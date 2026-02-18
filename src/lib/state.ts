@@ -127,17 +127,14 @@ export function formatChatLine(state: AppState): string {
     .map((m) => `${m.name}${formatManThousand(m.account)}(${formatManThousand(m.toon)})`)
     .join(",");
   const accAgg = new Map<string, number>();
-  const toonAgg = new Map<string, number>();
   for (const d of state.donors) {
-    const target = (d.target || "account") === "toon" ? toonAgg : accAgg;
-    target.set(d.name, (target.get(d.name) || 0) + d.amount);
+    if ((d.target || "account") === "toon") continue;
+    accAgg.set(d.name, (accAgg.get(d.name) || 0) + d.amount);
   }
   const accPairs = Array.from(accAgg.entries()).map(([name, amt]) => `${String(name).replace(/\s+/g, "")}${formatManThousand(amt)}`);
-  const toonPairs = Array.from(toonAgg.entries()).map(([name, amt]) => `${String(name).replace(/\s+/g, "")}${formatManThousand(amt)}`);
   const accStr = accPairs.length ? ` 후원:${accPairs.join(",")}` : "";
-  const toonStr = toonPairs.length ? ` 투네:${toonPairs.join(",")}` : "";
   const total = totalAccount(state);
-  return `${members}${accStr}${toonStr} 총합 ${formatManThousand(total)}`
+  return `${members}${accStr} 총합:${formatManThousand(total)}`
     .replace(/\s+,/g, ",")
     .replace(/,\s+/g, ",")
     .trim();
