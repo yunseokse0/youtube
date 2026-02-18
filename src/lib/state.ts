@@ -5,12 +5,15 @@ export type Member = {
   toon: number;
 };
 
+export type DonorTarget = "account" | "toon";
+
 export type Donor = {
   id: string;
   name: string;
   amount: number;
   memberId: string;
   at: number;
+  target?: DonorTarget;
 };
 
 export type AppState = {
@@ -123,14 +126,18 @@ export function formatChatLine(state: AppState): string {
   const members = state.members
     .map((m) => `${m.name}${formatManThousand(m.account)}(${formatManThousand(m.toon)})`)
     .join(",");
-  const agg = new Map<string, number>();
+  const accAgg = new Map<string, number>();
+  const toonAgg = new Map<string, number>();
   for (const d of state.donors) {
-    agg.set(d.name, (agg.get(d.name) || 0) + d.amount);
+    const target = (d.target || "account") === "toon" ? toonAgg : accAgg;
+    target.set(d.name, (target.get(d.name) || 0) + d.amount);
   }
-  const donorPairs = Array.from(agg.entries()).map(([name, amt]) => `${String(name).replace(/\s+/g, "")}${formatManThousand(amt)}`);
-  const donorStr = donorPairs.length ? ` 후원:${donorPairs.join(",")}` : "";
+  const accPairs = Array.from(accAgg.entries()).map(([name, amt]) => `${String(name).replace(/\s+/g, "")}${formatManThousand(amt)}`);
+  const toonPairs = Array.from(toonAgg.entries()).map(([name, amt]) => `${String(name).replace(/\s+/g, "")}${formatManThousand(amt)}`);
+  const accStr = accPairs.length ? ` 후원:${accPairs.join(",")}` : "";
+  const toonStr = toonPairs.length ? ` 투네:${toonPairs.join(",")}` : "";
   const total = totalAccount(state);
-  return `${members}${donorStr} 총합 ${formatManThousand(total)}`
+  return `${members}${accStr}${toonStr} 총합 ${formatManThousand(total)}`
     .replace(/\s+,/g, ",")
     .replace(/,\s+/g, ",")
     .trim();

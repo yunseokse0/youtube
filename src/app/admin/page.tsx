@@ -6,6 +6,7 @@ import {
   AppState,
   Member,
   Donor,
+  DonorTarget,
   defaultState,
   loadState,
   saveState,
@@ -43,6 +44,7 @@ export default function AdminPage() {
   const [donorName, setDonorName] = useState("");
   const [donorAmount, setDonorAmount] = useState("");
   const [donorMemberId, setDonorMemberId] = useState<string | null>(null);
+  const [donorTarget, setDonorTarget] = useState<DonorTarget>("account");
   const [copied, setCopied] = useState(false);
   const [newMemberName, setNewMemberName] = useState("");
   const [chatDraft, setChatDraft] = useState("");
@@ -71,11 +73,10 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (!chatDraftDirty) {
-      setChatDraft(formatChatLine(state));
-    }
+    setChatDraft(formatChatLine(state));
+    setChatDraftDirty(false);
     setForbiddenText((state.forbiddenWords || []).join("\n"));
-  }, [state, chatDraftDirty]);
+  }, [state]);
 
   useEffect(() => {
     const id = setInterval(() => saveState(state), 180_000);
@@ -191,9 +192,10 @@ export default function AdminPage() {
     const amount = parseTenThousandThousand(donorAmount);
     if (!donorMemberId) return;
     if (!confirmHighAmount(amount)) return;
+    const target = donorTarget;
     setState((prev: AppState) => {
       const safeName = (donorName || "무명").replace(/\s+/g, "");
-      const existingIdx = prev.donors.findIndex((d) => d.name === safeName && d.memberId === donorMemberId);
+      const existingIdx = prev.donors.findIndex((d) => d.name === safeName && d.memberId === donorMemberId && (d.target || "account") === target);
       let donors: Donor[];
       if (existingIdx >= 0) {
         const updated = { ...prev.donors[existingIdx], amount: prev.donors[existingIdx].amount + amount, at: Date.now() };
@@ -206,11 +208,13 @@ export default function AdminPage() {
           amount,
           memberId: donorMemberId,
           at: Date.now(),
+          target,
         };
         donors = [...prev.donors, donor];
       }
+      const field = target === "toon" ? "toon" : "account";
       const members = prev.members.map((m: Member) =>
-        m.id === donorMemberId ? { ...m, account: m.account + amount } : m
+        m.id === donorMemberId ? { ...m, [field]: (m[field] || 0) + amount } : m
       );
       const next: AppState = { ...prev, members, donors };
       saveState(next);
@@ -389,7 +393,7 @@ export default function AdminPage() {
 
             <section className="glass p-4 md:p-6">
               <h2 className="text-lg font-semibold mb-3">후원자 기록부</h2>
-              <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto_auto] gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto_auto_auto] gap-3">
                 <input
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
                   placeholder="후원자 이름"
@@ -403,6 +407,14 @@ export default function AdminPage() {
                   value={donorAmount}
                   onChange={(e) => setDonorAmount(maskTenThousandThousandInput(e.target.value))}
                 />
+                <select
+                  className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  value={donorTarget}
+                  onChange={(e) => setDonorTarget(e.target.value as DonorTarget)}
+                >
+                  <option value="account">계좌</option>
+                  <option value="toon">투네</option>
+                </select>
                 <select
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
                   value={donorMemberId || ""}
@@ -459,6 +471,7 @@ export default function AdminPage() {
                       <th className="text-left font-medium p-1">시간</th>
                       <th className="text-left font-medium p-1">후원자</th>
                       <th className="text-left font-medium p-1">멤버</th>
+                      <th className="text-left font-medium p-1">대상</th>
                       <th className="text-right font-medium p-1">금액</th>
                       <th className="text-right font-medium p-1 w-16">삭제</th>
                     </tr>
@@ -474,6 +487,7 @@ export default function AdminPage() {
                             <td className="p-1 text-neutral-400">{new Date(d.at).toLocaleTimeString()}</td>
                             <td className="p-1">{d.name}</td>
                             <td className="p-1 text-neutral-300">{m?.name || d.memberId}</td>
+                            <td className="p-1">{(d.target || "account") === "toon" ? <span className="text-amber-300">투네</span> : <span className="text-emerald-300">계좌</span>}</td>
                             <td className="p-1 text-right">{formatManThousand(d.amount)}</td>
                             <td className="p-1 text-right">
                               <button
@@ -482,8 +496,9 @@ export default function AdminPage() {
                                   if (typeof window !== "undefined" && !window.confirm("해당 후원 기록을 삭제할까요?")) return;
                                   setState((prev: AppState) => {
                                     const donors = prev.donors.filter((x) => x.id !== d.id);
+                                    const field = (d.target || "account") === "toon" ? "toon" : "account";
                                     const members = prev.members.map((mm: Member) =>
-                                      mm.id === d.memberId ? { ...mm, account: Math.max(0, mm.account - d.amount) } : mm
+                                      mm.id === d.memberId ? { ...mm, [field]: Math.max(0, (mm[field] || 0) - d.amount) } : mm
                                     );
                                     const next: AppState = { ...prev, donors, members };
                                     saveState(next);
@@ -498,7 +513,7 @@ export default function AdminPage() {
                         );
                       })}
                     {state.donors.length === 0 && (
-                      <tr><td className="p-2 text-neutral-400" colSpan={4}>기록이 없습니다.</td></tr>
+                      <tr><td className="p-2 text-neutral-400" colSpan={6}>기록이 없습니다.</td></tr>
                     )}
                   </tbody>
                 </table>
