@@ -6,6 +6,8 @@ import { AppState, STORAGE_KEY, defaultState, loadState, totalAccount, Member, r
 function useStorageState(): AppState {
   const [s, setS] = useState<AppState>(defaultState());
   useEffect(() => setS(loadState()), []);
+
+  // localStorage 이벤트 (같은 브라우저 탭 간 동기화)
   useEffect(() => {
     const handler = (e: StorageEvent) => {
       if (e.key === STORAGE_KEY && e.newValue) {
@@ -15,6 +17,25 @@ function useStorageState(): AppState {
     window.addEventListener("storage", handler);
     return () => window.removeEventListener("storage", handler);
   }, []);
+
+  // API 폴링 (OBS/Prism 등 외부 브라우저 소스 동기화)
+  useEffect(() => {
+    let running = true;
+    const poll = async () => {
+      if (!running) return;
+      try {
+        const res = await fetch("/api/state", { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.updatedAt) setS(data);
+        }
+      } catch {}
+      if (running) setTimeout(poll, 2000);
+    };
+    poll();
+    return () => { running = false; };
+  }, []);
+
   return s;
 }
 

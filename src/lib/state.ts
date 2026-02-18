@@ -105,7 +105,13 @@ export function saveState(state: AppState) {
   if (typeof window === "undefined") return;
   try {
     const next = { ...state, updatedAt: Date.now() };
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    const json = JSON.stringify(next);
+    window.localStorage.setItem(STORAGE_KEY, json);
+    fetch("/api/state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: json,
+    }).catch(() => {});
   } catch {
     // ignore
   }
