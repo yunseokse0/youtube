@@ -61,6 +61,9 @@ export default function AdminPage() {
   const [ovDense, setOvDense] = useState(true);
   const [ovAnchor, setOvAnchor] = useState("tl");
   const [ovSumAnchor, setOvSumAnchor] = useState("bc");
+  const [ovSumFree, setOvSumFree] = useState(false);
+  const [ovSumX, setOvSumX] = useState("50");
+  const [ovSumY, setOvSumY] = useState("90");
   const [overlayUrl, setOverlayUrl] = useState("");
 
   useEffect(() => {
@@ -321,16 +324,21 @@ export default function AdminPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const base = `${window.location.origin}/overlay`;
-    const params = new URLSearchParams({
+    const p: Record<string, string> = {
       scale: ovScale,
       memberSize: ovMemberSize,
       totalSize: ovTotalSize,
       dense: String(ovDense),
       anchor: ovAnchor,
-      sumAnchor: ovSumAnchor,
-    }).toString();
-    setOverlayUrl(`${base}?${params}`);
-  }, [ovScale, ovMemberSize, ovTotalSize, ovDense, ovAnchor, ovSumAnchor]);
+    };
+    if (ovSumFree) {
+      p.sumX = ovSumX;
+      p.sumY = ovSumY;
+    } else {
+      p.sumAnchor = ovSumAnchor;
+    }
+    setOverlayUrl(`${base}?${new URLSearchParams(p).toString()}`);
+  }, [ovScale, ovMemberSize, ovTotalSize, ovDense, ovAnchor, ovSumAnchor, ovSumFree, ovSumX, ovSumY]);
 
   const copyOverlayUrl = async () => {
     try {
@@ -540,10 +548,38 @@ export default function AdminPage() {
                     <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10" value={ovAnchor} onChange={(e) => setOvAnchor(e.target.value)}>
                       <option value="tl">좌상</option><option value="tr">우상</option><option value="bl">좌하</option><option value="br">우하</option>
                     </select>
-                    <label className="text-sm text-neutral-400">총합 위치(sumAnchor)</label>
-                    <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10" value={ovSumAnchor} onChange={(e) => setOvSumAnchor(e.target.value)}>
-                      <option value="bc">하단중앙</option><option value="tc">상단중앙</option><option value="bl">좌하</option><option value="br">우하</option><option value="tr">우상</option><option value="tl">좌상</option>
-                    </select>
+                    <label className="text-sm text-neutral-400">총합 위치 모드</label>
+                    <div className="flex gap-2">
+                      <button
+                        className={`px-2 py-1 rounded border text-sm ${!ovSumFree ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`}
+                        onClick={() => setOvSumFree(false)}
+                      >프리셋</button>
+                      <button
+                        className={`px-2 py-1 rounded border text-sm ${ovSumFree ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`}
+                        onClick={() => setOvSumFree(true)}
+                      >자유 위치</button>
+                    </div>
+                    {!ovSumFree ? (
+                      <>
+                        <label className="text-sm text-neutral-400">총합 위치</label>
+                        <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10" value={ovSumAnchor} onChange={(e) => setOvSumAnchor(e.target.value)}>
+                          <option value="bc">하단중앙</option><option value="tc">상단중앙</option><option value="bl">좌하</option><option value="br">우하</option><option value="tr">우상</option><option value="tl">좌상</option>
+                        </select>
+                      </>
+                    ) : (
+                      <>
+                        <label className="text-sm text-neutral-400">X 위치(%)</label>
+                        <div className="flex items-center gap-2">
+                          <input type="range" min="0" max="100" step="1" value={ovSumX} onChange={(e) => setOvSumX(e.target.value)} className="flex-1 accent-emerald-500" />
+                          <input className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-center" value={ovSumX} onChange={(e) => setOvSumX(e.target.value)} />
+                        </div>
+                        <label className="text-sm text-neutral-400">Y 위치(%)</label>
+                        <div className="flex items-center gap-2">
+                          <input type="range" min="0" max="100" step="1" value={ovSumY} onChange={(e) => setOvSumY(e.target.value)} className="flex-1 accent-emerald-500" />
+                          <input className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-center" value={ovSumY} onChange={(e) => setOvSumY(e.target.value)} />
+                        </div>
+                      </>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <input className="flex-1 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 font-mono text-xs" readOnly value={overlayUrl} />

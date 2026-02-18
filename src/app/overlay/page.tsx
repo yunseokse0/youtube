@@ -58,10 +58,14 @@ function OverlayInner() {
   const dense = (sp.get("dense") || "false").toLowerCase() === "true";
   const anchor = (sp.get("anchor") || "tl").toLowerCase();
   const sumAnchor = (sp.get("sumAnchor") || "bc").toLowerCase();
+  const sumXParam = sp.get("sumX");
+  const sumYParam = sp.get("sumY");
+  const hasFreePos = sumXParam !== null && sumYParam !== null;
+  const sumX = hasFreePos ? Math.max(0, Math.min(100, parseFloat(sumXParam!))) : 0;
+  const sumY = hasFreePos ? Math.max(0, Math.min(100, parseFloat(sumYParam!))) : 0;
 
   useEffect(() => {
     const prev = document.body.style.background;
-    const prevHtml = document.documentElement.style.background;
     document.body.style.background = "transparent";
     document.documentElement.style.background = "transparent";
     return () => { document.body.style.background = prev; };
@@ -72,12 +76,18 @@ function OverlayInner() {
     anchor === "bl" ? "bottom-4 left-4" :
     anchor === "br" ? "bottom-4 right-4 items-end text-right" :
     "top-4 left-4";
-  const sumPosClass =
-    sumAnchor === "tc" ? "top-4 left-1/2 -translate-x-1/2" :
-    sumAnchor === "bl" ? "bottom-4 left-4 translate-x-0" :
-    sumAnchor === "br" ? "bottom-4 right-4 translate-x-0" :
-    sumAnchor === "tr" ? "top-4 right-4 translate-x-0" :
-    "bottom-4 left-1/2 -translate-x-1/2";
+
+  const sumPosStyle: React.CSSProperties | undefined = hasFreePos
+    ? { left: `${sumX}%`, top: `${sumY}%`, transform: "translate(-50%, -50%)" }
+    : undefined;
+  const sumPosClass = hasFreePos
+    ? ""
+    : sumAnchor === "tc" ? "top-4 left-1/2 -translate-x-1/2" :
+      sumAnchor === "bl" ? "bottom-4 left-4 translate-x-0" :
+      sumAnchor === "br" ? "bottom-4 right-4 translate-x-0" :
+      sumAnchor === "tr" ? "top-4 right-4 translate-x-0" :
+      sumAnchor === "tl" ? "top-4 left-4 translate-x-0" :
+      "bottom-4 left-1/2 -translate-x-1/2";
 
   return (
     <main className="transparent-bg min-h-screen text-outline-strong no-select" style={{ zoom: scale }}>
@@ -90,7 +100,7 @@ function OverlayInner() {
           </div>
         ))}
       </div>
-      <div className={`fixed ${sumPosClass}`}>
+      <div className={`fixed ${sumPosClass}`} style={sumPosStyle}>
         <div
           className="font-extrabold text-amber-200 drop-shadow-[0_0_6px_rgba(0,0,0,1)]"
           style={{ fontSize: totalSize, lineHeight: 1.05 }}

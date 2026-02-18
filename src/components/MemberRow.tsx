@@ -11,15 +11,15 @@ type Props = {
 };
 
 export default function MemberRow({ member, onChange, onRename, onReset, onDelete }: Props) {
-  const [localAccount, setLocalAccount] = useState(member.account.toString());
-  const [localToon, setLocalToon] = useState(member.toon.toString());
+  const [localAccount, setLocalAccount] = useState(formatManThousand(member.account));
+  const [localToon, setLocalToon] = useState(formatManThousand(member.toon));
   const [localName, setLocalName] = useState(member.name);
   const prevAccount = useRef(member.account);
   const [flash, setFlash] = useState(false);
 
   useEffect(() => {
-    setLocalAccount(member.account.toString());
-    setLocalToon(member.toon.toString());
+    setLocalAccount(formatManThousand(member.account));
+    setLocalToon(formatManThousand(member.toon));
     setLocalName(member.name);
   }, [member.account, member.toon, member.name]);
 
