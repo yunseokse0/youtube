@@ -22,6 +22,7 @@ export type AppState = {
 
 export const STORAGE_KEY = "excel-broadcast-state-v1";
 export const DAILY_LOG_KEY = "excel-broadcast-daily-log-v1";
+export const FORBID_EVENTS_KEY = "excel-broadcast-forbid-events-v1";
 
 export function defaultMembers(): Member[] {
   return [
@@ -111,14 +112,28 @@ export function totalAccount(state: AppState): number {
   return state.members.reduce((sum, m) => sum + (m.account || 0), 0);
 }
 
+export function formatManThousand(n: number): string {
+  const safe = Math.max(0, Math.round(n / 1000) * 1000);
+  const man = Math.floor(safe / 10000);
+  const thousandDigit = Math.floor((safe % 10000) / 1000);
+  return thousandDigit ? `${man}.${thousandDigit}` : `${man}`;
+}
+
 export function formatChatLine(state: AppState): string {
   const members = state.members
-    .map((m) => `${m.name}${m.account}(${m.toon})`)
-    .join(", ");
-  const lastDonor = state.donors[state.donors.length - 1];
-  const donorStr = lastDonor ? ` 후원: ${lastDonor.name} ${lastDonor.amount}` : "";
+    .map((m) => `${m.name}${formatManThousand(m.account)}(${formatManThousand(m.toon)})`)
+    .join(",");
+  const agg = new Map<string, number>();
+  for (const d of state.donors) {
+    agg.set(d.name, (agg.get(d.name) || 0) + d.amount);
+  }
+  const donorPairs = Array.from(agg.entries()).map(([name, amt]) => `${String(name).replace(/\s+/g, "")}${formatManThousand(amt)}`);
+  const donorStr = donorPairs.length ? ` 후원:${donorPairs.join(",")}` : "";
   const total = totalAccount(state);
-  return `${members}${donorStr} 총합 ${total}`;
+  return `${members}${donorStr} 총합 ${formatManThousand(total)}`
+    .replace(/\s+,/g, ",")
+    .replace(/,\s+/g, ",")
+    .trim();
 }
 
 export function todaysDateKey(d = new Date()): string {
@@ -142,6 +157,54 @@ export function appendDailyLog(snapshot: AppState) {
     window.localStorage.setItem(DAILY_LOG_KEY, JSON.stringify(logs));
   } catch {
     // ignore
+  }
+}
+
+export type DailyLogEntry = {
+  at: string;
+  total: number;
+  members: Member[];
+  donors: Donor[];
+};
+
+export function loadDailyLog(): Record<string, DailyLogEntry[]> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(DAILY_LOG_KEY);
+    return raw ? JSON.parse(raw) as Record<string, DailyLogEntry[]> : {};
+  } catch {
+    return {};
+  }
+}
+
+export function clearDailyLog() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(DAILY_LOG_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+export type ForbidEvent = { at: number; author: string; message: string; word: string };
+export function appendForbidEvent(ev: ForbidEvent) {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(FORBID_EVENTS_KEY);
+    const arr: ForbidEvent[] = raw ? JSON.parse(raw) : [];
+    arr.unshift(ev);
+    const next = arr.slice(0, 200);
+    window.localStorage.setItem(FORBID_EVENTS_KEY, JSON.stringify(next));
+  } catch {}
+}
+
+export function loadForbidEvents(): ForbidEvent[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(FORBID_EVENTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
   }
 }
 

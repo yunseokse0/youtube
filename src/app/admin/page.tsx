@@ -15,7 +15,14 @@ import {
   maskTenThousandThousandInput,
   formatChatLine,
   STORAGE_KEY,
+  DAILY_LOG_KEY,
+  loadDailyLog,
+  DailyLogEntry,
+  formatManThousand,
   confirmHighAmount,
+  appendForbidEvent,
+  loadForbidEvents,
+  FORBID_EVENTS_KEY,
 } from "@/lib/state";
 import {
   startYoutubePolling,
@@ -32,6 +39,7 @@ import Link from "next/link";
 
 export default function AdminPage() {
   const [state, setState] = useState<AppState>(defaultState());
+  const [dailyLog, setDailyLog] = useState<Record<string, DailyLogEntry[]>>({});
   const [donorName, setDonorName] = useState("");
   const [donorAmount, setDonorAmount] = useState("");
   const [donorMemberId, setDonorMemberId] = useState<string | null>(null);
@@ -55,9 +63,11 @@ export default function AdminPage() {
 
   useEffect(() => {
     setState(loadState());
+    setDailyLog(loadDailyLog());
     setYtUrl(getSavedVideoUrl() || "");
     setLiveChatId(getPreferredLiveChatId());
     setApiKey(getPreferredApiKey() || "");
+    setEvents(loadForbidEvents());
   }, []);
 
   useEffect(() => {
@@ -82,6 +92,8 @@ export default function AdminPage() {
         } catch {
           // ignore
         }
+      } else if (e.key === DAILY_LOG_KEY) {
+        setDailyLog(loadDailyLog());
       }
     };
     window.addEventListener("storage", handler);
@@ -93,7 +105,9 @@ export default function AdminPage() {
       const text = `금칙어(${word}) 발견 - ${author}: ${message}`;
       window.dispatchEvent(new CustomEvent("forbidden-alert", { detail: { text } }));
       setEvents((prev) => {
-        const next = [{ at: Date.now(), author, message, word }, ...prev];
+        const ev = { at: Date.now(), author, message, word };
+        appendForbidEvent(ev);
+        const next = [ev, ...prev];
         return next.slice(0, 100);
       });
     });
@@ -178,7 +192,8 @@ export default function AdminPage() {
     if (!donorMemberId) return;
     if (!confirmHighAmount(amount)) return;
     setState((prev: AppState) => {
-      const existingIdx = prev.donors.findIndex((d) => d.name === (donorName || "무명") && d.memberId === donorMemberId);
+      const safeName = (donorName || "무명").replace(/\s+/g, "");
+      const existingIdx = prev.donors.findIndex((d) => d.name === safeName && d.memberId === donorMemberId);
       let donors: Donor[];
       if (existingIdx >= 0) {
         const updated = { ...prev.donors[existingIdx], amount: prev.donors[existingIdx].amount + amount, at: Date.now() };
@@ -187,7 +202,7 @@ export default function AdminPage() {
       } else {
         const donor: Donor = {
           id: `d_${Date.now()}`,
-          name: donorName || "무명",
+          name: safeName,
           amount,
           memberId: donorMemberId,
           at: Date.now(),
@@ -211,6 +226,13 @@ export default function AdminPage() {
   }, [state.members, donorMemberId]);
 
   const total = useMemo(() => totalAccount(state), [state]);
+  const flatLogs = useMemo(() => {
+    const arr: Array<{ date: string; entry: DailyLogEntry }> = [];
+    Object.entries(dailyLog).forEach(([date, entries]) => {
+      (entries || []).forEach((entry) => arr.push({ date, entry }));
+    });
+    return arr.sort((a,b)=> (a.date === b.date ? (a.entry.at < b.entry.at ? 1 : -1) : (a.date < b.date ? 1 : -1)));
+  }, [dailyLog]);
 
   const regenerateDraft = () => {
     setChatDraft(formatChatLine(state));
@@ -255,6 +277,7 @@ export default function AdminPage() {
 
   const onReset = () => {
     appendDailyLog(state);
+    setDailyLog(loadDailyLog());
     const next = defaultState();
     setState(next);
     saveState(next);
@@ -276,6 +299,19 @@ export default function AdminPage() {
   const clearApiKey = () => {
     clearPreferredApiKey();
     setApiKey(getPreferredApiKey() || "");
+  };
+
+  const onSnapshotNow = () => {
+    appendDailyLog(state);
+    setDailyLog(loadDailyLog());
+  };
+  const onDownloadLog = () => {
+    const raw = JSON.stringify(loadDailyLog(), null, 2);
+    const blob = new Blob([raw], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `daily-log-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
   };
 
   useEffect(() => {
@@ -318,16 +354,16 @@ export default function AdminPage() {
       <div className="max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">매니저 제어판</h1>
-          <Link className="text-sm text-neutral-300 underline" href="/overlay">오버레이 열기</Link>
+          <Link className="text-sm text-neutral-300 underline" href="/youtube">유튜브 모니터 열기</Link>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-6">
+        <div className="grid grid-cols-1 gap-6">
           <div className="space-y-6">
             <section className="glass p-4 md:p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold">멤버 정산 보드</h2>
                 <div className="text-right">
                   <div className="text-xs text-neutral-400">계좌 총합</div>
-                  <div className="text-2xl font-bold">{total.toLocaleString()}</div>
+                  <div className="text-2xl font-bold">{formatManThousand(total)}</div>
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 mb-4">
@@ -344,7 +380,7 @@ export default function AdminPage() {
                   모든 멤버 금액 리셋
                 </button>
               </div>
-              <div className="space-y-3">
+              <div className="space-y-3 overflow-x-auto">
                 {state.members.map((m: Member) => (
                   <MemberRow key={m.id} member={m} onChange={updateMember} onRename={renameMember} onReset={resetMemberAmounts} onDelete={deleteMember} />
                 ))}
@@ -415,6 +451,61 @@ export default function AdminPage() {
             </section>
 
             <section className="glass p-4 md:p-6">
+              <h2 className="text-lg font-semibold mb-3">후원자 리스트</h2>
+              <div className="max-h-[260px] overflow-auto pr-1">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-neutral-400">
+                      <th className="text-left font-medium p-1">시간</th>
+                      <th className="text-left font-medium p-1">후원자</th>
+                      <th className="text-left font-medium p-1">멤버</th>
+                      <th className="text-right font-medium p-1">금액</th>
+                      <th className="text-right font-medium p-1 w-16">삭제</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {state.donors
+                      .slice()
+                      .sort((a,b)=>b.at-a.at)
+                      .map((d) => {
+                        const m = state.members.find((x) => x.id === d.memberId);
+                        return (
+                          <tr key={d.id} className="border-t border-white/10">
+                            <td className="p-1 text-neutral-400">{new Date(d.at).toLocaleTimeString()}</td>
+                            <td className="p-1">{d.name}</td>
+                            <td className="p-1 text-neutral-300">{m?.name || d.memberId}</td>
+                            <td className="p-1 text-right">{formatManThousand(d.amount)}</td>
+                            <td className="p-1 text-right">
+                              <button
+                                className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700"
+                                onClick={() => {
+                                  if (typeof window !== "undefined" && !window.confirm("해당 후원 기록을 삭제할까요?")) return;
+                                  setState((prev: AppState) => {
+                                    const donors = prev.donors.filter((x) => x.id !== d.id);
+                                    const members = prev.members.map((mm: Member) =>
+                                      mm.id === d.memberId ? { ...mm, account: Math.max(0, mm.account - d.amount) } : mm
+                                    );
+                                    const next: AppState = { ...prev, donors, members };
+                                    saveState(next);
+                                    return next;
+                                  });
+                                }}
+                              >
+                                삭제
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    {state.donors.length === 0 && (
+                      <tr><td className="p-2 text-neutral-400" colSpan={4}>기록이 없습니다.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="glass p-4 md:p-6">
               <h2 className="text-lg font-semibold mb-3">오버레이 프리뷰 & URL</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-2">
@@ -473,89 +564,70 @@ export default function AdminPage() {
                 </div>
               </div>
               <div className="text-sm text-neutral-400 mt-2">
-                3분마다 상태를 자동 저장합니다. 다른 탭과 실시간 동기화됩니다.
+                3분마다 상태를 자동 저장합니다. 다른 탭과 실시간 동기화됩니다. 마지막 저장{" "}
+                <span className="text-neutral-200">{new Date(state.updatedAt).toLocaleTimeString()}</span>
               </div>
-            </section>
-          </div>
-
-          <aside className="space-y-6">
-            <section className="glass p-4 md:p-6">
-              <h2 className="text-lg font-semibold mb-3">유튜브 방송 연결</h2>
-              <div className="flex gap-2">
-                <input
-                  className="flex-1 px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
-                  placeholder="유튜브 방송 URL (예: https://www.youtube.com/watch?v=...)"
-                  value={ytUrl}
-                  onChange={(e) => setYtUrl(e.target.value)}
-                />
-                <button className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700" onClick={connectYoutube}>
-                  연결
-                </button>
-                <button className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700" onClick={disconnectYoutube}>
-                  해제
-                </button>
+              <div className="flex flex-wrap gap-2 mt-3">
+                <button
+                  className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700"
+                  onClick={() => {
+                    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+                    const a = document.createElement("a");
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `state-${new Date().toISOString().slice(0,10)}.json`;
+                    a.click();
+                  }}
+                >상태 내보내기(JSON)</button>
+                <button
+                  className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700"
+                  onClick={onSnapshotNow}
+                >지금 스냅샷 기록</button>
+                <button
+                  className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700"
+                  onClick={onDownloadLog}
+                >히스토리 다운로드(JSON)</button>
+                <button
+                  className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700"
+                  onClick={() => {
+                    if (typeof window === "undefined") return;
+                    const raw = window.localStorage.getItem("excel-broadcast-daily-log-v1") || "{}";
+                    const blob = new Blob([raw], { type: "application/json" });
+                    const a = document.createElement("a");
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `daily-log.json`;
+                    a.click();
+                  }}
+                >일일 로그 내보내기(JSON)</button>
+                <button
+                  className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700"
+                  onClick={() => {
+                    const header = "at,name,member,amount\r\n";
+                    const rows = state.donors
+                      .map((d) => {
+                        const m = state.members.find((x)=>x.id===d.memberId)?.name || d.memberId;
+                        const ts = new Date(d.at).toISOString();
+                        return `${ts},${d.name},${m},${d.amount}`;
+                      })
+                      .join("\r\n");
+                    const blob = new Blob([header+rows], { type: "text/csv;charset=utf-8" });
+                    const a = document.createElement("a");
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `donors.csv`;
+                    a.click();
+                  }}
+                >후원자 내보내기(CSV)</button>
               </div>
-              <div className="text-xs text-neutral-400 mt-2">
-                현재 liveChatId: <span className="text-neutral-300">{liveChatId ?? "미설정"}</span>
-              </div>
-              <div className="text-xs text-neutral-400 mt-1">
-                URL에서 videoId를 추출해 activeLiveChatId를 자동 조회합니다.
-              </div>
-              <div className="h-px my-4 bg-white/10" />
-              <div className="flex gap-2">
-                <input
-                  className="flex-1 px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
-                  type="password"
-                  placeholder="YouTube Data API 키 (로컬 저장)"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                />
-                <button className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700" onClick={saveApiKey}>
-                  키 저장
-                </button>
-                <button className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700" onClick={clearApiKey}>
-                  키 삭제
-                </button>
-              </div>
-              <div className="text-xs text-neutral-400 mt-2">
-                키는 브라우저 localStorage에만 저장되며, 서버로 전송/커밋되지 않습니다.
-              </div>
-            </section>
-            <section className="glass p-4 md:p-6">
-              <h2 className="text-lg font-semibold mb-3">채팅 모니터링</h2>
-              <div className="text-sm text-neutral-400 mb-2">금칙어 탐지 메시지가 최신순으로 표시됩니다.</div>
-              <div className="max-h-[420px] overflow-auto pr-1 space-y-2">
-                {events.length === 0 && (
-                  <div className="text-neutral-400 text-sm">아직 탐지된 메시지가 없습니다.</div>
-                )}
-                {events.map((ev, idx) => (
-                  <div key={idx} className="p-2 rounded bg-neutral-900/70 border border-red-500/30">
-                    <div className="text-xs text-red-400">[{new Date(ev.at).toLocaleTimeString()}] 금칙어: {ev.word}</div>
-                    <div className="text-sm"><span className="text-emerald-300">{ev.author}</span>: {ev.message}</div>
+              <div className="rounded border border-white/10 bg-neutral-900/60 mt-3 max-h-[220px] overflow-auto">
+                {flatLogs.length === 0 && <div className="p-3 text-sm text-neutral-400">히스토리가 없습니다. 리셋 시 자동 기록되며, [지금 스냅샷 기록]으로 즉시 저장할 수 있습니다.</div>}
+                {flatLogs.map((it, idx) => (
+                  <div key={idx} className="p-3 border-t border-white/10 text-sm">
+                    <div className="text-xs text-neutral-400">{it.date} {new Date(it.entry.at).toLocaleTimeString()}</div>
+                    <div className="text-neutral-300">총합 {it.entry.total.toLocaleString()} · 멤버 {it.entry.members.length} · 후원 {it.entry.donors.length}</div>
                   </div>
                 ))}
               </div>
             </section>
-            <section className="glass p-4 md:p-6">
-              <div className="flex items-center justify-between mb-2">
-                <h2 className="text-lg font-semibold">금지어 목록</h2>
-                <div className="text-xs text-neutral-400">{(forbiddenText.split(/\r?\n/).filter((x) => x.trim()).length) || 0}/99</div>
-              </div>
-              <textarea
-                ref={forbidEditRef}
-                className="w-full h-[220px] px-3 py-2 rounded bg-neutral-900/80 border border-white/10 font-mono"
-                value={forbiddenText}
-                onChange={(e) => setForbiddenText(e.target.value)}
-                onBlur={saveForbidden}
-                placeholder={"한 줄에 하나씩 입력하세요.\n최대 99개까지 저장됩니다."}
-              />
-              <div className="flex gap-2 mt-2">
-                <button className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700" onClick={saveForbidden}>
-                  저장
-                </button>
-              </div>
-            </section>
-          </aside>
+          </div>
         </div>
       </div>
     </main>

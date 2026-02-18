@@ -1,5 +1,5 @@
 "use client";
-import { Member, parseTenThousandThousand, confirmHighAmount, maskTenThousandThousandInput } from "@/lib/state";
+import { Member, parseTenThousandThousand, confirmHighAmount, maskTenThousandThousandInput, formatManThousand } from "@/lib/state";
 import { useEffect, useRef, useState } from "react";
 
 type Props = {
@@ -109,7 +109,7 @@ export default function MemberRow({ member, onChange, onRename, onReset, onDelet
       </div>
       <div className="text-right pr-2">
         <span className="text-neutral-400 text-xs">표시: </span>
-        <span className="font-mono">{member.account}(<span className="text-neutral-300">{member.toon}</span>)</span>
+        <span className="font-mono">{formatManThousand(member.account)}(<span className="text-neutral-300">{formatManThousand(member.toon)}</span>)</span>
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, STORAGE_KEY, defaultState, loadState, totalAccount, Member, roundToThousand } from "@/lib/state";
+import { AppState, STORAGE_KEY, defaultState, loadState, totalAccount, Member, roundToThousand, formatManThousand } from "@/lib/state";
 
 function useStorageState(): AppState {
   const [s, setS] = useState<AppState>(defaultState());
@@ -85,8 +85,8 @@ function OverlayInner() {
         {s.members.map((m: Member) => (
           <div key={m.id} className="font-bold tracking-tight" style={{ fontSize: memberSize, lineHeight: dense ? 1 : 1.15 }}>
             <span className="text-white">{m.name}</span>
-            <span className="ml-2 text-emerald-300">{m.account}</span>
-            <span className="ml-1 text-neutral-200">({m.toon})</span>
+            <span className="ml-2 text-emerald-300">{formatManThousand(m.account)}</span>
+            <span className="ml-1 text-neutral-200">({formatManThousand(m.toon)})</span>
           </div>
         ))}
       </div>
@@ -95,7 +95,7 @@ function OverlayInner() {
           className="font-extrabold text-amber-200 drop-shadow-[0_0_6px_rgba(0,0,0,1)]"
           style={{ fontSize: totalSize, lineHeight: 1.05 }}
         >
-          계좌 총합 {displaySum.toLocaleString()}
+          계좌 총합 {formatManThousand(displaySum)}
         </div>
       </div>
     </main>

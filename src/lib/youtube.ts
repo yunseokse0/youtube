@@ -1,6 +1,6 @@
 export type OnForbidden = (matched: { word: string; author: string; message: string }) => void;
 
-const ENV_API_KEY = process.env.NEXT_PUBLIC_YT_API_KEY;
+const ENV_API_KEY = process.env.NEXT_PUBLIC_YT_API_KEY || process.env.NEXT_PUBLIC_YOUTUBE_API_KEY;
 const ENV_LIVE_CHAT_ID = process.env.NEXT_PUBLIC_YT_LIVE_CHAT_ID;
 const LIVE_CHAT_ID_KEY = "excel-broadcast-live-chat-id";
 const VIDEO_URL_KEY = "excel-broadcast-video-url";
@@ -28,13 +28,17 @@ export function getPreferredApiKey(): string | null {
   return window.localStorage.getItem(API_KEY_KEY) || ENV_API_KEY || null;
 }
 
+export const HAS_ENV_API_KEY: boolean = !!ENV_API_KEY;
+
 export function setPreferredApiKey(key: string) {
   if (typeof window === "undefined") return;
+  if (ENV_API_KEY) return; // immutable when provided via env (e.g., Vercel)
   window.localStorage.setItem(API_KEY_KEY, key);
 }
 
 export function clearPreferredApiKey() {
   if (typeof window === "undefined") return;
+  if (ENV_API_KEY) return; // immutable when provided via env
   window.localStorage.removeItem(API_KEY_KEY);
 }
 
@@ -88,6 +92,42 @@ export async function setYoutubeVideoUrl(url: string): Promise<{ liveChatId: str
     window.localStorage.setItem(LIVE_CHAT_ID_KEY, liveChatId);
   }
   return { liveChatId: liveChatId || null, videoId };
+}
+
+export async function fetchConcurrentViewers(videoId: string): Promise<number | null> {
+  const API_KEY = getPreferredApiKey();
+  if (!API_KEY) return null;
+  try {
+    const url = new URL("https://www.googleapis.com/youtube/v3/videos");
+    url.searchParams.set("part", "liveStreamingDetails");
+    url.searchParams.set("id", videoId);
+    url.searchParams.set("key", API_KEY);
+    const r = await fetch(url.toString());
+    if (!r.ok) return null;
+    const data = await r.json();
+    const v = data?.items?.[0]?.liveStreamingDetails?.concurrentViewers;
+    if (v == null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+export function startViewersPolling(videoId: string, onSample: (n: number | null) => void, intervalMs = 10_000) {
+  let running = true;
+  const loop = async () => {
+    if (!running) return;
+    try {
+      const n = await fetchConcurrentViewers(videoId);
+      onSample(n);
+    } finally {
+      if (!running) return;
+      setTimeout(loop, Math.max(2_000, intervalMs));
+    }
+  };
+  loop();
+  return () => { running = false; };
 }
 
 export function startYoutubePolling(forbiddenWords: string[], onForbidden: OnForbidden) {
@@ -146,4 +186,75 @@ export function stopYoutubePolling() {
     aborter.abort();
     aborter = null;
   }
+}
+
+export type ChatMessage = {
+  id: string;
+  at: number;
+  author: string;
+  message: string;
+  owner: boolean;
+  moderator: boolean;
+  sponsor: boolean;
+  verified: boolean;
+};
+export function startChatPolling(
+  onMessage: (msg: ChatMessage) => void,
+  opts?: { intervalMs?: number; initialLimit?: number; maxResults?: number }
+) {
+  if (typeof window === "undefined") return () => {};
+  const preferred = getPreferredLiveChatId();
+  const API_KEY = getPreferredApiKey();
+  if (!API_KEY || !preferred) return () => {};
+  const controller = new AbortController();
+  let nextPageToken: string | undefined;
+  let running = true;
+  let first = true;
+  const interval = Math.max(2_000, opts?.intervalMs ?? 10_000);
+  const initialLimit = Math.min(2000, Math.max(50, opts?.initialLimit ?? 200));
+  const maxResults = Math.min(200, Math.max(50, opts?.maxResults ?? 200));
+  const seen = new Set<string>();
+
+  const loop = async () => {
+    if (!running) return;
+    try {
+      const url = new URL("https://www.googleapis.com/youtube/v3/liveChat/messages");
+      url.searchParams.set("liveChatId", preferred!);
+      url.searchParams.set("part", "snippet,authorDetails");
+      if (nextPageToken) url.searchParams.set("pageToken", nextPageToken);
+      // 항상 넉넉한 결과 수를 요청해 빠르게 들어오는 채팅을 놓치지 않습니다.
+      url.searchParams.set("maxResults", String(first ? initialLimit : maxResults));
+      url.searchParams.set("key", API_KEY!);
+      const resp = await fetch(url.toString(), { signal: controller.signal });
+      if (!resp.ok) throw new Error(`YT ${resp.status}`);
+      const data = await resp.json();
+      const items: any[] = data.items || [];
+      nextPageToken = data.nextPageToken;
+      first = false;
+      for (const it of items) {
+        const id: string = it.id || `${it.snippet?.publishedAt}-${it.authorDetails?.channelId}`;
+        if (id && seen.has(id)) continue;
+        if (id) seen.add(id);
+        const text = it.snippet?.displayMessage || "";
+        const author = it.authorDetails?.displayName || "unknown";
+        const owner = !!it.authorDetails?.isChatOwner;
+        const moderator = !!it.authorDetails?.isChatModerator;
+        const sponsor = !!it.authorDetails?.isChatSponsor;
+        const verified = !!it.authorDetails?.isVerified;
+        const publishedAt = it.snippet?.publishedAt ? Date.parse(it.snippet.publishedAt) : Date.now();
+        onMessage({ id, at: publishedAt, author, message: text, owner, moderator, sponsor, verified });
+      }
+      const pollingMs: number | undefined = data?.pollingIntervalMillis ? parseInt(data.pollingIntervalMillis, 10) : undefined;
+      const nextDelay = Math.max(1000, opts?.intervalMs ?? pollingMs ?? interval);
+      setTimeout(loop, nextDelay);
+    } catch {
+      if (!running) return;
+      setTimeout(loop, interval);
+    }
+  };
+  loop();
+  return () => {
+    running = false;
+    controller.abort();
+  };
 }
