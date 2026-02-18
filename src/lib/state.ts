@@ -1,0 +1,155 @@
+export type Member = {
+  id: string;
+  name: string;
+  account: number;
+  toon: number;
+};
+
+export type Donor = {
+  id: string;
+  name: string;
+  amount: number;
+  memberId: string;
+  at: number;
+};
+
+export type AppState = {
+  members: Member[];
+  donors: Donor[];
+  forbiddenWords: string[];
+  updatedAt: number;
+};
+
+export const STORAGE_KEY = "excel-broadcast-state-v1";
+export const DAILY_LOG_KEY = "excel-broadcast-daily-log-v1";
+
+export function defaultMembers(): Member[] {
+  return [
+    { id: "m1", name: "멤버1", account: 0, toon: 0 },
+    { id: "m2", name: "멤버2", account: 0, toon: 0 },
+    { id: "m3", name: "멤버3", account: 0, toon: 0 },
+  ];
+}
+
+export function defaultState(): AppState {
+  return {
+    members: defaultMembers(),
+    donors: [],
+    forbiddenWords: ["금칙어", "욕설", "비속어"],
+    updatedAt: Date.now(),
+  };
+}
+
+export function parseAmount(input: string | number): number {
+  if (typeof input === "number") return Math.max(0, Math.floor(input));
+  const extracted = (input || "")
+    .replace(/[^\d]/g, "");
+  const n = parseInt(extracted || "0", 10);
+  return isNaN(n) ? 0 : n;
+}
+
+// ex) "3.5" => 35,000 (3만5천원), "2" => 20,000, "2.0" => 20,000
+// Only first decimal digit is used as thousands; other characters are ignored.
+export function parseTenThousandThousand(input: string | number): number {
+  if (typeof input === "number") {
+    const intPart = Math.trunc(input);
+    const frac = Math.abs(input - intPart);
+    const thousandDigit = Math.trunc(frac * 10);
+    const value = intPart * 10000 + thousandDigit * 1000;
+    return Math.max(0, value);
+  }
+  const s = (input || "").toString().trim();
+  const match = s.replace(/,/g, "").match(/(-?\d+)(?:[.,](\d))?/);
+  if (!match) return 0;
+  const intPart = parseInt(match[1] || "0", 10);
+  const thousandDigit = parseInt(match[2] || "0", 10);
+  if (isNaN(intPart) || intPart < 0) return 0;
+  const td = isNaN(thousandDigit) || thousandDigit < 0 ? 0 : thousandDigit;
+  return intPart * 10000 + td * 1000;
+}
+
+export function maskTenThousandThousandInput(input: string): string {
+  const s = (input || "").toString().replace(/,/g, "").replace(/[^\d.,]/g, "");
+  const m = s.match(/^(\d*)([.,]?)(\d?)/);
+  if (!m) return "";
+  const i = m[1] || "";
+  const sep = m[2] ? "." : "";
+  const d = m[3] || "";
+  return i + sep + d;
+}
+
+export function roundToThousand(n: number): number {
+  return Math.round((n || 0) / 1000) * 1000;
+}
+
+export function loadState(): AppState {
+  if (typeof window === "undefined") return defaultState();
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return defaultState();
+    const data = JSON.parse(raw) as AppState;
+    data.members = data.members || defaultMembers();
+    data.donors = data.donors || [];
+    data.forbiddenWords = data.forbiddenWords || [];
+    return data;
+  } catch {
+    return defaultState();
+  }
+}
+
+export function saveState(state: AppState) {
+  if (typeof window === "undefined") return;
+  try {
+    const next = { ...state, updatedAt: Date.now() };
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+}
+
+export function totalAccount(state: AppState): number {
+  return state.members.reduce((sum, m) => sum + (m.account || 0), 0);
+}
+
+export function formatChatLine(state: AppState): string {
+  const members = state.members
+    .map((m) => `${m.name}${m.account}(${m.toon})`)
+    .join(", ");
+  const lastDonor = state.donors[state.donors.length - 1];
+  const donorStr = lastDonor ? ` 후원: ${lastDonor.name} ${lastDonor.amount}` : "";
+  const total = totalAccount(state);
+  return `${members}${donorStr} 총합 ${total}`;
+}
+
+export function todaysDateKey(d = new Date()): string {
+  return d.toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+export function appendDailyLog(snapshot: AppState) {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(DAILY_LOG_KEY);
+    const logs = raw ? JSON.parse(raw) as Record<string, unknown[]> : {};
+    const key = todaysDateKey();
+    const entry = {
+      at: new Date().toISOString(),
+      total: totalAccount(snapshot),
+      members: snapshot.members,
+      donors: snapshot.donors,
+    };
+    if (!logs[key]) logs[key] = [];
+    (logs[key] as unknown[]).push(entry);
+    window.localStorage.setItem(DAILY_LOG_KEY, JSON.stringify(logs));
+  } catch {
+    // ignore
+  }
+}
+
+export function confirmHighAmount(amount: number): boolean {
+  if (amount >= 1_000_000) {
+    return typeof window !== "undefined"
+      ? window.confirm("정말 이 금액이 맞습니까?")
+      : false;
+  }
+  return true;
+}
