@@ -16,10 +16,18 @@ export type Donor = {
   target?: DonorTarget;
 };
 
+export type MissionItem = {
+  id: string;
+  title: string;
+  price: string;
+  isHot?: boolean;
+};
+
 export type AppState = {
   members: Member[];
   donors: Donor[];
   forbiddenWords: string[];
+  missions?: MissionItem[];
   updatedAt: number;
 };
 
@@ -95,6 +103,7 @@ export function loadState(): AppState {
     data.members = data.members || defaultMembers();
     data.donors = data.donors || [];
     data.forbiddenWords = data.forbiddenWords || [];
+    data.missions = data.missions || [];
     return data;
   } catch {
     return defaultState();
@@ -143,6 +152,7 @@ export async function loadStateFromApi(): Promise<AppState | null> {
       data.members = data.members || defaultMembers();
       data.donors = data.donors || [];
       data.forbiddenWords = data.forbiddenWords || [];
+      data.missions = data.missions || [];
       return data as AppState;
     }
     return null;

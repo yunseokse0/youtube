@@ -1,74 +1,85 @@
-import { NextResponse } from "next/server";
-
 export const runtime = "edge";
+export const revalidate = 0;
 
-let stateCache: string | null = null;
-let cacheUpdatedAt = 0;
+const STORAGE_KEY = "excel-broadcast-state-v1";
 
-const KV_URL = process.env.KV_REST_API_URL;
-const KV_TOKEN = process.env.KV_REST_API_TOKEN;
-const STATE_KEY = "broadcast-state";
+function getEnv() {
+  const base =
+    process.env.UPSTASH_REDIS_REST_URL ||
+    process.env.KV_REST_API_URL ||
+    "";
+  const token =
+    process.env.UPSTASH_REDIS_REST_TOKEN ||
+    process.env.KV_REST_API_TOKEN ||
+    "";
+  return { base, token };
+}
 
-async function kvGet(): Promise<string | null> {
-  if (!KV_URL || !KV_TOKEN) return null;
+async function upstashGet(key: string) {
+  const { base, token } = getEnv();
+  if (!base || !token) return null;
+  const url = `${base.replace(/\/$/, "")}/get/${encodeURIComponent(key)}`;
+  const r = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!r.ok) return null;
+  const data = (await r.json()) as { result?: string | null };
+  if (!data || data.result == null) return null;
   try {
-    const res = await fetch(`${KV_URL}/get/${STATE_KEY}`, {
-      headers: { Authorization: `Bearer ${KV_TOKEN}` },
-      cache: "no-store",
-    });
-    const data = await res.json();
-    return data.result || null;
+    return JSON.parse(data.result as string);
   } catch {
     return null;
   }
 }
 
-async function kvSet(value: string): Promise<void> {
-  if (!KV_URL || !KV_TOKEN) return;
-  try {
-    await fetch(KV_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${KV_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(["SET", STATE_KEY, value]),
-    });
-  } catch {}
-}
-
-const CORS_HEADERS = {
-  "Content-Type": "application/json",
-  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
-  Pragma: "no-cache",
-  Expires: "0",
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
-
-export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+async function upstashSet(key: string, value: unknown) {
+  const { base, token } = getEnv();
+  if (!base || !token) return false;
+  const json = JSON.stringify(value);
+  const url = `${base.replace(/\/$/, "")}/set/${encodeURIComponent(
+    key
+  )}/${encodeURIComponent(json)}`;
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return r.ok;
 }
 
 export async function GET() {
-  const kvData = await kvGet();
-  if (kvData) {
-    stateCache = kvData;
-    return new NextResponse(kvData, { headers: CORS_HEADERS });
+  try {
+    const state = await upstashGet(STORAGE_KEY);
+    return new Response(JSON.stringify(state || {}), {
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",
+      },
+    });
+  } catch {
+    return new Response(JSON.stringify({}), {
+      headers: { "Content-Type": "application/json" },
+      status: 200,
+    });
   }
-
-  if (stateCache) {
-    return new NextResponse(stateCache, { headers: CORS_HEADERS });
-  }
-
-  return NextResponse.json(null, { status: 404, headers: CORS_HEADERS });
 }
 
 export async function POST(req: Request) {
-  const body = await req.text();
-  stateCache = body;
-  cacheUpdatedAt = Date.now();
-  await kvSet(body);
-  return NextResponse.json({ ok: true, updatedAt: cacheUpdatedAt }, { headers: CORS_HEADERS });
+  try {
+    const body = await req.json();
+    const ok = await upstashSet(STORAGE_KEY, body);
+    return new Response(JSON.stringify({ ok }), {
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",
+      },
+      status: ok ? 200 : 500,
+    });
+  } catch {
+    return new Response(JSON.stringify({ ok: false }), {
+      headers: { "Content-Type": "application/json" },
+      status: 500,
+    });
+  }
 }
+

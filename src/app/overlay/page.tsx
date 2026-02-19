@@ -1,7 +1,8 @@
 "use client";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, STORAGE_KEY, defaultState, loadState, totalAccount, Member, Donor, roundToThousand, formatManThousand } from "@/lib/state";
+import { AppState, STORAGE_KEY, defaultState, loadState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand } from "@/lib/state";
+import MissionMenu from "@/components/MissionMenu";
 
 function useStorageState(): AppState {
   const [s, setS] = useState<AppState>(defaultState());
@@ -80,7 +81,7 @@ function useElapsed(startTs: number | null) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
-type ThemeId = "default" | "excel" | "neon" | "retro" | "minimal" | "rpg" | "pastel";
+type ThemeId = "default" | "excel" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel";
 
 const THEMES: Record<ThemeId, {
   label: string;
@@ -226,6 +227,24 @@ const THEMES: Record<ThemeId, {
     tickerCls: "text-pink-200 font-semibold",
     timerCls: "font-mono text-purple-200/70",
   },
+  neonExcel: {
+    label: "네온 엑셀",
+    memberCls: "font-mono font-bold",
+    nameCls: "text-white",
+    accountCls: "text-right text-slate-400 font-mono",
+    toonCls: "text-right text-slate-400 font-mono",
+    totalCls: "font-mono font-black text-cyan-400 italic",
+    totalWrapCls: "bg-cyan-900/30 px-3 py-1 border-t-2 border-cyan-500/50",
+    rowCls: "bg-slate-900/40 py-2 px-3 border-b border-slate-800 last:border-none",
+    tableCls: "border-2 border-cyan-500/50 bg-black/40 rounded-lg overflow-hidden animate-neonPulse",
+    headerCls: "bg-cyan-900/30 text-cyan-300 text-xs font-mono py-1 px-3 border-b border-cyan-500/50 uppercase",
+    goalBarBg: "bg-black/60 border border-cyan-500/30 rounded",
+    goalBarFill: "bg-gradient-to-r from-cyan-500 to-fuchsia-500 shadow-[0_0_10px_rgba(0,255,255,0.4)]",
+    goalText: "text-cyan-300 font-mono font-bold",
+    goalWrap: "border border-cyan-500/30 bg-black/40 rounded p-1",
+    tickerCls: "text-cyan-300 font-mono font-bold",
+    timerCls: "font-mono text-cyan-400 drop-shadow-[0_0_6px_rgba(0,255,255,0.5)]",
+  },
 };
 
 function GoalBar({ current, goal, label, theme, width }: { current: number; goal: number; label: string; theme: typeof THEMES.default; width: number }) {
@@ -317,6 +336,9 @@ function OverlayInner() {
   const goalAnchor = (sp.get("goalAnchor") || "bc").toLowerCase();
   const timerStart = sp.get("timerStart") ? parseInt(sp.get("timerStart")!, 10) : null;
   const timerAnchor = (sp.get("timerAnchor") || "tr").toLowerCase();
+  const showMission = sp.get("showMission") === "true";
+  const missionAnchor = (sp.get("missionAnchor") || "br").toLowerCase();
+  const missions: MissionItem[] = s.missions || [];
 
   const elapsed = useElapsed(timerStart);
 
@@ -383,6 +405,49 @@ function OverlayInner() {
         )}
         {showTicker && <div className={`fixed ${posClass("bc")} mb-10`}><DonorTicker donors={s.donors} theme={theme} fontSize={memberSize * 0.8} /></div>}
         {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={theme} fontSize={memberSize} /></div>}
+        {showMission && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`}><MissionMenu missions={missions} fontSize={memberSize * 0.9} /></div>}
+      </main>
+    );
+  }
+
+  if (themeId === "neonExcel") {
+    return (
+      <main className="transparent-bg min-h-screen no-select" style={{ zoom: scale }}>
+        {showMembers && (
+          <div className={`fixed ${listPosClass}`}>
+            <div className={theme.tableCls} style={{ fontSize: memberSize }}>
+              <div className={`grid grid-cols-4 ${theme.headerCls}`}>
+                <div className="col-span-1">MEMBER</div>
+                <div className="col-span-1 text-right">BANK</div>
+                <div className="col-span-1 text-right">TOON</div>
+                <div className="col-span-1 text-right font-bold text-white">TOTAL</div>
+              </div>
+              {s.members.map((m: Member) => (
+                <div key={m.id} className={`grid grid-cols-4 items-center ${theme.rowCls}`}>
+                  <div className={theme.nameCls}>{m.name}</div>
+                  <div className={theme.accountCls}>{formatManThousand(m.account)}</div>
+                  <div className={theme.toonCls}>{formatManThousand(m.toon)}</div>
+                  <div className={`${theme.totalCls} text-right`}>{formatManThousand(m.account + m.toon)}</div>
+                </div>
+              ))}
+              {showTotal && (
+                <div className={`grid grid-cols-4 items-center ${theme.totalWrapCls}`}>
+                  <div className="text-cyan-300 font-bold col-span-2">TOTAL</div>
+                  <div className={`${theme.totalCls} text-right col-span-2`} style={{ fontSize: totalSize * 0.7 }}>{formatManThousand(displaySum)}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        {!showMembers && showTotal && (
+          <div className={`fixed ${sumPosClass}`} style={sumPosStyle}>
+            <div className={theme.totalWrapCls}><div className={theme.totalCls} style={{ fontSize: totalSize }}>{formatManThousand(displaySum)}</div></div>
+          </div>
+        )}
+        {showGoal && goal > 0 && <div className={`fixed ${posClass(goalAnchor)}`}><GoalBar current={rounded} goal={goal} label={goalLabel} theme={theme} width={goalWidth} /></div>}
+        {showTicker && <div className="fixed bottom-4 left-0 right-0"><DonorTicker donors={s.donors} theme={theme} fontSize={memberSize * 0.8} /></div>}
+        {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={theme} fontSize={memberSize} /></div>}
+        {showMission && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`}><MissionMenu missions={missions} fontSize={memberSize * 0.9} /></div>}
       </main>
     );
   }
@@ -426,6 +491,12 @@ function OverlayInner() {
       {showTimer && (
         <div className={`fixed ${posClass(timerAnchor)}`}>
           <Timer elapsed={elapsed} theme={theme} fontSize={memberSize} />
+        </div>
+      )}
+
+      {showMission && missions.length > 0 && (
+        <div className={`fixed ${posClass(missionAnchor)}`}>
+          <MissionMenu missions={missions} fontSize={memberSize * 0.9} />
         </div>
       )}
     </main>

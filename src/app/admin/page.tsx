@@ -26,6 +26,7 @@ import {
   appendForbidEvent,
   loadForbidEvents,
   FORBID_EVENTS_KEY,
+  MissionItem,
 } from "@/lib/state";
 import {
   startYoutubePolling,
@@ -55,6 +56,8 @@ export default function AdminPage() {
   const [forbiddenText, setForbiddenText] = useState("");
   const [events, setEvents] = useState<Array<{ at: number; author: string; message: string; word: string }>>([]);
   const forbidEditRef = useRef<HTMLTextAreaElement | null>(null);
+  const [missionTitle, setMissionTitle] = useState("");
+  const [missionPrice, setMissionPrice] = useState("");
   const [ytUrl, setYtUrl] = useState("");
   const [liveChatId, setLiveChatId] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState<string>("");
@@ -64,6 +67,7 @@ export default function AdminPage() {
     theme: string; showMembers: boolean; showTotal: boolean;
     showGoal: boolean; goal: string; goalLabel: string; goalWidth: string; goalAnchor: string;
     showTicker: boolean; showTimer: boolean; timerStart: number | null; timerAnchor: string;
+    showMission: boolean; missionAnchor: string;
   };
   const PRESET_STORAGE_KEY = "excel-broadcast-overlay-presets";
   const PRESET_TEMPLATES: { name: string; preset: Partial<OverlayPreset> }[] = [
@@ -73,6 +77,7 @@ export default function AdminPage() {
     { name: "목표 프로그레스바", preset: { showMembers: false, showTotal: false, showGoal: true, goal: "500000", goalLabel: "목표 금액", goalWidth: "500" } },
     { name: "후원 티커", preset: { showMembers: false, showTotal: false, showTicker: true } },
     { name: "타이머", preset: { showMembers: false, showTotal: false, showTimer: true } },
+    { name: "미션 메뉴판", preset: { showMembers: false, showTotal: false, showMission: true, missionAnchor: "br" } },
   ];
   const defaultPreset = (name: string, overrides: Partial<OverlayPreset> = {}): OverlayPreset => ({
     id: `ov_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name,
@@ -80,7 +85,7 @@ export default function AdminPage() {
     sumAnchor: "bc", sumFree: false, sumX: "50", sumY: "90", theme: "default",
     showMembers: true, showTotal: true, showGoal: false, goal: "0", goalLabel: "목표 금액",
     goalWidth: "400", goalAnchor: "bc", showTicker: false, showTimer: false,
-    timerStart: null, timerAnchor: "tr", ...overrides,
+    timerStart: null, timerAnchor: "tr", showMission: false, missionAnchor: "br", ...overrides,
   });
   const [presets, setPresets] = useState<OverlayPreset[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -139,6 +144,7 @@ export default function AdminPage() {
     if (p.showGoal) { q.showGoal = "true"; q.goal = String(Math.max(0, parseInt(p.goal || "0", 10) || 0)); q.goalLabel = p.goalLabel; q.goalWidth = p.goalWidth; q.goalAnchor = p.goalAnchor; }
     if (p.showTicker) q.showTicker = "true";
     if (p.showTimer && p.timerStart) { q.showTimer = "true"; q.timerStart = String(p.timerStart); q.timerAnchor = p.timerAnchor; }
+    if (p.showMission) { q.showMission = "true"; q.missionAnchor = p.missionAnchor; }
     return `${base}?${new URLSearchParams(q).toString()}`;
   };
   const copyUrl = async (url: string, id: string) => {
@@ -575,6 +581,79 @@ export default function AdminPage() {
 
             <section className="glass p-4 md:p-6">
               <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-semibold">미션 메뉴판</h2>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto] gap-2 mb-3">
+                <input className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10" placeholder="미션 제목 (예: 노래 부르기)" value={missionTitle} onChange={(e) => setMissionTitle(e.target.value)} />
+                <input className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10 w-32" placeholder="가격 (예: 3만)" value={missionPrice} onChange={(e) => setMissionPrice(e.target.value)} />
+                <button className="px-4 py-2 rounded bg-amber-700 hover:bg-amber-600 font-semibold" onClick={() => {
+                  if (!missionTitle.trim()) return;
+                  setState((prev) => {
+                    const m: MissionItem = { id: `mis_${Date.now()}`, title: missionTitle.trim(), price: missionPrice.trim() || "무료" };
+                    const next = { ...prev, missions: [...(prev.missions || []), m] };
+                    persistState(next);
+                    return next;
+                  });
+                  setMissionTitle(""); setMissionPrice("");
+                }}>추가</button>
+              </div>
+              {(state.missions || []).length === 0 && <div className="text-sm text-neutral-400 p-4 text-center border border-dashed border-white/10 rounded">미션이 없습니다.</div>}
+              {(state.missions || []).length > 0 && (
+                <div className="space-y-1 max-h-[300px] overflow-auto">
+                  {(state.missions || []).map((mis, idx) => (
+                    <div key={mis.id} className="flex items-center gap-2 px-3 py-2 rounded bg-neutral-900/40 border border-white/10">
+                      <span className="text-sm font-mono text-neutral-500 w-6">{idx + 1}</span>
+                      <input className="flex-1 px-2 py-1 rounded bg-neutral-800 border border-white/10 text-sm" value={mis.title} onChange={(e) => {
+                        setState((prev) => {
+                          const next = { ...prev, missions: (prev.missions || []).map(m => m.id === mis.id ? { ...m, title: e.target.value } : m) };
+                          persistState(next); return next;
+                        });
+                      }} />
+                      <input className="w-24 px-2 py-1 rounded bg-neutral-800 border border-white/10 text-sm text-right" value={mis.price} onChange={(e) => {
+                        setState((prev) => {
+                          const next = { ...prev, missions: (prev.missions || []).map(m => m.id === mis.id ? { ...m, price: e.target.value } : m) };
+                          persistState(next); return next;
+                        });
+                      }} />
+                      <button className={`px-2 py-1 rounded border text-xs ${mis.isHot ? "border-red-500 text-red-300" : "border-white/10 text-neutral-500"}`} onClick={() => {
+                        setState((prev) => {
+                          const next = { ...prev, missions: (prev.missions || []).map(m => m.id === mis.id ? { ...m, isHot: !m.isHot } : m) };
+                          persistState(next); return next;
+                        });
+                      }}>{mis.isHot ? "HOT" : "hot"}</button>
+                      <button className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => {
+                        if (idx === 0) return;
+                        setState((prev) => {
+                          const arr = [...(prev.missions || [])];
+                          [arr[idx - 1], arr[idx]] = [arr[idx], arr[idx - 1]];
+                          const next = { ...prev, missions: arr };
+                          persistState(next); return next;
+                        });
+                      }}>▲</button>
+                      <button className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => {
+                        if (idx >= (state.missions || []).length - 1) return;
+                        setState((prev) => {
+                          const arr = [...(prev.missions || [])];
+                          [arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]];
+                          const next = { ...prev, missions: arr };
+                          persistState(next); return next;
+                        });
+                      }}>▼</button>
+                      <button className="px-2 py-1 rounded bg-red-800 hover:bg-red-700 text-xs" onClick={() => {
+                        setState((prev) => {
+                          const next = { ...prev, missions: (prev.missions || []).filter(m => m.id !== mis.id) };
+                          persistState(next); return next;
+                        });
+                      }}>삭제</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="text-xs text-neutral-400 mt-2">오버레이 프리셋에서 &quot;미션 메뉴&quot;를 ON하면 방송 화면에 표시됩니다.</div>
+            </section>
+
+            <section className="glass p-4 md:p-6">
+              <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold">오버레이 관리 (다중)</h2>
                 <div className="flex gap-1 flex-wrap">
                   {PRESET_TEMPLATES.map((t) => (
@@ -610,7 +689,7 @@ export default function AdminPage() {
                             <div className="grid grid-cols-[110px_1fr] items-center gap-2">
                               <label className="text-xs text-neutral-400">테마</label>
                               <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.theme} onChange={(e) => updatePreset(p.id, { theme: e.target.value })}>
-                                <option value="default">기본</option><option value="excel">엑셀</option><option value="neon">네온</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
+                                <option value="default">기본</option><option value="excel">엑셀</option><option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
                               </select>
                               <label className="text-xs text-neutral-400">배율</label>
                               <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.scale} onChange={(e) => updatePreset(p.id, { scale: e.target.value })} />
@@ -651,7 +730,7 @@ export default function AdminPage() {
                             <div className="h-px bg-white/10 my-1" />
                             <div className="text-xs text-neutral-400 font-semibold">요소 표시/숨김</div>
                             <div className="flex flex-wrap gap-1">
-                              {([["멤버 목록", "showMembers"], ["총합", "showTotal"], ["목표바", "showGoal"], ["후원 티커", "showTicker"], ["타이머", "showTimer"]] as [string, keyof OverlayPreset][]).map(([label, key]) => (
+                              {([["멤버 목록", "showMembers"], ["총합", "showTotal"], ["목표바", "showGoal"], ["후원 티커", "showTicker"], ["타이머", "showTimer"], ["미션 메뉴", "showMission"]] as [string, keyof OverlayPreset][]).map(([label, key]) => (
                                 <button key={key} className={`px-2 py-0.5 rounded border text-xs ${p[key] ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { [key]: !p[key] })}>{label} {p[key] ? "ON" : "OFF"}</button>
                               ))}
                             </div>
@@ -686,6 +765,16 @@ export default function AdminPage() {
                                     <option value="tr">우상</option><option value="tl">좌상</option><option value="br">우하</option><option value="bl">좌하</option><option value="tc">상단중앙</option><option value="bc">하단중앙</option>
                                   </select>
                                 </div>
+                              </>
+                            )}
+
+                            {p.showMission && (
+                              <>
+                                <div className="h-px bg-white/10 my-1" />
+                                <div className="text-xs text-neutral-400 font-semibold">미션 메뉴판 위치</div>
+                                <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.missionAnchor} onChange={(e) => updatePreset(p.id, { missionAnchor: e.target.value })}>
+                                  <option value="br">우하</option><option value="bl">좌하</option><option value="tr">우상</option><option value="tl">좌상</option>
+                                </select>
                               </>
                             )}
 
