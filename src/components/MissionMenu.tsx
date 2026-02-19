@@ -6,7 +6,7 @@ const MissionMenu = ({ missions, fontSize = 16 }: { missions: MissionItem[]; fon
 
   return (
     <div
-      className="w-80 bg-stone-900/90 border-4 border-double border-amber-400 p-5 rounded-sm shadow-[0_0_20px_rgba(0,0,0,0.5)] backdrop-blur-sm animate-slideInRight"
+      className="w-80 bg-transparent p-5 rounded-sm animate-slideInRight"
       style={{ fontSize }}
     >
       <div className="text-center mb-4">
