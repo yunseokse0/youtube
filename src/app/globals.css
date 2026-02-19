@@ -43,3 +43,11 @@ body {
   -ms-user-select: none;
   user-select: none;
 }
+
+@keyframes ticker {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.animate-ticker {
+  animation: ticker 20s linear infinite;
+}

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
+export const runtime = "edge";
+
 let stateCache: string | null = null;
-let updatedAt = 0;
+let cacheUpdatedAt = 0;
 
 const KV_URL = process.env.KV_REST_API_URL;
 const KV_TOKEN = process.env.KV_REST_API_TOKEN;
@@ -35,39 +37,38 @@ async function kvSet(value: string): Promise<void> {
   } catch {}
 }
 
+const CORS_HEADERS = {
+  "Content-Type": "application/json",
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+  Pragma: "no-cache",
+  Expires: "0",
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+}
+
 export async function GET() {
   const kvData = await kvGet();
   if (kvData) {
     stateCache = kvData;
-    return new NextResponse(kvData, {
-      headers: {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store, no-cache, must-revalidate",
-        "Access-Control-Allow-Origin": "*",
-      },
-    });
+    return new NextResponse(kvData, { headers: CORS_HEADERS });
   }
 
   if (stateCache) {
-    return new NextResponse(stateCache, {
-      headers: {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store, no-cache, must-revalidate",
-        "Access-Control-Allow-Origin": "*",
-      },
-    });
+    return new NextResponse(stateCache, { headers: CORS_HEADERS });
   }
 
-  return NextResponse.json(null, {
-    status: 404,
-    headers: { "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" },
-  });
+  return NextResponse.json(null, { status: 404, headers: CORS_HEADERS });
 }
 
 export async function POST(req: Request) {
   const body = await req.text();
   stateCache = body;
-  updatedAt = Date.now();
+  cacheUpdatedAt = Date.now();
   await kvSet(body);
-  return NextResponse.json({ ok: true, updatedAt });
+  return NextResponse.json({ ok: true, updatedAt: cacheUpdatedAt }, { headers: CORS_HEADERS });
 }

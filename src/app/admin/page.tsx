@@ -10,6 +10,8 @@ import {
   defaultState,
   loadState,
   saveState,
+  saveStateAsync,
+  loadStateFromApi,
   totalAccount,
   appendDailyLog,
   parseTenThousandThousand,
@@ -40,6 +42,7 @@ import Link from "next/link";
 
 export default function AdminPage() {
   const [state, setState] = useState<AppState>(defaultState());
+  const [syncStatus, setSyncStatus] = useState<"loading" | "synced" | "local" | "error">("loading");
   const [dailyLog, setDailyLog] = useState<Record<string, DailyLogEntry[]>>({});
   const [donorName, setDonorName] = useState("");
   const [donorAmount, setDonorAmount] = useState("");
@@ -55,25 +58,101 @@ export default function AdminPage() {
   const [ytUrl, setYtUrl] = useState("");
   const [liveChatId, setLiveChatId] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState<string>("");
-  const [ovScale, setOvScale] = useState("0.75");
-  const [ovMemberSize, setOvMemberSize] = useState("18");
-  const [ovTotalSize, setOvTotalSize] = useState("40");
-  const [ovDense, setOvDense] = useState(true);
-  const [ovAnchor, setOvAnchor] = useState("tl");
-  const [ovSumAnchor, setOvSumAnchor] = useState("bc");
-  const [ovSumFree, setOvSumFree] = useState(false);
-  const [ovSumX, setOvSumX] = useState("50");
-  const [ovSumY, setOvSumY] = useState("90");
-  const [overlayUrl, setOverlayUrl] = useState("");
+  type OverlayPreset = {
+    id: string; name: string; scale: string; memberSize: string; totalSize: string;
+    dense: boolean; anchor: string; sumAnchor: string; sumFree: boolean; sumX: string; sumY: string;
+    theme: string; showMembers: boolean; showTotal: boolean;
+    showGoal: boolean; goal: string; goalLabel: string; goalWidth: string; goalAnchor: string;
+    showTicker: boolean; showTimer: boolean; timerStart: number | null; timerAnchor: string;
+  };
+  const PRESET_STORAGE_KEY = "excel-broadcast-overlay-presets";
+  const PRESET_TEMPLATES: { name: string; preset: Partial<OverlayPreset> }[] = [
+    { name: "전체 통합", preset: { showMembers: true, showTotal: true } },
+    { name: "멤버 목록만", preset: { showMembers: true, showTotal: false } },
+    { name: "총합만", preset: { showMembers: false, showTotal: true, totalSize: "60" } },
+    { name: "목표 프로그레스바", preset: { showMembers: false, showTotal: false, showGoal: true, goal: "500000", goalLabel: "목표 금액", goalWidth: "500" } },
+    { name: "후원 티커", preset: { showMembers: false, showTotal: false, showTicker: true } },
+    { name: "타이머", preset: { showMembers: false, showTotal: false, showTimer: true } },
+  ];
+  const defaultPreset = (name: string, overrides: Partial<OverlayPreset> = {}): OverlayPreset => ({
+    id: `ov_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name,
+    scale: "0.75", memberSize: "18", totalSize: "40", dense: true, anchor: "tl",
+    sumAnchor: "bc", sumFree: false, sumX: "50", sumY: "90", theme: "default",
+    showMembers: true, showTotal: true, showGoal: false, goal: "0", goalLabel: "목표 금액",
+    goalWidth: "400", goalAnchor: "bc", showTicker: false, showTimer: false,
+    timerStart: null, timerAnchor: "tr", ...overrides,
+  });
+  const [presets, setPresets] = useState<OverlayPreset[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
-    setState(loadState());
     setDailyLog(loadDailyLog());
     setYtUrl(getSavedVideoUrl() || "");
     setLiveChatId(getPreferredLiveChatId());
     setApiKey(getPreferredApiKey() || "");
     setEvents(loadForbidEvents());
+    try {
+      const raw = window.localStorage.getItem(PRESET_STORAGE_KEY);
+      if (raw) setPresets(JSON.parse(raw));
+    } catch {}
+    loadStateFromApi().then((apiState) => {
+      if (apiState) {
+        setState(apiState);
+        setSyncStatus("synced");
+        try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(apiState)); } catch {}
+      } else {
+        const local = loadState();
+        setState(local);
+        setSyncStatus("local");
+        saveStateAsync(local).then((ok) => { if (ok) setSyncStatus("synced"); });
+      }
+    });
   }, []);
+
+  const savePresets = (next: OverlayPreset[]) => {
+    setPresets(next);
+    try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(next)); } catch {}
+  };
+  const addPreset = (name: string, overrides: Partial<OverlayPreset> = {}) => {
+    const p = defaultPreset(name, overrides);
+    savePresets([...presets, p]);
+    setEditingId(p.id);
+  };
+  const updatePreset = (id: string, patch: Partial<OverlayPreset>) => {
+    savePresets(presets.map(p => p.id === id ? { ...p, ...patch } : p));
+  };
+  const removePreset = (id: string) => {
+    if (!window.confirm("이 오버레이 프리셋을 삭제할까요?")) return;
+    savePresets(presets.filter(p => p.id !== id));
+    if (editingId === id) setEditingId(null);
+  };
+  const buildOverlayUrl = (p: OverlayPreset): string => {
+    if (typeof window === "undefined") return "";
+    const base = `${window.location.origin}/overlay`;
+    const q: Record<string, string> = {
+      scale: p.scale, memberSize: p.memberSize, totalSize: p.totalSize,
+      dense: String(p.dense), anchor: p.anchor, theme: p.theme,
+      showMembers: String(p.showMembers), showTotal: String(p.showTotal),
+    };
+    if (p.sumFree) { q.sumX = p.sumX; q.sumY = p.sumY; } else { q.sumAnchor = p.sumAnchor; }
+    if (p.showGoal) { q.showGoal = "true"; q.goal = String(Math.max(0, parseInt(p.goal || "0", 10) || 0)); q.goalLabel = p.goalLabel; q.goalWidth = p.goalWidth; q.goalAnchor = p.goalAnchor; }
+    if (p.showTicker) q.showTicker = "true";
+    if (p.showTimer && p.timerStart) { q.showTimer = "true"; q.timerStart = String(p.timerStart); q.timerAnchor = p.timerAnchor; }
+    return `${base}?${new URLSearchParams(q).toString()}`;
+  };
+  const copyUrl = async (url: string, id: string) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(url); }
+      else { const ta = document.createElement("textarea"); ta.value = url; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); }
+      setCopiedId(id); setTimeout(() => setCopiedId(null), 1500);
+    } catch {}
+  };
+
+  const persistState = (s: AppState) => {
+    setSyncStatus("loading");
+    saveStateAsync(s).then((ok) => setSyncStatus(ok ? "synced" : "error"));
+  };
 
   useEffect(() => {
     setChatDraft(formatChatLine(state));
@@ -82,7 +161,7 @@ export default function AdminPage() {
   }, [state]);
 
   useEffect(() => {
-    const id = setInterval(() => saveState(state), 180_000);
+    const id = setInterval(() => persistState(state), 180_000);
     return () => clearInterval(id);
   }, [state]);
 
@@ -121,7 +200,7 @@ export default function AdminPage() {
   const updateMember = (m: Member) => {
     setState((prev: AppState) => {
       const next: AppState = { ...prev, members: prev.members.map((x: Member) => (x.id === m.id ? m : x)) };
-      saveState(next);
+      persistState(next);
       return next;
     });
   };
@@ -129,7 +208,7 @@ export default function AdminPage() {
   const renameMember = (id: string, name: string) => {
     setState((prev: AppState) => {
       const next: AppState = { ...prev, members: prev.members.map((x: Member) => (x.id === id ? { ...x, name } : x)) };
-      saveState(next);
+      persistState(next);
       return next;
     });
   };
@@ -140,7 +219,7 @@ export default function AdminPage() {
         ...prev,
         members: prev.members.map((x: Member) => (x.id === id ? { ...x, account: 0, toon: 0 } : x)),
       };
-      saveState(next);
+      persistState(next);
       return next;
     });
   };
@@ -152,7 +231,7 @@ export default function AdminPage() {
         ...prev,
         members: prev.members.map((x: Member) => ({ ...x, account: 0, toon: 0 })),
       };
-      saveState(next);
+      persistState(next);
       return next;
     });
   };
@@ -171,7 +250,7 @@ export default function AdminPage() {
       const members = prev.members.filter((m) => m.id !== id);
       const donors = prev.donors.filter((d) => d.memberId !== id);
       const next: AppState = { ...prev, members, donors };
-      saveState(next);
+      persistState(next);
       return next;
     });
     if (donorMemberId === id) {
@@ -185,7 +264,7 @@ export default function AdminPage() {
     const id = `m_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
     setState((prev: AppState) => {
       const next: AppState = { ...prev, members: [...prev.members, { id, name: base, account: 0, toon: 0 }] };
-      saveState(next);
+      persistState(next);
       return next;
     });
     setNewMemberName("");
@@ -220,7 +299,7 @@ export default function AdminPage() {
         m.id === donorMemberId ? { ...m, [field]: (m[field] || 0) + amount } : m
       );
       const next: AppState = { ...prev, members, donors };
-      saveState(next);
+      persistState(next);
       return next;
     });
     setDonorName("");
@@ -277,7 +356,7 @@ export default function AdminPage() {
     const uniq = Array.from(new Set(words)).slice(0, 99);
     setState((prev: AppState) => {
       const next: AppState = { ...prev, forbiddenWords: uniq };
-      saveState(next);
+      persistState(next);
       return next;
     });
   };
@@ -287,7 +366,7 @@ export default function AdminPage() {
     setDailyLog(loadDailyLog());
     const next = defaultState();
     setState(next);
-    saveState(next);
+    persistState(next);
   };
 
   const connectYoutube = async () => {
@@ -321,51 +400,17 @@ export default function AdminPage() {
     a.click();
   };
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const base = `${window.location.origin}/overlay`;
-    const p: Record<string, string> = {
-      scale: ovScale,
-      memberSize: ovMemberSize,
-      totalSize: ovTotalSize,
-      dense: String(ovDense),
-      anchor: ovAnchor,
-    };
-    if (ovSumFree) {
-      p.sumX = ovSumX;
-      p.sumY = ovSumY;
-    } else {
-      p.sumAnchor = ovSumAnchor;
-    }
-    setOverlayUrl(`${base}?${new URLSearchParams(p).toString()}`);
-  }, [ovScale, ovMemberSize, ovTotalSize, ovDense, ovAnchor, ovSumAnchor, ovSumFree, ovSumX, ovSumY]);
-
-  const copyOverlayUrl = async () => {
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(overlayUrl);
-      } else {
-        const ta = document.createElement("textarea");
-        ta.value = overlayUrl;
-        ta.style.position = "fixed";
-        ta.style.opacity = "0";
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
-      }
-      setCopied(true);
-      const t = setTimeout(() => setCopied(false), 1500);
-      return () => clearTimeout(t);
-    } catch {}
-  };
-
   return (
     <main className="min-h-screen p-4 md:p-8">
       <Toast />
       <div className="max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold">매니저 제어판</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold">매니저 제어판</h1>
+            <span className={`px-2 py-0.5 rounded text-xs font-medium ${syncStatus === "synced" ? "bg-emerald-900/60 text-emerald-300" : syncStatus === "loading" ? "bg-yellow-900/60 text-yellow-300" : syncStatus === "error" ? "bg-red-900/60 text-red-300" : "bg-neutral-800 text-neutral-400"}`}>
+              {syncStatus === "synced" ? "서버 동기화됨" : syncStatus === "loading" ? "동기화 중..." : syncStatus === "error" ? "서버 저장 실패" : "로컬 모드"}
+            </span>
+          </div>
           <Link className="text-sm text-neutral-300 underline" href="/youtube">유튜브 모니터 열기</Link>
         </div>
         <div className="grid grid-cols-1 gap-6">
@@ -509,7 +554,7 @@ export default function AdminPage() {
                                       mm.id === d.memberId ? { ...mm, [field]: Math.max(0, (mm[field] || 0) - d.amount) } : mm
                                     );
                                     const next: AppState = { ...prev, donors, members };
-                                    saveState(next);
+                                    persistState(next);
                                     return next;
                                   });
                                 }}
@@ -529,76 +574,139 @@ export default function AdminPage() {
             </section>
 
             <section className="glass p-4 md:p-6">
-              <h2 className="text-lg font-semibold mb-3">오버레이 프리뷰 & URL</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <div className="grid grid-cols-[120px_1fr] items-center gap-2">
-                    <label className="text-sm text-neutral-400">배율(scale)</label>
-                    <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10" value={ovScale} onChange={(e) => setOvScale(e.target.value)} />
-                    <label className="text-sm text-neutral-400">멤버 글자(px)</label>
-                    <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10" value={ovMemberSize} onChange={(e) => setOvMemberSize(e.target.value)} />
-                    <label className="text-sm text-neutral-400">총합 글자(px)</label>
-                    <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10" value={ovTotalSize} onChange={(e) => setOvTotalSize(e.target.value)} />
-                    <label className="text-sm text-neutral-400">줄 간격(dense)</label>
-                    <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10" value={String(ovDense)} onChange={(e) => setOvDense(e.target.value === "true")}>
-                      <option value="true">촘촘</option>
-                      <option value="false">보통</option>
-                    </select>
-                    <label className="text-sm text-neutral-400">목록 위치(anchor)</label>
-                    <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10" value={ovAnchor} onChange={(e) => setOvAnchor(e.target.value)}>
-                      <option value="tl">좌상</option><option value="tr">우상</option><option value="bl">좌하</option><option value="br">우하</option>
-                    </select>
-                    <label className="text-sm text-neutral-400">총합 위치 모드</label>
-                    <div className="flex gap-2">
-                      <button
-                        className={`px-2 py-1 rounded border text-sm ${!ovSumFree ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`}
-                        onClick={() => setOvSumFree(false)}
-                      >프리셋</button>
-                      <button
-                        className={`px-2 py-1 rounded border text-sm ${ovSumFree ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`}
-                        onClick={() => setOvSumFree(true)}
-                      >자유 위치</button>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-semibold">오버레이 관리 (다중)</h2>
+                <div className="flex gap-1 flex-wrap">
+                  {PRESET_TEMPLATES.map((t) => (
+                    <button key={t.name} className="px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-xs" onClick={() => addPreset(t.name, t.preset)}>+ {t.name}</button>
+                  ))}
+                </div>
+              </div>
+              <p className="text-xs text-neutral-400 mb-3">각 오버레이는 독립 URL을 가집니다. OBS/Prism에 브라우저 소스로 각각 추가하세요.</p>
+              {presets.length === 0 && (
+                <div className="text-sm text-neutral-400 p-6 text-center border border-dashed border-white/10 rounded">아직 오버레이가 없습니다. 위 버튼으로 추가하세요.</div>
+              )}
+              <div className="space-y-3">
+                {presets.map((p) => {
+                  const url = buildOverlayUrl(p);
+                  const isOpen = editingId === p.id;
+                  return (
+                    <div key={p.id} className="rounded border border-white/10 bg-neutral-900/40">
+                      <div className="flex items-center gap-2 px-3 py-2 cursor-pointer" onClick={() => setEditingId(isOpen ? null : p.id)}>
+                        <span className="text-sm">{isOpen ? "▼" : "▶"}</span>
+                        <input
+                          className="px-2 py-0.5 rounded bg-neutral-800 border border-white/10 text-sm font-semibold flex-shrink-0 w-40"
+                          value={p.name}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => updatePreset(p.id, { name: e.target.value })}
+                        />
+                        <span className="text-xs text-neutral-500 truncate flex-1 font-mono">{url.slice(0, 80)}...</span>
+                        <button className={`px-2 py-1 rounded text-xs ${copiedId === p.id ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`} onClick={(e) => { e.stopPropagation(); copyUrl(url, p.id); }}>{copiedId === p.id ? "복사됨!" : "URL 복사"}</button>
+                        <button className="px-2 py-1 rounded bg-red-800 hover:bg-red-700 text-xs" onClick={(e) => { e.stopPropagation(); removePreset(p.id); }}>삭제</button>
+                      </div>
+                      {isOpen && (
+                        <div className="px-3 pb-3 grid grid-cols-1 lg:grid-cols-2 gap-3 border-t border-white/10 pt-3">
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-[110px_1fr] items-center gap-2">
+                              <label className="text-xs text-neutral-400">테마</label>
+                              <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.theme} onChange={(e) => updatePreset(p.id, { theme: e.target.value })}>
+                                <option value="default">기본</option><option value="excel">엑셀</option><option value="neon">네온</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
+                              </select>
+                              <label className="text-xs text-neutral-400">배율</label>
+                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.scale} onChange={(e) => updatePreset(p.id, { scale: e.target.value })} />
+                              <label className="text-xs text-neutral-400">멤버 글자(px)</label>
+                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.memberSize} onChange={(e) => updatePreset(p.id, { memberSize: e.target.value })} />
+                              <label className="text-xs text-neutral-400">총합 글자(px)</label>
+                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.totalSize} onChange={(e) => updatePreset(p.id, { totalSize: e.target.value })} />
+                              <label className="text-xs text-neutral-400">줄 간격</label>
+                              <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={String(p.dense)} onChange={(e) => updatePreset(p.id, { dense: e.target.value === "true" })}>
+                                <option value="true">촘촘</option><option value="false">보통</option>
+                              </select>
+                              <label className="text-xs text-neutral-400">목록 위치</label>
+                              <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.anchor} onChange={(e) => updatePreset(p.id, { anchor: e.target.value })}>
+                                <option value="tl">좌상</option><option value="tr">우상</option><option value="bl">좌하</option><option value="br">우하</option>
+                              </select>
+                              <label className="text-xs text-neutral-400">총합 위치</label>
+                              <div className="flex gap-1">
+                                <button className={`px-2 py-0.5 rounded border text-xs ${!p.sumFree ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`} onClick={() => updatePreset(p.id, { sumFree: false })}>프리셋</button>
+                                <button className={`px-2 py-0.5 rounded border text-xs ${p.sumFree ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`} onClick={() => updatePreset(p.id, { sumFree: true })}>자유</button>
+                              </div>
+                              {!p.sumFree ? (
+                                <>
+                                  <label className="text-xs text-neutral-400">총합 앵커</label>
+                                  <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.sumAnchor} onChange={(e) => updatePreset(p.id, { sumAnchor: e.target.value })}>
+                                    <option value="bc">하단중앙</option><option value="tc">상단중앙</option><option value="bl">좌하</option><option value="br">우하</option><option value="tr">우상</option><option value="tl">좌상</option>
+                                  </select>
+                                </>
+                              ) : (
+                                <>
+                                  <label className="text-xs text-neutral-400">X(%)</label>
+                                  <div className="flex items-center gap-1"><input type="range" min="0" max="100" value={p.sumX} onChange={(e) => updatePreset(p.id, { sumX: e.target.value })} className="flex-1 accent-emerald-500" /><span className="text-xs w-8 text-center">{p.sumX}</span></div>
+                                  <label className="text-xs text-neutral-400">Y(%)</label>
+                                  <div className="flex items-center gap-1"><input type="range" min="0" max="100" value={p.sumY} onChange={(e) => updatePreset(p.id, { sumY: e.target.value })} className="flex-1 accent-emerald-500" /><span className="text-xs w-8 text-center">{p.sumY}</span></div>
+                                </>
+                              )}
+                            </div>
+
+                            <div className="h-px bg-white/10 my-1" />
+                            <div className="text-xs text-neutral-400 font-semibold">요소 표시/숨김</div>
+                            <div className="flex flex-wrap gap-1">
+                              {([["멤버 목록", "showMembers"], ["총합", "showTotal"], ["목표바", "showGoal"], ["후원 티커", "showTicker"], ["타이머", "showTimer"]] as [string, keyof OverlayPreset][]).map(([label, key]) => (
+                                <button key={key} className={`px-2 py-0.5 rounded border text-xs ${p[key] ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { [key]: !p[key] })}>{label} {p[key] ? "ON" : "OFF"}</button>
+                              ))}
+                            </div>
+
+                            {p.showGoal && (
+                              <>
+                                <div className="h-px bg-white/10 my-1" />
+                                <div className="text-xs text-neutral-400 font-semibold">목표 금액</div>
+                                <div className="grid grid-cols-[90px_1fr] items-center gap-1">
+                                  <label className="text-xs text-neutral-400">목표(원)</label>
+                                  <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" type="number" value={p.goal} onChange={(e) => updatePreset(p.id, { goal: e.target.value })} />
+                                  <label className="text-xs text-neutral-400">라벨</label>
+                                  <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.goalLabel} onChange={(e) => updatePreset(p.id, { goalLabel: e.target.value })} />
+                                  <label className="text-xs text-neutral-400">너비(px)</label>
+                                  <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.goalWidth} onChange={(e) => updatePreset(p.id, { goalWidth: e.target.value })} />
+                                  <label className="text-xs text-neutral-400">위치</label>
+                                  <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.goalAnchor} onChange={(e) => updatePreset(p.id, { goalAnchor: e.target.value })}>
+                                    <option value="bc">하단중앙</option><option value="tc">상단중앙</option><option value="bl">좌하</option><option value="br">우하</option><option value="tl">좌상</option><option value="tr">우상</option>
+                                  </select>
+                                </div>
+                              </>
+                            )}
+
+                            {p.showTimer && (
+                              <>
+                                <div className="h-px bg-white/10 my-1" />
+                                <div className="text-xs text-neutral-400 font-semibold">방송 타이머</div>
+                                <div className="flex flex-wrap gap-2 items-center">
+                                  <button className="px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-xs" onClick={() => updatePreset(p.id, { timerStart: Date.now() })}>{p.timerStart ? "재시작" : "시작"}</button>
+                                  {p.timerStart && <button className="px-2 py-1 rounded bg-red-700 hover:bg-red-600 text-xs" onClick={() => updatePreset(p.id, { timerStart: null })}>정지</button>}
+                                  <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.timerAnchor} onChange={(e) => updatePreset(p.id, { timerAnchor: e.target.value })}>
+                                    <option value="tr">우상</option><option value="tl">좌상</option><option value="br">우하</option><option value="bl">좌하</option><option value="tc">상단중앙</option><option value="bc">하단중앙</option>
+                                  </select>
+                                </div>
+                              </>
+                            )}
+
+                            <div className="h-px bg-white/10 my-1" />
+                            <div className="flex items-center gap-2">
+                              <input className="flex-1 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 font-mono text-xs" readOnly value={url} />
+                              <button className={`px-2 py-1 rounded text-xs whitespace-nowrap ${copiedId === p.id ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`} onClick={() => copyUrl(url, p.id)}>{copiedId === p.id ? "복사됨!" : "URL 복사"}</button>
+                            </div>
+                          </div>
+
+                          <div className="rounded border border-white/10 bg-black/70 p-2">
+                            <div className="text-xs text-neutral-400 mb-1">프리뷰</div>
+                            <div className="relative w-full h-[350px] rounded overflow-hidden">
+                              <iframe src={url} title={`preview-${p.id}`} className="absolute inset-0 w-full h-full" style={{ background: "transparent" }} scrolling="no" />
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    {!ovSumFree ? (
-                      <>
-                        <label className="text-sm text-neutral-400">총합 위치</label>
-                        <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10" value={ovSumAnchor} onChange={(e) => setOvSumAnchor(e.target.value)}>
-                          <option value="bc">하단중앙</option><option value="tc">상단중앙</option><option value="bl">좌하</option><option value="br">우하</option><option value="tr">우상</option><option value="tl">좌상</option>
-                        </select>
-                      </>
-                    ) : (
-                      <>
-                        <label className="text-sm text-neutral-400">X 위치(%)</label>
-                        <div className="flex items-center gap-2">
-                          <input type="range" min="0" max="100" step="1" value={ovSumX} onChange={(e) => setOvSumX(e.target.value)} className="flex-1 accent-emerald-500" />
-                          <input className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-center" value={ovSumX} onChange={(e) => setOvSumX(e.target.value)} />
-                        </div>
-                        <label className="text-sm text-neutral-400">Y 위치(%)</label>
-                        <div className="flex items-center gap-2">
-                          <input type="range" min="0" max="100" step="1" value={ovSumY} onChange={(e) => setOvSumY(e.target.value)} className="flex-1 accent-emerald-500" />
-                          <input className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-center" value={ovSumY} onChange={(e) => setOvSumY(e.target.value)} />
-                        </div>
-                      </>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input className="flex-1 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 font-mono text-xs" readOnly value={overlayUrl} />
-                    <button className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700" onClick={copyOverlayUrl}>URL 복사</button>
-                  </div>
-                  <div className="text-xs text-neutral-400">브라우저 소스에 이 URL을 그대로 붙여넣으면 투명 배경으로 출력됩니다.</div>
-                </div>
-                <div className="rounded border border-white/10 bg-black/70 p-2">
-                  <div className="text-xs text-neutral-400 mb-1">프리뷰</div>
-                  <div className="relative w-full h-[420px] rounded overflow-hidden">
-                    <iframe
-                      src={overlayUrl}
-                      title="overlay-preview"
-                      className="absolute inset-0 w-full h-full"
-                      style={{ background: "transparent" }}
-                      scrolling="no"
-                    />
-                  </div>
-                </div>
+                  );
+                })}
               </div>
             </section>
 

@@ -117,6 +117,40 @@ export function saveState(state: AppState) {
   }
 }
 
+export async function saveStateAsync(state: AppState): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  const next = { ...state, updatedAt: Date.now() };
+  const json = JSON.stringify(next);
+  try { window.localStorage.setItem(STORAGE_KEY, json); } catch {}
+  try {
+    const res = await fetch("/api/state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: json,
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function loadStateFromApi(): Promise<AppState | null> {
+  try {
+    const res = await fetch(`/api/state?_t=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data && data.members) {
+      data.members = data.members || defaultMembers();
+      data.donors = data.donors || [];
+      data.forbiddenWords = data.forbiddenWords || [];
+      return data as AppState;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function totalAccount(state: AppState): number {
   return state.members.reduce((sum, m) => sum + (m.account || 0), 0);
 }
