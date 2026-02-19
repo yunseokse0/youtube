@@ -1,36 +1,22 @@
 "use client";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, STORAGE_KEY, defaultState, loadState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand } from "@/lib/state";
+import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi } from "@/lib/state";
 import MissionMenu from "@/components/MissionMenu";
 
-function useStorageState(): AppState {
-  const [s, setS] = useState<AppState>(defaultState());
-  useEffect(() => setS(loadState()), []);
-
-  useEffect(() => {
-    const handler = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY && e.newValue) {
-        try { setS(JSON.parse(e.newValue)); } catch {}
-      }
-    };
-    window.addEventListener("storage", handler);
-    return () => window.removeEventListener("storage", handler);
-  }, []);
-
+function useRemoteState(): { state: AppState | null; ready: boolean } {
+  const [state, setState] = useState<AppState | null>(null);
   const lastUpdatedRef = useRef(0);
+  const loadRef = useRef(loadStateFromApi);
   useEffect(() => {
     let running = true;
     const poll = async () => {
       if (!running) return;
       try {
-        const res = await fetch(`/api/state?_t=${Date.now()}`, { cache: "no-store" });
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.updatedAt && data.updatedAt !== lastUpdatedRef.current) {
-            lastUpdatedRef.current = data.updatedAt;
-            setS(data);
-          }
+        const data = await loadRef.current();
+        if (data && data.updatedAt && data.updatedAt !== lastUpdatedRef.current) {
+          lastUpdatedRef.current = data.updatedAt;
+          setState(data);
         }
       } catch {}
       if (running) setTimeout(poll, 1500);
@@ -39,7 +25,7 @@ function useStorageState(): AppState {
     return () => { running = false; };
   }, []);
 
-  return s;
+  return { state, ready: state !== null };
 }
 
 function useCountUp(value: number, durationMs = 600) {
@@ -304,8 +290,11 @@ function Timer({ elapsed, theme, fontSize }: { elapsed: string | null; theme: ty
 }
 
 function OverlayInner() {
-  const s = useStorageState();
-  const sum = useMemo(() => totalAccount(s), [s]);
+  const { state: s, ready } = useRemoteState();
+  const members = useMemo(() => (ready && s ? s.members : []), [ready, s]);
+  const donors = useMemo(() => (ready && s ? s.donors : []), [ready, s]);
+  const missions = useMemo(() => (ready && s ? s.missions || [] : []), [ready, s]);
+  const sum = useMemo(() => (ready && s ? totalAccount(s) : 0), [ready, s]);
   const rounded = useMemo(() => roundToThousand(sum), [sum]);
   const displaySum = useCountUp(rounded, 800);
   const sp = useSearchParams();
@@ -338,7 +327,6 @@ function OverlayInner() {
   const timerAnchor = (sp.get("timerAnchor") || "tr").toLowerCase();
   const showMission = sp.get("showMission") === "true";
   const missionAnchor = (sp.get("missionAnchor") || "br").toLowerCase();
-  const missions: MissionItem[] = s.missions || [];
 
   const elapsed = useElapsed(timerStart);
 
@@ -370,7 +358,7 @@ function OverlayInner() {
   if (themeId === "excel") {
     return (
       <main className="transparent-bg min-h-screen no-select" style={{ zoom: scale }}>
-        {showMembers && (
+        {showMembers && ready && (
           <div className={`fixed ${listPosClass}`}>
             <table className={theme.tableCls} style={{ fontSize: memberSize, borderSpacing: 0 }}>
               <thead>
@@ -381,14 +369,14 @@ function OverlayInner() {
                 </tr>
               </thead>
               <tbody>
-                {s.members.map((m: Member) => (
+                {members.map((m: Member) => (
                   <tr key={m.id}>
                     <td className={`${theme.rowCls} ${theme.nameCls}`}>{m.name}</td>
                     <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(m.account)}</td>
                     <td className={`${theme.rowCls} ${theme.toonCls} text-right`}>{formatManThousand(m.toon)}</td>
                   </tr>
                 ))}
-                {showTotal && (
+                {showTotal && ready && (
                   <tr>
                     <td className={theme.totalWrapCls}>총합</td>
                     <td className={`${theme.totalWrapCls} text-right`} colSpan={2}>{formatManThousand(displaySum)}</td>
@@ -398,14 +386,14 @@ function OverlayInner() {
             </table>
           </div>
         )}
-        {showGoal && goal > 0 && (
+        {showGoal && ready && goal > 0 && (
           <div className={`fixed ${posClass(goalAnchor)}`}>
             <GoalBar current={rounded} goal={goal} label={goalLabel} theme={theme} width={goalWidth} />
           </div>
         )}
-        {showTicker && <div className={`fixed ${posClass("bc")} mb-10`}><DonorTicker donors={s.donors} theme={theme} fontSize={memberSize * 0.8} /></div>}
+        {showTicker && ready && <div className={`fixed ${posClass("bc")} mb-10`}><DonorTicker donors={donors} theme={theme} fontSize={memberSize * 0.8} /></div>}
         {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={theme} fontSize={memberSize} /></div>}
-        {showMission && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`}><MissionMenu missions={missions} fontSize={memberSize * 0.9} /></div>}
+        {showMission && ready && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`}><MissionMenu missions={missions} fontSize={memberSize * 0.9} /></div>}
       </main>
     );
   }
@@ -413,7 +401,7 @@ function OverlayInner() {
   if (themeId === "neonExcel") {
     return (
       <main className="transparent-bg min-h-screen no-select" style={{ zoom: scale }}>
-        {showMembers && (
+        {showMembers && ready && (
           <div className={`fixed ${listPosClass}`}>
             <div className={theme.tableCls} style={{ fontSize: memberSize }}>
               <div className={`grid grid-cols-4 ${theme.headerCls}`}>
@@ -422,7 +410,7 @@ function OverlayInner() {
                 <div className="col-span-1 text-right">TOON</div>
                 <div className="col-span-1 text-right font-bold text-white">TOTAL</div>
               </div>
-              {s.members.map((m: Member) => (
+              {members.map((m: Member) => (
                 <div key={m.id} className={`grid grid-cols-4 items-center ${theme.rowCls}`}>
                   <div className={theme.nameCls}>{m.name}</div>
                   <div className={theme.accountCls}>{formatManThousand(m.account)}</div>
@@ -430,7 +418,7 @@ function OverlayInner() {
                   <div className={`${theme.totalCls} text-right`}>{formatManThousand(m.account + m.toon)}</div>
                 </div>
               ))}
-              {showTotal && (
+              {showTotal && ready && (
                 <div className={`grid grid-cols-4 items-center ${theme.totalWrapCls}`}>
                   <div className="text-cyan-300 font-bold col-span-2">TOTAL</div>
                   <div className={`${theme.totalCls} text-right col-span-2`} style={{ fontSize: totalSize * 0.7 }}>{formatManThousand(displaySum)}</div>
@@ -439,24 +427,24 @@ function OverlayInner() {
             </div>
           </div>
         )}
-        {!showMembers && showTotal && (
+        {!showMembers && showTotal && ready && (
           <div className={`fixed ${sumPosClass}`} style={sumPosStyle}>
             <div className={theme.totalWrapCls}><div className={theme.totalCls} style={{ fontSize: totalSize }}>{formatManThousand(displaySum)}</div></div>
           </div>
         )}
-        {showGoal && goal > 0 && <div className={`fixed ${posClass(goalAnchor)}`}><GoalBar current={rounded} goal={goal} label={goalLabel} theme={theme} width={goalWidth} /></div>}
-        {showTicker && <div className="fixed bottom-4 left-0 right-0"><DonorTicker donors={s.donors} theme={theme} fontSize={memberSize * 0.8} /></div>}
+        {showGoal && ready && goal > 0 && <div className={`fixed ${posClass(goalAnchor)}`}><GoalBar current={rounded} goal={goal} label={goalLabel} theme={theme} width={goalWidth} /></div>}
+        {showTicker && ready && <div className="fixed bottom-4 left-0 right-0"><DonorTicker donors={donors} theme={theme} fontSize={memberSize * 0.8} /></div>}
         {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={theme} fontSize={memberSize} /></div>}
-        {showMission && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`}><MissionMenu missions={missions} fontSize={memberSize * 0.9} /></div>}
+        {showMission && ready && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`}><MissionMenu missions={missions} fontSize={memberSize * 0.9} /></div>}
       </main>
     );
   }
 
   return (
     <main className="transparent-bg min-h-screen text-outline-strong no-select" style={{ zoom: scale }}>
-      {showMembers && (
+      {showMembers && ready && (
         <div className={`fixed ${listPosClass} space-y-1`}>
-          {s.members.map((m: Member) => (
+          {members.map((m: Member) => (
             <div key={m.id} className={`${theme.memberCls} ${theme.rowCls}`} style={{ fontSize: memberSize, lineHeight: dense ? 1 : 1.15 }}>
               <span className={theme.nameCls}>{m.name}</span>
               <span className={theme.accountCls}>{formatManThousand(m.account)}</span>
@@ -466,7 +454,7 @@ function OverlayInner() {
         </div>
       )}
 
-      {showTotal && (
+      {showTotal && ready && (
         <div className={`fixed ${sumPosClass}`} style={sumPosStyle}>
           <div className={theme.totalWrapCls}>
             <div className={theme.totalCls} style={{ fontSize: totalSize, lineHeight: 1.05 }}>
@@ -476,15 +464,15 @@ function OverlayInner() {
         </div>
       )}
 
-      {showGoal && goal > 0 && (
+      {showGoal && ready && goal > 0 && (
         <div className={`fixed ${posClass(goalAnchor)}`}>
           <GoalBar current={rounded} goal={goal} label={goalLabel} theme={theme} width={goalWidth} />
         </div>
       )}
 
-      {showTicker && (
+      {showTicker && ready && (
         <div className={`fixed bottom-4 left-0 right-0`}>
-          <DonorTicker donors={s.donors} theme={theme} fontSize={memberSize * 0.8} />
+          <DonorTicker donors={donors} theme={theme} fontSize={memberSize * 0.8} />
         </div>
       )}
 
@@ -494,7 +482,7 @@ function OverlayInner() {
         </div>
       )}
 
-      {showMission && missions.length > 0 && (
+      {showMission && ready && missions.length > 0 && (
         <div className={`fixed ${posClass(missionAnchor)}`}>
           <MissionMenu missions={missions} fontSize={memberSize * 0.9} />
         </div>
