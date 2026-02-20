@@ -291,6 +291,7 @@ function GoalBar({ current, goal, label, theme, width }: { current: number; goal
 function DonorTicker({ donors, theme, fontSize }: { donors: Donor[]; theme: typeof THEMES.default; fontSize: number }) {
   const recent = useMemo(() => {
     return donors
+      .filter(d => d.amount > 0) // 금액이 0이 아닌 후원자만 표시
       .slice()
       .sort((a, b) => b.at - a.at)
       .slice(0, 5);
@@ -417,13 +418,15 @@ function OverlayInner() {
                 </tr>
               </thead>
               <tbody>
-                {members.map((m: Member) => (
-                  <tr key={m.id}>
-                    <td className={`${theme.rowCls} ${theme.nameCls}`}>{m.name}</td>
-                    <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(m.account)}</td>
-                    <td className={`${theme.rowCls} ${theme.toonCls} text-right`}>{formatManThousand(m.toon)}</td>
-                  </tr>
-                ))}
+                {members
+                  .filter(m => m.account > 0 || m.toon > 0) // 계좌나 투네 금액이 0이 아닌 멤버만 표시
+                  .map((m: Member) => (
+                    <tr key={m.id}>
+                      <td className={`${theme.rowCls} ${theme.nameCls}`}>{m.name}</td>
+                      <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(m.account)}</td>
+                      <td className={`${theme.rowCls} ${theme.toonCls} text-right`}>{formatManThousand(m.toon)}</td>
+                    </tr>
+                  ))}
                 {showTotal && ready && (
                   <tr>
                     <td className={theme.totalWrapCls}>총합</td>
@@ -458,14 +461,16 @@ function OverlayInner() {
                 <div className="col-span-1 text-right">TOON</div>
                 <div className="col-span-1 text-right font-bold text-white">TOTAL</div>
               </div>
-              {members.map((m: Member) => (
-                <div key={m.id} className={`grid grid-cols-4 items-center ${theme.rowCls}`}>
-                  <div className={theme.nameCls}>{m.name}</div>
-                  <div className={theme.accountCls}>{formatManThousand(m.account)}</div>
-                  <div className={theme.toonCls}>{formatManThousand(m.toon)}</div>
-                  <div className={`${theme.totalCls} text-right`}>{formatManThousand(m.account + m.toon)}</div>
-                </div>
-              ))}
+              {members
+                .filter(m => m.account > 0 || m.toon > 0) // 계좌나 투네 금액이 0이 아닌 멤버만 표시
+                .map((m: Member) => (
+                  <div key={m.id} className={`grid grid-cols-4 items-center ${theme.rowCls}`}>
+                    <div className={theme.nameCls}>{m.name}</div>
+                    <div className={theme.accountCls}>{formatManThousand(m.account)}</div>
+                    <div className={theme.toonCls}>{formatManThousand(m.toon)}</div>
+                    <div className={`${theme.totalCls} text-right`}>{formatManThousand(m.account + m.toon)}</div>
+                  </div>
+                ))}
               {showTotal && ready && (
                 <div className={`grid grid-cols-4 items-center ${theme.totalWrapCls}`}>
                   <div className="text-cyan-300 font-bold col-span-2">TOTAL</div>
@@ -492,13 +497,15 @@ function OverlayInner() {
     <main className="transparent-bg min-h-screen text-outline-strong no-select" style={{ zoom: scale }}>
       {showMembers && ready && (
         <div className={`fixed ${listPosClass} space-y-1`}>
-          {members.map((m: Member) => (
-            <div key={m.id} className={`${theme.memberCls} ${theme.rowCls}`} style={{ fontSize: memberSize, lineHeight: dense ? 1 : 1.15 }}>
-              <span className={theme.nameCls}>{m.name}</span>
-              <span className={theme.accountCls}>{formatManThousand(m.account)}</span>
-              <span className={theme.toonCls}>({formatManThousand(m.toon)})</span>
-            </div>
-          ))}
+          {members
+            .filter(m => m.account > 0 || m.toon > 0) // 계좌나 투네 금액이 0이 아닌 멤버만 표시
+            .map((m: Member) => (
+              <div key={m.id} className={`${theme.memberCls} ${theme.rowCls}`} style={{ fontSize: memberSize, lineHeight: dense ? 1 : 1.15 }}>
+                <span className={theme.nameCls}>{m.name}</span>
+                <span className={theme.accountCls}>{formatManThousand(m.account)}</span>
+                <span className={theme.toonCls}>({formatManThousand(m.toon)})</span>
+              </div>
+            ))}
         </div>
       )}
 
