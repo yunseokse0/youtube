@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import MemberRow from "@/components/MemberRow";
 import Toast from "@/components/Toast";
+import { getWebSocketServer } from "@/lib/websocket-server-admin";
 import {
   AppState,
   Member,
@@ -93,7 +94,22 @@ export default function AdminPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
-    setDailyLog(loadDailyLog());
+    // Start WebSocket server
+    try {
+      const wsServer = getWebSocketServer();
+      wsServer.start();
+      console.log('[Admin] WebSocket server started');
+    } catch (error) {
+      console.error('[Admin] Failed to start WebSocket server:', error);
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      // Keep server running for now, but could stop it here if needed
+    };
+  }, []);
+
+  useEffect(() => {
     setYtUrl(getSavedVideoUrl() || "");
     setLiveChatId(getPreferredLiveChatId());
     setApiKey(getPreferredApiKey() || "");
@@ -158,7 +174,19 @@ export default function AdminPage() {
 
   const persistState = (s: AppState) => {
     setSyncStatus("loading");
-    saveStateAsync(s).then((ok) => setSyncStatus(ok ? "synced" : "error"));
+    saveStateAsync(s).then((ok) => {
+      setSyncStatus(ok ? "synced" : "error");
+      if (ok) {
+        // Notify overlays about the update
+        try {
+          const wsServer = getWebSocketServer();
+          wsServer.notifyOverlayUpdate(s);
+          console.log('[Admin] Notified overlays about state update');
+        } catch (error) {
+          console.error('[Admin] Failed to notify overlays:', error);
+        }
+      }
+    });
   };
 
   const saveOverlaySettings = (settings: Partial<OverlaySettings>) => {
@@ -438,8 +466,43 @@ export default function AdminPage() {
             <span className={`px-2 py-0.5 rounded text-xs font-medium ${syncStatus === "synced" ? "bg-emerald-900/60 text-emerald-300" : syncStatus === "loading" ? "bg-yellow-900/60 text-yellow-300" : syncStatus === "error" ? "bg-red-900/60 text-red-300" : "bg-neutral-800 text-neutral-400"}`}>
               {syncStatus === "synced" ? "서버 동기화됨" : syncStatus === "loading" ? "동기화 중..." : syncStatus === "error" ? "서버 저장 실패" : "로컬 모드"}
             </span>
+            <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-900/60 text-blue-300">
+              WebSocket 연결됨
+            </span>
           </div>
-          <Link className="text-sm text-neutral-300 underline" href="/youtube">유튜브 모니터 열기</Link>
+          <div className="flex items-center gap-3">
+            <button 
+              className="px-3 py-1 rounded bg-blue-800 hover:bg-blue-700 text-sm"
+              onClick={() => {
+                // Test real-time update
+                setState((prev) => {
+                  const testDonor = {
+                    id: `test_${Date.now()}`,
+                    name: "테스트 후원자",
+                    amount: 10000,
+                    memberId: prev.members[0]?.id || "unknown",
+                    target: "account" as const,
+                    at: Date.now()
+                  };
+                  const members = prev.members.map((m) => 
+                    m.id === testDonor.memberId 
+                      ? { ...m, account: (m.account || 0) + testDonor.amount }
+                      : m
+                  );
+                  const next = {
+                    ...prev,
+                    donors: [testDonor, ...prev.donors.slice(0, 4)],
+                    members
+                  };
+                  persistState(next);
+                  return next;
+                });
+              }}
+            >
+              실시간 테스트
+            </button>
+            <Link className="text-sm text-neutral-300 underline" href="/youtube">유튜브 모니터 열기</Link>
+          </div>
         </div>
         <div className="grid grid-cols-1 gap-6">
           <div className="space-y-6">
