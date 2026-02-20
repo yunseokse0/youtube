@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import MemberRow from "@/components/MemberRow";
 import Toast from "@/components/Toast";
-import { getWebSocketServer } from "@/lib/websocket-server-admin";
+import { sendSSEUpdate } from "@/lib/sse-client";
 import {
   AppState,
   Member,
@@ -94,22 +94,6 @@ export default function AdminPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
-    // Start WebSocket server
-    try {
-      const wsServer = getWebSocketServer();
-      wsServer.start();
-      console.log('[Admin] WebSocket server started');
-    } catch (error) {
-      console.error('[Admin] Failed to start WebSocket server:', error);
-    }
-    
-    // Cleanup on unmount
-    return () => {
-      // Keep server running for now, but could stop it here if needed
-    };
-  }, []);
-
-  useEffect(() => {
     setYtUrl(getSavedVideoUrl() || "");
     setLiveChatId(getPreferredLiveChatId());
     setApiKey(getPreferredApiKey() || "");
@@ -177,14 +161,9 @@ export default function AdminPage() {
     saveStateAsync(s).then((ok) => {
       setSyncStatus(ok ? "synced" : "error");
       if (ok) {
-        // Notify overlays about the update
-        try {
-          const wsServer = getWebSocketServer();
-          wsServer.notifyOverlayUpdate(s);
-          console.log('[Admin] Notified overlays about state update');
-        } catch (error) {
-          console.error('[Admin] Failed to notify overlays:', error);
-        }
+        // Notify overlays about the update via SSE
+        sendSSEUpdate({ type: 'overlay_update', ...s });
+        console.log('[Admin] Notified overlays about state update via SSE');
       }
     });
   };
@@ -471,6 +450,12 @@ export default function AdminPage() {
             </span>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => window.open('/simple-admin', '_blank')}
+              className="px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-medium transition-all duration-200 shadow-lg"
+            >
+              🎯 간단한 모드로 전환
+            </button>
             <button 
               className="px-3 py-1 rounded bg-blue-800 hover:bg-blue-700 text-sm"
               onClick={() => {

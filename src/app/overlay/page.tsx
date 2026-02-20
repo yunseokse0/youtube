@@ -2,19 +2,20 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi } from "@/lib/state";
-import { useOverlayWebSocket } from "@/lib/overlay-websocket";
+import { useSSEConnection } from "@/lib/sse-client";
 import MissionMenu from "@/components/MissionMenu";
 import MissionTicker from "@/components/MissionTicker";
 
-function useRemoteState(): { state: AppState | null; ready: boolean; wsConnected: boolean } {
+function useRemoteState(): { state: AppState | null; ready: boolean; connected: boolean } {
   const [state, setState] = useState<AppState | null>(null);
   const lastUpdatedRef = useRef(0);
-  const { connected, lastMessage } = useOverlayWebSocket();
-  
-  // Log WebSocket connection status
-  useEffect(() => {
-    console.log('[Overlay] WebSocket connection status:', connected);
-  }, [connected]);
+  const { connected } = useSSEConnection((data) => {
+    if (data.type === 'overlay_update' && data.updatedAt && data.updatedAt !== lastUpdatedRef.current) {
+      lastUpdatedRef.current = data.updatedAt;
+      setState(data);
+      console.log('[Overlay] Received SSE update:', data);
+    }
+  });
   
   // Initial state loading
   useEffect(() => {
@@ -29,21 +30,9 @@ function useRemoteState(): { state: AppState | null; ready: boolean; wsConnected
     fetchInitialState();
   }, []);
 
-  // WebSocket updates
+  // Fallback polling when SSE is not connected
   useEffect(() => {
-    if (lastMessage && lastMessage.type === 'overlay_update') {
-      const updateData = lastMessage.data;
-      if (updateData && updateData.updatedAt && updateData.updatedAt !== lastUpdatedRef.current) {
-        lastUpdatedRef.current = updateData.updatedAt;
-        setState(updateData);
-        console.log('[Overlay] Received WebSocket update:', updateData);
-      }
-    }
-  }, [lastMessage]);
-
-  // Fallback polling when WebSocket is not connected
-  useEffect(() => {
-    if (connected) return; // Don't poll if WebSocket is connected
+    if (connected) return; // Don't poll if SSE is connected
     
     let running = true;
     const poll = async () => {
@@ -67,10 +56,12 @@ function useRemoteState(): { state: AppState | null; ready: boolean; wsConnected
       poll();
     }
     
-    return () => { running = false; };
+    return () => {
+      running = false;
+    };
   }, [connected, state]);
 
-  return { state, ready: state !== null, wsConnected: connected };
+  return { state, ready: state !== null, connected };
 }
 
 function useCountUp(value: number, durationMs = 600) {
@@ -335,7 +326,7 @@ function Timer({ elapsed, theme, fontSize }: { elapsed: string | null; theme: ty
 }
 
 function OverlayInner() {
-  const { state: s, ready, wsConnected } = useRemoteState();
+  const { state: s, ready, connected } = useRemoteState();
   const members = useMemo(() => (ready && s ? s.members : []), [ready, s]);
   const donors = useMemo(() => (ready && s ? s.donors : []), [ready, s]);
   const missions = useMemo(() => (ready && s ? s.missions || [] : []), [ready, s]);
@@ -344,10 +335,10 @@ function OverlayInner() {
   const displaySum = useCountUp(rounded, 800);
   const sp = useSearchParams();
   
-  // Log WebSocket connection status
+  // Log SSE connection status
   useEffect(() => {
-    console.log('[OverlayInner] WebSocket connected:', wsConnected);
-  }, [wsConnected]);
+    console.log('[OverlayInner] SSE connected:', connected);
+  }, [connected]);
   
   // Use overlay settings from state, with URL params as fallback for backward compatibility
   const overlaySettings = s?.overlaySettings;
@@ -411,9 +402,9 @@ function OverlayInner() {
   if (themeId === "excel") {
     return (
       <main className="transparent-bg min-h-screen no-select" style={{ zoom: scale }}>
-        {/* WebSocket connection indicator */}
-        <div className={`fixed top-2 right-2 text-xs px-2 py-1 rounded ${wsConnected ? 'bg-green-900/80 text-green-300' : 'bg-red-900/80 text-red-300'}`}>
-          {wsConnected ? '실시간 연결' : '폴링 모드'}
+        {/* SSE connection indicator */}
+        <div className={`fixed top-2 right-2 text-xs px-2 py-1 rounded ${connected ? 'bg-green-900/80 text-green-300' : 'bg-red-900/80 text-red-300'}`}>
+          {connected ? '실시간 연결' : '폴링 모드'}
         </div>
         {showMembers && ready && (
           <div className={`fixed ${listPosClass}`}>
