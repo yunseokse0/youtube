@@ -189,6 +189,7 @@ export default function SimpleAdminPage() {
   const [state, setState] = useState<AppState | null>(null);
   const [presets, setPresets] = useState<OverlayPreset[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
   const [showGuide, setShowGuide] = useState(false);
 
   // 상태 로드
@@ -366,21 +367,56 @@ export default function SimpleAdminPage() {
             <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-dashed border-white/20 p-12 text-center">
               <div className="text-4xl mb-4">🎬</div>
               <div className="text-white text-lg mb-2">아직 오버레이가 없습니다</div>
-              <div className="text-neutral-300 mb-4">위의 템플릿을 선택하여 시작하세요</div>
-              <div className="text-neutral-400 text-sm">각 템플릿은 방송에 맞게 커스터마이징할 수 있습니다</div>
+              <div className="text-neutral-300 mb-2">위의 템플릿을 선택하여 시작하세요</div>
+              <div className="text-neutral-400 text-sm mb-2">각 템플릿은 방송에 맞게 커스터마이징할 수 있습니다</div>
+              <div className="text-emerald-400 text-xs">💡 카드를 드래그하여 순서를 변경할 수 있습니다</div>
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {presets.map((preset) => (
-                <OverlayCard
+              {presets.map((preset, index) => (
+                <div
                   key={preset.id}
-                  preset={preset}
-                  onUpdate={updatePreset}
-                  onDelete={deletePreset}
-                  onCopyUrl={copyUrl}
-                  copiedId={copiedId}
-                  url={buildOverlayUrl(preset)}
-                />
+                  draggable
+                  onDragStart={(e) => {
+                     e.dataTransfer.setData('text/plain', preset.id);
+                     e.dataTransfer.effectAllowed = 'move';
+                     setDraggedId(preset.id);
+                   }}
+                   onDragEnd={() => setDraggedId(null)}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const draggedId = e.dataTransfer.getData('text/plain');
+                    if (draggedId === preset.id) return;
+                    
+                    const draggedIndex = presets.findIndex(p => p.id === draggedId);
+                    const targetIndex = index;
+                    
+                    if (draggedIndex === -1) return;
+                    
+                    const newPresets = [...presets];
+                    const [draggedPreset] = newPresets.splice(draggedIndex, 1);
+                    newPresets.splice(targetIndex, 0, draggedPreset);
+                    
+                    setPresets(newPresets);
+                    savePresets(newPresets);
+                  }}
+                  className={`cursor-move hover:opacity-80 transition-all duration-200 ${
+                     draggedId === preset.id ? 'opacity-50 scale-95 rotate-2' : ''
+                   } ${draggedId && draggedId !== preset.id ? 'opacity-70' : ''}`}
+                >
+                  <OverlayCard
+                    preset={preset}
+                    onUpdate={updatePreset}
+                    onDelete={deletePreset}
+                    onCopyUrl={copyUrl}
+                    copiedId={copiedId}
+                    url={buildOverlayUrl(preset)}
+                  />
+                </div>
               ))}
             </div>
           )}
