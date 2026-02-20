@@ -27,6 +27,7 @@ import {
   loadForbidEvents,
   FORBID_EVENTS_KEY,
   MissionItem,
+  OverlaySettings,
 } from "@/lib/state";
 import {
   startYoutubePolling,
@@ -158,6 +159,27 @@ export default function AdminPage() {
   const persistState = (s: AppState) => {
     setSyncStatus("loading");
     saveStateAsync(s).then((ok) => setSyncStatus(ok ? "synced" : "error"));
+  };
+
+  const saveOverlaySettings = (settings: Partial<OverlaySettings>) => {
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        overlaySettings: {
+          ...(prev.overlaySettings || {
+            scale: 1, memberSize: 24, totalSize: 64, dense: false,
+            anchor: "tl", sumAnchor: "bc", sumFree: false, sumX: 50, sumY: 90,
+            theme: "default", showMembers: true, showTotal: true, showGoal: false,
+            goal: 0, goalLabel: "목표 금액", goalWidth: 400, goalAnchor: "bc",
+            showTicker: false, showTimer: false, timerStart: null, timerAnchor: "tr",
+            showMission: false, missionAnchor: "br"
+          }),
+          ...settings
+        }
+      };
+      persistState(next);
+      return next;
+    });
   };
 
   useEffect(() => {

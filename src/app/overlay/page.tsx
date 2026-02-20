@@ -321,35 +321,38 @@ function OverlayInner() {
   const rounded = useMemo(() => roundToThousand(sum), [sum]);
   const displaySum = useCountUp(rounded, 800);
   const sp = useSearchParams();
-
-  const scale = Math.max(0.3, Math.min(3, parseFloat(sp.get("scale") || "1")));
-  const memberSize = Math.max(10, Math.min(80, parseInt(sp.get("memberSize") || "24", 10)));
-  const totalSize = Math.max(14, Math.min(160, parseInt(sp.get("totalSize") || "64", 10)));
-  const dense = (sp.get("dense") || "false").toLowerCase() === "true";
-  const anchor = (sp.get("anchor") || "tl").toLowerCase();
-  const sumAnchor = (sp.get("sumAnchor") || "bc").toLowerCase();
-  const sumXParam = sp.get("sumX");
-  const sumYParam = sp.get("sumY");
+  
+  // Use overlay settings from state, with URL params as fallback for backward compatibility
+  const overlaySettings = s?.overlaySettings;
+  
+  const scale = Math.max(0.3, Math.min(3, overlaySettings?.scale ?? parseFloat(sp.get("scale") || "1")));
+  const memberSize = Math.max(10, Math.min(80, overlaySettings?.memberSize ?? parseInt(sp.get("memberSize") || "24", 10)));
+  const totalSize = Math.max(14, Math.min(160, overlaySettings?.totalSize ?? parseInt(sp.get("totalSize") || "64", 10)));
+  const dense = (overlaySettings?.dense ?? (sp.get("dense") || "false").toLowerCase() === "true");
+  const anchor = (overlaySettings?.anchor ?? (sp.get("anchor") || "tl")).toLowerCase();
+  const sumAnchor = (overlaySettings?.sumAnchor ?? (sp.get("sumAnchor") || "bc")).toLowerCase();
+  const sumXParam = overlaySettings?.sumFree ? String(overlaySettings.sumX) : sp.get("sumX");
+  const sumYParam = overlaySettings?.sumFree ? String(overlaySettings.sumY) : sp.get("sumY");
   const hasFreePos = sumXParam !== null && sumYParam !== null;
   const sumX = hasFreePos ? Math.max(0, Math.min(100, parseFloat(sumXParam!))) : 0;
   const sumY = hasFreePos ? Math.max(0, Math.min(100, parseFloat(sumYParam!))) : 0;
-  const themeId = (sp.get("theme") || "default") as ThemeId;
+  const themeId = (overlaySettings?.theme ?? (sp.get("theme") || "default")) as ThemeId;
   const theme = THEMES[themeId] || THEMES.default;
 
-  const showMembers = sp.get("showMembers") !== "false";
-  const showTotal = sp.get("showTotal") !== "false";
-  const showGoal = sp.get("showGoal") === "true";
-  const showTicker = sp.get("showTicker") === "true";
-  const showTimer = sp.get("showTimer") === "true";
-  const goalRaw = parseInt(sp.get("goal") || "0", 10);
+  const showMembers = overlaySettings?.showMembers ?? (sp.get("showMembers") !== "false");
+  const showTotal = overlaySettings?.showTotal ?? (sp.get("showTotal") !== "false");
+  const showGoal = overlaySettings?.showGoal ?? (sp.get("showGoal") === "true");
+  const showTicker = overlaySettings?.showTicker ?? (sp.get("showTicker") === "true");
+  const showTimer = overlaySettings?.showTimer ?? (sp.get("showTimer") === "true");
+  const goalRaw = parseInt(String(overlaySettings?.goal ?? (sp.get("goal") || "0")), 10);
   const goal = isNaN(goalRaw) ? 0 : goalRaw;
-  const goalLabel = sp.get("goalLabel") || "목표 금액";
-  const goalWidth = Math.max(200, Math.min(800, parseInt(sp.get("goalWidth") || "400", 10)));
-  const goalAnchor = (sp.get("goalAnchor") || "bc").toLowerCase();
-  const timerStart = sp.get("timerStart") ? parseInt(sp.get("timerStart")!, 10) : null;
-  const timerAnchor = (sp.get("timerAnchor") || "tr").toLowerCase();
-  const showMission = sp.get("showMission") === "true";
-  const missionAnchor = (sp.get("missionAnchor") || "br").toLowerCase();
+  const goalLabel = String(overlaySettings?.goalLabel ?? (sp.get("goalLabel") || "목표 금액"));
+  const goalWidth = Math.max(200, Math.min(800, overlaySettings?.goalWidth ?? parseInt(sp.get("goalWidth") || "400", 10)));
+  const goalAnchor = (overlaySettings?.goalAnchor ?? (sp.get("goalAnchor") || "bc")).toLowerCase();
+  const timerStart = overlaySettings?.timerStart ?? (sp.get("timerStart") ? parseInt(sp.get("timerStart")!, 10) : null);
+  const timerAnchor = (overlaySettings?.timerAnchor ?? (sp.get("timerAnchor") || "tr")).toLowerCase();
+  const showMission = overlaySettings?.showMission ?? (sp.get("showMission") === "true");
+  const missionAnchor = (overlaySettings?.missionAnchor ?? (sp.get("missionAnchor") || "br")).toLowerCase();
 
   const elapsed = useElapsed(timerStart);
 

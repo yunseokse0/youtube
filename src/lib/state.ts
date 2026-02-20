@@ -23,11 +23,38 @@ export type MissionItem = {
   isHot?: boolean;
 };
 
+export type OverlaySettings = {
+  scale: number;
+  memberSize: number;
+  totalSize: number;
+  dense: boolean;
+  anchor: string;
+  sumAnchor: string;
+  sumFree: boolean;
+  sumX: number;
+  sumY: number;
+  theme: string;
+  showMembers: boolean;
+  showTotal: boolean;
+  showGoal: boolean;
+  goal: number;
+  goalLabel: string;
+  goalWidth: number;
+  goalAnchor: string;
+  showTicker: boolean;
+  showTimer: boolean;
+  timerStart: number | null;
+  timerAnchor: string;
+  showMission: boolean;
+  missionAnchor: string;
+};
+
 export type AppState = {
   members: Member[];
   donors: Donor[];
   forbiddenWords: string[];
   missions?: MissionItem[];
+  overlaySettings?: OverlaySettings;
   updatedAt: number;
 };
 
@@ -43,11 +70,40 @@ export function defaultMembers(): Member[] {
   ];
 }
 
+export function defaultOverlaySettings(): OverlaySettings {
+  return {
+    scale: 1,
+    memberSize: 24,
+    totalSize: 64,
+    dense: false,
+    anchor: "tl",
+    sumAnchor: "bc",
+    sumFree: false,
+    sumX: 50,
+    sumY: 90,
+    theme: "default",
+    showMembers: true,
+    showTotal: true,
+    showGoal: false,
+    goal: 0,
+    goalLabel: "목표 금액",
+    goalWidth: 400,
+    goalAnchor: "bc",
+    showTicker: false,
+    showTimer: false,
+    timerStart: null,
+    timerAnchor: "tr",
+    showMission: false,
+    missionAnchor: "br",
+  };
+}
+
 export function defaultState(): AppState {
   return {
     members: defaultMembers(),
     donors: [],
     forbiddenWords: ["금칙어", "욕설", "비속어"],
+    overlaySettings: defaultOverlaySettings(),
     updatedAt: Date.now(),
   };
 }
@@ -104,6 +160,7 @@ export function loadState(): AppState {
     data.donors = data.donors || [];
     data.forbiddenWords = data.forbiddenWords || [];
     data.missions = data.missions || [];
+    data.overlaySettings = data.overlaySettings || defaultOverlaySettings();
     return data;
   } catch {
     return defaultState();
@@ -153,6 +210,7 @@ export async function loadStateFromApi(): Promise<AppState | null> {
       data.donors = data.donors || [];
       data.forbiddenWords = data.forbiddenWords || [];
       data.missions = data.missions || [];
+      data.overlaySettings = data.overlaySettings || defaultOverlaySettings();
       return data as AppState;
     }
     return null;
