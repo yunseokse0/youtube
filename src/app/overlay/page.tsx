@@ -8,23 +8,45 @@ import MissionTicker from "@/components/MissionTicker";
 function useRemoteState(): { state: AppState | null; ready: boolean } {
   const [state, setState] = useState<AppState | null>(null);
   const lastUpdatedRef = useRef(0);
-  const loadRef = useRef(loadStateFromApi);
+  
+  // Initial state loading
+  useEffect(() => {
+    const fetchInitialState = async () => {
+      const data = await loadStateFromApi();
+      if (data) {
+        lastUpdatedRef.current = data.updatedAt;
+        setState(data);
+      }
+    };
+    fetchInitialState();
+  }, []);
+
+  // Polling for updates
   useEffect(() => {
     let running = true;
     const poll = async () => {
-      if (!running) return;
+      if (!running || !state) return;
       try {
-        const data = await loadRef.current();
-        if (data && data.updatedAt && data.updatedAt !== lastUpdatedRef.current) {
-          lastUpdatedRef.current = data.updatedAt;
-          setState(data);
+        const res = await fetch(`/api/state?_t=${Date.now()}`, { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.updatedAt && data.updatedAt !== lastUpdatedRef.current) {
+            lastUpdatedRef.current = data.updatedAt;
+            setState(data);
+          }
         }
-      } catch {}
+      } catch (error) {
+        console.error("Failed to fetch state:", error);
+      }
       if (running) setTimeout(poll, 1500);
     };
-    poll();
+    
+    if (state) {
+      poll();
+    }
+    
     return () => { running = false; };
-  }, []);
+  }, []); // Only run once on mount
 
   return { state, ready: state !== null };
 }
