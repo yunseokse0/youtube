@@ -3,6 +3,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi } from "@/lib/state";
 import MissionMenu from "@/components/MissionMenu";
+import MissionTicker from "@/components/MissionTicker";
 
 function useRemoteState(): { state: AppState | null; ready: boolean } {
   const [state, setState] = useState<AppState | null>(null);
@@ -393,7 +394,7 @@ function OverlayInner() {
         )}
         {showTicker && ready && <div className={`fixed ${posClass("bc")} mb-10`}><DonorTicker donors={donors} theme={theme} fontSize={memberSize * 0.8} /></div>}
         {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={theme} fontSize={memberSize} /></div>}
-        {showMission && ready && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`}><MissionMenu missions={missions} fontSize={memberSize * 0.9} /></div>}
+        {showMission && ready && missions.length > 0 && <MissionTicker missions={missions} fontSize={memberSize * 0.9} />}
       </main>
     );
   }
@@ -435,7 +436,7 @@ function OverlayInner() {
         {showGoal && ready && goal > 0 && <div className={`fixed ${posClass(goalAnchor)}`}><GoalBar current={rounded} goal={goal} label={goalLabel} theme={theme} width={goalWidth} /></div>}
         {showTicker && ready && <div className="fixed bottom-4 left-0 right-0"><DonorTicker donors={donors} theme={theme} fontSize={memberSize * 0.8} /></div>}
         {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={theme} fontSize={memberSize} /></div>}
-        {showMission && ready && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`}><MissionMenu missions={missions} fontSize={memberSize * 0.9} /></div>}
+        {showMission && ready && missions.length > 0 && <MissionTicker missions={missions} fontSize={memberSize * 0.9} />}
       </main>
     );
   }
@@ -483,9 +484,7 @@ function OverlayInner() {
       )}
 
       {showMission && ready && missions.length > 0 && (
-        <div className={`fixed ${posClass(missionAnchor)}`}>
-          <MissionMenu missions={missions} fontSize={memberSize * 0.9} />
-        </div>
+        <MissionTicker missions={missions} fontSize={memberSize * 0.9} />
       )}
     </main>
   );
