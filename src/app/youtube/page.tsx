@@ -13,7 +13,18 @@ import {
   startViewersPolling,
   startChatPolling,
   HAS_ENV_API_KEY,
+  getCacheStats,
 } from "@/lib/youtube";
+import {
+  requestNotificationPermission,
+  getNotificationPermission,
+  showForbidWordAlert,
+  showViewerSpikeAlert,
+  loadNotificationSettings,
+  saveNotificationSettings,
+  NotificationSettings,
+  DEFAULT_NOTIFICATION_SETTINGS,
+} from "@/lib/push-notification";
 import { FORBID_EVENTS_KEY, appendForbidEvent, loadForbidEvents } from "@/lib/state";
 
 type Point = { t: number; v: number | null };
@@ -29,9 +40,9 @@ export default function YoutubePage() {
   const [connected, setConnected] = useState(false);
   const [events, setEvents] = useState<Array<{ at: number; author: string; message: string; word: string }>>([]);
   const [chat, setChat] = useState<Array<{ id: string; at: number; author: string; message: string; owner: boolean; moderator: boolean; sponsor: boolean; verified: boolean }>>([]);
-  const [viewerIntervalSec, setViewerIntervalSec] = useState(10);
+  const [viewerIntervalSec, setViewerIntervalSec] = useState(60); // 10초 → 60초로 증가
   const [viewerKeep, setViewerKeep] = useState(180);
-  const [chatIntervalSec, setChatIntervalSec] = useState(10);
+  const [chatIntervalSec, setChatIntervalSec] = useState(30); // 10초 → 30초로 증가
   const [chatKeep, setChatKeep] = useState(300);
   const [latestOnTop, setLatestOnTop] = useState(true);
   const [autoKeep, setAutoKeep] = useState(true);
@@ -39,6 +50,10 @@ export default function YoutubePage() {
   const [keywordFilter, setKeywordFilter] = useState("");
   const [lastViewOk, setLastViewOk] = useState<number | null>(null);
   const [lastChatOk, setLastChatOk] = useState<number | null>(null);
+  const [cacheStats, setCacheStats] = useState({ viewers: 0, livechat: 0 });
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(DEFAULT_NOTIFICATION_SETTINGS);
+  const [lastViewerCount, setLastViewerCount] = useState<number | null>(null);
   const chatBoxRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -46,16 +61,43 @@ export default function YoutubePage() {
     setApiKey(getPreferredApiKey() || "");
     setLiveChatId(getPreferredLiveChatId());
     setEvents(loadForbidEvents());
+    
+    // 푸시 알림 설정 초기화
+    const permission = getNotificationPermission();
+    setNotificationPermission(permission);
+    const settings = loadNotificationSettings();
+    setNotificationSettings(settings);
+    
+    // 캐시 통계 주기적 업데이트
+    const updateCacheStats = () => {
+      const stats = getCacheStats();
+      setCacheStats(stats);
+    };
+    
+    updateCacheStats();
+    const interval = setInterval(updateCacheStats, 5000); // 5초마다 업데이트
+    
+    return () => clearInterval(interval);
   }, []);
 
   // prominent alert: listen storage and also run polling for chat
   useEffect(() => {
-    const stop = startYoutubePolling(words.split(/\r?\n/).map(w=>w.trim()).filter(Boolean), ({word, author, message}: Parameters<OnForbidden>[0]) => {
+    const stop = startYoutubePolling(words.split(/\r?\n/).map(w=>w.trim()).filter(Boolean), async ({word, author, message}: Parameters<OnForbidden>[0]) => {
       const text = `금칙어(${word}) - ${author}: ${message}`;
       const ev = { at: Date.now(), word, author, message };
       appendForbidEvent(ev);
       setEvents((prev)=>[ev, ...prev].slice(0,200));
       setAlert(text);
+      
+      // 푸시 알림 표시 (설정이 활성화된 경우)
+      if (notificationSettings.forbidWord && notificationPermission === 'granted') {
+        try {
+          await showForbidWordAlert(word, author, message);
+        } catch (error) {
+          console.error('[Push Notification] 금칙어 알림 표시 실패:', error);
+        }
+      }
+      
       // beep
       try {
         if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -88,13 +130,32 @@ export default function YoutubePage() {
       stop && stop();
       window.removeEventListener("storage", handler);
     };
-  }, [words]);
+  }, [words, notificationSettings, notificationPermission]);
 
   // viewers polling
   useEffect(() => {
     const id = parseVideoIdFromUrl(url || "");
-    if (!id) return;
-    const stop = startViewersPolling(id, (n) => {
+    console.log(`[YouTube Viewers] 시청자 수 폴링 시작 - VideoId: ${id}`);
+    if (!id) {
+      console.log("[YouTube Viewers] 유효하지 않은 URL");
+      return;
+    }
+    const stop = startViewersPolling(id, async (n) => {
+      console.log(`[YouTube Viewers] 시청자 수 수신: ${n}`);
+      
+      // 시청자 수 급증 감지
+      if (lastViewerCount !== null && n !== null && notificationSettings.viewerSpike && notificationPermission === 'granted') {
+        const increase = n - lastViewerCount;
+        if (increase >= notificationSettings.viewerSpikeThreshold) {
+          try {
+            await showViewerSpikeAlert(n, increase);
+          } catch (error) {
+            console.error('[Push Notification] 시청자 수 급증 알림 표시 실패:', error);
+          }
+        }
+      }
+      
+      setLastViewerCount(n);
       setPoints((prev) => {
         const next = [...prev, { t: Date.now(), v: n }].slice(-viewerKeep);
         return next;
@@ -103,11 +164,13 @@ export default function YoutubePage() {
     });
     setConnected(true);
     return () => stop && stop();
-  }, [url, viewerIntervalSec, viewerKeep]);
+  }, [url, viewerIntervalSec, viewerKeep, notificationSettings, notificationPermission, lastViewerCount]);
 
   // chat polling
   useEffect(() => {
+    console.log(`[YouTube Chat] 채팅 폴링 설정 - URL: ${url}, LiveChatId: ${liveChatId}, API Key: ${!!apiKey}`);
     const stop = startChatPolling((msg) => {
+      console.log(`[YouTube Chat] 채팅 메시지 수신: ${msg.author} - ${msg.message}`);
       setChat((prev) => {
         if (prev.some(p=>p.id===msg.id)) return prev;
         const next = [...prev, msg].slice(-chatKeep);
@@ -115,6 +178,7 @@ export default function YoutubePage() {
       });
       setLastChatOk(Date.now());
     }, { intervalMs: chatIntervalSec * 1000, initialLimit: Math.min(1000, chatKeep), maxResults: 200 });
+    console.log(`[YouTube Chat] 채팅 폴링 시작됨`);
     return () => stop && stop();
   }, [url, liveChatId, apiKey, chatIntervalSec, chatKeep]);
 
@@ -136,7 +200,9 @@ export default function YoutubePage() {
   }, [chat, autoKeep]);
 
   const connect = async () => {
-    const { liveChatId: id } = await setYoutubeVideoUrl(url.trim());
+    console.log(`[YouTube Connect] 연결 시도: ${url}`);
+    const { liveChatId: id, videoId } = await setYoutubeVideoUrl(url.trim());
+    console.log(`[YouTube Connect] 연결 결과 - LiveChatId: ${id}, VideoId: ${videoId}`);
     setLiveChatId(id);
   };
   const saveKey = () => {
@@ -222,6 +288,29 @@ export default function YoutubePage() {
     return () => clearTimeout(t);
   };
 
+  // 푸시 알림 권한 요청
+  const requestPushPermission = async () => {
+    try {
+      const permission = await requestNotificationPermission();
+      setNotificationPermission(permission);
+      if (permission === 'granted') {
+        console.log('[Push Notification] 푸시 알림 권한 획득 성공');
+      } else {
+        console.log('[Push Notification] 푸시 알림 권한 거부됨');
+      }
+    } catch (error) {
+      console.error('[Push Notification] 권한 요청 중 오류:', error);
+    }
+  };
+
+  // 푸시 알림 설정 변경
+  const updateNotificationSettings = (key: keyof NotificationSettings, value: any) => {
+    const newSettings = { ...notificationSettings, [key]: value };
+    setNotificationSettings(newSettings);
+    saveNotificationSettings(newSettings);
+    console.log(`[Push Notification] 설정 업데이트: ${key} = ${value}`);
+  };
+
   return (
     <main className="min-h-screen p-4 md:p-8">
       <div className="max-w-5xl mx-auto space-y-6">
@@ -259,6 +348,83 @@ export default function YoutubePage() {
           </div>
           <div className="text-xs text-neutral-400 mt-2">
             {HAS_ENV_API_KEY ? "배포 환경에서 제공된 키가 사용되며, 페이지에서 수정할 수 없습니다." : "키는 브라우저 localStorage에만 저장됩니다."}
+          </div>
+        </section>
+
+        <section className="glass p-4 md:p-6">
+          <h2 className="text-lg font-semibold mb-3">푸시 알림 설정</h2>
+          <div className="space-y-4">
+            <div className="flex flex-wrap gap-2 items-center">
+              <span className="text-sm text-neutral-300">푸시 알림 권한:</span>
+              <span className={`px-2 py-1 rounded text-xs ${
+                notificationPermission === 'granted' ? 'bg-emerald-700/60 text-emerald-300' :
+                notificationPermission === 'denied' ? 'bg-red-700/60 text-red-300' :
+                'bg-yellow-700/60 text-yellow-300'
+              }`}>
+                {notificationPermission === 'granted' ? '허용됨' :
+                 notificationPermission === 'denied' ? '거부됨' :
+                 '미확인'}
+              </span>
+              {notificationPermission !== 'granted' && (
+                <button 
+                  onClick={requestPushPermission}
+                  className="px-3 py-1 rounded bg-blue-700 hover:bg-blue-600 text-white text-xs"
+                >
+                  권한 요청
+                </button>
+              )}
+            </div>
+            
+            {notificationPermission === 'granted' && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="checkbox" 
+                    id="forbidWord"
+                    checked={notificationSettings.forbidWord}
+                    onChange={(e) => updateNotificationSettings('forbidWord', e.target.checked)}
+                    className="rounded"
+                  />
+                  <label htmlFor="forbidWord" className="text-sm text-neutral-300">금칙어 감지 시 푸시 알림</label>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="checkbox" 
+                    id="viewerSpike"
+                    checked={notificationSettings.viewerSpike}
+                    onChange={(e) => updateNotificationSettings('viewerSpike', e.target.checked)}
+                    className="rounded"
+                  />
+                  <label htmlFor="viewerSpike" className="text-sm text-neutral-300">시청자 수 급증 시 푸시 알림</label>
+                </div>
+                
+                {notificationSettings.viewerSpike && (
+                  <div className="flex items-center gap-2 ml-6">
+                    <label className="text-xs text-neutral-400">급증 기준:</label>
+                    <input 
+                      type="number" 
+                      value={notificationSettings.viewerSpikeThreshold}
+                      onChange={(e) => updateNotificationSettings('viewerSpikeThreshold', parseInt(e.target.value) || 1000)}
+                      className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs"
+                      min="100"
+                    />
+                    <span className="text-xs text-neutral-400">명 이상 증가 시</span>
+                  </div>
+                )}
+                
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="checkbox" 
+                    id="liveStart"
+                    checked={notificationSettings.liveStart}
+                    onChange={(e) => updateNotificationSettings('liveStart', e.target.checked)}
+                    className="rounded"
+                  />
+                  <label htmlFor="liveStart" className="text-sm text-neutral-300">라이브 방송 시작 시 푸시 알림</label>
+                </div>
+              </div>
+            )}
           </div>
         </section>
 
@@ -302,8 +468,12 @@ export default function YoutubePage() {
               </g>
             </svg>
             <div className="text-xs text-neutral-400 mt-1">
-              10초 간격 샘플 · 최근 {points.length}개 · 좌→우 시간 흐름 · y축 최대 {maxY}
-            </div>
+            10초 간격 샘플 · 최근 {points.length}개 · 좌→우 시간 흐름 · y축 최대 {maxY}
+          </div>
+          <div className="text-xs text-neutral-400 mt-2 flex flex-wrap gap-4">
+            <span>캐시: 시청자 {cacheStats.viewers}개 | 라이브챗 {cacheStats.livechat}개</span>
+            <span>할당량 절약: API 호출 전 캐시 확인 및 웹 스크래핑 대체</span>
+          </div>
           </div>
         </section>
 
@@ -356,9 +526,26 @@ export default function YoutubePage() {
         <section className="glass p-4 md:p-6">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold">금지어 알림</h2>
-            <button onClick={triggerTestAlert} className="px-3 py-1.5 rounded bg-red-700/70 hover:bg-red-600/70 text-white text-sm border border-white/10">
-              테스트 알림
-            </button>
+            <div className="flex gap-2">
+              <button onClick={triggerTestAlert} className="px-3 py-1.5 rounded bg-red-700/70 hover:bg-red-600/70 text-white text-sm border border-white/10">
+                테스트 알림
+              </button>
+              {notificationPermission === 'granted' && (
+                <button 
+                  onClick={async () => {
+                    try {
+                      await showForbidWordAlert('TEST', '테스트봇', '이것은 푸시 알림 테스트입니다.');
+                      console.log('[Push Notification] 금칙어 푸시 알림 테스트 완료');
+                    } catch (error) {
+                      console.error('[Push Notification] 푸시 알림 테스트 실패:', error);
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded bg-blue-700/70 hover:bg-blue-600/70 text-white text-sm border border-white/10"
+                >
+                  푸시 테스트
+                </button>
+              )}
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-[1fr_280px] gap-3">
             <div className="space-y-2">
