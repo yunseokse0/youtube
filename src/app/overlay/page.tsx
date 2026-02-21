@@ -605,7 +605,7 @@ function OverlayContent({ state: s, ready, connected, members, donors, missions,
             )}
             {showMission && ready && (
               <div className={`${getElementPosition(missionPosition, 'tl').className}`} style={getElementPosition(missionPosition, 'tl').style}>
-                <ElectronicMissionBoard missions={missions} fontSize={memberSize} missionAnchor={overlaySettings.missionAnchor} />
+                <ElectronicMissionBoard missions={missions} fontSize={memberSize} missionAnchor={missionAnchor} />
               </div>
             )}
             {showMembers && ready && (
@@ -683,7 +683,7 @@ function OverlayContent({ state: s, ready, connected, members, donors, missions,
       {/* 미션 모드일 때는 전광판만 표시 */}
       {overlayMode === 'mission' && ready && (
         <div className="fixed inset-0">
-          <ElectronicMissionBoard missions={missions} fontSize={memberSize} missionAnchor={overlaySettings.missionAnchor} />
+          <ElectronicMissionBoard missions={missions} fontSize={memberSize} missionAnchor={missionAnchor} />
         </div>
       )}
       
@@ -737,7 +737,7 @@ function OverlayContent({ state: s, ready, connected, members, donors, missions,
           
           {/* 우측: 전광판 */}
           <div className="flex-1 relative flex items-center justify-center min-h-[50vh] md:min-h-screen">
-            <ElectronicMissionBoard missions={missions} fontSize={memberSize} missionAnchor={overlaySettings.missionAnchor} />
+            <ElectronicMissionBoard missions={missions} fontSize={memberSize} missionAnchor={missionAnchor} />
           </div>
         </div>
       )}
