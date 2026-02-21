@@ -6,6 +6,7 @@ import { useSSEConnection } from "@/lib/sse-client";
 import { createModuleLogger } from "@/lib/logger";
 import MissionMenu from "@/components/MissionMenu";
 import MissionTicker from "@/components/MissionTicker";
+import ElectronicMissionBoard from "@/components/ElectronicMissionBoard";
 
 const logger = createModuleLogger('Overlay');
 
@@ -375,7 +376,7 @@ function Timer({ elapsed, theme, fontSize }: { elapsed: string | null; theme: ty
   );
 }
 
-function OverlayInner() {
+function OverlayInner({ overlayMode }: { overlayMode: OverlayMode }) {
   const { state: s, ready, connected } = useRemoteState();
   const members = useMemo(() => (ready && s ? s.members : []), [ready, s]);
   const donors = useMemo(() => (ready && s ? s.donors : []), [ready, s]);
@@ -389,13 +390,14 @@ function OverlayInner() {
     <Suspense fallback={<div>Loading...</div>}>
       <OverlayContentWrapper 
         state={s} ready={ready} connected={connected} members={members} donors={donors} 
-        missions={missions} sum={sum} toonSum={toonSum} rounded={rounded} displaySum={displaySum} 
+        missions={missions} sum={sum} toonSum={toonSum} rounded={rounded} displaySum={displaySum}
+        overlayMode={overlayMode}
       />
     </Suspense>
   );
 }
 
-function OverlayContentWrapper({ state: s, ready, connected, members, donors, missions, sum, toonSum, rounded, displaySum }: {
+function OverlayContentWrapper({ state: s, ready, connected, members, donors, missions, sum, toonSum, rounded, displaySum, overlayMode }: {
   state: AppState | null;
   ready: boolean;
   connected: boolean;
@@ -479,11 +481,12 @@ function OverlayContentWrapper({ state: s, ready, connected, members, donors, mi
       missionAnchor={missionAnchor}
       memberPosition={memberPosition} totalPosition={totalPosition} goalPosition={goalPosition}
       tickerPosition={tickerPosition} timerPosition={timerPosition} missionPosition={missionPosition}
+      overlayMode={overlayMode}
     />
   );
 }
 
-function OverlayContent({ state: s, ready, connected, members, donors, missions, sum, toonSum, rounded, displaySum, scale, memberSize, totalSize, dense, anchor, sumAnchor, sumFree, sumX, sumY, themeId, showMembers, showTotal, showGoal, goal, goalLabel, goalWidth, goalAnchor, showTicker, showTimer, timerStart, timerAnchor, showMission, missionAnchor, memberPosition, totalPosition, goalPosition, tickerPosition, timerPosition, missionPosition }: {
+function OverlayContent({ state: s, ready, connected, members, donors, missions, sum, toonSum, rounded, displaySum, scale, memberSize, totalSize, dense, anchor, sumAnchor, sumFree, sumX, sumY, themeId, showMembers, showTotal, showGoal, goal, goalLabel, goalWidth, goalAnchor, showTicker, showTimer, timerStart, timerAnchor, showMission, missionAnchor, memberPosition, totalPosition, goalPosition, tickerPosition, timerPosition, missionPosition, overlayMode }: {
   state: AppState | null;
   ready: boolean;
   connected: boolean;
@@ -580,83 +583,95 @@ function OverlayContent({ state: s, ready, connected, members, donors, missions,
   if (themeId === "excel") {
     return (
       <main className="transparent-bg min-h-screen no-select" style={{ zoom: scale }}>
-        {showTicker && ready && (
-          <div className={`${getElementPosition(tickerPosition, 'tc').className}`} style={getElementPosition(tickerPosition, 'tc').style}>
-            <DonorTicker donors={donors} theme={theme} fontSize={memberSize} />
+        {/* 미션 모드일 때는 전광판만 표시 */}
+        {overlayMode === 'mission' && ready && (
+          <div className="fixed inset-0 flex items-center justify-center">
+            <ElectronicMissionBoard missions={missions} fontSize={memberSize} />
           </div>
         )}
-        {showTimer && timerStart && ready && (
-          <div className={`${getElementPosition(timerPosition, 'tr').className}`} style={getElementPosition(timerPosition, 'tr').style}>
-            <Timer elapsed={elapsed} theme={theme} fontSize={memberSize} />
-          </div>
-        )}
-        {showMission && ready && (
-          <div className={`${getElementPosition(missionPosition, 'tl').className}`} style={getElementPosition(missionPosition, 'tl').style}>
-            <MissionTicker missions={missions} />
-          </div>
-        )}
-        {showMembers && ready && (
-          <div className={`${getElementPosition(memberPosition, anchor).className}`} style={getElementPosition(memberPosition, anchor).style}>
-            <table className={theme.tableCls} style={{ fontSize: memberFontSize, borderSpacing: 0 }}>
-              <thead>
-                <tr>
-                  <td className={theme.headerCls}>이름</td>
-                  <td className={theme.headerCls}>계좌</td>
-                  <td className={theme.headerCls}>투네</td>
-                </tr>
-              </thead>
-              <tbody>
-                {(() => {
-                  // 총합을 제외한 멤버들만 필터링하고 최대값 계산
-                  const filteredMembers = members.filter(m => m.account > 0 || m.toon > 0);
-                  const maxAccount = Math.max(...filteredMembers.map(m => m.account), 1);
-                  const maxToon = Math.max(...filteredMembers.map(m => m.toon), 1);
-                  
-                  return filteredMembers.map((m: Member) => {
-                    // 총 기부금 기준 상대값 계산 (계좌 + 투네)
-                    const totalAmount = m.account + m.toon;
-                    const maxTotal = maxAccount + maxToon;
-                    const totalPercent = (totalAmount / maxTotal) * 100;
-                    
-                    return (
-                      <tr 
-                        key={m.id} 
-                        className="relative group" 
-                        style={{ 
-                          position: 'relative',
-                          background: `linear-gradient(to right, #3b82f6 ${totalPercent}%, transparent ${totalPercent}%)`
-                        }}
-                      >
-                        <td className={`${theme.rowCls} ${theme.nameCls} relative z-10`}>
-                          {m.name}
-                        </td>
-                        <td className={`${theme.rowCls} ${theme.accountCls} text-right relative z-10`}>
-                          {formatManThousand(m.account)}
-                        </td>
-                        <td className={`${theme.rowCls} ${theme.toonCls} text-right relative z-10`}>
-                          {formatManThousand(m.toon)}
-                        </td>
-                      </tr>
-                    );
-                  });
-                })()}
-              </tbody>
-            </table>
-            {/* 총합은 별도로 표시 (멤버 목록 밖) */}
-            {showTotal && ready && (
-              <div className={`mt-2 ${getElementPosition(undefined, sumAnchor).className}`} style={getElementPosition(undefined, sumAnchor).style}>
-                <table className={theme.tableCls} style={{ fontSize: totalSize, borderSpacing: 0 }}>
-                  <tbody>
-                    <tr>
-                      <td className={theme.totalWrapCls}>총합</td>
-                      <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(sum)}</td>
-                      <td className={`${theme.rowCls} ${theme.toonCls} text-right`}></td>
-                    </tr>
-                  </tbody>
-                </table>
+        
+        {/* 표준 모드일 때는 기존 Excel UI 표시 */}
+        {overlayMode === 'standard' && (
+          <>
+            {showTicker && ready && (
+              <div className={`${getElementPosition(tickerPosition, 'tc').className}`} style={getElementPosition(tickerPosition, 'tc').style}>
+                <DonorTicker donors={donors} theme={theme} fontSize={memberSize} />
               </div>
             )}
-          </div>
+            {showTimer && timerStart && ready && (
+              <div className={`${getElementPosition(timerPosition, 'tr').className}`} style={getElementPosition(timerPosition, 'tr').style}>
+                <Timer elapsed={elapsed} theme={theme} fontSize={memberSize} />
+              </div>
+            )}
+            {showMission && ready && (
+              <div className={`${getElementPosition(missionPosition, 'tl').className}`} style={getElementPosition(missionPosition, 'tl').style}>
+                <ElectronicMissionBoard missions={missions} fontSize={memberSize} missionAnchor={overlaySettings.missionAnchor} />
+              </div>
+            )}
+            {showMembers && ready && (
+              <div className={`${getElementPosition(memberPosition, anchor).className}`} style={getElementPosition(memberPosition, anchor).style}>
+                <table className={theme.tableCls} style={{ fontSize: memberFontSize, borderSpacing: 0 }}>
+                  <thead>
+                    <tr>
+                      <td className={theme.headerCls}>이름</td>
+                      <td className={theme.headerCls}>계좌</td>
+                      <td className={theme.headerCls}>투네</td>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(() => {
+                      // 총합을 제외한 멤버들만 필터링하고 최대값 계산
+                      const filteredMembers = members.filter(m => m.account > 0 || m.toon > 0);
+                      const maxAccount = Math.max(...filteredMembers.map(m => m.account), 1);
+                      const maxToon = Math.max(...filteredMembers.map(m => m.toon), 1);
+                      
+                      return filteredMembers.map((m: Member) => {
+                        // 총 기부금 기준 상대값 계산 (계좌 + 투네)
+                        const totalAmount = m.account + m.toon;
+                        const maxTotal = maxAccount + maxToon;
+                        const totalPercent = (totalAmount / maxTotal) * 100;
+                        
+                        return (
+                          <tr 
+                            key={m.id} 
+                            className="relative group" 
+                            style={{ 
+                              position: 'relative',
+                              background: `linear-gradient(to right, #3b82f6 ${totalPercent}%, transparent ${totalPercent}%)`
+                            }}
+                          >
+                            <td className={`${theme.rowCls} ${theme.nameCls} relative z-10`}>
+                              {m.name}
+                            </td>
+                            <td className={`${theme.rowCls} ${theme.accountCls} text-right relative z-10`}>
+                              {formatManThousand(m.account)}
+                            </td>
+                            <td className={`${theme.rowCls} ${theme.toonCls} text-right relative z-10`}>
+                              {formatManThousand(m.toon)}
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
+                  </tbody>
+                </table>
+                {/* 총합은 별도로 표시 (멤버 목록 밖) */}
+                {showTotal && ready && (
+                  <div className={`mt-2 ${getElementPosition(undefined, sumAnchor).className}`} style={getElementPosition(undefined, sumAnchor).style}>
+                    <table className={theme.tableCls} style={{ fontSize: totalSize, borderSpacing: 0 }}>
+                      <tbody>
+                        <tr>
+                          <td className={theme.totalWrapCls}>총합</td>
+                          <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(sum)}</td>
+                          <td className={`${theme.rowCls} ${theme.toonCls} text-right`}></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         )}
       </main>
     );
@@ -665,56 +680,190 @@ function OverlayContent({ state: s, ready, connected, members, donors, missions,
   // 기본 테마 (simple) 또는 다른 테마들
   return (
     <main className="transparent-bg min-h-screen no-select" style={{ zoom: scale }}>
-      {showTicker && ready && (
-        <div className={`${getElementPosition(tickerPosition, 'tc').className}`} style={getElementPosition(tickerPosition, 'tc').style}>
-          <DonorTicker donors={donors} theme={theme} fontSize={memberSize} />
+      {/* 미션 모드일 때는 전광판만 표시 */}
+      {overlayMode === 'mission' && ready && (
+        <div className="fixed inset-0">
+          <ElectronicMissionBoard missions={missions} fontSize={memberSize} missionAnchor={overlaySettings.missionAnchor} />
         </div>
       )}
-      {showTimer && timerStart && ready && (
-        <div className={`${getElementPosition(timerPosition, 'tr').className}`} style={getElementPosition(timerPosition, 'tr').style}>
-          <Timer elapsed={elapsed} theme={theme} fontSize={memberSize} />
+      
+      {/* 동시 표시 모드일 때는 분할 화면으로 표시 */}
+      {overlayMode === 'both' && ready && (
+        <div className="fixed inset-0 flex flex-col md:flex-row">
+          {/* 좌측: 기존 UI (멤버 목록 등) */}
+          <div className="flex-1 relative overflow-hidden min-h-[50vh] md:min-h-screen">
+            {showMembers && (
+              <div className={`${getElementPosition(memberPosition, anchor).className}`} style={getElementPosition(memberPosition, anchor).style}>
+                <table className={theme.tableCls} style={{ fontSize: memberFontSize, borderSpacing: 0 }}>
+                  <thead>
+                    <tr>
+                      <td className={theme.headerCls}>이름</td>
+                      <td className={theme.headerCls}>계좌</td>
+                      <td className={theme.headerCls}>투네</td>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {members
+                      .filter(m => m.account > 0 || m.toon > 0)
+                      .map((m: Member) => (
+                        <tr key={m.id}>
+                          <td className={`${theme.rowCls} ${theme.nameCls}`}>{m.name}</td>
+                          <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(m.account)}</td>
+                          <td className={`${theme.rowCls} ${theme.toonCls} text-right`}>{formatManThousand(m.toon)}</td>
+                        </tr>
+                      ))}
+                    {showTotal && (
+                      <tr>
+                        <td className={theme.totalWrapCls}>총합</td>
+                        <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(sum)}</td>
+                        <td className={`${theme.rowCls} ${theme.toonCls} text-right`}></td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {showTicker && (
+              <div className={`${getElementPosition(tickerPosition, 'tc').className}`} style={getElementPosition(tickerPosition, 'tc').style}>
+                <DonorTicker donors={donors} theme={theme} fontSize={memberSize} />
+              </div>
+            )}
+            {showTimer && timerStart && (
+              <div className={`${getElementPosition(timerPosition, 'tr').className}`} style={getElementPosition(timerPosition, 'tr').style}>
+                <Timer elapsed={elapsed} theme={theme} fontSize={memberSize} />
+              </div>
+            )}
+          </div>
+          
+          {/* 우측: 전광판 */}
+          <div className="flex-1 relative flex items-center justify-center min-h-[50vh] md:min-h-screen">
+            <ElectronicMissionBoard missions={missions} fontSize={memberSize} missionAnchor={overlaySettings.missionAnchor} />
+          </div>
         </div>
       )}
-      {showMission && ready && (
-        <div className={`${getElementPosition(missionPosition, 'tl').className}`} style={getElementPosition(missionPosition, 'tl').style}>
-          <MissionTicker missions={missions} />
-        </div>
-      )}
-      {showMembers && ready && (
-        <div className={`${getElementPosition(memberPosition, anchor).className}`} style={getElementPosition(memberPosition, anchor).style}>
-          <table className={theme.tableCls} style={{ fontSize: memberFontSize, borderSpacing: 0 }}>
-            <thead>
-              <tr>
-                <td className={theme.headerCls}>이름</td>
-                <td className={theme.headerCls}>계좌</td>
-                <td className={theme.headerCls}>투네</td>
-              </tr>
-            </thead>
-            <tbody>
-              {members
-                .filter(m => m.account > 0 || m.toon > 0)
-                .map((m: Member) => (
-                  <tr key={m.id}>
-                    <td className={`${theme.rowCls} ${theme.nameCls}`}>{m.name}</td>
-                    <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(m.account)}</td>
-                    <td className={`${theme.rowCls} ${theme.toonCls} text-right`}>{formatManThousand(m.toon)}</td>
+      
+      {/* 표준 모드일 때는 기존 UI 표시 */}
+      {overlayMode === 'standard' && (
+        <>
+          {showTicker && ready && (
+            <div className={`${getElementPosition(tickerPosition, 'tc').className}`} style={getElementPosition(tickerPosition, 'tc').style}>
+              <DonorTicker donors={donors} theme={theme} fontSize={memberSize} />
+            </div>
+          )}
+          {showTimer && timerStart && ready && (
+            <div className={`${getElementPosition(timerPosition, 'tr').className}`} style={getElementPosition(timerPosition, 'tr').style}>
+              <Timer elapsed={elapsed} theme={theme} fontSize={memberSize} />
+            </div>
+          )}
+          {showMission && ready && (
+            <div className={`${getElementPosition(missionPosition, 'tl').className}`} style={getElementPosition(missionPosition, 'tl').style}>
+              <ElectronicMissionBoard missions={missions} fontSize={memberSize} />
+            </div>
+          )}
+          {showMembers && ready && (
+            <div className={`${getElementPosition(memberPosition, anchor).className}`} style={getElementPosition(memberPosition, anchor).style}>
+              <table className={theme.tableCls} style={{ fontSize: memberFontSize, borderSpacing: 0 }}>
+                <thead>
+                  <tr>
+                    <td className={theme.headerCls}>이름</td>
+                    <td className={theme.headerCls}>계좌</td>
+                    <td className={theme.headerCls}>투네</td>
                   </tr>
-                ))}
-              {showTotal && ready && (
-                <tr>
-                  <td className={theme.totalWrapCls}>총합</td>
-                  <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(sum)}</td>
-                  <td className={`${theme.rowCls} ${theme.toonCls} text-right`}></td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody>
+                  {members
+                    .filter(m => m.account > 0 || m.toon > 0)
+                    .map((m: Member) => (
+                      <tr key={m.id}>
+                        <td className={`${theme.rowCls} ${theme.nameCls}`}>{m.name}</td>
+                        <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(m.account)}</td>
+                        <td className={`${theme.rowCls} ${theme.toonCls} text-right`}>{formatManThousand(m.toon)}</td>
+                      </tr>
+                    ))}
+                  {showTotal && ready && (
+                    <tr>
+                      <td className={theme.totalWrapCls}>총합</td>
+                      <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(sum)}</td>
+                      <td className={`${theme.rowCls} ${theme.toonCls} text-right`}></td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
     </main>
   );
 }
 
+type OverlayMode = 'standard' | 'mission' | 'both';
+
+function OverlayModeController({ children }: { children: React.ReactNode | ((props: { overlayMode: OverlayMode }) => React.ReactNode) }) {
+  const [overlayMode, setOverlayMode] = useState<OverlayMode>('standard');
+  const [fadeClass, setFadeClass] = useState('opacity-100');
+  const searchParams = useSearchParams();
+
+  // URL 파라미터로 초기 모드 설정
+  useEffect(() => {
+    const mode = searchParams.get('mode') as OverlayMode;
+    if (mode && ['standard', 'mission'].includes(mode)) {
+      setOverlayMode(mode);
+    }
+  }, [searchParams]);
+
+  // 키보드 단축키로 전환
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.key === '1') {
+        switchMode('standard');
+      } else if (e.key === '2') {
+        switchMode('mission');
+      } else if (e.key === '3') {
+        switchMode('both');
+      } else if (e.key === ' ') {
+        e.preventDefault();
+        // 순환: standard -> mission -> both -> standard
+        if (overlayMode === 'standard') switchMode('mission');
+        else if (overlayMode === 'mission') switchMode('both');
+        else switchMode('standard');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [overlayMode]);
+
+  const switchMode = (newMode: OverlayMode) => {
+    setFadeClass('opacity-0');
+    setTimeout(() => {
+      setOverlayMode(newMode);
+      setFadeClass('opacity-100');
+    }, 150);
+  };
+
+  return (
+    <div className={`min-h-screen transition-opacity duration-300 ${fadeClass}`}>
+      {/* 모드 표시기 */}
+      <div className="fixed top-4 right-4 z-50 bg-black bg-opacity-70 text-white px-3 py-2 rounded text-sm">
+        모드: {overlayMode === 'standard' ? '표준' : overlayMode === 'mission' ? '미션' : '동시'} 
+        <span className="text-xs text-gray-300 ml-2">[1:표준, 2:미션, 3:동시, Space:전환]</span>
+      </div>
+      
+      {/* 현재 모드 표시 */}
+      <div className="fixed bottom-4 left-4 z-50 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-xs">
+        현재: {overlayMode === 'standard' ? 'Standard' : overlayMode === 'mission' ? 'Mission' : 'Both'}
+      </div>
+      
+      {typeof children === 'function' ? children({ overlayMode }) : children}
+    </div>
+  );
+}
+
 export default function OverlayPage() {
-  return <OverlayInner />;
+  return (
+    <OverlayModeController>
+      {({ overlayMode }) => <OverlayInner overlayMode={overlayMode} />}
+    </OverlayModeController>
+  );
 }

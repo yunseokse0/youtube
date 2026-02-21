@@ -1,299 +1,279 @@
-import React, { useEffect, useState } from "react";
-import { MissionItem } from "@/lib/state";
+'use client';
 
-interface Theme {
-  name: string;
-  frameBg: string;
-  panelBg: string;
-  borderColor: string;
-  textColor: string;
-  ledColor: string;
-  statusColor: string;
-  sideLedColor: string;
+import { useState, useEffect } from 'react';
+import { MissionItem } from '@/lib/state';
+
+interface ElectronicMissionBoardProps {
+  missions: MissionItem[];
+  fontSize?: number;
+  missionAnchor?: { x: number; y: number };
 }
 
-const themes: Record<string, Theme> = {
-  neon: {
-    name: 'Neon Green',
-    frameBg: 'linear-gradient(to bottom, #374151, #1f2937)',
-    panelBg: '#000000',
-    borderColor: '#22c55e',
-    textColor: '#22c55e',
-    ledColor: '#15803d',
-    statusColor: '#16a34a',
-    sideLedColor: '#ef4444'
-  },
+interface Theme {
+  frameBg: string;
+  panelBg: string;
+  textColor: string;
+  borderColor: string;
+  ledColor: string;
+  sideLedColor: string;
+  statusColor: string;
+}
+
+const themes: { [key: string]: Theme } = {
   blue: {
-    name: 'Neon Blue',
-    frameBg: 'linear-gradient(to bottom, #1e3a8a, #1e40af)',
-    panelBg: '#000000',
-    borderColor: '#3b82f6',
-    textColor: '#60a5fa',
-    ledColor: '#2563eb',
-    statusColor: '#3b82f6',
-    sideLedColor: '#f59e0b'
-  },
-  purple: {
-    name: 'Neon Purple',
-    frameBg: 'linear-gradient(to bottom, #581c87, #6b21a8)',
-    panelBg: '#000000',
-    borderColor: '#a855f7',
-    textColor: '#c084fc',
-    ledColor: '#7c3aed',
-    statusColor: '#9333ea',
-    sideLedColor: '#fbbf24'
+    frameBg: 'linear-gradient(135deg, #1e3c72, #2a5298)',
+    panelBg: '#0a0a0a',
+    textColor: '#00ff88',
+    borderColor: '#00ff88',
+    ledColor: '#00ff88',
+    sideLedColor: '#00ff88',
+    statusColor: '#00ff88'
   },
   red: {
-    name: 'Neon Red',
-    frameBg: 'linear-gradient(to bottom, #7f1d1d, #991b1b)',
-    panelBg: '#000000',
-    borderColor: '#ef4444',
-    textColor: '#f87171',
-    ledColor: '#dc2626',
-    statusColor: '#ef4444',
-    sideLedColor: '#22c55e'
+    frameBg: 'linear-gradient(135deg, #8b0000, #dc143c)',
+    panelBg: '#0a0a0a',
+    textColor: '#ff4444',
+    borderColor: '#ff4444',
+    ledColor: '#ff4444',
+    sideLedColor: '#ff4444',
+    statusColor: '#ff4444'
   },
-  gold: {
-    name: 'Gold',
-    frameBg: 'linear-gradient(to bottom, #92400e, #b45309)',
-    panelBg: '#000000',
-    borderColor: '#f59e0b',
-    textColor: '#fbbf24',
-    ledColor: '#d97706',
-    statusColor: '#f59e0b',
-    sideLedColor: '#10b981'
-  },
-  matrix: {
-    name: 'Matrix',
-    frameBg: 'linear-gradient(to bottom, #052e16, #064e3b)',
-    panelBg: '#000000',
-    borderColor: '#10b981',
-    textColor: '#34d399',
-    ledColor: '#059669',
-    statusColor: '#10b981',
-    sideLedColor: '#8b5cf6'
+  green: {
+    frameBg: 'linear-gradient(135deg, #006400, #228b22)',
+    panelBg: '#0a0a0a',
+    textColor: '#44ff44',
+    borderColor: '#44ff44',
+    ledColor: '#44ff44',
+    sideLedColor: '#44ff44',
+    statusColor: '#44ff44'
   }
 };
 
-const ElectronicMissionBoard = ({ missions, fontSize = 16, theme = 'neon' }: { 
-  missions: MissionItem[]; 
-  fontSize?: number;
-  theme?: string;
-}) => {
-  const [displayText, setDisplayText] = useState("");
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [position, setPosition] = useState(0);
-
-  const currentTheme = themes[theme] || themes.neon;
-
+export default function ElectronicMissionBoard({ missions, fontSize = 16, missionAnchor }: ElectronicMissionBoardProps) {
+  const [position, setPosition] = useState(400);
+  const [currentTheme] = useState('blue');
+  
+  const theme = themes[currentTheme];
+  
+  // 미션 텍스트 생성
+  const missionText = missions.length > 0 
+    ? missions.map(mission => 
+        mission.isHot ? `🔥 ${mission.title} - ${mission.price}원 🔥` : `${mission.title} - ${mission.price}원`
+      ).join('   |   ')
+    : '현재 진행중인 미션이 없습니다';
+  
+  const displayText = `${missionText}   |   ${missionText}`;
+  
+  // 흐르는 애니메이션
   useEffect(() => {
-    if (!missions.length) return;
-
-    const formatMissionText = (mission: MissionItem) => {
-      const hotIcon = mission.isHot ? "🔥" : "";
-      return `${hotIcon} ${mission.title} ${mission.price}`;
-    };
-
-    const animateText = () => {
-      if (missions.length === 0) return;
-
-      const currentMission = missions[currentIndex % missions.length];
-      const fullText = formatMissionText(currentMission);
-      
-      setIsAnimating(true);
-      setPosition(window.innerWidth); // 우측에서 시작
-      
-      // 흐르는 애니메이션
-      const flowInterval = setInterval(() => {
-        setPosition(prev => {
-          const newPos = prev - 2; // 좌측으로 이동
-          if (newPos < -400) { // 화면을 완전히 벗어나면
-            clearInterval(flowInterval);
-            setIsAnimating(false);
-            setTimeout(() => {
-              setCurrentIndex(prev => prev + 1);
-            }, 500);
-            return newPos;
-          }
-          return newPos;
-        });
-      }, 30);
-    };
-
-    const timeout = setTimeout(animateText, 500);
-    return () => clearTimeout(timeout);
-  }, [currentIndex, missions]);
-
-  if (!missions.length) return null;
-
+    const interval = setInterval(() => {
+      setPosition(prev => {
+        if (prev < -800) {
+          return 400;
+        }
+        return prev - 2;
+      });
+    }, 50);
+    
+    return () => clearInterval(interval);
+  }, []);
+  
   return (
     <div 
       style={{ 
         fontSize,
-        position: 'fixed',
-        top: '16px',
-        left: '0',
+        position: 'relative',
         width: '100%',
+        height: '100%',
         zIndex: 50,
         overflow: 'hidden',
         pointerEvents: 'none'
       }}
     >
-      {/* 흐르는 텍스트 */}
+      {/* 전광판 프레임 - 설정된 위치에 고정 */}
       <div style={{
         position: 'absolute',
-        left: `${position}px`,
-        whiteSpace: 'nowrap',
-        display: 'flex',
-        alignItems: 'center'
+        left: missionAnchor ? `${missionAnchor.x}%` : '50%',
+        top: missionAnchor ? `${missionAnchor.y}%` : '50%',
+        transform: 'translate(-50%, -50%)',
+        background: theme.frameBg,
+        padding: '8px',
+        borderRadius: '8px',
+        boxShadow: '0 8px 20px rgba(0,0,0,0.7)',
+        border: `2px solid ${theme.borderColor}`,
+        minWidth: '400px',
+        maxWidth: '600px'
       }}>
-        {/* 전광판 프레임 - 크기 축소 */}
+        {/* 내부 LED 패널 */}
         <div style={{
-          background: currentTheme.frameBg,
-          padding: '4px',
+          backgroundColor: theme.panelBg,
           borderRadius: '6px',
-          boxShadow: '0 6px 15px rgba(0,0,0,0.5)',
-          border: `1px solid ${currentTheme.borderColor}`,
-          position: 'relative'
+          padding: '16px',
+          minWidth: '350px',
+          minHeight: '120px',
+          border: `2px solid ${theme.borderColor}`,
+          position: 'relative',
+          overflow: 'hidden'
         }}>
-          {/* 내부 LED 패널 */}
+          {/* LED 효과 */}
           <div style={{
-            backgroundColor: currentTheme.panelBg,
-            borderRadius: '3px',
-            padding: '8px',
-            minWidth: '250px',
-            border: `2px solid ${currentTheme.borderColor}`,
+            position: 'absolute',
+            inset: 0,
+            background: `linear-gradient(to right, transparent, ${theme.textColor}20, transparent)`,
+            animation: 'pulse 2s infinite'
+          }} />
+          
+          {/* 상단 라벨 */}
+          <div style={{ marginBottom: '8px', textAlign: 'center' }}>
+            <span style={{
+              color: theme.textColor,
+              fontWeight: 'bold',
+              fontSize: '14px',
+              letterSpacing: '0.2em',
+              animation: 'pulse 2s infinite',
+              textShadow: `0 0 8px ${theme.textColor}80`
+            }}>
+              ■ MISSION BOARD ■
+            </span>
+          </div>
+          
+          {/* 흐르는 미션 텍스트 컨테이너 */}
+          <div style={{
             position: 'relative',
-            overflow: 'hidden'
+            height: '80px',
+            overflow: 'hidden',
+            marginBottom: '8px'
           }}>
-            {/* LED 효과 */}
+            {/* 흐르는 텍스트 */}
             <div style={{
               position: 'absolute',
-              inset: 0,
-              background: `linear-gradient(to right, transparent, ${currentTheme.textColor}20, transparent)`,
-              animation: 'pulse 2s infinite'
-            }} />
-            
-            {/* 상단 라벨 - 글자 크기 축소 */}
-            <div style={{ marginBottom: '4px' }}>
-              <span style={{
-                color: currentTheme.textColor,
-                fontWeight: 'bold',
-                fontSize: '10px',
-                letterSpacing: '0.1em',
-                animation: 'pulse 2s infinite'
-              }}>
-                ■ MISSION BOARD ■
-              </span>
-            </div>
-            
-            {/* 메인 디스플레이 - 크기 축소 */}
-            <div style={{
-              backgroundColor: currentTheme.panelBg,
-              border: `1px solid ${currentTheme.textColor}`,
-              borderRadius: '3px',
-              padding: '8px',
-              minHeight: '40px',
+              left: `${position}px`,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              whiteSpace: 'nowrap',
               display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              position: 'relative'
+              alignItems: 'center'
             }}>
-              {/* LED 그리드 효과 */}
+              {/* 메인 디스플레이 */}
               <div style={{
-                position: 'absolute',
-                inset: 0,
-                opacity: 0.2
+                backgroundColor: theme.panelBg,
+                border: `2px solid ${theme.textColor}`,
+                borderRadius: '6px',
+                padding: '16px',
+                minHeight: '60px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                position: 'relative'
               }}>
-                {Array.from({ length: 16 }).map((_, i) => (
-                  <div key={i} style={{
-                    position: 'absolute',
-                    width: '25%',
-                    height: '25%',
-                    border: `1px solid ${currentTheme.ledColor}`,
-                    left: `${(i % 4) * 25}%`,
-                    top: `${Math.floor(i / 4) * 25}%`
-                  }} />
-                ))}
-              </div>
-              
-              {/* 텍스트 디스플레이 */}
-              <div style={{ position: 'relative', zIndex: 10 }}>
-                <span style={{
-                  fontFamily: 'monospace',
-                  fontWeight: 'bold',
-                  color: currentTheme.textColor,
-                  letterSpacing: '0.1em',
-                  textShadow: `0 0 8px ${currentTheme.textColor}80, 0 0 16px ${currentTheme.textColor}40`,
-                  filter: 'brightness(1.2)',
-                  fontSize: '14px'
+                {/* LED 그리드 효과 */}
+                <div style={{
+                  position: 'absolute',
+                  inset: 0,
+                  opacity: 0.2
                 }}>
-                  {displayText}
-                  {/* 커서 효과 */}
-                  <span style={{ marginLeft: '2px' }}>█</span>
-                </span>
-              </div>
-            </div>
-            
-            {/* 하단 상태 표시줄 - 크기 축소 */}
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginTop: '4px',
-              fontSize: '8px'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <span style={{
-                  color: currentTheme.statusColor,
-                  animation: 'pulse 2s infinite'
-                }}>●</span>
-                <span style={{
-                  color: currentTheme.textColor,
-                  fontFamily: 'monospace',
-                  fontWeight: 'bold'
-                }}>ACTIVE</span>
-              </div>
-              <div style={{ color: currentTheme.statusColor }}>
-                {currentIndex + 1} / {missions.length}
+                  {Array.from({ length: 16 }).map((_, i) => (
+                    <div key={i} style={{
+                      position: 'absolute',
+                      width: '25%',
+                      height: '25%',
+                      border: `1px solid ${theme.ledColor}`,
+                      left: `${(i % 4) * 25}%`,
+                      top: `${Math.floor(i / 4) * 25}%`
+                    }} />
+                  ))}
+                </div>
+                
+                {/* 텍스트 디스플레이 */}
+                <div style={{ position: 'relative', zIndex: 10 }}>
+                  <span style={{
+                    fontFamily: 'monospace',
+                    fontWeight: 'bold',
+                    color: theme.textColor,
+                    letterSpacing: '0.1em',
+                    textShadow: `0 0 8px ${theme.textColor}80, 0 0 16px ${theme.textColor}40`,
+                    filter: 'brightness(1.2)',
+                    fontSize: '24px'
+                  }}>
+                    {displayText}
+                    {/* 커서 효과 */}
+                    <span style={{ marginLeft: '4px' }}>█</span>
+                  </span>
+                </div>
               </div>
             </div>
           </div>
           
-          {/* 사이드 LED 효과 - 크기 축소 */}
+          {/* 하단 상태 표시줄 */}
           <div style={{
-            position: 'absolute',
-            left: '-6px',
-            top: '50%',
-            transform: 'translateY(-50%)'
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            fontSize: '12px'
           }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{
+                color: theme.statusColor,
+                animation: 'pulse 2s infinite'
+              }}>●</span>
+              <span style={{
+                color: theme.textColor,
+                fontFamily: 'monospace',
+                fontSize: '10px'
+              }}>
+                SYSTEM ONLINE
+              </span>
+            </div>
             <div style={{
-              width: '3px',
-              height: '24px',
-              backgroundColor: currentTheme.sideLedColor,
-              borderRadius: '2px',
-              animation: 'pulse 2s infinite'
-            }} />
-          </div>
-          <div style={{
-            position: 'absolute',
-            right: '-6px',
-            top: '50%',
-            transform: 'translateY(-50%)'
-          }}>
-            <div style={{
-              width: '3px',
-              height: '24px',
-              backgroundColor: currentTheme.sideLedColor,
-              borderRadius: '2px',
-              animation: 'pulse 2s infinite'
-            }} />
+              color: theme.textColor,
+              fontFamily: 'monospace',
+              fontSize: '10px',
+              opacity: 0.8
+            }}>
+              {missions.length} MISSIONS
+            </div>
           </div>
         </div>
+        
+        {/* 사이드 LED 효과 */}
+        <div style={{
+          position: 'absolute',
+          left: '-12px',
+          top: '50%',
+          transform: 'translateY(-50%)'
+        }}>
+          <div style={{
+            width: '6px',
+            height: '48px',
+            backgroundColor: theme.sideLedColor,
+            borderRadius: '3px',
+            animation: 'pulse 2s infinite',
+            boxShadow: `0 0 10px ${theme.sideLedColor}`
+          }} />
+        </div>
+        <div style={{
+          position: 'absolute',
+          right: '-12px',
+          top: '50%',
+          transform: 'translateY(-50%)'
+        }}>
+          <div style={{
+            width: '6px',
+            height: '48px',
+            backgroundColor: theme.sideLedColor,
+            borderRadius: '3px',
+            animation: 'pulse 2s infinite',
+            boxShadow: `0 0 10px ${theme.sideLedColor}`
+          }} />
+        </div>
       </div>
+      
+      <style jsx>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.7; }
+        }
+      `}</style>
     </div>
   );
-};
-
-export default ElectronicMissionBoard;
+}
