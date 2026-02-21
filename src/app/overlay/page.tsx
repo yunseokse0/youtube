@@ -408,6 +408,7 @@ function OverlayContentWrapper({ state: s, ready, connected, members, donors, mi
   toonSum: number;
   rounded: number;
   displaySum: number;
+  overlayMode: OverlayMode;
 }) {
   const sp = useSearchParams();
   
@@ -469,6 +470,11 @@ function OverlayContentWrapper({ state: s, ready, connected, members, donors, mi
     y: parseFloat(sp.get("missionY")!)
   } : undefined);
   
+  // missionAnchor를 객체로 변환
+  const missionAnchorObj = typeof missionAnchor === 'string' ? 
+    (overlaySettings?.missionAnchor as any) || { x: 50, y: 50 } : 
+    missionAnchor;
+  
   return (
     <OverlayContent 
       state={s} ready={ready} connected={connected} members={members} donors={donors} 
@@ -478,7 +484,7 @@ function OverlayContentWrapper({ state: s, ready, connected, members, donors, mi
       showMembers={showMembers} showTotal={showTotal} showGoal={showGoal} goal={goal}
       goalLabel={goalLabel} goalWidth={goalWidth} goalAnchor={goalAnchor} showTicker={showTicker}
       showTimer={showTimer} timerStart={timerStart} timerAnchor={timerAnchor} showMission={showMission}
-      missionAnchor={missionAnchor}
+      missionAnchor={missionAnchorObj}
       memberPosition={memberPosition} totalPosition={totalPosition} goalPosition={goalPosition}
       tickerPosition={tickerPosition} timerPosition={timerPosition} missionPosition={missionPosition}
       overlayMode={overlayMode}
@@ -519,7 +525,8 @@ function OverlayContent({ state: s, ready, connected, members, donors, missions,
   timerStart: number | null;
   timerAnchor: string;
   showMission: boolean;
-  missionAnchor: string;
+  missionAnchor: { x: number; y: number };
+  overlayMode: OverlayMode;
   memberPosition?: { x?: number; y?: number; width?: number; height?: number; anchor?: string };
   totalPosition?: { x?: number; y?: number; width?: number; height?: number; anchor?: string };
   goalPosition?: { x?: number; y?: number; width?: number; height?: number; anchor?: string };
@@ -862,8 +869,10 @@ function OverlayModeController({ children }: { children: React.ReactNode | ((pro
 
 export default function OverlayPage() {
   return (
-    <OverlayModeController>
-      {({ overlayMode }) => <OverlayInner overlayMode={overlayMode} />}
-    </OverlayModeController>
+    <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center text-white">로딩 중...</div>}>
+      <OverlayModeController>
+        {({ overlayMode }) => <OverlayInner overlayMode={overlayMode} />}
+      </OverlayModeController>
+    </Suspense>
   );
 }
