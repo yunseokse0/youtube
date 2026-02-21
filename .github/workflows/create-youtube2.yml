@@ -1,0 +1,37 @@
+name: Create and Deploy to youtube2
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+        
+      - name: Link to youtube2 project
+        env:
+          VERCEL_TOKEN: vcp_37XNeunD2DMkCzup6C8BF4fwQ692G8vW2WQv7EhcAnMTxBlFFB0R5NDw
+        run: |
+          echo "Linking to youtube2 project..."
+          vercel link --yes --token=${{ env.VERCEL_TOKEN }} --scope yunseokseos-projects --project youtube2 || true
+          
+      - name: Deploy to youtube2
+        env:
+          VERCEL_TOKEN: vcp_37XNeunD2DMkCzup6C8BF4fwQ692G8vW2WQv7EhcAnMTxBlFFB0R5NDw
+        run: |
+          echo "Deploying to youtube2..."
+          vercel pull --yes --environment=production --token=${{ env.VERCEL_TOKEN }} --scope yunseokseos-projects
+          vercel build --prod --token=${{ env.VERCEL_TOKEN }} --scope yunseokseos-projects  
+          vercel deploy --prebuilt --prod --token=${{ env.VERCEL_TOKEN }} --scope yunseokseos-projects
