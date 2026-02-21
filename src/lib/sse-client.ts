@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { createModuleLogger } from './logger';
+
+const logger = createModuleLogger('SSE');
 
 export function useSSEConnection(onMessage: (data: any) => void) {
   const [connected, setConnected] = useState(false);
@@ -12,7 +15,7 @@ export function useSSEConnection(onMessage: (data: any) => void) {
       
       eventSource.onopen = () => {
         setConnected(true);
-        console.log('[SSE] Connected');
+        logger.info('SSE 연결됨');
       };
 
       eventSource.onmessage = (event) => {
@@ -22,7 +25,7 @@ export function useSSEConnection(onMessage: (data: any) => void) {
           const data = JSON.parse(event.data);
           onMessage(data);
         } catch (error) {
-          console.error('[SSE] Failed to parse message:', error);
+          logger.error('메시지 파싱 실패', error);
         }
       };
 
@@ -31,12 +34,14 @@ export function useSSEConnection(onMessage: (data: any) => void) {
         eventSourceRef.current?.close();
         eventSourceRef.current = null;
         
-        // 5초 후 재연결
+        logger.warn('SSE 연결 끊김, 1초 후 재연결');
+        
+        // 1초 후 재연결 (더 빠른 실시간 반영)
         setTimeout(() => {
           if (eventSourceRef.current === null) {
             connect();
           }
-        }, 5000);
+        }, 1000);
       };
 
       eventSourceRef.current = eventSource;
@@ -62,7 +67,8 @@ export async function sendSSEUpdate(data: any) {
       },
       body: JSON.stringify(data),
     });
+    logger.debug('SSE 업데이트 전송 성공', data);
   } catch (error) {
-    console.error('[SSE] Failed to send update:', error);
+    logger.error('SSE 업데이트 전송 실패', error);
   }
 }

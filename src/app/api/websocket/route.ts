@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getWebSocketServer, startWebSocketServer, stopWebSocketServer } from '@/lib/websocket-server';
+import { createModuleLogger } from '@/lib/logger';
+
+const logger = createModuleLogger('API/WebSocket');
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -11,35 +14,42 @@ export async function GET(request: NextRequest) {
     switch (action) {
       case 'start':
         wsServer.start();
+        const startClients = wsServer.getConnectedClients();
+        logger.info('WebSocket 서버 시작', { clients: startClients });
         return NextResponse.json({ 
           success: true, 
           message: 'WebSocket server started',
-          clients: wsServer.getConnectedClients()
+          clients: startClients
         });
         
       case 'stop':
         stopWebSocketServer();
+        logger.info('WebSocket 서버 중지');
         return NextResponse.json({ 
           success: true, 
           message: 'WebSocket server stopped' 
         });
         
       case 'status':
+        const statusClients = wsServer.getConnectedClients();
+        logger.debug('WebSocket 상태 조회', { clients: statusClients });
         return NextResponse.json({
           success: true,
           running: true,
-          clients: wsServer.getConnectedClients()
+          clients: statusClients
         });
         
       default:
+        const defaultClients = wsServer.getConnectedClients();
+        logger.debug('WebSocket 기본 상태', { clients: defaultClients });
         return NextResponse.json({
           success: true,
           running: true,
-          clients: wsServer.getConnectedClients()
+          clients: defaultClients
         });
     }
   } catch (error) {
-    console.error('WebSocket API error:', error);
+    logger.error('WebSocket API 오류', error);
     return NextResponse.json(
       { 
         success: false, 

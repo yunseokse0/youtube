@@ -1,10 +1,20 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { OverlayCard } from '@/components/OverlayCard';
 import { AppState } from '@/lib/state';
-import { sendSSEUpdate } from '@/lib/sse-client';
+import { sendSSEUpdate, useSSEConnection } from '@/lib/sse-client';
 import { nanoid } from 'nanoid';
+import { createModuleLogger } from '@/lib/logger';
+
+export type OverlayElementPosition = {
+  x: string;
+  y: string;
+  width?: string;
+  height?: string;
+  anchor?: string;
+};
 
 export type OverlayPreset = {
   id: string;
@@ -32,6 +42,13 @@ export type OverlayPreset = {
   timerAnchor: string;
   showMission: boolean;
   missionAnchor: string;
+  // 개별 요소 위치 설정
+  memberPosition?: OverlayElementPosition;
+  totalPosition?: OverlayElementPosition;
+  goalPosition?: OverlayElementPosition;
+  tickerPosition?: OverlayElementPosition;
+  timerPosition?: OverlayElementPosition;
+  missionPosition?: OverlayElementPosition;
 };
 
 const convertToOverlayPreset = (preset: any): OverlayPreset => ({
@@ -60,6 +77,13 @@ const convertToOverlayPreset = (preset: any): OverlayPreset => ({
   timerAnchor: preset.timerAnchor || 'tr',
   showMission: Boolean(preset.showMission || false),
   missionAnchor: preset.missionAnchor || 'br',
+  // 개별 요소 위치 설정
+  memberPosition: preset.memberPosition || undefined,
+  totalPosition: preset.totalPosition || undefined,
+  goalPosition: preset.goalPosition || undefined,
+  tickerPosition: preset.tickerPosition || undefined,
+  timerPosition: preset.timerPosition || undefined,
+  missionPosition: preset.missionPosition || undefined,
 });
 
 const PRESET_TEMPLATES = [
@@ -185,12 +209,18 @@ const PRESET_TEMPLATES = [
   }
 ];
 
-export default function SimpleAdminPage() {
+export default function AdminPage() {
   const [state, setState] = useState<AppState | null>(null);
   const [presets, setPresets] = useState<OverlayPreset[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [showGuide, setShowGuide] = useState(false);
+  const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null);
+  const [updateCount, setUpdateCount] = useState(0);
+  const [connected, setConnected] = useState(false);
+  
+  // 로거 인스턴스 생성
+  const logger = createModuleLogger('Admin');
 
   // 상태 로드
   useEffect(() => {
@@ -199,9 +229,32 @@ export default function SimpleAdminPage() {
       .then(data => {
         setState(data);
         setPresets(data.overlaySettings?.presets || []);
+        logger.info('상태 로드 성공', { presetsCount: data.overlaySettings?.presets?.length || 0 });
       })
-      .catch(console.error);
+      .catch(error => {
+        logger.error('상태 로드 실패', error);
+      });
   }, []);
+
+  // SSE 연결 및 성능 측정
+  useSSEConnection((data) => {
+    setConnected(true);
+    setLastUpdateTime(new Date());
+    setUpdateCount(prev => prev + 1);
+    logger.debug('SSE 메시지 수신', data);
+  });
+
+  // 연결 상태 모니터링
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // 마지막 업데이트로부터 5초가 지나면 연결 끊김으로 간주
+      if (lastUpdateTime && Date.now() - lastUpdateTime.getTime() > 5000) {
+        setConnected(false);
+      }
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [lastUpdateTime]);
 
   // 프리셋 저장
   const savePresets = async (newPresets: OverlayPreset[]) => {
@@ -236,7 +289,7 @@ export default function SimpleAdminPage() {
         sendSSEUpdate({ type: 'overlay_update', ...updatedState });
       }
     } catch (error) {
-      console.error('Failed to save presets:', error);
+      logger.error('프리셋 저장 실패', error);
     }
   };
 
@@ -311,6 +364,32 @@ export default function SimpleAdminPage() {
       q.missionAnchor = preset.missionAnchor;
     }
     
+    // 개별 위치 설정 (URL 파라미터로 변환)
+    if (preset.memberPosition?.x && preset.memberPosition?.y) {
+      q.memberX = preset.memberPosition.x;
+      q.memberY = preset.memberPosition.y;
+    }
+    if (preset.totalPosition?.x && preset.totalPosition?.y) {
+      q.totalX = preset.totalPosition.x;
+      q.totalY = preset.totalPosition.y;
+    }
+    if (preset.goalPosition?.x && preset.goalPosition?.y) {
+      q.goalX = preset.goalPosition.x;
+      q.goalY = preset.goalPosition.y;
+    }
+    if (preset.tickerPosition?.x && preset.tickerPosition?.y) {
+      q.tickerX = preset.tickerPosition.x;
+      q.tickerY = preset.tickerPosition.y;
+    }
+    if (preset.timerPosition?.x && preset.timerPosition?.y) {
+      q.timerX = preset.timerPosition.x;
+      q.timerY = preset.timerPosition.y;
+    }
+    if (preset.missionPosition?.x && preset.missionPosition?.y) {
+      q.missionX = preset.missionPosition.x;
+      q.missionY = preset.missionPosition.y;
+    }
+    
     return `${base}?${new URLSearchParams(q).toString()}`;
   };
 
@@ -323,6 +402,31 @@ export default function SimpleAdminPage() {
             <div>
               <h1 className="text-3xl font-bold text-white">🎬 오버레이 스튜디오</h1>
               <p className="text-neutral-300 mt-1">쉽고 빠른 실시간 방송 오버레이 관리</p>
+              
+              {/* 실시간 성능 상태 */}
+              <div className="flex items-center gap-4 mt-2">
+                <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs ${
+                  connected ? 'bg-green-600/20 text-green-400' : 'bg-red-600/20 text-red-400'
+                }`}>
+                  <div className={`w-2 h-2 rounded-full ${
+                    connected ? 'bg-green-400' : 'bg-red-400'
+                  }`} />
+                  {connected ? '🟢 실시간 연결' : '🔴 연결 끊김'}
+                </div>
+                
+                <div className="text-xs text-neutral-400">
+                  업데이트: <span className="font-mono">{updateCount}</span>
+                </div>
+                
+                {lastUpdateTime && (
+                  <div className="text-xs text-neutral-400">
+                    마지막: <span className="font-mono">{lastUpdateTime.toLocaleTimeString('ko-KR')}</span>
+                    {typeof window !== 'undefined' && (
+                      <span> ({Date.now() - lastUpdateTime.getTime()}ms 전)</span>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
             <button
               onClick={() => setShowGuide(true)}

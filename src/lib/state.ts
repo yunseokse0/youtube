@@ -23,6 +23,14 @@ export type MissionItem = {
   isHot?: boolean;
 };
 
+export type OverlayElementPosition = {
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  anchor?: string; // 'tl' | 'tr' | 'bl' | 'br' | 'tc' | 'bc' | 'cl' | 'cr' | 'cc'
+};
+
 export type OverlaySettings = {
   scale: number;
   memberSize: number;
@@ -47,6 +55,13 @@ export type OverlaySettings = {
   timerAnchor: string;
   showMission: boolean;
   missionAnchor: string;
+  // 개별 요소 위치 설정 (선택사항)
+  memberPosition?: OverlayElementPosition;
+  totalPosition?: OverlayElementPosition;
+  goalPosition?: OverlayElementPosition;
+  tickerPosition?: OverlayElementPosition;
+  timerPosition?: OverlayElementPosition;
+  missionPosition?: OverlayElementPosition;
 };
 
 export type AppState = {

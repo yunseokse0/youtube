@@ -1,0 +1,5 @@
+warning: in the working copy of 'src/app/youtube/page.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/youtube.ts', LF will be replaced by CRLF the next time Git touches it
+ src/app/youtube/page.tsx | 213 [32m++++++++++++++++++++++++++++++++++[m[31m---[m
+ src/lib/youtube.ts       | 270 [32m++++++++++++++++++++++++++++++++++++++++++++[m[31m---[m
+ 2 files changed, 454 insertions(+), 29 deletions(-)

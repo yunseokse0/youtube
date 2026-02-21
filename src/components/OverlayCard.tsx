@@ -1,5 +1,13 @@
 import React from 'react';
 
+export type OverlayElementPosition = {
+  x: string;
+  y: string;
+  width?: string;
+  height?: string;
+  anchor?: string;
+};
+
 export type OverlayPreset = {
   id: string;
   name: string;
@@ -26,6 +34,13 @@ export type OverlayPreset = {
   timerAnchor: string;
   showMission: boolean;
   missionAnchor: string;
+  // 개별 요소 위치 설정
+  memberPosition?: OverlayElementPosition;
+  totalPosition?: OverlayElementPosition;
+  goalPosition?: OverlayElementPosition;
+  tickerPosition?: OverlayElementPosition;
+  timerPosition?: OverlayElementPosition;
+  missionPosition?: OverlayElementPosition;
 };
 
 interface OverlayCardProps {
@@ -211,6 +226,152 @@ export function OverlayCard({ preset, onUpdate, onDelete, onCopyUrl, copiedId, u
           </div>
         </div>
       )}
+
+      {/* 개별 요소 위치 설정 */}
+      <div className="bg-white/5 rounded-lg p-3 mb-4">
+        <h3 className="text-sm font-medium text-neutral-300 mb-2">📍 개별 위치 설정</h3>
+        <div className="text-xs text-neutral-400 mb-3">각 요소의 정확한 위치를 설정합니다 (X: 0-100%, Y: 0-100%)</div>
+        <div className="space-y-2">
+          {preset.showMembers && (
+            <div className="grid grid-cols-3 gap-2">
+              <label className="text-xs text-neutral-400">👥 멤버 위치</label>
+              <input
+                type="number"
+                value={preset.memberPosition?.x || ''}
+                onChange={(e) => onUpdate(preset.id, { memberPosition: { x: e.target.value, y: preset.memberPosition?.y || '50', anchor: preset.memberPosition?.anchor || 'tl' } })}
+                className="px-2 py-1 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none text-xs"
+                placeholder="X%"
+                min="0"
+                max="100"
+              />
+              <input
+                type="number"
+                value={preset.memberPosition?.y || ''}
+                onChange={(e) => onUpdate(preset.id, { memberPosition: { x: preset.memberPosition?.x || '50', y: e.target.value, anchor: preset.memberPosition?.anchor || 'tl' } })}
+                className="px-2 py-1 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none text-xs"
+                placeholder="Y%"
+                min="0"
+                max="100"
+              />
+            </div>
+          )}
+          {preset.showTotal && (
+            <div className="grid grid-cols-3 gap-2">
+              <label className="text-xs text-neutral-400">💰 총합 위치</label>
+              <input
+                type="number"
+                value={preset.totalPosition?.x || ''}
+                onChange={(e) => onUpdate(preset.id, { totalPosition: { x: e.target.value, y: preset.totalPosition?.y || '50', anchor: preset.totalPosition?.anchor || 'bc' } })}
+                className="px-2 py-1 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none text-xs"
+                placeholder="X%"
+                min="0"
+                max="100"
+              />
+              <input
+                type="number"
+                value={preset.totalPosition?.y || ''}
+                onChange={(e) => onUpdate(preset.id, { totalPosition: { x: preset.totalPosition?.x || '50', y: e.target.value, anchor: preset.totalPosition?.anchor || 'bc' } })}
+                className="px-2 py-1 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none text-xs"
+                placeholder="Y%"
+                min="0"
+                max="100"
+              />
+            </div>
+          )}
+          {preset.showGoal && (
+            <div className="grid grid-cols-3 gap-2">
+              <label className="text-xs text-neutral-400">🎯 목표 위치</label>
+              <input
+                type="number"
+                value={preset.goalPosition?.x || ''}
+                onChange={(e) => onUpdate(preset.id, { goalPosition: { x: e.target.value, y: preset.goalPosition?.y || '50', anchor: preset.goalPosition?.anchor || 'bc' } })}
+                className="px-2 py-1 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none text-xs"
+                placeholder="X%"
+                min="0"
+                max="100"
+              />
+              <input
+                type="number"
+                value={preset.goalPosition?.y || ''}
+                onChange={(e) => onUpdate(preset.id, { goalPosition: { x: preset.goalPosition?.x || '50', y: e.target.value, anchor: preset.goalPosition?.anchor || 'bc' } })}
+                className="px-2 py-1 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none text-xs"
+                placeholder="Y%"
+                min="0"
+                max="100"
+              />
+            </div>
+          )}
+          {preset.showTicker && (
+            <div className="grid grid-cols-3 gap-2">
+              <label className="text-xs text-neutral-400">📜 티커 위치</label>
+              <input
+                type="number"
+                value={preset.tickerPosition?.x || ''}
+                onChange={(e) => onUpdate(preset.id, { tickerPosition: { x: e.target.value, y: preset.tickerPosition?.y || '50', anchor: preset.tickerPosition?.anchor || 'bl' } })}
+                className="px-2 py-1 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none text-xs"
+                placeholder="X%"
+                min="0"
+                max="100"
+              />
+              <input
+                type="number"
+                value={preset.tickerPosition?.y || ''}
+                onChange={(e) => onUpdate(preset.id, { tickerPosition: { x: preset.tickerPosition?.x || '50', y: e.target.value, anchor: preset.tickerPosition?.anchor || 'bl' } })}
+                className="px-2 py-1 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none text-xs"
+                placeholder="Y%"
+                min="0"
+                max="100"
+              />
+            </div>
+          )}
+          {preset.showTimer && (
+            <div className="grid grid-cols-3 gap-2">
+              <label className="text-xs text-neutral-400">⏰ 타이머 위치</label>
+              <input
+                type="number"
+                value={preset.timerPosition?.x || ''}
+                onChange={(e) => onUpdate(preset.id, { timerPosition: { x: e.target.value, y: preset.timerPosition?.y || '50', anchor: preset.timerPosition?.anchor || 'tc' } })}
+                className="px-2 py-1 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none text-xs"
+                placeholder="X%"
+                min="0"
+                max="100"
+              />
+              <input
+                type="number"
+                value={preset.timerPosition?.y || ''}
+                onChange={(e) => onUpdate(preset.id, { timerPosition: { x: preset.timerPosition?.x || '50', y: e.target.value, anchor: preset.timerPosition?.anchor || 'tc' } })}
+                className="px-2 py-1 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none text-xs"
+                placeholder="Y%"
+                min="0"
+                max="100"
+              />
+            </div>
+          )}
+          {preset.showMission && (
+            <div className="grid grid-cols-3 gap-2">
+              <label className="text-xs text-neutral-400">🎮 미션 위치</label>
+              <input
+                type="number"
+                value={preset.missionPosition?.x || ''}
+                onChange={(e) => onUpdate(preset.id, { missionPosition: { x: e.target.value, y: preset.missionPosition?.y || '50', anchor: preset.missionPosition?.anchor || 'tl' } })}
+                className="px-2 py-1 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none text-xs"
+                placeholder="X%"
+                min="0"
+                max="100"
+              />
+              <input
+                type="number"
+                value={preset.missionPosition?.y || ''}
+                onChange={(e) => onUpdate(preset.id, { missionPosition: { x: preset.missionPosition?.x || '50', y: e.target.value, anchor: preset.missionPosition?.anchor || 'tl' } })}
+                className="px-2 py-1 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none text-xs"
+                placeholder="Y%"
+                min="0"
+                max="100"
+              />
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* 프리뷰 */}
       <div className="bg-white/5 rounded-lg p-3">

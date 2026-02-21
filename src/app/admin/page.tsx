@@ -126,7 +126,20 @@ export default function AdminPage() {
     setEditingId(p.id);
   };
   const updatePreset = (id: string, patch: Partial<OverlayPreset>) => {
-    savePresets(presets.map(p => p.id === id ? { ...p, ...patch } : p));
+    const updatedPresets = presets.map(p => p.id === id ? { ...p, ...patch } : p);
+    savePresets(updatedPresets);
+    
+    // 프리셋 변경 시 오버레이에 전용 SSE 메시지 전송
+    const updatedPreset = updatedPresets.find(p => p.id === id);
+    if (updatedPreset) {
+      // 프리셋 변경사항을 오버레이에 직접 알림
+      sendSSEUpdate({ 
+        type: 'preset_update', 
+        preset: updatedPreset,
+        timestamp: Date.now()
+      });
+      console.log('[Admin] 프리셋 업데이트로 오버레이에 SSE 알림:', { presetId: id, patch });
+    }
   };
   const removePreset = (id: string) => {
     if (!window.confirm("이 오버레이 프리셋을 삭제할까요?")) return;

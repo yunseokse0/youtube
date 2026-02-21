@@ -1,12 +1,6 @@
 export const runtime = "edge";
 export const revalidate = 0;
 
-import type { AppState } from "@/lib/state";
-import { defaultState } from "@/lib/state";
-import { createModuleLogger } from "@/lib/logger";
-
-const logger = createModuleLogger('API/State');
-
 const STORAGE_KEY = "excel-broadcast-state-v1";
 
 function getEnv() {
@@ -20,8 +14,6 @@ function getEnv() {
     "";
   return { base, token };
 }
-
-let memoryState: AppState | null = null;
 
 async function upstashGet(key: string) {
   const { base, token } = getEnv();
@@ -57,32 +49,15 @@ async function upstashSet(key: string, value: unknown) {
 
 export async function GET() {
   try {
-    const { base, token } = getEnv();
-    if (!base || !token) {
-      const state = memoryState || defaultState();
-      logger.debug('메모리 상태 반환', { membersCount: state.members.length, donorsCount: state.donors.length });
-      return new Response(JSON.stringify(state), {
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control":
-            "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",
-        },
-      });
-    }
-
     const state = await upstashGet(STORAGE_KEY);
-    logger.debug('Redis 상태 반환', { hasState: !!state });
     return new Response(JSON.stringify(state || {}), {
       headers: {
         "Content-Type": "application/json",
-        "Cache-Control":
-          "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",
+        "Cache-Control": "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",
       },
     });
-  } catch (error) {
-    logger.error('상태 조회 실패', error);
-    const fallback = memoryState || defaultState();
-    return new Response(JSON.stringify(fallback), {
+  } catch {
+    return new Response(JSON.stringify({}), {
       headers: { "Content-Type": "application/json" },
       status: 200,
     });
@@ -91,38 +66,20 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as AppState;
-    const next: AppState = { ...body, updatedAt: Date.now() };
-
-    const { base, token } = getEnv();
-    if (!base || !token) {
-      memoryState = next;
-      logger.info('메모리 상태 업데이트', { updatedAt: next.updatedAt });
-      return new Response(JSON.stringify({ ok: true }), {
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control":
-            "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",
-        },
-        status: 200,
-      });
-    }
-
-    const ok = await upstashSet(STORAGE_KEY, next);
-    logger.info('Redis 상태 업데이트', { updatedAt: next.updatedAt, success: ok });
+    const body = await req.json();
+    const ok = await upstashSet(STORAGE_KEY, body);
     return new Response(JSON.stringify({ ok }), {
       headers: {
         "Content-Type": "application/json",
-        "Cache-Control":
-          "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",
+        "Cache-Control": "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",
       },
       status: ok ? 200 : 500,
     });
-  } catch (error) {
-    logger.error('상태 업데이트 실패', error);
+  } catch {
     return new Response(JSON.stringify({ ok: false }), {
       headers: { "Content-Type": "application/json" },
       status: 500,
     });
   }
 }
+

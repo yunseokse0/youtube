@@ -3,8 +3,11 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi } from "@/lib/state";
 import { useSSEConnection } from "@/lib/sse-client";
+import { createModuleLogger } from "@/lib/logger";
 import MissionMenu from "@/components/MissionMenu";
 import MissionTicker from "@/components/MissionTicker";
+
+const logger = createModuleLogger('Overlay');
 
 function useRemoteState(): { state: AppState | null; ready: boolean; connected: boolean } {
   const [state, setState] = useState<AppState | null>(null);
@@ -13,7 +16,53 @@ function useRemoteState(): { state: AppState | null; ready: boolean; connected: 
     if (data.type === 'overlay_update' && data.updatedAt && data.updatedAt !== lastUpdatedRef.current) {
       lastUpdatedRef.current = data.updatedAt;
       setState(data);
-      console.log('[Overlay] Received SSE update:', data);
+      logger.info('SSE 상태 업데이트 수신', { 
+        updatedAt: data.updatedAt,
+        members: data.members?.length,
+        donors: data.donors?.length,
+        memberData: data.members?.map((m: Member) => ({ name: m.name, account: m.account, toon: m.toon }))
+      });
+    } else if (data.type === 'preset_update' && data.preset) {
+      // 프리셋 업데이트 메시지 처리 - 오버레이 설정 업데이트
+      logger.info('프리셋 업데이트 수신, 오버레이 설정 업데이트', data.preset);
+      
+      // 프리셋 데이터를 오버레이 설정으로 변환하여 업데이트
+      setState((prevState) => {
+        if (!prevState) return prevState;
+        
+        const preset = data.preset;
+        const newOverlaySettings = {
+          scale: parseFloat(preset.scale || '1'),
+          memberSize: parseInt(preset.memberSize || '24', 10),
+          totalSize: parseInt(preset.totalSize || '64', 10),
+          dense: preset.dense || false,
+          anchor: preset.anchor || 'tl',
+          sumAnchor: preset.sumAnchor || 'bc',
+          sumFree: preset.sumFree || false,
+          sumX: parseFloat(preset.sumX || '50'),
+          sumY: parseFloat(preset.sumY || '90'),
+          theme: preset.theme || 'default',
+          showMembers: preset.showMembers !== false,
+          showTotal: preset.showTotal !== false,
+          showGoal: preset.showGoal || false,
+          goal: parseInt(preset.goal || '0', 10),
+          goalLabel: preset.goalLabel || '목표 금액',
+          goalWidth: parseInt(preset.goalWidth || '400', 10),
+          goalAnchor: preset.goalAnchor || 'bc',
+          showTicker: preset.showTicker || false,
+          showTimer: preset.showTimer || false,
+          timerStart: preset.timerStart || null,
+          timerAnchor: preset.timerAnchor || 'tr',
+          showMission: preset.showMission || false,
+          missionAnchor: preset.missionAnchor || 'br'
+        };
+        
+        return {
+          ...prevState,
+          overlaySettings: newOverlaySettings,
+          updatedAt: Date.now()
+        };
+      });
     }
   });
   
@@ -24,7 +73,7 @@ function useRemoteState(): { state: AppState | null; ready: boolean; connected: 
       if (data) {
         lastUpdatedRef.current = data.updatedAt;
         setState(data);
-        console.log('[Overlay] Initial state loaded:', data);
+        logger.info('초기 상태 로드됨', { updatedAt: data.updatedAt });
       }
     };
     fetchInitialState();
@@ -47,7 +96,7 @@ function useRemoteState(): { state: AppState | null; ready: boolean; connected: 
           }
         }
       } catch (error) {
-        console.error("Failed to fetch state:", error);
+        logger.error('상태 페치 실패', error);
       }
       if (running) setTimeout(poll, 1500);
     };
@@ -332,13 +381,37 @@ function OverlayInner() {
   const donors = useMemo(() => (ready && s ? s.donors : []), [ready, s]);
   const missions = useMemo(() => (ready && s ? s.missions || [] : []), [ready, s]);
   const sum = useMemo(() => (ready && s ? totalAccount(s) : 0), [ready, s]);
+  const toonSum = useMemo(() => (ready && s ? s.members.reduce((acc, m) => acc + m.toon, 0) : 0), [ready, s]);
   const rounded = useMemo(() => roundToThousand(sum), [sum]);
   const displaySum = useCountUp(rounded, 800);
+  
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <OverlayContentWrapper 
+        state={s} ready={ready} connected={connected} members={members} donors={donors} 
+        missions={missions} sum={sum} toonSum={toonSum} rounded={rounded} displaySum={displaySum} 
+      />
+    </Suspense>
+  );
+}
+
+function OverlayContentWrapper({ state: s, ready, connected, members, donors, missions, sum, toonSum, rounded, displaySum }: {
+  state: AppState | null;
+  ready: boolean;
+  connected: boolean;
+  members: Member[];
+  donors: Donor[];
+  missions: MissionItem[];
+  sum: number;
+  toonSum: number;
+  rounded: number;
+  displaySum: number;
+}) {
   const sp = useSearchParams();
   
   // Log SSE connection status
   useEffect(() => {
-    console.log('[OverlayInner] SSE connected:', connected);
+    logger.debug('SSE 연결 상태', { connected });
   }, [connected]);
   
   // Use overlay settings from state, with URL params as fallback for backward compatibility
@@ -346,32 +419,119 @@ function OverlayInner() {
   
   const scale = Math.max(0.3, Math.min(3, overlaySettings?.scale ?? parseFloat(sp.get("scale") || "1")));
   const memberSize = Math.max(10, Math.min(80, overlaySettings?.memberSize ?? parseInt(sp.get("memberSize") || "24", 10)));
-  const totalSize = Math.max(14, Math.min(160, overlaySettings?.totalSize ?? parseInt(sp.get("totalSize") || "64", 10)));
-  const dense = (overlaySettings?.dense ?? (sp.get("dense") || "false").toLowerCase() === "true");
-  const anchor = (overlaySettings?.anchor ?? (sp.get("anchor") || "tl")).toLowerCase();
-  const sumAnchor = (overlaySettings?.sumAnchor ?? (sp.get("sumAnchor") || "bc")).toLowerCase();
-  const sumXParam = overlaySettings?.sumFree ? String(overlaySettings.sumX) : sp.get("sumX");
-  const sumYParam = overlaySettings?.sumFree ? String(overlaySettings.sumY) : sp.get("sumY");
-  const hasFreePos = sumXParam !== null && sumYParam !== null;
-  const sumX = hasFreePos ? Math.max(0, Math.min(100, parseFloat(sumXParam!))) : 0;
-  const sumY = hasFreePos ? Math.max(0, Math.min(100, parseFloat(sumYParam!))) : 0;
-  const themeId = (overlaySettings?.theme ?? (sp.get("theme") || "default")) as ThemeId;
-  const theme = THEMES[themeId] || THEMES.default;
-
+  const totalSize = Math.max(10, Math.min(200, overlaySettings?.totalSize ?? parseInt(sp.get("totalSize") || "64", 10)));
+  const dense = overlaySettings?.dense ?? (sp.get("dense") === "true");
+  const anchor = overlaySettings?.anchor ?? (sp.get("anchor") as any) ?? "tl";
+  const sumAnchor = overlaySettings?.sumAnchor ?? (sp.get("sumAnchor") as any) ?? "bc";
+  const sumFree = overlaySettings?.sumFree ?? (sp.get("sumFree") === "true");
+  const sumX = Math.max(0, Math.min(100, overlaySettings?.sumX ?? parseFloat(sp.get("sumX") || "50")));
+  const sumY = Math.max(0, Math.min(100, overlaySettings?.sumY ?? parseFloat(sp.get("sumY") || "90")));
+  const themeId = (overlaySettings?.theme ?? sp.get("theme") ?? "default") as ThemeId;
   const showMembers = overlaySettings?.showMembers ?? (sp.get("showMembers") !== "false");
   const showTotal = overlaySettings?.showTotal ?? (sp.get("showTotal") !== "false");
   const showGoal = overlaySettings?.showGoal ?? (sp.get("showGoal") === "true");
+  const goal = overlaySettings?.goal ?? parseInt(sp.get("goal") || "0", 10);
+  const goalLabel = overlaySettings?.goalLabel ?? sp.get("goalLabel") ?? "목표 금액";
+  const goalWidth = Math.max(100, Math.min(800, overlaySettings?.goalWidth ?? parseInt(sp.get("goalWidth") || "400", 10)));
+  const goalAnchor = overlaySettings?.goalAnchor ?? (sp.get("goalAnchor") as any) ?? "bc";
   const showTicker = overlaySettings?.showTicker ?? (sp.get("showTicker") === "true");
   const showTimer = overlaySettings?.showTimer ?? (sp.get("showTimer") === "true");
-  const goalRaw = parseInt(String(overlaySettings?.goal ?? (sp.get("goal") || "0")), 10);
-  const goal = isNaN(goalRaw) ? 0 : goalRaw;
-  const goalLabel = String(overlaySettings?.goalLabel ?? (sp.get("goalLabel") || "목표 금액"));
-  const goalWidth = Math.max(200, Math.min(800, overlaySettings?.goalWidth ?? parseInt(sp.get("goalWidth") || "400", 10)));
-  const goalAnchor = (overlaySettings?.goalAnchor ?? (sp.get("goalAnchor") || "bc")).toLowerCase();
-  const timerStart = overlaySettings?.timerStart ?? (sp.get("timerStart") ? parseInt(sp.get("timerStart")!, 10) : null);
-  const timerAnchor = (overlaySettings?.timerAnchor ?? (sp.get("timerAnchor") || "tr")).toLowerCase();
+  const timerStart = overlaySettings?.timerStart ?? (sp.get("timerStart") ? new Date(sp.get("timerStart")!).getTime() : null);
+  const timerAnchor = overlaySettings?.timerAnchor ?? (sp.get("timerAnchor") as any) ?? "tr";
   const showMission = overlaySettings?.showMission ?? (sp.get("showMission") === "true");
-  const missionAnchor = (overlaySettings?.missionAnchor ?? (sp.get("missionAnchor") || "br")).toLowerCase();
+  const missionAnchor = overlaySettings?.missionAnchor ?? (sp.get("missionAnchor") as any) ?? "br";
+  
+  // 개별 위치 설정 (URL 파라미터에서 읽기)
+  const memberPosition = overlaySettings?.memberPosition || (sp.get("memberX") && sp.get("memberY") ? {
+    x: parseFloat(sp.get("memberX")!),
+    y: parseFloat(sp.get("memberY")!)
+  } : undefined);
+  const totalPosition = overlaySettings?.totalPosition || (sp.get("totalX") && sp.get("totalY") ? {
+    x: parseFloat(sp.get("totalX")!),
+    y: parseFloat(sp.get("totalY")!)
+  } : undefined);
+  const goalPosition = overlaySettings?.goalPosition || (sp.get("goalX") && sp.get("goalY") ? {
+    x: parseFloat(sp.get("goalX")!),
+    y: parseFloat(sp.get("goalY")!)
+  } : undefined);
+  const tickerPosition = overlaySettings?.tickerPosition || (sp.get("tickerX") && sp.get("tickerY") ? {
+    x: parseFloat(sp.get("tickerX")!),
+    y: parseFloat(sp.get("tickerY")!)
+  } : undefined);
+  const timerPosition = overlaySettings?.timerPosition || (sp.get("timerX") && sp.get("timerY") ? {
+    x: parseFloat(sp.get("timerX")!),
+    y: parseFloat(sp.get("timerY")!)
+  } : undefined);
+  const missionPosition = overlaySettings?.missionPosition || (sp.get("missionX") && sp.get("missionY") ? {
+    x: parseFloat(sp.get("missionX")!),
+    y: parseFloat(sp.get("missionY")!)
+  } : undefined);
+  
+  return (
+    <OverlayContent 
+      state={s} ready={ready} connected={connected} members={members} donors={donors} 
+      missions={missions} sum={sum} toonSum={toonSum} rounded={rounded} displaySum={displaySum}
+      scale={scale} memberSize={memberSize} totalSize={totalSize} dense={dense} anchor={anchor}
+      sumAnchor={sumAnchor} sumFree={sumFree} sumX={sumX} sumY={sumY} themeId={themeId}
+      showMembers={showMembers} showTotal={showTotal} showGoal={showGoal} goal={goal}
+      goalLabel={goalLabel} goalWidth={goalWidth} goalAnchor={goalAnchor} showTicker={showTicker}
+      showTimer={showTimer} timerStart={timerStart} timerAnchor={timerAnchor} showMission={showMission}
+      missionAnchor={missionAnchor}
+      memberPosition={memberPosition} totalPosition={totalPosition} goalPosition={goalPosition}
+      tickerPosition={tickerPosition} timerPosition={timerPosition} missionPosition={missionPosition}
+    />
+  );
+}
+
+function OverlayContent({ state: s, ready, connected, members, donors, missions, sum, toonSum, rounded, displaySum, scale, memberSize, totalSize, dense, anchor, sumAnchor, sumFree, sumX, sumY, themeId, showMembers, showTotal, showGoal, goal, goalLabel, goalWidth, goalAnchor, showTicker, showTimer, timerStart, timerAnchor, showMission, missionAnchor, memberPosition, totalPosition, goalPosition, tickerPosition, timerPosition, missionPosition }: {
+  state: AppState | null;
+  ready: boolean;
+  connected: boolean;
+  members: Member[];
+  donors: Donor[];
+  missions: MissionItem[];
+  sum: number;
+  toonSum: number;
+  rounded: number;
+  displaySum: number;
+  scale: number;
+  memberSize: number;
+  totalSize: number;
+  dense: boolean;
+  anchor: string;
+  sumAnchor: string;
+  sumFree: boolean;
+  sumX: number;
+  sumY: number;
+  themeId: ThemeId;
+  showMembers: boolean;
+  showTotal: boolean;
+  showGoal: boolean;
+  goal: number;
+  goalLabel: string;
+  goalWidth: number;
+  goalAnchor: string;
+  showTicker: boolean;
+  showTimer: boolean;
+  timerStart: number | null;
+  timerAnchor: string;
+  showMission: boolean;
+  missionAnchor: string;
+  memberPosition?: { x?: number; y?: number; width?: number; height?: number; anchor?: string };
+  totalPosition?: { x?: number; y?: number; width?: number; height?: number; anchor?: string };
+  goalPosition?: { x?: number; y?: number; width?: number; height?: number; anchor?: string };
+  tickerPosition?: { x?: number; y?: number; width?: number; height?: number; anchor?: string };
+  timerPosition?: { x?: number; y?: number; width?: number; height?: number; anchor?: string };
+  missionPosition?: { x?: number; y?: number; width?: number; height?: number; anchor?: string };
+}) {
+  // Log SSE connection status
+  useEffect(() => {
+    logger.debug('SSE 연결 상태', { connected });
+  }, [connected]);
+  
+  const theme = THEMES[themeId] || THEMES.default;
+  
+  const hasFreePos = sumFree && sumX !== undefined && sumY !== undefined;
 
   const elapsed = useElapsed(timerStart);
 
@@ -389,6 +549,22 @@ function OverlayInner() {
     a === "bc" ? "bottom-4 left-1/2 -translate-x-1/2" :
     "top-4 left-4";
 
+  // 개별 요소 위치 설정 함수
+  const getElementPosition = (position?: { x?: number; y?: number; width?: number; height?: number; anchor?: string }, defaultAnchor?: string) => {
+    if (position && position.x !== undefined && position.y !== undefined) {
+      const style: React.CSSProperties = {
+        left: `${position.x}%`,
+        top: `${position.y}%`,
+        transform: "translate(-50%, -50%)",
+        position: 'fixed'
+      };
+      if (position.width) style.width = `${position.width}px`;
+      if (position.height) style.height = `${position.height}px`;
+      return { style, className: "" };
+    }
+    return { style: undefined, className: posClass(position?.anchor || defaultAnchor || "tl") };
+  };
+
   const listPosClass =
     anchor === "tr" ? "top-4 right-4 items-end text-right" :
     anchor === "bl" ? "bottom-4 left-4" :
@@ -403,12 +579,23 @@ function OverlayInner() {
   if (themeId === "excel") {
     return (
       <main className="transparent-bg min-h-screen no-select" style={{ zoom: scale }}>
-        {/* SSE connection indicator */}
-        <div className={`fixed top-2 right-2 text-xs px-2 py-1 rounded ${connected ? 'bg-green-900/80 text-green-300' : 'bg-red-900/80 text-red-300'}`}>
-          {connected ? '실시간 연결' : '폴링 모드'}
-        </div>
+        {showTicker && ready && (
+          <div className={`${getElementPosition(tickerPosition, 'tc').className}`} style={getElementPosition(tickerPosition, 'tc').style}>
+            <DonorTicker donors={donors} theme={theme} fontSize={memberSize} />
+          </div>
+        )}
+        {showTimer && timerStart && ready && (
+          <div className={`${getElementPosition(timerPosition, 'tr').className}`} style={getElementPosition(timerPosition, 'tr').style}>
+            <Timer elapsed={elapsed} theme={theme} fontSize={memberSize} />
+          </div>
+        )}
+        {showMission && ready && (
+          <div className={`${getElementPosition(missionPosition, 'tl').className}`} style={getElementPosition(missionPosition, 'tl').style}>
+            <MissionTicker missions={missions} />
+          </div>
+        )}
         {showMembers && ready && (
-          <div className={`fixed ${listPosClass}`}>
+          <div className={`${getElementPosition(memberPosition, anchor).className}`} style={getElementPosition(memberPosition, anchor).style}>
             <table className={theme.tableCls} style={{ fontSize: memberSize, borderSpacing: 0 }}>
               <thead>
                 <tr>
@@ -430,124 +617,71 @@ function OverlayInner() {
                 {showTotal && ready && (
                   <tr>
                     <td className={theme.totalWrapCls}>총합</td>
-                    <td className={`${theme.totalWrapCls} text-right`} colSpan={2}>{formatManThousand(displaySum)}</td>
+                    <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(sum)}</td>
+                    <td className={`${theme.rowCls} ${theme.toonCls} text-right`}>{formatManThousand(toonSum)}</td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
         )}
-        {showGoal && ready && goal > 0 && (
-          <div className={`fixed ${posClass(goalAnchor)}`}>
-            <GoalBar current={rounded} goal={goal} label={goalLabel} theme={theme} width={goalWidth} />
-          </div>
-        )}
-        {showTicker && ready && <div className={`fixed ${posClass("bc")} mb-10`}><DonorTicker donors={donors} theme={theme} fontSize={memberSize * 0.8} /></div>}
-        {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={theme} fontSize={memberSize} /></div>}
-        {showMission && ready && missions.length > 0 && <MissionTicker missions={missions} fontSize={memberSize * 0.9} />}
       </main>
     );
   }
 
-  if (themeId === "neonExcel") {
-    return (
-      <main className="transparent-bg min-h-screen no-select" style={{ zoom: scale }}>
-        {showMembers && ready && (
-          <div className={`fixed ${listPosClass}`}>
-            <div className={theme.tableCls} style={{ fontSize: memberSize }}>
-              <div className={`grid grid-cols-4 ${theme.headerCls}`}>
-                <div className="col-span-1">MEMBER</div>
-                <div className="col-span-1 text-right">BANK</div>
-                <div className="col-span-1 text-right">TOON</div>
-                <div className="col-span-1 text-right font-bold text-white">TOTAL</div>
-              </div>
-              {members
-                .filter(m => m.account > 0 || m.toon > 0) // 계좌나 투네 금액이 0이 아닌 멤버만 표시
-                .map((m: Member) => (
-                  <div key={m.id} className={`grid grid-cols-4 items-center ${theme.rowCls}`}>
-                    <div className={theme.nameCls}>{m.name}</div>
-                    <div className={theme.accountCls}>{formatManThousand(m.account)}</div>
-                    <div className={theme.toonCls}>{formatManThousand(m.toon)}</div>
-                    <div className={`${theme.totalCls} text-right`}>{formatManThousand(m.account + m.toon)}</div>
-                  </div>
-                ))}
-              {showTotal && ready && (
-                <div className={`grid grid-cols-4 items-center ${theme.totalWrapCls}`}>
-                  <div className="text-cyan-300 font-bold col-span-2">TOTAL</div>
-                  <div className={`${theme.totalCls} text-right col-span-2`} style={{ fontSize: totalSize * 0.7 }}>{formatManThousand(displaySum)}</div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-        {!showMembers && showTotal && ready && (
-          <div className={`fixed ${sumPosClass}`} style={sumPosStyle}>
-            <div className={theme.totalWrapCls}><div className={theme.totalCls} style={{ fontSize: totalSize }}>{formatManThousand(displaySum)}</div></div>
-          </div>
-        )}
-        {showGoal && ready && goal > 0 && <div className={`fixed ${posClass(goalAnchor)}`}><GoalBar current={rounded} goal={goal} label={goalLabel} theme={theme} width={goalWidth} /></div>}
-        {showTicker && ready && <div className="fixed bottom-4 left-0 right-0"><DonorTicker donors={donors} theme={theme} fontSize={memberSize * 0.8} /></div>}
-        {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={theme} fontSize={memberSize} /></div>}
-        {showMission && ready && missions.length > 0 && <MissionTicker missions={missions} fontSize={memberSize * 0.9} />}
-      </main>
-    );
-  }
-
+  // 기본 테마 (simple) 또는 다른 테마들
   return (
-    <main className="transparent-bg min-h-screen text-outline-strong no-select" style={{ zoom: scale }}>
-      {showMembers && ready && (
-        <div className={`fixed ${listPosClass} space-y-1`}>
-          {members
-            .filter(m => m.account > 0 || m.toon > 0) // 계좌나 투네 금액이 0이 아닌 멤버만 표시
-            .map((m: Member) => (
-              <div key={m.id} className={`${theme.memberCls} ${theme.rowCls}`} style={{ fontSize: memberSize, lineHeight: dense ? 1 : 1.15 }}>
-                <span className={theme.nameCls}>{m.name}</span>
-                <span className={theme.accountCls}>{formatManThousand(m.account)}</span>
-                <span className={theme.toonCls}>({formatManThousand(m.toon)})</span>
-              </div>
-            ))}
-        </div>
-      )}
-
-      {showTotal && ready && (
-        <div className={`fixed ${sumPosClass}`} style={sumPosStyle}>
-          <div className={theme.totalWrapCls}>
-            <div className={theme.totalCls} style={{ fontSize: totalSize, lineHeight: 1.05 }}>
-              계좌 총합 {formatManThousand(displaySum)}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showGoal && ready && goal > 0 && (
-        <div className={`fixed ${posClass(goalAnchor)}`}>
-          <GoalBar current={rounded} goal={goal} label={goalLabel} theme={theme} width={goalWidth} />
-        </div>
-      )}
-
+    <main className="transparent-bg min-h-screen no-select" style={{ zoom: scale }}>
       {showTicker && ready && (
-        <div className={`fixed bottom-4 left-0 right-0`}>
-          <DonorTicker donors={donors} theme={theme} fontSize={memberSize * 0.8} />
+        <div className={`${getElementPosition(tickerPosition, 'tc').className}`} style={getElementPosition(tickerPosition, 'tc').style}>
+          <DonorTicker donors={donors} theme={theme} fontSize={memberSize} />
         </div>
       )}
-
-      {showTimer && (
-        <div className={`fixed ${posClass(timerAnchor)}`}>
+      {showTimer && timerStart && ready && (
+        <div className={`${getElementPosition(timerPosition, 'tr').className}`} style={getElementPosition(timerPosition, 'tr').style}>
           <Timer elapsed={elapsed} theme={theme} fontSize={memberSize} />
         </div>
       )}
-
-      {showMission && ready && missions.length > 0 && (
-        <MissionTicker missions={missions} fontSize={memberSize * 0.9} />
+      {showMission && ready && (
+        <div className={`${getElementPosition(missionPosition, 'tl').className}`} style={getElementPosition(missionPosition, 'tl').style}>
+          <MissionTicker missions={missions} />
+        </div>
+      )}
+      {showMembers && ready && (
+        <div className={`${getElementPosition(memberPosition, anchor).className}`} style={getElementPosition(memberPosition, anchor).style}>
+          <table className={theme.tableCls} style={{ fontSize: memberSize, borderSpacing: 0 }}>
+            <thead>
+              <tr>
+                <td className={theme.headerCls}>이름</td>
+                <td className={theme.headerCls}>계좌</td>
+                <td className={theme.headerCls}>투네</td>
+              </tr>
+            </thead>
+            <tbody>
+              {members
+                .filter(m => m.account > 0 || m.toon > 0)
+                .map((m: Member) => (
+                  <tr key={m.id}>
+                    <td className={`${theme.rowCls} ${theme.nameCls}`}>{m.name}</td>
+                    <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(m.account)}</td>
+                    <td className={`${theme.rowCls} ${theme.toonCls} text-right`}>{formatManThousand(m.toon)}</td>
+                  </tr>
+                ))}
+              {showTotal && ready && (
+                <tr>
+                  <td className={theme.totalWrapCls}>총합</td>
+                  <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(sum)}</td>
+                  <td className={`${theme.rowCls} ${theme.toonCls} text-right`}>{formatManThousand(toonSum)}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
     </main>
   );
 }
 
 export default function OverlayPage() {
-  return (
-    <Suspense>
-      <OverlayInner />
-    </Suspense>
-  );
+  return <OverlayInner />;
 }
