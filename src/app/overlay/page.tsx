@@ -530,6 +530,7 @@ function OverlayContent({ state: s, ready, connected, members, donors, missions,
   }, [connected]);
   
   const theme = THEMES[themeId] || THEMES.default;
+  const memberFontSize = Math.max(10, memberSize - 4);
   
   const hasFreePos = sumFree && sumX !== undefined && sumY !== undefined;
 
@@ -596,7 +597,7 @@ function OverlayContent({ state: s, ready, connected, members, donors, missions,
         )}
         {showMembers && ready && (
           <div className={`${getElementPosition(memberPosition, anchor).className}`} style={getElementPosition(memberPosition, anchor).style}>
-            <table className={theme.tableCls} style={{ fontSize: memberSize, borderSpacing: 0 }}>
+            <table className={theme.tableCls} style={{ fontSize: memberFontSize, borderSpacing: 0 }}>
               <thead>
                 <tr>
                   <td className={theme.headerCls}>이름</td>
@@ -605,24 +606,56 @@ function OverlayContent({ state: s, ready, connected, members, donors, missions,
                 </tr>
               </thead>
               <tbody>
-                {members
-                  .filter(m => m.account > 0 || m.toon > 0) // 계좌나 투네 금액이 0이 아닌 멤버만 표시
-                  .map((m: Member) => (
-                    <tr key={m.id}>
-                      <td className={`${theme.rowCls} ${theme.nameCls}`}>{m.name}</td>
-                      <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(m.account)}</td>
-                      <td className={`${theme.rowCls} ${theme.toonCls} text-right`}>{formatManThousand(m.toon)}</td>
-                    </tr>
-                  ))}
-                {showTotal && ready && (
-                  <tr>
-                    <td className={theme.totalWrapCls}>총합</td>
-                    <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(sum)}</td>
-                    <td className={`${theme.rowCls} ${theme.toonCls} text-right`}>{formatManThousand(toonSum)}</td>
-                  </tr>
-                )}
+                {(() => {
+                  // 총합을 제외한 멤버들만 필터링하고 최대값 계산
+                  const filteredMembers = members.filter(m => m.account > 0 || m.toon > 0);
+                  const maxAccount = Math.max(...filteredMembers.map(m => m.account), 1);
+                  const maxToon = Math.max(...filteredMembers.map(m => m.toon), 1);
+                  
+                  return filteredMembers.map((m: Member) => {
+                    // 총 기부금 기준 상대값 계산 (계좌 + 투네)
+                    const totalAmount = m.account + m.toon;
+                    const maxTotal = maxAccount + maxToon;
+                    const totalPercent = (totalAmount / maxTotal) * 100;
+                    
+                    return (
+                      <tr 
+                        key={m.id} 
+                        className="relative group" 
+                        style={{ 
+                          position: 'relative',
+                          background: `linear-gradient(to right, #3b82f6 ${totalPercent}%, transparent ${totalPercent}%)`
+                        }}
+                      >
+                        <td className={`${theme.rowCls} ${theme.nameCls} relative z-10`}>
+                          {m.name}
+                        </td>
+                        <td className={`${theme.rowCls} ${theme.accountCls} text-right relative z-10`}>
+                          {formatManThousand(m.account)}
+                        </td>
+                        <td className={`${theme.rowCls} ${theme.toonCls} text-right relative z-10`}>
+                          {formatManThousand(m.toon)}
+                        </td>
+                      </tr>
+                    );
+                  });
+                })()}
               </tbody>
             </table>
+            {/* 총합은 별도로 표시 (멤버 목록 밖) */}
+            {showTotal && ready && (
+              <div className={`mt-2 ${getElementPosition(undefined, sumAnchor).className}`} style={getElementPosition(undefined, sumAnchor).style}>
+                <table className={theme.tableCls} style={{ fontSize: totalSize, borderSpacing: 0 }}>
+                  <tbody>
+                    <tr>
+                      <td className={theme.totalWrapCls}>총합</td>
+                      <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(sum)}</td>
+                      <td className={`${theme.rowCls} ${theme.toonCls} text-right`}></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </main>
@@ -649,7 +682,7 @@ function OverlayContent({ state: s, ready, connected, members, donors, missions,
       )}
       {showMembers && ready && (
         <div className={`${getElementPosition(memberPosition, anchor).className}`} style={getElementPosition(memberPosition, anchor).style}>
-          <table className={theme.tableCls} style={{ fontSize: memberSize, borderSpacing: 0 }}>
+          <table className={theme.tableCls} style={{ fontSize: memberFontSize, borderSpacing: 0 }}>
             <thead>
               <tr>
                 <td className={theme.headerCls}>이름</td>
@@ -671,7 +704,7 @@ function OverlayContent({ state: s, ready, connected, members, donors, missions,
                 <tr>
                   <td className={theme.totalWrapCls}>총합</td>
                   <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(sum)}</td>
-                  <td className={`${theme.rowCls} ${theme.toonCls} text-right`}>{formatManThousand(toonSum)}</td>
+                  <td className={`${theme.rowCls} ${theme.toonCls} text-right`}></td>
                 </tr>
               )}
             </tbody>
