@@ -153,12 +153,15 @@ export default function AdminPage() {
       scale: p.scale, memberSize: p.memberSize, totalSize: p.totalSize,
       dense: String(p.dense), anchor: p.anchor, theme: p.theme,
       showMembers: String(p.showMembers), showTotal: String(p.showTotal),
+      showGoal: String(p.showGoal), showTicker: String(p.showTicker),
+      showTimer: String(p.showTimer), showMission: String(p.showMission),
+      sumFree: String(p.sumFree),
+      hideUi: "1"
     };
     if (p.sumFree) { q.sumX = p.sumX; q.sumY = p.sumY; } else { q.sumAnchor = p.sumAnchor; }
-    if (p.showGoal) { q.showGoal = "true"; q.goal = String(Math.max(0, parseInt(p.goal || "0", 10) || 0)); q.goalLabel = p.goalLabel; q.goalWidth = p.goalWidth; q.goalAnchor = p.goalAnchor; }
-    if (p.showTicker) q.showTicker = "true";
-    if (p.showTimer && p.timerStart) { q.showTimer = "true"; q.timerStart = String(p.timerStart); q.timerAnchor = p.timerAnchor; }
-    if (p.showMission) { q.showMission = "true"; q.missionAnchor = p.missionAnchor; }
+    if (p.showGoal) { q.goal = String(Math.max(0, parseInt(p.goal || "0", 10) || 0)); q.goalLabel = p.goalLabel; q.goalWidth = p.goalWidth; q.goalAnchor = p.goalAnchor; }
+    if (p.showTimer && p.timerStart) { q.timerStart = String(p.timerStart); q.timerAnchor = p.timerAnchor; }
+    if (p.showMission) { q.missionAnchor = p.missionAnchor; }
     return `${base}?${new URLSearchParams(q).toString()}`;
   };
   const copyUrl = async (url: string, id: string) => {

@@ -420,29 +420,59 @@ function OverlayContentWrapper({ state: s, ready, connected, members, donors, mi
   // Use overlay settings from state, with URL params as fallback for backward compatibility
   const overlaySettings = s?.overlaySettings;
   
-  const scale = Math.max(0.3, Math.min(3, overlaySettings?.scale ?? parseFloat(sp.get("scale") || "1")));
-  const memberSize = Math.max(10, Math.min(80, overlaySettings?.memberSize ?? parseInt(sp.get("memberSize") || "24", 10)));
-  const totalSize = Math.max(10, Math.min(200, overlaySettings?.totalSize ?? parseInt(sp.get("totalSize") || "64", 10)));
-  const dense = overlaySettings?.dense ?? (sp.get("dense") === "true");
-  const anchor = overlaySettings?.anchor ?? (sp.get("anchor") as any) ?? "tl";
-  const sumAnchor = overlaySettings?.sumAnchor ?? (sp.get("sumAnchor") as any) ?? "bc";
-  const sumFree = overlaySettings?.sumFree ?? (sp.get("sumFree") === "true");
-  const sumX = Math.max(0, Math.min(100, overlaySettings?.sumX ?? parseFloat(sp.get("sumX") || "50")));
-  const sumY = Math.max(0, Math.min(100, overlaySettings?.sumY ?? parseFloat(sp.get("sumY") || "90")));
-  const themeId = (overlaySettings?.theme ?? sp.get("theme") ?? "default") as ThemeId;
-  const showMembers = overlaySettings?.showMembers ?? (sp.get("showMembers") !== "false");
-  const showTotal = overlaySettings?.showTotal ?? (sp.get("showTotal") !== "false");
-  const showGoal = overlaySettings?.showGoal ?? (sp.get("showGoal") === "true");
-  const goal = overlaySettings?.goal ?? parseInt(sp.get("goal") || "0", 10);
-  const goalLabel = overlaySettings?.goalLabel ?? sp.get("goalLabel") ?? "목표 금액";
-  const goalWidth = Math.max(100, Math.min(800, overlaySettings?.goalWidth ?? parseInt(sp.get("goalWidth") || "400", 10)));
-  const goalAnchor = overlaySettings?.goalAnchor ?? (sp.get("goalAnchor") as any) ?? "bc";
-  const showTicker = overlaySettings?.showTicker ?? (sp.get("showTicker") === "true");
-  const showTimer = overlaySettings?.showTimer ?? (sp.get("showTimer") === "true");
-  const timerStart = overlaySettings?.timerStart ?? (sp.get("timerStart") ? new Date(sp.get("timerStart")!).getTime() : null);
-  const timerAnchor = overlaySettings?.timerAnchor ?? (sp.get("timerAnchor") as any) ?? "tr";
-  const showMission = overlaySettings?.showMission ?? (sp.get("showMission") === "true");
-  const missionAnchor = overlaySettings?.missionAnchor ?? (sp.get("missionAnchor") as any) ?? "br";
+  const scaleParam = sp.get("scale");
+  const scaleRaw = scaleParam !== null ? parseFloat(scaleParam) : overlaySettings?.scale ?? 1;
+  const scale = Math.max(0.3, Math.min(3, Number.isFinite(scaleRaw) ? scaleRaw : 1));
+  const memberSizeParam = sp.get("memberSize");
+  const memberSizeRaw = memberSizeParam !== null ? parseInt(memberSizeParam, 10) : overlaySettings?.memberSize ?? 24;
+  const memberSize = Math.max(10, Math.min(80, Number.isFinite(memberSizeRaw) ? memberSizeRaw : 24));
+  const totalSizeParam = sp.get("totalSize");
+  const totalSizeRaw = totalSizeParam !== null ? parseInt(totalSizeParam, 10) : overlaySettings?.totalSize ?? 64;
+  const totalSize = Math.max(10, Math.min(200, Number.isFinite(totalSizeRaw) ? totalSizeRaw : 64));
+  const denseParam = sp.get("dense");
+  const dense = denseParam !== null ? denseParam === "true" : overlaySettings?.dense ?? false;
+  const anchorParam = sp.get("anchor");
+  const anchor = anchorParam ?? overlaySettings?.anchor ?? "tl";
+  const sumAnchorParam = sp.get("sumAnchor");
+  const sumAnchor = sumAnchorParam ?? overlaySettings?.sumAnchor ?? "bc";
+  const sumFreeParam = sp.get("sumFree");
+  const sumFree = sumFreeParam !== null ? sumFreeParam === "true" : overlaySettings?.sumFree ?? false;
+  const sumXParam = sp.get("sumX");
+  const sumXRaw = sumXParam !== null ? parseFloat(sumXParam) : overlaySettings?.sumX ?? 50;
+  const sumX = Math.max(0, Math.min(100, Number.isFinite(sumXRaw) ? sumXRaw : 50));
+  const sumYParam = sp.get("sumY");
+  const sumYRaw = sumYParam !== null ? parseFloat(sumYParam) : overlaySettings?.sumY ?? 90;
+  const sumY = Math.max(0, Math.min(100, Number.isFinite(sumYRaw) ? sumYRaw : 90));
+  const themeParam = sp.get("theme");
+  const themeId = (themeParam ?? overlaySettings?.theme ?? "default") as ThemeId;
+  const showMembersParam = sp.get("showMembers");
+  const showMembers = showMembersParam !== null ? showMembersParam !== "false" : overlaySettings?.showMembers ?? true;
+  const showTotalParam = sp.get("showTotal");
+  const showTotal = showTotalParam !== null ? showTotalParam !== "false" : overlaySettings?.showTotal ?? true;
+  const showGoalParam = sp.get("showGoal");
+  const showGoal = showGoalParam !== null ? showGoalParam === "true" : overlaySettings?.showGoal ?? false;
+  const goalParam = sp.get("goal");
+  const goalRaw = goalParam !== null ? parseInt(goalParam, 10) : overlaySettings?.goal ?? 0;
+  const goal = Math.max(0, Number.isFinite(goalRaw) ? goalRaw : 0);
+  const goalLabelParam = sp.get("goalLabel");
+  const goalLabel = goalLabelParam ?? overlaySettings?.goalLabel ?? "목표 금액";
+  const goalWidthParam = sp.get("goalWidth");
+  const goalWidthRaw = goalWidthParam !== null ? parseInt(goalWidthParam, 10) : overlaySettings?.goalWidth ?? 400;
+  const goalWidth = Math.max(100, Math.min(800, Number.isFinite(goalWidthRaw) ? goalWidthRaw : 400));
+  const goalAnchorParam = sp.get("goalAnchor");
+  const goalAnchor = goalAnchorParam ?? overlaySettings?.goalAnchor ?? "bc";
+  const showTickerParam = sp.get("showTicker");
+  const showTicker = showTickerParam !== null ? showTickerParam === "true" : overlaySettings?.showTicker ?? false;
+  const showTimerParam = sp.get("showTimer");
+  const showTimer = showTimerParam !== null ? showTimerParam === "true" : overlaySettings?.showTimer ?? false;
+  const timerStartParam = sp.get("timerStart");
+  const timerStart = timerStartParam !== null ? new Date(timerStartParam).getTime() : overlaySettings?.timerStart ?? null;
+  const timerAnchorParam = sp.get("timerAnchor");
+  const timerAnchor = timerAnchorParam ?? overlaySettings?.timerAnchor ?? "tr";
+  const showMissionParam = sp.get("showMission");
+  const showMission = showMissionParam !== null ? showMissionParam === "true" : overlaySettings?.showMission ?? false;
+  const missionAnchorParam = sp.get("missionAnchor");
+  const missionAnchor = missionAnchorParam ?? overlaySettings?.missionAnchor ?? "br";
   
   // 개별 위치 설정 (URL 파라미터에서 읽기)
   const memberPosition = overlaySettings?.memberPosition || (sp.get("memberX") && sp.get("memberY") ? {
@@ -471,9 +501,7 @@ function OverlayContentWrapper({ state: s, ready, connected, members, donors, mi
   } : undefined);
   
   // missionAnchor를 객체로 변환
-  const missionAnchorObj = typeof missionAnchor === 'string' ? 
-    (overlaySettings?.missionAnchor as any) || { x: 50, y: 50 } : 
-    missionAnchor;
+  const missionAnchorObj = typeof missionAnchor === 'string' ? { x: 50, y: 50 } : missionAnchor;
   
   return (
     <OverlayContent 
@@ -612,7 +640,7 @@ function OverlayContent({ state: s, ready, connected, members, donors, missions,
             )}
             {showMission && ready && (
               <div className={`${getElementPosition(missionPosition, 'tl').className}`} style={getElementPosition(missionPosition, 'tl').style}>
-                <ElectronicMissionBoard missions={missions} fontSize={memberSize} missionAnchor={missionAnchor} />
+                <ElectronicMissionBoard missions={missions} fontSize={memberSize} missionAnchor={missionAnchor} themeName={themeId} />
               </div>
             )}
             {showMembers && ready && (
@@ -764,7 +792,7 @@ function OverlayContent({ state: s, ready, connected, members, donors, missions,
           )}
           {showMission && ready && (
             <div className={`${getElementPosition(missionPosition, 'tl').className}`} style={getElementPosition(missionPosition, 'tl').style}>
-              <ElectronicMissionBoard missions={missions} fontSize={memberSize} />
+              <ElectronicMissionBoard missions={missions} fontSize={memberSize} themeName={themeId} />
             </div>
           )}
           {showMembers && ready && (
@@ -808,19 +836,20 @@ type OverlayMode = 'standard' | 'mission' | 'both';
 
 function OverlayModeController({ children }: { children: React.ReactNode | ((props: { overlayMode: OverlayMode }) => React.ReactNode) }) {
   const [overlayMode, setOverlayMode] = useState<OverlayMode>('standard');
-  const [fadeClass, setFadeClass] = useState('opacity-100');
   const searchParams = useSearchParams();
+  const hideUi = searchParams.get('hideUi') === '1' || searchParams.get('hideUi') === 'true';
 
   // URL 파라미터로 초기 모드 설정
   useEffect(() => {
     const mode = searchParams.get('mode') as OverlayMode;
-    if (mode && ['standard', 'mission'].includes(mode)) {
+    if (mode && ['standard', 'mission', 'both'].includes(mode)) {
       setOverlayMode(mode);
     }
   }, [searchParams]);
 
   // 키보드 단축키로 전환
   useEffect(() => {
+    if (hideUi) return;
     const handleKeyPress = (e: KeyboardEvent) => {
       if (e.key === '1') {
         switchMode('standard');
@@ -839,32 +868,17 @@ function OverlayModeController({ children }: { children: React.ReactNode | ((pro
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [overlayMode]);
+  }, [overlayMode, hideUi]);
 
   const switchMode = (newMode: OverlayMode) => {
-    setFadeClass('opacity-0');
-    setTimeout(() => {
-      setOverlayMode(newMode);
-      setFadeClass('opacity-100');
-    }, 150);
+    setOverlayMode(newMode);
   };
 
-  return (
-    <div className={`min-h-screen transition-opacity duration-300 ${fadeClass}`}>
-      {/* 모드 표시기 */}
-      <div className="fixed top-4 right-4 z-50 bg-black bg-opacity-70 text-white px-3 py-2 rounded text-sm">
-        모드: {overlayMode === 'standard' ? '표준' : overlayMode === 'mission' ? '미션' : '동시'} 
-        <span className="text-xs text-gray-300 ml-2">[1:표준, 2:미션, 3:동시, Space:전환]</span>
-      </div>
-      
-      {/* 현재 모드 표시 */}
-      <div className="fixed bottom-4 left-4 z-50 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-xs">
-        현재: {overlayMode === 'standard' ? 'Standard' : overlayMode === 'mission' ? 'Mission' : 'Both'}
-      </div>
-      
-      {typeof children === 'function' ? children({ overlayMode }) : children}
-    </div>
-  );
+  if (hideUi) {
+    return typeof children === 'function' ? children({ overlayMode }) : children;
+  }
+
+  return typeof children === 'function' ? children({ overlayMode }) : children;
 }
 
 export default function OverlayPage() {

@@ -7,6 +7,7 @@ interface ElectronicMissionBoardProps {
   missions: MissionItem[];
   fontSize?: number;
   missionAnchor?: { x: number; y: number };
+  themeName?: string;
 }
 
 interface Theme {
@@ -49,11 +50,30 @@ const themes: { [key: string]: Theme } = {
   }
 };
 
-export default function ElectronicMissionBoard({ missions, fontSize = 16, missionAnchor }: ElectronicMissionBoardProps) {
+export default function ElectronicMissionBoard({ missions, fontSize = 16, missionAnchor, themeName = 'blue' }: ElectronicMissionBoardProps) {
   const [position, setPosition] = useState(400);
-  const [currentTheme] = useState('blue');
   
-  const theme = themes[currentTheme];
+  // 오버레이 테마 ID를 전광판 테마로 매핑
+  const getMissionTheme = (overlayThemeId: string): string => {
+    switch (overlayThemeId) {
+      case 'excel':
+        return 'green';
+      case 'neon':
+        return 'blue';
+      case 'retro':
+        return 'red';
+      case 'minimal':
+      case 'rpg':
+      case 'pastel':
+      case 'neonExcel':
+        return 'blue';
+      default:
+        return 'blue';
+    }
+  };
+  
+  const missionTheme = getMissionTheme(themeName);
+  const theme = themes[missionTheme] || themes.blue;
   
   // 미션 텍스트 생성
   const missionText = missions.length > 0 

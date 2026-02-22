@@ -343,24 +343,26 @@ export default function AdminPage() {
       theme: preset.theme,
       showMembers: String(preset.showMembers),
       showTotal: String(preset.showTotal),
+      showGoal: String(preset.showGoal),
+      showTicker: String(preset.showTicker),
+      showTimer: String(preset.showTimer),
+      showMission: String(preset.showMission),
+      sumFree: String(preset.sumFree),
+      hideUi: "1"
     };
     
     if (preset.showGoal) {
-      q.showGoal = "true";
       q.goal = String(Math.max(0, parseInt(preset.goal || "0", 10) || 0));
       q.goalLabel = preset.goalLabel;
       q.goalWidth = preset.goalWidth;
       q.goalAnchor = preset.goalAnchor;
     }
     
-    if (preset.showTicker) q.showTicker = "true";
     if (preset.showTimer && preset.timerStart) {
-      q.showTimer = "true";
       q.timerStart = String(preset.timerStart);
       q.timerAnchor = preset.timerAnchor;
     }
     if (preset.showMission) {
-      q.showMission = "true";
       q.missionAnchor = preset.missionAnchor;
     }
     
