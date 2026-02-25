@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { OverlayCard } from '@/components/OverlayCard';
-import { AppState, OverlaySettings } from '@/lib/state';
+import { AppState } from '@/lib/state';
 import { sendSSEUpdate, useSSEConnection } from '@/lib/sse-client';
 import { nanoid } from 'nanoid';
 import { createModuleLogger } from '@/lib/logger';
@@ -36,10 +36,6 @@ export type OverlayPreset = {
   goalLabel: string;
   goalWidth: string;
   goalAnchor: string;
-  showPersonalGoals: boolean;
-  personalGoalLabel: string;
-  personalGoalWidth: string;
-  personalGoalAnchor: string;
   showTicker: boolean;
   showTimer: boolean;
   timerStart: number | null;
@@ -50,7 +46,6 @@ export type OverlayPreset = {
   memberPosition?: OverlayElementPosition;
   totalPosition?: OverlayElementPosition;
   goalPosition?: OverlayElementPosition;
-  personalGoalPosition?: OverlayElementPosition;
   tickerPosition?: OverlayElementPosition;
   timerPosition?: OverlayElementPosition;
   missionPosition?: OverlayElementPosition;
@@ -76,10 +71,6 @@ const convertToOverlayPreset = (preset: any): OverlayPreset => ({
   goalLabel: preset.goalLabel || '목표 금액',
   goalWidth: String(preset.goalWidth || '400'),
   goalAnchor: preset.goalAnchor || 'bc',
-  showPersonalGoals: Boolean(preset.showPersonalGoals || false),
-  personalGoalLabel: preset.personalGoalLabel || '개인 목표',
-  personalGoalWidth: String(preset.personalGoalWidth || '300'),
-  personalGoalAnchor: preset.personalGoalAnchor || 'br',
   showTicker: Boolean(preset.showTicker || false),
   showTimer: Boolean(preset.showTimer || false),
   timerStart: preset.timerStart || null,
@@ -90,7 +81,6 @@ const convertToOverlayPreset = (preset: any): OverlayPreset => ({
   memberPosition: preset.memberPosition || undefined,
   totalPosition: preset.totalPosition || undefined,
   goalPosition: preset.goalPosition || undefined,
-  personalGoalPosition: preset.personalGoalPosition || undefined,
   tickerPosition: preset.tickerPosition || undefined,
   timerPosition: preset.timerPosition || undefined,
   missionPosition: preset.missionPosition || undefined,
@@ -158,40 +148,6 @@ const PRESET_TEMPLATES = [
     }
   },
   {
-    name: "👤 개인목표",
-    description: "멤버별 개인 목표 금액 표시",
-    preset: {
-      name: "개인목표 오버레이",
-      theme: "default",
-      showMembers: true,
-      showTotal: true,
-      showGoal: false,
-      showPersonalGoals: true,
-      personalGoalLabel: "개인 목표",
-      personalGoalWidth: "300",
-      personalGoalAnchor: "br",
-      showTicker: false,
-      showTimer: false,
-      showMission: false,
-      scale: "1",
-      memberSize: 16,
-      totalSize: 18,
-      dense: false,
-      anchor: "br",
-      sumAnchor: "bc",
-      goal: "0",
-      goalLabel: "목표 금액",
-      goalWidth: "400",
-      goalAnchor: "bc",
-      missionAnchor: "br",
-      timerAnchor: "tr",
-      timerStart: null,
-      sumFree: false,
-      sumX: "50",
-      sumY: "90"
-    }
-  },
-  {
     name: "✨ 미니멀",
     description: "간단하고 깔끔한 디자인",
     preset: {
@@ -200,10 +156,6 @@ const PRESET_TEMPLATES = [
       showMembers: false,
       showTotal: true,
       showGoal: false,
-      showPersonalGoals: false,
-      personalGoalLabel: "개인 목표",
-      personalGoalWidth: "300",
-      personalGoalAnchor: "br",
       showTicker: false,
       showTimer: false,
       showMission: false,
@@ -234,10 +186,6 @@ const PRESET_TEMPLATES = [
       showMembers: true,
       showTotal: true,
       showGoal: true,
-      showPersonalGoals: false,
-      personalGoalLabel: "개인 목표",
-      personalGoalWidth: "300",
-      personalGoalAnchor: "br",
       showTicker: true,
       showTimer: false,
       showMission: true,
@@ -317,7 +265,6 @@ export default function AdminPage() {
       anchor: "tl", sumAnchor: "bc", sumFree: false, sumX: "50", sumY: "90",
       theme: "default", showMembers: true, showTotal: true, showGoal: false,
       goal: "0", goalLabel: "목표 금액", goalWidth: "400", goalAnchor: "bc",
-      showPersonalGoals: false, personalGoalLabel: "개인 목표", personalGoalWidth: "300", personalGoalAnchor: "br",
       showTicker: false, showTimer: false, timerStart: null, timerAnchor: "tr",
       showMission: false, missionAnchor: "br"
     };
@@ -411,13 +358,6 @@ export default function AdminPage() {
       q.goalAnchor = preset.goalAnchor;
     }
     
-    if (preset.showPersonalGoals) {
-      q.showPersonalGoals = String(preset.showPersonalGoals);
-      q.personalGoalLabel = preset.personalGoalLabel;
-      q.personalGoalWidth = preset.personalGoalWidth;
-      q.personalGoalAnchor = preset.personalGoalAnchor;
-    }
-    
     if (preset.showTimer && preset.timerStart) {
       q.timerStart = String(preset.timerStart);
       q.timerAnchor = preset.timerAnchor;
@@ -438,10 +378,6 @@ export default function AdminPage() {
     if (preset.goalPosition?.x && preset.goalPosition?.y) {
       q.goalX = preset.goalPosition.x;
       q.goalY = preset.goalPosition.y;
-    }
-    if (preset.personalGoalPosition?.x && preset.personalGoalPosition?.y) {
-      q.personalGoalX = preset.personalGoalPosition.x;
-      q.personalGoalY = preset.personalGoalPosition.y;
     }
     if (preset.tickerPosition?.x && preset.tickerPosition?.y) {
       q.tickerX = preset.tickerPosition.x;

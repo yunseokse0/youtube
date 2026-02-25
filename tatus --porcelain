@@ -1,0 +1,64 @@
+warning: in the working copy of '.github/workflows/create-youtube2.yml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.github/workflows/deploy-youtube2.yml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.github/workflows/deploy.yml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.github/workflows/direct-deploy.yml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.github/workflows/emergency-deploy.yml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.github/workflows/existing-deploy.yml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.github/workflows/force-deploy.yml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.github/workflows/immediate-deploy.yml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.github/workflows/manual-deploy.yml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.github/workflows/netlify-deploy.yml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.github/workflows/token-deploy.yml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'create-default-state.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gradual-graph-test.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'high-contrast-test.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'high-visibility-test.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'inject-test-missions.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'neon-excel-graph-test.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'neon-excel-test.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'next-env.d.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'package-lock.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'package.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'postcss.config.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'send-state-simple.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'send-state.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'send_test_data.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'solid-block-test.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/app/globals.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/app/overlay/page.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/app/page.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/app/simple-admin/page.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/app/youtube/page.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/MemberRow.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/OverlayCard.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/overlay-websocket.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/state.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/youtube.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tsconfig.json', LF will be replaced by CRLF the next time Git touches it
+.gitignore
+.gitignore
+next.config.js
+next.config.js
+package-lock.json
+package-lock.json
+package.json
+package.json
+src/app/admin/page.tsx
+src/app/admin/page.tsx
+src/app/globals.css
+src/app/globals.css
+src/app/overlay/page.tsx
+src/app/overlay/page.tsx
+src/app/page.tsx
+src/app/page.tsx
+src/app/simple-admin/page.tsx
+src/app/youtube/page.tsx
+src/components/MemberRow.tsx
+src/components/MemberRow.tsx
+src/components/OverlayCard.tsx
+src/lib/overlay-websocket.ts
+src/lib/state.ts
+src/lib/state.ts
+src/lib/youtube.ts
+src/lib/youtube.ts
+tsconfig.json

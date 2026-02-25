@@ -1,0 +1,10 @@
+[33m64fe635[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m Trigger deployment: Force Vercel redeploy
+[33m139e2e7[m Fix: 테마 변경 및 전광판 표시 문제 해결
+[33mce72400[m Emergency deployment now
+[33m744dd9b[m Trigger immediate deployment
+[33m6930511[m Deploy to new Vercel project youtube2
+[33me29904f[m Direct Vercel deploy with token
+[33m6f29d98[m Add force deploy workflow
+[33m4eaec66[m Update files and push to GitHub
+[33m0e36b5d[m Fix useSearchParams and deploy to existing Vercel project
+[33m4beea9b[m Add Vercel token deployment workflow

@@ -1,892 +1,434 @@
 "use client";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi } from "@/lib/state";
-import { useSSEConnection } from "@/lib/sse-client";
-import { createModuleLogger } from "@/lib/logger";
-import MissionMenu from "@/components/MissionMenu";
-import MissionTicker from "@/components/MissionTicker";
-import ElectronicMissionBoard from "@/components/ElectronicMissionBoard";
+import { motion, AnimatePresence } from "framer-motion";
+import { AppState, totalAccount, Member, loadState } from "@/lib/state";
 
-const logger = createModuleLogger('Overlay');
+function useStorageState(): AppState {
+  const [state, setState] = useState<AppState>({ members: [], donors: [], forbiddenWords: [], updatedAt: Date.now() });
 
-function useRemoteState(): { state: AppState | null; ready: boolean; connected: boolean } {
-  const [state, setState] = useState<AppState | null>(null);
-  const lastUpdatedRef = useRef(0);
-  const { connected } = useSSEConnection((data) => {
-    if (data.type === 'overlay_update' && data.updatedAt && data.updatedAt !== lastUpdatedRef.current) {
-      lastUpdatedRef.current = data.updatedAt;
-      setState(data);
-      logger.info('SSE 상태 업데이트 수신', { 
-        updatedAt: data.updatedAt,
-        members: data.members?.length,
-        donors: data.donors?.length,
-        memberData: data.members?.map((m: Member) => ({ name: m.name, account: m.account, toon: m.toon }))
-      });
-    } else if (data.type === 'preset_update' && data.preset) {
-      // 프리셋 업데이트 메시지 처리 - 오버레이 설정 업데이트
-      logger.info('프리셋 업데이트 수신, 오버레이 설정 업데이트', data.preset);
-      
-      // 프리셋 데이터를 오버레이 설정으로 변환하여 업데이트
-      setState((prevState) => {
-        if (!prevState) return prevState;
-        
-        const preset = data.preset;
-        const newOverlaySettings = {
-          scale: parseFloat(preset.scale || '1'),
-          memberSize: parseInt(preset.memberSize || '24', 10),
-          totalSize: parseInt(preset.totalSize || '64', 10),
-          dense: preset.dense || false,
-          anchor: preset.anchor || 'tl',
-          sumAnchor: preset.sumAnchor || 'bc',
-          sumFree: preset.sumFree || false,
-          sumX: parseFloat(preset.sumX || '50'),
-          sumY: parseFloat(preset.sumY || '90'),
-          theme: preset.theme || 'default',
-          showMembers: preset.showMembers !== false,
-          showTotal: preset.showTotal !== false,
-          showGoal: preset.showGoal || false,
-          goal: parseInt(preset.goal || '0', 10),
-          goalLabel: preset.goalLabel || '목표 금액',
-          goalWidth: parseInt(preset.goalWidth || '400', 10),
-          goalAnchor: preset.goalAnchor || 'bc',
-          showTicker: preset.showTicker || false,
-          showTimer: preset.showTimer || false,
-          timerStart: preset.timerStart || null,
-          timerAnchor: preset.timerAnchor || 'tr',
-          showMission: preset.showMission || false,
-          missionAnchor: preset.missionAnchor || 'br'
-        };
-        
-        return {
-          ...prevState,
-          overlaySettings: newOverlaySettings,
-          updatedAt: Date.now()
-        };
-      });
-    }
-  });
-  
-  // Initial state loading
   useEffect(() => {
-    const fetchInitialState = async () => {
-      const data = await loadStateFromApi();
-      if (data) {
-        lastUpdatedRef.current = data.updatedAt;
-        setState(data);
-        logger.info('초기 상태 로드됨', { updatedAt: data.updatedAt });
-      }
-    };
-    fetchInitialState();
+    loadState().then(setState);
+    const id = setInterval(() => loadState().then(setState), 1000);
+    return () => clearInterval(id);
   }, []);
 
-  // Fallback polling when SSE is not connected
-  useEffect(() => {
-    if (connected) return; // Don't poll if SSE is connected
-    
-    let running = true;
-    const poll = async () => {
-      if (!running || !state) return;
-      try {
-        const res = await fetch(`/api/state?_t=${Date.now()}`, { cache: "no-store" });
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.updatedAt && data.updatedAt !== lastUpdatedRef.current) {
-            lastUpdatedRef.current = data.updatedAt;
-            setState(data);
-          }
-        }
-      } catch (error) {
-        logger.error('상태 페치 실패', error);
-      }
-      if (running) setTimeout(poll, 1500);
-    };
-    
-    if (state) {
-      poll();
-    }
-    
-    return () => {
-      running = false;
-    };
-  }, [connected, state]);
-
-  return { state, ready: state !== null, connected };
+  return state;
 }
 
-function useCountUp(value: number, durationMs = 600) {
-  const [display, setDisplay] = useState(value);
-  const rafRef = useRef<number | null>(null);
-  const startRef = useRef<number>(0);
-
-  useEffect(() => {
-    const from = display;
-    const to = value;
-    startRef.current = performance.now();
-    const loop = (t: number) => {
-      const elapsed = t - startRef.current;
-      const p = Math.min(1, elapsed / durationMs);
-      const eased = 1 - Math.pow(1 - p, 3);
-      setDisplay(Math.round(from + (to - from) * eased));
-      if (p < 1) rafRef.current = requestAnimationFrame(loop);
-    };
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    rafRef.current = requestAnimationFrame(loop);
-    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  }, [value, durationMs]);
-
-  return display;
+// 금액 포맷팅 함수
+function formatCurrency(amount: number, showCurrency: boolean = true): string {
+  const formatted = amount.toLocaleString('ko-KR');
+  return showCurrency ? `${formatted}원` : formatted;
 }
 
-function useElapsed(startTs: number | null) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    if (!startTs) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [startTs]);
-  if (!startTs) return null;
-  const diff = Math.max(0, Math.floor((now - startTs) / 1000));
-  const h = Math.floor(diff / 3600);
-  const m = Math.floor((diff % 3600) / 60);
-  const sec = diff % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-}
-
-type ThemeId = "default" | "excel" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel";
-
-const THEMES: Record<ThemeId, {
-  label: string;
-  memberCls: string;
-  nameCls: string;
-  accountCls: string;
-  toonCls: string;
-  totalCls: string;
-  totalWrapCls: string;
-  rowCls: string;
-  tableCls: string;
-  headerCls: string;
-  goalBarBg: string;
-  goalBarFill: string;
-  goalText: string;
-  goalWrap: string;
-  tickerCls: string;
-  timerCls: string;
-}> = {
-  default: {
-    label: "기본",
-    memberCls: "font-bold tracking-tight",
-    nameCls: "text-white",
-    accountCls: "ml-2 text-emerald-300",
-    toonCls: "ml-1 text-neutral-200",
-    totalCls: "font-extrabold text-amber-200 drop-shadow-[0_0_6px_rgba(0,0,0,1)]",
-    totalWrapCls: "",
-    rowCls: "",
-    tableCls: "",
-    headerCls: "",
-    goalBarBg: "bg-neutral-800/80",
-    goalBarFill: "bg-gradient-to-r from-emerald-500 to-emerald-300",
-    goalText: "text-white font-bold drop-shadow-[0_0_4px_rgba(0,0,0,1)]",
-    goalWrap: "",
-    tickerCls: "text-amber-200 font-semibold",
-    timerCls: "font-mono text-white/80",
-  },
-  excel: {
-    label: "엑셀",
-    memberCls: "font-mono",
-    nameCls: "text-black font-semibold",
-    accountCls: "text-blue-700 font-bold",
-    toonCls: "text-gray-500",
-    totalCls: "font-bold text-white",
-    totalWrapCls: "bg-[#217346] px-3 py-1",
-    rowCls: "border border-[#d4d4d4] px-3 py-1",
-    tableCls: "bg-white/95 border-collapse shadow-lg",
-    headerCls: "bg-[#217346] text-white font-bold px-3 py-1 border border-[#1a5c37] text-sm",
-    goalBarBg: "bg-[#d4d4d4]",
-    goalBarFill: "bg-[#217346]",
-    goalText: "text-white font-mono font-bold",
-    goalWrap: "border border-[#d4d4d4] bg-white/95 p-1",
-    tickerCls: "text-[#217346] font-mono font-bold",
-    timerCls: "font-mono text-black/60 bg-white/80 px-2",
-  },
-  neon: {
-    label: "네온",
-    memberCls: "font-black tracking-wide",
-    nameCls: "text-cyan-300 drop-shadow-[0_0_8px_rgba(0,255,255,0.7)]",
-    accountCls: "ml-2 text-fuchsia-400 drop-shadow-[0_0_8px_rgba(255,0,255,0.7)]",
-    toonCls: "ml-1 text-yellow-300 drop-shadow-[0_0_6px_rgba(255,255,0,0.5)]",
-    totalCls: "font-black text-lime-300 drop-shadow-[0_0_12px_rgba(0,255,0,0.8)]",
-    totalWrapCls: "",
-    rowCls: "",
-    tableCls: "",
-    headerCls: "",
-    goalBarBg: "bg-neutral-900/80 border border-cyan-500/40",
-    goalBarFill: "bg-gradient-to-r from-fuchsia-500 via-cyan-400 to-lime-400 shadow-[0_0_15px_rgba(0,255,255,0.5)]",
-    goalText: "text-white font-black drop-shadow-[0_0_8px_rgba(0,255,255,0.7)]",
-    goalWrap: "",
-    tickerCls: "text-cyan-300 font-bold drop-shadow-[0_0_8px_rgba(0,255,255,0.5)]",
-    timerCls: "font-mono text-fuchsia-300 drop-shadow-[0_0_6px_rgba(255,0,255,0.5)]",
-  },
-  retro: {
-    label: "레트로",
-    memberCls: "font-mono font-bold",
-    nameCls: "text-amber-100",
-    accountCls: "ml-2 text-green-400",
-    toonCls: "ml-1 text-green-600",
-    totalCls: "font-mono font-bold text-green-300",
-    totalWrapCls: "border-2 border-green-500/60 bg-black/70 px-4 py-2 rounded",
-    rowCls: "",
-    tableCls: "",
-    headerCls: "",
-    goalBarBg: "bg-black/80 border border-green-500/50",
-    goalBarFill: "bg-green-500",
-    goalText: "text-green-300 font-mono font-bold",
-    goalWrap: "border border-green-500/50 bg-black/70",
-    tickerCls: "text-green-400 font-mono",
-    timerCls: "font-mono text-green-300/80",
-  },
-  minimal: {
-    label: "미니멀",
-    memberCls: "font-light tracking-widest",
-    nameCls: "text-white/90",
-    accountCls: "ml-3 text-white/70",
-    toonCls: "ml-1 text-white/40",
-    totalCls: "font-thin text-white/80 tracking-[0.2em]",
-    totalWrapCls: "",
-    rowCls: "",
-    tableCls: "",
-    headerCls: "",
-    goalBarBg: "bg-white/10",
-    goalBarFill: "bg-white/50",
-    goalText: "text-white/70 font-light tracking-wider",
-    goalWrap: "",
-    tickerCls: "text-white/60 font-light",
-    timerCls: "font-mono text-white/40 font-light",
-  },
-  rpg: {
-    label: "RPG",
-    memberCls: "font-bold",
-    nameCls: "text-yellow-200 drop-shadow-[0_0_4px_rgba(0,0,0,1)]",
-    accountCls: "ml-2 text-red-400",
-    toonCls: "ml-1 text-sky-400",
-    totalCls: "font-extrabold text-yellow-300",
-    totalWrapCls: "bg-gradient-to-r from-amber-900/80 via-amber-800/80 to-amber-900/80 border-2 border-yellow-600/70 px-4 py-2 rounded-lg shadow-[0_0_15px_rgba(255,200,0,0.3)]",
-    rowCls: "bg-slate-900/70 border border-slate-600/50 px-3 py-1 rounded mb-1",
-    tableCls: "",
-    headerCls: "",
-    goalBarBg: "bg-slate-900/80 border-2 border-yellow-700/60 rounded-lg",
-    goalBarFill: "bg-gradient-to-r from-red-600 via-orange-500 to-yellow-400 rounded-lg shadow-[0_0_10px_rgba(255,150,0,0.4)]",
-    goalText: "text-yellow-200 font-extrabold drop-shadow-[0_0_4px_rgba(0,0,0,1)]",
-    goalWrap: "bg-slate-900/70 border border-yellow-700/50 rounded-lg p-1",
-    tickerCls: "text-yellow-300 font-bold",
-    timerCls: "font-mono text-sky-300",
-  },
-  pastel: {
-    label: "파스텔",
-    memberCls: "font-semibold",
-    nameCls: "text-pink-200",
-    accountCls: "ml-2 text-sky-200",
-    toonCls: "ml-1 text-purple-200/70",
-    totalCls: "font-bold text-pink-100",
-    totalWrapCls: "bg-gradient-to-r from-pink-500/40 to-purple-500/40 backdrop-blur-sm px-4 py-2 rounded-full border border-white/20",
-    rowCls: "",
-    tableCls: "",
-    headerCls: "",
-    goalBarBg: "bg-white/10 backdrop-blur-sm rounded-full",
-    goalBarFill: "bg-gradient-to-r from-pink-400 to-purple-400 rounded-full",
-    goalText: "text-white/90 font-semibold",
-    goalWrap: "backdrop-blur-sm",
-    tickerCls: "text-pink-200 font-semibold",
-    timerCls: "font-mono text-purple-200/70",
-  },
-  neonExcel: {
-    label: "네온 엑셀",
-    memberCls: "font-mono font-bold",
-    nameCls: "text-white",
-    accountCls: "text-right text-slate-400 font-mono",
-    toonCls: "text-right text-slate-400 font-mono",
-    totalCls: "font-mono font-black text-cyan-400 italic",
-    totalWrapCls: "bg-cyan-900/30 px-3 py-1 border-t-2 border-cyan-500/50",
-    rowCls: "bg-slate-900/40 py-2 px-3 border-b border-slate-800 last:border-none",
-    tableCls: "border-2 border-cyan-500/50 bg-black/40 rounded-lg overflow-hidden animate-neonPulse",
-    headerCls: "bg-cyan-900/30 text-cyan-300 text-xs font-mono py-1 px-3 border-b border-cyan-500/50 uppercase",
-    goalBarBg: "bg-black/60 border border-cyan-500/30 rounded",
-    goalBarFill: "bg-gradient-to-r from-cyan-500 to-fuchsia-500 shadow-[0_0_10px_rgba(0,255,255,0.4)]",
-    goalText: "text-cyan-300 font-mono font-bold",
-    goalWrap: "border border-cyan-500/30 bg-black/40 rounded p-1",
-    tickerCls: "text-cyan-300 font-mono font-bold",
-    timerCls: "font-mono text-cyan-400 drop-shadow-[0_0_6px_rgba(0,255,255,0.5)]",
-  },
+// 멤버별 색상 정의
+const memberColors = {
+  yellow: { primary: "#FFD700", secondary: "#FFA500", glow: "#FFD700", bg: "rgba(255, 215, 0, 0.1)" },
+  purple: { primary: "#9370DB", secondary: "#8A2BE2", glow: "#9370DB", bg: "rgba(147, 112, 219, 0.1)" },
+  pink: { primary: "#FF69B4", secondary: "#FF1493", glow: "#FF69B4", bg: "rgba(255, 105, 180, 0.1)" },
+  blue: { primary: "#00BFFF", secondary: "#1E90FF", glow: "#00BFFF", bg: "rgba(0, 191, 255, 0.1)" },
+  green: { primary: "#32CD32", secondary: "#228B22", glow: "#32CD32", bg: "rgba(50, 205, 50, 0.1)" },
+  red: { primary: "#FF6347", secondary: "#DC143C", glow: "#FF6347", bg: "rgba(255, 99, 71, 0.1)" },
+  orange: { primary: "#FFA500", secondary: "#FF8C00", glow: "#FFA500", bg: "rgba(255, 165, 0, 0.1)" },
+  cyan: { primary: "#00FFFF", secondary: "#00CED1", glow: "#00FFFF", bg: "rgba(0, 255, 255, 0.1)" }
 };
 
-function GoalBar({ current, goal, label, theme, width }: { current: number; goal: number; label: string; theme: typeof THEMES.default; width: number }) {
-  const pct = goal > 0 ? Math.min(100, (current / goal) * 100) : 0;
-  const displayPct = useCountUp(Math.round(pct), 600);
-  return (
-    <div className={theme.goalWrap} style={{ width }}>
-      <div className="flex justify-between items-center px-1 mb-1" style={{ fontSize: Math.max(12, width * 0.04) }}>
-        <span className={theme.goalText}>{label}</span>
-        <span className={theme.goalText}>{formatManThousand(current)} / {formatManThousand(goal)} ({displayPct}%)</span>
-      </div>
-      <div className={`${theme.goalBarBg} overflow-hidden`} style={{ height: Math.max(14, width * 0.04), borderRadius: 6 }}>
-        <div
-          className={`${theme.goalBarFill} h-full transition-all duration-700 ease-out`}
-          style={{ width: `${pct}%`, borderRadius: 6 }}
-        />
-      </div>
-    </div>
-  );
-}
+function OverlayContent() {
+  const searchParams = useSearchParams();
+  const state = useStorageState();
 
-function DonorTicker({ donors, theme, fontSize }: { donors: Donor[]; theme: typeof THEMES.default; fontSize: number }) {
-  const recent = useMemo(() => {
-    return donors
-      .filter(d => d.amount > 0) // 금액이 0이 아닌 후원자만 표시
-      .slice()
-      .sort((a, b) => b.at - a.at)
-      .slice(0, 5);
-  }, [donors]);
+  const themeId = searchParams.get("theme") || "neon";
+  const scale = parseFloat(searchParams.get("scale") || "1");
+  const showCurrency = searchParams.get("showCurrency") !== "false";
+  const showPersonalGoals = searchParams.get("showPersonalGoals") !== "false";
+  const showTotal = searchParams.get("showTotal") !== "false";
+  const showDonors = searchParams.get("showDonors") !== "false";
 
-  if (!recent.length) return null;
+  // 멤버 정렬 (전체 총합 기준, 동일 금액은 updatedAt 기준)
+  const sortedMembers = useMemo(() => {
+    return [...state.members]
+      .map(member => ({
+        ...member,
+        totalAmount: member.account + member.toon,
+        updatedAt: member.updatedAt || Date.now()
+      }))
+      .sort((a, b) => {
+        if (b.totalAmount !== a.totalAmount) {
+          return b.totalAmount - a.totalAmount;
+        }
+        return (a.updatedAt || 0) - (b.updatedAt || 0);
+      });
+  }, [state.members]);
 
-  return (
-    <div className="overflow-hidden whitespace-nowrap" style={{ fontSize }}>
-      <div className="inline-block animate-ticker">
-        {recent.map((d, i) => (
-          <span key={d.id || i} className={`${theme.tickerCls} mx-4`}>
-            ♥ {d.name} {formatManThousand(d.amount)}
-          </span>
-        ))}
-        {recent.map((d, i) => (
-          <span key={`dup-${d.id || i}`} className={`${theme.tickerCls} mx-4`}>
-            ♥ {d.name} {formatManThousand(d.amount)}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
+  // 총합 계산
+  const totalAmount = useMemo(() => totalAccount(state), [state]);
+  const totalAccountSum = useMemo(() => state.members.reduce((sum, m) => sum + m.account, 0), [state.members]);
+  const totalToonSum = useMemo(() => state.members.reduce((sum, m) => sum + m.toon, 0), [state.members]);
 
-function Timer({ elapsed, theme, fontSize }: { elapsed: string | null; theme: typeof THEMES.default; fontSize: number }) {
-  if (!elapsed) return null;
-  return (
-    <div className={theme.timerCls} style={{ fontSize }}>
-      {elapsed}
-    </div>
-  );
-}
-
-function OverlayInner({ overlayMode }: { overlayMode: OverlayMode }) {
-  const { state: s, ready, connected } = useRemoteState();
-  const members = useMemo(() => (ready && s ? s.members : []), [ready, s]);
-  const donors = useMemo(() => (ready && s ? s.donors : []), [ready, s]);
-  const missions = useMemo(() => (ready && s ? s.missions || [] : []), [ready, s]);
-  const sum = useMemo(() => (ready && s ? totalAccount(s) : 0), [ready, s]);
-  const toonSum = useMemo(() => (ready && s ? s.members.reduce((acc, m) => acc + m.toon, 0) : 0), [ready, s]);
-  const rounded = useMemo(() => roundToThousand(sum), [sum]);
-  const displaySum = useCountUp(rounded, 800);
-  
-  return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <OverlayContentWrapper 
-        state={s} ready={ready} connected={connected} members={members} donors={donors} 
-        missions={missions} sum={sum} toonSum={toonSum} rounded={rounded} displaySum={displaySum}
-        overlayMode={overlayMode}
-      />
-    </Suspense>
-  );
-}
-
-function OverlayContentWrapper({ state: s, ready, connected, members, donors, missions, sum, toonSum, rounded, displaySum, overlayMode }: {
-  state: AppState | null;
-  ready: boolean;
-  connected: boolean;
-  members: Member[];
-  donors: Donor[];
-  missions: MissionItem[];
-  sum: number;
-  toonSum: number;
-  rounded: number;
-  displaySum: number;
-  overlayMode: OverlayMode;
-}) {
-  const sp = useSearchParams();
-  
-  // Log SSE connection status
-  useEffect(() => {
-    logger.debug('SSE 연결 상태', { connected });
-  }, [connected]);
-  
-  // Use overlay settings from state, with URL params as fallback for backward compatibility
-  const overlaySettings = s?.overlaySettings;
-  
-  const scaleParam = sp.get("scale");
-  const scaleRaw = scaleParam !== null ? parseFloat(scaleParam) : overlaySettings?.scale ?? 1;
-  const scale = Math.max(0.3, Math.min(3, Number.isFinite(scaleRaw) ? scaleRaw : 1));
-  const memberSizeParam = sp.get("memberSize");
-  const memberSizeRaw = memberSizeParam !== null ? parseInt(memberSizeParam, 10) : overlaySettings?.memberSize ?? 24;
-  const memberSize = Math.max(10, Math.min(80, Number.isFinite(memberSizeRaw) ? memberSizeRaw : 24));
-  const totalSizeParam = sp.get("totalSize");
-  const totalSizeRaw = totalSizeParam !== null ? parseInt(totalSizeParam, 10) : overlaySettings?.totalSize ?? 64;
-  const totalSize = Math.max(10, Math.min(200, Number.isFinite(totalSizeRaw) ? totalSizeRaw : 64));
-  const denseParam = sp.get("dense");
-  const dense = denseParam !== null ? denseParam === "true" : overlaySettings?.dense ?? false;
-  const anchorParam = sp.get("anchor");
-  const anchor = anchorParam ?? overlaySettings?.anchor ?? "tl";
-  const sumAnchorParam = sp.get("sumAnchor");
-  const sumAnchor = sumAnchorParam ?? overlaySettings?.sumAnchor ?? "bc";
-  const sumFreeParam = sp.get("sumFree");
-  const sumFree = sumFreeParam !== null ? sumFreeParam === "true" : overlaySettings?.sumFree ?? false;
-  const sumXParam = sp.get("sumX");
-  const sumXRaw = sumXParam !== null ? parseFloat(sumXParam) : overlaySettings?.sumX ?? 50;
-  const sumX = Math.max(0, Math.min(100, Number.isFinite(sumXRaw) ? sumXRaw : 50));
-  const sumYParam = sp.get("sumY");
-  const sumYRaw = sumYParam !== null ? parseFloat(sumYParam) : overlaySettings?.sumY ?? 90;
-  const sumY = Math.max(0, Math.min(100, Number.isFinite(sumYRaw) ? sumYRaw : 90));
-  const themeParam = sp.get("theme");
-  const themeId = (themeParam ?? overlaySettings?.theme ?? "default") as ThemeId;
-  const showMembersParam = sp.get("showMembers");
-  const showMembers = showMembersParam !== null ? showMembersParam !== "false" : overlaySettings?.showMembers ?? true;
-  const showTotalParam = sp.get("showTotal");
-  const showTotal = showTotalParam !== null ? showTotalParam !== "false" : overlaySettings?.showTotal ?? true;
-  const showGoalParam = sp.get("showGoal");
-  const showGoal = showGoalParam !== null ? showGoalParam === "true" : overlaySettings?.showGoal ?? false;
-  const goalParam = sp.get("goal");
-  const goalRaw = goalParam !== null ? parseInt(goalParam, 10) : overlaySettings?.goal ?? 0;
-  const goal = Math.max(0, Number.isFinite(goalRaw) ? goalRaw : 0);
-  const goalLabelParam = sp.get("goalLabel");
-  const goalLabel = goalLabelParam ?? overlaySettings?.goalLabel ?? "목표 금액";
-  const goalWidthParam = sp.get("goalWidth");
-  const goalWidthRaw = goalWidthParam !== null ? parseInt(goalWidthParam, 10) : overlaySettings?.goalWidth ?? 400;
-  const goalWidth = Math.max(100, Math.min(800, Number.isFinite(goalWidthRaw) ? goalWidthRaw : 400));
-  const goalAnchorParam = sp.get("goalAnchor");
-  const goalAnchor = goalAnchorParam ?? overlaySettings?.goalAnchor ?? "bc";
-  const showTickerParam = sp.get("showTicker");
-  const showTicker = showTickerParam !== null ? showTickerParam === "true" : overlaySettings?.showTicker ?? false;
-  const showTimerParam = sp.get("showTimer");
-  const showTimer = showTimerParam !== null ? showTimerParam === "true" : overlaySettings?.showTimer ?? false;
-  const timerStartParam = sp.get("timerStart");
-  const timerStart = timerStartParam !== null ? new Date(timerStartParam).getTime() : overlaySettings?.timerStart ?? null;
-  const timerAnchorParam = sp.get("timerAnchor");
-  const timerAnchor = timerAnchorParam ?? overlaySettings?.timerAnchor ?? "tr";
-  const showMissionParam = sp.get("showMission");
-  const showMission = showMissionParam !== null ? showMissionParam === "true" : overlaySettings?.showMission ?? false;
-  const missionAnchorParam = sp.get("missionAnchor");
-  const missionAnchor = missionAnchorParam ?? overlaySettings?.missionAnchor ?? "br";
-  
-  // 개별 위치 설정 (URL 파라미터에서 읽기)
-  const memberPosition = overlaySettings?.memberPosition || (sp.get("memberX") && sp.get("memberY") ? {
-    x: parseFloat(sp.get("memberX")!),
-    y: parseFloat(sp.get("memberY")!)
-  } : undefined);
-  const totalPosition = overlaySettings?.totalPosition || (sp.get("totalX") && sp.get("totalY") ? {
-    x: parseFloat(sp.get("totalX")!),
-    y: parseFloat(sp.get("totalY")!)
-  } : undefined);
-  const goalPosition = overlaySettings?.goalPosition || (sp.get("goalX") && sp.get("goalY") ? {
-    x: parseFloat(sp.get("goalX")!),
-    y: parseFloat(sp.get("goalY")!)
-  } : undefined);
-  const tickerPosition = overlaySettings?.tickerPosition || (sp.get("tickerX") && sp.get("tickerY") ? {
-    x: parseFloat(sp.get("tickerX")!),
-    y: parseFloat(sp.get("tickerY")!)
-  } : undefined);
-  const timerPosition = overlaySettings?.timerPosition || (sp.get("timerX") && sp.get("timerY") ? {
-    x: parseFloat(sp.get("timerX")!),
-    y: parseFloat(sp.get("timerY")!)
-  } : undefined);
-  const missionPosition = overlaySettings?.missionPosition || (sp.get("missionX") && sp.get("missionY") ? {
-    x: parseFloat(sp.get("missionX")!),
-    y: parseFloat(sp.get("missionY")!)
-  } : undefined);
-  
-  // missionAnchor를 객체로 변환
-  const missionAnchorObj = typeof missionAnchor === 'string' ? { x: 50, y: 50 } : missionAnchor;
-  
-  return (
-    <OverlayContent 
-      state={s} ready={ready} connected={connected} members={members} donors={donors} 
-      missions={missions} sum={sum} toonSum={toonSum} rounded={rounded} displaySum={displaySum}
-      scale={scale} memberSize={memberSize} totalSize={totalSize} dense={dense} anchor={anchor}
-      sumAnchor={sumAnchor} sumFree={sumFree} sumX={sumX} sumY={sumY} themeId={themeId}
-      showMembers={showMembers} showTotal={showTotal} showGoal={showGoal} goal={goal}
-      goalLabel={goalLabel} goalWidth={goalWidth} goalAnchor={goalAnchor} showTicker={showTicker}
-      showTimer={showTimer} timerStart={timerStart} timerAnchor={timerAnchor} showMission={showMission}
-      missionAnchor={missionAnchorObj}
-      memberPosition={memberPosition} totalPosition={totalPosition} goalPosition={goalPosition}
-      tickerPosition={tickerPosition} timerPosition={timerPosition} missionPosition={missionPosition}
-      overlayMode={overlayMode}
-    />
-  );
-}
-
-function OverlayContent({ state: s, ready, connected, members, donors, missions, sum, toonSum, rounded, displaySum, scale, memberSize, totalSize, dense, anchor, sumAnchor, sumFree, sumX, sumY, themeId, showMembers, showTotal, showGoal, goal, goalLabel, goalWidth, goalAnchor, showTicker, showTimer, timerStart, timerAnchor, showMission, missionAnchor, memberPosition, totalPosition, goalPosition, tickerPosition, timerPosition, missionPosition, overlayMode }: {
-  state: AppState | null;
-  ready: boolean;
-  connected: boolean;
-  members: Member[];
-  donors: Donor[];
-  missions: MissionItem[];
-  sum: number;
-  toonSum: number;
-  rounded: number;
-  displaySum: number;
-  scale: number;
-  memberSize: number;
-  totalSize: number;
-  dense: boolean;
-  anchor: string;
-  sumAnchor: string;
-  sumFree: boolean;
-  sumX: number;
-  sumY: number;
-  themeId: ThemeId;
-  showMembers: boolean;
-  showTotal: boolean;
-  showGoal: boolean;
-  goal: number;
-  goalLabel: string;
-  goalWidth: number;
-  goalAnchor: string;
-  showTicker: boolean;
-  showTimer: boolean;
-  timerStart: number | null;
-  timerAnchor: string;
-  showMission: boolean;
-  missionAnchor: { x: number; y: number };
-  overlayMode: OverlayMode;
-  memberPosition?: { x?: number; y?: number; width?: number; height?: number; anchor?: string };
-  totalPosition?: { x?: number; y?: number; width?: number; height?: number; anchor?: string };
-  goalPosition?: { x?: number; y?: number; width?: number; height?: number; anchor?: string };
-  tickerPosition?: { x?: number; y?: number; width?: number; height?: number; anchor?: string };
-  timerPosition?: { x?: number; y?: number; width?: number; height?: number; anchor?: string };
-  missionPosition?: { x?: number; y?: number; width?: number; height?: number; anchor?: string };
-}) {
-  // Log SSE connection status
-  useEffect(() => {
-    logger.debug('SSE 연결 상태', { connected });
-  }, [connected]);
-  
-  const theme = THEMES[themeId] || THEMES.default;
-  const memberFontSize = Math.max(10, memberSize - 4);
-  
-  const hasFreePos = sumFree && sumX !== undefined && sumY !== undefined;
-
-  const elapsed = useElapsed(timerStart);
-
-  useEffect(() => {
-    document.body.style.background = "transparent";
-    document.documentElement.style.background = "transparent";
-    return () => { document.body.style.background = ""; };
-  }, []);
-
-  const posClass = (a: string) =>
-    a === "tr" ? "top-4 right-4" :
-    a === "bl" ? "bottom-4 left-4" :
-    a === "br" ? "bottom-4 right-4" :
-    a === "tc" ? "top-4 left-1/2 -translate-x-1/2" :
-    a === "bc" ? "bottom-4 left-1/2 -translate-x-1/2" :
-    "top-4 left-4";
-
-  // 개별 요소 위치 설정 함수
-  const getElementPosition = (position?: { x?: number; y?: number; width?: number; height?: number; anchor?: string }, defaultAnchor?: string) => {
-    if (position && position.x !== undefined && position.y !== undefined) {
-      const style: React.CSSProperties = {
-        left: `${position.x}%`,
-        top: `${position.y}%`,
-        transform: "translate(-50%, -50%)",
-        position: 'fixed'
-      };
-      if (position.width) style.width = `${position.width}px`;
-      if (position.height) style.height = `${position.height}px`;
-      return { style, className: "" };
-    }
-    return { style: undefined, className: posClass(position?.anchor || defaultAnchor || "tl") };
+  // 색상 할당
+  const getMemberColor = (index: number) => {
+    const colors = Object.keys(memberColors);
+    return memberColors[colors[index % colors.length] as keyof typeof memberColors];
   };
 
-  const listPosClass =
-    anchor === "tr" ? "top-4 right-4 items-end text-right" :
-    anchor === "bl" ? "bottom-4 left-4" :
-    anchor === "br" ? "bottom-4 right-4 items-end text-right" :
-    "top-4 left-4";
-
-  const sumPosStyle: React.CSSProperties | undefined = hasFreePos
-    ? { left: `${sumX}%`, top: `${sumY}%`, transform: "translate(-50%, -50%)" }
-    : undefined;
-  const sumPosClass = hasFreePos ? "" : posClass(sumAnchor);
-
-  if (themeId === "excel") {
-    return (
-      <main className="transparent-bg min-h-screen no-select" style={{ zoom: scale }}>
-        {/* 미션 모드일 때는 전광판만 표시 */}
-        {overlayMode === 'mission' && ready && (
-          <div className="fixed inset-0 flex items-center justify-center">
-            <ElectronicMissionBoard missions={missions} fontSize={memberSize} />
-          </div>
-        )}
+  return (
+    <div
+      className="fixed inset-0 pointer-events-none font-sans"
+      style={{ 
+        transform: `scale(${scale})`, 
+        transformOrigin: "top left",
+        background: "transparent"
+      }}
+    >
+      {/* 메인 레이아웃 - 좌측 멤버 카드, 우측 후원자 리스트 */}
+      <div className="flex h-full p-6 space-x-6">
         
-        {/* 표준 모드일 때는 기존 Excel UI 표시 */}
-        {overlayMode === 'standard' && (
-          <>
-            {showTicker && ready && (
-              <div className={`${getElementPosition(tickerPosition, 'tc').className}`} style={getElementPosition(tickerPosition, 'tc').style}>
-                <DonorTicker donors={donors} theme={theme} fontSize={memberSize} />
+        {/* 좌측: 멤버 카드 영역 */}
+        <div className="flex-1 space-y-4">
+          
+          {/* 총합 정보 패널 */}
+          {showTotal && (
+            <motion.div 
+              className="glass-panel p-6 mb-6"
+              initial={{ opacity: 0, y: -30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, ease: "easeOut" }}
+            >
+              <motion.div 
+                className="text-3xl font-bold text-center text-yellow-400"
+                style={{ 
+                  textShadow: "0 0 20px #FFD700, 0 0 40px #FFD700, 0 0 60px #FFD700"
+                }}
+                animate={{ scale: [1, 1.02, 1] }}
+                transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+              >
+                {formatCurrency(totalAmount, showCurrency)}
+              </motion.div>
+              <div className="text-center text-neutral-300 mt-2">총 후원금</div>
+              
+              {/* 계좌/투네 합계 */}
+              <div className="grid grid-cols-2 gap-4 mt-4">
+                <div className="text-center">
+                  <div className="text-lg font-semibold text-green-400">
+                    {formatCurrency(totalAccountSum, showCurrency)}
+                  </div>
+                  <div className="text-sm text-neutral-400">계좌 총합</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-lg font-semibold text-purple-400">
+                    {formatCurrency(totalToonSum, showCurrency)}
+                  </div>
+                  <div className="text-sm text-neutral-400">투네 총합</div>
+                </div>
               </div>
-            )}
-            {showTimer && timerStart && ready && (
-              <div className={`${getElementPosition(timerPosition, 'tr').className}`} style={getElementPosition(timerPosition, 'tr').style}>
-                <Timer elapsed={elapsed} theme={theme} fontSize={memberSize} />
-              </div>
-            )}
-            {showMission && ready && (
-              <div className={`${getElementPosition(missionPosition, 'tl').className}`} style={getElementPosition(missionPosition, 'tl').style}>
-                <ElectronicMissionBoard missions={missions} fontSize={memberSize} missionAnchor={missionAnchor} themeName={themeId} />
-              </div>
-            )}
-            {showMembers && ready && (
-              <div className={`${getElementPosition(memberPosition, anchor).className}`} style={getElementPosition(memberPosition, anchor).style}>
-                <table className={theme.tableCls} style={{ fontSize: memberFontSize, borderSpacing: 0 }}>
-                  <thead>
-                    <tr>
-                      <td className={theme.headerCls}>이름</td>
-                      <td className={theme.headerCls}>계좌</td>
-                      <td className={theme.headerCls}>투네</td>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(() => {
-                      // 총합을 제외한 멤버들만 필터링하고 최대값 계산
-                      const filteredMembers = members.filter(m => m.account > 0 || m.toon > 0);
-                      const maxAccount = Math.max(...filteredMembers.map(m => m.account), 1);
-                      const maxToon = Math.max(...filteredMembers.map(m => m.toon), 1);
+            </motion.div>
+          )}
+
+          {/* 멤버 카드 리스트 */}
+          <AnimatePresence mode="popLayout">
+            {sortedMembers.map((member, index) => {
+              const color = getMemberColor(index);
+              const total = member.account + member.toon;
+              const percentage = member.personalGoal ? Math.min((total / member.personalGoal) * 100, 100) : 0;
+              const remaining = member.personalGoal ? Math.max(member.personalGoal - total, 0) : 0;
+              
+              return (
+                <motion.div
+                  key={member.id}
+                  layout
+                  layoutId={member.id}
+                  initial={{ opacity: 0, y: 50, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -50, scale: 0.9 }}
+                  transition={{ 
+                    duration: 0.6, 
+                    type: "spring",
+                    stiffness: 100,
+                    damping: 15
+                  }}
+                  className="glass-panel p-5 border-l-4"
+                  style={{ 
+                    borderLeftColor: color.primary,
+                    background: `linear-gradient(135deg, rgba(0,0,0,0.4), ${color.bg})`
+                  }}
+                >
+                  {/* 멤버 헤더: 순위 + 직급 + 이름 */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center space-x-3">
+                      <motion.div 
+                        className="rank-badge"
+                        style={{ 
+                          background: `linear-gradient(45deg, ${color.primary}, ${color.secondary})`,
+                          boxShadow: `0 0 15px ${color.glow}`
+                        }}
+                        whileHover={{ scale: 1.1 }}
+                        transition={{ type: "spring", stiffness: 300 }}
+                      >
+                        {index + 1}
+                      </motion.div>
+                      {member.rank && (
+                        <span 
+                          className="rank-text px-3 py-1 rounded-full text-sm font-semibold"
+                          style={{ 
+                            background: color.bg,
+                            color: color.primary,
+                            border: `1px solid ${color.primary}`,
+                            textShadow: `0 0 10px ${color.glow}`
+                          }}
+                        >
+                          {member.rank}
+                        </span>
+                      )}
+                      <motion.h3 
+                        className="text-xl font-bold member-name"
+                        style={{ 
+                          color: color.primary,
+                          textShadow: `0 0 15px ${color.glow}, 0 0 30px ${color.glow}, 0 0 45px ${color.glow}`
+                        }}
+                        whileHover={{ scale: 1.05 }}
+                        transition={{ type: "spring", stiffness: 300 }}
+                      >
+                        {member.name}
+                      </motion.h3>
+                    </div>
+                    
+                    {/* 전체 총합 */}
+                    <motion.div 
+                      className="text-xl font-bold"
+                      key={total}
+                      initial={{ scale: 1.2, color: "#FFD700" }}
+                      animate={{ scale: 1, color: "#FFFFFF" }}
+                      transition={{ duration: 0.4, type: "spring" }}
+                      style={{ textShadow: "0 0 10px rgba(255,255,255,0.5)" }}
+                    >
+                      {formatCurrency(total, showCurrency)}
+                    </motion.div>
+                  </div>
+
+                  {/* 금액 세부 정보 */}
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div className="amount-box">
+                      <div className="text-sm text-neutral-400">계좌</div>
+                      <motion.div 
+                        className="text-lg font-semibold text-green-400"
+                        key={member.account}
+                        initial={{ scale: 1.1 }}
+                        animate={{ scale: 1 }}
+                        transition={{ duration: 0.3 }}
+                      >
+                        {formatCurrency(member.account, showCurrency)}
+                      </motion.div>
+                    </div>
+                    <div className="amount-box">
+                      <div className="text-sm text-neutral-400">투네</div>
+                      <motion.div 
+                        className="text-lg font-semibold text-purple-400"
+                        key={member.toon}
+                        initial={{ scale: 1.1 }}
+                        animate={{ scale: 1 }}
+                        transition={{ duration: 0.3 }}
+                      >
+                        {formatCurrency(member.toon, showCurrency)}
+                      </motion.div>
+                    </div>
+                  </div>
+
+                  {/* 게이지 바 */}
+                  {showPersonalGoals && member.personalGoal && member.personalGoal > 0 && (
+                    <div className="space-y-3">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-neutral-400">목표 달성률</span>
+                        <motion.span 
+                          className="font-bold"
+                          style={{ color: color.primary }}
+                          key={percentage}
+                          initial={{ scale: 1.3 }}
+                          animate={{ scale: 1 }}
+                          transition={{ duration: 0.4, type: "spring" }}
+                        >
+                          {percentage.toFixed(1)}%
+                        </motion.span>
+                      </div>
                       
-                      return filteredMembers.map((m: Member) => {
-                        // 총 기부금 기준 상대값 계산 (계좌 + 투네)
-                        const totalAmount = m.account + m.toon;
-                        const maxTotal = maxAccount + maxToon;
-                        const totalPercent = (totalAmount / maxTotal) * 100;
-                        
-                        return (
-                          <tr 
-                            key={m.id} 
-                            className="relative group" 
-                            style={{ 
-                              position: 'relative',
-                              background: `linear-gradient(to right, #3b82f6 ${totalPercent}%, transparent ${totalPercent}%)`
+                      <div className="gauge-container">
+                        <div className="gauge-bar-bg">
+                          <motion.div 
+                            className="gauge-bar-fill"
+                            initial={{ width: 0 }}
+                            animate={{ width: `${percentage}%` }}
+                            transition={{ 
+                              duration: 1.2, 
+                              ease: "easeOut",
+                              delay: 0.2
                             }}
-                          >
-                            <td className={`${theme.rowCls} ${theme.nameCls} relative z-10`}>
-                              {m.name}
-                            </td>
-                            <td className={`${theme.rowCls} ${theme.accountCls} text-right relative z-10`}>
-                              {formatManThousand(m.account)}
-                            </td>
-                            <td className={`${theme.rowCls} ${theme.toonCls} text-right relative z-10`}>
-                              {formatManThousand(m.toon)}
-                            </td>
-                          </tr>
-                        );
-                      });
-                    })()}
-                  </tbody>
-                </table>
-                {/* 총합은 별도로 표시 (멤버 목록 밖) */}
-                {showTotal && ready && (
-                  <div className={`mt-2 ${getElementPosition(undefined, sumAnchor).className}`} style={getElementPosition(undefined, sumAnchor).style}>
-                    <table className={theme.tableCls} style={{ fontSize: totalSize, borderSpacing: 0 }}>
-                      <tbody>
-                        <tr>
-                          <td className={theme.totalWrapCls}>총합</td>
-                          <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(sum)}</td>
-                          <td className={`${theme.rowCls} ${theme.toonCls} text-right`}></td>
-                        </tr>
-                      </tbody>
-                    </table>
+                            style={{
+                              background: `linear-gradient(90deg, ${color.primary}, ${color.secondary})`,
+                              boxShadow: `0 0 20px ${color.glow}, inset 0 0 10px rgba(255,255,255,0.3)`
+                            }}
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="text-center text-sm text-neutral-400">
+                        남은 금액: {formatCurrency(remaining, showCurrency)}
+                      </div>
+                    </div>
+                  )}
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </div>
+
+        {/* 우측: 후원자 리스트 */}
+        {showDonors && (
+          <motion.div 
+            className="w-80 space-y-4"
+            initial={{ opacity: 0, x: 50 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.8, delay: 0.3 }}
+          >
+            <div className="glass-panel p-4">
+              <h3 className="text-lg font-bold text-center mb-4" style={{ 
+                color: "#FFD700",
+                textShadow: "0 0 15px #FFD700, 0 0 30px #FFD700"
+              }}>
+                🎉 Big Hand
+              </h3>
+              
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                <AnimatePresence>
+                  {state.donors
+                    .sort((a, b) => b.at - a.at)
+                    .slice(0, 20)
+                    .map((donor, index) => (
+                      <motion.div
+                        key={donor.id}
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -20 }}
+                        transition={{ duration: 0.4, delay: index * 0.05 }}
+                        className="flex justify-between items-center p-2 rounded-lg bg-black bg-opacity-20"
+                      >
+                        <span className="font-semibold truncate" style={{
+                          textShadow: "0 0 8px rgba(255,255,255,0.3)"
+                        }}>
+                          {donor.name}
+                        </span>
+                        <span className="font-bold text-yellow-400" style={{
+                          textShadow: "0 0 8px rgba(255,215,0,0.5)"
+                        }}>
+                          {formatCurrency(donor.amount, showCurrency)}
+                        </span>
+                      </motion.div>
+                    ))
+                  }
+                </AnimatePresence>
+                
+                {state.donors.length === 0 && (
+                  <div className="text-center text-neutral-500 py-8">
+                    아직 후원이 없습니다
                   </div>
                 )}
               </div>
-            )}
-          </>
+            </div>
+          </motion.div>
         )}
-      </main>
-    );
-  }
+      </div>
 
-  // 기본 테마 (simple) 또는 다른 테마들
-  return (
-    <main className="transparent-bg min-h-screen no-select" style={{ zoom: scale }}>
-      {/* 미션 모드일 때는 전광판만 표시 */}
-      {overlayMode === 'mission' && ready && (
-        <div className="fixed inset-0">
-          <ElectronicMissionBoard missions={missions} fontSize={memberSize} missionAnchor={missionAnchor} />
-        </div>
-      )}
-      
-      {/* 동시 표시 모드일 때는 분할 화면으로 표시 */}
-      {overlayMode === 'both' && ready && (
-        <div className="fixed inset-0 flex flex-col md:flex-row">
-          {/* 좌측: 기존 UI (멤버 목록 등) */}
-          <div className="flex-1 relative overflow-hidden min-h-[50vh] md:min-h-screen">
-            {showMembers && (
-              <div className={`${getElementPosition(memberPosition, anchor).className}`} style={getElementPosition(memberPosition, anchor).style}>
-                <table className={theme.tableCls} style={{ fontSize: memberFontSize, borderSpacing: 0 }}>
-                  <thead>
-                    <tr>
-                      <td className={theme.headerCls}>이름</td>
-                      <td className={theme.headerCls}>계좌</td>
-                      <td className={theme.headerCls}>투네</td>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {members
-                      .filter(m => m.account > 0 || m.toon > 0)
-                      .map((m: Member) => (
-                        <tr key={m.id}>
-                          <td className={`${theme.rowCls} ${theme.nameCls}`}>{m.name}</td>
-                          <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(m.account)}</td>
-                          <td className={`${theme.rowCls} ${theme.toonCls} text-right`}>{formatManThousand(m.toon)}</td>
-                        </tr>
-                      ))}
-                    {showTotal && (
-                      <tr>
-                        <td className={theme.totalWrapCls}>총합</td>
-                        <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(sum)}</td>
-                        <td className={`${theme.rowCls} ${theme.toonCls} text-right`}></td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {showTicker && (
-              <div className={`${getElementPosition(tickerPosition, 'tc').className}`} style={getElementPosition(tickerPosition, 'tc').style}>
-                <DonorTicker donors={donors} theme={theme} fontSize={memberSize} />
-              </div>
-            )}
-            {showTimer && timerStart && (
-              <div className={`${getElementPosition(timerPosition, 'tr').className}`} style={getElementPosition(timerPosition, 'tr').style}>
-                <Timer elapsed={elapsed} theme={theme} fontSize={memberSize} />
-              </div>
-            )}
-          </div>
-          
-          {/* 우측: 전광판 */}
-          <div className="flex-1 relative flex items-center justify-center min-h-[50vh] md:min-h-screen">
-            <ElectronicMissionBoard missions={missions} fontSize={memberSize} missionAnchor={missionAnchor} />
-          </div>
-        </div>
-      )}
-      
-      {/* 표준 모드일 때는 기존 UI 표시 */}
-      {overlayMode === 'standard' && (
-        <>
-          {showTicker && ready && (
-            <div className={`${getElementPosition(tickerPosition, 'tc').className}`} style={getElementPosition(tickerPosition, 'tc').style}>
-              <DonorTicker donors={donors} theme={theme} fontSize={memberSize} />
-            </div>
-          )}
-          {showTimer && timerStart && ready && (
-            <div className={`${getElementPosition(timerPosition, 'tr').className}`} style={getElementPosition(timerPosition, 'tr').style}>
-              <Timer elapsed={elapsed} theme={theme} fontSize={memberSize} />
-            </div>
-          )}
-          {showMission && ready && (
-            <div className={`${getElementPosition(missionPosition, 'tl').className}`} style={getElementPosition(missionPosition, 'tl').style}>
-              <ElectronicMissionBoard missions={missions} fontSize={memberSize} themeName={themeId} />
-            </div>
-          )}
-          {showMembers && ready && (
-            <div className={`${getElementPosition(memberPosition, anchor).className}`} style={getElementPosition(memberPosition, anchor).style}>
-              <table className={theme.tableCls} style={{ fontSize: memberFontSize, borderSpacing: 0 }}>
-                <thead>
-                  <tr>
-                    <td className={theme.headerCls}>이름</td>
-                    <td className={theme.headerCls}>계좌</td>
-                    <td className={theme.headerCls}>투네</td>
-                  </tr>
-                </thead>
-                <tbody>
-                  {members
-                    .filter(m => m.account > 0 || m.toon > 0)
-                    .map((m: Member) => (
-                      <tr key={m.id}>
-                        <td className={`${theme.rowCls} ${theme.nameCls}`}>{m.name}</td>
-                        <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(m.account)}</td>
-                        <td className={`${theme.rowCls} ${theme.toonCls} text-right`}>{formatManThousand(m.toon)}</td>
-                      </tr>
-                    ))}
-                  {showTotal && ready && (
-                    <tr>
-                      <td className={theme.totalWrapCls}>총합</td>
-                      <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(sum)}</td>
-                      <td className={`${theme.rowCls} ${theme.toonCls} text-right`}></td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
-      )}
-    </main>
+      <style jsx>{`
+        .glass-panel {
+          background: rgba(0, 0, 0, 0.25);
+          backdrop-filter: blur(20px);
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          border-radius: 16px;
+          box-shadow: 
+            0 8px 32px rgba(0, 0, 0, 0.3),
+            inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        }
+
+        .rank-badge {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: bold;
+          font-size: 14px;
+          color: white;
+          text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+        }
+
+        .rank-text {
+          font-size: 12px;
+          font-weight: 600;
+        }
+
+        .member-name {
+          font-size: 20px;
+          font-weight: 800;
+          letter-spacing: 0.8px;
+        }
+
+        .amount-box {
+          background: rgba(0, 0, 0, 0.3);
+          padding: 12px;
+          border-radius: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .gauge-container {
+          position: relative;
+          width: 100%;
+        }
+
+        .gauge-bar-bg {
+          width: 100%;
+          height: 28px;
+          background: rgba(0, 0, 0, 0.6);
+          border-radius: 14px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          overflow: hidden;
+          position: relative;
+          box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+        }
+
+        .gauge-bar-fill {
+          height: 100%;
+          border-radius: 14px;
+          position: relative;
+          transition: width 0.8s ease-out;
+        }
+
+        /* 스크롤바 스타일 */
+        .overflow-y-auto::-webkit-scrollbar {
+          width: 6px;
+        }
+
+        .overflow-y-auto::-webkit-scrollbar-track {
+          background: rgba(0, 0, 0, 0.2);
+          border-radius: 3px;
+        }
+
+        .overflow-y-auto::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.3);
+          border-radius: 3px;
+        }
+
+        .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+          background: rgba(255, 255, 255, 0.5);
+        }
+      `}</style>
+    </div>
   );
-}
-
-type OverlayMode = 'standard' | 'mission' | 'both';
-
-function OverlayModeController({ children }: { children: React.ReactNode | ((props: { overlayMode: OverlayMode }) => React.ReactNode) }) {
-  const [overlayMode, setOverlayMode] = useState<OverlayMode>('standard');
-  const searchParams = useSearchParams();
-  const hideUi = searchParams.get('hideUi') === '1' || searchParams.get('hideUi') === 'true';
-
-  // URL 파라미터로 초기 모드 설정
-  useEffect(() => {
-    const mode = searchParams.get('mode') as OverlayMode;
-    if (mode && ['standard', 'mission', 'both'].includes(mode)) {
-      setOverlayMode(mode);
-    }
-  }, [searchParams]);
-
-  // 키보드 단축키로 전환
-  useEffect(() => {
-    if (hideUi) return;
-    const handleKeyPress = (e: KeyboardEvent) => {
-      if (e.key === '1') {
-        switchMode('standard');
-      } else if (e.key === '2') {
-        switchMode('mission');
-      } else if (e.key === '3') {
-        switchMode('both');
-      } else if (e.key === ' ') {
-        e.preventDefault();
-        // 순환: standard -> mission -> both -> standard
-        if (overlayMode === 'standard') switchMode('mission');
-        else if (overlayMode === 'mission') switchMode('both');
-        else switchMode('standard');
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [overlayMode, hideUi]);
-
-  const switchMode = (newMode: OverlayMode) => {
-    setOverlayMode(newMode);
-  };
-
-  if (hideUi) {
-    return typeof children === 'function' ? children({ overlayMode }) : children;
-  }
-
-  return typeof children === 'function' ? children({ overlayMode }) : children;
 }
 
 export default function OverlayPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center text-white">로딩 중...</div>}>
-      <OverlayModeController>
-        {({ overlayMode }) => <OverlayInner overlayMode={overlayMode} />}
-      </OverlayModeController>
+    <Suspense fallback={<div>Loading...</div>}>
+      <OverlayContent />
     </Suspense>
   );
 }

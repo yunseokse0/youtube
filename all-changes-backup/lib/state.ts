@@ -5,9 +5,6 @@ export type Member = {
   toon: number;
   today: number;
   missions?: string[];
-  personalGoal?: number;
-  rank?: string; // 직급 (회장, 사장, 부장 등)
-  updatedAt?: number; // 순위 정렬용 타임스탬프
 };
 
 export type Donor = {
@@ -61,10 +58,6 @@ export type OverlayPreset = {
   goalLabel: string;
   goalWidth: string;
   goalAnchor: string;
-  showPersonalGoals: boolean;
-  personalGoalLabel: string;
-  personalGoalWidth: string;
-  personalGoalAnchor: string;
   showTicker: boolean;
   showTimer: boolean;
   timerStart: number | null;
@@ -94,10 +87,6 @@ export type OverlaySettings = {
   goalLabel: string;
   goalWidth: string;
   goalAnchor: string;
-  showPersonalGoals: boolean;
-  personalGoalLabel: string;
-  personalGoalWidth: string;
-  personalGoalAnchor: string;
   showTicker: boolean;
   showTimer: boolean;
   timerStart: number | null;
@@ -121,9 +110,9 @@ export const FORBID_EVENTS_KEY = "excel-broadcast-forbid-events-v1";
 
 export function defaultMembers(): Member[] {
   return [
-    { id: "m1", name: "멤버1", account: 0, toon: 0, today: 0, personalGoal: 100000 },
-    { id: "m2", name: "멤버2", account: 0, toon: 0, today: 0, personalGoal: 100000 },
-    { id: "m3", name: "멤버3", account: 0, toon: 0, today: 0, personalGoal: 100000 },
+    { id: "m1", name: "멤버1", account: 0, toon: 0, today: 0 },
+    { id: "m2", name: "멤버2", account: 0, toon: 0, today: 0 },
+    { id: "m3", name: "멤버3", account: 0, toon: 0, today: 0 },
   ];
 }
 

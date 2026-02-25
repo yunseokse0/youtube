@@ -28,10 +28,6 @@ export type OverlayPreset = {
   goalLabel: string;
   goalWidth: string;
   goalAnchor: string;
-  showPersonalGoals: boolean;
-  personalGoalLabel: string;
-  personalGoalWidth: string;
-  personalGoalAnchor: string;
   showTicker: boolean;
   showTimer: boolean;
   timerStart: number | null;
@@ -42,7 +38,6 @@ export type OverlayPreset = {
   memberPosition?: OverlayElementPosition;
   totalPosition?: OverlayElementPosition;
   goalPosition?: OverlayElementPosition;
-  personalGoalPosition?: OverlayElementPosition;
   tickerPosition?: OverlayElementPosition;
   timerPosition?: OverlayElementPosition;
   missionPosition?: OverlayElementPosition;
@@ -62,7 +57,6 @@ export function OverlayCard({ preset, onUpdate, onDelete, onCopyUrl, copiedId, u
     { key: 'showMembers', label: '멤버', icon: '👥' },
     { key: 'showTotal', label: '총합', icon: '💰' },
     { key: 'showGoal', label: '목표', icon: '🎯' },
-    { key: 'showPersonalGoals', label: '개인목표', icon: '👤' },
     { key: 'showTicker', label: '티커', icon: '📜' },
     { key: 'showTimer', label: '타이머', icon: '⏰' },
     { key: 'showMission', label: '미션', icon: '🎮' },
@@ -233,35 +227,6 @@ export function OverlayCard({ preset, onUpdate, onDelete, onCopyUrl, copiedId, u
         </div>
       )}
 
-      {/* 개인 목표 설정 */}
-      {preset.showPersonalGoals && (
-        <div className="bg-white/5 rounded-lg p-3 mb-4">
-          <h3 className="text-sm font-medium text-neutral-300 mb-2">👤 개인 목표 설정</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-neutral-400 mb-1">라벨</label>
-              <input
-                type="text"
-                value={preset.personalGoalLabel}
-                onChange={(e) => onUpdate(preset.id, { personalGoalLabel: e.target.value })}
-                className="w-full px-3 py-2 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none"
-                placeholder="예: 개인 목표"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-neutral-400 mb-1">진행바 너비 (px)</label>
-              <input
-                type="number"
-                value={preset.personalGoalWidth}
-                onChange={(e) => onUpdate(preset.id, { personalGoalWidth: e.target.value })}
-                className="w-full px-3 py-2 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none"
-                placeholder="예: 300"
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 개별 요소 위치 설정 */}
       <div className="bg-white/5 rounded-lg p-3 mb-4">
         <h3 className="text-sm font-medium text-neutral-300 mb-2">📍 개별 위치 설정</h3>
@@ -329,29 +294,6 @@ export function OverlayCard({ preset, onUpdate, onDelete, onCopyUrl, copiedId, u
                 type="number"
                 value={preset.goalPosition?.y || ''}
                 onChange={(e) => onUpdate(preset.id, { goalPosition: { x: preset.goalPosition?.x || '50', y: e.target.value, anchor: preset.goalPosition?.anchor || 'bc' } })}
-                className="px-2 py-1 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none text-xs"
-                placeholder="Y%"
-                min="0"
-                max="100"
-              />
-            </div>
-          )}
-          {preset.showPersonalGoals && (
-            <div className="grid grid-cols-3 gap-2">
-              <label className="text-xs text-neutral-400">👤 개인목표 위치</label>
-              <input
-                type="number"
-                value={preset.personalGoalPosition?.x || ''}
-                onChange={(e) => onUpdate(preset.id, { personalGoalPosition: { x: e.target.value, y: preset.personalGoalPosition?.y || '50', anchor: preset.personalGoalPosition?.anchor || 'br' } })}
-                className="px-2 py-1 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none text-xs"
-                placeholder="X%"
-                min="0"
-                max="100"
-              />
-              <input
-                type="number"
-                value={preset.personalGoalPosition?.y || ''}
-                onChange={(e) => onUpdate(preset.id, { personalGoalPosition: { x: preset.personalGoalPosition?.x || '50', y: e.target.value, anchor: preset.personalGoalPosition?.anchor || 'br' } })}
                 className="px-2 py-1 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none text-xs"
                 placeholder="Y%"
                 min="0"

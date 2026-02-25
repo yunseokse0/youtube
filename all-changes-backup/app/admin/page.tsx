@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import MemberRow from "@/components/MemberRow";
 import Toast from "@/components/Toast";
 import {
@@ -44,7 +44,6 @@ export default function AdminPage() {
   const [ytUrl, setYtUrl] = useState("");
   const [liveChatId, setLiveChatId] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState<string>("");
-  const [showCurrencyUnit, setShowCurrencyUnit] = useState(true);
 
   // Load state on mount
   useEffect(() => {
@@ -61,8 +60,6 @@ export default function AdminPage() {
   useEffect(() => {
     saveState(state);
   }, [state]);
-
-
 
   const addDonor = useCallback((memberId: string, amount: number, message: string = "") => {
     const member = state.members.find(m => m.id === memberId);
@@ -194,12 +191,7 @@ export default function AdminPage() {
   const copyOverlayUrl = () => {
     const url = new URL(window.location.origin);
     url.pathname = "/overlay";
-    url.searchParams.set("theme", "default");
-    url.searchParams.set("showMembers", "true");
-    url.searchParams.set("showTotal", "true");
-    url.searchParams.set("showGoal", "false");
-    url.searchParams.set("showPersonalGoals", "false");
-    url.searchParams.set("showCurrency", showCurrencyUnit ? "true" : "false");
+    url.searchParams.set("theme", "excel");
     url.searchParams.set("scale", "1");
     url.searchParams.set("memberSize", "24");
     url.searchParams.set("totalSize", "32");
@@ -209,6 +201,12 @@ export default function AdminPage() {
     url.searchParams.set("sumFree", "true");
     url.searchParams.set("sumX", "10");
     url.searchParams.set("sumY", "10");
+    url.searchParams.set("showMembers", "true");
+    url.searchParams.set("showTotal", "true");
+    url.searchParams.set("showGoal", "false");
+    url.searchParams.set("showTicker", "false");
+    url.searchParams.set("showTimer", "false");
+    url.searchParams.set("showMission", "true");
     
     navigator.clipboard.writeText(url.toString());
     setCopied(true);
@@ -222,20 +220,11 @@ export default function AdminPage() {
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">매니저 제어판</h1>
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={showCurrencyUnit}
-                onChange={(e) => setShowCurrencyUnit(e.target.checked)}
-                className="rounded"
-              />
-              통화 단위 표시
-            </label>
             <button
-              className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700 text-sm"
-              onClick={copyOverlayUrl}
+              onClick={() => window.open('/simple-admin', '_blank')}
+              className="px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-medium transition-all duration-200 shadow-lg"
             >
-              {copied ? "✅ 복사됨" : "📋 오버레이 URL 복사"}
+              🎯 간단한 모드로 전환
             </button>
             <Link className="text-sm text-neutral-300 underline" href="/overlay">오버레이 열기</Link>
           </div>
@@ -340,9 +329,22 @@ export default function AdminPage() {
           </div>
 
           <div className="space-y-6">
+            <section className="glass p-4 md:p-6">
+              <h2 className="text-lg font-semibold mb-4">오버레이 URL</h2>
+              <button
+                className={`px-4 py-2 rounded transition-all ${
+                  copied 
+                    ? "bg-green-600 text-white" 
+                    : "bg-blue-600 hover:bg-blue-700 text-white"
+                }`}
+                onClick={copyOverlayUrl}
+              >
+                {copied ? "✅ 복사됨!" : "📋 오버레이 URL 복사"}
+              </button>
+            </section>
 
             <section className="glass p-4 md:p-6">
-              <h2 className="text-lg font-semibold mb-4">후원자 기록부</h2>
+              <h2 className="text-lg font-semibold mb-4">최근 후원</h2>
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {state.donors.slice(0, 10).map((donor) => (
                   <div key={donor.id} className="flex justify-between items-center p-2 bg-neutral-900/40 rounded">
@@ -362,69 +364,6 @@ export default function AdminPage() {
                     최근 후원이 없습니다
                   </div>
                 )}
-              </div>
-            </section>
-
-            <section className="glass p-4 md:p-6">
-              <h2 className="text-lg font-semibold mb-4">채팅용 복사 & 보안</h2>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium mb-2">채팅 메시지</label>
-                  <textarea
-                    className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
-                    placeholder="채팅 메시지를 입력하세요..."
-                    value={chatDraft}
-                    onChange={(e) => {
-                      setChatDraft(e.target.value);
-                      setChatDraftDirty(true);
-                    }}
-                    rows={3}
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white"
-                    onClick={() => {
-                      navigator.clipboard.writeText(chatDraft);
-                      setChatDraftDirty(false);
-                    }}
-                    disabled={!chatDraft.trim()}
-                  >
-                    📋 복사하기
-                  </button>
-                  <button
-                    className="px-4 py-2 rounded bg-neutral-800 hover:bg-neutral-700 text-white"
-                    onClick={() => setChatDraft("")}
-                  >
-                    🗑️ 지우기
-                  </button>
-                </div>
-                {chatDraftDirty && (
-                  <div className="text-xs text-yellow-400">⚠️ 저장되지 않은 변경사항이 있습니다</div>
-                )}
-              </div>
-            </section>
-
-            <section className="glass p-4 md:p-6">
-              <h2 className="text-lg font-semibold mb-4">📺 전광판</h2>
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    className="px-3 py-2 rounded bg-green-600 hover:bg-green-700 text-white text-sm"
-                    onClick={() => window.open('/electronic-board', '_blank')}
-                  >
-                    📺 전광판 열기
-                  </button>
-                  <button
-                    className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm"
-                    onClick={() => window.open('/simple-admin?board=1', '_blank')}
-                  >
-                    ⚙️ 전광판 설정
-                  </button>
-                </div>
-                <div className="text-xs text-neutral-400">
-                  💡 전광판은 특별 이벤트나 공지사항을 표시하는 데 사용됩니다
-                </div>
               </div>
             </section>
 

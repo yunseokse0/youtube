@@ -14,7 +14,6 @@ export default function MemberRow({ member, onChange, onRename, onReset, onDelet
   const [localAccount, setLocalAccount] = useState(member.account.toString());
   const [localToon, setLocalToon] = useState(member.toon.toString());
   const [localName, setLocalName] = useState(member.name);
-  const [localRank, setLocalRank] = useState(member.rank || "");
   const prevAccount = useRef(member.account);
   const [flash, setFlash] = useState(false);
 
@@ -22,8 +21,7 @@ export default function MemberRow({ member, onChange, onRename, onReset, onDelet
     setLocalAccount(member.account.toString());
     setLocalToon(member.toon.toString());
     setLocalName(member.name);
-    setLocalRank(member.rank || "");
-  }, [member.account, member.toon, member.name, member.rank]);
+  }, [member.account, member.toon, member.name]);
 
   useEffect(() => {
     if (prevAccount.current !== member.account) {
@@ -60,14 +58,6 @@ export default function MemberRow({ member, onChange, onRename, onReset, onDelet
     }
   };
 
-  const handleRankBlur = () => {
-    if (localRank !== (member.rank || "")) {
-      onChange(member.id, { rank: localRank.trim() || undefined });
-    } else {
-      setLocalRank(member.rank || "");
-    }
-  };
-
   return (
     <div className={`grid grid-cols-[1fr_auto_auto_auto] gap-3 items-center p-3 bg-neutral-900/60 rounded border border-white/10 ${flash ? "animate-pulse bg-green-900/30" : ""}`}>
       <div className="flex items-center gap-2">
@@ -77,14 +67,6 @@ export default function MemberRow({ member, onChange, onRename, onReset, onDelet
           onChange={(e) => setLocalName(e.target.value)}
           onBlur={handleNameBlur}
           onKeyDown={(e) => e.key === "Enter" && handleNameBlur()}
-        />
-        <input
-          className="w-20 px-2 py-1 rounded bg-neutral-800/80 border border-white/10 text-sm"
-          placeholder="직급"
-          value={localRank}
-          onChange={(e) => setLocalRank(e.target.value)}
-          onBlur={handleRankBlur}
-          onKeyDown={(e) => e.key === "Enter" && handleRankBlur()}
         />
         <span className="text-xs text-neutral-400">오늘: {member.today.toLocaleString()}</span>
       </div>
