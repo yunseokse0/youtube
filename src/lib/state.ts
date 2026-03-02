@@ -27,12 +27,18 @@ export type MissionItem = {
   isHot?: boolean;
 };
 
+type LegacyOverlaySettings = {
+  presets?: unknown[];
+  [key: string]: unknown;
+};
+
 export type AppState = {
   members: Member[];
   donors: Donor[];
   forbiddenWords: string[];
   missions?: MissionItem[];
   overlayPresets?: unknown[];
+  overlaySettings?: LegacyOverlaySettings;
   updatedAt: number;
 };
 
@@ -121,7 +127,11 @@ export function loadState(): AppState {
     data.donors = data.donors || [];
     data.forbiddenWords = data.forbiddenWords || [];
     data.missions = data.missions || [];
-    data.overlayPresets = Array.isArray(data.overlayPresets) ? data.overlayPresets : [];
+    data.overlayPresets = Array.isArray(data.overlayPresets)
+      ? data.overlayPresets
+      : Array.isArray(data.overlaySettings?.presets)
+        ? data.overlaySettings?.presets
+        : [];
     return data;
   } catch {
     return defaultState();
@@ -171,7 +181,11 @@ export async function loadStateFromApi(): Promise<AppState | null> {
       data.donors = data.donors || [];
       data.forbiddenWords = data.forbiddenWords || [];
       data.missions = data.missions || [];
-      data.overlayPresets = Array.isArray(data.overlayPresets) ? data.overlayPresets : [];
+      data.overlayPresets = Array.isArray(data.overlayPresets)
+        ? data.overlayPresets
+        : Array.isArray(data.overlaySettings?.presets)
+          ? data.overlaySettings?.presets
+          : [];
       return data as AppState;
     }
     return null;

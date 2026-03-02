@@ -25,7 +25,7 @@ export function useFlip(keys: string[], duration = 500) {
         el.style.transition = "none";
         el.style.transform = `translate(${dx}px, ${dy}px)`;
         // Force reflow
-        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+        // eslint-disable-next-line no-unused-expressions
         el.offsetHeight;
         el.style.transition = `transform ${duration}ms cubic-bezier(0.2, 0.7, 0.2, 1)`;
         el.style.transform = "translate(0px, 0px)";
