@@ -383,7 +383,7 @@ const THEMES: Record<ThemeId, {
     nameCls: "text-white",
     accountCls: "text-right text-slate-400 font-mono whitespace-nowrap",
     toonCls: "text-right text-slate-400 font-mono whitespace-nowrap",
-    totalCls: "font-mono font-black text-cyan-400 italic",
+    totalCls: "font-mono font-black text-cyan-300 tabular-nums whitespace-nowrap",
     totalWrapCls: "bg-cyan-900/30 px-1 py-1 border-t-2 border-cyan-500/50",
     rowCls: "bg-slate-900/40 py-1.5 px-1 border-b border-slate-800 last:border-none",
     tableCls: "border-2 border-cyan-500/50 bg-black/40 rounded-lg overflow-hidden animate-neonPulse",
@@ -510,6 +510,13 @@ function DonorTicker({ donors, theme, fontSize, color, full, duration, gap, limi
       .sort((a, b) => b.at - a.at)
       .slice(0, lim);
   }, [donors, limit]);
+  const stream = useMemo(() => {
+    if (!recent.length) return [];
+    const minItems = Math.max(8, (limit || 5) * 3);
+    const out: { name: string; at: number; account: number; toon: number }[] = [];
+    while (out.length < minItems) out.push(...recent);
+    return out.slice(0, minItems);
+  }, [recent, limit]);
 
   const runtimeTickerCfg = typeof window !== "undefined" ? (window as any).__overlayTickerConfig : null;
   const shouldShowGuide = typeof previewGuide === "boolean"
@@ -597,7 +604,7 @@ function DonorTicker({ donors, theme, fontSize, color, full, duration, gap, limi
           ...(duration ? { animationDuration: `${Math.max(3, duration)}s` } : {}),
         }}
       >
-        {recent.map((d, i) => (
+        {stream.map((d, i) => (
           <span
             key={`${d.name}-${d.at}-${i}`}
             className={theme.tickerCls}
@@ -606,7 +613,7 @@ function DonorTicker({ donors, theme, fontSize, color, full, duration, gap, limi
             ♥ {d.name} {amountText(d)}
           </span>
         ))}
-        {recent.map((d, i) => (
+        {stream.map((d, i) => (
           <span
             key={`dup-${d.name}-${d.at}-${i}`}
             className={theme.tickerCls}
@@ -1053,18 +1060,18 @@ function OverlayInner() {
                     <div className="text-left">RANK</div>
                     {hasRoleColumn && <div className="text-left">ROLE</div>}
                     <div className="text-left">MEMBER</div>
-                    <div className="text-right">BANK</div>
-                    <div className="text-right">TOON</div>
-                    <div className="text-right font-bold text-white">TOTAL</div>
+                    <div className="text-right pr-1">BANK</div>
+                    <div className="text-right pl-1 border-l border-cyan-500/30">TOON</div>
+                    <div className="text-right pl-1 border-l border-cyan-500/30 font-bold text-white">TOTAL</div>
                   </div>
                   {ranked.map(({m, rank}) => (
                     <div key={m.id} ref={setRowRef(m.id)} className={`${theme.rowCls} ${tight ? "py-0.5 px-1" : ""} gap-x-0 grid items-center transition-transform will-change-transform`} style={{ gridTemplateColumns: neonGridTemplate }}>
                       <div className={`${theme.nameCls} text-left`}>#{rank}</div>
                       {hasRoleColumn && <div className={`${theme.nameCls} text-left`}>{m.role || "-"}</div>}
                       <div className={`${theme.nameCls} text-left overflow-hidden whitespace-nowrap text-ellipsis`}>{m.name}</div>
-                      <div className={theme.accountCls + " text-right overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.account)}</div>
-                      <div className={theme.toonCls + " text-right overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.toon)}</div>
-                      <div className={`${theme.totalCls} text-right overflow-hidden whitespace-nowrap text-ellipsis`}>{fmt(m.account + m.toon)}</div>
+                      <div className={theme.accountCls + " text-right pr-1 overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.account)}</div>
+                      <div className={theme.toonCls + " text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.toon)}</div>
+                      <div className={`${theme.totalCls} text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis`}>{fmt(m.account + m.toon)}</div>
                     </div>
                   ))}
                   {pinned.map((m) => (
@@ -1072,9 +1079,9 @@ function OverlayInner() {
                       <div className={theme.nameCls}>—</div>
                       {hasRoleColumn && <div className={theme.nameCls}></div>}
                       <div className={theme.nameCls + " overflow-hidden whitespace-nowrap text-ellipsis"}>{m.name}</div>
-                      <div className={theme.accountCls + " text-right overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.account)}</div>
-                      <div className={theme.toonCls + " text-right overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.toon)}</div>
-                      <div className={`${theme.totalCls} text-right overflow-hidden whitespace-nowrap text-ellipsis`}>{fmt(m.account + m.toon)}</div>
+                      <div className={theme.accountCls + " text-right pr-1 overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.account)}</div>
+                      <div className={theme.toonCls + " text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.toon)}</div>
+                      <div className={`${theme.totalCls} text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis`}>{fmt(m.account + m.toon)}</div>
                     </div>
                   ))}
                   {showTotal && ready && (
@@ -1082,16 +1089,16 @@ function OverlayInner() {
                       className={`grid items-center ${theme.totalWrapCls} ${tight ? "px-1 py-0.5" : ""} gap-x-0`}
                       style={{ gridTemplateColumns: neonGridTemplate }}
                     >
-                      <div className="text-cyan-300 font-bold">{hasRoleColumn ? "합계" : "총합"}</div>
-                      {hasRoleColumn && <div />}
                       <div />
-                      <div className={`${theme.totalCls} text-right overflow-hidden whitespace-nowrap text-ellipsis`} style={{ fontSize: tSize * 0.68 }}>
+                      {hasRoleColumn && <div />}
+                      <div className="text-cyan-300 font-bold whitespace-nowrap">{hasRoleColumn ? "합계" : "총합"}</div>
+                      <div className={`${theme.totalCls} text-right pr-1 overflow-hidden whitespace-nowrap text-ellipsis`} style={{ fontSize: tSize * 0.68 }}>
                         {fmt(sumAccount)}
                       </div>
-                      <div className={`${theme.totalCls} text-right overflow-hidden whitespace-nowrap text-ellipsis`} style={{ fontSize: tSize * 0.68 }}>
+                      <div className={`${theme.totalCls} text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis`} style={{ fontSize: tSize * 0.68 }}>
                         {fmt(sumToon)}
                       </div>
-                      <div className={`${theme.totalCls} text-right overflow-hidden whitespace-nowrap text-ellipsis`} style={{ fontSize: tSize * 0.72 }}>
+                      <div className={`${theme.totalCls} text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis`} style={{ fontSize: tSize * 0.72 }}>
                         {fmt(rounded)}
                       </div>
                     </div>
