@@ -1060,8 +1060,8 @@ function OverlayInner() {
     const neonNameMaxCh = Math.max(nameCh, Math.round(nameMaxCh * 0.5));
     const neonNameCol = `minmax(${nameCh}ch, ${neonNameMaxCh}ch)`;
     const neonGridTemplate = hasRoleColumn
-      ? `3ch 6ch ${neonNameCol} ${bankCh}ch ${toonCh}ch ${totalCh}ch`
-      : `3ch ${neonNameCol} ${bankCh}ch ${toonCh}ch ${totalCh}ch`;
+      ? `4.5ch 6ch ${neonNameCol} ${bankCh}ch ${toonCh}ch ${totalCh}ch`
+      : `4.5ch ${neonNameCol} ${bankCh}ch ${toonCh}ch ${totalCh}ch`;
     return (
       <main className="transparent-bg min-h-screen no-select" style={scaledMainStyle}>
         {showMembers && ready && (
@@ -1075,12 +1075,12 @@ function OverlayInner() {
               <div>
                 <div ref={tableBoxRef as any} className={theme.tableCls} style={{ fontSize: mSize, width: "fit-content" }}>
                   <div className={`${theme.headerCls} grid items-center ${tight ? "py-0.5 px-1" : ""} gap-x-0`} style={{ gridTemplateColumns: neonGridTemplate }}>
-                    <div className="text-left">RANK</div>
-                    {hasRoleColumn && <div className="text-left">ROLE</div>}
-                    <div className="text-left">MEMBER</div>
-                    <div className="text-right pr-1">BANK</div>
-                    <div className="text-right pl-1 border-l border-cyan-500/30">TOON</div>
-                    <div className="text-right pl-1 border-l border-cyan-500/30 font-bold text-white">TOTAL</div>
+                    <div className="text-left overflow-hidden whitespace-nowrap text-ellipsis">RANK</div>
+                    {hasRoleColumn && <div className="text-left overflow-hidden whitespace-nowrap text-ellipsis">ROLE</div>}
+                    <div className="text-left overflow-hidden whitespace-nowrap text-ellipsis">MEMBER</div>
+                    <div className="text-right pr-1 overflow-hidden whitespace-nowrap text-ellipsis">BANK</div>
+                    <div className="text-right pl-1 border-l border-cyan-500/30 overflow-hidden whitespace-nowrap text-ellipsis">TOON</div>
+                    <div className="text-right pl-1 border-l border-cyan-500/30 font-bold text-white overflow-hidden whitespace-nowrap text-ellipsis">TOTAL</div>
                   </div>
                   {ranked.map(({m, rank}) => (
                     <div key={m.id} ref={setRowRef(m.id)} className={`${theme.rowCls} ${tight ? "py-0.5 px-1" : ""} gap-x-0 grid items-center transition-transform will-change-transform`} style={{ gridTemplateColumns: neonGridTemplate }}>
