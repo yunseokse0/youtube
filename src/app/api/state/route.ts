@@ -45,12 +45,14 @@ async function upstashSet(key: string, value: unknown) {
   const { base, token } = getEnv();
   if (!base || !token) return false;
   const json = JSON.stringify(value);
-  const url = `${base.replace(/\/$/, "")}/set/${encodeURIComponent(
-    key
-  )}/${encodeURIComponent(json)}`;
+  const url = `${base.replace(/\/$/, "")}/pipeline`;
   const r = await fetch(url, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify([["SET", key, json]]),
   });
   return r.ok;
 }

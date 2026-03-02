@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0e0e0e"/>
+      <stop offset="1" stop-color="#151515"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1920" fill="url(#g)"/>
+  <rect x="40" y="130" width="1000" height="1770" rx="26" fill="#000" opacity="0.55"/>
+  <rect x="60" y="180" width="960" height="540" rx="18" fill="#111"/>
+  <rect x="60" y="750" width="960" height="540" rx="18" fill="#111"/>
+  <rect x="60" y="1320" width="960" height="460" rx="18" fill="#111"/>
+  <text x="540" y="150" text-anchor="middle" font-size="28" fill="#bbb" font-family="sans-serif">YouTube Live (9:16) Demo</text>
+  <g opacity="0.9">
+    <rect x="60" y="100" width="960" height="56" rx="12" fill="#0b0b0b" stroke="#222"/>
+    <circle cx="96" cy="128" r="12" fill="#e53935"/>
+    <text x="120" y="134" font-size="22" fill="#eee" font-family="sans-serif">LIVE</text>
+    <rect x="860" y="112" width="140" height="32" rx="8" fill="#1f1f1f" />
+    <text x="870" y="134" font-size="18" fill="#aaa" font-family="sans-serif">12.3K watching</text>
+  </g>
+  <g opacity="0.9">
+    <rect x="60" y="1750" width="960" height="80" rx="14" fill="#0b0b0b" stroke="#222"/>
+    <rect x="90" y="1778" width="240" height="24" rx="6" fill="#1f1f1f"/>
+    <rect x="350" y="1778" width="120" height="24" rx="6" fill="#1f1f1f"/>
+    <rect x="490" y="1778" width="120" height="24" rx="6" fill="#1f1f1f"/>
+    <rect x="630" y="1778" width="120" height="24" rx="6" fill="#1f1f1f"/>
+    <rect x="770" y="1778" width="120" height="24" rx="6" fill="#1f1f1f"/>
+  </g>
+  <text x="540" y="490" text-anchor="middle" font-size="32" fill="#999" font-family="sans-serif">Video Area</text>
+  <text x="540" y="1060" text-anchor="middle" font-size="32" fill="#999" font-family="sans-serif">Chat / Info Area</text>
+  <text x="540" y="1560" text-anchor="middle" font-size="28" fill="#999" font-family="sans-serif">Description / Controls</text>
+</svg>

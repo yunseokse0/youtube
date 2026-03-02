@@ -1,117 +1,166 @@
 "use client";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi } from "@/lib/state";
-import { useSSEConnection } from "@/lib/sse-client";
-import { createModuleLogger } from "@/lib/logger";
+import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi, loadState, totalToon, totalCombined } from "@/lib/state";
+import { useFlip } from "@/lib/flip";
 import MissionMenu from "@/components/MissionMenu";
-import MissionTicker from "@/components/MissionTicker";
-import ElectronicMissionBoard from "@/components/ElectronicMissionBoard";
 
-const logger = createModuleLogger('Overlay');
+type OverlayPresetLike = {
+  id?: string;
+  scale?: string;
+  memberSize?: string;
+  totalSize?: string;
+  dense?: boolean;
+  anchor?: string;
+  sumAnchor?: string;
+  sumX?: string;
+  sumY?: string;
+  sumFree?: boolean;
+  theme?: string;
+  showMembers?: boolean;
+  showTotal?: boolean;
+  showGoal?: boolean;
+  goal?: string;
+  goalLabel?: string;
+  goalWidth?: string;
+  goalAnchor?: string;
+  goalCurrent?: string;
+  showPersonalGoal?: boolean;
+  personalGoalTheme?: string;
+  personalGoalAnchor?: string;
+  personalGoalLimit?: string;
+  personalGoalFree?: boolean;
+  personalGoalX?: string;
+  personalGoalY?: string;
+  tickerInMembers?: boolean;
+  tickerInGoal?: boolean;
+  tickerInPersonalGoal?: boolean;
+  showTicker?: boolean;
+  tickerAnchor?: string;
+  tickerWidth?: string;
+  showTimer?: boolean;
+  timerStart?: number | null;
+  timerAnchor?: string;
+  showMission?: boolean;
+  missionAnchor?: string;
+  showBottomDonors?: boolean;
+  donorsSize?: string;
+  donorsGap?: string;
+  donorsSpeed?: string;
+  donorsLimit?: string;
+  donorsFormat?: string;
+  donorsUnit?: string;
+  donorsColor?: string;
+  tickerTheme?: string;
+  tickerGlow?: string;
+  tickerShadow?: string;
+  currencyLocale?: string;
+};
 
-function useRemoteState(): { state: AppState | null; ready: boolean; connected: boolean } {
+function presetToParams(preset: OverlayPresetLike | null): URLSearchParams {
+  const q = new URLSearchParams();
+  if (!preset) return q;
+  q.set("scale", preset.scale || "0.75");
+  q.set("memberSize", preset.memberSize || "18");
+  q.set("totalSize", preset.totalSize || "40");
+  q.set("dense", String(preset.dense ?? true));
+  q.set("anchor", preset.anchor || "tl");
+  q.set("theme", preset.theme || "default");
+  q.set("showMembers", String(preset.showMembers ?? true));
+  q.set("showTotal", String(preset.showTotal ?? true));
+  if (preset.sumFree) {
+    q.set("sumX", preset.sumX || "50");
+    q.set("sumY", preset.sumY || "90");
+  } else {
+    q.set("sumAnchor", preset.sumAnchor || "bc");
+  }
+  if (preset.showGoal) {
+    q.set("showGoal", "true");
+    q.set("goal", preset.goal || "0");
+    q.set("goalLabel", preset.goalLabel || "목표 금액");
+    q.set("goalWidth", preset.goalWidth || "400");
+    q.set("goalAnchor", preset.goalAnchor || "bc");
+    if (preset.goalCurrent && preset.goalCurrent.trim()) q.set("goalCurrent", preset.goalCurrent.trim());
+  }
+  if (preset.showPersonalGoal) q.set("showPersonalGoal", "true");
+  if (preset.personalGoalTheme && preset.personalGoalTheme.trim()) q.set("personalGoalTheme", preset.personalGoalTheme.trim());
+  if (preset.personalGoalFree) {
+    q.set("personalGoalX", preset.personalGoalX || "78");
+    q.set("personalGoalY", preset.personalGoalY || "82");
+  } else if (preset.personalGoalAnchor && preset.personalGoalAnchor.trim()) {
+    q.set("personalGoalAnchor", preset.personalGoalAnchor.trim());
+  }
+  if (preset.personalGoalLimit && preset.personalGoalLimit.trim()) q.set("personalGoalLimit", preset.personalGoalLimit.trim());
+  if (preset.tickerInMembers) q.set("tickerInMembers", "true");
+  if (preset.tickerInGoal) q.set("tickerInGoal", "true");
+  if (preset.tickerInPersonalGoal) q.set("tickerInPersonalGoal", "true");
+  if (preset.showTicker) {
+    q.set("showTicker", "true");
+    if (preset.tickerAnchor) q.set("tickerAnchor", preset.tickerAnchor);
+    if (preset.tickerWidth && preset.tickerWidth.trim()) q.set("tickerWidth", preset.tickerWidth.trim());
+  }
+  if (preset.showTimer && preset.timerStart) {
+    q.set("showTimer", "true");
+    q.set("timerStart", String(preset.timerStart));
+    q.set("timerAnchor", preset.timerAnchor || "tr");
+  }
+  if (preset.showMission) {
+    q.set("showMission", "true");
+    q.set("missionAnchor", preset.missionAnchor || "br");
+  }
+  if (preset.showBottomDonors) q.set("showBottomDonors", "true");
+  if (preset.donorsSize && preset.donorsSize.trim()) q.set("donorsSize", preset.donorsSize.trim());
+  if (preset.donorsGap && preset.donorsGap.trim()) q.set("donorsGap", preset.donorsGap.trim());
+  if (preset.donorsSpeed && preset.donorsSpeed.trim()) q.set("donorsSpeed", preset.donorsSpeed.trim());
+  if (preset.donorsLimit && preset.donorsLimit.trim()) q.set("donorsLimit", preset.donorsLimit.trim());
+  q.set("donorsFormat", (preset.donorsFormat || "short").trim() === "full" ? "full" : "short");
+  if (preset.donorsUnit && preset.donorsUnit.trim()) q.set("donorsUnit", preset.donorsUnit.trim());
+  if (preset.donorsColor && preset.donorsColor.trim()) q.set("donorsColor", preset.donorsColor.trim());
+  if (preset.tickerTheme && preset.tickerTheme.trim()) q.set("tickerTheme", preset.tickerTheme.trim());
+  if (preset.tickerGlow && preset.tickerGlow.trim()) q.set("tickerGlow", preset.tickerGlow.trim());
+  if (preset.tickerShadow && preset.tickerShadow.trim()) q.set("tickerShadow", preset.tickerShadow.trim());
+  if (preset.currencyLocale && preset.currencyLocale.trim()) q.set("currencyLocale", preset.currencyLocale.trim());
+  return q;
+}
+
+function useRemoteState(): { state: AppState | null; ready: boolean } {
   const [state, setState] = useState<AppState | null>(null);
   const lastUpdatedRef = useRef(0);
-  const { connected } = useSSEConnection((data) => {
-    if (data.type === 'overlay_update' && data.updatedAt && data.updatedAt !== lastUpdatedRef.current) {
-      lastUpdatedRef.current = data.updatedAt;
-      setState(data);
-      logger.info('SSE 상태 업데이트 수신', { 
-        updatedAt: data.updatedAt,
-        members: data.members?.length,
-        donors: data.donors?.length,
-        memberData: data.members?.map((m: Member) => ({ name: m.name, account: m.account, toon: m.toon }))
-      });
-    } else if (data.type === 'preset_update' && data.preset) {
-      // 프리셋 업데이트 메시지 처리 - 오버레이 설정 업데이트
-      logger.info('프리셋 업데이트 수신, 오버레이 설정 업데이트', data.preset);
-      
-      // 프리셋 데이터를 오버레이 설정으로 변환하여 업데이트
-      setState((prevState) => {
-        if (!prevState) return prevState;
-        
-        const preset = data.preset;
-        const newOverlaySettings = {
-          scale: parseFloat(preset.scale || '1'),
-          memberSize: parseInt(preset.memberSize || '24', 10),
-          totalSize: parseInt(preset.totalSize || '64', 10),
-          dense: preset.dense || false,
-          anchor: preset.anchor || 'tl',
-          sumAnchor: preset.sumAnchor || 'bc',
-          sumFree: preset.sumFree || false,
-          sumX: parseFloat(preset.sumX || '50'),
-          sumY: parseFloat(preset.sumY || '90'),
-          theme: preset.theme || 'default',
-          showMembers: preset.showMembers !== false,
-          showTotal: preset.showTotal !== false,
-          showGoal: preset.showGoal || false,
-          goal: parseInt(preset.goal || '0', 10),
-          goalLabel: preset.goalLabel || '목표 금액',
-          goalWidth: parseInt(preset.goalWidth || '400', 10),
-          goalAnchor: preset.goalAnchor || 'bc',
-          showTicker: preset.showTicker || false,
-          showTimer: preset.showTimer || false,
-          timerStart: preset.timerStart || null,
-          timerAnchor: preset.timerAnchor || 'tr',
-          showMission: preset.showMission || false,
-          missionAnchor: preset.missionAnchor || 'br'
-        };
-        
-        return {
-          ...prevState,
-          overlaySettings: newOverlaySettings,
-          updatedAt: Date.now()
-        };
-      });
-    }
-  });
-  
-  // Initial state loading
+  const loadRef = useRef(loadStateFromApi);
   useEffect(() => {
-    const fetchInitialState = async () => {
-      const data = await loadStateFromApi();
-      if (data) {
-        lastUpdatedRef.current = data.updatedAt;
-        setState(data);
-        logger.info('초기 상태 로드됨', { updatedAt: data.updatedAt });
-      }
-    };
-    fetchInitialState();
-  }, []);
-
-  // Fallback polling when SSE is not connected
-  useEffect(() => {
-    if (connected) return; // Don't poll if SSE is connected
-    
     let running = true;
+    try {
+      const local = loadState();
+      setState(local);
+      lastUpdatedRef.current = local.updatedAt || 0;
+    } catch {}
     const poll = async () => {
-      if (!running || !state) return;
+      if (!running) return;
+      // Same-tab preview/overlay should react to local changes immediately
+      // even when API sync is delayed or failing.
       try {
-        const res = await fetch(`/api/state?_t=${Date.now()}`, { cache: "no-store" });
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.updatedAt && data.updatedAt !== lastUpdatedRef.current) {
-            lastUpdatedRef.current = data.updatedAt;
-            setState(data);
-          }
+        const local = loadState();
+        if (local && local.updatedAt && local.updatedAt > lastUpdatedRef.current) {
+          lastUpdatedRef.current = local.updatedAt;
+          setState(local);
         }
-      } catch (error) {
-        logger.error('상태 페치 실패', error);
-      }
+      } catch {}
+      try {
+        const data = await loadRef.current();
+        // Keep local state when API is stale (e.g. API save failed),
+        // and only accept strictly newer snapshots from server.
+        if (data && data.updatedAt && data.updatedAt > lastUpdatedRef.current) {
+          lastUpdatedRef.current = data.updatedAt;
+          setState(data);
+        }
+      } catch {}
       if (running) setTimeout(poll, 1500);
     };
-    
-    if (state) {
-      poll();
-    }
-    
-    return () => {
-      running = false;
-    };
-  }, [connected, state]);
+    poll();
+    return () => { running = false; };
+  }, []);
 
-  return { state, ready: state !== null, connected };
+  return { state, ready: state !== null };
 }
 
 function useCountUp(value: number, durationMs = 600) {
@@ -195,13 +244,13 @@ const THEMES: Record<ThemeId, {
     label: "엑셀",
     memberCls: "font-mono",
     nameCls: "text-black font-semibold",
-    accountCls: "text-blue-700 font-bold",
-    toonCls: "text-gray-500",
+    accountCls: "text-blue-700 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    toonCls: "text-gray-500 whitespace-nowrap font-mono tabular-nums overflow-hidden",
     totalCls: "font-bold text-white",
-    totalWrapCls: "bg-[#217346] px-3 py-1",
-    rowCls: "border border-[#d4d4d4] px-3 py-1",
+    totalWrapCls: "bg-[#217346] px-2 py-1",
+    rowCls: "border border-[#d4d4d4] px-2 py-1 align-middle",
     tableCls: "bg-white/95 border-collapse shadow-lg",
-    headerCls: "bg-[#217346] text-white font-bold px-3 py-1 border border-[#1a5c37] text-sm",
+    headerCls: "bg-[#217346] text-white font-bold px-2 py-1 border border-[#1a5c37] text-sm",
     goalBarBg: "bg-[#d4d4d4]",
     goalBarFill: "bg-[#217346]",
     goalText: "text-white font-mono font-bold",
@@ -213,8 +262,8 @@ const THEMES: Record<ThemeId, {
     label: "네온",
     memberCls: "font-black tracking-wide",
     nameCls: "text-cyan-300 drop-shadow-[0_0_8px_rgba(0,255,255,0.7)]",
-    accountCls: "ml-2 text-fuchsia-400 drop-shadow-[0_0_8px_rgba(255,0,255,0.7)]",
-    toonCls: "ml-1 text-yellow-300 drop-shadow-[0_0_6px_rgba(255,255,0,0.5)]",
+    accountCls: "ml-2 text-fuchsia-400 drop-shadow-[0_0_8px_rgba(255,0,255,0.7)] tabular-nums overflow-hidden",
+    toonCls: "ml-1 text-yellow-300 drop-shadow-[0_0_6px_rgba(255,255,0,0.5)] tabular-nums overflow-hidden",
     totalCls: "font-black text-lime-300 drop-shadow-[0_0_12px_rgba(0,255,0,0.8)]",
     totalWrapCls: "",
     rowCls: "",
@@ -303,13 +352,13 @@ const THEMES: Record<ThemeId, {
     label: "네온 엑셀",
     memberCls: "font-mono font-bold",
     nameCls: "text-white",
-    accountCls: "text-right text-slate-400 font-mono",
-    toonCls: "text-right text-slate-400 font-mono",
+    accountCls: "text-right text-slate-400 font-mono whitespace-nowrap",
+    toonCls: "text-right text-slate-400 font-mono whitespace-nowrap",
     totalCls: "font-mono font-black text-cyan-400 italic",
-    totalWrapCls: "bg-cyan-900/30 px-3 py-1 border-t-2 border-cyan-500/50",
-    rowCls: "bg-slate-900/40 py-2 px-3 border-b border-slate-800 last:border-none",
+    totalWrapCls: "bg-cyan-900/30 px-1 py-1 border-t-2 border-cyan-500/50",
+    rowCls: "bg-slate-900/40 py-1.5 px-1 border-b border-slate-800 last:border-none",
     tableCls: "border-2 border-cyan-500/50 bg-black/40 rounded-lg overflow-hidden animate-neonPulse",
-    headerCls: "bg-cyan-900/30 text-cyan-300 text-xs font-mono py-1 px-3 border-b border-cyan-500/50 uppercase",
+    headerCls: "bg-cyan-900/30 text-cyan-300 text-xs font-mono py-1 px-1 border-b border-cyan-500/50 uppercase",
     goalBarBg: "bg-black/60 border border-cyan-500/30 rounded",
     goalBarFill: "bg-gradient-to-r from-cyan-500 to-fuchsia-500 shadow-[0_0_10px_rgba(0,255,255,0.4)]",
     goalText: "text-cyan-300 font-mono font-bold",
@@ -338,28 +387,203 @@ function GoalBar({ current, goal, label, theme, width }: { current: number; goal
   );
 }
 
-function DonorTicker({ donors, theme, fontSize }: { donors: Donor[]; theme: typeof THEMES.default; fontSize: number }) {
-  const recent = useMemo(() => {
-    return donors
-      .filter(d => d.amount > 0) // 금액이 0이 아닌 후원자만 표시
-      .slice()
-      .sort((a, b) => b.at - a.at)
-      .slice(0, 5);
-  }, [donors]);
-
-  if (!recent.length) return null;
+function PersonalGoalBoard({
+  items,
+  themeId,
+  fontSize,
+}: {
+  items: Array<{ id: string; name: string; current: number; goal: number; pct: number }>;
+  themeId: "goalClassic" | "goalNeon";
+  fontSize: number;
+}) {
+  const palette = themeId === "goalNeon"
+    ? ["#7C4DFF", "#FFD54F", "#FF4D8D", "#63E6BE", "#4FC3F7", "#FFB74D"]
+    : ["#8C7DFF", "#F7D44A", "#E45C8B", "#6FC1FF", "#7ED39E", "#FDBA74"];
+  const cardClass = themeId === "goalNeon"
+    ? "bg-slate-900/85 border border-cyan-300/40 shadow-[0_0_12px_rgba(0,255,255,0.15)]"
+    : "bg-slate-800/90 border border-white/20";
+  const dimTextClass = themeId === "goalNeon" ? "text-cyan-100/80" : "text-white/75";
+  const currentTextClass = themeId === "goalNeon" ? "text-white" : "text-white";
+  const barBgClass = themeId === "goalNeon" ? "bg-slate-700/80" : "bg-slate-600/60";
+  const num = (n: number) => Math.max(0, Math.round(n)).toLocaleString("ko-KR");
 
   return (
-    <div className="overflow-hidden whitespace-nowrap" style={{ fontSize }}>
-      <div className="inline-block animate-ticker">
+    <div className="min-w-[300px] max-w-[440px]">
+      {items.length === 0 && (
+        <div className={`rounded ${cardClass} p-2 ${dimTextClass}`} style={{ fontSize: Math.max(10, Math.round(fontSize * 0.72)) }}>
+          목표(원) 입력된 멤버가 없습니다.
+        </div>
+      )}
+      <div className="space-y-2">
+        {items.map((it, idx) => {
+          const accent = palette[idx % palette.length];
+          const remain = Math.max(0, it.goal - it.current);
+          return (
+          <div key={it.id} className={`rounded-xl p-2 ${cardClass}`}>
+            <div className="flex items-center justify-between gap-2">
+              <span
+                className="px-2 py-0.5 rounded-md border font-bold tracking-wide text-white"
+                style={{ borderColor: accent, fontSize: Math.max(11, Math.round(fontSize * 0.72)), minWidth: 74 }}
+              >
+                {it.name}
+              </span>
+              <span className={dimTextClass} style={{ fontSize: Math.max(10, Math.round(fontSize * 0.66)) }}>
+                남은 금액: {num(remain)}
+              </span>
+              <span className={dimTextClass} style={{ fontSize: Math.max(10, Math.round(fontSize * 0.66)) }}>
+                {Math.round(it.pct)}%
+              </span>
+            </div>
+            <div className="flex items-center justify-end gap-1 mt-1">
+              <span className={currentTextClass} style={{ color: accent, fontWeight: 800, fontSize: Math.max(11, Math.round(fontSize * 0.72)) }}>
+                {num(it.current)}원
+              </span>
+              <span className={dimTextClass} style={{ fontSize: Math.max(10, Math.round(fontSize * 0.66)) }}>
+                / {num(it.goal)}
+              </span>
+            </div>
+            <div className={`${barBgClass} mt-1 overflow-hidden`} style={{ height: Math.max(7, Math.round(fontSize * 0.3)), borderRadius: 999 }}>
+              <div style={{ width: `${it.pct}%`, height: "100%", background: accent, borderRadius: 999 }} />
+            </div>
+          </div>
+        )})}
+      </div>
+    </div>
+  );
+}
+
+function DonorTicker({ donors, theme, fontSize, color, full, duration, gap, limit, unit, locale, placeholderText, previewGuide, tickerTheme, tickerGlow, tickerShadow }: { donors: Donor[]; theme: typeof THEMES.default; fontSize: number; color?: string; full?: boolean; duration?: number; gap?: number; limit?: number; unit?: string; locale?: string; placeholderText?: string; previewGuide?: boolean; tickerTheme?: string; tickerGlow?: number; tickerShadow?: number }) {
+  const recent = useMemo(() => {
+    const lim = Math.max(1, limit || 5);
+    const sorted = donors.slice().sort((a, b) => b.at - a.at);
+    const byName = new Map<string, { name: string; at: number; account: number; toon: number }>();
+    for (const d of sorted) {
+      const key = (d.name || "무명").trim() || "무명";
+      const prev = byName.get(key);
+      const isToon = (d.target || "account") === "toon";
+      if (!prev) {
+        byName.set(key, {
+          name: key,
+          at: d.at || 0,
+          account: isToon ? 0 : d.amount,
+          toon: isToon ? d.amount : 0,
+        });
+        continue;
+      }
+      byName.set(key, {
+        name: key,
+        at: Math.max(prev.at, d.at || 0),
+        account: prev.account + (isToon ? 0 : d.amount),
+        toon: prev.toon + (isToon ? d.amount : 0),
+      });
+    }
+    return Array.from(byName.values())
+      .sort((a, b) => b.at - a.at)
+      .slice(0, lim);
+  }, [donors, limit]);
+
+  const runtimeTickerCfg = typeof window !== "undefined" ? (window as any).__overlayTickerConfig : null;
+  const shouldShowGuide = typeof previewGuide === "boolean"
+    ? previewGuide
+    : (runtimeTickerCfg && typeof runtimeTickerCfg.previewGuide === "boolean")
+      ? runtimeTickerCfg.previewGuide
+      : (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("previewGuide") === "true" : false);
+  const tickerThemeValue = tickerTheme || (runtimeTickerCfg?.tickerTheme || (typeof window !== "undefined"
+    ? (new URLSearchParams(window.location.search).get("tickerTheme") || "auto")
+    : "auto"));
+  const tickerGlowValue = typeof tickerGlow === "number"
+    ? Math.max(0, Math.min(100, tickerGlow))
+    : (typeof runtimeTickerCfg?.tickerGlow === "number")
+      ? Math.max(0, Math.min(100, runtimeTickerCfg.tickerGlow))
+      : (typeof window !== "undefined" ? Math.max(0, Math.min(100, parseInt(new URLSearchParams(window.location.search).get("tickerGlow") || "45", 10))) : 45);
+  const tickerShadowValue = typeof tickerShadow === "number"
+    ? Math.max(0, Math.min(100, tickerShadow))
+    : (typeof runtimeTickerCfg?.tickerShadow === "number")
+      ? Math.max(0, Math.min(100, runtimeTickerCfg.tickerShadow))
+      : (typeof window !== "undefined" ? Math.max(0, Math.min(100, parseInt(new URLSearchParams(window.location.search).get("tickerShadow") || "35", 10))) : 35);
+  const baseTickerThemeStyle: React.CSSProperties =
+    tickerThemeValue === "neon"
+      ? { color: "#8cf4ff", fontWeight: 700 }
+      : tickerThemeValue === "warm"
+      ? { color: "#ffd28a", fontWeight: 700 }
+      : tickerThemeValue === "ice"
+      ? { color: "#c5e9ff", fontWeight: 700 }
+      : tickerThemeValue === "mono"
+      ? { color: "#e5e7eb", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontWeight: 700 }
+      : tickerThemeValue === "accent"
+      ? { color: "#fcd34d", fontWeight: 700 }
+      : {};
+  const colorWithAlpha = (hex: string, alpha: number): string => {
+    const m = hex.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+    if (!m) return hex;
+    const raw = m[1];
+    const normalized = raw.length === 3 ? raw.split("").map((c) => c + c).join("") : raw;
+    const r = parseInt(normalized.slice(0, 2), 16);
+    const g = parseInt(normalized.slice(2, 4), 16);
+    const b = parseInt(normalized.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
+  };
+  const glowColor = (color || (typeof baseTickerThemeStyle.color === "string" ? baseTickerThemeStyle.color : "")) as string;
+  const glowBlur = Math.round((tickerGlowValue / 100) * 16);
+  const shadowBlur = Math.round((tickerShadowValue / 100) * 8);
+  const shadowAlpha = (tickerShadowValue / 100) * 0.72;
+  const glowAlpha = (tickerGlowValue / 100) * 0.65;
+  const shadowParts: string[] = [];
+  if (shadowBlur > 0) shadowParts.push(`0 1px ${shadowBlur}px rgba(0, 0, 0, ${shadowAlpha.toFixed(2)})`);
+  if (glowBlur > 0 && glowColor) {
+    shadowParts.push(`0 0 ${glowBlur}px ${colorWithAlpha(glowColor, glowAlpha)}`);
+  }
+  const tickerThemeStyle: React.CSSProperties = {
+    ...baseTickerThemeStyle,
+    ...(shadowParts.length ? { textShadow: shadowParts.join(", ") } : {}),
+  };
+  const amountText = (d: { account: number; toon: number }) => {
+    const f = (n: number) => {
+      const base = full ? roundToThousand(n).toLocaleString(locale || "ko-KR") : formatManThousand(n);
+      return unit ? `${base} ${unit}` : base;
+    };
+    const accountPart = d.account > 0 ? f(d.account) : "";
+    const toonPart = d.toon > 0 ? `(${f(d.toon)})` : "";
+    if (accountPart && toonPart) return `${accountPart} ${toonPart}`;
+    return accountPart || toonPart || "0";
+  };
+  if (!recent.length) {
+    if (!shouldShowGuide) return null;
+    return (
+      <div className="overflow-hidden whitespace-nowrap" style={{ fontSize, width: "100%" }}>
+        <div className={theme.tickerCls} style={{ ...tickerThemeStyle, ...(color ? { color } : {}) }}>
+          {placeholderText || "후원티커는 이곳에 출력됩니다."}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-hidden whitespace-nowrap" style={{ fontSize, width: "100%" }}>
+      <div
+        className="inline-block animate-ticker"
+        style={{
+          ...tickerThemeStyle,
+          ...(color ? { color } : {}),
+          ...(duration ? { animationDuration: `${Math.max(3, duration)}s` } : {}),
+        }}
+      >
         {recent.map((d, i) => (
-          <span key={d.id || i} className={`${theme.tickerCls} mx-4`}>
-            ♥ {d.name} {formatManThousand(d.amount)}
+          <span
+            key={`${d.name}-${d.at}-${i}`}
+            className={theme.tickerCls}
+            style={{ marginLeft: gap ?? 16, marginRight: gap ?? 16 }}
+          >
+            ♥ {d.name} {amountText(d)}
           </span>
         ))}
         {recent.map((d, i) => (
-          <span key={`dup-${d.id || i}`} className={`${theme.tickerCls} mx-4`}>
-            ♥ {d.name} {formatManThousand(d.amount)}
+          <span
+            key={`dup-${d.name}-${d.at}-${i}`}
+            className={theme.tickerCls}
+            style={{ marginLeft: gap ?? 16, marginRight: gap ?? 16 }}
+          >
+            ♥ {d.name} {amountText(d)}
           </span>
         ))}
       </div>
@@ -370,209 +594,275 @@ function DonorTicker({ donors, theme, fontSize }: { donors: Donor[]; theme: type
 function Timer({ elapsed, theme, fontSize }: { elapsed: string | null; theme: typeof THEMES.default; fontSize: number }) {
   if (!elapsed) return null;
   return (
-    <div className={theme.timerCls} style={{ fontSize }}>
+    <div className={theme.timerCls} style={{ fontSize }} suppressHydrationWarning>
       {elapsed}
     </div>
   );
 }
 
-function OverlayInner({ overlayMode }: { overlayMode: OverlayMode }) {
-  const { state: s, ready, connected } = useRemoteState();
-  const members = useMemo(() => (ready && s ? s.members : []), [ready, s]);
-  const donors = useMemo(() => (ready && s ? s.donors : []), [ready, s]);
+function OverlayInner() {
+  const { state: s, ready } = useRemoteState();
+  const [localPresets, setLocalPresets] = useState<OverlayPresetLike[]>([]);
+  const readLocalPresets = () => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem("excel-broadcast-overlay-presets");
+      if (!raw) {
+        setLocalPresets([]);
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) setLocalPresets(parsed as OverlayPresetLike[]);
+    } catch {
+      setLocalPresets([]);
+    }
+  };
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    readLocalPresets();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "excel-broadcast-overlay-presets") readLocalPresets();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+  const membersRemote = useMemo(() => (ready && s ? s.members : []), [ready, s]);
+  const donorsRemote = useMemo(() => (ready && s ? s.donors : []), [ready, s]);
   const missions = useMemo(() => (ready && s ? s.missions || [] : []), [ready, s]);
-  const sum = useMemo(() => (ready && s ? totalAccount(s) : 0), [ready, s]);
-  const toonSum = useMemo(() => (ready && s ? s.members.reduce((acc, m) => acc + m.toon, 0) : 0), [ready, s]);
-  const rounded = useMemo(() => roundToThousand(sum), [sum]);
+  const overlayPresets = useMemo(() => {
+    const remote = ready && s && Array.isArray(s.overlayPresets) ? (s.overlayPresets as OverlayPresetLike[]) : [];
+    return remote.length > 0 ? remote : localPresets;
+  }, [ready, s, localPresets]);
+  const sumAccount = useMemo(() => (ready && s ? totalAccount(s) : 0), [ready, s]);
+  const sumToon = useMemo(() => (ready && s ? totalToon(s) : 0), [ready, s]);
+  const sumCombined = useMemo(() => (ready && s ? totalCombined(s) : 0), [ready, s]);
+  const rounded = useMemo(() => roundToThousand(sumCombined), [sumCombined]);
+  const pinnedFilter = (m: Member) => Boolean(m.operating) || /운영비/i.test(m.name) || /운영비/i.test(m.role || "");
   const displaySum = useCountUp(rounded, 800);
-  
-  return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <OverlayContentWrapper 
-        state={s} ready={ready} connected={connected} members={members} donors={donors} 
-        missions={missions} sum={sum} toonSum={toonSum} rounded={rounded} displaySum={displaySum}
-        overlayMode={overlayMode}
-      />
-    </Suspense>
+  const rawSp = useSearchParams();
+  const presetId = (rawSp.get("p") || "").trim();
+  const activePreset = useMemo(
+    () => (presetId ? overlayPresets.find((x) => x.id === presetId) || null : null),
+    [presetId, overlayPresets]
   );
-}
+  const presetParams = useMemo(() => presetToParams(activePreset), [activePreset]);
+  const sp = useMemo(
+    () => ({
+      get: (key: string) => {
+        const direct = rawSp.get(key);
+        if (direct !== null) return direct;
+        return presetParams.get(key);
+      },
+    }),
+    [rawSp, presetParams]
+  );
 
-function OverlayContentWrapper({ state: s, ready, connected, members, donors, missions, sum, toonSum, rounded, displaySum, overlayMode }: {
-  state: AppState | null;
-  ready: boolean;
-  connected: boolean;
-  members: Member[];
-  donors: Donor[];
-  missions: MissionItem[];
-  sum: number;
-  toonSum: number;
-  rounded: number;
-  displaySum: number;
-  overlayMode: OverlayMode;
-}) {
-  const sp = useSearchParams();
-  
-  // Log SSE connection status
-  useEffect(() => {
-    logger.debug('SSE 연결 상태', { connected });
-  }, [connected]);
-  
-  // Use overlay settings from state, with URL params as fallback for backward compatibility
-  const overlaySettings = s?.overlaySettings;
-  
-  const scaleParam = sp.get("scale");
-  const scaleRaw = scaleParam !== null ? parseFloat(scaleParam) : overlaySettings?.scale ?? 1;
-  const scale = Math.max(0.3, Math.min(3, Number.isFinite(scaleRaw) ? scaleRaw : 1));
-  const memberSizeParam = sp.get("memberSize");
-  const memberSizeRaw = memberSizeParam !== null ? parseInt(memberSizeParam, 10) : overlaySettings?.memberSize ?? 24;
-  const memberSize = Math.max(10, Math.min(80, Number.isFinite(memberSizeRaw) ? memberSizeRaw : 24));
-  const totalSizeParam = sp.get("totalSize");
-  const totalSizeRaw = totalSizeParam !== null ? parseInt(totalSizeParam, 10) : overlaySettings?.totalSize ?? 64;
-  const totalSize = Math.max(10, Math.min(200, Number.isFinite(totalSizeRaw) ? totalSizeRaw : 64));
-  const denseParam = sp.get("dense");
-  const dense = denseParam !== null ? denseParam === "true" : overlaySettings?.dense ?? false;
-  const anchorParam = sp.get("anchor");
-  const anchor = anchorParam ?? overlaySettings?.anchor ?? "tl";
-  const sumAnchorParam = sp.get("sumAnchor");
-  const sumAnchor = sumAnchorParam ?? overlaySettings?.sumAnchor ?? "bc";
-  const sumFreeParam = sp.get("sumFree");
-  const sumFree = sumFreeParam !== null ? sumFreeParam === "true" : overlaySettings?.sumFree ?? false;
+  const compact = (sp.get("compact") || "false").toLowerCase() === "true";
+  const autoFont = (sp.get("autoFont") || "false").toLowerCase() === "true";
+  const tight = (sp.get("tight") || "false").toLowerCase() === "true";
+  const fitBase = Math.max(240, Math.min(1600, parseInt(sp.get("fitBase") || "480", 10)));
+  const fitMinMember = Math.max(8, Math.min(40, parseInt(sp.get("fitMinMember") || "10", 10)));
+  const fitMaxMember = Math.max(fitMinMember, Math.min(80, parseInt(sp.get("fitMaxMember") || "24", 10)));
+  const scale = Math.max(0.3, Math.min(3, parseFloat(sp.get("scale") || (compact ? "0.8" : "1"))));
+  const memberSize = Math.max(10, Math.min(80, parseInt(sp.get("memberSize") || (compact ? "14" : "18"), 10)));
+  const totalSize = Math.max(14, Math.min(160, parseInt(sp.get("totalSize") || "20", 10)));
+  const dense = (sp.get("dense") || "false").toLowerCase() === "true";
+  const anchor = (sp.get("anchor") || "tl").toLowerCase();
+  const sumAnchor = (sp.get("sumAnchor") || "bc").toLowerCase();
   const sumXParam = sp.get("sumX");
-  const sumXRaw = sumXParam !== null ? parseFloat(sumXParam) : overlaySettings?.sumX ?? 50;
-  const sumX = Math.max(0, Math.min(100, Number.isFinite(sumXRaw) ? sumXRaw : 50));
   const sumYParam = sp.get("sumY");
-  const sumYRaw = sumYParam !== null ? parseFloat(sumYParam) : overlaySettings?.sumY ?? 90;
-  const sumY = Math.max(0, Math.min(100, Number.isFinite(sumYRaw) ? sumYRaw : 90));
-  const themeParam = sp.get("theme");
-  const themeId = (themeParam ?? overlaySettings?.theme ?? "default") as ThemeId;
-  const showMembersParam = sp.get("showMembers");
-  const showMembers = showMembersParam !== null ? showMembersParam !== "false" : overlaySettings?.showMembers ?? true;
-  const showTotalParam = sp.get("showTotal");
-  const showTotal = showTotalParam !== null ? showTotalParam !== "false" : overlaySettings?.showTotal ?? true;
-  const showGoalParam = sp.get("showGoal");
-  const showGoal = showGoalParam !== null ? showGoalParam === "true" : overlaySettings?.showGoal ?? false;
-  const goalParam = sp.get("goal");
-  const goalRaw = goalParam !== null ? parseInt(goalParam, 10) : overlaySettings?.goal ?? 0;
-  const goal = Math.max(0, Number.isFinite(goalRaw) ? goalRaw : 0);
-  const goalLabelParam = sp.get("goalLabel");
-  const goalLabel = goalLabelParam ?? overlaySettings?.goalLabel ?? "목표 금액";
-  const goalWidthParam = sp.get("goalWidth");
-  const goalWidthRaw = goalWidthParam !== null ? parseInt(goalWidthParam, 10) : overlaySettings?.goalWidth ?? 400;
-  const goalWidth = Math.max(100, Math.min(800, Number.isFinite(goalWidthRaw) ? goalWidthRaw : 400));
-  const goalAnchorParam = sp.get("goalAnchor");
-  const goalAnchor = goalAnchorParam ?? overlaySettings?.goalAnchor ?? "bc";
-  const showTickerParam = sp.get("showTicker");
-  const showTicker = showTickerParam !== null ? showTickerParam === "true" : overlaySettings?.showTicker ?? false;
-  const showTimerParam = sp.get("showTimer");
-  const showTimer = showTimerParam !== null ? showTimerParam === "true" : overlaySettings?.showTimer ?? false;
-  const timerStartParam = sp.get("timerStart");
-  const timerStart = timerStartParam !== null ? new Date(timerStartParam).getTime() : overlaySettings?.timerStart ?? null;
-  const timerAnchorParam = sp.get("timerAnchor");
-  const timerAnchor = timerAnchorParam ?? overlaySettings?.timerAnchor ?? "tr";
-  const showMissionParam = sp.get("showMission");
-  const showMission = showMissionParam !== null ? showMissionParam === "true" : overlaySettings?.showMission ?? false;
-  const missionAnchorParam = sp.get("missionAnchor");
-  const missionAnchor = missionAnchorParam ?? overlaySettings?.missionAnchor ?? "br";
-  
-  // 개별 위치 설정 (URL 파라미터에서 읽기)
-  const memberPosition = overlaySettings?.memberPosition || (sp.get("memberX") && sp.get("memberY") ? {
-    x: parseFloat(sp.get("memberX")!),
-    y: parseFloat(sp.get("memberY")!)
-  } : undefined);
-  const totalPosition = overlaySettings?.totalPosition || (sp.get("totalX") && sp.get("totalY") ? {
-    x: parseFloat(sp.get("totalX")!),
-    y: parseFloat(sp.get("totalY")!)
-  } : undefined);
-  const goalPosition = overlaySettings?.goalPosition || (sp.get("goalX") && sp.get("goalY") ? {
-    x: parseFloat(sp.get("goalX")!),
-    y: parseFloat(sp.get("goalY")!)
-  } : undefined);
-  const tickerPosition = overlaySettings?.tickerPosition || (sp.get("tickerX") && sp.get("tickerY") ? {
-    x: parseFloat(sp.get("tickerX")!),
-    y: parseFloat(sp.get("tickerY")!)
-  } : undefined);
-  const timerPosition = overlaySettings?.timerPosition || (sp.get("timerX") && sp.get("timerY") ? {
-    x: parseFloat(sp.get("timerX")!),
-    y: parseFloat(sp.get("timerY")!)
-  } : undefined);
-  const missionPosition = overlaySettings?.missionPosition || (sp.get("missionX") && sp.get("missionY") ? {
-    x: parseFloat(sp.get("missionX")!),
-    y: parseFloat(sp.get("missionY")!)
-  } : undefined);
-  
-  // missionAnchor를 객체로 변환
-  const missionAnchorObj = typeof missionAnchor === 'string' ? { x: 50, y: 50 } : missionAnchor;
-  
-  return (
-    <OverlayContent 
-      state={s} ready={ready} connected={connected} members={members} donors={donors} 
-      missions={missions} sum={sum} toonSum={toonSum} rounded={rounded} displaySum={displaySum}
-      scale={scale} memberSize={memberSize} totalSize={totalSize} dense={dense} anchor={anchor}
-      sumAnchor={sumAnchor} sumFree={sumFree} sumX={sumX} sumY={sumY} themeId={themeId}
-      showMembers={showMembers} showTotal={showTotal} showGoal={showGoal} goal={goal}
-      goalLabel={goalLabel} goalWidth={goalWidth} goalAnchor={goalAnchor} showTicker={showTicker}
-      showTimer={showTimer} timerStart={timerStart} timerAnchor={timerAnchor} showMission={showMission}
-      missionAnchor={missionAnchorObj}
-      memberPosition={memberPosition} totalPosition={totalPosition} goalPosition={goalPosition}
-      tickerPosition={tickerPosition} timerPosition={timerPosition} missionPosition={missionPosition}
-      overlayMode={overlayMode}
-    />
-  );
-}
-
-function OverlayContent({ state: s, ready, connected, members, donors, missions, sum, toonSum, rounded, displaySum, scale, memberSize, totalSize, dense, anchor, sumAnchor, sumFree, sumX, sumY, themeId, showMembers, showTotal, showGoal, goal, goalLabel, goalWidth, goalAnchor, showTicker, showTimer, timerStart, timerAnchor, showMission, missionAnchor, memberPosition, totalPosition, goalPosition, tickerPosition, timerPosition, missionPosition, overlayMode }: {
-  state: AppState | null;
-  ready: boolean;
-  connected: boolean;
-  members: Member[];
-  donors: Donor[];
-  missions: MissionItem[];
-  sum: number;
-  toonSum: number;
-  rounded: number;
-  displaySum: number;
-  scale: number;
-  memberSize: number;
-  totalSize: number;
-  dense: boolean;
-  anchor: string;
-  sumAnchor: string;
-  sumFree: boolean;
-  sumX: number;
-  sumY: number;
-  themeId: ThemeId;
-  showMembers: boolean;
-  showTotal: boolean;
-  showGoal: boolean;
-  goal: number;
-  goalLabel: string;
-  goalWidth: number;
-  goalAnchor: string;
-  showTicker: boolean;
-  showTimer: boolean;
-  timerStart: number | null;
-  timerAnchor: string;
-  showMission: boolean;
-  missionAnchor: { x: number; y: number };
-  overlayMode: OverlayMode;
-  memberPosition?: { x?: number; y?: number; width?: number; height?: number; anchor?: string };
-  totalPosition?: { x?: number; y?: number; width?: number; height?: number; anchor?: string };
-  goalPosition?: { x?: number; y?: number; width?: number; height?: number; anchor?: string };
-  tickerPosition?: { x?: number; y?: number; width?: number; height?: number; anchor?: string };
-  timerPosition?: { x?: number; y?: number; width?: number; height?: number; anchor?: string };
-  missionPosition?: { x?: number; y?: number; width?: number; height?: number; anchor?: string };
-}) {
-  // Log SSE connection status
-  useEffect(() => {
-    logger.debug('SSE 연결 상태', { connected });
-  }, [connected]);
-  
+  const hasFreePos = sumXParam !== null && sumYParam !== null;
+  const sumX = hasFreePos ? Math.max(0, Math.min(100, parseFloat(sumXParam!))) : 0;
+  const sumY = hasFreePos ? Math.max(0, Math.min(100, parseFloat(sumYParam!))) : 0;
+  const themeId = (sp.get("theme") || "default") as ThemeId;
   const theme = THEMES[themeId] || THEMES.default;
-  const memberFontSize = Math.max(10, memberSize - 4);
-  
-  const hasFreePos = sumFree && sumX !== undefined && sumY !== undefined;
+
+  const showMembers = sp.get("showMembers") !== "false";
+  const showTotal = sp.get("showTotal") !== "false";
+  const showGoal = sp.get("showGoal") === "true";
+  const showPersonalGoal = sp.get("showPersonalGoal") === "true";
+  const tickerInMembers = sp.get("tickerInMembers") === "true";
+  const tickerInGoal = sp.get("tickerInGoal") === "true";
+  const tickerInPersonalGoal = sp.get("tickerInPersonalGoal") === "true";
+  const showTicker = sp.get("showTicker") === "true";
+  const hasContextTicker = tickerInMembers || tickerInGoal || tickerInPersonalGoal;
+  const showTimer = sp.get("showTimer") === "true";
+  const goalRaw = parseInt(sp.get("goal") || "0", 10);
+  const goal = isNaN(goalRaw) ? 0 : goalRaw;
+  const goalLabel = sp.get("goalLabel") || "목표 금액";
+  const goalWidth = Math.max(200, Math.min(800, parseInt(sp.get("goalWidth") || "400", 10)));
+  const goalAnchor = (sp.get("goalAnchor") || "bc").toLowerCase();
+  const personalGoalAnchor = (sp.get("personalGoalAnchor") || "br").toLowerCase();
+  const personalGoalLimit = Math.max(1, Math.min(12, parseInt(sp.get("personalGoalLimit") || "3", 10)));
+  const personalGoalTheme = (sp.get("personalGoalTheme") || "goalClassic") as "goalClassic" | "goalNeon";
+  const personalGoalXParam = sp.get("personalGoalX");
+  const personalGoalYParam = sp.get("personalGoalY");
+  const hasPersonalGoalFreePos = personalGoalXParam !== null && personalGoalYParam !== null;
+  const personalGoalX = hasPersonalGoalFreePos ? Math.max(0, Math.min(100, parseFloat(personalGoalXParam!))) : 0;
+  const personalGoalY = hasPersonalGoalFreePos ? Math.max(0, Math.min(100, parseFloat(personalGoalYParam!))) : 0;
+  const goalCurrentParam = sp.get("goalCurrent");
+  const goalCurrent = goalCurrentParam !== null ? Math.max(0, parseInt(goalCurrentParam || "0", 10) || 0) : null;
+  const timerStart = sp.get("timerStart") ? parseInt(sp.get("timerStart")!, 10) : null;
+  const timerAnchor = (sp.get("timerAnchor") || "tr").toLowerCase();
+  const tickerAnchor = (sp.get("tickerAnchor") || "bc").toLowerCase();
+  const tickerWidth = Math.max(200, Math.min(1200, parseInt(sp.get("tickerWidth") || "600", 10)));
+  const showMission = sp.get("showMission") === "true";
+  const missionAnchor = (sp.get("missionAnchor") || "br").toLowerCase();
 
   const elapsed = useElapsed(timerStart);
+
+  const nameCh = Math.max(6, Math.min(40, parseInt(sp.get("nameCh") || (compact ? "10" : "12"), 10)));
+  const nameGrow = (sp.get("nameGrow") || "true").toLowerCase() === "true";
+  const currencyFull = (sp.get("currencyFull") || "false").toLowerCase() === "true";
+  const nameMaxCh = Math.max(nameCh, Math.min(80, parseInt(sp.get("nameMaxCh") || String(nameCh + 8), 10)));
+  const fullAmountMode = sp.get("donorsFormat") === "full" || currencyFull;
+  const defBankCh = (sp.get("bankCh") && parseInt(sp.get("bankCh")!, 10)) || (fullAmountMode ? (compact ? 9 : 11) : (compact ? 4 : 5));
+  const defToonCh = (sp.get("toonCh") && parseInt(sp.get("toonCh")!, 10)) || (fullAmountMode ? (compact ? 9 : 11) : (compact ? 4 : 5));
+  const defTotalCh = (sp.get("totalCh") && parseInt(sp.get("totalCh")!, 10)) || (fullAmountMode ? (compact ? 7 : 8) : (compact ? 5 : 6));
+  const bankCh = Math.max(3, Math.min(12, defBankCh));
+  const toonCh = Math.max(4, Math.min(12, defToonCh));
+  const totalCh = Math.max(4, Math.min(10, defTotalCh));
+  const showSideDonors = sp.get("showSideDonors") === "true";
+  const donorsSide = (sp.get("donorsSide") || "right").toLowerCase();
+  const donorsWidth = Math.max(120, Math.min(600, parseInt(sp.get("donorsWidth") || "220", 10)));
+  const donorsSize = Math.max(10, Math.min(60, parseInt(sp.get("donorsSize") || String(Math.round(memberSize * 0.9)), 10)));
+  const donorsColor = sp.get("donorsColor") || undefined;
+  const showBottomDonors = sp.get("showBottomDonors") === "true";
+  const effectiveShowTicker = showTicker && !hasContextTicker && !showBottomDonors;
+  const donorsGap = Math.max(0, Math.min(48, parseInt(sp.get("donorsGap") || (tight ? "8" : "16"), 10)));
+  const donorsSpeed = Math.max(3, Math.min(120, parseFloat(sp.get("donorsSpeed") || "20"))); // seconds per loop
+  const donorsLimit = Math.max(1, Math.min(50, parseInt(sp.get("donorsLimit") || "8", 10)));
+  const donorsFormat = sp.get("donorsFormat") === "full" ? "full" : "short"; // only full|short
+  const donorsUnit = sp.get("donorsUnit") || sp.get("currencyUnit") || "";
+  const currencyLocale = sp.get("currencyLocale") || "ko-KR";
+  const previewGuide = sp.get("previewGuide") === "true";
+  const tickerThemeCfg = sp.get("tickerTheme") || "auto";
+  const tickerGlowCfg = Math.max(0, Math.min(100, parseInt(sp.get("tickerGlow") || "45", 10)));
+  const tickerShadowCfg = Math.max(0, Math.min(100, parseInt(sp.get("tickerShadow") || "35", 10)));
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    (window as any).__overlayTickerConfig = {
+      previewGuide,
+      tickerTheme: tickerThemeCfg,
+      tickerGlow: tickerGlowCfg,
+      tickerShadow: tickerShadowCfg,
+    };
+  }, [previewGuide, tickerThemeCfg, tickerGlowCfg, tickerShadowCfg]);
+  // Keep member/total amount format aligned with donor ticker format.
+  const fmt = (n: number) =>
+    donorsFormat === "full"
+      ? roundToThousand(n).toLocaleString(currencyLocale)
+      : formatManThousand(n);
+  const lockWidth = (sp.get("lockWidth") || "false").toLowerCase() === "true";
+  const effectiveNameGrow = lockWidth ? false : nameGrow;
+  const scaledMainStyle: React.CSSProperties = { zoom: scale as any };
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [autoMemberSize, setAutoMemberSize] = useState(memberSize);
+  const [autoTotalSize, setAutoTotalSize] = useState(totalSize);
+  const [autoDonorSize, setAutoDonorSize] = useState(donorsSize);
+  const tableBoxRef = useRef<HTMLDivElement | HTMLTableElement | null>(null);
+  const [donorBoxWidth, setDonorBoxWidth] = useState<number | null>(null);
+  useEffect(() => {
+    if (!autoFont) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => {
+      const width = el.clientWidth || fitBase;
+      const factor = width / fitBase;
+      const m = Math.round(memberSize * factor);
+      const t = Math.round(totalSize * factor);
+      const d = Math.round(donorsSize * factor);
+      setAutoMemberSize(Math.max(fitMinMember, Math.min(fitMaxMember, m)));
+      setAutoTotalSize(Math.max(fitMinMember, Math.min(Math.max(fitMaxMember, 40), t)));
+      setAutoDonorSize(Math.max(fitMinMember, Math.min(fitMaxMember, d)));
+    };
+    update();
+    const ro = new (window as any).ResizeObserver(update);
+    ro.observe(el);
+    return () => { try { ro.disconnect(); } catch {} };
+  }, [autoFont, memberSize, totalSize, donorsSize, fitBase, fitMinMember, fitMaxMember]);
+  const mSize = autoFont ? autoMemberSize : memberSize;
+  const tSize = autoFont ? autoTotalSize : totalSize;
+  const dSize = autoFont ? autoDonorSize : donorsSize;
+
+  useEffect(() => {
+    const el = tableBoxRef.current;
+    if (!el) return;
+    const update = () => setDonorBoxWidth(Math.round(el.getBoundingClientRect().width));
+    update();
+    const ro = new (window as any).ResizeObserver(update);
+    ro.observe(el);
+    return () => { try { ro.disconnect(); } catch {} };
+  }, [showMembers, themeId, mSize, nameCh, bankCh, toonCh, totalCh, lockWidth, effectiveNameGrow]);
+
+  const demo = (sp.get("demo") || "false").toLowerCase() === "true";
+  const [demoMembers, setDemoMembers] = useState<Member[] | null>(null);
+  const [demoDonors, setDemoDonors] = useState<Donor[] | null>(null);
+  useEffect(() => {
+    if (!demo) return;
+    const baseMembers: Member[] = [
+      { id: "m1", name: "멤버1", account: 0, toon: 0, role: "과장" },
+      { id: "m2", name: "멤버2", account: 0, toon: 0, role: "부장" },
+      { id: "m3", name: "멤버3", account: 0, toon: 0, role: "대리" },
+      { id: "m4", name: "운영비", account: 0, toon: 0, role: "운영비" },
+    ];
+    setDemoMembers(baseMembers);
+    setDemoDonors([]);
+    const donorNames = ["Alice", "Bob", "Charlie", "Daisy", "Ethan", "Fiona", "Grace", "Henry"];
+    const interval = setInterval(() => {
+      setDemoMembers((prev) => {
+        if (!prev) return prev;
+        const arr = prev.map((m) => ({ ...m }));
+        const idx = Math.floor(Math.random() * 3);
+        const delta = Math.floor(Math.random() * 5 + 1) * 1000;
+        if (Math.random() < 0.5) arr[idx].account += delta;
+        else arr[idx].toon += delta;
+        return arr;
+      });
+      setDemoDonors((prev) => {
+        const list = prev ? [...prev] : [];
+        const name = donorNames[Math.floor(Math.random() * donorNames.length)];
+        const amount = (Math.floor(Math.random() * 10) + 1) * 1000;
+        const targets: ("account" | "toon")[] = ["account", "toon"];
+        const target = targets[Math.floor(Math.random() * targets.length)];
+        const membersPool = ["m1", "m2", "m3"];
+        const memberId = membersPool[Math.floor(Math.random() * membersPool.length)];
+        list.unshift({ id: `d-${Date.now()}`, name, amount, at: Date.now(), memberId, target });
+        return list.slice(0, 12);
+      });
+    }, 1200);
+    return () => clearInterval(interval);
+  }, [demo]);
+
+  const members = useMemo(() => (demo && demoMembers ? demoMembers : membersRemote), [demo, demoMembers, membersRemote]);
+  const donors = useMemo(() => (demo && demoDonors ? demoDonors : donorsRemote), [demo, demoDonors, donorsRemote]);
+  const personalGoals = useMemo(() => {
+    return members
+      .filter((m) => (m.goal || 0) > 0)
+      .map((m) => {
+        const goal = Math.max(0, m.goal || 0);
+        const current = Math.max(0, (m.account || 0) + (m.toon || 0));
+        const pct = goal > 0 ? Math.min(100, (current / goal) * 100) : 0;
+        return { id: m.id, name: m.name, current, goal, pct };
+      })
+      .sort((a, b) => b.pct - a.pct)
+      .slice(0, personalGoalLimit);
+  }, [members, personalGoalLimit]);
+
+  const unpinned = useMemo(() => members.filter((m) => !pinnedFilter(m)), [members]);
+  const pinned = useMemo(() => members.filter(pinnedFilter), [members]);
+  const hasRoleColumn = useMemo(
+    () => members.some((m) => (m.role || "").trim().length > 0),
+    [members]
+  );
+  const ranked = useMemo(() => {
+    const arr = [...unpinned].sort((a, b) => (b.account + b.toon) - (a.account + a.toon));
+    return arr.map((m, i) => ({ m, rank: i + 1 }));
+  }, [unpinned]);
+
+  const allOrderKeys = [...ranked.map(({ m }) => m.id), ...pinned.map((m) => `${m.id}-p`)];
+  const setRowRef = useFlip(allOrderKeys, 500);
 
   useEffect(() => {
     document.body.style.background = "transparent";
@@ -588,22 +878,6 @@ function OverlayContent({ state: s, ready, connected, members, donors, missions,
     a === "bc" ? "bottom-4 left-1/2 -translate-x-1/2" :
     "top-4 left-4";
 
-  // 개별 요소 위치 설정 함수
-  const getElementPosition = (position?: { x?: number; y?: number; width?: number; height?: number; anchor?: string }, defaultAnchor?: string) => {
-    if (position && position.x !== undefined && position.y !== undefined) {
-      const style: React.CSSProperties = {
-        left: `${position.x}%`,
-        top: `${position.y}%`,
-        transform: "translate(-50%, -50%)",
-        position: 'fixed'
-      };
-      if (position.width) style.width = `${position.width}px`;
-      if (position.height) style.height = `${position.height}px`;
-      return { style, className: "" };
-    }
-    return { style: undefined, className: posClass(position?.anchor || defaultAnchor || "tl") };
-  };
-
   const listPosClass =
     anchor === "tr" ? "top-4 right-4 items-end text-right" :
     anchor === "bl" ? "bottom-4 left-4" :
@@ -614,279 +888,325 @@ function OverlayContent({ state: s, ready, connected, members, donors, missions,
     ? { left: `${sumX}%`, top: `${sumY}%`, transform: "translate(-50%, -50%)" }
     : undefined;
   const sumPosClass = hasFreePos ? "" : posClass(sumAnchor);
+  const personalGoalPosStyle: React.CSSProperties | undefined = hasPersonalGoalFreePos
+    ? { left: `${personalGoalX}%`, top: `${personalGoalY}%`, transform: "translate(-50%, -50%)" }
+    : undefined;
+  const personalGoalPosClass = hasPersonalGoalFreePos ? "" : posClass(personalGoalAnchor);
 
   if (themeId === "excel") {
+    const excelGridCols = hasRoleColumn
+      ? ["3ch", "6ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`]
+      : ["3ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`];
     return (
-      <main className="transparent-bg min-h-screen no-select" style={{ zoom: scale }}>
-        {/* 미션 모드일 때는 전광판만 표시 */}
-        {overlayMode === 'mission' && ready && (
-          <div className="fixed inset-0 flex items-center justify-center">
-            <ElectronicMissionBoard missions={missions} fontSize={memberSize} />
-          </div>
-        )}
-        
-        {/* 표준 모드일 때는 기존 Excel UI 표시 */}
-        {overlayMode === 'standard' && (
-          <>
-            {showTicker && ready && (
-              <div className={`${getElementPosition(tickerPosition, 'tc').className}`} style={getElementPosition(tickerPosition, 'tc').style}>
-                <DonorTicker donors={donors} theme={theme} fontSize={memberSize} />
-              </div>
-            )}
-            {showTimer && timerStart && ready && (
-              <div className={`${getElementPosition(timerPosition, 'tr').className}`} style={getElementPosition(timerPosition, 'tr').style}>
-                <Timer elapsed={elapsed} theme={theme} fontSize={memberSize} />
-              </div>
-            )}
-            {showMission && ready && (
-              <div className={`${getElementPosition(missionPosition, 'tl').className}`} style={getElementPosition(missionPosition, 'tl').style}>
-                <ElectronicMissionBoard missions={missions} fontSize={memberSize} missionAnchor={missionAnchor} themeName={themeId} />
-              </div>
-            )}
-            {showMembers && ready && (
-              <div className={`${getElementPosition(memberPosition, anchor).className}`} style={getElementPosition(memberPosition, anchor).style}>
-                <table className={theme.tableCls} style={{ fontSize: memberFontSize, borderSpacing: 0 }}>
+      <main className="transparent-bg min-h-screen no-select" style={scaledMainStyle}>
+        {showMembers && ready && (
+          <div className={`fixed ${listPosClass}`}>
+            <div ref={containerRef} className="flex items-start gap-3" style={{ width: "fit-content" }}>
+              {showSideDonors && donorsSide === "left" && (
+                <div style={{ width: donorsWidth }}>
+                  <DonorTicker donors={donors} theme={theme} fontSize={dSize} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+                </div>
+              )}
+              <div>
+                <table ref={tableBoxRef as any} className={theme.tableCls} style={{ fontSize: mSize, borderSpacing: 0, tableLayout: "fixed" }}>
+                  <colgroup>
+                    {excelGridCols.map((w, idx) => (
+                      <col key={`excel-col-${idx}`} style={{ width: w }} />
+                    ))}
+                  </colgroup>
                   <thead>
                     <tr>
+                      <td className={theme.headerCls}>순위</td>
+                      {hasRoleColumn && <td className={theme.headerCls}>직급</td>}
                       <td className={theme.headerCls}>이름</td>
-                      <td className={theme.headerCls}>계좌</td>
-                      <td className={theme.headerCls}>투네</td>
+                      <td className={`${theme.headerCls} text-right`}>계좌</td>
+                      <td className={`${theme.headerCls} text-right`}>투네</td>
+                      <td className={`${theme.headerCls} text-right`}>TOTAL</td>
                     </tr>
                   </thead>
                   <tbody>
-                    {(() => {
-                      // 총합을 제외한 멤버들만 필터링하고 최대값 계산
-                      const filteredMembers = members.filter(m => m.account > 0 || m.toon > 0);
-                      const maxAccount = Math.max(...filteredMembers.map(m => m.account), 1);
-                      const maxToon = Math.max(...filteredMembers.map(m => m.toon), 1);
-                      
-                      return filteredMembers.map((m: Member) => {
-                        // 총 기부금 기준 상대값 계산 (계좌 + 투네)
-                        const totalAmount = m.account + m.toon;
-                        const maxTotal = maxAccount + maxToon;
-                        const totalPercent = (totalAmount / maxTotal) * 100;
-                        
-                        return (
-                          <tr 
-                            key={m.id} 
-                            className="relative group" 
-                            style={{ 
-                              position: 'relative',
-                              background: `linear-gradient(to right, #3b82f6 ${totalPercent}%, transparent ${totalPercent}%)`
-                            }}
-                          >
-                            <td className={`${theme.rowCls} ${theme.nameCls} relative z-10`}>
-                              {m.name}
-                            </td>
-                            <td className={`${theme.rowCls} ${theme.accountCls} text-right relative z-10`}>
-                              {formatManThousand(m.account)}
-                            </td>
-                            <td className={`${theme.rowCls} ${theme.toonCls} text-right relative z-10`}>
-                              {formatManThousand(m.toon)}
-                            </td>
-                          </tr>
-                        );
-                      });
-                    })()}
-                  </tbody>
-                </table>
-                {/* 총합은 별도로 표시 (멤버 목록 밖) */}
-                {showTotal && ready && (
-                  <div className={`mt-2 ${getElementPosition(undefined, sumAnchor).className}`} style={getElementPosition(undefined, sumAnchor).style}>
-                    <table className={theme.tableCls} style={{ fontSize: totalSize, borderSpacing: 0 }}>
-                      <tbody>
-                        <tr>
-                          <td className={theme.totalWrapCls}>총합</td>
-                          <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(sum)}</td>
-                          <td className={`${theme.rowCls} ${theme.toonCls} text-right`}></td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-          </>
-        )}
-      </main>
-    );
-  }
-
-  // 기본 테마 (simple) 또는 다른 테마들
-  return (
-    <main className="transparent-bg min-h-screen no-select" style={{ zoom: scale }}>
-      {/* 미션 모드일 때는 전광판만 표시 */}
-      {overlayMode === 'mission' && ready && (
-        <div className="fixed inset-0">
-          <ElectronicMissionBoard missions={missions} fontSize={memberSize} missionAnchor={missionAnchor} />
-        </div>
-      )}
-      
-      {/* 동시 표시 모드일 때는 분할 화면으로 표시 */}
-      {overlayMode === 'both' && ready && (
-        <div className="fixed inset-0 flex flex-col md:flex-row">
-          {/* 좌측: 기존 UI (멤버 목록 등) */}
-          <div className="flex-1 relative overflow-hidden min-h-[50vh] md:min-h-screen">
-            {showMembers && (
-              <div className={`${getElementPosition(memberPosition, anchor).className}`} style={getElementPosition(memberPosition, anchor).style}>
-                <table className={theme.tableCls} style={{ fontSize: memberFontSize, borderSpacing: 0 }}>
-                  <thead>
-                    <tr>
-                      <td className={theme.headerCls}>이름</td>
-                      <td className={theme.headerCls}>계좌</td>
-                      <td className={theme.headerCls}>투네</td>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {members
-                      .filter(m => m.account > 0 || m.toon > 0)
-                      .map((m: Member) => (
-                        <tr key={m.id}>
-                          <td className={`${theme.rowCls} ${theme.nameCls}`}>{m.name}</td>
-                          <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(m.account)}</td>
-                          <td className={`${theme.rowCls} ${theme.toonCls} text-right`}>{formatManThousand(m.toon)}</td>
-                        </tr>
-                      ))}
-                    {showTotal && (
+                    {ranked.map(({m, rank}) => (
+                      <tr key={m.id} ref={setRowRef(m.id)} className="transition-transform will-change-transform">
+                        <td className={`${theme.rowCls} text-left`}>#{rank}</td>
+                        {hasRoleColumn && <td className={`${theme.rowCls}`}>{m.role || "-"}</td>}
+                        <td className={`${theme.rowCls} ${theme.nameCls} truncate`}>{m.name}</td>
+                        <td className={`${theme.rowCls} ${theme.accountCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
+                        <td className={`${theme.rowCls} ${theme.toonCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
+                        <td className={`${theme.rowCls} text-right`}>{fmt(m.account + m.toon)}</td>
+                      </tr>
+                    ))}
+                    {pinned.map((m) => (
+                      <tr key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className="transition-transform will-change-transform">
+                        <td className={`${theme.rowCls} text-right`}>—</td>
+                        {hasRoleColumn && <td className={`${theme.rowCls}`}></td>}
+                        <td className={`${theme.rowCls} ${theme.nameCls} truncate`}>{m.name}</td>
+                        <td className={`${theme.rowCls} ${theme.accountCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
+                        <td className={`${theme.rowCls} ${theme.toonCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
+                        <td className={`${theme.rowCls} text-right`}>{fmt(m.account + m.toon)}</td>
+                      </tr>
+                    ))}
+                    {showTotal && ready && (
                       <tr>
-                        <td className={theme.totalWrapCls}>총합</td>
-                        <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(sum)}</td>
-                        <td className={`${theme.rowCls} ${theme.toonCls} text-right`}></td>
+                        <td className={theme.totalWrapCls} colSpan={hasRoleColumn ? 2 : 1}>총합</td>
+                        <td className={theme.totalWrapCls} />
+                        <td className={`${theme.totalWrapCls} text-right`}>{fmt(sumAccount)}</td>
+                        <td className={`${theme.totalWrapCls} text-right`}>{fmt(sumToon)}</td>
+                        <td className={`${theme.totalWrapCls} text-right`}>{fmt(rounded)}</td>
                       </tr>
                     )}
                   </tbody>
                 </table>
+                {showBottomDonors && !tickerInMembers && (
+                  <div className="mt-2" style={{ width: donorBoxWidth ? `${donorBoxWidth}px` : "100%", overflow: "hidden" }}>
+                    <DonorTicker donors={donors} theme={theme} fontSize={dSize} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+                  </div>
+                )}
+                {tickerInMembers && (
+                  <div className="mt-2" style={{ width: donorBoxWidth ? `${donorBoxWidth}px` : "100%", overflow: "hidden" }}>
+                    <DonorTicker donors={donors} theme={theme} fontSize={dSize} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+                  </div>
+                )}
               </div>
-            )}
-            {showTicker && (
-              <div className={`${getElementPosition(tickerPosition, 'tc').className}`} style={getElementPosition(tickerPosition, 'tc').style}>
-                <DonorTicker donors={donors} theme={theme} fontSize={memberSize} />
-              </div>
-            )}
-            {showTimer && timerStart && (
-              <div className={`${getElementPosition(timerPosition, 'tr').className}`} style={getElementPosition(timerPosition, 'tr').style}>
-                <Timer elapsed={elapsed} theme={theme} fontSize={memberSize} />
+              {showSideDonors && donorsSide === "right" && (
+                <div style={{ width: donorsWidth }}>
+                  <DonorTicker donors={donors} theme={theme} fontSize={dSize} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        {showGoal && ready && goal > 0 && (
+          <div className={`fixed ${posClass(goalAnchor)}`}>
+            <GoalBar current={rounded} goal={goal} label={goalLabel} theme={theme} width={goalWidth} />
+            {tickerInGoal && (
+              <div className="mt-2" style={{ width: goalWidth, overflow: "hidden" }}>
+                <DonorTicker donors={donors} theme={theme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
               </div>
             )}
           </div>
-          
-          {/* 우측: 전광판 */}
-          <div className="flex-1 relative flex items-center justify-center min-h-[50vh] md:min-h-screen">
-            <ElectronicMissionBoard missions={missions} fontSize={memberSize} missionAnchor={missionAnchor} />
+        )}
+        {showPersonalGoal && ready && (
+          <div className={`fixed ${personalGoalPosClass}`} style={personalGoalPosStyle}>
+            <PersonalGoalBoard items={personalGoals} themeId={personalGoalTheme} fontSize={memberSize} />
+            {tickerInPersonalGoal && (
+              <div className="mt-2 overflow-hidden">
+                <DonorTicker donors={donors} theme={theme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+              </div>
+            )}
+          </div>
+        )}
+        {effectiveShowTicker && ready && <div className={`fixed ${posClass("bc")} mb-10`}><DonorTicker donors={donors} theme={theme} fontSize={memberSize * 0.8} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
+        {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={theme} fontSize={memberSize} /></div>}
+        {showMission && ready && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`}><MissionMenu missions={missions} fontSize={memberSize * 0.9} /></div>}
+      </main>
+    );
+  }
+
+  if (themeId === "neonExcel") {
+    const neonNameMaxCh = Math.max(nameCh, Math.round(nameMaxCh * 0.5));
+    const neonNameCol = `minmax(${nameCh}ch, ${neonNameMaxCh}ch)`;
+    const neonGridTemplate = hasRoleColumn
+      ? `3ch 6ch ${neonNameCol} ${bankCh}ch ${toonCh}ch ${totalCh}ch`
+      : `3ch ${neonNameCol} ${bankCh}ch ${toonCh}ch ${totalCh}ch`;
+    return (
+      <main className="transparent-bg min-h-screen no-select" style={scaledMainStyle}>
+        {showMembers && ready && (
+          <div className={`fixed ${listPosClass}`}>
+            <div ref={containerRef} className={`flex items-start ${tight ? "gap-2" : "gap-3"}`} style={{ width: "fit-content" }}>
+              {showSideDonors && donorsSide === "left" && (
+                <div style={{ width: donorsWidth }}>
+                  <DonorTicker donors={donors} theme={theme} fontSize={dSize} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+                </div>
+              )}
+              <div>
+                <div ref={tableBoxRef as any} className={theme.tableCls} style={{ fontSize: mSize, width: "fit-content" }}>
+                  <div className={`${theme.headerCls} grid items-center ${tight ? "gap-x-1 py-0.5 px-1" : "gap-x-3"}`} style={{ gridTemplateColumns: neonGridTemplate }}>
+                    <div className="text-left">RANK</div>
+                    {hasRoleColumn && <div className="text-left">ROLE</div>}
+                    <div className="text-left">MEMBER</div>
+                    <div className="text-right">BANK</div>
+                    <div className="text-right">TOON</div>
+                    <div className="text-right font-bold text-white">TOTAL</div>
+                  </div>
+                  {ranked.map(({m, rank}) => (
+                    <div key={m.id} ref={setRowRef(m.id)} className={`${theme.rowCls} ${tight ? "py-0.5 px-1" : ""} grid items-center gap-x-1 transition-transform will-change-transform`} style={{ gridTemplateColumns: neonGridTemplate }}>
+                      <div className={`${theme.nameCls} text-left`}>#{rank}</div>
+                      {hasRoleColumn && <div className={`${theme.nameCls} text-left`}>{m.role || "-"}</div>}
+                      <div className={`${theme.nameCls} text-left overflow-hidden whitespace-nowrap text-ellipsis`}>{m.name}</div>
+                      <div className={theme.accountCls + " text-right overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.account)}</div>
+                      <div className={theme.toonCls + " text-right overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.toon)}</div>
+                      <div className={`${theme.totalCls} text-right overflow-hidden whitespace-nowrap text-ellipsis`}>{fmt(m.account + m.toon)}</div>
+                    </div>
+                  ))}
+                  {pinned.map((m) => (
+                    <div key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`${theme.rowCls} ${tight ? "py-0.5 px-1" : ""} grid items-center gap-x-1 transition-transform will-change-transform`} style={{ gridTemplateColumns: neonGridTemplate }}>
+                      <div className={theme.nameCls}>—</div>
+                      {hasRoleColumn && <div className={theme.nameCls}></div>}
+                      <div className={theme.nameCls + " overflow-hidden whitespace-nowrap text-ellipsis"}>{m.name}</div>
+                      <div className={theme.accountCls + " text-right overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.account)}</div>
+                      <div className={theme.toonCls + " text-right overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.toon)}</div>
+                      <div className={`${theme.totalCls} text-right overflow-hidden whitespace-nowrap text-ellipsis`}>{fmt(m.account + m.toon)}</div>
+                    </div>
+                  ))}
+                  {showTotal && ready && (
+                    <div
+                      className={`grid items-center ${theme.totalWrapCls} ${tight ? "px-1 py-0.5" : ""}`}
+                      style={{ gridTemplateColumns: neonGridTemplate }}
+                    >
+                      <div className="text-cyan-300 font-bold">{hasRoleColumn ? "합계" : "총합"}</div>
+                      {hasRoleColumn && <div />}
+                      <div />
+                      <div className={`${theme.totalCls} text-right overflow-hidden whitespace-nowrap text-ellipsis`} style={{ fontSize: tSize * 0.68 }}>
+                        {fmt(sumAccount)}
+                      </div>
+                      <div className={`${theme.totalCls} text-right overflow-hidden whitespace-nowrap text-ellipsis`} style={{ fontSize: tSize * 0.68 }}>
+                        {fmt(sumToon)}
+                      </div>
+                      <div className={`${theme.totalCls} text-right overflow-hidden whitespace-nowrap text-ellipsis`} style={{ fontSize: tSize * 0.72 }}>
+                        {fmt(rounded)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {showBottomDonors && !tickerInMembers && (
+                  <div className={tight ? "mt-1" : "mt-2"} style={{ width: donorBoxWidth ? `${donorBoxWidth}px` : "100%", overflow: "hidden" }}>
+                    <DonorTicker donors={donors} theme={theme} fontSize={dSize} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+                  </div>
+                )}
+                {tickerInMembers && (
+                  <div className={tight ? "mt-1" : "mt-2"} style={{ width: donorBoxWidth ? `${donorBoxWidth}px` : "100%", overflow: "hidden" }}>
+                    <DonorTicker donors={donors} theme={theme} fontSize={dSize} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+                  </div>
+                )}
+              </div>
+              {showSideDonors && donorsSide === "right" && (
+                <div style={{ width: donorsWidth }}>
+                  <DonorTicker donors={donors} theme={theme} fontSize={dSize} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        {!showMembers && showTotal && ready && (
+          <div className={`fixed ${sumPosClass}`} style={sumPosStyle}>
+            <div className={theme.totalWrapCls}><div className={theme.totalCls} style={{ fontSize: totalSize }}>
+              계좌 {formatManThousand(sumAccount)} · 투네 {formatManThousand(sumToon)} · 전체 {formatManThousand(rounded)}
+            </div></div>
+          </div>
+        )}
+        {showGoal && ready && goal > 0 && (
+          <div className={`fixed ${posClass(goalAnchor)}`}>
+            <GoalBar current={goalCurrent !== null ? goalCurrent : rounded} goal={goal} label={goalLabel} theme={theme} width={goalWidth} />
+            {tickerInGoal && (
+              <div className="mt-2" style={{ width: goalWidth, overflow: "hidden" }}>
+                <DonorTicker donors={donors} theme={theme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+              </div>
+            )}
+          </div>
+        )}
+        {showPersonalGoal && ready && (
+          <div className={`fixed ${personalGoalPosClass}`} style={personalGoalPosStyle}>
+            <PersonalGoalBoard items={personalGoals} themeId={personalGoalTheme} fontSize={memberSize} />
+            {tickerInPersonalGoal && (
+              <div className="mt-2 overflow-hidden">
+                <DonorTicker donors={donors} theme={theme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+              </div>
+            )}
+          </div>
+        )}
+        {effectiveShowTicker && ready && (
+          <div className={`fixed ${posClass(tickerAnchor)}`} style={{ width: tickerWidth }}>
+            <DonorTicker donors={donors} theme={theme} fontSize={memberSize * 0.8} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+          </div>
+        )}
+        {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={theme} fontSize={memberSize} /></div>}
+        {showMission && ready && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`}><MissionMenu missions={missions} fontSize={memberSize * 0.9} /></div>}
+      </main>
+    );
+  }
+
+  return (
+    <main className="transparent-bg min-h-screen text-outline-strong no-select" style={scaledMainStyle}>
+      {showMembers && ready && (
+        <div className={`fixed ${listPosClass} space-y-1`}>
+          {ranked.map(({m, rank}) => (
+            <div key={m.id} ref={setRowRef(m.id)} className={`${theme.memberCls} ${theme.rowCls} transition-transform will-change-transform whitespace-nowrap`} style={{ fontSize: mSize, lineHeight: dense ? 1 : 1.15 }}>
+              <span className={theme.nameCls}>#{rank} {m.name}{m.role ? ` [${m.role}]` : ""}</span>
+              <span className={theme.accountCls}>{fmt(m.account)}</span>
+              <span className={theme.toonCls}>({fmt(m.toon)})</span>
+            </div>
+          ))}
+          {pinned.map((m) => (
+            <div key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`${theme.memberCls} ${theme.rowCls} transition-transform will-change-transform whitespace-nowrap`} style={{ fontSize: mSize, lineHeight: dense ? 1 : 1.15 }}>
+              <span className={theme.nameCls}>{m.name}</span>
+              <span className={theme.accountCls}>{fmt(m.account)}</span>
+              <span className={theme.toonCls}>({fmt(m.toon)})</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showTotal && ready && (
+        <div className={`fixed ${sumPosClass}`} style={sumPosStyle}>
+          <div className={theme.totalWrapCls}>
+            <div className={theme.totalCls} style={{ fontSize: tSize, lineHeight: 1.05 }}>
+              계좌 {fmt(sumAccount)} · 투네 {fmt(sumToon)} · 전체 {fmt(rounded)}
+            </div>
           </div>
         </div>
       )}
-      
-      {/* 표준 모드일 때는 기존 UI 표시 */}
-      {overlayMode === 'standard' && (
-        <>
-          {showTicker && ready && (
-            <div className={`${getElementPosition(tickerPosition, 'tc').className}`} style={getElementPosition(tickerPosition, 'tc').style}>
-              <DonorTicker donors={donors} theme={theme} fontSize={memberSize} />
+
+      {showGoal && ready && goal > 0 && (
+        <div className={`fixed ${posClass(goalAnchor)}`}>
+          <GoalBar current={goalCurrent !== null ? goalCurrent : rounded} goal={goal} label={goalLabel} theme={theme} width={goalWidth} />
+          {tickerInGoal && (
+            <div className="mt-2" style={{ width: goalWidth, overflow: "hidden" }}>
+              <DonorTicker donors={donors} theme={theme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
             </div>
           )}
-          {showTimer && timerStart && ready && (
-            <div className={`${getElementPosition(timerPosition, 'tr').className}`} style={getElementPosition(timerPosition, 'tr').style}>
-              <Timer elapsed={elapsed} theme={theme} fontSize={memberSize} />
+        </div>
+      )}
+      {showPersonalGoal && ready && (
+        <div className={`fixed ${personalGoalPosClass}`} style={personalGoalPosStyle}>
+          <PersonalGoalBoard items={personalGoals} themeId={personalGoalTheme} fontSize={memberSize} />
+          {tickerInPersonalGoal && (
+            <div className="mt-2 overflow-hidden">
+              <DonorTicker donors={donors} theme={theme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
             </div>
           )}
-          {showMission && ready && (
-            <div className={`${getElementPosition(missionPosition, 'tl').className}`} style={getElementPosition(missionPosition, 'tl').style}>
-              <ElectronicMissionBoard missions={missions} fontSize={memberSize} themeName={themeId} />
-            </div>
-          )}
-          {showMembers && ready && (
-            <div className={`${getElementPosition(memberPosition, anchor).className}`} style={getElementPosition(memberPosition, anchor).style}>
-              <table className={theme.tableCls} style={{ fontSize: memberFontSize, borderSpacing: 0 }}>
-                <thead>
-                  <tr>
-                    <td className={theme.headerCls}>이름</td>
-                    <td className={theme.headerCls}>계좌</td>
-                    <td className={theme.headerCls}>투네</td>
-                  </tr>
-                </thead>
-                <tbody>
-                  {members
-                    .filter(m => m.account > 0 || m.toon > 0)
-                    .map((m: Member) => (
-                      <tr key={m.id}>
-                        <td className={`${theme.rowCls} ${theme.nameCls}`}>{m.name}</td>
-                        <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(m.account)}</td>
-                        <td className={`${theme.rowCls} ${theme.toonCls} text-right`}>{formatManThousand(m.toon)}</td>
-                      </tr>
-                    ))}
-                  {showTotal && ready && (
-                    <tr>
-                      <td className={theme.totalWrapCls}>총합</td>
-                      <td className={`${theme.rowCls} ${theme.accountCls} text-right`}>{formatManThousand(sum)}</td>
-                      <td className={`${theme.rowCls} ${theme.toonCls} text-right`}></td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
+        </div>
+      )}
+      {tickerInMembers && showMembers && ready && (
+        <div className={`fixed ${listPosClass}`} style={{ marginTop: Math.max(48, mSize * 2.4), width: "min(640px, 75vw)" }}>
+          <DonorTicker donors={donors} theme={theme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+        </div>
+      )}
+
+      {effectiveShowTicker && ready && (
+        <div className={`fixed ${posClass(tickerAnchor)}`} style={{ width: tickerWidth }}>
+          <DonorTicker donors={donors} theme={theme} fontSize={memberSize * 0.8} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+        </div>
+      )}
+
+      {showTimer && (
+        <div className={`fixed ${posClass(timerAnchor)}`}>
+          <Timer elapsed={elapsed} theme={theme} fontSize={memberSize} />
+        </div>
+      )}
+
+      {showMission && ready && missions.length > 0 && (
+        <div className={`fixed ${posClass(missionAnchor)}`}>
+          <MissionMenu missions={missions} fontSize={memberSize * 0.9} />
+        </div>
       )}
     </main>
   );
 }
 
-type OverlayMode = 'standard' | 'mission' | 'both';
-
-function OverlayModeController({ children }: { children: React.ReactNode | ((props: { overlayMode: OverlayMode }) => React.ReactNode) }) {
-  const [overlayMode, setOverlayMode] = useState<OverlayMode>('standard');
-  const searchParams = useSearchParams();
-  const hideUi = searchParams.get('hideUi') === '1' || searchParams.get('hideUi') === 'true';
-
-  // URL 파라미터로 초기 모드 설정
-  useEffect(() => {
-    const mode = searchParams.get('mode') as OverlayMode;
-    if (mode && ['standard', 'mission', 'both'].includes(mode)) {
-      setOverlayMode(mode);
-    }
-  }, [searchParams]);
-
-  // 키보드 단축키로 전환
-  useEffect(() => {
-    if (hideUi) return;
-    const handleKeyPress = (e: KeyboardEvent) => {
-      if (e.key === '1') {
-        switchMode('standard');
-      } else if (e.key === '2') {
-        switchMode('mission');
-      } else if (e.key === '3') {
-        switchMode('both');
-      } else if (e.key === ' ') {
-        e.preventDefault();
-        // 순환: standard -> mission -> both -> standard
-        if (overlayMode === 'standard') switchMode('mission');
-        else if (overlayMode === 'mission') switchMode('both');
-        else switchMode('standard');
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [overlayMode, hideUi]);
-
-  const switchMode = (newMode: OverlayMode) => {
-    setOverlayMode(newMode);
-  };
-
-  if (hideUi) {
-    return typeof children === 'function' ? children({ overlayMode }) : children;
-  }
-
-  return typeof children === 'function' ? children({ overlayMode }) : children;
-}
-
 export default function OverlayPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center text-white">로딩 중...</div>}>
-      <OverlayModeController>
-        {({ overlayMode }) => <OverlayInner overlayMode={overlayMode} />}
-      </OverlayModeController>
+    <Suspense>
+      <OverlayInner />
     </Suspense>
   );
 }

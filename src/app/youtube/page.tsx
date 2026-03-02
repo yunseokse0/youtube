@@ -241,7 +241,11 @@ export default function YoutubePage() {
     for (let i = 0; i <= parts; i++) {
       const t = minT + (span * i) / parts;
       const x = scaleX(t);
-      const label = new Date(t).toLocaleTimeString();
+      const d = new Date(t);
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      const ss = String(d.getSeconds()).padStart(2, "0");
+      const label = `${hh}:${mm}:${ss}`;
       ticks.push({ x, label });
     }
     return { d, ticks };
@@ -326,8 +330,8 @@ export default function YoutubePage() {
           <div className="flex flex-wrap gap-2 mt-2 text-xs">
             <span className={`px-2 py-1 rounded ${apiKey ? "bg-emerald-700/60" : "bg-red-700/60"}`}>API키 {apiKey ? "있음" : "없음"}</span>
             <span className={`px-2 py-1 rounded ${liveChatId ? "bg-emerald-700/60" : "bg-red-700/60"}`}>liveChatId {liveChatId ? "설정" : "미설정"}</span>
-            <span className="px-2 py-1 rounded bg-neutral-800/80">시청자 폴링 {lastViewOk ? new Date(lastViewOk).toLocaleTimeString() : "대기"}</span>
-            <span className="px-2 py-1 rounded bg-neutral-800/80">채팅 폴링 {lastChatOk ? new Date(lastChatOk).toLocaleTimeString() : "대기"}</span>
+            <span className="px-2 py-1 rounded bg-neutral-800/80">시청자 폴링 {lastViewOk ? <ClientTime ts={lastViewOk} /> : "대기"}</span>
+            <span className="px-2 py-1 rounded bg-neutral-800/80">채팅 폴링 {lastChatOk ? <ClientTime ts={lastChatOk} /> : "대기"}</span>
           </div>
           <div className="h-px my-4 bg-white/10" />
           <div className="flex gap-2">
@@ -510,7 +514,7 @@ export default function YoutubePage() {
                 const authorHit = authorFilter && authorFilter.split(",").some(a=>a.trim() && m.author.toLowerCase().includes(a.trim().toLowerCase()));
                 return (
                   <div key={m.id} className="p-2 border-b border-white/5">
-                    <span className="text-xs text-neutral-400 mr-2">{new Date(m.at).toLocaleTimeString()}</span>
+                    <ClientTime ts={m.at} className="text-xs text-neutral-400 mr-2" />
                     {m.owner && <span className="px-1.5 py-0.5 mr-1 rounded text-xs bg-fuchsia-700/70">owner</span>}
                     {m.moderator && <span className="px-1.5 py-0.5 mr-1 rounded text-xs bg-sky-700/70">mod</span>}
                     {m.sponsor && <span className="px-1.5 py-0.5 mr-1 rounded text-xs bg-emerald-700/70">sponsor</span>}
@@ -556,7 +560,7 @@ export default function YoutubePage() {
                 {events.length === 0 && <div className="p-3 text-sm text-neutral-400">로그가 없습니다.</div>}
                 {events.map((ev, i) => (
                   <div key={i} className="p-3 border-b border-white/5">
-                    <div className="text-xs text-neutral-400">{new Date(ev.at).toLocaleTimeString()}</div>
+                    <ClientTime ts={ev.at} className="text-xs text-neutral-400" />
                     <div className="text-red-300 font-semibold">[{ev.word}]</div>
                     <div className="text-sm"><span className="text-emerald-300">{ev.author}</span>: {ev.message}</div>
                   </div>
@@ -593,4 +597,12 @@ export default function YoutubePage() {
       )}
     </main>
   );
+}
+
+function ClientTime({ ts, className }: { ts: number; className?: string }) {
+  const [text, setText] = useState("");
+  useEffect(() => {
+    setText(new Date(ts).toLocaleTimeString());
+  }, [ts]);
+  return <span suppressHydrationWarning className={className}>{text}</span>;
 }

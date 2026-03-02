@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Goal Overlay</title>
+<style>
+  :root{
+    --bg: rgba(0,0,0,0);
+    --panel: rgba(17,24,39,0.72);
+    --panel-weak: rgba(31,41,55,0.7);
+    --text: rgba(255,255,255,0.9);
+    --text-dim: rgba(255,255,255,0.6);
+    --text-strong: #ffffff;
+    --accent: #22d3ee;
+    --radius: 12px;
+    --pad-y: 6px;
+    --pad-x: 10px;
+    --gap: 10px;
+    --bar-h: 8px;
+    --font: system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, Helvetica, Arial, Apple SD Gothic Neo, Malgun Gothic, sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%; background:transparent !important}
+  body{background:var(--bg); color:var(--text); font-family:var(--font)}
+  .wrap{width:clamp(320px, 92vw, 560px); margin:0 auto; padding:8px}
+  .list{display:flex; flex-direction:column; gap:12px}
+  .item{background:var(--panel); border-radius:var(--radius); overflow:hidden; will-change:transform}
+  .row{display:grid; grid-template-columns: 1fr auto auto; align-items:center; gap:12px; padding:var(--pad-y) var(--pad-x)}
+  .name{display:inline-flex; align-items:center; justify-content:flex-start; min-width:84px; padding:4px 10px; border-radius:10px; border:2px solid var(--accent); color:var(--text-strong); font-weight:800; letter-spacing:0.5px; background:rgba(0,0,0,0.2)}
+  .remain{color:var(--text); font-weight:700; opacity:.9; font-size:14px}
+  .stats{display:flex; align-items:baseline; gap:12px; white-space:nowrap}
+  .pct{color:var(--text-dim); font-weight:700; font-size:13px}
+  .current{color:var(--text-strong); font-weight:900; font-size:18px; text-shadow:0 0 10px rgba(255,255,255,0.25)}
+  .target{color:var(--text-dim); font-weight:600; font-size:13px}
+  .bar{height:var(--bar-h); background:var(--panel-weak); margin:0 var(--pad-x) var(--pad-y); border-radius:999px; overflow:hidden}
+  .fill{height:100%; width:0%; background:linear-gradient(90deg, var(--accent), #ffffff); transition:width 600ms cubic-bezier(.2,.7,.2,1)}
+  .mono{font-feature-settings:"tnum" 1,"lnum" 1; font-variant-numeric:tabular-nums lining-nums}
+  .compact .row{gap:10px; padding:6px 8px}
+  .compact .name{min-width:74px; padding:3px 8px}
+  .compact .current{font-size:16px}
+  .compact .remain{font-size:13px}
+  .compact .pct,.compact .target{font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap compact">
+  <div id="list" class="list"></div>
+</div>
+<script>
+  const userData = [
+    { id: "u1", name: "멤버 1", current: 205600, target: 500000, color: "#f2c200" },
+    { id: "u2", name: "멤버 2", current: 235200, target: 500000, color: "#b166ff" },
+    { id: "u3", name: "멤버 3", current: 127100, target: 500000, color: "#ff5a9e" }
+  ];
+  const listEl = document.getElementById("list");
+  const format = n => Math.max(0, Math.round(n)).toLocaleString("ko-KR");
+  const pct = (c,t) => t > 0 ? Math.min(100, (c/t)*100) : 0;
+  const byPercent = (a,b)=> pct(b.current,b.target)-pct(a.current,a.target);
+  function makeItem(u){
+    const item = document.createElement("div");
+    item.className = "item";
+    item.dataset.id = u.id;
+    const row = document.createElement("div");
+    row.className = "row";
+    const name = document.createElement("div");
+    name.className = "name";
+    name.textContent = u.name;
+    name.style.borderColor = u.color;
+    const remain = document.createElement("div");
+    remain.className = "remain mono";
+    const stats = document.createElement("div");
+    stats.className = "stats mono";
+    const p = document.createElement("div");
+    p.className = "pct";
+    const c = document.createElement("div");
+    c.className = "current";
+    c.style.color = u.color;
+    const t = document.createElement("div");
+    t.className = "target";
+    stats.appendChild(p); stats.appendChild(c); stats.appendChild(t);
+    row.appendChild(name); row.appendChild(remain); row.appendChild(stats);
+    const bar = document.createElement("div");
+    bar.className = "bar";
+    const fill = document.createElement("div");
+    fill.className = "fill";
+    fill.style.background = `linear-gradient(90deg, ${u.color}, #ffffff)`;
+    bar.appendChild(fill);
+    item.appendChild(row); item.appendChild(bar);
+    return {item, name, remain, p, c, t, fill};
+  }
+  const nodes = new Map();
+  function render(){
+    const firstRects = new Map();
+    for(const [id, n] of nodes){
+      firstRects.set(id, n.item.getBoundingClientRect());
+    }
+    userData.sort(byPercent);
+    const fragment = document.createDocumentFragment();
+    for(const u of userData){
+      let n = nodes.get(u.id);
+      if(!n){ n = makeItem(u); nodes.set(u.id, n); }
+      n.name.style.borderColor = u.color;
+      n.c.style.color = u.color;
+      n.remain.textContent = `남은 금액: ${format(u.target - u.current)}`;
+      const p = pct(u.current, u.target);
+      n.p.textContent = `${p.toFixed(1)}%`;
+      n.c.textContent = `${format(u.current)}원`;
+      n.t.textContent = `/ ${format(u.target)}`;
+      n.fill.style.width = `${p}%`;
+      fragment.appendChild(n.item);
+    }
+    listEl.appendChild(fragment);
+    requestAnimationFrame(()=> {
+      for(const u of userData){
+        const n = nodes.get(u.id);
+        const last = n.item.getBoundingClientRect();
+        const first = firstRects.get(u.id);
+        if(first){
+          const dy = first.top - last.top;
+          if(dy){
+            n.item.style.transition = "none";
+            n.item.style.transform = `translateY(${dy}px)`;
+            n.item.offsetHeight;
+            n.item.style.transition = "transform 500ms cubic-bezier(.2,.7,.2,1)";
+            n.item.style.transform = "translateY(0)";
+            const end = ()=>{ n.item.style.transition=""; n.item.removeEventListener("transitionend", end); };
+            n.item.addEventListener("transitionend", end);
+          }
+        }
+      }
+    });
+  }
+  function updateData(id, amount){
+    const u = userData.find(x=>x.id===id);
+    if(!u) return;
+    u.current = Math.max(0, Math.min(u.target, u.current + amount));
+    render();
+  }
+  render();
+  window.updateData = updateData;
+</script>
+</body>
+</html>

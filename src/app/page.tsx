@@ -13,6 +13,9 @@ export default function Home() {
         <div className="mt-3 text-sm text-neutral-400">
           금지어 알림 전용 페이지: <Link className="underline hover:text-neutral-300" href="/alerts">/alerts</Link>
         </div>
+        <div className="mt-1 text-sm text-neutral-400">
+          정산 기록 페이지: <Link className="underline hover:text-neutral-300" href="/settlements">/settlements</Link>
+        </div>
       </div>
     </main>
   );
