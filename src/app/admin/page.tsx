@@ -40,8 +40,24 @@ import {
   clearPreferredApiKey,
 } from "@/lib/youtube";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { appendSettlementRecordAndSync, SettlementMemberRatioOverrides } from "@/lib/settlement";
+
+function ClientTime({ ts }: { ts: number | string }) {
+  const [text, setText] = useState<string>("");
+  useEffect(() => {
+    try {
+      const n = typeof ts === "string" ? Date.parse(ts) : ts;
+      setText(new Date(n).toLocaleTimeString());
+    } catch {
+      setText("");
+    }
+  }, [ts]);
+  return <span suppressHydrationWarning>{text}</span>;
+}
 
 export default function AdminPage() {
+  const router = useRouter();
   const [state, setState] = useState<AppState>(defaultState());
   const [syncStatus, setSyncStatus] = useState<"loading" | "synced" | "local" | "error">("loading");
   const [dailyLog, setDailyLog] = useState<Record<string, DailyLogEntry[]>>({});
@@ -58,6 +74,12 @@ export default function AdminPage() {
   const forbidEditRef = useRef<HTMLTextAreaElement | null>(null);
   const [missionTitle, setMissionTitle] = useState("");
   const [missionPrice, setMissionPrice] = useState("");
+  const [settlementTitle, setSettlementTitle] = useState("");
+  const [accountRatioInput, setAccountRatioInput] = useState("70");
+  const [toonRatioInput, setToonRatioInput] = useState("60");
+  const [taxRateInput, setTaxRateInput] = useState("3.3");
+  const [useMemberRatioOverrides, setUseMemberRatioOverrides] = useState(false);
+  const [memberRatioInputs, setMemberRatioInputs] = useState<Record<string, { account: string; toon: string }>>({});
   const [ytUrl, setYtUrl] = useState("");
   const [liveChatId, setLiveChatId] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState<string>("");
@@ -65,16 +87,29 @@ export default function AdminPage() {
     id: string; name: string; scale: string; memberSize: string; totalSize: string;
     dense: boolean; anchor: string; sumAnchor: string; sumFree: boolean; sumX: string; sumY: string;
     theme: string; showMembers: boolean; showTotal: boolean;
-    showGoal: boolean; goal: string; goalLabel: string; goalWidth: string; goalAnchor: string;
-    showTicker: boolean; showTimer: boolean; timerStart: number | null; timerAnchor: string;
+    showGoal: boolean; goal: string; goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string;
+    showPersonalGoal?: boolean;
+    personalGoalTheme?: string;
+    personalGoalAnchor?: string;
+    personalGoalLimit?: string;
+    personalGoalFree?: boolean;
+    personalGoalX?: string;
+    personalGoalY?: string;
+    tickerInMembers?: boolean;
+    tickerInGoal?: boolean;
+    tickerInPersonalGoal?: boolean;
+    showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string;
     showMission: boolean; missionAnchor: string;
+    showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string;
   };
   const PRESET_STORAGE_KEY = "excel-broadcast-overlay-presets";
+  const SETTLEMENT_OPTIONS_KEY = "excel-broadcast-settlement-options-v1";
   const PRESET_TEMPLATES: { name: string; preset: Partial<OverlayPreset> }[] = [
     { name: "전체 통합", preset: { showMembers: true, showTotal: true } },
     { name: "멤버 목록만", preset: { showMembers: true, showTotal: false } },
     { name: "총합만", preset: { showMembers: false, showTotal: true, totalSize: "60" } },
     { name: "목표 프로그레스바", preset: { showMembers: false, showTotal: false, showGoal: true, goal: "500000", goalLabel: "목표 금액", goalWidth: "500" } },
+    { name: "개인 골", preset: { showMembers: false, showTotal: false, showPersonalGoal: true } },
     { name: "후원 티커", preset: { showMembers: false, showTotal: false, showTicker: true } },
     { name: "타이머", preset: { showMembers: false, showTotal: false, showTimer: true } },
     { name: "미션 메뉴판", preset: { showMembers: false, showTotal: false, showMission: true, missionAnchor: "br" } },
@@ -83,15 +118,19 @@ export default function AdminPage() {
     id: `ov_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name,
     scale: "0.75", memberSize: "18", totalSize: "40", dense: true, anchor: "tl",
     sumAnchor: "bc", sumFree: false, sumX: "50", sumY: "90", theme: "default",
-    showMembers: true, showTotal: true, showGoal: false, goal: "0", goalLabel: "목표 금액",
-    goalWidth: "400", goalAnchor: "bc", showTicker: false, showTimer: false,
-    timerStart: null, timerAnchor: "tr", showMission: false, missionAnchor: "br", ...overrides,
+    showMembers: true, showTotal: true, showGoal: false, goal: "0", goalLabel: "목표 금액", showPersonalGoal: false, personalGoalTheme: "goalClassic", personalGoalAnchor: "br", personalGoalLimit: "3", personalGoalFree: false, personalGoalX: "78", personalGoalY: "82",
+    tickerInMembers: true, tickerInGoal: true, tickerInPersonalGoal: true,
+    goalWidth: "400", goalAnchor: "bc", goalCurrent: "", showTicker: false, tickerAnchor: "bc", tickerWidth: "600", showTimer: false,
+    timerStart: null, timerAnchor: "tr", showMission: false, missionAnchor: "br",
+    showBottomDonors: true, donorsSize: "", donorsGap: "16", donorsSpeed: "20", donorsLimit: "8", donorsFormat: "short", donorsUnit: "", donorsColor: "", tickerTheme: "auto", tickerGlow: "45", tickerShadow: "35", currencyLocale: "ko-KR",
+    ...overrides,
   });
   const [presets, setPresets] = useState<OverlayPreset[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
+    let localPresets: OverlayPreset[] = [];
     setDailyLog(loadDailyLog());
     setYtUrl(getSavedVideoUrl() || "");
     setLiveChatId(getPreferredLiveChatId());
@@ -99,15 +138,57 @@ export default function AdminPage() {
     setEvents(loadForbidEvents());
     try {
       const raw = window.localStorage.getItem(PRESET_STORAGE_KEY);
-      if (raw) setPresets(JSON.parse(raw));
+      if (raw) {
+        localPresets = JSON.parse(raw) as OverlayPreset[];
+        setPresets(localPresets);
+      }
+    } catch {}
+    try {
+      const raw = window.localStorage.getItem(SETTLEMENT_OPTIONS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as {
+          accountRatioInput?: string;
+          toonRatioInput?: string;
+          taxRateInput?: string;
+          useMemberRatioOverrides?: boolean;
+          memberRatioInputs?: Record<string, { account?: string; toon?: string }>;
+        };
+        if (typeof parsed.accountRatioInput === "string") setAccountRatioInput(parsed.accountRatioInput);
+        if (typeof parsed.toonRatioInput === "string") setToonRatioInput(parsed.toonRatioInput);
+        if (typeof parsed.taxRateInput === "string") setTaxRateInput(parsed.taxRateInput);
+        if (typeof parsed.useMemberRatioOverrides === "boolean") setUseMemberRatioOverrides(parsed.useMemberRatioOverrides);
+        if (parsed.memberRatioInputs && typeof parsed.memberRatioInputs === "object") {
+          const normalized: Record<string, { account: string; toon: string }> = {};
+          Object.entries(parsed.memberRatioInputs).forEach(([memberId, value]) => {
+            normalized[memberId] = {
+              account: typeof value?.account === "string" ? value.account : "",
+              toon: typeof value?.toon === "string" ? value.toon : "",
+            };
+          });
+          setMemberRatioInputs(normalized);
+        }
+      }
     } catch {}
     loadStateFromApi().then((apiState) => {
       if (apiState) {
         setState(apiState);
+        if (Array.isArray(apiState.overlayPresets) && apiState.overlayPresets.length > 0) {
+          setPresets(apiState.overlayPresets as OverlayPreset[]);
+        } else if (localPresets.length > 0) {
+          const next = { ...apiState, overlayPresets: localPresets };
+          setState(next);
+          persistState(next);
+        }
         setSyncStatus("synced");
         try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(apiState)); } catch {}
       } else {
         const local = loadState();
+        if (Array.isArray(local.overlayPresets) && local.overlayPresets.length > 0) {
+          setPresets(local.overlayPresets as OverlayPreset[]);
+        } else if (localPresets.length > 0) {
+          local.overlayPresets = localPresets;
+          setPresets(localPresets);
+        }
         setState(local);
         setSyncStatus("local");
         saveStateAsync(local).then((ok) => { if (ok) setSyncStatus("synced"); });
@@ -118,6 +199,11 @@ export default function AdminPage() {
   const savePresets = (next: OverlayPreset[]) => {
     setPresets(next);
     try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(next)); } catch {}
+    setState((prev) => {
+      const merged: AppState = { ...prev, overlayPresets: next };
+      persistState(merged);
+      return merged;
+    });
   };
   const addPreset = (name: string, overrides: Partial<OverlayPreset> = {}) => {
     const p = defaultPreset(name, overrides);
@@ -135,16 +221,7 @@ export default function AdminPage() {
   const buildOverlayUrl = (p: OverlayPreset): string => {
     if (typeof window === "undefined") return "";
     const base = `${window.location.origin}/overlay`;
-    const q: Record<string, string> = {
-      scale: p.scale, memberSize: p.memberSize, totalSize: p.totalSize,
-      dense: String(p.dense), anchor: p.anchor, theme: p.theme,
-      showMembers: String(p.showMembers), showTotal: String(p.showTotal),
-    };
-    if (p.sumFree) { q.sumX = p.sumX; q.sumY = p.sumY; } else { q.sumAnchor = p.sumAnchor; }
-    if (p.showGoal) { q.showGoal = "true"; q.goal = String(Math.max(0, parseInt(p.goal || "0", 10) || 0)); q.goalLabel = p.goalLabel; q.goalWidth = p.goalWidth; q.goalAnchor = p.goalAnchor; }
-    if (p.showTicker) q.showTicker = "true";
-    if (p.showTimer && p.timerStart) { q.showTimer = "true"; q.timerStart = String(p.timerStart); q.timerAnchor = p.timerAnchor; }
-    if (p.showMission) { q.showMission = "true"; q.missionAnchor = p.missionAnchor; }
+    const q: Record<string, string> = { p: p.id };
     return `${base}?${new URLSearchParams(q).toString()}`;
   };
   const copyUrl = async (url: string, id: string) => {
@@ -188,6 +265,35 @@ export default function AdminPage() {
     window.addEventListener("storage", handler);
     return () => window.removeEventListener("storage", handler);
   }, []);
+
+  useEffect(() => {
+    setMemberRatioInputs((prev) => {
+      const next: Record<string, { account: string; toon: string }> = {};
+      for (const m of state.members) {
+        next[m.id] = {
+          account: prev[m.id]?.account ?? "",
+          toon: prev[m.id]?.toon ?? "",
+        };
+      }
+      return next;
+    });
+  }, [state.members]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        SETTLEMENT_OPTIONS_KEY,
+        JSON.stringify({
+          accountRatioInput,
+          toonRatioInput,
+          taxRateInput,
+          useMemberRatioOverrides,
+          memberRatioInputs,
+        })
+      );
+    } catch {}
+  }, [SETTLEMENT_OPTIONS_KEY, accountRatioInput, toonRatioInput, taxRateInput, useMemberRatioOverrides, memberRatioInputs]);
 
   useEffect(() => {
     const stop = startYoutubePolling(state.forbiddenWords, ({ word, author, message }: Parameters<OnForbidden>[0]) => {
@@ -280,26 +386,20 @@ export default function AdminPage() {
     const amount = parseTenThousandThousand(donorAmount);
     if (!donorMemberId) return;
     if (!confirmHighAmount(amount)) return;
+    if (amount <= 0) return;
     const target = donorTarget;
     setState((prev: AppState) => {
       const safeName = (donorName || "무명").replace(/\s+/g, "");
-      const existingIdx = prev.donors.findIndex((d) => d.name === safeName && d.memberId === donorMemberId && (d.target || "account") === target);
-      let donors: Donor[];
-      if (existingIdx >= 0) {
-        const updated = { ...prev.donors[existingIdx], amount: prev.donors[existingIdx].amount + amount, at: Date.now() };
-        donors = prev.donors.slice();
-        donors[existingIdx] = updated;
-      } else {
-        const donor: Donor = {
-          id: `d_${Date.now()}`,
-          name: safeName,
-          amount,
-          memberId: donorMemberId,
-          at: Date.now(),
-          target,
-        };
-        donors = [...prev.donors, donor];
-      }
+      // Keep each donation as a separate row for easier per-transaction corrections.
+      const donor: Donor = {
+        id: `d_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        name: safeName,
+        amount,
+        memberId: donorMemberId,
+        at: Date.now(),
+        target,
+      };
+      const donors: Donor[] = [...prev.donors, donor];
       const field = target === "toon" ? "toon" : "account";
       const members = prev.members.map((m: Member) =>
         m.id === donorMemberId ? { ...m, [field]: (m[field] || 0) + amount } : m
@@ -325,6 +425,23 @@ export default function AdminPage() {
     });
     return arr.sort((a,b)=> (a.date === b.date ? (a.entry.at < b.entry.at ? 1 : -1) : (a.date < b.date ? 1 : -1)));
   }, [dailyLog]);
+  const donorTotalsByName = useMemo(() => {
+    const map = new Map<string, { name: string; account: number; toon: number; total: number; count: number }>();
+    for (const d of state.donors) {
+      const key = (d.name || "무명").trim() || "무명";
+      const prev = map.get(key) || { name: key, account: 0, toon: 0, total: 0, count: 0 };
+      const isToon = (d.target || "account") === "toon";
+      const next = {
+        name: key,
+        account: prev.account + (isToon ? 0 : d.amount),
+        toon: prev.toon + (isToon ? d.amount : 0),
+        total: prev.total + d.amount,
+        count: prev.count + 1,
+      };
+      map.set(key, next);
+    }
+    return Array.from(map.values()).sort((a, b) => b.total - a.total);
+  }, [state.donors]);
 
   const regenerateDraft = () => {
     setChatDraft(formatChatLine(state));
@@ -406,12 +523,47 @@ export default function AdminPage() {
     a.click();
   };
 
+  const onFinishBroadcastAndSettle = async () => {
+    const accountRatioPct = Math.max(0, Math.min(100, parseFloat(accountRatioInput || "70") || 70));
+    const toonRatioPct = Math.max(0, Math.min(100, parseFloat(toonRatioInput || "60") || 60));
+    const taxRatePct = Math.max(0, Math.min(100, parseFloat(taxRateInput || "3.3") || 3.3));
+    const accountRatio = accountRatioPct / 100;
+    const toonRatio = toonRatioPct / 100;
+    const taxRate = taxRatePct / 100;
+    const parseOptionalPct = (value: string): number | null => {
+      const trimmed = (value || "").trim();
+      if (!trimmed) return null;
+      const n = parseFloat(trimmed);
+      if (!Number.isFinite(n)) return null;
+      return Math.max(0, Math.min(100, n)) / 100;
+    };
+    const memberRatioOverrides: SettlementMemberRatioOverrides | undefined = useMemberRatioOverrides
+      ? state.members.reduce<SettlementMemberRatioOverrides>((acc, m) => {
+          const input = memberRatioInputs[m.id];
+          const account = parseOptionalPct(input?.account || "");
+          const toon = parseOptionalPct(input?.toon || "");
+          if (account !== null || toon !== null) {
+            acc[m.id] = {
+              ...(account !== null ? { accountRatio: account } : {}),
+              ...(toon !== null ? { toonRatio: toon } : {}),
+            };
+          }
+          return acc;
+        }, {})
+      : undefined;
+    const title =
+      settlementTitle.trim() ||
+      `${new Date().toISOString().slice(0, 10)} 정산`;
+    const rec = await appendSettlementRecordAndSync(title, state.members, accountRatio, toonRatio, taxRate, memberRatioOverrides);
+    router.push(`/settlements/${rec.id}`);
+  };
+
   return (
     <main className="min-h-screen p-4 md:p-8">
       <Toast />
       <div className="max-w-6xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-start sm:items-center justify-between gap-2 mb-6">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <h1 className="text-2xl font-bold">매니저 제어판</h1>
             <span className={`px-2 py-0.5 rounded text-xs font-medium ${syncStatus === "synced" ? "bg-emerald-900/60 text-emerald-300" : syncStatus === "loading" ? "bg-yellow-900/60 text-yellow-300" : syncStatus === "error" ? "bg-red-900/60 text-red-300" : "bg-neutral-800 text-neutral-400"}`}>
               {syncStatus === "synced" ? "서버 동기화됨" : syncStatus === "loading" ? "동기화 중..." : syncStatus === "error" ? "서버 저장 실패" : "로컬 모드"}
@@ -422,13 +574,19 @@ export default function AdminPage() {
         <div className="grid grid-cols-1 gap-6">
           <div className="space-y-6">
             <section className="glass p-4 md:p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold">멤버 정산 보드</h2>
-                <div className="text-right">
-                  <div className="text-xs text-neutral-400">계좌 총합</div>
-                  <div className="text-2xl font-bold">{formatManThousand(total)}</div>
-                </div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">멤버 정산 보드</h2>
+            <div className="text-right">
+              <div className="text-xs text-neutral-400">계좌 · 투네 · 전체</div>
+              <div className="text-2xl font-bold">
+                {formatManThousand(state.members.reduce((s,m)=>s+(m.account||0),0))}
+                <span className="text-neutral-500 mx-1">·</span>
+                {formatManThousand(state.members.reduce((s,m)=>s+(m.toon||0),0))}
+                <span className="text-neutral-500 mx-1">·</span>
+                {formatManThousand(state.members.reduce((s,m)=>s+(m.account||0)+(m.toon||0),0))}
               </div>
+            </div>
+          </div>
               <div className="flex flex-wrap gap-2 mb-4">
                 <input
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
@@ -452,7 +610,7 @@ export default function AdminPage() {
 
             <section className="glass p-4 md:p-6">
               <h2 className="text-lg font-semibold mb-3">후원자 기록부</h2>
-              <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto_auto_auto] gap-3">
+              <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_auto_auto_auto] gap-3">
                 <input
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
                   placeholder="후원자 이름"
@@ -543,7 +701,7 @@ export default function AdminPage() {
                         const m = state.members.find((x) => x.id === d.memberId);
                         return (
                           <tr key={d.id} className="border-t border-white/10">
-                            <td className="p-1 text-neutral-400">{new Date(d.at).toLocaleTimeString()}</td>
+                            <td className="p-1 text-neutral-400"><ClientTime ts={d.at} /></td>
                             <td className="p-1">{d.name}</td>
                             <td className="p-1 text-neutral-300">{m?.name || d.memberId}</td>
                             <td className="p-1">{(d.target || "account") === "toon" ? <span className="text-amber-300">투네</span> : <span className="text-emerald-300">계좌</span>}</td>
@@ -577,15 +735,49 @@ export default function AdminPage() {
                   </tbody>
                 </table>
               </div>
+              <div className="text-xs text-neutral-400 mt-2">
+                후원자 리스트는 건별 기록입니다. (동일 후원자여도 건별로 별도 행 표시)
+              </div>
+            </section>
+
+            <section className="glass p-4 md:p-6">
+              <h2 className="text-lg font-semibold mb-3">후원자별 누적 합계</h2>
+              <div className="max-h-[240px] overflow-auto pr-1">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-neutral-400">
+                      <th className="text-left font-medium p-1">후원자</th>
+                      <th className="text-right font-medium p-1">계좌 누적</th>
+                      <th className="text-right font-medium p-1">투네 누적</th>
+                      <th className="text-right font-medium p-1">총 누적</th>
+                      <th className="text-right font-medium p-1">건수</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {donorTotalsByName.map((row) => (
+                      <tr key={row.name} className="border-t border-white/10">
+                        <td className="p-1">{row.name}</td>
+                        <td className="p-1 text-right text-emerald-300">{formatManThousand(row.account)}</td>
+                        <td className="p-1 text-right text-amber-300">{formatManThousand(row.toon)}</td>
+                        <td className="p-1 text-right font-semibold">{formatManThousand(row.total)}</td>
+                        <td className="p-1 text-right text-neutral-400">{row.count}</td>
+                      </tr>
+                    ))}
+                    {donorTotalsByName.length === 0 && (
+                      <tr><td className="p-2 text-neutral-400" colSpan={5}>누적 데이터가 없습니다.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </section>
 
             <section className="glass p-4 md:p-6">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold">미션 메뉴판</h2>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto] gap-2 mb-3">
+              <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_auto] gap-2 mb-3">
                 <input className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10" placeholder="미션 제목 (예: 노래 부르기)" value={missionTitle} onChange={(e) => setMissionTitle(e.target.value)} />
-                <input className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10 w-32" placeholder="가격 (예: 3만)" value={missionPrice} onChange={(e) => setMissionPrice(e.target.value)} />
+                <input className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10 w-full lg:w-32" placeholder="가격 (예: 3만)" value={missionPrice} onChange={(e) => setMissionPrice(e.target.value)} />
                 <button className="px-4 py-2 rounded bg-amber-700 hover:bg-amber-600 font-semibold" onClick={() => {
                   if (!missionTitle.trim()) return;
                   setState((prev) => {
@@ -671,22 +863,22 @@ export default function AdminPage() {
                   const isOpen = editingId === p.id;
                   return (
                     <div key={p.id} className="rounded border border-white/10 bg-neutral-900/40">
-                      <div className="flex items-center gap-2 px-3 py-2 cursor-pointer" onClick={() => setEditingId(isOpen ? null : p.id)}>
+                      <div className="flex flex-wrap items-center gap-2 px-3 py-2 cursor-pointer" onClick={() => setEditingId(isOpen ? null : p.id)}>
                         <span className="text-sm">{isOpen ? "▼" : "▶"}</span>
                         <input
-                          className="px-2 py-0.5 rounded bg-neutral-800 border border-white/10 text-sm font-semibold flex-shrink-0 w-40"
+                          className="px-2 py-0.5 rounded bg-neutral-800 border border-white/10 text-sm font-semibold flex-shrink-0 w-full sm:w-40"
                           value={p.name}
                           onClick={(e) => e.stopPropagation()}
                           onChange={(e) => updatePreset(p.id, { name: e.target.value })}
                         />
-                        <span className="text-xs text-neutral-500 truncate flex-1 font-mono">{url.slice(0, 80)}...</span>
+                        <span className="text-xs text-neutral-500 truncate basis-full sm:basis-auto sm:flex-1 font-mono">{url.slice(0, 80)}...</span>
                         <button className={`px-2 py-1 rounded text-xs ${copiedId === p.id ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`} onClick={(e) => { e.stopPropagation(); copyUrl(url, p.id); }}>{copiedId === p.id ? "복사됨!" : "URL 복사"}</button>
                         <button className="px-2 py-1 rounded bg-red-800 hover:bg-red-700 text-xs" onClick={(e) => { e.stopPropagation(); removePreset(p.id); }}>삭제</button>
                       </div>
                       {isOpen && (
                         <div className="px-3 pb-3 grid grid-cols-1 lg:grid-cols-2 gap-3 border-t border-white/10 pt-3">
                           <div className="space-y-2">
-                            <div className="grid grid-cols-[110px_1fr] items-center gap-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] items-center gap-2">
                               <label className="text-xs text-neutral-400">테마</label>
                               <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.theme} onChange={(e) => updatePreset(p.id, { theme: e.target.value })}>
                                 <option value="default">기본</option><option value="excel">엑셀</option><option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
@@ -730,26 +922,182 @@ export default function AdminPage() {
                             <div className="h-px bg-white/10 my-1" />
                             <div className="text-xs text-neutral-400 font-semibold">요소 표시/숨김</div>
                             <div className="flex flex-wrap gap-1">
-                              {([["멤버 목록", "showMembers"], ["총합", "showTotal"], ["목표바", "showGoal"], ["후원 티커", "showTicker"], ["타이머", "showTimer"], ["미션 메뉴", "showMission"]] as [string, keyof OverlayPreset][]).map(([label, key]) => (
+                              {([["멤버 목록", "showMembers"], ["총합", "showTotal"], ["목표바", "showGoal"], ["개인 골", "showPersonalGoal"], ["후원 티커", "showTicker"], ["타이머", "showTimer"], ["미션 메뉴", "showMission"]] as [string, keyof OverlayPreset][]).map(([label, key]) => (
                                 <button key={key} className={`px-2 py-0.5 rounded border text-xs ${p[key] ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { [key]: !p[key] })}>{label} {p[key] ? "ON" : "OFF"}</button>
                               ))}
+                            </div>
+
+                            <div className="h-px bg-white/10 my-1" />
+                            <div className="text-xs text-neutral-400 font-semibold">데모 빠른 실행</div>
+                            <div className="flex flex-wrap gap-1">
+                              {[
+                                { label: "멤버 보드", patch: { showMembers: true, showTotal: true, showGoal: false, showTicker: false, showTimer: false, showMission: false } },
+                                { label: "총합", patch: { showMembers: false, showTotal: true, showGoal: false, showTicker: false, showTimer: false, showMission: false } },
+                                { label: "목표바", patch: { showMembers: false, showTotal: false, showGoal: true, showTicker: false, showTimer: false, showMission: false } },
+                                { label: "후원 티커", patch: { showMembers: false, showTotal: false, showGoal: false, showTicker: true, showTimer: false, showMission: false } },
+                                { label: "타이머", patch: { showMembers: false, showTotal: false, showGoal: false, showTicker: false, showTimer: true, showMission: false, timerStart: Date.now() } },
+                                { label: "미션 메뉴", patch: { showMembers: false, showTotal: false, showGoal: false, showTicker: false, showTimer: false, showMission: true } },
+                              ].map(({ label, patch }) => (
+                                <button
+                                  key={label}
+                                  className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                                  onClick={() => {
+                                    if (typeof window === "undefined") return;
+                                    const base = buildOverlayUrl({ ...p, ...patch });
+                                    const u = new URL(base);
+                                    u.searchParams.set("demo", "true");
+                                    // 권장 프리셋 추가
+                                    u.searchParams.set("autoFont", "true");
+                                    u.searchParams.set("fitBase", "480");
+                                    u.searchParams.set("compact", "true");
+                                    u.searchParams.set("tight", "true");
+                                    u.searchParams.set("lockWidth", "true");
+                                    window.open(u.toString(), "_blank");
+                                  }}
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                              <button
+                                className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                                onClick={() => {
+                                  if (typeof window === "undefined") return;
+                                  const url = `${window.location.origin}/goal-overlay.html`;
+                                  window.open(url, "_blank");
+                                }}
+                              >
+                                목표 달성 바(HTML)
+                              </button>
+                            </div>
+
+                            <div className="h-px bg-white/10 my-1" />
+                            <div className="text-xs text-neutral-400 font-semibold">후원 리스트 옵션</div>
+                            <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] items-center gap-2">
+                              <label className="text-xs text-neutral-400">멤버목록 내 티커</label>
+                              <button className={`px-2 py-0.5 rounded border text-xs ${p.tickerInMembers ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { tickerInMembers: !p.tickerInMembers })}>
+                                {p.tickerInMembers ? "ON" : "OFF"}
+                              </button>
+                              <label className="text-xs text-neutral-400">목표바 내 티커</label>
+                              <button className={`px-2 py-0.5 rounded border text-xs ${p.tickerInGoal ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { tickerInGoal: !p.tickerInGoal })}>
+                                {p.tickerInGoal ? "ON" : "OFF"}
+                              </button>
+                              <label className="text-xs text-neutral-400">개인골 내 티커</label>
+                              <button className={`px-2 py-0.5 rounded border text-xs ${p.tickerInPersonalGoal ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { tickerInPersonalGoal: !p.tickerInPersonalGoal })}>
+                                {p.tickerInPersonalGoal ? "ON" : "OFF"}
+                              </button>
+                              <label className="text-xs text-neutral-400">하단 리스트 표시</label>
+                              <button className={`px-2 py-0.5 rounded border text-xs ${p.showBottomDonors ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { showBottomDonors: !p.showBottomDonors })}>
+                                {p.showBottomDonors ? "ON" : "OFF"}
+                              </button>
+                              <label className="text-xs text-neutral-400">티커 글자(px)</label>
+                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="(기본 자동)" value={p.donorsSize || ""} onChange={(e) => updatePreset(p.id, { donorsSize: e.target.value })} />
+                              <label className="text-xs text-neutral-400">간격(px)</label>
+                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.donorsGap || ""} onChange={(e) => updatePreset(p.id, { donorsGap: e.target.value })} />
+                              <label className="text-xs text-neutral-400">속도(초/루프)</label>
+                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.donorsSpeed || ""} onChange={(e) => updatePreset(p.id, { donorsSpeed: e.target.value })} />
+                              <label className="text-xs text-neutral-400">표시 개수(N)</label>
+                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.donorsLimit || ""} onChange={(e) => updatePreset(p.id, { donorsLimit: e.target.value })} />
+                              <label className="text-xs text-neutral-400">금액 표기</label>
+                              <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.donorsFormat || "short"} onChange={(e) => updatePreset(p.id, { donorsFormat: e.target.value })}>
+                                <option value="full">풀(1,234)</option>
+                                <option value="short">단축(1.2만)</option>
+                              </select>
+                              <label className="text-xs text-neutral-400">통화 로케일</label>
+                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="ko-KR / en-US 등" value={p.currencyLocale || ""} onChange={(e) => updatePreset(p.id, { currencyLocale: e.target.value })} />
+                              <label className="text-xs text-neutral-400">단위 표시</label>
+                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="원 / KRW 등" value={p.donorsUnit || ""} onChange={(e) => updatePreset(p.id, { donorsUnit: e.target.value })} />
+                              <label className="text-xs text-neutral-400">글자 색상</label>
+                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="#a0e9ff" value={p.donorsColor || ""} onChange={(e) => updatePreset(p.id, { donorsColor: e.target.value })} />
+                              <label className="text-xs text-neutral-400">티커 테마</label>
+                              <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.tickerTheme || "auto"} onChange={(e) => updatePreset(p.id, { tickerTheme: e.target.value })}>
+                                <option value="auto">기본(테마 따름)</option>
+                                <option value="accent">강조</option>
+                                <option value="neon">네온</option>
+                                <option value="warm">웜</option>
+                                <option value="ice">아이스</option>
+                                <option value="mono">모노</option>
+                              </select>
+                              <label className="text-xs text-neutral-400">글로우 강도</label>
+                              <div className="flex items-center gap-1">
+                                <input type="range" min="0" max="100" value={p.tickerGlow || "45"} onChange={(e) => updatePreset(p.id, { tickerGlow: e.target.value })} className="flex-1 accent-emerald-500" />
+                                <span className="text-xs w-8 text-center">{p.tickerGlow || "45"}</span>
+                              </div>
+                              <label className="text-xs text-neutral-400">그림자 강도</label>
+                              <div className="flex items-center gap-1">
+                                <input type="range" min="0" max="100" value={p.tickerShadow || "35"} onChange={(e) => updatePreset(p.id, { tickerShadow: e.target.value })} className="flex-1 accent-emerald-500" />
+                                <span className="text-xs w-8 text-center">{p.tickerShadow || "35"}</span>
+                              </div>
                             </div>
 
                             {p.showGoal && (
                               <>
                                 <div className="h-px bg-white/10 my-1" />
                                 <div className="text-xs text-neutral-400 font-semibold">목표 금액</div>
-                                <div className="grid grid-cols-[90px_1fr] items-center gap-1">
+                                <div className="grid grid-cols-1 sm:grid-cols-[90px_1fr] items-center gap-1">
                                   <label className="text-xs text-neutral-400">목표(원)</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" type="number" value={p.goal} onChange={(e) => updatePreset(p.id, { goal: e.target.value })} />
                                   <label className="text-xs text-neutral-400">라벨</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.goalLabel} onChange={(e) => updatePreset(p.id, { goalLabel: e.target.value })} />
+                                  <label className="text-xs text-neutral-400">데모 현재액(원)</label>
+                                  <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="미지정 시 자동" value={p.goalCurrent || ""} onChange={(e) => updatePreset(p.id, { goalCurrent: e.target.value })} />
                                   <label className="text-xs text-neutral-400">너비(px)</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.goalWidth} onChange={(e) => updatePreset(p.id, { goalWidth: e.target.value })} />
                                   <label className="text-xs text-neutral-400">위치</label>
                                   <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.goalAnchor} onChange={(e) => updatePreset(p.id, { goalAnchor: e.target.value })}>
                                     <option value="bc">하단중앙</option><option value="tc">상단중앙</option><option value="bl">좌하</option><option value="br">우하</option><option value="tl">좌상</option><option value="tr">우상</option>
                                   </select>
+                                </div>
+                              </>
+                            )}
+
+                            {p.showPersonalGoal && (
+                              <>
+                                <div className="h-px bg-white/10 my-1" />
+                                <div className="text-xs text-neutral-400 font-semibold">개인골 표시</div>
+                                <div className="grid grid-cols-1 sm:grid-cols-[90px_1fr] items-center gap-1">
+                                  <label className="text-xs text-neutral-400">테마</label>
+                                  <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.personalGoalTheme || "goalClassic"} onChange={(e) => updatePreset(p.id, { personalGoalTheme: e.target.value })}>
+                                    <option value="goalClassic">개인골 클래식</option>
+                                    <option value="goalNeon">개인골 네온</option>
+                                  </select>
+                                  <label className="text-xs text-neutral-400">위치 모드</label>
+                                  <div className="flex gap-1">
+                                    <button className={`px-2 py-0.5 rounded border text-xs ${!p.personalGoalFree ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`} onClick={() => updatePreset(p.id, { personalGoalFree: false })}>프리셋</button>
+                                    <button className={`px-2 py-0.5 rounded border text-xs ${p.personalGoalFree ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`} onClick={() => updatePreset(p.id, { personalGoalFree: true })}>자유</button>
+                                  </div>
+                                  <label className="text-xs text-neutral-400">위치</label>
+                                  {!p.personalGoalFree ? (
+                                    <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.personalGoalAnchor || "br"} onChange={(e) => updatePreset(p.id, { personalGoalAnchor: e.target.value })}>
+                                      <option value="br">우하</option><option value="bl">좌하</option><option value="tr">우상</option><option value="tl">좌상</option><option value="bc">하단중앙</option><option value="tc">상단중앙</option>
+                                    </select>
+                                  ) : (
+                                    <div className="text-xs text-neutral-500">아래 X/Y 사용</div>
+                                  )}
+                                  {p.personalGoalFree && (
+                                    <>
+                                      <label className="text-xs text-neutral-400">X(%)</label>
+                                      <div className="flex items-center gap-1"><input type="range" min="0" max="100" value={p.personalGoalX || "78"} onChange={(e) => updatePreset(p.id, { personalGoalX: e.target.value })} className="flex-1 accent-emerald-500" /><span className="text-xs w-8 text-center">{p.personalGoalX || "78"}</span></div>
+                                      <label className="text-xs text-neutral-400">Y(%)</label>
+                                      <div className="flex items-center gap-1"><input type="range" min="0" max="100" value={p.personalGoalY || "82"} onChange={(e) => updatePreset(p.id, { personalGoalY: e.target.value })} className="flex-1 accent-emerald-500" /><span className="text-xs w-8 text-center">{p.personalGoalY || "82"}</span></div>
+                                    </>
+                                  )}
+                                  <label className="text-xs text-neutral-400">표시 개수</label>
+                                  <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.personalGoalLimit || "3"} onChange={(e) => updatePreset(p.id, { personalGoalLimit: e.target.value.replace(/[^\d]/g, "") })} />
+                                </div>
+                              </>
+                            )}
+
+                            {p.showTicker && (
+                              <>
+                                <div className="h-px bg-white/10 my-1" />
+                                <div className="text-xs text-neutral-400 font-semibold">후원 티커 위치</div>
+                                <div className="grid grid-cols-1 sm:grid-cols-[90px_1fr] items-center gap-1">
+                                  <label className="text-xs text-neutral-400">앵커</label>
+                                  <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.tickerAnchor || "bc"} onChange={(e) => updatePreset(p.id, { tickerAnchor: e.target.value })}>
+                                    <option value="tr">우상</option><option value="tl">좌상</option><option value="br">우하</option><option value="bl">좌하</option><option value="tc">상단중앙</option><option value="bc">하단중앙</option>
+                                  </select>
+                                  <label className="text-xs text-neutral-400">폭(px)</label>
+                                  <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.tickerWidth || "600"} onChange={(e) => updatePreset(p.id, { tickerWidth: e.target.value })} />
                                 </div>
                               </>
                             )}
@@ -785,17 +1133,122 @@ export default function AdminPage() {
                             </div>
                           </div>
 
-                          <div className="rounded border border-white/10 bg-black/70 p-2">
-                            <div className="text-xs text-neutral-400 mb-1">프리뷰</div>
-                            <div className="relative w-full h-[350px] rounded overflow-hidden">
-                              <iframe src={url} title={`preview-${p.id}`} className="absolute inset-0 w-full h-full" style={{ background: "transparent" }} scrolling="no" />
-                            </div>
-                          </div>
+                          <VerticalPreview url={url} />
                         </div>
                       )}
                     </div>
                   );
                 })}
+              </div>
+            </section>
+
+            <section className="glass p-4 md:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <h2 className="text-lg font-semibold">방송 종료 정산</h2>
+                <Link className="text-sm text-neutral-300 underline" href="/settlements">정산 기록 보기</Link>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto_auto] gap-2">
+                <input
+                  className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  placeholder="정산 제목 (예: 16화 세부)"
+                  value={settlementTitle}
+                  onChange={(e) => setSettlementTitle(e.target.value)}
+                />
+                <input
+                  className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  placeholder="계좌 비율 % (예: 70)"
+                  value={accountRatioInput}
+                  onChange={(e) => setAccountRatioInput(e.target.value.replace(/[^\d.]/g, ""))}
+                />
+                <input
+                  className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  placeholder="투네 비율 % (예: 60)"
+                  value={toonRatioInput}
+                  onChange={(e) => setToonRatioInput(e.target.value.replace(/[^\d.]/g, ""))}
+                />
+                <input
+                  className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  placeholder="세금 비율 % (예: 3.3)"
+                  value={taxRateInput}
+                  onChange={(e) => setTaxRateInput(e.target.value.replace(/[^\d.]/g, ""))}
+                />
+                <button
+                  className="px-4 py-2 rounded bg-emerald-700 hover:bg-emerald-600 font-semibold"
+                  onClick={onFinishBroadcastAndSettle}
+                >
+                  방송 종료(정산 생성)
+                </button>
+              </div>
+              <div className="mt-3 rounded border border-white/10 bg-neutral-900/40 p-3 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm text-neutral-200 font-medium">멤버별 개별 비율</div>
+                  <button
+                    className={`px-2 py-1 rounded border text-xs ${useMemberRatioOverrides ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`}
+                    onClick={() => setUseMemberRatioOverrides((v) => !v)}
+                  >
+                    {useMemberRatioOverrides ? "사용 중" : "미사용"}
+                  </button>
+                </div>
+                <div className="text-xs text-neutral-400">
+                  개별 비율을 비워두면 상단 공통 비율(계좌 {accountRatioInput || "70"}%, 투네 {toonRatioInput || "60"}%)이 적용됩니다.
+                </div>
+                {useMemberRatioOverrides && (
+                  <div className="overflow-auto rounded border border-white/10">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-neutral-400 border-b border-white/10">
+                          <th className="p-2 text-left">멤버</th>
+                          <th className="p-2 text-left">계좌 비율 %</th>
+                          <th className="p-2 text-left">투네 비율 %</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {state.members.map((m) => (
+                          <tr key={m.id} className="border-b border-white/10">
+                            <td className="p-2">{m.name}</td>
+                            <td className="p-2">
+                              <input
+                                className="w-full px-2 py-1 rounded bg-neutral-900/80 border border-white/10"
+                                placeholder={accountRatioInput || "70"}
+                                value={memberRatioInputs[m.id]?.account || ""}
+                                onChange={(e) => {
+                                  const nextValue = e.target.value.replace(/[^\d.]/g, "");
+                                  setMemberRatioInputs((prev) => ({
+                                    ...prev,
+                                    [m.id]: {
+                                      account: nextValue,
+                                      toon: prev[m.id]?.toon ?? "",
+                                    },
+                                  }));
+                                }}
+                              />
+                            </td>
+                            <td className="p-2">
+                              <input
+                                className="w-full px-2 py-1 rounded bg-neutral-900/80 border border-white/10"
+                                placeholder={toonRatioInput || "60"}
+                                value={memberRatioInputs[m.id]?.toon || ""}
+                                onChange={(e) => {
+                                  const nextValue = e.target.value.replace(/[^\d.]/g, "");
+                                  setMemberRatioInputs((prev) => ({
+                                    ...prev,
+                                    [m.id]: {
+                                      account: prev[m.id]?.account ?? "",
+                                      toon: nextValue,
+                                    },
+                                  }));
+                                }}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+              <div className="text-xs text-neutral-400 mt-2">
+                계산식: (계좌×계좌비율 + 투네×투네비율) - 세금비율% / 비율은 % 단위로 입력
               </div>
             </section>
 
@@ -813,7 +1266,7 @@ export default function AdminPage() {
               </div>
               <div className="text-sm text-neutral-400 mt-2">
                 3분마다 상태를 자동 저장합니다. 다른 탭과 실시간 동기화됩니다. 마지막 저장{" "}
-                <span className="text-neutral-200">{new Date(state.updatedAt).toLocaleTimeString()}</span>
+                <span className="text-neutral-200"><ClientTime ts={state.updatedAt} /></span>
               </div>
               <div className="flex flex-wrap gap-2 mt-3">
                 <button
@@ -869,7 +1322,7 @@ export default function AdminPage() {
                 {flatLogs.length === 0 && <div className="p-3 text-sm text-neutral-400">히스토리가 없습니다. 리셋 시 자동 기록되며, [지금 스냅샷 기록]으로 즉시 저장할 수 있습니다.</div>}
                 {flatLogs.map((it, idx) => (
                   <div key={idx} className="p-3 border-t border-white/10 text-sm">
-                    <div className="text-xs text-neutral-400">{it.date} {new Date(it.entry.at).toLocaleTimeString()}</div>
+                    <div className="text-xs text-neutral-400">{it.date} <ClientTime ts={it.entry.at} /></div>
                     <div className="text-neutral-300">총합 {it.entry.total.toLocaleString()} · 멤버 {it.entry.members.length} · 후원 {it.entry.donors.length}</div>
                   </div>
                 ))}
@@ -879,5 +1332,75 @@ export default function AdminPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+function VerticalPreview({ url }: { url: string }) {
+  const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
+  const [showFrame, setShowFrame] = useState(true);
+  const [showGuides, setShowGuides] = useState(true);
+  const [w, h] = orientation === "portrait" ? [360, 640] : [640, 360];
+  const previewUrl = useMemo(() => {
+    try {
+      const u = new URL(url);
+      u.searchParams.set("previewGuide", "true");
+      return u.toString();
+    } catch {
+      return url;
+    }
+  }, [url]);
+  return (
+    <div className="rounded border border-white/10 bg-black/70 p-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+        <div className="text-xs text-neutral-400">프리뷰(단일 영상)</div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            className={`px-2 py-0.5 rounded border text-xs ${showFrame ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-300"}`}
+            onClick={() => setShowFrame(!showFrame)}
+            title="장식 프레임"
+          >
+            프레임
+          </button>
+          <button
+            className={`px-2 py-0.5 rounded border text-xs ${showGuides ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-300"}`}
+            onClick={() => setShowGuides(!showGuides)}
+            title="안전 구역 가이드"
+          >
+            가이드
+          </button>
+          <button
+            className="px-2 py-0.5 rounded border text-xs border-white/10 text-neutral-300 hover:border-emerald-500 hover:text-emerald-300"
+            onClick={() => setOrientation(orientation === "portrait" ? "landscape" : "portrait")}
+            title="가로/세로 전환"
+          >
+            {orientation === "portrait" ? "세로 9:16" : "가로 16:9"}
+          </button>
+        </div>
+      </div>
+      <div
+        className="relative mx-auto rounded-xl overflow-hidden"
+        style={{
+          width: "100%",
+          maxWidth: w,
+          aspectRatio: `${w} / ${h}`,
+          border: "1px solid rgba(255,255,255,0.1)",
+          background: "#0b0b0b",
+          boxShadow: showFrame ? "0 6px 24px rgba(0,0,0,0.8), inset 0 0 0 1px rgba(255,255,255,0.06), inset 0 8px 24px rgba(255,255,255,0.04)" : "none",
+        }}
+      >
+        <iframe src={previewUrl} title="vertical-preview" className="absolute inset-0 w-full h-full" style={{ background: "transparent" }} scrolling="no" />
+        {showGuides && (
+          <>
+            <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: "inset 0 0 0 1px rgba(0,255,170,0.35)" }} />
+            <div className="absolute pointer-events-none" style={{ top: "5%", left: "5%", right: "5%", bottom: "5%", boxShadow: "inset 0 0 0 1px rgba(64,200,255,0.45)" }} />
+            <div className="absolute pointer-events-none" style={{ top: "10%", left: "10%", right: "10%", bottom: "10%", boxShadow: "inset 0 0 0 1px rgba(255,200,0,0.5)" }} />
+            <div className="absolute inset-0 pointer-events-none">
+              <div className="absolute left-1/2 top-0 bottom-0" style={{ width: 1, background: "rgba(255,255,255,0.15)" }} />
+              <div className="absolute top-1/2 left-0 right-0" style={{ height: 1, background: "rgba(255,255,255,0.15)" }} />
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }

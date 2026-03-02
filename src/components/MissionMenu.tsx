@@ -5,43 +5,73 @@ const MissionMenu = ({ missions, fontSize = 16 }: { missions: MissionItem[]; fon
   if (!missions.length) return null;
 
   return (
-    <div
-      className="w-80 bg-transparent p-5 rounded-sm animate-slideInRight"
-      style={{ fontSize }}
-    >
-      <div className="text-center mb-4">
-        <h2 className="text-amber-400 text-[1.4em] font-black tracking-widest uppercase">
+    <div className="mission-board w-80 rounded-md p-3" style={{ fontSize }}>
+      <div className="text-center mb-2">
+        <h2 className="text-amber-300 text-[1.15em] font-black tracking-[0.18em] uppercase">
           Special Missions
         </h2>
-        <div className="h-1 w-full bg-amber-400 mt-1" />
       </div>
 
-      <ul className="space-y-3">
+      <ul className="space-y-2">
         {missions.map((item) => (
-          <li key={item.id} className="group flex flex-col">
-            <div className="flex justify-between items-end">
-              <span className="text-white text-[1em] font-bold group-hover:text-amber-300 transition-colors">
-                {item.isHot && (
-                  <span className="mr-2 text-[0.65em] bg-red-600 text-white px-1 rounded animate-pulse">
-                    HOT
-                  </span>
-                )}
-                {item.title}
-              </span>
-              <span className="text-amber-400 font-mono font-bold text-[1em]">
-                {item.price}
-              </span>
+          <li key={item.id} className="mission-row rounded px-2 py-1">
+            <div className="led-track-wrap">
+              <div className="led-track">
+                <span className="led-item">
+                  {item.isHot ? "[HOT] " : ""}
+                  {item.title} - {item.price}
+                </span>
+                <span className="led-item" aria-hidden>
+                  {item.isHot ? "[HOT] " : ""}
+                  {item.title} - {item.price}
+                </span>
+                <span className="led-item" aria-hidden>
+                  {item.isHot ? "[HOT] " : ""}
+                  {item.title} - {item.price}
+                </span>
+              </div>
             </div>
-            <div className="border-b border-dashed border-stone-600 w-full mt-1" />
           </li>
         ))}
       </ul>
 
-      <div className="mt-6 text-center">
-        <p className="text-stone-500 text-[0.7em] italic">
-          All missions are subject to streamer&apos;s condition.
-        </p>
-      </div>
+      <style jsx>{`
+        .mission-board {
+          background: rgba(6, 8, 16, 0.84);
+          border: 1px solid rgba(250, 204, 21, 0.35);
+          box-shadow:
+            0 0 0 1px rgba(250, 204, 21, 0.18) inset,
+            0 0 16px rgba(250, 204, 21, 0.1);
+        }
+        .mission-row {
+          background: rgba(12, 18, 28, 0.72);
+          border: 1px solid rgba(250, 204, 21, 0.24);
+        }
+        .led-track-wrap {
+          overflow: hidden;
+          white-space: nowrap;
+        }
+        .led-track {
+          display: inline-flex;
+          min-width: 100%;
+          animation: mission-marquee 16s linear infinite;
+        }
+        .led-item {
+          color: #fde68a;
+          text-shadow: 0 0 6px rgba(253, 230, 138, 0.65);
+          font-weight: 800;
+          letter-spacing: 0.04em;
+          margin-right: 2.25rem;
+        }
+        @keyframes mission-marquee {
+          0% {
+            transform: translateX(0);
+          }
+          100% {
+            transform: translateX(-33.333%);
+          }
+        }
+      `}</style>
     </div>
   );
 };

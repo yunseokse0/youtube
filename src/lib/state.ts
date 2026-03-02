@@ -1,8 +1,12 @@
 export type Member = {
   id: string;
   name: string;
+  realName?: string;
   account: number;
   toon: number;
+  goal?: number;
+  role?: string;
+  operating?: boolean;
 };
 
 export type DonorTarget = "account" | "toon";
@@ -28,6 +32,7 @@ export type AppState = {
   donors: Donor[];
   forbiddenWords: string[];
   missions?: MissionItem[];
+  overlayPresets?: unknown[];
   updatedAt: number;
 };
 
@@ -37,10 +42,21 @@ export const FORBID_EVENTS_KEY = "excel-broadcast-forbid-events-v1";
 
 export function defaultMembers(): Member[] {
   return [
-    { id: "m1", name: "멤버1", account: 0, toon: 0 },
-    { id: "m2", name: "멤버2", account: 0, toon: 0 },
-    { id: "m3", name: "멤버3", account: 0, toon: 0 },
+    { id: "m1", name: "멤버1", realName: "", account: 0, toon: 0, role: "", operating: false },
+    { id: "m2", name: "멤버2", realName: "", account: 0, toon: 0, role: "", operating: false },
+    { id: "m3", name: "멤버3", realName: "", account: 0, toon: 0, role: "", operating: false },
   ];
+}
+
+function normalizeMember(m: Member): Member {
+  const goal = typeof m.goal === "number" && Number.isFinite(m.goal) ? Math.max(0, Math.floor(m.goal)) : undefined;
+  return {
+    ...m,
+    realName: m.realName ?? "",
+    goal,
+    role: m.role ?? "",
+    operating: m.operating ?? (/운영비/i.test(m.name) || /운영비/i.test(m.role || "")),
+  };
 }
 
 export function defaultState(): AppState {
@@ -48,6 +64,7 @@ export function defaultState(): AppState {
     members: defaultMembers(),
     donors: [],
     forbiddenWords: ["금칙어", "욕설", "비속어"],
+    overlayPresets: [],
     updatedAt: Date.now(),
   };
 }
@@ -100,10 +117,11 @@ export function loadState(): AppState {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultState();
     const data = JSON.parse(raw) as AppState;
-    data.members = data.members || defaultMembers();
+    data.members = (data.members || defaultMembers()).map(normalizeMember);
     data.donors = data.donors || [];
     data.forbiddenWords = data.forbiddenWords || [];
     data.missions = data.missions || [];
+    data.overlayPresets = Array.isArray(data.overlayPresets) ? data.overlayPresets : [];
     return data;
   } catch {
     return defaultState();
@@ -149,10 +167,11 @@ export async function loadStateFromApi(): Promise<AppState | null> {
     if (!res.ok) return null;
     const data = await res.json();
     if (data && data.members) {
-      data.members = data.members || defaultMembers();
+      data.members = (data.members || defaultMembers()).map(normalizeMember);
       data.donors = data.donors || [];
       data.forbiddenWords = data.forbiddenWords || [];
       data.missions = data.missions || [];
+      data.overlayPresets = Array.isArray(data.overlayPresets) ? data.overlayPresets : [];
       return data as AppState;
     }
     return null;
@@ -163,6 +182,14 @@ export async function loadStateFromApi(): Promise<AppState | null> {
 
 export function totalAccount(state: AppState): number {
   return state.members.reduce((sum, m) => sum + (m.account || 0), 0);
+}
+
+export function totalToon(state: AppState): number {
+  return state.members.reduce((sum, m) => sum + (m.toon || 0), 0);
+}
+
+export function totalCombined(state: AppState): number {
+  return totalAccount(state) + totalToon(state);
 }
 
 export function formatManThousand(n: number): string {

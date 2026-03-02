@@ -30,7 +30,7 @@ export default function AlertsPage() {
           {events.length === 0 && <div className="text-neutral-400">아직 알림이 없습니다.</div>}
           {events.map((ev, i) => (
             <div key={i} className="p-3 rounded border border-red-500/40 bg-red-950/40">
-              <div className="text-xs text-neutral-300">{new Date(ev.at).toLocaleString()}</div>
+              <ClientTime ts={ev.at} className="text-xs text-neutral-300" />
               <div className="font-semibold text-red-300">금칙어: {ev.word}</div>
               <div className="text-sm"><span className="text-emerald-300">{ev.author}</span>: {ev.message}</div>
             </div>
@@ -39,4 +39,10 @@ export default function AlertsPage() {
       </div>
     </main>
   );
+}
+
+function ClientTime({ ts, className }: { ts: number; className?: string }) {
+  const [text, setText] = useState("");
+  useEffect(() => { setText(new Date(ts).toLocaleString()); }, [ts]);
+  return <div suppressHydrationWarning className={className}>{text}</div>;
 }
