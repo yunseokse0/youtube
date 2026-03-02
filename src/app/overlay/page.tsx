@@ -127,6 +127,7 @@ function useRemoteState(): { state: AppState | null; ready: boolean } {
   const [state, setState] = useState<AppState | null>(null);
   const lastUpdatedRef = useRef(0);
   const loadRef = useRef(loadStateFromApi);
+  const syncingRef = useRef(false);
   const readLocalStateIfExists = (): AppState | null => {
     if (typeof window === "undefined") return null;
     try {
@@ -138,7 +139,6 @@ function useRemoteState(): { state: AppState | null; ready: boolean } {
     }
   };
   useEffect(() => {
-    let running = true;
     const local = readLocalStateIfExists();
     if (local) {
       setState(local);
@@ -147,16 +147,17 @@ function useRemoteState(): { state: AppState | null; ready: boolean } {
       // No persisted local snapshot: allow API state to win immediately.
       lastUpdatedRef.current = 0;
     }
-    const poll = async () => {
-      if (!running) return;
+    const syncOnce = async () => {
+      if (syncingRef.current) return;
+      syncingRef.current = true;
       // Same-tab preview/overlay should react to local changes immediately
       // even when API sync is delayed or failing.
-      const local = readLocalStateIfExists();
-      if (local && local.updatedAt && local.updatedAt > lastUpdatedRef.current) {
-        lastUpdatedRef.current = local.updatedAt;
-        setState(local);
-      }
       try {
+        const localNow = readLocalStateIfExists();
+        if (localNow && localNow.updatedAt && localNow.updatedAt > lastUpdatedRef.current) {
+          lastUpdatedRef.current = localNow.updatedAt;
+          setState(localNow);
+        }
         const data = await loadRef.current();
         // Keep local state when API is stale (e.g. API save failed),
         // and only accept strictly newer snapshots from server.
@@ -165,10 +166,27 @@ function useRemoteState(): { state: AppState | null; ready: boolean } {
           setState(data);
         }
       } catch {}
-      if (running) setTimeout(poll, 1500);
+      syncingRef.current = false;
     };
-    poll();
-    return () => { running = false; };
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== STORAGE_KEY) return;
+      const localNow = readLocalStateIfExists();
+      if (localNow && localNow.updatedAt && localNow.updatedAt > lastUpdatedRef.current) {
+        lastUpdatedRef.current = localNow.updatedAt;
+        setState(localNow);
+      }
+    };
+    // Faster cadence for donor/member sync in overlay runtime.
+    const POLL_MS = 700;
+    const timer = window.setInterval(() => {
+      void syncOnce();
+    }, POLL_MS);
+    window.addEventListener("storage", onStorage);
+    void syncOnce();
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
 
   return { state, ready: state !== null };
