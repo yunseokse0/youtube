@@ -884,7 +884,22 @@ export default function AdminPage() {
                                 <option value="default">기본</option><option value="excel">엑셀</option><option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
                               </select>
                               <label className="text-xs text-neutral-400">배율</label>
-                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.scale} onChange={(e) => updatePreset(p.id, { scale: e.target.value })} />
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="range"
+                                  min="0.2"
+                                  max="2"
+                                  step="0.01"
+                                  value={p.scale}
+                                  onChange={(e) => updatePreset(p.id, { scale: e.target.value })}
+                                  className="flex-1 accent-emerald-500"
+                                />
+                                <input
+                                  className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                                  value={p.scale}
+                                  onChange={(e) => updatePreset(p.id, { scale: e.target.value.replace(/[^\d.]/g, "") })}
+                                />
+                              </div>
                               <label className="text-xs text-neutral-400">멤버 글자(px)</label>
                               <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.memberSize} onChange={(e) => updatePreset(p.id, { memberSize: e.target.value })} />
                               <label className="text-xs text-neutral-400">총합 글자(px)</label>

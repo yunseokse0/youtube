@@ -136,6 +136,15 @@ function useRemoteState(): { state: AppState | null; ready: boolean } {
     } catch {}
     const poll = async () => {
       if (!running) return;
+      // Same-tab preview/overlay should react to local changes immediately
+      // even when API sync is delayed or failing.
+      try {
+        const local = loadState();
+        if (local && local.updatedAt && local.updatedAt > lastUpdatedRef.current) {
+          lastUpdatedRef.current = local.updatedAt;
+          setState(local);
+        }
+      } catch {}
       try {
         const data = await loadRef.current();
         // Keep local state when API is stale (e.g. API save failed),
@@ -346,10 +355,10 @@ const THEMES: Record<ThemeId, {
     accountCls: "text-right text-slate-400 font-mono whitespace-nowrap",
     toonCls: "text-right text-slate-400 font-mono whitespace-nowrap",
     totalCls: "font-mono font-black text-cyan-400 italic",
-    totalWrapCls: "bg-cyan-900/30 px-3 py-1 border-t-2 border-cyan-500/50",
-    rowCls: "bg-slate-900/40 py-1.5 px-2 border-b border-slate-800 last:border-none",
+    totalWrapCls: "bg-cyan-900/30 px-1 py-1 border-t-2 border-cyan-500/50",
+    rowCls: "bg-slate-900/40 py-1.5 px-1 border-b border-slate-800 last:border-none",
     tableCls: "border-2 border-cyan-500/50 bg-black/40 rounded-lg overflow-hidden animate-neonPulse",
-    headerCls: "bg-cyan-900/30 text-cyan-300 text-xs font-mono py-1 px-2 border-b border-cyan-500/50 uppercase",
+    headerCls: "bg-cyan-900/30 text-cyan-300 text-xs font-mono py-1 px-1 border-b border-cyan-500/50 uppercase",
     goalBarBg: "bg-black/60 border border-cyan-500/30 rounded",
     goalBarFill: "bg-gradient-to-r from-cyan-500 to-fuchsia-500 shadow-[0_0_10px_rgba(0,255,255,0.4)]",
     goalText: "text-cyan-300 font-mono font-bold",
@@ -446,8 +455,29 @@ function PersonalGoalBoard({
 function DonorTicker({ donors, theme, fontSize, color, full, duration, gap, limit, unit, locale, placeholderText, previewGuide, tickerTheme, tickerGlow, tickerShadow }: { donors: Donor[]; theme: typeof THEMES.default; fontSize: number; color?: string; full?: boolean; duration?: number; gap?: number; limit?: number; unit?: string; locale?: string; placeholderText?: string; previewGuide?: boolean; tickerTheme?: string; tickerGlow?: number; tickerShadow?: number }) {
   const recent = useMemo(() => {
     const lim = Math.max(1, limit || 5);
-    return donors
-      .slice()
+    const sorted = donors.slice().sort((a, b) => b.at - a.at);
+    const byName = new Map<string, { name: string; at: number; account: number; toon: number }>();
+    for (const d of sorted) {
+      const key = (d.name || "무명").trim() || "무명";
+      const prev = byName.get(key);
+      const isToon = (d.target || "account") === "toon";
+      if (!prev) {
+        byName.set(key, {
+          name: key,
+          at: d.at || 0,
+          account: isToon ? 0 : d.amount,
+          toon: isToon ? d.amount : 0,
+        });
+        continue;
+      }
+      byName.set(key, {
+        name: key,
+        at: Math.max(prev.at, d.at || 0),
+        account: prev.account + (isToon ? 0 : d.amount),
+        toon: prev.toon + (isToon ? d.amount : 0),
+      });
+    }
+    return Array.from(byName.values())
       .sort((a, b) => b.at - a.at)
       .slice(0, lim);
   }, [donors, limit]);
@@ -507,10 +537,15 @@ function DonorTicker({ donors, theme, fontSize, color, full, duration, gap, limi
     ...baseTickerThemeStyle,
     ...(shadowParts.length ? { textShadow: shadowParts.join(", ") } : {}),
   };
-  const amountText = (d: Donor) => {
-    const base = full ? roundToThousand(d.amount).toLocaleString(locale || "ko-KR") : formatManThousand(d.amount);
-    const withUnit = unit ? `${base} ${unit}` : base;
-    return (d.target || "account") === "toon" ? `(${withUnit})` : withUnit;
+  const amountText = (d: { account: number; toon: number }) => {
+    const f = (n: number) => {
+      const base = full ? roundToThousand(n).toLocaleString(locale || "ko-KR") : formatManThousand(n);
+      return unit ? `${base} ${unit}` : base;
+    };
+    const accountPart = d.account > 0 ? f(d.account) : "";
+    const toonPart = d.toon > 0 ? `(${f(d.toon)})` : "";
+    if (accountPart && toonPart) return `${accountPart} ${toonPart}`;
+    return accountPart || toonPart || "0";
   };
   if (!recent.length) {
     if (!shouldShowGuide) return null;
@@ -535,7 +570,7 @@ function DonorTicker({ donors, theme, fontSize, color, full, duration, gap, limi
       >
         {recent.map((d, i) => (
           <span
-            key={d.id || i}
+            key={`${d.name}-${d.at}-${i}`}
             className={theme.tickerCls}
             style={{ marginLeft: gap ?? 16, marginRight: gap ?? 16 }}
           >
@@ -544,7 +579,7 @@ function DonorTicker({ donors, theme, fontSize, color, full, duration, gap, limi
         ))}
         {recent.map((d, i) => (
           <span
-            key={`dup-${d.id || i}`}
+            key={`dup-${d.name}-${d.at}-${i}`}
             className={theme.tickerCls}
             style={{ marginLeft: gap ?? 16, marginRight: gap ?? 16 }}
           >
@@ -568,14 +603,28 @@ function Timer({ elapsed, theme, fontSize }: { elapsed: string | null; theme: ty
 function OverlayInner() {
   const { state: s, ready } = useRemoteState();
   const [localPresets, setLocalPresets] = useState<OverlayPresetLike[]>([]);
-  useEffect(() => {
+  const readLocalPresets = () => {
     if (typeof window === "undefined") return;
     try {
       const raw = window.localStorage.getItem("excel-broadcast-overlay-presets");
-      if (!raw) return;
+      if (!raw) {
+        setLocalPresets([]);
+        return;
+      }
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) setLocalPresets(parsed as OverlayPresetLike[]);
-    } catch {}
+    } catch {
+      setLocalPresets([]);
+    }
+  };
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    readLocalPresets();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "excel-broadcast-overlay-presets") readLocalPresets();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
   const membersRemote = useMemo(() => (ready && s ? s.members : []), [ready, s]);
   const donorsRemote = useMemo(() => (ready && s ? s.donors : []), [ready, s]);
@@ -666,12 +715,13 @@ function OverlayInner() {
   const nameGrow = (sp.get("nameGrow") || "true").toLowerCase() === "true";
   const currencyFull = (sp.get("currencyFull") || "false").toLowerCase() === "true";
   const nameMaxCh = Math.max(nameCh, Math.min(80, parseInt(sp.get("nameMaxCh") || String(nameCh + 8), 10)));
-  const defBankCh = (sp.get("bankCh") && parseInt(sp.get("bankCh")!, 10)) || (currencyFull ? (compact ? 6 : 7) : (compact ? 4 : 5));
-  const defToonCh = (sp.get("toonCh") && parseInt(sp.get("toonCh")!, 10)) || (currencyFull ? (compact ? 6 : 7) : (compact ? 4 : 5));
-  const defTotalCh = (sp.get("totalCh") && parseInt(sp.get("totalCh")!, 10)) || (currencyFull ? (compact ? 7 : 8) : (compact ? 5 : 6));
+  const fullAmountMode = sp.get("donorsFormat") === "full" || currencyFull;
+  const defBankCh = (sp.get("bankCh") && parseInt(sp.get("bankCh")!, 10)) || (fullAmountMode ? (compact ? 9 : 11) : (compact ? 4 : 5));
+  const defToonCh = (sp.get("toonCh") && parseInt(sp.get("toonCh")!, 10)) || (fullAmountMode ? (compact ? 9 : 11) : (compact ? 4 : 5));
+  const defTotalCh = (sp.get("totalCh") && parseInt(sp.get("totalCh")!, 10)) || (fullAmountMode ? (compact ? 7 : 8) : (compact ? 5 : 6));
   const bankCh = Math.max(3, Math.min(12, defBankCh));
   const toonCh = Math.max(4, Math.min(12, defToonCh));
-  const totalCh = Math.max(4, Math.min(12, defTotalCh));
+  const totalCh = Math.max(4, Math.min(10, defTotalCh));
   const showSideDonors = sp.get("showSideDonors") === "true";
   const donorsSide = (sp.get("donorsSide") || "right").toLowerCase();
   const donorsWidth = Math.max(120, Math.min(600, parseInt(sp.get("donorsWidth") || "220", 10)));
@@ -705,6 +755,7 @@ function OverlayInner() {
       : formatManThousand(n);
   const lockWidth = (sp.get("lockWidth") || "false").toLowerCase() === "true";
   const effectiveNameGrow = lockWidth ? false : nameGrow;
+  const scaledMainStyle: React.CSSProperties = { zoom: scale as any };
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoMemberSize, setAutoMemberSize] = useState(memberSize);
@@ -801,6 +852,10 @@ function OverlayInner() {
 
   const unpinned = useMemo(() => members.filter((m) => !pinnedFilter(m)), [members]);
   const pinned = useMemo(() => members.filter(pinnedFilter), [members]);
+  const hasRoleColumn = useMemo(
+    () => members.some((m) => (m.role || "").trim().length > 0),
+    [members]
+  );
   const ranked = useMemo(() => {
     const arr = [...unpinned].sort((a, b) => (b.account + b.toon) - (a.account + a.toon));
     return arr.map((m, i) => ({ m, rank: i + 1 }));
@@ -839,8 +894,11 @@ function OverlayInner() {
   const personalGoalPosClass = hasPersonalGoalFreePos ? "" : posClass(personalGoalAnchor);
 
   if (themeId === "excel") {
+    const excelGridCols = hasRoleColumn
+      ? ["3ch", "6ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`]
+      : ["3ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`];
     return (
-      <main className="transparent-bg min-h-screen no-select" style={{ zoom: scale }}>
+      <main className="transparent-bg min-h-screen no-select" style={scaledMainStyle}>
         {showMembers && ready && (
           <div className={`fixed ${listPosClass}`}>
             <div ref={containerRef} className="flex items-start gap-3" style={{ width: "fit-content" }}>
@@ -852,17 +910,14 @@ function OverlayInner() {
               <div>
                 <table ref={tableBoxRef as any} className={theme.tableCls} style={{ fontSize: mSize, borderSpacing: 0, tableLayout: "fixed" }}>
                   <colgroup>
-                    <col style={{ width: "3ch" }} />
-                    <col style={{ width: "6ch" }} />
-                    <col style={{ width: `${nameCh}ch` }} />
-                    <col style={{ width: `${bankCh}ch` }} />
-                    <col style={{ width: `${toonCh}ch` }} />
-                    <col style={{ width: `${totalCh}ch` }} />
+                    {excelGridCols.map((w, idx) => (
+                      <col key={`excel-col-${idx}`} style={{ width: w }} />
+                    ))}
                   </colgroup>
                   <thead>
                     <tr>
                       <td className={theme.headerCls}>순위</td>
-                      <td className={theme.headerCls}>직급</td>
+                      {hasRoleColumn && <td className={theme.headerCls}>직급</td>}
                       <td className={theme.headerCls}>이름</td>
                       <td className={`${theme.headerCls} text-right`}>계좌</td>
                       <td className={`${theme.headerCls} text-right`}>투네</td>
@@ -873,7 +928,7 @@ function OverlayInner() {
                     {ranked.map(({m, rank}) => (
                       <tr key={m.id} ref={setRowRef(m.id)} className="transition-transform will-change-transform">
                         <td className={`${theme.rowCls} text-left`}>#{rank}</td>
-                        <td className={`${theme.rowCls}`}>{m.role || "-"}</td>
+                        {hasRoleColumn && <td className={`${theme.rowCls}`}>{m.role || "-"}</td>}
                         <td className={`${theme.rowCls} ${theme.nameCls} truncate`}>{m.name}</td>
                         <td className={`${theme.rowCls} ${theme.accountCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${theme.rowCls} ${theme.toonCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
@@ -883,7 +938,7 @@ function OverlayInner() {
                     {pinned.map((m) => (
                       <tr key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className="transition-transform will-change-transform">
                         <td className={`${theme.rowCls} text-right`}>—</td>
-                        <td className={`${theme.rowCls}`}></td>
+                        {hasRoleColumn && <td className={`${theme.rowCls}`}></td>}
                         <td className={`${theme.rowCls} ${theme.nameCls} truncate`}>{m.name}</td>
                         <td className={`${theme.rowCls} ${theme.accountCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${theme.rowCls} ${theme.toonCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
@@ -892,12 +947,11 @@ function OverlayInner() {
                     ))}
                     {showTotal && ready && (
                       <tr>
-                        <td className={theme.totalWrapCls} colSpan={3}>총합</td>
-                        <td className={`${theme.totalWrapCls} text-right`}>
-                          계좌 {fmt(sumAccount)} · 투네 {fmt(sumToon)} · 전체 {fmt(rounded)}
-                        </td>
-                        <td className={`${theme.totalWrapCls}`} />
-                        <td className={`${theme.totalWrapCls}`} />
+                        <td className={theme.totalWrapCls} colSpan={hasRoleColumn ? 2 : 1}>총합</td>
+                        <td className={theme.totalWrapCls} />
+                        <td className={`${theme.totalWrapCls} text-right`}>{fmt(sumAccount)}</td>
+                        <td className={`${theme.totalWrapCls} text-right`}>{fmt(sumToon)}</td>
+                        <td className={`${theme.totalWrapCls} text-right`}>{fmt(rounded)}</td>
                       </tr>
                     )}
                   </tbody>
@@ -949,8 +1003,13 @@ function OverlayInner() {
   }
 
   if (themeId === "neonExcel") {
+    const neonNameMaxCh = Math.max(nameCh, Math.round(nameMaxCh * 0.5));
+    const neonNameCol = `minmax(${nameCh}ch, ${neonNameMaxCh}ch)`;
+    const neonGridTemplate = hasRoleColumn
+      ? `3ch 6ch ${neonNameCol} ${bankCh}ch ${toonCh}ch ${totalCh}ch`
+      : `3ch ${neonNameCol} ${bankCh}ch ${toonCh}ch ${totalCh}ch`;
     return (
-      <main className="transparent-bg min-h-screen no-select" style={{ zoom: scale }}>
+      <main className="transparent-bg min-h-screen no-select" style={scaledMainStyle}>
         {showMembers && ready && (
           <div className={`fixed ${listPosClass}`}>
             <div ref={containerRef} className={`flex items-start ${tight ? "gap-2" : "gap-3"}`} style={{ width: "fit-content" }}>
@@ -960,40 +1019,51 @@ function OverlayInner() {
                 </div>
               )}
               <div>
-                <div ref={tableBoxRef as any} className={theme.tableCls} style={{ fontSize: mSize, width: lockWidth ? "fit-content" : undefined }}>
-                  <div className={`${theme.headerCls} grid items-center ${tight ? "gap-x-1 py-0.5 px-1" : "gap-x-3"}`} style={{ gridTemplateColumns: `3ch 6ch ${effectiveNameGrow ? `minmax(${nameCh}ch, 1fr)` : `minmax(${nameCh}ch, ${nameMaxCh}ch)`} ${bankCh}ch ${toonCh}ch ${totalCh}ch` }}>
+                <div ref={tableBoxRef as any} className={theme.tableCls} style={{ fontSize: mSize, width: "fit-content" }}>
+                  <div className={`${theme.headerCls} grid items-center ${tight ? "gap-x-1 py-0.5 px-1" : "gap-x-3"}`} style={{ gridTemplateColumns: neonGridTemplate }}>
                     <div className="text-left">RANK</div>
-                    <div className="text-left">ROLE</div>
+                    {hasRoleColumn && <div className="text-left">ROLE</div>}
                     <div className="text-left">MEMBER</div>
                     <div className="text-right">BANK</div>
                     <div className="text-right">TOON</div>
                     <div className="text-right font-bold text-white">TOTAL</div>
                   </div>
                   {ranked.map(({m, rank}) => (
-                    <div key={m.id} ref={setRowRef(m.id)} className={`${theme.rowCls} ${tight ? "py-0.5 px-1" : ""} grid items-center gap-x-1 transition-transform will-change-transform`} style={{ gridTemplateColumns: `3ch 6ch ${effectiveNameGrow ? `minmax(${nameCh}ch, 1fr)` : `minmax(${nameCh}ch, ${nameMaxCh}ch)`} ${bankCh}ch ${toonCh}ch ${totalCh}ch` }}>
+                    <div key={m.id} ref={setRowRef(m.id)} className={`${theme.rowCls} ${tight ? "py-0.5 px-1" : ""} grid items-center gap-x-1 transition-transform will-change-transform`} style={{ gridTemplateColumns: neonGridTemplate }}>
                       <div className={`${theme.nameCls} text-left`}>#{rank}</div>
-                      <div className={`${theme.nameCls} text-left`}>{m.role || "-"}</div>
-                      <div className={`${theme.nameCls} text-left`}>{m.name}</div>
-                      <div className={theme.accountCls + " text-right"}>{fmt(m.account)}</div>
-                      <div className={theme.toonCls + " text-right"}>{fmt(m.toon)}</div>
-                      <div className={`${theme.totalCls} text-right`}>{fmt(m.account + m.toon)}</div>
+                      {hasRoleColumn && <div className={`${theme.nameCls} text-left`}>{m.role || "-"}</div>}
+                      <div className={`${theme.nameCls} text-left overflow-hidden whitespace-nowrap text-ellipsis`}>{m.name}</div>
+                      <div className={theme.accountCls + " text-right overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.account)}</div>
+                      <div className={theme.toonCls + " text-right overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.toon)}</div>
+                      <div className={`${theme.totalCls} text-right overflow-hidden whitespace-nowrap text-ellipsis`}>{fmt(m.account + m.toon)}</div>
                     </div>
                   ))}
                   {pinned.map((m) => (
-                    <div key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`${theme.rowCls} ${tight ? "py-0.5 px-1" : ""} grid items-center gap-x-1 transition-transform will-change-transform`} style={{ gridTemplateColumns: `3ch 6ch ${effectiveNameGrow ? `minmax(${nameCh}ch, 1fr)` : `minmax(${nameCh}ch, ${nameMaxCh}ch)`} ${bankCh}ch ${toonCh}ch ${totalCh}ch` }}>
+                    <div key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`${theme.rowCls} ${tight ? "py-0.5 px-1" : ""} grid items-center gap-x-1 transition-transform will-change-transform`} style={{ gridTemplateColumns: neonGridTemplate }}>
                       <div className={theme.nameCls}>—</div>
-                      <div className={theme.nameCls}></div>
-                      <div className={theme.nameCls}>{m.name}</div>
-                      <div className={theme.accountCls + " text-right"}>{fmt(m.account)}</div>
-                      <div className={theme.toonCls + " text-right"}>{fmt(m.toon)}</div>
-                      <div className={`${theme.totalCls} text-right`}>{fmt(m.account + m.toon)}</div>
+                      {hasRoleColumn && <div className={theme.nameCls}></div>}
+                      <div className={theme.nameCls + " overflow-hidden whitespace-nowrap text-ellipsis"}>{m.name}</div>
+                      <div className={theme.accountCls + " text-right overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.account)}</div>
+                      <div className={theme.toonCls + " text-right overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.toon)}</div>
+                      <div className={`${theme.totalCls} text-right overflow-hidden whitespace-nowrap text-ellipsis`}>{fmt(m.account + m.toon)}</div>
                     </div>
                   ))}
                   {showTotal && ready && (
-                    <div className={`grid grid-cols-6 items-center ${theme.totalWrapCls} ${tight ? "px-1 py-0.5" : ""}`}>
-                      <div className="text-cyan-300 font-bold col-span-3">TOTAL</div>
-                      <div className={`${theme.totalCls} text-right col-span-3`} style={{ fontSize: tSize * 0.7 }}>
-                        계좌 {fmt(sumAccount)} · 투네 {fmt(sumToon)} · 전체 {fmt(rounded)}
+                    <div
+                      className={`grid items-center ${theme.totalWrapCls} ${tight ? "px-1 py-0.5" : ""}`}
+                      style={{ gridTemplateColumns: neonGridTemplate }}
+                    >
+                      <div className="text-cyan-300 font-bold">{hasRoleColumn ? "합계" : "총합"}</div>
+                      {hasRoleColumn && <div />}
+                      <div />
+                      <div className={`${theme.totalCls} text-right overflow-hidden whitespace-nowrap text-ellipsis`} style={{ fontSize: tSize * 0.68 }}>
+                        {fmt(sumAccount)}
+                      </div>
+                      <div className={`${theme.totalCls} text-right overflow-hidden whitespace-nowrap text-ellipsis`} style={{ fontSize: tSize * 0.68 }}>
+                        {fmt(sumToon)}
+                      </div>
+                      <div className={`${theme.totalCls} text-right overflow-hidden whitespace-nowrap text-ellipsis`} style={{ fontSize: tSize * 0.72 }}>
+                        {fmt(rounded)}
                       </div>
                     </div>
                   )}
@@ -1056,7 +1126,7 @@ function OverlayInner() {
   }
 
   return (
-    <main className="transparent-bg min-h-screen text-outline-strong no-select" style={{ zoom: scale }}>
+    <main className="transparent-bg min-h-screen text-outline-strong no-select" style={scaledMainStyle}>
       {showMembers && ready && (
         <div className={`fixed ${listPosClass} space-y-1`}>
           {ranked.map(({m, rank}) => (

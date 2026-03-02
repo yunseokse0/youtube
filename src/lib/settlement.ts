@@ -67,8 +67,42 @@ function sortLatest(records: SettlementRecord[]): SettlementRecord[] {
   return [...records].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 
+function normalizeOperatingMember(m: SettlementMemberResult): SettlementMemberResult {
+  const isOperating = /운영비/i.test(m.name || "");
+  if (!isOperating) return m;
+  const account = Math.max(0, m.account || 0);
+  const toon = Math.max(0, m.toon || 0);
+  const gross = account + toon;
+  return {
+    ...m,
+    accountRatio: 1,
+    toonRatio: 1,
+    accountApplied: account,
+    toonApplied: toon,
+    gross,
+    fee: 0,
+    net: gross,
+  };
+}
+
+function migrateSettlementRecord(record: SettlementRecord): SettlementRecord {
+  const members = (record.members || []).map(normalizeOperatingMember);
+  const totalGross = members.reduce((s, r) => s + (r.gross || 0), 0);
+  const totalFee = members.reduce((s, r) => s + (r.fee || 0), 0);
+  const totalNet = members.reduce((s, r) => s + (r.net || 0), 0);
+  return {
+    ...record,
+    members,
+    totalGross,
+    totalFee,
+    totalNet,
+  };
+}
+
 export function normalizeSettlementRecords(records: SettlementRecord[]): SettlementRecord[] {
-  return sortLatest(pruneOlderThan3Years(Array.isArray(records) ? records : []));
+  const base = Array.isArray(records) ? records : [];
+  const migrated = base.map(migrateSettlementRecord);
+  return sortLatest(pruneOlderThan3Years(migrated));
 }
 
 function normalizeDeleteLogs(logs: SettlementDeleteLog[]): SettlementDeleteLog[] {
@@ -109,19 +143,31 @@ export function computeSettlement(
   const rows: SettlementMemberResult[] = (members || []).map((m) => {
     const account = Math.max(0, m.account || 0);
     const toon = Math.max(0, m.toon || 0);
+    const isOperating =
+      Boolean(m.operating) ||
+      /운영비/i.test(m.name || "") ||
+      /운영비/i.test(m.role || "");
     const perMember = memberRatioOverrides?.[m.id];
     const effectiveAccountRatio = toSafeRate(
-      typeof perMember?.accountRatio === "number" ? perMember.accountRatio : accountRatio,
+      isOperating
+        ? 1
+        : typeof perMember?.accountRatio === "number"
+          ? perMember.accountRatio
+          : accountRatio,
       accountRatio
     );
     const effectiveToonRatio = toSafeRate(
-      typeof perMember?.toonRatio === "number" ? perMember.toonRatio : toonRatio,
+      isOperating
+        ? 1
+        : typeof perMember?.toonRatio === "number"
+          ? perMember.toonRatio
+          : toonRatio,
       toonRatio
     );
     const accountApplied = Math.round(account * effectiveAccountRatio);
     const toonApplied = Math.round(toon * effectiveToonRatio);
     const gross = accountApplied + toonApplied;
-    const fee = Math.round(gross * feeRate);
+    const fee = isOperating ? 0 : Math.round(gross * feeRate);
     const net = Math.max(0, gross - fee);
     return {
       memberId: m.id,
@@ -304,6 +350,10 @@ export async function deleteSettlementRecordAndSync(recordId: string, reason = "
 export function toSettlementFormulaLine(record: SettlementRecord, m: SettlementMemberResult): string {
   const accSrc = formatManThousand(m.account);
   const toonSrc = formatManThousand(m.toon);
+  const isOperating = /운영비/i.test(m.name || "");
+  if (isOperating) {
+    return `${m.name} 운영비 예외: 계좌${accSrc} + 투네${toonSrc} = ${m.gross.toLocaleString()} (비율/세금 미적용)`;
+  }
   const accRatio = Number((m.accountRatio ?? record.accountRatio).toFixed(3));
   const toonRatio = Number((m.toonRatio ?? record.toonRatio).toFixed(3));
   return `${m.name} 계좌${accSrc}x${accRatio}=${m.accountApplied.toLocaleString()} 투네${toonSrc}x${toonRatio}=${m.toonApplied.toLocaleString()} /=${m.gross.toLocaleString()}-${m.fee.toLocaleString()}=${m.net.toLocaleString()}`;
