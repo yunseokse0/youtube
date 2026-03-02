@@ -38,6 +38,9 @@ type OverlayPresetLike = {
   showTicker?: boolean;
   tickerAnchor?: string;
   tickerWidth?: string;
+  tickerFree?: boolean;
+  tickerX?: string;
+  tickerY?: string;
   showTimer?: boolean;
   timerStart?: number | null;
   timerAnchor?: string;
@@ -96,7 +99,12 @@ function presetToParams(preset: OverlayPresetLike | null): URLSearchParams {
   if (preset.tickerInPersonalGoal) q.set("tickerInPersonalGoal", "true");
   if (preset.showTicker) {
     q.set("showTicker", "true");
-    if (preset.tickerAnchor) q.set("tickerAnchor", preset.tickerAnchor);
+    if (preset.tickerFree) {
+      q.set("tickerX", preset.tickerX || "50");
+      q.set("tickerY", preset.tickerY || "86");
+    } else if (preset.tickerAnchor) {
+      q.set("tickerAnchor", preset.tickerAnchor);
+    }
     if (preset.tickerWidth && preset.tickerWidth.trim()) q.set("tickerWidth", preset.tickerWidth.trim());
   }
   if (preset.showTimer && preset.timerStart) {
@@ -742,6 +750,11 @@ function OverlayInner() {
   const timerAnchor = (sp.get("timerAnchor") || "tr").toLowerCase();
   const tickerAnchor = (sp.get("tickerAnchor") || "bc").toLowerCase();
   const tickerWidth = Math.max(200, Math.min(1200, parseInt(sp.get("tickerWidth") || "600", 10)));
+  const tickerXParam = sp.get("tickerX");
+  const tickerYParam = sp.get("tickerY");
+  const hasTickerFreePos = tickerXParam !== null && tickerYParam !== null;
+  const tickerX = hasTickerFreePos ? Math.max(0, Math.min(100, parseFloat(tickerXParam!))) : 0;
+  const tickerY = hasTickerFreePos ? Math.max(0, Math.min(100, parseFloat(tickerYParam!))) : 0;
   const showMission = sp.get("showMission") === "true";
   const missionAnchor = (sp.get("missionAnchor") || "br").toLowerCase();
 
@@ -928,6 +941,10 @@ function OverlayInner() {
     ? { left: `${personalGoalX}%`, top: `${personalGoalY}%`, transform: "translate(-50%, -50%)" }
     : undefined;
   const personalGoalPosClass = hasPersonalGoalFreePos ? "" : posClass(personalGoalAnchor);
+  const tickerPosStyle: React.CSSProperties | undefined = hasTickerFreePos
+    ? { left: `${tickerX}%`, top: `${tickerY}%`, transform: "translate(-50%, -50%)", width: tickerWidth }
+    : { width: tickerWidth };
+  const tickerPosClass = hasTickerFreePos ? "" : posClass(tickerAnchor);
 
   if (themeId === "excel") {
     const excelGridCols = hasRoleColumn
@@ -1031,7 +1048,7 @@ function OverlayInner() {
             )}
           </div>
         )}
-        {effectiveShowTicker && ready && <div className={`fixed ${posClass("bc")} mb-10`}><DonorTicker donors={donors} theme={theme} fontSize={memberSize * 0.8} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
+        {effectiveShowTicker && ready && <div className={`fixed ${tickerPosClass} ${hasTickerFreePos ? "" : "mb-10"}`} style={tickerPosStyle}><DonorTicker donors={donors} theme={theme} fontSize={memberSize * 0.8} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
         {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={theme} fontSize={memberSize} /></div>}
         {showMission && ready && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`}><MissionMenu missions={missions} fontSize={memberSize * 0.9} /></div>}
       </main>
@@ -1151,7 +1168,7 @@ function OverlayInner() {
           </div>
         )}
         {effectiveShowTicker && ready && (
-          <div className={`fixed ${posClass(tickerAnchor)}`} style={{ width: tickerWidth }}>
+          <div className={`fixed ${tickerPosClass}`} style={tickerPosStyle}>
             <DonorTicker donors={donors} theme={theme} fontSize={memberSize * 0.8} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
           </div>
         )}
@@ -1219,7 +1236,7 @@ function OverlayInner() {
       )}
 
       {effectiveShowTicker && ready && (
-        <div className={`fixed ${posClass(tickerAnchor)}`} style={{ width: tickerWidth }}>
+        <div className={`fixed ${tickerPosClass}`} style={tickerPosStyle}>
           <DonorTicker donors={donors} theme={theme} fontSize={memberSize * 0.8} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
         </div>
       )}

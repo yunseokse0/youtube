@@ -60,6 +60,7 @@ export default function AdminPage() {
   const router = useRouter();
   const [state, setState] = useState<AppState>(defaultState());
   const [syncStatus, setSyncStatus] = useState<"loading" | "synced" | "local" | "error">("loading");
+  const stateUpdatedAtRef = useRef<number>(0);
   const [dailyLog, setDailyLog] = useState<Record<string, DailyLogEntry[]>>({});
   const [donorName, setDonorName] = useState("");
   const [donorAmount, setDonorAmount] = useState("");
@@ -98,7 +99,7 @@ export default function AdminPage() {
     tickerInMembers?: boolean;
     tickerInGoal?: boolean;
     tickerInPersonalGoal?: boolean;
-    showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string;
+    showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string;
     showMission: boolean; missionAnchor: string;
     showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string;
   };
@@ -120,7 +121,7 @@ export default function AdminPage() {
     sumAnchor: "bc", sumFree: false, sumX: "50", sumY: "90", theme: "default",
     showMembers: true, showTotal: true, showGoal: false, goal: "0", goalLabel: "목표 금액", showPersonalGoal: false, personalGoalTheme: "goalClassic", personalGoalAnchor: "br", personalGoalLimit: "3", personalGoalFree: false, personalGoalX: "78", personalGoalY: "82",
     tickerInMembers: true, tickerInGoal: true, tickerInPersonalGoal: true,
-    goalWidth: "400", goalAnchor: "bc", goalCurrent: "", showTicker: false, tickerAnchor: "bc", tickerWidth: "600", showTimer: false,
+    goalWidth: "400", goalAnchor: "bc", goalCurrent: "", showTicker: false, tickerAnchor: "bc", tickerWidth: "600", tickerFree: false, tickerX: "50", tickerY: "86", showTimer: false,
     timerStart: null, timerAnchor: "tr", showMission: false, missionAnchor: "br",
     showBottomDonors: true, donorsSize: "", donorsGap: "16", donorsSpeed: "20", donorsLimit: "8", donorsFormat: "short", donorsUnit: "", donorsColor: "", tickerTheme: "auto", tickerGlow: "45", tickerShadow: "35", currencyLocale: "ko-KR",
     ...overrides,
@@ -128,6 +129,10 @@ export default function AdminPage() {
   const [presets, setPresets] = useState<OverlayPreset[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    stateUpdatedAtRef.current = state.updatedAt || 0;
+  }, [state.updatedAt]);
 
   useEffect(() => {
     let localPresets: OverlayPreset[] = [];
@@ -194,6 +199,39 @@ export default function AdminPage() {
         saveStateAsync(local).then((ok) => { if (ok) setSyncStatus("synced"); });
       }
     });
+  }, []);
+
+  // Keep admin amounts synchronized across mobile/PC sessions.
+  // We only accept strictly newer server snapshots to avoid stale overwrites.
+  useEffect(() => {
+    let running = true;
+    let inFlight = false;
+    const syncFromApi = async () => {
+      if (!running || inFlight) return;
+      inFlight = true;
+      try {
+        const remote = await loadStateFromApi();
+        if (!remote) return;
+        const remoteUpdatedAt = remote.updatedAt || 0;
+        if (remoteUpdatedAt > stateUpdatedAtRef.current) {
+          stateUpdatedAtRef.current = remoteUpdatedAt;
+          setState(remote);
+          if (Array.isArray(remote.overlayPresets)) {
+            setPresets(remote.overlayPresets as OverlayPreset[]);
+          }
+          setSyncStatus("synced");
+          try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(remote)); } catch {}
+        }
+      } finally {
+        inFlight = false;
+      }
+    };
+    const timer = window.setInterval(() => { void syncFromApi(); }, 1200);
+    void syncFromApi();
+    return () => {
+      running = false;
+      window.clearInterval(timer);
+    };
   }, []);
 
   const savePresets = (next: OverlayPreset[]) => {
@@ -1107,10 +1145,27 @@ export default function AdminPage() {
                                 <div className="h-px bg-white/10 my-1" />
                                 <div className="text-xs text-neutral-400 font-semibold">후원 티커 위치</div>
                                 <div className="grid grid-cols-1 sm:grid-cols-[90px_1fr] items-center gap-1">
-                                  <label className="text-xs text-neutral-400">앵커</label>
-                                  <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.tickerAnchor || "bc"} onChange={(e) => updatePreset(p.id, { tickerAnchor: e.target.value })}>
-                                    <option value="tr">우상</option><option value="tl">좌상</option><option value="br">우하</option><option value="bl">좌하</option><option value="tc">상단중앙</option><option value="bc">하단중앙</option>
-                                  </select>
+                                  <label className="text-xs text-neutral-400">위치 모드</label>
+                                  <div className="flex gap-1">
+                                    <button className={`px-2 py-0.5 rounded border text-xs ${!p.tickerFree ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`} onClick={() => updatePreset(p.id, { tickerFree: false })}>프리셋</button>
+                                    <button className={`px-2 py-0.5 rounded border text-xs ${p.tickerFree ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`} onClick={() => updatePreset(p.id, { tickerFree: true })}>자유</button>
+                                  </div>
+                                  <label className="text-xs text-neutral-400">위치</label>
+                                  {!p.tickerFree ? (
+                                    <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.tickerAnchor || "bc"} onChange={(e) => updatePreset(p.id, { tickerAnchor: e.target.value })}>
+                                      <option value="tr">우상</option><option value="tl">좌상</option><option value="br">우하</option><option value="bl">좌하</option><option value="tc">상단중앙</option><option value="bc">하단중앙</option>
+                                    </select>
+                                  ) : (
+                                    <div className="text-xs text-neutral-500">아래 X/Y 슬라이더 사용</div>
+                                  )}
+                                  {p.tickerFree && (
+                                    <>
+                                      <label className="text-xs text-neutral-400">X(%)</label>
+                                      <div className="flex items-center gap-1"><input type="range" min="0" max="100" value={p.tickerX || "50"} onChange={(e) => updatePreset(p.id, { tickerX: e.target.value })} className="flex-1 accent-emerald-500" /><span className="text-xs w-8 text-center">{p.tickerX || "50"}</span></div>
+                                      <label className="text-xs text-neutral-400">Y(%)</label>
+                                      <div className="flex items-center gap-1"><input type="range" min="0" max="100" value={p.tickerY || "86"} onChange={(e) => updatePreset(p.id, { tickerY: e.target.value })} className="flex-1 accent-emerald-500" /><span className="text-xs w-8 text-center">{p.tickerY || "86"}</span></div>
+                                    </>
+                                  )}
                                   <label className="text-xs text-neutral-400">폭(px)</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.tickerWidth || "600"} onChange={(e) => updatePreset(p.id, { tickerWidth: e.target.value })} />
                                 </div>
