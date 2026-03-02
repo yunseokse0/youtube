@@ -61,6 +61,9 @@ export default function AdminPage() {
   const [state, setState] = useState<AppState>(defaultState());
   const [syncStatus, setSyncStatus] = useState<"loading" | "synced" | "local" | "error">("loading");
   const stateUpdatedAtRef = useRef<number>(0);
+  const lastLocalPersistAtRef = useRef<number>(0);
+  const syncStatusRef = useRef<"loading" | "synced" | "local" | "error">("loading");
+  const pendingUnsyncedRef = useRef<boolean>(false);
   const [dailyLog, setDailyLog] = useState<Record<string, DailyLogEntry[]>>({});
   const [donorName, setDonorName] = useState("");
   const [donorAmount, setDonorAmount] = useState("");
@@ -133,6 +136,9 @@ export default function AdminPage() {
   useEffect(() => {
     stateUpdatedAtRef.current = state.updatedAt || 0;
   }, [state.updatedAt]);
+  useEffect(() => {
+    syncStatusRef.current = syncStatus;
+  }, [syncStatus]);
 
   useEffect(() => {
     let localPresets: OverlayPreset[] = [];
@@ -202,7 +208,7 @@ export default function AdminPage() {
   }, []);
 
   // Keep admin amounts synchronized across mobile/PC sessions.
-  // We only accept strictly newer server snapshots to avoid stale overwrites.
+  // Server state is treated as source of truth across devices.
   useEffect(() => {
     let running = true;
     let inFlight = false;
@@ -213,12 +219,14 @@ export default function AdminPage() {
         const remote = await loadStateFromApi();
         if (!remote) return;
         const remoteUpdatedAt = remote.updatedAt || 0;
-        if (remoteUpdatedAt > stateUpdatedAtRef.current) {
+        const shouldApplyRemote = remoteUpdatedAt !== stateUpdatedAtRef.current;
+        if (shouldApplyRemote) {
           stateUpdatedAtRef.current = remoteUpdatedAt;
           setState(remote);
           if (Array.isArray(remote.overlayPresets)) {
             setPresets(remote.overlayPresets as OverlayPreset[]);
           }
+          pendingUnsyncedRef.current = false;
           setSyncStatus("synced");
           try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(remote)); } catch {}
         }
@@ -226,11 +234,22 @@ export default function AdminPage() {
         inFlight = false;
       }
     };
+    const onFocus = () => { void syncFromApi(); };
+    const onOnline = () => { void syncFromApi(); };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void syncFromApi();
+    };
     const timer = window.setInterval(() => { void syncFromApi(); }, 1200);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVisibility);
     void syncFromApi();
     return () => {
       running = false;
       window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
 
@@ -271,8 +290,17 @@ export default function AdminPage() {
   };
 
   const persistState = (s: AppState) => {
+    lastLocalPersistAtRef.current = Date.now();
+    pendingUnsyncedRef.current = true;
     setSyncStatus("loading");
-    saveStateAsync(s).then((ok) => setSyncStatus(ok ? "synced" : "error"));
+    saveStateAsync(s).then((ok) => {
+      if (ok) {
+        pendingUnsyncedRef.current = false;
+        setSyncStatus("synced");
+      } else {
+        setSyncStatus("error");
+      }
+    });
   };
 
   useEffect(() => {
@@ -282,7 +310,12 @@ export default function AdminPage() {
   }, [state]);
 
   useEffect(() => {
-    const id = setInterval(() => persistState(state), 180_000);
+    // Retry unsynced writes quickly to minimize cross-device drift.
+    const id = setInterval(() => {
+      if (pendingUnsyncedRef.current || syncStatusRef.current === "error") {
+        persistState(state);
+      }
+    }, 5000);
     return () => clearInterval(id);
   }, [state]);
 
@@ -552,6 +585,24 @@ export default function AdminPage() {
     appendDailyLog(state);
     setDailyLog(loadDailyLog());
   };
+  const onFetchLatestFromServer = async () => {
+    setSyncStatus("loading");
+    const remote = await loadStateFromApi();
+    if (!remote) {
+      setSyncStatus("error");
+      if (typeof window !== "undefined") window.alert("서버에서 상태를 가져오지 못했습니다.");
+      return;
+    }
+    stateUpdatedAtRef.current = remote.updatedAt || 0;
+    pendingUnsyncedRef.current = false;
+    setState(remote);
+    if (Array.isArray(remote.overlayPresets)) {
+      setPresets(remote.overlayPresets as OverlayPreset[]);
+      try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(remote.overlayPresets)); } catch {}
+    }
+    try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(remote)); } catch {}
+    setSyncStatus("synced");
+  };
   const onDownloadLog = () => {
     const raw = JSON.stringify(loadDailyLog(), null, 2);
     const blob = new Blob([raw], { type: "application/json" });
@@ -606,6 +657,13 @@ export default function AdminPage() {
             <span className={`px-2 py-0.5 rounded text-xs font-medium ${syncStatus === "synced" ? "bg-emerald-900/60 text-emerald-300" : syncStatus === "loading" ? "bg-yellow-900/60 text-yellow-300" : syncStatus === "error" ? "bg-red-900/60 text-red-300" : "bg-neutral-800 text-neutral-400"}`}>
               {syncStatus === "synced" ? "서버 동기화됨" : syncStatus === "loading" ? "동기화 중..." : syncStatus === "error" ? "서버 저장 실패" : "로컬 모드"}
             </span>
+            <button
+              className="px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-xs font-medium"
+              onClick={onFetchLatestFromServer}
+              title="로컬이 리셋되었을 때 서버 최신 상태를 다시 가져옵니다"
+            >
+              서버에서 가져오기
+            </button>
           </div>
           <Link className="text-sm text-neutral-300 underline" href="/youtube">유튜브 모니터 열기</Link>
         </div>

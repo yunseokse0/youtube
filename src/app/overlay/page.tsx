@@ -520,7 +520,7 @@ function DonorTicker({ donors, theme, fontSize, color, full, duration, gap, limi
   }, [donors, limit]);
   const stream = useMemo(() => {
     if (!recent.length) return [];
-    const minItems = Math.max(8, (limit || 5) * 3);
+    const minItems = Math.max(24, (limit || 5) * 10);
     const out: { name: string; at: number; account: number; toon: number }[] = [];
     while (out.length < minItems) out.push(...recent);
     return out.slice(0, minItems);
@@ -616,7 +616,7 @@ function DonorTicker({ donors, theme, fontSize, color, full, duration, gap, limi
           <span
             key={`${d.name}-${d.at}-${i}`}
             className={theme.tickerCls}
-            style={{ marginLeft: gap ?? 16, marginRight: gap ?? 16 }}
+            style={{ marginLeft: gap ?? 10, marginRight: gap ?? 10 }}
           >
             ♥ {d.name} {amountText(d)}
           </span>
@@ -625,7 +625,7 @@ function DonorTicker({ donors, theme, fontSize, color, full, duration, gap, limi
           <span
             key={`dup-${d.name}-${d.at}-${i}`}
             className={theme.tickerCls}
-            style={{ marginLeft: gap ?? 16, marginRight: gap ?? 16 }}
+            style={{ marginLeft: gap ?? 10, marginRight: gap ?? 10 }}
           >
             ♥ {d.name} {amountText(d)}
           </span>
@@ -812,6 +812,7 @@ function OverlayInner() {
   const [autoDonorSize, setAutoDonorSize] = useState(donorsSize);
   const tableBoxRef = useRef<HTMLDivElement | HTMLTableElement | null>(null);
   const [donorBoxWidth, setDonorBoxWidth] = useState<number | null>(null);
+  const contextualTickerWidth = donorBoxWidth ? Math.max(donorBoxWidth, tickerWidth) : tickerWidth;
   useEffect(() => {
     if (!autoFont) return;
     const el = containerRef.current;
@@ -1010,12 +1011,12 @@ function OverlayInner() {
                   </tbody>
                 </table>
                 {showBottomDonors && !tickerInMembers && (
-                  <div className="mt-2" style={{ width: donorBoxWidth ? `${donorBoxWidth}px` : "100%", overflow: "hidden" }}>
+                  <div className="mt-2" style={{ width: `${contextualTickerWidth}px`, overflow: "hidden" }}>
                     <DonorTicker donors={donors} theme={theme} fontSize={dSize} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
                   </div>
                 )}
                 {tickerInMembers && (
-                  <div className="mt-2" style={{ width: donorBoxWidth ? `${donorBoxWidth}px` : "100%", overflow: "hidden" }}>
+                  <div className="mt-2" style={{ width: `${contextualTickerWidth}px`, overflow: "hidden" }}>
                     <DonorTicker donors={donors} theme={theme} fontSize={dSize} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
                   </div>
                 )}
@@ -1122,12 +1123,12 @@ function OverlayInner() {
                   )}
                 </div>
                 {showBottomDonors && !tickerInMembers && (
-                  <div className={tight ? "mt-1" : "mt-2"} style={{ width: donorBoxWidth ? `${donorBoxWidth}px` : "100%", overflow: "hidden" }}>
+                  <div className={tight ? "mt-1" : "mt-2"} style={{ width: `${contextualTickerWidth}px`, overflow: "hidden" }}>
                     <DonorTicker donors={donors} theme={theme} fontSize={dSize} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
                   </div>
                 )}
                 {tickerInMembers && (
-                  <div className={tight ? "mt-1" : "mt-2"} style={{ width: donorBoxWidth ? `${donorBoxWidth}px` : "100%", overflow: "hidden" }}>
+                  <div className={tight ? "mt-1" : "mt-2"} style={{ width: `${contextualTickerWidth}px`, overflow: "hidden" }}>
                     <DonorTicker donors={donors} theme={theme} fontSize={dSize} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
                   </div>
                 )}
