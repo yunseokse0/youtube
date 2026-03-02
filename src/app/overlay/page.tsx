@@ -1029,7 +1029,7 @@ function OverlayInner() {
                     <div className="text-right font-bold text-white">TOTAL</div>
                   </div>
                   {ranked.map(({m, rank}) => (
-                    <div key={m.id} ref={setRowRef(m.id)} className={`${theme.rowCls} ${tight ? "py-0.5 px-1" : ""} grid items-center gap-x-1 transition-transform will-change-transform`} style={{ gridTemplateColumns: neonGridTemplate }}>
+                    <div key={m.id} ref={setRowRef(m.id)} className={`${theme.rowCls} ${tight ? "gap-x-1 py-0.5 px-1" : "gap-x-3"} grid items-center transition-transform will-change-transform`} style={{ gridTemplateColumns: neonGridTemplate }}>
                       <div className={`${theme.nameCls} text-left`}>#{rank}</div>
                       {hasRoleColumn && <div className={`${theme.nameCls} text-left`}>{m.role || "-"}</div>}
                       <div className={`${theme.nameCls} text-left overflow-hidden whitespace-nowrap text-ellipsis`}>{m.name}</div>
@@ -1039,7 +1039,7 @@ function OverlayInner() {
                     </div>
                   ))}
                   {pinned.map((m) => (
-                    <div key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`${theme.rowCls} ${tight ? "py-0.5 px-1" : ""} grid items-center gap-x-1 transition-transform will-change-transform`} style={{ gridTemplateColumns: neonGridTemplate }}>
+                    <div key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`${theme.rowCls} ${tight ? "gap-x-1 py-0.5 px-1" : "gap-x-3"} grid items-center transition-transform will-change-transform`} style={{ gridTemplateColumns: neonGridTemplate }}>
                       <div className={theme.nameCls}>—</div>
                       {hasRoleColumn && <div className={theme.nameCls}></div>}
                       <div className={theme.nameCls + " overflow-hidden whitespace-nowrap text-ellipsis"}>{m.name}</div>
@@ -1050,7 +1050,7 @@ function OverlayInner() {
                   ))}
                   {showTotal && ready && (
                     <div
-                      className={`grid items-center ${theme.totalWrapCls} ${tight ? "px-1 py-0.5" : ""}`}
+                      className={`grid items-center ${theme.totalWrapCls} ${tight ? "gap-x-1 px-1 py-0.5" : "gap-x-3"}`}
                       style={{ gridTemplateColumns: neonGridTemplate }}
                     >
                       <div className="text-cyan-300 font-bold">{hasRoleColumn ? "합계" : "총합"}</div>
