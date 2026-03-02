@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi, loadState, totalToon, totalCombined } from "@/lib/state";
+import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi, loadState, totalToon, totalCombined, STORAGE_KEY } from "@/lib/state";
 import { useFlip } from "@/lib/flip";
 import MissionMenu from "@/components/MissionMenu";
 
@@ -127,24 +127,35 @@ function useRemoteState(): { state: AppState | null; ready: boolean } {
   const [state, setState] = useState<AppState | null>(null);
   const lastUpdatedRef = useRef(0);
   const loadRef = useRef(loadStateFromApi);
+  const readLocalStateIfExists = (): AppState | null => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      return loadState();
+    } catch {
+      return null;
+    }
+  };
   useEffect(() => {
     let running = true;
-    try {
-      const local = loadState();
+    const local = readLocalStateIfExists();
+    if (local) {
       setState(local);
       lastUpdatedRef.current = local.updatedAt || 0;
-    } catch {}
+    } else {
+      // No persisted local snapshot: allow API state to win immediately.
+      lastUpdatedRef.current = 0;
+    }
     const poll = async () => {
       if (!running) return;
       // Same-tab preview/overlay should react to local changes immediately
       // even when API sync is delayed or failing.
-      try {
-        const local = loadState();
-        if (local && local.updatedAt && local.updatedAt > lastUpdatedRef.current) {
-          lastUpdatedRef.current = local.updatedAt;
-          setState(local);
-        }
-      } catch {}
+      const local = readLocalStateIfExists();
+      if (local && local.updatedAt && local.updatedAt > lastUpdatedRef.current) {
+        lastUpdatedRef.current = local.updatedAt;
+        setState(local);
+      }
       try {
         const data = await loadRef.current();
         // Keep local state when API is stale (e.g. API save failed),
@@ -358,7 +369,7 @@ const THEMES: Record<ThemeId, {
     totalWrapCls: "bg-cyan-900/30 px-1 py-1 border-t-2 border-cyan-500/50",
     rowCls: "bg-slate-900/40 py-1.5 px-1 border-b border-slate-800 last:border-none",
     tableCls: "border-2 border-cyan-500/50 bg-black/40 rounded-lg overflow-hidden animate-neonPulse",
-    headerCls: "bg-cyan-900/30 text-cyan-300 text-xs font-mono py-1 px-1 border-b border-cyan-500/50 uppercase",
+    headerCls: "bg-cyan-900/30 text-cyan-300 font-mono py-1 px-1 border-b border-cyan-500/50 uppercase",
     goalBarBg: "bg-black/60 border border-cyan-500/30 rounded",
     goalBarFill: "bg-gradient-to-r from-cyan-500 to-fuchsia-500 shadow-[0_0_10px_rgba(0,255,255,0.4)]",
     goalText: "text-cyan-300 font-mono font-bold",
@@ -1020,7 +1031,7 @@ function OverlayInner() {
               )}
               <div>
                 <div ref={tableBoxRef as any} className={theme.tableCls} style={{ fontSize: mSize, width: "fit-content" }}>
-                  <div className={`${theme.headerCls} grid items-center ${tight ? "gap-x-1 py-0.5 px-1" : "gap-x-3"}`} style={{ gridTemplateColumns: neonGridTemplate }}>
+                  <div className={`${theme.headerCls} grid items-center ${tight ? "py-0.5 px-1" : ""} gap-x-0`} style={{ gridTemplateColumns: neonGridTemplate }}>
                     <div className="text-left">RANK</div>
                     {hasRoleColumn && <div className="text-left">ROLE</div>}
                     <div className="text-left">MEMBER</div>
@@ -1029,7 +1040,7 @@ function OverlayInner() {
                     <div className="text-right font-bold text-white">TOTAL</div>
                   </div>
                   {ranked.map(({m, rank}) => (
-                    <div key={m.id} ref={setRowRef(m.id)} className={`${theme.rowCls} ${tight ? "gap-x-1 py-0.5 px-1" : "gap-x-3"} grid items-center transition-transform will-change-transform`} style={{ gridTemplateColumns: neonGridTemplate }}>
+                    <div key={m.id} ref={setRowRef(m.id)} className={`${theme.rowCls} ${tight ? "py-0.5 px-1" : ""} gap-x-0 grid items-center transition-transform will-change-transform`} style={{ gridTemplateColumns: neonGridTemplate }}>
                       <div className={`${theme.nameCls} text-left`}>#{rank}</div>
                       {hasRoleColumn && <div className={`${theme.nameCls} text-left`}>{m.role || "-"}</div>}
                       <div className={`${theme.nameCls} text-left overflow-hidden whitespace-nowrap text-ellipsis`}>{m.name}</div>
@@ -1039,7 +1050,7 @@ function OverlayInner() {
                     </div>
                   ))}
                   {pinned.map((m) => (
-                    <div key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`${theme.rowCls} ${tight ? "gap-x-1 py-0.5 px-1" : "gap-x-3"} grid items-center transition-transform will-change-transform`} style={{ gridTemplateColumns: neonGridTemplate }}>
+                    <div key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`${theme.rowCls} ${tight ? "py-0.5 px-1" : ""} gap-x-0 grid items-center transition-transform will-change-transform`} style={{ gridTemplateColumns: neonGridTemplate }}>
                       <div className={theme.nameCls}>—</div>
                       {hasRoleColumn && <div className={theme.nameCls}></div>}
                       <div className={theme.nameCls + " overflow-hidden whitespace-nowrap text-ellipsis"}>{m.name}</div>
@@ -1050,7 +1061,7 @@ function OverlayInner() {
                   ))}
                   {showTotal && ready && (
                     <div
-                      className={`grid items-center ${theme.totalWrapCls} ${tight ? "gap-x-1 px-1 py-0.5" : "gap-x-3"}`}
+                      className={`grid items-center ${theme.totalWrapCls} ${tight ? "px-1 py-0.5" : ""} gap-x-0`}
                       style={{ gridTemplateColumns: neonGridTemplate }}
                     >
                       <div className="text-cyan-300 font-bold">{hasRoleColumn ? "합계" : "총합"}</div>
