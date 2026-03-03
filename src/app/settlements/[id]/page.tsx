@@ -5,14 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useParams } from "next/navigation";
 import { SettlementMemberResult, SettlementRecord, deleteSettlementRecordAndSync, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToTxt, saveSettlementRecords, saveSettlementRecordsToApi, toSettlementFormulaLine } from "@/lib/settlement";
-
-function downloadBlob(filename: string, content: string, type: string) {
-  const blob = new Blob([content], { type });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-}
+import { downloadTextFile, downloadBlobFile } from "@/lib/download";
 
 function updateMemberBankInfo(
   records: SettlementRecord[],
@@ -118,7 +111,9 @@ export default function SettlementDetailPage() {
         remaining -= usableH;
       }
 
-      pdf.save(`${record.title}.pdf`);
+      const pdfOutput = pdf.output("blob");
+      const blob = pdfOutput instanceof Blob ? pdfOutput : new Blob([pdfOutput], { type: "application/pdf" });
+      await downloadBlobFile(`${record.title}.pdf`, blob);
     } catch {
       window.alert("PDF 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {
@@ -157,13 +152,13 @@ export default function SettlementDetailPage() {
             <Link className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700 whitespace-nowrap" href="/settlements">목록</Link>
             <button
               className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700 whitespace-nowrap"
-              onClick={() => downloadBlob(`${record.title}.csv`, recordToCsv(record), "text/csv;charset=utf-8")}
+              onClick={() => downloadTextFile(`${record.title}.csv`, recordToCsv(record), "text/csv;charset=utf-8")}
             >
               엑셀(CSV)
             </button>
             <button
               className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700 whitespace-nowrap"
-              onClick={() => downloadBlob(`${record.title}.txt`, recordToTxt(record), "text/plain;charset=utf-8")}
+              onClick={() => downloadTextFile(`${record.title}.txt`, recordToTxt(record), "text/plain;charset=utf-8")}
             >
               메모장(TXT)
             </button>
