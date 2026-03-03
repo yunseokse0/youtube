@@ -1405,7 +1405,7 @@ export default function AdminPage() {
                   onChange={(e) => setTaxRateInput(e.target.value.replace(/[^\d.]/g, ""))}
                 />
                 <button
-                    className="px-4 py-2 rounded bg-[#22c55e] hover:bg-[#16a34a] font-semibold text-white"
+                  className="px-4 py-2 rounded bg-[#22c55e] hover:bg-[#16a34a] font-semibold text-white whitespace-nowrap shrink-0"
                   onClick={onFinishBroadcastAndSettle}
                 >
                   방송 종료(정산 생성)
