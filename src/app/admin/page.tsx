@@ -312,11 +312,89 @@ export default function AdminPage() {
       if (editingId === id) setEditingId(null);
     }, { confirmText: "삭제", danger: true });
   };
+  const presetToQueryParams = (p: OverlayPreset): URLSearchParams => {
+    const q = new URLSearchParams();
+    q.set("p", p.id);
+    q.set("scale", p.scale || "0.75");
+    q.set("memberSize", p.memberSize || "18");
+    q.set("totalSize", p.totalSize || "40");
+    q.set("dense", String(p.dense ?? true));
+    q.set("anchor", p.anchor || "tl");
+    q.set("theme", p.theme || "default");
+    if (p.membersTheme && p.membersTheme.trim()) q.set("membersTheme", p.membersTheme.trim());
+    if (p.totalTheme && p.totalTheme.trim()) q.set("totalTheme", p.totalTheme.trim());
+    if (p.goalTheme && p.goalTheme.trim()) q.set("goalTheme", p.goalTheme.trim());
+    if (p.tickerBaseTheme && p.tickerBaseTheme.trim()) q.set("tickerBaseTheme", p.tickerBaseTheme.trim());
+    if (p.timerTheme && p.timerTheme.trim()) q.set("timerTheme", p.timerTheme.trim());
+    if (p.missionTheme && p.missionTheme.trim()) q.set("missionTheme", p.missionTheme.trim());
+    q.set("showMembers", String(p.showMembers ?? true));
+    q.set("showTotal", String(p.showTotal ?? true));
+    if (p.sumFree) {
+      q.set("sumX", p.sumX || "50");
+      q.set("sumY", p.sumY || "90");
+    } else {
+      q.set("sumAnchor", p.sumAnchor || "bc");
+    }
+    if (p.showGoal) {
+      q.set("showGoal", "true");
+      q.set("goal", p.goal || "0");
+      q.set("goalLabel", p.goalLabel || "목표 금액");
+      q.set("goalWidth", p.goalWidth || "400");
+      q.set("goalAnchor", p.goalAnchor || "bc");
+      if (p.goalCurrent && p.goalCurrent.trim()) q.set("goalCurrent", p.goalCurrent.trim());
+    }
+    if (p.showPersonalGoal) q.set("showPersonalGoal", "true");
+    if (p.personalGoalTheme && p.personalGoalTheme.trim()) q.set("personalGoalTheme", p.personalGoalTheme.trim());
+    if (p.personalGoalFree) {
+      q.set("personalGoalFree", "true");
+      q.set("personalGoalX", p.personalGoalX || "78");
+      q.set("personalGoalY", p.personalGoalY || "82");
+    } else if (p.personalGoalAnchor && p.personalGoalAnchor.trim()) {
+      q.set("personalGoalAnchor", p.personalGoalAnchor.trim());
+    }
+    if (p.personalGoalLimit && p.personalGoalLimit.trim()) q.set("personalGoalLimit", p.personalGoalLimit.trim());
+    if (p.tickerInMembers) q.set("tickerInMembers", "true");
+    if (p.tickerInGoal) q.set("tickerInGoal", "true");
+    if (p.tickerInPersonalGoal) q.set("tickerInPersonalGoal", "true");
+    if (p.showTicker) {
+      q.set("showTicker", "true");
+      if (p.tickerFree) {
+        q.set("tickerX", p.tickerX || "50");
+        q.set("tickerY", p.tickerY || "86");
+      } else if (p.tickerAnchor) {
+        q.set("tickerAnchor", p.tickerAnchor);
+      }
+      if (p.tickerWidth && p.tickerWidth.trim()) q.set("tickerWidth", p.tickerWidth.trim());
+    }
+    if (p.showTimer && p.timerStart) {
+      q.set("showTimer", "true");
+      q.set("timerStart", String(p.timerStart));
+      q.set("timerAnchor", p.timerAnchor || "tr");
+    }
+    if (p.showMission) {
+      q.set("showMission", "true");
+      q.set("missionAnchor", p.missionAnchor || "br");
+    }
+    if (p.showBottomDonors) q.set("showBottomDonors", "true");
+    if (p.donorsSize && p.donorsSize.trim()) q.set("donorsSize", p.donorsSize.trim());
+    if (p.donorsGap && p.donorsGap.trim()) q.set("donorsGap", p.donorsGap.trim());
+    if (p.donorsSpeed && p.donorsSpeed.trim()) q.set("donorsSpeed", p.donorsSpeed.trim());
+    if (p.donorsLimit && p.donorsLimit.trim()) q.set("donorsLimit", p.donorsLimit.trim());
+    q.set("donorsFormat", (p.donorsFormat || "short").trim() === "full" ? "full" : "short");
+    if (p.donorsUnit && p.donorsUnit.trim()) q.set("donorsUnit", p.donorsUnit.trim());
+    if (p.donorsColor && p.donorsColor.trim()) q.set("donorsColor", p.donorsColor.trim());
+    if (p.donorsBgColor && p.donorsBgColor.trim()) q.set("donorsBgColor", p.donorsBgColor.trim());
+    if (p.donorsBgOpacity && p.donorsBgOpacity.trim()) q.set("donorsBgOpacity", p.donorsBgOpacity.trim());
+    if (p.tickerTheme && p.tickerTheme.trim()) q.set("tickerTheme", p.tickerTheme.trim());
+    if (p.tickerGlow && p.tickerGlow.trim()) q.set("tickerGlow", p.tickerGlow.trim());
+    if (p.tickerShadow && p.tickerShadow.trim()) q.set("tickerShadow", p.tickerShadow.trim());
+    if (p.currencyLocale && p.currencyLocale.trim()) q.set("currencyLocale", p.currencyLocale.trim());
+    return q;
+  };
   const buildOverlayUrl = (p: OverlayPreset): string => {
     if (typeof window === "undefined") return "";
     const base = `${window.location.origin}/overlay`;
-    const q: Record<string, string> = { p: p.id };
-    return `${base}?${new URLSearchParams(q).toString()}`;
+    return `${base}?${presetToQueryParams(p).toString()}`;
   };
   const buildPreviewOverlayUrl = (p: OverlayPreset): string => buildOverlayUrl(p);
   const copyUrl = async (url: string, id: string) => {
@@ -578,7 +656,11 @@ export default function AdminPage() {
   const onReset = () => {
     appendDailyLog(state);
     setDailyLog(loadDailyLog());
-    const next = defaultState();
+    const next = {
+      ...defaultState(),
+      overlayPresets: state.overlayPresets || [],
+      missions: state.missions || [],
+    };
     setState(next);
     persistState(next);
   };
