@@ -64,91 +64,100 @@ export default function MemberRow({ member, onChange, onRename, onReset, onDelet
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto_auto] gap-3 items-start md:items-center p-3 bg-neutral-900/60 rounded border border-white/10">
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          className="w-full sm:w-40 px-2 py-1 rounded bg-neutral-800/80 border border-white/10 font-semibold"
-          value={localName}
-          onChange={(e) => setLocalName(e.target.value)}
-          onBlur={() => onRename?.(member.id, (localName || "무명").trim())}
-          placeholder="멤버 이름"
-        />
-        <input
-          className="w-full sm:w-32 px-2 py-1 rounded bg-neutral-800/80 border border-white/10"
-          value={member.role || ""}
-          onChange={(e) => onChange({ ...member, role: e.target.value })}
-          placeholder="직급 (예: 대리)"
-          title="멤버 직급"
-        />
-        <input
-          className="w-full sm:w-32 px-2 py-1 rounded bg-neutral-800/80 border border-white/10"
-          inputMode="numeric"
-          value={localGoal}
-          onChange={(e) => setLocalGoal(e.target.value.replace(/[^\d]/g, ""))}
-          onBlur={() => commitGoal(localGoal)}
-          placeholder="목표(원)"
-          title="개인 목표 금액(원)"
-        />
-        <label className="flex items-center gap-1 text-xs text-neutral-300" title="체크 시 랭크에서 제외되고 표 하단에 고정 표시됩니다.">
+    <div className="h-full rounded-xl border border-white/10 bg-neutral-900/60 p-4 flex flex-col gap-3">
+      <div className="grid grid-cols-1 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <input
-            type="checkbox"
-            checked={!!member.operating}
-            onChange={(e) => onChange({ ...member, operating: e.target.checked })}
+            className="w-full px-3 py-2 rounded bg-neutral-800/80 border border-white/10 font-semibold"
+            value={localName}
+            onChange={(e) => setLocalName(e.target.value)}
+            onBlur={() => onRename?.(member.id, (localName || "무명").trim())}
+            placeholder="멤버 이름"
           />
-          운영비
-        </label>
-        <button
-          onClick={() => onReset?.(member.id)}
-          className="px-2 py-1 bg-neutral-800 rounded hover:bg-neutral-700 text-xs"
-          title="계좌/투네 0으로 리셋"
-        >
-          리셋
-        </button>
-        <button
-          onClick={() => onDelete?.(member.id)}
-          className="px-2 py-1 bg-red-700 rounded hover:bg-red-600 text-xs"
-          title="멤버 삭제"
-        >
-          삭제
-        </button>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="text-xs text-neutral-400 mr-1">계좌</label>
-        <input
-          className={`w-28 sm:w-28 px-2 py-1 rounded bg-neutral-800/80 border border-white/10 focus:outline-none ${flash ? "animate-flashGold" : ""}`}
-          inputMode="decimal"
-          value={localAccount}
-          onChange={(e) => setLocalAccount(maskTenThousandThousandInput(e.target.value))}
-          onBlur={() => commitAccount(localAccount)}
-          placeholder="예: 3.5 = 35,000"
-        />
-        <div className="grid grid-cols-2 sm:flex gap-1 w-full sm:w-auto">
-          <button onClick={() => adjust("account", 1000)} className="px-2 py-1 bg-neutral-800 rounded hover:bg-neutral-700">+1천</button>
-          <button onClick={() => adjust("account", -1000)} className="px-2 py-1 bg-neutral-800 rounded hover:bg-neutral-700">-1천</button>
-          <button onClick={() => adjust("account", 10000)} className="px-2 py-1 bg-neutral-800 rounded hover:bg-neutral-700">+1만</button>
-          <button onClick={() => adjust("account", -10000)} className="px-2 py-1 bg-neutral-800 rounded hover:bg-neutral-700">-1만</button>
+          <input
+            className="w-full px-3 py-2 rounded bg-neutral-800/80 border border-white/10"
+            value={member.role || ""}
+            onChange={(e) => onChange({ ...member, role: e.target.value })}
+            placeholder="직급 (예: 대리)"
+            title="멤버 직급"
+          />
+        </div>
+        <div className="grid grid-cols-[1fr_auto] gap-2">
+          <input
+            className="w-full px-3 py-2 rounded bg-neutral-800/80 border border-white/10"
+            inputMode="numeric"
+            value={localGoal}
+            onChange={(e) => setLocalGoal(e.target.value.replace(/[^\d]/g, ""))}
+            onBlur={() => commitGoal(localGoal)}
+            placeholder="목표(원)"
+            title="개인 목표 금액(원)"
+          />
+          <label className="px-3 py-2 rounded bg-neutral-800/70 border border-white/10 flex items-center gap-2 text-xs text-neutral-300" title="체크 시 랭크에서 제외되고 표 하단에 고정 표시됩니다.">
+            <input
+              type="checkbox"
+              checked={!!member.operating}
+              onChange={(e) => onChange({ ...member, operating: e.target.checked })}
+            />
+            운영비
+          </label>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="text-xs text-neutral-400 mr-1">투네</label>
-        <input
-          className="w-28 sm:w-28 px-2 py-1 rounded bg-neutral-800/80 border border-white/10 focus:outline-none"
-          inputMode="decimal"
-          value={localToon}
-          onChange={(e) => setLocalToon(maskTenThousandThousandInput(e.target.value))}
-          onBlur={() => commitToon(localToon)}
-          placeholder="예: 1.2 = 12,000"
-        />
-        <div className="grid grid-cols-2 sm:flex gap-1 w-full sm:w-auto">
-          <button onClick={() => adjust("toon", 1000)} className="px-2 py-1 bg-neutral-800 rounded hover:bg-neutral-700">+1천</button>
-          <button onClick={() => adjust("toon", -1000)} className="px-2 py-1 bg-neutral-800 rounded hover:bg-neutral-700">-1천</button>
-          <button onClick={() => adjust("toon", 10000)} className="px-2 py-1 bg-neutral-800 rounded hover:bg-neutral-700">+1만</button>
-          <button onClick={() => adjust("toon", -10000)} className="px-2 py-1 bg-neutral-800 rounded hover:bg-neutral-700">-1만</button>
+
+      <div className="rounded-lg border border-white/10 bg-black/20 p-2">
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs text-neutral-400">계좌</label>
+          <input
+            className={`w-32 px-2 py-1 rounded bg-neutral-800/80 border border-white/10 text-right focus:outline-none ${flash ? "animate-flashGold" : ""}`}
+            inputMode="decimal"
+            value={localAccount}
+            onChange={(e) => setLocalAccount(maskTenThousandThousandInput(e.target.value))}
+            onBlur={() => commitAccount(localAccount)}
+            placeholder="3.5"
+          />
+        </div>
+        <div className="grid grid-cols-4 gap-1">
+          <button onClick={() => adjust("account", 1000)} className="px-2 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-xs">+1천</button>
+          <button onClick={() => adjust("account", -1000)} className="px-2 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-xs">-1천</button>
+          <button onClick={() => adjust("account", 10000)} className="px-2 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-xs">+1만</button>
+          <button onClick={() => adjust("account", -10000)} className="px-2 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-xs">-1만</button>
         </div>
       </div>
-      <div className="text-left md:text-right pr-0 md:pr-2">
-        <span className="text-neutral-400 text-xs">표시: </span>
-        <span className="font-mono">{formatManThousand(member.account)}(<span className="text-neutral-300">{formatManThousand(member.toon)}</span>)</span>
+
+      <div className="rounded-lg border border-white/10 bg-black/20 p-2">
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs text-neutral-400">투네</label>
+          <input
+            className="w-32 px-2 py-1 rounded bg-neutral-800/80 border border-white/10 text-right focus:outline-none"
+            inputMode="decimal"
+            value={localToon}
+            onChange={(e) => setLocalToon(maskTenThousandThousandInput(e.target.value))}
+            onBlur={() => commitToon(localToon)}
+            placeholder="1.2"
+          />
+        </div>
+        <div className="grid grid-cols-4 gap-1">
+          <button onClick={() => adjust("toon", 1000)} className="px-2 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-xs">+1천</button>
+          <button onClick={() => adjust("toon", -1000)} className="px-2 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-xs">-1천</button>
+          <button onClick={() => adjust("toon", 10000)} className="px-2 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-xs">+1만</button>
+          <button onClick={() => adjust("toon", -10000)} className="px-2 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-xs">-1만</button>
+        </div>
+      </div>
+
+      <div className="mt-auto pt-1 flex items-center justify-between">
+        <div className="text-xs text-neutral-400">
+          표시:
+          <span className="ml-1 font-mono text-neutral-200">
+            {formatManThousand(member.account)}(<span className="text-neutral-300">{formatManThousand(member.toon)}</span>)
+          </span>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => onReset?.(member.id)} className="px-3 py-1.5 bg-neutral-800 rounded-lg hover:bg-neutral-700 text-xs" title="계좌/투네 0으로 리셋">
+            리셋
+          </button>
+          <button onClick={() => onDelete?.(member.id)} className="px-3 py-1.5 bg-red-700 rounded-lg hover:bg-red-600 text-xs" title="멤버 삭제">
+            삭제
+          </button>
+        </div>
       </div>
     </div>
   );

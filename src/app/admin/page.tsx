@@ -23,22 +23,8 @@ import {
   DailyLogEntry,
   formatManThousand,
   confirmHighAmount,
-  appendForbidEvent,
-  loadForbidEvents,
-  FORBID_EVENTS_KEY,
   MissionItem,
 } from "@/lib/state";
-import {
-  startYoutubePolling,
-  OnForbidden,
-  getPreferredLiveChatId,
-  getSavedVideoUrl,
-  setYoutubeVideoUrl,
-  clearPreferredLiveChatId,
-  getPreferredApiKey,
-  setPreferredApiKey,
-  clearPreferredApiKey,
-} from "@/lib/youtube";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { appendSettlementRecordAndSync, SettlementMemberRatioOverrides } from "@/lib/settlement";
@@ -73,9 +59,6 @@ export default function AdminPage() {
   const [newMemberName, setNewMemberName] = useState("");
   const [chatDraft, setChatDraft] = useState("");
   const [chatDraftDirty, setChatDraftDirty] = useState(false);
-  const [forbiddenText, setForbiddenText] = useState("");
-  const [events, setEvents] = useState<Array<{ at: number; author: string; message: string; word: string }>>([]);
-  const forbidEditRef = useRef<HTMLTextAreaElement | null>(null);
   const [missionTitle, setMissionTitle] = useState("");
   const [missionPrice, setMissionPrice] = useState("");
   const [settlementTitle, setSettlementTitle] = useState("");
@@ -84,13 +67,17 @@ export default function AdminPage() {
   const [taxRateInput, setTaxRateInput] = useState("3.3");
   const [useMemberRatioOverrides, setUseMemberRatioOverrides] = useState(false);
   const [memberRatioInputs, setMemberRatioInputs] = useState<Record<string, { account: string; toon: string }>>({});
-  const [ytUrl, setYtUrl] = useState("");
-  const [liveChatId, setLiveChatId] = useState<string | null>(null);
-  const [apiKey, setApiKey] = useState<string>("");
   type OverlayPreset = {
     id: string; name: string; scale: string; memberSize: string; totalSize: string;
     dense: boolean; anchor: string; sumAnchor: string; sumFree: boolean; sumX: string; sumY: string;
-    theme: string; showMembers: boolean; showTotal: boolean;
+    theme: string;
+    membersTheme?: string;
+    totalTheme?: string;
+    goalTheme?: string;
+    tickerBaseTheme?: string;
+    timerTheme?: string;
+    missionTheme?: string;
+    showMembers: boolean; showTotal: boolean;
     showGoal: boolean; goal: string; goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string;
     showPersonalGoal?: boolean;
     personalGoalTheme?: string;
@@ -104,7 +91,7 @@ export default function AdminPage() {
     tickerInPersonalGoal?: boolean;
     showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string;
     showMission: boolean; missionAnchor: string;
-    showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string;
+    showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string;
   };
   const PRESET_STORAGE_KEY = "excel-broadcast-overlay-presets";
   const SETTLEMENT_OPTIONS_KEY = "excel-broadcast-settlement-options-v1";
@@ -118,6 +105,7 @@ export default function AdminPage() {
     { name: "타이머", preset: { showMembers: false, showTotal: false, showTimer: true } },
     { name: "미션 메뉴판", preset: { showMembers: false, showTotal: false, showMission: true, missionAnchor: "br" } },
   ];
+  const managePositionInPrism = true;
   const defaultPreset = (name: string, overrides: Partial<OverlayPreset> = {}): OverlayPreset => ({
     id: `ov_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name,
     scale: "0.75", memberSize: "18", totalSize: "40", dense: true, anchor: "tl",
@@ -126,12 +114,60 @@ export default function AdminPage() {
     tickerInMembers: true, tickerInGoal: true, tickerInPersonalGoal: true,
     goalWidth: "400", goalAnchor: "bc", goalCurrent: "", showTicker: false, tickerAnchor: "bc", tickerWidth: "600", tickerFree: false, tickerX: "50", tickerY: "86", showTimer: false,
     timerStart: null, timerAnchor: "tr", showMission: false, missionAnchor: "br",
-    showBottomDonors: true, donorsSize: "", donorsGap: "16", donorsSpeed: "20", donorsLimit: "8", donorsFormat: "short", donorsUnit: "", donorsColor: "", tickerTheme: "auto", tickerGlow: "45", tickerShadow: "35", currencyLocale: "ko-KR",
+    membersTheme: "auto", totalTheme: "auto", goalTheme: "auto", tickerBaseTheme: "auto", timerTheme: "auto", missionTheme: "auto",
+    showBottomDonors: true, donorsSize: "", donorsGap: "16", donorsSpeed: "20", donorsLimit: "8", donorsFormat: "short", donorsUnit: "", donorsColor: "", donorsBgColor: "", donorsBgOpacity: "0", tickerTheme: "auto", tickerGlow: "45", tickerShadow: "35", currencyLocale: "ko-KR",
     ...overrides,
   });
   const [presets, setPresets] = useState<OverlayPreset[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const touchStartYRef = useRef<number | null>(null);
+  const actionConfirmRef = useRef<null | (() => void)>(null);
+  const [actionSheet, setActionSheet] = useState<{ open: boolean; title: string; desc: string; confirmText: string; danger: boolean }>({
+    open: false,
+    title: "",
+    desc: "",
+    confirmText: "확인",
+    danger: true,
+  });
+  const [activeNav, setActiveNav] = useState<"dashboard" | "settlement" | "donor" | "overlay" | "logs">("dashboard");
+  const panelCardClass = "rounded-xl border border-white/10 bg-[#252525] shadow-[0_8px_24px_rgba(0,0,0,0.28)]";
+  const navItems: Array<{ key: "dashboard" | "settlement" | "donor" | "overlay" | "logs"; label: string; targetId: string }> = [
+    { key: "dashboard", label: "대시보드", targetId: "dashboard-summary" },
+    { key: "settlement", label: "정산 관리", targetId: "settlement-member-board" },
+    { key: "donor", label: "후원자", targetId: "donor-management" },
+    { key: "overlay", label: "오버레이 설정", targetId: "overlay-settings" },
+    { key: "logs", label: "로그 / 데이터", targetId: "logs-data" },
+  ];
+  const moveToSection = (key: "dashboard" | "settlement" | "donor" | "overlay" | "logs", targetId: string) => {
+    setActiveNav(key);
+    if (typeof window === "undefined") return;
+    const el = document.getElementById(targetId);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const requestConfirm = (title: string, desc: string, onConfirm: () => void, options?: { confirmText?: string; danger?: boolean }) => {
+    if (typeof window === "undefined") return;
+    const isMobile = window.matchMedia("(max-width: 1023px)").matches;
+    if (!isMobile) {
+      const text = desc ? `${title}\n\n${desc}` : title;
+      if (window.confirm(text)) onConfirm();
+      return;
+    }
+    actionConfirmRef.current = onConfirm;
+    setActionSheet({
+      open: true,
+      title,
+      desc,
+      confirmText: options?.confirmText || "확인",
+      danger: options?.danger ?? true,
+    });
+  };
+  const closeActionSheet = () => {
+    actionConfirmRef.current = null;
+    setActionSheet((prev) => ({ ...prev, open: false }));
+  };
 
   useEffect(() => {
     stateUpdatedAtRef.current = state.updatedAt || 0;
@@ -143,10 +179,6 @@ export default function AdminPage() {
   useEffect(() => {
     let localPresets: OverlayPreset[] = [];
     setDailyLog(loadDailyLog());
-    setYtUrl(getSavedVideoUrl() || "");
-    setLiveChatId(getPreferredLiveChatId());
-    setApiKey(getPreferredApiKey() || "");
-    setEvents(loadForbidEvents());
     try {
       const raw = window.localStorage.getItem(PRESET_STORAGE_KEY);
       if (raw) {
@@ -271,9 +303,10 @@ export default function AdminPage() {
     savePresets(presets.map(p => p.id === id ? { ...p, ...patch } : p));
   };
   const removePreset = (id: string) => {
-    if (!window.confirm("이 오버레이 프리셋을 삭제할까요?")) return;
-    savePresets(presets.filter(p => p.id !== id));
-    if (editingId === id) setEditingId(null);
+    requestConfirm("오버레이 프리셋 삭제", "이 오버레이 프리셋을 삭제할까요?", () => {
+      savePresets(presets.filter(p => p.id !== id));
+      if (editingId === id) setEditingId(null);
+    }, { confirmText: "삭제", danger: true });
   };
   const buildOverlayUrl = (p: OverlayPreset): string => {
     if (typeof window === "undefined") return "";
@@ -281,6 +314,7 @@ export default function AdminPage() {
     const q: Record<string, string> = { p: p.id };
     return `${base}?${new URLSearchParams(q).toString()}`;
   };
+  const buildPreviewOverlayUrl = (p: OverlayPreset): string => buildOverlayUrl(p);
   const copyUrl = async (url: string, id: string) => {
     try {
       if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(url); }
@@ -306,7 +340,6 @@ export default function AdminPage() {
   useEffect(() => {
     setChatDraft(formatChatLine(state));
     setChatDraftDirty(false);
-    setForbiddenText((state.forbiddenWords || []).join("\n"));
   }, [state]);
 
   useEffect(() => {
@@ -366,20 +399,6 @@ export default function AdminPage() {
     } catch {}
   }, [SETTLEMENT_OPTIONS_KEY, accountRatioInput, toonRatioInput, taxRateInput, useMemberRatioOverrides, memberRatioInputs]);
 
-  useEffect(() => {
-    const stop = startYoutubePolling(state.forbiddenWords, ({ word, author, message }: Parameters<OnForbidden>[0]) => {
-      const text = `금칙어(${word}) 발견 - ${author}: ${message}`;
-      window.dispatchEvent(new CustomEvent("forbidden-alert", { detail: { text } }));
-      setEvents((prev) => {
-        const ev = { at: Date.now(), author, message, word };
-        appendForbidEvent(ev);
-        const next = [ev, ...prev];
-        return next.slice(0, 100);
-      });
-    });
-    return () => stop && stop();
-  }, [state.forbiddenWords, liveChatId, apiKey]);
-
   const updateMember = (m: Member) => {
     setState((prev: AppState) => {
       const next: AppState = { ...prev, members: prev.members.map((x: Member) => (x.id === m.id ? m : x)) };
@@ -408,15 +427,16 @@ export default function AdminPage() {
   };
 
   const resetAllMembersAmounts = () => {
-    if (typeof window !== "undefined" && !window.confirm("모든 멤버의 계좌/투네를 0으로 리셋할까요?")) return;
-    setState((prev: AppState) => {
-      const next: AppState = {
-        ...prev,
-        members: prev.members.map((x: Member) => ({ ...x, account: 0, toon: 0 })),
-      };
-      persistState(next);
-      return next;
-    });
+    requestConfirm("모든 멤버 금액 리셋", "모든 멤버의 계좌/투네를 0으로 리셋할까요?", () => {
+      setState((prev: AppState) => {
+        const next: AppState = {
+          ...prev,
+          members: prev.members.map((x: Member) => ({ ...x, account: 0, toon: 0 })),
+        };
+        persistState(next);
+        return next;
+      });
+    }, { confirmText: "리셋", danger: true });
   };
 
   const deleteMember = (id: string) => {
@@ -428,18 +448,19 @@ export default function AdminPage() {
       `계좌: ${target?.account ?? 0}, 투네: ${target?.toon ?? 0}\n` +
       `연결된 후원 기록: ${donorsCount}건\n\n` +
       `삭제 후에는 되돌릴 수 없습니다. 계속할까요?`;
-    if (typeof window !== "undefined" && !window.confirm(warn)) return;
-    setState((prev: AppState) => {
-      const members = prev.members.filter((m) => m.id !== id);
-      const donors = prev.donors.filter((d) => d.memberId !== id);
-      const next: AppState = { ...prev, members, donors };
-      persistState(next);
-      return next;
-    });
-    if (donorMemberId === id) {
-      const nextId = state.members.find((m) => m.id !== id)?.id ?? null;
-      setDonorMemberId(nextId);
-    }
+    requestConfirm("멤버 삭제", warn, () => {
+      setState((prev: AppState) => {
+        const members = prev.members.filter((m) => m.id !== id);
+        const donors = prev.donors.filter((d) => d.memberId !== id);
+        const next: AppState = { ...prev, members, donors };
+        persistState(next);
+        return next;
+      });
+      if (donorMemberId === id) {
+        const nextId = state.members.find((m) => m.id !== id)?.id ?? null;
+        setDonorMemberId(nextId);
+      }
+    }, { confirmText: "삭제", danger: true });
   };
 
   const addMember = () => {
@@ -542,43 +563,12 @@ export default function AdminPage() {
     }
   };
 
-  const saveForbidden = () => {
-    const words = forbiddenText
-      .split(/\r?\n/)
-      .map((w) => w.trim())
-      .filter((w) => w.length > 0);
-    const uniq = Array.from(new Set(words)).slice(0, 99);
-    setState((prev: AppState) => {
-      const next: AppState = { ...prev, forbiddenWords: uniq };
-      persistState(next);
-      return next;
-    });
-  };
-
   const onReset = () => {
     appendDailyLog(state);
     setDailyLog(loadDailyLog());
     const next = defaultState();
     setState(next);
     persistState(next);
-  };
-
-  const connectYoutube = async () => {
-    const { liveChatId: id } = await setYoutubeVideoUrl(ytUrl.trim());
-    setLiveChatId(id);
-  };
-  const disconnectYoutube = () => {
-    clearPreferredLiveChatId();
-    setLiveChatId(null);
-  };
-  const saveApiKey = () => {
-    setPreferredApiKey(apiKey.trim());
-    // trigger polling restart via state change (already in deps)
-    setApiKey(getPreferredApiKey() || "");
-  };
-  const clearApiKey = () => {
-    clearPreferredApiKey();
-    setApiKey(getPreferredApiKey() || "");
   };
 
   const onSnapshotNow = () => {
@@ -602,6 +592,34 @@ export default function AdminPage() {
     }
     try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(remote)); } catch {}
     setSyncStatus("synced");
+  };
+  const runPullRefresh = async () => {
+    if (pullRefreshing) return;
+    setPullRefreshing(true);
+    await onFetchLatestFromServer();
+    window.setTimeout(() => {
+      setPullRefreshing(false);
+      setPullDistance(0);
+    }, 240);
+  };
+  const handleTouchStart = (e: any) => {
+    if (typeof window === "undefined") return;
+    if (window.scrollY <= 0) touchStartYRef.current = e.touches?.[0]?.clientY ?? null;
+  };
+  const handleTouchMove = (e: any) => {
+    if (typeof window === "undefined") return;
+    if (touchStartYRef.current === null || window.scrollY > 0) return;
+    const delta = (e.touches?.[0]?.clientY ?? 0) - touchStartYRef.current;
+    if (delta <= 0) return;
+    setPullDistance(Math.min(88, Math.round(delta * 0.45)));
+  };
+  const handleTouchEnd = () => {
+    touchStartYRef.current = null;
+    if (pullDistance >= 64) {
+      void runPullRefresh();
+      return;
+    }
+    setPullDistance(0);
   };
   const onDownloadLog = () => {
     const raw = JSON.stringify(loadDailyLog(), null, 2);
@@ -648,9 +666,44 @@ export default function AdminPage() {
   };
 
   return (
-    <main className="min-h-screen p-4 md:p-8">
+    <main
+      className="min-h-screen p-4 md:p-8 pb-24 md:pb-10 text-neutral-100"
+      style={{ backgroundColor: "#1a1a1a" }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
       <Toast />
-      <div className="max-w-6xl mx-auto">
+      <div className="lg:hidden fixed left-1/2 -translate-x-1/2 top-2 z-40 pointer-events-none">
+        <div
+          className={`px-3 py-1 rounded-full text-[11px] border border-white/10 transition-all ${
+            pullRefreshing ? "bg-[#22c55e]/30 text-[#86efac]" : "bg-black/50 text-neutral-300"
+          }`}
+          style={{ opacity: pullDistance > 8 || pullRefreshing ? 1 : 0, transform: `translateY(${Math.min(18, pullDistance * 0.28)}px)` }}
+        >
+          {pullRefreshing ? "동기화 중..." : pullDistance >= 64 ? "놓아서 동기화" : "아래로 당겨 동기화"}
+        </div>
+      </div>
+      <div className="mx-auto max-w-[1400px] grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)] gap-6">
+        <aside className="hidden lg:block lg:sticky lg:top-6 self-start rounded-xl border border-white/10 bg-[#222222] p-3 h-fit">
+          <div className="text-xs uppercase tracking-[0.12em] text-neutral-400 px-2 pb-2">메뉴</div>
+          <div className="space-y-1">
+            {navItems.map((item) => (
+              <button
+                key={item.key}
+                onClick={() => moveToSection(item.key, item.targetId)}
+                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                  activeNav === item.key
+                    ? "bg-indigo-500 text-white"
+                    : "bg-transparent text-neutral-300 hover:bg-white/5"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </aside>
+        <div>
         <div className="flex flex-wrap items-start sm:items-center justify-between gap-2 mb-6">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <h1 className="text-2xl font-bold">매니저 제어판</h1>
@@ -658,18 +711,34 @@ export default function AdminPage() {
               {syncStatus === "synced" ? "서버 동기화됨" : syncStatus === "loading" ? "동기화 중..." : syncStatus === "error" ? "서버 저장 실패" : "로컬 모드"}
             </span>
             <button
-              className="px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-xs font-medium"
+              className="px-2 py-1 rounded bg-[#22c55e] hover:bg-[#16a34a] text-xs font-medium text-white"
               onClick={onFetchLatestFromServer}
               title="로컬이 리셋되었을 때 서버 최신 상태를 다시 가져옵니다"
             >
               서버에서 가져오기
             </button>
           </div>
-          <Link className="text-sm text-neutral-300 underline" href="/youtube">유튜브 모니터 열기</Link>
+          <Link className="text-sm text-neutral-300 underline" href="/settlements">정산 기록 보기</Link>
         </div>
+        <section id="dashboard-summary" className={`${panelCardClass} p-4 mb-6`}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="rounded-lg bg-[#1e1e1e] border border-white/10 px-3 py-2">
+              <div className="text-xs text-neutral-400">오늘 총 후원액</div>
+              <div className="text-xl font-bold text-white">{formatManThousand(total)}</div>
+            </div>
+            <div className="rounded-lg bg-[#1e1e1e] border border-white/10 px-3 py-2">
+              <div className="text-xs text-neutral-400">후원 건수</div>
+              <div className="text-xl font-bold text-[#6366f1]">{state.donors.length.toLocaleString("ko-KR")}</div>
+            </div>
+            <div className="rounded-lg bg-[#1e1e1e] border border-white/10 px-3 py-2">
+              <div className="text-xs text-neutral-400">멤버 수</div>
+              <div className="text-xl font-bold text-[#22c55e]">{state.members.length.toLocaleString("ko-KR")}</div>
+            </div>
+          </div>
+        </section>
         <div className="grid grid-cols-1 gap-6">
           <div className="space-y-6">
-            <section className="glass p-4 md:p-6">
+            <section id="settlement-member-board" className={`${panelCardClass} p-4 md:p-6`}>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">멤버 정산 보드</h2>
             <div className="text-right">
@@ -697,14 +766,14 @@ export default function AdminPage() {
                   모든 멤버 금액 리셋
                 </button>
               </div>
-              <div className="space-y-3 overflow-x-auto">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
                 {state.members.map((m: Member) => (
                   <MemberRow key={m.id} member={m} onChange={updateMember} onRename={renameMember} onReset={resetMemberAmounts} onDelete={deleteMember} />
                 ))}
               </div>
             </section>
 
-            <section className="glass p-4 md:p-6">
+            <section id="donor-management" className={`${panelCardClass} p-4 md:p-6`}>
               <h2 className="text-lg font-semibold mb-3">후원자 기록부</h2>
               <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_auto_auto_auto] gap-3">
                 <input
@@ -747,7 +816,7 @@ export default function AdminPage() {
               <div className="text-sm text-neutral-400 mt-2">입력값에 콤마/문자 포함되어도 숫자만 인식</div>
             </section>
 
-            <section className="glass p-4 md:p-6">
+            <section className={`${panelCardClass} p-4 md:p-6`}>
               <h2 className="text-lg font-semibold mb-3">채팅용 복사 & 보안</h2>
               <textarea
                 className="w-full min-h-[100px] px-3 py-2 rounded bg-neutral-900/80 border border-white/10 font-mono"
@@ -775,7 +844,7 @@ export default function AdminPage() {
               </div>
             </section>
 
-            <section className="glass p-4 md:p-6">
+            <section className={`${panelCardClass} p-4 md:p-6`}>
               <h2 className="text-lg font-semibold mb-3">후원자 리스트</h2>
               <div className="max-h-[260px] overflow-auto pr-1">
                 <table className="w-full text-sm">
@@ -806,17 +875,18 @@ export default function AdminPage() {
                               <button
                                 className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700"
                                 onClick={() => {
-                                  if (typeof window !== "undefined" && !window.confirm("해당 후원 기록을 삭제할까요?")) return;
-                                  setState((prev: AppState) => {
-                                    const donors = prev.donors.filter((x) => x.id !== d.id);
-                                    const field = (d.target || "account") === "toon" ? "toon" : "account";
-                                    const members = prev.members.map((mm: Member) =>
-                                      mm.id === d.memberId ? { ...mm, [field]: Math.max(0, (mm[field] || 0) - d.amount) } : mm
-                                    );
-                                    const next: AppState = { ...prev, donors, members };
-                                    persistState(next);
-                                    return next;
-                                  });
+                                  requestConfirm("후원 기록 삭제", "해당 후원 기록을 삭제할까요?", () => {
+                                    setState((prev: AppState) => {
+                                      const donors = prev.donors.filter((x) => x.id !== d.id);
+                                      const field = (d.target || "account") === "toon" ? "toon" : "account";
+                                      const members = prev.members.map((mm: Member) =>
+                                        mm.id === d.memberId ? { ...mm, [field]: Math.max(0, (mm[field] || 0) - d.amount) } : mm
+                                      );
+                                      const next: AppState = { ...prev, donors, members };
+                                      persistState(next);
+                                      return next;
+                                    });
+                                  }, { confirmText: "삭제", danger: true });
                                 }}
                               >
                                 삭제
@@ -836,7 +906,7 @@ export default function AdminPage() {
               </div>
             </section>
 
-            <section className="glass p-4 md:p-6">
+            <section className={`${panelCardClass} p-4 md:p-6`}>
               <h2 className="text-lg font-semibold mb-3">후원자별 누적 합계</h2>
               <div className="max-h-[240px] overflow-auto pr-1">
                 <table className="w-full text-sm">
@@ -867,7 +937,7 @@ export default function AdminPage() {
               </div>
             </section>
 
-            <section className="glass p-4 md:p-6">
+            <section className={`${panelCardClass} p-4 md:p-6`}>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold">미션 메뉴판</h2>
               </div>
@@ -940,22 +1010,33 @@ export default function AdminPage() {
               <div className="text-xs text-neutral-400 mt-2">오버레이 프리셋에서 &quot;미션 메뉴&quot;를 ON하면 방송 화면에 표시됩니다.</div>
             </section>
 
-            <section className="glass p-4 md:p-6">
+            <section id="overlay-settings" className={`${panelCardClass} p-4 md:p-6`}>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold">오버레이 관리 (다중)</h2>
                 <div className="flex gap-1 flex-wrap">
                   {PRESET_TEMPLATES.map((t) => (
-                    <button key={t.name} className="px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-xs" onClick={() => addPreset(t.name, t.preset)}>+ {t.name}</button>
+                    <button key={t.name} className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs text-white" onClick={() => addPreset(t.name, t.preset)}>+ {t.name}</button>
                   ))}
                 </div>
               </div>
               <p className="text-xs text-neutral-400 mb-3">각 오버레이는 독립 URL을 가집니다. OBS/Prism에 브라우저 소스로 각각 추가하세요.</p>
+              <p className="text-xs text-neutral-500 mb-3">위치/크기 조정은 Prism에서 진행하고, 여기 프리뷰는 형태/디자인과 실시간 상태 업데이트 확인용으로 사용하세요.</p>
               {presets.length === 0 && (
                 <div className="text-sm text-neutral-400 p-6 text-center border border-dashed border-white/10 rounded">아직 오버레이가 없습니다. 위 버튼으로 추가하세요.</div>
               )}
               <div className="space-y-3">
                 {presets.map((p) => {
                   const url = buildOverlayUrl(p);
+                  const previewBaseUrl = buildPreviewOverlayUrl(p);
+                  const previewRev = [
+                    p.theme, p.scale, p.memberSize, p.totalSize,
+                    p.showMembers ? "1" : "0", p.showTotal ? "1" : "0", p.showGoal ? "1" : "0", p.showPersonalGoal ? "1" : "0", p.showTicker ? "1" : "0", p.showTimer ? "1" : "0", p.showMission ? "1" : "0",
+                    p.membersTheme, p.totalTheme, p.goalTheme, p.tickerBaseTheme, p.timerTheme, p.missionTheme,
+                    p.goal, p.goalLabel, p.goalWidth, p.goalCurrent,
+                    p.personalGoalTheme, p.personalGoalLimit,
+                    p.tickerWidth, p.donorsSize, p.donorsGap, p.donorsSpeed, p.donorsLimit, p.donorsFormat, p.donorsUnit, p.currencyLocale, p.donorsColor, p.donorsBgColor, p.donorsBgOpacity, p.tickerTheme, p.tickerGlow, p.tickerShadow,
+                  ].join("|");
+                  const previewUrl = `${previewBaseUrl}&pv=${encodeURIComponent(previewRev)}`;
                   const isOpen = editingId === p.id;
                   return (
                     <div key={p.id} className="rounded border border-white/10 bg-neutral-900/40">
@@ -968,8 +1049,8 @@ export default function AdminPage() {
                           onChange={(e) => updatePreset(p.id, { name: e.target.value })}
                         />
                         <span className="text-xs text-neutral-500 truncate basis-full sm:basis-auto sm:flex-1 font-mono">{url.slice(0, 80)}...</span>
-                        <button className={`px-2 py-1 rounded text-xs ${copiedId === p.id ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`} onClick={(e) => { e.stopPropagation(); copyUrl(url, p.id); }}>{copiedId === p.id ? "복사됨!" : "URL 복사"}</button>
-                        <button className="px-2 py-1 rounded bg-red-800 hover:bg-red-700 text-xs" onClick={(e) => { e.stopPropagation(); removePreset(p.id); }}>삭제</button>
+                        <button className={`px-2 py-1 rounded text-xs ${copiedId === p.id ? "bg-[#22c55e]" : "bg-neutral-700 hover:bg-neutral-600"}`} onClick={(e) => { e.stopPropagation(); copyUrl(url, p.id); }}>{copiedId === p.id ? "복사됨!" : "URL 복사"}</button>
+                        <button className="px-2 py-1 rounded bg-[#ef4444] hover:bg-[#dc2626] text-xs text-white" onClick={(e) => { e.stopPropagation(); removePreset(p.id); }}>삭제</button>
                       </div>
                       {isOpen && (
                         <div className="px-3 pb-3 grid grid-cols-1 lg:grid-cols-2 gap-3 border-t border-white/10 pt-3">
@@ -979,6 +1060,27 @@ export default function AdminPage() {
                               <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.theme} onChange={(e) => updatePreset(p.id, { theme: e.target.value })}>
                                 <option value="default">기본</option><option value="excel">엑셀</option><option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
                               </select>
+                              <label className="text-xs text-neutral-400">기능별 테마</label>
+                              <div className="grid grid-cols-2 gap-1">
+                                <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.membersTheme || "auto"} onChange={(e) => updatePreset(p.id, { membersTheme: e.target.value })}>
+                                  <option value="auto">멤버: 기본 테마 따름</option><option value="default">기본</option><option value="excel">엑셀</option><option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
+                                </select>
+                                <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.totalTheme || "auto"} onChange={(e) => updatePreset(p.id, { totalTheme: e.target.value })}>
+                                  <option value="auto">총합: 기본 테마 따름</option><option value="default">기본</option><option value="excel">엑셀</option><option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
+                                </select>
+                                <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.goalTheme || "auto"} onChange={(e) => updatePreset(p.id, { goalTheme: e.target.value })}>
+                                  <option value="auto">목표바: 기본 테마 따름</option><option value="default">기본</option><option value="excel">엑셀</option><option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
+                                </select>
+                                <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.tickerBaseTheme || "auto"} onChange={(e) => updatePreset(p.id, { tickerBaseTheme: e.target.value })}>
+                                  <option value="auto">티커: 기본 테마 따름</option><option value="default">기본</option><option value="excel">엑셀</option><option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
+                                </select>
+                                <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.timerTheme || "auto"} onChange={(e) => updatePreset(p.id, { timerTheme: e.target.value })}>
+                                  <option value="auto">타이머: 기본 테마 따름</option><option value="default">기본</option><option value="excel">엑셀</option><option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
+                                </select>
+                                <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.missionTheme || "auto"} onChange={(e) => updatePreset(p.id, { missionTheme: e.target.value })}>
+                                  <option value="auto">미션: 기본 테마 따름</option><option value="default">기본</option><option value="excel">엑셀</option><option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
+                                </select>
+                              </div>
                               <label className="text-xs text-neutral-400">배율</label>
                               <div className="flex items-center gap-2">
                                 <input
@@ -1004,28 +1106,10 @@ export default function AdminPage() {
                               <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={String(p.dense)} onChange={(e) => updatePreset(p.id, { dense: e.target.value === "true" })}>
                                 <option value="true">촘촘</option><option value="false">보통</option>
                               </select>
-                              <label className="text-xs text-neutral-400">목록 위치</label>
-                              <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.anchor} onChange={(e) => updatePreset(p.id, { anchor: e.target.value })}>
-                                <option value="tl">좌상</option><option value="tr">우상</option><option value="bl">좌하</option><option value="br">우하</option>
-                              </select>
-                              <label className="text-xs text-neutral-400">총합 위치</label>
-                              <div className="flex gap-1">
-                                <button className={`px-2 py-0.5 rounded border text-xs ${!p.sumFree ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`} onClick={() => updatePreset(p.id, { sumFree: false })}>프리셋</button>
-                                <button className={`px-2 py-0.5 rounded border text-xs ${p.sumFree ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`} onClick={() => updatePreset(p.id, { sumFree: true })}>자유</button>
-                              </div>
-                              {!p.sumFree ? (
+                              {managePositionInPrism && (
                                 <>
-                                  <label className="text-xs text-neutral-400">총합 앵커</label>
-                                  <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.sumAnchor} onChange={(e) => updatePreset(p.id, { sumAnchor: e.target.value })}>
-                                    <option value="bc">하단중앙</option><option value="tc">상단중앙</option><option value="bl">좌하</option><option value="br">우하</option><option value="tr">우상</option><option value="tl">좌상</option>
-                                  </select>
-                                </>
-                              ) : (
-                                <>
-                                  <label className="text-xs text-neutral-400">X(%)</label>
-                                  <div className="flex items-center gap-1"><input type="range" min="0" max="100" value={p.sumX} onChange={(e) => updatePreset(p.id, { sumX: e.target.value })} className="flex-1 accent-emerald-500" /><span className="text-xs w-8 text-center">{p.sumX}</span></div>
-                                  <label className="text-xs text-neutral-400">Y(%)</label>
-                                  <div className="flex items-center gap-1"><input type="range" min="0" max="100" value={p.sumY} onChange={(e) => updatePreset(p.id, { sumY: e.target.value })} className="flex-1 accent-emerald-500" /><span className="text-xs w-8 text-center">{p.sumY}</span></div>
+                                  <label className="text-xs text-neutral-400">위치 설정(Prism에서)</label>
+                                  <div className="text-xs text-neutral-500">위치/크기 조정은 Prism에서 진행합니다.</div>
                                 </>
                               )}
                             </div>
@@ -1117,8 +1201,22 @@ export default function AdminPage() {
                               <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="ko-KR / en-US 등" value={p.currencyLocale || ""} onChange={(e) => updatePreset(p.id, { currencyLocale: e.target.value })} />
                               <label className="text-xs text-neutral-400">단위 표시</label>
                               <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="원 / KRW 등" value={p.donorsUnit || ""} onChange={(e) => updatePreset(p.id, { donorsUnit: e.target.value })} />
-                              <label className="text-xs text-neutral-400">글자 색상</label>
+                              <label className="text-xs text-neutral-400">티커 텍스트 색상</label>
                               <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="#a0e9ff" value={p.donorsColor || ""} onChange={(e) => updatePreset(p.id, { donorsColor: e.target.value })} />
+                              <label className="text-xs text-neutral-400">티커 배경 색상</label>
+                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="#000000" value={p.donorsBgColor || ""} onChange={(e) => updatePreset(p.id, { donorsBgColor: e.target.value })} />
+                              <label className="text-xs text-neutral-400">배경 투명도</label>
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="100"
+                                  value={p.donorsBgOpacity || "0"}
+                                  onChange={(e) => updatePreset(p.id, { donorsBgOpacity: e.target.value })}
+                                  className="flex-1 accent-emerald-500"
+                                />
+                                <span className="text-xs w-10 text-center">{p.donorsBgOpacity || "0"}%</span>
+                              </div>
                               <label className="text-xs text-neutral-400">티커 테마</label>
                               <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.tickerTheme || "auto"} onChange={(e) => updatePreset(p.id, { tickerTheme: e.target.value })}>
                                 <option value="auto">기본(테마 따름)</option>
@@ -1153,10 +1251,12 @@ export default function AdminPage() {
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="미지정 시 자동" value={p.goalCurrent || ""} onChange={(e) => updatePreset(p.id, { goalCurrent: e.target.value })} />
                                   <label className="text-xs text-neutral-400">너비(px)</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.goalWidth} onChange={(e) => updatePreset(p.id, { goalWidth: e.target.value })} />
-                                  <label className="text-xs text-neutral-400">위치</label>
-                                  <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.goalAnchor} onChange={(e) => updatePreset(p.id, { goalAnchor: e.target.value })}>
-                                    <option value="bc">하단중앙</option><option value="tc">상단중앙</option><option value="bl">좌하</option><option value="br">우하</option><option value="tl">좌상</option><option value="tr">우상</option>
-                                  </select>
+                                  {managePositionInPrism && (
+                                    <>
+                                      <label className="text-xs text-neutral-400">위치 설정(Prism에서)</label>
+                                      <div className="text-xs text-neutral-500">위치/크기 조정은 Prism에서 진행합니다.</div>
+                                    </>
+                                  )}
                                 </div>
                               </>
                             )}
@@ -1171,25 +1271,10 @@ export default function AdminPage() {
                                     <option value="goalClassic">개인골 클래식</option>
                                     <option value="goalNeon">개인골 네온</option>
                                   </select>
-                                  <label className="text-xs text-neutral-400">위치 모드</label>
-                                  <div className="flex gap-1">
-                                    <button className={`px-2 py-0.5 rounded border text-xs ${!p.personalGoalFree ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`} onClick={() => updatePreset(p.id, { personalGoalFree: false })}>프리셋</button>
-                                    <button className={`px-2 py-0.5 rounded border text-xs ${p.personalGoalFree ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`} onClick={() => updatePreset(p.id, { personalGoalFree: true })}>자유</button>
-                                  </div>
-                                  <label className="text-xs text-neutral-400">위치</label>
-                                  {!p.personalGoalFree ? (
-                                    <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.personalGoalAnchor || "br"} onChange={(e) => updatePreset(p.id, { personalGoalAnchor: e.target.value })}>
-                                      <option value="br">우하</option><option value="bl">좌하</option><option value="tr">우상</option><option value="tl">좌상</option><option value="bc">하단중앙</option><option value="tc">상단중앙</option>
-                                    </select>
-                                  ) : (
-                                    <div className="text-xs text-neutral-500">아래 X/Y 사용</div>
-                                  )}
-                                  {p.personalGoalFree && (
+                                  {managePositionInPrism && (
                                     <>
-                                      <label className="text-xs text-neutral-400">X(%)</label>
-                                      <div className="flex items-center gap-1"><input type="range" min="0" max="100" value={p.personalGoalX || "78"} onChange={(e) => updatePreset(p.id, { personalGoalX: e.target.value })} className="flex-1 accent-emerald-500" /><span className="text-xs w-8 text-center">{p.personalGoalX || "78"}</span></div>
-                                      <label className="text-xs text-neutral-400">Y(%)</label>
-                                      <div className="flex items-center gap-1"><input type="range" min="0" max="100" value={p.personalGoalY || "82"} onChange={(e) => updatePreset(p.id, { personalGoalY: e.target.value })} className="flex-1 accent-emerald-500" /><span className="text-xs w-8 text-center">{p.personalGoalY || "82"}</span></div>
+                                      <label className="text-xs text-neutral-400">위치 설정(Prism에서)</label>
+                                      <div className="text-xs text-neutral-500">위치/크기 조정은 Prism에서 진행합니다.</div>
                                     </>
                                   )}
                                   <label className="text-xs text-neutral-400">표시 개수</label>
@@ -1201,29 +1286,10 @@ export default function AdminPage() {
                             {p.showTicker && (
                               <>
                                 <div className="h-px bg-white/10 my-1" />
-                                <div className="text-xs text-neutral-400 font-semibold">후원 티커 위치</div>
+                                <div className="text-xs text-neutral-400 font-semibold">후원 티커</div>
                                 <div className="grid grid-cols-1 sm:grid-cols-[90px_1fr] items-center gap-1">
-                                  <label className="text-xs text-neutral-400">위치 모드</label>
-                                  <div className="flex gap-1">
-                                    <button className={`px-2 py-0.5 rounded border text-xs ${!p.tickerFree ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`} onClick={() => updatePreset(p.id, { tickerFree: false })}>프리셋</button>
-                                    <button className={`px-2 py-0.5 rounded border text-xs ${p.tickerFree ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`} onClick={() => updatePreset(p.id, { tickerFree: true })}>자유</button>
-                                  </div>
-                                  <label className="text-xs text-neutral-400">위치</label>
-                                  {!p.tickerFree ? (
-                                    <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.tickerAnchor || "bc"} onChange={(e) => updatePreset(p.id, { tickerAnchor: e.target.value })}>
-                                      <option value="tr">우상</option><option value="tl">좌상</option><option value="br">우하</option><option value="bl">좌하</option><option value="tc">상단중앙</option><option value="bc">하단중앙</option>
-                                    </select>
-                                  ) : (
-                                    <div className="text-xs text-neutral-500">아래 X/Y 슬라이더 사용</div>
-                                  )}
-                                  {p.tickerFree && (
-                                    <>
-                                      <label className="text-xs text-neutral-400">X(%)</label>
-                                      <div className="flex items-center gap-1"><input type="range" min="0" max="100" value={p.tickerX || "50"} onChange={(e) => updatePreset(p.id, { tickerX: e.target.value })} className="flex-1 accent-emerald-500" /><span className="text-xs w-8 text-center">{p.tickerX || "50"}</span></div>
-                                      <label className="text-xs text-neutral-400">Y(%)</label>
-                                      <div className="flex items-center gap-1"><input type="range" min="0" max="100" value={p.tickerY || "86"} onChange={(e) => updatePreset(p.id, { tickerY: e.target.value })} className="flex-1 accent-emerald-500" /><span className="text-xs w-8 text-center">{p.tickerY || "86"}</span></div>
-                                    </>
-                                  )}
+                                  <label className="text-xs text-neutral-400">위치 설정(Prism에서)</label>
+                                  <div className="text-xs text-neutral-500">위치/크기 조정은 Prism에서 진행합니다.</div>
                                   <label className="text-xs text-neutral-400">폭(px)</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.tickerWidth || "600"} onChange={(e) => updatePreset(p.id, { tickerWidth: e.target.value })} />
                                 </div>
@@ -1237,9 +1303,7 @@ export default function AdminPage() {
                                 <div className="flex flex-wrap gap-2 items-center">
                                   <button className="px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-xs" onClick={() => updatePreset(p.id, { timerStart: Date.now() })}>{p.timerStart ? "재시작" : "시작"}</button>
                                   {p.timerStart && <button className="px-2 py-1 rounded bg-red-700 hover:bg-red-600 text-xs" onClick={() => updatePreset(p.id, { timerStart: null })}>정지</button>}
-                                  <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.timerAnchor} onChange={(e) => updatePreset(p.id, { timerAnchor: e.target.value })}>
-                                    <option value="tr">우상</option><option value="tl">좌상</option><option value="br">우하</option><option value="bl">좌하</option><option value="tc">상단중앙</option><option value="bc">하단중앙</option>
-                                  </select>
+                                  <span className="text-xs text-neutral-500">위치 설정(Prism에서)</span>
                                 </div>
                               </>
                             )}
@@ -1247,10 +1311,8 @@ export default function AdminPage() {
                             {p.showMission && (
                               <>
                                 <div className="h-px bg-white/10 my-1" />
-                                <div className="text-xs text-neutral-400 font-semibold">미션 메뉴판 위치</div>
-                                <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.missionAnchor} onChange={(e) => updatePreset(p.id, { missionAnchor: e.target.value })}>
-                                  <option value="br">우하</option><option value="bl">좌하</option><option value="tr">우상</option><option value="tl">좌상</option>
-                                </select>
+                                <div className="text-xs text-neutral-400 font-semibold">미션 메뉴판</div>
+                                <div className="text-xs text-neutral-500">위치 설정(Prism에서)</div>
                               </>
                             )}
 
@@ -1261,7 +1323,7 @@ export default function AdminPage() {
                             </div>
                           </div>
 
-                          <VerticalPreview url={url} />
+                          <VerticalPreview url={previewUrl} />
                         </div>
                       )}
                     </div>
@@ -1270,7 +1332,7 @@ export default function AdminPage() {
               </div>
             </section>
 
-            <section className="glass p-4 md:p-6">
+            <section className={`${panelCardClass} p-4 md:p-6`}>
               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                 <h2 className="text-lg font-semibold">방송 종료 정산</h2>
                 <Link className="text-sm text-neutral-300 underline" href="/settlements">정산 기록 보기</Link>
@@ -1301,7 +1363,7 @@ export default function AdminPage() {
                   onChange={(e) => setTaxRateInput(e.target.value.replace(/[^\d.]/g, ""))}
                 />
                 <button
-                  className="px-4 py-2 rounded bg-emerald-700 hover:bg-emerald-600 font-semibold"
+                    className="px-4 py-2 rounded bg-[#22c55e] hover:bg-[#16a34a] font-semibold text-white"
                   onClick={onFinishBroadcastAndSettle}
                 >
                   방송 종료(정산 생성)
@@ -1380,12 +1442,12 @@ export default function AdminPage() {
               </div>
             </section>
 
-            <section className="glass p-4 md:p-6">
+            <section id="logs-data" className={`${panelCardClass} p-4 md:p-6`}>
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold">데이터</h2>
                 <div className="flex gap-2">
                   <button
-                    className="px-3 py-2 rounded bg-red-600 hover:bg-red-500"
+                    className="px-3 py-2 rounded bg-[#ef4444] hover:bg-[#dc2626] text-white"
                     onClick={onReset}
                   >
                     정산 리셋(로그 기록)
@@ -1459,6 +1521,61 @@ export default function AdminPage() {
           </div>
         </div>
       </div>
+      </div>
+      {actionSheet.open && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <button className="absolute inset-0 bg-black/55" onClick={closeActionSheet} aria-label="액션 시트 닫기" />
+          <div className="absolute bottom-0 left-0 right-0 rounded-t-2xl border-t border-white/10 bg-[#202020] p-4">
+            <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-3" />
+            <div className="text-sm font-semibold text-white">{actionSheet.title}</div>
+            {actionSheet.desc && <div className="text-xs text-neutral-400 mt-1 whitespace-pre-line">{actionSheet.desc}</div>}
+            <div className="grid grid-cols-2 gap-2 mt-4">
+              <button className="px-3 py-2 rounded-lg bg-neutral-700 text-sm" onClick={closeActionSheet}>취소</button>
+              <button
+                className={`px-3 py-2 rounded-lg text-sm font-semibold ${actionSheet.danger ? "bg-[#ef4444] text-white" : "bg-[#22c55e] text-white"}`}
+                onClick={() => {
+                  const fn = actionConfirmRef.current;
+                  closeActionSheet();
+                  fn?.();
+                }}
+              >
+                {actionSheet.confirmText}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      <footer className="mt-8 text-center text-xs text-neutral-500">
+        © 2024 Final Entertainment. All rights reserved.
+      </footer>
+      <nav className="fixed bottom-0 left-0 right-0 z-40 lg:hidden border-t border-white/10 bg-[#202020]/95 backdrop-blur">
+        <div className="grid grid-cols-4 gap-1 p-2">
+          <button
+            onClick={() => moveToSection("dashboard", "dashboard-summary")}
+            className={`rounded-md py-2 text-xs ${activeNav === "dashboard" ? "bg-[#6366f1] text-white" : "text-neutral-300"}`}
+          >
+            홈
+          </button>
+          <button
+            onClick={() => moveToSection("settlement", "settlement-member-board")}
+            className={`rounded-md py-2 text-xs ${activeNav === "settlement" ? "bg-[#6366f1] text-white" : "text-neutral-300"}`}
+          >
+            정산
+          </button>
+          <button
+            onClick={() => moveToSection("donor", "donor-management")}
+            className={`rounded-md py-2 text-xs ${activeNav === "donor" ? "bg-[#6366f1] text-white" : "text-neutral-300"}`}
+          >
+            후원자
+          </button>
+          <button
+            onClick={() => moveToSection("overlay", "overlay-settings")}
+            className={`rounded-md py-2 text-xs ${activeNav === "overlay" ? "bg-[#6366f1] text-white" : "text-neutral-300"}`}
+          >
+            설정
+          </button>
+        </div>
+      </nav>
     </main>
   );
 }
@@ -1516,7 +1633,7 @@ function VerticalPreview({ url }: { url: string }) {
           boxShadow: showFrame ? "0 6px 24px rgba(0,0,0,0.8), inset 0 0 0 1px rgba(255,255,255,0.06), inset 0 8px 24px rgba(255,255,255,0.04)" : "none",
         }}
       >
-        <iframe src={previewUrl} title="vertical-preview" className="absolute inset-0 w-full h-full" style={{ background: "transparent" }} scrolling="no" />
+        <iframe key={previewUrl} src={previewUrl} title="vertical-preview" className="absolute inset-0 w-full h-full" style={{ background: "transparent" }} scrolling="no" />
         {showGuides && (
           <>
             <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: "inset 0 0 0 1px rgba(0,255,170,0.35)" }} />

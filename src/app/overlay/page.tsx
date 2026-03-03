@@ -17,6 +17,12 @@ type OverlayPresetLike = {
   sumY?: string;
   sumFree?: boolean;
   theme?: string;
+  membersTheme?: string;
+  totalTheme?: string;
+  goalTheme?: string;
+  tickerBaseTheme?: string;
+  timerTheme?: string;
+  missionTheme?: string;
   showMembers?: boolean;
   showTotal?: boolean;
   showGoal?: boolean;
@@ -54,6 +60,8 @@ type OverlayPresetLike = {
   donorsFormat?: string;
   donorsUnit?: string;
   donorsColor?: string;
+  donorsBgColor?: string;
+  donorsBgOpacity?: string;
   tickerTheme?: string;
   tickerGlow?: string;
   tickerShadow?: string;
@@ -69,6 +77,12 @@ function presetToParams(preset: OverlayPresetLike | null): URLSearchParams {
   q.set("dense", String(preset.dense ?? true));
   q.set("anchor", preset.anchor || "tl");
   q.set("theme", preset.theme || "default");
+  if (preset.membersTheme && preset.membersTheme.trim()) q.set("membersTheme", preset.membersTheme.trim());
+  if (preset.totalTheme && preset.totalTheme.trim()) q.set("totalTheme", preset.totalTheme.trim());
+  if (preset.goalTheme && preset.goalTheme.trim()) q.set("goalTheme", preset.goalTheme.trim());
+  if (preset.tickerBaseTheme && preset.tickerBaseTheme.trim()) q.set("tickerBaseTheme", preset.tickerBaseTheme.trim());
+  if (preset.timerTheme && preset.timerTheme.trim()) q.set("timerTheme", preset.timerTheme.trim());
+  if (preset.missionTheme && preset.missionTheme.trim()) q.set("missionTheme", preset.missionTheme.trim());
   q.set("showMembers", String(preset.showMembers ?? true));
   q.set("showTotal", String(preset.showTotal ?? true));
   if (preset.sumFree) {
@@ -88,6 +102,7 @@ function presetToParams(preset: OverlayPresetLike | null): URLSearchParams {
   if (preset.showPersonalGoal) q.set("showPersonalGoal", "true");
   if (preset.personalGoalTheme && preset.personalGoalTheme.trim()) q.set("personalGoalTheme", preset.personalGoalTheme.trim());
   if (preset.personalGoalFree) {
+    q.set("personalGoalFree", "true");
     q.set("personalGoalX", preset.personalGoalX || "78");
     q.set("personalGoalY", preset.personalGoalY || "82");
   } else if (preset.personalGoalAnchor && preset.personalGoalAnchor.trim()) {
@@ -124,6 +139,8 @@ function presetToParams(preset: OverlayPresetLike | null): URLSearchParams {
   q.set("donorsFormat", (preset.donorsFormat || "short").trim() === "full" ? "full" : "short");
   if (preset.donorsUnit && preset.donorsUnit.trim()) q.set("donorsUnit", preset.donorsUnit.trim());
   if (preset.donorsColor && preset.donorsColor.trim()) q.set("donorsColor", preset.donorsColor.trim());
+  if (preset.donorsBgColor && preset.donorsBgColor.trim()) q.set("donorsBgColor", preset.donorsBgColor.trim());
+  if (preset.donorsBgOpacity && preset.donorsBgOpacity.trim()) q.set("donorsBgOpacity", preset.donorsBgOpacity.trim());
   if (preset.tickerTheme && preset.tickerTheme.trim()) q.set("tickerTheme", preset.tickerTheme.trim());
   if (preset.tickerGlow && preset.tickerGlow.trim()) q.set("tickerGlow", preset.tickerGlow.trim());
   if (preset.tickerShadow && preset.tickerShadow.trim()) q.set("tickerShadow", preset.tickerShadow.trim());
@@ -489,12 +506,13 @@ function PersonalGoalBoard({
   );
 }
 
-function DonorTicker({ donors, theme, fontSize, color, full, duration, gap, limit, unit, locale, placeholderText, previewGuide, tickerTheme, tickerGlow, tickerShadow }: { donors: Donor[]; theme: typeof THEMES.default; fontSize: number; color?: string; full?: boolean; duration?: number; gap?: number; limit?: number; unit?: string; locale?: string; placeholderText?: string; previewGuide?: boolean; tickerTheme?: string; tickerGlow?: number; tickerShadow?: number }) {
+function DonorTicker({ donors, theme, fontSize, color, bgColor, bgOpacity, full, duration, gap, limit, unit, locale, placeholderText, previewGuide, tickerTheme, tickerGlow, tickerShadow }: { donors: Donor[]; theme: typeof THEMES.default; fontSize: number; color?: string; bgColor?: string; bgOpacity?: number; full?: boolean; duration?: number; gap?: number; limit?: number; unit?: string; locale?: string; placeholderText?: string; previewGuide?: boolean; tickerTheme?: string; tickerGlow?: number; tickerShadow?: number }) {
   const recent = useMemo(() => {
     const lim = Math.max(1, limit || 5);
     const sorted = donors.slice().sort((a, b) => b.at - a.at);
     const byName = new Map<string, { name: string; at: number; account: number; toon: number }>();
     for (const d of sorted) {
+      if ((d.target || "account") === "toon") continue;
       const key = (d.name || "무명").trim() || "무명";
       const prev = byName.get(key);
       const isToon = (d.target || "account") === "toon";
@@ -567,6 +585,23 @@ function DonorTicker({ donors, theme, fontSize, color, full, duration, gap, limi
     const b = parseInt(normalized.slice(4, 6), 16);
     return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
   };
+  const normalizeColorWithAlpha = (input: string, alpha: number): string => {
+    const trimmed = input.trim();
+    if (!trimmed) return "";
+    if (trimmed.startsWith("#")) return colorWithAlpha(trimmed, alpha);
+    const rgb = trimmed.match(/^rgb\(\s*([^\)]*)\s*\)$/i);
+    if (rgb) {
+      return `rgba(${rgb[1]}, ${Math.max(0, Math.min(1, alpha))})`;
+    }
+    const rgba = trimmed.match(/^rgba\(\s*([^\)]*)\s*\)$/i);
+    if (rgba) {
+      const parts = rgba[1].split(",").map((p) => p.trim());
+      if (parts.length >= 3) {
+        return `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${Math.max(0, Math.min(1, alpha))})`;
+      }
+    }
+    return trimmed;
+  };
   const glowColor = (color || (typeof baseTickerThemeStyle.color === "string" ? baseTickerThemeStyle.color : "")) as string;
   const glowBlur = Math.round((tickerGlowValue / 100) * 16);
   const shadowBlur = Math.round((tickerShadowValue / 100) * 8);
@@ -581,6 +616,19 @@ function DonorTicker({ donors, theme, fontSize, color, full, duration, gap, limi
     ...baseTickerThemeStyle,
     ...(shadowParts.length ? { textShadow: shadowParts.join(", ") } : {}),
   };
+  const backgroundOpacity = Math.max(0, Math.min(100, bgOpacity ?? 0)) / 100;
+  const tickerBackground = bgColor ? normalizeColorWithAlpha(bgColor, backgroundOpacity) : "";
+  const tickerContainerStyle: React.CSSProperties = {
+    fontSize,
+    width: "100%",
+    ...(tickerBackground
+      ? {
+          background: tickerBackground,
+          borderRadius: 8,
+          padding: "0.12em 0.3em",
+        }
+      : {}),
+  };
   const amountText = (d: { account: number; toon: number }) => {
     const f = (n: number) => {
       const base = full ? roundToThousand(n).toLocaleString(locale || "ko-KR") : formatManThousand(n);
@@ -594,7 +642,7 @@ function DonorTicker({ donors, theme, fontSize, color, full, duration, gap, limi
   if (!recent.length) {
     if (!shouldShowGuide) return null;
     return (
-      <div className="overflow-hidden whitespace-nowrap" style={{ fontSize, width: "100%" }}>
+      <div className="overflow-hidden whitespace-nowrap" style={tickerContainerStyle}>
         <div className={theme.tickerCls} style={{ ...tickerThemeStyle, ...(color ? { color } : {}) }}>
           {placeholderText || "후원티커는 이곳에 출력됩니다."}
         </div>
@@ -603,7 +651,7 @@ function DonorTicker({ donors, theme, fontSize, color, full, duration, gap, limi
   }
 
   return (
-    <div className="overflow-hidden whitespace-nowrap" style={{ fontSize, width: "100%" }}>
+    <div className="overflow-hidden whitespace-nowrap" style={tickerContainerStyle}>
       <div
         className="inline-block animate-ticker"
         style={{
@@ -616,7 +664,7 @@ function DonorTicker({ donors, theme, fontSize, color, full, duration, gap, limi
           <span
             key={`${d.name}-${d.at}-${i}`}
             className={theme.tickerCls}
-            style={{ marginLeft: gap ?? 10, marginRight: gap ?? 10 }}
+            style={{ marginLeft: gap ?? 10, marginRight: gap ?? 10, ...(color ? { color } : {}) }}
           >
             ♥ {d.name} {amountText(d)}
           </span>
@@ -625,7 +673,7 @@ function DonorTicker({ donors, theme, fontSize, color, full, duration, gap, limi
           <span
             key={`dup-${d.name}-${d.at}-${i}`}
             className={theme.tickerCls}
-            style={{ marginLeft: gap ?? 10, marginRight: gap ?? 10 }}
+            style={{ marginLeft: gap ?? 10, marginRight: gap ?? 10, ...(color ? { color } : {}) }}
           >
             ♥ {d.name} {amountText(d)}
           </span>
@@ -700,6 +748,13 @@ function OverlayInner() {
     }),
     [rawSp, presetParams]
   );
+  const parsePct = (raw: string | null, fallback: number) => {
+    if (raw === null || raw.trim() === "") return fallback;
+    const n = Number.parseFloat(raw);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(0, Math.min(100, n));
+  };
+  const fitWidthToViewport = (px: number, margin = 24) => `min(${Math.max(1, Math.round(px))}px, calc(100vw - ${margin}px))`;
 
   const compact = (sp.get("compact") || "false").toLowerCase() === "true";
   const autoFont = (sp.get("autoFont") || "false").toLowerCase() === "true";
@@ -716,10 +771,20 @@ function OverlayInner() {
   const sumXParam = sp.get("sumX");
   const sumYParam = sp.get("sumY");
   const hasFreePos = sumXParam !== null && sumYParam !== null;
-  const sumX = hasFreePos ? Math.max(0, Math.min(100, parseFloat(sumXParam!))) : 0;
-  const sumY = hasFreePos ? Math.max(0, Math.min(100, parseFloat(sumYParam!))) : 0;
+  const sumX = hasFreePos ? parsePct(sumXParam, 50) : 0;
+  const sumY = hasFreePos ? parsePct(sumYParam, 90) : 0;
   const themeId = (sp.get("theme") || "default") as ThemeId;
   const theme = THEMES[themeId] || THEMES.default;
+  const pickTheme = (candidate: string | null, fallback: ThemeId): ThemeId => {
+    if (!candidate || candidate === "auto") return fallback;
+    return (candidate in THEMES ? candidate : fallback) as ThemeId;
+  };
+  const membersTheme = THEMES[pickTheme(sp.get("membersTheme"), themeId)] || theme;
+  const totalTheme = THEMES[pickTheme(sp.get("totalTheme"), themeId)] || theme;
+  const goalTheme = THEMES[pickTheme(sp.get("goalTheme"), themeId)] || theme;
+  const tickerBaseTheme = THEMES[pickTheme(sp.get("tickerBaseTheme"), themeId)] || theme;
+  const timerTheme = THEMES[pickTheme(sp.get("timerTheme"), themeId)] || theme;
+  const missionTheme = THEMES[pickTheme(sp.get("missionTheme"), themeId)] || theme;
 
   const showMembers = sp.get("showMembers") !== "false";
   const showTotal = sp.get("showTotal") !== "false";
@@ -739,11 +804,12 @@ function OverlayInner() {
   const personalGoalAnchor = (sp.get("personalGoalAnchor") || "br").toLowerCase();
   const personalGoalLimit = Math.max(1, Math.min(12, parseInt(sp.get("personalGoalLimit") || "3", 10)));
   const personalGoalTheme = (sp.get("personalGoalTheme") || "goalClassic") as "goalClassic" | "goalNeon";
+  const personalGoalFree = (sp.get("personalGoalFree") || "false").toLowerCase() === "true";
   const personalGoalXParam = sp.get("personalGoalX");
   const personalGoalYParam = sp.get("personalGoalY");
-  const hasPersonalGoalFreePos = personalGoalXParam !== null && personalGoalYParam !== null;
-  const personalGoalX = hasPersonalGoalFreePos ? Math.max(0, Math.min(100, parseFloat(personalGoalXParam!))) : 0;
-  const personalGoalY = hasPersonalGoalFreePos ? Math.max(0, Math.min(100, parseFloat(personalGoalYParam!))) : 0;
+  const hasPersonalGoalFreePos = personalGoalFree || (personalGoalXParam !== null && personalGoalYParam !== null);
+  const personalGoalX = hasPersonalGoalFreePos ? parsePct(personalGoalXParam, 78) : 0;
+  const personalGoalY = hasPersonalGoalFreePos ? parsePct(personalGoalYParam, 82) : 0;
   const goalCurrentParam = sp.get("goalCurrent");
   const goalCurrent = goalCurrentParam !== null ? Math.max(0, parseInt(goalCurrentParam || "0", 10) || 0) : null;
   const timerStart = sp.get("timerStart") ? parseInt(sp.get("timerStart")!, 10) : null;
@@ -753,8 +819,8 @@ function OverlayInner() {
   const tickerXParam = sp.get("tickerX");
   const tickerYParam = sp.get("tickerY");
   const hasTickerFreePos = tickerXParam !== null && tickerYParam !== null;
-  const tickerX = hasTickerFreePos ? Math.max(0, Math.min(100, parseFloat(tickerXParam!))) : 0;
-  const tickerY = hasTickerFreePos ? Math.max(0, Math.min(100, parseFloat(tickerYParam!))) : 0;
+  const tickerX = hasTickerFreePos ? parsePct(tickerXParam, 50) : 0;
+  const tickerY = hasTickerFreePos ? parsePct(tickerYParam, 86) : 0;
   const showMission = sp.get("showMission") === "true";
   const missionAnchor = (sp.get("missionAnchor") || "br").toLowerCase();
 
@@ -776,6 +842,8 @@ function OverlayInner() {
   const donorsWidth = Math.max(120, Math.min(600, parseInt(sp.get("donorsWidth") || "220", 10)));
   const donorsSize = Math.max(10, Math.min(60, parseInt(sp.get("donorsSize") || String(Math.round(memberSize * 0.9)), 10)));
   const donorsColor = sp.get("donorsColor") || undefined;
+  const donorsBgColor = sp.get("donorsBgColor") || undefined;
+  const donorsBgOpacity = Math.max(0, Math.min(100, parseInt(sp.get("donorsBgOpacity") || "0", 10)));
   const showBottomDonors = sp.get("showBottomDonors") === "true";
   const effectiveShowTicker = showTicker && !hasContextTicker && !showBottomDonors;
   const donorsGap = Math.max(0, Math.min(48, parseInt(sp.get("donorsGap") || (tight ? "8" : "16"), 10)));
@@ -938,13 +1006,33 @@ function OverlayInner() {
     ? { left: `${sumX}%`, top: `${sumY}%`, transform: "translate(-50%, -50%)" }
     : undefined;
   const sumPosClass = hasFreePos ? "" : posClass(sumAnchor);
-  const personalGoalPosStyle: React.CSSProperties | undefined = hasPersonalGoalFreePos
-    ? { left: `${personalGoalX}%`, top: `${personalGoalY}%`, transform: "translate(-50%, -50%)" }
-    : undefined;
-  const personalGoalPosClass = hasPersonalGoalFreePos ? "" : posClass(personalGoalAnchor);
+  const personalGoalPosClass = posClass(personalGoalAnchor);
+  const renderPersonalGoal = () => {
+    const content = (
+      <>
+        <PersonalGoalBoard items={personalGoals} themeId={personalGoalTheme} fontSize={memberSize} />
+        {tickerInPersonalGoal && (
+          <div className="mt-2 overflow-hidden">
+            <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+          </div>
+        )}
+      </>
+    );
+    if (hasPersonalGoalFreePos) {
+      return (
+        <div className="fixed inset-0 pointer-events-none">
+          <div className="absolute pointer-events-auto" style={{ left: `${personalGoalX}%`, top: `${personalGoalY}%`, transform: "translate(-50%, -50%)" }}>
+            {content}
+          </div>
+        </div>
+      );
+    }
+    return <div className={`fixed ${personalGoalPosClass}`}>{content}</div>;
+  };
+  const responsiveTickerWidth = fitWidthToViewport(tickerWidth);
   const tickerPosStyle: React.CSSProperties | undefined = hasTickerFreePos
-    ? { left: `${tickerX}%`, top: `${tickerY}%`, transform: "translate(-50%, -50%)", width: tickerWidth }
-    : { width: tickerWidth };
+    ? { left: `${tickerX}%`, top: `${tickerY}%`, transform: "translate(-50%, -50%)", width: responsiveTickerWidth }
+    : { width: responsiveTickerWidth };
   const tickerPosClass = hasTickerFreePos ? "" : posClass(tickerAnchor);
 
   if (themeId === "excel") {
@@ -958,11 +1046,11 @@ function OverlayInner() {
             <div ref={containerRef} className="flex items-start gap-3" style={{ width: "fit-content" }}>
               {showSideDonors && donorsSide === "left" && (
                 <div style={{ width: donorsWidth }}>
-                  <DonorTicker donors={donors} theme={theme} fontSize={dSize} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+                  <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
                 </div>
               )}
               <div>
-                <table ref={tableBoxRef as any} className={theme.tableCls} style={{ fontSize: mSize, borderSpacing: 0, tableLayout: "fixed" }}>
+                <table ref={tableBoxRef as any} className={membersTheme.tableCls} style={{ fontSize: mSize, borderSpacing: 0, tableLayout: "fixed" }}>
                   <colgroup>
                     {excelGridCols.map((w, idx) => (
                       <col key={`excel-col-${idx}`} style={{ width: w }} />
@@ -970,60 +1058,60 @@ function OverlayInner() {
                   </colgroup>
                   <thead>
                     <tr>
-                      <td className={theme.headerCls}>순위</td>
-                      {hasRoleColumn && <td className={theme.headerCls}>직급</td>}
-                      <td className={theme.headerCls}>이름</td>
-                      <td className={`${theme.headerCls} text-right`}>계좌</td>
-                      <td className={`${theme.headerCls} text-right`}>투네</td>
-                      <td className={`${theme.headerCls} text-right`}>TOTAL</td>
+                      <td className={membersTheme.headerCls}>순위</td>
+                      {hasRoleColumn && <td className={membersTheme.headerCls}>직급</td>}
+                      <td className={membersTheme.headerCls}>이름</td>
+                      <td className={`${membersTheme.headerCls} text-right`}>계좌</td>
+                      <td className={`${membersTheme.headerCls} text-right`}>투네</td>
+                      <td className={`${membersTheme.headerCls} text-right`}>TOTAL</td>
                     </tr>
                   </thead>
                   <tbody>
                     {ranked.map(({m, rank}) => (
                       <tr key={m.id} ref={setRowRef(m.id)} className="transition-transform will-change-transform">
-                        <td className={`${theme.rowCls} text-left`}>#{rank}</td>
-                        {hasRoleColumn && <td className={`${theme.rowCls}`}>{m.role || "-"}</td>}
-                        <td className={`${theme.rowCls} ${theme.nameCls} truncate`}>{m.name}</td>
-                        <td className={`${theme.rowCls} ${theme.accountCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
-                        <td className={`${theme.rowCls} ${theme.toonCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
-                        <td className={`${theme.rowCls} text-right`}>{fmt(m.account + m.toon)}</td>
+                        <td className={`${membersTheme.rowCls} text-left`}>#{rank}</td>
+                        {hasRoleColumn && <td className={`${membersTheme.rowCls}`}>{m.role || "-"}</td>}
+                        <td className={`${membersTheme.rowCls} ${membersTheme.nameCls} truncate`}>{m.name}</td>
+                        <td className={`${membersTheme.rowCls} ${membersTheme.accountCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
+                        <td className={`${membersTheme.rowCls} ${membersTheme.toonCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
+                        <td className={`${membersTheme.rowCls} text-right`}>{fmt(m.account + m.toon)}</td>
                       </tr>
                     ))}
                     {pinned.map((m) => (
                       <tr key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className="transition-transform will-change-transform">
-                        <td className={`${theme.rowCls} text-right`}>—</td>
-                        {hasRoleColumn && <td className={`${theme.rowCls}`}></td>}
-                        <td className={`${theme.rowCls} ${theme.nameCls} truncate`}>{m.name}</td>
-                        <td className={`${theme.rowCls} ${theme.accountCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
-                        <td className={`${theme.rowCls} ${theme.toonCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
-                        <td className={`${theme.rowCls} text-right`}>{fmt(m.account + m.toon)}</td>
+                        <td className={`${membersTheme.rowCls} text-right`}>—</td>
+                        {hasRoleColumn && <td className={`${membersTheme.rowCls}`}></td>}
+                        <td className={`${membersTheme.rowCls} ${membersTheme.nameCls} truncate`}>{m.name}</td>
+                        <td className={`${membersTheme.rowCls} ${membersTheme.accountCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
+                        <td className={`${membersTheme.rowCls} ${membersTheme.toonCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
+                        <td className={`${membersTheme.rowCls} text-right`}>{fmt(m.account + m.toon)}</td>
                       </tr>
                     ))}
                     {showTotal && ready && (
                       <tr>
-                        <td className={theme.totalWrapCls} colSpan={hasRoleColumn ? 2 : 1}>총합</td>
-                        <td className={theme.totalWrapCls} />
-                        <td className={`${theme.totalWrapCls} text-right`}>{fmt(sumAccount)}</td>
-                        <td className={`${theme.totalWrapCls} text-right`}>{fmt(sumToon)}</td>
-                        <td className={`${theme.totalWrapCls} text-right`}>{fmt(rounded)}</td>
+                        <td className={totalTheme.totalWrapCls} colSpan={hasRoleColumn ? 2 : 1}>총합</td>
+                        <td className={totalTheme.totalWrapCls} />
+                        <td className={`${totalTheme.totalWrapCls} text-right`}>{fmt(sumAccount)}</td>
+                        <td className={`${totalTheme.totalWrapCls} text-right`}>{fmt(sumToon)}</td>
+                        <td className={`${totalTheme.totalWrapCls} text-right`}>{fmt(rounded)}</td>
                       </tr>
                     )}
                   </tbody>
                 </table>
                 {showBottomDonors && !tickerInMembers && (
-                  <div className="mt-2" style={{ width: `${contextualTickerWidth}px`, overflow: "hidden" }}>
-                    <DonorTicker donors={donors} theme={theme} fontSize={dSize} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+                  <div className="mt-2" style={{ width: fitWidthToViewport(contextualTickerWidth), overflow: "hidden" }}>
+                    <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
                   </div>
                 )}
                 {tickerInMembers && (
-                  <div className="mt-2" style={{ width: `${contextualTickerWidth}px`, overflow: "hidden" }}>
-                    <DonorTicker donors={donors} theme={theme} fontSize={dSize} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+                  <div className="mt-2" style={{ width: fitWidthToViewport(contextualTickerWidth), overflow: "hidden" }}>
+                    <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
                   </div>
                 )}
               </div>
               {showSideDonors && donorsSide === "right" && (
                 <div style={{ width: donorsWidth }}>
-                  <DonorTicker donors={donors} theme={theme} fontSize={dSize} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+                  <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
                 </div>
               )}
             </div>
@@ -1031,27 +1119,20 @@ function OverlayInner() {
         )}
         {showGoal && ready && goal > 0 && (
           <div className={`fixed ${posClass(goalAnchor)}`}>
-            <GoalBar current={rounded} goal={goal} label={goalLabel} theme={theme} width={goalWidth} />
+            <GoalBar current={rounded} goal={goal} label={goalLabel} theme={goalTheme} width={goalWidth} />
             {tickerInGoal && (
-              <div className="mt-2" style={{ width: goalWidth, overflow: "hidden" }}>
-                <DonorTicker donors={donors} theme={theme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+              <div className="mt-2" style={{ width: fitWidthToViewport(goalWidth), overflow: "hidden" }}>
+                <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
               </div>
             )}
           </div>
         )}
         {showPersonalGoal && ready && (
-          <div className={`fixed ${personalGoalPosClass}`} style={personalGoalPosStyle}>
-            <PersonalGoalBoard items={personalGoals} themeId={personalGoalTheme} fontSize={memberSize} />
-            {tickerInPersonalGoal && (
-              <div className="mt-2 overflow-hidden">
-                <DonorTicker donors={donors} theme={theme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
-              </div>
-            )}
-          </div>
+          renderPersonalGoal()
         )}
-        {effectiveShowTicker && ready && <div className={`fixed ${tickerPosClass} ${hasTickerFreePos ? "" : "mb-10"}`} style={tickerPosStyle}><DonorTicker donors={donors} theme={theme} fontSize={memberSize * 0.8} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
-        {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={theme} fontSize={memberSize} /></div>}
-        {showMission && ready && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`}><MissionMenu missions={missions} fontSize={memberSize * 0.9} /></div>}
+        {effectiveShowTicker && ready && <div className={`fixed ${tickerPosClass} ${hasTickerFreePos ? "" : "mb-10"}`} style={tickerPosStyle}><DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
+        {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={timerTheme} fontSize={memberSize} /></div>}
+        {showMission && ready && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`}><MissionMenu missions={missions} fontSize={memberSize * 0.9} themeVariant={pickTheme(sp.get("missionTheme"), themeId)} /></div>}
       </main>
     );
   }
@@ -1069,12 +1150,12 @@ function OverlayInner() {
             <div ref={containerRef} className={`flex items-start ${tight ? "gap-2" : "gap-3"}`} style={{ width: "fit-content" }}>
               {showSideDonors && donorsSide === "left" && (
                 <div style={{ width: donorsWidth }}>
-                  <DonorTicker donors={donors} theme={theme} fontSize={dSize} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+                  <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
                 </div>
               )}
               <div>
-                <div ref={tableBoxRef as any} className={theme.tableCls} style={{ fontSize: mSize, width: "fit-content" }}>
-                  <div className={`${theme.headerCls} grid items-center ${tight ? "py-0.5 px-1" : ""} gap-x-0`} style={{ gridTemplateColumns: neonGridTemplate }}>
+                <div ref={tableBoxRef as any} className={membersTheme.tableCls} style={{ fontSize: mSize, width: "fit-content" }}>
+                  <div className={`${membersTheme.headerCls} grid items-center ${tight ? "py-0.5 px-1" : ""} gap-x-0`} style={{ gridTemplateColumns: neonGridTemplate }}>
                     <div className="text-left overflow-hidden whitespace-nowrap text-ellipsis">RANK</div>
                     {hasRoleColumn && <div className="text-left overflow-hidden whitespace-nowrap text-ellipsis">ROLE</div>}
                     <div className="text-left overflow-hidden whitespace-nowrap text-ellipsis">MEMBER</div>
@@ -1083,59 +1164,59 @@ function OverlayInner() {
                     <div className="text-right pl-1 border-l border-cyan-500/30 font-bold text-white overflow-hidden whitespace-nowrap text-ellipsis">TOTAL</div>
                   </div>
                   {ranked.map(({m, rank}) => (
-                    <div key={m.id} ref={setRowRef(m.id)} className={`${theme.rowCls} ${tight ? "py-0.5 px-1" : ""} gap-x-0 grid items-center transition-transform will-change-transform`} style={{ gridTemplateColumns: neonGridTemplate }}>
-                      <div className={`${theme.nameCls} text-left`}>#{rank}</div>
-                      {hasRoleColumn && <div className={`${theme.nameCls} text-left`}>{m.role || "-"}</div>}
-                      <div className={`${theme.nameCls} text-left overflow-hidden whitespace-nowrap text-ellipsis`}>{m.name}</div>
-                      <div className={theme.accountCls + " text-right pr-1 overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.account)}</div>
-                      <div className={theme.toonCls + " text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.toon)}</div>
-                      <div className={`${theme.totalCls} text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis`}>{fmt(m.account + m.toon)}</div>
+                    <div key={m.id} ref={setRowRef(m.id)} className={`${membersTheme.rowCls} ${tight ? "py-0.5 px-1" : ""} gap-x-0 grid items-center transition-transform will-change-transform`} style={{ gridTemplateColumns: neonGridTemplate }}>
+                      <div className={`${membersTheme.nameCls} text-left`}>#{rank}</div>
+                      {hasRoleColumn && <div className={`${membersTheme.nameCls} text-left`}>{m.role || "-"}</div>}
+                      <div className={`${membersTheme.nameCls} text-left overflow-hidden whitespace-nowrap text-ellipsis`}>{m.name}</div>
+                      <div className={membersTheme.accountCls + " text-right pr-1 overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.account)}</div>
+                      <div className={membersTheme.toonCls + " text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.toon)}</div>
+                      <div className={`${totalTheme.totalCls} text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis`}>{fmt(m.account + m.toon)}</div>
                     </div>
                   ))}
                   {pinned.map((m) => (
-                    <div key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`${theme.rowCls} ${tight ? "py-0.5 px-1" : ""} gap-x-0 grid items-center transition-transform will-change-transform`} style={{ gridTemplateColumns: neonGridTemplate }}>
-                      <div className={theme.nameCls}>—</div>
-                      {hasRoleColumn && <div className={theme.nameCls}></div>}
-                      <div className={theme.nameCls + " overflow-hidden whitespace-nowrap text-ellipsis"}>{m.name}</div>
-                      <div className={theme.accountCls + " text-right pr-1 overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.account)}</div>
-                      <div className={theme.toonCls + " text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.toon)}</div>
-                      <div className={`${theme.totalCls} text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis`}>{fmt(m.account + m.toon)}</div>
+                    <div key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`${membersTheme.rowCls} ${tight ? "py-0.5 px-1" : ""} gap-x-0 grid items-center transition-transform will-change-transform`} style={{ gridTemplateColumns: neonGridTemplate }}>
+                      <div className={membersTheme.nameCls}>—</div>
+                      {hasRoleColumn && <div className={membersTheme.nameCls}></div>}
+                      <div className={membersTheme.nameCls + " overflow-hidden whitespace-nowrap text-ellipsis"}>{m.name}</div>
+                      <div className={membersTheme.accountCls + " text-right pr-1 overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.account)}</div>
+                      <div className={membersTheme.toonCls + " text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.toon)}</div>
+                      <div className={`${totalTheme.totalCls} text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis`}>{fmt(m.account + m.toon)}</div>
                     </div>
                   ))}
                   {showTotal && ready && (
                     <div
-                      className={`grid items-center ${theme.totalWrapCls} ${tight ? "px-1 py-0.5" : ""} gap-x-0`}
+                      className={`grid items-center ${totalTheme.totalWrapCls} ${tight ? "px-1 py-0.5" : ""} gap-x-0`}
                       style={{ gridTemplateColumns: neonGridTemplate }}
                     >
                       <div />
                       {hasRoleColumn && <div />}
                       <div className="text-cyan-300 font-bold whitespace-nowrap">{hasRoleColumn ? "합계" : "총합"}</div>
-                      <div className={`${theme.totalCls} text-right pr-1 overflow-hidden whitespace-nowrap text-ellipsis`} style={{ fontSize: tSize * 0.68 }}>
+                      <div className={`${totalTheme.totalCls} text-right pr-1 overflow-hidden whitespace-nowrap text-ellipsis`} style={{ fontSize: tSize * 0.68 }}>
                         {fmt(sumAccount)}
                       </div>
-                      <div className={`${theme.totalCls} text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis`} style={{ fontSize: tSize * 0.68 }}>
+                      <div className={`${totalTheme.totalCls} text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis`} style={{ fontSize: tSize * 0.68 }}>
                         {fmt(sumToon)}
                       </div>
-                      <div className={`${theme.totalCls} text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis`} style={{ fontSize: tSize * 0.72 }}>
+                      <div className={`${totalTheme.totalCls} text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis`} style={{ fontSize: tSize * 0.72 }}>
                         {fmt(rounded)}
                       </div>
                     </div>
                   )}
                 </div>
                 {showBottomDonors && !tickerInMembers && (
-                  <div className={tight ? "mt-1" : "mt-2"} style={{ width: `${contextualTickerWidth}px`, overflow: "hidden" }}>
-                    <DonorTicker donors={donors} theme={theme} fontSize={dSize} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+                  <div className={tight ? "mt-1" : "mt-2"} style={{ width: fitWidthToViewport(contextualTickerWidth), overflow: "hidden" }}>
+                    <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
                   </div>
                 )}
                 {tickerInMembers && (
-                  <div className={tight ? "mt-1" : "mt-2"} style={{ width: `${contextualTickerWidth}px`, overflow: "hidden" }}>
-                    <DonorTicker donors={donors} theme={theme} fontSize={dSize} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+                  <div className={tight ? "mt-1" : "mt-2"} style={{ width: fitWidthToViewport(contextualTickerWidth), overflow: "hidden" }}>
+                    <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
                   </div>
                 )}
               </div>
               {showSideDonors && donorsSide === "right" && (
                 <div style={{ width: donorsWidth }}>
-                  <DonorTicker donors={donors} theme={theme} fontSize={dSize} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+                  <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
                 </div>
               )}
             </div>
@@ -1143,38 +1224,31 @@ function OverlayInner() {
         )}
         {!showMembers && showTotal && ready && (
           <div className={`fixed ${sumPosClass}`} style={sumPosStyle}>
-            <div className={theme.totalWrapCls}><div className={theme.totalCls} style={{ fontSize: totalSize }}>
+            <div className={totalTheme.totalWrapCls}><div className={totalTheme.totalCls} style={{ fontSize: totalSize }}>
               계좌 {formatManThousand(sumAccount)} · 투네 {formatManThousand(sumToon)} · 전체 {formatManThousand(rounded)}
             </div></div>
           </div>
         )}
         {showGoal && ready && goal > 0 && (
           <div className={`fixed ${posClass(goalAnchor)}`}>
-            <GoalBar current={goalCurrent !== null ? goalCurrent : rounded} goal={goal} label={goalLabel} theme={theme} width={goalWidth} />
+            <GoalBar current={goalCurrent !== null ? goalCurrent : rounded} goal={goal} label={goalLabel} theme={goalTheme} width={goalWidth} />
             {tickerInGoal && (
-              <div className="mt-2" style={{ width: goalWidth, overflow: "hidden" }}>
-                <DonorTicker donors={donors} theme={theme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+              <div className="mt-2" style={{ width: fitWidthToViewport(goalWidth), overflow: "hidden" }}>
+                <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
               </div>
             )}
           </div>
         )}
         {showPersonalGoal && ready && (
-          <div className={`fixed ${personalGoalPosClass}`} style={personalGoalPosStyle}>
-            <PersonalGoalBoard items={personalGoals} themeId={personalGoalTheme} fontSize={memberSize} />
-            {tickerInPersonalGoal && (
-              <div className="mt-2 overflow-hidden">
-                <DonorTicker donors={donors} theme={theme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
-              </div>
-            )}
-          </div>
+          renderPersonalGoal()
         )}
         {effectiveShowTicker && ready && (
           <div className={`fixed ${tickerPosClass}`} style={tickerPosStyle}>
-            <DonorTicker donors={donors} theme={theme} fontSize={memberSize * 0.8} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+            <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
           </div>
         )}
-        {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={theme} fontSize={memberSize} /></div>}
-        {showMission && ready && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`}><MissionMenu missions={missions} fontSize={memberSize * 0.9} /></div>}
+        {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={timerTheme} fontSize={memberSize} /></div>}
+        {showMission && ready && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`}><MissionMenu missions={missions} fontSize={memberSize * 0.9} themeVariant={pickTheme(sp.get("missionTheme"), themeId)} /></div>}
       </main>
     );
   }
@@ -1184,17 +1258,17 @@ function OverlayInner() {
       {showMembers && ready && (
         <div className={`fixed ${listPosClass} space-y-1`}>
           {ranked.map(({m, rank}) => (
-            <div key={m.id} ref={setRowRef(m.id)} className={`${theme.memberCls} ${theme.rowCls} transition-transform will-change-transform whitespace-nowrap`} style={{ fontSize: mSize, lineHeight: dense ? 1 : 1.15 }}>
-              <span className={theme.nameCls}>#{rank} {m.name}{m.role ? ` [${m.role}]` : ""}</span>
-              <span className={theme.accountCls}>{fmt(m.account)}</span>
-              <span className={theme.toonCls}>({fmt(m.toon)})</span>
+            <div key={m.id} ref={setRowRef(m.id)} className={`${membersTheme.memberCls} ${membersTheme.rowCls} transition-transform will-change-transform whitespace-nowrap`} style={{ fontSize: mSize, lineHeight: dense ? 1 : 1.15 }}>
+              <span className={membersTheme.nameCls}>#{rank} {m.name}{m.role ? ` [${m.role}]` : ""}</span>
+              <span className={membersTheme.accountCls}>{fmt(m.account)}</span>
+              <span className={membersTheme.toonCls}>({fmt(m.toon)})</span>
             </div>
           ))}
           {pinned.map((m) => (
-            <div key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`${theme.memberCls} ${theme.rowCls} transition-transform will-change-transform whitespace-nowrap`} style={{ fontSize: mSize, lineHeight: dense ? 1 : 1.15 }}>
-              <span className={theme.nameCls}>{m.name}</span>
-              <span className={theme.accountCls}>{fmt(m.account)}</span>
-              <span className={theme.toonCls}>({fmt(m.toon)})</span>
+            <div key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`${membersTheme.memberCls} ${membersTheme.rowCls} transition-transform will-change-transform whitespace-nowrap`} style={{ fontSize: mSize, lineHeight: dense ? 1 : 1.15 }}>
+              <span className={membersTheme.nameCls}>{m.name}</span>
+              <span className={membersTheme.accountCls}>{fmt(m.account)}</span>
+              <span className={membersTheme.toonCls}>({fmt(m.toon)})</span>
             </div>
           ))}
         </div>
@@ -1202,8 +1276,8 @@ function OverlayInner() {
 
       {showTotal && ready && (
         <div className={`fixed ${sumPosClass}`} style={sumPosStyle}>
-          <div className={theme.totalWrapCls}>
-            <div className={theme.totalCls} style={{ fontSize: tSize, lineHeight: 1.05 }}>
+          <div className={totalTheme.totalWrapCls}>
+            <div className={totalTheme.totalCls} style={{ fontSize: tSize, lineHeight: 1.05 }}>
               계좌 {fmt(sumAccount)} · 투네 {fmt(sumToon)} · 전체 {fmt(rounded)}
             </div>
           </div>
@@ -1212,45 +1286,38 @@ function OverlayInner() {
 
       {showGoal && ready && goal > 0 && (
         <div className={`fixed ${posClass(goalAnchor)}`}>
-          <GoalBar current={goalCurrent !== null ? goalCurrent : rounded} goal={goal} label={goalLabel} theme={theme} width={goalWidth} />
+          <GoalBar current={goalCurrent !== null ? goalCurrent : rounded} goal={goal} label={goalLabel} theme={goalTheme} width={goalWidth} />
           {tickerInGoal && (
-            <div className="mt-2" style={{ width: goalWidth, overflow: "hidden" }}>
-              <DonorTicker donors={donors} theme={theme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+            <div className="mt-2" style={{ width: fitWidthToViewport(goalWidth), overflow: "hidden" }}>
+              <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
             </div>
           )}
         </div>
       )}
       {showPersonalGoal && ready && (
-        <div className={`fixed ${personalGoalPosClass}`} style={personalGoalPosStyle}>
-          <PersonalGoalBoard items={personalGoals} themeId={personalGoalTheme} fontSize={memberSize} />
-          {tickerInPersonalGoal && (
-            <div className="mt-2 overflow-hidden">
-              <DonorTicker donors={donors} theme={theme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
-            </div>
-          )}
-        </div>
+        renderPersonalGoal()
       )}
       {tickerInMembers && showMembers && ready && (
-        <div className={`fixed ${listPosClass}`} style={{ marginTop: Math.max(48, mSize * 2.4), width: "min(640px, 75vw)" }}>
-          <DonorTicker donors={donors} theme={theme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+        <div className={`fixed ${listPosClass}`} style={{ marginTop: Math.max(48, mSize * 2.4), width: "min(960px, calc(100vw - 24px))" }}>
+          <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
         </div>
       )}
 
       {effectiveShowTicker && ready && (
         <div className={`fixed ${tickerPosClass}`} style={tickerPosStyle}>
-          <DonorTicker donors={donors} theme={theme} fontSize={memberSize * 0.8} color={donorsColor} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
+          <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
         </div>
       )}
 
       {showTimer && (
         <div className={`fixed ${posClass(timerAnchor)}`}>
-          <Timer elapsed={elapsed} theme={theme} fontSize={memberSize} />
+          <Timer elapsed={elapsed} theme={timerTheme} fontSize={memberSize} />
         </div>
       )}
 
       {showMission && ready && missions.length > 0 && (
         <div className={`fixed ${posClass(missionAnchor)}`}>
-          <MissionMenu missions={missions} fontSize={memberSize * 0.9} />
+          <MissionMenu missions={missions} fontSize={memberSize * 0.9} themeVariant={pickTheme(sp.get("missionTheme"), themeId)} />
         </div>
       )}
     </main>
