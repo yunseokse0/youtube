@@ -12,7 +12,6 @@ import {
   saveState,
   saveStateAsync,
   loadStateFromApi,
-  totalAccount,
   appendDailyLog,
   parseTenThousandThousand,
   maskTenThousandThousandInput,
@@ -146,6 +145,11 @@ export default function AdminPage() {
     if (typeof window === "undefined") return;
     const el = document.getElementById(targetId);
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const toColorPickerValue = (raw?: string, fallback = "#ffffff") => {
+    const v = (raw || "").trim();
+    const m = v.match(/^#([0-9a-fA-F]{6})$/);
+    return m ? `#${m[1].toLowerCase()}` : fallback;
   };
   const requestConfirm = (title: string, desc: string, onConfirm: () => void, options?: { confirmText?: string; danger?: boolean }) => {
     if (typeof window === "undefined") return;
@@ -509,7 +513,15 @@ export default function AdminPage() {
     if (!donorMemberId) setDonorMemberId(state.members[0].id);
   }, [state.members, donorMemberId]);
 
-  const total = useMemo(() => totalAccount(state), [state]);
+  const isOperatingMember = (m: Member) => Boolean(m.operating) || /운영비/i.test(m.name) || /운영비/i.test(m.role || "");
+  const total = useMemo(
+    () => state.members.reduce((sum, m) => sum + (m.account || 0) + (m.toon || 0), 0),
+    [state.members]
+  );
+  const activeMemberCount = useMemo(
+    () => state.members.filter((m) => !isOperatingMember(m)).length,
+    [state.members]
+  );
   const flatLogs = useMemo(() => {
     const arr: Array<{ date: string; entry: DailyLogEntry }> = [];
     Object.entries(dailyLog).forEach(([date, entries]) => {
@@ -732,7 +744,7 @@ export default function AdminPage() {
             </div>
             <div className="rounded-lg bg-[#1e1e1e] border border-white/10 px-3 py-2">
               <div className="text-xs text-neutral-400">멤버 수</div>
-              <div className="text-xl font-bold text-[#22c55e]">{state.members.length.toLocaleString("ko-KR")}</div>
+              <div className="text-xl font-bold text-[#22c55e]">{activeMemberCount.toLocaleString("ko-KR")}</div>
             </div>
           </div>
         </section>
@@ -1202,9 +1214,39 @@ export default function AdminPage() {
                               <label className="text-xs text-neutral-400">단위 표시</label>
                               <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="원 / KRW 등" value={p.donorsUnit || ""} onChange={(e) => updatePreset(p.id, { donorsUnit: e.target.value })} />
                               <label className="text-xs text-neutral-400">티커 텍스트 색상</label>
-                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="#a0e9ff" value={p.donorsColor || ""} onChange={(e) => updatePreset(p.id, { donorsColor: e.target.value })} />
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                  value={toColorPickerValue(p.donorsColor, "#a0e9ff")}
+                                  onChange={(e) => updatePreset(p.id, { donorsColor: e.target.value })}
+                                />
+                                <span className="text-xs text-neutral-400 font-mono">{p.donorsColor || "자동(테마 따름)"}</span>
+                                <button
+                                  type="button"
+                                  className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                                  onClick={() => updatePreset(p.id, { donorsColor: "" })}
+                                >
+                                  자동
+                                </button>
+                              </div>
                               <label className="text-xs text-neutral-400">티커 배경 색상</label>
-                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="#000000" value={p.donorsBgColor || ""} onChange={(e) => updatePreset(p.id, { donorsBgColor: e.target.value })} />
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                  value={toColorPickerValue(p.donorsBgColor, "#000000")}
+                                  onChange={(e) => updatePreset(p.id, { donorsBgColor: e.target.value })}
+                                />
+                                <span className="text-xs text-neutral-400 font-mono">{p.donorsBgColor || "자동(배경 미사용)"}</span>
+                                <button
+                                  type="button"
+                                  className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                                  onClick={() => updatePreset(p.id, { donorsBgColor: "" })}
+                                >
+                                  자동
+                                </button>
+                              </div>
                               <label className="text-xs text-neutral-400">배경 투명도</label>
                               <div className="flex items-center gap-1">
                                 <input
