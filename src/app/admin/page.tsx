@@ -131,6 +131,7 @@ export default function AdminPage() {
     confirmText: "확인",
     danger: true,
   });
+  const [resetSheetOpen, setResetSheetOpen] = useState(false);
   const [activeNav, setActiveNav] = useState<"dashboard" | "settlement" | "donor" | "overlay" | "logs">("dashboard");
   const panelCardClass = "rounded-xl border border-white/10 bg-[#252525] shadow-[0_8px_24px_rgba(0,0,0,0.28)]";
   const navItems: Array<{ key: "dashboard" | "settlement" | "donor" | "overlay" | "logs"; label: string; targetId: string }> = [
@@ -575,7 +576,22 @@ export default function AdminPage() {
     }
   };
 
-  const onReset = () => {
+  const onResetKeepMembers = () => {
+    appendDailyLog(state);
+    setDailyLog(loadDailyLog());
+    const next: AppState = {
+      ...state,
+      members: state.members.map((m) => ({ ...m, account: 0, toon: 0 })),
+      donors: [],
+      overlayPresets: state.overlayPresets || [],
+      missions: state.missions || [],
+      updatedAt: Date.now(),
+    };
+    setState(next);
+    persistState(next);
+    setResetSheetOpen(false);
+  };
+  const onResetInitMembers = () => {
     appendDailyLog(state);
     setDailyLog(loadDailyLog());
     const next = {
@@ -585,6 +601,7 @@ export default function AdminPage() {
     };
     setState(next);
     persistState(next);
+    setResetSheetOpen(false);
   };
 
   const onSnapshotNow = () => {
@@ -1494,7 +1511,7 @@ export default function AdminPage() {
                 <div className="flex gap-2">
                   <button
                     className="px-3 py-2 rounded bg-[#ef4444] hover:bg-[#dc2626] text-white"
-                    onClick={onReset}
+                    onClick={() => setResetSheetOpen(true)}
                   >
                     정산 리셋(로그 기록)
                   </button>
@@ -1586,6 +1603,38 @@ export default function AdminPage() {
                 }}
               >
                 {actionSheet.confirmText}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {resetSheetOpen && (
+        <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center">
+          <button className="absolute inset-0 bg-black/55" onClick={() => setResetSheetOpen(false)} aria-label="닫기" />
+          <div className="relative w-full max-w-md lg:rounded-2xl rounded-t-2xl border-t lg:border border-white/10 bg-[#202020] p-4 lg:mx-4">
+            <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-3 lg:hidden" />
+            <div className="text-sm font-semibold text-white">정산 리셋 (로그 기록)</div>
+            <div className="text-xs text-neutral-400 mt-1">멤버 초기화 여부를 선택하세요.</div>
+            <div className="space-y-2 mt-4">
+              <button
+                className="w-full px-3 py-2.5 rounded-lg bg-neutral-700 hover:bg-neutral-600 text-sm text-left"
+                onClick={onResetKeepMembers}
+              >
+                <span className="font-medium text-white">멤버 유지</span>
+                <span className="block text-xs text-neutral-400 mt-0.5">이전 멤버·운영비 그대로 유지. 후원 내역·금액만 초기화</span>
+              </button>
+              <button
+                className="w-full px-3 py-2.5 rounded-lg bg-[#ef4444] hover:bg-[#dc2626] text-sm text-left"
+                onClick={onResetInitMembers}
+              >
+                <span className="font-medium text-white">멤버 초기화</span>
+                <span className="block text-xs text-white/80 mt-0.5">멤버를 기본 3명으로 초기화</span>
+              </button>
+              <button
+                className="w-full px-3 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-sm"
+                onClick={() => setResetSheetOpen(false)}
+              >
+                취소
               </button>
             </div>
           </div>
