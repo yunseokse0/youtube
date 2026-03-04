@@ -43,6 +43,7 @@ function ClientTime({ ts }: { ts: number | string }) {
 
 export default function AdminPage() {
   const router = useRouter();
+  const [user, setUser] = useState<{ id: string; companyName: string } | null>(null);
   const [state, setState] = useState<AppState>(defaultState());
   const [syncStatus, setSyncStatus] = useState<"loading" | "synced" | "local" | "error">("loading");
   const stateUpdatedAtRef = useRef<number>(0);
@@ -173,6 +174,12 @@ export default function AdminPage() {
     actionConfirmRef.current = null;
     setActionSheet((prev) => ({ ...prev, open: false }));
   };
+
+  useEffect(() => {
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => data.user && setUser(data.user));
+  }, []);
 
   useEffect(() => {
     stateUpdatedAtRef.current = state.updatedAt || 0;
@@ -316,7 +323,7 @@ export default function AdminPage() {
   const buildOverlayUrl = (p: OverlayPreset): string => {
     if (typeof window === "undefined") return "";
     const base = `${window.location.origin}/overlay`;
-    const q: Record<string, string> = { p: p.id };
+    const q: Record<string, string> = { p: p.id, u: user?.id || "finalent" };
     return `${base}?${new URLSearchParams(q).toString()}`;
   };
   const buildPreviewOverlayUrl = (p: OverlayPreset): string => buildOverlayUrl(p);
@@ -739,7 +746,7 @@ export default function AdminPage() {
         <div>
         <div className="flex flex-wrap items-start sm:items-center justify-between gap-2 mb-6">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <h1 className="text-2xl font-bold">매니저 제어판</h1>
+            <h1 className="text-2xl font-bold">{user?.companyName || "매니저"} 정산 시스템</h1>
             <span className={`px-2 py-0.5 rounded text-xs font-medium ${syncStatus === "synced" ? "bg-emerald-900/60 text-emerald-300" : syncStatus === "loading" ? "bg-yellow-900/60 text-yellow-300" : syncStatus === "error" ? "bg-red-900/60 text-red-300" : "bg-neutral-800 text-neutral-400"}`}>
               {syncStatus === "synced" ? "서버 동기화됨" : syncStatus === "loading" ? "동기화 중..." : syncStatus === "error" ? "서버 저장 실패" : "로컬 모드"}
             </span>
@@ -749,6 +756,16 @@ export default function AdminPage() {
               title="로컬이 리셋되었을 때 서버 최신 상태를 다시 가져옵니다"
             >
               서버에서 가져오기
+            </button>
+            <button
+              className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
+              onClick={async () => {
+                await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+                router.push("/login");
+                router.refresh();
+              }}
+            >
+              로그아웃
             </button>
           </div>
           <Link className="text-sm text-neutral-300 underline" href="/settlements">정산 기록 보기</Link>

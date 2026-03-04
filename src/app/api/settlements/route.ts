@@ -1,7 +1,27 @@
 export const runtime = "edge";
 export const revalidate = 0;
 
-const STORAGE_KEY = "excel-broadcast-settlement-records-v1";
+import { AUTH_COOKIE } from "@/lib/auth";
+
+const STORAGE_KEY_BASE = "excel-broadcast-settlement-records-v1";
+const STORAGE_KEY_LEGACY = "excel-broadcast-settlement-records-v1";
+
+function getUserId(req: Request): string | null {
+  const cookie = req.headers.get("cookie") || "";
+  const match = cookie.match(new RegExp(`${AUTH_COOKIE}=([^;]+)`));
+  if (match) {
+    try {
+      const parsed = JSON.parse(decodeURIComponent(match[1]));
+      return parsed?.id || null;
+    } catch { return null; }
+  }
+  const url = new URL(req.url);
+  return url.searchParams.get("user");
+}
+
+function recordsKey(userId: string | null): string {
+  return userId ? `${STORAGE_KEY_BASE}:${userId}` : STORAGE_KEY_LEGACY;
+}
 
 function getEnv() {
   const base =
@@ -47,9 +67,17 @@ async function upstashSet(key: string, value: unknown) {
   return r.ok;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const records = await upstashGet(STORAGE_KEY);
+    const userId = getUserId(req) || "finalent";
+    let records = await upstashGet(recordsKey(userId));
+    if (userId === "finalent" && (!Array.isArray(records) || records.length === 0)) {
+      const legacy = await upstashGet(STORAGE_KEY_LEGACY);
+      if (Array.isArray(legacy)) {
+        if (legacy.length > 0) await upstashSet(recordsKey("finalent"), legacy);
+        records = legacy;
+      }
+    }
     return new Response(JSON.stringify(Array.isArray(records) ? records : []), {
       headers: {
         "Content-Type": "application/json",
@@ -66,8 +94,9 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
+    const userId = getUserId(req) || "finalent";
     const body = await req.json();
-    const ok = await upstashSet(STORAGE_KEY, Array.isArray(body) ? body : []);
+    const ok = await upstashSet(recordsKey(userId), Array.isArray(body) ? body : []);
     return new Response(JSON.stringify({ ok }), {
       headers: {
         "Content-Type": "application/json",

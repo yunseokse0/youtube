@@ -164,6 +164,7 @@ export async function saveStateAsync(state: AppState): Promise<boolean> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: json,
+      credentials: "include",
     });
     return res.ok;
   } catch {
@@ -171,9 +172,11 @@ export async function saveStateAsync(state: AppState): Promise<boolean> {
   }
 }
 
-export async function loadStateFromApi(): Promise<AppState | null> {
+export async function loadStateFromApi(userId?: string): Promise<AppState | null> {
   try {
-    const res = await fetch(`/api/state?_t=${Date.now()}`, { cache: "no-store" });
+    const q = new URLSearchParams({ _t: String(Date.now()) });
+    if (userId) q.set("user", userId);
+    const res = await fetch(`/api/state?${q.toString()}`, { cache: "no-store", credentials: "include" });
     if (!res.ok) return null;
     const data = await res.json();
     if (data && data.members) {

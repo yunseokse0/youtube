@@ -4,10 +4,29 @@ export const revalidate = 0;
 import type { AppState } from "@/lib/state";
 import { defaultState } from "@/lib/state";
 import { createModuleLogger } from "@/lib/logger";
+import { AUTH_COOKIE } from "@/lib/auth";
 
 const logger = createModuleLogger('API/State');
 
-const STORAGE_KEY = "excel-broadcast-state-v1";
+const STORAGE_KEY_BASE = "excel-broadcast-state-v1";
+const STORAGE_KEY_LEGACY = "excel-broadcast-state-v1";
+
+function getUserId(req: Request): string | null {
+  const cookie = req.headers.get("cookie") || "";
+  const match = cookie.match(new RegExp(`${AUTH_COOKIE}=([^;]+)`));
+  if (match) {
+    try {
+      const parsed = JSON.parse(decodeURIComponent(match[1]));
+      return parsed?.id || null;
+    } catch { return null; }
+  }
+  const url = new URL(req.url);
+  return url.searchParams.get("user");
+}
+
+function stateKey(userId: string | null): string {
+  return userId ? `${STORAGE_KEY_BASE}:${userId}` : STORAGE_KEY_LEGACY;
+}
 
 function getEnv() {
   const base =
@@ -57,8 +76,9 @@ async function upstashSet(key: string, value: unknown) {
   return r.ok;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const userId = getUserId(req) || "finalent";
     const { base, token } = getEnv();
     if (!base || !token) {
       const state = memoryState || defaultState();
@@ -72,8 +92,16 @@ export async function GET() {
       });
     }
 
-    const state = await upstashGet(STORAGE_KEY);
-    logger.debug('Redis 상태 반환', { hasState: !!state });
+    let state = await upstashGet(stateKey(userId));
+    if (userId === "finalent" && (!state || !Array.isArray(state.members))) {
+      const legacy = await upstashGet(STORAGE_KEY_LEGACY);
+      if (legacy && (Array.isArray(legacy.members) || Array.isArray(legacy.overlayPresets))) {
+        await upstashSet(stateKey("finalent"), legacy);
+        state = legacy;
+        logger.info('기존 데이터 finalent 계정으로 마이그레이션');
+      }
+    }
+    logger.debug('Redis 상태 반환', { hasState: !!state, userId });
     return new Response(JSON.stringify(state || {}), {
       headers: {
         "Content-Type": "application/json",
@@ -93,6 +121,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
+    const userId = getUserId(req) || "finalent";
     const body = (await req.json()) as AppState;
     const next: AppState = { ...body, updatedAt: Date.now() };
 
@@ -110,8 +139,8 @@ export async function POST(req: Request) {
       });
     }
 
-    const ok = await upstashSet(STORAGE_KEY, next);
-    logger.info('Redis 상태 업데이트', { updatedAt: next.updatedAt, success: ok });
+    const ok = await upstashSet(stateKey(userId), next);
+    logger.info('Redis 상태 업데이트', { updatedAt: next.updatedAt, success: ok, userId });
     return new Response(JSON.stringify({ ok }), {
       headers: {
         "Content-Type": "application/json",

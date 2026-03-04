@@ -148,10 +148,11 @@ function presetToParams(preset: OverlayPresetLike | null): URLSearchParams {
   return q;
 }
 
-function useRemoteState(): { state: AppState | null; ready: boolean } {
+function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
   const [state, setState] = useState<AppState | null>(null);
   const lastUpdatedRef = useRef(0);
-  const loadRef = useRef(loadStateFromApi);
+  const loadRef = useRef(() => loadStateFromApi(userId));
+  loadRef.current = () => loadStateFromApi(userId);
   const syncingRef = useRef(false);
   const readLocalStateIfExists = (): AppState | null => {
     if (typeof window === "undefined") return null;
@@ -693,7 +694,9 @@ function Timer({ elapsed, theme, fontSize }: { elapsed: string | null; theme: ty
 }
 
 function OverlayInner() {
-  const { state: s, ready } = useRemoteState();
+  const rawSp = useSearchParams();
+  const userId = (rawSp.get("u") || "finalent").trim();
+  const { state: s, ready } = useRemoteState(userId);
   const [localPresets, setLocalPresets] = useState<OverlayPresetLike[]>([]);
   const readLocalPresets = () => {
     if (typeof window === "undefined") return;
@@ -731,7 +734,6 @@ function OverlayInner() {
   const rounded = useMemo(() => roundToThousand(sumCombined), [sumCombined]);
   const pinnedFilter = (m: Member) => Boolean(m.operating) || /운영비/i.test(m.name) || /운영비/i.test(m.role || "");
   const displaySum = useCountUp(rounded, 800);
-  const rawSp = useSearchParams();
   const presetId = (rawSp.get("p") || "").trim();
   const activePreset = useMemo(
     () => (presetId ? overlayPresets.find((x) => x.id === presetId) || null : null),
