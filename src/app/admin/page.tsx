@@ -92,13 +92,16 @@ export default function AdminPage() {
     showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string;
     showMission: boolean; missionAnchor: string;
     showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
+    confettiMilestone?: string;
+    tableBgOpacity?: string;
   };
   const PRESET_STORAGE_KEY = "excel-broadcast-overlay-presets";
   const SETTLEMENT_OPTIONS_KEY = "excel-broadcast-settlement-options-v1";
   const PRESET_TEMPLATES: { name: string; preset: Partial<OverlayPreset> }[] = [
+    { name: "엑셀표만", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true } },
     { name: "전체 통합", preset: { showMembers: true, showTotal: true } },
     { name: "표만 (엑셀)", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true } },
-    { name: "멤버 목록만", preset: { showMembers: true, showTotal: false } },
+    { name: "멤버 목록만", preset: { showMembers: true, showTotal: false, showBottomDonors: false, tickerInMembers: false } },
     { name: "총합만", preset: { showMembers: false, showTotal: true, totalSize: "60" } },
     { name: "목표 프로그레스바", preset: { showMembers: false, showTotal: false, showGoal: true, goal: "500000", goalLabel: "목표 금액", goalWidth: "500" } },
     { name: "개인 골", preset: { showMembers: false, showTotal: false, showPersonalGoal: true, personalGoalAnchor: "tl" } },
@@ -117,6 +120,8 @@ export default function AdminPage() {
     timerStart: null, timerAnchor: "tr", showMission: false, missionAnchor: "br",
     membersTheme: "auto", totalTheme: "auto", goalTheme: "auto", tickerBaseTheme: "auto", timerTheme: "auto", missionTheme: "auto",
     showBottomDonors: true, donorsSize: "", donorsGap: "16", donorsSpeed: "20", donorsLimit: "8", donorsFormat: "short", donorsUnit: "", donorsColor: "", donorsBgColor: "", donorsBgOpacity: "0", tickerTheme: "auto", tickerGlow: "45", tickerShadow: "35", currencyLocale: "ko-KR",
+    confettiMilestone: "",
+    tableBgOpacity: "",
     ...overrides,
   });
   const [presets, setPresets] = useState<OverlayPreset[]>([]);
@@ -1081,7 +1086,7 @@ export default function AdminPage() {
                 </div>
               </div>
               <p className="text-xs text-neutral-400 mb-3">각 오버레이는 독립 URL을 가집니다. OBS/Prism에 브라우저 소스로 각각 추가하세요.</p>
-              <p className="text-xs text-neutral-500 mb-3">위치/크기 조정은 Prism에서 진행하고, 여기 프리뷰는 형태/디자인과 실시간 상태 업데이트 확인용으로 사용하세요.</p>
+              <p className="text-xs text-neutral-500 mb-3">위치/크기 조정은 Prism에서 진행하고, 여기 프리뷰는 형태/디자인과 실시간 상태 업데이트 확인용으로 사용하세요. Prism 브라우저 소스 크기를 프리뷰(9:16)와 동일하게 맞추면 화면이 일치합니다.</p>
               {presets.length === 0 && (
                 <div className="text-sm text-neutral-400 p-6 text-center border border-dashed border-white/10 rounded">아직 오버레이가 없습니다. 위 버튼으로 추가하세요.</div>
               )}
@@ -1096,6 +1101,8 @@ export default function AdminPage() {
                     p.goal, p.goalLabel, p.goalWidth, p.goalCurrent,
                     p.personalGoalTheme, p.personalGoalLimit,
                     p.tickerWidth, p.donorsSize, p.donorsGap, p.donorsSpeed, p.donorsLimit, p.donorsFormat, p.donorsUnit, p.currencyLocale, p.donorsColor, p.donorsBgColor, p.donorsBgOpacity, p.tickerTheme, p.tickerGlow, p.tickerShadow,
+                    p.confettiMilestone,
+                    p.tableBgOpacity,
                   ].join("|");
                   const previewUrl = `${previewBaseUrl}&pv=${encodeURIComponent(previewRev)}`;
                   const isOpen = editingId === p.id;
@@ -1120,7 +1127,7 @@ export default function AdminPage() {
                               <label className="text-xs text-neutral-400">테마</label>
                               <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.theme} onChange={(e) => updatePreset(p.id, { theme: e.target.value })}>
                                 <option value="default">기본</option>
-                                <option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option>
+                                <option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option><option value="excelTeal">엑셀(틸)</option><option value="excelPurple">엑셀(퍼플)</option><option value="excelEmerald">엑셀(에메랄드)</option><option value="excelOrange">엑셀(오렌지)</option><option value="excelIndigo">엑셀(인디고)</option>
                                 <option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
                                 <option value="rainbow">무지개</option><option value="sunset">일몰</option><option value="ocean">오션</option><option value="forest">포레스트</option><option value="aurora">오로라</option><option value="violet">바이올렛</option><option value="coral">코랄</option><option value="mint">민트</option><option value="lava">라바</option><option value="ice">아이스</option>
                               </select>
@@ -1165,6 +1172,61 @@ export default function AdminPage() {
                               </button>
                               <span className="text-[10px] text-neutral-500">(표만: 목록·총합만, 나머지 숨김)</span>
                             </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] items-center gap-2">
+                              <label className="text-xs text-neutral-400">표 배경 투명도</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="100"
+                                  value={p.tableBgOpacity ?? "100"}
+                                  onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value })}
+                                  className="flex-1 accent-emerald-500"
+                                />
+                                <input
+                                  className="w-14 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  value={p.tableBgOpacity ?? "100"}
+                                  onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value.replace(/[^\d]/g, "").slice(0, 3) })}
+                                />
+                                <span className="text-xs text-neutral-500">% (100=불투명)</span>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] items-center gap-2">
+                              <label className="text-xs text-neutral-400">폭죽(매 N만원)</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                  placeholder="0=비활성"
+                                  type="number"
+                                  min="0"
+                                  max="1000"
+                                  value={p.confettiMilestone ?? ""}
+                                  onChange={(e) => updatePreset(p.id, { confettiMilestone: e.target.value.replace(/[^\d]/g, "") })}
+                                />
+                                <span className="text-xs text-neutral-500">만원마다 누적매출 돌파 시 폭죽</span>
+                                <button
+                                  className="px-2 py-1 rounded bg-amber-600 hover:bg-amber-500 text-xs text-white"
+                                  onClick={async () => {
+                                    const { default: confetti } = await import("canvas-confetti");
+                                    const count = 150;
+                                    const defaults = { origin: { y: 0.6 }, zIndex: 9999 };
+                                    function fire(particleRatio: number, opts: Record<string, unknown>) {
+                                      confetti({ ...defaults, ...opts, particleCount: Math.floor(count * particleRatio) });
+                                    }
+                                    fire(0.25, { spread: 26, startVelocity: 55 });
+                                    fire(0.2, { spread: 60 });
+                                    fire(0.35, { spread: 100, decay: 0.91, scalar: 0.8 });
+                                    fire(0.1, { spread: 120, startVelocity: 25, decay: 0.92, scalar: 1.2 });
+                                    fire(0.1, { spread: 120, startVelocity: 45 });
+                                  }}
+                                >
+                                  폭죽 데모
+                                </button>
+                              </div>
+                            </div>
                             <div className="text-xs text-neutral-400 font-semibold">요소 표시/숨김</div>
                             <div className="flex flex-wrap gap-1">
                               {([["멤버 목록", "showMembers"], ["총합", "showTotal"], ["목표바", "showGoal"], ["개인 골", "showPersonalGoal"], ["후원 티커", "showTicker"], ["타이머", "showTimer"], ["미션 전광판", "showMission"]] as [string, keyof OverlayPreset][]).map(([label, key]) => (
@@ -1176,6 +1238,8 @@ export default function AdminPage() {
                             <div className="text-xs text-neutral-400 font-semibold">데모 빠른 실행</div>
                             <div className="flex flex-wrap gap-1">
                               {[
+                                { label: "폭죽 데모(오버레이)", patch: { showMembers: true, showTotal: true, showGoal: false, showTicker: false, showTimer: false, showMission: false, confettiMilestone: "10" } },
+                                { label: "엑셀표만", patch: { theme: "excel", showMembers: true, showTotal: true, showGoal: false, showTicker: false, showTimer: false, showMission: false, tableOnly: true } },
                                 { label: "표만", patch: { theme: "excel", showMembers: true, showTotal: true, showGoal: false, showTicker: false, showTimer: false, showMission: false, tableOnly: true } },
                                 { label: "멤버 보드", patch: { showMembers: true, showTotal: true, showGoal: false, showTicker: false, showTimer: false, showMission: false } },
                                 { label: "총합", patch: { showMembers: false, showTotal: true, showGoal: false, showTicker: false, showTimer: false, showMission: false } },
@@ -1201,6 +1265,8 @@ export default function AdminPage() {
                                     if (patch.showTimer !== undefined) u.searchParams.set("showTimer", String(patch.showTimer));
                                     if (patch.showMission !== undefined) u.searchParams.set("showMission", String(patch.showMission));
                                     if (patch.timerStart) u.searchParams.set("timerStart", String(patch.timerStart));
+                                    if (patch.confettiMilestone) u.searchParams.set("confettiMilestone", patch.confettiMilestone);
+                                    if (patch.tableBgOpacity) u.searchParams.set("tableBgOpacity", patch.tableBgOpacity);
                                     u.searchParams.set("autoFont", "true");
                                     u.searchParams.set("fitBase", "480");
                                     u.searchParams.set("compact", "true");

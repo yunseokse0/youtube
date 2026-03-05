@@ -242,7 +242,7 @@ export function appendDailyLog(snapshot: AppState) {
   if (typeof window === "undefined") return;
   try {
     const raw = window.localStorage.getItem(DAILY_LOG_KEY);
-    const logs = raw ? JSON.parse(raw) as Record<string, unknown[]> : {};
+    const logs = raw ? (JSON.parse(raw) as Record<string, unknown[]>) : {};
     const key = todaysDateKey();
     const entry = {
       at: new Date().toISOString(),
@@ -252,7 +252,28 @@ export function appendDailyLog(snapshot: AppState) {
     };
     if (!logs[key]) logs[key] = [];
     (logs[key] as unknown[]).push(entry);
-    window.localStorage.setItem(DAILY_LOG_KEY, JSON.stringify(logs));
+    const merged = JSON.stringify(logs);
+    window.localStorage.setItem(DAILY_LOG_KEY, merged);
+    // 서버에 동기화: 기존 서버 데이터와 병합 후 저장 (실패 시 로컬만 유지)
+    fetch("/api/daily-log", { cache: "no-store", credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((serverLog: Record<string, unknown[]> | null) => {
+        let toSave: Record<string, unknown[]>;
+        if (serverLog && typeof serverLog === "object") {
+          toSave = { ...serverLog };
+          if (!toSave[key]) toSave[key] = [];
+          (toSave[key] as unknown[]).push(entry);
+        } else {
+          toSave = JSON.parse(merged) as Record<string, unknown[]>;
+        }
+        return fetch("/api/daily-log", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(toSave),
+        });
+      })
+      .catch(() => {});
   } catch {
     // ignore
   }
@@ -269,7 +290,23 @@ export function loadDailyLog(): Record<string, DailyLogEntry[]> {
   if (typeof window === "undefined") return {};
   try {
     const raw = window.localStorage.getItem(DAILY_LOG_KEY);
-    return raw ? JSON.parse(raw) as Record<string, DailyLogEntry[]> : {};
+    return raw ? (JSON.parse(raw) as Record<string, DailyLogEntry[]>) : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function loadDailyLogFromApi(): Promise<Record<string, DailyLogEntry[]>> {
+  if (typeof window === "undefined") return {};
+  try {
+    const res = await fetch(`/api/daily-log?_t=${Date.now()}`, {
+      cache: "no-store",
+      credentials: "include",
+    });
+    if (!res.ok) return {};
+    const data = await res.json();
+    if (data && typeof data === "object") return data as Record<string, DailyLogEntry[]>;
+    return {};
   } catch {
     return {};
   }

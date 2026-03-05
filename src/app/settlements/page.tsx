@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { SettlementDeleteLog, SettlementRecord, deleteSettlementRecordAndSync, loadSettlementDeleteLogs, loadSettlementRecordsPreferApi } from "@/lib/settlement";
+import { loadDailyLog, loadDailyLogFromApi, Donor } from "@/lib/state";
 
 function formatMan( n: number ): string {
   if (n >= 1_0000_0000) return `${(n / 1_0000_0000).toFixed(1)}억`;
@@ -13,14 +14,29 @@ function formatMan( n: number ): string {
 export default function SettlementsPage() {
   const [records, setRecords] = useState<SettlementRecord[]>([]);
   const [deleteLogs, setDeleteLogs] = useState<SettlementDeleteLog[]>([]);
+  const [dailyLog, setDailyLog] = useState<Record<string, { at: string; total: number; members: unknown[]; donors: Donor[] }[]>>({});
   const [titleQuery, setTitleQuery] = useState("");
   const [dateQuery, setDateQuery] = useState("");
   const [memberQuery, setMemberQuery] = useState("");
+  const [selectedForGraph, setSelectedForGraph] = useState<string | null>(null);
 
   useEffect(() => {
     loadSettlementRecordsPreferApi().then(setRecords);
     setDeleteLogs(loadSettlementDeleteLogs());
+    loadDailyLogFromApi()
+      .then((apiLog) => {
+        const local = loadDailyLog();
+        const merged = { ...local, ...apiLog };
+        setDailyLog(Object.keys(merged).length > 0 ? merged : {});
+      })
+      .catch(() => setDailyLog(loadDailyLog()));
   }, []);
+
+  useEffect(() => {
+    if (selectedForGraph && !filteredRecords.some((r) => r.id === selectedForGraph)) {
+      setSelectedForGraph(null);
+    }
+  }, [selectedForGraph, filteredRecords]);
 
   const onDeleteRecord = async (recordId: string) => {
     const target = records.find((r) => r.id === recordId);
@@ -50,6 +66,62 @@ export default function SettlementsPage() {
       return true;
     });
   }, [records, titleQuery, memberQuery, dateQuery]);
+
+  const getDonorsForRecord = (r: SettlementRecord): Donor[] => {
+    const ymd = new Date(r.createdAt).toISOString().slice(0, 10);
+    const entries = dailyLog[ymd] || [];
+    const last = entries[entries.length - 1];
+    return last?.donors || [];
+  };
+
+  const recordToDonors = useMemo(() => {
+    const map = new Map<string, Donor[]>();
+    for (const r of filteredRecords) {
+      map.set(r.id, getDonorsForRecord(r));
+    }
+    return map;
+  }, [filteredRecords, dailyLog]);
+
+  const donorDashboard = useMemo(() => {
+    const allDonors: Donor[] = [];
+    for (const r of filteredRecords) {
+      allDonors.push(...(recordToDonors.get(r.id) || []));
+    }
+    const totalAmount = allDonors.reduce((s, d) => s + d.amount, 0);
+    const byName = new Map<string, { name: string; amount: number; count: number }>();
+    for (const d of allDonors) {
+      const key = (d.name || "무명").trim() || "무명";
+      const prev = byName.get(key) || { name: key, amount: 0, count: 0 };
+      byName.set(key, { name: key, amount: prev.amount + d.amount, count: prev.count + 1 });
+    }
+    const topDonors = Array.from(byName.values())
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 10);
+    const broadcastCount = filteredRecords.length;
+    const avgPerBroadcast = broadcastCount > 0 ? totalAmount / broadcastCount : 0;
+    return { totalAmount, totalCount: allDonors.length, topDonors, broadcastCount, avgPerBroadcast };
+  }, [filteredRecords, recordToDonors]);
+
+  const timeGraphData = useMemo(() => {
+    const rid = selectedForGraph;
+    if (!rid) return null;
+    const donors = recordToDonors.get(rid) || [];
+    if (donors.length === 0) return null;
+    const minAt = Math.min(...donors.map((d) => d.at));
+    const BUCKET_MIN = 15;
+    const buckets: Record<number, { amount: number; count: number }> = {};
+    for (const d of donors) {
+      const mins = Math.floor((d.at - minAt) / 60000 / BUCKET_MIN) * BUCKET_MIN;
+      if (!buckets[mins]) buckets[mins] = { amount: 0, count: 0 };
+      buckets[mins].amount += d.amount;
+      buckets[mins].count += 1;
+    }
+    const sorted = Object.entries(buckets)
+      .map(([k, v]) => ({ mins: parseInt(k, 10), ...v }))
+      .sort((a, b) => a.mins - b.mins);
+    const maxAmount = Math.max(1, ...sorted.map((s) => s.amount));
+    return { buckets: sorted, maxAmount, minAt };
+  }, [selectedForGraph, recordToDonors]);
 
   const dashboard = useMemo(() => {
     const totalGross = filteredRecords.reduce((s, r) => s + (r.totalGross || 0), 0);
@@ -223,6 +295,97 @@ export default function SettlementsPage() {
             </div>
           )}
 
+          {/* 후원자 대시보드 */}
+          {donorDashboard.totalCount > 0 && (
+            <div className="rounded-lg bg-neutral-800/50 p-4 border border-white/5">
+              <h3 className="text-sm font-semibold mb-3">후원자 현황</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                <div className="rounded bg-neutral-700/50 p-2">
+                  <div className="text-[10px] text-neutral-500">총 후원 건수</div>
+                  <div className="text-lg font-bold text-cyan-400">{donorDashboard.totalCount.toLocaleString()}</div>
+                </div>
+                <div className="rounded bg-neutral-700/50 p-2">
+                  <div className="text-[10px] text-neutral-500">총 후원액</div>
+                  <div className="text-lg font-bold text-cyan-400">{formatMan(donorDashboard.totalAmount)}</div>
+                </div>
+                <div className="rounded bg-neutral-700/50 p-2">
+                  <div className="text-[10px] text-neutral-500">방송당 평균</div>
+                  <div className="text-lg font-bold text-cyan-400">{formatMan(donorDashboard.avgPerBroadcast)}</div>
+                </div>
+                <div className="rounded bg-neutral-700/50 p-2">
+                  <div className="text-[10px] text-neutral-500">건당 평균</div>
+                  <div className="text-lg font-bold text-cyan-400">{donorDashboard.totalCount > 0 ? formatMan(donorDashboard.totalAmount / donorDashboard.totalCount) : "-"}</div>
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-neutral-500 mb-2">후원자별 누적 (상위 10명)</div>
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {donorDashboard.topDonors.map((t) => (
+                    <div key={t.name} className="flex items-center justify-between text-xs">
+                      <span className="truncate max-w-[120px]" title={t.name}>{t.name}</span>
+                      <span className="text-cyan-300 font-medium">{formatMan(t.amount)}</span>
+                      <span className="text-neutral-500">({t.count}건)</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="text-[10px] text-neutral-500 mt-2">※ 일일 로그(리셋 시 저장) 기준. 다른 기기에서는 표시되지 않을 수 있습니다.</div>
+            </div>
+          )}
+
+          {/* 방송별 후원 시점 그래프 */}
+          {filteredRecords.length > 0 && (
+            <div className="rounded-lg bg-neutral-800/50 p-4 border border-white/5">
+              <h3 className="text-sm font-semibold mb-3">후원 시점 분석 (방송 중 어느 시점에 후원이 몰렸는지)</h3>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {filteredRecords.slice(0, 12).map((r) => {
+                  const donors = recordToDonors.get(r.id) || [];
+                  const hasData = donors.length > 0;
+                  return (
+                    <button
+                      key={r.id}
+                      className={`px-2 py-1 rounded text-xs whitespace-nowrap ${selectedForGraph === r.id ? "bg-cyan-600 text-white" : hasData ? "bg-neutral-700 hover:bg-neutral-600" : "bg-neutral-800 text-neutral-500 cursor-not-allowed"}`}
+                      onClick={() => hasData && setSelectedForGraph(selectedForGraph === r.id ? null : r.id)}
+                      disabled={!hasData}
+                      title={hasData ? `${r.title} (${donors.length}건)` : "후원 데이터 없음"}
+                    >
+                      {r.title.slice(0, 12)}{r.title.length > 12 ? "…" : ""} {hasData && `(${donors.length})`}
+                    </button>
+                  );
+                })}
+              </div>
+              {timeGraphData && (
+                <div className="space-y-2">
+                  <div className="text-xs text-neutral-400">
+                    선택: {filteredRecords.find((r) => r.id === selectedForGraph)?.title} · {timeGraphData.buckets.length}개 구간 (15분 단위)
+                  </div>
+                  <div className="flex items-end gap-1 h-32">
+                    {timeGraphData.buckets.map((b) => (
+                      <div
+                        key={b.mins}
+                        className="flex-1 min-w-[12px] flex flex-col items-center justify-end group"
+                        title={`${b.mins}분~${b.mins + 15}분: ${formatMan(b.amount)} (${b.count}건)`}
+                      >
+                        <div
+                          className="w-full max-w-8 rounded-t bg-cyan-500/80 group-hover:bg-cyan-400 transition-colors"
+                          style={{ height: `${Math.max(4, (b.amount / timeGraphData.maxAmount) * 100)}%` }}
+                        />
+                        <span className="text-[9px] text-neutral-500 mt-0.5">{b.mins}m</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-[10px] text-neutral-500">가로축: 방송 시작 후 경과 시간(분). 세로축: 해당 구간 후원액.</div>
+                </div>
+              )}
+              {!timeGraphData && selectedForGraph && (
+                <div className="text-sm text-neutral-500 py-4">선택한 방송에 후원 데이터가 없습니다.</div>
+              )}
+              {!selectedForGraph && (
+                <div className="text-sm text-neutral-500 py-4">위에서 방송을 선택하면 후원 시점 그래프가 표시됩니다.</div>
+              )}
+            </div>
+          )}
+
           {dashboard.memberData.length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <div className="rounded-lg bg-neutral-800/50 p-4 border border-white/5">
@@ -283,17 +446,21 @@ export default function SettlementsPage() {
                 <th className="p-2 text-left">일시</th>
                 <th className="p-2 text-left">제목</th>
                 <th className="p-2 text-right">참여자</th>
+                <th className="p-2 text-right">후원</th>
                 <th className="p-2 text-right">최종 정산</th>
                 <th className="p-2 text-right">열기</th>
                 <th className="p-2 text-right">삭제</th>
               </tr>
             </thead>
             <tbody>
-              {filteredRecords.map((r) => (
+              {filteredRecords.map((r) => {
+                const donors = recordToDonors.get(r.id) || [];
+                return (
                 <tr key={r.id} className="border-b border-white/10">
                   <td className="p-2 whitespace-nowrap">{new Date(r.createdAt).toLocaleString()}</td>
                   <td className="p-2 whitespace-nowrap">{r.title}</td>
                   <td className="p-2 text-right">{r.members.length}</td>
+                  <td className="p-2 text-right text-cyan-400" title={donors.length > 0 ? `${donors.length}건` : "데이터 없음"}>{donors.length}</td>
                   <td className="p-2 text-right font-semibold">{r.totalNet.toLocaleString()}</td>
                   <td className="p-2 text-right">
                     <Link className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 whitespace-nowrap inline-block" href={`/settlements/${r.id}`}>상세</Link>
@@ -302,10 +469,11 @@ export default function SettlementsPage() {
                     <button className="px-2 py-1 rounded bg-red-800 hover:bg-red-700 whitespace-nowrap" onClick={() => onDeleteRecord(r.id)}>삭제</button>
                   </td>
                 </tr>
-              ))}
+              );
+              })}
               {filteredRecords.length === 0 && (
                 <tr>
-                  <td className="p-4 text-neutral-400" colSpan={6}>조건에 맞는 정산 기록이 없습니다.</td>
+                  <td className="p-4 text-neutral-400" colSpan={7}>조건에 맞는 정산 기록이 없습니다.</td>
                 </tr>
               )}
             </tbody>

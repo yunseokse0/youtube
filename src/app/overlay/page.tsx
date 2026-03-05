@@ -67,6 +67,8 @@ type OverlayPresetLike = {
   tickerShadow?: string;
   currencyLocale?: string;
   tableOnly?: boolean;
+  confettiMilestone?: string;
+  tableBgOpacity?: string;
 };
 
 function presetToParams(preset: OverlayPresetLike | null): URLSearchParams {
@@ -141,6 +143,8 @@ function presetToParams(preset: OverlayPresetLike | null): URLSearchParams {
   if (preset.tickerShadow && preset.tickerShadow.trim()) q.set("tickerShadow", preset.tickerShadow.trim());
   if (preset.currencyLocale && preset.currencyLocale.trim()) q.set("currencyLocale", preset.currencyLocale.trim());
   if (preset.tableOnly) q.set("tableOnly", "true");
+  if (preset.confettiMilestone && preset.confettiMilestone.trim()) q.set("confettiMilestone", preset.confettiMilestone.trim());
+  if (preset.tableBgOpacity && preset.tableBgOpacity.trim()) q.set("tableBgOpacity", preset.tableBgOpacity.trim());
   return q;
 }
 
@@ -253,7 +257,14 @@ function useElapsed(startTs: number | null) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
-type ThemeId = "default" | "excel" | "excelBlue" | "excelSlate" | "excelAmber" | "excelRose" | "excelNavy" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel" | "rainbow" | "sunset" | "ocean" | "forest" | "aurora" | "violet" | "coral" | "mint" | "lava" | "ice";
+type ThemeId = "default" | "excel" | "excelBlue" | "excelSlate" | "excelAmber" | "excelRose" | "excelNavy" | "excelTeal" | "excelPurple" | "excelEmerald" | "excelOrange" | "excelIndigo" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel" | "rainbow" | "sunset" | "ocean" | "forest" | "aurora" | "violet" | "coral" | "mint" | "lava" | "ice";
+
+const TABLE_BG_RGB: Record<string, [number, number, number]> = {
+  excel: [255, 255, 255], excelBlue: [255, 255, 255], excelAmber: [255, 251, 235], excelRose: [255, 241, 242],
+  excelTeal: [240, 253, 250], excelPurple: [250, 245, 255], excelEmerald: [236, 253, 245], excelOrange: [255, 247, 237], excelIndigo: [238, 242, 255],
+  excelSlate: [30, 41, 59], excelNavy: [15, 23, 42],
+};
+const defaultTableBgRgb: [number, number, number] = [23, 23, 23];
 
 const THEMES: Record<ThemeId, {
   label: string;
@@ -294,36 +305,36 @@ const THEMES: Record<ThemeId, {
   excel: {
     label: "엑셀(녹색)",
     memberCls: "font-mono",
-    nameCls: "text-black font-semibold",
-    accountCls: "text-blue-700 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
-    toonCls: "text-gray-500 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    nameCls: "text-slate-900 font-semibold",
+    accountCls: "text-blue-800 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    toonCls: "text-slate-600 whitespace-nowrap font-mono tabular-nums overflow-hidden",
     totalCls: "font-bold text-white",
     totalWrapCls: "bg-[#217346] px-2 py-1",
-    rowCls: "border border-[#d4d4d4] px-2 py-1 align-middle",
-    tableCls: "bg-white/95 border-collapse shadow-lg",
+    rowCls: "border border-[#d4d4d4] px-2 py-1 align-middle bg-white",
+    tableCls: "bg-white border-collapse shadow-lg",
     headerCls: "bg-[#217346] text-white font-bold px-2 py-1 border border-[#1a5c37] text-sm",
     goalBarBg: "bg-[#d4d4d4]",
     goalBarFill: "bg-[#217346]",
     goalText: "text-white font-mono font-bold",
-    goalWrap: "border border-[#d4d4d4] bg-white/95 p-1",
+    goalWrap: "border border-[#d4d4d4] bg-white p-1",
     tickerCls: "text-[#217346] font-mono font-bold",
     timerCls: "font-mono text-black/60 bg-white/80 px-2",
   },
   excelBlue: {
     label: "엑셀(파랑)",
     memberCls: "font-mono",
-    nameCls: "text-black font-semibold",
+    nameCls: "text-slate-900 font-semibold",
     accountCls: "text-blue-800 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
-    toonCls: "text-slate-500 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    toonCls: "text-slate-600 whitespace-nowrap font-mono tabular-nums overflow-hidden",
     totalCls: "font-bold text-white",
     totalWrapCls: "bg-[#2563eb] px-2 py-1",
-    rowCls: "border border-[#cbd5e1] px-2 py-1 align-middle",
-    tableCls: "bg-white/95 border-collapse shadow-lg",
+    rowCls: "border border-[#cbd5e1] px-2 py-1 align-middle bg-white",
+    tableCls: "bg-white border-collapse shadow-lg",
     headerCls: "bg-[#2563eb] text-white font-bold px-2 py-1 border border-[#1d4ed8] text-sm",
     goalBarBg: "bg-[#e2e8f0]",
     goalBarFill: "bg-[#2563eb]",
     goalText: "text-white font-mono font-bold",
-    goalWrap: "border border-[#cbd5e1] bg-white/95 p-1",
+    goalWrap: "border border-[#cbd5e1] bg-white p-1",
     tickerCls: "text-[#2563eb] font-mono font-bold",
     timerCls: "font-mono text-slate-600 bg-white/80 px-2",
   },
@@ -349,12 +360,12 @@ const THEMES: Record<ThemeId, {
     label: "엑셀(앰버)",
     memberCls: "font-mono",
     nameCls: "text-amber-950 font-semibold",
-    accountCls: "text-amber-800 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
-    toonCls: "text-amber-600 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    accountCls: "text-amber-900 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    toonCls: "text-amber-700 whitespace-nowrap font-mono tabular-nums overflow-hidden",
     totalCls: "font-bold text-white",
     totalWrapCls: "bg-[#d97706] px-2 py-1",
-    rowCls: "border border-amber-200 px-2 py-1 align-middle",
-    tableCls: "bg-amber-50/95 border-collapse shadow-lg",
+    rowCls: "border border-amber-200 px-2 py-1 align-middle bg-amber-50",
+    tableCls: "bg-amber-50 border-collapse shadow-lg",
     headerCls: "bg-[#d97706] text-white font-bold px-2 py-1 border border-[#b45309] text-sm",
     goalBarBg: "bg-amber-200",
     goalBarFill: "bg-[#d97706]",
@@ -367,12 +378,12 @@ const THEMES: Record<ThemeId, {
     label: "엑셀(로즈)",
     memberCls: "font-mono",
     nameCls: "text-rose-950 font-semibold",
-    accountCls: "text-rose-700 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
-    toonCls: "text-rose-500 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    accountCls: "text-rose-800 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    toonCls: "text-rose-600 whitespace-nowrap font-mono tabular-nums overflow-hidden",
     totalCls: "font-bold text-white",
     totalWrapCls: "bg-[#e11d48] px-2 py-1",
-    rowCls: "border border-rose-200 px-2 py-1 align-middle",
-    tableCls: "bg-rose-50/95 border-collapse shadow-lg",
+    rowCls: "border border-rose-200 px-2 py-1 align-middle bg-rose-50",
+    tableCls: "bg-rose-50 border-collapse shadow-lg",
     headerCls: "bg-[#e11d48] text-white font-bold px-2 py-1 border border-[#be123c] text-sm",
     goalBarBg: "bg-rose-200",
     goalBarFill: "bg-[#e11d48]",
@@ -398,6 +409,96 @@ const THEMES: Record<ThemeId, {
     goalWrap: "border border-slate-500 bg-slate-900/95 p-1",
     tickerCls: "text-sky-300 font-mono font-bold",
     timerCls: "font-mono text-slate-300 bg-slate-800/80 px-2",
+  },
+  excelTeal: {
+    label: "엑셀(틸)",
+    memberCls: "font-mono",
+    nameCls: "text-slate-900 font-semibold",
+    accountCls: "text-teal-800 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    toonCls: "text-slate-600 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    totalCls: "font-bold text-white",
+    totalWrapCls: "bg-[#0d9488] px-2 py-1",
+    rowCls: "border border-teal-200 px-2 py-1 align-middle bg-teal-50",
+    tableCls: "bg-teal-50 border-collapse shadow-lg",
+    headerCls: "bg-[#0d9488] text-white font-bold px-2 py-1 border border-[#0f766e] text-sm",
+    goalBarBg: "bg-teal-200",
+    goalBarFill: "bg-[#0d9488]",
+    goalText: "text-white font-mono font-bold",
+    goalWrap: "border border-teal-200 bg-teal-50 p-1",
+    tickerCls: "text-[#0d9488] font-mono font-bold",
+    timerCls: "font-mono text-teal-700 bg-teal-100/80 px-2",
+  },
+  excelPurple: {
+    label: "엑셀(퍼플)",
+    memberCls: "font-mono",
+    nameCls: "text-slate-900 font-semibold",
+    accountCls: "text-purple-800 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    toonCls: "text-slate-600 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    totalCls: "font-bold text-white",
+    totalWrapCls: "bg-[#7c3aed] px-2 py-1",
+    rowCls: "border border-purple-200 px-2 py-1 align-middle bg-purple-50",
+    tableCls: "bg-purple-50 border-collapse shadow-lg",
+    headerCls: "bg-[#7c3aed] text-white font-bold px-2 py-1 border border-[#6d28d9] text-sm",
+    goalBarBg: "bg-purple-200",
+    goalBarFill: "bg-[#7c3aed]",
+    goalText: "text-white font-mono font-bold",
+    goalWrap: "border border-purple-200 bg-purple-50 p-1",
+    tickerCls: "text-[#7c3aed] font-mono font-bold",
+    timerCls: "font-mono text-purple-700 bg-purple-100/80 px-2",
+  },
+  excelEmerald: {
+    label: "엑셀(에메랄드)",
+    memberCls: "font-mono",
+    nameCls: "text-slate-900 font-semibold",
+    accountCls: "text-emerald-800 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    toonCls: "text-slate-600 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    totalCls: "font-bold text-white",
+    totalWrapCls: "bg-[#059669] px-2 py-1",
+    rowCls: "border border-emerald-200 px-2 py-1 align-middle bg-emerald-50",
+    tableCls: "bg-emerald-50 border-collapse shadow-lg",
+    headerCls: "bg-[#059669] text-white font-bold px-2 py-1 border border-[#047857] text-sm",
+    goalBarBg: "bg-emerald-200",
+    goalBarFill: "bg-[#059669]",
+    goalText: "text-white font-mono font-bold",
+    goalWrap: "border border-emerald-200 bg-emerald-50 p-1",
+    tickerCls: "text-[#059669] font-mono font-bold",
+    timerCls: "font-mono text-emerald-700 bg-emerald-100/80 px-2",
+  },
+  excelOrange: {
+    label: "엑셀(오렌지)",
+    memberCls: "font-mono",
+    nameCls: "text-slate-900 font-semibold",
+    accountCls: "text-orange-800 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    toonCls: "text-slate-600 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    totalCls: "font-bold text-white",
+    totalWrapCls: "bg-[#ea580c] px-2 py-1",
+    rowCls: "border border-orange-200 px-2 py-1 align-middle bg-orange-50",
+    tableCls: "bg-orange-50 border-collapse shadow-lg",
+    headerCls: "bg-[#ea580c] text-white font-bold px-2 py-1 border border-[#c2410c] text-sm",
+    goalBarBg: "bg-orange-200",
+    goalBarFill: "bg-[#ea580c]",
+    goalText: "text-white font-mono font-bold",
+    goalWrap: "border border-orange-200 bg-orange-50 p-1",
+    tickerCls: "text-[#ea580c] font-mono font-bold",
+    timerCls: "font-mono text-orange-700 bg-orange-100/80 px-2",
+  },
+  excelIndigo: {
+    label: "엑셀(인디고)",
+    memberCls: "font-mono",
+    nameCls: "text-slate-900 font-semibold",
+    accountCls: "text-indigo-800 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    toonCls: "text-slate-600 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    totalCls: "font-bold text-white",
+    totalWrapCls: "bg-[#4f46e5] px-2 py-1",
+    rowCls: "border border-indigo-200 px-2 py-1 align-middle bg-indigo-50",
+    tableCls: "bg-indigo-50 border-collapse shadow-lg",
+    headerCls: "bg-[#4f46e5] text-white font-bold px-2 py-1 border border-[#4338ca] text-sm",
+    goalBarBg: "bg-indigo-200",
+    goalBarFill: "bg-[#4f46e5]",
+    goalText: "text-white font-mono font-bold",
+    goalWrap: "border border-indigo-200 bg-indigo-50 p-1",
+    tickerCls: "text-[#4f46e5] font-mono font-bold",
+    timerCls: "font-mono text-indigo-700 bg-indigo-100/80 px-2",
   },
   neon: {
     label: "네온",
@@ -1050,7 +1151,7 @@ function OverlayInner() {
   const timerTheme = theme;
   const missionTheme = theme;
   const missionThemeVariant = (() => {
-    const excelThemes = ["excel", "excelBlue", "excelSlate", "excelAmber", "excelRose", "excelNavy"];
+    const excelThemes = ["excel", "excelBlue", "excelSlate", "excelAmber", "excelRose", "excelNavy", "excelTeal", "excelPurple", "excelEmerald", "excelOrange", "excelIndigo"];
     return excelThemes.includes(themeId) ? "excel" : (["rainbow", "sunset", "ocean", "forest", "aurora", "violet", "coral", "mint", "lava", "ice"].includes(themeId) ? "neon" : themeId);
   })() as "default" | "excel" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel";
 
@@ -1094,6 +1195,12 @@ function OverlayInner() {
   const missionAnchor = (sp.get("missionAnchor") || "bc").toLowerCase();
   const missionWidth = Math.max(400, Math.min(1600, parseInt(sp.get("missionWidth") || "800", 10)));
   const missionDuration = Math.max(15, Math.min(60, parseInt(sp.get("missionDuration") || "25", 10)));
+  const confettiMilestoneMan = (() => {
+    const raw = (sp.get("confettiMilestone") || "").trim();
+    if (!raw) return 0;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? Math.max(1, Math.min(1000, n)) : 0;
+  })();
 
   const elapsed = useElapsed(timerStart);
 
@@ -1127,6 +1234,12 @@ function OverlayInner() {
   const tickerThemeCfg = sp.get("tickerTheme") || "auto";
   const tickerGlowCfg = Math.max(0, Math.min(100, parseInt(sp.get("tickerGlow") || "45", 10)));
   const tickerShadowCfg = Math.max(0, Math.min(100, parseInt(sp.get("tickerShadow") || "35", 10)));
+  const tableBgOpacity = (() => {
+    const raw = (sp.get("tableBgOpacity") || "").trim();
+    if (!raw) return 100;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 100;
+  })();
   useEffect(() => {
     if (typeof window === "undefined") return;
     (window as any).__overlayTickerConfig = {
@@ -1141,6 +1254,12 @@ function OverlayInner() {
     donorsFormat === "full"
       ? roundToThousand(n).toLocaleString(currencyLocale)
       : formatManThousand(n);
+  const stripBg = (cls: string) => cls.replace(/\bbg-[^\s]+/g, "bg-transparent");
+  const useTableOpacity = tableBgOpacity < 100;
+  const effectiveTableCls = useTableOpacity ? stripBg(membersTheme.tableCls) : membersTheme.tableCls;
+  const effectiveRowCls = useTableOpacity ? stripBg(membersTheme.rowCls) : membersTheme.rowCls;
+  const effectiveHeaderCls = membersTheme.headerCls;
+  const effectiveTotalWrapCls = totalTheme.totalWrapCls;
   const lockWidth = (sp.get("lockWidth") || "false").toLowerCase() === "true";
   const effectiveNameGrow = lockWidth ? false : nameGrow;
   const scaledMainStyle: React.CSSProperties = { zoom: scale as any };
@@ -1253,11 +1372,59 @@ function OverlayInner() {
   const allOrderKeys = [...ranked.map(({ m }) => m.id), ...pinned.map((m) => `${m.id}-p`)];
   const setRowRef = useFlip(allOrderKeys, 500);
 
+  const prevTotalsRef = useRef<Map<string, number>>(new Map());
+  const [changedIds, setChangedIds] = useState<Set<string>>(new Set());
+  const isInitialMount = useRef(true);
+  useEffect(() => {
+    const next = new Map<string, number>();
+    const changed = new Set<string>();
+    for (const m of members) {
+      const total = (m.account || 0) + (m.toon || 0);
+      const prev = prevTotalsRef.current.get(m.id);
+      next.set(m.id, total);
+      if (!isInitialMount.current && prev !== undefined && prev !== total) {
+        changed.add(m.id);
+      }
+    }
+    isInitialMount.current = false;
+    prevTotalsRef.current = next;
+    if (changed.size > 0) {
+      setChangedIds(changed);
+      const t = setTimeout(() => setChangedIds(new Set()), 800);
+      return () => clearTimeout(t);
+    }
+  }, [members]);
+
   useEffect(() => {
     document.body.style.background = "transparent";
     document.documentElement.style.background = "transparent";
     return () => { document.body.style.background = ""; };
   }, []);
+
+  const confettiLastMilestoneRef = useRef<number>(0);
+  useEffect(() => {
+    if (confettiMilestoneMan <= 0) return;
+    const milestoneWon = confettiMilestoneMan * 10000;
+    const curr = Math.floor(rounded / milestoneWon);
+    const prev = confettiLastMilestoneRef.current;
+    if (curr > prev && prev >= 0) {
+      confettiLastMilestoneRef.current = curr;
+      import("canvas-confetti").then(({ default: confetti }) => {
+        const count = 150;
+        const defaults = { origin: { y: 0.6 }, zIndex: 9999 };
+        function fire(particleRatio: number, opts: Record<string, unknown>) {
+          confetti({ ...defaults, ...opts, particleCount: Math.floor(count * particleRatio) });
+        }
+        fire(0.25, { spread: 26, startVelocity: 55 });
+        fire(0.2, { spread: 60 });
+        fire(0.35, { spread: 100, decay: 0.91, scalar: 0.8 });
+        fire(0.1, { spread: 120, startVelocity: 25, decay: 0.92, scalar: 1.2 });
+        fire(0.1, { spread: 120, startVelocity: 45 });
+      });
+    } else if (curr >= 0) {
+      confettiLastMilestoneRef.current = curr;
+    }
+  }, [rounded, confettiMilestoneMan]);
 
   const posClass = (a: string) =>
     a === "tr" ? "top-4 right-4" :
@@ -1306,20 +1473,72 @@ function OverlayInner() {
     : { width: responsiveTickerWidth };
   const tickerPosClass = hasTickerFreePos ? "" : posClass(tickerAnchor);
 
-  const excelGridCols = hasRoleColumn
+    const excelGridCols = hasRoleColumn
       ? ["3ch", "6ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`]
       : ["3ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`];
     return (
       <main className="transparent-bg min-h-screen no-select" style={scaledMainStyle}>
         {showMembers && ready && (
-          <div className={`fixed ${listPosClass}`}>
-            <div ref={containerRef} className="flex items-start gap-3" style={{ width: "fit-content" }}>
+          <div className={`fixed ${listPosClass}`} style={{ maxWidth: "100vw", maxHeight: "100vh" }}>
+            <div ref={containerRef} className="flex items-start gap-3" style={{ width: "fit-content", maxWidth: "100vw" }}>
               {showSideDonors && donorsSide === "left" && (
                 <div style={{ width: donorsWidth }}>
                   <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
                 </div>
               )}
               <div>
+                {useTableOpacity ? (
+                  <div className="relative rounded-lg overflow-hidden" style={{ backgroundColor: `rgba(${(TABLE_BG_RGB[themeId] || defaultTableBgRgb).join(",")}, ${tableBgOpacity / 100})` }}>
+                    <table ref={tableBoxRef as any} className={effectiveTableCls} style={{ fontSize: mSize, borderSpacing: 0, tableLayout: "fixed" }}>
+                  <colgroup>
+                    {excelGridCols.map((w, idx) => (
+                      <col key={`excel-col-${idx}`} style={{ width: w }} />
+                    ))}
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <td className={effectiveHeaderCls}>순위</td>
+                      {hasRoleColumn && <td className={effectiveHeaderCls}>직급</td>}
+                      <td className={effectiveHeaderCls}>이름</td>
+                      <td className={`${effectiveHeaderCls} text-right`}>계좌</td>
+                      <td className={`${effectiveHeaderCls} text-right`}>투네</td>
+                      <td className={`${effectiveHeaderCls} text-right`}>TOTAL</td>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ranked.map(({m, rank}) => (
+                      <tr key={m.id} ref={setRowRef(m.id)} className={`transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
+                        <td className={`${effectiveRowCls} text-left`}>#{rank}</td>
+                        {hasRoleColumn && <td className={effectiveRowCls}>{m.role || "-"}</td>}
+                        <td className={`${effectiveRowCls} ${membersTheme.nameCls} truncate`}>{m.name}</td>
+                        <td className={`${effectiveRowCls} ${membersTheme.accountCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
+                        <td className={`${effectiveRowCls} ${membersTheme.toonCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
+                        <td className={`${effectiveRowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
+                      </tr>
+                    ))}
+                    {pinned.map((m) => (
+                      <tr key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
+                        <td className={`${effectiveRowCls} text-right`}>—</td>
+                        {hasRoleColumn && <td className={effectiveRowCls}></td>}
+                        <td className={`${effectiveRowCls} ${membersTheme.nameCls} truncate`}>{m.name}</td>
+                        <td className={`${effectiveRowCls} ${membersTheme.accountCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
+                        <td className={`${effectiveRowCls} ${membersTheme.toonCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
+                        <td className={`${effectiveRowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
+                      </tr>
+                    ))}
+                    {showTotal && ready && (
+                      <tr>
+                        <td className={effectiveTotalWrapCls} colSpan={hasRoleColumn ? 2 : 1}>총합</td>
+                        <td className={effectiveTotalWrapCls} />
+                        <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(sumAccount)}</td>
+                        <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(sumToon)}</td>
+                        <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(rounded)}</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+                  </div>
+                ) : (
                 <table ref={tableBoxRef as any} className={membersTheme.tableCls} style={{ fontSize: mSize, borderSpacing: 0, tableLayout: "fixed" }}>
                   <colgroup>
                     {excelGridCols.map((w, idx) => (
@@ -1338,23 +1557,23 @@ function OverlayInner() {
                   </thead>
                   <tbody>
                     {ranked.map(({m, rank}) => (
-                      <tr key={m.id} ref={setRowRef(m.id)} className="transition-transform will-change-transform">
+                      <tr key={m.id} ref={setRowRef(m.id)} className={`transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
                         <td className={`${membersTheme.rowCls} text-left`}>#{rank}</td>
-                        {hasRoleColumn && <td className={`${membersTheme.rowCls}`}>{m.role || "-"}</td>}
+                        {hasRoleColumn && <td className={membersTheme.rowCls}>{m.role || "-"}</td>}
                         <td className={`${membersTheme.rowCls} ${membersTheme.nameCls} truncate`}>{m.name}</td>
                         <td className={`${membersTheme.rowCls} ${membersTheme.accountCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${membersTheme.rowCls} ${membersTheme.toonCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
-                        <td className={`${membersTheme.rowCls} text-right`}>{fmt(m.account + m.toon)}</td>
+                        <td className={`${membersTheme.rowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
                       </tr>
                     ))}
                     {pinned.map((m) => (
-                      <tr key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className="transition-transform will-change-transform">
+                      <tr key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
                         <td className={`${membersTheme.rowCls} text-right`}>—</td>
-                        {hasRoleColumn && <td className={`${membersTheme.rowCls}`}></td>}
+                        {hasRoleColumn && <td className={membersTheme.rowCls}></td>}
                         <td className={`${membersTheme.rowCls} ${membersTheme.nameCls} truncate`}>{m.name}</td>
                         <td className={`${membersTheme.rowCls} ${membersTheme.accountCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${membersTheme.rowCls} ${membersTheme.toonCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
-                        <td className={`${membersTheme.rowCls} text-right`}>{fmt(m.account + m.toon)}</td>
+                        <td className={`${membersTheme.rowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
                       </tr>
                     ))}
                     {showTotal && ready && (
@@ -1368,6 +1587,7 @@ function OverlayInner() {
                     )}
                   </tbody>
                 </table>
+                )}
                 {showBottomDonors && !tickerInMembers && (
                   <div className="mt-2" style={{ width: fitWidthToViewport(contextualTickerWidth), overflow: "hidden" }}>
                     <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
@@ -1403,8 +1623,8 @@ function OverlayInner() {
         {effectiveShowTicker && ready && <div className={`fixed ${tickerPosClass} ${hasTickerFreePos ? "" : "mb-10"}`} style={tickerPosStyle}><DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
         {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={timerTheme} fontSize={memberSize} /></div>}
         {showMission && ready && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`} style={{ width: fitWidthToViewport(missionWidth) }}><MissionBoard missions={missions} fontSize={memberSize * 0.9} themeVariant={missionThemeVariant} duration={missionDuration} /></div>}
-      </main>
-    );
+    </main>
+  );
 }
 
 export default function OverlayPage() {
