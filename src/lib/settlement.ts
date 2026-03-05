@@ -359,6 +359,15 @@ export function toSettlementFormulaLine(record: SettlementRecord, m: SettlementM
   return `${m.name} 계좌${accSrc}x${accRatio}=${m.accountApplied.toLocaleString()} 투네${toonSrc}x${toonRatio}=${m.toonApplied.toLocaleString()} /=${m.gross.toLocaleString()}-${m.fee.toLocaleString()}=${m.net.toLocaleString()}`;
 }
 
+/** 정산 export/표시용 멤버 순서: 정산금액(net) 내림차순, 운영비는 맨 아래 */
+export function getMembersForExport(record: SettlementRecord): SettlementMemberResult[] {
+  const members = record.members || [];
+  const operating = members.filter((m) => /운영비/i.test(m.name || ""));
+  const nonOperating = members.filter((m) => !/운영비/i.test(m.name || ""));
+  const sortByNet = (a: SettlementMemberResult, b: SettlementMemberResult) => (b.net || 0) - (a.net || 0);
+  return [...nonOperating.sort(sortByNet), ...operating.sort(sortByNet)];
+}
+
 export function recordToCsv(record: SettlementRecord): string {
   const header = [
     "생성시각",
@@ -377,7 +386,7 @@ export function recordToCsv(record: SettlementRecord): string {
     "최종정산",
     "계산식",
   ].join(",");
-  const rows = record.members.map((m) => {
+  const rows = getMembersForExport(record).map((m) => {
     const cells = [
       new Date(record.createdAt).toISOString(),
       record.title,
@@ -406,7 +415,7 @@ export function recordToTxt(record: SettlementRecord): string {
   lines.push(`생성시각: ${new Date(record.createdAt).toLocaleString()}`);
   lines.push(`비율: 계좌 ${record.accountRatio} / 투네 ${record.toonRatio} / 세금 ${Math.round(record.feeRate * 1000) / 10}%`);
   lines.push("");
-  for (const m of record.members) {
+  for (const m of getMembersForExport(record)) {
     lines.push(
       `${m.name}${m.realName ? `(${m.realName})` : ""} | 계좌 ${m.accountApplied.toLocaleString()} + 투네 ${m.toonApplied.toLocaleString()} = ${m.gross.toLocaleString()} - 세금 ${m.fee.toLocaleString()} => 정산 ${m.net.toLocaleString()}`
     );

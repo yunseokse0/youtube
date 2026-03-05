@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useParams } from "next/navigation";
-import { SettlementMemberResult, SettlementRecord, deleteSettlementRecordAndSync, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToTxt, saveSettlementRecords, saveSettlementRecordsToApi, toSettlementFormulaLine } from "@/lib/settlement";
+import { SettlementMemberResult, SettlementRecord, deleteSettlementRecordAndSync, getMembersForExport, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToTxt, saveSettlementRecords, saveSettlementRecordsToApi, toSettlementFormulaLine } from "@/lib/settlement";
 import { downloadTextFile, downloadBlobFile } from "@/lib/download";
 
 function updateMemberBankInfo(
@@ -194,7 +194,7 @@ export default function SettlementDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {record.members.map((m) => (
+              {getMembersForExport(record).map((m) => (
                 <tr key={m.memberId} className="border-b border-white/10">
                   <td className="p-2">{m.name}</td>
                   <td className="p-2">{m.realName || "-"}</td>
