@@ -1,0 +1,75 @@
+"use client";
+
+import React from "react";
+import { MissionItem } from "@/lib/state";
+
+type MissionThemeVariant = "default" | "excel" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel";
+
+const MISSION_THEME_STYLES: Record<MissionThemeVariant, { itemColor: string; itemShadow: string; titleColor: string; bgColor: string }> = {
+  default: { itemColor: "#fde68a", itemShadow: "0 0 6px rgba(253, 230, 138, 0.65)", titleColor: "#fcd34d", bgColor: "rgba(6, 8, 16, 0.85)" },
+  excel: { itemColor: "#1e3a2e", itemShadow: "none", titleColor: "#217346", bgColor: "rgba(255, 255, 255, 0.95)" },
+  neon: { itemColor: "#ffcc4d", itemShadow: "0 0 8px rgba(255, 204, 77, 0.8)", titleColor: "#7df9ff", bgColor: "rgba(4, 8, 18, 0.9)" },
+  retro: { itemColor: "#bbf7d0", itemShadow: "none", titleColor: "#86efac", bgColor: "rgba(8, 12, 8, 0.92)" },
+  minimal: { itemColor: "#f3f4f6", itemShadow: "none", titleColor: "#e5e7eb", bgColor: "rgba(15, 15, 18, 0.75)" },
+  rpg: { itemColor: "#fde68a", itemShadow: "0 0 5px rgba(250, 204, 21, 0.55)", titleColor: "#facc15", bgColor: "rgba(27, 20, 8, 0.9)" },
+  pastel: { itemColor: "#fdf2f8", itemShadow: "0 0 6px rgba(233, 213, 255, 0.45)", titleColor: "#fbcfe8", bgColor: "rgba(95, 66, 132, 0.7)" },
+  neonExcel: { itemColor: "#a5f3fc", itemShadow: "0 0 6px rgba(103, 232, 249, 0.5)", titleColor: "#67e8f9", bgColor: "rgba(4, 13, 20, 0.9)" },
+};
+
+type MissionBoardProps = {
+  missions: MissionItem[];
+  fontSize?: number;
+  themeVariant?: MissionThemeVariant;
+  duration?: number;
+};
+
+const MissionBoard = ({
+  missions,
+  fontSize = 18,
+  themeVariant = "default",
+  duration = 25,
+}: MissionBoardProps) => {
+  if (!missions.length) return null;
+  const theme = MISSION_THEME_STYLES[themeVariant] || MISSION_THEME_STYLES.default;
+
+  const content = (
+    <>
+      <span className="font-black tracking-widest" style={{ color: theme.titleColor, marginRight: 32 }}>
+        ■ MISSION ■
+      </span>
+      {missions.map((item, idx) => (
+        <span key={item.id} style={{ marginLeft: 24, marginRight: 24, color: theme.itemColor, textShadow: theme.itemShadow, fontWeight: 700 }}>
+          {item.isHot && <span className="text-red-400">[HOT] </span>}
+          {item.title}
+          <span style={{ marginLeft: 8, color: theme.titleColor, fontWeight: 800 }}>- {item.price}</span>
+          {idx < missions.length - 1 && <span style={{ marginLeft: 16, opacity: 0.6 }}>•</span>}
+        </span>
+      ))}
+    </>
+  );
+
+  return (
+    <div
+      className="overflow-hidden rounded py-2 px-3 w-full"
+      style={{
+        fontSize,
+        background: theme.bgColor,
+      }}
+    >
+      <div className="overflow-hidden whitespace-nowrap">
+        <div
+          className="inline-block"
+          style={{ animation: `mission-ticker-flow ${duration}s linear infinite` }}
+        >
+          {content}
+          <span style={{ marginLeft: 48 }} />
+          {content}
+          <span style={{ marginLeft: 48 }} />
+          {content}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default MissionBoard;

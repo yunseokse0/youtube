@@ -3,7 +3,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi, loadState, totalToon, totalCombined, STORAGE_KEY } from "@/lib/state";
 import { useFlip } from "@/lib/flip";
-import MissionMenu from "@/components/MissionMenu";
+import MissionBoard from "@/components/MissionBoard";
 
 type OverlayPresetLike = {
   id?: string;
@@ -78,12 +78,6 @@ function presetToParams(preset: OverlayPresetLike | null): URLSearchParams {
   q.set("dense", String(preset.dense ?? true));
   q.set("anchor", preset.anchor || "tl");
   q.set("theme", preset.theme || "default");
-  if (preset.membersTheme && preset.membersTheme.trim()) q.set("membersTheme", preset.membersTheme.trim());
-  if (preset.totalTheme && preset.totalTheme.trim()) q.set("totalTheme", preset.totalTheme.trim());
-  if (preset.goalTheme && preset.goalTheme.trim()) q.set("goalTheme", preset.goalTheme.trim());
-  if (preset.tickerBaseTheme && preset.tickerBaseTheme.trim()) q.set("tickerBaseTheme", preset.tickerBaseTheme.trim());
-  if (preset.timerTheme && preset.timerTheme.trim()) q.set("timerTheme", preset.timerTheme.trim());
-  if (preset.missionTheme && preset.missionTheme.trim()) q.set("missionTheme", preset.missionTheme.trim());
   q.set("showMembers", String(preset.showMembers ?? true));
   q.set("showTotal", String(preset.showTotal ?? true));
   if (preset.sumFree) {
@@ -130,7 +124,7 @@ function presetToParams(preset: OverlayPresetLike | null): URLSearchParams {
   }
   if (preset.showMission) {
     q.set("showMission", "true");
-    q.set("missionAnchor", preset.missionAnchor || "br");
+    q.set("missionAnchor", preset.missionAnchor || "bc");
   }
   if (preset.showBottomDonors) q.set("showBottomDonors", "true");
   if (preset.donorsSize && preset.donorsSize.trim()) q.set("donorsSize", preset.donorsSize.trim());
@@ -259,9 +253,7 @@ function useElapsed(startTs: number | null) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
-type ThemeId = "default" | "excel" | "excelBlue" | "excelSlate" | "excelAmber" | "excelRose" | "excelNavy" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel";
-
-const EXCEL_TABLE_THEMES: ThemeId[] = ["excel", "excelBlue", "excelSlate", "excelAmber", "excelRose", "excelNavy"];
+type ThemeId = "default" | "excel" | "excelBlue" | "excelSlate" | "excelAmber" | "excelRose" | "excelNavy" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel" | "rainbow" | "sunset" | "ocean" | "forest" | "aurora" | "violet" | "coral" | "mint" | "lava" | "ice";
 
 const THEMES: Record<ThemeId, {
   label: string;
@@ -285,17 +277,17 @@ const THEMES: Record<ThemeId, {
     label: "기본",
     memberCls: "font-bold tracking-tight",
     nameCls: "text-white",
-    accountCls: "ml-2 text-emerald-300",
-    toonCls: "ml-1 text-neutral-200",
+    accountCls: "text-emerald-300",
+    toonCls: "text-neutral-200",
     totalCls: "font-extrabold text-amber-200 drop-shadow-[0_0_6px_rgba(0,0,0,1)]",
-    totalWrapCls: "",
-    rowCls: "",
-    tableCls: "",
-    headerCls: "",
+    totalWrapCls: "bg-neutral-800/90 border border-emerald-500/40 px-2 py-1 rounded",
+    rowCls: "border-b border-neutral-600/50 px-2 py-1 bg-neutral-900/60",
+    tableCls: "bg-neutral-900/80 border border-neutral-600 rounded-lg overflow-hidden border-collapse shadow-lg",
+    headerCls: "bg-emerald-800/80 text-white font-bold px-2 py-1 border-b border-emerald-600 text-sm",
     goalBarBg: "bg-neutral-800/80",
     goalBarFill: "bg-gradient-to-r from-emerald-500 to-emerald-300",
     goalText: "text-white font-bold drop-shadow-[0_0_4px_rgba(0,0,0,1)]",
-    goalWrap: "",
+    goalWrap: "border border-neutral-600 bg-neutral-900/80 rounded p-1",
     tickerCls: "text-amber-200 font-semibold",
     timerCls: "font-mono text-white/80",
   },
@@ -411,17 +403,17 @@ const THEMES: Record<ThemeId, {
     label: "네온",
     memberCls: "font-black tracking-wide",
     nameCls: "text-cyan-300 drop-shadow-[0_0_8px_rgba(0,255,255,0.7)]",
-    accountCls: "ml-2 text-fuchsia-400 drop-shadow-[0_0_8px_rgba(255,0,255,0.7)] tabular-nums overflow-hidden",
-    toonCls: "ml-1 text-yellow-300 drop-shadow-[0_0_6px_rgba(255,255,0,0.5)] tabular-nums overflow-hidden",
+    accountCls: "text-fuchsia-400 drop-shadow-[0_0_8px_rgba(255,0,255,0.7)] tabular-nums overflow-hidden",
+    toonCls: "text-yellow-300 drop-shadow-[0_0_6px_rgba(255,255,0,0.5)] tabular-nums overflow-hidden",
     totalCls: "font-black text-lime-300 drop-shadow-[0_0_12px_rgba(0,255,0,0.8)]",
-    totalWrapCls: "",
-    rowCls: "",
-    tableCls: "",
-    headerCls: "",
+    totalWrapCls: "bg-neutral-900/90 border border-cyan-500/50 px-2 py-1 rounded",
+    rowCls: "border-b border-cyan-500/30 px-2 py-1 bg-black/40",
+    tableCls: "bg-black/60 border border-cyan-500/50 rounded-lg overflow-hidden border-collapse shadow-lg",
+    headerCls: "bg-gradient-to-r from-cyan-600/80 to-fuchsia-600/80 text-white font-bold px-2 py-1 text-sm",
     goalBarBg: "bg-neutral-900/80 border border-cyan-500/40",
     goalBarFill: "bg-gradient-to-r from-fuchsia-500 via-cyan-400 to-lime-400 shadow-[0_0_15px_rgba(0,255,255,0.5)]",
     goalText: "text-white font-black drop-shadow-[0_0_8px_rgba(0,255,255,0.7)]",
-    goalWrap: "",
+    goalWrap: "border border-cyan-500/40 bg-black/60 rounded p-1",
     tickerCls: "text-cyan-300 font-bold drop-shadow-[0_0_8px_rgba(0,255,255,0.5)]",
     timerCls: "font-mono text-fuchsia-300 drop-shadow-[0_0_6px_rgba(255,0,255,0.5)]",
   },
@@ -429,13 +421,13 @@ const THEMES: Record<ThemeId, {
     label: "레트로",
     memberCls: "font-mono font-bold",
     nameCls: "text-amber-100",
-    accountCls: "ml-2 text-green-400",
-    toonCls: "ml-1 text-green-600",
+    accountCls: "text-green-400",
+    toonCls: "text-green-600",
     totalCls: "font-mono font-bold text-green-300",
     totalWrapCls: "border-2 border-green-500/60 bg-black/70 px-4 py-2 rounded",
-    rowCls: "",
-    tableCls: "",
-    headerCls: "",
+    rowCls: "border-b border-green-500/40 px-2 py-1 bg-black/50",
+    tableCls: "bg-black/70 border-2 border-green-500/60 rounded overflow-hidden border-collapse shadow-lg",
+    headerCls: "bg-green-800/90 text-amber-100 font-bold px-2 py-1 border-b border-green-500 text-sm",
     goalBarBg: "bg-black/80 border border-green-500/50",
     goalBarFill: "bg-green-500",
     goalText: "text-green-300 font-mono font-bold",
@@ -447,17 +439,17 @@ const THEMES: Record<ThemeId, {
     label: "미니멀",
     memberCls: "font-light tracking-widest",
     nameCls: "text-white/90",
-    accountCls: "ml-3 text-white/70",
-    toonCls: "ml-1 text-white/40",
+    accountCls: "text-white/70",
+    toonCls: "text-white/40",
     totalCls: "font-thin text-white/80 tracking-[0.2em]",
-    totalWrapCls: "",
-    rowCls: "",
-    tableCls: "",
-    headerCls: "",
+    totalWrapCls: "bg-white/5 border border-white/10 px-2 py-1",
+    rowCls: "border-b border-white/5 px-2 py-1",
+    tableCls: "bg-black/30 border border-white/10 rounded overflow-hidden border-collapse",
+    headerCls: "bg-white/10 text-white/80 font-light px-2 py-1 text-sm tracking-wider",
     goalBarBg: "bg-white/10",
     goalBarFill: "bg-white/50",
     goalText: "text-white/70 font-light tracking-wider",
-    goalWrap: "",
+    goalWrap: "border border-white/10 bg-black/30 rounded p-1",
     tickerCls: "text-white/60 font-light",
     timerCls: "font-mono text-white/40 font-light",
   },
@@ -465,13 +457,13 @@ const THEMES: Record<ThemeId, {
     label: "RPG",
     memberCls: "font-bold",
     nameCls: "text-yellow-200 drop-shadow-[0_0_4px_rgba(0,0,0,1)]",
-    accountCls: "ml-2 text-red-400",
-    toonCls: "ml-1 text-sky-400",
+    accountCls: "text-red-400",
+    toonCls: "text-sky-400",
     totalCls: "font-extrabold text-yellow-300",
     totalWrapCls: "bg-gradient-to-r from-amber-900/80 via-amber-800/80 to-amber-900/80 border-2 border-yellow-600/70 px-4 py-2 rounded-lg shadow-[0_0_15px_rgba(255,200,0,0.3)]",
-    rowCls: "bg-slate-900/70 border border-slate-600/50 px-3 py-1 rounded mb-1",
-    tableCls: "",
-    headerCls: "",
+    rowCls: "bg-slate-900/70 border-b border-slate-600/50 px-3 py-1",
+    tableCls: "bg-slate-900/90 border-2 border-yellow-600/60 rounded-lg overflow-hidden border-collapse shadow-lg",
+    headerCls: "bg-gradient-to-r from-amber-800 to-yellow-700 text-yellow-200 font-bold px-3 py-1 border-b border-yellow-600/70 text-sm",
     goalBarBg: "bg-slate-900/80 border-2 border-yellow-700/60 rounded-lg",
     goalBarFill: "bg-gradient-to-r from-red-600 via-orange-500 to-yellow-400 rounded-lg shadow-[0_0_10px_rgba(255,150,0,0.4)]",
     goalText: "text-yellow-200 font-extrabold drop-shadow-[0_0_4px_rgba(0,0,0,1)]",
@@ -483,17 +475,17 @@ const THEMES: Record<ThemeId, {
     label: "파스텔",
     memberCls: "font-semibold",
     nameCls: "text-pink-200",
-    accountCls: "ml-2 text-sky-200",
-    toonCls: "ml-1 text-purple-200/70",
+    accountCls: "text-sky-200",
+    toonCls: "text-purple-200/70",
     totalCls: "font-bold text-pink-100",
     totalWrapCls: "bg-gradient-to-r from-pink-500/40 to-purple-500/40 backdrop-blur-sm px-4 py-2 rounded-full border border-white/20",
-    rowCls: "",
-    tableCls: "",
-    headerCls: "",
+    rowCls: "border-b border-pink-400/20 px-2 py-1 bg-purple-900/30",
+    tableCls: "bg-gradient-to-br from-pink-900/40 to-purple-900/50 border border-pink-400/30 rounded-xl overflow-hidden border-collapse backdrop-blur-sm",
+    headerCls: "bg-gradient-to-r from-pink-500/60 to-purple-500/60 text-white font-semibold px-2 py-1 text-sm",
     goalBarBg: "bg-white/10 backdrop-blur-sm rounded-full",
     goalBarFill: "bg-gradient-to-r from-pink-400 to-purple-400 rounded-full",
     goalText: "text-white/90 font-semibold",
-    goalWrap: "backdrop-blur-sm",
+    goalWrap: "backdrop-blur-sm border border-pink-400/30 rounded p-1",
     tickerCls: "text-pink-200 font-semibold",
     timerCls: "font-mono text-purple-200/70",
   },
@@ -514,6 +506,186 @@ const THEMES: Record<ThemeId, {
     goalWrap: "border border-cyan-500/30 bg-black/40 rounded p-1",
     tickerCls: "text-cyan-300 font-mono font-bold",
     timerCls: "font-mono text-cyan-400 drop-shadow-[0_0_6px_rgba(0,255,255,0.5)]",
+  },
+  rainbow: {
+    label: "무지개",
+    memberCls: "font-bold",
+    nameCls: "text-white drop-shadow-[0_0_4px_rgba(0,0,0,0.8)]",
+    accountCls: "text-amber-200 tabular-nums",
+    toonCls: "text-cyan-200 tabular-nums",
+    totalCls: "font-black text-white drop-shadow-[0_0_6px_rgba(255,255,255,0.5)]",
+    totalWrapCls: "bg-gradient-to-r from-red-500 via-orange-500 via-yellow-500 via-green-500 via-blue-500 to-purple-500 px-4 py-2 rounded-lg shadow-lg",
+    rowCls: "border-b border-white/20 px-2 py-1 bg-black/50",
+    tableCls: "bg-black/70 border-2 border-white/30 rounded-xl overflow-hidden border-collapse shadow-[0_0_20px_rgba(255,100,255,0.3)]",
+    headerCls: "bg-gradient-to-r from-red-600 via-orange-500 via-yellow-500 via-green-500 via-blue-600 to-purple-600 text-white font-bold px-2 py-1 text-sm",
+    goalBarBg: "bg-black/60 rounded-lg",
+    goalBarFill: "bg-gradient-to-r from-red-500 via-orange-400 via-yellow-400 via-green-400 via-blue-500 to-purple-500 rounded-lg shadow-[0_0_12px_rgba(255,200,255,0.4)]",
+    goalText: "text-white font-bold drop-shadow-[0_0_4px_rgba(0,0,0,0.8)]",
+    goalWrap: "border border-white/20 bg-black/60 rounded-lg p-1",
+    tickerCls: "text-amber-200 font-bold",
+    timerCls: "font-mono text-cyan-300",
+  },
+  sunset: {
+    label: "일몰",
+    memberCls: "font-semibold",
+    nameCls: "text-orange-100",
+    accountCls: "text-amber-200 tabular-nums",
+    toonCls: "text-rose-300 tabular-nums",
+    totalCls: "font-bold text-yellow-100",
+    totalWrapCls: "bg-gradient-to-r from-orange-600 via-rose-500 to-purple-600 px-4 py-2 rounded-lg shadow-lg",
+    rowCls: "border-b border-orange-500/30 px-2 py-1 bg-slate-900/70",
+    tableCls: "bg-gradient-to-b from-slate-900/95 to-orange-950/80 border border-orange-500/40 rounded-xl overflow-hidden border-collapse shadow-[0_0_25px_rgba(251,146,60,0.25)]",
+    headerCls: "bg-gradient-to-r from-orange-600 to-rose-600 text-white font-bold px-2 py-1 text-sm",
+    goalBarBg: "bg-slate-800/80 rounded-lg",
+    goalBarFill: "bg-gradient-to-r from-orange-500 via-rose-500 to-purple-500 rounded-lg shadow-[0_0_10px_rgba(251,146,60,0.4)]",
+    goalText: "text-orange-100 font-bold",
+    goalWrap: "border border-orange-500/40 bg-slate-900/80 rounded-lg p-1",
+    tickerCls: "text-amber-200 font-semibold",
+    timerCls: "font-mono text-rose-300",
+  },
+  ocean: {
+    label: "오션",
+    memberCls: "font-semibold",
+    nameCls: "text-cyan-100",
+    accountCls: "text-sky-300 tabular-nums",
+    toonCls: "text-teal-300 tabular-nums",
+    totalCls: "font-bold text-white",
+    totalWrapCls: "bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-600 px-4 py-2 rounded-lg shadow-lg",
+    rowCls: "border-b border-cyan-500/30 px-2 py-1 bg-slate-900/70",
+    tableCls: "bg-gradient-to-b from-slate-900/95 to-cyan-950/60 border border-cyan-500/50 rounded-xl overflow-hidden border-collapse shadow-[0_0_25px_rgba(6,182,212,0.25)]",
+    headerCls: "bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 text-white font-bold px-2 py-1 text-sm",
+    goalBarBg: "bg-slate-800/80 rounded-lg",
+    goalBarFill: "bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-500 rounded-lg shadow-[0_0_10px_rgba(6,182,212,0.4)]",
+    goalText: "text-cyan-100 font-bold",
+    goalWrap: "border border-cyan-500/40 bg-slate-900/80 rounded-lg p-1",
+    tickerCls: "text-cyan-300 font-semibold",
+    timerCls: "font-mono text-sky-300",
+  },
+  forest: {
+    label: "포레스트",
+    memberCls: "font-semibold",
+    nameCls: "text-emerald-100",
+    accountCls: "text-lime-300 tabular-nums",
+    toonCls: "text-green-400 tabular-nums",
+    totalCls: "font-bold text-lime-100",
+    totalWrapCls: "bg-gradient-to-r from-emerald-600 via-green-500 to-teal-600 px-4 py-2 rounded-lg shadow-lg",
+    rowCls: "border-b border-emerald-500/30 px-2 py-1 bg-slate-900/70",
+    tableCls: "bg-gradient-to-b from-slate-900/95 to-emerald-950/60 border border-emerald-500/50 rounded-xl overflow-hidden border-collapse shadow-[0_0_25px_rgba(16,185,129,0.25)]",
+    headerCls: "bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold px-2 py-1 text-sm",
+    goalBarBg: "bg-slate-800/80 rounded-lg",
+    goalBarFill: "bg-gradient-to-r from-emerald-500 via-green-400 to-teal-500 rounded-lg shadow-[0_0_10px_rgba(16,185,129,0.4)]",
+    goalText: "text-emerald-100 font-bold",
+    goalWrap: "border border-emerald-500/40 bg-slate-900/80 rounded-lg p-1",
+    tickerCls: "text-lime-300 font-semibold",
+    timerCls: "font-mono text-emerald-300",
+  },
+  aurora: {
+    label: "오로라",
+    memberCls: "font-semibold",
+    nameCls: "text-purple-100",
+    accountCls: "text-fuchsia-300 tabular-nums",
+    toonCls: "text-cyan-300 tabular-nums",
+    totalCls: "font-bold text-white",
+    totalWrapCls: "bg-gradient-to-r from-purple-500 via-fuchsia-500 via-cyan-500 to-emerald-500 px-4 py-2 rounded-lg shadow-lg",
+    rowCls: "border-b border-purple-500/30 px-2 py-1 bg-slate-900/70",
+    tableCls: "bg-gradient-to-b from-slate-900/95 via-purple-950/50 to-cyan-950/40 border border-purple-500/50 rounded-xl overflow-hidden border-collapse shadow-[0_0_25px_rgba(168,85,247,0.25)]",
+    headerCls: "bg-gradient-to-r from-purple-600 via-fuchsia-500 to-cyan-500 text-white font-bold px-2 py-1 text-sm",
+    goalBarBg: "bg-slate-800/80 rounded-lg",
+    goalBarFill: "bg-gradient-to-r from-purple-400 via-fuchsia-400 via-cyan-400 to-emerald-400 rounded-lg shadow-[0_0_12px_rgba(168,85,247,0.4)]",
+    goalText: "text-purple-100 font-bold",
+    goalWrap: "border border-purple-500/40 bg-slate-900/80 rounded-lg p-1",
+    tickerCls: "text-fuchsia-300 font-semibold",
+    timerCls: "font-mono text-cyan-300",
+  },
+  violet: {
+    label: "바이올렛",
+    memberCls: "font-semibold",
+    nameCls: "text-violet-100",
+    accountCls: "text-purple-300 tabular-nums",
+    toonCls: "text-fuchsia-300 tabular-nums",
+    totalCls: "font-bold text-white",
+    totalWrapCls: "bg-gradient-to-r from-violet-600 via-purple-500 to-fuchsia-600 px-4 py-2 rounded-lg shadow-lg",
+    rowCls: "border-b border-violet-500/30 px-2 py-1 bg-slate-900/70",
+    tableCls: "bg-gradient-to-b from-slate-900/95 to-violet-950/70 border border-violet-500/50 rounded-xl overflow-hidden border-collapse shadow-[0_0_25px_rgba(139,92,246,0.25)]",
+    headerCls: "bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-bold px-2 py-1 text-sm",
+    goalBarBg: "bg-slate-800/80 rounded-lg",
+    goalBarFill: "bg-gradient-to-r from-violet-500 via-purple-400 to-fuchsia-500 rounded-lg shadow-[0_0_10px_rgba(139,92,246,0.4)]",
+    goalText: "text-violet-100 font-bold",
+    goalWrap: "border border-violet-500/40 bg-slate-900/80 rounded-lg p-1",
+    tickerCls: "text-purple-300 font-semibold",
+    timerCls: "font-mono text-fuchsia-300",
+  },
+  coral: {
+    label: "코랄",
+    memberCls: "font-semibold",
+    nameCls: "text-rose-100",
+    accountCls: "text-orange-300 tabular-nums",
+    toonCls: "text-pink-300 tabular-nums",
+    totalCls: "font-bold text-white",
+    totalWrapCls: "bg-gradient-to-r from-rose-500 via-orange-400 to-amber-500 px-4 py-2 rounded-lg shadow-lg",
+    rowCls: "border-b border-rose-500/30 px-2 py-1 bg-slate-900/70",
+    tableCls: "bg-gradient-to-b from-slate-900/95 to-rose-950/60 border border-rose-500/50 rounded-xl overflow-hidden border-collapse shadow-[0_0_25px_rgba(244,63,94,0.25)]",
+    headerCls: "bg-gradient-to-r from-rose-600 to-amber-500 text-white font-bold px-2 py-1 text-sm",
+    goalBarBg: "bg-slate-800/80 rounded-lg",
+    goalBarFill: "bg-gradient-to-r from-rose-500 via-orange-400 to-amber-400 rounded-lg shadow-[0_0_10px_rgba(244,63,94,0.4)]",
+    goalText: "text-rose-100 font-bold",
+    goalWrap: "border border-rose-500/40 bg-slate-900/80 rounded-lg p-1",
+    tickerCls: "text-orange-300 font-semibold",
+    timerCls: "font-mono text-pink-300",
+  },
+  mint: {
+    label: "민트",
+    memberCls: "font-semibold",
+    nameCls: "text-teal-100",
+    accountCls: "text-emerald-300 tabular-nums",
+    toonCls: "text-cyan-300 tabular-nums",
+    totalCls: "font-bold text-white",
+    totalWrapCls: "bg-gradient-to-r from-teal-500 via-emerald-500 to-cyan-500 px-4 py-2 rounded-lg shadow-lg",
+    rowCls: "border-b border-teal-500/30 px-2 py-1 bg-slate-900/70",
+    tableCls: "bg-gradient-to-b from-slate-900/95 to-teal-950/60 border border-teal-500/50 rounded-xl overflow-hidden border-collapse shadow-[0_0_25px_rgba(20,184,166,0.25)]",
+    headerCls: "bg-gradient-to-r from-teal-600 to-cyan-500 text-white font-bold px-2 py-1 text-sm",
+    goalBarBg: "bg-slate-800/80 rounded-lg",
+    goalBarFill: "bg-gradient-to-r from-teal-400 via-emerald-400 to-cyan-400 rounded-lg shadow-[0_0_10px_rgba(20,184,166,0.4)]",
+    goalText: "text-teal-100 font-bold",
+    goalWrap: "border border-teal-500/40 bg-slate-900/80 rounded-lg p-1",
+    tickerCls: "text-emerald-300 font-semibold",
+    timerCls: "font-mono text-cyan-300",
+  },
+  lava: {
+    label: "라바",
+    memberCls: "font-bold",
+    nameCls: "text-red-100",
+    accountCls: "text-orange-300 tabular-nums",
+    toonCls: "text-yellow-300 tabular-nums",
+    totalCls: "font-black text-yellow-100",
+    totalWrapCls: "bg-gradient-to-r from-red-600 via-orange-500 to-yellow-500 px-4 py-2 rounded-lg shadow-[0_0_15px_rgba(239,68,68,0.4)]",
+    rowCls: "border-b border-red-500/40 px-2 py-1 bg-slate-900/80",
+    tableCls: "bg-gradient-to-b from-slate-900/95 to-red-950/70 border-2 border-red-500/60 rounded-xl overflow-hidden border-collapse shadow-[0_0_30px_rgba(239,68,68,0.3)]",
+    headerCls: "bg-gradient-to-r from-red-600 via-orange-500 to-yellow-500 text-white font-bold px-2 py-1 text-sm",
+    goalBarBg: "bg-slate-800/80 rounded-lg",
+    goalBarFill: "bg-gradient-to-r from-red-500 via-orange-400 to-yellow-400 rounded-lg shadow-[0_0_12px_rgba(239,68,68,0.5)]",
+    goalText: "text-red-100 font-bold",
+    goalWrap: "border border-red-500/50 bg-slate-900/80 rounded-lg p-1",
+    tickerCls: "text-orange-300 font-bold",
+    timerCls: "font-mono text-yellow-300",
+  },
+  ice: {
+    label: "아이스",
+    memberCls: "font-semibold",
+    nameCls: "text-sky-100",
+    accountCls: "text-cyan-200 tabular-nums",
+    toonCls: "text-blue-200 tabular-nums",
+    totalCls: "font-bold text-white",
+    totalWrapCls: "bg-gradient-to-r from-cyan-300 via-sky-300 to-blue-400 px-4 py-2 rounded-lg shadow-[0_0_15px_rgba(125,211,252,0.4)]",
+    rowCls: "border-b border-cyan-400/30 px-2 py-1 bg-slate-900/80",
+    tableCls: "bg-gradient-to-b from-slate-900/95 to-cyan-950/50 border border-cyan-400/50 rounded-xl overflow-hidden border-collapse shadow-[0_0_25px_rgba(34,211,238,0.2)]",
+    headerCls: "bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-500 text-slate-900 font-bold px-2 py-1 text-sm",
+    goalBarBg: "bg-slate-800/80 rounded-lg",
+    goalBarFill: "bg-gradient-to-r from-cyan-300 via-sky-300 to-blue-400 rounded-lg shadow-[0_0_10px_rgba(34,211,238,0.4)]",
+    goalText: "text-sky-100 font-bold",
+    goalWrap: "border border-cyan-400/40 bg-slate-900/80 rounded-lg p-1",
+    tickerCls: "text-cyan-200 font-semibold",
+    timerCls: "font-mono text-sky-300",
   },
 };
 
@@ -871,22 +1043,16 @@ function OverlayInner() {
   const sumY = hasFreePos ? parsePct(sumYParam, 90) : 0;
   const themeId = (sp.get("theme") || "default") as ThemeId;
   const theme = THEMES[themeId] || THEMES.default;
-  const pickTheme = (candidate: string | null, fallback: ThemeId): ThemeId => {
-    if (!candidate || candidate === "auto") return fallback;
-    return (candidate in THEMES ? candidate : fallback) as ThemeId;
-  };
-  const membersThemeId = pickTheme(sp.get("membersTheme"), themeId) as ThemeId;
-  const membersTheme = THEMES[membersThemeId] || theme;
-  const totalTheme = THEMES[pickTheme(sp.get("totalTheme"), themeId)] || theme;
-  const useExcelTableLayout = EXCEL_TABLE_THEMES.includes(themeId) || EXCEL_TABLE_THEMES.includes(membersThemeId);
+  const membersTheme = theme;
+  const totalTheme = theme;
+  const goalTheme = theme;
+  const tickerBaseTheme = theme;
+  const timerTheme = theme;
+  const missionTheme = theme;
   const missionThemeVariant = (() => {
-    const t = pickTheme(sp.get("missionTheme"), themeId) as ThemeId;
-    return EXCEL_TABLE_THEMES.includes(t) ? "excel" : t;
+    const excelThemes = ["excel", "excelBlue", "excelSlate", "excelAmber", "excelRose", "excelNavy"];
+    return excelThemes.includes(themeId) ? "excel" : (["rainbow", "sunset", "ocean", "forest", "aurora", "violet", "coral", "mint", "lava", "ice"].includes(themeId) ? "neon" : themeId);
   })() as "default" | "excel" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel";
-  const goalTheme = THEMES[pickTheme(sp.get("goalTheme"), themeId)] || theme;
-  const tickerBaseTheme = THEMES[pickTheme(sp.get("tickerBaseTheme"), themeId)] || theme;
-  const timerTheme = THEMES[pickTheme(sp.get("timerTheme"), themeId)] || theme;
-  const missionTheme = THEMES[pickTheme(sp.get("missionTheme"), themeId)] || theme;
 
   const tableOnly = sp.get("tableOnly") === "true";
   const showMembers = tableOnly ? true : (sp.get("showMembers") !== "false");
@@ -904,7 +1070,7 @@ function OverlayInner() {
   const goalLabel = sp.get("goalLabel") || "목표 금액";
   const goalWidth = Math.max(200, Math.min(800, parseInt(sp.get("goalWidth") || "400", 10)));
   const goalAnchor = (sp.get("goalAnchor") || "bc").toLowerCase();
-  const personalGoalAnchor = (sp.get("personalGoalAnchor") || "br").toLowerCase();
+  const personalGoalAnchor = (sp.get("personalGoalAnchor") || "tl").toLowerCase();
   const personalGoalLimit = Math.max(1, Math.min(12, parseInt(sp.get("personalGoalLimit") || "3", 10)));
   const personalGoalTheme = (sp.get("personalGoalTheme") || "goalClassic") as "goalClassic" | "goalNeon";
   const personalGoalFree = (sp.get("personalGoalFree") || "false").toLowerCase() === "true";
@@ -925,7 +1091,9 @@ function OverlayInner() {
   const tickerX = hasTickerFreePos ? parsePct(tickerXParam, 50) : 0;
   const tickerY = hasTickerFreePos ? parsePct(tickerYParam, 86) : 0;
   const showMission = tableOnly ? false : (sp.get("showMission") === "true");
-  const missionAnchor = (sp.get("missionAnchor") || "br").toLowerCase();
+  const missionAnchor = (sp.get("missionAnchor") || "bc").toLowerCase();
+  const missionWidth = Math.max(400, Math.min(1600, parseInt(sp.get("missionWidth") || "800", 10)));
+  const missionDuration = Math.max(15, Math.min(60, parseInt(sp.get("missionDuration") || "25", 10)));
 
   const elapsed = useElapsed(timerStart);
 
@@ -1023,9 +1191,9 @@ function OverlayInner() {
   useEffect(() => {
     if (!demo) return;
     const baseMembers: Member[] = [
-      { id: "m1", name: "멤버1", account: 0, toon: 0, role: "과장" },
-      { id: "m2", name: "멤버2", account: 0, toon: 0, role: "부장" },
-      { id: "m3", name: "멤버3", account: 0, toon: 0, role: "대리" },
+      { id: "m1", name: "멤버1", account: 0, toon: 0, goal: 100000, role: "과장" },
+      { id: "m2", name: "멤버2", account: 0, toon: 0, goal: 150000, role: "부장" },
+      { id: "m3", name: "멤버3", account: 0, toon: 0, goal: 80000, role: "대리" },
       { id: "m4", name: "운영비", account: 0, toon: 0, role: "운영비" },
     ];
     setDemoMembers(baseMembers);
@@ -1138,8 +1306,7 @@ function OverlayInner() {
     : { width: responsiveTickerWidth };
   const tickerPosClass = hasTickerFreePos ? "" : posClass(tickerAnchor);
 
-  if (useExcelTableLayout) {
-    const excelGridCols = hasRoleColumn
+  const excelGridCols = hasRoleColumn
       ? ["3ch", "6ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`]
       : ["3ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`];
     return (
@@ -1222,7 +1389,7 @@ function OverlayInner() {
         )}
         {showGoal && ready && goal > 0 && (
           <div className={`fixed ${posClass(goalAnchor)}`}>
-            <GoalBar current={rounded} goal={goal} label={goalLabel} theme={goalTheme} width={goalWidth} />
+            <GoalBar current={goalCurrent !== null ? goalCurrent : rounded} goal={goal} label={goalLabel} theme={goalTheme} width={goalWidth} />
             {tickerInGoal && (
               <div className="mt-2" style={{ width: fitWidthToViewport(goalWidth), overflow: "hidden" }}>
                 <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
@@ -1235,196 +1402,9 @@ function OverlayInner() {
         )}
         {effectiveShowTicker && ready && <div className={`fixed ${tickerPosClass} ${hasTickerFreePos ? "" : "mb-10"}`} style={tickerPosStyle}><DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
         {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={timerTheme} fontSize={memberSize} /></div>}
-        {showMission && ready && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`}><MissionMenu missions={missions} fontSize={memberSize * 0.9} themeVariant={missionThemeVariant} /></div>}
+        {showMission && ready && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`} style={{ width: fitWidthToViewport(missionWidth) }}><MissionBoard missions={missions} fontSize={memberSize * 0.9} themeVariant={missionThemeVariant} duration={missionDuration} /></div>}
       </main>
     );
-  }
-
-  if (themeId === "neonExcel") {
-    const neonNameMaxCh = Math.max(nameCh, Math.round(nameMaxCh * 0.5));
-    const neonNameCol = `minmax(${nameCh}ch, ${neonNameMaxCh}ch)`;
-    const neonGridTemplate = hasRoleColumn
-      ? `4.5ch 6ch ${neonNameCol} ${bankCh}ch ${toonCh}ch ${totalCh}ch`
-      : `4.5ch ${neonNameCol} ${bankCh}ch ${toonCh}ch ${totalCh}ch`;
-    return (
-      <main className="transparent-bg min-h-screen no-select" style={scaledMainStyle}>
-        {showMembers && ready && (
-          <div className={`fixed ${listPosClass}`}>
-            <div ref={containerRef} className={`flex items-start ${tight ? "gap-2" : "gap-3"}`} style={{ width: "fit-content" }}>
-              {showSideDonors && donorsSide === "left" && (
-                <div style={{ width: donorsWidth }}>
-                  <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
-                </div>
-              )}
-              <div>
-                <div ref={tableBoxRef as any} className={membersTheme.tableCls} style={{ fontSize: mSize, width: "fit-content" }}>
-                  <div className={`${membersTheme.headerCls} grid items-center ${tight ? "py-0.5 px-1" : ""} gap-x-0`} style={{ gridTemplateColumns: neonGridTemplate }}>
-                    <div className="text-left overflow-hidden whitespace-nowrap text-ellipsis">RANK</div>
-                    {hasRoleColumn && <div className="text-left overflow-hidden whitespace-nowrap text-ellipsis">ROLE</div>}
-                    <div className="text-left overflow-hidden whitespace-nowrap text-ellipsis">MEMBER</div>
-                    <div className="text-right pr-1 overflow-hidden whitespace-nowrap text-ellipsis">BANK</div>
-                    <div className="text-right pl-1 border-l border-cyan-500/30 overflow-hidden whitespace-nowrap text-ellipsis">TOON</div>
-                    <div className="text-right pl-1 border-l border-cyan-500/30 font-bold text-white overflow-hidden whitespace-nowrap text-ellipsis">TOTAL</div>
-                  </div>
-                  {ranked.map(({m, rank}) => (
-                    <div key={m.id} ref={setRowRef(m.id)} className={`${membersTheme.rowCls} ${tight ? "py-0.5 px-1" : ""} gap-x-0 grid items-center transition-transform will-change-transform`} style={{ gridTemplateColumns: neonGridTemplate }}>
-                      <div className={`${membersTheme.nameCls} text-left`}>#{rank}</div>
-                      {hasRoleColumn && <div className={`${membersTheme.nameCls} text-left`}>{m.role || "-"}</div>}
-                      <div className={`${membersTheme.nameCls} text-left overflow-hidden whitespace-nowrap text-ellipsis`}>{m.name}</div>
-                      <div className={membersTheme.accountCls + " text-right pr-1 overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.account)}</div>
-                      <div className={membersTheme.toonCls + " text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.toon)}</div>
-                      <div className={`${totalTheme.totalCls} text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis`}>{fmt(m.account + m.toon)}</div>
-                    </div>
-                  ))}
-                  {pinned.map((m) => (
-                    <div key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`${membersTheme.rowCls} ${tight ? "py-0.5 px-1" : ""} gap-x-0 grid items-center transition-transform will-change-transform`} style={{ gridTemplateColumns: neonGridTemplate }}>
-                      <div className={membersTheme.nameCls}>—</div>
-                      {hasRoleColumn && <div className={membersTheme.nameCls}></div>}
-                      <div className={membersTheme.nameCls + " overflow-hidden whitespace-nowrap text-ellipsis"}>{m.name}</div>
-                      <div className={membersTheme.accountCls + " text-right pr-1 overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.account)}</div>
-                      <div className={membersTheme.toonCls + " text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis"}>{fmt(m.toon)}</div>
-                      <div className={`${totalTheme.totalCls} text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis`}>{fmt(m.account + m.toon)}</div>
-                    </div>
-                  ))}
-                  {showTotal && ready && (
-                    <div
-                      className={`grid items-center ${totalTheme.totalWrapCls} ${tight ? "px-1 py-0.5" : ""} gap-x-0`}
-                      style={{ gridTemplateColumns: neonGridTemplate }}
-                    >
-                      <div />
-                      {hasRoleColumn && <div />}
-                      <div className="text-cyan-300 font-bold whitespace-nowrap">{hasRoleColumn ? "합계" : "총합"}</div>
-                      <div className={`${totalTheme.totalCls} text-right pr-1 overflow-hidden whitespace-nowrap text-ellipsis`} style={{ fontSize: tSize * 0.68 }}>
-                        {fmt(sumAccount)}
-                      </div>
-                      <div className={`${totalTheme.totalCls} text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis`} style={{ fontSize: tSize * 0.68 }}>
-                        {fmt(sumToon)}
-                      </div>
-                      <div className={`${totalTheme.totalCls} text-right pl-1 border-l border-cyan-500/20 overflow-hidden whitespace-nowrap text-ellipsis`} style={{ fontSize: tSize * 0.72 }}>
-                        {fmt(rounded)}
-                      </div>
-                    </div>
-                  )}
-                </div>
-                {showBottomDonors && !tickerInMembers && (
-                  <div className={tight ? "mt-1" : "mt-2"} style={{ width: fitWidthToViewport(contextualTickerWidth), overflow: "hidden" }}>
-                    <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
-                  </div>
-                )}
-                {tickerInMembers && (
-                  <div className={tight ? "mt-1" : "mt-2"} style={{ width: fitWidthToViewport(contextualTickerWidth), overflow: "hidden" }}>
-                    <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
-                  </div>
-                )}
-              </div>
-              {showSideDonors && donorsSide === "right" && (
-                <div style={{ width: donorsWidth }}>
-                  <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-        {!showMembers && showTotal && ready && (
-          <div className={`fixed ${sumPosClass}`} style={sumPosStyle}>
-            <div className={totalTheme.totalWrapCls}><div className={totalTheme.totalCls} style={{ fontSize: totalSize }}>
-              계좌 {formatManThousand(sumAccount)} · 투네 {formatManThousand(sumToon)} · 전체 {formatManThousand(rounded)}
-            </div></div>
-          </div>
-        )}
-        {showGoal && ready && goal > 0 && (
-          <div className={`fixed ${posClass(goalAnchor)}`}>
-            <GoalBar current={goalCurrent !== null ? goalCurrent : rounded} goal={goal} label={goalLabel} theme={goalTheme} width={goalWidth} />
-            {tickerInGoal && (
-              <div className="mt-2" style={{ width: fitWidthToViewport(goalWidth), overflow: "hidden" }}>
-                <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
-              </div>
-            )}
-          </div>
-        )}
-        {showPersonalGoal && ready && (
-          renderPersonalGoal()
-        )}
-        {effectiveShowTicker && ready && (
-          <div className={`fixed ${tickerPosClass}`} style={tickerPosStyle}>
-            <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
-          </div>
-        )}
-        {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={timerTheme} fontSize={memberSize} /></div>}
-        {showMission && ready && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`}><MissionMenu missions={missions} fontSize={memberSize * 0.9} themeVariant={missionThemeVariant} /></div>}
-      </main>
-    );
-  }
-
-  return (
-    <main className="transparent-bg min-h-screen text-outline-strong no-select" style={scaledMainStyle}>
-      {showMembers && ready && (
-        <div className={`fixed ${listPosClass} space-y-1`}>
-          {ranked.map(({m, rank}) => (
-            <div key={m.id} ref={setRowRef(m.id)} className={`${membersTheme.memberCls} ${membersTheme.rowCls} transition-transform will-change-transform whitespace-nowrap`} style={{ fontSize: mSize, lineHeight: dense ? 1 : 1.15 }}>
-              <span className={membersTheme.nameCls}>#{rank} {m.name}{m.role ? ` [${m.role}]` : ""}</span>
-              <span className={membersTheme.accountCls}>{fmt(m.account)}</span>
-              <span className={membersTheme.toonCls}>({fmt(m.toon)})</span>
-            </div>
-          ))}
-          {pinned.map((m) => (
-            <div key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`${membersTheme.memberCls} ${membersTheme.rowCls} transition-transform will-change-transform whitespace-nowrap`} style={{ fontSize: mSize, lineHeight: dense ? 1 : 1.15 }}>
-              <span className={membersTheme.nameCls}>{m.name}</span>
-              <span className={membersTheme.accountCls}>{fmt(m.account)}</span>
-              <span className={membersTheme.toonCls}>({fmt(m.toon)})</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {showTotal && ready && (
-        <div className={`fixed ${sumPosClass}`} style={sumPosStyle}>
-          <div className={totalTheme.totalWrapCls}>
-            <div className={totalTheme.totalCls} style={{ fontSize: tSize, lineHeight: 1.05 }}>
-              계좌 {fmt(sumAccount)} · 투네 {fmt(sumToon)} · 전체 {fmt(rounded)}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showGoal && ready && goal > 0 && (
-        <div className={`fixed ${posClass(goalAnchor)}`}>
-          <GoalBar current={goalCurrent !== null ? goalCurrent : rounded} goal={goal} label={goalLabel} theme={goalTheme} width={goalWidth} />
-          {tickerInGoal && (
-            <div className="mt-2" style={{ width: fitWidthToViewport(goalWidth), overflow: "hidden" }}>
-              <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
-            </div>
-          )}
-        </div>
-      )}
-      {showPersonalGoal && ready && (
-        renderPersonalGoal()
-      )}
-      {tickerInMembers && showMembers && ready && (
-        <div className={`fixed ${listPosClass}`} style={{ marginTop: Math.max(48, mSize * 2.4), width: "min(960px, calc(100vw - 24px))" }}>
-          <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
-        </div>
-      )}
-
-      {effectiveShowTicker && ready && (
-        <div className={`fixed ${tickerPosClass}`} style={tickerPosStyle}>
-          <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
-        </div>
-      )}
-
-      {showTimer && (
-        <div className={`fixed ${posClass(timerAnchor)}`}>
-          <Timer elapsed={elapsed} theme={timerTheme} fontSize={memberSize} />
-        </div>
-      )}
-
-      {showMission && ready && missions.length > 0 && (
-        <div className={`fixed ${posClass(missionAnchor)}`}>
-          <MissionMenu missions={missions} fontSize={memberSize * 0.9} themeVariant={missionThemeVariant} />
-        </div>
-      )}
-    </main>
-  );
 }
 
 export default function OverlayPage() {

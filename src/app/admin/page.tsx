@@ -101,17 +101,17 @@ export default function AdminPage() {
     { name: "멤버 목록만", preset: { showMembers: true, showTotal: false } },
     { name: "총합만", preset: { showMembers: false, showTotal: true, totalSize: "60" } },
     { name: "목표 프로그레스바", preset: { showMembers: false, showTotal: false, showGoal: true, goal: "500000", goalLabel: "목표 금액", goalWidth: "500" } },
-    { name: "개인 골", preset: { showMembers: false, showTotal: false, showPersonalGoal: true } },
+    { name: "개인 골", preset: { showMembers: false, showTotal: false, showPersonalGoal: true, personalGoalAnchor: "tl" } },
     { name: "후원 티커", preset: { showMembers: false, showTotal: false, showTicker: true } },
     { name: "타이머", preset: { showMembers: false, showTotal: false, showTimer: true } },
-    { name: "미션 메뉴판", preset: { showMembers: false, showTotal: false, showMission: true, missionAnchor: "br" } },
+    { name: "미션 전광판", preset: { showMembers: false, showTotal: false, showMission: true, missionAnchor: "bc" } },
   ];
   const managePositionInPrism = true;
   const defaultPreset = (name: string, overrides: Partial<OverlayPreset> = {}): OverlayPreset => ({
     id: `ov_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name,
     scale: "0.75", memberSize: "18", totalSize: "40", dense: true, anchor: "tl",
     sumAnchor: "bc", sumFree: false, sumX: "50", sumY: "90", theme: "default",
-    showMembers: true, showTotal: true, showGoal: false, goal: "0", goalLabel: "목표 금액", showPersonalGoal: false, personalGoalTheme: "goalClassic", personalGoalAnchor: "br", personalGoalLimit: "3", personalGoalFree: false, personalGoalX: "78", personalGoalY: "82",
+    showMembers: true, showTotal: true, showGoal: false, goal: "0", goalLabel: "목표 금액", showPersonalGoal: false, personalGoalTheme: "goalClassic", personalGoalAnchor: "tl", personalGoalLimit: "3", personalGoalFree: false, personalGoalX: "78", personalGoalY: "82",
     tickerInMembers: true, tickerInGoal: true, tickerInPersonalGoal: true,
     goalWidth: "400", goalAnchor: "bc", goalCurrent: "", showTicker: false, tickerAnchor: "bc", tickerWidth: "600", tickerFree: false, tickerX: "50", tickerY: "86", showTimer: false,
     timerStart: null, timerAnchor: "tr", showMission: false, missionAnchor: "br",
@@ -327,7 +327,12 @@ export default function AdminPage() {
     const q: Record<string, string> = { p: p.id, u: user?.id || "finalent" };
     return `${base}?${new URLSearchParams(q).toString()}`;
   };
-  const buildPreviewOverlayUrl = (p: OverlayPreset): string => buildOverlayUrl(p);
+  const buildPreviewOverlayUrl = (p: OverlayPreset): string => {
+    const url = buildOverlayUrl(p);
+    const u = new URL(url);
+    u.searchParams.set("demo", "true");
+    return u.toString();
+  };
   const copyUrl = async (url: string, id: string) => {
     try {
       if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(url); }
@@ -995,7 +1000,7 @@ export default function AdminPage() {
 
             <section className={`${panelCardClass} p-4 md:p-6`}>
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-semibold">미션 메뉴판</h2>
+                <h2 className="text-lg font-semibold">미션 전광판</h2>
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_auto] gap-2 mb-3">
                 <input className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10" placeholder="미션 제목 (예: 노래 부르기)" value={missionTitle} onChange={(e) => setMissionTitle(e.target.value)} />
@@ -1063,7 +1068,7 @@ export default function AdminPage() {
                   ))}
                 </div>
               )}
-              <div className="text-xs text-neutral-400 mt-2">오버레이 프리셋에서 &quot;미션 메뉴&quot;를 ON하면 방송 화면에 표시됩니다.</div>
+              <div className="text-xs text-neutral-400 mt-2">오버레이 프리셋에서 &quot;미션 전광판&quot;을 ON하면 우측→좌측 흐름으로 방송 화면에 표시됩니다.</div>
             </section>
 
             <section id="overlay-settings" className={`${panelCardClass} p-4 md:p-6`}>
@@ -1114,29 +1119,11 @@ export default function AdminPage() {
                             <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] items-center gap-2">
                               <label className="text-xs text-neutral-400">테마</label>
                               <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.theme} onChange={(e) => updatePreset(p.id, { theme: e.target.value })}>
-                                <option value="default">기본</option><option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option><option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
+                                <option value="default">기본</option>
+                                <option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option>
+                                <option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
+                                <option value="rainbow">무지개</option><option value="sunset">일몰</option><option value="ocean">오션</option><option value="forest">포레스트</option><option value="aurora">오로라</option><option value="violet">바이올렛</option><option value="coral">코랄</option><option value="mint">민트</option><option value="lava">라바</option><option value="ice">아이스</option>
                               </select>
-                              <label className="text-xs text-neutral-400">기능별 테마</label>
-                              <div className="grid grid-cols-2 gap-1">
-                                <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.membersTheme || "auto"} onChange={(e) => updatePreset(p.id, { membersTheme: e.target.value })}>
-                                  <option value="auto">멤버: 기본 테마 따름</option><option value="default">기본</option><option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option><option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
-                                </select>
-                                <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.totalTheme || "auto"} onChange={(e) => updatePreset(p.id, { totalTheme: e.target.value })}>
-                                  <option value="auto">총합: 기본 테마 따름</option><option value="default">기본</option><option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option><option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
-                                </select>
-                                <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.goalTheme || "auto"} onChange={(e) => updatePreset(p.id, { goalTheme: e.target.value })}>
-                                  <option value="auto">목표바: 기본 테마 따름</option><option value="default">기본</option><option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option><option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
-                                </select>
-                                <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.tickerBaseTheme || "auto"} onChange={(e) => updatePreset(p.id, { tickerBaseTheme: e.target.value })}>
-                                  <option value="auto">티커: 기본 테마 따름</option><option value="default">기본</option><option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option><option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
-                                </select>
-                                <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.timerTheme || "auto"} onChange={(e) => updatePreset(p.id, { timerTheme: e.target.value })}>
-                                  <option value="auto">타이머: 기본 테마 따름</option><option value="default">기본</option><option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option><option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
-                                </select>
-                                <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.missionTheme || "auto"} onChange={(e) => updatePreset(p.id, { missionTheme: e.target.value })}>
-                                  <option value="auto">미션: 기본 테마 따름</option><option value="default">기본</option><option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option><option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
-                                </select>
-                              </div>
                               <label className="text-xs text-neutral-400">배율</label>
                               <div className="flex items-center gap-2">
                                 <input
@@ -1180,7 +1167,7 @@ export default function AdminPage() {
                             </div>
                             <div className="text-xs text-neutral-400 font-semibold">요소 표시/숨김</div>
                             <div className="flex flex-wrap gap-1">
-                              {([["멤버 목록", "showMembers"], ["총합", "showTotal"], ["목표바", "showGoal"], ["개인 골", "showPersonalGoal"], ["후원 티커", "showTicker"], ["타이머", "showTimer"], ["미션 메뉴", "showMission"]] as [string, keyof OverlayPreset][]).map(([label, key]) => (
+                              {([["멤버 목록", "showMembers"], ["총합", "showTotal"], ["목표바", "showGoal"], ["개인 골", "showPersonalGoal"], ["후원 티커", "showTicker"], ["타이머", "showTimer"], ["미션 전광판", "showMission"]] as [string, keyof OverlayPreset][]).map(([label, key]) => (
                                 <button key={key} className={`px-2 py-0.5 rounded border text-xs ${p[key] ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { [key]: !p[key] })}>{label} {p[key] ? "ON" : "OFF"}</button>
                               ))}
                             </div>
@@ -1195,7 +1182,7 @@ export default function AdminPage() {
                                 { label: "목표바", patch: { showMembers: false, showTotal: false, showGoal: true, showTicker: false, showTimer: false, showMission: false } },
                                 { label: "후원 티커", patch: { showMembers: false, showTotal: false, showGoal: false, showTicker: true, showTimer: false, showMission: false } },
                                 { label: "타이머", patch: { showMembers: false, showTotal: false, showGoal: false, showTicker: false, showTimer: true, showMission: false, timerStart: Date.now() } },
-                                { label: "미션 메뉴", patch: { showMembers: false, showTotal: false, showGoal: false, showTicker: false, showTimer: false, showMission: true } },
+                                { label: "미션 전광판", patch: { showMembers: false, showTotal: false, showGoal: false, showTicker: false, showTimer: false, showMission: true } },
                               ].map(({ label, patch }) => (
                                 <button
                                   key={label}
@@ -1413,7 +1400,7 @@ export default function AdminPage() {
                             {p.showMission && (
                               <>
                                 <div className="h-px bg-white/10 my-1" />
-                                <div className="text-xs text-neutral-400 font-semibold">미션 메뉴판</div>
+                                <div className="text-xs text-neutral-400 font-semibold">미션 전광판</div>
                                 <div className="text-xs text-neutral-500">위치 설정(Prism에서)</div>
                               </>
                             )}
