@@ -43,7 +43,7 @@ function ClientTime({ ts }: { ts: number | string }) {
 
 export default function AdminPage() {
   const router = useRouter();
-  const [user, setUser] = useState<{ id: string; companyName: string } | null>(null);
+  const [user, setUser] = useState<{ id: string; companyName: string; name?: string; remainingDays?: number | null; unlimited?: boolean } | null>(null);
   const [state, setState] = useState<AppState>(defaultState());
   const [syncStatus, setSyncStatus] = useState<"loading" | "synced" | "local" | "error">("loading");
   const stateUpdatedAtRef = useRef<number>(0);
@@ -748,6 +748,11 @@ export default function AdminPage() {
         <div className="flex flex-wrap items-start sm:items-center justify-between gap-2 mb-6">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <h1 className="text-2xl font-bold">{user?.companyName || "매니저"} 정산 시스템</h1>
+            {(user?.remainingDays != null || user?.unlimited) && (
+              <span className={`px-2 py-0.5 rounded text-xs font-medium ${user?.unlimited ? "bg-blue-900/60 text-blue-300" : (user?.remainingDays ?? 0) <= 7 ? "bg-amber-900/60 text-amber-300" : "bg-neutral-800 text-neutral-400"}`}>
+                {user?.unlimited ? "무제한" : `남은 일수: ${user?.remainingDays ?? 0}일`}
+              </span>
+            )}
             <span className={`px-2 py-0.5 rounded text-xs font-medium ${syncStatus === "synced" ? "bg-emerald-900/60 text-emerald-300" : syncStatus === "loading" ? "bg-yellow-900/60 text-yellow-300" : syncStatus === "error" ? "bg-red-900/60 text-red-300" : "bg-neutral-800 text-neutral-400"}`}>
               {syncStatus === "synced" ? "서버 동기화됨" : syncStatus === "loading" ? "동기화 중..." : syncStatus === "error" ? "서버 저장 실패" : "로컬 모드"}
             </span>
