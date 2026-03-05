@@ -360,28 +360,34 @@ export default function SettlementsPage() {
                     선택: {filteredRecords.find((r) => r.id === selectedForGraph)?.title} · {timeGraphData.buckets.length}개 구간 (15분 단위)
                   </div>
                   <div className="flex gap-2">
-                    <div className="flex flex-col justify-between text-[9px] text-neutral-500 py-1">
+                    <div className="flex flex-col justify-between text-[9px] text-neutral-500 py-1 shrink-0">
                       <span>{formatMan(timeGraphData.maxAmount)}</span>
                       <span>0</span>
                     </div>
-                  <div className="flex-1 flex items-end gap-0.5 h-40" style={{ minHeight: 160 }}>
+                  <div className="flex-1 flex items-end gap-0.5 min-h-[160px]" style={{ height: 160 }}>
                     {timeGraphData.buckets.map((b) => {
                       const pct = timeGraphData.maxAmount > 0 ? b.amount / timeGraphData.maxAmount : 0;
-                      const barHeightPx = Math.max(6, Math.round(pct * 140));
+                      const barHeightPx = Math.max(8, Math.round(pct * 140));
                       return (
                         <div
                           key={b.mins}
-                          className="flex-1 min-w-[14px] flex flex-col items-center justify-end group relative"
+                          className="flex-1 min-w-[12px] flex flex-col items-stretch justify-end group relative"
+                          style={{ height: 160 }}
                           title={`${b.mins}분~${b.mins + 15}분: ${formatMan(b.amount)} (${b.count}건)`}
                         >
-                          <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] text-cyan-300 opacity-0 group-hover:opacity-100 whitespace-nowrap z-10 bg-neutral-900/95 px-1 rounded">
+                          <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[9px] text-cyan-300 opacity-0 group-hover:opacity-100 whitespace-nowrap z-10 bg-neutral-900/95 px-1 rounded">
                             {formatMan(b.amount)} ({b.count}건)
                           </span>
-                          <div
-                            className="w-full max-w-10 rounded-t bg-cyan-500/90 group-hover:bg-cyan-400 transition-colors flex-shrink-0"
-                            style={{ height: barHeightPx }}
-                          />
-                          <span className="text-[9px] text-neutral-500 mt-0.5 flex-shrink-0">{b.mins}m</span>
+                          <div className="flex-1 min-h-0 flex flex-col justify-end items-center">
+                            <span className="text-[8px] text-cyan-400/90 mb-0.5 truncate max-w-full" title={formatMan(b.amount)}>
+                              {b.amount > 0 ? formatMan(b.amount) : ""}
+                            </span>
+                            <div
+                              className="w-full max-w-12 rounded-t bg-cyan-500 group-hover:bg-cyan-400 transition-colors shrink-0"
+                              style={{ height: barHeightPx, minHeight: 8 }}
+                            />
+                          </div>
+                          <span className="text-[9px] text-neutral-500 mt-0.5 shrink-0 text-center">{b.mins}m</span>
                         </div>
                       );
                     })}
