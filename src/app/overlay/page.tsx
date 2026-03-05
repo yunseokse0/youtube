@@ -66,6 +66,7 @@ type OverlayPresetLike = {
   tickerGlow?: string;
   tickerShadow?: string;
   currencyLocale?: string;
+  tableOnly?: boolean;
 };
 
 function presetToParams(preset: OverlayPresetLike | null): URLSearchParams {
@@ -145,6 +146,7 @@ function presetToParams(preset: OverlayPresetLike | null): URLSearchParams {
   if (preset.tickerGlow && preset.tickerGlow.trim()) q.set("tickerGlow", preset.tickerGlow.trim());
   if (preset.tickerShadow && preset.tickerShadow.trim()) q.set("tickerShadow", preset.tickerShadow.trim());
   if (preset.currencyLocale && preset.currencyLocale.trim()) q.set("currencyLocale", preset.currencyLocale.trim());
+  if (preset.tableOnly) q.set("tableOnly", "true");
   return q;
 }
 
@@ -257,7 +259,9 @@ function useElapsed(startTs: number | null) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
-type ThemeId = "default" | "excel" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel";
+type ThemeId = "default" | "excel" | "excelBlue" | "excelSlate" | "excelAmber" | "excelRose" | "excelNavy" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel";
+
+const EXCEL_TABLE_THEMES: ThemeId[] = ["excel", "excelBlue", "excelSlate", "excelAmber", "excelRose", "excelNavy"];
 
 const THEMES: Record<ThemeId, {
   label: string;
@@ -296,7 +300,7 @@ const THEMES: Record<ThemeId, {
     timerCls: "font-mono text-white/80",
   },
   excel: {
-    label: "엑셀",
+    label: "엑셀(녹색)",
     memberCls: "font-mono",
     nameCls: "text-black font-semibold",
     accountCls: "text-blue-700 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
@@ -312,6 +316,96 @@ const THEMES: Record<ThemeId, {
     goalWrap: "border border-[#d4d4d4] bg-white/95 p-1",
     tickerCls: "text-[#217346] font-mono font-bold",
     timerCls: "font-mono text-black/60 bg-white/80 px-2",
+  },
+  excelBlue: {
+    label: "엑셀(파랑)",
+    memberCls: "font-mono",
+    nameCls: "text-black font-semibold",
+    accountCls: "text-blue-800 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    toonCls: "text-slate-500 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    totalCls: "font-bold text-white",
+    totalWrapCls: "bg-[#2563eb] px-2 py-1",
+    rowCls: "border border-[#cbd5e1] px-2 py-1 align-middle",
+    tableCls: "bg-white/95 border-collapse shadow-lg",
+    headerCls: "bg-[#2563eb] text-white font-bold px-2 py-1 border border-[#1d4ed8] text-sm",
+    goalBarBg: "bg-[#e2e8f0]",
+    goalBarFill: "bg-[#2563eb]",
+    goalText: "text-white font-mono font-bold",
+    goalWrap: "border border-[#cbd5e1] bg-white/95 p-1",
+    tickerCls: "text-[#2563eb] font-mono font-bold",
+    timerCls: "font-mono text-slate-600 bg-white/80 px-2",
+  },
+  excelSlate: {
+    label: "엑셀(슬레이트)",
+    memberCls: "font-mono",
+    nameCls: "text-slate-100 font-semibold",
+    accountCls: "text-sky-300 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    toonCls: "text-slate-400 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    totalCls: "font-bold text-white",
+    totalWrapCls: "bg-[#334155] px-2 py-1",
+    rowCls: "border border-slate-600 px-2 py-1 align-middle",
+    tableCls: "bg-slate-800/95 border-collapse shadow-lg",
+    headerCls: "bg-[#334155] text-white font-bold px-2 py-1 border border-slate-600 text-sm",
+    goalBarBg: "bg-slate-700",
+    goalBarFill: "bg-slate-500",
+    goalText: "text-slate-200 font-mono font-bold",
+    goalWrap: "border border-slate-600 bg-slate-800/95 p-1",
+    tickerCls: "text-slate-300 font-mono font-bold",
+    timerCls: "font-mono text-slate-400 bg-slate-700/80 px-2",
+  },
+  excelAmber: {
+    label: "엑셀(앰버)",
+    memberCls: "font-mono",
+    nameCls: "text-amber-950 font-semibold",
+    accountCls: "text-amber-800 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    toonCls: "text-amber-600 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    totalCls: "font-bold text-white",
+    totalWrapCls: "bg-[#d97706] px-2 py-1",
+    rowCls: "border border-amber-200 px-2 py-1 align-middle",
+    tableCls: "bg-amber-50/95 border-collapse shadow-lg",
+    headerCls: "bg-[#d97706] text-white font-bold px-2 py-1 border border-[#b45309] text-sm",
+    goalBarBg: "bg-amber-200",
+    goalBarFill: "bg-[#d97706]",
+    goalText: "text-white font-mono font-bold",
+    goalWrap: "border border-amber-200 bg-amber-50/95 p-1",
+    tickerCls: "text-[#d97706] font-mono font-bold",
+    timerCls: "font-mono text-amber-700 bg-amber-100/80 px-2",
+  },
+  excelRose: {
+    label: "엑셀(로즈)",
+    memberCls: "font-mono",
+    nameCls: "text-rose-950 font-semibold",
+    accountCls: "text-rose-700 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    toonCls: "text-rose-500 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    totalCls: "font-bold text-white",
+    totalWrapCls: "bg-[#e11d48] px-2 py-1",
+    rowCls: "border border-rose-200 px-2 py-1 align-middle",
+    tableCls: "bg-rose-50/95 border-collapse shadow-lg",
+    headerCls: "bg-[#e11d48] text-white font-bold px-2 py-1 border border-[#be123c] text-sm",
+    goalBarBg: "bg-rose-200",
+    goalBarFill: "bg-[#e11d48]",
+    goalText: "text-white font-mono font-bold",
+    goalWrap: "border border-rose-200 bg-rose-50/95 p-1",
+    tickerCls: "text-[#e11d48] font-mono font-bold",
+    timerCls: "font-mono text-rose-700 bg-rose-100/80 px-2",
+  },
+  excelNavy: {
+    label: "엑셀(네이비)",
+    memberCls: "font-mono",
+    nameCls: "text-slate-100 font-semibold",
+    accountCls: "text-sky-200 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    toonCls: "text-slate-400 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    totalCls: "font-bold text-white",
+    totalWrapCls: "bg-[#1e3a8a] px-2 py-1",
+    rowCls: "border border-slate-500 px-2 py-1 align-middle",
+    tableCls: "bg-slate-900/95 border-collapse shadow-lg",
+    headerCls: "bg-[#1e3a8a] text-white font-bold px-2 py-1 border border-[#1e40af] text-sm",
+    goalBarBg: "bg-slate-600",
+    goalBarFill: "bg-[#1e40af]",
+    goalText: "text-white font-mono font-bold",
+    goalWrap: "border border-slate-500 bg-slate-900/95 p-1",
+    tickerCls: "text-sky-300 font-mono font-bold",
+    timerCls: "font-mono text-slate-300 bg-slate-800/80 px-2",
   },
   neon: {
     label: "네온",
@@ -781,23 +875,30 @@ function OverlayInner() {
     if (!candidate || candidate === "auto") return fallback;
     return (candidate in THEMES ? candidate : fallback) as ThemeId;
   };
-  const membersTheme = THEMES[pickTheme(sp.get("membersTheme"), themeId)] || theme;
+  const membersThemeId = pickTheme(sp.get("membersTheme"), themeId) as ThemeId;
+  const membersTheme = THEMES[membersThemeId] || theme;
   const totalTheme = THEMES[pickTheme(sp.get("totalTheme"), themeId)] || theme;
+  const useExcelTableLayout = EXCEL_TABLE_THEMES.includes(themeId) || EXCEL_TABLE_THEMES.includes(membersThemeId);
+  const missionThemeVariant = (() => {
+    const t = pickTheme(sp.get("missionTheme"), themeId) as ThemeId;
+    return EXCEL_TABLE_THEMES.includes(t) ? "excel" : t;
+  })() as "default" | "excel" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel";
   const goalTheme = THEMES[pickTheme(sp.get("goalTheme"), themeId)] || theme;
   const tickerBaseTheme = THEMES[pickTheme(sp.get("tickerBaseTheme"), themeId)] || theme;
   const timerTheme = THEMES[pickTheme(sp.get("timerTheme"), themeId)] || theme;
   const missionTheme = THEMES[pickTheme(sp.get("missionTheme"), themeId)] || theme;
 
-  const showMembers = sp.get("showMembers") !== "false";
-  const showTotal = sp.get("showTotal") !== "false";
-  const showGoal = sp.get("showGoal") === "true";
-  const showPersonalGoal = sp.get("showPersonalGoal") === "true";
-  const tickerInMembers = sp.get("tickerInMembers") === "true";
-  const tickerInGoal = sp.get("tickerInGoal") === "true";
-  const tickerInPersonalGoal = sp.get("tickerInPersonalGoal") === "true";
-  const showTicker = sp.get("showTicker") === "true";
+  const tableOnly = sp.get("tableOnly") === "true";
+  const showMembers = tableOnly ? true : (sp.get("showMembers") !== "false");
+  const showTotal = tableOnly ? true : (sp.get("showTotal") !== "false");
+  const showGoal = tableOnly ? false : (sp.get("showGoal") === "true");
+  const showPersonalGoal = tableOnly ? false : (sp.get("showPersonalGoal") === "true");
+  const tickerInMembers = tableOnly ? false : (sp.get("tickerInMembers") === "true");
+  const tickerInGoal = tableOnly ? false : (sp.get("tickerInGoal") === "true");
+  const tickerInPersonalGoal = tableOnly ? false : (sp.get("tickerInPersonalGoal") === "true");
+  const showTicker = tableOnly ? false : (sp.get("showTicker") === "true");
   const hasContextTicker = tickerInMembers || tickerInGoal || tickerInPersonalGoal;
-  const showTimer = sp.get("showTimer") === "true";
+  const showTimer = tableOnly ? false : (sp.get("showTimer") === "true");
   const goalRaw = parseInt(sp.get("goal") || "0", 10);
   const goal = isNaN(goalRaw) ? 0 : goalRaw;
   const goalLabel = sp.get("goalLabel") || "목표 금액";
@@ -823,7 +924,7 @@ function OverlayInner() {
   const hasTickerFreePos = tickerXParam !== null && tickerYParam !== null;
   const tickerX = hasTickerFreePos ? parsePct(tickerXParam, 50) : 0;
   const tickerY = hasTickerFreePos ? parsePct(tickerYParam, 86) : 0;
-  const showMission = sp.get("showMission") === "true";
+  const showMission = tableOnly ? false : (sp.get("showMission") === "true");
   const missionAnchor = (sp.get("missionAnchor") || "br").toLowerCase();
 
   const elapsed = useElapsed(timerStart);
@@ -839,14 +940,14 @@ function OverlayInner() {
   const bankCh = Math.max(3, Math.min(12, defBankCh));
   const toonCh = Math.max(4, Math.min(12, defToonCh));
   const totalCh = Math.max(4, Math.min(10, defTotalCh));
-  const showSideDonors = sp.get("showSideDonors") === "true";
+  const showSideDonors = tableOnly ? false : (sp.get("showSideDonors") === "true");
   const donorsSide = (sp.get("donorsSide") || "right").toLowerCase();
   const donorsWidth = Math.max(120, Math.min(600, parseInt(sp.get("donorsWidth") || "220", 10)));
   const donorsSize = Math.max(10, Math.min(60, parseInt(sp.get("donorsSize") || String(Math.round(memberSize * 0.9)), 10)));
   const donorsColor = sp.get("donorsColor") || undefined;
   const donorsBgColor = sp.get("donorsBgColor") || undefined;
   const donorsBgOpacity = Math.max(0, Math.min(100, parseInt(sp.get("donorsBgOpacity") || "0", 10)));
-  const showBottomDonors = sp.get("showBottomDonors") === "true";
+  const showBottomDonors = tableOnly ? false : (sp.get("showBottomDonors") === "true");
   const effectiveShowTicker = showTicker && !hasContextTicker && !showBottomDonors;
   const donorsGap = Math.max(0, Math.min(48, parseInt(sp.get("donorsGap") || (tight ? "8" : "16"), 10)));
   const donorsSpeed = Math.max(3, Math.min(120, parseFloat(sp.get("donorsSpeed") || "20"))); // seconds per loop
@@ -1037,7 +1138,7 @@ function OverlayInner() {
     : { width: responsiveTickerWidth };
   const tickerPosClass = hasTickerFreePos ? "" : posClass(tickerAnchor);
 
-  if (themeId === "excel") {
+  if (useExcelTableLayout) {
     const excelGridCols = hasRoleColumn
       ? ["3ch", "6ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`]
       : ["3ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`];
@@ -1134,7 +1235,7 @@ function OverlayInner() {
         )}
         {effectiveShowTicker && ready && <div className={`fixed ${tickerPosClass} ${hasTickerFreePos ? "" : "mb-10"}`} style={tickerPosStyle}><DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
         {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={timerTheme} fontSize={memberSize} /></div>}
-        {showMission && ready && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`}><MissionMenu missions={missions} fontSize={memberSize * 0.9} themeVariant={pickTheme(sp.get("missionTheme"), themeId)} /></div>}
+        {showMission && ready && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`}><MissionMenu missions={missions} fontSize={memberSize * 0.9} themeVariant={missionThemeVariant} /></div>}
       </main>
     );
   }
@@ -1250,7 +1351,7 @@ function OverlayInner() {
           </div>
         )}
         {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={timerTheme} fontSize={memberSize} /></div>}
-        {showMission && ready && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`}><MissionMenu missions={missions} fontSize={memberSize * 0.9} themeVariant={pickTheme(sp.get("missionTheme"), themeId)} /></div>}
+        {showMission && ready && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`}><MissionMenu missions={missions} fontSize={memberSize * 0.9} themeVariant={missionThemeVariant} /></div>}
       </main>
     );
   }
@@ -1319,7 +1420,7 @@ function OverlayInner() {
 
       {showMission && ready && missions.length > 0 && (
         <div className={`fixed ${posClass(missionAnchor)}`}>
-          <MissionMenu missions={missions} fontSize={memberSize * 0.9} themeVariant={pickTheme(sp.get("missionTheme"), themeId)} />
+          <MissionMenu missions={missions} fontSize={memberSize * 0.9} themeVariant={missionThemeVariant} />
         </div>
       )}
     </main>
