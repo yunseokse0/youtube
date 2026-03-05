@@ -27,6 +27,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { appendSettlementRecordAndSync, SettlementMemberRatioOverrides } from "@/lib/settlement";
+import { presetToParams } from "@/lib/overlay-params";
 
 function ClientTime({ ts }: { ts: number | string }) {
   const [text, setText] = useState<string>("");
@@ -329,8 +330,11 @@ export default function AdminPage() {
   const buildOverlayUrl = (p: OverlayPreset): string => {
     if (typeof window === "undefined") return "";
     const base = `${window.location.origin}/overlay`;
-    const q: Record<string, string> = { p: p.id, u: user?.id || "finalent" };
-    return `${base}?${new URLSearchParams(q).toString()}`;
+    const presetParams = presetToParams(p);
+    const q = new URLSearchParams(presetParams);
+    q.set("p", p.id);
+    q.set("u", user?.id || "finalent");
+    return `${base}?${q.toString()}`;
   };
   const buildPreviewOverlayUrl = (p: OverlayPreset): string => {
     const url = buildOverlayUrl(p);
