@@ -1,4 +1,4 @@
-import { Member, formatManThousand } from "@/lib/state";
+import { Member, Donor, formatManThousand } from "@/lib/state";
 
 export const SETTLEMENT_RECORDS_KEY = "excel-broadcast-settlement-records-v1";
 export const SETTLEMENT_DELETE_LOGS_KEY = "excel-broadcast-settlement-delete-logs-v1";
@@ -32,6 +32,7 @@ export type SettlementRecord = {
   totalGross: number;
   totalFee: number;
   totalNet: number;
+  donors?: Donor[];
 };
 
 export type SettlementDeleteLog = {
@@ -265,7 +266,8 @@ export function appendSettlementRecord(
   accountRatio: number,
   toonRatio: number,
   feeRate = 0.033,
-  memberRatioOverrides?: SettlementMemberRatioOverrides
+  memberRatioOverrides?: SettlementMemberRatioOverrides,
+  donors?: Donor[]
 ): SettlementRecord {
   const body = computeSettlement(members, accountRatio, toonRatio, feeRate, memberRatioOverrides);
   const rec: SettlementRecord = {
@@ -273,6 +275,7 @@ export function appendSettlementRecord(
     title: title.trim() || "정산",
     createdAt: Date.now(),
     ...body,
+    ...(donors && donors.length > 0 ? { donors } : {}),
   };
   const prev = loadSettlementRecords();
   saveSettlementRecords([rec, ...prev]);
@@ -328,9 +331,10 @@ export async function appendSettlementRecordAndSync(
   accountRatio: number,
   toonRatio: number,
   feeRate = 0.033,
-  memberRatioOverrides?: SettlementMemberRatioOverrides
+  memberRatioOverrides?: SettlementMemberRatioOverrides,
+  donors?: Donor[]
 ): Promise<SettlementRecord> {
-  const rec = appendSettlementRecord(title, members, accountRatio, toonRatio, feeRate, memberRatioOverrides);
+  const rec = appendSettlementRecord(title, members, accountRatio, toonRatio, feeRate, memberRatioOverrides, donors);
   const local = loadSettlementRecords();
   await saveSettlementRecordsToApi(local);
   return rec;

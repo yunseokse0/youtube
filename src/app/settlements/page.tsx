@@ -70,6 +70,11 @@ export default function SettlementsPage() {
   const recordToDonors = useMemo(() => {
     const map = new Map<string, Donor[]>();
     for (const r of filteredRecords) {
+      const fromRecord = r.donors && r.donors.length > 0 ? r.donors : [];
+      if (fromRecord.length > 0) {
+        map.set(r.id, fromRecord);
+        continue;
+      }
       const ymd = new Date(r.createdAt).toISOString().slice(0, 10);
       const entries = dailyLog[ymd] || [];
       const last = entries[entries.length - 1];
@@ -91,8 +96,7 @@ export default function SettlementsPage() {
       byName.set(key, { name: key, amount: prev.amount + d.amount, count: prev.count + 1 });
     }
     const topDonors = Array.from(byName.values())
-      .sort((a, b) => b.amount - a.amount)
-      .slice(0, 10);
+      .sort((a, b) => b.amount - a.amount);
     const broadcastCount = filteredRecords.length;
     const avgPerBroadcast = broadcastCount > 0 ? totalAmount / broadcastCount : 0;
     return { totalAmount, totalCount: allDonors.length, topDonors, broadcastCount, avgPerBroadcast };
@@ -148,8 +152,7 @@ export default function SettlementsPage() {
     }, {});
     const memberData = Object.values(byMember)
       .filter((m) => m.net > 0 || m.gross > 0)
-      .sort((a, b) => (b.net || 0) - (a.net || 0))
-      .slice(0, 15);
+      .sort((a, b) => (b.net || 0) - (a.net || 0));
     const maxNet = Math.max(1, ...memberData.map((m) => m.net));
     const maxMonthly = Math.max(1, ...monthlyData.map((m) => m.net));
     const totalForPie = memberData.reduce((s, m) => s + m.net, 0);
@@ -314,8 +317,8 @@ export default function SettlementsPage() {
                 </div>
               </div>
               <div>
-                <div className="text-xs text-neutral-500 mb-2">후원자별 누적 (상위 10명)</div>
-                <div className="space-y-1 max-h-32 overflow-y-auto">
+                <div className="text-xs text-neutral-500 mb-2">후원자별 누적 (전체)</div>
+                <div className="space-y-1 max-h-64 overflow-y-auto">
                   {donorDashboard.topDonors.map((t) => (
                     <div key={t.name} className="flex items-center justify-between text-xs">
                       <span className="truncate max-w-[120px]" title={t.name}>{t.name}</span>
@@ -333,6 +336,7 @@ export default function SettlementsPage() {
           {filteredRecords.length > 0 && (
             <div className="rounded-lg bg-neutral-800/50 p-4 border border-white/5">
               <h3 className="text-sm font-semibold mb-3">후원 시점 분석 (방송 중 어느 시점에 후원이 몰렸는지)</h3>
+              <div className="text-xs text-neutral-500 mb-2">회색 버튼: 해당 날짜의 일일 로그(후원 시점) 없음. 리셋 시 저장됨.</div>
               <div className="flex flex-wrap gap-2 mb-3">
                 {filteredRecords.slice(0, 12).map((r) => {
                   const donors = recordToDonors.get(r.id) || [];
@@ -343,7 +347,7 @@ export default function SettlementsPage() {
                       className={`px-2 py-1 rounded text-xs whitespace-nowrap ${selectedForGraph === r.id ? "bg-cyan-600 text-white" : hasData ? "bg-neutral-700 hover:bg-neutral-600" : "bg-neutral-800 text-neutral-500 cursor-not-allowed"}`}
                       onClick={() => hasData && setSelectedForGraph(selectedForGraph === r.id ? null : r.id)}
                       disabled={!hasData}
-                      title={hasData ? `${r.title} (${donors.length}건)` : "후원 데이터 없음"}
+                      title={hasData ? `${r.title} (${donors.length}건)` : `후원 데이터 없음 (${new Date(r.createdAt).toISOString().slice(0, 10)} 일일 로그 없음)`}
                     >
                       {r.title.slice(0, 12)}{r.title.length > 12 ? "…" : ""} {hasData && `(${donors.length})`}
                     </button>
@@ -355,26 +359,39 @@ export default function SettlementsPage() {
                   <div className="text-xs text-neutral-400">
                     선택: {filteredRecords.find((r) => r.id === selectedForGraph)?.title} · {timeGraphData.buckets.length}개 구간 (15분 단위)
                   </div>
-                  <div className="flex items-end gap-1 h-32">
-                    {timeGraphData.buckets.map((b) => (
-                      <div
-                        key={b.mins}
-                        className="flex-1 min-w-[12px] flex flex-col items-center justify-end group"
-                        title={`${b.mins}분~${b.mins + 15}분: ${formatMan(b.amount)} (${b.count}건)`}
-                      >
+                  <div className="flex gap-2">
+                    <div className="flex flex-col justify-between text-[9px] text-neutral-500 py-1">
+                      <span>{formatMan(timeGraphData.maxAmount)}</span>
+                      <span>0</span>
+                    </div>
+                  <div className="flex-1 flex items-end gap-0.5 h-40" style={{ minHeight: 160 }}>
+                    {timeGraphData.buckets.map((b) => {
+                      const pct = timeGraphData.maxAmount > 0 ? b.amount / timeGraphData.maxAmount : 0;
+                      const barHeightPx = Math.max(6, Math.round(pct * 140));
+                      return (
                         <div
-                          className="w-full max-w-8 rounded-t bg-cyan-500/80 group-hover:bg-cyan-400 transition-colors"
-                          style={{ height: `${Math.max(4, (b.amount / timeGraphData.maxAmount) * 100)}%` }}
-                        />
-                        <span className="text-[9px] text-neutral-500 mt-0.5">{b.mins}m</span>
-                      </div>
-                    ))}
+                          key={b.mins}
+                          className="flex-1 min-w-[14px] flex flex-col items-center justify-end group relative"
+                          title={`${b.mins}분~${b.mins + 15}분: ${formatMan(b.amount)} (${b.count}건)`}
+                        >
+                          <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] text-cyan-300 opacity-0 group-hover:opacity-100 whitespace-nowrap z-10 bg-neutral-900/95 px-1 rounded">
+                            {formatMan(b.amount)} ({b.count}건)
+                          </span>
+                          <div
+                            className="w-full max-w-10 rounded-t bg-cyan-500/90 group-hover:bg-cyan-400 transition-colors flex-shrink-0"
+                            style={{ height: barHeightPx }}
+                          />
+                          <span className="text-[9px] text-neutral-500 mt-0.5 flex-shrink-0">{b.mins}m</span>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div className="text-[10px] text-neutral-500">가로축: 방송 시작 후 경과 시간(분). 세로축: 해당 구간 후원액.</div>
+                  </div>
+                  <div className="text-[10px] text-neutral-500">가로축: 방송 시작 후 경과 시간(분). 세로축: 해당 구간 후원액. (막대에 마우스를 올리면 금액 표시)</div>
                 </div>
               )}
               {!timeGraphData && selectedForGraph && (
-                <div className="text-sm text-neutral-500 py-4">선택한 방송에 후원 데이터가 없습니다.</div>
+                <div className="text-sm text-neutral-500 py-4">선택한 방송에 후원 데이터가 없습니다. 해당 날짜에 리셋/스냅샷을 했을 때만 일일 로그가 저장됩니다.</div>
               )}
               {!selectedForGraph && (
                 <div className="text-sm text-neutral-500 py-4">위에서 방송을 선택하면 후원 시점 그래프가 표시됩니다.</div>
@@ -398,8 +415,8 @@ export default function SettlementsPage() {
                         : "var(--tw-bg-opacity, 1) rgb(38 38 38)",
                     }}
                   />
-                  <div className="flex-1 min-w-0 space-y-1">
-                    {dashboard.memberPieData.slice(0, 6).map((m) => (
+                  <div className="flex-1 min-w-0 space-y-1 max-h-48 overflow-y-auto">
+                    {dashboard.memberPieData.map((m) => (
                       <div key={m.name} className="flex items-center gap-2 text-xs">
                         <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: m.color }} />
                         <span className="truncate" title={m.name}>{m.name}</span>
@@ -410,8 +427,8 @@ export default function SettlementsPage() {
                 </div>
               </div>
               <div className="rounded-lg bg-neutral-800/50 p-4 border border-white/5">
-                <h3 className="text-sm font-semibold mb-3">멤버별 정산 현황 (막대, 상위 15명)</h3>
-                <div className="space-y-2 max-h-48 overflow-y-auto">
+                <h3 className="text-sm font-semibold mb-3">멤버별 정산 현황 (막대, 전체)</h3>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
                   {dashboard.memberData.map((m) => (
                     <div key={m.name} className="flex items-center gap-2">
                       <span className="text-sm w-20 truncate" title={m.name}>{m.name}</span>

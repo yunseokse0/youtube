@@ -712,7 +712,8 @@ export default function AdminPage() {
     const title =
       settlementTitle.trim() ||
       `${new Date().toISOString().slice(0, 10)} 정산`;
-    const rec = await appendSettlementRecordAndSync(title, state.members, accountRatio, toonRatio, taxRate, memberRatioOverrides);
+    appendDailyLog(state);
+    const rec = await appendSettlementRecordAndSync(title, state.members, accountRatio, toonRatio, taxRate, memberRatioOverrides, state.donors);
     router.push(`/settlements/${rec.id}`);
   };
 
