@@ -32,12 +32,6 @@ export default function SettlementsPage() {
       .catch(() => setDailyLog(loadDailyLog()));
   }, []);
 
-  useEffect(() => {
-    if (selectedForGraph && !filteredRecords.some((r) => r.id === selectedForGraph)) {
-      setSelectedForGraph(null);
-    }
-  }, [selectedForGraph, filteredRecords]);
-
   const onDeleteRecord = async (recordId: string) => {
     const target = records.find((r) => r.id === recordId);
     if (!target) return;
@@ -67,17 +61,19 @@ export default function SettlementsPage() {
     });
   }, [records, titleQuery, memberQuery, dateQuery]);
 
-  const getDonorsForRecord = (r: SettlementRecord): Donor[] => {
-    const ymd = new Date(r.createdAt).toISOString().slice(0, 10);
-    const entries = dailyLog[ymd] || [];
-    const last = entries[entries.length - 1];
-    return last?.donors || [];
-  };
+  useEffect(() => {
+    if (selectedForGraph && !filteredRecords.some((r) => r.id === selectedForGraph)) {
+      setSelectedForGraph(null);
+    }
+  }, [selectedForGraph, filteredRecords]);
 
   const recordToDonors = useMemo(() => {
     const map = new Map<string, Donor[]>();
     for (const r of filteredRecords) {
-      map.set(r.id, getDonorsForRecord(r));
+      const ymd = new Date(r.createdAt).toISOString().slice(0, 10);
+      const entries = dailyLog[ymd] || [];
+      const last = entries[entries.length - 1];
+      map.set(r.id, last?.donors || []);
     }
     return map;
   }, [filteredRecords, dailyLog]);

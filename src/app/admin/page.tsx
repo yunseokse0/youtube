@@ -1266,7 +1266,7 @@ export default function AdminPage() {
                                     if (patch.showMission !== undefined) u.searchParams.set("showMission", String(patch.showMission));
                                     if (patch.timerStart) u.searchParams.set("timerStart", String(patch.timerStart));
                                     if (patch.confettiMilestone) u.searchParams.set("confettiMilestone", patch.confettiMilestone);
-                                    if (patch.tableBgOpacity) u.searchParams.set("tableBgOpacity", patch.tableBgOpacity);
+                                    if ("tableBgOpacity" in patch && patch.tableBgOpacity) u.searchParams.set("tableBgOpacity", String(patch.tableBgOpacity));
                                     u.searchParams.set("autoFont", "true");
                                     u.searchParams.set("fitBase", "480");
                                     u.searchParams.set("compact", "true");

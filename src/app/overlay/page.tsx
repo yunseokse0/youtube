@@ -1473,8 +1473,9 @@ function OverlayInner() {
     : { width: responsiveTickerWidth };
   const tickerPosClass = hasTickerFreePos ? "" : posClass(tickerAnchor);
 
+    const roleCh = Math.max(4, Math.min(10, members.reduce((max, m) => Math.max(max, (m.role || "").length), 2)));
     const excelGridCols = hasRoleColumn
-      ? ["3ch", "6ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`]
+      ? ["3ch", `${roleCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`]
       : ["3ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`];
     return (
       <main className="transparent-bg min-h-screen no-select" style={scaledMainStyle}>
@@ -1498,7 +1499,7 @@ function OverlayInner() {
                   <thead>
                     <tr>
                       <td className={effectiveHeaderCls}>순위</td>
-                      {hasRoleColumn && <td className={effectiveHeaderCls}>직급</td>}
+                      {hasRoleColumn && <td className={effectiveHeaderCls} style={{ whiteSpace: "nowrap" }}>직급</td>}
                       <td className={effectiveHeaderCls}>이름</td>
                       <td className={`${effectiveHeaderCls} text-right`}>계좌</td>
                       <td className={`${effectiveHeaderCls} text-right`}>투네</td>
@@ -1509,7 +1510,23 @@ function OverlayInner() {
                     {ranked.map(({m, rank}) => (
                       <tr key={m.id} ref={setRowRef(m.id)} className={`transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
                         <td className={`${effectiveRowCls} text-left`}>#{rank}</td>
-                        {hasRoleColumn && <td className={effectiveRowCls}>{m.role || "-"}</td>}
+                        {hasRoleColumn && (
+                          <td
+                            className={effectiveRowCls}
+                            style={{
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              fontSize: (() => {
+                                const len = (m.role || "-").length;
+                                if (len <= roleCh) return undefined;
+                                const scale = Math.min(1, roleCh / len);
+                                return `${Math.round(scale * 100)}%`;
+                              })(),
+                            }}
+                          >
+                            {m.role || "-"}
+                          </td>
+                        )}
                         <td className={`${effectiveRowCls} ${membersTheme.nameCls} truncate`}>{m.name}</td>
                         <td className={`${effectiveRowCls} ${membersTheme.accountCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${effectiveRowCls} ${membersTheme.toonCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
@@ -1548,7 +1565,7 @@ function OverlayInner() {
                   <thead>
                     <tr>
                       <td className={membersTheme.headerCls}>순위</td>
-                      {hasRoleColumn && <td className={membersTheme.headerCls}>직급</td>}
+                      {hasRoleColumn && <td className={membersTheme.headerCls} style={{ whiteSpace: "nowrap" }}>직급</td>}
                       <td className={membersTheme.headerCls}>이름</td>
                       <td className={`${membersTheme.headerCls} text-right`}>계좌</td>
                       <td className={`${membersTheme.headerCls} text-right`}>투네</td>
@@ -1559,7 +1576,23 @@ function OverlayInner() {
                     {ranked.map(({m, rank}) => (
                       <tr key={m.id} ref={setRowRef(m.id)} className={`transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
                         <td className={`${membersTheme.rowCls} text-left`}>#{rank}</td>
-                        {hasRoleColumn && <td className={membersTheme.rowCls}>{m.role || "-"}</td>}
+                        {hasRoleColumn && (
+                          <td
+                            className={membersTheme.rowCls}
+                            style={{
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              fontSize: (() => {
+                                const len = (m.role || "-").length;
+                                if (len <= roleCh) return undefined;
+                                const scale = Math.min(1, roleCh / len);
+                                return `${Math.round(scale * 100)}%`;
+                              })(),
+                            }}
+                          >
+                            {m.role || "-"}
+                          </td>
+                        )}
                         <td className={`${membersTheme.rowCls} ${membersTheme.nameCls} truncate`}>{m.name}</td>
                         <td className={`${membersTheme.rowCls} ${membersTheme.accountCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${membersTheme.rowCls} ${membersTheme.toonCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
