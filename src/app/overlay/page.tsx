@@ -1634,6 +1634,7 @@ function OverlayInner() {
         {showTimer && <div className={`absolute ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={timerTheme} fontSize={memberSize} /></div>}
         {showMission && ready && missions.length > 0 && <div className={`absolute ${posClass(missionAnchor)}`} style={{ width: fitWidthToViewport(missionWidth) }}><MissionBoard missions={missions} fontSize={memberSize * 0.9} themeVariant={missionThemeVariant} duration={missionDuration} /></div>}
         {demo && <div className="fixed top-2 left-2 z-[9999] px-2 py-0.5 rounded bg-rose-600/90 text-white text-xs font-bold shadow">DEMO</div>}
+        {!userId && <div className="fixed top-8 left-2 z-[9999] px-2 py-0.5 rounded bg-amber-600/90 text-white text-[11px] font-semibold shadow">인증 누락: u 파라미터 필요</div>}
           </main>
         </div>
       </div>
