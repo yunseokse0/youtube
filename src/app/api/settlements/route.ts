@@ -77,10 +77,10 @@ export async function GET(req: Request) {
       });
     }
     let records = await upstashGet(recordsKey(userId));
-    if (userId === "finalent" && (!Array.isArray(records) || records.length === 0)) {
+    if (!Array.isArray(records) || records.length === 0) {
       const legacy = await upstashGet(STORAGE_KEY_LEGACY);
-      if (Array.isArray(legacy)) {
-        if (legacy.length > 0) await upstashSet(recordsKey("finalent"), legacy);
+      if (Array.isArray(legacy) && legacy.length > 0) {
+        await upstashSet(recordsKey(userId), legacy);
         records = legacy;
       }
     }

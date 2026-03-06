@@ -84,10 +84,10 @@ export async function GET(req: Request) {
       });
     }
     let data: DailyLogData | null = await upstashGet(logKey(userId));
-    if (userId === "finalent" && (!data || typeof data !== "object")) {
+    if (!data || typeof data !== "object" || Object.keys(data).length === 0) {
       const legacy = await upstashGet(STORAGE_KEY_LEGACY);
-      if (legacy && typeof legacy === "object") {
-        await upstashSet(logKey("finalent"), legacy);
+      if (legacy && typeof legacy === "object" && Object.keys(legacy).length > 0) {
+        await upstashSet(logKey(userId), legacy);
         data = legacy;
       }
     }

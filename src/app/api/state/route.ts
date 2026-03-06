@@ -99,12 +99,12 @@ export async function GET(req: Request) {
     }
 
     let state = await upstashGet(stateKey(userId));
-    if (userId === "finalent" && (!state || !Array.isArray(state.members))) {
+    if (!state || !Array.isArray(state.members)) {
       const legacy = await upstashGet(STORAGE_KEY_LEGACY);
       if (legacy && (Array.isArray(legacy.members) || Array.isArray(legacy.overlayPresets))) {
-        await upstashSet(stateKey("finalent"), legacy);
+        await upstashSet(stateKey(userId), legacy);
         state = legacy;
-        logger.info('기존 데이터 finalent 계정으로 마이그레이션');
+        logger.info('기존 데이터 계정으로 마이그레이션', { userId });
       }
     }
     logger.debug('Redis 상태 반환', { hasState: !!state, userId });
