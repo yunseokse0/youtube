@@ -980,8 +980,13 @@ function OverlayInner() {
   const presetId = (rawSp.get("p") || "").trim();
   const activePreset = useMemo(() => {
     if (presetId) return overlayPresets.find((x) => x.id === presetId) || null;
+    const preferredId = ready && s && (s as any).overlaySettings?.currentPresetId;
+    if (preferredId) {
+      const byPreferred = overlayPresets.find((x) => x.id === preferredId);
+      if (byPreferred) return byPreferred;
+    }
     return overlayPresets.length ? overlayPresets[0] : null;
-  }, [presetId, overlayPresets]);
+  }, [presetId, overlayPresets, ready, s]);
   const presetParams = useMemo(() => presetToParams(activePreset), [activePreset]);
   const sp = useMemo(
     () => ({

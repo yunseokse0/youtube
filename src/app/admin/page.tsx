@@ -344,7 +344,18 @@ export default function AdminPage() {
     setEditingId(p.id);
   };
   const updatePreset = (id: string, patch: Partial<OverlayPreset>) => {
-    savePresets(presets.map(p => p.id === id ? { ...p, ...patch } : p));
+    const nextPresets = presets.map(p => p.id === id ? { ...p, ...patch } : p);
+    setPresets(nextPresets);
+    try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(nextPresets)); } catch {}
+    setState((prev: AppState) => {
+      const merged: AppState = {
+        ...prev,
+        overlayPresets: nextPresets,
+        overlaySettings: { ...(prev.overlaySettings || {}), currentPresetId: id },
+      };
+      persistState(merged);
+      return merged;
+    });
     setPresetRev((r) => r + 1);
   };
   const removePreset = (id: string) => {
