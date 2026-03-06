@@ -162,7 +162,10 @@ export function saveState(state: AppState, userId?: string | null) {
       body: json,
       credentials: "include",
     }).catch(() => {});
-    try { void sendSSEUpdate(next); } catch {}
+    try {
+      const { sendSSEUpdate } = require("./sse-post") as { sendSSEUpdate: (d: unknown) => Promise<void> };
+      void sendSSEUpdate(next);
+    } catch {}
   } catch {
     // ignore
   }
@@ -183,7 +186,10 @@ export async function saveStateAsync(state: AppState, userId?: string | null): P
       body: json,
       credentials: "include",
     });
-    try { void sendSSEUpdate(next); } catch {}
+    try {
+      const { sendSSEUpdate } = require("./sse-post") as { sendSSEUpdate: (d: unknown) => Promise<void> };
+      void sendSSEUpdate(next);
+    } catch {}
     return res.ok;
   } catch {
     return false;
