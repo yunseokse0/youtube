@@ -1254,9 +1254,32 @@ function OverlayInner() {
   }, [members]);
 
   useEffect(() => {
-    document.body.style.background = "transparent";
-    document.documentElement.style.background = "transparent";
-    return () => { document.body.style.background = ""; };
+    const html = document.documentElement;
+    const body = document.body;
+    html.style.background = "transparent";
+    body.style.background = "transparent";
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    body.style.margin = "0";
+    html.style.overscrollBehavior = "none";
+    body.style.overscrollBehavior = "none";
+    html.style.height = "100%";
+    body.style.height = "100%";
+    html.style.width = "100%";
+    body.style.width = "100%";
+    return () => {
+      html.style.background = "";
+      body.style.background = "";
+      html.style.overflow = "";
+      body.style.overflow = "";
+      body.style.margin = "";
+      html.style.overscrollBehavior = "";
+      body.style.overscrollBehavior = "";
+      html.style.height = "";
+      body.style.height = "";
+      html.style.width = "";
+      body.style.width = "";
+    };
   }, []);
 
   const confettiLastMilestoneRef = useRef<number>(0);
