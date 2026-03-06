@@ -1167,7 +1167,7 @@ export default function AdminPage() {
                       </div>
                       {isOpen && (
                         <div className="px-3 pb-3 grid grid-cols-1 lg:grid-cols-2 gap-3 border-t border-white/10 pt-3">
-                          <div className="space-y-2">
+                          <div className="space-y-2 lg:order-2">
                             <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] items-center gap-2">
                               <label className="text-xs text-neutral-400">테마</label>
                               <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.theme} onChange={(e) => updatePreset(p.id, { theme: e.target.value })}>
@@ -1522,7 +1522,9 @@ export default function AdminPage() {
                             </div>
                           </div>
 
-                          <VerticalPreview url={previewUrl} />
+                          <div className="lg:order-1">
+                            <VerticalPreview url={previewUrl} />
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1815,7 +1817,7 @@ function VerticalPreview({ url }: { url: string }) {
   const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
   const [showFrame, setShowFrame] = useState(true);
   const [showGuides, setShowGuides] = useState(true);
-  const [w, h] = orientation === "portrait" ? [720, 1280] : [1280, 720];
+  const [w, h] = orientation === "portrait" ? [360, 640] : [640, 360];
   const previewUrl = useMemo(() => {
     try {
       const u = new URL(url);
@@ -1854,10 +1856,11 @@ function VerticalPreview({ url }: { url: string }) {
         </div>
       </div>
       <div
-        className="relative mx-auto rounded-xl overflow-hidden"
+        className="relative mx-auto rounded-xl overflow-hidden shrink-0"
         style={{
           width: "100%",
           maxWidth: w,
+          maxHeight: "70vh",
           aspectRatio: `${w} / ${h}`,
           border: "1px solid rgba(255,255,255,0.1)",
           background: "#0b0b0b",
