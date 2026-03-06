@@ -9,6 +9,12 @@ export type OverlayPresetLike = {
   tableFree?: boolean;
   tableX?: string;
   tableY?: string;
+  autoFont?: boolean;
+  compact?: boolean;
+  tight?: boolean;
+  lockWidth?: boolean;
+  nameGrow?: boolean;
+  nameCh?: string;
   sumAnchor?: string;
   sumX?: string;
   sumY?: string;
@@ -85,6 +91,12 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   } else {
     q.set("anchor", preset.anchor || "cc");
   }
+  if (preset.autoFont) q.set("autoFont", "true");
+  if (preset.compact) q.set("compact", "true");
+  if (preset.tight) q.set("tight", "true");
+  if (preset.lockWidth) q.set("lockWidth", "true");
+  if (preset.nameGrow === false) q.set("nameGrow", "false");
+  if (preset.nameCh && preset.nameCh.trim()) q.set("nameCh", preset.nameCh.trim());
   q.set("theme", preset.theme || "default");
   q.set("showMembers", String(preset.showMembers ?? true));
   q.set("showTotal", String(preset.showTotal ?? true));

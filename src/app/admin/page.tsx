@@ -72,7 +72,7 @@ export default function AdminPage() {
   const [memberRatioInputs, setMemberRatioInputs] = useState<Record<string, { account: string; toon: string }>>({});
   type OverlayPreset = {
     id: string; name: string; scale: string; memberSize: string; totalSize: string;
-    dense: boolean; anchor: string; tableFree?: boolean; tableX?: string; tableY?: string; sumAnchor: string; sumFree: boolean; sumX: string; sumY: string;
+    dense: boolean; anchor: string; tableFree?: boolean; tableX?: string; tableY?: string; autoFont?: boolean; compact?: boolean; tight?: boolean; lockWidth?: boolean; nameGrow?: boolean; nameCh?: string; sumAnchor: string; sumFree: boolean; sumX: string; sumY: string;
     theme: string;
     membersTheme?: string;
     totalTheme?: string;
@@ -1309,6 +1309,32 @@ export default function AdminPage() {
                               <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={String(p.dense)} onChange={(e) => updatePreset(p.id, { dense: e.target.value === "true" })}>
                                 <option value="true">촘촘</option><option value="false">보통</option>
                               </select>
+                              <label className="text-xs text-neutral-400">자동 글자 크기</label>
+                              <button className={`px-2 py-0.5 rounded border text-xs ${p.autoFont ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { autoFont: !p.autoFont })}>
+                                {p.autoFont ? "ON" : "OFF"}
+                              </button>
+                              <label className="text-xs text-neutral-400">컴팩트 모드</label>
+                              <button className={`px-2 py-0.5 rounded border text-xs ${p.compact ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { compact: !p.compact })}>
+                                {p.compact ? "ON" : "OFF"}
+                              </button>
+                              <label className="text-xs text-neutral-400">촘촘 간격(+티커 간격)</label>
+                              <button className={`px-2 py-0.5 rounded border text-xs ${p.tight ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { tight: !p.tight })}>
+                                {p.tight ? "ON" : "OFF"}
+                              </button>
+                              <label className="text-xs text-neutral-400">표 폭 고정</label>
+                              <button className={`px-2 py-0.5 rounded border text-xs ${p.lockWidth ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { lockWidth: !p.lockWidth })}>
+                                {p.lockWidth ? "ON" : "OFF"}
+                              </button>
+                              <label className={`text-xs ${p.lockWidth ? "text-neutral-600" : "text-neutral-400"}`}>이름 칸 확장</label>
+                              <button
+                                className={`px-2 py-0.5 rounded border text-xs ${p.lockWidth ? "opacity-60 cursor-not-allowed" : (p.nameGrow !== false ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500")}`}
+                                onClick={() => !p.lockWidth && updatePreset(p.id, { nameGrow: !(p.nameGrow !== false) })}
+                                disabled={!!p.lockWidth}
+                              >
+                                {p.nameGrow !== false ? "ON" : "OFF"}
+                              </button>
+                              <label className="text-xs text-neutral-400">이름 너비(ch)</label>
+                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="(기본 자동)" value={p.nameCh || ""} onChange={(e) => updatePreset(p.id, { nameCh: e.target.value.replace(/[^\d]/g, "") })} />
                               <label className="text-xs text-neutral-400">계좌 글자 색상</label>
                               <div className="flex items-center gap-2">
                                 <input
