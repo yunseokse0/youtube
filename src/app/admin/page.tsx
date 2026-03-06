@@ -1222,11 +1222,12 @@ export default function AdminPage() {
                                 <option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
                                 <option value="rainbow">무지개</option><option value="sunset">일몰</option><option value="ocean">오션</option><option value="forest">포레스트</option><option value="aurora">오로라</option><option value="violet">바이올렛</option><option value="coral">코랄</option><option value="mint">민트</option><option value="lava">라바</option><option value="ice">아이스</option>
                               </select>
-                              <label className="text-xs text-neutral-400">표 위치(앵커)</label>
+                              <label className={`text-xs ${p.tableFree ? "text-neutral-600" : "text-neutral-400"}`}>표 위치(앵커)</label>
                               <select
-                                className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                className={`px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm ${p.tableFree ? "opacity-60 cursor-not-allowed" : ""}`}
                                 value={p.anchor || "cc"}
                                 onChange={(e) => updatePreset(p.id, { anchor: e.target.value })}
+                                disabled={!!p.tableFree}
                               >
                                 <option value="tl">상좌</option>
                                 <option value="tc">상중</option>
@@ -1238,11 +1239,12 @@ export default function AdminPage() {
                                 <option value="bc">하중</option>
                                 <option value="br">하우</option>
                               </select>
+                              <label className="text-xs text-neutral-400">표 자유 위치</label>
                               <div className="flex items-center gap-2">
-                                <label className="text-xs text-neutral-400">표 자유 위치</label>
                                 <button
                                   className={`px-2 py-0.5 rounded border text-xs ${p.tableFree ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`}
                                   onClick={() => updatePreset(p.id, { tableFree: !p.tableFree })}
+                                  type="button"
                                 >
                                   {p.tableFree ? "자유 위치 ON" : "자유 위치 OFF"}
                                 </button>
@@ -1259,10 +1261,11 @@ export default function AdminPage() {
                                       className="flex-1 accent-emerald-500"
                                     />
                                     <input
-                                      className="w-14 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                                      className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
                                       value={p.tableX || "50"}
                                       onChange={(e) => updatePreset(p.id, { tableX: e.target.value.replace(/[^\\d]/g, "") })}
                                     />
+                                    <span className="text-xs text-neutral-500">%</span>
                                   </div>
                                   <label className="text-xs text-neutral-400">표 Y%</label>
                                   <div className="flex items-center gap-2">
@@ -1273,10 +1276,11 @@ export default function AdminPage() {
                                       className="flex-1 accent-emerald-500"
                                     />
                                     <input
-                                      className="w-14 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                                      className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
                                       value={p.tableY || "50"}
                                       onChange={(e) => updatePreset(p.id, { tableY: e.target.value.replace(/[^\\d]/g, "") })}
                                     />
+                                    <span className="text-xs text-neutral-500">%</span>
                                   </div>
                                 </>
                               )}
