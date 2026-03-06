@@ -386,7 +386,7 @@ export default function AdminPage() {
   const buildStablePreviewUrl = (p: OverlayPreset): string => {
     if (typeof window === "undefined") return "";
     const base = `${window.location.origin}/overlay`;
-    const q = new URLSearchParams();
+    const q = new URLSearchParams(presetToParams(p));
     q.set("p", p.id);
     q.set("u", user?.id || "finalent");
     q.set("previewGuide", "true");
