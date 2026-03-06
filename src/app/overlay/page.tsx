@@ -1454,7 +1454,7 @@ function OverlayInner() {
       <div style={viewportWrapperStyle} className="overlay-root">
         {scaleStyleTag}
         {colorOverrideStyle}
-        <div style={viewportInnerStyle}>
+        <div style={viewportInnerStyle} className="overlay-route">
           <main className="transparent-bg no-select" style={{ ...scaledMainStyle, minHeight: BASE_H, width: BASE_W }}>
         {showMembers && ready && (
           <div className={`absolute ${listPosClass}`} style={{ maxWidth: BASE_W, maxHeight: BASE_H }}>
