@@ -1221,6 +1221,22 @@ export default function AdminPage() {
                                 <option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
                                 <option value="rainbow">무지개</option><option value="sunset">일몰</option><option value="ocean">오션</option><option value="forest">포레스트</option><option value="aurora">오로라</option><option value="violet">바이올렛</option><option value="coral">코랄</option><option value="mint">민트</option><option value="lava">라바</option><option value="ice">아이스</option>
                               </select>
+                              <label className="text-xs text-neutral-400">표 위치(앵커)</label>
+                              <select
+                                className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                value={p.anchor || "cc"}
+                                onChange={(e) => updatePreset(p.id, { anchor: e.target.value })}
+                              >
+                                <option value="tl">상좌</option>
+                                <option value="tc">상중</option>
+                                <option value="tr">상우</option>
+                                <option value="cl">중좌</option>
+                                <option value="cc">중앙</option>
+                                <option value="cr">중우</option>
+                                <option value="bl">하좌</option>
+                                <option value="bc">하중</option>
+                                <option value="br">하우</option>
+                              </select>
                               <label className="text-xs text-neutral-400">배율</label>
                               <div className="flex items-center gap-2">
                                 <input
