@@ -1333,6 +1333,18 @@ function OverlayInner() {
     return () => document.body.classList.remove("overlay-vertical");
   }, [isVertical]);
 
+  useEffect(() => {
+    const route = document.querySelector(".overlay-route") as HTMLElement | null;
+    if (!route) return;
+    const s = viewportScale * scale;
+    route.style.transform = `scale(${s})`;
+    route.style.transformOrigin = "center center";
+    return () => {
+      route.style.transform = "";
+      route.style.transformOrigin = "";
+    };
+  }, [viewportScale, scale]);
+
   const confettiLastMilestoneRef = useRef<number>(0);
   useEffect(() => {
     if (confettiMilestoneMan <= 0) return;
@@ -1428,8 +1440,6 @@ function OverlayInner() {
       position: "relative",
       width: BASE_W,
       height: BASE_H,
-      transform: `scale(${viewportScale * scale})`,
-      transformOrigin: "center center",
       flexShrink: 0,
     };
     return (

@@ -18,7 +18,7 @@ export default function OverlayLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="overlay-route" style={{ position: "fixed", inset: 0, minHeight: "100vh", minWidth: "100vw" }}>
+    <div className="overlay-route" style={{ position: "fixed", inset: 0, minHeight: "100vh", minWidth: "100vw", overflow: "hidden" }}>
       <style dangerouslySetInnerHTML={{ __html: `
         html.overlay-page, body.overlay-page { background: transparent !important; }
         .overlay-route { background: transparent !important; -webkit-font-smoothing: antialiased; -webkit-backface-visibility: hidden; backface-visibility: hidden; }
