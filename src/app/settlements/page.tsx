@@ -52,7 +52,7 @@ export default function SettlementsPage() {
     const res = await deleteSettlementRecordAndSync(recordId, "user-delete-from-list", user?.id);
     if (!res.deleted) return;
     setRecords((prev) => prev.filter((r) => r.id !== recordId));
-    setDeleteLogs(loadSettlementDeleteLogs());
+    setDeleteLogs(loadSettlementDeleteLogs(user?.id));
   };
 
   const filteredRecords = useMemo(() => {

@@ -214,7 +214,18 @@ export function computeSettlement(
 export function loadSettlementRecords(userId?: string | null): SettlementRecord[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem(settlementRecordsKey(userId));
+    let raw = window.localStorage.getItem(settlementRecordsKey(userId));
+    if (!raw && userId) {
+      const legacyRaw = window.localStorage.getItem(SETTLEMENT_RECORDS_KEY);
+      if (legacyRaw) {
+        const arr = JSON.parse(legacyRaw) as SettlementRecord[];
+        if (Array.isArray(arr) && arr.length > 0) {
+          const normalized = normalizeSettlementRecords(arr);
+          saveSettlementRecords(normalized, userId);
+          return normalized;
+        }
+      }
+    }
     if (!raw) return [];
     const arr = JSON.parse(raw) as SettlementRecord[];
     return normalizeSettlementRecords(arr);
@@ -236,7 +247,18 @@ export function saveSettlementRecords(records: SettlementRecord[], userId?: stri
 export function loadSettlementDeleteLogs(userId?: string | null): SettlementDeleteLog[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem(settlementDeleteLogsKey(userId));
+    let raw = window.localStorage.getItem(settlementDeleteLogsKey(userId));
+    if (!raw && userId) {
+      raw = window.localStorage.getItem(SETTLEMENT_DELETE_LOGS_KEY);
+      if (raw) {
+        const arr = JSON.parse(raw) as SettlementDeleteLog[];
+        if (Array.isArray(arr) && arr.length > 0) {
+          const normalized = normalizeDeleteLogs(arr);
+          saveSettlementDeleteLogs(normalized, userId);
+          return normalized;
+        }
+      }
+    }
     if (!raw) return [];
     return normalizeDeleteLogs(JSON.parse(raw) as SettlementDeleteLog[]);
   } catch {
@@ -320,16 +342,23 @@ export async function saveSettlementRecordsToApi(records: SettlementRecord[]): P
 }
 
 export async function loadSettlementRecordsPreferApi(userId?: string | null): Promise<SettlementRecord[]> {
-  const local = loadSettlementRecords(userId);
+  let local = loadSettlementRecords(userId);
   const fromApi = await loadSettlementRecordsFromApi();
   if (fromApi) {
     const merged = mergeSettlementRecords(local, fromApi);
     saveSettlementRecords(merged, userId);
-    // Heal stale API snapshots when local has newer/missing records.
     if (merged.length !== fromApi.length) {
       saveSettlementRecordsToApi(merged).catch(() => {});
     }
     return merged;
+  }
+  if (local.length === 0 && userId) {
+    local = loadSettlementRecords(null);
+    if (local.length > 0) {
+      saveSettlementRecords(local, userId);
+      saveSettlementRecordsToApi(local).catch(() => {});
+      return local;
+    }
   }
   return local;
 }
