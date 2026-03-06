@@ -258,6 +258,13 @@ export default function AdminPage() {
           const next = { ...apiState, overlayPresets: localPresets };
           setState(next);
           persistState(next);
+        } else {
+          const first = makeTopBarPreset();
+          const merged = { ...apiState, overlayPresets: [first] };
+          setPresets([first]);
+          setState(merged);
+          persistState(merged);
+          try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify([first])); } catch {}
         }
         setSyncStatus("synced");
         try { window.localStorage.setItem(storageKey(user?.id), JSON.stringify(apiState)); } catch {}
@@ -268,6 +275,11 @@ export default function AdminPage() {
         } else if (localPresets.length > 0) {
           local.overlayPresets = localPresets;
           setPresets(localPresets);
+        } else {
+          const first = makeTopBarPreset();
+          local.overlayPresets = [first];
+          setPresets([first]);
+          try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify([first])); } catch {}
         }
         setState(local);
         const offline = typeof navigator !== "undefined" && !navigator.onLine;
@@ -340,23 +352,24 @@ export default function AdminPage() {
       return merged;
     });
   };
+  const makeTopBarPreset = (): OverlayPreset => defaultPreset("상단바(프리즘)", {
+    theme: "excel",
+    showMembers: true,
+    showTotal: true,
+    dense: true,
+    scale: "1",
+    anchor: "tc",
+    tableMarginTop: "0",
+    tableMarginRight: "0",
+    tableMarginBottom: "0",
+    tableMarginLeft: "0",
+    autoFit: "width",
+    autoFitPin: "tc",
+    box: "tight",
+    noCrop: true,
+  });
   const createAndApplyTopBarPreset = () => {
-    const p = defaultPreset("상단바(프리즘)", {
-      theme: "excel",
-      showMembers: true,
-      showTotal: true,
-      dense: true,
-      scale: "1",
-      anchor: "tc",
-      tableMarginTop: "0",
-      tableMarginRight: "0",
-      tableMarginBottom: "0",
-      tableMarginLeft: "0",
-      autoFit: "width",
-      autoFitPin: "tc",
-      box: "tight",
-      noCrop: true,
-    });
+    const p = makeTopBarPreset();
     const next = [...presets, p];
     savePresets(next);
     setEditingId(p.id);
