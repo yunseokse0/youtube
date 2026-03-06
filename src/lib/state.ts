@@ -42,6 +42,8 @@ export type AppState = {
   updatedAt: number;
 };
 
+import { sendSSEUpdate } from "./sse-client";
+
 export const STORAGE_KEY = "excel-broadcast-state-v1";
 export const DAILY_LOG_KEY = "excel-broadcast-daily-log-v1";
 export const FORBID_EVENTS_KEY = "excel-broadcast-forbid-events-v1";
@@ -160,6 +162,7 @@ export function saveState(state: AppState, userId?: string | null) {
       body: json,
       credentials: "include",
     }).catch(() => {});
+    try { void sendSSEUpdate(next); } catch {}
   } catch {
     // ignore
   }
@@ -180,6 +183,7 @@ export async function saveStateAsync(state: AppState, userId?: string | null): P
       body: json,
       credentials: "include",
     });
+    try { void sendSSEUpdate(next); } catch {}
     return res.ok;
   } catch {
     return false;

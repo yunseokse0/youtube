@@ -1,10 +1,11 @@
 "use client";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi, loadState, totalToon, totalCombined, storageKey, defaultState } from "@/lib/state";
 import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
 import { useFlip } from "@/lib/flip";
 import MissionBoard from "@/components/MissionBoard";
+import { useSSEConnection } from "@/lib/sse-client";
 
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
   const [state, setState] = useState<AppState | null>(null);
@@ -12,6 +13,13 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   const loadRef = useRef(() => loadStateFromApi(userId));
   loadRef.current = () => loadStateFromApi(userId);
   const syncingRef = useRef(false);
+  const onSSE = useCallback((incoming: any) => {
+    if (incoming && incoming.updatedAt && incoming.updatedAt > lastUpdatedRef.current) {
+      lastUpdatedRef.current = incoming.updatedAt;
+      setState(incoming as AppState);
+    }
+  }, []);
+  const _sse = useSSEConnection(onSSE);
   const readLocalStateIfExists = (): AppState | null => {
     if (typeof window === "undefined") return null;
     try {
