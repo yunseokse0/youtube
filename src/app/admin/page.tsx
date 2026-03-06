@@ -1608,6 +1608,22 @@ export default function AdminPage() {
                                   )}
                                   <label className="text-xs text-neutral-400">표시 개수</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.personalGoalLimit || "3"} onChange={(e) => updatePreset(p.id, { personalGoalLimit: e.target.value.replace(/[^\d]/g, "") })} />
+                                  <div className="sm:col-span-2 text-[11px] text-neutral-500">
+                                    멤버의 목표(원)를 설정해야 개인골 카드가 표시됩니다. 상단의 ‘멤버 정산 보드’에서 각 멤버의 목표를 입력하세요.
+                                  </div>
+                                  <div className="sm:col-span-2">
+                                    <button
+                                      type="button"
+                                      className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                                      onClick={() => {
+                                        const u = new URL(buildStablePreviewUrl(p));
+                                        u.searchParams.set("demo", "true");
+                                        window.open(u.toString(), "_blank");
+                                      }}
+                                    >
+                                      데모 미리보기(개인골)
+                                    </button>
+                                  </div>
                                 </div>
                               </>
                             )}
