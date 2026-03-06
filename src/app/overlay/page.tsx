@@ -14,10 +14,10 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   loadRef.current = () => loadStateFromApi(userId);
   const syncingRef = useRef(false);
   const onSSE = useCallback((incoming: any) => {
-    if (incoming && incoming.updatedAt && incoming.updatedAt > lastUpdatedRef.current) {
-      lastUpdatedRef.current = incoming.updatedAt;
-      setState(incoming as AppState);
-    }
+    if (!incoming) return;
+    const ts = (incoming as any).updatedAt || Date.now();
+    lastUpdatedRef.current = ts;
+    setState(incoming as AppState);
   }, []);
   const _sse = useSSEConnection(onSSE);
   const readLocalStateIfExists = (): AppState | null => {
