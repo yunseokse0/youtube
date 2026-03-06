@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi, loadState, totalToon, totalCombined, storageKey } from "@/lib/state";
+import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi, loadState, totalToon, totalCombined, storageKey, defaultState } from "@/lib/state";
 import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
 import { useFlip } from "@/lib/flip";
 import MissionBoard from "@/components/MissionBoard";
@@ -49,8 +49,14 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
         if (data && data.updatedAt && data.updatedAt > lastUpdatedRef.current) {
           lastUpdatedRef.current = data.updatedAt;
           setState(data);
+        } else if (!localNow && !data) {
+          // API 실패 + localStorage 비어있음 → 기본 상태로라도 프리뷰 표시
+          setState(defaultState());
         }
-      } catch {}
+      } catch {
+        const localNow = readLocalStateIfExists();
+        if (!localNow) setState(defaultState());
+      }
       syncingRef.current = false;
     };
     const onStorage = (e: StorageEvent) => {
@@ -1353,6 +1359,7 @@ function OverlayInner() {
     "top-4 left-4";
 
   const listPosClass =
+    previewGuide ? "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" :
     anchor === "tr" ? "top-4 right-4 items-end text-right" :
     anchor === "bl" ? "bottom-4 left-4" :
     anchor === "br" ? "bottom-4 right-4 items-end text-right" :
@@ -1376,14 +1383,14 @@ function OverlayInner() {
     );
     if (hasPersonalGoalFreePos) {
       return (
-        <div className="fixed inset-0 pointer-events-none">
+        <div className="absolute inset-0 pointer-events-none">
           <div className="absolute pointer-events-auto" style={{ left: `${personalGoalX}%`, top: `${personalGoalY}%`, transform: "translate(-50%, -50%)" }}>
             {content}
           </div>
         </div>
       );
     }
-    return <div className={`fixed ${personalGoalPosClass}`}>{content}</div>;
+    return <div className={`absolute ${personalGoalPosClass}`}>{content}</div>;
   };
   const responsiveTickerWidth = fitWidthToViewport(tickerWidth);
   const tickerPosStyle: React.CSSProperties | undefined = hasTickerFreePos
@@ -1406,6 +1413,7 @@ function OverlayInner() {
       height: "100%",
     };
     const viewportInnerStyle: React.CSSProperties = {
+      position: "relative",
       width: BASE_W,
       height: BASE_H,
       transform: `scale(${viewportScale})`,
@@ -1417,7 +1425,7 @@ function OverlayInner() {
         <div style={viewportInnerStyle}>
           <main className="transparent-bg no-select" style={{ ...scaledMainStyle, minHeight: BASE_H, width: BASE_W }}>
         {showMembers && ready && (
-          <div className={`fixed ${listPosClass}`} style={{ maxWidth: BASE_W, maxHeight: BASE_H }}>
+          <div className={`absolute ${listPosClass}`} style={{ maxWidth: BASE_W, maxHeight: BASE_H }}>
             <div ref={containerRef} className="flex items-start gap-3" style={{ width: "fit-content", maxWidth: BASE_W }}>
               {showSideDonors && donorsSide === "left" && (
                 <div style={{ width: donorsWidth }}>
@@ -1578,7 +1586,7 @@ function OverlayInner() {
           </div>
         )}
         {showGoal && ready && goal > 0 && (
-          <div className={`fixed ${posClass(goalAnchor)}`}>
+          <div className={`absolute ${posClass(goalAnchor)}`}>
             <GoalBar current={goalCurrent !== null ? goalCurrent : rounded} goal={goal} label={goalLabel} theme={goalTheme} width={goalWidth} />
             {tickerInGoal && (
               <div className="mt-2" style={{ width: fitWidthToViewport(goalWidth), overflow: "hidden" }}>
@@ -1590,9 +1598,9 @@ function OverlayInner() {
         {showPersonalGoal && ready && (
           renderPersonalGoal()
         )}
-        {effectiveShowTicker && ready && <div className={`fixed ${tickerPosClass} ${hasTickerFreePos ? "" : "mb-10"}`} style={tickerPosStyle}><DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
-        {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={timerTheme} fontSize={memberSize} /></div>}
-        {showMission && ready && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`} style={{ width: fitWidthToViewport(missionWidth) }}><MissionBoard missions={missions} fontSize={memberSize * 0.9} themeVariant={missionThemeVariant} duration={missionDuration} /></div>}
+        {effectiveShowTicker && ready && <div className={`absolute ${tickerPosClass} ${hasTickerFreePos ? "" : "mb-10"}`} style={tickerPosStyle}><DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
+        {showTimer && <div className={`absolute ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={timerTheme} fontSize={memberSize} /></div>}
+        {showMission && ready && missions.length > 0 && <div className={`absolute ${posClass(missionAnchor)}`} style={{ width: fitWidthToViewport(missionWidth) }}><MissionBoard missions={missions} fontSize={memberSize * 0.9} themeVariant={missionThemeVariant} duration={missionDuration} /></div>}
           </main>
         </div>
       </div>
