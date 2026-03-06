@@ -359,7 +359,9 @@ export default function AdminPage() {
     const url = buildOverlayUrl(p);
     const u = new URL(url);
     u.searchParams.set("previewGuide", "true");
-    u.searchParams.set("previewScale", "2.5");
+    const isVertical = u.searchParams.get("vertical") === "true" || p.vertical;
+    u.searchParams.set("renderWidth", isVertical ? "1080" : "1920");
+    u.searchParams.set("renderHeight", isVertical ? "1920" : "1080");
     return u.toString();
   };
   const copyUrl = async (url: string, id: string) => {
@@ -1131,7 +1133,7 @@ export default function AdminPage() {
                 </div>
               </div>
               <p className="text-xs text-neutral-400 mb-3">각 오버레이는 독립 URL을 가집니다. OBS/Prism에 브라우저 소스로 각각 추가하세요.</p>
-              <p className="text-xs text-neutral-500 mb-3">위치/크기 조정은 Prism에서 진행하고, 여기 프리뷰는 형태/디자인과 실시간 상태 업데이트 확인용으로 사용하세요. Prism 브라우저 소스 크기를 프리뷰(9:16)와 동일하게 맞추면 화면이 일치합니다.</p>
+              <p className="text-xs text-neutral-500 mb-3">위치/크기 조정은 Prism에서 진행하고, 여기 프리뷰는 형태/디자인과 실시간 상태 업데이트 확인용으로 사용하세요. Prism 브라우저 소스 크기를 1080×1920(세로)으로 맞추면 프리뷰와 방송 화면이 일치합니다.</p>
               {presets.length === 0 && (
                 <div className="text-sm text-neutral-400 p-6 text-center border border-dashed border-white/10 rounded">아직 오버레이가 없습니다. 위 버튼으로 추가하세요.</div>
               )}

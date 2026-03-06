@@ -1141,21 +1141,25 @@ function OverlayInner() {
   const scaledMainStyle: React.CSSProperties = {};
   const BASE_W = isVertical ? 1080 : 1920;
   const BASE_H = isVertical ? 1920 : 1080;
-  const previewScaleMult = Math.max(1, Math.min(4, parseFloat(sp.get("previewScale") || "1")));
+  const renderW = sp.get("renderWidth") ? parseInt(sp.get("renderWidth")!, 10) : null;
+  const renderH = sp.get("renderHeight") ? parseInt(sp.get("renderHeight")!, 10) : null;
+  const useRenderDims = Number.isFinite(renderW) && Number.isFinite(renderH) && renderW! > 0 && renderH! > 0;
   const [viewportScale, setViewportScale] = useState(1);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const update = () => {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      let s = Math.min(w / BASE_W, h / BASE_H, 1);
-      if (previewScaleMult > 1) s = Math.min(s * previewScaleMult, 3);
+      const w = useRenderDims ? renderW! : window.innerWidth;
+      const h = useRenderDims ? renderH! : window.innerHeight;
+      let s = Math.min(w / BASE_W, h / BASE_H);
       setViewportScale(s);
     };
     update();
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
-  }, [previewScaleMult]);
+    if (!useRenderDims) {
+      window.addEventListener("resize", update);
+      return () => window.removeEventListener("resize", update);
+    }
+    return () => {};
+  }, [useRenderDims, renderW, renderH, BASE_W, BASE_H]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoMemberSize, setAutoMemberSize] = useState(memberSize);
