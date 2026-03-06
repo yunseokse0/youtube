@@ -1121,6 +1121,21 @@ function OverlayInner() {
   const lockWidth = (sp.get("lockWidth") || "false").toLowerCase() === "true";
   const effectiveNameGrow = lockWidth ? false : nameGrow;
   const scaledMainStyle: React.CSSProperties = { zoom: scale as any };
+  const BASE_W = 1920;
+  const BASE_H = 1080;
+  const [viewportScale, setViewportScale] = useState(1);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const update = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const s = Math.min(w / BASE_W, h / BASE_H, 1);
+      setViewportScale(s);
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoMemberSize, setAutoMemberSize] = useState(memberSize);
@@ -1358,11 +1373,30 @@ function OverlayInner() {
     const excelGridCols = hasRoleColumn
       ? ["3ch", `${roleCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`]
       : ["3ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`];
+    const viewportWrapperStyle: React.CSSProperties = {
+      position: "fixed",
+      inset: 0,
+      overflow: "hidden",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      width: "100%",
+      height: "100%",
+    };
+    const viewportInnerStyle: React.CSSProperties = {
+      width: BASE_W,
+      height: BASE_H,
+      transform: `scale(${viewportScale})`,
+      transformOrigin: "center center",
+      flexShrink: 0,
+    };
     return (
-      <main className="transparent-bg min-h-screen no-select" style={scaledMainStyle}>
+      <div style={viewportWrapperStyle}>
+        <div style={viewportInnerStyle}>
+          <main className="transparent-bg no-select" style={{ ...scaledMainStyle, minHeight: BASE_H, width: BASE_W }}>
         {showMembers && ready && (
-          <div className={`fixed ${listPosClass}`} style={{ maxWidth: "100vw", maxHeight: "100vh" }}>
-            <div ref={containerRef} className="flex items-start gap-3" style={{ width: "fit-content", maxWidth: "100vw" }}>
+          <div className={`fixed ${listPosClass}`} style={{ maxWidth: BASE_W, maxHeight: BASE_H }}>
+            <div ref={containerRef} className="flex items-start gap-3" style={{ width: "fit-content", maxWidth: BASE_W }}>
               {showSideDonors && donorsSide === "left" && (
                 <div style={{ width: donorsWidth }}>
                   <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
@@ -1537,9 +1571,11 @@ function OverlayInner() {
         {effectiveShowTicker && ready && <div className={`fixed ${tickerPosClass} ${hasTickerFreePos ? "" : "mb-10"}`} style={tickerPosStyle}><DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
         {showTimer && <div className={`fixed ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={timerTheme} fontSize={memberSize} /></div>}
         {showMission && ready && missions.length > 0 && <div className={`fixed ${posClass(missionAnchor)}`} style={{ width: fitWidthToViewport(missionWidth) }}><MissionBoard missions={missions} fontSize={memberSize * 0.9} themeVariant={missionThemeVariant} duration={missionDuration} /></div>}
-    </main>
-  );
-}
+          </main>
+        </div>
+      </div>
+    );
+  }
 
 export default function OverlayPage() {
   return (
