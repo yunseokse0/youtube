@@ -1180,9 +1180,9 @@ export default function AdminPage() {
                               <div className="flex items-center gap-2">
                                 <input
                                   type="range"
-                                  min="0.2"
-                                  max="2"
-                                  step="0.01"
+                                  min="0.5"
+                                  max="4"
+                                  step="0.05"
                                   value={p.scale}
                                   onChange={(e) => updatePreset(p.id, { scale: e.target.value })}
                                   className="flex-1 accent-emerald-500"

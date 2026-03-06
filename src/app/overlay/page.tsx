@@ -1007,7 +1007,7 @@ function OverlayInner() {
   const fitBase = Math.max(240, Math.min(1600, parseInt(sp.get("fitBase") || (isVertical ? "400" : "480"), 10)));
   const fitMinMember = Math.max(8, Math.min(40, parseInt(sp.get("fitMinMember") || (isVertical ? "22" : "10"), 10)));
   const fitMaxMember = Math.max(fitMinMember, Math.min(80, parseInt(sp.get("fitMaxMember") || (isVertical ? "44" : "24"), 10)));
-  const scale = isVertical ? 1 : Math.max(0.3, Math.min(3, parseFloat(sp.get("scale") || (compact ? "0.8" : "1"))));
+  const scale = Math.max(0.5, Math.min(4, parseFloat(sp.get("scale") || (isVertical ? "1" : (compact ? "0.8" : "1")))));
   const memberSize = Math.max(10, Math.min(80, parseInt(sp.get("memberSize") || (compact ? "14" : (isVertical ? "36" : "18")), 10)));
   const totalSize = Math.max(14, Math.min(160, parseInt(sp.get("totalSize") || (isVertical ? "44" : "20"), 10)));
   const dense = (sp.get("dense") || "false").toLowerCase() === "true";
@@ -1138,7 +1138,7 @@ function OverlayInner() {
   const effectiveTotalWrapCls = totalTheme.totalWrapCls;
   const lockWidth = (sp.get("lockWidth") || "false").toLowerCase() === "true";
   const effectiveNameGrow = lockWidth ? false : nameGrow;
-  const scaledMainStyle: React.CSSProperties = isVertical ? {} : { zoom: scale as any };
+  const scaledMainStyle: React.CSSProperties = {};
   const BASE_W = isVertical ? 1080 : 1920;
   const BASE_H = isVertical ? 1920 : 1080;
   const previewScaleMult = Math.max(1, Math.min(4, parseFloat(sp.get("previewScale") || "1")));
@@ -1416,7 +1416,7 @@ function OverlayInner() {
       position: "relative",
       width: BASE_W,
       height: BASE_H,
-      transform: `scale(${viewportScale})`,
+      transform: `scale(${viewportScale * scale})`,
       transformOrigin: "center center",
       flexShrink: 0,
     };
