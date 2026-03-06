@@ -991,12 +991,15 @@ function OverlayInner() {
   const sp = useMemo(
     () => ({
       get: (key: string) => {
-        const direct = rawSp.get(key);
-        if (direct !== null && direct !== "") return direct;
+        const allowDirectOverride = Boolean(presetId);
+        if (allowDirectOverride) {
+          const direct = rawSp.get(key);
+          if (direct !== null && direct !== "") return direct;
+        }
         return presetParams.get(key);
       },
     }),
-    [rawSp, presetParams]
+    [rawSp, presetParams, presetId]
   );
   const parsePct = (raw: string | null, fallback: number) => {
     if (raw === null || raw.trim() === "") return fallback;
