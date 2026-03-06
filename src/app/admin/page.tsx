@@ -351,6 +351,7 @@ export default function AdminPage() {
     const url = buildOverlayUrl(p);
     const u = new URL(url);
     u.searchParams.set("previewGuide", "true");
+    u.searchParams.set("previewScale", "2.5");
     return u.toString();
   };
   const copyUrl = async (url: string, id: string) => {
@@ -1806,7 +1807,7 @@ function VerticalPreview({ url }: { url: string }) {
   const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
   const [showFrame, setShowFrame] = useState(true);
   const [showGuides, setShowGuides] = useState(true);
-  const [w, h] = orientation === "portrait" ? [540, 960] : [960, 540];
+  const [w, h] = orientation === "portrait" ? [720, 1280] : [1280, 720];
   const previewUrl = useMemo(() => {
     try {
       const u = new URL(url);

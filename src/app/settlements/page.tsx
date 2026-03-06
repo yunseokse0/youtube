@@ -38,7 +38,15 @@ export default function SettlementsPage() {
         loadDailyLogFromApi()
           .then((apiLog) => {
             const local = loadDailyLog(u.id);
-            const merged = { ...local, ...apiLog };
+            const allDates = new Set([...Object.keys(local || {}), ...Object.keys(apiLog || {})]);
+            const merged: Record<string, { at: string; total: number; members: unknown[]; donors: Donor[] }[]> = {};
+            for (const date of allDates) {
+              const localEntries = local?.[date] || [];
+              const apiEntries = apiLog?.[date] || [];
+              const localDonors = localEntries.reduce((s, e) => s + (e.donors?.length || 0), 0);
+              const apiDonors = apiEntries.reduce((s, e) => s + (e.donors?.length || 0), 0);
+              merged[date] = apiDonors >= localDonors ? apiEntries : localEntries;
+            }
             setDailyLog(Object.keys(merged).length > 0 ? merged : {});
           })
           .catch(() => setDailyLog(loadDailyLog(u.id)));
@@ -90,8 +98,16 @@ export default function SettlementsPage() {
       }
       const ymd = new Date(r.createdAt).toISOString().slice(0, 10);
       const entries = dailyLog[ymd] || [];
-      const last = entries[entries.length - 1];
-      map.set(r.id, last?.donors || []);
+      if (entries.length === 0) {
+        map.set(r.id, []);
+        continue;
+      }
+      const recAt = r.createdAt;
+      const beforeOrAt = entries
+        .filter((e) => new Date(e.at).getTime() <= recAt)
+        .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+      const best = beforeOrAt[0] ?? entries[entries.length - 1];
+      map.set(r.id, best?.donors || []);
     }
     return map;
   }, [filteredRecords, dailyLog]);

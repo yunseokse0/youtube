@@ -297,7 +297,17 @@ export type DailyLogEntry = {
 export function loadDailyLog(userId?: string | null): Record<string, DailyLogEntry[]> {
   if (typeof window === "undefined") return {};
   try {
-    const raw = window.localStorage.getItem(dailyLogStorageKey(userId));
+    let raw = window.localStorage.getItem(dailyLogStorageKey(userId));
+    if (!raw && userId) {
+      raw = window.localStorage.getItem(DAILY_LOG_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, DailyLogEntry[]>;
+        if (parsed && typeof parsed === "object" && Object.keys(parsed).length > 0) {
+          window.localStorage.setItem(dailyLogStorageKey(userId), raw);
+          return parsed;
+        }
+      }
+    }
     return raw ? (JSON.parse(raw) as Record<string, DailyLogEntry[]>) : {};
   } catch {
     return {};

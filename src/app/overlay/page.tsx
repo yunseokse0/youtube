@@ -1124,19 +1124,21 @@ function OverlayInner() {
   const scaledMainStyle: React.CSSProperties = { zoom: scale as any };
   const BASE_W = 1920;
   const BASE_H = 1080;
+  const previewScaleMult = Math.max(1, Math.min(4, parseFloat(sp.get("previewScale") || "1")));
   const [viewportScale, setViewportScale] = useState(1);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const update = () => {
       const w = window.innerWidth;
       const h = window.innerHeight;
-      const s = Math.min(w / BASE_W, h / BASE_H, 1);
+      let s = Math.min(w / BASE_W, h / BASE_H, 1);
+      if (previewScaleMult > 1) s = Math.min(s * previewScaleMult, 3);
       setViewportScale(s);
     };
     update();
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
-  }, []);
+  }, [previewScaleMult]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoMemberSize, setAutoMemberSize] = useState(memberSize);
