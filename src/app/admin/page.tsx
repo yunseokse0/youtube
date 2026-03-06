@@ -114,6 +114,7 @@ export default function AdminPage() {
     { name: "후원 티커", preset: { showMembers: false, showTotal: false, showTicker: true } },
     { name: "타이머", preset: { showMembers: false, showTotal: false, showTimer: true } },
     { name: "미션 전광판", preset: { showMembers: false, showTotal: false, showMission: true, missionAnchor: "bc" } },
+    { name: "상단바(프리즘)", preset: { name: "상단바(프리즘)", theme: "excel", showMembers: true, showTotal: true, dense: true, scale: "1", anchor: "tc", tableMarginTop: "0", tableMarginRight: "0", tableMarginBottom: "0", tableMarginLeft: "0", autoFit: "width", autoFitPin: "tc", box: "tight", noCrop: true } },
   ];
   const managePositionInPrism = true;
   const defaultPreset = (name: string, overrides: Partial<OverlayPreset> = {}): OverlayPreset => ({
@@ -338,6 +339,29 @@ export default function AdminPage() {
       persistState(merged);
       return merged;
     });
+  };
+  const createAndApplyTopBarPreset = () => {
+    const p = defaultPreset("상단바(프리즘)", {
+      theme: "excel",
+      showMembers: true,
+      showTotal: true,
+      dense: true,
+      scale: "1",
+      anchor: "tc",
+      tableMarginTop: "0",
+      tableMarginRight: "0",
+      tableMarginBottom: "0",
+      tableMarginLeft: "0",
+      autoFit: "width",
+      autoFitPin: "tc",
+      box: "tight",
+      noCrop: true,
+    });
+    const next = [...presets, p];
+    savePresets(next);
+    setEditingId(p.id);
+    // 현재 프리셋으로 지정
+    updatePreset(p.id, {});
   };
   const addPreset = (name: string, overrides: Partial<OverlayPreset> = {}) => {
     const p = defaultPreset(name, overrides);
@@ -1191,6 +1215,7 @@ export default function AdminPage() {
                   {PRESET_TEMPLATES.map((t) => (
                     <button key={t.name} className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs text-white" onClick={() => addPreset(t.name, t.preset)}>+ {t.name}</button>
                   ))}
+                  <button className="px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-xs text-white" onClick={createAndApplyTopBarPreset}>상단바(프리즘) 적용</button>
                 </div>
               </div>
               <p className="text-xs text-neutral-400 mb-3">각 오버레이는 독립 URL을 가집니다. OBS/Prism에 브라우저 소스로 각각 추가하세요.</p>
