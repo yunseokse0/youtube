@@ -1188,6 +1188,7 @@ function OverlayInner() {
   const renderH = sp.get("renderHeight") ? parseInt(sp.get("renderHeight")!, 10) : null;
   const isPreviewGuide = sp.get("previewGuide") === "true";
   const autoFit = (sp.get("autoFit") || "none").toLowerCase() as "none" | "width" | "height" | "contain" | "cover";
+  const fitPin = (sp.get("fitPin") || "cc").toLowerCase() as "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr";
   const showGuide = (sp.get("guide") || "false").toLowerCase() === "true";
   const useRenderDims = isPreviewGuide && Number.isFinite(renderW) && Number.isFinite(renderH) && renderW! > 0 && renderH! > 0;
   const [viewportScale, setViewportScale] = useState(1);
@@ -1487,13 +1488,21 @@ function OverlayInner() {
       ? ["3ch", `${roleCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`]
       : ["3ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`];
     const effectiveScale = viewportScale * scale;
+    const justify =
+      fitPin === "tl" || fitPin === "cl" || fitPin === "bl" ? "flex-start" :
+      fitPin === "tr" || fitPin === "cr" || fitPin === "br" ? "flex-end" :
+      "center";
+    const align =
+      fitPin === "tl" || fitPin === "tc" || fitPin === "tr" ? "flex-start" :
+      fitPin === "bl" || fitPin === "bc" || fitPin === "br" ? "flex-end" :
+      "center";
     const viewportWrapperStyle: React.CSSProperties = {
       position: "fixed",
       inset: 0,
       overflow: "hidden",
       display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
+      alignItems: align as any,
+      justifyContent: justify as any,
       width: "100%",
       height: "100%",
     };
@@ -1503,9 +1512,19 @@ function OverlayInner() {
       height: BASE_H,
       flexShrink: 0,
     };
+    const origin =
+      fitPin === "tl" ? "left top" :
+      fitPin === "tr" ? "right top" :
+      fitPin === "bl" ? "left bottom" :
+      fitPin === "br" ? "right bottom" :
+      fitPin === "tc" ? "center top" :
+      fitPin === "bc" ? "center bottom" :
+      fitPin === "cl" ? "left center" :
+      fitPin === "cr" ? "right center" :
+      "center center";
     const scaleStyleTag = (
       <style dangerouslySetInnerHTML={{ __html: `
-        .overlay-route { transform: scale(${effectiveScale}) !important; -webkit-transform: scale(${effectiveScale}) !important; transform-origin: center center !important; }
+        .overlay-route { transform: scale(${effectiveScale}) !important; -webkit-transform: scale(${effectiveScale}) !important; transform-origin: ${origin} !important; }
       ` }} />
     );
     const colorOverrideStyle = (accountColor || toonColor) ? (
