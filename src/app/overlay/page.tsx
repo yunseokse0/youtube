@@ -1447,10 +1447,12 @@ function OverlayInner() {
       width: BASE_W,
       height: BASE_H,
       flexShrink: 0,
-      transform: `scale(${effectiveScale})`,
-      WebkitTransform: `scale(${effectiveScale})`,
-      transformOrigin: "center center",
     };
+    const scaleStyleTag = (
+      <style dangerouslySetInnerHTML={{ __html: `
+        .overlay-route { transform: scale(${effectiveScale}) !important; -webkit-transform: scale(${effectiveScale}) !important; transform-origin: center center !important; }
+      ` }} />
+    );
     const colorOverrideStyle = (accountColor || toonColor) ? (
       <style dangerouslySetInnerHTML={{ __html: [
         accountColor && `.overlay-root .overlay-account-cell { color: ${accountColor} !important; }`,
@@ -1459,6 +1461,7 @@ function OverlayInner() {
     ) : null;
     return (
       <div style={viewportWrapperStyle} className="overlay-root">
+        {scaleStyleTag}
         {colorOverrideStyle}
         <div style={viewportInnerStyle}>
           <main className="transparent-bg no-select" style={{ ...scaledMainStyle, minHeight: BASE_H, width: BASE_W }}>
