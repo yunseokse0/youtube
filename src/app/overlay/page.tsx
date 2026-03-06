@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi, loadState, totalToon, totalCombined, STORAGE_KEY } from "@/lib/state";
+import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi, loadState, totalToon, totalCombined, storageKey } from "@/lib/state";
 import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
 import { useFlip } from "@/lib/flip";
 import MissionBoard from "@/components/MissionBoard";
@@ -15,9 +15,10 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   const readLocalStateIfExists = (): AppState | null => {
     if (typeof window === "undefined") return null;
     try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
+      const key = storageKey(userId);
+      const raw = window.localStorage.getItem(key);
       if (!raw) return null;
-      return loadState();
+      return loadState(userId ?? undefined);
     } catch {
       return null;
     }
@@ -53,7 +54,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       syncingRef.current = false;
     };
     const onStorage = (e: StorageEvent) => {
-      if (e.key !== STORAGE_KEY) return;
+      if (e.key !== storageKey(userId ?? undefined)) return;
       const localNow = readLocalStateIfExists();
       if (localNow && localNow.updatedAt && localNow.updatedAt > lastUpdatedRef.current) {
         lastUpdatedRef.current = localNow.updatedAt;

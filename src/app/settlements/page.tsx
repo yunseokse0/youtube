@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { SettlementDeleteLog, SettlementRecord, deleteSettlementRecordAndSync, loadSettlementDeleteLogs, loadSettlementRecordsPreferApi } from "@/lib/settlement";
 import { loadDailyLog, loadDailyLogFromApi, Donor } from "@/lib/state";
@@ -12,6 +13,8 @@ function formatMan( n: number ): string {
 }
 
 export default function SettlementsPage() {
+  const router = useRouter();
+  const [user, setUser] = useState<{ id: string } | null>(null);
   const [records, setRecords] = useState<SettlementRecord[]>([]);
   const [deleteLogs, setDeleteLogs] = useState<SettlementDeleteLog[]>([]);
   const [dailyLog, setDailyLog] = useState<Record<string, { at: string; total: number; members: unknown[]; donors: Donor[] }[]>>({});
@@ -21,22 +24,32 @@ export default function SettlementsPage() {
   const [selectedForGraph, setSelectedForGraph] = useState<string | null>(null);
 
   useEffect(() => {
-    loadSettlementRecordsPreferApi().then(setRecords);
-    setDeleteLogs(loadSettlementDeleteLogs());
-    loadDailyLogFromApi()
-      .then((apiLog) => {
-        const local = loadDailyLog();
-        const merged = { ...local, ...apiLog };
-        setDailyLog(Object.keys(merged).length > 0 ? merged : {});
-      })
-      .catch(() => setDailyLog(loadDailyLog()));
-  }, []);
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((r) => r.json())
+      .then(async (data) => {
+        if (!data?.user) {
+          router.replace("/login");
+          return;
+        }
+        const u = data.user as { id: string };
+        setUser(u);
+        loadSettlementRecordsPreferApi(u.id).then(setRecords);
+        setDeleteLogs(loadSettlementDeleteLogs(u.id));
+        loadDailyLogFromApi()
+          .then((apiLog) => {
+            const local = loadDailyLog(u.id);
+            const merged = { ...local, ...apiLog };
+            setDailyLog(Object.keys(merged).length > 0 ? merged : {});
+          })
+          .catch(() => setDailyLog(loadDailyLog(u.id)));
+      });
+  }, [router]);
 
   const onDeleteRecord = async (recordId: string) => {
     const target = records.find((r) => r.id === recordId);
     if (!target) return;
     if (!window.confirm(`정산 기록을 삭제할까요?\n${target.title}\n삭제 후 복구할 수 없습니다.`)) return;
-    const res = await deleteSettlementRecordAndSync(recordId, "user-delete-from-list");
+    const res = await deleteSettlementRecordAndSync(recordId, "user-delete-from-list", user?.id);
     if (!res.deleted) return;
     setRecords((prev) => prev.filter((r) => r.id !== recordId));
     setDeleteLogs(loadSettlementDeleteLogs());

@@ -16,13 +16,15 @@ import {
   parseTenThousandThousand,
   maskTenThousandThousandInput,
   formatChatLine,
-  STORAGE_KEY,
+  storageKey,
+  dailyLogStorageKey,
   DAILY_LOG_KEY,
   loadDailyLog,
   DailyLogEntry,
   formatManThousand,
   confirmHighAmount,
   MissionItem,
+  totalCombined,
 } from "@/lib/state";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -132,6 +134,7 @@ export default function AdminPage() {
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const touchStartYRef = useRef<number | null>(null);
   const actionConfirmRef = useRef<null | (() => void)>(null);
+  const resetInProgressRef = useRef(false);
   const [actionSheet, setActionSheet] = useState<{ open: boolean; title: string; desc: string; confirmText: string; danger: boolean }>({
     open: false,
     title: "",
@@ -185,8 +188,14 @@ export default function AdminPage() {
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
       .then((r) => r.json())
-      .then((data) => data.user && setUser(data.user));
-  }, []);
+      .then((data) => {
+        if (data?.user) {
+          setUser(data.user);
+        } else {
+          router.replace("/login");
+        }
+      });
+  }, [router]);
 
   useEffect(() => {
     stateUpdatedAtRef.current = state.updatedAt || 0;
@@ -196,8 +205,9 @@ export default function AdminPage() {
   }, [syncStatus]);
 
   useEffect(() => {
+    if (!user) return;
     let localPresets: OverlayPreset[] = [];
-    setDailyLog(loadDailyLog());
+    setDailyLog(loadDailyLog(user?.id));
     try {
       const raw = window.localStorage.getItem(PRESET_STORAGE_KEY);
       if (raw) {
@@ -231,7 +241,7 @@ export default function AdminPage() {
         }
       }
     } catch {}
-    loadStateFromApi().then((apiState) => {
+    loadStateFromApi(user?.id).then((apiState) => {
       if (apiState) {
         setState(apiState);
         if (Array.isArray(apiState.overlayPresets) && apiState.overlayPresets.length > 0) {
@@ -242,9 +252,9 @@ export default function AdminPage() {
           persistState(next);
         }
         setSyncStatus("synced");
-        try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(apiState)); } catch {}
+        try { window.localStorage.setItem(storageKey(user?.id), JSON.stringify(apiState)); } catch {}
       } else {
-        const local = loadState();
+        const local = loadState(user?.id);
         if (Array.isArray(local.overlayPresets) && local.overlayPresets.length > 0) {
           setPresets(local.overlayPresets as OverlayPreset[]);
         } else if (localPresets.length > 0) {
@@ -253,21 +263,22 @@ export default function AdminPage() {
         }
         setState(local);
         setSyncStatus("local");
-        saveStateAsync(local).then((ok) => { if (ok) setSyncStatus("synced"); });
+        saveStateAsync(local, user?.id).then((ok) => { if (ok) setSyncStatus("synced"); });
       }
     });
-  }, []);
+  }, [user]);
 
   // Keep admin amounts synchronized across mobile/PC sessions.
   // Server state is treated as source of truth across devices.
   useEffect(() => {
+    if (!user) return;
     let running = true;
     let inFlight = false;
     const syncFromApi = async () => {
       if (!running || inFlight) return;
       inFlight = true;
       try {
-        const remote = await loadStateFromApi();
+        const remote = await loadStateFromApi(user?.id);
         if (!remote) return;
         const remoteUpdatedAt = remote.updatedAt || 0;
         const shouldApplyRemote = remoteUpdatedAt !== stateUpdatedAtRef.current;
@@ -279,7 +290,7 @@ export default function AdminPage() {
           }
           pendingUnsyncedRef.current = false;
           setSyncStatus("synced");
-          try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(remote)); } catch {}
+          try { window.localStorage.setItem(storageKey(user?.id), JSON.stringify(remote)); } catch {}
         }
       } finally {
         inFlight = false;
@@ -302,7 +313,7 @@ export default function AdminPage() {
       window.removeEventListener("online", onOnline);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, []);
+  }, [user]);
 
   const savePresets = (next: OverlayPreset[]) => {
     setPresets(next);
@@ -354,7 +365,7 @@ export default function AdminPage() {
     lastLocalPersistAtRef.current = Date.now();
     pendingUnsyncedRef.current = true;
     setSyncStatus("loading");
-    saveStateAsync(s).then((ok) => {
+    saveStateAsync(s, user?.id).then((ok) => {
       if (ok) {
         pendingUnsyncedRef.current = false;
         setSyncStatus("synced");
@@ -380,22 +391,24 @@ export default function AdminPage() {
   }, [state]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !user?.id) return;
+    const key = storageKey(user.id);
+    const dailyKey = dailyLogStorageKey(user.id);
     const handler = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY && e.newValue) {
+      if (e.key === key && e.newValue) {
         try {
           const incoming = JSON.parse(e.newValue) as AppState;
           setState(incoming);
         } catch {
           // ignore
         }
-      } else if (e.key === DAILY_LOG_KEY) {
-        setDailyLog(loadDailyLog());
+      } else if (e.key === dailyKey) {
+        setDailyLog(loadDailyLog(user.id));
       }
     };
     window.addEventListener("storage", handler);
     return () => window.removeEventListener("storage", handler);
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     setMemberRatioInputs((prev) => {
@@ -599,8 +612,17 @@ export default function AdminPage() {
   };
 
   const onResetKeepMembers = () => {
-    appendDailyLog(state);
-    setDailyLog(loadDailyLog());
+    if (resetInProgressRef.current) return;
+    const total = totalCombined(state);
+    const hasDonors = state.donors.length > 0;
+    if (total === 0 && !hasDonors) {
+      setResetSheetOpen(false);
+      return;
+    }
+    resetInProgressRef.current = true;
+    setResetSheetOpen(false);
+    appendDailyLog(state, user?.id);
+    setDailyLog(loadDailyLog(user?.id));
     const next: AppState = {
       ...state,
       members: state.members.map((m) => ({ ...m, account: 0, toon: 0 })),
@@ -611,11 +633,20 @@ export default function AdminPage() {
     };
     setState(next);
     persistState(next);
-    setResetSheetOpen(false);
+    resetInProgressRef.current = false;
   };
   const onResetInitMembers = () => {
-    appendDailyLog(state);
-    setDailyLog(loadDailyLog());
+    if (resetInProgressRef.current) return;
+    const total = totalCombined(state);
+    const hasDonors = state.donors.length > 0;
+    if (total === 0 && !hasDonors) {
+      setResetSheetOpen(false);
+      return;
+    }
+    resetInProgressRef.current = true;
+    setResetSheetOpen(false);
+    appendDailyLog(state, user?.id);
+    setDailyLog(loadDailyLog(user?.id));
     const next = {
       ...defaultState(),
       overlayPresets: state.overlayPresets || [],
@@ -623,12 +654,12 @@ export default function AdminPage() {
     };
     setState(next);
     persistState(next);
-    setResetSheetOpen(false);
+    resetInProgressRef.current = false;
   };
 
   const onSnapshotNow = () => {
-    appendDailyLog(state);
-    setDailyLog(loadDailyLog());
+    appendDailyLog(state, user?.id);
+    setDailyLog(loadDailyLog(user?.id));
   };
   const onFetchLatestFromServer = async () => {
     setSyncStatus("loading");
@@ -645,7 +676,7 @@ export default function AdminPage() {
       setPresets(remote.overlayPresets as OverlayPreset[]);
       try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(remote.overlayPresets)); } catch {}
     }
-    try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(remote)); } catch {}
+    try { window.localStorage.setItem(storageKey(user?.id), JSON.stringify(remote)); } catch {}
     setSyncStatus("synced");
   };
   const runPullRefresh = async () => {
@@ -677,7 +708,7 @@ export default function AdminPage() {
     setPullDistance(0);
   };
   const onDownloadLog = () => {
-    const raw = JSON.stringify(loadDailyLog(), null, 2);
+    const raw = JSON.stringify(loadDailyLog(user?.id), null, 2);
     const blob = new Blob([raw], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -716,8 +747,8 @@ export default function AdminPage() {
     const title =
       settlementTitle.trim() ||
       `${new Date().toISOString().slice(0, 10)} 정산`;
-    appendDailyLog(state);
-    const rec = await appendSettlementRecordAndSync(title, state.members, accountRatio, toonRatio, taxRate, memberRatioOverrides, state.donors);
+    appendDailyLog(state, user?.id);
+    const rec = await appendSettlementRecordAndSync(title, state.members, accountRatio, toonRatio, taxRate, memberRatioOverrides, state.donors, user?.id);
     router.push(`/settlements/${rec.id}`);
   };
 

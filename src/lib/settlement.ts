@@ -3,6 +3,13 @@ import { Member, Donor, formatManThousand } from "@/lib/state";
 export const SETTLEMENT_RECORDS_KEY = "excel-broadcast-settlement-records-v1";
 export const SETTLEMENT_DELETE_LOGS_KEY = "excel-broadcast-settlement-delete-logs-v1";
 
+export function settlementRecordsKey(userId?: string | null): string {
+  return userId ? `${SETTLEMENT_RECORDS_KEY}:${userId}` : SETTLEMENT_RECORDS_KEY;
+}
+export function settlementDeleteLogsKey(userId?: string | null): string {
+  return userId ? `${SETTLEMENT_DELETE_LOGS_KEY}:${userId}` : SETTLEMENT_DELETE_LOGS_KEY;
+}
+
 export type SettlementMemberResult = {
   memberId: string;
   name: string;
@@ -204,10 +211,10 @@ export function computeSettlement(
   };
 }
 
-export function loadSettlementRecords(): SettlementRecord[] {
+export function loadSettlementRecords(userId?: string | null): SettlementRecord[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem(SETTLEMENT_RECORDS_KEY);
+    const raw = window.localStorage.getItem(settlementRecordsKey(userId));
     if (!raw) return [];
     const arr = JSON.parse(raw) as SettlementRecord[];
     return normalizeSettlementRecords(arr);
@@ -216,20 +223,20 @@ export function loadSettlementRecords(): SettlementRecord[] {
   }
 }
 
-export function saveSettlementRecords(records: SettlementRecord[]) {
+export function saveSettlementRecords(records: SettlementRecord[], userId?: string | null) {
   if (typeof window === "undefined") return;
   try {
     const next = normalizeSettlementRecords(records || []);
-    window.localStorage.setItem(SETTLEMENT_RECORDS_KEY, JSON.stringify(next));
+    window.localStorage.setItem(settlementRecordsKey(userId), JSON.stringify(next));
   } catch {
     // ignore
   }
 }
 
-export function loadSettlementDeleteLogs(): SettlementDeleteLog[] {
+export function loadSettlementDeleteLogs(userId?: string | null): SettlementDeleteLog[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem(SETTLEMENT_DELETE_LOGS_KEY);
+    const raw = window.localStorage.getItem(settlementDeleteLogsKey(userId));
     if (!raw) return [];
     return normalizeDeleteLogs(JSON.parse(raw) as SettlementDeleteLog[]);
   } catch {
@@ -237,16 +244,16 @@ export function loadSettlementDeleteLogs(): SettlementDeleteLog[] {
   }
 }
 
-export function saveSettlementDeleteLogs(logs: SettlementDeleteLog[]) {
+export function saveSettlementDeleteLogs(logs: SettlementDeleteLog[], userId?: string | null) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(SETTLEMENT_DELETE_LOGS_KEY, JSON.stringify(normalizeDeleteLogs(logs)));
+    window.localStorage.setItem(settlementDeleteLogsKey(userId), JSON.stringify(normalizeDeleteLogs(logs)));
   } catch {
     // ignore
   }
 }
 
-export function appendSettlementDeleteLog(record: SettlementRecord, reason = "manual"): SettlementDeleteLog {
+export function appendSettlementDeleteLog(record: SettlementRecord, reason = "manual", userId?: string | null): SettlementDeleteLog {
   const log: SettlementDeleteLog = {
     recordId: record.id,
     title: record.title,
@@ -255,8 +262,8 @@ export function appendSettlementDeleteLog(record: SettlementRecord, reason = "ma
     totalNet: record.totalNet,
     reason,
   };
-  const prev = loadSettlementDeleteLogs();
-  saveSettlementDeleteLogs([log, ...prev]);
+  const prev = loadSettlementDeleteLogs(userId);
+  saveSettlementDeleteLogs([log, ...prev], userId);
   return log;
 }
 
@@ -267,7 +274,8 @@ export function appendSettlementRecord(
   toonRatio: number,
   feeRate = 0.033,
   memberRatioOverrides?: SettlementMemberRatioOverrides,
-  donors?: Donor[]
+  donors?: Donor[],
+  userId?: string | null
 ): SettlementRecord {
   const body = computeSettlement(members, accountRatio, toonRatio, feeRate, memberRatioOverrides);
   const rec: SettlementRecord = {
@@ -277,15 +285,15 @@ export function appendSettlementRecord(
     ...body,
     ...(donors && donors.length > 0 ? { donors } : {}),
   };
-  const prev = loadSettlementRecords();
-  saveSettlementRecords([rec, ...prev]);
+  const prev = loadSettlementRecords(userId);
+  saveSettlementRecords([rec, ...prev], userId);
   return rec;
 }
 
 export async function loadSettlementRecordsFromApi(): Promise<SettlementRecord[] | null> {
   if (typeof window === "undefined") return null;
   try {
-    const res = await fetch(`/api/settlements?_t=${Date.now()}`, { cache: "no-store" });
+    const res = await fetch(`/api/settlements?_t=${Date.now()}`, { cache: "no-store", credentials: "include" });
     if (!res.ok) return null;
     const data = await res.json();
     if (!Array.isArray(data)) return [];
@@ -303,6 +311,7 @@ export async function saveSettlementRecordsToApi(records: SettlementRecord[]): P
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(normalized),
+      credentials: "include",
     });
     return res.ok;
   } catch {
@@ -310,12 +319,12 @@ export async function saveSettlementRecordsToApi(records: SettlementRecord[]): P
   }
 }
 
-export async function loadSettlementRecordsPreferApi(): Promise<SettlementRecord[]> {
-  const local = loadSettlementRecords();
+export async function loadSettlementRecordsPreferApi(userId?: string | null): Promise<SettlementRecord[]> {
+  const local = loadSettlementRecords(userId);
   const fromApi = await loadSettlementRecordsFromApi();
   if (fromApi) {
     const merged = mergeSettlementRecords(local, fromApi);
-    saveSettlementRecords(merged);
+    saveSettlementRecords(merged, userId);
     // Heal stale API snapshots when local has newer/missing records.
     if (merged.length !== fromApi.length) {
       saveSettlementRecordsToApi(merged).catch(() => {});
@@ -332,21 +341,22 @@ export async function appendSettlementRecordAndSync(
   toonRatio: number,
   feeRate = 0.033,
   memberRatioOverrides?: SettlementMemberRatioOverrides,
-  donors?: Donor[]
+  donors?: Donor[],
+  userId?: string | null
 ): Promise<SettlementRecord> {
-  const rec = appendSettlementRecord(title, members, accountRatio, toonRatio, feeRate, memberRatioOverrides, donors);
-  const local = loadSettlementRecords();
+  const rec = appendSettlementRecord(title, members, accountRatio, toonRatio, feeRate, memberRatioOverrides, donors, userId);
+  const local = loadSettlementRecords(userId);
   await saveSettlementRecordsToApi(local);
   return rec;
 }
 
-export async function deleteSettlementRecordAndSync(recordId: string, reason = "manual"): Promise<{ ok: boolean; deleted?: SettlementRecord }> {
-  const local = loadSettlementRecords();
+export async function deleteSettlementRecordAndSync(recordId: string, reason = "manual", userId?: string | null): Promise<{ ok: boolean; deleted?: SettlementRecord }> {
+  const local = loadSettlementRecords(userId);
   const target = local.find((r) => r.id === recordId);
   if (!target) return { ok: false };
   const next = local.filter((r) => r.id !== recordId);
-  saveSettlementRecords(next);
-  appendSettlementDeleteLog(target, reason);
+  saveSettlementRecords(next, userId);
+  appendSettlementDeleteLog(target, reason, userId);
   const ok = await saveSettlementRecordsToApi(next);
   return { ok, deleted: target };
 }

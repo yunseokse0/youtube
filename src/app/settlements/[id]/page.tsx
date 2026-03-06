@@ -26,22 +26,33 @@ export default function SettlementDetailPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const id = params?.id || "";
+  const [user, setUser] = useState<{ id: string } | null>(null);
   const [records, setRecords] = useState<SettlementRecord[] | null>(null);
   const [copiedMemberId, setCopiedMemberId] = useState<string | null>(null);
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const contentRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    const local = loadSettlementRecords();
-    setRecords(local);
-    loadSettlementRecordsPreferApi().then(setRecords);
-  }, []);
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data?.user) {
+          router.replace("/login");
+          return;
+        }
+        const u = data.user as { id: string };
+        setUser(u);
+        const local = loadSettlementRecords(u.id);
+        setRecords(local);
+        loadSettlementRecordsPreferApi(u.id).then(setRecords);
+      });
+  }, [router]);
   const record = useMemo(() => (records || []).find((x) => x.id === id) || null, [records, id]);
 
   const saveBankInfo = (memberId: string, patch: { bankName?: string; bankAccount?: string; accountHolder?: string }) => {
-    if (!records) return;
+    if (!records || !user) return;
     const next = updateMemberBankInfo(records, id, memberId, patch);
     setRecords(next);
-    saveSettlementRecords(next);
+    saveSettlementRecords(next, user.id);
     saveSettlementRecordsToApi(next).catch(() => {});
   };
 
@@ -71,7 +82,7 @@ export default function SettlementDetailPage() {
   const onDeleteRecord = async () => {
     if (!record) return;
     if (!window.confirm(`정산 기록을 삭제할까요?\n${record.title}\n삭제 후 복구할 수 없습니다.`)) return;
-    const res = await deleteSettlementRecordAndSync(record.id, "user-delete-from-detail");
+    const res = await deleteSettlementRecordAndSync(record.id, "user-delete-from-detail", user?.id);
     if (!res.deleted) return;
     router.push("/settlements");
   };

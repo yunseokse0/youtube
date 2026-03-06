@@ -46,6 +46,13 @@ export const STORAGE_KEY = "excel-broadcast-state-v1";
 export const DAILY_LOG_KEY = "excel-broadcast-daily-log-v1";
 export const FORBID_EVENTS_KEY = "excel-broadcast-forbid-events-v1";
 
+export function storageKey(userId?: string | null): string {
+  return userId ? `${STORAGE_KEY}:${userId}` : STORAGE_KEY;
+}
+export function dailyLogStorageKey(userId?: string | null): string {
+  return userId ? `${DAILY_LOG_KEY}:${userId}` : DAILY_LOG_KEY;
+}
+
 export function defaultMembers(): Member[] {
   return [
     { id: "m1", name: "멤버1", realName: "", account: 0, toon: 0, role: "", operating: false },
@@ -117,10 +124,10 @@ export function roundToThousand(n: number): number {
   return Math.round((n || 0) / 1000) * 1000;
 }
 
-export function loadState(): AppState {
+export function loadState(userId?: string | null): AppState {
   if (typeof window === "undefined") return defaultState();
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(storageKey(userId));
     if (!raw) return defaultState();
     const data = JSON.parse(raw) as AppState;
     data.members = (data.members || defaultMembers()).map(normalizeMember);
@@ -138,12 +145,12 @@ export function loadState(): AppState {
   }
 }
 
-export function saveState(state: AppState) {
+export function saveState(state: AppState, userId?: string | null) {
   if (typeof window === "undefined") return;
   try {
     const next = { ...state, updatedAt: Date.now() };
     const json = JSON.stringify(next);
-    window.localStorage.setItem(STORAGE_KEY, json);
+    window.localStorage.setItem(storageKey(userId), json);
     fetch("/api/state", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -154,11 +161,11 @@ export function saveState(state: AppState) {
   }
 }
 
-export async function saveStateAsync(state: AppState): Promise<boolean> {
+export async function saveStateAsync(state: AppState, userId?: string | null): Promise<boolean> {
   if (typeof window === "undefined") return false;
   const next = { ...state, updatedAt: Date.now() };
   const json = JSON.stringify(next);
-  try { window.localStorage.setItem(STORAGE_KEY, json); } catch {}
+  try { window.localStorage.setItem(storageKey(userId), json); } catch {}
   try {
     const res = await fetch("/api/state", {
       method: "POST",
@@ -238,22 +245,23 @@ export function todaysDateKey(d = new Date()): string {
   return d.toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
-export function appendDailyLog(snapshot: AppState) {
+export function appendDailyLog(snapshot: AppState, userId?: string | null) {
   if (typeof window === "undefined") return;
   try {
-    const raw = window.localStorage.getItem(DAILY_LOG_KEY);
+    const storageKeyForLog = dailyLogStorageKey(userId);
+    const raw = window.localStorage.getItem(storageKeyForLog);
     const logs = raw ? (JSON.parse(raw) as Record<string, unknown[]>) : {};
-    const key = todaysDateKey();
+    const dateKey = todaysDateKey();
     const entry = {
       at: new Date().toISOString(),
       total: totalAccount(snapshot),
       members: snapshot.members,
       donors: snapshot.donors,
     };
-    if (!logs[key]) logs[key] = [];
-    (logs[key] as unknown[]).push(entry);
+    if (!logs[dateKey]) logs[dateKey] = [];
+    (logs[dateKey] as unknown[]).push(entry);
     const merged = JSON.stringify(logs);
-    window.localStorage.setItem(DAILY_LOG_KEY, merged);
+    window.localStorage.setItem(storageKeyForLog, merged);
     // 서버에 동기화: 기존 서버 데이터와 병합 후 저장 (실패 시 로컬만 유지)
     fetch("/api/daily-log", { cache: "no-store", credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
@@ -261,8 +269,8 @@ export function appendDailyLog(snapshot: AppState) {
         let toSave: Record<string, unknown[]>;
         if (serverLog && typeof serverLog === "object") {
           toSave = { ...serverLog };
-          if (!toSave[key]) toSave[key] = [];
-          (toSave[key] as unknown[]).push(entry);
+          if (!toSave[dateKey]) toSave[dateKey] = [];
+          (toSave[dateKey] as unknown[]).push(entry);
         } else {
           toSave = JSON.parse(merged) as Record<string, unknown[]>;
         }
@@ -286,10 +294,10 @@ export type DailyLogEntry = {
   donors: Donor[];
 };
 
-export function loadDailyLog(): Record<string, DailyLogEntry[]> {
+export function loadDailyLog(userId?: string | null): Record<string, DailyLogEntry[]> {
   if (typeof window === "undefined") return {};
   try {
-    const raw = window.localStorage.getItem(DAILY_LOG_KEY);
+    const raw = window.localStorage.getItem(dailyLogStorageKey(userId));
     return raw ? (JSON.parse(raw) as Record<string, DailyLogEntry[]>) : {};
   } catch {
     return {};
@@ -312,10 +320,10 @@ export async function loadDailyLogFromApi(): Promise<Record<string, DailyLogEntr
   }
 }
 
-export function clearDailyLog() {
+export function clearDailyLog(userId?: string | null) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.removeItem(DAILY_LOG_KEY);
+    window.localStorage.removeItem(dailyLogStorageKey(userId));
   } catch {
     // ignore
   }

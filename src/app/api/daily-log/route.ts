@@ -76,7 +76,13 @@ export type DailyLogData = Record<string, DailyLogEntry[]>;
 
 export async function GET(req: Request) {
   try {
-    const userId = getUserId(req) || "finalent";
+    const userId = getUserId(req);
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     let data: DailyLogData | null = await upstashGet(logKey(userId));
     if (userId === "finalent" && (!data || typeof data !== "object")) {
       const legacy = await upstashGet(STORAGE_KEY_LEGACY);
@@ -105,7 +111,13 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const userId = getUserId(req) || "finalent";
+    const userId = getUserId(req);
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     const body = (await req.json()) as DailyLogData;
     if (!body || typeof body !== "object") {
       return new Response(JSON.stringify({ ok: false }), {

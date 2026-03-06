@@ -78,7 +78,13 @@ async function upstashSet(key: string, value: unknown) {
 
 export async function GET(req: Request) {
   try {
-    const userId = getUserId(req) || "finalent";
+    const userId = getUserId(req);
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     const { base, token } = getEnv();
     if (!base || !token) {
       const state = memoryState || defaultState();
@@ -121,7 +127,13 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const userId = getUserId(req) || "finalent";
+    const userId = getUserId(req);
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     const body = (await req.json()) as AppState;
     const next: AppState = { ...body, updatedAt: Date.now() };
 

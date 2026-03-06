@@ -69,7 +69,13 @@ async function upstashSet(key: string, value: unknown) {
 
 export async function GET(req: Request) {
   try {
-    const userId = getUserId(req) || "finalent";
+    const userId = getUserId(req);
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     let records = await upstashGet(recordsKey(userId));
     if (userId === "finalent" && (!Array.isArray(records) || records.length === 0)) {
       const legacy = await upstashGet(STORAGE_KEY_LEGACY);
@@ -94,7 +100,13 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const userId = getUserId(req) || "finalent";
+    const userId = getUserId(req);
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     const body = await req.json();
     const ok = await upstashSet(recordsKey(userId), Array.isArray(body) ? body : []);
     return new Response(JSON.stringify({ ok }), {
