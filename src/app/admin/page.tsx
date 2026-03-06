@@ -262,8 +262,9 @@ export default function AdminPage() {
           setPresets(localPresets);
         }
         setState(local);
-        setSyncStatus("local");
-        saveStateAsync(local, user?.id).then((ok) => { if (ok) setSyncStatus("synced"); });
+        const offline = typeof navigator !== "undefined" && !navigator.onLine;
+        setSyncStatus(offline ? "local" : "error");
+        if (!offline) saveStateAsync(local, user?.id).then((ok) => { if (ok) setSyncStatus("synced"); });
       }
     });
   }, [user]);
@@ -279,7 +280,12 @@ export default function AdminPage() {
       inFlight = true;
       try {
         const remote = await loadStateFromApi(user?.id);
-        if (!remote) return;
+        if (!remote) {
+          if (typeof navigator !== "undefined" && !navigator.onLine) setSyncStatus("local");
+          else setSyncStatus("error");
+          return;
+        }
+        setSyncStatus("synced");
         const remoteUpdatedAt = remote.updatedAt || 0;
         const shouldApplyRemote = remoteUpdatedAt !== stateUpdatedAtRef.current;
         if (shouldApplyRemote) {
@@ -289,7 +295,6 @@ export default function AdminPage() {
             setPresets(remote.overlayPresets as OverlayPreset[]);
           }
           pendingUnsyncedRef.current = false;
-          setSyncStatus("synced");
           try { window.localStorage.setItem(storageKey(user?.id), JSON.stringify(remote)); } catch {}
         }
       } finally {
@@ -297,13 +302,15 @@ export default function AdminPage() {
       }
     };
     const onFocus = () => { void syncFromApi(); };
-    const onOnline = () => { void syncFromApi(); };
+    const onOnline = () => { setSyncStatus("loading"); void syncFromApi(); };
+    const onOffline = () => { setSyncStatus("local"); };
     const onVisibility = () => {
       if (document.visibilityState === "visible") void syncFromApi();
     };
     const timer = window.setInterval(() => { void syncFromApi(); }, 1200);
     window.addEventListener("focus", onFocus);
     window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
     document.addEventListener("visibilitychange", onVisibility);
     void syncFromApi();
     return () => {
@@ -311,6 +318,7 @@ export default function AdminPage() {
       window.clearInterval(timer);
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [user]);
@@ -800,8 +808,8 @@ export default function AdminPage() {
                 {user?.unlimited ? "무제한" : `남은 일수: ${user?.remainingDays ?? 0}일`}
               </span>
             )}
-            <span className={`px-2 py-0.5 rounded text-xs font-medium ${syncStatus === "synced" ? "bg-emerald-900/60 text-emerald-300" : syncStatus === "loading" ? "bg-yellow-900/60 text-yellow-300" : syncStatus === "error" ? "bg-red-900/60 text-red-300" : "bg-neutral-800 text-neutral-400"}`}>
-              {syncStatus === "synced" ? "서버 동기화됨" : syncStatus === "loading" ? "동기화 중..." : syncStatus === "error" ? "서버 저장 실패" : "로컬 모드"}
+            <span className={`px-2 py-0.5 rounded text-xs font-medium ${syncStatus === "synced" ? "bg-emerald-900/60 text-emerald-300" : syncStatus === "loading" ? "bg-yellow-900/60 text-yellow-300" : syncStatus === "error" ? "bg-amber-900/60 text-amber-300" : "bg-neutral-800 text-neutral-400"}`}>
+              {syncStatus === "synced" ? "서버 동기화됨" : syncStatus === "loading" ? "동기화 중..." : syncStatus === "error" ? "연결 재시도 중" : "로컬 모드 (오프라인)"}
             </span>
             <button
               className="px-2 py-1 rounded bg-[#22c55e] hover:bg-[#16a34a] text-xs font-medium text-white"

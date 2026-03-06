@@ -37,6 +37,22 @@ body {
   background: transparent !important;
 }
 
+/* 오버레이 세로/모바일 모드: 기본 폰트 확대 */
+.overlay-vertical {
+  font-size: 20px;
+}
+/* 오버레이 행: 터치/시인성용 패딩 (최소 80px 높이 확보) */
+.overlay-row td {
+  padding: 0.75rem 0.5rem;
+  vertical-align: middle;
+}
+.overlay-goal-card {
+  padding: 0.75rem 1rem;
+}
+.overlay-goal-bar {
+  min-height: 0.75rem;
+}
+
 .no-select {
   -webkit-user-select: none;
   -moz-user-select: none;

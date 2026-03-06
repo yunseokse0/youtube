@@ -17,5 +17,14 @@ export default function OverlayLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return children;
+  return (
+    <>
+      <style dangerouslySetInnerHTML={{ __html: `
+        .overlay-root { font-size: clamp(18px, 2.8vh, 26px); }
+        .overlay-row td { padding: 0.5rem 0.4rem; min-height: 5rem; vertical-align: middle; }
+        .overlay-row { min-height: 5rem; }
+      ` }} />
+      {children}
+    </>
+  );
 }

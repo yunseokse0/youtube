@@ -652,16 +652,17 @@ const THEMES: Record<ThemeId, {
 function GoalBar({ current, goal, label, theme, width }: { current: number; goal: number; label: string; theme: typeof THEMES.default; width: number }) {
   const pct = goal > 0 ? Math.min(100, (current / goal) * 100) : 0;
   const displayPct = useCountUp(Math.round(pct), 600);
+  const barH = Math.max(18, Math.round(width * 0.05));
   return (
-    <div className={theme.goalWrap} style={{ width }}>
-      <div className="flex justify-between items-center px-1 mb-1" style={{ fontSize: Math.max(12, width * 0.04) }}>
+    <div className={theme.goalWrap} style={{ width, padding: "0.5rem 0" }}>
+      <div className="flex justify-between items-center px-2 mb-2 gap-2 flex-wrap" style={{ fontSize: Math.max(14, width * 0.045) }}>
         <span className={theme.goalText}>{label}</span>
         <span className={theme.goalText}>{formatManThousand(current)} / {formatManThousand(goal)} ({displayPct}%)</span>
       </div>
-      <div className={`${theme.goalBarBg} overflow-hidden`} style={{ height: Math.max(14, width * 0.04), borderRadius: 6 }}>
+      <div className={`${theme.goalBarBg} overflow-hidden`} style={{ height: barH, borderRadius: 8 }}>
         <div
           className={`${theme.goalBarFill} h-full transition-all duration-700 ease-out`}
-          style={{ width: `${pct}%`, borderRadius: 6 }}
+          style={{ width: `${pct}%`, borderRadius: 8 }}
         />
       </div>
     </div>
@@ -695,35 +696,36 @@ function PersonalGoalBoard({
           목표(원) 입력된 멤버가 없습니다.
         </div>
       )}
-      <div className="space-y-2">
+      <div className="space-y-3">
         {items.map((it, idx) => {
           const accent = palette[idx % palette.length];
           const remain = Math.max(0, it.goal - it.current);
+          const barH = Math.max(16, Math.round(fontSize * 0.55));
           return (
-          <div key={it.id} className={`rounded-xl p-2 ${cardClass}`}>
-            <div className="flex items-center justify-between gap-2">
+          <div key={it.id} className={`overlay-goal-card rounded-xl ${cardClass}`} style={{ padding: "0.75rem 1rem" }}>
+            <div className="flex items-center justify-between gap-3 flex-wrap" style={{ paddingBottom: "0.5rem" }}>
               <span
-                className="px-2 py-0.5 rounded-md border font-bold tracking-wide text-white"
-                style={{ borderColor: accent, fontSize: Math.max(11, Math.round(fontSize * 0.72)), minWidth: 74 }}
+                className="px-3 py-1 rounded-md border font-bold tracking-wide text-white shrink-0"
+                style={{ borderColor: accent, fontSize: Math.max(14, Math.round(fontSize * 0.72)), minWidth: 90 }}
               >
                 {it.name}
               </span>
-              <span className={dimTextClass} style={{ fontSize: Math.max(10, Math.round(fontSize * 0.66)) }}>
+              <span className={dimTextClass} style={{ fontSize: Math.max(12, Math.round(fontSize * 0.66)) }}>
                 남은 금액: {num(remain)}
               </span>
-              <span className={dimTextClass} style={{ fontSize: Math.max(10, Math.round(fontSize * 0.66)) }}>
+              <span className={dimTextClass} style={{ fontSize: Math.max(12, Math.round(fontSize * 0.66)) }}>
                 {Math.round(it.pct)}%
               </span>
             </div>
-            <div className="flex items-center justify-end gap-1 mt-1">
-              <span className={currentTextClass} style={{ color: accent, fontWeight: 800, fontSize: Math.max(11, Math.round(fontSize * 0.72)) }}>
+            <div className="flex items-center justify-end gap-2" style={{ paddingBottom: "0.5rem" }}>
+              <span className={currentTextClass} style={{ color: accent, fontWeight: 800, fontSize: Math.max(14, Math.round(fontSize * 0.72)) }}>
                 {num(it.current)}원
               </span>
-              <span className={dimTextClass} style={{ fontSize: Math.max(10, Math.round(fontSize * 0.66)) }}>
+              <span className={dimTextClass} style={{ fontSize: Math.max(12, Math.round(fontSize * 0.66)) }}>
                 / {num(it.goal)}
               </span>
             </div>
-            <div className={`${barBgClass} mt-1 overflow-hidden`} style={{ height: Math.max(7, Math.round(fontSize * 0.3)), borderRadius: 999 }}>
+            <div className={`overlay-goal-bar ${barBgClass} overflow-hidden`} style={{ height: barH, borderRadius: 999 }}>
               <div style={{ width: `${it.pct}%`, height: "100%", background: accent, borderRadius: 999 }} />
             </div>
           </div>
@@ -987,12 +989,21 @@ function OverlayInner() {
   const compact = (sp.get("compact") || "false").toLowerCase() === "true";
   const autoFont = (sp.get("autoFont") || "false").toLowerCase() === "true";
   const tight = (sp.get("tight") || "false").toLowerCase() === "true";
-  const fitBase = Math.max(240, Math.min(1600, parseInt(sp.get("fitBase") || "480", 10)));
-  const fitMinMember = Math.max(8, Math.min(40, parseInt(sp.get("fitMinMember") || "10", 10)));
-  const fitMaxMember = Math.max(fitMinMember, Math.min(80, parseInt(sp.get("fitMaxMember") || "24", 10)));
-  const scale = Math.max(0.3, Math.min(3, parseFloat(sp.get("scale") || (compact ? "0.8" : "1"))));
-  const memberSize = Math.max(10, Math.min(80, parseInt(sp.get("memberSize") || (compact ? "14" : "18"), 10)));
-  const totalSize = Math.max(14, Math.min(160, parseInt(sp.get("totalSize") || "20", 10)));
+  const verticalParam = (sp.get("vertical") || "false").toLowerCase() === "true";
+  const [isVertical, setIsVertical] = useState(verticalParam);
+  useEffect(() => {
+    if (verticalParam) { setIsVertical(true); return; }
+    const check = () => setIsVertical(typeof window !== "undefined" && window.innerHeight > window.innerWidth);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, [verticalParam]);
+  const fitBase = Math.max(240, Math.min(1600, parseInt(sp.get("fitBase") || (isVertical ? "400" : "480"), 10)));
+  const fitMinMember = Math.max(8, Math.min(40, parseInt(sp.get("fitMinMember") || (isVertical ? "22" : "10"), 10)));
+  const fitMaxMember = Math.max(fitMinMember, Math.min(80, parseInt(sp.get("fitMaxMember") || (isVertical ? "44" : "24"), 10)));
+  const scale = isVertical ? 1 : Math.max(0.3, Math.min(3, parseFloat(sp.get("scale") || (compact ? "0.8" : "1"))));
+  const memberSize = Math.max(10, Math.min(80, parseInt(sp.get("memberSize") || (compact ? "14" : (isVertical ? "36" : "18")), 10)));
+  const totalSize = Math.max(14, Math.min(160, parseInt(sp.get("totalSize") || (isVertical ? "44" : "20"), 10)));
   const dense = (sp.get("dense") || "false").toLowerCase() === "true";
   const anchor = (sp.get("anchor") || "tl").toLowerCase();
   const sumAnchor = (sp.get("sumAnchor") || "bc").toLowerCase();
@@ -1063,7 +1074,7 @@ function OverlayInner() {
 
   const elapsed = useElapsed(timerStart);
 
-  const nameCh = Math.max(6, Math.min(40, parseInt(sp.get("nameCh") || (compact ? "10" : "12"), 10)));
+  const nameCh = Math.max(6, Math.min(40, parseInt(sp.get("nameCh") || (compact ? "10" : (isVertical ? "14" : "12")), 10)));
   const nameGrow = (sp.get("nameGrow") || "true").toLowerCase() === "true";
   const currencyFull = (sp.get("currencyFull") || "false").toLowerCase() === "true";
   const nameMaxCh = Math.max(nameCh, Math.min(80, parseInt(sp.get("nameMaxCh") || String(nameCh + 8), 10)));
@@ -1121,9 +1132,9 @@ function OverlayInner() {
   const effectiveTotalWrapCls = totalTheme.totalWrapCls;
   const lockWidth = (sp.get("lockWidth") || "false").toLowerCase() === "true";
   const effectiveNameGrow = lockWidth ? false : nameGrow;
-  const scaledMainStyle: React.CSSProperties = { zoom: scale as any };
-  const BASE_W = 1920;
-  const BASE_H = 1080;
+  const scaledMainStyle: React.CSSProperties = isVertical ? {} : { zoom: scale as any };
+  const BASE_W = isVertical ? 1080 : 1920;
+  const BASE_H = isVertical ? 1920 : 1080;
   const previewScaleMult = Math.max(1, Math.min(4, parseFloat(sp.get("previewScale") || "1")));
   const [viewportScale, setViewportScale] = useState(1);
   useEffect(() => {
@@ -1297,8 +1308,16 @@ function OverlayInner() {
       body.style.height = "";
       html.style.width = "";
       body.style.width = "";
+      body.classList.remove("overlay-vertical");
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (isVertical) document.body.classList.add("overlay-vertical");
+    else document.body.classList.remove("overlay-vertical");
+    return () => document.body.classList.remove("overlay-vertical");
+  }, [isVertical]);
 
   const confettiLastMilestoneRef = useRef<number>(0);
   useEffect(() => {
@@ -1394,7 +1413,7 @@ function OverlayInner() {
       flexShrink: 0,
     };
     return (
-      <div style={viewportWrapperStyle}>
+      <div style={viewportWrapperStyle} className="overlay-root">
         <div style={viewportInnerStyle}>
           <main className="transparent-bg no-select" style={{ ...scaledMainStyle, minHeight: BASE_H, width: BASE_W }}>
         {showMembers && ready && (
@@ -1426,7 +1445,7 @@ function OverlayInner() {
                   </thead>
                   <tbody>
                     {ranked.map(({m, rank}) => (
-                      <tr key={m.id} ref={setRowRef(m.id)} className={`transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
+                      <tr key={m.id} ref={setRowRef(m.id)} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
                         <td className={`${effectiveRowCls} text-left`}>#{rank}</td>
                         {hasRoleColumn && (
                           <td
@@ -1452,7 +1471,7 @@ function OverlayInner() {
                       </tr>
                     ))}
                     {pinned.map((m) => (
-                      <tr key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
+                      <tr key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
                         <td className={`${effectiveRowCls} text-right`}>—</td>
                         {hasRoleColumn && <td className={effectiveRowCls}></td>}
                         <td className={`${effectiveRowCls} ${membersTheme.nameCls} truncate`}>{m.name}</td>
@@ -1492,7 +1511,7 @@ function OverlayInner() {
                   </thead>
                   <tbody>
                     {ranked.map(({m, rank}) => (
-                      <tr key={m.id} ref={setRowRef(m.id)} className={`transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
+                      <tr key={m.id} ref={setRowRef(m.id)} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
                         <td className={`${membersTheme.rowCls} text-left`}>#{rank}</td>
                         {hasRoleColumn && (
                           <td
@@ -1518,7 +1537,7 @@ function OverlayInner() {
                       </tr>
                     ))}
                     {pinned.map((m) => (
-                      <tr key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
+                      <tr key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
                         <td className={`${membersTheme.rowCls} text-right`}>—</td>
                         {hasRoleColumn && <td className={membersTheme.rowCls}></td>}
                         <td className={`${membersTheme.rowCls} ${membersTheme.nameCls} truncate`}>{m.name}</td>
