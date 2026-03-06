@@ -1029,6 +1029,10 @@ function OverlayInner() {
   const totalSize = Math.max(14, Math.min(160, parseInt(sp.get("totalSize") || (isVertical ? "44" : "20"), 10)));
   const dense = (sp.get("dense") || "false").toLowerCase() === "true";
   const anchor = (sp.get("anchor") || "cc").toLowerCase();
+  const tableFree = (sp.get("tableFree") || "false").toLowerCase() === "true";
+  const tableXParam = sp.get("tableX");
+  const tableYParam = sp.get("tableY");
+  const hasTableFreePos = tableFree || (tableXParam !== null && tableYParam !== null);
   const sumAnchor = (sp.get("sumAnchor") || "bc").toLowerCase();
   const sumXParam = sp.get("sumX");
   const sumYParam = sp.get("sumY");
@@ -1397,8 +1401,11 @@ function OverlayInner() {
     a === "bc" ? "bottom-4 left-1/2 -translate-x-1/2" :
     "top-4 left-4";
 
+  const listPosStyle: React.CSSProperties | undefined = hasTableFreePos
+    ? { left: `${parsePct(tableXParam, 50)}%`, top: `${parsePct(tableYParam, 50)}%`, transform: "translate(-50%, -50%)" }
+    : undefined;
   const listPosClass =
-    previewGuide ? "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" :
+    previewGuide || hasTableFreePos ? "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" :
     anchor === "cc" || anchor === "center" ? "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" :
     anchor === "tc" ? "top-4 left-1/2 -translate-x-1/2" :
     anchor === "bc" ? "bottom-4 left-1/2 -translate-x-1/2" :
@@ -1479,7 +1486,7 @@ function OverlayInner() {
         <div style={viewportInnerStyle} className="overlay-route">
           <main className="transparent-bg no-select" style={{ ...scaledMainStyle, minHeight: BASE_H, width: BASE_W }}>
         {showMembers && ready && (
-          <div className={`absolute ${listPosClass}`} style={{ maxWidth: BASE_W, maxHeight: BASE_H }}>
+          <div className={`absolute ${listPosClass}`} style={{ maxWidth: BASE_W, maxHeight: BASE_H, ...listPosStyle }}>
             <div ref={containerRef} className="flex items-start gap-3" style={{ width: "fit-content", maxWidth: BASE_W }}>
               {showSideDonors && donorsSide === "left" && (
                 <div style={{ width: donorsWidth }}>

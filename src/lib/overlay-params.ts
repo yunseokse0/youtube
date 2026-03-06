@@ -6,6 +6,9 @@ export type OverlayPresetLike = {
   totalSize?: string;
   dense?: boolean;
   anchor?: string;
+  tableFree?: boolean;
+  tableX?: string;
+  tableY?: string;
   sumAnchor?: string;
   sumX?: string;
   sumY?: string;
@@ -75,7 +78,13 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   q.set("memberSize", preset.memberSize || "18");
   q.set("totalSize", preset.totalSize || "40");
   q.set("dense", String(preset.dense ?? true));
-  q.set("anchor", preset.anchor || "cc");
+  if (preset.tableFree) {
+    q.set("tableFree", "true");
+    q.set("tableX", preset.tableX || "50");
+    q.set("tableY", preset.tableY || "50");
+  } else {
+    q.set("anchor", preset.anchor || "cc");
+  }
   q.set("theme", preset.theme || "default");
   q.set("showMembers", String(preset.showMembers ?? true));
   q.set("showTotal", String(preset.showTotal ?? true));

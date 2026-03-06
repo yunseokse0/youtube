@@ -72,7 +72,7 @@ export default function AdminPage() {
   const [memberRatioInputs, setMemberRatioInputs] = useState<Record<string, { account: string; toon: string }>>({});
   type OverlayPreset = {
     id: string; name: string; scale: string; memberSize: string; totalSize: string;
-    dense: boolean; anchor: string; sumAnchor: string; sumFree: boolean; sumX: string; sumY: string;
+    dense: boolean; anchor: string; tableFree?: boolean; tableX?: string; tableY?: string; sumAnchor: string; sumFree: boolean; sumX: string; sumY: string;
     theme: string;
     membersTheme?: string;
     totalTheme?: string;
@@ -119,6 +119,7 @@ export default function AdminPage() {
   const defaultPreset = (name: string, overrides: Partial<OverlayPreset> = {}): OverlayPreset => ({
     id: `ov_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name,
     scale: "0.75", memberSize: "18", totalSize: "40", dense: true, anchor: "cc",
+    tableFree: false, tableX: "50", tableY: "50",
     sumAnchor: "bc", sumFree: false, sumX: "50", sumY: "90", theme: "default",
     showMembers: true, showTotal: true, showGoal: false, goal: "0", goalLabel: "목표 금액", showPersonalGoal: false, personalGoalTheme: "goalClassic", personalGoalAnchor: "tl", personalGoalLimit: "3", personalGoalFree: false, personalGoalX: "78", personalGoalY: "82",
     tickerInMembers: true, tickerInGoal: true, tickerInPersonalGoal: true,
@@ -1237,6 +1238,48 @@ export default function AdminPage() {
                                 <option value="bc">하중</option>
                                 <option value="br">하우</option>
                               </select>
+                              <div className="flex items-center gap-2">
+                                <label className="text-xs text-neutral-400">표 자유 위치</label>
+                                <button
+                                  className={`px-2 py-0.5 rounded border text-xs ${p.tableFree ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`}
+                                  onClick={() => updatePreset(p.id, { tableFree: !p.tableFree })}
+                                >
+                                  {p.tableFree ? "자유 위치 ON" : "자유 위치 OFF"}
+                                </button>
+                                <span className="text-[10px] text-neutral-500">(X/Y 비율로 중앙점 지정)</span>
+                              </div>
+                              {p.tableFree && (
+                                <>
+                                  <label className="text-xs text-neutral-400">표 X%</label>
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="range" min="0" max="100"
+                                      value={p.tableX || "50"}
+                                      onChange={(e) => updatePreset(p.id, { tableX: String(Math.max(0, Math.min(100, parseInt(e.target.value || "0", 10)))) })}
+                                      className="flex-1 accent-emerald-500"
+                                    />
+                                    <input
+                                      className="w-14 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                                      value={p.tableX || "50"}
+                                      onChange={(e) => updatePreset(p.id, { tableX: e.target.value.replace(/[^\\d]/g, "") })}
+                                    />
+                                  </div>
+                                  <label className="text-xs text-neutral-400">표 Y%</label>
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="range" min="0" max="100"
+                                      value={p.tableY || "50"}
+                                      onChange={(e) => updatePreset(p.id, { tableY: String(Math.max(0, Math.min(100, parseInt(e.target.value || "0", 10)))) })}
+                                      className="flex-1 accent-emerald-500"
+                                    />
+                                    <input
+                                      className="w-14 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                                      value={p.tableY || "50"}
+                                      onChange={(e) => updatePreset(p.id, { tableY: e.target.value.replace(/[^\\d]/g, "") })}
+                                    />
+                                  </div>
+                                </>
+                              )}
                               <label className="text-xs text-neutral-400">배율</label>
                               <div className="flex items-center gap-2">
                                 <input
