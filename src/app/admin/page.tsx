@@ -672,7 +672,7 @@ export default function AdminPage() {
   };
   const onFetchLatestFromServer = async () => {
     setSyncStatus("loading");
-    const remote = await loadStateFromApi();
+    const remote = await loadStateFromApi(user?.id);
     if (!remote) {
       setSyncStatus("error");
       if (typeof window !== "undefined") window.alert("서버에서 상태를 가져오지 못했습니다.");

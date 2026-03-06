@@ -151,10 +151,14 @@ export function saveState(state: AppState, userId?: string | null) {
     const next = { ...state, updatedAt: Date.now() };
     const json = JSON.stringify(next);
     window.localStorage.setItem(storageKey(userId), json);
-    fetch("/api/state", {
+    const q = new URLSearchParams();
+    if (userId) q.set("user", userId);
+    const url = q.toString() ? `/api/state?${q.toString()}` : "/api/state";
+    fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: json,
+      credentials: "include",
     }).catch(() => {});
   } catch {
     // ignore
@@ -167,7 +171,10 @@ export async function saveStateAsync(state: AppState, userId?: string | null): P
   const json = JSON.stringify(next);
   try { window.localStorage.setItem(storageKey(userId), json); } catch {}
   try {
-    const res = await fetch("/api/state", {
+    const q = new URLSearchParams();
+    if (userId) q.set("user", userId);
+    const url = q.toString() ? `/api/state?${q.toString()}` : "/api/state";
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: json,
@@ -263,7 +270,10 @@ export function appendDailyLog(snapshot: AppState, userId?: string | null) {
     const merged = JSON.stringify(logs);
     window.localStorage.setItem(storageKeyForLog, merged);
     // 서버에 동기화: 기존 서버 데이터와 병합 후 저장 (실패 시 로컬만 유지)
-    fetch("/api/daily-log", { cache: "no-store", credentials: "include" })
+    const q = new URLSearchParams();
+    if (userId) q.set("user", userId);
+    const baseUrl = q.toString() ? `/api/daily-log?${q.toString()}` : "/api/daily-log";
+    fetch(baseUrl, { cache: "no-store", credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
       .then((serverLog: Record<string, unknown[]> | null) => {
         let toSave: Record<string, unknown[]>;
@@ -274,7 +284,7 @@ export function appendDailyLog(snapshot: AppState, userId?: string | null) {
         } else {
           toSave = JSON.parse(merged) as Record<string, unknown[]>;
         }
-        return fetch("/api/daily-log", {
+        return fetch(baseUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
@@ -314,10 +324,12 @@ export function loadDailyLog(userId?: string | null): Record<string, DailyLogEnt
   }
 }
 
-export async function loadDailyLogFromApi(): Promise<Record<string, DailyLogEntry[]>> {
+export async function loadDailyLogFromApi(userId?: string | null): Promise<Record<string, DailyLogEntry[]>> {
   if (typeof window === "undefined") return {};
   try {
-    const res = await fetch(`/api/daily-log?_t=${Date.now()}`, {
+    const q = new URLSearchParams({ _t: String(Date.now()) });
+    if (userId) q.set("user", userId);
+    const res = await fetch(`/api/daily-log?${q.toString()}`, {
       cache: "no-store",
       credentials: "include",
     });

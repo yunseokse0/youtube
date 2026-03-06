@@ -53,7 +53,7 @@ export default function SettlementDetailPage() {
     const next = updateMemberBankInfo(records, id, memberId, patch);
     setRecords(next);
     saveSettlementRecords(next, user.id);
-    saveSettlementRecordsToApi(next).catch(() => {});
+    saveSettlementRecordsToApi(next, user.id).catch(() => {});
   };
 
   const copyAccountLine = async (m: SettlementMemberResult) => {

@@ -312,10 +312,12 @@ export function appendSettlementRecord(
   return rec;
 }
 
-export async function loadSettlementRecordsFromApi(): Promise<SettlementRecord[] | null> {
+export async function loadSettlementRecordsFromApi(userId?: string | null): Promise<SettlementRecord[] | null> {
   if (typeof window === "undefined") return null;
   try {
-    const res = await fetch(`/api/settlements?_t=${Date.now()}`, { cache: "no-store", credentials: "include" });
+    const q = new URLSearchParams({ _t: String(Date.now()) });
+    if (userId) q.set("user", userId);
+    const res = await fetch(`/api/settlements?${q.toString()}`, { cache: "no-store", credentials: "include" });
     if (!res.ok) return null;
     const data = await res.json();
     if (!Array.isArray(data)) return [];
@@ -325,11 +327,14 @@ export async function loadSettlementRecordsFromApi(): Promise<SettlementRecord[]
   }
 }
 
-export async function saveSettlementRecordsToApi(records: SettlementRecord[]): Promise<boolean> {
+export async function saveSettlementRecordsToApi(records: SettlementRecord[], userId?: string | null): Promise<boolean> {
   if (typeof window === "undefined") return false;
   try {
     const normalized = normalizeSettlementRecords(records);
-    const res = await fetch("/api/settlements", {
+    const q = new URLSearchParams();
+    if (userId) q.set("user", userId);
+    const url = q.toString() ? `/api/settlements?${q.toString()}` : "/api/settlements";
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(normalized),
@@ -343,12 +348,12 @@ export async function saveSettlementRecordsToApi(records: SettlementRecord[]): P
 
 export async function loadSettlementRecordsPreferApi(userId?: string | null): Promise<SettlementRecord[]> {
   let local = loadSettlementRecords(userId);
-  const fromApi = await loadSettlementRecordsFromApi();
+  const fromApi = await loadSettlementRecordsFromApi(userId);
   if (fromApi) {
     const merged = mergeSettlementRecords(local, fromApi);
     saveSettlementRecords(merged, userId);
     if (merged.length !== fromApi.length) {
-      saveSettlementRecordsToApi(merged).catch(() => {});
+      saveSettlementRecordsToApi(merged, userId).catch(() => {});
     }
     return merged;
   }
@@ -356,7 +361,7 @@ export async function loadSettlementRecordsPreferApi(userId?: string | null): Pr
     local = loadSettlementRecords(null);
     if (local.length > 0) {
       saveSettlementRecords(local, userId);
-      saveSettlementRecordsToApi(local).catch(() => {});
+      saveSettlementRecordsToApi(local, userId).catch(() => {});
       return local;
     }
   }
@@ -375,7 +380,7 @@ export async function appendSettlementRecordAndSync(
 ): Promise<SettlementRecord> {
   const rec = appendSettlementRecord(title, members, accountRatio, toonRatio, feeRate, memberRatioOverrides, donors, userId);
   const local = loadSettlementRecords(userId);
-  await saveSettlementRecordsToApi(local);
+  await saveSettlementRecordsToApi(local, userId);
   return rec;
 }
 
@@ -386,7 +391,7 @@ export async function deleteSettlementRecordAndSync(recordId: string, reason = "
   const next = local.filter((r) => r.id !== recordId);
   saveSettlementRecords(next, userId);
   appendSettlementDeleteLog(target, reason, userId);
-  const ok = await saveSettlementRecordsToApi(next);
+  const ok = await saveSettlementRecordsToApi(next, userId);
   return { ok, deleted: target };
 }
 
