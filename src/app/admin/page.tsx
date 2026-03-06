@@ -1198,8 +1198,6 @@ export default function AdminPage() {
                         />
                         <span className="text-xs text-neutral-500 truncate basis-full sm:basis-auto sm:flex-1 font-mono">{url.slice(0, 80)}...</span>
                         <button className={`px-2 py-1 rounded text-xs ${copiedId === p.id ? "bg-[#22c55e]" : "bg-neutral-700 hover:bg-neutral-600"}`} onClick={(e) => { e.stopPropagation(); copyUrl(url, p.id); }}>{copiedId === p.id ? "복사됨!" : "URL 복사"}</button>
-                        <button className="px-2 py-1 rounded bg-[#0ea5e9] hover:bg-[#0284c7] text-xs text-white" title="PRISM 브라우저 소스(가로 16:9)" onClick={(e) => { e.stopPropagation(); copyUrl(buildPrismOverlayUrl(p, false), `${p.id}-ph`); }}>PRISM 가로</button>
-                        <button className="px-2 py-1 rounded bg-[#0ea5e9] hover:bg-[#0284c7] text-xs text-white" title="PRISM 브라우저 소스(세로 9:16)" onClick={(e) => { e.stopPropagation(); copyUrl(buildPrismOverlayUrl(p, true), `${p.id}-pv`); }}>PRISM 세로</button>
                         <button className="px-2 py-1 rounded bg-[#ef4444] hover:bg-[#dc2626] text-xs text-white" onClick={(e) => { e.stopPropagation(); removePreset(p.id); }}>삭제</button>
                       </div>
                       {isOpen && (
@@ -1578,8 +1576,6 @@ export default function AdminPage() {
                             <div className="flex items-center gap-2">
                               <input className="flex-1 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 font-mono text-xs" readOnly value={url} />
                               <button className={`px-2 py-1 rounded text-xs whitespace-nowrap ${copiedId === p.id ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`} onClick={() => copyUrl(url, p.id)}>{copiedId === p.id ? "복사됨!" : "URL 복사"}</button>
-                              <button className="px-2 py-1 rounded bg-[#0ea5e9] hover:bg-[#0284c7] text-xs text-white whitespace-nowrap" title="PRISM 브라우저 소스(가로 16:9)" onClick={() => copyUrl(buildPrismOverlayUrl(p, false), `${p.id}-ph`)}>PRISM 가로</button>
-                              <button className="px-2 py-1 rounded bg-[#0ea5e9] hover:bg-[#0284c7] text-xs text-white whitespace-nowrap" title="PRISM 브라우저 소스(세로 9:16)" onClick={() => copyUrl(buildPrismOverlayUrl(p, true), `${p.id}-pv`)}>PRISM 세로</button>
                             </div>
                           </div>
 
