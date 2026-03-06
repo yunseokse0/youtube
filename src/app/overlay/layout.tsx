@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "오버레이",
   robots: "noindex, nofollow",
@@ -23,9 +25,11 @@ export default function OverlayLayout({
         html.overlay-page, body.overlay-page { background: transparent !important; }
         .overlay-route { background: transparent !important; -webkit-font-smoothing: antialiased; -webkit-backface-visibility: hidden; backface-visibility: hidden; }
         .overlay-root { font-size: 100%; -webkit-font-smoothing: antialiased; }
-        .overlay-row td { padding: 0.5rem 0.4rem; min-height: 5rem; vertical-align: middle; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
-        .overlay-row { min-height: 5rem; }
+        .overlay-row td { padding: 0.35em 0.3em !important; min-height: 2.4em; line-height: 1.35; vertical-align: middle; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
+        .overlay-row { min-height: 2.4em; }
         .overlay-root table { -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+        .overlay-root table td { font-size: inherit !important; }
+        .overlay-root table thead td { line-height: 1.35; }
       ` }} />
       {children}
     </div>

@@ -978,7 +978,7 @@ function OverlayInner() {
     () => ({
       get: (key: string) => {
         const direct = rawSp.get(key);
-        if (direct !== null) return direct;
+        if (direct !== null && direct !== "") return direct;
         return presetParams.get(key);
       },
     }),
@@ -1335,6 +1335,22 @@ function OverlayInner() {
     return () => document.body.classList.remove("overlay-vertical");
   }, [isVertical]);
 
+  useEffect(() => {
+    const route = document.querySelector(".overlay-route") as HTMLElement | null;
+    if (!route) return;
+    const s = viewportScale * scale;
+    route.style.transform = `scale(${s})`;
+    route.style.webkitTransform = `scale(${s})`;
+    route.style.transformOrigin = "center center";
+    route.style.webkitTransformOrigin = "center center";
+    return () => {
+      route.style.transform = "";
+      route.style.webkitTransform = "";
+      route.style.transformOrigin = "";
+      route.style.webkitTransformOrigin = "";
+    };
+  }, [viewportScale, scale]);
+
 
   const confettiLastMilestoneRef = useRef<number>(0);
   useEffect(() => {
@@ -1427,15 +1443,11 @@ function OverlayInner() {
       width: "100%",
       height: "100%",
     };
-    const effectiveScale = viewportScale * scale;
     const viewportInnerStyle: React.CSSProperties = {
       position: "relative",
       width: BASE_W,
       height: BASE_H,
-      transform: `scale(${effectiveScale})`,
-      transformOrigin: "center center",
       flexShrink: 0,
-      willChange: "transform",
     };
     return (
       <div style={viewportWrapperStyle} className="overlay-root">
