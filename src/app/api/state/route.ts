@@ -109,8 +109,10 @@ export async function GET(req: Request) {
         logger.info('기존 데이터 계정으로 마이그레이션', { userId });
       }
     }
-    logger.debug('Redis 상태 반환', { hasState: !!state, userId });
-    return new Response(JSON.stringify(state || {}), {
+    // Redis에서 상태를 못 가져오더라도 방송 지속성을 위해 메모리/기본 상태 반환
+    const effective = state || memoryState || defaultState();
+    logger.debug('Redis 상태 반환', { hasState: !!state, usedMemory: !!memoryState, userId });
+    return new Response(JSON.stringify(effective), {
       headers: {
         "Content-Type": "application/json",
         "Cache-Control":
@@ -155,19 +157,32 @@ export async function POST(req: Request) {
 
     const ok = await upstashSet(stateKey(userId), next);
     logger.info('Redis 상태 업데이트', { updatedAt: next.updatedAt, success: ok, userId });
-    return new Response(JSON.stringify({ ok }), {
+    // Redis 오류 시에도 방송 중단 방지를 위해 메모리에 저장 후 200 반환
+    if (!ok) {
+      memoryState = next;
+      logger.warn('Redis 업데이트 실패로 메모리에 기록', { updatedAt: next.updatedAt, userId });
+    } else {
+      memoryState = next;
+    }
+    return new Response(JSON.stringify({ ok: true, fallback: ok ? undefined : "memory" }), {
       headers: {
         "Content-Type": "application/json",
         "Cache-Control":
           "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",
       },
-      status: ok ? 200 : 500,
+      status: 200,
     });
   } catch (error) {
     logger.error('상태 업데이트 실패', error);
-    return new Response(JSON.stringify({ ok: false }), {
+    // 예외 발생 시에도 메모리에 저장 시도
+    try {
+      const body = (await req.json()) as AppState;
+      memoryState = { ...body, updatedAt: Date.now() };
+      logger.warn('예외 발생으로 메모리에 기록', { updatedAt: memoryState.updatedAt });
+    } catch {}
+    return new Response(JSON.stringify({ ok: true, fallback: "memory" }), {
       headers: { "Content-Type": "application/json" },
-      status: 500,
+      status: 200,
     });
   }
 }

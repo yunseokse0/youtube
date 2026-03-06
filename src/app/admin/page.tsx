@@ -440,7 +440,9 @@ export default function AdminPage() {
         pendingUnsyncedRef.current = false;
         setSyncStatus("synced");
       } else {
-        setSyncStatus("error");
+        // 서버 실패 시에도 로컬 저장은 된 상태 → 로컬 모드로 전환
+        const offline = typeof navigator !== "undefined" && !navigator.onLine;
+        setSyncStatus(offline ? "local" : "error");
       }
     });
   };
