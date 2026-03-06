@@ -360,9 +360,6 @@ export default function AdminPage() {
     const q = new URLSearchParams(presetParams);
     q.set("p", p.id);
     q.set("u", user?.id || "finalent");
-    const isVertical = q.get("vertical") === "true" || !!p.vertical;
-    q.set("renderWidth", isVertical ? "1080" : "1920");
-    q.set("renderHeight", isVertical ? "1920" : "1080");
     return `${base}?${q.toString()}`;
   };
   const buildPreviewOverlayUrl = (p: OverlayPreset): string => {

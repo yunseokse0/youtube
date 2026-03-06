@@ -1145,7 +1145,7 @@ function OverlayInner() {
   const BASE_H = isVertical ? 1920 : 1080;
   const renderW = sp.get("renderWidth") ? parseInt(sp.get("renderWidth")!, 10) : null;
   const renderH = sp.get("renderHeight") ? parseInt(sp.get("renderHeight")!, 10) : null;
-  const useRenderDims = Number.isFinite(renderW) && Number.isFinite(renderH) && renderW! > 0 && renderH! > 0;
+  const useRenderDims = (sp.get("previewGuide") === "true") && Number.isFinite(renderW) && Number.isFinite(renderH) && renderW! > 0 && renderH! > 0;
   const [viewportScale, setViewportScale] = useState(1);
   useEffect(() => {
     if (typeof window === "undefined") return;
