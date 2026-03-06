@@ -8,6 +8,9 @@ const STORAGE_KEY_BASE = "excel-broadcast-daily-log-v1";
 const STORAGE_KEY_LEGACY = "excel-broadcast-daily-log-v1";
 
 function getUserId(req: Request): string | null {
+  const url = new URL(req.url);
+  const fromUrl = url.searchParams.get("user");
+  if (fromUrl && fromUrl.trim()) return fromUrl.trim();
   const cookie = req.headers.get("cookie") || "";
   const match = cookie.match(new RegExp(`${AUTH_COOKIE}=([^;]+)`));
   if (match) {
@@ -18,8 +21,7 @@ function getUserId(req: Request): string | null {
       return null;
     }
   }
-  const url = new URL(req.url);
-  return url.searchParams.get("user");
+  return null;
 }
 
 function logKey(userId: string | null): string {

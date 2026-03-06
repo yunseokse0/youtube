@@ -224,7 +224,7 @@ export default function AdminPage() {
 
   // 상태 로드
   useEffect(() => {
-    fetch('/api/state')
+    fetch('/api/state?user=finalent', { credentials: "include" })
       .then(r => r.json())
       .then(data => {
         setState(data);
@@ -278,10 +278,11 @@ export default function AdminPage() {
     };
     
     try {
-      const response = await fetch('/api/state', {
+      const response = await fetch('/api/state?user=finalent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedState),
+        credentials: "include",
       });
       
       if (response.ok) {
