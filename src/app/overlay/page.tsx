@@ -1190,6 +1190,7 @@ function OverlayInner() {
   const autoFit = (sp.get("autoFit") || "none").toLowerCase() as "none" | "width" | "height" | "contain" | "cover";
   const fitPin = (sp.get("fitPin") || "cc").toLowerCase() as "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr";
   const showGuide = (sp.get("guide") || "false").toLowerCase() === "true";
+  const boxMode = (sp.get("box") || "full").toLowerCase() as "full" | "tight";
   const useRenderDims = isPreviewGuide && Number.isFinite(renderW) && Number.isFinite(renderH) && renderW! > 0 && renderH! > 0;
   const [viewportScale, setViewportScale] = useState(1);
   useEffect(() => {
@@ -1221,6 +1222,24 @@ function OverlayInner() {
   }, [isPreviewGuide, autoFit, useRenderDims, renderW, renderH, BASE_W, BASE_H]);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const [contentW, setContentW] = useState<number>(BASE_W);
+  const [contentH, setContentH] = useState<number>(BASE_H);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const el = containerRef.current;
+    if (!el) return;
+    const updateSize = () => {
+      const r = el.getBoundingClientRect();
+      const w = Math.max(1, Math.round(r.width));
+      const h = Math.max(1, Math.round(r.height));
+      setContentW(w);
+      setContentH(h);
+    };
+    updateSize();
+    const ro = new (window as any).ResizeObserver(updateSize);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const [autoMemberSize, setAutoMemberSize] = useState(memberSize);
   const [autoTotalSize, setAutoTotalSize] = useState(totalSize);
   const [autoDonorSize, setAutoDonorSize] = useState(donorsSize);
@@ -1496,6 +1515,8 @@ function OverlayInner() {
       fitPin === "tl" || fitPin === "tc" || fitPin === "tr" ? "flex-start" :
       fitPin === "bl" || fitPin === "bc" || fitPin === "br" ? "flex-end" :
       "center";
+    const FIT_W = boxMode === "tight" ? Math.max(1, contentW) : BASE_W;
+    const FIT_H = boxMode === "tight" ? Math.max(1, contentH) : BASE_H;
     const viewportWrapperStyle: React.CSSProperties = {
       position: "fixed",
       inset: 0,
@@ -1508,8 +1529,8 @@ function OverlayInner() {
     };
     const viewportInnerStyle: React.CSSProperties = {
       position: "relative",
-      width: BASE_W,
-      height: BASE_H,
+      width: FIT_W,
+      height: FIT_H,
       flexShrink: 0,
     };
     const origin =
@@ -1551,10 +1572,10 @@ function OverlayInner() {
           </div>
         )}
         <div style={viewportInnerStyle} className="overlay-route">
-          <main className="transparent-bg no-select" style={{ ...scaledMainStyle, minHeight: BASE_H, width: BASE_W }}>
+          <main className="transparent-bg no-select" style={{ ...scaledMainStyle, minHeight: FIT_H, width: FIT_W }}>
         {showMembers && ready && (
-          <div className={`absolute ${listPosClass}`} style={{ maxWidth: BASE_W, maxHeight: BASE_H, ...listPosStyle }}>
-            <div ref={containerRef} className="flex items-start gap-3" style={{ width: "fit-content", maxWidth: BASE_W }}>
+          <div className={`absolute ${listPosClass}`} style={{ maxWidth: FIT_W, maxHeight: FIT_H, ...listPosStyle }}>
+            <div ref={containerRef} className="flex items-start gap-3" style={{ width: "fit-content", maxWidth: FIT_W }}>
               {showSideDonors && donorsSide === "left" && (
                 <div style={{ width: donorsWidth }}>
                   <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
