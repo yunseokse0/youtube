@@ -929,7 +929,7 @@ function Timer({ elapsed, theme, fontSize }: { elapsed: string | null; theme: ty
 
 function OverlayInner() {
   const rawSp = useSearchParams();
-  const userId = (rawSp.get("u") || "finalent").trim();
+  const userId = (rawSp.get("u") || "").trim();
   const { state: s, ready } = useRemoteState(userId);
   const [localPresets, setLocalPresets] = useState<OverlayPresetLike[]>([]);
   const readLocalPresets = () => {
@@ -1335,6 +1335,12 @@ function OverlayInner() {
     return () => document.body.classList.remove("overlay-vertical");
   }, [isVertical]);
 
+  useEffect(() => {
+    if (demo) {
+      try { console.warn("[Overlay] Demo mode is ON. Live state will be ignored for members/donors."); } catch {}
+    }
+  }, [demo]);
+
   const confettiLastMilestoneRef = useRef<number>(0);
   useEffect(() => {
     if (confettiMilestoneMan <= 0) return;
@@ -1627,6 +1633,7 @@ function OverlayInner() {
         {effectiveShowTicker && ready && <div className={`absolute ${tickerPosClass} ${hasTickerFreePos ? "" : "mb-10"}`} style={tickerPosStyle}><DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
         {showTimer && <div className={`absolute ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={timerTheme} fontSize={memberSize} /></div>}
         {showMission && ready && missions.length > 0 && <div className={`absolute ${posClass(missionAnchor)}`} style={{ width: fitWidthToViewport(missionWidth) }}><MissionBoard missions={missions} fontSize={memberSize * 0.9} themeVariant={missionThemeVariant} duration={missionDuration} /></div>}
+        {demo && <div className="fixed top-2 left-2 z-[9999] px-2 py-0.5 rounded bg-rose-600/90 text-white text-xs font-bold shadow">DEMO</div>}
           </main>
         </div>
       </div>
