@@ -1188,6 +1188,7 @@ function OverlayInner() {
   const renderH = sp.get("renderHeight") ? parseInt(sp.get("renderHeight")!, 10) : null;
   const isPreviewGuide = sp.get("previewGuide") === "true";
   const autoFit = (sp.get("autoFit") || "none").toLowerCase() as "none" | "width" | "height" | "contain" | "cover";
+  const showGuide = (sp.get("guide") || "false").toLowerCase() === "true";
   const useRenderDims = isPreviewGuide && Number.isFinite(renderW) && Number.isFinite(renderH) && renderW! > 0 && renderH! > 0;
   const [viewportScale, setViewportScale] = useState(1);
   useEffect(() => {
@@ -1517,6 +1518,19 @@ function OverlayInner() {
       <div style={viewportWrapperStyle} className="overlay-root">
         {scaleStyleTag}
         {colorOverrideStyle}
+        {showGuide && (
+          <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 9998 }}>
+            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: "rgba(0,255,200,0.4)" }} />
+            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 1, background: "rgba(0,255,200,0.2)" }} />
+            <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 1, background: "rgba(0,255,200,0.2)" }} />
+            <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 1, background: "rgba(0,255,200,0.2)" }} />
+            <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: 1, background: "rgba(0,200,255,0.2)" }} />
+            <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: 1, background: "rgba(0,200,255,0.2)" }} />
+            <div style={{ position: "absolute", top: 8, left: 8, color: "rgba(255,255,255,0.8)", fontSize: 12, fontFamily: "system-ui, sans-serif" }}>
+              GUIDE ON — autoFit={autoFit}
+            </div>
+          </div>
+        )}
         <div style={viewportInnerStyle} className="overlay-route">
           <main className="transparent-bg no-select" style={{ ...scaledMainStyle, minHeight: BASE_H, width: BASE_W }}>
         {showMembers && ready && (
