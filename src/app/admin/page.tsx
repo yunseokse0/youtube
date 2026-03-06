@@ -1571,7 +1571,7 @@ export default function AdminPage() {
                           </div>
 
                           <div className="lg:order-1">
-                            <VerticalPreview url={buildStablePreviewUrl(p)} preset={p} />
+                            <VerticalPreview url={buildStablePreviewUrl(p)} />
                           </div>
                         </div>
                       )}
@@ -1861,11 +1861,10 @@ export default function AdminPage() {
   );
 }
 
-function VerticalPreview({ url, preset }: { url: string; preset?: OverlayPresetLike }) {
+function VerticalPreview({ url }: { url: string }) {
   const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
   const [showFrame, setShowFrame] = useState(true);
   const [showGuides, setShowGuides] = useState(true);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [w, h] = orientation === "portrait" ? [360, 640] : [640, 360];
   const previewUrl = useMemo(() => {
     try {
@@ -1876,16 +1875,6 @@ function VerticalPreview({ url, preset }: { url: string; preset?: OverlayPresetL
       return url;
     }
   }, [url]);
-  const postParamsToIframe = () => {
-    if (!preset || typeof window === "undefined") return;
-    const params = Object.fromEntries(presetToParams(preset).entries());
-    iframeRef.current?.contentWindow?.postMessage({ type: "overlay-params", params }, window.location.origin);
-  };
-  useEffect(() => {
-    if (!preset) return;
-    postParamsToIframe();
-  }, [preset]);
-  const onIframeLoad = () => setTimeout(postParamsToIframe, 50);
   return (
     <div className="rounded border border-white/10 bg-black/70 p-2">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
@@ -1926,7 +1915,7 @@ function VerticalPreview({ url, preset }: { url: string; preset?: OverlayPresetL
           boxShadow: showFrame ? "0 6px 24px rgba(0,0,0,0.8), inset 0 0 0 1px rgba(255,255,255,0.06), inset 0 8px 24px rgba(255,255,255,0.04)" : "none",
         }}
       >
-        <iframe ref={iframeRef} key={previewUrl} src={previewUrl} title="vertical-preview" className="absolute inset-0 w-full h-full" style={{ background: "transparent" }} scrolling="no" onLoad={onIframeLoad} />
+        <iframe key={previewUrl} src={previewUrl} title="vertical-preview" className="absolute inset-0 w-full h-full" style={{ background: "transparent" }} scrolling="no" />
         {showGuides && (
           <>
             <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: "inset 0 0 0 1px rgba(0,255,170,0.35)" }} />

@@ -974,30 +974,15 @@ function OverlayInner() {
     [presetId, overlayPresets]
   );
   const presetParams = useMemo(() => presetToParams(activePreset), [activePreset]);
-  const [overrideParams, setOverrideParams] = useState<Record<string, string> | null>(null);
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const handler = (e: MessageEvent) => {
-      if (e.origin !== window.location.origin) return;
-      const d = e.data;
-      if (d?.type === "overlay-params" && d?.params && typeof d.params === "object") {
-        setOverrideParams(d.params as Record<string, string>);
-      }
-    };
-    window.addEventListener("message", handler);
-    return () => window.removeEventListener("message", handler);
-  }, []);
   const sp = useMemo(
     () => ({
       get: (key: string) => {
-        const override = overrideParams?.[key];
-        if (override !== undefined && override !== null && override !== "") return override;
         const direct = rawSp.get(key);
         if (direct !== null && direct !== "") return direct;
         return presetParams.get(key);
       },
     }),
-    [rawSp, presetParams, overrideParams]
+    [rawSp, presetParams]
   );
   const parsePct = (raw: string | null, fallback: number) => {
     if (raw === null || raw.trim() === "") return fallback;
