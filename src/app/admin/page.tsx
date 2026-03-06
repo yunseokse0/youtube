@@ -72,7 +72,7 @@ export default function AdminPage() {
   const [memberRatioInputs, setMemberRatioInputs] = useState<Record<string, { account: string; toon: string }>>({});
   type OverlayPreset = {
     id: string; name: string; scale: string; memberSize: string; totalSize: string;
-    dense: boolean; anchor: string; tableFree?: boolean; tableX?: string; tableY?: string; autoFont?: boolean; compact?: boolean; tight?: boolean; lockWidth?: boolean; nameGrow?: boolean; nameCh?: string; sumAnchor: string; sumFree: boolean; sumX: string; sumY: string;
+    dense: boolean; anchor: string; tableFree?: boolean; tableX?: string; tableY?: string; autoFont?: boolean; compact?: boolean; tight?: boolean; lockWidth?: boolean; nameGrow?: boolean; nameCh?: string; tableMarginTop?: string; tableMarginRight?: string; tableMarginBottom?: string; tableMarginLeft?: string; sumAnchor: string; sumFree: boolean; sumX: string; sumY: string;
     theme: string;
     membersTheme?: string;
     totalTheme?: string;
@@ -1239,6 +1239,37 @@ export default function AdminPage() {
                                 <option value="bc">하중</option>
                                 <option value="br">하우</option>
                               </select>
+                              <label className={`text-xs ${p.tableFree ? "text-neutral-600" : "text-neutral-400"}`}>표 여백(px)</label>
+                              <div className={`grid grid-cols-2 gap-2 ${p.tableFree ? "opacity-60 pointer-events-none" : ""}`}>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[11px] text-neutral-500 w-6">상</span>
+                                  <input className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.tableMarginTop || "0"} onChange={(e) => updatePreset(p.id, { tableMarginTop: e.target.value.replace(/[^\d-]/g, "") })} />
+                                  <span className="text-[11px] text-neutral-500 w-6">하</span>
+                                  <input className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.tableMarginBottom || "0"} onChange={(e) => updatePreset(p.id, { tableMarginBottom: e.target.value.replace(/[^\d-]/g, "") })} />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[11px] text-neutral-500 w-6">좌</span>
+                                  <input className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.tableMarginLeft || "0"} onChange={(e) => updatePreset(p.id, { tableMarginLeft: e.target.value.replace(/[^\d-]/g, "") })} />
+                                  <span className="text-[11px] text-neutral-500 w-6">우</span>
+                                  <input className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.tableMarginRight || "0"} onChange={(e) => updatePreset(p.id, { tableMarginRight: e.target.value.replace(/[^\d-]/g, "") })} />
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {[
+                                  { label: "상단바(중앙)", anchor: "tc" },
+                                  { label: "상단바(좌)", anchor: "tl" },
+                                  { label: "상단바(우)", anchor: "tr" },
+                                ].map(({ label, anchor }) => (
+                                  <button
+                                    key={label}
+                                    type="button"
+                                    className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                                    onClick={() => updatePreset(p.id, { tableFree: false, anchor, compact: true, tight: true })}
+                                  >
+                                    {label}
+                                  </button>
+                                ))}
+                              </div>
                               <label className="text-xs text-neutral-400">표 자유 위치</label>
                               <div className="flex items-center gap-2">
                                 <button

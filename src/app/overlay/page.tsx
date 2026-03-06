@@ -1033,6 +1033,10 @@ function OverlayInner() {
   const tableXParam = sp.get("tableX");
   const tableYParam = sp.get("tableY");
   const hasTableFreePos = tableFree || (tableXParam !== null && tableYParam !== null);
+  const tableMarginTop = parseInt(sp.get("tableMarginTop") || "0", 10) || 0;
+  const tableMarginRight = parseInt(sp.get("tableMarginRight") || "0", 10) || 0;
+  const tableMarginBottom = parseInt(sp.get("tableMarginBottom") || "0", 10) || 0;
+  const tableMarginLeft = parseInt(sp.get("tableMarginLeft") || "0", 10) || 0;
   const sumAnchor = (sp.get("sumAnchor") || "bc").toLowerCase();
   const sumXParam = sp.get("sumX");
   const sumYParam = sp.get("sumY");
@@ -1403,7 +1407,12 @@ function OverlayInner() {
 
   const listPosStyle: React.CSSProperties | undefined = hasTableFreePos
     ? { left: `${parsePct(tableXParam, 50)}%`, top: `${parsePct(tableYParam, 50)}%`, transform: "translate(-50%, -50%)" }
-    : undefined;
+    : {
+        marginTop: tableMarginTop,
+        marginRight: tableMarginRight,
+        marginBottom: tableMarginBottom,
+        marginLeft: tableMarginLeft,
+      };
   const listPosClass =
     previewGuide || hasTableFreePos ? "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" :
     anchor === "cc" || anchor === "center" ? "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" :

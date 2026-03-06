@@ -15,6 +15,10 @@ export type OverlayPresetLike = {
   lockWidth?: boolean;
   nameGrow?: boolean;
   nameCh?: string;
+  tableMarginTop?: string;
+  tableMarginRight?: string;
+  tableMarginBottom?: string;
+  tableMarginLeft?: string;
   sumAnchor?: string;
   sumX?: string;
   sumY?: string;
@@ -97,6 +101,10 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.lockWidth) q.set("lockWidth", "true");
   if (preset.nameGrow === false) q.set("nameGrow", "false");
   if (preset.nameCh && preset.nameCh.trim()) q.set("nameCh", preset.nameCh.trim());
+  if (preset.tableMarginTop && preset.tableMarginTop.trim()) q.set("tableMarginTop", preset.tableMarginTop.trim());
+  if (preset.tableMarginRight && preset.tableMarginRight.trim()) q.set("tableMarginRight", preset.tableMarginRight.trim());
+  if (preset.tableMarginBottom && preset.tableMarginBottom.trim()) q.set("tableMarginBottom", preset.tableMarginBottom.trim());
+  if (preset.tableMarginLeft && preset.tableMarginLeft.trim()) q.set("tableMarginLeft", preset.tableMarginLeft.trim());
   q.set("theme", preset.theme || "default");
   q.set("showMembers", String(preset.showMembers ?? true));
   q.set("showTotal", String(preset.showTotal ?? true));
