@@ -1191,8 +1191,10 @@ function OverlayInner() {
   const fitPin = (sp.get("fitPin") || "cc").toLowerCase() as "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr";
   const showGuide = (sp.get("guide") || "false").toLowerCase() === "true";
   const boxMode = (sp.get("box") || "full").toLowerCase() as "full" | "tight";
+  const noCrop = (sp.get("noCrop") || "true").toLowerCase() !== "false";
   const useRenderDims = isPreviewGuide && Number.isFinite(renderW) && Number.isFinite(renderH) && renderW! > 0 && renderH! > 0;
   const [viewportScale, setViewportScale] = useState(1);
+  const [containLimitScale, setContainLimitScale] = useState(1);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const enableAuto = isPreviewGuide || autoFit !== "none";
@@ -1212,6 +1214,7 @@ function OverlayInner() {
       }
       s = Math.max(0.1, s);
       setViewportScale(s);
+      setContainLimitScale(Math.max(0.1, Math.min(sx, sy)));
     };
     update();
     if (!useRenderDims) {
@@ -1506,7 +1509,10 @@ function OverlayInner() {
     const excelGridCols = hasRoleColumn
       ? ["3ch", `${roleCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`]
       : ["3ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`];
-    const effectiveScale = viewportScale * scale;
+    let effectiveScale = viewportScale * scale;
+    if (noCrop) {
+      effectiveScale = Math.min(effectiveScale, containLimitScale);
+    }
     const justify =
       fitPin === "tl" || fitPin === "cl" || fitPin === "bl" ? "flex-start" :
       fitPin === "tr" || fitPin === "cr" || fitPin === "br" ? "flex-end" :

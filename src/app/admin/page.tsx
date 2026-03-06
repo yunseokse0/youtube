@@ -72,7 +72,7 @@ export default function AdminPage() {
   const [memberRatioInputs, setMemberRatioInputs] = useState<Record<string, { account: string; toon: string }>>({});
   type OverlayPreset = {
     id: string; name: string; scale: string; memberSize: string; totalSize: string;
-    dense: boolean; anchor: string; tableFree?: boolean; tableX?: string; tableY?: string; autoFont?: boolean; compact?: boolean; tight?: boolean; lockWidth?: boolean; nameGrow?: boolean; nameCh?: string; tableMarginTop?: string; tableMarginRight?: string; tableMarginBottom?: string; tableMarginLeft?: string; autoFit?: "none" | "width" | "height" | "contain" | "cover"; autoFitPin?: "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr"; box?: "full" | "tight"; sumAnchor: string; sumFree: boolean; sumX: string; sumY: string;
+    dense: boolean; anchor: string; tableFree?: boolean; tableX?: string; tableY?: string; autoFont?: boolean; compact?: boolean; tight?: boolean; lockWidth?: boolean; nameGrow?: boolean; nameCh?: string; tableMarginTop?: string; tableMarginRight?: string; tableMarginBottom?: string; tableMarginLeft?: string; autoFit?: "none" | "width" | "height" | "contain" | "cover"; autoFitPin?: "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr"; box?: "full" | "tight"; noCrop?: boolean; sumAnchor: string; sumFree: boolean; sumX: string; sumY: string;
     theme: string;
     membersTheme?: string;
     totalTheme?: string;
@@ -1241,6 +1241,10 @@ export default function AdminPage() {
                                 <option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
                                 <option value="rainbow">무지개</option><option value="sunset">일몰</option><option value="ocean">오션</option><option value="forest">포레스트</option><option value="aurora">오로라</option><option value="violet">바이올렛</option><option value="coral">코랄</option><option value="mint">민트</option><option value="lava">라바</option><option value="ice">아이스</option>
                               </select>
+                              <label className="text-xs text-neutral-400">안가림 모드</label>
+                              <button className={`px-2 py-0.5 rounded border text-xs ${p.noCrop !== false ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { noCrop: !(p.noCrop !== false) })}>
+                                {p.noCrop !== false ? "ON" : "OFF"}
+                              </button>
                               <label className="text-xs text-neutral-400">Prism 영역</label>
                               <select
                                 className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"

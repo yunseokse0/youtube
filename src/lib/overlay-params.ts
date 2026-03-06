@@ -22,6 +22,7 @@ export type OverlayPresetLike = {
   autoFit?: "none" | "width" | "height" | "contain" | "cover";
   autoFitPin?: "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr";
   box?: "full" | "tight";
+  noCrop?: boolean;
   sumAnchor?: string;
   sumX?: string;
   sumY?: string;
@@ -111,6 +112,7 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.autoFit && preset.autoFit !== "none") q.set("autoFit", preset.autoFit);
   if (preset.autoFitPin && preset.autoFitPin !== "cc") q.set("fitPin", preset.autoFitPin);
   if (preset.box && preset.box !== "full") q.set("box", preset.box);
+  if (preset.noCrop === false) q.set("noCrop", "false");
   q.set("theme", preset.theme || "default");
   q.set("showMembers", String(preset.showMembers ?? true));
   q.set("showTotal", String(preset.showTotal ?? true));
