@@ -1806,7 +1806,7 @@ function VerticalPreview({ url }: { url: string }) {
   const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
   const [showFrame, setShowFrame] = useState(true);
   const [showGuides, setShowGuides] = useState(true);
-  const [w, h] = orientation === "portrait" ? [360, 640] : [640, 360];
+  const [w, h] = orientation === "portrait" ? [540, 960] : [960, 540];
   const previewUrl = useMemo(() => {
     try {
       const u = new URL(url);
