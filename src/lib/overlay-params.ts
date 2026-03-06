@@ -64,6 +64,8 @@ export type OverlayPresetLike = {
   confettiMilestone?: string;
   tableBgOpacity?: string;
   vertical?: boolean;
+  accountColor?: string;
+  toonColor?: string;
 };
 
 export function presetToParams(preset: OverlayPresetLike | null): URLSearchParams {
@@ -140,6 +142,8 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.tableOnly) q.set("tableOnly", "true");
   if (preset.confettiMilestone && preset.confettiMilestone.trim()) q.set("confettiMilestone", preset.confettiMilestone.trim());
   if (preset.tableBgOpacity && preset.tableBgOpacity.trim()) q.set("tableBgOpacity", preset.tableBgOpacity.trim());
+  if (preset.accountColor && preset.accountColor.trim()) q.set("accountColor", preset.accountColor.trim());
+  if (preset.toonColor && preset.toonColor.trim()) q.set("toonColor", preset.toonColor.trim());
   if (preset.vertical) q.set("vertical", "true");
   return q;
 }

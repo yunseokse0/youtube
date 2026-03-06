@@ -153,8 +153,8 @@ const THEMES: Record<ThemeId, {
     label: "기본",
     memberCls: "font-bold tracking-tight",
     nameCls: "text-white",
-    accountCls: "text-emerald-300",
-    toonCls: "text-neutral-200",
+    accountCls: "text-white",
+    toonCls: "text-white",
     totalCls: "font-extrabold text-amber-200 drop-shadow-[0_0_6px_rgba(0,0,0,1)]",
     totalWrapCls: "bg-neutral-800/90 border border-emerald-500/40 px-2 py-1 rounded",
     rowCls: "border-b border-neutral-600/50 px-2 py-1 bg-neutral-900/60",
@@ -1097,6 +1097,8 @@ function OverlayInner() {
   const donorsSize = Math.max(10, Math.min(60, parseInt(sp.get("donorsSize") || String(Math.round(memberSize * 0.9)), 10)));
   const donorsColor = sp.get("donorsColor") || undefined;
   const donorsBgColor = sp.get("donorsBgColor") || undefined;
+  const accountColor = sp.get("accountColor") || undefined;
+  const toonColor = sp.get("toonColor") || undefined;
   const donorsBgOpacity = Math.max(0, Math.min(100, parseInt(sp.get("donorsBgOpacity") || "0", 10)));
   const showBottomDonors = tableOnly ? false : (sp.get("showBottomDonors") === "true");
   const effectiveShowTicker = showTicker && !hasContextTicker && !showBottomDonors;
@@ -1333,17 +1335,6 @@ function OverlayInner() {
     return () => document.body.classList.remove("overlay-vertical");
   }, [isVertical]);
 
-  useEffect(() => {
-    const route = document.querySelector(".overlay-route") as HTMLElement | null;
-    if (!route) return;
-    const s = viewportScale * scale;
-    route.style.transform = `scale(${s})`;
-    route.style.transformOrigin = "center center";
-    return () => {
-      route.style.transform = "";
-      route.style.transformOrigin = "";
-    };
-  }, [viewportScale, scale]);
 
   const confettiLastMilestoneRef = useRef<number>(0);
   useEffect(() => {
@@ -1436,11 +1427,15 @@ function OverlayInner() {
       width: "100%",
       height: "100%",
     };
+    const effectiveScale = viewportScale * scale;
     const viewportInnerStyle: React.CSSProperties = {
       position: "relative",
       width: BASE_W,
       height: BASE_H,
+      transform: `scale(${effectiveScale})`,
+      transformOrigin: "center center",
       flexShrink: 0,
+      willChange: "transform",
     };
     return (
       <div style={viewportWrapperStyle} className="overlay-root">
@@ -1495,8 +1490,8 @@ function OverlayInner() {
                           </td>
                         )}
                         <td className={`${effectiveRowCls} ${membersTheme.nameCls} truncate`}>{m.name}</td>
-                        <td className={`${effectiveRowCls} ${membersTheme.accountCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
-                        <td className={`${effectiveRowCls} ${membersTheme.toonCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
+                        <td className={`${effectiveRowCls} ${membersTheme.accountCls} text-right`} style={{ textOverflow: "clip", ...(accountColor && { color: accountColor }) }}>{fmt(m.account)}</td>
+                        <td className={`${effectiveRowCls} ${membersTheme.toonCls} text-right`} style={{ textOverflow: "clip", ...(toonColor && { color: toonColor }) }}>{fmt(m.toon)}</td>
                         <td className={`${effectiveRowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
                       </tr>
                     ))}
@@ -1505,8 +1500,8 @@ function OverlayInner() {
                         <td className={`${effectiveRowCls} text-right`}>—</td>
                         {hasRoleColumn && <td className={effectiveRowCls}></td>}
                         <td className={`${effectiveRowCls} ${membersTheme.nameCls} truncate`}>{m.name}</td>
-                        <td className={`${effectiveRowCls} ${membersTheme.accountCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
-                        <td className={`${effectiveRowCls} ${membersTheme.toonCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
+                        <td className={`${effectiveRowCls} ${membersTheme.accountCls} text-right`} style={{ textOverflow: "clip", ...(accountColor && { color: accountColor }) }}>{fmt(m.account)}</td>
+                        <td className={`${effectiveRowCls} ${membersTheme.toonCls} text-right`} style={{ textOverflow: "clip", ...(toonColor && { color: toonColor }) }}>{fmt(m.toon)}</td>
                         <td className={`${effectiveRowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
                       </tr>
                     ))}
@@ -1561,8 +1556,8 @@ function OverlayInner() {
                           </td>
                         )}
                         <td className={`${membersTheme.rowCls} ${membersTheme.nameCls} truncate`}>{m.name}</td>
-                        <td className={`${membersTheme.rowCls} ${membersTheme.accountCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
-                        <td className={`${membersTheme.rowCls} ${membersTheme.toonCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
+                        <td className={`${membersTheme.rowCls} ${membersTheme.accountCls} text-right`} style={{ textOverflow: "clip", ...(accountColor && { color: accountColor }) }}>{fmt(m.account)}</td>
+                        <td className={`${membersTheme.rowCls} ${membersTheme.toonCls} text-right`} style={{ textOverflow: "clip", ...(toonColor && { color: toonColor }) }}>{fmt(m.toon)}</td>
                         <td className={`${membersTheme.rowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
                       </tr>
                     ))}
@@ -1571,8 +1566,8 @@ function OverlayInner() {
                         <td className={`${membersTheme.rowCls} text-right`}>—</td>
                         {hasRoleColumn && <td className={membersTheme.rowCls}></td>}
                         <td className={`${membersTheme.rowCls} ${membersTheme.nameCls} truncate`}>{m.name}</td>
-                        <td className={`${membersTheme.rowCls} ${membersTheme.accountCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
-                        <td className={`${membersTheme.rowCls} ${membersTheme.toonCls} text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
+                        <td className={`${membersTheme.rowCls} ${membersTheme.accountCls} text-right`} style={{ textOverflow: "clip", ...(accountColor && { color: accountColor }) }}>{fmt(m.account)}</td>
+                        <td className={`${membersTheme.rowCls} ${membersTheme.toonCls} text-right`} style={{ textOverflow: "clip", ...(toonColor && { color: toonColor }) }}>{fmt(m.toon)}</td>
                         <td className={`${membersTheme.rowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
                       </tr>
                     ))}

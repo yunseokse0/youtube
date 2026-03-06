@@ -98,6 +98,8 @@ export default function AdminPage() {
     confettiMilestone?: string;
     tableBgOpacity?: string;
     vertical?: boolean;
+    accountColor?: string;
+    toonColor?: string;
   };
   const PRESET_STORAGE_KEY = "excel-broadcast-overlay-presets";
   const SETTLEMENT_OPTIONS_KEY = "excel-broadcast-settlement-options-v1";
@@ -126,9 +128,12 @@ export default function AdminPage() {
     showBottomDonors: true, donorsSize: "", donorsGap: "16", donorsSpeed: "20", donorsLimit: "8", donorsFormat: "short", donorsUnit: "", donorsColor: "", donorsBgColor: "", donorsBgOpacity: "0", tickerTheme: "auto", tickerGlow: "45", tickerShadow: "35", currencyLocale: "ko-KR",
     confettiMilestone: "",
     tableBgOpacity: "",
+    accountColor: "",
+    toonColor: "",
     ...overrides,
   });
   const [presets, setPresets] = useState<OverlayPreset[]>([]);
+  const [presetRev, setPresetRev] = useState(0);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [pullDistance, setPullDistance] = useState(0);
@@ -340,6 +345,7 @@ export default function AdminPage() {
   };
   const updatePreset = (id: string, patch: Partial<OverlayPreset>) => {
     savePresets(presets.map(p => p.id === id ? { ...p, ...patch } : p));
+    setPresetRev((r) => r + 1);
   };
   const removePreset = (id: string) => {
     requestConfirm("오버레이 프리셋 삭제", "이 오버레이 프리셋을 삭제할까요?", () => {
@@ -1154,8 +1160,10 @@ export default function AdminPage() {
                     p.tickerWidth, p.donorsSize, p.donorsGap, p.donorsSpeed, p.donorsLimit, p.donorsFormat, p.donorsUnit, p.currencyLocale, p.donorsColor, p.donorsBgColor, p.donorsBgOpacity, p.tickerTheme, p.tickerGlow, p.tickerShadow,
                     p.confettiMilestone,
                     p.tableBgOpacity,
+                    p.accountColor,
+                    p.toonColor,
                   ].join("|");
-                  const previewUrl = `${previewBaseUrl}&pv=${encodeURIComponent(previewRev)}`;
+                  const previewUrl = `${previewBaseUrl}&pv=${encodeURIComponent(previewRev)}&_rev=${presetRev}`;
                   const isOpen = editingId === p.id;
                   return (
                     <div key={p.id} className="rounded border border-white/10 bg-neutral-900/40">
@@ -1207,6 +1215,28 @@ export default function AdminPage() {
                               <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={String(p.dense)} onChange={(e) => updatePreset(p.id, { dense: e.target.value === "true" })}>
                                 <option value="true">촘촘</option><option value="false">보통</option>
                               </select>
+                              <label className="text-xs text-neutral-400">계좌 글자 색상</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                  value={toColorPickerValue(p.accountColor, "#ffffff")}
+                                  onChange={(e) => updatePreset(p.id, { accountColor: e.target.value })}
+                                />
+                                <span className="text-xs text-neutral-400 font-mono">{p.accountColor || "테마 기본"}</span>
+                                <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { accountColor: "" })}>자동</button>
+                              </div>
+                              <label className="text-xs text-neutral-400">투네 글자 색상</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                  value={toColorPickerValue(p.toonColor, "#ffffff")}
+                                  onChange={(e) => updatePreset(p.id, { toonColor: e.target.value })}
+                                />
+                                <span className="text-xs text-neutral-400 font-mono">{p.toonColor || "테마 기본"}</span>
+                                <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { toonColor: "" })}>자동</button>
+                              </div>
                               {managePositionInPrism && (
                                 <>
                                   <label className="text-xs text-neutral-400">위치 설정(Prism에서)</label>
