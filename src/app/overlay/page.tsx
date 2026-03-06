@@ -1011,7 +1011,7 @@ function OverlayInner() {
   const memberSize = Math.max(10, Math.min(80, parseInt(sp.get("memberSize") || (compact ? "14" : (isVertical ? "36" : "18")), 10)));
   const totalSize = Math.max(14, Math.min(160, parseInt(sp.get("totalSize") || (isVertical ? "44" : "20"), 10)));
   const dense = (sp.get("dense") || "false").toLowerCase() === "true";
-  const anchor = (sp.get("anchor") || "tl").toLowerCase();
+  const anchor = (sp.get("anchor") || "cc").toLowerCase();
   const sumAnchor = (sp.get("sumAnchor") || "bc").toLowerCase();
   const sumXParam = sp.get("sumX");
   const sumYParam = sp.get("sumY");
@@ -1150,7 +1150,7 @@ function OverlayInner() {
     const update = () => {
       const w = useRenderDims ? renderW! : window.innerWidth;
       const h = useRenderDims ? renderH! : window.innerHeight;
-      let s = Math.min(w / BASE_W, h / BASE_H);
+      let s = Math.max(0.1, Math.min(w / BASE_W, h / BASE_H));
       setViewportScale(s);
     };
     update();
@@ -1295,6 +1295,8 @@ function OverlayInner() {
   useEffect(() => {
     const html = document.documentElement;
     const body = document.body;
+    html.classList.add("overlay-page");
+    body.classList.add("overlay-page");
     html.style.background = "transparent";
     body.style.background = "transparent";
     html.style.overflow = "hidden";
@@ -1307,6 +1309,8 @@ function OverlayInner() {
     html.style.width = "100%";
     body.style.width = "100%";
     return () => {
+      html.classList.remove("overlay-page");
+      body.classList.remove("overlay-page");
       html.style.background = "";
       body.style.background = "";
       html.style.overflow = "";
@@ -1355,6 +1359,7 @@ function OverlayInner() {
   }, [rounded, confettiMilestoneMan]);
 
   const posClass = (a: string) =>
+    a === "cc" || a === "center" ? "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" :
     a === "tr" ? "top-4 right-4" :
     a === "bl" ? "bottom-4 left-4" :
     a === "br" ? "bottom-4 right-4" :
@@ -1364,10 +1369,13 @@ function OverlayInner() {
 
   const listPosClass =
     previewGuide ? "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" :
+    anchor === "cc" || anchor === "center" ? "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" :
+    anchor === "tc" ? "top-4 left-1/2 -translate-x-1/2" :
+    anchor === "bc" ? "bottom-4 left-1/2 -translate-x-1/2" :
     anchor === "tr" ? "top-4 right-4 items-end text-right" :
     anchor === "bl" ? "bottom-4 left-4" :
     anchor === "br" ? "bottom-4 right-4 items-end text-right" :
-    "top-4 left-4";
+    "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2";
 
   const sumPosStyle: React.CSSProperties | undefined = hasFreePos
     ? { left: `${sumX}%`, top: `${sumY}%`, transform: "translate(-50%, -50%)" }

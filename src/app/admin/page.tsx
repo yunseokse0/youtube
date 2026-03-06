@@ -116,7 +116,7 @@ export default function AdminPage() {
   const managePositionInPrism = true;
   const defaultPreset = (name: string, overrides: Partial<OverlayPreset> = {}): OverlayPreset => ({
     id: `ov_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name,
-    scale: "0.75", memberSize: "18", totalSize: "40", dense: true, anchor: "tl",
+    scale: "0.75", memberSize: "18", totalSize: "40", dense: true, anchor: "cc",
     sumAnchor: "bc", sumFree: false, sumX: "50", sumY: "90", theme: "default",
     showMembers: true, showTotal: true, showGoal: false, goal: "0", goalLabel: "목표 금액", showPersonalGoal: false, personalGoalTheme: "goalClassic", personalGoalAnchor: "tl", personalGoalLimit: "3", personalGoalFree: false, personalGoalX: "78", personalGoalY: "82",
     tickerInMembers: true, tickerInGoal: true, tickerInPersonalGoal: true,
@@ -354,6 +354,9 @@ export default function AdminPage() {
     const q = new URLSearchParams(presetParams);
     q.set("p", p.id);
     q.set("u", user?.id || "finalent");
+    const isVertical = q.get("vertical") === "true" || !!p.vertical;
+    q.set("renderWidth", isVertical ? "1080" : "1920");
+    q.set("renderHeight", isVertical ? "1920" : "1080");
     return `${base}?${q.toString()}`;
   };
   const buildPreviewOverlayUrl = (p: OverlayPreset): string => {
