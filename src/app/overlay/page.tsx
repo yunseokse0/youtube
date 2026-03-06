@@ -978,10 +978,10 @@ function OverlayInner() {
   const pinnedFilter = (m: Member) => Boolean(m.operating) || /운영비/i.test(m.name) || /운영비/i.test(m.role || "");
   const displaySum = useCountUp(rounded, 800);
   const presetId = (rawSp.get("p") || "").trim();
-  const activePreset = useMemo(
-    () => (presetId ? overlayPresets.find((x) => x.id === presetId) || null : null),
-    [presetId, overlayPresets]
-  );
+  const activePreset = useMemo(() => {
+    if (presetId) return overlayPresets.find((x) => x.id === presetId) || null;
+    return overlayPresets.length ? overlayPresets[0] : null;
+  }, [presetId, overlayPresets]);
   const presetParams = useMemo(() => presetToParams(activePreset), [activePreset]);
   const sp = useMemo(
     () => ({
