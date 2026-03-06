@@ -974,15 +974,30 @@ function OverlayInner() {
     [presetId, overlayPresets]
   );
   const presetParams = useMemo(() => presetToParams(activePreset), [activePreset]);
+  const [overrideParams, setOverrideParams] = useState<Record<string, string> | null>(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return;
+      const d = e.data;
+      if (d?.type === "overlay-params" && d?.params && typeof d.params === "object") {
+        setOverrideParams(d.params as Record<string, string>);
+      }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, []);
   const sp = useMemo(
     () => ({
       get: (key: string) => {
+        const override = overrideParams?.[key];
+        if (override !== undefined && override !== null && override !== "") return override;
         const direct = rawSp.get(key);
         if (direct !== null && direct !== "") return direct;
         return presetParams.get(key);
       },
     }),
-    [rawSp, presetParams]
+    [rawSp, presetParams, overrideParams]
   );
   const parsePct = (raw: string | null, fallback: number) => {
     if (raw === null || raw.trim() === "") return fallback;
@@ -1426,15 +1441,15 @@ function OverlayInner() {
       justifyContent: "center",
       width: "100%",
       height: "100%",
-      transform: `scale(${effectiveScale})`,
-      WebkitTransform: `scale(${effectiveScale})`,
-      transformOrigin: "center center",
     };
     const viewportInnerStyle: React.CSSProperties = {
       position: "relative",
       width: BASE_W,
       height: BASE_H,
       flexShrink: 0,
+      transform: `scale(${effectiveScale})`,
+      WebkitTransform: `scale(${effectiveScale})`,
+      transformOrigin: "center center",
     };
     const colorOverrideStyle = (accountColor || toonColor) ? (
       <style dangerouslySetInnerHTML={{ __html: [

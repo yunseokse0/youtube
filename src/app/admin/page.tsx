@@ -29,7 +29,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { appendSettlementRecordAndSync, SettlementMemberRatioOverrides } from "@/lib/settlement";
-import { presetToParams } from "@/lib/overlay-params";
+import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
 
 function ClientTime({ ts }: { ts: number | string }) {
   const [text, setText] = useState<string>("");
@@ -373,6 +373,18 @@ export default function AdminPage() {
     u.searchParams.set("renderWidth", isVertical ? "1080" : "1920");
     u.searchParams.set("renderHeight", isVertical ? "1920" : "1080");
     return u.toString();
+  };
+  const buildStablePreviewUrl = (p: OverlayPreset): string => {
+    if (typeof window === "undefined") return "";
+    const base = `${window.location.origin}/overlay`;
+    const q = new URLSearchParams();
+    q.set("p", p.id);
+    q.set("u", user?.id || "finalent");
+    q.set("previewGuide", "true");
+    const isVertical = !!p.vertical;
+    q.set("renderWidth", isVertical ? "1080" : "1920");
+    q.set("renderHeight", isVertical ? "1920" : "1080");
+    return `${base}?${q.toString()}`;
   };
   const copyUrl = async (url: string, id: string) => {
     try {
@@ -1559,7 +1571,7 @@ export default function AdminPage() {
                           </div>
 
                           <div className="lg:order-1">
-                            <VerticalPreview url={previewUrl} />
+                            <VerticalPreview url={buildStablePreviewUrl(p)} preset={p} />
                           </div>
                         </div>
                       )}
@@ -1849,10 +1861,11 @@ export default function AdminPage() {
   );
 }
 
-function VerticalPreview({ url }: { url: string }) {
+function VerticalPreview({ url, preset }: { url: string; preset?: OverlayPresetLike }) {
   const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
   const [showFrame, setShowFrame] = useState(true);
   const [showGuides, setShowGuides] = useState(true);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [w, h] = orientation === "portrait" ? [360, 640] : [640, 360];
   const previewUrl = useMemo(() => {
     try {
@@ -1863,6 +1876,16 @@ function VerticalPreview({ url }: { url: string }) {
       return url;
     }
   }, [url]);
+  const postParamsToIframe = () => {
+    if (!preset || typeof window === "undefined") return;
+    const params = Object.fromEntries(presetToParams(preset).entries());
+    iframeRef.current?.contentWindow?.postMessage({ type: "overlay-params", params }, window.location.origin);
+  };
+  useEffect(() => {
+    if (!preset) return;
+    postParamsToIframe();
+  }, [preset]);
+  const onIframeLoad = () => setTimeout(postParamsToIframe, 50);
   return (
     <div className="rounded border border-white/10 bg-black/70 p-2">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
@@ -1903,7 +1926,7 @@ function VerticalPreview({ url }: { url: string }) {
           boxShadow: showFrame ? "0 6px 24px rgba(0,0,0,0.8), inset 0 0 0 1px rgba(255,255,255,0.06), inset 0 8px 24px rgba(255,255,255,0.04)" : "none",
         }}
       >
-        <iframe key={previewUrl} src={previewUrl} title="vertical-preview" className="absolute inset-0 w-full h-full" style={{ background: "transparent" }} scrolling="no" />
+        <iframe ref={iframeRef} key={previewUrl} src={previewUrl} title="vertical-preview" className="absolute inset-0 w-full h-full" style={{ background: "transparent" }} scrolling="no" onLoad={onIframeLoad} />
         {showGuides && (
           <>
             <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: "inset 0 0 0 1px rgba(0,255,170,0.35)" }} />
