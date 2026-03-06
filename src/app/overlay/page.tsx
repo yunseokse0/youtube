@@ -1442,11 +1442,11 @@ function OverlayInner() {
   const listPosClass =
     previewGuide || hasTableFreePos ? "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" :
     anchor === "cc" || anchor === "center" ? "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" :
-    anchor === "tc" ? "top-4 left-1/2 -translate-x-1/2" :
-    anchor === "bc" ? "bottom-4 left-1/2 -translate-x-1/2" :
-    anchor === "tr" ? "top-4 right-4 items-end text-right" :
-    anchor === "bl" ? "bottom-4 left-4" :
-    anchor === "br" ? "bottom-4 right-4 items-end text-right" :
+    anchor === "tc" ? "top-0 left-1/2 -translate-x-1/2" :
+    anchor === "bc" ? "bottom-0 left-1/2 -translate-x-1/2" :
+    anchor === "tr" ? "top-0 right-0 items-end text-right" :
+    anchor === "bl" ? "bottom-0 left-0" :
+    anchor === "br" ? "bottom-0 right-0 items-end text-right" :
     "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2";
 
   const sumPosStyle: React.CSSProperties | undefined = hasFreePos
