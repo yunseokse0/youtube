@@ -413,6 +413,23 @@ export default function AdminPage() {
       setCopiedId(id); setTimeout(() => setCopiedId(null), 1500);
     } catch {}
   };
+  const buildEmergencySnapshotUrl = (p: OverlayPreset): string => {
+    if (typeof window === "undefined") return "";
+    const base = `${window.location.origin}/overlay`;
+    const snapObj = {
+      members: state.members.map(m => ({ id: m.id, name: m.name, account: m.account, toon: m.toon, goal: m.goal, role: m.role, operating: m.operating })),
+      donors: [],
+      forbiddenWords: state.forbiddenWords || [],
+      updatedAt: Date.now(),
+    };
+    const json = JSON.stringify(snapObj);
+    const b64 = btoa(encodeURIComponent(json));
+    const q = new URLSearchParams();
+    q.set("p", p.id);
+    q.set("u", user?.id || "finalent");
+    q.set("snap", b64);
+    return `${base}?${q.toString()}`;
+  };
 
   const persistState = (s: AppState) => {
     lastLocalPersistAtRef.current = Date.now();
@@ -1722,6 +1739,16 @@ export default function AdminPage() {
                             <div className="flex items-center gap-2">
                               <input className="flex-1 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 font-mono text-xs" readOnly value={url} />
                               <button className={`px-2 py-1 rounded text-xs whitespace-nowrap ${copiedId === p.id ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`} onClick={() => copyUrl(url, p.id)}>{copiedId === p.id ? "복사됨!" : "URL 복사"}</button>
+                              <button
+                                className="px-2 py-1 rounded bg-amber-700 hover:bg-amber-600 text-xs whitespace-nowrap"
+                                onClick={() => {
+                                  const snapUrl = buildEmergencySnapshotUrl(p);
+                                  copyUrl(snapUrl, p.id);
+                                }}
+                                title="서버 연결 장애 시 멤버/금액 스냅샷을 URL에 포함해 바로 표시"
+                              >
+                                긴급 링크(오프라인)
+                              </button>
                             </div>
                           </div>
 

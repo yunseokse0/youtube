@@ -7,6 +7,19 @@ import { useFlip } from "@/lib/flip";
 import MissionBoard from "@/components/MissionBoard";
 import { useSSEConnection } from "@/lib/sse-client";
 
+function tryDecodeSnapshot(str: string | null): AppState | null {
+  if (!str) return null;
+  try {
+    const json = decodeURIComponent(atob(str));
+    const obj = JSON.parse(json);
+    if (obj && typeof obj === "object" && Array.isArray(obj.members)) {
+      const now = Date.now();
+      return { ...defaultState(), ...obj, updatedAt: obj.updatedAt || now };
+    }
+  } catch {}
+  return null;
+}
+
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
   const [state, setState] = useState<AppState | null>(null);
   const lastUpdatedRef = useRef(0);
@@ -939,7 +952,10 @@ function OverlayInner() {
   const rawSp = useSearchParams();
   const rawUserId = (rawSp.get("u") || "").trim();
   const userId = rawUserId || "finalent";
-  const { state: s, ready } = useRemoteState(userId);
+  const snap = tryDecodeSnapshot(rawSp.get("snap"));
+  const { state: remoteState, ready: remoteReady } = useRemoteState(userId);
+  const s = snap || remoteState;
+  const ready = !!snap || remoteReady;
   const [localPresets, setLocalPresets] = useState<OverlayPresetLike[]>([]);
   const readLocalPresets = () => {
     if (typeof window === "undefined") return;
