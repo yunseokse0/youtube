@@ -339,7 +339,7 @@ export default function AdminPage() {
   const buildPreviewOverlayUrl = (p: OverlayPreset): string => {
     const url = buildOverlayUrl(p);
     const u = new URL(url);
-    u.searchParams.set("demo", "true");
+    u.searchParams.set("previewGuide", "true");
     return u.toString();
   };
   const copyUrl = async (url: string, id: string) => {
@@ -1260,7 +1260,6 @@ export default function AdminPage() {
                                     if (typeof window === "undefined") return;
                                     const base = buildOverlayUrl({ ...p, ...patch });
                                     const u = new URL(base);
-                                    u.searchParams.set("demo", "true");
                                     if (patch.tableOnly) u.searchParams.set("tableOnly", "true");
                                     if (patch.theme) u.searchParams.set("theme", patch.theme);
                                     if (patch.showMembers !== undefined) u.searchParams.set("showMembers", String(patch.showMembers));

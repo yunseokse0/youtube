@@ -71,7 +71,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       window.clearInterval(timer);
       window.removeEventListener("storage", onStorage);
     };
-  }, []);
+  }, [userId]);
 
   return { state, ready: state !== null };
 }
