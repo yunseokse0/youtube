@@ -1154,10 +1154,15 @@ function OverlayInner() {
   const BASE_H = isVertical ? 1920 : 1080;
   const renderW = sp.get("renderWidth") ? parseInt(sp.get("renderWidth")!, 10) : null;
   const renderH = sp.get("renderHeight") ? parseInt(sp.get("renderHeight")!, 10) : null;
-  const useRenderDims = (sp.get("previewGuide") === "true") && Number.isFinite(renderW) && Number.isFinite(renderH) && renderW! > 0 && renderH! > 0;
+  const isPreviewGuide = sp.get("previewGuide") === "true";
+  const useRenderDims = isPreviewGuide && Number.isFinite(renderW) && Number.isFinite(renderH) && renderW! > 0 && renderH! > 0;
   const [viewportScale, setViewportScale] = useState(1);
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!isPreviewGuide) {
+      setViewportScale(1);
+      return;
+    }
     const update = () => {
       const w = useRenderDims ? renderW! : window.innerWidth;
       const h = useRenderDims ? renderH! : window.innerHeight;
@@ -1170,7 +1175,7 @@ function OverlayInner() {
       return () => window.removeEventListener("resize", update);
     }
     return () => {};
-  }, [useRenderDims, renderW, renderH, BASE_W, BASE_H]);
+  }, [isPreviewGuide, useRenderDims, renderW, renderH, BASE_W, BASE_H]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoMemberSize, setAutoMemberSize] = useState(memberSize);
