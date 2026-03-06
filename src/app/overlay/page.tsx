@@ -1187,18 +1187,27 @@ function OverlayInner() {
   const renderW = sp.get("renderWidth") ? parseInt(sp.get("renderWidth")!, 10) : null;
   const renderH = sp.get("renderHeight") ? parseInt(sp.get("renderHeight")!, 10) : null;
   const isPreviewGuide = sp.get("previewGuide") === "true";
+  const autoFit = (sp.get("autoFit") || "none").toLowerCase() as "none" | "width" | "height" | "contain" | "cover";
   const useRenderDims = isPreviewGuide && Number.isFinite(renderW) && Number.isFinite(renderH) && renderW! > 0 && renderH! > 0;
   const [viewportScale, setViewportScale] = useState(1);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!isPreviewGuide) {
-      setViewportScale(1);
-      return;
-    }
+    const enableAuto = isPreviewGuide || autoFit !== "none";
+    if (!enableAuto) { setViewportScale(1); return; }
     const update = () => {
       const w = useRenderDims ? renderW! : window.innerWidth;
       const h = useRenderDims ? renderH! : window.innerHeight;
-      let s = Math.max(0.1, Math.min(w / BASE_W, h / BASE_H));
+      const sx = w / BASE_W;
+      const sy = h / BASE_H;
+      let s = 1;
+      switch (autoFit) {
+        case "width": s = sx; break;
+        case "height": s = sy; break;
+        case "cover": s = Math.max(sx, sy); break;
+        case "contain": s = Math.min(sx, sy); break;
+        default: s = Math.min(sx, sy); break; // preview guide 기본
+      }
+      s = Math.max(0.1, s);
       setViewportScale(s);
     };
     update();
@@ -1207,7 +1216,7 @@ function OverlayInner() {
       return () => window.removeEventListener("resize", update);
     }
     return () => {};
-  }, [isPreviewGuide, useRenderDims, renderW, renderH, BASE_W, BASE_H]);
+  }, [isPreviewGuide, autoFit, useRenderDims, renderW, renderH, BASE_W, BASE_H]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoMemberSize, setAutoMemberSize] = useState(memberSize);

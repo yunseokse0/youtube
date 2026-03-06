@@ -19,6 +19,7 @@ export type OverlayPresetLike = {
   tableMarginRight?: string;
   tableMarginBottom?: string;
   tableMarginLeft?: string;
+  autoFit?: "none" | "width" | "height" | "contain" | "cover";
   sumAnchor?: string;
   sumX?: string;
   sumY?: string;
@@ -105,6 +106,7 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.tableMarginRight && preset.tableMarginRight.trim()) q.set("tableMarginRight", preset.tableMarginRight.trim());
   if (preset.tableMarginBottom && preset.tableMarginBottom.trim()) q.set("tableMarginBottom", preset.tableMarginBottom.trim());
   if (preset.tableMarginLeft && preset.tableMarginLeft.trim()) q.set("tableMarginLeft", preset.tableMarginLeft.trim());
+  if (preset.autoFit && preset.autoFit !== "none") q.set("autoFit", preset.autoFit);
   q.set("theme", preset.theme || "default");
   q.set("showMembers", String(preset.showMembers ?? true));
   q.set("showTotal", String(preset.showTotal ?? true));

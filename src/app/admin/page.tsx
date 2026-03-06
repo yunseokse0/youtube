@@ -72,7 +72,7 @@ export default function AdminPage() {
   const [memberRatioInputs, setMemberRatioInputs] = useState<Record<string, { account: string; toon: string }>>({});
   type OverlayPreset = {
     id: string; name: string; scale: string; memberSize: string; totalSize: string;
-    dense: boolean; anchor: string; tableFree?: boolean; tableX?: string; tableY?: string; autoFont?: boolean; compact?: boolean; tight?: boolean; lockWidth?: boolean; nameGrow?: boolean; nameCh?: string; tableMarginTop?: string; tableMarginRight?: string; tableMarginBottom?: string; tableMarginLeft?: string; sumAnchor: string; sumFree: boolean; sumX: string; sumY: string;
+    dense: boolean; anchor: string; tableFree?: boolean; tableX?: string; tableY?: string; autoFont?: boolean; compact?: boolean; tight?: boolean; lockWidth?: boolean; nameGrow?: boolean; nameCh?: string; tableMarginTop?: string; tableMarginRight?: string; tableMarginBottom?: string; tableMarginLeft?: string; autoFit?: "none" | "width" | "height" | "contain" | "cover"; sumAnchor: string; sumFree: boolean; sumX: string; sumY: string;
     theme: string;
     membersTheme?: string;
     totalTheme?: string;
@@ -1358,6 +1358,18 @@ export default function AdminPage() {
                               <label className="text-xs text-neutral-400">줄 간격</label>
                               <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={String(p.dense)} onChange={(e) => updatePreset(p.id, { dense: e.target.value === "true" })}>
                                 <option value="true">촘촘</option><option value="false">보통</option>
+                              </select>
+                              <label className="text-xs text-neutral-400">Prism 맞춤</label>
+                              <select
+                                className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                value={p.autoFit || "none"}
+                                onChange={(e) => updatePreset(p.id, { autoFit: e.target.value as any })}
+                              >
+                                <option value="none">사용 안 함</option>
+                                <option value="width">가로 맞춤</option>
+                                <option value="height">세로 맞춤</option>
+                                <option value="contain">화면 맞춤(여백)</option>
+                                <option value="cover">꽉 채움(자름)</option>
                               </select>
                               <label className="text-xs text-neutral-400">자동 글자 크기</label>
                               <button className={`px-2 py-0.5 rounded border text-xs ${p.autoFont ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { autoFont: !p.autoFont })}>
