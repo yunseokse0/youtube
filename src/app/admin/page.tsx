@@ -97,6 +97,7 @@ export default function AdminPage() {
     showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
     confettiMilestone?: string;
     tableBgOpacity?: string;
+    vertical?: boolean;
   };
   const PRESET_STORAGE_KEY = "excel-broadcast-overlay-presets";
   const SETTLEMENT_OPTIONS_KEY = "excel-broadcast-settlement-options-v1";
@@ -359,7 +360,7 @@ export default function AdminPage() {
     const url = buildOverlayUrl(p);
     const u = new URL(url);
     u.searchParams.set("previewGuide", "true");
-    const isVertical = u.searchParams.get("vertical") === "true" || p.vertical;
+    const isVertical = u.searchParams.get("vertical") === "true" || !!p.vertical;
     u.searchParams.set("renderWidth", isVertical ? "1080" : "1920");
     u.searchParams.set("renderHeight", isVertical ? "1920" : "1080");
     return u.toString();
