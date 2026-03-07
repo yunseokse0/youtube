@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { SettlementDeleteLog, SettlementRecord, deleteSettlementRecordAndSync, loadSettlementDeleteLogs, loadSettlementRecordsPreferApi } from "@/lib/settlement";
+import { SettlementDeleteLog, SettlementRecord, deleteSettlementRecordAndSync, loadSettlementDeleteLogs, loadSettlementRecordsPreferApi, normalizeSettlementRecords, saveSettlementRecords, saveSettlementRecordsToApi } from "@/lib/settlement";
 import { loadDailyLog, loadDailyLogFromApi, Donor } from "@/lib/state";
+import { downloadBlobFile } from "@/lib/download";
 
 function formatMan( n: number ): string {
   if (n >= 1_0000_0000) return `${(n / 1_0000_0000).toFixed(1)}억`;
@@ -22,6 +23,8 @@ export default function SettlementsPage() {
   const [dateQuery, setDateQuery] = useState("");
   const [memberQuery, setMemberQuery] = useState("");
   const [selectedForGraph, setSelectedForGraph] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const fileInputId = "settlement-import-json";
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -52,6 +55,37 @@ export default function SettlementsPage() {
           .catch(() => setDailyLog(loadDailyLog(u.id)));
       });
   }, [router]);
+
+  const onExportJson = () => {
+    try {
+      const payload = JSON.stringify(records, null, 2);
+      const blob = new Blob([payload], { type: "application/json;charset=utf-8" });
+      downloadBlobFile(`settlements-backup-${new Date().toISOString().slice(0,10)}.json`, blob);
+    } catch {}
+  };
+
+  const onImportJsonFile = async (file: File) => {
+    if (!user) return;
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const normalized = normalizeSettlementRecords(Array.isArray(parsed) ? (parsed as SettlementRecord[]) : []);
+      saveSettlementRecords(normalized, user.id);
+      setRecords(normalized);
+      await saveSettlementRecordsToApi(normalized, user.id);
+      alert(`JSON 복구 완료: ${normalized.length}개 항목`);
+    } catch {
+      alert("JSON 파싱 실패 또는 형식 오류");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const onImportClick = () => {
+    const input = document.getElementById(fileInputId) as HTMLInputElement | null;
+    input?.click();
+  };
 
   const onDeleteRecord = async (recordId: string) => {
     const target = records.find((r) => r.id === recordId);
@@ -195,10 +229,38 @@ export default function SettlementsPage() {
 
   return (
     <main className="min-h-screen p-4 md:p-8">
+      <input
+        id={fileInputId}
+        type="file"
+        accept="application/json"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onImportJsonFile(f);
+          e.currentTarget.value = "";
+        }}
+      />
       <div className="max-w-5xl mx-auto space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-2xl font-bold">정산 기록</h1>
-          <Link className="text-sm underline text-neutral-300" href="/admin">관리자</Link>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onExportJson}
+              className="px-3 py-1.5 rounded border border-white/10 bg-neutral-800 hover:bg-neutral-700 text-sm"
+              title="모든 정산 기록을 JSON으로 백업"
+            >
+              JSON 백업
+            </button>
+            <button
+              onClick={onImportClick}
+              disabled={importing}
+              className="px-3 py-1.5 rounded border border-white/10 bg-neutral-800 hover:bg-neutral-700 text-sm disabled:opacity-60"
+              title="JSON 파일로 정산 기록 복구"
+            >
+              {importing ? "복구 중…" : "JSON 복구"}
+            </button>
+            <Link className="text-sm underline text-neutral-300" href="/admin">관리자</Link>
+          </div>
         </div>
         <div className="text-sm text-neutral-400">최대 3년치 정산 기록을 보관합니다.</div>
         <div className="rounded border border-white/10 bg-neutral-900/40 p-3">
@@ -559,4 +621,3 @@ export default function SettlementsPage() {
     </main>
   );
 }
-
