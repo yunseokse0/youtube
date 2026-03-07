@@ -6,6 +6,9 @@ import { AUTH_COOKIE } from "@/lib/auth";
 const STORAGE_KEY_BASE = "excel-broadcast-settlement-records-v1";
 const STORAGE_KEY_LEGACY = "excel-broadcast-settlement-records-v1";
 
+// In-memory fallback for environments without Upstash (per-instance)
+const memoryRecords: Record<string, unknown[]> = {};
+
 function getUserId(req: Request): string | null {
   const url = new URL(req.url);
   const fromUrl = url.searchParams.get("user");
@@ -84,6 +87,9 @@ export async function GET(req: Request) {
       if (Array.isArray(legacy) && legacy.length > 0) {
         await upstashSet(recordsKey(userId), legacy);
         records = legacy;
+      } else {
+        // Fallback: use in-memory store
+        records = Array.isArray(memoryRecords[userId]) ? memoryRecords[userId] : [];
       }
     }
     return new Response(JSON.stringify(Array.isArray(records) ? records : []), {
@@ -110,7 +116,13 @@ export async function POST(req: Request) {
       });
     }
     const body = await req.json();
-    const ok = await upstashSet(recordsKey(userId), Array.isArray(body) ? body : []);
+    const payload = Array.isArray(body) ? body : [];
+    let ok = await upstashSet(recordsKey(userId), payload);
+    if (!ok) {
+      // Fallback to memory store when Upstash is unavailable
+      memoryRecords[userId] = payload;
+      ok = true;
+    }
     return new Response(JSON.stringify({ ok }), {
       headers: {
         "Content-Type": "application/json",

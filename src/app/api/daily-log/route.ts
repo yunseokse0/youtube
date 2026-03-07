@@ -7,6 +7,9 @@ import type { DailyLogEntry } from "@/lib/state";
 const STORAGE_KEY_BASE = "excel-broadcast-daily-log-v1";
 const STORAGE_KEY_LEGACY = "excel-broadcast-daily-log-v1";
 
+// In-memory fallback when Upstash is unavailable (per-instance)
+const memoryDailyLog: Record<string, Record<string, DailyLogEntry[]>> = {};
+
 function getUserId(req: Request): string | null {
   const url = new URL(req.url);
   const fromUrl = url.searchParams.get("user");
@@ -91,6 +94,8 @@ export async function GET(req: Request) {
       if (legacy && typeof legacy === "object" && Object.keys(legacy).length > 0) {
         await upstashSet(logKey(userId), legacy);
         data = legacy;
+      } else {
+        data = memoryDailyLog[userId] || {};
       }
     }
     return new Response(
@@ -127,7 +132,11 @@ export async function POST(req: Request) {
         status: 400,
       });
     }
-    const ok = await upstashSet(logKey(userId), body);
+    let ok = await upstashSet(logKey(userId), body);
+    if (!ok) {
+      memoryDailyLog[userId] = body;
+      ok = true;
+    }
     return new Response(JSON.stringify({ ok }), {
       headers: {
         "Content-Type": "application/json",
