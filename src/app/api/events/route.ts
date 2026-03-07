@@ -13,6 +13,12 @@ export async function GET(request: NextRequest) {
       clients.push(controller);
       logger.debug('새로운 SSE 클라이언트 연결', { totalClients: clients.length });
       
+      // 연결 직후 재시도 지시 및 초기 keepalive 전송
+      try {
+        controller.enqueue(`retry: 5000\n\n`);
+        controller.enqueue(`event: hello\ndata: "ok"\n\n`);
+      } catch {}
+
       // 연결 유지를 위한 ping (더 자주 연결 상태 확인)
       const interval = setInterval(() => {
         try {
@@ -36,9 +42,10 @@ export async function GET(request: NextRequest) {
 
   return new Response(stream, {
     headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
     },
   });
 }
