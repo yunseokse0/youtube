@@ -122,6 +122,7 @@ export default function AdminPage() {
   const defaultPreset = (name: string, overrides: Partial<OverlayPreset> = {}): OverlayPreset => ({
     id: `ov_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name,
     scale: "0.75", memberSize: "18", totalSize: "40", dense: true, anchor: "cc",
+    layout: "center-fixed", zoomMode: "invert",
     tableFree: false, tableX: "50", tableY: "50",
     sumAnchor: "bc", sumFree: false, sumX: "50", sumY: "90", theme: "default",
     showMembers: true, showTotal: true, showGoal: false, goal: "0", goalLabel: "목표 금액", showPersonalGoal: false, personalGoalTheme: "goalClassic", personalGoalAnchor: "tl", personalGoalLimit: "3", personalGoalFree: false, personalGoalX: "78", personalGoalY: "82",
@@ -2151,7 +2152,7 @@ function VerticalPreview({ url }: { url: string }) {
   const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
   const [showFrame, setShowFrame] = useState(true);
   const [showGuides, setShowGuides] = useState(true);
-  const [w, h] = orientation === "portrait" ? [360, 640] : [640, 360];
+  const [w, h] = orientation === "portrait" ? [540, 960] : [960, 540];
   const previewUrl = useMemo(() => {
     try {
       const u = new URL(url);
@@ -2189,18 +2190,17 @@ function VerticalPreview({ url }: { url: string }) {
           </button>
         </div>
       </div>
-      <div
-        className="relative mx-auto rounded-xl overflow-hidden shrink-0"
-        style={{
-          width: "100%",
-          maxWidth: w,
-          maxHeight: "70vh",
-          aspectRatio: `${w} / ${h}`,
-          border: "1px solid rgba(255,255,255,0.1)",
-          background: "#0b0b0b",
-          boxShadow: showFrame ? "0 6px 24px rgba(0,0,0,0.8), inset 0 0 0 1px rgba(255,255,255,0.06), inset 0 8px 24px rgba(255,255,255,0.04)" : "none",
-        }}
-      >
+      <div className="relative mx-auto rounded-xl overflow-hidden shrink-0"
+           style={{
+             width: "min(70vw, 820px)",
+             maxWidth: "100%",
+             height: "auto",
+             maxHeight: "78vh",
+             aspectRatio: `${w} / ${h}`,
+             border: "1px solid rgba(255,255,255,0.1)",
+             background: "#0b0b0b",
+             boxShadow: showFrame ? "0 6px 24px rgba(0,0,0,0.8), inset 0 0 0 1px rgba(255,255,255,0.06), inset 0 8px 24px rgba(255,255,255,0.04)" : "none",
+           }}>
         <iframe key={previewUrl} src={previewUrl} title="vertical-preview" className="absolute inset-0 w-full h-full" style={{ background: "transparent" }} scrolling="no" />
         {showGuides && (
           <>

@@ -1044,7 +1044,7 @@ function OverlayInner() {
   const memberSize = Math.max(10, Math.min(80, parseInt(sp.get("memberSize") || (compact ? "14" : (isVertical ? "36" : "18")), 10)));
   const totalSize = Math.max(14, Math.min(160, parseInt(sp.get("totalSize") || (isVertical ? "44" : "20"), 10)));
   const dense = (sp.get("dense") || "false").toLowerCase() === "true";
-  const layoutMode = (sp.get("layout") || "").toLowerCase();
+  const layoutMode = (sp.get("layout") || "center-fixed").toLowerCase();
   const centerFixed = layoutMode === "center-fixed" || layoutMode === "center";
   const anchor = centerFixed ? "cc" : (sp.get("anchor") || "cc").toLowerCase();
   const tableFree = (sp.get("tableFree") || "false").toLowerCase() === "true";
@@ -1190,7 +1190,7 @@ function OverlayInner() {
   const renderH = sp.get("renderHeight") ? parseInt(sp.get("renderHeight")!, 10) : null;
   const isPreviewGuide = sp.get("previewGuide") === "true";
   const autoFit = (sp.get("autoFit") || "none").toLowerCase() as "none" | "width" | "height" | "contain" | "cover";
-  const zoomMode = ((sp.get("zoomMode") || "follow").toLowerCase() as "follow" | "invert" | "neutral");
+  const zoomMode = ((sp.get("zoomMode") || "invert").toLowerCase() as "follow" | "invert" | "neutral");
   const fitPin = centerFixed ? "cc" : ((sp.get("fitPin") || "cc").toLowerCase() as "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr");
   const showGuide = (sp.get("guide") || "false").toLowerCase() === "true";
   const boxMode = (sp.get("box") || "full").toLowerCase() as "full" | "tight";
@@ -1586,7 +1586,11 @@ function OverlayInner() {
       fitPin === "cl" ? "left center" :
       fitPin === "cr" ? "right center" :
       "center center";
-    const scaleStyleTag = (
+    const scaleStyleTag = centerFixed ? (
+      <style dangerouslySetInnerHTML={{ __html: `
+        .overlay-route { transform: none !important; -webkit-transform: none !important; transform-origin: center center !important; }
+      ` }} />
+    ) : (
       <style dangerouslySetInnerHTML={{ __html: `
         .overlay-route { transform: scale(${effectiveScale}) !important; -webkit-transform: scale(${effectiveScale}) !important; transform-origin: ${origin} !important; }
       ` }} />
