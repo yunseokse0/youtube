@@ -1044,7 +1044,9 @@ function OverlayInner() {
   const memberSize = Math.max(10, Math.min(80, parseInt(sp.get("memberSize") || (compact ? "14" : (isVertical ? "36" : "18")), 10)));
   const totalSize = Math.max(14, Math.min(160, parseInt(sp.get("totalSize") || (isVertical ? "44" : "20"), 10)));
   const dense = (sp.get("dense") || "false").toLowerCase() === "true";
-  const anchor = (sp.get("anchor") || "cc").toLowerCase();
+  const layoutMode = (sp.get("layout") || "").toLowerCase();
+  const centerFixed = layoutMode === "center-fixed" || layoutMode === "center";
+  const anchor = centerFixed ? "cc" : (sp.get("anchor") || "cc").toLowerCase();
   const tableFree = (sp.get("tableFree") || "false").toLowerCase() === "true";
   const tableXParam = sp.get("tableX");
   const tableYParam = sp.get("tableY");
@@ -1188,7 +1190,7 @@ function OverlayInner() {
   const renderH = sp.get("renderHeight") ? parseInt(sp.get("renderHeight")!, 10) : null;
   const isPreviewGuide = sp.get("previewGuide") === "true";
   const autoFit = (sp.get("autoFit") || "none").toLowerCase() as "none" | "width" | "height" | "contain" | "cover";
-  const fitPin = (sp.get("fitPin") || "cc").toLowerCase() as "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr";
+  const fitPin = centerFixed ? "cc" : ((sp.get("fitPin") || "cc").toLowerCase() as "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr");
   const showGuide = (sp.get("guide") || "false").toLowerCase() === "true";
   const boxMode = (sp.get("box") || "full").toLowerCase() as "full" | "tight";
   const noCrop = (sp.get("noCrop") || "true").toLowerCase() !== "false";
@@ -1509,15 +1511,17 @@ function OverlayInner() {
     const excelGridCols = hasRoleColumn
       ? ["3ch", `${roleCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`]
       : ["3ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`];
-    let effectiveScale = viewportScale * scale;
+    let effectiveScale = centerFixed ? 1 : (viewportScale * scale);
     if (noCrop) {
       effectiveScale = Math.min(effectiveScale, containLimitScale);
     }
     const justify =
+      centerFixed ? "center" :
       fitPin === "tl" || fitPin === "cl" || fitPin === "bl" ? "flex-start" :
       fitPin === "tr" || fitPin === "cr" || fitPin === "br" ? "flex-end" :
       "center";
     const align =
+      centerFixed ? "center" :
       fitPin === "tl" || fitPin === "tc" || fitPin === "tr" ? "flex-start" :
       fitPin === "bl" || fitPin === "bc" || fitPin === "br" ? "flex-end" :
       "center";
@@ -1535,8 +1539,10 @@ function OverlayInner() {
     };
     const viewportInnerStyle: React.CSSProperties = {
       position: "relative",
-      width: FIT_W,
-      height: FIT_H,
+      width: centerFixed ? BASE_W : FIT_W,
+      height: centerFixed ? BASE_H : FIT_H,
+      maxWidth: centerFixed ? "95vw" : undefined,
+      maxHeight: centerFixed ? "95vh" : undefined,
       flexShrink: 0,
     };
     const origin =
@@ -1554,6 +1560,13 @@ function OverlayInner() {
         .overlay-route { transform: scale(${effectiveScale}) !important; -webkit-transform: scale(${effectiveScale}) !important; transform-origin: ${origin} !important; }
       ` }} />
     );
+    const centerFixedStyle = centerFixed ? (
+      <style dangerouslySetInnerHTML={{ __html: `
+        html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
+        .overlay-center-fixed .overlay-row td { font-size: 24px !important; min-height: 60px !important; line-height: 60px !important; padding: 10px 12px !important; }
+        .overlay-center-fixed table { background: rgba(0,0,0,0.5) !important; }
+      ` }} />
+    ) : null;
     const colorOverrideStyle = (accountColor || toonColor) ? (
       <style dangerouslySetInnerHTML={{ __html: [
         accountColor && `.overlay-root .overlay-account-cell { color: ${accountColor} !important; }`,
@@ -1561,8 +1574,9 @@ function OverlayInner() {
       ].filter(Boolean).join("\n") }} />
     ) : null;
     return (
-      <div style={viewportWrapperStyle} className="overlay-root">
+      <div style={viewportWrapperStyle} className={`overlay-root ${centerFixed ? "overlay-center-fixed" : ""}`}>
         {scaleStyleTag}
+        {centerFixedStyle}
         {colorOverrideStyle}
         {showGuide && (
           <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 9998 }}>
