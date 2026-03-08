@@ -5,6 +5,7 @@ export type OverlayPresetLike = {
   memberSize?: string;
   totalSize?: string;
   layout?: "center-fixed" | "center";
+  zoomMode?: "follow" | "invert" | "neutral";
   dense?: boolean;
   anchor?: string;
   tableFree?: boolean;
@@ -93,6 +94,7 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   q.set("memberSize", preset.memberSize || "18");
   q.set("totalSize", preset.totalSize || "40");
   if (preset.layout === "center-fixed" || preset.layout === "center") q.set("layout", "center-fixed");
+  if (preset.zoomMode && preset.zoomMode !== "follow") q.set("zoomMode", preset.zoomMode);
   q.set("dense", String(preset.dense ?? true));
   if (preset.tableFree) {
     q.set("tableFree", "true");

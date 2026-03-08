@@ -1190,6 +1190,7 @@ function OverlayInner() {
   const renderH = sp.get("renderHeight") ? parseInt(sp.get("renderHeight")!, 10) : null;
   const isPreviewGuide = sp.get("previewGuide") === "true";
   const autoFit = (sp.get("autoFit") || "none").toLowerCase() as "none" | "width" | "height" | "contain" | "cover";
+  const zoomMode = ((sp.get("zoomMode") || "follow").toLowerCase() as "follow" | "invert" | "neutral");
   const fitPin = centerFixed ? "cc" : ((sp.get("fitPin") || "cc").toLowerCase() as "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr");
   const showGuide = (sp.get("guide") || "false").toLowerCase() === "true";
   const boxMode = (sp.get("box") || "full").toLowerCase() as "full" | "tight";
@@ -1197,6 +1198,36 @@ function OverlayInner() {
   const useRenderDims = isPreviewGuide && Number.isFinite(renderW) && Number.isFinite(renderH) && renderW! > 0 && renderH! > 0;
   const [viewportScale, setViewportScale] = useState(1);
   const [containLimitScale, setContainLimitScale] = useState(1);
+  const baseViewportRef = useRef<{ w: number; h: number } | null>(null);
+  const [centerZoomScale, setCenterZoomScale] = useState(1);
+  useEffect(() => {
+    if (!centerFixed) { setCenterZoomScale(1); return; }
+    if (typeof window === "undefined") return;
+    if (!baseViewportRef.current) {
+      baseViewportRef.current = { w: window.innerWidth, h: window.innerHeight };
+    }
+    const update = () => {
+      const vv: any = (window as any).visualViewport;
+      let s = 1;
+      if (vv && typeof vv.scale === "number") {
+        s = vv.scale || 1;
+      } else {
+        const b = baseViewportRef.current!;
+        const sx = window.innerWidth / Math.max(1, b.w);
+        const sy = window.innerHeight / Math.max(1, b.h);
+        s = Math.min(sx, sy);
+      }
+      setCenterZoomScale(Math.max(0.1, Math.min(8, s)));
+    };
+    update();
+    const vv: any = (window as any).visualViewport;
+    vv?.addEventListener?.("resize", update);
+    window.addEventListener("resize", update);
+    return () => {
+      vv?.removeEventListener?.("resize", update);
+      window.removeEventListener("resize", update);
+    };
+  }, [centerFixed]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const enableAuto = isPreviewGuide || autoFit !== "none";
@@ -1511,7 +1542,9 @@ function OverlayInner() {
     const excelGridCols = hasRoleColumn
       ? ["3ch", `${roleCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`]
       : ["3ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`];
-    let effectiveScale = centerFixed ? 1 : (viewportScale * scale);
+    let effectiveScale = centerFixed
+      ? (zoomMode === "neutral" ? 1 : (zoomMode === "invert" ? (1 / centerZoomScale) : centerZoomScale))
+      : (viewportScale * scale);
     if (noCrop) {
       effectiveScale = Math.min(effectiveScale, containLimitScale);
     }
@@ -1543,7 +1576,7 @@ function OverlayInner() {
       height: centerFixed ? BASE_H : FIT_H,
       flexShrink: 0,
     };
-    const origin =
+    const origin = centerFixed ? "center center" :
       fitPin === "tl" ? "left top" :
       fitPin === "tr" ? "right top" :
       fitPin === "bl" ? "left bottom" :

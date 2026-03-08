@@ -73,6 +73,7 @@ export default function AdminPage() {
   type OverlayPreset = {
     id: string; name: string; scale: string; memberSize: string; totalSize: string;
     layout?: "center-fixed" | "center";
+    zoomMode?: "follow" | "invert" | "neutral";
     dense: boolean; anchor: string; tableFree?: boolean; tableX?: string; tableY?: string; autoFont?: boolean; compact?: boolean; tight?: boolean; lockWidth?: boolean; nameGrow?: boolean; nameCh?: string; tableMarginTop?: string; tableMarginRight?: string; tableMarginBottom?: string; tableMarginLeft?: string; autoFit?: "none" | "width" | "height" | "contain" | "cover"; autoFitPin?: "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr"; box?: "full" | "tight"; noCrop?: boolean; sumAnchor: string; sumFree: boolean; sumX: string; sumY: string;
     theme: string;
     membersTheme?: string;
@@ -1302,6 +1303,16 @@ export default function AdminPage() {
                               >
                                 {p.layout === "center-fixed" ? "ON" : "OFF"}
                               </button>
+                              <label className="text-xs text-neutral-400">줌 반응</label>
+                              <select
+                                className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                value={p.zoomMode || "follow"}
+                                onChange={(e) => updatePreset(p.id, { zoomMode: e.target.value as any })}
+                              >
+                                <option value="follow">정상(확대=커짐)</option>
+                                <option value="invert">반전(확대=작아짐)</option>
+                                <option value="neutral">무시(크기 고정)</option>
+                              </select>
                               <label className={`text-xs ${p.tableFree ? "text-neutral-600" : "text-neutral-400"}`}>표 위치(앵커)</label>
                               <select
                                 className={`px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm ${(p.tableFree || p.layout === "center-fixed") ? "opacity-60 cursor-not-allowed" : ""}`}
