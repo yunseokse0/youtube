@@ -1541,8 +1541,6 @@ function OverlayInner() {
       position: "relative",
       width: centerFixed ? BASE_W : FIT_W,
       height: centerFixed ? BASE_H : FIT_H,
-      maxWidth: centerFixed ? "95vw" : undefined,
-      maxHeight: centerFixed ? "95vh" : undefined,
       flexShrink: 0,
     };
     const origin =

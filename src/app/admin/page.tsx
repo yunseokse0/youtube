@@ -72,6 +72,7 @@ export default function AdminPage() {
   const [memberRatioInputs, setMemberRatioInputs] = useState<Record<string, { account: string; toon: string }>>({});
   type OverlayPreset = {
     id: string; name: string; scale: string; memberSize: string; totalSize: string;
+    layout?: "center-fixed" | "center";
     dense: boolean; anchor: string; tableFree?: boolean; tableX?: string; tableY?: string; autoFont?: boolean; compact?: boolean; tight?: boolean; lockWidth?: boolean; nameGrow?: boolean; nameCh?: string; tableMarginTop?: string; tableMarginRight?: string; tableMarginBottom?: string; tableMarginLeft?: string; autoFit?: "none" | "width" | "height" | "contain" | "cover"; autoFitPin?: "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr"; box?: "full" | "tight"; noCrop?: boolean; sumAnchor: string; sumFree: boolean; sumX: string; sumY: string;
     theme: string;
     membersTheme?: string;
@@ -1251,6 +1252,7 @@ export default function AdminPage() {
                     p.tableBgOpacity,
                     p.accountColor,
                     p.toonColor,
+                    p.layout || "",
                   ].join("|");
                   const previewUrl = `${previewBaseUrl}&pv=${encodeURIComponent(previewRev)}&_rev=${presetRev}`;
                   const isOpen = editingId === p.id;
@@ -1292,12 +1294,20 @@ export default function AdminPage() {
                                 <option value="full">전체(1920x1080/1080x1920)</option>
                                 <option value="tight">콘텐츠만(여백 제거)</option>
                               </select>
+                              <label className="text-xs text-neutral-400">중앙 고정 레이아웃</label>
+                              <button
+                                className={`px-2 py-0.5 rounded border text-xs ${p.layout === "center-fixed" ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`}
+                                onClick={() => updatePreset(p.id, { layout: p.layout === "center-fixed" ? undefined : "center-fixed" })}
+                                type="button"
+                              >
+                                {p.layout === "center-fixed" ? "ON" : "OFF"}
+                              </button>
                               <label className={`text-xs ${p.tableFree ? "text-neutral-600" : "text-neutral-400"}`}>표 위치(앵커)</label>
                               <select
-                                className={`px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm ${p.tableFree ? "opacity-60 cursor-not-allowed" : ""}`}
+                                className={`px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm ${(p.tableFree || p.layout === "center-fixed") ? "opacity-60 cursor-not-allowed" : ""}`}
                                 value={p.anchor || "cc"}
                                 onChange={(e) => updatePreset(p.id, { anchor: e.target.value })}
-                                disabled={!!p.tableFree}
+                                disabled={!!p.tableFree || p.layout === "center-fixed"}
                               >
                                 <option value="tl">상좌</option>
                                 <option value="tc">상중</option>
@@ -1412,9 +1422,10 @@ export default function AdminPage() {
                               </select>
                               <label className="text-xs text-neutral-400">Prism 맞춤</label>
                               <select
-                                className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                className={`px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm ${p.layout === "center-fixed" ? "opacity-60 cursor-not-allowed" : ""}`}
                                 value={p.autoFit || "none"}
                                 onChange={(e) => updatePreset(p.id, { autoFit: e.target.value as any })}
+                                disabled={p.layout === "center-fixed"}
                               >
                                 <option value="none">사용 안 함</option>
                                 <option value="width">가로 맞춤</option>
@@ -1424,9 +1435,10 @@ export default function AdminPage() {
                               </select>
                               <label className="text-xs text-neutral-400">맞춤 기준(핀)</label>
                               <select
-                                className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                className={`px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm ${p.layout === "center-fixed" ? "opacity-60 cursor-not-allowed" : ""}`}
                                 value={p.autoFitPin || "cc"}
                                 onChange={(e) => updatePreset(p.id, { autoFitPin: e.target.value as any })}
+                                disabled={p.layout === "center-fixed"}
                               >
                                 <option value="cc">중앙</option>
                                 <option value="tl">좌상</option>
