@@ -1050,7 +1050,7 @@ function OverlayInner() {
   const tableFree = (sp.get("tableFree") || "false").toLowerCase() === "true";
   const tableXParam = sp.get("tableX");
   const tableYParam = sp.get("tableY");
-  const hasTableFreePos = tableFree || (tableXParam !== null && tableYParam !== null);
+  const hasTableFreePos = centerFixed ? false : (tableFree || (tableXParam !== null && tableYParam !== null));
   const tableMarginTop = parseInt(sp.get("tableMarginTop") || "0", 10) || 0;
   const tableMarginRight = parseInt(sp.get("tableMarginRight") || "0", 10) || 0;
   const tableMarginBottom = parseInt(sp.get("tableMarginBottom") || "0", 10) || 0;
@@ -1058,7 +1058,7 @@ function OverlayInner() {
   const sumAnchor = (sp.get("sumAnchor") || "bc").toLowerCase();
   const sumXParam = sp.get("sumX");
   const sumYParam = sp.get("sumY");
-  const hasFreePos = sumXParam !== null && sumYParam !== null;
+  const hasFreePos = centerFixed ? false : (sumXParam !== null && sumYParam !== null);
   const sumX = hasFreePos ? parsePct(sumXParam, 50) : 0;
   const sumY = hasFreePos ? parsePct(sumYParam, 90) : 0;
   const themeId = (sp.get("theme") || "default") as ThemeId;
@@ -1096,7 +1096,7 @@ function OverlayInner() {
   const personalGoalFree = (sp.get("personalGoalFree") || "false").toLowerCase() === "true";
   const personalGoalXParam = sp.get("personalGoalX");
   const personalGoalYParam = sp.get("personalGoalY");
-  const hasPersonalGoalFreePos = personalGoalFree || (personalGoalXParam !== null && personalGoalYParam !== null);
+  const hasPersonalGoalFreePos = centerFixed ? false : (personalGoalFree || (personalGoalXParam !== null && personalGoalYParam !== null));
   const personalGoalX = hasPersonalGoalFreePos ? parsePct(personalGoalXParam, 78) : 0;
   const personalGoalY = hasPersonalGoalFreePos ? parsePct(personalGoalYParam, 82) : 0;
   const goalCurrentParam = sp.get("goalCurrent");
@@ -1107,7 +1107,7 @@ function OverlayInner() {
   const tickerWidth = Math.max(200, Math.min(1200, parseInt(sp.get("tickerWidth") || "600", 10)));
   const tickerXParam = sp.get("tickerX");
   const tickerYParam = sp.get("tickerY");
-  const hasTickerFreePos = tickerXParam !== null && tickerYParam !== null;
+  const hasTickerFreePos = centerFixed ? false : (tickerXParam !== null && tickerYParam !== null);
   const tickerX = hasTickerFreePos ? parsePct(tickerXParam, 50) : 0;
   const tickerY = hasTickerFreePos ? parsePct(tickerYParam, 86) : 0;
   const showMission = tableOnly ? false : (sp.get("showMission") === "true");
@@ -1230,7 +1230,7 @@ function OverlayInner() {
   }, [centerFixed]);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const enableAuto = isPreviewGuide || autoFit !== "none";
+    const enableAuto = ((isPreviewGuide && !centerFixed && !(tableFree || (tableXParam !== null && tableYParam !== null))) || autoFit !== "none");
     if (!enableAuto) { setViewportScale(1); return; }
     const update = () => {
       const w = useRenderDims ? renderW! : window.innerWidth;
@@ -1496,7 +1496,7 @@ function OverlayInner() {
         marginLeft: tableMarginLeft,
       };
   const listPosClass =
-    previewGuide || hasTableFreePos ? "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" :
+    centerFixed || previewGuide || hasTableFreePos ? "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" :
     anchor === "cc" || anchor === "center" ? "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" :
     anchor === "tc" ? "top-0 left-1/2 -translate-x-1/2" :
     anchor === "bc" ? "bottom-0 left-1/2 -translate-x-1/2" :
@@ -1542,7 +1542,7 @@ function OverlayInner() {
     const excelGridCols = hasRoleColumn
       ? ["3ch", `${roleCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`]
       : ["3ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`];
-    let effectiveScale = centerFixed
+    let effectiveScale = centerFixed || hasTableFreePos
       ? (zoomMode === "neutral" ? 1 : (zoomMode === "invert" ? (1 / centerZoomScale) : centerZoomScale))
       : (viewportScale * scale);
     if (noCrop) {
@@ -1586,7 +1586,7 @@ function OverlayInner() {
       fitPin === "cl" ? "left center" :
       fitPin === "cr" ? "right center" :
       "center center";
-    const scaleStyleTag = centerFixed ? (
+    const scaleStyleTag = (centerFixed || hasTableFreePos) ? (
       <style dangerouslySetInnerHTML={{ __html: `
         .overlay-route { transform: none !important; -webkit-transform: none !important; transform-origin: center center !important; }
       ` }} />
@@ -1595,6 +1595,9 @@ function OverlayInner() {
         .overlay-route { transform: scale(${effectiveScale}) !important; -webkit-transform: scale(${effectiveScale}) !important; transform-origin: ${origin} !important; }
       ` }} />
     );
+    const visualScale = centerFixed ? centerZoomScale : viewportScale;
+    const wrapSmall = visualScale <= 0.6;
+    const nameWrapCls = wrapSmall ? "whitespace-normal break-words" : "truncate";
     const centerFixedStyle = centerFixed ? (
       <style dangerouslySetInnerHTML={{ __html: `
         html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
@@ -1608,11 +1611,22 @@ function OverlayInner() {
         toonColor && `.overlay-root .overlay-toon-cell { color: ${toonColor} !important; }`,
       ].filter(Boolean).join("\n") }} />
     ) : null;
+    const numericNoWrapStyle = (
+      <style dangerouslySetInnerHTML={{ __html: `
+        .overlay-root .overlay-account-cell,
+        .overlay-root .overlay-toon-cell {
+          white-space: nowrap !important;
+          overflow: hidden !important;
+          text-overflow: clip !important;
+        }
+      ` }} />
+    );
     return (
       <div style={viewportWrapperStyle} className={`overlay-root ${centerFixed ? "overlay-center-fixed" : ""}`}>
         {scaleStyleTag}
         {centerFixedStyle}
         {colorOverrideStyle}
+        {numericNoWrapStyle}
         {showGuide && (
           <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 9998 }}>
             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: "rgba(0,255,200,0.4)" }} />
@@ -1663,7 +1677,7 @@ function OverlayInner() {
                           <td
                             className={effectiveRowCls}
                             style={{
-                              whiteSpace: "nowrap",
+                              whiteSpace: wrapSmall ? "normal" : "nowrap",
                               overflow: "hidden",
                               fontSize: (() => {
                                 const len = (m.role || "-").length;
@@ -1676,7 +1690,7 @@ function OverlayInner() {
                             {m.role || "-"}
                           </td>
                         )}
-                        <td className={`${effectiveRowCls} ${membersTheme.nameCls} truncate`}>{m.name}</td>
+                        <td className={`${effectiveRowCls} ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
                         <td className={`${effectiveRowCls} ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${effectiveRowCls} ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
                         <td className={`${effectiveRowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
@@ -1686,7 +1700,7 @@ function OverlayInner() {
                       <tr key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
                         <td className={`${effectiveRowCls} text-right`}>—</td>
                         {hasRoleColumn && <td className={effectiveRowCls}></td>}
-                        <td className={`${effectiveRowCls} ${membersTheme.nameCls} truncate`}>{m.name}</td>
+                        <td className={`${effectiveRowCls} ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
                         <td className={`${effectiveRowCls} ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${effectiveRowCls} ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
                         <td className={`${effectiveRowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
@@ -1729,7 +1743,7 @@ function OverlayInner() {
                           <td
                             className={membersTheme.rowCls}
                             style={{
-                              whiteSpace: "nowrap",
+                              whiteSpace: wrapSmall ? "normal" : "nowrap",
                               overflow: "hidden",
                               fontSize: (() => {
                                 const len = (m.role || "-").length;
@@ -1742,7 +1756,7 @@ function OverlayInner() {
                             {m.role || "-"}
                           </td>
                         )}
-                        <td className={`${membersTheme.rowCls} ${membersTheme.nameCls} truncate`}>{m.name}</td>
+                        <td className={`${membersTheme.rowCls} ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
                         <td className={`${membersTheme.rowCls} ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${membersTheme.rowCls} ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
                         <td className={`${membersTheme.rowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
@@ -1752,7 +1766,7 @@ function OverlayInner() {
                       <tr key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
                         <td className={`${membersTheme.rowCls} text-right`}>—</td>
                         {hasRoleColumn && <td className={membersTheme.rowCls}></td>}
-                        <td className={`${membersTheme.rowCls} ${membersTheme.nameCls} truncate`}>{m.name}</td>
+                        <td className={`${membersTheme.rowCls} ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
                         <td className={`${membersTheme.rowCls} ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${membersTheme.rowCls} ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
                         <td className={`${membersTheme.rowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>

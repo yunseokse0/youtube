@@ -1363,7 +1363,7 @@ export default function AdminPage() {
                                 ))}
                               </div>
                               <label className="text-xs text-neutral-400">표 자유 위치</label>
-                              <div className="flex items-center gap-2">
+                              <div className={`flex items-center gap-2 ${p.layout === "center-fixed" ? "opacity-60 pointer-events-none" : ""}`}>
                                 <button
                                   className={`px-2 py-0.5 rounded border text-xs ${p.tableFree ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`}
                                   onClick={() => updatePreset(p.id, { tableFree: !p.tableFree })}
