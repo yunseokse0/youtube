@@ -5,6 +5,7 @@ import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, fo
 import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
 import { useFlip } from "@/lib/flip";
 import MissionBoard from "@/components/MissionBoard";
+import MissionBoardSlot from "@/components/MissionBoardSlot";
 import { useSSEConnection } from "@/lib/sse-client";
 
 function tryDecodeSnapshot(str: string | null): AppState | null {
@@ -1393,6 +1394,44 @@ function OverlayInner() {
       ? String((activePreset as any).missionEffectHotOnly) === "true"
       : (sp.get("missionEffectHotOnly") === "true")
   );
+  const missionDisplayMode = (externalHost && (activePreset as any)?.missionDisplayMode)
+    ? String((activePreset as any).missionDisplayMode)
+    : ((sp.get("displayMode") || "horizontal") as "horizontal" | "vertical-slot");
+  const missionVisibleCount = Math.max(
+    1,
+    Math.min(
+      6,
+      parseInt(
+        (externalHost && (activePreset as any)?.missionVisibleCount)
+          ? String((activePreset as any).missionVisibleCount)
+          : (sp.get("visibleCount") || "3"),
+        10,
+      ),
+    ),
+  );
+  const missionSpeedSec = Math.max(
+    1,
+    Math.min(
+      120,
+      parseFloat(
+        (externalHost && (activePreset as any)?.missionSpeed)
+          ? String((activePreset as any).missionSpeed)
+          : (sp.get("missionSpeed") || (missionDisplayMode === "horizontal" ? "25" : "2")),
+      ),
+    ),
+  );
+  const missionGapSizePx = Math.max(
+    0,
+    Math.min(
+      48,
+      parseInt(
+        (externalHost && (activePreset as any)?.missionGapSize)
+          ? String((activePreset as any).missionGapSize)
+          : (sp.get("gapSize") || "8"),
+        10,
+      ),
+    ),
+  );
   useEffect(() => {
     if (typeof window === "undefined") return;
     const enableAuto = ((isPreviewGuide && !centerFixed && !(tableFree || (tableXParam !== null && tableYParam !== null))) || autoFit !== "none");
@@ -1988,18 +2027,33 @@ function OverlayInner() {
         {showMission && (ready || isPreviewGuide) && missions.length > 0 && (
           <div className={`absolute ${posClass(externalHost ? "cc" : missionAnchor)} z-[9990] pointer-events-none`} style={{ width: fitWidthToViewport(missionWidth) }}>
             <div className="pointer-events-auto">
-              <MissionBoard
-                missions={missions}
-                fontSize={missionFontSize}
-                themeVariant={missionThemeVariant}
-                duration={missionDuration}
-                bgOpacity={missionBgOpacityCfg}
-                bgColor={missionBgColorCfg}
-                itemColor={missionItemColorCfg}
-                titleColor={missionTitleColorCfg}
-                effect={missionEffectCfg}
-                effectHotOnly={missionEffectHotOnlyCfg}
-              />
+              {missionDisplayMode === "vertical-slot" ? (
+                <MissionBoardSlot
+                  missions={missions}
+                  fontSize={missionFontSize}
+                  themeVariant={missionThemeVariant}
+                  visibleCount={missionVisibleCount}
+                  speed={missionSpeedSec}
+                  gapSize={missionGapSizePx}
+                  bgOpacity={missionBgOpacityCfg}
+                  bgColor={missionBgColorCfg}
+                  itemColor={missionItemColorCfg}
+                  titleColor={missionTitleColorCfg}
+                />
+              ) : (
+                <MissionBoard
+                  missions={missions}
+                  fontSize={missionFontSize}
+                  themeVariant={missionThemeVariant}
+                  duration={missionSpeedSec}
+                  bgOpacity={missionBgOpacityCfg}
+                  bgColor={missionBgColorCfg}
+                  itemColor={missionItemColorCfg}
+                  titleColor={missionTitleColorCfg}
+                  effect={missionEffectCfg}
+                  effectHotOnly={missionEffectHotOnlyCfg}
+                />
+              )}
             </div>
           </div>
         )}

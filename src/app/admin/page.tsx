@@ -31,6 +31,7 @@ import { useRouter } from "next/navigation";
 import { appendSettlementRecordAndSync, SettlementMemberRatioOverrides } from "@/lib/settlement";
 import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
 import MissionBoard from "@/components/MissionBoard";
+import MissionBoardSlot from "@/components/MissionBoardSlot";
 
 function ClientTime({ ts }: { ts: number | string }) {
   const [text, setText] = useState<string>("");
@@ -92,6 +93,10 @@ export default function AdminPage() {
     missionFontSize?: string;
     missionEffect?: string;
     missionEffectHotOnly?: string;
+    missionDisplayMode?: string;
+    missionVisibleCount?: string;
+    missionSpeed?: string;
+    missionGapSize?: string;
     showMembers: boolean; showTotal: boolean;
     showGoal: boolean; goal: string; goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string;
     showPersonalGoal?: boolean;
@@ -2007,31 +2012,84 @@ export default function AdminPage() {
                                   <input id={`hotOnly-${p.id}`} type="checkbox" className="w-4 h-4 accent-emerald-500" checked={(p.missionEffectHotOnly as any) === "true"} onChange={(e) => updatePreset(p.id, { missionEffectHotOnly: e.target.checked ? "true" : "false" })} />
                                   <label htmlFor={`hotOnly-${p.id}`} className="text-xs text-neutral-400">핫 항목만 적용</label>
                                 </div>
+                                <label className="text-xs text-neutral-400">디스플레이 모드</label>
+                                <select
+                                  className="px-2 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm min-h-[44px]"
+                                  value={p.missionDisplayMode || "horizontal"}
+                                  onChange={(e) => updatePreset(p.id, { missionDisplayMode: e.target.value })}
+                                >
+                                  <option value="horizontal">가로 흐름</option>
+                                  <option value="vertical-slot">슬롯형(세로)</option>
+                                </select>
+                                {p.missionDisplayMode === "vertical-slot" && (
+                                  <>
+                                    <label className="text-xs text-neutral-400">노출 개수</label>
+                                    <div className="flex items-center gap-2">
+                                      <input type="range" min="1" max="6" value={p.missionVisibleCount || "3"} onChange={(e) => updatePreset(p.id, { missionVisibleCount: e.target.value })} className="flex-1 accent-emerald-500 h-11" />
+                                      <input className="w-20 px-2 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm text-right min-h-[44px]" value={p.missionVisibleCount || "3"} onChange={(e) => updatePreset(p.id, { missionVisibleCount: e.target.value.replace(/[^\\d]/g, "") })} />
+                                    </div>
+                                  </>
+                                )}
+                                <label className="text-xs text-neutral-400">애니메이션 속도(초)</label>
+                                <div className="flex items-center gap-2">
+                                  <input type="range" min="1" max="120" value={p.missionSpeed || (p.missionDisplayMode === "vertical-slot" ? "2" : "25")} onChange={(e) => updatePreset(p.id, { missionSpeed: e.target.value })} className="flex-1 accent-emerald-500 h-11" />
+                                  <input className="w-20 px-2 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm text-right min-h-[44px]" value={p.missionSpeed || (p.missionDisplayMode === "vertical-slot" ? "2" : "25")} onChange={(e) => updatePreset(p.id, { missionSpeed: e.target.value.replace(/[^\\d.]/g, "") })} />
+                                </div>
+                                <label className="text-xs text-neutral-400">아이템 간격(px)</label>
+                                <div className="flex items-center gap-2">
+                                  <input type="range" min="0" max="48" value={p.missionGapSize || "8"} onChange={(e) => updatePreset(p.id, { missionGapSize: e.target.value })} className="flex-1 accent-emerald-500 h-11" />
+                                  <input className="w-20 px-2 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm text-right min-h-[44px]" value={p.missionGapSize || "8"} onChange={(e) => updatePreset(p.id, { missionGapSize: e.target.value.replace(/[^\\d]/g, "") })} />
+                                </div>
                                 </div>
                                 {/* Palette view removed; keep compact select */}
                                 <div className="mt-2 rounded border border-white/10 bg-neutral-950/60 p-2">
                                   <div className="text-xs text-neutral-400 mb-1">미션 전광판 미리보기</div>
                                   <div className="overflow-hidden">
-                                    <MissionBoard
-                                      missions={(state.missions && state.missions.length > 0) ? state.missions : [
-                                        { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
-                                        { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
-                                        { id: "mis_demo_3", title: "게임 미션 클리어 도전", price: "5만" },
-                                      ]}
-                                      fontSize={parseInt(p.missionFontSize || "18", 10)}
-                                      themeVariant={(() => {
-                                        const id = p.theme || "default";
-                                        const excelThemes = ["excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"];
-                                        if (excelThemes.includes(id)) return "excel";
-                                        if (["rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"].includes(id)) return "neon";
-                                        return (id as any);
-                                      })()}
-                                      duration={22}
-                                      bgColor={(p as any).missionBgColor || undefined}
-                                      bgOpacity={parseInt(p.missionBgOpacity || "85", 10)}
-                                      itemColor={(p as any).missionItemColor || undefined}
-                                      titleColor={(p as any).missionTitleColor || undefined}
-                                    />
+                                    {(p.missionDisplayMode === "vertical-slot") ? (
+                                      <MissionBoardSlot
+                                        missions={(state.missions && state.missions.length > 0) ? state.missions : [
+                                          { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
+                                          { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
+                                          { id: "mis_demo_3", title: "게임 미션 클리어 도전", price: "5만" },
+                                        ]}
+                                        fontSize={parseInt(p.missionFontSize || "18", 10)}
+                                        themeVariant={(() => {
+                                          const id = p.theme || "default";
+                                          const excelThemes = ["excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"];
+                                          if (excelThemes.includes(id)) return "excel";
+                                          if (["rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"].includes(id)) return "neon";
+                                          return (id as any);
+                                        })()}
+                                        visibleCount={parseInt(p.missionVisibleCount || "3", 10)}
+                                        speed={parseFloat(p.missionSpeed || "2")}
+                                        gapSize={parseInt(p.missionGapSize || "8", 10)}
+                                        bgColor={(p as any).missionBgColor || undefined}
+                                        bgOpacity={parseInt(p.missionBgOpacity || "85", 10)}
+                                        itemColor={(p as any).missionItemColor || undefined}
+                                        titleColor={(p as any).missionTitleColor || undefined}
+                                      />
+                                    ) : (
+                                      <MissionBoard
+                                        missions={(state.missions && state.missions.length > 0) ? state.missions : [
+                                          { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
+                                          { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
+                                          { id: "mis_demo_3", title: "게임 미션 클리어 도전", price: "5만" },
+                                        ]}
+                                        fontSize={parseInt(p.missionFontSize || "18", 10)}
+                                        themeVariant={(() => {
+                                          const id = p.theme || "default";
+                                          const excelThemes = ["excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"];
+                                          if (excelThemes.includes(id)) return "excel";
+                                          if (["rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"].includes(id)) return "neon";
+                                          return (id as any);
+                                        })()}
+                                        duration={parseFloat(p.missionSpeed || "25")}
+                                        bgColor={(p as any).missionBgColor || undefined}
+                                        bgOpacity={parseInt(p.missionBgOpacity || "85", 10)}
+                                        itemColor={(p as any).missionItemColor || undefined}
+                                        titleColor={(p as any).missionTitleColor || undefined}
+                                      />
+                                    )}
                                   </div>
                                 </div>
                                 <div className="text-xs text-neutral-500">위치 설정(Prism에서), 고급 위치는 포지션 탭에서 조정</div>
@@ -2059,28 +2117,53 @@ export default function AdminPage() {
                             {(p.showMission && !p.showMembers && !p.showTotal && !p.showGoal && !p.showPersonalGoal && !p.showTicker && !p.showTimer) ? (
                               <div className="rounded border border-white/10 bg-neutral-950/60 p-3">
                                 <div className="text-xs text-neutral-400 mb-2">미션 전광판 미리보기</div>
-                                <MissionBoard
-                                  missions={(state.missions && state.missions.length > 0) ? state.missions : [
-                                    { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
-                                    { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
-                                    { id: "mis_demo_3", title: "게임 미션 클리어 도전", price: "5만" },
-                                  ]}
-                                  fontSize={parseInt(p.missionFontSize || "24", 10)}
-                                  themeVariant={(() => {
-                                    const id = p.theme || "default";
-                                    const excelThemes = ["excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"];
-                                    if (excelThemes.includes(id)) return "excel";
-                                    if (["rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"].includes(id)) return "neon";
-                                    return (id as any);
-                                  })()}
-                                  duration={22}
-                                  bgColor={(p as any).missionBgColor || undefined}
-                                  bgOpacity={parseInt(p.missionBgOpacity || "85", 10)}
-                                  itemColor={(p as any).missionItemColor || undefined}
-                                  titleColor={(p as any).missionTitleColor || undefined}
-                                  effect={(p as any).missionEffect || "none"}
-                                  effectHotOnly={(p as any).missionEffectHotOnly === "true"}
-                                />
+                                {(p.missionDisplayMode === "vertical-slot") ? (
+                                  <MissionBoardSlot
+                                    missions={(state.missions && state.missions.length > 0) ? state.missions : [
+                                      { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
+                                      { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
+                                      { id: "mis_demo_3", title: "게임 미션 클리어 도전", price: "5만" },
+                                    ]}
+                                    fontSize={parseInt(p.missionFontSize || "24", 10)}
+                                    themeVariant={(() => {
+                                      const id = p.theme || "default";
+                                      const excelThemes = ["excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"];
+                                      if (excelThemes.includes(id)) return "excel";
+                                      if (["rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"].includes(id)) return "neon";
+                                      return (id as any);
+                                    })()}
+                                    visibleCount={parseInt(p.missionVisibleCount || "3", 10)}
+                                    speed={parseFloat(p.missionSpeed || "2")}
+                                    gapSize={parseInt(p.missionGapSize || "8", 10)}
+                                    bgColor={(p as any).missionBgColor || undefined}
+                                    bgOpacity={parseInt(p.missionBgOpacity || "85", 10)}
+                                    itemColor={(p as any).missionItemColor || undefined}
+                                    titleColor={(p as any).missionTitleColor || undefined}
+                                  />
+                                ) : (
+                                  <MissionBoard
+                                    missions={(state.missions && state.missions.length > 0) ? state.missions : [
+                                      { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
+                                      { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
+                                      { id: "mis_demo_3", title: "게임 미션 클리어 도전", price: "5만" },
+                                    ]}
+                                    fontSize={parseInt(p.missionFontSize || "24", 10)}
+                                    themeVariant={(() => {
+                                      const id = p.theme || "default";
+                                      const excelThemes = ["excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"];
+                                      if (excelThemes.includes(id)) return "excel";
+                                      if (["rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"].includes(id)) return "neon";
+                                      return (id as any);
+                                    })()}
+                                    duration={parseFloat(p.missionSpeed || "25")}
+                                    bgColor={(p as any).missionBgColor || undefined}
+                                    bgOpacity={parseInt(p.missionBgOpacity || "85", 10)}
+                                    itemColor={(p as any).missionItemColor || undefined}
+                                    titleColor={(p as any).missionTitleColor || undefined}
+                                    effect={(p as any).missionEffect || "none"}
+                                    effectHotOnly={(p as any).missionEffectHotOnly === "true"}
+                                  />
+                                )}
                               </div>
                             ) : (
                               <VerticalPreview url={buildStablePreviewUrl(p)} />

@@ -74,6 +74,10 @@ export type OverlayPresetLike = {
   missionFontSize?: string;
   missionEffect?: string;
   missionEffectHotOnly?: string;
+  missionDisplayMode?: string;
+  missionVisibleCount?: string;
+  missionSpeed?: string;
+  missionGapSize?: string;
   host?: string;
   showBottomDonors?: boolean;
   donorsSize?: string;
@@ -190,6 +194,10 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
     if (preset.missionFontSize && preset.missionFontSize.trim()) q.set("missionFontSize", preset.missionFontSize.trim());
     if (preset.missionEffect && preset.missionEffect.trim()) q.set("missionEffect", preset.missionEffect.trim());
     if (preset.missionEffectHotOnly && preset.missionEffectHotOnly.trim()) q.set("missionEffectHotOnly", preset.missionEffectHotOnly.trim());
+    if (preset.missionDisplayMode && preset.missionDisplayMode.trim()) q.set("displayMode", preset.missionDisplayMode.trim());
+    if (preset.missionVisibleCount && preset.missionVisibleCount.trim()) q.set("visibleCount", preset.missionVisibleCount.trim());
+    if (preset.missionSpeed && preset.missionSpeed.trim()) q.set("missionSpeed", preset.missionSpeed.trim());
+    if (preset.missionGapSize && preset.missionGapSize.trim()) q.set("gapSize", preset.missionGapSize.trim());
   }
   if (preset.showBottomDonors) q.set("showBottomDonors", "true");
   if (preset.donorsSize && preset.donorsSize.trim()) q.set("donorsSize", preset.donorsSize.trim());
