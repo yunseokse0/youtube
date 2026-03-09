@@ -1042,6 +1042,8 @@ function OverlayInner() {
       }
       showMissionEffective = Boolean(active?.showMission);
     }
+    // 미리보기에서는 상태 파악을 위해 강제로 표시
+    if ((preview || demoParam)) showMissionEffective = true;
     if (showMissionEffective && (preview || demoParam)) {
       return [
         { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },

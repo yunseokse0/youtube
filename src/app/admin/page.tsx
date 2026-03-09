@@ -1344,7 +1344,7 @@ export default function AdminPage() {
               )}
               <div className="space-y-3">
                 {presets.map((p) => {
-                  const url = buildOverlayUrl(p);
+                  const url = buildPrismOverlayUrl(p, !!p.vertical);
                   const previewUrl = buildStablePreviewUrl(p);
                   const isOpen = editingId === p.id;
                   return (
