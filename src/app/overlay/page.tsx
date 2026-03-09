@@ -1196,26 +1196,10 @@ function OverlayInner() {
     const raw = sp.get("showMission");
     if (raw === "true") return true;
     if (raw === "false") return false;
-    // 미리보기 모드에서 URL에 showMission이 없더라도, 프리셋이 ON이면 보이도록 허용
-    const isPreview = rawSp.get("previewGuide") === "true";
-    if (isPreview) {
-      const pId = (rawSp.get("p") || "").trim();
-      const presets = (s && (s as any).overlayPresets) || [];
-      let active: any = null;
-      if (pId) active = presets.find((x: any) => x.id === pId) || null;
-      if (!active) {
-        const prefId = s && (s as any).overlaySettings?.currentPresetId;
-        if (prefId) active = presets.find((x: any) => x.id === prefId) || null;
-        if (!active && Array.isArray(presets) && presets.length) active = presets[0];
-      }
-      return Boolean(active?.showMission);
-    }
-    return false;
+    // URL에 설정이 없으면 프리셋 값을 따름(프리뷰/외부 호스트 모두)
+    return Boolean(activePreset?.showMission);
   })();
-  const missionAnchor = (sp.get("missionAnchor") || "bc").toLowerCase();
-  const missionWidth = Math.max(400, Math.min(1600, parseInt(sp.get("missionWidth") || "800", 10)));
-  const missionDuration = Math.max(15, Math.min(60, parseInt(sp.get("missionDuration") || "25", 10)));
-  const missionFontSize = Math.max(10, Math.min(80, parseInt(sp.get("missionFontSize") || String(Math.round(memberSize * 0.9)), 10)));
+  // 미션 관련 세부 옵션은 외부 호스트 여부에 따라 프리셋 또는 URL에서 해석
   const confettiMilestoneMan = (() => {
     const raw = (sp.get("confettiMilestone") || "").trim();
     if (!raw) return 0;
@@ -1335,6 +1319,80 @@ function OverlayInner() {
       window.removeEventListener("resize", update);
     };
   }, [centerFixed]);
+  // 외부 호스트 판단 이후에 미션 옵션을 계산
+  const missionAnchor = (externalHost && activePreset?.missionAnchor)
+    ? String(activePreset.missionAnchor).toLowerCase()
+    : (sp.get("missionAnchor") || "bc").toLowerCase();
+  const missionWidth = Math.max(
+    400,
+    Math.min(
+      1600,
+      parseInt(
+        (externalHost && activePreset?.missionWidth)
+          ? String(activePreset.missionWidth)
+          : (sp.get("missionWidth") || "800"),
+        10,
+      ),
+    ),
+  );
+  const missionDuration = Math.max(
+    15,
+    Math.min(
+      60,
+      parseInt(
+        (externalHost && activePreset?.missionDuration)
+          ? String(activePreset.missionDuration)
+          : (sp.get("missionDuration") || "25"),
+        10,
+      ),
+    ),
+  );
+  const missionFontSize = Math.max(
+    10,
+    Math.min(
+      80,
+      parseInt(
+        (externalHost && activePreset?.missionFontSize)
+          ? String(activePreset.missionFontSize)
+          : (sp.get("missionFontSize") || "18"),
+        10,
+      ),
+    ),
+  );
+  const missionBgOpacityCfg = Math.max(
+    0,
+    Math.min(
+      100,
+      parseInt(
+        (externalHost && activePreset?.missionBgOpacity)
+          ? String(activePreset.missionBgOpacity)
+          : (sp.get("missionBgOpacity") || "85"),
+        10,
+      ),
+    ),
+  );
+  const missionBgColorCfg =
+    ((externalHost && activePreset?.missionBgColor)
+      ? String(activePreset.missionBgColor)
+      : (sp.get("missionBgColor") || "")).trim() || undefined;
+  const missionItemColorCfg =
+    ((externalHost && activePreset?.missionItemColor)
+      ? String(activePreset.missionItemColor)
+      : (sp.get("missionItemColor") || "")).trim() || undefined;
+  const missionTitleColorCfg =
+    ((externalHost && activePreset?.missionTitleColor)
+      ? String(activePreset.missionTitleColor)
+      : (sp.get("missionTitleColor") || "")).trim() || undefined;
+  const missionEffectCfg = (
+    (externalHost && (activePreset as any)?.missionEffect)
+      ? String((activePreset as any).missionEffect)
+      : (sp.get("missionEffect") || "none")
+  ) as "none" | "blink" | "pulse" | "glow";
+  const missionEffectHotOnlyCfg = (
+    (externalHost && (activePreset as any)?.missionEffectHotOnly)
+      ? String((activePreset as any).missionEffectHotOnly) === "true"
+      : (sp.get("missionEffectHotOnly") === "true")
+  );
   useEffect(() => {
     if (typeof window === "undefined") return;
     const enableAuto = ((isPreviewGuide && !centerFixed && !(tableFree || (tableXParam !== null && tableYParam !== null))) || autoFit !== "none");
@@ -1935,10 +1993,12 @@ function OverlayInner() {
                 fontSize={missionFontSize}
                 themeVariant={missionThemeVariant}
                 duration={missionDuration}
-                bgOpacity={Math.max(0, Math.min(100, parseInt(sp.get("missionBgOpacity") || "85", 10)))}
-                bgColor={(sp.get("missionBgColor") || "").trim() || undefined}
-                itemColor={(sp.get("missionItemColor") || "").trim() || undefined}
-                titleColor={(sp.get("missionTitleColor") || "").trim() || undefined}
+                bgOpacity={missionBgOpacityCfg}
+                bgColor={missionBgColorCfg}
+                itemColor={missionItemColorCfg}
+                titleColor={missionTitleColorCfg}
+                effect={missionEffectCfg}
+                effectHotOnly={missionEffectHotOnlyCfg}
               />
             </div>
           </div>

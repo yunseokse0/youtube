@@ -25,6 +25,8 @@ type MissionBoardProps = {
   bgColor?: string;
   itemColor?: string;
   titleColor?: string;
+  effect?: "none" | "blink" | "pulse" | "glow";
+  effectHotOnly?: boolean;
 };
 
 const MissionBoard = ({
@@ -36,6 +38,8 @@ const MissionBoard = ({
   bgColor,
   itemColor,
   titleColor,
+  effect = "none",
+  effectHotOnly = false,
 }: MissionBoardProps) => {
   if (!missions.length) return null;
   const base = MISSION_THEME_STYLES[themeVariant] || MISSION_THEME_STYLES.default;
@@ -74,11 +78,27 @@ const MissionBoard = ({
 
   const content = (
     <>
+      <style>{`
+        @keyframes fx-blink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0.4 } }
+        @keyframes fx-pulse { 0% { transform: scale(1) } 50% { transform: scale(1.06) } 100% { transform: scale(1) } }
+        @keyframes fx-glow { 0% { text-shadow: 0 0 0 rgba(255,255,255,0.0) } 50% { text-shadow: 0 0 10px rgba(255,255,255,0.6) } 100% { text-shadow: 0 0 0 rgba(255,255,255,0.0) } }
+        .fx-blink { animation: fx-blink 1.2s steps(2, end) infinite }
+        .fx-pulse { animation: fx-pulse 1.8s ease-in-out infinite }
+        .fx-glow { animation: fx-glow 1.6s ease-in-out infinite }
+      `}</style>
       <span className="font-black tracking-widest" style={{ color: theme.titleColor, marginRight: 32 }}>
         ■ MISSION ■
       </span>
       {missions.map((item, idx) => (
-        <span key={item.id} style={{ marginLeft: 24, marginRight: 24, color: theme.itemColor, textShadow: theme.itemShadow, fontWeight: 700 }}>
+        <span
+          key={item.id}
+          className={
+            effect === "none" ? "" :
+            effectHotOnly ? (item.isHot ? (effect === "blink" ? "fx-blink" : effect === "pulse" ? "fx-pulse" : "fx-glow") : "") :
+            (effect === "blink" ? "fx-blink" : effect === "pulse" ? "fx-pulse" : "fx-glow")
+          }
+          style={{ marginLeft: 24, marginRight: 24, color: theme.itemColor, textShadow: theme.itemShadow, fontWeight: 700 }}
+        >
           {item.isHot && <span className="text-red-400">[HOT] </span>}
           {item.title}
           <span style={{ marginLeft: 8, color: theme.titleColor, fontWeight: 800 }}>- {item.price}</span>

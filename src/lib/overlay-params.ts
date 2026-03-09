@@ -72,6 +72,8 @@ export type OverlayPresetLike = {
   missionItemColor?: string;
   missionTitleColor?: string;
   missionFontSize?: string;
+  missionEffect?: string;
+  missionEffectHotOnly?: string;
   host?: string;
   showBottomDonors?: boolean;
   donorsSize?: string;
@@ -186,6 +188,8 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
     if (preset.missionItemColor && preset.missionItemColor.trim()) q.set("missionItemColor", preset.missionItemColor.trim());
     if (preset.missionTitleColor && preset.missionTitleColor.trim()) q.set("missionTitleColor", preset.missionTitleColor.trim());
     if (preset.missionFontSize && preset.missionFontSize.trim()) q.set("missionFontSize", preset.missionFontSize.trim());
+    if (preset.missionEffect && preset.missionEffect.trim()) q.set("missionEffect", preset.missionEffect.trim());
+    if (preset.missionEffectHotOnly && preset.missionEffectHotOnly.trim()) q.set("missionEffectHotOnly", preset.missionEffectHotOnly.trim());
   }
   if (preset.showBottomDonors) q.set("showBottomDonors", "true");
   if (preset.donorsSize && preset.donorsSize.trim()) q.set("donorsSize", preset.donorsSize.trim());

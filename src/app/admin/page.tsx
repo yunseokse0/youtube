@@ -90,6 +90,8 @@ export default function AdminPage() {
     missionItemColor?: string;
     missionTitleColor?: string;
     missionFontSize?: string;
+    missionEffect?: string;
+    missionEffectHotOnly?: string;
     showMembers: boolean; showTotal: boolean;
     showGoal: boolean; goal: string; goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string;
     showPersonalGoal?: boolean;
@@ -478,14 +480,12 @@ export default function AdminPage() {
   const buildPrismOverlayUrl = (p: OverlayPreset, vertical: boolean): string => {
     if (typeof window === "undefined") return "";
     const base = `${window.location.origin}/overlay`;
-    const q = new URLSearchParams(presetToParams(p));
+    // Prism용은 최소 파라미터만 포함(옵션은 서버 프리셋/Prism에서 조정)
+    const q = new URLSearchParams();
     q.set("p", p.id);
     q.set("u", user?.id || "finalent");
     q.set("vertical", vertical ? "true" : "false");
     q.set("host", "prism");
-    q.delete("previewGuide");
-    q.delete("renderWidth");
-    q.delete("renderHeight");
     return `${base}?${q.toString()}`;
   };
   const buildPreviewOverlayUrl = (p: OverlayPreset): string => {
@@ -1992,6 +1992,21 @@ export default function AdminPage() {
                                     <input className="w-20 px-2 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm text-right min-h-[44px]" value={p.missionFontSize || "18"} onChange={(e) => updatePreset(p.id, { missionFontSize: e.target.value.replace(/[^\\d]/g, "") })} />
                                     <span className="text-xs text-neutral-500">px</span>
                                   </div>
+                                <label className="text-xs text-neutral-400">효과</label>
+                                <select
+                                  className="px-2 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm min-h-[44px]"
+                                  value={p.missionEffect || "none"}
+                                  onChange={(e) => updatePreset(p.id, { missionEffect: e.target.value })}
+                                >
+                                  <option value="none">없음</option>
+                                  <option value="blink">깜빡임</option>
+                                  <option value="pulse">펄스</option>
+                                  <option value="glow">글로우</option>
+                                </select>
+                                <div className="flex items-center gap-2">
+                                  <input id={`hotOnly-${p.id}`} type="checkbox" className="w-4 h-4 accent-emerald-500" checked={(p.missionEffectHotOnly as any) === "true"} onChange={(e) => updatePreset(p.id, { missionEffectHotOnly: e.target.checked ? "true" : "false" })} />
+                                  <label htmlFor={`hotOnly-${p.id}`} className="text-xs text-neutral-400">핫 항목만 적용</label>
+                                </div>
                                 </div>
                                 {/* Palette view removed; keep compact select */}
                                 <div className="mt-2 rounded border border-white/10 bg-neutral-950/60 p-2">
@@ -2041,7 +2056,33 @@ export default function AdminPage() {
                           </div>
 
                           <div className="lg:order-1">
-                            {!(p.showMission && !p.showMembers && !p.showTotal && !p.showGoal && !p.showPersonalGoal && !p.showTicker && !p.showTimer) && (
+                            {(p.showMission && !p.showMembers && !p.showTotal && !p.showGoal && !p.showPersonalGoal && !p.showTicker && !p.showTimer) ? (
+                              <div className="rounded border border-white/10 bg-neutral-950/60 p-3">
+                                <div className="text-xs text-neutral-400 mb-2">미션 전광판 미리보기</div>
+                                <MissionBoard
+                                  missions={(state.missions && state.missions.length > 0) ? state.missions : [
+                                    { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
+                                    { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
+                                    { id: "mis_demo_3", title: "게임 미션 클리어 도전", price: "5만" },
+                                  ]}
+                                  fontSize={parseInt(p.missionFontSize || "24", 10)}
+                                  themeVariant={(() => {
+                                    const id = p.theme || "default";
+                                    const excelThemes = ["excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"];
+                                    if (excelThemes.includes(id)) return "excel";
+                                    if (["rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"].includes(id)) return "neon";
+                                    return (id as any);
+                                  })()}
+                                  duration={22}
+                                  bgColor={(p as any).missionBgColor || undefined}
+                                  bgOpacity={parseInt(p.missionBgOpacity || "85", 10)}
+                                  itemColor={(p as any).missionItemColor || undefined}
+                                  titleColor={(p as any).missionTitleColor || undefined}
+                                  effect={(p as any).missionEffect || "none"}
+                                  effectHotOnly={(p as any).missionEffectHotOnly === "true"}
+                                />
+                              </div>
+                            ) : (
                               <VerticalPreview url={buildStablePreviewUrl(p)} />
                             )}
                           </div>
