@@ -1920,7 +1920,7 @@ function OverlayInner() {
         )}
         {effectiveShowTicker && ready && <div className={`absolute ${tickerPosClass} ${hasTickerFreePos ? "" : "mb-10"}`} style={tickerPosStyle}><DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
         {showTimer && <div className={`absolute ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={timerTheme} fontSize={memberSize} /></div>}
-        {showMission && ready && missions.length > 0 && (
+        {showMission && (ready || isPreviewGuide) && missions.length > 0 && (
           <div className={`absolute ${posClass(missionAnchor)} z-[9990] pointer-events-none`} style={{ width: fitWidthToViewport(missionWidth) }}>
             <div className="pointer-events-auto">
               <MissionBoard missions={missions} fontSize={memberSize * 0.9} themeVariant={missionThemeVariant} duration={missionDuration} />
