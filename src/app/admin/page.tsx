@@ -506,6 +506,12 @@ export default function AdminPage() {
         donors: [],
         missions: (state as any).missions || [],
         forbiddenWords: state.forbiddenWords || [],
+        goal: (() => { const n = parseInt((p.goal || "0") as any, 10); return Number.isFinite(n) ? Math.max(0, n) : 0; })(),
+        goalCurrent: (() => {
+          const raw = (p.goalCurrent || "") as any;
+          const n = raw === "" || raw === null || raw === undefined ? null : parseInt(String(raw), 10);
+          return n === null || Number.isNaN(n) ? null : Math.max(0, n);
+        })(),
         updatedAt: Date.now(),
       };
       const json = JSON.stringify(snapObj);
@@ -529,6 +535,12 @@ export default function AdminPage() {
       donors: [],
       missions: (state as any).missions || [],
       forbiddenWords: state.forbiddenWords || [],
+      goal: (() => { const n = parseInt((p.goal || "0") as any, 10); return Number.isFinite(n) ? Math.max(0, n) : 0; })(),
+      goalCurrent: (() => {
+        const raw = (p.goalCurrent || "") as any;
+        const n = raw === "" || raw === null || raw === undefined ? null : parseInt(String(raw), 10);
+        return n === null || Number.isNaN(n) ? null : Math.max(0, n);
+      })(),
       updatedAt: Date.now(),
     };
     const json = JSON.stringify(snapObj);
@@ -1224,10 +1236,10 @@ export default function AdminPage() {
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold">미션 전광판</h2>
               </div>
-              <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_auto] gap-2 mb-3">
-                <input className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10" placeholder="미션 제목 (예: 노래 부르기)" value={missionTitle} onChange={(e) => setMissionTitle(e.target.value)} />
-                <input className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10 w-full lg:w-32" placeholder="가격 (예: 3만)" value={missionPrice} onChange={(e) => setMissionPrice(e.target.value)} />
-                <button className="px-4 py-2 rounded bg-amber-700 hover:bg-amber-600 font-semibold" onClick={() => {
+              <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto_auto] gap-2 mb-3">
+                <input className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10 min-h-[44px]" placeholder="미션 제목 (예: 노래 부르기)" value={missionTitle} onChange={(e) => setMissionTitle(e.target.value)} />
+                <input className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10 w-full sm:w-32 min-h-[44px]" placeholder="가격 (예: 3만)" value={missionPrice} onChange={(e) => setMissionPrice(e.target.value)} />
+                <button className="px-4 py-2 rounded bg-amber-700 hover:bg-amber-600 font-semibold min-h-[44px]" onClick={() => {
                   if (!missionTitle.trim()) return;
                   setState((prev) => {
                     const m: MissionItem = { id: `mis_${Date.now()}`, title: missionTitle.trim(), price: missionPrice.trim() || "무료" };
@@ -1240,29 +1252,46 @@ export default function AdminPage() {
               </div>
               {(state.missions || []).length === 0 && <div className="text-sm text-neutral-400 p-4 text-center border border-dashed border-white/10 rounded">미션이 없습니다.</div>}
               {(state.missions || []).length > 0 && (
-                <div className="space-y-1 max-h-[300px] overflow-auto">
+                <div className="space-y-1 max-h-[340px] overflow-auto">
                   {(state.missions || []).map((mis, idx) => (
-                    <div key={mis.id} className="flex items-center gap-2 px-3 py-2 rounded bg-neutral-900/40 border border-white/10">
+                    <div key={mis.id}
+                      className="flex items-center gap-2 px-3 py-2 rounded bg-neutral-900/40 border border-white/10 min-h-[44px]"
+                      draggable
+                      onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(idx)); }}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const src = parseInt(e.dataTransfer.getData("text/plain") || "-1", 10);
+                        if (isNaN(src) || src < 0 || src === idx) return;
+                        setState((prev) => {
+                          const arr = [...(prev.missions || [])];
+                          const [moved] = arr.splice(src, 1);
+                          arr.splice(idx, 0, moved);
+                          const next = { ...prev, missions: arr };
+                          persistState(next); return next;
+                        });
+                      }}
+                    >
                       <span className="text-sm font-mono text-neutral-500 w-6">{idx + 1}</span>
-                      <input className="flex-1 px-2 py-1 rounded bg-neutral-800 border border-white/10 text-sm" value={mis.title} onChange={(e) => {
+                      <input className="flex-1 px-2 py-1 rounded bg-neutral-800 border border-white/10 text-sm min-h-[40px]" value={mis.title} onChange={(e) => {
                         setState((prev) => {
                           const next = { ...prev, missions: (prev.missions || []).map(m => m.id === mis.id ? { ...m, title: e.target.value } : m) };
                           persistState(next); return next;
                         });
                       }} />
-                      <input className="w-24 px-2 py-1 rounded bg-neutral-800 border border-white/10 text-sm text-right" value={mis.price} onChange={(e) => {
+                      <input className="w-24 px-2 py-1 rounded bg-neutral-800 border border-white/10 text-sm text-right min-h-[40px]" value={mis.price} onChange={(e) => {
                         setState((prev) => {
                           const next = { ...prev, missions: (prev.missions || []).map(m => m.id === mis.id ? { ...m, price: e.target.value } : m) };
                           persistState(next); return next;
                         });
                       }} />
-                      <button className={`px-2 py-1 rounded border text-xs ${mis.isHot ? "border-red-500 text-red-300" : "border-white/10 text-neutral-500"}`} onClick={() => {
+                      <button className={`px-2 py-1 rounded border text-xs min-h-[36px] ${mis.isHot ? "border-red-500 text-red-300" : "border-white/10 text-neutral-500"}`} onClick={() => {
                         setState((prev) => {
                           const next = { ...prev, missions: (prev.missions || []).map(m => m.id === mis.id ? { ...m, isHot: !m.isHot } : m) };
                           persistState(next); return next;
                         });
                       }}>{mis.isHot ? "HOT" : "hot"}</button>
-                      <button className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => {
+                      <button className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs min-h-[36px]" onClick={() => {
                         if (idx === 0) return;
                         setState((prev) => {
                           const arr = [...(prev.missions || [])];
@@ -1271,7 +1300,7 @@ export default function AdminPage() {
                           persistState(next); return next;
                         });
                       }}>▲</button>
-                      <button className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => {
+                      <button className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs min-h-[36px]" onClick={() => {
                         if (idx >= (state.missions || []).length - 1) return;
                         setState((prev) => {
                           const arr = [...(prev.missions || [])];
@@ -1280,7 +1309,7 @@ export default function AdminPage() {
                           persistState(next); return next;
                         });
                       }}>▼</button>
-                      <button className="px-2 py-1 rounded bg-red-800 hover:bg-red-700 text-xs" onClick={() => {
+                      <button className="px-2 py-1 rounded bg-red-800 hover:bg-red-700 text-xs min-h-[36px]" onClick={() => {
                         setState((prev) => {
                           const next = { ...prev, missions: (prev.missions || []).filter(m => m.id !== mis.id) };
                           persistState(next); return next;
@@ -1953,7 +1982,7 @@ export default function AdminPage() {
                                 </div>
                                 <label className="text-xs text-neutral-400 mt-1">미션 테마</label>
                                 <select
-                                  className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                  className="px-2 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm min-h-[44px]"
                                   value={p.missionTheme || "auto"}
                                   onChange={(e) => updatePreset(p.id, { missionTheme: e.target.value })}
                                 >
@@ -1963,20 +1992,21 @@ export default function AdminPage() {
                                   <option value="rainbow">무지개</option><option value="sunset">일몰</option><option value="ocean">오션</option><option value="forest">포레스트</option><option value="aurora">오로라</option><option value="violet">바이올렛</option><option value="coral">코랄</option><option value="mint">민트</option><option value="lava">라바</option><option value="ice">아이스</option>
                                   <option value="minimal">미니멀</option><option value="pastel">파스텔</option><option value="retro">레트로</option><option value="rpg">RPG</option>
                                 </select>
-                                <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2 mt-2">
+                                <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-3 mt-2">
                                   <label className="text-xs text-neutral-400">너비</label>
                                   <div className="flex items-center gap-2">
-                                    <input type="range" min="400" max="1600" value={p.missionWidth || "800"} onChange={(e) => updatePreset(p.id, { missionWidth: e.target.value })} className="flex-1 accent-emerald-500" />
-                                    <input className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right" value={p.missionWidth || "800"} onChange={(e) => updatePreset(p.id, { missionWidth: e.target.value.replace(/[^\\d]/g, "") })} />
+                                    <input type="range" min="400" max="1600" value={p.missionWidth || "800"} onChange={(e) => updatePreset(p.id, { missionWidth: e.target.value })} className="flex-1 accent-emerald-500 h-11" />
+                                    <input className="w-24 px-2 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm text-right min-h-[44px]" value={p.missionWidth || "800"} onChange={(e) => updatePreset(p.id, { missionWidth: e.target.value.replace(/[^\\d]/g, "") })} />
                                     <span className="text-xs text-neutral-500">px</span>
                                   </div>
                                   <label className="text-xs text-neutral-400">속도</label>
                                   <div className="flex items-center gap-2">
-                                    <input type="range" min="15" max="60" value={p.missionDuration || "25"} onChange={(e) => updatePreset(p.id, { missionDuration: e.target.value })} className="flex-1 accent-emerald-500" />
-                                    <input className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right" value={p.missionDuration || "25"} onChange={(e) => updatePreset(p.id, { missionDuration: e.target.value.replace(/[^\\d]/g, "") })} />
+                                    <input type="range" min="15" max="60" value={p.missionDuration || "25"} onChange={(e) => updatePreset(p.id, { missionDuration: e.target.value })} className="flex-1 accent-emerald-500 h-11" />
+                                    <input className="w-20 px-2 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm text-right min-h-[44px]" value={p.missionDuration || "25"} onChange={(e) => updatePreset(p.id, { missionDuration: e.target.value.replace(/[^\\d]/g, "") })} />
                                     <span className="text-xs text-neutral-500">초/루프</span>
                                   </div>
                                 </div>
+                                <ThemeThumbs value={p.missionTheme || "auto"} options={missionThemeChoices} onChange={(v) => updatePreset(p.id, { missionTheme: v })} />
                                 <div className="mt-2 rounded border border-white/10 bg-neutral-950/60 p-2">
                                   <div className="text-xs text-neutral-400 mb-1">미션 전광판 미리보기</div>
                                   <div className="overflow-hidden">

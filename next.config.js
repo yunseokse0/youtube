@@ -1,12 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: true,
-  poweredByHeader: false,
-  experimental: {
-    typedRoutes: true
-  },
-  env: {
-    NEXT_PUBLIC_YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY,
+  trailingSlash: false,
+  async rewrites() {
+    return [
+      // Normalize overlay route to avoid 404s in certain host setups
+      { source: '/overlay', destination: '/overlay' },
+      { source: '/overlay/', destination: '/overlay' },
+      { source: '/overlay/:path*', destination: '/overlay' },
+    ];
   },
 };
 
