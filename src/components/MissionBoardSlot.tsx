@@ -28,6 +28,8 @@ type MissionBoardSlotProps = {
   bgColor?: string;
   itemColor?: string;
   titleColor?: string;
+  effect?: "none" | "blink" | "pulse" | "glow" | "sparkle";
+  effectHotOnly?: boolean;
 };
 
 export default function MissionBoardSlot({
@@ -41,6 +43,8 @@ export default function MissionBoardSlot({
   bgColor,
   itemColor,
   titleColor,
+  effect = "none",
+  effectHotOnly = false,
 }: MissionBoardSlotProps) {
   const base = MISSION_THEME_STYLES[themeVariant] || MISSION_THEME_STYLES.default;
   const theme = {
@@ -117,7 +121,37 @@ export default function MissionBoardSlot({
               미션이 없습니다
             </motion.div>
           ) : (
-            items.map((item) => (
+            items.map((item) => {
+              const applyEffect = !effectHotOnly || Boolean(item.isHot);
+              const getEffectAnim = () => {
+                if (!applyEffect) return {};
+                switch (effect) {
+                  case "blink":
+                    return {
+                      animate: { opacity: [1, 0.5, 1] },
+                      transition: { repeat: Infinity, duration: 1.2, ease: "easeInOut" },
+                    };
+                  case "pulse":
+                    return {
+                      animate: { scale: [1, 1.03, 1] },
+                      transition: { repeat: Infinity, duration: 1.8, ease: "easeInOut" },
+                    };
+                  case "glow":
+                    return {
+                      animate: { filter: ["drop-shadow(0 0 0px rgba(255,255,200,0.0))", "drop-shadow(0 0 6px rgba(255,255,200,0.7))", "drop-shadow(0 0 0px rgba(255,255,200,0.0))"] },
+                      transition: { repeat: Infinity, duration: 2.2, ease: "easeInOut" },
+                    };
+                  case "sparkle":
+                    return {
+                      animate: { filter: ["brightness(1)", "brightness(1.25)", "brightness(1)"] },
+                      transition: { repeat: Infinity, duration: 1.6, ease: "easeInOut" },
+                    };
+                  default:
+                    return {};
+                }
+              };
+              const anim = getEffectAnim();
+              return (
             <motion.div
               layout
                 key={`${start}_${item.id}`}
@@ -134,10 +168,15 @@ export default function MissionBoardSlot({
                 }}
               >
                 {item.isHot && <span className="text-red-400" style={{ marginRight: 6 }}>[HOT]</span>}
-                <span style={{ flex: 1 }}>{item.title}</span>
-                <span style={{ marginLeft: 12, color: theme.titleColor, fontWeight: 800 }}>{item.price}</span>
+                <motion.span style={{ flex: 1 }} {...anim}>
+                  {item.title}
+                </motion.span>
+                <motion.span style={{ marginLeft: 12, color: theme.titleColor, fontWeight: 800 }} {...anim}>
+                  {item.price}
+                </motion.span>
               </motion.div>
-            ))
+              );
+            })
           )}
         </AnimatePresence>
       </div>

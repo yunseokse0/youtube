@@ -491,6 +491,13 @@ export default function AdminPage() {
     q.set("u", user?.id || "finalent");
     q.set("vertical", vertical ? "true" : "false");
     q.set("host", "prism");
+    // 프리셋 저장/전파 지연 시에도 즉시 반영되도록 핵심 미션 옵션은 URL로 보강
+    if ((p as any).missionDisplayMode) q.set("displayMode", String((p as any).missionDisplayMode));
+    if ((p as any).missionVisibleCount) q.set("visibleCount", String((p as any).missionVisibleCount));
+    if ((p as any).missionSpeed) q.set("missionSpeed", String((p as any).missionSpeed));
+    if ((p as any).missionGapSize) q.set("gapSize", String((p as any).missionGapSize));
+    if ((p as any).missionEffect) q.set("missionEffect", String((p as any).missionEffect));
+    if ((p as any).missionEffectHotOnly) q.set("missionEffectHotOnly", String((p as any).missionEffectHotOnly) === "true" ? "true" : "false");
     return `${base}?${q.toString()}`;
   };
   const buildPreviewOverlayUrl = (p: OverlayPreset): string => {
