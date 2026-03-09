@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import MemberRow from "@/components/MemberRow";
 import Toast from "@/components/Toast";
 import {
@@ -218,71 +218,7 @@ export default function AdminPage() {
       ))}
     </div>
   );
-  const ThemePicker = ({
-    value,
-    options,
-    onChange,
-    storageKey = "fav:themes",
-    groups,
-  }: {
-    value: string;
-    options: string[];
-    onChange: (v: string) => void;
-    storageKey?: string;
-    groups?: Record<string, string[]>;
-  }) => {
-    const [q, setQ] = useState("");
-    const [tab, setTab] = useState<"all" | "fav" | string>("all");
-    const readFavs = (): Set<string> => {
-      if (typeof window === "undefined") return new Set<string>();
-      try { return new Set<string>(JSON.parse(window.localStorage.getItem(storageKey) || "[]")); } catch { return new Set<string>(); }
-    };
-    const [favs, setFavs] = useState<Set<string>>(readFavs());
-    const toggleFav = (id: string) => {
-      const next = new Set(favs);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      setFavs(next);
-      if (typeof window !== "undefined") window.localStorage.setItem(storageKey, JSON.stringify([...next]));
-    };
-    const lowerQ = q.trim().toLowerCase();
-    let pool = [...options];
-    if (tab === "fav") pool = pool.filter((id) => favs.has(id));
-    else if (tab !== "all" && groups?.[tab]) pool = pool.filter((id) => groups![tab].includes(id));
-    if (lowerQ) pool = pool.filter((id) => id.toLowerCase().includes(lowerQ));
-    return (
-      <div className="mt-1 space-y-1.5">
-        <div className="flex items-center gap-1">
-          <input
-            className="flex-1 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs"
-            placeholder="테마 검색"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-          <button className={`px-2 py-1 rounded text-xs ${tab === "all" ? "bg-emerald-700" : "bg-neutral-700 hover:bg-neutral-600"}`} onClick={() => setTab("all")}>전체</button>
-          <button className={`px-2 py-1 rounded text-xs ${tab === "fav" ? "bg-emerald-700" : "bg-neutral-700 hover:bg-neutral-600"}`} onClick={() => setTab("fav")}>즐겨찾기</button>
-          {groups && Object.keys(groups).map((k) => (
-            <button key={k} className={`px-2 py-1 rounded text-xs ${tab === k ? "bg-emerald-700" : "bg-neutral-700 hover:bg-neutral-600"}`} onClick={() => setTab(k)}>{k}</button>
-          ))}
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {pool.map((opt) => (
-            <div key={opt} className={`relative rounded-md border ${value === opt ? "border-emerald-400" : "border-white/10"}`} style={{ width: 64 }}>
-              <button onClick={() => onChange(opt)} className="block rounded-md overflow-hidden" title={opt} style={{ width: 64, height: 32 }}>
-                <div className="w-full h-full" style={themeStyle(opt)} />
-              </button>
-              <button
-                title="즐겨찾기"
-                onClick={() => toggleFav(opt)}
-                className={`absolute -top-2 -right-2 rounded-full text-[10px] w-5 h-5 border ${favs.has(opt) ? "bg-yellow-400 text-black border-yellow-300" : "bg-neutral-800 border-white/10 text-neutral-300"}`}
-              >★</button>
-              <div className="text-[10px] text-neutral-400 text-center mt-0.5 truncate" style={{ maxWidth: 64 }}>{opt}</div>
-            </div>
-          ))}
-          {pool.length === 0 && <div className="text-xs text-neutral-500 px-2 py-1">검색 결과가 없습니다</div>}
-        </div>
-      </div>
-    );
-  };
+  
   const moveToSection = (key: "dashboard" | "settlement" | "donor" | "overlay" | "logs", targetId: string) => {
     setActiveNav(key);
     if (typeof window === "undefined") return;
@@ -564,6 +500,18 @@ export default function AdminPage() {
     const isVertical = !!p.vertical;
     q.set("renderWidth", isVertical ? "1080" : "1920");
     q.set("renderHeight", isVertical ? "1920" : "1080");
+    try {
+      const snapObj = {
+        members: state.members.map(m => ({ id: m.id, name: m.name, account: m.account, toon: m.toon, goal: m.goal, role: m.role, operating: m.operating })),
+        donors: [],
+        missions: (state as any).missions || [],
+        forbiddenWords: state.forbiddenWords || [],
+        updatedAt: Date.now(),
+      };
+      const json = JSON.stringify(snapObj);
+      const b64 = btoa(encodeURIComponent(json));
+      q.set("snap", b64);
+    } catch {}
     return `${base}?${q.toString()}`;
   };
   const copyUrl = async (url: string, id: string) => {
@@ -579,6 +527,7 @@ export default function AdminPage() {
     const snapObj = {
       members: state.members.map(m => ({ id: m.id, name: m.name, account: m.account, toon: m.toon, goal: m.goal, role: m.role, operating: m.operating })),
       donors: [],
+      missions: (state as any).missions || [],
       forbiddenWords: state.forbiddenWords || [],
       updatedAt: Date.now(),
     };
@@ -1417,16 +1366,7 @@ export default function AdminPage() {
                                     <option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option><option value="excelTeal">엑셀(틸)</option><option value="excelPurple">엑셀(퍼플)</option><option value="excelEmerald">엑셀(에메랄드)</option><option value="excelOrange">엑셀(오렌지)</option><option value="excelIndigo">엑셀(인디고)</option>
                                     <option value="minimal">미니멀</option><option value="pastel">파스텔</option><option value="retro">레트로</option><option value="rpg">RPG</option>
                                   </select>
-                                  <ThemePicker
-                                    value={p.membersTheme || "auto"}
-                                    options={memberThemeChoices}
-                                    onChange={(v) => updatePreset(p.id, { membersTheme: v, totalTheme: v })}
-                                    storageKey="fav:memberThemes"
-                                    groups={{
-                                      기본: ["auto","default","minimal","pastel","retro","rpg"],
-                                      엑셀: ["excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"],
-                                    }}
-                                  />
+                                  <ThemeThumbs value={p.membersTheme || "auto"} options={memberThemeChoices} onChange={(v) => updatePreset(p.id, { membersTheme: v, totalTheme: v })} />
                                   <label className="text-xs text-neutral-400">표 배경 불투명도</label>
                                   <div className="flex items-center gap-2">
                                     <input type="range" min="0" max="100" value={p.tableBgOpacity || "100"} onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value })} className="flex-1 accent-emerald-500" />
@@ -2012,17 +1952,17 @@ export default function AdminPage() {
                                   </div>
                                 </div>
                                 <label className="text-xs text-neutral-400 mt-1">미션 테마</label>
-                                <ThemePicker
+                                <select
+                                  className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
                                   value={p.missionTheme || "auto"}
-                                  options={missionThemeChoices}
-                                  onChange={(v) => updatePreset(p.id, { missionTheme: v })}
-                                  storageKey="fav:missionThemes"
-                                  groups={{
-                                    기본: ["auto","default","minimal","pastel","retro","rpg"],
-                                    엑셀: ["excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"],
-                                    네온: ["neon","neonExcel","rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"],
-                                  }}
-                                />
+                                  onChange={(e) => updatePreset(p.id, { missionTheme: e.target.value })}
+                                >
+                                  <option value="auto">자동(전체 테마 따름)</option>
+                                  <option value="default">기본</option>
+                                  <option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option><option value="excelTeal">엑셀(틸)</option><option value="excelPurple">엑셀(퍼플)</option><option value="excelEmerald">엑셀(에메랄드)</option><option value="excelOrange">엑셀(오렌지)</option><option value="excelIndigo">엑셀(인디고)</option>
+                                  <option value="rainbow">무지개</option><option value="sunset">일몰</option><option value="ocean">오션</option><option value="forest">포레스트</option><option value="aurora">오로라</option><option value="violet">바이올렛</option><option value="coral">코랄</option><option value="mint">민트</option><option value="lava">라바</option><option value="ice">아이스</option>
+                                  <option value="minimal">미니멀</option><option value="pastel">파스텔</option><option value="retro">레트로</option><option value="rpg">RPG</option>
+                                </select>
                                 <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2 mt-2">
                                   <label className="text-xs text-neutral-400">너비</label>
                                   <div className="flex items-center gap-2">
@@ -2374,6 +2314,7 @@ function VerticalPreview({ url }: { url: string }) {
   const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
   const [showFrame, setShowFrame] = useState(true);
   const [showGuides, setShowGuides] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
   const [w, h] = orientation === "portrait" ? [540, 960] : [960, 540];
   const previewUrl = useMemo(() => {
     try {
@@ -2384,6 +2325,19 @@ function VerticalPreview({ url }: { url: string }) {
       return url;
     }
   }, [url]);
+  const onLoad = useCallback((e: any) => {
+    try {
+      const doc = e?.target?.contentDocument;
+      if (!doc) { setErr("미리보기 로드 실패"); return; }
+      const title = (doc.title || "").toLowerCase();
+      const text = (doc.body?.innerText || "").toLowerCase();
+      if (title.includes("404") || text.includes("not found")) setErr("프리뷰 경로 404");
+      else setErr(null);
+    } catch {
+      setErr(null);
+    }
+  }, []);
+  const onError = useCallback(() => setErr("미리보기 네트워크 오류"), []);
   return (
     <div className="rounded border border-white/10 bg-black/70 p-2">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
@@ -2423,7 +2377,12 @@ function VerticalPreview({ url }: { url: string }) {
              background: "#0b0b0b",
              boxShadow: showFrame ? "0 6px 24px rgba(0,0,0,0.8), inset 0 0 0 1px rgba(255,255,255,0.06), inset 0 8px 24px rgba(255,255,255,0.04)" : "none",
            }}>
-        <iframe key={previewUrl} src={previewUrl} title="vertical-preview" className="absolute inset-0 w-full h-full" style={{ background: "transparent" }} scrolling="no" />
+        <iframe key={previewUrl} src={previewUrl} title="vertical-preview" className="absolute inset-0 w-full h-full" style={{ background: "transparent" }} scrolling="no" onLoad={onLoad} onError={onError} />
+        {err && (
+          <div className="absolute top-2 right-2 z-[10000] px-2 py-1 rounded bg-rose-700 text-white text-xs">
+            {err}
+          </div>
+        )}
         {showGuides && (
           <>
             <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: "inset 0 0 0 1px rgba(0,255,170,0.35)" }} />
