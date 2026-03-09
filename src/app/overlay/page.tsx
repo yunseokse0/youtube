@@ -26,11 +26,41 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   const loadRef = useRef(() => loadStateFromApi(userId));
   loadRef.current = () => loadStateFromApi(userId);
   const syncingRef = useRef(false);
+  const lastGoodRef = useRef<AppState | null>(null);
+  const LAST_GOOD_KEY = typeof window !== "undefined" ? `overlay-last-good-${userId || "default"}` : "overlay-last-good";
+  const KEEP_EMPTY_GRACE_MS = 60000;
+  const isViable = (s: AppState | null) => !!(s && Array.isArray(s.members) && s.members.length > 0);
+  const loadLastGood = (): AppState | null => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem(LAST_GOOD_KEY);
+      if (!raw) return null;
+      const obj = JSON.parse(raw);
+      if (obj && typeof obj === "object" && Array.isArray(obj.members)) return obj as AppState;
+    } catch {}
+    return null;
+  };
+  const saveLastGood = (s: AppState) => {
+    if (typeof window === "undefined") return;
+    try { window.localStorage.setItem(LAST_GOOD_KEY, JSON.stringify(s)); } catch {}
+  };
+  const shouldDiscardEmpty = (incoming: AppState | null) => {
+    if (!incoming) return false;
+    const emptyMembers = !Array.isArray(incoming.members) || incoming.members.length === 0;
+    if (!emptyMembers) return false;
+    if (!lastGoodRef.current) return false;
+    const ts = incoming.updatedAt || Date.now();
+    const age = Date.now() - ts;
+    return age <= KEEP_EMPTY_GRACE_MS;
+  };
   const onSSE = useCallback((incoming: any) => {
     if (!incoming) return;
+    if (shouldDiscardEmpty(incoming as AppState)) return;
     const ts = (incoming as any).updatedAt || Date.now();
     lastUpdatedRef.current = ts;
-    setState(incoming as AppState);
+    const next = incoming as AppState;
+    setState(next);
+    if (isViable(next)) { lastGoodRef.current = next; saveLastGood(next); }
   }, []);
   const _sse = useSSEConnection(onSSE);
   const readLocalStateIfExists = (): AppState | null => {
@@ -46,9 +76,16 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   };
   useEffect(() => {
     const local = readLocalStateIfExists();
-    if (local) {
+    const lastGood = loadLastGood();
+    if (local && isViable(local)) {
       setState(local);
       lastUpdatedRef.current = local.updatedAt || 0;
+      lastGoodRef.current = local;
+      saveLastGood(local);
+    } else if (lastGood && isViable(lastGood)) {
+      setState(lastGood);
+      lastUpdatedRef.current = lastGood.updatedAt || 0;
+      lastGoodRef.current = lastGood;
     } else {
       // No persisted local snapshot: allow API state to win immediately.
       lastUpdatedRef.current = 0;
@@ -60,32 +97,36 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       // even when API sync is delayed or failing.
       try {
         const localNow = readLocalStateIfExists();
-        if (localNow && localNow.updatedAt && localNow.updatedAt > lastUpdatedRef.current) {
+        if (localNow && localNow.updatedAt && localNow.updatedAt > lastUpdatedRef.current && !shouldDiscardEmpty(localNow)) {
           lastUpdatedRef.current = localNow.updatedAt;
           setState(localNow);
+          if (isViable(localNow)) { lastGoodRef.current = localNow; saveLastGood(localNow); }
         }
         const data = await loadRef.current();
         // Keep local state when API is stale (e.g. API save failed),
         // and only accept strictly newer snapshots from server.
-        if (data && data.updatedAt && data.updatedAt > lastUpdatedRef.current) {
+        if (data && data.updatedAt && data.updatedAt > lastUpdatedRef.current && !shouldDiscardEmpty(data)) {
           lastUpdatedRef.current = data.updatedAt;
           setState(data);
+          if (isViable(data)) { lastGoodRef.current = data; saveLastGood(data); }
         } else if (!localNow && !data) {
           // API 실패 + localStorage 비어있음 → 기본 상태로라도 프리뷰 표시
-          setState(defaultState());
+          const fallback = lastGoodRef.current || loadLastGood() || defaultState();
+          setState(fallback);
         }
       } catch {
         const localNow = readLocalStateIfExists();
-        if (!localNow) setState(defaultState());
+        if (!localNow) setState(lastGoodRef.current || loadLastGood() || defaultState());
       }
       syncingRef.current = false;
     };
     const onStorage = (e: StorageEvent) => {
       if (e.key !== storageKey(userId ?? undefined)) return;
       const localNow = readLocalStateIfExists();
-      if (localNow && localNow.updatedAt && localNow.updatedAt > lastUpdatedRef.current) {
+      if (localNow && localNow.updatedAt && localNow.updatedAt > lastUpdatedRef.current && !shouldDiscardEmpty(localNow)) {
         lastUpdatedRef.current = localNow.updatedAt;
         setState(localNow);
+        if (isViable(localNow)) { lastGoodRef.current = localNow; saveLastGood(localNow); }
       }
     };
     // Faster cadence for donor/member sync in overlay runtime.
