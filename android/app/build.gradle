@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.yunseok.youtube"
+    namespace = "com.finalent.app"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.yunseok.youtube"
+        applicationId "com.finalent.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -16,10 +16,27 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    def relStoreFile = System.getenv("RELEASE_STORE_FILE") ?: (project.hasProperty("RELEASE_STORE_FILE") ? project.property("RELEASE_STORE_FILE") : null)
+    def relStorePassword = System.getenv("RELEASE_STORE_PASSWORD") ?: (project.hasProperty("RELEASE_STORE_PASSWORD") ? project.property("RELEASE_STORE_PASSWORD") : null)
+    def relKeyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: (project.hasProperty("RELEASE_KEY_ALIAS") ? project.property("RELEASE_KEY_ALIAS") : null)
+    def relKeyPassword = System.getenv("RELEASE_KEY_PASSWORD") ?: (project.hasProperty("RELEASE_KEY_PASSWORD") ? project.property("RELEASE_KEY_PASSWORD") : null)
+    if (relStoreFile && relStorePassword && relKeyAlias && relKeyPassword) {
+        signingConfigs {
+            release {
+                storeFile file(relStoreFile)
+                storePassword relStorePassword
+                keyAlias relKeyAlias
+                keyPassword relKeyPassword
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (signingConfigs.findByName("release")) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

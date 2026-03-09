@@ -417,6 +417,11 @@ export function getMembersForExport(record: SettlementRecord): SettlementMemberR
 }
 
 export function recordToCsv(record: SettlementRecord): string {
+  const summaryHeader = ["요약", "닉네임", "실명", "최종정산"].join(",");
+  const summaryRows = getMembersForExport(record).map((m) => {
+    const cells = ["최종 정산", m.name, m.realName || "", String(m.net)];
+    return cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",");
+  });
   const header = [
     "생성시각",
     "정산제목",
@@ -454,7 +459,7 @@ export function recordToCsv(record: SettlementRecord): string {
     ];
     return cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",");
   });
-  return `\uFEFF${[header, ...rows].join("\r\n")}`;
+  return `\uFEFF${[summaryHeader, ...summaryRows, "", header, ...rows].join("\r\n")}`;
 }
 
 export function recordToTxt(record: SettlementRecord): string {
@@ -462,6 +467,11 @@ export function recordToTxt(record: SettlementRecord): string {
   lines.push(`[정산] ${record.title}`);
   lines.push(`생성시각: ${new Date(record.createdAt).toLocaleString()}`);
   lines.push(`비율: 계좌 ${record.accountRatio} / 투네 ${record.toonRatio} / 세금 ${Math.round(record.feeRate * 1000) / 10}%`);
+  lines.push("");
+  lines.push("최종 정산 요약");
+  for (const m of getMembersForExport(record)) {
+    lines.push(`- ${m.name}${m.realName ? `(${m.realName})` : ""}: ${m.net.toLocaleString()}`);
+  }
   lines.push("");
   for (const m of getMembersForExport(record)) {
     lines.push(
@@ -474,6 +484,5 @@ export function recordToTxt(record: SettlementRecord): string {
   }
   lines.push("");
   lines.push(`총합: ${record.totalGross.toLocaleString()} / 세금: ${record.totalFee.toLocaleString()} / 정산: ${record.totalNet.toLocaleString()}`);
-  return lines.join("\n");
+  return `\uFEFF${lines.join("\n")}`;
 }
-

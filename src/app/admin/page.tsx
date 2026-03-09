@@ -163,6 +163,57 @@ export default function AdminPage() {
     { key: "overlay", label: "오버레이 설정", targetId: "overlay-settings" },
     { key: "logs", label: "로그 / 데이터", targetId: "logs-data" },
   ];
+  const baseThemeChoices = ["default","excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","neon","neonExcel","retro","minimal","rpg","pastel","rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"];
+  const memberThemeChoices = ["auto","default","excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","minimal","pastel","retro","rpg"];
+  const missionThemeChoices = ["auto","default","excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","neon","neonExcel","rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice","minimal","pastel","retro","rpg"];
+  const themeStyle = (id: string): React.CSSProperties => {
+    const map: Record<string, React.CSSProperties> = {
+      default: { background: "linear-gradient(135deg,#111,#333)" },
+      minimal: { background: "linear-gradient(135deg,#0b0b0b,#1f2937)" },
+      retro: { background: "linear-gradient(135deg,#7c2d12,#ca8a04)" },
+      rpg: { background: "linear-gradient(135deg,#1b1b1b,#3f3f46)" },
+      pastel: { background: "linear-gradient(135deg,#f5d0fe,#bfdbfe)" },
+      excel: { background: "linear-gradient(135deg,#065f46,#34d399)" },
+      excelBlue: { background: "linear-gradient(135deg,#1e3a8a,#60a5fa)" },
+      excelSlate: { background: "linear-gradient(135deg,#0f172a,#334155)" },
+      excelAmber: { background: "linear-gradient(135deg,#92400e,#f59e0b)" },
+      excelRose: { background: "linear-gradient(135deg,#9f1239,#fb7185)" },
+      excelNavy: { background: "linear-gradient(135deg,#0b132b,#1c2541)" },
+      excelTeal: { background: "linear-gradient(135deg,#0f766e,#5eead4)" },
+      excelPurple: { background: "linear-gradient(135deg,#5b21b6,#c084fc)" },
+      excelEmerald: { background: "linear-gradient(135deg,#064e3b,#10b981)" },
+      excelOrange: { background: "linear-gradient(135deg,#7c2d12,#fb923c)" },
+      excelIndigo: { background: "linear-gradient(135deg,#3730a3,#818cf8)" },
+      neon: { background: "linear-gradient(135deg,#06b6d4,#a78bfa,#f472b6)" },
+      neonExcel: { background: "linear-gradient(135deg,#10b981,#22d3ee,#f472b6)" },
+      rainbow: { background: "linear-gradient(90deg,#ef4444,#f59e0b,#10b981,#3b82f6,#8b5cf6)" },
+      sunset: { background: "linear-gradient(135deg,#fb923c,#ef4444,#7c3aed)" },
+      ocean: { background: "linear-gradient(135deg,#0ea5e9,#22d3ee,#10b981)" },
+      forest: { background: "linear-gradient(135deg,#065f46,#16a34a,#22c55e)" },
+      aurora: { background: "linear-gradient(135deg,#22d3ee,#a78bfa,#34d399)" },
+      violet: { background: "linear-gradient(135deg,#7c3aed,#a78bfa)" },
+      coral: { background: "linear-gradient(135deg,#fb7185,#f59e0b)" },
+      mint: { background: "linear-gradient(135deg,#14b8a6,#a7f3d0)" },
+      lava: { background: "linear-gradient(135deg,#ef4444,#f97316,#f59e0b)" },
+      ice: { background: "linear-gradient(135deg,#67e8f9,#bae6fd)" },
+    };
+    return map[id] || map.default;
+  };
+  const ThemeThumbs = ({ value, options, onChange }: { value: string; options: string[]; onChange: (v: string) => void }) => (
+    <div className="flex flex-wrap gap-1.5 mt-1">
+      {options.map((opt) => (
+        <button
+          key={opt}
+          onClick={() => onChange(opt)}
+          className={`rounded-md border ${value === opt ? "border-emerald-400" : "border-white/10"} overflow-hidden`}
+          title={opt}
+          style={{ width: 48, height: 28 }}
+        >
+          <div className="w-full h-full" style={themeStyle(opt)} />
+        </button>
+      ))}
+    </div>
+  );
   const moveToSection = (key: "dashboard" | "settlement" | "donor" | "overlay" | "logs", targetId: string) => {
     setActiveNav(key);
     if (typeof window === "undefined") return;
@@ -883,7 +934,7 @@ export default function AdminPage() {
           {pullRefreshing ? "동기화 중..." : pullDistance >= 64 ? "놓아서 동기화" : "아래로 당겨 동기화"}
         </div>
       </div>
-      <div className="mx-auto max-w-[1400px] grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)] gap-6">
+      <div className="mx-auto max-w-[1600px] grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)] gap-6">
         <aside className="hidden lg:block lg:sticky lg:top-6 self-start rounded-xl border border-white/10 bg-[#222222] p-3 h-fit">
           <div className="text-xs uppercase tracking-[0.12em] text-neutral-400 px-2 pb-2">메뉴</div>
           <div className="space-y-1">
@@ -1275,7 +1326,7 @@ export default function AdminPage() {
                       {isOpen && (
                         <div className="px-3 pb-3 grid grid-cols-1 lg:grid-cols-2 gap-3 border-t border-white/10 pt-3">
                           <div className="space-y-2 lg:order-2">
-                            <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] items-center gap-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
                               <label className="text-xs text-neutral-400">테마</label>
                               <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.theme} onChange={(e) => updatePreset(p.id, { theme: e.target.value })}>
                                 <option value="default">기본</option>
@@ -1283,6 +1334,45 @@ export default function AdminPage() {
                                 <option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
                                 <option value="rainbow">무지개</option><option value="sunset">일몰</option><option value="ocean">오션</option><option value="forest">포레스트</option><option value="aurora">오로라</option><option value="violet">바이올렛</option><option value="coral">코랄</option><option value="mint">민트</option><option value="lava">라바</option><option value="ice">아이스</option>
                               </select>
+                              <ThemeThumbs value={p.theme} options={baseThemeChoices} onChange={(v) => updatePreset(p.id, { theme: v })} />
+                              {(p.showMembers || p.showTotal) && (
+                                <>
+                                  <label className="text-xs text-neutral-400">멤버·총합 테마</label>
+                                  <select
+                                    className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                    value={p.membersTheme || "auto"}
+                                    onChange={(e) => updatePreset(p.id, { membersTheme: e.target.value, totalTheme: e.target.value })}
+                                  >
+                                    <option value="auto">자동(전체 테마 따름)</option>
+                                    <option value="default">기본</option>
+                                    <option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option><option value="excelTeal">엑셀(틸)</option><option value="excelPurple">엑셀(퍼플)</option><option value="excelEmerald">엑셀(에메랄드)</option><option value="excelOrange">엑셀(오렌지)</option><option value="excelIndigo">엑셀(인디고)</option>
+                                    <option value="minimal">미니멀</option><option value="pastel">파스텔</option><option value="retro">레트로</option><option value="rpg">RPG</option>
+                                  </select>
+                                  <ThemeThumbs value={p.membersTheme || "auto"} options={memberThemeChoices} onChange={(v) => updatePreset(p.id, { membersTheme: v, totalTheme: v })} />
+                                  <label className="text-xs text-neutral-400">표 배경 불투명도</label>
+                                  <div className="flex items-center gap-2">
+                                    <input type="range" min="0" max="100" value={p.tableBgOpacity || "100"} onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value })} className="flex-1 accent-emerald-500" />
+                                    <input className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right" value={p.tableBgOpacity || "100"} onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value.replace(/[^\\d]/g, "") })} />
+                                    <span className="text-xs text-neutral-500">%</span>
+                                  </div>
+                                </>
+                              )}
+                              {p.showGoal && (
+                                <>
+                                  <label className="text-xs text-neutral-400">목표바 테마</label>
+                                  <select
+                                    className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                    value={p.goalTheme || "auto"}
+                                    onChange={(e) => updatePreset(p.id, { goalTheme: e.target.value })}
+                                  >
+                                    <option value="auto">자동(전체 테마 따름)</option>
+                                    <option value="default">기본</option>
+                                    <option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option><option value="excelTeal">엑셀(틸)</option><option value="excelPurple">엑셀(퍼플)</option><option value="excelEmerald">엑셀(에메랄드)</option><option value="excelOrange">엑셀(오렌지)</option><option value="excelIndigo">엑셀(인디고)</option>
+                                    <option value="minimal">미니멀</option><option value="pastel">파스텔</option><option value="retro">레트로</option><option value="rpg">RPG</option>
+                                  </select>
+                                  <ThemeThumbs value={p.goalTheme || "auto"} options={memberThemeChoices} onChange={(v) => updatePreset(p.id, { goalTheme: v })} />
+                                </>
+                              )}
                               <label className="text-xs text-neutral-400">안가림 모드</label>
                               <button className={`px-2 py-0.5 rounded border text-xs ${p.noCrop !== false ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { noCrop: !(p.noCrop !== false) })}>
                                 {p.noCrop !== false ? "ON" : "OFF"}
@@ -1526,7 +1616,7 @@ export default function AdminPage() {
                               </button>
                               <span className="text-[10px] text-neutral-500">(표만: 목록·총합만, 나머지 숨김)</span>
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] items-center gap-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
                               <label className="text-xs text-neutral-400">표 배경 투명도</label>
                               <div className="flex items-center gap-2">
                                 <input
@@ -1548,7 +1638,7 @@ export default function AdminPage() {
                                 <span className="text-xs text-neutral-500">% (100=불투명)</span>
                               </div>
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] items-center gap-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
                               <label className="text-xs text-neutral-400">폭죽(매 N만원)</label>
                               <div className="flex items-center gap-2">
                                 <input
@@ -1645,7 +1735,7 @@ export default function AdminPage() {
 
                             <div className="h-px bg-white/10 my-1" />
                             <div className="text-xs text-neutral-400 font-semibold">후원 리스트 옵션</div>
-                            <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] items-center gap-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
                               <label className="text-xs text-neutral-400">멤버목록 내 티커</label>
                               <button className={`px-2 py-0.5 rounded border text-xs ${p.tickerInMembers ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { tickerInMembers: !p.tickerInMembers })}>
                                 {p.tickerInMembers ? "ON" : "OFF"}
@@ -1750,7 +1840,7 @@ export default function AdminPage() {
                               <>
                                 <div className="h-px bg-white/10 my-1" />
                                 <div className="text-xs text-neutral-400 font-semibold">목표 금액</div>
-                                <div className="grid grid-cols-1 sm:grid-cols-[90px_1fr] items-center gap-1">
+                                <div className="grid grid-cols-1 sm:grid-cols-[100px_minmax(0,1fr)] items-center gap-1">
                                   <label className="text-xs text-neutral-400">목표(원)</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" type="number" value={p.goal} onChange={(e) => updatePreset(p.id, { goal: e.target.value })} />
                                   <label className="text-xs text-neutral-400">라벨</label>
@@ -1773,7 +1863,7 @@ export default function AdminPage() {
                               <>
                                 <div className="h-px bg-white/10 my-1" />
                                 <div className="text-xs text-neutral-400 font-semibold">개인골 표시</div>
-                                <div className="grid grid-cols-1 sm:grid-cols-[90px_1fr] items-center gap-1">
+                                <div className="grid grid-cols-1 sm:grid-cols-[100px_minmax(0,1fr)] items-center gap-1">
                                   <label className="text-xs text-neutral-400">테마</label>
                                   <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.personalGoalTheme || "goalClassic"} onChange={(e) => updatePreset(p.id, { personalGoalTheme: e.target.value })}>
                                     <option value="goalClassic">개인골 클래식</option>
@@ -1811,7 +1901,7 @@ export default function AdminPage() {
                               <>
                                 <div className="h-px bg-white/10 my-1" />
                                 <div className="text-xs text-neutral-400 font-semibold">후원 티커</div>
-                                <div className="grid grid-cols-1 sm:grid-cols-[90px_1fr] items-center gap-1">
+                                <div className="grid grid-cols-1 sm:grid-cols-[100px_minmax(0,1fr)] items-center gap-1">
                                   <label className="text-xs text-neutral-400">위치 설정(Prism에서)</label>
                                   <div className="text-xs text-neutral-500">위치/크기 조정은 Prism에서 진행합니다.</div>
                                   <label className="text-xs text-neutral-400">폭(px)</label>
@@ -1836,6 +1926,19 @@ export default function AdminPage() {
                               <>
                                 <div className="h-px bg-white/10 my-1" />
                                 <div className="text-xs text-neutral-400 font-semibold">미션 전광판</div>
+                                <label className="text-xs text-neutral-400 mt-1">미션 테마</label>
+                                <select
+                                  className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                  value={p.missionTheme || "auto"}
+                                  onChange={(e) => updatePreset(p.id, { missionTheme: e.target.value })}
+                                >
+                                  <option value="auto">자동(전체 테마 따름)</option>
+                                  <option value="default">기본</option>
+                                  <option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option><option value="excelTeal">엑셀(틸)</option><option value="excelPurple">엑셀(퍼플)</option><option value="excelEmerald">엑셀(에메랄드)</option><option value="excelOrange">엑셀(오렌지)</option><option value="excelIndigo">엑셀(인디고)</option>
+                                  <option value="rainbow">무지개</option><option value="sunset">일몰</option><option value="ocean">오션</option><option value="forest">포레스트</option><option value="aurora">오로라</option><option value="violet">바이올렛</option><option value="coral">코랄</option><option value="mint">민트</option><option value="lava">라바</option><option value="ice">아이스</option>
+                                  <option value="minimal">미니멀</option><option value="pastel">파스텔</option><option value="retro">레트로</option><option value="rpg">RPG</option>
+                                </select>
+                                <ThemeThumbs value={p.missionTheme || "auto"} options={missionThemeChoices} onChange={(v) => updatePreset(p.id, { missionTheme: v })} />
                                 <div className="text-xs text-neutral-500">위치 설정(Prism에서)</div>
                               </>
                             )}
@@ -2192,10 +2295,10 @@ function VerticalPreview({ url }: { url: string }) {
       </div>
       <div className="relative mx-auto rounded-xl overflow-hidden shrink-0"
            style={{
-             width: "min(70vw, 820px)",
+             width: "min(84vw, 1100px)",
              maxWidth: "100%",
              height: "auto",
-             maxHeight: "78vh",
+             maxHeight: "82vh",
              aspectRatio: `${w} / ${h}`,
              border: "1px solid rgba(255,255,255,0.1)",
              background: "#0b0b0b",

@@ -1023,7 +1023,22 @@ function OverlayInner() {
   }, []);
   const membersRemote = useMemo(() => (ready && s ? s.members : []), [ready, s]);
   const donorsRemote = useMemo(() => (ready && s ? s.donors : []), [ready, s]);
-  const missions = useMemo(() => (ready && s ? s.missions || [] : []), [ready, s]);
+  const missions = useMemo(() => {
+    const base = ready && s ? (s.missions || []) : [];
+    if (base.length > 0) return base;
+    const spLocal = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
+    const preview = spLocal.get("previewGuide") === "true";
+    const demoParam = spLocal.get("demo") === "true";
+    const showMissionParam = (spLocal.get("showMission") || "false").toLowerCase() === "true";
+    if (showMissionParam && (preview || demoParam)) {
+      return [
+        { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
+        { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
+        { id: "mis_demo_3", title: "게임 미션 클리어 도전", price: "5만" },
+      ] as MissionItem[];
+    }
+    return base;
+  }, [ready, s]);
   const overlayPresets = useMemo(() => {
     const remote = ready && s && Array.isArray(s.overlayPresets) ? (s.overlayPresets as OverlayPresetLike[]) : [];
     return remote.length > 0 ? remote : localPresets;
@@ -1103,16 +1118,27 @@ function OverlayInner() {
   const sumX = hasFreePos ? parsePct(sumXParam, 50) : 0;
   const sumY = hasFreePos ? parsePct(sumYParam, 90) : 0;
   const themeId = (sp.get("theme") || "default") as ThemeId;
-  const theme = THEMES[themeId] || THEMES.default;
-  const membersTheme = theme;
-  const totalTheme = theme;
-  const goalTheme = theme;
-  const tickerBaseTheme = theme;
-  const timerTheme = theme;
-  const missionTheme = theme;
+  const baseTheme = THEMES[themeId] || THEMES.default;
+  const resolveThemeId = (key: string): ThemeId => {
+    const raw = (sp.get(key) || "auto").trim();
+    const id = (raw && raw !== "auto" ? raw : themeId) as ThemeId;
+    return (THEMES as any)[id] ? id : themeId;
+  };
+  const membersThemeId = resolveThemeId("membersTheme");
+  const totalThemeId = resolveThemeId("totalTheme");
+  const goalThemeId = resolveThemeId("goalTheme");
+  const tickerBaseThemeId = resolveThemeId("tickerBaseTheme");
+  const timerThemeId = resolveThemeId("timerTheme");
+  const missionThemeId = resolveThemeId("missionTheme");
+  const membersTheme = THEMES[membersThemeId];
+  const totalTheme = THEMES[totalThemeId];
+  const goalTheme = THEMES[goalThemeId];
+  const tickerBaseTheme = THEMES[tickerBaseThemeId];
+  const timerTheme = THEMES[timerThemeId];
+  const missionTheme = THEMES[missionThemeId];
   const missionThemeVariant = (() => {
     const excelThemes = ["excel", "excelBlue", "excelSlate", "excelAmber", "excelRose", "excelNavy", "excelTeal", "excelPurple", "excelEmerald", "excelOrange", "excelIndigo"];
-    return excelThemes.includes(themeId) ? "excel" : (["rainbow", "sunset", "ocean", "forest", "aurora", "violet", "coral", "mint", "lava", "ice"].includes(themeId) ? "neon" : themeId);
+    return excelThemes.includes(missionThemeId) ? "excel" : (["rainbow", "sunset", "ocean", "forest", "aurora", "violet", "coral", "mint", "lava", "ice"].includes(missionThemeId) ? "neon" : missionThemeId);
   })() as "default" | "excel" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel";
 
   const tableOnly = sp.get("tableOnly") === "true";
@@ -1198,7 +1224,10 @@ function OverlayInner() {
   const tickerShadowCfg = Math.max(0, Math.min(100, parseInt(sp.get("tickerShadow") || "35", 10)));
   const tableBgOpacity = (() => {
     const raw = (sp.get("tableBgOpacity") || "").trim();
-    if (!raw) return 100;
+    if (!raw) {
+      const neonThemes = ["rainbow", "sunset", "ocean", "forest", "aurora", "violet", "coral", "mint", "lava", "ice"];
+      return neonThemes.includes(membersThemeId) ? 92 : 100;
+    }
     const n = parseInt(raw, 10);
     return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 100;
   })();
@@ -1859,7 +1888,13 @@ function OverlayInner() {
         )}
         {effectiveShowTicker && ready && <div className={`absolute ${tickerPosClass} ${hasTickerFreePos ? "" : "mb-10"}`} style={tickerPosStyle}><DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
         {showTimer && <div className={`absolute ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={timerTheme} fontSize={memberSize} /></div>}
-        {showMission && ready && missions.length > 0 && <div className={`absolute ${posClass(missionAnchor)}`} style={{ width: fitWidthToViewport(missionWidth) }}><MissionBoard missions={missions} fontSize={memberSize * 0.9} themeVariant={missionThemeVariant} duration={missionDuration} /></div>}
+        {showMission && ready && missions.length > 0 && (
+          <div className={`absolute ${posClass(missionAnchor)} z-[9990] pointer-events-none`} style={{ width: fitWidthToViewport(missionWidth) }}>
+            <div className="pointer-events-auto">
+              <MissionBoard missions={missions} fontSize={memberSize * 0.9} themeVariant={missionThemeVariant} duration={missionDuration} />
+            </div>
+          </div>
+        )}
         {demo && <div className="fixed top-2 left-2 z-[9999] px-2 py-0.5 rounded bg-rose-600/90 text-white text-xs font-bold shadow">DEMO</div>}
         {!rawUserId && <div className="fixed top-8 left-2 z-[9999] px-2 py-0.5 rounded bg-amber-600/90 text-white text-[11px] font-semibold shadow">인증 누락: 기본 계정 사용 중</div>}
           </main>

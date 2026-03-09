@@ -118,6 +118,12 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.box && preset.box !== "full") q.set("box", preset.box);
   if (preset.noCrop === false) q.set("noCrop", "false");
   q.set("theme", preset.theme || "default");
+  if (preset.membersTheme && preset.membersTheme !== "auto") q.set("membersTheme", preset.membersTheme);
+  if (preset.totalTheme && preset.totalTheme !== "auto") q.set("totalTheme", preset.totalTheme);
+  if (preset.goalTheme && preset.goalTheme !== "auto") q.set("goalTheme", preset.goalTheme);
+  if (preset.tickerBaseTheme && preset.tickerBaseTheme !== "auto") q.set("tickerBaseTheme", preset.tickerBaseTheme);
+  if (preset.timerTheme && preset.timerTheme !== "auto") q.set("timerTheme", preset.timerTheme);
+  if (preset.missionTheme && preset.missionTheme !== "auto") q.set("missionTheme", preset.missionTheme);
   q.set("showMembers", String(preset.showMembers ?? true));
   q.set("showTotal", String(preset.showTotal ?? true));
   if (preset.sumFree) {

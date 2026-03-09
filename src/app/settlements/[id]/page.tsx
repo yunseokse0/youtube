@@ -182,6 +182,21 @@ export default function SettlementDetailPage() {
           </div>
         </div>
 
+        <div className="rounded border border-white/10 bg-neutral-900/60 p-3">
+          <div className="text-sm font-semibold mb-2">최종 정산 요약</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+            {getMembersForExport(record).map((m) => (
+              <div key={`sum-${m.memberId}`} className="rounded bg-black/30 border border-white/10 px-3 py-2 flex items-baseline justify-between">
+                <div className="text-sm text-neutral-300 mr-3 truncate">
+                  <span className="font-medium">{m.name}</span>
+                  {m.realName ? <span className="text-neutral-500"> ({m.realName})</span> : null}
+                </div>
+                <div className="text-base font-extrabold text-emerald-300 tabular-nums">{m.net.toLocaleString()}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div className="text-sm text-neutral-300 whitespace-nowrap overflow-x-auto">
           계좌 비율 {(record.accountRatio * 100).toFixed(1)}% · 투네 비율 {(record.toonRatio * 100).toFixed(1)}% · 세금 {(record.feeRate * 100).toFixed(1)}%
         </div>
@@ -266,4 +281,3 @@ export default function SettlementDetailPage() {
     </main>
   );
 }
-

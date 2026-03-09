@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">YouTube Overlay</string>
-    <string name="title_activity_main">YouTube Overlay</string>
-    <string name="package_name">com.yunseok.youtube</string>
-    <string name="custom_url_scheme">com.yunseok.youtube</string>
+    <string name="app_name">FinalEnt</string>
+    <string name="title_activity_main">FinalEnt</string>
+    <string name="package_name">com.finalent.app</string>
+    <string name="custom_url_scheme">com.finalent.app</string>
 </resources>
