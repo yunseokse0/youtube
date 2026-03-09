@@ -1029,8 +1029,20 @@ function OverlayInner() {
     const spLocal = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
     const preview = spLocal.get("previewGuide") === "true";
     const demoParam = spLocal.get("demo") === "true";
-    const showMissionParam = (spLocal.get("showMission") || "false").toLowerCase() === "true";
-    if (showMissionParam && (preview || demoParam)) {
+    const pId = (spLocal.get("p") || "").trim();
+    let showMissionEffective = (spLocal.get("showMission") || "").toLowerCase() === "true";
+    if (!showMissionEffective && s) {
+      const presets = (s as any).overlayPresets || [];
+      let active: any = null;
+      if (pId) active = presets.find((x: any) => x.id === pId) || null;
+      if (!active) {
+        const prefId = (s as any).overlaySettings?.currentPresetId;
+        if (prefId) active = presets.find((x: any) => x.id === prefId) || null;
+        if (!active && Array.isArray(presets) && presets.length) active = presets[0];
+      }
+      showMissionEffective = Boolean(active?.showMission);
+    }
+    if (showMissionEffective && (preview || demoParam)) {
       return [
         { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
         { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
@@ -1177,7 +1189,27 @@ function OverlayInner() {
   const hasTickerFreePos = centerFixed ? false : (tickerXParam !== null && tickerYParam !== null);
   const tickerX = hasTickerFreePos ? parsePct(tickerXParam, 50) : 0;
   const tickerY = hasTickerFreePos ? parsePct(tickerYParam, 86) : 0;
-  const showMission = tableOnly ? false : (sp.get("showMission") === "true");
+  const showMission = (() => {
+    if (tableOnly) return false;
+    const raw = sp.get("showMission");
+    if (raw === "true") return true;
+    if (raw === "false") return false;
+    // 미리보기 모드에서 URL에 showMission이 없더라도, 프리셋이 ON이면 보이도록 허용
+    const isPreview = rawSp.get("previewGuide") === "true";
+    if (isPreview) {
+      const pId = (rawSp.get("p") || "").trim();
+      const presets = (s && (s as any).overlayPresets) || [];
+      let active: any = null;
+      if (pId) active = presets.find((x: any) => x.id === pId) || null;
+      if (!active) {
+        const prefId = s && (s as any).overlaySettings?.currentPresetId;
+        if (prefId) active = presets.find((x: any) => x.id === prefId) || null;
+        if (!active && Array.isArray(presets) && presets.length) active = presets[0];
+      }
+      return Boolean(active?.showMission);
+    }
+    return false;
+  })();
   const missionAnchor = (sp.get("missionAnchor") || "bc").toLowerCase();
   const missionWidth = Math.max(400, Math.min(1600, parseInt(sp.get("missionWidth") || "800", 10)));
   const missionDuration = Math.max(15, Math.min(60, parseInt(sp.get("missionDuration") || "25", 10)));

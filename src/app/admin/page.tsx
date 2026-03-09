@@ -30,6 +30,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { appendSettlementRecordAndSync, SettlementMemberRatioOverrides } from "@/lib/settlement";
 import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
+import MissionBoard from "@/components/MissionBoard";
 
 function ClientTime({ ts }: { ts: number | string }) {
   const [text, setText] = useState<string>("");
@@ -82,6 +83,8 @@ export default function AdminPage() {
     tickerBaseTheme?: string;
     timerTheme?: string;
     missionTheme?: string;
+    missionWidth?: string;
+    missionDuration?: string;
     showMembers: boolean; showTotal: boolean;
     showGoal: boolean; goal: string; goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string;
     showPersonalGoal?: boolean;
@@ -129,6 +132,7 @@ export default function AdminPage() {
     tickerInMembers: true, tickerInGoal: true, tickerInPersonalGoal: true,
     goalWidth: "400", goalAnchor: "bc", goalCurrent: "", showTicker: false, tickerAnchor: "bc", tickerWidth: "600", tickerFree: false, tickerX: "50", tickerY: "86", showTimer: false,
     timerStart: null, timerAnchor: "tr", showMission: false, missionAnchor: "br",
+    missionWidth: "800", missionDuration: "25",
     membersTheme: "auto", totalTheme: "auto", goalTheme: "auto", tickerBaseTheme: "auto", timerTheme: "auto", missionTheme: "auto",
     showBottomDonors: true, donorsSize: "", donorsGap: "16", donorsSpeed: "20", donorsLimit: "8", donorsFormat: "short", donorsUnit: "", donorsColor: "", donorsBgColor: "", donorsBgOpacity: "0", tickerTheme: "auto", tickerGlow: "45", tickerShadow: "35", currencyLocale: "ko-KR",
     confettiMilestone: "",
@@ -214,6 +218,71 @@ export default function AdminPage() {
       ))}
     </div>
   );
+  const ThemePicker = ({
+    value,
+    options,
+    onChange,
+    storageKey = "fav:themes",
+    groups,
+  }: {
+    value: string;
+    options: string[];
+    onChange: (v: string) => void;
+    storageKey?: string;
+    groups?: Record<string, string[]>;
+  }) => {
+    const [q, setQ] = useState("");
+    const [tab, setTab] = useState<"all" | "fav" | string>("all");
+    const readFavs = (): Set<string> => {
+      if (typeof window === "undefined") return new Set<string>();
+      try { return new Set<string>(JSON.parse(window.localStorage.getItem(storageKey) || "[]")); } catch { return new Set<string>(); }
+    };
+    const [favs, setFavs] = useState<Set<string>>(readFavs());
+    const toggleFav = (id: string) => {
+      const next = new Set(favs);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      setFavs(next);
+      if (typeof window !== "undefined") window.localStorage.setItem(storageKey, JSON.stringify([...next]));
+    };
+    const lowerQ = q.trim().toLowerCase();
+    let pool = [...options];
+    if (tab === "fav") pool = pool.filter((id) => favs.has(id));
+    else if (tab !== "all" && groups?.[tab]) pool = pool.filter((id) => groups![tab].includes(id));
+    if (lowerQ) pool = pool.filter((id) => id.toLowerCase().includes(lowerQ));
+    return (
+      <div className="mt-1 space-y-1.5">
+        <div className="flex items-center gap-1">
+          <input
+            className="flex-1 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs"
+            placeholder="테마 검색"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          <button className={`px-2 py-1 rounded text-xs ${tab === "all" ? "bg-emerald-700" : "bg-neutral-700 hover:bg-neutral-600"}`} onClick={() => setTab("all")}>전체</button>
+          <button className={`px-2 py-1 rounded text-xs ${tab === "fav" ? "bg-emerald-700" : "bg-neutral-700 hover:bg-neutral-600"}`} onClick={() => setTab("fav")}>즐겨찾기</button>
+          {groups && Object.keys(groups).map((k) => (
+            <button key={k} className={`px-2 py-1 rounded text-xs ${tab === k ? "bg-emerald-700" : "bg-neutral-700 hover:bg-neutral-600"}`} onClick={() => setTab(k)}>{k}</button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {pool.map((opt) => (
+            <div key={opt} className={`relative rounded-md border ${value === opt ? "border-emerald-400" : "border-white/10"}`} style={{ width: 64 }}>
+              <button onClick={() => onChange(opt)} className="block rounded-md overflow-hidden" title={opt} style={{ width: 64, height: 32 }}>
+                <div className="w-full h-full" style={themeStyle(opt)} />
+              </button>
+              <button
+                title="즐겨찾기"
+                onClick={() => toggleFav(opt)}
+                className={`absolute -top-2 -right-2 rounded-full text-[10px] w-5 h-5 border ${favs.has(opt) ? "bg-yellow-400 text-black border-yellow-300" : "bg-neutral-800 border-white/10 text-neutral-300"}`}
+              >★</button>
+              <div className="text-[10px] text-neutral-400 text-center mt-0.5 truncate" style={{ maxWidth: 64 }}>{opt}</div>
+            </div>
+          ))}
+          {pool.length === 0 && <div className="text-xs text-neutral-500 px-2 py-1">검색 결과가 없습니다</div>}
+        </div>
+      </div>
+    );
+  };
   const moveToSection = (key: "dashboard" | "settlement" | "donor" | "overlay" | "logs", targetId: string) => {
     setActiveNav(key);
     if (typeof window === "undefined") return;
@@ -1348,7 +1417,16 @@ export default function AdminPage() {
                                     <option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option><option value="excelTeal">엑셀(틸)</option><option value="excelPurple">엑셀(퍼플)</option><option value="excelEmerald">엑셀(에메랄드)</option><option value="excelOrange">엑셀(오렌지)</option><option value="excelIndigo">엑셀(인디고)</option>
                                     <option value="minimal">미니멀</option><option value="pastel">파스텔</option><option value="retro">레트로</option><option value="rpg">RPG</option>
                                   </select>
-                                  <ThemeThumbs value={p.membersTheme || "auto"} options={memberThemeChoices} onChange={(v) => updatePreset(p.id, { membersTheme: v, totalTheme: v })} />
+                                  <ThemePicker
+                                    value={p.membersTheme || "auto"}
+                                    options={memberThemeChoices}
+                                    onChange={(v) => updatePreset(p.id, { membersTheme: v, totalTheme: v })}
+                                    storageKey="fav:memberThemes"
+                                    groups={{
+                                      기본: ["auto","default","minimal","pastel","retro","rpg"],
+                                      엑셀: ["excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"],
+                                    }}
+                                  />
                                   <label className="text-xs text-neutral-400">표 배경 불투명도</label>
                                   <div className="flex items-center gap-2">
                                     <input type="range" min="0" max="100" value={p.tableBgOpacity || "100"} onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value })} className="flex-1 accent-emerald-500" />
@@ -1926,20 +2004,61 @@ export default function AdminPage() {
                               <>
                                 <div className="h-px bg-white/10 my-1" />
                                 <div className="text-xs text-neutral-400 font-semibold">미션 전광판</div>
+                                <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2 mt-1">
+                                  <label className="text-xs text-neutral-400">표시</label>
+                                  <div>
+                                    <button className={`px-2 py-1 rounded text-xs ${p.showMission ? "bg-emerald-700" : "bg-neutral-700 hover:bg-neutral-600"}`} onClick={() => updatePreset(p.id, { showMission: !p.showMission })}>{p.showMission ? "ON" : "OFF"}</button>
+                                    <span className="ml-2 text-xs text-neutral-500">프리뷰/OBS에서 즉시 반영</span>
+                                  </div>
+                                </div>
                                 <label className="text-xs text-neutral-400 mt-1">미션 테마</label>
-                                <select
-                                  className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                <ThemePicker
                                   value={p.missionTheme || "auto"}
-                                  onChange={(e) => updatePreset(p.id, { missionTheme: e.target.value })}
-                                >
-                                  <option value="auto">자동(전체 테마 따름)</option>
-                                  <option value="default">기본</option>
-                                  <option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option><option value="excelTeal">엑셀(틸)</option><option value="excelPurple">엑셀(퍼플)</option><option value="excelEmerald">엑셀(에메랄드)</option><option value="excelOrange">엑셀(오렌지)</option><option value="excelIndigo">엑셀(인디고)</option>
-                                  <option value="rainbow">무지개</option><option value="sunset">일몰</option><option value="ocean">오션</option><option value="forest">포레스트</option><option value="aurora">오로라</option><option value="violet">바이올렛</option><option value="coral">코랄</option><option value="mint">민트</option><option value="lava">라바</option><option value="ice">아이스</option>
-                                  <option value="minimal">미니멀</option><option value="pastel">파스텔</option><option value="retro">레트로</option><option value="rpg">RPG</option>
-                                </select>
-                                <ThemeThumbs value={p.missionTheme || "auto"} options={missionThemeChoices} onChange={(v) => updatePreset(p.id, { missionTheme: v })} />
-                                <div className="text-xs text-neutral-500">위치 설정(Prism에서)</div>
+                                  options={missionThemeChoices}
+                                  onChange={(v) => updatePreset(p.id, { missionTheme: v })}
+                                  storageKey="fav:missionThemes"
+                                  groups={{
+                                    기본: ["auto","default","minimal","pastel","retro","rpg"],
+                                    엑셀: ["excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"],
+                                    네온: ["neon","neonExcel","rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"],
+                                  }}
+                                />
+                                <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2 mt-2">
+                                  <label className="text-xs text-neutral-400">너비</label>
+                                  <div className="flex items-center gap-2">
+                                    <input type="range" min="400" max="1600" value={p.missionWidth || "800"} onChange={(e) => updatePreset(p.id, { missionWidth: e.target.value })} className="flex-1 accent-emerald-500" />
+                                    <input className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right" value={p.missionWidth || "800"} onChange={(e) => updatePreset(p.id, { missionWidth: e.target.value.replace(/[^\\d]/g, "") })} />
+                                    <span className="text-xs text-neutral-500">px</span>
+                                  </div>
+                                  <label className="text-xs text-neutral-400">속도</label>
+                                  <div className="flex items-center gap-2">
+                                    <input type="range" min="15" max="60" value={p.missionDuration || "25"} onChange={(e) => updatePreset(p.id, { missionDuration: e.target.value })} className="flex-1 accent-emerald-500" />
+                                    <input className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right" value={p.missionDuration || "25"} onChange={(e) => updatePreset(p.id, { missionDuration: e.target.value.replace(/[^\\d]/g, "") })} />
+                                    <span className="text-xs text-neutral-500">초/루프</span>
+                                  </div>
+                                </div>
+                                <div className="mt-2 rounded border border-white/10 bg-neutral-950/60 p-2">
+                                  <div className="text-xs text-neutral-400 mb-1">미션 전광판 미리보기</div>
+                                  <div className="overflow-hidden">
+                                    <MissionBoard
+                                      missions={(state.missions && state.missions.length > 0) ? state.missions : [
+                                        { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
+                                        { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
+                                        { id: "mis_demo_3", title: "게임 미션 클리어 도전", price: "5만" },
+                                      ]}
+                                      fontSize={14}
+                                      themeVariant={(() => {
+                                        const id = (p.missionTheme && p.missionTheme !== "auto" ? p.missionTheme : p.theme) || "default";
+                                        const excelThemes = ["excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"];
+                                        if (excelThemes.includes(id)) return "excel";
+                                        if (["rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"].includes(id)) return "neon";
+                                        return (id as any);
+                                      })()}
+                                      duration={22}
+                                    />
+                                  </div>
+                                </div>
+                                <div className="text-xs text-neutral-500">위치 설정(Prism에서), 고급 위치는 포지션 탭에서 조정</div>
                               </>
                             )}
 

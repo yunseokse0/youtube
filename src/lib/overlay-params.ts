@@ -65,6 +65,8 @@ export type OverlayPresetLike = {
   timerAnchor?: string;
   showMission?: boolean;
   missionAnchor?: string;
+  missionWidth?: string;
+  missionDuration?: string;
   showBottomDonors?: boolean;
   donorsSize?: string;
   donorsGap?: string;
@@ -171,6 +173,8 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.showMission) {
     q.set("showMission", "true");
     q.set("missionAnchor", preset.missionAnchor || "bc");
+    if (preset.missionWidth && preset.missionWidth.trim()) q.set("missionWidth", preset.missionWidth.trim());
+    if (preset.missionDuration && preset.missionDuration.trim()) q.set("missionDuration", preset.missionDuration.trim());
   }
   if (preset.showBottomDonors) q.set("showBottomDonors", "true");
   if (preset.donorsSize && preset.donorsSize.trim()) q.set("donorsSize", preset.donorsSize.trim());
