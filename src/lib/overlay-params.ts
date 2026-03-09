@@ -68,8 +68,10 @@ export type OverlayPresetLike = {
   missionWidth?: string;
   missionDuration?: string;
   missionBgOpacity?: string;
+  missionBgColor?: string;
   missionItemColor?: string;
   missionTitleColor?: string;
+  missionFontSize?: string;
   host?: string;
   showBottomDonors?: boolean;
   donorsSize?: string;
@@ -176,12 +178,14 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   }
   if (preset.showMission) {
     q.set("showMission", "true");
-    q.set("missionAnchor", preset.missionAnchor || "bc");
+    if (preset.missionAnchor && preset.missionAnchor.trim()) q.set("missionAnchor", preset.missionAnchor);
     if (preset.missionWidth && preset.missionWidth.trim()) q.set("missionWidth", preset.missionWidth.trim());
     if (preset.missionDuration && preset.missionDuration.trim()) q.set("missionDuration", preset.missionDuration.trim());
     q.set("missionBgOpacity", (preset.missionBgOpacity && preset.missionBgOpacity.trim()) ? preset.missionBgOpacity.trim() : "85");
+    if (preset.missionBgColor && preset.missionBgColor.trim()) q.set("missionBgColor", preset.missionBgColor.trim());
     if (preset.missionItemColor && preset.missionItemColor.trim()) q.set("missionItemColor", preset.missionItemColor.trim());
     if (preset.missionTitleColor && preset.missionTitleColor.trim()) q.set("missionTitleColor", preset.missionTitleColor.trim());
+    if (preset.missionFontSize && preset.missionFontSize.trim()) q.set("missionFontSize", preset.missionFontSize.trim());
   }
   if (preset.showBottomDonors) q.set("showBottomDonors", "true");
   if (preset.donorsSize && preset.donorsSize.trim()) q.set("donorsSize", preset.donorsSize.trim());

@@ -22,6 +22,7 @@ type MissionBoardProps = {
   themeVariant?: MissionThemeVariant;
   duration?: number;
   bgOpacity?: number;
+  bgColor?: string;
   itemColor?: string;
   titleColor?: string;
 };
@@ -32,6 +33,7 @@ const MissionBoard = ({
   themeVariant = "default",
   duration = 25,
   bgOpacity,
+  bgColor,
   itemColor,
   titleColor,
 }: MissionBoardProps) => {
@@ -42,14 +44,31 @@ const MissionBoard = ({
     itemColor: itemColor || base.itemColor,
     titleColor: titleColor || base.titleColor,
     bgColor: (() => {
-      if (typeof bgOpacity !== "number") return base.bgColor;
-      const o = Math.max(0, Math.min(1, bgOpacity / 100));
-      const m = base.bgColor.match(/rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([0-9.]+)\s*\)/i);
+      const toRgba = (hex: string, op: number) => {
+        const h = hex.replace("#", "");
+        if (h.length === 3) {
+          const r = parseInt(h[0] + h[0], 16);
+          const g = parseInt(h[1] + h[1], 16);
+          const b = parseInt(h[2] + h[2], 16);
+          return `rgba(${r}, ${g}, ${b}, ${op})`;
+        }
+        if (h.length === 6) {
+          const r = parseInt(h.slice(0, 2), 16);
+          const g = parseInt(h.slice(2, 4), 16);
+          const b = parseInt(h.slice(4, 6), 16);
+          return `rgba(${r}, ${g}, ${b}, ${op})`;
+        }
+        return hex;
+      };
+      const o = typeof bgOpacity === "number" ? Math.max(0, Math.min(1, bgOpacity / 100)) : undefined;
+      if (bgColor && o !== undefined) return toRgba(bgColor, o);
+      if (o === undefined) return bgColor || base.bgColor;
+      const m = (bgColor || base.bgColor).match(/rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([0-9.]+)\s*\)/i);
       if (m) {
         const [, r, g, b] = m;
         return `rgba(${r}, ${g}, ${b}, ${o})`;
       }
-      return base.bgColor;
+      return bgColor || base.bgColor;
     })(),
   };
 

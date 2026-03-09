@@ -86,8 +86,10 @@ export default function AdminPage() {
     missionWidth?: string;
     missionDuration?: string;
     missionBgOpacity?: string;
+    missionBgColor?: string;
     missionItemColor?: string;
     missionTitleColor?: string;
+    missionFontSize?: string;
     showMembers: boolean; showTotal: boolean;
     showGoal: boolean; goal: string; goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string;
     showPersonalGoal?: boolean;
@@ -1971,41 +1973,25 @@ export default function AdminPage() {
                                     <span className="ml-2 text-xs text-neutral-500">프리뷰/OBS에서 즉시 반영</span>
                                   </div>
                                 </div>
-                                <label className="text-xs text-neutral-400 mt-1">미션 테마</label>
-                                <select
-                                  className="px-2 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm min-h-[44px]"
-                                  value={p.missionTheme || "auto"}
-                                  onChange={(e) => updatePreset(p.id, { missionTheme: e.target.value })}
-                                >
-                                  <option value="auto">자동(전체 테마 따름)</option>
-                                  <option value="default">기본</option>
-                                  <option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option><option value="excelTeal">엑셀(틸)</option><option value="excelPurple">엑셀(퍼플)</option><option value="excelEmerald">엑셀(에메랄드)</option><option value="excelOrange">엑셀(오렌지)</option><option value="excelIndigo">엑셀(인디고)</option>
-                                  <option value="rainbow">무지개</option><option value="sunset">일몰</option><option value="ocean">오션</option><option value="forest">포레스트</option><option value="aurora">오로라</option><option value="violet">바이올렛</option><option value="coral">코랄</option><option value="mint">민트</option><option value="lava">라바</option><option value="ice">아이스</option>
-                                  <option value="minimal">미니멀</option><option value="pastel">파스텔</option><option value="retro">레트로</option><option value="rpg">RPG</option>
-                                </select>
                                 <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-3 mt-2">
-                                  <label className="text-xs text-neutral-400">너비</label>
-                                  <div className="flex items-center gap-2">
-                                    <input type="range" min="400" max="1600" value={p.missionWidth || "800"} onChange={(e) => updatePreset(p.id, { missionWidth: e.target.value })} className="flex-1 accent-emerald-500 h-11" />
-                                    <input className="w-24 px-2 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm text-right min-h-[44px]" value={p.missionWidth || "800"} onChange={(e) => updatePreset(p.id, { missionWidth: e.target.value.replace(/[^\\d]/g, "") })} />
-                                    <span className="text-xs text-neutral-500">px</span>
-                                  </div>
-                                  <label className="text-xs text-neutral-400">속도</label>
-                                  <div className="flex items-center gap-2">
-                                    <input type="range" min="15" max="60" value={p.missionDuration || "25"} onChange={(e) => updatePreset(p.id, { missionDuration: e.target.value })} className="flex-1 accent-emerald-500 h-11" />
-                                    <input className="w-20 px-2 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm text-right min-h-[44px]" value={p.missionDuration || "25"} onChange={(e) => updatePreset(p.id, { missionDuration: e.target.value.replace(/[^\\d]/g, "") })} />
-                                    <span className="text-xs text-neutral-500">초/루프</span>
-                                  </div>
+                                  <label className="text-xs text-neutral-400">배경 색상</label>
+                                  <input type="color" className="w-16 h-11 rounded bg-neutral-900/80 border border-white/10" value={(p.missionBgColor as any) || "#0b0b0b"} onChange={(e) => updatePreset(p.id, { missionBgColor: e.target.value })} />
                                   <label className="text-xs text-neutral-400">배경 불투명도</label>
                                   <div className="flex items-center gap-2">
                                     <input type="range" min="0" max="100" value={p.missionBgOpacity || "85"} onChange={(e) => updatePreset(p.id, { missionBgOpacity: e.target.value })} className="flex-1 accent-emerald-500 h-11" />
                                     <input className="w-20 px-2 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm text-right min-h-[44px]" value={p.missionBgOpacity || "85"} onChange={(e) => updatePreset(p.id, { missionBgOpacity: e.target.value.replace(/[^\\d]/g, "") })} />
                                     <span className="text-xs text-neutral-500">%</span>
                                   </div>
-                                  <label className="text-xs text-neutral-400">항목 색상</label>
+                                  <label className="text-xs text-neutral-400">텍스트 색상</label>
                                   <input type="color" className="w-16 h-11 rounded bg-neutral-900/80 border border-white/10" value={(p.missionItemColor as any) || "#fde68a"} onChange={(e) => updatePreset(p.id, { missionItemColor: e.target.value })} />
                                   <label className="text-xs text-neutral-400">강조 색상</label>
                                   <input type="color" className="w-16 h-11 rounded bg-neutral-900/80 border border-white/10" value={(p.missionTitleColor as any) || "#fcd34d"} onChange={(e) => updatePreset(p.id, { missionTitleColor: e.target.value })} />
+                                  <label className="text-xs text-neutral-400">글씨 크기</label>
+                                  <div className="flex items-center gap-2">
+                                    <input type="range" min="10" max="80" value={p.missionFontSize || "18"} onChange={(e) => updatePreset(p.id, { missionFontSize: e.target.value })} className="flex-1 accent-emerald-500 h-11" />
+                                    <input className="w-20 px-2 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm text-right min-h-[44px]" value={p.missionFontSize || "18"} onChange={(e) => updatePreset(p.id, { missionFontSize: e.target.value.replace(/[^\\d]/g, "") })} />
+                                    <span className="text-xs text-neutral-500">px</span>
+                                  </div>
                                 </div>
                                 {/* Palette view removed; keep compact select */}
                                 <div className="mt-2 rounded border border-white/10 bg-neutral-950/60 p-2">
@@ -2017,15 +2003,16 @@ export default function AdminPage() {
                                         { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
                                         { id: "mis_demo_3", title: "게임 미션 클리어 도전", price: "5만" },
                                       ]}
-                                      fontSize={14}
+                                      fontSize={parseInt(p.missionFontSize || "18", 10)}
                                       themeVariant={(() => {
-                                        const id = (p.missionTheme && p.missionTheme !== "auto" ? p.missionTheme : p.theme) || "default";
+                                        const id = p.theme || "default";
                                         const excelThemes = ["excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"];
                                         if (excelThemes.includes(id)) return "excel";
                                         if (["rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"].includes(id)) return "neon";
                                         return (id as any);
                                       })()}
                                       duration={22}
+                                      bgColor={(p as any).missionBgColor || undefined}
                                       bgOpacity={parseInt(p.missionBgOpacity || "85", 10)}
                                       itemColor={(p as any).missionItemColor || undefined}
                                       titleColor={(p as any).missionTitleColor || undefined}
@@ -2054,7 +2041,9 @@ export default function AdminPage() {
                           </div>
 
                           <div className="lg:order-1">
-                            <VerticalPreview url={buildStablePreviewUrl(p)} />
+                            {!(p.showMission && !p.showMembers && !p.showTotal && !p.showGoal && !p.showPersonalGoal && !p.showTicker && !p.showTimer) && (
+                              <VerticalPreview url={buildStablePreviewUrl(p)} />
+                            )}
                           </div>
                         </div>
                       )}

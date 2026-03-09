@@ -1215,6 +1215,7 @@ function OverlayInner() {
   const missionAnchor = (sp.get("missionAnchor") || "bc").toLowerCase();
   const missionWidth = Math.max(400, Math.min(1600, parseInt(sp.get("missionWidth") || "800", 10)));
   const missionDuration = Math.max(15, Math.min(60, parseInt(sp.get("missionDuration") || "25", 10)));
+  const missionFontSize = Math.max(10, Math.min(80, parseInt(sp.get("missionFontSize") || String(Math.round(memberSize * 0.9)), 10)));
   const confettiMilestoneMan = (() => {
     const raw = (sp.get("confettiMilestone") || "").trim();
     if (!raw) return 0;
@@ -1655,11 +1656,13 @@ function OverlayInner() {
       effectiveScale = Math.min(effectiveScale, containLimitScale);
     }
     const justify =
+      externalHost ? "center" :
       centerFixed ? "center" :
       fitPin === "tl" || fitPin === "cl" || fitPin === "bl" ? "flex-start" :
       fitPin === "tr" || fitPin === "cr" || fitPin === "br" ? "flex-end" :
       "center";
     const align =
+      externalHost ? "center" :
       centerFixed ? "center" :
       fitPin === "tl" || fitPin === "tc" || fitPin === "tr" ? "flex-start" :
       fitPin === "bl" || fitPin === "bc" || fitPin === "br" ? "flex-end" :
@@ -1678,8 +1681,8 @@ function OverlayInner() {
     };
     const viewportInnerStyle: React.CSSProperties = {
       position: "relative",
-      width: centerFixed ? BASE_W : FIT_W,
-      height: centerFixed ? BASE_H : FIT_H,
+      width: (centerFixed || externalHost) ? BASE_W : FIT_W,
+      height: (centerFixed || externalHost) ? BASE_H : FIT_H,
       flexShrink: 0,
     };
     const origin = centerFixed ? "center center" :
@@ -1925,14 +1928,15 @@ function OverlayInner() {
         {effectiveShowTicker && ready && <div className={`absolute ${tickerPosClass} ${hasTickerFreePos ? "" : "mb-10"}`} style={tickerPosStyle}><DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
         {showTimer && <div className={`absolute ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={timerTheme} fontSize={memberSize} /></div>}
         {showMission && (ready || isPreviewGuide) && missions.length > 0 && (
-          <div className={`absolute ${posClass(missionAnchor)} z-[9990] pointer-events-none`} style={{ width: fitWidthToViewport(missionWidth) }}>
+          <div className={`absolute ${posClass(externalHost ? "cc" : missionAnchor)} z-[9990] pointer-events-none`} style={{ width: fitWidthToViewport(missionWidth) }}>
             <div className="pointer-events-auto">
               <MissionBoard
                 missions={missions}
-                fontSize={memberSize * 0.9}
+                fontSize={missionFontSize}
                 themeVariant={missionThemeVariant}
                 duration={missionDuration}
                 bgOpacity={Math.max(0, Math.min(100, parseInt(sp.get("missionBgOpacity") || "85", 10)))}
+                bgColor={(sp.get("missionBgColor") || "").trim() || undefined}
                 itemColor={(sp.get("missionItemColor") || "").trim() || undefined}
                 titleColor={(sp.get("missionTitleColor") || "").trim() || undefined}
               />
