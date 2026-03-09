@@ -67,6 +67,10 @@ export type OverlayPresetLike = {
   missionAnchor?: string;
   missionWidth?: string;
   missionDuration?: string;
+  missionBgOpacity?: string;
+  missionItemColor?: string;
+  missionTitleColor?: string;
+  host?: string;
   showBottomDonors?: boolean;
   donorsSize?: string;
   donorsGap?: string;
@@ -175,6 +179,9 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
     q.set("missionAnchor", preset.missionAnchor || "bc");
     if (preset.missionWidth && preset.missionWidth.trim()) q.set("missionWidth", preset.missionWidth.trim());
     if (preset.missionDuration && preset.missionDuration.trim()) q.set("missionDuration", preset.missionDuration.trim());
+    q.set("missionBgOpacity", (preset.missionBgOpacity && preset.missionBgOpacity.trim()) ? preset.missionBgOpacity.trim() : "85");
+    if (preset.missionItemColor && preset.missionItemColor.trim()) q.set("missionItemColor", preset.missionItemColor.trim());
+    if (preset.missionTitleColor && preset.missionTitleColor.trim()) q.set("missionTitleColor", preset.missionTitleColor.trim());
   }
   if (preset.showBottomDonors) q.set("showBottomDonors", "true");
   if (preset.donorsSize && preset.donorsSize.trim()) q.set("donorsSize", preset.donorsSize.trim());
@@ -196,5 +203,6 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.accountColor && preset.accountColor.trim()) q.set("accountColor", preset.accountColor.trim());
   if (preset.toonColor && preset.toonColor.trim()) q.set("toonColor", preset.toonColor.trim());
   if (preset.vertical) q.set("vertical", "true");
+  if (preset.host && preset.host.trim()) q.set("host", preset.host.trim());
   return q;
 }

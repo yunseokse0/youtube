@@ -1293,6 +1293,8 @@ function OverlayInner() {
   const isPreviewGuide = sp.get("previewGuide") === "true";
   const autoFit = (sp.get("autoFit") || "none").toLowerCase() as "none" | "width" | "height" | "contain" | "cover";
   const zoomMode = ((sp.get("zoomMode") || "invert").toLowerCase() as "follow" | "invert" | "neutral");
+  const hostParam = (sp.get("host") || "").toLowerCase();
+  const externalHost = hostParam === "prism" || hostParam === "obs" || hostParam === "external";
   const fitPin = centerFixed ? "cc" : ((sp.get("fitPin") || "cc").toLowerCase() as "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr");
   const showGuide = (sp.get("guide") || "false").toLowerCase() === "true";
   const boxMode = (sp.get("box") || "full").toLowerCase() as "full" | "tight";
@@ -1646,7 +1648,7 @@ function OverlayInner() {
       : ["3ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`];
     let effectiveScale = centerFixed || hasTableFreePos
       ? (zoomMode === "neutral" ? 1 : (zoomMode === "invert" ? (1 / centerZoomScale) : centerZoomScale))
-      : (viewportScale * scale);
+      : (externalHost ? 1 : (viewportScale * scale));
     if (noCrop) {
       effectiveScale = Math.min(effectiveScale, containLimitScale);
     }
@@ -1688,7 +1690,7 @@ function OverlayInner() {
       fitPin === "cl" ? "left center" :
       fitPin === "cr" ? "right center" :
       "center center";
-    const scaleStyleTag = (centerFixed || hasTableFreePos) ? (
+    const scaleStyleTag = (centerFixed || hasTableFreePos || externalHost) ? (
       <style dangerouslySetInnerHTML={{ __html: `
         .overlay-route { transform: none !important; -webkit-transform: none !important; transform-origin: center center !important; }
       ` }} />
@@ -1923,7 +1925,15 @@ function OverlayInner() {
         {showMission && (ready || isPreviewGuide) && missions.length > 0 && (
           <div className={`absolute ${posClass(missionAnchor)} z-[9990] pointer-events-none`} style={{ width: fitWidthToViewport(missionWidth) }}>
             <div className="pointer-events-auto">
-              <MissionBoard missions={missions} fontSize={memberSize * 0.9} themeVariant={missionThemeVariant} duration={missionDuration} />
+              <MissionBoard
+                missions={missions}
+                fontSize={memberSize * 0.9}
+                themeVariant={missionThemeVariant}
+                duration={missionDuration}
+                bgOpacity={Math.max(0, Math.min(100, parseInt(sp.get("missionBgOpacity") || "85", 10)))}
+                itemColor={(sp.get("missionItemColor") || "").trim() || undefined}
+                titleColor={(sp.get("missionTitleColor") || "").trim() || undefined}
+              />
             </div>
           </div>
         )}

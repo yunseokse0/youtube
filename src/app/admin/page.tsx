@@ -85,6 +85,9 @@ export default function AdminPage() {
     missionTheme?: string;
     missionWidth?: string;
     missionDuration?: string;
+    missionBgOpacity?: string;
+    missionItemColor?: string;
+    missionTitleColor?: string;
     showMembers: boolean; showTotal: boolean;
     showGoal: boolean; goal: string; goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string;
     showPersonalGoal?: boolean;
@@ -105,6 +108,7 @@ export default function AdminPage() {
     vertical?: boolean;
     accountColor?: string;
     toonColor?: string;
+    host?: string;
   };
   const PRESET_STORAGE_KEY = "excel-broadcast-overlay-presets";
   const SETTLEMENT_OPTIONS_KEY = "excel-broadcast-settlement-options-v1";
@@ -476,6 +480,7 @@ export default function AdminPage() {
     q.set("p", p.id);
     q.set("u", user?.id || "finalent");
     q.set("vertical", vertical ? "true" : "false");
+    q.set("host", "prism");
     q.delete("previewGuide");
     q.delete("renderWidth");
     q.delete("renderHeight");
@@ -1340,21 +1345,7 @@ export default function AdminPage() {
               <div className="space-y-3">
                 {presets.map((p) => {
                   const url = buildOverlayUrl(p);
-                  const previewBaseUrl = buildPreviewOverlayUrl(p);
-                  const previewRev = [
-                    p.theme, p.scale, p.memberSize, p.totalSize,
-                    p.showMembers ? "1" : "0", p.showTotal ? "1" : "0", p.showGoal ? "1" : "0", p.showPersonalGoal ? "1" : "0", p.showTicker ? "1" : "0", p.showTimer ? "1" : "0", p.showMission ? "1" : "0",
-                    p.membersTheme, p.totalTheme, p.goalTheme, p.tickerBaseTheme, p.timerTheme, p.missionTheme,
-                    p.goal, p.goalLabel, p.goalWidth, p.goalCurrent,
-                    p.personalGoalTheme, p.personalGoalLimit,
-                    p.tickerWidth, p.donorsSize, p.donorsGap, p.donorsSpeed, p.donorsLimit, p.donorsFormat, p.donorsUnit, p.currencyLocale, p.donorsColor, p.donorsBgColor, p.donorsBgOpacity, p.tickerTheme, p.tickerGlow, p.tickerShadow,
-                    p.confettiMilestone,
-                    p.tableBgOpacity,
-                    p.accountColor,
-                    p.toonColor,
-                    p.layout || "",
-                  ].join("|");
-                  const previewUrl = `${previewBaseUrl}&pv=${encodeURIComponent(previewRev)}&_rev=${presetRev}`;
+                  const previewUrl = buildStablePreviewUrl(p);
                   const isOpen = editingId === p.id;
                   return (
                     <div key={p.id} className="rounded border border-white/10 bg-neutral-900/40">
@@ -1381,7 +1372,7 @@ export default function AdminPage() {
                                 <option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
                                 <option value="rainbow">무지개</option><option value="sunset">일몰</option><option value="ocean">오션</option><option value="forest">포레스트</option><option value="aurora">오로라</option><option value="violet">바이올렛</option><option value="coral">코랄</option><option value="mint">민트</option><option value="lava">라바</option><option value="ice">아이스</option>
                               </select>
-                              <ThemeThumbs value={p.theme} options={baseThemeChoices} onChange={(v) => updatePreset(p.id, { theme: v })} />
+                              {/* Palette view removed per user preference; compact select retained */}
                               {(p.showMembers || p.showTotal) && (
                                 <>
                                   <label className="text-xs text-neutral-400">멤버·총합 테마</label>
@@ -1395,7 +1386,7 @@ export default function AdminPage() {
                                     <option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option><option value="excelTeal">엑셀(틸)</option><option value="excelPurple">엑셀(퍼플)</option><option value="excelEmerald">엑셀(에메랄드)</option><option value="excelOrange">엑셀(오렌지)</option><option value="excelIndigo">엑셀(인디고)</option>
                                     <option value="minimal">미니멀</option><option value="pastel">파스텔</option><option value="retro">레트로</option><option value="rpg">RPG</option>
                                   </select>
-                                  <ThemeThumbs value={p.membersTheme || "auto"} options={memberThemeChoices} onChange={(v) => updatePreset(p.id, { membersTheme: v, totalTheme: v })} />
+                                  {/* Palette view removed; keep compact select */}
                                   <label className="text-xs text-neutral-400">표 배경 불투명도</label>
                                   <div className="flex items-center gap-2">
                                     <input type="range" min="0" max="100" value={p.tableBgOpacity || "100"} onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value })} className="flex-1 accent-emerald-500" />
@@ -1417,7 +1408,7 @@ export default function AdminPage() {
                                     <option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option><option value="excelTeal">엑셀(틸)</option><option value="excelPurple">엑셀(퍼플)</option><option value="excelEmerald">엑셀(에메랄드)</option><option value="excelOrange">엑셀(오렌지)</option><option value="excelIndigo">엑셀(인디고)</option>
                                     <option value="minimal">미니멀</option><option value="pastel">파스텔</option><option value="retro">레트로</option><option value="rpg">RPG</option>
                                   </select>
-                                  <ThemeThumbs value={p.goalTheme || "auto"} options={memberThemeChoices} onChange={(v) => updatePreset(p.id, { goalTheme: v })} />
+                                  {/* Palette view removed; keep compact select */}
                                 </>
                               )}
                               <label className="text-xs text-neutral-400">안가림 모드</label>
@@ -2005,8 +1996,18 @@ export default function AdminPage() {
                                     <input className="w-20 px-2 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm text-right min-h-[44px]" value={p.missionDuration || "25"} onChange={(e) => updatePreset(p.id, { missionDuration: e.target.value.replace(/[^\\d]/g, "") })} />
                                     <span className="text-xs text-neutral-500">초/루프</span>
                                   </div>
+                                  <label className="text-xs text-neutral-400">배경 불투명도</label>
+                                  <div className="flex items-center gap-2">
+                                    <input type="range" min="0" max="100" value={p.missionBgOpacity || "85"} onChange={(e) => updatePreset(p.id, { missionBgOpacity: e.target.value })} className="flex-1 accent-emerald-500 h-11" />
+                                    <input className="w-20 px-2 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm text-right min-h-[44px]" value={p.missionBgOpacity || "85"} onChange={(e) => updatePreset(p.id, { missionBgOpacity: e.target.value.replace(/[^\\d]/g, "") })} />
+                                    <span className="text-xs text-neutral-500">%</span>
+                                  </div>
+                                  <label className="text-xs text-neutral-400">항목 색상</label>
+                                  <input type="color" className="w-16 h-11 rounded bg-neutral-900/80 border border-white/10" value={(p.missionItemColor as any) || "#fde68a"} onChange={(e) => updatePreset(p.id, { missionItemColor: e.target.value })} />
+                                  <label className="text-xs text-neutral-400">강조 색상</label>
+                                  <input type="color" className="w-16 h-11 rounded bg-neutral-900/80 border border-white/10" value={(p.missionTitleColor as any) || "#fcd34d"} onChange={(e) => updatePreset(p.id, { missionTitleColor: e.target.value })} />
                                 </div>
-                                <ThemeThumbs value={p.missionTheme || "auto"} options={missionThemeChoices} onChange={(v) => updatePreset(p.id, { missionTheme: v })} />
+                                {/* Palette view removed; keep compact select */}
                                 <div className="mt-2 rounded border border-white/10 bg-neutral-950/60 p-2">
                                   <div className="text-xs text-neutral-400 mb-1">미션 전광판 미리보기</div>
                                   <div className="overflow-hidden">
@@ -2025,6 +2026,9 @@ export default function AdminPage() {
                                         return (id as any);
                                       })()}
                                       duration={22}
+                                      bgOpacity={parseInt(p.missionBgOpacity || "85", 10)}
+                                      itemColor={(p as any).missionItemColor || undefined}
+                                      titleColor={(p as any).missionTitleColor || undefined}
                                     />
                                   </div>
                                 </div>

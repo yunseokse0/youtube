@@ -21,6 +21,9 @@ type MissionBoardProps = {
   fontSize?: number;
   themeVariant?: MissionThemeVariant;
   duration?: number;
+  bgOpacity?: number;
+  itemColor?: string;
+  titleColor?: string;
 };
 
 const MissionBoard = ({
@@ -28,9 +31,27 @@ const MissionBoard = ({
   fontSize = 18,
   themeVariant = "default",
   duration = 25,
+  bgOpacity,
+  itemColor,
+  titleColor,
 }: MissionBoardProps) => {
   if (!missions.length) return null;
-  const theme = MISSION_THEME_STYLES[themeVariant] || MISSION_THEME_STYLES.default;
+  const base = MISSION_THEME_STYLES[themeVariant] || MISSION_THEME_STYLES.default;
+  const theme = {
+    ...base,
+    itemColor: itemColor || base.itemColor,
+    titleColor: titleColor || base.titleColor,
+    bgColor: (() => {
+      if (typeof bgOpacity !== "number") return base.bgColor;
+      const o = Math.max(0, Math.min(1, bgOpacity / 100));
+      const m = base.bgColor.match(/rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([0-9.]+)\s*\)/i);
+      if (m) {
+        const [, r, g, b] = m;
+        return `rgba(${r}, ${g}, ${b}, ${o})`;
+      }
+      return base.bgColor;
+    })(),
+  };
 
   const content = (
     <>
