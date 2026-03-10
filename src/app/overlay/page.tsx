@@ -1159,7 +1159,13 @@ function OverlayInner() {
   const showMembers = tableOnly ? true : (sp.get("showMembers") !== "false");
   const showTotal = tableOnly ? true : (sp.get("showTotal") !== "false");
   const showGoal = tableOnly ? false : (sp.get("showGoal") === "true");
-  const showPersonalGoal = tableOnly ? false : (sp.get("showPersonalGoal") === "true");
+  const showPersonalGoal = (() => {
+    if (tableOnly) return false;
+    const raw = sp.get("showPersonalGoal");
+    if (raw === "true") return true;
+    if (raw === "false") return false;
+    return Boolean(activePreset?.showPersonalGoal);
+  })();
   const showTicker = (sp.get("showTicker") === "true");
   const tickerInMembers = tableOnly ? false : (sp.get("tickerInMembers") === "true");
   const tickerInPersonalGoal = tableOnly ? false : (sp.get("tickerInPersonalGoal") === "true");
