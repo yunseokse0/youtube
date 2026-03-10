@@ -34,6 +34,8 @@ export type OverlayPreset = {
   timerAnchor: string;
   showMission: boolean;
   missionAnchor: string;
+  missionTitleText?: string;
+  missionTitleColor?: string;
   // 개별 요소 위치 설정
   memberPosition?: OverlayElementPosition;
   totalPosition?: OverlayElementPosition;
@@ -344,6 +346,29 @@ export function OverlayCard({ preset, onUpdate, onDelete, onCopyUrl, copiedId, u
                 min="0"
                 max="100"
               />
+            </div>
+          )}
+          {preset.showMission && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-neutral-400">타이틀 텍스트</label>
+                <input
+                  type="text"
+                  value={preset.missionTitleText || ''}
+                  onChange={(e) => onUpdate(preset.id, { missionTitleText: e.target.value })}
+                  className="w-full px-2 py-1 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none text-sm"
+                  placeholder="예: MISSION"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-neutral-400">타이틀 색상</label>
+                <input
+                  type="color"
+                  value={preset.missionTitleColor || '#fcd34d'}
+                  onChange={(e) => onUpdate(preset.id, { missionTitleColor: e.target.value })}
+                  className="w-16 h-10 rounded bg-white/5 border border-white/10"
+                />
+              </div>
             </div>
           )}
         </div>

@@ -810,7 +810,6 @@ function DonorTicker({ donors, theme, fontSize, color, bgColor, bgOpacity, full,
     const sorted = donors.slice().sort((a, b) => b.at - a.at);
     const byName = new Map<string, { name: string; at: number; account: number; toon: number }>();
     for (const d of sorted) {
-      if ((d.target || "account") === "toon") continue;
       const key = (d.name || "무명").trim() || "무명";
       const prev = byName.get(key);
       const isToon = (d.target || "account") === "toon";
@@ -818,16 +817,16 @@ function DonorTicker({ donors, theme, fontSize, color, bgColor, bgOpacity, full,
         byName.set(key, {
           name: key,
           at: d.at || 0,
-          account: isToon ? 0 : d.amount,
-          toon: isToon ? d.amount : 0,
+          account: isToon ? 0 : (d.amount || 0),
+          toon: isToon ? (d.amount || 0) : 0,
         });
         continue;
       }
       byName.set(key, {
         name: key,
         at: Math.max(prev.at, d.at || 0),
-        account: prev.account + (isToon ? 0 : d.amount),
-        toon: prev.toon + (isToon ? d.amount : 0),
+        account: prev.account + (isToon ? 0 : (d.amount || 0)),
+        toon: prev.toon + (isToon ? (d.amount || 0) : 0),
       });
     }
     return Array.from(byName.values())
@@ -2030,7 +2029,7 @@ function OverlayInner() {
         {showPersonalGoal && (ready || isPreviewGuide) && (
           renderPersonalGoal()
         )}
-        {effectiveShowTicker && ready && <div className={`absolute ${tickerPosClass} ${hasTickerFreePos ? "" : "mb-10"}`} style={tickerPosStyle}><DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
+        {effectiveShowTicker && (ready || isPreviewGuide) && <div className={`absolute ${tickerPosClass} ${hasTickerFreePos ? "" : "mb-10"}`} style={tickerPosStyle}><DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
         {showTimer && <div className={`absolute ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={timerTheme} fontSize={memberSize} /></div>}
         {showMission && (ready || isPreviewGuide) && missions.length > 0 && (
           <div className={`absolute ${posClass(externalHost ? "cc" : missionAnchor)} z-[9990] pointer-events-none`} style={{ width: fitWidthToViewport(missionWidth) }}>

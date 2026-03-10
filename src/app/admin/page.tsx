@@ -502,7 +502,7 @@ export default function AdminPage() {
     try {
       const snapObj = {
         members: state.members.map(m => ({ id: m.id, name: m.name, account: m.account, toon: m.toon, goal: m.goal, role: m.role, operating: m.operating })),
-        donors: [],
+        donors: state.donors || [],
         missions: (state as any).missions || [],
         forbiddenWords: state.forbiddenWords || [],
         goal: (() => { const n = parseInt((p.goal || "0") as any, 10); return Number.isFinite(n) ? Math.max(0, n) : 0; })(),
@@ -531,7 +531,7 @@ export default function AdminPage() {
     const base = `${window.location.origin}/overlay`;
     const snapObj = {
       members: state.members.map(m => ({ id: m.id, name: m.name, account: m.account, toon: m.toon, goal: m.goal, role: m.role, operating: m.operating })),
-      donors: [],
+      donors: state.donors || [],
       missions: (state as any).missions || [],
       forbiddenWords: state.forbiddenWords || [],
       goal: (() => { const n = parseInt((p.goal || "0") as any, 10); return Number.isFinite(n) ? Math.max(0, n) : 0; })(),
