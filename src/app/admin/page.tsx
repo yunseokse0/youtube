@@ -2197,33 +2197,33 @@ export default function AdminPage() {
                 <h2 className="text-lg font-semibold">방송 종료 정산</h2>
                 <Link className="text-sm text-neutral-300 underline" href="/settlements">정산 기록 보기</Link>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto_auto] gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <input
-                  className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  className="flex-1 min-w-[220px] px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
                   placeholder="정산 제목 (예: 16화 세부)"
                   value={settlementTitle}
                   onChange={(e) => setSettlementTitle(e.target.value)}
                 />
                 <input
-                  className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  className="w-[120px] px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
                   placeholder="계좌 비율 % (예: 70)"
                   value={accountRatioInput}
                   onChange={(e) => setAccountRatioInput(e.target.value.replace(/[^\d.]/g, ""))}
                 />
                 <input
-                  className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  className="w-[120px] px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
                   placeholder="투네 비율 % (예: 60)"
                   value={toonRatioInput}
                   onChange={(e) => setToonRatioInput(e.target.value.replace(/[^\d.]/g, ""))}
                 />
                 <input
-                  className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  className="w-[120px] px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
                   placeholder="세금 비율 % (예: 3.3)"
                   value={taxRateInput}
                   onChange={(e) => setTaxRateInput(e.target.value.replace(/[^\d.]/g, ""))}
                 />
                 <button
-                  className="px-4 py-2 rounded bg-[#22c55e] hover:bg-[#16a34a] font-semibold text-white whitespace-nowrap shrink-0"
+                  className="px-4 py-2 rounded bg-[#22c55e] hover:bg-[#16a34a] font-semibold text-white whitespace-nowrap flex-none"
                   onClick={onFinishBroadcastAndSettle}
                 >
                   방송 종료(정산 생성)
