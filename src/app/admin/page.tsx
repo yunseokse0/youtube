@@ -356,7 +356,11 @@ export default function AdminPage() {
         setState(local);
         const offline = typeof navigator !== "undefined" && !navigator.onLine;
         setSyncStatus(offline ? "local" : "error");
-        if (!offline) saveStateAsync(local, user?.id).then((ok) => { if (ok) setSyncStatus("synced"); });
+        // 의미 있는 데이터가 있을 때만 서버에 업로드 (초기 기본값 덮어쓰기 방지)
+        const hasMeaningfulData = totalCombined(local) > 0 || (local.donors && local.donors.length > 0);
+        if (!offline && hasMeaningfulData) {
+          saveStateAsync(local, user?.id).then((ok) => { if (ok) setSyncStatus("synced"); });
+        }
       }
     });
   }, [user]);
