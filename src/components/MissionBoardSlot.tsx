@@ -21,6 +21,7 @@ type MissionBoardSlotProps = {
   missions: MissionItem[];
   fontSize?: number;
   themeVariant?: MissionThemeVariant;
+  titleText?: string;
   visibleCount?: number;
   speed?: number; // seconds per step
   gapSize?: number; // px
@@ -36,6 +37,7 @@ export default function MissionBoardSlot({
   missions,
   fontSize = 18,
   themeVariant = "default",
+  titleText = "MISSION",
   visibleCount = 3,
   speed = 2,
   gapSize = 8,
@@ -105,7 +107,7 @@ export default function MissionBoardSlot({
     >
       <div style={{ display: "flex", alignItems: "center", marginBottom: gapSize }}>
         <span className="font-black tracking-widest" style={{ color: theme.titleColor }}>
-          ■ MISSION ■
+          ■ {titleText || "MISSION"} ■
         </span>
       </div>
       <div style={{ display: "grid", gap: gapSize }}>

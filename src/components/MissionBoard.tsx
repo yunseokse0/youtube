@@ -21,6 +21,7 @@ type MissionBoardProps = {
   fontSize?: number;
   themeVariant?: MissionThemeVariant;
   duration?: number;
+  titleText?: string;
   bgOpacity?: number;
   bgColor?: string;
   itemColor?: string;
@@ -34,6 +35,7 @@ const MissionBoard = ({
   fontSize = 18,
   themeVariant = "default",
   duration = 25,
+  titleText = "MISSION",
   bgOpacity,
   bgColor,
   itemColor,
@@ -87,7 +89,7 @@ const MissionBoard = ({
         .fx-glow { animation: fx-glow 1.6s ease-in-out infinite }
       `}</style>
       <span className="font-black tracking-widest" style={{ color: theme.titleColor, marginRight: 32 }}>
-        ■ MISSION ■
+        ■ {titleText || "MISSION"} ■
       </span>
       {missions.map((item, idx) => (
         <span

@@ -57,7 +57,6 @@ export function OverlayCard({ preset, onUpdate, onDelete, onCopyUrl, copiedId, u
     { key: 'showMembers', label: '멤버', icon: '👥' },
     { key: 'showTotal', label: '총합', icon: '💰' },
     { key: 'showGoal', label: '목표', icon: '🎯' },
-    { key: 'showTicker', label: '티커', icon: '📜' },
     { key: 'showTimer', label: '타이머', icon: '⏰' },
     { key: 'showMission', label: '미션', icon: '🎮' },
   ];
@@ -192,9 +191,9 @@ export function OverlayCard({ preset, onUpdate, onDelete, onCopyUrl, copiedId, u
             max="40"
             value={preset.memberSize}
             onChange={(e) => onUpdate(preset.id, { memberSize: e.target.value })}
-            className="w-full accent-emerald-500"
+            className="w-full accent-emerald-500 mb-2"
           />
-          <div className="text-xs text-neutral-400 text-center">{preset.memberSize}px</div>
+          <div className="text-xs text-neutral-400 text-center mt-1">{preset.memberSize}px</div>
         </div>
       </div>
 
@@ -294,29 +293,6 @@ export function OverlayCard({ preset, onUpdate, onDelete, onCopyUrl, copiedId, u
                 type="number"
                 value={preset.goalPosition?.y || ''}
                 onChange={(e) => onUpdate(preset.id, { goalPosition: { x: preset.goalPosition?.x || '50', y: e.target.value, anchor: preset.goalPosition?.anchor || 'bc' } })}
-                className="px-2 py-1 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none text-xs"
-                placeholder="Y%"
-                min="0"
-                max="100"
-              />
-            </div>
-          )}
-          {preset.showTicker && (
-            <div className="grid grid-cols-3 gap-2">
-              <label className="text-xs text-neutral-400">📜 티커 위치</label>
-              <input
-                type="number"
-                value={preset.tickerPosition?.x || ''}
-                onChange={(e) => onUpdate(preset.id, { tickerPosition: { x: e.target.value, y: preset.tickerPosition?.y || '50', anchor: preset.tickerPosition?.anchor || 'bl' } })}
-                className="px-2 py-1 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none text-xs"
-                placeholder="X%"
-                min="0"
-                max="100"
-              />
-              <input
-                type="number"
-                value={preset.tickerPosition?.y || ''}
-                onChange={(e) => onUpdate(preset.id, { tickerPosition: { x: preset.tickerPosition?.x || '50', y: e.target.value, anchor: preset.tickerPosition?.anchor || 'bl' } })}
                 className="px-2 py-1 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none text-xs"
                 placeholder="Y%"
                 min="0"

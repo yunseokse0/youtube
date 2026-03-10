@@ -1161,11 +1161,11 @@ function OverlayInner() {
   const showTotal = tableOnly ? true : (sp.get("showTotal") !== "false");
   const showGoal = tableOnly ? false : (sp.get("showGoal") === "true");
   const showPersonalGoal = tableOnly ? false : (sp.get("showPersonalGoal") === "true");
+  const showTicker = (sp.get("showTicker") === "true");
   const tickerInMembers = tableOnly ? false : (sp.get("tickerInMembers") === "true");
-  const tickerInGoal = tableOnly ? false : (sp.get("tickerInGoal") === "true");
   const tickerInPersonalGoal = tableOnly ? false : (sp.get("tickerInPersonalGoal") === "true");
-  const showTicker = tableOnly ? false : (sp.get("showTicker") === "true");
-  const hasContextTicker = tickerInMembers || tickerInGoal || tickerInPersonalGoal;
+  const tickerInGoal = false;
+  const hasContextTicker = tickerInMembers || tickerInPersonalGoal;
   const showTimer = tableOnly ? false : (sp.get("showTimer") === "true");
   const goalRaw = parseInt(sp.get("goal") || "0", 10);
   const goal = isNaN(goalRaw) ? 0 : goalRaw;
@@ -1265,12 +1265,21 @@ function OverlayInner() {
     donorsFormat === "full"
       ? roundToThousand(n).toLocaleString(currencyLocale)
       : formatManThousand(n);
-  const stripBg = (cls: string) => cls.replace(/\bbg-[^\s]+/g, "bg-transparent");
+  const stripBg = (cls: string) =>
+    cls
+      // Remove any solid bg-* utilities
+      .replace(/\bbg-[^\s]+/g, "bg-transparent")
+      // Remove gradient-related utilities so they don't apply per-cell
+      .replace(/\bbg-gradient-[^\s]+/g, "")
+      .replace(/\bfrom-[^\s]+/g, "")
+      .replace(/\bvia-[^\s]+/g, "")
+      .replace(/\bto-[^\s]+/g, "");
   const useTableOpacity = tableBgOpacity < 100;
   const effectiveTableCls = useTableOpacity ? stripBg(membersTheme.tableCls) : membersTheme.tableCls;
-  const effectiveRowCls = useTableOpacity ? stripBg(membersTheme.rowCls) : membersTheme.rowCls;
-  const effectiveHeaderCls = membersTheme.headerCls;
-  const effectiveTotalWrapCls = totalTheme.totalWrapCls;
+  // Always remove per-cell gradients/backgrounds for cleaner unified look
+  const effectiveRowCls = stripBg(membersTheme.rowCls);
+  const effectiveHeaderCls = stripBg(membersTheme.headerCls);
+  const effectiveTotalWrapCls = stripBg(totalTheme.totalWrapCls);
   const lockWidth = (sp.get("lockWidth") || "false").toLowerCase() === "true";
   const effectiveNameGrow = lockWidth ? false : nameGrow;
   const scaledMainStyle: React.CSSProperties = {};
@@ -1280,7 +1289,7 @@ function OverlayInner() {
   const renderH = sp.get("renderHeight") ? parseInt(sp.get("renderHeight")!, 10) : null;
   const isPreviewGuide = sp.get("previewGuide") === "true";
   const autoFit = (sp.get("autoFit") || "none").toLowerCase() as "none" | "width" | "height" | "contain" | "cover";
-  const zoomMode = ((sp.get("zoomMode") || "invert").toLowerCase() as "follow" | "invert" | "neutral");
+  const zoomMode = ((sp.get("zoomMode") || "follow").toLowerCase() as "follow" | "invert" | "neutral");
   const hostParam = (sp.get("host") || "").toLowerCase();
   const externalHost = hostParam === "prism" || hostParam === "obs" || hostParam === "external";
   const fitPin = centerFixed ? "cc" : ((sp.get("fitPin") || "cc").toLowerCase() as "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr");
@@ -1384,6 +1393,10 @@ function OverlayInner() {
     ((externalHost && activePreset?.missionTitleColor)
       ? String(activePreset.missionTitleColor)
       : (sp.get("missionTitleColor") || "")).trim() || undefined;
+  const missionTitleTextCfg =
+    ((externalHost && (activePreset as any)?.missionTitleText)
+      ? String((activePreset as any).missionTitleText)
+      : (sp.get("missionTitleText") || "")).trim() || "MISSION";
   const missionEffectCfg = (
     (externalHost && (activePreset as any)?.missionEffect)
       ? String((activePreset as any).missionEffect)
@@ -2012,11 +2025,6 @@ function OverlayInner() {
         {showGoal && ready && goal > 0 && (
           <div className={`absolute ${posClass(goalAnchor)}`}>
             <GoalBar current={goalCurrent !== null ? goalCurrent : rounded} goal={goal} label={goalLabel} theme={goalTheme} width={goalWidth} />
-            {tickerInGoal && (
-              <div className="mt-2" style={{ width: fitWidthToViewport(goalWidth), overflow: "hidden" }}>
-                <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
-              </div>
-            )}
           </div>
         )}
         {showPersonalGoal && ready && (
@@ -2032,6 +2040,7 @@ function OverlayInner() {
                   missions={missions}
                   fontSize={missionFontSize}
                   themeVariant={missionThemeVariant}
+                  titleText={missionTitleTextCfg}
                   visibleCount={missionVisibleCount}
                   speed={missionSpeedSec}
                   gapSize={missionGapSizePx}
@@ -2045,6 +2054,7 @@ function OverlayInner() {
                   missions={missions}
                   fontSize={missionFontSize}
                   themeVariant={missionThemeVariant}
+                  titleText={missionTitleTextCfg}
                   duration={missionSpeedSec}
                   bgOpacity={missionBgOpacityCfg}
                   bgColor={missionBgColorCfg}

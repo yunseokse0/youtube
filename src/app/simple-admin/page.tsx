@@ -186,7 +186,7 @@ const PRESET_TEMPLATES = [
       showMembers: true,
       showTotal: true,
       showGoal: true,
-      showTicker: true,
+      showTicker: false,
       showTimer: false,
       showMission: true,
       scale: "1",

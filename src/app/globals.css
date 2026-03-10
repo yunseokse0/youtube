@@ -114,3 +114,24 @@ body {
 .animate-neonPulse {
   animation: neonPulse 2s ease-in-out infinite;
 }
+
+/* 설정 화면 가독성 향상 */
+#overlay-settings {
+  font-size: 14px;
+  line-height: 1.5;
+}
+#overlay-settings .text-xs {
+  font-size: 0.9rem;
+}
+#overlay-settings input[type="text"],
+#overlay-settings input[type="number"],
+#overlay-settings input[type="color"],
+#overlay-settings select {
+  font-size: 0.95rem;
+  padding: 0.5rem 0.6rem;
+  min-height: 36px;
+}
+#overlay-settings button {
+  font-size: 0.9rem;
+  padding: 0.35rem 0.6rem;
+}

@@ -185,6 +185,13 @@ export default function SettlementsPage() {
     const maxAmount = Math.max(1, ...sorted.map((s) => s.amount));
     return { buckets: sorted, maxAmount, minAt };
   }, [selectedForGraph, recordToDonors]);
+  const formatMins = (mins: number) => {
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    if (h > 0 && m > 0) return `${h}h${m}m`;
+    if (h > 0) return `${h}h`;
+    return `${m}m`;
+  };
 
   const dashboard = useMemo(() => {
     const totalGross = filteredRecords.reduce((s, r) => s + (r.totalGross || 0), 0);
@@ -357,23 +364,25 @@ export default function SettlementsPage() {
           {dashboard.monthlyData.length > 0 && (
             <div className="rounded-lg bg-neutral-800/50 p-4 border border-white/5">
               <h3 className="text-sm font-semibold mb-3">월별 매출 추이 (막대 그래프)</h3>
-              <div className="flex items-end gap-2 h-40">
-                {dashboard.monthlyData.map((d) => (
-                  <div key={d.month} className="flex-1 flex flex-col items-center gap-1 min-w-[28px] group">
-                    <div className="w-full flex flex-col items-center justify-end h-32 gap-0.5">
-                      <div
-                        className="w-full max-w-10 rounded-t bg-blue-500/80 group-hover:bg-blue-400 transition-colors relative"
-                        style={{ height: `${Math.max(8, (d.net / dashboard.maxMonthly) * 100)}%` }}
-                        title={`${d.month}: 정산 ${d.net.toLocaleString()}원`}
-                      >
-                        <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] text-neutral-300 opacity-0 group-hover:opacity-100 whitespace-nowrap">
-                          {formatMan(d.net)}
-                        </span>
+              <div className="overflow-x-auto">
+                <div className="flex items-end gap-2 h-40" style={{ minWidth: Math.max(360, dashboard.monthlyData.length * 36) }}>
+                  {dashboard.monthlyData.map((d) => (
+                    <div key={d.month} className="flex-1 flex flex-col items-center gap-1 min-w-[32px] group">
+                      <div className="w-full flex flex-col items-center justify-end h-32 gap-0.5">
+                        <div
+                          className="w-full max-w-10 rounded-t bg-blue-500/80 group-hover:bg-blue-400 transition-colors relative"
+                          style={{ height: `${Math.max(8, (d.net / dashboard.maxMonthly) * 100)}%` }}
+                          title={`${d.month}: 정산 ${d.net.toLocaleString()}원`}
+                        >
+                          <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] text-neutral-300 opacity-0 group-hover:opacity-100 whitespace-nowrap">
+                            {formatMan(d.net)}
+                          </span>
+                        </div>
                       </div>
+                      <span className="text-[10px] text-neutral-500 truncate w-full text-center">{d.month.slice(2)}</span>
                     </div>
-                    <span className="text-[10px] text-neutral-500 truncate w-full text-center">{d.month.slice(2)}</span>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
               <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-neutral-400">
                 {dashboard.monthlyData.map((d) => (
@@ -455,34 +464,39 @@ export default function SettlementsPage() {
                       <span>{formatMan(timeGraphData.maxAmount)}</span>
                       <span>0</span>
                     </div>
-                  <div className="flex-1 flex items-end gap-0.5 min-h-[160px]" style={{ height: 160 }}>
-                    {timeGraphData.buckets.map((b) => {
-                      const pct = timeGraphData.maxAmount > 0 ? b.amount / timeGraphData.maxAmount : 0;
-                      const barHeightPx = Math.max(8, Math.round(pct * 140));
-                      return (
-                        <div
-                          key={b.mins}
-                          className="flex-1 min-w-[12px] flex flex-col items-stretch justify-end group relative"
-                          style={{ height: 160 }}
-                          title={`${b.mins}분~${b.mins + 15}분: ${formatMan(b.amount)} (${b.count}건)`}
-                        >
-                          <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[9px] text-cyan-300 opacity-0 group-hover:opacity-100 whitespace-nowrap z-10 bg-neutral-900/95 px-1 rounded">
-                            {formatMan(b.amount)} ({b.count}건)
-                          </span>
-                          <div className="flex-1 min-h-0 flex flex-col justify-end items-center">
-                            <span className="text-[8px] text-cyan-400/90 mb-0.5 truncate max-w-full" title={formatMan(b.amount)}>
-                              {b.amount > 0 ? formatMan(b.amount) : ""}
-                            </span>
+                    <div className="flex-1 overflow-x-auto">
+                      <div
+                        className="flex items-end gap-0.5 min-h-[160px]"
+                        style={{ height: 160, minWidth: Math.max(360, timeGraphData.buckets.length * 18) }}
+                      >
+                        {timeGraphData.buckets.map((b) => {
+                          const pct = timeGraphData.maxAmount > 0 ? b.amount / timeGraphData.maxAmount : 0;
+                          const barHeightPx = Math.max(8, Math.round(pct * 140));
+                          return (
                             <div
-                              className="w-full max-w-12 rounded-t bg-cyan-500 group-hover:bg-cyan-400 transition-colors shrink-0"
-                              style={{ height: barHeightPx, minHeight: 8 }}
-                            />
-                          </div>
-                          <span className="text-[9px] text-neutral-500 mt-0.5 shrink-0 text-center">{b.mins}m</span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                              key={b.mins}
+                              className="flex-none flex flex-col items-stretch justify-end group relative"
+                              style={{ height: 160, width: 18 }}
+                              title={`${formatMins(b.mins)}~${formatMins(b.mins + 15)}: ${formatMan(b.amount)} (${b.count}건)`}
+                            >
+                              <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[9px] text-cyan-300 opacity-0 group-hover:opacity-100 whitespace-nowrap z-10 bg-neutral-900/95 px-1 rounded">
+                                {formatMan(b.amount)} ({b.count}건)
+                              </span>
+                              <div className="flex-1 min-h-0 flex flex-col justify-end items-center">
+                                <span className="text-[8px] text-cyan-400/90 mb-0.5 truncate max-w-full" title={formatMan(b.amount)}>
+                                  {b.amount > 0 ? formatMan(b.amount) : ""}
+                                </span>
+                                <div
+                                  className="w-full max-w-12 rounded-t bg-cyan-500 group-hover:bg-cyan-400 transition-colors shrink-0"
+                                  style={{ height: barHeightPx, minHeight: 8 }}
+                                />
+                              </div>
+                              <span className="text-[9px] text-neutral-500 mt-0.5 shrink-0 text-center">{formatMins(b.mins)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                   <div className="text-[10px] text-neutral-500">가로축: 방송 시작 후 경과 시간(분). 세로축: 해당 구간 후원액. (막대에 마우스를 올리면 금액 표시)</div>
                 </div>

@@ -90,6 +90,7 @@ export default function AdminPage() {
     missionBgColor?: string;
     missionItemColor?: string;
     missionTitleColor?: string;
+    missionTitleText?: string;
     missionFontSize?: string;
     missionEffect?: string;
     missionEffectHotOnly?: string;
@@ -129,25 +130,22 @@ export default function AdminPage() {
     { name: "총합만", preset: { showMembers: false, showTotal: true, totalSize: "60" } },
     { name: "목표 프로그레스바", preset: { showMembers: false, showTotal: false, showGoal: true, goal: "500000", goalLabel: "목표 금액", goalWidth: "500" } },
     { name: "개인 골", preset: { showMembers: false, showTotal: false, showPersonalGoal: true, personalGoalAnchor: "tl" } },
-    { name: "후원 티커", preset: { showMembers: false, showTotal: false, showTicker: true } },
-    { name: "타이머", preset: { showMembers: false, showTotal: false, showTimer: true } },
     { name: "미션 전광판", preset: { showMembers: false, showTotal: false, showMission: true, missionAnchor: "bc" } },
-    { name: "상단바(프리즘)", preset: { name: "상단바(프리즘)", theme: "excel", showMembers: true, showTotal: true, dense: true, scale: "1", anchor: "tc", tableMarginTop: "0", tableMarginRight: "0", tableMarginBottom: "0", tableMarginLeft: "0", autoFit: "width", autoFitPin: "tc", box: "tight", noCrop: true } },
   ];
   const managePositionInPrism = true;
   const defaultPreset = (name: string, overrides: Partial<OverlayPreset> = {}): OverlayPreset => ({
     id: `ov_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name,
     scale: "0.75", memberSize: "18", totalSize: "40", dense: true, anchor: "cc",
-    layout: "center-fixed", zoomMode: "invert",
+    layout: "center-fixed", zoomMode: "follow",
     tableFree: false, tableX: "50", tableY: "50",
     sumAnchor: "bc", sumFree: false, sumX: "50", sumY: "90", theme: "default",
     showMembers: true, showTotal: true, showGoal: false, goal: "0", goalLabel: "목표 금액", showPersonalGoal: false, personalGoalTheme: "goalClassic", personalGoalAnchor: "tl", personalGoalLimit: "3", personalGoalFree: false, personalGoalX: "78", personalGoalY: "82",
-    tickerInMembers: true, tickerInGoal: true, tickerInPersonalGoal: true,
+    tickerInMembers: false, tickerInGoal: false, tickerInPersonalGoal: false,
     goalWidth: "400", goalAnchor: "bc", goalCurrent: "", showTicker: false, tickerAnchor: "bc", tickerWidth: "600", tickerFree: false, tickerX: "50", tickerY: "86", showTimer: false,
     timerStart: null, timerAnchor: "tr", showMission: false, missionAnchor: "br",
     missionWidth: "800", missionDuration: "25",
     membersTheme: "auto", totalTheme: "auto", goalTheme: "auto", tickerBaseTheme: "auto", timerTheme: "auto", missionTheme: "auto",
-    showBottomDonors: true, donorsSize: "", donorsGap: "16", donorsSpeed: "20", donorsLimit: "8", donorsFormat: "short", donorsUnit: "", donorsColor: "", donorsBgColor: "", donorsBgOpacity: "0", tickerTheme: "auto", tickerGlow: "45", tickerShadow: "35", currencyLocale: "ko-KR",
+    showBottomDonors: false, donorsSize: "", donorsGap: "16", donorsSpeed: "20", donorsLimit: "8", donorsFormat: "short", donorsUnit: "", donorsColor: "", donorsBgColor: "", donorsBgOpacity: "0", tickerTheme: "auto", tickerGlow: "45", tickerShadow: "35", currencyLocale: "ko-KR",
     confettiMilestone: "",
     tableBgOpacity: "",
     accountColor: "",
@@ -173,6 +171,7 @@ export default function AdminPage() {
   const [resetSheetOpen, setResetSheetOpen] = useState(false);
   const [activeNav, setActiveNav] = useState<"dashboard" | "settlement" | "donor" | "overlay" | "logs">("dashboard");
   const panelCardClass = "rounded-xl border border-white/10 bg-[#252525] shadow-[0_8px_24px_rgba(0,0,0,0.28)]";
+  const simpleMode = true;
   const navItems: Array<{ key: "dashboard" | "settlement" | "donor" | "overlay" | "logs"; label: string; targetId: string }> = [
     { key: "dashboard", label: "대시보드", targetId: "dashboard-summary" },
     { key: "settlement", label: "정산 관리", targetId: "settlement-member-board" },
@@ -331,7 +330,7 @@ export default function AdminPage() {
           setState(next);
           persistState(next);
         } else {
-          const first = makeTopBarPreset();
+          const first = defaultPreset("전체 통합", { showMembers: true, showTotal: true });
           const merged = { ...apiState, overlayPresets: [first] };
           setPresets([first]);
           setState(merged);
@@ -348,7 +347,7 @@ export default function AdminPage() {
           local.overlayPresets = localPresets;
           setPresets(localPresets);
         } else {
-          const first = makeTopBarPreset();
+          const first = defaultPreset("전체 통합", { showMembers: true, showTotal: true });
           local.overlayPresets = [first];
           setPresets([first]);
           try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify([first])); } catch {}
@@ -428,30 +427,7 @@ export default function AdminPage() {
       return merged;
     });
   };
-  const makeTopBarPreset = (): OverlayPreset => defaultPreset("상단바(프리즘)", {
-    theme: "excel",
-    showMembers: true,
-    showTotal: true,
-    dense: true,
-    scale: "1",
-    anchor: "tc",
-    tableMarginTop: "0",
-    tableMarginRight: "0",
-    tableMarginBottom: "0",
-    tableMarginLeft: "0",
-    autoFit: "width",
-    autoFitPin: "tc",
-    box: "tight",
-    noCrop: true,
-  });
-  const createAndApplyTopBarPreset = () => {
-    const p = makeTopBarPreset();
-    const next = [...presets, p];
-    savePresets(next);
-    setEditingId(p.id);
-    // 현재 프리셋으로 지정
-    updatePreset(p.id, {});
-  };
+  // 상단바 전용 프리셋 기능 제거됨
   const addPreset = (name: string, overrides: Partial<OverlayPreset> = {}) => {
     const p = defaultPreset(name, overrides);
     savePresets([...presets, p]);
@@ -1036,7 +1012,9 @@ export default function AdminPage() {
               로그아웃
             </button>
           </div>
-          <Link className="text-sm text-neutral-300 underline" href="/settlements">정산 기록 보기</Link>
+          <div className="flex items-center gap-2">
+            <Link className="text-sm text-neutral-300 underline" href="/settlements">정산 기록 보기</Link>
+          </div>
         </div>
         <section id="dashboard-summary" className={`${panelCardClass} p-4 mb-6`}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -1134,7 +1112,7 @@ export default function AdminPage() {
               <div className="text-sm text-neutral-400 mt-2">입력값에 콤마/문자 포함되어도 숫자만 인식</div>
             </section>
 
-            <section className={`${panelCardClass} p-4 md:p-6`}>
+            <section className={`${panelCardClass} p-4 md:p-6 ${simpleMode ? "hidden" : ""}`}>
               <h2 className="text-lg font-semibold mb-3">채팅용 복사 & 보안</h2>
               <textarea
                 className="w-full min-h-[100px] px-3 py-2 rounded bg-neutral-900/80 border border-white/10 font-mono"
@@ -1162,7 +1140,7 @@ export default function AdminPage() {
               </div>
             </section>
 
-            <section className={`${panelCardClass} p-4 md:p-6`}>
+            <section className={`${panelCardClass} p-4 md:p-6 ${simpleMode ? "hidden" : ""}`}>
               <h2 className="text-lg font-semibold mb-3">후원자 리스트</h2>
               <div className="max-h-[260px] overflow-auto pr-1">
                 <table className="w-full text-sm">
@@ -1224,7 +1202,7 @@ export default function AdminPage() {
               </div>
             </section>
 
-            <section className={`${panelCardClass} p-4 md:p-6`}>
+            <section className={`${panelCardClass} p-4 md:p-6 ${simpleMode ? "hidden" : ""}`}>
               <h2 className="text-lg font-semibold mb-3">후원자별 누적 합계</h2>
               <div className="max-h-[240px] overflow-auto pr-1">
                 <table className="w-full text-sm">
@@ -1258,6 +1236,20 @@ export default function AdminPage() {
             <section className={`${panelCardClass} p-4 md:p-6`}>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold">미션 전광판</h2>
+                <button
+                  className="px-2 py-1 rounded bg-red-800 hover:bg-red-700 text-xs"
+                  onClick={() => {
+                    requestConfirm("미션 전광판 초기화", "계정에 저장된 모든 미션을 삭제할까요?", () => {
+                      setState((prev) => {
+                        const next = { ...prev, missions: [] };
+                        persistState(next);
+                        return next;
+                      });
+                    }, { confirmText: "초기화", danger: true });
+                  }}
+                >
+                  초기화
+                </button>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto_auto] gap-2 mb-3">
                 <input className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10 min-h-[44px]" placeholder="미션 제목 (예: 노래 부르기)" value={missionTitle} onChange={(e) => setMissionTitle(e.target.value)} />
@@ -1352,7 +1344,6 @@ export default function AdminPage() {
                   {PRESET_TEMPLATES.map((t) => (
                     <button key={t.name} className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs text-white" onClick={() => addPreset(t.name, t.preset)}>+ {t.name}</button>
                   ))}
-                  <button className="px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-xs text-white" onClick={createAndApplyTopBarPreset}>상단바(프리즘) 적용</button>
                 </div>
               </div>
               <p className="text-xs text-neutral-400 mb-3">각 오버레이는 독립 URL을 가집니다. OBS/Prism에 브라우저 소스로 각각 추가하세요.</p>
@@ -1380,7 +1371,7 @@ export default function AdminPage() {
                         <button className="px-2 py-1 rounded bg-[#ef4444] hover:bg-[#dc2626] text-xs text-white" onClick={(e) => { e.stopPropagation(); removePreset(p.id); }}>삭제</button>
                       </div>
                       {isOpen && (
-                        <div className="px-3 pb-3 grid grid-cols-1 lg:grid-cols-2 gap-3 border-t border-white/10 pt-3">
+                        <div className={`px-3 pb-3 grid grid-cols-1 lg:grid-cols-2 gap-3 border-t border-white/10 pt-3 ${simpleMode ? "hidden" : ""}`}>
                           <div className="space-y-2 lg:order-2">
                             <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
                               <label className="text-xs text-neutral-400">테마</label>
@@ -1665,78 +1656,86 @@ export default function AdminPage() {
                             </div>
 
                             <div className="h-px bg-white/10 my-1" />
-                            <div className="flex items-center gap-2">
-                              <label className="text-xs text-neutral-400">표만 모드</label>
-                              <button className={`px-2 py-0.5 rounded border text-xs ${p.tableOnly ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { tableOnly: !p.tableOnly })}>
-                                {p.tableOnly ? "표만 ON" : "표만 OFF"}
-                              </button>
-                              <span className="text-[10px] text-neutral-500">(표만: 목록·총합만, 나머지 숨김)</span>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
-                              <label className="text-xs text-neutral-400">표 배경 투명도</label>
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="range"
-                                  min="0"
-                                  max="100"
-                                  value={p.tableBgOpacity ?? "100"}
-                                  onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value })}
-                                  className="flex-1 accent-emerald-500"
-                                />
-                                <input
-                                  className="w-14 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
-                                  type="number"
-                                  min="0"
-                                  max="100"
-                                  value={p.tableBgOpacity ?? "100"}
-                                  onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value.replace(/[^\d]/g, "").slice(0, 3) })}
-                                />
-                                <span className="text-xs text-neutral-500">% (100=불투명)</span>
+                            <details className="rounded border border-white/10 bg-neutral-900/40" open>
+                              <summary className="cursor-pointer select-none px-3 py-2 text-xs text-neutral-300">표 옵션</summary>
+                              <div className="p-3 space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <label className="text-xs text-neutral-400">표만 모드</label>
+                                  <button className={`px-2 py-0.5 rounded border text-xs ${p.tableOnly ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { tableOnly: !p.tableOnly })}>
+                                    {p.tableOnly ? "표만 ON" : "표만 OFF"}
+                                  </button>
+                                  <span className="text-[10px] text-neutral-500">(표만: 목록·총합만, 나머지 숨김)</span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
+                                  <label className="text-xs text-neutral-400">표 배경 투명도</label>
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="range"
+                                      min="0"
+                                      max="100"
+                                      value={p.tableBgOpacity ?? "100"}
+                                      onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value })}
+                                      className="flex-1 accent-emerald-500"
+                                    />
+                                    <input
+                                      className="w-14 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                                      type="number"
+                                      min="0"
+                                      max="100"
+                                      value={p.tableBgOpacity ?? "100"}
+                                      onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value.replace(/[^\d]/g, "").slice(0, 3) })}
+                                    />
+                                    <span className="text-xs text-neutral-500">% (100=불투명)</span>
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
+                                  <label className="text-xs text-neutral-400">폭죽(매 N만원)</label>
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                      placeholder="0=비활성"
+                                      type="number"
+                                      min="0"
+                                      max="1000"
+                                      value={p.confettiMilestone ?? ""}
+                                      onChange={(e) => updatePreset(p.id, { confettiMilestone: e.target.value.replace(/[^\d]/g, "") })}
+                                    />
+                                    <span className="text-xs text-neutral-500">만원마다 누적매출 돌파 시 폭죽</span>
+                                    <button
+                                      className="px-2 py-1 rounded bg-amber-600 hover:bg-amber-500 text-xs text-white"
+                                      onClick={async () => {
+                                        const { default: confetti } = await import("canvas-confetti");
+                                        const count = 150;
+                                        const defaults = { origin: { y: 0.6 }, zIndex: 9999 };
+                                        function fire(particleRatio: number, opts: Record<string, unknown>) {
+                                          confetti({ ...defaults, ...opts, particleCount: Math.floor(count * particleRatio) });
+                                        }
+                                        fire(0.25, { spread: 26, startVelocity: 55 });
+                                        fire(0.2, { spread: 60 });
+                                        fire(0.35, { spread: 100, decay: 0.91, scalar: 0.8 });
+                                        fire(0.1, { spread: 120, startVelocity: 25, decay: 0.92, scalar: 1.2 });
+                                        fire(0.1, { spread: 120, startVelocity: 45 });
+                                      }}
+                                    >
+                                      폭죽 데모
+                                    </button>
+                                  </div>
+                                </div>
                               </div>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
-                              <label className="text-xs text-neutral-400">폭죽(매 N만원)</label>
-                              <div className="flex items-center gap-2">
-                                <input
-                                  className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
-                                  placeholder="0=비활성"
-                                  type="number"
-                                  min="0"
-                                  max="1000"
-                                  value={p.confettiMilestone ?? ""}
-                                  onChange={(e) => updatePreset(p.id, { confettiMilestone: e.target.value.replace(/[^\d]/g, "") })}
-                                />
-                                <span className="text-xs text-neutral-500">만원마다 누적매출 돌파 시 폭죽</span>
-                                <button
-                                  className="px-2 py-1 rounded bg-amber-600 hover:bg-amber-500 text-xs text-white"
-                                  onClick={async () => {
-                                    const { default: confetti } = await import("canvas-confetti");
-                                    const count = 150;
-                                    const defaults = { origin: { y: 0.6 }, zIndex: 9999 };
-                                    function fire(particleRatio: number, opts: Record<string, unknown>) {
-                                      confetti({ ...defaults, ...opts, particleCount: Math.floor(count * particleRatio) });
-                                    }
-                                    fire(0.25, { spread: 26, startVelocity: 55 });
-                                    fire(0.2, { spread: 60 });
-                                    fire(0.35, { spread: 100, decay: 0.91, scalar: 0.8 });
-                                    fire(0.1, { spread: 120, startVelocity: 25, decay: 0.92, scalar: 1.2 });
-                                    fire(0.1, { spread: 120, startVelocity: 45 });
-                                  }}
-                                >
-                                  폭죽 데모
-                                </button>
+                            </details>
+                            <details className="rounded border border-white/10 bg-neutral-900/40">
+                              <summary className="cursor-pointer select-none px-3 py-2 text-xs text-neutral-300">표시 요소</summary>
+                              <div className="p-3 flex flex-wrap gap-1">
+                                {([["멤버 목록", "showMembers"], ["총합", "showTotal"], ["목표바", "showGoal"], ["개인 골", "showPersonalGoal"], ["타이머", "showTimer"], ["미션 전광판", "showMission"]] as [string, keyof OverlayPreset][]).map(([label, key]) => (
+                                  <button key={key} className={`px-2 py-0.5 rounded border text-xs ${p[key] ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { [key]: !p[key] })}>{label} {p[key] ? "ON" : "OFF"}</button>
+                                ))}
                               </div>
-                            </div>
-                            <div className="text-xs text-neutral-400 font-semibold">요소 표시/숨김</div>
-                            <div className="flex flex-wrap gap-1">
-                              {([["멤버 목록", "showMembers"], ["총합", "showTotal"], ["목표바", "showGoal"], ["개인 골", "showPersonalGoal"], ["후원 티커", "showTicker"], ["타이머", "showTimer"], ["미션 전광판", "showMission"]] as [string, keyof OverlayPreset][]).map(([label, key]) => (
-                                <button key={key} className={`px-2 py-0.5 rounded border text-xs ${p[key] ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { [key]: !p[key] })}>{label} {p[key] ? "ON" : "OFF"}</button>
-                              ))}
-                            </div>
+                            </details>
 
                             <div className="h-px bg-white/10 my-1" />
-                            <div className="text-xs text-neutral-400 font-semibold">데모 빠른 실행</div>
-                            <div className="flex flex-wrap gap-1">
+                            <details className="rounded border border-white/10 bg-neutral-900/40">
+                              <summary className="cursor-pointer select-none px-3 py-2 text-xs text-neutral-300">빠른 실행</summary>
+                              <div className="p-3 flex flex-wrap gap-1">
                               {[
                                 { label: "폭죽 데모(오버레이)", patch: { showMembers: true, showTotal: true, showGoal: false, showTicker: false, showTimer: false, showMission: false, confettiMilestone: "10" } },
                                 { label: "엑셀표만", patch: { theme: "excel", showMembers: true, showTotal: true, showGoal: false, showTicker: false, showTimer: false, showMission: false, tableOnly: true } },
@@ -1744,7 +1743,6 @@ export default function AdminPage() {
                                 { label: "멤버 보드", patch: { showMembers: true, showTotal: true, showGoal: false, showTicker: false, showTimer: false, showMission: false } },
                                 { label: "총합", patch: { showMembers: false, showTotal: true, showGoal: false, showTicker: false, showTimer: false, showMission: false } },
                                 { label: "목표바", patch: { showMembers: false, showTotal: false, showGoal: true, showTicker: false, showTimer: false, showMission: false } },
-                                { label: "후원 티커", patch: { showMembers: false, showTotal: false, showGoal: false, showTicker: true, showTimer: false, showMission: false } },
                                 { label: "타이머", patch: { showMembers: false, showTotal: false, showGoal: false, showTicker: false, showTimer: true, showMission: false, timerStart: Date.now() } },
                                 { label: "미션 전광판", patch: { showMembers: false, showTotal: false, showGoal: false, showTicker: false, showTimer: false, showMission: true } },
                               ].map(({ label, patch }) => (
@@ -1787,124 +1785,130 @@ export default function AdminPage() {
                               >
                                 목표 달성 바(HTML)
                               </button>
-                            </div>
+                              </div>
+                            </details>
 
-                            <div className="h-px bg-white/10 my-1" />
-                            <div className="text-xs text-neutral-400 font-semibold">후원 리스트 옵션</div>
-                            <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
-                              <label className="text-xs text-neutral-400">멤버목록 내 티커</label>
-                              <button className={`px-2 py-0.5 rounded border text-xs ${p.tickerInMembers ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { tickerInMembers: !p.tickerInMembers })}>
-                                {p.tickerInMembers ? "ON" : "OFF"}
-                              </button>
-                              <label className="text-xs text-neutral-400">목표바 내 티커</label>
-                              <button className={`px-2 py-0.5 rounded border text-xs ${p.tickerInGoal ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { tickerInGoal: !p.tickerInGoal })}>
-                                {p.tickerInGoal ? "ON" : "OFF"}
-                              </button>
-                              <label className="text-xs text-neutral-400">개인골 내 티커</label>
-                              <button className={`px-2 py-0.5 rounded border text-xs ${p.tickerInPersonalGoal ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { tickerInPersonalGoal: !p.tickerInPersonalGoal })}>
-                                {p.tickerInPersonalGoal ? "ON" : "OFF"}
-                              </button>
-                              <label className="text-xs text-neutral-400">하단 리스트 표시</label>
-                              <button className={`px-2 py-0.5 rounded border text-xs ${p.showBottomDonors ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { showBottomDonors: !p.showBottomDonors })}>
-                                {p.showBottomDonors ? "ON" : "OFF"}
-                              </button>
-                              <label className="text-xs text-neutral-400">티커 글자(px)</label>
-                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="(기본 자동)" value={p.donorsSize || ""} onChange={(e) => updatePreset(p.id, { donorsSize: e.target.value })} />
-                              <label className="text-xs text-neutral-400">간격(px)</label>
-                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.donorsGap || ""} onChange={(e) => updatePreset(p.id, { donorsGap: e.target.value })} />
-                              <label className="text-xs text-neutral-400">속도(초/루프)</label>
-                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.donorsSpeed || ""} onChange={(e) => updatePreset(p.id, { donorsSpeed: e.target.value })} />
-                              <label className="text-xs text-neutral-400">표시 개수(N)</label>
-                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.donorsLimit || ""} onChange={(e) => updatePreset(p.id, { donorsLimit: e.target.value })} />
-                              <label className="text-xs text-neutral-400">금액 표기</label>
-                              <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.donorsFormat || "short"} onChange={(e) => updatePreset(p.id, { donorsFormat: e.target.value })}>
-                                <option value="full">풀(1,234)</option>
-                                <option value="short">단축(1.2만)</option>
-                              </select>
-                              <label className="text-xs text-neutral-400">통화 로케일</label>
-                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="ko-KR / en-US 등" value={p.currencyLocale || ""} onChange={(e) => updatePreset(p.id, { currencyLocale: e.target.value })} />
-                              <label className="text-xs text-neutral-400">단위 표시</label>
-                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="원 / KRW 등" value={p.donorsUnit || ""} onChange={(e) => updatePreset(p.id, { donorsUnit: e.target.value })} />
-                              <label className="text-xs text-neutral-400">티커 텍스트 색상</label>
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="color"
-                                  className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
-                                  value={toColorPickerValue(p.donorsColor, "#a0e9ff")}
-                                  onChange={(e) => updatePreset(p.id, { donorsColor: e.target.value })}
-                                />
-                                <span className="text-xs text-neutral-400 font-mono">{p.donorsColor || "자동(테마 따름)"}</span>
-                                <button
-                                  type="button"
-                                  className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
-                                  onClick={() => updatePreset(p.id, { donorsColor: "" })}
-                                >
-                                  자동
-                                </button>
-                              </div>
-                              <label className="text-xs text-neutral-400">티커 배경 색상</label>
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="color"
-                                  className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
-                                  value={toColorPickerValue(p.donorsBgColor, "#000000")}
-                                  onChange={(e) => updatePreset(p.id, { donorsBgColor: e.target.value })}
-                                />
-                                <span className="text-xs text-neutral-400 font-mono">{p.donorsBgColor || "자동(배경 미사용)"}</span>
-                                <button
-                                  type="button"
-                                  className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
-                                  onClick={() => updatePreset(p.id, { donorsBgColor: "" })}
-                                >
-                                  자동
-                                </button>
-                              </div>
-                              <label className="text-xs text-neutral-400">배경 투명도</label>
-                              <div className="flex items-center gap-1">
-                                <input
-                                  type="range"
-                                  min="0"
-                                  max="100"
-                                  value={p.donorsBgOpacity || "0"}
-                                  onChange={(e) => updatePreset(p.id, { donorsBgOpacity: e.target.value })}
-                                  className="flex-1 accent-emerald-500"
-                                />
-                                <span className="text-xs w-10 text-center">{p.donorsBgOpacity || "0"}%</span>
-                              </div>
-                              <label className="text-xs text-neutral-400">티커 테마</label>
-                              <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.tickerTheme || "auto"} onChange={(e) => updatePreset(p.id, { tickerTheme: e.target.value })}>
-                                <option value="auto">기본(테마 따름)</option>
-                                <option value="accent">강조</option>
-                                <option value="neon">네온</option>
-                                <option value="warm">웜</option>
-                                <option value="ice">아이스</option>
-                                <option value="mono">모노</option>
-                              </select>
-                              <label className="text-xs text-neutral-400">글로우 강도</label>
-                              <div className="flex items-center gap-1">
-                                <input type="range" min="0" max="100" value={p.tickerGlow || "45"} onChange={(e) => updatePreset(p.id, { tickerGlow: e.target.value })} className="flex-1 accent-emerald-500" />
-                                <span className="text-xs w-8 text-center">{p.tickerGlow || "45"}</span>
-                              </div>
-                              <label className="text-xs text-neutral-400">그림자 강도</label>
-                              <div className="flex items-center gap-1">
-                                <input type="range" min="0" max="100" value={p.tickerShadow || "35"} onChange={(e) => updatePreset(p.id, { tickerShadow: e.target.value })} className="flex-1 accent-emerald-500" />
-                                <span className="text-xs w-8 text-center">{p.tickerShadow || "35"}</span>
-                              </div>
-                            </div>
-
-                            {p.showGoal && (
+                            {(p.showMembers || p.showPersonalGoal) && (
                               <>
                                 <div className="h-px bg-white/10 my-1" />
-                                <div className="text-xs text-neutral-400 font-semibold">목표 금액</div>
-                                <div className="grid grid-cols-1 sm:grid-cols-[100px_minmax(0,1fr)] items-center gap-1">
+                                <div className="text-xs text-neutral-400 font-semibold">후원 리스트 옵션</div>
+                                <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
+                                  <label className="text-xs text-neutral-400">하단 리스트 표시</label>
+                                  <button className={`px-2 py-0.5 rounded border text-xs ${p.showBottomDonors ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { showBottomDonors: !p.showBottomDonors })}>
+                                    {p.showBottomDonors ? "ON" : "OFF"}
+                                  </button>
+                                  <label className="text-xs text-neutral-400">티커 글자(px)</label>
+                                  <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="(기본 자동)" value={p.donorsSize || ""} onChange={(e) => updatePreset(p.id, { donorsSize: e.target.value })} />
+                                  <label className="text-xs text-neutral-400">간격(px)</label>
+                                  <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.donorsGap || ""} onChange={(e) => updatePreset(p.id, { donorsGap: e.target.value })} />
+                                  <label className="text-xs text-neutral-400">속도(초/루프)</label>
+                                  <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.donorsSpeed || ""} onChange={(e) => updatePreset(p.id, { donorsSpeed: e.target.value })} />
+                                  <label className="text-xs text-neutral-400">표시 개수(N)</label>
+                                  <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.donorsLimit || ""} onChange={(e) => updatePreset(p.id, { donorsLimit: e.target.value })} />
+                                  <label className="text-xs text-neutral-400">금액 표기</label>
+                                  <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.donorsFormat || "short"} onChange={(e) => updatePreset(p.id, { donorsFormat: e.target.value })}>
+                                    <option value="full">풀(1,234)</option>
+                                    <option value="short">단축(1.2만)</option>
+                                  </select>
+                                  <label className="text-xs text-neutral-400">통화 로케일</label>
+                                  <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="ko-KR / en-US 등" value={p.currencyLocale || ""} onChange={(e) => updatePreset(p.id, { currencyLocale: e.target.value })} />
+                                  <label className="text-xs text-neutral-400">단위 표시</label>
+                                  <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="원 / KRW 등" value={p.donorsUnit || ""} onChange={(e) => updatePreset(p.id, { donorsUnit: e.target.value })} />
+                                  <div className="col-span-1 sm:col-span-2">
+                                    <details className="rounded border border-white/10 bg-neutral-900/40">
+                                      <summary className="cursor-pointer select-none px-3 py-2 text-xs text-neutral-300">고급 옵션</summary>
+                                      <div className="p-3 grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
+                                        <label className="text-xs text-neutral-400">티커 텍스트 색상</label>
+                                        <div className="flex items-center gap-2">
+                                          <input
+                                            type="color"
+                                            className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                            value={toColorPickerValue(p.donorsColor, "#a0e9ff")}
+                                            onChange={(e) => updatePreset(p.id, { donorsColor: e.target.value })}
+                                          />
+                                          <span className="text-xs text-neutral-400 font-mono">{p.donorsColor || "자동(테마 따름)"}</span>
+                                          <button
+                                            type="button"
+                                            className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                                            onClick={() => updatePreset(p.id, { donorsColor: "" })}
+                                          >
+                                            자동
+                                          </button>
+                                        </div>
+                                        <label className="text-xs text-neutral-400">티커 배경 색상</label>
+                                        <div className="flex items-center gap-2">
+                                          <input
+                                            type="color"
+                                            className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                            value={toColorPickerValue(p.donorsBgColor, "#000000")}
+                                            onChange={(e) => updatePreset(p.id, { donorsBgColor: e.target.value })}
+                                          />
+                                          <span className="text-xs text-neutral-400 font-mono">{p.donorsBgColor || "자동(배경 미사용)"}</span>
+                                          <button
+                                            type="button"
+                                            className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                                            onClick={() => updatePreset(p.id, { donorsBgColor: "" })}
+                                          >
+                                            자동
+                                          </button>
+                                        </div>
+                                        <label className="text-xs text-neutral-400">배경 투명도</label>
+                                        <div className="flex items-center gap-1">
+                                          <input
+                                            type="range"
+                                            min="0"
+                                            max="100"
+                                            value={p.donorsBgOpacity || "0"}
+                                            onChange={(e) => updatePreset(p.id, { donorsBgOpacity: e.target.value })}
+                                            className="flex-1 accent-emerald-500"
+                                          />
+                                          <span className="text-xs w-10 text-center">{p.donorsBgOpacity || "0"}%</span>
+                                        </div>
+                                        <label className="text-xs text-neutral-400">티커 테마</label>
+                                        <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.tickerTheme || "auto"} onChange={(e) => updatePreset(p.id, { tickerTheme: e.target.value })}>
+                                          <option value="auto">기본(테마 따름)</option>
+                                          <option value="accent">강조</option>
+                                          <option value="neon">네온</option>
+                                          <option value="warm">웜</option>
+                                          <option value="ice">아이스</option>
+                                          <option value="mono">모노</option>
+                                        </select>
+                                        <label className="text-xs text-neutral-400">글로우 강도</label>
+                                        <div className="flex items-center gap-1">
+                                          <input type="range" min="0" max="100" value={p.tickerGlow || "45"} onChange={(e) => updatePreset(p.id, { tickerGlow: e.target.value })} className="flex-1 accent-emerald-500" />
+                                          <span className="text-xs w-8 text-center">{p.tickerGlow || "45"}</span>
+                                        </div>
+                                        <label className="text-xs text-neutral-400">그림자 강도</label>
+                                        <div className="flex items-center gap-1">
+                                          <input type="range" min="0" max="100" value={p.tickerShadow || "35"} onChange={(e) => updatePreset(p.id, { tickerShadow: e.target.value })} className="flex-1 accent-emerald-500" />
+                                          <span className="text-xs w-8 text-center">{p.tickerShadow || "35"}</span>
+                                        </div>
+                                      </div>
+                                    </details>
+                                  </div>
+                                </div>
+                              </>
+                            )}
+
+                            {p.showGoal && (
+                              <details className="rounded border border-white/10 bg-neutral-900/40">
+                                <summary className="cursor-pointer select-none px-3 py-2 text-xs text-neutral-300">목표</summary>
+                                <div className="p-3 grid grid-cols-1 sm:grid-cols-[100px_minmax(0,1fr)] items-center gap-1">
                                   <label className="text-xs text-neutral-400">목표(원)</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" type="number" value={p.goal} onChange={(e) => updatePreset(p.id, { goal: e.target.value })} />
                                   <label className="text-xs text-neutral-400">라벨</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.goalLabel} onChange={(e) => updatePreset(p.id, { goalLabel: e.target.value })} />
                                   <label className="text-xs text-neutral-400">데모 현재액(원)</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="미지정 시 자동" value={p.goalCurrent || ""} onChange={(e) => updatePreset(p.id, { goalCurrent: e.target.value })} />
-                                  <label className="text-xs text-neutral-400">너비(px)</label>
-                                  <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.goalWidth} onChange={(e) => updatePreset(p.id, { goalWidth: e.target.value })} />
+                                  <div className="col-span-1 sm:col-span-2">
+                                    <details className="rounded border border-white/10 bg-neutral-900/40">
+                                      <summary className="cursor-pointer select-none px-3 py-2 text-xs text-neutral-300">고급 옵션</summary>
+                                      <div className="p-3 grid grid-cols-1 sm:grid-cols-[100px_minmax(0,1fr)] items-center gap-1">
+                                        <label className="text-xs text-neutral-400">너비(px)</label>
+                                        <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.goalWidth} onChange={(e) => updatePreset(p.id, { goalWidth: e.target.value })} />
+                                      </div>
+                                    </details>
+                                  </div>
                                   {managePositionInPrism && (
                                     <>
                                       <label className="text-xs text-neutral-400">위치 설정(Prism에서)</label>
@@ -1912,14 +1916,13 @@ export default function AdminPage() {
                                     </>
                                   )}
                                 </div>
-                              </>
+                              </details>
                             )}
 
                             {p.showPersonalGoal && (
-                              <>
-                                <div className="h-px bg-white/10 my-1" />
-                                <div className="text-xs text-neutral-400 font-semibold">개인골 표시</div>
-                                <div className="grid grid-cols-1 sm:grid-cols-[100px_minmax(0,1fr)] items-center gap-1">
+                              <details className="rounded border border-white/10 bg-neutral-900/40">
+                                <summary className="cursor-pointer select-none px-3 py-2 text-xs text-neutral-300">개인골</summary>
+                                <div className="p-3 grid grid-cols-1 sm:grid-cols-[100px_minmax(0,1fr)] items-center gap-1">
                                   <label className="text-xs text-neutral-400">테마</label>
                                   <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.personalGoalTheme || "goalClassic"} onChange={(e) => updatePreset(p.id, { personalGoalTheme: e.target.value })}>
                                     <option value="goalClassic">개인골 클래식</option>
@@ -1950,32 +1953,20 @@ export default function AdminPage() {
                                     </button>
                                   </div>
                                 </div>
-                              </>
+                              </details>
                             )}
 
-                            {p.showTicker && (
-                              <>
-                                <div className="h-px bg-white/10 my-1" />
-                                <div className="text-xs text-neutral-400 font-semibold">후원 티커</div>
-                                <div className="grid grid-cols-1 sm:grid-cols-[100px_minmax(0,1fr)] items-center gap-1">
-                                  <label className="text-xs text-neutral-400">위치 설정(Prism에서)</label>
-                                  <div className="text-xs text-neutral-500">위치/크기 조정은 Prism에서 진행합니다.</div>
-                                  <label className="text-xs text-neutral-400">폭(px)</label>
-                                  <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs" value={p.tickerWidth || "600"} onChange={(e) => updatePreset(p.id, { tickerWidth: e.target.value })} />
-                                </div>
-                              </>
-                            )}
+                            {/* 후원 티커 섹션 제거: 데모 실행 버튼만 유지 */}
 
                             {p.showTimer && (
-                              <>
-                                <div className="h-px bg-white/10 my-1" />
-                                <div className="text-xs text-neutral-400 font-semibold">방송 타이머</div>
-                                <div className="flex flex-wrap gap-2 items-center">
+                              <details className="rounded border border-white/10 bg-neutral-900/40">
+                                <summary className="cursor-pointer select-none px-3 py-2 text-xs text-neutral-300">방송 타이머</summary>
+                                <div className="p-3 flex flex-wrap gap-2 items-center">
                                   <button className="px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-xs" onClick={() => updatePreset(p.id, { timerStart: Date.now() })}>{p.timerStart ? "재시작" : "시작"}</button>
                                   {p.timerStart && <button className="px-2 py-1 rounded bg-red-700 hover:bg-red-600 text-xs" onClick={() => updatePreset(p.id, { timerStart: null })}>정지</button>}
                                   <span className="text-xs text-neutral-500">위치 설정(Prism에서)</span>
                                 </div>
-                              </>
+                              </details>
                             )}
 
                             {p.showMission && (
@@ -2002,6 +1993,13 @@ export default function AdminPage() {
                                   <input type="color" className="w-16 h-11 rounded bg-neutral-900/80 border border-white/10" value={(p.missionItemColor as any) || "#fde68a"} onChange={(e) => updatePreset(p.id, { missionItemColor: e.target.value })} />
                                   <label className="text-xs text-neutral-400">강조 색상</label>
                                   <input type="color" className="w-16 h-11 rounded bg-neutral-900/80 border border-white/10" value={(p.missionTitleColor as any) || "#fcd34d"} onChange={(e) => updatePreset(p.id, { missionTitleColor: e.target.value })} />
+                              <label className="text-xs text-neutral-400">제목 텍스트</label>
+                              <input
+                                className="px-2 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm min-h-[44px]"
+                                placeholder="MISSION"
+                                value={(p as any).missionTitleText || ""}
+                                onChange={(e) => updatePreset(p.id, { missionTitleText: e.target.value })}
+                              />
                                   <label className="text-xs text-neutral-400">글씨 크기</label>
                                   <div className="flex items-center gap-2">
                                     <input type="range" min="10" max="80" value={p.missionFontSize || "18"} onChange={(e) => updatePreset(p.id, { missionFontSize: e.target.value })} className="flex-1 accent-emerald-500 h-11" />
@@ -2053,56 +2051,60 @@ export default function AdminPage() {
                                 </div>
                                 </div>
                                 {/* Palette view removed; keep compact select */}
-                                <div className="mt-2 rounded border border-white/10 bg-neutral-950/60 p-2">
-                                  <div className="text-xs text-neutral-400 mb-1">미션 전광판 미리보기</div>
-                                  <div className="overflow-hidden">
-                                    {(p.missionDisplayMode === "vertical-slot") ? (
-                                      <MissionBoardSlot
-                                        missions={(state.missions && state.missions.length > 0) ? state.missions : [
-                                          { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
-                                          { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
-                                          { id: "mis_demo_3", title: "게임 미션 클리어 도전", price: "5만" },
-                                        ]}
-                                        fontSize={parseInt(p.missionFontSize || "18", 10)}
-                                        themeVariant={(() => {
-                                          const id = p.theme || "default";
-                                          const excelThemes = ["excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"];
-                                          if (excelThemes.includes(id)) return "excel";
-                                          if (["rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"].includes(id)) return "neon";
-                                          return (id as any);
-                                        })()}
-                                        visibleCount={parseInt(p.missionVisibleCount || "3", 10)}
-                                        speed={parseFloat(p.missionSpeed || "2")}
-                                        gapSize={parseInt(p.missionGapSize || "8", 10)}
-                                        bgColor={(p as any).missionBgColor || undefined}
-                                        bgOpacity={parseInt(p.missionBgOpacity || "85", 10)}
-                                        itemColor={(p as any).missionItemColor || undefined}
-                                        titleColor={(p as any).missionTitleColor || undefined}
-                                      />
-                                    ) : (
-                                      <MissionBoard
-                                        missions={(state.missions && state.missions.length > 0) ? state.missions : [
-                                          { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
-                                          { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
-                                          { id: "mis_demo_3", title: "게임 미션 클리어 도전", price: "5만" },
-                                        ]}
-                                        fontSize={parseInt(p.missionFontSize || "18", 10)}
-                                        themeVariant={(() => {
-                                          const id = p.theme || "default";
-                                          const excelThemes = ["excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"];
-                                          if (excelThemes.includes(id)) return "excel";
-                                          if (["rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"].includes(id)) return "neon";
-                                          return (id as any);
-                                        })()}
-                                        duration={parseFloat(p.missionSpeed || "25")}
-                                        bgColor={(p as any).missionBgColor || undefined}
-                                        bgOpacity={parseInt(p.missionBgOpacity || "85", 10)}
-                                        itemColor={(p as any).missionItemColor || undefined}
-                                        titleColor={(p as any).missionTitleColor || undefined}
-                                      />
-                                    )}
+                                {!(p.showMission && !p.showMembers && !p.showTotal && !p.showGoal && !p.showPersonalGoal && !p.showTicker && !p.showTimer) && (
+                                  <div className="mt-2 rounded border border-white/10 bg-neutral-950/60 p-2">
+                                    <div className="text-xs text-neutral-400 mb-1">미션 전광판 미리보기</div>
+                                    <div className="overflow-hidden">
+                                      {(p.missionDisplayMode === "vertical-slot") ? (
+                                        <MissionBoardSlot
+                                          missions={(state.missions && state.missions.length > 0) ? state.missions : [
+                                            { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
+                                            { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
+                                            { id: "mis_demo_3", title: "게임 미션 클리어 도전", price: "5만" },
+                                          ]}
+                                          fontSize={parseInt(p.missionFontSize || "18", 10)}
+                                          themeVariant={(() => {
+                                            const id = p.theme || "default";
+                                            const excelThemes = ["excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"];
+                                            if (excelThemes.includes(id)) return "excel";
+                                            if (["rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"].includes(id)) return "neon";
+                                            return (id as any);
+                                          })()}
+                                        titleText={(p as any).missionTitleText || undefined}
+                                          visibleCount={parseInt(p.missionVisibleCount || "3", 10)}
+                                          speed={parseFloat(p.missionSpeed || "2")}
+                                          gapSize={parseInt(p.missionGapSize || "8", 10)}
+                                          bgColor={(p as any).missionBgColor || undefined}
+                                          bgOpacity={parseInt(p.missionBgOpacity || "85", 10)}
+                                          itemColor={(p as any).missionItemColor || undefined}
+                                          titleColor={(p as any).missionTitleColor || undefined}
+                                        />
+                                      ) : (
+                                        <MissionBoard
+                                          missions={(state.missions && state.missions.length > 0) ? state.missions : [
+                                            { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
+                                            { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
+                                            { id: "mis_demo_3", title: "게임 미션 클리어 도전", price: "5만" },
+                                          ]}
+                                          fontSize={parseInt(p.missionFontSize || "18", 10)}
+                                          themeVariant={(() => {
+                                            const id = p.theme || "default";
+                                            const excelThemes = ["excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"];
+                                            if (excelThemes.includes(id)) return "excel";
+                                            if (["rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"].includes(id)) return "neon";
+                                            return (id as any);
+                                          })()}
+                                        titleText={(p as any).missionTitleText || undefined}
+                                          duration={parseFloat(p.missionSpeed || "25")}
+                                          bgColor={(p as any).missionBgColor || undefined}
+                                          bgOpacity={parseInt(p.missionBgOpacity || "85", 10)}
+                                          itemColor={(p as any).missionItemColor || undefined}
+                                          titleColor={(p as any).missionTitleColor || undefined}
+                                        />
+                                      )}
+                                    </div>
                                   </div>
-                                </div>
+                                )}
                                 <div className="text-xs text-neutral-500">위치 설정(Prism에서), 고급 위치는 포지션 탭에서 조정</div>
                               </>
                             )}
@@ -2143,6 +2145,7 @@ export default function AdminPage() {
                                       if (["rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"].includes(id)) return "neon";
                                       return (id as any);
                                     })()}
+                                    titleText={(p as any).missionTitleText || undefined}
                                     visibleCount={parseInt(p.missionVisibleCount || "3", 10)}
                                     speed={parseFloat(p.missionSpeed || "2")}
                                     gapSize={parseInt(p.missionGapSize || "8", 10)}
@@ -2166,6 +2169,7 @@ export default function AdminPage() {
                                       if (["rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"].includes(id)) return "neon";
                                       return (id as any);
                                     })()}
+                                    titleText={(p as any).missionTitleText || undefined}
                                     duration={parseFloat(p.missionSpeed || "25")}
                                     bgColor={(p as any).missionBgColor || undefined}
                                     bgOpacity={parseInt(p.missionBgOpacity || "85", 10)}
@@ -2434,7 +2438,7 @@ export default function AdminPage() {
         </div>
       )}
       <footer className="mt-8 text-center text-xs text-neutral-500">
-        © 2024 Final Entertainment. All rights reserved.
+        © 2026 Final Entertainment. All rights reserved.
       </footer>
       <nav className="fixed bottom-0 left-0 right-0 z-40 lg:hidden border-t border-white/10 bg-[#202020]/95 backdrop-blur">
         <div className="grid grid-cols-4 gap-1 p-2">
