@@ -2027,7 +2027,7 @@ function OverlayInner() {
             <GoalBar current={goalCurrent !== null ? goalCurrent : rounded} goal={goal} label={goalLabel} theme={goalTheme} width={goalWidth} />
           </div>
         )}
-        {showPersonalGoal && ready && (
+        {showPersonalGoal && (ready || isPreviewGuide) && (
           renderPersonalGoal()
         )}
         {effectiveShowTicker && ready && <div className={`absolute ${tickerPosClass} ${hasTickerFreePos ? "" : "mb-10"}`} style={tickerPosStyle}><DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
