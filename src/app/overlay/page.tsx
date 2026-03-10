@@ -810,23 +810,23 @@ function DonorTicker({ donors, theme, fontSize, color, bgColor, bgOpacity, full,
     const sorted = donors.slice().sort((a, b) => b.at - a.at);
     const byName = new Map<string, { name: string; at: number; account: number; toon: number }>();
     for (const d of sorted) {
+      if ((d.target || "account") === "toon") continue;
       const key = (d.name || "무명").trim() || "무명";
       const prev = byName.get(key);
-      const isToon = (d.target || "account") === "toon";
       if (!prev) {
         byName.set(key, {
           name: key,
           at: d.at || 0,
-          account: isToon ? 0 : (d.amount || 0),
-          toon: isToon ? (d.amount || 0) : 0,
+          account: (d.amount || 0),
+          toon: 0,
         });
         continue;
       }
       byName.set(key, {
         name: key,
         at: Math.max(prev.at, d.at || 0),
-        account: prev.account + (isToon ? 0 : (d.amount || 0)),
-        toon: prev.toon + (isToon ? (d.amount || 0) : 0),
+        account: prev.account + (d.amount || 0),
+        toon: prev.toon,
       });
     }
     return Array.from(byName.values())
