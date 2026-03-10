@@ -171,7 +171,7 @@ export default function AdminPage() {
   const [resetSheetOpen, setResetSheetOpen] = useState(false);
   const [activeNav, setActiveNav] = useState<"dashboard" | "settlement" | "donor" | "overlay" | "logs">("dashboard");
   const panelCardClass = "rounded-xl border border-white/10 bg-[#252525] shadow-[0_8px_24px_rgba(0,0,0,0.28)]";
-  const simpleMode = true;
+  const simpleMode = false;
   const navItems: Array<{ key: "dashboard" | "settlement" | "donor" | "overlay" | "logs"; label: string; targetId: string }> = [
     { key: "dashboard", label: "대시보드", targetId: "dashboard-summary" },
     { key: "settlement", label: "정산 관리", targetId: "settlement-member-board" },
