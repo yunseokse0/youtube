@@ -486,3 +486,87 @@ export function recordToTxt(record: SettlementRecord): string {
   lines.push(`총합: ${record.totalGross.toLocaleString()} / 세금: ${record.totalFee.toLocaleString()} / 정산: ${record.totalNet.toLocaleString()}`);
   return `\uFEFF${lines.join("\n")}`;
 }
+
+export type ReadableSettlementSource = {
+  label: string;
+  rawAmount: number;
+  shareRate: number;
+};
+
+export type ReadableSettlementMember = {
+  name: string;
+  rawAmount?: number;
+  shareRate?: number;
+  taxRate?: number;
+  sources?: ReadableSettlementSource[];
+};
+
+export type ReadableSettlementInput = {
+  title: string;
+  defaultTaxRate?: number;
+  members: ReadableSettlementMember[];
+};
+
+function fmtWon(n: number): string {
+  return `${Math.max(0, Math.round(n)).toLocaleString("ko-KR")}원`;
+}
+
+function fmtPct(r: number): string {
+  const v = Math.round(Math.max(0, r) * 1000) / 10;
+  return `${v}%`;
+}
+
+export function generateReadableSettlement(data: ReadableSettlementInput): string {
+  const title = data.title || "정산";
+  const members = Array.isArray(data.members) ? data.members : [];
+  const blocks: string[] = [];
+  const summary: { name: string; net: number }[] = [];
+  let sumApplied = 0;
+  let sumTax = 0;
+  let sumNet = 0;
+  for (const m of members) {
+    const taxRate = typeof m.taxRate === "number" ? m.taxRate : (typeof data.defaultTaxRate === "number" ? data.defaultTaxRate : 0);
+    const sources: ReadableSettlementSource[] = Array.isArray(m.sources) && m.sources.length > 0
+      ? m.sources
+      : (typeof m.rawAmount === "number" && typeof m.shareRate === "number"
+        ? [{ label: "원금", rawAmount: m.rawAmount, shareRate: m.shareRate }]
+        : []);
+    const lines: string[] = [];
+    let applied = 0;
+    for (const s of sources) {
+      const src = Math.max(0, s.rawAmount || 0);
+      const rate = Math.max(0, Math.min(1, s.shareRate || 0));
+      const ap = Math.round(src * rate);
+      applied += ap;
+      lines.push(`${s.label}: ${fmtWon(src)} × ${fmtPct(rate)}(수익배분) ➔ ${fmtWon(ap)}`);
+    }
+    const tax = Math.round(applied * Math.max(0, taxRate || 0));
+    const net = Math.max(0, applied - tax);
+    lines.push(`${fmtWon(applied)} - 세금 ${fmtWon(tax)}(${fmtPct(Math.max(0, taxRate || 0))}) = 최종 ${fmtWon(net)}`);
+    blocks.push(`[${m.name}]\n${lines.join("\n")}`);
+    summary.push({ name: m.name, net });
+    sumApplied += applied;
+    sumTax += tax;
+    sumNet += net;
+  }
+  const summaryLines = [
+    "전체 요약",
+    ...summary.map((s) => `- ${s.name}: ${fmtWon(s.net)}`),
+  ];
+  const totalLines = [
+    "총합",
+    `수익배분 합계: ${fmtWon(sumApplied)}`,
+    `세금 합계: -${fmtWon(sumTax)}`,
+    `최종 합계: ${fmtWon(sumNet)}`,
+  ];
+  const out = [
+    `[정산] ${title}`,
+    "",
+    ...summaryLines,
+    "",
+    ...blocks.map((b) => `────────\n${b}`).join("\n\n").split("\n"),
+    "",
+    ...totalLines,
+  ].join("\n");
+  return `\uFEFF${out}`;
+}

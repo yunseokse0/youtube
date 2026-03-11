@@ -1087,6 +1087,24 @@ function OverlayInner() {
     }),
     [rawSp, presetParams, presetId]
   );
+  useEffect(() => {
+    let cancelled = false;
+    const needFetch = presetId && (!activePreset || (overlayPresets.length === 0 && localPresets.length === 0));
+    if (!needFetch) return;
+    const q = new URLSearchParams();
+    q.set("user", userId);
+    fetch(`/api/overlays?${q.toString()}`, { cache: "no-store" })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (cancelled) return;
+        if (data && Array.isArray(data.overlayPresets)) {
+          try { window.localStorage.setItem("excel-broadcast-overlay-presets", JSON.stringify(data.overlayPresets)); } catch {}
+          setLocalPresets(data.overlayPresets as OverlayPresetLike[]);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [presetId, userId, activePreset, overlayPresets.length, localPresets.length]);
   const parsePct = (raw: string | null, fallback: number) => {
     if (raw === null || raw.trim() === "") return fallback;
     const n = Number.parseFloat(raw);
@@ -1159,13 +1177,6 @@ function OverlayInner() {
   const showMembers = tableOnly ? true : (sp.get("showMembers") !== "false");
   const showTotal = tableOnly ? true : (sp.get("showTotal") !== "false");
   const showGoal = tableOnly ? false : (sp.get("showGoal") === "true");
-  const showPersonalGoal = (() => {
-    if (tableOnly) return false;
-    const raw = sp.get("showPersonalGoal");
-    if (raw === "true") return true;
-    if (raw === "false") return false;
-    return Boolean(activePreset?.showPersonalGoal);
-  })();
   const showTicker = (sp.get("showTicker") === "true");
   const tickerInMembers = tableOnly ? false : (sp.get("tickerInMembers") === "true");
   const tickerInPersonalGoal = tableOnly ? false : (sp.get("tickerInPersonalGoal") === "true");
@@ -1590,6 +1601,15 @@ function OverlayInner() {
       .sort((a, b) => b.pct - a.pct)
       .slice(0, personalGoalLimit);
   }, [members, personalGoalLimit]);
+  const showPersonalGoal = useMemo(() => {
+    const raw = sp.get("showPersonalGoal");
+    if (raw === "true") return true;
+    if (raw === "false") return false;
+    if (tableOnly) return false;
+    const presetHas = typeof (activePreset as any)?.showPersonalGoal === "boolean";
+    if (presetHas) return Boolean((activePreset as any).showPersonalGoal);
+    return personalGoals.length > 0;
+  }, [sp, tableOnly, activePreset, personalGoals.length]);
 
   const unpinned = useMemo(() => members.filter((m) => !pinnedFilter(m)), [members]);
   const pinned = useMemo(() => members.filter(pinnedFilter), [members]);
@@ -1745,14 +1765,14 @@ function OverlayInner() {
     );
     if (hasPersonalGoalFreePos) {
       return (
-        <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute inset-0 pointer-events-none z-[9985]">
           <div className="absolute pointer-events-auto" style={{ left: `${personalGoalX}%`, top: `${personalGoalY}%`, transform: "translate(-50%, -50%)" }}>
             {content}
           </div>
         </div>
       );
     }
-    return <div className={`absolute ${personalGoalPosClass}`}>{content}</div>;
+    return <div className={`absolute ${personalGoalPosClass} z-[9985]`}>{content}</div>;
   };
   const responsiveTickerWidth = fitWidthToViewport(tickerWidth);
   const tickerPosStyle: React.CSSProperties | undefined = hasTickerFreePos
@@ -1866,7 +1886,7 @@ function OverlayInner() {
         )}
         <div style={viewportInnerStyle} className="overlay-route">
           <main className="transparent-bg no-select" style={{ ...scaledMainStyle, minHeight: FIT_H, width: FIT_W }}>
-        {showMembers && ready && (
+        {showMembers && (ready || isPreviewGuide || externalHost) && (
           <div className={`absolute ${listPosClass}`} style={{ maxWidth: FIT_W, maxHeight: FIT_H, ...listPosStyle }}>
             <div ref={containerRef} className="flex items-start gap-3" style={{ width: "fit-content", maxWidth: FIT_W }}>
               {showSideDonors && donorsSide === "left" && (
@@ -2027,12 +2047,12 @@ function OverlayInner() {
             </div>
           </div>
         )}
-        {showGoal && ready && goal > 0 && (
+        {showGoal && (ready || isPreviewGuide || externalHost) && goal > 0 && (
           <div className={`absolute ${posClass(goalAnchor)}`}>
             <GoalBar current={goalCurrent !== null ? goalCurrent : rounded} goal={goal} label={goalLabel} theme={goalTheme} width={goalWidth} />
           </div>
         )}
-        {showPersonalGoal && (ready || isPreviewGuide) && (
+        {showPersonalGoal && (ready || isPreviewGuide || externalHost) && (
           renderPersonalGoal()
         )}
         {effectiveShowTicker && (ready || isPreviewGuide) && <div className={`absolute ${tickerPosClass} ${hasTickerFreePos ? "" : "mb-10"}`} style={tickerPosStyle}><DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
