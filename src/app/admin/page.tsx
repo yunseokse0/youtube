@@ -34,6 +34,24 @@ import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
 import MissionBoard from "@/components/MissionBoard";
 import MissionBoardSlot from "@/components/MissionBoardSlot";
 
+type OverlayPreset = {
+  id: string; name: string; scale: string; memberSize: string; totalSize: string;
+  layout?: "center-fixed" | "center";
+  zoomMode?: "follow" | "invert" | "neutral";
+  dense: boolean; anchor: string; tableFree?: boolean; tableX?: string; tableY?: string; autoFont?: boolean; compact?: boolean; tight?: boolean; lockWidth?: boolean; nameGrow?: boolean; nameCh?: string; tableMarginTop?: string; tableMarginRight?: string; tableMarginBottom?: string; tableMarginLeft?: string; autoFit?: "none" | "width" | "height" | "contain" | "cover"; autoFitPin?: "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr"; box?: "full" | "tight"; noCrop?: boolean; sumAnchor: string; sumFree: boolean; sumX: string; sumY: string;
+  theme: string;
+  membersTheme?: string; totalTheme?: string; goalTheme?: string; tickerBaseTheme?: string; timerTheme?: string; missionTheme?: string;
+  missionWidth?: string; missionDuration?: string; missionBgOpacity?: string; missionBgColor?: string; missionItemColor?: string; missionTitleColor?: string; missionTitleText?: string; missionTitleEffect?: string; missionFontSize?: string; missionEffect?: string; missionEffectHotOnly?: string; missionDisplayMode?: string; missionVisibleCount?: string; missionSpeed?: string; missionGapSize?: string;
+  showMembers: boolean; showTotal: boolean;
+  showGoal: boolean; goal: string; goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string;
+  showPersonalGoal?: boolean; personalGoalTheme?: string; personalGoalAnchor?: string; personalGoalLimit?: string; personalGoalFree?: boolean; personalGoalX?: string; personalGoalY?: string;
+  tickerInMembers?: boolean; tickerInGoal?: boolean; tickerInPersonalGoal?: boolean;
+  showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string;
+  showMission: boolean; missionAnchor: string;
+  showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
+  confettiMilestone?: string; tableBgOpacity?: string; vertical?: boolean; accountColor?: string; toonColor?: string; host?: string;
+};
+
 function ClientTime({ ts }: { ts: number | string }) {
   const [text, setText] = useState<string>("");
   useEffect(() => {
@@ -73,55 +91,6 @@ export default function AdminPage() {
   const [taxRateInput, setTaxRateInput] = useState("3.3");
   const [useMemberRatioOverrides, setUseMemberRatioOverrides] = useState(false);
   const [memberRatioInputs, setMemberRatioInputs] = useState<Record<string, { account: string; toon: string }>>({});
-  type OverlayPreset = {
-    id: string; name: string; scale: string; memberSize: string; totalSize: string;
-    layout?: "center-fixed" | "center";
-    zoomMode?: "follow" | "invert" | "neutral";
-    dense: boolean; anchor: string; tableFree?: boolean; tableX?: string; tableY?: string; autoFont?: boolean; compact?: boolean; tight?: boolean; lockWidth?: boolean; nameGrow?: boolean; nameCh?: string; tableMarginTop?: string; tableMarginRight?: string; tableMarginBottom?: string; tableMarginLeft?: string; autoFit?: "none" | "width" | "height" | "contain" | "cover"; autoFitPin?: "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr"; box?: "full" | "tight"; noCrop?: boolean; sumAnchor: string; sumFree: boolean; sumX: string; sumY: string;
-    theme: string;
-    membersTheme?: string;
-    totalTheme?: string;
-    goalTheme?: string;
-    tickerBaseTheme?: string;
-    timerTheme?: string;
-    missionTheme?: string;
-    missionWidth?: string;
-    missionDuration?: string;
-    missionBgOpacity?: string;
-    missionBgColor?: string;
-    missionItemColor?: string;
-    missionTitleColor?: string;
-    missionTitleText?: string;
-    missionTitleEffect?: string;
-    missionFontSize?: string;
-    missionEffect?: string;
-    missionEffectHotOnly?: string;
-    missionDisplayMode?: string;
-    missionVisibleCount?: string;
-    missionSpeed?: string;
-    missionGapSize?: string;
-    showMembers: boolean; showTotal: boolean;
-    showGoal: boolean; goal: string; goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string;
-    showPersonalGoal?: boolean;
-    personalGoalTheme?: string;
-    personalGoalAnchor?: string;
-    personalGoalLimit?: string;
-    personalGoalFree?: boolean;
-    personalGoalX?: string;
-    personalGoalY?: string;
-    tickerInMembers?: boolean;
-    tickerInGoal?: boolean;
-    tickerInPersonalGoal?: boolean;
-    showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string;
-    showMission: boolean; missionAnchor: string;
-    showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
-    confettiMilestone?: string;
-    tableBgOpacity?: string;
-    vertical?: boolean;
-    accountColor?: string;
-    toonColor?: string;
-    host?: string;
-  };
   const PRESET_STORAGE_KEY = "excel-broadcast-overlay-presets";
   const SETTLEMENT_OPTIONS_KEY = "excel-broadcast-settlement-options-v1";
   const PRESET_TEMPLATES: { name: string; preset: Partial<OverlayPreset> }[] = [
