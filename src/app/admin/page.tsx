@@ -13,6 +13,7 @@ import {
   saveStateAsync,
   loadStateFromApi,
   appendDailyLog,
+  loadDailyLogFromApi,
   parseTenThousandThousand,
   maskTenThousandThousandInput,
   formatChatLine,
@@ -286,7 +287,13 @@ export default function AdminPage() {
   useEffect(() => {
     if (!user) return;
     let localPresets: OverlayPreset[] = [];
-    setDailyLog(loadDailyLog(user?.id));
+    // 우선 서버의 일일 로그를 소스로 사용(장치 간 일관성)
+    loadDailyLogFromApi(user?.id).then((serverLog) => {
+      setDailyLog(serverLog);
+      try { window.localStorage.setItem(dailyLogStorageKey(user?.id), JSON.stringify(serverLog)); } catch {}
+    }).catch(() => {
+      setDailyLog(loadDailyLog(user?.id));
+    });
     try {
       const raw = window.localStorage.getItem(PRESET_STORAGE_KEY);
       if (raw) {
@@ -807,7 +814,10 @@ export default function AdminPage() {
     resetInProgressRef.current = true;
     setResetSheetOpen(false);
     appendDailyLog(state, user?.id);
-    setDailyLog(loadDailyLog(user?.id));
+    loadDailyLogFromApi(user?.id).then((serverLog) => {
+      setDailyLog(serverLog);
+      try { window.localStorage.setItem(dailyLogStorageKey(user?.id), JSON.stringify(serverLog)); } catch {}
+    }).catch(() => setDailyLog(loadDailyLog(user?.id)));
     const next: AppState = {
       ...state,
       members: state.members.map((m) => ({ ...m, account: 0, toon: 0 })),
@@ -831,7 +841,10 @@ export default function AdminPage() {
     resetInProgressRef.current = true;
     setResetSheetOpen(false);
     appendDailyLog(state, user?.id);
-    setDailyLog(loadDailyLog(user?.id));
+    loadDailyLogFromApi(user?.id).then((serverLog) => {
+      setDailyLog(serverLog);
+      try { window.localStorage.setItem(dailyLogStorageKey(user?.id), JSON.stringify(serverLog)); } catch {}
+    }).catch(() => setDailyLog(loadDailyLog(user?.id)));
     const next = {
       ...defaultState(),
       overlayPresets: state.overlayPresets || [],
@@ -844,7 +857,10 @@ export default function AdminPage() {
 
   const onSnapshotNow = () => {
     appendDailyLog(state, user?.id);
-    setDailyLog(loadDailyLog(user?.id));
+    loadDailyLogFromApi(user?.id).then((serverLog) => {
+      setDailyLog(serverLog);
+      try { window.localStorage.setItem(dailyLogStorageKey(user?.id), JSON.stringify(serverLog)); } catch {}
+    }).catch(() => setDailyLog(loadDailyLog(user?.id)));
   };
   const onFetchLatestFromServer = async () => {
     setSyncStatus("loading");
@@ -868,6 +884,13 @@ export default function AdminPage() {
     if (pullRefreshing) return;
     setPullRefreshing(true);
     await onFetchLatestFromServer();
+    try {
+      const serverLog = await loadDailyLogFromApi(user?.id);
+      setDailyLog(serverLog);
+      try { window.localStorage.setItem(dailyLogStorageKey(user?.id), JSON.stringify(serverLog)); } catch {}
+    } catch {
+      setDailyLog(loadDailyLog(user?.id));
+    }
     window.setTimeout(() => {
       setPullRefreshing(false);
       setPullDistance(0);

@@ -1587,7 +1587,14 @@ function OverlayInner() {
     return () => clearInterval(interval);
   }, [demo]);
 
-  const members = useMemo(() => (demo && demoMembers ? demoMembers : membersRemote), [demo, demoMembers, membersRemote]);
+  const members = useMemo(() => {
+    const base = (demo && demoMembers ? demoMembers : membersRemote);
+    if (base.length > 0) return base;
+    if ((!ready) && (isPreviewGuide || externalHost)) {
+      return defaultState().members;
+    }
+    return base;
+  }, [demo, demoMembers, membersRemote, ready, isPreviewGuide, externalHost]);
   const donors = useMemo(() => (demo && demoDonors ? demoDonors : donorsRemote), [demo, demoDonors, donorsRemote]);
   const personalGoals = useMemo(() => {
     return members
@@ -1605,11 +1612,12 @@ function OverlayInner() {
     const raw = sp.get("showPersonalGoal");
     if (raw === "true") return true;
     if (raw === "false") return false;
-    if (tableOnly) return false;
     const presetHas = typeof (activePreset as any)?.showPersonalGoal === "boolean";
     if (presetHas) return Boolean((activePreset as any).showPersonalGoal);
+    if (isPreviewGuide || externalHost) return true;
+    if (tableOnly) return false;
     return personalGoals.length > 0;
-  }, [sp, tableOnly, activePreset, personalGoals.length]);
+  }, [sp, tableOnly, activePreset, personalGoals.length, isPreviewGuide, externalHost]);
 
   const unpinned = useMemo(() => members.filter((m) => !pinnedFilter(m)), [members]);
   const pinned = useMemo(() => members.filter(pinnedFilter), [members]);
