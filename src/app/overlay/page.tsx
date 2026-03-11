@@ -1854,6 +1854,7 @@ function OverlayInner() {
       <style dangerouslySetInnerHTML={{ __html: `
         html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
         .overlay-center-fixed .overlay-row td { font-size: 24px !important; min-height: 36px !important; line-height: 1.2 !important; padding: 6px 10px !important; }
+        .overlay-center-fixed .overlay-total-row td { font-size: 28px !important; min-height: 42px !important; padding: 8px 12px !important; font-weight: 600 !important; }
         .overlay-center-fixed table { background: rgba(0,0,0,0.5) !important; }
       ` }} />
     ) : null;
@@ -1955,7 +1956,7 @@ function OverlayInner() {
                       </tr>
                     ))}
                     {showTotal && ready && (
-                      <tr>
+                      <tr className="overlay-total-row">
                         <td className={effectiveTotalWrapCls} colSpan={hasRoleColumn ? 2 : 1}>총합</td>
                         <td className={effectiveTotalWrapCls} />
                         <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(sumAccount)}</td>
@@ -2017,7 +2018,7 @@ function OverlayInner() {
                       </tr>
                     ))}
                     {showTotal && ready && (
-                      <tr>
+                      <tr className="overlay-total-row">
                         <td className={totalTheme.totalWrapCls} colSpan={hasRoleColumn ? 2 : 1}>총합</td>
                         <td className={totalTheme.totalWrapCls} />
                         <td className={`${totalTheme.totalWrapCls} text-right`}>{fmt(sumAccount)}</td>
