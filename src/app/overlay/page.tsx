@@ -1788,7 +1788,7 @@ function OverlayInner() {
     : { width: responsiveTickerWidth };
   const tickerPosClass = hasTickerFreePos ? "" : posClass(tickerAnchor);
 
-    const roleCh = Math.max(4, Math.min(10, members.reduce((max, m) => Math.max(max, (m.role || "").length), 2)));
+    const roleCh = Math.max(6, Math.min(14, members.reduce((max, m) => Math.max(max, (m.role || "").length), 2)));
     const excelGridCols = hasRoleColumn
       ? ["3ch", `${roleCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`]
       : ["3ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`];
@@ -1853,7 +1853,7 @@ function OverlayInner() {
     const centerFixedStyle = centerFixed ? (
       <style dangerouslySetInnerHTML={{ __html: `
         html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
-        .overlay-center-fixed .overlay-row td { font-size: 24px !important; min-height: 60px !important; line-height: 60px !important; padding: 10px 12px !important; }
+        .overlay-center-fixed .overlay-row td { font-size: 24px !important; min-height: 36px !important; line-height: 1.2 !important; padding: 6px 10px !important; }
         .overlay-center-fixed table { background: rgba(0,0,0,0.5) !important; }
       ` }} />
     ) : null;
@@ -1929,14 +1929,10 @@ function OverlayInner() {
                           <td
                             className={effectiveRowCls}
                             style={{
-                              whiteSpace: wrapSmall ? "normal" : "nowrap",
+                              whiteSpace: "nowrap",
                               overflow: "hidden",
-                              fontSize: (() => {
-                                const len = (m.role || "-").length;
-                                if (len <= roleCh) return undefined;
-                                const scale = Math.min(1, roleCh / len);
-                                return `${Math.round(scale * 100)}%`;
-                              })(),
+                              textOverflow: "ellipsis",
+                              maxWidth: `${roleCh}ch`,
                             }}
                           >
                             {m.role || "-"}
@@ -1995,14 +1991,10 @@ function OverlayInner() {
                           <td
                             className={membersTheme.rowCls}
                             style={{
-                              whiteSpace: wrapSmall ? "normal" : "nowrap",
+                              whiteSpace: "nowrap",
                               overflow: "hidden",
-                              fontSize: (() => {
-                                const len = (m.role || "-").length;
-                                if (len <= roleCh) return undefined;
-                                const scale = Math.min(1, roleCh / len);
-                                return `${Math.round(scale * 100)}%`;
-                              })(),
+                              textOverflow: "ellipsis",
+                              maxWidth: `${roleCh}ch`,
                             }}
                           >
                             {m.role || "-"}
