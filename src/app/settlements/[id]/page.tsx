@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useParams } from "next/navigation";
-import { SettlementMemberResult, SettlementRecord, deleteSettlementRecordAndSync, getMembersForExport, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToTxt, saveSettlementRecords, saveSettlementRecordsToApi, toSettlementFormulaLine } from "@/lib/settlement";
+import { SettlementMemberResult, SettlementRecord, deleteSettlementRecordAndSync, getMembersForExport, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToReadableTxt, recordToTxt, saveSettlementRecords, saveSettlementRecordsToApi, toSettlementFormulaLine } from "@/lib/settlement";
 import { downloadTextFile, downloadBlobFile } from "@/lib/download";
 
 function updateMemberBankInfo(
@@ -29,6 +29,7 @@ export default function SettlementDetailPage() {
   const [user, setUser] = useState<{ id: string } | null>(null);
   const [records, setRecords] = useState<SettlementRecord[] | null>(null);
   const [copiedMemberId, setCopiedMemberId] = useState<string | null>(null);
+  const [copiedKakao, setCopiedKakao] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const contentRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -54,6 +55,27 @@ export default function SettlementDetailPage() {
     setRecords(next);
     saveSettlementRecords(next, user.id);
     saveSettlementRecordsToApi(next, user.id).catch(() => {});
+  };
+
+  const copyKakaoTxt = async () => {
+    if (!record) return;
+    const txt = recordToReadableTxt(record);
+    try {
+      await navigator.clipboard.writeText(txt);
+      setCopiedKakao(true);
+      window.setTimeout(() => setCopiedKakao(false), 2000);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = txt;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      setCopiedKakao(true);
+      window.setTimeout(() => setCopiedKakao(false), 2000);
+    }
   };
 
   const copyAccountLine = async (m: SettlementMemberResult) => {
@@ -172,6 +194,12 @@ export default function SettlementDetailPage() {
               onClick={() => downloadTextFile(`${record.title}.txt`, recordToTxt(record), "text/plain;charset=utf-8")}
             >
               메모장(TXT)
+            </button>
+            <button
+              className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700 whitespace-nowrap"
+              onClick={copyKakaoTxt}
+            >
+              {copiedKakao ? "카카오톡 복사됨" : "카카오톡 복사"}
             </button>
             <button className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700 disabled:opacity-60 whitespace-nowrap" onClick={onDownloadPdf} disabled={pdfGenerating}>
               {pdfGenerating ? "PDF 생성 중..." : "PDF"}

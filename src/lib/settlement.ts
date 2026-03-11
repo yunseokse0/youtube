@@ -463,28 +463,10 @@ export function recordToCsv(record: SettlementRecord): string {
 }
 
 export function recordToTxt(record: SettlementRecord): string {
-  const lines: string[] = [];
-  lines.push(`[정산] ${record.title}`);
-  lines.push(`생성시각: ${new Date(record.createdAt).toLocaleString()}`);
-  lines.push(`비율: 계좌 ${record.accountRatio} / 투네 ${record.toonRatio} / 세금 ${Math.round(record.feeRate * 1000) / 10}%`);
-  lines.push("");
-  lines.push("최종 정산 요약");
-  for (const m of getMembersForExport(record)) {
-    lines.push(`- ${m.name}${m.realName ? `(${m.realName})` : ""}: ${m.net.toLocaleString()}`);
-  }
-  lines.push("");
-  for (const m of getMembersForExport(record)) {
-    lines.push(
-      `${m.name}${m.realName ? `(${m.realName})` : ""} | 계좌 ${m.accountApplied.toLocaleString()} + 투네 ${m.toonApplied.toLocaleString()} = ${m.gross.toLocaleString()} - 세금 ${m.fee.toLocaleString()} => 정산 ${m.net.toLocaleString()}`
-    );
-    if (m.bankName || m.bankAccount || m.accountHolder) {
-      lines.push(`  계좌정보: ${m.bankName || "-"} / ${m.bankAccount || "-"} / ${m.accountHolder || "-"}`);
-    }
-    lines.push(`  계산식: ${toSettlementFormulaLine(record, m)}`);
-  }
-  lines.push("");
-  lines.push(`총합: ${record.totalGross.toLocaleString()} / 세금: ${record.totalFee.toLocaleString()} / 정산: ${record.totalNet.toLocaleString()}`);
-  return `\uFEFF${lines.join("\n")}`;
+  const base = recordToReadableTxt(record);
+  const createdAt = `생성시각: ${new Date(record.createdAt).toLocaleString()}`;
+  const inserted = base.replace(/(\[정산\] .+)\n\n/, `$1\n${createdAt}\n\n`);
+  return inserted;
 }
 
 export type ReadableSettlementSource = {
@@ -495,6 +477,7 @@ export type ReadableSettlementSource = {
 
 export type ReadableSettlementMember = {
   name: string;
+  realName?: string;
   rawAmount?: number;
   shareRate?: number;
   taxRate?: number;
@@ -516,57 +499,101 @@ function fmtPct(r: number): string {
   return `${v}%`;
 }
 
+/**
+ * SettlementRecord를 ReadableSettlementInput으로 변환.
+ * rawAmount(원금), shareRate(배분율), taxRate(세율)을 명시적으로 구분.
+ */
+export function recordToReadableInput(record: SettlementRecord): ReadableSettlementInput {
+  const taxRate = record.feeRate ?? 0.033;
+  const members: ReadableSettlementMember[] = getMembersForExport(record).map((m) => {
+    const isOperating = /운영비/i.test(m.name || "");
+    if (isOperating) {
+      return {
+        name: `${m.name}${m.realName ? ` (${m.realName})` : ""}`,
+        sources: [
+          { label: "계좌", rawAmount: m.account, shareRate: 1 },
+          { label: "투네", rawAmount: m.toon, shareRate: 1 },
+        ],
+        taxRate: 0,
+      };
+    }
+    return {
+      name: `${m.name}${m.realName ? ` (${m.realName})` : ""}`,
+      sources: [
+        { label: "계좌", rawAmount: m.account, shareRate: m.accountRatio },
+        { label: "투네", rawAmount: m.toon, shareRate: m.toonRatio },
+      ],
+      taxRate,
+    };
+  });
+  return { title: record.title, defaultTaxRate: taxRate, members };
+}
+
+/**
+ * 구조화된 정산 텍스트 생성. 카카오톡 복사 시 줄바꿈 유지.
+ * [1. 전체 요약] → [2. 개인별 상세 계산식] → [3. 총합 및 세금]
+ */
 export function generateReadableSettlement(data: ReadableSettlementInput): string {
   const title = data.title || "정산";
   const members = Array.isArray(data.members) ? data.members : [];
+  const defaultTaxRate = typeof data.defaultTaxRate === "number" ? data.defaultTaxRate : 0.033;
+
   const blocks: string[] = [];
   const summary: { name: string; net: number }[] = [];
   let sumApplied = 0;
   let sumTax = 0;
   let sumNet = 0;
+
   for (const m of members) {
-    const taxRate = typeof m.taxRate === "number" ? m.taxRate : (typeof data.defaultTaxRate === "number" ? data.defaultTaxRate : 0);
-    const sources: ReadableSettlementSource[] = Array.isArray(m.sources) && m.sources.length > 0
-      ? m.sources
-      : (typeof m.rawAmount === "number" && typeof m.shareRate === "number"
-        ? [{ label: "원금", rawAmount: m.rawAmount, shareRate: m.shareRate }]
-        : []);
+    const taxRate = typeof m.taxRate === "number" ? m.taxRate : defaultTaxRate;
+    const sources: ReadableSettlementSource[] =
+      Array.isArray(m.sources) && m.sources.length > 0
+        ? m.sources
+        : typeof m.rawAmount === "number" && typeof m.shareRate === "number"
+          ? [{ label: "원금", rawAmount: m.rawAmount, shareRate: m.shareRate }]
+          : [];
+
     const lines: string[] = [];
     let applied = 0;
+
     for (const s of sources) {
-      const src = Math.max(0, s.rawAmount || 0);
+      const raw = Math.max(0, s.rawAmount || 0);
       const rate = Math.max(0, Math.min(1, s.shareRate || 0));
-      const ap = Math.round(src * rate);
+      const ap = Math.round(raw * rate);
       applied += ap;
-      lines.push(`${s.label}: ${fmtWon(src)} × ${fmtPct(rate)}(수익배분) ➔ ${fmtWon(ap)}`);
+      lines.push(`${s.label}: ${fmtWon(raw)} × ${fmtPct(rate)}(수익배분) ➔ ${fmtWon(ap)}`);
     }
+
     const tax = Math.round(applied * Math.max(0, taxRate || 0));
     const net = Math.max(0, applied - tax);
     lines.push(`${fmtWon(applied)} - 세금 ${fmtWon(tax)}(${fmtPct(Math.max(0, taxRate || 0))}) = 최종 ${fmtWon(net)}`);
-    blocks.push(`[${m.name}]\n${lines.join("\n")}`);
+
+    blocks.push(`┌ ${m.name}\n${lines.map((l) => `│ ${l}`).join("\n")}\n└`);
     summary.push({ name: m.name, net });
     sumApplied += applied;
     sumTax += tax;
     sumNet += net;
   }
-  const summaryLines = [
-    "전체 요약",
-    ...summary.map((s) => `- ${s.name}: ${fmtWon(s.net)}`),
-  ];
-  const totalLines = [
-    "총합",
-    `수익배분 합계: ${fmtWon(sumApplied)}`,
-    `세금 합계: -${fmtWon(sumTax)}`,
-    `최종 합계: ${fmtWon(sumNet)}`,
-  ];
+
   const out = [
     `[정산] ${title}`,
     "",
-    ...summaryLines,
+    "━━━ 1. 전체 요약 ━━━",
+    ...summary.map((s) => `  • ${s.name}: ${fmtWon(s.net)}`),
     "",
-    ...blocks.map((b) => `────────\n${b}`).join("\n\n").split("\n"),
+    "━━━ 2. 개인별 상세 계산식 ━━━",
+    ...blocks,
     "",
-    ...totalLines,
+    "━━━ 3. 총합 및 세금 ━━━",
+    `  수익배분 합계: ${fmtWon(sumApplied)}`,
+    `  세금 합계: -${fmtWon(sumTax)}`,
+    `  최종 정산 합계: ${fmtWon(sumNet)}`,
   ].join("\n");
+
   return `\uFEFF${out}`;
+}
+
+/** SettlementRecord → 구조화된 읽기 쉬운 텍스트 (카카오톡 복사용) */
+export function recordToReadableTxt(record: SettlementRecord): string {
+  return generateReadableSettlement(recordToReadableInput(record));
 }
