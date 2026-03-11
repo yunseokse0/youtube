@@ -16,6 +16,8 @@ const MISSION_THEME_STYLES: Record<MissionThemeVariant, { itemColor: string; ite
   neonExcel: { itemColor: "#a5f3fc", itemShadow: "0 0 6px rgba(103, 232, 249, 0.5)", titleColor: "#67e8f9", bgColor: "rgba(4, 13, 20, 0.9)" },
 };
 
+export type MissionTitleEffect = "none" | "blink" | "pulse" | "glow" | "sparkle" | "gradient" | "rainbow" | "shadow";
+
 type MissionBoardProps = {
   missions: MissionItem[];
   fontSize?: number;
@@ -26,6 +28,7 @@ type MissionBoardProps = {
   bgColor?: string;
   itemColor?: string;
   titleColor?: string;
+  titleEffect?: MissionTitleEffect;
   effect?: "none" | "blink" | "pulse" | "glow";
   effectHotOnly?: boolean;
 };
@@ -40,6 +43,7 @@ const MissionBoard = ({
   bgColor,
   itemColor,
   titleColor,
+  titleEffect = "none",
   effect = "none",
   effectHotOnly = false,
 }: MissionBoardProps) => {
@@ -78,19 +82,17 @@ const MissionBoard = ({
     })(),
   };
 
-  const content = (
+  const titleEffectCls =
+    titleEffect === "blink" ? "fx-title-blink" :
+    titleEffect === "pulse" ? "fx-title-pulse" :
+    titleEffect === "glow" ? "fx-title-glow" :
+    titleEffect === "sparkle" ? "fx-title-sparkle" :
+    titleEffect === "gradient" ? "fx-title-gradient" :
+    titleEffect === "rainbow" ? "fx-title-rainbow" :
+    titleEffect === "shadow" ? "fx-title-shadow" : "";
+
+  const tickerContent = (
     <>
-      <style>{`
-        @keyframes fx-blink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0.4 } }
-        @keyframes fx-pulse { 0% { transform: scale(1) } 50% { transform: scale(1.06) } 100% { transform: scale(1) } }
-        @keyframes fx-glow { 0% { text-shadow: 0 0 0 rgba(255,255,255,0.0) } 50% { text-shadow: 0 0 10px rgba(255,255,255,0.6) } 100% { text-shadow: 0 0 0 rgba(255,255,255,0.0) } }
-        .fx-blink { animation: fx-blink 1.2s steps(2, end) infinite }
-        .fx-pulse { animation: fx-pulse 1.8s ease-in-out infinite }
-        .fx-glow { animation: fx-glow 1.6s ease-in-out infinite }
-      `}</style>
-      <span className="font-black tracking-widest" style={{ color: theme.titleColor, marginRight: 32 }}>
-        ■ {titleText || "MISSION"} ■
-      </span>
       {missions.map((item, idx) => (
         <span
           key={item.id}
@@ -118,16 +120,50 @@ const MissionBoard = ({
         background: theme.bgColor,
       }}
     >
+      <style>{`
+        @keyframes fx-blink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0.4 } }
+        @keyframes fx-pulse { 0% { transform: scale(1) } 50% { transform: scale(1.06) } 100% { transform: scale(1) } }
+        @keyframes fx-glow { 0% { text-shadow: 0 0 0 rgba(255,255,255,0.0) } 50% { text-shadow: 0 0 10px rgba(255,255,255,0.6) } 100% { text-shadow: 0 0 0 rgba(255,255,255,0.0) } }
+        .fx-blink { animation: fx-blink 1.2s steps(2, end) infinite }
+        .fx-pulse { animation: fx-pulse 1.8s ease-in-out infinite }
+        .fx-glow { animation: fx-glow 1.6s ease-in-out infinite }
+        @keyframes fx-title-blink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0.5 } }
+        @keyframes fx-title-pulse { 0%, 100% { transform: scale(1) } 50% { transform: scale(1.08) } }
+        @keyframes fx-title-glow { 0%, 100% { text-shadow: 0 0 4px currentColor } 50% { text-shadow: 0 0 16px currentColor, 0 0 24px currentColor } }
+        @keyframes fx-title-sparkle { 0%, 100% { filter: brightness(1) } 50% { filter: brightness(1.4) } }
+        @keyframes fx-title-gradient { 0% { background-position: 0% 50% } 50% { background-position: 100% 50% } 100% { background-position: 0% 50% } }
+        @keyframes fx-title-rainbow { 0% { filter: hue-rotate(0deg) } 100% { filter: hue-rotate(360deg) } }
+        @keyframes fx-title-shadow { 0%, 100% { text-shadow: 0 2px 4px rgba(0,0,0,0.5) } 50% { text-shadow: 0 4px 12px rgba(0,0,0,0.8), 0 0 8px currentColor } }
+        .fx-title-blink { animation: fx-title-blink 1.2s steps(2, end) infinite }
+        .fx-title-pulse { animation: fx-title-pulse 1.8s ease-in-out infinite }
+        .fx-title-glow { animation: fx-title-glow 2s ease-in-out infinite }
+        .fx-title-sparkle { animation: fx-title-sparkle 1.6s ease-in-out infinite }
+        .fx-title-gradient { background: linear-gradient(90deg, #fcd34d, #f97316, #ec4899, #8b5cf6, #fcd34d); background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: fx-title-gradient 4s ease infinite }
+        .fx-title-rainbow { animation: fx-title-rainbow 3s linear infinite }
+        .fx-title-shadow { animation: fx-title-shadow 2s ease-in-out infinite }
+      `}</style>
+      <div className="flex justify-center items-center w-full mb-2 text-center">
+        <span
+          className={`font-black tracking-widest ${titleEffectCls}`}
+          style={
+            titleEffect !== "gradient"
+              ? { color: theme.titleColor }
+              : undefined
+          }
+        >
+          ■ {titleText || "MISSION"} ■
+        </span>
+      </div>
       <div className="overflow-hidden whitespace-nowrap">
         <div
           className="inline-block"
           style={{ animation: `mission-ticker-flow ${duration}s linear infinite` }}
         >
-          {content}
+          {tickerContent}
           <span style={{ marginLeft: 48 }} />
-          {content}
+          {tickerContent}
           <span style={{ marginLeft: 48 }} />
-          {content}
+          {tickerContent}
         </div>
       </div>
     </div>

@@ -36,6 +36,7 @@ export type OverlayPreset = {
   missionAnchor: string;
   missionTitleText?: string;
   missionTitleColor?: string;
+  missionTitleEffect?: string;
   // 개별 요소 위치 설정
   memberPosition?: OverlayElementPosition;
   totalPosition?: OverlayElementPosition;
@@ -368,6 +369,23 @@ export function OverlayCard({ preset, onUpdate, onDelete, onCopyUrl, copiedId, u
                   onChange={(e) => onUpdate(preset.id, { missionTitleColor: e.target.value })}
                   className="w-16 h-10 rounded bg-white/5 border border-white/10"
                 />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs text-neutral-400">타이틀 효과</label>
+                <select
+                  value={preset.missionTitleEffect || 'none'}
+                  onChange={(e) => onUpdate(preset.id, { missionTitleEffect: e.target.value })}
+                  className="w-full px-2 py-1 rounded bg-white/5 border border-white/10 focus:border-emerald-500 focus:outline-none text-sm"
+                >
+                  <option value="none">없음</option>
+                  <option value="blink">깜빡임</option>
+                  <option value="pulse">펄스</option>
+                  <option value="glow">글로우</option>
+                  <option value="sparkle">스파클</option>
+                  <option value="gradient">그라데이션</option>
+                  <option value="rainbow">레인보우</option>
+                  <option value="shadow">섀도우</option>
+                </select>
               </div>
             </div>
           )}

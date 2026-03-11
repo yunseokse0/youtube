@@ -92,6 +92,7 @@ export default function AdminPage() {
     missionItemColor?: string;
     missionTitleColor?: string;
     missionTitleText?: string;
+    missionTitleEffect?: string;
     missionFontSize?: string;
     missionEffect?: string;
     missionEffectHotOnly?: string;
@@ -2007,8 +2008,23 @@ export default function AdminPage() {
                                   </div>
                                   <label className="text-xs text-neutral-400">텍스트 색상</label>
                                   <input type="color" className="w-16 h-11 rounded bg-neutral-900/80 border border-white/10" value={(p.missionItemColor as any) || "#fde68a"} onChange={(e) => updatePreset(p.id, { missionItemColor: e.target.value })} />
-                                  <label className="text-xs text-neutral-400">강조 색상</label>
+                                  <label className="text-xs text-neutral-400">타이틀 색상</label>
                                   <input type="color" className="w-16 h-11 rounded bg-neutral-900/80 border border-white/10" value={(p.missionTitleColor as any) || "#fcd34d"} onChange={(e) => updatePreset(p.id, { missionTitleColor: e.target.value })} />
+                              <label className="text-xs text-neutral-400">타이틀 효과</label>
+                              <select
+                                className="px-2 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm min-h-[44px]"
+                                value={(p as any).missionTitleEffect || "none"}
+                                onChange={(e) => updatePreset(p.id, { missionTitleEffect: e.target.value })}
+                              >
+                                <option value="none">없음</option>
+                                <option value="blink">깜빡임</option>
+                                <option value="pulse">펄스</option>
+                                <option value="glow">글로우</option>
+                                <option value="sparkle">스파클</option>
+                                <option value="gradient">그라데이션</option>
+                                <option value="rainbow">레인보우</option>
+                                <option value="shadow">섀도우</option>
+                              </select>
                               <label className="text-xs text-neutral-400">제목 텍스트</label>
                               <input
                                 className="px-2 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm min-h-[44px]"
@@ -2094,6 +2110,7 @@ export default function AdminPage() {
                                           bgOpacity={parseInt(p.missionBgOpacity || "85", 10)}
                                           itemColor={(p as any).missionItemColor || undefined}
                                           titleColor={(p as any).missionTitleColor || undefined}
+                                          titleEffect={((p as any).missionTitleEffect || "none") as any}
                                         />
                                       ) : (
                                         <MissionBoard
@@ -2116,6 +2133,7 @@ export default function AdminPage() {
                                           bgOpacity={parseInt(p.missionBgOpacity || "85", 10)}
                                           itemColor={(p as any).missionItemColor || undefined}
                                           titleColor={(p as any).missionTitleColor || undefined}
+                                          titleEffect={((p as any).missionTitleEffect || "none") as any}
                                         />
                                       )}
                                     </div>
@@ -2169,6 +2187,7 @@ export default function AdminPage() {
                                     bgOpacity={parseInt(p.missionBgOpacity || "85", 10)}
                                     itemColor={(p as any).missionItemColor || undefined}
                                     titleColor={(p as any).missionTitleColor || undefined}
+                                    titleEffect={((p as any).missionTitleEffect || "none") as any}
                                   />
                                 ) : (
                                   <MissionBoard
@@ -2191,6 +2210,7 @@ export default function AdminPage() {
                                     bgOpacity={parseInt(p.missionBgOpacity || "85", 10)}
                                     itemColor={(p as any).missionItemColor || undefined}
                                     titleColor={(p as any).missionTitleColor || undefined}
+                                    titleEffect={((p as any).missionTitleEffect || "none") as any}
                                     effect={(p as any).missionEffect || "none"}
                                     effectHotOnly={(p as any).missionEffectHotOnly === "true"}
                                   />

@@ -17,6 +17,8 @@ const MISSION_THEME_STYLES: Record<MissionThemeVariant, { itemColor: string; ite
   neonExcel: { itemColor: "#a5f3fc", itemShadow: "0 0 6px rgba(103, 232, 249, 0.5)", titleColor: "#67e8f9", bgColor: "rgba(4, 13, 20, 0.9)" },
 };
 
+export type MissionTitleEffect = "none" | "blink" | "pulse" | "glow" | "sparkle" | "gradient" | "rainbow" | "shadow";
+
 type MissionBoardSlotProps = {
   missions: MissionItem[];
   fontSize?: number;
@@ -29,6 +31,7 @@ type MissionBoardSlotProps = {
   bgColor?: string;
   itemColor?: string;
   titleColor?: string;
+  titleEffect?: MissionTitleEffect;
   effect?: "none" | "blink" | "pulse" | "glow" | "sparkle";
   effectHotOnly?: boolean;
 };
@@ -45,6 +48,7 @@ export default function MissionBoardSlot({
   bgColor,
   itemColor,
   titleColor,
+  titleEffect = "none",
   effect = "none",
   effectHotOnly = false,
 }: MissionBoardSlotProps) {
@@ -105,11 +109,30 @@ export default function MissionBoardSlot({
         background: theme.bgColor,
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", marginBottom: gapSize }}>
-        <span className="font-black tracking-widest" style={{ color: theme.titleColor }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", marginBottom: gapSize, textAlign: "center" }}>
+        <span
+          className={`font-black tracking-widest mission-slot-title-${titleEffect}`}
+          style={titleEffect !== "gradient" ? { color: theme.titleColor } : undefined}
+        >
           ■ {titleText || "MISSION"} ■
         </span>
       </div>
+      <style jsx>{`
+        @keyframes slot-title-blink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0.5 } }
+        @keyframes slot-title-pulse { 0%, 100% { transform: scale(1) } 50% { transform: scale(1.08) } }
+        @keyframes slot-title-glow { 0%, 100% { text-shadow: 0 0 4px currentColor } 50% { text-shadow: 0 0 16px currentColor, 0 0 24px currentColor } }
+        @keyframes slot-title-sparkle { 0%, 100% { filter: brightness(1) } 50% { filter: brightness(1.4) } }
+        @keyframes slot-title-gradient { 0% { background-position: 0% 50% } 50% { background-position: 100% 50% } 100% { background-position: 0% 50% } }
+        @keyframes slot-title-rainbow { 0% { filter: hue-rotate(0deg) } 100% { filter: hue-rotate(360deg) } }
+        @keyframes slot-title-shadow { 0%, 100% { text-shadow: 0 2px 4px rgba(0,0,0,0.5) } 50% { text-shadow: 0 4px 12px rgba(0,0,0,0.8), 0 0 8px currentColor } }
+        .mission-slot-title-blink { animation: slot-title-blink 1.2s steps(2, end) infinite }
+        .mission-slot-title-pulse { animation: slot-title-pulse 1.8s ease-in-out infinite }
+        .mission-slot-title-glow { animation: slot-title-glow 2s ease-in-out infinite }
+        .mission-slot-title-sparkle { animation: slot-title-sparkle 1.6s ease-in-out infinite }
+        .mission-slot-title-gradient { background: linear-gradient(90deg, #fcd34d, #f97316, #ec4899, #8b5cf6, #fcd34d); background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: slot-title-gradient 4s ease infinite }
+        .mission-slot-title-rainbow { animation: slot-title-rainbow 3s linear infinite }
+        .mission-slot-title-shadow { animation: slot-title-shadow 2s ease-in-out infinite }
+      `}</style>
       <div style={{ display: "grid", gap: gapSize }}>
         <AnimatePresence initial={false} mode="popLayout">
           {items.length === 0 ? (

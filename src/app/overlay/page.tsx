@@ -1413,6 +1413,11 @@ function OverlayInner() {
     ((externalHost && (activePreset as any)?.missionTitleText)
       ? String((activePreset as any).missionTitleText)
       : (sp.get("missionTitleText") || "")).trim() || "MISSION";
+  const missionTitleEffectCfg = (
+    (externalHost && (activePreset as any)?.missionTitleEffect)
+      ? String((activePreset as any).missionTitleEffect)
+      : (sp.get("missionTitleEffect") || "none")
+  ) as "none" | "blink" | "pulse" | "glow" | "sparkle" | "gradient" | "rainbow" | "shadow";
   const missionEffectCfg = (
     (externalHost && (activePreset as any)?.missionEffect)
       ? String((activePreset as any).missionEffect)
@@ -2074,6 +2079,7 @@ function OverlayInner() {
                   bgColor={missionBgColorCfg}
                   itemColor={missionItemColorCfg}
                   titleColor={missionTitleColorCfg}
+                  titleEffect={missionTitleEffectCfg}
                 />
               ) : (
                 <MissionBoard
@@ -2086,6 +2092,7 @@ function OverlayInner() {
                   bgColor={missionBgColorCfg}
                   itemColor={missionItemColorCfg}
                   titleColor={missionTitleColorCfg}
+                  titleEffect={missionTitleEffectCfg}
                   effect={missionEffectCfg}
                   effectHotOnly={missionEffectHotOnlyCfg}
                 />
