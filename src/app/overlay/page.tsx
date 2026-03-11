@@ -1914,7 +1914,7 @@ function OverlayInner() {
                   </colgroup>
                   <thead>
                     <tr>
-                      <td className={effectiveHeaderCls}>순위</td>
+                      <td className={`${effectiveHeaderCls} overlay-rank-cell`}>순위</td>
                       {hasRoleColumn && <td className={effectiveHeaderCls} style={{ whiteSpace: "nowrap" }}>직급</td>}
                       <td className={effectiveHeaderCls}>이름</td>
                       <td className={`${effectiveHeaderCls} text-right`}>계좌</td>
@@ -1925,7 +1925,7 @@ function OverlayInner() {
                   <tbody>
                     {ranked.map(({m, rank}) => (
                       <tr key={m.id} ref={setRowRef(m.id)} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
-                        <td className={`${effectiveRowCls} text-left`}>#{rank}</td>
+                        <td className={`${effectiveRowCls} text-left overlay-rank-cell`}>#{rank}</td>
                         {hasRoleColumn && (
                           <td
                             className={effectiveRowCls}
@@ -1947,7 +1947,7 @@ function OverlayInner() {
                     ))}
                     {pinned.map((m) => (
                       <tr key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
-                        <td className={`${effectiveRowCls} text-right`}>—</td>
+                        <td className={`${effectiveRowCls} text-right overlay-rank-cell`}>—</td>
                         {hasRoleColumn && <td className={effectiveRowCls}></td>}
                         <td className={`${effectiveRowCls} ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
                         <td className={`${effectiveRowCls} ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
@@ -1976,7 +1976,7 @@ function OverlayInner() {
                   </colgroup>
                   <thead>
                     <tr>
-                      <td className={membersTheme.headerCls}>순위</td>
+                      <td className={`${membersTheme.headerCls} overlay-rank-cell`}>순위</td>
                       {hasRoleColumn && <td className={membersTheme.headerCls} style={{ whiteSpace: "nowrap" }}>직급</td>}
                       <td className={membersTheme.headerCls}>이름</td>
                       <td className={`${membersTheme.headerCls} text-right`}>계좌</td>
@@ -1987,7 +1987,7 @@ function OverlayInner() {
                   <tbody>
                     {ranked.map(({m, rank}) => (
                       <tr key={m.id} ref={setRowRef(m.id)} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
-                        <td className={`${membersTheme.rowCls} text-left`}>#{rank}</td>
+                        <td className={`${membersTheme.rowCls} text-left overlay-rank-cell`}>#{rank}</td>
                         {hasRoleColumn && (
                           <td
                             className={membersTheme.rowCls}
@@ -2009,7 +2009,7 @@ function OverlayInner() {
                     ))}
                     {pinned.map((m) => (
                       <tr key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
-                        <td className={`${membersTheme.rowCls} text-right`}>—</td>
+                        <td className={`${membersTheme.rowCls} text-right overlay-rank-cell`}>—</td>
                         {hasRoleColumn && <td className={membersTheme.rowCls}></td>}
                         <td className={`${membersTheme.rowCls} ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
                         <td className={`${membersTheme.rowCls} ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
