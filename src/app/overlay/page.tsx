@@ -1598,6 +1598,9 @@ function OverlayInner() {
     if ((!ready) && (isPreviewGuide || externalHost)) {
       return defaultState().members;
     }
+    if ((isPreviewGuide || externalHost) && base.length === 0) {
+      return defaultState().members;
+    }
     return base;
   }, [demo, demoMembers, membersRemote, ready, isPreviewGuide, externalHost]);
   const donors = useMemo(() => (demo && demoDonors ? demoDonors : donorsRemote), [demo, demoDonors, donorsRemote]);

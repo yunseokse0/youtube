@@ -2220,7 +2220,7 @@ export default function AdminPage() {
                                 )}
                               </div>
                             ) : (
-                              <VerticalPreview url={buildStablePreviewUrl(p)} />
+                              <ClientPreviewWrapper preset={p} buildUrl={buildStablePreviewUrl} />
                             )}
                           </div>
                         </div>
@@ -2511,13 +2511,27 @@ export default function AdminPage() {
   );
 }
 
+function ClientPreviewWrapper({ preset, buildUrl }: { preset: OverlayPreset; buildUrl: (p: OverlayPreset) => string }) {
+  const [url, setUrl] = useState("");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const u = buildUrl(preset);
+    if (u) setUrl(u);
+  }, [preset, buildUrl]);
+  return <VerticalPreview url={url} />;
+}
+
 function VerticalPreview({ url }: { url: string }) {
   const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
   const [showFrame, setShowFrame] = useState(true);
   const [showGuides, setShowGuides] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [iframeKey, setIframeKey] = useState(0);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [w, h] = orientation === "portrait" ? [540, 960] : [960, 540];
   const previewUrl = useMemo(() => {
+    if (!url || typeof url !== "string" || url.trim() === "") return "";
     try {
       const u = new URL(url);
       u.searchParams.set("previewGuide", "true");
@@ -2527,6 +2541,7 @@ function VerticalPreview({ url }: { url: string }) {
     }
   }, [url]);
   const onLoad = useCallback((e: any) => {
+    setLoading(false);
     try {
       const doc = e?.target?.contentDocument;
       if (!doc) { setErr("미리보기 로드 실패"); return; }
@@ -2538,7 +2553,15 @@ function VerticalPreview({ url }: { url: string }) {
       setErr(null);
     }
   }, []);
-  const onError = useCallback(() => setErr("미리보기 네트워크 오류"), []);
+  const onError = useCallback(() => {
+    setLoading(false);
+    setErr("미리보기 네트워크 오류");
+  }, []);
+  const reloadPreview = useCallback(() => {
+    setErr(null);
+    setLoading(true);
+    setIframeKey((k) => k + 1);
+  }, []);
   return (
     <div className="rounded border border-white/10 bg-black/70 p-2">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
@@ -2565,12 +2588,46 @@ function VerticalPreview({ url }: { url: string }) {
           >
             {orientation === "portrait" ? "세로 9:16" : "가로 16:9"}
           </button>
+          <button
+            className="px-2 py-0.5 rounded border text-xs border-white/10 text-neutral-300 hover:border-emerald-500 hover:text-emerald-300"
+            onClick={reloadPreview}
+            title="프리뷰 새로고침"
+          >
+            새로고침
+          </button>
+          <button
+            className={`px-2 py-0.5 rounded border text-xs ${showDiagnostics ? "border-amber-500 text-amber-300" : "border-white/10 text-neutral-300 hover:border-amber-500"}`}
+            onClick={() => setShowDiagnostics((v) => !v)}
+            title="원인 진단"
+          >
+            진단
+          </button>
         </div>
       </div>
+      {showDiagnostics && (
+        <div className="mb-2 p-2 rounded bg-neutral-900/80 border border-amber-500/40 text-xs space-y-1">
+          <div><span className="text-neutral-500">URL 길이:</span> {previewUrl ? previewUrl.length : 0}자 (브라우저 한도 ~2000자)</div>
+          <div><span className="text-neutral-500">상태:</span> {loading ? "로딩 중" : err || "로드 완료"}</div>
+          <div className="flex flex-wrap gap-2">
+            <a href={previewUrl} target="_blank" rel="noopener noreferrer" className="text-amber-400 underline">새 탭에서 열기</a>
+            <button type="button" className="text-amber-400 underline" onClick={() => { navigator.clipboard?.writeText(previewUrl || ""); }}>URL 복사</button>
+          </div>
+          {previewUrl && previewUrl.length > 1800 && (
+            <div className="text-amber-400">⚠ URL이 너무 길어 일부 환경에서 실패할 수 있습니다. 멤버/후원자 수를 줄여보세요.</div>
+          )}
+        </div>
+      )}
+      {!previewUrl ? (
+        <div className="flex flex-col items-center justify-center py-16 px-4 rounded-xl border border-white/10 bg-neutral-900/50 text-center">
+          <div className="text-sm text-neutral-400 mb-2">프리뷰 URL을 생성할 수 없습니다.</div>
+          <div className="text-xs text-neutral-500">페이지를 새로고침하거나, 오버레이를 펼쳐 확인해 주세요.</div>
+        </div>
+      ) : (
       <div className="relative mx-auto rounded-xl overflow-hidden shrink-0"
            style={{
              width: "min(84vw, 1100px)",
              maxWidth: "100%",
+             minHeight: 280,
              height: "auto",
              maxHeight: "82vh",
              aspectRatio: `${w} / ${h}`,
@@ -2578,7 +2635,12 @@ function VerticalPreview({ url }: { url: string }) {
              background: "#0b0b0b",
              boxShadow: showFrame ? "0 6px 24px rgba(0,0,0,0.8), inset 0 0 0 1px rgba(255,255,255,0.06), inset 0 8px 24px rgba(255,255,255,0.04)" : "none",
            }}>
-        <iframe key={previewUrl} src={previewUrl} title="vertical-preview" className="absolute inset-0 w-full h-full" style={{ background: "transparent" }} scrolling="no" onLoad={onLoad} onError={onError} />
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-neutral-900/90 z-[9999]">
+            <div className="text-sm text-neutral-400">프리뷰 로딩 중...</div>
+          </div>
+        )}
+        <iframe key={`${previewUrl}-${iframeKey}`} src={previewUrl} title="vertical-preview" className="absolute inset-0 w-full h-full" style={{ background: "transparent" }} scrolling="no" onLoad={onLoad} onError={onError} />
         {err && (
           <div className="absolute top-2 right-2 z-[10000] px-2 py-1 rounded bg-rose-700 text-white text-xs">
             {err}
@@ -2596,6 +2658,7 @@ function VerticalPreview({ url }: { url: string }) {
           </>
         )}
       </div>
+      )}
     </div>
   );
 }

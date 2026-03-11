@@ -9,6 +9,16 @@ const nextConfig = {
       { source: '/overlay/:path*', destination: '/overlay' },
     ];
   },
+  async headers() {
+    return [
+      {
+        source: '/overlay',
+        headers: [
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+        ],
+      },
+    ];
+  },
 };
 
 module.exports = nextConfig;
