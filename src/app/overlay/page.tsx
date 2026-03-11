@@ -950,11 +950,11 @@ function DonorTicker({ donors, theme, fontSize, color, bgColor, bgOpacity, full,
   return (
     <div className="overflow-hidden whitespace-nowrap" style={tickerContainerStyle}>
       <div
-        className="inline-block animate-ticker"
+        className="inline-block"
         style={{
           ...tickerThemeStyle,
           ...(color ? { color } : {}),
-          ...(duration ? { animationDuration: `${Math.max(10, duration)}s` } : {}),
+          animation: `ticker ${Math.max(10, duration || 60)}s linear infinite`,
         }}
       >
         {stream.map((d, i) => (
@@ -1249,7 +1249,7 @@ function OverlayInner() {
   const showBottomDonors = tableOnly ? false : (sp.get("showBottomDonors") === "true");
   const effectiveShowTicker = showTicker && !hasContextTicker && !showBottomDonors;
   const donorsGap = Math.max(0, Math.min(48, parseInt(sp.get("donorsGap") || (tight ? "8" : "16"), 10)));
-  const donorsSpeed = Math.max(10, Math.min(600, parseFloat(sp.get("donorsSpeed") || "45"))); // seconds per loop (기본 45초, 최대 10분)
+  const donorsSpeed = Math.max(10, Math.min(7200, parseFloat(sp.get("donorsSpeed") || "60"))); // seconds per loop (기본 60초, 최대 2시간)
   const donorsLimit = Math.max(1, Math.min(50, parseInt(sp.get("donorsLimit") || "8", 10)));
   const donorsFormat = sp.get("donorsFormat") === "full" ? "full" : "short"; // only full|short
   const donorsUnit = sp.get("donorsUnit") || sp.get("currencyUnit") || "";

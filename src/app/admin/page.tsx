@@ -147,7 +147,7 @@ export default function AdminPage() {
     timerStart: null, timerAnchor: "tr", showMission: false, missionAnchor: "br",
     missionWidth: "800", missionDuration: "25",
     membersTheme: "auto", totalTheme: "auto", goalTheme: "auto", tickerBaseTheme: "auto", timerTheme: "auto", missionTheme: "auto",
-    showBottomDonors: false, donorsSize: "", donorsGap: "16", donorsSpeed: "45", donorsLimit: "8", donorsFormat: "short", donorsUnit: "", donorsColor: "", donorsBgColor: "", donorsBgOpacity: "0", tickerTheme: "auto", tickerGlow: "45", tickerShadow: "35", currencyLocale: "ko-KR",
+    showBottomDonors: false, donorsSize: "", donorsGap: "16", donorsSpeed: "60", donorsLimit: "8", donorsFormat: "short", donorsUnit: "", donorsColor: "", donorsBgColor: "", donorsBgOpacity: "0", tickerTheme: "auto", tickerGlow: "45", tickerShadow: "35", currencyLocale: "ko-KR",
     confettiMilestone: "",
     tableBgOpacity: "",
     accountColor: "",
@@ -1818,10 +1818,10 @@ export default function AdminPage() {
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="(기본 자동)" value={p.donorsSize || ""} onChange={(e) => updatePreset(p.id, { donorsSize: e.target.value })} />
                                   <label className="text-xs text-neutral-400">간격(px)</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.donorsGap || ""} onChange={(e) => updatePreset(p.id, { donorsGap: e.target.value })} />
-                                  <label className="text-xs text-neutral-400">속도(초/루프, 10~600)</label>
+                                  <label className="text-xs text-neutral-400">속도(초/루프, 10~7200=2시간)</label>
                                   <div className="flex items-center gap-2">
-                                    <input type="range" min="10" max="600" step="5" value={Math.min(600, Math.max(10, parseInt(p.donorsSpeed || "45", 10) || 45))} onChange={(e) => updatePreset(p.id, { donorsSpeed: e.target.value })} className="flex-1 accent-emerald-500 h-11" />
-                                    <input className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right" placeholder="45" value={p.donorsSpeed || ""} onChange={(e) => updatePreset(p.id, { donorsSpeed: e.target.value.replace(/[^\d]/g, "") })} />
+                                    <input type="range" min="10" max="7200" step="30" value={Math.min(7200, Math.max(10, parseInt(p.donorsSpeed || "60", 10) || 60))} onChange={(e) => updatePreset(p.id, { donorsSpeed: e.target.value })} className="flex-1 accent-emerald-500 h-11" />
+                                    <input className="w-24 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right" placeholder="60" value={p.donorsSpeed || ""} onChange={(e) => updatePreset(p.id, { donorsSpeed: e.target.value.replace(/[^\d]/g, "") })} />
                                   </div>
                                   <label className="text-xs text-neutral-400">표시 개수(N)</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.donorsLimit || ""} onChange={(e) => updatePreset(p.id, { donorsLimit: e.target.value })} />

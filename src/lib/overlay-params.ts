@@ -206,7 +206,7 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.showBottomDonors) q.set("showBottomDonors", "true");
   if (preset.donorsSize && preset.donorsSize.trim()) q.set("donorsSize", preset.donorsSize.trim());
   if (preset.donorsGap && preset.donorsGap.trim()) q.set("donorsGap", preset.donorsGap.trim());
-  q.set("donorsSpeed", (preset.donorsSpeed && preset.donorsSpeed.trim()) ? preset.donorsSpeed.trim() : "45");
+  q.set("donorsSpeed", (preset.donorsSpeed && preset.donorsSpeed.trim()) ? preset.donorsSpeed.trim() : "60");
   if (preset.donorsLimit && preset.donorsLimit.trim()) q.set("donorsLimit", preset.donorsLimit.trim());
   q.set("donorsFormat", (preset.donorsFormat || "short").trim() === "full" ? "full" : "short");
   if (preset.donorsUnit && preset.donorsUnit.trim()) q.set("donorsUnit", preset.donorsUnit.trim());
