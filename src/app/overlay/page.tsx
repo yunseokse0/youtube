@@ -1861,8 +1861,9 @@ function OverlayInner() {
     const centerFixedStyle = centerFixed ? (
       <style dangerouslySetInnerHTML={{ __html: `
         html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
-        .overlay-center-fixed .overlay-row td { font-size: 24px !important; min-height: 36px !important; line-height: 1.2 !important; padding: 6px 10px !important; }
-        .overlay-center-fixed .overlay-total-row td { font-size: 28px !important; min-height: 42px !important; padding: 8px 12px !important; font-weight: 600 !important; }
+        .overlay-center-fixed .overlay-row td,
+        .overlay-center-fixed thead td { font-size: ${mSize}px !important; min-height: ${Math.round(mSize * 1.5)}px !important; line-height: 1.2 !important; padding: ${Math.round(mSize * 0.25)}px ${Math.round(mSize * 0.4)}px !important; }
+        .overlay-center-fixed .overlay-total-row td { font-size: ${tSize}px !important; min-height: ${Math.round(tSize * 1.5)}px !important; padding: ${Math.round(tSize * 0.2)}px ${Math.round(tSize * 0.3)}px !important; font-weight: 600 !important; }
         .overlay-center-fixed table { background: rgba(0,0,0,0.5) !important; }
       ` }} />
     ) : null;
