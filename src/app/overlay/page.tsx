@@ -1870,16 +1870,15 @@ function OverlayInner() {
         .overlay-route { transform: scale(${effectiveScale}) !important; -webkit-transform: scale(${effectiveScale}) !important; transform-origin: ${origin} !important; }
       ` }} />
     );
-    const visualScale = centerFixed ? centerZoomScale : viewportScale;
-    const wrapSmall = visualScale <= 0.6;
-    const nameWrapCls = wrapSmall ? "whitespace-normal break-words" : "truncate";
+    const nameWrapCls = "truncate";
     const centerFixedStyle = centerFixed ? (
       <style dangerouslySetInnerHTML={{ __html: `
         html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
         .overlay-center-fixed .overlay-row td,
-        .overlay-center-fixed thead td { font-size: ${mSize}px !important; min-height: ${Math.round(mSize * 1.5)}px !important; line-height: 1.2 !important; padding: ${Math.round(mSize * 0.25)}px ${Math.round(mSize * 0.4)}px !important; }
-        .overlay-center-fixed .overlay-total-row td { font-size: ${tSize}px !important; min-height: ${Math.round(tSize * 1.5)}px !important; padding: ${Math.round(tSize * 0.2)}px ${Math.round(tSize * 0.3)}px !important; font-weight: 600 !important; }
+        .overlay-center-fixed thead td { font-size: min(${mSize}px, 18cqw) !important; min-height: ${Math.round(mSize * 1.5)}px !important; line-height: 1.2 !important; padding: ${Math.round(mSize * 0.25)}px ${Math.round(mSize * 0.4)}px !important; }
+        .overlay-center-fixed .overlay-total-row td { font-size: min(${tSize}px, 20cqw) !important; min-height: ${Math.round(tSize * 1.5)}px !important; padding: ${Math.round(tSize * 0.2)}px ${Math.round(tSize * 0.3)}px !important; font-weight: 600 !important; }
         .overlay-center-fixed table { background: rgba(0,0,0,0.5) !important; }
+        .overlay-center-fixed table td { container-type: inline-size; white-space: nowrap !important; overflow: hidden !important; }
       ` }} />
     ) : null;
     const colorOverrideStyle = (accountColor || toonColor) ? (

@@ -32,7 +32,9 @@ export default function OverlayLayout({
         .overlay-root table thead td { line-height: 1.2; padding: 0.18em 0.25em !important; }
         .overlay-root table .overlay-total-row td { font-size: 1.15em !important; padding: 0.3em 0.35em !important; line-height: 1.25; min-height: 1.8em; font-weight: 600; }
         .overlay-root table .overlay-rank-cell { white-space: nowrap !important; }
-        .overlay-root table td { writing-mode: horizontal-tb; text-orientation: mixed; }
+        .overlay-root table td { writing-mode: horizontal-tb; text-orientation: mixed; white-space: nowrap !important; overflow: hidden !important; }
+        .overlay-root table td { container-type: inline-size; font-size: min(1em, 18cqw) !important; }
+        .overlay-root table .overlay-total-row td { font-size: min(1.15em, 20cqw) !important; }
       ` }} />
       {children}
     </div>
