@@ -2391,10 +2391,9 @@ export default function AdminPage() {
       </div>
       </div>
       {actionSheet.open && (
-        <div className="fixed inset-0 z-50 lg:hidden">
+        <div className="fixed inset-0 z-50 lg:hidden flex items-center justify-center p-4">
           <button className="absolute inset-0 bg-black/55" onClick={closeActionSheet} aria-label="액션 시트 닫기" />
-          <div className="absolute bottom-0 left-0 right-0 rounded-t-2xl border-t border-white/10 bg-[#202020] p-4">
-            <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-3" />
+          <div className="relative w-full max-w-sm rounded-2xl border border-white/10 bg-[#202020] p-4 shadow-xl">
             <div className="text-sm font-semibold text-white">{actionSheet.title}</div>
             {actionSheet.desc && <div className="text-xs text-neutral-400 mt-1 whitespace-pre-line">{actionSheet.desc}</div>}
             <div className="grid grid-cols-2 gap-2 mt-4">
