@@ -21,6 +21,20 @@ function tryDecodeSnapshot(str: string | null): AppState | null {
   return null;
 }
 
+function tryReadSnapshotFromStorage(snapKey: string | null): AppState | null {
+  if (!snapKey || typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(snapKey);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === "object" && Array.isArray(obj.members)) {
+      const now = Date.now();
+      return { ...defaultState(), ...obj, updatedAt: obj.updatedAt || now };
+    }
+  } catch {}
+  return null;
+}
+
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
   const [state, setState] = useState<AppState | null>(null);
   const lastUpdatedRef = useRef(0);
@@ -993,7 +1007,8 @@ function OverlayInner() {
   const rawSp = useSearchParams();
   const rawUserId = (rawSp.get("u") || "").trim();
   const userId = rawUserId || "finalent";
-  const snap = tryDecodeSnapshot(rawSp.get("snap"));
+  const snapKey = (rawSp.get("snapKey") || "").trim();
+  const snap = tryReadSnapshotFromStorage(snapKey || null) || tryDecodeSnapshot(rawSp.get("snap"));
   const { state: remoteState, ready: remoteReady } = useRemoteState(userId);
   const s = snap || remoteState;
   const ready = !!snap || remoteReady;

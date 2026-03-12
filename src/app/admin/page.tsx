@@ -459,6 +459,7 @@ export default function AdminPage() {
     u.searchParams.set("renderHeight", isVertical ? "1920" : "1080");
     return u.toString();
   };
+  const PREVIEW_SNAP_PREFIX = "excel-preview-snap-";
   const buildStablePreviewUrl = (p: OverlayPreset): string => {
     if (typeof window === "undefined") return "";
     const base = `${window.location.origin}/overlay`;
@@ -483,9 +484,20 @@ export default function AdminPage() {
         })(),
         updatedAt: Date.now(),
       };
-      const json = JSON.stringify(snapObj);
-      const b64 = btoa(encodeURIComponent(json));
-      q.set("snap", b64);
+      const snapKey = PREVIEW_SNAP_PREFIX + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem(snapKey, JSON.stringify(snapObj));
+      q.set("snapKey", snapKey);
+      try {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k?.startsWith(PREVIEW_SNAP_PREFIX)) {
+            const age = Date.now() - parseInt(k.replace(PREVIEW_SNAP_PREFIX, "").split("-")[0] || "0", 10);
+            if (age > 600000) keysToRemove.push(k);
+          }
+        }
+        keysToRemove.forEach((k) => localStorage.removeItem(k));
+      } catch {}
     } catch {}
     return `${base}?${q.toString()}`;
   };
