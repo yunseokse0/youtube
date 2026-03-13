@@ -442,12 +442,32 @@ export default function AdminPage() {
   const buildPrismOverlayUrl = (p: OverlayPreset, vertical: boolean): string => {
     if (typeof window === "undefined") return "";
     const base = `${window.location.origin}/overlay`;
-    // Prism용은 최소 파라미터만 포함(옵션은 프리셋 값을 그대로 따름)
-    const q = new URLSearchParams();
+    const q = new URLSearchParams(presetToParams(p));
     q.set("p", p.id);
     q.set("u", user?.id || "finalent");
     q.set("vertical", vertical ? "true" : "false");
     q.set("host", "prism");
+    try {
+      const snapObj = {
+        members: state.members.map(m => ({ id: m.id, name: m.name, account: m.account, toon: m.toon, goal: m.goal, role: m.role, operating: m.operating })),
+        donors: state.donors || [],
+        missions: (state as any).missions || [],
+        forbiddenWords: state.forbiddenWords || [],
+        goal: (() => { const n = parseInt((p.goal || "0") as any, 10); return Number.isFinite(n) ? Math.max(0, n) : 0; })(),
+        goalCurrent: (() => {
+          const raw = (p.goalCurrent || "") as any;
+          const n = raw === "" || raw === null || raw === undefined ? null : parseInt(String(raw), 10);
+          return n === null || Number.isNaN(n) ? null : Math.max(0, n);
+        })(),
+        updatedAt: Date.now(),
+      };
+      const json = JSON.stringify(snapObj);
+      const b64 = btoa(encodeURIComponent(json));
+      q.set("snap", b64);
+      const url = `${base}?${q.toString()}`;
+      if (url.length <= 1900) return url;
+      q.delete("snap");
+    } catch {}
     return `${base}?${q.toString()}`;
   };
   const buildPreviewOverlayUrl = (p: OverlayPreset): string => {
