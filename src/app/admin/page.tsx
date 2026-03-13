@@ -490,6 +490,8 @@ export default function AdminPage() {
     const isVertical = !!p.vertical;
     q.set("renderWidth", isVertical ? "1080" : "1920");
     q.set("renderHeight", isVertical ? "1920" : "1080");
+    const hasMembersWithGoal = state.members.some((m) => (m.goal || 0) > 0);
+    if (hasMembersWithGoal) q.set("showPersonalGoal", "true");
     try {
       const snapObj = {
         members: state.members.map(m => ({ id: m.id, name: m.name, account: m.account, toon: m.toon, goal: m.goal, role: m.role, operating: m.operating })),
@@ -504,6 +506,14 @@ export default function AdminPage() {
         })(),
         updatedAt: Date.now(),
       };
+      const json = JSON.stringify(snapObj);
+      const b64 = btoa(encodeURIComponent(json));
+      q.set("snap", b64);
+      const urlWithSnap = `${base}?${q.toString()}`;
+      if (urlWithSnap.length <= 1900) {
+        return urlWithSnap;
+      }
+      q.delete("snap");
       const snapKey = PREVIEW_SNAP_PREFIX + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
       localStorage.setItem(snapKey, JSON.stringify(snapObj));
       q.set("snapKey", snapKey);
