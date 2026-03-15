@@ -47,12 +47,36 @@ import { sendSSEUpdate } from "./sse-client";
 export const STORAGE_KEY = "excel-broadcast-state-v1";
 export const DAILY_LOG_KEY = "excel-broadcast-daily-log-v1";
 export const FORBID_EVENTS_KEY = "excel-broadcast-forbid-events-v1";
+export const MISSIONS_BACKUP_KEY = "excel-broadcast-missions-backup-v1";
 
 export function storageKey(userId?: string | null): string {
   return userId ? `${STORAGE_KEY}:${userId}` : STORAGE_KEY;
 }
 export function dailyLogStorageKey(userId?: string | null): string {
   return userId ? `${DAILY_LOG_KEY}:${userId}` : DAILY_LOG_KEY;
+}
+export function missionsBackupKey(userId?: string | null): string {
+  return userId ? `${MISSIONS_BACKUP_KEY}:${userId}` : MISSIONS_BACKUP_KEY;
+}
+
+export function saveMissionsBackup(missions: MissionItem[], userId?: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(missionsBackupKey(userId), JSON.stringify(missions));
+  } catch {}
+}
+
+export function loadMissionsBackup(userId?: string | null): MissionItem[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(missionsBackupKey(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    return parsed as MissionItem[];
+  } catch {
+    return null;
+  }
 }
 
 export function defaultMembers(): Member[] {

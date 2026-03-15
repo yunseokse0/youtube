@@ -12,6 +12,8 @@ import {
   saveState,
   saveStateAsync,
   loadStateFromApi,
+  saveMissionsBackup,
+  loadMissionsBackup,
   appendDailyLog,
   loadDailyLogFromApi,
   parseTenThousandThousand,
@@ -85,6 +87,7 @@ export default function AdminPage() {
   const [chatDraftDirty, setChatDraftDirty] = useState(false);
   const [missionTitle, setMissionTitle] = useState("");
   const [missionPrice, setMissionPrice] = useState("");
+  const [missionRestoreLoading, setMissionRestoreLoading] = useState(false);
   const [settlementTitle, setSettlementTitle] = useState("");
   const [accountRatioInput, setAccountRatioInput] = useState("70");
   const [toonRatioInput, setToonRatioInput] = useState("60");
@@ -1264,20 +1267,58 @@ export default function AdminPage() {
             <section className={`${panelCardClass} p-4 md:p-6`}>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold">미션 전광판</h2>
-                <button
-                  className="px-2 py-1 rounded bg-red-800 hover:bg-red-700 text-xs"
-                  onClick={() => {
-                    requestConfirm("미션 전광판 초기화", "계정에 저장된 모든 미션을 삭제할까요?", () => {
-                      setState((prev) => {
-                        const next = { ...prev, missions: [] };
-                        persistState(next);
-                        return next;
-                      });
-                    }, { confirmText: "초기화", danger: true });
-                  }}
-                >
-                  초기화
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-xs disabled:opacity-50"
+                    disabled={missionRestoreLoading}
+                    onClick={async () => {
+                      setMissionRestoreLoading(true);
+                      try {
+                        const backup = loadMissionsBackup(user?.id);
+                        if (backup && backup.length > 0) {
+                          setState((prev) => {
+                            const next = { ...prev, missions: backup };
+                            persistState(next);
+                            return next;
+                          });
+                          return;
+                        }
+                        const apiState = await loadStateFromApi(user?.id);
+                        if (!apiState || !Array.isArray(apiState.missions) || apiState.missions.length === 0) {
+                          alert("서버에 저장된 미션 데이터가 없습니다.");
+                          return;
+                        }
+                        setState((prev) => {
+                          const next = { ...prev, missions: apiState.missions! };
+                          persistState(next);
+                          return next;
+                        });
+                      } finally {
+                        setMissionRestoreLoading(false);
+                      }
+                    }}
+                    title="실수로 초기화했을 경우 서버에 저장된 미션을 복구합니다"
+                  >
+                    {missionRestoreLoading ? "불러오는 중..." : "서버에서 불러오기"}
+                  </button>
+                  <button
+                    className="px-2 py-1 rounded bg-red-800 hover:bg-red-700 text-xs"
+                    onClick={() => {
+                      requestConfirm("미션 전광판 초기화", "계정에 저장된 모든 미션을 삭제할까요? (서버에서 불러오기로 복구 가능)", () => {
+                        setState((prev) => {
+                          if ((prev.missions || []).length > 0) {
+                            saveMissionsBackup(prev.missions || [], user?.id);
+                          }
+                          const next = { ...prev, missions: [] };
+                          persistState(next);
+                          return next;
+                        });
+                      }, { confirmText: "초기화", danger: true });
+                    }}
+                  >
+                    초기화
+                  </button>
+                </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto_auto] gap-2 mb-3">
                 <input className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10 min-h-[44px]" placeholder="미션 제목 (예: 노래 부르기)" value={missionTitle} onChange={(e) => setMissionTitle(e.target.value)} />
