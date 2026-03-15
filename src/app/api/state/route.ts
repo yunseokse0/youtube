@@ -90,6 +90,9 @@ export async function GET(req: Request) {
     const { base, token } = getEnv();
     if (!base || !token) {
       const state = memoryState || defaultState();
+      if (!memoryState) {
+        logger.warn('Redis 미설정 - 메모리만 사용 (서버 재시작 시 데이터 초기화됨. UPSTASH_REDIS_* 환경변수 설정 권장)');
+      }
       logger.debug('메모리 상태 반환', { membersCount: state.members.length, donorsCount: state.donors.length });
       return new Response(JSON.stringify(state), {
         headers: {
@@ -111,6 +114,9 @@ export async function GET(req: Request) {
     }
     // Redis에서 상태를 못 가져오더라도 방송 지속성을 위해 메모리/기본 상태 반환
     const effective = state || memoryState || defaultState();
+    if (!state && !memoryState) {
+      logger.warn('Redis/메모리 모두 비어있음 - 기본값 반환 (서버 재시작 시 발생. Redis 설정 권장)', { userId });
+    }
     logger.debug('Redis 상태 반환', { hasState: !!state, usedMemory: !!memoryState, userId });
     return new Response(JSON.stringify(effective), {
       headers: {

@@ -264,7 +264,19 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!user) return;
+    // localStorage에서 즉시 복원 (서버 재시작/동기화 시 기본값 덮어쓰기 전에 로컬 데이터 확보)
+    const hydrated = loadState(user.id);
+    setState(hydrated);
     let localPresets: OverlayPreset[] = [];
+    try {
+      const raw = window.localStorage.getItem(PRESET_STORAGE_KEY);
+      if (raw) localPresets = JSON.parse(raw) as OverlayPreset[];
+    } catch {}
+    if (Array.isArray(hydrated.overlayPresets) && hydrated.overlayPresets.length > 0) {
+      setPresets(hydrated.overlayPresets as OverlayPreset[]);
+    } else if (localPresets.length > 0) {
+      setPresets(localPresets);
+    }
     // 우선 서버의 일일 로그를 소스로 사용(장치 간 일관성)
     loadDailyLogFromApi(user?.id).then((serverLog) => {
       setDailyLog(serverLog);
@@ -272,13 +284,6 @@ export default function AdminPage() {
     }).catch(() => {
       setDailyLog(loadDailyLog(user?.id));
     });
-    try {
-      const raw = window.localStorage.getItem(PRESET_STORAGE_KEY);
-      if (raw) {
-        localPresets = JSON.parse(raw) as OverlayPreset[];
-        setPresets(localPresets);
-      }
-    } catch {}
     try {
       const raw = window.localStorage.getItem(SETTLEMENT_OPTIONS_KEY);
       if (raw) {
