@@ -257,6 +257,16 @@ export function totalCombined(state: AppState): number {
   return totalAccount(state) + totalToon(state);
 }
 
+/** 서버/동기화 시 기본값으로 덮어쓰기 방지: remote가 기본 상태처럼 보이는지 확인 */
+export function isDefaultLikeState(state: AppState): boolean {
+  const def = defaultMembers();
+  const m = state.members || [];
+  if (m.length !== def.length) return false;
+  const allDefaultNames = m.every((mm, i) => mm.id === def[i].id && mm.name === def[i].name);
+  const noData = totalCombined(state) === 0 && (!state.donors || state.donors.length === 0);
+  return allDefaultNames && noData;
+}
+
 export function formatManThousand(n: number): string {
   const safe = Math.max(0, Math.round(n / 1000) * 1000);
   const man = Math.floor(safe / 10000);

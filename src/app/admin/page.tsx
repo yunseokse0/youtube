@@ -14,6 +14,7 @@ import {
   loadStateFromApi,
   saveMissionsBackup,
   loadMissionsBackup,
+  isDefaultLikeState,
   appendDailyLog,
   loadDailyLogFromApi,
   parseTenThousandThousand,
@@ -307,10 +308,19 @@ export default function AdminPage() {
     loadStateFromApi(user?.id).then((apiState) => {
       const local = loadState(user?.id);
       if (apiState) {
-        // 서버가 missions를 비워서 반환해도 로컬에 미션이 있으면 보존 (의도치 않은 초기화 방지)
+        // 계정 소속 데이터 보존: 서버가 기본값을 반환해도 로컬에 의미 있는 데이터가 있으면 덮어쓰지 않음
         let toApply = apiState;
-        if (!apiState.missions?.length && local.missions?.length) {
-          toApply = { ...apiState, missions: local.missions };
+        const remoteDefaultLike = isDefaultLikeState(apiState);
+        const localHasData = !isDefaultLikeState(local);
+        const preserveMembersDonors = remoteDefaultLike && localHasData;
+        const preserveMissions = !apiState.missions?.length && local.missions?.length;
+        if (preserveMembersDonors || preserveMissions) {
+          toApply = {
+            ...apiState,
+            members: preserveMembersDonors && local.members?.length ? local.members : apiState.members,
+            donors: preserveMembersDonors ? (local.donors || []) : apiState.donors,
+            missions: preserveMissions ? local.missions! : apiState.missions,
+          };
           persistState(toApply);
         }
         setState(toApply);
@@ -376,18 +386,27 @@ export default function AdminPage() {
         if (shouldApplyRemote) {
           stateUpdatedAtRef.current = remoteUpdatedAt;
           const prev = stateRef.current;
-          // 서버가 missions를 비워서 반환해도 로컬에 미션이 있으면 보존 (의도치 않은 초기화 방지)
-          const preservedMissions = !remote.missions?.length && prev.missions?.length;
-          const toApply = preservedMissions ? { ...remote, missions: prev.missions } : remote;
+          // 계정 소속 데이터 보존: 서버가 기본값이면 로컬 members/donors/missions 유지
+          const remoteDefaultLike = isDefaultLikeState(remote);
+          const localHasData = !isDefaultLikeState(prev);
+          const preserveMembersDonors = remoteDefaultLike && localHasData;
+          const preserveMissions = !remote.missions?.length && prev.missions?.length;
+          let toApply = remote;
+          if (preserveMembersDonors || preserveMissions) {
+            toApply = {
+              ...remote,
+              members: preserveMembersDonors && prev.members?.length ? prev.members : remote.members,
+              donors: preserveMembersDonors ? (prev.donors || []) : remote.donors,
+              missions: preserveMissions ? prev.missions! : remote.missions,
+            };
+            persistState(toApply);
+          }
           setState(toApply);
           if (Array.isArray(toApply.overlayPresets)) {
             setPresets(toApply.overlayPresets as OverlayPreset[]);
           }
           pendingUnsyncedRef.current = false;
           try { window.localStorage.setItem(storageKey(user?.id), JSON.stringify(toApply)); } catch {}
-          if (preservedMissions) {
-            persistState(toApply);
-          }
         }
       } finally {
         inFlight = false;
@@ -623,9 +642,18 @@ export default function AdminPage() {
         try {
           const incoming = JSON.parse(e.newValue) as AppState;
           setState((prev) => {
-            // 다른 탭이 missions를 비워도 로컬에 미션이 있으면 보존 (의도치 않은 초기화 방지)
-            if (!incoming.missions?.length && prev.missions?.length) {
-              const merged = { ...incoming, missions: prev.missions };
+            // 계정 소속 데이터 보존: 다른 탭이 기본값으로 덮어도 로컬 members/donors/missions 유지
+            const incomingDefaultLike = isDefaultLikeState(incoming);
+            const localHasData = !isDefaultLikeState(prev);
+            const preserveMembersDonors = incomingDefaultLike && localHasData;
+            const preserveMissions = !incoming.missions?.length && prev.missions?.length;
+            if (preserveMembersDonors || preserveMissions) {
+              const merged = {
+                ...incoming,
+                members: preserveMembersDonors && prev.members?.length ? prev.members : incoming.members,
+                donors: preserveMembersDonors ? (prev.donors || []) : incoming.donors,
+                missions: preserveMissions ? prev.missions! : incoming.missions,
+              };
               queueMicrotask(() => persistState(merged));
               return merged;
             }
