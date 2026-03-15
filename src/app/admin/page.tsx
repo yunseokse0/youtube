@@ -73,6 +73,7 @@ export default function AdminPage() {
   const [state, setState] = useState<AppState>(defaultState());
   const [syncStatus, setSyncStatus] = useState<"loading" | "synced" | "local" | "error">("loading");
   const stateUpdatedAtRef = useRef<number>(0);
+  const stateRef = useRef<AppState>(state);
   const lastLocalPersistAtRef = useRef<number>(0);
   const syncStatusRef = useRef<"loading" | "synced" | "local" | "error">("loading");
   const pendingUnsyncedRef = useRef<boolean>(false);
@@ -251,6 +252,9 @@ export default function AdminPage() {
   }, [router]);
 
   useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+  useEffect(() => {
     stateUpdatedAtRef.current = state.updatedAt || 0;
   }, [state.updatedAt]);
   useEffect(() => {
@@ -301,26 +305,32 @@ export default function AdminPage() {
       }
     } catch {}
     loadStateFromApi(user?.id).then((apiState) => {
+      const local = loadState(user?.id);
       if (apiState) {
-        setState(apiState);
-        if (Array.isArray(apiState.overlayPresets) && apiState.overlayPresets.length > 0) {
-          setPresets(apiState.overlayPresets as OverlayPreset[]);
+        // 서버가 missions를 비워서 반환해도 로컬에 미션이 있으면 보존 (의도치 않은 초기화 방지)
+        let toApply = apiState;
+        if (!apiState.missions?.length && local.missions?.length) {
+          toApply = { ...apiState, missions: local.missions };
+          persistState(toApply);
+        }
+        setState(toApply);
+        if (Array.isArray(toApply.overlayPresets) && toApply.overlayPresets.length > 0) {
+          setPresets(toApply.overlayPresets as OverlayPreset[]);
         } else if (localPresets.length > 0) {
-          const next = { ...apiState, overlayPresets: localPresets };
+          const next = { ...toApply, overlayPresets: localPresets };
           setState(next);
           persistState(next);
         } else {
           const first = defaultPreset("전체 통합", { showMembers: true, showTotal: true });
-          const merged = { ...apiState, overlayPresets: [first] };
+          const merged = { ...toApply, overlayPresets: [first] };
           setPresets([first]);
           setState(merged);
           persistState(merged);
           try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify([first])); } catch {}
         }
         setSyncStatus("synced");
-        try { window.localStorage.setItem(storageKey(user?.id), JSON.stringify(apiState)); } catch {}
+        try { window.localStorage.setItem(storageKey(user?.id), JSON.stringify(toApply)); } catch {}
       } else {
-        const local = loadState(user?.id);
         if (Array.isArray(local.overlayPresets) && local.overlayPresets.length > 0) {
           setPresets(local.overlayPresets as OverlayPreset[]);
         } else if (localPresets.length > 0) {
@@ -365,12 +375,19 @@ export default function AdminPage() {
         const shouldApplyRemote = remoteUpdatedAt !== stateUpdatedAtRef.current;
         if (shouldApplyRemote) {
           stateUpdatedAtRef.current = remoteUpdatedAt;
-          setState(remote);
-          if (Array.isArray(remote.overlayPresets)) {
-            setPresets(remote.overlayPresets as OverlayPreset[]);
+          const prev = stateRef.current;
+          // 서버가 missions를 비워서 반환해도 로컬에 미션이 있으면 보존 (의도치 않은 초기화 방지)
+          const preservedMissions = !remote.missions?.length && prev.missions?.length;
+          const toApply = preservedMissions ? { ...remote, missions: prev.missions } : remote;
+          setState(toApply);
+          if (Array.isArray(toApply.overlayPresets)) {
+            setPresets(toApply.overlayPresets as OverlayPreset[]);
           }
           pendingUnsyncedRef.current = false;
-          try { window.localStorage.setItem(storageKey(user?.id), JSON.stringify(remote)); } catch {}
+          try { window.localStorage.setItem(storageKey(user?.id), JSON.stringify(toApply)); } catch {}
+          if (preservedMissions) {
+            persistState(toApply);
+          }
         }
       } finally {
         inFlight = false;
@@ -605,7 +622,15 @@ export default function AdminPage() {
       if (e.key === key && e.newValue) {
         try {
           const incoming = JSON.parse(e.newValue) as AppState;
-          setState(incoming);
+          setState((prev) => {
+            // 다른 탭이 missions를 비워도 로컬에 미션이 있으면 보존 (의도치 않은 초기화 방지)
+            if (!incoming.missions?.length && prev.missions?.length) {
+              const merged = { ...incoming, missions: prev.missions };
+              queueMicrotask(() => persistState(merged));
+              return merged;
+            }
+            return incoming;
+          });
         } catch {
           // ignore
         }
