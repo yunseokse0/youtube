@@ -350,9 +350,12 @@ export async function loadSettlementRecordsPreferApi(userId?: string | null): Pr
   let local = loadSettlementRecords(userId);
   const fromApi = await loadSettlementRecordsFromApi(userId);
   if (fromApi) {
-    const merged = mergeSettlementRecords(local, fromApi);
+    // 서버가 빈 배열을 반환해도 로컬에 기록이 있으면 보존 (서버 재시작 시)
+    const merged = fromApi.length === 0 && local.length > 0
+      ? local
+      : mergeSettlementRecords(local, fromApi);
     saveSettlementRecords(merged, userId);
-    if (merged.length !== fromApi.length) {
+    if (merged.length !== fromApi.length || (fromApi.length === 0 && merged.length > 0)) {
       saveSettlementRecordsToApi(merged, userId).catch(() => {});
     }
     return merged;

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { SettlementDeleteLog, SettlementRecord, deleteSettlementRecordAndSync, loadSettlementDeleteLogs, loadSettlementRecordsPreferApi, normalizeSettlementRecords, saveSettlementRecords, saveSettlementRecordsToApi } from "@/lib/settlement";
+import { SettlementDeleteLog, SettlementRecord, deleteSettlementRecordAndSync, loadSettlementDeleteLogs, loadSettlementRecords, loadSettlementRecordsPreferApi, normalizeSettlementRecords, saveSettlementRecords, saveSettlementRecordsToApi } from "@/lib/settlement";
 import { loadDailyLog, loadDailyLogFromApi, Donor } from "@/lib/state";
 import { downloadBlobFile } from "@/lib/download";
 
@@ -36,6 +36,9 @@ export default function SettlementsPage() {
         }
         const u = data.user as { id: string };
         setUser(u);
+        // localStorage에서 즉시 복원 (서버 재시작 시 API 빈 응답 전에 로컬 데이터 표시)
+        const hydrated = loadSettlementRecords(u.id);
+        if (hydrated.length > 0) setRecords(hydrated);
         loadSettlementRecordsPreferApi(u.id).then(setRecords);
         setDeleteLogs(loadSettlementDeleteLogs(u.id));
         loadDailyLogFromApi(u.id)
