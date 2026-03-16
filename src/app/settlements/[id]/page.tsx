@@ -47,6 +47,20 @@ export default function SettlementDetailPage() {
         loadSettlementRecordsPreferApi(u.id).then(setRecords);
       });
   }, [router]);
+
+  // 디바이스 간 동기화
+  useEffect(() => {
+    if (!user) return;
+    const syncRecords = () => loadSettlementRecordsPreferApi(user.id).then(setRecords);
+    const timer = window.setInterval(syncRecords, 3000);
+    const onVisibility = () => { if (document.visibilityState === "visible") void syncRecords(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [user]);
+
   const record = useMemo(() => (records || []).find((x) => x.id === id) || null, [records, id]);
 
   const saveBankInfo = (memberId: string, patch: { bankName?: string; bankAccount?: string; accountHolder?: string }) => {

@@ -122,17 +122,16 @@ function normalizeDeleteLogs(logs: SettlementDeleteLog[]): SettlementDeleteLog[]
     .sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
 }
 
+/** 서버를 source of truth로 병합. remote에 없는 로컬 기록은 다른 디바이스에서 삭제된 것으로 간주하고 제외. 단, 최근 30초 이내 생성된 로컬 전용 기록은 저장 중일 수 있으므로 보존. */
 function mergeSettlementRecords(local: SettlementRecord[], remote: SettlementRecord[]): SettlementRecord[] {
+  const remoteIds = new Set((remote || []).map((r) => r.id));
   const byId = new Map<string, SettlementRecord>();
-  for (const r of local || []) byId.set(r.id, r);
-  for (const r of remote || []) {
-    const prev = byId.get(r.id);
-    if (!prev) {
-      byId.set(r.id, r);
-      continue;
-    }
-    // Prefer the one with newer createdAt if duplicated IDs ever happen.
-    byId.set(r.id, (r.createdAt || 0) >= (prev.createdAt || 0) ? r : prev);
+  for (const r of remote || []) byId.set(r.id, r);
+  const now = Date.now();
+  const pendingThreshold = 30_000;
+  for (const r of local || []) {
+    if (remoteIds.has(r.id)) continue;
+    if ((r.createdAt || 0) > now - pendingThreshold) byId.set(r.id, r);
   }
   return normalizeSettlementRecords(Array.from(byId.values()));
 }

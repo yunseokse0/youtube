@@ -59,6 +59,22 @@ export default function SettlementsPage() {
       });
   }, [router]);
 
+  // 디바이스 간 동기화: 주기적 및 탭 포커스 시 API에서 최신 정산 기록 가져오기
+  useEffect(() => {
+    if (!user) return;
+    const syncRecords = () => loadSettlementRecordsPreferApi(user.id).then(setRecords);
+    const timer = window.setInterval(syncRecords, 3000);
+    const onFocus = () => void syncRecords();
+    const onVisibility = () => { if (document.visibilityState === "visible") void syncRecords(); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [user]);
+
   const onExportJson = () => {
     try {
       const payload = JSON.stringify(records, null, 2);
