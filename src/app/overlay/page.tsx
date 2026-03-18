@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi, loadState, totalToon, totalCombined, storageKey, defaultState } from "@/lib/state";
+import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi, loadState, totalToon, totalCombined, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers } from "@/lib/state";
 import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
 import { useFlip } from "@/lib/flip";
 import MissionBoard from "@/components/MissionBoard";
@@ -15,7 +15,11 @@ function tryDecodeSnapshot(str: string | null): AppState | null {
     const obj = JSON.parse(json);
     if (obj && typeof obj === "object" && Array.isArray(obj.members)) {
       const now = Date.now();
-      return { ...defaultState(), ...obj, updatedAt: obj.updatedAt || now };
+      const merged = { ...defaultState(), ...obj, updatedAt: obj.updatedAt || now };
+      const v = ensureMembers(merged.members);
+      merged.members = v.length > 0 ? v : defaultMembers();
+      merged.missions = ensureMissionItems(merged.missions);
+      return merged;
     }
   } catch {}
   return null;
@@ -29,7 +33,11 @@ function tryReadSnapshotFromStorage(snapKey: string | null): AppState | null {
     const obj = JSON.parse(raw);
     if (obj && typeof obj === "object" && Array.isArray(obj.members)) {
       const now = Date.now();
-      return { ...defaultState(), ...obj, updatedAt: obj.updatedAt || now };
+      const merged = { ...defaultState(), ...obj, updatedAt: obj.updatedAt || now };
+      const v = ensureMembers(merged.members);
+      merged.members = v.length > 0 ? v : defaultMembers();
+      merged.missions = ensureMissionItems(merged.missions);
+      return merged;
     }
   } catch {}
   return null;
@@ -1036,10 +1044,11 @@ function OverlayInner() {
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
-  const membersRemote = useMemo(() => (ready && s ? s.members : []), [ready, s]);
+  const membersRemote = useMemo(() => ensureMembers(ready && s ? s.members : []), [ready, s]);
   const donorsRemote = useMemo(() => (ready && s ? s.donors : []), [ready, s]);
   const missions = useMemo(() => {
-    const base = ready && s ? (s.missions || []) : [];
+    const raw = ready && s ? (s.missions || []) : [];
+    const base = ensureMissionItems(raw);
     if (base.length > 0) return base;
     const spLocal = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
     const preview = spLocal.get("previewGuide") === "true";

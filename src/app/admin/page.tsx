@@ -15,6 +15,7 @@ import {
   saveMissionsBackup,
   loadMissionsBackup,
   isDefaultLikeState,
+  ensureMissionItems,
   appendDailyLog,
   loadDailyLogFromApi,
   parseTenThousandThousand,
@@ -98,6 +99,15 @@ export default function AdminPage() {
   const [memberRatioInputs, setMemberRatioInputs] = useState<Record<string, { account: string; toon: string }>>({});
   const PRESET_STORAGE_KEY = "excel-broadcast-overlay-presets";
   const SETTLEMENT_OPTIONS_KEY = "excel-broadcast-settlement-options-v1";
+  const DEMO_MISSIONS: MissionItem[] = [
+    { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
+    { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
+    { id: "mis_demo_3", title: "게임 미션 클리어 도전", price: "5만" },
+  ];
+  const displayMissions = useMemo(() => {
+    const v = ensureMissionItems(state.missions);
+    return v.length > 0 ? v : DEMO_MISSIONS;
+  }, [state.missions]);
   const PRESET_TEMPLATES: { name: string; preset: Partial<OverlayPreset> }[] = [
     { name: "엑셀표만", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true } },
     { name: "전체 통합", preset: { showMembers: true, showTotal: true } },
@@ -387,7 +397,8 @@ export default function AdminPage() {
         }
         setSyncStatus("synced");
         const remoteUpdatedAt = remote.updatedAt || 0;
-        const shouldApplyRemote = remoteUpdatedAt !== stateUpdatedAtRef.current;
+        // 구버전 원격 데이터로 최신 로컬 덮어쓰기 방지: 원격이 더 최신일 때만 적용
+        const shouldApplyRemote = remoteUpdatedAt > stateUpdatedAtRef.current;
         if (shouldApplyRemote) {
           stateUpdatedAtRef.current = remoteUpdatedAt;
           const prev = stateRef.current;
@@ -608,7 +619,9 @@ export default function AdminPage() {
   };
 
   const persistState = (s: AppState) => {
-    lastLocalPersistAtRef.current = Date.now();
+    const now = Date.now();
+    lastLocalPersistAtRef.current = now;
+    stateUpdatedAtRef.current = now;
     pendingUnsyncedRef.current = true;
     setSyncStatus("loading");
     saveStateAsync(s, user?.id).then((ok) => {
@@ -646,6 +659,9 @@ export default function AdminPage() {
       if (e.key === key && e.newValue) {
         try {
           const incoming = JSON.parse(e.newValue) as AppState;
+          const incomingUpdatedAt = incoming.updatedAt || 0;
+          if (incomingUpdatedAt <= stateUpdatedAtRef.current) return;
+          stateUpdatedAtRef.current = incomingUpdatedAt;
           setState((prev) => {
             // 계정 소속 데이터 보존: 다른 탭이 기본값으로 덮어도 로컬 members/donors/missions 유지
             const incomingDefaultLike = isDefaultLikeState(incoming);
@@ -1028,6 +1044,7 @@ export default function AdminPage() {
     const title =
       settlementTitle.trim() ||
       `${new Date().toISOString().slice(0, 10)} 정산`;
+    await saveStateAsync(state, user?.id);
     appendDailyLog(state, user?.id);
     const rec = await appendSettlementRecordAndSync(title, state.members, accountRatio, toonRatio, taxRate, memberRatioOverrides, state.donors, user?.id);
     router.push(`/settlements/${rec.id}`);
@@ -2202,11 +2219,7 @@ export default function AdminPage() {
                                     <div className="overflow-hidden">
                                       {(p.missionDisplayMode === "vertical-slot") ? (
                                         <MissionBoardSlot
-                                          missions={(state.missions && state.missions.length > 0) ? state.missions : [
-                                            { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
-                                            { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
-                                            { id: "mis_demo_3", title: "게임 미션 클리어 도전", price: "5만" },
-                                          ]}
+                                          missions={displayMissions}
                                           fontSize={parseInt(p.missionFontSize || "18", 10)}
                                           themeVariant={(() => {
                                             const id = p.theme || "default";
@@ -2227,11 +2240,7 @@ export default function AdminPage() {
                                         />
                                       ) : (
                                         <MissionBoard
-                                          missions={(state.missions && state.missions.length > 0) ? state.missions : [
-                                            { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
-                                            { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
-                                            { id: "mis_demo_3", title: "게임 미션 클리어 도전", price: "5만" },
-                                          ]}
+                                          missions={displayMissions}
                                           fontSize={parseInt(p.missionFontSize || "18", 10)}
                                           themeVariant={(() => {
                                             const id = p.theme || "default";
@@ -2279,11 +2288,7 @@ export default function AdminPage() {
                                 <div className="text-xs text-neutral-400 mb-2">미션 전광판 미리보기</div>
                                 {(p.missionDisplayMode === "vertical-slot") ? (
                                   <MissionBoardSlot
-                                    missions={(state.missions && state.missions.length > 0) ? state.missions : [
-                                      { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
-                                      { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
-                                      { id: "mis_demo_3", title: "게임 미션 클리어 도전", price: "5만" },
-                                    ]}
+                                    missions={displayMissions}
                                     fontSize={parseInt(p.missionFontSize || "24", 10)}
                                     themeVariant={(() => {
                                       const id = p.theme || "default";
@@ -2304,11 +2309,7 @@ export default function AdminPage() {
                                   />
                                 ) : (
                                   <MissionBoard
-                                    missions={(state.missions && state.missions.length > 0) ? state.missions : [
-                                      { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
-                                      { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
-                                      { id: "mis_demo_3", title: "게임 미션 클리어 도전", price: "5만" },
-                                    ]}
+                                    missions={displayMissions}
                                     fontSize={parseInt(p.missionFontSize || "24", 10)}
                                     themeVariant={(() => {
                                       const id = p.theme || "default";

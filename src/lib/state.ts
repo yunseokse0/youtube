@@ -27,6 +27,31 @@ export type MissionItem = {
   isHot?: boolean;
 };
 
+/** 동기화 오류 시 members가 missions에 섞이는 것 방지. title/price가 있는 항목만 반환 */
+export function ensureMissionItems(items: unknown[] | undefined | null): MissionItem[] {
+  if (!Array.isArray(items)) return [];
+  return items.filter((x): x is MissionItem => {
+    if (!x || typeof x !== "object") return false;
+    const t = x as Record<string, unknown>;
+    return typeof t.title === "string" && typeof t.price === "string";
+  }).map((x) => ({
+    id: String((x as MissionItem).id || ""),
+    title: String((x as MissionItem).title || ""),
+    price: String((x as MissionItem).price || ""),
+    isHot: Boolean((x as MissionItem).isHot),
+  }));
+}
+
+/** 동기화 오류 시 missions가 members에 섞이는 것 방지. name이 있고 title이 없는 항목만 반환 */
+export function ensureMembers(items: unknown[] | undefined | null): Member[] {
+  if (!Array.isArray(items)) return [];
+  return items.filter((x): x is Member => {
+    if (!x || typeof x !== "object") return false;
+    const t = x as Record<string, unknown>;
+    return typeof t.name === "string" && typeof t.title !== "string";
+  }).map((m) => normalizeMember(m as Member));
+}
+
 type LegacyOverlaySettings = {
   presets?: unknown[];
   [key: string]: unknown;
@@ -156,10 +181,10 @@ export function loadState(userId?: string | null): AppState {
     const raw = window.localStorage.getItem(storageKey(userId));
     if (!raw) return defaultState();
     const data = JSON.parse(raw) as AppState;
-    data.members = (data.members || defaultMembers()).map(normalizeMember);
+    data.members = (() => { const v = ensureMembers(data.members); return v.length > 0 ? v : defaultMembers().map(normalizeMember); })();
     data.donors = data.donors || [];
     data.forbiddenWords = data.forbiddenWords || [];
-    data.missions = data.missions || [];
+    data.missions = ensureMissionItems(data.missions);
     data.overlayPresets = Array.isArray(data.overlayPresets)
       ? data.overlayPresets
       : Array.isArray(data.overlaySettings?.presets)
@@ -228,10 +253,10 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
     if (!res.ok) return null;
     const data = await res.json();
     if (data && data.members) {
-      data.members = (data.members || defaultMembers()).map(normalizeMember);
+      data.members = (() => { const v = ensureMembers(data.members); return v.length > 0 ? v : defaultMembers().map(normalizeMember); })();
       data.donors = data.donors || [];
       data.forbiddenWords = data.forbiddenWords || [];
-      data.missions = data.missions || [];
+      data.missions = ensureMissionItems(data.missions);
       data.overlayPresets = Array.isArray(data.overlayPresets)
         ? data.overlayPresets
         : Array.isArray(data.overlaySettings?.presets)
