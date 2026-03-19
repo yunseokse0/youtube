@@ -1492,20 +1492,25 @@ function OverlayInner() {
   );
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const enableAuto = ((isPreviewGuide && !centerFixed && !(tableFree || (tableXParam !== null && tableYParam !== null))) || autoFit !== "none");
+    const enableAuto = externalHost || ((isPreviewGuide && !centerFixed && !(tableFree || (tableXParam !== null && tableYParam !== null))) || autoFit !== "none");
     if (!enableAuto) { setViewportScale(1); return; }
     const update = () => {
-      const w = useRenderDims ? renderW! : window.innerWidth;
-      const h = useRenderDims ? renderH! : window.innerHeight;
+      const vv: any = (window as any).visualViewport;
+      const w = useRenderDims ? renderW! : (vv?.width ?? window.innerWidth);
+      const h = useRenderDims ? renderH! : (vv?.height ?? window.innerHeight);
       const sx = w / BASE_W;
       const sy = h / BASE_H;
       let s = 1;
-      switch (autoFit) {
-        case "width": s = sx; break;
-        case "height": s = sy; break;
-        case "cover": s = Math.max(sx, sy); break;
-        case "contain": s = Math.min(sx, sy); break;
-        default: s = Math.min(sx, sy); break; // preview guide 기본
+      if (externalHost) {
+        s = Math.min(sx, sy);
+      } else {
+        switch (autoFit) {
+          case "width": s = sx; break;
+          case "height": s = sy; break;
+          case "cover": s = Math.max(sx, sy); break;
+          case "contain": s = Math.min(sx, sy); break;
+          default: s = Math.min(sx, sy); break;
+        }
       }
       s = Math.max(0.1, s);
       setViewportScale(s);
@@ -1513,11 +1518,18 @@ function OverlayInner() {
     };
     update();
     if (!useRenderDims) {
+      const vv: any = (window as any).visualViewport;
+      vv?.addEventListener?.("resize", update);
+      vv?.addEventListener?.("scroll", update);
       window.addEventListener("resize", update);
-      return () => window.removeEventListener("resize", update);
+      return () => {
+        vv?.removeEventListener?.("resize", update);
+        vv?.removeEventListener?.("scroll", update);
+        window.removeEventListener("resize", update);
+      };
     }
     return () => {};
-  }, [isPreviewGuide, autoFit, useRenderDims, renderW, renderH, BASE_W, BASE_H]);
+  }, [externalHost, isPreviewGuide, autoFit, useRenderDims, renderW, renderH, BASE_W, BASE_H]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [contentW, setContentW] = useState<number>(BASE_W);
@@ -1824,9 +1836,11 @@ function OverlayInner() {
     const excelGridCols = hasRoleColumn
       ? ["3ch", `${roleCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`]
       : ["3ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`];
-    let effectiveScale = centerFixed || hasTableFreePos
-      ? (zoomMode === "neutral" ? 1 : (zoomMode === "invert" ? (1 / centerZoomScale) : centerZoomScale))
-      : (externalHost ? 1 : (viewportScale * scale));
+    let effectiveScale = externalHost
+      ? (viewportScale * scale)
+      : (centerFixed || hasTableFreePos)
+        ? (zoomMode === "neutral" ? 1 : (zoomMode === "invert" ? (1 / centerZoomScale) : centerZoomScale))
+        : (viewportScale * scale);
     if (noCrop) {
       effectiveScale = Math.min(effectiveScale, containLimitScale);
     }
@@ -1870,7 +1884,7 @@ function OverlayInner() {
       fitPin === "cl" ? "left center" :
       fitPin === "cr" ? "right center" :
       "center center";
-    const scaleStyleTag = (centerFixed || hasTableFreePos || externalHost) ? (
+    const scaleStyleTag = (centerFixed || hasTableFreePos) && !externalHost ? (
       <style dangerouslySetInnerHTML={{ __html: `
         .overlay-route { transform: none !important; -webkit-transform: none !important; transform-origin: center center !important; }
       ` }} />
