@@ -2,7 +2,7 @@ export const runtime = "edge";
 export const revalidate = 0;
 
 import type { AppState } from "@/lib/state";
-import { defaultState } from "@/lib/state";
+import { defaultState, mergeDonorsForMultiTabSave } from "@/lib/state";
 import { createModuleLogger } from "@/lib/logger";
 import { AUTH_COOKIE } from "@/lib/auth";
 
@@ -145,9 +145,16 @@ export async function POST(req: Request) {
       });
     }
     const body = (await req.json()) as AppState;
-    const next: AppState = { ...body, updatedAt: Date.now() };
-
     const { base, token } = getEnv();
+    let existing: AppState | null = null;
+    if (base && token) {
+      existing = await upstashGet(stateKey(userId)) as AppState | null;
+    } else {
+      existing = memoryState;
+    }
+    const mergedDonors = mergeDonorsForMultiTabSave(body.donors || [], existing?.donors);
+    const next: AppState = { ...body, donors: mergedDonors, updatedAt: Date.now() };
+
     if (!base || !token) {
       memoryState = next;
       logger.info('메모리 상태 업데이트', { updatedAt: next.updatedAt });

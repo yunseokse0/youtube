@@ -270,6 +270,40 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
   }
 }
 
+/**
+ * 여러 브라우저/탭이 동시에 저장할 때 오래된 탭이 후원 목록을 덮어쓰는 것을 완화합니다.
+ * - incoming에 서버에 없던 새 후원 id가 있으면 기존과 id 기준 병합(최신 at 우선).
+ * - incoming이 기존 id의 부분집합이고 비율이 절반 이하이면, 누락분을 서버(existing)에서 채움(스테일 탭).
+ * - 그 외(삭제·소량 삭제 등)는 incoming을 그대로 반영합니다.
+ */
+export function mergeDonorsForMultiTabSave(incoming: Donor[], existing: Donor[] | undefined): Donor[] {
+  if (!existing || existing.length === 0) return incoming;
+  if (incoming.length === 0) return [];
+  const existingIds = new Set(existing.map((d) => d.id));
+  const hasNewInIncoming = incoming.some((d) => !existingIds.has(d.id));
+  if (hasNewInIncoming) {
+    const map = new Map<string, Donor>();
+    for (const d of existing) map.set(d.id, d);
+    for (const d of incoming) {
+      const prev = map.get(d.id);
+      if (!prev || d.at >= prev.at) map.set(d.id, d);
+    }
+    return Array.from(map.values()).sort((a, b) => b.at - a.at);
+  }
+  const subset = incoming.every((d) => existingIds.has(d.id));
+  if (!subset) return incoming;
+  const ratio = incoming.length / existing.length;
+  if (incoming.length < existing.length && ratio <= 0.5) {
+    const map = new Map<string, Donor>();
+    for (const d of incoming) map.set(d.id, d);
+    for (const d of existing) {
+      if (!map.has(d.id)) map.set(d.id, d);
+    }
+    return Array.from(map.values()).sort((a, b) => b.at - a.at);
+  }
+  return incoming;
+}
+
 export function totalAccount(state: AppState): number {
   return state.members.reduce((sum, m) => sum + (m.account || 0), 0);
 }
