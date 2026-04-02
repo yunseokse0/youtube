@@ -2,6 +2,7 @@ export const runtime = "edge";
 export const revalidate = 0;
 
 import { AUTH_COOKIE } from "@/lib/auth";
+import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
 
 const STORAGE_KEY_BASE = "excel-broadcast-settlement-records-v1";
 const STORAGE_KEY_LEGACY = "excel-broadcast-settlement-records-v1";
@@ -83,12 +84,15 @@ export async function GET(req: Request) {
     }
     let records = await upstashGet(recordsKey(userId));
     if (!Array.isArray(records) || records.length === 0) {
-      const legacy = await upstashGet(STORAGE_KEY_LEGACY);
-      if (Array.isArray(legacy) && legacy.length > 0) {
-        await upstashSet(recordsKey(userId), legacy);
-        records = legacy;
+      if (isLegacyMigrationTargetUserId(userId)) {
+        const legacy = await upstashGet(STORAGE_KEY_LEGACY);
+        if (Array.isArray(legacy) && legacy.length > 0) {
+          await upstashSet(recordsKey(userId), legacy);
+          records = legacy;
+        } else {
+          records = Array.isArray(memoryRecords[userId]) ? memoryRecords[userId] : [];
+        }
       } else {
-        // Fallback: use in-memory store
         records = Array.isArray(memoryRecords[userId]) ? memoryRecords[userId] : [];
       }
     }

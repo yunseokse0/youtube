@@ -5,6 +5,7 @@ import type { AppState } from "@/lib/state";
 import { defaultState, mergeDonorsForMultiTabSave } from "@/lib/state";
 import { createModuleLogger } from "@/lib/logger";
 import { AUTH_COOKIE } from "@/lib/auth";
+import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
 
 const logger = createModuleLogger('API/State');
 
@@ -105,11 +106,13 @@ export async function GET(req: Request) {
 
     let state = await upstashGet(stateKey(userId));
     if (!state || !Array.isArray(state.members)) {
-      const legacy = await upstashGet(STORAGE_KEY_LEGACY);
-      if (legacy && (Array.isArray(legacy.members) || Array.isArray(legacy.overlayPresets))) {
-        await upstashSet(stateKey(userId), legacy);
-        state = legacy;
-        logger.info('기존 데이터 계정으로 마이그레이션', { userId });
+      if (isLegacyMigrationTargetUserId(userId)) {
+        const legacy = await upstashGet(STORAGE_KEY_LEGACY);
+        if (legacy && (Array.isArray(legacy.members) || Array.isArray(legacy.overlayPresets))) {
+          await upstashSet(stateKey(userId), legacy);
+          state = legacy;
+          logger.info('기존 데이터 계정으로 마이그레이션', { userId });
+        }
       }
     }
     // Redis에서 상태를 못 가져오더라도 방송 지속성을 위해 메모리/기본 상태 반환

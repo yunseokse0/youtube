@@ -2,6 +2,7 @@ export const runtime = "edge";
 export const revalidate = 0;
 
 import { AUTH_COOKIE } from "@/lib/auth";
+import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
 import type { DailyLogEntry } from "@/lib/state";
 
 const STORAGE_KEY_BASE = "excel-broadcast-daily-log-v1";
@@ -90,10 +91,14 @@ export async function GET(req: Request) {
     }
     let data: DailyLogData | null = await upstashGet(logKey(userId));
     if (!data || typeof data !== "object" || Object.keys(data).length === 0) {
-      const legacy = await upstashGet(STORAGE_KEY_LEGACY);
-      if (legacy && typeof legacy === "object" && Object.keys(legacy).length > 0) {
-        await upstashSet(logKey(userId), legacy);
-        data = legacy;
+      if (isLegacyMigrationTargetUserId(userId)) {
+        const legacy = await upstashGet(STORAGE_KEY_LEGACY);
+        if (legacy && typeof legacy === "object" && Object.keys(legacy).length > 0) {
+          await upstashSet(logKey(userId), legacy);
+          data = legacy;
+        } else {
+          data = memoryDailyLog[userId] || {};
+        }
       } else {
         data = memoryDailyLog[userId] || {};
       }
