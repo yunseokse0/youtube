@@ -1,4 +1,13 @@
-import { Member, Donor, formatManThousand } from "@/lib/state";
+import { formatManThousand } from "@/lib/state";
+import { computeSettlement, type SigMatchRankingItem } from "@/lib/settlement-utils";
+import type {
+  Donor,
+  Member,
+  SettlementDeleteLog,
+  SettlementMemberRatioOverrides,
+  SettlementMemberResult,
+  SettlementRecord,
+} from "@/types";
 
 export const SETTLEMENT_RECORDS_KEY = "excel-broadcast-settlement-records-v1";
 export const SETTLEMENT_DELETE_LOGS_KEY = "excel-broadcast-settlement-delete-logs-v1";
@@ -10,59 +19,13 @@ export function settlementDeleteLogsKey(userId?: string | null): string {
   return userId ? `${SETTLEMENT_DELETE_LOGS_KEY}:${userId}` : SETTLEMENT_DELETE_LOGS_KEY;
 }
 
-export type SettlementMemberResult = {
-  memberId: string;
-  name: string;
-  realName?: string;
-  bankName?: string;
-  bankAccount?: string;
-  accountHolder?: string;
-  account: number;
-  toon: number;
-  accountRatio: number;
-  toonRatio: number;
-  accountApplied: number;
-  toonApplied: number;
-  gross: number;
-  fee: number;
-  net: number;
+export type {
+  SettlementDeleteLog,
+  SettlementMemberRatioOverrides,
+  SettlementMemberResult,
+  SettlementRecord,
 };
-
-export type SettlementRecord = {
-  id: string;
-  title: string;
-  createdAt: number;
-  accountRatio: number;
-  toonRatio: number;
-  feeRate: number; // kept for backward compatibility, used as tax rate
-  members: SettlementMemberResult[];
-  totalGross: number;
-  totalFee: number;
-  totalNet: number;
-  donors?: Donor[];
-};
-
-export type SettlementDeleteLog = {
-  recordId: string;
-  title: string;
-  createdAt: number;
-  deletedAt: number;
-  totalNet: number;
-  reason?: string;
-};
-
-export type SettlementMemberRatioOverrides = Record<
-  string,
-  {
-    accountRatio?: number;
-    toonRatio?: number;
-  }
->;
-
-function toSafeRate(n: number, fallback: number): number {
-  if (!Number.isFinite(n)) return fallback;
-  return Math.max(0, Math.min(1, n));
-}
+export { computeSettlement };
 
 function pruneOlderThan3Years(records: SettlementRecord[]): SettlementRecord[] {
   const now = Date.now();
@@ -136,79 +99,6 @@ function mergeSettlementRecords(local: SettlementRecord[], remote: SettlementRec
   return normalizeSettlementRecords(Array.from(byId.values()));
 }
 
-export function computeSettlement(
-  members: Member[],
-  accountRatioRaw: number,
-  toonRatioRaw: number,
-  feeRateRaw = 0.033,
-  memberRatioOverrides?: SettlementMemberRatioOverrides
-): Omit<SettlementRecord, "id" | "title" | "createdAt"> {
-  const accountRatio = toSafeRate(accountRatioRaw, 0.7);
-  const toonRatio = toSafeRate(toonRatioRaw, 0.6);
-  const feeRate = Math.max(0, feeRateRaw || 0);
-
-  const rows: SettlementMemberResult[] = (members || []).map((m) => {
-    const account = Math.max(0, m.account || 0);
-    const toon = Math.max(0, m.toon || 0);
-    const isOperating =
-      Boolean(m.operating) ||
-      /운영비/i.test(m.name || "") ||
-      /운영비/i.test(m.role || "");
-    const perMember = memberRatioOverrides?.[m.id];
-    const effectiveAccountRatio = toSafeRate(
-      isOperating
-        ? 1
-        : typeof perMember?.accountRatio === "number"
-          ? perMember.accountRatio
-          : accountRatio,
-      accountRatio
-    );
-    const effectiveToonRatio = toSafeRate(
-      isOperating
-        ? 1
-        : typeof perMember?.toonRatio === "number"
-          ? perMember.toonRatio
-          : toonRatio,
-      toonRatio
-    );
-    const accountApplied = Math.round(account * effectiveAccountRatio);
-    const toonApplied = Math.round(toon * effectiveToonRatio);
-    const gross = accountApplied + toonApplied;
-    const fee = isOperating ? 0 : Math.round(gross * feeRate);
-    const net = Math.max(0, gross - fee);
-    return {
-      memberId: m.id,
-      name: m.name,
-      realName: m.realName || "",
-      bankName: "",
-      bankAccount: "",
-      accountHolder: "",
-      account,
-      toon,
-      accountRatio: effectiveAccountRatio,
-      toonRatio: effectiveToonRatio,
-      accountApplied,
-      toonApplied,
-      gross,
-      fee,
-      net,
-    };
-  });
-
-  const totalGross = rows.reduce((s, r) => s + r.gross, 0);
-  const totalFee = rows.reduce((s, r) => s + r.fee, 0);
-  const totalNet = rows.reduce((s, r) => s + r.net, 0);
-
-  return {
-    accountRatio,
-    toonRatio,
-    feeRate,
-    members: rows,
-    totalGross,
-    totalFee,
-    totalNet,
-  };
-}
 
 export function loadSettlementRecords(userId?: string | null): SettlementRecord[] {
   if (typeof window === "undefined") return [];
@@ -383,6 +273,56 @@ export async function appendSettlementRecordAndSync(
   const rec = appendSettlementRecord(title, members, accountRatio, toonRatio, feeRate, memberRatioOverrides, donors, userId);
   const local = loadSettlementRecords(userId);
   await saveSettlementRecordsToApi(local, userId);
+  return rec;
+}
+
+export async function appendSigMatchIncentiveSettlementAndSync(
+  title: string,
+  rankings: SigMatchRankingItem[],
+  incentivePerPoint: number,
+  userId?: string | null
+): Promise<SettlementRecord | null> {
+  const unit = Math.max(0, Math.floor(incentivePerPoint || 0));
+  const rows = (rankings || [])
+    .filter((x) => x.score > 0)
+    .map<SettlementMemberResult>((x) => {
+      const gross = unit > 0 ? x.score * unit : x.score;
+      return {
+        memberId: x.memberId,
+        name: x.name,
+        realName: "",
+        bankName: "",
+        bankAccount: "",
+        accountHolder: "",
+        account: gross,
+        toon: 0,
+        accountRatio: 1,
+        toonRatio: 0,
+        accountApplied: gross,
+        toonApplied: 0,
+        gross,
+        fee: 0,
+        net: gross,
+      };
+    });
+  if (rows.length === 0) return null;
+  const total = rows.reduce((s, r) => s + r.net, 0);
+  const rec: SettlementRecord = {
+    id: `st_sig_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    title: title.trim() || "시그 인센티브 정산",
+    createdAt: Date.now(),
+    accountRatio: 1,
+    toonRatio: 0,
+    feeRate: 0,
+    members: rows,
+    totalGross: total,
+    totalFee: 0,
+    totalNet: total,
+  };
+  const prev = loadSettlementRecords(userId);
+  const next = normalizeSettlementRecords([rec, ...prev]);
+  saveSettlementRecords(next, userId);
+  await saveSettlementRecordsToApi(next, userId);
   return rec;
 }
 

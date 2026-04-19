@@ -197,7 +197,7 @@ export default function YoutubePage() {
     if (recent > 50) target = 1000;
     if (recent > 200) target = 2000;
     if (target !== chatKeep) setChatKeep(target);
-  }, [chat, autoKeep]);
+  }, [chat, autoKeep, chatKeep]);
 
   const connect = async () => {
     console.log(`[YouTube Connect] 연결 시도: ${url}`);

@@ -6,6 +6,7 @@ import { defaultState, mergeDonorsForMultiTabSave } from "@/lib/state";
 import { createModuleLogger } from "@/lib/logger";
 import { AUTH_COOKIE } from "@/lib/auth";
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
+import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
 
 const logger = createModuleLogger('API/State');
 
@@ -42,8 +43,6 @@ function getEnv() {
     "";
   return { base, token };
 }
-
-let memoryState: AppState | null = null;
 
 async function upstashGet(key: string) {
   const { base, token } = getEnv();
@@ -90,8 +89,8 @@ export async function GET(req: Request) {
     }
     const { base, token } = getEnv();
     if (!base || !token) {
-      const state = memoryState || defaultState();
-      if (!memoryState) {
+      const state = getServerMemoryAppState() || defaultState();
+      if (!getServerMemoryAppState()) {
         logger.warn('Redis 미설정 - 메모리만 사용 (서버 재시작 시 데이터 초기화됨. UPSTASH_REDIS_* 환경변수 설정 권장)');
       }
       logger.debug('메모리 상태 반환', { membersCount: state.members.length, donorsCount: state.donors.length });
@@ -116,11 +115,11 @@ export async function GET(req: Request) {
       }
     }
     // Redis에서 상태를 못 가져오더라도 방송 지속성을 위해 메모리/기본 상태 반환
-    const effective = state || memoryState || defaultState();
-    if (!state && !memoryState) {
+    const effective = state || getServerMemoryAppState() || defaultState();
+    if (!state && !getServerMemoryAppState()) {
       logger.warn('Redis/메모리 모두 비어있음 - 기본값 반환 (서버 재시작 시 발생. Redis 설정 권장)', { userId });
     }
-    logger.debug('Redis 상태 반환', { hasState: !!state, usedMemory: !!memoryState, userId });
+    logger.debug('Redis 상태 반환', { hasState: !!state, usedMemory: !!getServerMemoryAppState(), userId });
     return new Response(JSON.stringify(effective), {
       headers: {
         "Content-Type": "application/json",
@@ -130,7 +129,7 @@ export async function GET(req: Request) {
     });
   } catch (error) {
     logger.error('상태 조회 실패', error);
-    const fallback = memoryState || defaultState();
+    const fallback = getServerMemoryAppState() || defaultState();
     return new Response(JSON.stringify(fallback), {
       headers: { "Content-Type": "application/json" },
       status: 200,
@@ -153,13 +152,13 @@ export async function POST(req: Request) {
     if (base && token) {
       existing = await upstashGet(stateKey(userId)) as AppState | null;
     } else {
-      existing = memoryState;
+      existing = getServerMemoryAppState();
     }
     const mergedDonors = mergeDonorsForMultiTabSave(body.donors || [], existing?.donors);
     const next: AppState = { ...body, donors: mergedDonors, updatedAt: Date.now() };
 
     if (!base || !token) {
-      memoryState = next;
+      setServerMemoryAppState(next);
       logger.info('메모리 상태 업데이트', { updatedAt: next.updatedAt });
       return new Response(JSON.stringify({ ok: true }), {
         headers: {
@@ -175,10 +174,10 @@ export async function POST(req: Request) {
     logger.info('Redis 상태 업데이트', { updatedAt: next.updatedAt, success: ok, userId });
     // Redis 오류 시에도 방송 중단 방지를 위해 메모리에 저장 후 200 반환
     if (!ok) {
-      memoryState = next;
+      setServerMemoryAppState(next);
       logger.warn('Redis 업데이트 실패로 메모리에 기록', { updatedAt: next.updatedAt, userId });
     } else {
-      memoryState = next;
+      setServerMemoryAppState(next);
     }
     return new Response(JSON.stringify({ ok: true, fallback: ok ? undefined : "memory" }), {
       headers: {
@@ -193,8 +192,9 @@ export async function POST(req: Request) {
     // 예외 발생 시에도 메모리에 저장 시도
     try {
       const body = (await req.json()) as AppState;
-      memoryState = { ...body, updatedAt: Date.now() };
-      logger.warn('예외 발생으로 메모리에 기록', { updatedAt: memoryState.updatedAt });
+      const memNext = { ...body, updatedAt: Date.now() };
+      setServerMemoryAppState(memNext);
+      logger.warn('예외 발생으로 메모리에 기록', { updatedAt: memNext.updatedAt });
     } catch {}
     return new Response(JSON.stringify({ ok: true, fallback: "memory" }), {
       headers: { "Content-Type": "application/json" },

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export interface WebSocketMessage {
   type: string;
@@ -14,7 +14,7 @@ export function useOverlayWebSocket() {
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 5;
 
-  const connect = () => {
+  const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return;
     }
@@ -63,9 +63,9 @@ export function useOverlayWebSocket() {
     } catch (error) {
       console.error('[WebSocket] Failed to create connection:', error);
     }
-  };
+  }, []);
 
-  const disconnect = () => {
+  const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
@@ -76,7 +76,7 @@ export function useOverlayWebSocket() {
       wsRef.current = null;
     }
     setConnected(false);
-  };
+  }, []);
 
   const sendMessage = (message: any) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -92,7 +92,7 @@ export function useOverlayWebSocket() {
     return () => {
       disconnect();
     };
-  }, []);
+  }, [connect, disconnect]);
 
   return {
     connected,

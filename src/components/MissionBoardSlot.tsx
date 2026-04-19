@@ -99,7 +99,7 @@ export default function MissionBoardSlot({
       setStart((s) => (missions.length > 0 ? (s + 1) % missions.length : 0));
     }, Math.max(300, speed * 1000));
     return () => clearInterval(interval);
-  }, [missions.length, speed]);
+  }, [missions, speed]);
 
   return (
     <div

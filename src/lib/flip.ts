@@ -3,6 +3,7 @@ import { useLayoutEffect, useRef } from "react";
 export function useFlip(keys: string[], duration = 500) {
   const prevRects = useRef(new Map<string, DOMRect>());
   const elements = useRef(new Map<string, HTMLElement>());
+  const keySignature = keys.join("|");
 
   const setEl = (key: string) => (el: HTMLElement | null) => {
     if (el) elements.current.set(key, el);
@@ -37,7 +38,7 @@ export function useFlip(keys: string[], duration = 500) {
       }
     }
     prevRects.current = rects;
-  }, [keys.join("|"), duration]);
+  }, [keySignature, duration]);
 
   return setEl;
 }

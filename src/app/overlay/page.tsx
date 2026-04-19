@@ -3,6 +3,7 @@ import { Suspense, useEffect, useMemo, useRef, useState, useCallback } from "rea
 import { useSearchParams } from "next/navigation";
 import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi, loadState, totalToon, totalCombined, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers } from "@/lib/state";
 import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
+import { getEffectiveRemainingTime } from "@/lib/timer-utils";
 import { useFlip } from "@/lib/flip";
 import MissionBoard from "@/components/MissionBoard";
 import MissionBoardSlot from "@/components/MissionBoardSlot";
@@ -53,7 +54,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   const LAST_GOOD_KEY = typeof window !== "undefined" ? `overlay-last-good-${userId || "default"}` : "overlay-last-good";
   const KEEP_EMPTY_GRACE_MS = 60000;
   const isViable = (s: AppState | null) => !!(s && Array.isArray(s.members) && s.members.length > 0);
-  const loadLastGood = (): AppState | null => {
+  const loadLastGood = useCallback((): AppState | null => {
     if (typeof window === "undefined") return null;
     try {
       const raw = window.localStorage.getItem(LAST_GOOD_KEY);
@@ -62,11 +63,11 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       if (obj && typeof obj === "object" && Array.isArray(obj.members)) return obj as AppState;
     } catch {}
     return null;
-  };
-  const saveLastGood = (s: AppState) => {
+  }, [LAST_GOOD_KEY]);
+  const saveLastGood = useCallback((s: AppState) => {
     if (typeof window === "undefined") return;
     try { window.localStorage.setItem(LAST_GOOD_KEY, JSON.stringify(s)); } catch {}
-  };
+  }, [LAST_GOOD_KEY]);
   const shouldDiscardEmpty = (incoming: AppState | null) => {
     if (!incoming) return false;
     const emptyMembers = !Array.isArray(incoming.members) || incoming.members.length === 0;
@@ -84,9 +85,9 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
     const next = incoming as AppState;
     setState(next);
     if (isViable(next)) { lastGoodRef.current = next; saveLastGood(next); }
-  }, []);
+  }, [saveLastGood]);
   const _sse = useSSEConnection(onSSE);
-  const readLocalStateIfExists = (): AppState | null => {
+  const readLocalStateIfExists = useCallback((): AppState | null => {
     if (typeof window === "undefined") return null;
     try {
       const key = storageKey(userId);
@@ -96,7 +97,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
     } catch {
       return null;
     }
-  };
+  }, [userId]);
   useEffect(() => {
     const local = readLocalStateIfExists();
     const lastGood = loadLastGood();
@@ -163,7 +164,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       window.clearInterval(timer);
       window.removeEventListener("storage", onStorage);
     };
-  }, [userId]);
+  }, [userId, loadLastGood, readLocalStateIfExists, saveLastGood]);
 
   return { state, ready: state !== null };
 }
@@ -172,10 +173,12 @@ function useCountUp(value: number, durationMs = 600) {
   const [display, setDisplay] = useState(value);
   const rafRef = useRef<number | null>(null);
   const startRef = useRef<number>(0);
+  const prevValueRef = useRef<number>(value);
 
   useEffect(() => {
-    const from = display;
+    const from = prevValueRef.current;
     const to = value;
+    prevValueRef.current = to;
     startRef.current = performance.now();
     const loop = (t: number) => {
       const elapsed = t - startRef.current;
@@ -207,12 +210,39 @@ function useElapsed(startTs: number | null) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
+function useServerTimer(timer: AppState["sigMatchTimer"] | null): { text: string | null; paused: boolean; remainingSeconds: number | null } {
+  const [remaining, setRemaining] = useState<number>(timer ? getEffectiveRemainingTime(timer) : 0);
+  useEffect(() => {
+    if (!timer) {
+      setRemaining(0);
+      return;
+    }
+    setRemaining(getEffectiveRemainingTime(timer));
+    if (!timer.isActive) return;
+    const id = window.setInterval(() => {
+      setRemaining(getEffectiveRemainingTime(timer));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [timer]);
+  if (!timer) return { text: null, paused: false, remainingSeconds: null };
+  const safe = Math.max(0, remaining);
+  const h = Math.floor(safe / 3600);
+  const m = Math.floor((safe % 3600) / 60);
+  const sec = safe % 60;
+  return {
+    text: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`,
+    paused: !timer.isActive,
+    remainingSeconds: safe,
+  };
+}
+
 type ThemeId = "default" | "excel" | "excelBlue" | "excelSlate" | "excelAmber" | "excelRose" | "excelNavy" | "excelTeal" | "excelPurple" | "excelEmerald" | "excelOrange" | "excelIndigo" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel" | "rainbow" | "sunset" | "ocean" | "forest" | "aurora" | "violet" | "coral" | "mint" | "lava" | "ice";
 
 const TABLE_BG_RGB: Record<string, [number, number, number]> = {
   excel: [255, 255, 255], excelBlue: [255, 255, 255], excelAmber: [255, 251, 235], excelRose: [255, 241, 242],
   excelTeal: [240, 253, 250], excelPurple: [250, 245, 255], excelEmerald: [236, 253, 245], excelOrange: [255, 247, 237], excelIndigo: [238, 242, 255],
   excelSlate: [30, 41, 59], excelNavy: [15, 23, 42],
+  pastel: [253, 252, 240],
 };
 const defaultTableBgRgb: [number, number, number] = [23, 23, 23];
 
@@ -524,21 +554,21 @@ const THEMES: Record<ThemeId, {
   },
   pastel: {
     label: "파스텔",
-    memberCls: "font-semibold",
-    nameCls: "text-pink-200",
-    accountCls: "text-sky-200",
-    toonCls: "text-purple-200/70",
-    totalCls: "font-bold text-pink-100",
-    totalWrapCls: "bg-gradient-to-r from-pink-500/40 to-purple-500/40 backdrop-blur-sm px-4 py-2 rounded-full border border-white/20",
-    rowCls: "border-b border-pink-400/20 px-2 py-1 bg-purple-900/30",
-    tableCls: "bg-gradient-to-br from-pink-900/40 to-purple-900/50 border border-pink-400/30 rounded-xl overflow-hidden border-collapse backdrop-blur-sm",
-    headerCls: "bg-gradient-to-r from-pink-500/60 to-purple-500/60 text-white font-semibold px-2 py-1 text-sm",
-    goalBarBg: "bg-white/10 backdrop-blur-sm rounded-full",
-    goalBarFill: "bg-gradient-to-r from-pink-400 to-purple-400 rounded-full",
-    goalText: "text-white/90 font-semibold",
-    goalWrap: "backdrop-blur-sm border border-pink-400/30 rounded p-1",
-    tickerCls: "text-pink-200 font-semibold",
-    timerCls: "font-mono text-purple-200/70",
+    memberCls: "font-semibold pastel-text-outline",
+    nameCls: "text-pastel-ink",
+    accountCls: "text-pastel-ink font-medium tabular-nums pastel-text-outline",
+    toonCls: "text-pastel-ink/85 tabular-nums pastel-text-outline",
+    totalCls: "font-bold text-pastel-ink pastel-text-outline",
+    totalWrapCls: "rounded-2xl border border-white/20 bg-pastel-orange/50 px-3 py-1 backdrop-blur-md",
+    rowCls: "px-2 py-1 align-middle",
+    tableCls: "overflow-hidden rounded-2xl border border-white/20 border-collapse bg-white/40 shadow-sm backdrop-blur-md",
+    headerCls: "bg-pastel-green/70 px-2 py-1 text-sm font-bold text-pastel-ink pastel-text-outline",
+    goalBarBg: "rounded-full border border-white/20 bg-white/30 backdrop-blur-md",
+    goalBarFill: "rounded-full bg-gradient-to-r from-pastel-red via-pastel-orange to-pastel-blue",
+    goalText: "font-semibold text-pastel-ink pastel-text-outline",
+    goalWrap: "rounded-2xl border border-white/20 bg-white/35 p-1 backdrop-blur-md",
+    tickerCls: "font-semibold text-pastel-ink pastel-text-outline",
+    timerCls: "font-mono text-pastel-ink",
   },
   neonExcel: {
     label: "네온 엑셀",
@@ -1002,11 +1032,35 @@ function DonorTicker({ donors, theme, fontSize, color, bgColor, bgOpacity, full,
   );
 }
 
-function Timer({ elapsed, theme, fontSize }: { elapsed: string | null; theme: typeof THEMES.default; fontSize: number }) {
+function Timer({
+  elapsed,
+  paused,
+  fontSize,
+  remainingSeconds,
+}: {
+  elapsed: string | null;
+  paused?: boolean;
+  fontSize: number;
+  /** 카운트다운(서버 타이머)일 때만 전달; 10초 미만 부드러운 로즈 강조 */
+  remainingSeconds?: number | null;
+}) {
   if (!elapsed) return null;
+  const lowTime = remainingSeconds != null && remainingSeconds > 0 && remainingSeconds < 10;
   return (
-    <div className={theme.timerCls} style={{ fontSize }} suppressHydrationWarning>
-      {elapsed}
+    <div
+      className={`inline-flex min-w-[6.5ch] items-center justify-center rounded-full border border-white/20 bg-white/40 px-4 py-1.5 backdrop-blur-md ${
+        paused ? "animate-pulse opacity-90" : ""
+      }`}
+      suppressHydrationWarning
+    >
+      <span
+        className={`font-mono font-bold tabular-nums pastel-text-outline ${
+          paused ? "text-pastel-orange" : lowTime ? "text-pastel-alert animate-pastel-timer-low" : "text-pastel-ink"
+        }`}
+        style={{ fontSize, lineHeight: 1.1 }}
+      >
+        {elapsed}
+      </span>
     </div>
   );
 }
@@ -1052,7 +1106,6 @@ function OverlayInner() {
     if (base.length > 0) return base;
     const spLocal = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
     const preview = spLocal.get("previewGuide") === "true";
-    const demoParam = spLocal.get("demo") === "true";
     const pId = (spLocal.get("p") || "").trim();
     let showMissionEffective = (spLocal.get("showMission") || "").toLowerCase() === "true";
     if (!showMissionEffective && s) {
@@ -1066,13 +1119,13 @@ function OverlayInner() {
       }
       showMissionEffective = Boolean(active?.showMission);
     }
-    // 미리보기에서는 상태 파악을 위해 강제로 표시
-    if ((preview || demoParam)) showMissionEffective = true;
-    if (showMissionEffective && (preview || demoParam)) {
+    // 관리자 프리뷰(iframe)에서만 미션이 비었을 때 예시 표시
+    if (preview) showMissionEffective = true;
+    if (showMissionEffective && preview) {
       return [
-        { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
-        { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
-        { id: "mis_demo_3", title: "게임 미션 클리어 도전", price: "5만" },
+        { id: "mis_ph_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
+        { id: "mis_ph_2", title: "즉흥 노래 한 곡", price: "3만" },
+        { id: "mis_ph_3", title: "게임 미션 클리어 도전", price: "5만" },
       ] as MissionItem[];
     }
     return base;
@@ -1184,13 +1237,11 @@ function OverlayInner() {
   const totalThemeId = resolveThemeId("totalTheme");
   const goalThemeId = resolveThemeId("goalTheme");
   const tickerBaseThemeId = resolveThemeId("tickerBaseTheme");
-  const timerThemeId = resolveThemeId("timerTheme");
   const missionThemeId = resolveThemeId("missionTheme");
   const membersTheme = THEMES[membersThemeId];
   const totalTheme = THEMES[totalThemeId];
   const goalTheme = THEMES[goalThemeId];
   const tickerBaseTheme = THEMES[tickerBaseThemeId];
-  const timerTheme = THEMES[timerThemeId];
   const missionTheme = THEMES[missionThemeId];
   const missionThemeVariant = (() => {
     const excelThemes = ["excel", "excelBlue", "excelSlate", "excelAmber", "excelRose", "excelNavy", "excelTeal", "excelPurple", "excelEmerald", "excelOrange", "excelIndigo"];
@@ -1224,6 +1275,7 @@ function OverlayInner() {
   const goalCurrentParam = sp.get("goalCurrent");
   const goalCurrent = goalCurrentParam !== null ? Math.max(0, parseInt(goalCurrentParam || "0", 10) || 0) : null;
   const timerStart = sp.get("timerStart") ? parseInt(sp.get("timerStart")!, 10) : null;
+  const timerType = (sp.get("timerType") || "").trim();
   const timerAnchor = (sp.get("timerAnchor") || "tr").toLowerCase();
   const tickerAnchor = (sp.get("tickerAnchor") || "bc").toLowerCase();
   const tickerWidth = Math.max(200, Math.min(1200, parseInt(sp.get("tickerWidth") || "600", 10)));
@@ -1248,7 +1300,27 @@ function OverlayInner() {
     return Number.isFinite(n) ? Math.max(1, Math.min(1000, n)) : 0;
   })();
 
+  const timerFromState = useMemo(() => {
+    if (!s || !timerType) return null;
+    if (timerType === "sigMatch") return s.sigMatchTimer;
+    if (timerType === "mealMatch") return s.mealMatchTimer;
+    if (timerType === "sigSales") return s.sigSalesTimer;
+    if (timerType === "general") return s.generalTimer;
+    return null;
+  }, [s, timerType]);
+  const matchTimerAllowed = useMemo(() => {
+    if (!timerType || !s?.matchTimerEnabled) return true;
+    const m = s.matchTimerEnabled;
+    if (timerType === "sigMatch") return m.sigMatch;
+    if (timerType === "mealMatch") return m.mealMatch;
+    if (timerType === "sigSales") return m.sigSales;
+    if (timerType === "general") return m.general;
+    return true;
+  }, [s, timerType]);
+  const serverTimer = useServerTimer(timerFromState);
   const elapsed = useElapsed(timerStart);
+  const timerText = serverTimer.text || elapsed;
+  const timerPaused = serverTimer.text ? serverTimer.paused : false;
 
   const nameCh = Math.max(6, Math.min(40, parseInt(sp.get("nameCh") || (compact ? "10" : (isVertical ? "14" : "12")), 10)));
   const nameGrow = (sp.get("nameGrow") || "true").toLowerCase() === "true";
@@ -1517,7 +1589,7 @@ function OverlayInner() {
       return () => window.removeEventListener("resize", update);
     }
     return () => {};
-  }, [isPreviewGuide, autoFit, useRenderDims, renderW, renderH, BASE_W, BASE_H]);
+  }, [isPreviewGuide, centerFixed, tableFree, tableXParam, tableYParam, autoFit, useRenderDims, renderW, renderH, BASE_W, BASE_H]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [contentW, setContentW] = useState<number>(BASE_W);
@@ -1577,47 +1649,8 @@ function OverlayInner() {
     return () => { try { ro.disconnect(); } catch {} };
   }, [showMembers, themeId, mSize, nameCh, bankCh, toonCh, totalCh, lockWidth, effectiveNameGrow]);
 
-  const demo = (sp.get("demo") || "false").toLowerCase() === "true";
-  const [demoMembers, setDemoMembers] = useState<Member[] | null>(null);
-  const [demoDonors, setDemoDonors] = useState<Donor[] | null>(null);
-  useEffect(() => {
-    if (!demo) return;
-    const baseMembers: Member[] = [
-      { id: "m1", name: "멤버1", account: 0, toon: 0, goal: 100000, role: "과장" },
-      { id: "m2", name: "멤버2", account: 0, toon: 0, goal: 150000, role: "부장" },
-      { id: "m3", name: "멤버3", account: 0, toon: 0, goal: 80000, role: "대리" },
-      { id: "m4", name: "운영비", account: 0, toon: 0, role: "운영비" },
-    ];
-    setDemoMembers(baseMembers);
-    setDemoDonors([]);
-    const donorNames = ["Alice", "Bob", "Charlie", "Daisy", "Ethan", "Fiona", "Grace", "Henry"];
-    const interval = setInterval(() => {
-      setDemoMembers((prev) => {
-        if (!prev) return prev;
-        const arr = prev.map((m) => ({ ...m }));
-        const idx = Math.floor(Math.random() * 3);
-        const delta = Math.floor(Math.random() * 5 + 1) * 1000;
-        if (Math.random() < 0.5) arr[idx].account += delta;
-        else arr[idx].toon += delta;
-        return arr;
-      });
-      setDemoDonors((prev) => {
-        const list = prev ? [...prev] : [];
-        const name = donorNames[Math.floor(Math.random() * donorNames.length)];
-        const amount = (Math.floor(Math.random() * 10) + 1) * 1000;
-        const targets: ("account" | "toon")[] = ["account", "toon"];
-        const target = targets[Math.floor(Math.random() * targets.length)];
-        const membersPool = ["m1", "m2", "m3"];
-        const memberId = membersPool[Math.floor(Math.random() * membersPool.length)];
-        list.unshift({ id: `d-${Date.now()}`, name, amount, at: Date.now(), memberId, target });
-        return list.slice(0, 12);
-      });
-    }, 1200);
-    return () => clearInterval(interval);
-  }, [demo]);
-
   const members = useMemo(() => {
-    const base = (demo && demoMembers ? demoMembers : membersRemote);
+    const base = membersRemote;
     if (base.length > 0) return base;
     if ((!ready) && (isPreviewGuide || externalHost)) {
       return defaultState().members;
@@ -1626,8 +1659,8 @@ function OverlayInner() {
       return defaultState().members;
     }
     return base;
-  }, [demo, demoMembers, membersRemote, ready, isPreviewGuide, externalHost]);
-  const donors = useMemo(() => (demo && demoDonors ? demoDonors : donorsRemote), [demo, demoDonors, donorsRemote]);
+  }, [membersRemote, ready, isPreviewGuide, externalHost]);
+  const donors = useMemo(() => donorsRemote, [donorsRemote]);
   const personalGoals = useMemo(() => {
     return members
       .filter((m) => (m.goal || 0) > 0)
@@ -1728,12 +1761,6 @@ function OverlayInner() {
     else document.body.classList.remove("overlay-vertical");
     return () => document.body.classList.remove("overlay-vertical");
   }, [isVertical]);
-
-  useEffect(() => {
-    if (demo) {
-      try { console.warn("[Overlay] Demo mode is ON. Live state will be ignored for members/donors."); } catch {}
-    }
-  }, [demo]);
 
   const confettiLastMilestoneRef = useRef<number>(0);
   useEffect(() => {
@@ -1937,8 +1964,12 @@ function OverlayInner() {
               )}
               <div>
                 {useTableOpacity ? (
-                  <div className="relative rounded-lg overflow-hidden" style={{ backgroundColor: `rgba(${(TABLE_BG_RGB[themeId] || defaultTableBgRgb).join(",")}, ${tableBgOpacity / 100})` }}>
-                    <table ref={tableBoxRef as any} className={effectiveTableCls} style={{ fontSize: mSize, borderSpacing: 0, tableLayout: "fixed" }}>
+                  <div className="relative overflow-hidden rounded-2xl" style={{ backgroundColor: `rgba(${(TABLE_BG_RGB[themeId] || defaultTableBgRgb).join(",")}, ${tableBgOpacity / 100})` }}>
+                    <table
+                      ref={tableBoxRef as any}
+                      className={`${effectiveTableCls}${membersThemeId === "pastel" ? " pastel-member-table" : ""}`}
+                      style={{ fontSize: mSize, borderSpacing: 0, tableLayout: "fixed" }}
+                    >
                   <colgroup>
                     {excelGridCols.map((w, idx) => (
                       <col key={`excel-col-${idx}`} style={{ width: w }} />
@@ -1974,7 +2005,7 @@ function OverlayInner() {
                         <td className={`${effectiveRowCls} ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
                         <td className={`${effectiveRowCls} ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${effectiveRowCls} ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
-                        <td className={`${effectiveRowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
+                        <td className={`${effectiveRowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","pastel"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
                       </tr>
                     ))}
                     {pinned.map((m) => (
@@ -1984,7 +2015,7 @@ function OverlayInner() {
                         <td className={`${effectiveRowCls} ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
                         <td className={`${effectiveRowCls} ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${effectiveRowCls} ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
-                        <td className={`${effectiveRowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
+                        <td className={`${effectiveRowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","pastel"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
                       </tr>
                     ))}
                     {showTotal && ready && (
@@ -2000,7 +2031,11 @@ function OverlayInner() {
                 </table>
                   </div>
                 ) : (
-                <table ref={tableBoxRef as any} className={membersTheme.tableCls} style={{ fontSize: mSize, borderSpacing: 0, tableLayout: "fixed" }}>
+                <table
+                  ref={tableBoxRef as any}
+                  className={`${membersTheme.tableCls}${membersThemeId === "pastel" ? " pastel-member-table" : ""}`}
+                  style={{ fontSize: mSize, borderSpacing: 0, tableLayout: "fixed" }}
+                >
                   <colgroup>
                     {excelGridCols.map((w, idx) => (
                       <col key={`excel-col-${idx}`} style={{ width: w }} />
@@ -2036,7 +2071,7 @@ function OverlayInner() {
                         <td className={`${membersTheme.rowCls} ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
                         <td className={`${membersTheme.rowCls} ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${membersTheme.rowCls} ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
-                        <td className={`${membersTheme.rowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
+                        <td className={`${membersTheme.rowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","pastel"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
                       </tr>
                     ))}
                     {pinned.map((m) => (
@@ -2046,7 +2081,7 @@ function OverlayInner() {
                         <td className={`${membersTheme.rowCls} ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
                         <td className={`${membersTheme.rowCls} ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${membersTheme.rowCls} ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
-                        <td className={`${membersTheme.rowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
+                        <td className={`${membersTheme.rowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","pastel"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
                       </tr>
                     ))}
                     {showTotal && ready && (
@@ -2089,7 +2124,16 @@ function OverlayInner() {
           renderPersonalGoal()
         )}
         {effectiveShowTicker && (ready || isPreviewGuide) && <div className={`absolute ${tickerPosClass} ${hasTickerFreePos ? "" : "mb-10"}`} style={tickerPosStyle}><DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
-        {showTimer && <div className={`absolute ${posClass(timerAnchor)}`}><Timer elapsed={elapsed} theme={timerTheme} fontSize={memberSize} /></div>}
+        {showTimer && matchTimerAllowed && (
+          <div className={`absolute ${posClass(timerAnchor)}`}>
+            <Timer
+              elapsed={timerText}
+              paused={timerPaused}
+              fontSize={memberSize}
+              remainingSeconds={serverTimer.remainingSeconds}
+            />
+          </div>
+        )}
         {showMission && (ready || isPreviewGuide) && missions.length > 0 && (
           <div className={`absolute ${posClass(externalHost ? "cc" : missionAnchor)} z-[9990] pointer-events-none`} style={{ width: fitWidthToViewport(missionWidth) }}>
             <div className="pointer-events-auto">
@@ -2127,8 +2171,7 @@ function OverlayInner() {
             </div>
           </div>
         )}
-        {demo && <div className="fixed top-2 left-2 z-[9999] px-2 py-0.5 rounded bg-rose-600/90 text-white text-xs font-bold shadow">DEMO</div>}
-        {!rawUserId && <div className="fixed top-8 left-2 z-[9999] px-2 py-0.5 rounded bg-amber-600/90 text-white text-[11px] font-semibold shadow">인증 누락: 기본 계정 사용 중</div>}
+        {!rawUserId && <div className="fixed top-2 left-2 z-[9999] px-2 py-0.5 rounded bg-amber-600/90 text-white text-[11px] font-semibold shadow">인증 누락: 기본 계정 사용 중</div>}
           </main>
         </div>
       </div>

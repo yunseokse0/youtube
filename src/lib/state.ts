@@ -1,31 +1,92 @@
-export type Member = {
-  id: string;
-  name: string;
-  realName?: string;
-  account: number;
-  toon: number;
-  goal?: number;
-  role?: string;
-  operating?: boolean;
-};
+import type {
+  AppState,
+  Donor,
+  MatchTimerEnabled,
+  MealBattleState,
+  MealMatchSettings,
+  MealMatchState,
+  Member,
+  MissionItem,
+  SigItem,
+  SigMatchPool,
+  SigMatchSettings,
+  RouletteState,
+  SigMatchState,
+  TimerState,
+} from "@/types";
+export type {
+  AppState,
+  Donor,
+  DonorTarget,
+  LegacyOverlaySettings,
+  MatchTimerEnabled,
+  MealBattleState,
+  MealMatchSettings,
+  MealMatchState,
+  Member,
+  MissionItem,
+  RouletteState,
+  SigItem,
+  SigMatchPool,
+  SigMatchSettings,
+  SigMatchState,
+  TimerState,
+} from "@/types";
 
-export type DonorTarget = "account" | "toon";
+/** 시그 풀: 멤버는 최대 한 풀에만, 풀은 2인 이상만 유지 */
+export function normalizeSigMatchPools(raw: unknown, validMemberIds: Set<string>): SigMatchPool[] {
+  if (!Array.isArray(raw)) return [];
+  const assigned = new Set<string>();
+  const out: SigMatchPool[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const idRaw = (item as Record<string, unknown>).id;
+    const id =
+      typeof idRaw === "string" && idRaw.trim()
+        ? idRaw.trim()
+        : `pool_${out.length}_${Math.random().toString(36).slice(2, 6)}`;
+    const idsRaw = (item as Record<string, unknown>).memberIds;
+    const ids = Array.isArray(idsRaw)
+      ? idsRaw.map((x) => String(x)).filter((mid) => mid && validMemberIds.has(mid) && !assigned.has(mid))
+      : [];
+    if (ids.length < 2) continue;
+    for (const mid of ids) assigned.add(mid);
+    out.push({ id, memberIds: ids });
+  }
+  return out;
+}
 
-export type Donor = {
-  id: string;
-  name: string;
-  amount: number;
-  memberId: string;
-  at: number;
-  target?: DonorTarget;
-};
+/** 시그 대전 랭킹 참가자 목록(유효 id만, 순서 유지) */
+export function normalizeSigMatchParticipantIds(raw: unknown, validMemberIds: Set<string>): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const x of raw) {
+    const id = String(x);
+    if (!id || !validMemberIds.has(id) || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+import { DEFAULT_SIG_INVENTORY, normalizeSigInventory } from "./constants";
 
-export type MissionItem = {
-  id: string;
-  title: string;
-  price: string;
-  isHot?: boolean;
-};
+export function normalizeRouletteState(raw: unknown): RouletteState {
+  const def: RouletteState = { isRolling: false, result: null, spinCount: 0, startedAt: 0 };
+  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return def;
+  const o = raw as Record<string, unknown>;
+  let result: SigItem | null = null;
+  if (o.result && typeof o.result === "object") {
+    const arr = normalizeSigInventory([o.result]);
+    result = arr[0] || null;
+  }
+  return {
+    isRolling: Boolean(o.isRolling),
+    result,
+    spinCount: Number.isFinite(o.spinCount) ? Math.max(0, Math.floor(Number(o.spinCount))) : 0,
+    startedAt: Number.isFinite(o.startedAt) ? Math.max(0, Math.floor(Number(o.startedAt))) : 0,
+  };
+}
 
 /** 동기화 오류 시 members가 missions에 섞이는 것 방지. title/price가 있는 항목만 반환 */
 export function ensureMissionItems(items: unknown[] | undefined | null): MissionItem[] {
@@ -51,21 +112,6 @@ export function ensureMembers(items: unknown[] | undefined | null): Member[] {
     return typeof t.name === "string" && typeof t.title !== "string";
   }).map((m) => normalizeMember(m as Member));
 }
-
-type LegacyOverlaySettings = {
-  presets?: unknown[];
-  [key: string]: unknown;
-};
-
-export type AppState = {
-  members: Member[];
-  donors: Donor[];
-  forbiddenWords: string[];
-  missions?: MissionItem[];
-  overlayPresets?: unknown[];
-  overlaySettings?: LegacyOverlaySettings;
-  updatedAt: number;
-};
 
 import { sendSSEUpdate } from "./sse-client";
 
@@ -124,12 +170,177 @@ function normalizeMember(m: Member): Member {
 }
 
 export function defaultState(): AppState {
+  const defaultTimer: TimerState = { remainingTime: 0, isActive: false, lastUpdated: Date.now() };
+  const defaultMealBattle: MealBattleState = {
+    participants: [],
+    memberGaugeColors: {},
+    overlayTitle: "식사 대전",
+    currentMission: "",
+    totalGoal: 100,
+    timerTheme: "default",
+    timerSize: 36,
+    missionBubbleBg: "#9333ea",
+    missionBubbleTextColor: "#ffffff",
+    gaugeTrackBg: "rgba(23,23,23,0.85)",
+    gaugeTrackBorderColor: "rgba(255,255,255,0.2)",
+    gaugeFillColor: "#22c55e",
+    scoreTextColor: "#ffffff",
+    nameTagBg: "#facc15",
+    nameTagTextColor: "#000000",
+    showPanelBorder: false,
+    panelBorderColor: "rgba(255,255,255,0.25)",
+    showGaugeTrackBorder: false,
+    teamBattleEnabled: false,
+    teamAName: "A팀",
+    teamBName: "B팀",
+    teamAMemberIds: [],
+    teamBMemberIds: [],
+    teamAColor: "#2563eb",
+    teamBColor: "#dc2626",
+  };
+  const defaultMealSettings: MealMatchSettings = {
+    isActive: false,
+    title: "식사 대전",
+    mode: "team",
+    targetScore: 100,
+    teamAName: "Team A",
+    teamBName: "Team B",
+    teamAMemberIds: ["m1"],
+    teamBMemberIds: ["m2"],
+  };
   return {
     members: defaultMembers(),
     donors: [],
     forbiddenWords: ["금칙어", "욕설", "비속어"],
+    sigInventory: DEFAULT_SIG_INVENTORY.map((x) => ({ ...x })),
+    rouletteState: normalizeRouletteState(null),
     overlayPresets: [],
+    sigMatch: {},
+    mealBattle: defaultMealBattle,
+    mealMatch: {},
+    sigMatchSettings: {
+      isActive: false,
+      targetCount: 100,
+      title: "시그 대전",
+      keyword: "시그",
+      signatureAmounts: [77, 100, 333],
+      scoringMode: "count",
+      incentivePerPoint: 1000,
+      sigMatchPools: [],
+      participantMemberIds: [],
+    },
+    mealMatchSettings: defaultMealSettings,
+    sigMatchTimer: { ...defaultTimer },
+    mealMatchTimer: { ...defaultTimer },
+    sigSalesTimer: { ...defaultTimer },
+    generalTimer: { ...defaultTimer },
+    matchTimerEnabled: { sigMatch: true, mealMatch: true, sigSales: true, general: true },
     updatedAt: Date.now(),
+  };
+}
+
+function normalizeMealBattle(input: unknown): MealBattleState {
+  const v = input && typeof input === "object" ? (input as Partial<MealBattleState>) : {};
+  const rawGaugeColors = (v as Record<string, unknown>).memberGaugeColors;
+  const memberGaugeColors =
+    rawGaugeColors && typeof rawGaugeColors === "object" && !Array.isArray(rawGaugeColors)
+      ? Object.fromEntries(
+          Object.entries(rawGaugeColors as Record<string, unknown>)
+            .filter(([key, val]) => typeof key === "string" && typeof val === "string" && String(val).trim())
+            .map(([key, val]) => [key, String(val).trim()])
+        )
+      : {};
+  const otRaw = typeof v.overlayTitle === "string" ? v.overlayTitle.trim() : "";
+  const cmRaw = typeof v.currentMission === "string" ? v.currentMission.trim() : "";
+  const totalGoal = Number.isFinite(v.totalGoal) ? Math.max(1, Math.floor(v.totalGoal as number)) : 100;
+  const participantsWithGoals = Array.isArray(v.participants)
+    ? v.participants
+        .filter((x) => Boolean(x && typeof x === "object"))
+        .map((x) => {
+          const goalRaw = (x as Record<string, unknown>).goal;
+          const goalNum = Number(goalRaw);
+          const goal =
+            goalRaw !== undefined && goalRaw !== null && Number.isFinite(goalNum) ? Math.max(1, Math.floor(goalNum)) : totalGoal;
+          return {
+            memberId: String((x as Record<string, unknown>).memberId || ""),
+            name: String((x as Record<string, unknown>).name || ""),
+            score: Math.max(0, Math.floor(Number((x as Record<string, unknown>).score || 0) || 0)),
+            goal,
+            color: String((x as Record<string, unknown>).color || "#60a5fa"),
+            donationLinkActive: Boolean((x as Record<string, unknown>).donationLinkActive),
+          };
+        })
+        .filter((x) => Boolean(x.memberId))
+    : [];
+  return {
+    participants: participantsWithGoals,
+    memberGaugeColors,
+    overlayTitle: otRaw || "식사 대전",
+    currentMission: cmRaw,
+    totalGoal,
+    timerTheme: v.timerTheme === "neon" || v.timerTheme === "minimal" || v.timerTheme === "danger" ? v.timerTheme : "default",
+    timerSize: Number.isFinite(v.timerSize) ? Math.max(16, Math.min(120, Math.floor(v.timerSize as number))) : 36,
+    missionBubbleBg: String((v as Record<string, unknown>).missionBubbleBg || "#9333ea"),
+    missionBubbleTextColor: String((v as Record<string, unknown>).missionBubbleTextColor || "#ffffff"),
+    gaugeTrackBg: String((v as Record<string, unknown>).gaugeTrackBg || "rgba(23,23,23,0.85)"),
+    gaugeTrackBorderColor: String((v as Record<string, unknown>).gaugeTrackBorderColor || "rgba(255,255,255,0.2)"),
+    gaugeFillColor: String((v as Record<string, unknown>).gaugeFillColor || "#22c55e"),
+    scoreTextColor: String((v as Record<string, unknown>).scoreTextColor || "#ffffff"),
+    nameTagBg: String((v as Record<string, unknown>).nameTagBg || "#facc15"),
+    nameTagTextColor: String((v as Record<string, unknown>).nameTagTextColor || "#000000"),
+    showPanelBorder: typeof (v as Record<string, unknown>).showPanelBorder === "boolean" ? Boolean((v as Record<string, unknown>).showPanelBorder) : false,
+    panelBorderColor: String((v as Record<string, unknown>).panelBorderColor || "rgba(255,255,255,0.25)"),
+    showGaugeTrackBorder: typeof (v as Record<string, unknown>).showGaugeTrackBorder === "boolean"
+      ? Boolean((v as Record<string, unknown>).showGaugeTrackBorder)
+      : false,
+    teamBattleEnabled: Boolean((v as Record<string, unknown>).teamBattleEnabled),
+    teamAName: typeof (v as Record<string, unknown>).teamAName === "string" && String((v as Record<string, unknown>).teamAName).trim()
+      ? String((v as Record<string, unknown>).teamAName).trim()
+      : "A팀",
+    teamBName: typeof (v as Record<string, unknown>).teamBName === "string" && String((v as Record<string, unknown>).teamBName).trim()
+      ? String((v as Record<string, unknown>).teamBName).trim()
+      : "B팀",
+    teamAMemberIds: Array.isArray((v as Record<string, unknown>).teamAMemberIds)
+      ? ((v as Record<string, unknown>).teamAMemberIds as unknown[]).map((x) => String(x)).filter(Boolean)
+      : [],
+    teamBMemberIds: Array.isArray((v as Record<string, unknown>).teamBMemberIds)
+      ? ((v as Record<string, unknown>).teamBMemberIds as unknown[]).map((x) => String(x)).filter(Boolean)
+      : [],
+    teamAColor: String((v as Record<string, unknown>).teamAColor || "#2563eb"),
+    teamBColor: String((v as Record<string, unknown>).teamBColor || "#dc2626"),
+  };
+}
+
+function normalizeMealMatchSettings(input: unknown): MealMatchSettings {
+  const s = input && typeof input === "object" ? (input as Partial<MealMatchSettings>) : {};
+  return {
+    isActive: Boolean(s.isActive),
+    title: typeof s.title === "string" && s.title.trim() ? s.title : "식사 대전",
+    mode: s.mode === "individual" ? "individual" : "team",
+    targetScore: Number.isFinite(s.targetScore) ? Math.max(1, Math.floor(s.targetScore as number)) : 100,
+    teamAName: typeof s.teamAName === "string" && s.teamAName.trim() ? s.teamAName : "Team A",
+    teamBName: typeof s.teamBName === "string" && s.teamBName.trim() ? s.teamBName : "Team B",
+    teamAMemberIds: Array.isArray(s.teamAMemberIds) ? s.teamAMemberIds.map((x) => String(x)).filter(Boolean) : [],
+    teamBMemberIds: Array.isArray(s.teamBMemberIds) ? s.teamBMemberIds.map((x) => String(x)).filter(Boolean) : [],
+  };
+}
+
+function normalizeTimerState(input: unknown): TimerState {
+  const t = input && typeof input === "object" ? (input as Partial<TimerState>) : {};
+  return {
+    remainingTime: Number.isFinite(t.remainingTime) ? Math.max(0, Math.floor(t.remainingTime as number)) : 0,
+    isActive: Boolean(t.isActive),
+    lastUpdated: Number.isFinite(t.lastUpdated) ? Math.max(0, Math.floor(t.lastUpdated as number)) : Date.now(),
+  };
+}
+
+function normalizeMatchTimerEnabled(input: unknown): MatchTimerEnabled {
+  const v = input && typeof input === "object" ? (input as Partial<MatchTimerEnabled>) : {};
+  return {
+    sigMatch: typeof v.sigMatch === "boolean" ? v.sigMatch : true,
+    mealMatch: typeof v.mealMatch === "boolean" ? v.mealMatch : true,
+    sigSales: typeof v.sigSales === "boolean" ? v.sigSales : true,
+    general: typeof v.general === "boolean" ? v.general : true,
   };
 }
 
@@ -185,6 +396,42 @@ export function loadState(userId?: string | null): AppState {
     data.donors = data.donors || [];
     data.forbiddenWords = data.forbiddenWords || [];
     data.missions = ensureMissionItems(data.missions);
+    data.sigInventory = normalizeSigInventory((data as AppState).sigInventory);
+    data.sigMatch = data.sigMatch && typeof data.sigMatch === "object" ? data.sigMatch : {};
+    data.mealBattle = normalizeMealBattle((data as AppState).mealBattle);
+    data.mealMatch = data.mealMatch && typeof data.mealMatch === "object" ? data.mealMatch : {};
+    const validSigMemberIds = new Set(data.members.map((m: Member) => m.id));
+    data.sigMatchSettings = {
+      isActive: Boolean(data.sigMatchSettings?.isActive),
+      targetCount: Number.isFinite(data.sigMatchSettings?.targetCount)
+        ? Math.max(1, Math.floor(data.sigMatchSettings!.targetCount))
+        : 100,
+      title: typeof data.sigMatchSettings?.title === "string" && data.sigMatchSettings.title.trim()
+        ? data.sigMatchSettings.title
+        : "시그 대전",
+      keyword: typeof data.sigMatchSettings?.keyword === "string" ? data.sigMatchSettings.keyword : "시그",
+      signatureAmounts: Array.isArray(data.sigMatchSettings?.signatureAmounts)
+        ? data.sigMatchSettings.signatureAmounts
+            .map((x: unknown) => Number(x))
+            .filter((x: number) => Number.isFinite(x) && x > 0)
+        : [77, 100, 333],
+      scoringMode: data.sigMatchSettings?.scoringMode === "amount" ? "amount" : "count",
+      incentivePerPoint: Number.isFinite(data.sigMatchSettings?.incentivePerPoint)
+        ? Math.max(0, Math.floor(data.sigMatchSettings!.incentivePerPoint))
+        : 1000,
+      sigMatchPools: normalizeSigMatchPools(data.sigMatchSettings?.sigMatchPools, validSigMemberIds),
+      participantMemberIds: normalizeSigMatchParticipantIds(
+        (data as AppState).sigMatchSettings?.participantMemberIds,
+        validSigMemberIds
+      ),
+    };
+    data.rouletteState = normalizeRouletteState((data as AppState).rouletteState);
+    data.mealMatchSettings = normalizeMealMatchSettings((data as AppState).mealMatchSettings);
+    data.sigMatchTimer = normalizeTimerState((data as AppState).sigMatchTimer);
+    data.mealMatchTimer = normalizeTimerState((data as AppState).mealMatchTimer);
+    data.sigSalesTimer = normalizeTimerState((data as AppState).sigSalesTimer);
+    data.generalTimer = normalizeTimerState((data as AppState).generalTimer);
+    data.matchTimerEnabled = normalizeMatchTimerEnabled((data as AppState).matchTimerEnabled);
     data.overlayPresets = Array.isArray(data.overlayPresets)
       ? data.overlayPresets
       : Array.isArray(data.overlaySettings?.presets)
@@ -257,6 +504,42 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
       data.donors = data.donors || [];
       data.forbiddenWords = data.forbiddenWords || [];
       data.missions = ensureMissionItems(data.missions);
+      data.sigInventory = normalizeSigInventory((data as AppState).sigInventory);
+      data.sigMatch = data.sigMatch && typeof data.sigMatch === "object" ? data.sigMatch : {};
+      data.mealBattle = normalizeMealBattle((data as AppState).mealBattle);
+      data.mealMatch = data.mealMatch && typeof data.mealMatch === "object" ? data.mealMatch : {};
+      const validSigMemberIdsApi = new Set<string>((data.members as Member[]).map((m) => m.id));
+      data.sigMatchSettings = {
+        isActive: Boolean(data.sigMatchSettings?.isActive),
+        targetCount: Number.isFinite(data.sigMatchSettings?.targetCount)
+          ? Math.max(1, Math.floor(data.sigMatchSettings!.targetCount))
+          : 100,
+        title: typeof data.sigMatchSettings?.title === "string" && data.sigMatchSettings.title.trim()
+          ? data.sigMatchSettings.title
+          : "시그 대전",
+        keyword: typeof data.sigMatchSettings?.keyword === "string" ? data.sigMatchSettings.keyword : "시그",
+        signatureAmounts: Array.isArray(data.sigMatchSettings?.signatureAmounts)
+          ? data.sigMatchSettings.signatureAmounts
+              .map((x: unknown) => Number(x))
+              .filter((x: number) => Number.isFinite(x) && x > 0)
+          : [77, 100, 333],
+        scoringMode: data.sigMatchSettings?.scoringMode === "amount" ? "amount" : "count",
+        incentivePerPoint: Number.isFinite(data.sigMatchSettings?.incentivePerPoint)
+          ? Math.max(0, Math.floor(data.sigMatchSettings!.incentivePerPoint))
+          : 1000,
+        sigMatchPools: normalizeSigMatchPools(data.sigMatchSettings?.sigMatchPools, validSigMemberIdsApi),
+        participantMemberIds: normalizeSigMatchParticipantIds(
+          (data as AppState).sigMatchSettings?.participantMemberIds,
+          validSigMemberIdsApi
+        ),
+      };
+      data.rouletteState = normalizeRouletteState((data as AppState).rouletteState);
+      data.mealMatchSettings = normalizeMealMatchSettings((data as AppState).mealMatchSettings);
+      data.sigMatchTimer = normalizeTimerState((data as AppState).sigMatchTimer);
+      data.mealMatchTimer = normalizeTimerState((data as AppState).mealMatchTimer);
+      data.sigSalesTimer = normalizeTimerState((data as AppState).sigSalesTimer);
+      data.generalTimer = normalizeTimerState((data as AppState).generalTimer);
+      data.matchTimerEnabled = normalizeMatchTimerEnabled((data as AppState).matchTimerEnabled);
       data.overlayPresets = Array.isArray(data.overlayPresets)
         ? data.overlayPresets
         : Array.isArray(data.overlaySettings?.presets)

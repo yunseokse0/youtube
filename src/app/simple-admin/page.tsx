@@ -209,6 +209,8 @@ const PRESET_TEMPLATES = [
   }
 ];
 
+const logger = createModuleLogger('Admin');
+
 export default function AdminPage() {
   const [state, setState] = useState<AppState | null>(null);
   const [presets, setPresets] = useState<OverlayPreset[]>([]);
@@ -219,9 +221,6 @@ export default function AdminPage() {
   const [updateCount, setUpdateCount] = useState(0);
   const [connected, setConnected] = useState(false);
   
-  // 로거 인스턴스 생성
-  const logger = createModuleLogger('Admin');
-
   // 상태 로드
   useEffect(() => {
     fetch('/api/state?user=finalent', { credentials: "include" })

@@ -35,6 +35,9 @@ export default function OverlayLayout({
         .overlay-root table td { writing-mode: horizontal-tb; text-orientation: mixed; white-space: nowrap !important; overflow: hidden !important; }
         .overlay-root table td { container-type: inline-size; font-size: min(1em, 18cqw) !important; }
         .overlay-root table .overlay-total-row td { font-size: min(1.15em, 20cqw) !important; }
+        /* 파스텔 테마: 구분선 없이 행 배경만 교차 */
+        table.pastel-member-table tbody tr.overlay-row:nth-child(odd) td { background-color: rgba(199, 206, 234, 0.32) !important; }
+        table.pastel-member-table tbody tr.overlay-row:nth-child(even) td { background-color: rgba(226, 240, 203, 0.36) !important; }
       ` }} />
       {children}
     </div>

@@ -30,11 +30,19 @@ import {
   confirmHighAmount,
   MissionItem,
   totalCombined,
+  TimerState,
+  normalizeSigMatchPools,
+  normalizeSigMatchParticipantIds,
 } from "@/lib/state";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { appendSettlementRecordAndSync, SettlementMemberRatioOverrides } from "@/lib/settlement";
+import * as XLSX from "xlsx";
+import { appendSettlementRecordAndSync, appendSigMatchIncentiveSettlementAndSync, SettlementMemberRatioOverrides } from "@/lib/settlement";
+import { formatSigMatchStat, getSigMatchRankings } from "@/lib/settlement-utils";
+import { getEffectiveRemainingTime, pauseTimer, resumeTimer } from "@/lib/timer-utils";
 import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
+import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
 import MissionBoard from "@/components/MissionBoard";
 import MissionBoardSlot from "@/components/MissionBoardSlot";
 
@@ -55,6 +63,13 @@ type OverlayPreset = {
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
   confettiMilestone?: string; tableBgOpacity?: string; vertical?: boolean; accountColor?: string; toonColor?: string; host?: string;
 };
+
+/** 미션 목록이 비었을 때 미션 전광판 UI 확인용 placeholder */
+const PLACEHOLDER_MISSIONS: MissionItem[] = [
+  { id: "mis_ph_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
+  { id: "mis_ph_2", title: "즉흥 노래 한 곡", price: "3만" },
+  { id: "mis_ph_3", title: "게임 미션 클리어 도전", price: "5만" },
+];
 
 function ClientTime({ ts }: { ts: number | string }) {
   const [text, setText] = useState<string>("");
@@ -91,6 +106,13 @@ export default function AdminPage() {
   const [missionTitle, setMissionTitle] = useState("");
   const [missionPrice, setMissionPrice] = useState("");
   const [missionRestoreLoading, setMissionRestoreLoading] = useState(false);
+  const [newSigName, setNewSigName] = useState("");
+  const [newSigPrice, setNewSigPrice] = useState("77000");
+  const [newSigMaxCount, setNewSigMaxCount] = useState("1");
+  const [newSigMemberId, setNewSigMemberId] = useState<string>("");
+  const [newSigImageUrl, setNewSigImageUrl] = useState("");
+  const [sigExcelResult, setSigExcelResult] = useState("");
+  const [rouletteSpinCount, setRouletteSpinCount] = useState("1");
   const [settlementTitle, setSettlementTitle] = useState("");
   const [accountRatioInput, setAccountRatioInput] = useState("70");
   const [toonRatioInput, setToonRatioInput] = useState("60");
@@ -99,14 +121,9 @@ export default function AdminPage() {
   const [memberRatioInputs, setMemberRatioInputs] = useState<Record<string, { account: string; toon: string }>>({});
   const PRESET_STORAGE_KEY = "excel-broadcast-overlay-presets";
   const SETTLEMENT_OPTIONS_KEY = "excel-broadcast-settlement-options-v1";
-  const DEMO_MISSIONS: MissionItem[] = [
-    { id: "mis_demo_1", title: "예시 미션 · 셋리스트 요청", price: "2만", isHot: true },
-    { id: "mis_demo_2", title: "즉흥 노래 한 곡", price: "3만" },
-    { id: "mis_demo_3", title: "게임 미션 클리어 도전", price: "5만" },
-  ];
   const displayMissions = useMemo(() => {
     const v = ensureMissionItems(state.missions);
-    return v.length > 0 ? v : DEMO_MISSIONS;
+    return v.length > 0 ? v : PLACEHOLDER_MISSIONS;
   }, [state.missions]);
   const PRESET_TEMPLATES: { name: string; preset: Partial<OverlayPreset> }[] = [
     { name: "엑셀표만", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true } },
@@ -142,6 +159,7 @@ export default function AdminPage() {
   const [presetRev, setPresetRev] = useState(0);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [sigMatchPreviewIframeKey, setSigMatchPreviewIframeKey] = useState(0);
   const [pullDistance, setPullDistance] = useState(0);
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const touchStartYRef = useRef<number | null>(null);
@@ -201,6 +219,22 @@ export default function AdminPage() {
     };
     return map[id] || map.default;
   };
+  const persistState = useCallback((s: AppState) => {
+    const now = Date.now();
+    lastLocalPersistAtRef.current = now;
+    stateUpdatedAtRef.current = now;
+    pendingUnsyncedRef.current = true;
+    setSyncStatus("loading");
+    saveStateAsync(s, user?.id).then((ok) => {
+      if (ok) {
+        pendingUnsyncedRef.current = false;
+        setSyncStatus("synced");
+      } else {
+        const offline = typeof navigator !== "undefined" && !navigator.onLine;
+        setSyncStatus(offline ? "local" : "error");
+      }
+    });
+  }, [user?.id]);
   const ThemeThumbs = ({ value, options, onChange }: { value: string; options: string[]; onChange: (v: string) => void }) => (
     <div className="flex flex-wrap gap-1.5 mt-1">
       {options.map((opt) => (
@@ -377,7 +411,7 @@ export default function AdminPage() {
         }
       }
     });
-  }, [user]);
+  }, [user, persistState]);
 
   // Keep admin amounts synchronized across mobile/PC sessions.
   // Server state is treated as source of truth across devices.
@@ -448,7 +482,7 @@ export default function AdminPage() {
       window.removeEventListener("offline", onOffline);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [user]);
+  }, [user, persistState]);
 
   const savePresets = (next: OverlayPreset[]) => {
     setPresets(next);
@@ -494,6 +528,7 @@ export default function AdminPage() {
     q.set("u", user?.id || "finalent");
     return `${base}?${q.toString()}`;
   };
+  /** 방송/OBS용: snap 없음 → 오버레이는 항상 `/api/state` 기준 실시간 반영 (스냅샷은 아래 프리뷰 iframe 전용) */
   const buildPrismOverlayUrl = (p: OverlayPreset, vertical: boolean): string => {
     if (typeof window === "undefined") return "";
     const base = `${window.location.origin}/overlay`;
@@ -502,27 +537,6 @@ export default function AdminPage() {
     q.set("u", user?.id || "finalent");
     q.set("vertical", vertical ? "true" : "false");
     q.set("host", "prism");
-    try {
-      const snapObj = {
-        members: state.members.map(m => ({ id: m.id, name: m.name, account: m.account, toon: m.toon, goal: m.goal, role: m.role, operating: m.operating })),
-        donors: state.donors || [],
-        missions: (state as any).missions || [],
-        forbiddenWords: state.forbiddenWords || [],
-        goal: (() => { const n = parseInt((p.goal || "0") as any, 10); return Number.isFinite(n) ? Math.max(0, n) : 0; })(),
-        goalCurrent: (() => {
-          const raw = (p.goalCurrent || "") as any;
-          const n = raw === "" || raw === null || raw === undefined ? null : parseInt(String(raw), 10);
-          return n === null || Number.isNaN(n) ? null : Math.max(0, n);
-        })(),
-        updatedAt: Date.now(),
-      };
-      const json = JSON.stringify(snapObj);
-      const b64 = btoa(encodeURIComponent(json));
-      q.set("snap", b64);
-      const url = `${base}?${q.toString()}`;
-      if (url.length <= 1900) return url;
-      q.delete("snap");
-    } catch {}
     return `${base}?${q.toString()}`;
   };
   const buildPreviewOverlayUrl = (p: OverlayPreset): string => {
@@ -586,6 +600,50 @@ export default function AdminPage() {
     } catch {}
     return `${base}?${q.toString()}`;
   };
+
+  const buildSigMatchPreviewUrl = useCallback((): string => {
+    if (typeof window === "undefined") return "";
+    const uid = user?.id || "finalent";
+    const base = `${window.location.origin}/overlay/sig-match`;
+    const q = new URLSearchParams();
+    q.set("u", uid);
+    q.set("previewGuide", "true");
+    try {
+      const snapObj = {
+        members: state.members.map((m) => ({
+          id: m.id,
+          name: m.name,
+          account: m.account,
+          toon: m.toon,
+          goal: m.goal,
+          role: m.role,
+          operating: m.operating,
+        })),
+        donors: state.donors || [],
+        sigMatchSettings: state.sigMatchSettings,
+        sigMatch: state.sigMatch || {},
+        updatedAt: Date.now(),
+      };
+      const json = JSON.stringify(snapObj);
+      const b64 = btoa(encodeURIComponent(json));
+      q.set("snap", b64);
+      const url = `${base}?${q.toString()}`;
+      if (url.length <= 1900) return url;
+      q.delete("snap");
+      const snapKey = `${PREVIEW_SNAP_PREFIX}sigmatch-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      localStorage.setItem(snapKey, json);
+      q.set("snapKey", snapKey);
+      return `${base}?${q.toString()}`;
+    } catch {
+      return `${base}?u=${encodeURIComponent(uid)}&previewGuide=true`;
+    }
+  }, [user?.id, state.members, state.donors, state.sigMatchSettings, state.sigMatch]);
+
+  const [sigMatchPreviewIframeSrc, setSigMatchPreviewIframeSrc] = useState("");
+  useEffect(() => {
+    setSigMatchPreviewIframeSrc(buildSigMatchPreviewUrl());
+  }, [buildSigMatchPreviewUrl]);
+
   const copyUrl = async (url: string, id: string) => {
     try {
       if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(url); }
@@ -618,28 +676,10 @@ export default function AdminPage() {
     return `${base}?${q.toString()}`;
   };
 
-  const persistState = (s: AppState) => {
-    const now = Date.now();
-    lastLocalPersistAtRef.current = now;
-    stateUpdatedAtRef.current = now;
-    pendingUnsyncedRef.current = true;
-    setSyncStatus("loading");
-    saveStateAsync(s, user?.id).then((ok) => {
-      if (ok) {
-        pendingUnsyncedRef.current = false;
-        setSyncStatus("synced");
-      } else {
-        // 서버 실패 시에도 로컬 저장은 된 상태 → 로컬 모드로 전환
-        const offline = typeof navigator !== "undefined" && !navigator.onLine;
-        setSyncStatus(offline ? "local" : "error");
-      }
-    });
-  };
-
   useEffect(() => {
     setChatDraft(formatChatLine(state));
     setChatDraftDirty(false);
-  }, [state]);
+  }, [state, persistState]);
 
   useEffect(() => {
     // Retry unsynced writes quickly to minimize cross-device drift.
@@ -649,7 +689,7 @@ export default function AdminPage() {
       }
     }, 5000);
     return () => clearInterval(id);
-  }, [state]);
+  }, [state, persistState]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !user?.id) return;
@@ -689,7 +729,7 @@ export default function AdminPage() {
     };
     window.addEventListener("storage", handler);
     return () => window.removeEventListener("storage", handler);
-  }, [user?.id]);
+  }, [user?.id, persistState]);
 
   useEffect(() => {
     setMemberRatioInputs((prev) => {
@@ -773,7 +813,31 @@ export default function AdminPage() {
       setState((prev: AppState) => {
         const members = prev.members.filter((m) => m.id !== id);
         const donors = prev.donors.filter((d) => d.memberId !== id);
-        const next: AppState = { ...prev, members, donors };
+        const nextSigMatch = { ...(prev.sigMatch || {}) };
+        const nextMealMatch = { ...(prev.mealMatch || {}) };
+        delete nextSigMatch[id];
+        delete nextMealMatch[id];
+        const next: AppState = {
+          ...prev,
+          members,
+          donors,
+          sigMatch: nextSigMatch,
+          mealMatch: nextMealMatch,
+          mealBattle: {
+            ...prev.mealBattle,
+            participants: (prev.mealBattle?.participants || []).filter((p) => p.memberId !== id),
+            memberGaugeColors: Object.fromEntries(
+              Object.entries(prev.mealBattle?.memberGaugeColors || {}).filter(([k]) => k !== id)
+            ),
+            teamAMemberIds: (prev.mealBattle?.teamAMemberIds || []).filter((x) => x !== id),
+            teamBMemberIds: (prev.mealBattle?.teamBMemberIds || []).filter((x) => x !== id),
+          },
+          mealMatchSettings: {
+            ...prev.mealMatchSettings,
+            teamAMemberIds: (prev.mealMatchSettings?.teamAMemberIds || []).filter((x) => x !== id),
+            teamBMemberIds: (prev.mealMatchSettings?.teamBMemberIds || []).filter((x) => x !== id),
+          },
+        };
         persistState(next);
         return next;
       });
@@ -788,11 +852,491 @@ export default function AdminPage() {
     const base = (newMemberName || `멤버${state.members.length + 1}`).trim();
     const id = `m_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
     setState((prev: AppState) => {
-      const next: AppState = { ...prev, members: [...prev.members, { id, name: base, account: 0, toon: 0 }] };
+      const next: AppState = {
+        ...prev,
+        members: [...prev.members, { id, name: base, account: 0, toon: 0 }],
+        sigMatch: { ...(prev.sigMatch || {}), [id]: 0 },
+        mealMatch: { ...(prev.mealMatch || {}), [id]: 0 },
+        mealBattle: {
+          ...prev.mealBattle,
+          participants: [...(prev.mealBattle?.participants || [])],
+        },
+      };
       persistState(next);
       return next;
     });
     setNewMemberName("");
+  };
+
+  const updateSigMatchSettings = (patch: Partial<AppState["sigMatchSettings"]>) => {
+    setState((prev: AppState) => {
+      const valid = new Set(prev.members.map((mm) => mm.id));
+      const merged: AppState["sigMatchSettings"] = {
+        ...prev.sigMatchSettings,
+        sigMatchPools: prev.sigMatchSettings.sigMatchPools ?? [],
+        ...patch,
+      };
+      const next: AppState = {
+        ...prev,
+        sigMatchSettings: {
+          ...merged,
+          sigMatchPools: normalizeSigMatchPools(merged.sigMatchPools, valid),
+          participantMemberIds: normalizeSigMatchParticipantIds(merged.participantMemberIds, valid),
+        },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const updateMealMatchSettings = (patch: Partial<AppState["mealMatchSettings"]>) => {
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        mealMatchSettings: {
+          ...prev.mealMatchSettings,
+          ...patch,
+        },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const MEAL_PARTICIPANT_COLORS = ["#60a5fa", "#f59e0b", "#22c55e", "#ef4444", "#a78bfa", "#06b6d4", "#f472b6"];
+
+  const updateMealBattle = (patch: Partial<AppState["mealBattle"]>) => {
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        mealBattle: {
+          ...prev.mealBattle,
+          ...patch,
+        },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const toggleMealParticipant = (memberId: string, checked: boolean) => {
+    setState((prev: AppState) => {
+      const member = prev.members.find((m) => m.id === memberId);
+      if (!member) return prev;
+      const existing = prev.mealBattle?.participants || [];
+      const exists = existing.some((p) => p.memberId === memberId);
+      let participants = existing;
+      if (checked && !exists) {
+        participants = [
+          ...existing,
+          {
+            memberId,
+            name: member.name,
+            score: 0,
+            goal: Math.max(1, Math.floor(prev.mealBattle?.totalGoal || 100)),
+            color:
+              prev.mealBattle?.memberGaugeColors?.[memberId] ||
+              MEAL_PARTICIPANT_COLORS[existing.length % MEAL_PARTICIPANT_COLORS.length],
+            donationLinkActive: false,
+          },
+        ];
+      } else if (!checked && exists) {
+        participants = existing.filter((p) => p.memberId !== memberId);
+      }
+      const next: AppState = {
+        ...prev,
+        mealBattle: {
+          ...prev.mealBattle,
+          participants,
+        },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const updateMealParticipant = (
+    memberId: string,
+    updater: (participant: AppState["mealBattle"]["participants"][number]) => AppState["mealBattle"]["participants"][number]
+  ) => {
+    setState((prev: AppState) => {
+      const participants = (prev.mealBattle?.participants || []).map((p) => (p.memberId === memberId ? updater(p) : p));
+      const next: AppState = {
+        ...prev,
+        mealBattle: {
+          ...prev.mealBattle,
+          participants,
+        },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const mergeMealMemberGaugeColor = (memberId: string, color: string) => {
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        mealBattle: {
+          ...prev.mealBattle,
+          memberGaugeColors: { ...(prev.mealBattle?.memberGaugeColors || {}), [memberId]: color },
+        },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const patchMealParticipantColor = (memberId: string, color: string) => {
+    setState((prev: AppState) => {
+      const participants = (prev.mealBattle?.participants || []).map((p) =>
+        p.memberId === memberId ? { ...p, color } : p
+      );
+      const next: AppState = {
+        ...prev,
+        mealBattle: {
+          ...prev.mealBattle,
+          participants,
+          memberGaugeColors: { ...(prev.mealBattle?.memberGaugeColors || {}), [memberId]: color },
+        },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const setMealBattleMemberTeam = (memberId: string, team: "" | "A" | "B") => {
+    setState((prev: AppState) => {
+      const a = (prev.mealBattle?.teamAMemberIds || []).filter((id) => id !== memberId);
+      const b = (prev.mealBattle?.teamBMemberIds || []).filter((id) => id !== memberId);
+      const nextA = team === "A" ? [...a, memberId] : a;
+      const nextB = team === "B" ? [...b, memberId] : b;
+      const next: AppState = {
+        ...prev,
+        mealBattle: {
+          ...prev.mealBattle,
+          teamAMemberIds: nextA,
+          teamBMemberIds: nextB,
+        },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const resetMealMatchScores = () => {
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        mealBattle: {
+          ...prev.mealBattle,
+          participants: (prev.mealBattle?.participants || []).map((p) => ({ ...p, score: 0 })),
+        },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const adjustSigMatchScore = (memberId: string, delta: number) => {
+    setState((prev: AppState) => {
+      const current = prev.sigMatch?.[memberId] || 0;
+      const nextScore = Math.max(0, current + delta);
+      const next: AppState = {
+        ...prev,
+        sigMatch: {
+          ...(prev.sigMatch || {}),
+          [memberId]: nextScore,
+        },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const toggleSigRollingItem = (id: string, checked: boolean) => {
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        sigInventory: (prev.sigInventory || []).map((x) => (x.id === id ? { ...x, isRolling: checked } : x)),
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const toggleSigActiveItem = (id: string, checked: boolean) => {
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        sigInventory: (prev.sigInventory || []).map((x) => (x.id === id ? { ...x, isActive: checked } : x)),
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const spinSigRoulette = async () => {
+    const uid = user?.id;
+    if (!uid) {
+      setSigExcelResult("로그인 후 룰렛을 사용할 수 있습니다.");
+      return;
+    }
+    const n = Math.max(1, Math.min(999, parseInt(String(rouletteSpinCount || "1"), 10) || 1));
+    try {
+      const res = await fetch(`/api/roulette/spin?user=${encodeURIComponent(uid)}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spinCount: n }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok) {
+        setSigExcelResult(j.error === "empty_inventory" ? "시그 인벤토리가 비어 있습니다." : `룰렛 실패: ${j.error || res.status}`);
+        return;
+      }
+      const remote = await loadStateFromApi(uid);
+      if (remote) {
+        setState(remote);
+        try {
+          window.localStorage.setItem(storageKey(uid), JSON.stringify(remote));
+        } catch {}
+      }
+      setSigExcelResult(`룰렛 ${n}회 스핀 완료 (서버 당첨 확정). 오버레이 /overlay/sig-sales 에서 확인하세요.`);
+    } catch (e) {
+      setSigExcelResult(`룰렛 요청 오류: ${String(e)}`);
+    }
+  };
+
+  const adjustSigSoldCount = (id: string, delta: number) => {
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        sigInventory: (prev.sigInventory || []).map((x) => {
+          if (x.id !== id) return x;
+          const soldCount = Math.max(0, Math.min(x.maxCount, (x.soldCount || 0) + delta));
+          return { ...x, soldCount };
+        }),
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const updateSigItem = (id: string, patch: Partial<AppState["sigInventory"][number]>) => {
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        sigInventory: (prev.sigInventory || []).map((x) => (x.id === id ? { ...x, ...patch } : x)),
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const removeSigItem = (id: string) => {
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        sigInventory: (prev.sigInventory || []).filter((x) => x.id !== id),
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const addSigItem = () => {
+    const name = newSigName.trim();
+    if (!name) return;
+    const price = Math.max(0, Math.floor(Number(newSigPrice || 0) || 0));
+    const maxCount = Math.max(1, Math.floor(Number(newSigMaxCount || 1) || 1));
+    const normalizedName = name.replace(/\s+/g, "").toLowerCase();
+    const hasDuplicate = (state.sigInventory || []).some((x) => (x.name || "").replace(/\s+/g, "").toLowerCase() === normalizedName);
+    if (hasDuplicate) {
+      setSigExcelResult(`중복 이름이라 추가하지 않았습니다: ${name}`);
+      return;
+    }
+    setState((prev: AppState) => {
+      const nextItem = {
+        id: `sig_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        name,
+        price,
+        imageUrl: newSigImageUrl.trim(),
+        memberId: newSigMemberId || prev.members[0]?.id || "",
+        maxCount,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      };
+      const next: AppState = {
+        ...prev,
+        sigInventory: [...(prev.sigInventory || []), nextItem],
+      };
+      persistState(next);
+      return next;
+    });
+    setNewSigName("");
+    setNewSigPrice("77000");
+    setNewSigMaxCount("1");
+    setNewSigImageUrl("");
+    setSigExcelResult("");
+  };
+
+  const downloadSigExcelTemplate = () => {
+    const rows = [
+      { name: "애교", price: 77000, maxCount: 5, memberName: "", imageUrl: "/images/sigs/애교.png", isRolling: "Y" },
+      { name: "댄스", price: 100000, maxCount: 3, memberName: "", imageUrl: "/images/sigs/댄스.png", isRolling: "Y" },
+    ];
+    const sheet = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet, "sig_inventory");
+    XLSX.writeFile(wb, "sig-inventory-template.xlsx");
+  };
+
+  const clearAllSigItems = () => {
+    if (!confirm("시그 목록 전체를 삭제할까요?")) return;
+    setState((prev: AppState) => {
+      const next: AppState = { ...prev, sigInventory: [] };
+      persistState(next);
+      return next;
+    });
+    setSigExcelResult("시그 목록을 전체 삭제했습니다.");
+  };
+
+  const uploadSigExcel = async (file: File | null) => {
+    if (!file) return;
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array" });
+    const first = wb.SheetNames[0];
+    if (!first) {
+      setSigExcelResult("엑셀 시트가 비어 있습니다.");
+      return;
+    }
+    const sheet = wb.Sheets[first];
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+    if (!rows.length) {
+      setSigExcelResult("엑셀에 데이터 행이 없습니다.");
+      return;
+    }
+    let added = 0;
+    let skipped = 0;
+    setState((prev: AppState) => {
+      const existing = new Set((prev.sigInventory || []).map((x) => (x.name || "").replace(/\s+/g, "").toLowerCase()));
+      const memberMap = new Map((prev.members || []).map((m) => [m.name.trim(), m.id]));
+      const nextItems = [...(prev.sigInventory || [])];
+
+      for (const row of rows) {
+        const name = String(row.name ?? row["이름"] ?? "").trim();
+        if (!name) {
+          skipped += 1;
+          continue;
+        }
+        const key = name.replace(/\s+/g, "").toLowerCase();
+        if (existing.has(key)) {
+          skipped += 1;
+          continue;
+        }
+        const price = Math.max(0, Math.floor(Number(row.price ?? row["가격"] ?? 0) || 0));
+        const maxCount = Math.max(1, Math.floor(Number(row.maxCount ?? row["최대수량"] ?? 1) || 1));
+        const memberName = String(row.memberName ?? row["멤버"] ?? "").trim();
+        const isRollingRaw = String(row.isRolling ?? row["노출"] ?? "Y").trim().toLowerCase();
+        const imageUrl = String(row.imageUrl ?? row["이미지"] ?? "").trim();
+        const rolling = isRollingRaw === "y" || isRollingRaw === "true" || isRollingRaw === "1";
+        const activeCol = row.isActive ?? row["판매활성"];
+        let isActive = rolling;
+        if (activeCol !== undefined && activeCol !== null && String(activeCol).trim() !== "") {
+          const isActiveRaw = String(activeCol).trim().toLowerCase();
+          isActive = isActiveRaw === "y" || isActiveRaw === "true" || isActiveRaw === "1";
+        }
+        nextItems.push({
+          id: `sig_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          name,
+          price,
+          imageUrl,
+          memberId: memberMap.get(memberName) || "",
+          maxCount,
+          soldCount: 0,
+          isRolling: rolling,
+          isActive,
+        });
+        existing.add(key);
+        added += 1;
+      }
+
+      const next: AppState = { ...prev, sigInventory: nextItems };
+      persistState(next);
+      return next;
+    });
+    setSigExcelResult(`엑셀 업로드 완료: ${added}개 추가, ${skipped}개 중복/무효로 건너뜀`);
+  };
+
+  const uploadSigImage = (id: string, file: File | null) => {
+    if (!file) return;
+    const isAllowed = /image\/(gif|png|jpe?g)/i.test(file.type);
+    if (!isAllowed) {
+      alert("gif, png, jpg(jpeg) 파일만 업로드 가능합니다.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      if (!result) return;
+      updateSigItem(id, { imageUrl: result });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const uploadNewSigImage = (file: File | null) => {
+    if (!file) return;
+    const isAllowed = /image\/(gif|png|jpe?g)/i.test(file.type);
+    if (!isAllowed) {
+      alert("gif, png, jpg(jpeg) 파일만 업로드 가능합니다.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      if (!result) return;
+      setNewSigImageUrl(result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const updateMatchTimer = (
+    key: "sigMatchTimer" | "mealMatchTimer" | "sigSalesTimer" | "generalTimer",
+    updater: (timer: TimerState) => TimerState
+  ) => {
+    setState((prev: AppState) => {
+      const current = prev[key];
+      const nextTimer = updater(current);
+      const next: AppState = { ...prev, [key]: nextTimer };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const adjustTimerSeconds = (key: "sigMatchTimer" | "mealMatchTimer" | "sigSalesTimer" | "generalTimer", deltaSec: number) => {
+    updateMatchTimer(key, (timer) => {
+      const effective = getEffectiveRemainingTime(timer);
+      const next = Math.max(0, effective + deltaSec);
+      return {
+        remainingTime: next,
+        isActive: timer.isActive,
+        lastUpdated: Date.now(),
+      };
+    });
+  };
+
+  const updateMatchTimerEnabled = (patch: Partial<AppState["matchTimerEnabled"]>) => {
+    setState((prev: AppState) => {
+      const base = prev.matchTimerEnabled || { sigMatch: true, mealMatch: true, sigSales: true, general: true };
+      const next: AppState = {
+        ...prev,
+        matchTimerEnabled: { ...base, ...patch },
+      };
+      persistState(next);
+      return next;
+    });
   };
 
   const addDonor = () => {
@@ -817,7 +1361,21 @@ export default function AdminPage() {
       const members = prev.members.map((m: Member) =>
         m.id === donorMemberId ? { ...m, [field]: (m[field] || 0) + amount } : m
       );
-      const next: AppState = { ...prev, members, donors };
+      const mealParticipants = applyMealBattleDonationToParticipants(
+        prev.mealBattle?.participants || [],
+        donorMemberId,
+        amount,
+        1
+      );
+      const next: AppState = {
+        ...prev,
+        members,
+        donors,
+        mealBattle: {
+          ...prev.mealBattle,
+          participants: mealParticipants,
+        },
+      };
       persistState(next);
       return next;
     });
@@ -839,6 +1397,41 @@ export default function AdminPage() {
     () => state.members.filter((m) => !isOperatingMember(m)).length,
     [state.members]
   );
+  const sigMatchRanking = useMemo(
+    () => getSigMatchRankings(
+      state.donors || [],
+      state.members || [],
+      state.sigMatchSettings,
+      state.sigMatch || {}
+    ),
+    [state.donors, state.members, state.sigMatchSettings, state.sigMatch]
+  );
+  const sigSignatureAmountsInput = useMemo(
+    () => (state.sigMatchSettings?.signatureAmounts || []).join(", "),
+    [state.sigMatchSettings?.signatureAmounts]
+  );
+  const mealParticipants = useMemo(() => state.mealBattle?.participants || [], [state.mealBattle?.participants]);
+
+  const toggleSigMatchActive = async () => {
+    const wasActive = Boolean(state.sigMatchSettings?.isActive);
+    const nextActive = !wasActive;
+    if (wasActive && !nextActive) {
+      const rankings = getSigMatchRankings(
+        state.donors || [],
+        state.members || [],
+        state.sigMatchSettings,
+        state.sigMatch || {}
+      );
+      const title = `${state.sigMatchSettings?.title || "시그 대전"} 인센티브 정산`;
+      await appendSigMatchIncentiveSettlementAndSync(
+        title,
+        rankings,
+        state.sigMatchSettings?.incentivePerPoint || 1000,
+        user?.id
+      );
+    }
+    updateSigMatchSettings({ isActive: nextActive });
+  };
   const flatLogs = useMemo(() => {
     const arr: Array<{ date: string; entry: DailyLogEntry }> = [];
     Object.entries(dailyLog).forEach(([date, entries]) => {
@@ -1173,6 +1766,1025 @@ export default function AdminPage() {
                   <MemberRow key={m.id} member={m} onChange={updateMember} onRename={renameMember} onReset={resetMemberAmounts} onDelete={deleteMember} />
                 ))}
               </div>
+              <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-base font-semibold">시그 대전 관리</h3>
+                    <p className="text-xs text-neutral-400">Redis donors를 기준으로 점수를 실시간 집계하고, 긴급 보정값을 합산합니다.</p>
+                  </div>
+                  <button
+                    onClick={() => { void toggleSigMatchActive(); }}
+                    className={`px-3 py-1.5 rounded text-sm font-semibold ${
+                      state.sigMatchSettings?.isActive ? "bg-emerald-600 hover:bg-emerald-500" : "bg-neutral-700 hover:bg-neutral-600"
+                    }`}
+                  >
+                    {state.sigMatchSettings?.isActive ? "활성화됨" : "비활성화됨"}
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-[1fr_140px_140px] gap-2">
+                  <input
+                    className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                    placeholder="대전 제목"
+                    value={state.sigMatchSettings?.title || "시그 대전"}
+                    onChange={(e) => updateSigMatchSettings({ title: e.target.value })}
+                  />
+                  <input
+                    className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                    type="number"
+                    min={1}
+                    value={state.sigMatchSettings?.targetCount || 100}
+                    onChange={(e) => {
+                      const n = Number.parseInt(e.target.value || "100", 10);
+                      updateSigMatchSettings({ targetCount: Number.isFinite(n) ? Math.max(1, n) : 100 });
+                    }}
+                  />
+                  <select
+                    className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                    value={state.sigMatchSettings?.scoringMode || "count"}
+                    onChange={(e) => updateSigMatchSettings({ scoringMode: e.target.value as "count" | "amount" })}
+                  >
+                    <option value="count">점수 방식: 건수</option>
+                    <option value="amount">점수 방식: 금액</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-[1fr_220px] gap-2">
+                  <input
+                    className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                    placeholder="시그 키워드 (예: 시그)"
+                    value={state.sigMatchSettings?.keyword || "시그"}
+                    onChange={(e) => updateSigMatchSettings({ keyword: e.target.value })}
+                  />
+                  <input
+                    className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                    placeholder="시그 금액 목록 (예: 77,100,333)"
+                    value={sigSignatureAmountsInput}
+                    onChange={(e) => {
+                      const arr = e.target.value
+                        .split(",")
+                        .map((x) => Number.parseInt(x.trim(), 10))
+                        .filter((x) => Number.isFinite(x) && x > 0);
+                      updateSigMatchSettings({ signatureAmounts: arr });
+                    }}
+                  />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-2 items-center">
+                  <input
+                    className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                    type="number"
+                    min={0}
+                    placeholder="포인트당 정산 단가"
+                    value={state.sigMatchSettings?.incentivePerPoint ?? 1000}
+                    onChange={(e) => {
+                      const n = Number.parseInt(e.target.value || "1000", 10);
+                      updateSigMatchSettings({ incentivePerPoint: Number.isFinite(n) ? Math.max(0, n) : 1000 });
+                    }}
+                  />
+                  <div className="text-xs text-neutral-400">세션 종료 시 &quot;시그 인센티브 정산&quot;이 자동 생성됩니다. (count 모드: 점수 x 단가, amount 모드: 점수=금액)</div>
+                </div>
+                <div className="rounded-lg border border-white/10 bg-neutral-950/30 p-3 space-y-2">
+                  <div>
+                    <h4 className="text-sm font-semibold text-neutral-200">랭킹 표시 멤버 (참가자)</h4>
+                    <p className="mt-1 text-xs text-neutral-500">
+                      체크가 전부 켜져 있으면 전원이 랭킹에 나갑니다. 일부만 남기면 그 멤버만 표시·집계되며, 제외된 멤버에게 붙은 시그는 대전 점수에 포함되지 않습니다.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="rounded bg-neutral-700 px-2 py-1 text-xs hover:bg-neutral-600"
+                      onClick={() => updateSigMatchSettings({ participantMemberIds: [] })}
+                    >
+                      전원 표시
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1">
+                    {state.members.map((m) => {
+                      const ids = state.sigMatchSettings?.participantMemberIds ?? [];
+                      const allMode = ids.length === 0;
+                      const checked = allMode || ids.includes(m.id);
+                      const allMemberIds = state.members.map((x) => x.id);
+                      return (
+                        <label key={`sig-part-${m.id}`} className="flex cursor-pointer items-center gap-1.5 text-xs text-neutral-300">
+                          <input
+                            type="checkbox"
+                            className="rounded border-white/20"
+                            checked={checked}
+                            onChange={() => {
+                              const valid = new Set(state.members.map((mm) => mm.id));
+                              if (allMode) {
+                                const next = allMemberIds.filter((id) => id !== m.id);
+                                updateSigMatchSettings({
+                                  participantMemberIds: normalizeSigMatchParticipantIds(next, valid),
+                                });
+                              } else {
+                                const set = new Set(ids);
+                                let next: string[];
+                                if (set.has(m.id)) {
+                                  next = ids.filter((id) => id !== m.id);
+                                } else {
+                                  next = [...ids, m.id];
+                                }
+                                if (next.length === 0 || next.length >= allMemberIds.length) {
+                                  updateSigMatchSettings({ participantMemberIds: [] });
+                                } else {
+                                  updateSigMatchSettings({
+                                    participantMemberIds: normalizeSigMatchParticipantIds(next, valid),
+                                  });
+                                }
+                              }
+                            }}
+                          />
+                          <span className="truncate max-w-[120px]">{m.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-white/10 bg-neutral-950/40 p-3 space-y-3">
+                  <div>
+                    <h4 className="text-sm font-semibold text-neutral-200">1:1 / n:n 규칙 (시그 풀)</h4>
+                    <p className="mt-1 text-xs text-neutral-500">
+                      풀이 없으면 후원에 연결된 멤버만 점수가 올라갑니다(1:1). 아래에서 풀을 만들고 멤버를 넣으면, 같은 풀 안에서는 시그 1건이 풀 인원으로 나눠져 모두에게 동일하게 반영됩니다(n:n). 멤버는 한 풀에만 들어갈 수 있습니다. 풀은 2명 이상일 때만 적용됩니다.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="rounded bg-neutral-700 px-2 py-1 text-xs hover:bg-neutral-600"
+                      onClick={() => {
+                        const pools = [...(state.sigMatchSettings.sigMatchPools || [])];
+                        pools.push({ id: `pool_${Date.now()}`, memberIds: [] });
+                        const valid = new Set(state.members.map((m) => m.id));
+                        updateSigMatchSettings({ sigMatchPools: normalizeSigMatchPools(pools, valid) });
+                      }}
+                    >
+                      + 풀 추가
+                    </button>
+                  </div>
+                  {(state.sigMatchSettings.sigMatchPools || []).length === 0 ? (
+                    <p className="text-xs text-neutral-500">등록된 풀이 없습니다. 전원 1:1 방식입니다.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {(state.sigMatchSettings.sigMatchPools || []).map((pool, pi) => (
+                        <div key={pool.id} className="rounded border border-white/10 bg-neutral-900/60 p-2">
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <span className="text-xs font-medium text-neutral-300">풀 {pi + 1}</span>
+                            <button
+                              type="button"
+                              className="rounded bg-red-900/60 px-2 py-0.5 text-[11px] hover:bg-red-800/80"
+                              onClick={() => {
+                                const next = (state.sigMatchSettings.sigMatchPools || []).filter((p) => p.id !== pool.id);
+                                const valid = new Set(state.members.map((m) => m.id));
+                                updateSigMatchSettings({ sigMatchPools: normalizeSigMatchPools(next, valid) });
+                              }}
+                            >
+                              풀 삭제
+                            </button>
+                          </div>
+                          <div className="flex flex-wrap gap-x-3 gap-y-1">
+                            {state.members.map((m) => (
+                              <label key={`${pool.id}-${m.id}`} className="flex cursor-pointer items-center gap-1.5 text-xs text-neutral-300">
+                                <input
+                                  type="checkbox"
+                                  className="rounded border-white/20"
+                                  checked={pool.memberIds.includes(m.id)}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    let pools = [...(state.sigMatchSettings.sigMatchPools || [])].map((p) => ({
+                                      ...p,
+                                      memberIds: [...p.memberIds],
+                                    }));
+                                    if (checked) {
+                                      pools = pools.map((p) => {
+                                        if (p.id === pool.id) return { ...p, memberIds: [...new Set([...p.memberIds, m.id])] };
+                                        return { ...p, memberIds: p.memberIds.filter((id) => id !== m.id) };
+                                      });
+                                    } else {
+                                      pools = pools.map((p) =>
+                                        p.id === pool.id ? { ...p, memberIds: p.memberIds.filter((id) => id !== m.id) } : p
+                                      );
+                                    }
+                                    const valid = new Set(state.members.map((mm) => mm.id));
+                                    updateSigMatchSettings({ sigMatchPools: normalizeSigMatchPools(pools, valid) });
+                                  }}
+                                />
+                                <span className="truncate max-w-[120px]">{m.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  {sigMatchRanking.map((row) => (
+                    <div key={row.memberId} className="flex items-center justify-between gap-2 rounded border border-white/10 bg-[#1f1f1f] px-3 py-2">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold truncate">{row.name}</div>
+                        <div className="text-xs text-neutral-400">
+                          점수 {formatSigMatchStat(row.score)} · 매칭 {formatSigMatchStat(row.matchedCount)}건 · 합계{" "}
+                          {formatSigMatchStat(row.matchedAmount)} · 보정 {row.manualAdjust >= 0 ? "+" : ""}
+                          {row.manualAdjust}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button className="px-2 py-1 rounded bg-red-900/70 hover:bg-red-800 text-xs" onClick={() => adjustSigMatchScore(row.memberId, -1)}>긴급 -1</button>
+                        <button className="px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-xs" onClick={() => adjustSigMatchScore(row.memberId, 1)}>긴급 +1</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
+                  <span>오버레이 URL:</span>
+                  <code className="text-neutral-300 break-all">
+                    {typeof window !== "undefined" ? window.location.origin : ""}/overlay/sig-match?u={user?.id || "finalent"}
+                  </code>
+                  <button
+                    type="button"
+                    className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-sig-match" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                    onClick={() => {
+                      const u = `${window.location.origin}/overlay/sig-match?u=${user?.id || "finalent"}`;
+                      void copyUrl(u, "dash-sig-match");
+                    }}
+                  >
+                    {copiedId === "dash-sig-match" ? "복사됨!" : "URL 복사"}
+                  </button>
+                  <button
+                    type="button"
+                    className="px-2 py-1 rounded text-xs shrink-0 bg-amber-800/90 hover:bg-amber-700"
+                    onClick={() => {
+                      const u = buildSigMatchPreviewUrl();
+                      window.open(u, "_blank", "noopener,noreferrer");
+                    }}
+                  >
+                    미리보기 (스냅샷)
+                  </button>
+                  <button
+                    type="button"
+                    className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-sig-match-preview" ? "bg-emerald-600" : "bg-amber-900/60 hover:bg-amber-800/80"}`}
+                    onClick={() => {
+                      void copyUrl(buildSigMatchPreviewUrl(), "dash-sig-match-preview");
+                    }}
+                  >
+                    {copiedId === "dash-sig-match-preview" ? "복사됨!" : "미리보기 URL 복사"}
+                  </button>
+                </div>
+                <p className="text-[11px] text-neutral-500">
+                  미리보기는 현재 관리 화면의 멤버·후원·시그 설정을 URL에 담아 새 탭에서 확인합니다(OBS·방송용 실시간 URL과 별개).
+                </p>
+                <div className="mt-3 rounded-lg border border-white/10 bg-black/50 overflow-hidden">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 px-2 py-1.5">
+                    <span className="text-xs font-medium text-neutral-300">오버레이 UI 미리보기</span>
+                    <button
+                      type="button"
+                      className="rounded border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-emerald-500/60 hover:text-emerald-200"
+                      onClick={() => setSigMatchPreviewIframeKey((k) => k + 1)}
+                    >
+                      새로고침
+                    </button>
+                  </div>
+                  <div className="relative w-full bg-black/40" style={{ minHeight: "280px", aspectRatio: "16 / 10" }}>
+                    {sigMatchPreviewIframeSrc ? (
+                      <iframe
+                        key={`sig-match-${sigMatchPreviewIframeKey}-${sigMatchPreviewIframeSrc.slice(0, 120)}`}
+                        src={sigMatchPreviewIframeSrc}
+                        title="시그 대전 오버레이 미리보기"
+                        className="absolute inset-0 h-full w-full border-0"
+                        style={{ background: "transparent" }}
+                        sandbox="allow-scripts allow-same-origin"
+                      />
+                    ) : (
+                      <div className="flex h-[280px] items-center justify-center text-xs text-neutral-500">미리보기 URL 생성 중…</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-base font-semibold">식사 대전 관리</h3>
+                    <p className="text-xs text-neutral-400">
+                      참여 멤버별 게이지 색·점수·개인 목표, 상단 제목·미션 말풍선, 오버레이 색상을 실시간 제어합니다. &quot;팀대전&quot;을 켜고 멤버를 A/B에 넣으면 팀 합산 막대로 표시됩니다(팀 모드: 2분할, 개인 모드: 채움 안 색 분할). 식사 매치「개인」이면 (총점 ÷ 참가자 목표 합) 채움 막대입니다. 멤버 행에서 색을 먼저 고른 뒤 참가 체크하면 그 색이 적용됩니다.
+                      &quot;후원 연동 ON&quot;인 멤버에게만 후원 입력 시 식대전 점수가 오르고(만 원 단위 환산), 다른 멤버 후원은 멤버 금액·엑셀에만 반영됩니다.
+                    </p>
+                  </div>
+                  <button
+                    className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs"
+                    onClick={() => window.open(`/overlay/meal-match?u=${user?.id || "finalent"}`, "_blank", "noopener,noreferrer")}
+                  >
+                    식사대전 오버레이 열기
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <label className="block space-y-1">
+                    <span className="text-xs text-neutral-400">상단 큰 제목</span>
+                    <input
+                      className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                      placeholder="예: 식사 대전"
+                      value={state.mealBattle?.overlayTitle || ""}
+                      onChange={(e) => updateMealBattle({ overlayTitle: e.target.value })}
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-xs text-neutral-400">미션 말풍선 (비우면 숨김)</span>
+                    <input
+                      className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                      placeholder="예: 개똥이 사료값"
+                      value={state.mealBattle?.currentMission || ""}
+                      onChange={(e) => updateMealBattle({ currentMission: e.target.value })}
+                    />
+                  </label>
+                </div>
+                <label className="block space-y-1 max-w-xl">
+                  <span className="text-xs text-neutral-400">식사 매치 모드 → 오버레이 게이지 형태</span>
+                  <select
+                    className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                    value={state.mealMatchSettings?.mode || "team"}
+                    onChange={(e) => updateMealMatchSettings({ mode: e.target.value as "team" | "individual" })}
+                  >
+                    <option value="team">팀 — 분할/채움 형태(아래 팀대전·개인 설정과 조합)</option>
+                    <option value="individual">개인(1인) — 총점÷목표합 채움 막대</option>
+                  </select>
+                </label>
+                <div className="rounded-lg border border-white/10 bg-black/20 p-3 space-y-3">
+                  <label className="flex items-center gap-2 text-sm text-neutral-200 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(state.mealBattle?.teamBattleEnabled)}
+                      onChange={(e) => updateMealBattle({ teamBattleEnabled: e.target.checked })}
+                    />
+                    팀대전 (A/B에 멤버를 넣으면 막대가 팀 합산 기준으로 표시)
+                  </label>
+                  {state.mealBattle?.teamBattleEnabled ? (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <label className="block space-y-1">
+                          <span className="text-xs text-neutral-400">A팀 이름</span>
+                          <input
+                            className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                            value={state.mealBattle?.teamAName || "A팀"}
+                            onChange={(e) => updateMealBattle({ teamAName: e.target.value })}
+                          />
+                        </label>
+                        <label className="block space-y-1">
+                          <span className="text-xs text-neutral-400">B팀 이름</span>
+                          <input
+                            className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                            value={state.mealBattle?.teamBName || "B팀"}
+                            onChange={(e) => updateMealBattle({ teamBName: e.target.value })}
+                          />
+                        </label>
+                      </div>
+                      <div className="text-xs text-neutral-400">전체 멤버를 A팀·B팀·미배정 중 하나로 지정합니다. 식대전 참가자만 점수가 합산됩니다.</div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[220px] overflow-y-auto pr-1">
+                        {state.members.map((m) => {
+                          const inA = (state.mealBattle?.teamAMemberIds || []).includes(m.id);
+                          const inB = (state.mealBattle?.teamBMemberIds || []).includes(m.id);
+                          const val = inA ? "A" : inB ? "B" : "";
+                          return (
+                            <div key={m.id} className="flex items-center justify-between gap-2 rounded border border-white/10 bg-[#1f1f1f] px-2 py-1.5">
+                              <span className="text-sm truncate">{m.name}</span>
+                              <select
+                                className="text-xs px-2 py-1 rounded bg-neutral-900 border border-white/10 shrink-0"
+                                value={val}
+                                onChange={(e) => setMealBattleMemberTeam(m.id, e.target.value as "" | "A" | "B")}
+                              >
+                                <option value="">미배정</option>
+                                <option value="A">{state.mealBattle?.teamAName || "A팀"}</option>
+                                <option value="B">{state.mealBattle?.teamBName || "B팀"}</option>
+                              </select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-[1fr_140px] gap-2 items-end">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                    <label className="flex flex-col gap-1">
+                      <span className="text-neutral-400">말풍선 배경</span>
+                      <input
+                        type="color"
+                        value={state.mealBattle?.missionBubbleBg || "#9333ea"}
+                        onChange={(e) => updateMealBattle({ missionBubbleBg: e.target.value })}
+                        className="h-9 w-full rounded border border-white/20 bg-transparent"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-neutral-400">말풍선 글자</span>
+                      <input
+                        type="color"
+                        value={state.mealBattle?.missionBubbleTextColor || "#ffffff"}
+                        onChange={(e) => updateMealBattle({ missionBubbleTextColor: e.target.value })}
+                        className="h-9 w-full rounded border border-white/20 bg-transparent"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-neutral-400">게이지 트랙</span>
+                      <input
+                        type="color"
+                        value={/^#/.test(state.mealBattle?.gaugeTrackBg || "") ? (state.mealBattle?.gaugeTrackBg as string) : "#171717"}
+                        title="단색만 피커로 고를 수 있습니다. 알파는 아래 입력란에 hex/rgba로 입력하세요."
+                        onChange={(e) => updateMealBattle({ gaugeTrackBg: e.target.value })}
+                        className="h-9 w-full rounded border border-white/20 bg-transparent"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-neutral-400">채움 막대(개인)</span>
+                      <input
+                        type="color"
+                        value={state.mealBattle?.gaugeFillColor || "#22c55e"}
+                        onChange={(e) => updateMealBattle({ gaugeFillColor: e.target.value })}
+                        className="h-9 w-full rounded border border-white/20 bg-transparent"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-neutral-400">A팀 막대</span>
+                      <input
+                        type="color"
+                        value={state.mealBattle?.teamAColor || "#2563eb"}
+                        onChange={(e) => updateMealBattle({ teamAColor: e.target.value })}
+                        className="h-9 w-full rounded border border-white/20 bg-transparent"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-neutral-400">B팀 막대</span>
+                      <input
+                        type="color"
+                        value={state.mealBattle?.teamBColor || "#dc2626"}
+                        onChange={(e) => updateMealBattle({ teamBColor: e.target.value })}
+                        className="h-9 w-full rounded border border-white/20 bg-transparent"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-neutral-400">점수·요약 글자</span>
+                      <input
+                        type="color"
+                        value={state.mealBattle?.scoreTextColor || "#ffffff"}
+                        onChange={(e) => updateMealBattle({ scoreTextColor: e.target.value })}
+                        className="h-9 w-full rounded border border-white/20 bg-transparent"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-neutral-400">이름 태그 배경</span>
+                      <input
+                        type="color"
+                        value={state.mealBattle?.nameTagBg || "#facc15"}
+                        onChange={(e) => updateMealBattle({ nameTagBg: e.target.value })}
+                        className="h-9 w-full rounded border border-white/20 bg-transparent"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-neutral-400">이름 태그 글자</span>
+                      <input
+                        type="color"
+                        value={state.mealBattle?.nameTagTextColor || "#000000"}
+                        onChange={(e) => updateMealBattle({ nameTagTextColor: e.target.value })}
+                        className="h-9 w-full rounded border border-white/20 bg-transparent"
+                      />
+                    </label>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label className="block space-y-1">
+                      <span className="text-xs text-neutral-400">신규 참가 기본 목표</span>
+                      <input
+                        className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                        type="number"
+                        min={1}
+                        value={state.mealBattle?.totalGoal || 100}
+                        onChange={(e) => updateMealBattle({ totalGoal: Math.max(1, Number.parseInt(e.target.value || "100", 10) || 100) })}
+                      />
+                    </label>
+                    <div className="space-y-2 rounded border border-white/10 bg-black/20 p-2">
+                      <div className="text-[11px] text-neutral-500">오버레이 테두리 (기본 끔)</div>
+                      <label className="flex items-center gap-2 text-xs text-neutral-200 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(state.mealBattle?.showPanelBorder)}
+                          onChange={(e) => updateMealBattle({ showPanelBorder: e.target.checked })}
+                        />
+                        메인 패널 테두리
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-neutral-200 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(state.mealBattle?.showGaugeTrackBorder)}
+                          onChange={(e) => updateMealBattle({ showGaugeTrackBorder: e.target.checked })}
+                        />
+                        게이지 트랙 테두리
+                      </label>
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <input
+                    className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-xs"
+                    placeholder="게이지 트랙 배경 (rgba/hex, 예: rgba(23,23,23,0.85))"
+                    value={state.mealBattle?.gaugeTrackBg || ""}
+                    onChange={(e) => updateMealBattle({ gaugeTrackBg: e.target.value })}
+                  />
+                  <input
+                    className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-xs"
+                    placeholder="채움 막대 색 (개인 모드, rgba/hex)"
+                    value={state.mealBattle?.gaugeFillColor || ""}
+                    onChange={(e) => updateMealBattle({ gaugeFillColor: e.target.value })}
+                  />
+                  <input
+                    className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-xs"
+                    placeholder="패널 테두리 색 (rgba/hex)"
+                    value={state.mealBattle?.panelBorderColor || ""}
+                    onChange={(e) => updateMealBattle({ panelBorderColor: e.target.value })}
+                  />
+                  <input
+                    className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-xs"
+                    placeholder="게이지 트랙 테두리 색 (rgba/hex)"
+                    value={state.mealBattle?.gaugeTrackBorderColor || ""}
+                    onChange={(e) => updateMealBattle({ gaugeTrackBorderColor: e.target.value })}
+                  />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-[180px_120px_1fr] gap-2 items-center">
+                  <select
+                    className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                    value={state.mealBattle?.timerTheme || "default"}
+                    onChange={(e) => updateMealBattle({ timerTheme: e.target.value as "default" | "neon" | "minimal" | "danger" })}
+                  >
+                    <option value="default">타이머 테마: 기본</option>
+                    <option value="neon">타이머 테마: 네온</option>
+                    <option value="minimal">타이머 테마: 미니멀</option>
+                    <option value="danger">타이머 테마: 경고</option>
+                  </select>
+                  <input
+                    className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                    type="number"
+                    min={16}
+                    max={120}
+                    value={state.mealBattle?.timerSize || 36}
+                    onChange={(e) =>
+                      updateMealBattle({
+                        timerSize: Math.max(16, Math.min(120, Number.parseInt(e.target.value || "36", 10) || 36)),
+                      })
+                    }
+                  />
+                  <div className="text-xs text-neutral-400">타이머 크기: 16~120px, 테마/사이즈는 오버레이에 실시간 반영됩니다.</div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700 text-sm" onClick={resetMealMatchScores}>
+                    점수 초기화
+                  </button>
+                  <span className="text-xs text-neutral-400">패널·게이지 테두리는 위 옵션을 켠 경우에만 오버레이에 표시됩니다.</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {state.members.map((m, idx) => {
+                    const p = mealParticipants.find((x) => x.memberId === m.id);
+                    const draft =
+                      state.mealBattle?.memberGaugeColors?.[m.id] ||
+                      MEAL_PARTICIPANT_COLORS[idx % MEAL_PARTICIPANT_COLORS.length];
+                    const swatch = p?.color || draft;
+                    const pickerVal = /^#/.test(swatch) ? swatch : "#60a5fa";
+                    return (
+                      <div
+                        key={m.id}
+                        className="rounded border border-white/10 bg-[#1f1f1f] px-3 py-2 flex items-center justify-between gap-2"
+                      >
+                        <span className="text-sm truncate min-w-0">{m.name}</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <input
+                            type="color"
+                            value={pickerVal}
+                            title="게이지 색"
+                            onChange={(e) => {
+                              const c = e.target.value;
+                              if (p) patchMealParticipantColor(m.id, c);
+                              else mergeMealMemberGaugeColor(m.id, c);
+                            }}
+                            className="h-8 w-10 rounded border border-white/20 bg-transparent cursor-pointer"
+                          />
+                          <label className="flex items-center gap-1 text-xs text-neutral-300 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(p)}
+                              onChange={(e) => toggleMealParticipant(m.id, e.target.checked)}
+                            />
+                            참가
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="space-y-2">
+                  {mealParticipants.map((row) => (
+                    <div key={row.memberId} className="rounded border border-white/10 bg-[#1f1f1f] px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-semibold text-sm">{row.name}</div>
+                        <div className="text-xs text-neutral-400">
+                          점수 {row.score.toLocaleString("ko-KR")} / 목표 {(row.goal ?? state.mealBattle?.totalGoal ?? 100).toLocaleString("ko-KR")}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 justify-end">
+                        <label className="flex items-center gap-1 text-xs text-neutral-400">
+                          개인 목표
+                          <input
+                            className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-right text-neutral-100"
+                            type="number"
+                            min={1}
+                            value={row.goal ?? state.mealBattle?.totalGoal ?? 100}
+                            onChange={(e) =>
+                              updateMealParticipant(row.memberId, (p) => ({
+                                ...p,
+                                goal: Math.max(1, Number.parseInt(e.target.value || "1", 10) || 1),
+                              }))
+                            }
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className={`px-2 py-1 rounded text-xs font-medium ${
+                            row.donationLinkActive ? "bg-amber-700 hover:bg-amber-600 text-white" : "bg-neutral-700 hover:bg-neutral-600 text-neutral-200"
+                          }`}
+                          onClick={() =>
+                            updateMealParticipant(row.memberId, (p) => ({ ...p, donationLinkActive: !p.donationLinkActive }))
+                          }
+                        >
+                          후원 연동 {row.donationLinkActive ? "ON" : "OFF"}
+                        </button>
+                        <input
+                          type="color"
+                          value={/^#/.test(row.color || "") ? row.color : "#60a5fa"}
+                          onChange={(e) => patchMealParticipantColor(row.memberId, e.target.value)}
+                          className="h-8 w-10 rounded border border-white/20 bg-transparent"
+                        />
+                        <button
+                          className="px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-xs"
+                          onClick={() => updateMealParticipant(row.memberId, (p) => ({ ...p, score: Math.max(0, p.score + 1) }))}
+                        >
+                          +1
+                        </button>
+                        <button
+                          className="px-2 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-xs"
+                          onClick={() => updateMealParticipant(row.memberId, (p) => ({ ...p, score: Math.max(0, p.score + 10) }))}
+                        >
+                          +10
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
+                  <span>오버레이 URL:</span>
+                  <code className="text-neutral-300 break-all">
+                    {typeof window !== "undefined" ? window.location.origin : ""}/overlay/meal-match?u={user?.id || "finalent"}
+                  </code>
+                  <button
+                    type="button"
+                    className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-meal-match" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                    onClick={() => {
+                      const u = `${window.location.origin}/overlay/meal-match?u=${user?.id || "finalent"}`;
+                      void copyUrl(u, "dash-meal-match");
+                    }}
+                  >
+                    {copiedId === "dash-meal-match" ? "복사됨!" : "URL 복사"}
+                  </button>
+                </div>
+              </div>
+              <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-base font-semibold">시그 룰렛 및 판매 관리</h3>
+                    <p className="text-xs text-neutral-400">
+                      룰렛 당첨은 서버(<code className="text-neutral-300">/api/roulette/spin</code>)에서만 결정되어 Redis에 저장됩니다. 판매 ±는 기존과 동일하게 전체 상태로 동기화되며 후원(donors) 병합 로직과 충돌하지 않습니다.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <label className="flex flex-col text-[11px] text-neutral-400">
+                      회수
+                      <input
+                        type="number"
+                        min={1}
+                        max={999}
+                        className="mt-0.5 w-24 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
+                        value={rouletteSpinCount}
+                        onChange={(e) => setRouletteSpinCount(e.target.value)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="rounded bg-fuchsia-700 px-3 py-2 text-sm font-semibold hover:bg-fuchsia-600"
+                      onClick={() => {
+                        void spinSigRoulette();
+                      }}
+                    >
+                      룰렛 돌리기 (회수 입력)
+                    </button>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
+                  <span>판매 오버레이 URL:</span>
+                  <code className="text-neutral-300 break-all">
+                    {typeof window !== "undefined" ? window.location.origin : ""}/overlay/sig-sales?u={user?.id || "finalent"}
+                  </code>
+                  <button
+                    type="button"
+                    className={`rounded px-2 py-1 text-xs shrink-0 ${copiedId === "dash-sig-sales" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                    onClick={() => {
+                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}`;
+                      void copyUrl(u, "dash-sig-sales");
+                    }}
+                  >
+                    {copiedId === "dash-sig-sales" ? "복사됨!" : "URL 복사"}
+                  </button>
+                </div>
+                <div className="rounded border border-white/10 bg-black/20 p-2">
+                  <div className="text-xs font-semibold text-neutral-300 mb-2">판매 활성 시그 (빠른 조절)</div>
+                  <div className="flex flex-col gap-2">
+                    {(state.sigInventory || [])
+                      .filter((x) => x.isActive)
+                      .map((item) => (
+                        <div key={`active-${item.id}`} className="flex flex-wrap items-center justify-between gap-2 rounded border border-white/10 bg-neutral-900/50 px-2 py-1">
+                          <span className="text-sm font-medium truncate max-w-[200px]">{item.name}</span>
+                          <span className="text-xs text-neutral-400">
+                            {item.soldCount}/{item.maxCount}
+                          </span>
+                          <div className="flex gap-1">
+                            <button type="button" className="rounded bg-red-900/70 px-2 py-0.5 text-xs" onClick={() => adjustSigSoldCount(item.id, -1)}>
+                              취소 -1
+                            </button>
+                            <button type="button" className="rounded bg-emerald-800 px-2 py-0.5 text-xs" onClick={() => adjustSigSoldCount(item.id, 1)}>
+                              판매 +1
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    {(state.sigInventory || []).every((x) => !x.isActive) ? (
+                      <p className="text-xs text-neutral-500">판매 활성 시그가 없습니다. 아래 목록에서 &quot;판매 활성&quot;을 켜 주세요.</p>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold">시그 판매 관리</h3>
+                    <p className="text-xs text-neutral-400">인벤토리에서 이번 방송 노출 시그를 선택하고 판매량을 실시간 조정합니다.</p>
+                  </div>
+                  <div className="text-right space-y-2 max-w-full">
+                    <div className="text-xs text-neutral-400 flex flex-wrap items-center justify-end gap-2">
+                      <span>오버레이 URL:</span>
+                      <code className="text-neutral-300 break-all text-left">
+                        {typeof window !== "undefined" ? window.location.origin : ""}/overlay/sig-board?u={user?.id || "finalent"}
+                      </code>
+                      <button
+                        type="button"
+                        className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-sig-board" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                        onClick={() => {
+                          const u = `${window.location.origin}/overlay/sig-board?u=${user?.id || "finalent"}`;
+                          void copyUrl(u, "dash-sig-board");
+                        }}
+                      >
+                        {copiedId === "dash-sig-board" ? "복사됨!" : "URL 복사"}
+                      </button>
+                    </div>
+                    <button
+                      className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs"
+                      onClick={() => window.open(`/overlay/sig-board?u=${user?.id || "finalent"}`, "_blank", "noopener,noreferrer")}
+                    >
+                      실시간 오버레이 열기
+                    </button>
+                  </div>
+                </div>
+                <div className="rounded border border-white/10 bg-black/25 p-2 flex flex-wrap items-center gap-2">
+                  <button
+                    className="px-3 py-1 rounded bg-sky-700 hover:bg-sky-600 text-sm"
+                    onClick={downloadSigExcelTemplate}
+                  >
+                    기본 엑셀 폼 다운로드
+                  </button>
+                  <label className="px-3 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-sm cursor-pointer">
+                    엑셀 업로드
+                    <input
+                      className="hidden"
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={(e) => {
+                        uploadSigExcel(e.target.files?.[0] || null);
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                  <button
+                    className="px-3 py-1 rounded bg-red-900/80 hover:bg-red-800 text-sm"
+                    onClick={clearAllSigItems}
+                  >
+                    전체 지우기
+                  </button>
+                  {sigExcelResult ? <span className="text-xs text-neutral-300">{sigExcelResult}</span> : null}
+                </div>
+                <div className="space-y-2">
+                  <div className="rounded border border-white/10 bg-black/25 p-2 grid grid-cols-1 md:grid-cols-[1fr_120px_100px_1fr_1fr_auto] gap-2">
+                    <input
+                      className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                      placeholder="신규 시그 이름"
+                      value={newSigName}
+                      onChange={(e) => setNewSigName(e.target.value)}
+                    />
+                    <input
+                      className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                      type="number"
+                      min={0}
+                      placeholder="가격"
+                      value={newSigPrice}
+                      onChange={(e) => setNewSigPrice(e.target.value)}
+                    />
+                    <input
+                      className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                      type="number"
+                      min={1}
+                      placeholder="최대"
+                      value={newSigMaxCount}
+                      onChange={(e) => setNewSigMaxCount(e.target.value)}
+                    />
+                    <select
+                      className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                      value={newSigMemberId}
+                      onChange={(e) => setNewSigMemberId(e.target.value)}
+                    >
+                      <option value="">멤버 미지정</option>
+                      {state.members.map((m) => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
+                    </select>
+                    <div className="flex flex-col gap-1">
+                      <input
+                        className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs"
+                        placeholder="이미지 URL 또는 경로"
+                        value={newSigImageUrl}
+                        onChange={(e) => setNewSigImageUrl(e.target.value)}
+                      />
+                      <input
+                        className="text-xs"
+                        type="file"
+                        accept=".gif,.png,.jpg,.jpeg,image/gif,image/png,image/jpeg"
+                        onChange={(e) => uploadNewSigImage(e.target.files?.[0] || null)}
+                      />
+                    </div>
+                    <button className="px-3 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-sm" onClick={addSigItem}>시그 추가</button>
+                  </div>
+                  {newSigImageUrl ? (
+                    <div className="rounded border border-white/10 bg-black/20 p-2">
+                      <div className="text-[11px] text-neutral-400 mb-2">신규 시그 이미지 미리보기</div>
+                      <div className="relative h-20 w-20 overflow-hidden rounded border border-white/10 bg-black/30">
+                        <Image src={newSigImageUrl} alt="신규 시그 미리보기" fill className="object-cover" unoptimized />
+                      </div>
+                    </div>
+                  ) : null}
+                  {(state.sigInventory || []).map((item) => (
+                    <div key={item.id} className="rounded border border-white/10 bg-[#1f1f1f] px-3 py-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                        <div className="flex flex-wrap items-center gap-3 text-sm">
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(item.isRolling)}
+                              onChange={(e) => toggleSigRollingItem(item.id, e.target.checked)}
+                            />
+                            <span>보드 노출</span>
+                          </label>
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(item.isActive)}
+                              onChange={(e) => toggleSigActiveItem(item.id, e.target.checked)}
+                            />
+                            <span>판매 활성</span>
+                          </label>
+                          <span className="font-semibold">{item.name}</span>
+                        </div>
+                        <div className="text-xs text-neutral-400">
+                          가격 {item.price.toLocaleString("ko-KR")} · 판매 {item.soldCount}/{item.maxCount}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button className="px-2 py-1 rounded bg-red-900/70 hover:bg-red-800 text-xs" onClick={() => adjustSigSoldCount(item.id, -1)}>취소 -1</button>
+                          <button className="px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-xs" onClick={() => adjustSigSoldCount(item.id, 1)}>판매 +1</button>
+                          <button className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs" onClick={() => removeSigItem(item.id)}>삭제</button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-[1fr_120px_100px_1fr_1.3fr] gap-2">
+                        <input
+                          className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                          value={item.name}
+                          onChange={(e) => updateSigItem(item.id, { name: e.target.value })}
+                        />
+                        <input
+                          className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                          type="number"
+                          min={0}
+                          value={item.price}
+                          onChange={(e) => updateSigItem(item.id, { price: Math.max(0, Math.floor(Number(e.target.value || 0) || 0)) })}
+                        />
+                        <input
+                          className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                          type="number"
+                          min={1}
+                          value={item.maxCount}
+                          onChange={(e) => updateSigItem(item.id, { maxCount: Math.max(1, Math.floor(Number(e.target.value || 1) || 1)) })}
+                        />
+                        <select
+                          className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                          value={item.memberId || ""}
+                          onChange={(e) => updateSigItem(item.id, { memberId: e.target.value })}
+                        >
+                          <option value="">멤버 미지정</option>
+                          {state.members.map((m) => (
+                            <option key={m.id} value={m.id}>{m.name}</option>
+                          ))}
+                        </select>
+                        <div className="flex flex-col gap-1">
+                          <input
+                            className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs"
+                            placeholder="이미지 URL 또는 경로"
+                            value={item.imageUrl || ""}
+                            onChange={(e) => updateSigItem(item.id, { imageUrl: e.target.value })}
+                          />
+                          <input
+                            className="text-xs"
+                            type="file"
+                            accept=".gif,.png,.jpg,.jpeg,image/gif,image/png,image/jpeg"
+                            onChange={(e) => uploadSigImage(item.id, e.target.files?.[0] || null)}
+                          />
+                        </div>
+                      </div>
+                      {item.imageUrl ? (
+                        <div className="mt-2 flex items-start gap-2">
+                          <div className="relative h-16 w-16 overflow-hidden rounded border border-white/10 bg-black/30">
+                            <Image src={item.imageUrl} alt={`${item.name} 미리보기`} fill className="object-cover" unoptimized />
+                          </div>
+                          <div className="text-xs text-neutral-400 break-all">
+                            이미지 설정됨: {item.imageUrl.startsWith("data:image/") ? "업로드 이미지(data URL)" : item.imageUrl}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+                <div className="text-xs text-neutral-500">
+                  「보드 노출」은 시그 보드 롤링,「판매 활성」은 /overlay/sig-sales 판매 그리드에 표시됩니다. 시그 추가/멤버 지정/판매량 조절은 즉시 `/api/state`를 통해 Redis에 반영됩니다.
+                </div>
+              </div>
+              <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
+                <div>
+                  <h3 className="text-base font-semibold">타이머 제어</h3>
+                  <p className="text-xs text-neutral-400 mt-1">
+                    매치용 타이머 외에 일반 타이머를 따로 둘 수 있습니다. 오버레이에서 숨기려면 &quot;오버레이 사용&quot;을 끄세요. (제어 버튼은 그대로 사용 가능)
+                  </p>
+                </div>
+                {([
+                  { key: "sigMatchTimer", flag: "sigMatch" as const, label: "시그 매치 타이머" },
+                  { key: "mealMatchTimer", flag: "mealMatch" as const, label: "식사 매치 타이머" },
+                  { key: "sigSalesTimer", flag: "sigSales" as const, label: "시그 판매 타이머" },
+                  { key: "generalTimer", flag: "general" as const, label: "일반 타이머" },
+                ] as const).map((timerDef) => {
+                  const timer = state[timerDef.key];
+                  const effective = getEffectiveRemainingTime(timer);
+                  const mm = Math.floor(effective / 60);
+                  const ss = effective % 60;
+                  const overlayOn = state.matchTimerEnabled?.[timerDef.flag] !== false;
+                  return (
+                    <div key={timerDef.key} className="rounded border border-white/10 bg-[#1f1f1f] px-3 py-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="text-sm font-semibold">{timerDef.label}</div>
+                          <div className="text-xs text-neutral-400">
+                            남은 시간 {String(mm).padStart(2, "0")}:{String(ss).padStart(2, "0")}
+                          </div>
+                          <label className="mt-1 flex items-center gap-2 text-xs text-neutral-300 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={overlayOn}
+                              onChange={() => updateMatchTimerEnabled({ [timerDef.flag]: !overlayOn })}
+                            />
+                            오버레이 사용
+                          </label>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            className={`px-2 py-1 rounded text-xs ${timer.isActive ? "bg-amber-700 hover:bg-amber-600" : "bg-emerald-700 hover:bg-emerald-600"}`}
+                            onClick={() =>
+                              updateMatchTimer(timerDef.key, (t) => (t.isActive ? pauseTimer(t) : resumeTimer(t)))
+                            }
+                          >
+                            {timer.isActive ? "⏸ 일시정지" : "▶ 시작"}
+                          </button>
+                          <button className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs" onClick={() => adjustTimerSeconds(timerDef.key, -60)}>-1분</button>
+                          <button className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs" onClick={() => adjustTimerSeconds(timerDef.key, +60)}>+1분</button>
+                          <button className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs" onClick={() => adjustTimerSeconds(timerDef.key, +10)}>+10초</button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </section>
 
             <section id="donor-management" className={`${panelCardClass} p-4 md:p-6`}>
@@ -1284,7 +2896,18 @@ export default function AdminPage() {
                                       const members = prev.members.map((mm: Member) =>
                                         mm.id === d.memberId ? { ...mm, [field]: Math.max(0, (mm[field] || 0) - d.amount) } : mm
                                       );
-                                      const next: AppState = { ...prev, donors, members };
+                                      const mealParticipants = applyMealBattleDonationToParticipants(
+                                        prev.mealBattle?.participants || [],
+                                        d.memberId,
+                                        d.amount,
+                                        -1
+                                      );
+                                      const next: AppState = {
+                                        ...prev,
+                                        donors,
+                                        members,
+                                        mealBattle: { ...prev.mealBattle, participants: mealParticipants },
+                                      };
                                       persistState(next);
                                       return next;
                                     });
@@ -1491,7 +3114,10 @@ export default function AdminPage() {
                 </div>
               </div>
               <p className="text-xs text-neutral-400 mb-3">각 오버레이는 독립 URL을 가집니다. OBS/Prism에 브라우저 소스로 각각 추가하세요.</p>
-              <p className="text-xs text-neutral-500 mb-3">위치/크기 조정은 Prism에서 진행하고, 여기 프리뷰는 형태/디자인과 실시간 상태 업데이트 확인용으로 사용하세요. Prism 브라우저 소스 크기를 1080×1920(세로)으로 맞추면 프리뷰와 방송 화면이 일치합니다.</p>
+              <p className="text-xs text-neutral-500 mb-3">
+                복사되는 URL은 <span className="text-neutral-300">서버(Redis)에 저장된 최신 상태</span>를 실시간으로 불러옵니다. 아래 프레임 미리보기만 편집 시점 스냅샷을 쓸 수 있습니다.
+                위치/크기는 Prism에서 조정하세요. 세로 방송이면 브라우저 소스를 1080×1920에 맞추면 됩니다.
+              </p>
               {presets.length === 0 && (
                 <div className="text-sm text-neutral-400 p-6 text-center border border-dashed border-white/10 rounded">아직 오버레이가 없습니다. 위 버튼으로 추가하세요.</div>
               )}
@@ -1861,7 +3487,7 @@ export default function AdminPage() {
                                         fire(0.1, { spread: 120, startVelocity: 45 });
                                       }}
                                     >
-                                      폭죽 데모
+                                      폭죽 효과 테스트
                                     </button>
                                   </div>
                                 </div>
@@ -1881,7 +3507,7 @@ export default function AdminPage() {
                               <summary className="cursor-pointer select-none px-3 py-2 text-xs text-neutral-300">빠른 실행</summary>
                               <div className="p-3 flex flex-wrap gap-1">
                               {[
-                                { label: "폭죽 데모(오버레이)", patch: { showMembers: true, showTotal: true, showGoal: false, showTicker: false, showTimer: false, showMission: false, confettiMilestone: "10" } },
+                                { label: "폭죽(오버레이)", patch: { showMembers: true, showTotal: true, showGoal: false, showTicker: false, showTimer: false, showMission: false, confettiMilestone: "10" } },
                                 { label: "엑셀표만", patch: { theme: "excel", showMembers: true, showTotal: true, showGoal: false, showTicker: false, showTimer: false, showMission: false, tableOnly: true } },
                                 { label: "표만", patch: { theme: "excel", showMembers: true, showTotal: true, showGoal: false, showTicker: false, showTimer: false, showMission: false, tableOnly: true } },
                                 { label: "멤버 보드", patch: { showMembers: true, showTotal: true, showGoal: false, showTicker: false, showTimer: false, showMission: false } },
@@ -2045,7 +3671,7 @@ export default function AdminPage() {
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" type="number" value={p.goal} onChange={(e) => updatePreset(p.id, { goal: e.target.value })} />
                                   <label className="text-xs text-neutral-400">라벨</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.goalLabel} onChange={(e) => updatePreset(p.id, { goalLabel: e.target.value })} />
-                                  <label className="text-xs text-neutral-400">데모 현재액(원)</label>
+                                  <label className="text-xs text-neutral-400">미리보기용 현재액(원)</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="미지정 시 자동" value={p.goalCurrent || ""} onChange={(e) => updatePreset(p.id, { goalCurrent: e.target.value })} />
                                   <div className="col-span-1 sm:col-span-2">
                                     <details className="rounded border border-white/10 bg-neutral-900/40">
@@ -2089,21 +3715,20 @@ export default function AdminPage() {
                                   <div className="sm:col-span-2">
                                     <button
                                       type="button"
-                                      className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                                      className="px-2 py-1 rounded bg-emerald-900/50 hover:bg-emerald-800/60 border border-emerald-700/40 text-xs text-emerald-100"
                                       onClick={() => {
-                                        const u = new URL(buildStablePreviewUrl(p));
-                                        u.searchParams.set("demo", "true");
-                                        window.open(u.toString(), "_blank");
+                                        if (typeof window === "undefined") return;
+                                        window.open(buildPrismOverlayUrl(p, !!p.vertical), "_blank", "noopener,noreferrer");
                                       }}
                                     >
-                                      데모 미리보기(개인골)
+                                      실시간으로 열기 (개인골)
                                     </button>
                                   </div>
                                 </div>
                               </details>
                             )}
 
-                            {/* 후원 티커 섹션 제거: 데모 실행 버튼만 유지 */}
+                            {/* 후원 티커 섹션 제거 */}
 
                             {p.showTimer && (
                               <details className="rounded border border-white/10 bg-neutral-900/40">
