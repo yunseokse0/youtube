@@ -66,20 +66,13 @@ export default function MemberRow({ member, onChange, onRename, onReset, onDelet
   return (
     <div className="h-full rounded-xl border border-white/10 bg-neutral-900/60 p-4 flex flex-col gap-3">
       <div className="grid grid-cols-1 gap-2">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-2">
           <input
             className="w-full px-3 py-2 rounded bg-neutral-800/80 border border-white/10 font-semibold"
             value={localName}
             onChange={(e) => setLocalName(e.target.value)}
             onBlur={() => onRename?.(member.id, (localName || "무명").trim())}
             placeholder="멤버 이름"
-          />
-          <input
-            className="w-full px-3 py-2 rounded bg-neutral-800/80 border border-white/10"
-            value={member.role || ""}
-            onChange={(e) => onChange({ ...member, role: e.target.value })}
-            placeholder="직급 (예: 대리)"
-            title="멤버 직급"
           />
         </div>
         <div className="grid grid-cols-[1fr_auto] gap-2">

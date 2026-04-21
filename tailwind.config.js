@@ -12,6 +12,11 @@ module.exports = {
           light: "rgba(255,255,255,0.08)",
           dark: "rgba(0,0,0,0.35)",
         },
+        "pink-light": "#FFF1F2",
+        "pink-pastel": "#FCE4EC",
+        "pink-accent": "#F8BBD0",
+        "pink-deep": "#F06292",
+        "white-glass": "rgba(255, 255, 255, 0.7)",
         /** 서비스 공통 파스텔 팔레트 (원색 대신 이 토큰만 사용) */
         "pastel-red": "#FFB7B2",
         "pastel-orange": "#FFDAC1",

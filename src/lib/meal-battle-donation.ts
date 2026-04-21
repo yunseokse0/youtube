@@ -10,11 +10,17 @@ export function applyMealBattleDonationToParticipants(
   participants: MealBattleParticipant[],
   memberId: string,
   amount: number,
-  direction: 1 | -1
+  direction: 1 | -1,
+  donorAt?: number
 ): MealBattleParticipant[] {
   const delta = mealBattleDonationScoreDelta(amount) * direction;
   if (delta === 0) return participants;
+  const eventAt = Number.isFinite(Number(donorAt)) ? Math.max(0, Math.floor(Number(donorAt))) : Date.now();
   return participants.map((p) =>
-    p.memberId === memberId && p.donationLinkActive ? { ...p, score: Math.max(0, p.score + delta) } : p
+    p.memberId === memberId &&
+    p.donationLinkActive &&
+    (!p.donationLinkStartedAt || eventAt >= p.donationLinkStartedAt)
+      ? { ...p, score: Math.max(0, (Number(p.score) || 0) + delta) }
+      : p
   );
 }

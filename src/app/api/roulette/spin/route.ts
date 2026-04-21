@@ -15,10 +15,14 @@ export async function POST(req: Request) {
       return Response.json({ error: "unauthorized" }, { status: 401, headers: { "Content-Type": "application/json" } });
     }
     let spinCount = 1;
+    let priceFilter: number | null = null;
     try {
-      const j = (await req.json()) as { spinCount?: number };
+      const j = (await req.json()) as { spinCount?: number; priceFilter?: number | null };
       if (j && typeof j.spinCount === "number" && Number.isFinite(j.spinCount)) {
         spinCount = Math.max(1, Math.min(999, Math.floor(j.spinCount)));
+      }
+      if (j && typeof j.priceFilter === "number" && Number.isFinite(j.priceFilter) && j.priceFilter > 0) {
+        priceFilter = Math.max(0, Math.floor(j.priceFilter));
       }
     } catch {
       /* body 없음 → 1회 */
@@ -26,15 +30,20 @@ export async function POST(req: Request) {
 
     const s = await loadAppStateForRoulette(userId);
     const inv = normalizeSigInventory(s.sigInventory);
-    const pool = inv.filter((x) => x.soldCount < x.maxCount);
+    const rollingPool = inv.filter((x) => x.isRolling && x.soldCount < x.maxCount);
+    const pool = rollingPool.length > 0 ? rollingPool : inv.filter((x) => x.soldCount < x.maxCount);
     const usePool = pool.length > 0 ? pool : inv;
     if (usePool.length === 0) {
       return Response.json({ error: "empty_inventory" }, { status: 400, headers: { "Content-Type": "application/json" } });
     }
+    const tierPool = priceFilter == null ? usePool : usePool.filter((x) => Math.floor(Number(x.price || 0)) === priceFilter);
+    if (tierPool.length === 0) {
+      return Response.json({ error: "empty_price_tier" }, { status: 400, headers: { "Content-Type": "application/json" } });
+    }
 
     const u = new Uint32Array(1);
     crypto.getRandomValues(u);
-    const picked = usePool[u[0]! % usePool.length]!;
+    const picked = tierPool[u[0]! % tierPool.length]!;
     const result: SigItem = { ...picked };
 
     const prevRs = normalizeRouletteState(s.rouletteState);

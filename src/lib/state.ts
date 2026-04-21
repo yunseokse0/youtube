@@ -2,6 +2,8 @@ import type {
   AppState,
   Donor,
   MatchTimerEnabled,
+  DonorRankingsTheme,
+  DonorRankingsPreset,
   MealBattleState,
   MealMatchSettings,
   MealMatchState,
@@ -20,6 +22,8 @@ export type {
   DonorTarget,
   LegacyOverlaySettings,
   MatchTimerEnabled,
+  DonorRankingsTheme,
+  DonorRankingsPreset,
   MealBattleState,
   MealMatchSettings,
   MealMatchState,
@@ -88,6 +92,70 @@ export function normalizeRouletteState(raw: unknown): RouletteState {
   };
 }
 
+const DEFAULT_DONOR_RANKINGS_THEME: DonorRankingsTheme = {
+  top: 7,
+  titleSize: 28,
+  rowSize: 21,
+  rankSize: 24,
+  bg: "transparent",
+  panelBg: "transparent",
+  borderColor: "transparent",
+  headerAccountBg: "#F8BBD0",
+  headerToonBg: "#F06292",
+  rowEvenBg: "transparent",
+  rowOddBg: "transparent",
+  rankColor: "#F06292",
+  nameColor: "#ffffff",
+  amountColor: "#fff59d",
+  outlineColor: "rgba(0,0,0,0.92)",
+};
+
+function normalizeDonorRankingsTheme(input: unknown): DonorRankingsTheme {
+  const v = input && typeof input === "object" ? (input as Partial<DonorRankingsTheme>) : {};
+  const n = (x: unknown, min: number, max: number, fallback: number) => {
+    const parsed = Number(x);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(min, Math.min(max, Math.floor(parsed)));
+  };
+  const s = (x: unknown, fallback: string) => {
+    const raw = String(x ?? "").trim();
+    return raw || fallback;
+  };
+  return {
+    top: n(v.top, 1, 20, DEFAULT_DONOR_RANKINGS_THEME.top),
+    titleSize: n(v.titleSize, 14, 80, DEFAULT_DONOR_RANKINGS_THEME.titleSize),
+    rowSize: n(v.rowSize, 12, 64, DEFAULT_DONOR_RANKINGS_THEME.rowSize),
+    rankSize: n(v.rankSize, 12, 72, DEFAULT_DONOR_RANKINGS_THEME.rankSize),
+    bg: s(v.bg, DEFAULT_DONOR_RANKINGS_THEME.bg),
+    panelBg: s(v.panelBg, DEFAULT_DONOR_RANKINGS_THEME.panelBg),
+    borderColor: s(v.borderColor, DEFAULT_DONOR_RANKINGS_THEME.borderColor),
+    headerAccountBg: s(v.headerAccountBg, DEFAULT_DONOR_RANKINGS_THEME.headerAccountBg),
+    headerToonBg: s(v.headerToonBg, DEFAULT_DONOR_RANKINGS_THEME.headerToonBg),
+    rowEvenBg: s(v.rowEvenBg, DEFAULT_DONOR_RANKINGS_THEME.rowEvenBg),
+    rowOddBg: s(v.rowOddBg, DEFAULT_DONOR_RANKINGS_THEME.rowOddBg),
+    rankColor: s(v.rankColor, DEFAULT_DONOR_RANKINGS_THEME.rankColor),
+    nameColor: s(v.nameColor, DEFAULT_DONOR_RANKINGS_THEME.nameColor),
+    amountColor: s(v.amountColor, DEFAULT_DONOR_RANKINGS_THEME.amountColor),
+    outlineColor: s(v.outlineColor, DEFAULT_DONOR_RANKINGS_THEME.outlineColor),
+  };
+}
+
+function normalizeDonorRankingsPresets(input: unknown): DonorRankingsPreset[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .filter((x) => x && typeof x === "object")
+    .map((x, idx) => {
+      const o = x as Record<string, unknown>;
+      const id = typeof o.id === "string" && o.id.trim() ? o.id.trim() : `drp_${idx}_${Math.random().toString(36).slice(2, 6)}`;
+      const name = typeof o.name === "string" && o.name.trim() ? o.name.trim() : `프리셋 ${idx + 1}`;
+      return {
+        id,
+        name,
+        theme: normalizeDonorRankingsTheme(o.theme),
+      };
+    });
+}
+
 /** 동기화 오류 시 members가 missions에 섞이는 것 방지. title/price가 있는 항목만 반환 */
 export function ensureMissionItems(items: unknown[] | undefined | null): MissionItem[] {
   if (!Array.isArray(items)) return [];
@@ -152,9 +220,9 @@ export function loadMissionsBackup(userId?: string | null): MissionItem[] | null
 
 export function defaultMembers(): Member[] {
   return [
-    { id: "m1", name: "멤버1", realName: "", account: 0, toon: 0, role: "", operating: false },
-    { id: "m2", name: "멤버2", realName: "", account: 0, toon: 0, role: "", operating: false },
-    { id: "m3", name: "멤버3", realName: "", account: 0, toon: 0, role: "", operating: false },
+    { id: "m1", name: "멤버1", realName: "", account: 0, toon: 0, operating: false },
+    { id: "m2", name: "멤버2", realName: "", account: 0, toon: 0, operating: false },
+    { id: "m3", name: "멤버3", realName: "", account: 0, toon: 0, operating: false },
   ];
 }
 
@@ -164,9 +232,42 @@ function normalizeMember(m: Member): Member {
     ...m,
     realName: m.realName ?? "",
     goal,
-    role: m.role ?? "",
-    operating: m.operating ?? (/운영비/i.test(m.name) || /운영비/i.test(m.role || "")),
+    operating: m.operating ?? /운영비/i.test(m.name),
   };
+}
+
+/** 직급은 멤버와 분리 저장: memberId -> 직급 */
+export function normalizeMemberPositions(
+  raw: unknown,
+  members: Member[]
+): Record<string, string> {
+  const validIds = new Set((members || []).map((m) => m.id));
+  const out: Record<string, string> = {};
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [id, val] of Object.entries(raw as Record<string, unknown>)) {
+      if (!validIds.has(id)) continue;
+      const role = String(val ?? "").trim();
+      if (!role) continue;
+      out[id] = role;
+    }
+  }
+  // 하위호환: 기존 member.role 값이 있으면 초기 직급으로 채움
+  for (const m of members || []) {
+    if (out[m.id]) continue;
+    const legacy = String((m as unknown as { role?: string }).role || "").trim();
+    if (legacy) out[m.id] = legacy;
+  }
+  return out;
+}
+
+function normalizeMemberPositionMode(input: unknown): AppState["memberPositionMode"] {
+  return input === "rankLinked" ? "rankLinked" : "fixed";
+}
+
+function normalizeRankPositionLabels(input: unknown): string[] {
+  const fallback = ["대표", "", "", "", "", "", "", "", "", "", "", ""];
+  if (!Array.isArray(input)) return fallback;
+  return Array.from({ length: 12 }).map((_, idx) => String(input[idx] || "").trim());
 }
 
 export function defaultState(): AppState {
@@ -193,6 +294,8 @@ export function defaultState(): AppState {
     teamBattleEnabled: false,
     teamAName: "A팀",
     teamBName: "B팀",
+    teamAGoal: 0,
+    teamBGoal: 0,
     teamAMemberIds: [],
     teamBMemberIds: [],
     teamAColor: "#2563eb",
@@ -210,6 +313,12 @@ export function defaultState(): AppState {
   };
   return {
     members: defaultMembers(),
+    memberPositions: {},
+    memberPositionMode: "fixed",
+    rankPositionLabels: ["대표", "", "", "", "", "", "", "", "", "", "", ""],
+    donorRankingsTheme: { ...DEFAULT_DONOR_RANKINGS_THEME },
+    donorRankingsPresets: [],
+    donorRankingsPresetId: undefined,
     donors: [],
     forbiddenWords: ["금칙어", "욕설", "비속어"],
     sigInventory: DEFAULT_SIG_INVENTORY.map((x) => ({ ...x })),
@@ -268,6 +377,9 @@ function normalizeMealBattle(input: unknown): MealBattleState {
             goal,
             color: String((x as Record<string, unknown>).color || "#60a5fa"),
             donationLinkActive: Boolean((x as Record<string, unknown>).donationLinkActive),
+            donationLinkStartedAt: Number.isFinite(Number((x as Record<string, unknown>).donationLinkStartedAt))
+              ? Math.max(0, Math.floor(Number((x as Record<string, unknown>).donationLinkStartedAt)))
+              : undefined,
           };
         })
         .filter((x) => Boolean(x.memberId))
@@ -300,6 +412,12 @@ function normalizeMealBattle(input: unknown): MealBattleState {
     teamBName: typeof (v as Record<string, unknown>).teamBName === "string" && String((v as Record<string, unknown>).teamBName).trim()
       ? String((v as Record<string, unknown>).teamBName).trim()
       : "B팀",
+    teamAGoal: Number.isFinite(Number((v as Record<string, unknown>).teamAGoal))
+      ? Math.max(0, Math.floor(Number((v as Record<string, unknown>).teamAGoal)))
+      : 0,
+    teamBGoal: Number.isFinite(Number((v as Record<string, unknown>).teamBGoal))
+      ? Math.max(0, Math.floor(Number((v as Record<string, unknown>).teamBGoal)))
+      : 0,
     teamAMemberIds: Array.isArray((v as Record<string, unknown>).teamAMemberIds)
       ? ((v as Record<string, unknown>).teamAMemberIds as unknown[]).map((x) => String(x)).filter(Boolean)
       : [],
@@ -393,6 +511,14 @@ export function loadState(userId?: string | null): AppState {
     if (!raw) return defaultState();
     const data = JSON.parse(raw) as AppState;
     data.members = (() => { const v = ensureMembers(data.members); return v.length > 0 ? v : defaultMembers().map(normalizeMember); })();
+    data.memberPositions = normalizeMemberPositions((data as AppState).memberPositions, data.members);
+    data.memberPositionMode = normalizeMemberPositionMode((data as AppState).memberPositionMode);
+    data.rankPositionLabels = normalizeRankPositionLabels((data as AppState).rankPositionLabels);
+    data.donorRankingsTheme = normalizeDonorRankingsTheme((data as AppState).donorRankingsTheme);
+    data.donorRankingsPresets = normalizeDonorRankingsPresets((data as AppState).donorRankingsPresets);
+    data.donorRankingsPresetId = typeof (data as AppState).donorRankingsPresetId === "string" && (data as AppState).donorRankingsPresetId
+      ? (data as AppState).donorRankingsPresetId
+      : undefined;
     data.donors = data.donors || [];
     data.forbiddenWords = data.forbiddenWords || [];
     data.missions = ensureMissionItems(data.missions);
@@ -501,6 +627,14 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
     const data = await res.json();
     if (data && data.members) {
       data.members = (() => { const v = ensureMembers(data.members); return v.length > 0 ? v : defaultMembers().map(normalizeMember); })();
+      data.memberPositions = normalizeMemberPositions((data as AppState).memberPositions, data.members);
+      data.memberPositionMode = normalizeMemberPositionMode((data as AppState).memberPositionMode);
+      data.rankPositionLabels = normalizeRankPositionLabels((data as AppState).rankPositionLabels);
+      data.donorRankingsTheme = normalizeDonorRankingsTheme((data as AppState).donorRankingsTheme);
+      data.donorRankingsPresets = normalizeDonorRankingsPresets((data as AppState).donorRankingsPresets);
+      data.donorRankingsPresetId = typeof (data as AppState).donorRankingsPresetId === "string" && (data as AppState).donorRankingsPresetId
+        ? (data as AppState).donorRankingsPresetId
+        : undefined;
       data.donors = data.donors || [];
       data.forbiddenWords = data.forbiddenWords || [];
       data.missions = ensureMissionItems(data.missions);

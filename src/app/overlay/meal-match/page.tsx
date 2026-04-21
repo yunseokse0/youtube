@@ -80,14 +80,16 @@ function outlineStyle(): React.CSSProperties {
 }
 
 function segmentBarStyle(seg: { memberId: string; color: string }): React.CSSProperties {
-  if (seg.memberId === "__teamA") return { background: "linear-gradient(90deg,#FFB7B2,#ffc9c5)" };
-  if (seg.memberId === "__teamB") return { background: "linear-gradient(90deg,#C7CEEA,#dde2f2)" };
+  if (seg.memberId === "__teamA") return { background: "linear-gradient(90deg,#f9a8d4,#fbcfe8)" };
+  if (seg.memberId === "__teamB") return { background: "linear-gradient(90deg,#fda4af,#fecdd3)" };
   return { backgroundColor: seg.color };
 }
 
 export default function MealMatchOverlayPage() {
   const sp = useSearchParams();
   const userId = sp.get("u") || "finalent";
+  const demoEnabled = sp.get("demo") === "true";
+  const demoMode = (sp.get("demoMode") || "member").toLowerCase();
   const { state, ready } = useRemoteState(userId);
   const [overtakeText, setOvertakeText] = useState<string | null>(null);
   const lastLeaderRef = useRef<string>("");
@@ -102,6 +104,28 @@ export default function MealMatchOverlayPage() {
 
   const defaultGoal = Math.max(1, state?.mealBattle?.totalGoal || 100);
   const participants = useMemo(() => {
+    if (demoEnabled) {
+      if (demoMode === "team") {
+        return [
+          { memberId: "demo-a1", name: "멤버1", score: 72, goal: 100, color: "#f472b6" },
+          { memberId: "demo-a2", name: "멤버2", score: 28, goal: 100, color: "#f9a8d4" },
+          { memberId: "demo-b1", name: "멤버3", score: 55, goal: 100, color: "#fb7185" },
+          { memberId: "demo-b2", name: "멤버4", score: 18, goal: 100, color: "#fda4af" },
+        ];
+      }
+      if (demoMode === "individual") {
+        return [
+          { memberId: "demo-i1", name: "멤버1", score: 40, goal: 100, color: "#f472b6" },
+          { memberId: "demo-i2", name: "멤버2", score: 35, goal: 100, color: "#f9a8d4" },
+          { memberId: "demo-i3", name: "멤버3", score: 20, goal: 100, color: "#fb7185" },
+        ];
+      }
+      return [
+        { memberId: "demo-m1", name: "멤버1", score: 62, goal: 100, color: "#f472b6" },
+        { memberId: "demo-m2", name: "멤버2", score: 31, goal: 100, color: "#f9a8d4" },
+        { memberId: "demo-m3", name: "멤버3", score: 14, goal: 100, color: "#fb7185" },
+      ];
+    }
     const configured = (state?.mealBattle?.participants || [])
       .filter((p) => p.memberId)
       .map((p) => ({
@@ -109,10 +133,10 @@ export default function MealMatchOverlayPage() {
         name: p.name || "멤버",
         score: Math.max(0, Number(p.score || 0)),
         goal: Math.max(1, Math.floor(Number(p.goal) || 0) || defaultGoal),
-        color: p.color || "#60a5fa",
+        color: p.color || "#f472b6",
       }));
     if (configured.length > 0) return configured;
-    const fallbackColors = ["#60a5fa", "#f59e0b", "#22c55e", "#ef4444", "#a78bfa"];
+    const fallbackColors = ["#f472b6", "#fb7185", "#f9a8d4", "#fda4af", "#e879f9"];
     return (state?.members || []).map((m, idx) => ({
       memberId: m.id,
       name: m.name || "멤버",
@@ -120,7 +144,7 @@ export default function MealMatchOverlayPage() {
       goal: defaultGoal,
       color: fallbackColors[idx % fallbackColors.length],
     }));
-  }, [state?.mealBattle?.participants, state?.members, defaultGoal]);
+  }, [demoEnabled, demoMode, state?.mealBattle?.participants, state?.members, defaultGoal]);
   const totalScore = participants.reduce((sum, p) => sum + p.score, 0);
   const totalGoalsSum = useMemo(
     () => Math.max(1, participants.reduce((s, p) => s + p.goal, 0)),
@@ -129,30 +153,42 @@ export default function MealMatchOverlayPage() {
   const overlayTitle = state?.mealBattle?.overlayTitle?.trim() || "식사 대전";
   const missionBubble = state?.mealBattle?.currentMission?.trim() || "";
   const mb = state?.mealBattle;
-  const missionBubbleBg = mb?.missionBubbleBg || "#9333ea";
+  const missionBubbleBg = mb?.missionBubbleBg || "#db2777";
   const missionBubbleTextColor = mb?.missionBubbleTextColor || "#ffffff";
-  const gaugeTrackBg = mb?.gaugeTrackBg || "rgba(23,23,23,0.85)";
-  const gaugeFillColor = mb?.gaugeFillColor || "#22c55e";
-  const fillGaugeMode = state?.mealMatchSettings?.mode === "individual";
+  const gaugeTrackBg = mb?.gaugeTrackBg || "rgba(255,255,255,0.30)";
+  const gaugeFillColor = mb?.gaugeFillColor || "#f472b6";
+  const fillGaugeMode = demoEnabled
+    ? demoMode === "individual"
+    : state?.mealMatchSettings?.mode === "individual";
   const fillPercent = useMemo(() => {
     if (!fillGaugeMode) return 0;
     return Math.min(100, (totalScore / totalGoalsSum) * 100);
   }, [fillGaugeMode, totalScore, totalGoalsSum]);
   const scoreTextColor = mb?.scoreTextColor || "#ffffff";
-  const nameTagBg = mb?.nameTagBg || "#E2F0CB";
-  const nameTagTextColor = mb?.nameTagTextColor || "#000000";
+  const nameTagBg = "rgba(255, 255, 255, 0.82)";
+  const nameTagTextColor = "#ec4899";
   const showPanelBorder = Boolean(mb?.showPanelBorder);
   const panelBorderColor = mb?.panelBorderColor || "rgba(255,255,255,0.25)";
   const showGaugeTrackBorder = Boolean(mb?.showGaugeTrackBorder);
   const gaugeTrackBorderColor = mb?.gaugeTrackBorderColor || "rgba(255,255,255,0.2)";
 
-  const teamBattleEnabled = Boolean(mb?.teamBattleEnabled);
+  const teamBattleEnabled = demoEnabled
+    ? demoMode === "team"
+    : Boolean(mb?.teamBattleEnabled);
   const teamAName = mb?.teamAName?.trim() || "A팀";
   const teamBName = mb?.teamBName?.trim() || "B팀";
-  const teamAColor = mb?.teamAColor || "#2563eb";
-  const teamBColor = mb?.teamBColor || "#dc2626";
-  const teamAIds = useMemo(() => new Set(mb?.teamAMemberIds || []), [mb?.teamAMemberIds]);
-  const teamBIds = useMemo(() => new Set(mb?.teamBMemberIds || []), [mb?.teamBMemberIds]);
+  const teamAGoalSetting = Math.max(0, Math.floor(Number(mb?.teamAGoal || 0) || 0));
+  const teamBGoalSetting = Math.max(0, Math.floor(Number(mb?.teamBGoal || 0) || 0));
+  const teamAColor = mb?.teamAColor || "#f472b6";
+  const teamBColor = mb?.teamBColor || "#fb7185";
+  const teamAIds = useMemo(() => {
+    if (demoEnabled && demoMode === "team") return new Set(["demo-a1", "demo-a2"]);
+    return new Set(mb?.teamAMemberIds || []);
+  }, [demoEnabled, demoMode, mb?.teamAMemberIds]);
+  const teamBIds = useMemo(() => {
+    if (demoEnabled && demoMode === "team") return new Set(["demo-b1", "demo-b2"]);
+    return new Set(mb?.teamBMemberIds || []);
+  }, [demoEnabled, demoMode, mb?.teamBMemberIds]);
 
   const hasTeamRoster = useMemo(
     () => participants.some((p) => teamAIds.has(p.memberId) || teamBIds.has(p.memberId)),
@@ -173,8 +209,10 @@ export default function MealMatchOverlayPage() {
         bGoal += p.goal;
       }
     }
-    return { aScore, bScore, aGoal: Math.max(1, aGoal), bGoal: Math.max(1, bGoal) };
-  }, [participants, teamAIds, teamBIds]);
+    const resolvedAGoal = teamAGoalSetting > 0 ? teamAGoalSetting : Math.max(1, aGoal);
+    const resolvedBGoal = teamBGoalSetting > 0 ? teamBGoalSetting : Math.max(1, bGoal);
+    return { aScore, bScore, aGoal: resolvedAGoal, bGoal: resolvedBGoal };
+  }, [participants, teamAIds, teamBIds, teamAGoalSetting, teamBGoalSetting]);
 
   const useTeamSplitGauge = teamBattleEnabled && !fillGaugeMode && hasTeamRoster;
 
@@ -287,14 +325,20 @@ export default function MealMatchOverlayPage() {
     <main className="min-h-screen w-full bg-transparent text-white p-5">
       <div className="mx-auto max-w-[1350px]">
         <div className="mb-4 text-center">
-          <div className="pastel-text-outline text-4xl font-black tracking-wide text-white" style={outlineStyle()}>
+          <div className="pastel-text-outline text-4xl font-black tracking-wide text-pink-100" style={outlineStyle()}>
             {overlayTitle}
           </div>
+          {demoEnabled && (
+            <div className="mx-auto mt-2 inline-flex rounded-full border border-pink-200/80 bg-pink-300/35 px-3 py-1 text-xs font-bold text-pink-100">
+              DEMO · {demoMode === "team" ? "팀 모드" : demoMode === "individual" ? "개인(단일게이지) 모드" : "개인 분할 모드"}
+            </div>
+          )}
           {showMealMatchTimer ? (
             <div
               className={`mx-auto mt-2 inline-flex min-w-[5.5ch] items-center justify-center rounded-full border border-white/20 bg-white/40 px-5 py-2 backdrop-blur-md ${
                 paused ? "animate-pulse opacity-90" : ""
               }`}
+              style={{ borderColor: "rgba(251, 207, 232, 0.55)", background: "rgba(251, 207, 232, 0.35)" }}
             >
               <span
                 className={`font-extrabold tabular-nums pastel-text-outline ${
@@ -309,7 +353,7 @@ export default function MealMatchOverlayPage() {
         </div>
 
         <div
-          className={`rounded-3xl border border-white/20 bg-white/40 px-4 py-6 backdrop-blur-md ${showPanelBorder ? "border-2" : ""}`}
+          className={`rounded-3xl border border-white/40 bg-[linear-gradient(135deg,#FFDEE9_0%,#FCE4EC_50%,#FFD1FF_100%)] px-4 py-6 backdrop-blur-xl shadow-[0_8px_32px_0_rgba(255,182,193,0.3)] ${showPanelBorder ? "border-2" : ""}`}
           style={showPanelBorder ? { borderColor: panelBorderColor } : undefined}
         >
           <div className={`relative ${missionBubble ? "h-36" : "h-32"}`}>
@@ -343,14 +387,14 @@ export default function MealMatchOverlayPage() {
                             className="h-full shrink-0"
                             style={{
                               width: `${(teamAgg.aScore / Math.max(1, totalScore)) * 100}%`,
-                              background: "linear-gradient(90deg,#FFB7B2,#ffc9c5)",
+                                background: "linear-gradient(90deg,#f9a8d4,#fbcfe8)",
                             }}
                           />
                           <div
                             className="h-full shrink-0"
                             style={{
                               width: `${(teamAgg.bScore / Math.max(1, totalScore)) * 100}%`,
-                              background: "linear-gradient(90deg,#C7CEEA,#dde2f2)",
+                                background: "linear-gradient(90deg,#fda4af,#fecdd3)",
                             }}
                           />
                           {unassignedScore > 0 ? (
@@ -363,14 +407,17 @@ export default function MealMatchOverlayPage() {
                           ) : null}
                         </div>
                       ) : (
-                        <div
-                          className={`h-full w-full ${
-                            gaugeFillColor === "#22c55e"
-                              ? "bg-gradient-to-r from-pastel-red via-pastel-orange to-pastel-blue"
-                              : ""
-                          }`}
-                          style={gaugeFillColor !== "#22c55e" ? { backgroundColor: gaugeFillColor } : undefined}
-                        />
+                        <div className="relative h-full w-full overflow-hidden">
+                          <div
+                            className={`h-full w-full ${
+                              gaugeFillColor === "#f472b6"
+                                ? "bg-gradient-to-r from-pink-200 to-pink-400"
+                                : ""
+                            }`}
+                            style={gaugeFillColor !== "#f472b6" ? { backgroundColor: gaugeFillColor } : undefined}
+                          />
+                          <div className="pointer-events-none absolute left-0 right-0 top-0 h-[20%] bg-white/20" />
+                        </div>
                       )}
                     </motion.div>
                     <div
@@ -391,9 +438,10 @@ export default function MealMatchOverlayPage() {
                         animate={{ width: `${seg.percent}%` }}
                         transition={{ type: "spring", stiffness: 120, damping: 20 }}
                         style={segmentBarStyle(seg)}
-                        className="h-full"
+                        className="relative h-full"
                       />
                     ))}
+                    <div className="pointer-events-none absolute left-0 right-0 top-0 h-[20%] bg-white/20" />
                   </motion.div>
                 )}
               </div>

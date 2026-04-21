@@ -38,6 +38,7 @@ export type OverlayPresetLike = {
   missionTheme?: string;
   showMembers?: boolean;
   showTotal?: boolean;
+  totalMode?: "total" | "contribution";
   showGoal?: boolean;
   goal?: string;
   goalLabel?: string;
@@ -142,6 +143,7 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.missionTheme && preset.missionTheme !== "auto") q.set("missionTheme", preset.missionTheme);
   q.set("showMembers", String(preset.showMembers ?? true));
   q.set("showTotal", String(preset.showTotal ?? true));
+  if (preset.totalMode === "contribution") q.set("totalMode", "contribution");
   if (preset.sumFree) {
     q.set("sumX", preset.sumX || "50");
     q.set("sumY", preset.sumY || "90");

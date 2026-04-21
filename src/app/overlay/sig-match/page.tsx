@@ -2,6 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
 import type { AppState } from "@/lib/state";
 import {
@@ -74,7 +75,7 @@ function parseSigMatchSnapshot(sp: URLSearchParams): AppState | null {
 }
 
 function useSigMatchState(userId: string | undefined, lockedSnapshot: AppState | null): { state: AppState | null; ready: boolean } {
-  const [state, setState] = useState<AppState | null>(lockedSnapshot);
+  const [state, setState] = useState<AppState | null>(lockedSnapshot || defaultState());
   const lastUpdatedRef = useRef(0);
   const syncingRef = useRef(false);
 
@@ -173,16 +174,19 @@ function SigMatchOverlayInner() {
     [state?.donors, state?.members, state?.sigMatchSettings, state?.sigMatch]
   );
 
-  if (!ready || !state) return null;
+  if (!ready || !state) {
+    return (
+      <main className="min-h-screen w-full bg-[#0b1020] p-6 text-white">
+        <div className="mx-auto max-w-3xl rounded-2xl border border-white/20 bg-black/40 p-4 text-sm">
+          시그 대전 오버레이 로딩 중...
+        </div>
+      </main>
+    );
+  }
 
   return (
-    <main className="min-h-screen w-full bg-transparent p-8 text-pastel-ink">
-      {previewGuide && lockedSnapshot && (
-        <div className="pointer-events-none fixed left-3 top-3 z-50 rounded-lg border border-amber-400/80 bg-amber-950/90 px-3 py-1.5 text-xs font-semibold text-amber-100 shadow-lg">
-          미리보기 · 현재 화면 스냅샷 (실시간 반영 아님)
-        </div>
-      )}
-      <div className="glass-pastel-card mx-auto max-w-3xl rounded-3xl p-6">
+    <main className={`min-h-screen w-full p-8 text-pastel-ink ${previewGuide ? "bg-[#1d1020]" : "bg-transparent"}`}>
+      <div className="mx-auto max-w-3xl rounded-3xl border border-pink-200/50 bg-gradient-to-b from-pink-100/60 via-rose-100/50 to-fuchsia-100/40 p-6 shadow-[0_12px_36px_rgba(236,72,153,0.22)] backdrop-blur-md">
         <div className="mb-4 flex items-end justify-between gap-3">
           <div>
             <h1 className="text-4xl font-extrabold tracking-tight pastel-text-outline">{title}</h1>
@@ -190,13 +194,11 @@ function SigMatchOverlayInner() {
               목표 {target.toLocaleString("ko-KR")} · 상태 {active ? "진행중" : "대기"}
             </p>
           </div>
-          <div
-            className={`rounded-full border border-white/20 px-3 py-1 text-sm font-bold backdrop-blur-sm pastel-text-outline ${
-              active ? "bg-pastel-green/70 text-pastel-ink" : "bg-pastel-blue/50 text-pastel-ink/90"
-            }`}
-          >
-            {active ? "LIVE" : "OFF"}
-          </div>
+          {active ? (
+            <div className="rounded-full border border-pink-100/70 bg-pink-300/70 px-3 py-1 text-sm font-bold text-rose-950 backdrop-blur-sm pastel-text-outline">
+              LIVE
+            </div>
+          ) : null}
         </div>
 
         <div className="space-y-2">
@@ -211,10 +213,10 @@ function SigMatchOverlayInner() {
                 transition={{ type: "spring", stiffness: 420, damping: 34, mass: 0.8 }}
                 className={`rounded-2xl px-4 py-3 pastel-text-outline ${
                   idx === 0
-                    ? "border border-white/25 bg-gradient-to-r from-pastel-orange/60 to-pastel-yellow/50 shadow-sm backdrop-blur-sm"
+                    ? "border border-pink-200/80 bg-gradient-to-r from-pink-200/85 to-rose-100/85 shadow-sm backdrop-blur-sm"
                     : idx % 2 === 0
-                      ? "bg-pastel-blue/30"
-                      : "bg-pastel-yellow/25"
+                      ? "bg-pink-100/70"
+                      : "bg-rose-100/70"
                 }`}
               >
                 <div className="flex items-center justify-between gap-3">
@@ -227,23 +229,23 @@ function SigMatchOverlayInner() {
                   </div>
                 </div>
                 <div className="mt-2">
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-pastel-blue/40">
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-rose-100/80">
                     <div
-                      className="h-full rounded-full bg-gradient-to-r from-pastel-red via-pastel-orange to-pastel-blue transition-all duration-500"
+                      className="h-full rounded-full bg-gradient-to-r from-fuchsia-400 via-pink-400 to-rose-300 transition-all duration-500"
                       style={{ width: `${Math.min(100, (row.score / Math.max(1, target)) * 100)}%` }}
                     />
                   </div>
                   <div className="mt-1 text-xs text-pastel-ink/80">
                     {state.sigMatchSettings?.scoringMode === "amount"
                       ? `매칭 ${formatSigMatchStat(row.matchedCount)}건 · 합계 ${formatSigMatchStat(row.matchedAmount)} · 목표 ${target.toLocaleString("ko-KR")}`
-                      : `매칭 ${formatSigMatchStat(row.matchedCount)}건 · 보정 ${row.manualAdjust >= 0 ? "+" : ""}${row.manualAdjust} · 목표 ${target.toLocaleString("ko-KR")}`}
+                      : `매칭 ${formatSigMatchStat(row.matchedCount)}건${row.manualAdjust !== 0 ? ` · 보정 ${row.manualAdjust >= 0 ? "+" : ""}${row.manualAdjust}` : ""} · 목표 ${target.toLocaleString("ko-KR")}`}
                   </div>
                 </div>
               </motion.div>
             ))}
           </AnimatePresence>
           {ranking.length === 0 && (
-            <div className="rounded-2xl bg-pastel-green/25 px-4 py-6 text-center text-pastel-ink/75 pastel-text-outline">
+            <div className="rounded-2xl bg-pink-100/70 px-4 py-6 text-center text-rose-900/80 pastel-text-outline">
               표시할 멤버 데이터가 없습니다.
             </div>
           )}
@@ -252,6 +254,10 @@ function SigMatchOverlayInner() {
     </main>
   );
 }
+
+const SigMatchOverlayInnerNoSSR = dynamic(async () => SigMatchOverlayInner, {
+  ssr: false,
+});
 
 export default function SigMatchOverlayPage() {
   return (
@@ -262,7 +268,7 @@ export default function SigMatchOverlayPage() {
         </main>
       }
     >
-      <SigMatchOverlayInner />
+      <SigMatchOverlayInnerNoSSR />
     </Suspense>
   );
 }

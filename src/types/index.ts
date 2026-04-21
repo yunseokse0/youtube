@@ -11,8 +11,6 @@ export type Member = {
   toon: number;
   /** 개인 목표 금액 */
   goal?: number;
-  /** 역할/직급 텍스트 */
-  role?: string;
   /** 운영비 멤버 여부(세금/비율 예외 처리) */
   operating?: boolean;
 };
@@ -80,6 +78,8 @@ export type MealBattleParticipant = {
   color: string;
   /** true면 관리자 후원 입력 시 식대전 점수에 반영. 멤버 계좌/투네·엑셀 집계는 항상 반영. */
   donationLinkActive: boolean;
+  /** 후원 연동 ON을 누른 시각(epoch ms). 이 시각 이후 후원부터 식대전 점수에 반영. */
+  donationLinkStartedAt?: number;
 };
 
 export type MealBattleState = {
@@ -117,6 +117,10 @@ export type MealBattleState = {
   teamBattleEnabled: boolean;
   teamAName: string;
   teamBName: string;
+  /** 팀 목표(0이면 참가자 개인 목표 합 자동 사용) */
+  teamAGoal: number;
+  /** 팀 목표(0이면 참가자 개인 목표 합 자동 사용) */
+  teamBGoal: number;
   teamAMemberIds: string[];
   teamBMemberIds: string[];
   teamAColor: string;
@@ -182,9 +186,45 @@ export type MealMatchSettings = {
   teamBMemberIds: string[];
 };
 
+export type DonorRankingsTheme = {
+  top: number;
+  titleSize: number;
+  rowSize: number;
+  rankSize: number;
+  bg: string;
+  panelBg: string;
+  borderColor: string;
+  headerAccountBg: string;
+  headerToonBg: string;
+  rowEvenBg: string;
+  rowOddBg: string;
+  rankColor: string;
+  nameColor: string;
+  amountColor: string;
+  outlineColor: string;
+};
+
+export type DonorRankingsPreset = {
+  id: string;
+  name: string;
+  theme: DonorRankingsTheme;
+};
+
 export type AppState = {
   /** 멤버 목록 */
   members: Member[];
+  /** 멤버 직급(직급은 멤버 엔티티와 분리 저장) */
+  memberPositions: Record<string, string>;
+  /** 직급 표시 방식: 멤버 고정(fixed) / 순위 연동(rankLinked) */
+  memberPositionMode: "fixed" | "rankLinked";
+  /** 순위 연동 모드에서 사용할 직급 라벨(1위부터 순서대로) */
+  rankPositionLabels: string[];
+  /** 계좌/투네 후원 순위 오버레이 테마 */
+  donorRankingsTheme: DonorRankingsTheme;
+  /** 후원 순위 오버레이 테마 프리셋 목록 */
+  donorRankingsPresets: DonorRankingsPreset[];
+  /** 현재 선택된 후원 순위 프리셋 ID */
+  donorRankingsPresetId?: string;
   /** 후원 원장(멀티탭 병합 대상) */
   donors: Donor[];
   forbiddenWords: string[];

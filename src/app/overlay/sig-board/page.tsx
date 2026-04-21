@@ -137,6 +137,7 @@ export default function SigBoardOverlayPage() {
               const soldOut = item.soldCount >= item.maxCount;
               const stampBurstKey = stampBurstIds[item.id] || 0;
               const pct = Math.min(100, (item.soldCount / Math.max(1, item.maxCount)) * 100);
+              const isSingleSale = item.maxCount <= 1;
               return (
                 <div
                   key={item.id}
@@ -174,14 +175,16 @@ export default function SigBoardOverlayPage() {
                   <div className="p-2">
                     <div className="truncate text-sm font-bold pastel-text-outline">{item.name}</div>
                     <div className="text-xs text-pastel-ink/80 pastel-text-outline">
-                      {item.soldCount}/{item.maxCount} · {item.price.toLocaleString("ko-KR")}원
+                      {isSingleSale ? (soldOut ? "완판" : "판매대기") : `${item.soldCount}/${item.maxCount}`} · {item.price.toLocaleString("ko-KR")}원
                     </div>
-                    <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-pastel-blue/50">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-pastel-red via-pastel-orange to-pastel-blue"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
+                    {!isSingleSale ? (
+                      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-pastel-blue/50">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-pastel-red via-pastel-orange to-pastel-blue"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               );

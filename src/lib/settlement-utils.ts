@@ -29,8 +29,7 @@ export function computeSettlement(
     const toon = Math.max(0, m.toon || 0);
     const isOperating =
       Boolean(m.operating) ||
-      /운영비/i.test(m.name || "") ||
-      /운영비/i.test(m.role || "");
+      /운영비/i.test(m.name || "");
     const perMember = memberRatioOverrides?.[m.id];
     const effectiveAccountRatio = toSafeRate(
       isOperating

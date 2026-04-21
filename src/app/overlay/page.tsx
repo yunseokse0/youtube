@@ -265,22 +265,22 @@ const THEMES: Record<ThemeId, {
   timerCls: string;
 }> = {
   default: {
-    label: "기본",
+    label: "핑크 그라데이션",
     memberCls: "font-bold tracking-tight",
-    nameCls: "text-white",
-    accountCls: "text-white",
-    toonCls: "text-white",
-    totalCls: "font-extrabold text-amber-200 drop-shadow-[0_0_6px_rgba(0,0,0,1)]",
-    totalWrapCls: "bg-neutral-800/90 border border-emerald-500/40 px-2 py-1 rounded",
-    rowCls: "border-b border-neutral-600/50 px-2 py-1 bg-neutral-900/60",
-    tableCls: "bg-neutral-900/80 border border-neutral-600 rounded-lg overflow-hidden border-collapse shadow-lg",
-    headerCls: "bg-emerald-800/80 text-white font-bold px-2 py-1 border-b border-emerald-600 text-sm",
-    goalBarBg: "bg-neutral-800/80",
-    goalBarFill: "bg-gradient-to-r from-emerald-500 to-emerald-300",
+    nameCls: "text-pink-700",
+    accountCls: "text-pink-700",
+    toonCls: "text-pink-600",
+    totalCls: "font-extrabold text-pink-700 drop-shadow-[0_0_6px_rgba(255,255,255,0.45)]",
+    totalWrapCls: "bg-[linear-gradient(135deg,#FFDEE9_0%,#FCE4EC_50%,#FFD1FF_100%)] border border-white/40 px-2 py-1 rounded backdrop-blur-xl shadow-[0_8px_32px_0_rgba(255,182,193,0.3)]",
+    rowCls: "px-2 py-1 bg-white/30 hover:bg-pink-50/50 transition-colors",
+    tableCls: "bg-white/30 border border-white/40 rounded-lg overflow-hidden border-collapse backdrop-blur-xl shadow-[0_8px_32px_0_rgba(255,182,193,0.3)]",
+    headerCls: "bg-pink-100/80 text-pink-700 font-bold px-2 py-1 text-sm",
+    goalBarBg: "bg-white/35",
+    goalBarFill: "bg-gradient-to-r from-[#FFDEE9] via-[#FCE4EC] to-[#FFD1FF]",
     goalText: "text-white font-bold drop-shadow-[0_0_4px_rgba(0,0,0,1)]",
-    goalWrap: "border border-neutral-600 bg-neutral-900/80 rounded p-1",
-    tickerCls: "text-amber-200 font-semibold",
-    timerCls: "font-mono text-white/80",
+    goalWrap: "border border-white/40 bg-white/30 rounded p-1 backdrop-blur-xl shadow-[0_8px_32px_0_rgba(255,182,193,0.25)]",
+    tickerCls: "text-pink-700 font-semibold",
+    timerCls: "font-mono text-pink-700/90",
   },
   excel: {
     label: "엑셀(녹색)",
@@ -1138,7 +1138,12 @@ function OverlayInner() {
   const sumToon = useMemo(() => (ready && s ? totalToon(s) : 0), [ready, s]);
   const sumCombined = useMemo(() => (ready && s ? totalCombined(s) : 0), [ready, s]);
   const rounded = useMemo(() => roundToThousand(sumCombined), [sumCombined]);
-  const pinnedFilter = (m: Member) => Boolean(m.operating) || /운영비/i.test(m.name) || /운영비/i.test(m.role || "");
+  const memberPositionsMap = useMemo<Record<string, string>>(
+    () => ((ready && s && typeof (s as AppState).memberPositions === "object") ? ((s as AppState).memberPositions || {}) : {}),
+    [ready, s]
+  );
+  const getMemberRole = useCallback((m: Member) => memberPositionsMap[m.id] || "", [memberPositionsMap]);
+  const pinnedFilter = (m: Member) => Boolean(m.operating) || /운영비/i.test(m.name) || /운영비/i.test(getMemberRole(m));
   const displaySum = useCountUp(rounded, 800);
   const presetId = (rawSp.get("p") || "").trim();
   const activePreset = useMemo(() => {
@@ -1226,12 +1231,14 @@ function OverlayInner() {
   const hasFreePos = centerFixed ? false : (sumXParam !== null && sumYParam !== null);
   const sumX = hasFreePos ? parsePct(sumXParam, 50) : 0;
   const sumY = hasFreePos ? parsePct(sumYParam, 90) : 0;
-  const themeId = (sp.get("theme") || "default") as ThemeId;
-  const baseTheme = THEMES[themeId] || THEMES.default;
+  const themeId: ThemeId = "default";
+  const baseTheme = THEMES.default;
+  const totalMode = ((sp.get("totalMode") || "total").toLowerCase() === "contribution" ? "contribution" : "total") as "total" | "contribution";
+  const totalHeaderLabel = totalMode === "contribution" ? "기여도" : "TOTAL";
   const resolveThemeId = (key: string): ThemeId => {
     const raw = (sp.get(key) || "auto").trim();
-    const id = (raw && raw !== "auto" ? raw : themeId) as ThemeId;
-    return (THEMES as any)[id] ? id : themeId;
+    if (raw === "auto" || !raw) return "default";
+    return "default";
   };
   const membersThemeId = resolveThemeId("membersTheme");
   const totalThemeId = resolveThemeId("totalTheme");
@@ -1377,6 +1384,11 @@ function OverlayInner() {
     donorsFormat === "full"
       ? roundToThousand(n).toLocaleString(currencyLocale)
       : formatManThousand(n);
+  const fmtTotalCell = (n: number) => {
+    if (totalMode !== "contribution") return fmt(n);
+    const ratio = sumCombined > 0 ? (n / sumCombined) * 100 : 0;
+    return `${ratio.toFixed(1)}%`;
+  };
   const stripBg = (cls: string) =>
     cls
       // Remove any solid bg-* utilities
@@ -1687,8 +1699,8 @@ function OverlayInner() {
   const unpinned = useMemo(() => members.filter((m) => !pinnedFilter(m)), [members]);
   const pinned = useMemo(() => members.filter(pinnedFilter), [members]);
   const hasRoleColumn = useMemo(
-    () => members.some((m) => (m.role || "").trim().length > 0),
-    [members]
+    () => members.some((m) => getMemberRole(m).trim().length > 0),
+    [members, getMemberRole]
   );
   const ranked = useMemo(() => {
     const arr = [...unpinned].sort((a, b) => (b.account + b.toon) - (a.account + a.toon));
@@ -1847,7 +1859,7 @@ function OverlayInner() {
     : { width: responsiveTickerWidth };
   const tickerPosClass = hasTickerFreePos ? "" : posClass(tickerAnchor);
 
-    const roleCh = Math.max(6, Math.min(14, members.reduce((max, m) => Math.max(max, (m.role || "").length), 2)));
+    const roleCh = Math.max(6, Math.min(14, members.reduce((max, m) => Math.max(max, getMemberRole(m).length), 2)));
     const excelGridCols = hasRoleColumn
       ? ["3ch", `${roleCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`]
       : ["3ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`];
@@ -1982,7 +1994,7 @@ function OverlayInner() {
                       <td className={effectiveHeaderCls}>이름</td>
                       <td className={`${effectiveHeaderCls} text-right`}>계좌</td>
                       <td className={`${effectiveHeaderCls} text-right`}>투네</td>
-                      <td className={`${effectiveHeaderCls} text-right`}>TOTAL</td>
+                      <td className={`${effectiveHeaderCls} text-right`}>{totalHeaderLabel}</td>
                     </tr>
                   </thead>
                   <tbody>
@@ -1999,13 +2011,13 @@ function OverlayInner() {
                               maxWidth: `${roleCh}ch`,
                             }}
                           >
-                            {m.role || "-"}
+                            {getMemberRole(m) || "-"}
                           </td>
                         )}
                         <td className={`${effectiveRowCls} ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
                         <td className={`${effectiveRowCls} ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${effectiveRowCls} ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
-                        <td className={`${effectiveRowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","pastel"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
+                        <td className={`${effectiveRowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","pastel"].includes(themeId) ? "text-slate-900" : ""}`}>{fmtTotalCell(m.account + m.toon)}</td>
                       </tr>
                     ))}
                     {pinned.map((m) => (
@@ -2015,7 +2027,7 @@ function OverlayInner() {
                         <td className={`${effectiveRowCls} ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
                         <td className={`${effectiveRowCls} ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${effectiveRowCls} ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
-                        <td className={`${effectiveRowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","pastel"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
+                        <td className={`${effectiveRowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","pastel"].includes(themeId) ? "text-slate-900" : ""}`}>{fmtTotalCell(m.account + m.toon)}</td>
                       </tr>
                     ))}
                     {showTotal && ready && (
@@ -2024,7 +2036,7 @@ function OverlayInner() {
                         <td className={effectiveTotalWrapCls} />
                         <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(sumAccount)}</td>
                         <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(sumToon)}</td>
-                        <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(rounded)}</td>
+                        <td className={`${effectiveTotalWrapCls} text-right`}>{totalMode === "contribution" ? "100.0%" : fmt(rounded)}</td>
                       </tr>
                     )}
                   </tbody>
@@ -2048,7 +2060,7 @@ function OverlayInner() {
                       <td className={membersTheme.headerCls}>이름</td>
                       <td className={`${membersTheme.headerCls} text-right`}>계좌</td>
                       <td className={`${membersTheme.headerCls} text-right`}>투네</td>
-                      <td className={`${membersTheme.headerCls} text-right`}>TOTAL</td>
+                      <td className={`${membersTheme.headerCls} text-right`}>{totalHeaderLabel}</td>
                     </tr>
                   </thead>
                   <tbody>
@@ -2065,13 +2077,13 @@ function OverlayInner() {
                               maxWidth: `${roleCh}ch`,
                             }}
                           >
-                            {m.role || "-"}
+                            {getMemberRole(m) || "-"}
                           </td>
                         )}
                         <td className={`${membersTheme.rowCls} ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
                         <td className={`${membersTheme.rowCls} ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${membersTheme.rowCls} ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
-                        <td className={`${membersTheme.rowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","pastel"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
+                        <td className={`${membersTheme.rowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","pastel"].includes(themeId) ? "text-slate-900" : ""}`}>{fmtTotalCell(m.account + m.toon)}</td>
                       </tr>
                     ))}
                     {pinned.map((m) => (
@@ -2081,7 +2093,7 @@ function OverlayInner() {
                         <td className={`${membersTheme.rowCls} ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
                         <td className={`${membersTheme.rowCls} ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${membersTheme.rowCls} ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
-                        <td className={`${membersTheme.rowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","pastel"].includes(themeId) ? "text-slate-900" : ""}`}>{fmt(m.account + m.toon)}</td>
+                        <td className={`${membersTheme.rowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","pastel"].includes(themeId) ? "text-slate-900" : ""}`}>{fmtTotalCell(m.account + m.toon)}</td>
                       </tr>
                     ))}
                     {showTotal && ready && (
@@ -2090,7 +2102,7 @@ function OverlayInner() {
                         <td className={totalTheme.totalWrapCls} />
                         <td className={`${totalTheme.totalWrapCls} text-right`}>{fmt(sumAccount)}</td>
                         <td className={`${totalTheme.totalWrapCls} text-right`}>{fmt(sumToon)}</td>
-                        <td className={`${totalTheme.totalWrapCls} text-right`}>{fmt(rounded)}</td>
+                        <td className={`${totalTheme.totalWrapCls} text-right`}>{totalMode === "contribution" ? "100.0%" : fmt(rounded)}</td>
                       </tr>
                     )}
                   </tbody>

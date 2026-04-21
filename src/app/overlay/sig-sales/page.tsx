@@ -185,6 +185,7 @@ export default function SigSalesOverlayPage() {
               {activeItems.map((item) => {
                 const soldOut = item.soldCount >= item.maxCount;
                 const pct = Math.min(100, (item.soldCount / Math.max(1, item.maxCount)) * 100);
+                const isSingleSale = item.maxCount <= 1;
                 return (
                   <div
                     key={item.id}
@@ -222,11 +223,13 @@ export default function SigSalesOverlayPage() {
                         {item.name}
                       </div>
                       <div className="text-xs" style={outlineText()}>
-                        {item.soldCount}/{item.maxCount} · {item.price.toLocaleString("ko-KR")}원
+                        {isSingleSale ? (soldOut ? "완판" : "판매대기") : `${item.soldCount}/${item.maxCount}`} · {item.price.toLocaleString("ko-KR")}원
                       </div>
-                      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/20">
-                        <div className="h-full rounded-full bg-gradient-to-r from-emerald-300 to-cyan-300" style={{ width: `${pct}%` }} />
-                      </div>
+                      {!isSingleSale ? (
+                        <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/20">
+                          <div className="h-full rounded-full bg-gradient-to-r from-emerald-300 to-cyan-300" style={{ width: `${pct}%` }} />
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 );

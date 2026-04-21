@@ -4,11 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
 import { defaultState, loadState, loadStateFromApi, storageKey, type AppState } from "@/lib/state";
-
-type DonorRow = {
-  name: string;
-  amount: number;
-};
+import { sortMembersForRanking } from "@/lib/utils";
 
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
   const [state, setState] = useState<AppState | null>(null);
@@ -80,68 +76,60 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   return { state, ready: state !== null };
 }
 
-function normalizeTarget(donor: Record<string, unknown>): "account" | "toon" {
-  const rawType = String(donor.type || "").trim();
-  if (rawType === "계좌") return "account";
-  if (rawType === "투네이션") return "toon";
-
-  const rawTarget = String(donor.target || "").trim().toLowerCase();
-  if (rawTarget === "toon") return "toon";
-  return "account";
-}
-
-function aggregateTop5(rows: Array<{ name: string; amount: number }>): DonorRow[] {
-  const byName = new Map<string, number>();
-  for (const row of rows) {
-    const key = row.name.trim() || "무명";
-    byName.set(key, (byName.get(key) || 0) + Math.max(0, row.amount || 0));
-  }
-  return Array.from(byName.entries())
-    .map(([name, amount]) => ({ name, amount }))
-    .sort((a, b) => b.amount - a.amount)
-    .slice(0, 5);
-}
-
-function DonationColumn({
-  title,
-  titleClass,
+function RankingTable({
   items,
-  suffix,
 }: {
-  title: string;
-  titleClass: string;
-  items: DonorRow[];
-  suffix?: string;
+  items: ReturnType<typeof sortMembersForRanking>;
 }) {
+  const outlinedText = {
+    textShadow:
+      "-1px -1px 0 rgba(0,0,0,0.7),1px -1px 0 rgba(0,0,0,0.7),-1px 1px 0 rgba(0,0,0,0.7),1px 1px 0 rgba(0,0,0,0.7)",
+  } as const;
+
   return (
-    <section className="glass-pastel-card w-full max-w-[520px] overflow-hidden rounded-2xl">
-      <div className={`px-4 py-3 text-lg font-bold tracking-wide pastel-text-outline ${titleClass}`}>{title}</div>
+    <section className="w-full max-w-[980px] overflow-hidden rounded-2xl border border-white/60 bg-white/30 shadow-sm backdrop-blur-md">
+      <div className="grid grid-cols-[minmax(0,1.4fr)_120px_150px_150px_160px] gap-2 border-b border-white/70 bg-pink-pastel px-4 py-3 text-[15px] font-extrabold text-pink-deep">
+        <span style={outlinedText}>멤버</span>
+        <span style={outlinedText}>직급</span>
+        <span className="text-right" style={outlinedText}>계좌</span>
+        <span className="text-right" style={outlinedText}>투네</span>
+        <span className="text-right" style={outlinedText}>합계</span>
+      </div>
       <div className="space-y-2 p-3">
         <AnimatePresence initial={false}>
           {items.map((item, idx) => (
             <motion.div
-              key={item.name}
+              key={item.id}
               layout
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -16 }}
               transition={{ type: "spring", stiffness: 420, damping: 34, mass: 0.8 }}
-              className={`grid grid-cols-[42px_minmax(0,1fr)_auto] items-center gap-2 rounded-2xl px-3 py-2.5 text-pastel-ink pastel-text-outline ${
-                idx % 2 === 0 ? "bg-pastel-blue/35" : "bg-pastel-yellow/30"
+              className={`grid grid-cols-[minmax(0,1.4fr)_120px_150px_150px_160px] items-center gap-2 rounded-xl px-4 py-3 text-white shadow-sm ${
+                item.isRepresentative
+                  ? "border-2 border-white bg-pink-accent"
+                  : idx % 2 === 0
+                    ? "border border-white/70 bg-pink-light"
+                    : "border border-white/70 bg-white/80"
               }`}
             >
-              <span className="text-center font-bold text-pastel-ink/80">{idx + 1}</span>
-              <span className="truncate font-semibold">{item.name}</span>
-              <span className="font-extrabold tabular-nums">
-                {item.amount.toLocaleString("ko-KR")}
-                {suffix ? ` ${suffix}` : ""}
+              <span className="truncate text-[18px] font-extrabold" style={outlinedText}>{item.name}</span>
+              <span className="text-[14px] font-bold" style={outlinedText}>{item.position}</span>
+              <span className="text-right font-extrabold tabular-nums" style={outlinedText}>
+                {item.accountAmount.toLocaleString("ko-KR")}
+              </span>
+              <span className="text-right font-extrabold tabular-nums" style={outlinedText}>
+                {item.toonAmount.toLocaleString("ko-KR")}
+              </span>
+              <span className="text-right font-black tabular-nums text-[17px] text-pastel-yellow" style={outlinedText}>
+                {item.totalAmount.toLocaleString("ko-KR")}
               </span>
             </motion.div>
           ))}
         </AnimatePresence>
         {items.length === 0 && (
-          <div className="rounded-2xl bg-pastel-green/30 px-3 py-6 text-center text-pastel-ink/75 pastel-text-outline">
-            데이터 없음
+          <div className="rounded-xl border border-white/70 bg-pink-light px-3 py-6 text-center text-white shadow-sm">
+            <span className="font-bold" style={outlinedText}>표시할 멤버 데이터가 없습니다.</span>
           </div>
         )}
       </div>
@@ -154,43 +142,30 @@ export default function DonationListsOverlayPage() {
   const userId = sp.get("u") || "finalent";
   const { state, ready } = useRemoteState(userId);
 
-  const { accountTop5, toonTop5 } = useMemo(() => {
-    const donors = (state?.donors || []) as Array<Record<string, unknown>>;
-    const accountRows: Array<{ name: string; amount: number }> = [];
-    const toonRows: Array<{ name: string; amount: number }> = [];
-
-    for (const d of donors) {
-      const target = normalizeTarget(d);
-      const row = {
-        name: String(d.name || "무명"),
-        amount: Number(d.amount || 0),
-      };
-      if (target === "toon") toonRows.push(row);
-      else accountRows.push(row);
-    }
-
-    return {
-      accountTop5: aggregateTop5(accountRows),
-      toonTop5: aggregateTop5(toonRows),
-    };
-  }, [state?.donors]);
+  const ranking = useMemo(
+    () =>
+      sortMembersForRanking(state?.members || [], state?.memberPositions || {}, {
+        mode: "fixed",
+        rankPositionLabels: state?.rankPositionLabels || [],
+      }),
+    [state?.members, state?.memberPositions, state?.rankPositionLabels]
+  );
 
   if (!ready) return null;
 
   return (
-    <main className="min-h-screen w-full bg-soft-bg p-6 text-pastel-ink">
-      <div className="mx-auto grid max-w-[1200px] grid-cols-1 gap-4 md:grid-cols-2 md:gap-6">
-        <DonationColumn
-          title="계좌 후원"
-          titleClass="bg-pastel-yellow text-pastel-ink"
-          items={accountTop5}
-        />
-        <DonationColumn
-          title="투네이션"
-          titleClass="bg-pastel-blue text-pastel-ink"
-          items={toonTop5}
-          suffix="캐시"
-        />
+    <main className="min-h-screen w-full bg-transparent p-6 text-white">
+      <div className="mx-auto max-w-[1020px]">
+        <h1
+          className="mb-4 text-center text-3xl font-black text-pink-deep"
+          style={{
+            textShadow:
+              "-1px -1px 0 rgba(255,255,255,0.92),1px -1px 0 rgba(255,255,255,0.92),-1px 1px 0 rgba(255,255,255,0.92),1px 1px 0 rgba(255,255,255,0.92)",
+          }}
+        >
+          후원 랭킹 보드
+        </h1>
+        <RankingTable items={ranking} />
       </div>
     </main>
   );

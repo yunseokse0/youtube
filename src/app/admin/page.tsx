@@ -55,6 +55,7 @@ type OverlayPreset = {
   membersTheme?: string; totalTheme?: string; goalTheme?: string; tickerBaseTheme?: string; timerTheme?: string; missionTheme?: string;
   missionWidth?: string; missionDuration?: string; missionBgOpacity?: string; missionBgColor?: string; missionItemColor?: string; missionTitleColor?: string; missionTitleText?: string; missionTitleEffect?: string; missionFontSize?: string; missionEffect?: string; missionEffectHotOnly?: string; missionDisplayMode?: string; missionVisibleCount?: string; missionSpeed?: string; missionGapSize?: string;
   showMembers: boolean; showTotal: boolean;
+  totalMode?: "total" | "contribution";
   showGoal: boolean; goal: string; goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string;
   showPersonalGoal?: boolean; personalGoalTheme?: string; personalGoalAnchor?: string; personalGoalLimit?: string; personalGoalFree?: boolean; personalGoalX?: string; personalGoalY?: string;
   tickerInMembers?: boolean; tickerInGoal?: boolean; tickerInPersonalGoal?: boolean;
@@ -70,6 +71,9 @@ const PLACEHOLDER_MISSIONS: MissionItem[] = [
   { id: "mis_ph_2", title: "즉흥 노래 한 곡", price: "3만" },
   { id: "mis_ph_3", title: "게임 미션 클리어 도전", price: "5만" },
 ];
+
+const ONE_SHOT_SIG_ID = "sig_one_shot";
+const ONE_SHOT_SIG_NAME = "한방 시그";
 
 function ClientTime({ ts }: { ts: number | string }) {
   const [text, setText] = useState<string>("");
@@ -113,6 +117,8 @@ export default function AdminPage() {
   const [newSigImageUrl, setNewSigImageUrl] = useState("");
   const [sigExcelResult, setSigExcelResult] = useState("");
   const [rouletteSpinCount, setRouletteSpinCount] = useState("1");
+  const [roulettePriceFilter, setRoulettePriceFilter] = useState("all");
+  const [donorRankingPresetName, setDonorRankingPresetName] = useState("");
   const [settlementTitle, setSettlementTitle] = useState("");
   const [accountRatioInput, setAccountRatioInput] = useState("70");
   const [toonRatioInput, setToonRatioInput] = useState("60");
@@ -142,7 +148,7 @@ export default function AdminPage() {
     layout: "center-fixed", zoomMode: "follow",
     tableFree: false, tableX: "50", tableY: "50",
     sumAnchor: "bc", sumFree: false, sumX: "50", sumY: "90", theme: "default",
-    showMembers: true, showTotal: true, showGoal: false, goal: "0", goalLabel: "목표 금액", showPersonalGoal: false, personalGoalTheme: "goalClassic", personalGoalAnchor: "tl", personalGoalLimit: "3", personalGoalFree: false, personalGoalX: "78", personalGoalY: "82",
+    showMembers: true, showTotal: true, totalMode: "total", showGoal: false, goal: "0", goalLabel: "목표 금액", showPersonalGoal: false, personalGoalTheme: "goalClassic", personalGoalAnchor: "tl", personalGoalLimit: "3", personalGoalFree: false, personalGoalX: "78", personalGoalY: "82",
     tickerInMembers: false, tickerInGoal: false, tickerInPersonalGoal: false,
     goalWidth: "400", goalAnchor: "bc", goalCurrent: "", showTicker: false, tickerAnchor: "bc", tickerWidth: "600", tickerFree: false, tickerX: "50", tickerY: "86", showTimer: false,
     timerStart: null, timerAnchor: "tr", showMission: false, missionAnchor: "br",
@@ -160,6 +166,8 @@ export default function AdminPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [sigMatchPreviewIframeKey, setSigMatchPreviewIframeKey] = useState(0);
+  const [sigSalesPreviewIframeKey, setSigSalesPreviewIframeKey] = useState(0);
+  const [donorRankingsPreviewIframeKey, setDonorRankingsPreviewIframeKey] = useState(0);
   const [pullDistance, setPullDistance] = useState(0);
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const touchStartYRef = useRef<number | null>(null);
@@ -176,6 +184,54 @@ export default function AdminPage() {
   const [activeNav, setActiveNav] = useState<"dashboard" | "settlement" | "donor" | "overlay" | "logs">("dashboard");
   const panelCardClass = "rounded-xl border border-white/10 bg-[#252525] shadow-[0_8px_24px_rgba(0,0,0,0.28)]";
   const simpleMode = false;
+
+  const syncOneShotSigItem = useCallback((prev: AppState): AppState => {
+    const inv = prev.sigInventory || [];
+    const totalAmount = inv
+      .filter((x) => x.id !== ONE_SHOT_SIG_ID)
+      .reduce((sum, x) => sum + Math.max(0, Number(x.price || 0)) * Math.max(0, Number(x.soldCount || 0)), 0);
+    const oneShot = inv.find((x) => x.id === ONE_SHOT_SIG_ID);
+    if (!oneShot) {
+      return {
+        ...prev,
+        sigInventory: [
+          ...inv,
+          {
+            id: ONE_SHOT_SIG_ID,
+            name: ONE_SHOT_SIG_NAME,
+            price: totalAmount,
+            imageUrl: "",
+            memberId: "",
+            maxCount: 1,
+            soldCount: 0,
+            isRolling: false,
+            isActive: true,
+          },
+        ],
+      };
+    }
+    const nextOneShot = {
+      ...oneShot,
+      name: ONE_SHOT_SIG_NAME,
+      price: totalAmount,
+      maxCount: 1,
+      soldCount: 0,
+      isRolling: false,
+      isActive: true,
+    };
+    const changed =
+      oneShot.name !== nextOneShot.name ||
+      oneShot.price !== nextOneShot.price ||
+      oneShot.maxCount !== nextOneShot.maxCount ||
+      oneShot.soldCount !== nextOneShot.soldCount ||
+      oneShot.isRolling !== nextOneShot.isRolling ||
+      oneShot.isActive !== nextOneShot.isActive;
+    if (!changed) return prev;
+    return {
+      ...prev,
+      sigInventory: inv.map((x) => (x.id === ONE_SHOT_SIG_ID ? nextOneShot : x)),
+    };
+  }, []);
   const navItems: Array<{ key: "dashboard" | "settlement" | "donor" | "overlay" | "logs"; label: string; targetId: string }> = [
     { key: "dashboard", label: "대시보드", targetId: "dashboard-summary" },
     { key: "settlement", label: "정산 관리", targetId: "settlement-member-board" },
@@ -563,7 +619,8 @@ export default function AdminPage() {
     if (hasMembersWithGoal) q.set("showPersonalGoal", "true");
     try {
       const snapObj = {
-        members: state.members.map(m => ({ id: m.id, name: m.name, account: m.account, toon: m.toon, goal: m.goal, role: m.role, operating: m.operating })),
+        members: state.members.map(m => ({ id: m.id, name: m.name, account: m.account, toon: m.toon, goal: m.goal, operating: m.operating })),
+        memberPositions: state.memberPositions || {},
         donors: state.donors || [],
         missions: (state as any).missions || [],
         forbiddenWords: state.forbiddenWords || [],
@@ -601,48 +658,22 @@ export default function AdminPage() {
     return `${base}?${q.toString()}`;
   };
 
-  const buildSigMatchPreviewUrl = useCallback((): string => {
+  const buildSigMatchLiveUrl = useCallback((): string => {
     if (typeof window === "undefined") return "";
     const uid = user?.id || "finalent";
-    const base = `${window.location.origin}/overlay/sig-match`;
-    const q = new URLSearchParams();
-    q.set("u", uid);
-    q.set("previewGuide", "true");
-    try {
-      const snapObj = {
-        members: state.members.map((m) => ({
-          id: m.id,
-          name: m.name,
-          account: m.account,
-          toon: m.toon,
-          goal: m.goal,
-          role: m.role,
-          operating: m.operating,
-        })),
-        donors: state.donors || [],
-        sigMatchSettings: state.sigMatchSettings,
-        sigMatch: state.sigMatch || {},
-        updatedAt: Date.now(),
-      };
-      const json = JSON.stringify(snapObj);
-      const b64 = btoa(encodeURIComponent(json));
-      q.set("snap", b64);
-      const url = `${base}?${q.toString()}`;
-      if (url.length <= 1900) return url;
-      q.delete("snap");
-      const snapKey = `${PREVIEW_SNAP_PREFIX}sigmatch-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-      localStorage.setItem(snapKey, json);
-      q.set("snapKey", snapKey);
-      return `${base}?${q.toString()}`;
-    } catch {
-      return `${base}?u=${encodeURIComponent(uid)}&previewGuide=true`;
-    }
-  }, [user?.id, state.members, state.donors, state.sigMatchSettings, state.sigMatch]);
+    return `${window.location.origin}/overlay/sig-match?u=${encodeURIComponent(uid)}`;
+  }, [user?.id]);
 
+  const sigMatchPreviewUrlRef = useRef("");
   const [sigMatchPreviewIframeSrc, setSigMatchPreviewIframeSrc] = useState("");
   useEffect(() => {
-    setSigMatchPreviewIframeSrc(buildSigMatchPreviewUrl());
-  }, [buildSigMatchPreviewUrl]);
+    if (!sigMatchPreviewUrlRef.current) {
+      sigMatchPreviewUrlRef.current = buildSigMatchLiveUrl();
+    }
+    if (!sigMatchPreviewIframeSrc) {
+      setSigMatchPreviewIframeSrc(sigMatchPreviewUrlRef.current);
+    }
+  }, [sigMatchPreviewIframeSrc, buildSigMatchLiveUrl]);
 
   const copyUrl = async (url: string, id: string) => {
     try {
@@ -655,7 +686,8 @@ export default function AdminPage() {
     if (typeof window === "undefined") return "";
     const base = `${window.location.origin}/overlay`;
     const snapObj = {
-      members: state.members.map(m => ({ id: m.id, name: m.name, account: m.account, toon: m.toon, goal: m.goal, role: m.role, operating: m.operating })),
+      members: state.members.map(m => ({ id: m.id, name: m.name, account: m.account, toon: m.toon, goal: m.goal, operating: m.operating })),
+      memberPositions: state.memberPositions || {},
       donors: state.donors || [],
       missions: (state as any).missions || [],
       forbiddenWords: state.forbiddenWords || [],
@@ -680,6 +712,30 @@ export default function AdminPage() {
     setChatDraft(formatChatLine(state));
     setChatDraftDirty(false);
   }, [state, persistState]);
+
+  useEffect(() => {
+    const hasOneShot = (state.sigInventory || []).some((x) => x.id === ONE_SHOT_SIG_ID);
+    const totalAmount = (state.sigInventory || [])
+      .filter((x) => x.id !== ONE_SHOT_SIG_ID)
+      .reduce((sum, x) => sum + Math.max(0, Number(x.price || 0)) * Math.max(0, Number(x.soldCount || 0)), 0);
+    const oneShot = (state.sigInventory || []).find((x) => x.id === ONE_SHOT_SIG_ID);
+    const needsSync =
+      !hasOneShot ||
+      !oneShot ||
+      oneShot.name !== ONE_SHOT_SIG_NAME ||
+      oneShot.price !== totalAmount ||
+      oneShot.maxCount !== 1 ||
+      oneShot.soldCount !== 0 ||
+      oneShot.isRolling !== false ||
+      oneShot.isActive !== true;
+    if (!needsSync) return;
+    setState((prev: AppState) => {
+      const next = syncOneShotSigItem(prev);
+      if (next === prev) return prev;
+      persistState(next);
+      return next;
+    });
+  }, [state.sigInventory, persistState, syncOneShotSigItem]);
 
   useEffect(() => {
     // Retry unsynced writes quickly to minimize cross-device drift.
@@ -820,6 +876,9 @@ export default function AdminPage() {
         const next: AppState = {
           ...prev,
           members,
+          memberPositions: Object.fromEntries(
+            Object.entries(prev.memberPositions || {}).filter(([k]) => k !== id)
+          ),
           donors,
           sigMatch: nextSigMatch,
           mealMatch: nextMealMatch,
@@ -855,6 +914,7 @@ export default function AdminPage() {
       const next: AppState = {
         ...prev,
         members: [...prev.members, { id, name: base, account: 0, toon: 0 }],
+        memberPositions: { ...(prev.memberPositions || {}) },
         sigMatch: { ...(prev.sigMatch || {}), [id]: 0 },
         mealMatch: { ...(prev.mealMatch || {}), [id]: 0 },
         mealBattle: {
@@ -866,6 +926,37 @@ export default function AdminPage() {
       return next;
     });
     setNewMemberName("");
+  };
+
+  const updateMemberPosition = (memberId: string, position: string) => {
+    setState((prev: AppState) => {
+      const cleaned = (position || "").trim();
+      const nextMap = { ...(prev.memberPositions || {}) };
+      if (cleaned) nextMap[memberId] = cleaned;
+      else delete nextMap[memberId];
+      const next: AppState = { ...prev, memberPositions: nextMap };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const updateMemberPositionMode = (mode: AppState["memberPositionMode"]) => {
+    setState((prev: AppState) => {
+      const next: AppState = { ...prev, memberPositionMode: mode };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const updateRankPositionLabel = (index: number, value: string) => {
+    setState((prev: AppState) => {
+      const labels = [...(prev.rankPositionLabels || ["대표", "이사", "부장", "과장", "대리", "사원"])];
+      while (labels.length <= index) labels.push("");
+      labels[index] = value;
+      const next: AppState = { ...prev, rankPositionLabels: labels };
+      persistState(next);
+      return next;
+    });
   };
 
   const updateSigMatchSettings = (patch: Partial<AppState["sigMatchSettings"]>) => {
@@ -897,6 +988,66 @@ export default function AdminPage() {
           ...prev.mealMatchSettings,
           ...patch,
         },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const updateDonorRankingsTheme = (patch: Partial<AppState["donorRankingsTheme"]>) => {
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        donorRankingsTheme: {
+          ...(prev.donorRankingsTheme || defaultState().donorRankingsTheme),
+          ...patch,
+        },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const applyDonorRankingsPreset = (id: string) => {
+    setState((prev: AppState) => {
+      const preset = (prev.donorRankingsPresets || []).find((x) => x.id === id);
+      if (!preset) return prev;
+      const next: AppState = {
+        ...prev,
+        donorRankingsPresetId: id,
+        donorRankingsTheme: { ...preset.theme },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const saveDonorRankingsPreset = () => {
+    const name = (donorRankingPresetName || "").trim() || `후원순위 프리셋 ${(state.donorRankingsPresets?.length || 0) + 1}`;
+    setState((prev: AppState) => {
+      const preset = {
+        id: `drp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        name,
+        theme: { ...(prev.donorRankingsTheme || defaultState().donorRankingsTheme) },
+      };
+      const next: AppState = {
+        ...prev,
+        donorRankingsPresets: [...(prev.donorRankingsPresets || []), preset],
+        donorRankingsPresetId: preset.id,
+      };
+      persistState(next);
+      return next;
+    });
+    setDonorRankingPresetName("");
+  };
+
+  const deleteDonorRankingsPreset = (id: string) => {
+    setState((prev: AppState) => {
+      const presets = (prev.donorRankingsPresets || []).filter((x) => x.id !== id);
+      const next: AppState = {
+        ...prev,
+        donorRankingsPresets: presets,
+        donorRankingsPresetId: prev.donorRankingsPresetId === id ? presets[0]?.id : prev.donorRankingsPresetId,
       };
       persistState(next);
       return next;
@@ -938,6 +1089,7 @@ export default function AdminPage() {
               prev.mealBattle?.memberGaugeColors?.[memberId] ||
               MEAL_PARTICIPANT_COLORS[existing.length % MEAL_PARTICIPANT_COLORS.length],
             donationLinkActive: false,
+            donationLinkStartedAt: undefined,
           },
         ];
       } else if (!checked && exists) {
@@ -1055,22 +1207,26 @@ export default function AdminPage() {
   };
 
   const toggleSigRollingItem = (id: string, checked: boolean) => {
+    if (id === ONE_SHOT_SIG_ID) return;
     setState((prev: AppState) => {
-      const next: AppState = {
+      const draft: AppState = {
         ...prev,
         sigInventory: (prev.sigInventory || []).map((x) => (x.id === id ? { ...x, isRolling: checked } : x)),
       };
+      const next = syncOneShotSigItem(draft);
       persistState(next);
       return next;
     });
   };
 
   const toggleSigActiveItem = (id: string, checked: boolean) => {
+    if (id === ONE_SHOT_SIG_ID) return;
     setState((prev: AppState) => {
-      const next: AppState = {
+      const draft: AppState = {
         ...prev,
         sigInventory: (prev.sigInventory || []).map((x) => (x.id === id ? { ...x, isActive: checked } : x)),
       };
+      const next = syncOneShotSigItem(draft);
       persistState(next);
       return next;
     });
@@ -1083,16 +1239,26 @@ export default function AdminPage() {
       return;
     }
     const n = Math.max(1, Math.min(999, parseInt(String(rouletteSpinCount || "1"), 10) || 1));
+    const priceFilter =
+      roulettePriceFilter === "all"
+        ? null
+        : Math.max(0, Math.floor(Number.parseInt(String(roulettePriceFilter), 10) || 0));
     try {
       const res = await fetch(`/api/roulette/spin?user=${encodeURIComponent(uid)}`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spinCount: n }),
+        body: JSON.stringify({ spinCount: n, priceFilter }),
       });
       const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!res.ok) {
-        setSigExcelResult(j.error === "empty_inventory" ? "시그 인벤토리가 비어 있습니다." : `룰렛 실패: ${j.error || res.status}`);
+        setSigExcelResult(
+          j.error === "empty_inventory"
+            ? "시그 인벤토리가 비어 있습니다."
+            : j.error === "empty_price_tier"
+              ? "선택한 금액대에 남은 시그가 없습니다."
+              : `룰렛 실패: ${j.error || res.status}`
+        );
         return;
       }
       const remote = await loadStateFromApi(uid);
@@ -1102,15 +1268,17 @@ export default function AdminPage() {
           window.localStorage.setItem(storageKey(uid), JSON.stringify(remote));
         } catch {}
       }
-      setSigExcelResult(`룰렛 ${n}회 스핀 완료 (서버 당첨 확정). 오버레이 /overlay/sig-sales 에서 확인하세요.`);
+      const priceLabel = priceFilter ? ` · 금액대 ${priceFilter.toLocaleString("ko-KR")}원` : "";
+      setSigExcelResult(`룰렛 ${n}회 스핀 완료${priceLabel} (서버 당첨 확정). 오버레이 /overlay/sig-sales 에서 확인하세요.`);
     } catch (e) {
       setSigExcelResult(`룰렛 요청 오류: ${String(e)}`);
     }
   };
 
   const adjustSigSoldCount = (id: string, delta: number) => {
+    if (id === ONE_SHOT_SIG_ID) return;
     setState((prev: AppState) => {
-      const next: AppState = {
+      const draft: AppState = {
         ...prev,
         sigInventory: (prev.sigInventory || []).map((x) => {
           if (x.id !== id) return x;
@@ -1118,6 +1286,7 @@ export default function AdminPage() {
           return { ...x, soldCount };
         }),
       };
+      const next = syncOneShotSigItem(draft);
       persistState(next);
       return next;
     });
@@ -1125,21 +1294,36 @@ export default function AdminPage() {
 
   const updateSigItem = (id: string, patch: Partial<AppState["sigInventory"][number]>) => {
     setState((prev: AppState) => {
-      const next: AppState = {
+      const sanitizedPatch =
+        id === ONE_SHOT_SIG_ID
+          ? {
+              ...patch,
+              name: ONE_SHOT_SIG_NAME,
+              price: undefined,
+              maxCount: undefined,
+              soldCount: undefined,
+              isRolling: undefined,
+              isActive: undefined,
+            }
+          : patch;
+      const draft: AppState = {
         ...prev,
-        sigInventory: (prev.sigInventory || []).map((x) => (x.id === id ? { ...x, ...patch } : x)),
+        sigInventory: (prev.sigInventory || []).map((x) => (x.id === id ? { ...x, ...sanitizedPatch } : x)),
       };
+      const next = syncOneShotSigItem(draft);
       persistState(next);
       return next;
     });
   };
 
   const removeSigItem = (id: string) => {
+    if (id === ONE_SHOT_SIG_ID) return;
     setState((prev: AppState) => {
-      const next: AppState = {
+      const draft: AppState = {
         ...prev,
         sigInventory: (prev.sigInventory || []).filter((x) => x.id !== id),
       };
+      const next = syncOneShotSigItem(draft);
       persistState(next);
       return next;
     });
@@ -1168,10 +1352,11 @@ export default function AdminPage() {
         isRolling: true,
         isActive: true,
       };
-      const next: AppState = {
+      const draft: AppState = {
         ...prev,
         sigInventory: [...(prev.sigInventory || []), nextItem],
       };
+      const next = syncOneShotSigItem(draft);
       persistState(next);
       return next;
     });
@@ -1196,7 +1381,8 @@ export default function AdminPage() {
   const clearAllSigItems = () => {
     if (!confirm("시그 목록 전체를 삭제할까요?")) return;
     setState((prev: AppState) => {
-      const next: AppState = { ...prev, sigInventory: [] };
+      const draft: AppState = { ...prev, sigInventory: [] };
+      const next = syncOneShotSigItem(draft);
       persistState(next);
       return next;
     });
@@ -1223,7 +1409,7 @@ export default function AdminPage() {
     setState((prev: AppState) => {
       const existing = new Set((prev.sigInventory || []).map((x) => (x.name || "").replace(/\s+/g, "").toLowerCase()));
       const memberMap = new Map((prev.members || []).map((m) => [m.name.trim(), m.id]));
-      const nextItems = [...(prev.sigInventory || [])];
+      const nextItems = [...(prev.sigInventory || [])].filter((x) => x.id !== ONE_SHOT_SIG_ID);
 
       for (const row of rows) {
         const name = String(row.name ?? row["이름"] ?? "").trim();
@@ -1263,7 +1449,8 @@ export default function AdminPage() {
         added += 1;
       }
 
-      const next: AppState = { ...prev, sigInventory: nextItems };
+      const draft: AppState = { ...prev, sigInventory: nextItems };
+      const next = syncOneShotSigItem(draft);
       persistState(next);
       return next;
     });
@@ -1365,7 +1552,8 @@ export default function AdminPage() {
         prev.mealBattle?.participants || [],
         donorMemberId,
         amount,
-        1
+        1,
+        donor.at
       );
       const next: AppState = {
         ...prev,
@@ -1388,7 +1576,10 @@ export default function AdminPage() {
     if (!donorMemberId) setDonorMemberId(state.members[0].id);
   }, [state.members, donorMemberId]);
 
-  const isOperatingMember = (m: Member) => Boolean(m.operating) || /운영비/i.test(m.name) || /운영비/i.test(m.role || "");
+  const isOperatingMember = (m: Member) => {
+    const position = state.memberPositions?.[m.id] || "";
+    return Boolean(m.operating) || /운영비/i.test(m.name) || /운영비/i.test(position);
+  };
   const total = useMemo(
     () => state.members.reduce((sum, m) => sum + (m.account || 0) + (m.toon || 0), 0),
     [state.members]
@@ -1766,6 +1957,69 @@ export default function AdminPage() {
                   <MemberRow key={m.id} member={m} onChange={updateMember} onRename={renameMember} onReset={resetMemberAmounts} onDelete={deleteMember} />
                 ))}
               </div>
+              <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-2">
+                <div>
+                  <h3 className="text-base font-semibold">직급 관리 (별도)</h3>
+                  <p className="text-xs text-neutral-400 mt-1">
+                    직급은 멤버 정보와 분리 저장됩니다. 정렬/오버레이 표시는 아래 직급 맵을 기준으로 동작합니다.
+                  </p>
+                </div>
+                <div className="rounded border border-white/10 bg-black/20 p-2">
+                  <div className="text-xs text-neutral-400 mb-1">직급 모드</div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className={`px-2 py-1 rounded text-xs ${state.memberPositionMode !== "rankLinked" ? "bg-emerald-700 hover:bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                      onClick={() => updateMemberPositionMode("fixed")}
+                    >
+                      멤버 고정 직급
+                    </button>
+                    <button
+                      type="button"
+                      className={`px-2 py-1 rounded text-xs ${state.memberPositionMode === "rankLinked" ? "bg-emerald-700 hover:bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                      onClick={() => updateMemberPositionMode("rankLinked")}
+                    >
+                      순위 연동 직급
+                    </button>
+                  </div>
+                  <p className="mt-1 text-[11px] text-neutral-500">
+                    순위 연동 모드에서는 점수 순으로 정렬되며, 1위부터 직급 라벨이 이동하면서 붙습니다.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {state.members.map((m) => (
+                    <label key={`pos-${m.id}`} className="grid grid-cols-[120px_1fr] items-center gap-2 rounded border border-white/10 bg-black/20 px-2 py-1.5">
+                      <span className="truncate text-sm text-neutral-300">{m.name}</span>
+                      <input
+                        className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
+                        placeholder="직급 (예: 대표, 이사, 부장)"
+                        value={state.memberPositions?.[m.id] || ""}
+                        onChange={(e) => updateMemberPosition(m.id, e.target.value)}
+                      />
+                    </label>
+                  ))}
+                </div>
+                {state.memberPositionMode === "rankLinked" && (
+                  <div className="rounded border border-white/10 bg-black/20 p-2">
+                    <div className="text-xs text-neutral-400 mb-2">
+                      순위별 직급 라벨 (1위~12위). 비워두면 해당 순위 직급은 오버레이에서 출력되지 않습니다.
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                      {Array.from({ length: 12 }).map((_, idx) => (
+                        <label key={`rank-label-${idx}`} className="grid grid-cols-[46px_1fr] items-center gap-2 text-xs text-neutral-300">
+                          <span>{idx + 1}위</span>
+                          <input
+                            className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
+                            value={state.rankPositionLabels?.[idx] || ""}
+                            onChange={(e) => updateRankPositionLabel(idx, e.target.value)}
+                            placeholder={idx === 0 ? "대표(고정)" : `직급 ${idx + 1}`}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
               <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
@@ -1998,7 +2252,7 @@ export default function AdminPage() {
                 <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
                   <span>오버레이 URL:</span>
                   <code className="text-neutral-300 break-all">
-                    {typeof window !== "undefined" ? window.location.origin : ""}/overlay/sig-match?u={user?.id || "finalent"}
+                    /overlay/sig-match?u={user?.id || "finalent"}
                   </code>
                   <button
                     type="button"
@@ -2014,24 +2268,15 @@ export default function AdminPage() {
                     type="button"
                     className="px-2 py-1 rounded text-xs shrink-0 bg-amber-800/90 hover:bg-amber-700"
                     onClick={() => {
-                      const u = buildSigMatchPreviewUrl();
+                      const u = buildSigMatchLiveUrl();
                       window.open(u, "_blank", "noopener,noreferrer");
                     }}
                   >
-                    미리보기 (스냅샷)
-                  </button>
-                  <button
-                    type="button"
-                    className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-sig-match-preview" ? "bg-emerald-600" : "bg-amber-900/60 hover:bg-amber-800/80"}`}
-                    onClick={() => {
-                      void copyUrl(buildSigMatchPreviewUrl(), "dash-sig-match-preview");
-                    }}
-                  >
-                    {copiedId === "dash-sig-match-preview" ? "복사됨!" : "미리보기 URL 복사"}
+                    실시간 오버레이 열기
                   </button>
                 </div>
                 <p className="text-[11px] text-neutral-500">
-                  미리보기는 현재 관리 화면의 멤버·후원·시그 설정을 URL에 담아 새 탭에서 확인합니다(OBS·방송용 실시간 URL과 별개).
+                  아래 오버레이 UI는 스냅샷이 아닌 실시간 URL을 그대로 표시합니다. 관리자 변경사항이 즉시 반영됩니다.
                 </p>
                 <div className="mt-3 rounded-lg border border-white/10 bg-black/50 overflow-hidden">
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 px-2 py-1.5">
@@ -2039,7 +2284,11 @@ export default function AdminPage() {
                     <button
                       type="button"
                       className="rounded border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-emerald-500/60 hover:text-emerald-200"
-                      onClick={() => setSigMatchPreviewIframeKey((k) => k + 1)}
+                      onClick={() => {
+                        sigMatchPreviewUrlRef.current = `${buildSigMatchLiveUrl()}&_t=${Date.now()}`;
+                        setSigMatchPreviewIframeSrc(sigMatchPreviewUrlRef.current);
+                        setSigMatchPreviewIframeKey((k) => k + 1);
+                      }}
                     >
                       새로고침
                     </button>
@@ -2052,7 +2301,6 @@ export default function AdminPage() {
                         title="시그 대전 오버레이 미리보기"
                         className="absolute inset-0 h-full w-full border-0"
                         style={{ background: "transparent" }}
-                        sandbox="allow-scripts allow-same-origin"
                       />
                     ) : (
                       <div className="flex h-[280px] items-center justify-center text-xs text-neutral-500">미리보기 URL 생성 중…</div>
@@ -2133,6 +2381,26 @@ export default function AdminPage() {
                             className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
                             value={state.mealBattle?.teamBName || "B팀"}
                             onChange={(e) => updateMealBattle({ teamBName: e.target.value })}
+                          />
+                        </label>
+                        <label className="block space-y-1">
+                          <span className="text-xs text-neutral-400">A팀 목표 (0=자동)</span>
+                          <input
+                            className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                            type="number"
+                            min={0}
+                            value={state.mealBattle?.teamAGoal ?? 0}
+                            onChange={(e) => updateMealBattle({ teamAGoal: Math.max(0, Number.parseInt(e.target.value || "0", 10) || 0) })}
+                          />
+                        </label>
+                        <label className="block space-y-1">
+                          <span className="text-xs text-neutral-400">B팀 목표 (0=자동)</span>
+                          <input
+                            className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                            type="number"
+                            min={0}
+                            value={state.mealBattle?.teamBGoal ?? 0}
+                            onChange={(e) => updateMealBattle({ teamBGoal: Math.max(0, Number.parseInt(e.target.value || "0", 10) || 0) })}
                           />
                         </label>
                       </div>
@@ -2380,10 +2648,23 @@ export default function AdminPage() {
                       <div className="min-w-0">
                         <div className="font-semibold text-sm">{row.name}</div>
                         <div className="text-xs text-neutral-400">
-                          점수 {row.score.toLocaleString("ko-KR")} / 목표 {(row.goal ?? state.mealBattle?.totalGoal ?? 100).toLocaleString("ko-KR")}
+                          점수 {(Number(row.score) || 0).toLocaleString("ko-KR")} / 목표 {(Number(row.goal ?? state.mealBattle?.totalGoal ?? 100) || 100).toLocaleString("ko-KR")}
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2 justify-end">
+                        <label className="flex items-center gap-1 text-xs text-neutral-400">
+                          표시 이름
+                          <input
+                            className="w-28 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-neutral-100"
+                            value={row.name || ""}
+                            onChange={(e) =>
+                              updateMealParticipant(row.memberId, (p) => ({
+                                ...p,
+                                name: e.target.value,
+                              }))
+                            }
+                          />
+                        </label>
                         <label className="flex items-center gap-1 text-xs text-neutral-400">
                           개인 목표
                           <input
@@ -2405,7 +2686,14 @@ export default function AdminPage() {
                             row.donationLinkActive ? "bg-amber-700 hover:bg-amber-600 text-white" : "bg-neutral-700 hover:bg-neutral-600 text-neutral-200"
                           }`}
                           onClick={() =>
-                            updateMealParticipant(row.memberId, (p) => ({ ...p, donationLinkActive: !p.donationLinkActive }))
+                            updateMealParticipant(row.memberId, (p) => {
+                              const nextActive = !p.donationLinkActive;
+                              return {
+                                ...p,
+                                donationLinkActive: nextActive,
+                                donationLinkStartedAt: nextActive ? Date.now() : undefined,
+                              };
+                            })
                           }
                         >
                           후원 연동 {row.donationLinkActive ? "ON" : "OFF"}
@@ -2435,7 +2723,7 @@ export default function AdminPage() {
                 <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
                   <span>오버레이 URL:</span>
                   <code className="text-neutral-300 break-all">
-                    {typeof window !== "undefined" ? window.location.origin : ""}/overlay/meal-match?u={user?.id || "finalent"}
+                    /overlay/meal-match?u={user?.id || "finalent"}
                   </code>
                   <button
                     type="button"
@@ -2447,6 +2735,183 @@ export default function AdminPage() {
                   >
                     {copiedId === "dash-meal-match" ? "복사됨!" : "URL 복사"}
                   </button>
+                </div>
+                <div className="rounded border border-white/10 bg-black/20 p-3 space-y-2">
+                  <div>
+                    <h4 className="text-sm font-semibold">후원 순위 오버레이 (계좌/투네 분리)</h4>
+                    <p className="text-xs text-neutral-400 mt-1">
+                      계좌/투네 후원 순위를 각각 표시합니다. 아래 슬라이더/컬러피커로 조정한 뒤 프리셋으로 저장할 수 있습니다.
+                    </p>
+                  </div>
+                  <div className="rounded border border-white/10 bg-neutral-900/40 p-2 space-y-2">
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
+                      <label className="text-[11px] text-neutral-400">
+                        표시 개수 (Top)
+                        <input
+                          type="range"
+                          min={1}
+                          max={20}
+                          value={state.donorRankingsTheme.top}
+                          onChange={(e) => updateDonorRankingsTheme({ top: Number(e.target.value) })}
+                          className="w-full"
+                        />
+                        <div className="text-xs text-neutral-300">{state.donorRankingsTheme.top}</div>
+                      </label>
+                      <label className="text-[11px] text-neutral-400">
+                        제목 폰트
+                        <input
+                          type="range"
+                          min={14}
+                          max={80}
+                          value={state.donorRankingsTheme.titleSize}
+                          onChange={(e) => updateDonorRankingsTheme({ titleSize: Number(e.target.value) })}
+                          className="w-full"
+                        />
+                        <div className="text-xs text-neutral-300">{state.donorRankingsTheme.titleSize}px</div>
+                      </label>
+                      <label className="text-[11px] text-neutral-400">
+                        행 폰트
+                        <input
+                          type="range"
+                          min={12}
+                          max={64}
+                          value={state.donorRankingsTheme.rowSize}
+                          onChange={(e) => updateDonorRankingsTheme({ rowSize: Number(e.target.value) })}
+                          className="w-full"
+                        />
+                        <div className="text-xs text-neutral-300">{state.donorRankingsTheme.rowSize}px</div>
+                      </label>
+                      <label className="text-[11px] text-neutral-400">
+                        순위 폰트
+                        <input
+                          type="range"
+                          min={12}
+                          max={72}
+                          value={state.donorRankingsTheme.rankSize}
+                          onChange={(e) => updateDonorRankingsTheme({ rankSize: Number(e.target.value) })}
+                          className="w-full"
+                        />
+                        <div className="text-xs text-neutral-300">{state.donorRankingsTheme.rankSize}px</div>
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+                      {[
+                        ["headerAccountBg", "계좌 헤더"],
+                        ["headerToonBg", "투네 헤더"],
+                        ["rankColor", "순위 색"],
+                        ["nameColor", "닉네임 색"],
+                        ["amountColor", "금액 색"],
+                      ].map(([key, label]) => (
+                        <label key={key} className="text-[11px] text-neutral-400 flex items-center justify-between gap-2 rounded border border-white/10 bg-black/20 px-2 py-1">
+                          <span>{label}</span>
+                          <input
+                            type="color"
+                            value={String((state.donorRankingsTheme as unknown as Record<string, unknown>)[key] || "#ffffff")}
+                            onChange={(e) => updateDonorRankingsTheme({ [key]: e.target.value } as Partial<AppState["donorRankingsTheme"]>)}
+                            className="h-7 w-9 rounded border border-white/20 bg-transparent p-0.5"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                      {[
+                        ["bg", "배경"],
+                        ["panelBg", "패널 배경"],
+                        ["borderColor", "테두리"],
+                        ["rowEvenBg", "짝수 행"],
+                        ["rowOddBg", "홀수 행"],
+                        ["outlineColor", "텍스트 외곽선"],
+                      ].map(([key, label]) => (
+                        <label key={key} className="text-[11px] text-neutral-400 flex items-center gap-2 rounded border border-white/10 bg-black/20 px-2 py-1">
+                          <span className="w-24 shrink-0">{label}</span>
+                          <input
+                            type="text"
+                            value={String((state.donorRankingsTheme as unknown as Record<string, unknown>)[key] || "")}
+                            onChange={(e) => updateDonorRankingsTheme({ [key]: e.target.value } as Partial<AppState["donorRankingsTheme"]>)}
+                            className="h-7 w-full rounded border border-white/10 bg-neutral-900/80 px-2 text-xs"
+                            placeholder="transparent / #fff / rgba(...)"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <div className="text-[11px] text-neutral-500">
+                      반투명/rgba 값이 필요하면 아래 URL 파라미터로 덮어쓸 수 있습니다. 기본은 관리자 저장값이 사용됩니다.
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="text"
+                        className="h-8 w-56 rounded border border-white/10 bg-neutral-900/80 px-2 text-xs"
+                        value={donorRankingPresetName}
+                        onChange={(e) => setDonorRankingPresetName(e.target.value)}
+                        placeholder="프리셋 이름 (예: 방송 기본)"
+                      />
+                      <button type="button" className="px-2 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-xs" onClick={saveDonorRankingsPreset}>
+                        현재값 프리셋 저장
+                      </button>
+                    </div>
+                    <div className="space-y-1">
+                      {(state.donorRankingsPresets || []).length === 0 ? (
+                        <p className="text-[11px] text-neutral-500">저장된 프리셋이 없습니다.</p>
+                      ) : (
+                        (state.donorRankingsPresets || []).map((preset) => (
+                          <div key={preset.id} className="flex items-center justify-between gap-2 rounded border border-white/10 bg-black/20 px-2 py-1">
+                            <span className="text-xs text-neutral-200 truncate">{preset.name}</span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                className={`px-2 py-0.5 rounded text-xs ${state.donorRankingsPresetId === preset.id ? "bg-emerald-700" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                                onClick={() => applyDonorRankingsPreset(preset.id)}
+                              >
+                                {state.donorRankingsPresetId === preset.id ? "적용중" : "적용"}
+                              </button>
+                              <button
+                                type="button"
+                                className="px-2 py-0.5 rounded text-xs bg-red-900/80 hover:bg-red-800"
+                                onClick={() => deleteDonorRankingsPreset(preset.id)}
+                              >
+                                삭제
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
+                    <span>실시간 URL:</span>
+                    <code className="text-neutral-300 break-all">
+                      /overlay/donor-rankings?u={user?.id || "finalent"}
+                    </code>
+                    <button
+                      type="button"
+                      className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-donor-rankings" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                      onClick={() => {
+                        const u = `${window.location.origin}/overlay/donor-rankings?u=${user?.id || "finalent"}`;
+                        void copyUrl(u, "dash-donor-rankings");
+                      }}
+                    >
+                      {copiedId === "dash-donor-rankings" ? "복사됨!" : "URL 복사"}
+                    </button>
+                  </div>
+                  <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
+                    <span>테스트 URL:</span>
+                    <code className="text-neutral-300 break-all">
+                      /overlay/donor-rankings?u={user?.id || "finalent"}&test=true
+                    </code>
+                    <button
+                      type="button"
+                      className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-donor-rankings-test" ? "bg-emerald-600" : "bg-amber-800/90 hover:bg-amber-700"}`}
+                      onClick={() => {
+                        const u = `${window.location.origin}/overlay/donor-rankings?u=${user?.id || "finalent"}&test=true`;
+                        void copyUrl(u, "dash-donor-rankings-test");
+                      }}
+                    >
+                      {copiedId === "dash-donor-rankings-test" ? "복사됨!" : "테스트 URL 복사"}
+                    </button>
+                  </div>
+                  <div className="text-[11px] text-neutral-500">
+                    필요 시 URL 파라미터로 임시 오버라이드 가능: <code>top</code>, <code>test</code>, <code>titleSize</code>, <code>rowSize</code>, <code>rankSize</code>, <code>headerAccountBg</code>, <code>headerToonBg</code>, <code>rowEvenBg</code>, <code>rowOddBg</code>, <code>nameColor</code>, <code>amountColor</code>, <code>rankColor</code>, <code>panelBg</code>, <code>border</code>, <code>outline</code>, <code>bg</code>
+                  </div>
                 </div>
               </div>
               <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
@@ -2469,6 +2934,25 @@ export default function AdminPage() {
                         onChange={(e) => setRouletteSpinCount(e.target.value)}
                       />
                     </label>
+                    <label className="flex flex-col text-[11px] text-neutral-400">
+                      금액대
+                      <select
+                        className="mt-0.5 w-40 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
+                        value={roulettePriceFilter}
+                        onChange={(e) => setRoulettePriceFilter(e.target.value)}
+                      >
+                        <option value="all">전체 금액</option>
+                        {Array.from(
+                          new Set((state.sigInventory || []).map((x) => Math.max(0, Number(x.price || 0))).filter((x) => Number.isFinite(x) && x > 0))
+                        )
+                          .sort((a, b) => a - b)
+                          .map((price) => (
+                            <option key={`roulette-price-${price}`} value={String(price)}>
+                              {price.toLocaleString("ko-KR")}원
+                            </option>
+                          ))}
+                      </select>
+                    </label>
                     <button
                       type="button"
                       className="rounded bg-fuchsia-700 px-3 py-2 text-sm font-semibold hover:bg-fuchsia-600"
@@ -2483,7 +2967,7 @@ export default function AdminPage() {
                 <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
                   <span>판매 오버레이 URL:</span>
                   <code className="text-neutral-300 break-all">
-                    {typeof window !== "undefined" ? window.location.origin : ""}/overlay/sig-sales?u={user?.id || "finalent"}
+                    /overlay/sig-sales?u={user?.id || "finalent"}
                   </code>
                   <button
                     type="button"
@@ -2495,6 +2979,34 @@ export default function AdminPage() {
                   >
                     {copiedId === "dash-sig-sales" ? "복사됨!" : "URL 복사"}
                   </button>
+                  <button
+                    type="button"
+                    className="rounded bg-[#6366f1] px-2 py-1 text-xs hover:bg-[#4f46e5]"
+                    onClick={() => window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}`, "_blank", "noopener,noreferrer")}
+                  >
+                    미리보기 열기
+                  </button>
+                </div>
+                <div className="rounded-lg border border-white/10 bg-black/50 overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-white/5 px-2 py-1.5">
+                    <span className="text-xs font-medium text-neutral-300">시그 룰렛/판매 오버레이 미리보기</span>
+                    <button
+                      type="button"
+                      className="rounded border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-emerald-500/60 hover:text-emerald-200"
+                      onClick={() => setSigSalesPreviewIframeKey((k) => k + 1)}
+                    >
+                      새로고침
+                    </button>
+                  </div>
+                  <div className="relative w-full bg-black/40" style={{ minHeight: "280px", aspectRatio: "16 / 10" }}>
+                    <iframe
+                      key={`sig-sales-${sigSalesPreviewIframeKey}-${user?.id || "finalent"}`}
+                      src={`/overlay/sig-sales?u=${user?.id || "finalent"}`}
+                      title="시그 룰렛 판매 오버레이 미리보기"
+                      className="absolute inset-0 h-full w-full border-0"
+                      style={{ background: "transparent" }}
+                    />
+                  </div>
                 </div>
                 <div className="rounded border border-white/10 bg-black/20 p-2">
                   <div className="text-xs font-semibold text-neutral-300 mb-2">판매 활성 시그 (빠른 조절)</div>
@@ -2504,9 +3016,9 @@ export default function AdminPage() {
                       .map((item) => (
                         <div key={`active-${item.id}`} className="flex flex-wrap items-center justify-between gap-2 rounded border border-white/10 bg-neutral-900/50 px-2 py-1">
                           <span className="text-sm font-medium truncate max-w-[200px]">{item.name}</span>
-                          <span className="text-xs text-neutral-400">
-                            {item.soldCount}/{item.maxCount}
-                          </span>
+                          {item.maxCount <= 1 ? (
+                            <span className="text-xs text-neutral-400">{item.soldCount >= 1 ? "완판" : "판매대기"}</span>
+                          ) : null}
                           <div className="flex gap-1">
                             <button type="button" className="rounded bg-red-900/70 px-2 py-0.5 text-xs" onClick={() => adjustSigSoldCount(item.id, -1)}>
                               취소 -1
@@ -2533,7 +3045,7 @@ export default function AdminPage() {
                     <div className="text-xs text-neutral-400 flex flex-wrap items-center justify-end gap-2">
                       <span>오버레이 URL:</span>
                       <code className="text-neutral-300 break-all text-left">
-                        {typeof window !== "undefined" ? window.location.origin : ""}/overlay/sig-board?u={user?.id || "finalent"}
+                        /overlay/sig-board?u={user?.id || "finalent"}
                       </code>
                       <button
                         type="button"
@@ -2582,7 +3094,7 @@ export default function AdminPage() {
                   {sigExcelResult ? <span className="text-xs text-neutral-300">{sigExcelResult}</span> : null}
                 </div>
                 <div className="space-y-2">
-                  <div className="rounded border border-white/10 bg-black/25 p-2 grid grid-cols-1 md:grid-cols-[1fr_120px_100px_1fr_1fr_auto] gap-2">
+                  <div className="rounded border border-white/10 bg-black/25 p-2 grid grid-cols-1 md:grid-cols-[1fr_120px_1fr_1fr_auto] gap-2">
                     <input
                       className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
                       placeholder="신규 시그 이름"
@@ -2596,14 +3108,6 @@ export default function AdminPage() {
                       placeholder="가격"
                       value={newSigPrice}
                       onChange={(e) => setNewSigPrice(e.target.value)}
-                    />
-                    <input
-                      className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
-                      type="number"
-                      min={1}
-                      placeholder="최대"
-                      value={newSigMaxCount}
-                      onChange={(e) => setNewSigMaxCount(e.target.value)}
                     />
                     <select
                       className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
@@ -2639,7 +3143,9 @@ export default function AdminPage() {
                       </div>
                     </div>
                   ) : null}
-                  {(state.sigInventory || []).map((item) => (
+                  {(state.sigInventory || []).map((item) => {
+                    const isOneShot = item.id === ONE_SHOT_SIG_ID;
+                    return (
                     <div key={item.id} className="rounded border border-white/10 bg-[#1f1f1f] px-3 py-2">
                       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                         <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -2647,6 +3153,7 @@ export default function AdminPage() {
                             <input
                               type="checkbox"
                               checked={Boolean(item.isRolling)}
+                              disabled={isOneShot}
                               onChange={(e) => toggleSigRollingItem(item.id, e.target.checked)}
                             />
                             <span>보드 노출</span>
@@ -2655,25 +3162,39 @@ export default function AdminPage() {
                             <input
                               type="checkbox"
                               checked={Boolean(item.isActive)}
+                              disabled={isOneShot}
                               onChange={(e) => toggleSigActiveItem(item.id, e.target.checked)}
                             />
                             <span>판매 활성</span>
                           </label>
                           <span className="font-semibold">{item.name}</span>
                         </div>
-                        <div className="text-xs text-neutral-400">
-                          가격 {item.price.toLocaleString("ko-KR")} · 판매 {item.soldCount}/{item.maxCount}
-                        </div>
+                        <div className="text-xs text-neutral-400">가격 {item.price.toLocaleString("ko-KR")}</div>
                         <div className="flex items-center gap-1">
-                          <button className="px-2 py-1 rounded bg-red-900/70 hover:bg-red-800 text-xs" onClick={() => adjustSigSoldCount(item.id, -1)}>취소 -1</button>
-                          <button className="px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-xs" onClick={() => adjustSigSoldCount(item.id, 1)}>판매 +1</button>
-                          <button className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs" onClick={() => removeSigItem(item.id)}>삭제</button>
+                          {item.maxCount <= 1 && item.soldCount >= 1 ? (
+                            <Image
+                              src="/images/sigs/stamp.png"
+                              alt="완판 도장"
+                              width={28}
+                              height={28}
+                              unoptimized
+                              className="h-7 w-7 object-contain opacity-90"
+                            />
+                          ) : null}
+                          {!isOneShot && (
+                            <>
+                              <button className="px-2 py-1 rounded bg-red-900/70 hover:bg-red-800 text-xs" onClick={() => adjustSigSoldCount(item.id, -1)}>취소 -1</button>
+                              <button className="px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-xs" onClick={() => adjustSigSoldCount(item.id, 1)}>판매 +1</button>
+                              <button className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs" onClick={() => removeSigItem(item.id)}>삭제</button>
+                            </>
+                          )}
                         </div>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-[1fr_120px_100px_1fr_1.3fr] gap-2">
+                      <div className="grid grid-cols-1 md:grid-cols-[1fr_120px_1fr_1.3fr] gap-2">
                         <input
                           className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
                           value={item.name}
+                          disabled={isOneShot}
                           onChange={(e) => updateSigItem(item.id, { name: e.target.value })}
                         />
                         <input
@@ -2681,18 +3202,13 @@ export default function AdminPage() {
                           type="number"
                           min={0}
                           value={item.price}
+                          disabled={isOneShot}
                           onChange={(e) => updateSigItem(item.id, { price: Math.max(0, Math.floor(Number(e.target.value || 0) || 0)) })}
-                        />
-                        <input
-                          className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
-                          type="number"
-                          min={1}
-                          value={item.maxCount}
-                          onChange={(e) => updateSigItem(item.id, { maxCount: Math.max(1, Math.floor(Number(e.target.value || 1) || 1)) })}
                         />
                         <select
                           className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
                           value={item.memberId || ""}
+                          disabled={isOneShot}
                           onChange={(e) => updateSigItem(item.id, { memberId: e.target.value })}
                         >
                           <option value="">멤버 미지정</option>
@@ -2725,8 +3241,14 @@ export default function AdminPage() {
                           </div>
                         </div>
                       ) : null}
+                      {isOneShot ? (
+                        <div className="mt-2 text-[11px] text-fuchsia-300">
+                          한방 시그 금액은 나온 시그 합계(판매량×가격)로 자동 계산됩니다.
+                        </div>
+                      ) : null}
                     </div>
-                  ))}
+                  );
+                  })}
                 </div>
                 <div className="text-xs text-neutral-500">
                   「보드 노출」은 시그 보드 롤링,「판매 활성」은 /overlay/sig-sales 판매 그리드에 표시됩니다. 시그 추가/멤버 지정/판매량 조절은 즉시 `/api/state`를 통해 Redis에 반영됩니다.
@@ -2750,6 +3272,7 @@ export default function AdminPage() {
                   const mm = Math.floor(effective / 60);
                   const ss = effective % 60;
                   const overlayOn = state.matchTimerEnabled?.[timerDef.flag] !== false;
+                  const timerOnlyUrl = `/overlay?u=${user?.id || "finalent"}&showMembers=false&showTotal=false&showGoal=false&showPersonalGoal=false&showTicker=false&showMission=false&showTimer=true&timerType=${timerDef.flag}`;
                   return (
                     <div key={timerDef.key} className="rounded border border-white/10 bg-[#1f1f1f] px-3 py-2">
                       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2781,6 +3304,29 @@ export default function AdminPage() {
                           <button className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs" onClick={() => adjustTimerSeconds(timerDef.key, +10)}>+10초</button>
                         </div>
                       </div>
+                      {timerDef.flag === "general" && (
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-neutral-400">
+                          <span>일반 타이머 오버레이:</span>
+                          <code className="text-neutral-300 break-all">{timerOnlyUrl}</code>
+                          <button
+                            type="button"
+                            className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-general-timer" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                            onClick={() => {
+                              const u = `${window.location.origin}${timerOnlyUrl}`;
+                              void copyUrl(u, "dash-general-timer");
+                            }}
+                          >
+                            {copiedId === "dash-general-timer" ? "복사됨!" : "URL 복사"}
+                          </button>
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs text-white"
+                            onClick={() => window.open(timerOnlyUrl, "_blank", "noopener,noreferrer")}
+                          >
+                            오버레이 열기
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -2900,7 +3446,8 @@ export default function AdminPage() {
                                         prev.mealBattle?.participants || [],
                                         d.memberId,
                                         d.amount,
-                                        -1
+                                        -1,
+                                        d.at
                                       );
                                       const next: AppState = {
                                         ...prev,
@@ -3118,6 +3665,48 @@ export default function AdminPage() {
                 복사되는 URL은 <span className="text-neutral-300">서버(Redis)에 저장된 최신 상태</span>를 실시간으로 불러옵니다. 아래 프레임 미리보기만 편집 시점 스냅샷을 쓸 수 있습니다.
                 위치/크기는 Prism에서 조정하세요. 세로 방송이면 브라우저 소스를 1080×1920에 맞추면 됩니다.
               </p>
+              <div className="mb-3 rounded border border-white/10 bg-black/20 p-2 text-xs text-neutral-400 flex flex-wrap items-center gap-2">
+                <span>후원 리스트 오버레이:</span>
+                <code className="text-neutral-300 break-all">/overlay/donor-rankings?u={user?.id || "finalent"}</code>
+                <button
+                  type="button"
+                  className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-donor-rankings-inline" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                  onClick={() => {
+                    const u = `${window.location.origin}/overlay/donor-rankings?u=${user?.id || "finalent"}`;
+                    void copyUrl(u, "dash-donor-rankings-inline");
+                  }}
+                >
+                  {copiedId === "dash-donor-rankings-inline" ? "복사됨!" : "URL 복사"}
+                </button>
+                <button
+                  type="button"
+                  className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs text-white"
+                  onClick={() => window.open(`/overlay/donor-rankings?u=${user?.id || "finalent"}`, "_blank", "noopener,noreferrer")}
+                >
+                  오버레이 열기
+                </button>
+              </div>
+              <div className="mb-3 rounded-lg border border-white/10 bg-black/30 overflow-hidden">
+                <div className="flex items-center justify-between border-b border-white/5 px-2 py-1.5">
+                  <span className="text-xs font-medium text-neutral-300">후원 리스트 오버레이 미리보기</span>
+                  <button
+                    type="button"
+                    className="rounded border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-emerald-500/60 hover:text-emerald-200"
+                    onClick={() => setDonorRankingsPreviewIframeKey((k) => k + 1)}
+                  >
+                    새로고침
+                  </button>
+                </div>
+                <div className="relative w-full bg-black/40" style={{ minHeight: "260px", aspectRatio: "16 / 9" }}>
+                  <iframe
+                    key={`donor-rankings-${donorRankingsPreviewIframeKey}-${user?.id || "finalent"}`}
+                    src={`/overlay/donor-rankings?u=${user?.id || "finalent"}`}
+                    title="후원 리스트 오버레이 미리보기"
+                    className="absolute inset-0 h-full w-full border-0"
+                    style={{ background: "transparent" }}
+                  />
+                </div>
+              </div>
               {presets.length === 0 && (
                 <div className="text-sm text-neutral-400 p-6 text-center border border-dashed border-white/10 rounded">아직 오버레이가 없습니다. 위 버튼으로 추가하세요.</div>
               )}
@@ -3146,10 +3735,7 @@ export default function AdminPage() {
                             <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
                               <label className="text-xs text-neutral-400">테마</label>
                               <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.theme} onChange={(e) => updatePreset(p.id, { theme: e.target.value })}>
-                                <option value="default">기본</option>
-                                <option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option><option value="excelTeal">엑셀(틸)</option><option value="excelPurple">엑셀(퍼플)</option><option value="excelEmerald">엑셀(에메랄드)</option><option value="excelOrange">엑셀(오렌지)</option><option value="excelIndigo">엑셀(인디고)</option>
-                                <option value="neon">네온</option><option value="neonExcel">네온 엑셀</option><option value="retro">레트로</option><option value="minimal">미니멀</option><option value="rpg">RPG</option><option value="pastel">파스텔</option>
-                                <option value="rainbow">무지개</option><option value="sunset">일몰</option><option value="ocean">오션</option><option value="forest">포레스트</option><option value="aurora">오로라</option><option value="violet">바이올렛</option><option value="coral">코랄</option><option value="mint">민트</option><option value="lava">라바</option><option value="ice">아이스</option>
+                                <option value="default">기본(핑크 그라데이션)</option>
                               </select>
                               {/* Palette view removed per user preference; compact select retained */}
                               {(p.showMembers || p.showTotal) && (
@@ -3160,10 +3746,7 @@ export default function AdminPage() {
                                     value={p.membersTheme || "auto"}
                                     onChange={(e) => updatePreset(p.id, { membersTheme: e.target.value, totalTheme: e.target.value })}
                                   >
-                                    <option value="auto">자동(전체 테마 따름)</option>
-                                    <option value="default">기본</option>
-                                    <option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option><option value="excelTeal">엑셀(틸)</option><option value="excelPurple">엑셀(퍼플)</option><option value="excelEmerald">엑셀(에메랄드)</option><option value="excelOrange">엑셀(오렌지)</option><option value="excelIndigo">엑셀(인디고)</option>
-                                    <option value="minimal">미니멀</option><option value="pastel">파스텔</option><option value="retro">레트로</option><option value="rpg">RPG</option>
+                                    <option value="default">기본(핑크 그라데이션)</option>
                                   </select>
                                   {/* Palette view removed; keep compact select */}
                                   <label className="text-xs text-neutral-400">표 배경 불투명도</label>
@@ -3172,6 +3755,15 @@ export default function AdminPage() {
                                     <input className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right" value={p.tableBgOpacity || "100"} onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value.replace(/[^\\d]/g, "") })} />
                                     <span className="text-xs text-neutral-500">%</span>
                                   </div>
+                                  <label className="text-xs text-neutral-400">TOTAL 표시</label>
+                                  <select
+                                    className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                    value={p.totalMode || "total"}
+                                    onChange={(e) => updatePreset(p.id, { totalMode: e.target.value as "total" | "contribution" })}
+                                  >
+                                    <option value="total">TOTAL</option>
+                                    <option value="contribution">기여도</option>
+                                  </select>
                                 </>
                               )}
                               {p.showGoal && (
@@ -3182,10 +3774,7 @@ export default function AdminPage() {
                                     value={p.goalTheme || "auto"}
                                     onChange={(e) => updatePreset(p.id, { goalTheme: e.target.value })}
                                   >
-                                    <option value="auto">자동(전체 테마 따름)</option>
-                                    <option value="default">기본</option>
-                                    <option value="excel">엑셀(녹색)</option><option value="excelBlue">엑셀(파랑)</option><option value="excelSlate">엑셀(슬레이트)</option><option value="excelAmber">엑셀(앰버)</option><option value="excelRose">엑셀(로즈)</option><option value="excelNavy">엑셀(네이비)</option><option value="excelTeal">엑셀(틸)</option><option value="excelPurple">엑셀(퍼플)</option><option value="excelEmerald">엑셀(에메랄드)</option><option value="excelOrange">엑셀(오렌지)</option><option value="excelIndigo">엑셀(인디고)</option>
-                                    <option value="minimal">미니멀</option><option value="pastel">파스텔</option><option value="retro">레트로</option><option value="rpg">RPG</option>
+                                    <option value="default">기본(핑크 그라데이션)</option>
                                   </select>
                                   {/* Palette view removed; keep compact select */}
                                 </>
@@ -4264,6 +4853,7 @@ function VerticalPreview({ url }: { url: string }) {
   const [loading, setLoading] = useState(true);
   const [iframeKey, setIframeKey] = useState(0);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [w, h] = orientation === "portrait" ? [540, 960] : [960, 540];
   const previewUrl = useMemo(() => {
     if (!url || typeof url !== "string" || url.trim() === "") return "";
@@ -4275,7 +4865,33 @@ function VerticalPreview({ url }: { url: string }) {
       return url;
     }
   }, [url]);
+  useEffect(() => {
+    if (loadTimeoutRef.current) {
+      clearTimeout(loadTimeoutRef.current);
+      loadTimeoutRef.current = null;
+    }
+    if (!previewUrl) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setErr(null);
+    loadTimeoutRef.current = setTimeout(() => {
+      setLoading(false);
+      setErr("미리보기 로딩 지연 (새 탭 열기로 확인)");
+    }, 15000);
+    return () => {
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+        loadTimeoutRef.current = null;
+      }
+    };
+  }, [previewUrl, iframeKey]);
   const onLoad = useCallback((e: any) => {
+    if (loadTimeoutRef.current) {
+      clearTimeout(loadTimeoutRef.current);
+      loadTimeoutRef.current = null;
+    }
     setLoading(false);
     try {
       const doc = e?.target?.contentDocument;
@@ -4289,6 +4905,10 @@ function VerticalPreview({ url }: { url: string }) {
     }
   }, []);
   const onError = useCallback(() => {
+    if (loadTimeoutRef.current) {
+      clearTimeout(loadTimeoutRef.current);
+      loadTimeoutRef.current = null;
+    }
     setLoading(false);
     setErr("미리보기 네트워크 오류");
   }, []);
