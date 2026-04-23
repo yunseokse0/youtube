@@ -323,6 +323,19 @@ export function normalizeDonorRankingsOverlayConfig(input: unknown): OverlayConf
   return normalizeDonationListsOverlayConfig(input);
 }
 
+function normalizeSigSalesExcludedIds(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const x of input) {
+    const id = String(x || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
 export function defaultState(): AppState {
   const defaultTimer: TimerState = { remainingTime: 0, isActive: false, lastUpdated: Date.now() };
   const defaultMealBattle: MealBattleState = {
@@ -377,6 +390,7 @@ export function defaultState(): AppState {
     sigInventory: DEFAULT_SIG_INVENTORY.map((x) => ({ ...x })),
     sigSoldOutStampUrl: "",
     sigSalesMemberPresets: {},
+    sigSalesExcludedIds: [],
     rouletteState: normalizeRouletteState(null),
     overlayPresets: [],
     sigMatch: {},
@@ -629,6 +643,7 @@ export function loadState(userId?: string | null): AppState {
               ])
           )
         : {};
+    data.sigSalesExcludedIds = normalizeSigSalesExcludedIds((data as AppState).sigSalesExcludedIds);
     data.sigMatch = data.sigMatch && typeof data.sigMatch === "object" ? data.sigMatch : {};
     data.mealBattle = normalizeMealBattle((data as AppState).mealBattle);
     data.mealMatch = data.mealMatch && typeof data.mealMatch === "object" ? data.mealMatch : {};
@@ -759,6 +774,7 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
                 ])
             )
           : {};
+      data.sigSalesExcludedIds = normalizeSigSalesExcludedIds((data as AppState).sigSalesExcludedIds);
       data.sigMatch = data.sigMatch && typeof data.sigMatch === "object" ? data.sigMatch : {};
       data.mealBattle = normalizeMealBattle((data as AppState).mealBattle);
       data.mealMatch = data.mealMatch && typeof data.mealMatch === "object" ? data.mealMatch : {};

@@ -106,10 +106,20 @@ export default function SigSalesOverlayPage() {
   const { state, ready } = useRemoteState(userId);
   const rs = state?.rouletteState;
   const inv = state?.sigInventory || [];
+  const excludedSet = useMemo(
+    () => new Set((state?.sigSalesExcludedIds || []).map((x) => String(x))),
+    [state?.sigSalesExcludedIds]
+  );
+  const invForSales = useMemo(() => inv.filter((x) => !excludedSet.has(x.id)), [inv, excludedSet]);
   const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || "/images/sigs/stamp.png";
-  const activeItems = useMemo(() => inv.filter((x) => x.isActive), [inv]);
-  const wheelItems = useMemo(() => (inv.length ? inv : activeItems), [inv, activeItems]);
-  const reel = useMemo(() => (inv.length ? [...inv, ...inv, ...inv, ...inv] : []), [inv]);
+  const activeItems = useMemo(() => invForSales.filter((x) => x.isActive), [invForSales]);
+  const wheelItems = useMemo(() => {
+    const rolling = invForSales.filter((x) => x.isRolling);
+    if (rolling.length > 0) return rolling;
+    if (activeItems.length > 0) return activeItems;
+    return invForSales;
+  }, [invForSales, activeItems]);
+  const reel = useMemo(() => (wheelItems.length ? [...wheelItems, ...wheelItems, ...wheelItems, ...wheelItems] : []), [wheelItems]);
   const demoX = useMotionValue(0);
   const finishOnceRef = useRef(false);
   const spinAudio = useAudio("/sounds/spin.mp3", { loop: true, volume: 0.55 });

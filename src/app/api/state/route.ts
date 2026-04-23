@@ -101,6 +101,7 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
   if (!("missions" in patch)) next.missions = base.missions;
   if (!("sigInventory" in patch)) next.sigInventory = base.sigInventory;
   if (!("sigSoldOutStampUrl" in patch)) next.sigSoldOutStampUrl = base.sigSoldOutStampUrl;
+  if (!("sigSalesExcludedIds" in patch)) next.sigSalesExcludedIds = base.sigSalesExcludedIds;
   if (!("overlayPresets" in patch)) next.overlayPresets = base.overlayPresets;
   if (!("overlaySettings" in patch)) next.overlaySettings = base.overlaySettings;
   if (!("sigMatch" in patch)) next.sigMatch = base.sigMatch;

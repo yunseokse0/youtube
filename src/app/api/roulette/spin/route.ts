@@ -77,7 +77,12 @@ export async function POST(req: Request) {
         }
       }
     } catch {}
-    const inv = normalizeSigInventory(s.sigInventory);
+    const excludedSet = new Set(
+      Array.isArray((s as AppState).sigSalesExcludedIds)
+        ? (s as AppState).sigSalesExcludedIds.map((x) => String(x))
+        : []
+    );
+    const inv = normalizeSigInventory(s.sigInventory).filter((x) => !excludedSet.has(x.id));
     const rollingPool = inv.filter((x) => x.isRolling && x.soldCount < x.maxCount);
     const pool = rollingPool.length > 0 ? rollingPool : inv.filter((x) => x.soldCount < x.maxCount);
     const usePool = pool.length > 0 ? pool : inv;

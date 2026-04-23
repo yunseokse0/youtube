@@ -1626,6 +1626,20 @@ export default function AdminPage() {
     })();
   };
 
+  const toggleSigSalesExcluded = (id: string, excluded: boolean) => {
+    setState((prev: AppState) => {
+      const base = new Set((prev.sigSalesExcludedIds || []).map(String));
+      if (excluded) base.add(id);
+      else base.delete(id);
+      const next: AppState = {
+        ...prev,
+        sigSalesExcludedIds: Array.from(base),
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
   const saveSigSalesPresetForMember = (memberId: string) => {
     if (!memberId) return;
     setState((prev: AppState) => {
@@ -3501,7 +3515,7 @@ export default function AdminPage() {
                     <div className="mb-2 text-[11px] text-neutral-400">관리자 내장 룰렛 컴포넌트 미리보기</div>
                     <div className="flex justify-center">
                       <Roulette
-                        items={(state.sigInventory || []).filter((x) => x.isRolling)}
+                        items={(state.sigInventory || []).filter((x) => x.isRolling && !(state.sigSalesExcludedIds || []).includes(x.id))}
                         isRolling={Boolean(state.rouletteState?.isRolling)}
                         resultId={state.rouletteState?.result?.id}
                         spinDurationSec={5}
@@ -3544,6 +3558,48 @@ export default function AdminPage() {
                       <p className="text-xs text-neutral-500">판매 활성 시그가 없습니다. 아래 목록에서 &quot;판매 활성&quot;을 켜 주세요.</p>
                     ) : null}
                   </div>
+                </div>
+                <div className="rounded border border-white/10 bg-black/20 p-2">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-xs font-semibold text-neutral-300">시그판매 제외 설정 (그리드/룰렛 공통)</div>
+                    <button
+                      type="button"
+                      className="rounded bg-neutral-700 px-2 py-0.5 text-[11px] hover:bg-neutral-600"
+                      onClick={() => {
+                        setState((prev: AppState) => {
+                          const next: AppState = { ...prev, sigSalesExcludedIds: [] };
+                          persistState(next);
+                          return next;
+                        });
+                      }}
+                    >
+                      전체 해제
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-1.5 md:grid-cols-2">
+                    {(state.sigInventory || []).map((item) => {
+                      const excluded = (state.sigSalesExcludedIds || []).includes(item.id);
+                      return (
+                        <label
+                          key={`exclude-sig-sales-${item.id}`}
+                          className={`flex cursor-pointer items-center justify-between rounded border px-2 py-1 text-xs ${
+                            excluded ? "border-rose-500/40 bg-rose-950/35 text-rose-100" : "border-white/10 bg-neutral-900/40 text-neutral-200"
+                          }`}
+                        >
+                          <span className="truncate pr-2">{item.name}</span>
+                          <input
+                            type="checkbox"
+                            checked={excluded}
+                            onChange={(e) => toggleSigSalesExcluded(item.id, e.target.checked)}
+                            className="h-4 w-4"
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-2 text-[11px] text-neutral-500">
+                    체크된 시그는 <code>/overlay/sig-sales</code> 화면 표시와 <code>/api/roulette/spin</code> 추첨 후보에서 제외됩니다.
+                  </p>
                 </div>
               </div>
               <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">

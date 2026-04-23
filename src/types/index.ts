@@ -283,6 +283,8 @@ export type AppState = {
   donorRankingsOverlayConfig: OverlayConfig;
   /** `/overlay/donation-lists` 배경 GIF·투명도(상태 저장 시 Redis와 동기화) */
   donationListsOverlayConfig: OverlayConfig;
+  /** 시그 판매/룰렛에서 제외할 시그 ID 목록 */
+  sigSalesExcludedIds: string[];
   /** 마지막 저장 시각(epoch ms), 원격-로컬 최신성 비교 기준 */
   updatedAt: number;
 };
