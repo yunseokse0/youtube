@@ -31,18 +31,29 @@ import {
   MissionItem,
   totalCombined,
   TimerState,
+  normalizeDonorRankingsOverlayConfig,
   normalizeSigMatchPools,
   normalizeSigMatchParticipantIds,
+  normalizeDonationListsOverlayConfig,
+  type OverlayConfig,
 } from "@/lib/state";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
+import Roulette from "@/components/Roulette";
 import { appendSettlementRecordAndSync, appendSigMatchIncentiveSettlementAndSync, SettlementMemberRatioOverrides } from "@/lib/settlement";
 import { formatSigMatchStat, getSigMatchRankings } from "@/lib/settlement-utils";
 import { getEffectiveRemainingTime, pauseTimer, resumeTimer } from "@/lib/timer-utils";
 import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
 import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
+
+/** 후원 계열 오버레이 배경 GIF 프리셋 — 외부 URL은 방송망에서 차단될 수 있음 */
+const DONATION_LISTS_BG_GIF_PRESETS: { label: string; url: string }[] = [
+  { label: "— 프리셋 —", url: "" },
+  { label: "파스텔 반짝 (Giphy)", url: "https://media.giphy.com/media/26BRuo6sLetdllPAQ/giphy.gif" },
+  { label: "하트 파티클 (Giphy)", url: "https://media2.giphy.com/media/l0MYC0LajbaPoEADu/giphy.gif" },
+];
 import MissionBoard from "@/components/MissionBoard";
 import MissionBoardSlot from "@/components/MissionBoardSlot";
 
@@ -59,7 +70,7 @@ type OverlayPreset = {
   showGoal: boolean; goal: string; goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string;
   showPersonalGoal?: boolean; personalGoalTheme?: string; personalGoalAnchor?: string; personalGoalLimit?: string; personalGoalFree?: boolean; personalGoalX?: string; personalGoalY?: string;
   tickerInMembers?: boolean; tickerInGoal?: boolean; tickerInPersonalGoal?: boolean;
-  showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string;
+  showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
   confettiMilestone?: string; tableBgOpacity?: string; vertical?: boolean; accountColor?: string; toonColor?: string; host?: string;
@@ -74,6 +85,7 @@ const PLACEHOLDER_MISSIONS: MissionItem[] = [
 
 const ONE_SHOT_SIG_ID = "sig_one_shot";
 const ONE_SHOT_SIG_NAME = "한방 시그";
+const MAX_SIG_UPLOAD_BYTES = 30 * 1024 * 1024;
 
 function ClientTime({ ts }: { ts: number | string }) {
   const [text, setText] = useState<string>("");
@@ -116,8 +128,11 @@ export default function AdminPage() {
   const [newSigMemberId, setNewSigMemberId] = useState<string>("");
   const [newSigImageUrl, setNewSigImageUrl] = useState("");
   const [sigExcelResult, setSigExcelResult] = useState("");
+  const [sigPresetMemberId, setSigPresetMemberId] = useState("");
   const [rouletteSpinCount, setRouletteSpinCount] = useState("1");
-  const [roulettePriceFilter, setRoulettePriceFilter] = useState("all");
+  /** 회차별 금액 범위(최소/최대). 최대 40회차까지 UI, 그 이상은 40회차 값으로 패딩 */
+  const [roulettePriceRanges, setRoulettePriceRanges] = useState<Array<{ min: string; max: string }>>([{ min: "", max: "" }]);
+  const ROULETTE_ROUND_UI_CAP = 40;
   const [donorRankingPresetName, setDonorRankingPresetName] = useState("");
   const [settlementTitle, setSettlementTitle] = useState("");
   const [accountRatioInput, setAccountRatioInput] = useState("70");
@@ -151,7 +166,7 @@ export default function AdminPage() {
     showMembers: true, showTotal: true, totalMode: "total", showGoal: false, goal: "0", goalLabel: "목표 금액", showPersonalGoal: false, personalGoalTheme: "goalClassic", personalGoalAnchor: "tl", personalGoalLimit: "3", personalGoalFree: false, personalGoalX: "78", personalGoalY: "82",
     tickerInMembers: false, tickerInGoal: false, tickerInPersonalGoal: false,
     goalWidth: "400", goalAnchor: "bc", goalCurrent: "", showTicker: false, tickerAnchor: "bc", tickerWidth: "600", tickerFree: false, tickerX: "50", tickerY: "86", showTimer: false,
-    timerStart: null, timerAnchor: "tr", showMission: false, missionAnchor: "br",
+    timerStart: null, timerAnchor: "tr", timerShowHours: false, timerFontColor: "", timerBgColor: "", timerBorderColor: "", timerBgOpacity: "40", showMission: false, missionAnchor: "br",
     missionWidth: "800", missionDuration: "25",
     membersTheme: "auto", totalTheme: "auto", goalTheme: "auto", tickerBaseTheme: "auto", timerTheme: "auto", missionTheme: "auto",
     showBottomDonors: false, donorsSize: "", donorsGap: "16", donorsSpeed: "60", donorsLimit: "8", donorsFormat: "short", donorsUnit: "", donorsColor: "", donorsBgColor: "", donorsBgOpacity: "0", tickerTheme: "auto", tickerGlow: "45", tickerShadow: "35", currencyLocale: "ko-KR",
@@ -168,6 +183,13 @@ export default function AdminPage() {
   const [sigMatchPreviewIframeKey, setSigMatchPreviewIframeKey] = useState(0);
   const [sigSalesPreviewIframeKey, setSigSalesPreviewIframeKey] = useState(0);
   const [donorRankingsPreviewIframeKey, setDonorRankingsPreviewIframeKey] = useState(0);
+  const [timerUiNow, setTimerUiNow] = useState(Date.now());
+  const [timerMinuteInputs, setTimerMinuteInputs] = useState<Record<"sigMatchTimer" | "mealMatchTimer" | "sigSalesTimer" | "generalTimer", string>>({
+    sigMatchTimer: "0",
+    mealMatchTimer: "0",
+    sigSalesTimer: "0",
+    generalTimer: "0",
+  });
   const [pullDistance, setPullDistance] = useState(0);
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const touchStartYRef = useRef<number | null>(null);
@@ -468,6 +490,11 @@ export default function AdminPage() {
       }
     });
   }, [user, persistState]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setTimerUiNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
 
   // Keep admin amounts synchronized across mobile/PC sessions.
   // Server state is treated as source of truth across devices.
@@ -1008,6 +1035,30 @@ export default function AdminPage() {
     });
   };
 
+  const updateDonationListsOverlayConfig = (patch: Partial<OverlayConfig>) => {
+    setState((prev: AppState) => {
+      const base = normalizeDonationListsOverlayConfig(prev.donationListsOverlayConfig);
+      const next: AppState = {
+        ...prev,
+        donationListsOverlayConfig: { ...base, ...patch },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const updateDonorRankingsOverlayConfig = (patch: Partial<OverlayConfig>) => {
+    setState((prev: AppState) => {
+      const base = normalizeDonorRankingsOverlayConfig(prev.donorRankingsOverlayConfig);
+      const next: AppState = {
+        ...prev,
+        donorRankingsOverlayConfig: { ...base, ...patch },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
   const applyDonorRankingsPreset = (id: string) => {
     setState((prev: AppState) => {
       const preset = (prev.donorRankingsPresets || []).find((x) => x.id === id);
@@ -1239,24 +1290,47 @@ export default function AdminPage() {
       return;
     }
     const n = Math.max(1, Math.min(999, parseInt(String(rouletteSpinCount || "1"), 10) || 1));
-    const priceFilter =
-      roulettePriceFilter === "all"
-        ? null
-        : Math.max(0, Math.floor(Number.parseInt(String(roulettePriceFilter), 10) || 0));
+    const cap = Math.min(n, ROULETTE_ROUND_UI_CAP);
+    let parts = roulettePriceRanges.slice(0, cap);
+    while (parts.length < cap) parts.push({ min: "", max: "" });
+    const toRange = (v: { min: string; max: string }): { min: number | null; max: number | null } | null => {
+      const minRaw = String(v?.min || "").replace(/[^\d]/g, "");
+      const maxRaw = String(v?.max || "").replace(/[^\d]/g, "");
+      const minNum = minRaw ? Math.floor(Number.parseInt(minRaw, 10) || 0) : 0;
+      const maxNum = maxRaw ? Math.floor(Number.parseInt(maxRaw, 10) || 0) : 0;
+      const hasMin = minNum > 0;
+      const hasMax = maxNum > 0;
+      if (!hasMin && !hasMax) return null;
+      const min = hasMin ? minNum : null;
+      const max = hasMax ? maxNum : null;
+      if (min != null && max != null && min > max) {
+        return { min: max, max: min };
+      }
+      return { min, max };
+    };
+    const priceRanges: Array<{ min: number | null; max: number | null } | null> = parts.map(toRange);
+    const pad = priceRanges[priceRanges.length - 1] ?? null;
+    while (priceRanges.length < n) priceRanges.push(pad);
     try {
       const res = await fetch(`/api/roulette/spin?user=${encodeURIComponent(uid)}`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spinCount: n, priceFilter }),
+        body: JSON.stringify({ spinCount: n, priceRanges }),
       });
-      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; round?: number };
       if (!res.ok) {
         setSigExcelResult(
           j.error === "empty_inventory"
             ? "시그 인벤토리가 비어 있습니다."
             : j.error === "empty_price_tier"
-              ? "선택한 금액대에 남은 시그가 없습니다."
+              ? typeof j.round === "number"
+                ? `${j.round}회차: 선택한 금액대에 뽑을 시그가 없습니다.`
+                : "선택한 금액대에 남은 시그가 없습니다."
+              : j.error === "empty_price_range"
+                ? typeof j.round === "number"
+                  ? `${j.round}회차: 설정한 최소/최대 범위에 뽑을 시그가 없습니다.`
+                  : "설정한 최소/최대 범위에 남은 시그가 없습니다."
               : `룰렛 실패: ${j.error || res.status}`
         );
         return;
@@ -1268,7 +1342,26 @@ export default function AdminPage() {
           window.localStorage.setItem(storageKey(uid), JSON.stringify(remote));
         } catch {}
       }
-      const priceLabel = priceFilter ? ` · 금액대 ${priceFilter.toLocaleString("ko-KR")}원` : "";
+      const uniq = Array.from(
+        new Set(
+          priceRanges.map((x) => {
+            if (!x) return "전체";
+            const min = x.min != null ? x.min.toLocaleString("ko-KR") : "";
+            const max = x.max != null ? x.max.toLocaleString("ko-KR") : "";
+            if (min && max) return `${min}~${max}`;
+            if (min) return `${min} 이상`;
+            if (max) return `${max} 이하`;
+            return "전체";
+          })
+        )
+      );
+      const priceLabel =
+        uniq.length <= 1
+          ? uniq[0] === "전체"
+            ? " · 금액대 전체"
+            : ` · 금액대 ${uniq[0]}원`
+          : ` · 회차별 금액대 (${uniq.slice(0, 5).join(", ")}${uniq.length > 5 ? "…" : ""})`;
+      setSigSalesPreviewIframeKey((k) => k + 1);
       setSigExcelResult(`룰렛 ${n}회 스핀 완료${priceLabel} (서버 당첨 확정). 오버레이 /overlay/sig-sales 에서 확인하세요.`);
     } catch (e) {
       setSigExcelResult(`룰렛 요청 오류: ${String(e)}`);
@@ -1276,7 +1369,22 @@ export default function AdminPage() {
   };
 
   const adjustSigSoldCount = (id: string, delta: number) => {
-    if (id === ONE_SHOT_SIG_ID) return;
+    if (id === ONE_SHOT_SIG_ID) {
+      if (delta <= 0) return;
+      setState((prev: AppState) => {
+        const draft: AppState = {
+          ...prev,
+          sigInventory: (prev.sigInventory || []).map((x) => {
+            if (x.id === ONE_SHOT_SIG_ID) return x;
+            return { ...x, soldCount: Math.max(0, x.maxCount) };
+          }),
+        };
+        const next = syncOneShotSigItem(draft);
+        persistState(next);
+        return next;
+      });
+      return;
+    }
     setState((prev: AppState) => {
       const draft: AppState = {
         ...prev,
@@ -1457,36 +1565,138 @@ export default function AdminPage() {
     setSigExcelResult(`엑셀 업로드 완료: ${added}개 추가, ${skipped}개 중복/무효로 건너뜀`);
   };
 
-  const uploadSigImage = (id: string, file: File | null) => {
-    if (!file) return;
-    const isAllowed = /image\/(gif|png|jpe?g)/i.test(file.type);
+  const uploadSigImageFile = async (file: File | null): Promise<string | null> => {
+    if (!file) return null;
+    const isAllowed = /image\/(gif|png|jpe?g|webp)/i.test(file.type);
     if (!isAllowed) {
-      alert("gif, png, jpg(jpeg) 파일만 업로드 가능합니다.");
-      return;
+      alert("gif, png, jpg(jpeg), webp 파일만 업로드 가능합니다.");
+      return null;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = typeof reader.result === "string" ? reader.result : "";
-      if (!result) return;
-      updateSigItem(id, { imageUrl: result });
-    };
-    reader.readAsDataURL(file);
+    if (file.size > MAX_SIG_UPLOAD_BYTES) {
+      alert("이미지 용량은 최대 30MB까지 업로드 가능합니다.");
+      return null;
+    }
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch("/api/upload/sig-image", {
+      method: "POST",
+      credentials: "include",
+      body: fd,
+    });
+    const j = (await res.json().catch(() => ({}))) as { ok?: boolean; url?: string; error?: string };
+    if (!res.ok || !j.ok || !j.url) {
+      alert(`이미지 업로드 실패: ${j.error || res.status}`);
+      return null;
+    }
+    return j.url;
+  };
+
+  const uploadSigImage = (id: string, file: File | null) => {
+    void (async () => {
+      const url = await uploadSigImageFile(file);
+      if (!url) return;
+      updateSigItem(id, { imageUrl: url });
+    })();
   };
 
   const uploadNewSigImage = (file: File | null) => {
-    if (!file) return;
-    const isAllowed = /image\/(gif|png|jpe?g)/i.test(file.type);
-    if (!isAllowed) {
-      alert("gif, png, jpg(jpeg) 파일만 업로드 가능합니다.");
+    void (async () => {
+      const url = await uploadSigImageFile(file);
+      if (!url) return;
+      setNewSigImageUrl(url);
+    })();
+  };
+
+  const updateSigSoldOutStampUrl = (url: string) => {
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        sigSoldOutStampUrl: url,
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const uploadSigSoldOutStampImage = (file: File | null) => {
+    void (async () => {
+      const url = await uploadSigImageFile(file);
+      if (!url) return;
+      updateSigSoldOutStampUrl(url);
+    })();
+  };
+
+  const saveSigSalesPresetForMember = (memberId: string) => {
+    if (!memberId) return;
+    setState((prev: AppState) => {
+      const memberSigIds = new Set(
+        (prev.sigInventory || [])
+          .filter((x) => x.id !== ONE_SHOT_SIG_ID && x.memberId === memberId)
+          .map((x) => x.id)
+      );
+      const activeIds = (prev.sigInventory || [])
+        .filter((x) => memberSigIds.has(x.id) && x.isActive)
+        .map((x) => x.id);
+      const next: AppState = {
+        ...prev,
+        sigSalesMemberPresets: {
+          ...(prev.sigSalesMemberPresets || {}),
+          [memberId]: activeIds,
+        },
+      };
+      persistState(next);
+      return next;
+    });
+    setSigExcelResult("멤버별 시그 판매 프리셋을 저장했습니다.");
+  };
+
+  const applySigSalesPresetForMember = (memberId: string) => {
+    if (!memberId) return;
+    if (!state.sigSalesMemberPresets?.[memberId]?.length) {
+      setSigExcelResult("저장된 프리셋이 없습니다. 먼저 현재 설정을 저장해 주세요.");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = typeof reader.result === "string" ? reader.result : "";
-      if (!result) return;
-      setNewSigImageUrl(result);
-    };
-    reader.readAsDataURL(file);
+    setState((prev: AppState) => {
+      const presetIds = new Set((prev.sigSalesMemberPresets?.[memberId] || []).map(String));
+      const next: AppState = {
+        ...prev,
+        sigInventory: (prev.sigInventory || []).map((x) => {
+          if (x.id === ONE_SHOT_SIG_ID) return x;
+          if (x.memberId !== memberId) return { ...x, isActive: false };
+          return { ...x, isActive: presetIds.has(x.id) };
+        }),
+      };
+      persistState(next);
+      return next;
+    });
+    setSigExcelResult("선택 멤버의 시그 판매 프리셋을 적용했습니다.");
+  };
+
+  const clearSigSalesPresetForMember = (memberId: string) => {
+    if (!memberId) return;
+    setState((prev: AppState) => {
+      const map = { ...(prev.sigSalesMemberPresets || {}) };
+      delete map[memberId];
+      const next: AppState = { ...prev, sigSalesMemberPresets: map };
+      persistState(next);
+      return next;
+    });
+    setSigExcelResult("선택 멤버의 시그 판매 프리셋을 삭제했습니다.");
+  };
+
+  const applyNextSigSalesPresetMember = () => {
+    const presetMemberIds = state.members
+      .map((m) => m.id)
+      .filter((id) => (state.sigSalesMemberPresets?.[id]?.length || 0) > 0);
+    if (presetMemberIds.length === 0) {
+      setSigExcelResult("저장된 멤버별 판매 프리셋이 없습니다.");
+      return;
+    }
+    const currentIdx = presetMemberIds.indexOf(sigPresetMemberId);
+    const nextIdx = currentIdx < 0 ? 0 : (currentIdx + 1) % presetMemberIds.length;
+    const nextMemberId = presetMemberIds[nextIdx]!;
+    setSigPresetMemberId(nextMemberId);
+    applySigSalesPresetForMember(nextMemberId);
   };
 
   const updateMatchTimer = (
@@ -1514,12 +1724,47 @@ export default function AdminPage() {
     });
   };
 
+  const setTimerMinutes = (key: "sigMatchTimer" | "mealMatchTimer" | "sigSalesTimer" | "generalTimer", minutes: number) => {
+    const safeMin = Math.max(0, Math.floor(minutes));
+    updateMatchTimer(key, (timer) => ({
+      remainingTime: safeMin * 60,
+      isActive: timer.isActive,
+      lastUpdated: Date.now(),
+    }));
+  };
+
   const updateMatchTimerEnabled = (patch: Partial<AppState["matchTimerEnabled"]>) => {
     setState((prev: AppState) => {
       const base = prev.matchTimerEnabled || { sigMatch: true, mealMatch: true, sigSales: true, general: true };
       const next: AppState = {
         ...prev,
         matchTimerEnabled: { ...base, ...patch },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const updateTimerDisplayStyle = (
+    key: "sigMatch" | "mealMatch" | "sigSales" | "general",
+    patch: Partial<AppState["timerDisplayStyles"]["general"]>
+  ) => {
+    setState((prev: AppState) => {
+      const baseStyles = prev.timerDisplayStyles || {
+        sigMatch: { showHours: false, fontColor: "", bgColor: "", borderColor: "", bgOpacity: 40 },
+        mealMatch: { showHours: false, fontColor: "", bgColor: "", borderColor: "", bgOpacity: 40 },
+        sigSales: { showHours: false, fontColor: "", bgColor: "", borderColor: "", bgOpacity: 40 },
+        general: { showHours: false, fontColor: "", bgColor: "", borderColor: "", bgOpacity: 40 },
+      };
+      const next: AppState = {
+        ...prev,
+        timerDisplayStyles: {
+          ...baseStyles,
+          [key]: {
+            ...baseStyles[key],
+            ...patch,
+          },
+        },
       };
       persistState(next);
       return next;
@@ -1575,6 +1820,11 @@ export default function AdminPage() {
     if (!state.members.length) return;
     if (!donorMemberId) setDonorMemberId(state.members[0].id);
   }, [state.members, donorMemberId]);
+  useEffect(() => {
+    if (!state.members.length) return;
+    const exists = state.members.some((m) => m.id === sigPresetMemberId);
+    if (!exists) setSigPresetMemberId(state.members[0].id);
+  }, [state.members, sigPresetMemberId]);
 
   const isOperatingMember = (m: Member) => {
     const position = state.memberPositions?.[m.id] || "";
@@ -2914,6 +3164,200 @@ export default function AdminPage() {
                   </div>
                 </div>
               </div>
+              <div className="mt-3 rounded-2xl border border-fuchsia-400/35 bg-gradient-to-br from-fuchsia-950/55 via-rose-950/45 to-pink-950/40 p-4 shadow-[0_10px_36px_rgba(236,72,153,0.22)] backdrop-blur-md">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h4 className="text-sm font-semibold text-pink-100">후원 랭킹 · 배경 GIF</h4>
+                    <p className="mt-1 max-w-xl text-xs text-pink-100/75">
+                      후원 랭킹(<code className="text-pink-50/90">/overlay/donor-rankings</code>) 전용 배경입니다. 엑셀표 배경과 분리되어 독립 저장됩니다.
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <code className="max-w-[min(100%,420px)] break-all text-[11px] text-fuchsia-100/90">
+                      /overlay/donor-rankings?u={user?.id || "finalent"}
+                    </code>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        className={`rounded px-2 py-1 text-xs ${copiedId === "dash-donor-rankings-bg" ? "bg-emerald-600" : "bg-white/15 text-pink-50 hover:bg-white/25"}`}
+                        onClick={() => {
+                          const u = `${window.location.origin}/overlay/donor-rankings?u=${user?.id || "finalent"}`;
+                          void copyUrl(u, "dash-donor-rankings-bg");
+                        }}
+                      >
+                        {copiedId === "dash-donor-rankings-bg" ? "복사됨!" : "URL 복사"}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded bg-gradient-to-r from-fuchsia-600 to-pink-600 px-2 py-1 text-xs font-semibold text-white shadow-sm hover:from-fuchsia-500 hover:to-pink-500"
+                        onClick={() => window.open(`/overlay/donor-rankings?u=${user?.id || "finalent"}`, "_blank", "noopener,noreferrer")}
+                      >
+                        오버레이 열기
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                {(() => {
+                  const drCfg = normalizeDonorRankingsOverlayConfig(state.donorRankingsOverlayConfig);
+                  const presetSelectValue = DONATION_LISTS_BG_GIF_PRESETS.some((p) => p.url && p.url === drCfg.bgGifUrl)
+                    ? drCfg.bgGifUrl
+                    : drCfg.bgGifUrl.trim()
+                      ? "__custom__"
+                      : "";
+                  return (
+                    <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
+                        GIF 프리셋
+                        <select
+                          className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 shadow-inner outline-none focus:border-fuchsia-400/70"
+                          value={presetSelectValue}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === "__custom__") return;
+                            updateDonorRankingsOverlayConfig({ bgGifUrl: v });
+                          }}
+                        >
+                          {DONATION_LISTS_BG_GIF_PRESETS.map((p) => (
+                            <option key={p.label} value={p.url}>
+                              {p.label}
+                            </option>
+                          ))}
+                          <option value="__custom__">직접 URL 입력</option>
+                        </select>
+                      </label>
+                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
+                        GIF URL (https… 또는 /public 경로)
+                        <input
+                          className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 placeholder:text-pink-200/40 outline-none focus:border-fuchsia-400/70"
+                          placeholder="예: https://media.giphy.com/... 또는 /images/bg/my.gif"
+                          value={drCfg.bgGifUrl}
+                          onChange={(e) => updateDonorRankingsOverlayConfig({ bgGifUrl: e.target.value })}
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90 md:col-span-2">
+                        배경 투명도 ({drCfg.bgOpacity}%)
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={drCfg.bgOpacity}
+                          onChange={(e) => updateDonorRankingsOverlayConfig({ bgOpacity: Number(e.target.value) })}
+                          className="w-full accent-fuchsia-400"
+                        />
+                      </label>
+                      <label className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/15 bg-black/20 px-3 py-2.5 md:col-span-2 cursor-pointer">
+                        <span className="text-xs font-semibold text-pink-50">배경 사용</span>
+                        <span className="flex items-center gap-2 text-[11px] text-pink-100/80">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-white/30 bg-black/40 text-fuchsia-500 focus:ring-fuchsia-400"
+                            checked={drCfg.isBgEnabled}
+                            onChange={(e) => updateDonorRankingsOverlayConfig({ isBgEnabled: e.target.checked })}
+                          />
+                          ON / OFF
+                        </span>
+                      </label>
+                    </div>
+                  );
+                })()}
+              </div>
+              <div className="mt-3 rounded-2xl border border-fuchsia-400/35 bg-gradient-to-br from-fuchsia-950/55 via-rose-950/45 to-pink-950/40 p-4 shadow-[0_10px_36px_rgba(236,72,153,0.22)] backdrop-blur-md">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h4 className="text-sm font-semibold text-pink-100">후원 엑셀표 · 배경 GIF</h4>
+                    <p className="mt-1 max-w-xl text-xs text-pink-100/75">
+                      멤버 랭킹 표(<code className="text-pink-50/90">/overlay/donation-lists</code>) 배경입니다. 값은 상태에 저장되어 Redis와 동기화됩니다.
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <code className="max-w-[min(100%,420px)] break-all text-[11px] text-fuchsia-100/90">
+                      /overlay/donation-lists?u={user?.id || "finalent"}
+                    </code>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        className={`rounded px-2 py-1 text-xs ${copiedId === "dash-donation-lists" ? "bg-emerald-600" : "bg-white/15 text-pink-50 hover:bg-white/25"}`}
+                        onClick={() => {
+                          const u = `${window.location.origin}/overlay/donation-lists?u=${user?.id || "finalent"}`;
+                          void copyUrl(u, "dash-donation-lists");
+                        }}
+                      >
+                        {copiedId === "dash-donation-lists" ? "복사됨!" : "URL 복사"}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded bg-gradient-to-r from-fuchsia-600 to-pink-600 px-2 py-1 text-xs font-semibold text-white shadow-sm hover:from-fuchsia-500 hover:to-pink-500"
+                        onClick={() => window.open(`/overlay/donation-lists?u=${user?.id || "finalent"}`, "_blank", "noopener,noreferrer")}
+                      >
+                        오버레이 열기
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                {(() => {
+                  const dlCfg = normalizeDonationListsOverlayConfig(state.donationListsOverlayConfig);
+                  const presetSelectValue = DONATION_LISTS_BG_GIF_PRESETS.some((p) => p.url && p.url === dlCfg.bgGifUrl)
+                    ? dlCfg.bgGifUrl
+                    : dlCfg.bgGifUrl.trim()
+                      ? "__custom__"
+                      : "";
+                  return (
+                    <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
+                        GIF 프리셋
+                        <select
+                          className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 shadow-inner outline-none focus:border-fuchsia-400/70"
+                          value={presetSelectValue}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === "__custom__") return;
+                            updateDonationListsOverlayConfig({ bgGifUrl: v });
+                          }}
+                        >
+                          {DONATION_LISTS_BG_GIF_PRESETS.map((p) => (
+                            <option key={p.label} value={p.url}>
+                              {p.label}
+                            </option>
+                          ))}
+                          <option value="__custom__">직접 URL 입력</option>
+                        </select>
+                      </label>
+                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
+                        GIF URL (https… 또는 /public 경로)
+                        <input
+                          className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 placeholder:text-pink-200/40 outline-none focus:border-fuchsia-400/70"
+                          placeholder="예: https://media.giphy.com/... 또는 /images/bg/my.gif"
+                          value={dlCfg.bgGifUrl}
+                          onChange={(e) => updateDonationListsOverlayConfig({ bgGifUrl: e.target.value })}
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90 md:col-span-2">
+                        배경 투명도 ({dlCfg.bgOpacity}%)
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={dlCfg.bgOpacity}
+                          onChange={(e) => updateDonationListsOverlayConfig({ bgOpacity: Number(e.target.value) })}
+                          className="w-full accent-fuchsia-400"
+                        />
+                      </label>
+                      <label className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/15 bg-black/20 px-3 py-2.5 md:col-span-2 cursor-pointer">
+                        <span className="text-xs font-semibold text-pink-50">배경 사용</span>
+                        <span className="flex items-center gap-2 text-[11px] text-pink-100/80">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-white/30 bg-black/40 text-fuchsia-500 focus:ring-fuchsia-400"
+                            checked={dlCfg.isBgEnabled}
+                            onChange={(e) => updateDonationListsOverlayConfig({ isBgEnabled: e.target.checked })}
+                          />
+                          ON / OFF
+                        </span>
+                      </label>
+                    </div>
+                  );
+                })()}
+              </div>
               <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
@@ -2924,34 +3368,25 @@ export default function AdminPage() {
                   </div>
                   <div className="flex flex-wrap items-end gap-2">
                     <label className="flex flex-col text-[11px] text-neutral-400">
-                      회수
+                      총 회수
                       <input
                         type="number"
                         min={1}
                         max={999}
                         className="mt-0.5 w-24 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
                         value={rouletteSpinCount}
-                        onChange={(e) => setRouletteSpinCount(e.target.value)}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          setRouletteSpinCount(raw);
+                          const n = Math.max(1, Math.min(999, parseInt(String(raw || "1"), 10) || 1));
+                          const cap = Math.min(n, ROULETTE_ROUND_UI_CAP);
+                          setRoulettePriceRanges((prev) => {
+                            const next = prev.slice(0, cap);
+                            while (next.length < cap) next.push({ min: "", max: "" });
+                            return next;
+                          });
+                        }}
                       />
-                    </label>
-                    <label className="flex flex-col text-[11px] text-neutral-400">
-                      금액대
-                      <select
-                        className="mt-0.5 w-40 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
-                        value={roulettePriceFilter}
-                        onChange={(e) => setRoulettePriceFilter(e.target.value)}
-                      >
-                        <option value="all">전체 금액</option>
-                        {Array.from(
-                          new Set((state.sigInventory || []).map((x) => Math.max(0, Number(x.price || 0))).filter((x) => Number.isFinite(x) && x > 0))
-                        )
-                          .sort((a, b) => a - b)
-                          .map((price) => (
-                            <option key={`roulette-price-${price}`} value={String(price)}>
-                              {price.toLocaleString("ko-KR")}원
-                            </option>
-                          ))}
-                      </select>
                     </label>
                     <button
                       type="button"
@@ -2960,10 +3395,74 @@ export default function AdminPage() {
                         void spinSigRoulette();
                       }}
                     >
-                      룰렛 돌리기 (회수 입력)
+                      룰렛 돌리기
                     </button>
                   </div>
                 </div>
+                {(() => {
+                  const n = Math.max(1, Math.min(999, parseInt(String(rouletteSpinCount || "1"), 10) || 1));
+                  const rows = Math.min(n, ROULETTE_ROUND_UI_CAP);
+                  return (
+                    <div className="rounded border border-white/10 bg-black/30 p-2">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-neutral-400">
+                        <span className="font-medium text-neutral-300">회차별 최소/최대 금액</span>
+                        <span>
+                          총 <span className="text-fuchsia-300">{n}</span>회 · 아래는{" "}
+                          <span className="text-fuchsia-300">{rows}</span>회차까지 개별 설정
+                          {n > ROULETTE_ROUND_UI_CAP ? (
+                            <span className="text-amber-300/90"> ({ROULETTE_ROUND_UI_CAP + 1}회~{n}회는 {ROULETTE_ROUND_UI_CAP}회차와 동일)</span>
+                          ) : null}
+                        </span>
+                      </div>
+                      <div className="max-h-52 space-y-1 overflow-y-auto pr-1">
+                        {Array.from({ length: rows }, (_, i) => (
+                          <div key={`roulette-tier-${i}`} className="flex flex-wrap items-center gap-2 text-xs">
+                            <span className="w-11 shrink-0 text-neutral-500">{i + 1}회</span>
+                            <input
+                              className="w-28 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
+                              placeholder="최소(빈칸=없음)"
+                              inputMode="numeric"
+                              value={roulettePriceRanges[i]?.min ?? ""}
+                              onChange={(e) => {
+                                const v = e.target.value.replace(/[^\d]/g, "");
+                                setRoulettePriceRanges((prev) => {
+                                  const cap = Math.min(
+                                    Math.max(1, Math.min(999, parseInt(String(rouletteSpinCount || "1"), 10) || 1)),
+                                    ROULETTE_ROUND_UI_CAP
+                                  );
+                                  const next = prev.slice(0, cap);
+                                  while (next.length < cap) next.push({ min: "", max: "" });
+                                  next[i] = { ...(next[i] || { min: "", max: "" }), min: v };
+                                  return next;
+                                });
+                              }}
+                            />
+                            <span className="text-neutral-500">~</span>
+                            <input
+                              className="w-28 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
+                              placeholder="최대(빈칸=없음)"
+                              inputMode="numeric"
+                              value={roulettePriceRanges[i]?.max ?? ""}
+                              onChange={(e) => {
+                                const v = e.target.value.replace(/[^\d]/g, "");
+                                setRoulettePriceRanges((prev) => {
+                                  const cap = Math.min(
+                                    Math.max(1, Math.min(999, parseInt(String(rouletteSpinCount || "1"), 10) || 1)),
+                                    ROULETTE_ROUND_UI_CAP
+                                  );
+                                  const next = prev.slice(0, cap);
+                                  while (next.length < cap) next.push({ min: "", max: "" });
+                                  next[i] = { ...(next[i] || { min: "", max: "" }), max: v };
+                                  return next;
+                                });
+                              }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
                   <span>판매 오버레이 URL:</span>
                   <code className="text-neutral-300 break-all">
@@ -2989,7 +3488,7 @@ export default function AdminPage() {
                 </div>
                 <div className="rounded-lg border border-white/10 bg-black/50 overflow-hidden">
                   <div className="flex items-center justify-between border-b border-white/5 px-2 py-1.5">
-                    <span className="text-xs font-medium text-neutral-300">시그 룰렛/판매 오버레이 미리보기</span>
+                    <span className="text-xs font-medium text-neutral-300">시그 룰렛/판매 오버레이 (실제 작동 모드)</span>
                     <button
                       type="button"
                       className="rounded border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-emerald-500/60 hover:text-emerald-200"
@@ -2997,6 +3496,18 @@ export default function AdminPage() {
                     >
                       새로고침
                     </button>
+                  </div>
+                  <div className="border-b border-white/10 bg-neutral-950/70 px-2 py-3">
+                    <div className="mb-2 text-[11px] text-neutral-400">관리자 내장 룰렛 컴포넌트 미리보기</div>
+                    <div className="flex justify-center">
+                      <Roulette
+                        items={(state.sigInventory || []).filter((x) => x.isRolling)}
+                        isRolling={Boolean(state.rouletteState?.isRolling)}
+                        resultId={state.rouletteState?.result?.id}
+                        spinDurationSec={5}
+                        startedAt={state.rouletteState?.startedAt}
+                      />
+                    </div>
                   </div>
                   <div className="relative w-full bg-black/40" style={{ minHeight: "280px", aspectRatio: "16 / 10" }}>
                     <iframe
@@ -3067,6 +3578,49 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <div className="rounded border border-white/10 bg-black/25 p-2 flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-neutral-300">멤버별 판매 프리셋</span>
+                  <select
+                    className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs"
+                    value={sigPresetMemberId}
+                    onChange={(e) => setSigPresetMemberId(e.target.value)}
+                  >
+                    {state.members.map((m) => (
+                      <option key={`sig-preset-${m.id}`} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="px-2 py-1 rounded bg-sky-800 hover:bg-sky-700 text-xs"
+                    onClick={() => saveSigSalesPresetForMember(sigPresetMemberId)}
+                  >
+                    현재 설정 저장
+                  </button>
+                  <button
+                    type="button"
+                    className="px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-xs"
+                    onClick={() => applySigSalesPresetForMember(sigPresetMemberId)}
+                  >
+                    프리셋 적용
+                  </button>
+                  <button
+                    type="button"
+                    className="px-2 py-1 rounded bg-violet-800 hover:bg-violet-700 text-xs"
+                    onClick={applyNextSigSalesPresetMember}
+                  >
+                    다음 멤버 적용
+                  </button>
+                  <button
+                    type="button"
+                    className="px-2 py-1 rounded bg-red-900/70 hover:bg-red-800 text-xs"
+                    onClick={() => clearSigSalesPresetForMember(sigPresetMemberId)}
+                  >
+                    프리셋 삭제
+                  </button>
+                  <span className="text-[11px] text-neutral-500">
+                    저장: 선택 멤버 시그의 현재 판매 활성 상태 / 적용: 해당 멤버 시그만 판매 활성
+                  </span>
+                </div>
+                <div className="rounded border border-white/10 bg-black/25 p-2 flex flex-wrap items-center gap-2">
                   <button
                     className="px-3 py-1 rounded bg-sky-700 hover:bg-sky-600 text-sm"
                     onClick={downloadSigExcelTemplate}
@@ -3092,6 +3646,37 @@ export default function AdminPage() {
                     전체 지우기
                   </button>
                   {sigExcelResult ? <span className="text-xs text-neutral-300">{sigExcelResult}</span> : null}
+                </div>
+                <div className="rounded border border-white/10 bg-black/25 p-2 grid grid-cols-1 md:grid-cols-[180px_1fr] gap-2 items-center">
+                  <div className="text-xs text-neutral-300">판매 완료 오버레이 이미지</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs min-w-[240px]"
+                      placeholder="이미지 URL 또는 경로 (gif/png/jpg)"
+                      value={state.sigSoldOutStampUrl || ""}
+                      onChange={(e) => updateSigSoldOutStampUrl(e.target.value)}
+                    />
+                    <input
+                      className="text-xs"
+                      type="file"
+                      accept=".gif,.png,.jpg,.jpeg,image/gif,image/png,image/jpeg"
+                      onChange={(e) => uploadSigSoldOutStampImage(e.target.files?.[0] || null)}
+                    />
+                    <button
+                      type="button"
+                      className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
+                      onClick={() => updateSigSoldOutStampUrl("")}
+                    >
+                      기본 도장 사용
+                    </button>
+                  </div>
+                  <div className="text-[11px] text-neutral-500">완판 시 시그 이미지 정중앙에 겹쳐 표시됩니다.</div>
+                  <div className="flex items-center gap-2">
+                    <div className="relative h-14 w-14 overflow-hidden rounded border border-white/10 bg-black/30">
+                      <Image src={state.sigSoldOutStampUrl || "/images/sigs/stamp.png"} alt="완판 오버레이 미리보기" fill unoptimized className="object-contain" />
+                    </div>
+                    <span className="text-xs text-neutral-400">{state.sigSoldOutStampUrl ? "커스텀 이미지 사용 중" : "기본 도장 사용 중"}</span>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <div className="rounded border border-white/10 bg-black/25 p-2 grid grid-cols-1 md:grid-cols-[1fr_120px_1fr_1fr_auto] gap-2">
@@ -3173,7 +3758,7 @@ export default function AdminPage() {
                         <div className="flex items-center gap-1">
                           {item.maxCount <= 1 && item.soldCount >= 1 ? (
                             <Image
-                              src="/images/sigs/stamp.png"
+                              src={state.sigSoldOutStampUrl || "/images/sigs/stamp.png"}
                               alt="완판 도장"
                               width={28}
                               height={28}
@@ -3268,11 +3853,18 @@ export default function AdminPage() {
                   { key: "generalTimer", flag: "general" as const, label: "일반 타이머" },
                 ] as const).map((timerDef) => {
                   const timer = state[timerDef.key];
-                  const effective = getEffectiveRemainingTime(timer);
+                  const timerStyle = state.timerDisplayStyles?.[timerDef.flag] || {
+                    showHours: false,
+                    fontColor: "",
+                    bgColor: "",
+                    borderColor: "",
+                    bgOpacity: 40,
+                  };
+                  const effective = getEffectiveRemainingTime(timer, timerUiNow);
                   const mm = Math.floor(effective / 60);
                   const ss = effective % 60;
                   const overlayOn = state.matchTimerEnabled?.[timerDef.flag] !== false;
-                  const timerOnlyUrl = `/overlay?u=${user?.id || "finalent"}&showMembers=false&showTotal=false&showGoal=false&showPersonalGoal=false&showTicker=false&showMission=false&showTimer=true&timerType=${timerDef.flag}`;
+                  const timerOnlyUrl = `/overlay?u=${user?.id || "finalent"}&timerType=${timerDef.flag}`;
                   return (
                     <div key={timerDef.key} className="rounded border border-white/10 bg-[#1f1f1f] px-3 py-2">
                       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -3304,6 +3896,28 @@ export default function AdminPage() {
                           <button className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs" onClick={() => adjustTimerSeconds(timerDef.key, +10)}>+10초</button>
                         </div>
                       </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                        <span className="text-neutral-400">분 설정</span>
+                        <input
+                          className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                          inputMode="numeric"
+                          value={timerMinuteInputs[timerDef.key]}
+                          onChange={(e) => {
+                            const raw = e.target.value.replace(/[^\d]/g, "");
+                            setTimerMinuteInputs((prev) => ({ ...prev, [timerDef.key]: raw }));
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="px-2 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-xs"
+                          onClick={() => {
+                            const mins = parseInt(timerMinuteInputs[timerDef.key] || "0", 10);
+                            setTimerMinutes(timerDef.key, Number.isFinite(mins) ? mins : 0);
+                          }}
+                        >
+                          분으로 설정
+                        </button>
+                      </div>
                       {timerDef.flag === "general" && (
                         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-neutral-400">
                           <span>일반 타이머 오버레이:</span>
@@ -3327,6 +3941,63 @@ export default function AdminPage() {
                           </button>
                         </div>
                       )}
+                      <div className="mt-3 border-t border-white/10 pt-2 grid grid-cols-1 sm:grid-cols-[100px_minmax(0,1fr)] items-center gap-2">
+                        <label className="text-xs text-neutral-400">표시 형식</label>
+                        <button
+                          type="button"
+                          className={`w-fit px-2 py-1 rounded border text-xs ${timerStyle.showHours ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`}
+                          onClick={() => updateTimerDisplayStyle(timerDef.flag, { showHours: !timerStyle.showHours })}
+                        >
+                          시:분:초 {timerStyle.showHours ? "ON" : "OFF"} (OFF=분:초)
+                        </button>
+                        <label className="text-xs text-neutral-400">글자 색상</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            className="w-14 h-9 rounded bg-neutral-900/80 border border-white/10"
+                            value={(timerStyle.fontColor as any) || "#ffffff"}
+                            onChange={(e) => updateTimerDisplayStyle(timerDef.flag, { fontColor: e.target.value })}
+                          />
+                          <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updateTimerDisplayStyle(timerDef.flag, { fontColor: "" })}>기본</button>
+                        </div>
+                        <label className="text-xs text-neutral-400">배경 색상</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            className="w-14 h-9 rounded bg-neutral-900/80 border border-white/10"
+                            value={(timerStyle.bgColor as any) || "#ffffff"}
+                            onChange={(e) => updateTimerDisplayStyle(timerDef.flag, { bgColor: e.target.value })}
+                          />
+                          <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updateTimerDisplayStyle(timerDef.flag, { bgColor: "" })}>기본</button>
+                        </div>
+                        <label className="text-xs text-neutral-400">테두리 색상</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            className="w-14 h-9 rounded bg-neutral-900/80 border border-white/10"
+                            value={(timerStyle.borderColor as any) || "#ffffff"}
+                            onChange={(e) => updateTimerDisplayStyle(timerDef.flag, { borderColor: e.target.value })}
+                          />
+                          <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updateTimerDisplayStyle(timerDef.flag, { borderColor: "" })}>기본</button>
+                        </div>
+                        <label className="text-xs text-neutral-400">배경 투명도</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={String(timerStyle.bgOpacity ?? 40)}
+                            onChange={(e) => updateTimerDisplayStyle(timerDef.flag, { bgOpacity: Math.max(0, Math.min(100, parseInt(e.target.value || "0", 10) || 0)) })}
+                            className="flex-1 accent-emerald-500"
+                          />
+                          <input
+                            className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                            value={String(timerStyle.bgOpacity ?? 40)}
+                            onChange={(e) => updateTimerDisplayStyle(timerDef.flag, { bgOpacity: Math.max(0, Math.min(100, parseInt(e.target.value.replace(/[^\d]/g, "") || "0", 10) || 0)) })}
+                          />
+                          <span className="text-xs text-neutral-500">%</span>
+                        </div>
+                      </div>
                     </div>
                   );
                 })}
@@ -4322,10 +4993,67 @@ export default function AdminPage() {
                             {p.showTimer && (
                               <details className="rounded border border-white/10 bg-neutral-900/40">
                                 <summary className="cursor-pointer select-none px-3 py-2 text-xs text-neutral-300">방송 타이머</summary>
-                                <div className="p-3 flex flex-wrap gap-2 items-center">
-                                  <button className="px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-xs" onClick={() => updatePreset(p.id, { timerStart: Date.now() })}>{p.timerStart ? "재시작" : "시작"}</button>
-                                  {p.timerStart && <button className="px-2 py-1 rounded bg-red-700 hover:bg-red-600 text-xs" onClick={() => updatePreset(p.id, { timerStart: null })}>정지</button>}
-                                  <span className="text-xs text-neutral-500">위치 설정(Prism에서)</span>
+                                <div className="p-3 space-y-3">
+                                  <div className="flex flex-wrap gap-2 items-center">
+                                    <button className="px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-xs" onClick={() => updatePreset(p.id, { timerStart: Date.now() })}>{p.timerStart ? "재시작" : "시작"}</button>
+                                    {p.timerStart && <button className="px-2 py-1 rounded bg-red-700 hover:bg-red-600 text-xs" onClick={() => updatePreset(p.id, { timerStart: null })}>정지</button>}
+                                    <button
+                                      className={`px-2 py-1 rounded border text-xs ${p.timerShowHours ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-400"}`}
+                                      onClick={() => updatePreset(p.id, { timerShowHours: !p.timerShowHours })}
+                                    >
+                                      시:분:초 {p.timerShowHours ? "ON" : "OFF"}
+                                    </button>
+                                  </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
+                                    <label className="text-xs text-neutral-400">글자 색상</label>
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="color"
+                                        className="w-16 h-10 rounded bg-neutral-900/80 border border-white/10"
+                                        value={(p.timerFontColor as any) || "#ffffff"}
+                                        onChange={(e) => updatePreset(p.id, { timerFontColor: e.target.value })}
+                                      />
+                                      <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { timerFontColor: "" })}>기본</button>
+                                    </div>
+                                    <label className="text-xs text-neutral-400">배경 색상</label>
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="color"
+                                        className="w-16 h-10 rounded bg-neutral-900/80 border border-white/10"
+                                        value={(p.timerBgColor as any) || "#ffffff"}
+                                        onChange={(e) => updatePreset(p.id, { timerBgColor: e.target.value })}
+                                      />
+                                      <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { timerBgColor: "" })}>기본</button>
+                                    </div>
+                                    <label className="text-xs text-neutral-400">테두리 색상</label>
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="color"
+                                        className="w-16 h-10 rounded bg-neutral-900/80 border border-white/10"
+                                        value={(p.timerBorderColor as any) || "#ffffff"}
+                                        onChange={(e) => updatePreset(p.id, { timerBorderColor: e.target.value })}
+                                      />
+                                      <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { timerBorderColor: "" })}>기본</button>
+                                    </div>
+                                    <label className="text-xs text-neutral-400">배경 불투명도</label>
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="range"
+                                        min="0"
+                                        max="100"
+                                        value={p.timerBgOpacity || "40"}
+                                        onChange={(e) => updatePreset(p.id, { timerBgOpacity: e.target.value })}
+                                        className="flex-1 accent-emerald-500 h-10"
+                                      />
+                                      <input
+                                        className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                                        value={p.timerBgOpacity || "40"}
+                                        onChange={(e) => updatePreset(p.id, { timerBgOpacity: e.target.value.replace(/[^\d]/g, "").slice(0, 3) })}
+                                      />
+                                      <span className="text-xs text-neutral-500">%</span>
+                                    </div>
+                                  </div>
+                                  <div className="text-xs text-neutral-500">위치 설정은 Prism에서 조정 가능</div>
                                 </div>
                               </details>
                             )}

@@ -236,6 +236,32 @@ function useServerTimer(timer: AppState["sigMatchTimer"] | null): { text: string
   };
 }
 
+function formatTimerText(elapsed: string | null, remainingSeconds?: number | null, showHours = false): string | null {
+  if (remainingSeconds != null && Number.isFinite(remainingSeconds)) {
+    const safe = Math.max(0, Math.floor(remainingSeconds));
+    if (showHours) {
+      const h = Math.floor(safe / 3600);
+      const m = Math.floor((safe % 3600) / 60);
+      const sec = safe % 60;
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+    }
+    const mm = Math.floor(safe / 60);
+    const sec = safe % 60;
+    return `${String(mm).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  }
+  if (!elapsed) return null;
+  const parts = elapsed.split(":").map((x) => parseInt(x, 10));
+  if (parts.some((x) => Number.isNaN(x))) return elapsed;
+  const h = parts.length === 3 ? parts[0] : 0;
+  const m = parts.length >= 2 ? parts[parts.length - 2] : 0;
+  const sec = parts[parts.length - 1] ?? 0;
+  if (showHours) {
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  }
+  const totalMin = h * 60 + m;
+  return `${String(totalMin).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+
 type ThemeId = "default" | "excel" | "excelBlue" | "excelSlate" | "excelAmber" | "excelRose" | "excelNavy" | "excelTeal" | "excelPurple" | "excelEmerald" | "excelOrange" | "excelIndigo" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel" | "rainbow" | "sunset" | "ocean" | "forest" | "aurora" | "violet" | "coral" | "mint" | "lava" | "ice";
 
 const TABLE_BG_RGB: Record<string, [number, number, number]> = {
@@ -1037,27 +1063,49 @@ function Timer({
   paused,
   fontSize,
   remainingSeconds,
+  fontColor,
+  bgColor,
+  borderColor,
+  bgOpacity,
 }: {
   elapsed: string | null;
   paused?: boolean;
   fontSize: number;
   /** 카운트다운(서버 타이머)일 때만 전달; 10초 미만 부드러운 로즈 강조 */
   remainingSeconds?: number | null;
+  fontColor?: string;
+  bgColor?: string;
+  borderColor?: string;
+  bgOpacity?: number;
 }) {
   if (!elapsed) return null;
   const lowTime = remainingSeconds != null && remainingSeconds > 0 && remainingSeconds < 10;
+  const hasCustomFontColor = Boolean(fontColor && fontColor.trim());
   return (
     <div
-      className={`inline-flex min-w-[6.5ch] items-center justify-center rounded-full border border-white/20 bg-white/40 px-4 py-1.5 backdrop-blur-md ${
+      className={`inline-flex min-w-[4.5ch] items-center justify-center rounded-full px-4 py-1.5 backdrop-blur-md ${
         paused ? "animate-pulse opacity-90" : ""
       }`}
+      style={{
+        borderColor: borderColor || "rgba(255,255,255,0.2)",
+        borderWidth: 1,
+        borderStyle: "solid",
+        backgroundColor: bgColor || `rgba(255,255,255,${Math.max(0, Math.min(100, bgOpacity ?? 40)) / 100})`,
+      }}
       suppressHydrationWarning
     >
       <span
-        className={`font-mono font-bold tabular-nums pastel-text-outline ${
-          paused ? "text-pastel-orange" : lowTime ? "text-pastel-alert animate-pastel-timer-low" : "text-pastel-ink"
+        className={`font-mono font-bold tabular-nums ${
+          hasCustomFontColor ? "" : "pastel-text-outline"
+        } ${
+          hasCustomFontColor ? "" : (paused ? "text-pastel-orange" : lowTime ? "text-pastel-alert animate-pastel-timer-low" : "text-pastel-ink")
         }`}
-        style={{ fontSize, lineHeight: 1.1 }}
+        style={{
+          fontSize,
+          lineHeight: 1.1,
+          color: hasCustomFontColor ? fontColor : undefined,
+          textShadow: hasCustomFontColor ? "-1px -1px 0 rgba(0,0,0,0.55), 1px -1px 0 rgba(0,0,0,0.55), -1px 1px 0 rgba(0,0,0,0.55), 1px 1px 0 rgba(0,0,0,0.55)" : undefined,
+        }}
       >
         {elapsed}
       </span>
@@ -1159,11 +1207,8 @@ function OverlayInner() {
   const sp = useMemo(
     () => ({
       get: (key: string) => {
-        const allowDirectOverride = Boolean(presetId);
-        if (allowDirectOverride) {
-          const direct = rawSp.get(key);
-          if (direct !== null && direct !== "") return direct;
-        }
+        const direct = rawSp.get(key);
+        if (direct !== null && direct !== "") return direct;
         return presetParams.get(key);
       },
     }),
@@ -1255,16 +1300,34 @@ function OverlayInner() {
     return excelThemes.includes(missionThemeId) ? "excel" : (["rainbow", "sunset", "ocean", "forest", "aurora", "violet", "coral", "mint", "lava", "ice"].includes(missionThemeId) ? "neon" : missionThemeId);
   })() as "default" | "excel" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel";
 
-  const tableOnly = sp.get("tableOnly") === "true";
-  const showMembers = tableOnly ? true : (sp.get("showMembers") !== "false");
-  const showTotal = tableOnly ? true : (sp.get("showTotal") !== "false");
-  const showGoal = tableOnly ? false : (sp.get("showGoal") === "true");
-  const showTicker = (sp.get("showTicker") === "true");
+  const timerTypeRaw = (
+    sp.get("timerType") ||
+    sp.get("timertype") ||
+    sp.get("timer") ||
+    sp.get("type") ||
+    ""
+  ).trim();
+  const timerOnlyMode = Boolean(timerTypeRaw);
+  const timerType = useMemo<"sigMatch" | "mealMatch" | "sigSales" | "general" | null>(() => {
+    if (!timerTypeRaw) return null;
+    const normalized = timerTypeRaw.toLowerCase();
+    if (normalized === "sigmatch" || normalized === "sigmatchtimer") return "sigMatch";
+    if (normalized === "mealmatch" || normalized === "mealmatchtimer") return "mealMatch";
+    if (normalized === "sigsales" || normalized === "sigsalestimer") return "sigSales";
+    if (normalized === "general" || normalized === "generaltimer") return "general";
+    return null;
+  }, [timerTypeRaw]);
+  const tableOnly = timerOnlyMode ? false : (sp.get("tableOnly") === "true");
+  const showMembers = tableOnly ? true : (timerOnlyMode ? (sp.get("showMembers") === "true") : (sp.get("showMembers") !== "false"));
+  const showTotal = tableOnly ? true : (timerOnlyMode ? (sp.get("showTotal") === "true") : (sp.get("showTotal") !== "false"));
+  const showGoal = tableOnly ? false : (timerOnlyMode ? (sp.get("showGoal") === "true") : (sp.get("showGoal") === "true"));
+  const showTicker = timerOnlyMode ? (sp.get("showTicker") === "true") : (sp.get("showTicker") === "true");
   const tickerInMembers = tableOnly ? false : (sp.get("tickerInMembers") === "true");
   const tickerInPersonalGoal = tableOnly ? false : (sp.get("tickerInPersonalGoal") === "true");
   const tickerInGoal = false;
   const hasContextTicker = tickerInMembers || tickerInPersonalGoal;
-  const showTimer = tableOnly ? false : (sp.get("showTimer") === "true");
+  const showTimerRaw = (sp.get("showTimer") || "").toLowerCase();
+  const showTimer = tableOnly ? false : (timerOnlyMode ? showTimerRaw !== "false" : showTimerRaw === "true");
   const goalRaw = parseInt(sp.get("goal") || "0", 10);
   const goal = isNaN(goalRaw) ? 0 : goalRaw;
   const goalLabel = sp.get("goalLabel") || "목표 금액";
@@ -1282,8 +1345,8 @@ function OverlayInner() {
   const goalCurrentParam = sp.get("goalCurrent");
   const goalCurrent = goalCurrentParam !== null ? Math.max(0, parseInt(goalCurrentParam || "0", 10) || 0) : null;
   const timerStart = sp.get("timerStart") ? parseInt(sp.get("timerStart")!, 10) : null;
-  const timerType = (sp.get("timerType") || "").trim();
-  const timerAnchor = (sp.get("timerAnchor") || "tr").toLowerCase();
+  const timerAnchorParam = (sp.get("timerAnchor") || "").trim().toLowerCase();
+  const timerAnchor = timerAnchorParam || (timerOnlyMode ? "cc" : "tr");
   const tickerAnchor = (sp.get("tickerAnchor") || "bc").toLowerCase();
   const tickerWidth = Math.max(200, Math.min(1200, parseInt(sp.get("tickerWidth") || "600", 10)));
   const tickerXParam = sp.get("tickerX");
@@ -1293,6 +1356,7 @@ function OverlayInner() {
   const tickerY = hasTickerFreePos ? parsePct(tickerYParam, 86) : 0;
   const showMission = (() => {
     if (tableOnly) return false;
+    if (timerOnlyMode) return sp.get("showMission") === "true";
     const raw = sp.get("showMission");
     if (raw === "true") return true;
     if (raw === "false") return false;
@@ -1307,14 +1371,36 @@ function OverlayInner() {
     return Number.isFinite(n) ? Math.max(1, Math.min(1000, n)) : 0;
   })();
 
+  const resolvedTimerType = useMemo<"sigMatch" | "mealMatch" | "sigSales" | "general" | null>(() => {
+    if (timerType) return timerType;
+    return timerOnlyMode ? "general" : null;
+  }, [timerOnlyMode, timerType]);
   const timerFromState = useMemo(() => {
-    if (!s || !timerType) return null;
-    if (timerType === "sigMatch") return s.sigMatchTimer;
-    if (timerType === "mealMatch") return s.mealMatchTimer;
-    if (timerType === "sigSales") return s.sigSalesTimer;
-    if (timerType === "general") return s.generalTimer;
+    if (!s) return null;
+    if (!resolvedTimerType) return null;
+    if (resolvedTimerType === "sigMatch") return s.sigMatchTimer;
+    if (resolvedTimerType === "mealMatch") return s.mealMatchTimer;
+    if (resolvedTimerType === "sigSales") return s.sigSalesTimer;
+    if (resolvedTimerType === "general") return s.generalTimer;
     return null;
-  }, [s, timerType]);
+  }, [resolvedTimerType, s]);
+  const timerStyleFromState = useMemo(() => {
+    if (!s || !resolvedTimerType) return null;
+    return s.timerDisplayStyles?.[resolvedTimerType] || null;
+  }, [resolvedTimerType, s]);
+  const timerShowHoursRaw = (sp.get("timerShowHours") || "").toLowerCase();
+  const timerShowHours = timerShowHoursRaw
+    ? timerShowHoursRaw === "true"
+    : (timerStyleFromState?.showHours ?? !timerOnlyMode);
+  const timerFontColor = (sp.get("timerFontColor") || "").trim() || timerStyleFromState?.fontColor || undefined;
+  const timerBgColor = (sp.get("timerBgColor") || "").trim() || timerStyleFromState?.bgColor || undefined;
+  const timerBorderColor = (sp.get("timerBorderColor") || "").trim() || timerStyleFromState?.borderColor || undefined;
+  const timerBgOpacity = (() => {
+    const raw = (sp.get("timerBgOpacity") || "").trim();
+    if (!raw) return timerStyleFromState?.bgOpacity ?? 40;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : (timerStyleFromState?.bgOpacity ?? 40);
+  })();
   const matchTimerAllowed = useMemo(() => {
     if (!timerType || !s?.matchTimerEnabled) return true;
     const m = s.matchTimerEnabled;
@@ -1324,9 +1410,11 @@ function OverlayInner() {
     if (timerType === "general") return m.general;
     return true;
   }, [s, timerType]);
+  const effectiveTimerAllowed = timerOnlyMode ? true : matchTimerAllowed;
   const serverTimer = useServerTimer(timerFromState);
   const elapsed = useElapsed(timerStart);
-  const timerText = serverTimer.text || elapsed;
+  const timerBaseText = serverTimer.text || elapsed || (timerOnlyMode ? "00:00:00" : null);
+  const timerText = formatTimerText(timerBaseText, serverTimer.remainingSeconds, timerShowHours);
   const timerPaused = serverTimer.text ? serverTimer.paused : false;
 
   const nameCh = Math.max(6, Math.min(40, parseInt(sp.get("nameCh") || (compact ? "10" : (isVertical ? "14" : "12")), 10)));
@@ -1689,12 +1777,13 @@ function OverlayInner() {
     const raw = sp.get("showPersonalGoal");
     if (raw === "true") return true;
     if (raw === "false") return false;
+    if (timerOnlyMode) return false;
     const presetHas = typeof (activePreset as any)?.showPersonalGoal === "boolean";
     if (presetHas) return Boolean((activePreset as any).showPersonalGoal);
     if (isPreviewGuide || externalHost) return true;
     if (tableOnly) return false;
     return personalGoals.length > 0;
-  }, [sp, tableOnly, activePreset, personalGoals.length, isPreviewGuide, externalHost]);
+  }, [sp, timerOnlyMode, tableOnly, activePreset, personalGoals.length, isPreviewGuide, externalHost]);
 
   const unpinned = useMemo(() => members.filter((m) => !pinnedFilter(m)), [members]);
   const pinned = useMemo(() => members.filter(pinnedFilter), [members]);
@@ -1892,6 +1981,7 @@ function OverlayInner() {
       justifyContent: justify as any,
       width: "100%",
       height: "100%",
+      background: "transparent",
     };
     const viewportInnerStyle: React.CSSProperties = {
       position: "relative",
@@ -1965,7 +2055,7 @@ function OverlayInner() {
           </div>
         )}
         <div style={viewportInnerStyle} className="overlay-route">
-          <main className="transparent-bg no-select" style={{ ...scaledMainStyle, minHeight: FIT_H, width: FIT_W }}>
+          <main className="transparent-bg no-select" style={{ ...scaledMainStyle, minHeight: FIT_H, width: FIT_W, background: "transparent" }}>
         {showMembers && (ready || isPreviewGuide || externalHost) && (
           <div className={`absolute ${listPosClass}`} style={{ maxWidth: FIT_W, maxHeight: FIT_H, ...listPosStyle }}>
             <div ref={containerRef} className="flex items-start gap-3" style={{ width: "fit-content", maxWidth: FIT_W }}>
@@ -2136,13 +2226,17 @@ function OverlayInner() {
           renderPersonalGoal()
         )}
         {effectiveShowTicker && (ready || isPreviewGuide) && <div className={`absolute ${tickerPosClass} ${hasTickerFreePos ? "" : "mb-10"}`} style={tickerPosStyle}><DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
-        {showTimer && matchTimerAllowed && (
-          <div className={`absolute ${posClass(timerAnchor)}`}>
+        {showTimer && effectiveTimerAllowed && (
+          <div className={`absolute ${posClass(timerAnchor)} z-[10000]`}>
             <Timer
               elapsed={timerText}
               paused={timerPaused}
               fontSize={memberSize}
               remainingSeconds={serverTimer.remainingSeconds}
+              fontColor={timerFontColor}
+              bgColor={timerBgColor}
+              borderColor={timerBorderColor}
+              bgOpacity={timerBgOpacity}
             />
           </div>
         )}

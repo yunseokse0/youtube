@@ -9,11 +9,13 @@ import type {
   MealMatchState,
   Member,
   MissionItem,
+  OverlayConfig,
   SigItem,
   SigMatchPool,
   SigMatchSettings,
   RouletteState,
   SigMatchState,
+  TimerDisplayStyle,
   TimerState,
 } from "@/types";
 export type {
@@ -29,11 +31,13 @@ export type {
   MealMatchState,
   Member,
   MissionItem,
+  OverlayConfig,
   RouletteState,
   SigItem,
   SigMatchPool,
   SigMatchSettings,
   SigMatchState,
+  TimerDisplayStyle,
   TimerState,
 } from "@/types";
 
@@ -79,16 +83,48 @@ export function normalizeRouletteState(raw: unknown): RouletteState {
   const def: RouletteState = { isRolling: false, result: null, spinCount: 0, startedAt: 0 };
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return def;
   const o = raw as Record<string, unknown>;
+  let results: SigItem[] | undefined;
+  if (Array.isArray(o.results)) {
+    const norm = normalizeSigInventory(o.results.filter((x) => x && typeof x === "object") as unknown[]);
+    results = norm.length > 0 ? norm : undefined;
+  }
+  let spinPriceFilters: (number | null)[] | undefined;
+  if (Array.isArray(o.spinPriceFilters)) {
+    spinPriceFilters = o.spinPriceFilters.map((x) => {
+      if (x === null) return null;
+      const n = Number(x);
+      return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
+    });
+  }
+  let spinPriceRanges: ({ min: number | null; max: number | null } | null)[] | undefined;
+  if (Array.isArray((o as Record<string, unknown>).spinPriceRanges)) {
+    const raw = (o as Record<string, unknown>).spinPriceRanges as unknown[];
+    spinPriceRanges = raw.map((x) => {
+      if (x == null || typeof x !== "object") return null;
+      const minNum = Number((x as Record<string, unknown>).min);
+      const maxNum = Number((x as Record<string, unknown>).max);
+      const min = Number.isFinite(minNum) && minNum > 0 ? Math.floor(minNum) : null;
+      const max = Number.isFinite(maxNum) && maxNum > 0 ? Math.floor(maxNum) : null;
+      if (min == null && max == null) return null;
+      if (min != null && max != null && min > max) return { min: max, max: min };
+      return { min, max };
+    });
+  }
   let result: SigItem | null = null;
   if (o.result && typeof o.result === "object") {
     const arr = normalizeSigInventory([o.result]);
     result = arr[0] || null;
+  } else if (results && results.length > 0) {
+    result = results[results.length - 1] ?? null;
   }
   return {
     isRolling: Boolean(o.isRolling),
     result,
     spinCount: Number.isFinite(o.spinCount) ? Math.max(0, Math.floor(Number(o.spinCount))) : 0,
     startedAt: Number.isFinite(o.startedAt) ? Math.max(0, Math.floor(Number(o.startedAt))) : 0,
+    results,
+    spinPriceFilters,
+    spinPriceRanges,
   };
 }
 
@@ -270,6 +306,23 @@ function normalizeRankPositionLabels(input: unknown): string[] {
   return Array.from({ length: 12 }).map((_, idx) => String(input[idx] || "").trim());
 }
 
+export function normalizeDonationListsOverlayConfig(input: unknown): OverlayConfig {
+  const v = input && typeof input === "object" ? (input as Partial<OverlayConfig>) : {};
+  const urlRaw = typeof v.bgGifUrl === "string" ? v.bgGifUrl.trim() : "";
+  let op = Number(v.bgOpacity);
+  if (!Number.isFinite(op)) op = 40;
+  op = Math.max(0, Math.min(100, Math.round(op)));
+  return {
+    bgGifUrl: urlRaw,
+    bgOpacity: op,
+    isBgEnabled: Boolean(v.isBgEnabled),
+  };
+}
+
+export function normalizeDonorRankingsOverlayConfig(input: unknown): OverlayConfig {
+  return normalizeDonationListsOverlayConfig(input);
+}
+
 export function defaultState(): AppState {
   const defaultTimer: TimerState = { remainingTime: 0, isActive: false, lastUpdated: Date.now() };
   const defaultMealBattle: MealBattleState = {
@@ -322,6 +375,8 @@ export function defaultState(): AppState {
     donors: [],
     forbiddenWords: ["금칙어", "욕설", "비속어"],
     sigInventory: DEFAULT_SIG_INVENTORY.map((x) => ({ ...x })),
+    sigSoldOutStampUrl: "",
+    sigSalesMemberPresets: {},
     rouletteState: normalizeRouletteState(null),
     overlayPresets: [],
     sigMatch: {},
@@ -344,6 +399,14 @@ export function defaultState(): AppState {
     sigSalesTimer: { ...defaultTimer },
     generalTimer: { ...defaultTimer },
     matchTimerEnabled: { sigMatch: true, mealMatch: true, sigSales: true, general: true },
+    timerDisplayStyles: {
+      sigMatch: defaultTimerDisplayStyle(),
+      mealMatch: defaultTimerDisplayStyle(),
+      sigSales: defaultTimerDisplayStyle(),
+      general: defaultTimerDisplayStyle(),
+    },
+    donorRankingsOverlayConfig: normalizeDonorRankingsOverlayConfig(null),
+    donationListsOverlayConfig: normalizeDonationListsOverlayConfig(null),
     updatedAt: Date.now(),
   };
 }
@@ -462,6 +525,38 @@ function normalizeMatchTimerEnabled(input: unknown): MatchTimerEnabled {
   };
 }
 
+function defaultTimerDisplayStyle(): TimerDisplayStyle {
+  return {
+    showHours: false,
+    fontColor: "",
+    bgColor: "",
+    borderColor: "",
+    bgOpacity: 40,
+  };
+}
+
+function normalizeTimerDisplayStyle(input: unknown): TimerDisplayStyle {
+  const v = input && typeof input === "object" ? (input as Partial<TimerDisplayStyle>) : {};
+  const op = Number(v.bgOpacity);
+  return {
+    showHours: typeof v.showHours === "boolean" ? v.showHours : false,
+    fontColor: typeof v.fontColor === "string" ? v.fontColor : "",
+    bgColor: typeof v.bgColor === "string" ? v.bgColor : "",
+    borderColor: typeof v.borderColor === "string" ? v.borderColor : "",
+    bgOpacity: Number.isFinite(op) ? Math.max(0, Math.min(100, Math.round(op))) : 40,
+  };
+}
+
+function normalizeTimerDisplayStyles(input: unknown): AppState["timerDisplayStyles"] {
+  const v = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  return {
+    sigMatch: normalizeTimerDisplayStyle(v.sigMatch),
+    mealMatch: normalizeTimerDisplayStyle(v.mealMatch),
+    sigSales: normalizeTimerDisplayStyle(v.sigSales),
+    general: normalizeTimerDisplayStyle(v.general),
+  };
+}
+
 export function parseAmount(input: string | number): number {
   if (typeof input === "number") return Math.max(0, Math.floor(input));
   const extracted = (input || "")
@@ -523,6 +618,17 @@ export function loadState(userId?: string | null): AppState {
     data.forbiddenWords = data.forbiddenWords || [];
     data.missions = ensureMissionItems(data.missions);
     data.sigInventory = normalizeSigInventory((data as AppState).sigInventory);
+    data.sigSoldOutStampUrl = typeof (data as AppState).sigSoldOutStampUrl === "string" ? (data as AppState).sigSoldOutStampUrl : "";
+    data.sigSalesMemberPresets =
+      (data as AppState).sigSalesMemberPresets && typeof (data as AppState).sigSalesMemberPresets === "object"
+        ? Object.fromEntries(
+            Object.entries((data as AppState).sigSalesMemberPresets as Record<string, unknown>)
+              .map(([memberId, ids]) => [
+                memberId,
+                Array.isArray(ids) ? ids.map((x) => String(x)).filter(Boolean) : [],
+              ])
+          )
+        : {};
     data.sigMatch = data.sigMatch && typeof data.sigMatch === "object" ? data.sigMatch : {};
     data.mealBattle = normalizeMealBattle((data as AppState).mealBattle);
     data.mealMatch = data.mealMatch && typeof data.mealMatch === "object" ? data.mealMatch : {};
@@ -558,6 +664,9 @@ export function loadState(userId?: string | null): AppState {
     data.sigSalesTimer = normalizeTimerState((data as AppState).sigSalesTimer);
     data.generalTimer = normalizeTimerState((data as AppState).generalTimer);
     data.matchTimerEnabled = normalizeMatchTimerEnabled((data as AppState).matchTimerEnabled);
+    data.timerDisplayStyles = normalizeTimerDisplayStyles((data as AppState).timerDisplayStyles);
+    data.donorRankingsOverlayConfig = normalizeDonorRankingsOverlayConfig((data as AppState).donorRankingsOverlayConfig);
+    data.donationListsOverlayConfig = normalizeDonationListsOverlayConfig((data as AppState).donationListsOverlayConfig);
     data.overlayPresets = Array.isArray(data.overlayPresets)
       ? data.overlayPresets
       : Array.isArray(data.overlaySettings?.presets)
@@ -639,6 +748,17 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
       data.forbiddenWords = data.forbiddenWords || [];
       data.missions = ensureMissionItems(data.missions);
       data.sigInventory = normalizeSigInventory((data as AppState).sigInventory);
+      data.sigSoldOutStampUrl = typeof (data as AppState).sigSoldOutStampUrl === "string" ? (data as AppState).sigSoldOutStampUrl : "";
+      data.sigSalesMemberPresets =
+        (data as AppState).sigSalesMemberPresets && typeof (data as AppState).sigSalesMemberPresets === "object"
+          ? Object.fromEntries(
+              Object.entries((data as AppState).sigSalesMemberPresets as Record<string, unknown>)
+                .map(([memberId, ids]) => [
+                  memberId,
+                  Array.isArray(ids) ? ids.map((x) => String(x)).filter(Boolean) : [],
+                ])
+            )
+          : {};
       data.sigMatch = data.sigMatch && typeof data.sigMatch === "object" ? data.sigMatch : {};
       data.mealBattle = normalizeMealBattle((data as AppState).mealBattle);
       data.mealMatch = data.mealMatch && typeof data.mealMatch === "object" ? data.mealMatch : {};
@@ -674,6 +794,9 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
       data.sigSalesTimer = normalizeTimerState((data as AppState).sigSalesTimer);
       data.generalTimer = normalizeTimerState((data as AppState).generalTimer);
       data.matchTimerEnabled = normalizeMatchTimerEnabled((data as AppState).matchTimerEnabled);
+      data.timerDisplayStyles = normalizeTimerDisplayStyles((data as AppState).timerDisplayStyles);
+      data.donorRankingsOverlayConfig = normalizeDonorRankingsOverlayConfig((data as AppState).donorRankingsOverlayConfig);
+      data.donationListsOverlayConfig = normalizeDonationListsOverlayConfig((data as AppState).donationListsOverlayConfig);
       data.overlayPresets = Array.isArray(data.overlayPresets)
         ? data.overlayPresets
         : Array.isArray(data.overlaySettings?.presets)

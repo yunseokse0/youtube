@@ -3,7 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
-import { defaultState, loadState, loadStateFromApi, storageKey, type AppState } from "@/lib/state";
+import {
+  defaultState,
+  loadState,
+  loadStateFromApi,
+  normalizeDonorRankingsOverlayConfig,
+  storageKey,
+  type AppState,
+} from "@/lib/state";
 
 type DonorRow = {
   name: string;
@@ -217,6 +224,10 @@ export default function DonorRankingsOverlayPage() {
   const sp = useSearchParams();
   const userId = sp.get("u") || "finalent";
   const { state, ready } = useRemoteState(userId);
+  const overlayCfg = useMemo(
+    () => normalizeDonorRankingsOverlayConfig(state?.donorRankingsOverlayConfig),
+    [state?.donorRankingsOverlayConfig]
+  );
 
   const useTest = (sp.get("test") || "false").toLowerCase() === "true";
   const savedTheme = state?.donorRankingsTheme || defaultState().donorRankingsTheme;
@@ -236,6 +247,8 @@ export default function DonorRankingsOverlayPage() {
   const nameColor = readColor(sp, "nameColor", savedTheme.nameColor);
   const amountColor = readColor(sp, "amountColor", savedTheme.amountColor);
   const outlineColor = readColor(sp, "outline", savedTheme.outlineColor);
+  const showBgLayer = overlayCfg.isBgEnabled && Boolean(overlayCfg.bgGifUrl.trim());
+  const bgOpacityPct = Math.max(0, Math.min(100, overlayCfg.bgOpacity)) / 100;
 
   const { accountTop, toonTop } = useMemo(() => {
     if (useTest) {
@@ -264,8 +277,24 @@ export default function DonorRankingsOverlayPage() {
   if (!ready && !useTest) return null;
 
   return (
-    <main className="min-h-screen w-full p-5" style={{ backgroundColor: bg }}>
-      <div className="mx-auto max-w-[1500px]">
+    <main className="relative min-h-screen w-full overflow-hidden p-5" style={{ backgroundColor: bg }}>
+      {showBgLayer ? (
+        <div className="pointer-events-none fixed inset-0 z-0" aria-hidden>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={overlayCfg.bgGifUrl.trim()}
+            alt=""
+            width={1920}
+            height={1080}
+            className="h-full w-full object-cover"
+            style={{ opacity: bgOpacityPct }}
+            loading="eager"
+            decoding="async"
+            fetchPriority="high"
+          />
+        </div>
+      ) : null}
+      <div className="relative z-10 mx-auto max-w-[1500px]">
         {useTest && (
           <div className="mb-2 inline-block rounded bg-amber-600/85 px-2 py-1 text-xs font-bold text-black">
             TEST MODE

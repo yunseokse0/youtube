@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
-import { defaultState, loadState, loadStateFromApi, storageKey, type AppState } from "@/lib/state";
+import { defaultState, loadState, loadStateFromApi, normalizeDonationListsOverlayConfig, storageKey, type AppState } from "@/lib/state";
 import { sortMembersForRanking } from "@/lib/utils";
 
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
@@ -87,7 +87,7 @@ function RankingTable({
   } as const;
 
   return (
-    <section className="w-full max-w-[980px] overflow-hidden rounded-2xl border border-white/60 bg-white/30 shadow-sm backdrop-blur-md">
+    <section className="relative z-10 w-full max-w-[980px] overflow-hidden rounded-2xl border border-white/60 bg-white/30 shadow-sm backdrop-blur-sm">
       <div className="grid grid-cols-[minmax(0,1.4fr)_120px_150px_150px_160px] gap-2 border-b border-white/70 bg-pink-pastel px-4 py-3 text-[15px] font-extrabold text-pink-deep">
         <span style={outlinedText}>멤버</span>
         <span style={outlinedText}>직급</span>
@@ -142,6 +142,13 @@ export default function DonationListsOverlayPage() {
   const userId = sp.get("u") || "finalent";
   const { state, ready } = useRemoteState(userId);
 
+  const overlayCfg = useMemo(
+    () => normalizeDonationListsOverlayConfig(state?.donationListsOverlayConfig),
+    [state?.donationListsOverlayConfig]
+  );
+  const showBgLayer = overlayCfg.isBgEnabled && Boolean(overlayCfg.bgGifUrl.trim());
+  const bgOpacityPct = Math.max(0, Math.min(100, overlayCfg.bgOpacity)) / 100;
+
   const ranking = useMemo(
     () =>
       sortMembersForRanking(state?.members || [], state?.memberPositions || {}, {
@@ -154,8 +161,37 @@ export default function DonationListsOverlayPage() {
   if (!ready) return null;
 
   return (
-    <main className="min-h-screen w-full bg-transparent p-6 text-white">
-      <div className="mx-auto max-w-[1020px]">
+    <main className="relative min-h-screen w-full overflow-hidden bg-transparent p-6 text-white">
+      {showBgLayer ? (
+        <div className="pointer-events-none fixed inset-0 z-0" aria-hidden>
+          <div
+            className="absolute inset-0"
+            style={{
+              WebkitMaskImage:
+                "radial-gradient(ellipse 92% 88% at 50% 44%, rgba(0,0,0,1) 48%, rgba(0,0,0,0) 100%)",
+              maskImage: "radial-gradient(ellipse 92% 88% at 50% 44%, rgba(0,0,0,1) 48%, rgba(0,0,0,0) 100%)",
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={overlayCfg.bgGifUrl.trim()}
+              alt=""
+              width={1920}
+              height={1080}
+              className="h-full w-full object-cover"
+              style={{ opacity: bgOpacityPct }}
+              loading="eager"
+              decoding="async"
+              fetchPriority="high"
+            />
+            <div
+              className="absolute inset-0 mix-blend-multiply bg-gradient-to-br from-pink-300/55 via-fuchsia-200/45 to-rose-200/50"
+              aria-hidden
+            />
+          </div>
+        </div>
+      ) : null}
+      <div className="relative z-10 mx-auto max-w-[1020px]">
         <h1
           className="mb-4 text-center text-3xl font-black text-pink-deep"
           style={{

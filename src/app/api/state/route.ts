@@ -7,11 +7,18 @@ import { createModuleLogger } from "@/lib/logger";
 import { AUTH_COOKIE } from "@/lib/auth";
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
+import { isRouletteLocked } from "../roulette/roulette-lock";
+import { loadAppStateForRoulette } from "../roulette/edge-state-store";
 
 const logger = createModuleLogger('API/State');
 
 const STORAGE_KEY_BASE = "excel-broadcast-state-v1";
 const STORAGE_KEY_LEGACY = "excel-broadcast-state-v1";
+
+function isLocalRequest(req: Request): boolean {
+  const host = (req.headers.get("host") || "").toLowerCase();
+  return host.includes("localhost") || host.includes("127.0.0.1") || host.includes("[::1]");
+}
 
 function getUserId(req: Request): string | null {
   const url = new URL(req.url);
@@ -25,6 +32,7 @@ function getUserId(req: Request): string | null {
       return parsed?.id || null;
     } catch { return null; }
   }
+  if (isLocalRequest(req)) return "admin";
   return null;
 }
 
@@ -42,6 +50,88 @@ function getEnv() {
     process.env.KV_REST_API_TOKEN ||
     "";
   return { base, token };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function deepMerge<T>(base: T, patch: Partial<T>): T {
+  if (!isPlainObject(base) || !isPlainObject(patch)) {
+    return (patch as T) ?? base;
+  }
+  const out: Record<string, unknown> = { ...base };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) continue;
+    const cur = out[k];
+    if (isPlainObject(cur) && isPlainObject(v)) {
+      out[k] = deepMerge(cur, v);
+    } else {
+      out[k] = v;
+    }
+  }
+  return out as T;
+}
+
+function mergePartialState(base: AppState, patch: Partial<AppState>, userId: string): AppState {
+  const next: AppState = {
+    ...base,
+    ...patch,
+    // 중첩 객체는 deep merge로 처리
+    matchTimerEnabled: patch.matchTimerEnabled
+      ? deepMerge(base.matchTimerEnabled, patch.matchTimerEnabled)
+      : base.matchTimerEnabled,
+    timerDisplayStyles: patch.timerDisplayStyles
+      ? deepMerge(base.timerDisplayStyles, patch.timerDisplayStyles)
+      : base.timerDisplayStyles,
+    sigSalesMemberPresets: patch.sigSalesMemberPresets
+      ? deepMerge(base.sigSalesMemberPresets, patch.sigSalesMemberPresets)
+      : base.sigSalesMemberPresets,
+  };
+
+  // patch에 없는 필드가 undefined로 덮이지 않도록 보정
+  if (!("members" in patch)) next.members = base.members;
+  if (!("memberPositions" in patch)) next.memberPositions = base.memberPositions;
+  if (!("memberPositionMode" in patch)) next.memberPositionMode = base.memberPositionMode;
+  if (!("rankPositionLabels" in patch)) next.rankPositionLabels = base.rankPositionLabels;
+  if (!("donorRankingsTheme" in patch)) next.donorRankingsTheme = base.donorRankingsTheme;
+  if (!("donorRankingsPresets" in patch)) next.donorRankingsPresets = base.donorRankingsPresets;
+  if (!("donorRankingsPresetId" in patch)) next.donorRankingsPresetId = base.donorRankingsPresetId;
+  if (!("forbiddenWords" in patch)) next.forbiddenWords = base.forbiddenWords;
+  if (!("missions" in patch)) next.missions = base.missions;
+  if (!("sigInventory" in patch)) next.sigInventory = base.sigInventory;
+  if (!("sigSoldOutStampUrl" in patch)) next.sigSoldOutStampUrl = base.sigSoldOutStampUrl;
+  if (!("overlayPresets" in patch)) next.overlayPresets = base.overlayPresets;
+  if (!("overlaySettings" in patch)) next.overlaySettings = base.overlaySettings;
+  if (!("sigMatch" in patch)) next.sigMatch = base.sigMatch;
+  if (!("sigMatchSettings" in patch)) next.sigMatchSettings = base.sigMatchSettings;
+  if (!("mealBattle" in patch)) next.mealBattle = base.mealBattle;
+  if (!("mealMatch" in patch)) next.mealMatch = base.mealMatch;
+  if (!("mealMatchSettings" in patch)) next.mealMatchSettings = base.mealMatchSettings;
+  if (!("sigMatchTimer" in patch)) next.sigMatchTimer = base.sigMatchTimer;
+  if (!("mealMatchTimer" in patch)) next.mealMatchTimer = base.mealMatchTimer;
+  if (!("sigSalesTimer" in patch)) next.sigSalesTimer = base.sigSalesTimer;
+  if (!("generalTimer" in patch)) next.generalTimer = base.generalTimer;
+  if (!("donorRankingsOverlayConfig" in patch)) next.donorRankingsOverlayConfig = base.donorRankingsOverlayConfig;
+  if (!("donationListsOverlayConfig" in patch)) next.donationListsOverlayConfig = base.donationListsOverlayConfig;
+
+  // rouletteState는 /api/roulette/spin, /api/roulette/finish 전용으로 관리한다.
+  // Edge 런타임에서는 인메모리 lock이 인스턴스 간 공유되지 않아 /api/state 저장과 경합할 수 있으므로
+  // /api/state 경로에서 들어온 rouletteState는 "더 최신 startedAt"인 경우에만 제한적으로 반영한다.
+  // 대부분의 일반 저장은 base를 유지해 스핀 상태 덮어쓰기를 방지한다.
+  const baseStartedAt = Number(base.rouletteState?.startedAt || 0);
+  const patchStartedAt = Number(patch.rouletteState?.startedAt || 0);
+  const patchHasRollingFlag = typeof patch.rouletteState?.isRolling === "boolean";
+  const canApplyPatchRouletteState =
+    "rouletteState" in patch &&
+    !isRouletteLocked(userId) &&
+    Number.isFinite(patchStartedAt) &&
+    (patchStartedAt > baseStartedAt || (patchStartedAt === baseStartedAt && patchHasRollingFlag));
+  if (!canApplyPatchRouletteState) {
+    next.rouletteState = base.rouletteState;
+  }
+
+  return next;
 }
 
 async function upstashGet(key: string) {
@@ -119,8 +209,28 @@ export async function GET(req: Request) {
     if (!state && !getServerMemoryAppState()) {
       logger.warn('Redis/메모리 모두 비어있음 - 기본값 반환 (서버 재시작 시 발생. Redis 설정 권장)', { userId });
     }
+    let mergedForResponse = effective as AppState;
+    // Edge 런타임에서 상태 경합이 있을 수 있어, 룰렛 전용 저장소의 최신 rouletteState를 응답에 우선 반영
+    // (spin 직후 오버레이가 회전 상태를 놓치지 않도록 보강)
+    try {
+      const rouletteStateSource = await loadAppStateForRoulette(userId);
+      if (rouletteStateSource?.rouletteState) {
+        const curStarted = Number((effective as AppState).rouletteState?.startedAt || 0);
+        const rouletteStarted = Number(rouletteStateSource.rouletteState?.startedAt || 0);
+        const shouldUseRouletteState =
+          Boolean(rouletteStateSource.rouletteState?.isRolling) ||
+          rouletteStarted >= curStarted;
+        if (shouldUseRouletteState) {
+          mergedForResponse = {
+            ...(effective as AppState),
+            rouletteState: rouletteStateSource.rouletteState,
+          };
+        }
+      }
+    } catch {}
+
     logger.debug('Redis 상태 반환', { hasState: !!state, usedMemory: !!getServerMemoryAppState(), userId });
-    return new Response(JSON.stringify(effective), {
+    return new Response(JSON.stringify(mergedForResponse), {
       headers: {
         "Content-Type": "application/json",
         "Cache-Control":
@@ -146,7 +256,7 @@ export async function POST(req: Request) {
         headers: { "Content-Type": "application/json" },
       });
     }
-    const body = (await req.json()) as AppState;
+    const body = (await req.json()) as Partial<AppState>;
     const { base, token } = getEnv();
     let existing: AppState | null = null;
     if (base && token) {
@@ -154,8 +264,12 @@ export async function POST(req: Request) {
     } else {
       existing = getServerMemoryAppState();
     }
-    const mergedDonors = mergeDonorsForMultiTabSave(body.donors || [], existing?.donors);
-    const next: AppState = { ...body, donors: mergedDonors, updatedAt: Date.now() };
+    const baseState = existing || defaultState();
+    const mergedDonors = Array.isArray(body.donors)
+      ? mergeDonorsForMultiTabSave(body.donors || [], baseState.donors)
+      : baseState.donors;
+    const merged = mergePartialState(baseState, body, userId);
+    const next: AppState = { ...merged, donors: mergedDonors, updatedAt: Date.now() };
 
     if (!base || !token) {
       setServerMemoryAppState(next);

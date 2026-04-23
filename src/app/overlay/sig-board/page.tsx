@@ -80,6 +80,7 @@ export default function SigBoardOverlayPage() {
   const sp = useSearchParams();
   const userId = sp.get("u") || "finalent";
   const { state, ready } = useRemoteState(userId);
+  const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || "/images/sigs/stamp.png";
 
   const rollingItems = useMemo(
     () => (state?.sigInventory || []).filter((x) => x.isRolling),
@@ -164,9 +165,9 @@ export default function SigBoardOverlayPage() {
                         >
                           <div className="absolute inset-2 rounded-full bg-pastel-red/50 blur-[2px]" aria-hidden />
                           <motion.img
-                            src="/images/sigs/stamp.png"
+                            src={soldOutStampUrl}
                             alt="stamp"
-                            className="relative z-[1] h-28 w-28 object-contain opacity-90 mix-blend-multiply"
+                            className="relative z-[1] h-28 w-28 object-contain opacity-90"
                           />
                         </motion.div>
                       )}

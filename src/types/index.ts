@@ -56,10 +56,17 @@ export type SigItem = {
 /** 서버가 저장하는 룰렛 상태(당첨은 서버에서만 결정) */
 export type RouletteState = {
   isRolling: boolean;
+  /** 마지막(또는 단일) 스핀 당첨 — 오버레이 릴 정렬용 */
   result: SigItem | null;
   spinCount: number;
   /** 스핀 시작 시각(ms) — 오버레이 애니메이션 동기화 */
   startedAt: number;
+  /** 회수>1일 때 회차별 당첨 목록(있으면 result는 보통 마지막 항목과 동일) */
+  results?: SigItem[];
+  /** 회차별 적용 금액대(null = 전체 풀) */
+  spinPriceFilters?: (number | null)[];
+  /** 회차별 적용 최소/최대 금액 범위(null = 전체 범위) */
+  spinPriceRanges?: ({ min: number | null; max: number | null } | null)[];
 };
 
 export type LegacyOverlaySettings = {
@@ -131,6 +138,14 @@ export type TimerState = {
   remainingTime: number;
   isActive: boolean;
   lastUpdated: number;
+};
+
+export type TimerDisplayStyle = {
+  showHours: boolean;
+  fontColor: string;
+  bgColor: string;
+  borderColor: string;
+  bgOpacity: number;
 };
 
 /** 시그 매치 / 식사 매치 / 시그 판매 / 일반 타이머를 오버레이에서 쓸지 여부 */
@@ -210,6 +225,16 @@ export type DonorRankingsPreset = {
   theme: DonorRankingsTheme;
 };
 
+/** 후원 랭킹 엑셀표 등 오버레이 전용 배경(GIF) 설정 */
+export type OverlayConfig = {
+  /** 배경 GIF 이미지 URL 또는 경로(예: /images/bg/foo.gif) */
+  bgGifUrl: string;
+  /** 배경 투명도 0~100 */
+  bgOpacity: number;
+  /** 배경 레이어 사용 여부 */
+  isBgEnabled: boolean;
+};
+
 export type AppState = {
   /** 멤버 목록 */
   members: Member[];
@@ -230,6 +255,10 @@ export type AppState = {
   forbiddenWords: string[];
   missions?: MissionItem[];
   sigInventory: SigItem[];
+  /** 시그 판매/보드 완판 시 이미지 오버레이 URL (gif/png/jpg 등) */
+  sigSoldOutStampUrl: string;
+  /** 멤버별 시그 판매 프리셋(활성화할 시그 id 목록) */
+  sigSalesMemberPresets: Record<string, string[]>;
   /** 시그 룰렛(서버 랜덤 결과 + 오버레이 애니메이션) */
   rouletteState: RouletteState;
   overlayPresets?: unknown[];
@@ -248,6 +277,12 @@ export type AppState = {
   generalTimer: TimerState;
   /** 대전별 타이머 오버레이 사용 여부 */
   matchTimerEnabled: MatchTimerEnabled;
+  /** 타이머 유형별 표시 스타일(글자/배경/테두리/형식) */
+  timerDisplayStyles: Record<"sigMatch" | "mealMatch" | "sigSales" | "general", TimerDisplayStyle>;
+  /** `/overlay/donor-rankings` 배경 GIF·투명도 */
+  donorRankingsOverlayConfig: OverlayConfig;
+  /** `/overlay/donation-lists` 배경 GIF·투명도(상태 저장 시 Redis와 동기화) */
+  donationListsOverlayConfig: OverlayConfig;
   /** 마지막 저장 시각(epoch ms), 원격-로컬 최신성 비교 기준 */
   updatedAt: number;
 };
