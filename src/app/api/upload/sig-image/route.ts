@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
-import { AUTH_COOKIE } from "@/lib/auth";
+import { AUTH_COOKIE, isDevAuthBypassRequest } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const revalidate = 0;
@@ -9,6 +9,7 @@ export const revalidate = 0;
 const MAX_BYTES = 30 * 1024 * 1024;
 
 function getUserId(req: Request): string | null {
+  if (isDevAuthBypassRequest(req)) return "finalent";
   const cookie = req.headers.get("cookie") || "";
   const match = cookie.match(new RegExp(`${AUTH_COOKIE}=([^;]+)`));
   if (!match) return null;

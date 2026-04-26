@@ -1953,6 +1953,24 @@ function OverlayInner() {
     const excelGridCols = hasRoleColumn
       ? ["3ch", `${roleCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`]
       : ["3ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`];
+    const columnGradients = hasRoleColumn
+      ? [
+          "rgba(255, 212, 231, 0.70)", // rank
+          "rgba(255, 212, 231, 0.70)", // role
+          "rgba(255, 212, 231, 0.70)", // name
+          "rgba(255, 212, 231, 0.70)", // account
+          "rgba(255, 212, 231, 0.70)", // toon
+          "rgba(255, 212, 231, 0.70)", // total
+          "rgba(255, 212, 231, 0.70)", // contribution
+        ]
+      : [
+          "rgba(255, 212, 231, 0.70)", // rank
+          "rgba(255, 212, 231, 0.70)", // name
+          "rgba(255, 212, 231, 0.70)", // account
+          "rgba(255, 212, 231, 0.70)", // toon
+          "rgba(255, 212, 231, 0.70)", // total
+          "rgba(255, 212, 231, 0.70)", // contribution
+        ];
     let effectiveScale = centerFixed || hasTableFreePos
       ? (zoomMode === "neutral" ? 1 : (zoomMode === "invert" ? (1 / centerZoomScale) : centerZoomScale))
       : (externalHost ? 1 : (viewportScale * scale));
@@ -2041,40 +2059,36 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table {
           border-radius: 16px;
           overflow: hidden;
-          border: 1px solid rgba(251, 207, 232, 0.34);
-          box-shadow: 0 18px 36px rgba(76, 5, 25, 0.36), inset 0 1px 0 rgba(255,255,255,0.10);
+          border: 1px solid rgba(255, 236, 246, 0.72);
+          box-shadow: 0 12px 24px rgba(118, 36, 79, 0.18), inset 0 1px 0 rgba(255,255,255,0.22);
           backdrop-filter: blur(12px);
           -webkit-backdrop-filter: blur(12px);
         }
         .overlay-root .overlay-elegant-table td {
-          color: #fff7fb !important;
+          color: #fffdfd !important;
           transition: filter 180ms ease, transform 180ms ease, background-size 220ms ease;
-          background-size: 100% 100%;
-          text-shadow: 0 1px 0 rgba(0,0,0,0.32);
+          background: transparent !important;
+          text-shadow: 0 1px 0 rgba(82, 26, 53, 0.24);
         }
         .overlay-root .overlay-elegant-table thead td {
-          color: #fff1f8 !important;
-          text-shadow: 0 1px 0 rgba(0,0,0,0.45);
-          box-shadow: inset 0 -1px 0 rgba(255, 228, 244, 0.35), inset 0 1px 0 rgba(255,255,255,0.12);
+          color: #fffdfd !important;
+          text-shadow: 0 1px 0 rgba(82, 26, 53, 0.30);
+          box-shadow: inset 0 -1px 0 rgba(255, 228, 244, 0.46), inset 0 1px 0 rgba(255,255,255,0.20);
         }
-        .overlay-root .overlay-elegant-table td.overlay-col-rank { background-image: linear-gradient(135deg, rgba(190, 24, 93, 0.54) 0%, rgba(225, 29, 72, 0.50) 100%) !important; }
-        .overlay-root .overlay-elegant-table td.overlay-col-role { background-image: linear-gradient(135deg, rgba(219, 39, 119, 0.50) 0%, rgba(236, 72, 153, 0.48) 100%) !important; }
-        .overlay-root .overlay-elegant-table td.overlay-col-name { background-image: linear-gradient(135deg, rgba(236, 72, 153, 0.56) 0%, rgba(251, 113, 133, 0.52) 54%, rgba(217, 70, 239, 0.54) 100%) !important; }
-        .overlay-root .overlay-elegant-table td.overlay-col-account { background-image: linear-gradient(135deg, rgba(251, 113, 133, 0.50) 0%, rgba(244, 114, 182, 0.48) 100%) !important; }
-        .overlay-root .overlay-elegant-table td.overlay-col-toon { background-image: linear-gradient(135deg, rgba(251, 113, 133, 0.48) 0%, rgba(236, 72, 153, 0.48) 100%) !important; }
-        .overlay-root .overlay-elegant-table td.overlay-col-total { background-image: linear-gradient(135deg, rgba(217, 70, 239, 0.58) 0%, rgba(236, 72, 153, 0.62) 52%, rgba(251, 113, 133, 0.58) 100%) !important; color: #fff7ed !important; box-shadow: inset 0 0 0 1px rgba(255, 236, 220, 0.25); }
-        .overlay-root .overlay-elegant-table td.overlay-col-contribution { background-image: linear-gradient(135deg, rgba(244, 114, 182, 0.50) 0%, rgba(236, 72, 153, 0.52) 100%) !important; color: #fff1f2 !important; }
-        .overlay-root .overlay-elegant-table thead td.overlay-col-rank { background-image: linear-gradient(135deg, rgba(157, 23, 77, 0.78) 0%, rgba(190, 24, 93, 0.74) 100%) !important; }
-        .overlay-root .overlay-elegant-table thead td.overlay-col-role { background-image: linear-gradient(135deg, rgba(131, 24, 67, 0.78) 0%, rgba(190, 24, 93, 0.74) 100%) !important; }
-        .overlay-root .overlay-elegant-table thead td.overlay-col-name { background-image: linear-gradient(135deg, rgba(190, 24, 93, 0.80) 0%, rgba(225, 29, 72, 0.76) 48%, rgba(192, 38, 211, 0.78) 100%) !important; }
+        .overlay-root .overlay-elegant-table td.overlay-col-total { color: #fff9f0 !important; box-shadow: inset 0 0 0 1px rgba(255, 240, 228, 0.24); }
+        .overlay-root .overlay-elegant-table td.overlay-col-contribution { color: #fff7fa !important; }
+        .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-role,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-name,
         .overlay-root .overlay-elegant-table thead td.overlay-col-account,
-        .overlay-root .overlay-elegant-table thead td.overlay-col-toon { background-image: linear-gradient(135deg, rgba(190, 24, 93, 0.76) 0%, rgba(236, 72, 153, 0.74) 100%) !important; }
-        .overlay-root .overlay-elegant-table thead td.overlay-col-total { background-image: linear-gradient(135deg, rgba(217, 70, 239, 0.84) 0%, rgba(236, 72, 153, 0.82) 48%, rgba(251, 113, 133, 0.78) 100%) !important; color: #fff7ed !important; box-shadow: inset 0 -1px 0 rgba(255, 236, 220, 0.52), inset 0 1px 0 rgba(255,255,255,0.16); }
-        .overlay-root .overlay-elegant-table thead td.overlay-col-contribution { background-image: linear-gradient(135deg, rgba(190, 24, 93, 0.76) 0%, rgba(219, 39, 119, 0.74) 100%) !important; }
+        .overlay-root .overlay-elegant-table thead td.overlay-col-toon,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-total,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-contribution {
+          background: rgba(244, 170, 205, 0.92) !important;
+        }
         .overlay-root .overlay-elegant-table tbody tr:hover td {
-          filter: brightness(1.16) saturate(1.10);
+          filter: brightness(1.06) saturate(1.03);
           transform: scale(1.009);
-          background-size: 106% 106%;
         }
       ` }} />
     );
@@ -2118,7 +2132,7 @@ function OverlayInner() {
                     >
                   <colgroup>
                     {excelGridCols.map((w, idx) => (
-                      <col key={`excel-col-${idx}`} style={{ width: w }} />
+                      <col key={`excel-col-${idx}`} style={{ width: w, backgroundImage: columnGradients[idx], backgroundRepeat: "no-repeat", backgroundSize: "100% 100%" }} />
                     ))}
                   </colgroup>
                   <thead>
@@ -2188,7 +2202,7 @@ function OverlayInner() {
                 >
                   <colgroup>
                     {excelGridCols.map((w, idx) => (
-                      <col key={`excel-col-${idx}`} style={{ width: w }} />
+                      <col key={`excel-col-${idx}`} style={{ width: w, backgroundImage: columnGradients[idx], backgroundRepeat: "no-repeat", backgroundSize: "100% 100%" }} />
                     ))}
                   </colgroup>
                   <thead>

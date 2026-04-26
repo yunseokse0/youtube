@@ -4,7 +4,7 @@ export const revalidate = 0;
 import type { AppState } from "@/lib/state";
 import { defaultState, mergeDonorsForMultiTabSave } from "@/lib/state";
 import { createModuleLogger } from "@/lib/logger";
-import { AUTH_COOKIE } from "@/lib/auth";
+import { AUTH_COOKIE, isDevAuthBypassRequest } from "@/lib/auth";
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { isRouletteLocked } from "../roulette/roulette-lock";
@@ -14,11 +14,6 @@ const logger = createModuleLogger('API/State');
 
 const STORAGE_KEY_BASE = "excel-broadcast-state-v1";
 const STORAGE_KEY_LEGACY = "excel-broadcast-state-v1";
-
-function isLocalRequest(req: Request): boolean {
-  const host = (req.headers.get("host") || "").toLowerCase();
-  return host.includes("localhost") || host.includes("127.0.0.1") || host.includes("[::1]");
-}
 
 function getUserId(req: Request): string | null {
   const url = new URL(req.url);
@@ -32,7 +27,7 @@ function getUserId(req: Request): string | null {
       return parsed?.id || null;
     } catch { return null; }
   }
-  if (isLocalRequest(req)) return "admin";
+  if (isDevAuthBypassRequest(req)) return "finalent";
   return null;
 }
 

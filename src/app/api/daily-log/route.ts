@@ -1,7 +1,7 @@
 export const runtime = "edge";
 export const revalidate = 0;
 
-import { AUTH_COOKIE } from "@/lib/auth";
+import { AUTH_COOKIE, isDevAuthBypassRequest } from "@/lib/auth";
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
 import type { DailyLogEntry } from "@/lib/state";
 
@@ -25,6 +25,7 @@ function getUserId(req: Request): string | null {
       return null;
     }
   }
+  if (isDevAuthBypassRequest(req)) return "finalent";
   return null;
 }
 

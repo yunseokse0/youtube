@@ -1,15 +1,10 @@
 import type { AppState } from "@/lib/state";
 import { defaultState } from "@/lib/state";
-import { AUTH_COOKIE } from "@/lib/auth";
+import { AUTH_COOKIE, isDevAuthBypassRequest } from "@/lib/auth";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
 
 const STORAGE_KEY_BASE = "excel-broadcast-state-v1";
 const STORAGE_KEY_LEGACY = "excel-broadcast-state-v1";
-
-function isLocalRequest(req: Request): boolean {
-  const host = (req.headers.get("host") || "").toLowerCase();
-  return host.includes("localhost") || host.includes("127.0.0.1") || host.includes("[::1]");
-}
 
 export function getRouletteUserId(req: Request): string | null {
   const url = new URL(req.url);
@@ -25,7 +20,7 @@ export function getRouletteUserId(req: Request): string | null {
       return null;
     }
   }
-  if (isLocalRequest(req)) return "admin";
+  if (isDevAuthBypassRequest(req)) return "finalent";
   return null;
 }
 

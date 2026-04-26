@@ -649,6 +649,7 @@ export default function AdminPage() {
     q.set("renderHeight", isVertical ? "1920" : "1080");
     const hasMembersWithGoal = state.members.some((m) => (m.goal || 0) > 0);
     if (hasMembersWithGoal) q.set("showPersonalGoal", "true");
+    const snapUpdatedAt = Number(state.updatedAt || 0) > 0 ? Number(state.updatedAt) : Date.now();
     try {
       const snapObj = {
         members: state.members.map(m => ({ id: m.id, name: m.name, account: m.account, toon: m.toon, contribution: m.contribution || 0, goal: m.goal, operating: m.operating })),
@@ -662,7 +663,7 @@ export default function AdminPage() {
           const n = raw === "" || raw === null || raw === undefined ? null : parseInt(String(raw), 10);
           return n === null || Number.isNaN(n) ? null : Math.max(0, n);
         })(),
-        updatedAt: Date.now(),
+        updatedAt: snapUpdatedAt,
       };
       const json = JSON.stringify(snapObj);
       const b64 = btoa(encodeURIComponent(json));
@@ -672,7 +673,8 @@ export default function AdminPage() {
         return urlWithSnap;
       }
       q.delete("snap");
-      const snapKey = PREVIEW_SNAP_PREFIX + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
+      // Stable key per saved state version to prevent iframe reload loops.
+      const snapKey = PREVIEW_SNAP_PREFIX + snapUpdatedAt + "-" + p.id;
       localStorage.setItem(snapKey, JSON.stringify(snapObj));
       q.set("snapKey", snapKey);
       try {

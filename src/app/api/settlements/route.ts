@@ -1,7 +1,7 @@
 export const runtime = "edge";
 export const revalidate = 0;
 
-import { AUTH_COOKIE } from "@/lib/auth";
+import { AUTH_COOKIE, isDevAuthBypassRequest } from "@/lib/auth";
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
 
 const STORAGE_KEY_BASE = "excel-broadcast-settlement-records-v1";
@@ -22,6 +22,7 @@ function getUserId(req: Request): string | null {
       return parsed?.id || null;
     } catch { return null; }
   }
+  if (isDevAuthBypassRequest(req)) return "finalent";
   return null;
 }
 
