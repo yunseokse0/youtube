@@ -1278,7 +1278,7 @@ function OverlayInner() {
   const sumY = hasFreePos ? parsePct(sumYParam, 90) : 0;
   const themeId: ThemeId = "default";
   const baseTheme = THEMES.default;
-  const totalHeaderLabel = "TOTAL";
+  const totalHeaderLabel = "합계";
   const resolveThemeId = (key: string): ThemeId => {
     const raw = (sp.get(key) || "auto").trim();
     if (raw === "auto" || !raw) return "default";
@@ -2041,39 +2041,40 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table {
           border-radius: 16px;
           overflow: hidden;
-          border: 1px solid rgba(148, 163, 184, 0.22);
-          box-shadow: 0 20px 40px rgba(2, 6, 23, 0.52), inset 0 1px 0 rgba(255,255,255,0.08);
+          border: 1px solid rgba(251, 207, 232, 0.34);
+          box-shadow: 0 18px 36px rgba(76, 5, 25, 0.36), inset 0 1px 0 rgba(255,255,255,0.10);
           backdrop-filter: blur(12px);
           -webkit-backdrop-filter: blur(12px);
         }
         .overlay-root .overlay-elegant-table td {
-          color: #e5e7eb !important;
+          color: #fff7fb !important;
           transition: filter 180ms ease, transform 180ms ease, background-size 220ms ease;
           background-size: 100% 100%;
+          text-shadow: 0 1px 0 rgba(0,0,0,0.32);
         }
         .overlay-root .overlay-elegant-table thead td {
-          color: #f8fafc !important;
-          text-shadow: 0 1px 0 rgba(0,0,0,0.4);
-          box-shadow: inset 0 -1px 0 rgba(255,255,255,0.12);
+          color: #fff1f8 !important;
+          text-shadow: 0 1px 0 rgba(0,0,0,0.45);
+          box-shadow: inset 0 -1px 0 rgba(255, 228, 244, 0.35), inset 0 1px 0 rgba(255,255,255,0.12);
         }
-        .overlay-root .overlay-elegant-table td.overlay-col-rank { background-image: linear-gradient(115deg, rgba(56, 189, 248, 0.28) 0%, rgba(124, 58, 237, 0.36) 100%) !important; }
-        .overlay-root .overlay-elegant-table td.overlay-col-role { background-image: linear-gradient(120deg, rgba(99, 102, 241, 0.26) 0%, rgba(147, 51, 234, 0.34) 100%) !important; }
-        .overlay-root .overlay-elegant-table td.overlay-col-name { background-image: linear-gradient(115deg, rgba(236, 72, 153, 0.30) 0%, rgba(251, 113, 133, 0.34) 48%, rgba(251, 191, 140, 0.30) 100%) !important; }
-        .overlay-root .overlay-elegant-table td.overlay-col-account { background-image: linear-gradient(115deg, rgba(6, 182, 212, 0.30) 0%, rgba(45, 212, 191, 0.36) 52%, rgba(132, 204, 22, 0.30) 100%) !important; }
-        .overlay-root .overlay-elegant-table td.overlay-col-toon { background-image: linear-gradient(115deg, rgba(8, 145, 178, 0.30) 0%, rgba(20, 184, 166, 0.34) 50%, rgba(163, 230, 53, 0.28) 100%) !important; }
-        .overlay-root .overlay-elegant-table td.overlay-col-total { background-image: linear-gradient(115deg, rgba(14, 165, 233, 0.34) 0%, rgba(34, 197, 94, 0.42) 52%, rgba(190, 242, 100, 0.34) 100%) !important; color: #f0fdf4 !important; }
-        .overlay-root .overlay-elegant-table td.overlay-col-contribution { background-image: linear-gradient(115deg, rgba(245, 158, 11, 0.28) 0%, rgba(251, 191, 36, 0.30) 100%) !important; color: #fef3c7 !important; }
-        .overlay-root .overlay-elegant-table thead td.overlay-col-rank { background-image: linear-gradient(120deg, rgba(14, 116, 144, 0.58) 0%, rgba(88, 28, 135, 0.66) 100%) !important; }
-        .overlay-root .overlay-elegant-table thead td.overlay-col-role { background-image: linear-gradient(120deg, rgba(55, 48, 163, 0.56) 0%, rgba(126, 34, 206, 0.64) 100%) !important; }
-        .overlay-root .overlay-elegant-table thead td.overlay-col-name { background-image: linear-gradient(120deg, rgba(157, 23, 77, 0.60) 0%, rgba(190, 24, 93, 0.66) 55%, rgba(180, 83, 9, 0.62) 100%) !important; }
+        .overlay-root .overlay-elegant-table td.overlay-col-rank { background-image: linear-gradient(135deg, rgba(190, 24, 93, 0.54) 0%, rgba(225, 29, 72, 0.50) 100%) !important; }
+        .overlay-root .overlay-elegant-table td.overlay-col-role { background-image: linear-gradient(135deg, rgba(219, 39, 119, 0.50) 0%, rgba(236, 72, 153, 0.48) 100%) !important; }
+        .overlay-root .overlay-elegant-table td.overlay-col-name { background-image: linear-gradient(135deg, rgba(236, 72, 153, 0.56) 0%, rgba(251, 113, 133, 0.52) 54%, rgba(217, 70, 239, 0.54) 100%) !important; }
+        .overlay-root .overlay-elegant-table td.overlay-col-account { background-image: linear-gradient(135deg, rgba(251, 113, 133, 0.50) 0%, rgba(244, 114, 182, 0.48) 100%) !important; }
+        .overlay-root .overlay-elegant-table td.overlay-col-toon { background-image: linear-gradient(135deg, rgba(251, 113, 133, 0.48) 0%, rgba(236, 72, 153, 0.48) 100%) !important; }
+        .overlay-root .overlay-elegant-table td.overlay-col-total { background-image: linear-gradient(135deg, rgba(217, 70, 239, 0.58) 0%, rgba(236, 72, 153, 0.62) 52%, rgba(251, 113, 133, 0.58) 100%) !important; color: #fff7ed !important; box-shadow: inset 0 0 0 1px rgba(255, 236, 220, 0.25); }
+        .overlay-root .overlay-elegant-table td.overlay-col-contribution { background-image: linear-gradient(135deg, rgba(244, 114, 182, 0.50) 0%, rgba(236, 72, 153, 0.52) 100%) !important; color: #fff1f2 !important; }
+        .overlay-root .overlay-elegant-table thead td.overlay-col-rank { background-image: linear-gradient(135deg, rgba(157, 23, 77, 0.78) 0%, rgba(190, 24, 93, 0.74) 100%) !important; }
+        .overlay-root .overlay-elegant-table thead td.overlay-col-role { background-image: linear-gradient(135deg, rgba(131, 24, 67, 0.78) 0%, rgba(190, 24, 93, 0.74) 100%) !important; }
+        .overlay-root .overlay-elegant-table thead td.overlay-col-name { background-image: linear-gradient(135deg, rgba(190, 24, 93, 0.80) 0%, rgba(225, 29, 72, 0.76) 48%, rgba(192, 38, 211, 0.78) 100%) !important; }
         .overlay-root .overlay-elegant-table thead td.overlay-col-account,
-        .overlay-root .overlay-elegant-table thead td.overlay-col-toon { background-image: linear-gradient(120deg, rgba(8, 145, 178, 0.60) 0%, rgba(13, 148, 136, 0.66) 52%, rgba(77, 124, 15, 0.60) 100%) !important; }
-        .overlay-root .overlay-elegant-table thead td.overlay-col-total { background-image: linear-gradient(120deg, rgba(2, 132, 199, 0.66) 0%, rgba(5, 150, 105, 0.76) 52%, rgba(101, 163, 13, 0.70) 100%) !important; }
-        .overlay-root .overlay-elegant-table thead td.overlay-col-contribution { background-image: linear-gradient(120deg, rgba(161, 98, 7, 0.62) 0%, rgba(180, 83, 9, 0.68) 100%) !important; }
+        .overlay-root .overlay-elegant-table thead td.overlay-col-toon { background-image: linear-gradient(135deg, rgba(190, 24, 93, 0.76) 0%, rgba(236, 72, 153, 0.74) 100%) !important; }
+        .overlay-root .overlay-elegant-table thead td.overlay-col-total { background-image: linear-gradient(135deg, rgba(217, 70, 239, 0.84) 0%, rgba(236, 72, 153, 0.82) 48%, rgba(251, 113, 133, 0.78) 100%) !important; color: #fff7ed !important; box-shadow: inset 0 -1px 0 rgba(255, 236, 220, 0.52), inset 0 1px 0 rgba(255,255,255,0.16); }
+        .overlay-root .overlay-elegant-table thead td.overlay-col-contribution { background-image: linear-gradient(135deg, rgba(190, 24, 93, 0.76) 0%, rgba(219, 39, 119, 0.74) 100%) !important; }
         .overlay-root .overlay-elegant-table tbody tr:hover td {
-          filter: brightness(1.14) saturate(1.12);
-          transform: scale(1.012);
-          background-size: 108% 108%;
+          filter: brightness(1.16) saturate(1.10);
+          transform: scale(1.009);
+          background-size: 106% 106%;
         }
       ` }} />
     );

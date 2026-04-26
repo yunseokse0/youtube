@@ -173,15 +173,24 @@ function RankingColumn({
   amountColor: string;
   outlineColor: string;
 }) {
-  const outlined = { textShadow: `-1px -1px 0 ${outlineColor},1px -1px 0 ${outlineColor},-1px 1px 0 ${outlineColor},1px 1px 0 ${outlineColor}` } as const;
+  const outlined = { textShadow: `-1px -1px 0 ${outlineColor},1px -1px 0 ${outlineColor},-1px 1px 0 ${outlineColor},1px 1px 0 ${outlineColor},0 2px 6px rgba(0,0,0,0.38)` } as const;
   return (
     <section
-      className="w-full overflow-hidden rounded-xl border"
-      style={{ backgroundColor: panelBg, borderColor }}
+      className="w-full overflow-hidden rounded-2xl border shadow-[0_10px_28px_rgba(76,5,25,0.32)] backdrop-blur-md"
+      style={{
+        background: panelBg,
+        borderColor,
+      }}
     >
       <div
-        className="px-4 py-3 font-black"
-        style={{ backgroundColor: headerBg, fontSize: `${titleSize}px`, ...outlined }}
+        className="px-4 py-3 font-black border-b"
+        style={{
+          background: headerBg,
+          borderColor: "rgba(255, 232, 244, 0.55)",
+          color: "#fff7fb",
+          fontSize: `${titleSize}px`,
+          ...outlined,
+        }}
       >
         {title}
       </div>
@@ -195,10 +204,10 @@ function RankingColumn({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -12 }}
               transition={{ type: "spring", stiffness: 420, damping: 34, mass: 0.8 }}
-              className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border px-3 py-2"
+              className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border px-3 py-2 transition-all duration-200 hover:brightness-110 hover:saturate-110"
               style={{
                 borderColor,
-                backgroundColor: idx % 2 === 0 ? rowEvenBg : rowOddBg,
+                background: idx % 2 === 0 ? rowEvenBg : rowOddBg,
                 fontSize: `${rowSize}px`,
               }}
             >
@@ -236,17 +245,27 @@ export default function DonorRankingsOverlayPage() {
   const titleSize = readNumber(sp, "titleSize", savedTheme.titleSize, 14, 80);
   const rowSize = readNumber(sp, "rowSize", savedTheme.rowSize, 12, 64);
   const rankSize = readNumber(sp, "rankSize", savedTheme.rankSize, 12, 72);
-  const bg = readColor(sp, "bg", savedTheme.bg);
-  const panelBg = readColor(sp, "panelBg", savedTheme.panelBg);
-  const borderColor = readColor(sp, "border", savedTheme.borderColor);
-  const headerAccountBg = readColor(sp, "headerAccountBg", savedTheme.headerAccountBg);
-  const headerToonBg = readColor(sp, "headerToonBg", savedTheme.headerToonBg);
-  const rowEvenBg = readColor(sp, "rowEvenBg", savedTheme.rowEvenBg);
-  const rowOddBg = readColor(sp, "rowOddBg", savedTheme.rowOddBg);
-  const rankColor = readColor(sp, "rankColor", savedTheme.rankColor);
-  const nameColor = readColor(sp, "nameColor", savedTheme.nameColor);
-  const amountColor = readColor(sp, "amountColor", savedTheme.amountColor);
-  const outlineColor = readColor(sp, "outline", savedTheme.outlineColor);
+  const bg = readColor(sp, "bg", savedTheme.bg) || "transparent";
+  const panelBg =
+    readColor(sp, "panelBg", savedTheme.panelBg) ||
+    "linear-gradient(180deg, rgba(34,8,25,0.76) 0%, rgba(20,7,18,0.72) 100%)";
+  const borderColor = readColor(sp, "border", savedTheme.borderColor) || "rgba(255, 210, 232, 0.38)";
+  const headerAccountBg =
+    readColor(sp, "headerAccountBg", savedTheme.headerAccountBg) ||
+    "linear-gradient(135deg, #ffd6ea 0%, #ff9ec8 56%, #f75c9c 100%)";
+  const headerToonBg =
+    readColor(sp, "headerToonBg", savedTheme.headerToonBg) ||
+    "linear-gradient(135deg, #ffd2e8 0%, #ff8ebf 56%, #ef4f96 100%)";
+  const rowEvenBg =
+    readColor(sp, "rowEvenBg", savedTheme.rowEvenBg) ||
+    "linear-gradient(135deg, rgba(255,141,184,0.28) 0%, rgba(244,114,182,0.24) 52%, rgba(232,121,249,0.22) 100%)";
+  const rowOddBg =
+    readColor(sp, "rowOddBg", savedTheme.rowOddBg) ||
+    "linear-gradient(135deg, rgba(244,114,182,0.22) 0%, rgba(251,113,133,0.2) 52%, rgba(217,70,239,0.18) 100%)";
+  const rankColor = readColor(sp, "rankColor", savedTheme.rankColor) || "#fff5f9";
+  const nameColor = readColor(sp, "nameColor", savedTheme.nameColor) || "#fff7fb";
+  const amountColor = readColor(sp, "amountColor", savedTheme.amountColor) || "#fff7ed";
+  const outlineColor = readColor(sp, "outline", savedTheme.outlineColor) || "rgba(58, 6, 28, 0.85)";
   const showBgLayer = overlayCfg.isBgEnabled && Boolean(overlayCfg.bgGifUrl.trim());
   const bgOpacityPct = Math.max(0, Math.min(100, overlayCfg.bgOpacity)) / 100;
 
