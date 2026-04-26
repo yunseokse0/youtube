@@ -13,7 +13,6 @@ type Props = {
 export default function MemberRow({ member, onChange, onRename, onReset, onDelete }: Props) {
   const [localAccount, setLocalAccount] = useState(formatManThousand(member.account));
   const [localToon, setLocalToon] = useState(formatManThousand(member.toon));
-  const [localContribution, setLocalContribution] = useState(formatManThousand(member.contribution || 0));
   const [localGoal, setLocalGoal] = useState(member.goal ? String(member.goal) : "");
   const [localName, setLocalName] = useState(member.name);
   const prevAccount = useRef(member.account);
@@ -22,10 +21,9 @@ export default function MemberRow({ member, onChange, onRename, onReset, onDelet
   useEffect(() => {
     setLocalAccount(formatManThousand(member.account));
     setLocalToon(formatManThousand(member.toon));
-    setLocalContribution(formatManThousand(member.contribution || 0));
     setLocalGoal(member.goal ? String(member.goal) : "");
     setLocalName(member.name);
-  }, [member.account, member.toon, member.contribution, member.goal, member.name]);
+  }, [member.account, member.toon, member.goal, member.name]);
 
   useEffect(() => {
     if (member.account > prevAccount.current) {
@@ -39,11 +37,11 @@ export default function MemberRow({ member, onChange, onRename, onReset, onDelet
   const commitAccount = (val: string) => {
     const amt = parseTenThousandThousand(val);
     if (!confirmHighAmount(amt)) return;
-    onChange({ ...member, account: amt });
+    onChange({ ...member, account: amt, contribution: amt + (member.toon || 0) });
   };
   const commitToon = (val: string) => {
     const amt = parseTenThousandThousand(val);
-    onChange({ ...member, toon: amt });
+    onChange({ ...member, toon: amt, contribution: (member.account || 0) + amt });
   };
   const commitGoal = (val: string) => {
     const cleaned = (val || "").replace(/[^\d]/g, "");
@@ -58,15 +56,12 @@ export default function MemberRow({ member, onChange, onRename, onReset, onDelet
     }
     onChange({ ...member, goal: nextGoal > 0 ? nextGoal : undefined });
   };
-  const commitContribution = (val: string) => {
-    const amt = parseTenThousandThousand(val);
-    onChange({ ...member, contribution: amt });
-  };
-
-  const adjust = (field: "account" | "toon" | "contribution", delta: number) => {
+  const adjust = (field: "account" | "toon", delta: number) => {
     const nextVal = Math.max(0, (member as any)[field] + delta);
     if (field === "account" && !confirmHighAmount(nextVal)) return;
-    onChange({ ...member, [field]: nextVal } as Member);
+    const nextAccount = field === "account" ? nextVal : (member.account || 0);
+    const nextToon = field === "toon" ? nextVal : (member.toon || 0);
+    onChange({ ...member, [field]: nextVal, contribution: nextAccount + nextToon } as Member);
   };
 
   return (
@@ -123,22 +118,11 @@ export default function MemberRow({ member, onChange, onRename, onReset, onDelet
       </div>
 
       <div className="rounded-lg border border-white/10 bg-black/20 p-2">
-        <div className="flex items-center justify-between mb-2">
-          <label className="text-xs text-neutral-400">기여도</label>
-          <input
-            className="w-32 px-2 py-1 rounded bg-neutral-800/80 border border-white/10 text-right focus:outline-none"
-            inputMode="decimal"
-            value={localContribution}
-            onChange={(e) => setLocalContribution(maskTenThousandThousandInput(e.target.value))}
-            onBlur={() => commitContribution(localContribution)}
-            placeholder="0.5"
-          />
-        </div>
-        <div className="grid grid-cols-4 gap-1">
-          <button onClick={() => adjust("contribution", 1000)} className="px-2 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-xs">+1천</button>
-          <button onClick={() => adjust("contribution", -1000)} className="px-2 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-xs">-1천</button>
-          <button onClick={() => adjust("contribution", 10000)} className="px-2 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-xs">+1만</button>
-          <button onClick={() => adjust("contribution", -10000)} className="px-2 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-xs">-1만</button>
+        <div className="flex items-center justify-between">
+          <label className="text-xs text-neutral-400">기여도(자동)</label>
+          <div className="w-32 px-2 py-1 rounded bg-neutral-800/80 border border-white/10 text-right text-sm text-neutral-200">
+            {formatManThousand((member.account || 0) + (member.toon || 0))}
+          </div>
         </div>
       </div>
 
@@ -166,7 +150,7 @@ export default function MemberRow({ member, onChange, onRename, onReset, onDelet
         <div className="text-xs text-neutral-400">
           표시:
           <span className="ml-1 font-mono text-neutral-200">
-            {formatManThousand(member.account)}(<span className="text-neutral-300">{formatManThousand(member.toon)}</span>) / 기여도 {formatManThousand(member.contribution || 0)}
+            {formatManThousand(member.account)}(<span className="text-neutral-300">{formatManThousand(member.toon)}</span>) / 기여도 {formatManThousand((member.account || 0) + (member.toon || 0))}
           </span>
         </div>
         <div className="flex gap-2">

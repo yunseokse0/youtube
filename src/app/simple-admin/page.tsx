@@ -344,7 +344,7 @@ export default function AdminPage() {
       showMembers: String(preset.showMembers),
       showTotal: String(preset.showTotal),
       showGoal: String(preset.showGoal),
-      showTicker: String(preset.showTicker),
+      showTicker: "false",
       showTimer: String(preset.showTimer),
       showMission: String(preset.showMission),
       sumFree: String(preset.sumFree),
@@ -379,10 +379,7 @@ export default function AdminPage() {
       q.goalX = preset.goalPosition.x;
       q.goalY = preset.goalPosition.y;
     }
-    if (preset.tickerPosition?.x && preset.tickerPosition?.y) {
-      q.tickerX = preset.tickerPosition.x;
-      q.tickerY = preset.tickerPosition.y;
-    }
+    // 후원 티커 기능 제거: ticker 위치 파라미터 전송 안 함
     if (preset.timerPosition?.x && preset.timerPosition?.y) {
       q.timerX = preset.timerPosition.x;
       q.timerY = preset.timerPosition.y;

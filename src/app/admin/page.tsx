@@ -86,6 +86,17 @@ const PLACEHOLDER_MISSIONS: MissionItem[] = [
 const ONE_SHOT_SIG_ID = "sig_one_shot";
 const ONE_SHOT_SIG_NAME = "한방 시그";
 const MAX_SIG_UPLOAD_BYTES = 30 * 1024 * 1024;
+const SIG_DUMMY_IMAGE = "/images/sigs/dummy-sig.svg";
+
+function resolveSigPreviewSrc(raw?: string): string {
+  const v = String(raw || "").trim();
+  if (!v) return SIG_DUMMY_IMAGE;
+  if (v.startsWith("/")) return v;
+  if (v.startsWith("images/")) return `/${v}`;
+  if (v.startsWith("http://") || v.startsWith("https://")) return v;
+  if (v.startsWith("data:image/") || v.startsWith("blob:")) return v;
+  return SIG_DUMMY_IMAGE;
+}
 
 function ClientTime({ ts }: { ts: number | string }) {
   const [text, setText] = useState<string>("");
@@ -163,7 +174,7 @@ export default function AdminPage() {
   const managePositionInPrism = true;
   const defaultPreset = (name: string, overrides: Partial<OverlayPreset> = {}): OverlayPreset => ({
     id: `ov_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name,
-    scale: "0.75", memberSize: "18", totalSize: "40", dense: true, anchor: "cc",
+    scale: "1.1", memberSize: "24", totalSize: "56", dense: true, anchor: "cc",
     layout: "center-fixed", zoomMode: "follow",
     tableFree: false, tableX: "50", tableY: "50",
     sumAnchor: "bc", sumFree: false, sumX: "50", sumY: "90", theme: "default",
@@ -626,6 +637,13 @@ export default function AdminPage() {
     q.set("vertical", vertical ? "true" : "false");
     q.set("host", "prism");
     return `${base}?${q.toString()}`;
+  };
+  const buildPrismDemoOverlayUrl = (p: OverlayPreset, vertical: boolean): string => {
+    const baseUrl = buildPrismOverlayUrl(p, vertical);
+    if (!baseUrl) return "";
+    const u = new URL(baseUrl);
+    u.searchParams.set("demo", "true");
+    return u.toString();
   };
   const buildPreviewOverlayUrl = (p: OverlayPreset): string => {
     const url = buildOverlayUrl(p);
@@ -1812,7 +1830,13 @@ export default function AdminPage() {
       const donors: Donor[] = [...prev.donors, donor];
       const field = target === "toon" ? "toon" : "account";
       const members = prev.members.map((m: Member) =>
-        m.id === donorMemberId ? { ...m, [field]: (m[field] || 0) + amount } : m
+        m.id === donorMemberId
+          ? (() => {
+              const nextAccount = field === "account" ? (m.account || 0) + amount : (m.account || 0);
+              const nextToon = field === "toon" ? (m.toon || 0) + amount : (m.toon || 0);
+              return { ...m, [field]: (m[field] || 0) + amount, contribution: nextAccount + nextToon };
+            })()
+          : m
       );
       const mealParticipants = applyMealBattleDonationToParticipants(
         prev.mealBattle?.participants || [],
@@ -2248,7 +2272,7 @@ export default function AdminPage() {
                 <span className="text-neutral-500 mx-1">·</span>
                 {formatManThousand(state.members.reduce((s,m)=>s+(m.toon||0),0))}
                 <span className="text-neutral-500 mx-1">·</span>
-                {formatManThousand(state.members.reduce((s,m)=>s+(m.contribution||0),0))}
+                {formatManThousand(state.members.reduce((s,m)=>s+((m.account||0)+(m.toon||0)),0))}
                 <span className="text-neutral-500 mx-1">·</span>
                 {formatManThousand(state.members.reduce((s,m)=>s+(m.account||0)+(m.toon||0),0))}
               </div>
@@ -3832,7 +3856,15 @@ export default function AdminPage() {
                     <div className="rounded border border-white/10 bg-black/20 p-2">
                       <div className="text-[11px] text-neutral-400 mb-2">신규 시그 이미지 미리보기</div>
                       <div className="relative h-20 w-20 overflow-hidden rounded border border-white/10 bg-black/30">
-                        <Image src={newSigImageUrl} alt="신규 시그 미리보기" fill className="object-cover" unoptimized />
+                        <img
+                          src={resolveSigPreviewSrc(newSigImageUrl)}
+                          alt="신규 시그 미리보기"
+                          className="h-full w-full object-cover"
+                          onError={(e) => {
+                            e.currentTarget.onerror = null;
+                            e.currentTarget.src = SIG_DUMMY_IMAGE;
+                          }}
+                        />
                       </div>
                     </div>
                   ) : null}
@@ -3927,7 +3959,15 @@ export default function AdminPage() {
                       {item.imageUrl ? (
                         <div className="mt-2 flex items-start gap-2">
                           <div className="relative h-16 w-16 overflow-hidden rounded border border-white/10 bg-black/30">
-                            <Image src={item.imageUrl} alt={`${item.name} 미리보기`} fill className="object-cover" unoptimized />
+                            <img
+                              src={resolveSigPreviewSrc(item.imageUrl)}
+                              alt={`${item.name} 미리보기`}
+                              className="h-full w-full object-cover"
+                              onError={(e) => {
+                                e.currentTarget.onerror = null;
+                                e.currentTarget.src = SIG_DUMMY_IMAGE;
+                              }}
+                            />
                           </div>
                           <div className="text-xs text-neutral-400 break-all">
                             이미지 설정됨: {item.imageUrl.startsWith("data:image/") ? "업로드 이미지(data URL)" : item.imageUrl}
@@ -4620,6 +4660,7 @@ export default function AdminPage() {
               <div className="space-y-3">
                 {presets.map((p) => {
                   const url = buildPrismOverlayUrl(p, !!p.vertical);
+                  const demoUrl = buildPrismDemoOverlayUrl(p, !!p.vertical);
                   const previewUrl = buildStablePreviewUrl(p);
                   const isOpen = editingId === p.id;
                   return (
@@ -4634,6 +4675,8 @@ export default function AdminPage() {
                         />
                         <span className="text-xs text-neutral-500 truncate basis-full sm:basis-auto sm:flex-1 font-mono">{url.slice(0, 80)}...</span>
                         <button className={`px-2 py-1 rounded text-xs ${copiedId === p.id ? "bg-[#22c55e]" : "bg-neutral-700 hover:bg-neutral-600"}`} onClick={(e) => { e.stopPropagation(); copyUrl(url, p.id); }}>{copiedId === p.id ? "복사됨!" : "URL 복사"}</button>
+                        <button className={`px-2 py-1 rounded text-xs ${copiedId === `${p.id}-demo` ? "bg-emerald-600" : "bg-fuchsia-700 hover:bg-fuchsia-600"}`} onClick={(e) => { e.stopPropagation(); copyUrl(demoUrl, `${p.id}-demo`); }}>{copiedId === `${p.id}-demo` ? "복사됨!" : "데모 URL"}</button>
+                        <button className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={(e) => { e.stopPropagation(); window.open(demoUrl, "_blank", "noopener,noreferrer"); }}>데모 열기</button>
                         <button className="px-2 py-1 rounded bg-[#ef4444] hover:bg-[#dc2626] text-xs text-white" onClick={(e) => { e.stopPropagation(); removePreset(p.id); }}>삭제</button>
                       </div>
                       {isOpen && (
@@ -5053,110 +5096,7 @@ export default function AdminPage() {
                               </div>
                             </details>
 
-                            {(p.showMembers || p.showPersonalGoal) && (
-                              <>
-                                <div className="h-px bg-white/10 my-1" />
-                                <div className="text-xs text-neutral-400 font-semibold">후원 리스트 옵션</div>
-                                <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
-                                  <label className="text-xs text-neutral-400">하단 리스트 표시</label>
-                                  <button className={`px-2 py-0.5 rounded border text-xs ${p.showBottomDonors ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { showBottomDonors: !p.showBottomDonors })}>
-                                    {p.showBottomDonors ? "ON" : "OFF"}
-                                  </button>
-                                  <label className="text-xs text-neutral-400">티커 글자(px)</label>
-                                  <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="(기본 자동)" value={p.donorsSize || ""} onChange={(e) => updatePreset(p.id, { donorsSize: e.target.value })} />
-                                  <label className="text-xs text-neutral-400">간격(px)</label>
-                                  <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.donorsGap || ""} onChange={(e) => updatePreset(p.id, { donorsGap: e.target.value })} />
-                                  <label className="text-xs text-neutral-400">속도(초/루프, 10~7200=2시간)</label>
-                                  <div className="flex items-center gap-2">
-                                    <input type="range" min="10" max="7200" step="30" value={Math.min(7200, Math.max(10, parseInt(p.donorsSpeed || "60", 10) || 60))} onChange={(e) => updatePreset(p.id, { donorsSpeed: e.target.value })} className="flex-1 accent-emerald-500 h-11" />
-                                    <input className="w-24 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right" placeholder="60" value={p.donorsSpeed || ""} onChange={(e) => updatePreset(p.id, { donorsSpeed: e.target.value.replace(/[^\d]/g, "") })} />
-                                  </div>
-                                  <label className="text-xs text-neutral-400">표시 개수(N)</label>
-                                  <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.donorsLimit || ""} onChange={(e) => updatePreset(p.id, { donorsLimit: e.target.value })} />
-                                  <label className="text-xs text-neutral-400">금액 표기</label>
-                                  <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.donorsFormat || "short"} onChange={(e) => updatePreset(p.id, { donorsFormat: e.target.value })}>
-                                    <option value="full">풀(1,234)</option>
-                                    <option value="short">단축(1.2만)</option>
-                                  </select>
-                                  <label className="text-xs text-neutral-400">통화 로케일</label>
-                                  <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="ko-KR / en-US 등" value={p.currencyLocale || ""} onChange={(e) => updatePreset(p.id, { currencyLocale: e.target.value })} />
-                                  <label className="text-xs text-neutral-400">단위 표시</label>
-                                  <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="원 / KRW 등" value={p.donorsUnit || ""} onChange={(e) => updatePreset(p.id, { donorsUnit: e.target.value })} />
-                                  <div className="col-span-1 sm:col-span-2">
-                                    <details className="rounded border border-white/10 bg-neutral-900/40">
-                                      <summary className="cursor-pointer select-none px-3 py-2 text-xs text-neutral-300">고급 옵션</summary>
-                                      <div className="p-3 grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
-                                        <label className="text-xs text-neutral-400">티커 텍스트 색상</label>
-                                        <div className="flex items-center gap-2">
-                                          <input
-                                            type="color"
-                                            className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
-                                            value={toColorPickerValue(p.donorsColor, "#a0e9ff")}
-                                            onChange={(e) => updatePreset(p.id, { donorsColor: e.target.value })}
-                                          />
-                                          <span className="text-xs text-neutral-400 font-mono">{p.donorsColor || "자동(테마 따름)"}</span>
-                                          <button
-                                            type="button"
-                                            className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
-                                            onClick={() => updatePreset(p.id, { donorsColor: "" })}
-                                          >
-                                            자동
-                                          </button>
-                                        </div>
-                                        <label className="text-xs text-neutral-400">티커 배경 색상</label>
-                                        <div className="flex items-center gap-2">
-                                          <input
-                                            type="color"
-                                            className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
-                                            value={toColorPickerValue(p.donorsBgColor, "#000000")}
-                                            onChange={(e) => updatePreset(p.id, { donorsBgColor: e.target.value })}
-                                          />
-                                          <span className="text-xs text-neutral-400 font-mono">{p.donorsBgColor || "자동(배경 미사용)"}</span>
-                                          <button
-                                            type="button"
-                                            className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
-                                            onClick={() => updatePreset(p.id, { donorsBgColor: "" })}
-                                          >
-                                            자동
-                                          </button>
-                                        </div>
-                                        <label className="text-xs text-neutral-400">배경 투명도</label>
-                                        <div className="flex items-center gap-1">
-                                          <input
-                                            type="range"
-                                            min="0"
-                                            max="100"
-                                            value={p.donorsBgOpacity || "0"}
-                                            onChange={(e) => updatePreset(p.id, { donorsBgOpacity: e.target.value })}
-                                            className="flex-1 accent-emerald-500"
-                                          />
-                                          <span className="text-xs w-10 text-center">{p.donorsBgOpacity || "0"}%</span>
-                                        </div>
-                                        <label className="text-xs text-neutral-400">티커 테마</label>
-                                        <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.tickerTheme || "auto"} onChange={(e) => updatePreset(p.id, { tickerTheme: e.target.value })}>
-                                          <option value="auto">기본(테마 따름)</option>
-                                          <option value="accent">강조</option>
-                                          <option value="neon">네온</option>
-                                          <option value="warm">웜</option>
-                                          <option value="ice">아이스</option>
-                                          <option value="mono">모노</option>
-                                        </select>
-                                        <label className="text-xs text-neutral-400">글로우 강도</label>
-                                        <div className="flex items-center gap-1">
-                                          <input type="range" min="0" max="100" value={p.tickerGlow || "45"} onChange={(e) => updatePreset(p.id, { tickerGlow: e.target.value })} className="flex-1 accent-emerald-500" />
-                                          <span className="text-xs w-8 text-center">{p.tickerGlow || "45"}</span>
-                                        </div>
-                                        <label className="text-xs text-neutral-400">그림자 강도</label>
-                                        <div className="flex items-center gap-1">
-                                          <input type="range" min="0" max="100" value={p.tickerShadow || "35"} onChange={(e) => updatePreset(p.id, { tickerShadow: e.target.value })} className="flex-1 accent-emerald-500" />
-                                          <span className="text-xs w-8 text-center">{p.tickerShadow || "35"}</span>
-                                        </div>
-                                      </div>
-                                    </details>
-                                  </div>
-                                </div>
-                              </>
-                            )}
+                            {/* 후원 티커 기능 제거됨 */}
 
                             {p.showGoal && (
                               <details className="rounded border border-white/10 bg-neutral-900/40">
@@ -5390,7 +5330,7 @@ export default function AdminPage() {
                                 </div>
                                 </div>
                                 {/* Palette view removed; keep compact select */}
-                                {!(p.showMission && !p.showMembers && !p.showTotal && !p.showGoal && !p.showPersonalGoal && !p.showTicker && !p.showTimer) && (
+                                {!(p.showMission && !p.showMembers && !p.showTotal && !p.showGoal && !p.showPersonalGoal && !p.showTimer) && (
                                   <div className="mt-2 rounded border border-white/10 bg-neutral-950/60 p-2">
                                     <div className="text-xs text-neutral-400 mb-1">미션 전광판 미리보기</div>
                                     <div className="overflow-hidden">
@@ -5460,7 +5400,7 @@ export default function AdminPage() {
                           </div>
 
                           <div className="lg:order-1">
-                            {(p.showMission && !p.showMembers && !p.showTotal && !p.showGoal && !p.showPersonalGoal && !p.showTicker && !p.showTimer) ? (
+                            {(p.showMission && !p.showMembers && !p.showTotal && !p.showGoal && !p.showPersonalGoal && !p.showTimer) ? (
                               <div className="rounded border border-white/10 bg-neutral-950/60 p-3">
                                 <div className="text-xs text-neutral-400 mb-2">미션 전광판 미리보기</div>
                                 {(p.missionDisplayMode === "vertical-slot") ? (

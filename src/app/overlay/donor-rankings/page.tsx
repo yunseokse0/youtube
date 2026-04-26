@@ -174,6 +174,12 @@ function RankingColumn({
   outlineColor: string;
 }) {
   const outlined = { textShadow: `-1px -1px 0 ${outlineColor},1px -1px 0 ${outlineColor},-1px 1px 0 ${outlineColor},1px 1px 0 ${outlineColor},0 2px 6px rgba(0,0,0,0.38)` } as const;
+  const rankLabel = (idx: number): string => {
+    if (idx === 0) return "🥇";
+    if (idx === 1) return "🥈";
+    if (idx === 2) return "🥉";
+    return String(idx + 1);
+  };
   return (
     <section
       className="w-full overflow-hidden rounded-2xl border shadow-[0_10px_28px_rgba(76,5,25,0.32)] backdrop-blur-md"
@@ -183,7 +189,7 @@ function RankingColumn({
       }}
     >
       <div
-        className="px-4 py-3 font-black border-b"
+        className="px-4 py-3 font-black border-b text-center"
         style={{
           background: headerBg,
           borderColor: "rgba(255, 232, 244, 0.55)",
@@ -212,7 +218,7 @@ function RankingColumn({
               }}
             >
               <span className="font-black text-center" style={{ color: rankColor, fontSize: `${rankSize}px`, ...outlined }}>
-                {idx + 1}
+                {rankLabel(idx)}
               </span>
               <span className="truncate font-bold" style={{ color: nameColor, ...outlined }}>
                 {item.name}

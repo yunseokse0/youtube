@@ -1214,6 +1214,7 @@ function OverlayInner() {
     }),
     [rawSp, presetParams, presetId]
   );
+  const demoMode = ((sp.get("demo") || "").toLowerCase() === "true") || ((sp.get("test") || "").toLowerCase() === "true");
   useEffect(() => {
     let cancelled = false;
     const needFetch = presetId && (!activePreset || (overlayPresets.length === 0 && localPresets.length === 0));
@@ -1255,9 +1256,9 @@ function OverlayInner() {
   const fitBase = Math.max(240, Math.min(1600, parseInt(sp.get("fitBase") || (isVertical ? "400" : "480"), 10)));
   const fitMinMember = Math.max(8, Math.min(40, parseInt(sp.get("fitMinMember") || (isVertical ? "22" : "10"), 10)));
   const fitMaxMember = Math.max(fitMinMember, Math.min(80, parseInt(sp.get("fitMaxMember") || (isVertical ? "44" : "24"), 10)));
-  const scale = Math.max(0.5, Math.min(4, parseFloat(sp.get("scale") || (isVertical ? "1" : (compact ? "0.8" : "1")))));
-  const memberSize = Math.max(10, Math.min(80, parseInt(sp.get("memberSize") || (compact ? "14" : (isVertical ? "36" : "18")), 10)));
-  const totalSize = Math.max(14, Math.min(160, parseInt(sp.get("totalSize") || (isVertical ? "44" : "20"), 10)));
+  const scale = Math.max(0.5, Math.min(4, parseFloat(sp.get("scale") || (isVertical ? "1" : (compact ? "0.9" : "1.1")))));
+  const memberSize = Math.max(10, Math.min(80, parseInt(sp.get("memberSize") || (compact ? "16" : (isVertical ? "40" : "24")), 10)));
+  const totalSize = Math.max(14, Math.min(160, parseInt(sp.get("totalSize") || (isVertical ? "48" : "30"), 10)));
   const dense = (sp.get("dense") || "false").toLowerCase() === "true";
   const layoutMode = (sp.get("layout") || "center-fixed").toLowerCase();
   const centerFixed = layoutMode === "center-fixed" || layoutMode === "center";
@@ -1320,11 +1321,11 @@ function OverlayInner() {
   const showMembers = tableOnly ? true : (timerOnlyMode ? (sp.get("showMembers") === "true") : (sp.get("showMembers") !== "false"));
   const showTotal = tableOnly ? true : (timerOnlyMode ? (sp.get("showTotal") === "true") : (sp.get("showTotal") !== "false"));
   const showGoal = tableOnly ? false : (timerOnlyMode ? (sp.get("showGoal") === "true") : (sp.get("showGoal") === "true"));
-  const showTicker = timerOnlyMode ? (sp.get("showTicker") === "true") : (sp.get("showTicker") === "true");
-  const tickerInMembers = tableOnly ? false : (sp.get("tickerInMembers") === "true");
-  const tickerInPersonalGoal = tableOnly ? false : (sp.get("tickerInPersonalGoal") === "true");
+  const showTicker = false;
+  const tickerInMembers = false;
+  const tickerInPersonalGoal = false;
   const tickerInGoal = false;
-  const hasContextTicker = tickerInMembers || tickerInPersonalGoal;
+  const hasContextTicker = false;
   const showTimerRaw = (sp.get("showTimer") || "").toLowerCase();
   const showTimer = tableOnly ? false : (timerOnlyMode ? showTimerRaw !== "false" : showTimerRaw === "true");
   const goalRaw = parseInt(sp.get("goal") || "0", 10);
@@ -1429,7 +1430,7 @@ function OverlayInner() {
   const toonCh = Math.max(4, Math.min(12, defToonCh));
   const totalCh = Math.max(4, Math.min(10, defTotalCh));
   const contributionCh = Math.max(4, Math.min(10, defContributionCh));
-  const showSideDonors = tableOnly ? false : (sp.get("showSideDonors") === "true");
+  const showSideDonors = false;
   const donorsSide = (sp.get("donorsSide") || "right").toLowerCase();
   const donorsWidth = Math.max(120, Math.min(600, parseInt(sp.get("donorsWidth") || "220", 10)));
   const donorsSize = Math.max(10, Math.min(60, parseInt(sp.get("donorsSize") || String(Math.round(memberSize * 0.9)), 10)));
@@ -1438,8 +1439,8 @@ function OverlayInner() {
   const accountColor = sp.get("accountColor") || undefined;
   const toonColor = sp.get("toonColor") || undefined;
   const donorsBgOpacity = Math.max(0, Math.min(100, parseInt(sp.get("donorsBgOpacity") || "0", 10)));
-  const showBottomDonors = tableOnly ? false : (sp.get("showBottomDonors") === "true");
-  const effectiveShowTicker = showTicker && !hasContextTicker && !showBottomDonors;
+  const showBottomDonors = false;
+  const effectiveShowTicker = false;
   const donorsGap = Math.max(0, Math.min(48, parseInt(sp.get("donorsGap") || (tight ? "8" : "16"), 10)));
   const donorsSpeed = Math.max(10, Math.min(7200, parseFloat(sp.get("donorsSpeed") || "60"))); // seconds per loop (기본 60초, 최대 2시간)
   const donorsLimit = Math.max(1, Math.min(50, parseInt(sp.get("donorsLimit") || "8", 10)));
@@ -1747,6 +1748,13 @@ function OverlayInner() {
   }, [showMembers, themeId, mSize, nameCh, bankCh, toonCh, totalCh, lockWidth, effectiveNameGrow]);
 
   const members = useMemo(() => {
+    if (demoMode) {
+      return [
+        { id: "demo-1", name: "멤버1", account: 320000, toon: 110000, contribution: 45000, goal: 700000, operating: false },
+        { id: "demo-2", name: "멤버2", account: 240000, toon: 90000, contribution: 30000, goal: 650000, operating: false },
+        { id: "demo-3", name: "멤버3", account: 170000, toon: 70000, contribution: 15000, goal: 500000, operating: false },
+      ] as Member[];
+    }
     const base = membersRemote;
     if (base.length > 0) return base;
     if ((!ready) && (isPreviewGuide || externalHost)) {
@@ -1756,12 +1764,21 @@ function OverlayInner() {
       return defaultState().members;
     }
     return base;
-  }, [membersRemote, ready, isPreviewGuide, externalHost]);
+  }, [demoMode, membersRemote, ready, isPreviewGuide, externalHost]);
   const sumContribution = useMemo(
-    () => members.reduce((sum, m) => sum + Math.max(0, m.contribution || 0), 0),
+    () => members.reduce((sum, m) => sum + Math.max(0, (m.account || 0) + (m.toon || 0)), 0),
     [members]
   );
-  const donors = useMemo(() => donorsRemote, [donorsRemote]);
+  const donors = useMemo(() => {
+    if (demoMode) {
+      return [
+        { id: "d1", name: "후원자A", amount: 120000, memberId: "demo-1", at: Date.now() - 120000, target: "account" },
+        { id: "d2", name: "후원자B", amount: 90000, memberId: "demo-2", at: Date.now() - 90000, target: "toon" },
+        { id: "d3", name: "후원자C", amount: 70000, memberId: "demo-3", at: Date.now() - 60000, target: "account" },
+      ] as Donor[];
+    }
+    return donorsRemote;
+  }, [demoMode, donorsRemote]);
   const personalGoals = useMemo(() => {
     return members
       .filter((m) => (m.goal || 0) > 0)
@@ -1925,11 +1942,6 @@ function OverlayInner() {
     const content = (
       <>
         <PersonalGoalBoard items={personalGoals} themeId={personalGoalTheme} fontSize={memberSize} />
-        {tickerInPersonalGoal && (
-          <div className="mt-2 overflow-hidden">
-            <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={Math.max(10, memberSize * 0.75)} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
-          </div>
-        )}
       </>
     );
     if (hasPersonalGoalFreePos) {
@@ -2057,7 +2069,7 @@ function OverlayInner() {
     const tableVisualStyle = (
       <style dangerouslySetInnerHTML={{ __html: `
         .overlay-root .overlay-elegant-table {
-          border-radius: 16px;
+          border-radius: 0 !important;
           overflow: hidden;
           border: 1px solid rgba(255, 236, 246, 0.72);
           box-shadow: 0 12px 24px rgba(118, 36, 79, 0.18), inset 0 1px 0 rgba(255,255,255,0.22);
@@ -2124,7 +2136,7 @@ function OverlayInner() {
               )}
               <div>
                 {useTableOpacity ? (
-                  <div className="relative overflow-hidden rounded-2xl" style={{ backgroundColor: `rgba(${(TABLE_BG_RGB[themeId] || defaultTableBgRgb).join(",")}, ${tableBgOpacity / 100})` }}>
+                <div className="relative overflow-hidden" style={{ borderRadius: 0, backgroundColor: `rgba(${(TABLE_BG_RGB[themeId] || defaultTableBgRgb).join(",")}, ${tableBgOpacity / 100})` }}>
                     <table
                       ref={tableBoxRef as any}
                       className={`${effectiveTableCls} overlay-elegant-table${membersThemeId === "pastel" ? " pastel-member-table" : ""}`}
@@ -2167,7 +2179,7 @@ function OverlayInner() {
                         <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${effectiveRowCls} overlay-col-toon ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
                         <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>{fmtTotalCell(m.account + m.toon)}</td>
-                        <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>{fmt(m.contribution || 0)}</td>
+                        <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>{fmt((m.account || 0) + (m.toon || 0))}</td>
                       </tr>
                     ))}
                     {pinned.map((m) => (
@@ -2178,7 +2190,7 @@ function OverlayInner() {
                         <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${effectiveRowCls} overlay-col-toon ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
                         <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>{fmtTotalCell(m.account + m.toon)}</td>
-                        <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>{fmt(m.contribution || 0)}</td>
+                        <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>{fmt((m.account || 0) + (m.toon || 0))}</td>
                       </tr>
                     ))}
                     {showTotal && ready && (
@@ -2237,7 +2249,7 @@ function OverlayInner() {
                         <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${effectiveRowCls} overlay-col-toon ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
                         <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>{fmtTotalCell(m.account + m.toon)}</td>
-                        <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>{fmt(m.contribution || 0)}</td>
+                        <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>{fmt((m.account || 0) + (m.toon || 0))}</td>
                       </tr>
                     ))}
                     {pinned.map((m) => (
@@ -2248,7 +2260,7 @@ function OverlayInner() {
                         <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
                         <td className={`${effectiveRowCls} overlay-col-toon ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
                         <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>{fmtTotalCell(m.account + m.toon)}</td>
-                        <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>{fmt(m.contribution || 0)}</td>
+                        <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>{fmt((m.account || 0) + (m.toon || 0))}</td>
                       </tr>
                     ))}
                     {showTotal && ready && (
@@ -2264,22 +2276,7 @@ function OverlayInner() {
                   </tbody>
                 </table>
                 )}
-                {showBottomDonors && !tickerInMembers && (
-                  <div className="mt-2" style={{ width: fitWidthToViewport(contextualTickerWidth), overflow: "hidden" }}>
-                    <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
-                  </div>
-                )}
-                {tickerInMembers && (
-                  <div className="mt-2" style={{ width: fitWidthToViewport(contextualTickerWidth), overflow: "hidden" }}>
-                    <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
-                  </div>
-                )}
               </div>
-              {showSideDonors && donorsSide === "right" && (
-                <div style={{ width: donorsWidth }}>
-                  <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
-                </div>
-              )}
             </div>
           </div>
         )}
@@ -2291,7 +2288,6 @@ function OverlayInner() {
         {showPersonalGoal && (ready || isPreviewGuide || externalHost) && (
           renderPersonalGoal()
         )}
-        {effectiveShowTicker && (ready || isPreviewGuide) && <div className={`absolute ${tickerPosClass} ${hasTickerFreePos ? "" : "mb-10"}`} style={tickerPosStyle}><DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={memberSize * 0.8} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} /></div>}
         {showTimer && effectiveTimerAllowed && (
           <div className={`absolute ${posClass(timerAnchor)} z-[10000]`}>
             <Timer
