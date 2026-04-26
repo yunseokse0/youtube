@@ -61,7 +61,8 @@ export default function Roulette({
     if (!isRolling || !items.length || !resultId) return;
     const winnerIndex = Math.max(0, items.findIndex((x) => x.id === resultId));
     const spins = 7;
-    const end = spins * 360 - winnerIndex * segment;
+    // Align winner to the segment center at the top pointer.
+    const end = spins * 360 - (winnerIndex * segment + segment / 2);
     setTargetAngle(end);
   }, [isRolling, items, resultId, segment, startedAt]);
 
@@ -86,10 +87,10 @@ export default function Roulette({
               <div
                 key={`r-item-${item.id}-${idx}`}
                 className="absolute left-1/2 top-1/2 h-0 w-0"
-                style={{ transform: `rotate(${angle}deg) translateY(-145px)` }}
+                style={{ transform: `rotate(${angle}deg) translateY(-122px)` }}
               >
                 <div
-                  className="relative -left-12 -top-11 flex w-24 flex-col items-center gap-1"
+                  className="relative flex w-24 -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1"
                   style={{ transform: `rotate(${-angle - currentAngle}deg)` }}
                 >
                   <div className="relative h-12 w-12 overflow-hidden rounded-full border border-white/80 bg-white/70 shadow">
