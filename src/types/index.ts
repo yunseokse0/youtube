@@ -9,6 +9,8 @@ export type Member = {
   account: number;
   /** 투네(플랫폼) 후원 누적 금액 */
   toon: number;
+  /** 수동 관리 기여도 금액(계좌/투네와 별도 집계) */
+  contribution?: number;
   /** 개인 목표 금액 */
   goal?: number;
   /** 운영비 멤버 여부(세금/비율 예외 처리) */
@@ -30,6 +32,16 @@ export type Donor = {
   at: number;
   /** 후원 채널(계좌/투네) */
   target?: DonorTarget;
+};
+
+export type ContributionLog = {
+  id: string;
+  memberId: string;
+  amount: number;
+  /** 1=추가, -1=차감 */
+  delta: 1 | -1;
+  note?: string;
+  at: number;
 };
 
 export type MissionItem = {
@@ -252,6 +264,8 @@ export type AppState = {
   donorRankingsPresetId?: string;
   /** 후원 원장(멀티탭 병합 대상) */
   donors: Donor[];
+  /** 기여도 수동 조정 로그 */
+  contributionLogs: ContributionLog[];
   forbiddenWords: string[];
   missions?: MissionItem[];
   sigInventory: SigItem[];

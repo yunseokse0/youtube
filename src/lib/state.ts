@@ -1,6 +1,7 @@
 import type {
   AppState,
   Donor,
+  ContributionLog,
   MatchTimerEnabled,
   DonorRankingsTheme,
   DonorRankingsPreset,
@@ -20,6 +21,7 @@ import type {
 } from "@/types";
 export type {
   AppState,
+  ContributionLog,
   Donor,
   DonorTarget,
   LegacyOverlaySettings,
@@ -256,17 +258,21 @@ export function loadMissionsBackup(userId?: string | null): MissionItem[] | null
 
 export function defaultMembers(): Member[] {
   return [
-    { id: "m1", name: "멤버1", realName: "", account: 0, toon: 0, operating: false },
-    { id: "m2", name: "멤버2", realName: "", account: 0, toon: 0, operating: false },
-    { id: "m3", name: "멤버3", realName: "", account: 0, toon: 0, operating: false },
+    { id: "m1", name: "멤버1", realName: "", account: 0, toon: 0, contribution: 0, operating: false },
+    { id: "m2", name: "멤버2", realName: "", account: 0, toon: 0, contribution: 0, operating: false },
+    { id: "m3", name: "멤버3", realName: "", account: 0, toon: 0, contribution: 0, operating: false },
   ];
 }
 
 function normalizeMember(m: Member): Member {
   const goal = typeof m.goal === "number" && Number.isFinite(m.goal) ? Math.max(0, Math.floor(m.goal)) : undefined;
+  const contribution = typeof m.contribution === "number" && Number.isFinite(m.contribution)
+    ? Math.max(0, Math.floor(m.contribution))
+    : 0;
   return {
     ...m,
     realName: m.realName ?? "",
+    contribution,
     goal,
     operating: m.operating ?? /운영비/i.test(m.name),
   };
@@ -386,6 +392,7 @@ export function defaultState(): AppState {
     donorRankingsPresets: [],
     donorRankingsPresetId: undefined,
     donors: [],
+    contributionLogs: [],
     forbiddenWords: ["금칙어", "욕설", "비속어"],
     sigInventory: DEFAULT_SIG_INVENTORY.map((x) => ({ ...x })),
     sigSoldOutStampUrl: "",
@@ -629,6 +636,18 @@ export function loadState(userId?: string | null): AppState {
       ? (data as AppState).donorRankingsPresetId
       : undefined;
     data.donors = data.donors || [];
+    data.contributionLogs = Array.isArray((data as AppState).contributionLogs)
+      ? ((data as AppState).contributionLogs as ContributionLog[])
+          .filter((x) => x && typeof x === "object")
+          .map((x) => ({
+            id: String((x as ContributionLog).id || `cl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`),
+            memberId: String((x as ContributionLog).memberId || ""),
+            amount: Math.max(0, Math.floor(Number((x as ContributionLog).amount || 0))),
+            delta: (x as ContributionLog).delta === -1 ? -1 : 1,
+            note: typeof (x as ContributionLog).note === "string" ? (x as ContributionLog).note : "",
+            at: Number.isFinite(Number((x as ContributionLog).at)) ? Math.floor(Number((x as ContributionLog).at)) : Date.now(),
+          }))
+      : [];
     data.forbiddenWords = data.forbiddenWords || [];
     data.missions = ensureMissionItems(data.missions);
     data.sigInventory = normalizeSigInventory((data as AppState).sigInventory);
@@ -760,6 +779,18 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
         ? (data as AppState).donorRankingsPresetId
         : undefined;
       data.donors = data.donors || [];
+      data.contributionLogs = Array.isArray((data as AppState).contributionLogs)
+        ? ((data as AppState).contributionLogs as ContributionLog[])
+            .filter((x) => x && typeof x === "object")
+            .map((x) => ({
+              id: String((x as ContributionLog).id || `cl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`),
+              memberId: String((x as ContributionLog).memberId || ""),
+              amount: Math.max(0, Math.floor(Number((x as ContributionLog).amount || 0))),
+              delta: (x as ContributionLog).delta === -1 ? -1 : 1,
+              note: typeof (x as ContributionLog).note === "string" ? (x as ContributionLog).note : "",
+              at: Number.isFinite(Number((x as ContributionLog).at)) ? Math.floor(Number((x as ContributionLog).at)) : Date.now(),
+            }))
+        : [];
       data.forbiddenWords = data.forbiddenWords || [];
       data.missions = ensureMissionItems(data.missions);
       data.sigInventory = normalizeSigInventory((data as AppState).sigInventory);

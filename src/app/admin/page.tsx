@@ -66,7 +66,7 @@ type OverlayPreset = {
   membersTheme?: string; totalTheme?: string; goalTheme?: string; tickerBaseTheme?: string; timerTheme?: string; missionTheme?: string;
   missionWidth?: string; missionDuration?: string; missionBgOpacity?: string; missionBgColor?: string; missionItemColor?: string; missionTitleColor?: string; missionTitleText?: string; missionTitleEffect?: string; missionFontSize?: string; missionEffect?: string; missionEffectHotOnly?: string; missionDisplayMode?: string; missionVisibleCount?: string; missionSpeed?: string; missionGapSize?: string;
   showMembers: boolean; showTotal: boolean;
-  totalMode?: "total" | "contribution";
+  totalMode?: "total";
   showGoal: boolean; goal: string; goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string;
   showPersonalGoal?: boolean; personalGoalTheme?: string; personalGoalAnchor?: string; personalGoalLimit?: string; personalGoalFree?: boolean; personalGoalX?: string; personalGoalY?: string;
   tickerInMembers?: boolean; tickerInGoal?: boolean; tickerInPersonalGoal?: boolean;
@@ -115,6 +115,10 @@ export default function AdminPage() {
   const [donorAmount, setDonorAmount] = useState("");
   const [donorMemberId, setDonorMemberId] = useState<string | null>(null);
   const [donorTarget, setDonorTarget] = useState<DonorTarget>("account");
+  const [contributionAmount, setContributionAmount] = useState("");
+  const [contributionMemberId, setContributionMemberId] = useState<string | null>(null);
+  const [contributionDelta, setContributionDelta] = useState<1 | -1>(1);
+  const [contributionNote, setContributionNote] = useState("");
   const [copied, setCopied] = useState(false);
   const [newMemberName, setNewMemberName] = useState("");
   const [chatDraft, setChatDraft] = useState("");
@@ -647,7 +651,7 @@ export default function AdminPage() {
     if (hasMembersWithGoal) q.set("showPersonalGoal", "true");
     try {
       const snapObj = {
-        members: state.members.map(m => ({ id: m.id, name: m.name, account: m.account, toon: m.toon, goal: m.goal, operating: m.operating })),
+        members: state.members.map(m => ({ id: m.id, name: m.name, account: m.account, toon: m.toon, contribution: m.contribution || 0, goal: m.goal, operating: m.operating })),
         memberPositions: state.memberPositions || {},
         donors: state.donors || [],
         missions: (state as any).missions || [],
@@ -714,7 +718,7 @@ export default function AdminPage() {
     if (typeof window === "undefined") return "";
     const base = `${window.location.origin}/overlay`;
     const snapObj = {
-      members: state.members.map(m => ({ id: m.id, name: m.name, account: m.account, toon: m.toon, goal: m.goal, operating: m.operating })),
+      members: state.members.map(m => ({ id: m.id, name: m.name, account: m.account, toon: m.toon, contribution: m.contribution || 0, goal: m.goal, operating: m.operating })),
       memberPositions: state.memberPositions || {},
       donors: state.donors || [],
       missions: (state as any).missions || [],
@@ -864,7 +868,7 @@ export default function AdminPage() {
     setState((prev: AppState) => {
       const next: AppState = {
         ...prev,
-        members: prev.members.map((x: Member) => (x.id === id ? { ...x, account: 0, toon: 0 } : x)),
+        members: prev.members.map((x: Member) => (x.id === id ? { ...x, account: 0, toon: 0, contribution: 0 } : x)),
       };
       persistState(next);
       return next;
@@ -872,11 +876,11 @@ export default function AdminPage() {
   };
 
   const resetAllMembersAmounts = () => {
-    requestConfirm("모든 멤버 금액 리셋", "모든 멤버의 계좌/투네를 0으로 리셋할까요?", () => {
+    requestConfirm("모든 멤버 금액 리셋", "모든 멤버의 계좌/투네/기여도를 0으로 리셋할까요?", () => {
       setState((prev: AppState) => {
         const next: AppState = {
           ...prev,
-          members: prev.members.map((x: Member) => ({ ...x, account: 0, toon: 0 })),
+          members: prev.members.map((x: Member) => ({ ...x, account: 0, toon: 0, contribution: 0 })),
         };
         persistState(next);
         return next;
@@ -890,7 +894,7 @@ export default function AdminPage() {
     const warn =
       `멤버를 삭제합니다.\n` +
       `이름: ${target?.name ?? id}\n` +
-      `계좌: ${target?.account ?? 0}, 투네: ${target?.toon ?? 0}\n` +
+      `계좌: ${target?.account ?? 0}, 투네: ${target?.toon ?? 0}, 기여도: ${target?.contribution ?? 0}\n` +
       `연결된 후원 기록: ${donorsCount}건\n\n` +
       `삭제 후에는 되돌릴 수 없습니다. 계속할까요?`;
     requestConfirm("멤버 삭제", warn, () => {
@@ -941,7 +945,7 @@ export default function AdminPage() {
     setState((prev: AppState) => {
       const next: AppState = {
         ...prev,
-        members: [...prev.members, { id, name: base, account: 0, toon: 0 }],
+        members: [...prev.members, { id, name: base, account: 0, toon: 0, contribution: 0 }],
         memberPositions: { ...(prev.memberPositions || {}) },
         sigMatch: { ...(prev.sigMatch || {}), [id]: 0 },
         mealMatch: { ...(prev.mealMatch || {}), [id]: 0 },
@@ -1831,10 +1835,53 @@ export default function AdminPage() {
     setDonorAmount("");
   };
 
+  const addContribution = () => {
+    const amount = parseTenThousandThousand(contributionAmount);
+    if (!contributionMemberId) return;
+    if (amount <= 0) return;
+    setState((prev: AppState) => {
+      const now = Date.now();
+      const log = {
+        id: `cl_${now}_${Math.random().toString(36).slice(2, 6)}`,
+        memberId: contributionMemberId,
+        amount,
+        delta: contributionDelta,
+        note: contributionNote.trim(),
+        at: now,
+      };
+      const members = prev.members.map((m: Member) => {
+        if (m.id !== contributionMemberId) return m;
+        const curr = Math.max(0, m.contribution || 0);
+        const nextContribution = contributionDelta > 0
+          ? curr + amount
+          : Math.max(0, curr - amount);
+        return { ...m, contribution: nextContribution };
+      });
+      const next: AppState = {
+        ...prev,
+        members,
+        contributionLogs: [...(prev.contributionLogs || []), log],
+      };
+      persistState(next);
+      return next;
+    });
+    setContributionAmount("");
+    setContributionNote("");
+  };
+
   useEffect(() => {
     if (!state.members.length) return;
     if (!donorMemberId) setDonorMemberId(state.members[0].id);
   }, [state.members, donorMemberId]);
+  useEffect(() => {
+    if (!state.members.length) return;
+    if (!contributionMemberId) setContributionMemberId(state.members[0].id);
+  }, [state.members, contributionMemberId]);
+  useEffect(() => {
+    if (!state.members.length) return;
+    const exists = state.members.some((m) => m.id === contributionMemberId);
+    if (!exists) setContributionMemberId(state.members[0].id);
+  }, [state.members, contributionMemberId]);
   useEffect(() => {
     if (!state.members.length) return;
     const exists = state.members.some((m) => m.id === sigPresetMemberId);
@@ -1958,7 +2005,7 @@ export default function AdminPage() {
     }).catch(() => setDailyLog(loadDailyLog(user?.id)));
     const next: AppState = {
       ...state,
-      members: state.members.map((m) => ({ ...m, account: 0, toon: 0 })),
+      members: state.members.map((m) => ({ ...m, account: 0, toon: 0, contribution: 0 })),
       donors: [],
       overlayPresets: state.overlayPresets || [],
       missions: state.missions || [],
@@ -2193,11 +2240,13 @@ export default function AdminPage() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">멤버 정산 보드</h2>
             <div className="text-right">
-              <div className="text-xs text-neutral-400">계좌 · 투네 · 전체</div>
+              <div className="text-xs text-neutral-400">계좌 · 투네 · 기여도 · 전체</div>
               <div className="text-2xl font-bold">
                 {formatManThousand(state.members.reduce((s,m)=>s+(m.account||0),0))}
                 <span className="text-neutral-500 mx-1">·</span>
                 {formatManThousand(state.members.reduce((s,m)=>s+(m.toon||0),0))}
+                <span className="text-neutral-500 mx-1">·</span>
+                {formatManThousand(state.members.reduce((s,m)=>s+(m.contribution||0),0))}
                 <span className="text-neutral-500 mx-1">·</span>
                 {formatManThousand(state.members.reduce((s,m)=>s+(m.account||0)+(m.toon||0),0))}
               </div>
@@ -4104,6 +4153,49 @@ export default function AdminPage() {
               <div className="text-sm text-neutral-400 mt-2">입력값에 콤마/문자 포함되어도 숫자만 인식</div>
             </section>
 
+            <section id="contribution-management" className={`${panelCardClass} p-4 md:p-6`}>
+              <h2 className="text-lg font-semibold mb-3">기여도 기록부</h2>
+              <div className="grid grid-cols-1 lg:grid-cols-[auto_1fr_auto_auto_auto] gap-3">
+                <select
+                  className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  value={contributionDelta > 0 ? "plus" : "minus"}
+                  onChange={(e) => setContributionDelta(e.target.value === "minus" ? -1 : 1)}
+                >
+                  <option value="plus">추가(+)</option>
+                  <option value="minus">차감(-)</option>
+                </select>
+                <input
+                  className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  placeholder="금액 (예: 3.5 = 35,000)"
+                  inputMode="numeric"
+                  value={contributionAmount}
+                  onChange={(e) => setContributionAmount(maskTenThousandThousandInput(e.target.value))}
+                />
+                <select
+                  className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  value={contributionMemberId || ""}
+                  onChange={(e) => setContributionMemberId(e.target.value)}
+                >
+                  {state.members.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+                <input
+                  className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  placeholder="메모(선택)"
+                  value={contributionNote}
+                  onChange={(e) => setContributionNote(e.target.value)}
+                />
+                <button
+                  className={`px-4 py-2 rounded font-semibold ${contributionDelta > 0 ? "bg-cyan-600 hover:bg-cyan-500" : "bg-rose-600 hover:bg-rose-500"}`}
+                  onClick={addContribution}
+                >
+                  기여도 반영
+                </button>
+              </div>
+              <div className="text-sm text-neutral-400 mt-2">후원 입력과 동일하게 건별 로그를 남기며, 로그에서 되돌리기/삭제할 수 있습니다.</div>
+            </section>
+
             <section className={`${panelCardClass} p-4 md:p-6 ${simpleMode ? "hidden" : ""}`}>
               <h2 className="text-lg font-semibold mb-3">채팅용 복사 & 보안</h2>
               <textarea
@@ -4203,6 +4295,91 @@ export default function AdminPage() {
               </div>
               <div className="text-xs text-neutral-400 mt-2">
                 후원자 리스트는 건별 기록입니다. (동일 후원자여도 건별로 별도 행 표시)
+              </div>
+            </section>
+
+            <section className={`${panelCardClass} p-4 md:p-6 ${simpleMode ? "hidden" : ""}`}>
+              <h2 className="text-lg font-semibold mb-3">기여도 로그</h2>
+              <div className="max-h-[260px] overflow-auto pr-1">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-neutral-400">
+                      <th className="text-left font-medium p-1">시간</th>
+                      <th className="text-left font-medium p-1">멤버</th>
+                      <th className="text-left font-medium p-1">구분</th>
+                      <th className="text-right font-medium p-1">금액</th>
+                      <th className="text-left font-medium p-1">메모</th>
+                      <th className="text-right font-medium p-1 w-28">작업</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(state.contributionLogs || [])
+                      .slice()
+                      .sort((a, b) => b.at - a.at)
+                      .map((log) => {
+                        const member = state.members.find((m) => m.id === log.memberId);
+                        return (
+                          <tr key={log.id} className="border-t border-white/10">
+                            <td className="p-1 text-neutral-400"><ClientTime ts={log.at} /></td>
+                            <td className="p-1 text-neutral-300">{member?.name || log.memberId}</td>
+                            <td className="p-1">{log.delta > 0 ? <span className="text-cyan-300">추가</span> : <span className="text-rose-300">차감</span>}</td>
+                            <td className="p-1 text-right">{formatManThousand(log.amount)}</td>
+                            <td className="p-1 text-neutral-400">{log.note || "-"}</td>
+                            <td className="p-1 text-right">
+                              <div className="flex justify-end gap-1">
+                                <button
+                                  className="px-2 py-1 rounded bg-amber-700 hover:bg-amber-600 text-xs"
+                                  onClick={() => {
+                                    requestConfirm("기여도 로그 되돌리기", "이 기록을 되돌리고 로그에서 제거할까요?", () => {
+                                      setState((prev: AppState) => {
+                                        const members = prev.members.map((m: Member) => {
+                                          if (m.id !== log.memberId) return m;
+                                          const curr = Math.max(0, m.contribution || 0);
+                                          const nextContribution = log.delta > 0
+                                            ? Math.max(0, curr - log.amount)
+                                            : curr + log.amount;
+                                          return { ...m, contribution: nextContribution };
+                                        });
+                                        const next: AppState = {
+                                          ...prev,
+                                          members,
+                                          contributionLogs: (prev.contributionLogs || []).filter((x) => x.id !== log.id),
+                                        };
+                                        persistState(next);
+                                        return next;
+                                      });
+                                    }, { confirmText: "되돌리기", danger: true });
+                                  }}
+                                >
+                                  되돌리기
+                                </button>
+                                <button
+                                  className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                                  onClick={() => {
+                                    requestConfirm("기여도 로그 삭제", "값 변화 없이 로그만 삭제할까요?", () => {
+                                      setState((prev: AppState) => {
+                                        const next: AppState = {
+                                          ...prev,
+                                          contributionLogs: (prev.contributionLogs || []).filter((x) => x.id !== log.id),
+                                        };
+                                        persistState(next);
+                                        return next;
+                                      });
+                                    }, { confirmText: "삭제", danger: true });
+                                  }}
+                                >
+                                  삭제
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    {(state.contributionLogs || []).length === 0 && (
+                      <tr><td className="p-2 text-neutral-400" colSpan={6}>기록이 없습니다.</td></tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </section>
 
@@ -4487,10 +4664,9 @@ export default function AdminPage() {
                                   <select
                                     className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
                                     value={p.totalMode || "total"}
-                                    onChange={(e) => updatePreset(p.id, { totalMode: e.target.value as "total" | "contribution" })}
+                                    onChange={(e) => updatePreset(p.id, { totalMode: e.target.value as "total" })}
                                   >
                                     <option value="total">TOTAL</option>
-                                    <option value="contribution">기여도</option>
                                   </select>
                                 </>
                               )}

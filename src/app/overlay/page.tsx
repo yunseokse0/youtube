@@ -1278,8 +1278,7 @@ function OverlayInner() {
   const sumY = hasFreePos ? parsePct(sumYParam, 90) : 0;
   const themeId: ThemeId = "default";
   const baseTheme = THEMES.default;
-  const totalMode = ((sp.get("totalMode") || "total").toLowerCase() === "contribution" ? "contribution" : "total") as "total" | "contribution";
-  const totalHeaderLabel = totalMode === "contribution" ? "기여도" : "TOTAL";
+  const totalHeaderLabel = "TOTAL";
   const resolveThemeId = (key: string): ThemeId => {
     const raw = (sp.get(key) || "auto").trim();
     if (raw === "auto" || !raw) return "default";
@@ -1425,9 +1424,11 @@ function OverlayInner() {
   const defBankCh = (sp.get("bankCh") && parseInt(sp.get("bankCh")!, 10)) || (fullAmountMode ? (compact ? 9 : 11) : (compact ? 4 : 5));
   const defToonCh = (sp.get("toonCh") && parseInt(sp.get("toonCh")!, 10)) || (fullAmountMode ? (compact ? 9 : 11) : (compact ? 4 : 5));
   const defTotalCh = (sp.get("totalCh") && parseInt(sp.get("totalCh")!, 10)) || (fullAmountMode ? (compact ? 7 : 8) : (compact ? 5 : 6));
+  const defContributionCh = (sp.get("contributionCh") && parseInt(sp.get("contributionCh")!, 10)) || (fullAmountMode ? (compact ? 7 : 8) : (compact ? 5 : 6));
   const bankCh = Math.max(3, Math.min(12, defBankCh));
   const toonCh = Math.max(4, Math.min(12, defToonCh));
   const totalCh = Math.max(4, Math.min(10, defTotalCh));
+  const contributionCh = Math.max(4, Math.min(10, defContributionCh));
   const showSideDonors = tableOnly ? false : (sp.get("showSideDonors") === "true");
   const donorsSide = (sp.get("donorsSide") || "right").toLowerCase();
   const donorsWidth = Math.max(120, Math.min(600, parseInt(sp.get("donorsWidth") || "220", 10)));
@@ -1472,11 +1473,7 @@ function OverlayInner() {
     donorsFormat === "full"
       ? roundToThousand(n).toLocaleString(currencyLocale)
       : formatManThousand(n);
-  const fmtTotalCell = (n: number) => {
-    if (totalMode !== "contribution") return fmt(n);
-    const ratio = sumCombined > 0 ? (n / sumCombined) * 100 : 0;
-    return `${ratio.toFixed(1)}%`;
-  };
+  const fmtTotalCell = (n: number) => fmt(n);
   const stripBg = (cls: string) =>
     cls
       // Remove any solid bg-* utilities
@@ -1760,6 +1757,10 @@ function OverlayInner() {
     }
     return base;
   }, [membersRemote, ready, isPreviewGuide, externalHost]);
+  const sumContribution = useMemo(
+    () => members.reduce((sum, m) => sum + Math.max(0, m.contribution || 0), 0),
+    [members]
+  );
   const donors = useMemo(() => donorsRemote, [donorsRemote]);
   const personalGoals = useMemo(() => {
     return members
@@ -1950,24 +1951,8 @@ function OverlayInner() {
 
     const roleCh = Math.max(6, Math.min(14, members.reduce((max, m) => Math.max(max, getMemberRole(m).length), 2)));
     const excelGridCols = hasRoleColumn
-      ? ["3ch", `${roleCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`]
-      : ["3ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`];
-    const columnGradients = hasRoleColumn
-      ? [
-          "linear-gradient(180deg, rgba(255,225,235,0.72) 0%, rgba(255,240,246,0.58) 100%)", // rank
-          "linear-gradient(180deg, rgba(255,214,228,0.70) 0%, rgba(255,234,244,0.56) 100%)", // role
-          "linear-gradient(180deg, rgba(248,220,255,0.70) 0%, rgba(238,228,255,0.56) 100%)", // name
-          "linear-gradient(180deg, rgba(220,236,255,0.72) 0%, rgba(233,244,255,0.56) 100%)", // account
-          "linear-gradient(180deg, rgba(210,245,255,0.70) 0%, rgba(226,250,255,0.56) 100%)", // toon
-          "linear-gradient(180deg, rgba(221,255,238,0.72) 0%, rgba(236,255,246,0.58) 100%)", // total
-        ]
-      : [
-          "linear-gradient(180deg, rgba(255,225,235,0.72) 0%, rgba(255,240,246,0.58) 100%)", // rank
-          "linear-gradient(180deg, rgba(248,220,255,0.70) 0%, rgba(238,228,255,0.56) 100%)", // name
-          "linear-gradient(180deg, rgba(220,236,255,0.72) 0%, rgba(233,244,255,0.56) 100%)", // account
-          "linear-gradient(180deg, rgba(210,245,255,0.70) 0%, rgba(226,250,255,0.56) 100%)", // toon
-          "linear-gradient(180deg, rgba(221,255,238,0.72) 0%, rgba(236,255,246,0.58) 100%)", // total
-        ];
+      ? ["3ch", `${roleCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`]
+      : ["3ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`];
     let effectiveScale = centerFixed || hasTableFreePos
       ? (zoomMode === "neutral" ? 1 : (zoomMode === "invert" ? (1 / centerZoomScale) : centerZoomScale))
       : (externalHost ? 1 : (viewportScale * scale));
@@ -2051,12 +2036,54 @@ function OverlayInner() {
         }
       ` }} />
     );
+    const tableVisualStyle = (
+      <style dangerouslySetInnerHTML={{ __html: `
+        .overlay-root .overlay-elegant-table {
+          border-radius: 16px;
+          overflow: hidden;
+          border: 1px solid rgba(148, 163, 184, 0.22);
+          box-shadow: 0 20px 40px rgba(2, 6, 23, 0.52), inset 0 1px 0 rgba(255,255,255,0.08);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+        }
+        .overlay-root .overlay-elegant-table td {
+          color: #e5e7eb !important;
+          transition: filter 180ms ease, transform 180ms ease, background-size 220ms ease;
+          background-size: 100% 100%;
+        }
+        .overlay-root .overlay-elegant-table thead td {
+          color: #f8fafc !important;
+          text-shadow: 0 1px 0 rgba(0,0,0,0.4);
+          box-shadow: inset 0 -1px 0 rgba(255,255,255,0.12);
+        }
+        .overlay-root .overlay-elegant-table td.overlay-col-rank { background-image: linear-gradient(115deg, rgba(56, 189, 248, 0.28) 0%, rgba(124, 58, 237, 0.36) 100%) !important; }
+        .overlay-root .overlay-elegant-table td.overlay-col-role { background-image: linear-gradient(120deg, rgba(99, 102, 241, 0.26) 0%, rgba(147, 51, 234, 0.34) 100%) !important; }
+        .overlay-root .overlay-elegant-table td.overlay-col-name { background-image: linear-gradient(115deg, rgba(236, 72, 153, 0.30) 0%, rgba(251, 113, 133, 0.34) 48%, rgba(251, 191, 140, 0.30) 100%) !important; }
+        .overlay-root .overlay-elegant-table td.overlay-col-account { background-image: linear-gradient(115deg, rgba(6, 182, 212, 0.30) 0%, rgba(45, 212, 191, 0.36) 52%, rgba(132, 204, 22, 0.30) 100%) !important; }
+        .overlay-root .overlay-elegant-table td.overlay-col-toon { background-image: linear-gradient(115deg, rgba(8, 145, 178, 0.30) 0%, rgba(20, 184, 166, 0.34) 50%, rgba(163, 230, 53, 0.28) 100%) !important; }
+        .overlay-root .overlay-elegant-table td.overlay-col-total { background-image: linear-gradient(115deg, rgba(14, 165, 233, 0.34) 0%, rgba(34, 197, 94, 0.42) 52%, rgba(190, 242, 100, 0.34) 100%) !important; color: #f0fdf4 !important; }
+        .overlay-root .overlay-elegant-table td.overlay-col-contribution { background-image: linear-gradient(115deg, rgba(245, 158, 11, 0.28) 0%, rgba(251, 191, 36, 0.30) 100%) !important; color: #fef3c7 !important; }
+        .overlay-root .overlay-elegant-table thead td.overlay-col-rank { background-image: linear-gradient(120deg, rgba(14, 116, 144, 0.58) 0%, rgba(88, 28, 135, 0.66) 100%) !important; }
+        .overlay-root .overlay-elegant-table thead td.overlay-col-role { background-image: linear-gradient(120deg, rgba(55, 48, 163, 0.56) 0%, rgba(126, 34, 206, 0.64) 100%) !important; }
+        .overlay-root .overlay-elegant-table thead td.overlay-col-name { background-image: linear-gradient(120deg, rgba(157, 23, 77, 0.60) 0%, rgba(190, 24, 93, 0.66) 55%, rgba(180, 83, 9, 0.62) 100%) !important; }
+        .overlay-root .overlay-elegant-table thead td.overlay-col-account,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-toon { background-image: linear-gradient(120deg, rgba(8, 145, 178, 0.60) 0%, rgba(13, 148, 136, 0.66) 52%, rgba(77, 124, 15, 0.60) 100%) !important; }
+        .overlay-root .overlay-elegant-table thead td.overlay-col-total { background-image: linear-gradient(120deg, rgba(2, 132, 199, 0.66) 0%, rgba(5, 150, 105, 0.76) 52%, rgba(101, 163, 13, 0.70) 100%) !important; }
+        .overlay-root .overlay-elegant-table thead td.overlay-col-contribution { background-image: linear-gradient(120deg, rgba(161, 98, 7, 0.62) 0%, rgba(180, 83, 9, 0.68) 100%) !important; }
+        .overlay-root .overlay-elegant-table tbody tr:hover td {
+          filter: brightness(1.14) saturate(1.12);
+          transform: scale(1.012);
+          background-size: 108% 108%;
+        }
+      ` }} />
+    );
     return (
       <div style={viewportWrapperStyle} className={`overlay-root ${centerFixed ? "overlay-center-fixed" : ""}`}>
         {scaleStyleTag}
         {centerFixedStyle}
         {colorOverrideStyle}
         {numericNoWrapStyle}
+        {tableVisualStyle}
         {showGuide && (
           <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 9998 }}>
             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: "rgba(0,255,200,0.4)" }} />
@@ -2085,31 +2112,32 @@ function OverlayInner() {
                   <div className="relative overflow-hidden rounded-2xl" style={{ backgroundColor: `rgba(${(TABLE_BG_RGB[themeId] || defaultTableBgRgb).join(",")}, ${tableBgOpacity / 100})` }}>
                     <table
                       ref={tableBoxRef as any}
-                      className={`${effectiveTableCls}${membersThemeId === "pastel" ? " pastel-member-table" : ""}`}
+                      className={`${effectiveTableCls} overlay-elegant-table${membersThemeId === "pastel" ? " pastel-member-table" : ""}`}
                       style={{ fontSize: mSize, borderSpacing: 0, tableLayout: "fixed" }}
                     >
                   <colgroup>
                     {excelGridCols.map((w, idx) => (
-                      <col key={`excel-col-${idx}`} style={{ width: w, backgroundImage: columnGradients[idx], backgroundRepeat: "no-repeat", backgroundSize: "100% 100%" }} />
+                      <col key={`excel-col-${idx}`} style={{ width: w }} />
                     ))}
                   </colgroup>
                   <thead>
                     <tr>
-                      <td className={`${effectiveHeaderCls} overlay-rank-cell`}>순위</td>
-                      {hasRoleColumn && <td className={effectiveHeaderCls} style={{ whiteSpace: "nowrap" }}>직급</td>}
-                      <td className={effectiveHeaderCls}>이름</td>
-                      <td className={`${effectiveHeaderCls} text-right`}>계좌</td>
-                      <td className={`${effectiveHeaderCls} text-right`}>투네</td>
-                      <td className={`${effectiveHeaderCls} text-right`}>{totalHeaderLabel}</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-rank overlay-rank-cell`}>순위</td>
+                      {hasRoleColumn && <td className={`${effectiveHeaderCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>직급</td>}
+                      <td className={`${effectiveHeaderCls} overlay-col-name`}>이름</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-account text-right`}>계좌</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-toon text-right`}>투네</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-total text-right`}>{totalHeaderLabel}</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-contribution text-right`}>기여도</td>
                     </tr>
                   </thead>
                   <tbody>
                     {ranked.map(({m, rank}) => (
                       <tr key={m.id} ref={setRowRef(m.id)} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
-                        <td className={`${effectiveRowCls} text-left overlay-rank-cell`}>#{rank}</td>
+                        <td className={`${effectiveRowCls} overlay-col-rank text-left overlay-rank-cell`}>#{rank}</td>
                         {hasRoleColumn && (
                           <td
-                            className={effectiveRowCls}
+                            className={`${effectiveRowCls} overlay-col-role`}
                             style={{
                               whiteSpace: "nowrap",
                               overflow: "hidden",
@@ -2120,20 +2148,22 @@ function OverlayInner() {
                             {getMemberRole(m) || "-"}
                           </td>
                         )}
-                        <td className={`${effectiveRowCls} ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
-                        <td className={`${effectiveRowCls} ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
-                        <td className={`${effectiveRowCls} ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
-                        <td className={`${effectiveRowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","pastel"].includes(themeId) ? "text-slate-900" : ""}`}>{fmtTotalCell(m.account + m.toon)}</td>
+                        <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
+                        <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
+                        <td className={`${effectiveRowCls} overlay-col-toon ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
+                        <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>{fmtTotalCell(m.account + m.toon)}</td>
+                        <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>{fmt(m.contribution || 0)}</td>
                       </tr>
                     ))}
                     {pinned.map((m) => (
                       <tr key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
-                        <td className={`${effectiveRowCls} text-right overlay-rank-cell`}>—</td>
-                        {hasRoleColumn && <td className={effectiveRowCls}></td>}
-                        <td className={`${effectiveRowCls} ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
-                        <td className={`${effectiveRowCls} ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
-                        <td className={`${effectiveRowCls} ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
-                        <td className={`${effectiveRowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","pastel"].includes(themeId) ? "text-slate-900" : ""}`}>{fmtTotalCell(m.account + m.toon)}</td>
+                        <td className={`${effectiveRowCls} overlay-col-rank text-right overlay-rank-cell`}>—</td>
+                        {hasRoleColumn && <td className={`${effectiveRowCls} overlay-col-role`}></td>}
+                        <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
+                        <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
+                        <td className={`${effectiveRowCls} overlay-col-toon ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
+                        <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>{fmtTotalCell(m.account + m.toon)}</td>
+                        <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>{fmt(m.contribution || 0)}</td>
                       </tr>
                     ))}
                     {showTotal && ready && (
@@ -2142,7 +2172,8 @@ function OverlayInner() {
                         <td className={effectiveTotalWrapCls} />
                         <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(sumAccount)}</td>
                         <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(sumToon)}</td>
-                        <td className={`${effectiveTotalWrapCls} text-right`}>{totalMode === "contribution" ? "100.0%" : fmt(rounded)}</td>
+                        <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(rounded)}</td>
+                        <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(sumContribution)}</td>
                       </tr>
                     )}
                   </tbody>
@@ -2151,31 +2182,32 @@ function OverlayInner() {
                 ) : (
                 <table
                   ref={tableBoxRef as any}
-                  className={`${membersTheme.tableCls}${membersThemeId === "pastel" ? " pastel-member-table" : ""}`}
+                  className={`${membersTheme.tableCls} overlay-elegant-table${membersThemeId === "pastel" ? " pastel-member-table" : ""}`}
                   style={{ fontSize: mSize, borderSpacing: 0, tableLayout: "fixed" }}
                 >
                   <colgroup>
                     {excelGridCols.map((w, idx) => (
-                      <col key={`excel-col-${idx}`} style={{ width: w, backgroundImage: columnGradients[idx], backgroundRepeat: "no-repeat", backgroundSize: "100% 100%" }} />
+                      <col key={`excel-col-${idx}`} style={{ width: w }} />
                     ))}
                   </colgroup>
                   <thead>
                     <tr>
-                      <td className={`${effectiveHeaderCls} overlay-rank-cell`}>순위</td>
-                      {hasRoleColumn && <td className={effectiveHeaderCls} style={{ whiteSpace: "nowrap" }}>직급</td>}
-                      <td className={effectiveHeaderCls}>이름</td>
-                      <td className={`${effectiveHeaderCls} text-right`}>계좌</td>
-                      <td className={`${effectiveHeaderCls} text-right`}>투네</td>
-                      <td className={`${effectiveHeaderCls} text-right`}>{totalHeaderLabel}</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-rank overlay-rank-cell`}>순위</td>
+                      {hasRoleColumn && <td className={`${effectiveHeaderCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>직급</td>}
+                      <td className={`${effectiveHeaderCls} overlay-col-name`}>이름</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-account text-right`}>계좌</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-toon text-right`}>투네</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-total text-right`}>{totalHeaderLabel}</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-contribution text-right`}>기여도</td>
                     </tr>
                   </thead>
                   <tbody>
                     {ranked.map(({m, rank}) => (
                       <tr key={m.id} ref={setRowRef(m.id)} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
-                        <td className={`${effectiveRowCls} text-left overlay-rank-cell`}>#{rank}</td>
+                        <td className={`${effectiveRowCls} overlay-col-rank text-left overlay-rank-cell`}>#{rank}</td>
                         {hasRoleColumn && (
                           <td
-                            className={effectiveRowCls}
+                            className={`${effectiveRowCls} overlay-col-role`}
                             style={{
                               whiteSpace: "nowrap",
                               overflow: "hidden",
@@ -2186,20 +2218,22 @@ function OverlayInner() {
                             {getMemberRole(m) || "-"}
                           </td>
                         )}
-                        <td className={`${effectiveRowCls} ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
-                        <td className={`${effectiveRowCls} ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
-                        <td className={`${effectiveRowCls} ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
-                        <td className={`${effectiveRowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","pastel"].includes(themeId) ? "text-slate-900" : ""}`}>{fmtTotalCell(m.account + m.toon)}</td>
+                        <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
+                        <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
+                        <td className={`${effectiveRowCls} overlay-col-toon ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
+                        <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>{fmtTotalCell(m.account + m.toon)}</td>
+                        <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>{fmt(m.contribution || 0)}</td>
                       </tr>
                     ))}
                     {pinned.map((m) => (
                       <tr key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
-                        <td className={`${effectiveRowCls} text-right overlay-rank-cell`}>—</td>
-                        {hasRoleColumn && <td className={effectiveRowCls}></td>}
-                        <td className={`${effectiveRowCls} ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
-                        <td className={`${effectiveRowCls} ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
-                        <td className={`${effectiveRowCls} ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
-                        <td className={`${effectiveRowCls} text-right font-bold ${["excel","excelBlue","excelAmber","excelRose","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","pastel"].includes(themeId) ? "text-slate-900" : ""}`}>{fmtTotalCell(m.account + m.toon)}</td>
+                        <td className={`${effectiveRowCls} overlay-col-rank text-right overlay-rank-cell`}>—</td>
+                        {hasRoleColumn && <td className={`${effectiveRowCls} overlay-col-role`}></td>}
+                        <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
+                        <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
+                        <td className={`${effectiveRowCls} overlay-col-toon ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
+                        <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>{fmtTotalCell(m.account + m.toon)}</td>
+                        <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>{fmt(m.contribution || 0)}</td>
                       </tr>
                     ))}
                     {showTotal && ready && (
@@ -2208,7 +2242,8 @@ function OverlayInner() {
                         <td className={effectiveTotalWrapCls} />
                         <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(sumAccount)}</td>
                         <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(sumToon)}</td>
-                        <td className={`${effectiveTotalWrapCls} text-right`}>{totalMode === "contribution" ? "100.0%" : fmt(rounded)}</td>
+                        <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(rounded)}</td>
+                        <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(sumContribution)}</td>
                       </tr>
                     )}
                   </tbody>
