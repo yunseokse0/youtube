@@ -615,7 +615,8 @@ export default function AdminPage() {
   const buildPrismOverlayUrl = (p: OverlayPreset, vertical: boolean): string => {
     if (typeof window === "undefined") return "";
     const base = `${window.location.origin}/overlay`;
-    const q = new URLSearchParams(presetToParams(p));
+    // OBS/Prism URL is intentionally minimal: keep runtime options in saved preset/state.
+    const q = new URLSearchParams();
     q.set("p", p.id);
     q.set("u", user?.id || "finalent");
     q.set("vertical", vertical ? "true" : "false");
@@ -5662,8 +5663,8 @@ function VerticalPreview({ url }: { url: string }) {
     setErr(null);
     loadTimeoutRef.current = setTimeout(() => {
       setLoading(false);
-      setErr("미리보기 로딩 지연 (새 탭 열기로 확인)");
-    }, 15000);
+      setErr("미리보기 로딩 지연 (네트워크 확인 후 새로고침)");
+    }, 30000);
     return () => {
       if (loadTimeoutRef.current) {
         clearTimeout(loadTimeoutRef.current);
@@ -5679,7 +5680,7 @@ function VerticalPreview({ url }: { url: string }) {
     setLoading(false);
     try {
       const doc = e?.target?.contentDocument;
-      if (!doc) { setErr("미리보기 로드 실패"); return; }
+      if (!doc) { setErr(null); return; }
       const title = (doc.title || "").toLowerCase();
       const text = (doc.body?.innerText || "").toLowerCase();
       if (title.includes("404") || text.includes("not found")) setErr("프리뷰 경로 404");
