@@ -72,10 +72,8 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
         const remote = await loadStateFromApi(userId);
         if (!remote) return;
         const remoteUpdatedAt = remote.updatedAt || 0;
-        if (remoteUpdatedAt >= lastUpdatedRef.current) {
-          lastUpdatedRef.current = remoteUpdatedAt;
-          setState(remote);
-        }
+        lastUpdatedRef.current = remoteUpdatedAt;
+        setState(remote);
       } finally {
         syncingRef.current = false;
       }
@@ -251,6 +249,8 @@ export default function DonorRankingsOverlayPage() {
   const titleSize = readNumber(sp, "titleSize", savedTheme.titleSize, 14, 80);
   const rowSize = readNumber(sp, "rowSize", savedTheme.rowSize, 12, 64);
   const rankSize = readNumber(sp, "rankSize", savedTheme.rankSize, 12, 72);
+  const zoomPct = Math.floor(readNumber(sp, "zoomPct", 100, 30, 300));
+  const zoomScale = zoomPct / 100;
   const bg = readColor(sp, "bg", savedTheme.bg) || "transparent";
   const panelBg =
     readColor(sp, "panelBg", savedTheme.panelBg) ||
@@ -319,7 +319,14 @@ export default function DonorRankingsOverlayPage() {
           />
         </div>
       ) : null}
-      <div className="relative z-10 mx-auto max-w-[1500px]">
+      <div
+        className="relative z-10 mx-auto max-w-[1500px]"
+        style={{
+          transform: `scale(${zoomScale})`,
+          transformOrigin: "top center",
+          width: `${100 / zoomScale}%`,
+        }}
+      >
         {useTest && (
           <div className="mb-2 inline-block rounded bg-amber-600/85 px-2 py-1 text-xs font-bold text-black">
             TEST MODE

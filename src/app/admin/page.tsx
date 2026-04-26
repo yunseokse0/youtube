@@ -198,6 +198,7 @@ export default function AdminPage() {
   const [sigMatchPreviewIframeKey, setSigMatchPreviewIframeKey] = useState(0);
   const [sigSalesPreviewIframeKey, setSigSalesPreviewIframeKey] = useState(0);
   const [donorRankingsPreviewIframeKey, setDonorRankingsPreviewIframeKey] = useState(0);
+  const [donorRankingsZoomPct, setDonorRankingsZoomPct] = useState("100");
   const [timerUiNow, setTimerUiNow] = useState(Date.now());
   const [timerMinuteInputs, setTimerMinuteInputs] = useState<Record<"sigMatchTimer" | "mealMatchTimer" | "sigSalesTimer" | "generalTimer", string>>({
     sigMatchTimer: "0",
@@ -733,6 +734,20 @@ export default function AdminPage() {
       else { const ta = document.createElement("textarea"); ta.value = url; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); }
       setCopiedId(id); setTimeout(() => setCopiedId(null), 1500);
     } catch {}
+  };
+  const getDonorRankingsZoomPct = (): number => {
+    const raw = donorRankingsZoomPct.replace(/[^\d]/g, "");
+    const n = parseInt(raw || "100", 10);
+    if (!Number.isFinite(n)) return 100;
+    return Math.max(30, Math.min(300, n));
+  };
+  const buildDonorRankingsUrl = (opts?: { test?: boolean }): string => {
+    if (typeof window === "undefined") return "";
+    const q = new URLSearchParams();
+    q.set("u", user?.id || "finalent");
+    q.set("zoomPct", String(getDonorRankingsZoomPct()));
+    if (opts?.test) q.set("test", "true");
+    return `${window.location.origin}/overlay/donor-rankings?${q.toString()}`;
   };
   const buildEmergencySnapshotUrl = (p: OverlayPreset): string => {
     if (typeof window === "undefined") return "";
@@ -3220,13 +3235,13 @@ export default function AdminPage() {
                   <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
                     <span>실시간 URL:</span>
                     <code className="text-neutral-300 break-all">
-                      /overlay/donor-rankings?u={user?.id || "finalent"}
+                      /overlay/donor-rankings?u={user?.id || "finalent"}&zoomPct={getDonorRankingsZoomPct()}
                     </code>
                     <button
                       type="button"
                       className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-donor-rankings" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
                       onClick={() => {
-                        const u = `${window.location.origin}/overlay/donor-rankings?u=${user?.id || "finalent"}`;
+                        const u = buildDonorRankingsUrl();
                         void copyUrl(u, "dash-donor-rankings");
                       }}
                     >
@@ -3236,21 +3251,30 @@ export default function AdminPage() {
                   <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
                     <span>테스트 URL:</span>
                     <code className="text-neutral-300 break-all">
-                      /overlay/donor-rankings?u={user?.id || "finalent"}&test=true
+                      /overlay/donor-rankings?u={user?.id || "finalent"}&zoomPct={getDonorRankingsZoomPct()}&test=true
                     </code>
                     <button
                       type="button"
                       className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-donor-rankings-test" ? "bg-emerald-600" : "bg-amber-800/90 hover:bg-amber-700"}`}
                       onClick={() => {
-                        const u = `${window.location.origin}/overlay/donor-rankings?u=${user?.id || "finalent"}&test=true`;
+                        const u = buildDonorRankingsUrl({ test: true });
                         void copyUrl(u, "dash-donor-rankings-test");
                       }}
                     >
                       {copiedId === "dash-donor-rankings-test" ? "복사됨!" : "테스트 URL 복사"}
                     </button>
                   </div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
+                    <span>OBS 크기(%)</span>
+                    <input
+                      className="w-20 rounded bg-neutral-900/80 border border-white/10 px-2 py-1 text-sm text-right"
+                      value={donorRankingsZoomPct}
+                      onChange={(e) => setDonorRankingsZoomPct(e.target.value.replace(/[^\d]/g, ""))}
+                    />
+                    <span className="text-neutral-500">30~300 (기본 100)</span>
+                  </div>
                   <div className="text-[11px] text-neutral-500">
-                    필요 시 URL 파라미터로 임시 오버라이드 가능: <code>top</code>, <code>test</code>, <code>titleSize</code>, <code>rowSize</code>, <code>rankSize</code>, <code>headerAccountBg</code>, <code>headerToonBg</code>, <code>rowEvenBg</code>, <code>rowOddBg</code>, <code>nameColor</code>, <code>amountColor</code>, <code>rankColor</code>, <code>panelBg</code>, <code>border</code>, <code>outline</code>, <code>bg</code>
+                    필요 시 URL 파라미터로 임시 오버라이드 가능: <code>top</code>, <code>test</code>, <code>zoomPct</code>, <code>titleSize</code>, <code>rowSize</code>, <code>rankSize</code>, <code>headerAccountBg</code>, <code>headerToonBg</code>, <code>rowEvenBg</code>, <code>rowOddBg</code>, <code>nameColor</code>, <code>amountColor</code>, <code>rankColor</code>, <code>panelBg</code>, <code>border</code>, <code>outline</code>, <code>bg</code>
                   </div>
                 </div>
               </div>
@@ -3264,14 +3288,14 @@ export default function AdminPage() {
                   </div>
                   <div className="flex flex-col items-end gap-2 shrink-0">
                     <code className="max-w-[min(100%,420px)] break-all text-[11px] text-fuchsia-100/90">
-                      /overlay/donor-rankings?u={user?.id || "finalent"}
+                      /overlay/donor-rankings?u={user?.id || "finalent"}&zoomPct={getDonorRankingsZoomPct()}
                     </code>
                     <div className="flex flex-wrap justify-end gap-2">
                       <button
                         type="button"
                         className={`rounded px-2 py-1 text-xs ${copiedId === "dash-donor-rankings-bg" ? "bg-emerald-600" : "bg-white/15 text-pink-50 hover:bg-white/25"}`}
                         onClick={() => {
-                          const u = `${window.location.origin}/overlay/donor-rankings?u=${user?.id || "finalent"}`;
+                          const u = buildDonorRankingsUrl();
                           void copyUrl(u, "dash-donor-rankings-bg");
                         }}
                       >
@@ -3280,7 +3304,7 @@ export default function AdminPage() {
                       <button
                         type="button"
                         className="rounded bg-gradient-to-r from-fuchsia-600 to-pink-600 px-2 py-1 text-xs font-semibold text-white shadow-sm hover:from-fuchsia-500 hover:to-pink-500"
-                        onClick={() => window.open(`/overlay/donor-rankings?u=${user?.id || "finalent"}`, "_blank", "noopener,noreferrer")}
+                        onClick={() => window.open(buildDonorRankingsUrl(), "_blank", "noopener,noreferrer")}
                       >
                         오버레이 열기
                       </button>
@@ -4614,12 +4638,12 @@ export default function AdminPage() {
               </p>
               <div className="mb-3 rounded border border-white/10 bg-black/20 p-2 text-xs text-neutral-400 flex flex-wrap items-center gap-2">
                 <span>후원 리스트 오버레이:</span>
-                <code className="text-neutral-300 break-all">/overlay/donor-rankings?u={user?.id || "finalent"}</code>
+                <code className="text-neutral-300 break-all">/overlay/donor-rankings?u={user?.id || "finalent"}&zoomPct={getDonorRankingsZoomPct()}</code>
                 <button
                   type="button"
                   className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-donor-rankings-inline" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
                   onClick={() => {
-                    const u = `${window.location.origin}/overlay/donor-rankings?u=${user?.id || "finalent"}`;
+                    const u = buildDonorRankingsUrl();
                     void copyUrl(u, "dash-donor-rankings-inline");
                   }}
                 >
@@ -4628,7 +4652,7 @@ export default function AdminPage() {
                 <button
                   type="button"
                   className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs text-white"
-                  onClick={() => window.open(`/overlay/donor-rankings?u=${user?.id || "finalent"}`, "_blank", "noopener,noreferrer")}
+                  onClick={() => window.open(buildDonorRankingsUrl(), "_blank", "noopener,noreferrer")}
                 >
                   오버레이 열기
                 </button>
@@ -4647,7 +4671,7 @@ export default function AdminPage() {
                 <div className="relative w-full bg-black/40" style={{ minHeight: "260px", aspectRatio: "16 / 9" }}>
                   <iframe
                     key={`donor-rankings-${donorRankingsPreviewIframeKey}-${user?.id || "finalent"}`}
-                    src={`/overlay/donor-rankings?u=${user?.id || "finalent"}`}
+                    src={`/overlay/donor-rankings?u=${user?.id || "finalent"}&zoomPct=${getDonorRankingsZoomPct()}`}
                     title="후원 리스트 오버레이 미리보기"
                     className="absolute inset-0 h-full w-full border-0"
                     style={{ background: "transparent" }}
