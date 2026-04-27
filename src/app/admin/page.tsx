@@ -4179,6 +4179,13 @@ export default function AdminPage() {
                             onChange={(e) => updateTimerDisplayStyle(timerDef.flag, { bgColor: e.target.value })}
                           />
                           <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updateTimerDisplayStyle(timerDef.flag, { bgColor: "" })}>기본</button>
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                            onClick={() => updateTimerDisplayStyle(timerDef.flag, { bgColor: "transparent", borderColor: "transparent", bgOpacity: 0 })}
+                          >
+                            배경 없음
+                          </button>
                         </div>
                         <label className="text-xs text-neutral-400">테두리 색상</label>
                         <div className="flex items-center gap-2">
@@ -5310,6 +5317,13 @@ export default function AdminPage() {
                                         onChange={(e) => updatePreset(p.id, { timerBgColor: e.target.value })}
                                       />
                                       <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { timerBgColor: "" })}>기본</button>
+                                      <button
+                                        type="button"
+                                        className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                                        onClick={() => updatePreset(p.id, { timerBgColor: "transparent", timerBorderColor: "transparent", timerBgOpacity: "0" })}
+                                      >
+                                        배경 없음
+                                      </button>
                                     </div>
                                     <label className="text-xs text-neutral-400">테두리 색상</label>
                                     <div className="flex items-center gap-2">
