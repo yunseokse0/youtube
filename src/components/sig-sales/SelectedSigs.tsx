@@ -14,14 +14,26 @@ type SelectedSigsProps = {
   disabled?: boolean;
   trailingSlot?: ReactNode;
   highlightId?: string | null;
+  showToggle?: boolean;
+  soldOverrideSet?: Set<string>;
 };
 
-export default function SelectedSigs({ items, soldOutStampUrl, manualSoldSet, onToggleSold, disabled = false, trailingSlot, highlightId = null }: SelectedSigsProps) {
+export default function SelectedSigs({
+  items,
+  soldOutStampUrl,
+  manualSoldSet,
+  onToggleSold,
+  disabled = false,
+  trailingSlot,
+  highlightId = null,
+  showToggle = true,
+  soldOverrideSet,
+}: SelectedSigsProps) {
   const fallbackImage = "/images/sigs/dummy-sig.svg";
   return (
     <section className={`grid grid-cols-1 gap-3 ${trailingSlot ? "md:grid-cols-6" : "md:grid-cols-5"}`}>
       {items.map((item, idx) => {
-        const sold = manualSoldSet.has(item.id);
+        const sold = soldOverrideSet ? soldOverrideSet.has(item.id) : manualSoldSet.has(item.id);
         const isLatestConfirmed = highlightId === item.id;
         return (
           <motion.article
@@ -62,14 +74,16 @@ export default function SelectedSigs({ items, soldOutStampUrl, manualSoldSet, on
             <div className="space-y-1 p-2">
               <div className="truncate text-sm font-bold text-white">{item.name}</div>
               <div className="text-xs text-amber-200">{formatWon(item.price)}</div>
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={() => onToggleSold(item.id)}
-                className={`w-full rounded px-2 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${sold ? "bg-rose-700/85 text-white" : "bg-emerald-700/85 text-white"}`}
-              >
-                {sold ? "판매 취소" : "판매 완료"}
-              </button>
+              {showToggle ? (
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onToggleSold(item.id)}
+                  className={`w-full rounded px-2 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${sold ? "bg-rose-700/85 text-white" : "bg-emerald-700/85 text-white"}`}
+                >
+                  {sold ? "판매 취소" : "판매 완료"}
+                </button>
+              ) : null}
             </div>
           </motion.article>
         );

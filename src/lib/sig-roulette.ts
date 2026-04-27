@@ -3,12 +3,12 @@ import { getServerMemoryRouletteLogs, setServerMemoryRouletteLogs } from "@/lib/
 
 export const ONE_SHOT_SIG_ID = "sig_one_shot";
 export const SPIN_SOUND_PATHS = {
-  tick: "/sounds/spin-tick.mp3",
-  final: "/sounds/spin-final.mp3",
-  success: "/sounds/success.mp3",
-  oneShot: "/sounds/oneshot.mp3",
+  tick: "/sounds/spin-tick.wav",
+  final: "/sounds/spin-final.wav",
+  success: "/sounds/success.wav",
+  oneShot: "/sounds/oneshot.wav",
 } as const;
-export const SOUND_ASSETS_ENABLED = false;
+export const SOUND_ASSETS_ENABLED = true;
 
 export function pickDistinctSigs(pool: SigItem[], count: number): SigItem[] {
   const copy = [...pool];

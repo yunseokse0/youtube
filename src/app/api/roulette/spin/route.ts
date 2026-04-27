@@ -24,6 +24,7 @@ export async function POST(req: Request) {
     }
     let spinCount = 1;
     let mode: "default" | "cinematic5" = "default";
+    let memberIdFilter: string | null = null;
     let legacyPriceFilter: number | null = null;
     let priceFilters: (number | null)[] | null = null;
     let priceRanges: ({ min: number | null; max: number | null } | null)[] | null = null;
@@ -31,6 +32,7 @@ export async function POST(req: Request) {
       const j = (await req.json()) as {
         spinCount?: number;
         mode?: string;
+        memberId?: string | null;
         priceFilter?: number | null;
         priceFilters?: (number | null)[];
         priceRanges?: ({ min?: number | null; max?: number | null } | null)[];
@@ -40,6 +42,10 @@ export async function POST(req: Request) {
       }
       if (j?.mode === "cinematic5") {
         mode = "cinematic5";
+      }
+      if (typeof j?.memberId === "string") {
+        const v = j.memberId.trim();
+        memberIdFilter = v.length > 0 ? v : null;
       }
       if (j && typeof j.priceFilter === "number" && Number.isFinite(j.priceFilter) && j.priceFilter > 0) {
         legacyPriceFilter = Math.max(0, Math.floor(j.priceFilter));
@@ -90,7 +96,13 @@ export async function POST(req: Request) {
     );
     const inv = normalizeSigInventory(s.sigInventory).filter((x) => !excludedSet.has(x.id));
     if (mode === "cinematic5") {
-      const pool = inv.filter((x) => x.isActive && x.id !== ONE_SHOT_SIG_ID && x.soldCount < x.maxCount);
+      const pool = inv.filter(
+        (x) =>
+          x.isActive &&
+          x.id !== ONE_SHOT_SIG_ID &&
+          x.soldCount < x.maxCount &&
+          (!memberIdFilter || (x.memberId || "") === memberIdFilter)
+      );
       if (pool.length < 5) {
         return Response.json({ error: "not_enough_active_sigs" }, { status: 400, headers: { "Content-Type": "application/json" } });
       }

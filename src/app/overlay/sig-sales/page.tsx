@@ -14,7 +14,7 @@ import { ONE_SHOT_SIG_ID, SOUND_ASSETS_ENABLED, SPIN_SOUND_PATHS, clampOverlayOp
 import { useSigSalesState } from "@/hooks/useSigSalesState";
 
 const POLL_MS = 1000;
-const STEP_CONFIRM_PAUSE_MS = 1800;
+const STEP_CONFIRM_PAUSE_MS = 3000;
 const DEMO_POOL = [
   { id: "demo_1", name: "애교", price: 77000, imageUrl: "/images/sigs/애교.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
   { id: "demo_2", name: "댄스", price: 100000, imageUrl: "/images/sigs/댄스.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
@@ -36,6 +36,8 @@ const buildOneShotFromSelected = (selected: SigItem[]) => ({
 export default function SigSalesOverlayPage() {
   const sp = useSearchParams();
   const userId = sp.get("u") || "finalent";
+  const memberIdParam = (sp.get("memberId") || sp.get("member") || "").trim();
+  const memberFilterId = memberIdParam.length > 0 ? memberIdParam : "";
   const rouletteDemo = sp.get("rouletteDemo") === "1" || sp.get("rouletteDemo") === "true";
   const [state, setState] = useState<AppState | null>(null);
   const [manualSoldSet, setManualSoldSet] = useState<Set<string>>(new Set());
@@ -46,6 +48,9 @@ export default function SigSalesOverlayPage() {
   const [stagedSelected, setStagedSelected] = useState<SigItem[]>([]);
   const [spinStep, setSpinStep] = useState(0);
   const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [lastConfirmedText, setLastConfirmedText] = useState("");
+  const [lastConfirmedFxKey, setLastConfirmedFxKey] = useState(0);
+  const [oneShotReveal, setOneShotReveal] = useState(false);
   const nextSpinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [volume, setVolume] = useState(0.7);
   const [muted, setMuted] = useState(false);
@@ -87,8 +92,14 @@ export default function SigSalesOverlayPage() {
     if (rouletteDemo) return DEMO_POOL;
     if (!state) return [];
     const excluded = new Set((state.sigSalesExcludedIds || []).map((x) => String(x)));
-    return (state.sigInventory || []).filter((x) => x.isActive && x.id !== ONE_SHOT_SIG_ID && !excluded.has(x.id));
-  }, [state, rouletteDemo]);
+    return (state.sigInventory || []).filter(
+      (x) =>
+        x.isActive &&
+        x.id !== ONE_SHOT_SIG_ID &&
+        !excluded.has(x.id) &&
+        (!memberFilterId || (x.memberId || "") === memberFilterId)
+    );
+  }, [state, rouletteDemo, memberFilterId]);
   const wheelItems = useMemo(() => {
     const base = activeNormalPool.slice(0, 12);
     if (base.length >= 8) return base;
@@ -121,13 +132,22 @@ export default function SigSalesOverlayPage() {
 
   const finalDisplaySelected = displaySelectedSigs;
   const finalDisplayOneShot = displayOneShot;
+  const showFinalShowcase = finalDisplaySelected.length >= 5 && !demoSpin && !pendingLanding;
   const oneShotImageUrl = useMemo(() => {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     return oneShotItem?.imageUrl || "/images/sigs/dummy-sig.svg";
   }, [state?.sigInventory]);
+  const soldFromBackofficeSet = useMemo(() => {
+    const soldIds = new Set<string>();
+    const inv = state?.sigInventory || [];
+    for (const item of inv) {
+      if ((item.soldCount || 0) >= (item.maxCount || 1)) soldIds.add(item.id);
+    }
+    return soldIds;
+  }, [state?.sigInventory]);
+  const oneShotSoldFromBackoffice = soldFromBackofficeSet.has(ONE_SHOT_SIG_ID);
 
-  useEffect(() => {
-    if (machine.phase !== "IDLE") return;
+  const resetRoundUi = useCallback(() => {
     if (nextSpinTimerRef.current) {
       clearTimeout(nextSpinTimerRef.current);
       nextSpinTimerRef.current = null;
@@ -135,9 +155,10 @@ export default function SigSalesOverlayPage() {
     setStagedSelected([]);
     setSpinStep(0);
     setHighlightId(null);
+    setOneShotReveal(false);
     setPendingLanding(null);
     setDemoSpin(null);
-  }, [machine.phase]);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -148,9 +169,27 @@ export default function SigSalesOverlayPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!lastConfirmedText) return;
+    const id = window.setTimeout(() => setLastConfirmedText(""), 3000);
+    return () => window.clearTimeout(id);
+  }, [lastConfirmedText]);
+
+  useEffect(() => {
+    if (!showFinalShowcase || !finalDisplayOneShot) {
+      setOneShotReveal(false);
+      return;
+    }
+    const id = window.setTimeout(() => setOneShotReveal(true), 950);
+    return () => window.clearTimeout(id);
+  }, [showFinalShowcase, finalDisplayOneShot]);
+
   const onStartRoulette = useCallback(async () => {
     if (controlsDisabled) return;
     if (!rouletteDemo && machine.phase === "LANDED") return;
+    // OBS에서는 수동으로 소스를 내리기 전까지 결과를 유지하고,
+    // 새 회차 시작 시점에만 화면 상태를 초기화한다.
+    resetRoundUi();
     if (rouletteDemo) {
       // 데모는 Confirm 단계 없이 반복 재생 가능해야 하므로 매 회차 초기화
       resetToIdle();
@@ -164,28 +203,22 @@ export default function SigSalesOverlayPage() {
         persist: false,
       });
       setDemoSpin({ startedAt: Date.now(), resultId: selected[0]?.id || resultId });
-      setSpinStep(0);
-      setStagedSelected([]);
-      setHighlightId(null);
       confetti({ particleCount: 60, spread: 70, origin: { y: 0.2 } });
       return;
     }
     try {
-      const data = await spin();
+      const data = await spin({ memberId: memberFilterId || null });
       const selected = (data.selectedSigs || []).slice(0, 5);
       const oneShot = buildOneShotFromSelected(selected);
       setPendingLanding({ selected, oneShot, resultId: data.result?.id || selected[selected.length - 1]?.id || null, persist: true });
       setDemoSpin({ startedAt: Date.now(), resultId: selected[0]?.id || null });
-      setSpinStep(0);
-      setStagedSelected([]);
-      setHighlightId(null);
       confetti({ particleCount: 75, spread: 66, origin: { y: 0.23 } });
       setManualSoldSet(new Set());
       setOneShotSold(false);
     } catch {
-      setError("회전판 시작 실패");
+      setError(memberFilterId ? "해당 멤버 시그 회전판 시작 실패" : "회전판 시작 실패");
     }
-  }, [rouletteDemo, controlsDisabled, machine.phase, spin, setError, resetToIdle]);
+  }, [rouletteDemo, controlsDisabled, machine.phase, spin, setError, resetToIdle, resetRoundUi, memberFilterId]);
 
   const persistRouletteState = useCallback(
     async (nextPartial: Partial<AppState["rouletteState"]>) => {
@@ -276,27 +309,41 @@ export default function SigSalesOverlayPage() {
         </header>
 
         <section style={{ backgroundColor: "transparent" }} className="relative p-0">
-          <RouletteWheel
+          {lastConfirmedText ? (
+            <div
+              key={`confirmed-fx-${lastConfirmedFxKey}`}
+              className="pointer-events-none absolute left-4 top-1/2 z-40 -translate-y-1/2 rounded-2xl border border-fuchsia-300/80 bg-fuchsia-500/25 px-5 py-3 text-3xl font-black text-fuchsia-100 shadow-[0_0_26px_rgba(217,70,239,0.6)] animate-pulse"
+            >
+              {lastConfirmedText}
+            </div>
+          ) : null}
+          {!showFinalShowcase ? <RouletteWheel
             items={wheelItemsWithResult}
             isRolling={Boolean(demoSpin) || machine.isRolling || machine.phase === "SPINNING"}
             resultId={displayResultId}
             startedAt={demoSpin?.startedAt || machine.startedAt}
             volume={volume}
             muted={muted}
-            onLanded={() => {
+            onLanded={(landedId) => {
               if (!pendingLanding) return;
               const selectedQueue = pendingLanding.selected.slice(0, 5);
               if (selectedQueue.length === 0) return;
-              const current = selectedQueue[Math.min(spinStep, selectedQueue.length - 1)];
-              const nextSelected = [...stagedSelected, current];
+              const byResult = landedId ? selectedQueue.find((x) => x.id === landedId) : null;
+              const fallback = selectedQueue[Math.min(spinStep, selectedQueue.length - 1)];
+              const current = byResult || fallback;
+              if (!current) return;
+              const nextSelected = [...stagedSelected, current].filter((item, idx, arr) => arr.findIndex((x) => x.id === item.id) === idx);
               const nextStep = spinStep + 1;
               setHighlightId(current.id);
+              setLastConfirmedText(`${current.name} 확정!`);
+              setLastConfirmedFxKey((v) => v + 1);
 
               if (nextStep < selectedQueue.length) {
                 setStagedSelected(nextSelected);
                 setSpinStep(nextStep);
                 if (nextSpinTimerRef.current) clearTimeout(nextSpinTimerRef.current);
                 nextSpinTimerRef.current = setTimeout(() => {
+                  setLastConfirmedText("");
                   setDemoSpin({ startedAt: Date.now(), resultId: selectedQueue[nextStep].id });
                 }, STEP_CONFIRM_PAUSE_MS);
                 return;
@@ -318,7 +365,7 @@ export default function SigSalesOverlayPage() {
                 oneShotResult: oneShot,
               });
             }}
-          />
+          /> : null}
           {machine.phase === "CONFIRM_PENDING" ? (
             <div className="pointer-events-none absolute inset-0 z-50 grid place-items-center bg-black/55">
               <div className="rounded-xl border border-yellow-300/50 bg-neutral-900/90 px-6 py-4 text-center">
@@ -330,21 +377,24 @@ export default function SigSalesOverlayPage() {
 
           {(machine.phase === "SPINNING" || machine.phase === "LANDED" || machine.phase === "CONFIRM_PENDING" || machine.phase === "CONFIRMED" || stagedSelected.length > 0) &&
           finalDisplaySelected.length > 0 ? (
-            <div className="mt-4 space-y-4">
+            <div className={`mt-4 space-y-4 transition-all duration-700 ${showFinalShowcase ? "-translate-y-[260px]" : "translate-y-0"}`}>
               {rouletteDemo ? <p className="text-xs font-semibold text-fuchsia-200/90">데모 당첨 배치 미리보기</p> : null}
               <SelectedSigs
                 items={finalDisplaySelected}
                 soldOutStampUrl={soldOutStampUrl}
                 manualSoldSet={manualSoldSet}
-                disabled={controlsDisabled}
+                disabled={true}
+                showToggle={false}
+                soldOverrideSet={soldFromBackofficeSet}
                 highlightId={highlightId}
-                trailingSlot={finalDisplayOneShot ? (
+                trailingSlot={finalDisplayOneShot && oneShotReveal ? (
                   <OneShotSigCard
                     name={finalDisplayOneShot?.name || "한방 시그"}
                     price={finalDisplayOneShot?.price || 0}
                     imageUrl={oneShotImageUrl}
-                    sold={oneShotSold}
-                    disabled={controlsDisabled}
+                    sold={oneShotSoldFromBackoffice}
+                    disabled={true}
+                    showToggle={false}
                     compact
                     onToggleSold={() => setOneShotSold((v) => !v)}
                   />
@@ -358,18 +408,7 @@ export default function SigSalesOverlayPage() {
                   })
                 }
               />
-              {!rouletteDemo ? (
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    disabled={controlsDisabled || machine.phase === "CONFIRMED"}
-                    onClick={() => setShowConfirmModal(true)}
-                    className="rounded bg-emerald-600 px-4 py-2 text-sm font-bold hover:bg-emerald-500 disabled:opacity-50"
-                  >
-                    {machine.phase === "CONFIRM_PENDING" ? "처리 중..." : "Confirm Sale (수동 확정)"}
-                  </button>
-                </div>
-              ) : null}
+              {null}
             </div>
           ) : null}
           {machine.phase === "CONFIRMED" ? (
@@ -386,7 +425,7 @@ export default function SigSalesOverlayPage() {
         </section>
       </div>
       <ConfirmationModal
-        open={showConfirmModal && machine.phase !== "CONFIRMED" && !rouletteDemo}
+        open={false}
         loading={machine.phase === "CONFIRM_PENDING" || machine.isFinishLoading}
         onCancel={() => {
           setShowConfirmModal(false);

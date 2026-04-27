@@ -127,7 +127,7 @@ export function useSigSalesState(userId: string, appState: AppState | null) {
     dispatch({ type: "HYDRATE", payload: toMachine(appState.rouletteState) });
   }, [appState]);
 
-  const spin = useCallback(async () => {
+  const spin = useCallback(async (options?: { memberId?: string | null }) => {
     if (machine.phase === "SPINNING" || machine.phase === "CONFIRM_PENDING" || machine.isFinishLoading) {
       throw new Error("spin_blocked");
     }
@@ -137,7 +137,7 @@ export function useSigSalesState(userId: string, appState: AppState | null) {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "cinematic5" }),
+        body: JSON.stringify({ mode: "cinematic5", memberId: options?.memberId || null }),
       });
       if (!res.ok) {
         dispatch({ type: "SPIN_FAILED", payload: "회전판 시작 실패" });

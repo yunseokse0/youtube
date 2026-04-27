@@ -12,9 +12,19 @@ type OneShotSigCardProps = {
   disabled?: boolean;
   compact?: boolean;
   imageUrl?: string;
+  showToggle?: boolean;
 };
 
-export default function OneShotSigCard({ name, price, sold, onToggleSold, disabled = false, compact = false, imageUrl = "" }: OneShotSigCardProps) {
+export default function OneShotSigCard({
+  name,
+  price,
+  sold,
+  onToggleSold,
+  disabled = false,
+  compact = false,
+  imageUrl = "",
+  showToggle = true,
+}: OneShotSigCardProps) {
   const fallbackImage = "/images/sigs/dummy-sig.svg";
   return (
     <motion.section
@@ -42,14 +52,16 @@ export default function OneShotSigCard({ name, price, sold, onToggleSold, disabl
         </div>
         <div className={compact ? "" : "text-right"}>
           <div className={`${compact ? "text-base" : "text-2xl"} font-black text-yellow-200`}>{formatWon(price)}</div>
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={onToggleSold}
-            className={`mt-2 w-full rounded px-2 py-1 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50 ${sold ? "bg-rose-700 text-white" : "bg-amber-500 text-black"}`}
-          >
-            {sold ? "한방 판매 취소" : "한방 판매 완료"}
-          </button>
+          {showToggle ? (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={onToggleSold}
+              className={`mt-2 w-full rounded px-2 py-1 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50 ${sold ? "bg-rose-700 text-white" : "bg-amber-500 text-black"}`}
+            >
+              {sold ? "한방 판매 취소" : "한방 판매 완료"}
+            </button>
+          ) : null}
         </div>
       </div>
     </motion.section>

@@ -18,6 +18,7 @@ type RouletteWheelProps = {
 };
 
 const COLORS = ["#fb7185", "#f59e0b", "#22d3ee", "#a78bfa", "#34d399", "#f472b6", "#facc15", "#60a5fa"];
+const SPIN_DURATION_SCALE = 1.3;
 
 export default function RouletteWheel({ items, isRolling, resultId, startedAt, volume = 0.7, muted = false, onLanded }: RouletteWheelProps) {
   const rotate = useMotionValue(0);
@@ -98,7 +99,26 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
     animationRef.current?.stop();
     animationRef.current = null;
   };
-
+  const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+  const runTickTrack = async (
+    durationMs: number,
+    startIntervalMs: number,
+    endIntervalMs: number,
+    isCancelled: () => boolean,
+    tickSound: Howl | null
+  ) => {
+    if (!tickSound || durationMs <= 0) return;
+    const startedAt = Date.now();
+    while (!isCancelled()) {
+      const elapsed = Date.now() - startedAt;
+      if (elapsed >= durationMs) break;
+      const p = Math.min(1, elapsed / durationMs);
+      const currentInterval = Math.max(36, Math.round(startIntervalMs + (endIntervalMs - startIntervalMs) * p));
+      tickSound.stop();
+      tickSound.play();
+      await sleep(currentInterval);
+    }
+  };
   const runAnimation = (
     to: number | number[],
     options: { duration: number; ease?: unknown; repeat?: number; repeatType?: "reverse" | "loop" | "mirror" }
@@ -137,7 +157,7 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
 
     let cancelled = false;
     sounds?.tick.stop();
-    sounds?.tick.play();
+    sounds?.final.stop();
 
     const runSequence = async () => {
       try {
@@ -146,29 +166,34 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
         const cruiseTarget = currentRotate + 1240;
 
         // 1) 가속: 서서히 속도를 올리는 구간
-        await runAnimation(accelTarget, { duration: 0.95, ease: [0.42, 0, 1, 1] });
+        await Promise.all([
+          runAnimation(accelTarget, { duration: 0.95 * SPIN_DURATION_SCALE, ease: [0.42, 0, 1, 1] }),
+          runTickTrack(0.95 * SPIN_DURATION_SCALE * 1000, 125, 62, () => cancelled, sounds?.tick || null),
+        ]);
         if (cancelled) return;
 
         // 2) 고속 유지: 일정한 최고속으로 회전
-        await runAnimation(cruiseTarget, { duration: 1.15, ease: "linear" });
+        await Promise.all([
+          runAnimation(cruiseTarget, { duration: 1.15 * SPIN_DURATION_SCALE, ease: "linear" }),
+          runTickTrack(1.15 * SPIN_DURATION_SCALE * 1000, 58, 58, () => cancelled, sounds?.tick || null),
+        ]);
         if (cancelled) return;
 
         // 3) 감속 착지: 서서히 감속하며 목표 위치로 자연스럽게 정지
         const target = calculateFinalAngle(resultId, Math.max(1, spinItems.length), cruiseTarget, 1);
-        sounds?.final.stop();
-        sounds?.final.play();
-        await runAnimation(target, {
-          duration: 2.9,
-          ease: [0.05, 0.9, 0.18, 1.0],
-        });
+        await Promise.all([
+          runAnimation(target, {
+            duration: 2.9 * SPIN_DURATION_SCALE,
+            ease: [0.05, 0.9, 0.18, 1.0],
+          }),
+          runTickTrack(2.9 * SPIN_DURATION_SCALE * 1000, 72, 190, () => cancelled, sounds?.tick || null),
+        ]);
         if (cancelled) return;
 
-        // 4) 착지 직전 미세 wobble
-        await runAnimation(target + 8, {
-          duration: 0.3,
-          repeat: 1,
-          repeatType: "reverse",
-          ease: "easeInOut",
+        // 4) 착지 후 고정(역동작 없이 바로 정지)
+        await runAnimation(target, {
+          duration: 0.1 * SPIN_DURATION_SCALE,
+          ease: "linear",
         });
         if (cancelled) return;
 
@@ -227,7 +252,7 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
           </motion.div>
         ) : null}
       </AnimatePresence>
-      <div className="pointer-events-none absolute left-1/2 top-3 z-30 -translate-x-1/2 text-5xl text-amber-300 drop-shadow-[0_0_10px_rgba(251,191,36,0.9)]">
+      <div className="pointer-events-none absolute left-1/2 top-3 z-30 -translate-x-1/2 text-5xl text-pink-500 drop-shadow-[0_0_12px_rgba(236,72,153,0.95)]">
         ▼
       </div>
       <div className="absolute inset-0 grid place-items-center">
@@ -240,10 +265,17 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
             const isWin = idx === winnerIndex && !isRolling;
             return (
               <div key={`${item.id}-${idx}`} className="absolute left-1/2 top-1/2 h-0 w-0" style={{ transform: `rotate(${angle}deg) translateY(-148px)` }}>
+                {isWin ? (
+                  <motion.div
+                    className="absolute left-1/2 top-1/2 h-14 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full border border-yellow-200/85 bg-pink-500/35"
+                    animate={{ opacity: [0.35, 0.95, 0.45], scale: [1, 1.1, 1.03] }}
+                    transition={{ duration: 1.1, repeat: Infinity }}
+                  />
+                ) : null}
                 <motion.div
-                  className={`w-24 -translate-x-1/2 -translate-y-1/2 text-center text-xs font-black ${isWin ? "text-yellow-200" : "text-white"}`}
+                  className={`relative z-10 w-24 -translate-x-1/2 -translate-y-1/2 text-center text-xs font-black ${isWin ? "text-pink-100" : "text-white"}`}
                   style={{ transform: `rotate(${-angle - currentAngle}deg)` }}
-                  animate={isWin ? { scale: [1, 1.08, 1], textShadow: ["0 0 4px #000", "0 0 14px #facc15", "0 0 4px #000"] } : {}}
+                  animate={isWin ? { scale: [1, 1.14, 1], textShadow: ["0 0 4px #000", "0 0 16px #ec4899", "0 0 4px #000"] } : {}}
                   transition={{ duration: 1.2, repeat: isWin ? Infinity : 0 }}
                 >
                   {item.name}
