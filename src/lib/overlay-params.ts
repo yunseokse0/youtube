@@ -240,3 +240,15 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.host && preset.host.trim()) q.set("host", preset.host.trim());
   return q;
 }
+
+type SearchParamsLike = {
+  get(name: string): string | null;
+};
+
+export function getOverlayUserIdFromSearchParams(
+  searchParams: SearchParamsLike,
+  fallback = "finalent"
+): string {
+  const userId = searchParams.get("u") || searchParams.get("user");
+  return (userId || "").trim() || fallback;
+}

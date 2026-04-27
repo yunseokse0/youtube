@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { defaultState, loadState, loadStateFromApi, storageKey, type AppState } from "@/lib/state";
-import type { OverlayPresetLike } from "@/lib/overlay-params";
+import { getOverlayUserIdFromSearchParams, type OverlayPresetLike } from "@/lib/overlay-params";
 
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
   const [state, setState] = useState<AppState | null>(null);
@@ -55,7 +55,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
 
 export default function GoalOverlayPage() {
   const sp = useSearchParams();
-  const userId = (sp.get("u") || "finalent").trim();
+  const userId = getOverlayUserIdFromSearchParams(sp);
   const { state, ready } = useRemoteState(userId);
 
   const activePreset = useMemo(() => {

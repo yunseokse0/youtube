@@ -210,6 +210,7 @@ const PRESET_TEMPLATES = [
 ];
 
 const logger = createModuleLogger('Admin');
+const DEFAULT_OVERLAY_USER_ID = "finalent";
 
 export default function AdminPage() {
   const [state, setState] = useState<AppState | null>(null);
@@ -335,6 +336,7 @@ export default function AdminPage() {
     if (typeof window === "undefined") return "";
     const base = `${window.location.origin}/overlay`;
     const q: Record<string, string> = {
+      u: DEFAULT_OVERLAY_USER_ID,
       scale: preset.scale,
       memberSize: String(preset.memberSize),
       totalSize: String(preset.totalSize),

@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { defaultState, loadState, loadStateFromApi, storageKey, type AppState } from "@/lib/state";
+import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { resolveSigImageUrl } from "@/lib/constants";
 
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
@@ -78,7 +79,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
 
 export default function SigBoardOverlayPage() {
   const sp = useSearchParams();
-  const userId = sp.get("u") || "finalent";
+  const userId = getOverlayUserIdFromSearchParams(sp);
   const { state, ready } = useRemoteState(userId);
   const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || "/images/sigs/stamp.png";
 

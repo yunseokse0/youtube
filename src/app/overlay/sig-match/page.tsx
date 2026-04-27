@@ -14,6 +14,7 @@ import {
   normalizeSigMatchPools,
   storageKey,
 } from "@/lib/state";
+import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { formatSigMatchStat, getSigMatchRankings } from "@/lib/settlement-utils";
 
 function tryReadSnapshotFromStorage(snapKey: string | null): Record<string, unknown> | null {
@@ -150,7 +151,7 @@ function useSigMatchState(userId: string | undefined, lockedSnapshot: AppState |
 
 function SigMatchOverlayInner() {
   const sp = useSearchParams();
-  const userId = sp.get("u") || "finalent";
+  const userId = getOverlayUserIdFromSearchParams(sp);
   const snapQs = sp.get("snap") || "";
   const snapKeyQs = sp.get("snapKey") || "";
   const previewGuide = sp.get("previewGuide") === "true";

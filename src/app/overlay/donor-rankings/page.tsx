@@ -11,6 +11,7 @@ import {
   storageKey,
   type AppState,
 } from "@/lib/state";
+import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 
 type DonorRow = {
   name: string;
@@ -242,7 +243,7 @@ function RankingColumn({
 
 export default function DonorRankingsOverlayPage() {
   const sp = useSearchParams();
-  const userId = sp.get("u") || "finalent";
+  const userId = getOverlayUserIdFromSearchParams(sp);
   const { state, ready } = useRemoteState(userId);
   const overlayCfg = useMemo(
     () => normalizeDonorRankingsOverlayConfig(state?.donorRankingsOverlayConfig),

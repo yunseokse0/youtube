@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
 import { defaultState, loadState, loadStateFromApi, storageKey, type AppState } from "@/lib/state";
+import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { getEffectiveRemainingTime } from "@/lib/timer-utils";
 
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
@@ -87,7 +88,7 @@ function segmentBarStyle(seg: { memberId: string; color: string }): React.CSSPro
 
 export default function MealMatchOverlayPage() {
   const sp = useSearchParams();
-  const userId = sp.get("u") || "finalent";
+  const userId = getOverlayUserIdFromSearchParams(sp);
   const demoEnabled = sp.get("demo") === "true";
   const demoMode = (sp.get("demoMode") || "member").toLowerCase();
   const { state, ready } = useRemoteState(userId);

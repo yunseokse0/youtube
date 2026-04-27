@@ -10,6 +10,7 @@ import SelectedSigs from "@/components/sig-sales/SelectedSigs";
 import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
 import ConfirmationModal from "@/components/sig-sales/ConfirmationModal";
 import { loadStateFromApi, saveStateAsync, type AppState } from "@/lib/state";
+import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { ONE_SHOT_SIG_ID, SOUND_ASSETS_ENABLED, SPIN_SOUND_PATHS } from "@/lib/sig-roulette";
 import { useSigSalesState } from "@/hooks/useSigSalesState";
 
@@ -35,7 +36,7 @@ const buildOneShotFromSelected = (selected: SigItem[]) => ({
 
 export default function SigSalesOverlayPage() {
   const sp = useSearchParams();
-  const userId = sp.get("u") || "finalent";
+  const userId = getOverlayUserIdFromSearchParams(sp);
   const memberIdParam = (sp.get("memberId") || sp.get("member") || "").trim();
   const memberFilterId = memberIdParam.length > 0 ? memberIdParam : "";
   const rouletteDemo = sp.get("rouletteDemo") === "1" || sp.get("rouletteDemo") === "true";

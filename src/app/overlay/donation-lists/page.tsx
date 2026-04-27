@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
 import { defaultState, loadState, loadStateFromApi, normalizeDonationListsOverlayConfig, storageKey, type AppState } from "@/lib/state";
+import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { sortMembersForRanking } from "@/lib/utils";
 
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
@@ -139,7 +140,7 @@ function RankingTable({
 
 export default function DonationListsOverlayPage() {
   const sp = useSearchParams();
-  const userId = sp.get("u") || "finalent";
+  const userId = getOverlayUserIdFromSearchParams(sp);
   const { state, ready } = useRemoteState(userId);
 
   const overlayCfg = useMemo(
