@@ -12,6 +12,19 @@ import { resolveSigImageUrl } from "@/lib/constants";
 const POLL_MS_SLOW = 1500;
 const POLL_MS_ROLLING = 350;
 const SPIN_ANIM_MS = 5000;
+const ONE_SHOT_SIG_ID = "sig_one_shot";
+const ROULETTE_DEMO_ITEMS = [
+  { id: "demo_1", name: "애교", price: 77000, imageUrl: "/images/sigs/애교.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_2", name: "댄스", price: 100000, imageUrl: "/images/sigs/댄스.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_3", name: "식사권", price: 333000, imageUrl: "/images/sigs/식사권.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_4", name: "보이스", price: 50000, imageUrl: "/images/sigs/보이스.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_5", name: "노래", price: 120000, imageUrl: "/images/sigs/노래.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_6", name: "토크", price: 55000, imageUrl: "/images/sigs/토크.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_7", name: "하트", price: 30000, imageUrl: "/images/sigs/하트.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_8", name: "게임", price: 88000, imageUrl: "/images/sigs/게임.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_9", name: "보너스", price: 150000, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_10", name: "한방 시그", price: 0, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+] as const;
 
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
   const [state, setState] = useState<AppState | null>(null);
@@ -103,6 +116,8 @@ export default function SigSalesOverlayPage() {
   const userId = sp.get("u") || "finalent";
   const reelPreview =
     sp.get("reelPreview") === "true" || sp.get("reelPreview") === "1" || sp.get("previewRoulette") === "true";
+  const rouletteDemo =
+    sp.get("rouletteDemo") === "true" || sp.get("rouletteDemo") === "1" || sp.get("wheelDemo") === "true";
   const { state, ready } = useRemoteState(userId);
   const rs = state?.rouletteState;
   const inv = state?.sigInventory || [];
@@ -112,16 +127,28 @@ export default function SigSalesOverlayPage() {
   );
   const invForSales = useMemo(() => inv.filter((x) => !excludedSet.has(x.id)), [inv, excludedSet]);
   const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || "/images/sigs/stamp.png";
-  const activeItems = useMemo(() => invForSales.filter((x) => x.isActive), [invForSales]);
+  const activeItems = useMemo(
+    () =>
+      (rouletteDemo ? [...ROULETTE_DEMO_ITEMS] : invForSales.filter((x) => x.isActive)).filter(
+        (x) => x.id !== ONE_SHOT_SIG_ID && x.name !== "한방 시그"
+      ),
+    [invForSales, rouletteDemo]
+  );
   const wheelItems = useMemo(() => {
+    if (rouletteDemo) return [...ROULETTE_DEMO_ITEMS];
     const rolling = invForSales.filter((x) => x.isRolling);
     if (rolling.length > 0) return rolling;
     if (activeItems.length > 0) return activeItems;
     return invForSales;
-  }, [invForSales, activeItems]);
+  }, [invForSales, activeItems, rouletteDemo]);
   const reel = useMemo(() => (wheelItems.length ? [...wheelItems, ...wheelItems, ...wheelItems, ...wheelItems] : []), [wheelItems]);
   const demoX = useMotionValue(0);
   const finishOnceRef = useRef(false);
+  const [demoStartedAt, setDemoStartedAt] = useState<number>(() => Date.now());
+  const [demoResultId, setDemoResultId] = useState<string | undefined>(undefined);
+  const [demoResults, setDemoResults] = useState<typeof wheelItems>([]);
+  const [highlightedSigId, setHighlightedSigId] = useState<string | null>(null);
+  const prevResolvedResultIdRef = useRef<string | null>(null);
   const spinAudio = useAudio("/sounds/spin.mp3", { loop: true, volume: 0.55 });
   const winAudio = useAudio("/sounds/win.mp3", { loop: false, volume: 0.95 });
 
@@ -143,6 +170,20 @@ export default function SigSalesOverlayPage() {
     }
   }, [rs?.isRolling, spinAudio, winAudio]);
 
+  // 데모 모드에서도 "회전 시작 → 당첨" 사운드를 주기적으로 재생
+  useEffect(() => {
+    if (!rouletteDemo || !wheelItems.length) return;
+    spinAudio.stop();
+    spinAudio.play(true);
+    const t = window.setTimeout(() => {
+      spinAudio.stop();
+      winAudio.play(true);
+    }, Math.max(1200, SPIN_ANIM_MS - 280));
+    return () => {
+      window.clearTimeout(t);
+    };
+  }, [rouletteDemo, demoStartedAt, wheelItems.length, spinAudio, winAudio]);
+
   useEffect(() => {
     if (!reelPreview || !reel.length) return;
     if (rs?.isRolling) return;
@@ -158,11 +199,42 @@ export default function SigSalesOverlayPage() {
     return () => controls.stop();
   }, [reelPreview, reel.length, rs?.isRolling, demoX]);
 
-  if (!ready || !state) return null;
+  useEffect(() => {
+    if (!rouletteDemo || !wheelItems.length) return;
+    const pick = () => {
+      const oneShot = wheelItems.find((x) => x.name === "한방 시그");
+      const basePool = wheelItems.filter((x) => x.name !== "한방 시그");
+      const randoms = Array.from({ length: 4 }).map(() => {
+        const idx = Math.floor(Math.random() * Math.max(1, basePool.length));
+        return (basePool[idx] || wheelItems[0])!;
+      });
+      const results = oneShot ? [...randoms, oneShot] : [...randoms, randoms[randoms.length - 1]!];
+      setDemoResults(results);
+      setDemoResultId(results[results.length - 1]?.id);
+      setDemoStartedAt(Date.now());
+    };
+    pick();
+    const id = window.setInterval(pick, SPIN_ANIM_MS + 800);
+    return () => window.clearInterval(id);
+  }, [rouletteDemo, wheelItems]);
 
-  const showReel = Boolean(rs?.isRolling && rs?.result && reel.length);
+  const demoRolling = rouletteDemo && wheelItems.length > 0;
+  const showReel = Boolean((rs?.isRolling && rs?.result && reel.length) || demoRolling);
   const showReelDemoStrip = reelPreview && !showReel && reel.length > 0;
   const showRouletteHeader = !showReel;
+  const isRollingDisplay = demoRolling || Boolean(rs?.isRolling);
+  const resolvedResultId = demoRolling ? (demoResultId || null) : (rs?.result?.id || null);
+
+  useEffect(() => {
+    if (!resolvedResultId) return;
+    if (prevResolvedResultIdRef.current === resolvedResultId) return;
+    prevResolvedResultIdRef.current = resolvedResultId;
+    setHighlightedSigId(resolvedResultId);
+    const t = window.setTimeout(() => setHighlightedSigId(null), 1600);
+    return () => window.clearTimeout(t);
+  }, [resolvedResultId]);
+
+  if (!ready || !state) return null;
 
   return (
     <main className="min-h-screen w-full bg-transparent p-4 text-white">
@@ -177,15 +249,16 @@ export default function SigSalesOverlayPage() {
             className="relative mx-auto flex h-[min(70vh,640px)] max-w-[1100px] flex-col items-center justify-center overflow-hidden rounded-2xl"
           >
             <div className="mb-3 text-2xl font-black" style={outlineText()}>
-              시그 룰렛 · {rs?.spinCount ?? 1}회
+              {demoRolling ? "시그 판매 추첨 · 데모 5회" : `시그 판매 추첨 · ${rs?.spinCount ?? 1}회`}
             </div>
             <Roulette
               items={wheelItems}
-              isRolling={Boolean(rs?.isRolling)}
-              resultId={rs?.result?.id}
+              isRolling={isRollingDisplay}
+              resultId={demoRolling ? demoResultId : rs?.result?.id}
               spinDurationSec={SPIN_ANIM_MS / 1000}
-              startedAt={rs?.startedAt}
+              startedAt={demoRolling ? demoStartedAt : rs?.startedAt}
               onAnimationComplete={() => {
+                if (demoRolling) return;
                 if (finishOnceRef.current) return;
                 finishOnceRef.current = true;
                 spinAudio.stop();
@@ -196,9 +269,6 @@ export default function SigSalesOverlayPage() {
                 }).catch(() => {});
               }}
             />
-            <p className="mt-3 text-sm font-semibold" style={outlineText()}>
-              포인터(상단 화살표) 위치에서 당첨 시그가 결정됩니다.
-            </p>
           </motion.div>
         ) : (
           <motion.div
@@ -211,7 +281,7 @@ export default function SigSalesOverlayPage() {
             {showRouletteHeader ? (
               <section className="mb-6">
                 <h1 className="mb-2 text-center text-3xl font-black md:text-4xl" style={outlineText()}>
-                  시그 룰렛
+                  시그 판매
                 </h1>
                 {showReelDemoStrip ? (
                   <div className="rounded-2xl border border-fuchsia-400/45 bg-black/45 p-4 shadow-lg backdrop-blur-sm">
@@ -227,13 +297,19 @@ export default function SigSalesOverlayPage() {
                             key={`demo-strip-${item.id}-${idx}`}
                             className="relative h-40 w-[132px] shrink-0 overflow-hidden rounded-lg border border-white/20 bg-black/40"
                           >
-                            <Image
-                              src={resolveSigImageUrl(item.name, item.imageUrl)}
-                              alt={item.name}
-                              fill
-                              unoptimized
-                              className="object-cover"
-                            />
+                            {String(item.imageUrl || "").trim() ? (
+                              <Image
+                                src={resolveSigImageUrl(item.name, item.imageUrl)}
+                                alt={item.name}
+                                fill
+                                unoptimized
+                                className="object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-fuchsia-700/40 to-rose-700/40 px-2 text-center text-lg font-black text-white">
+                                {item.name}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </motion.div>
@@ -243,35 +319,38 @@ export default function SigSalesOverlayPage() {
                     </p>
                   </div>
                 ) : (
-                  <div className="rounded-2xl border border-white/20 bg-black/35 px-4 py-4 text-center backdrop-blur-sm">
-                    <p className="text-sm font-semibold text-white/90" style={outlineText()}>
-                      관리자에서 <span className="text-amber-200">룰렛 돌리기</span>를 실행하면 이 화면이 잠시 룰렛 전체 화면으로 바뀝니다.
-                    </p>
-                  </div>
+                  <></>
                 )}
               </section>
             ) : null}
-            <h2 className="mb-3 text-center text-xl font-black text-white/95 md:text-2xl" style={outlineText()}>
-              시그 판매
-            </h2>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               {activeItems.map((item) => {
                 const soldOut = item.soldCount >= item.maxCount;
                 const pct = Math.min(100, (item.soldCount / Math.max(1, item.maxCount)) * 100);
                 const isSingleSale = item.maxCount <= 1;
+                const isHighlighted = item.id === highlightedSigId;
                 return (
                   <div
                     key={item.id}
-                    className="relative overflow-hidden rounded-2xl border border-white/25 bg-black/30 shadow-lg backdrop-blur-sm"
+                    className={`relative overflow-hidden rounded-2xl border bg-black/30 shadow-lg backdrop-blur-sm transition-all duration-300 ${isHighlighted ? "border-amber-300/95 animate-pulse shadow-[0_0_24px_rgba(251,191,36,0.65)] scale-[1.02]" : "border-white/25"}`}
                   >
+                    {isHighlighted ? (
+                      <div className="pointer-events-none absolute inset-0 z-10 bg-gradient-to-br from-amber-300/20 via-yellow-200/10 to-transparent" />
+                    ) : null}
                     <div className="relative aspect-[4/5] w-full">
-                      <Image
-                        src={resolveSigImageUrl(item.name, item.imageUrl)}
-                        alt={item.name}
-                        fill
-                        unoptimized
-                        className="object-cover"
-                      />
+                      {String(item.imageUrl || "").trim() ? (
+                        <Image
+                          src={resolveSigImageUrl(item.name, item.imageUrl)}
+                          alt={item.name}
+                          fill
+                          unoptimized
+                          className="object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-fuchsia-700/40 to-rose-700/40 px-2 text-center text-2xl font-black text-white">
+                          {item.name}
+                        </div>
+                      )}
                       {soldOut ? <div className="absolute inset-0 bg-neutral-700/70" /> : null}
                       <AnimatePresence>
                         {soldOut ? (
@@ -312,21 +391,6 @@ export default function SigSalesOverlayPage() {
               <p className="mt-6 text-center text-sm" style={outlineText()}>
                 활성화된 판매 시그가 없습니다. 관리자에서 판매 활성을 켜 주세요.
               </p>
-            ) : null}
-            {rs?.result ? (
-              <div className="mt-6 rounded-2xl border border-amber-300/50 bg-black/35 px-4 py-3 text-center backdrop-blur-sm">
-                <div className="text-sm font-bold text-amber-200" style={outlineText()}>
-                  최근 당첨
-                </div>
-                <div className="mt-1 text-xl font-black" style={outlineText()}>
-                  {rs.result.name}
-                </div>
-                {rs.results && rs.results.length > 1 ? (
-                  <div className="mt-2 border-t border-white/10 pt-2 text-xs text-white/85" style={outlineText()}>
-                    {rs.spinCount}회 결과: {rs.results.map((x) => x.name).join(" → ")}
-                  </div>
-                ) : null}
-              </div>
             ) : null}
           </motion.div>
         )}

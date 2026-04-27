@@ -218,6 +218,8 @@ export type DonorRankingsTheme = {
   titleSize: number;
   rowSize: number;
   rankSize: number;
+  /** 후원 랭킹 패널 전체 불투명도(0~100) */
+  overlayOpacity: number;
   bg: string;
   panelBg: string;
   borderColor: string;

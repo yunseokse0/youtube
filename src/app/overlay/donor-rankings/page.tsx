@@ -154,6 +154,7 @@ function RankingColumn({
   nameColor,
   amountColor,
   outlineColor,
+  headerOpacity,
 }: {
   title: string;
   items: DonorRow[];
@@ -170,6 +171,7 @@ function RankingColumn({
   nameColor: string;
   amountColor: string;
   outlineColor: string;
+  headerOpacity: number;
 }) {
   const outlined = { textShadow: `-1px -1px 0 ${outlineColor},1px -1px 0 ${outlineColor},-1px 1px 0 ${outlineColor},1px 1px 0 ${outlineColor},0 2px 6px rgba(0,0,0,0.38)` } as const;
   const rankLabel = (idx: number): string => {
@@ -187,16 +189,22 @@ function RankingColumn({
       }}
     >
       <div
-        className="px-4 py-3 font-black border-b text-center"
+        className="relative overflow-hidden px-4 py-3 font-black border-b text-center"
         style={{
-          background: headerBg,
           borderColor: "rgba(255, 232, 244, 0.55)",
           color: "#fff7fb",
           fontSize: `${titleSize}px`,
           ...outlined,
         }}
       >
-        {title}
+        <div
+          className="absolute inset-0"
+          style={{
+            background: headerBg,
+            opacity: Math.max(0, Math.min(100, headerOpacity)) / 100,
+          }}
+        />
+        <span className="relative z-10">{title}</span>
       </div>
       <div className="space-y-1.5 p-2.5">
         <AnimatePresence initial={false}>
@@ -249,6 +257,7 @@ export default function DonorRankingsOverlayPage() {
   const titleSize = readNumber(sp, "titleSize", savedTheme.titleSize, 14, 80);
   const rowSize = readNumber(sp, "rowSize", savedTheme.rowSize, 12, 64);
   const rankSize = readNumber(sp, "rankSize", savedTheme.rankSize, 12, 72);
+  const overlayOpacity = readNumber(sp, "overlayOpacity", savedTheme.overlayOpacity, 0, 100);
   const zoomPct = Math.floor(readNumber(sp, "zoomPct", 100, 30, 300));
   const zoomScale = zoomPct / 100;
   const bg = readColor(sp, "bg", savedTheme.bg) || "transparent";
@@ -348,6 +357,7 @@ export default function DonorRankingsOverlayPage() {
             nameColor={nameColor}
             amountColor={amountColor}
             outlineColor={outlineColor}
+            headerOpacity={overlayOpacity}
           />
           <RankingColumn
             title={`투네 후원 순위 TOP ${topN}`}
@@ -365,6 +375,7 @@ export default function DonorRankingsOverlayPage() {
             nameColor={nameColor}
             amountColor={amountColor}
             outlineColor={outlineColor}
+            headerOpacity={overlayOpacity}
           />
         </div>
       </div>

@@ -13,14 +13,14 @@ export const BROADCAST_SIG_PRESET_NAMES = [
 ] as const;
 
 export const DEFAULT_SIG_INVENTORY: SigItem[] = [
-  { id: "sig_aegyo", name: "애교", price: 77000, imageUrl: "/images/sigs/애교.png", memberId: "", maxCount: 5, soldCount: 0, isRolling: true, isActive: true },
-  { id: "sig_dance", name: "댄스", price: 100000, imageUrl: "/images/sigs/댄스.png", memberId: "", maxCount: 3, soldCount: 0, isRolling: true, isActive: true },
-  { id: "sig_meal", name: "식사권", price: 333000, imageUrl: "/images/sigs/식사권.png", memberId: "", maxCount: 2, soldCount: 0, isRolling: true, isActive: true },
-  { id: "sig_voice", name: "보이스", price: 50000, imageUrl: "/images/sigs/보이스.png", memberId: "", maxCount: 6, soldCount: 0, isRolling: false, isActive: true },
-  { id: "sig_song", name: "노래", price: 120000, imageUrl: "/images/sigs/노래.png", memberId: "", maxCount: 4, soldCount: 0, isRolling: false, isActive: false },
-  { id: "sig_talk", name: "토크", price: 55000, imageUrl: "/images/sigs/토크.png", memberId: "", maxCount: 5, soldCount: 0, isRolling: false, isActive: false },
-  { id: "sig_heart", name: "하트", price: 30000, imageUrl: "/images/sigs/하트.png", memberId: "", maxCount: 10, soldCount: 0, isRolling: false, isActive: false },
-  { id: "sig_game", name: "게임", price: 88000, imageUrl: "/images/sigs/게임.png", memberId: "", maxCount: 3, soldCount: 0, isRolling: false, isActive: false },
+  { id: "sig_aegyo", name: "애교", price: 77000, imageUrl: "/images/sigs/애교.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "sig_dance", name: "댄스", price: 100000, imageUrl: "/images/sigs/댄스.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "sig_meal", name: "식사권", price: 333000, imageUrl: "/images/sigs/식사권.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "sig_voice", name: "보이스", price: 50000, imageUrl: "/images/sigs/보이스.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: true },
+  { id: "sig_song", name: "노래", price: 120000, imageUrl: "/images/sigs/노래.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: false },
+  { id: "sig_talk", name: "토크", price: 55000, imageUrl: "/images/sigs/토크.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: false },
+  { id: "sig_heart", name: "하트", price: 30000, imageUrl: "/images/sigs/하트.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: false },
+  { id: "sig_game", name: "게임", price: 88000, imageUrl: "/images/sigs/게임.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: false },
 ];
 
 export function normalizeSigInventory(input: unknown): SigItem[] {

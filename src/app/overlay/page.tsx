@@ -798,19 +798,39 @@ const THEMES: Record<ThemeId, {
 
 function GoalBar({ current, goal, label, theme, width }: { current: number; goal: number; label: string; theme: typeof THEMES.default; width: number }) {
   const pct = goal > 0 ? Math.min(100, (current / goal) * 100) : 0;
-  const displayPct = useCountUp(Math.round(pct), 600);
-  const barH = Math.max(18, Math.round(width * 0.05));
+  const displayPct = useCountUp(Math.round(pct * 10) / 10, 600);
+  const barH = Math.max(26, Math.round(width * 0.055));
+  const toMan = (n: number) => `${(Math.max(0, n) / 10000).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}만원`;
   return (
-    <div className={theme.goalWrap} style={{ width, padding: "0.5rem 0" }}>
-      <div className="flex justify-between items-center px-2 mb-2 gap-2 flex-wrap" style={{ fontSize: Math.max(14, width * 0.045) }}>
-        <span className={theme.goalText}>{label}</span>
-        <span className={theme.goalText}>{formatManThousand(current)} / {formatManThousand(goal)} ({displayPct}%)</span>
-      </div>
-      <div className={`${theme.goalBarBg} overflow-hidden`} style={{ height: barH, borderRadius: 8 }}>
+    <div style={{ width, padding: "0.14rem", borderRadius: 8, background: "rgba(18, 38, 12, 0.22)", border: "1px solid rgba(166, 227, 92, 0.45)" }}>
+      <div className="relative overflow-hidden" style={{ height: barH, borderRadius: 7, background: "rgba(145, 188, 105, 0.24)", boxShadow: "inset 0 1px 3px rgba(0,0,0,0.28)" }}>
         <div
-          className={`${theme.goalBarFill} h-full transition-all duration-700 ease-out`}
-          style={{ width: `${pct}%`, borderRadius: 8 }}
+          className="h-full transition-all duration-700 ease-out"
+          style={{
+            width: `${pct}%`,
+            borderRadius: 7,
+            background: "linear-gradient(90deg, rgba(132, 204, 22, 0.98) 0%, rgba(163, 230, 53, 0.98) 45%, rgba(190, 242, 100, 0.98) 100%)",
+            boxShadow: "0 0 8px rgba(163, 230, 53, 0.35), inset 0 1px 0 rgba(255,255,255,0.28)",
+          }}
         />
+        <div className="absolute inset-0 flex items-center justify-between px-2" style={{ fontSize: Math.max(12, width * 0.028), letterSpacing: "-0.01em" }}>
+          <span
+            className="inline-flex items-center rounded-sm px-1.5 py-0.5"
+            style={{
+              color: "#f4ffe9",
+              fontWeight: 900,
+              background: "rgba(178, 224, 128, 0.28)",
+              border: "1px solid rgba(210, 246, 168, 0.52)",
+              textShadow: "0 1px 1px rgba(0,0,0,0.55)",
+              lineHeight: 1,
+            }}
+          >
+            {label}
+          </span>
+          <span style={{ color: "#f9fff4", fontWeight: 700, textShadow: "0 1px 2px rgba(0,0,0,0.78)", lineHeight: 1 }}>
+            {toMan(current)} / {toMan(goal)} ({displayPct}%)
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -2073,18 +2093,20 @@ function OverlayInner() {
           overflow: hidden;
           border: 1px solid rgba(255, 236, 246, 0.72);
           box-shadow: 0 12px 24px rgba(118, 36, 79, 0.18), inset 0 1px 0 rgba(255,255,255,0.22);
-          backdrop-filter: blur(12px);
-          -webkit-backdrop-filter: blur(12px);
+          backdrop-filter: none;
+          -webkit-backdrop-filter: none;
         }
         .overlay-root .overlay-elegant-table td {
-          color: #fffdfd !important;
+          color: #ffffff !important;
           transition: filter 180ms ease, transform 180ms ease, background-size 220ms ease;
           background: transparent !important;
-          text-shadow: 0 1px 0 rgba(82, 26, 53, 0.24);
+          text-shadow: none !important;
+          -webkit-font-smoothing: antialiased;
+          text-rendering: geometricPrecision;
         }
         .overlay-root .overlay-elegant-table thead td {
-          color: #fffdfd !important;
-          text-shadow: 0 1px 0 rgba(82, 26, 53, 0.30);
+          color: #ffffff !important;
+          text-shadow: 0 1px 0 rgba(20, 8, 14, 0.35);
           box-shadow: inset 0 -1px 0 rgba(255, 228, 244, 0.46), inset 0 1px 0 rgba(255,255,255,0.20);
         }
         .overlay-root .overlay-elegant-table td.overlay-col-total { color: #fff9f0 !important; box-shadow: inset 0 0 0 1px rgba(255, 240, 228, 0.24); }
@@ -2282,7 +2304,7 @@ function OverlayInner() {
         )}
         {showGoal && (ready || isPreviewGuide || externalHost) && goal > 0 && (
           <div className={`absolute ${posClass(goalAnchor)}`}>
-            <GoalBar current={goalCurrent !== null ? goalCurrent : rounded} goal={goal} label={goalLabel} theme={goalTheme} width={goalWidth} />
+            <GoalBar current={sumCombined} goal={goal} label={goalLabel} theme={goalTheme} width={goalWidth} />
           </div>
         )}
         {showPersonalGoal && (ready || isPreviewGuide || externalHost) && (

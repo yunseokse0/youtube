@@ -226,8 +226,8 @@ export default function AdminPage() {
   const syncOneShotSigItem = useCallback((prev: AppState): AppState => {
     const inv = prev.sigInventory || [];
     const totalAmount = inv
-      .filter((x) => x.id !== ONE_SHOT_SIG_ID)
-      .reduce((sum, x) => sum + Math.max(0, Number(x.price || 0)) * Math.max(0, Number(x.soldCount || 0)), 0);
+      .filter((x) => x.id !== ONE_SHOT_SIG_ID && Boolean(x.isActive))
+      .reduce((sum, x) => sum + Math.max(0, Number(x.price || 0)), 0);
     const oneShot = inv.find((x) => x.id === ONE_SHOT_SIG_ID);
     if (!oneShot) {
       return {
@@ -782,12 +782,14 @@ export default function AdminPage() {
 
   useEffect(() => {
     const hasOneShot = (state.sigInventory || []).some((x) => x.id === ONE_SHOT_SIG_ID);
+    const hasMultiCountItem = (state.sigInventory || []).some((x) => x.id !== ONE_SHOT_SIG_ID && Number(x.maxCount || 1) !== 1);
     const totalAmount = (state.sigInventory || [])
-      .filter((x) => x.id !== ONE_SHOT_SIG_ID)
-      .reduce((sum, x) => sum + Math.max(0, Number(x.price || 0)) * Math.max(0, Number(x.soldCount || 0)), 0);
+      .filter((x) => x.id !== ONE_SHOT_SIG_ID && Boolean(x.isActive))
+      .reduce((sum, x) => sum + Math.max(0, Number(x.price || 0)), 0);
     const oneShot = (state.sigInventory || []).find((x) => x.id === ONE_SHOT_SIG_ID);
     const needsSync =
       !hasOneShot ||
+      hasMultiCountItem ||
       !oneShot ||
       oneShot.name !== ONE_SHOT_SIG_NAME ||
       oneShot.price !== totalAmount ||
@@ -797,7 +799,12 @@ export default function AdminPage() {
       oneShot.isActive !== true;
     if (!needsSync) return;
     setState((prev: AppState) => {
-      const next = syncOneShotSigItem(prev);
+      const clampedInventory = (prev.sigInventory || []).map((x) => {
+        if (x.id === ONE_SHOT_SIG_ID) return x;
+        return { ...x, maxCount: 1, soldCount: Math.max(0, Math.min(1, Number(x.soldCount || 0))) };
+      });
+      const draft = { ...prev, sigInventory: clampedInventory };
+      const next = syncOneShotSigItem(draft);
       if (next === prev) return prev;
       persistState(next);
       return next;
@@ -1410,13 +1417,13 @@ export default function AdminPage() {
 
   const adjustSigSoldCount = (id: string, delta: number) => {
     if (id === ONE_SHOT_SIG_ID) {
-      if (delta <= 0) return;
       setState((prev: AppState) => {
+        const markSoldOut = delta > 0;
         const draft: AppState = {
           ...prev,
           sigInventory: (prev.sigInventory || []).map((x) => {
             if (x.id === ONE_SHOT_SIG_ID) return x;
-            return { ...x, soldCount: Math.max(0, x.maxCount) };
+            return { ...x, soldCount: markSoldOut ? Math.max(0, x.maxCount) : 0 };
           }),
         };
         const next = syncOneShotSigItem(draft);
@@ -1481,7 +1488,6 @@ export default function AdminPage() {
     const name = newSigName.trim();
     if (!name) return;
     const price = Math.max(0, Math.floor(Number(newSigPrice || 0) || 0));
-    const maxCount = Math.max(1, Math.floor(Number(newSigMaxCount || 1) || 1));
     const normalizedName = name.replace(/\s+/g, "").toLowerCase();
     const hasDuplicate = (state.sigInventory || []).some((x) => (x.name || "").replace(/\s+/g, "").toLowerCase() === normalizedName);
     if (hasDuplicate) {
@@ -1495,7 +1501,7 @@ export default function AdminPage() {
         price,
         imageUrl: newSigImageUrl.trim(),
         memberId: newSigMemberId || prev.members[0]?.id || "",
-        maxCount,
+        maxCount: 1,
         soldCount: 0,
         isRolling: true,
         isActive: true,
@@ -1517,8 +1523,8 @@ export default function AdminPage() {
 
   const downloadSigExcelTemplate = () => {
     const rows = [
-      { name: "애교", price: 77000, maxCount: 5, memberName: "", imageUrl: "/images/sigs/애교.png", isRolling: "Y" },
-      { name: "댄스", price: 100000, maxCount: 3, memberName: "", imageUrl: "/images/sigs/댄스.png", isRolling: "Y" },
+      { name: "애교", price: 77000, maxCount: 1, memberName: "", imageUrl: "/images/sigs/애교.png", isRolling: "Y" },
+      { name: "댄스", price: 100000, maxCount: 1, memberName: "", imageUrl: "/images/sigs/댄스.png", isRolling: "Y" },
     ];
     const sheet = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -1571,7 +1577,6 @@ export default function AdminPage() {
           continue;
         }
         const price = Math.max(0, Math.floor(Number(row.price ?? row["가격"] ?? 0) || 0));
-        const maxCount = Math.max(1, Math.floor(Number(row.maxCount ?? row["최대수량"] ?? 1) || 1));
         const memberName = String(row.memberName ?? row["멤버"] ?? "").trim();
         const isRollingRaw = String(row.isRolling ?? row["노출"] ?? "Y").trim().toLowerCase();
         const imageUrl = String(row.imageUrl ?? row["이미지"] ?? "").trim();
@@ -1588,7 +1593,7 @@ export default function AdminPage() {
           price,
           imageUrl,
           memberId: memberMap.get(memberName) || "",
-          maxCount,
+          maxCount: 1,
           soldCount: 0,
           isRolling: rolling,
           isActive,
@@ -3148,6 +3153,18 @@ export default function AdminPage() {
                         />
                         <div className="text-xs text-neutral-300">{state.donorRankingsTheme.rankSize}px</div>
                       </label>
+                      <label className="text-[11px] text-neutral-400">
+                        오버레이 투명도
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={state.donorRankingsTheme.overlayOpacity}
+                          onChange={(e) => updateDonorRankingsTheme({ overlayOpacity: Number(e.target.value) })}
+                          className="w-full"
+                        />
+                        <div className="text-xs text-neutral-300">{state.donorRankingsTheme.overlayOpacity}%</div>
+                      </label>
                     </div>
                     <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
                       {[
@@ -3264,6 +3281,20 @@ export default function AdminPage() {
                       {copiedId === "dash-donor-rankings-test" ? "복사됨!" : "테스트 URL 복사"}
                     </button>
                   </div>
+                  <div className="rounded border border-white/10 bg-black/20 px-3 py-2">
+                    <div className="text-xs text-neutral-300 mb-1">후원 리스트 투명도(실시간)</div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={state.donorRankingsTheme.overlayOpacity}
+                        onChange={(e) => updateDonorRankingsTheme({ overlayOpacity: Number(e.target.value) })}
+                        className="flex-1"
+                      />
+                      <div className="w-14 text-right text-xs text-neutral-200">{state.donorRankingsTheme.overlayOpacity}%</div>
+                    </div>
+                  </div>
                   <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
                     <span>OBS 크기(%)</span>
                     <input
@@ -3274,7 +3305,7 @@ export default function AdminPage() {
                     <span className="text-neutral-500">30~300 (기본 100)</span>
                   </div>
                   <div className="text-[11px] text-neutral-500">
-                    필요 시 URL 파라미터로 임시 오버라이드 가능: <code>top</code>, <code>test</code>, <code>zoomPct</code>, <code>titleSize</code>, <code>rowSize</code>, <code>rankSize</code>, <code>headerAccountBg</code>, <code>headerToonBg</code>, <code>rowEvenBg</code>, <code>rowOddBg</code>, <code>nameColor</code>, <code>amountColor</code>, <code>rankColor</code>, <code>panelBg</code>, <code>border</code>, <code>outline</code>, <code>bg</code>
+                    필요 시 URL 파라미터로 임시 오버라이드 가능: <code>top</code>, <code>test</code>, <code>zoomPct</code>, <code>overlayOpacity</code>, <code>titleSize</code>, <code>rowSize</code>, <code>rankSize</code>, <code>headerAccountBg</code>, <code>headerToonBg</code>, <code>rowEvenBg</code>, <code>rowOddBg</code>, <code>nameColor</code>, <code>amountColor</code>, <code>rankColor</code>, <code>panelBg</code>, <code>border</code>, <code>outline</code>, <code>bg</code>
                   </div>
                 </div>
               </div>
@@ -3475,7 +3506,7 @@ export default function AdminPage() {
               <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <h3 className="text-base font-semibold">시그 룰렛 및 판매 관리</h3>
+                    <h3 className="text-base font-semibold">시그 판매 및 추첨 관리</h3>
                     <p className="text-xs text-neutral-400">
                       룰렛 당첨은 서버(<code className="text-neutral-300">/api/roulette/spin</code>)에서만 결정되어 Redis에 저장됩니다. 판매 ±는 기존과 동일하게 전체 상태로 동기화되며 후원(donors) 병합 로직과 충돌하지 않습니다.
                     </p>
@@ -4657,6 +4688,20 @@ export default function AdminPage() {
                   오버레이 열기
                 </button>
               </div>
+              <div className="mb-3 rounded border border-white/10 bg-black/20 px-3 py-2">
+                <div className="text-xs text-neutral-300 mb-1">후원 리스트 타이틀 배경 투명도(실시간)</div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={state.donorRankingsTheme.overlayOpacity}
+                    onChange={(e) => updateDonorRankingsTheme({ overlayOpacity: Number(e.target.value) })}
+                    className="flex-1"
+                  />
+                  <div className="w-14 text-right text-xs text-neutral-200">{state.donorRankingsTheme.overlayOpacity}%</div>
+                </div>
+              </div>
               <div className="mb-3 rounded-lg border border-white/10 bg-black/30 overflow-hidden">
                 <div className="flex items-center justify-between border-b border-white/5 px-2 py-1.5">
                   <span className="text-xs font-medium text-neutral-300">후원 리스트 오버레이 미리보기</span>
@@ -4686,6 +4731,8 @@ export default function AdminPage() {
                   const url = buildPrismOverlayUrl(p, !!p.vertical);
                   const demoUrl = buildPrismDemoOverlayUrl(p, !!p.vertical);
                   const previewUrl = buildStablePreviewUrl(p);
+                  const scaleNum = Math.max(0.5, Math.min(4, Number.parseFloat(p.scale || "1") || 1));
+                  const scalePct = Math.round(scaleNum * 100);
                   const isOpen = editingId === p.id;
                   return (
                     <div key={p.id} className="rounded border border-white/10 bg-neutral-900/40">
@@ -4876,22 +4923,30 @@ export default function AdminPage() {
                                   </div>
                                 </>
                               )}
-                              <label className="text-xs text-neutral-400">배율</label>
+                              <label className="text-xs text-neutral-400">표 크기(%)</label>
                               <div className="flex items-center gap-2">
                                 <input
                                   type="range"
-                                  min="0.5"
-                                  max="4"
-                                  step="0.05"
-                                  value={p.scale}
-                                  onChange={(e) => updatePreset(p.id, { scale: e.target.value })}
+                                  min="50"
+                                  max="400"
+                                  step="1"
+                                  value={String(scalePct)}
+                                  onChange={(e) => {
+                                    const n = Math.max(50, Math.min(400, parseInt(e.target.value || "100", 10) || 100));
+                                    updatePreset(p.id, { scale: String(n / 100) });
+                                  }}
                                   className="flex-1 accent-emerald-500"
                                 />
                                 <input
-                                  className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
-                                  value={p.scale}
-                                  onChange={(e) => updatePreset(p.id, { scale: e.target.value.replace(/[^\d.]/g, "") })}
+                                  className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                                  value={String(scalePct)}
+                                  onChange={(e) => {
+                                    const raw = e.target.value.replace(/[^\d]/g, "");
+                                    const n = Math.max(50, Math.min(400, parseInt(raw || "100", 10) || 100));
+                                    updatePreset(p.id, { scale: String(n / 100) });
+                                  }}
                                 />
+                                <span className="text-xs text-neutral-500">%</span>
                               </div>
                               <label className="text-xs text-neutral-400">멤버 글자(px)</label>
                               <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.memberSize} onChange={(e) => updatePreset(p.id, { memberSize: e.target.value })} />

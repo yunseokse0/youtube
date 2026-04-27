@@ -1,10 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
 import { motion, useMotionValue } from "framer-motion";
 import type { SigItem } from "@/types";
-import { resolveSigImageUrl } from "@/lib/constants";
 
 type RouletteProps = {
   items: SigItem[];
@@ -35,6 +33,21 @@ export default function Roulette({
   const wheelRotate = useMotionValue(0);
   const [targetAngle, setTargetAngle] = useState(0);
   const [currentAngle, setCurrentAngle] = useState(0);
+  const particles = useMemo(
+    () =>
+      Array.from({ length: 26 }).map((_, i) => {
+        const seed = i + 1;
+        return {
+          id: `pt-${i}`,
+          left: 8 + ((seed * 37) % 84),
+          size: 3 + (seed % 5),
+          delay: (seed % 9) * 0.08,
+          duration: 0.7 + (seed % 5) * 0.22,
+          hue: 36 + (seed % 4) * 16,
+        };
+      }),
+    []
+  );
 
   const segment = 360 / Math.max(1, items.length);
   const gradient = useMemo(() => {
@@ -67,9 +80,42 @@ export default function Roulette({
   }, [isRolling, items, resultId, segment, startedAt]);
 
   return (
-    <div className="relative h-[420px] w-full max-w-[900px] overflow-hidden rounded-2xl border border-pink-200 bg-white/40 backdrop-blur-md">
-      <div className="pointer-events-none absolute left-1/2 top-2 z-20 -translate-x-1/2 text-4xl leading-none text-rose-400 drop-shadow-[0_0_10px_rgba(251,113,133,0.95)] animate-pulse">
-        ▼
+    <div className="relative h-[420px] w-full max-w-[900px] overflow-hidden rounded-2xl bg-transparent">
+      {isRolling ? (
+        <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
+          {particles.map((p) => (
+            <motion.span
+              key={p.id}
+              className="absolute rounded-full"
+              style={{
+                left: `${p.left}%`,
+                bottom: "-8%",
+                width: p.size,
+                height: p.size,
+                background: `hsla(${p.hue}, 95%, 72%, 0.95)`,
+                boxShadow: `0 0 ${p.size * 2}px hsla(${p.hue}, 95%, 70%, 0.85)`,
+              }}
+              initial={{ opacity: 0, y: 0, x: 0, scale: 0.7 }}
+              animate={{
+                opacity: [0, 0.95, 0],
+                y: [-2, -250],
+                x: [0, (p.left % 2 === 0 ? 16 : -16), 0],
+                scale: [0.7, 1.15, 0.6],
+              }}
+              transition={{
+                duration: p.duration,
+                delay: p.delay,
+                repeat: Infinity,
+                ease: "easeOut",
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
+      <div className="pointer-events-none absolute left-1/2 top-2 z-20 -translate-x-1/2">
+        <div className="text-4xl leading-none text-rose-400 drop-shadow-[0_0_10px_rgba(251,113,133,0.95)] animate-pulse">
+          ▼
+        </div>
       </div>
       <div className="absolute inset-0 grid place-items-center">
         <motion.div
@@ -93,20 +139,11 @@ export default function Roulette({
                   className="relative flex w-24 -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1"
                   style={{ transform: `rotate(${-angle - currentAngle}deg)` }}
                 >
-                  <div className="relative h-12 w-12 overflow-hidden rounded-full border border-white/80 bg-white/70 shadow">
-                    <Image
-                      src={resolveSigImageUrl(item.name, item.imageUrl)}
-                      alt={item.name}
-                      fill
-                      unoptimized
-                      className="object-cover"
-                    />
-                  </div>
                   <div
-                    className="max-w-[92px] truncate text-center text-[11px] font-black text-rose-700"
+                    className="max-w-[96px] px-1 text-center text-[11px] font-black text-rose-700"
                     style={{
                       textShadow:
-                        "-1px -1px 0 rgba(255,255,255,0.95),1px -1px 0 rgba(255,255,255,0.95),-1px 1px 0 rgba(255,255,255,0.95),1px 1px 0 rgba(255,255,255,0.95)",
+                        "-1px -1px 0 rgba(255,255,255,0.92),1px -1px 0 rgba(255,255,255,0.92),-1px 1px 0 rgba(255,255,255,0.92),1px 1px 0 rgba(255,255,255,0.92)",
                     }}
                   >
                     {item.name}
