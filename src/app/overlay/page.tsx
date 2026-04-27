@@ -1337,8 +1337,8 @@ function OverlayInner() {
     return null;
   }, [timerTypeRaw]);
   const tableOnly = timerOnlyMode ? false : (sp.get("tableOnly") === "true");
-  const showMembers = tableOnly ? true : (timerOnlyMode ? (sp.get("showMembers") === "true") : (sp.get("showMembers") !== "false"));
-  const showTotal = tableOnly ? true : (timerOnlyMode ? (sp.get("showTotal") === "true") : (sp.get("showTotal") !== "false"));
+  const showMembers = tableOnly ? true : (timerOnlyMode ? false : (sp.get("showMembers") !== "false"));
+  const showTotal = tableOnly ? true : (timerOnlyMode ? false : (sp.get("showTotal") !== "false"));
   const showGoal = tableOnly ? false : (timerOnlyMode ? (sp.get("showGoal") === "true") : (sp.get("showGoal") === "true"));
   const showTicker = false;
   const tickerInMembers = false;
@@ -1419,6 +1419,12 @@ function OverlayInner() {
     if (!raw) return timerStyleFromState?.bgOpacity ?? 40;
     const n = parseInt(raw, 10);
     return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : (timerStyleFromState?.bgOpacity ?? 40);
+  })();
+  const timerScalePercent = (() => {
+    const raw = (sp.get("timerScale") || "").trim();
+    if (!raw) return timerStyleFromState?.scalePercent ?? 100;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? Math.max(50, Math.min(250, n)) : (timerStyleFromState?.scalePercent ?? 100);
   })();
   const matchTimerAllowed = useMemo(() => {
     if (!timerType || !s?.matchTimerEnabled) return true;
@@ -2314,7 +2320,7 @@ function OverlayInner() {
             <Timer
               elapsed={timerText}
               paused={timerPaused}
-              fontSize={memberSize}
+              fontSize={Math.round(memberSize * (timerScalePercent / 100))}
               remainingSeconds={serverTimer.remainingSeconds}
               fontColor={timerFontColor}
               bgColor={timerBgColor}

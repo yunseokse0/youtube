@@ -47,7 +47,6 @@ const PREVIEW_FILLER_POOL: SigItem[] = [
 
 export default function AdminSigSalesPage() {
   const [userId] = useState("finalent");
-  const COMMON_MEMBER_FILTER = "__common__";
   const [memberFilterId, setMemberFilterId] = useState("");
   const [state, setState] = useState<AppState | null>(null);
   const [loadingSpin, setLoadingSpin] = useState(false);
@@ -161,7 +160,7 @@ export default function AdminSigSalesPage() {
         x.isActive &&
         x.id !== ONE_SHOT_SIG_ID &&
         !excluded.has(x.id) &&
-        (!memberFilterId || (memberFilterId === COMMON_MEMBER_FILTER ? !(x.memberId || "").trim() : (x.memberId || "") === memberFilterId))
+        (!memberFilterId || (x.memberId || "") === memberFilterId)
     );
   }, [state, memberFilterId]);
   const wheelItems = useMemo(() => {
@@ -413,8 +412,7 @@ export default function AdminSigSalesPage() {
               onChange={(e) => setMemberFilterId(e.target.value)}
               className="rounded border border-white/15 bg-neutral-900 px-2 py-2 text-xs text-neutral-200"
             >
-              <option value="">전체 멤버</option>
-              <option value={COMMON_MEMBER_FILTER}>공통</option>
+              <option value="">전체(공통 포함)</option>
               {(state?.members || []).map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name}

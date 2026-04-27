@@ -186,6 +186,8 @@ export type TimerDisplayStyle = {
   bgColor: string;
   borderColor: string;
   bgOpacity: number;
+  /** 타이머 표시 크기(%) */
+  scalePercent: number;
 };
 
 /** 시그 매치 / 식사 매치 / 시그 판매 / 일반 타이머를 오버레이에서 쓸지 여부 */

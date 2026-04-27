@@ -69,7 +69,7 @@ type OverlayPreset = {
   showGoal: boolean; goal: string; goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string;
   showPersonalGoal?: boolean; personalGoalTheme?: string; personalGoalAnchor?: string; personalGoalLimit?: string; personalGoalFree?: boolean; personalGoalX?: string; personalGoalY?: string;
   tickerInMembers?: boolean; tickerInGoal?: boolean; tickerInPersonalGoal?: boolean;
-  showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string;
+  showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
   confettiMilestone?: string; tableBgOpacity?: string; vertical?: boolean; accountColor?: string; toonColor?: string; host?: string;
@@ -141,6 +141,8 @@ export default function AdminPage() {
   const [newSigMaxCount, setNewSigMaxCount] = useState("1");
   const [newSigMemberId, setNewSigMemberId] = useState<string>("");
   const [newSigImageUrl, setNewSigImageUrl] = useState("");
+  const [newSigPreviewUrl, setNewSigPreviewUrl] = useState("");
+  const [sigPreviewMap, setSigPreviewMap] = useState<Record<string, string>>({});
   const [sigExcelResult, setSigExcelResult] = useState("");
   const [sigPresetMemberId, setSigPresetMemberId] = useState("");
   const [rouletteSpinCount, setRouletteSpinCount] = useState("1");
@@ -180,7 +182,7 @@ export default function AdminPage() {
     showMembers: true, showTotal: true, totalMode: "total", showGoal: false, goal: "0", goalLabel: "목표 금액", showPersonalGoal: false, personalGoalTheme: "goalClassic", personalGoalAnchor: "tl", personalGoalLimit: "3", personalGoalFree: false, personalGoalX: "78", personalGoalY: "82",
     tickerInMembers: false, tickerInGoal: false, tickerInPersonalGoal: false,
     goalWidth: "400", goalAnchor: "bc", goalCurrent: "", showTicker: false, tickerAnchor: "bc", tickerWidth: "600", tickerFree: false, tickerX: "50", tickerY: "86", showTimer: false,
-    timerStart: null, timerAnchor: "tr", timerShowHours: false, timerFontColor: "", timerBgColor: "", timerBorderColor: "", timerBgOpacity: "40", showMission: false, missionAnchor: "br",
+    timerStart: null, timerAnchor: "tr", timerShowHours: false, timerFontColor: "", timerBgColor: "", timerBorderColor: "", timerBgOpacity: "40", timerScale: "100", showMission: false, missionAnchor: "br",
     missionWidth: "800", missionDuration: "25",
     membersTheme: "auto", totalTheme: "auto", goalTheme: "auto", tickerBaseTheme: "auto", timerTheme: "auto", missionTheme: "auto",
     showBottomDonors: false, donorsSize: "", donorsGap: "16", donorsSpeed: "60", donorsLimit: "8", donorsFormat: "short", donorsUnit: "", donorsColor: "", donorsBgColor: "", donorsBgOpacity: "0", tickerTheme: "auto", tickerGlow: "45", tickerShadow: "35", currencyLocale: "ko-KR",
@@ -1515,6 +1517,7 @@ export default function AdminPage() {
     setNewSigPrice("77000");
     setNewSigMaxCount("1");
     setNewSigImageUrl("");
+    setNewSigPreviewUrl("");
     setSigExcelResult("");
   };
 
@@ -1638,18 +1641,24 @@ export default function AdminPage() {
   };
 
   const uploadSigImage = (id: string, file: File | null) => {
+    if (!file) return;
+    setSigPreviewMap((prev) => ({ ...prev, [id]: URL.createObjectURL(file) }));
     void (async () => {
       const url = await uploadSigImageFile(file);
       if (!url) return;
       updateSigItem(id, { imageUrl: url });
+      setSigPreviewMap((prev) => ({ ...prev, [id]: "" }));
     })();
   };
 
   const uploadNewSigImage = (file: File | null) => {
+    if (!file) return;
+    setNewSigPreviewUrl(URL.createObjectURL(file));
     void (async () => {
       const url = await uploadSigImageFile(file);
       if (!url) return;
       setNewSigImageUrl(url);
+      setNewSigPreviewUrl("");
     })();
   };
 
@@ -1811,10 +1820,10 @@ export default function AdminPage() {
   ) => {
     setState((prev: AppState) => {
       const baseStyles = prev.timerDisplayStyles || {
-        sigMatch: { showHours: false, fontColor: "", bgColor: "", borderColor: "", bgOpacity: 40 },
-        mealMatch: { showHours: false, fontColor: "", bgColor: "", borderColor: "", bgOpacity: 40 },
-        sigSales: { showHours: false, fontColor: "", bgColor: "", borderColor: "", bgOpacity: 40 },
-        general: { showHours: false, fontColor: "", bgColor: "", borderColor: "", bgOpacity: 40 },
+        sigMatch: { showHours: false, fontColor: "", bgColor: "", borderColor: "", bgOpacity: 40, scalePercent: 100 },
+        mealMatch: { showHours: false, fontColor: "", bgColor: "", borderColor: "", bgOpacity: 40, scalePercent: 100 },
+        sigSales: { showHours: false, fontColor: "", bgColor: "", borderColor: "", bgOpacity: 40, scalePercent: 100 },
+        general: { showHours: false, fontColor: "", bgColor: "", borderColor: "", bgOpacity: 40, scalePercent: 100 },
       };
       const next: AppState = {
         ...prev,
@@ -3875,7 +3884,7 @@ export default function AdminPage() {
                       value={newSigMemberId}
                       onChange={(e) => setNewSigMemberId(e.target.value)}
                     >
-                      <option value="">멤버 미지정</option>
+                      <option value="">공통(전체 멤버)</option>
                       {state.members.map((m) => (
                         <option key={m.id} value={m.id}>{m.name}</option>
                       ))}
@@ -3891,17 +3900,21 @@ export default function AdminPage() {
                         className="text-xs"
                         type="file"
                         accept=".gif,.png,.jpg,.jpeg,image/gif,image/png,image/jpeg"
-                        onChange={(e) => uploadNewSigImage(e.target.files?.[0] || null)}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          uploadNewSigImage(file);
+                        }}
                       />
                     </div>
                     <button className="px-3 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-sm" onClick={addSigItem}>시그 추가</button>
                   </div>
-                  {newSigImageUrl ? (
+                  {(newSigPreviewUrl || newSigImageUrl) ? (
                     <div className="rounded border border-white/10 bg-black/20 p-2">
                       <div className="text-[11px] text-neutral-400 mb-2">신규 시그 이미지 미리보기</div>
                       <div className="relative h-20 w-20 overflow-hidden rounded border border-white/10 bg-black/30">
                         <img
-                          src={resolveSigPreviewSrc(newSigImageUrl)}
+                          src={newSigPreviewUrl || resolveSigPreviewSrc(newSigImageUrl)}
                           alt="신규 시그 미리보기"
                           className="h-full w-full object-cover"
                           onError={(e) => {
@@ -3980,7 +3993,7 @@ export default function AdminPage() {
                           disabled={isOneShot}
                           onChange={(e) => updateSigItem(item.id, { memberId: e.target.value })}
                         >
-                          <option value="">멤버 미지정</option>
+                          <option value="">공통(전체 멤버)</option>
                           {state.members.map((m) => (
                             <option key={m.id} value={m.id}>{m.name}</option>
                           ))}
@@ -3996,15 +4009,19 @@ export default function AdminPage() {
                             className="text-xs"
                             type="file"
                             accept=".gif,.png,.jpg,.jpeg,image/gif,image/png,image/jpeg"
-                            onChange={(e) => uploadSigImage(item.id, e.target.files?.[0] || null)}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              uploadSigImage(item.id, file);
+                            }}
                           />
                         </div>
                       </div>
-                      {item.imageUrl ? (
+                      {(sigPreviewMap[item.id] || item.imageUrl) ? (
                         <div className="mt-2 flex items-start gap-2">
                           <div className="relative h-16 w-16 overflow-hidden rounded border border-white/10 bg-black/30">
                             <img
-                              src={resolveSigPreviewSrc(item.imageUrl)}
+                              src={sigPreviewMap[item.id] || resolveSigPreviewSrc(item.imageUrl)}
                               alt={`${item.name} 미리보기`}
                               className="h-full w-full object-cover"
                               onError={(e) => {
@@ -4051,6 +4068,7 @@ export default function AdminPage() {
                     bgColor: "",
                     borderColor: "",
                     bgOpacity: 40,
+                    scalePercent: 100,
                   };
                   const effective = getEffectiveRemainingTime(timer, timerUiNow);
                   const mm = Math.floor(effective / 60);
@@ -4186,6 +4204,31 @@ export default function AdminPage() {
                             className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
                             value={String(timerStyle.bgOpacity ?? 40)}
                             onChange={(e) => updateTimerDisplayStyle(timerDef.flag, { bgOpacity: Math.max(0, Math.min(100, parseInt(e.target.value.replace(/[^\d]/g, "") || "0", 10) || 0)) })}
+                          />
+                          <span className="text-xs text-neutral-500">%</span>
+                        </div>
+                        <label className="text-xs text-neutral-400">타이머 크기</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="range"
+                            min="50"
+                            max="250"
+                            value={String(timerStyle.scalePercent ?? 100)}
+                            onChange={(e) =>
+                              updateTimerDisplayStyle(timerDef.flag, {
+                                scalePercent: Math.max(50, Math.min(250, parseInt(e.target.value || "100", 10) || 100)),
+                              })
+                            }
+                            className="flex-1 accent-fuchsia-500"
+                          />
+                          <input
+                            className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                            value={String(timerStyle.scalePercent ?? 100)}
+                            onChange={(e) =>
+                              updateTimerDisplayStyle(timerDef.flag, {
+                                scalePercent: Math.max(50, Math.min(250, parseInt(e.target.value.replace(/[^\d]/g, "") || "100", 10) || 100)),
+                              })
+                            }
                           />
                           <span className="text-xs text-neutral-500">%</span>
                         </div>
@@ -4912,7 +4955,7 @@ export default function AdminPage() {
                                   </div>
                                 </>
                               )}
-                              <label className="text-xs text-neutral-400">표 크기(%)</label>
+                              <label className="text-xs text-neutral-400">엑셀표 스케일(%)</label>
                               <div className="flex items-center gap-2">
                                 <input
                                   type="range"
@@ -5292,6 +5335,23 @@ export default function AdminPage() {
                                         className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
                                         value={p.timerBgOpacity || "40"}
                                         onChange={(e) => updatePreset(p.id, { timerBgOpacity: e.target.value.replace(/[^\d]/g, "").slice(0, 3) })}
+                                      />
+                                      <span className="text-xs text-neutral-500">%</span>
+                                    </div>
+                                    <label className="text-xs text-neutral-400">타이머 스케일(%)</label>
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="range"
+                                        min="50"
+                                        max="250"
+                                        value={p.timerScale || "100"}
+                                        onChange={(e) => updatePreset(p.id, { timerScale: e.target.value })}
+                                        className="flex-1 accent-fuchsia-500 h-10"
+                                      />
+                                      <input
+                                        className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                                        value={p.timerScale || "100"}
+                                        onChange={(e) => updatePreset(p.id, { timerScale: e.target.value.replace(/[^\d]/g, "").slice(0, 3) })}
                                       />
                                       <span className="text-xs text-neutral-500">%</span>
                                     </div>

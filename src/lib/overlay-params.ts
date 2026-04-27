@@ -69,6 +69,7 @@ export type OverlayPresetLike = {
   timerBgColor?: string;
   timerBorderColor?: string;
   timerBgOpacity?: string;
+  timerScale?: string;
   showMission?: boolean;
   missionAnchor?: string;
   missionWidth?: string;
@@ -195,6 +196,7 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
     if (preset.timerBgColor && preset.timerBgColor.trim()) q.set("timerBgColor", preset.timerBgColor.trim());
     if (preset.timerBorderColor && preset.timerBorderColor.trim()) q.set("timerBorderColor", preset.timerBorderColor.trim());
     if (preset.timerBgOpacity && preset.timerBgOpacity.trim()) q.set("timerBgOpacity", preset.timerBgOpacity.trim());
+    if (preset.timerScale && preset.timerScale.trim()) q.set("timerScale", preset.timerScale.trim());
   }
   if (preset.showMission) {
     q.set("showMission", "true");
