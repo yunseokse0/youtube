@@ -72,7 +72,7 @@ type OverlayPreset = {
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
-  confettiMilestone?: string; tableBgOpacity?: string; vertical?: boolean; accountColor?: string; toonColor?: string; host?: string;
+  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; vertical?: boolean; accountColor?: string; toonColor?: string; host?: string;
 };
 
 /** 미션 목록이 비었을 때 미션 전광판 UI 확인용 placeholder */
@@ -188,6 +188,8 @@ export default function AdminPage() {
     showBottomDonors: false, donorsSize: "", donorsGap: "16", donorsSpeed: "60", donorsLimit: "8", donorsFormat: "short", donorsUnit: "", donorsColor: "", donorsBgColor: "", donorsBgOpacity: "0", tickerTheme: "auto", tickerGlow: "45", tickerShadow: "35", currencyLocale: "ko-KR",
     confettiMilestone: "",
     tableBgOpacity: "",
+    tableBgGifUrl: "",
+    tableBgGifOpacity: "45",
     accountColor: "",
     toonColor: "",
     ...overrides,
@@ -1717,6 +1719,15 @@ export default function AdminPage() {
       const url = await uploadSigImageFile(file);
       if (!url) return;
       updateSigSoldOutStampUrl(url);
+    })();
+  };
+
+  const uploadTableBgGifImage = (presetId: string, file: File | null) => {
+    if (!file) return;
+    void (async () => {
+      const url = await uploadSigImageFile(file);
+      if (!url) return;
+      updatePreset(presetId, { tableBgGifUrl: url });
     })();
   };
 
@@ -4884,6 +4895,45 @@ export default function AdminPage() {
                                   <div className="flex items-center gap-2">
                                     <input type="range" min="0" max="100" value={p.tableBgOpacity || "100"} onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value })} className="flex-1 accent-emerald-500" />
                                     <input className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right" value={p.tableBgOpacity || "100"} onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value.replace(/[^\\d]/g, "") })} />
+                                    <span className="text-xs text-neutral-500">%</span>
+                                  </div>
+                                  <label className="text-xs text-neutral-400">엑셀표 배경 GIF URL</label>
+                                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
+                                    <input
+                                      className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                      placeholder="예: https://media.giphy.com/.../giphy.gif"
+                                      value={p.tableBgGifUrl || ""}
+                                      onChange={(e) => updatePreset(p.id, { tableBgGifUrl: e.target.value })}
+                                    />
+                                    <label className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs text-white cursor-pointer text-center">
+                                      GIF 업로드
+                                      <input
+                                        type="file"
+                                        accept=".gif,image/gif"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                          const file = e.target.files?.[0] || null;
+                                          uploadTableBgGifImage(p.id, file);
+                                          e.currentTarget.value = "";
+                                        }}
+                                      />
+                                    </label>
+                                  </div>
+                                  <label className="text-xs text-neutral-400">GIF 불투명도</label>
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="range"
+                                      min="0"
+                                      max="100"
+                                      value={p.tableBgGifOpacity || "45"}
+                                      onChange={(e) => updatePreset(p.id, { tableBgGifOpacity: e.target.value })}
+                                      className="flex-1 accent-emerald-500"
+                                    />
+                                    <input
+                                      className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                                      value={p.tableBgGifOpacity || "45"}
+                                      onChange={(e) => updatePreset(p.id, { tableBgGifOpacity: e.target.value.replace(/[^\\d]/g, "") })}
+                                    />
                                     <span className="text-xs text-neutral-500">%</span>
                                   </div>
                                   <label className="text-xs text-neutral-400">TOTAL 표시</label>

@@ -1429,6 +1429,14 @@ function OverlayInner() {
     const n = parseInt(raw, 10);
     return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 100;
   })();
+  const tableBgGifUrl = (sp.get("tableBgGifUrl") || "").trim();
+  const tableBgGifOpacity = (() => {
+    const raw = (sp.get("tableBgGifOpacity") || "").trim();
+    if (!raw) return 45;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 45;
+  })();
+  const showTableBgGif = Boolean(tableBgGifUrl);
   useEffect(() => {
     if (typeof window === "undefined") return;
     (window as any).__overlayTickerConfig = {
@@ -2112,7 +2120,22 @@ function OverlayInner() {
                   <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
                 </div>
               )}
-              <div>
+              <div
+                className="relative overflow-hidden"
+                style={{ borderRadius: 0 }}
+              >
+                {showTableBgGif ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={tableBgGifUrl}
+                    alt=""
+                    className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+                    style={{ opacity: tableBgGifOpacity / 100 }}
+                    loading="eager"
+                    decoding="async"
+                  />
+                ) : null}
+                <div className="relative z-[1]">
                 {useTableOpacity ? (
                 <div className="relative overflow-hidden" style={{ borderRadius: 0, backgroundColor: `rgba(${(TABLE_BG_RGB[themeId] || defaultTableBgRgb).join(",")}, ${tableBgOpacity / 100})` }}>
                     <table
@@ -2254,6 +2277,7 @@ function OverlayInner() {
                   </tbody>
                 </table>
                 )}
+                </div>
               </div>
             </div>
           </div>
