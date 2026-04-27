@@ -200,10 +200,7 @@ export default function AdminPage() {
   const [donorRankingsPreviewIframeKey, setDonorRankingsPreviewIframeKey] = useState(0);
   const [donorRankingsZoomPct, setDonorRankingsZoomPct] = useState("100");
   const [timerUiNow, setTimerUiNow] = useState(Date.now());
-  const [timerMinuteInputs, setTimerMinuteInputs] = useState<Record<"sigMatchTimer" | "mealMatchTimer" | "sigSalesTimer" | "generalTimer", string>>({
-    sigMatchTimer: "0",
-    mealMatchTimer: "0",
-    sigSalesTimer: "0",
+  const [timerMinuteInputs, setTimerMinuteInputs] = useState<Record<"generalTimer", string>>({
     generalTimer: "0",
   });
   const [pullDistance, setPullDistance] = useState(0);
@@ -1769,7 +1766,7 @@ export default function AdminPage() {
   };
 
   const updateMatchTimer = (
-    key: "sigMatchTimer" | "mealMatchTimer" | "sigSalesTimer" | "generalTimer",
+    key: "generalTimer",
     updater: (timer: TimerState) => TimerState
   ) => {
     setState((prev: AppState) => {
@@ -1781,7 +1778,7 @@ export default function AdminPage() {
     });
   };
 
-  const adjustTimerSeconds = (key: "sigMatchTimer" | "mealMatchTimer" | "sigSalesTimer" | "generalTimer", deltaSec: number) => {
+  const adjustTimerSeconds = (key: "generalTimer", deltaSec: number) => {
     updateMatchTimer(key, (timer) => {
       const effective = getEffectiveRemainingTime(timer);
       const next = Math.max(0, effective + deltaSec);
@@ -1793,7 +1790,7 @@ export default function AdminPage() {
     });
   };
 
-  const setTimerMinutes = (key: "sigMatchTimer" | "mealMatchTimer" | "sigSalesTimer" | "generalTimer", minutes: number) => {
+  const setTimerMinutes = (key: "generalTimer", minutes: number) => {
     const safeMin = Math.max(0, Math.floor(minutes));
     updateMatchTimer(key, (timer) => ({
       remainingTime: safeMin * 60,
@@ -1804,7 +1801,7 @@ export default function AdminPage() {
 
   const updateMatchTimerEnabled = (patch: Partial<AppState["matchTimerEnabled"]>) => {
     setState((prev: AppState) => {
-      const base = prev.matchTimerEnabled || { sigMatch: true, mealMatch: true, sigSales: true, general: true };
+      const base = prev.matchTimerEnabled || { general: true };
       const next: AppState = {
         ...prev,
         matchTimerEnabled: { ...base, ...patch },
@@ -1814,15 +1811,9 @@ export default function AdminPage() {
     });
   };
 
-  const updateTimerDisplayStyle = (
-    key: "sigMatch" | "mealMatch" | "sigSales" | "general",
-    patch: Partial<AppState["timerDisplayStyles"]["general"]>
-  ) => {
+  const updateTimerDisplayStyle = (key: "general", patch: Partial<AppState["timerDisplayStyles"]["general"]>) => {
     setState((prev: AppState) => {
       const baseStyles = prev.timerDisplayStyles || {
-        sigMatch: { showHours: false, fontColor: "", bgColor: "", borderColor: "", bgOpacity: 40, scalePercent: 100 },
-        mealMatch: { showHours: false, fontColor: "", bgColor: "", borderColor: "", bgOpacity: 40, scalePercent: 100 },
-        sigSales: { showHours: false, fontColor: "", bgColor: "", borderColor: "", bgOpacity: 40, scalePercent: 100 },
         general: { showHours: false, fontColor: "", bgColor: "", borderColor: "", bgOpacity: 40, scalePercent: 100 },
       };
       const next: AppState = {
@@ -3116,16 +3107,10 @@ export default function AdminPage() {
                   <div className="rounded border border-white/10 bg-neutral-900/40 p-2 space-y-2">
                     <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
                       <label className="text-[11px] text-neutral-400">
-                        표시 개수 (Top)
-                        <input
-                          type="range"
-                          min={1}
-                          max={20}
-                          value={state.donorRankingsTheme.top}
-                          onChange={(e) => updateDonorRankingsTheme({ top: Number(e.target.value) })}
-                          className="w-full"
-                        />
-                        <div className="text-xs text-neutral-300">{state.donorRankingsTheme.top}</div>
+                        표시 개수
+                        <div className="mt-2 rounded border border-white/10 bg-black/20 px-2 py-2 text-xs text-neutral-300">
+                          전체 표시 (고정)
+                        </div>
                       </label>
                       <label className="text-[11px] text-neutral-400">
                         제목 폰트
@@ -4052,15 +4037,10 @@ export default function AdminPage() {
                 <div>
                   <h3 className="text-base font-semibold">타이머 제어</h3>
                   <p className="text-xs text-neutral-400 mt-1">
-                    매치용 타이머 외에 일반 타이머를 따로 둘 수 있습니다. 오버레이에서 숨기려면 &quot;오버레이 사용&quot;을 끄세요. (제어 버튼은 그대로 사용 가능)
+                    일반 타이머 하나만 사용합니다. 오버레이에서 숨기려면 &quot;오버레이 사용&quot;을 끄세요. (제어 버튼은 그대로 사용 가능)
                   </p>
                 </div>
-                {([
-                  { key: "sigMatchTimer", flag: "sigMatch" as const, label: "시그 매치 타이머" },
-                  { key: "mealMatchTimer", flag: "mealMatch" as const, label: "식사 매치 타이머" },
-                  { key: "sigSalesTimer", flag: "sigSales" as const, label: "시그 판매 타이머" },
-                  { key: "generalTimer", flag: "general" as const, label: "일반 타이머" },
-                ] as const).map((timerDef) => {
+                {([{ key: "generalTimer", flag: "general" as const, label: "일반 타이머" }] as const).map((timerDef) => {
                   const timer = state[timerDef.key];
                   const timerStyle = state.timerDisplayStyles?.[timerDef.flag] || {
                     showHours: false,

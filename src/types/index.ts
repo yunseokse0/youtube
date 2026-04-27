@@ -190,11 +190,8 @@ export type TimerDisplayStyle = {
   scalePercent: number;
 };
 
-/** 시그 매치 / 식사 매치 / 시그 판매 / 일반 타이머를 오버레이에서 쓸지 여부 */
+/** 일반 타이머 오버레이 사용 여부 */
 export type MatchTimerEnabled = {
-  sigMatch: boolean;
-  mealMatch: boolean;
-  sigSales: boolean;
   /** 방송용 자유 타이머(매치와 무관) */
   general: boolean;
 };
@@ -316,15 +313,12 @@ export type AppState = {
   mealBattle: MealBattleState;
   mealMatch: MealMatchState;
   mealMatchSettings: MealMatchSettings;
-  sigMatchTimer: TimerState;
-  mealMatchTimer: TimerState;
-  sigSalesTimer: TimerState;
-  /** 매치와 별도의 일반 카운트다운 타이머 */
+  /** 방송용 카운트다운 타이머 */
   generalTimer: TimerState;
   /** 대전별 타이머 오버레이 사용 여부 */
   matchTimerEnabled: MatchTimerEnabled;
-  /** 타이머 유형별 표시 스타일(글자/배경/테두리/형식) */
-  timerDisplayStyles: Record<"sigMatch" | "mealMatch" | "sigSales" | "general", TimerDisplayStyle>;
+  /** 일반 타이머 표시 스타일(글자/배경/테두리/형식) */
+  timerDisplayStyles: Record<"general", TimerDisplayStyle>;
   /** `/overlay/donor-rankings` 배경 GIF·투명도 */
   donorRankingsOverlayConfig: OverlayConfig;
   /** `/overlay/donation-lists` 배경 GIF·투명도(상태 저장 시 Redis와 동기화) */

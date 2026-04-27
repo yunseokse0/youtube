@@ -210,7 +210,7 @@ function useElapsed(startTs: number | null) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
-function useServerTimer(timer: AppState["sigMatchTimer"] | null): { text: string | null; paused: boolean; remainingSeconds: number | null } {
+function useServerTimer(timer: AppState["generalTimer"] | null): { text: string | null; paused: boolean; remainingSeconds: number | null } {
   const [remaining, setRemaining] = useState<number>(timer ? getEffectiveRemainingTime(timer) : 0);
   useEffect(() => {
     if (!timer) {
@@ -1079,32 +1079,24 @@ function DonorTicker({ donors, theme, fontSize, color, bgColor, bgOpacity, full,
 
 function Timer({
   elapsed,
-  paused,
   fontSize,
-  remainingSeconds,
   fontColor,
   bgColor,
   borderColor,
   bgOpacity,
 }: {
   elapsed: string | null;
-  paused?: boolean;
   fontSize: number;
-  /** 카운트다운(서버 타이머)일 때만 전달; 10초 미만 부드러운 로즈 강조 */
-  remainingSeconds?: number | null;
   fontColor?: string;
   bgColor?: string;
   borderColor?: string;
   bgOpacity?: number;
 }) {
   if (!elapsed) return null;
-  const lowTime = remainingSeconds != null && remainingSeconds > 0 && remainingSeconds < 10;
   const hasCustomFontColor = Boolean(fontColor && fontColor.trim());
   return (
     <div
-      className={`inline-flex min-w-[4.5ch] items-center justify-center rounded-full px-4 py-1.5 backdrop-blur-md ${
-        paused ? "animate-pulse opacity-90" : ""
-      }`}
+      className="inline-flex min-w-[4.5ch] items-center justify-center rounded-full px-4 py-1.5 backdrop-blur-md"
       style={{
         borderColor: borderColor || "rgba(255,255,255,0.2)",
         borderWidth: 1,
@@ -1114,16 +1106,11 @@ function Timer({
       suppressHydrationWarning
     >
       <span
-        className={`font-mono font-bold tabular-nums ${
-          hasCustomFontColor ? "" : "pastel-text-outline"
-        } ${
-          hasCustomFontColor ? "" : (paused ? "text-pastel-orange" : lowTime ? "text-pastel-alert animate-pastel-timer-low" : "text-pastel-ink")
-        }`}
+        className={`font-mono font-bold tabular-nums ${hasCustomFontColor ? "" : "text-pastel-ink"}`}
         style={{
           fontSize,
           lineHeight: 1.1,
           color: hasCustomFontColor ? fontColor : undefined,
-          textShadow: hasCustomFontColor ? "-1px -1px 0 rgba(0,0,0,0.55), 1px -1px 0 rgba(0,0,0,0.55), -1px 1px 0 rgba(0,0,0,0.55), 1px 1px 0 rgba(0,0,0,0.55)" : undefined,
         }}
       >
         {elapsed}
@@ -1327,13 +1314,10 @@ function OverlayInner() {
     ""
   ).trim();
   const timerOnlyMode = Boolean(timerTypeRaw);
-  const timerType = useMemo<"sigMatch" | "mealMatch" | "sigSales" | "general" | null>(() => {
+  const timerType = useMemo<"general" | null>(() => {
     if (!timerTypeRaw) return null;
     const normalized = timerTypeRaw.toLowerCase();
-    if (normalized === "sigmatch" || normalized === "sigmatchtimer") return "sigMatch";
-    if (normalized === "mealmatch" || normalized === "mealmatchtimer") return "mealMatch";
-    if (normalized === "sigsales" || normalized === "sigsalestimer") return "sigSales";
-    if (normalized === "general" || normalized === "generaltimer") return "general";
+    if (normalized === "general" || normalized === "generaltimer" || normalized === "timer") return "general";
     return null;
   }, [timerTypeRaw]);
   const tableOnly = timerOnlyMode ? false : (sp.get("tableOnly") === "true");
@@ -1390,18 +1374,14 @@ function OverlayInner() {
     return Number.isFinite(n) ? Math.max(1, Math.min(1000, n)) : 0;
   })();
 
-  const resolvedTimerType = useMemo<"sigMatch" | "mealMatch" | "sigSales" | "general" | null>(() => {
+  const resolvedTimerType = useMemo<"general" | null>(() => {
     if (timerType) return timerType;
     return timerOnlyMode ? "general" : null;
   }, [timerOnlyMode, timerType]);
   const timerFromState = useMemo(() => {
     if (!s) return null;
     if (!resolvedTimerType) return null;
-    if (resolvedTimerType === "sigMatch") return s.sigMatchTimer;
-    if (resolvedTimerType === "mealMatch") return s.mealMatchTimer;
-    if (resolvedTimerType === "sigSales") return s.sigSalesTimer;
-    if (resolvedTimerType === "general") return s.generalTimer;
-    return null;
+    return s.generalTimer;
   }, [resolvedTimerType, s]);
   const timerStyleFromState = useMemo(() => {
     if (!s || !resolvedTimerType) return null;
@@ -1426,21 +1406,17 @@ function OverlayInner() {
     const n = parseInt(raw, 10);
     return Number.isFinite(n) ? Math.max(50, Math.min(250, n)) : (timerStyleFromState?.scalePercent ?? 100);
   })();
+  const timerBaseFontSize = timerOnlyMode ? 56 : Math.max(28, Math.round(memberSize * 1.45));
+  const timerFontSize = Math.max(14, Math.round(timerBaseFontSize * (timerScalePercent / 100)));
   const matchTimerAllowed = useMemo(() => {
-    if (!timerType || !s?.matchTimerEnabled) return true;
-    const m = s.matchTimerEnabled;
-    if (timerType === "sigMatch") return m.sigMatch;
-    if (timerType === "mealMatch") return m.mealMatch;
-    if (timerType === "sigSales") return m.sigSales;
-    if (timerType === "general") return m.general;
-    return true;
-  }, [s, timerType]);
+    if (!s?.matchTimerEnabled) return true;
+    return s.matchTimerEnabled.general;
+  }, [s]);
   const effectiveTimerAllowed = timerOnlyMode ? true : matchTimerAllowed;
   const serverTimer = useServerTimer(timerFromState);
   const elapsed = useElapsed(timerStart);
   const timerBaseText = serverTimer.text || elapsed || (timerOnlyMode ? "00:00:00" : null);
   const timerText = formatTimerText(timerBaseText, serverTimer.remainingSeconds, timerShowHours);
-  const timerPaused = serverTimer.text ? serverTimer.paused : false;
 
   const nameCh = Math.max(6, Math.min(40, parseInt(sp.get("nameCh") || (compact ? "10" : (isVertical ? "14" : "12")), 10)));
   const nameGrow = (sp.get("nameGrow") || "true").toLowerCase() === "true";
@@ -1836,8 +1812,15 @@ function OverlayInner() {
   );
   const ranked = useMemo(() => {
     const arr = [...unpinned].sort((a, b) => (b.account + b.toon) - (a.account + a.toon));
-    return arr.map((m, i) => ({ m, rank: i + 1 }));
-  }, [unpinned]);
+    let nextRank = 1;
+    return arr.map((m) => {
+      const role = getMemberRole(m).trim();
+      if (role === "대표") return { m, rank: null as number | null };
+      const rank = nextRank;
+      nextRank += 1;
+      return { m, rank };
+    });
+  }, [unpinned, getMemberRole]);
 
   const allOrderKeys = [...ranked.map(({ m }) => m.id), ...pinned.map((m) => `${m.id}-p`)];
   const setRowRef = useFlip(allOrderKeys, 500);
@@ -2188,7 +2171,7 @@ function OverlayInner() {
                   <tbody>
                     {ranked.map(({m, rank}) => (
                       <tr key={m.id} ref={setRowRef(m.id)} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
-                        <td className={`${effectiveRowCls} overlay-col-rank text-left overlay-rank-cell`}>#{rank}</td>
+                        <td className={`${effectiveRowCls} overlay-col-rank text-left overlay-rank-cell`}>{rank == null ? "—" : `#${rank}`}</td>
                         {hasRoleColumn && (
                           <td
                             className={`${effectiveRowCls} overlay-col-role`}
@@ -2258,7 +2241,7 @@ function OverlayInner() {
                   <tbody>
                     {ranked.map(({m, rank}) => (
                       <tr key={m.id} ref={setRowRef(m.id)} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
-                        <td className={`${effectiveRowCls} overlay-col-rank text-left overlay-rank-cell`}>#{rank}</td>
+                        <td className={`${effectiveRowCls} overlay-col-rank text-left overlay-rank-cell`}>{rank == null ? "—" : `#${rank}`}</td>
                         {hasRoleColumn && (
                           <td
                             className={`${effectiveRowCls} overlay-col-role`}
@@ -2319,9 +2302,7 @@ function OverlayInner() {
           <div className={`absolute ${posClass(timerAnchor)} z-[10000]`}>
             <Timer
               elapsed={timerText}
-              paused={timerPaused}
-              fontSize={Math.round(memberSize * (timerScalePercent / 100))}
-              remainingSeconds={serverTimer.remainingSeconds}
+              fontSize={timerFontSize}
               fontColor={timerFontColor}
               bgColor={timerBgColor}
               borderColor={timerBorderColor}

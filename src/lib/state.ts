@@ -476,15 +476,9 @@ export function defaultState(): AppState {
       participantMemberIds: [],
     },
     mealMatchSettings: defaultMealSettings,
-    sigMatchTimer: { ...defaultTimer },
-    mealMatchTimer: { ...defaultTimer },
-    sigSalesTimer: { ...defaultTimer },
     generalTimer: { ...defaultTimer },
-    matchTimerEnabled: { sigMatch: true, mealMatch: true, sigSales: true, general: true },
+    matchTimerEnabled: { general: true },
     timerDisplayStyles: {
-      sigMatch: defaultTimerDisplayStyle(),
-      mealMatch: defaultTimerDisplayStyle(),
-      sigSales: defaultTimerDisplayStyle(),
       general: defaultTimerDisplayStyle(),
     },
     donorRankingsOverlayConfig: normalizeDonorRankingsOverlayConfig(null),
@@ -600,9 +594,6 @@ function normalizeTimerState(input: unknown): TimerState {
 function normalizeMatchTimerEnabled(input: unknown): MatchTimerEnabled {
   const v = input && typeof input === "object" ? (input as Partial<MatchTimerEnabled>) : {};
   return {
-    sigMatch: typeof v.sigMatch === "boolean" ? v.sigMatch : true,
-    mealMatch: typeof v.mealMatch === "boolean" ? v.mealMatch : true,
-    sigSales: typeof v.sigSales === "boolean" ? v.sigSales : true,
     general: typeof v.general === "boolean" ? v.general : true,
   };
 }
@@ -635,9 +626,6 @@ function normalizeTimerDisplayStyle(input: unknown): TimerDisplayStyle {
 function normalizeTimerDisplayStyles(input: unknown): AppState["timerDisplayStyles"] {
   const v = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   return {
-    sigMatch: normalizeTimerDisplayStyle(v.sigMatch),
-    mealMatch: normalizeTimerDisplayStyle(v.mealMatch),
-    sigSales: normalizeTimerDisplayStyle(v.sigSales),
     general: normalizeTimerDisplayStyle(v.general),
   };
 }
@@ -757,9 +745,6 @@ export function loadState(userId?: string | null): AppState {
     };
     data.rouletteState = normalizeRouletteState((data as AppState).rouletteState);
     data.mealMatchSettings = normalizeMealMatchSettings((data as AppState).mealMatchSettings);
-    data.sigMatchTimer = normalizeTimerState((data as AppState).sigMatchTimer);
-    data.mealMatchTimer = normalizeTimerState((data as AppState).mealMatchTimer);
-    data.sigSalesTimer = normalizeTimerState((data as AppState).sigSalesTimer);
     data.generalTimer = normalizeTimerState((data as AppState).generalTimer);
     data.matchTimerEnabled = normalizeMatchTimerEnabled((data as AppState).matchTimerEnabled);
     data.timerDisplayStyles = normalizeTimerDisplayStyles((data as AppState).timerDisplayStyles);
@@ -900,9 +885,6 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
       };
       data.rouletteState = normalizeRouletteState((data as AppState).rouletteState);
       data.mealMatchSettings = normalizeMealMatchSettings((data as AppState).mealMatchSettings);
-      data.sigMatchTimer = normalizeTimerState((data as AppState).sigMatchTimer);
-      data.mealMatchTimer = normalizeTimerState((data as AppState).mealMatchTimer);
-      data.sigSalesTimer = normalizeTimerState((data as AppState).sigSalesTimer);
       data.generalTimer = normalizeTimerState((data as AppState).generalTimer);
       data.matchTimerEnabled = normalizeMatchTimerEnabled((data as AppState).matchTimerEnabled);
       data.timerDisplayStyles = normalizeTimerDisplayStyles((data as AppState).timerDisplayStyles);

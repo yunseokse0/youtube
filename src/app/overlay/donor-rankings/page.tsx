@@ -113,7 +113,7 @@ function normalizeTarget(donor: Record<string, unknown>): "account" | "toon" {
   return rawTarget === "toon" ? "toon" : "account";
 }
 
-function aggregateTopN(rows: DonorRow[], limit: number): DonorRow[] {
+function aggregateAll(rows: DonorRow[]): DonorRow[] {
   const byName = new Map<string, number>();
   for (const row of rows) {
     const key = row.name.trim() || "무명";
@@ -121,8 +121,7 @@ function aggregateTopN(rows: DonorRow[], limit: number): DonorRow[] {
   }
   return Array.from(byName.entries())
     .map(([name, amount]) => ({ name, amount }))
-    .sort((a, b) => b.amount - a.amount)
-    .slice(0, Math.max(1, limit));
+    .sort((a, b) => b.amount - a.amount);
 }
 
 function readNumber(sp: URLSearchParams, key: string, fallback: number, min: number, max: number): number {
@@ -253,7 +252,6 @@ export default function DonorRankingsOverlayPage() {
   const useTest = (sp.get("test") || "false").toLowerCase() === "true";
   const savedTheme = state?.donorRankingsTheme || defaultState().donorRankingsTheme;
 
-  const topN = Math.floor(readNumber(sp, "top", savedTheme.top, 1, 20));
   const titleSize = readNumber(sp, "titleSize", savedTheme.titleSize, 14, 80);
   const rowSize = readNumber(sp, "rowSize", savedTheme.rowSize, 12, 64);
   const rankSize = readNumber(sp, "rankSize", savedTheme.rankSize, 12, 72);
@@ -287,8 +285,8 @@ export default function DonorRankingsOverlayPage() {
   const { accountTop, toonTop } = useMemo(() => {
     if (useTest) {
       return {
-        accountTop: TEST_ACCOUNT_ROWS.slice(0, topN),
-        toonTop: TEST_TOON_ROWS.slice(0, topN),
+        accountTop: [...TEST_ACCOUNT_ROWS],
+        toonTop: [...TEST_TOON_ROWS],
       };
     }
     const donors = (state?.donors || []) as Array<Record<string, unknown>>;
@@ -303,10 +301,10 @@ export default function DonorRankingsOverlayPage() {
       else accountRows.push(row);
     }
     return {
-      accountTop: aggregateTopN(accountRows, topN),
-      toonTop: aggregateTopN(toonRows, topN),
+      accountTop: aggregateAll(accountRows),
+      toonTop: aggregateAll(toonRows),
     };
-  }, [state?.donors, topN, useTest]);
+  }, [state?.donors, useTest]);
 
   if (!ready && !useTest) return null;
 
@@ -343,7 +341,7 @@ export default function DonorRankingsOverlayPage() {
         )}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <RankingColumn
-            title={`계좌 후원 순위 TOP ${topN}`}
+            title="계좌 후원 순위"
             items={accountTop}
             headerBg={headerAccountBg}
             rowEvenBg={rowEvenBg}
@@ -360,7 +358,7 @@ export default function DonorRankingsOverlayPage() {
             headerOpacity={overlayOpacity}
           />
           <RankingColumn
-            title={`투네 후원 순위 TOP ${topN}`}
+            title="투네 후원 순위"
             items={toonTop}
             suffix="캐시"
             headerBg={headerToonBg}

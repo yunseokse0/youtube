@@ -104,9 +104,6 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
   if (!("mealBattle" in patch)) next.mealBattle = base.mealBattle;
   if (!("mealMatch" in patch)) next.mealMatch = base.mealMatch;
   if (!("mealMatchSettings" in patch)) next.mealMatchSettings = base.mealMatchSettings;
-  if (!("sigMatchTimer" in patch)) next.sigMatchTimer = base.sigMatchTimer;
-  if (!("mealMatchTimer" in patch)) next.mealMatchTimer = base.mealMatchTimer;
-  if (!("sigSalesTimer" in patch)) next.sigSalesTimer = base.sigSalesTimer;
   if (!("generalTimer" in patch)) next.generalTimer = base.generalTimer;
   if (!("donorRankingsOverlayConfig" in patch)) next.donorRankingsOverlayConfig = base.donorRankingsOverlayConfig;
   if (!("donationListsOverlayConfig" in patch)) next.donationListsOverlayConfig = base.donationListsOverlayConfig;

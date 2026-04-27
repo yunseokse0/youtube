@@ -94,11 +94,11 @@ export default function MealMatchOverlayPage() {
   const [overtakeText, setOvertakeText] = useState<string | null>(null);
   const lastLeaderRef = useRef<string>("");
 
-  const timerState = state?.mealMatchTimer || null;
+  const timerState = state?.generalTimer || null;
   const remaining = timerState ? getEffectiveRemainingTime(timerState) : 0;
   const paused = Boolean(timerState && !timerState.isActive);
   const timerText = `${String(Math.floor(Math.max(0, remaining) / 60)).padStart(2, "0")}:${String(Math.max(0, remaining) % 60).padStart(2, "0")}`;
-  const showMealMatchTimer = state?.matchTimerEnabled?.mealMatch !== false;
+  const showMealMatchTimer = state?.matchTimerEnabled?.general !== false;
   const timerSize = Math.max(16, Math.min(120, state?.mealBattle?.timerSize || 36));
   const timerLowTime = remaining < 10 && remaining > 0 && !paused;
 
