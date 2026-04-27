@@ -1624,14 +1624,22 @@ export default function AdminPage() {
     }
     const fd = new FormData();
     fd.append("file", file);
-    const res = await fetch("/api/upload/sig-image", {
-      method: "POST",
-      credentials: "include",
-      body: fd,
-    });
+    let res: Response;
+    try {
+      res = await fetch("/api/upload/sig-image", {
+        method: "POST",
+        credentials: "include",
+        body: fd,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "network_error";
+      alert(`이미지 업로드 실패: ${msg}`);
+      return null;
+    }
     const j = (await res.json().catch(() => ({}))) as { ok?: boolean; url?: string; error?: string };
     if (!res.ok || !j.ok || !j.url) {
-      alert(`이미지 업로드 실패: ${j.error || res.status}`);
+      const errorText = typeof j.error === "string" && j.error.trim() ? j.error : String(res.status);
+      alert(`이미지 업로드 실패: ${errorText}`);
       return null;
     }
     return j.url;

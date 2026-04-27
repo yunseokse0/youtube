@@ -10,7 +10,7 @@ import SelectedSigs from "@/components/sig-sales/SelectedSigs";
 import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
 import ConfirmationModal from "@/components/sig-sales/ConfirmationModal";
 import { loadStateFromApi, saveStateAsync, type AppState } from "@/lib/state";
-import { ONE_SHOT_SIG_ID, SOUND_ASSETS_ENABLED, SPIN_SOUND_PATHS, clampOverlayOpacity } from "@/lib/sig-roulette";
+import { ONE_SHOT_SIG_ID, SOUND_ASSETS_ENABLED, SPIN_SOUND_PATHS } from "@/lib/sig-roulette";
 import { useSigSalesState } from "@/hooks/useSigSalesState";
 
 const POLL_MS = 1000;
@@ -42,7 +42,6 @@ export default function SigSalesOverlayPage() {
   const [state, setState] = useState<AppState | null>(null);
   const [manualSoldSet, setManualSoldSet] = useState<Set<string>>(new Set());
   const [oneShotSold, setOneShotSold] = useState(false);
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingLanding, setPendingLanding] = useState<{ selected: SigItem[]; oneShot: { id: string; name: string; price: number } | null; resultId: string | null; persist: boolean } | null>(null);
   const [demoSpin, setDemoSpin] = useState<{ startedAt: number; resultId: string | null } | null>(null);
   const [stagedSelected, setStagedSelected] = useState<SigItem[]>([]);
@@ -52,13 +51,10 @@ export default function SigSalesOverlayPage() {
   const [lastConfirmedFxKey, setLastConfirmedFxKey] = useState(0);
   const [oneShotReveal, setOneShotReveal] = useState(false);
   const nextSpinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [volume, setVolume] = useState(0.7);
-  const [muted, setMuted] = useState(false);
   const [oneShotSound] = useState(() =>
     SOUND_ASSETS_ENABLED ? new Howl({ src: [SPIN_SOUND_PATHS.oneShot], preload: true, volume: 0.7, mute: false }) : null
   );
-  const { machine, spin, landed, markConfirmPending, cancelConfirm, resetToIdle, finish, setOpacity, setError } = useSigSalesState(userId, state);
-  const controlsDisabled = machine.phase === "CONFIRM_PENDING" || machine.isFinishLoading;
+  const { machine, landed, markConfirmPending, cancelConfirm, resetToIdle, finish, setError } = useSigSalesState(userId, state);
 
   const loadRemote = useCallback(async () => {
     if (rouletteDemo) return;
@@ -72,12 +68,6 @@ export default function SigSalesOverlayPage() {
     const id = window.setInterval(() => void loadRemote(), POLL_MS);
     return () => window.clearInterval(id);
   }, [rouletteDemo, loadRemote]);
-
-  useEffect(() => {
-    if (!oneShotSound) return;
-    oneShotSound.volume(volume);
-    oneShotSound.mute(muted);
-  }, [oneShotSound, volume, muted]);
 
   useEffect(() => {
     return () => {
@@ -147,19 +137,6 @@ export default function SigSalesOverlayPage() {
   }, [state?.sigInventory]);
   const oneShotSoldFromBackoffice = soldFromBackofficeSet.has(ONE_SHOT_SIG_ID);
 
-  const resetRoundUi = useCallback(() => {
-    if (nextSpinTimerRef.current) {
-      clearTimeout(nextSpinTimerRef.current);
-      nextSpinTimerRef.current = null;
-    }
-    setStagedSelected([]);
-    setSpinStep(0);
-    setHighlightId(null);
-    setOneShotReveal(false);
-    setPendingLanding(null);
-    setDemoSpin(null);
-  }, []);
-
   useEffect(() => {
     return () => {
       if (nextSpinTimerRef.current) {
@@ -183,61 +160,6 @@ export default function SigSalesOverlayPage() {
     const id = window.setTimeout(() => setOneShotReveal(true), 950);
     return () => window.clearTimeout(id);
   }, [showFinalShowcase, finalDisplayOneShot]);
-
-  const onStartRoulette = useCallback(async () => {
-    if (controlsDisabled) return;
-    if (!rouletteDemo && machine.phase === "LANDED") return;
-    if (!rouletteDemo && activeNormalPool.length < 5) {
-      setError(memberFilterId ? "선택 멤버의 활성 시그가 5개 미만입니다." : "활성 시그가 5개 미만입니다.");
-      return;
-    }
-    // OBS에서는 수동으로 소스를 내리기 전까지 결과를 유지하고,
-    // 새 회차 시작 시점에만 화면 상태를 초기화한다.
-    resetRoundUi();
-    if (rouletteDemo) {
-      // 데모는 Confirm 단계 없이 반복 재생 가능해야 하므로 매 회차 초기화
-      resetToIdle();
-      const shuffled = [...DEMO_POOL].sort(() => Math.random() - 0.5);
-      const selected = shuffled.slice(0, 5);
-      const resultId = selected[selected.length - 1]?.id || null;
-      setPendingLanding({
-        selected,
-        oneShot: { id: ONE_SHOT_SIG_ID, name: "한방 시그", price: selected.reduce((sum, x) => sum + x.price, 0) },
-        resultId,
-        persist: false,
-      });
-      setDemoSpin({ startedAt: Date.now(), resultId: selected[0]?.id || resultId });
-      confetti({ particleCount: 60, spread: 70, origin: { y: 0.2 } });
-      return;
-    }
-    try {
-      const data = await spin({ memberId: memberFilterId || null });
-      const selected = (data.selectedSigs || []).slice(0, 5);
-      const oneShot = buildOneShotFromSelected(selected);
-      setPendingLanding({ selected, oneShot, resultId: data.result?.id || selected[selected.length - 1]?.id || null, persist: true });
-      setDemoSpin({ startedAt: Date.now(), resultId: selected[0]?.id || null });
-      confetti({ particleCount: 75, spread: 66, origin: { y: 0.23 } });
-      setManualSoldSet(new Set());
-      setOneShotSold(false);
-    } catch (e) {
-      const code = e instanceof Error ? e.message : "";
-      if (code === "not_enough_active_sigs") {
-        setError(memberFilterId ? "선택 멤버의 활성 시그가 5개 미만입니다." : "활성 시그가 5개 미만입니다.");
-      } else {
-        setError(memberFilterId ? "해당 멤버 시그 회전판 시작 실패" : "회전판 시작 실패");
-      }
-    }
-  }, [rouletteDemo, controlsDisabled, machine.phase, spin, setError, resetToIdle, resetRoundUi, memberFilterId]);
-
-  const persistRouletteState = useCallback(
-    async (nextPartial: Partial<AppState["rouletteState"]>) => {
-      if (!state || rouletteDemo) return;
-      const next: AppState = { ...state, rouletteState: { ...state.rouletteState, ...nextPartial }, updatedAt: Date.now() };
-      setState(next);
-      await saveStateAsync(next, userId);
-    },
-    [state, rouletteDemo, userId]
-  );
 
   const onConfirmSale = useCallback(async () => {
     if (rouletteDemo || !state || machine.selectedSigs.length === 0) return;
@@ -263,7 +185,6 @@ export default function SigSalesOverlayPage() {
         finalPhase: "CONFIRMED",
       });
       confetti({ particleCount: 100, spread: 85, origin: { y: 0.2 } });
-      setShowConfirmModal(false);
     } catch {
       cancelConfirm();
       setError("판매 확정 처리 실패");
@@ -273,49 +194,6 @@ export default function SigSalesOverlayPage() {
   return (
     <main className="min-h-screen bg-neutral-950/70 p-4 text-white">
       <div className="mx-auto max-w-[1280px] space-y-4">
-        <header className="p-2">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h1 className="text-2xl font-black text-yellow-200">시그 판매 회전판</h1>
-            <button
-              type="button"
-              onClick={() => void onStartRoulette()}
-              disabled={
-                activeNormalPool.length < 5 ||
-                controlsDisabled ||
-                (!rouletteDemo && (machine.phase === "LANDED" || machine.phase === "CONFIRMED"))
-              }
-              className="rounded bg-fuchsia-700 px-4 py-2 text-sm font-bold hover:bg-fuchsia-600 disabled:opacity-50"
-            >
-              회전판 시작
-            </button>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
-            <label className="flex items-center gap-2">
-              배경 투명도
-              <input
-                type="range"
-                min={40}
-                max={100}
-                value={Math.round(machine.overlayOpacity * 100)}
-              disabled={controlsDisabled}
-                onChange={(e) => {
-                  const v = Number(e.target.value) / 100;
-                  setOpacity(v);
-                  void persistRouletteState({ overlayOpacity: clampOverlayOpacity(v) });
-                }}
-              />
-            </label>
-            <label className="flex items-center gap-2">
-              볼륨
-              <input disabled={controlsDisabled} type="range" min={0} max={100} value={Math.round(volume * 100)} onChange={(e) => setVolume(Number(e.target.value) / 100)} />
-            </label>
-            <label className="flex items-center gap-2">
-              <input disabled={controlsDisabled} type="checkbox" checked={muted} onChange={(e) => setMuted(e.target.checked)} />
-              음소거
-            </label>
-            <span className="px-2 py-1 text-xs text-white/70">현재 상태: {machine.phase}</span>
-          </div>
-        </header>
 
         <section style={{ backgroundColor: "transparent" }} className="relative p-0">
           {lastConfirmedText ? (
@@ -331,8 +209,8 @@ export default function SigSalesOverlayPage() {
             isRolling={Boolean(demoSpin) || machine.isRolling || machine.phase === "SPINNING"}
             resultId={displayResultId}
             startedAt={demoSpin?.startedAt || machine.startedAt}
-            volume={volume}
-            muted={muted}
+            volume={0.7}
+            muted={false}
             onLanded={(landedId) => {
               if (!pendingLanding) return;
               const selectedQueue = pendingLanding.selected.slice(0, 5);
@@ -367,12 +245,6 @@ export default function SigSalesOverlayPage() {
               setDemoSpin(null);
               setPendingLanding(null);
               if (!pendingLanding.persist) return;
-              void persistRouletteState({
-                phase: "LANDED",
-                isRolling: false,
-                selectedSigs: nextSelected,
-                oneShotResult: oneShot,
-              });
             }}
           /> : null}
           {machine.phase === "CONFIRM_PENDING" ? (
@@ -437,7 +309,6 @@ export default function SigSalesOverlayPage() {
         open={false}
         loading={machine.phase === "CONFIRM_PENDING" || machine.isFinishLoading}
         onCancel={() => {
-          setShowConfirmModal(false);
           cancelConfirm();
         }}
         onConfirm={() => void onConfirmSale()}

@@ -1815,7 +1815,7 @@ function OverlayInner() {
     let nextRank = 1;
     return arr.map((m) => {
       const role = getMemberRole(m).trim();
-      if (role === "대표") return { m, rank: null as number | null };
+      if (role.includes("대표")) return { m, rank: null as number | null };
       const rank = nextRank;
       nextRank += 1;
       return { m, rank };

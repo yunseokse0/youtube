@@ -203,6 +203,10 @@ export default function AdminSigSalesPage() {
 
   const onStartRoulette = useCallback(async () => {
     if (loadingSpin) return;
+    if (!memberFilterId) {
+      setToast("회전 전 멤버를 먼저 선택해주세요.");
+      return;
+    }
     if (machine.phase === "CONFIRM_PENDING" || machine.isFinishLoading) {
       // 잠김 상태 복구: 시작 버튼은 무반응이 아닌 자동 복구 후 새 회차로 진입
       cancelConfirm();
@@ -219,29 +223,7 @@ export default function AdminSigSalesPage() {
       resetToIdle();
     }
     if (activeNormalPool.length < 5) {
-      if (memberFilterId) {
-        setToast("선택한 멤버의 활성 시그가 5개 미만입니다. 멤버 시그를 추가/활성화해주세요.");
-        return;
-      }
-      // 운영 데이터가 부족할 때도 데모 스타일로 바로 테스트할 수 있게 fallback
-      const shuffled = [...PREVIEW_FILLER_POOL].sort(() => Math.random() - 0.5);
-      const selected = shuffled.slice(0, 5);
-      const resultId = selected[selected.length - 1]?.id || null;
-      setPendingLanding({
-        selected,
-        oneShot: { id: ONE_SHOT_SIG_ID, name: "한방 시그", price: selected.reduce((sum, x) => sum + x.price, 0) },
-        resultId,
-        persist: false,
-      });
-      setDemoSpin({ startedAt: Date.now(), resultId: selected[0]?.id || resultId });
-      setSpinStep(0);
-      setStagedSelected([]);
-      setHighlightId(null);
-      setManualSoldSet(new Set());
-      setOneShotSold(false);
-      setShowConfirmModal(false);
-      setToast("활성 시그 5개 미만이라 데모 회차로 실행했습니다.");
-      confetti({ particleCount: 55, spread: 60, origin: { y: 0.25 } });
+      setToast("선택한 멤버의 활성 시그가 5개 미만입니다. 멤버 시그를 추가/활성화해주세요.");
       return;
     }
     setLoadingSpin(true);
@@ -285,7 +267,7 @@ export default function AdminSigSalesPage() {
     } finally {
       setLoadingSpin(false);
     }
-  }, [loadingSpin, machine.phase, machine.isFinishLoading, activeNormalPool.length, spin, resetToIdle, cancelConfirm, memberFilterId]);
+  }, [loadingSpin, memberFilterId, machine.phase, machine.isFinishLoading, activeNormalPool.length, spin, resetToIdle, cancelConfirm]);
 
   const onRerollReset = useCallback(() => {
     if (nextSpinTimerRef.current) {
@@ -412,7 +394,7 @@ export default function AdminSigSalesPage() {
               onChange={(e) => setMemberFilterId(e.target.value)}
               className="rounded border border-white/15 bg-neutral-900 px-2 py-2 text-xs text-neutral-200"
             >
-              <option value="">전체(공통 포함)</option>
+              <option value="">멤버 선택</option>
               {(state?.members || []).map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name}
@@ -430,7 +412,7 @@ export default function AdminSigSalesPage() {
             <button
               type="button"
               onClick={() => void onStartRoulette()}
-              disabled={loadingSpin}
+              disabled={loadingSpin || !memberFilterId}
               className="rounded bg-fuchsia-700 px-4 py-2 text-sm font-bold hover:bg-fuchsia-600 disabled:opacity-50"
             >
               {loadingSpin ? "추첨 준비중..." : "회전판 시작"}

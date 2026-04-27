@@ -126,15 +126,20 @@ export default function MealMatchOverlayPage() {
         { memberId: "demo-m3", name: "멤버3", score: 14, goal: 100, color: "#fb7185" },
       ];
     }
+    const memberMap = new Map((state?.members || []).map((m) => [m.id, m]));
     const configured = (state?.mealBattle?.participants || [])
-      .filter((p) => p.memberId)
-      .map((p) => ({
-        memberId: p.memberId,
-        name: p.name || "멤버",
-        score: Math.max(0, Number(p.score || 0)),
-        goal: Math.max(1, Math.floor(Number(p.goal) || 0) || defaultGoal),
-        color: p.color || "#f472b6",
-      }));
+      .filter((p) => p.memberId && memberMap.has(p.memberId))
+      .map((p) => {
+        const syncedMember = memberMap.get(p.memberId);
+        return {
+          memberId: p.memberId,
+          // 멤버 마스터 이름을 우선 사용해 이름 변경 시 즉시 동기화
+          name: syncedMember?.name || p.name || "멤버",
+          score: Math.max(0, Number(p.score || 0)),
+          goal: Math.max(1, Math.floor(Number(p.goal) || 0) || defaultGoal),
+          color: p.color || "#f472b6",
+        };
+      });
     if (configured.length > 0) return configured;
     const fallbackColors = ["#f472b6", "#fb7185", "#f9a8d4", "#fda4af", "#e879f9"];
     return (state?.members || []).map((m, idx) => ({
@@ -145,6 +150,7 @@ export default function MealMatchOverlayPage() {
       color: fallbackColors[idx % fallbackColors.length],
     }));
   }, [demoEnabled, demoMode, state?.mealBattle?.participants, state?.members, defaultGoal]);
+  const shouldRenderMealMatchTimer = showMealMatchTimer && Boolean(timerState && (timerState.isActive || remaining > 0));
   const totalScore = participants.reduce((sum, p) => sum + p.score, 0);
   const totalGoalsSum = useMemo(
     () => Math.max(1, participants.reduce((s, p) => s + p.goal, 0)),
@@ -333,7 +339,7 @@ export default function MealMatchOverlayPage() {
               DEMO · {demoMode === "team" ? "팀 모드" : demoMode === "individual" ? "개인(단일게이지) 모드" : "개인 분할 모드"}
             </div>
           )}
-          {showMealMatchTimer ? (
+          {shouldRenderMealMatchTimer ? (
             <div
               className={`mx-auto mt-2 inline-flex min-w-[5.5ch] items-center justify-center rounded-full border border-white/20 bg-white/40 px-5 py-2 backdrop-blur-md ${
                 paused ? "animate-pulse opacity-90" : ""
