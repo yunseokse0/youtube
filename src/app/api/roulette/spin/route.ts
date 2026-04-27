@@ -7,6 +7,7 @@ import { normalizeSigInventory } from "@/lib/constants";
 import type { SigItem } from "@/types";
 import { getRouletteUserId, loadAppStateForRoulette, saveAppStateForRoulette } from "../edge-state-store";
 import { setRouletteLock } from "../roulette-lock";
+const ONE_SHOT_SIG_ID = "sig_one_shot";
 
 function pickRandom<T>(arr: T[]): T {
   const u = new Uint32Array(1);
@@ -22,18 +23,23 @@ export async function POST(req: Request) {
       return Response.json({ error: "unauthorized" }, { status: 401, headers: { "Content-Type": "application/json" } });
     }
     let spinCount = 1;
+    let mode: "default" | "cinematic5" = "default";
     let legacyPriceFilter: number | null = null;
     let priceFilters: (number | null)[] | null = null;
     let priceRanges: ({ min: number | null; max: number | null } | null)[] | null = null;
     try {
       const j = (await req.json()) as {
         spinCount?: number;
+        mode?: string;
         priceFilter?: number | null;
         priceFilters?: (number | null)[];
         priceRanges?: ({ min?: number | null; max?: number | null } | null)[];
       };
       if (j && typeof j.spinCount === "number" && Number.isFinite(j.spinCount)) {
         spinCount = Math.max(1, Math.min(999, Math.floor(j.spinCount)));
+      }
+      if (j?.mode === "cinematic5") {
+        mode = "cinematic5";
       }
       if (j && typeof j.priceFilter === "number" && Number.isFinite(j.priceFilter) && j.priceFilter > 0) {
         legacyPriceFilter = Math.max(0, Math.floor(j.priceFilter));
@@ -83,6 +89,73 @@ export async function POST(req: Request) {
         : []
     );
     const inv = normalizeSigInventory(s.sigInventory).filter((x) => !excludedSet.has(x.id));
+    if (mode === "cinematic5") {
+      const pool = inv.filter((x) => x.isActive && x.id !== ONE_SHOT_SIG_ID && x.soldCount < x.maxCount);
+      if (pool.length < 5) {
+        return Response.json({ error: "not_enough_active_sigs" }, { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+      const shuffled = [...pool];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const u = new Uint32Array(1);
+        crypto.getRandomValues(u);
+        const j = u[0]! % (i + 1);
+        const t = shuffled[i]!;
+        shuffled[i] = shuffled[j]!;
+        shuffled[j] = t;
+      }
+      const selectedSigs = shuffled.slice(0, 5).map((x) => ({ ...x, maxCount: 1 }));
+      const oneShot = {
+        id: ONE_SHOT_SIG_ID,
+        name: "한방 시그",
+        price: selectedSigs.reduce((sum, x) => sum + Math.max(0, Math.floor(Number(x.price || 0))), 0),
+      };
+      const prevRs = normalizeRouletteState(s.rouletteState);
+      const result = selectedSigs[selectedSigs.length - 1] || null;
+      setRouletteLock(userId, 10_000);
+      const next: AppState = {
+        ...s,
+        sigInventory: inv,
+        rouletteState: {
+          ...prevRs,
+          phase: "SPINNING",
+          isRolling: true,
+          spinCount: 5,
+          result,
+          results: selectedSigs,
+          selectedSigs,
+          oneShotResult: oneShot,
+          startedAt: Date.now(),
+          sessionId: `session_${Date.now()}`,
+        },
+        updatedAt: Date.now(),
+      };
+      await saveAppStateForRoulette(userId, next);
+      try {
+        const url = new URL(req.url);
+        url.pathname = "/api/state";
+        url.search = `?user=${encodeURIComponent(userId)}`;
+        await fetch(url.toString(), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rouletteState: next.rouletteState,
+            updatedAt: next.updatedAt,
+          }),
+        });
+      } catch {}
+      return Response.json(
+        {
+          ok: true,
+          mode,
+          startedAt: next.rouletteState.startedAt,
+          sessionId: next.rouletteState.sessionId,
+          result,
+          selectedSigs,
+          oneShot,
+        },
+        { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }
+      );
+    }
     const rollingPool = inv.filter((x) => x.isRolling && x.soldCount < x.maxCount);
     const pool = rollingPool.length > 0 ? rollingPool : inv.filter((x) => x.soldCount < x.maxCount);
     const usePool = pool.length > 0 ? pool : inv;

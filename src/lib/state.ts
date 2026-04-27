@@ -82,13 +82,26 @@ export function normalizeSigMatchParticipantIds(raw: unknown, validMemberIds: Se
 import { DEFAULT_SIG_INVENTORY, normalizeSigInventory } from "./constants";
 
 export function normalizeRouletteState(raw: unknown): RouletteState {
-  const def: RouletteState = { isRolling: false, result: null, spinCount: 0, startedAt: 0 };
+  const def: RouletteState = {
+    phase: "IDLE",
+    isRolling: false,
+    result: null,
+    spinCount: 0,
+    startedAt: 0,
+    overlayOpacity: 0.85,
+    oneShotResult: null,
+  };
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return def;
   const o = raw as Record<string, unknown>;
   let results: SigItem[] | undefined;
   if (Array.isArray(o.results)) {
     const norm = normalizeSigInventory(o.results.filter((x) => x && typeof x === "object") as unknown[]);
     results = norm.length > 0 ? norm : undefined;
+  }
+  let selectedSigs: SigItem[] | undefined;
+  if (Array.isArray(o.selectedSigs)) {
+    const norm = normalizeSigInventory(o.selectedSigs.filter((x) => x && typeof x === "object") as unknown[]);
+    selectedSigs = norm.length > 0 ? norm : undefined;
   }
   let spinPriceFilters: (number | null)[] | undefined;
   if (Array.isArray(o.spinPriceFilters)) {
@@ -119,12 +132,58 @@ export function normalizeRouletteState(raw: unknown): RouletteState {
   } else if (results && results.length > 0) {
     result = results[results.length - 1] ?? null;
   }
+  const rawPhase = String(o.phase || "").toUpperCase();
+  const phase = rawPhase === "SPINNING" || rawPhase === "LANDED" || rawPhase === "CONFIRM_PENDING" || rawPhase === "CONFIRMED"
+    ? (rawPhase as RouletteState["phase"])
+    : "IDLE";
+  const overlayOpacityRaw = Number(o.overlayOpacity);
+  const overlayOpacity = Number.isFinite(overlayOpacityRaw) ? Math.max(0.4, Math.min(1, overlayOpacityRaw)) : 0.85;
+  const oneShotRaw = o.oneShotResult;
+  const oneShotResult =
+    oneShotRaw && typeof oneShotRaw === "object"
+      ? {
+          id: String((oneShotRaw as Record<string, unknown>).id || "sig_one_shot"),
+          name: String((oneShotRaw as Record<string, unknown>).name || "한방 시그"),
+          price: Math.max(0, Math.floor(Number((oneShotRaw as Record<string, unknown>).price || 0))),
+        }
+      : null;
+  const historyLogs = Array.isArray(o.historyLogs)
+    ? o.historyLogs
+        .filter((x) => x && typeof x === "object")
+        .slice(0, 50)
+        .map((x) => {
+          const r = x as Record<string, unknown>;
+          const selectedSigs = Array.isArray(r.selectedSigs)
+            ? normalizeSigInventory((r.selectedSigs as unknown[]).filter((s) => s && typeof s === "object"))
+            : [];
+          const phase: "CONFIRMED" | "CANCELLED" = r.phase === "CANCELLED" ? "CANCELLED" : "CONFIRMED";
+          return {
+            id: String(r.id || ""),
+            sessionId: String(r.sessionId || ""),
+            phase,
+            selectedSigs,
+            selectedSigIds: selectedSigs.map((s) => s.id),
+            oneShotPrice: Math.max(0, Math.floor(Number(r.oneShotPrice || 0))),
+            totalPrice: Math.max(0, Math.floor(Number(r.totalPrice || 0))),
+            timestamp: Math.max(0, Math.floor(Number(r.timestamp || 0))),
+            adminId: typeof r.adminId === "string" ? r.adminId : undefined,
+            reason: typeof r.reason === "string" ? r.reason : undefined,
+          };
+        })
+    : undefined;
   return {
+    phase,
     isRolling: Boolean(o.isRolling),
     result,
     spinCount: Number.isFinite(o.spinCount) ? Math.max(0, Math.floor(Number(o.spinCount))) : 0,
     startedAt: Number.isFinite(o.startedAt) ? Math.max(0, Math.floor(Number(o.startedAt))) : 0,
     results,
+    selectedSigs,
+    oneShotResult,
+    overlayOpacity,
+    sessionId: typeof o.sessionId === "string" ? o.sessionId : undefined,
+    lastFinishedAt: Number.isFinite(Number(o.lastFinishedAt)) ? Math.max(0, Math.floor(Number(o.lastFinishedAt))) : undefined,
+    historyLogs,
     spinPriceFilters,
     spinPriceRanges,
   };

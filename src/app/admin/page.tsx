@@ -41,7 +41,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
-import Roulette from "@/components/Roulette";
 import { appendSettlementRecordAndSync, appendSigMatchIncentiveSettlementAndSync, SettlementMemberRatioOverrides } from "@/lib/settlement";
 import { formatSigMatchStat, getSigMatchRankings } from "@/lib/settlement-utils";
 import { getEffectiveRemainingTime, pauseTimer, resumeTimer } from "@/lib/timer-utils";
@@ -196,7 +195,6 @@ export default function AdminPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [sigMatchPreviewIframeKey, setSigMatchPreviewIframeKey] = useState(0);
-  const [sigSalesPreviewIframeKey, setSigSalesPreviewIframeKey] = useState(0);
   const [donorRankingsPreviewIframeKey, setDonorRankingsPreviewIframeKey] = useState(0);
   const [donorRankingsZoomPct, setDonorRankingsZoomPct] = useState("100");
   const [timerUiNow, setTimerUiNow] = useState(Date.now());
@@ -1333,7 +1331,7 @@ export default function AdminPage() {
   const spinSigRoulette = async () => {
     const uid = user?.id;
     if (!uid) {
-      setSigExcelResult("로그인 후 룰렛을 사용할 수 있습니다.");
+      setSigExcelResult("로그인 후 회전판을 사용할 수 있습니다.");
       return;
     }
     const n = Math.max(1, Math.min(999, parseInt(String(rouletteSpinCount || "1"), 10) || 1));
@@ -1378,7 +1376,7 @@ export default function AdminPage() {
                 ? typeof j.round === "number"
                   ? `${j.round}회차: 설정한 최소/최대 범위에 뽑을 시그가 없습니다.`
                   : "설정한 최소/최대 범위에 남은 시그가 없습니다."
-              : `룰렛 실패: ${j.error || res.status}`
+              : `회전판 실패: ${j.error || res.status}`
         );
         return;
       }
@@ -1408,10 +1406,9 @@ export default function AdminPage() {
             ? " · 금액대 전체"
             : ` · 금액대 ${uniq[0]}원`
           : ` · 회차별 금액대 (${uniq.slice(0, 5).join(", ")}${uniq.length > 5 ? "…" : ""})`;
-      setSigSalesPreviewIframeKey((k) => k + 1);
-      setSigExcelResult(`룰렛 ${n}회 스핀 완료${priceLabel} (서버 당첨 확정). 오버레이 /overlay/sig-sales 에서 확인하세요.`);
+      setSigExcelResult(`회전판 ${n}회 스핀 완료${priceLabel} (서버 당첨 확정). 오버레이 /overlay/sig-sales 에서 확인하세요.`);
     } catch (e) {
-      setSigExcelResult(`룰렛 요청 오류: ${String(e)}`);
+      setSigExcelResult(`회전판 요청 오류: ${String(e)}`);
     }
   };
 
@@ -3504,11 +3501,27 @@ export default function AdminPage() {
                 })()}
               </div>
               <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
+                <div className="rounded-xl border border-yellow-300/40 bg-gradient-to-r from-yellow-500/10 to-fuchsia-500/10 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="text-sm font-bold text-yellow-200">시그 판매 회전판 (신규)</div>
+                      <div className="text-xs text-neutral-300">시네마틱 단일 플로우 관리 페이지</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="rounded bg-white/10 px-2 py-1 text-[11px] text-neutral-200">
+                        현재 상태: {state.rouletteState?.phase || "IDLE"}
+                      </span>
+                      <Link href="/admin/sig-sales" className="rounded bg-yellow-500 px-3 py-1.5 text-xs font-bold text-black hover:bg-yellow-400">
+                        페이지 열기
+                      </Link>
+                    </div>
+                  </div>
+                </div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <h3 className="text-base font-semibold">시그 판매 및 추첨 관리</h3>
+                    <h3 className="text-base font-semibold">시그 판매 및 회전판 추첨 관리</h3>
                     <p className="text-xs text-neutral-400">
-                      룰렛 당첨은 서버(<code className="text-neutral-300">/api/roulette/spin</code>)에서만 결정되어 Redis에 저장됩니다. 판매 ±는 기존과 동일하게 전체 상태로 동기화되며 후원(donors) 병합 로직과 충돌하지 않습니다.
+                      회전판 당첨은 서버(<code className="text-neutral-300">/api/roulette/spin</code>)에서만 결정되어 Redis에 저장됩니다. 판매 ±는 기존과 동일하게 전체 상태로 동기화되며 후원(donors) 병합 로직과 충돌하지 않습니다.
                     </p>
                   </div>
                   <div className="flex flex-wrap items-end gap-2">
@@ -3540,7 +3553,7 @@ export default function AdminPage() {
                         void spinSigRoulette();
                       }}
                     >
-                      룰렛 돌리기
+                      회전판 돌리기
                     </button>
                   </div>
                 </div>
@@ -3631,38 +3644,10 @@ export default function AdminPage() {
                     미리보기 열기
                   </button>
                 </div>
-                <div className="rounded-lg border border-white/10 bg-black/50 overflow-hidden">
-                  <div className="flex items-center justify-between border-b border-white/5 px-2 py-1.5">
-                    <span className="text-xs font-medium text-neutral-300">시그 룰렛/판매 오버레이 (실제 작동 모드)</span>
-                    <button
-                      type="button"
-                      className="rounded border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-emerald-500/60 hover:text-emerald-200"
-                      onClick={() => setSigSalesPreviewIframeKey((k) => k + 1)}
-                    >
-                      새로고침
-                    </button>
-                  </div>
-                  <div className="border-b border-white/10 bg-neutral-950/70 px-2 py-3">
-                    <div className="mb-2 text-[11px] text-neutral-400">관리자 내장 룰렛 컴포넌트 미리보기</div>
-                    <div className="flex justify-center">
-                      <Roulette
-                        items={(state.sigInventory || []).filter((x) => x.isRolling && !(state.sigSalesExcludedIds || []).includes(x.id))}
-                        isRolling={Boolean(state.rouletteState?.isRolling)}
-                        resultId={state.rouletteState?.result?.id}
-                        spinDurationSec={5}
-                        startedAt={state.rouletteState?.startedAt}
-                      />
-                    </div>
-                  </div>
-                  <div className="relative w-full bg-black/40" style={{ minHeight: "280px", aspectRatio: "16 / 10" }}>
-                    <iframe
-                      key={`sig-sales-${sigSalesPreviewIframeKey}-${user?.id || "finalent"}`}
-                      src={`/overlay/sig-sales?u=${user?.id || "finalent"}`}
-                      title="시그 룰렛 판매 오버레이 미리보기"
-                      className="absolute inset-0 h-full w-full border-0"
-                      style={{ background: "transparent" }}
-                    />
-                  </div>
+                <div className="rounded-lg border border-white/10 bg-black/30 p-3">
+                  <p className="text-xs text-neutral-300">
+                    회전판 미리보기는 <code>/admin/sig-sales</code> 단일 화면에서만 제공합니다.
+                  </p>
                 </div>
                 <div className="rounded border border-white/10 bg-black/20 p-2">
                   <div className="text-xs font-semibold text-neutral-300 mb-2">판매 활성 시그 (빠른 조절)</div>
@@ -3692,7 +3677,7 @@ export default function AdminPage() {
                 </div>
                 <div className="rounded border border-white/10 bg-black/20 p-2">
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-xs font-semibold text-neutral-300">시그판매 제외 설정 (그리드/룰렛 공통)</div>
+                    <div className="text-xs font-semibold text-neutral-300">시그판매 제외 설정 (그리드/회전판 공통)</div>
                     <button
                       type="button"
                       className="rounded bg-neutral-700 px-2 py-0.5 text-[11px] hover:bg-neutral-600"

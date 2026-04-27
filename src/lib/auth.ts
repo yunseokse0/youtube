@@ -35,7 +35,7 @@ function isPrivateNetworkHost(hostname: string): boolean {
 
 export function isDevAuthBypassRequest(req: Request): boolean {
   if (process.env.NODE_ENV === "production") return false;
-  const hostRaw = (req.headers.get("host") || "").trim().toLowerCase();
-  const hostname = hostRaw.split(":")[0] || hostRaw;
-  return isPrivateNetworkHost(hostname);
+  // 개발 환경에서는 호스트 종류(localhost/터널/사설도메인)와 무관하게 로그인 우회
+  // 프로덕션에서는 위 가드로 반드시 차단됨
+  return true;
 }

@@ -1,400 +1,364 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import Image from "next/image";
-import { AnimatePresence, motion, animate, useMotionValue } from "framer-motion";
-import { defaultState, loadState, loadStateFromApi, storageKey, type AppState } from "@/lib/state";
-import Roulette from "@/components/Roulette";
-import { useAudio } from "@/lib/use-audio";
-import { resolveSigImageUrl } from "@/lib/constants";
+import { Howl } from "howler";
+import confetti from "canvas-confetti";
+import type { SigItem } from "@/types";
+import RouletteWheel from "@/components/sig-sales/RouletteWheel";
+import SelectedSigs from "@/components/sig-sales/SelectedSigs";
+import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
+import ConfirmationModal from "@/components/sig-sales/ConfirmationModal";
+import { loadStateFromApi, saveStateAsync, type AppState } from "@/lib/state";
+import { ONE_SHOT_SIG_ID, SOUND_ASSETS_ENABLED, SPIN_SOUND_PATHS, clampOverlayOpacity } from "@/lib/sig-roulette";
+import { useSigSalesState } from "@/hooks/useSigSalesState";
 
-const POLL_MS_SLOW = 1500;
-const POLL_MS_ROLLING = 350;
-const SPIN_ANIM_MS = 5000;
-const ONE_SHOT_SIG_ID = "sig_one_shot";
-const ROULETTE_DEMO_ITEMS = [
-  { id: "demo_1", name: "애교", price: 77000, imageUrl: "/images/sigs/애교.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_2", name: "댄스", price: 100000, imageUrl: "/images/sigs/댄스.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_3", name: "식사권", price: 333000, imageUrl: "/images/sigs/식사권.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_4", name: "보이스", price: 50000, imageUrl: "/images/sigs/보이스.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_5", name: "노래", price: 120000, imageUrl: "/images/sigs/노래.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_6", name: "토크", price: 55000, imageUrl: "/images/sigs/토크.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_7", name: "하트", price: 30000, imageUrl: "/images/sigs/하트.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_8", name: "게임", price: 88000, imageUrl: "/images/sigs/게임.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_9", name: "보너스", price: 150000, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_10", name: "한방 시그", price: 0, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-] as const;
-
-function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
-  const [state, setState] = useState<AppState | null>(null);
-  const lastUpdatedRef = useRef(0);
-  const syncingRef = useRef(false);
-  const rollingRef = useRef(false);
-  rollingRef.current = Boolean(state?.rouletteState?.isRolling);
-
-  const readLocal = useCallback((): AppState | null => {
-    if (typeof window === "undefined") return null;
-    try {
-      const raw = window.localStorage.getItem(storageKey(userId));
-      if (!raw) return null;
-      return loadState(userId ?? undefined);
-    } catch {
-      return null;
-    }
-  }, [userId]);
-
-  useEffect(() => {
-    const local = readLocal();
-    if (local) {
-      setState(local);
-      lastUpdatedRef.current = local.updatedAt || 0;
-    } else {
-      const base = defaultState();
-      setState(base);
-      lastUpdatedRef.current = base.updatedAt || 0;
-    }
-
-    const sync = async () => {
-      if (syncingRef.current) return;
-      syncingRef.current = true;
-      try {
-        const remote = await loadStateFromApi(userId);
-        if (remote && (remote.updatedAt || 0) >= lastUpdatedRef.current) {
-          lastUpdatedRef.current = remote.updatedAt || Date.now();
-          setState(remote);
-        }
-      } finally {
-        syncingRef.current = false;
-      }
-    };
-
-    const tick = () => void sync();
-    const idSlow = window.setInterval(tick, POLL_MS_SLOW);
-    const idFast = window.setInterval(() => {
-      if (rollingRef.current) tick();
-    }, POLL_MS_ROLLING);
-    const onStorage = (e: StorageEvent) => {
-      if (e.key !== storageKey(userId ?? undefined)) return;
-      const now = readLocal();
-      if (now && (now.updatedAt || 0) >= lastUpdatedRef.current) {
-        lastUpdatedRef.current = now.updatedAt || Date.now();
-        setState(now);
-      }
-      void sync();
-    };
-    const onFocus = () => void sync();
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void sync();
-    };
-    window.addEventListener("storage", onStorage);
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisible);
-    void sync();
-    return () => {
-      window.clearInterval(idSlow);
-      window.clearInterval(idFast);
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [readLocal, userId]);
-
-  return { state, ready: state !== null };
-}
-
-function outlineText(): CSSProperties {
-  return {
-    color: "#fff",
-    textShadow:
-      "-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000,0 0 6px rgba(0,0,0,0.85)",
-  };
-}
+const POLL_MS = 1000;
+const DEMO_POOL = [
+  { id: "demo_1", name: "애교", price: 77000, imageUrl: "/images/sigs/애교.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_2", name: "댄스", price: 100000, imageUrl: "/images/sigs/댄스.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_3", name: "식사권", price: 333000, imageUrl: "/images/sigs/식사권.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_4", name: "보이스", price: 50000, imageUrl: "/images/sigs/보이스.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_5", name: "노래", price: 120000, imageUrl: "/images/sigs/노래.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_6", name: "토크", price: 55000, imageUrl: "/images/sigs/토크.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_7", name: "하트", price: 30000, imageUrl: "/images/sigs/하트.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_8", name: "게임", price: 88000, imageUrl: "/images/sigs/게임.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_9", name: "보너스", price: 150000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_10", name: "특전", price: 220000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+];
+const buildOneShotFromSelected = (selected: SigItem[]) => ({
+  id: ONE_SHOT_SIG_ID,
+  name: "한방 시그",
+  price: selected.reduce((sum, x) => sum + x.price, 0),
+});
 
 export default function SigSalesOverlayPage() {
   const sp = useSearchParams();
   const userId = sp.get("u") || "finalent";
-  const reelPreview =
-    sp.get("reelPreview") === "true" || sp.get("reelPreview") === "1" || sp.get("previewRoulette") === "true";
-  const rouletteDemo =
-    sp.get("rouletteDemo") === "true" || sp.get("rouletteDemo") === "1" || sp.get("wheelDemo") === "true";
-  const { state, ready } = useRemoteState(userId);
-  const rs = state?.rouletteState;
-  const inv = state?.sigInventory || [];
-  const excludedSet = useMemo(
-    () => new Set((state?.sigSalesExcludedIds || []).map((x) => String(x))),
-    [state?.sigSalesExcludedIds]
+  const rouletteDemo = sp.get("rouletteDemo") === "1" || sp.get("rouletteDemo") === "true";
+  const [state, setState] = useState<AppState | null>(null);
+  const [manualSoldSet, setManualSoldSet] = useState<Set<string>>(new Set());
+  const [oneShotSold, setOneShotSold] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pendingLanding, setPendingLanding] = useState<{ selected: SigItem[]; oneShot: { id: string; name: string; price: number } | null; resultId: string | null } | null>(null);
+  const [demoSpin, setDemoSpin] = useState<{ startedAt: number; resultId: string | null } | null>(null);
+  const [volume, setVolume] = useState(0.7);
+  const [muted, setMuted] = useState(false);
+  const [oneShotSound] = useState(() =>
+    SOUND_ASSETS_ENABLED ? new Howl({ src: [SPIN_SOUND_PATHS.oneShot], preload: true, volume: 0.7, mute: false }) : null
   );
-  const invForSales = useMemo(() => inv.filter((x) => !excludedSet.has(x.id)), [inv, excludedSet]);
-  const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || "/images/sigs/stamp.png";
-  const activeItems = useMemo(
-    () =>
-      (rouletteDemo ? [...ROULETTE_DEMO_ITEMS] : invForSales.filter((x) => x.isActive)).filter(
-        (x) => x.id !== ONE_SHOT_SIG_ID && x.name !== "한방 시그"
-      ),
-    [invForSales, rouletteDemo]
-  );
-  const wheelItems = useMemo(() => {
-    if (rouletteDemo) return [...ROULETTE_DEMO_ITEMS];
-    const rolling = invForSales.filter((x) => x.isRolling);
-    if (rolling.length > 0) return rolling;
-    if (activeItems.length > 0) return activeItems;
-    return invForSales;
-  }, [invForSales, activeItems, rouletteDemo]);
-  const reel = useMemo(() => (wheelItems.length ? [...wheelItems, ...wheelItems, ...wheelItems, ...wheelItems] : []), [wheelItems]);
-  const demoX = useMotionValue(0);
-  const finishOnceRef = useRef(false);
-  const [demoStartedAt, setDemoStartedAt] = useState<number>(() => Date.now());
-  const [demoResultId, setDemoResultId] = useState<string | undefined>(undefined);
-  const [demoResults, setDemoResults] = useState<typeof wheelItems>([]);
-  const [highlightedSigId, setHighlightedSigId] = useState<string | null>(null);
-  const prevResolvedResultIdRef = useRef<string | null>(null);
-  const spinAudio = useAudio("/sounds/spin.mp3", { loop: true, volume: 0.55 });
-  const winAudio = useAudio("/sounds/win.mp3", { loop: false, volume: 0.95 });
+  const { machine, spin, landed, markConfirmPending, cancelConfirm, resetToIdle, finish, setOpacity, setError } = useSigSalesState(userId, state);
+  const controlsDisabled = machine.phase === "CONFIRM_PENDING" || machine.isFinishLoading;
+
+  const loadRemote = useCallback(async () => {
+    if (rouletteDemo) return;
+    const remote = await loadStateFromApi(userId);
+    if (remote) setState(remote);
+  }, [rouletteDemo, userId]);
 
   useEffect(() => {
-    finishOnceRef.current = false;
-  }, [rs?.startedAt]);
-
-  useEffect(() => {
-    spinAudio.unlock();
-    winAudio.unlock();
-  }, [spinAudio, winAudio]);
-
-  useEffect(() => {
-    const isRolling = Boolean(rs?.isRolling);
-    if (isRolling) {
-      spinAudio.play(true);
-    } else {
-      spinAudio.stop();
-    }
-  }, [rs?.isRolling, spinAudio, winAudio]);
-
-  // 데모 모드에서도 "회전 시작 → 당첨" 사운드를 주기적으로 재생
-  useEffect(() => {
-    if (!rouletteDemo || !wheelItems.length) return;
-    spinAudio.stop();
-    spinAudio.play(true);
-    const t = window.setTimeout(() => {
-      spinAudio.stop();
-      winAudio.play(true);
-    }, Math.max(1200, SPIN_ANIM_MS - 280));
-    return () => {
-      window.clearTimeout(t);
-    };
-  }, [rouletteDemo, demoStartedAt, wheelItems.length, spinAudio, winAudio]);
-
-  useEffect(() => {
-    if (!reelPreview || !reel.length) return;
-    if (rs?.isRolling) return;
-    const w = typeof window !== "undefined" ? window.innerWidth : 800;
-    const amp = Math.min(420, Math.max(160, w * 0.35));
-    demoX.set(0);
-    const controls = animate(demoX, [-amp, 0], {
-      duration: 6,
-      ease: "easeInOut",
-      repeat: Infinity,
-      repeatType: "mirror",
-    });
-    return () => controls.stop();
-  }, [reelPreview, reel.length, rs?.isRolling, demoX]);
-
-  useEffect(() => {
-    if (!rouletteDemo || !wheelItems.length) return;
-    const pick = () => {
-      const oneShot = wheelItems.find((x) => x.name === "한방 시그");
-      const basePool = wheelItems.filter((x) => x.name !== "한방 시그");
-      const randoms = Array.from({ length: 4 }).map(() => {
-        const idx = Math.floor(Math.random() * Math.max(1, basePool.length));
-        return (basePool[idx] || wheelItems[0])!;
-      });
-      const results = oneShot ? [...randoms, oneShot] : [...randoms, randoms[randoms.length - 1]!];
-      setDemoResults(results);
-      setDemoResultId(results[results.length - 1]?.id);
-      setDemoStartedAt(Date.now());
-    };
-    pick();
-    const id = window.setInterval(pick, SPIN_ANIM_MS + 800);
+    if (rouletteDemo) return;
+    void loadRemote();
+    const id = window.setInterval(() => void loadRemote(), POLL_MS);
     return () => window.clearInterval(id);
-  }, [rouletteDemo, wheelItems]);
-
-  const demoRolling = rouletteDemo && wheelItems.length > 0;
-  const showReel = Boolean((rs?.isRolling && rs?.result && reel.length) || demoRolling);
-  const showReelDemoStrip = reelPreview && !showReel && reel.length > 0;
-  const showRouletteHeader = !showReel;
-  const isRollingDisplay = demoRolling || Boolean(rs?.isRolling);
-  const resolvedResultId = demoRolling ? (demoResultId || null) : (rs?.result?.id || null);
+  }, [rouletteDemo, loadRemote]);
 
   useEffect(() => {
-    if (!resolvedResultId) return;
-    if (prevResolvedResultIdRef.current === resolvedResultId) return;
-    prevResolvedResultIdRef.current = resolvedResultId;
-    setHighlightedSigId(resolvedResultId);
-    const t = window.setTimeout(() => setHighlightedSigId(null), 1600);
-    return () => window.clearTimeout(t);
-  }, [resolvedResultId]);
+    if (!oneShotSound) return;
+    oneShotSound.volume(volume);
+    oneShotSound.mute(muted);
+  }, [oneShotSound, volume, muted]);
 
-  if (!ready || !state) return null;
+  useEffect(() => {
+    return () => {
+      oneShotSound?.unload();
+    };
+  }, [oneShotSound]);
+
+  // 결과 배치는 운영자가 reset 할 때까지 유지한다.
+
+  const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || "/images/sigs/dummy-sig.svg";
+  const activeNormalPool = useMemo(() => {
+    if (rouletteDemo) return DEMO_POOL;
+    if (!state) return [];
+    const excluded = new Set((state.sigSalesExcludedIds || []).map((x) => String(x)));
+    return (state.sigInventory || []).filter((x) => x.isActive && x.id !== ONE_SHOT_SIG_ID && !excluded.has(x.id));
+  }, [state, rouletteDemo]);
+  const wheelItems = useMemo(() => {
+    const base = activeNormalPool.slice(0, 12);
+    if (base.length >= 8) return base;
+    const filler = DEMO_POOL.filter((f) => !base.some((b) => b.name === f.name));
+    return [...base, ...filler].slice(0, 10);
+  }, [activeNormalPool]);
+  const wheelItemsWithResult = useMemo(() => {
+    const resultId = demoSpin?.resultId || machine.resultId;
+    if (!resultId) return wheelItems;
+    if (wheelItems.some((item) => item.id === resultId)) return wheelItems;
+    const found = activeNormalPool.find((item) => item.id === resultId);
+    if (!found) return wheelItems;
+    if (!wheelItems.length) return [found];
+    return [...wheelItems.slice(0, Math.max(0, wheelItems.length - 1)), found];
+  }, [wheelItems, demoSpin?.resultId, machine.resultId, activeNormalPool]);
+  const displaySelectedSigs = useMemo(() => {
+    if (machine.selectedSigs.length > 0) return machine.selectedSigs.slice(0, 5);
+    if (rouletteDemo && pendingLanding?.selected?.length) return pendingLanding.selected.slice(0, 5);
+    return [];
+  }, [machine.selectedSigs, rouletteDemo, pendingLanding]);
+  const displayOneShot = useMemo(() => {
+    if (displaySelectedSigs.length === 0) return null;
+    return buildOneShotFromSelected(displaySelectedSigs);
+  }, [displaySelectedSigs]);
+  const displayResultId = useMemo(() => {
+    if (displaySelectedSigs.length === 0) return null;
+    return (demoSpin?.resultId || machine.resultId || displaySelectedSigs[displaySelectedSigs.length - 1]?.id || null) as string | null;
+  }, [displaySelectedSigs, demoSpin?.resultId, machine.resultId]);
+
+  const onLandedPayload = useMemo(() => {
+    if (!pendingLanding?.selected?.length) return null;
+    const selected = pendingLanding.selected.slice(0, 5);
+    return {
+      selected,
+      oneShot: buildOneShotFromSelected(selected),
+      resultId: pendingLanding.resultId || selected[selected.length - 1]?.id || null,
+    };
+  }, [pendingLanding]);
+  const displayFromPending = rouletteDemo && Boolean(onLandedPayload || pendingLanding);
+  const displaySelectedFromPending = useMemo(() => {
+    if (!onLandedPayload?.selected?.length) return [];
+    return onLandedPayload.selected;
+  }, [onLandedPayload]);
+  const displayOneShotFromPending = useMemo(() => {
+    if (!onLandedPayload) return null;
+    return onLandedPayload.oneShot;
+  }, [onLandedPayload]);
+
+  const finalDisplaySelected = displayFromPending && displaySelectedFromPending.length > 0 ? displaySelectedFromPending : displaySelectedSigs;
+  const finalDisplayOneShot = displayFromPending && displayOneShotFromPending ? displayOneShotFromPending : displayOneShot;
+  const oneShotImageUrl = useMemo(() => {
+    const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
+    return oneShotItem?.imageUrl || "/images/sigs/dummy-sig.svg";
+  }, [state?.sigInventory]);
+
+  const onLandedResultId = useMemo(() => {
+    if (onLandedPayload?.resultId) return onLandedPayload.resultId;
+    return null;
+  }, [onLandedPayload]);
+
+  const onStartRoulette = useCallback(async () => {
+    if (controlsDisabled) return;
+    if (!rouletteDemo && machine.phase === "LANDED") return;
+    if (rouletteDemo) {
+      // 데모는 Confirm 단계 없이 반복 재생 가능해야 하므로 매 회차 초기화
+      resetToIdle();
+      const shuffled = [...DEMO_POOL].sort(() => Math.random() - 0.5);
+      const selected = shuffled.slice(0, 5);
+      const resultId = selected[selected.length - 1]?.id || null;
+      setPendingLanding({
+        selected,
+        oneShot: { id: ONE_SHOT_SIG_ID, name: "한방 시그", price: selected.reduce((sum, x) => sum + x.price, 0) },
+        resultId,
+      });
+      setDemoSpin({ startedAt: Date.now(), resultId });
+      confetti({ particleCount: 60, spread: 70, origin: { y: 0.2 } });
+      return;
+    }
+    try {
+      const data = await spin();
+      const selected = (data.selectedSigs || []).slice(0, 5);
+      setPendingLanding({ selected, oneShot: data.oneShot, resultId: data.result?.id || null });
+      confetti({ particleCount: 75, spread: 66, origin: { y: 0.23 } });
+      setManualSoldSet(new Set());
+      setOneShotSold(false);
+    } catch {
+      setError("회전판 시작 실패");
+    }
+  }, [rouletteDemo, controlsDisabled, machine.phase, spin, setError, resetToIdle]);
+
+  const persistRouletteState = useCallback(
+    async (nextPartial: Partial<AppState["rouletteState"]>) => {
+      if (!state || rouletteDemo) return;
+      const next: AppState = { ...state, rouletteState: { ...state.rouletteState, ...nextPartial }, updatedAt: Date.now() };
+      setState(next);
+      await saveStateAsync(next, userId);
+    },
+    [state, rouletteDemo, userId]
+  );
+
+  const onConfirmSale = useCallback(async () => {
+    if (rouletteDemo || !state || machine.selectedSigs.length === 0) return;
+    markConfirmPending();
+    const selectedSet = new Set(machine.selectedSigs.map((x) => x.id));
+    const nextInventory = state.sigInventory.map((item) => {
+      if (manualSoldSet.has(item.id) || (oneShotSold && selectedSet.has(item.id))) return { ...item, soldCount: 1 };
+      return item;
+    });
+    const next: AppState = {
+      ...state,
+      sigInventory: nextInventory,
+      rouletteState: { ...state.rouletteState, phase: "CONFIRMED", lastFinishedAt: Date.now() },
+      updatedAt: Date.now(),
+    };
+    setState(next);
+    await saveStateAsync(next, userId);
+    try {
+      await finish({
+        sessionId: machine.sessionId,
+        selectedSigs: machine.selectedSigs,
+        oneShotResult: machine.oneShot,
+        finalPhase: "CONFIRMED",
+      });
+      confetti({ particleCount: 100, spread: 85, origin: { y: 0.2 } });
+      setShowConfirmModal(false);
+    } catch {
+      cancelConfirm();
+      setError("판매 확정 처리 실패");
+    }
+  }, [rouletteDemo, state, machine.selectedSigs, machine.sessionId, machine.oneShot, manualSoldSet, oneShotSold, userId, finish, markConfirmPending, cancelConfirm, setError]);
 
   return (
-    <main className="min-h-screen w-full bg-transparent p-4 text-white">
-      <AnimatePresence mode="wait">
-        {showReel ? (
-          <motion.div
-            key="reel"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.35 }}
-            className="relative mx-auto flex h-[min(70vh,640px)] max-w-[1100px] flex-col items-center justify-center overflow-hidden rounded-2xl"
-          >
-            <div className="mb-3 text-2xl font-black" style={outlineText()}>
-              {demoRolling ? "시그 판매 추첨 · 데모 5회" : `시그 판매 추첨 · ${rs?.spinCount ?? 1}회`}
+    <main className="min-h-screen bg-neutral-950/70 p-4 text-white">
+      <div className="mx-auto max-w-[1280px] space-y-4">
+        <header className="p-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h1 className="text-2xl font-black text-yellow-200">시그 판매 회전판</h1>
+            <button
+              type="button"
+              onClick={() => void onStartRoulette()}
+              disabled={
+                activeNormalPool.length < 5 ||
+                controlsDisabled ||
+                (!rouletteDemo && (machine.phase === "LANDED" || machine.phase === "CONFIRMED"))
+              }
+              className="rounded bg-fuchsia-700 px-4 py-2 text-sm font-bold hover:bg-fuchsia-600 disabled:opacity-50"
+            >
+              회전판 시작
+            </button>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
+            <label className="flex items-center gap-2">
+              배경 투명도
+              <input
+                type="range"
+                min={40}
+                max={100}
+                value={Math.round(machine.overlayOpacity * 100)}
+              disabled={controlsDisabled}
+                onChange={(e) => {
+                  const v = Number(e.target.value) / 100;
+                  setOpacity(v);
+                  void persistRouletteState({ overlayOpacity: clampOverlayOpacity(v) });
+                }}
+              />
+            </label>
+            <label className="flex items-center gap-2">
+              볼륨
+              <input disabled={controlsDisabled} type="range" min={0} max={100} value={Math.round(volume * 100)} onChange={(e) => setVolume(Number(e.target.value) / 100)} />
+            </label>
+            <label className="flex items-center gap-2">
+              <input disabled={controlsDisabled} type="checkbox" checked={muted} onChange={(e) => setMuted(e.target.checked)} />
+              음소거
+            </label>
+            <span className="px-2 py-1 text-xs text-white/70">현재 상태: {machine.phase}</span>
+          </div>
+        </header>
+
+        <section style={{ backgroundColor: "transparent" }} className="relative p-0">
+          <RouletteWheel
+            items={wheelItemsWithResult}
+            isRolling={Boolean(demoSpin) || machine.isRolling || machine.phase === "SPINNING"}
+            resultId={displayResultId}
+            startedAt={demoSpin?.startedAt || machine.startedAt}
+            volume={volume}
+            muted={muted}
+            onLanded={() => {
+              if (!onLandedPayload) return;
+              landed(onLandedPayload.selected, onLandedPayload.oneShot, onLandedResultId);
+              oneShotSound?.stop();
+              oneShotSound?.play();
+              setDemoSpin(null);
+              setPendingLanding(null);
+              void persistRouletteState({
+                phase: "LANDED",
+                isRolling: false,
+                selectedSigs: onLandedPayload.selected,
+                oneShotResult: onLandedPayload.oneShot,
+              });
+            }}
+          />
+          {machine.phase === "CONFIRM_PENDING" ? (
+            <div className="pointer-events-none absolute inset-0 z-50 grid place-items-center bg-black/55">
+              <div className="rounded-xl border border-yellow-300/50 bg-neutral-900/90 px-6 py-4 text-center">
+                <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-yellow-300 border-t-transparent" />
+                <p className="mt-2 text-sm font-semibold text-yellow-100">판매 확정 처리 중...</p>
+              </div>
             </div>
-            <Roulette
-              items={wheelItems}
-              isRolling={isRollingDisplay}
-              resultId={demoRolling ? demoResultId : rs?.result?.id}
-              spinDurationSec={SPIN_ANIM_MS / 1000}
-              startedAt={demoRolling ? demoStartedAt : rs?.startedAt}
-              onAnimationComplete={() => {
-                if (demoRolling) return;
-                if (finishOnceRef.current) return;
-                finishOnceRef.current = true;
-                spinAudio.stop();
-                winAudio.play(true);
-                void fetch(`/api/roulette/finish?user=${encodeURIComponent(userId)}`, {
-                  method: "POST",
-                  credentials: "include",
-                }).catch(() => {});
-              }}
-            />
-          </motion.div>
-        ) : (
-          <motion.div
-            key="grid"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.45, ease: "easeOut" }}
-            className="mx-auto max-w-[1280px]"
-          >
-            {showRouletteHeader ? (
-              <section className="mb-6">
-                <h1 className="mb-2 text-center text-3xl font-black md:text-4xl" style={outlineText()}>
-                  시그 판매
-                </h1>
-                {showReelDemoStrip ? (
-                  <div className="rounded-2xl border border-fuchsia-400/45 bg-black/45 p-4 shadow-lg backdrop-blur-sm">
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-xs font-bold text-fuchsia-100">미리보기 · 데모 스크롤 (실제 스핀 시 전체 화면)</span>
-                      <span className="text-[10px] text-white/55">방송 URL에는 reelPreview 제거</span>
-                    </div>
-                    <div className="relative mx-auto h-48 w-full max-w-[900px] overflow-hidden rounded-xl border border-white/25 bg-black/30">
-                      <div className="pointer-events-none absolute left-1/2 top-0 z-10 h-full w-1 -translate-x-1/2 bg-amber-300/90 shadow-[0_0_12px_rgba(251,191,36,0.8)]" />
-                      <motion.div className="absolute left-0 top-2 flex h-44 gap-2 px-2" style={{ x: demoX }}>
-                        {reel.map((item, idx) => (
-                          <div
-                            key={`demo-strip-${item.id}-${idx}`}
-                            className="relative h-40 w-[132px] shrink-0 overflow-hidden rounded-lg border border-white/20 bg-black/40"
-                          >
-                            {String(item.imageUrl || "").trim() ? (
-                              <Image
-                                src={resolveSigImageUrl(item.name, item.imageUrl)}
-                                alt={item.name}
-                                fill
-                                unoptimized
-                                className="object-cover"
-                              />
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-fuchsia-700/40 to-rose-700/40 px-2 text-center text-lg font-black text-white">
-                                {item.name}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </motion.div>
-                    </div>
-                    <p className="mt-3 text-center text-sm font-semibold text-white/90" style={outlineText()}>
-                      가운데 선에 멈추는 슬롯이 실제 룰렛과 동일합니다.
-                    </p>
-                  </div>
-                ) : (
-                  <></>
-                )}
-              </section>
-            ) : null}
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              {activeItems.map((item) => {
-                const soldOut = item.soldCount >= item.maxCount;
-                const pct = Math.min(100, (item.soldCount / Math.max(1, item.maxCount)) * 100);
-                const isSingleSale = item.maxCount <= 1;
-                const isHighlighted = item.id === highlightedSigId;
-                return (
-                  <div
-                    key={item.id}
-                    className={`relative overflow-hidden rounded-2xl border bg-black/30 shadow-lg backdrop-blur-sm transition-all duration-300 ${isHighlighted ? "border-amber-300/95 animate-pulse shadow-[0_0_24px_rgba(251,191,36,0.65)] scale-[1.02]" : "border-white/25"}`}
+          ) : null}
+
+          {(machine.phase === "LANDED" || machine.phase === "CONFIRM_PENDING" || machine.phase === "CONFIRMED" || (rouletteDemo && Boolean(pendingLanding))) &&
+          finalDisplaySelected.length > 0 ? (
+            <div className="mt-4 space-y-4">
+              {rouletteDemo ? <p className="text-xs font-semibold text-fuchsia-200/90">데모 당첨 배치 미리보기</p> : null}
+              <SelectedSigs
+                items={finalDisplaySelected}
+                soldOutStampUrl={soldOutStampUrl}
+                manualSoldSet={manualSoldSet}
+                disabled={controlsDisabled}
+                trailingSlot={
+                  <OneShotSigCard
+                    name={finalDisplayOneShot?.name || "한방 시그"}
+                    price={finalDisplayOneShot?.price || 0}
+                    imageUrl={oneShotImageUrl}
+                    sold={oneShotSold}
+                    disabled={controlsDisabled}
+                    compact
+                    onToggleSold={() => setOneShotSold((v) => !v)}
+                  />
+                }
+                onToggleSold={(id) =>
+                  setManualSoldSet((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
+                    return next;
+                  })
+                }
+              />
+              {!rouletteDemo ? (
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    disabled={controlsDisabled || machine.phase === "CONFIRMED"}
+                    onClick={() => setShowConfirmModal(true)}
+                    className="rounded bg-emerald-600 px-4 py-2 text-sm font-bold hover:bg-emerald-500 disabled:opacity-50"
                   >
-                    {isHighlighted ? (
-                      <div className="pointer-events-none absolute inset-0 z-10 bg-gradient-to-br from-amber-300/20 via-yellow-200/10 to-transparent" />
-                    ) : null}
-                    <div className="relative aspect-[4/5] w-full">
-                      {String(item.imageUrl || "").trim() ? (
-                        <Image
-                          src={resolveSigImageUrl(item.name, item.imageUrl)}
-                          alt={item.name}
-                          fill
-                          unoptimized
-                          className="object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-fuchsia-700/40 to-rose-700/40 px-2 text-center text-2xl font-black text-white">
-                          {item.name}
-                        </div>
-                      )}
-                      {soldOut ? <div className="absolute inset-0 bg-neutral-700/70" /> : null}
-                      <AnimatePresence>
-                        {soldOut ? (
-                          <motion.div
-                            key={`stamp-${item.id}`}
-                            initial={{ scale: 1.4, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            className="pointer-events-none absolute left-1/2 top-1/2 flex h-28 w-28 -translate-x-1/2 -translate-y-1/2 items-center justify-center"
-                          >
-                            <div className="absolute inset-1 rounded-full bg-rose-300/45 blur-[2px]" aria-hidden />
-                            <motion.img
-                              src={soldOutStampUrl}
-                              alt="참 잘했어요"
-                              className="relative z-[1] h-24 w-24 object-contain opacity-90"
-                            />
-                          </motion.div>
-                        ) : null}
-                      </AnimatePresence>
-                    </div>
-                    <div className="p-2">
-                      <div className="truncate text-sm font-bold" style={outlineText()}>
-                        {item.name}
-                      </div>
-                      <div className="text-xs" style={outlineText()}>
-                        {isSingleSale ? (soldOut ? "완판" : "판매대기") : `${item.soldCount}/${item.maxCount}`} · {item.price.toLocaleString("ko-KR")}원
-                      </div>
-                      {!isSingleSale ? (
-                        <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/20">
-                          <div className="h-full rounded-full bg-gradient-to-r from-emerald-300 to-cyan-300" style={{ width: `${pct}%` }} />
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                );
-              })}
+                    {machine.phase === "CONFIRM_PENDING" ? "처리 중..." : "Confirm Sale (수동 확정)"}
+                  </button>
+                </div>
+              ) : null}
             </div>
-            {activeItems.length === 0 ? (
-              <p className="mt-6 text-center text-sm" style={outlineText()}>
-                활성화된 판매 시그가 없습니다. 관리자에서 판매 활성을 켜 주세요.
+          ) : null}
+          {machine.phase === "CONFIRMED" ? (
+            <div className="mt-4 rounded-xl border border-emerald-300/60 bg-emerald-900/30 p-4 text-center">
+              <p className="text-2xl font-black text-emerald-200">판매 확정 완료!</p>
+              <p className="mt-1 text-sm text-emerald-100">
+                {machine.selectedSigs.map((s) => s.name).join(", ")} + {machine.oneShot?.name || "한방 시그"}
               </p>
-            ) : null}
-          </motion.div>
-        )}
-      </AnimatePresence>
+              <button type="button" onClick={resetToIdle} className="mt-3 rounded bg-emerald-500 px-4 py-1.5 text-sm font-bold text-black">
+                새로운 회차 시작
+              </button>
+            </div>
+          ) : null}
+        </section>
+      </div>
+      <ConfirmationModal
+        open={showConfirmModal && machine.phase !== "CONFIRMED" && !rouletteDemo}
+        loading={machine.phase === "CONFIRM_PENDING" || machine.isFinishLoading}
+        onCancel={() => {
+          setShowConfirmModal(false);
+          cancelConfirm();
+        }}
+        onConfirm={() => void onConfirmSale()}
+      />
     </main>
   );
 }

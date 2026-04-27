@@ -30,6 +30,8 @@ export default function Roulette({
   startedAt,
   onAnimationComplete,
 }: RouletteProps) {
+  // -1: 반시계, 1: 시계 방향
+  const spinDirection = -1;
   const wheelRotate = useMotionValue(0);
   const [targetAngle, setTargetAngle] = useState(0);
   const [currentAngle, setCurrentAngle] = useState(0);
@@ -75,9 +77,9 @@ export default function Roulette({
     const winnerIndex = Math.max(0, items.findIndex((x) => x.id === resultId));
     const spins = 7;
     // Align winner to the segment center at the top pointer.
-    const end = spins * 360 - (winnerIndex * segment + segment / 2);
+    const end = spinDirection * (spins * 360 - (winnerIndex * segment + segment / 2));
     setTargetAngle(end);
-  }, [isRolling, items, resultId, segment, startedAt]);
+  }, [isRolling, items, resultId, segment, startedAt, spinDirection]);
 
   return (
     <div className="relative h-[420px] w-full max-w-[900px] overflow-hidden rounded-2xl bg-transparent">

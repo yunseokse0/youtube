@@ -61,12 +61,13 @@ export type SigItem = {
   soldCount: number;
   /** 시그 보드(롤링) 노출 */
   isRolling: boolean;
-  /** 시그 판매/룰렛 오버레이 등 활성 판매 대상 */
+  /** 시그 판매/회전판 오버레이 등 활성 판매 대상 */
   isActive: boolean;
 };
 
-/** 서버가 저장하는 룰렛 상태(당첨은 서버에서만 결정) */
+/** 서버가 저장하는 회전판 상태(당첨은 서버에서만 결정) */
 export type RouletteState = {
+  phase?: "IDLE" | "SPINNING" | "LANDED" | "CONFIRM_PENDING" | "CONFIRMED";
   isRolling: boolean;
   /** 마지막(또는 단일) 스핀 당첨 — 오버레이 릴 정렬용 */
   result: SigItem | null;
@@ -79,6 +80,33 @@ export type RouletteState = {
   spinPriceFilters?: (number | null)[];
   /** 회차별 적용 최소/최대 금액 범위(null = 전체 범위) */
   spinPriceRanges?: ({ min: number | null; max: number | null } | null)[];
+  /** 시네마틱 플로우용 최종 선정 5개 */
+  selectedSigs?: SigItem[];
+  /** 시네마틱 플로우용 원샷 카드 정보 */
+  oneShotResult?: {
+    id: string;
+    name: string;
+    price: number;
+  } | null;
+  /** 배경 투명도(0.4~1.0) */
+  overlayOpacity?: number;
+  /** 최근 세션 식별자 */
+  sessionId?: string;
+  /** 최근 확정 로그 */
+  lastFinishedAt?: number;
+  /** 최근 이력 스냅샷(최대 50) */
+  historyLogs?: Array<{
+    id: string;
+    sessionId: string;
+    phase: "CONFIRMED" | "CANCELLED";
+    selectedSigs: SigItem[];
+    selectedSigIds: string[];
+    oneShotPrice: number;
+    totalPrice: number;
+    timestamp: number;
+    adminId?: string;
+    reason?: string;
+  }>;
 };
 
 export type LegacyOverlaySettings = {
@@ -275,7 +303,7 @@ export type AppState = {
   sigSoldOutStampUrl: string;
   /** 멤버별 시그 판매 프리셋(활성화할 시그 id 목록) */
   sigSalesMemberPresets: Record<string, string[]>;
-  /** 시그 룰렛(서버 랜덤 결과 + 오버레이 애니메이션) */
+  /** 시그 회전판(서버 랜덤 결과 + 오버레이 애니메이션) */
   rouletteState: RouletteState;
   overlayPresets?: unknown[];
   overlaySettings?: LegacyOverlaySettings;
@@ -299,7 +327,7 @@ export type AppState = {
   donorRankingsOverlayConfig: OverlayConfig;
   /** `/overlay/donation-lists` 배경 GIF·투명도(상태 저장 시 Redis와 동기화) */
   donationListsOverlayConfig: OverlayConfig;
-  /** 시그 판매/룰렛에서 제외할 시그 ID 목록 */
+  /** 시그 판매/회전판에서 제외할 시그 ID 목록 */
   sigSalesExcludedIds: string[];
   /** 마지막 저장 시각(epoch ms), 원격-로컬 최신성 비교 기준 */
   updatedAt: number;

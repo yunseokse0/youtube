@@ -206,7 +206,7 @@ export async function GET(req: Request) {
       logger.warn('Redis/메모리 모두 비어있음 - 기본값 반환 (서버 재시작 시 발생. Redis 설정 권장)', { userId });
     }
     let mergedForResponse = effective as AppState;
-    // Edge 런타임에서 상태 경합이 있을 수 있어, 룰렛 전용 저장소의 최신 rouletteState를 응답에 우선 반영
+    // Edge 런타임에서 상태 경합이 있을 수 있어, 회전판 전용 저장소의 최신 rouletteState를 응답에 우선 반영
     // (spin 직후 오버레이가 회전 상태를 놓치지 않도록 보강)
     try {
       const rouletteStateSource = await loadAppStateForRoulette(userId);
