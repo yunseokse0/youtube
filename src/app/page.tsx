@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { AUTH_COOKIE } from "@/lib/auth";
 
 export default async function Home() {
   const cookieStore = await cookies();
   const userCookie = cookieStore.get(AUTH_COOKIE)?.value;
-  if (userCookie) redirect("/admin");
+  const headerStore = await headers();
+  const host = (headerStore.get("host") || "").toLowerCase().split(":")[0];
+  const isLocal = host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+  if (userCookie || isLocal) redirect("/admin");
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-[#1a1a1a]">

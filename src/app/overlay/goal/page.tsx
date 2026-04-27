@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { defaultState, loadState, loadStateFromApi, storageKey, type AppState } from "@/lib/state";
 import { getOverlayUserIdFromSearchParams, type OverlayPresetLike } from "@/lib/overlay-params";
+import { GoalBar } from "@/components/GoalBar";
 
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
   const [state, setState] = useState<AppState | null>(null);
@@ -61,11 +62,20 @@ export default function GoalOverlayPage() {
   const activePreset = useMemo(() => {
     const presets = (state?.overlayPresets || []) as OverlayPresetLike[];
     if (!Array.isArray(presets) || presets.length === 0) return null;
+    const isGoalEnabledPreset = (preset: OverlayPresetLike | null | undefined) => {
+      if (!preset) return false;
+      const goalValue = Number(preset.goal || 0);
+      return Boolean(preset.showGoal) || (Number.isFinite(goalValue) && goalValue > 0);
+    };
+    const firstGoalPreset = presets.find((x) => isGoalEnabledPreset(x)) || null;
     const pId = (sp.get("p") || "").trim();
-    if (pId) return presets.find((x) => x.id === pId) || null;
+    if (pId) return presets.find((x) => x.id === pId) || firstGoalPreset || presets[0] || null;
     const preferredId = (state as any)?.overlaySettings?.currentPresetId;
-    if (preferredId) return presets.find((x) => x.id === preferredId) || null;
-    return presets[0] || null;
+    if (preferredId) {
+      const preferred = presets.find((x) => x.id === preferredId) || null;
+      return preferred || firstGoalPreset || presets[0] || null;
+    }
+    return firstGoalPreset || presets[0] || null;
   }, [state, sp]);
 
   const goal = useMemo(() => {
@@ -76,7 +86,7 @@ export default function GoalOverlayPage() {
     return 0;
   }, [sp, activePreset?.goal]);
 
-  const goalLabel = (sp.get("goalLabel") || activePreset?.goalLabel || "후원 목표").trim();
+  const goalLabel = (sp.get("goalLabel") || activePreset?.goalLabel || "후원").trim();
   const width = useMemo(() => {
     const fromUrl = Number(sp.get("goalWidth"));
     if (Number.isFinite(fromUrl)) return Math.max(260, Math.min(1200, Math.floor(fromUrl)));
@@ -98,7 +108,6 @@ export default function GoalOverlayPage() {
     return Math.max(0, totalCombined);
   }, [sp, activePreset?.goalCurrent, totalCombined]);
 
-  const pct = goal > 0 ? Math.min(100, (current / goal) * 100) : 0;
   if (!ready) return null;
 
   return (
@@ -106,18 +115,7 @@ export default function GoalOverlayPage() {
       <div className="mx-auto flex min-h-[120px] items-center justify-center" style={{ width }}>
         {goal > 0 ? (
           <section className="w-full rounded-2xl border border-white/35 bg-black/35 p-3 backdrop-blur-md">
-            <div className="mb-2 flex items-center justify-between text-white">
-              <span className="text-base font-extrabold">{goalLabel}</span>
-              <span className="text-sm font-bold tabular-nums">
-                {Math.round(pct)}% ({Math.max(0, Math.floor(current)).toLocaleString("ko-KR")} / {goal.toLocaleString("ko-KR")})
-              </span>
-            </div>
-            <div className="h-5 overflow-hidden rounded-full border border-white/25 bg-white/20">
-              <div
-                className="h-full bg-gradient-to-r from-fuchsia-400 via-pink-400 to-rose-300 transition-all duration-500"
-                style={{ width: `${pct}%` }}
-              />
-            </div>
+            <GoalBar current={current} goal={goal} label={goalLabel} width={width} compactLabel />
           </section>
         ) : (
           <section className="rounded-xl border border-amber-300/50 bg-black/35 px-4 py-2 text-sm font-semibold text-amber-100">

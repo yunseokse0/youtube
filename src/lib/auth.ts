@@ -24,18 +24,19 @@ export function getUserById(id: string): { id: string; companyName: string } | n
   return { id: id.trim().toLowerCase(), companyName: u.companyName };
 }
 
-function isPrivateNetworkHost(hostname: string): boolean {
+function isLocalHost(hostname: string): boolean {
   if (!hostname) return false;
   if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]") return true;
-  if (hostname.startsWith("10.")) return true;
-  if (hostname.startsWith("192.168.")) return true;
-  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)) return true;
   return false;
 }
 
 export function isDevAuthBypassRequest(req: Request): boolean {
+  try {
+    const hostname = new URL(req.url).hostname.toLowerCase();
+    if (isLocalHost(hostname)) return true;
+  } catch {}
+  const hostHeader = (req.headers.get("host") || "").toLowerCase().split(":")[0];
+  if (isLocalHost(hostHeader)) return true;
   if (process.env.NODE_ENV === "production") return false;
-  // 개발 환경에서는 호스트 종류(localhost/터널/사설도메인)와 무관하게 로그인 우회
-  // 프로덕션에서는 위 가드로 반드시 차단됨
   return true;
 }

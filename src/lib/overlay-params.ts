@@ -159,7 +159,7 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.showGoal) {
     q.set("showGoal", "true");
     q.set("goal", preset.goal || "0");
-    q.set("goalLabel", preset.goalLabel || "목표 금액");
+    q.set("goalLabel", preset.goalLabel || "후원");
     q.set("goalWidth", preset.goalWidth || "400");
     q.set("goalAnchor", preset.goalAnchor || "bc");
     if (preset.goalCurrent && preset.goalCurrent.trim()) q.set("goalCurrent", preset.goalCurrent.trim());

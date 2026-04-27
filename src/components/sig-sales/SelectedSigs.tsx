@@ -16,6 +16,7 @@ type SelectedSigsProps = {
   highlightId?: string | null;
   showToggle?: boolean;
   soldOverrideSet?: Set<string>;
+  compact?: boolean;
 };
 
 export default function SelectedSigs({
@@ -28,10 +29,11 @@ export default function SelectedSigs({
   highlightId = null,
   showToggle = true,
   soldOverrideSet,
+  compact = false,
 }: SelectedSigsProps) {
   const fallbackImage = "/images/sigs/dummy-sig.svg";
   return (
-    <section className={`grid grid-cols-1 gap-3 ${trailingSlot ? "md:grid-cols-6" : "md:grid-cols-5"}`}>
+    <section className={`grid grid-cols-2 gap-2 ${trailingSlot ? "md:grid-cols-6" : "md:grid-cols-5"}`}>
       {items.map((item, idx) => {
         const sold = soldOverrideSet ? soldOverrideSet.has(item.id) : manualSoldSet.has(item.id);
         const isLatestConfirmed = highlightId === item.id;
@@ -54,7 +56,7 @@ export default function SelectedSigs({
                 transition={{ duration: 0.9, repeat: 1 }}
               />
             ) : null}
-            <div className="relative aspect-[4/5]">
+            <div className={`relative ${compact ? "aspect-[4/3]" : "aspect-[4/5]"}`}>
               <img
                 src={resolveSigImageUrl(item.name, item.imageUrl)}
                 alt={item.name}
@@ -71,9 +73,9 @@ export default function SelectedSigs({
                 </>
               ) : null}
             </div>
-            <div className="space-y-1 p-2">
-              <div className="truncate text-sm font-bold text-white">{item.name}</div>
-              <div className="text-xs text-amber-200">{formatWon(item.price)}</div>
+            <div className={`${compact ? "space-y-0.5 p-1.5" : "space-y-1 p-2"}`}>
+              <div className={`truncate font-bold text-white ${compact ? "text-[11px]" : "text-sm"}`}>{item.name}</div>
+              <div className={`${compact ? "text-[10px]" : "text-xs"} text-amber-200`}>{formatWon(item.price)}</div>
               {showToggle ? (
                 <button
                   type="button"
@@ -88,7 +90,7 @@ export default function SelectedSigs({
           </motion.article>
         );
       })}
-      {trailingSlot ? <div className="min-h-[280px]">{trailingSlot}</div> : null}
+      {trailingSlot ? <div className={compact ? "min-h-[140px]" : "min-h-[280px]"}>{trailingSlot}</div> : null}
     </section>
   );
 }

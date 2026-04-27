@@ -16,6 +16,8 @@ import { useSigSalesState } from "@/hooks/useSigSalesState";
 
 const POLL_MS = 1000;
 const STEP_CONFIRM_PAUSE_MS = 3000;
+const ROULETTE_VISIBLE_SLOTS = 10;
+const CONFIRMED_VISIBLE_SLOTS = 5;
 const DEMO_POOL = [
   { id: "demo_1", name: "애교", price: 77000, imageUrl: "/images/sigs/애교.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
   { id: "demo_2", name: "댄스", price: 100000, imageUrl: "/images/sigs/댄스.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
@@ -92,10 +94,10 @@ export default function SigSalesOverlayPage() {
     );
   }, [state, rouletteDemo, memberFilterId]);
   const wheelItems = useMemo(() => {
-    const base = activeNormalPool.slice(0, 12);
-    if (base.length >= 8) return base;
+    const base = activeNormalPool.slice(0, ROULETTE_VISIBLE_SLOTS);
+    if (base.length >= ROULETTE_VISIBLE_SLOTS) return base;
     const filler = DEMO_POOL.filter((f) => !base.some((b) => b.name === f.name));
-    return [...base, ...filler].slice(0, 10);
+    return [...base, ...filler].slice(0, ROULETTE_VISIBLE_SLOTS);
   }, [activeNormalPool]);
   const wheelItemsWithResult = useMemo(() => {
     const resultId = demoSpin?.resultId || machine.resultId;
@@ -107,13 +109,13 @@ export default function SigSalesOverlayPage() {
     return [...wheelItems.slice(0, Math.max(0, wheelItems.length - 1)), found];
   }, [wheelItems, demoSpin?.resultId, machine.resultId, activeNormalPool]);
   const displaySelectedSigs = useMemo(() => {
-    if (stagedSelected.length > 0) return stagedSelected.slice(0, 5);
-    if (machine.selectedSigs.length > 0) return machine.selectedSigs.slice(0, 5);
-    if (rouletteDemo && pendingLanding?.selected?.length) return pendingLanding.selected.slice(0, 5);
+    if (stagedSelected.length > 0) return stagedSelected.slice(0, CONFIRMED_VISIBLE_SLOTS);
+    if (machine.selectedSigs.length > 0) return machine.selectedSigs.slice(0, CONFIRMED_VISIBLE_SLOTS);
+    if (rouletteDemo && pendingLanding?.selected?.length) return pendingLanding.selected.slice(0, CONFIRMED_VISIBLE_SLOTS);
     return [];
   }, [machine.selectedSigs, rouletteDemo, pendingLanding, stagedSelected]);
   const displayOneShot = useMemo(() => {
-    if (displaySelectedSigs.length < 5) return null;
+    if (displaySelectedSigs.length < CONFIRMED_VISIBLE_SLOTS) return null;
     return buildOneShotFromSelected(displaySelectedSigs);
   }, [displaySelectedSigs]);
   const displayResultId = useMemo(() => {
@@ -123,7 +125,7 @@ export default function SigSalesOverlayPage() {
 
   const finalDisplaySelected = displaySelectedSigs;
   const finalDisplayOneShot = displayOneShot;
-  const showFinalShowcase = finalDisplaySelected.length >= 5 && !demoSpin && !pendingLanding;
+  const showFinalShowcase = finalDisplaySelected.length >= CONFIRMED_VISIBLE_SLOTS && !demoSpin && !pendingLanding;
   const oneShotImageUrl = useMemo(() => {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     return oneShotItem?.imageUrl || "/images/sigs/dummy-sig.svg";
@@ -214,7 +216,7 @@ export default function SigSalesOverlayPage() {
             muted={false}
             onLanded={(landedId) => {
               if (!pendingLanding) return;
-              const selectedQueue = pendingLanding.selected.slice(0, 5);
+              const selectedQueue = pendingLanding.selected.slice(0, CONFIRMED_VISIBLE_SLOTS);
               if (selectedQueue.length === 0) return;
               const byResult = landedId ? selectedQueue.find((x) => x.id === landedId) : null;
               const fallback = selectedQueue[Math.min(spinStep, selectedQueue.length - 1)];
@@ -259,38 +261,40 @@ export default function SigSalesOverlayPage() {
 
           {(machine.phase === "SPINNING" || machine.phase === "LANDED" || machine.phase === "CONFIRM_PENDING" || machine.phase === "CONFIRMED" || stagedSelected.length > 0) &&
           finalDisplaySelected.length > 0 ? (
-            <div className={`mt-4 space-y-4 transition-all duration-700 ${showFinalShowcase ? "-translate-y-[260px]" : "translate-y-0"}`}>
-              {rouletteDemo ? <p className="text-xs font-semibold text-fuchsia-200/90">데모 당첨 배치 미리보기</p> : null}
-              <SelectedSigs
-                items={finalDisplaySelected}
-                soldOutStampUrl={soldOutStampUrl}
-                manualSoldSet={manualSoldSet}
-                disabled={true}
-                showToggle={false}
-                soldOverrideSet={soldFromBackofficeSet}
-                highlightId={highlightId}
-                trailingSlot={finalDisplayOneShot && oneShotReveal ? (
-                  <OneShotSigCard
-                    name={finalDisplayOneShot?.name || "한방 시그"}
-                    price={finalDisplayOneShot?.price || 0}
-                    imageUrl={oneShotImageUrl}
-                    sold={oneShotSoldFromBackoffice}
-                    disabled={true}
-                    showToggle={false}
-                    compact
-                    onToggleSold={() => setOneShotSold((v) => !v)}
-                  />
-                ) : null}
-                onToggleSold={(id) =>
-                  setManualSoldSet((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(id)) next.delete(id);
-                    else next.add(id);
-                    return next;
-                  })
-                }
-              />
-              {null}
+            <div className="pointer-events-none absolute inset-x-0 bottom-3 z-40 px-2">
+              <div className={`rounded-xl border border-white/20 bg-black/45 p-2 backdrop-blur-sm transition-all duration-700 ${showFinalShowcase ? "translate-y-0 opacity-100" : "translate-y-2 opacity-95"}`}>
+                {rouletteDemo ? <p className="mb-2 text-xs font-semibold text-fuchsia-200/90">데모 당첨 배치 미리보기</p> : null}
+                <SelectedSigs
+                  items={finalDisplaySelected}
+                  soldOutStampUrl={soldOutStampUrl}
+                  manualSoldSet={manualSoldSet}
+                  compact
+                  disabled={true}
+                  showToggle={false}
+                  soldOverrideSet={soldFromBackofficeSet}
+                  highlightId={highlightId}
+                  trailingSlot={finalDisplayOneShot && oneShotReveal ? (
+                    <OneShotSigCard
+                      name={finalDisplayOneShot?.name || "한방 시그"}
+                      price={finalDisplayOneShot?.price || 0}
+                      imageUrl={oneShotImageUrl}
+                      sold={oneShotSoldFromBackoffice}
+                      disabled={true}
+                      showToggle={false}
+                      compact
+                      onToggleSold={() => setOneShotSold((v) => !v)}
+                    />
+                  ) : null}
+                  onToggleSold={(id) =>
+                    setManualSoldSet((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(id)) next.delete(id);
+                      else next.add(id);
+                      return next;
+                    })
+                  }
+                />
+              </div>
             </div>
           ) : null}
           {machine.phase === "CONFIRMED" ? (

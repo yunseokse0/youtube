@@ -7,6 +7,7 @@ import { getEffectiveRemainingTime } from "@/lib/timer-utils";
 import { useFlip } from "@/lib/flip";
 import MissionBoard from "@/components/MissionBoard";
 import MissionBoardSlot from "@/components/MissionBoardSlot";
+import { GoalBar } from "@/components/GoalBar";
 import { useSSEConnection } from "@/lib/sse-client";
 
 function tryDecodeSnapshot(str: string | null): AppState | null {
@@ -796,45 +797,6 @@ const THEMES: Record<ThemeId, {
   },
 };
 
-function GoalBar({ current, goal, label, theme, width }: { current: number; goal: number; label: string; theme: typeof THEMES.default; width: number }) {
-  const pct = goal > 0 ? Math.min(100, (current / goal) * 100) : 0;
-  const displayPct = useCountUp(Math.round(pct * 10) / 10, 600);
-  const barH = Math.max(26, Math.round(width * 0.055));
-  const toMan = (n: number) => `${(Math.max(0, n) / 10000).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}만원`;
-  return (
-    <div style={{ width, padding: "0.14rem", borderRadius: 8, background: "rgba(18, 38, 12, 0.22)", border: "1px solid rgba(166, 227, 92, 0.45)" }}>
-      <div className="relative overflow-hidden" style={{ height: barH, borderRadius: 7, background: "rgba(209, 213, 219, 0.55)", boxShadow: "inset 0 1px 3px rgba(0,0,0,0.22)" }}>
-        <div
-          className="h-full transition-all duration-700 ease-out"
-          style={{
-            width: `${pct}%`,
-            borderRadius: 7,
-            background: "linear-gradient(90deg, rgba(132, 204, 22, 0.98) 0%, rgba(163, 230, 53, 0.98) 45%, rgba(190, 242, 100, 0.98) 100%)",
-            boxShadow: "0 0 8px rgba(163, 230, 53, 0.35), inset 0 1px 0 rgba(255,255,255,0.28)",
-          }}
-        />
-        <div className="absolute inset-0 flex items-center justify-between px-2" style={{ fontSize: Math.max(12, width * 0.028), letterSpacing: "-0.01em" }}>
-          <span
-            className="inline-flex items-center"
-            style={{
-              color: "#f4ffe9",
-              fontWeight: 900,
-              textShadow: "0 1px 1px rgba(0,0,0,0.55)",
-              lineHeight: 1,
-            }}
-          >
-            {label}
-          </span>
-          <span style={{ color: "#f9fff4", fontWeight: 700, textShadow: "0 1px 2px rgba(0,0,0,0.78)", lineHeight: 1 }}>
-            {toMan(current)} / {toMan(goal)}{" "}
-            <span style={{ color: pct <= 0 ? "#d1d5db" : "#f9fff4" }}>({displayPct}%)</span>
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function PersonalGoalBoard({
   items,
   themeId,
@@ -1293,12 +1255,10 @@ function OverlayInner() {
   };
   const membersThemeId = resolveThemeId("membersTheme");
   const totalThemeId = resolveThemeId("totalTheme");
-  const goalThemeId = resolveThemeId("goalTheme");
   const tickerBaseThemeId = resolveThemeId("tickerBaseTheme");
   const missionThemeId = resolveThemeId("missionTheme");
   const membersTheme = THEMES[membersThemeId];
   const totalTheme = THEMES[totalThemeId];
-  const goalTheme = THEMES[goalThemeId];
   const tickerBaseTheme = THEMES[tickerBaseThemeId];
   const missionTheme = THEMES[missionThemeId];
   const missionThemeVariant = (() => {
@@ -1341,7 +1301,7 @@ function OverlayInner() {
   const showTimer = tableOnly ? false : (timerOnlyMode ? showTimerRaw !== "false" : showTimerRaw === "true");
   const goalRaw = parseInt(sp.get("goal") || "0", 10);
   const goal = isNaN(goalRaw) ? 0 : goalRaw;
-  const goalLabel = sp.get("goalLabel") || "목표 금액";
+  const goalLabel = sp.get("goalLabel") || "후원";
   const goalWidth = Math.max(200, Math.min(800, parseInt(sp.get("goalWidth") || "400", 10)));
   const goalAnchor = (sp.get("goalAnchor") || "bc").toLowerCase();
   const personalGoalAnchor = (sp.get("personalGoalAnchor") || "tl").toLowerCase();
@@ -2300,7 +2260,7 @@ function OverlayInner() {
         )}
         {showGoal && (ready || isPreviewGuide || externalHost) && goal > 0 && (
           <div className={`absolute ${posClass(goalAnchor)}`}>
-            <GoalBar current={sumCombined} goal={goal} label={goalLabel} theme={goalTheme} width={goalWidth} />
+            <GoalBar current={sumCombined} goal={goal} label={goalLabel} width={goalWidth} />
           </div>
         )}
         {showPersonalGoal && (ready || isPreviewGuide || externalHost) && (

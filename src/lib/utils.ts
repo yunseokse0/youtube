@@ -57,8 +57,8 @@ export function sortMembersForRanking(
     return merged
       .map((row, idx) => ({
         ...row,
-        position: row.isRepresentative ? (rankLabels[idx] || "대표") : (rankLabels[idx] || ""),
-        isRepresentative: row.isRepresentative,
+        position: row.isRepresentative ? "대표" : (rankLabels[idx] || (idx === 0 ? "대표" : "")),
+        isRepresentative: row.isRepresentative || idx === 0,
       }));
   }
 

@@ -168,7 +168,7 @@ export default function AdminPage() {
     { name: "표만 (엑셀)", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true } },
     { name: "멤버 목록만", preset: { showMembers: true, showTotal: false, showBottomDonors: false, tickerInMembers: false } },
     { name: "총합만", preset: { showMembers: false, showTotal: true, totalSize: "60" } },
-    { name: "목표 프로그레스바", preset: { showMembers: false, showTotal: false, showGoal: true, goal: "500000", goalLabel: "목표 금액", goalWidth: "500" } },
+    { name: "목표 프로그레스바", preset: { showMembers: false, showTotal: false, showGoal: true, goal: "500000", goalLabel: "후원", goalWidth: "500" } },
     { name: "개인 골", preset: { showMembers: false, showTotal: false, showPersonalGoal: true, personalGoalAnchor: "tl" } },
     { name: "미션 전광판", preset: { showMembers: false, showTotal: false, showMission: true, missionAnchor: "bc" } },
   ];
@@ -179,7 +179,7 @@ export default function AdminPage() {
     layout: "center-fixed", zoomMode: "follow",
     tableFree: false, tableX: "50", tableY: "50",
     sumAnchor: "bc", sumFree: false, sumX: "50", sumY: "90", theme: "default",
-    showMembers: true, showTotal: true, totalMode: "total", showGoal: false, goal: "0", goalLabel: "목표 금액", showPersonalGoal: false, personalGoalTheme: "goalClassic", personalGoalAnchor: "tl", personalGoalLimit: "3", personalGoalFree: false, personalGoalX: "78", personalGoalY: "82",
+    showMembers: true, showTotal: true, totalMode: "total", showGoal: false, goal: "0", goalLabel: "후원", showPersonalGoal: false, personalGoalTheme: "goalClassic", personalGoalAnchor: "tl", personalGoalLimit: "3", personalGoalFree: false, personalGoalX: "78", personalGoalY: "82",
     tickerInMembers: false, tickerInGoal: false, tickerInPersonalGoal: false,
     goalWidth: "400", goalAnchor: "bc", goalCurrent: "", showTicker: false, tickerAnchor: "bc", tickerWidth: "600", tickerFree: false, tickerX: "50", tickerY: "86", showTimer: false,
     timerStart: null, timerAnchor: "tr", timerShowHours: false, timerFontColor: "", timerBgColor: "", timerBorderColor: "", timerBgOpacity: "40", timerScale: "100", showMission: false, missionAnchor: "br",
@@ -216,7 +216,7 @@ export default function AdminPage() {
     danger: true,
   });
   const [resetSheetOpen, setResetSheetOpen] = useState(false);
-  const [activeNav, setActiveNav] = useState<"dashboard" | "settlement" | "donor" | "overlay" | "logs">("dashboard");
+  const [activeNav, setActiveNav] = useState<"dashboard" | "settlement" | "donor" | "overlay" | "goal" | "logs">("dashboard");
   const panelCardClass = "rounded-xl border border-white/10 bg-[#252525] shadow-[0_8px_24px_rgba(0,0,0,0.28)]";
   const simpleMode = false;
 
@@ -267,11 +267,12 @@ export default function AdminPage() {
       sigInventory: inv.map((x) => (x.id === ONE_SHOT_SIG_ID ? nextOneShot : x)),
     };
   }, []);
-  const navItems: Array<{ key: "dashboard" | "settlement" | "donor" | "overlay" | "logs"; label: string; targetId: string }> = [
+  const navItems: Array<{ key: "dashboard" | "settlement" | "donor" | "overlay" | "goal" | "logs"; label: string; targetId: string }> = [
     { key: "dashboard", label: "대시보드", targetId: "dashboard-summary" },
     { key: "settlement", label: "정산 관리", targetId: "settlement-member-board" },
     { key: "donor", label: "후원자", targetId: "donor-management" },
     { key: "overlay", label: "오버레이 설정", targetId: "overlay-settings" },
+    { key: "goal", label: "후원 목표", targetId: "overlay-goal-shortcut" },
     { key: "logs", label: "로그 / 데이터", targetId: "logs-data" },
   ];
   const baseThemeChoices = ["default","excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","neon","neonExcel","retro","minimal","rpg","pastel","rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"];
@@ -342,7 +343,7 @@ export default function AdminPage() {
     </div>
   );
   
-  const moveToSection = (key: "dashboard" | "settlement" | "donor" | "overlay" | "logs", targetId: string) => {
+  const moveToSection = (key: "dashboard" | "settlement" | "donor" | "overlay" | "goal" | "logs", targetId: string) => {
     setActiveNav(key);
     if (typeof window === "undefined") return;
     const el = document.getElementById(targetId);
@@ -655,6 +656,26 @@ export default function AdminPage() {
   const PREVIEW_SNAP_PREFIX = "excel-preview-snap-";
   const buildStablePreviewUrl = (p: OverlayPreset): string => {
     if (typeof window === "undefined") return "";
+    const isGoalOnlyPreset =
+      Boolean(p.showGoal) &&
+      !Boolean(p.showMembers) &&
+      !Boolean(p.showTotal) &&
+      !Boolean(p.showTimer) &&
+      !Boolean(p.showMission) &&
+      !Boolean(p.showPersonalGoal);
+    if (isGoalOnlyPreset) {
+      const goalOnly = new URL(`${window.location.origin}/overlay/goal`);
+      goalOnly.searchParams.set("u", user?.id || "finalent");
+      if (p.id) goalOnly.searchParams.set("p", p.id);
+      goalOnly.searchParams.set("goal", String(Math.max(0, parseInt((p.goal || "0") as any, 10) || 0)));
+      goalOnly.searchParams.set("goalLabel", (p.goalLabel || "후원 목표").trim());
+      goalOnly.searchParams.set("goalWidth", String(Math.max(260, Math.min(1200, parseInt((p.goalWidth || "560") as any, 10) || 560))));
+      if (String(p.goalCurrent || "").trim()) {
+        goalOnly.searchParams.set("goalCurrent", String(Math.max(0, parseInt(String(p.goalCurrent), 10) || 0)));
+      }
+      goalOnly.searchParams.set("previewGuide", "true");
+      return goalOnly.toString();
+    }
     const base = `${window.location.origin}/overlay`;
     const q = new URLSearchParams(presetToParams(p));
     q.set("p", p.id);
@@ -1014,6 +1035,19 @@ export default function AdminPage() {
   const updateMemberPositionMode = (mode: AppState["memberPositionMode"]) => {
     setState((prev: AppState) => {
       const next: AppState = { ...prev, memberPositionMode: mode };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const updateRepresentativeMember = (memberId: string) => {
+    setState((prev: AppState) => {
+      const nextMap = { ...(prev.memberPositions || {}) };
+      for (const m of prev.members) {
+        if (nextMap[m.id] === "대표") delete nextMap[m.id];
+      }
+      if (memberId) nextMap[memberId] = "대표";
+      const next: AppState = { ...prev, memberPositions: nextMap };
       persistState(next);
       return next;
     });
@@ -2361,17 +2395,33 @@ export default function AdminPage() {
                       <span className="truncate text-sm text-neutral-300">{m.name}</span>
                       <input
                         className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
-                        placeholder="직급 (예: 대표, 이사, 부장)"
+                        placeholder={state.memberPositionMode === "rankLinked" ? "순위 연동 모드에서는 아래 대표 멤버만 지정" : "직급 (예: 대표, 이사, 부장)"}
                         value={state.memberPositions?.[m.id] || ""}
                         onChange={(e) => updateMemberPosition(m.id, e.target.value)}
+                        disabled={state.memberPositionMode === "rankLinked"}
                       />
                     </label>
                   ))}
                 </div>
                 {state.memberPositionMode === "rankLinked" && (
                   <div className="rounded border border-white/10 bg-black/20 p-2">
+                    <div className="mb-2 grid grid-cols-1 md:grid-cols-[120px_1fr] items-center gap-2">
+                      <label className="text-xs text-neutral-300">대표 멤버</label>
+                      <select
+                        className="w-full rounded bg-neutral-900/80 border border-white/10 px-2 py-1.5 text-sm"
+                        value={state.members.find((m) => state.memberPositions?.[m.id] === "대표")?.id || ""}
+                        onChange={(e) => updateRepresentativeMember(e.target.value)}
+                      >
+                        <option value="">미지정(순위 1위가 대표)</option>
+                        {state.members.map((m) => (
+                          <option key={`rep-${m.id}`} value={m.id}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                     <div className="text-xs text-neutral-400 mb-2">
-                      순위별 직급 라벨 (1위~12위). 비워두면 해당 순위 직급은 오버레이에서 출력되지 않습니다.
+                      순위별 직급 라벨 (1위~12위). 대표 멤버를 지정하면 해당 멤버는 항상 대표로 고정됩니다.
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                       {Array.from({ length: 12 }).map((_, idx) => (
@@ -4776,6 +4826,39 @@ export default function AdminPage() {
                         <button className={`px-2 py-1 rounded text-xs ${copiedId === `${p.id}-demo` ? "bg-emerald-600" : "bg-fuchsia-700 hover:bg-fuchsia-600"}`} onClick={(e) => { e.stopPropagation(); copyUrl(demoUrl, `${p.id}-demo`); }}>{copiedId === `${p.id}-demo` ? "복사됨!" : "데모 URL"}</button>
                         <button className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={(e) => { e.stopPropagation(); window.open(demoUrl, "_blank", "noopener,noreferrer"); }}>데모 열기</button>
                         <button className="px-2 py-1 rounded bg-[#ef4444] hover:bg-[#dc2626] text-xs text-white" onClick={(e) => { e.stopPropagation(); removePreset(p.id); }}>삭제</button>
+                        <div
+                          className="basis-full rounded border border-white/10 bg-black/20 px-2 py-1.5"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="mb-1 flex items-center justify-between text-[11px] text-neutral-400">
+                            <span>엑셀표 스케일(빠른 조절)</span>
+                            <span className="text-neutral-200">{scalePct}%</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="range"
+                              min="50"
+                              max="400"
+                              step="1"
+                              value={String(scalePct)}
+                              onChange={(e) => {
+                                const n = Math.max(50, Math.min(400, parseInt(e.target.value || "100", 10) || 100));
+                                updatePreset(p.id, { scale: String(n / 100) });
+                              }}
+                              className="flex-1 accent-emerald-500"
+                            />
+                            <input
+                              className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-[11px] text-right"
+                              value={String(scalePct)}
+                              onChange={(e) => {
+                                const raw = e.target.value.replace(/[^\d]/g, "");
+                                const n = Math.max(50, Math.min(400, parseInt(raw || "100", 10) || 100));
+                                updatePreset(p.id, { scale: String(n / 100) });
+                              }}
+                            />
+                            <span className="text-[11px] text-neutral-500">%</span>
+                          </div>
+                        </div>
                       </div>
                       {isOpen && (
                         <div className={`px-3 pb-3 grid grid-cols-1 lg:grid-cols-2 gap-3 border-t border-white/10 pt-3 ${simpleMode ? "hidden" : ""}`}>
@@ -5190,6 +5273,7 @@ export default function AdminPage() {
                                 </button>
                               ))}
                               <button
+                                id="overlay-goal-shortcut"
                                 className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
                                 onClick={() => {
                                   if (typeof window === "undefined") return;
@@ -5837,7 +5921,7 @@ export default function AdminPage() {
         © 2026 Final Entertainment. All rights reserved.
       </footer>
       <nav className="fixed bottom-0 left-0 right-0 z-40 lg:hidden border-t border-white/10 bg-[#202020]/95 backdrop-blur">
-        <div className="grid grid-cols-4 gap-1 p-2">
+        <div className="grid grid-cols-5 gap-1 p-2">
           <button
             onClick={() => moveToSection("dashboard", "dashboard-summary")}
             className={`rounded-md py-2 text-xs ${activeNav === "dashboard" ? "bg-[#6366f1] text-white" : "text-neutral-300"}`}
@@ -5861,6 +5945,12 @@ export default function AdminPage() {
             className={`rounded-md py-2 text-xs ${activeNav === "overlay" ? "bg-[#6366f1] text-white" : "text-neutral-300"}`}
           >
             설정
+          </button>
+          <button
+            onClick={() => moveToSection("goal", "overlay-goal-shortcut")}
+            className={`rounded-md py-2 text-xs ${activeNav === "goal" ? "bg-[#6366f1] text-white" : "text-neutral-300"}`}
+          >
+            목표
           </button>
         </div>
       </nav>
