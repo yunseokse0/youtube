@@ -803,7 +803,7 @@ function GoalBar({ current, goal, label, theme, width }: { current: number; goal
   const toMan = (n: number) => `${(Math.max(0, n) / 10000).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}만원`;
   return (
     <div style={{ width, padding: "0.14rem", borderRadius: 8, background: "rgba(18, 38, 12, 0.22)", border: "1px solid rgba(166, 227, 92, 0.45)" }}>
-      <div className="relative overflow-hidden" style={{ height: barH, borderRadius: 7, background: "rgba(145, 188, 105, 0.24)", boxShadow: "inset 0 1px 3px rgba(0,0,0,0.28)" }}>
+      <div className="relative overflow-hidden" style={{ height: barH, borderRadius: 7, background: "rgba(209, 213, 219, 0.55)", boxShadow: "inset 0 1px 3px rgba(0,0,0,0.22)" }}>
         <div
           className="h-full transition-all duration-700 ease-out"
           style={{
@@ -815,12 +815,10 @@ function GoalBar({ current, goal, label, theme, width }: { current: number; goal
         />
         <div className="absolute inset-0 flex items-center justify-between px-2" style={{ fontSize: Math.max(12, width * 0.028), letterSpacing: "-0.01em" }}>
           <span
-            className="inline-flex items-center rounded-sm px-1.5 py-0.5"
+            className="inline-flex items-center"
             style={{
               color: "#f4ffe9",
               fontWeight: 900,
-              background: "rgba(178, 224, 128, 0.28)",
-              border: "1px solid rgba(210, 246, 168, 0.52)",
               textShadow: "0 1px 1px rgba(0,0,0,0.55)",
               lineHeight: 1,
             }}
@@ -828,7 +826,8 @@ function GoalBar({ current, goal, label, theme, width }: { current: number; goal
             {label}
           </span>
           <span style={{ color: "#f9fff4", fontWeight: 700, textShadow: "0 1px 2px rgba(0,0,0,0.78)", lineHeight: 1 }}>
-            {toMan(current)} / {toMan(goal)} ({displayPct}%)
+            {toMan(current)} / {toMan(goal)}{" "}
+            <span style={{ color: pct <= 0 ? "#d1d5db" : "#f9fff4" }}>({displayPct}%)</span>
           </span>
         </div>
       </div>
