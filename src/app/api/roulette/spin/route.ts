@@ -9,6 +9,23 @@ import { getRouletteUserId, loadAppStateForRoulette, saveAppStateForRoulette } f
 import { setRouletteLock } from "../roulette-lock";
 const ONE_SHOT_SIG_ID = "sig_one_shot";
 
+function buildFallbackPool(size = 10): SigItem[] {
+  return Array.from({ length: Math.max(1, size) }).map((_, i) => {
+    const idx = i + 1;
+    return {
+      id: `fallback_sig_${idx}`,
+      name: `예비 시그 ${idx}`,
+      price: idx * 10000,
+      imageUrl: "",
+      memberId: "",
+      maxCount: 9999,
+      soldCount: 0,
+      isRolling: true,
+      isActive: true,
+    } as SigItem;
+  });
+}
+
 function pickRandom<T>(arr: T[]): T {
   const u = new Uint32Array(1);
   crypto.getRandomValues(u);
@@ -103,10 +120,27 @@ export async function POST(req: Request) {
           x.soldCount < x.maxCount &&
           (!memberIdFilter || (x.memberId || "") === memberIdFilter)
       );
-      if (pool.length < 5) {
+      // 라이브 운영 중 필터/활성 상태 때문에 후보가 5개 미만이어도
+      // 회전판이 멈추지 않도록 단계적으로 풀을 확장한다.
+      const broadActivePool = inv.filter(
+        (x) => x.isActive && x.id !== ONE_SHOT_SIG_ID && x.soldCount < x.maxCount
+      );
+      const broadAnyPool = inv.filter(
+        (x) => x.id !== ONE_SHOT_SIG_ID && x.soldCount < x.maxCount
+      );
+      const uniqueById = new Map<string, SigItem>();
+      for (const item of pool) uniqueById.set(item.id, item);
+      if (uniqueById.size < 5) {
+        for (const item of broadActivePool) uniqueById.set(item.id, item);
+      }
+      if (uniqueById.size < 5) {
+        for (const item of broadAnyPool) uniqueById.set(item.id, item);
+      }
+      const candidatePool = Array.from(uniqueById.values());
+      if (candidatePool.length < 5) {
         return Response.json({ error: "not_enough_active_sigs" }, { status: 400, headers: { "Content-Type": "application/json" } });
       }
-      const shuffled = [...pool];
+      const shuffled = [...candidatePool];
       for (let i = shuffled.length - 1; i > 0; i--) {
         const u = new Uint32Array(1);
         crypto.getRandomValues(u);
@@ -159,6 +193,7 @@ export async function POST(req: Request) {
         {
           ok: true,
           mode,
+          fallbackExpanded: candidatePool.length !== pool.length,
           startedAt: next.rouletteState.startedAt,
           sessionId: next.rouletteState.sessionId,
           result,
@@ -171,9 +206,7 @@ export async function POST(req: Request) {
     const rollingPool = inv.filter((x) => x.isRolling && x.soldCount < x.maxCount);
     const pool = rollingPool.length > 0 ? rollingPool : inv.filter((x) => x.soldCount < x.maxCount);
     const usePool = pool.length > 0 ? pool : inv;
-    if (usePool.length === 0) {
-      return Response.json({ error: "empty_inventory" }, { status: 400, headers: { "Content-Type": "application/json" } });
-    }
+    const runtimePool = usePool.length > 0 ? usePool : buildFallbackPool(10);
 
     const plan: (number | null)[] = [];
     const planRanges: ({ min: number | null; max: number | null } | null)[] = [];
@@ -193,10 +226,11 @@ export async function POST(req: Request) {
     }
 
     const results: SigItem[] = [];
+    let fallbackUsed = usePool.length === 0;
     for (let i = 0; i < spinCount; i++) {
       const tier = plan[i] ?? null;
       const range = planRanges[i] ?? null;
-      const basePool = tier == null ? usePool : usePool.filter((x) => Math.floor(Number(x.price || 0)) === tier);
+      const basePool = tier == null ? runtimePool : runtimePool.filter((x) => Math.floor(Number(x.price || 0)) === tier);
       const tierPool = range == null
         ? basePool
         : basePool.filter((x) => {
@@ -207,16 +241,10 @@ export async function POST(req: Request) {
             return true;
           });
       if (tierPool.length === 0) {
-        if (range != null) {
-          return Response.json(
-            { error: "empty_price_range", round: i + 1, range },
-            { status: 400, headers: { "Content-Type": "application/json" } }
-          );
-        }
-        return Response.json(
-          { error: "empty_price_tier", round: i + 1, tier },
-          { status: 400, headers: { "Content-Type": "application/json" } }
-        );
+        fallbackUsed = true;
+        const pickedFallback = pickRandom(runtimePool);
+        results.push({ ...pickedFallback });
+        continue;
       }
       const picked = pickRandom(tierPool);
       results.push({ ...picked });
@@ -258,7 +286,7 @@ export async function POST(req: Request) {
       });
     } catch {}
     return Response.json(
-      { ok: true, result: last, results, spinCount, spinPriceFilters: plan, spinPriceRanges: planRanges },
+      { ok: true, result: last, results, spinCount, spinPriceFilters: plan, spinPriceRanges: planRanges, fallbackUsed },
       { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }
     );
   } catch (e) {

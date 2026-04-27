@@ -8,17 +8,34 @@ export const revalidate = 0;
 
 const MAX_BYTES = 30 * 1024 * 1024;
 
+function tryParseUserCookie(raw: string): { id?: string } | null {
+  if (!raw) return null;
+  const candidates = [raw, decodeURIComponent(raw)];
+  for (const cand of candidates) {
+    const trimmed = String(cand).trim().replace(/^"|"$/g, "");
+    if (!trimmed) continue;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === "object") return parsed as { id?: string };
+    } catch {}
+    try {
+      const decodedTwice = decodeURIComponent(trimmed);
+      const parsed = JSON.parse(decodedTwice);
+      if (parsed && typeof parsed === "object") return parsed as { id?: string };
+    } catch {}
+  }
+  return null;
+}
+
 function getUserId(req: Request): string | null {
   if (isDevAuthBypassRequest(req)) return "finalent";
   const cookie = req.headers.get("cookie") || "";
-  const match = cookie.match(new RegExp(`${AUTH_COOKIE}=([^;]+)`));
+  const escaped = AUTH_COOKIE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = cookie.match(new RegExp(`${escaped}=([^;]+)`));
   if (!match) return null;
-  try {
-    const parsed = JSON.parse(decodeURIComponent(match[1]));
-    return parsed?.id || null;
-  } catch {
-    return null;
-  }
+  const parsed = tryParseUserCookie(match[1] || "");
+  const uid = typeof parsed?.id === "string" ? parsed.id.trim() : "";
+  return uid || null;
 }
 
 function extFrom(file: File): string | null {

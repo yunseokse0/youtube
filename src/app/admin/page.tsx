@@ -630,13 +630,42 @@ export default function AdminPage() {
   /** 방송/OBS용: snap 없음 → 오버레이는 항상 `/api/state` 기준 실시간 반영 (스냅샷은 아래 프리뷰 iframe 전용) */
   const buildPrismOverlayUrl = (p: OverlayPreset, vertical: boolean): string => {
     if (typeof window === "undefined") return "";
+    const isGoalOnlyPreset =
+      Boolean(p.showGoal) &&
+      !Boolean(p.showMembers) &&
+      !Boolean(p.showTotal) &&
+      !Boolean(p.showTimer) &&
+      !Boolean(p.showMission) &&
+      !Boolean(p.showPersonalGoal);
+    if (isGoalOnlyPreset) {
+      const goalOnly = new URL(`${window.location.origin}/overlay/goal`);
+      goalOnly.searchParams.set("p", p.id);
+      goalOnly.searchParams.set("u", user?.id || "finalent");
+      goalOnly.searchParams.set("host", "prism");
+      goalOnly.searchParams.set("goal", String(Math.max(0, parseInt((p.goal || "0") as any, 10) || 0)));
+      goalOnly.searchParams.set("goalLabel", (p.goalLabel || "후원").trim());
+      goalOnly.searchParams.set("goalWidth", String(Math.max(260, Math.min(1200, parseInt((p.goalWidth || "560") as any, 10) || 560))));
+      if (String(p.goalCurrent || "").trim()) {
+        goalOnly.searchParams.set("goalCurrent", String(Math.max(0, parseInt(String(p.goalCurrent), 10) || 0)));
+      }
+      return goalOnly.toString();
+    }
     const base = `${window.location.origin}/overlay`;
-    // OBS/Prism URL is intentionally minimal: keep runtime options in saved preset/state.
+    // OBS/Prism URL is minimal + critical goal params for reliable rendering.
     const q = new URLSearchParams();
     q.set("p", p.id);
     q.set("u", user?.id || "finalent");
     q.set("vertical", vertical ? "true" : "false");
     q.set("host", "prism");
+    q.set("showGoal", p.showGoal ? "true" : "false");
+    if (p.showGoal) {
+      q.set("goal", String(Math.max(0, parseInt((p.goal || "0") as any, 10) || 0)));
+      q.set("goalLabel", (p.goalLabel || "후원").trim());
+      q.set("goalWidth", String(Math.max(200, Math.min(800, parseInt((p.goalWidth || "400") as any, 10) || 400))));
+      if (String(p.goalCurrent || "").trim()) {
+        q.set("goalCurrent", String(Math.max(0, parseInt(String(p.goalCurrent), 10) || 0)));
+      }
+    }
     return `${base}?${q.toString()}`;
   };
   const buildPrismDemoOverlayUrl = (p: OverlayPreset, vertical: boolean): string => {
@@ -670,7 +699,7 @@ export default function AdminPage() {
       goalOnly.searchParams.set("u", user?.id || "finalent");
       if (p.id) goalOnly.searchParams.set("p", p.id);
       goalOnly.searchParams.set("goal", String(Math.max(0, parseInt((p.goal || "0") as any, 10) || 0)));
-      goalOnly.searchParams.set("goalLabel", (p.goalLabel || "후원 목표").trim());
+      goalOnly.searchParams.set("goalLabel", (p.goalLabel || "후원").trim());
       goalOnly.searchParams.set("goalWidth", String(Math.max(260, Math.min(1200, parseInt((p.goalWidth || "560") as any, 10) || 560))));
       if (String(p.goalCurrent || "").trim()) {
         goalOnly.searchParams.set("goalCurrent", String(Math.max(0, parseInt(String(p.goalCurrent), 10) || 0)));
@@ -5342,11 +5371,11 @@ export default function AdminPage() {
                               <details className="rounded border border-white/10 bg-neutral-900/40">
                                 <summary className="cursor-pointer select-none px-3 py-2 text-xs text-neutral-300">목표</summary>
                                 <div className="p-3 grid grid-cols-1 sm:grid-cols-[100px_minmax(0,1fr)] items-center gap-1">
-                                  <label className="text-xs text-neutral-400">목표(원)</label>
+                                  <label className="text-xs text-neutral-400">후원(원)</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" type="number" value={p.goal} onChange={(e) => updatePreset(p.id, { goal: e.target.value })} />
                                   <label className="text-xs text-neutral-400">라벨</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.goalLabel} onChange={(e) => updatePreset(p.id, { goalLabel: e.target.value })} />
-                                  <label className="text-xs text-neutral-400">미리보기용 현재액(원)</label>
+                                  <label className="text-xs text-neutral-400">총 금액(현재 후원액, 원)</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="미지정 시 자동" value={p.goalCurrent || ""} onChange={(e) => updatePreset(p.id, { goalCurrent: e.target.value })} />
                                   <div className="col-span-1 sm:col-span-2">
                                     <details className="rounded border border-white/10 bg-neutral-900/40">

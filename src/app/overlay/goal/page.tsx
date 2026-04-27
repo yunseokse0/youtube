@@ -115,11 +115,11 @@ export default function GoalOverlayPage() {
       <div className="mx-auto flex min-h-[120px] items-center justify-center" style={{ width }}>
         {goal > 0 ? (
           <section className="w-full rounded-2xl border border-white/35 bg-black/35 p-3 backdrop-blur-md">
-            <GoalBar current={current} goal={goal} label={goalLabel} width={width} compactLabel />
+            <GoalBar current={current} goal={goal} label={goalLabel} width={width} />
           </section>
         ) : (
           <section className="rounded-xl border border-amber-300/50 bg-black/35 px-4 py-2 text-sm font-semibold text-amber-100">
-            목표 금액이 설정되지 않았습니다. 백오피스에서 목표를 입력해주세요.
+            후원 목표 금액이 설정되지 않았습니다. 백오피스에서 입력해주세요.
           </section>
         )}
       </div>

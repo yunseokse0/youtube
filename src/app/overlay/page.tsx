@@ -1299,10 +1299,21 @@ function OverlayInner() {
   const hasContextTicker = false;
   const showTimerRaw = (sp.get("showTimer") || "").toLowerCase();
   const showTimer = tableOnly ? false : (timerOnlyMode ? showTimerRaw !== "false" : showTimerRaw === "true");
-  const goalRaw = parseInt(sp.get("goal") || "0", 10);
-  const goal = isNaN(goalRaw) ? 0 : goalRaw;
-  const goalLabel = sp.get("goalLabel") || "후원";
-  const goalWidth = Math.max(200, Math.min(800, parseInt(sp.get("goalWidth") || "400", 10)));
+  const goal = useMemo(() => {
+    const fromUrl = parseInt(sp.get("goal") || "0", 10);
+    if (Number.isFinite(fromUrl) && fromUrl > 0) return fromUrl;
+    const fromPreset = Number((activePreset as any)?.goal || 0);
+    if (Number.isFinite(fromPreset) && fromPreset > 0) return Math.floor(fromPreset);
+    return 0;
+  }, [sp, activePreset]);
+  const goalLabel = (sp.get("goalLabel") || (activePreset as any)?.goalLabel || "후원").trim();
+  const goalWidth = useMemo(() => {
+    const fromUrl = parseInt(sp.get("goalWidth") || "0", 10);
+    if (Number.isFinite(fromUrl) && fromUrl > 0) return Math.max(200, Math.min(800, fromUrl));
+    const fromPreset = Number((activePreset as any)?.goalWidth || 0);
+    if (Number.isFinite(fromPreset) && fromPreset > 0) return Math.max(200, Math.min(800, Math.floor(fromPreset)));
+    return 400;
+  }, [sp, activePreset]);
   const goalAnchor = (sp.get("goalAnchor") || "bc").toLowerCase();
   const personalGoalAnchor = (sp.get("personalGoalAnchor") || "tl").toLowerCase();
   const personalGoalLimit = Math.max(1, Math.min(12, parseInt(sp.get("personalGoalLimit") || "3", 10)));
@@ -1313,8 +1324,16 @@ function OverlayInner() {
   const hasPersonalGoalFreePos = centerFixed ? false : (personalGoalFree || (personalGoalXParam !== null && personalGoalYParam !== null));
   const personalGoalX = hasPersonalGoalFreePos ? parsePct(personalGoalXParam, 78) : 0;
   const personalGoalY = hasPersonalGoalFreePos ? parsePct(personalGoalYParam, 82) : 0;
-  const goalCurrentParam = sp.get("goalCurrent");
-  const goalCurrent = goalCurrentParam !== null ? Math.max(0, parseInt(goalCurrentParam || "0", 10) || 0) : null;
+  const goalCurrent = useMemo(() => {
+    const fromUrlRaw = sp.get("goalCurrent");
+    if (fromUrlRaw !== null) {
+      const fromUrl = parseInt(fromUrlRaw || "0", 10);
+      return Math.max(0, Number.isFinite(fromUrl) ? fromUrl : 0);
+    }
+    const fromPreset = Number((activePreset as any)?.goalCurrent || NaN);
+    if (Number.isFinite(fromPreset) && fromPreset >= 0) return Math.floor(fromPreset);
+    return null;
+  }, [sp, activePreset]);
   const timerStart = sp.get("timerStart") ? parseInt(sp.get("timerStart")!, 10) : null;
   const timerAnchorParam = (sp.get("timerAnchor") || "").trim().toLowerCase();
   const timerAnchor = timerAnchorParam || (timerOnlyMode ? "cc" : "tr");
@@ -1421,7 +1440,9 @@ function OverlayInner() {
   const tickerGlowCfg = Math.max(0, Math.min(100, parseInt(sp.get("tickerGlow") || "45", 10)));
   const tickerShadowCfg = Math.max(0, Math.min(100, parseInt(sp.get("tickerShadow") || "35", 10)));
   const tableBgOpacity = (() => {
-    const raw = (sp.get("tableBgOpacity") || "").trim();
+    const rawUrl = (sp.get("tableBgOpacity") || "").trim();
+    const rawPreset = String((activePreset as any)?.tableBgOpacity || "").trim();
+    const raw = rawUrl || rawPreset;
     if (!raw) {
       const neonThemes = ["rainbow", "sunset", "ocean", "forest", "aurora", "violet", "coral", "mint", "lava", "ice"];
       return neonThemes.includes(membersThemeId) ? 92 : 100;
@@ -1429,9 +1450,11 @@ function OverlayInner() {
     const n = parseInt(raw, 10);
     return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 100;
   })();
-  const tableBgGifUrl = (sp.get("tableBgGifUrl") || "").trim();
+  const tableBgGifUrl = ((sp.get("tableBgGifUrl") || "").trim() || String((activePreset as any)?.tableBgGifUrl || "").trim());
   const tableBgGifOpacity = (() => {
-    const raw = (sp.get("tableBgGifOpacity") || "").trim();
+    const rawUrl = (sp.get("tableBgGifOpacity") || "").trim();
+    const rawPreset = String((activePreset as any)?.tableBgGifOpacity || "").trim();
+    const raw = rawUrl || rawPreset;
     if (!raw) return 45;
     const n = parseInt(raw, 10);
     return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 45;
@@ -1968,7 +1991,7 @@ function OverlayInner() {
           "rgba(255, 212, 231, 0.70)", // contribution
         ];
     let effectiveScale = centerFixed || hasTableFreePos
-      ? (zoomMode === "neutral" ? 1 : (zoomMode === "invert" ? (1 / centerZoomScale) : centerZoomScale))
+      ? (scale * (zoomMode === "neutral" ? 1 : (zoomMode === "invert" ? (1 / centerZoomScale) : centerZoomScale)))
       : (externalHost ? 1 : (viewportScale * scale));
     if (noCrop) {
       effectiveScale = Math.min(effectiveScale, containLimitScale);
@@ -2014,7 +2037,7 @@ function OverlayInner() {
       fitPin === "cl" ? "left center" :
       fitPin === "cr" ? "right center" :
       "center center";
-    const scaleStyleTag = (centerFixed || hasTableFreePos || externalHost) ? (
+    const scaleStyleTag = externalHost ? (
       <style dangerouslySetInnerHTML={{ __html: `
         .overlay-route { transform: none !important; -webkit-transform: none !important; transform-origin: center center !important; }
       ` }} />
