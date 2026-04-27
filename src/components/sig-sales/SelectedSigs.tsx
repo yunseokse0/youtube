@@ -13,22 +13,35 @@ type SelectedSigsProps = {
   onToggleSold: (id: string) => void;
   disabled?: boolean;
   trailingSlot?: ReactNode;
+  highlightId?: string | null;
 };
 
-export default function SelectedSigs({ items, soldOutStampUrl, manualSoldSet, onToggleSold, disabled = false, trailingSlot }: SelectedSigsProps) {
+export default function SelectedSigs({ items, soldOutStampUrl, manualSoldSet, onToggleSold, disabled = false, trailingSlot, highlightId = null }: SelectedSigsProps) {
   const fallbackImage = "/images/sigs/dummy-sig.svg";
   return (
     <section className={`grid grid-cols-1 gap-3 ${trailingSlot ? "md:grid-cols-6" : "md:grid-cols-5"}`}>
       {items.map((item, idx) => {
         const sold = manualSoldSet.has(item.id);
+        const isLatestConfirmed = highlightId === item.id;
         return (
           <motion.article
             key={item.id}
             initial={{ opacity: 0, y: 28, scale: 0.92 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ delay: idx * 0.08, duration: 0.35 }}
-            className="relative overflow-hidden rounded-xl border border-white/20 bg-neutral-900/70"
+            className={`relative overflow-hidden rounded-xl border bg-neutral-900/70 ${isLatestConfirmed ? "border-yellow-300 shadow-[0_0_24px_rgba(250,204,21,0.45)]" : "border-white/20"}`}
           >
+            <div className="absolute left-2 top-2 z-20 rounded bg-emerald-600/90 px-2 py-0.5 text-[10px] font-black text-white">
+              확정
+            </div>
+            {isLatestConfirmed ? (
+              <motion.div
+                className="pointer-events-none absolute inset-0 z-10 border-2 border-yellow-300/85"
+                initial={{ opacity: 0.1 }}
+                animate={{ opacity: [0.15, 0.9, 0.2] }}
+                transition={{ duration: 0.9, repeat: 1 }}
+              />
+            ) : null}
             <div className="relative aspect-[4/5]">
               <img
                 src={resolveSigImageUrl(item.name, item.imageUrl)}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import confetti from "canvas-confetti";
 import { Howl } from "howler";
 import type { SigItem } from "@/types";
@@ -14,6 +14,7 @@ import { ONE_SHOT_SIG_ID, SPIN_SOUND_PATHS, clampOverlayOpacity, cancelRouletteS
 import { useSigSalesState } from "@/hooks/useSigSalesState";
 
 const POLL_MS = 1000;
+const STEP_CONFIRM_PAUSE_MS = 1800;
 type HistoryItem = {
   id: string;
   sessionId: string;
@@ -55,12 +56,16 @@ export default function AdminSigSalesPage() {
   const [manualSoldSet, setManualSoldSet] = useState<Set<string>>(new Set());
   const [oneShotSold, setOneShotSold] = useState(false);
   const [demoSpin, setDemoSpin] = useState<{ startedAt: number; resultId: string | null } | null>(null);
-  const [pendingLanding, setPendingLanding] = useState<{ selected: SigItem[]; oneShot: { id: string; name: string; price: number } | null; resultId: string | null } | null>(null);
+  const [pendingLanding, setPendingLanding] = useState<{ selected: SigItem[]; oneShot: { id: string; name: string; price: number } | null; resultId: string | null; persist: boolean } | null>(null);
   const [volume, setVolume] = useState(0.7);
   const [muted, setMuted] = useState(false);
   const [autoResetAfterConfirm, setAutoResetAfterConfirm] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [stagedSelected, setStagedSelected] = useState<SigItem[]>([]);
+  const [spinStep, setSpinStep] = useState(0);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const nextSpinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [oneShotSound] = useState(() => new Howl({ src: [SPIN_SOUND_PATHS.oneShot], preload: true, volume: 0.7 }));
   const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || "/images/sigs/stamp.png";
   const { machine, spin, landed, markConfirmPending, cancelConfirm, resetToIdle, finish, setOpacity, setError } = useSigSalesState(userId, state);
@@ -114,6 +119,28 @@ export default function AdminSigSalesPage() {
     return () => window.clearTimeout(id);
   }, [machine.phase, autoResetAfterConfirm, resetToIdle]);
 
+  useEffect(() => {
+    if (machine.phase !== "IDLE") return;
+    if (nextSpinTimerRef.current) {
+      clearTimeout(nextSpinTimerRef.current);
+      nextSpinTimerRef.current = null;
+    }
+    setStagedSelected([]);
+    setSpinStep(0);
+    setHighlightId(null);
+    setPendingLanding(null);
+    setDemoSpin(null);
+  }, [machine.phase]);
+
+  useEffect(() => {
+    return () => {
+      if (nextSpinTimerRef.current) {
+        clearTimeout(nextSpinTimerRef.current);
+        nextSpinTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const activeNormalPool = useMemo(() => {
     if (!state) return [];
     const excluded = new Set((state.sigSalesExcludedIds || []).map((x) => String(x)));
@@ -134,9 +161,12 @@ export default function AdminSigSalesPage() {
     if (!wheelItems.length) return [found];
     return [...wheelItems.slice(0, Math.max(0, wheelItems.length - 1)), found];
   }, [wheelItems, demoSpin?.resultId, machine.resultId, activeNormalPool]);
-  const displaySelectedSigs = useMemo(() => machine.selectedSigs.slice(0, 5), [machine.selectedSigs]);
+  const displaySelectedSigs = useMemo(() => {
+    if (stagedSelected.length > 0) return stagedSelected.slice(0, 5);
+    return machine.selectedSigs.slice(0, 5);
+  }, [machine.selectedSigs, stagedSelected]);
   const displayOneShot = useMemo(() => {
-    if (!displaySelectedSigs.length) return null;
+    if (displaySelectedSigs.length < 5) return null;
     return buildOneShotFromSelected(displaySelectedSigs);
   }, [displaySelectedSigs]);
   const oneShotImageUrl = useMemo(() => {
@@ -170,8 +200,12 @@ export default function AdminSigSalesPage() {
         selected,
         oneShot: { id: ONE_SHOT_SIG_ID, name: "한방 시그", price: selected.reduce((sum, x) => sum + x.price, 0) },
         resultId,
+        persist: false,
       });
-      setDemoSpin({ startedAt: Date.now(), resultId });
+      setDemoSpin({ startedAt: Date.now(), resultId: selected[0]?.id || resultId });
+      setSpinStep(0);
+      setStagedSelected([]);
+      setHighlightId(null);
       setManualSoldSet(new Set());
       setOneShotSold(false);
       setShowConfirmModal(false);
@@ -183,7 +217,12 @@ export default function AdminSigSalesPage() {
     try {
       const data = await spin();
       const selected = (data.selectedSigs || []).slice(0, 5);
-      setPendingLanding({ selected, oneShot: data.oneShot, resultId: data.result?.id || null });
+      const oneShot = buildOneShotFromSelected(selected);
+      setPendingLanding({ selected, oneShot, resultId: data.result?.id || selected[selected.length - 1]?.id || null, persist: true });
+      setDemoSpin({ startedAt: Date.now(), resultId: selected[0]?.id || null });
+      setSpinStep(0);
+      setStagedSelected([]);
+      setHighlightId(null);
       confetti({ particleCount: 70, spread: 65, origin: { y: 0.25 } });
       setManualSoldSet(new Set());
       setOneShotSold(false);
@@ -197,8 +236,12 @@ export default function AdminSigSalesPage() {
         selected,
         oneShot: { id: ONE_SHOT_SIG_ID, name: "한방 시그", price: selected.reduce((sum, x) => sum + x.price, 0) },
         resultId,
+        persist: false,
       });
-      setDemoSpin({ startedAt: Date.now(), resultId });
+      setDemoSpin({ startedAt: Date.now(), resultId: selected[0]?.id || resultId });
+      setSpinStep(0);
+      setStagedSelected([]);
+      setHighlightId(null);
       setManualSoldSet(new Set());
       setOneShotSold(false);
       setShowConfirmModal(false);
@@ -348,17 +391,37 @@ export default function AdminSigSalesPage() {
             muted={muted}
             onLanded={() => {
               if (!pendingLanding) return;
-              const selected = pendingLanding.selected.slice(0, 5);
-              const oneShot = buildOneShotFromSelected(selected);
-              landed(selected, oneShot, pendingLanding.resultId || selected[selected.length - 1]?.id || null);
+              const selectedQueue = pendingLanding.selected.slice(0, 5);
+              if (selectedQueue.length === 0) return;
+              const current = selectedQueue[Math.min(spinStep, selectedQueue.length - 1)];
+              const nextSelected = [...stagedSelected, current];
+              const nextStep = spinStep + 1;
+              setHighlightId(current.id);
+
+              if (nextStep < selectedQueue.length) {
+                setStagedSelected(nextSelected);
+                setSpinStep(nextStep);
+                if (nextSpinTimerRef.current) clearTimeout(nextSpinTimerRef.current);
+                nextSpinTimerRef.current = setTimeout(() => {
+                  setDemoSpin({ startedAt: Date.now(), resultId: selectedQueue[nextStep].id });
+                }, STEP_CONFIRM_PAUSE_MS);
+                return;
+              }
+
+              const finalSelected = nextSelected;
+              const oneShot = buildOneShotFromSelected(finalSelected);
+              landed(finalSelected, oneShot, pendingLanding.resultId || current.id);
               oneShotSound.stop();
               oneShotSound.play();
+              setStagedSelected(finalSelected);
+              setSpinStep(0);
               setDemoSpin(null);
               setPendingLanding(null);
+              if (!pendingLanding.persist) return;
               void persistRouletteState({
                 phase: "LANDED",
                 isRolling: false,
-                selectedSigs: selected,
+                selectedSigs: finalSelected,
                 oneShotResult: oneShot,
               });
             }}
@@ -376,14 +439,16 @@ export default function AdminSigSalesPage() {
             </div>
           ) : null}
 
-          {(machine.phase === "LANDED" || machine.phase === "CONFIRM_PENDING" || machine.phase === "CONFIRMED") && displaySelectedSigs.length > 0 ? (
+          {(machine.phase === "SPINNING" || machine.phase === "LANDED" || machine.phase === "CONFIRM_PENDING" || machine.phase === "CONFIRMED" || stagedSelected.length > 0) &&
+          displaySelectedSigs.length > 0 ? (
             <div className="mt-4 space-y-4">
               <SelectedSigs
                 items={displaySelectedSigs}
                 soldOutStampUrl={soldOutStampUrl}
                 manualSoldSet={manualSoldSet}
                 disabled={controlsDisabled}
-                trailingSlot={
+                highlightId={highlightId}
+                trailingSlot={displayOneShot ? (
                   <OneShotSigCard
                     name={displayOneShot?.name || "한방 시그"}
                     price={displayOneShot?.price || 0}
@@ -393,7 +458,7 @@ export default function AdminSigSalesPage() {
                     compact
                     onToggleSold={() => setOneShotSold((v) => !v)}
                   />
-                }
+                ) : null}
                 onToggleSold={(id) =>
                   setManualSoldSet((prev) => {
                     const next = new Set(prev);

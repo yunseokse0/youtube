@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Howl } from "howler";
 import confetti from "canvas-confetti";
@@ -14,6 +14,7 @@ import { ONE_SHOT_SIG_ID, SOUND_ASSETS_ENABLED, SPIN_SOUND_PATHS, clampOverlayOp
 import { useSigSalesState } from "@/hooks/useSigSalesState";
 
 const POLL_MS = 1000;
+const STEP_CONFIRM_PAUSE_MS = 1800;
 const DEMO_POOL = [
   { id: "demo_1", name: "애교", price: 77000, imageUrl: "/images/sigs/애교.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
   { id: "demo_2", name: "댄스", price: 100000, imageUrl: "/images/sigs/댄스.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
@@ -40,8 +41,12 @@ export default function SigSalesOverlayPage() {
   const [manualSoldSet, setManualSoldSet] = useState<Set<string>>(new Set());
   const [oneShotSold, setOneShotSold] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [pendingLanding, setPendingLanding] = useState<{ selected: SigItem[]; oneShot: { id: string; name: string; price: number } | null; resultId: string | null } | null>(null);
+  const [pendingLanding, setPendingLanding] = useState<{ selected: SigItem[]; oneShot: { id: string; name: string; price: number } | null; resultId: string | null; persist: boolean } | null>(null);
   const [demoSpin, setDemoSpin] = useState<{ startedAt: number; resultId: string | null } | null>(null);
+  const [stagedSelected, setStagedSelected] = useState<SigItem[]>([]);
+  const [spinStep, setSpinStep] = useState(0);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const nextSpinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [volume, setVolume] = useState(0.7);
   const [muted, setMuted] = useState(false);
   const [oneShotSound] = useState(() =>
@@ -100,12 +105,13 @@ export default function SigSalesOverlayPage() {
     return [...wheelItems.slice(0, Math.max(0, wheelItems.length - 1)), found];
   }, [wheelItems, demoSpin?.resultId, machine.resultId, activeNormalPool]);
   const displaySelectedSigs = useMemo(() => {
+    if (stagedSelected.length > 0) return stagedSelected.slice(0, 5);
     if (machine.selectedSigs.length > 0) return machine.selectedSigs.slice(0, 5);
     if (rouletteDemo && pendingLanding?.selected?.length) return pendingLanding.selected.slice(0, 5);
     return [];
-  }, [machine.selectedSigs, rouletteDemo, pendingLanding]);
+  }, [machine.selectedSigs, rouletteDemo, pendingLanding, stagedSelected]);
   const displayOneShot = useMemo(() => {
-    if (displaySelectedSigs.length === 0) return null;
+    if (displaySelectedSigs.length < 5) return null;
     return buildOneShotFromSelected(displaySelectedSigs);
   }, [displaySelectedSigs]);
   const displayResultId = useMemo(() => {
@@ -113,36 +119,34 @@ export default function SigSalesOverlayPage() {
     return (demoSpin?.resultId || machine.resultId || displaySelectedSigs[displaySelectedSigs.length - 1]?.id || null) as string | null;
   }, [displaySelectedSigs, demoSpin?.resultId, machine.resultId]);
 
-  const onLandedPayload = useMemo(() => {
-    if (!pendingLanding?.selected?.length) return null;
-    const selected = pendingLanding.selected.slice(0, 5);
-    return {
-      selected,
-      oneShot: buildOneShotFromSelected(selected),
-      resultId: pendingLanding.resultId || selected[selected.length - 1]?.id || null,
-    };
-  }, [pendingLanding]);
-  const displayFromPending = rouletteDemo && Boolean(onLandedPayload || pendingLanding);
-  const displaySelectedFromPending = useMemo(() => {
-    if (!onLandedPayload?.selected?.length) return [];
-    return onLandedPayload.selected;
-  }, [onLandedPayload]);
-  const displayOneShotFromPending = useMemo(() => {
-    if (!onLandedPayload) return null;
-    return onLandedPayload.oneShot;
-  }, [onLandedPayload]);
-
-  const finalDisplaySelected = displayFromPending && displaySelectedFromPending.length > 0 ? displaySelectedFromPending : displaySelectedSigs;
-  const finalDisplayOneShot = displayFromPending && displayOneShotFromPending ? displayOneShotFromPending : displayOneShot;
+  const finalDisplaySelected = displaySelectedSigs;
+  const finalDisplayOneShot = displayOneShot;
   const oneShotImageUrl = useMemo(() => {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     return oneShotItem?.imageUrl || "/images/sigs/dummy-sig.svg";
   }, [state?.sigInventory]);
 
-  const onLandedResultId = useMemo(() => {
-    if (onLandedPayload?.resultId) return onLandedPayload.resultId;
-    return null;
-  }, [onLandedPayload]);
+  useEffect(() => {
+    if (machine.phase !== "IDLE") return;
+    if (nextSpinTimerRef.current) {
+      clearTimeout(nextSpinTimerRef.current);
+      nextSpinTimerRef.current = null;
+    }
+    setStagedSelected([]);
+    setSpinStep(0);
+    setHighlightId(null);
+    setPendingLanding(null);
+    setDemoSpin(null);
+  }, [machine.phase]);
+
+  useEffect(() => {
+    return () => {
+      if (nextSpinTimerRef.current) {
+        clearTimeout(nextSpinTimerRef.current);
+        nextSpinTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const onStartRoulette = useCallback(async () => {
     if (controlsDisabled) return;
@@ -157,15 +161,24 @@ export default function SigSalesOverlayPage() {
         selected,
         oneShot: { id: ONE_SHOT_SIG_ID, name: "한방 시그", price: selected.reduce((sum, x) => sum + x.price, 0) },
         resultId,
+        persist: false,
       });
-      setDemoSpin({ startedAt: Date.now(), resultId });
+      setDemoSpin({ startedAt: Date.now(), resultId: selected[0]?.id || resultId });
+      setSpinStep(0);
+      setStagedSelected([]);
+      setHighlightId(null);
       confetti({ particleCount: 60, spread: 70, origin: { y: 0.2 } });
       return;
     }
     try {
       const data = await spin();
       const selected = (data.selectedSigs || []).slice(0, 5);
-      setPendingLanding({ selected, oneShot: data.oneShot, resultId: data.result?.id || null });
+      const oneShot = buildOneShotFromSelected(selected);
+      setPendingLanding({ selected, oneShot, resultId: data.result?.id || selected[selected.length - 1]?.id || null, persist: true });
+      setDemoSpin({ startedAt: Date.now(), resultId: selected[0]?.id || null });
+      setSpinStep(0);
+      setStagedSelected([]);
+      setHighlightId(null);
       confetti({ particleCount: 75, spread: 66, origin: { y: 0.23 } });
       setManualSoldSet(new Set());
       setOneShotSold(false);
@@ -271,17 +284,38 @@ export default function SigSalesOverlayPage() {
             volume={volume}
             muted={muted}
             onLanded={() => {
-              if (!onLandedPayload) return;
-              landed(onLandedPayload.selected, onLandedPayload.oneShot, onLandedResultId);
+              if (!pendingLanding) return;
+              const selectedQueue = pendingLanding.selected.slice(0, 5);
+              if (selectedQueue.length === 0) return;
+              const current = selectedQueue[Math.min(spinStep, selectedQueue.length - 1)];
+              const nextSelected = [...stagedSelected, current];
+              const nextStep = spinStep + 1;
+              setHighlightId(current.id);
+
+              if (nextStep < selectedQueue.length) {
+                setStagedSelected(nextSelected);
+                setSpinStep(nextStep);
+                if (nextSpinTimerRef.current) clearTimeout(nextSpinTimerRef.current);
+                nextSpinTimerRef.current = setTimeout(() => {
+                  setDemoSpin({ startedAt: Date.now(), resultId: selectedQueue[nextStep].id });
+                }, STEP_CONFIRM_PAUSE_MS);
+                return;
+              }
+
+              const oneShot = buildOneShotFromSelected(nextSelected);
+              landed(nextSelected, oneShot, pendingLanding.resultId || current.id);
               oneShotSound?.stop();
               oneShotSound?.play();
+              setStagedSelected(nextSelected);
+              setSpinStep(0);
               setDemoSpin(null);
               setPendingLanding(null);
+              if (!pendingLanding.persist) return;
               void persistRouletteState({
                 phase: "LANDED",
                 isRolling: false,
-                selectedSigs: onLandedPayload.selected,
-                oneShotResult: onLandedPayload.oneShot,
+                selectedSigs: nextSelected,
+                oneShotResult: oneShot,
               });
             }}
           />
@@ -294,7 +328,7 @@ export default function SigSalesOverlayPage() {
             </div>
           ) : null}
 
-          {(machine.phase === "LANDED" || machine.phase === "CONFIRM_PENDING" || machine.phase === "CONFIRMED" || (rouletteDemo && Boolean(pendingLanding))) &&
+          {(machine.phase === "SPINNING" || machine.phase === "LANDED" || machine.phase === "CONFIRM_PENDING" || machine.phase === "CONFIRMED" || stagedSelected.length > 0) &&
           finalDisplaySelected.length > 0 ? (
             <div className="mt-4 space-y-4">
               {rouletteDemo ? <p className="text-xs font-semibold text-fuchsia-200/90">데모 당첨 배치 미리보기</p> : null}
@@ -303,7 +337,8 @@ export default function SigSalesOverlayPage() {
                 soldOutStampUrl={soldOutStampUrl}
                 manualSoldSet={manualSoldSet}
                 disabled={controlsDisabled}
-                trailingSlot={
+                highlightId={highlightId}
+                trailingSlot={finalDisplayOneShot ? (
                   <OneShotSigCard
                     name={finalDisplayOneShot?.name || "한방 시그"}
                     price={finalDisplayOneShot?.price || 0}
@@ -313,7 +348,7 @@ export default function SigSalesOverlayPage() {
                     compact
                     onToggleSold={() => setOneShotSold((v) => !v)}
                   />
-                }
+                ) : null}
                 onToggleSold={(id) =>
                   setManualSoldSet((prev) => {
                     const next = new Set(prev);

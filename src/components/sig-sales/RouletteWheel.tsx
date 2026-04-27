@@ -83,16 +83,15 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
     return () => unsub();
   }, [rotate]);
 
-  const calculateFinalAngle = (targetId: string | null, count: number) => {
-    if (!targetId || !items.length) return rotate.get() + 360;
+  const calculateFinalAngle = (targetId: string | null, count: number, currentBase: number, minTurns: number) => {
+    if (!targetId || !items.length) return currentBase + Math.max(1, minTurns) * 360;
     const idx = Math.max(0, items.findIndex((x) => x.id === targetId));
-    const targetCenter = idx * (360 / Math.max(1, count)) + 360 / Math.max(1, count) / 2;
+    const seg = 360 / Math.max(1, count);
+    const targetCenter = idx * seg + seg / 2;
     const normalizedTarget = ((360 - targetCenter) % 360 + 360) % 360;
-    const current = rotate.get();
-    const currentNorm = ((current % 360) + 360) % 360;
+    const currentNorm = ((currentBase % 360) + 360) % 360;
     const deltaToTarget = ((normalizedTarget - currentNorm) % 360 + 360) % 360;
-    // Always include extra turns so every spin is visibly long.
-    return current + 4 * 360 + deltaToTarget;
+    return currentBase + minTurns * 360 + deltaToTarget;
   };
 
   const stopAllAnimations = () => {
@@ -143,30 +142,30 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
     const runSequence = async () => {
       try {
         const currentRotate = rotate.get();
-        const burstTarget = currentRotate + 720;
-        const phase1Target = currentRotate + 2040;
+        const accelTarget = currentRotate + 460;
+        const cruiseTarget = currentRotate + 1240;
 
-        // 1-1) 짧은 급가속: 첫 구간이 가장 빠르게 체감되지만 튀지 않게 완화
-        await runAnimation(burstTarget, { duration: 0.52, ease: [0.16, 0.95, 0.3, 1] });
+        // 1) 가속: 서서히 속도를 올리는 구간
+        await runAnimation(accelTarget, { duration: 0.95, ease: [0.42, 0, 1, 1] });
         if (cancelled) return;
 
-        // 1-2) 안정 고속 구간: 일정 속도로 회전하여 체감 안정화
-        await runAnimation(phase1Target, { duration: 2.25, ease: "linear" });
+        // 2) 고속 유지: 일정한 최고속으로 회전
+        await runAnimation(cruiseTarget, { duration: 1.15, ease: "linear" });
         if (cancelled) return;
 
-        // 2) 감속 착지 (2.05s): 급브레이크 느낌을 줄이고 자연스럽게 감속
-        const target = calculateFinalAngle(resultId, Math.max(1, spinItems.length));
+        // 3) 감속 착지: 서서히 감속하며 목표 위치로 자연스럽게 정지
+        const target = calculateFinalAngle(resultId, Math.max(1, spinItems.length), cruiseTarget, 1);
         sounds?.final.stop();
         sounds?.final.play();
         await runAnimation(target, {
-          duration: 2.05,
-          ease: [0.2, 0.9, 0.28, 1.0],
+          duration: 2.9,
+          ease: [0.05, 0.9, 0.18, 1.0],
         });
         if (cancelled) return;
 
-        // 3) 착지 직전 미세 wobble
+        // 4) 착지 직전 미세 wobble
         await runAnimation(target + 8, {
-          duration: 0.2,
+          duration: 0.3,
           repeat: 1,
           repeatType: "reverse",
           ease: "easeInOut",
