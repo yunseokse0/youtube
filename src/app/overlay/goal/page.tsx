@@ -1,0 +1,130 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { defaultState, loadState, loadStateFromApi, storageKey, type AppState } from "@/lib/state";
+import type { OverlayPresetLike } from "@/lib/overlay-params";
+
+function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
+  const [state, setState] = useState<AppState | null>(null);
+  const lastUpdatedRef = useRef(0);
+  const syncingRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const raw = window.localStorage.getItem(storageKey(userId));
+        if (raw) {
+          const local = loadState(userId ?? undefined);
+          setState(local);
+          lastUpdatedRef.current = local.updatedAt || 0;
+        }
+      } catch {
+        // ignore local read error
+      }
+    }
+    if (!state) {
+      const fallback = defaultState();
+      setState(fallback);
+      lastUpdatedRef.current = fallback.updatedAt || 0;
+    }
+
+    const syncFromApi = async () => {
+      if (syncingRef.current) return;
+      syncingRef.current = true;
+      try {
+        const remote = await loadStateFromApi(userId);
+        if (!remote) return;
+        const remoteUpdatedAt = remote.updatedAt || 0;
+        if (remoteUpdatedAt >= lastUpdatedRef.current) {
+          lastUpdatedRef.current = remoteUpdatedAt;
+          setState(remote);
+        }
+      } finally {
+        syncingRef.current = false;
+      }
+    };
+
+    void syncFromApi();
+    const id = window.setInterval(() => void syncFromApi(), 2500);
+    return () => window.clearInterval(id);
+  }, [userId]);
+
+  return { state, ready: state !== null };
+}
+
+export default function GoalOverlayPage() {
+  const sp = useSearchParams();
+  const userId = (sp.get("u") || "finalent").trim();
+  const { state, ready } = useRemoteState(userId);
+
+  const activePreset = useMemo(() => {
+    const presets = (state?.overlayPresets || []) as OverlayPresetLike[];
+    if (!Array.isArray(presets) || presets.length === 0) return null;
+    const pId = (sp.get("p") || "").trim();
+    if (pId) return presets.find((x) => x.id === pId) || null;
+    const preferredId = (state as any)?.overlaySettings?.currentPresetId;
+    if (preferredId) return presets.find((x) => x.id === preferredId) || null;
+    return presets[0] || null;
+  }, [state, sp]);
+
+  const goal = useMemo(() => {
+    const fromUrl = Number(sp.get("goal"));
+    if (Number.isFinite(fromUrl) && fromUrl > 0) return Math.floor(fromUrl);
+    const fromPreset = Number(activePreset?.goal || 0);
+    if (Number.isFinite(fromPreset) && fromPreset > 0) return Math.floor(fromPreset);
+    return 0;
+  }, [sp, activePreset?.goal]);
+
+  const goalLabel = (sp.get("goalLabel") || activePreset?.goalLabel || "후원 목표").trim();
+  const width = useMemo(() => {
+    const fromUrl = Number(sp.get("goalWidth"));
+    if (Number.isFinite(fromUrl)) return Math.max(260, Math.min(1200, Math.floor(fromUrl)));
+    const fromPreset = Number(activePreset?.goalWidth || 0);
+    if (Number.isFinite(fromPreset) && fromPreset > 0) return Math.max(260, Math.min(1200, Math.floor(fromPreset)));
+    return 560;
+  }, [sp, activePreset?.goalWidth]);
+
+  const totalCombined = useMemo(
+    () => (state?.members || []).reduce((sum, m) => sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)), 0),
+    [state?.members]
+  );
+
+  const current = useMemo(() => {
+    const fromUrl = Number(sp.get("goalCurrent"));
+    if (Number.isFinite(fromUrl) && fromUrl >= 0) return Math.floor(fromUrl);
+    const fromPreset = Number(activePreset?.goalCurrent || NaN);
+    if (Number.isFinite(fromPreset) && fromPreset >= 0) return Math.floor(fromPreset);
+    return Math.max(0, totalCombined);
+  }, [sp, activePreset?.goalCurrent, totalCombined]);
+
+  const pct = goal > 0 ? Math.min(100, (current / goal) * 100) : 0;
+  if (!ready) return null;
+
+  return (
+    <main className="min-h-screen w-full bg-transparent p-4">
+      <div className="mx-auto flex min-h-[120px] items-center justify-center" style={{ width }}>
+        {goal > 0 ? (
+          <section className="w-full rounded-2xl border border-white/35 bg-black/35 p-3 backdrop-blur-md">
+            <div className="mb-2 flex items-center justify-between text-white">
+              <span className="text-base font-extrabold">{goalLabel}</span>
+              <span className="text-sm font-bold tabular-nums">
+                {Math.round(pct)}% ({Math.max(0, Math.floor(current)).toLocaleString("ko-KR")} / {goal.toLocaleString("ko-KR")})
+              </span>
+            </div>
+            <div className="h-5 overflow-hidden rounded-full border border-white/25 bg-white/20">
+              <div
+                className="h-full bg-gradient-to-r from-fuchsia-400 via-pink-400 to-rose-300 transition-all duration-500"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+          </section>
+        ) : (
+          <section className="rounded-xl border border-amber-300/50 bg-black/35 px-4 py-2 text-sm font-semibold text-amber-100">
+            목표 금액이 설정되지 않았습니다. 백오피스에서 목표를 입력해주세요.
+          </section>
+        )}
+      </div>
+    </main>
+  );
+}

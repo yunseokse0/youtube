@@ -80,8 +80,8 @@ function outlineStyle(): React.CSSProperties {
 }
 
 function segmentBarStyle(seg: { memberId: string; color: string }): React.CSSProperties {
-  if (seg.memberId === "__teamA") return { background: "linear-gradient(90deg,#f9a8d4,#fbcfe8)" };
-  if (seg.memberId === "__teamB") return { background: "linear-gradient(90deg,#fda4af,#fecdd3)" };
+  if (seg.memberId === "__teamA") return { backgroundColor: seg.color };
+  if (seg.memberId === "__teamB") return { backgroundColor: seg.color };
   return { backgroundColor: seg.color };
 }
 
@@ -93,9 +93,16 @@ export default function MealMatchOverlayPage() {
   const { state, ready } = useRemoteState(userId);
   const [overtakeText, setOvertakeText] = useState<string | null>(null);
   const lastLeaderRef = useRef<string>("");
+  const [timerTick, setTimerTick] = useState(0);
 
   const timerState = state?.generalTimer || null;
-  const remaining = timerState ? getEffectiveRemainingTime(timerState) : 0;
+  useEffect(() => {
+    if (!timerState) return;
+    setTimerTick((v) => v + 1);
+    const id = window.setInterval(() => setTimerTick((v) => v + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [timerState?.isActive, timerState?.remainingTime, timerState?.lastUpdated]);
+  const remaining = useMemo(() => (timerState ? getEffectiveRemainingTime(timerState) : 0), [timerState, timerTick]);
   const paused = Boolean(timerState && !timerState.isActive);
   const timerText = `${String(Math.floor(Math.max(0, remaining) / 60)).padStart(2, "0")}:${String(Math.max(0, remaining) % 60).padStart(2, "0")}`;
   const showMealMatchTimer = state?.matchTimerEnabled?.general !== false;
@@ -225,10 +232,8 @@ export default function MealMatchOverlayPage() {
   const segments = useMemo(() => {
     if (!participants.length || fillGaugeMode) return [];
     if (useTeamSplitGauge) {
-      const wA = teamAgg.aScore / teamAgg.aGoal;
-      const wB = teamAgg.bScore / teamAgg.bGoal;
-      const sumW = wA + wB;
-      if (teamAgg.aScore + teamAgg.bScore <= 0 || sumW <= 0) {
+      const totalGoal = Math.max(1, teamAgg.aGoal + teamAgg.bGoal);
+      if (teamAgg.aScore + teamAgg.bScore <= 0) {
         return [
           {
             memberId: "__teamA",
@@ -250,8 +255,8 @@ export default function MealMatchOverlayPage() {
           },
         ];
       }
-      const pA = (wA / sumW) * 100;
-      const pB = (wB / sumW) * 100;
+      const pA = Math.min(100, (teamAgg.aScore / totalGoal) * 100);
+      const pB = Math.min(100 - pA, (teamAgg.bScore / totalGoal) * 100);
       return [
         {
           memberId: "__teamA",
@@ -273,9 +278,7 @@ export default function MealMatchOverlayPage() {
         },
       ];
     }
-    const weights = participants.map((p) => p.score / Math.max(1, p.goal));
-    const sumW = weights.reduce((a, b) => a + b, 0);
-    if (totalScore <= 0 || sumW <= 0) {
+    if (totalScore <= 0 || totalGoalsSum <= 0) {
       return participants.map((p, idx) => ({
         ...p,
         percent: 0,
@@ -284,7 +287,7 @@ export default function MealMatchOverlayPage() {
     }
     let cumulative = 0;
     return participants.map((p, idx) => {
-      const percent = (weights[idx]! / sumW) * 100;
+      const percent = Math.min(100, (p.score / totalGoalsSum) * 100);
       const center = cumulative + percent / 2;
       cumulative += percent;
       return { ...p, percent, center };
@@ -415,12 +418,8 @@ export default function MealMatchOverlayPage() {
                       ) : (
                         <div className="relative h-full w-full overflow-hidden">
                           <div
-                            className={`h-full w-full ${
-                              gaugeFillColor === "#f472b6"
-                                ? "bg-gradient-to-r from-pink-200 to-pink-400"
-                                : ""
-                            }`}
-                            style={gaugeFillColor !== "#f472b6" ? { backgroundColor: gaugeFillColor } : undefined}
+                            className="h-full w-full"
+                            style={{ backgroundColor: gaugeFillColor }}
                           />
                           <div className="pointer-events-none absolute left-0 right-0 top-0 h-[20%] bg-white/20" />
                         </div>

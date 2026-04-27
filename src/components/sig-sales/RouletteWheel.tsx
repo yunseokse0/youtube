@@ -247,8 +247,6 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
                 transition={{ duration: 1.1 + (p.id % 5) * 0.25, repeat: Infinity, delay: p.delay }}
               />
             ))}
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(251,191,36,0.16),transparent_58%)]" />
-            <div className="absolute inset-y-0 left-1/2 w-28 -translate-x-1/2 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.25),transparent)] blur-xl" />
           </motion.div>
         ) : null}
       </AnimatePresence>

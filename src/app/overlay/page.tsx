@@ -1323,7 +1323,15 @@ function OverlayInner() {
   const tableOnly = timerOnlyMode ? false : (sp.get("tableOnly") === "true");
   const showMembers = tableOnly ? true : (timerOnlyMode ? false : (sp.get("showMembers") !== "false"));
   const showTotal = tableOnly ? true : (timerOnlyMode ? false : (sp.get("showTotal") !== "false"));
-  const showGoal = tableOnly ? false : (timerOnlyMode ? (sp.get("showGoal") === "true") : (sp.get("showGoal") === "true"));
+  const showGoal = (() => {
+    if (tableOnly) return false;
+    const raw = sp.get("showGoal");
+    if (timerOnlyMode) return raw === "true";
+    if (raw === "true") return true;
+    if (raw === "false") return false;
+    // URL에 설정이 없으면 프리셋 값을 따름
+    return Boolean(activePreset?.showGoal);
+  })();
   const showTicker = false;
   const tickerInMembers = false;
   const tickerInPersonalGoal = false;

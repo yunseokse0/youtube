@@ -192,7 +192,7 @@ export default function SigSalesOverlayPage() {
   }, [rouletteDemo, state, machine.selectedSigs, machine.sessionId, machine.oneShot, manualSoldSet, oneShotSold, userId, finish, markConfirmPending, cancelConfirm, setError]);
 
   return (
-    <main className="min-h-screen bg-neutral-950/70 p-4 text-white">
+    <main className="min-h-screen bg-transparent p-4 text-white">
       <div className="mx-auto max-w-[1280px] space-y-4">
 
         <section style={{ backgroundColor: "transparent" }} className="relative p-0">

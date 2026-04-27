@@ -5193,11 +5193,11 @@ export default function AdminPage() {
                                 className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
                                 onClick={() => {
                                   if (typeof window === "undefined") return;
-                                  const url = `${window.location.origin}/goal-overlay.html`;
+                                  const url = `${window.location.origin}/overlay/goal?u=${user?.id || "finalent"}${p.id ? `&p=${encodeURIComponent(p.id)}` : ""}`;
                                   window.open(url, "_blank");
                                 }}
                               >
-                                목표 달성 바(HTML)
+                                목표 달성 바(전용)
                               </button>
                               </div>
                             </details>
