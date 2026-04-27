@@ -1609,7 +1609,11 @@ export default function AdminPage() {
 
   const uploadSigImageFile = async (file: File | null): Promise<string | null> => {
     if (!file) return null;
-    const isAllowed = /image\/(gif|png|jpe?g|webp)/i.test(file.type);
+    const mime = String(file.type || "").toLowerCase();
+    const name = String(file.name || "").toLowerCase();
+    const isAllowedMime = /image\/(gif|png|jpe?g|webp)/i.test(mime);
+    const isAllowedExt = /\.(gif|png|jpe?g|webp)$/i.test(name);
+    const isAllowed = isAllowedMime || isAllowedExt;
     if (!isAllowed) {
       alert("gif, png, jpg(jpeg), webp 파일만 업로드 가능합니다.");
       return null;

@@ -140,8 +140,16 @@ export function useSigSalesState(userId: string, appState: AppState | null) {
         body: JSON.stringify({ mode: "cinematic5", memberId: options?.memberId || null }),
       });
       if (!res.ok) {
-        dispatch({ type: "SPIN_FAILED", payload: "회전판 시작 실패" });
-        throw new Error("spin_failed");
+        const payload = (await res.json().catch(() => ({}))) as { error?: string };
+        const code = payload?.error || "spin_failed";
+        const message =
+          code === "not_enough_active_sigs"
+            ? "활성 시그가 5개 미만입니다."
+            : code === "empty_inventory"
+            ? "시그 목록이 비어 있습니다."
+            : "회전판 시작 실패";
+        dispatch({ type: "SPIN_FAILED", payload: message });
+        throw new Error(code);
       }
       const data = (await res.json()) as {
         startedAt: number;
@@ -159,9 +167,14 @@ export function useSigSalesState(userId: string, appState: AppState | null) {
         },
       });
       return data;
-    } catch {
-      dispatch({ type: "SPIN_FAILED", payload: "회전판 시작 실패" });
-      throw new Error("spin_failed");
+    } catch (e) {
+      const code = e instanceof Error && e.message ? e.message : "spin_failed";
+      if (code === "not_enough_active_sigs") {
+        dispatch({ type: "SPIN_FAILED", payload: "활성 시그가 5개 미만입니다." });
+      } else {
+        dispatch({ type: "SPIN_FAILED", payload: "회전판 시작 실패" });
+      }
+      throw new Error(code);
     }
   }, [userId, machine.phase, machine.isFinishLoading]);
 

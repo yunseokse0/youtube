@@ -47,6 +47,7 @@ const PREVIEW_FILLER_POOL: SigItem[] = [
 
 export default function AdminSigSalesPage() {
   const [userId] = useState("finalent");
+  const COMMON_MEMBER_FILTER = "__common__";
   const [memberFilterId, setMemberFilterId] = useState("");
   const [state, setState] = useState<AppState | null>(null);
   const [loadingSpin, setLoadingSpin] = useState(false);
@@ -160,7 +161,7 @@ export default function AdminSigSalesPage() {
         x.isActive &&
         x.id !== ONE_SHOT_SIG_ID &&
         !excluded.has(x.id) &&
-        (!memberFilterId || (x.memberId || "") === memberFilterId)
+        (!memberFilterId || (memberFilterId === COMMON_MEMBER_FILTER ? !(x.memberId || "").trim() : (x.memberId || "") === memberFilterId))
     );
   }, [state, memberFilterId]);
   const wheelItems = useMemo(() => {
@@ -219,6 +220,10 @@ export default function AdminSigSalesPage() {
       resetToIdle();
     }
     if (activeNormalPool.length < 5) {
+      if (memberFilterId) {
+        setToast("선택한 멤버의 활성 시그가 5개 미만입니다. 멤버 시그를 추가/활성화해주세요.");
+        return;
+      }
       // 운영 데이터가 부족할 때도 데모 스타일로 바로 테스트할 수 있게 fallback
       const shuffled = [...PREVIEW_FILLER_POOL].sort(() => Math.random() - 0.5);
       const selected = shuffled.slice(0, 5);
@@ -254,7 +259,12 @@ export default function AdminSigSalesPage() {
       setManualSoldSet(new Set());
       setOneShotSold(false);
       setShowConfirmModal(false);
-    } catch {
+    } catch (e) {
+      const code = e instanceof Error ? e.message : "";
+      if (code === "not_enough_active_sigs") {
+        setToast(memberFilterId ? "선택 멤버의 활성 시그가 5개 미만입니다." : "활성 시그가 5개 미만입니다.");
+        return;
+      }
       // API 장애가 있어도 현장 테스트를 계속할 수 있도록 데모 회차로 즉시 대체
       const shuffled = [...PREVIEW_FILLER_POOL].sort(() => Math.random() - 0.5);
       const selected = shuffled.slice(0, 5);
@@ -404,6 +414,7 @@ export default function AdminSigSalesPage() {
               className="rounded border border-white/15 bg-neutral-900 px-2 py-2 text-xs text-neutral-200"
             >
               <option value="">전체 멤버</option>
+              <option value={COMMON_MEMBER_FILTER}>공통</option>
               {(state?.members || []).map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name}

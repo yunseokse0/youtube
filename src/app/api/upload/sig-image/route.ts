@@ -23,10 +23,15 @@ function getUserId(req: Request): string | null {
 
 function extFrom(file: File): string | null {
   const t = String(file.type || "").toLowerCase();
+  const n = String(file.name || "").toLowerCase();
   if (t.includes("gif")) return ".gif";
   if (t.includes("png")) return ".png";
   if (t.includes("jpeg") || t.includes("jpg")) return ".jpg";
   if (t.includes("webp")) return ".webp";
+  if (n.endsWith(".gif")) return ".gif";
+  if (n.endsWith(".png")) return ".png";
+  if (n.endsWith(".jpg") || n.endsWith(".jpeg")) return ".jpg";
+  if (n.endsWith(".webp")) return ".webp";
   return null;
 }
 

@@ -187,6 +187,10 @@ export default function SigSalesOverlayPage() {
   const onStartRoulette = useCallback(async () => {
     if (controlsDisabled) return;
     if (!rouletteDemo && machine.phase === "LANDED") return;
+    if (!rouletteDemo && activeNormalPool.length < 5) {
+      setError(memberFilterId ? "선택 멤버의 활성 시그가 5개 미만입니다." : "활성 시그가 5개 미만입니다.");
+      return;
+    }
     // OBS에서는 수동으로 소스를 내리기 전까지 결과를 유지하고,
     // 새 회차 시작 시점에만 화면 상태를 초기화한다.
     resetRoundUi();
@@ -215,8 +219,13 @@ export default function SigSalesOverlayPage() {
       confetti({ particleCount: 75, spread: 66, origin: { y: 0.23 } });
       setManualSoldSet(new Set());
       setOneShotSold(false);
-    } catch {
-      setError(memberFilterId ? "해당 멤버 시그 회전판 시작 실패" : "회전판 시작 실패");
+    } catch (e) {
+      const code = e instanceof Error ? e.message : "";
+      if (code === "not_enough_active_sigs") {
+        setError(memberFilterId ? "선택 멤버의 활성 시그가 5개 미만입니다." : "활성 시그가 5개 미만입니다.");
+      } else {
+        setError(memberFilterId ? "해당 멤버 시그 회전판 시작 실패" : "회전판 시작 실패");
+      }
     }
   }, [rouletteDemo, controlsDisabled, machine.phase, spin, setError, resetToIdle, resetRoundUi, memberFilterId]);
 
