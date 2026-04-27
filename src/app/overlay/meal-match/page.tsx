@@ -278,19 +278,16 @@ export default function MealMatchOverlayPage() {
         },
       ];
     }
-    if (totalScore <= 0 || totalGoalsSum <= 0) {
-      return participants.map((p, idx) => ({
-        ...p,
-        percent: 0,
-        center: ((idx + 0.5) / participants.length) * 100,
-      }));
-    }
-    let cumulative = 0;
+    const slotPercent = 100 / Math.max(1, participants.length);
     return participants.map((p, idx) => {
-      const percent = Math.min(100, (p.score / totalGoalsSum) * 100);
-      const center = cumulative + percent / 2;
-      cumulative += percent;
-      return { ...p, percent, center };
+      const fillPercent = Math.min(100, (p.score / Math.max(1, p.goal)) * 100);
+      return {
+        ...p,
+        // 멤버 슬롯은 고정(자리 유지), 슬롯 내부 채움만 점수에 따라 증가
+        percent: slotPercent,
+        fillPercent,
+        center: ((idx + 0.5) / participants.length) * 100,
+      };
     });
   }, [
     participants,
@@ -442,9 +439,15 @@ export default function MealMatchOverlayPage() {
                         layout
                         animate={{ width: `${seg.percent}%` }}
                         transition={{ type: "spring", stiffness: 120, damping: 20 }}
-                        style={segmentBarStyle(seg)}
                         className="relative h-full"
-                      />
+                      >
+                        <motion.div
+                          className="h-full"
+                          animate={{ width: `${Math.max(0, Math.min(100, (seg as any).fillPercent ?? seg.percent))}%` }}
+                          transition={{ type: "spring", stiffness: 120, damping: 20 }}
+                          style={segmentBarStyle(seg)}
+                        />
+                      </motion.div>
                     ))}
                     <div className="pointer-events-none absolute left-0 right-0 top-0 h-[20%] bg-white/20" />
                   </motion.div>
