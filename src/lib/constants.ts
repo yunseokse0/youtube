@@ -48,6 +48,21 @@ export function normalizeSigInventory(input: unknown): SigItem[] {
 }
 
 export function resolveSigImageUrl(name: string, imageUrl?: string): string {
-  if (imageUrl && imageUrl.trim()) return imageUrl;
-  return `/images/sigs/${name.trim()}.png`;
+  const raw = String(imageUrl || "").trim();
+  if (raw) {
+    const normalized = raw.replace(/\\/g, "/");
+    if (
+      normalized.startsWith("http://") ||
+      normalized.startsWith("https://") ||
+      normalized.startsWith("data:image/") ||
+      normalized.startsWith("blob:")
+    ) {
+      return normalized;
+    }
+    if (normalized.startsWith("/")) return normalized;
+    if (normalized.startsWith("uploads/") || normalized.startsWith("images/")) return `/${normalized}`;
+  }
+  const safeName = String(name || "").trim();
+  if (!safeName) return "/images/sigs/dummy-sig.svg";
+  return `/images/sigs/${safeName}.png`;
 }

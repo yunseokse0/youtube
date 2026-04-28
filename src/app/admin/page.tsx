@@ -88,9 +88,10 @@ const MAX_SIG_UPLOAD_BYTES = 30 * 1024 * 1024;
 const SIG_DUMMY_IMAGE = "/images/sigs/dummy-sig.svg";
 
 function resolveSigPreviewSrc(raw?: string): string {
-  const v = String(raw || "").trim();
+  const v = String(raw || "").trim().replace(/\\/g, "/");
   if (!v) return SIG_DUMMY_IMAGE;
   if (v.startsWith("/")) return v;
+  if (v.startsWith("uploads/")) return `/${v}`;
   if (v.startsWith("images/")) return `/${v}`;
   if (v.startsWith("http://") || v.startsWith("https://")) return v;
   if (v.startsWith("data:image/") || v.startsWith("blob:")) return v;
