@@ -212,18 +212,24 @@ function SigMatchOverlayInner() {
     if (!Number.isFinite(endAt) || endAt <= 0) return 0;
     return Math.max(0, Math.ceil((endAt - timerNow) / 1000));
   }, [state?.sigMatchSettings?.overlayTimerEndAt, timerNow]);
-  const timerVisible = Number(state?.sigMatchSettings?.overlayTimerDurationSec || 0) > 0;
+  const timerDurationSec = Math.max(0, Number(state?.sigMatchSettings?.overlayTimerDurationSec || 0));
+  const timerVisible = true;
+  const timerDisplaySec = Number(state?.sigMatchSettings?.overlayTimerEndAt || 0) > 0
+    ? timerRemainingSec
+    : timerDurationSec;
   const timerText = useMemo(() => {
-    const sec = Math.max(0, timerRemainingSec);
+    const sec = Math.max(0, timerDisplaySec);
     const m = Math.floor(sec / 60);
     const s = sec % 60;
     return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  }, [timerRemainingSec]);
+  }, [timerDisplaySec]);
   const versusTotalRaw = duelData.left.score + duelData.right.score;
   const leftPct = versusTotalRaw > 0
     ? Math.max(0, Math.min(100, (duelData.left.score / versusTotalRaw) * 100))
     : 50;
   const rightPct = 100 - leftPct;
+  const leftLeading = duelData.left.score > duelData.right.score;
+  const rightLeading = duelData.right.score > duelData.left.score;
 
   if (!ready || !state) {
     return (
@@ -240,23 +246,29 @@ function SigMatchOverlayInner() {
       <div className="mx-auto max-w-5xl p-4">
         <div className="relative mb-4 p-3">
           {timerVisible ? (
-            <div className="absolute left-1/2 top-1 -translate-x-1/2 rounded-md border border-red-300/70 bg-red-500/85 px-3 py-0.5 text-2xl font-black leading-none text-white shadow-[0_0_12px_rgba(239,68,68,0.45)]">
+            <div className="absolute left-1/2 top-1 -translate-x-1/2 rounded-md bg-red-500/85 px-3 py-0.5 text-2xl font-black leading-none text-white shadow-[0_0_12px_rgba(239,68,68,0.45)]">
               {timerText}
             </div>
           ) : null}
           <div className="mt-8 flex items-center justify-between gap-2 text-xs text-white/80">
-            <span className="truncate">{duelData.left.label}</span>
-            <span className="rounded-md border border-white/20 bg-black/30 px-2 py-0.5 font-bold text-white/90">VS</span>
-            <span className="truncate text-right">{duelData.right.label}</span>
+            <span className="inline-flex max-w-[42%] truncate rounded-full bg-white/80 px-3 py-1 font-black text-pink-600">
+              {leftLeading ? "👑 " : ""}
+              {duelData.left.label}
+            </span>
+            <span className="rounded-md bg-black/30 px-2 py-0.5 font-bold text-white/90">VS</span>
+            <span className="inline-flex max-w-[42%] truncate justify-end rounded-full bg-white/80 px-3 py-1 font-black text-sky-600">
+              {rightLeading ? "👑 " : ""}
+              {duelData.right.label}
+            </span>
           </div>
           <div className="mt-2 h-4 w-full overflow-hidden rounded-full">
             <div className="flex h-full w-full">
               <div
-                className="h-full bg-gradient-to-r from-pink-300 via-pink-400 to-rose-300 transition-[width] duration-700 ease-out"
+                className="h-full bg-pink-300 transition-[width] duration-700 ease-out"
                 style={{ width: `${leftPct}%` }}
               />
               <div
-                className="h-full bg-gradient-to-r from-sky-300 via-blue-300 to-indigo-300 transition-[width] duration-700 ease-out"
+                className="h-full bg-sky-300 transition-[width] duration-700 ease-out"
                 style={{ width: `${rightPct}%` }}
               />
             </div>
@@ -264,10 +276,6 @@ function SigMatchOverlayInner() {
           <div className="mt-1 flex items-center justify-between text-[11px] text-white/75">
             <span>{formatSigMatchStat(duelData.left.score)}</span>
             <span>{formatSigMatchStat(duelData.right.score)}</span>
-          </div>
-          <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-white/65">
-            <div className="truncate">{(duelData.left.ids || []).map((id) => memberMap.get(id) || id).join(", ") || "-"}</div>
-            <div className="truncate text-right">{(duelData.right.ids || []).map((id) => memberMap.get(id) || id).join(", ") || "-"}</div>
           </div>
         </div>
 

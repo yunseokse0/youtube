@@ -30,6 +30,27 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
   const itemsRef = useRef<SigItem[]>(items);
   const onLandedRef = useRef<RouletteWheelProps["onLanded"]>(onLanded);
   const [sounds, setSounds] = useState<{ tick: Howl; final: Howl; success: Howl } | null>(null);
+  const hasSoundAssetErrorRef = useRef(false);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const playFallbackTone = (freq: number, durationMs: number, gain = 0.03) => {
+    if (muted) return;
+    if (typeof window === "undefined") return;
+    const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (!Ctx) return;
+    if (!audioCtxRef.current) audioCtxRef.current = new Ctx();
+    const ctx = audioCtxRef.current;
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    g.gain.value = Math.max(0.001, Math.min(0.08, gain * volume));
+    osc.connect(g);
+    g.connect(ctx.destination);
+    const now = ctx.currentTime;
+    osc.start(now);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + durationMs / 1000);
+    osc.stop(now + durationMs / 1000);
+  };
 
   const segmentCount = Math.max(1, items.length);
   const segment = 360 / segmentCount;
@@ -47,14 +68,52 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
       setSounds(null);
       return;
     }
-    const tick = new Howl({ src: [SPIN_SOUND_PATHS.tick], loop: true, volume, preload: true, mute: muted });
-    const final = new Howl({ src: [SPIN_SOUND_PATHS.final], loop: false, volume, preload: true, mute: muted });
-    const success = new Howl({ src: [SPIN_SOUND_PATHS.success], loop: false, volume, preload: true, mute: muted });
+    const tick = new Howl({
+      src: [SPIN_SOUND_PATHS.tick],
+      loop: true,
+      volume,
+      preload: true,
+      mute: muted,
+      onloaderror: () => {
+        hasSoundAssetErrorRef.current = true;
+      },
+      onplayerror: () => {
+        hasSoundAssetErrorRef.current = true;
+      },
+    });
+    const final = new Howl({
+      src: [SPIN_SOUND_PATHS.final],
+      loop: false,
+      volume,
+      preload: true,
+      mute: muted,
+      onloaderror: () => {
+        hasSoundAssetErrorRef.current = true;
+      },
+      onplayerror: () => {
+        hasSoundAssetErrorRef.current = true;
+      },
+    });
+    const success = new Howl({
+      src: [SPIN_SOUND_PATHS.success],
+      loop: false,
+      volume,
+      preload: true,
+      mute: muted,
+      onloaderror: () => {
+        hasSoundAssetErrorRef.current = true;
+      },
+      onplayerror: () => {
+        hasSoundAssetErrorRef.current = true;
+      },
+    });
     setSounds({ tick, final, success });
     return () => {
       tick.unload();
       final.unload();
       success.unload();
+      try { audioCtxRef.current?.close(); } catch {}
+      audioCtxRef.current = null;
     };
   }, []);
 
@@ -114,8 +173,12 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
       if (elapsed >= durationMs) break;
       const p = Math.min(1, elapsed / durationMs);
       const currentInterval = Math.max(36, Math.round(startIntervalMs + (endIntervalMs - startIntervalMs) * p));
-      tickSound.stop();
-      tickSound.play();
+      if (tickSound && !hasSoundAssetErrorRef.current) {
+        tickSound.stop();
+        tickSound.play();
+      } else {
+        playFallbackTone(760, 42, 0.02);
+      }
       await sleep(currentInterval);
     }
   };
@@ -199,7 +262,12 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
 
         sounds?.tick.stop();
         sounds?.success.stop();
-        sounds?.success.play();
+        if (sounds?.success && !hasSoundAssetErrorRef.current) {
+          sounds.success.play();
+        } else {
+          playFallbackTone(880, 120, 0.04);
+          window.setTimeout(() => playFallbackTone(1170, 150, 0.04), 110);
+        }
         if (!hasLandedRef.current) {
           hasLandedRef.current = true;
           console.log("[Wheel] LANDED CALL", resultId);

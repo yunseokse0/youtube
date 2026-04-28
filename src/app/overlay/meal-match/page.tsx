@@ -158,7 +158,7 @@ export default function MealMatchOverlayPage() {
       color: fallbackColors[idx % fallbackColors.length],
     }));
   }, [demoEnabled, demoMode, state?.mealBattle?.participants, state?.members, defaultGoal]);
-  const shouldRenderMealMatchTimer = showMealMatchTimer && Boolean(timerState && (timerState.isActive || remaining > 0));
+  const shouldRenderMealMatchTimer = showMealMatchTimer;
   const totalScore = participants.reduce((sum, p) => sum + p.score, 0);
   const totalGoalsSum = useMemo(
     () => Math.max(1, participants.reduce((s, p) => s + p.goal, 0)),
@@ -359,10 +359,7 @@ export default function MealMatchOverlayPage() {
           ) : null}
         </div>
 
-        <div
-          className={`rounded-3xl border border-white/40 bg-[linear-gradient(135deg,#FFDEE9_0%,#FCE4EC_50%,#FFD1FF_100%)] px-4 py-6 backdrop-blur-xl shadow-[0_8px_32px_0_rgba(255,182,193,0.3)] ${showPanelBorder ? "border-2" : ""}`}
-          style={showPanelBorder ? { borderColor: panelBorderColor } : undefined}
-        >
+        <div className="px-4 py-5">
           <div className={`relative ${missionBubble ? "h-36" : "h-32"}`}>
             {missionBubble ? (
               <div
@@ -394,14 +391,14 @@ export default function MealMatchOverlayPage() {
                             className="h-full shrink-0"
                             style={{
                               width: `${(teamAgg.aScore / Math.max(1, totalScore)) * 100}%`,
-                                background: "linear-gradient(90deg,#f9a8d4,#fbcfe8)",
+                              backgroundColor: teamAColor,
                             }}
                           />
                           <div
                             className="h-full shrink-0"
                             style={{
                               width: `${(teamAgg.bScore / Math.max(1, totalScore)) * 100}%`,
-                                background: "linear-gradient(90deg,#fda4af,#fecdd3)",
+                              backgroundColor: teamBColor,
                             }}
                           />
                           {unassignedScore > 0 ? (

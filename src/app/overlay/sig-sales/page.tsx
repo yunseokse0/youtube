@@ -46,8 +46,47 @@ export default function SigSalesOverlayPage() {
   const [lastConfirmedText, setLastConfirmedText] = useState("");
   const [lastConfirmedFxKey, setLastConfirmedFxKey] = useState(0);
   const nextSpinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasOneShotSoundErrorRef = useRef(false);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const playFallbackOneShot = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (!Ctx) return;
+    if (!audioCtxRef.current) audioCtxRef.current = new Ctx();
+    const ctx = audioCtxRef.current;
+    const tones: Array<[number, number]> = [
+      [900, 0.11],
+      [1200, 0.14],
+    ];
+    tones.forEach(([freq, sec], idx) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      g.gain.value = 0.04;
+      osc.connect(g);
+      g.connect(ctx.destination);
+      const at = ctx.currentTime + idx * 0.1;
+      osc.start(at);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + sec);
+      osc.stop(at + sec);
+    });
+  }, []);
   const [oneShotSound] = useState(() =>
-    SOUND_ASSETS_ENABLED ? new Howl({ src: [SPIN_SOUND_PATHS.oneShot], preload: true, volume: 0.7, mute: false }) : null
+    SOUND_ASSETS_ENABLED
+      ? new Howl({
+          src: [SPIN_SOUND_PATHS.oneShot],
+          preload: true,
+          volume: 0.7,
+          mute: false,
+          onloaderror: () => {
+            hasOneShotSoundErrorRef.current = true;
+          },
+          onplayerror: () => {
+            hasOneShotSoundErrorRef.current = true;
+          },
+        })
+      : null
   );
   const { machine, landed, markConfirmPending, cancelConfirm, resetToIdle, finish, setError } = useSigSalesState(userId, state);
 
@@ -67,6 +106,8 @@ export default function SigSalesOverlayPage() {
   useEffect(() => {
     return () => {
       oneShotSound?.unload();
+      try { audioCtxRef.current?.close(); } catch {}
+      audioCtxRef.current = null;
     };
   }, [oneShotSound]);
 
@@ -176,8 +217,12 @@ export default function SigSalesOverlayPage() {
 
               const oneShot = buildOneShotFromSelected(nextSelected);
               landed(nextSelected, oneShot, pendingLanding.resultId || current.id);
-              oneShotSound?.stop();
-              oneShotSound?.play();
+              if (oneShotSound && !hasOneShotSoundErrorRef.current) {
+                oneShotSound.stop();
+                oneShotSound.play();
+              } else {
+                playFallbackOneShot();
+              }
               setStagedSelected(nextSelected);
               setSpinStep(0);
               setDemoSpin(null);

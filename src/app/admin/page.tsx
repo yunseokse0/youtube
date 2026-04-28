@@ -4009,6 +4009,47 @@ export default function AdminPage() {
                   </button>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
+                  <span>멤버별 진행 URL:</span>
+                  <select
+                    className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs"
+                    value={selectedMemberId}
+                    onChange={(e) => setSelectedMemberId(e.target.value)}
+                  >
+                    <option value="">멤버 선택</option>
+                    {(state.members || []).map((m) => (
+                      <option key={`sig-progress-member-${m.id}`} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                  <code className="text-neutral-300 break-all">
+                    /overlay/sig-sales?u={user?.id || "finalent"}{selectedMemberId ? `&memberId=${selectedMemberId}` : ""}
+                  </code>
+                  <button
+                    type="button"
+                    disabled={!selectedMemberId}
+                    className={`rounded px-2 py-1 text-xs shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${copiedId === "dash-sig-sales-member" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                    onClick={() => {
+                      if (!selectedMemberId) return;
+                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&memberId=${encodeURIComponent(selectedMemberId)}`;
+                      void copyUrl(u, "dash-sig-sales-member");
+                    }}
+                  >
+                    {copiedId === "dash-sig-sales-member" ? "복사됨!" : "URL 복사"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!selectedMemberId}
+                    className="rounded bg-[#6366f1] px-2 py-1 text-xs hover:bg-[#4f46e5] disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={() => {
+                      if (!selectedMemberId) return;
+                      window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}&memberId=${encodeURIComponent(selectedMemberId)}`, "_blank", "noopener,noreferrer");
+                    }}
+                  >
+                    미리보기 열기
+                  </button>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
                   <span>회전판 결과 오버레이 URL:</span>
                   <code className="text-neutral-300 break-all">
                     /overlay/sig-sales-result?u={user?.id || "finalent"}
