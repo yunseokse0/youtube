@@ -12,6 +12,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   const syncingRef = useRef(false);
 
   useEffect(() => {
+    let hasLocalSnapshot = false;
     if (typeof window !== "undefined") {
       try {
         const raw = window.localStorage.getItem(storageKey(userId));
@@ -19,15 +20,17 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
           const local = loadState(userId ?? undefined);
           setState(local);
           lastUpdatedRef.current = local.updatedAt || 0;
+          hasLocalSnapshot = true;
         }
       } catch {
         // ignore local read error
       }
     }
-    if (!state) {
+    if (!hasLocalSnapshot) {
       const fallback = defaultState();
       setState(fallback);
-      lastUpdatedRef.current = fallback.updatedAt || 0;
+      // No persisted local snapshot: allow API state to win immediately.
+      lastUpdatedRef.current = 0;
     }
 
     const syncFromApi = async () => {
@@ -37,7 +40,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
         const remote = await loadStateFromApi(userId);
         if (!remote) return;
         const remoteUpdatedAt = remote.updatedAt || 0;
-        if (remoteUpdatedAt >= lastUpdatedRef.current) {
+        if (lastUpdatedRef.current <= 0 || remoteUpdatedAt >= lastUpdatedRef.current) {
           lastUpdatedRef.current = remoteUpdatedAt;
           setState(remote);
         }
