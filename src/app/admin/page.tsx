@@ -1698,13 +1698,31 @@ export default function AdminPage() {
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "network_error";
-      alert(`이미지 업로드 실패: ${msg}`);
+      const normalized = String(msg || "").toLowerCase();
+      const networkLike =
+        normalized.includes("network") ||
+        normalized.includes("failed to fetch") ||
+        normalized.includes("load failed");
+      alert(networkLike ? "이미지 업로드 실패: 네트워크 오류입니다. 인터넷 연결을 확인해 주세요." : `이미지 업로드 실패: ${msg}`);
       return null;
     }
     const j = (await res.json().catch(() => ({}))) as { ok?: boolean; url?: string; error?: string };
     if (!res.ok || !j.ok || !j.url) {
-      const errorText = typeof j.error === "string" && j.error.trim() ? j.error : String(res.status);
-      alert(`이미지 업로드 실패: ${errorText}`);
+      const rawError = typeof j.error === "string" && j.error.trim() ? j.error.trim() : String(res.status);
+      const normalized = rawError.toLowerCase();
+      const message =
+        normalized === "unauthorized" || String(res.status) === "401"
+          ? "로그인이 만료되었거나 권한이 없습니다. 새로고침 후 다시 로그인해 주세요."
+          : normalized === "invalid_type"
+            ? "지원하지 않는 파일 형식입니다. GIF/PNG/JPG/WEBP 파일만 업로드할 수 있습니다."
+            : normalized === "file_too_large" || String(res.status) === "413"
+              ? "파일 용량이 너무 큽니다. 30MB 이하 파일만 업로드할 수 있습니다."
+              : normalized === "missing_file"
+                ? "업로드할 파일을 찾지 못했습니다. 파일을 다시 선택해 주세요."
+                : String(res.status).startsWith("5")
+                  ? "서버 오류로 업로드에 실패했습니다. 잠시 후 다시 시도해 주세요."
+                  : `알 수 없는 오류(${rawError})가 발생했습니다.`;
+      alert(`이미지 업로드 실패: ${message}`);
       return null;
     }
     return j.url;
@@ -3718,7 +3736,7 @@ export default function AdminPage() {
                   );
                 })()}
                 <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
-                  <span>판매 오버레이 URL:</span>
+                  <span>회전판 진행 오버레이 URL:</span>
                   <code className="text-neutral-300 break-all">
                     /overlay/sig-sales?u={user?.id || "finalent"}
                   </code>
@@ -3740,9 +3758,32 @@ export default function AdminPage() {
                     미리보기 열기
                   </button>
                 </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
+                  <span>회전판 결과 오버레이 URL:</span>
+                  <code className="text-neutral-300 break-all">
+                    /overlay/sig-sales-result?u={user?.id || "finalent"}
+                  </code>
+                  <button
+                    type="button"
+                    className={`rounded px-2 py-1 text-xs shrink-0 ${copiedId === "dash-sig-sales-result" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                    onClick={() => {
+                      const u = `${window.location.origin}/overlay/sig-sales-result?u=${user?.id || "finalent"}`;
+                      void copyUrl(u, "dash-sig-sales-result");
+                    }}
+                  >
+                    {copiedId === "dash-sig-sales-result" ? "복사됨!" : "URL 복사"}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded bg-[#6366f1] px-2 py-1 text-xs hover:bg-[#4f46e5]"
+                    onClick={() => window.open(`/overlay/sig-sales-result?u=${user?.id || "finalent"}`, "_blank", "noopener,noreferrer")}
+                  >
+                    미리보기 열기
+                  </button>
+                </div>
                 <div className="rounded-lg border border-white/10 bg-black/30 p-3">
                   <p className="text-xs text-neutral-300">
-                    회전판 미리보기는 <code>/admin/sig-sales</code> 단일 화면에서만 제공합니다.
+                    회전판 실제 미리보기는 <code>/admin/sig-sales</code>에서 확인하고, 방송 장면에서는 진행/결과 오버레이를 분리해 사용하세요.
                   </p>
                 </div>
                 <div className="rounded border border-white/10 bg-black/20 p-2">

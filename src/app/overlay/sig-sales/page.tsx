@@ -3,13 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Howl } from "howler";
-import confetti from "canvas-confetti";
 import type { SigItem } from "@/types";
 import RouletteWheel from "@/components/sig-sales/RouletteWheel";
-import SelectedSigs from "@/components/sig-sales/SelectedSigs";
-import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
-import ConfirmationModal from "@/components/sig-sales/ConfirmationModal";
-import { loadStateFromApi, saveStateAsync, type AppState } from "@/lib/state";
+import { loadStateFromApi, type AppState } from "@/lib/state";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { ONE_SHOT_SIG_ID, SOUND_ASSETS_ENABLED, SPIN_SOUND_PATHS } from "@/lib/sig-roulette";
 import { useSigSalesState } from "@/hooks/useSigSalesState";
@@ -43,16 +39,12 @@ export default function SigSalesOverlayPage() {
   const memberFilterId = memberIdParam.length > 0 ? memberIdParam : "";
   const rouletteDemo = sp.get("rouletteDemo") === "1" || sp.get("rouletteDemo") === "true";
   const [state, setState] = useState<AppState | null>(null);
-  const [manualSoldSet, setManualSoldSet] = useState<Set<string>>(new Set());
-  const [oneShotSold, setOneShotSold] = useState(false);
   const [pendingLanding, setPendingLanding] = useState<{ selected: SigItem[]; oneShot: { id: string; name: string; price: number } | null; resultId: string | null; persist: boolean } | null>(null);
   const [demoSpin, setDemoSpin] = useState<{ startedAt: number; resultId: string | null } | null>(null);
   const [stagedSelected, setStagedSelected] = useState<SigItem[]>([]);
   const [spinStep, setSpinStep] = useState(0);
-  const [highlightId, setHighlightId] = useState<string | null>(null);
   const [lastConfirmedText, setLastConfirmedText] = useState("");
   const [lastConfirmedFxKey, setLastConfirmedFxKey] = useState(0);
-  const [oneShotReveal, setOneShotReveal] = useState(false);
   const nextSpinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [oneShotSound] = useState(() =>
     SOUND_ASSETS_ENABLED ? new Howl({ src: [SPIN_SOUND_PATHS.oneShot], preload: true, volume: 0.7, mute: false }) : null
@@ -123,23 +115,6 @@ export default function SigSalesOverlayPage() {
     return (demoSpin?.resultId || machine.resultId || displaySelectedSigs[displaySelectedSigs.length - 1]?.id || null) as string | null;
   }, [displaySelectedSigs, demoSpin?.resultId, machine.resultId]);
 
-  const finalDisplaySelected = displaySelectedSigs;
-  const finalDisplayOneShot = displayOneShot;
-  const showFinalShowcase = finalDisplaySelected.length >= CONFIRMED_VISIBLE_SLOTS && !demoSpin && !pendingLanding;
-  const oneShotImageUrl = useMemo(() => {
-    const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
-    return oneShotItem?.imageUrl || "/images/sigs/dummy-sig.svg";
-  }, [state?.sigInventory]);
-  const soldFromBackofficeSet = useMemo(() => {
-    const soldIds = new Set<string>();
-    const inv = state?.sigInventory || [];
-    for (const item of inv) {
-      if ((item.soldCount || 0) >= (item.maxCount || 1)) soldIds.add(item.id);
-    }
-    return soldIds;
-  }, [state?.sigInventory]);
-  const oneShotSoldFromBackoffice = soldFromBackofficeSet.has(ONE_SHOT_SIG_ID);
-
   useEffect(() => {
     return () => {
       if (nextSpinTimerRef.current) {
@@ -155,45 +130,6 @@ export default function SigSalesOverlayPage() {
     return () => window.clearTimeout(id);
   }, [lastConfirmedText]);
 
-  useEffect(() => {
-    if (!showFinalShowcase || !finalDisplayOneShot) {
-      setOneShotReveal(false);
-      return;
-    }
-    const id = window.setTimeout(() => setOneShotReveal(true), 950);
-    return () => window.clearTimeout(id);
-  }, [showFinalShowcase, finalDisplayOneShot]);
-
-  const onConfirmSale = useCallback(async () => {
-    if (rouletteDemo || !state || machine.selectedSigs.length === 0) return;
-    markConfirmPending();
-    const selectedSet = new Set(machine.selectedSigs.map((x) => x.id));
-    const nextInventory = state.sigInventory.map((item) => {
-      if (manualSoldSet.has(item.id) || (oneShotSold && selectedSet.has(item.id))) return { ...item, soldCount: 1 };
-      return item;
-    });
-    const next: AppState = {
-      ...state,
-      sigInventory: nextInventory,
-      rouletteState: { ...state.rouletteState, phase: "CONFIRMED", lastFinishedAt: Date.now() },
-      updatedAt: Date.now(),
-    };
-    setState(next);
-    await saveStateAsync(next, userId);
-    try {
-      await finish({
-        sessionId: machine.sessionId,
-        selectedSigs: machine.selectedSigs,
-        oneShotResult: machine.oneShot,
-        finalPhase: "CONFIRMED",
-      });
-      confetti({ particleCount: 100, spread: 85, origin: { y: 0.2 } });
-    } catch {
-      cancelConfirm();
-      setError("판매 확정 처리 실패");
-    }
-  }, [rouletteDemo, state, machine.selectedSigs, machine.sessionId, machine.oneShot, manualSoldSet, oneShotSold, userId, finish, markConfirmPending, cancelConfirm, setError]);
-
   return (
     <main className="min-h-screen bg-transparent p-4 text-white">
       <div className="mx-auto max-w-[1280px] space-y-4">
@@ -207,7 +143,7 @@ export default function SigSalesOverlayPage() {
               {lastConfirmedText}
             </div>
           ) : null}
-          {!showFinalShowcase ? <RouletteWheel
+          <RouletteWheel
             items={wheelItemsWithResult}
             isRolling={Boolean(demoSpin) || machine.isRolling || machine.phase === "SPINNING"}
             resultId={displayResultId}
@@ -224,7 +160,6 @@ export default function SigSalesOverlayPage() {
               if (!current) return;
               const nextSelected = [...stagedSelected, current].filter((item, idx, arr) => arr.findIndex((x) => x.id === item.id) === idx);
               const nextStep = spinStep + 1;
-              setHighlightId(current.id);
               setLastConfirmedText(`${current.name} 확정!`);
               setLastConfirmedFxKey((v) => v + 1);
 
@@ -249,51 +184,12 @@ export default function SigSalesOverlayPage() {
               setPendingLanding(null);
               if (!pendingLanding.persist) return;
             }}
-          /> : null}
+          />
           {machine.phase === "CONFIRM_PENDING" ? (
             <div className="pointer-events-none absolute inset-0 z-50 grid place-items-center bg-black/55">
               <div className="rounded-xl border border-yellow-300/50 bg-neutral-900/90 px-6 py-4 text-center">
                 <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-yellow-300 border-t-transparent" />
                 <p className="mt-2 text-sm font-semibold text-yellow-100">판매 확정 처리 중...</p>
-              </div>
-            </div>
-          ) : null}
-
-          {(machine.phase === "SPINNING" || machine.phase === "LANDED" || machine.phase === "CONFIRM_PENDING" || machine.phase === "CONFIRMED" || stagedSelected.length > 0) &&
-          finalDisplaySelected.length > 0 ? (
-            <div className="pointer-events-none absolute inset-x-0 bottom-3 z-40 px-2">
-              <div className={`rounded-xl border border-white/20 bg-black/45 p-2 backdrop-blur-sm transition-all duration-700 ${showFinalShowcase ? "translate-y-0 opacity-100" : "translate-y-2 opacity-95"}`}>
-                {rouletteDemo ? <p className="mb-2 text-xs font-semibold text-fuchsia-200/90">데모 당첨 배치 미리보기</p> : null}
-                <SelectedSigs
-                  items={finalDisplaySelected}
-                  soldOutStampUrl={soldOutStampUrl}
-                  manualSoldSet={manualSoldSet}
-                  compact
-                  disabled={true}
-                  showToggle={false}
-                  soldOverrideSet={soldFromBackofficeSet}
-                  highlightId={highlightId}
-                  trailingSlot={finalDisplayOneShot && oneShotReveal ? (
-                    <OneShotSigCard
-                      name={finalDisplayOneShot?.name || "한방 시그"}
-                      price={finalDisplayOneShot?.price || 0}
-                      imageUrl={oneShotImageUrl}
-                      sold={oneShotSoldFromBackoffice}
-                      disabled={true}
-                      showToggle={false}
-                      compact
-                      onToggleSold={() => setOneShotSold((v) => !v)}
-                    />
-                  ) : null}
-                  onToggleSold={(id) =>
-                    setManualSoldSet((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(id)) next.delete(id);
-                      else next.add(id);
-                      return next;
-                    })
-                  }
-                />
               </div>
             </div>
           ) : null}
@@ -310,14 +206,6 @@ export default function SigSalesOverlayPage() {
           ) : null}
         </section>
       </div>
-      <ConfirmationModal
-        open={false}
-        loading={machine.phase === "CONFIRM_PENDING" || machine.isFinishLoading}
-        onCancel={() => {
-          cancelConfirm();
-        }}
-        onConfirm={() => void onConfirmSale()}
-      />
     </main>
   );
 }

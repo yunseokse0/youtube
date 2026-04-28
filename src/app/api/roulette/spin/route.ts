@@ -137,10 +137,20 @@ export async function POST(req: Request) {
         for (const item of broadAnyPool) uniqueById.set(item.id, item);
       }
       const candidatePool = Array.from(uniqueById.values());
-      if (candidatePool.length < 5) {
-        return Response.json({ error: "not_enough_active_sigs" }, { status: 400, headers: { "Content-Type": "application/json" } });
+      const expandedPool = [...candidatePool];
+      let fallbackUsed = false;
+      if (expandedPool.length < 5) {
+        fallbackUsed = true;
+        const fillSource = candidatePool.length > 0 ? candidatePool : buildFallbackPool(10);
+        while (expandedPool.length < 5) {
+          const picked = pickRandom(fillSource);
+          expandedPool.push({
+            ...picked,
+            id: `${picked.id}__pad_${expandedPool.length + 1}`,
+          });
+        }
       }
-      const shuffled = [...candidatePool];
+      const shuffled = [...expandedPool];
       for (let i = shuffled.length - 1; i > 0; i--) {
         const u = new Uint32Array(1);
         crypto.getRandomValues(u);
@@ -193,7 +203,7 @@ export async function POST(req: Request) {
         {
           ok: true,
           mode,
-          fallbackExpanded: candidatePool.length !== pool.length,
+          fallbackExpanded: fallbackUsed || candidatePool.length !== pool.length,
           startedAt: next.rouletteState.startedAt,
           sessionId: next.rouletteState.sessionId,
           result,
