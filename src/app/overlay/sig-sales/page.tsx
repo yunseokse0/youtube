@@ -52,8 +52,12 @@ export default function SigSalesOverlayPage() {
     if (typeof window === "undefined") return;
     const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
     if (!Ctx) return;
-    if (!audioCtxRef.current) audioCtxRef.current = new Ctx();
-    const ctx = audioCtxRef.current;
+    let ctx = audioCtxRef.current;
+    if (!ctx) {
+      ctx = new Ctx();
+      audioCtxRef.current = ctx;
+    }
+    if (!ctx) return;
     const tones: Array<[number, number]> = [
       [900, 0.11],
       [1200, 0.14],
