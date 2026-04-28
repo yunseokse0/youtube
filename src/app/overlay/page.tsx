@@ -1496,6 +1496,10 @@ function OverlayInner() {
     const n = parseInt(raw, 10);
     return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 45;
   })();
+  const totalLineVisible = (() => {
+    const raw = (sp.get("totalLineVisible") || "").trim().toLowerCase();
+    return raw === "true";
+  })();
   const showTableBgGif = Boolean(tableBgGifUrl);
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1533,7 +1537,9 @@ function OverlayInner() {
   // Always remove per-cell gradients/backgrounds for cleaner unified look
   const effectiveRowCls = stripBg(membersTheme.rowCls);
   const effectiveHeaderCls = stripBg(membersTheme.headerCls);
-  const effectiveTotalWrapCls = stripBorder(stripBg(totalTheme.totalWrapCls));
+  const effectiveTotalWrapCls = totalLineVisible
+    ? stripBg(totalTheme.totalWrapCls)
+    : stripBorder(stripBg(totalTheme.totalWrapCls));
   const lockWidth = (sp.get("lockWidth") || "false").toLowerCase() === "true";
   const effectiveNameGrow = lockWidth ? false : nameGrow;
   const scaledMainStyle: React.CSSProperties = {};
@@ -2167,6 +2173,7 @@ function OverlayInner() {
           box-shadow: inset 0 -1px 0 rgba(255, 228, 244, 0.46), inset 0 1px 0 rgba(255,255,255,0.20);
         }
         .overlay-root .overlay-elegant-table td.overlay-col-total { color: #fff9f0 !important; }
+        ${totalLineVisible ? "" : `
         .overlay-root .overlay-elegant-table td.overlay-col-total,
         .overlay-root .overlay-elegant-table th.overlay-col-total,
         .overlay-root .overlay-total-row td {
@@ -2174,6 +2181,7 @@ function OverlayInner() {
           box-shadow: none !important;
           outline: none !important;
         }
+        `}
         .overlay-root .overlay-elegant-table td.overlay-col-contribution { color: #fff7fa !important; }
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
         .overlay-root .overlay-elegant-table thead td.overlay-col-role,

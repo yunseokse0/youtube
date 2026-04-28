@@ -72,7 +72,7 @@ type OverlayPreset = {
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
-  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; vertical?: boolean; accountColor?: string; toonColor?: string; host?: string;
+  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; host?: string;
 };
 
 /** 미션 목록이 비었을 때 미션 전광판 UI 확인용 placeholder */
@@ -189,6 +189,7 @@ export default function AdminPage() {
     showBottomDonors: false, donorsSize: "", donorsGap: "16", donorsSpeed: "60", donorsLimit: "8", donorsFormat: "short", donorsUnit: "", donorsColor: "", donorsBgColor: "", donorsBgOpacity: "0", tickerTheme: "auto", tickerGlow: "45", tickerShadow: "35", currencyLocale: "ko-KR",
     confettiMilestone: "",
     tableBgOpacity: "",
+    totalLineVisible: false,
     tableBgGifUrl: "",
     tableBgGifOpacity: "45",
     accountColor: "",
@@ -5599,6 +5600,16 @@ export default function AdminPage() {
                                     {p.tableOnly ? "표만 ON" : "표만 OFF"}
                                   </button>
                                   <span className="text-[10px] text-neutral-500">(표만: 목록·총합만, 나머지 숨김)</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <label className="text-xs text-neutral-400">합계 선 표시</label>
+                                  <button
+                                    className={`px-2 py-0.5 rounded border text-xs ${p.totalLineVisible ? "border-amber-500 text-amber-300" : "border-white/10 text-neutral-500"}`}
+                                    onClick={() => updatePreset(p.id, { totalLineVisible: !p.totalLineVisible })}
+                                  >
+                                    {p.totalLineVisible ? "선 ON" : "선 OFF(기본)"}
+                                  </button>
+                                  <span className="text-[10px] text-neutral-500">기본은 OFF(합계 컬럼/합계행 선 제거)</span>
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
                                   <label className="text-xs text-neutral-400">표 배경 투명도</label>
