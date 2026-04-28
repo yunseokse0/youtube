@@ -8,9 +8,19 @@ type Props = {
   onRename?: (id: string, name: string) => void;
   onReset?: (id: string) => void;
   onDelete?: (id: string) => void;
+  donationLinkActive?: boolean | null;
+  onToggleDonationLink?: () => void;
 };
 
-export default function MemberRow({ member, onChange, onRename, onReset, onDelete }: Props) {
+export default function MemberRow({
+  member,
+  onChange,
+  onRename,
+  onReset,
+  onDelete,
+  donationLinkActive = null,
+  onToggleDonationLink,
+}: Props) {
   const [localAccount, setLocalAccount] = useState(formatManThousand(member.account));
   const [localToon, setLocalToon] = useState(formatManThousand(member.toon));
   const [localGoal, setLocalGoal] = useState(member.goal ? String(member.goal) : "");
@@ -123,6 +133,24 @@ export default function MemberRow({ member, onChange, onRename, onReset, onDelet
           <div className="w-32 px-2 py-1 rounded bg-neutral-800/80 border border-white/10 text-right text-sm text-neutral-200">
             {formatManThousand((member.account || 0) + (member.toon || 0))}
           </div>
+        </div>
+      </div>
+      <div className="rounded-lg border border-white/10 bg-black/20 p-2">
+        <div className="flex items-center justify-between gap-2">
+          <label className="text-xs text-neutral-400">후원 연동(식대전)</label>
+          {donationLinkActive === null ? (
+            <span className="text-[11px] text-neutral-500">식대전 미참가</span>
+          ) : (
+            <button
+              type="button"
+              onClick={onToggleDonationLink}
+              className={`px-2 py-1 rounded text-xs font-semibold ${
+                donationLinkActive ? "bg-amber-700 hover:bg-amber-600 text-white" : "bg-neutral-700 hover:bg-neutral-600 text-neutral-200"
+              }`}
+            >
+              후원 연동 {donationLinkActive ? "ON" : "OFF"}
+            </button>
+          )}
         </div>
       </div>
 

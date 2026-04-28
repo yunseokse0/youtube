@@ -2416,7 +2416,29 @@ export default function AdminPage() {
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
                 {state.members.map((m: Member) => (
-                  <MemberRow key={m.id} member={m} onChange={updateMember} onRename={renameMember} onReset={resetMemberAmounts} onDelete={deleteMember} />
+                  <MemberRow
+                    key={m.id}
+                    member={m}
+                    onChange={updateMember}
+                    onRename={renameMember}
+                    onReset={resetMemberAmounts}
+                    onDelete={deleteMember}
+                    donationLinkActive={
+                      mealParticipants.find((p) => p.memberId === m.id)?.donationLinkActive ?? null
+                    }
+                    onToggleDonationLink={() => {
+                      const row = mealParticipants.find((p) => p.memberId === m.id);
+                      if (!row) return;
+                      updateMealParticipant(m.id, (p) => {
+                        const nextActive = !p.donationLinkActive;
+                        return {
+                          ...p,
+                          donationLinkActive: nextActive,
+                          donationLinkStartedAt: nextActive ? Date.now() : undefined,
+                        };
+                      });
+                    }}
+                  />
                 ))}
               </div>
               <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-2">
