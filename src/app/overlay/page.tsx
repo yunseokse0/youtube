@@ -1813,6 +1813,10 @@ function OverlayInner() {
       .sort((a, b) => b.pct - a.pct)
       .slice(0, personalGoalLimit);
   }, [members, personalGoalLimit]);
+  const liveGoalCurrent = useMemo(
+    () => members.reduce((sum, m) => sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)), 0),
+    [members]
+  );
   const resolvedMemberRoles = useMemo<Record<string, string>>(() => {
     if (memberPositionMode !== "rankLinked") return memberPositionsMap;
     const roleMap: Record<string, string> = {};
@@ -2351,7 +2355,7 @@ function OverlayInner() {
         )}
         {(showGoal || fallbackShowGoal) && (ready || isPreviewGuide || externalHost) && goal > 0 && (
           <div className={`absolute ${posClass(goalAnchor)}`}>
-            <GoalBar current={sumCombined} goal={goal} label={goalLabel} width={goalWidth} />
+            <GoalBar current={liveGoalCurrent} goal={goal} label={goalLabel} width={goalWidth} />
           </div>
         )}
         {showPersonalGoal && (ready || isPreviewGuide || externalHost) && (
