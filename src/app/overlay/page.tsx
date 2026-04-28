@@ -2149,7 +2149,22 @@ function OverlayInner() {
         }
       ` }} />
     );
-    const tableVisualStyle = (
+  const excelThemeIds: ThemeId[] = [
+    "excel",
+    "excelBlue",
+    "excelSlate",
+    "excelAmber",
+    "excelRose",
+    "excelNavy",
+    "excelTeal",
+    "excelPurple",
+    "excelEmerald",
+    "excelOrange",
+    "excelIndigo",
+  ];
+  const isExcelMembersTheme = excelThemeIds.includes(membersThemeId);
+  const excelTextOutline = "-1px -1px 0 rgba(6, 12, 24, 0.95), 1px -1px 0 rgba(6, 12, 24, 0.95), -1px 1px 0 rgba(6, 12, 24, 0.95), 1px 1px 0 rgba(6, 12, 24, 0.95), 0 2px 6px rgba(0,0,0,0.42)";
+  const tableVisualStyle = (
       <style dangerouslySetInnerHTML={{ __html: `
         .overlay-root .overlay-elegant-table {
           border-radius: 0 !important;
@@ -2163,13 +2178,13 @@ function OverlayInner() {
           color: #ffffff !important;
           transition: filter 180ms ease, transform 180ms ease, background-size 220ms ease;
           background: transparent !important;
-          text-shadow: none !important;
+          text-shadow: ${isExcelMembersTheme ? excelTextOutline : "none"} !important;
           -webkit-font-smoothing: antialiased;
           text-rendering: geometricPrecision;
         }
         .overlay-root .overlay-elegant-table thead td {
           color: #ffffff !important;
-          text-shadow: 0 1px 0 rgba(20, 8, 14, 0.35);
+          text-shadow: ${isExcelMembersTheme ? excelTextOutline : "0 1px 0 rgba(20, 8, 14, 0.35)"};
           box-shadow: inset 0 -1px 0 rgba(255, 228, 244, 0.46), inset 0 1px 0 rgba(255,255,255,0.20);
         }
         .overlay-root .overlay-elegant-table td.overlay-col-total { color: #fff9f0 !important; }

@@ -62,6 +62,8 @@ export function GoalBar({
   const fillOpacity = Math.max(0, Math.min(100, opacityPercent)) / 100;
   const containerOpacity = opacityAffectsText ? fillOpacity : 1;
   const barFillOpacity = opacityAffectsText ? 1 : fillOpacity;
+  const goalTextOutline =
+    "-1px -1px 0 rgba(6, 12, 24, 0.95), 1px -1px 0 rgba(6, 12, 24, 0.95), -1px 1px 0 rgba(6, 12, 24, 0.95), 1px 1px 0 rgba(6, 12, 24, 0.95), 0 2px 6px rgba(0,0,0,0.42)";
 
   return (
     <div style={{ width, padding: "0.12rem", borderRadius: 8, border: "1px solid rgba(255, 215, 232, 0.9)", opacity: containerOpacity }}>
@@ -82,13 +84,13 @@ export function GoalBar({
             style={{
               color: "#fff7fb",
               fontWeight: 900,
-              textShadow: "0 1px 1px rgba(0,0,0,0.55)",
+              textShadow: goalTextOutline,
               lineHeight: 1,
             }}
           >
             {normalizedLabel}
           </span>
-          <span style={{ color: "#fff7fb", fontWeight: 700, textShadow: "0 1px 2px rgba(0,0,0,0.78)", lineHeight: 1 }}>
+          <span style={{ color: "#fff7fb", fontWeight: 700, textShadow: goalTextOutline, lineHeight: 1 }}>
             {compactLabel ? "후원 " : ""}
             {toMan(current)} / {toMan(goal)}{" "}
             <span style={{ color: pct <= 0 ? "#e5e7eb" : "#fff7fb" }}>({displayPct}%)</span>
