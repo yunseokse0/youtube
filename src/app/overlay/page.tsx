@@ -1263,6 +1263,9 @@ function OverlayInner() {
   const resolveThemeId = (key: string): ThemeId => {
     const raw = (sp.get(key) || "auto").trim();
     if (raw === "auto" || !raw) return "default";
+    if (Object.prototype.hasOwnProperty.call(THEMES, raw)) {
+      return raw as ThemeId;
+    }
     return "default";
   };
   const membersThemeId = resolveThemeId("membersTheme");
