@@ -26,6 +26,14 @@ function isValidUserId(value: string): boolean {
   return /^[a-zA-Z0-9_-]{1,64}$/.test(value);
 }
 
+function getUploadRootCandidates(): string[] {
+  const cwd = process.cwd();
+  return [
+    path.join(cwd, "public"),
+    path.join(cwd, ".next", "standalone", "public"),
+  ];
+}
+
 function tryParseUserCookie(raw: string): { id?: string } | null {
   if (!raw) return null;
   const decoded = decodeRepeated(raw);
@@ -141,10 +149,14 @@ export async function POST(req: Request) {
 
     const safeUid = String(uid).replace(/[^a-zA-Z0-9_-]/g, "_") || "user";
     const fileName = `${Date.now()}_${randomUUID().slice(0, 8)}${ext}`;
-    const dir = path.join(process.cwd(), "public", "uploads", "sigs", safeUid);
-    await mkdir(dir, { recursive: true });
-    const fullPath = path.join(dir, fileName);
-    await writeFile(fullPath, Buffer.from(ab));
+    const data = Buffer.from(ab);
+    const roots = getUploadRootCandidates();
+    for (const root of roots) {
+      const dir = path.join(root, "uploads", "sigs", safeUid);
+      await mkdir(dir, { recursive: true });
+      const fullPath = path.join(dir, fileName);
+      await writeFile(fullPath, data);
+    }
     const url = `/uploads/sigs/${safeUid}/${fileName}`;
     return Response.json({ ok: true, url }, { status: 200 });
   } catch (e) {
