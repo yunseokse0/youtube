@@ -2168,13 +2168,23 @@ function OverlayInner() {
           transition: filter 180ms ease, transform 180ms ease, background-size 220ms ease;
           background: transparent !important;
           text-shadow: ${excelTextOutline} !important;
+          -webkit-text-stroke: 0.75px rgba(6, 12, 24, 0.95) !important;
+          paint-order: stroke fill;
           -webkit-font-smoothing: antialiased;
           text-rendering: geometricPrecision;
         }
         .overlay-root .overlay-elegant-table thead td {
           color: #ffffff !important;
           text-shadow: ${excelTextOutline};
+          -webkit-text-stroke: 0.9px rgba(6, 12, 24, 0.95) !important;
+          paint-order: stroke fill;
           box-shadow: inset 0 -1px 0 rgba(255, 228, 244, 0.46), inset 0 1px 0 rgba(255,255,255,0.20);
+        }
+        .overlay-root .overlay-elegant-table td span,
+        .overlay-root .overlay-elegant-table td strong {
+          text-shadow: ${excelTextOutline} !important;
+          -webkit-text-stroke: 0.75px rgba(6, 12, 24, 0.95) !important;
+          paint-order: stroke fill;
         }
         .overlay-root .overlay-elegant-table td.overlay-col-total { color: #fff9f0 !important; }
         ${totalLineVisible ? "" : `
