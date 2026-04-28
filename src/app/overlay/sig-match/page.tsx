@@ -154,6 +154,16 @@ function SigMatchOverlayInner() {
   const snapQs = sp.get("snap") || "";
   const snapKeyQs = sp.get("snapKey") || "";
   const previewGuide = sp.get("previewGuide") === "true";
+  const overlayScalePct = (() => {
+    const raw = sp.get("scalePct") || sp.get("zoomPct") || "100";
+    const n = parseInt(raw.replace(/[^\d]/g, ""), 10);
+    if (!Number.isFinite(n)) return 100;
+    return Math.max(50, Math.min(300, n));
+  })();
+  const overlayScale = overlayScalePct / 100;
+  const overlayScaleStyle = overlayScale === 1
+    ? undefined
+    : ({ zoom: overlayScale } as React.CSSProperties);
 
   const lockedSnapshot = useMemo(() => parseSigMatchSnapshot(sp), [snapQs, snapKeyQs]);
 
@@ -243,7 +253,10 @@ function SigMatchOverlayInner() {
 
   return (
     <main className={`min-h-screen w-full p-4 text-white ${previewGuide ? "bg-[#111827]" : "bg-transparent"}`}>
-      <div className="mx-auto max-w-5xl p-4">
+      <div
+        className="mx-auto max-w-5xl p-4"
+        style={overlayScaleStyle}
+      >
         <div className="relative mb-4 p-3">
           {timerVisible ? (
             <div className="absolute left-1/2 top-1 -translate-x-1/2 rounded-md bg-red-500/85 px-3 py-0.5 text-2xl font-black leading-none text-white shadow-[0_0_12px_rgba(239,68,68,0.45)]">

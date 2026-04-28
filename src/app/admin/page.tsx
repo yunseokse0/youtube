@@ -202,6 +202,7 @@ export default function AdminPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [sigMatchPreviewIframeKey, setSigMatchPreviewIframeKey] = useState(0);
+  const [battleScalePct, setBattleScalePct] = useState("100");
   const [donorRankingsPreviewIframeKey, setDonorRankingsPreviewIframeKey] = useState(0);
   const [donorRankingsZoomPct, setDonorRankingsZoomPct] = useState("100");
   const [timerUiNow, setTimerUiNow] = useState(Date.now());
@@ -781,11 +782,34 @@ export default function AdminPage() {
     return `${base}?${q.toString()}`;
   };
 
+  const getBattleScalePct = (): number => {
+    const raw = battleScalePct.replace(/[^\d]/g, "");
+    const n = parseInt(raw || "100", 10);
+    if (!Number.isFinite(n)) return 100;
+    return Math.max(50, Math.min(300, n));
+  };
   const buildSigMatchLiveUrl = useCallback((): string => {
     if (typeof window === "undefined") return "";
     const uid = user?.id || "finalent";
-    return `${window.location.origin}/overlay/sig-match?u=${encodeURIComponent(uid)}`;
-  }, [user?.id]);
+    const raw = battleScalePct.replace(/[^\d]/g, "");
+    const n = parseInt(raw || "100", 10);
+    const scalePct = Number.isFinite(n) ? Math.max(50, Math.min(300, n)) : 100;
+    const q = new URLSearchParams();
+    q.set("u", uid);
+    q.set("scalePct", String(scalePct));
+    return `${window.location.origin}/overlay/sig-match?${q.toString()}`;
+  }, [user?.id, battleScalePct]);
+  const buildMealMatchLiveUrl = useCallback((): string => {
+    if (typeof window === "undefined") return "";
+    const uid = user?.id || "finalent";
+    const raw = battleScalePct.replace(/[^\d]/g, "");
+    const n = parseInt(raw || "100", 10);
+    const scalePct = Number.isFinite(n) ? Math.max(50, Math.min(300, n)) : 100;
+    const q = new URLSearchParams();
+    q.set("u", uid);
+    q.set("scalePct", String(scalePct));
+    return `${window.location.origin}/overlay/meal-match?${q.toString()}`;
+  }, [user?.id, battleScalePct]);
 
   const sigMatchPreviewUrlRef = useRef("");
   const [sigMatchPreviewIframeSrc, setSigMatchPreviewIframeSrc] = useState("");
@@ -2907,15 +2931,35 @@ export default function AdminPage() {
                   ))}
                 </div>
                 <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
+                  <span>대전 배율(%):</span>
+                  <input
+                    className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs"
+                    value={battleScalePct}
+                    onChange={(e) => {
+                      const n = Math.max(50, Math.min(300, parseInt(e.target.value.replace(/[^\d]/g, "") || "100", 10) || 100));
+                      setBattleScalePct(String(n));
+                    }}
+                  />
+                  <input
+                    type="range"
+                    min={50}
+                    max={300}
+                    step={1}
+                    value={String(getBattleScalePct())}
+                    onChange={(e) => setBattleScalePct(String(parseInt(e.target.value, 10) || 100))}
+                  />
+                  <span className="text-neutral-300">{getBattleScalePct()}%</span>
+                </div>
+                <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
                   <span>오버레이 URL:</span>
                   <code className="text-neutral-300 break-all">
-                    /overlay/sig-match?u={user?.id || "finalent"}
+                    /overlay/sig-match?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}
                   </code>
                   <button
                     type="button"
                     className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-sig-match" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
                     onClick={() => {
-                      const u = `${window.location.origin}/overlay/sig-match?u=${user?.id || "finalent"}`;
+                      const u = buildSigMatchLiveUrl();
                       void copyUrl(u, "dash-sig-match");
                     }}
                   >
@@ -2976,7 +3020,7 @@ export default function AdminPage() {
                   </div>
                   <button
                     className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs"
-                    onClick={() => window.open(`/overlay/meal-match?u=${user?.id || "finalent"}`, "_blank", "noopener,noreferrer")}
+                    onClick={() => window.open(buildMealMatchLiveUrl(), "_blank", "noopener,noreferrer")}
                   >
                     식사대전 오버레이 열기
                   </button>
@@ -3380,13 +3424,13 @@ export default function AdminPage() {
                 <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
                   <span>오버레이 URL:</span>
                   <code className="text-neutral-300 break-all">
-                    /overlay/meal-match?u={user?.id || "finalent"}
+                    /overlay/meal-match?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}
                   </code>
                   <button
                     type="button"
                     className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-meal-match" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
                     onClick={() => {
-                      const u = `${window.location.origin}/overlay/meal-match?u=${user?.id || "finalent"}`;
+                      const u = buildMealMatchLiveUrl();
                       void copyUrl(u, "dash-meal-match");
                     }}
                   >

@@ -89,6 +89,16 @@ function segmentBarStyle(seg: { memberId: string; color: string }): React.CSSPro
 export default function MealMatchOverlayPage() {
   const sp = useSearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
+  const overlayScalePct = (() => {
+    const raw = sp.get("scalePct") || sp.get("zoomPct") || "100";
+    const n = parseInt(raw.replace(/[^\d]/g, ""), 10);
+    if (!Number.isFinite(n)) return 100;
+    return Math.max(50, Math.min(300, n));
+  })();
+  const overlayScale = overlayScalePct / 100;
+  const overlayScaleStyle = overlayScale === 1
+    ? undefined
+    : ({ zoom: overlayScale } as React.CSSProperties);
   const demoEnabled = sp.get("demo") === "true";
   const demoMode = (sp.get("demoMode") || "member").toLowerCase();
   const { state, ready } = useRemoteState(userId);
@@ -330,7 +340,10 @@ export default function MealMatchOverlayPage() {
 
   return (
     <main className="min-h-screen w-full bg-transparent text-white p-5">
-      <div className="mx-auto max-w-[1350px]">
+      <div
+        className="mx-auto max-w-[1350px]"
+        style={overlayScaleStyle}
+      >
         <div className="mb-4 text-center">
           <div className="pastel-text-outline text-4xl font-black tracking-wide text-pink-100" style={outlineStyle()}>
             {overlayTitle}
