@@ -36,12 +36,14 @@ export function GoalBar({
   label,
   width,
   compactLabel = false,
+  opacityPercent = 100,
 }: {
   current: number;
   goal: number;
   label: string;
   width: number;
   compactLabel?: boolean;
+  opacityPercent?: number;
 }) {
   const pct = goal > 0 ? Math.min(100, (current / goal) * 100) : 0;
   const displayPct = useCountUp(Math.round(pct * 10) / 10, 600);
@@ -55,9 +57,10 @@ export function GoalBar({
   })();
   const toMan = (n: number) =>
     `${(Math.max(0, n) / 10000).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}만원`;
+  const containerOpacity = Math.max(0, Math.min(100, opacityPercent)) / 100;
 
   return (
-    <div style={{ width, padding: "0.12rem", borderRadius: 8, border: "1px solid rgba(255, 215, 232, 0.9)" }}>
+    <div style={{ width, padding: "0.12rem", borderRadius: 8, border: "1px solid rgba(255, 215, 232, 0.9)", opacity: containerOpacity }}>
       <div className="relative overflow-hidden" style={{ height: barH, borderRadius: 7, background: "transparent" }}>
         <div
           className="h-full transition-all duration-700 ease-out"

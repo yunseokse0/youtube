@@ -94,6 +94,15 @@ export default function GoalOverlayPage() {
     if (Number.isFinite(fromPreset) && fromPreset > 0) return Math.max(260, Math.min(1200, Math.floor(fromPreset)));
     return 560;
   }, [sp, activePreset?.goalWidth]);
+  const goalOpacity = useMemo(() => {
+    const rawUrl = (sp.get("goalOpacity") || "").trim();
+    const rawPreset = String((activePreset as any)?.goalOpacity || "").trim();
+    const rawTableOpacityPreset = String((activePreset as any)?.tableBgOpacity || "").trim();
+    const raw = rawUrl || rawPreset || rawTableOpacityPreset;
+    if (!raw) return 100;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 100;
+  }, [sp, activePreset]);
 
   const totalCombined = useMemo(
     () => (state?.members || []).reduce((sum, m) => sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)), 0),
@@ -110,7 +119,7 @@ export default function GoalOverlayPage() {
       <div className="mx-auto flex min-h-[120px] items-center justify-center" style={{ width }}>
         {goal > 0 ? (
           <section className="w-full p-0">
-            <GoalBar current={current} goal={goal} label={goalLabel} width={width} />
+            <GoalBar current={current} goal={goal} label={goalLabel} width={width} opacityPercent={goalOpacity} />
           </section>
         ) : (
           <section className="rounded-xl border border-amber-300/50 bg-black/35 px-4 py-2 text-sm font-semibold text-amber-100">

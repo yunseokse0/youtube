@@ -1465,6 +1465,14 @@ function OverlayInner() {
     const n = parseInt(raw, 10);
     return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 100;
   })();
+  const goalOpacity = (() => {
+    const rawUrl = (sp.get("goalOpacity") || "").trim();
+    const rawPreset = String((activePreset as any)?.goalOpacity || "").trim();
+    const raw = rawUrl || rawPreset;
+    if (!raw) return tableBgOpacity;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : tableBgOpacity;
+  })();
   const tableBgGifUrl = ((sp.get("tableBgGifUrl") || "").trim() || String((activePreset as any)?.tableBgGifUrl || "").trim());
   const tableBgGifOpacity = (() => {
     const rawUrl = (sp.get("tableBgGifOpacity") || "").trim();
@@ -2144,7 +2152,7 @@ function OverlayInner() {
           text-shadow: 0 1px 0 rgba(20, 8, 14, 0.35);
           box-shadow: inset 0 -1px 0 rgba(255, 228, 244, 0.46), inset 0 1px 0 rgba(255,255,255,0.20);
         }
-        .overlay-root .overlay-elegant-table td.overlay-col-total { color: #fff9f0 !important; box-shadow: inset 0 0 0 1px rgba(255, 240, 228, 0.24); }
+        .overlay-root .overlay-elegant-table td.overlay-col-total { color: #fff9f0 !important; }
         .overlay-root .overlay-elegant-table td.overlay-col-contribution { color: #fff7fa !important; }
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
         .overlay-root .overlay-elegant-table thead td.overlay-col-role,
@@ -2355,7 +2363,7 @@ function OverlayInner() {
         )}
         {(showGoal || fallbackShowGoal) && (ready || isPreviewGuide || externalHost) && goal > 0 && (
           <div className={`absolute ${posClass(goalAnchor)}`}>
-            <GoalBar current={liveGoalCurrent} goal={goal} label={goalLabel} width={goalWidth} />
+            <GoalBar current={liveGoalCurrent} goal={goal} label={goalLabel} width={goalWidth} opacityPercent={goalOpacity} />
           </div>
         )}
         {showPersonalGoal && (ready || isPreviewGuide || externalHost) && (
