@@ -3,7 +3,6 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { AnimatePresence, motion } from "framer-motion";
 import type { AppState } from "@/lib/state";
 import {
   defaultState,
@@ -161,19 +160,70 @@ function SigMatchOverlayInner() {
   const { state, ready } = useSigMatchState(userId, lockedSnapshot);
 
   const title = state?.sigMatchSettings?.title || "시그 대전";
-  const target = state?.sigMatchSettings?.targetCount || 100;
   const active = Boolean(state?.sigMatchSettings?.isActive);
+  const donationSyncMode = (state?.donationSyncMode || "mealBattle") as "none" | "mealBattle" | "sigMatch" | "sigSales";
+  const sigMatchDonors = useMemo(
+    () => (donationSyncMode === "sigMatch" ? (state?.donors || []) : []),
+    [donationSyncMode, state?.donors]
+  );
 
   const ranking = useMemo(
     () =>
       getSigMatchRankings(
-        state?.donors || [],
+        sigMatchDonors,
         state?.members || [],
         state?.sigMatchSettings || defaultState().sigMatchSettings,
         state?.sigMatch || {}
       ),
-    [state?.donors, state?.members, state?.sigMatchSettings, state?.sigMatch]
+    [sigMatchDonors, state?.members, state?.sigMatchSettings, state?.sigMatch]
   );
+  const memberMap = useMemo(() => new Map((state?.members || []).map((m) => [m.id, m.name])), [state?.members]);
+  const duelData = useMemo(() => {
+    const pools = (state?.sigMatchSettings?.sigMatchPools || []).filter((p) => Array.isArray(p.memberIds) && p.memberIds.length >= 2);
+    const scoreMap = new Map(ranking.map((r) => [r.memberId, r.score]));
+    const makeSide = (memberIds: string[], fallbackLabel: string) => {
+      const ids = memberIds.filter(Boolean);
+      const label = ids.map((id) => memberMap.get(id) || id).join(" · ") || fallbackLabel;
+      const score = ids.reduce((sum, id) => sum + (scoreMap.get(id) || 0), 0);
+      return { ids, label, score };
+    };
+    if (pools.length >= 2) {
+      const left = makeSide(pools[0].memberIds, "LEFT");
+      const right = makeSide(pools[1].memberIds, "RIGHT");
+      return { left, right, mode: "pool" as const };
+    }
+    const first = ranking[0];
+    const second = ranking[1];
+    const left = first
+      ? { ids: [first.memberId], label: first.name, score: first.score }
+      : { ids: [], label: "LEFT", score: 0 };
+    const right = second
+      ? { ids: [second.memberId], label: second.name, score: second.score }
+      : { ids: [], label: "RIGHT", score: 0 };
+    return { left, right, mode: "duel" as const };
+  }, [ranking, state?.sigMatchSettings?.sigMatchPools, memberMap]);
+  const [timerNow, setTimerNow] = useState(Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setTimerNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  const timerRemainingSec = useMemo(() => {
+    const endAt = Number(state?.sigMatchSettings?.overlayTimerEndAt || 0);
+    if (!Number.isFinite(endAt) || endAt <= 0) return 0;
+    return Math.max(0, Math.ceil((endAt - timerNow) / 1000));
+  }, [state?.sigMatchSettings?.overlayTimerEndAt, timerNow]);
+  const timerVisible = Number(state?.sigMatchSettings?.overlayTimerDurationSec || 0) > 0;
+  const timerText = useMemo(() => {
+    const sec = Math.max(0, timerRemainingSec);
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }, [timerRemainingSec]);
+  const versusTotalRaw = duelData.left.score + duelData.right.score;
+  const leftPct = versusTotalRaw > 0
+    ? Math.max(0, Math.min(100, (duelData.left.score / versusTotalRaw) * 100))
+    : 50;
+  const rightPct = 100 - leftPct;
 
   if (!ready || !state) {
     return (
@@ -186,71 +236,46 @@ function SigMatchOverlayInner() {
   }
 
   return (
-    <main className={`min-h-screen w-full p-8 text-pastel-ink ${previewGuide ? "bg-[#1d1020]" : "bg-transparent"}`}>
-      <div className="mx-auto max-w-3xl rounded-3xl border border-pink-200/50 bg-gradient-to-b from-pink-100/60 via-rose-100/50 to-fuchsia-100/40 p-6 shadow-[0_12px_36px_rgba(236,72,153,0.22)] backdrop-blur-md">
-        <div className="mb-4 flex items-end justify-between gap-3">
-          <div>
-            <h1 className="text-4xl font-extrabold tracking-tight pastel-text-outline">{title}</h1>
-            <p className="mt-1 text-sm text-pastel-ink/80 pastel-text-outline">
-              목표 {target.toLocaleString("ko-KR")} · 상태 {active ? "진행중" : "대기"}
-            </p>
-          </div>
-          {active ? (
-            <div className="rounded-full border border-pink-100/70 bg-pink-300/70 px-3 py-1 text-sm font-bold text-rose-950 backdrop-blur-sm pastel-text-outline">
-              LIVE
+    <main className={`min-h-screen w-full p-4 text-white ${previewGuide ? "bg-[#111827]" : "bg-transparent"}`}>
+      <div className="mx-auto max-w-5xl p-4">
+        <div className="relative mb-4 p-3">
+          {timerVisible ? (
+            <div className="absolute left-1/2 top-1 -translate-x-1/2 rounded-md border border-red-300/70 bg-red-500/85 px-3 py-0.5 text-2xl font-black leading-none text-white shadow-[0_0_12px_rgba(239,68,68,0.45)]">
+              {timerText}
             </div>
           ) : null}
+          <div className="mt-8 flex items-center justify-between gap-2 text-xs text-white/80">
+            <span className="truncate">{duelData.left.label}</span>
+            <span className="rounded-md border border-white/20 bg-black/30 px-2 py-0.5 font-bold text-white/90">VS</span>
+            <span className="truncate text-right">{duelData.right.label}</span>
+          </div>
+          <div className="mt-2 h-4 w-full overflow-hidden rounded-full">
+            <div className="flex h-full w-full">
+              <div
+                className="h-full bg-gradient-to-r from-pink-300 via-pink-400 to-rose-300 transition-[width] duration-700 ease-out"
+                style={{ width: `${leftPct}%` }}
+              />
+              <div
+                className="h-full bg-gradient-to-r from-sky-300 via-blue-300 to-indigo-300 transition-[width] duration-700 ease-out"
+                style={{ width: `${rightPct}%` }}
+              />
+            </div>
+          </div>
+          <div className="mt-1 flex items-center justify-between text-[11px] text-white/75">
+            <span>{formatSigMatchStat(duelData.left.score)}</span>
+            <span>{formatSigMatchStat(duelData.right.score)}</span>
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-white/65">
+            <div className="truncate">{(duelData.left.ids || []).map((id) => memberMap.get(id) || id).join(", ") || "-"}</div>
+            <div className="truncate text-right">{(duelData.right.ids || []).map((id) => memberMap.get(id) || id).join(", ") || "-"}</div>
+          </div>
         </div>
 
-        <div className="space-y-2">
-          <AnimatePresence initial={false}>
-            {ranking.map((row, idx) => (
-              <motion.div
-                key={row.memberId}
-                layout
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ type: "spring", stiffness: 420, damping: 34, mass: 0.8 }}
-                className={`rounded-2xl px-4 py-3 pastel-text-outline ${
-                  idx === 0
-                    ? "border border-pink-200/80 bg-gradient-to-r from-pink-200/85 to-rose-100/85 shadow-sm backdrop-blur-sm"
-                    : idx % 2 === 0
-                      ? "bg-pink-100/70"
-                      : "bg-rose-100/70"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="w-8 text-center text-xl font-black text-pastel-ink/90">{idx + 1}</div>
-                    <div className={`truncate font-bold ${idx === 0 ? "text-3xl" : "text-2xl"}`}>{row.name}</div>
-                  </div>
-                  <div className={`font-black text-pastel-ink ${idx === 0 ? "text-4xl" : "text-3xl"}`}>
-                    {formatSigMatchStat(row.score)}
-                  </div>
-                </div>
-                <div className="mt-2">
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-rose-100/80">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-fuchsia-400 via-pink-400 to-rose-300 transition-all duration-500"
-                      style={{ width: `${Math.min(100, (row.score / Math.max(1, target)) * 100)}%` }}
-                    />
-                  </div>
-                  <div className="mt-1 text-xs text-pastel-ink/80">
-                    {state.sigMatchSettings?.scoringMode === "amount"
-                      ? `매칭 ${formatSigMatchStat(row.matchedCount)}건 · 합계 ${formatSigMatchStat(row.matchedAmount)} · 목표 ${target.toLocaleString("ko-KR")}`
-                      : `매칭 ${formatSigMatchStat(row.matchedCount)}건${row.manualAdjust !== 0 ? ` · 보정 ${row.manualAdjust >= 0 ? "+" : ""}${row.manualAdjust}` : ""} · 목표 ${target.toLocaleString("ko-KR")}`}
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-          {ranking.length === 0 && (
-            <div className="rounded-2xl bg-pink-100/70 px-4 py-6 text-center text-rose-900/80 pastel-text-outline">
-              표시할 멤버 데이터가 없습니다.
-            </div>
-          )}
-        </div>
+        {ranking.length === 0 ? (
+          <div className="rounded-xl border border-white/10 bg-black/25 px-3 py-4 text-center text-xs text-white/70">
+            표시할 멤버 데이터가 없습니다.
+          </div>
+        ) : null}
       </div>
     </main>
   );

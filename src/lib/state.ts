@@ -474,6 +474,8 @@ export function defaultState(): AppState {
       incentivePerPoint: 1000,
       sigMatchPools: [],
       participantMemberIds: [],
+      overlayTimerDurationSec: 180,
+      overlayTimerEndAt: null,
     },
     mealMatchSettings: defaultMealSettings,
     generalTimer: { ...defaultTimer },
@@ -483,6 +485,7 @@ export function defaultState(): AppState {
     },
     donorRankingsOverlayConfig: normalizeDonorRankingsOverlayConfig(null),
     donationListsOverlayConfig: normalizeDonationListsOverlayConfig(null),
+    donationSyncMode: "mealBattle",
     updatedAt: Date.now(),
   };
 }
@@ -715,6 +718,13 @@ export function loadState(userId?: string | null): AppState {
           )
         : {};
     data.sigSalesExcludedIds = normalizeSigSalesExcludedIds((data as AppState).sigSalesExcludedIds);
+    data.donationSyncMode =
+      (data as AppState).donationSyncMode === "none" ||
+      (data as AppState).donationSyncMode === "mealBattle" ||
+      (data as AppState).donationSyncMode === "sigMatch" ||
+      (data as AppState).donationSyncMode === "sigSales"
+        ? (data as AppState).donationSyncMode
+        : "mealBattle";
     data.sigMatch = data.sigMatch && typeof data.sigMatch === "object" ? data.sigMatch : {};
     data.mealBattle = normalizeMealBattle((data as AppState).mealBattle);
     data.mealMatch = data.mealMatch && typeof data.mealMatch === "object" ? data.mealMatch : {};
@@ -742,6 +752,12 @@ export function loadState(userId?: string | null): AppState {
         (data as AppState).sigMatchSettings?.participantMemberIds,
         validSigMemberIds
       ),
+      overlayTimerDurationSec: Number.isFinite((data as AppState).sigMatchSettings?.overlayTimerDurationSec)
+        ? Math.max(0, Math.min(24 * 60 * 60, Math.floor((data as AppState).sigMatchSettings!.overlayTimerDurationSec as number)))
+        : 180,
+      overlayTimerEndAt: Number.isFinite((data as AppState).sigMatchSettings?.overlayTimerEndAt)
+        ? Math.max(0, Math.floor(Number((data as AppState).sigMatchSettings!.overlayTimerEndAt)))
+        : null,
     };
     data.rouletteState = normalizeRouletteState((data as AppState).rouletteState);
     data.mealMatchSettings = normalizeMealMatchSettings((data as AppState).mealMatchSettings);
@@ -855,6 +871,13 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
             )
           : {};
       data.sigSalesExcludedIds = normalizeSigSalesExcludedIds((data as AppState).sigSalesExcludedIds);
+      data.donationSyncMode =
+        (data as AppState).donationSyncMode === "none" ||
+        (data as AppState).donationSyncMode === "mealBattle" ||
+        (data as AppState).donationSyncMode === "sigMatch" ||
+        (data as AppState).donationSyncMode === "sigSales"
+          ? (data as AppState).donationSyncMode
+          : "mealBattle";
       data.sigMatch = data.sigMatch && typeof data.sigMatch === "object" ? data.sigMatch : {};
       data.mealBattle = normalizeMealBattle((data as AppState).mealBattle);
       data.mealMatch = data.mealMatch && typeof data.mealMatch === "object" ? data.mealMatch : {};
@@ -882,6 +905,12 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
           (data as AppState).sigMatchSettings?.participantMemberIds,
           validSigMemberIdsApi
         ),
+        overlayTimerDurationSec: Number.isFinite((data as AppState).sigMatchSettings?.overlayTimerDurationSec)
+          ? Math.max(0, Math.min(24 * 60 * 60, Math.floor((data as AppState).sigMatchSettings!.overlayTimerDurationSec as number)))
+          : 180,
+        overlayTimerEndAt: Number.isFinite((data as AppState).sigMatchSettings?.overlayTimerEndAt)
+          ? Math.max(0, Math.floor(Number((data as AppState).sigMatchSettings!.overlayTimerEndAt)))
+          : null,
       };
       data.rouletteState = normalizeRouletteState((data as AppState).rouletteState);
       data.mealMatchSettings = normalizeMealMatchSettings((data as AppState).mealMatchSettings);

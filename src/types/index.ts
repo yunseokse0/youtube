@@ -227,6 +227,10 @@ export type SigMatchSettings = {
    * 비어 있으면 전원. 하나 이상이면 해당 멤버만 대전에 포함(나머지는 목록에서 제외).
    */
   participantMemberIds: string[];
+  /** 시그 대전 오버레이 카운트다운 총 시간(초). 0이면 타이머 숨김 */
+  overlayTimerDurationSec?: number;
+  /** 시그 대전 오버레이 타이머 종료 시각(epoch ms). null/0이면 정지 */
+  overlayTimerEndAt?: number | null;
 };
 
 export type MealMatchSettings = {
@@ -325,6 +329,8 @@ export type AppState = {
   donationListsOverlayConfig: OverlayConfig;
   /** 시그 판매/회전판에서 제외할 시그 ID 목록 */
   sigSalesExcludedIds: string[];
+  /** 후원 동기화 라우팅(중복 반영 방지): none | mealBattle | sigMatch | sigSales */
+  donationSyncMode?: "none" | "mealBattle" | "sigMatch" | "sigSales";
   /** 마지막 저장 시각(epoch ms), 원격-로컬 최신성 비교 기준 */
   updatedAt: number;
 };

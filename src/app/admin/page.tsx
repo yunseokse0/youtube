@@ -2006,6 +2006,7 @@ export default function AdminPage() {
     if (amount <= 0) return;
     const target = donorTarget;
     setState((prev: AppState) => {
+      const syncMode = prev.donationSyncMode || "mealBattle";
       const safeName = (donorName || "무명").replace(/\s+/g, "");
       // Keep each donation as a separate row for easier per-transaction corrections.
       const donor: Donor = {
@@ -2027,13 +2028,16 @@ export default function AdminPage() {
             })()
           : m
       );
-      const mealParticipants = applyMealBattleDonationToParticipants(
-        prev.mealBattle?.participants || [],
-        donorMemberId,
-        amount,
-        1,
-        donor.at
-      );
+      const mealParticipants =
+        syncMode === "mealBattle"
+          ? applyMealBattleDonationToParticipants(
+              prev.mealBattle?.participants || [],
+              donorMemberId,
+              amount,
+              1,
+              donor.at
+            )
+          : (prev.mealBattle?.participants || []);
       const next: AppState = {
         ...prev,
         members,
@@ -2115,14 +2119,19 @@ export default function AdminPage() {
     () => state.members.filter((m) => !isOperatingMember(m)).length,
     [state.members]
   );
+  const donationSyncMode = (state.donationSyncMode || "mealBattle") as "none" | "mealBattle" | "sigMatch" | "sigSales";
+  const sigMatchDonors = useMemo(
+    () => (donationSyncMode === "sigMatch" ? (state.donors || []) : []),
+    [donationSyncMode, state.donors]
+  );
   const sigMatchRanking = useMemo(
     () => getSigMatchRankings(
-      state.donors || [],
+      sigMatchDonors,
       state.members || [],
       state.sigMatchSettings,
       state.sigMatch || {}
     ),
-    [state.donors, state.members, state.sigMatchSettings, state.sigMatch]
+    [sigMatchDonors, state.members, state.sigMatchSettings, state.sigMatch]
   );
   const sigSignatureAmountsInput = useMemo(
     () => (state.sigMatchSettings?.signatureAmounts || []).join(", "),
@@ -2135,7 +2144,7 @@ export default function AdminPage() {
     const nextActive = !wasActive;
     if (wasActive && !nextActive) {
       const rankings = getSigMatchRankings(
-        state.donors || [],
+        sigMatchDonors,
         state.members || [],
         state.sigMatchSettings,
         state.sigMatch || {}
@@ -2588,6 +2597,42 @@ export default function AdminPage() {
                 )}
               </div>
               <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
+                <div className="rounded-lg border border-amber-300/30 bg-amber-500/10 p-3 space-y-2">
+                  <div className="text-sm font-semibold text-amber-200">후원 동기화 일괄 관리 (중복 방지)</div>
+                  <p className="text-xs text-neutral-300">
+                    후원 입력은 아래에서 선택한 대상에만 동기화됩니다. 동시에 여러 시스템에 중복 반영되지 않습니다.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {([
+                      ["mealBattle", "식사대전 동기화"],
+                      ["sigMatch", "시그대전 동기화"],
+                      ["sigSales", "시그판매 동기화(준비)"],
+                      ["none", "동기화 안 함"],
+                    ] as Array<[AppState["donationSyncMode"], string]>).map(([mode, label]) => (
+                      <button
+                        key={`donation-sync-mode-${mode}`}
+                        type="button"
+                        className={`rounded px-2 py-1 text-xs ${
+                          donationSyncMode === mode
+                            ? "bg-amber-600 text-white"
+                            : "bg-neutral-700 hover:bg-neutral-600 text-neutral-200"
+                        }`}
+                        onClick={() => {
+                          setState((prev: AppState) => {
+                            const next: AppState = { ...prev, donationSyncMode: mode || "none" };
+                            persistState(next);
+                            return next;
+                          });
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="text-[11px] text-neutral-400">
+                    현재 모드: <span className="text-amber-200 font-semibold">{donationSyncMode}</span>
+                  </div>
+                </div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h3 className="text-base font-semibold">시그 대전 관리</h3>
@@ -2661,6 +2706,50 @@ export default function AdminPage() {
                     }}
                   />
                   <div className="text-xs text-neutral-400">세션 종료 시 &quot;시그 인센티브 정산&quot;이 자동 생성됩니다. (count 모드: 점수 x 단가, amount 모드: 점수=금액)</div>
+                </div>
+                <div className="rounded-lg border border-white/10 bg-neutral-950/40 p-3 space-y-2">
+                  <div className="text-sm font-semibold text-neutral-200">오버레이 타이머</div>
+                  <div className="grid grid-cols-1 md:grid-cols-[160px_1fr] gap-2 items-center">
+                    <input
+                      className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                      type="number"
+                      min={0}
+                      max={86400}
+                      placeholder="초(0=숨김)"
+                      value={state.sigMatchSettings?.overlayTimerDurationSec ?? 180}
+                      onChange={(e) => {
+                        const n = Number.parseInt(e.target.value || "0", 10);
+                        updateSigMatchSettings({ overlayTimerDurationSec: Number.isFinite(n) ? Math.max(0, Math.min(86400, n)) : 0 });
+                      }}
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        className="rounded bg-emerald-700 px-2 py-1 text-xs hover:bg-emerald-600"
+                        onClick={() => {
+                          const sec = Math.max(0, Number(state.sigMatchSettings?.overlayTimerDurationSec || 0));
+                          if (sec <= 0) {
+                            alert("먼저 타이머 시간을 1초 이상 입력해 주세요.");
+                            return;
+                          }
+                          updateSigMatchSettings({ overlayTimerEndAt: Date.now() + sec * 1000 });
+                        }}
+                      >
+                        시작
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded bg-neutral-700 px-2 py-1 text-xs hover:bg-neutral-600"
+                        onClick={() => updateSigMatchSettings({ overlayTimerEndAt: null })}
+                      >
+                        정지
+                      </button>
+                      <span className="text-xs text-neutral-400">
+                        상태: {Number(state.sigMatchSettings?.overlayTimerEndAt || 0) > Date.now() ? "진행중" : "대기"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-neutral-500">`1:1`과 `n:n` 모두 동일 타이머를 사용하며, 오버레이 중앙 VS 위에 표시됩니다.</div>
                 </div>
                 <div className="rounded-lg border border-white/10 bg-neutral-950/30 p-3 space-y-2">
                   <div>
@@ -4736,18 +4825,22 @@ export default function AdminPage() {
                                 onClick={() => {
                                   requestConfirm("후원 기록 삭제", "해당 후원 기록을 삭제할까요?", () => {
                                     setState((prev: AppState) => {
+                                      const syncMode = prev.donationSyncMode || "mealBattle";
                                       const donors = prev.donors.filter((x) => x.id !== d.id);
                                       const field = (d.target || "account") === "toon" ? "toon" : "account";
                                       const members = prev.members.map((mm: Member) =>
                                         mm.id === d.memberId ? { ...mm, [field]: Math.max(0, (mm[field] || 0) - d.amount) } : mm
                                       );
-                                      const mealParticipants = applyMealBattleDonationToParticipants(
-                                        prev.mealBattle?.participants || [],
-                                        d.memberId,
-                                        d.amount,
-                                        -1,
-                                        d.at
-                                      );
+                                      const mealParticipants =
+                                        syncMode === "mealBattle"
+                                          ? applyMealBattleDonationToParticipants(
+                                              prev.mealBattle?.participants || [],
+                                              d.memberId,
+                                              d.amount,
+                                              -1,
+                                              d.at
+                                            )
+                                          : (prev.mealBattle?.participants || []);
                                       const next: AppState = {
                                         ...prev,
                                         donors,
