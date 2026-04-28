@@ -1158,8 +1158,14 @@ function OverlayInner() {
     () => ((ready && s && typeof (s as AppState).memberPositions === "object") ? ((s as AppState).memberPositions || {}) : {}),
     [ready, s]
   );
-  const getMemberRole = useCallback((m: Member) => memberPositionsMap[m.id] || "", [memberPositionsMap]);
-  const pinnedFilter = (m: Member) => Boolean(m.operating) || /운영비/i.test(m.name) || /운영비/i.test(getMemberRole(m));
+  const memberPositionMode = useMemo<"fixed" | "rankLinked">(
+    () => ((ready && s && (s as AppState).memberPositionMode === "rankLinked") ? "rankLinked" : "fixed"),
+    [ready, s]
+  );
+  const rankPositionLabels = useMemo<string[]>(
+    () => ((ready && s && Array.isArray((s as AppState).rankPositionLabels)) ? (s as AppState).rankPositionLabels : []),
+    [ready, s]
+  );
   const displaySum = useCountUp(rounded, 800);
   const presetId = (rawSp.get("p") || "").trim();
   const activePreset = useMemo(() => {
@@ -1282,10 +1288,18 @@ function OverlayInner() {
     return null;
   }, [timerTypeRaw]);
   const tableOnly = timerOnlyMode ? false : (sp.get("tableOnly") === "true");
-  const showMembers = tableOnly ? true : (timerOnlyMode ? false : (sp.get("showMembers") !== "false"));
-  const showTotal = tableOnly ? true : (timerOnlyMode ? false : (sp.get("showTotal") !== "false"));
+  const showGoalRequested = (() => {
+    const raw = sp.get("showGoal");
+    if (raw === "true") return true;
+    if (raw === "false") return false;
+    return Boolean(activePreset?.showGoal);
+  })();
+  // tableOnly가 켜져 있어도 목표바를 명시적으로 켠 프리셋/URL에서는 목표바를 우선한다.
+  const effectiveTableOnly = tableOnly && !showGoalRequested;
+  const showMembers = effectiveTableOnly ? true : (timerOnlyMode ? false : (sp.get("showMembers") !== "false"));
+  const showTotal = effectiveTableOnly ? true : (timerOnlyMode ? false : (sp.get("showTotal") !== "false"));
   const showGoal = (() => {
-    if (tableOnly) return false;
+    if (effectiveTableOnly) return false;
     const raw = sp.get("showGoal");
     if (timerOnlyMode) return raw === "true";
     if (raw === "true") return true;
@@ -1299,7 +1313,7 @@ function OverlayInner() {
   const tickerInGoal = false;
   const hasContextTicker = false;
   const showTimerRaw = (sp.get("showTimer") || "").toLowerCase();
-  const showTimer = tableOnly ? false : (timerOnlyMode ? showTimerRaw !== "false" : showTimerRaw === "true");
+  const showTimer = effectiveTableOnly ? false : (timerOnlyMode ? showTimerRaw !== "false" : showTimerRaw === "true");
   const goal = useMemo(() => {
     const fromUrl = parseInt(sp.get("goal") || "0", 10);
     if (Number.isFinite(fromUrl) && fromUrl > 0) return fromUrl;
@@ -1346,7 +1360,7 @@ function OverlayInner() {
   const tickerX = hasTickerFreePos ? parsePct(tickerXParam, 50) : 0;
   const tickerY = hasTickerFreePos ? parsePct(tickerYParam, 86) : 0;
   const showMission = (() => {
-    if (tableOnly) return false;
+    if (effectiveTableOnly) return false;
     if (timerOnlyMode) return sp.get("showMission") === "true";
     const raw = sp.get("showMission");
     if (raw === "true") return true;
@@ -1485,12 +1499,19 @@ function OverlayInner() {
       .replace(/\bfrom-[^\s]+/g, "")
       .replace(/\bvia-[^\s]+/g, "")
       .replace(/\bto-[^\s]+/g, "");
+  const stripBorder = (cls: string) =>
+    cls
+      .replace(/\bborder(?:-[trblxy])?(?:-[^\s]+)?/g, "")
+      .replace(/\brounded(?:-[^\s]+)?/g, "")
+      .replace(/\bshadow(?:-[^\s]+)?/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
   const useTableOpacity = tableBgOpacity < 100;
   const effectiveTableCls = useTableOpacity ? stripBg(membersTheme.tableCls) : membersTheme.tableCls;
   // Always remove per-cell gradients/backgrounds for cleaner unified look
   const effectiveRowCls = stripBg(membersTheme.rowCls);
   const effectiveHeaderCls = stripBg(membersTheme.headerCls);
-  const effectiveTotalWrapCls = stripBg(totalTheme.totalWrapCls);
+  const effectiveTotalWrapCls = stripBorder(stripBg(totalTheme.totalWrapCls));
   const lockWidth = (sp.get("lockWidth") || "false").toLowerCase() === "true";
   const effectiveNameGrow = lockWidth ? false : nameGrow;
   const scaledMainStyle: React.CSSProperties = {};
@@ -1792,6 +1813,24 @@ function OverlayInner() {
       .sort((a, b) => b.pct - a.pct)
       .slice(0, personalGoalLimit);
   }, [members, personalGoalLimit]);
+  const resolvedMemberRoles = useMemo<Record<string, string>>(() => {
+    if (memberPositionMode !== "rankLinked") return memberPositionsMap;
+    const roleMap: Record<string, string> = {};
+    const representative = members.find((m) => (memberPositionsMap[m.id] || "").trim() === "대표") || null;
+    const others = members
+      .filter((m) => !representative || m.id !== representative.id)
+      .sort((a, b) => ((b.account || 0) + (b.toon || 0)) - ((a.account || 0) + (a.toon || 0)));
+    if (representative) roleMap[representative.id] = "대표";
+    const startIdx = representative ? 1 : 0;
+    others.forEach((m, idx) => {
+      const rankIdx = idx + startIdx;
+      const label = String(rankPositionLabels[rankIdx] || "").trim() || (rankIdx === 0 ? "대표" : "");
+      if (label) roleMap[m.id] = label;
+    });
+    return roleMap;
+  }, [memberPositionMode, memberPositionsMap, members, rankPositionLabels]);
+  const getMemberRole = useCallback((m: Member) => resolvedMemberRoles[m.id] || "", [resolvedMemberRoles]);
+  const pinnedFilter = (m: Member) => Boolean(m.operating) || /운영비/i.test(m.name) || /운영비/i.test(getMemberRole(m));
   const showPersonalGoal = useMemo(() => {
     const raw = sp.get("showPersonalGoal");
     if (raw === "true") return true;
@@ -1800,9 +1839,17 @@ function OverlayInner() {
     const presetHas = typeof (activePreset as any)?.showPersonalGoal === "boolean";
     if (presetHas) return Boolean((activePreset as any).showPersonalGoal);
     if (isPreviewGuide || externalHost) return true;
-    if (tableOnly) return false;
+    if (effectiveTableOnly) return false;
     return personalGoals.length > 0;
-  }, [sp, timerOnlyMode, tableOnly, activePreset, personalGoals.length, isPreviewGuide, externalHost]);
+  }, [sp, timerOnlyMode, effectiveTableOnly, activePreset, personalGoals.length, isPreviewGuide, externalHost]);
+  const fallbackShowGoal =
+    !showMembers &&
+    !showTotal &&
+    !showGoal &&
+    !showPersonalGoal &&
+    !showTimer &&
+    !showMission &&
+    goal > 0;
 
   const unpinned = useMemo(() => members.filter((m) => !pinnedFilter(m)), [members]);
   const pinned = useMemo(() => members.filter(pinnedFilter), [members]);
@@ -2302,7 +2349,7 @@ function OverlayInner() {
             </div>
           </div>
         )}
-        {showGoal && (ready || isPreviewGuide || externalHost) && goal > 0 && (
+        {(showGoal || fallbackShowGoal) && (ready || isPreviewGuide || externalHost) && goal > 0 && (
           <div className={`absolute ${posClass(goalAnchor)}`}>
             <GoalBar current={sumCombined} goal={goal} label={goalLabel} width={goalWidth} />
           </div>

@@ -100,13 +100,8 @@ export default function GoalOverlayPage() {
     [state?.members]
   );
 
-  const current = useMemo(() => {
-    const fromUrl = Number(sp.get("goalCurrent"));
-    if (Number.isFinite(fromUrl) && fromUrl >= 0) return Math.floor(fromUrl);
-    const fromPreset = Number(activePreset?.goalCurrent || NaN);
-    if (Number.isFinite(fromPreset) && fromPreset >= 0) return Math.floor(fromPreset);
-    return Math.max(0, totalCombined);
-  }, [sp, activePreset?.goalCurrent, totalCombined]);
+  // 목표바 현재값은 항상 실시간 후원 합계와 동기화한다.
+  const current = Math.max(0, totalCombined);
 
   if (!ready) return null;
 
@@ -114,7 +109,7 @@ export default function GoalOverlayPage() {
     <main className="min-h-screen w-full bg-transparent p-4">
       <div className="mx-auto flex min-h-[120px] items-center justify-center" style={{ width }}>
         {goal > 0 ? (
-          <section className="w-full rounded-2xl border border-white/35 bg-black/35 p-3 backdrop-blur-md">
+          <section className="w-full p-0">
             <GoalBar current={current} goal={goal} label={goalLabel} width={width} />
           </section>
         ) : (

@@ -57,8 +57,8 @@ export function GoalBar({
     `${(Math.max(0, n) / 10000).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}만원`;
 
   return (
-    <div style={{ width, padding: "0.14rem", borderRadius: 8, background: "rgba(255, 205, 228, 0.24)", border: "1px solid rgba(255, 182, 213, 0.6)" }}>
-      <div className="relative overflow-hidden" style={{ height: barH, borderRadius: 7, background: "rgba(255, 238, 247, 0.66)", boxShadow: "inset 0 1px 3px rgba(0,0,0,0.18)" }}>
+    <div style={{ width }}>
+      <div className="relative overflow-hidden" style={{ height: barH, borderRadius: 7, background: "transparent" }}>
         <div
           className="h-full transition-all duration-700 ease-out"
           style={{

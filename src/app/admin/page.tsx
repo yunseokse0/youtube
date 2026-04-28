@@ -198,6 +198,7 @@ export default function AdminPage() {
   const [presetRev, setPresetRev] = useState(0);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [selectedMemberId, setSelectedMemberId] = useState("");
   const [sigMatchPreviewIframeKey, setSigMatchPreviewIframeKey] = useState(0);
   const [donorRankingsPreviewIframeKey, setDonorRankingsPreviewIframeKey] = useState(0);
   const [donorRankingsZoomPct, setDonorRankingsZoomPct] = useState("100");
@@ -3757,6 +3758,23 @@ export default function AdminPage() {
                   >
                     미리보기 열기
                   </button>
+                  <button
+                    type="button"
+                    className={`rounded px-2 py-1 text-xs shrink-0 ${copiedId === "dash-sig-sales-demo" ? "bg-emerald-600" : "bg-fuchsia-700 hover:bg-fuchsia-600"}`}
+                    onClick={() => {
+                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1`;
+                      void copyUrl(u, "dash-sig-sales-demo");
+                    }}
+                  >
+                    {copiedId === "dash-sig-sales-demo" ? "복사됨!" : "데모 URL"}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded bg-fuchsia-700 px-2 py-1 text-xs hover:bg-fuchsia-600"
+                    onClick={() => window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1`, "_blank", "noopener,noreferrer")}
+                  >
+                    데모 열기
+                  </button>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
                   <span>회전판 결과 오버레이 URL:</span>
@@ -3777,6 +3795,64 @@ export default function AdminPage() {
                     type="button"
                     className="rounded bg-[#6366f1] px-2 py-1 text-xs hover:bg-[#4f46e5]"
                     onClick={() => window.open(`/overlay/sig-sales-result?u=${user?.id || "finalent"}`, "_blank", "noopener,noreferrer")}
+                  >
+                    미리보기 열기
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded px-2 py-1 text-xs shrink-0 ${copiedId === "dash-sig-sales-result-demo" ? "bg-emerald-600" : "bg-fuchsia-700 hover:bg-fuchsia-600"}`}
+                    onClick={() => {
+                      const u = `${window.location.origin}/overlay/sig-sales-result?u=${user?.id || "finalent"}&demo=1`;
+                      void copyUrl(u, "dash-sig-sales-result-demo");
+                    }}
+                  >
+                    {copiedId === "dash-sig-sales-result-demo" ? "복사됨!" : "데모 URL"}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded bg-fuchsia-700 px-2 py-1 text-xs hover:bg-fuchsia-600"
+                    onClick={() => window.open(`/overlay/sig-sales-result?u=${user?.id || "finalent"}&demo=1`, "_blank", "noopener,noreferrer")}
+                  >
+                    데모 열기
+                  </button>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
+                  <span>멤버별 결과 URL:</span>
+                  <select
+                    className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs"
+                    value={selectedMemberId}
+                    onChange={(e) => setSelectedMemberId(e.target.value)}
+                  >
+                    <option value="">멤버 선택</option>
+                    {(state.members || []).map((m) => (
+                      <option key={`sig-result-member-${m.id}`} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                  <code className="text-neutral-300 break-all">
+                    /overlay/sig-sales-result?u={user?.id || "finalent"}{selectedMemberId ? `&memberId=${selectedMemberId}` : ""}
+                  </code>
+                  <button
+                    type="button"
+                    disabled={!selectedMemberId}
+                    className={`rounded px-2 py-1 text-xs shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${copiedId === "dash-sig-sales-result-member" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                    onClick={() => {
+                      if (!selectedMemberId) return;
+                      const u = `${window.location.origin}/overlay/sig-sales-result?u=${user?.id || "finalent"}&memberId=${encodeURIComponent(selectedMemberId)}`;
+                      void copyUrl(u, "dash-sig-sales-result-member");
+                    }}
+                  >
+                    {copiedId === "dash-sig-sales-result-member" ? "복사됨!" : "URL 복사"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!selectedMemberId}
+                    className="rounded bg-[#6366f1] px-2 py-1 text-xs hover:bg-[#4f46e5] disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={() => {
+                      if (!selectedMemberId) return;
+                      window.open(`/overlay/sig-sales-result?u=${user?.id || "finalent"}&memberId=${encodeURIComponent(selectedMemberId)}`, "_blank", "noopener,noreferrer");
+                    }}
                   >
                     미리보기 열기
                   </button>
