@@ -86,10 +86,18 @@ const ONE_SHOT_SIG_ID = "sig_one_shot";
 const ONE_SHOT_SIG_NAME = "한방 시그";
 const MAX_SIG_UPLOAD_BYTES = 30 * 1024 * 1024;
 const SIG_DUMMY_IMAGE = "/images/sigs/dummy-sig.svg";
+const BROKEN_SIG_UID_PATTERN = /(_257b_2522id_2522|%257b%2522id%2522|%7b%22id%22)/i;
+
+function isBrokenSigImageUrl(raw?: string): boolean {
+  const v = String(raw || "").trim().toLowerCase();
+  if (!v) return false;
+  return BROKEN_SIG_UID_PATTERN.test(v);
+}
 
 function resolveSigPreviewSrc(raw?: string): string {
   const v = String(raw || "").trim().replace(/\\/g, "/");
   if (!v) return SIG_DUMMY_IMAGE;
+  if (isBrokenSigImageUrl(v)) return SIG_DUMMY_IMAGE;
   if (v.startsWith("/")) return v;
   if (v.startsWith("uploads/")) return `/${v}`;
   if (v.startsWith("images/")) return `/${v}`;
@@ -1814,6 +1822,10 @@ export default function AdminPage() {
                   ? "서버 오류로 업로드에 실패했습니다. 잠시 후 다시 시도해 주세요."
                   : `알 수 없는 오류(${rawError})가 발생했습니다.`;
       alert(`이미지 업로드 실패: ${message}`);
+      return null;
+    }
+    if (isBrokenSigImageUrl(j.url)) {
+      alert("이미지 업로드 실패: 사용자 경로 파싱 오류가 발생했습니다. 다시 로그인 후 재시도해 주세요.");
       return null;
     }
     return j.url;

@@ -51,6 +51,9 @@ export function resolveSigImageUrl(name: string, imageUrl?: string): string {
   const raw = String(imageUrl || "").trim();
   if (raw) {
     const normalized = raw.replace(/\\/g, "/");
+    if (/(?:_257b_2522id_2522|%257b%2522id%2522|%7b%22id%22)/i.test(normalized)) {
+      return "/images/sigs/dummy-sig.svg";
+    }
     if (
       normalized.startsWith("http://") ||
       normalized.startsWith("https://") ||
