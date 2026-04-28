@@ -45,6 +45,8 @@ export type OverlayPresetLike = {
   goalWidth?: string;
   goalAnchor?: string;
   goalCurrent?: string;
+  goalOpacity?: string;
+  goalOpacityText?: boolean;
   showPersonalGoal?: boolean;
   personalGoalTheme?: string;
   personalGoalAnchor?: string;
@@ -165,6 +167,8 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
     q.set("goalWidth", preset.goalWidth || "400");
     q.set("goalAnchor", preset.goalAnchor || "bc");
     if (preset.goalCurrent && preset.goalCurrent.trim()) q.set("goalCurrent", preset.goalCurrent.trim());
+    if (preset.goalOpacity && preset.goalOpacity.trim()) q.set("goalOpacity", preset.goalOpacity.trim());
+    if (preset.goalOpacityText) q.set("goalOpacityText", "true");
   }
   if (preset.showPersonalGoal) q.set("showPersonalGoal", "true");
   if (preset.personalGoalTheme && preset.personalGoalTheme.trim()) q.set("personalGoalTheme", preset.personalGoalTheme.trim());

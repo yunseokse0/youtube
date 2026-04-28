@@ -1177,7 +1177,12 @@ function OverlayInner() {
     }
     return overlayPresets.length ? overlayPresets[0] : null;
   }, [presetId, overlayPresets, ready, s]);
-  const presetParams = useMemo(() => presetToParams(activePreset), [activePreset]);
+  const lastStablePresetRef = useRef<OverlayPresetLike | null>(null);
+  useEffect(() => {
+    if (activePreset) lastStablePresetRef.current = activePreset;
+  }, [activePreset]);
+  const effectivePreset = activePreset || lastStablePresetRef.current;
+  const presetParams = useMemo(() => presetToParams(effectivePreset), [effectivePreset]);
   const sp = useMemo(
     () => ({
       get: (key: string) => {
@@ -1472,6 +1477,15 @@ function OverlayInner() {
     if (!raw) return tableBgOpacity;
     const n = parseInt(raw, 10);
     return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : tableBgOpacity;
+  })();
+  const goalOpacityAffectsText = (() => {
+    const rawUrl = (sp.get("goalOpacityText") || "").trim().toLowerCase();
+    if (rawUrl === "true") return true;
+    if (rawUrl === "false") return false;
+    const rawPreset = String((activePreset as any)?.goalOpacityText ?? "").trim().toLowerCase();
+    if (rawPreset === "true") return true;
+    if (rawPreset === "false") return false;
+    return false;
   })();
   const tableBgGifUrl = ((sp.get("tableBgGifUrl") || "").trim() || String((activePreset as any)?.tableBgGifUrl || "").trim());
   const tableBgGifOpacity = (() => {
@@ -2153,6 +2167,13 @@ function OverlayInner() {
           box-shadow: inset 0 -1px 0 rgba(255, 228, 244, 0.46), inset 0 1px 0 rgba(255,255,255,0.20);
         }
         .overlay-root .overlay-elegant-table td.overlay-col-total { color: #fff9f0 !important; }
+        .overlay-root .overlay-elegant-table td.overlay-col-total,
+        .overlay-root .overlay-elegant-table th.overlay-col-total,
+        .overlay-root .overlay-total-row td {
+          border: none !important;
+          box-shadow: none !important;
+          outline: none !important;
+        }
         .overlay-root .overlay-elegant-table td.overlay-col-contribution { color: #fff7fa !important; }
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
         .overlay-root .overlay-elegant-table thead td.overlay-col-role,
@@ -2363,7 +2384,14 @@ function OverlayInner() {
         )}
         {(showGoal || fallbackShowGoal) && (ready || isPreviewGuide || externalHost) && goal > 0 && (
           <div className={`absolute ${posClass(goalAnchor)}`}>
-            <GoalBar current={liveGoalCurrent} goal={goal} label={goalLabel} width={goalWidth} opacityPercent={goalOpacity} />
+            <GoalBar
+              current={liveGoalCurrent}
+              goal={goal}
+              label={goalLabel}
+              width={goalWidth}
+              opacityPercent={goalOpacity}
+              opacityAffectsText={goalOpacityAffectsText}
+            />
           </div>
         )}
         {showPersonalGoal && (ready || isPreviewGuide || externalHost) && (

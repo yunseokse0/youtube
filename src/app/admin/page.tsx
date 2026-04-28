@@ -66,7 +66,7 @@ type OverlayPreset = {
   missionWidth?: string; missionDuration?: string; missionBgOpacity?: string; missionBgColor?: string; missionItemColor?: string; missionTitleColor?: string; missionTitleText?: string; missionTitleEffect?: string; missionFontSize?: string; missionEffect?: string; missionEffectHotOnly?: string; missionDisplayMode?: string; missionVisibleCount?: string; missionSpeed?: string; missionGapSize?: string;
   showMembers: boolean; showTotal: boolean;
   totalMode?: "total";
-  showGoal: boolean; goal: string; goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string;
+  showGoal: boolean; goal: string; goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string; goalOpacity?: string; goalOpacityText?: boolean;
   showPersonalGoal?: boolean; personalGoalTheme?: string; personalGoalAnchor?: string; personalGoalLimit?: string; personalGoalFree?: boolean; personalGoalX?: string; personalGoalY?: string;
   tickerInMembers?: boolean; tickerInGoal?: boolean; tickerInPersonalGoal?: boolean;
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
@@ -142,6 +142,7 @@ export default function AdminPage() {
   const [newSigMemberId, setNewSigMemberId] = useState<string>("");
   const [newSigImageUrl, setNewSigImageUrl] = useState("");
   const [newSigPreviewUrl, setNewSigPreviewUrl] = useState("");
+  const [newSigImageUploading, setNewSigImageUploading] = useState(false);
   const [sigPreviewMap, setSigPreviewMap] = useState<Record<string, string>>({});
   const [sigExcelResult, setSigExcelResult] = useState("");
   const [sigPresetMemberId, setSigPresetMemberId] = useState("");
@@ -181,7 +182,7 @@ export default function AdminPage() {
     sumAnchor: "bc", sumFree: false, sumX: "50", sumY: "90", theme: "default",
     showMembers: true, showTotal: true, totalMode: "total", showGoal: false, goal: "0", goalLabel: "후원", showPersonalGoal: false, personalGoalTheme: "goalClassic", personalGoalAnchor: "tl", personalGoalLimit: "3", personalGoalFree: false, personalGoalX: "78", personalGoalY: "82",
     tickerInMembers: false, tickerInGoal: false, tickerInPersonalGoal: false,
-    goalWidth: "400", goalAnchor: "bc", goalCurrent: "", showTicker: false, tickerAnchor: "bc", tickerWidth: "600", tickerFree: false, tickerX: "50", tickerY: "86", showTimer: false,
+    goalWidth: "400", goalAnchor: "bc", goalCurrent: "", goalOpacity: "", goalOpacityText: false, showTicker: false, tickerAnchor: "bc", tickerWidth: "600", tickerFree: false, tickerX: "50", tickerY: "86", showTimer: false,
     timerStart: null, timerAnchor: "tr", timerShowHours: false, timerFontColor: "", timerBgColor: "", timerBorderColor: "", timerBgOpacity: "40", timerScale: "100", showMission: false, missionAnchor: "br",
     missionWidth: "800", missionDuration: "25",
     membersTheme: "auto", totalTheme: "auto", goalTheme: "auto", tickerBaseTheme: "auto", timerTheme: "auto", missionTheme: "auto",
@@ -646,6 +647,12 @@ export default function AdminPage() {
       goalOnly.searchParams.set("goal", String(Math.max(0, parseInt((p.goal || "0") as any, 10) || 0)));
       goalOnly.searchParams.set("goalLabel", (p.goalLabel || "후원").trim());
       goalOnly.searchParams.set("goalWidth", String(Math.max(260, Math.min(1200, parseInt((p.goalWidth || "560") as any, 10) || 560))));
+      if (String(p.goalOpacity || "").trim()) {
+        goalOnly.searchParams.set("goalOpacity", String(Math.max(0, Math.min(100, parseInt(String(p.goalOpacity), 10) || 100))));
+      }
+      if (p.goalOpacityText) {
+        goalOnly.searchParams.set("goalOpacityText", "true");
+      }
       if (String(p.goalCurrent || "").trim()) {
         goalOnly.searchParams.set("goalCurrent", String(Math.max(0, parseInt(String(p.goalCurrent), 10) || 0)));
       }
@@ -663,6 +670,12 @@ export default function AdminPage() {
       q.set("goal", String(Math.max(0, parseInt((p.goal || "0") as any, 10) || 0)));
       q.set("goalLabel", (p.goalLabel || "후원").trim());
       q.set("goalWidth", String(Math.max(200, Math.min(800, parseInt((p.goalWidth || "400") as any, 10) || 400))));
+      if (String(p.goalOpacity || "").trim()) {
+        q.set("goalOpacity", String(Math.max(0, Math.min(100, parseInt(String(p.goalOpacity), 10) || 100))));
+      }
+      if (p.goalOpacityText) {
+        q.set("goalOpacityText", "true");
+      }
       if (String(p.goalCurrent || "").trim()) {
         q.set("goalCurrent", String(Math.max(0, parseInt(String(p.goalCurrent), 10) || 0)));
       }
@@ -702,6 +715,12 @@ export default function AdminPage() {
       goalOnly.searchParams.set("goal", String(Math.max(0, parseInt((p.goal || "0") as any, 10) || 0)));
       goalOnly.searchParams.set("goalLabel", (p.goalLabel || "후원").trim());
       goalOnly.searchParams.set("goalWidth", String(Math.max(260, Math.min(1200, parseInt((p.goalWidth || "560") as any, 10) || 560))));
+      if (String(p.goalOpacity || "").trim()) {
+        goalOnly.searchParams.set("goalOpacity", String(Math.max(0, Math.min(100, parseInt(String(p.goalOpacity), 10) || 100))));
+      }
+      if (p.goalOpacityText) {
+        goalOnly.searchParams.set("goalOpacityText", "true");
+      }
       if (String(p.goalCurrent || "").trim()) {
         goalOnly.searchParams.set("goalCurrent", String(Math.max(0, parseInt(String(p.goalCurrent), 10) || 0)));
       }
@@ -1584,6 +1603,10 @@ export default function AdminPage() {
   const addSigItem = () => {
     const name = newSigName.trim();
     if (!name) return;
+    if (newSigImageUploading) {
+      setSigExcelResult("이미지 업로드 중입니다. 완료 후 시그를 추가해 주세요.");
+      return;
+    }
     const price = Math.max(0, Math.floor(Number(newSigPrice || 0) || 0));
     const normalizedName = name.replace(/\s+/g, "").toLowerCase();
     const hasDuplicate = (state.sigInventory || []).some((x) => (x.name || "").replace(/\s+/g, "").toLowerCase() === normalizedName);
@@ -1591,9 +1614,12 @@ export default function AdminPage() {
       setSigExcelResult(`중복 이름이라 추가하지 않았습니다: ${name}`);
       return;
     }
+    let createdId = "";
+    const previewSrcCandidate = (newSigPreviewUrl || resolveSigPreviewSrc(newSigImageUrl)).trim();
     setState((prev: AppState) => {
+      createdId = `sig_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const nextItem = {
-        id: `sig_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        id: createdId,
         name,
         price,
         imageUrl: newSigImageUrl.trim(),
@@ -1611,6 +1637,9 @@ export default function AdminPage() {
       persistState(next);
       return next;
     });
+    if (createdId && previewSrcCandidate) {
+      setSigPreviewMap((prev) => ({ ...prev, [createdId]: previewSrcCandidate }));
+    }
     setNewSigName("");
     setNewSigPrice("77000");
     setNewSigMaxCount("1");
@@ -1777,12 +1806,15 @@ export default function AdminPage() {
 
   const uploadNewSigImage = (file: File | null) => {
     if (!file) return;
+    setNewSigImageUploading(true);
     setNewSigPreviewUrl(URL.createObjectURL(file));
     void (async () => {
       const url = await uploadSigImageFile(file);
-      if (!url) return;
-      setNewSigImageUrl(url);
-      setNewSigPreviewUrl("");
+      if (url) {
+        setNewSigImageUrl(url);
+        setNewSigPreviewUrl("");
+      }
+      setNewSigImageUploading(false);
     })();
   };
 
@@ -4217,7 +4249,13 @@ export default function AdminPage() {
                         }}
                       />
                     </div>
-                    <button className="px-3 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-sm" onClick={addSigItem}>시그 추가</button>
+                    <button
+                      className="px-3 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                      onClick={addSigItem}
+                      disabled={newSigImageUploading}
+                    >
+                      {newSigImageUploading ? "이미지 업로드 중..." : "시그 추가"}
+                    </button>
                   </div>
                   {(newSigPreviewUrl || newSigImageUrl) ? (
                     <div className="rounded border border-white/10 bg-black/20 p-2">
@@ -5610,6 +5648,34 @@ export default function AdminPage() {
                                       <div className="p-3 grid grid-cols-1 sm:grid-cols-[100px_minmax(0,1fr)] items-center gap-1">
                                         <label className="text-xs text-neutral-400">너비(px)</label>
                                         <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.goalWidth} onChange={(e) => updatePreset(p.id, { goalWidth: e.target.value })} />
+                                        <label className="text-xs text-neutral-400">투명도(%)</label>
+                                        <div className="flex items-center gap-2">
+                                          <input
+                                            type="range"
+                                            min="0"
+                                            max="100"
+                                            value={p.goalOpacity ?? "100"}
+                                            onChange={(e) => updatePreset(p.id, { goalOpacity: e.target.value })}
+                                            className="flex-1 accent-fuchsia-500"
+                                          />
+                                          <input
+                                            className="w-14 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            value={p.goalOpacity ?? "100"}
+                                            onChange={(e) => updatePreset(p.id, { goalOpacity: e.target.value.replace(/[^\d]/g, "").slice(0, 3) })}
+                                          />
+                                        </div>
+                                        <label className="text-xs text-neutral-400">텍스트도 투명화</label>
+                                        <label className="inline-flex items-center gap-2 text-xs text-neutral-300">
+                                          <input
+                                            type="checkbox"
+                                            checked={Boolean(p.goalOpacityText)}
+                                            onChange={(e) => updatePreset(p.id, { goalOpacityText: e.target.checked })}
+                                          />
+                                          체크 시 텍스트/외곽선도 함께 투명화
+                                        </label>
                                       </div>
                                     </details>
                                   </div>
