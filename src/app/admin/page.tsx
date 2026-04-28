@@ -785,6 +785,41 @@ export default function AdminPage() {
       setCopiedId(id); setTimeout(() => setCopiedId(null), 1500);
     } catch {}
   };
+  const rouletteUserId = user?.id || "finalent";
+  const rouletteQuickUrls = useMemo(() => {
+    const progressPath = `/overlay/sig-sales?u=${rouletteUserId}`;
+    const progressDemoPath = `${progressPath}&rouletteDemo=1`;
+    const resultPath = `/overlay/sig-sales-result?u=${rouletteUserId}`;
+    const resultDemoPath = `${resultPath}&demo=1`;
+    const memberResultPath = selectedMemberId
+      ? `${resultPath}&memberId=${encodeURIComponent(selectedMemberId)}`
+      : "";
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    return {
+      progressPath,
+      progressDemoPath,
+      resultPath,
+      resultDemoPath,
+      memberResultPath,
+      progressAbs: origin ? `${origin}${progressPath}` : "",
+      progressDemoAbs: origin ? `${origin}${progressDemoPath}` : "",
+      resultAbs: origin ? `${origin}${resultPath}` : "",
+      resultDemoAbs: origin ? `${origin}${resultDemoPath}` : "",
+      memberResultAbs: origin && memberResultPath ? `${origin}${memberResultPath}` : "",
+    };
+  }, [rouletteUserId, selectedMemberId]);
+  const rouletteQuickSummaryText = useMemo(() => {
+    const lines = [
+      `[진행] ${rouletteQuickUrls.progressAbs}`,
+      `[결과] ${rouletteQuickUrls.resultAbs}`,
+      `[진행 데모] ${rouletteQuickUrls.progressDemoAbs}`,
+      `[결과 데모] ${rouletteQuickUrls.resultDemoAbs}`,
+    ];
+    if (rouletteQuickUrls.memberResultAbs) {
+      lines.push(`[멤버 결과] ${rouletteQuickUrls.memberResultAbs}`);
+    }
+    return lines.join("\n");
+  }, [rouletteQuickUrls]);
   const getDonorRankingsZoomPct = (): number => {
     const raw = donorRankingsZoomPct.replace(/[^\d]/g, "");
     const n = parseInt(raw || "100", 10);
@@ -3763,6 +3798,54 @@ export default function AdminPage() {
                     </div>
                   );
                 })()}
+                <div className="rounded-xl border border-sky-300/30 bg-sky-500/5 p-3 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-sm font-semibold text-sky-200">회전판 빠른 점검</div>
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
+                      <span className="rounded bg-white/10 px-2 py-1">phase: {state.rouletteState?.phase || "IDLE"}</span>
+                      <span className="rounded bg-white/10 px-2 py-1">결과: {(state.rouletteState?.selectedSigs || []).length}개</span>
+                      <span className="rounded bg-white/10 px-2 py-1">한방시그: {state.rouletteState?.oneShotResult ? "있음" : "없음"}</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      className={`rounded px-2 py-1 text-xs ${copiedId === "dash-sig-quick-all" ? "bg-emerald-600" : "bg-sky-700 hover:bg-sky-600"}`}
+                      onClick={() => {
+                        if (!rouletteQuickSummaryText.trim()) return;
+                        void copyUrl(rouletteQuickSummaryText, "dash-sig-quick-all");
+                      }}
+                    >
+                      {copiedId === "dash-sig-quick-all" ? "복사됨!" : "점검 URL 전체 복사"}
+                    </button>
+                    <button type="button" className="rounded bg-[#6366f1] px-2 py-1 text-xs hover:bg-[#4f46e5]" onClick={() => window.open(rouletteQuickUrls.progressPath, "_blank", "noopener,noreferrer")}>
+                      진행 열기
+                    </button>
+                    <button type="button" className="rounded bg-[#6366f1] px-2 py-1 text-xs hover:bg-[#4f46e5]" onClick={() => window.open(rouletteQuickUrls.resultPath, "_blank", "noopener,noreferrer")}>
+                      결과 열기
+                    </button>
+                    <button type="button" className="rounded bg-fuchsia-700 px-2 py-1 text-xs hover:bg-fuchsia-600" onClick={() => window.open(rouletteQuickUrls.progressDemoPath, "_blank", "noopener,noreferrer")}>
+                      진행 데모
+                    </button>
+                    <button type="button" className="rounded bg-fuchsia-700 px-2 py-1 text-xs hover:bg-fuchsia-600" onClick={() => window.open(rouletteQuickUrls.resultDemoPath, "_blank", "noopener,noreferrer")}>
+                      결과 데모
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!rouletteQuickUrls.memberResultPath}
+                      className="rounded bg-indigo-700 px-2 py-1 text-xs hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={() => {
+                        if (!rouletteQuickUrls.memberResultPath) return;
+                        window.open(rouletteQuickUrls.memberResultPath, "_blank", "noopener,noreferrer");
+                      }}
+                    >
+                      멤버 결과 열기
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-neutral-400">
+                    점검 순서: <span className="text-neutral-200">진행 데모</span> → <span className="text-neutral-200">결과 데모</span> → <span className="text-neutral-200">실제 진행</span> → <span className="text-neutral-200">실제 결과</span>
+                  </p>
+                </div>
                 <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
                   <span>회전판 진행 오버레이 URL:</span>
                   <code className="text-neutral-300 break-all">
