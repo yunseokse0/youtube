@@ -3590,7 +3590,7 @@ export default function AdminPage() {
                           onChange={(e) => {
                             const v = e.target.value;
                             if (v === "__custom__") return;
-                            updateDonationListsOverlayConfig({ bgGifUrl: v });
+                            updateDonationListsOverlayConfig({ bgGifUrl: v, isBgEnabled: Boolean(String(v || "").trim()) });
                           }}
                         >
                           {DONATION_LISTS_BG_GIF_PRESETS.map((p) => (
@@ -3607,7 +3607,12 @@ export default function AdminPage() {
                           className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 placeholder:text-pink-200/40 outline-none focus:border-fuchsia-400/70"
                           placeholder="예: https://media.giphy.com/... 또는 /images/bg/my.gif"
                           value={dlCfg.bgGifUrl}
-                          onChange={(e) => updateDonationListsOverlayConfig({ bgGifUrl: e.target.value })}
+                          onChange={(e) =>
+                            updateDonationListsOverlayConfig({
+                              bgGifUrl: e.target.value,
+                              isBgEnabled: Boolean(String(e.target.value || "").trim()),
+                            })
+                          }
                         />
                       </label>
                       <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90 md:col-span-2">
