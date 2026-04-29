@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { SigItem } from "@/types";
 import SelectedSigs from "@/components/sig-sales/SelectedSigs";
 import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
@@ -26,6 +26,9 @@ export default function ResultOverlay({
   showOneShotReveal,
 }: ResultOverlayProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
+  useEffect(() => {
+    setImageLoaded(false);
+  }, [signImageUrl]);
 
   useImagePreload(
     signImageUrl,
@@ -42,7 +45,7 @@ export default function ResultOverlay({
   if (!visible) return null;
 
   return (
-    <div className="mt-4 space-y-4">
+    <div className="mt-5 space-y-3">
       <SelectedSigs
         items={selectedSigs}
         soldOutStampUrl={soldOutStampUrl}
@@ -50,27 +53,29 @@ export default function ResultOverlay({
         onToggleSold={() => {}}
         showToggle={false}
         compact
-        trailingSlot={
-          oneShot && showOneShotReveal ? (
-            <div className="relative">
-              <OneShotSigCard
-                name={oneShot.name}
-                price={oneShot.price}
-                imageUrl={signImageUrl}
-                sold={false}
-                onToggleSold={() => {}}
-                showToggle={false}
-                compact
-              />
-              {!imageLoaded ? (
-                <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-xl bg-black/35 text-xs font-semibold text-yellow-100">
-                  이미지 로딩 중...
-                </div>
-              ) : null}
-            </div>
-          ) : null
-        }
+        showConfirmedBadge={false}
+        className="mx-auto w-full max-w-[1120px]"
       />
+      {oneShot && showOneShotReveal ? (
+        <div className="w-full max-w-[220px]">
+          <div className="relative rounded-xl border border-yellow-300/45 bg-black/20 p-1 shadow-[0_0_18px_rgba(250,204,21,0.25)]">
+            <OneShotSigCard
+              name={oneShot.name}
+              price={oneShot.price}
+              imageUrl={signImageUrl}
+              sold={false}
+              onToggleSold={() => {}}
+              showToggle={false}
+              compact
+            />
+            {!imageLoaded ? (
+              <div className="pointer-events-none absolute inset-1 grid place-items-center rounded-xl bg-black/35 text-xs font-semibold text-yellow-100">
+                이미지 로딩 중...
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

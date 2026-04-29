@@ -1191,7 +1191,7 @@ function OverlayInner() {
         return presetParams.get(key);
       },
     }),
-    [rawSp, presetParams, presetId]
+    [rawSp, presetParams]
   );
   const demoMode = ((sp.get("demo") || "").toLowerCase() === "true") || ((sp.get("test") || "").toLowerCase() === "true");
   useEffect(() => {
@@ -1865,7 +1865,10 @@ function OverlayInner() {
     return roleMap;
   }, [memberPositionMode, memberPositionsMap, members, rankPositionLabels]);
   const getMemberRole = useCallback((m: Member) => resolvedMemberRoles[m.id] || "", [resolvedMemberRoles]);
-  const pinnedFilter = (m: Member) => Boolean(m.operating) || /운영비/i.test(m.name) || /운영비/i.test(getMemberRole(m));
+  const pinnedFilter = useCallback(
+    (m: Member) => Boolean(m.operating) || /운영비/i.test(m.name) || /운영비/i.test(getMemberRole(m)),
+    [getMemberRole]
+  );
   const showPersonalGoal = useMemo(() => {
     const raw = sp.get("showPersonalGoal");
     if (raw === "true") return true;
@@ -1886,8 +1889,8 @@ function OverlayInner() {
     !showMission &&
     goal > 0;
 
-  const unpinned = useMemo(() => members.filter((m) => !pinnedFilter(m)), [members]);
-  const pinned = useMemo(() => members.filter(pinnedFilter), [members]);
+  const unpinned = useMemo(() => members.filter((m) => !pinnedFilter(m)), [members, pinnedFilter]);
+  const pinned = useMemo(() => members.filter(pinnedFilter), [members, pinnedFilter]);
   const hasRoleColumn = useMemo(
     () => members.some((m) => getMemberRole(m).trim().length > 0),
     [members, getMemberRole]

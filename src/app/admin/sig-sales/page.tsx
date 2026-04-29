@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import confetti from "canvas-confetti";
 import { Howl } from "howler";
 import type { SigItem } from "@/types";
@@ -9,7 +10,7 @@ import SelectedSigs from "@/components/sig-sales/SelectedSigs";
 import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
 import ConfirmationModal from "@/components/sig-sales/ConfirmationModal";
 import RouletteHistoryModal from "@/components/sig-sales/RouletteHistoryModal";
-import { loadStateFromApi, saveStateAsync, type AppState } from "@/lib/state";
+import { loadState, loadStateFromApi, saveStateAsync, type AppState } from "@/lib/state";
 import { ONE_SHOT_SIG_ID, SPIN_SOUND_PATHS, clampOverlayOpacity, cancelRouletteSession } from "@/lib/sig-roulette";
 import { useSigSalesState } from "@/hooks/useSigSalesState";
 
@@ -46,7 +47,10 @@ const PREVIEW_FILLER_POOL: SigItem[] = [
 ];
 
 export default function AdminSigSalesPage() {
-  const [userId] = useState("finalent");
+  const router = useRouter();
+  const [user, setUser] = useState<{ id: string; companyName: string; name?: string; remainingDays?: number | null; unlimited?: boolean } | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const userId = user?.id || "finalent";
   const [memberFilterId, setMemberFilterId] = useState("");
   const [state, setState] = useState<AppState | null>(null);
   const [loadingSpin, setLoadingSpin] = useState(false);
@@ -73,20 +77,37 @@ export default function AdminSigSalesPage() {
   const [oneShotSound] = useState(() => new Howl({ src: [SPIN_SOUND_PATHS.oneShot], preload: true, volume: 0.7 }));
   const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || "/images/sigs/stamp.png";
   const { machine, spin, landed, markConfirmPending, cancelConfirm, resetToIdle, finish, setOpacity, setError } = useSigSalesState(userId, state);
-  const controlsDisabled = machine.phase === "CONFIRM_PENDING" || machine.isFinishLoading;
-
-  const loadRemote = useCallback(async () => {
-    const remote = await loadStateFromApi(userId);
-    if (remote) setState(remote);
-  }, [userId]);
+  const controlsDisabled = !authReady || machine.phase === "CONFIRM_PENDING" || machine.isFinishLoading;
 
   useEffect(() => {
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.user?.id) {
+          setUser(data.user);
+        } else {
+          router.replace("/login");
+        }
+      })
+      .finally(() => setAuthReady(true));
+  }, [router]);
+
+  const loadRemote = useCallback(async () => {
+    if (!authReady) return;
+    const remote = await loadStateFromApi(userId);
+    if (remote) setState(remote);
+  }, [authReady, userId]);
+
+  useEffect(() => {
+    if (!authReady) return;
+    setState(loadState(userId));
     void loadRemote();
     const id = window.setInterval(() => void loadRemote(), POLL_MS);
     return () => window.clearInterval(id);
-  }, [loadRemote]);
+  }, [authReady, userId, loadRemote]);
 
   const loadHistory = useCallback(async (limit = 8) => {
+    if (!authReady) return;
     const res = await fetch(`/api/roulette/history?user=${encodeURIComponent(userId)}&limit=${limit}`, {
       cache: "no-store",
       credentials: "include",
@@ -94,11 +115,12 @@ export default function AdminSigSalesPage() {
     if (!res.ok) return;
     const data = (await res.json()) as { history?: HistoryItem[] };
     if (Array.isArray(data.history)) setHistory(data.history);
-  }, [userId]);
+  }, [authReady, userId]);
 
   useEffect(() => {
+    if (!authReady) return;
     void loadHistory(8);
-  }, [loadHistory]);
+  }, [authReady, loadHistory]);
 
   useEffect(() => {
     oneShotSound.volume(volume);
@@ -202,6 +224,7 @@ export default function AdminSigSalesPage() {
   }, [showFinalShowcase, displayOneShot]);
 
   const onStartRoulette = useCallback(async () => {
+    if (!authReady) return;
     if (loadingSpin) return;
     if (!memberFilterId) {
       setToast("회전 전 멤버를 먼저 선택해주세요.");
@@ -267,7 +290,7 @@ export default function AdminSigSalesPage() {
     } finally {
       setLoadingSpin(false);
     }
-  }, [loadingSpin, memberFilterId, machine.phase, machine.isFinishLoading, activeNormalPool.length, spin, resetToIdle, cancelConfirm]);
+  }, [authReady, loadingSpin, memberFilterId, machine.phase, machine.isFinishLoading, activeNormalPool.length, spin, resetToIdle, cancelConfirm]);
 
   const onRerollReset = useCallback(() => {
     if (nextSpinTimerRef.current) {

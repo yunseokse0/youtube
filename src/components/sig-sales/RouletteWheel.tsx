@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, animate, motion, useMotionValue } from "framer-motion";
 import type { AnimationPlaybackControls } from "framer-motion";
 import { Howl } from "howler";
@@ -32,10 +32,13 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
   const onLandedRef = useRef<RouletteWheelProps["onLanded"]>(onLanded);
   const onTransitionEndRef = useRef<RouletteWheelProps["onTransitionEnd"]>(onTransitionEnd);
   const [sounds, setSounds] = useState<{ tick: Howl; final: Howl; success: Howl } | null>(null);
+  const soundsRef = useRef<{ tick: Howl; final: Howl; success: Howl } | null>(null);
   const hasSoundAssetErrorRef = useRef(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
-  const playFallbackTone = (freq: number, durationMs: number, gain = 0.03) => {
-    if (muted) return;
+  const mutedRef = useRef(muted);
+  const volumeRef = useRef(volume);
+  const playFallbackTone = useCallback((freq: number, durationMs: number, gain = 0.03) => {
+    if (mutedRef.current) return;
     if (typeof window === "undefined") return;
     const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
     if (!Ctx) return;
@@ -49,14 +52,14 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
     const g = ctx.createGain();
     osc.type = "sine";
     osc.frequency.value = freq;
-    g.gain.value = Math.max(0.001, Math.min(0.08, gain * volume));
+    g.gain.value = Math.max(0.001, Math.min(0.08, gain * volumeRef.current));
     osc.connect(g);
     g.connect(ctx.destination);
     const now = ctx.currentTime;
     osc.start(now);
     g.gain.exponentialRampToValueAtTime(0.0001, now + durationMs / 1000);
     osc.stop(now + durationMs / 1000);
-  };
+  }, []);
 
   const segmentCount = Math.max(1, items.length);
   const segment = 360 / segmentCount;
@@ -77,9 +80,7 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
     const tick = new Howl({
       src: [SPIN_SOUND_PATHS.tick],
       loop: true,
-      volume,
       preload: true,
-      mute: muted,
       onloaderror: () => {
         hasSoundAssetErrorRef.current = true;
       },
@@ -90,9 +91,7 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
     const final = new Howl({
       src: [SPIN_SOUND_PATHS.final],
       loop: false,
-      volume,
       preload: true,
-      mute: muted,
       onloaderror: () => {
         hasSoundAssetErrorRef.current = true;
       },
@@ -103,9 +102,7 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
     const success = new Howl({
       src: [SPIN_SOUND_PATHS.success],
       loop: false,
-      volume,
       preload: true,
-      mute: muted,
       onloaderror: () => {
         hasSoundAssetErrorRef.current = true;
       },
@@ -125,6 +122,7 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
 
   useEffect(() => {
     if (!sounds) return;
+    soundsRef.current = sounds;
     sounds.tick.volume(volume);
     sounds.final.volume(volume);
     sounds.success.volume(volume);
@@ -132,6 +130,11 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
     sounds.final.mute(muted);
     sounds.success.mute(muted);
   }, [sounds, volume, muted]);
+
+  useEffect(() => {
+    mutedRef.current = muted;
+    volumeRef.current = volume;
+  }, [muted, volume]);
 
   useEffect(() => {
     itemsRef.current = items;
@@ -153,23 +156,24 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
     return () => unsub();
   }, [rotate]);
 
-  const calculateFinalAngle = (targetId: string | null, count: number, currentBase: number, minTurns: number) => {
-    if (!targetId || !items.length) return currentBase + Math.max(1, minTurns) * 360;
-    const idx = Math.max(0, items.findIndex((x) => x.id === targetId));
+  const calculateFinalAngle = useCallback((targetId: string | null, count: number, currentBase: number, minTurns: number) => {
+    const currentItems = itemsRef.current;
+    if (!targetId || !currentItems.length) return currentBase + Math.max(1, minTurns) * 360;
+    const idx = Math.max(0, currentItems.findIndex((x) => x.id === targetId));
     const seg = 360 / Math.max(1, count);
     const targetCenter = idx * seg + seg / 2;
     const normalizedTarget = ((360 - targetCenter) % 360 + 360) % 360;
     const currentNorm = ((currentBase % 360) + 360) % 360;
     const deltaToTarget = ((normalizedTarget - currentNorm) % 360 + 360) % 360;
     return currentBase + minTurns * 360 + deltaToTarget;
-  };
+  }, []);
 
-  const stopAllAnimations = () => {
+  const stopAllAnimations = useCallback(() => {
     animationRef.current?.stop();
     animationRef.current = null;
-  };
-  const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
-  const runTickTrack = async (
+  }, []);
+  const sleep = useCallback((ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms)), []);
+  const runTickTrack = useCallback(async (
     durationMs: number,
     startIntervalMs: number,
     endIntervalMs: number,
@@ -191,8 +195,8 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
       }
       await sleep(currentInterval);
     }
-  };
-  const runAnimation = (
+  }, [playFallbackTone, sleep]);
+  const runAnimation = useCallback((
     to: number | number[],
     options: { duration: number; ease?: unknown; repeat?: number; repeatType?: "reverse" | "loop" | "mirror" }
   ) =>
@@ -202,7 +206,7 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
         onComplete: () => resolve(),
       } as never);
       animationRef.current = controls;
-    });
+    }), [rotate]);
 
   useEffect(() => {
     const spinKey = `${startedAt || 0}:${resultId || "none"}`;
@@ -211,8 +215,8 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
       hasLandedRef.current = false;
       activeSpinKeyRef.current = "";
       stopAllAnimations();
-      sounds?.tick.stop();
-      sounds?.final.stop();
+      soundsRef.current?.tick.stop();
+      soundsRef.current?.final.stop();
       return;
     }
 
@@ -229,8 +233,8 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
     console.log("[Wheel] STARTING ANIMATION", { isRolling, startedAt, resultId });
 
     let cancelled = false;
-    sounds?.tick.stop();
-    sounds?.final.stop();
+    soundsRef.current?.tick.stop();
+    soundsRef.current?.final.stop();
 
     const runSequence = async () => {
       try {
@@ -241,14 +245,14 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
         // 1) 가속: 서서히 속도를 올리는 구간
         await Promise.all([
           runAnimation(accelTarget, { duration: 0.95 * SPIN_DURATION_SCALE, ease: [0.42, 0, 1, 1] }),
-          runTickTrack(0.95 * SPIN_DURATION_SCALE * 1000, 125, 62, () => cancelled, sounds?.tick || null),
+          runTickTrack(0.95 * SPIN_DURATION_SCALE * 1000, 125, 62, () => cancelled, soundsRef.current?.tick || null),
         ]);
         if (cancelled) return;
 
         // 2) 고속 유지: 일정한 최고속으로 회전
         await Promise.all([
           runAnimation(cruiseTarget, { duration: 1.15 * SPIN_DURATION_SCALE, ease: "linear" }),
-          runTickTrack(1.15 * SPIN_DURATION_SCALE * 1000, 58, 58, () => cancelled, sounds?.tick || null),
+          runTickTrack(1.15 * SPIN_DURATION_SCALE * 1000, 58, 58, () => cancelled, soundsRef.current?.tick || null),
         ]);
         if (cancelled) return;
 
@@ -259,7 +263,7 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
             duration: 2.9 * SPIN_DURATION_SCALE,
             ease: [0.05, 0.9, 0.18, 1.0],
           }),
-          runTickTrack(2.9 * SPIN_DURATION_SCALE * 1000, 72, 190, () => cancelled, sounds?.tick || null),
+          runTickTrack(2.9 * SPIN_DURATION_SCALE * 1000, 72, 190, () => cancelled, soundsRef.current?.tick || null),
         ]);
         if (cancelled) return;
 
@@ -271,10 +275,10 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
         if (cancelled) return;
         onTransitionEndRef.current?.();
 
-        sounds?.tick.stop();
-        sounds?.success.stop();
-        if (sounds?.success && !hasSoundAssetErrorRef.current) {
-          sounds.success.play();
+        soundsRef.current?.tick.stop();
+        soundsRef.current?.success.stop();
+        if (soundsRef.current?.success && !hasSoundAssetErrorRef.current) {
+          soundsRef.current.success.play();
         } else {
           playFallbackTone(880, 120, 0.04);
           window.setTimeout(() => playFallbackTone(1170, 150, 0.04), 110);
@@ -286,8 +290,8 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
         }
       } catch {
         // 예외가 나도 다음 회차 시작이 막히지 않도록 사운드만 정리
-        sounds?.tick.stop();
-        sounds?.final.stop();
+        soundsRef.current?.tick.stop();
+        soundsRef.current?.final.stop();
       }
     };
 
@@ -296,10 +300,10 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
     return () => {
       cancelled = true;
       stopAllAnimations();
-      sounds?.tick.stop();
-      sounds?.final.stop();
+      soundsRef.current?.tick.stop();
+      soundsRef.current?.final.stop();
     };
-  }, [isRolling, startedAt, resultId, rotate, sounds]);
+  }, [isRolling, startedAt, resultId, rotate, stopAllAnimations, runAnimation, runTickTrack, calculateFinalAngle, playFallbackTone]);
 
   const particles = useMemo(
     () =>
@@ -342,18 +346,22 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
             const isWin = idx === winnerIndex && !isRolling;
             return (
               <div key={`${item.id}-${idx}`} className="absolute left-1/2 top-1/2 h-0 w-0" style={{ transform: `rotate(${angle}deg) translateY(-148px)` }}>
-                {isWin ? (
-                  <motion.div
-                    className="absolute left-1/2 top-1/2 h-14 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full border border-yellow-200/85 bg-pink-500/35"
-                    animate={{ opacity: [0.35, 0.95, 0.45], scale: [1, 1.1, 1.03] }}
-                    transition={{ duration: 1.1, repeat: Infinity }}
-                  />
-                ) : null}
                 <motion.div
-                  className={`relative z-10 w-24 -translate-x-1/2 -translate-y-1/2 text-center text-xs font-black ${isWin ? "text-pink-100" : "text-white"}`}
+                  className={`relative z-10 w-20 -translate-x-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-center text-[11px] font-black ${
+                    isWin
+                      ? "border border-yellow-200/75 bg-black/45 text-yellow-100 shadow-[0_0_14px_rgba(250,204,21,0.35)]"
+                      : "text-white"
+                  }`}
                   style={{ transform: `rotate(${-angle - currentAngle}deg)` }}
-                  animate={isWin ? { scale: [1, 1.14, 1], textShadow: ["0 0 4px #000", "0 0 16px #ec4899", "0 0 4px #000"] } : {}}
-                  transition={{ duration: 1.2, repeat: isWin ? Infinity : 0 }}
+                  animate={
+                    isWin
+                      ? {
+                          scale: [1, 1.06, 1],
+                          textShadow: ["0 0 4px rgba(0,0,0,0.95)", "0 0 10px rgba(250,204,21,0.65)", "0 0 4px rgba(0,0,0,0.95)"],
+                        }
+                      : {}
+                  }
+                  transition={{ duration: 1.4, repeat: isWin ? Infinity : 0 }}
                 >
                   {item.name}
                 </motion.div>

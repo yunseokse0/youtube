@@ -104,7 +104,7 @@ export default function MealMatchOverlayPage() {
   const { state, ready } = useRemoteState(userId);
   const [overtakeText, setOvertakeText] = useState<string | null>(null);
   const lastLeaderRef = useRef<string>("");
-  const [timerTick, setTimerTick] = useState(0);
+  const [, setTimerTick] = useState(0);
 
   const timerState = state?.generalTimer || null;
   useEffect(() => {
@@ -112,8 +112,8 @@ export default function MealMatchOverlayPage() {
     setTimerTick((v) => v + 1);
     const id = window.setInterval(() => setTimerTick((v) => v + 1), 1000);
     return () => window.clearInterval(id);
-  }, [timerState?.isActive, timerState?.remainingTime, timerState?.lastUpdated]);
-  const remaining = useMemo(() => (timerState ? getEffectiveRemainingTime(timerState) : 0), [timerState, timerTick]);
+  }, [timerState]);
+  const remaining = timerState ? getEffectiveRemainingTime(timerState) : 0;
   const paused = Boolean(timerState && !timerState.isActive);
   const timerText = `${String(Math.floor(Math.max(0, remaining) / 60)).padStart(2, "0")}:${String(Math.max(0, remaining) % 60).padStart(2, "0")}`;
   const showMealMatchTimer = state?.matchTimerEnabled?.general !== false;
@@ -302,7 +302,6 @@ export default function MealMatchOverlayPage() {
     });
   }, [
     participants,
-    totalScore,
     fillGaugeMode,
     useTeamSplitGauge,
     teamAgg,

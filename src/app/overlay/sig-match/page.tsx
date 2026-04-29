@@ -151,8 +151,6 @@ function useSigMatchState(userId: string | undefined, lockedSnapshot: AppState |
 function SigMatchOverlayInner() {
   const sp = useSearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
-  const snapQs = sp.get("snap") || "";
-  const snapKeyQs = sp.get("snapKey") || "";
   const previewGuide = sp.get("previewGuide") === "true";
   const overlayScalePct = (() => {
     const raw = sp.get("scalePct") || sp.get("zoomPct") || "100";
@@ -165,7 +163,7 @@ function SigMatchOverlayInner() {
     ? undefined
     : ({ zoom: overlayScale } as React.CSSProperties);
 
-  const lockedSnapshot = useMemo(() => parseSigMatchSnapshot(sp), [snapQs, snapKeyQs]);
+  const lockedSnapshot = useMemo(() => parseSigMatchSnapshot(sp), [sp]);
 
   const { state, ready } = useSigMatchState(userId, lockedSnapshot);
 

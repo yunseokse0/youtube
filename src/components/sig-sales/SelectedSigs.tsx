@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Image from "next/image";
 import type { ReactNode } from "react";
 import type { SigItem } from "@/types";
 import { formatWon } from "@/lib/sig-roulette";
@@ -17,6 +18,8 @@ type SelectedSigsProps = {
   showToggle?: boolean;
   soldOverrideSet?: Set<string>;
   compact?: boolean;
+  showConfirmedBadge?: boolean;
+  className?: string;
 };
 
 export default function SelectedSigs({
@@ -30,10 +33,19 @@ export default function SelectedSigs({
   showToggle = true,
   soldOverrideSet,
   compact = false,
+  showConfirmedBadge = true,
+  className = "",
 }: SelectedSigsProps) {
   const fallbackImage = "/images/sigs/dummy-sig.svg";
+  const gridClass = compact
+    ? trailingSlot
+      ? "grid-cols-6"
+      : "grid-cols-5"
+    : trailingSlot
+      ? "grid-cols-2 md:grid-cols-3 xl:grid-cols-6"
+      : "grid-cols-2 md:grid-cols-3 xl:grid-cols-5";
   return (
-    <section className={`grid grid-cols-2 gap-2 ${trailingSlot ? "md:grid-cols-6" : "md:grid-cols-5"}`}>
+    <section className={`grid ${gridClass} gap-1.5 ${className}`.trim()}>
       {items.map((item, idx) => {
         const sold = soldOverrideSet ? soldOverrideSet.has(item.id) : manualSoldSet.has(item.id);
         const isLatestConfirmed = highlightId === item.id;
@@ -45,9 +57,11 @@ export default function SelectedSigs({
             transition={{ delay: idx * 0.08, duration: 0.35 }}
             className={`relative overflow-hidden rounded-xl border bg-neutral-900/70 ${isLatestConfirmed ? "border-yellow-300 shadow-[0_0_24px_rgba(250,204,21,0.45)]" : "border-white/20"}`}
           >
-            <div className="absolute left-2 top-2 z-20 rounded bg-emerald-600/90 px-2 py-0.5 text-[10px] font-black text-white">
-              확정
-            </div>
+            {showConfirmedBadge ? (
+              <div className="absolute left-2 top-2 z-20 rounded bg-emerald-600/90 px-2 py-0.5 text-[10px] font-black text-white">
+                확정
+              </div>
+            ) : null}
             {isLatestConfirmed ? (
               <motion.div
                 className="pointer-events-none absolute inset-0 z-10 border-2 border-yellow-300/85"
@@ -56,11 +70,14 @@ export default function SelectedSigs({
                 transition={{ duration: 0.9, repeat: 1 }}
               />
             ) : null}
-            <div className={`relative ${compact ? "aspect-[4/3]" : "aspect-[4/5]"}`}>
-              <img
+            <div className={`relative ${compact ? "aspect-[3/4]" : "aspect-[4/5]"}`}>
+              <Image
                 src={resolveSigImageUrl(item.name, item.imageUrl)}
                 alt={item.name}
-                className="h-full w-full object-cover"
+                fill
+                unoptimized
+                sizes={compact ? "140px" : "240px"}
+                className="object-cover"
                 onError={(e) => {
                   e.currentTarget.onerror = null;
                   e.currentTarget.src = fallbackImage;
@@ -69,13 +86,20 @@ export default function SelectedSigs({
               {sold ? (
                 <>
                   <div className="absolute inset-0 bg-black/45" />
-                  <img src={soldOutStampUrl} alt="판매 완료" className="absolute left-1/2 top-1/2 h-28 w-28 -translate-x-1/2 -translate-y-1/2 object-contain" />
+                  <Image
+                    src={soldOutStampUrl}
+                    alt="판매 완료"
+                    width={112}
+                    height={112}
+                    unoptimized
+                    className="absolute left-1/2 top-1/2 h-28 w-28 -translate-x-1/2 -translate-y-1/2 object-contain"
+                  />
                 </>
               ) : null}
             </div>
-            <div className={`${compact ? "space-y-0.5 p-1.5" : "space-y-1 p-2"}`}>
-              <div className={`truncate font-bold text-white ${compact ? "text-[11px]" : "text-sm"}`}>{item.name}</div>
-              <div className={`${compact ? "text-[10px]" : "text-xs"} text-amber-200`}>{formatWon(item.price)}</div>
+            <div className={`${compact ? "space-y-0 p-1" : "space-y-1 p-2"}`}>
+              <div className={`truncate font-bold text-white ${compact ? "text-[9px]" : "text-sm"}`}>{item.name}</div>
+              <div className={`${compact ? "text-[8px]" : "text-xs"} text-amber-200`}>{formatWon(item.price)}</div>
               {showToggle ? (
                 <button
                   type="button"
@@ -90,7 +114,7 @@ export default function SelectedSigs({
           </motion.article>
         );
       })}
-      {trailingSlot ? <div className={compact ? "min-h-[140px]" : "min-h-[280px]"}>{trailingSlot}</div> : null}
+      {trailingSlot ? <div className={compact ? "min-h-[132px]" : "min-h-[280px]"}>{trailingSlot}</div> : null}
     </section>
   );
 }

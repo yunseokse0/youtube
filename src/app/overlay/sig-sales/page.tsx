@@ -69,6 +69,7 @@ export default function SigSalesOverlayPage() {
   const nextSpinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const transitionHandledKeyRef = useRef("");
   const phaseRef = useRef<WheelPhase>("idle");
+  const demoBootedRef = useRef(false);
   const hasOneShotSoundErrorRef = useRef(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const playFallbackOneShot = useCallback(() => {
@@ -178,6 +179,7 @@ export default function SigSalesOverlayPage() {
     if (displaySelectedSigs.length < CONFIRMED_VISIBLE_SLOTS) return null;
     return buildOneShotFromSelected(displaySelectedSigs);
   }, [displaySelectedSigs]);
+  const hideWheelAfterComplete = showResultPanel && displaySelectedSigs.length >= CONFIRMED_VISIBLE_SLOTS;
   const oneShotImageUrl = useMemo(() => {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     return oneShotItem?.imageUrl || "/images/sigs/dummy-sig.svg";
@@ -272,6 +274,28 @@ export default function SigSalesOverlayPage() {
     return () => window.clearTimeout(id);
   }, [lastConfirmedText]);
 
+  useEffect(() => {
+    if (!rouletteDemo) return;
+    if (demoBootedRef.current) return;
+    if (pendingLanding || demoSpin) return;
+    const shuffled = [...DEMO_POOL].sort(() => Math.random() - 0.5);
+    const selected = shuffled.slice(0, CONFIRMED_VISIBLE_SLOTS);
+    const resultId = selected[selected.length - 1]?.id || null;
+    if (selected.length === 0) return;
+    demoBootedRef.current = true;
+    setPendingLanding({
+      selected,
+      oneShot: buildOneShotFromSelected(selected),
+      resultId,
+      persist: false,
+    });
+    setSpinStep(0);
+    setStagedSelected([]);
+    setShowResultPanel(false);
+    setCurrentSignImageUrl("");
+    setDemoSpin({ startedAt: Date.now(), resultId: selected[0]?.id || resultId });
+  }, [rouletteDemo, pendingLanding, demoSpin]);
+
   const handleForceReset = useCallback(() => {
     if (!window.confirm("모든 상태를 강제 초기화하시겠습니까?")) return;
     dispatch({ type: "RESET" });
@@ -303,70 +327,72 @@ export default function SigSalesOverlayPage() {
               {lastConfirmedText}
             </div>
           ) : null}
-          <RouletteWheel
-            items={wheelItemsWithResult}
-            isRolling={wheelPhase === "spinning" || Boolean(demoSpin) || machine.isRolling || machine.phase === "SPINNING"}
-            resultId={displayResultId}
-            startedAt={demoSpin?.startedAt || machine.startedAt}
-            volume={0.7}
-            muted={false}
-            onTransitionEnd={() => {
-              if (phaseRef.current === "result") return;
-              const transitionKey = `${machine.startedAt}:${displayResultId || "none"}:${spinStep}`;
-              if (transitionHandledKeyRef.current === transitionKey) return;
-              transitionHandledKeyRef.current = transitionKey;
-              console.log("[Wheel] TRANSITION END FIRED");
-              dispatch({ type: "SETTLING" });
-              window.setTimeout(() => {
-                dispatch({ type: "LANDED" });
-                setShowResultPanel(true);
-                const signUrl = getSignImageUrl(machine.resultId || machine.selectedSigs?.[0]?.id || displayResultId);
-                setCurrentSignImageUrl(signUrl || "");
-                if (signUrl) {
-                  const img = new Image();
-                  img.src = signUrl;
+          {!hideWheelAfterComplete ? (
+            <RouletteWheel
+              items={wheelItemsWithResult}
+              isRolling={wheelPhase === "spinning" || Boolean(demoSpin) || machine.isRolling || machine.phase === "SPINNING"}
+              resultId={displayResultId}
+              startedAt={demoSpin?.startedAt || machine.startedAt}
+              volume={0.7}
+              muted={false}
+              onTransitionEnd={() => {
+                if (phaseRef.current === "result") return;
+                const transitionKey = `${machine.startedAt}:${displayResultId || "none"}:${spinStep}`;
+                if (transitionHandledKeyRef.current === transitionKey) return;
+                transitionHandledKeyRef.current = transitionKey;
+                console.log("[Wheel] TRANSITION END FIRED");
+                dispatch({ type: "SETTLING" });
+                window.setTimeout(() => {
+                  dispatch({ type: "LANDED" });
+                  setShowResultPanel(true);
+                  const signUrl = getSignImageUrl(machine.resultId || machine.selectedSigs?.[0]?.id || displayResultId);
+                  setCurrentSignImageUrl(signUrl || "");
+                  if (signUrl) {
+                    const img = new Image();
+                    img.src = signUrl;
+                  }
+                }, 300);
+              }}
+              onLanded={(landedId) => {
+                const selectedQueue = (pendingLanding?.selected || machine.selectedSigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
+                if (selectedQueue.length === 0) return;
+                const byResult = landedId ? selectedQueue.find((x) => x.id === landedId) : null;
+                const fallback = selectedQueue[Math.min(spinStep, selectedQueue.length - 1)];
+                const current = byResult || fallback;
+                if (!current) return;
+                const nextSelected = [...stagedSelected, current].filter((item, idx, arr) => arr.findIndex((x) => x.id === item.id) === idx);
+                const nextStep = spinStep + 1;
+                setLastConfirmedText(`${current.name} 확정!`);
+                setLastConfirmedFxKey((v) => v + 1);
+
+                if (nextStep < selectedQueue.length) {
+                  setStagedSelected(nextSelected);
+                  setSpinStep(nextStep);
+                  if (nextSpinTimerRef.current) clearTimeout(nextSpinTimerRef.current);
+                  nextSpinTimerRef.current = setTimeout(() => {
+                    setLastConfirmedText("");
+                    setDemoSpin({ startedAt: Date.now(), resultId: selectedQueue[nextStep].id });
+                  }, STEP_CONFIRM_PAUSE_MS);
+                  return;
                 }
-              }, 300);
-            }}
-            onLanded={(landedId) => {
-              const selectedQueue = (pendingLanding?.selected || machine.selectedSigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
-              if (selectedQueue.length === 0) return;
-              const byResult = landedId ? selectedQueue.find((x) => x.id === landedId) : null;
-              const fallback = selectedQueue[Math.min(spinStep, selectedQueue.length - 1)];
-              const current = byResult || fallback;
-              if (!current) return;
-              const nextSelected = [...stagedSelected, current].filter((item, idx, arr) => arr.findIndex((x) => x.id === item.id) === idx);
-              const nextStep = spinStep + 1;
-              setLastConfirmedText(`${current.name} 확정!`);
-              setLastConfirmedFxKey((v) => v + 1);
 
-              if (nextStep < selectedQueue.length) {
+                const oneShot = buildOneShotFromSelected(nextSelected);
+                landed(nextSelected, oneShot, pendingLanding?.resultId || machine.resultId || current.id);
+                if (oneShotSound && !hasOneShotSoundErrorRef.current) {
+                  oneShotSound.stop();
+                  oneShotSound.play();
+                } else {
+                  playFallbackOneShot();
+                }
                 setStagedSelected(nextSelected);
-                setSpinStep(nextStep);
-                if (nextSpinTimerRef.current) clearTimeout(nextSpinTimerRef.current);
-                nextSpinTimerRef.current = setTimeout(() => {
-                  setLastConfirmedText("");
-                  setDemoSpin({ startedAt: Date.now(), resultId: selectedQueue[nextStep].id });
-                }, STEP_CONFIRM_PAUSE_MS);
-                return;
-              }
-
-              const oneShot = buildOneShotFromSelected(nextSelected);
-              landed(nextSelected, oneShot, pendingLanding?.resultId || machine.resultId || current.id);
-              if (oneShotSound && !hasOneShotSoundErrorRef.current) {
-                oneShotSound.stop();
-                oneShotSound.play();
-              } else {
-                playFallbackOneShot();
-              }
-              setStagedSelected(nextSelected);
-              setSpinStep(0);
-              setDemoSpin(null);
-              setPendingLanding(null);
-              setShowResultPanel(true);
-              if (!pendingLanding?.persist) return;
-            }}
-          />
+                setSpinStep(0);
+                setDemoSpin(null);
+                setPendingLanding(null);
+                setShowResultPanel(true);
+                if (!pendingLanding?.persist) return;
+              }}
+            />
+          ) : null}
           <ResultOverlay
             visible={wheelPhase === "result" || showResultPanel}
             selectedSigs={displaySelectedSigs}

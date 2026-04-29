@@ -2145,17 +2145,17 @@ export default function AdminPage() {
     if (!exists) setSigPresetMemberId(state.members[0].id);
   }, [state.members, sigPresetMemberId]);
 
-  const isOperatingMember = (m: Member) => {
+  const isOperatingMember = useCallback((m: Member) => {
     const position = state.memberPositions?.[m.id] || "";
     return Boolean(m.operating) || /운영비/i.test(m.name) || /운영비/i.test(position);
-  };
+  }, [state.memberPositions]);
   const total = useMemo(
     () => state.members.reduce((sum, m) => sum + (m.account || 0) + (m.toon || 0), 0),
     [state.members]
   );
   const activeMemberCount = useMemo(
     () => state.members.filter((m) => !isOperatingMember(m)).length,
-    [state.members]
+    [state.members, isOperatingMember]
   );
   const donationSyncMode = (state.donationSyncMode || "mealBattle") as "none" | "mealBattle" | "sigMatch" | "sigSales";
   const sigMatchDonors = useMemo(
@@ -4449,10 +4449,13 @@ export default function AdminPage() {
                     <div className="rounded border border-white/10 bg-black/20 p-2">
                       <div className="text-[11px] text-neutral-400 mb-2">신규 시그 이미지 미리보기</div>
                       <div className="relative h-20 w-20 overflow-hidden rounded border border-white/10 bg-black/30">
-                        <img
+                        <Image
                           src={newSigPreviewUrl || resolveSigPreviewSrc(newSigImageUrl)}
                           alt="신규 시그 미리보기"
-                          className="h-full w-full object-cover"
+                          fill
+                          unoptimized
+                          sizes="80px"
+                          className="object-cover"
                           onError={(e) => {
                             e.currentTarget.onerror = null;
                             e.currentTarget.src = SIG_DUMMY_IMAGE;
@@ -4556,10 +4559,13 @@ export default function AdminPage() {
                       {(sigPreviewMap[item.id] || item.imageUrl) ? (
                         <div className="mt-2 flex items-start gap-2">
                           <div className="relative h-16 w-16 overflow-hidden rounded border border-white/10 bg-black/30">
-                            <img
+                            <Image
                               src={sigPreviewMap[item.id] || resolveSigPreviewSrc(item.imageUrl)}
                               alt={`${item.name} 미리보기`}
-                              className="h-full w-full object-cover"
+                              fill
+                              unoptimized
+                              sizes="64px"
+                              className="object-cover"
                               onError={(e) => {
                                 e.currentTarget.onerror = null;
                                 e.currentTarget.src = SIG_DUMMY_IMAGE;
