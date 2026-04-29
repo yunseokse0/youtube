@@ -222,6 +222,7 @@ export default function AdminPage() {
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [sigMatchPreviewIframeKey, setSigMatchPreviewIframeKey] = useState(0);
   const [battleScalePct, setBattleScalePct] = useState("100");
+  const [sigSalesMenuCount, setSigSalesMenuCount] = useState("10");
   const [donorRankingsPreviewIframeKey, setDonorRankingsPreviewIframeKey] = useState(0);
   const [donorRankingsZoomPct, setDonorRankingsZoomPct] = useState("100");
   const [timerUiNow, setTimerUiNow] = useState(Date.now());
@@ -276,16 +277,12 @@ export default function AdminPage() {
       price: totalAmount,
       maxCount: 1,
       soldCount: 0,
-      isRolling: false,
-      isActive: true,
     };
     const changed =
       oneShot.name !== nextOneShot.name ||
       oneShot.price !== nextOneShot.price ||
       oneShot.maxCount !== nextOneShot.maxCount ||
-      oneShot.soldCount !== nextOneShot.soldCount ||
-      oneShot.isRolling !== nextOneShot.isRolling ||
-      oneShot.isActive !== nextOneShot.isActive;
+      oneShot.soldCount !== nextOneShot.soldCount;
     if (!changed) return prev;
     return {
       ...prev,
@@ -849,37 +846,35 @@ export default function AdminPage() {
     } catch {}
   };
   const rouletteUserId = user?.id || "finalent";
+  const getSigSalesMenuCount = useCallback((): number => {
+    const raw = sigSalesMenuCount.replace(/[^\d]/g, "");
+    const n = parseInt(raw || "10", 10);
+    if (!Number.isFinite(n)) return 10;
+    return Math.max(5, Math.min(20, n));
+  }, [sigSalesMenuCount]);
   const rouletteQuickUrls = useMemo(() => {
-    const progressPath = `/overlay/sig-sales?u=${rouletteUserId}`;
+    const progressPath = `/overlay/sig-sales?u=${rouletteUserId}&menuCount=${getSigSalesMenuCount()}`;
     const progressDemoPath = `${progressPath}&rouletteDemo=1`;
-    const resultPath = `/overlay/sig-sales-result?u=${rouletteUserId}`;
-    const resultDemoPath = `${resultPath}&demo=1`;
-    const memberResultPath = selectedMemberId
-      ? `${resultPath}&memberId=${encodeURIComponent(selectedMemberId)}`
+    const memberProgressPath = selectedMemberId
+      ? `${progressPath}&memberId=${encodeURIComponent(selectedMemberId)}`
       : "";
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     return {
       progressPath,
       progressDemoPath,
-      resultPath,
-      resultDemoPath,
-      memberResultPath,
+      memberProgressPath,
       progressAbs: origin ? `${origin}${progressPath}` : "",
       progressDemoAbs: origin ? `${origin}${progressDemoPath}` : "",
-      resultAbs: origin ? `${origin}${resultPath}` : "",
-      resultDemoAbs: origin ? `${origin}${resultDemoPath}` : "",
-      memberResultAbs: origin && memberResultPath ? `${origin}${memberResultPath}` : "",
+      memberProgressAbs: origin && memberProgressPath ? `${origin}${memberProgressPath}` : "",
     };
-  }, [rouletteUserId, selectedMemberId]);
+  }, [rouletteUserId, selectedMemberId, getSigSalesMenuCount]);
   const rouletteQuickSummaryText = useMemo(() => {
     const lines = [
-      `[진행] ${rouletteQuickUrls.progressAbs}`,
-      `[결과] ${rouletteQuickUrls.resultAbs}`,
-      `[진행 데모] ${rouletteQuickUrls.progressDemoAbs}`,
-      `[결과 데모] ${rouletteQuickUrls.resultDemoAbs}`,
+      `[통합 오버레이] ${rouletteQuickUrls.progressAbs}`,
+      `[통합 데모] ${rouletteQuickUrls.progressDemoAbs}`,
     ];
-    if (rouletteQuickUrls.memberResultAbs) {
-      lines.push(`[멤버 결과] ${rouletteQuickUrls.memberResultAbs}`);
+    if (rouletteQuickUrls.memberProgressAbs) {
+      lines.push(`[멤버 통합] ${rouletteQuickUrls.memberProgressAbs}`);
     }
     return lines.join("\n");
   }, [rouletteQuickUrls]);
@@ -4008,43 +4003,46 @@ export default function AdminPage() {
                       {copiedId === "dash-sig-quick-all" ? "복사됨!" : "점검 URL 전체 복사"}
                     </button>
                     <button type="button" className="rounded bg-[#6366f1] px-2 py-1 text-xs hover:bg-[#4f46e5]" onClick={() => window.open(rouletteQuickUrls.progressPath, "_blank", "noopener,noreferrer")}>
-                      진행 열기
-                    </button>
-                    <button type="button" className="rounded bg-[#6366f1] px-2 py-1 text-xs hover:bg-[#4f46e5]" onClick={() => window.open(rouletteQuickUrls.resultPath, "_blank", "noopener,noreferrer")}>
-                      결과 열기
+                      통합 열기
                     </button>
                     <button type="button" className="rounded bg-fuchsia-700 px-2 py-1 text-xs hover:bg-fuchsia-600" onClick={() => window.open(rouletteQuickUrls.progressDemoPath, "_blank", "noopener,noreferrer")}>
-                      진행 데모
-                    </button>
-                    <button type="button" className="rounded bg-fuchsia-700 px-2 py-1 text-xs hover:bg-fuchsia-600" onClick={() => window.open(rouletteQuickUrls.resultDemoPath, "_blank", "noopener,noreferrer")}>
-                      결과 데모
+                      통합 데모
                     </button>
                     <button
                       type="button"
-                      disabled={!rouletteQuickUrls.memberResultPath}
+                      disabled={!rouletteQuickUrls.memberProgressPath}
                       className="rounded bg-indigo-700 px-2 py-1 text-xs hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed"
                       onClick={() => {
-                        if (!rouletteQuickUrls.memberResultPath) return;
-                        window.open(rouletteQuickUrls.memberResultPath, "_blank", "noopener,noreferrer");
+                        if (!rouletteQuickUrls.memberProgressPath) return;
+                        window.open(rouletteQuickUrls.memberProgressPath, "_blank", "noopener,noreferrer");
                       }}
                     >
-                      멤버 결과 열기
+                      멤버 통합 열기
                     </button>
                   </div>
                   <p className="text-[11px] text-neutral-400">
-                    점검 순서: <span className="text-neutral-200">진행 데모</span> → <span className="text-neutral-200">결과 데모</span> → <span className="text-neutral-200">실제 진행</span> → <span className="text-neutral-200">실제 결과</span>
+                    점검 순서: <span className="text-neutral-200">통합 데모</span> → <span className="text-neutral-200">실제 통합</span> → <span className="text-neutral-200">멤버 통합</span>
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
                   <span>회전판 진행 오버레이 URL:</span>
+                  <span>메뉴 수</span>
+                  <input
+                    className="w-16 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs"
+                    value={sigSalesMenuCount}
+                    onChange={(e) => {
+                      const n = Math.max(5, Math.min(20, parseInt(e.target.value.replace(/[^\d]/g, "") || "10", 10) || 10));
+                      setSigSalesMenuCount(String(n));
+                    }}
+                  />
                   <code className="text-neutral-300 break-all">
-                    /overlay/sig-sales?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}&wheelScalePct=85
+                    /overlay/sig-sales?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}&wheelScalePct=85&menuCount={getSigSalesMenuCount()}
                   </code>
                   <button
                     type="button"
                     className={`rounded px-2 py-1 text-xs shrink-0 ${copiedId === "dash-sig-sales" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
                     onClick={() => {
-                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85`;
+                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}`;
                       void copyUrl(u, "dash-sig-sales");
                     }}
                   >
@@ -4053,7 +4051,7 @@ export default function AdminPage() {
                   <button
                     type="button"
                     className="rounded bg-[#6366f1] px-2 py-1 text-xs hover:bg-[#4f46e5]"
-                    onClick={() => window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85`, "_blank", "noopener,noreferrer")}
+                    onClick={() => window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}`, "_blank", "noopener,noreferrer")}
                   >
                     미리보기 열기
                   </button>
@@ -4061,7 +4059,7 @@ export default function AdminPage() {
                     type="button"
                     className={`rounded px-2 py-1 text-xs shrink-0 ${copiedId === "dash-sig-sales-demo" ? "bg-emerald-600" : "bg-fuchsia-700 hover:bg-fuchsia-600"}`}
                     onClick={() => {
-                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85`;
+                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}`;
                       void copyUrl(u, "dash-sig-sales-demo");
                     }}
                   >
@@ -4070,7 +4068,7 @@ export default function AdminPage() {
                   <button
                     type="button"
                     className="rounded bg-fuchsia-700 px-2 py-1 text-xs hover:bg-fuchsia-600"
-                    onClick={() => window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85`, "_blank", "noopener,noreferrer")}
+                    onClick={() => window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}`, "_blank", "noopener,noreferrer")}
                   >
                     데모 열기
                   </button>
@@ -4090,7 +4088,7 @@ export default function AdminPage() {
                     ))}
                   </select>
                   <code className="text-neutral-300 break-all">
-                    /overlay/sig-sales?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}&wheelScalePct=85{selectedMemberId ? `&memberId=${selectedMemberId}` : ""}
+                    /overlay/sig-sales?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}&wheelScalePct=85&menuCount={getSigSalesMenuCount()}{selectedMemberId ? `&memberId=${selectedMemberId}` : ""}
                   </code>
                   <button
                     type="button"
@@ -4098,7 +4096,7 @@ export default function AdminPage() {
                     className={`rounded px-2 py-1 text-xs shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${copiedId === "dash-sig-sales-member" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
                     onClick={() => {
                       if (!selectedMemberId) return;
-                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&memberId=${encodeURIComponent(selectedMemberId)}`;
+                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}&memberId=${encodeURIComponent(selectedMemberId)}`;
                       void copyUrl(u, "dash-sig-sales-member");
                     }}
                   >
@@ -4110,88 +4108,7 @@ export default function AdminPage() {
                     className="rounded bg-[#6366f1] px-2 py-1 text-xs hover:bg-[#4f46e5] disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={() => {
                       if (!selectedMemberId) return;
-                      window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&memberId=${encodeURIComponent(selectedMemberId)}`, "_blank", "noopener,noreferrer");
-                    }}
-                  >
-                    미리보기 열기
-                  </button>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
-                  <span>회전판 결과 오버레이 URL:</span>
-                  <code className="text-neutral-300 break-all">
-                    /overlay/sig-sales-result?u={user?.id || "finalent"}
-                  </code>
-                  <button
-                    type="button"
-                    className={`rounded px-2 py-1 text-xs shrink-0 ${copiedId === "dash-sig-sales-result" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
-                    onClick={() => {
-                      const u = `${window.location.origin}/overlay/sig-sales-result?u=${user?.id || "finalent"}`;
-                      void copyUrl(u, "dash-sig-sales-result");
-                    }}
-                  >
-                    {copiedId === "dash-sig-sales-result" ? "복사됨!" : "URL 복사"}
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded bg-[#6366f1] px-2 py-1 text-xs hover:bg-[#4f46e5]"
-                    onClick={() => window.open(`/overlay/sig-sales-result?u=${user?.id || "finalent"}`, "_blank", "noopener,noreferrer")}
-                  >
-                    미리보기 열기
-                  </button>
-                  <button
-                    type="button"
-                    className={`rounded px-2 py-1 text-xs shrink-0 ${copiedId === "dash-sig-sales-result-demo" ? "bg-emerald-600" : "bg-fuchsia-700 hover:bg-fuchsia-600"}`}
-                    onClick={() => {
-                      const u = `${window.location.origin}/overlay/sig-sales-result?u=${user?.id || "finalent"}&demo=1`;
-                      void copyUrl(u, "dash-sig-sales-result-demo");
-                    }}
-                  >
-                    {copiedId === "dash-sig-sales-result-demo" ? "복사됨!" : "데모 URL"}
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded bg-fuchsia-700 px-2 py-1 text-xs hover:bg-fuchsia-600"
-                    onClick={() => window.open(`/overlay/sig-sales-result?u=${user?.id || "finalent"}&demo=1`, "_blank", "noopener,noreferrer")}
-                  >
-                    데모 열기
-                  </button>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
-                  <span>멤버별 결과 URL:</span>
-                  <select
-                    className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs"
-                    value={selectedMemberId}
-                    onChange={(e) => setSelectedMemberId(e.target.value)}
-                  >
-                    <option value="">멤버 선택</option>
-                    {(state.members || []).map((m) => (
-                      <option key={`sig-result-member-${m.id}`} value={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
-                  </select>
-                  <code className="text-neutral-300 break-all">
-                    /overlay/sig-sales-result?u={user?.id || "finalent"}{selectedMemberId ? `&memberId=${selectedMemberId}` : ""}
-                  </code>
-                  <button
-                    type="button"
-                    disabled={!selectedMemberId}
-                    className={`rounded px-2 py-1 text-xs shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${copiedId === "dash-sig-sales-result-member" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
-                    onClick={() => {
-                      if (!selectedMemberId) return;
-                      const u = `${window.location.origin}/overlay/sig-sales-result?u=${user?.id || "finalent"}&memberId=${encodeURIComponent(selectedMemberId)}`;
-                      void copyUrl(u, "dash-sig-sales-result-member");
-                    }}
-                  >
-                    {copiedId === "dash-sig-sales-result-member" ? "복사됨!" : "URL 복사"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!selectedMemberId}
-                    className="rounded bg-[#6366f1] px-2 py-1 text-xs hover:bg-[#4f46e5] disabled:opacity-50 disabled:cursor-not-allowed"
-                    onClick={() => {
-                      if (!selectedMemberId) return;
-                      window.open(`/overlay/sig-sales-result?u=${user?.id || "finalent"}&memberId=${encodeURIComponent(selectedMemberId)}`, "_blank", "noopener,noreferrer");
+                      window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}&memberId=${encodeURIComponent(selectedMemberId)}`, "_blank", "noopener,noreferrer");
                     }}
                   >
                     미리보기 열기
@@ -4199,7 +4116,7 @@ export default function AdminPage() {
                 </div>
                 <div className="rounded-lg border border-white/10 bg-black/30 p-3">
                   <p className="text-xs text-neutral-300">
-                    회전판 실제 미리보기는 <code>/admin/sig-sales</code>에서 확인하고, 방송 장면에서는 진행/결과 오버레이를 분리해 사용하세요.
+                    회전판 실제 미리보기는 <code>/admin/sig-sales</code>에서 확인하고, 방송 장면에서는 통합 오버레이(<code>/overlay/sig-sales</code>) 한 개만 사용하세요.
                   </p>
                 </div>
                 <div className="rounded border border-white/10 bg-black/20 p-2">
@@ -4486,7 +4403,6 @@ export default function AdminPage() {
                             <input
                               type="checkbox"
                               checked={Boolean(item.isRolling)}
-                              disabled={isOneShot}
                               onChange={(e) => toggleSigRollingItem(item.id, e.target.checked)}
                             />
                             <span>보드 노출</span>
@@ -4495,7 +4411,6 @@ export default function AdminPage() {
                             <input
                               type="checkbox"
                               checked={Boolean(item.isActive)}
-                              disabled={isOneShot}
                               onChange={(e) => toggleSigActiveItem(item.id, e.target.checked)}
                             />
                             <span>판매 활성</span>

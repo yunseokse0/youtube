@@ -137,19 +137,19 @@ export async function POST(req: Request) {
         for (const item of broadAnyPool) uniqueById.set(item.id, item);
       }
       const candidatePool = Array.from(uniqueById.values());
-      const expandedPool = [...candidatePool];
       let fallbackUsed = false;
-      if (expandedPool.length < 5) {
-        fallbackUsed = true;
-        const fillSource = candidatePool.length > 0 ? candidatePool : buildFallbackPool(10);
-        while (expandedPool.length < 5) {
-          const picked = pickRandom(fillSource);
-          expandedPool.push({
-            ...picked,
-            id: `${picked.id}__pad_${expandedPool.length + 1}`,
-          });
+      if (candidatePool.length < 5) {
+        const need = 5 - candidatePool.length;
+        const fallbackPool = buildFallbackPool(need + 5)
+          .filter((x) => !uniqueById.has(x.id))
+          .slice(0, need);
+        if (fallbackPool.length < need) {
+          return Response.json({ error: "not_enough_active_sigs" }, { status: 400, headers: { "Content-Type": "application/json" } });
         }
+        fallbackUsed = true;
+        for (const item of fallbackPool) uniqueById.set(item.id, item);
       }
+      const expandedPool = Array.from(uniqueById.values());
       const shuffled = [...expandedPool];
       for (let i = shuffled.length - 1; i > 0; i--) {
         const u = new Uint32Array(1);

@@ -14,7 +14,6 @@ import { useImagePreload } from "@/hooks/useImagePreload";
 
 const POLL_MS = 1000;
 const STEP_CONFIRM_PAUSE_MS = 3000;
-const ROULETTE_VISIBLE_SLOTS = 10;
 const CONFIRMED_VISIBLE_SLOTS = 5;
 const DEMO_POOL = [
   { id: "demo_1", name: "애교", price: 77000, imageUrl: "/images/sigs/애교.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
@@ -54,6 +53,12 @@ export default function SigSalesOverlayPage() {
   const userId = getOverlayUserIdFromSearchParams(sp);
   const memberIdParam = (sp.get("memberId") || sp.get("member") || "").trim();
   const memberFilterId = memberIdParam.length > 0 ? memberIdParam : "";
+  const menuCount = (() => {
+    const raw = sp.get("menuCount") || sp.get("wheelCount") || "10";
+    const n = parseInt(raw.replace(/[^\d]/g, ""), 10);
+    if (!Number.isFinite(n)) return 10;
+    return Math.max(5, Math.min(20, n));
+  })();
   const rouletteDemo = sp.get("rouletteDemo") === "1" || sp.get("rouletteDemo") === "true";
   const overlayScalePct = (() => {
     const raw = sp.get("scalePct") || sp.get("zoomPct") || "100";
@@ -171,11 +176,11 @@ export default function SigSalesOverlayPage() {
     );
   }, [state, rouletteDemo, memberFilterId]);
   const wheelItems = useMemo(() => {
-    const base = activeNormalPool.slice(0, ROULETTE_VISIBLE_SLOTS);
-    if (base.length >= ROULETTE_VISIBLE_SLOTS) return base;
-    const filler = DEMO_POOL.filter((f) => !base.some((b) => b.name === f.name));
-    return [...base, ...filler].slice(0, ROULETTE_VISIBLE_SLOTS);
-  }, [activeNormalPool]);
+    const base = activeNormalPool.slice(0, menuCount);
+    if (base.length > 0) return base;
+    if (rouletteDemo) return DEMO_POOL.slice(0, menuCount);
+    return [];
+  }, [activeNormalPool, rouletteDemo, menuCount]);
   const wheelItemsWithResult = useMemo(() => {
     const resultId = demoSpin?.resultId || machine.resultId;
     if (!resultId) return wheelItems;
@@ -187,10 +192,17 @@ export default function SigSalesOverlayPage() {
   }, [wheelItems, demoSpin?.resultId, machine.resultId, activeNormalPool]);
   const displaySelectedSigs = useMemo(() => {
     if (stagedSelected.length > 0) return stagedSelected.slice(0, CONFIRMED_VISIBLE_SLOTS);
+    const inStepFlow =
+      Boolean(pendingLanding) ||
+      Boolean(demoSpin) ||
+      machine.phase === "SPINNING" ||
+      wheelPhase === "spinning" ||
+      wheelPhase === "settling";
+    if (inStepFlow) return [];
     if (machine.selectedSigs.length > 0) return machine.selectedSigs.slice(0, CONFIRMED_VISIBLE_SLOTS);
     if (rouletteDemo && pendingLanding?.selected?.length) return pendingLanding.selected.slice(0, CONFIRMED_VISIBLE_SLOTS);
     return [];
-  }, [machine.selectedSigs, rouletteDemo, pendingLanding, stagedSelected]);
+  }, [machine.selectedSigs, machine.phase, rouletteDemo, pendingLanding, stagedSelected, demoSpin, wheelPhase]);
   const displayOneShot = useMemo(() => {
     if (displaySelectedSigs.length < CONFIRMED_VISIBLE_SLOTS) return null;
     return buildOneShotFromSelected(displaySelectedSigs);
@@ -294,7 +306,8 @@ export default function SigSalesOverlayPage() {
     if (!rouletteDemo) return;
     if (demoBootedRef.current) return;
     if (pendingLanding || demoSpin) return;
-    const shuffled = [...DEMO_POOL].sort(() => Math.random() - 0.5);
+    const sourcePool = activeNormalPool.length >= CONFIRMED_VISIBLE_SLOTS ? activeNormalPool : DEMO_POOL;
+    const shuffled = [...sourcePool].sort(() => Math.random() - 0.5);
     const selected = shuffled.slice(0, CONFIRMED_VISIBLE_SLOTS);
     const resultId = selected[selected.length - 1]?.id || null;
     if (selected.length === 0) return;
@@ -310,7 +323,7 @@ export default function SigSalesOverlayPage() {
     setShowResultPanel(false);
     setCurrentSignImageUrl("");
     setDemoSpin({ startedAt: Date.now(), resultId: selected[0]?.id || resultId });
-  }, [rouletteDemo, pendingLanding, demoSpin]);
+  }, [rouletteDemo, pendingLanding, demoSpin, activeNormalPool]);
 
   return (
     <main className="min-h-screen bg-transparent p-4 text-white">
