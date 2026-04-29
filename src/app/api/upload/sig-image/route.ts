@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
+import { createClient } from "@supabase/supabase-js";
 import { AUTH_COOKIE, isDevAuthBypassRequest } from "@/lib/auth";
 
 export const runtime = "nodejs";
@@ -126,6 +127,18 @@ function extFromBytes(buf: Uint8Array): string | null {
   return null;
 }
 
+function getSupabaseStorageConfig():
+  | { url: string; serviceRoleKey: string; buckets: string[] }
+  | null {
+  const url = (process.env.SUPABASE_URL || "").trim();
+  const serviceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+  const preferredBucket = (process.env.SUPABASE_STORAGE_BUCKET || "").trim();
+  const buckets = [preferredBucket, "image", "images"].filter(Boolean)
+    .filter((name, idx, arr) => arr.indexOf(name) === idx);
+  if (!url || !serviceRoleKey) return null;
+  return { url, serviceRoleKey, buckets };
+}
+
 export async function POST(req: Request) {
   try {
     const uid = getUserId(req);
@@ -150,6 +163,39 @@ export async function POST(req: Request) {
     const safeUid = String(uid).replace(/[^a-zA-Z0-9_-]/g, "_") || "user";
     const fileName = `${Date.now()}_${randomUUID().slice(0, 8)}${ext}`;
     const data = Buffer.from(ab);
+    const storagePath = `sigs/${safeUid}/${fileName}`;
+    const supabaseConfig = getSupabaseStorageConfig();
+
+    if (supabaseConfig) {
+      const supabase = createClient(supabaseConfig.url, supabaseConfig.serviceRoleKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+      let uploadedBucket = "";
+      let uploadErrorMessage = "unknown";
+      for (const bucket of supabaseConfig.buckets) {
+        const { error } = await supabase.storage
+          .from(bucket)
+          .upload(storagePath, data, {
+            contentType: String(file.type || "application/octet-stream"),
+            upsert: false,
+          });
+        if (!error) {
+          uploadedBucket = bucket;
+          break;
+        }
+        uploadErrorMessage = error.message;
+      }
+      if (!uploadedBucket) {
+        return Response.json({ ok: false, error: `supabase_upload_failed:${uploadErrorMessage}` }, { status: 500 });
+      }
+      const { data: publicData } = supabase.storage
+        .from(uploadedBucket)
+        .getPublicUrl(storagePath);
+      const publicUrl = publicData?.publicUrl || "";
+      if (!publicUrl) return Response.json({ ok: false, error: "supabase_public_url_failed" }, { status: 500 });
+      return Response.json({ ok: true, url: publicUrl }, { status: 200 });
+    }
+
     const roots = getUploadRootCandidates();
     for (const root of roots) {
       const dir = path.join(root, "uploads", "sigs", safeUid);
@@ -157,7 +203,7 @@ export async function POST(req: Request) {
       const fullPath = path.join(dir, fileName);
       await writeFile(fullPath, data);
     }
-    const url = `/uploads/sigs/${safeUid}/${fileName}`;
+    const url = `/uploads/${storagePath}`;
     return Response.json({ ok: true, url }, { status: 200 });
   } catch (e) {
     return Response.json({ ok: false, error: String(e) }, { status: 500 });

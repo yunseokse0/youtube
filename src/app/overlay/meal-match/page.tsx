@@ -174,16 +174,26 @@ export default function MealMatchOverlayPage() {
     () => Math.max(1, participants.reduce((s, p) => s + p.goal, 0)),
     [participants]
   );
-  const overlayTitle = state?.mealBattle?.overlayTitle?.trim() || "식사 대전";
+  const rawOverlayTitle = state?.mealBattle?.overlayTitle?.trim() || "";
+  const defaultOverlayTitle = "식사 대전";
+  const overlayTitleBase = rawOverlayTitle || defaultOverlayTitle;
   const missionBubble = state?.mealBattle?.currentMission?.trim() || "";
   const mb = state?.mealBattle;
   const missionBubbleBg = mb?.missionBubbleBg || "#db2777";
   const missionBubbleTextColor = mb?.missionBubbleTextColor || "#ffffff";
   const gaugeTrackBg = mb?.gaugeTrackBg || "rgba(255,255,255,0.30)";
   const gaugeFillColor = mb?.gaugeFillColor || "#f472b6";
-  const fillGaugeMode = demoEnabled
+  const requestedFillGaugeMode = demoEnabled
     ? demoMode === "individual"
     : state?.mealMatchSettings?.mode === "individual";
+  const isSingleParticipant = participants.length === 1;
+  const singleParticipant = isSingleParticipant ? participants[0] : null;
+  const fillGaugeMode = requestedFillGaugeMode || isSingleParticipant;
+  const overlayTitle = useMemo(() => {
+    if (!isSingleParticipant || !singleParticipant) return overlayTitleBase;
+    if (overlayTitleBase !== defaultOverlayTitle) return overlayTitleBase;
+    return `${singleParticipant.name} 1인 식사 대전`;
+  }, [isSingleParticipant, singleParticipant, overlayTitleBase]);
   const fillPercent = useMemo(() => {
     if (!fillGaugeMode) return 0;
     return Math.min(100, (totalScore / totalGoalsSum) * 100);
@@ -437,7 +447,9 @@ export default function MealMatchOverlayPage() {
                       style={outlineStyle()}
                     >
                       <span className="text-base sm:text-lg font-black tabular-nums" style={{ color: scoreTextColor }}>
-                        {Math.round(totalScore)} / {Math.round(totalGoalsSum)}
+                        {isSingleParticipant && singleParticipant
+                          ? `${singleParticipant.name} ${Math.round(singleParticipant.score)} / ${Math.round(singleParticipant.goal)}`
+                          : `${Math.round(totalScore)} / ${Math.round(totalGoalsSum)}`}
                       </span>
                     </div>
                   </>
