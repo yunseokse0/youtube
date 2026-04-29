@@ -12,6 +12,7 @@ type RouletteWheelProps = {
   isRolling: boolean;
   resultId: string | null;
   startedAt: number;
+  scalePct?: number;
   volume?: number;
   muted?: boolean;
   onTransitionEnd?: () => void;
@@ -21,7 +22,17 @@ type RouletteWheelProps = {
 const COLORS = ["#fb7185", "#f59e0b", "#22d3ee", "#a78bfa", "#34d399", "#f472b6", "#facc15", "#60a5fa"];
 const SPIN_DURATION_SCALE = 1.3;
 
-export default function RouletteWheel({ items, isRolling, resultId, startedAt, volume = 0.7, muted = false, onTransitionEnd, onLanded }: RouletteWheelProps) {
+export default function RouletteWheel({
+  items,
+  isRolling,
+  resultId,
+  startedAt,
+  scalePct = 100,
+  volume = 0.7,
+  muted = false,
+  onTransitionEnd,
+  onLanded,
+}: RouletteWheelProps) {
   const rotate = useMotionValue(0);
   const [currentAngle, setCurrentAngle] = useState(0);
   const [winnerIndex, setWinnerIndex] = useState(-1);
@@ -63,6 +74,15 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
 
   const segmentCount = Math.max(1, items.length);
   const segment = 360 / segmentCount;
+  const wheelScale = Math.max(55, Math.min(140, Math.floor(Number(scalePct) || 100))) / 100;
+  const frameHeightPx = Math.round(360 * wheelScale);
+  const frameMaxWidthPx = Math.round(680 * wheelScale);
+  const wheelSizePx = Math.round(270 * wheelScale);
+  const pointerSizePx = Math.max(28, Math.round(36 * wheelScale));
+  const labelRadiusPx = Math.round(96 * wheelScale);
+  const labelWidthPx = Math.max(56, Math.round(80 * wheelScale));
+  const labelFontPx = Math.max(9, Math.round(11 * wheelScale));
+  const centerSizePx = Math.max(36, Math.round(48 * wheelScale));
   const gradient = useMemo(() => {
     const stops = items.map((_, i) => {
       const from = i * segment;
@@ -317,7 +337,7 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
   );
 
   return (
-    <div className="relative mx-auto h-[520px] w-full max-w-[980px] overflow-hidden bg-transparent">
+    <div className="relative mx-auto w-full overflow-hidden bg-transparent" style={{ height: `${frameHeightPx}px`, maxWidth: `${frameMaxWidthPx}px` }}>
       <AnimatePresence>
         {isRolling ? (
           <motion.div className="pointer-events-none absolute inset-0 z-20" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -333,26 +353,29 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
           </motion.div>
         ) : null}
       </AnimatePresence>
-      <div className="pointer-events-none absolute left-1/2 top-3 z-30 -translate-x-1/2 text-5xl text-pink-500 drop-shadow-[0_0_12px_rgba(236,72,153,0.95)]">
+      <div
+        className="pointer-events-none absolute left-1/2 top-1 z-30 -translate-x-1/2 text-pink-500 drop-shadow-[0_0_12px_rgba(236,72,153,0.95)]"
+        style={{ fontSize: `${pointerSizePx}px`, lineHeight: 1 }}
+      >
         ▼
       </div>
       <div className="absolute inset-0 grid place-items-center">
         <motion.div
-          className="relative h-[420px] w-[420px] rounded-full border-8 border-yellow-300 shadow-[0_0_45px_rgba(251,191,36,0.38)]"
-          style={{ rotate, background: gradient }}
+          className="relative rounded-full border-8 border-yellow-300 shadow-[0_0_45px_rgba(251,191,36,0.38)]"
+          style={{ height: `${wheelSizePx}px`, width: `${wheelSizePx}px`, rotate, background: gradient }}
         >
           {items.map((item, idx) => {
             const angle = idx * segment;
             const isWin = idx === winnerIndex && !isRolling;
             return (
-              <div key={`${item.id}-${idx}`} className="absolute left-1/2 top-1/2 h-0 w-0" style={{ transform: `rotate(${angle}deg) translateY(-148px)` }}>
+              <div key={`${item.id}-${idx}`} className="absolute left-1/2 top-1/2 h-0 w-0" style={{ transform: `rotate(${angle}deg) translateY(-${labelRadiusPx}px)` }}>
                 <motion.div
-                  className={`relative z-10 w-20 -translate-x-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-center text-[11px] font-black ${
+                  className={`relative z-10 -translate-x-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-center font-black ${
                     isWin
                       ? "border border-yellow-200/75 bg-black/45 text-yellow-100 shadow-[0_0_14px_rgba(250,204,21,0.35)]"
                       : "text-white"
                   }`}
-                  style={{ transform: `rotate(${-angle - currentAngle}deg)` }}
+                  style={{ width: `${labelWidthPx}px`, fontSize: `${labelFontPx}px`, transform: `rotate(${-angle - currentAngle}deg)` }}
                   animate={
                     isWin
                       ? {
@@ -368,7 +391,10 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
               </div>
             );
           })}
-          <div className="absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-yellow-300 bg-black/60" />
+          <div
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-yellow-300 bg-black/60"
+            style={{ height: `${centerSizePx}px`, width: `${centerSizePx}px` }}
+          />
         </motion.div>
       </div>
     </div>

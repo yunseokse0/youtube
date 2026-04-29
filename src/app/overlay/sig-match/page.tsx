@@ -161,7 +161,7 @@ function SigMatchOverlayInner() {
   const overlayScale = overlayScalePct / 100;
   const overlayScaleStyle = overlayScale === 1
     ? undefined
-    : ({ zoom: overlayScale } as React.CSSProperties);
+    : ({ transform: `scale(${overlayScale})`, transformOrigin: "top center" } as React.CSSProperties);
 
   const lockedSnapshot = useMemo(() => parseSigMatchSnapshot(sp), [sp]);
 

@@ -13,6 +13,7 @@ type ResultOverlayProps = {
   oneShot: { name: string; price: number } | null;
   signImageUrl: string;
   showOneShotReveal: boolean;
+  className?: string;
 };
 
 const EMPTY_SOLD_SET = new Set<string>();
@@ -24,6 +25,7 @@ export default function ResultOverlay({
   oneShot,
   signImageUrl,
   showOneShotReveal,
+  className = "",
 }: ResultOverlayProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   useEffect(() => {
@@ -45,7 +47,7 @@ export default function ResultOverlay({
   if (!visible) return null;
 
   return (
-    <div className="mt-5 space-y-3">
+    <div className={`space-y-2 ${className}`.trim()}>
       <SelectedSigs
         items={selectedSigs}
         soldOutStampUrl={soldOutStampUrl}

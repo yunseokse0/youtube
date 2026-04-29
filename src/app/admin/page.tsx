@@ -4028,13 +4028,13 @@ export default function AdminPage() {
                 <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
                   <span>회전판 진행 오버레이 URL:</span>
                   <code className="text-neutral-300 break-all">
-                    /overlay/sig-sales?u={user?.id || "finalent"}
+                    /overlay/sig-sales?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}&wheelScalePct=85
                   </code>
                   <button
                     type="button"
                     className={`rounded px-2 py-1 text-xs shrink-0 ${copiedId === "dash-sig-sales" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
                     onClick={() => {
-                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}`;
+                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85`;
                       void copyUrl(u, "dash-sig-sales");
                     }}
                   >
@@ -4043,7 +4043,7 @@ export default function AdminPage() {
                   <button
                     type="button"
                     className="rounded bg-[#6366f1] px-2 py-1 text-xs hover:bg-[#4f46e5]"
-                    onClick={() => window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}`, "_blank", "noopener,noreferrer")}
+                    onClick={() => window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85`, "_blank", "noopener,noreferrer")}
                   >
                     미리보기 열기
                   </button>
@@ -4051,7 +4051,7 @@ export default function AdminPage() {
                     type="button"
                     className={`rounded px-2 py-1 text-xs shrink-0 ${copiedId === "dash-sig-sales-demo" ? "bg-emerald-600" : "bg-fuchsia-700 hover:bg-fuchsia-600"}`}
                     onClick={() => {
-                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1`;
+                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85`;
                       void copyUrl(u, "dash-sig-sales-demo");
                     }}
                   >
@@ -4060,7 +4060,7 @@ export default function AdminPage() {
                   <button
                     type="button"
                     className="rounded bg-fuchsia-700 px-2 py-1 text-xs hover:bg-fuchsia-600"
-                    onClick={() => window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1`, "_blank", "noopener,noreferrer")}
+                    onClick={() => window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85`, "_blank", "noopener,noreferrer")}
                   >
                     데모 열기
                   </button>
@@ -4080,7 +4080,7 @@ export default function AdminPage() {
                     ))}
                   </select>
                   <code className="text-neutral-300 break-all">
-                    /overlay/sig-sales?u={user?.id || "finalent"}{selectedMemberId ? `&memberId=${selectedMemberId}` : ""}
+                    /overlay/sig-sales?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}&wheelScalePct=85{selectedMemberId ? `&memberId=${selectedMemberId}` : ""}
                   </code>
                   <button
                     type="button"
@@ -4088,7 +4088,7 @@ export default function AdminPage() {
                     className={`rounded px-2 py-1 text-xs shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${copiedId === "dash-sig-sales-member" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
                     onClick={() => {
                       if (!selectedMemberId) return;
-                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&memberId=${encodeURIComponent(selectedMemberId)}`;
+                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&memberId=${encodeURIComponent(selectedMemberId)}`;
                       void copyUrl(u, "dash-sig-sales-member");
                     }}
                   >
@@ -4100,7 +4100,7 @@ export default function AdminPage() {
                     className="rounded bg-[#6366f1] px-2 py-1 text-xs hover:bg-[#4f46e5] disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={() => {
                       if (!selectedMemberId) return;
-                      window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}&memberId=${encodeURIComponent(selectedMemberId)}`, "_blank", "noopener,noreferrer");
+                      window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&memberId=${encodeURIComponent(selectedMemberId)}`, "_blank", "noopener,noreferrer");
                     }}
                   >
                     미리보기 열기

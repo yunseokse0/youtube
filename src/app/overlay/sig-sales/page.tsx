@@ -55,6 +55,22 @@ export default function SigSalesOverlayPage() {
   const memberIdParam = (sp.get("memberId") || sp.get("member") || "").trim();
   const memberFilterId = memberIdParam.length > 0 ? memberIdParam : "";
   const rouletteDemo = sp.get("rouletteDemo") === "1" || sp.get("rouletteDemo") === "true";
+  const overlayScalePct = (() => {
+    const raw = sp.get("scalePct") || sp.get("zoomPct") || "100";
+    const n = parseInt(raw.replace(/[^\d]/g, ""), 10);
+    if (!Number.isFinite(n)) return 100;
+    return Math.max(50, Math.min(300, n));
+  })();
+  const wheelScalePct = (() => {
+    const raw = sp.get("wheelScalePct") || sp.get("wheelPct") || "85";
+    const n = parseInt(raw.replace(/[^\d]/g, ""), 10);
+    if (!Number.isFinite(n)) return 85;
+    return Math.max(55, Math.min(140, n));
+  })();
+  const overlayScale = overlayScalePct / 100;
+  const overlayScaleStyle = overlayScale === 1
+    ? undefined
+    : ({ transform: `scale(${overlayScale})`, transformOrigin: "top center" } as React.CSSProperties);
   const [state, setState] = useState<AppState | null>(null);
   const [pendingLanding, setPendingLanding] = useState<{ selected: SigItem[]; oneShot: { id: string; name: string; price: number } | null; resultId: string | null; persist: boolean } | null>(null);
   const [demoSpin, setDemoSpin] = useState<{ startedAt: number; resultId: string | null } | null>(null);
@@ -296,29 +312,10 @@ export default function SigSalesOverlayPage() {
     setDemoSpin({ startedAt: Date.now(), resultId: selected[0]?.id || resultId });
   }, [rouletteDemo, pendingLanding, demoSpin]);
 
-  const handleForceReset = useCallback(() => {
-    if (!window.confirm("모든 상태를 강제 초기화하시겠습니까?")) return;
-    dispatch({ type: "RESET" });
-    setShowResultPanel(false);
-    setCurrentSignImageUrl("");
-    setPendingLanding(null);
-    setDemoSpin(null);
-    setStagedSelected([]);
-    setSpinStep(0);
-    transitionHandledKeyRef.current = "";
-    phaseRef.current = "idle";
-    if (nextSpinTimerRef.current) {
-      clearTimeout(nextSpinTimerRef.current);
-      nextSpinTimerRef.current = null;
-    }
-    console.log("[Force Reset] All states cleared");
-  }, []);
-
   return (
     <main className="min-h-screen bg-transparent p-4 text-white">
       <div className="mx-auto max-w-[1280px] space-y-4">
-
-        <section style={{ backgroundColor: "transparent" }} className="relative p-0">
+        <section style={{ ...overlayScaleStyle, backgroundColor: "transparent" }} className="relative p-0">
           {lastConfirmedText ? (
             <div
               key={`confirmed-fx-${lastConfirmedFxKey}`}
@@ -333,6 +330,7 @@ export default function SigSalesOverlayPage() {
               isRolling={wheelPhase === "spinning" || Boolean(demoSpin) || machine.isRolling || machine.phase === "SPINNING"}
               resultId={displayResultId}
               startedAt={demoSpin?.startedAt || machine.startedAt}
+              scalePct={wheelScalePct}
               volume={0.7}
               muted={false}
               onTransitionEnd={() => {
@@ -400,14 +398,8 @@ export default function SigSalesOverlayPage() {
             oneShot={displayOneShot ? { name: displayOneShot.name, price: displayOneShot.price } : null}
             signImageUrl={currentSignImageUrl || oneShotImageUrl}
             showOneShotReveal={showOneShotReveal}
+            className={hideWheelAfterComplete ? "absolute inset-x-0 top-2 z-30" : "mt-2"}
           />
-          <button
-            type="button"
-            onClick={handleForceReset}
-            className="absolute right-2 top-2 z-50 rounded bg-rose-600/90 px-2 py-1 text-xs font-bold text-white hover:bg-rose-500"
-          >
-            강제 초기화
-          </button>
           {machine.phase === "CONFIRM_PENDING" ? (
             <div className="pointer-events-none absolute inset-0 z-50 grid place-items-center bg-black/55">
               <div className="rounded-xl border border-yellow-300/50 bg-neutral-900/90 px-6 py-4 text-center">
