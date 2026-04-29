@@ -14,13 +14,14 @@ type RouletteWheelProps = {
   startedAt: number;
   volume?: number;
   muted?: boolean;
+  onTransitionEnd?: () => void;
   onLanded?: (resultId?: string | null) => void;
 };
 
 const COLORS = ["#fb7185", "#f59e0b", "#22d3ee", "#a78bfa", "#34d399", "#f472b6", "#facc15", "#60a5fa"];
 const SPIN_DURATION_SCALE = 1.3;
 
-export default function RouletteWheel({ items, isRolling, resultId, startedAt, volume = 0.7, muted = false, onLanded }: RouletteWheelProps) {
+export default function RouletteWheel({ items, isRolling, resultId, startedAt, volume = 0.7, muted = false, onTransitionEnd, onLanded }: RouletteWheelProps) {
   const rotate = useMotionValue(0);
   const [currentAngle, setCurrentAngle] = useState(0);
   const [winnerIndex, setWinnerIndex] = useState(-1);
@@ -29,6 +30,7 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
   const activeSpinKeyRef = useRef("");
   const itemsRef = useRef<SigItem[]>(items);
   const onLandedRef = useRef<RouletteWheelProps["onLanded"]>(onLanded);
+  const onTransitionEndRef = useRef<RouletteWheelProps["onTransitionEnd"]>(onTransitionEnd);
   const [sounds, setSounds] = useState<{ tick: Howl; final: Howl; success: Howl } | null>(null);
   const hasSoundAssetErrorRef = useRef(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -138,6 +140,10 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
   useEffect(() => {
     onLandedRef.current = onLanded;
   }, [onLanded]);
+
+  useEffect(() => {
+    onTransitionEndRef.current = onTransitionEnd;
+  }, [onTransitionEnd]);
 
   useEffect(() => {
     const unsub = rotate.on("change", (v) => {
@@ -263,6 +269,7 @@ export default function RouletteWheel({ items, isRolling, resultId, startedAt, v
           ease: "linear",
         });
         if (cancelled) return;
+        onTransitionEndRef.current?.();
 
         sounds?.tick.stop();
         sounds?.success.stop();

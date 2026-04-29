@@ -1,14 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Howl } from "howler";
 import type { SigItem } from "@/types";
 import RouletteWheel from "@/components/sig-sales/RouletteWheel";
+import ResultOverlay from "@/components/sig-sales/ResultOverlay";
 import { loadStateFromApi, type AppState } from "@/lib/state";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { ONE_SHOT_SIG_ID, SOUND_ASSETS_ENABLED, SPIN_SOUND_PATHS } from "@/lib/sig-roulette";
 import { useSigSalesState } from "@/hooks/useSigSalesState";
+import { useImagePreload } from "@/hooks/useImagePreload";
 
 const POLL_MS = 1000;
 const STEP_CONFIRM_PAUSE_MS = 3000;
@@ -31,6 +33,21 @@ const buildOneShotFromSelected = (selected: SigItem[]) => ({
   name: "한방 시그",
   price: selected.reduce((sum, x) => sum + x.price, 0),
 });
+type WheelPhase = "idle" | "spinning" | "settling" | "result";
+const wheelReducer = (state: WheelPhase, action: { type: string }): WheelPhase => {
+  switch (action.type) {
+    case "START_SPIN":
+      return "spinning";
+    case "SETTLING":
+      return "settling";
+    case "LANDED":
+      return "result";
+    case "RESET":
+      return "idle";
+    default:
+      return state;
+  }
+};
 
 export default function SigSalesOverlayPage() {
   const sp = useSearchParams();
@@ -45,7 +62,13 @@ export default function SigSalesOverlayPage() {
   const [spinStep, setSpinStep] = useState(0);
   const [lastConfirmedText, setLastConfirmedText] = useState("");
   const [lastConfirmedFxKey, setLastConfirmedFxKey] = useState(0);
+  const [showOneShotReveal, setShowOneShotReveal] = useState(false);
+  const [showResultPanel, setShowResultPanel] = useState(false);
+  const [currentSignImageUrl, setCurrentSignImageUrl] = useState("");
+  const [wheelPhase, dispatch] = useReducer(wheelReducer, "idle");
   const nextSpinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const transitionHandledKeyRef = useRef("");
+  const phaseRef = useRef<WheelPhase>("idle");
   const hasOneShotSoundErrorRef = useRef(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const playFallbackOneShot = useCallback(() => {
@@ -155,10 +178,26 @@ export default function SigSalesOverlayPage() {
     if (displaySelectedSigs.length < CONFIRMED_VISIBLE_SLOTS) return null;
     return buildOneShotFromSelected(displaySelectedSigs);
   }, [displaySelectedSigs]);
+  const oneShotImageUrl = useMemo(() => {
+    const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
+    return oneShotItem?.imageUrl || "/images/sigs/dummy-sig.svg";
+  }, [state?.sigInventory]);
   const displayResultId = useMemo(() => {
     if (displaySelectedSigs.length === 0) return null;
     return (demoSpin?.resultId || machine.resultId || displaySelectedSigs[displaySelectedSigs.length - 1]?.id || null) as string | null;
   }, [displaySelectedSigs, demoSpin?.resultId, machine.resultId]);
+  const getSignImageUrl = useCallback((id?: string | null) => {
+    if (!id) return "";
+    const pool = [...(stagedSelected || []), ...(machine.selectedSigs || []), ...(activeNormalPool || []), ...(DEMO_POOL || [])];
+    const found = pool.find((item) => item.id === id);
+    return found?.imageUrl || "";
+  }, [stagedSelected, machine.selectedSigs, activeNormalPool]);
+  useImagePreload(oneShotImageUrl);
+  useImagePreload(currentSignImageUrl);
+
+  useEffect(() => {
+    console.log(`[Phase Change] ${wheelPhase} | signUrl: ${currentSignImageUrl ? "exist" : "empty"}`);
+  }, [wheelPhase, currentSignImageUrl]);
 
   useEffect(() => {
     return () => {
@@ -170,10 +209,86 @@ export default function SigSalesOverlayPage() {
   }, []);
 
   useEffect(() => {
+    phaseRef.current = wheelPhase;
+  }, [wheelPhase]);
+
+  useEffect(() => {
+    // 오버레이가 서버 상태만으로도 재생될 수 있도록 대기열을 자동 복원한다.
+    if (pendingLanding || demoSpin) return;
+    const selectedFromServer = (machine.selectedSigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
+    if (machine.phase !== "SPINNING" || selectedFromServer.length === 0) return;
+    const derivedOneShot = buildOneShotFromSelected(selectedFromServer);
+    setPendingLanding({
+      selected: selectedFromServer,
+      oneShot: derivedOneShot,
+      resultId: machine.resultId || selectedFromServer[selectedFromServer.length - 1]?.id || null,
+      persist: true,
+    });
+    setSpinStep(0);
+    setStagedSelected([]);
+    setDemoSpin({ startedAt: Date.now(), resultId: selectedFromServer[0]?.id || machine.resultId || null });
+  }, [machine.phase, machine.selectedSigs, machine.resultId, pendingLanding, demoSpin]);
+
+  useEffect(() => {
+    if (machine.phase === "SPINNING") {
+      dispatch({ type: "RESET" });
+      dispatch({ type: "START_SPIN" });
+      setShowResultPanel(false);
+      setCurrentSignImageUrl("");
+      transitionHandledKeyRef.current = "";
+    }
+  }, [machine.phase]);
+
+  useEffect(() => {
+    // 서버 selected 결과가 갱신되면 이전 결과 패널/phase 잔존을 먼저 정리한다.
+    if (machine.phase === "IDLE") {
+      dispatch({ type: "RESET" });
+      setShowResultPanel(false);
+      setCurrentSignImageUrl("");
+      transitionHandledKeyRef.current = "";
+    }
+  }, [machine.selectedSigs, machine.phase]);
+
+  useEffect(() => {
+    if (!showResultPanel || !displayOneShot) {
+      setShowOneShotReveal(false);
+      return;
+    }
+    const id = window.setTimeout(() => setShowOneShotReveal(true), 900);
+    return () => window.clearTimeout(id);
+  }, [showResultPanel, displayOneShot]);
+
+  useEffect(() => {
+    const queue = pendingLanding?.selected || [];
+    queue.forEach((item) => {
+      const img = new Image();
+      img.src = item.imageUrl || "/images/sigs/dummy-sig.svg";
+    });
+  }, [pendingLanding]);
+
+  useEffect(() => {
     if (!lastConfirmedText) return;
     const id = window.setTimeout(() => setLastConfirmedText(""), 3000);
     return () => window.clearTimeout(id);
   }, [lastConfirmedText]);
+
+  const handleForceReset = useCallback(() => {
+    if (!window.confirm("모든 상태를 강제 초기화하시겠습니까?")) return;
+    dispatch({ type: "RESET" });
+    setShowResultPanel(false);
+    setCurrentSignImageUrl("");
+    setPendingLanding(null);
+    setDemoSpin(null);
+    setStagedSelected([]);
+    setSpinStep(0);
+    transitionHandledKeyRef.current = "";
+    phaseRef.current = "idle";
+    if (nextSpinTimerRef.current) {
+      clearTimeout(nextSpinTimerRef.current);
+      nextSpinTimerRef.current = null;
+    }
+    console.log("[Force Reset] All states cleared");
+  }, []);
 
   return (
     <main className="min-h-screen bg-transparent p-4 text-white">
@@ -190,14 +305,31 @@ export default function SigSalesOverlayPage() {
           ) : null}
           <RouletteWheel
             items={wheelItemsWithResult}
-            isRolling={Boolean(demoSpin) || machine.isRolling || machine.phase === "SPINNING"}
+            isRolling={wheelPhase === "spinning" || Boolean(demoSpin) || machine.isRolling || machine.phase === "SPINNING"}
             resultId={displayResultId}
             startedAt={demoSpin?.startedAt || machine.startedAt}
             volume={0.7}
             muted={false}
+            onTransitionEnd={() => {
+              if (phaseRef.current === "result") return;
+              const transitionKey = `${machine.startedAt}:${displayResultId || "none"}:${spinStep}`;
+              if (transitionHandledKeyRef.current === transitionKey) return;
+              transitionHandledKeyRef.current = transitionKey;
+              console.log("[Wheel] TRANSITION END FIRED");
+              dispatch({ type: "SETTLING" });
+              window.setTimeout(() => {
+                dispatch({ type: "LANDED" });
+                setShowResultPanel(true);
+                const signUrl = getSignImageUrl(machine.resultId || machine.selectedSigs?.[0]?.id || displayResultId);
+                setCurrentSignImageUrl(signUrl || "");
+                if (signUrl) {
+                  const img = new Image();
+                  img.src = signUrl;
+                }
+              }, 300);
+            }}
             onLanded={(landedId) => {
-              if (!pendingLanding) return;
-              const selectedQueue = pendingLanding.selected.slice(0, CONFIRMED_VISIBLE_SLOTS);
+              const selectedQueue = (pendingLanding?.selected || machine.selectedSigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
               if (selectedQueue.length === 0) return;
               const byResult = landedId ? selectedQueue.find((x) => x.id === landedId) : null;
               const fallback = selectedQueue[Math.min(spinStep, selectedQueue.length - 1)];
@@ -220,7 +352,7 @@ export default function SigSalesOverlayPage() {
               }
 
               const oneShot = buildOneShotFromSelected(nextSelected);
-              landed(nextSelected, oneShot, pendingLanding.resultId || current.id);
+              landed(nextSelected, oneShot, pendingLanding?.resultId || machine.resultId || current.id);
               if (oneShotSound && !hasOneShotSoundErrorRef.current) {
                 oneShotSound.stop();
                 oneShotSound.play();
@@ -231,9 +363,25 @@ export default function SigSalesOverlayPage() {
               setSpinStep(0);
               setDemoSpin(null);
               setPendingLanding(null);
-              if (!pendingLanding.persist) return;
+              setShowResultPanel(true);
+              if (!pendingLanding?.persist) return;
             }}
           />
+          <ResultOverlay
+            visible={wheelPhase === "result" || showResultPanel}
+            selectedSigs={displaySelectedSigs}
+            soldOutStampUrl={soldOutStampUrl}
+            oneShot={displayOneShot ? { name: displayOneShot.name, price: displayOneShot.price } : null}
+            signImageUrl={currentSignImageUrl || oneShotImageUrl}
+            showOneShotReveal={showOneShotReveal}
+          />
+          <button
+            type="button"
+            onClick={handleForceReset}
+            className="absolute right-2 top-2 z-50 rounded bg-rose-600/90 px-2 py-1 text-xs font-bold text-white hover:bg-rose-500"
+          >
+            강제 초기화
+          </button>
           {machine.phase === "CONFIRM_PENDING" ? (
             <div className="pointer-events-none absolute inset-0 z-50 grid place-items-center bg-black/55">
               <div className="rounded-xl border border-yellow-300/50 bg-neutral-900/90 px-6 py-4 text-center">
