@@ -94,6 +94,16 @@ function isBrokenSigImageUrl(raw?: string): boolean {
   return BROKEN_SIG_UID_PATTERN.test(v);
 }
 
+function isLegacyLocalSigImageUrl(raw?: string): boolean {
+  const v = String(raw || "").trim().toLowerCase();
+  if (!v) return false;
+  return (
+    v.startsWith("/uploads/") ||
+    v.startsWith("uploads/") ||
+    v.includes(".onrender.com/uploads/")
+  );
+}
+
 function resolveSigPreviewSrc(raw?: string): string {
   const v = String(raw || "").trim().replace(/\\/g, "/");
   if (!v) return SIG_DUMMY_IMAGE;
@@ -4466,6 +4476,8 @@ export default function AdminPage() {
                   ) : null}
                   {(state.sigInventory || []).map((item) => {
                     const isOneShot = item.id === ONE_SHOT_SIG_ID;
+                    const hasLegacyLocalUrl = isLegacyLocalSigImageUrl(item.imageUrl);
+                    const hasBrokenUrl = isBrokenSigImageUrl(item.imageUrl);
                     return (
                     <div key={item.id} className="rounded border border-white/10 bg-[#1f1f1f] px-3 py-2">
                       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
@@ -4574,6 +4586,16 @@ export default function AdminPage() {
                           </div>
                           <div className="text-xs text-neutral-400 break-all">
                             이미지 설정됨: {item.imageUrl.startsWith("data:image/") ? "업로드 이미지(data URL)" : item.imageUrl}
+                            {hasLegacyLocalUrl ? (
+                              <div className="mt-1 text-rose-300">
+                                경고: 구형 /uploads 경로입니다. 운영 환경에서 404가 날 수 있어 재업로드가 필요합니다.
+                              </div>
+                            ) : null}
+                            {hasBrokenUrl ? (
+                              <div className="mt-1 text-rose-300">
+                                경고: 이미지 URL이 손상되었습니다. 파일을 다시 업로드해 주세요.
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                       ) : null}

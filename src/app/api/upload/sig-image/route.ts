@@ -196,6 +196,13 @@ export async function POST(req: Request) {
       return Response.json({ ok: true, url: publicUrl }, { status: 200 });
     }
 
+    if (process.env.NODE_ENV === "production") {
+      return Response.json(
+        { ok: false, error: "storage_not_configured: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY" },
+        { status: 500 }
+      );
+    }
+
     const roots = getUploadRootCandidates();
     for (const root of roots) {
       const dir = path.join(root, "uploads", "sigs", safeUid);
