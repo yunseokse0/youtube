@@ -275,15 +275,8 @@ export default function SigSalesOverlayPage() {
     }
   }, [machine.phase]);
 
-  useEffect(() => {
-    // 서버 selected 결과가 갱신되면 이전 결과 패널/phase 잔존을 먼저 정리한다.
-    if (machine.phase === "IDLE") {
-      dispatch({ type: "RESET" });
-      setShowResultPanel(false);
-      setCurrentSignImageUrl("");
-      transitionHandledKeyRef.current = "";
-    }
-  }, [machine.selectedSigs, machine.phase]);
+  // IDLE 동기화 시에도 방송 화면 결과를 유지한다.
+  // 새로운 회차가 시작되면 SPINNING 전환 effect에서 초기화된다.
 
   useEffect(() => {
     if (!showResultPanel || !displayOneShot) {
