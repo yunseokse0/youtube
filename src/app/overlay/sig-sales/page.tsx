@@ -53,10 +53,10 @@ export default function SigSalesOverlayPage() {
   const userId = getOverlayUserIdFromSearchParams(sp);
   const memberIdParam = (sp.get("memberId") || sp.get("member") || "").trim();
   const memberFilterId = memberIdParam.length > 0 ? memberIdParam : "";
-  const menuCount = (() => {
-    const raw = sp.get("menuCount") || sp.get("wheelCount") || "10";
+  const menuCountParam = (() => {
+    const raw = sp.get("menuCount") || sp.get("wheelCount") || "";
     const n = parseInt(raw.replace(/[^\d]/g, ""), 10);
-    if (!Number.isFinite(n)) return 10;
+    if (!Number.isFinite(n)) return null;
     return Math.max(5, Math.min(20, n));
   })();
   const rouletteDemo = sp.get("rouletteDemo") === "1" || sp.get("rouletteDemo") === "true";
@@ -163,6 +163,12 @@ export default function SigSalesOverlayPage() {
   // 결과 배치는 운영자가 reset 할 때까지 유지한다.
 
   const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || "/images/sigs/dummy-sig.svg";
+  const menuCount = useMemo(() => {
+    if (menuCountParam != null) return menuCountParam;
+    const persisted = Number(state?.rouletteState?.menuCount);
+    if (Number.isFinite(persisted)) return Math.max(5, Math.min(20, Math.floor(persisted)));
+    return 10;
+  }, [menuCountParam, state?.rouletteState?.menuCount]);
   const activeNormalPool = useMemo(() => {
     if (rouletteDemo) return DEMO_POOL;
     if (!state) return [];

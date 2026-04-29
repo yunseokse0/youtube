@@ -90,6 +90,8 @@ export type RouletteState = {
   } | null;
   /** 배경 투명도(0.4~1.0) */
   overlayOpacity?: number;
+  /** 회전판에 노출할 메뉴 수(5~20) */
+  menuCount?: number;
   /** 최근 세션 식별자 */
   sessionId?: string;
   /** 최근 확정 로그 */

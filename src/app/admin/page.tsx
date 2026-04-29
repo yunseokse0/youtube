@@ -88,6 +88,12 @@ const MAX_SIG_UPLOAD_BYTES = 30 * 1024 * 1024;
 const SIG_DUMMY_IMAGE = "/images/sigs/dummy-sig.svg";
 const BROKEN_SIG_UID_PATTERN = /(_257b_2522id_2522|%257b%2522id%2522|%7b%22id%22)/i;
 
+function clampSigSalesMenuCount(raw: string | number | null | undefined): number {
+  const n = typeof raw === "number" ? raw : parseInt(String(raw || "").replace(/[^\d]/g, "") || "10", 10);
+  if (!Number.isFinite(n)) return 10;
+  return Math.max(5, Math.min(20, Math.floor(n)));
+}
+
 function isBrokenSigImageUrl(raw?: string): boolean {
   const v = String(raw || "").trim().toLowerCase();
   if (!v) return false;
@@ -847,11 +853,13 @@ export default function AdminPage() {
   };
   const rouletteUserId = user?.id || "finalent";
   const getSigSalesMenuCount = useCallback((): number => {
-    const raw = sigSalesMenuCount.replace(/[^\d]/g, "");
-    const n = parseInt(raw || "10", 10);
-    if (!Number.isFinite(n)) return 10;
-    return Math.max(5, Math.min(20, n));
+    return clampSigSalesMenuCount(sigSalesMenuCount);
   }, [sigSalesMenuCount]);
+  useEffect(() => {
+    const persisted = clampSigSalesMenuCount(state.rouletteState?.menuCount);
+    const asText = String(persisted);
+    if (sigSalesMenuCount !== asText) setSigSalesMenuCount(asText);
+  }, [state.rouletteState?.menuCount, sigSalesMenuCount]);
   const rouletteQuickUrls = useMemo(() => {
     const progressPath = `/overlay/sig-sales?u=${rouletteUserId}&menuCount=${getSigSalesMenuCount()}`;
     const progressDemoPath = `${progressPath}&rouletteDemo=1`;
@@ -4031,8 +4039,22 @@ export default function AdminPage() {
                     className="w-16 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs"
                     value={sigSalesMenuCount}
                     onChange={(e) => {
-                      const n = Math.max(5, Math.min(20, parseInt(e.target.value.replace(/[^\d]/g, "") || "10", 10) || 10));
-                      setSigSalesMenuCount(String(n));
+                      const n = clampSigSalesMenuCount(e.target.value);
+                      const nextText = String(n);
+                      setSigSalesMenuCount(nextText);
+                      setState((prev) => {
+                        const prevCount = clampSigSalesMenuCount(prev.rouletteState?.menuCount);
+                        if (prevCount === n) return prev;
+                        const next = {
+                          ...prev,
+                          rouletteState: {
+                            ...prev.rouletteState,
+                            menuCount: n,
+                          },
+                        };
+                        persistState(next);
+                        return next;
+                      });
                     }}
                   />
                   <code className="text-neutral-300 break-all">
