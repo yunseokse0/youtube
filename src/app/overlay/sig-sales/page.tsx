@@ -89,6 +89,7 @@ export default function SigSalesOverlayPage() {
   const [wheelPhase, dispatch] = useReducer(wheelReducer, "idle");
   const nextSpinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const transitionHandledKeyRef = useRef("");
+  const handledSpinKeyRef = useRef("");
   const phaseRef = useRef<WheelPhase>("idle");
   const demoBootedRef = useRef(false);
   const hasOneShotSoundErrorRef = useRef(false);
@@ -266,14 +267,23 @@ export default function SigSalesOverlayPage() {
   }, [machine.phase, machine.selectedSigs, machine.resultId, pendingLanding, demoSpin]);
 
   useEffect(() => {
-    if (machine.phase === "SPINNING") {
-      dispatch({ type: "RESET" });
-      dispatch({ type: "START_SPIN" });
-      setShowResultPanel(false);
-      setCurrentSignImageUrl("");
-      transitionHandledKeyRef.current = "";
+    if (machine.phase !== "SPINNING") return;
+    const spinKey = `${machine.startedAt || 0}:${machine.sessionId || ""}:${machine.resultId || ""}`;
+    if (!machine.startedAt || handledSpinKeyRef.current === spinKey) return;
+    handledSpinKeyRef.current = spinKey;
+    dispatch({ type: "RESET" });
+    dispatch({ type: "START_SPIN" });
+    setShowResultPanel(false);
+    setCurrentSignImageUrl("");
+    transitionHandledKeyRef.current = "";
+  }, [machine.phase, machine.startedAt, machine.sessionId, machine.resultId]);
+
+  useEffect(() => {
+    if (machine.phase !== "SPINNING" && machine.phase !== "IDLE") return;
+    if (machine.selectedSigs.length > 0) {
+      setShowResultPanel(true);
     }
-  }, [machine.phase]);
+  }, [machine.phase, machine.selectedSigs.length]);
 
   // IDLE 동기화 시에도 방송 화면 결과를 유지한다.
   // 새로운 회차가 시작되면 SPINNING 전환 effect에서 초기화된다.

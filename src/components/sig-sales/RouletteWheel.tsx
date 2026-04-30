@@ -237,6 +237,7 @@ export default function RouletteWheel({
       stopAllAnimations();
       soundsRef.current?.tick.stop();
       soundsRef.current?.final.stop();
+      soundsRef.current?.success.stop();
       return;
     }
 
@@ -312,6 +313,7 @@ export default function RouletteWheel({
         // 예외가 나도 다음 회차 시작이 막히지 않도록 사운드만 정리
         soundsRef.current?.tick.stop();
         soundsRef.current?.final.stop();
+        soundsRef.current?.success.stop();
       }
     };
 
@@ -322,6 +324,7 @@ export default function RouletteWheel({
       stopAllAnimations();
       soundsRef.current?.tick.stop();
       soundsRef.current?.final.stop();
+      soundsRef.current?.success.stop();
     };
   }, [isRolling, startedAt, resultId, rotate, stopAllAnimations, runAnimation, runTickTrack, calculateFinalAngle, playFallbackTone]);
 
