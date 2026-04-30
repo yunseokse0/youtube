@@ -4,11 +4,16 @@ export const revalidate = 0;
 import type { AppState } from "@/lib/state";
 import { defaultState, mergeDonorsForMultiTabSave } from "@/lib/state";
 import { createModuleLogger } from "@/lib/logger";
-import { AUTH_COOKIE, isDevAuthBypassRequest } from "@/lib/auth";
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { isRouletteLocked } from "../roulette/roulette-lock";
 import { loadAppStateForRoulette } from "../roulette/edge-state-store";
+import { getUserIdFromRequest } from "../_shared/user-id";
+import {
+  getRedisEnv,
+  upstashGetJson,
+  upstashSetJsonWithPipeline,
+} from "../_shared/upstash";
 
 const logger = createModuleLogger('API/State');
 
@@ -16,35 +21,11 @@ const STORAGE_KEY_BASE = "excel-broadcast-state-v1";
 const STORAGE_KEY_LEGACY = "excel-broadcast-state-v1";
 
 function getUserId(req: Request): string | null {
-  const url = new URL(req.url);
-  const fromUrl = url.searchParams.get("user");
-  if (fromUrl && fromUrl.trim()) return fromUrl.trim();
-  const cookie = req.headers.get("cookie") || "";
-  const match = cookie.match(new RegExp(`${AUTH_COOKIE}=([^;]+)`));
-  if (match) {
-    try {
-      const parsed = JSON.parse(decodeURIComponent(match[1]));
-      return parsed?.id || null;
-    } catch { return null; }
-  }
-  if (isDevAuthBypassRequest(req)) return "finalent";
-  return null;
+  return getUserIdFromRequest(req);
 }
 
 function stateKey(userId: string | null): string {
   return userId ? `${STORAGE_KEY_BASE}:${userId}` : STORAGE_KEY_LEGACY;
-}
-
-function getEnv() {
-  const base =
-    process.env.UPSTASH_REDIS_REST_URL ||
-    process.env.KV_REST_API_URL ||
-    "";
-  const token =
-    process.env.UPSTASH_REDIS_REST_TOKEN ||
-    process.env.KV_REST_API_TOKEN ||
-    "";
-  return { base, token };
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -127,38 +108,12 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
   return next;
 }
 
-async function upstashGet(key: string) {
-  const { base, token } = getEnv();
-  if (!base || !token) return null;
-  const url = `${base.replace(/\/$/, "")}/get/${encodeURIComponent(key)}`;
-  const r = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-  if (!r.ok) return null;
-  const data = (await r.json()) as { result?: string | null };
-  if (!data || data.result == null) return null;
-  try {
-    return JSON.parse(data.result as string);
-  } catch {
-    return null;
-  }
+async function upstashGet<T = unknown>(key: string): Promise<T | null> {
+  return upstashGetJson<T>(key);
 }
 
 async function upstashSet(key: string, value: unknown) {
-  const { base, token } = getEnv();
-  if (!base || !token) return false;
-  const json = JSON.stringify(value);
-  const url = `${base.replace(/\/$/, "")}/pipeline`;
-  const r = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify([["SET", key, json]]),
-  });
-  return r.ok;
+  return upstashSetJsonWithPipeline(key, value);
 }
 
 export async function GET(req: Request) {
@@ -170,7 +125,7 @@ export async function GET(req: Request) {
         headers: { "Content-Type": "application/json" },
       });
     }
-    const { base, token } = getEnv();
+    const { base, token } = getRedisEnv();
     if (!base || !token) {
       const state = getServerMemoryAppState() || defaultState();
       if (!getServerMemoryAppState()) {
@@ -186,10 +141,10 @@ export async function GET(req: Request) {
       });
     }
 
-    let state = await upstashGet(stateKey(userId));
+    let state = await upstashGet<AppState>(stateKey(userId));
     if (!state || !Array.isArray(state.members)) {
       if (isLegacyMigrationTargetUserId(userId)) {
-        const legacy = await upstashGet(STORAGE_KEY_LEGACY);
+        const legacy = await upstashGet<AppState>(STORAGE_KEY_LEGACY);
         if (legacy && (Array.isArray(legacy.members) || Array.isArray(legacy.overlayPresets))) {
           await upstashSet(stateKey(userId), legacy);
           state = legacy;
@@ -250,10 +205,10 @@ export async function POST(req: Request) {
       });
     }
     const body = (await req.json()) as Partial<AppState>;
-    const { base, token } = getEnv();
+    const { base, token } = getRedisEnv();
     let existing: AppState | null = null;
     if (base && token) {
-      existing = await upstashGet(stateKey(userId)) as AppState | null;
+      existing = await upstashGet<AppState>(stateKey(userId));
     } else {
       existing = getServerMemoryAppState();
     }

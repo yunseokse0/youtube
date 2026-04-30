@@ -2,6 +2,7 @@ export const runtime = "edge";
 export const revalidate = 0;
 
 import type { Account } from "../route";
+import { upstashGetJson, upstashSetJsonWithSetPath } from "../../_shared/upstash";
 
 const ACCOUNTS_KEY = "excel-broadcast-accounts-v1";
 
@@ -16,40 +17,12 @@ function checkAdminKey(key: string | null): boolean {
   return key === expected;
 }
 
-function getEnv() {
-  const base = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL || "";
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || "";
-  return { base, token };
-}
-
 async function upstashGet(key: string) {
-  const { base, token } = getEnv();
-  if (!base || !token) return null;
-  const url = `${base.replace(/\/$/, "")}/get/${encodeURIComponent(key)}`;
-  const r = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-  if (!r.ok) return null;
-  const data = (await r.json()) as { result?: string | null };
-  if (!data || data.result == null) return null;
-  try {
-    return JSON.parse(data.result as string);
-  } catch {
-    return null;
-  }
+  return upstashGetJson(key);
 }
 
 async function upstashSet(key: string, value: unknown) {
-  const { base, token } = getEnv();
-  if (!base || !token) return false;
-  const json = JSON.stringify(value);
-  const url = `${base.replace(/\/$/, "")}/set/${encodeURIComponent(key)}/${encodeURIComponent(json)}`;
-  const r = await fetch(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return r.ok;
+  return upstashSetJsonWithSetPath(key, value);
 }
 
 export async function PATCH(
