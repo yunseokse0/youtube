@@ -231,6 +231,25 @@ function SigMatchOverlayInner() {
     const s = sec % 60;
     return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }, [timerDisplaySec]);
+  const timerStyleFromState = state?.timerDisplayStyles?.general;
+  const timerOutlineColor = (sp.get("timerOutlineColor") || "").trim() || timerStyleFromState?.outlineColor || "rgba(6, 12, 24, 0.95)";
+  const timerOutlineWidth = (() => {
+    const raw = (sp.get("timerOutlineWidth") || "").trim();
+    if (raw) {
+      const n = parseFloat(raw);
+      if (Number.isFinite(n)) return Math.max(0, Math.min(3, n));
+    }
+    const fromState = Number(timerStyleFromState?.outlineWidth ?? 0.8);
+    return Number.isFinite(fromState) ? Math.max(0, Math.min(3, fromState)) : 0.8;
+  })();
+  const timerTextOutlineStyle: React.CSSProperties = {
+    textShadow:
+      timerOutlineWidth > 0
+        ? `${-timerOutlineWidth}px 0 0 ${timerOutlineColor}, ${timerOutlineWidth}px 0 0 ${timerOutlineColor}, 0 ${-timerOutlineWidth}px 0 ${timerOutlineColor}, 0 ${timerOutlineWidth}px 0 ${timerOutlineColor}, 0 0 ${Math.max(1, timerOutlineWidth)}px ${timerOutlineColor}`
+        : undefined,
+    WebkitTextStroke: timerOutlineWidth > 0 ? `${timerOutlineWidth}px ${timerOutlineColor}` : undefined,
+    paintOrder: "stroke fill",
+  };
   const versusTotalRaw = duelData.left.score + duelData.right.score;
   const leftPct = versusTotalRaw > 0
     ? Math.max(0, Math.min(100, (duelData.left.score / versusTotalRaw) * 100))
@@ -258,7 +277,7 @@ function SigMatchOverlayInner() {
         <div className="relative mb-4 p-3">
           {timerVisible ? (
             <div className="absolute left-1/2 top-1 -translate-x-1/2 rounded-md bg-red-500/85 px-3 py-0.5 text-2xl font-black leading-none text-white shadow-[0_0_12px_rgba(239,68,68,0.45)]">
-              {timerText}
+              <span style={timerTextOutlineStyle}>{timerText}</span>
             </div>
           ) : null}
           <div className="mt-8 flex items-center justify-between gap-2 text-xs text-white/80">

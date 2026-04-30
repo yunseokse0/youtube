@@ -426,6 +426,42 @@ export default function AdminPage() {
     syncStatusRef.current = syncStatus;
   }, [syncStatus]);
 
+  const mergeIncomingStateSafely = useCallback((incoming: AppState, local: AppState): { merged: AppState; didPreserve: boolean } => {
+    const incomingDefaultLike = isDefaultLikeState(incoming);
+    const localHasData = !isDefaultLikeState(local);
+    // 서버가 기본 데이터만 반환하면, 이미 로컬에 있는 기존 상태를 최대한 그대로 유지한다.
+    if (incomingDefaultLike && localHasData) {
+      return {
+        merged: {
+          ...incoming,
+          ...local,
+          updatedAt: Math.max(incoming.updatedAt || 0, local.updatedAt || 0) || Date.now(),
+        },
+        didPreserve: true,
+      };
+    }
+
+    let merged = incoming;
+    let didPreserve = false;
+    if (!incoming.missions?.length && local.missions?.length) {
+      merged = { ...merged, missions: local.missions };
+      didPreserve = true;
+    }
+    if (!incoming.overlayPresets?.length && local.overlayPresets?.length) {
+      merged = { ...merged, overlayPresets: local.overlayPresets };
+      didPreserve = true;
+    }
+    const incomingOverlaySettingsEmpty =
+      !incoming.overlaySettings || Object.keys(incoming.overlaySettings).length === 0;
+    const localOverlaySettingsHasData =
+      !!local.overlaySettings && Object.keys(local.overlaySettings).length > 0;
+    if (incomingOverlaySettingsEmpty && localOverlaySettingsHasData) {
+      merged = { ...merged, overlaySettings: local.overlaySettings };
+      didPreserve = true;
+    }
+    return { merged, didPreserve };
+  }, []);
+
   useEffect(() => {
     if (!user) return;
     // localStorage에서 즉시 복원 (서버 재시작/동기화 시 기본값 덮어쓰기 전에 로컬 데이터 확보)
@@ -477,21 +513,8 @@ export default function AdminPage() {
     loadStateFromApi(user?.id).then((apiState) => {
       const local = loadState(user?.id);
       if (apiState) {
-        // 계정 소속 데이터 보존: 서버가 기본값을 반환해도 로컬에 의미 있는 데이터가 있으면 덮어쓰지 않음
-        let toApply = apiState;
-        const remoteDefaultLike = isDefaultLikeState(apiState);
-        const localHasData = !isDefaultLikeState(local);
-        const preserveMembersDonors = remoteDefaultLike && localHasData;
-        const preserveMissions = !apiState.missions?.length && local.missions?.length;
-        if (preserveMembersDonors || preserveMissions) {
-          toApply = {
-            ...apiState,
-            members: preserveMembersDonors && local.members?.length ? local.members : apiState.members,
-            donors: preserveMembersDonors ? (local.donors || []) : apiState.donors,
-            missions: preserveMissions ? local.missions! : apiState.missions,
-          };
-          persistState(toApply);
-        }
+        const { merged: toApply, didPreserve } = mergeIncomingStateSafely(apiState, local);
+        if (didPreserve) persistState(toApply);
         setState(toApply);
         if (Array.isArray(toApply.overlayPresets) && toApply.overlayPresets.length > 0) {
           setPresets(toApply.overlayPresets as OverlayPreset[]);
@@ -561,21 +584,8 @@ export default function AdminPage() {
         if (shouldApplyRemote) {
           stateUpdatedAtRef.current = remoteUpdatedAt;
           const prev = stateRef.current;
-          // 계정 소속 데이터 보존: 서버가 기본값이면 로컬 members/donors/missions 유지
-          const remoteDefaultLike = isDefaultLikeState(remote);
-          const localHasData = !isDefaultLikeState(prev);
-          const preserveMembersDonors = remoteDefaultLike && localHasData;
-          const preserveMissions = !remote.missions?.length && prev.missions?.length;
-          let toApply = remote;
-          if (preserveMembersDonors || preserveMissions) {
-            toApply = {
-              ...remote,
-              members: preserveMembersDonors && prev.members?.length ? prev.members : remote.members,
-              donors: preserveMembersDonors ? (prev.donors || []) : remote.donors,
-              missions: preserveMissions ? prev.missions! : remote.missions,
-            };
-            persistState(toApply);
-          }
+          const { merged: toApply, didPreserve } = mergeIncomingStateSafely(remote, prev);
+          if (didPreserve) persistState(toApply);
           setState(toApply);
           if (Array.isArray(toApply.overlayPresets)) {
             setPresets(toApply.overlayPresets as OverlayPreset[]);
@@ -987,22 +997,9 @@ export default function AdminPage() {
           if (incomingUpdatedAt <= stateUpdatedAtRef.current) return;
           stateUpdatedAtRef.current = incomingUpdatedAt;
           setState((prev) => {
-            // 계정 소속 데이터 보존: 다른 탭이 기본값으로 덮어도 로컬 members/donors/missions 유지
-            const incomingDefaultLike = isDefaultLikeState(incoming);
-            const localHasData = !isDefaultLikeState(prev);
-            const preserveMembersDonors = incomingDefaultLike && localHasData;
-            const preserveMissions = !incoming.missions?.length && prev.missions?.length;
-            if (preserveMembersDonors || preserveMissions) {
-              const merged = {
-                ...incoming,
-                members: preserveMembersDonors && prev.members?.length ? prev.members : incoming.members,
-                donors: preserveMembersDonors ? (prev.donors || []) : incoming.donors,
-                missions: preserveMissions ? prev.missions! : incoming.missions,
-              };
-              queueMicrotask(() => persistState(merged));
-              return merged;
-            }
-            return incoming;
+            const { merged, didPreserve } = mergeIncomingStateSafely(incoming, prev);
+            if (didPreserve) queueMicrotask(() => persistState(merged));
+            return merged;
           });
         } catch {
           // ignore
@@ -1013,7 +1010,7 @@ export default function AdminPage() {
     };
     window.addEventListener("storage", handler);
     return () => window.removeEventListener("storage", handler);
-  }, [user?.id, persistState]);
+  }, [user?.id, persistState, mergeIncomingStateSafely]);
 
   useEffect(() => {
     setMemberRatioInputs((prev) => {
