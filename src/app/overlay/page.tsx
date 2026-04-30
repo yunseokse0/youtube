@@ -2128,7 +2128,7 @@ function OverlayInner() {
       "center center";
     const scaleStyleTag = (
       <style dangerouslySetInnerHTML={{ __html: `
-        .overlay-route { transform: scale(${effectiveScale}) !important; -webkit-transform: scale(${effectiveScale}) !important; transform-origin: ${origin} !important; }
+        .overlay-scale-target { transform: scale(${effectiveScale}) !important; -webkit-transform: scale(${effectiveScale}) !important; transform-origin: ${origin} !important; }
       ` }} />
     );
     const nameWrapCls = "truncate";
@@ -2245,7 +2245,7 @@ function OverlayInner() {
             </div>
           </div>
         )}
-        <div style={viewportInnerStyle} className="overlay-route">
+        <div style={viewportInnerStyle} className="overlay-scale-target">
           <main className="transparent-bg no-select" style={{ ...scaledMainStyle, minHeight: FIT_H, width: FIT_W, background: "transparent" }}>
         {showMembers && (ready || isPreviewGuide || externalHost) && (
           <div className={`absolute ${listPosClass}`} style={{ maxWidth: FIT_W, maxHeight: FIT_H, ...listPosStyle }}>
