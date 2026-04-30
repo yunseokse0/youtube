@@ -15,7 +15,8 @@ import { useImagePreload } from "@/hooks/useImagePreload";
 const POLL_MS = 1000;
 const STEP_CONFIRM_PAUSE_MS = 3000;
 const CONFIRMED_VISIBLE_SLOTS = 5;
-const RECENT_SPIN_WINDOW_MS = 90_000;
+const MIN_ONE_SHOT_SIGS = 2;
+const RECENT_SPIN_WINDOW_MS = 20_000;
 const DEMO_POOL = [
   { id: "demo_1", name: "애교", price: 77000, imageUrl: "/images/sigs/애교.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
   { id: "demo_2", name: "댄스", price: 100000, imageUrl: "/images/sigs/댄스.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
@@ -28,11 +29,14 @@ const DEMO_POOL = [
   { id: "demo_9", name: "보너스", price: 150000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
   { id: "demo_10", name: "특전", price: 220000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
 ];
-const buildOneShotFromSelected = (selected: SigItem[]) => ({
-  id: ONE_SHOT_SIG_ID,
-  name: "한방 시그",
-  price: selected.reduce((sum, x) => sum + x.price, 0),
-});
+const buildOneShotFromSelected = (selected: SigItem[]) => {
+  if (selected.length < MIN_ONE_SHOT_SIGS) return null;
+  return {
+    id: ONE_SHOT_SIG_ID,
+    name: "한방 시그",
+    price: selected.reduce((sum, x) => sum + x.price, 0),
+  };
+};
 type WheelPhase = "idle" | "spinning" | "settling" | "result";
 const wheelReducer = (state: WheelPhase, action: { type: string }): WheelPhase => {
   switch (action.type) {
@@ -91,6 +95,7 @@ export default function SigSalesOverlayPage() {
   const nextSpinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const transitionHandledKeyRef = useRef("");
   const handledSpinKeyRef = useRef("");
+  const completedSpinKeyRef = useRef("");
   const phaseRef = useRef<WheelPhase>("idle");
   const demoBootedRef = useRef(false);
   const hasOneShotSoundErrorRef = useRef(false);
@@ -175,13 +180,13 @@ export default function SigSalesOverlayPage() {
     const raw = (sp.get("menuFillFromAllActive") || "").toLowerCase();
     if (raw === "true" || raw === "1") return true;
     if (raw === "false" || raw === "0") return false;
-    return state?.rouletteState?.menuFillFromAllActive !== false;
+    return state?.rouletteState?.menuFillFromAllActive === true;
   }, [sp, state?.rouletteState?.menuFillFromAllActive]);
   const menuFillFromDemo = useMemo(() => {
     const raw = (sp.get("menuFillFromDemo") || "").toLowerCase();
     if (raw === "true" || raw === "1") return true;
     if (raw === "false" || raw === "0") return false;
-    return state?.rouletteState?.menuFillFromDemo !== false;
+    return state?.rouletteState?.menuFillFromDemo === true;
   }, [sp, state?.rouletteState?.menuFillFromDemo]);
   const activeNormalPool = useMemo(() => {
     if (rouletteDemo) return DEMO_POOL;
@@ -248,11 +253,16 @@ export default function SigSalesOverlayPage() {
     return [];
   }, [machine.selectedSigs, machine.phase, rouletteDemo, pendingLanding, stagedSelected, demoSpin, wheelPhase]);
   const displayOneShot = useMemo(() => {
-    if (displaySelectedSigs.length < CONFIRMED_VISIBLE_SLOTS) return null;
+    if (displaySelectedSigs.length < MIN_ONE_SHOT_SIGS) return null;
     return buildOneShotFromSelected(displaySelectedSigs);
   }, [displaySelectedSigs]);
+  const completedTargetCount = useMemo(() => {
+    if (pendingLanding?.selected?.length) return Math.max(1, Math.min(CONFIRMED_VISIBLE_SLOTS, pendingLanding.selected.length));
+    if (machine.selectedSigs?.length) return Math.max(1, Math.min(CONFIRMED_VISIBLE_SLOTS, machine.selectedSigs.length));
+    return 1;
+  }, [pendingLanding?.selected, machine.selectedSigs]);
   const hideWheelAfterComplete =
-    displaySelectedSigs.length >= CONFIRMED_VISIBLE_SLOTS &&
+    displaySelectedSigs.length >= completedTargetCount &&
     !pendingLanding &&
     !demoSpin &&
     wheelPhase !== "spinning" &&
@@ -277,6 +287,14 @@ export default function SigSalesOverlayPage() {
     const found = pool.find((item) => item.id === id);
     return found?.imageUrl || "";
   }, [stagedSelected, machine.selectedSigs, activeNormalPool]);
+  const hasServerSpinToPlay = useMemo(() => {
+    return (
+      machine.phase === "SPINNING" &&
+      machine.isRolling &&
+      Boolean(machine.sessionId) &&
+      Boolean(pendingLanding?.selected?.length)
+    );
+  }, [machine.phase, machine.isRolling, machine.sessionId, pendingLanding?.selected?.length]);
   useImagePreload(oneShotImageUrl);
   useImagePreload(currentSignImageUrl);
 
@@ -300,6 +318,8 @@ export default function SigSalesOverlayPage() {
   useEffect(() => {
     // 오버레이가 서버 상태만으로도 재생될 수 있도록 대기열을 자동 복원한다.
     if (pendingLanding || demoSpin) return;
+    const machineSpinKey = `${machine.startedAt || 0}:${machine.sessionId || ""}:${machine.resultId || ""}`;
+    if (machineSpinKey === completedSpinKeyRef.current) return;
     const selectedFromServer = (machine.selectedSigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
     if (machine.phase !== "SPINNING" || selectedFromServer.length === 0) return;
     const startedAt = Number(machine.startedAt || 0);
@@ -319,7 +339,9 @@ export default function SigSalesOverlayPage() {
 
   useEffect(() => {
     if (machine.phase !== "SPINNING") return;
+    if (!pendingLanding && !demoSpin) return;
     const spinKey = `${machine.startedAt || 0}:${machine.sessionId || ""}:${machine.resultId || ""}`;
+    if (spinKey === completedSpinKeyRef.current) return;
     if (!machine.startedAt || handledSpinKeyRef.current === spinKey) return;
     handledSpinKeyRef.current = spinKey;
     dispatch({ type: "RESET" });
@@ -366,9 +388,9 @@ export default function SigSalesOverlayPage() {
     if (!rouletteDemo) return;
     if (demoBootedRef.current) return;
     if (pendingLanding || demoSpin) return;
-    const sourcePool = activeNormalPool.length >= CONFIRMED_VISIBLE_SLOTS ? activeNormalPool : DEMO_POOL;
+    const sourcePool = activeNormalPool.length > 0 ? activeNormalPool : DEMO_POOL;
     const shuffled = [...sourcePool].sort(() => Math.random() - 0.5);
-    const selected = shuffled.slice(0, CONFIRMED_VISIBLE_SLOTS);
+    const selected = shuffled.slice(0, Math.max(1, Math.min(CONFIRMED_VISIBLE_SLOTS, shuffled.length)));
     const resultId = selected[selected.length - 1]?.id || null;
     if (selected.length === 0) return;
     demoBootedRef.current = true;
@@ -400,7 +422,7 @@ export default function SigSalesOverlayPage() {
           {!hideWheelAfterComplete ? (
             <RouletteWheel
               items={wheelItemsWithResult}
-              isRolling={wheelPhase === "spinning" || Boolean(demoSpin) || machine.isRolling || machine.phase === "SPINNING"}
+              isRolling={wheelPhase === "spinning" || Boolean(demoSpin) || hasServerSpinToPlay}
               resultId={displayResultId}
               startedAt={demoSpin?.startedAt || machine.startedAt}
               scalePct={wheelScalePct}
@@ -448,6 +470,8 @@ export default function SigSalesOverlayPage() {
                 }
 
                 const oneShot = buildOneShotFromSelected(nextSelected);
+                const machineSpinKey = `${machine.startedAt || 0}:${machine.sessionId || ""}:${machine.resultId || ""}`;
+                completedSpinKeyRef.current = machineSpinKey;
                 landed(nextSelected, oneShot, pendingLanding?.resultId || machine.resultId || current.id);
                 if (oneShotSound && !hasOneShotSoundErrorRef.current) {
                   oneShotSound.stop();
@@ -485,7 +509,8 @@ export default function SigSalesOverlayPage() {
             <div className="mt-4 rounded-xl border border-emerald-300/60 bg-emerald-900/30 p-4 text-center">
               <p className="text-2xl font-black text-emerald-200">판매 확정 완료!</p>
               <p className="mt-1 text-sm text-emerald-100">
-                {machine.selectedSigs.map((s) => s.name).join(", ")} + {machine.oneShot?.name || "한방 시그"}
+                {machine.selectedSigs.map((s) => s.name).join(", ")}
+                {machine.oneShot?.name ? ` + ${machine.oneShot.name}` : ""}
               </p>
               <button type="button" onClick={resetToIdle} className="mt-3 rounded bg-emerald-500 px-4 py-1.5 text-sm font-bold text-black">
                 새로운 회차 시작

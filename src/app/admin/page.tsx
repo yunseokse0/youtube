@@ -4087,11 +4087,11 @@ export default function AdminPage() {
                   <label className="ml-2 inline-flex items-center gap-1 rounded border border-white/10 bg-black/20 px-2 py-1 text-[11px] text-neutral-300">
                     <input
                       type="checkbox"
-                      checked={state.rouletteState?.menuFillFromAllActive !== false}
+                      checked={state.rouletteState?.menuFillFromAllActive === true}
                       onChange={(e) => {
                         const checked = e.target.checked;
                         setState((prev) => {
-                          const prevVal = prev.rouletteState?.menuFillFromAllActive !== false;
+                          const prevVal = prev.rouletteState?.menuFillFromAllActive === true;
                           if (prevVal === checked) return prev;
                           const next = {
                             ...prev,
@@ -4110,11 +4110,11 @@ export default function AdminPage() {
                   <label className="inline-flex items-center gap-1 rounded border border-white/10 bg-black/20 px-2 py-1 text-[11px] text-neutral-300">
                     <input
                       type="checkbox"
-                      checked={state.rouletteState?.menuFillFromDemo !== false}
+                      checked={state.rouletteState?.menuFillFromDemo === true}
                       onChange={(e) => {
                         const checked = e.target.checked;
                         setState((prev) => {
-                          const prevVal = prev.rouletteState?.menuFillFromDemo !== false;
+                          const prevVal = prev.rouletteState?.menuFillFromDemo === true;
                           if (prevVal === checked) return prev;
                           const next = {
                             ...prev,

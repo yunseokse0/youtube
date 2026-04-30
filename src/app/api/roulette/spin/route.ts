@@ -137,19 +137,10 @@ export async function POST(req: Request) {
         for (const item of broadAnyPool) uniqueById.set(item.id, item);
       }
       const candidatePool = Array.from(uniqueById.values());
-      let fallbackUsed = false;
-      if (candidatePool.length < 5) {
-        const need = 5 - candidatePool.length;
-        const fallbackPool = buildFallbackPool(need + 5)
-          .filter((x) => !uniqueById.has(x.id))
-          .slice(0, need);
-        if (fallbackPool.length < need) {
-          return Response.json({ error: "not_enough_active_sigs" }, { status: 400, headers: { "Content-Type": "application/json" } });
-        }
-        fallbackUsed = true;
-        for (const item of fallbackPool) uniqueById.set(item.id, item);
+      if (candidatePool.length < 1) {
+        return Response.json({ error: "not_enough_active_sigs" }, { status: 400, headers: { "Content-Type": "application/json" } });
       }
-      const expandedPool = Array.from(uniqueById.values());
+      const expandedPool = candidatePool;
       const shuffled = [...expandedPool];
       for (let i = shuffled.length - 1; i > 0; i--) {
         const u = new Uint32Array(1);
@@ -159,12 +150,15 @@ export async function POST(req: Request) {
         shuffled[i] = shuffled[j]!;
         shuffled[j] = t;
       }
-      const selectedSigs = shuffled.slice(0, 5).map((x) => ({ ...x, maxCount: 1 }));
-      const oneShot = {
-        id: ONE_SHOT_SIG_ID,
-        name: "한방 시그",
-        price: selectedSigs.reduce((sum, x) => sum + Math.max(0, Math.floor(Number(x.price || 0))), 0),
-      };
+      const selectedCount = Math.max(1, Math.min(5, shuffled.length));
+      const selectedSigs = shuffled.slice(0, selectedCount).map((x) => ({ ...x, maxCount: 1 }));
+      const oneShot = selectedSigs.length >= 2
+        ? {
+            id: ONE_SHOT_SIG_ID,
+            name: "한방 시그",
+            price: selectedSigs.reduce((sum, x) => sum + Math.max(0, Math.floor(Number(x.price || 0))), 0),
+          }
+        : null;
       const prevRs = normalizeRouletteState(s.rouletteState);
       const result = selectedSigs[selectedSigs.length - 1] || null;
       setRouletteLock(userId, 10_000);
@@ -175,7 +169,7 @@ export async function POST(req: Request) {
           ...prevRs,
           phase: "SPINNING",
           isRolling: true,
-          spinCount: 5,
+          spinCount: selectedSigs.length,
           result,
           results: selectedSigs,
           selectedSigs,
@@ -203,7 +197,7 @@ export async function POST(req: Request) {
         {
           ok: true,
           mode,
-          fallbackExpanded: fallbackUsed || candidatePool.length !== pool.length,
+          fallbackExpanded: candidatePool.length !== pool.length,
           startedAt: next.rouletteState.startedAt,
           sessionId: next.rouletteState.sessionId,
           result,

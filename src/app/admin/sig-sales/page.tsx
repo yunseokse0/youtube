@@ -16,6 +16,8 @@ import { useSigSalesState } from "@/hooks/useSigSalesState";
 
 const POLL_MS = 1000;
 const STEP_CONFIRM_PAUSE_MS = 3000;
+const MAX_SELECTED_SIGS = 5;
+const MIN_ONE_SHOT_SIGS = 2;
 type HistoryItem = {
   id: string;
   sessionId: string;
@@ -27,11 +29,14 @@ type HistoryItem = {
   adminId?: string | null;
   reason?: string | null;
 };
-const buildOneShotFromSelected = (selected: SigItem[]) => ({
-  id: ONE_SHOT_SIG_ID,
-  name: "한방 시그",
-  price: selected.reduce((sum, x) => sum + x.price, 0),
-});
+const buildOneShotFromSelected = (selected: SigItem[]) => {
+  if (selected.length < MIN_ONE_SHOT_SIGS) return null;
+  return {
+    id: ONE_SHOT_SIG_ID,
+    name: "한방 시그",
+    price: selected.reduce((sum, x) => sum + x.price, 0),
+  };
+};
 
 const PREVIEW_FILLER_POOL: SigItem[] = [
   { id: "preview_1", name: "애교", price: 77000, imageUrl: "/images/sigs/애교.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
@@ -201,14 +206,19 @@ export default function AdminSigSalesPage() {
     return [...wheelItems.slice(0, Math.max(0, wheelItems.length - 1)), found];
   }, [wheelItems, demoSpin?.resultId, machine.resultId, activeNormalPool]);
   const displaySelectedSigs = useMemo(() => {
-    if (stagedSelected.length > 0) return stagedSelected.slice(0, 5);
-    return machine.selectedSigs.slice(0, 5);
+    if (stagedSelected.length > 0) return stagedSelected.slice(0, MAX_SELECTED_SIGS);
+    return machine.selectedSigs.slice(0, MAX_SELECTED_SIGS);
   }, [machine.selectedSigs, stagedSelected]);
   const displayOneShot = useMemo(() => {
-    if (displaySelectedSigs.length < 5) return null;
+    if (displaySelectedSigs.length < MIN_ONE_SHOT_SIGS) return null;
     return buildOneShotFromSelected(displaySelectedSigs);
   }, [displaySelectedSigs]);
-  const showFinalShowcase = displaySelectedSigs.length >= 5 && !demoSpin && !pendingLanding;
+  const targetSelectionCount = useMemo(() => {
+    if (pendingLanding?.selected?.length) return Math.max(1, Math.min(MAX_SELECTED_SIGS, pendingLanding.selected.length));
+    if (machine.selectedSigs?.length) return Math.max(1, Math.min(MAX_SELECTED_SIGS, machine.selectedSigs.length));
+    return 1;
+  }, [pendingLanding?.selected, machine.selectedSigs]);
+  const showFinalShowcase = displaySelectedSigs.length >= targetSelectionCount && !demoSpin && !pendingLanding;
   const oneShotImageUrl = useMemo(() => {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     return oneShotItem?.imageUrl || "/images/sigs/dummy-sig.svg";
@@ -245,14 +255,14 @@ export default function AdminSigSalesPage() {
       // 운영 중 멈춤 체감 방지를 위해 이전 회차를 자동 초기화하고 새 회차 시작
       resetToIdle();
     }
-    if (activeNormalPool.length < 5) {
-      setToast("선택한 멤버의 활성 시그가 5개 미만입니다. 멤버 시그를 추가/활성화해주세요.");
+    if (activeNormalPool.length < 1) {
+      setToast("선택한 멤버의 활성 시그가 없습니다. 멤버 시그를 추가/활성화해주세요.");
       return;
     }
     setLoadingSpin(true);
     try {
       const data = await spin({ memberId: memberFilterId || null });
-      const selected = (data.selectedSigs || []).slice(0, 5);
+      const selected = (data.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
       const oneShot = buildOneShotFromSelected(selected);
       setPendingLanding({ selected, oneShot, resultId: data.result?.id || selected[selected.length - 1]?.id || null, persist: true });
       setDemoSpin({ startedAt: Date.now(), resultId: selected[0]?.id || null });
@@ -266,16 +276,16 @@ export default function AdminSigSalesPage() {
     } catch (e) {
       const code = e instanceof Error ? e.message : "";
       if (code === "not_enough_active_sigs") {
-        setToast(memberFilterId ? "선택 멤버의 활성 시그가 5개 미만입니다." : "활성 시그가 5개 미만입니다.");
+        setToast(memberFilterId ? "선택 멤버의 활성 시그가 없습니다." : "활성 시그가 없습니다.");
         return;
       }
       // API 장애가 있어도 현장 테스트를 계속할 수 있도록 데모 회차로 즉시 대체
       const shuffled = [...PREVIEW_FILLER_POOL].sort(() => Math.random() - 0.5);
-      const selected = shuffled.slice(0, 5);
+      const selected = shuffled.slice(0, Math.max(1, Math.min(MAX_SELECTED_SIGS, shuffled.length)));
       const resultId = selected[selected.length - 1]?.id || null;
       setPendingLanding({
         selected,
-        oneShot: { id: ONE_SHOT_SIG_ID, name: "한방 시그", price: selected.reduce((sum, x) => sum + x.price, 0) },
+        oneShot: buildOneShotFromSelected(selected),
         resultId,
         persist: false,
       });
@@ -488,7 +498,7 @@ export default function AdminSigSalesPage() {
             muted={muted}
             onLanded={(landedId) => {
               if (!pendingLanding) return;
-              const selectedQueue = pendingLanding.selected.slice(0, 5);
+              const selectedQueue = pendingLanding.selected.slice(0, MAX_SELECTED_SIGS);
               if (selectedQueue.length === 0) return;
               const byResult = landedId ? selectedQueue.find((x) => x.id === landedId) : null;
               const fallback = selectedQueue[Math.min(spinStep, selectedQueue.length - 1)];
@@ -588,7 +598,8 @@ export default function AdminSigSalesPage() {
             <div className="mt-4 rounded-xl border border-emerald-300/60 bg-emerald-900/30 p-4 text-center">
               <p className="text-2xl font-black text-emerald-200">판매 확정 완료!</p>
               <p className="mt-1 text-sm text-emerald-100">
-                {displaySelectedSigs.map((s) => s.name).join(", ")} + {displayOneShot?.name || "한방 시그"}
+                {displaySelectedSigs.map((s) => s.name).join(", ")}
+                {displayOneShot?.name ? ` + ${displayOneShot.name}` : ""}
               </p>
               <button type="button" onClick={resetToIdle} className="mt-3 rounded bg-emerald-500 px-4 py-1.5 text-sm font-bold text-black">
                 새로운 회차 시작

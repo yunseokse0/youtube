@@ -91,7 +91,7 @@ export function normalizeRouletteState(raw: unknown): RouletteState {
     overlayOpacity: 0.85,
     menuCount: 10,
     menuFillFromAllActive: true,
-    menuFillFromDemo: true,
+    menuFillFromDemo: false,
     oneShotResult: null,
   };
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return def;
@@ -144,7 +144,7 @@ export function normalizeRouletteState(raw: unknown): RouletteState {
   const menuCountRaw = Number(o.menuCount);
   const menuCount = Number.isFinite(menuCountRaw) ? Math.max(5, Math.min(20, Math.floor(menuCountRaw))) : 10;
   const menuFillFromAllActive = typeof o.menuFillFromAllActive === "boolean" ? o.menuFillFromAllActive : true;
-  const menuFillFromDemo = typeof o.menuFillFromDemo === "boolean" ? o.menuFillFromDemo : true;
+  const menuFillFromDemo = typeof o.menuFillFromDemo === "boolean" ? o.menuFillFromDemo : false;
   const oneShotRaw = o.oneShotResult;
   const oneShotResult =
     oneShotRaw && typeof oneShotRaw === "object"

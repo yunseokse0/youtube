@@ -208,7 +208,15 @@ export default function RouletteWheel({
       if (elapsed >= durationMs) break;
       const p = Math.min(1, elapsed / durationMs);
       const currentInterval = Math.max(36, Math.round(startIntervalMs + (endIntervalMs - startIntervalMs) * p));
+      const slow = Math.max(startIntervalMs, endIntervalMs);
+      const fast = Math.min(startIntervalMs, endIntervalMs);
+      const speedNormRaw = slow === fast ? 1 : (slow - currentInterval) / Math.max(1, slow - fast);
+      const speedNorm = Math.max(0, Math.min(1, speedNormRaw));
+      const dynamicVolume = Math.max(0.02, Math.min(1, volumeRef.current * (0.35 + 0.65 * speedNorm)));
+      const dynamicRate = 0.92 + speedNorm * 0.38;
       if (tickSound && !hasSoundAssetErrorRef.current) {
+        tickSound.volume(dynamicVolume);
+        tickSound.rate(dynamicRate);
         tickSound.stop();
         tickSound.play();
       } else {
@@ -377,7 +385,7 @@ export default function RouletteWheel({
                   className={`relative z-10 -translate-x-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-center font-black ${
                     isWin
                       ? "border border-yellow-200/80 bg-black/65 text-yellow-100 shadow-[0_0_14px_rgba(250,204,21,0.42)]"
-                      : "border border-black/35 bg-black/55 text-white"
+                      : "border border-transparent bg-transparent text-white"
                   }`}
                   style={{
                     width: `${labelWidthPx}px`,
