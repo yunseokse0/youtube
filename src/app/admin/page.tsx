@@ -2030,6 +2030,52 @@ export default function AdminPage() {
     });
   };
 
+  /** 시그 대전 오버레이 타이머는 식사대전과 동일하게 generalTimer로 동기화 */
+  const stopSigMatchOverlayTimerSynced = () => {
+    setState((prev: AppState) => {
+      const valid = new Set(prev.members.map((mm) => mm.id));
+      const mergedSettings = { ...prev.sigMatchSettings, overlayTimerEndAt: null as number | null };
+      const next: AppState = {
+        ...prev,
+        generalTimer: pauseTimer(prev.generalTimer),
+        sigMatchSettings: {
+          ...mergedSettings,
+          sigMatchPools: normalizeSigMatchPools(mergedSettings.sigMatchPools || [], valid),
+          participantMemberIds: normalizeSigMatchParticipantIds(mergedSettings.participantMemberIds || [], valid),
+        },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const startSigMatchOverlayTimerSynced = () => {
+    const sec = Math.max(0, Number(state.sigMatchSettings?.overlayTimerDurationSec || 0));
+    if (sec <= 0) {
+      alert("먼저 타이머 시간을 1초 이상 입력해 주세요.");
+      return;
+    }
+    setState((prev: AppState) => {
+      const valid = new Set(prev.members.map((mm) => mm.id));
+      const mergedSettings = { ...prev.sigMatchSettings, overlayTimerEndAt: null as number | null };
+      const next: AppState = {
+        ...prev,
+        generalTimer: {
+          remainingTime: sec,
+          isActive: true,
+          lastUpdated: Date.now(),
+        },
+        sigMatchSettings: {
+          ...mergedSettings,
+          sigMatchPools: normalizeSigMatchPools(mergedSettings.sigMatchPools || [], valid),
+          participantMemberIds: normalizeSigMatchParticipantIds(mergedSettings.participantMemberIds || [], valid),
+        },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
   const updateTimerDisplayStyle = (key: "general", patch: Partial<AppState["timerDisplayStyles"]["general"]>) => {
     setState((prev: AppState) => {
       const baseStyles = prev.timerDisplayStyles || {
@@ -2804,30 +2850,28 @@ export default function AdminPage() {
                       <button
                         type="button"
                         className="rounded bg-emerald-700 px-2 py-1 text-xs hover:bg-emerald-600"
-                        onClick={() => {
-                          const sec = Math.max(0, Number(state.sigMatchSettings?.overlayTimerDurationSec || 0));
-                          if (sec <= 0) {
-                            alert("먼저 타이머 시간을 1초 이상 입력해 주세요.");
-                            return;
-                          }
-                          updateSigMatchSettings({ overlayTimerEndAt: Date.now() + sec * 1000 });
-                        }}
+                        onClick={() => startSigMatchOverlayTimerSynced()}
                       >
                         시작
                       </button>
                       <button
                         type="button"
                         className="rounded bg-neutral-700 px-2 py-1 text-xs hover:bg-neutral-600"
-                        onClick={() => updateSigMatchSettings({ overlayTimerEndAt: null })}
+                        onClick={() => stopSigMatchOverlayTimerSynced()}
                       >
                         정지
                       </button>
                       <span className="text-xs text-neutral-400">
-                        상태: {Number(state.sigMatchSettings?.overlayTimerEndAt || 0) > Date.now() ? "진행중" : "대기"}
+                        상태:{" "}
+                        {state.generalTimer?.isActive && getEffectiveRemainingTime(state.generalTimer) > 0
+                          ? "진행중"
+                          : "대기"}
                       </span>
                     </div>
                   </div>
-                  <div className="text-[11px] text-neutral-500">`1:1`과 `n:n` 모두 동일 타이머를 사용하며, 오버레이 중앙 VS 위에 표시됩니다.</div>
+                  <div className="text-[11px] text-neutral-500">
+                    「타이머 제어」의 일반 타이머(generalTimer)와 동일 소스입니다. 시그/식사 오버레이·OBS 여러 소스가 같은 남은 시간을 보게 됩니다. 중앙 VS 위에 표시됩니다.
+                  </div>
                 </div>
                 <div className="rounded-lg border border-white/10 bg-neutral-950/30 p-3 space-y-2">
                   <div>

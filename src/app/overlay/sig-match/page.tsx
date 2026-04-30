@@ -14,6 +14,7 @@ import {
   storageKey,
 } from "@/lib/state";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
+import { getEffectiveRemainingTime } from "@/lib/timer-utils";
 import { formatSigMatchStat, getSigMatchRankings } from "@/lib/settlement-utils";
 
 function tryReadSnapshotFromStorage(snapKey: string | null): Record<string, unknown> | null {
@@ -210,27 +211,20 @@ function SigMatchOverlayInner() {
       : { ids: [], label: "RIGHT", score: 0 };
     return { left, right, mode: "duel" as const };
   }, [ranking, state?.sigMatchSettings?.sigMatchPools, memberMap]);
-  const [timerNow, setTimerNow] = useState(Date.now());
+  /** 식사대전(/overlay/meal-match)과 동일하게 generalTimer + 서버 동기화(lastUpdated) 기준 */
+  const timerState = state?.generalTimer || null;
+  const [, setTimerTick] = useState(0);
   useEffect(() => {
-    const id = window.setInterval(() => setTimerNow(Date.now()), 1000);
+    if (!timerState) return;
+    setTimerTick((v) => v + 1);
+    const id = window.setInterval(() => setTimerTick((v) => v + 1), 1000);
     return () => window.clearInterval(id);
-  }, []);
-  const timerRemainingSec = useMemo(() => {
-    const endAt = Number(state?.sigMatchSettings?.overlayTimerEndAt || 0);
-    if (!Number.isFinite(endAt) || endAt <= 0) return 0;
-    return Math.max(0, Math.ceil((endAt - timerNow) / 1000));
-  }, [state?.sigMatchSettings?.overlayTimerEndAt, timerNow]);
-  const timerDurationSec = Math.max(0, Number(state?.sigMatchSettings?.overlayTimerDurationSec || 0));
-  const timerVisible = true;
-  const timerDisplaySec = Number(state?.sigMatchSettings?.overlayTimerEndAt || 0) > 0
-    ? timerRemainingSec
-    : timerDurationSec;
-  const timerText = useMemo(() => {
-    const sec = Math.max(0, timerDisplaySec);
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  }, [timerDisplaySec]);
+  }, [timerState]);
+  const showSigMatchTimer = state?.matchTimerEnabled?.general !== false;
+  const remainingSec = timerState ? getEffectiveRemainingTime(timerState) : 0;
+  const timerPaused = Boolean(timerState && !timerState.isActive);
+  const timerVisible = showSigMatchTimer;
+  const timerText = `${String(Math.floor(Math.max(0, remainingSec) / 60)).padStart(2, "0")}:${String(Math.max(0, remainingSec) % 60).padStart(2, "0")}`;
   const timerStyleFromState = state?.timerDisplayStyles?.general;
   const timerOutlineColor = (sp.get("timerOutlineColor") || "").trim() || timerStyleFromState?.outlineColor || "rgba(6, 12, 24, 0.95)";
   const timerOutlineWidth = (() => {
@@ -276,7 +270,11 @@ function SigMatchOverlayInner() {
       >
         <div className="relative mb-4 p-3">
           {timerVisible ? (
-            <div className="absolute left-1/2 top-1 -translate-x-1/2 rounded-md bg-red-500/85 px-3 py-0.5 text-2xl font-black leading-none text-white shadow-[0_0_12px_rgba(239,68,68,0.45)]">
+            <div
+              className={`absolute left-1/2 top-1 -translate-x-1/2 rounded-md px-3 py-0.5 text-2xl font-black leading-none text-white shadow-[0_0_12px_rgba(239,68,68,0.45)] ${
+                timerPaused ? "bg-neutral-600/90" : "bg-red-500/85"
+              }`}
+            >
               <span style={timerTextOutlineStyle}>{timerText}</span>
             </div>
           ) : null}
