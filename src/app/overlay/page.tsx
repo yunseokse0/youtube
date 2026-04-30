@@ -1045,6 +1045,8 @@ function Timer({
   fontColor,
   bgColor,
   borderColor,
+  outlineColor,
+  outlineWidth,
   bgOpacity,
 }: {
   elapsed: string | null;
@@ -1052,10 +1054,15 @@ function Timer({
   fontColor?: string;
   bgColor?: string;
   borderColor?: string;
+  outlineColor?: string;
+  outlineWidth?: number;
   bgOpacity?: number;
 }) {
   if (!elapsed) return null;
   const hasCustomFontColor = Boolean(fontColor && fontColor.trim());
+  const hasCustomOutlineColor = Boolean(outlineColor && outlineColor.trim());
+  const effectiveOutlineColor = hasCustomOutlineColor ? outlineColor : "rgba(6, 12, 24, 0.95)";
+  const effectiveOutlineWidth = Number.isFinite(outlineWidth) ? Math.max(0, Math.min(3, outlineWidth as number)) : 0.8;
   return (
     <div
       className="inline-flex min-w-[4.5ch] items-center justify-center rounded-full px-4 py-1.5 backdrop-blur-md"
@@ -1073,6 +1080,9 @@ function Timer({
           fontSize,
           lineHeight: 1.1,
           color: hasCustomFontColor ? fontColor : undefined,
+          textShadow: `0 0 1px ${effectiveOutlineColor}, 0 1px 0 ${effectiveOutlineColor}, 0 -1px 0 ${effectiveOutlineColor}, 1px 0 0 ${effectiveOutlineColor}, -1px 0 0 ${effectiveOutlineColor}`,
+          WebkitTextStroke: `${effectiveOutlineWidth}px ${effectiveOutlineColor}`,
+          paintOrder: "stroke fill",
         }}
       >
         {elapsed}
@@ -1407,6 +1417,13 @@ function OverlayInner() {
   const timerFontColor = (sp.get("timerFontColor") || "").trim() || timerStyleFromState?.fontColor || undefined;
   const timerBgColor = (sp.get("timerBgColor") || "").trim() || timerStyleFromState?.bgColor || undefined;
   const timerBorderColor = (sp.get("timerBorderColor") || "").trim() || timerStyleFromState?.borderColor || undefined;
+  const timerOutlineColor = (sp.get("timerOutlineColor") || "").trim() || timerStyleFromState?.outlineColor || undefined;
+  const timerOutlineWidth = (() => {
+    const raw = (sp.get("timerOutlineWidth") || "").trim();
+    if (!raw) return timerStyleFromState?.outlineWidth ?? 0.8;
+    const n = parseFloat(raw);
+    return Number.isFinite(n) ? Math.max(0, Math.min(3, n)) : (timerStyleFromState?.outlineWidth ?? 0.8);
+  })();
   const timerBgOpacity = (() => {
     const raw = (sp.get("timerBgOpacity") || "").trim();
     if (!raw) return timerStyleFromState?.bgOpacity ?? 40;
@@ -2440,6 +2457,8 @@ function OverlayInner() {
               fontColor={timerFontColor}
               bgColor={timerBgColor}
               borderColor={timerBorderColor}
+              outlineColor={timerOutlineColor}
+              outlineWidth={timerOutlineWidth}
               bgOpacity={timerBgOpacity}
             />
           </div>

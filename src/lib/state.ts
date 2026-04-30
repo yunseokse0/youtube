@@ -611,6 +611,8 @@ function defaultTimerDisplayStyle(): TimerDisplayStyle {
     fontColor: "",
     bgColor: "",
     borderColor: "",
+    outlineColor: "",
+    outlineWidth: 0.8,
     bgOpacity: 40,
     scalePercent: 100,
   };
@@ -620,11 +622,14 @@ function normalizeTimerDisplayStyle(input: unknown): TimerDisplayStyle {
   const v = input && typeof input === "object" ? (input as Partial<TimerDisplayStyle>) : {};
   const op = Number(v.bgOpacity);
   const scale = Number(v.scalePercent);
+  const outlineWidth = Number(v.outlineWidth);
   return {
     showHours: typeof v.showHours === "boolean" ? v.showHours : false,
     fontColor: typeof v.fontColor === "string" ? v.fontColor : "",
     bgColor: typeof v.bgColor === "string" ? v.bgColor : "",
     borderColor: typeof v.borderColor === "string" ? v.borderColor : "",
+    outlineColor: typeof v.outlineColor === "string" ? v.outlineColor : "",
+    outlineWidth: Number.isFinite(outlineWidth) ? Math.max(0, Math.min(3, Number(outlineWidth.toFixed(1)))) : 0.8,
     bgOpacity: Number.isFinite(op) ? Math.max(0, Math.min(100, Math.round(op))) : 40,
     scalePercent: Number.isFinite(scale) ? Math.max(50, Math.min(250, Math.round(scale))) : 100,
   };

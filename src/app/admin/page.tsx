@@ -2036,7 +2036,7 @@ export default function AdminPage() {
   const updateTimerDisplayStyle = (key: "general", patch: Partial<AppState["timerDisplayStyles"]["general"]>) => {
     setState((prev: AppState) => {
       const baseStyles = prev.timerDisplayStyles || {
-        general: { showHours: false, fontColor: "", bgColor: "", borderColor: "", bgOpacity: 40, scalePercent: 100 },
+        general: { showHours: false, fontColor: "", bgColor: "", borderColor: "", outlineColor: "", outlineWidth: 0.8, bgOpacity: 40, scalePercent: 100 },
       };
       const next: AppState = {
         ...prev,
@@ -4566,6 +4566,8 @@ export default function AdminPage() {
                     fontColor: "",
                     bgColor: "",
                     borderColor: "",
+                    outlineColor: "",
+                    outlineWidth: 0.8,
                     bgOpacity: 40,
                     scalePercent: 100,
                   };
@@ -4695,6 +4697,49 @@ export default function AdminPage() {
                             onChange={(e) => updateTimerDisplayStyle(timerDef.flag, { borderColor: e.target.value })}
                           />
                           <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updateTimerDisplayStyle(timerDef.flag, { borderColor: "" })}>기본</button>
+                        </div>
+                        <label className="text-xs text-neutral-400">글자 외곽선 색상</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            className="w-14 h-9 rounded bg-neutral-900/80 border border-white/10"
+                            value={(timerStyle.outlineColor as any) || "#000000"}
+                            onChange={(e) => updateTimerDisplayStyle(timerDef.flag, { outlineColor: e.target.value })}
+                          />
+                          <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updateTimerDisplayStyle(timerDef.flag, { outlineColor: "" })}>기본</button>
+                        </div>
+                        <label className="text-xs text-neutral-400">글자 외곽선 두께</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="range"
+                            min="0"
+                            max="3"
+                            step="0.1"
+                            value={String(timerStyle.outlineWidth ?? 0.8)}
+                            onChange={(e) =>
+                              updateTimerDisplayStyle(timerDef.flag, {
+                                outlineWidth: Math.max(0, Math.min(3, parseFloat(e.target.value || "0.8") || 0.8)),
+                              })
+                            }
+                            className="flex-1 accent-violet-500"
+                          />
+                          <input
+                            className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                            value={String(timerStyle.outlineWidth ?? 0.8)}
+                            onChange={(e) =>
+                              updateTimerDisplayStyle(timerDef.flag, {
+                                outlineWidth: Math.max(0, Math.min(3, parseFloat(e.target.value.replace(/[^\d.]/g, "") || "0.8") || 0.8)),
+                              })
+                            }
+                          />
+                          <span className="text-xs text-neutral-500">px</span>
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
+                            onClick={() => updateTimerDisplayStyle(timerDef.flag, { outlineWidth: 0.8 })}
+                          >
+                            기본
+                          </button>
                         </div>
                         <label className="text-xs text-neutral-400">배경 투명도</label>
                         <div className="flex items-center gap-2">

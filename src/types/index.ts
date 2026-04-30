@@ -187,6 +187,8 @@ export type TimerDisplayStyle = {
   fontColor: string;
   bgColor: string;
   borderColor: string;
+  outlineColor: string;
+  outlineWidth: number;
   bgOpacity: number;
   /** 타이머 표시 크기(%) */
   scalePercent: number;
