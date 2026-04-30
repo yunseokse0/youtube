@@ -1196,6 +1196,7 @@ function OverlayInner() {
   const demoMode = ((sp.get("demo") || "").toLowerCase() === "true") || ((sp.get("test") || "").toLowerCase() === "true");
   useEffect(() => {
     let cancelled = false;
+    if (!presetId) return;
     const needFetch = presetId && (!activePreset || (overlayPresets.length === 0 && localPresets.length === 0));
     if (!needFetch) return;
     const q = new URLSearchParams();
@@ -1224,7 +1225,9 @@ function OverlayInner() {
   const autoFont = (sp.get("autoFont") || "false").toLowerCase() === "true";
   const tight = (sp.get("tight") || "false").toLowerCase() === "true";
   const verticalParam = (sp.get("vertical") || "false").toLowerCase() === "true";
-  const [isVertical, setIsVertical] = useState(verticalParam);
+  const [isVertical, setIsVertical] = useState(
+    () => verticalParam || (typeof window !== "undefined" && window.innerHeight > window.innerWidth)
+  );
   useEffect(() => {
     if (verticalParam) { setIsVertical(true); return; }
     const check = () => setIsVertical(typeof window !== "undefined" && window.innerHeight > window.innerWidth);
@@ -2215,6 +2218,13 @@ function OverlayInner() {
         }
       ` }} />
     );
+    // If a preset id is explicitly requested, hold first paint until that preset resolves.
+    // This prevents reloading-time layout jumps caused by default render -> preset render.
+    const waitForPreset = Boolean(presetId) && !activePreset;
+    if (waitForPreset) {
+      return <div className="overlay-root" style={{ position: "fixed", inset: 0, background: "transparent" }} />;
+    }
+
     return (
       <div style={viewportWrapperStyle} className={`overlay-root ${centerFixed ? "overlay-center-fixed" : ""}`}>
         {scaleStyleTag}
