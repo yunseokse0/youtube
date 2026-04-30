@@ -6,8 +6,10 @@ import { Howl } from "howler";
 import type { SigItem } from "@/types";
 import RouletteWheel from "@/components/sig-sales/RouletteWheel";
 import ResultOverlay from "@/components/sig-sales/ResultOverlay";
+import SigBoardRolling from "@/components/sig-sales/SigBoardRolling";
 import { loadStateFromApi, type AppState } from "@/lib/state";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
+import { resolveSigImageUrl } from "@/lib/constants";
 import { ONE_SHOT_SIG_ID, SOUND_ASSETS_ENABLED, SPIN_SOUND_PATHS } from "@/lib/sig-roulette";
 import { useSigSalesState } from "@/hooks/useSigSalesState";
 import { useImagePreload } from "@/hooks/useImagePreload";
@@ -16,7 +18,8 @@ const POLL_MS = 1000;
 const STEP_CONFIRM_PAUSE_MS = 3000;
 const CONFIRMED_VISIBLE_SLOTS = 5;
 const MIN_ONE_SHOT_SIGS = 2;
-const RECENT_SPIN_WINDOW_MS = 20_000;
+/** OBS 소스 로드 지연 등으로 오버레이가 늦게 붙어도 같은 회차 복원 허용 */
+const RECENT_SPIN_WINDOW_MS = 180_000;
 const DEMO_POOL = [
   { id: "demo_1", name: "애교", price: 77000, imageUrl: "/images/sigs/애교.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
   { id: "demo_2", name: "댄스", price: 100000, imageUrl: "/images/sigs/댄스.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
@@ -65,6 +68,12 @@ export default function SigSalesOverlayPage() {
     return Math.max(5, Math.min(20, n));
   })();
   const rouletteDemo = sp.get("rouletteDemo") === "1" || sp.get("rouletteDemo") === "true";
+  /** 기본: 시그 보드 롤링 표시. 회전판만 필요하면 hideSigBoard=1 또는 sigBoard=0 */
+  const hideSigBoard =
+    sp.get("hideSigBoard") === "1" ||
+    String(sp.get("hideSigBoard") || "").toLowerCase() === "true" ||
+    sp.get("sigBoard") === "0" ||
+    String(sp.get("sigBoard") || "").toLowerCase() === "false";
   const overlayScalePct = (() => {
     const raw = sp.get("scalePct") || sp.get("zoomPct") || "100";
     const n = parseInt(raw.replace(/[^\d]/g, ""), 10);
@@ -240,6 +249,8 @@ export default function SigSalesOverlayPage() {
     return [...wheelItems.slice(0, Math.max(0, wheelItems.length - 1)), found];
   }, [wheelItems, demoSpin?.resultId, machine.resultId, activeNormalPool]);
   const displaySelectedSigs = useMemo(() => {
+    // 서버 phase가 IDLE인데 이전 회차 selectedSigs만 남은 경우가 있어 표시하지 않음(회전판이 안 돌았는데 숨겨지는 현상 방지)
+    if (!rouletteDemo && machine.phase === "IDLE") return [];
     if (stagedSelected.length > 0) return stagedSelected.slice(0, CONFIRMED_VISIBLE_SLOTS);
     const inStepFlow =
       Boolean(pendingLanding) ||
@@ -261,7 +272,13 @@ export default function SigSalesOverlayPage() {
     if (machine.selectedSigs?.length) return Math.max(1, Math.min(CONFIRMED_VISIBLE_SLOTS, machine.selectedSigs.length));
     return 1;
   }, [pendingLanding?.selected, machine.selectedSigs]);
+  /** IDLE + 남은 selectedSigs만으로는 숨기지 않음(방송 소스 새로 열었을 때 바로 사라지는 버그) */
+  const sessionAllowsHideWheel =
+    machine.phase === "LANDED" ||
+    machine.phase === "CONFIRM_PENDING" ||
+    machine.phase === "CONFIRMED";
   const hideWheelAfterComplete =
+    sessionAllowsHideWheel &&
     displaySelectedSigs.length >= completedTargetCount &&
     !pendingLanding &&
     !demoSpin &&
@@ -270,12 +287,12 @@ export default function SigSalesOverlayPage() {
   const oneShotImageUrl = useMemo(() => {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     const fromOneShot = (oneShotItem?.imageUrl || "").trim();
-    if (fromOneShot) return fromOneShot;
-    const fromSelected = (displaySelectedSigs.find((x) => (x.imageUrl || "").trim())?.imageUrl || "").trim();
-    if (fromSelected) return fromSelected;
-    const fromPool = (activeNormalPool.find((x) => (x.imageUrl || "").trim())?.imageUrl || "").trim();
-    if (fromPool) return fromPool;
-    return "/images/sigs/dummy-sig.svg";
+    if (fromOneShot) return resolveSigImageUrl(oneShotItem?.name || "한방 시그", fromOneShot);
+    const pick = displaySelectedSigs.find((x) => (x.imageUrl || "").trim());
+    if (pick) return resolveSigImageUrl(pick.name, pick.imageUrl);
+    const poolPick = activeNormalPool.find((x) => (x.imageUrl || "").trim());
+    if (poolPick) return resolveSigImageUrl(poolPick.name, poolPick.imageUrl);
+    return resolveSigImageUrl("", "");
   }, [state?.sigInventory, displaySelectedSigs, activeNormalPool]);
   const displayResultId = useMemo(() => {
     if (displaySelectedSigs.length === 0) return null;
@@ -285,7 +302,7 @@ export default function SigSalesOverlayPage() {
     if (!id) return "";
     const pool = [...(stagedSelected || []), ...(machine.selectedSigs || []), ...(activeNormalPool || []), ...(DEMO_POOL || [])];
     const found = pool.find((item) => item.id === id);
-    return found?.imageUrl || "";
+    return resolveSigImageUrl(found?.name || "", found?.imageUrl || "");
   }, [stagedSelected, machine.selectedSigs, activeNormalPool]);
   const hasServerSpinToPlay = useMemo(() => {
     return (
@@ -335,7 +352,31 @@ export default function SigSalesOverlayPage() {
     setSpinStep(0);
     setStagedSelected([]);
     setDemoSpin({ startedAt: Date.now(), resultId: selectedFromServer[0]?.id || machine.resultId || null });
-  }, [machine.phase, machine.selectedSigs, machine.resultId, pendingLanding, demoSpin]);
+  }, [
+    machine.phase,
+    machine.selectedSigs,
+    machine.resultId,
+    pendingLanding,
+    demoSpin,
+    machine.isRolling,
+    machine.startedAt,
+    machine.sessionId,
+  ]);
+
+  useEffect(() => {
+    if (rouletteDemo) return;
+    // appState 수신 전 기본 IDLE이면 건드리지 않음(HYDRATE SPINNING과 경쟁 방지)
+    if (!state) return;
+    if (machine.phase !== "IDLE") return;
+    dispatch({ type: "RESET" });
+    setSpinStep(0);
+    setStagedSelected([]);
+    setPendingLanding(null);
+    setDemoSpin(null);
+    setCurrentSignImageUrl("");
+    transitionHandledKeyRef.current = "";
+    handledSpinKeyRef.current = "";
+  }, [machine.phase, state, rouletteDemo]);
 
   useEffect(() => {
     if (machine.phase !== "SPINNING") return;
@@ -352,10 +393,19 @@ export default function SigSalesOverlayPage() {
   }, [machine.phase, machine.startedAt, machine.sessionId, machine.resultId]);
 
   useEffect(() => {
-    if (machine.phase !== "SPINNING" && machine.phase !== "IDLE" && machine.phase !== "LANDED" && machine.phase !== "CONFIRMED") return;
-    if (machine.selectedSigs.length > 0) {
-      setShowResultPanel(true);
+    if (machine.phase === "IDLE") {
+      setShowResultPanel(false);
+      return;
     }
+    if (
+      machine.phase !== "SPINNING" &&
+      machine.phase !== "LANDED" &&
+      machine.phase !== "CONFIRMED" &&
+      machine.phase !== "CONFIRM_PENDING"
+    ) {
+      return;
+    }
+    if (machine.selectedSigs.length > 0) setShowResultPanel(true);
   }, [machine.phase, machine.selectedSigs.length]);
 
   // IDLE 동기화 시에도 방송 화면 결과를 유지한다.
@@ -374,7 +424,7 @@ export default function SigSalesOverlayPage() {
     const queue = pendingLanding?.selected || [];
     queue.forEach((item) => {
       const img = new Image();
-      img.src = item.imageUrl || "/images/sigs/dummy-sig.svg";
+      img.src = resolveSigImageUrl(item.name, item.imageUrl);
     });
   }, [pendingLanding]);
 
@@ -410,6 +460,9 @@ export default function SigSalesOverlayPage() {
   return (
     <main className="min-h-screen bg-transparent p-4 text-white">
       <div className="mx-auto max-w-[1280px] space-y-4">
+        {!hideSigBoard && state && (state.sigInventory || []).length > 0 ? (
+          <SigBoardRolling inventory={state.sigInventory || []} soldOutStampUrl={soldOutStampUrl} className="pb-2" />
+        ) : null}
         <section style={{ ...overlayScaleStyle, backgroundColor: "transparent" }} className="relative p-0">
           {lastConfirmedText ? (
             <div

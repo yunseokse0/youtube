@@ -4284,34 +4284,15 @@ export default function AdminPage() {
                 </div>
               </div>
               <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <h3 className="text-base font-semibold">시그 판매 관리</h3>
-                    <p className="text-xs text-neutral-400">인벤토리에서 이번 방송 노출 시그를 선택하고 판매량을 실시간 조정합니다.</p>
-                  </div>
-                  <div className="text-right space-y-2 max-w-full">
-                    <div className="text-xs text-neutral-400 flex flex-wrap items-center justify-end gap-2">
-                      <span>오버레이 URL:</span>
-                      <code className="text-neutral-300 break-all text-left">
-                        /overlay/sig-board?u={user?.id || "finalent"}
-                      </code>
-                      <button
-                        type="button"
-                        className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-sig-board" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
-                        onClick={() => {
-                          const u = `${window.location.origin}/overlay/sig-board?u=${user?.id || "finalent"}`;
-                          void copyUrl(u, "dash-sig-board");
-                        }}
-                      >
-                        {copiedId === "dash-sig-board" ? "복사됨!" : "URL 복사"}
-                      </button>
-                    </div>
-                    <button
-                      className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs"
-                      onClick={() => window.open(`/overlay/sig-board?u=${user?.id || "finalent"}`, "_blank", "noopener,noreferrer")}
-                    >
-                      실시간 오버레이 열기
-                    </button>
+                    <p className="text-xs text-neutral-400">
+                      인벤토리에서 이번 방송 노출 시그를 선택하고 판매량을 실시간 조정합니다. 방송은 위 회전판 오버레이 URL(
+                      <code>/overlay/sig-sales</code>)만 쓰면 되며, 「보드 노출」로
+                      체크된 시그가 있으면 그 롤링 보드가 같은 화면 상단에 자동으로 붙습니다. 회전판만 보이게 하려면 URL에{" "}
+                      <code className="text-neutral-300">hideSigBoard=1</code>만 추가하면 됩니다.
+                    </p>
                   </div>
                 </div>
                 <div className="rounded border border-white/10 bg-black/25 p-2 flex flex-wrap items-center gap-2">
@@ -4651,7 +4632,7 @@ export default function AdminPage() {
                   })}
                 </div>
                 <div className="text-xs text-neutral-500">
-                  「보드 노출」은 시그 보드 롤링,「판매 활성」은 /overlay/sig-sales 판매 그리드에 표시됩니다. 시그 추가/멤버 지정/판매량 조절은 즉시 `/api/state`를 통해 Redis에 반영됩니다.
+                  「보드 노출」은 <code>/overlay/sig-sales</code> 상단 롤링 그리드,「판매 활성」은 회전판 메뉴 후보에 포함됩니다. 시그 추가/멤버 지정/판매량 조절은 즉시 `/api/state`를 통해 Redis에 반영됩니다.
                 </div>
               </div>
               <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
