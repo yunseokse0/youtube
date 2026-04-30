@@ -90,6 +90,8 @@ export function normalizeRouletteState(raw: unknown): RouletteState {
     startedAt: 0,
     overlayOpacity: 0.85,
     menuCount: 10,
+    menuFillFromAllActive: true,
+    menuFillFromDemo: true,
     oneShotResult: null,
   };
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return def;
@@ -141,6 +143,8 @@ export function normalizeRouletteState(raw: unknown): RouletteState {
   const overlayOpacity = Number.isFinite(overlayOpacityRaw) ? Math.max(0.4, Math.min(1, overlayOpacityRaw)) : 0.85;
   const menuCountRaw = Number(o.menuCount);
   const menuCount = Number.isFinite(menuCountRaw) ? Math.max(5, Math.min(20, Math.floor(menuCountRaw))) : 10;
+  const menuFillFromAllActive = typeof o.menuFillFromAllActive === "boolean" ? o.menuFillFromAllActive : true;
+  const menuFillFromDemo = typeof o.menuFillFromDemo === "boolean" ? o.menuFillFromDemo : true;
   const oneShotRaw = o.oneShotResult;
   const oneShotResult =
     oneShotRaw && typeof oneShotRaw === "object"
@@ -185,6 +189,8 @@ export function normalizeRouletteState(raw: unknown): RouletteState {
     oneShotResult,
     overlayOpacity,
     menuCount,
+    menuFillFromAllActive,
+    menuFillFromDemo,
     sessionId: typeof o.sessionId === "string" ? o.sessionId : undefined,
     lastFinishedAt: Number.isFinite(Number(o.lastFinishedAt)) ? Math.max(0, Math.floor(Number(o.lastFinishedAt))) : undefined,
     historyLogs,

@@ -92,6 +92,10 @@ export type RouletteState = {
   overlayOpacity?: number;
   /** 회전판에 노출할 메뉴 수(5~20) */
   menuCount?: number;
+  /** 메뉴가 부족할 때 전체 활성 시그에서 자동 보충 */
+  menuFillFromAllActive?: boolean;
+  /** 메뉴가 여전히 부족할 때 데모 풀로 자동 보충 */
+  menuFillFromDemo?: boolean;
   /** 최근 세션 식별자 */
   sessionId?: string;
   /** 최근 확정 로그 */

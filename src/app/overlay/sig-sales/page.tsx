@@ -15,6 +15,7 @@ import { useImagePreload } from "@/hooks/useImagePreload";
 const POLL_MS = 1000;
 const STEP_CONFIRM_PAUSE_MS = 3000;
 const CONFIRMED_VISIBLE_SLOTS = 5;
+const RECENT_SPIN_WINDOW_MS = 90_000;
 const DEMO_POOL = [
   { id: "demo_1", name: "애교", price: 77000, imageUrl: "/images/sigs/애교.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
   { id: "demo_2", name: "댄스", price: 100000, imageUrl: "/images/sigs/댄스.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
@@ -170,6 +171,18 @@ export default function SigSalesOverlayPage() {
     if (Number.isFinite(persisted)) return Math.max(5, Math.min(20, Math.floor(persisted)));
     return 10;
   }, [menuCountParam, state?.rouletteState?.menuCount]);
+  const menuFillFromAllActive = useMemo(() => {
+    const raw = (sp.get("menuFillFromAllActive") || "").toLowerCase();
+    if (raw === "true" || raw === "1") return true;
+    if (raw === "false" || raw === "0") return false;
+    return state?.rouletteState?.menuFillFromAllActive !== false;
+  }, [sp, state?.rouletteState?.menuFillFromAllActive]);
+  const menuFillFromDemo = useMemo(() => {
+    const raw = (sp.get("menuFillFromDemo") || "").toLowerCase();
+    if (raw === "true" || raw === "1") return true;
+    if (raw === "false" || raw === "0") return false;
+    return state?.rouletteState?.menuFillFromDemo !== false;
+  }, [sp, state?.rouletteState?.menuFillFromDemo]);
   const activeNormalPool = useMemo(() => {
     if (rouletteDemo) return DEMO_POOL;
     if (!state) return [];
@@ -182,12 +195,36 @@ export default function SigSalesOverlayPage() {
         (!memberFilterId || (x.memberId || "") === memberFilterId)
     );
   }, [state, rouletteDemo, memberFilterId]);
+  const wheelDisplayPool = useMemo(() => {
+    // 메뉴는 최소 5개를 보장하고, 최대는 사용자가 설정한 menuCount까지 채운다.
+    const targetCount = Math.max(CONFIRMED_VISIBLE_SLOTS, menuCount);
+    const unique = new Map<string, SigItem>();
+    for (const item of activeNormalPool) unique.set(item.id, item);
+    if (menuFillFromAllActive && unique.size < targetCount && state) {
+      const excluded = new Set((state.sigSalesExcludedIds || []).map((x) => String(x)));
+      const broadActivePool = (state.sigInventory || []).filter(
+        (x) => x.isActive && x.id !== ONE_SHOT_SIG_ID && !excluded.has(x.id)
+      );
+      for (const item of broadActivePool) {
+        unique.set(item.id, item);
+        if (unique.size >= targetCount) break;
+      }
+    }
+    if (menuFillFromDemo && unique.size < targetCount) {
+      const fillers = DEMO_POOL;
+      for (const item of fillers) {
+        unique.set(item.id, item);
+        if (unique.size >= targetCount) break;
+      }
+    }
+    return Array.from(unique.values());
+  }, [activeNormalPool, menuCount, state, menuFillFromAllActive, menuFillFromDemo]);
   const wheelItems = useMemo(() => {
-    const base = activeNormalPool.slice(0, menuCount);
+    const base = wheelDisplayPool.slice(0, menuCount);
     if (base.length > 0) return base;
     if (rouletteDemo) return DEMO_POOL.slice(0, menuCount);
     return [];
-  }, [activeNormalPool, rouletteDemo, menuCount]);
+  }, [wheelDisplayPool, rouletteDemo, menuCount]);
   const wheelItemsWithResult = useMemo(() => {
     const resultId = demoSpin?.resultId || machine.resultId;
     if (!resultId) return wheelItems;
@@ -214,11 +251,22 @@ export default function SigSalesOverlayPage() {
     if (displaySelectedSigs.length < CONFIRMED_VISIBLE_SLOTS) return null;
     return buildOneShotFromSelected(displaySelectedSigs);
   }, [displaySelectedSigs]);
-  const hideWheelAfterComplete = showResultPanel && displaySelectedSigs.length >= CONFIRMED_VISIBLE_SLOTS;
+  const hideWheelAfterComplete =
+    displaySelectedSigs.length >= CONFIRMED_VISIBLE_SLOTS &&
+    !pendingLanding &&
+    !demoSpin &&
+    wheelPhase !== "spinning" &&
+    wheelPhase !== "settling";
   const oneShotImageUrl = useMemo(() => {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
-    return oneShotItem?.imageUrl || "/images/sigs/dummy-sig.svg";
-  }, [state?.sigInventory]);
+    const fromOneShot = (oneShotItem?.imageUrl || "").trim();
+    if (fromOneShot) return fromOneShot;
+    const fromSelected = (displaySelectedSigs.find((x) => (x.imageUrl || "").trim())?.imageUrl || "").trim();
+    if (fromSelected) return fromSelected;
+    const fromPool = (activeNormalPool.find((x) => (x.imageUrl || "").trim())?.imageUrl || "").trim();
+    if (fromPool) return fromPool;
+    return "/images/sigs/dummy-sig.svg";
+  }, [state?.sigInventory, displaySelectedSigs, activeNormalPool]);
   const displayResultId = useMemo(() => {
     if (displaySelectedSigs.length === 0) return null;
     return (demoSpin?.resultId || machine.resultId || displaySelectedSigs[displaySelectedSigs.length - 1]?.id || null) as string | null;
@@ -254,6 +302,9 @@ export default function SigSalesOverlayPage() {
     if (pendingLanding || demoSpin) return;
     const selectedFromServer = (machine.selectedSigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
     if (machine.phase !== "SPINNING" || selectedFromServer.length === 0) return;
+    const startedAt = Number(machine.startedAt || 0);
+    const recentEnough = startedAt > 0 && Date.now() - startedAt <= RECENT_SPIN_WINDOW_MS;
+    if (!machine.isRolling || !recentEnough) return;
     const derivedOneShot = buildOneShotFromSelected(selectedFromServer);
     setPendingLanding({
       selected: selectedFromServer,
@@ -279,7 +330,7 @@ export default function SigSalesOverlayPage() {
   }, [machine.phase, machine.startedAt, machine.sessionId, machine.resultId]);
 
   useEffect(() => {
-    if (machine.phase !== "SPINNING" && machine.phase !== "IDLE") return;
+    if (machine.phase !== "SPINNING" && machine.phase !== "IDLE" && machine.phase !== "LANDED" && machine.phase !== "CONFIRMED") return;
     if (machine.selectedSigs.length > 0) {
       setShowResultPanel(true);
     }
@@ -418,7 +469,7 @@ export default function SigSalesOverlayPage() {
             selectedSigs={displaySelectedSigs}
             soldOutStampUrl={soldOutStampUrl}
             oneShot={displayOneShot ? { name: displayOneShot.name, price: displayOneShot.price } : null}
-            signImageUrl={currentSignImageUrl || oneShotImageUrl}
+            signImageUrl={oneShotImageUrl || currentSignImageUrl}
             showOneShotReveal={showOneShotReveal}
             className={hideWheelAfterComplete ? "absolute inset-x-0 top-2 z-30" : "mt-2"}
           />

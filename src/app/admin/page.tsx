@@ -2420,6 +2420,33 @@ export default function AdminPage() {
     const rec = await appendSettlementRecordAndSync(title, state.members, accountRatio, toonRatio, taxRate, memberRatioOverrides, state.donors, user?.id);
     router.push(`/settlements/${rec.id}`);
   };
+  const sigImageUrlIssues = (state.sigInventory || [])
+    .map((item) => {
+      const raw = String(item.imageUrl || "").trim();
+      const isLegacyUploads = isLegacyLocalSigImageUrl(raw);
+      const isBroken = isBrokenSigImageUrl(raw);
+      const isEmpty = raw.length === 0;
+      if (!isLegacyUploads && !isBroken && !isEmpty) return null;
+      return {
+        id: item.id,
+        name: item.name || "(이름 없음)",
+        raw,
+        isLegacyUploads,
+        isBroken,
+        isEmpty,
+      };
+    })
+    .filter(Boolean) as Array<{
+    id: string;
+    name: string;
+    raw: string;
+    isLegacyUploads: boolean;
+    isBroken: boolean;
+    isEmpty: boolean;
+  }>;
+  const legacyUploadsCount = sigImageUrlIssues.filter((x) => x.isLegacyUploads).length;
+  const brokenImageUrlCount = sigImageUrlIssues.filter((x) => x.isBroken).length;
+  const emptyImageUrlCount = sigImageUrlIssues.filter((x) => x.isEmpty).length;
 
   return (
     <main
@@ -4057,6 +4084,52 @@ export default function AdminPage() {
                       });
                     }}
                   />
+                  <label className="ml-2 inline-flex items-center gap-1 rounded border border-white/10 bg-black/20 px-2 py-1 text-[11px] text-neutral-300">
+                    <input
+                      type="checkbox"
+                      checked={state.rouletteState?.menuFillFromAllActive !== false}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setState((prev) => {
+                          const prevVal = prev.rouletteState?.menuFillFromAllActive !== false;
+                          if (prevVal === checked) return prev;
+                          const next = {
+                            ...prev,
+                            rouletteState: {
+                              ...prev.rouletteState,
+                              menuFillFromAllActive: checked,
+                            },
+                          };
+                          persistState(next);
+                          return next;
+                        });
+                      }}
+                    />
+                    전체 활성 시그 보충
+                  </label>
+                  <label className="inline-flex items-center gap-1 rounded border border-white/10 bg-black/20 px-2 py-1 text-[11px] text-neutral-300">
+                    <input
+                      type="checkbox"
+                      checked={state.rouletteState?.menuFillFromDemo !== false}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setState((prev) => {
+                          const prevVal = prev.rouletteState?.menuFillFromDemo !== false;
+                          if (prevVal === checked) return prev;
+                          const next = {
+                            ...prev,
+                            rouletteState: {
+                              ...prev.rouletteState,
+                              menuFillFromDemo: checked,
+                            },
+                          };
+                          persistState(next);
+                          return next;
+                        });
+                      }}
+                    />
+                    데모 풀 보충
+                  </label>
                   <code className="text-neutral-300 break-all">
                     /overlay/sig-sales?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}&wheelScalePct=85&menuCount={getSigSalesMenuCount()}{selectedMemberId ? `&memberId=${selectedMemberId}` : ""}
                   </code>
@@ -4413,6 +4486,38 @@ export default function AdminPage() {
                       </div>
                     </div>
                   ) : null}
+                  <div className={`rounded border px-3 py-2 ${sigImageUrlIssues.length > 0 ? "border-rose-400/40 bg-rose-900/20" : "border-emerald-400/30 bg-emerald-900/20"}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-sm font-semibold">
+                        시그 이미지 URL 자동 탐지
+                      </div>
+                      <div className={`text-xs ${sigImageUrlIssues.length > 0 ? "text-rose-200" : "text-emerald-200"}`}>
+                        {sigImageUrlIssues.length > 0 ? `문제 ${sigImageUrlIssues.length}건` : "문제 없음"}
+                      </div>
+                    </div>
+                    <div className="mt-1 text-[11px] text-neutral-300">
+                      /uploads 경로, 깨진 URL, 빈 URL을 자동 감지합니다.
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                      <span className="rounded bg-black/35 px-2 py-1 text-neutral-200">legacy /uploads: {legacyUploadsCount}</span>
+                      <span className="rounded bg-black/35 px-2 py-1 text-neutral-200">깨진 URL: {brokenImageUrlCount}</span>
+                      <span className="rounded bg-black/35 px-2 py-1 text-neutral-200">빈 URL: {emptyImageUrlCount}</span>
+                    </div>
+                    {sigImageUrlIssues.length > 0 ? (
+                      <div className="mt-2 max-h-28 overflow-auto rounded border border-white/10 bg-black/30 p-2 text-[11px] text-rose-100">
+                        {sigImageUrlIssues.map((issue) => (
+                          <div key={`sig-url-issue-${issue.id}`} className="mb-1 last:mb-0">
+                            <span className="font-semibold">{issue.name}</span>
+                            {" · "}
+                            {issue.isLegacyUploads ? "[legacy /uploads] " : ""}
+                            {issue.isBroken ? "[깨진 URL] " : ""}
+                            {issue.isEmpty ? "[빈 URL] " : ""}
+                            <span className="text-rose-200/80">{issue.raw || "(empty)"}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                   {(state.sigInventory || []).map((item) => {
                     const isOneShot = item.id === ONE_SHOT_SIG_ID;
                     const hasLegacyLocalUrl = isLegacyLocalSigImageUrl(item.imageUrl);

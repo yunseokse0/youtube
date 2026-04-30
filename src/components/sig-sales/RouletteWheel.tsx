@@ -80,8 +80,9 @@ export default function RouletteWheel({
   const wheelSizePx = Math.round(270 * wheelScale);
   const pointerSizePx = Math.max(28, Math.round(36 * wheelScale));
   const labelRadiusPx = Math.round(96 * wheelScale);
-  const labelWidthPx = Math.max(56, Math.round(80 * wheelScale));
-  const labelFontPx = Math.max(9, Math.round(11 * wheelScale));
+  const labelWidthPx = Math.max(70, Math.round(96 * wheelScale));
+  const labelHeightPx = Math.max(34, Math.round(46 * wheelScale));
+  const labelFontPx = Math.max(11, Math.round(13 * wheelScale));
   const centerSizePx = Math.max(36, Math.round(48 * wheelScale));
   const gradient = useMemo(() => {
     const stops = items.map((_, i) => {
@@ -375,10 +376,25 @@ export default function RouletteWheel({
                 <motion.div
                   className={`relative z-10 -translate-x-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-center font-black ${
                     isWin
-                      ? "border border-yellow-200/75 bg-black/45 text-yellow-100 shadow-[0_0_14px_rgba(250,204,21,0.35)]"
-                      : "text-white"
+                      ? "border border-yellow-200/80 bg-black/65 text-yellow-100 shadow-[0_0_14px_rgba(250,204,21,0.42)]"
+                      : "border border-black/35 bg-black/55 text-white"
                   }`}
-                  style={{ width: `${labelWidthPx}px`, fontSize: `${labelFontPx}px`, transform: `rotate(${-angle - currentAngle}deg)` }}
+                  style={{
+                    width: `${labelWidthPx}px`,
+                    minHeight: `${labelHeightPx}px`,
+                    fontSize: `${labelFontPx}px`,
+                    transform: `rotate(${-angle - currentAngle}deg)`,
+                    lineHeight: 1.15,
+                    textShadow: "0 0 2px rgba(0,0,0,0.95), 0 1px 1px rgba(0,0,0,0.95), 0 -1px 1px rgba(0,0,0,0.95), 1px 0 1px rgba(0,0,0,0.95), -1px 0 1px rgba(0,0,0,0.95)",
+                    WebkitTextStroke: "0.6px rgba(0,0,0,0.92)",
+                    paintOrder: "stroke fill",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    whiteSpace: "normal",
+                    wordBreak: "keep-all",
+                    overflowWrap: "anywhere",
+                  }}
                   animate={
                     isWin
                       ? {
