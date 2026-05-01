@@ -255,6 +255,15 @@ export async function POST(req: Request) {
     }
 
     const last = results[results.length - 1]!;
+    const selectedSigs = results.map((x) => ({ ...x }));
+    const oneShot =
+      selectedSigs.length >= 2
+        ? {
+            id: ONE_SHOT_SIG_ID,
+            name: "한방 시그",
+            price: selectedSigs.reduce((sum, x) => sum + Math.max(0, Math.floor(Number(x.price || 0))), 0),
+          }
+        : null;
 
     const prevRs = normalizeRouletteState(s.rouletteState);
     // Spin 직후 짧은 시간 동안 rouletteState를 보호하여 다른 저장이 덮어쓰지 못하게 함.
@@ -264,13 +273,17 @@ export async function POST(req: Request) {
       sigInventory: inv,
       rouletteState: {
         ...prevRs,
+        phase: "SPINNING",
         isRolling: true,
         result: last,
         results,
+        selectedSigs,
+        oneShotResult: oneShot,
         spinPriceFilters: plan,
         spinPriceRanges: planRanges,
-        spinCount,
+        spinCount: selectedSigs.length,
         startedAt: Date.now(),
+        sessionId: `session_${Date.now()}`,
       },
       updatedAt: Date.now(),
     };
