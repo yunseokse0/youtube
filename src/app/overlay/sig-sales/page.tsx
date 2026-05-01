@@ -346,6 +346,17 @@ export default function SigSalesOverlayPage() {
     return Boolean(hideWheelAfterComplete && showResultPanel);
   }, [hideSigBoard, state, sigBoardDuringSpin, hideWheelAfterComplete, showResultPanel]);
   const resultOverlayVisible = Boolean(showResultPanel && hideWheelAfterComplete);
+  /** 관리자가 재고에서 완판 처리한 시그 → 방송 결과 카드에도 스탬프 표시 */
+  const inventorySoldOutIdSet = useMemo(() => {
+    const next = new Set<string>();
+    for (const row of state?.sigInventory || []) {
+      if (row.soldCount >= row.maxCount) {
+        next.add(row.id);
+        next.add(canonicalSigIdFromWheelSliceId(row.id));
+      }
+    }
+    return next;
+  }, [state?.sigInventory]);
   const oneShotImageUrl = useMemo(() => {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     const fromOneShot = (oneShotItem?.imageUrl || "").trim();
@@ -589,6 +600,7 @@ export default function SigSalesOverlayPage() {
             visible={resultOverlayVisible}
             selectedSigs={displaySelectedSigs}
             soldOutStampUrl={soldOutStampUrl}
+            soldOverrideSet={inventorySoldOutIdSet}
             oneShot={displayOneShot ? { name: displayOneShot.name, price: displayOneShot.price } : null}
             signImageUrl={oneShotImageUrl || currentSignImageUrl}
             showOneShotReveal={Boolean(displayOneShot && resultOverlayVisible)}

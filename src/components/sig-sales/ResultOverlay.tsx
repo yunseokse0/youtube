@@ -15,6 +15,8 @@ type ResultOverlayProps = {
   showOneShotReveal: boolean;
   className?: string;
   gifDelayMultiplier?: number;
+  /** 재고 완판 등: 해당 id면 판매 완료 스탬프(방송 오버레이용) */
+  soldOverrideSet?: Set<string>;
 };
 
 const EMPTY_SOLD_SET = new Set<string>();
@@ -28,6 +30,7 @@ export default function ResultOverlay({
   showOneShotReveal,
   className = "",
   gifDelayMultiplier = 3.5,
+  soldOverrideSet,
 }: ResultOverlayProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   useEffect(() => {
@@ -76,6 +79,7 @@ export default function ResultOverlay({
         items={selectedSigs}
         soldOutStampUrl={soldOutStampUrl}
         manualSoldSet={EMPTY_SOLD_SET}
+        soldOverrideSet={soldOverrideSet}
         onToggleSold={() => {}}
         showToggle={false}
         compact

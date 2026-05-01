@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import Image from "next/image";
 import type { ReactNode } from "react";
 import type { SigItem } from "@/types";
-import { formatWon } from "@/lib/sig-roulette";
+import { canonicalSigIdFromWheelSliceId, formatWon } from "@/lib/sig-roulette";
 import { resolveSigImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 
@@ -52,7 +52,10 @@ export default function SelectedSigs({
   return (
     <section className={`grid ${gridClass} gap-1.5 ${gridAlign} ${className}`.trim()}>
       {items.map((item, idx) => {
-        const sold = soldOverrideSet ? soldOverrideSet.has(item.id) : manualSoldSet.has(item.id);
+        const canonId = canonicalSigIdFromWheelSliceId(item.id);
+        const sold = soldOverrideSet
+          ? soldOverrideSet.has(item.id) || soldOverrideSet.has(canonId)
+          : manualSoldSet.has(item.id) || manualSoldSet.has(canonId);
         const isLatestConfirmed = highlightId === item.id;
         return (
           <motion.article
