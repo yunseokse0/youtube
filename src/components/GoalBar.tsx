@@ -62,6 +62,8 @@ export function GoalBar({
   const fillOpacity = Math.max(0, Math.min(100, opacityPercent)) / 100;
   const containerOpacity = opacityAffectsText ? fillOpacity : 1;
   const barFillOpacity = opacityAffectsText ? 1 : fillOpacity;
+  const ambientPulse = "goalbar-ambient-pulse 4.8s ease-in-out infinite";
+  const ambientSweep = "goalbar-ambient-sweep 5.2s linear infinite";
   const goalTextOutline =
     "-1px -1px 0 rgba(6, 12, 24, 0.95), 1px -1px 0 rgba(6, 12, 24, 0.95), -1px 1px 0 rgba(6, 12, 24, 0.95), 1px 1px 0 rgba(6, 12, 24, 0.95), 0 2px 6px rgba(0,0,0,0.42)";
 
@@ -69,13 +71,26 @@ export function GoalBar({
     <div style={{ width, padding: "0.12rem", borderRadius: 8, border: "1px solid rgba(255, 215, 232, 0.9)", opacity: containerOpacity }}>
       <div className="relative overflow-hidden" style={{ height: barH, borderRadius: 7, background: "transparent" }}>
         <div
-          className="h-full transition-all duration-700 ease-out"
+          className="goalbar-fill h-full transition-all duration-700 ease-out"
           style={{
             width: `${pct}%`,
             borderRadius: 7,
             opacity: barFillOpacity,
             background: "linear-gradient(90deg, rgba(255, 199, 220, 0.98) 0%, rgba(255, 166, 201, 0.98) 45%, rgba(255, 214, 231, 0.98) 100%)",
             boxShadow: "0 0 8px rgba(255, 182, 213, 0.42), inset 0 1px 0 rgba(255,255,255,0.35)",
+            animation: ambientPulse,
+          }}
+        />
+        <div
+          aria-hidden
+          className="goalbar-sweep pointer-events-none absolute top-0 bottom-0 rounded-full"
+          style={{
+            width: "32%",
+            opacity: barFillOpacity * 0.22,
+            background:
+              "linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.42) 50%, rgba(255,255,255,0) 100%)",
+            filter: "blur(1px)",
+            animation: ambientSweep,
           }}
         />
         <div className="absolute inset-0 flex items-center justify-between px-2" style={{ fontSize: Math.max(12, width * 0.028), letterSpacing: "-0.01em" }}>
@@ -97,6 +112,31 @@ export function GoalBar({
           </span>
         </div>
       </div>
+      <style jsx>{`
+        @keyframes goalbar-ambient-pulse {
+          0%,
+          100% {
+            filter: drop-shadow(0 0 0 rgba(255, 192, 222, 0.08));
+          }
+          50% {
+            filter: drop-shadow(0 0 7px rgba(255, 192, 222, 0.22));
+          }
+        }
+        @keyframes goalbar-ambient-sweep {
+          0% {
+            transform: translateX(-34%);
+          }
+          100% {
+            transform: translateX(320%);
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .goalbar-fill,
+          .goalbar-sweep {
+            animation: none !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

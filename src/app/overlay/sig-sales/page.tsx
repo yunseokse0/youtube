@@ -191,7 +191,7 @@ export default function SigSalesOverlayPage() {
 
   // 결과 배치는 운영자가 reset 할 때까지 유지한다.
 
-  const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || "/images/sigs/dummy-sig.svg";
+  const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || "/images/sigs/stamp.png";
   const menuCount = useMemo(() => {
     if (menuCountParam != null) return menuCountParam;
     const persisted = Number(state?.rouletteState?.menuCount);
