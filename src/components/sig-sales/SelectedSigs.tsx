@@ -21,7 +21,7 @@ type SelectedSigsProps = {
   compact?: boolean;
   showConfirmedBadge?: boolean;
   className?: string;
-  /** GIF 시그 프레임 유지 배수 (오버레이 `sigGifDelay` 등과 동일 의미, 기본 2) */
+  /** GIF 시그 프레임 유지 배수 (오버레이 `sigGifDelay` 등과 동일 의미, 기본 3.5) */
   gifDelayMultiplier?: number;
 };
 
@@ -38,7 +38,7 @@ export default function SelectedSigs({
   compact = false,
   showConfirmedBadge = true,
   className = "",
-  gifDelayMultiplier = 2,
+  gifDelayMultiplier = 3.5,
 }: SelectedSigsProps) {
   const fallbackImage = "/images/sigs/dummy-sig.svg";
   const gridClass = compact
@@ -48,8 +48,9 @@ export default function SelectedSigs({
     : trailingSlot
       ? "grid-cols-2 md:grid-cols-3 xl:grid-cols-6"
       : "grid-cols-2 md:grid-cols-3 xl:grid-cols-5";
+  const gridAlign = compact && trailingSlot ? "items-start" : "";
   return (
-    <section className={`grid ${gridClass} gap-1.5 ${className}`.trim()}>
+    <section className={`grid ${gridClass} gap-1.5 ${gridAlign} ${className}`.trim()}>
       {items.map((item, idx) => {
         const sold = soldOverrideSet ? soldOverrideSet.has(item.id) : manualSoldSet.has(item.id);
         const isLatestConfirmed = highlightId === item.id;
@@ -124,7 +125,9 @@ export default function SelectedSigs({
           </motion.article>
         );
       })}
-      {trailingSlot ? <div className={compact ? "min-h-[132px]" : "min-h-[280px]"}>{trailingSlot}</div> : null}
+      {trailingSlot ? (
+        <div className={compact ? "flex min-h-0 justify-center pt-0.5" : "min-h-[280px]"}>{trailingSlot}</div>
+      ) : null}
     </section>
   );
 }

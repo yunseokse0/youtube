@@ -27,7 +27,7 @@ export default function ResultOverlay({
   signImageUrl,
   showOneShotReveal,
   className = "",
-  gifDelayMultiplier = 2,
+  gifDelayMultiplier = 3.5,
 }: ResultOverlayProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   useEffect(() => {
@@ -50,7 +50,7 @@ export default function ResultOverlay({
 
   const oneShotTrailing =
     oneShot && showOneShotReveal ? (
-      <div className="relative min-h-[132px]">
+      <div className="relative w-full max-w-[152px] justify-self-center">
         <OneShotSigCard
           name={oneShot.name}
           price={oneShot.price}

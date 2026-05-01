@@ -93,12 +93,12 @@ export default function SigSalesOverlayPage() {
     if (!Number.isFinite(n)) return 85;
     return Math.max(55, Math.min(140, n));
   })();
-  /** GIF 시그 프레임 유지 시간 배수 (1=원본, 2=기본으로 약 2배 느림). `sigGifSpeed` 동일 의미 */
+  /** GIF 시그 프레임 유지 시간 배수 (1=원본, 기본 3.5). `sigGifSpeed` 동일 의미 */
   const sigGifDelayMultiplier = (() => {
     const raw = sp.get("sigGifDelay") || sp.get("sigGifSpeed") || "";
-    if (!raw.trim()) return 2;
+    if (!raw.trim()) return 3.5;
     const n = parseFloat(String(raw).replace(",", "."));
-    if (!Number.isFinite(n)) return 2;
+    if (!Number.isFinite(n)) return 3.5;
     return Math.max(1, Math.min(10, n));
   })();
   const overlayScale = overlayScalePct / 100;

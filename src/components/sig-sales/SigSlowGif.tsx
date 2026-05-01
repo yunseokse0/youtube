@@ -8,7 +8,7 @@ type SigSlowGifProps = {
   src: string;
   alt: string;
   className?: string;
-  /** 1 = 원본 속도, 2 = 두 배 느리게(프레임 유지 시간 2배) */
+  /** 1 = 원본 속도, 기본 3.5 ≈ 프레임 유지 약 3.5배 */
   delayMultiplier?: number;
   onLoadError?: () => void;
   /** 첫 프레임 렌더 직후 (프리로드 UI 등) */
@@ -19,7 +19,7 @@ export default function SigSlowGif({
   src,
   alt,
   className = "",
-  delayMultiplier = 2,
+  delayMultiplier = 3.5,
   onLoadError,
   onReady,
 }: SigSlowGifProps) {
@@ -83,7 +83,7 @@ export default function SigSlowGif({
         onReadyRef.current?.();
       }
 
-      const delayMsRaw = Math.max(20, frame.delay * delayMultiplier);
+      const delayMsRaw = Math.max(34, frame.delay * delayMultiplier);
       frameIndex = (frameIndex + 1) % loadedFrames.length;
       const elapsed = performance.now() - start;
       const wait = Math.max(0, Math.floor(delayMsRaw - elapsed));

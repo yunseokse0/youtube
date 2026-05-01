@@ -27,7 +27,7 @@ export default function SigSaleMedia({
   unoptimized,
   onError,
   onReady,
-  gifDelayMultiplier = 2,
+  gifDelayMultiplier = 3.5,
 }: SigSaleMediaProps) {
   const [gifFail, setGifFail] = useState(false);
 

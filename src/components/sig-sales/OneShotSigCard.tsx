@@ -27,7 +27,7 @@ export default function OneShotSigCard({
   compact = false,
   imageUrl = "",
   showToggle = true,
-  gifDelayMultiplier = 2,
+  gifDelayMultiplier = 3.5,
   onMediaReady,
 }: OneShotSigCardProps) {
   const fallbackImage = "/images/sigs/dummy-sig.svg";
@@ -36,10 +36,18 @@ export default function OneShotSigCard({
       initial={{ opacity: 0, scale: 0.85, y: 24 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       transition={{ duration: 0.45, ease: "easeOut" }}
-      className={`relative overflow-hidden border border-yellow-300/70 bg-[linear-gradient(135deg,rgba(245,158,11,0.25),rgba(234,179,8,0.1))] shadow-[0_0_30px_rgba(250,204,21,0.35)] ${compact ? "h-full rounded-xl p-1.5" : "rounded-2xl p-4"}`}
+      className={`relative border border-yellow-300/70 bg-[linear-gradient(135deg,rgba(245,158,11,0.25),rgba(234,179,8,0.1))] shadow-[0_0_30px_rgba(250,204,21,0.35)] ${
+        compact
+          ? "mx-auto w-full max-w-[148px] self-start overflow-visible rounded-xl p-1 pb-1.5"
+          : "overflow-hidden rounded-2xl p-4"
+      }`}
     >
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.35),transparent_65%)]" />
-      <div className={`relative mb-2 overflow-hidden rounded-lg border border-yellow-200/25 bg-black/25 ${compact ? "aspect-[3/4]" : "h-40"}`}>
+      <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.35),transparent_65%)]" />
+      <div
+        className={`relative overflow-hidden rounded-lg border border-yellow-200/25 bg-black/25 ${
+          compact ? "mb-1 h-[100px] w-full sm:h-[108px]" : "mb-2 h-40"
+        }`}
+      >
         <SigSaleMedia
           src={resolveSigImageUrl(name, imageUrl)}
           alt={name}
@@ -54,7 +62,7 @@ export default function OneShotSigCard({
           }}
         />
       </div>
-      <div className={`relative ${compact ? "flex h-full flex-col justify-between gap-1.5" : "flex flex-wrap items-center justify-between gap-3"}`}>
+      <div className={`relative ${compact ? "flex flex-col gap-0.5" : "flex flex-wrap items-center justify-between gap-3"}`}>
         <div>
           <h3
             className={`font-black ${compact ? "text-[11px] text-neutral-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]" : "text-lg text-yellow-100"}`}
