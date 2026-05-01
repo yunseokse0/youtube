@@ -3963,10 +3963,15 @@ export default function AdminPage() {
                     <p className="text-xs text-neutral-400">
                       회전판 당첨은 서버(<code className="text-neutral-300">/api/roulette/spin</code>)에서만 결정되어 Redis에 저장됩니다. 판매 ±는 기존과 동일하게 전체 상태로 동기화되며 후원(donors) 병합 로직과 충돌하지 않습니다.
                     </p>
+                    <p className="mt-1 text-[11px] leading-snug text-amber-200/90">
+                      「총 회수」는 버튼을 <strong className="font-semibold text-amber-100">한 번</strong> 눌렀을 때 서버가{" "}
+                      <strong className="font-semibold text-amber-100">동시에 뽑을 시그 개수</strong>입니다(회전판을 5번 연속 도는 설정이 아닙니다). 같은 시그가 여러 번 나와도 카드가 각각
+                      표시되며, 개수만큼 결과 카드·한방 요약이 함께 나옵니다. 화면을 단순하게 하려면 <strong className="font-semibold text-amber-100">1</strong>로 두세요.
+                    </p>
                   </div>
                   <div className="flex flex-wrap items-end gap-2">
                     <label className="flex flex-col text-[11px] text-neutral-400">
-                      총 회수
+                      총 회수(동시 추첨)
                       <input
                         type="number"
                         min={1}
@@ -4003,19 +4008,22 @@ export default function AdminPage() {
                   return (
                     <div className="rounded border border-white/10 bg-black/30 p-2">
                       <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-neutral-400">
-                        <span className="font-medium text-neutral-300">회차별 최소/최대 금액</span>
+                        <span className="font-medium text-neutral-300">슬롯별 최소/최대 금액</span>
                         <span>
-                          총 <span className="text-fuchsia-300">{n}</span>회 · 아래는{" "}
-                          <span className="text-fuchsia-300">{rows}</span>회차까지 개별 설정
+                          동시 <span className="text-fuchsia-300">{n}</span>개 추첨 중 앞{" "}
+                          <span className="text-fuchsia-300">{rows}</span>칸까지 개별 설정
                           {n > ROULETTE_ROUND_UI_CAP ? (
-                            <span className="text-amber-300/90"> ({ROULETTE_ROUND_UI_CAP + 1}회~{n}회는 {ROULETTE_ROUND_UI_CAP}회차와 동일)</span>
+                            <span className="text-amber-300/90">
+                              {" "}
+                              ({ROULETTE_ROUND_UI_CAP + 1}번째~{n}번째 칸은 {ROULETTE_ROUND_UI_CAP}번째 칸과 동일)
+                            </span>
                           ) : null}
                         </span>
                       </div>
                       <div className="max-h-52 space-y-1 overflow-y-auto pr-1">
                         {Array.from({ length: rows }, (_, i) => (
                           <div key={`roulette-tier-${i}`} className="flex flex-wrap items-center gap-2 text-xs">
-                            <span className="w-11 shrink-0 text-neutral-500">{i + 1}회</span>
+                            <span className="w-14 shrink-0 text-neutral-500">{i + 1}번째</span>
                             <input
                               className="w-28 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
                               placeholder="최소(빈칸=없음)"

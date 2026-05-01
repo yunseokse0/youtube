@@ -59,7 +59,7 @@ export default function SelectedSigs({
         const isLatestConfirmed = highlightId === item.id;
         return (
           <motion.article
-            key={item.id}
+            key={`${canonId}__slot_${idx}`}
             initial={{ opacity: 0, y: 28, scale: 0.92 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ delay: idx * 0.08, duration: 0.35 }}
