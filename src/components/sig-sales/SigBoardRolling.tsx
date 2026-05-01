@@ -12,6 +12,8 @@ type SigBoardRollingProps = {
   soldOutStampUrl: string;
   className?: string;
   gifDelayMultiplier?: number;
+  /** false면 2.6초마다 페이지가 넘어가지 않음(방송 오버레이에서 GIF+롤링 이중 움직임 방지) */
+  autoAdvancePages?: boolean;
 };
 
 /** 회전판 오버레이에 포함 가능한 시그 보드(보드 노출 롤링 그리드) */
@@ -20,6 +22,7 @@ export default function SigBoardRolling({
   soldOutStampUrl,
   className = "",
   gifDelayMultiplier = 2,
+  autoAdvancePages = true,
 }: SigBoardRollingProps) {
   const rollingItems = useMemo(() => inventory.filter((x) => x.isRolling), [inventory]);
 
@@ -30,12 +33,13 @@ export default function SigBoardRolling({
   const [stampBurstIds, setStampBurstIds] = useState<Record<string, number>>({});
 
   useEffect(() => {
+    if (!autoAdvancePages) return;
     if (pageCount <= 1) return;
     const id = window.setInterval(() => {
       setPage((p) => (p + 1) % pageCount);
     }, 2600);
     return () => window.clearInterval(id);
-  }, [pageCount]);
+  }, [pageCount, autoAdvancePages]);
 
   useEffect(() => {
     const current: Record<string, boolean> = {};
@@ -102,11 +106,10 @@ export default function SigBoardRolling({
                             transition={{ duration: 0.35, ease: "easeOut" }}
                             className="relative flex max-h-[min(7rem,52%)] max-w-[min(7rem,52%)] items-center justify-center"
                           >
-                            <div className="absolute inset-1 rounded-full bg-pastel-red/50 blur-[2px]" aria-hidden />
                             <motion.img
                               src={soldOutStampUrl}
                               alt="stamp"
-                              className="relative z-[1] h-auto w-auto max-h-full max-w-full object-contain object-center opacity-90"
+                              className="relative z-[1] h-auto w-auto max-h-full max-w-full object-contain object-center opacity-95 drop-shadow-[0_2px_12px_rgba(0,0,0,0.55)]"
                             />
                           </motion.div>
                         </motion.div>

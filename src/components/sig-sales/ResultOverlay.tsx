@@ -48,6 +48,28 @@ export default function ResultOverlay({
 
   if (!visible) return null;
 
+  const oneShotTrailing =
+    oneShot && showOneShotReveal ? (
+      <div className="relative min-h-[132px]">
+        <OneShotSigCard
+          name={oneShot.name}
+          price={oneShot.price}
+          imageUrl={signImageUrl}
+          sold={false}
+          onToggleSold={() => {}}
+          showToggle={false}
+          compact
+          gifDelayMultiplier={gifDelayMultiplier}
+          onMediaReady={() => setImageLoaded(true)}
+        />
+        {!imageLoaded ? (
+          <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-xl bg-black/40 text-[10px] font-semibold text-neutral-100">
+            이미지 로딩 중...
+          </div>
+        ) : null}
+      </div>
+    ) : undefined;
+
   return (
     <div className={`space-y-2 ${className}`.trim()}>
       <SelectedSigs
@@ -58,31 +80,10 @@ export default function ResultOverlay({
         showToggle={false}
         compact
         showConfirmedBadge={false}
+        trailingSlot={oneShotTrailing}
         className="mx-auto w-full max-w-[1120px]"
         gifDelayMultiplier={gifDelayMultiplier}
       />
-      {oneShot && showOneShotReveal ? (
-        <div className="w-full max-w-[220px]">
-          <div className="relative rounded-xl border border-yellow-300/45 bg-black/20 p-1 shadow-[0_0_18px_rgba(250,204,21,0.25)]">
-            <OneShotSigCard
-              name={oneShot.name}
-              price={oneShot.price}
-              imageUrl={signImageUrl}
-              sold={false}
-              onToggleSold={() => {}}
-              showToggle={false}
-              compact
-              gifDelayMultiplier={gifDelayMultiplier}
-            />
-            {!imageLoaded ? (
-              <div className="pointer-events-none absolute inset-1 grid place-items-center rounded-xl bg-black/35 text-xs font-semibold text-yellow-100">
-                이미지 로딩 중...
-              </div>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
-

@@ -15,6 +15,7 @@ type OneShotSigCardProps = {
   imageUrl?: string;
   showToggle?: boolean;
   gifDelayMultiplier?: number;
+  onMediaReady?: () => void;
 };
 
 export default function OneShotSigCard({
@@ -27,6 +28,7 @@ export default function OneShotSigCard({
   imageUrl = "",
   showToggle = true,
   gifDelayMultiplier = 2,
+  onMediaReady,
 }: OneShotSigCardProps) {
   const fallbackImage = "/images/sigs/dummy-sig.svg";
   return (
@@ -43,8 +45,9 @@ export default function OneShotSigCard({
           alt={name}
           fill
           sizes={compact ? "110px" : "160px"}
-          className="object-cover"
+          className="object-cover object-center"
           gifDelayMultiplier={gifDelayMultiplier}
+          onReady={onMediaReady}
           onError={(e) => {
             e.currentTarget.onerror = null;
             e.currentTarget.src = fallbackImage;
@@ -53,8 +56,16 @@ export default function OneShotSigCard({
       </div>
       <div className={`relative ${compact ? "flex h-full flex-col justify-between gap-1.5" : "flex flex-wrap items-center justify-between gap-3"}`}>
         <div>
-          <h3 className={`${compact ? "text-[11px]" : "text-lg"} font-black text-yellow-100`}>{name}</h3>
-          <p className={`${compact ? "text-[9px]" : "text-sm"} text-yellow-200/85`}>선정된 5개 시그 합산 금액</p>
+          <h3
+            className={`font-black ${compact ? "text-[11px] text-neutral-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]" : "text-lg text-yellow-100"}`}
+          >
+            {name}
+          </h3>
+          <p
+            className={`${compact ? "text-[9px] text-neutral-200/95" : "text-sm text-yellow-200/85"}`}
+          >
+            선정된 5개 시그 합산 금액
+          </p>
         </div>
         <div className={compact ? "" : "text-right"}>
           <div

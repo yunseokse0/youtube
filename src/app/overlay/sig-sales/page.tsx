@@ -72,12 +72,15 @@ export default function SigSalesOverlayPage() {
     return Math.max(5, Math.min(20, n));
   })();
   const rouletteDemo = sp.get("rouletteDemo") === "1" || sp.get("rouletteDemo") === "true";
-  /** 기본: 시그 보드 롤링 표시. 회전판만 필요하면 hideSigBoard=1 또는 sigBoard=0 */
+  /** 기본: 시그 보드는 회전 완료·결과 패널과 함께만 표시. SPINNING 중에도 보이게 하려면 sigBoardDuringSpin=1 */
   const hideSigBoard =
     sp.get("hideSigBoard") === "1" ||
     String(sp.get("hideSigBoard") || "").toLowerCase() === "true" ||
     sp.get("sigBoard") === "0" ||
     String(sp.get("sigBoard") || "").toLowerCase() === "false";
+  const sigBoardDuringSpin =
+    sp.get("sigBoardDuringSpin") === "1" ||
+    String(sp.get("sigBoardDuringSpin") || "").toLowerCase() === "true";
   const overlayScalePct = (() => {
     const raw = sp.get("scalePct") || sp.get("zoomPct") || "100";
     const n = parseInt(raw.replace(/[^\d]/g, ""), 10);
@@ -314,7 +317,8 @@ export default function SigSalesOverlayPage() {
       Boolean(pendingLanding) ||
       Boolean(demoSpin) ||
       (machine.phase === "SPINNING" && !overlayHoldResults) ||
-      wheelPhase === "spinning";
+      wheelPhase === "spinning" ||
+      wheelPhase === "settling";
     if (inSpinUx) return [];
     if (machine.selectedSigs.length > 0) return machine.selectedSigs.slice(0, CONFIRMED_VISIBLE_SLOTS);
     if (rouletteDemo && pendingLanding?.selected?.length) return pendingLanding.selected.slice(0, CONFIRMED_VISIBLE_SLOTS);
@@ -336,6 +340,12 @@ export default function SigSalesOverlayPage() {
     wheelPhase !== "spinning" &&
     wheelPhase !== "settling" &&
     (wheelPhase === "result" || overlayHoldResults || showResultPanel);
+  const showSigBoardRollingSection = useMemo(() => {
+    if (hideSigBoard || !state || (state.sigInventory || []).length === 0) return false;
+    if (sigBoardDuringSpin) return true;
+    return Boolean(hideWheelAfterComplete && showResultPanel);
+  }, [hideSigBoard, state, sigBoardDuringSpin, hideWheelAfterComplete, showResultPanel]);
+  const resultOverlayVisible = Boolean(showResultPanel && hideWheelAfterComplete);
   const oneShotImageUrl = useMemo(() => {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     const fromOneShot = (oneShotItem?.imageUrl || "").trim();
@@ -576,12 +586,12 @@ export default function SigSalesOverlayPage() {
             />
           ) : null}
           <ResultOverlay
-            visible={showResultPanel}
+            visible={resultOverlayVisible}
             selectedSigs={displaySelectedSigs}
             soldOutStampUrl={soldOutStampUrl}
             oneShot={displayOneShot ? { name: displayOneShot.name, price: displayOneShot.price } : null}
             signImageUrl={oneShotImageUrl || currentSignImageUrl}
-            showOneShotReveal={Boolean(displayOneShot && showResultPanel)}
+            showOneShotReveal={Boolean(displayOneShot && resultOverlayVisible)}
             className={hideWheelAfterComplete ? "relative z-30 w-full max-w-[1120px]" : "w-full max-w-[1120px]"}
             gifDelayMultiplier={sigGifDelayMultiplier}
           />
@@ -606,12 +616,13 @@ export default function SigSalesOverlayPage() {
             </div>
           ) : null}
         </section>
-        {!hideSigBoard && state && (state.sigInventory || []).length > 0 ? (
+        {showSigBoardRollingSection && state ? (
           <SigBoardRolling
             inventory={state.sigInventory || []}
             soldOutStampUrl={soldOutStampUrl}
             className="pb-2"
             gifDelayMultiplier={sigGifDelayMultiplier}
+            autoAdvancePages={sigBoardDuringSpin}
           />
         ) : null}
       </div>
