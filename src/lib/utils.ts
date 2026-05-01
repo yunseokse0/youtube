@@ -18,6 +18,10 @@ function safeAmount(value: unknown): number {
   return Math.max(0, Math.floor(n));
 }
 
+function floorToHundreds(value: number): number {
+  return Math.floor(Math.max(0, value) / 100) * 100;
+}
+
 function normalizePosition(member: Member, memberPositions?: Record<string, string>): string {
   const mapped = memberPositions?.[member.id];
   const raw = String(mapped ?? (member as Member & { position?: string }).position ?? "").trim();
@@ -33,8 +37,9 @@ export function sortMembersForRanking(
   const mode = options?.mode || "fixed";
   const rankLabels = Array.from({ length: 12 }).map((_, idx) => String(options?.rankPositionLabels?.[idx] || "").trim());
   const rows: MemberRankingRow[] = (members || []).map((m) => {
-    const accountAmount = safeAmount(m.account);
-    const toonAmount = safeAmount(m.toon);
+    // 엑셀표(멤버 랭킹 표)는 100원 단위 버림 기준으로 집계한다.
+    const accountAmount = floorToHundreds(safeAmount(m.account));
+    const toonAmount = floorToHundreds(safeAmount(m.toon));
     const basePosition = normalizePosition(m, memberPositions);
     const position = mode === "rankLinked" ? basePosition : basePosition;
     return {

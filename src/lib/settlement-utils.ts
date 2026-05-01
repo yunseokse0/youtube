@@ -13,6 +13,10 @@ function toSafeRate(n: number, fallback: number): number {
   return Math.max(0, Math.min(1, n));
 }
 
+function floorToHundreds(value: number): number {
+  return Math.floor(Math.max(0, value) / 100) * 100;
+}
+
 export function computeSettlement(
   members: Member[],
   accountRatioRaw: number,
@@ -25,8 +29,9 @@ export function computeSettlement(
   const feeRate = Math.max(0, feeRateRaw || 0);
 
   const rows: SettlementMemberResult[] = (members || []).map((m) => {
-    const account = Math.max(0, m.account || 0);
-    const toon = Math.max(0, m.toon || 0);
+    // 정산(엑셀/CVS/TXT 포함)은 원금 기준을 100원 단위 버림으로 통일.
+    const account = floorToHundreds(Math.max(0, m.account || 0));
+    const toon = floorToHundreds(Math.max(0, m.toon || 0));
     const isOperating =
       Boolean(m.operating) ||
       /운영비/i.test(m.name || "");

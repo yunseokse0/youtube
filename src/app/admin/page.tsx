@@ -18,8 +18,7 @@ import {
   ensureMissionItems,
   appendDailyLog,
   loadDailyLogFromApi,
-  parseTenThousandThousand,
-  maskTenThousandThousandInput,
+  parseAmount,
   formatChatLine,
   storageKey,
   dailyLogStorageKey,
@@ -2097,7 +2096,7 @@ export default function AdminPage() {
   };
 
   const addDonor = () => {
-    const amount = parseTenThousandThousand(donorAmount);
+    const amount = parseAmount(donorAmount);
     if (!donorMemberId) return;
     if (!confirmHighAmount(amount)) return;
     if (amount <= 0) return;
@@ -2152,7 +2151,7 @@ export default function AdminPage() {
   };
 
   const addContribution = () => {
-    const amount = parseTenThousandThousand(contributionAmount);
+    const amount = parseAmount(contributionAmount);
     if (!contributionMemberId) return;
     if (amount <= 0) return;
     setState((prev: AppState) => {
@@ -4947,10 +4946,10 @@ export default function AdminPage() {
                 />
                 <input
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
-                  placeholder="입금액 (예: 3.5 = 35,000)"
+                  placeholder="입금액 (예: 35000)"
                   inputMode="numeric"
                   value={donorAmount}
-                  onChange={(e) => setDonorAmount(maskTenThousandThousandInput(e.target.value))}
+                  onChange={(e) => setDonorAmount(e.target.value)}
                 />
                 <select
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
@@ -4992,10 +4991,10 @@ export default function AdminPage() {
                 </select>
                 <input
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
-                  placeholder="금액 (예: 3.5 = 35,000)"
+                  placeholder="금액 (예: 35000)"
                   inputMode="numeric"
                   value={contributionAmount}
-                  onChange={(e) => setContributionAmount(maskTenThousandThousandInput(e.target.value))}
+                  onChange={(e) => setContributionAmount(e.target.value)}
                 />
                 <select
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
