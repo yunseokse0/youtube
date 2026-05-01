@@ -19,7 +19,11 @@ type RouletteWheelProps = {
   onLanded?: (resultId?: string | null) => void;
 };
 
-const COLORS = ["#fb7185", "#f59e0b", "#22d3ee", "#a78bfa", "#34d399", "#f472b6", "#facc15", "#60a5fa"];
+const COLORS = [
+  "#fb7185", "#f59e0b", "#22d3ee", "#a78bfa", "#34d399", "#f472b6", "#facc15", "#60a5fa",
+  "#ef4444", "#84cc16", "#06b6d4", "#818cf8", "#e879f9", "#fdba74", "#5eead4", "#fca5a5",
+  "#93c5fd", "#f9a8d4", "#bef264", "#fcd34d",
+];
 const SPIN_DURATION_SCALE = 1.3;
 
 export default function RouletteWheel({

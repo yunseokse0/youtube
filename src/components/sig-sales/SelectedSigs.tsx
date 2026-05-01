@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import type { SigItem } from "@/types";
 import { formatWon } from "@/lib/sig-roulette";
 import { resolveSigImageUrl } from "@/lib/constants";
+import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 
 type SelectedSigsProps = {
   items: SigItem[];
@@ -20,6 +21,8 @@ type SelectedSigsProps = {
   compact?: boolean;
   showConfirmedBadge?: boolean;
   className?: string;
+  /** GIF 시그 프레임 유지 배수 (오버레이 `sigGifDelay` 등과 동일 의미, 기본 2) */
+  gifDelayMultiplier?: number;
 };
 
 export default function SelectedSigs({
@@ -35,6 +38,7 @@ export default function SelectedSigs({
   compact = false,
   showConfirmedBadge = true,
   className = "",
+  gifDelayMultiplier = 2,
 }: SelectedSigsProps) {
   const fallbackImage = "/images/sigs/dummy-sig.svg";
   const gridClass = compact
@@ -70,14 +74,14 @@ export default function SelectedSigs({
                 transition={{ duration: 0.9, repeat: 1 }}
               />
             ) : null}
-            <div className={`relative ${compact ? "aspect-[3/4]" : "aspect-[4/5]"}`}>
-              <Image
+            <div className={`relative overflow-hidden ${compact ? "aspect-[3/4]" : "aspect-[4/5]"}`}>
+              <SigSaleMedia
                 src={resolveSigImageUrl(item.name, item.imageUrl)}
                 alt={item.name}
                 fill
-                unoptimized
                 sizes={compact ? "140px" : "240px"}
-                className="object-cover"
+                className="object-cover object-center"
+                gifDelayMultiplier={gifDelayMultiplier}
                 onError={(e) => {
                   e.currentTarget.onerror = null;
                   e.currentTarget.src = fallbackImage;
@@ -85,21 +89,27 @@ export default function SelectedSigs({
               />
               {sold ? (
                 <>
-                  <div className="absolute inset-0 bg-black/45" />
-                  <Image
-                    src={soldOutStampUrl}
-                    alt="판매 완료"
-                    width={112}
-                    height={112}
-                    unoptimized
-                    className="absolute left-1/2 top-1/2 h-28 w-28 -translate-x-1/2 -translate-y-1/2 object-contain"
-                  />
+                  <div className="absolute inset-0 z-[5] bg-black/45" aria-hidden />
+                  <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-[min(12%,1rem)]">
+                    <Image
+                      src={soldOutStampUrl}
+                      alt="판매 완료"
+                      width={112}
+                      height={112}
+                      unoptimized
+                      className="h-auto w-auto max-h-[min(7rem,55%)] max-w-[min(7rem,55%)] object-contain object-center"
+                    />
+                  </div>
                 </>
               ) : null}
             </div>
             <div className={`${compact ? "space-y-0 p-1" : "space-y-1 p-2"}`}>
               <div className={`truncate font-bold text-white ${compact ? "text-[9px]" : "text-sm"}`}>{item.name}</div>
-              <div className={`${compact ? "text-[8px]" : "text-xs"} text-amber-200`}>{formatWon(item.price)}</div>
+              <div
+                className={`${compact ? "text-[8px]" : "text-xs"} font-semibold tabular-nums text-neutral-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]`}
+              >
+                {formatWon(item.price)}
+              </div>
               {showToggle ? (
                 <button
                   type="button"

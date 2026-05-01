@@ -11,7 +11,13 @@ import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
 import ConfirmationModal from "@/components/sig-sales/ConfirmationModal";
 import RouletteHistoryModal from "@/components/sig-sales/RouletteHistoryModal";
 import { loadState, loadStateFromApi, saveStateAsync, type AppState } from "@/lib/state";
-import { ONE_SHOT_SIG_ID, SPIN_SOUND_PATHS, clampOverlayOpacity, cancelRouletteSession } from "@/lib/sig-roulette";
+import {
+  ONE_SHOT_SIG_ID,
+  SPIN_SOUND_PATHS,
+  clampOverlayOpacity,
+  cancelRouletteSession,
+  canonicalSigIdFromWheelSliceId,
+} from "@/lib/sig-roulette";
 import { useSigSalesState } from "@/hooks/useSigSalesState";
 
 const POLL_MS = 1000;
@@ -356,12 +362,14 @@ export default function AdminSigSalesPage() {
   const onConfirmSale = useCallback(async () => {
     if (!state || displaySelectedSigs.length === 0) return;
     markConfirmPending();
-    const selectedSet = new Set(displaySelectedSigs.map((x) => x.id));
+    const manualCanon = new Set([...manualSoldSet].map((id) => canonicalSigIdFromWheelSliceId(id)));
+    const selectedCanon = new Set(displaySelectedSigs.map((x) => canonicalSigIdFromWheelSliceId(x.id)));
     const nextInventory = state.sigInventory.map((item) => {
-      if (manualSoldSet.has(item.id) || (oneShotSold && selectedSet.has(item.id))) {
-        return { ...item, soldCount: 1, maxCount: 1 };
-      }
-      return item;
+      const markSold =
+        manualCanon.has(item.id) || (oneShotSold && selectedCanon.has(item.id));
+      if (!markSold) return item;
+      const soldCount = Math.min(item.maxCount, Math.max(0, item.soldCount) + 1);
+      return { ...item, soldCount };
     });
     const next: AppState = {
       ...state,

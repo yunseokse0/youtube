@@ -14,6 +14,7 @@ type ResultOverlayProps = {
   signImageUrl: string;
   showOneShotReveal: boolean;
   className?: string;
+  gifDelayMultiplier?: number;
 };
 
 const EMPTY_SOLD_SET = new Set<string>();
@@ -26,6 +27,7 @@ export default function ResultOverlay({
   signImageUrl,
   showOneShotReveal,
   className = "",
+  gifDelayMultiplier = 2,
 }: ResultOverlayProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   useEffect(() => {
@@ -57,6 +59,7 @@ export default function ResultOverlay({
         compact
         showConfirmedBadge={false}
         className="mx-auto w-full max-w-[1120px]"
+        gifDelayMultiplier={gifDelayMultiplier}
       />
       {oneShot && showOneShotReveal ? (
         <div className="w-full max-w-[220px]">
@@ -69,6 +72,7 @@ export default function ResultOverlay({
               onToggleSold={() => {}}
               showToggle={false}
               compact
+              gifDelayMultiplier={gifDelayMultiplier}
             />
             {!imageLoaded ? (
               <div className="pointer-events-none absolute inset-1 grid place-items-center rounded-xl bg-black/35 text-xs font-semibold text-yellow-100">

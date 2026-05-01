@@ -10,12 +10,16 @@ import SigBoardRolling from "@/components/sig-sales/SigBoardRolling";
 import { loadStateFromApi, type AppState } from "@/lib/state";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { resolveSigImageUrl } from "@/lib/constants";
-import { ONE_SHOT_SIG_ID, SOUND_ASSETS_ENABLED, SPIN_SOUND_PATHS } from "@/lib/sig-roulette";
+import {
+  ONE_SHOT_SIG_ID,
+  SOUND_ASSETS_ENABLED,
+  SPIN_SOUND_PATHS,
+  canonicalSigIdFromWheelSliceId,
+} from "@/lib/sig-roulette";
 import { useSigSalesState } from "@/hooks/useSigSalesState";
 import { useImagePreload } from "@/hooks/useImagePreload";
 
 const POLL_MS = 1000;
-const STEP_CONFIRM_PAUSE_MS = 3000;
 const CONFIRMED_VISIBLE_SLOTS = 5;
 const MIN_ONE_SHOT_SIGS = 2;
 /** OBS 소스 로드 지연 등으로 오버레이가 늦게 붙어도 같은 회차 복원 허용 */
@@ -86,6 +90,14 @@ export default function SigSalesOverlayPage() {
     if (!Number.isFinite(n)) return 85;
     return Math.max(55, Math.min(140, n));
   })();
+  /** GIF 시그 프레임 유지 시간 배수 (1=원본, 2=기본으로 약 2배 느림). `sigGifSpeed` 동일 의미 */
+  const sigGifDelayMultiplier = (() => {
+    const raw = sp.get("sigGifDelay") || sp.get("sigGifSpeed") || "";
+    if (!raw.trim()) return 2;
+    const n = parseFloat(String(raw).replace(",", "."));
+    if (!Number.isFinite(n)) return 2;
+    return Math.max(1, Math.min(10, n));
+  })();
   const overlayScale = overlayScalePct / 100;
   const overlayScaleStyle = overlayScale === 1
     ? undefined
@@ -93,15 +105,13 @@ export default function SigSalesOverlayPage() {
   const [state, setState] = useState<AppState | null>(null);
   const [pendingLanding, setPendingLanding] = useState<{ selected: SigItem[]; oneShot: { id: string; name: string; price: number } | null; resultId: string | null; persist: boolean } | null>(null);
   const [demoSpin, setDemoSpin] = useState<{ startedAt: number; resultId: string | null } | null>(null);
-  const [stagedSelected, setStagedSelected] = useState<SigItem[]>([]);
-  const [spinStep, setSpinStep] = useState(0);
   const [lastConfirmedText, setLastConfirmedText] = useState("");
   const [lastConfirmedFxKey, setLastConfirmedFxKey] = useState(0);
-  const [showOneShotReveal, setShowOneShotReveal] = useState(false);
   const [showResultPanel, setShowResultPanel] = useState(false);
+  /** 착지 후 서버가 잠시 SPINNING으로 폴링되어도 결과·회전판 숨김 UX 유지 */
+  const [overlayHoldResults, setOverlayHoldResults] = useState(false);
   const [currentSignImageUrl, setCurrentSignImageUrl] = useState("");
   const [wheelPhase, dispatch] = useReducer(wheelReducer, "idle");
-  const nextSpinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const transitionHandledKeyRef = useRef("");
   const handledSpinKeyRef = useRef("");
   const completedSpinKeyRef = useRef("");
@@ -210,7 +220,7 @@ export default function SigSalesOverlayPage() {
     );
   }, [state, rouletteDemo, memberFilterId]);
   const wheelDisplayPool = useMemo(() => {
-    // 메뉴는 최소 5개를 보장하고, 최대는 사용자가 설정한 menuCount까지 채운다.
+    // 후보 풀은 최소 menuCount까지 채운다(회전판 칸 수와 무관하게 후보 확보).
     const targetCount = Math.max(CONFIRMED_VISIBLE_SLOTS, menuCount);
     const unique = new Map<string, SigItem>();
     for (const item of activeNormalPool) unique.set(item.id, item);
@@ -233,36 +243,83 @@ export default function SigSalesOverlayPage() {
     }
     return Array.from(unique.values());
   }, [activeNormalPool, menuCount, state, menuFillFromAllActive, menuFillFromDemo]);
-  const wheelItems = useMemo(() => {
-    const base = wheelDisplayPool.slice(0, menuCount);
-    if (base.length > 0) return base;
-    if (rouletteDemo) return DEMO_POOL.slice(0, menuCount);
-    return [];
-  }, [wheelDisplayPool, rouletteDemo, menuCount]);
+
+  /** 고유 시그가 적어도 menuCount만큼 칸을 순환 채움(각 칸은 고유 slice id) */
+  const wheelSlices = useMemo(() => {
+    const n = Math.max(1, menuCount);
+    const pool =
+      wheelDisplayPool.length > 0
+        ? wheelDisplayPool
+        : rouletteDemo
+          ? DEMO_POOL
+          : [];
+    if (pool.length === 0) return [] as SigItem[];
+    const out: SigItem[] = [];
+    for (let i = 0; i < n; i++) {
+      const canonical = pool[i % pool.length]!;
+      out.push({ ...canonical, id: `${canonical.id}__wslot_${i}` });
+    }
+    return out;
+  }, [wheelDisplayPool, menuCount, rouletteDemo]);
+
   const wheelItemsWithResult = useMemo(() => {
-    const resultId = demoSpin?.resultId || machine.resultId;
-    if (!resultId) return wheelItems;
-    if (wheelItems.some((item) => item.id === resultId)) return wheelItems;
-    const found = activeNormalPool.find((item) => item.id === resultId);
-    if (!found) return wheelItems;
-    if (!wheelItems.length) return [found];
-    return [...wheelItems.slice(0, Math.max(0, wheelItems.length - 1)), found];
-  }, [wheelItems, demoSpin?.resultId, machine.resultId, activeNormalPool]);
+    const base = [...wheelSlices];
+    const rid = demoSpin?.resultId || machine.resultId || pendingLanding?.resultId || null;
+    if (!rid || base.length === 0) return base;
+    const hasWinner = base.some((s) => canonicalSigIdFromWheelSliceId(s.id) === rid);
+    if (hasWinner) return base;
+    const found =
+      activeNormalPool.find((item) => item.id === rid) ||
+      (pendingLanding?.selected || []).find((x) => x.id === rid) ||
+      (machine.selectedSigs || []).find((x) => x.id === rid) ||
+      DEMO_POOL.find((x) => x.id === rid);
+    if (!found) return base;
+    base[base.length - 1] = { ...found, id: `${found.id}__wslot_${base.length - 1}` };
+    return base;
+  }, [
+    wheelSlices,
+    demoSpin?.resultId,
+    machine.resultId,
+    pendingLanding?.resultId,
+    pendingLanding?.selected,
+    machine.selectedSigs,
+    activeNormalPool,
+  ]);
+
+  /** 서버 당첨 id(real) → 휠 세그먼트 id */
+  const wheelResultSliceId = useMemo(() => {
+    const realId =
+      machine.resultId ||
+      demoSpin?.resultId ||
+      pendingLanding?.resultId ||
+      (pendingLanding?.selected?.length ? pendingLanding.selected[pendingLanding.selected.length - 1]?.id : null) ||
+      (machine.selectedSigs?.length ? machine.selectedSigs[machine.selectedSigs.length - 1]?.id : null) ||
+      null;
+    if (!realId || wheelItemsWithResult.length === 0) return null;
+    const idx = wheelItemsWithResult.findIndex((s) => canonicalSigIdFromWheelSliceId(s.id) === realId);
+    return idx >= 0 ? wheelItemsWithResult[idx]!.id : wheelItemsWithResult[wheelItemsWithResult.length - 1]!.id;
+  }, [
+    machine.resultId,
+    demoSpin?.resultId,
+    pendingLanding?.resultId,
+    pendingLanding?.selected,
+    machine.selectedSigs,
+    wheelItemsWithResult,
+  ]);
   const displaySelectedSigs = useMemo(() => {
     // 서버 phase가 IDLE인데 이전 회차 selectedSigs만 남은 경우가 있어 표시하지 않음(회전판이 안 돌았는데 숨겨지는 현상 방지)
     if (!rouletteDemo && machine.phase === "IDLE") return [];
-    if (stagedSelected.length > 0) return stagedSelected.slice(0, CONFIRMED_VISIBLE_SLOTS);
-    const inStepFlow =
+    // settling 단계는 이미 감속 완료 후이므로 결과 표시를 막지 않음(착지 직후 그리드가 비는 현상 방지)
+    const inSpinUx =
       Boolean(pendingLanding) ||
       Boolean(demoSpin) ||
-      machine.phase === "SPINNING" ||
-      wheelPhase === "spinning" ||
-      wheelPhase === "settling";
-    if (inStepFlow) return [];
+      (machine.phase === "SPINNING" && !overlayHoldResults) ||
+      wheelPhase === "spinning";
+    if (inSpinUx) return [];
     if (machine.selectedSigs.length > 0) return machine.selectedSigs.slice(0, CONFIRMED_VISIBLE_SLOTS);
     if (rouletteDemo && pendingLanding?.selected?.length) return pendingLanding.selected.slice(0, CONFIRMED_VISIBLE_SLOTS);
     return [];
-  }, [machine.selectedSigs, machine.phase, rouletteDemo, pendingLanding, stagedSelected, demoSpin, wheelPhase]);
+  }, [machine.selectedSigs, machine.phase, rouletteDemo, pendingLanding, demoSpin, wheelPhase, overlayHoldResults]);
   const displayOneShot = useMemo(() => {
     if (displaySelectedSigs.length < MIN_ONE_SHOT_SIGS) return null;
     return buildOneShotFromSelected(displaySelectedSigs);
@@ -272,18 +329,13 @@ export default function SigSalesOverlayPage() {
     if (machine.selectedSigs?.length) return Math.max(1, Math.min(CONFIRMED_VISIBLE_SLOTS, machine.selectedSigs.length));
     return 1;
   }, [pendingLanding?.selected, machine.selectedSigs]);
-  /** IDLE + 남은 selectedSigs만으로는 숨기지 않음(방송 소스 새로 열었을 때 바로 사라지는 버그) */
-  const sessionAllowsHideWheel =
-    machine.phase === "LANDED" ||
-    machine.phase === "CONFIRM_PENDING" ||
-    machine.phase === "CONFIRMED";
   const hideWheelAfterComplete =
-    sessionAllowsHideWheel &&
-    displaySelectedSigs.length >= completedTargetCount &&
+    machine.selectedSigs.length >= completedTargetCount &&
     !pendingLanding &&
     !demoSpin &&
     wheelPhase !== "spinning" &&
-    wheelPhase !== "settling";
+    wheelPhase !== "settling" &&
+    (wheelPhase === "result" || overlayHoldResults || showResultPanel);
   const oneShotImageUrl = useMemo(() => {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     const fromOneShot = (oneShotItem?.imageUrl || "").trim();
@@ -294,16 +346,12 @@ export default function SigSalesOverlayPage() {
     if (poolPick) return resolveSigImageUrl(poolPick.name, poolPick.imageUrl);
     return resolveSigImageUrl("", "");
   }, [state?.sigInventory, displaySelectedSigs, activeNormalPool]);
-  const displayResultId = useMemo(() => {
-    if (displaySelectedSigs.length === 0) return null;
-    return (demoSpin?.resultId || machine.resultId || displaySelectedSigs[displaySelectedSigs.length - 1]?.id || null) as string | null;
-  }, [displaySelectedSigs, demoSpin?.resultId, machine.resultId]);
   const getSignImageUrl = useCallback((id?: string | null) => {
     if (!id) return "";
-    const pool = [...(stagedSelected || []), ...(machine.selectedSigs || []), ...(activeNormalPool || []), ...(DEMO_POOL || [])];
+    const pool = [...(machine.selectedSigs || []), ...(activeNormalPool || []), ...(DEMO_POOL || [])];
     const found = pool.find((item) => item.id === id);
     return resolveSigImageUrl(found?.name || "", found?.imageUrl || "");
-  }, [stagedSelected, machine.selectedSigs, activeNormalPool]);
+  }, [machine.selectedSigs, activeNormalPool]);
   const hasServerSpinToPlay = useMemo(() => {
     return (
       machine.phase === "SPINNING" &&
@@ -318,15 +366,6 @@ export default function SigSalesOverlayPage() {
   useEffect(() => {
     console.log(`[Phase Change] ${wheelPhase} | signUrl: ${currentSignImageUrl ? "exist" : "empty"}`);
   }, [wheelPhase, currentSignImageUrl]);
-
-  useEffect(() => {
-    return () => {
-      if (nextSpinTimerRef.current) {
-        clearTimeout(nextSpinTimerRef.current);
-        nextSpinTimerRef.current = null;
-      }
-    };
-  }, []);
 
   useEffect(() => {
     phaseRef.current = wheelPhase;
@@ -349,9 +388,9 @@ export default function SigSalesOverlayPage() {
       resultId: machine.resultId || selectedFromServer[selectedFromServer.length - 1]?.id || null,
       persist: true,
     });
-    setSpinStep(0);
-    setStagedSelected([]);
-    setDemoSpin({ startedAt: Date.now(), resultId: selectedFromServer[0]?.id || machine.resultId || null });
+    const finalRealId =
+      machine.resultId || selectedFromServer[selectedFromServer.length - 1]?.id || selectedFromServer[0]?.id || null;
+    setDemoSpin({ startedAt: Date.now(), resultId: finalRealId });
   }, [
     machine.phase,
     machine.selectedSigs,
@@ -369,11 +408,10 @@ export default function SigSalesOverlayPage() {
     if (!state) return;
     if (machine.phase !== "IDLE") return;
     dispatch({ type: "RESET" });
-    setSpinStep(0);
-    setStagedSelected([]);
     setPendingLanding(null);
     setDemoSpin(null);
     setCurrentSignImageUrl("");
+    setOverlayHoldResults(false);
     transitionHandledKeyRef.current = "";
     handledSpinKeyRef.current = "";
   }, [machine.phase, state, rouletteDemo]);
@@ -387,18 +425,34 @@ export default function SigSalesOverlayPage() {
     handledSpinKeyRef.current = spinKey;
     dispatch({ type: "RESET" });
     dispatch({ type: "START_SPIN" });
+    setOverlayHoldResults(false);
     setShowResultPanel(false);
     setCurrentSignImageUrl("");
     transitionHandledKeyRef.current = "";
   }, [machine.phase, machine.startedAt, machine.sessionId, machine.resultId]);
 
   useEffect(() => {
+    if (machine.phase !== "LANDED" && machine.phase !== "CONFIRM_PENDING" && machine.phase !== "CONFIRMED") return;
+    if ((machine.selectedSigs || []).length === 0) return;
+    setOverlayHoldResults(true);
+  }, [machine.phase, machine.selectedSigs.length]);
+
+  useEffect(() => {
     if (machine.phase === "IDLE") {
+      setShowResultPanel(false);
+      setOverlayHoldResults(false);
+      return;
+    }
+    if (machine.phase === "SPINNING") {
+      // 착지 직후 서버가 잠시 SPINNING으로 오버레이되어도 결과 유지
+      if (overlayHoldResults && machine.selectedSigs.length > 0) {
+        setShowResultPanel(true);
+        return;
+      }
       setShowResultPanel(false);
       return;
     }
     if (
-      machine.phase !== "SPINNING" &&
       machine.phase !== "LANDED" &&
       machine.phase !== "CONFIRMED" &&
       machine.phase !== "CONFIRM_PENDING"
@@ -406,19 +460,10 @@ export default function SigSalesOverlayPage() {
       return;
     }
     if (machine.selectedSigs.length > 0) setShowResultPanel(true);
-  }, [machine.phase, machine.selectedSigs.length]);
+  }, [machine.phase, machine.selectedSigs.length, overlayHoldResults]);
 
   // IDLE 동기화 시에도 방송 화면 결과를 유지한다.
   // 새로운 회차가 시작되면 SPINNING 전환 effect에서 초기화된다.
-
-  useEffect(() => {
-    if (!showResultPanel || !displayOneShot) {
-      setShowOneShotReveal(false);
-      return;
-    }
-    const id = window.setTimeout(() => setShowOneShotReveal(true), 900);
-    return () => window.clearTimeout(id);
-  }, [showResultPanel, displayOneShot]);
 
   useEffect(() => {
     const queue = pendingLanding?.selected || [];
@@ -450,20 +495,18 @@ export default function SigSalesOverlayPage() {
       resultId,
       persist: false,
     });
-    setSpinStep(0);
-    setStagedSelected([]);
     setShowResultPanel(false);
     setCurrentSignImageUrl("");
-    setDemoSpin({ startedAt: Date.now(), resultId: selected[0]?.id || resultId });
+    setDemoSpin({ startedAt: Date.now(), resultId });
   }, [rouletteDemo, pendingLanding, demoSpin, activeNormalPool]);
 
   return (
     <main className="min-h-screen bg-transparent p-4 text-white">
       <div className="mx-auto max-w-[1280px] space-y-4">
-        {!hideSigBoard && state && (state.sigInventory || []).length > 0 ? (
-          <SigBoardRolling inventory={state.sigInventory || []} soldOutStampUrl={soldOutStampUrl} className="pb-2" />
-        ) : null}
-        <section style={{ ...overlayScaleStyle, backgroundColor: "transparent" }} className="relative p-0">
+        <section
+          style={{ ...overlayScaleStyle, backgroundColor: "transparent" }}
+          className="relative flex flex-col items-center gap-4 p-0"
+        >
           {lastConfirmedText ? (
             <div
               key={`confirmed-fx-${lastConfirmedFxKey}`}
@@ -476,79 +519,71 @@ export default function SigSalesOverlayPage() {
             <RouletteWheel
               items={wheelItemsWithResult}
               isRolling={wheelPhase === "spinning" || Boolean(demoSpin) || hasServerSpinToPlay}
-              resultId={displayResultId}
+              resultId={wheelResultSliceId}
               startedAt={demoSpin?.startedAt || machine.startedAt}
               scalePct={wheelScalePct}
               volume={0.7}
               muted={false}
               onTransitionEnd={() => {
                 if (phaseRef.current === "result") return;
-                const transitionKey = `${machine.startedAt}:${displayResultId || "none"}:${spinStep}`;
+                const transitionKey = `${machine.startedAt}:${wheelResultSliceId || "none"}`;
                 if (transitionHandledKeyRef.current === transitionKey) return;
                 transitionHandledKeyRef.current = transitionKey;
-                console.log("[Wheel] TRANSITION END FIRED");
                 dispatch({ type: "SETTLING" });
                 window.setTimeout(() => {
                   dispatch({ type: "LANDED" });
-                  setShowResultPanel(true);
-                  const signUrl = getSignImageUrl(machine.resultId || machine.selectedSigs?.[0]?.id || displayResultId);
-                  setCurrentSignImageUrl(signUrl || "");
-                  if (signUrl) {
-                    const img = new Image();
-                    img.src = signUrl;
-                  }
-                }, 300);
+                }, 280);
               }}
               onLanded={(landedId) => {
                 const selectedQueue = (pendingLanding?.selected || machine.selectedSigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
                 if (selectedQueue.length === 0) return;
-                const byResult = landedId ? selectedQueue.find((x) => x.id === landedId) : null;
-                const fallback = selectedQueue[Math.min(spinStep, selectedQueue.length - 1)];
-                const current = byResult || fallback;
-                if (!current) return;
-                const nextSelected = [...stagedSelected, current].filter((item, idx, arr) => arr.findIndex((x) => x.id === item.id) === idx);
-                const nextStep = spinStep + 1;
-                setLastConfirmedText(`${current.name} 확정!`);
-                setLastConfirmedFxKey((v) => v + 1);
-
-                if (nextStep < selectedQueue.length) {
-                  setStagedSelected(nextSelected);
-                  setSpinStep(nextStep);
-                  if (nextSpinTimerRef.current) clearTimeout(nextSpinTimerRef.current);
-                  nextSpinTimerRef.current = setTimeout(() => {
-                    setLastConfirmedText("");
-                    setDemoSpin({ startedAt: Date.now(), resultId: selectedQueue[nextStep].id });
-                  }, STEP_CONFIRM_PAUSE_MS);
-                  return;
+                const canonicalLand = landedId ? canonicalSigIdFromWheelSliceId(landedId) : null;
+                const expectedReal =
+                  pendingLanding?.resultId ||
+                  machine.resultId ||
+                  selectedQueue[selectedQueue.length - 1]?.id ||
+                  null;
+                if (canonicalLand && expectedReal && canonicalLand !== expectedReal) {
+                  console.warn("[sig-sales] wheel slice vs server result mismatch", canonicalLand, expectedReal);
                 }
 
-                const oneShot = buildOneShotFromSelected(nextSelected);
+                const oneShot = buildOneShotFromSelected(selectedQueue);
                 const machineSpinKey = `${machine.startedAt || 0}:${machine.sessionId || ""}:${machine.resultId || ""}`;
                 completedSpinKeyRef.current = machineSpinKey;
-                landed(nextSelected, oneShot, pendingLanding?.resultId || machine.resultId || current.id);
+                const finalResultId =
+                  pendingLanding?.resultId ||
+                  machine.resultId ||
+                  expectedReal ||
+                  canonicalLand ||
+                  selectedQueue[selectedQueue.length - 1]?.id ||
+                  selectedQueue[0]!.id;
+                landed(selectedQueue, oneShot, finalResultId);
                 if (oneShotSound && !hasOneShotSoundErrorRef.current) {
                   oneShotSound.stop();
                   oneShotSound.play();
                 } else {
                   playFallbackOneShot();
                 }
-                setStagedSelected(nextSelected);
-                setSpinStep(0);
                 setDemoSpin(null);
                 setPendingLanding(null);
+                setOverlayHoldResults(true);
                 setShowResultPanel(true);
-                if (!pendingLanding?.persist) return;
+                setLastConfirmedText(`${selectedQueue.map((s) => s.name).join(", ")} 확정!`);
+                setLastConfirmedFxKey((v) => v + 1);
+                const signUrl = getSignImageUrl(finalResultId);
+                setCurrentSignImageUrl(signUrl || "");
               }}
             />
           ) : null}
           <ResultOverlay
-            visible={wheelPhase === "result" || showResultPanel}
+            visible={showResultPanel}
             selectedSigs={displaySelectedSigs}
             soldOutStampUrl={soldOutStampUrl}
             oneShot={displayOneShot ? { name: displayOneShot.name, price: displayOneShot.price } : null}
             signImageUrl={oneShotImageUrl || currentSignImageUrl}
-            showOneShotReveal={showOneShotReveal}
-            className={hideWheelAfterComplete ? "absolute inset-x-0 top-2 z-30" : "mt-2"}
+            showOneShotReveal={Boolean(displayOneShot && showResultPanel)}
+            className={hideWheelAfterComplete ? "relative z-30 w-full max-w-[1120px]" : "w-full max-w-[1120px]"}
+            gifDelayMultiplier={sigGifDelayMultiplier}
           />
           {machine.phase === "CONFIRM_PENDING" ? (
             <div className="pointer-events-none absolute inset-0 z-50 grid place-items-center bg-black/55">
@@ -571,6 +606,14 @@ export default function SigSalesOverlayPage() {
             </div>
           ) : null}
         </section>
+        {!hideSigBoard && state && (state.sigInventory || []).length > 0 ? (
+          <SigBoardRolling
+            inventory={state.sigInventory || []}
+            soldOutStampUrl={soldOutStampUrl}
+            className="pb-2"
+            gifDelayMultiplier={sigGifDelayMultiplier}
+          />
+        ) : null}
       </div>
     </main>
   );

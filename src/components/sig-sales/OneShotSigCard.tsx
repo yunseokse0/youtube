@@ -1,9 +1,9 @@
 "use client";
 
 import { motion } from "framer-motion";
-import Image from "next/image";
 import { formatWon } from "@/lib/sig-roulette";
 import { resolveSigImageUrl } from "@/lib/constants";
+import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 
 type OneShotSigCardProps = {
   name: string;
@@ -14,6 +14,7 @@ type OneShotSigCardProps = {
   compact?: boolean;
   imageUrl?: string;
   showToggle?: boolean;
+  gifDelayMultiplier?: number;
 };
 
 export default function OneShotSigCard({
@@ -25,6 +26,7 @@ export default function OneShotSigCard({
   compact = false,
   imageUrl = "",
   showToggle = true,
+  gifDelayMultiplier = 2,
 }: OneShotSigCardProps) {
   const fallbackImage = "/images/sigs/dummy-sig.svg";
   return (
@@ -36,13 +38,13 @@ export default function OneShotSigCard({
     >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.35),transparent_65%)]" />
       <div className={`relative mb-2 overflow-hidden rounded-lg border border-yellow-200/25 bg-black/25 ${compact ? "aspect-[3/4]" : "h-40"}`}>
-        <Image
+        <SigSaleMedia
           src={resolveSigImageUrl(name, imageUrl)}
           alt={name}
           fill
-          unoptimized
           sizes={compact ? "110px" : "160px"}
           className="object-cover"
+          gifDelayMultiplier={gifDelayMultiplier}
           onError={(e) => {
             e.currentTarget.onerror = null;
             e.currentTarget.src = fallbackImage;
@@ -55,7 +57,11 @@ export default function OneShotSigCard({
           <p className={`${compact ? "text-[9px]" : "text-sm"} text-yellow-200/85`}>선정된 5개 시그 합산 금액</p>
         </div>
         <div className={compact ? "" : "text-right"}>
-          <div className={`${compact ? "text-sm" : "text-2xl"} font-black text-yellow-200`}>{formatWon(price)}</div>
+          <div
+            className={`${compact ? "text-sm" : "text-2xl"} font-black tabular-nums text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.88)]`}
+          >
+            {formatWon(price)}
+          </div>
           {showToggle ? (
             <button
               type="button"

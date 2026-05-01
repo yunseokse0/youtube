@@ -5,15 +5,22 @@ import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
 import type { SigItem } from "@/types";
 import { resolveSigImageUrl } from "@/lib/constants";
+import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 
 type SigBoardRollingProps = {
   inventory: SigItem[];
   soldOutStampUrl: string;
   className?: string;
+  gifDelayMultiplier?: number;
 };
 
 /** 회전판 오버레이에 포함 가능한 시그 보드(보드 노출 롤링 그리드) */
-export default function SigBoardRolling({ inventory, soldOutStampUrl, className = "" }: SigBoardRollingProps) {
+export default function SigBoardRolling({
+  inventory,
+  soldOutStampUrl,
+  className = "",
+  gifDelayMultiplier = 2,
+}: SigBoardRollingProps) {
   const rollingItems = useMemo(() => inventory.filter((x) => x.isRolling), [inventory]);
 
   const pageSize = 4;
@@ -70,31 +77,38 @@ export default function SigBoardRolling({ inventory, soldOutStampUrl, className 
               const isSingleSale = item.maxCount <= 1;
               return (
                 <div key={item.id} className="glass-pastel-card relative overflow-hidden rounded-3xl">
-                  <div className="relative aspect-[4/5] w-full">
-                    <Image
+                  <div className="relative aspect-[4/5] w-full overflow-hidden">
+                    <SigSaleMedia
                       src={resolveSigImageUrl(item.name, item.imageUrl)}
                       alt={item.name}
                       fill
-                      unoptimized
-                      className="object-cover"
+                      className="relative z-0 object-cover object-center"
+                      gifDelayMultiplier={gifDelayMultiplier}
                     />
-                    {soldOut && <div className="absolute inset-0 bg-pastel-ink/25" />}
+                    {soldOut ? <div className="absolute inset-0 z-[5] bg-pastel-ink/25" aria-hidden /> : null}
                     <AnimatePresence>
                       {soldOut && (
                         <motion.div
                           key={`stamp-${item.id}-${stampBurstKey}`}
-                          initial={{ scale: 2.2, rotate: -12, opacity: 0 }}
-                          animate={{ scale: 1, rotate: -8, opacity: 1 }}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
                           exit={{ opacity: 0 }}
                           transition={{ duration: 0.35, ease: "easeOut" }}
-                          className="pointer-events-none absolute left-1/2 top-1/2 flex h-32 w-32 -translate-x-1/2 -translate-y-1/2 items-center justify-center"
+                          className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-[min(10%,1rem)]"
                         >
-                          <div className="absolute inset-2 rounded-full bg-pastel-red/50 blur-[2px]" aria-hidden />
-                          <motion.img
-                            src={soldOutStampUrl}
-                            alt="stamp"
-                            className="relative z-[1] h-28 w-28 object-contain opacity-90"
-                          />
+                          <motion.div
+                            initial={{ scale: 2.2, rotate: -12 }}
+                            animate={{ scale: 1, rotate: -8 }}
+                            transition={{ duration: 0.35, ease: "easeOut" }}
+                            className="relative flex max-h-[min(7rem,52%)] max-w-[min(7rem,52%)] items-center justify-center"
+                          >
+                            <div className="absolute inset-1 rounded-full bg-pastel-red/50 blur-[2px]" aria-hidden />
+                            <motion.img
+                              src={soldOutStampUrl}
+                              alt="stamp"
+                              className="relative z-[1] h-auto w-auto max-h-full max-w-full object-contain object-center opacity-90"
+                            />
+                          </motion.div>
                         </motion.div>
                       )}
                     </AnimatePresence>

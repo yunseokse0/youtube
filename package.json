@@ -23,6 +23,7 @@
     "@types/ws": "^8.18.1",
     "canvas-confetti": "^1.9.4",
     "framer-motion": "^10.18.0",
+    "gifuct-js": "^2.1.2",
     "howler": "^2.2.4",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.0",

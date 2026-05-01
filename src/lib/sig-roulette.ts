@@ -2,6 +2,13 @@ import type { SigItem } from "@/types";
 import { getServerMemoryRouletteLogs, setServerMemoryRouletteLogs } from "@/lib/server-memory-roulette-logs";
 
 export const ONE_SHOT_SIG_ID = "sig_one_shot";
+
+/** 회전판 메뉴 슬라이스 id(`실제SigId__wslot_n`) → 재고 `SigItem.id` */
+export function canonicalSigIdFromWheelSliceId(sliceId: string): string {
+  const raw = String(sliceId || "").trim();
+  const m = /^(.+)__wslot_(\d+)$/.exec(raw);
+  return m?.[1] || raw;
+}
 export const SPIN_SOUND_PATHS = {
   tick: "/sounds/spin-tick.wav",
   final: "/sounds/spin-final.wav",
