@@ -16,6 +16,8 @@ export const SPIN_SOUND_PATHS = {
   oneShot: "/sounds/oneshot.wav",
 } as const;
 export const SOUND_ASSETS_ENABLED = true;
+/** false: 회전판은 wav 대신 Web Audio 절차음만 사용(더 절제된 톤). 오버레이 한방 등 다른 경로는 `SOUND_ASSETS_ENABLED` 유지 */
+export const ROULETTE_WHEEL_WAV_ASSETS_ENABLED = false;
 
 export function pickDistinctSigs(pool: SigItem[], count: number): SigItem[] {
   const copy = [...pool];

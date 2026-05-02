@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const sessionReason = searchParams.get("reason");
   const [id, setId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -25,7 +27,12 @@ export default function LoginPage() {
         setError(data.error || "로그인에 실패했습니다.");
         return;
       }
-      router.push("/admin");
+      const back = searchParams.get("from");
+      const safeBack =
+        back && back.startsWith("/") && !back.startsWith("//") && !back.includes(":")
+          ? back
+          : "/admin";
+      router.push(safeBack);
       router.refresh();
     } catch {
       setError("로그인 처리 중 오류가 발생했습니다.");
@@ -39,6 +46,14 @@ export default function LoginPage() {
       <div className="w-[92%] max-w-sm rounded-xl border border-white/10 bg-[#252525] p-6 shadow-xl">
         <h1 className="text-xl font-bold text-white mb-1">로그인</h1>
         <p className="text-sm text-neutral-400 mb-6">방송 정산 시스템</p>
+        {sessionReason === "expired" ? (
+          <div
+            role="alert"
+            className="mb-4 rounded-lg border border-amber-400/40 bg-amber-500/15 px-3 py-2.5 text-sm leading-snug text-amber-100"
+          >
+            로그인 세션이 만료되었습니다. 다시 로그인해 주세요.
+          </div>
+        ) : null}
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
             <label className="block text-xs text-neutral-400 mb-1">아이디</label>
@@ -72,6 +87,22 @@ export default function LoginPage() {
           </button>
         </form>
       </div>
+    </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginFallback />}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginFallback() {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[#1a1a1a]">
+      <p className="text-sm text-neutral-400">로딩 중…</p>
     </main>
   );
 }

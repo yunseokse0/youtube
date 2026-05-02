@@ -1,5 +1,6 @@
 import "./globals.css";
 import type { Metadata } from "next";
+import SessionExpiredListener from "@/components/SessionExpiredListener";
 
 export const metadata: Metadata = {
   title: "Final Entertainment 방송 정산 시스템",
@@ -18,7 +19,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko" className="dark">
-      <body>{children}</body>
+      <body>
+        <SessionExpiredListener />
+        {children}
+      </body>
     </html>
   );
 }

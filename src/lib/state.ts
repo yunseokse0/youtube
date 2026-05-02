@@ -792,6 +792,14 @@ export function loadState(userId?: string | null): AppState {
   }
 }
 
+/** 세션 만료 시 관리자·정산 화면에서만 로그인 유도(오버레이 등 다른 경로에서는 무시) */
+function notifyAdminSessionExpired() {
+  if (typeof window === "undefined") return;
+  const p = window.location.pathname;
+  if (!p.startsWith("/admin") && !p.startsWith("/settlements")) return;
+  window.dispatchEvent(new CustomEvent("broadcast-session-expired"));
+}
+
 async function postAppStateJson(json: string, effectiveUserId?: string | null): Promise<Response> {
   const q = new URLSearchParams();
   if (effectiveUserId) q.set("user", effectiveUserId);
@@ -816,6 +824,9 @@ async function postAppStateWithAuthRecovery(json: string, userId?: string | null
     }
   } catch {
     /* ignore */
+  }
+  if (res.status === 401) {
+    notifyAdminSessionExpired();
   }
   return res;
 }
@@ -859,6 +870,10 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
     const q = new URLSearchParams({ _t: String(Date.now()) });
     if (userId) q.set("user", userId);
     const res = await fetch(`/api/state?${q.toString()}`, { cache: "no-store", credentials: "include" });
+    if (res.status === 401) {
+      notifyAdminSessionExpired();
+      return null;
+    }
     if (!res.ok) return null;
     const data = await res.json();
     if (data && data.members) {

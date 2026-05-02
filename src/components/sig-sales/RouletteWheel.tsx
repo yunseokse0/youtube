@@ -5,7 +5,16 @@ import { AnimatePresence, animate, motion, useMotionValue } from "framer-motion"
 import type { AnimationPlaybackControls } from "framer-motion";
 import { Howl } from "howler";
 import type { SigItem } from "@/types";
-import { SOUND_ASSETS_ENABLED, SPIN_SOUND_PATHS } from "@/lib/sig-roulette";
+import {
+  ROULETTE_WHEEL_WAV_ASSETS_ENABLED,
+  SOUND_ASSETS_ENABLED,
+  SPIN_SOUND_PATHS,
+} from "@/lib/sig-roulette";
+import {
+  getOrCreateSpinAudioContext,
+  playSpinLandShimmer,
+  playSpinMechanicalTick,
+} from "@/lib/roulette-procedural-audio";
 
 type RouletteWheelProps = {
   items: SigItem[];
@@ -52,6 +61,25 @@ export default function RouletteWheel({
   const audioCtxRef = useRef<AudioContext | null>(null);
   const mutedRef = useRef(muted);
   const volumeRef = useRef(volume);
+  /** speedNorm 0~1: 빠를수록 살짝 크게(회전 감각) */
+  const playSpinTickScaled = useCallback((speedNorm: number) => {
+    if (mutedRef.current) return;
+    const ctx = getOrCreateSpinAudioContext(audioCtxRef.current);
+    if (!ctx) return;
+    audioCtxRef.current = ctx;
+    const m = volumeRef.current * (0.32 + 0.68 * Math.max(0, Math.min(1, speedNorm)));
+    playSpinMechanicalTick(ctx, Math.max(0.12, Math.min(1, m)));
+  }, []);
+
+  const playProceduralLand = useCallback(() => {
+    if (mutedRef.current) return;
+    const ctx = getOrCreateSpinAudioContext(audioCtxRef.current);
+    if (!ctx) return;
+    audioCtxRef.current = ctx;
+    playSpinLandShimmer(ctx, volumeRef.current);
+  }, []);
+
+  /** wav 모드 폴백용 짧은 사인 틱 */
   const playFallbackTone = useCallback((freq: number, durationMs: number, gain = 0.03) => {
     if (mutedRef.current) return;
     if (typeof window === "undefined") return;
@@ -76,7 +104,7 @@ export default function RouletteWheel({
     osc.stop(now + durationMs / 1000);
   }, []);
 
-  /** 짧은 상승 3음 — 당첨(가벼운 느낌) */
+  /** wav 성공음 보조용 */
   const playWinChime = useCallback(() => {
     if (mutedRef.current) return;
     const notes = [
@@ -111,7 +139,7 @@ export default function RouletteWheel({
   }, [items, segment]);
 
   useEffect(() => {
-    if (!SOUND_ASSETS_ENABLED) {
+    if (!SOUND_ASSETS_ENABLED || !ROULETTE_WHEEL_WAV_ASSETS_ENABLED) {
       setSounds(null);
       return;
     }
@@ -231,17 +259,19 @@ export default function RouletteWheel({
       const speedNorm = Math.max(0, Math.min(1, speedNormRaw));
       const dynamicVolume = Math.max(0.012, Math.min(0.52, volumeRef.current * (0.35 + 0.65 * speedNorm) * 0.45));
       const dynamicRate = 0.94 + speedNorm * 0.28;
-      if (tickSound && !hasSoundAssetErrorRef.current) {
+      const useWavTick =
+        ROULETTE_WHEEL_WAV_ASSETS_ENABLED && tickSound && !hasSoundAssetErrorRef.current;
+      if (useWavTick && tickSound) {
         tickSound.volume(dynamicVolume);
         tickSound.rate(dynamicRate);
         tickSound.stop();
         tickSound.play();
       } else {
-        playFallbackTone(590, 26, 0.011);
+        playSpinTickScaled(speedNorm);
       }
       await sleep(currentInterval);
     }
-  }, [playFallbackTone, sleep]);
+  }, [playSpinTickScaled, sleep]);
   const runAnimation = useCallback((
     to: number | number[],
     options: { duration: number; ease?: unknown; repeat?: number; repeatType?: "reverse" | "loop" | "mirror" }
@@ -323,10 +353,14 @@ export default function RouletteWheel({
         soundsRef.current?.tick.stop();
         soundsRef.current?.final.stop();
         soundsRef.current?.success.stop();
-        playWinChime();
-        if (soundsRef.current?.success && !hasSoundAssetErrorRef.current) {
-          soundsRef.current.success.volume(volumeRef.current * 0.22);
-          window.setTimeout(() => soundsRef.current?.success?.play(), 40);
+        if (!ROULETTE_WHEEL_WAV_ASSETS_ENABLED) {
+          playProceduralLand();
+        } else {
+          playWinChime();
+          if (soundsRef.current?.success && !hasSoundAssetErrorRef.current) {
+            soundsRef.current.success.volume(volumeRef.current * 0.22);
+            window.setTimeout(() => soundsRef.current?.success?.play(), 40);
+          }
         }
         if (!hasLandedRef.current) {
           hasLandedRef.current = true;
@@ -349,7 +383,18 @@ export default function RouletteWheel({
       soundsRef.current?.final.stop();
       soundsRef.current?.success.stop();
     };
-  }, [isRolling, startedAt, resultId, rotate, stopAllAnimations, runAnimation, runTickTrack, calculateFinalAngle, playFallbackTone, playWinChime]);
+  }, [
+    isRolling,
+    startedAt,
+    resultId,
+    rotate,
+    stopAllAnimations,
+    runAnimation,
+    runTickTrack,
+    calculateFinalAngle,
+    playProceduralLand,
+    playWinChime,
+  ]);
 
   const particles = useMemo(
     () =>
