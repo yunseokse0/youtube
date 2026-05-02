@@ -99,6 +99,17 @@ export default function MealMatchOverlayPage() {
   const overlayScaleStyle = overlayScale === 1
     ? undefined
     : ({ zoom: overlayScale } as React.CSSProperties);
+  const contentWidthPct = (() => {
+    const raw = sp.get("contentWidthPct") || sp.get("maxWidthPct") || "";
+    const n = parseInt(raw.replace(/[^\d]/g, ""), 10);
+    if (!Number.isFinite(n)) return 100;
+    return Math.max(40, Math.min(100, n));
+  })();
+  const overlayContainerStyle: React.CSSProperties = {
+    width: "100%",
+    maxWidth: `${contentWidthPct}%`,
+    ...(overlayScaleStyle || {}),
+  };
   const demoEnabled = sp.get("demo") === "true";
   const demoMode = (sp.get("demoMode") || "member").toLowerCase();
   const { state, ready } = useRemoteState(userId);
@@ -349,10 +360,7 @@ export default function MealMatchOverlayPage() {
 
   return (
     <main className="min-h-screen w-full bg-transparent text-white p-5">
-      <div
-        className="mx-auto max-w-[1350px]"
-        style={overlayScaleStyle}
-      >
+      <div className="mx-auto w-full" style={overlayContainerStyle}>
         <div className="mb-4 text-center">
           <div className="pastel-text-outline text-4xl font-black tracking-wide text-pink-100" style={outlineStyle()}>
             {overlayTitle}

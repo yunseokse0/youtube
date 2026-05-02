@@ -45,6 +45,7 @@ import { formatSigMatchStat, getSigMatchRankings } from "@/lib/settlement-utils"
 import { getEffectiveRemainingTime, pauseTimer, resumeTimer } from "@/lib/timer-utils";
 import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
 import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
+import { getVisibleAdminNavItems, isAdminNavSectionVisible, type AdminNavKey } from "@/app/admin/admin-nav-config";
 
 /** 후원 계열 오버레이 배경 GIF 프리셋 — 외부 URL은 방송망에서 차단될 수 있음 */
 const DONATION_LISTS_BG_GIF_PRESETS: { label: string; url: string }[] = [
@@ -227,6 +228,8 @@ export default function AdminPage() {
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [sigMatchPreviewIframeKey, setSigMatchPreviewIframeKey] = useState(0);
   const [battleScalePct, setBattleScalePct] = useState("100");
+  /** 시그/식사 대전 오버레이 본문 max-width (%), URL contentWidthPct */
+  const [battleContentWidthPct, setBattleContentWidthPct] = useState("100");
   const [sigSalesMenuCount, setSigSalesMenuCount] = useState("10");
   const [donorRankingsPreviewIframeKey, setDonorRankingsPreviewIframeKey] = useState(0);
   const [donorRankingsZoomPct, setDonorRankingsZoomPct] = useState("100");
@@ -247,7 +250,7 @@ export default function AdminPage() {
     danger: true,
   });
   const [resetSheetOpen, setResetSheetOpen] = useState(false);
-  const [activeNav, setActiveNav] = useState<"dashboard" | "settlement" | "donor" | "overlay" | "goal" | "logs">("dashboard");
+  const [activeNav, setActiveNav] = useState<AdminNavKey>("dashboard");
   const panelCardClass = "rounded-xl border border-white/10 bg-[#252525] shadow-[0_8px_24px_rgba(0,0,0,0.28)]";
   const simpleMode = false;
 
@@ -294,14 +297,12 @@ export default function AdminPage() {
       sigInventory: inv.map((x) => (x.id === ONE_SHOT_SIG_ID ? nextOneShot : x)),
     };
   }, []);
-  const navItems: Array<{ key: "dashboard" | "settlement" | "donor" | "overlay" | "goal" | "logs"; label: string; targetId: string }> = [
-    { key: "dashboard", label: "대시보드", targetId: "dashboard-summary" },
-    { key: "settlement", label: "정산 관리", targetId: "settlement-member-board" },
-    { key: "donor", label: "후원자", targetId: "donor-management" },
-    { key: "overlay", label: "오버레이 설정", targetId: "overlay-settings" },
-    { key: "goal", label: "후원 목표", targetId: "overlay-goal-shortcut" },
-    { key: "logs", label: "로그 / 데이터", targetId: "logs-data" },
-  ];
+  const navItems = useMemo(() => getVisibleAdminNavItems(), []);
+  useEffect(() => {
+    const keys = navItems.map((n) => n.key);
+    if (keys.length === 0) return;
+    setActiveNav((prev) => (keys.includes(prev) ? prev : keys[0]!));
+  }, [navItems]);
   const baseThemeChoices = ["default","excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","neon","neonExcel","retro","minimal","rpg","pastel","rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"];
   const memberThemeChoices = ["auto","default","excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","minimal","pastel","retro","rpg"];
   const missionThemeChoices = ["auto","default","excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","neon","neonExcel","rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice","minimal","pastel","retro","rpg"];
@@ -370,7 +371,7 @@ export default function AdminPage() {
     </div>
   );
   
-  const moveToSection = (key: "dashboard" | "settlement" | "donor" | "overlay" | "goal" | "logs", targetId: string) => {
+  const moveToSection = (key: AdminNavKey, targetId: string) => {
     setActiveNav(key);
     if (typeof window === "undefined") return;
     const el = document.getElementById(targetId);
@@ -553,7 +554,7 @@ export default function AdminPage() {
         }
       }
     });
-  }, [user, persistState]);
+  }, [user, persistState, mergeIncomingStateSafely]);
 
   useEffect(() => {
     const id = window.setInterval(() => setTimerUiNow(Date.now()), 1000);
@@ -616,7 +617,7 @@ export default function AdminPage() {
       window.removeEventListener("offline", onOffline);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [user, persistState]);
+  }, [user, persistState, mergeIncomingStateSafely]);
 
   const savePresets = (next: OverlayPreset[]) => {
     setPresets(next);
@@ -819,6 +820,12 @@ export default function AdminPage() {
     if (!Number.isFinite(n)) return 100;
     return Math.max(50, Math.min(300, n));
   };
+  const getBattleContentWidthPct = useCallback((): number => {
+    const raw = battleContentWidthPct.replace(/[^\d]/g, "");
+    const n = parseInt(raw || "100", 10);
+    if (!Number.isFinite(n)) return 100;
+    return Math.max(40, Math.min(100, n));
+  }, [battleContentWidthPct]);
   const buildSigMatchLiveUrl = useCallback((): string => {
     if (typeof window === "undefined") return "";
     const uid = user?.id || "finalent";
@@ -828,8 +835,9 @@ export default function AdminPage() {
     const q = new URLSearchParams();
     q.set("u", uid);
     q.set("scalePct", String(scalePct));
+    q.set("contentWidthPct", String(getBattleContentWidthPct()));
     return `${window.location.origin}/overlay/sig-match?${q.toString()}`;
-  }, [user?.id, battleScalePct]);
+  }, [user?.id, battleScalePct, getBattleContentWidthPct]);
   const buildMealMatchLiveUrl = useCallback((): string => {
     if (typeof window === "undefined") return "";
     const uid = user?.id || "finalent";
@@ -839,19 +847,19 @@ export default function AdminPage() {
     const q = new URLSearchParams();
     q.set("u", uid);
     q.set("scalePct", String(scalePct));
+    q.set("contentWidthPct", String(getBattleContentWidthPct()));
     return `${window.location.origin}/overlay/meal-match?${q.toString()}`;
-  }, [user?.id, battleScalePct]);
+  }, [user?.id, battleScalePct, getBattleContentWidthPct]);
 
   const sigMatchPreviewUrlRef = useRef("");
   const [sigMatchPreviewIframeSrc, setSigMatchPreviewIframeSrc] = useState("");
+  /** 대전 배율·유저 변경 시 미리보기 iframe URL을 즉시 동기화(기존: 최초 1회만 세팅되어 배율 미반영) */
   useEffect(() => {
-    if (!sigMatchPreviewUrlRef.current) {
-      sigMatchPreviewUrlRef.current = buildSigMatchLiveUrl();
-    }
-    if (!sigMatchPreviewIframeSrc) {
-      setSigMatchPreviewIframeSrc(sigMatchPreviewUrlRef.current);
-    }
-  }, [sigMatchPreviewIframeSrc, buildSigMatchLiveUrl]);
+    if (typeof window === "undefined") return;
+    const url = buildSigMatchLiveUrl();
+    sigMatchPreviewUrlRef.current = url;
+    setSigMatchPreviewIframeSrc(url);
+  }, [buildSigMatchLiveUrl]);
 
   const copyUrl = async (url: string, id: string) => {
     try {
@@ -2565,6 +2573,7 @@ export default function AdminPage() {
             <Link className="text-sm text-neutral-300 underline" href="/settlements">정산 기록 보기</Link>
           </div>
         </div>
+        {isAdminNavSectionVisible("dashboard") && (
         <section id="dashboard-summary" className={`${panelCardClass} p-4 mb-6`}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="rounded-lg bg-[#1e1e1e] border border-white/10 px-3 py-2">
@@ -2581,8 +2590,10 @@ export default function AdminPage() {
             </div>
           </div>
         </section>
+        )}
         <div className="grid grid-cols-1 gap-6">
           <div className="space-y-6">
+            {isAdminNavSectionVisible("settlement") && (
             <section id="settlement-member-board" className={`${panelCardClass} p-4 md:p-6`}>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">멤버 정산 보드</h2>
@@ -3047,9 +3058,31 @@ export default function AdminPage() {
                   <span className="text-neutral-300">{getBattleScalePct()}%</span>
                 </div>
                 <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
+                  <span>가로 폭(%):</span>
+                  <input
+                    className="w-20 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs"
+                    value={battleContentWidthPct}
+                    onChange={(e) => {
+                      const n = Math.max(40, Math.min(100, parseInt(e.target.value.replace(/[^\d]/g, "") || "100", 10) || 100));
+                      setBattleContentWidthPct(String(n));
+                    }}
+                  />
+                  <input
+                    type="range"
+                    min={40}
+                    max={100}
+                    step={1}
+                    value={String(getBattleContentWidthPct())}
+                    onChange={(e) => setBattleContentWidthPct(String(parseInt(e.target.value, 10) || 100))}
+                  />
+                  <span className="text-neutral-300">{getBattleContentWidthPct()}%</span>
+                  <span className="text-[10px] text-neutral-600">(본문 너비 · 식사대전 URL 동일)</span>
+                </div>
+                <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
                   <span>오버레이 URL:</span>
                   <code className="text-neutral-300 break-all">
-                    /overlay/sig-match?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}
+                    /overlay/sig-match?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}&contentWidthPct=
+                    {getBattleContentWidthPct()}
                   </code>
                   <button
                     type="button"
@@ -3077,7 +3110,12 @@ export default function AdminPage() {
                 </p>
                 <div className="mt-3 rounded-lg border border-white/10 bg-black/50 overflow-hidden">
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 px-2 py-1.5">
-                    <span className="text-xs font-medium text-neutral-300">오버레이 UI 미리보기</span>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-xs font-medium text-neutral-300">오버레이 UI 미리보기</span>
+                      <span className="text-[10px] text-neutral-500">
+                        scalePct={getBattleScalePct()} · contentWidthPct={getBattleContentWidthPct()} 반영 · 변경 시 자동 갱신
+                      </span>
+                    </div>
                     <button
                       type="button"
                       className="rounded border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-emerald-500/60 hover:text-emerald-200"
@@ -3090,7 +3128,12 @@ export default function AdminPage() {
                       새로고침
                     </button>
                   </div>
-                  <div className="relative w-full bg-black/40" style={{ minHeight: "280px", aspectRatio: "16 / 10" }}>
+                  <div
+                    className="relative w-full overflow-auto bg-black/40"
+                    style={{
+                      height: `${Math.min(720, Math.max(280, Math.round(280 * (getBattleScalePct() / 100))))}px`,
+                    }}
+                  >
                     {sigMatchPreviewIframeSrc ? (
                       <iframe
                         key={`sig-match-${sigMatchPreviewIframeKey}-${sigMatchPreviewIframeSrc.slice(0, 120)}`}
@@ -3520,7 +3563,8 @@ export default function AdminPage() {
                 <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
                   <span>오버레이 URL:</span>
                   <code className="text-neutral-300 break-all">
-                    /overlay/meal-match?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}
+                    /overlay/meal-match?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}&contentWidthPct=
+                    {getBattleContentWidthPct()}
                   </code>
                   <button
                     type="button"
@@ -4934,7 +4978,10 @@ export default function AdminPage() {
                 })}
               </div>
             </section>
+            )}
 
+            {isAdminNavSectionVisible("donor") && (
+            <>
             <section id="donor-management" className={`${panelCardClass} p-4 md:p-6`}>
               <h2 className="text-lg font-semibold mb-3">후원자 기록부</h2>
               <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_auto_auto_auto] gap-3">
@@ -5384,7 +5431,10 @@ export default function AdminPage() {
               )}
               <div className="text-xs text-neutral-400 mt-2">오버레이 프리셋에서 &quot;미션 전광판&quot;을 ON하면 우측→좌측 흐름으로 방송 화면에 표시됩니다.</div>
             </section>
+            </>
+            )}
 
+            {isAdminNavSectionVisible("overlay") && (
             <section id="overlay-settings" className={`${panelCardClass} p-4 md:p-6`}>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold">오버레이 관리 (다중)</h2>
@@ -5976,6 +6026,7 @@ export default function AdminPage() {
                                   {label}
                                 </button>
                               ))}
+                              {isAdminNavSectionVisible("goal") && (
                               <button
                                 id="overlay-goal-shortcut"
                                 className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
@@ -5987,6 +6038,7 @@ export default function AdminPage() {
                               >
                                 목표 달성 바(전용)
                               </button>
+                              )}
                               </div>
                             </details>
 
@@ -6404,7 +6456,9 @@ export default function AdminPage() {
                 })}
               </div>
             </section>
+            )}
 
+            {isAdminNavSectionVisible("settlement") && (
             <section className={`${panelCardClass} p-4 md:p-6`}>
               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                 <h2 className="text-lg font-semibold">방송 종료 정산</h2>
@@ -6514,7 +6568,9 @@ export default function AdminPage() {
                 계산식: (계좌×계좌비율 + 투네×투네비율) - 세금비율% / 비율은 % 단위로 입력
               </div>
             </section>
+            )}
 
+            {isAdminNavSectionVisible("logs") && (
             <section id="logs-data" className={`${panelCardClass} p-4 md:p-6`}>
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold">데이터</h2>
@@ -6591,6 +6647,7 @@ export default function AdminPage() {
                 ))}
               </div>
             </section>
+            )}
           </div>
         </div>
       </div>
@@ -6653,37 +6710,24 @@ export default function AdminPage() {
         © 2026 Final Entertainment. All rights reserved.
       </footer>
       <nav className="fixed bottom-0 left-0 right-0 z-40 lg:hidden border-t border-white/10 bg-[#202020]/95 backdrop-blur">
-        <div className="grid grid-cols-5 gap-1 p-2">
-          <button
-            onClick={() => moveToSection("dashboard", "dashboard-summary")}
-            className={`rounded-md py-2 text-xs ${activeNav === "dashboard" ? "bg-[#6366f1] text-white" : "text-neutral-300"}`}
-          >
-            홈
-          </button>
-          <button
-            onClick={() => moveToSection("settlement", "settlement-member-board")}
-            className={`rounded-md py-2 text-xs ${activeNav === "settlement" ? "bg-[#6366f1] text-white" : "text-neutral-300"}`}
-          >
-            정산
-          </button>
-          <button
-            onClick={() => moveToSection("donor", "donor-management")}
-            className={`rounded-md py-2 text-xs ${activeNav === "donor" ? "bg-[#6366f1] text-white" : "text-neutral-300"}`}
-          >
-            후원자
-          </button>
-          <button
-            onClick={() => moveToSection("overlay", "overlay-settings")}
-            className={`rounded-md py-2 text-xs ${activeNav === "overlay" ? "bg-[#6366f1] text-white" : "text-neutral-300"}`}
-          >
-            설정
-          </button>
-          <button
-            onClick={() => moveToSection("goal", "overlay-goal-shortcut")}
-            className={`rounded-md py-2 text-xs ${activeNav === "goal" ? "bg-[#6366f1] text-white" : "text-neutral-300"}`}
-          >
-            목표
-          </button>
+        <div
+          className="grid gap-1 p-2"
+          style={{
+            gridTemplateColumns: `repeat(${Math.max(1, navItems.filter((i) => i.mobileShort).length)}, minmax(0, 1fr))`,
+          }}
+        >
+          {navItems
+            .filter((item) => item.mobileShort)
+            .map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => moveToSection(item.key, item.targetId)}
+                className={`rounded-md py-2 text-xs ${activeNav === item.key ? "bg-[#6366f1] text-white" : "text-neutral-300"}`}
+              >
+                {item.mobileShort}
+              </button>
+            ))}
         </div>
       </nav>
     </main>

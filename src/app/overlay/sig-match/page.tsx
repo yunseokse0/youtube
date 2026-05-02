@@ -163,6 +163,17 @@ function SigMatchOverlayInner() {
   const overlayScaleStyle = overlayScale === 1
     ? undefined
     : ({ transform: `scale(${overlayScale})`, transformOrigin: "top center" } as React.CSSProperties);
+  const contentWidthPct = (() => {
+    const raw = sp.get("contentWidthPct") || sp.get("maxWidthPct") || "";
+    const n = parseInt(raw.replace(/[^\d]/g, ""), 10);
+    if (!Number.isFinite(n)) return 100;
+    return Math.max(40, Math.min(100, n));
+  })();
+  const overlayContainerStyle: React.CSSProperties = {
+    width: "100%",
+    maxWidth: `${contentWidthPct}%`,
+    ...(overlayScaleStyle || {}),
+  };
 
   const lockedSnapshot = useMemo(() => parseSigMatchSnapshot(sp), [sp]);
 
@@ -201,15 +212,40 @@ function SigMatchOverlayInner() {
       const right = makeSide(pools[1].memberIds, "RIGHT");
       return { left, right, mode: "pool" as const };
     }
-    const first = ranking[0];
-    const second = ranking[1];
-    const left = first
-      ? { ids: [first.memberId], label: first.name, score: first.score }
-      : { ids: [], label: "LEFT", score: 0 };
-    const right = second
-      ? { ids: [second.memberId], label: second.name, score: second.score }
-      : { ids: [], label: "RIGHT", score: 0 };
-    return { left, right, mode: "duel" as const };
+    const list = ranking.filter(Boolean);
+    if (list.length === 0) {
+      return {
+        left: { ids: [], label: "LEFT", score: 0 },
+        right: { ids: [], label: "RIGHT", score: 0 },
+        mode: "duel" as const,
+      };
+    }
+    if (list.length === 1) {
+      const only = list[0]!;
+      return {
+        left: { ids: [only.memberId], label: only.name, score: only.score },
+        right: { ids: [], label: "—", score: 0 },
+        mode: "duel" as const,
+      };
+    }
+    if (list.length === 2) {
+      const [a, b] = list;
+      return {
+        left: { ids: [a!.memberId], label: a!.name, score: a!.score },
+        right: { ids: [b!.memberId], label: b!.name, score: b!.score },
+        mode: "duel" as const,
+      };
+    }
+    /** 3명 이상·풀 미사용: 랭킹 순 상위 절반 vs 나머지(이름을 모두 VS 줄에 표시) */
+    const mid = Math.ceil(list.length / 2);
+    const leftList = list.slice(0, mid);
+    const rightList = list.slice(mid);
+    const pack = (items: typeof list) => ({
+      ids: items.map((x) => x.memberId),
+      label: items.map((x) => x.name).join(" · ") || "—",
+      score: items.reduce((s, x) => s + x.score, 0),
+    });
+    return { left: pack(leftList), right: pack(rightList), mode: "duel" as const };
   }, [ranking, state?.sigMatchSettings?.sigMatchPools, memberMap]);
   /** 식사대전(/overlay/meal-match)과 동일하게 generalTimer + 서버 동기화(lastUpdated) 기준 */
   const timerState = state?.generalTimer || null;
@@ -264,10 +300,7 @@ function SigMatchOverlayInner() {
 
   return (
     <main className={`min-h-screen w-full p-4 text-white ${previewGuide ? "bg-[#111827]" : "bg-transparent"}`}>
-      <div
-        className="mx-auto max-w-5xl p-4"
-        style={overlayScaleStyle}
-      >
+      <div className="mx-auto p-4" style={overlayContainerStyle}>
         <div className="relative mb-4 p-3">
           {timerVisible ? (
             <div

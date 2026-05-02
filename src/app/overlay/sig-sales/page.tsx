@@ -520,13 +520,20 @@ export default function SigSalesOverlayPage() {
       revealTimerRef.current = null;
     }
     transitionHandledKeyRef.current = "";
-  }, [machine.phase, machine.startedAt, machine.sessionId, machine.resultId]);
+  }, [
+    machine.phase,
+    machine.startedAt,
+    machine.sessionId,
+    machine.resultId,
+    pendingLanding,
+    demoSpin,
+  ]);
 
   useEffect(() => {
     if (machine.phase !== "LANDED" && machine.phase !== "CONFIRM_PENDING" && machine.phase !== "CONFIRMED") return;
     if ((machine.selectedSigs || []).length === 0) return;
     setOverlayHoldResults(true);
-  }, [machine.phase, machine.selectedSigs.length]);
+  }, [machine.phase, machine.selectedSigs]);
 
   useEffect(() => {
     if (machine.phase === "IDLE") {
@@ -551,7 +558,7 @@ export default function SigSalesOverlayPage() {
       return;
     }
     if (machine.selectedSigs.length > 0) setShowResultPanel(true);
-  }, [machine.phase, machine.selectedSigs.length, overlayHoldResults]);
+  }, [machine.phase, machine.selectedSigs, overlayHoldResults]);
 
   // IDLE 동기화 시에도 방송 화면 결과를 유지한다.
   // 새로운 회차가 시작되면 SPINNING 전환 effect에서 초기화된다.
