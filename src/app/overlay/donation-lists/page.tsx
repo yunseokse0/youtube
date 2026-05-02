@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
 import { defaultState, loadState, loadStateFromApi, normalizeDonationListsOverlayConfig, storageKey, type AppState } from "@/lib/state";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
+import { resolveGifUrlForEmbed } from "@/lib/gif-url";
 import { sortMembersForRanking } from "@/lib/utils";
 
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
@@ -148,6 +149,7 @@ export default function DonationListsOverlayPage() {
     [state?.donationListsOverlayConfig]
   );
   const showBgLayer = overlayCfg.isBgEnabled && Boolean(overlayCfg.bgGifUrl.trim());
+  const bgGifSrc = useMemo(() => resolveGifUrlForEmbed(overlayCfg.bgGifUrl), [overlayCfg.bgGifUrl]);
   const bgOpacityPct = Math.max(0, Math.min(100, overlayCfg.bgOpacity)) / 100;
 
   const ranking = useMemo(
@@ -175,7 +177,7 @@ export default function DonationListsOverlayPage() {
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={overlayCfg.bgGifUrl.trim()}
+              src={bgGifSrc.trim()}
               alt=""
               width={1920}
               height={1080}

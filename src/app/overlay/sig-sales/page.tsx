@@ -154,15 +154,15 @@ export default function SigSalesOverlayPage() {
     }
     if (!ctx) return;
     const tones: Array<[number, number]> = [
-      [900, 0.11],
-      [1200, 0.14],
+      [740, 0.09],
+      [990, 0.1],
     ];
     tones.forEach(([freq, sec], idx) => {
       const osc = ctx.createOscillator();
       const g = ctx.createGain();
       osc.type = "sine";
       osc.frequency.value = freq;
-      g.gain.value = 0.04;
+      g.gain.value = 0.024;
       osc.connect(g);
       g.connect(ctx.destination);
       const at = ctx.currentTime + idx * 0.1;
@@ -333,16 +333,18 @@ export default function SigSalesOverlayPage() {
   const displaySelectedSigs = useMemo(() => {
     // 서버 phase가 IDLE인데 이전 회차 selectedSigs만 남은 경우가 있어 표시하지 않음(회전판이 안 돌았는데 숨겨지는 현상 방지)
     if (!rouletteDemo && machine.phase === "IDLE") return [];
-    // settling 단계는 이미 감속 완료 후이므로 결과 표시를 막지 않음(착지 직후 그리드가 비는 현상 방지)
+    /** 서버가 이미 당첨 시그를 내려준 경우 스핀·착지 연출 중에도 그리드가 비지 않게 함(나중에 한꺼번에만 뜨는 느낌 완화) */
+    const hasQueue =
+      (pendingLanding?.selected?.length || 0) > 0 || (machine.selectedSigs?.length || 0) > 0;
     const inSpinUx =
-      Boolean(pendingLanding) ||
-      Boolean(demoSpin) ||
-      (machine.phase === "SPINNING" && !overlayHoldResults) ||
-      wheelPhase === "spinning" ||
-      wheelPhase === "settling";
+      !hasQueue &&
+      (Boolean(demoSpin) ||
+        (machine.phase === "SPINNING" && !overlayHoldResults) ||
+        wheelPhase === "spinning" ||
+        wheelPhase === "settling");
     if (inSpinUx) return [];
     if (machine.selectedSigs.length > 0) return machine.selectedSigs.slice(0, CONFIRMED_VISIBLE_SLOTS);
-    if (rouletteDemo && pendingLanding?.selected?.length) return pendingLanding.selected.slice(0, CONFIRMED_VISIBLE_SLOTS);
+    if (pendingLanding?.selected?.length) return pendingLanding.selected.slice(0, CONFIRMED_VISIBLE_SLOTS);
     return [];
   }, [machine.selectedSigs, machine.phase, rouletteDemo, pendingLanding, demoSpin, wheelPhase, overlayHoldResults]);
   const displayOneShot = useMemo(() => {
@@ -375,7 +377,26 @@ export default function SigSalesOverlayPage() {
     if (sigBoardDuringSpin) return true;
     return Boolean(hideWheelAfterComplete && showResultPanel && revealGateOpen);
   }, [hideSigBoard, state, sigBoardDuringSpin, hideWheelAfterComplete, showResultPanel, revealGateOpen]);
-  const resultOverlayVisible = Boolean(showResultPanel && hideWheelAfterComplete && revealGateOpen);
+  /**
+   * 스핀 중 showResultPanel=false 이어도 당첨 시그가 이미 확정되어 있으면 결과 그리드를 반드시 연다.
+   * (그리드 데이터만 채우고 패널을 숨기면「돌다가 비었다가 한꺼번에」가 그대로 발생함)
+   */
+  const resultOverlayVisible = Boolean(
+    revealGateOpen &&
+      displaySelectedSigs.length > 0 &&
+      (machine.phase === "IDLE"
+        ? rouletteDemo
+        : (showResultPanel && hideWheelAfterComplete) ||
+          machine.phase === "SPINNING" ||
+          machine.phase === "LANDED" ||
+          machine.phase === "CONFIRM_PENDING" ||
+          machine.phase === "CONFIRMED" ||
+          wheelPhase === "spinning" ||
+          wheelPhase === "settling" ||
+          wheelPhase === "result" ||
+          Boolean(demoSpin) ||
+          Boolean(pendingLanding))
+  );
   /** 관리자가 재고에서 완판 처리한 시그 → 방송 결과 카드에도 스탬프 표시 */
   const inventorySoldOutIdSet = useMemo(() => {
     const next = new Set<string>();

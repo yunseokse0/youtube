@@ -7,6 +7,7 @@ import { normalizeSigInventory } from "@/lib/constants";
 import type { SigItem } from "@/types";
 import { getRouletteUserId, loadAppStateForRoulette, saveAppStateForRoulette } from "../edge-state-store";
 import { setRouletteLock } from "../roulette-lock";
+import { forwardCookieHeader } from "../../_shared/internal-state-headers";
 const ONE_SHOT_SIG_ID = "sig_one_shot";
 
 function buildFallbackPool(size = 10): SigItem[] {
@@ -30,6 +31,22 @@ function pickRandom<T>(arr: T[]): T {
   const u = new Uint32Array(1);
   crypto.getRandomValues(u);
   return arr[u[0]! % arr.length]!;
+}
+
+function filterPoolByTierAndRange(
+  list: SigItem[],
+  tier: number | null,
+  range: { min: number | null; max: number | null } | null
+): SigItem[] {
+  let base = tier == null ? list : list.filter((x) => Math.floor(Number(x.price || 0)) === tier);
+  if (range == null) return base;
+  return base.filter((x) => {
+    const price = Math.floor(Number(x.price || 0));
+    if (!Number.isFinite(price) || price <= 0) return false;
+    if (range.min != null && price < range.min) return false;
+    if (range.max != null && price > range.max) return false;
+    return true;
+  });
 }
 
 /** 서버에서만 랜덤 당첨 → Redis(또는 공유 메모리)에 rouletteState 저장 */
@@ -98,7 +115,7 @@ export async function POST(req: Request) {
       const stateUrl = new URL(req.url);
       stateUrl.pathname = "/api/state";
       stateUrl.search = `?user=${encodeURIComponent(userId)}`;
-      const stateRes = await fetch(stateUrl.toString(), { cache: "no-store" });
+      const stateRes = await fetch(stateUrl.toString(), { cache: "no-store", headers: forwardCookieHeader(req) });
       if (stateRes.ok) {
         const remote = (await stateRes.json()) as AppState;
         if (remote && Array.isArray(remote.members)) {
@@ -186,7 +203,7 @@ export async function POST(req: Request) {
         url.search = `?user=${encodeURIComponent(userId)}`;
         await fetch(url.toString(), {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...forwardCookieHeader(req) },
           body: JSON.stringify({
             rouletteState: next.rouletteState,
             updatedAt: next.updatedAt,
@@ -210,7 +227,8 @@ export async function POST(req: Request) {
     const rollingPool = inv.filter((x) => x.isRolling && x.soldCount < x.maxCount);
     const pool = rollingPool.length > 0 ? rollingPool : inv.filter((x) => x.soldCount < x.maxCount);
     const usePool = pool.length > 0 ? pool : inv;
-    const runtimePool = usePool.length > 0 ? usePool : buildFallbackPool(10);
+    let runtimePool = (usePool.length > 0 ? usePool : inv).filter((x) => x.id !== ONE_SHOT_SIG_ID);
+    if (runtimePool.length === 0) runtimePool = buildFallbackPool(10);
 
     const plan: (number | null)[] = [];
     const planRanges: ({ min: number | null; max: number | null } | null)[] = [];
@@ -229,29 +247,43 @@ export async function POST(req: Request) {
       for (let i = 0; i < spinCount; i++) planRanges.push(null);
     }
 
+    const noPriceFilters =
+      legacyPriceFilter == null &&
+      (!priceFilters || priceFilters.every((x) => x == null)) &&
+      plan.every((t) => t == null) &&
+      planRanges.every((r) => r == null);
+    if (noPriceFilters) {
+      const uniq = new Set(runtimePool.map((x) => x.id)).size;
+      if (uniq < spinCount) {
+        return Response.json(
+          { error: "not_enough_unique_sigs", need: spinCount, have: uniq },
+          { status: 400, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }
+        );
+      }
+    }
+
+    /** 한 번의 스핀 안에서는 같은 시그 id가 중복 당첨되지 않도록 무복원 추첨 */
     const results: SigItem[] = [];
     let fallbackUsed = usePool.length === 0;
+    let remaining: SigItem[] = runtimePool.map((x) => ({ ...x }));
+
     for (let i = 0; i < spinCount; i++) {
       const tier = plan[i] ?? null;
       const range = planRanges[i] ?? null;
-      const basePool = tier == null ? runtimePool : runtimePool.filter((x) => Math.floor(Number(x.price || 0)) === tier);
-      const tierPool = range == null
-        ? basePool
-        : basePool.filter((x) => {
-            const price = Math.floor(Number(x.price || 0));
-            if (!Number.isFinite(price) || price <= 0) return false;
-            if (range.min != null && price < range.min) return false;
-            if (range.max != null && price > range.max) return false;
-            return true;
-          });
+      let tierPool = filterPoolByTierAndRange(remaining, tier, range);
       if (tierPool.length === 0) {
-        fallbackUsed = true;
-        const pickedFallback = pickRandom(runtimePool);
-        results.push({ ...pickedFallback });
-        continue;
+        /** 금액/티어 조건을 만족하는 시그가 remaining에 없으면, 아직 당첨되지 않은 id만 전체 풀에서 탐색 */
+        tierPool = filterPoolByTierAndRange(runtimePool, tier, range).filter((x) => !results.some((r) => r.id === x.id));
+      }
+      if (tierPool.length === 0) {
+        return Response.json(
+          { error: "empty_price_range", round: i + 1 },
+          { status: 400, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }
+        );
       }
       const picked = pickRandom(tierPool);
       results.push({ ...picked });
+      remaining = remaining.filter((x) => x.id !== picked.id);
     }
 
     const last = results[results.length - 1]!;
@@ -295,7 +327,7 @@ export async function POST(req: Request) {
       url.search = `?user=${encodeURIComponent(userId)}`;
       await fetch(url.toString(), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...forwardCookieHeader(req) },
         body: JSON.stringify({
           rouletteState: next.rouletteState,
           updatedAt: next.updatedAt,

@@ -6,6 +6,7 @@ import { normalizeRouletteState } from "@/lib/state";
 import { normalizeSigInventory } from "@/lib/constants";
 import type { SigItem } from "@/types";
 import { getRouletteUserId, loadAppStateForRoulette, saveAppStateForRoulette } from "../edge-state-store";
+import { forwardCookieHeader } from "../../_shared/internal-state-headers";
 
 const ONE_SHOT_SIG_ID = "sig_one_shot";
 
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
       const stateUrl = new URL(req.url);
       stateUrl.pathname = "/api/state";
       stateUrl.search = `?user=${encodeURIComponent(userId)}`;
-      const stateRes = await fetch(stateUrl.toString(), { cache: "no-store" });
+      const stateRes = await fetch(stateUrl.toString(), { cache: "no-store", headers: forwardCookieHeader(req) });
       if (stateRes.ok) {
         const remote = (await stateRes.json()) as AppState;
         if (remote && Array.isArray(remote.members)) {
@@ -111,7 +112,7 @@ export async function POST(req: Request) {
       url.search = `?user=${encodeURIComponent(userId)}`;
       await fetch(url.toString(), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...forwardCookieHeader(req) },
         body: JSON.stringify({
           rouletteState: next.rouletteState,
           updatedAt: next.updatedAt,

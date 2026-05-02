@@ -11,6 +11,7 @@ import {
   storageKey,
   type AppState,
 } from "@/lib/state";
+import { resolveGifUrlForEmbed } from "@/lib/gif-url";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 
 type DonorRow = {
@@ -309,6 +310,7 @@ export default function DonorRankingsOverlayPage() {
   const amountColor = readColor(sp, "amountColor", savedTheme.amountColor) || "#fff7ed";
   const outlineColor = readColor(sp, "outline", savedTheme.outlineColor) || "rgba(58, 6, 28, 0.85)";
   const showBgLayer = overlayCfg.isBgEnabled && Boolean(overlayCfg.bgGifUrl.trim());
+  const bgGifSrc = useMemo(() => resolveGifUrlForEmbed(overlayCfg.bgGifUrl), [overlayCfg.bgGifUrl]);
   const bgOpacityPct = Math.max(0, Math.min(100, overlayCfg.bgOpacity)) / 100;
 
   const { accountTop, toonTop } = useMemo(() => {
@@ -343,7 +345,7 @@ export default function DonorRankingsOverlayPage() {
         <div className="pointer-events-none fixed inset-0 z-0" aria-hidden>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={overlayCfg.bgGifUrl.trim()}
+            src={bgGifSrc.trim()}
             alt=""
             width={1920}
             height={1080}

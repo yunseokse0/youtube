@@ -792,21 +792,42 @@ export function loadState(userId?: string | null): AppState {
   }
 }
 
+async function postAppStateJson(json: string, effectiveUserId?: string | null): Promise<Response> {
+  const q = new URLSearchParams();
+  if (effectiveUserId) q.set("user", effectiveUserId);
+  const url = q.toString() ? `/api/state?${q.toString()}` : "/api/state";
+  return fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: json,
+    credentials: "include",
+  });
+}
+
+/** 401 시 쿠키만으로는 user 쿼리가 없을 때 실패하는 경우를 줄이기 위해 /api/auth/me로 id 보강 후 1회 재시도 */
+async function postAppStateWithAuthRecovery(json: string, userId?: string | null): Promise<Response> {
+  let res = await postAppStateJson(json, userId);
+  if (res.status !== 401) return res;
+  try {
+    const me = await fetch("/api/auth/me", { credentials: "include" }).then((r) => r.json()) as { user?: { id?: string } };
+    const uid = typeof me?.user?.id === "string" && me.user.id ? me.user.id : null;
+    if (uid) {
+      res = await postAppStateJson(json, uid);
+    }
+  } catch {
+    /* ignore */
+  }
+  return res;
+}
+
 export function saveState(state: AppState, userId?: string | null) {
   if (typeof window === "undefined") return;
   try {
     const next = { ...state, updatedAt: Date.now() };
     const json = JSON.stringify(next);
     window.localStorage.setItem(storageKey(userId), json);
-    const q = new URLSearchParams();
-    if (userId) q.set("user", userId);
-    const url = q.toString() ? `/api/state?${q.toString()}` : "/api/state";
-    fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: json,
-      credentials: "include",
-    }).catch(() => {});
+    void postAppStateWithAuthRecovery(json, userId)
+      .catch(() => {});
     try {
       const { sendSSEUpdate } = require("./sse-post") as { sendSSEUpdate: (d: unknown) => Promise<void> };
       void sendSSEUpdate(next);
@@ -822,15 +843,7 @@ export async function saveStateAsync(state: AppState, userId?: string | null): P
   const json = JSON.stringify(next);
   try { window.localStorage.setItem(storageKey(userId), json); } catch {}
   try {
-    const q = new URLSearchParams();
-    if (userId) q.set("user", userId);
-    const url = q.toString() ? `/api/state?${q.toString()}` : "/api/state";
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: json,
-      credentials: "include",
-    });
+    const res = await postAppStateWithAuthRecovery(json, userId);
     try {
       const { sendSSEUpdate } = require("./sse-post") as { sendSSEUpdate: (d: unknown) => Promise<void> };
       void sendSSEUpdate(next);

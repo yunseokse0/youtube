@@ -171,9 +171,11 @@ export default function AdminPage() {
   const [sigPreviewMap, setSigPreviewMap] = useState<Record<string, string>>({});
   const [sigExcelResult, setSigExcelResult] = useState("");
   const [sigPresetMemberId, setSigPresetMemberId] = useState("");
-  const [rouletteSpinCount, setRouletteSpinCount] = useState("1");
-  /** 회차별 금액 범위(최소/최대). 최대 40회차까지 UI, 그 이상은 40회차 값으로 패딩 */
-  const [roulettePriceRanges, setRoulettePriceRanges] = useState<Array<{ min: string; max: string }>>([{ min: "", max: "" }]);
+  /** 회차별 금액 범위(최소/최대). 빈칸이면 해당 회차는 금액 제한 없이 남은 시그 중 랜덤(중복 없음) */
+  const [rouletteSpinCount, setRouletteSpinCount] = useState("5");
+  const [roulettePriceRanges, setRoulettePriceRanges] = useState<Array<{ min: string; max: string }>>(() =>
+    Array.from({ length: 5 }, () => ({ min: "", max: "" }))
+  );
   const ROULETTE_ROUND_UI_CAP = 40;
   const [donorRankingPresetName, setDonorRankingPresetName] = useState("");
   const [settlementTitle, setSettlementTitle] = useState("");
@@ -1510,7 +1512,7 @@ export default function AdminPage() {
       setSigExcelResult("로그인 후 회전판을 사용할 수 있습니다.");
       return;
     }
-    const n = Math.max(1, Math.min(999, parseInt(String(rouletteSpinCount || "1"), 10) || 1));
+    const n = Math.max(1, Math.min(999, parseInt(String(rouletteSpinCount || "5"), 10) || 5));
     const cap = Math.min(n, ROULETTE_ROUND_UI_CAP);
     let parts = roulettePriceRanges.slice(0, cap);
     while (parts.length < cap) parts.push({ min: "", max: "" });
@@ -1539,7 +1541,13 @@ export default function AdminPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ spinCount: n, priceRanges }),
       });
-      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; round?: number };
+      const j = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        round?: number;
+        need?: number;
+        have?: number;
+      };
       if (!res.ok) {
         setSigExcelResult(
           j.error === "empty_inventory"
@@ -1552,6 +1560,10 @@ export default function AdminPage() {
                 ? typeof j.round === "number"
                   ? `${j.round}회차: 설정한 최소/최대 범위에 뽑을 시그가 없습니다.`
                   : "설정한 최소/최대 범위에 남은 시그가 없습니다."
+              : j.error === "not_enough_unique_sigs"
+                ? typeof j.need === "number" && typeof j.have === "number"
+                  ? `서로 다른 시그가 부족합니다(필요 ${j.need}개 · 후보 ${j.have}개). 인벤토리를 늘리거나 뽑기 개수를 줄이세요.`
+                  : "서로 다른 시그 수가 부족합니다."
               : `회전판 실패: ${j.error || res.status}`
         );
         return;
@@ -1582,7 +1594,7 @@ export default function AdminPage() {
             ? " · 금액대 전체"
             : ` · 금액대 ${uniq[0]}원`
           : ` · 회차별 금액대 (${uniq.slice(0, 5).join(", ")}${uniq.length > 5 ? "…" : ""})`;
-      setSigExcelResult(`회전판 1회 · 시그 ${n}개 당첨 확정${priceLabel}. 오버레이 /overlay/sig-sales 에서 확인하세요.`);
+      setSigExcelResult(`회전판 1회 · 시그 ${n}개 당첨(중복 없음) 확정${priceLabel}. 오버레이 /overlay/sig-sales 에서 확인하세요.`);
     } catch (e) {
       setSigExcelResult(`회전판 요청 오류: ${String(e)}`);
     }
@@ -3900,7 +3912,8 @@ export default function AdminPage() {
                   <div className="min-w-0">
                     <h4 className="text-sm font-semibold text-pink-100">후원 엑셀표 · 배경 GIF</h4>
                     <p className="mt-1 max-w-xl text-xs text-pink-100/75">
-                      멤버 랭킹 표(<code className="text-pink-50/90">/overlay/donation-lists</code>) 배경입니다. 값은 상태에 저장되어 Redis와 동기화됩니다.
+                      멤버 랭킹 표(<code className="text-pink-50/90">/overlay/donation-lists</code>) 배경입니다. Giphy <span className="text-pink-50/90">페이지</span> 주소(
+                      <code className="break-all">giphy.com/gifs/…</code>)도 오버레이에서 자동으로 직접 GIF로 바뀝니다. 저장이 막히면(콘솔 401) 로그인을 다시 하면 서버·OBS에 반영됩니다.
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-2 shrink-0">
@@ -3960,7 +3973,7 @@ export default function AdminPage() {
                         GIF URL (https… 또는 /public 경로)
                         <input
                           className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 placeholder:text-pink-200/40 outline-none focus:border-fuchsia-400/70"
-                          placeholder="예: https://media.giphy.com/... 또는 /images/bg/my.gif"
+                          placeholder="https://i.giphy.com/xxxxx.gif 또는 giphy.com/gifs/… 페이지"
                           value={dlCfg.bgGifUrl}
                           onChange={(e) =>
                             updateDonationListsOverlayConfig({
@@ -4021,15 +4034,13 @@ export default function AdminPage() {
                       회전판 당첨은 서버(<code className="text-neutral-300">/api/roulette/spin</code>)에서만 결정되어 Redis에 저장됩니다. 판매 ±는 기존과 동일하게 전체 상태로 동기화되며 후원(donors) 병합 로직과 충돌하지 않습니다.
                     </p>
                     <p className="mt-1 text-[11px] leading-snug text-amber-200/90">
-                      아래 숫자는 <strong className="font-semibold text-amber-100">돌림 1번(회전판 돌리기 1회)</strong>당{" "}
-                      <strong className="font-semibold text-amber-100">나와야 할 시그 개수</strong>입니다. 같은 시그가 여러 번 나와도 결과 카드는
-                      개수만큼 따로 표시됩니다.
+                      한 번 돌릴 때 나올 시그 개수를 정합니다. 금액 칸을 비우면 해당 줄은 <strong className="text-amber-100">전체 풀에서 무작위</strong>이며,
+                      같은 회차 안에서는 <strong className="text-amber-100">시그가 서로 중복되지 않습니다</strong>. 서로 다른 시그 수가 부족하면 오류가 납니다.
                     </p>
                   </div>
                   <div className="flex flex-wrap items-end gap-2">
                     <label className="flex flex-col text-[11px] text-neutral-400">
-                      나와야 할 시그 개수
-                      <span className="font-normal text-neutral-500">(돌림 1회당)</span>
+                      한 판당 당첨 시그 개수
                       <input
                         type="number"
                         min={1}
@@ -4039,11 +4050,11 @@ export default function AdminPage() {
                         onChange={(e) => {
                           const raw = e.target.value;
                           setRouletteSpinCount(raw);
-                          const n = Math.max(1, Math.min(999, parseInt(String(raw || "1"), 10) || 1));
-                          const cap = Math.min(n, ROULETTE_ROUND_UI_CAP);
+                          const nn = Math.max(1, Math.min(999, parseInt(String(raw || "5"), 10) || 5));
+                          const capRows = Math.min(nn, ROULETTE_ROUND_UI_CAP);
                           setRoulettePriceRanges((prev) => {
-                            const next = prev.slice(0, cap);
-                            while (next.length < cap) next.push({ min: "", max: "" });
+                            const next = prev.slice(0, capRows);
+                            while (next.length < capRows) next.push({ min: "", max: "" });
                             return next;
                           });
                         }}
@@ -4061,19 +4072,19 @@ export default function AdminPage() {
                   </div>
                 </div>
                 {(() => {
-                  const n = Math.max(1, Math.min(999, parseInt(String(rouletteSpinCount || "1"), 10) || 1));
+                  const n = Math.max(1, Math.min(999, parseInt(String(rouletteSpinCount || "5"), 10) || 5));
                   const rows = Math.min(n, ROULETTE_ROUND_UI_CAP);
                   return (
                     <div className="rounded border border-white/10 bg-black/30 p-2">
                       <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-neutral-400">
-                        <span className="font-medium text-neutral-300">시그별 최소/최대 금액</span>
+                        <span className="font-medium text-neutral-300">시그별 최소/최대 금액 (원)</span>
                         <span>
                           나올 시그 <span className="text-fuchsia-300">{n}</span>개 중 앞{" "}
-                          <span className="text-fuchsia-300">{rows}</span>개까지 개별 설정
+                          <span className="text-fuchsia-300">{rows}</span>개까지 개별 설정 · 빈칸=해당 줄은 전체 랜덤
                           {n > ROULETTE_ROUND_UI_CAP ? (
                             <span className="text-amber-300/90">
                               {" "}
-                              ({ROULETTE_ROUND_UI_CAP + 1}번째~{n}번째 시그는 {ROULETTE_ROUND_UI_CAP}번째와 동일)
+                              ({ROULETTE_ROUND_UI_CAP + 1}번째~는 {ROULETTE_ROUND_UI_CAP}번째와 동일 조건)
                             </span>
                           ) : null}
                         </span>
@@ -4081,7 +4092,7 @@ export default function AdminPage() {
                       <div className="max-h-52 space-y-1 overflow-y-auto pr-1">
                         {Array.from({ length: rows }, (_, i) => (
                           <div key={`roulette-tier-${i}`} className="flex flex-wrap items-center gap-2 text-xs">
-                            <span className="w-14 shrink-0 text-neutral-500">{i + 1}번째 시그</span>
+                            <span className="w-14 shrink-0 text-neutral-500">{i + 1}번째</span>
                             <input
                               className="w-28 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
                               placeholder="최소(빈칸=없음)"
@@ -4091,7 +4102,7 @@ export default function AdminPage() {
                                 const v = e.target.value.replace(/[^\d]/g, "");
                                 setRoulettePriceRanges((prev) => {
                                   const cap = Math.min(
-                                    Math.max(1, Math.min(999, parseInt(String(rouletteSpinCount || "1"), 10) || 1)),
+                                    Math.max(1, Math.min(999, parseInt(String(rouletteSpinCount || "5"), 10) || 5)),
                                     ROULETTE_ROUND_UI_CAP
                                   );
                                   const next = prev.slice(0, cap);
@@ -4111,7 +4122,7 @@ export default function AdminPage() {
                                 const v = e.target.value.replace(/[^\d]/g, "");
                                 setRoulettePriceRanges((prev) => {
                                   const cap = Math.min(
-                                    Math.max(1, Math.min(999, parseInt(String(rouletteSpinCount || "1"), 10) || 1)),
+                                    Math.max(1, Math.min(999, parseInt(String(rouletteSpinCount || "5"), 10) || 5)),
                                     ROULETTE_ROUND_UI_CAP
                                   );
                                   const next = prev.slice(0, cap);

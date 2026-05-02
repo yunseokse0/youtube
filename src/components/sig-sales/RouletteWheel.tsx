@@ -76,6 +76,19 @@ export default function RouletteWheel({
     osc.stop(now + durationMs / 1000);
   }, []);
 
+  /** 짧은 상승 3음 — 당첨(가벼운 느낌) */
+  const playWinChime = useCallback(() => {
+    if (mutedRef.current) return;
+    const notes = [
+      [523.25, 68],
+      [659.25, 72],
+      [783.99, 100],
+    ] as const;
+    notes.forEach(([freq, ms], i) => {
+      window.setTimeout(() => playFallbackTone(freq, ms, 0.016), i * 82);
+    });
+  }, [playFallbackTone]);
+
   const segmentCount = Math.max(1, items.length);
   const segment = 360 / segmentCount;
   const wheelScale = Math.max(55, Math.min(140, Math.floor(Number(scalePct) || 100))) / 100;
@@ -216,15 +229,15 @@ export default function RouletteWheel({
       const fast = Math.min(startIntervalMs, endIntervalMs);
       const speedNormRaw = slow === fast ? 1 : (slow - currentInterval) / Math.max(1, slow - fast);
       const speedNorm = Math.max(0, Math.min(1, speedNormRaw));
-      const dynamicVolume = Math.max(0.02, Math.min(1, volumeRef.current * (0.35 + 0.65 * speedNorm)));
-      const dynamicRate = 0.92 + speedNorm * 0.38;
+      const dynamicVolume = Math.max(0.012, Math.min(0.52, volumeRef.current * (0.35 + 0.65 * speedNorm) * 0.45));
+      const dynamicRate = 0.94 + speedNorm * 0.28;
       if (tickSound && !hasSoundAssetErrorRef.current) {
         tickSound.volume(dynamicVolume);
         tickSound.rate(dynamicRate);
         tickSound.stop();
         tickSound.play();
       } else {
-        playFallbackTone(760, 42, 0.02);
+        playFallbackTone(590, 26, 0.011);
       }
       await sleep(currentInterval);
     }
@@ -308,12 +321,12 @@ export default function RouletteWheel({
         onTransitionEndRef.current?.();
 
         soundsRef.current?.tick.stop();
+        soundsRef.current?.final.stop();
         soundsRef.current?.success.stop();
+        playWinChime();
         if (soundsRef.current?.success && !hasSoundAssetErrorRef.current) {
-          soundsRef.current.success.play();
-        } else {
-          playFallbackTone(880, 120, 0.04);
-          window.setTimeout(() => playFallbackTone(1170, 150, 0.04), 110);
+          soundsRef.current.success.volume(volumeRef.current * 0.22);
+          window.setTimeout(() => soundsRef.current?.success?.play(), 40);
         }
         if (!hasLandedRef.current) {
           hasLandedRef.current = true;
@@ -336,7 +349,7 @@ export default function RouletteWheel({
       soundsRef.current?.final.stop();
       soundsRef.current?.success.stop();
     };
-  }, [isRolling, startedAt, resultId, rotate, stopAllAnimations, runAnimation, runTickTrack, calculateFinalAngle, playFallbackTone]);
+  }, [isRolling, startedAt, resultId, rotate, stopAllAnimations, runAnimation, runTickTrack, calculateFinalAngle, playFallbackTone, playWinChime]);
 
   const particles = useMemo(
     () =>
