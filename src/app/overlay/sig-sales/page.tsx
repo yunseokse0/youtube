@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { AnimatePresence, motion } from "framer-motion";
 import { Howl } from "howler";
 import type { SigItem } from "@/types";
 import RouletteWheel from "@/components/sig-sales/RouletteWheel";
@@ -101,6 +102,22 @@ export default function SigSalesOverlayPage() {
     if (!Number.isFinite(n)) return 3.5;
     return Math.max(1, Math.min(10, n));
   })();
+  /** 착지 후 이 시간(ms)이 지나야 시그 카드·휠 퇴장 연출 시작. `cardRevealDelayMs` 동의어 */
+  const resultRevealDelayMs = useMemo(() => {
+    const raw = sp.get("resultRevealDelayMs") || sp.get("cardRevealDelayMs") || "";
+    const n = parseInt(String(raw).replace(/[^\d]/g, ""), 10);
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return Math.min(120_000, n);
+  }, [sp]);
+  /** 휠 페이드·카드 슬라이드 duration (ms). `wheelFadeMs` 동의어 */
+  const revealMotionMs = useMemo(() => {
+    const raw = sp.get("revealMotionMs") || sp.get("wheelFadeMs") || "";
+    if (!raw.trim()) return 550;
+    const n = parseInt(String(raw).replace(/[^\d]/g, ""), 10);
+    if (!Number.isFinite(n)) return 550;
+    return Math.max(200, Math.min(4000, n));
+  }, [sp]);
+  const revealMotionSec = revealMotionMs / 1000;
   const overlayScale = overlayScalePct / 100;
   const overlayScaleStyle = overlayScale === 1
     ? undefined
@@ -115,6 +132,10 @@ export default function SigSalesOverlayPage() {
   const [overlayHoldResults, setOverlayHoldResults] = useState(false);
   const [currentSignImageUrl, setCurrentSignImageUrl] = useState("");
   const [wheelPhase, dispatch] = useReducer(wheelReducer, "idle");
+  /** 착지 후 정지 연출이 끝나고 resultRevealDelayMs 경과 전까지 false → 시그 카드·휠 퇴장 지연 */
+  const [revealGateOpen, setRevealGateOpen] = useState(true);
+  const [wheelFadePhase, setWheelFadePhase] = useState<"on" | "fading" | "off">("on");
+  const revealTimerRef = useRef<number | null>(null);
   const transitionHandledKeyRef = useRef("");
   const handledSpinKeyRef = useRef("");
   const completedSpinKeyRef = useRef("");
@@ -166,7 +187,7 @@ export default function SigSalesOverlayPage() {
         })
       : null
   );
-  const { machine, landed, markConfirmPending, cancelConfirm, resetToIdle, finish, setError } = useSigSalesState(userId, state);
+  const { machine, landed, resetToIdle } = useSigSalesState(userId, state);
 
   const loadRemote = useCallback(async () => {
     if (rouletteDemo) return;
@@ -340,12 +361,21 @@ export default function SigSalesOverlayPage() {
     wheelPhase !== "spinning" &&
     wheelPhase !== "settling" &&
     (wheelPhase === "result" || overlayHoldResults || showResultPanel);
+  /** 회차별 reveal·페이드 시퀀스 구분(데모에서 sessionId 비어 있어도 충돌 방지) */
+  const spinCompletionKey = useMemo(() => {
+    const selKey = (machine.selectedSigs || []).map((s) => s.id).join(",");
+    return `${machine.sessionId || ""}:${machine.startedAt || 0}:${machine.resultId || ""}:${selKey}`;
+  }, [machine.sessionId, machine.startedAt, machine.resultId, machine.selectedSigs]);
+  const showWheelVisual = useMemo(
+    () => !hideWheelAfterComplete || !revealGateOpen || wheelFadePhase !== "off",
+    [hideWheelAfterComplete, revealGateOpen, wheelFadePhase],
+  );
   const showSigBoardRollingSection = useMemo(() => {
     if (hideSigBoard || !state || (state.sigInventory || []).length === 0) return false;
     if (sigBoardDuringSpin) return true;
-    return Boolean(hideWheelAfterComplete && showResultPanel);
-  }, [hideSigBoard, state, sigBoardDuringSpin, hideWheelAfterComplete, showResultPanel]);
-  const resultOverlayVisible = Boolean(showResultPanel && hideWheelAfterComplete);
+    return Boolean(hideWheelAfterComplete && showResultPanel && revealGateOpen);
+  }, [hideSigBoard, state, sigBoardDuringSpin, hideWheelAfterComplete, showResultPanel, revealGateOpen]);
+  const resultOverlayVisible = Boolean(showResultPanel && hideWheelAfterComplete && revealGateOpen);
   /** 관리자가 재고에서 완판 처리한 시그 → 방송 결과 카드에도 스탬프 표시 */
   const inventorySoldOutIdSet = useMemo(() => {
     const next = new Set<string>();
@@ -389,6 +419,38 @@ export default function SigSalesOverlayPage() {
   }, [wheelPhase]);
 
   useEffect(() => {
+    if (!hideWheelAfterComplete) {
+      if (revealTimerRef.current) {
+        clearTimeout(revealTimerRef.current);
+        revealTimerRef.current = null;
+      }
+      setRevealGateOpen(true);
+      setWheelFadePhase("on");
+      return;
+    }
+    setRevealGateOpen(false);
+    setWheelFadePhase("on");
+    const runReveal = () => {
+      setRevealGateOpen(true);
+      setWheelFadePhase("fading");
+    };
+    if (resultRevealDelayMs <= 0) {
+      runReveal();
+    } else {
+      revealTimerRef.current = window.setTimeout(() => {
+        revealTimerRef.current = null;
+        runReveal();
+      }, resultRevealDelayMs);
+    }
+    return () => {
+      if (revealTimerRef.current) {
+        clearTimeout(revealTimerRef.current);
+        revealTimerRef.current = null;
+      }
+    };
+  }, [hideWheelAfterComplete, resultRevealDelayMs]);
+
+  useEffect(() => {
     // 오버레이가 서버 상태만으로도 재생될 수 있도록 대기열을 자동 복원한다.
     if (pendingLanding || demoSpin) return;
     const machineSpinKey = `${machine.startedAt || 0}:${machine.sessionId || ""}:${machine.resultId || ""}`;
@@ -429,6 +491,12 @@ export default function SigSalesOverlayPage() {
     setDemoSpin(null);
     setCurrentSignImageUrl("");
     setOverlayHoldResults(false);
+    setRevealGateOpen(true);
+    setWheelFadePhase("on");
+    if (revealTimerRef.current) {
+      clearTimeout(revealTimerRef.current);
+      revealTimerRef.current = null;
+    }
     transitionHandledKeyRef.current = "";
     handledSpinKeyRef.current = "";
   }, [machine.phase, state, rouletteDemo]);
@@ -445,6 +513,12 @@ export default function SigSalesOverlayPage() {
     setOverlayHoldResults(false);
     setShowResultPanel(false);
     setCurrentSignImageUrl("");
+    setRevealGateOpen(true);
+    setWheelFadePhase("on");
+    if (revealTimerRef.current) {
+      clearTimeout(revealTimerRef.current);
+      revealTimerRef.current = null;
+    }
     transitionHandledKeyRef.current = "";
   }, [machine.phase, machine.startedAt, machine.sessionId, machine.resultId]);
 
@@ -532,77 +606,122 @@ export default function SigSalesOverlayPage() {
               {lastConfirmedText}
             </div>
           ) : null}
-          {!hideWheelAfterComplete ? (
-            <RouletteWheel
-              items={wheelItemsWithResult}
-              isRolling={wheelPhase === "spinning" || Boolean(demoSpin) || hasServerSpinToPlay}
-              resultId={wheelResultSliceId}
-              startedAt={demoSpin?.startedAt || machine.startedAt}
-              scalePct={wheelScalePct}
-              volume={0.7}
-              muted={false}
-              onTransitionEnd={() => {
-                if (phaseRef.current === "result") return;
-                const transitionKey = `${machine.startedAt}:${wheelResultSliceId || "none"}`;
-                if (transitionHandledKeyRef.current === transitionKey) return;
-                transitionHandledKeyRef.current = transitionKey;
-                dispatch({ type: "SETTLING" });
-                window.setTimeout(() => {
-                  dispatch({ type: "LANDED" });
-                }, 280);
+          {showWheelVisual ? (
+            <motion.div
+              key={`wheel-wrap-${spinCompletionKey}`}
+              className="flex w-full max-w-[1120px] flex-col items-center"
+              initial={false}
+              animate={{ opacity: wheelFadePhase === "fading" ? 0 : 1 }}
+              transition={{ duration: revealMotionSec, ease: [0.4, 0, 0.2, 1] }}
+              onAnimationComplete={() => {
+                setWheelFadePhase((p) => (p === "fading" ? "off" : p));
               }}
-              onLanded={(landedId) => {
-                const selectedQueue = (pendingLanding?.selected || machine.selectedSigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
-                if (selectedQueue.length === 0) return;
-                const canonicalLand = landedId ? canonicalSigIdFromWheelSliceId(landedId) : null;
-                const expectedReal =
-                  pendingLanding?.resultId ||
-                  machine.resultId ||
-                  selectedQueue[selectedQueue.length - 1]?.id ||
-                  null;
-                if (canonicalLand && expectedReal && canonicalLand !== expectedReal) {
-                  console.warn("[sig-sales] wheel slice vs server result mismatch", canonicalLand, expectedReal);
-                }
+            >
+              <RouletteWheel
+                items={wheelItemsWithResult}
+                isRolling={wheelPhase === "spinning" || Boolean(demoSpin) || hasServerSpinToPlay}
+                resultId={wheelResultSliceId}
+                startedAt={demoSpin?.startedAt || machine.startedAt}
+                scalePct={wheelScalePct}
+                volume={0.7}
+                muted={false}
+                onTransitionEnd={() => {
+                  if (phaseRef.current === "result") return;
+                  const transitionKey = `${machine.startedAt}:${wheelResultSliceId || "none"}`;
+                  if (transitionHandledKeyRef.current === transitionKey) return;
+                  transitionHandledKeyRef.current = transitionKey;
+                  dispatch({ type: "SETTLING" });
+                  window.setTimeout(() => {
+                    dispatch({ type: "LANDED" });
+                  }, 280);
+                }}
+                onLanded={(landedId) => {
+                  const selectedQueue = (pendingLanding?.selected || machine.selectedSigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
+                  if (selectedQueue.length === 0) return;
+                  const snapSession = machine.sessionId;
+                  const snapStarted = machine.startedAt;
+                  const canonicalLand = landedId ? canonicalSigIdFromWheelSliceId(landedId) : null;
+                  const expectedReal =
+                    pendingLanding?.resultId ||
+                    machine.resultId ||
+                    selectedQueue[selectedQueue.length - 1]?.id ||
+                    null;
+                  if (canonicalLand && expectedReal && canonicalLand !== expectedReal) {
+                    console.warn("[sig-sales] wheel slice vs server result mismatch", canonicalLand, expectedReal);
+                  }
 
-                const oneShot = buildOneShotFromSelected(selectedQueue);
-                const machineSpinKey = `${machine.startedAt || 0}:${machine.sessionId || ""}:${machine.resultId || ""}`;
-                completedSpinKeyRef.current = machineSpinKey;
-                const finalResultId =
-                  pendingLanding?.resultId ||
-                  machine.resultId ||
-                  expectedReal ||
-                  canonicalLand ||
-                  selectedQueue[selectedQueue.length - 1]?.id ||
-                  selectedQueue[0]!.id;
-                landed(selectedQueue, oneShot, finalResultId);
-                if (oneShotSound && !hasOneShotSoundErrorRef.current) {
-                  oneShotSound.stop();
-                  oneShotSound.play();
-                } else {
-                  playFallbackOneShot();
-                }
-                setDemoSpin(null);
-                setPendingLanding(null);
-                setOverlayHoldResults(true);
-                setShowResultPanel(true);
-                setLastConfirmedText(`${selectedQueue.map((s) => s.name).join(", ")} 확정!`);
-                setLastConfirmedFxKey((v) => v + 1);
-                const signUrl = getSignImageUrl(finalResultId);
-                setCurrentSignImageUrl(signUrl || "");
-              }}
-            />
+                  const oneShot = buildOneShotFromSelected(selectedQueue);
+                  const machineSpinKey = `${machine.startedAt || 0}:${machine.sessionId || ""}:${machine.resultId || ""}`;
+                  completedSpinKeyRef.current = machineSpinKey;
+                  const finalResultId =
+                    pendingLanding?.resultId ||
+                    machine.resultId ||
+                    expectedReal ||
+                    canonicalLand ||
+                    selectedQueue[selectedQueue.length - 1]?.id ||
+                    selectedQueue[0]!.id;
+                  landed(selectedQueue, oneShot, finalResultId);
+                  if (oneShotSound && !hasOneShotSoundErrorRef.current) {
+                    oneShotSound.stop();
+                    oneShotSound.play();
+                  } else {
+                    playFallbackOneShot();
+                  }
+                  setDemoSpin(null);
+                  setPendingLanding(null);
+                  setOverlayHoldResults(true);
+                  setShowResultPanel(true);
+                  setLastConfirmedText(`${selectedQueue.map((s) => s.name).join(", ")} 확정!`);
+                  setLastConfirmedFxKey((v) => v + 1);
+                  const signUrl = getSignImageUrl(finalResultId);
+                  setCurrentSignImageUrl(signUrl || "");
+                  if (!rouletteDemo && snapSession) {
+                    void (async () => {
+                      try {
+                        const res = await fetch(`/api/roulette/land?user=${encodeURIComponent(userId)}`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            sessionId: snapSession,
+                            startedAt: snapStarted,
+                            selectedSigs: selectedQueue,
+                            oneShotResult: oneShot,
+                          }),
+                        });
+                        if (res.ok) void loadRemote();
+                      } catch {
+                        /* 네트워크 실패 시 HYDRATE 완화 로직으로 UX 유지 */
+                      }
+                    })();
+                  }
+                }}
+              />
+            </motion.div>
           ) : null}
-          <ResultOverlay
-            visible={resultOverlayVisible}
-            selectedSigs={displaySelectedSigs}
-            soldOutStampUrl={soldOutStampUrl}
-            soldOverrideSet={inventorySoldOutIdSet}
-            oneShot={displayOneShot ? { name: displayOneShot.name, price: displayOneShot.price } : null}
-            signImageUrl={oneShotImageUrl || currentSignImageUrl}
-            showOneShotReveal={Boolean(displayOneShot && resultOverlayVisible)}
-            className={hideWheelAfterComplete ? "relative z-30 w-full max-w-[1120px]" : "w-full max-w-[1120px]"}
-            gifDelayMultiplier={sigGifDelayMultiplier}
-          />
+          <AnimatePresence mode="wait">
+            {resultOverlayVisible ? (
+              <motion.div
+                key={`result-${spinCompletionKey}`}
+                initial={{ opacity: 0, y: 44 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 20 }}
+                transition={{ duration: revealMotionSec, ease: [0.22, 1, 0.36, 1] }}
+                className={hideWheelAfterComplete ? "relative z-30 w-full max-w-[1120px]" : "w-full max-w-[1120px]"}
+              >
+                <ResultOverlay
+                  visible
+                  selectedSigs={displaySelectedSigs}
+                  soldOutStampUrl={soldOutStampUrl}
+                  soldOverrideSet={inventorySoldOutIdSet}
+                  oneShot={displayOneShot ? { name: displayOneShot.name, price: displayOneShot.price } : null}
+                  signImageUrl={oneShotImageUrl || currentSignImageUrl}
+                  showOneShotReveal={Boolean(displayOneShot && resultOverlayVisible)}
+                  className="w-full max-w-[1120px]"
+                  gifDelayMultiplier={sigGifDelayMultiplier}
+                />
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
           {machine.phase === "CONFIRM_PENDING" ? (
             <div className="pointer-events-none absolute inset-0 z-50 grid place-items-center bg-black/55">
               <div className="rounded-xl border border-yellow-300/50 bg-neutral-900/90 px-6 py-4 text-center">
@@ -625,13 +744,20 @@ export default function SigSalesOverlayPage() {
           ) : null}
         </section>
         {showSigBoardRollingSection && state ? (
-          <SigBoardRolling
-            inventory={state.sigInventory || []}
-            soldOutStampUrl={soldOutStampUrl}
-            className="pb-2"
-            gifDelayMultiplier={sigGifDelayMultiplier}
-            autoAdvancePages={sigBoardDuringSpin}
-          />
+          <motion.div
+            key={`sigboard-${spinCompletionKey}`}
+            initial={{ opacity: 0, y: 28 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: revealMotionSec, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <SigBoardRolling
+              inventory={state.sigInventory || []}
+              soldOutStampUrl={soldOutStampUrl}
+              className="pb-2"
+              gifDelayMultiplier={sigGifDelayMultiplier}
+              autoAdvancePages={sigBoardDuringSpin}
+            />
+          </motion.div>
         ) : null}
       </div>
     </main>

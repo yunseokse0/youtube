@@ -119,12 +119,30 @@ function toMachine(rs: RouletteState | undefined): Partial<SigSalesMachine> {
 export function useSigSalesState(userId: string, appState: AppState | null) {
   const [machine, dispatch] = useReducer(reducer, initialMachine);
   const prevUpdatedAtRef = useRef(0);
+  const machineRef = useRef(machine);
+  machineRef.current = machine;
 
   useEffect(() => {
     if (!appState) return;
-    if ((appState.updatedAt || 0) < prevUpdatedAtRef.current) return;
-    prevUpdatedAtRef.current = appState.updatedAt || 0;
-    dispatch({ type: "HYDRATE", payload: toMachine(appState.rouletteState) });
+    const incomingTs = appState.updatedAt || 0;
+    if (incomingTs < prevUpdatedAtRef.current) return;
+
+    const incoming = toMachine(appState.rouletteState);
+    const cur = machineRef.current;
+    // 서버가 아직 SPINNING인데 로컬은 착지(LANDED)·확정대기(CONFIRM_PENDING)면 폴링이 단계를 되돌리지 않음
+    if (
+      incoming.phase === "SPINNING" &&
+      (cur.phase === "LANDED" || cur.phase === "CONFIRM_PENDING") &&
+      cur.sessionId &&
+      cur.sessionId === incoming.sessionId &&
+      Number(incoming.startedAt || 0) === Number(cur.startedAt || 0)
+    ) {
+      prevUpdatedAtRef.current = incomingTs;
+      return;
+    }
+
+    prevUpdatedAtRef.current = incomingTs;
+    dispatch({ type: "HYDRATE", payload: incoming });
   }, [appState]);
 
   const spin = useCallback(async (options?: { memberId?: string | null; force?: boolean }) => {
@@ -145,13 +163,6 @@ export function useSigSalesState(userId: string, appState: AppState | null) {
       if (!res.ok) {
         const payload = (await res.json().catch(() => ({}))) as { error?: string };
         const code = payload?.error || "spin_failed";
-        const message =
-          code === "not_enough_active_sigs"
-            ? "활성 시그가 5개 미만입니다."
-            : code === "empty_inventory"
-            ? "시그 목록이 비어 있습니다."
-            : "회전판 시작 실패";
-        dispatch({ type: "SPIN_FAILED", payload: message });
         throw new Error(code);
       }
       const data = (await res.json()) as {
@@ -172,11 +183,16 @@ export function useSigSalesState(userId: string, appState: AppState | null) {
       return data;
     } catch (e) {
       const code = e instanceof Error && e.message ? e.message : "spin_failed";
-      if (code === "not_enough_active_sigs") {
-        dispatch({ type: "SPIN_FAILED", payload: "활성 시그가 5개 미만입니다." });
-      } else {
-        dispatch({ type: "SPIN_FAILED", payload: "회전판 시작 실패" });
+      if (code === "spin_blocked") {
+        throw e;
       }
+      const message =
+        code === "not_enough_active_sigs"
+          ? "활성 시그가 5개 미만입니다."
+          : code === "empty_inventory"
+            ? "시그 목록이 비어 있습니다."
+            : "회전판 시작 실패";
+      dispatch({ type: "SPIN_FAILED", payload: message });
       throw new Error(code);
     }
   }, [userId, machine.phase, machine.isFinishLoading]);

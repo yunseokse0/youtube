@@ -264,8 +264,6 @@ export default function RouletteWheel({
     hasLandedRef.current = false;
     stopAllAnimations();
 
-    console.log("[Wheel] STARTING ANIMATION", { isRolling, startedAt, resultId });
-
     let cancelled = false;
     soundsRef.current?.tick.stop();
     soundsRef.current?.final.stop();
@@ -319,7 +317,6 @@ export default function RouletteWheel({
         }
         if (!hasLandedRef.current) {
           hasLandedRef.current = true;
-          console.log("[Wheel] LANDED CALL", resultId);
           onLandedRef.current?.(resultId);
         }
       } catch {

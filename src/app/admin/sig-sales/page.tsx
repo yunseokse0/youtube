@@ -364,6 +364,22 @@ export default function AdminSigSalesPage() {
   const onConfirmSale = useCallback(async () => {
     if (!state || displaySelectedSigs.length === 0) return;
     markConfirmPending();
+    try {
+      const pr = await fetch(`/api/roulette/pending?user=${encodeURIComponent(userId)}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: machine.sessionId }),
+      });
+      if (!pr.ok) {
+        throw new Error("pending_failed");
+      }
+    } catch {
+      setError("판매 확정 준비 실패");
+      cancelConfirm();
+      setToast("판매 확정 준비 실패");
+      return;
+    }
     const manualCanon = new Set([...manualSoldSet].map((id) => canonicalSigIdFromWheelSliceId(id)));
     const selectedCanon = new Set(displaySelectedSigs.map((x) => canonicalSigIdFromWheelSliceId(x.id)));
     const nextInventory = state.sigInventory.map((item) => {
@@ -373,36 +389,67 @@ export default function AdminSigSalesPage() {
       const soldCount = Math.min(item.maxCount, Math.max(0, item.soldCount) + 1);
       return { ...item, soldCount };
     });
+    try {
+      await finish({
+        sessionId: machine.sessionId,
+        selectedSigs: displaySelectedSigs,
+        oneShotResult: displayOneShot,
+        finalPhase: "CONFIRMED",
+      });
+    } catch {
+      setError("판매 확정 처리 실패");
+      cancelConfirm();
+      setToast("판매 확정 처리 실패");
+      return;
+    }
+    const finishedAt = Date.now();
     const next: AppState = {
       ...state,
       sigInventory: nextInventory,
       rouletteState: {
         ...state.rouletteState,
         phase: "CONFIRMED",
-        lastFinishedAt: Date.now(),
-      },
-      updatedAt: Date.now(),
-    };
-    setState(next);
-    await saveStateAsync(next, userId);
-    try {
-      const res = await finish({
-        sessionId: machine.sessionId,
+        isRolling: false,
+        lastFinishedAt: finishedAt,
         selectedSigs: displaySelectedSigs,
-        oneShotResult: displayOneShot,
-        finalPhase: "CONFIRMED",
-      });
-      const asAny = res as { history?: HistoryItem[] };
-      if (Array.isArray(asAny.history)) setHistory(asAny.history.slice(0, 8));
+        oneShotResult: displayOneShot ?? state.rouletteState?.oneShotResult ?? null,
+        sessionId: machine.sessionId || state.rouletteState?.sessionId || "",
+      },
+      updatedAt: finishedAt,
+    };
+    let saved = await saveStateAsync(next, userId);
+    if (!saved) {
+      await new Promise((r) => setTimeout(r, 400));
+      saved = await saveStateAsync(next, userId);
+    }
+    if (saved) {
+      setState(next);
+      void loadHistory(8);
       setToast("판매 확정 완료!");
       confetti({ particleCount: 110, spread: 80, origin: { y: 0.22 } });
       setShowConfirmModal(false);
-    } catch {
-      setError("판매 확정 처리 실패");
-      cancelConfirm();
-      setToast("판매 확정 처리 실패");
+    } else {
+      setToast(
+        "서버에 회차는 반영되었으나 재고 저장에 실패했습니다. 새로고침 후 재고를 확인하세요.",
+      );
+      void loadRemote();
+      setShowConfirmModal(false);
     }
-  }, [state, displaySelectedSigs, machine.sessionId, displayOneShot, manualSoldSet, oneShotSold, userId, finish, markConfirmPending, setError, cancelConfirm]);
+  }, [
+    state,
+    displaySelectedSigs,
+    machine.sessionId,
+    displayOneShot,
+    manualSoldSet,
+    oneShotSold,
+    userId,
+    finish,
+    markConfirmPending,
+    setError,
+    cancelConfirm,
+    loadRemote,
+    loadHistory,
+  ]);
 
   const onCancelConfirmedSession = useCallback(async () => {
     if (!machine.sessionId || machine.selectedSigs.length === 0) return;
