@@ -973,7 +973,8 @@ function DonorTicker({ donors, theme, fontSize, color, bgColor, bgOpacity, full,
     ...(shadowParts.length ? { textShadow: shadowParts.join(", ") } : {}),
   };
   const backgroundOpacity = Math.max(0, Math.min(100, bgOpacity ?? 0)) / 100;
-  const tickerBackground = bgColor ? normalizeColorWithAlpha(bgColor, backgroundOpacity) : "";
+  const tickerBackground =
+    bgColor && backgroundOpacity > 0 ? normalizeColorWithAlpha(bgColor, backgroundOpacity) : "";
   const tickerContainerStyle: React.CSSProperties = {
     fontSize,
     width: "100%",
@@ -1559,12 +1560,13 @@ function OverlayInner() {
   const useTableOpacity = tableBgOpacity < 100 || showTableBgGif;
   const tableTintAlpha = showTableBgGif ? Math.min(tableBgOpacity / 100, 0.88) : tableBgOpacity / 100;
   const effectiveTableCls = useTableOpacity ? stripBg(membersTheme.tableCls) : membersTheme.tableCls;
-  // Always remove per-cell gradients/backgrounds for cleaner unified look
+  // Strip row backgrounds for tinted/GIF sheet; keep header & total bar colors when shown.
   const effectiveRowCls = stripBg(membersTheme.rowCls);
-  const effectiveHeaderCls = stripBg(membersTheme.headerCls);
+  const mutedTotalWrapCls = stripBorder(stripBg(totalTheme.totalWrapCls));
+  const totalWrapClsTintedMode = totalLineVisible ? totalTheme.totalWrapCls : mutedTotalWrapCls;
   const effectiveTotalWrapCls = totalLineVisible
     ? stripBg(totalTheme.totalWrapCls)
-    : stripBorder(stripBg(totalTheme.totalWrapCls));
+    : mutedTotalWrapCls;
   const lockWidth = (sp.get("lockWidth") || "false").toLowerCase() === "true";
   const effectiveNameGrow = lockWidth ? false : nameGrow;
   const scaledMainStyle: React.CSSProperties = {};
@@ -2328,13 +2330,13 @@ function OverlayInner() {
                   </colgroup>
                   <thead>
                     <tr>
-                      <td className={`${effectiveHeaderCls} overlay-col-rank overlay-rank-cell`}>순위</td>
-                      {hasRoleColumn && <td className={`${effectiveHeaderCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>직급</td>}
-                      <td className={`${effectiveHeaderCls} overlay-col-name`}>이름</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-account text-right`}>계좌</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-toon text-right`}>투네</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-total text-right`}>{totalHeaderLabel}</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-contribution text-right`}>기여도</td>
+                      <td className={`${membersTheme.headerCls} overlay-col-rank overlay-rank-cell`}>순위</td>
+                      {hasRoleColumn && <td className={`${membersTheme.headerCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>직급</td>}
+                      <td className={`${membersTheme.headerCls} overlay-col-name`}>이름</td>
+                      <td className={`${membersTheme.headerCls} overlay-col-account text-right`}>계좌</td>
+                      <td className={`${membersTheme.headerCls} overlay-col-toon text-right`}>투네</td>
+                      <td className={`${membersTheme.headerCls} overlay-col-total text-right`}>{totalHeaderLabel}</td>
+                      <td className={`${membersTheme.headerCls} overlay-col-contribution text-right`}>기여도</td>
                     </tr>
                   </thead>
                   <tbody>
@@ -2374,12 +2376,12 @@ function OverlayInner() {
                     ))}
                     {showTotal && ready && (
                       <tr className="overlay-total-row">
-                        <td className={effectiveTotalWrapCls} colSpan={hasRoleColumn ? 2 : 1}>총합</td>
-                        <td className={effectiveTotalWrapCls} />
-                        <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(sumAccount)}</td>
-                        <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(sumToon)}</td>
-                        <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(rounded)}</td>
-                        <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(sumContribution)}</td>
+                        <td className={totalWrapClsTintedMode} colSpan={hasRoleColumn ? 2 : 1}>총합</td>
+                        <td className={totalWrapClsTintedMode} />
+                        <td className={`${totalWrapClsTintedMode} text-right`}>{fmt(sumAccount)}</td>
+                        <td className={`${totalWrapClsTintedMode} text-right`}>{fmt(sumToon)}</td>
+                        <td className={`${totalWrapClsTintedMode} text-right`}>{fmt(rounded)}</td>
+                        <td className={`${totalWrapClsTintedMode} text-right`}>{fmt(sumContribution)}</td>
                       </tr>
                     )}
                   </tbody>
@@ -2398,13 +2400,13 @@ function OverlayInner() {
                   </colgroup>
                   <thead>
                     <tr>
-                      <td className={`${effectiveHeaderCls} overlay-col-rank overlay-rank-cell`}>순위</td>
-                      {hasRoleColumn && <td className={`${effectiveHeaderCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>직급</td>}
-                      <td className={`${effectiveHeaderCls} overlay-col-name`}>이름</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-account text-right`}>계좌</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-toon text-right`}>투네</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-total text-right`}>{totalHeaderLabel}</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-contribution text-right`}>기여도</td>
+                      <td className={`${membersTheme.headerCls} overlay-col-rank overlay-rank-cell`}>순위</td>
+                      {hasRoleColumn && <td className={`${membersTheme.headerCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>직급</td>}
+                      <td className={`${membersTheme.headerCls} overlay-col-name`}>이름</td>
+                      <td className={`${membersTheme.headerCls} overlay-col-account text-right`}>계좌</td>
+                      <td className={`${membersTheme.headerCls} overlay-col-toon text-right`}>투네</td>
+                      <td className={`${membersTheme.headerCls} overlay-col-total text-right`}>{totalHeaderLabel}</td>
+                      <td className={`${membersTheme.headerCls} overlay-col-contribution text-right`}>기여도</td>
                     </tr>
                   </thead>
                   <tbody>
