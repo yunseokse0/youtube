@@ -2729,7 +2729,7 @@ export default function AdminPage() {
                     {([
                       ["mealBattle", "식사대전 동기화"],
                       ["sigMatch", "시그대전 동기화"],
-                      ["sigSales", "시그판매 동기화(준비)"],
+                      ["sigSales", "시그판매 동기화"],
                       ["none", "동기화 안 함"],
                     ] as Array<[AppState["donationSyncMode"], string]>).map(([mode, label]) => (
                       <button

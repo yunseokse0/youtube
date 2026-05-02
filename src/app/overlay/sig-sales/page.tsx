@@ -646,9 +646,6 @@ export default function SigSalesOverlayPage() {
                     machine.resultId ||
                     selectedQueue[selectedQueue.length - 1]?.id ||
                     null;
-                  if (canonicalLand && expectedReal && canonicalLand !== expectedReal) {
-                    console.warn("[sig-sales] wheel slice vs server result mismatch", canonicalLand, expectedReal);
-                  }
 
                   const oneShot = buildOneShotFromSelected(selectedQueue);
                   const machineSpinKey = `${machine.startedAt || 0}:${machine.sessionId || ""}:${machine.resultId || ""}`;

@@ -138,6 +138,20 @@ function readColor(sp: URLSearchParams, key: string, fallback: string): string {
   return raw || fallback;
 }
 
+/** 저장값이 `transparent`일 때 밝은 카메라 배경에서도 보이도록 방송용 기본값 사용(URL로 덮어쓰기 가능) */
+function resolveThemeColor(
+  sp: URLSearchParams,
+  key: string,
+  saved: string | undefined,
+  broadcastDefault: string
+): string {
+  const fromUrl = (sp.get(key) || "").trim();
+  if (fromUrl) return fromUrl;
+  const s = (saved || "").trim();
+  if (s && s.toLowerCase() !== "transparent") return s;
+  return broadcastDefault;
+}
+
 function RankingColumn({
   title,
   items,
@@ -260,22 +274,36 @@ export default function DonorRankingsOverlayPage() {
   const zoomPct = Math.floor(readNumber(sp, "zoomPct", 100, 30, 300));
   const zoomScale = zoomPct / 100;
   const bg = readColor(sp, "bg", savedTheme.bg) || "transparent";
-  const panelBg =
-    readColor(sp, "panelBg", savedTheme.panelBg) ||
-    "linear-gradient(180deg, rgba(34,8,25,0.76) 0%, rgba(20,7,18,0.72) 100%)";
-  const borderColor = readColor(sp, "border", savedTheme.borderColor) || "rgba(255, 210, 232, 0.38)";
+  const panelBg = resolveThemeColor(
+    sp,
+    "panelBg",
+    savedTheme.panelBg,
+    "linear-gradient(180deg, rgba(26,10,22,0.88) 0%, rgba(14,6,14,0.84) 100%)"
+  );
+  const borderColor = resolveThemeColor(
+    sp,
+    "border",
+    savedTheme.borderColor,
+    "rgba(255, 210, 232, 0.42)"
+  );
   const headerAccountBg =
     readColor(sp, "headerAccountBg", savedTheme.headerAccountBg) ||
     "linear-gradient(135deg, #ffd6ea 0%, #ff9ec8 56%, #f75c9c 100%)";
   const headerToonBg =
     readColor(sp, "headerToonBg", savedTheme.headerToonBg) ||
     "linear-gradient(135deg, #ffd2e8 0%, #ff8ebf 56%, #ef4f96 100%)";
-  const rowEvenBg =
-    readColor(sp, "rowEvenBg", savedTheme.rowEvenBg) ||
-    "linear-gradient(135deg, rgba(255,141,184,0.28) 0%, rgba(244,114,182,0.24) 52%, rgba(232,121,249,0.22) 100%)";
-  const rowOddBg =
-    readColor(sp, "rowOddBg", savedTheme.rowOddBg) ||
-    "linear-gradient(135deg, rgba(244,114,182,0.22) 0%, rgba(251,113,133,0.2) 52%, rgba(217,70,239,0.18) 100%)";
+  const rowEvenBg = resolveThemeColor(
+    sp,
+    "rowEvenBg",
+    savedTheme.rowEvenBg,
+    "linear-gradient(135deg, rgba(255,141,184,0.38) 0%, rgba(244,114,182,0.32) 52%, rgba(232,121,249,0.28) 100%)"
+  );
+  const rowOddBg = resolveThemeColor(
+    sp,
+    "rowOddBg",
+    savedTheme.rowOddBg,
+    "linear-gradient(135deg, rgba(244,114,182,0.32) 0%, rgba(251,113,133,0.28) 52%, rgba(217,70,239,0.26) 100%)"
+  );
   const rankColor = readColor(sp, "rankColor", savedTheme.rankColor) || "#fff5f9";
   const nameColor = readColor(sp, "nameColor", savedTheme.nameColor) || "#fff7fb";
   const amountColor = readColor(sp, "amountColor", savedTheme.amountColor) || "#fff7ed";

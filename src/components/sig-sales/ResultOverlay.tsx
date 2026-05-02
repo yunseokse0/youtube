@@ -39,13 +39,11 @@ export default function ResultOverlay({
 
   useImagePreload(
     signImageUrl,
-    (url) => {
+    () => {
       setImageLoaded(true);
-      console.log(`[Result] Image fully loaded: ${url}`);
     },
-    (url) => {
+    () => {
       setImageLoaded(false);
-      console.warn(`[Result] Image load failed, using fallback: ${url}`);
     }
   );
 

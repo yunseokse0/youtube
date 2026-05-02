@@ -16,12 +16,10 @@ export function useImagePreload(
 
     const img = new Image();
     img.onload = () => {
-      console.log(`✅ [Preload] Success: ${src}`);
       loadedRef.current[src] = true;
       onLoad?.(src);
     };
     img.onerror = () => {
-      console.error(`❌ [Preload] Failed: ${src}`);
       onError?.(src);
     };
     img.src = src;

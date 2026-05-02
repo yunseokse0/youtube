@@ -2240,7 +2240,7 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td.overlay-col-toon,
         .overlay-root .overlay-elegant-table thead td.overlay-col-total,
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution {
-          background: rgba(244, 170, 205, 0.92) !important;
+          background: rgba(244, 170, 205, 0.62) !important;
         }
         `}
         .overlay-root .overlay-elegant-table tbody tr:hover td {
