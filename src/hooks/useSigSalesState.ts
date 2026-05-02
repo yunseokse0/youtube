@@ -127,8 +127,11 @@ export function useSigSalesState(userId: string, appState: AppState | null) {
     dispatch({ type: "HYDRATE", payload: toMachine(appState.rouletteState) });
   }, [appState]);
 
-  const spin = useCallback(async (options?: { memberId?: string | null }) => {
-    if (machine.phase === "SPINNING" || machine.phase === "CONFIRM_PENDING" || machine.isFinishLoading) {
+  const spin = useCallback(async (options?: { memberId?: string | null; force?: boolean }) => {
+    if (!options?.force && machine.isFinishLoading) {
+      throw new Error("spin_blocked");
+    }
+    if (!options?.force && (machine.phase === "SPINNING" || machine.phase === "CONFIRM_PENDING")) {
       throw new Error("spin_blocked");
     }
     dispatch({ type: "SPINNING", payload: { startedAt: Date.now(), sessionId: "", resultId: null } });

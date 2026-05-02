@@ -246,16 +246,18 @@ export default function AdminSigSalesPage() {
       setToast("회전 전 멤버를 먼저 선택해주세요.");
       return;
     }
-    if (machine.phase === "CONFIRM_PENDING" || machine.isFinishLoading) {
-      // 잠김 상태 복구: 시작 버튼은 무반응이 아닌 자동 복구 후 새 회차로 진입
+    if (machine.isFinishLoading) {
+      setToast("판매 확정 처리 중입니다. 잠시 후 다시 시도하세요.");
+      return;
+    }
+    /** reset 직후에도 useCallback spin이 이전 phase를 보므로 API 가드 우회 */
+    let forceSpinAfterRecover = false;
+    if (machine.phase === "CONFIRM_PENDING") {
       cancelConfirm();
       resetToIdle();
       setShowConfirmModal(false);
       setToast("이전 처리 상태를 복구하고 새 회차를 시작합니다.");
-    }
-    if (machine.phase === "CONFIRM_PENDING") {
-      setToast("판매 확정 처리 중입니다. 잠시 후 다시 시도하세요.");
-      return;
+      forceSpinAfterRecover = true;
     }
     if (machine.phase === "LANDED" || machine.phase === "CONFIRMED") {
       // 운영 중 멈춤 체감 방지를 위해 이전 회차를 자동 초기화하고 새 회차 시작
@@ -267,7 +269,7 @@ export default function AdminSigSalesPage() {
     }
     setLoadingSpin(true);
     try {
-      const data = await spin({ memberId: memberFilterId || null });
+      const data = await spin({ memberId: memberFilterId || null, force: forceSpinAfterRecover });
       const selected = (data.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
       const oneShot = buildOneShotFromSelected(selected);
       setPendingLanding({ selected, oneShot, resultId: data.result?.id || selected[selected.length - 1]?.id || null, persist: true });

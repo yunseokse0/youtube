@@ -385,10 +385,6 @@ export default function SigSalesOverlayPage() {
   useImagePreload(currentSignImageUrl);
 
   useEffect(() => {
-    console.log(`[Phase Change] ${wheelPhase} | signUrl: ${currentSignImageUrl ? "exist" : "empty"}`);
-  }, [wheelPhase, currentSignImageUrl]);
-
-  useEffect(() => {
     phaseRef.current = wheelPhase;
   }, [wheelPhase]);
 
