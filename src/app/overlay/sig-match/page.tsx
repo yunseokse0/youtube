@@ -17,6 +17,11 @@ import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { getEffectiveRemainingTime } from "@/lib/timer-utils";
 import { formatSigMatchStat, getSigMatchRankings } from "@/lib/settlement-utils";
 
+type SigMatchSide = { ids: string[]; label: string; score: number };
+type SigMatchDuelLayout =
+  | { mode: "dual"; left: SigMatchSide; right: SigMatchSide }
+  | { mode: "triple"; sides: [SigMatchSide, SigMatchSide, SigMatchSide] };
+
 function tryReadSnapshotFromStorage(snapKey: string | null): Record<string, unknown> | null {
   if (!snapKey || typeof window === "undefined") return null;
   try {
@@ -198,54 +203,79 @@ function SigMatchOverlayInner() {
     [sigMatchDonors, state?.members, state?.sigMatchSettings, state?.sigMatch]
   );
   const memberMap = useMemo(() => new Map((state?.members || []).map((m) => [m.id, m.name])), [state?.members]);
-  const duelData = useMemo(() => {
-    const pools = (state?.sigMatchSettings?.sigMatchPools || []).filter((p) => Array.isArray(p.memberIds) && p.memberIds.length >= 2);
+  const duelData = useMemo((): SigMatchDuelLayout => {
+    const pools = (state?.sigMatchSettings?.sigMatchPools || []).filter(
+      (p) => Array.isArray(p.memberIds) && p.memberIds.length >= 1
+    );
     const scoreMap = new Map(ranking.map((r) => [r.memberId, r.score]));
-    const makeSide = (memberIds: string[], fallbackLabel: string) => {
-      const ids = memberIds.filter(Boolean);
+    const makeSide = (memberIds: string[], fallbackLabel: string): SigMatchSide => {
+      const ids = [...new Set(memberIds.filter(Boolean))];
       const label = ids.map((id) => memberMap.get(id) || id).join(" · ") || fallbackLabel;
       const score = ids.reduce((sum, id) => sum + (scoreMap.get(id) || 0), 0);
       return { ids, label, score };
     };
-    if (pools.length >= 2) {
-      const left = makeSide(pools[0].memberIds, "LEFT");
-      const right = makeSide(pools[1].memberIds, "RIGHT");
-      return { left, right, mode: "pool" as const };
+
+    /** 풀 3개 이상: 상위 3개 풀 → 삼자 막대 (1:1:1·혼합 팀 등) */
+    if (pools.length >= 3) {
+      const sides: [SigMatchSide, SigMatchSide, SigMatchSide] = [
+        makeSide(pools[0]!.memberIds, "1"),
+        makeSide(pools[1]!.memberIds, "2"),
+        makeSide(pools[2]!.memberIds, "3"),
+      ];
+      return { mode: "triple", sides };
     }
+    /** 풀 2개 → 좌·우만 (1:2, 2:1, 2:2 …) */
+    if (pools.length >= 2) {
+      return {
+        mode: "dual",
+        left: makeSide(pools[0]!.memberIds, "LEFT"),
+        right: makeSide(pools[1]!.memberIds, "RIGHT"),
+      };
+    }
+
     const list = ranking.filter(Boolean);
     if (list.length === 0) {
       return {
+        mode: "dual",
         left: { ids: [], label: "LEFT", score: 0 },
         right: { ids: [], label: "RIGHT", score: 0 },
-        mode: "duel" as const,
       };
     }
     if (list.length === 1) {
       const only = list[0]!;
       return {
+        mode: "dual",
         left: { ids: [only.memberId], label: only.name, score: only.score },
         right: { ids: [], label: "—", score: 0 },
-        mode: "duel" as const,
       };
     }
     if (list.length === 2) {
       const [a, b] = list;
       return {
+        mode: "dual",
         left: { ids: [a!.memberId], label: a!.name, score: a!.score },
         right: { ids: [b!.memberId], label: b!.name, score: b!.score },
-        mode: "duel" as const,
       };
     }
-    /** 3명 이상·풀 미사용: 랭킹 순 상위 절반 vs 나머지(이름을 모두 VS 줄에 표시) */
+    /** 풀 없음·참가 3명: 개인전 1:1:1 */
+    if (list.length === 3) {
+      const triple: [SigMatchSide, SigMatchSide, SigMatchSide] = [
+        { ids: [list[0]!.memberId], label: list[0]!.name, score: list[0]!.score },
+        { ids: [list[1]!.memberId], label: list[1]!.name, score: list[1]!.score },
+        { ids: [list[2]!.memberId], label: list[2]!.name, score: list[2]!.score },
+      ];
+      return { mode: "triple", sides: triple };
+    }
+    /** 4명 이상·풀 없음: 랭킹 순 절반 vs 절반 */
     const mid = Math.ceil(list.length / 2);
     const leftList = list.slice(0, mid);
     const rightList = list.slice(mid);
-    const pack = (items: typeof list) => ({
+    const pack = (items: typeof list): SigMatchSide => ({
       ids: items.map((x) => x.memberId),
       label: items.map((x) => x.name).join(" · ") || "—",
       score: items.reduce((s, x) => s + x.score, 0),
     });
-    return { left: pack(leftList), right: pack(rightList), mode: "duel" as const };
+    return { mode: "dual", left: pack(leftList), right: pack(rightList) };
   }, [ranking, state?.sigMatchSettings?.sigMatchPools, memberMap]);
   /** 식사대전(/overlay/meal-match)과 동일하게 generalTimer + 서버 동기화(lastUpdated) 기준 */
   const timerState = state?.generalTimer || null;
@@ -280,13 +310,45 @@ function SigMatchOverlayInner() {
     WebkitTextStroke: timerOutlineWidth > 0 ? `${timerOutlineWidth}px ${timerOutlineColor}` : undefined,
     paintOrder: "stroke fill",
   };
-  const versusTotalRaw = duelData.left.score + duelData.right.score;
-  const leftPct = versusTotalRaw > 0
-    ? Math.max(0, Math.min(100, (duelData.left.score / versusTotalRaw) * 100))
-    : 50;
-  const rightPct = 100 - leftPct;
-  const leftLeading = duelData.left.score > duelData.right.score;
-  const rightLeading = duelData.right.score > duelData.left.score;
+  const dualBar =
+    duelData.mode === "dual"
+      ? (() => {
+          const t = duelData.left.score + duelData.right.score;
+          const leftPct = t > 0 ? Math.max(0, Math.min(100, (duelData.left.score / t) * 100)) : 50;
+          return {
+            leftPct,
+            rightPct: 100 - leftPct,
+            leftLeading: duelData.left.score > duelData.right.score,
+            rightLeading: duelData.right.score > duelData.left.score,
+          };
+        })()
+      : null;
+
+  const tripleBar =
+    duelData.mode === "triple"
+      ? (() => {
+          const [a, b, c] = duelData.sides;
+          const t = a.score + b.score + c.score;
+          let p0: number;
+          let p1: number;
+          let p2: number;
+          if (t > 0) {
+            p0 = (a.score / t) * 100;
+            p1 = (b.score / t) * 100;
+            p2 = 100 - p0 - p1;
+          } else {
+            p0 = 100 / 3;
+            p1 = 100 / 3;
+            p2 = 100 / 3;
+          }
+          const maxS = Math.max(a.score, b.score, c.score);
+          const lead = maxS > 0;
+          return {
+            pcts: [p0, p1, p2] as [number, number, number],
+            crown: [lead && a.score === maxS, lead && b.score === maxS, lead && c.score === maxS] as [boolean, boolean, boolean],
+          };
+        })()
+      : null;
 
   if (!ready || !state) {
     return (
@@ -311,33 +373,79 @@ function SigMatchOverlayInner() {
               <span style={timerTextOutlineStyle}>{timerText}</span>
             </div>
           ) : null}
-          <div className="mt-8 flex items-center justify-between gap-2 text-xs text-white/80">
-            <span className="inline-flex max-w-[42%] truncate rounded-full bg-white/80 px-3 py-1 font-black text-pink-600">
-              {leftLeading ? "👑 " : ""}
-              {duelData.left.label}
-            </span>
-            <span className="rounded-md bg-black/30 px-2 py-0.5 font-bold text-white/90">VS</span>
-            <span className="inline-flex max-w-[42%] truncate justify-end rounded-full bg-white/80 px-3 py-1 font-black text-sky-600">
-              {rightLeading ? "👑 " : ""}
-              {duelData.right.label}
-            </span>
-          </div>
-          <div className="mt-2 h-4 w-full overflow-hidden rounded-full">
-            <div className="flex h-full w-full">
-              <div
-                className="h-full bg-pink-300 transition-[width] duration-700 ease-out"
-                style={{ width: `${leftPct}%` }}
-              />
-              <div
-                className="h-full bg-sky-300 transition-[width] duration-700 ease-out"
-                style={{ width: `${rightPct}%` }}
-              />
-            </div>
-          </div>
-          <div className="mt-1 flex items-center justify-between text-[11px] text-white/75">
-            <span>{formatSigMatchStat(duelData.left.score)}</span>
-            <span>{formatSigMatchStat(duelData.right.score)}</span>
-          </div>
+          {dualBar && duelData.mode === "dual" ? (
+            <>
+              <div className="mt-8 flex items-center justify-between gap-2 text-xs text-white/80">
+                <span className="inline-flex max-w-[42%] truncate rounded-full bg-white/80 px-3 py-1 font-black text-pink-600">
+                  {dualBar.leftLeading ? "👑 " : ""}
+                  {duelData.left.label}
+                </span>
+                <span className="rounded-md bg-black/30 px-2 py-0.5 font-bold text-white/90">VS</span>
+                <span className="inline-flex max-w-[42%] truncate justify-end rounded-full bg-white/80 px-3 py-1 font-black text-sky-600">
+                  {dualBar.rightLeading ? "👑 " : ""}
+                  {duelData.right.label}
+                </span>
+              </div>
+              <div className="mt-2 h-4 w-full overflow-hidden rounded-full">
+                <div className="flex h-full w-full">
+                  <div
+                    className="h-full bg-pink-300 transition-[width] duration-700 ease-out"
+                    style={{ width: `${dualBar.leftPct}%` }}
+                  />
+                  <div
+                    className="h-full bg-sky-300 transition-[width] duration-700 ease-out"
+                    style={{ width: `${dualBar.rightPct}%` }}
+                  />
+                </div>
+              </div>
+              <div className="mt-1 flex items-center justify-between text-[11px] text-white/75">
+                <span>{formatSigMatchStat(duelData.left.score)}</span>
+                <span>{formatSigMatchStat(duelData.right.score)}</span>
+              </div>
+            </>
+          ) : null}
+          {tripleBar && duelData.mode === "triple" ? (
+            <>
+              <div className="mt-8 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[11px] text-white/80 sm:text-xs">
+                {duelData.sides.map((side, i) => (
+                  <span key={`sig-triple-${i}-${side.ids.join("-") || "x"}`} className="contents">
+                    {i > 0 ? (
+                      <span className="rounded-md bg-black/30 px-1.5 py-0.5 font-bold text-white/90">VS</span>
+                    ) : null}
+                    <span
+                      className={`inline-flex max-w-[30%] min-w-0 truncate rounded-full bg-white/80 px-2 py-1 font-black sm:px-3 ${
+                        i === 0 ? "text-pink-600" : i === 1 ? "text-amber-600" : "text-sky-600"
+                      }`}
+                    >
+                      {tripleBar.crown[i] ? "👑 " : ""}
+                      {side.label}
+                    </span>
+                  </span>
+                ))}
+              </div>
+              <div className="mt-2 h-4 w-full overflow-hidden rounded-full">
+                <div className="flex h-full w-full">
+                  <div
+                    className="h-full bg-pink-300 transition-[width] duration-700 ease-out"
+                    style={{ width: `${tripleBar.pcts[0]}%` }}
+                  />
+                  <div
+                    className="h-full bg-amber-300 transition-[width] duration-700 ease-out"
+                    style={{ width: `${tripleBar.pcts[1]}%` }}
+                  />
+                  <div
+                    className="h-full bg-sky-300 transition-[width] duration-700 ease-out"
+                    style={{ width: `${tripleBar.pcts[2]}%` }}
+                  />
+                </div>
+              </div>
+              <div className="mt-1 grid grid-cols-3 gap-1 text-center text-[11px] text-white/75">
+                {duelData.sides.map((side, i) => (
+                  <span key={`sig-triple-score-${i}-${side.ids.join("-")}`}>{formatSigMatchStat(side.score)}</span>
+                ))}
+              </div>
+            </>
+          ) : null}
         </div>
 
         {ranking.length === 0 ? (

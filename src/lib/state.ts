@@ -43,7 +43,7 @@ export type {
   TimerState,
 } from "@/types";
 
-/** 시그 풀: 멤버는 최대 한 풀에만, 풀은 2인 이상만 유지 */
+/** 시그 풀: 멤버는 최대 한 풀에만, 풀은 1인 이상(1인 팀·1:2·삼자 구분용) */
 export function normalizeSigMatchPools(raw: unknown, validMemberIds: Set<string>): SigMatchPool[] {
   if (!Array.isArray(raw)) return [];
   const assigned = new Set<string>();
@@ -59,7 +59,7 @@ export function normalizeSigMatchPools(raw: unknown, validMemberIds: Set<string>
     const ids = Array.isArray(idsRaw)
       ? idsRaw.map((x) => String(x)).filter((mid) => mid && validMemberIds.has(mid) && !assigned.has(mid))
       : [];
-    if (ids.length < 2) continue;
+    if (ids.length < 1) continue;
     for (const mid of ids) assigned.add(mid);
     out.push({ id, memberIds: ids });
   }

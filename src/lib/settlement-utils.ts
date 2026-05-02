@@ -111,7 +111,7 @@ export function formatSigMatchStat(n: number): string {
 function findPoolForMember(memberId: string, pools: SigMatchPool[]): string[] | null {
   for (const p of pools || []) {
     const ids = [...new Set((p.memberIds || []).filter(Boolean))];
-    if (ids.length >= 2 && ids.includes(memberId)) return ids;
+    if (ids.length >= 1 && ids.includes(memberId)) return ids;
   }
   return null;
 }

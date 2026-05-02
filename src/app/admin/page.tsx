@@ -2946,7 +2946,7 @@ export default function AdminPage() {
                   <div>
                     <h4 className="text-sm font-semibold text-neutral-200">1:1 / n:n 규칙 (시그 풀)</h4>
                     <p className="mt-1 text-xs text-neutral-500">
-                      풀이 없으면 후원에 연결된 멤버만 점수가 올라갑니다(1:1). 아래에서 풀을 만들고 멤버를 넣으면, 같은 풀 안에서는 시그 1건이 풀 인원으로 나눠져 모두에게 동일하게 반영됩니다(n:n). 멤버는 한 풀에만 들어갈 수 있습니다. 풀은 2명 이상일 때만 적용됩니다.
+                      풀이 없으면 후원 멤버별 1:1 집계입니다. 풀에 넣은 멤버는 시그 1건을 풀 인원 수로 나눠 동일 반영(n:n)합니다. 멤버는 한 풀에만 속할 수 있습니다. 풀 2개 → 오버레이 좌·우(1:2·2:1 등), 풀 3개 → 삼자 막대. 풀 없이 참가자만 3명이면 오버레이는 1:1:1(삼각)로 표시됩니다.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">

@@ -226,8 +226,9 @@ export type SigMatchSettings = {
   /** count 모드에서 포인트→정산 환산 단가 */
   incentivePerPoint: number;
   /**
-   * n:n 풀 목록(2명 이상만 유효). 비어 있으면 전원 1:1.
+   * n:n 풀 목록(멤버 1명 이상). 비어 있으면 후원은 멤버별 1:1 집계.
    * 한 멤버는 한 풀에만 속할 수 있음(먼저 정의된 풀 우선).
+   * 풀 2개 → 오버레이 좌·우(1:2·2:1 등), 풀 3개 → 삼자(1:1:1) 표시에 사용.
    */
   sigMatchPools: SigMatchPool[];
   /**
