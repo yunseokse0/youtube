@@ -415,7 +415,7 @@ function SigMatchOverlayInner() {
                     style={{ width: `${tripleBar.pcts[i]}%` }}
                   >
                     <span
-                      className={`inline-flex w-full max-w-full justify-center truncate rounded-full bg-white/80 px-1.5 py-1 text-center text-[11px] font-black sm:px-2.5 sm:text-xs ${
+                      className={`inline-flex w-max max-w-full min-w-0 items-center justify-center overflow-hidden text-ellipsis whitespace-nowrap rounded-full bg-white/80 px-2 py-1 text-center text-[11px] font-black sm:px-3 sm:text-xs ${
                         i === 0 ? "text-pink-600" : i === 1 ? "text-amber-600" : "text-sky-600"
                       }`}
                       title={side.label}
