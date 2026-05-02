@@ -177,6 +177,7 @@ export default function AdminPage() {
     Array.from({ length: 5 }, () => ({ min: "", max: "" }))
   );
   const ROULETTE_ROUND_UI_CAP = 40;
+  const [rouletteResetBusy, setRouletteResetBusy] = useState(false);
   const [donorRankingPresetName, setDonorRankingPresetName] = useState("");
   const [settlementTitle, setSettlementTitle] = useState("");
   const [accountRatioInput, setAccountRatioInput] = useState("70");
@@ -911,6 +912,41 @@ export default function AdminPage() {
     }
     return lines.join("\n");
   }, [rouletteQuickUrls]);
+  const rouletteServerStatus = useMemo(() => {
+    const rs = state.rouletteState;
+    if (!rs) {
+      return {
+        phase: "IDLE",
+        isRolling: false,
+        sessionShort: "—",
+        startedLabel: "—",
+        nWin: 0,
+        hasOneShot: false,
+      };
+    }
+    const sid = (rs.sessionId || "").trim();
+    const sessionShort = sid.length > 24 ? `${sid.slice(0, 22)}…` : sid || "—";
+    const st = Number(rs.startedAt || 0);
+    const startedLabel =
+      st > 0
+        ? new Date(st).toLocaleString("ko-KR", {
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+          })
+        : "—";
+    return {
+      phase: rs.phase || "IDLE",
+      isRolling: Boolean(rs.isRolling),
+      sessionShort,
+      startedLabel,
+      nWin: (rs.selectedSigs || []).length,
+      hasOneShot: Boolean(rs.oneShotResult),
+    };
+  }, [state.rouletteState]);
   const getDonorRankingsZoomPct = (): number => {
     const raw = donorRankingsZoomPct.replace(/[^\d]/g, "");
     const n = parseInt(raw || "100", 10);
@@ -1512,6 +1548,28 @@ export default function AdminPage() {
       setSigExcelResult("로그인 후 회전판을 사용할 수 있습니다.");
       return;
     }
+    const rs = state.rouletteState;
+    if (rs) {
+      const idle = (rs.phase || "IDLE") === "IDLE";
+      const blockedUntilReset =
+        !idle ||
+        rs.isRolling ||
+        (rs.selectedSigs || []).length > 0 ||
+        Boolean(rs.oneShotResult);
+      if (blockedUntilReset) {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("forbidden-alert", {
+              detail: {
+                text: "이전 회전판 결과가 남아 있어 새로 돌릴 수 없습니다. 아래「회전판 초기화 (IDLE)」를 누른 뒤 다시「회전판 돌리기」를 누르세요.",
+                durationMs: 5200,
+              },
+            })
+          );
+        }
+        return;
+      }
+    }
     const n = Math.max(1, Math.min(999, parseInt(String(rouletteSpinCount || "5"), 10) || 5));
     const cap = Math.min(n, ROULETTE_ROUND_UI_CAP);
     let parts = roulettePriceRanges.slice(0, cap);
@@ -1597,6 +1655,40 @@ export default function AdminPage() {
       setSigExcelResult(`회전판 1회 · 시그 ${n}개 당첨(중복 없음) 확정${priceLabel}. 오버레이 /overlay/sig-sales 에서 확인하세요.`);
     } catch (e) {
       setSigExcelResult(`회전판 요청 오류: ${String(e)}`);
+    }
+  };
+
+  const resetRouletteIdle = async () => {
+    const uid = user?.id;
+    if (!uid) {
+      setSigExcelResult("로그인 후 회전판 초기화를 사용할 수 있습니다.");
+      return;
+    }
+    setRouletteResetBusy(true);
+    try {
+      const res = await fetch(`/api/roulette/reset?user=${encodeURIComponent(uid)}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok) {
+        setSigExcelResult(`회전판 초기화 실패: ${j.error || res.status}`);
+        return;
+      }
+      const remote = await loadStateFromApi(uid);
+      if (remote) {
+        setState(remote);
+        try {
+          window.localStorage.setItem(storageKey(uid), JSON.stringify(remote));
+        } catch {}
+      }
+      setSigExcelResult("회전판 상태를 IDLE로 초기화했습니다. 오버레이 유령 결과가 사라집니다.");
+    } catch (e) {
+      setSigExcelResult(`회전판 초기화 오류: ${String(e)}`);
+    } finally {
+      setRouletteResetBusy(false);
     }
   };
 
@@ -4017,9 +4109,9 @@ export default function AdminPage() {
                       <div className="text-sm font-bold text-yellow-200">시그 판매 회전판 (신규)</div>
                       <div className="text-xs text-neutral-300">시네마틱 단일 플로우 관리 페이지</div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="rounded bg-white/10 px-2 py-1 text-[11px] text-neutral-200">
-                        현재 상태: {state.rouletteState?.phase || "IDLE"}
+                        현재 상태: {rouletteServerStatus.phase}
                       </span>
                       <Link href="/admin/sig-sales" className="rounded bg-yellow-500 px-3 py-1.5 text-xs font-bold text-black hover:bg-yellow-400">
                         페이지 열기
@@ -4142,14 +4234,39 @@ export default function AdminPage() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="text-sm font-semibold text-sky-200">회전판 빠른 점검</div>
                     <div className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
-                      <span className="rounded bg-white/10 px-2 py-1">phase: {state.rouletteState?.phase || "IDLE"}</span>
+                      <span className="rounded bg-white/10 px-2 py-1">phase: {rouletteServerStatus.phase}</span>
                       <span className="rounded bg-white/10 px-2 py-1">
-                        당첨 시그: {(state.rouletteState?.selectedSigs || []).length}개
+                        rolling: {rouletteServerStatus.isRolling ? "예" : "아니오"}
                       </span>
-                      <span className="rounded bg-white/10 px-2 py-1">한방시그: {state.rouletteState?.oneShotResult ? "있음" : "없음"}</span>
+                      <span className="rounded bg-white/10 px-2 py-1">당첨 시그: {rouletteServerStatus.nWin}개</span>
+                      <span className="rounded bg-white/10 px-2 py-1">
+                        한방(데이터): {rouletteServerStatus.hasOneShot ? "있음" : "없음"}
+                      </span>
                     </div>
                   </div>
+                  <div className="flex flex-wrap gap-2 text-[11px] text-neutral-400">
+                    <span className="rounded bg-black/25 px-2 py-1 font-mono text-neutral-200">
+                      session: {rouletteServerStatus.sessionShort}
+                    </span>
+                    <span className="rounded bg-black/25 px-2 py-1">
+                      시작 시각: {rouletteServerStatus.startedLabel}
+                    </span>
+                  </div>
+                  <p className="text-[11px] leading-snug text-sky-100/90">
+                    방송 오버레이는 당첨 시그만 한 줄로 표시합니다(합산 한방 카드 없음). 아래쪽 인벤 롤링 보드를 같이 쓰려면 URL에{" "}
+                    <code className="rounded bg-black/30 px-1 text-emerald-200">sigBoardWithResults=1</code> 를 붙이세요.
+                  </p>
                   <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={rouletteResetBusy || !user?.id}
+                      className="rounded bg-amber-800 px-2 py-1 text-xs font-semibold text-amber-50 hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={() => {
+                        void resetRouletteIdle();
+                      }}
+                    >
+                      {rouletteResetBusy ? "초기화 중…" : "회전판 초기화 (IDLE)"}
+                    </button>
                     <button
                       type="button"
                       className={`rounded px-2 py-1 text-xs ${copiedId === "dash-sig-quick-all" ? "bg-emerald-600" : "bg-sky-700 hover:bg-sky-600"}`}

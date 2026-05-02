@@ -82,6 +82,13 @@ export default function SigSalesOverlayPage() {
   const sigBoardDuringSpin =
     sp.get("sigBoardDuringSpin") === "1" ||
     String(sp.get("sigBoardDuringSpin") || "").toLowerCase() === "true";
+  /**
+   * 기본: 당첨 결과(위 한 줄)만 쓰고, 아래 `SigBoardRolling`은 끔 → 이중 시그 줄 방지.
+   * 인벤 롤링을 당첨과 같이 쓰려면 URL에 sigBoardWithResults=1
+   */
+  const allowSigBoardWithResults =
+    sp.get("sigBoardWithResults") === "1" ||
+    String(sp.get("sigBoardWithResults") || "").toLowerCase() === "true";
   const overlayScalePct = (() => {
     const raw = sp.get("scalePct") || sp.get("zoomPct") || "100";
     const n = parseInt(raw.replace(/[^\d]/g, ""), 10);
@@ -333,6 +340,22 @@ export default function SigSalesOverlayPage() {
   const displaySelectedSigs = useMemo(() => {
     // 서버 phase가 IDLE인데 이전 회차 selectedSigs만 남은 경우가 있어 표시하지 않음(회전판이 안 돌았는데 숨겨지는 현상 방지)
     if (!rouletteDemo && machine.phase === "IDLE") return [];
+    const startedAtNum = Number(machine.startedAt || 0);
+    const spinningFreshEnough =
+      machine.phase !== "SPINNING" ||
+      rouletteDemo ||
+      (startedAtNum > 0 && Date.now() - startedAtNum <= RECENT_SPIN_WINDOW_MS);
+    /** 서버 phase가 예전 회차 SPINNING으로 남아 있으면 OBS만 켠 것처럼 보일 때 카드가 미리 깔리는 현상 방지 */
+    if (
+      !rouletteDemo &&
+      machine.phase === "SPINNING" &&
+      !spinningFreshEnough &&
+      !pendingLanding &&
+      !demoSpin &&
+      wheelPhase === "idle"
+    ) {
+      return [];
+    }
     /** 서버가 이미 당첨 시그를 내려준 경우 스핀·착지 연출 중에도 그리드가 비지 않게 함(나중에 한꺼번에만 뜨는 느낌 완화) */
     const hasQueue =
       (pendingLanding?.selected?.length || 0) > 0 || (machine.selectedSigs?.length || 0) > 0;
@@ -347,10 +370,6 @@ export default function SigSalesOverlayPage() {
     if (pendingLanding?.selected?.length) return pendingLanding.selected.slice(0, CONFIRMED_VISIBLE_SLOTS);
     return [];
   }, [machine.selectedSigs, machine.phase, rouletteDemo, pendingLanding, demoSpin, wheelPhase, overlayHoldResults]);
-  const displayOneShot = useMemo(() => {
-    if (displaySelectedSigs.length < MIN_ONE_SHOT_SIGS) return null;
-    return buildOneShotFromSelected(displaySelectedSigs);
-  }, [displaySelectedSigs]);
   const completedTargetCount = useMemo(() => {
     if (pendingLanding?.selected?.length) return Math.max(1, Math.min(CONFIRMED_VISIBLE_SLOTS, pendingLanding.selected.length));
     if (machine.selectedSigs?.length) return Math.max(1, Math.min(CONFIRMED_VISIBLE_SLOTS, machine.selectedSigs.length));
@@ -372,11 +391,6 @@ export default function SigSalesOverlayPage() {
     () => !hideWheelAfterComplete || !revealGateOpen || wheelFadePhase !== "off",
     [hideWheelAfterComplete, revealGateOpen, wheelFadePhase],
   );
-  const showSigBoardRollingSection = useMemo(() => {
-    if (hideSigBoard || !state || (state.sigInventory || []).length === 0) return false;
-    if (sigBoardDuringSpin) return true;
-    return Boolean(hideWheelAfterComplete && showResultPanel && revealGateOpen);
-  }, [hideSigBoard, state, sigBoardDuringSpin, hideWheelAfterComplete, showResultPanel, revealGateOpen]);
   /**
    * 스핀 중 showResultPanel=false 이어도 당첨 시그가 이미 확정되어 있으면 결과 그리드를 반드시 연다.
    * (그리드 데이터만 채우고 패널을 숨기면「돌다가 비었다가 한꺼번에」가 그대로 발생함)
@@ -397,6 +411,22 @@ export default function SigSalesOverlayPage() {
           Boolean(demoSpin) ||
           Boolean(pendingLanding))
   );
+  const showSigBoardRollingSection = useMemo(() => {
+    if (hideSigBoard || !state || (state.sigInventory || []).length === 0) return false;
+    if (displaySelectedSigs.length > 0 && resultOverlayVisible && !allowSigBoardWithResults) return false;
+    if (sigBoardDuringSpin) return true;
+    return Boolean(hideWheelAfterComplete && showResultPanel && revealGateOpen);
+  }, [
+    hideSigBoard,
+    state,
+    displaySelectedSigs.length,
+    resultOverlayVisible,
+    allowSigBoardWithResults,
+    sigBoardDuringSpin,
+    hideWheelAfterComplete,
+    showResultPanel,
+    revealGateOpen,
+  ]);
   /** 관리자가 재고에서 완판 처리한 시그 → 방송 결과 카드에도 스탬프 표시 */
   const inventorySoldOutIdSet = useMemo(() => {
     const next = new Set<string>();
@@ -738,9 +768,9 @@ export default function SigSalesOverlayPage() {
                   selectedSigs={displaySelectedSigs}
                   soldOutStampUrl={soldOutStampUrl}
                   soldOverrideSet={inventorySoldOutIdSet}
-                  oneShot={displayOneShot ? { name: displayOneShot.name, price: displayOneShot.price } : null}
+                  oneShot={null}
                   signImageUrl={oneShotImageUrl || currentSignImageUrl}
-                  showOneShotReveal={Boolean(displayOneShot && resultOverlayVisible)}
+                  showOneShotReveal={false}
                   className="w-full max-w-[1120px]"
                   gifDelayMultiplier={sigGifDelayMultiplier}
                 />

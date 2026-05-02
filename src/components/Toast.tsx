@@ -1,12 +1,17 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export default function Toast() {
   const [msg, setMsg] = useState<string | null>(null);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const onForbidden = (e: Event) => {
-      const ce = e as CustomEvent<{ text: string }>;
+      const ce = e as CustomEvent<{ text: string; durationMs?: number }>;
+      if (hideTimerRef.current) {
+        clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
       setMsg(ce.detail.text);
       try {
         const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -22,20 +27,26 @@ export default function Toast() {
       } catch {
         // ignore audio errors
       }
-      const t = setTimeout(() => setMsg(null), 2000);
-      return () => clearTimeout(t);
+      const ms = Math.min(60000, Math.max(1200, ce.detail.durationMs ?? 2500));
+      hideTimerRef.current = setTimeout(() => {
+        hideTimerRef.current = null;
+        setMsg(null);
+      }, ms);
     };
     window.addEventListener("forbidden-alert", onForbidden as EventListener);
-    return () => window.removeEventListener("forbidden-alert", onForbidden as EventListener);
+    return () => {
+      window.removeEventListener("forbidden-alert", onForbidden as EventListener);
+      if (hideTimerRef.current) {
+        clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
+    };
   }, []);
 
   if (!msg) return null;
   return (
-    <div className="fixed top-4 right-4 z-50">
-      <div className="px-4 py-3 rounded bg-red-600 text-white font-semibold shadow-lg">
-        {msg}
-      </div>
+    <div className="fixed top-4 right-4 z-50 max-w-[min(92vw,420px)]">
+      <div className="rounded bg-red-600 px-4 py-3 text-sm font-semibold leading-snug text-white shadow-lg">{msg}</div>
     </div>
   );
 }
-
