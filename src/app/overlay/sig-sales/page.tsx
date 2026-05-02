@@ -125,6 +125,14 @@ export default function SigSalesOverlayPage() {
     return Math.max(200, Math.min(4000, n));
   }, [sp]);
   const revealMotionSec = revealMotionMs / 1000;
+  /** 당첨 시그 카드를 한 장씩 보이게 하는 간격(ms). `resultStaggerMs` 동의어 */
+  const sigResultStaggerMs = useMemo(() => {
+    const raw = sp.get("sigResultStaggerMs") || sp.get("resultStaggerMs") || "";
+    if (!raw.trim()) return 750;
+    const n = parseInt(String(raw).replace(/[^\d]/g, ""), 10);
+    if (!Number.isFinite(n)) return 750;
+    return Math.max(120, Math.min(12000, n));
+  }, [sp]);
   const overlayScale = overlayScalePct / 100;
   const overlayScaleStyle = overlayScale === 1
     ? undefined
@@ -143,6 +151,10 @@ export default function SigSalesOverlayPage() {
   const [revealGateOpen, setRevealGateOpen] = useState(true);
   const [wheelFadePhase, setWheelFadePhase] = useState<"on" | "fading" | "off">("on");
   const revealTimerRef = useRef<number | null>(null);
+  const staggerTimersRef = useRef<number[]>([]);
+  const staggerRanSessionRef = useRef("");
+  const [revealedSigCount, setRevealedSigCount] = useState(0);
+  const [oneShotRevealUnlocked, setOneShotRevealUnlocked] = useState(false);
   const transitionHandledKeyRef = useRef("");
   const handledSpinKeyRef = useRef("");
   const completedSpinKeyRef = useRef("");
@@ -337,7 +349,8 @@ export default function SigSalesOverlayPage() {
     machine.selectedSigs,
     wheelItemsWithResult,
   ]);
-  const displaySelectedSigs = useMemo(() => {
+  /** 회전 중·착지 전에는 비우고, 착지 후에는 순차 공개용 전체 목록 */
+  const fullSelectedSigs = useMemo(() => {
     // 서버 phase가 IDLE인데 이전 회차 selectedSigs만 남은 경우가 있어 표시하지 않음(회전판이 안 돌았는데 숨겨지는 현상 방지)
     if (!rouletteDemo && machine.phase === "IDLE") return [];
     const startedAtNum = Number(machine.startedAt || 0);
@@ -356,32 +369,118 @@ export default function SigSalesOverlayPage() {
     ) {
       return [];
     }
-    /** 서버가 이미 당첨 시그를 내려준 경우 스핀·착지 연출 중에도 그리드가 비지 않게 함(나중에 한꺼번에만 뜨는 느낌 완화) */
-    const hasQueue =
-      (pendingLanding?.selected?.length || 0) > 0 || (machine.selectedSigs?.length || 0) > 0;
+    /** 서버가 당첨 목록을 미리 내려줘도 회전·감속 중에는 칸을 채우지 않음 → 한 장씩만 드러남 */
     const inSpinUx =
-      !hasQueue &&
-      (Boolean(demoSpin) ||
-        (machine.phase === "SPINNING" && !overlayHoldResults) ||
-        wheelPhase === "spinning" ||
-        wheelPhase === "settling");
+      Boolean(demoSpin) ||
+      (machine.phase === "SPINNING" && !overlayHoldResults) ||
+      wheelPhase === "spinning" ||
+      wheelPhase === "settling";
     if (inSpinUx) return [];
     if (machine.selectedSigs.length > 0) return machine.selectedSigs.slice(0, CONFIRMED_VISIBLE_SLOTS);
     if (pendingLanding?.selected?.length) return pendingLanding.selected.slice(0, CONFIRMED_VISIBLE_SLOTS);
     return [];
   }, [machine.selectedSigs, machine.phase, rouletteDemo, pendingLanding, demoSpin, wheelPhase, overlayHoldResults]);
+  const staggerAnchorKey = `${machine.sessionId || ""}|${machine.startedAt || 0}|${machine.resultId || ""}`;
+  const displaySelectedSigs = useMemo(() => {
+    if (fullSelectedSigs.length === 0) return [];
+    if (wheelPhase === "spinning" || wheelPhase === "settling") return [];
+    if (machine.phase === "CONFIRM_PENDING" || machine.phase === "CONFIRMED") {
+      return fullSelectedSigs;
+    }
+    const progressive =
+      wheelPhase === "result" ||
+      overlayHoldResults ||
+      showResultPanel ||
+      machine.phase === "LANDED";
+    if (progressive) {
+      return fullSelectedSigs.slice(0, Math.min(revealedSigCount, fullSelectedSigs.length));
+    }
+    return fullSelectedSigs;
+  }, [
+    fullSelectedSigs,
+    wheelPhase,
+    overlayHoldResults,
+    showResultPanel,
+    revealedSigCount,
+    machine.phase,
+  ]);
   const completedTargetCount = useMemo(() => {
     if (pendingLanding?.selected?.length) return Math.max(1, Math.min(CONFIRMED_VISIBLE_SLOTS, pendingLanding.selected.length));
     if (machine.selectedSigs?.length) return Math.max(1, Math.min(CONFIRMED_VISIBLE_SLOTS, machine.selectedSigs.length));
     return 1;
   }, [pendingLanding?.selected, machine.selectedSigs]);
+  const oneShotEligibleAfterReveal = useMemo(
+    () => buildOneShotFromSelected(machine.selectedSigs.slice(0, CONFIRMED_VISIBLE_SLOTS)),
+    [machine.selectedSigs],
+  );
+  const staggerVisualComplete = useMemo(() => {
+    if (machine.selectedSigs.length === 0) return true;
+    if (revealedSigCount < completedTargetCount) return false;
+    if (oneShotEligibleAfterReveal && !oneShotRevealUnlocked) return false;
+    return true;
+  }, [
+    machine.selectedSigs.length,
+    revealedSigCount,
+    completedTargetCount,
+    oneShotEligibleAfterReveal,
+    oneShotRevealUnlocked,
+  ]);
+
+  const revealQueueKey = useMemo(() => {
+    const fromMachine = machine.selectedSigs.slice(0, CONFIRMED_VISIBLE_SLOTS).map((s) => s.id).join(",");
+    if (fromMachine.length > 0) return fromMachine;
+    return (pendingLanding?.selected || []).slice(0, CONFIRMED_VISIBLE_SLOTS).map((s) => s.id).join(",");
+  }, [machine.selectedSigs, pendingLanding?.selected]);
+
+  useEffect(() => {
+    setRevealedSigCount(0);
+    setOneShotRevealUnlocked(false);
+    staggerRanSessionRef.current = "";
+  }, [staggerAnchorKey]);
+
+  useEffect(() => {
+    if (wheelPhase === "spinning" || wheelPhase === "settling") {
+      setRevealedSigCount(0);
+      setOneShotRevealUnlocked(false);
+    }
+  }, [wheelPhase]);
+
+  useEffect(() => {
+    if (wheelPhase !== "result") return;
+    if (staggerRanSessionRef.current === staggerAnchorKey) return;
+    if (!revealQueueKey.length) return;
+    const items = machine.selectedSigs.length
+      ? machine.selectedSigs.slice(0, CONFIRMED_VISIBLE_SLOTS)
+      : (pendingLanding?.selected || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
+    const n = items.length;
+    if (n === 0) return;
+    staggerRanSessionRef.current = staggerAnchorKey;
+    const stagger = sigResultStaggerMs;
+    for (let i = 1; i <= n; i++) {
+      const tid = window.setTimeout(() => setRevealedSigCount(i), stagger * (i - 1));
+      staggerTimersRef.current.push(tid);
+    }
+    if (buildOneShotFromSelected(items)) {
+      const tid = window.setTimeout(() => setOneShotRevealUnlocked(true), stagger * n + stagger);
+      staggerTimersRef.current.push(tid);
+    }
+  }, [wheelPhase, staggerAnchorKey, sigResultStaggerMs, revealQueueKey, machine.selectedSigs, pendingLanding?.selected]);
+
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach((x) => window.clearTimeout(x));
+      staggerTimersRef.current = [];
+    };
+  }, []);
+
   const hideWheelAfterComplete =
     machine.selectedSigs.length >= completedTargetCount &&
     !pendingLanding &&
     !demoSpin &&
     wheelPhase !== "spinning" &&
     wheelPhase !== "settling" &&
-    (wheelPhase === "result" || overlayHoldResults || showResultPanel);
+    (wheelPhase === "result" || overlayHoldResults || showResultPanel) &&
+    staggerVisualComplete;
   /** 회차별 reveal·페이드 시퀀스 구분(데모에서 sessionId 비어 있어도 충돌 방지) */
   const spinCompletionKey = useMemo(() => {
     const selKey = (machine.selectedSigs || []).map((s) => s.id).join(",");
@@ -397,7 +496,7 @@ export default function SigSalesOverlayPage() {
    */
   const resultOverlayVisible = Boolean(
     revealGateOpen &&
-      displaySelectedSigs.length > 0 &&
+      (displaySelectedSigs.length > 0 || oneShotRevealUnlocked) &&
       (machine.phase === "IDLE"
         ? rouletteDemo
         : (showResultPanel && hideWheelAfterComplete) ||
@@ -411,6 +510,14 @@ export default function SigSalesOverlayPage() {
           Boolean(demoSpin) ||
           Boolean(pendingLanding))
   );
+
+  const oneShotForResultOverlay = useMemo(() => {
+    if (!oneShotRevealUnlocked) return null;
+    return (
+      machine.oneShot ||
+      buildOneShotFromSelected(machine.selectedSigs.slice(0, CONFIRMED_VISIBLE_SLOTS))
+    );
+  }, [oneShotRevealUnlocked, machine.oneShot, machine.selectedSigs]);
   const showSigBoardRollingSection = useMemo(() => {
     if (hideSigBoard || !state || (state.sigInventory || []).length === 0) return false;
     if (displaySelectedSigs.length > 0 && resultOverlayVisible && !allowSigBoardWithResults) return false;
@@ -768,9 +875,9 @@ export default function SigSalesOverlayPage() {
                   selectedSigs={displaySelectedSigs}
                   soldOutStampUrl={soldOutStampUrl}
                   soldOverrideSet={inventorySoldOutIdSet}
-                  oneShot={null}
+                  oneShot={oneShotForResultOverlay}
                   signImageUrl={oneShotImageUrl || currentSignImageUrl}
-                  showOneShotReveal={false}
+                  showOneShotReveal={Boolean(oneShotForResultOverlay)}
                   className="w-full max-w-[1120px]"
                   gifDelayMultiplier={sigGifDelayMultiplier}
                 />
