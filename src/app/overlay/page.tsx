@@ -1555,7 +1555,9 @@ function OverlayInner() {
       .replace(/\bshadow(?:-[^\s]+)?/g, "")
       .replace(/\s+/g, " ")
       .trim();
-  const useTableOpacity = tableBgOpacity < 100;
+  // GIF 배경은 테이블/열 불투명 배경 아래에 깔리므로, GIF 사용 시에도 stripBg + 틴트 경로를 태워야 보임
+  const useTableOpacity = tableBgOpacity < 100 || showTableBgGif;
+  const tableTintAlpha = showTableBgGif ? Math.min(tableBgOpacity / 100, 0.88) : tableBgOpacity / 100;
   const effectiveTableCls = useTableOpacity ? stripBg(membersTheme.tableCls) : membersTheme.tableCls;
   // Always remove per-cell gradients/backgrounds for cleaner unified look
   const effectiveRowCls = stripBg(membersTheme.rowCls);
@@ -2220,6 +2222,17 @@ function OverlayInner() {
         }
         `}
         .overlay-root .overlay-elegant-table td.overlay-col-contribution { color: #fff7fa !important; }
+        ${useTableOpacity ? `
+        .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-role,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-name,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-account,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-toon,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-total,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-contribution {
+          background: transparent !important;
+        }
+        ` : `
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
         .overlay-root .overlay-elegant-table thead td.overlay-col-role,
         .overlay-root .overlay-elegant-table thead td.overlay-col-name,
@@ -2229,6 +2242,7 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution {
           background: rgba(244, 170, 205, 0.92) !important;
         }
+        `}
         .overlay-root .overlay-elegant-table tbody tr:hover td {
           filter: brightness(1.06) saturate(1.03);
           transform: scale(1.009);
@@ -2289,7 +2303,7 @@ function OverlayInner() {
                 ) : null}
                 <div className="relative z-[1]">
                 {useTableOpacity ? (
-                <div className="relative overflow-hidden" style={{ borderRadius: 0, backgroundColor: `rgba(${(TABLE_BG_RGB[themeId] || defaultTableBgRgb).join(",")}, ${tableBgOpacity / 100})` }}>
+                <div className="relative overflow-hidden" style={{ borderRadius: 0, backgroundColor: `rgba(${(TABLE_BG_RGB[themeId] || defaultTableBgRgb).join(",")}, ${tableTintAlpha})` }}>
                     <table
                       ref={tableBoxRef as any}
                       className={`${effectiveTableCls} overlay-elegant-table${membersThemeId === "pastel" ? " pastel-member-table" : ""}`}
@@ -2297,7 +2311,19 @@ function OverlayInner() {
                     >
                   <colgroup>
                     {excelGridCols.map((w, idx) => (
-                      <col key={`excel-col-${idx}`} style={{ width: w, backgroundImage: columnGradients[idx], backgroundRepeat: "no-repeat", backgroundSize: "100% 100%" }} />
+                      <col
+                        key={`excel-col-${idx}`}
+                        style={
+                          showTableBgGif
+                            ? { width: w }
+                            : {
+                                width: w,
+                                backgroundImage: columnGradients[idx],
+                                backgroundRepeat: "no-repeat",
+                                backgroundSize: "100% 100%",
+                              }
+                        }
+                      />
                     ))}
                   </colgroup>
                   <thead>
