@@ -406,21 +406,24 @@ function SigMatchOverlayInner() {
           ) : null}
           {tripleBar && duelData.mode === "triple" ? (
             <>
-              <div className="mt-8 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[11px] text-white/80 sm:text-xs">
+              {/** 열 너비 = 막대 세그먼트 비율과 동일 → 이름·점수가 본인 게이지 위에 정렬 */}
+              <div className="mt-8 flex w-full items-end">
                 {duelData.sides.map((side, i) => (
-                  <span key={`sig-triple-${i}-${side.ids.join("-") || "x"}`} className="contents">
-                    {i > 0 ? (
-                      <span className="rounded-md bg-black/30 px-1.5 py-0.5 font-bold text-white/90">VS</span>
-                    ) : null}
+                  <div
+                    key={`sig-triple-label-${i}-${side.ids.join("-") || "x"}`}
+                    className="flex min-w-0 flex-col items-center justify-end px-0.5"
+                    style={{ width: `${tripleBar.pcts[i]}%` }}
+                  >
                     <span
-                      className={`inline-flex max-w-[30%] min-w-0 truncate rounded-full bg-white/80 px-2 py-1 font-black sm:px-3 ${
+                      className={`inline-flex w-full max-w-full justify-center truncate rounded-full bg-white/80 px-1.5 py-1 text-center text-[11px] font-black sm:px-2.5 sm:text-xs ${
                         i === 0 ? "text-pink-600" : i === 1 ? "text-amber-600" : "text-sky-600"
                       }`}
+                      title={side.label}
                     >
                       {tripleBar.crown[i] ? "👑 " : ""}
                       {side.label}
                     </span>
-                  </span>
+                  </div>
                 ))}
               </div>
               <div className="mt-2 h-4 w-full overflow-hidden rounded-full">
@@ -439,9 +442,15 @@ function SigMatchOverlayInner() {
                   />
                 </div>
               </div>
-              <div className="mt-1 grid grid-cols-3 gap-1 text-center text-[11px] text-white/75">
+              <div className="mt-1 flex w-full text-[11px] text-white/75">
                 {duelData.sides.map((side, i) => (
-                  <span key={`sig-triple-score-${i}-${side.ids.join("-")}`}>{formatSigMatchStat(side.score)}</span>
+                  <div
+                    key={`sig-triple-score-${i}-${side.ids.join("-")}`}
+                    className="min-w-0 truncate text-center tabular-nums"
+                    style={{ width: `${tripleBar.pcts[i]}%` }}
+                  >
+                    {formatSigMatchStat(side.score)}
+                  </div>
                 ))}
               </div>
             </>

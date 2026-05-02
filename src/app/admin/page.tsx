@@ -377,8 +377,11 @@ export default function AdminPage() {
     const el = document.getElementById(targetId);
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   };
+  /** `<input type="color">`는 #rrggbb만 허용 — transparent 등은 fallback으로 표시 */
   const toColorPickerValue = (raw?: string, fallback = "#ffffff") => {
     const v = (raw || "").trim();
+    const lower = v.toLowerCase();
+    if (!v || lower === "transparent" || lower === "none") return fallback;
     const m = v.match(/^#([0-9a-fA-F]{6})$/);
     return m ? `#${m[1].toLowerCase()}` : fallback;
   };
@@ -2548,7 +2551,10 @@ export default function AdminPage() {
                 {user?.unlimited ? "무제한" : `남은 일수: ${user?.remainingDays ?? 0}일`}
               </span>
             )}
-            <span className={`px-2 py-0.5 rounded text-xs font-medium ${syncStatus === "synced" ? "bg-emerald-900/60 text-emerald-300" : syncStatus === "loading" ? "bg-yellow-900/60 text-yellow-300" : syncStatus === "error" ? "bg-amber-900/60 text-amber-300" : "bg-neutral-800 text-neutral-400"}`}>
+            <span
+              className={`px-2 py-0.5 rounded text-xs font-medium ${syncStatus === "synced" ? "bg-emerald-900/60 text-emerald-300" : syncStatus === "loading" ? "bg-yellow-900/60 text-yellow-300" : syncStatus === "error" ? "bg-amber-900/60 text-amber-300" : "bg-neutral-800 text-neutral-400"}`}
+              title={syncStatus === "error" ? "동기화 실패 시 개발자 도구에 401이 보이면 로그인 세션이 만료된 경우가 많습니다. 페이지를 새로고침한 뒤 다시 로그인해 보세요." : undefined}
+            >
               {syncStatus === "synced" ? "서버 동기화됨" : syncStatus === "loading" ? "동기화 중..." : syncStatus === "error" ? "연결 재시도 중" : "로컬 모드 (오프라인)"}
             </span>
             <button
@@ -2946,7 +2952,7 @@ export default function AdminPage() {
                   <div>
                     <h4 className="text-sm font-semibold text-neutral-200">1:1 / n:n 규칙 (시그 풀)</h4>
                     <p className="mt-1 text-xs text-neutral-500">
-                      풀이 없으면 후원 멤버별 1:1 집계입니다. 풀에 넣은 멤버는 시그 1건을 풀 인원 수로 나눠 동일 반영(n:n)합니다. 멤버는 한 풀에만 속할 수 있습니다. 풀 2개 → 오버레이 좌·우(1:2·2:1 등), 풀 3개 → 삼자 막대. 풀 없이 참가자만 3명이면 오버레이는 1:1:1(삼각)로 표시됩니다.
+                      풀이 없으면 후원 멤버별 1:1 집계입니다. 풀에 넣은 멤버는 시그 1건을 풀 인원 수로 나눠 동일 반영(n:n)합니다. 멤버는 한 풀에만 속할 수 있습니다. 풀 2개 → 오버레이 좌·우(1:2·2:1 등), 풀 3개 → 삼자 막대. 풀 없이 참가자만 3명이면 오버레이는 1:1:1(삼각)로 표시됩니다. 풀을 4개 이상 만들면 시그 오버레이 막대는 <span className="text-amber-400/90">앞선 3개 풀만</span> 사용합니다.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -3275,7 +3281,7 @@ export default function AdminPage() {
                       <span className="text-neutral-400">말풍선 배경</span>
                       <input
                         type="color"
-                        value={state.mealBattle?.missionBubbleBg || "#9333ea"}
+                        value={toColorPickerValue(state.mealBattle?.missionBubbleBg, "#9333ea")}
                         onChange={(e) => updateMealBattle({ missionBubbleBg: e.target.value })}
                         className="h-9 w-full rounded border border-white/20 bg-transparent"
                       />
@@ -3284,7 +3290,7 @@ export default function AdminPage() {
                       <span className="text-neutral-400">말풍선 글자</span>
                       <input
                         type="color"
-                        value={state.mealBattle?.missionBubbleTextColor || "#ffffff"}
+                        value={toColorPickerValue(state.mealBattle?.missionBubbleTextColor, "#ffffff")}
                         onChange={(e) => updateMealBattle({ missionBubbleTextColor: e.target.value })}
                         className="h-9 w-full rounded border border-white/20 bg-transparent"
                       />
@@ -3293,7 +3299,7 @@ export default function AdminPage() {
                       <span className="text-neutral-400">게이지 트랙</span>
                       <input
                         type="color"
-                        value={/^#/.test(state.mealBattle?.gaugeTrackBg || "") ? (state.mealBattle?.gaugeTrackBg as string) : "#171717"}
+                        value={toColorPickerValue(state.mealBattle?.gaugeTrackBg, "#171717")}
                         title="단색만 피커로 고를 수 있습니다. 알파는 아래 입력란에 hex/rgba로 입력하세요."
                         onChange={(e) => updateMealBattle({ gaugeTrackBg: e.target.value })}
                         className="h-9 w-full rounded border border-white/20 bg-transparent"
@@ -3303,7 +3309,7 @@ export default function AdminPage() {
                       <span className="text-neutral-400">채움 막대(개인)</span>
                       <input
                         type="color"
-                        value={state.mealBattle?.gaugeFillColor || "#22c55e"}
+                        value={toColorPickerValue(state.mealBattle?.gaugeFillColor, "#22c55e")}
                         onChange={(e) => updateMealBattle({ gaugeFillColor: e.target.value })}
                         className="h-9 w-full rounded border border-white/20 bg-transparent"
                       />
@@ -3312,7 +3318,7 @@ export default function AdminPage() {
                       <span className="text-neutral-400">A팀 막대</span>
                       <input
                         type="color"
-                        value={state.mealBattle?.teamAColor || "#2563eb"}
+                        value={toColorPickerValue(state.mealBattle?.teamAColor, "#2563eb")}
                         onChange={(e) => updateMealBattle({ teamAColor: e.target.value })}
                         className="h-9 w-full rounded border border-white/20 bg-transparent"
                       />
@@ -3321,7 +3327,7 @@ export default function AdminPage() {
                       <span className="text-neutral-400">B팀 막대</span>
                       <input
                         type="color"
-                        value={state.mealBattle?.teamBColor || "#dc2626"}
+                        value={toColorPickerValue(state.mealBattle?.teamBColor, "#dc2626")}
                         onChange={(e) => updateMealBattle({ teamBColor: e.target.value })}
                         className="h-9 w-full rounded border border-white/20 bg-transparent"
                       />
@@ -3330,7 +3336,7 @@ export default function AdminPage() {
                       <span className="text-neutral-400">점수·요약 글자</span>
                       <input
                         type="color"
-                        value={state.mealBattle?.scoreTextColor || "#ffffff"}
+                        value={toColorPickerValue(state.mealBattle?.scoreTextColor, "#ffffff")}
                         onChange={(e) => updateMealBattle({ scoreTextColor: e.target.value })}
                         className="h-9 w-full rounded border border-white/20 bg-transparent"
                       />
@@ -3339,7 +3345,7 @@ export default function AdminPage() {
                       <span className="text-neutral-400">이름 태그 배경</span>
                       <input
                         type="color"
-                        value={state.mealBattle?.nameTagBg || "#facc15"}
+                        value={toColorPickerValue(state.mealBattle?.nameTagBg, "#facc15")}
                         onChange={(e) => updateMealBattle({ nameTagBg: e.target.value })}
                         className="h-9 w-full rounded border border-white/20 bg-transparent"
                       />
@@ -3348,7 +3354,7 @@ export default function AdminPage() {
                       <span className="text-neutral-400">이름 태그 글자</span>
                       <input
                         type="color"
-                        value={state.mealBattle?.nameTagTextColor || "#000000"}
+                        value={toColorPickerValue(state.mealBattle?.nameTagTextColor, "#000000")}
                         onChange={(e) => updateMealBattle({ nameTagTextColor: e.target.value })}
                         className="h-9 w-full rounded border border-white/20 bg-transparent"
                       />
@@ -3450,7 +3456,7 @@ export default function AdminPage() {
                       state.mealBattle?.memberGaugeColors?.[m.id] ||
                       MEAL_PARTICIPANT_COLORS[idx % MEAL_PARTICIPANT_COLORS.length];
                     const swatch = p?.color || draft;
-                    const pickerVal = /^#/.test(swatch) ? swatch : "#60a5fa";
+                    const pickerVal = toColorPickerValue(typeof swatch === "string" ? swatch : "", "#60a5fa");
                     return (
                       <div
                         key={m.id}
@@ -3540,7 +3546,7 @@ export default function AdminPage() {
                         </button>
                         <input
                           type="color"
-                          value={/^#/.test(row.color || "") ? row.color : "#60a5fa"}
+                          value={toColorPickerValue(row.color, "#60a5fa")}
                           onChange={(e) => patchMealParticipantColor(row.memberId, e.target.value)}
                           className="h-8 w-10 rounded border border-white/20 bg-transparent"
                         />
@@ -3653,7 +3659,7 @@ export default function AdminPage() {
                           <span>{label}</span>
                           <input
                             type="color"
-                            value={String((state.donorRankingsTheme as unknown as Record<string, unknown>)[key] || "#ffffff")}
+                            value={toColorPickerValue(String((state.donorRankingsTheme as unknown as Record<string, unknown>)[key] ?? ""), "#ffffff")}
                             onChange={(e) => updateDonorRankingsTheme({ [key]: e.target.value } as Partial<AppState["donorRankingsTheme"]>)}
                             className="h-7 w-9 rounded border border-white/20 bg-transparent p-0.5"
                           />
@@ -4855,7 +4861,7 @@ export default function AdminPage() {
                           <input
                             type="color"
                             className="w-14 h-9 rounded bg-neutral-900/80 border border-white/10"
-                            value={(timerStyle.fontColor as any) || "#ffffff"}
+                            value={toColorPickerValue(String(timerStyle.fontColor ?? ""), "#ffffff")}
                             onChange={(e) => updateTimerDisplayStyle(timerDef.flag, { fontColor: e.target.value })}
                           />
                           <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updateTimerDisplayStyle(timerDef.flag, { fontColor: "" })}>기본</button>
@@ -4865,7 +4871,7 @@ export default function AdminPage() {
                           <input
                             type="color"
                             className="w-14 h-9 rounded bg-neutral-900/80 border border-white/10"
-                            value={(timerStyle.bgColor as any) || "#ffffff"}
+                            value={toColorPickerValue(String(timerStyle.bgColor ?? ""), "#ffffff")}
                             onChange={(e) => updateTimerDisplayStyle(timerDef.flag, { bgColor: e.target.value })}
                           />
                           <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updateTimerDisplayStyle(timerDef.flag, { bgColor: "" })}>기본</button>
@@ -4882,7 +4888,7 @@ export default function AdminPage() {
                           <input
                             type="color"
                             className="w-14 h-9 rounded bg-neutral-900/80 border border-white/10"
-                            value={(timerStyle.borderColor as any) || "#ffffff"}
+                            value={toColorPickerValue(String(timerStyle.borderColor ?? ""), "#ffffff")}
                             onChange={(e) => updateTimerDisplayStyle(timerDef.flag, { borderColor: e.target.value })}
                           />
                           <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updateTimerDisplayStyle(timerDef.flag, { borderColor: "" })}>기본</button>
@@ -4892,7 +4898,7 @@ export default function AdminPage() {
                           <input
                             type="color"
                             className="w-14 h-9 rounded bg-neutral-900/80 border border-white/10"
-                            value={(timerStyle.outlineColor as any) || "#000000"}
+                            value={toColorPickerValue(String(timerStyle.outlineColor ?? ""), "#000000")}
                             onChange={(e) => updateTimerDisplayStyle(timerDef.flag, { outlineColor: e.target.value })}
                           />
                           <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updateTimerDisplayStyle(timerDef.flag, { outlineColor: "" })}>기본</button>
@@ -6159,7 +6165,7 @@ export default function AdminPage() {
                                       <input
                                         type="color"
                                         className="w-16 h-10 rounded bg-neutral-900/80 border border-white/10"
-                                        value={(p.timerFontColor as any) || "#ffffff"}
+                                        value={toColorPickerValue(String(p.timerFontColor ?? ""), "#ffffff")}
                                         onChange={(e) => updatePreset(p.id, { timerFontColor: e.target.value })}
                                       />
                                       <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { timerFontColor: "" })}>기본</button>
@@ -6169,7 +6175,7 @@ export default function AdminPage() {
                                       <input
                                         type="color"
                                         className="w-16 h-10 rounded bg-neutral-900/80 border border-white/10"
-                                        value={(p.timerBgColor as any) || "#ffffff"}
+                                        value={toColorPickerValue(String(p.timerBgColor ?? ""), "#ffffff")}
                                         onChange={(e) => updatePreset(p.id, { timerBgColor: e.target.value })}
                                       />
                                       <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { timerBgColor: "" })}>기본</button>
@@ -6186,7 +6192,7 @@ export default function AdminPage() {
                                       <input
                                         type="color"
                                         className="w-16 h-10 rounded bg-neutral-900/80 border border-white/10"
-                                        value={(p.timerBorderColor as any) || "#ffffff"}
+                                        value={toColorPickerValue(String(p.timerBorderColor ?? ""), "#ffffff")}
                                         onChange={(e) => updatePreset(p.id, { timerBorderColor: e.target.value })}
                                       />
                                       <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { timerBorderColor: "" })}>기본</button>
@@ -6244,7 +6250,7 @@ export default function AdminPage() {
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-3 mt-2">
                                   <label className="text-xs text-neutral-400">배경 색상</label>
-                                  <input type="color" className="w-16 h-11 rounded bg-neutral-900/80 border border-white/10" value={(p.missionBgColor as any) || "#0b0b0b"} onChange={(e) => updatePreset(p.id, { missionBgColor: e.target.value })} />
+                                  <input type="color" className="w-16 h-11 rounded bg-neutral-900/80 border border-white/10" value={toColorPickerValue(String(p.missionBgColor ?? ""), "#0b0b0b")} onChange={(e) => updatePreset(p.id, { missionBgColor: e.target.value })} />
                                   <label className="text-xs text-neutral-400">배경 불투명도</label>
                                   <div className="flex items-center gap-2">
                                     <input type="range" min="0" max="100" value={p.missionBgOpacity || "85"} onChange={(e) => updatePreset(p.id, { missionBgOpacity: e.target.value })} className="flex-1 accent-emerald-500 h-11" />
@@ -6252,9 +6258,9 @@ export default function AdminPage() {
                                     <span className="text-xs text-neutral-500">%</span>
                                   </div>
                                   <label className="text-xs text-neutral-400">텍스트 색상</label>
-                                  <input type="color" className="w-16 h-11 rounded bg-neutral-900/80 border border-white/10" value={(p.missionItemColor as any) || "#fde68a"} onChange={(e) => updatePreset(p.id, { missionItemColor: e.target.value })} />
+                                  <input type="color" className="w-16 h-11 rounded bg-neutral-900/80 border border-white/10" value={toColorPickerValue(String(p.missionItemColor ?? ""), "#fde68a")} onChange={(e) => updatePreset(p.id, { missionItemColor: e.target.value })} />
                                   <label className="text-xs text-neutral-400">타이틀 색상</label>
-                                  <input type="color" className="w-16 h-11 rounded bg-neutral-900/80 border border-white/10" value={(p.missionTitleColor as any) || "#fcd34d"} onChange={(e) => updatePreset(p.id, { missionTitleColor: e.target.value })} />
+                                  <input type="color" className="w-16 h-11 rounded bg-neutral-900/80 border border-white/10" value={toColorPickerValue(String(p.missionTitleColor ?? ""), "#fcd34d")} onChange={(e) => updatePreset(p.id, { missionTitleColor: e.target.value })} />
                               <label className="text-xs text-neutral-400">타이틀 효과</label>
                               <select
                                 className="px-2 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm min-h-[44px]"

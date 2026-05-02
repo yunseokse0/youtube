@@ -1,5 +1,13 @@
 import React from 'react';
 
+function hexForColorInput(raw: string | undefined, fallback: string) {
+  const v = (raw || "").trim();
+  const l = v.toLowerCase();
+  if (!v || l === "transparent" || l === "none") return fallback;
+  const m = v.match(/^#([0-9a-fA-F]{6})$/);
+  return m ? `#${m[1]!.toLowerCase()}` : fallback;
+}
+
 export type OverlayElementPosition = {
   x: string;
   y: string;
@@ -365,7 +373,7 @@ export function OverlayCard({ preset, onUpdate, onDelete, onCopyUrl, copiedId, u
                 <label className="text-xs text-neutral-400">타이틀 색상</label>
                 <input
                   type="color"
-                  value={preset.missionTitleColor || '#fcd34d'}
+                  value={hexForColorInput(preset.missionTitleColor, "#fcd34d")}
                   onChange={(e) => onUpdate(preset.id, { missionTitleColor: e.target.value })}
                   className="w-16 h-10 rounded bg-white/5 border border-white/10"
                 />
