@@ -41,16 +41,17 @@ export default function SelectedSigs({
   gifDelayMultiplier = 3.5,
 }: SelectedSigsProps) {
   const fallbackImage = "/images/sigs/dummy-sig.svg";
-  const gridClass = compact
-    ? trailingSlot
-      ? "grid-cols-6"
-      : "grid-cols-5"
-    : trailingSlot
-      ? "grid-cols-2 md:grid-cols-3 xl:grid-cols-6"
-      : "grid-cols-2 md:grid-cols-3 xl:grid-cols-5";
-  const gridAlign = compact && trailingSlot ? "items-start" : "";
+  /** 고정 5·6열은 카드가 적을 때도 빈 칸이 남아 미리 깔린 것처럼 보임 → 실제 개수만큼 열만 사용 */
+  const trailingActive = Boolean(trailingSlot);
+  const cellCount = items.length + (trailingActive ? 1 : 0);
+  const columnCount = Math.min(6, Math.max(1, cellCount));
+  const gridTemplateColumns = `repeat(${columnCount}, minmax(0, 1fr))`;
+  const gridAlign = compact && trailingActive ? "items-start" : "";
   return (
-    <section className={`grid ${gridClass} gap-1.5 ${gridAlign} ${className}`.trim()}>
+    <section
+      className={`grid w-full gap-1.5 ${gridAlign} ${className}`.trim()}
+      style={{ gridTemplateColumns }}
+    >
       {items.map((item, idx) => {
         const canonId = canonicalSigIdFromWheelSliceId(item.id);
         const sold = soldOverrideSet

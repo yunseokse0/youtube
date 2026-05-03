@@ -435,7 +435,8 @@ export default function SigSalesOverlayPage() {
     useSequentialWheel,
     revealedSigCount,
   ]);
-  const staggerAnchorKey = `${machine.sessionId || ""}|${machine.startedAt || 0}|${machine.resultId || ""}`;
+  /** resultId 제외: 폴링으로 resultId만 늦게 오면 키가 바뀌며 카드·한방 해제 상태가 초기화되는 문제 방지 */
+  const staggerAnchorKey = `${machine.sessionId || ""}|${machine.startedAt || 0}`;
   const displaySelectedSigs = useMemo(() => {
     if (fullSelectedSigs.length === 0) return [];
     if (
@@ -553,6 +554,21 @@ export default function SigSalesOverlayPage() {
       staggerTimersRef.current = [];
     };
   }, []);
+
+  /** 순차 연출: 마지막 시그 카드 공개 후 한방도 확실히 해제(onLanded 타임아웃만 의존하지 않음) */
+  useEffect(() => {
+    if (!oneShotEligibleAfterReveal) return;
+    if (revealedSigCount < completedTargetCount) return;
+    if (oneShotRevealUnlocked) return;
+    const tid = window.setTimeout(() => setOneShotRevealUnlocked(true), sigResultStaggerMs);
+    return () => window.clearTimeout(tid);
+  }, [
+    oneShotEligibleAfterReveal,
+    revealedSigCount,
+    completedTargetCount,
+    oneShotRevealUnlocked,
+    sigResultStaggerMs,
+  ]);
 
   const hideWheelAfterComplete =
     machine.selectedSigs.length >= completedTargetCount &&
@@ -940,7 +956,7 @@ export default function SigSalesOverlayPage() {
                     selectedQueue[selectedQueue.length - 1]?.id ||
                     selectedQueue[0]!.id;
                   landed(selectedQueue, oneShot, finalResultId);
-                  if (seqMulti && buildOneShotFromSelected(selectedQueue)) {
+                  if (buildOneShotFromSelected(selectedQueue)) {
                     window.setTimeout(() => setOneShotRevealUnlocked(true), sigResultStaggerMs);
                   }
                   if (ROULETTE_WHEEL_SFX_ENABLED) {
