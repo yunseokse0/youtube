@@ -2224,7 +2224,7 @@ function OverlayInner() {
         }
         `}
         .overlay-root .overlay-elegant-table td.overlay-col-contribution { color: #fff7fa !important; }
-        ${useTableOpacity ? `
+        /* 반투명 테이블 모드에서도 헤더 분홍 띠 유지(예전엔 transparent 로 헤더만 사라짐) */
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
         .overlay-root .overlay-elegant-table thead td.overlay-col-role,
         .overlay-root .overlay-elegant-table thead td.overlay-col-name,
@@ -2232,19 +2232,8 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td.overlay-col-toon,
         .overlay-root .overlay-elegant-table thead td.overlay-col-total,
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution {
-          background: transparent !important;
+          background: rgba(244, 170, 205, ${useTableOpacity ? 0.78 : 0.62}) !important;
         }
-        ` : `
-        .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
-        .overlay-root .overlay-elegant-table thead td.overlay-col-role,
-        .overlay-root .overlay-elegant-table thead td.overlay-col-name,
-        .overlay-root .overlay-elegant-table thead td.overlay-col-account,
-        .overlay-root .overlay-elegant-table thead td.overlay-col-toon,
-        .overlay-root .overlay-elegant-table thead td.overlay-col-total,
-        .overlay-root .overlay-elegant-table thead td.overlay-col-contribution {
-          background: rgba(244, 170, 205, 0.62) !important;
-        }
-        `}
         .overlay-root .overlay-elegant-table tbody tr:hover td {
           filter: brightness(1.06) saturate(1.03);
           transform: scale(1.009);
