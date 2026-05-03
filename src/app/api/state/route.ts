@@ -1,8 +1,9 @@
 export const runtime = "edge";
 export const revalidate = 0;
 
+import type { RouletteState } from "@/types";
 import type { AppState } from "@/lib/state";
-import { defaultState, mergeDonorsForMultiTabSave } from "@/lib/state";
+import { defaultState, mergeDonorsForMultiTabSave, normalizeRouletteState } from "@/lib/state";
 import { createModuleLogger } from "@/lib/logger";
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
@@ -47,6 +48,39 @@ function deepMerge<T>(base: T, patch: Partial<T>): T {
     }
   }
   return out as T;
+}
+
+/** 클라이언트가 보낸 rouletteState 에서 메뉴 수·UI 설정만 현재 서버 상태 위에 얹음(스핀 결과 필드는 무시) */
+function mergeRouletteUiPrefsOntoCurrent(
+  current: RouletteState | undefined,
+  patchRs: Partial<RouletteState> | undefined
+): RouletteState {
+  const out = normalizeRouletteState(current);
+  if (!patchRs || typeof patchRs !== "object") return out;
+  if (patchRs.menuCount !== undefined) {
+    const n = Number(patchRs.menuCount);
+    if (Number.isFinite(n)) {
+      out.menuCount = Math.max(5, Math.min(20, Math.floor(n)));
+    }
+  }
+  if (typeof patchRs.menuFillFromAllActive === "boolean") {
+    out.menuFillFromAllActive = patchRs.menuFillFromAllActive;
+  }
+  if (typeof patchRs.menuFillFromDemo === "boolean") {
+    out.menuFillFromDemo = patchRs.menuFillFromDemo;
+  }
+  if (patchRs.overlayOpacity !== undefined) {
+    const o = Number(patchRs.overlayOpacity);
+    if (Number.isFinite(o)) {
+      out.overlayOpacity = Math.max(0.4, Math.min(1, o));
+    }
+  }
+  if (Array.isArray(patchRs.historyLogs)) {
+    out.historyLogs = patchRs.historyLogs
+      .filter((x) => x && typeof x === "object")
+      .slice(0, 50) as RouletteState["historyLogs"];
+  }
+  return out;
 }
 
 function mergePartialState(base: AppState, patch: Partial<AppState>, userId: string): AppState {
@@ -103,6 +137,10 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
     (patchStartedAt > baseStartedAt || (patchStartedAt === baseStartedAt && patchHasRollingFlag));
   if (!canApplyPatchRouletteState) {
     next.rouletteState = base.rouletteState;
+  }
+
+  if ("rouletteState" in patch && patch.rouletteState != null && typeof patch.rouletteState === "object") {
+    next.rouletteState = mergeRouletteUiPrefsOntoCurrent(next.rouletteState, patch.rouletteState as Partial<RouletteState>);
   }
 
   return next;
@@ -163,15 +201,28 @@ export async function GET(req: Request) {
     try {
       const rouletteStateSource = await loadAppStateForRoulette(userId);
       if (rouletteStateSource?.rouletteState) {
-        const curStarted = Number((effective as AppState).rouletteState?.startedAt || 0);
-        const rouletteStarted = Number(rouletteStateSource.rouletteState?.startedAt || 0);
+        const rs = rouletteStateSource.rouletteState;
+        const effectiveRs = (effective as AppState).rouletteState;
+        const curStarted = Number(effectiveRs?.startedAt || 0);
+        const rouletteStarted = Number(rs?.startedAt || 0);
+        const srcCleanIdle =
+          (rs.phase || "IDLE") === "IDLE" &&
+          !rs.isRolling &&
+          !(rs.selectedSigs && rs.selectedSigs.length > 0) &&
+          !rs.oneShotResult;
+        const effectiveLooksBusy =
+          (effectiveRs?.phase || "IDLE") !== "IDLE" ||
+          Boolean(effectiveRs?.isRolling) ||
+          Boolean(effectiveRs?.selectedSigs && effectiveRs.selectedSigs.length > 0) ||
+          Boolean(effectiveRs?.oneShotResult);
         const shouldUseRouletteState =
-          Boolean(rouletteStateSource.rouletteState?.isRolling) ||
-          rouletteStarted >= curStarted;
+          Boolean(rs.isRolling) ||
+          rouletteStarted >= curStarted ||
+          (srcCleanIdle && effectiveLooksBusy);
         if (shouldUseRouletteState) {
           mergedForResponse = {
             ...(effective as AppState),
-            rouletteState: rouletteStateSource.rouletteState,
+            rouletteState: rs,
           };
         }
       }

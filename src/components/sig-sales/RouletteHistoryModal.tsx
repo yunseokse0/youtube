@@ -7,7 +7,7 @@ import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
 type HistoryItem = {
   id: string;
   sessionId: string;
-  phase: "CONFIRMED" | "CANCELLED";
+  phase: "LANDED" | "CONFIRMED" | "CANCELLED";
   selectedSigs: Array<{ id: string; name: string; price: number }>;
   oneShotPrice: number;
   totalPrice: number;
@@ -45,7 +45,15 @@ export default function RouletteHistoryModal({ open, item, onClose, onLoadReadon
               세션 {item.sessionId} · {new Date(item.timestamp).toLocaleString("ko-KR")}
             </p>
           </div>
-          <span className={`rounded px-2 py-1 text-xs font-bold ${item.phase === "CONFIRMED" ? "bg-emerald-700/70 text-emerald-100" : "bg-rose-800/70 text-rose-100"}`}>
+          <span
+            className={`rounded px-2 py-1 text-xs font-bold ${
+              item.phase === "CONFIRMED"
+                ? "bg-emerald-700/70 text-emerald-100"
+                : item.phase === "LANDED"
+                  ? "bg-amber-700/80 text-amber-50"
+                  : "bg-rose-800/70 text-rose-100"
+            }`}
+          >
             {item.phase}
           </span>
         </div>
@@ -60,6 +68,8 @@ export default function RouletteHistoryModal({ open, item, onClose, onLoadReadon
           <OneShotSigCard name="한방 시그" price={item.oneShotPrice} sold={true} disabled={true} onToggleSold={() => {}} />
         </div>
         <div className="mt-3 rounded border border-white/10 bg-black/30 p-3 text-sm">
+          <div>당첨 시그: {item.selectedSigs.map((s) => s.name).join(", ") || "-"}</div>
+          <div>한방 시그 금액: {item.oneShotPrice.toLocaleString("ko-KR")}원</div>
           <div>총 금액: {item.totalPrice.toLocaleString("ko-KR")}원</div>
           <div>관리자: {item.adminId || "-"}</div>
           {item.reason ? <div>사유: {item.reason}</div> : null}

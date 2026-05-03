@@ -19,6 +19,8 @@ type SelectedSigsProps = {
   showToggle?: boolean;
   soldOverrideSet?: Set<string>;
   compact?: boolean;
+  /** 오버레이 등: 당첨 카드를 왼쪽 정렬 */
+  compactGridJustify?: "center" | "start";
   showConfirmedBadge?: boolean;
   className?: string;
   /** GIF 시그 프레임 유지 배수 (오버레이 `sigGifDelay` 등과 동일 의미, 기본 3.5) */
@@ -38,21 +40,26 @@ export default function SelectedSigs({
   showToggle = true,
   soldOverrideSet,
   compact = false,
+  compactGridJustify = "center",
   showConfirmedBadge = true,
   className = "",
   gifDelayMultiplier = 3.5,
   entranceOnlyLatest = false,
 }: SelectedSigsProps) {
-  const fallbackImage = "/images/sigs/dummy-sig.svg";
   /** 고정 5·6열은 카드가 적을 때도 빈 칸이 남아 미리 깔린 것처럼 보임 → 실제 개수만큼 열만 사용 */
   const trailingActive = Boolean(trailingSlot);
   const cellCount = items.length + (trailingActive ? 1 : 0);
   const columnCount = Math.min(6, Math.max(1, cellCount));
-  const gridTemplateColumns = `repeat(${columnCount}, minmax(0, 1fr))`;
+  /** compact(오버레이): 1fr 이면 당첨 1개일 때 한 칸이 1120px까지 늘어나 이미지가 비정상적으로 큼 → 열 너비 상한 */
+  const gridTemplateColumns = compact
+    ? `repeat(${columnCount}, minmax(0, min(10.5rem, 46vw)))`
+    : `repeat(${columnCount}, minmax(0, 1fr))`;
   const gridAlign = compact && trailingActive ? "items-start" : "";
+  const justifyCompact =
+    compact && compactGridJustify === "start" ? "justify-start" : compact ? "justify-center" : "";
   return (
     <section
-      className={`grid w-full gap-1.5 ${gridAlign} ${className}`.trim()}
+      className={`grid w-full gap-1.5 ${justifyCompact} ${gridAlign} ${className}`.trim()}
       style={{ gridTemplateColumns }}
     >
       {items.map((item, idx) => {
@@ -97,13 +104,9 @@ export default function SelectedSigs({
                 src={resolveSigImageUrl(item.name, item.imageUrl)}
                 alt={item.name}
                 fill
-                sizes={compact ? "140px" : "240px"}
+                sizes={compact ? "(max-width:768px) 40vw, 168px" : "240px"}
                 className="object-cover object-center"
                 gifDelayMultiplier={gifDelayMultiplier}
-                onError={(e) => {
-                  e.currentTarget.onerror = null;
-                  e.currentTarget.src = fallbackImage;
-                }}
               />
               {sold ? (
                 <>

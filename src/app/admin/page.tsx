@@ -178,6 +178,9 @@ export default function AdminPage() {
   );
   const ROULETTE_ROUND_UI_CAP = 40;
   const [rouletteResetBusy, setRouletteResetBusy] = useState(false);
+  /** 회전판 돌리기/초기화 결과 — sigExcelResult(엑셀)와 분리해 버튼 바로 아래에 표시 */
+  const [rouletteActionMessage, setRouletteActionMessage] = useState("");
+  const [rouletteSpinBusy, setRouletteSpinBusy] = useState(false);
   const [donorRankingPresetName, setDonorRankingPresetName] = useState("");
   const [settlementTitle, setSettlementTitle] = useState("");
   const [accountRatioInput, setAccountRatioInput] = useState("70");
@@ -1540,56 +1543,70 @@ export default function AdminPage() {
   };
 
   const spinSigRoulette = async () => {
-    const uid = user?.id;
-    if (!uid) {
-      setSigExcelResult("로그인 후 회전판을 사용할 수 있습니다.");
-      return;
-    }
-    const rs = state.rouletteState;
-    if (rs) {
-      const idle = (rs.phase || "IDLE") === "IDLE";
-      const blockedUntilReset =
-        !idle ||
-        rs.isRolling ||
-        (rs.selectedSigs || []).length > 0 ||
-        Boolean(rs.oneShotResult);
-      if (blockedUntilReset) {
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(
-            new CustomEvent("forbidden-alert", {
-              detail: {
-                text: "이전 회전판 결과가 남아 있어 새로 돌릴 수 없습니다. 아래「회전판 초기화 (IDLE)」를 누른 뒤 다시「회전판 돌리기」를 누르세요.",
-                durationMs: 5200,
-              },
-            })
-          );
-        }
-        return;
-      }
-    }
-    const n = Math.max(1, Math.min(999, parseInt(String(rouletteSpinCount || "5"), 10) || 5));
-    const cap = Math.min(n, ROULETTE_ROUND_UI_CAP);
-    let parts = roulettePriceRanges.slice(0, cap);
-    while (parts.length < cap) parts.push({ min: "", max: "" });
-    const toRange = (v: { min: string; max: string }): { min: number | null; max: number | null } | null => {
-      const minRaw = String(v?.min || "").replace(/[^\d]/g, "");
-      const maxRaw = String(v?.max || "").replace(/[^\d]/g, "");
-      const minNum = minRaw ? Math.floor(Number.parseInt(minRaw, 10) || 0) : 0;
-      const maxNum = maxRaw ? Math.floor(Number.parseInt(maxRaw, 10) || 0) : 0;
-      const hasMin = minNum > 0;
-      const hasMax = maxNum > 0;
-      if (!hasMin && !hasMax) return null;
-      const min = hasMin ? minNum : null;
-      const max = hasMax ? maxNum : null;
-      if (min != null && max != null && min > max) {
-        return { min: max, max: min };
-      }
-      return { min, max };
-    };
-    const priceRanges: Array<{ min: number | null; max: number | null } | null> = parts.map(toRange);
-    const pad = priceRanges[priceRanges.length - 1] ?? null;
-    while (priceRanges.length < n) priceRanges.push(pad);
+    /** 오버레이 URL의 `u=` 와 동일해야 폴링 상태가 맞음 (`user` 미로드 시 finalent 등) */
+    const uid = rouletteUserId;
+    setRouletteSpinBusy(true);
+    setRouletteActionMessage("");
     try {
+      const rs = state.rouletteState;
+      if (rs) {
+        const idle = (rs.phase || "IDLE") === "IDLE";
+        const blockedUntilReset =
+          !idle ||
+          rs.isRolling ||
+          (rs.selectedSigs || []).length > 0 ||
+          Boolean(rs.oneShotResult);
+        if (blockedUntilReset) {
+          setRouletteActionMessage("이전 회전 결과를 초기화한 뒤 회전을 시작합니다…");
+          try {
+            const resetRes = await fetch(`/api/roulette/reset?user=${encodeURIComponent(uid)}`, {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({}),
+            });
+            const resetJ = (await resetRes.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+            if (!resetRes.ok) {
+              setRouletteActionMessage(
+                `회전판 초기화 실패: ${resetJ.error || resetRes.status}. 아래「회전판 초기화 (IDLE)」를 누른 뒤 다시 시도하세요.`
+              );
+              return;
+            }
+            const remoteAfterReset = await loadStateFromApi(uid);
+            if (remoteAfterReset) {
+              setState(remoteAfterReset);
+              try {
+                window.localStorage.setItem(storageKey(uid), JSON.stringify(remoteAfterReset));
+              } catch {}
+            }
+          } catch (e) {
+            setRouletteActionMessage(`회전판 초기화 오류: ${String(e)}`);
+            return;
+          }
+        }
+      }
+      const n = Math.max(1, Math.min(999, parseInt(String(rouletteSpinCount || "5"), 10) || 5));
+      const cap = Math.min(n, ROULETTE_ROUND_UI_CAP);
+      let parts = roulettePriceRanges.slice(0, cap);
+      while (parts.length < cap) parts.push({ min: "", max: "" });
+      const toRange = (v: { min: string; max: string }): { min: number | null; max: number | null } | null => {
+        const minRaw = String(v?.min || "").replace(/[^\d]/g, "");
+        const maxRaw = String(v?.max || "").replace(/[^\d]/g, "");
+        const minNum = minRaw ? Math.floor(Number.parseInt(minRaw, 10) || 0) : 0;
+        const maxNum = maxRaw ? Math.floor(Number.parseInt(maxRaw, 10) || 0) : 0;
+        const hasMin = minNum > 0;
+        const hasMax = maxNum > 0;
+        if (!hasMin && !hasMax) return null;
+        const min = hasMin ? minNum : null;
+        const max = hasMax ? maxNum : null;
+        if (min != null && max != null && min > max) {
+          return { min: max, max: min };
+        }
+        return { min, max };
+      };
+      const priceRanges: Array<{ min: number | null; max: number | null } | null> = parts.map(toRange);
+      const pad = priceRanges[priceRanges.length - 1] ?? null;
+      while (priceRanges.length < n) priceRanges.push(pad);
       const res = await fetch(`/api/roulette/spin?user=${encodeURIComponent(uid)}`, {
         method: "POST",
         credentials: "include",
@@ -1604,22 +1621,24 @@ export default function AdminPage() {
         have?: number;
       };
       if (!res.ok) {
-        setSigExcelResult(
-          j.error === "empty_inventory"
-            ? "시그 인벤토리가 비어 있습니다."
-            : j.error === "empty_price_tier"
-              ? typeof j.round === "number"
-                ? `${j.round}회차: 선택한 금액대에 뽑을 시그가 없습니다.`
-                : "선택한 금액대에 남은 시그가 없습니다."
-              : j.error === "empty_price_range"
+        setRouletteActionMessage(
+          res.status === 401 || j.error === "unauthorized"
+            ? "로그인 세션이 없거나 만료되었습니다. 새로고침 후 다시 로그인해 주세요."
+            : j.error === "empty_inventory"
+              ? "시그 인벤토리가 비어 있습니다."
+              : j.error === "empty_price_tier"
                 ? typeof j.round === "number"
-                  ? `${j.round}회차: 설정한 최소/최대 범위에 뽑을 시그가 없습니다.`
-                  : "설정한 최소/최대 범위에 남은 시그가 없습니다."
-              : j.error === "not_enough_unique_sigs"
-                ? typeof j.need === "number" && typeof j.have === "number"
-                  ? `서로 다른 시그가 부족합니다(필요 ${j.need}개 · 후보 ${j.have}개). 인벤토리를 늘리거나 뽑기 개수를 줄이세요.`
-                  : "서로 다른 시그 수가 부족합니다."
-              : `회전판 실패: ${j.error || res.status}`
+                  ? `${j.round}회차: 선택한 금액대에 뽑을 시그가 없습니다.`
+                  : "선택한 금액대에 남은 시그가 없습니다."
+                : j.error === "empty_price_range"
+                  ? typeof j.round === "number"
+                    ? `${j.round}회차: 설정한 최소/최대 범위에 뽑을 시그가 없습니다.`
+                    : "설정한 최소/최대 범위에 남은 시그가 없습니다."
+                  : j.error === "not_enough_unique_sigs"
+                    ? typeof j.need === "number" && typeof j.have === "number"
+                      ? `서로 다른 시그가 부족합니다(필요 ${j.need}개 · 후보 ${j.have}개). 인벤토리를 늘리거나 뽑기 개수를 줄이세요.`
+                      : "서로 다른 시그 수가 부족합니다."
+                    : `회전판 실패: ${j.error || res.status}`
         );
         return;
       }
@@ -1649,18 +1668,18 @@ export default function AdminPage() {
             ? " · 금액대 전체"
             : ` · 금액대 ${uniq[0]}원`
           : ` · 회차별 금액대 (${uniq.slice(0, 5).join(", ")}${uniq.length > 5 ? "…" : ""})`;
-      setSigExcelResult(`회전판 1회 · 시그 ${n}개 당첨(중복 없음) 확정${priceLabel}. 오버레이 /overlay/sig-sales 에서 확인하세요.`);
+      setRouletteActionMessage(
+        `회전 ${n}회 · 시그 ${n}개 당첨 확정(회전당 1개·중복 없음)${priceLabel}. 오버레이 /overlay/sig-sales (u=${uid}) 에서 확인하세요.`,
+      );
     } catch (e) {
-      setSigExcelResult(`회전판 요청 오류: ${String(e)}`);
+      setRouletteActionMessage(`회전판 요청 오류: ${String(e)}`);
+    } finally {
+      setRouletteSpinBusy(false);
     }
   };
 
   const resetRouletteIdle = async () => {
-    const uid = user?.id;
-    if (!uid) {
-      setSigExcelResult("로그인 후 회전판 초기화를 사용할 수 있습니다.");
-      return;
-    }
+    const uid = rouletteUserId;
     setRouletteResetBusy(true);
     try {
       const res = await fetch(`/api/roulette/reset?user=${encodeURIComponent(uid)}`, {
@@ -1671,7 +1690,7 @@ export default function AdminPage() {
       });
       const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!res.ok) {
-        setSigExcelResult(`회전판 초기화 실패: ${j.error || res.status}`);
+        setRouletteActionMessage(`회전판 초기화 실패: ${j.error || res.status}`);
         return;
       }
       const remote = await loadStateFromApi(uid);
@@ -1681,9 +1700,9 @@ export default function AdminPage() {
           window.localStorage.setItem(storageKey(uid), JSON.stringify(remote));
         } catch {}
       }
-      setSigExcelResult("회전판 상태를 IDLE로 초기화했습니다. 오버레이 유령 결과가 사라집니다.");
+      setRouletteActionMessage("회전판 상태를 IDLE로 초기화했습니다. 오버레이 유령 결과가 사라집니다.");
     } catch (e) {
-      setSigExcelResult(`회전판 초기화 오류: ${String(e)}`);
+      setRouletteActionMessage(`회전판 초기화 오류: ${String(e)}`);
     } finally {
       setRouletteResetBusy(false);
     }
@@ -4123,13 +4142,14 @@ export default function AdminPage() {
                       회전판 당첨은 서버(<code className="text-neutral-300">/api/roulette/spin</code>)에서만 결정되어 Redis에 저장됩니다. 판매 ±는 기존과 동일하게 전체 상태로 동기화되며 후원(donors) 병합 로직과 충돌하지 않습니다.
                     </p>
                     <p className="mt-1 text-[11px] leading-snug text-amber-200/90">
-                      한 번 돌릴 때 나올 시그 개수를 정합니다. 금액 칸을 비우면 해당 줄은 <strong className="text-amber-100">전체 풀에서 무작위</strong>이며,
-                      같은 회차 안에서는 <strong className="text-amber-100">시그가 서로 중복되지 않습니다</strong>. 서로 다른 시그 수가 부족하면 오류가 납니다.
+                      아래 숫자는 <strong className="text-amber-100">회전 횟수이며 곧 당첨 시그 개수</strong>입니다(회전 1회당 시그 1개). 예: 5면 휠이 5번 돌아가고 시그 5개가 나옵니다. 금액 칸을 비우면 해당 회차는{" "}
+                      <strong className="text-amber-100">전체 풀에서 무작위</strong>이며, 같은 버튼 한 번 안에서는{" "}
+                      <strong className="text-amber-100">시그가 서로 중복되지 않습니다</strong>. 서로 다른 시그 수가 부족하면 오류가 납니다.
                     </p>
                   </div>
                   <div className="flex flex-wrap items-end gap-2">
                     <label className="flex flex-col text-[11px] text-neutral-400">
-                      한 판당 당첨 시그 개수
+                      회전 수 (= 시그 당첨 수)
                       <input
                         type="number"
                         min={1}
@@ -4151,15 +4171,21 @@ export default function AdminPage() {
                     </label>
                     <button
                       type="button"
-                      className="rounded bg-fuchsia-700 px-3 py-2 text-sm font-semibold hover:bg-fuchsia-600"
+                      disabled={rouletteSpinBusy}
+                      className="rounded bg-fuchsia-700 px-3 py-2 text-sm font-semibold hover:bg-fuchsia-600 disabled:cursor-not-allowed disabled:opacity-60"
                       onClick={() => {
                         void spinSigRoulette();
                       }}
                     >
-                      회전판 돌리기
+                      {rouletteSpinBusy ? "회전 요청 중…" : "회전판 돌리기"}
                     </button>
                   </div>
                 </div>
+                {rouletteActionMessage ? (
+                  <div className="rounded border border-fuchsia-500/35 bg-fuchsia-950/40 px-3 py-2 text-xs leading-snug text-fuchsia-50/95">
+                    {rouletteActionMessage}
+                  </div>
+                ) : null}
                 {(() => {
                   const n = Math.max(1, Math.min(999, parseInt(String(rouletteSpinCount || "5"), 10) || 5));
                   const rows = Math.min(n, ROULETTE_ROUND_UI_CAP);
@@ -4256,7 +4282,7 @@ export default function AdminPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      disabled={rouletteResetBusy || !user?.id}
+                      disabled={rouletteResetBusy}
                       className="rounded bg-amber-800 px-2 py-1 text-xs font-semibold text-amber-50 hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
                       onClick={() => {
                         void resetRouletteIdle();

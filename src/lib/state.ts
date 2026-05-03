@@ -163,7 +163,9 @@ export function normalizeRouletteState(raw: unknown): RouletteState {
           const selectedSigs = Array.isArray(r.selectedSigs)
             ? normalizeSigInventory((r.selectedSigs as unknown[]).filter((s) => s && typeof s === "object"))
             : [];
-          const phase: "CONFIRMED" | "CANCELLED" = r.phase === "CANCELLED" ? "CANCELLED" : "CONFIRMED";
+          const pr = String(r.phase || "");
+          const phase: "LANDED" | "CONFIRMED" | "CANCELLED" =
+            pr === "CANCELLED" ? "CANCELLED" : pr === "LANDED" ? "LANDED" : "CONFIRMED";
           return {
             id: String(r.id || ""),
             sessionId: String(r.sessionId || ""),
@@ -831,13 +833,29 @@ async function postAppStateWithAuthRecovery(json: string, userId?: string | null
   return res;
 }
 
+/** 관리자 /api/state 저장 시 — 스핀 결과(phase 등)는 보내지 않고 메뉴 수·오버레이 UI 설정만 전달 */
+function appStatePayloadForApi(next: AppState): Partial<AppState> {
+  const { rouletteState, ...rest } = next;
+  if (!rouletteState) return rest;
+  return {
+    ...rest,
+    rouletteState: {
+      menuCount: rouletteState.menuCount,
+      menuFillFromAllActive: rouletteState.menuFillFromAllActive,
+      menuFillFromDemo: rouletteState.menuFillFromDemo,
+      overlayOpacity: rouletteState.overlayOpacity,
+      ...(Array.isArray(rouletteState.historyLogs) ? { historyLogs: rouletteState.historyLogs } : {}),
+    },
+  };
+}
+
 export function saveState(state: AppState, userId?: string | null) {
   if (typeof window === "undefined") return;
   try {
     const next = { ...state, updatedAt: Date.now() };
     const json = JSON.stringify(next);
     window.localStorage.setItem(storageKey(userId), json);
-    void postAppStateWithAuthRecovery(json, userId)
+    void postAppStateWithAuthRecovery(JSON.stringify(appStatePayloadForApi(next)), userId)
       .catch(() => {});
     try {
       const { sendSSEUpdate } = require("./sse-post") as { sendSSEUpdate: (d: unknown) => Promise<void> };
@@ -854,7 +872,7 @@ export async function saveStateAsync(state: AppState, userId?: string | null): P
   const json = JSON.stringify(next);
   try { window.localStorage.setItem(storageKey(userId), json); } catch {}
   try {
-    const res = await postAppStateWithAuthRecovery(json, userId);
+    const res = await postAppStateWithAuthRecovery(JSON.stringify(appStatePayloadForApi(next)), userId);
     try {
       const { sendSSEUpdate } = require("./sse-post") as { sendSSEUpdate: (d: unknown) => Promise<void> };
       void sendSSEUpdate(next);

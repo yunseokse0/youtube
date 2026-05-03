@@ -23,6 +23,27 @@ export const DEFAULT_SIG_INVENTORY: SigItem[] = [
   { id: "sig_game", name: "게임", price: 88000, imageUrl: "/images/sigs/게임.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: false },
 ];
 
+/** 오버레이 UI 확인용: true 이면 resolveSigImageUrl 이 항상 더미 SVG 반환(실패 PNG 요청·404 방지) */
+let sigImagePlaceholderOnlyForOverlay = false;
+
+export function setSigImagePlaceholderOnlyForOverlay(value: boolean): void {
+  sigImagePlaceholderOnlyForOverlay = Boolean(value);
+}
+
+export function getSigImagePlaceholderOnlyForOverlay(): boolean {
+  return sigImagePlaceholderOnlyForOverlay;
+}
+
+/** 저장된 시그 이미지 경로 보정(`/images/sig/` 오타 → `/images/sigs/`) — 인벤·당첨 배열 모두 적용 */
+export function normalizeSigImageUrlStored(raw: unknown): string {
+  const s = String(raw ?? "").trim().replace(/\\/g, "/");
+  if (!s) return "";
+  if (s.startsWith("/images/sig/")) {
+    return s.replace(/^\/images\/sig\//, "/images/sigs/");
+  }
+  return s;
+}
+
 export function normalizeSigInventory(input: unknown): SigItem[] {
   if (!Array.isArray(input)) return DEFAULT_SIG_INVENTORY.map((x) => ({ ...x }));
   const list = input
@@ -35,7 +56,7 @@ export function normalizeSigInventory(input: unknown): SigItem[] {
         id: String(x.id || `sig_${Math.random().toString(36).slice(2, 8)}`),
         name: String(x.name || "시그"),
         price: Math.max(0, Math.floor(Number(x.price || 0) || 0)),
-        imageUrl: String(x.imageUrl || ""),
+        imageUrl: normalizeSigImageUrlStored(x.imageUrl),
         memberId: String(x.memberId || ""),
         maxCount: Math.max(1, Math.floor(Number(x.maxCount || 1) || 1)),
         soldCount: Math.max(0, Math.floor(Number(x.soldCount || 0) || 0)),
@@ -48,24 +69,27 @@ export function normalizeSigInventory(input: unknown): SigItem[] {
 }
 
 export function resolveSigImageUrl(name: string, imageUrl?: string): string {
-  const raw = String(imageUrl || "").trim();
+  if (sigImagePlaceholderOnlyForOverlay) {
+    return "/images/sigs/dummy-sig.svg";
+  }
+  const raw = normalizeSigImageUrlStored(imageUrl);
   if (raw) {
-    const normalized = raw.replace(/\\/g, "/");
-    if (/(?:_257b_2522id_2522|%257b%2522id%2522|%7b%22id%22)/i.test(normalized)) {
+    if (/(?:_257b_2522id_2522|%257b%2522id%2522|%7b%22id%22)/i.test(raw)) {
       return "/images/sigs/dummy-sig.svg";
     }
     if (
-      normalized.startsWith("http://") ||
-      normalized.startsWith("https://") ||
-      normalized.startsWith("data:image/") ||
-      normalized.startsWith("blob:")
+      raw.startsWith("http://") ||
+      raw.startsWith("https://") ||
+      raw.startsWith("data:image/") ||
+      raw.startsWith("blob:")
     ) {
-      return normalized;
+      return raw;
     }
-    if (normalized.startsWith("/")) return normalized;
-    if (normalized.startsWith("uploads/") || normalized.startsWith("images/")) return `/${normalized}`;
+    if (raw.startsWith("/")) return raw;
+    if (raw.startsWith("uploads/") || raw.startsWith("images/")) return `/${raw}`;
   }
   const safeName = String(name || "").trim();
   if (!safeName) return "/images/sigs/dummy-sig.svg";
-  return `/images/sigs/${safeName}.png`;
+  /** public 에 이름별 PNG 가 없으면 404만 줄줄이 남음 → 공통 더미(이미지 URL을 비운 시그) */
+  return "/images/sigs/dummy-sig.svg";
 }

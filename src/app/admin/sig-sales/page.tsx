@@ -22,12 +22,12 @@ import { useSigSalesState } from "@/hooks/useSigSalesState";
 
 const POLL_MS = 1000;
 const STEP_CONFIRM_PAUSE_MS = 3000;
-const MAX_SELECTED_SIGS = 5;
+const MAX_SELECTED_SIGS = 20;
 const MIN_ONE_SHOT_SIGS = 2;
 type HistoryItem = {
   id: string;
   sessionId: string;
-  phase: "CONFIRMED" | "CANCELLED";
+  phase: "LANDED" | "CONFIRMED" | "CANCELLED";
   selectedSigs: Array<{ id: string; name: string; price: number }>;
   oneShotPrice: number;
   totalPrice: number;
@@ -63,6 +63,8 @@ export default function AdminSigSalesPage() {
   const [authReady, setAuthReady] = useState(false);
   const userId = user?.id || "finalent";
   const [memberFilterId, setMemberFilterId] = useState("");
+  /** /api/roulette/spin cinematic5 전용: 본문 spinCount(1~20). 미보내면 서버는 최대 5·풀만 사용 */
+  const [cinematicSpinCount, setCinematicSpinCount] = useState(5);
   const [state, setState] = useState<AppState | null>(null);
   const [loadingSpin, setLoadingSpin] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(true);
@@ -132,6 +134,12 @@ export default function AdminSigSalesPage() {
     if (!authReady) return;
     void loadHistory(8);
   }, [authReady, loadHistory]);
+
+  /** 방송 착지(LANDED) 직후 Redis 로그가 쌓이면 이력 패널 갱신 */
+  useEffect(() => {
+    if (!authReady) return;
+    if (machine.phase === "LANDED") void loadHistory(8);
+  }, [authReady, machine.phase, loadHistory]);
 
   useEffect(() => {
     oneShotSound.volume(volume);
@@ -267,9 +275,10 @@ export default function AdminSigSalesPage() {
       setToast("선택한 멤버의 활성 시그가 없습니다. 멤버 시그를 추가/활성화해주세요.");
       return;
     }
+    const nSpin = Math.max(1, Math.min(MAX_SELECTED_SIGS, Math.floor(cinematicSpinCount) || 5));
     setLoadingSpin(true);
     try {
-      const data = await spin({ memberId: memberFilterId || null, force: forceSpinAfterRecover });
+      const data = await spin({ memberId: memberFilterId || null, force: forceSpinAfterRecover, spinCount: nSpin });
       const selected = (data.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
       const oneShot = buildOneShotFromSelected(selected);
       setPendingLanding({ selected, oneShot, resultId: data.result?.id || selected[selected.length - 1]?.id || null, persist: true });
@@ -308,7 +317,18 @@ export default function AdminSigSalesPage() {
     } finally {
       setLoadingSpin(false);
     }
-  }, [authReady, loadingSpin, memberFilterId, machine.phase, machine.isFinishLoading, activeNormalPool.length, spin, resetToIdle, cancelConfirm]);
+  }, [
+    authReady,
+    loadingSpin,
+    memberFilterId,
+    cinematicSpinCount,
+    machine.phase,
+    machine.isFinishLoading,
+    activeNormalPool.length,
+    spin,
+    resetToIdle,
+    cancelConfirm,
+  ]);
 
   const onRerollReset = useCallback(() => {
     if (nextSpinTimerRef.current) {
@@ -491,6 +511,21 @@ export default function AdminSigSalesPage() {
                 </option>
               ))}
             </select>
+            <label className="flex flex-col gap-0.5 text-[11px] text-neutral-400">
+              당첨 시그 수
+              <input
+                type="number"
+                min={1}
+                max={MAX_SELECTED_SIGS}
+                value={cinematicSpinCount}
+                onChange={(e) => {
+                  const raw = parseInt(String(e.target.value || ""), 10);
+                  if (!Number.isFinite(raw)) return;
+                  setCinematicSpinCount(Math.max(1, Math.min(MAX_SELECTED_SIGS, raw)));
+                }}
+                className="w-16 rounded border border-white/15 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-100"
+              />
+            </label>
             <button
               type="button"
               onClick={onRerollReset}
@@ -677,8 +712,18 @@ export default function AdminSigSalesPage() {
           </div>
           {historyOpen ? (
             <div className="mt-2 space-y-2">
-              {history.length === 0 ? <p className="text-xs text-neutral-400">아직 확정 이력이 없습니다.</p> : null}
-              {history.slice(0, 8).map((h) => (
+              {history.length === 0 ? <p className="text-xs text-neutral-400">아직 이력이 없습니다. (방송 착지 후 LANDED · 판매 확정 후 CONFIRMED)</p> : null}
+              {history.slice(0, 8).map((h) => {
+                const names = h.selectedSigs.map((s) => s.name).join(", ") || "-";
+                const phaseStyle =
+                  h.phase === "CONFIRMED"
+                    ? "border-emerald-500/35 bg-emerald-950/20 text-neutral-100"
+                    : h.phase === "LANDED"
+                      ? "border-amber-500/40 bg-amber-950/25 text-neutral-100"
+                      : "border-rose-500/35 bg-rose-950/20 text-neutral-100";
+                const badgeStyle =
+                  h.phase === "CONFIRMED" ? "bg-emerald-700/70" : h.phase === "LANDED" ? "bg-amber-700/75" : "bg-rose-700/70";
+                return (
                 <button
                   type="button"
                   key={h.id}
@@ -686,17 +731,24 @@ export default function AdminSigSalesPage() {
                     setSelectedHistory(h);
                     setShowHistoryModal(true);
                   }}
-                  className={`w-full rounded border px-3 py-2 text-left text-xs ${h.phase === "CONFIRMED" ? "border-emerald-500/35 bg-emerald-950/20 text-neutral-100" : "border-rose-500/35 bg-rose-950/20 text-neutral-100"}`}
+                  className={`w-full rounded border px-3 py-2 text-left text-xs ${phaseStyle}`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span>세션: {h.sessionId}</span>
-                    <span className={`rounded px-1.5 py-0.5 ${h.phase === "CONFIRMED" ? "bg-emerald-700/70" : "bg-rose-700/70"}`}>{h.phase}</span>
+                    <span className="truncate">세션: {h.sessionId}</span>
+                    <span className={`shrink-0 rounded px-1.5 py-0.5 ${badgeStyle}`}>{h.phase}</span>
                   </div>
-                  <div className="mt-1 text-neutral-300">
-                    {new Date(h.timestamp).toLocaleString("ko-KR")} · 총액 {h.totalPrice.toLocaleString("ko-KR")}원
+                  <div className="mt-1 text-neutral-200">
+                    당첨 시그: {names}
+                  </div>
+                  <div className="mt-0.5 text-neutral-300">
+                    한방 시그: {h.oneShotPrice.toLocaleString("ko-KR")}원 · 합계 {h.totalPrice.toLocaleString("ko-KR")}원
+                  </div>
+                  <div className="mt-1 text-[11px] text-neutral-400">
+                    {new Date(h.timestamp).toLocaleString("ko-KR")}
                   </div>
                 </button>
-              ))}
+                );
+              })}
               <button type="button" className="mt-1 rounded bg-white/10 px-2 py-1 text-xs" onClick={() => void loadHistory(20)}>
                 전체 이력 보기
               </button>

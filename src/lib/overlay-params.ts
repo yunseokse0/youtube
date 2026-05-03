@@ -259,6 +259,18 @@ export function getOverlayUserIdFromSearchParams(
   searchParams: SearchParamsLike,
   fallback = "finalent"
 ): string {
-  const userId = searchParams.get("u") || searchParams.get("user");
+  /** `n=` 레거시·오타 호환 (OBS에서 u 대신 붙인 경우 폴링 user 불일치 → 회전 상태 꼬임) */
+  const userId = searchParams.get("u") || searchParams.get("user") || searchParams.get("n");
   return (userId || "").trim() || fallback;
+}
+
+/** OBS 프리셋 등에서 `memberId=null` 문자열이 들어오면 필터가 깨지므로 무시 */
+export function getOverlayMemberFilterIdFromSearchParams(searchParams: SearchParamsLike): string {
+  const raw = (searchParams.get("memberId") || searchParams.get("member") || "").trim();
+  if (!raw) return "";
+  const lower = raw.toLowerCase();
+  if (lower === "null" || lower === "undefined" || lower === "none" || lower === "-" || lower === "nil") {
+    return "";
+  }
+  return raw;
 }

@@ -22,6 +22,8 @@ type RouletteWheelProps = {
   isRolling: boolean;
   resultId: string | null;
   startedAt: number;
+  /** 순차 회전 등 동일 startedAt·resultId 조합에서도 다음 애니를 강제로 시작 */
+  spinReplayNonce?: number;
   scalePct?: number;
   volume?: number;
   muted?: boolean;
@@ -41,6 +43,7 @@ export default function RouletteWheel({
   isRolling,
   resultId,
   startedAt,
+  spinReplayNonce = 0,
   scalePct = 100,
   volume = 0.7,
   muted = false,
@@ -286,7 +289,7 @@ export default function RouletteWheel({
     }), [rotate]);
 
   useEffect(() => {
-    const spinKey = `${startedAt || 0}:${resultId || "none"}`;
+    const spinKey = `${startedAt || 0}:${resultId || "none"}:${spinReplayNonce}`;
 
     if (!isRolling || !startedAt) {
       hasLandedRef.current = false;
@@ -390,6 +393,7 @@ export default function RouletteWheel({
     isRolling,
     startedAt,
     resultId,
+    spinReplayNonce,
     rotate,
     stopAllAnimations,
     runAnimation,

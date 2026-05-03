@@ -104,7 +104,7 @@ export type RouletteState = {
   historyLogs?: Array<{
     id: string;
     sessionId: string;
-    phase: "CONFIRMED" | "CANCELLED";
+    phase: "LANDED" | "CONFIRMED" | "CANCELLED";
     selectedSigs: SigItem[];
     selectedSigIds: string[];
     oneShotPrice: number;

@@ -145,7 +145,7 @@ export function useSigSalesState(userId: string, appState: AppState | null) {
     dispatch({ type: "HYDRATE", payload: incoming });
   }, [appState]);
 
-  const spin = useCallback(async (options?: { memberId?: string | null; force?: boolean }) => {
+  const spin = useCallback(async (options?: { memberId?: string | null; force?: boolean; spinCount?: number }) => {
     if (!options?.force && machine.isFinishLoading) {
       throw new Error("spin_blocked");
     }
@@ -158,7 +158,13 @@ export function useSigSalesState(userId: string, appState: AppState | null) {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "cinematic5", memberId: options?.memberId || null }),
+        body: JSON.stringify({
+          mode: "cinematic5",
+          memberId: options?.memberId || null,
+          ...(typeof options?.spinCount === "number" && Number.isFinite(options.spinCount)
+            ? { spinCount: Math.max(1, Math.min(999, Math.floor(options.spinCount))) }
+            : {}),
+        }),
       });
       if (!res.ok) {
         const payload = (await res.json().catch(() => ({}))) as { error?: string };

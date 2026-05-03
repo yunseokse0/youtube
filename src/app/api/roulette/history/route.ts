@@ -29,10 +29,14 @@ export async function GET(req: Request) {
       );
     }
     const limit = parsed.data.limit ?? 20;
-    const appState = await loadAppStateForRoulette(userId);
-    const fromState = appState.rouletteState?.historyLogs || [];
-    const stateFiltered = parsed.data.sessionId ? fromState.filter((x) => x.sessionId === parsed.data.sessionId) : fromState;
-    const history = stateFiltered.length > 0 ? stateFiltered.slice(0, limit) : await getRouletteHistory(userId, limit, parsed.data.sessionId);
+    /** Redis/메모리 로그가 소스 오브 트루스(착지 LANDED 등이 상태 스냅샷보다 먼저 반영됨) */
+    let history = await getRouletteHistory(userId, limit, parsed.data.sessionId);
+    if (history.length === 0) {
+      const appState = await loadAppStateForRoulette(userId);
+      const fromState = appState.rouletteState?.historyLogs || [];
+      const stateFiltered = parsed.data.sessionId ? fromState.filter((x) => x.sessionId === parsed.data.sessionId) : fromState;
+      history = stateFiltered.slice(0, limit);
+    }
     return Response.json(
       {
         ok: true,

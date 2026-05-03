@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { getSigImagePlaceholderOnlyForOverlay, normalizeSigImageUrlStored } from "@/lib/constants";
 
 export function useImagePreload(
   url?: string | null,
@@ -10,7 +11,11 @@ export function useImagePreload(
   const loadedRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
-    const src = String(url || "").trim();
+    const raw = String(url || "").trim();
+    if (!raw) return;
+    const src = getSigImagePlaceholderOnlyForOverlay()
+      ? "/images/sigs/dummy-sig.svg"
+      : normalizeSigImageUrlStored(raw) || raw;
     if (!src) return;
     if (loadedRef.current[src]) return;
 

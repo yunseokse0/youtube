@@ -30,7 +30,6 @@ export default function OneShotSigCard({
   gifDelayMultiplier = 3.5,
   onMediaReady,
 }: OneShotSigCardProps) {
-  const fallbackImage = "/images/sigs/dummy-sig.svg";
   return (
     <motion.section
       initial={{ opacity: 0, scale: 0.85, y: 24 }}
@@ -56,10 +55,6 @@ export default function OneShotSigCard({
           className="object-cover object-center"
           gifDelayMultiplier={gifDelayMultiplier}
           onReady={onMediaReady}
-          onError={(e) => {
-            e.currentTarget.onerror = null;
-            e.currentTarget.src = fallbackImage;
-          }}
         />
       </div>
       <div className={`relative ${compact ? "flex flex-col gap-0.5" : "flex flex-wrap items-center justify-between gap-3"}`}>

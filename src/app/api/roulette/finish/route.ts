@@ -127,6 +127,12 @@ export async function POST(req: Request) {
       });
     } catch {}
     clearRouletteLock(userId);
+    if (typeof console !== "undefined" && console.info) {
+      const names = selectedSigs.map((s) => s.name).join(", ");
+      console.info(
+        `[roulette/finish] user=${userId} session=${sessionId || rs.sessionId} phase=${finalPhase} 시그=[${names}] 한방=${oneShotPrice.toLocaleString("ko-KR")}원 log=${logResult.logId}`,
+      );
+    }
     return Response.json(
       {
         ok: true,

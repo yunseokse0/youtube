@@ -5,6 +5,7 @@ import type { AppState } from "@/lib/state";
 import { normalizeRouletteState } from "@/lib/state";
 import { normalizeSigInventory } from "@/lib/constants";
 import type { SigItem } from "@/types";
+import { saveRouletteLog } from "@/lib/sig-roulette";
 import { getRouletteUserId, loadAppStateForRoulette, saveAppStateForRoulette } from "../edge-state-store";
 import { forwardCookieHeader } from "../../_shared/internal-state-headers";
 
@@ -119,6 +120,29 @@ export async function POST(req: Request) {
         }),
       });
     } catch {}
+
+    const oneShotPrice = Math.max(0, Math.floor(Number(oneShotResult?.price || 0)));
+    try {
+      const logRes = await saveRouletteLog({
+        userId,
+        sessionId,
+        phase: "LANDED",
+        selectedSigs,
+        oneShotPrice,
+        adminId: userId,
+        reason: "overlay_land",
+      });
+      if (typeof console !== "undefined" && console.info) {
+        const names = selectedSigs.map((s) => s.name).join(", ");
+        console.info(
+          `[roulette/land] user=${userId} session=${sessionId} 시그=[${names}] 한방=${oneShotPrice.toLocaleString("ko-KR")}원 phase=LANDED log=${logRes.logId}`,
+        );
+      }
+    } catch (logErr) {
+      if (typeof console !== "undefined" && console.warn) {
+        console.warn("[roulette/land] saveRouletteLog failed", logErr);
+      }
+    }
 
     return Response.json({ ok: true }, { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
   } catch (e) {

@@ -46,7 +46,8 @@ export default function ResultOverlay({
       setImageLoaded(true);
     },
     () => {
-      setImageLoaded(false);
+      /** 원본 URL이 404여도 SigSaleMedia가 더미로 폴백하므로 로딩 오버레이로 결과를 가리지 않음 */
+      setImageLoaded(true);
     }
   );
 
@@ -86,7 +87,8 @@ export default function ResultOverlay({
         compact
         showConfirmedBadge={false}
         trailingSlot={oneShotTrailing}
-        className="mx-auto w-full max-w-[1120px]"
+        compactGridJustify="start"
+        className="max-w-full"
         gifDelayMultiplier={gifDelayMultiplier}
         entranceOnlyLatest={entranceOnlyLatest}
       />

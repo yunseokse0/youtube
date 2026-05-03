@@ -57,6 +57,8 @@ export async function POST(req: Request) {
       return Response.json({ error: "unauthorized" }, { status: 401, headers: { "Content-Type": "application/json" } });
     }
     let spinCount = 1;
+    /** 본문에 spinCount 숫자가 있었는지(통합 관리자 회전 N회 등). 없으면 cinematic5 는 레거시처럼 최대 5·풀 크기만 적용 */
+    let spinCountExplicit = false;
     let mode: "default" | "cinematic5" = "default";
     let memberIdFilter: string | null = null;
     let legacyPriceFilter: number | null = null;
@@ -73,6 +75,7 @@ export async function POST(req: Request) {
       };
       if (j && typeof j.spinCount === "number" && Number.isFinite(j.spinCount)) {
         spinCount = Math.max(1, Math.min(999, Math.floor(j.spinCount)));
+        spinCountExplicit = true;
       }
       if (j?.mode === "cinematic5") {
         mode = "cinematic5";
@@ -167,7 +170,12 @@ export async function POST(req: Request) {
         shuffled[i] = shuffled[j]!;
         shuffled[j] = t;
       }
-      const selectedCount = Math.max(1, Math.min(5, shuffled.length));
+      /** 명시된 회전 수: 최대 40까지(통합 관리자 회전판과 유사). 미지정 시 레거시 최대 5·풀 크기 */
+      const CINEMATIC5_MAX_EXPLICIT = 40;
+      const CINEMATIC5_MAX_LEGACY = 5;
+      const selectedCount = spinCountExplicit
+        ? Math.max(1, Math.min(CINEMATIC5_MAX_EXPLICIT, spinCount, shuffled.length))
+        : Math.max(1, Math.min(CINEMATIC5_MAX_LEGACY, shuffled.length));
       const selectedSigs = shuffled.slice(0, selectedCount).map((x) => ({ ...x, maxCount: 1 }));
       const oneShot = selectedSigs.length >= 2
         ? {

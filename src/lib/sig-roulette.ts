@@ -49,7 +49,8 @@ export function formatWon(value: number): string {
 export type RouletteSessionLog = {
   id: string;
   sessionId: string;
-  phase: "CONFIRMED" | "CANCELLED";
+  /** LANDED: 방송 착지(결과 확정), CONFIRMED: 판매 확정, CANCELLED: 취소 */
+  phase: "LANDED" | "CONFIRMED" | "CANCELLED";
   selectedSigs: SigItem[];
   selectedSigIds: string[];
   oneShotPrice: number;
@@ -115,7 +116,7 @@ export async function getRouletteHistory(userId: string, limit = 20, sessionId?:
 export async function saveRouletteLog(params: {
   userId: string;
   sessionId: string;
-  phase: "CONFIRMED" | "CANCELLED";
+  phase: "LANDED" | "CONFIRMED" | "CANCELLED";
   selectedSigs: SigItem[];
   oneShotPrice: number;
   adminId?: string;
@@ -126,17 +127,30 @@ export async function saveRouletteLog(params: {
   const duplicate = existing.some((x) => x.sessionId === params.sessionId);
   if (duplicate) {
     const prev = existing.find((x) => x.sessionId === params.sessionId)!;
-    if (prev.phase === params.phase) return { ok: true, logId: prev.id, duplicate: true, logs: existing };
-    const replaced = existing.map((x) =>
-      x.sessionId === params.sessionId
-        ? {
-            ...x,
-            phase: params.phase,
-            reason: params.reason,
-            timestamp: Date.now(),
-          }
-        : x
+    const totalPrice = params.selectedSigs.reduce(
+      (sum, s) => sum + Math.max(0, Math.floor(Number(s.price || 0))),
+      0,
     );
+    const nextLog: RouletteSessionLog = {
+      ...prev,
+      phase: params.phase,
+      selectedSigs: params.selectedSigs.map((x) => ({ ...x })),
+      selectedSigIds: params.selectedSigs.map((x) => x.id),
+      oneShotPrice: Math.max(0, Math.floor(params.oneShotPrice || 0)),
+      totalPrice,
+      timestamp: Date.now(),
+      adminId: params.adminId ?? prev.adminId,
+      reason: params.reason !== undefined ? params.reason : prev.reason,
+    };
+    const unchanged =
+      prev.phase === nextLog.phase &&
+      prev.oneShotPrice === nextLog.oneShotPrice &&
+      prev.totalPrice === nextLog.totalPrice &&
+      prev.selectedSigIds.join(",") === nextLog.selectedSigIds.join(",");
+    if (unchanged) {
+      return { ok: true, logId: prev.id, duplicate: true, logs: existing };
+    }
+    const replaced = existing.map((x) => (x.sessionId === params.sessionId ? nextLog : x));
     const savedRemote = await upstashSetJson(key, replaced);
     if (!savedRemote) setServerMemoryRouletteLogs(key, replaced);
     return { ok: true, logId: prev.id, duplicate: false, logs: replaced };
