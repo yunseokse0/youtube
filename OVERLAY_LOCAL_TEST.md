@@ -10,6 +10,16 @@ npm run dev
 
 브라우저 기본 주소: `http://localhost:3000`
 
+## 바로 회전판 테스트 (한 번에 열기)
+
+개발 서버 실행 후 **아래 주소만** 열면 데모 회전판이 자동으로 시작합니다.
+
+```
+http://localhost:3000/overlay/sig-sales/demo
+```
+
+→ `/overlay/sig-sales` 로 리다이렉트되며 `rouletteDemo=1`, `menuCount=5`, `devSequentialTest=1` 가 붙습니다.
+
 ## 순차 연출만 보기 (서버·Redis 없이)
 
 아래 URL을 열면 데모 풀에서 5개를 뽑고, **회전 5번 → 카드 한 장씩** 흐름이 재생됩니다.
