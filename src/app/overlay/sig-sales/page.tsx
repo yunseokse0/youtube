@@ -32,15 +32,16 @@ const DEFAULT_RESULT_REVEAL_DELAY_MS = 480;
 const DEFAULT_SEQUENTIAL_CARD_EMERGE_MS = 200;
 /** 순차 라운드: 한 라운드 착지 후 다음 회전 시작까지(ms). LANDED 지연(280ms)·카드 공개보다 길게 */
 const DEFAULT_SEQUENTIAL_NEXT_SPIN_MS = 860;
+/** 저장소에 한글 파일명 PNG가 없으면 404만 줄줄이 나와 콘솔·미디어가 막히므로 공통 더미 사용 */
 const DEMO_POOL = [
-  { id: "demo_1", name: "애교", price: 77000, imageUrl: "/images/sigs/애교.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_2", name: "댄스", price: 100000, imageUrl: "/images/sigs/댄스.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_3", name: "식사권", price: 333000, imageUrl: "/images/sigs/식사권.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_4", name: "보이스", price: 50000, imageUrl: "/images/sigs/보이스.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_5", name: "노래", price: 120000, imageUrl: "/images/sigs/노래.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_6", name: "토크", price: 55000, imageUrl: "/images/sigs/토크.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_7", name: "하트", price: 30000, imageUrl: "/images/sigs/하트.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_8", name: "게임", price: 88000, imageUrl: "/images/sigs/게임.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_1", name: "애교", price: 77000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_2", name: "댄스", price: 100000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_3", name: "식사권", price: 333000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_4", name: "보이스", price: 50000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_5", name: "노래", price: 120000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_6", name: "토크", price: 55000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_7", name: "하트", price: 30000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "demo_8", name: "게임", price: 88000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
   { id: "demo_9", name: "보너스", price: 150000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
   { id: "demo_10", name: "특전", price: 220000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
 ];
@@ -192,6 +193,8 @@ export default function SigSalesOverlayPage() {
   const wheelPhasePrevRef = useRef<WheelPhase>("idle");
   const phaseRef = useRef<WheelPhase>("idle");
   const demoBootedRef = useRef(false);
+  /** rouletteDemo 최초 1회만 idle→START_SPIN 보정(라운드 간 타임아웃 스핀과 중복 안 함) */
+  const demoWheelPrimedRef = useRef(false);
   const hasOneShotSoundErrorRef = useRef(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const playFallbackOneShot = useCallback(() => {
@@ -599,11 +602,10 @@ export default function SigSalesOverlayPage() {
    * 결과 패널·휠 래퍼가 통째로 리마운트되며 카드가 한꺼번에 다시 그려지는 현상 발생.
    */
   const spinCompletionKey = useMemo(() => {
-    if (rouletteDemo) {
-      return `demo:${demoSpin?.startedAt ?? "boot"}`;
-    }
+    /** demoSpin 시작 시점으로 키가 바뀌면 휠·결과 트리가 리마운트되어 회전 애니가 끊김 → 데모는 고정 키 */
+    if (rouletteDemo) return "roulette-demo";
     return `${machine.sessionId || ""}:${machine.startedAt || 0}`;
-  }, [rouletteDemo, demoSpin?.startedAt, machine.sessionId, machine.startedAt]);
+  }, [rouletteDemo, machine.sessionId, machine.startedAt]);
   const showWheelVisual = useMemo(
     () => !hideWheelAfterComplete || !revealGateOpen || wheelFadePhase !== "off",
     [hideWheelAfterComplete, revealGateOpen, wheelFadePhase],
@@ -836,6 +838,15 @@ export default function SigSalesOverlayPage() {
     pendingLanding,
     demoSpin,
   ]);
+
+  useEffect(() => {
+    if (!rouletteDemo || !demoSpin || !pendingLanding?.selected?.length) return;
+    if (wheelPhase !== "idle") return;
+    if (demoWheelPrimedRef.current) return;
+    demoWheelPrimedRef.current = true;
+    dispatch({ type: "RESET" });
+    dispatch({ type: "START_SPIN" });
+  }, [rouletteDemo, demoSpin, pendingLanding?.selected?.length, wheelPhase]);
 
   useEffect(() => {
     if (machine.phase !== "LANDED" && machine.phase !== "CONFIRM_PENDING" && machine.phase !== "CONFIRMED") return;
