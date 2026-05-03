@@ -435,6 +435,7 @@ export default function SigSalesOverlayPage() {
   }, [
     machine.selectedSigs,
     machine.phase,
+    machine.startedAt,
     rouletteDemo,
     pendingLanding,
     demoSpin,
