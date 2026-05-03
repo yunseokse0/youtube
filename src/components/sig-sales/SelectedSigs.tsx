@@ -23,6 +23,8 @@ type SelectedSigsProps = {
   className?: string;
   /** GIF 시그 프레임 유지 배수 (오버레이 `sigGifDelay` 등과 동일 의미, 기본 3.5) */
   gifDelayMultiplier?: number;
+  /** true: 맨 마지막으로 추가된 카드만 등장 연출(순차 공개 시 이전 카드가 다시 튀지 않게) */
+  entranceOnlyLatest?: boolean;
 };
 
 export default function SelectedSigs({
@@ -39,6 +41,7 @@ export default function SelectedSigs({
   showConfirmedBadge = true,
   className = "",
   gifDelayMultiplier = 3.5,
+  entranceOnlyLatest = false,
 }: SelectedSigsProps) {
   const fallbackImage = "/images/sigs/dummy-sig.svg";
   /** 고정 5·6열은 카드가 적을 때도 빈 칸이 남아 미리 깔린 것처럼 보임 → 실제 개수만큼 열만 사용 */
@@ -58,12 +61,22 @@ export default function SelectedSigs({
           ? soldOverrideSet.has(item.id) || soldOverrideSet.has(canonId)
           : manualSoldSet.has(item.id) || manualSoldSet.has(canonId);
         const isLatestConfirmed = highlightId === item.id;
+        const latestIdx = items.length - 1;
+        const isNewest = idx === latestIdx;
+        const entrance =
+          entranceOnlyLatest && !isNewest
+            ? { initial: false as const, animate: undefined, transition: undefined }
+            : {
+                initial: { opacity: 0, y: 28, scale: 0.92 } as const,
+                animate: { opacity: 1, y: 0, scale: 1 } as const,
+                transition: { delay: entranceOnlyLatest ? 0 : idx * 0.08, duration: 0.35 },
+              };
         return (
           <motion.article
             key={`${canonId}__slot_${idx}`}
-            initial={{ opacity: 0, y: 28, scale: 0.92 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ delay: idx * 0.08, duration: 0.35 }}
+            initial={entrance.initial}
+            animate={entrance.animate}
+            transition={entrance.transition}
             className={`relative overflow-hidden rounded-xl border bg-neutral-900/70 ${isLatestConfirmed ? "border-yellow-300 shadow-[0_0_24px_rgba(250,204,21,0.45)]" : "border-white/20"}`}
           >
             {showConfirmedBadge ? (

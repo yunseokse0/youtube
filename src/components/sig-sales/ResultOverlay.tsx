@@ -17,6 +17,8 @@ type ResultOverlayProps = {
   gifDelayMultiplier?: number;
   /** 재고 완판 등: 해당 id면 판매 완료 스탬프(방송 오버레이용) */
   soldOverrideSet?: Set<string>;
+  /** 순차 시그 공개: 새로 붙는 카드만 등장 연출 */
+  entranceOnlyLatest?: boolean;
 };
 
 const EMPTY_SOLD_SET = new Set<string>();
@@ -31,6 +33,7 @@ export default function ResultOverlay({
   className = "",
   gifDelayMultiplier = 3.5,
   soldOverrideSet,
+  entranceOnlyLatest = false,
 }: ResultOverlayProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   useEffect(() => {
@@ -85,6 +88,7 @@ export default function ResultOverlay({
         trailingSlot={oneShotTrailing}
         className="mx-auto w-full max-w-[1120px]"
         gifDelayMultiplier={gifDelayMultiplier}
+        entranceOnlyLatest={entranceOnlyLatest}
       />
     </div>
   );

@@ -80,6 +80,10 @@ export default function SigSalesOverlayPage() {
     return Math.max(5, Math.min(20, n));
   })();
   const rouletteDemo = sp.get("rouletteDemo") === "1" || sp.get("rouletteDemo") === "true";
+  /** 로컬에서 순차 연출이 보이도록 타이밍만 살짝 늘림(?devSequentialTest=1) */
+  const devSequentialTest =
+    sp.get("devSequentialTest") === "1" ||
+    String(sp.get("devSequentialTest") || "").toLowerCase() === "true";
   /** 기본: 시그 보드는 회전 완료·결과 패널과 함께만 표시. SPINNING 중에도 보이게 하려면 sigBoardDuringSpin=1 */
   const hideSigBoard =
     sp.get("hideSigBoard") === "1" ||
@@ -122,8 +126,9 @@ export default function SigSalesOverlayPage() {
     if (!raw.trim()) return DEFAULT_RESULT_REVEAL_DELAY_MS;
     const n = parseInt(String(raw).replace(/[^\d]/g, ""), 10);
     if (!Number.isFinite(n) || n < 0) return DEFAULT_RESULT_REVEAL_DELAY_MS;
-    return Math.min(120_000, n);
-  }, [sp]);
+    const base = Math.min(120_000, n);
+    return devSequentialTest ? Math.max(base, 550) : base;
+  }, [sp, devSequentialTest]);
   /** 휠 페이드·카드 슬라이드 duration (ms). `wheelFadeMs` 동의어 */
   const revealMotionMs = useMemo(() => {
     const raw = sp.get("revealMotionMs") || sp.get("wheelFadeMs") || "";
@@ -147,16 +152,18 @@ export default function SigSalesOverlayPage() {
     if (!raw.trim()) return DEFAULT_SEQUENTIAL_CARD_EMERGE_MS;
     const n = parseInt(String(raw).replace(/[^\d]/g, ""), 10);
     if (!Number.isFinite(n) || n < 0) return DEFAULT_SEQUENTIAL_CARD_EMERGE_MS;
-    return Math.min(3000, n);
-  }, [sp]);
+    const base = Math.min(3000, n);
+    return devSequentialTest ? Math.max(base, 420) : base;
+  }, [sp, devSequentialTest]);
   /** 순차 라운드 사이 다음 스핀까지 대기(ms) */
   const sequentialNextSpinMs = useMemo(() => {
     const raw = sp.get("sequentialNextSpinMs") || "";
     if (!raw.trim()) return DEFAULT_SEQUENTIAL_NEXT_SPIN_MS;
     const n = parseInt(String(raw).replace(/[^\d]/g, ""), 10);
     if (!Number.isFinite(n) || n < 0) return DEFAULT_SEQUENTIAL_NEXT_SPIN_MS;
-    return Math.max(400, Math.min(6000, n));
-  }, [sp]);
+    const base = Math.max(400, Math.min(6000, n));
+    return devSequentialTest ? Math.max(base, 1100) : base;
+  }, [sp, devSequentialTest]);
   const overlayScale = overlayScalePct / 100;
   const overlayScaleStyle = overlayScale === 1
     ? undefined
@@ -446,6 +453,14 @@ export default function SigSalesOverlayPage() {
       return [];
     }
     if (machine.phase === "CONFIRM_PENDING" || machine.phase === "CONFIRMED") {
+      if (machine.phase === "CONFIRMED") return fullSelectedSigs;
+      if (
+        useSequentialWheel &&
+        revealedSigCount > 0 &&
+        revealedSigCount < fullSelectedSigs.length
+      ) {
+        return fullSelectedSigs.slice(0, Math.min(revealedSigCount, fullSelectedSigs.length));
+      }
       return fullSelectedSigs;
     }
     if (useSequentialWheel && revealedSigCount > 0) {
@@ -578,11 +593,16 @@ export default function SigSalesOverlayPage() {
     wheelPhase !== "settling" &&
     (wheelPhase === "result" || overlayHoldResults || showResultPanel) &&
     staggerVisualComplete;
-  /** 회차별 reveal·페이드 시퀀스 구분(데모에서 sessionId 비어 있어도 충돌 방지) */
+  /**
+   * 회차 단위로만 바뀌게 함. selectedSigs/resultId를 넣으면 landed() 직후 키가 바뀌어
+   * 결과 패널·휠 래퍼가 통째로 리마운트되며 카드가 한꺼번에 다시 그려지는 현상 발생.
+   */
   const spinCompletionKey = useMemo(() => {
-    const selKey = (machine.selectedSigs || []).map((s) => s.id).join(",");
-    return `${machine.sessionId || ""}:${machine.startedAt || 0}:${machine.resultId || ""}:${selKey}`;
-  }, [machine.sessionId, machine.startedAt, machine.resultId, machine.selectedSigs]);
+    if (rouletteDemo) {
+      return `demo:${demoSpin?.startedAt ?? "boot"}`;
+    }
+    return `${machine.sessionId || ""}:${machine.startedAt || 0}`;
+  }, [rouletteDemo, demoSpin?.startedAt, machine.sessionId, machine.startedAt]);
   const showWheelVisual = useMemo(
     () => !hideWheelAfterComplete || !revealGateOpen || wheelFadePhase !== "off",
     [hideWheelAfterComplete, revealGateOpen, wheelFadePhase],
@@ -1016,6 +1036,7 @@ export default function SigSalesOverlayPage() {
                   showOneShotReveal={Boolean(oneShotForResultOverlay)}
                   className="w-full max-w-[1120px]"
                   gifDelayMultiplier={sigGifDelayMultiplier}
+                  entranceOnlyLatest
                 />
               </motion.div>
             ) : null}
