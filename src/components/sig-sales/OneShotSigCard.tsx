@@ -58,7 +58,7 @@ export default function OneShotSigCard({
     >
       <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.35),transparent_65%)]" />
       <div
-        className={`relative overflow-hidden rounded-lg border border-yellow-200/25 bg-black/40 ${
+        className={`relative overflow-hidden rounded-lg border border-yellow-200/40 bg-gradient-to-b from-amber-950/55 via-neutral-950/75 to-black ${
           compact ? "mb-1 aspect-[4/3] min-h-[168px] w-full sm:min-h-[180px]" : "mb-2 h-40"
         }`}
       >
@@ -68,7 +68,9 @@ export default function OneShotSigCard({
           fill
           sizes={compact ? "288px" : "160px"}
           className={
-            compact ? "object-contain object-center" : "object-cover object-center"
+            compact
+              ? "object-cover object-center brightness-[1.15] contrast-[1.08] saturate-[1.12]"
+              : "object-cover object-center"
           }
           gifDelayMultiplier={gifDelayMultiplier}
           onReady={onMediaReady}

@@ -709,6 +709,10 @@ export default function AdminPage() {
     q.set("u", user?.id || "finalent");
     q.set("vertical", vertical ? "true" : "false");
     q.set("host", "prism");
+    q.set(
+      "tableBgOpacity",
+      p.tableBgOpacity && String(p.tableBgOpacity).trim() ? String(p.tableBgOpacity).trim() : "100"
+    );
     q.set("showGoal", p.showGoal ? "true" : "false");
     if (p.showGoal) {
       q.set("goal", String(Math.max(0, parseInt((p.goal || "0") as any, 10) || 0)));

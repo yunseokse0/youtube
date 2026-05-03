@@ -180,14 +180,6 @@ export default function SigSalesOverlayPage() {
     return Math.max(200, Math.min(4000, n));
   }, [sp]);
   const revealMotionSec = revealMotionMs / 1000;
-  /** 한방 시그 표시 후 회전판 페이드 시작까지 추가 대기(ms). `wheelFadeHoldMs` 동의어 */
-  const wheelFadeAfterOneShotMs = useMemo(() => {
-    const raw = sp.get("wheelFadeAfterOneShotMs") || sp.get("wheelFadeHoldMs") || "";
-    if (!raw.trim()) return 650;
-    const n = parseInt(String(raw).replace(/[^\d]/g, ""), 10);
-    if (!Number.isFinite(n) || n < 0) return 650;
-    return Math.min(12_000, n);
-  }, [sp]);
   /** 당첨 시그 카드를 한 장씩 보이게 하는 간격(ms). `resultStaggerMs` 동의어 */
   const sigResultStaggerMs = useMemo(() => {
     const raw = sp.get("sigResultStaggerMs") || sp.get("resultStaggerMs") || "";
@@ -249,8 +241,6 @@ export default function SigSalesOverlayPage() {
   const staggerRanSessionRef = useRef("");
   const [revealedSigCount, setRevealedSigCount] = useState(0);
   const [oneShotRevealUnlocked, setOneShotRevealUnlocked] = useState(false);
-  /** 한방 등장 직후 한 템포 쉰 뒤에야 회전판 페이드 시작 */
-  const [postOneShotWheelFadeReady, setPostOneShotWheelFadeReady] = useState(true);
   /** [계약] 당첨 목록은 스핀 시점에 이미 확정·여기 인덱스는 서버 동기화용이 아니라 현재 몇 번째 휠 라운드 연출인지만 나타냄(0..n-1) */
   const [sequentialRoundIndex, setSequentialRoundIndex] = useState(0);
   /** 폴링/IDLE 순간에 selectedSigs 가 비어도 방송 화면에 당첨이 남도록 마지막 확정 목록 보존(초기화·신규 세션 때만 제거) */
@@ -662,6 +652,11 @@ export default function SigSalesOverlayPage() {
     oneShotEligibleAfterReveal,
     oneShotRevealUnlocked,
   ]);
+  /** 개별 당첨 시그만 모두 공개됐는지(한방 카드는 제외) — 회전판은 여기까지만 기다렸다가 페이드 */
+  const individualSigsRevealDone = useMemo(() => {
+    if (machine.selectedSigs.length === 0) return true;
+    return revealedSigCount >= completedTargetCount;
+  }, [machine.selectedSigs.length, revealedSigCount, completedTargetCount]);
 
   const revealQueueKey = useMemo(() => {
     const fromMachine = machine.selectedSigs.slice(0, CONFIRMED_VISIBLE_SLOTS).map((s) => s.id).join(",");
@@ -753,19 +748,6 @@ export default function SigSalesOverlayPage() {
     sigResultStaggerMs,
   ]);
 
-  useEffect(() => {
-    if (!oneShotEligibleAfterReveal) {
-      setPostOneShotWheelFadeReady(true);
-      return;
-    }
-    if (!oneShotRevealUnlocked) {
-      setPostOneShotWheelFadeReady(false);
-      return;
-    }
-    const tid = window.setTimeout(() => setPostOneShotWheelFadeReady(true), wheelFadeAfterOneShotMs);
-    return () => window.clearTimeout(tid);
-  }, [oneShotEligibleAfterReveal, oneShotRevealUnlocked, wheelFadeAfterOneShotMs]);
-
   const hideWheelAfterComplete =
     machine.selectedSigs.length >= completedTargetCount &&
     !pendingLanding &&
@@ -773,12 +755,9 @@ export default function SigSalesOverlayPage() {
     wheelPhase !== "spinning" &&
     wheelPhase !== "settling" &&
     (wheelPhase === "result" || overlayHoldResults || showResultPanel) &&
-    staggerVisualComplete;
-  /** 모든 연출(개별 시그·한방) 완료 후 + 한방 직후 버퍼까지 지나야 회전판 페이드 시작 */
-  const wheelFadeScheduled = useMemo(
-    () => hideWheelAfterComplete && postOneShotWheelFadeReady,
-    [hideWheelAfterComplete, postOneShotWheelFadeReady],
-  );
+    individualSigsRevealDone;
+  /** 한방 공개 여부와 무관하게, 개별 시그 연출만 끝나면 회전판 페이드 예약 */
+  const wheelFadeScheduled = useMemo(() => hideWheelAfterComplete, [hideWheelAfterComplete]);
   /**
    * 회차 단위로만 바뀌게 함. selectedSigs/resultId를 넣으면 landed() 직후 키가 바뀌어
    * 결과 패널·휠 래퍼가 통째로 리마운트되며 카드가 한꺼번에 다시 그려지는 현상 발생.
@@ -939,10 +918,6 @@ export default function SigSalesOverlayPage() {
       setWheelFadePhase("on");
       return;
     }
-    /** 한방 시그가 방금 열렸으면 잠시 후에 페이드(회전판만 서서히) */
-    if (!postOneShotWheelFadeReady) {
-      return;
-    }
     /** 당첨 카드는 broadcastSticky·hold 동안 휠 페이드와 무관하게 유지 → 깜빡임 방지 */
     const keepResults =
       overlayHoldResults ||
@@ -975,7 +950,6 @@ export default function SigSalesOverlayPage() {
     };
   }, [
     hideWheelAfterComplete,
-    postOneShotWheelFadeReady,
     resultRevealDelayMs,
     overlayHoldResults,
     broadcastStickySigs,

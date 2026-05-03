@@ -1559,16 +1559,14 @@ function OverlayInner() {
   // GIF 배경은 테이블/열 불투명 배경 아래에 깔리므로, GIF 사용 시에도 stripBg + 틴트 경로를 태워야 보임
   const useTableOpacity = tableBgOpacity < 100 || showTableBgGif;
   const tableTintAlpha = showTableBgGif ? Math.min(tableBgOpacity / 100, 0.88) : tableBgOpacity / 100;
-  const effectiveTableCls = useTableOpacity ? stripBg(membersTheme.tableCls) : membersTheme.tableCls;
+  /** 미리보기와 동일하게 항상 시트 틴트+colgroup 경로 사용 → 테이블 클래스 배경은 제거 */
+  const effectiveTableCls = stripBg(membersTheme.tableCls);
   // Strip row backgrounds for tinted/GIF sheet; keep header & total bar colors when shown.
   const effectiveRowCls = stripBg(membersTheme.rowCls);
   /** 멤버 표 thead: 테마별 색 띠·테두리 없이 텍스트만 (방송 오버레이용) */
   const effectiveHeaderCls = stripBorder(stripBg(membersTheme.headerCls));
   const mutedTotalWrapCls = stripBorder(stripBg(totalTheme.totalWrapCls));
   const totalWrapClsTintedMode = totalLineVisible ? totalTheme.totalWrapCls : mutedTotalWrapCls;
-  const effectiveTotalWrapCls = totalLineVisible
-    ? stripBg(totalTheme.totalWrapCls)
-    : mutedTotalWrapCls;
   const lockWidth = (sp.get("lockWidth") || "false").toLowerCase() === "true";
   const effectiveNameGrow = lockWidth ? false : nameGrow;
   const scaledMainStyle: React.CSSProperties = {};
@@ -2202,24 +2200,32 @@ function OverlayInner() {
           -webkit-font-smoothing: antialiased;
           text-rendering: geometricPrecision;
         }
+        /* 관리자 미리보기와 동일: 분홍 헤더 띠 위에는 흰색 외곽선 대신 진한 글자 */
         .overlay-root .overlay-elegant-table thead td {
-          color: #ffffff !important;
+          color: #111827 !important;
           background: transparent !important;
-          text-shadow: ${excelTextOutline};
-          -webkit-text-stroke: 0.9px rgba(6, 12, 24, 0.95) !important;
-          paint-order: stroke fill;
+          font-weight: 800 !important;
+          text-shadow: none !important;
+          -webkit-text-stroke: 0 !important;
+          paint-order: normal;
           box-shadow: none !important;
           border: none !important;
         }
-        .overlay-root .overlay-elegant-table td span,
-        .overlay-root .overlay-elegant-table td strong {
+        .overlay-root .overlay-elegant-table thead td span,
+        .overlay-root .overlay-elegant-table thead td strong {
+          color: inherit !important;
+          text-shadow: none !important;
+          -webkit-text-stroke: 0 !important;
+        }
+        .overlay-root .overlay-elegant-table tbody td span,
+        .overlay-root .overlay-elegant-table tbody td strong {
           text-shadow: ${excelTextOutline} !important;
           -webkit-text-stroke: 0.75px rgba(6, 12, 24, 0.95) !important;
           paint-order: stroke fill;
         }
-        .overlay-root .overlay-elegant-table td.overlay-col-total { color: #fff9f0 !important; }
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-total { color: #fff9f0 !important; }
         ${totalLineVisible ? "" : `
-        .overlay-root .overlay-elegant-table td.overlay-col-total,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-total,
         .overlay-root .overlay-elegant-table th.overlay-col-total,
         .overlay-root .overlay-total-row td {
           border: none !important;
@@ -2227,7 +2233,7 @@ function OverlayInner() {
           outline: none !important;
         }
         `}
-        .overlay-root .overlay-elegant-table td.overlay-col-contribution { color: #fff7fa !important; }
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution { color: #fff7fa !important; }
         /* 반투명 테이블 모드에서도 헤더 분홍 띠 유지(예전엔 transparent 로 헤더만 사라짐) */
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
         .overlay-root .overlay-elegant-table thead td.overlay-col-role,
@@ -2297,7 +2303,6 @@ function OverlayInner() {
                   />
                 ) : null}
                 <div className="relative z-[1]">
-                {useTableOpacity ? (
                 <div className="relative overflow-hidden" style={{ borderRadius: 0, backgroundColor: `rgba(${(TABLE_BG_RGB[themeId] || defaultTableBgRgb).join(",")}, ${tableTintAlpha})` }}>
                     <table
                       ref={tableBoxRef as any}
@@ -2380,76 +2385,6 @@ function OverlayInner() {
                   </tbody>
                 </table>
                   </div>
-                ) : (
-                <table
-                  ref={tableBoxRef as any}
-                  className={`${membersTheme.tableCls} overlay-elegant-table${membersThemeId === "pastel" ? " pastel-member-table" : ""}`}
-                  style={{ fontSize: mSize, borderSpacing: 0, tableLayout: "fixed" }}
-                >
-                  <colgroup>
-                    {excelGridCols.map((w, idx) => (
-                      <col key={`excel-col-${idx}`} style={{ width: w, backgroundImage: columnGradients[idx], backgroundRepeat: "no-repeat", backgroundSize: "100% 100%" }} />
-                    ))}
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <td className={`${effectiveHeaderCls} overlay-col-rank overlay-rank-cell`}>순위</td>
-                      {hasRoleColumn && <td className={`${effectiveHeaderCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>직급</td>}
-                      <td className={`${effectiveHeaderCls} overlay-col-name`}>이름</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-account text-right`}>계좌</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-toon text-right`}>투네</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-total text-right`}>{totalHeaderLabel}</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-contribution text-right`}>기여도</td>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ranked.map(({m, rank}) => (
-                      <tr key={m.id} ref={setRowRef(m.id)} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
-                        <td className={`${effectiveRowCls} overlay-col-rank text-left overlay-rank-cell`}>{rank == null ? "—" : `#${rank}`}</td>
-                        {hasRoleColumn && (
-                          <td
-                            className={`${effectiveRowCls} overlay-col-role`}
-                            style={{
-                              whiteSpace: "nowrap",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              maxWidth: `${roleCh}ch`,
-                            }}
-                          >
-                            {getMemberRole(m) || "-"}
-                          </td>
-                        )}
-                        <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
-                        <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
-                        <td className={`${effectiveRowCls} overlay-col-toon ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
-                        <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>{fmtTotalCell(m.account + m.toon)}</td>
-                        <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>{fmt((m.account || 0) + (m.toon || 0))}</td>
-                      </tr>
-                    ))}
-                    {pinned.map((m) => (
-                      <tr key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
-                        <td className={`${effectiveRowCls} overlay-col-rank text-right overlay-rank-cell`}>—</td>
-                        {hasRoleColumn && <td className={`${effectiveRowCls} overlay-col-role`}></td>}
-                        <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
-                        <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
-                        <td className={`${effectiveRowCls} overlay-col-toon ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
-                        <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>{fmtTotalCell(m.account + m.toon)}</td>
-                        <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>{fmt((m.account || 0) + (m.toon || 0))}</td>
-                      </tr>
-                    ))}
-                    {showTotal && ready && (
-                      <tr className="overlay-total-row">
-                        <td className={effectiveTotalWrapCls} colSpan={hasRoleColumn ? 2 : 1}>총합</td>
-                        <td className={effectiveTotalWrapCls} />
-                        <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(sumAccount)}</td>
-                        <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(sumToon)}</td>
-                        <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(rounded)}</td>
-                        <td className={`${effectiveTotalWrapCls} text-right`}>{fmt(sumContribution)}</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-                )}
                 </div>
               </div>
             </div>

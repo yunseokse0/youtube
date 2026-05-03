@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
 import {
@@ -168,6 +168,8 @@ function RankingColumn({
   amountColor,
   outlineColor,
   headerOpacity,
+  unified,
+  showColumnDivider,
 }: {
   title: string;
   items: DonorRow[];
@@ -183,6 +185,10 @@ function RankingColumn({
   amountColor: string;
   outlineColor: string;
   headerOpacity: number;
+  /** true: 단일 외곽 패널 안의 칼럼(관리자 미리보기와 동일한 한 덩어리 레이아웃) */
+  unified?: boolean;
+  /** unified일 때 좌측 칼럼 오른쪽 구분선(md 이상) */
+  showColumnDivider?: boolean;
 }) {
   const outlined = { textShadow: `-1px -1px 0 ${outlineColor},1px -1px 0 ${outlineColor},-1px 1px 0 ${outlineColor},1px 1px 0 ${outlineColor},0 2px 6px rgba(0,0,0,0.38)` } as const;
   const rankLabel = (idx: number): string => {
@@ -191,14 +197,22 @@ function RankingColumn({
     if (idx === 2) return "🥉";
     return String(idx + 1);
   };
-  return (
-    <section
-      className="w-full overflow-hidden rounded-2xl border shadow-[0_10px_28px_rgba(76,5,25,0.32)] backdrop-blur-md"
-      style={{
+  const outerClass = unified
+    ? `flex min-w-0 flex-1 flex-col overflow-hidden ${
+        showColumnDivider
+          ? "border-b border-solid border-r-0 md:border-b-0 md:border-r md:border-solid"
+          : ""
+      }`
+    : "w-full overflow-hidden rounded-2xl border shadow-[0_10px_28px_rgba(76,5,25,0.32)] backdrop-blur-md";
+  const outerStyle: CSSProperties | undefined = unified
+    ? { borderColor }
+    : {
         background: panelBg,
         borderColor,
-      }}
-    >
+      };
+
+  return (
+    <section className={outerClass} style={outerStyle}>
       <div
         className="relative overflow-hidden px-4 py-3 font-black border-b text-center"
         style={{
@@ -217,7 +231,7 @@ function RankingColumn({
         />
         <span className="relative z-10">{title}</span>
       </div>
-      <div className="space-y-1 p-2.5">
+      <div className={`space-y-1 ${unified ? "flex-1 px-3 py-2.5" : "p-2.5"}`}>
         <AnimatePresence initial={false}>
           {items.map((item, idx) => (
             <motion.div
@@ -352,7 +366,13 @@ export default function DonorRankingsOverlayPage() {
             TEST MODE
           </div>
         )}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div
+          className="grid grid-cols-1 overflow-hidden rounded-2xl border shadow-[0_10px_28px_rgba(76,5,25,0.32)] backdrop-blur-md md:grid-cols-2 md:gap-0"
+          style={{
+            background: panelBg,
+            borderColor,
+          }}
+        >
           <RankingColumn
             title="계좌 후원 순위"
             items={accountTop}
@@ -367,6 +387,8 @@ export default function DonorRankingsOverlayPage() {
             amountColor={amountColor}
             outlineColor={outlineColor}
             headerOpacity={overlayOpacity}
+            unified
+            showColumnDivider
           />
           <RankingColumn
             title="투네 후원 순위"
@@ -383,6 +405,7 @@ export default function DonorRankingsOverlayPage() {
             amountColor={amountColor}
             outlineColor={outlineColor}
             headerOpacity={overlayOpacity}
+            unified
           />
         </div>
       </div>
