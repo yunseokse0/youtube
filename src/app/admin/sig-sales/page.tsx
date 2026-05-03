@@ -402,9 +402,13 @@ export default function AdminSigSalesPage() {
     }
     const manualCanon = new Set([...manualSoldSet].map((id) => canonicalSigIdFromWheelSliceId(id)));
     const selectedCanon = new Set(displaySelectedSigs.map((x) => canonicalSigIdFromWheelSliceId(x.id)));
+    /** 판매 확정 시: 이번 회차 당첨 시그는 모두 재고 +1. 한방 카드 토글(oneShotSold) 없이도 반영되도록 함 */
     const nextInventory = state.sigInventory.map((item) => {
+      const itemCanon = canonicalSigIdFromWheelSliceId(item.id);
       const markSold =
-        manualCanon.has(item.id) || (oneShotSold && selectedCanon.has(item.id));
+        manualCanon.has(itemCanon) ||
+        selectedCanon.has(itemCanon) ||
+        (item.id === ONE_SHOT_SIG_ID && Boolean(displayOneShot));
       if (!markSold) return item;
       const soldCount = Math.min(item.maxCount, Math.max(0, item.soldCount) + 1);
       return { ...item, soldCount };
@@ -461,7 +465,6 @@ export default function AdminSigSalesPage() {
     machine.sessionId,
     displayOneShot,
     manualSoldSet,
-    oneShotSold,
     userId,
     finish,
     markConfirmPending,
@@ -659,6 +662,7 @@ export default function AdminSigSalesPage() {
                     price={displayOneShot?.price || 0}
                     imageUrl={oneShotImageUrl}
                     sold={oneShotSold}
+                    soldOutStampUrl={soldOutStampUrl}
                     disabled={controlsDisabled}
                     compact
                     onToggleSold={() => setOneShotSold((v) => !v)}

@@ -5,6 +5,7 @@ import type { SigItem } from "@/types";
 import SelectedSigs from "@/components/sig-sales/SelectedSigs";
 import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
 import { useImagePreload } from "@/hooks/useImagePreload";
+import { canonicalSigIdFromWheelSliceId, ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 
 type ResultOverlayProps = {
   visible: boolean;
@@ -53,6 +54,11 @@ export default function ResultOverlay({
 
   if (!visible) return null;
 
+  const oneShotSold =
+    soldOverrideSet &&
+    (soldOverrideSet.has(ONE_SHOT_SIG_ID) ||
+      soldOverrideSet.has(canonicalSigIdFromWheelSliceId(ONE_SHOT_SIG_ID)));
+
   const oneShotTrailing =
     oneShot && showOneShotReveal ? (
       <div className="relative w-full max-w-[152px] justify-self-center">
@@ -60,7 +66,8 @@ export default function ResultOverlay({
           name={oneShot.name}
           price={oneShot.price}
           imageUrl={signImageUrl}
-          sold={false}
+          sold={Boolean(oneShotSold)}
+          soldOutStampUrl={soldOutStampUrl}
           onToggleSold={() => {}}
           showToggle={false}
           compact

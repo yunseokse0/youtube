@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Image from "next/image";
 import { formatWon } from "@/lib/sig-roulette";
 import { resolveSigImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
@@ -14,6 +15,8 @@ type OneShotSigCardProps = {
   compact?: boolean;
   imageUrl?: string;
   showToggle?: boolean;
+  /** 판매 완료 시 미디어 위 스탬프(관리·오버레이 공통). 없으면 스탬프 레이어 없음 */
+  soldOutStampUrl?: string;
   gifDelayMultiplier?: number;
   onMediaReady?: () => void;
 };
@@ -27,6 +30,7 @@ export default function OneShotSigCard({
   compact = false,
   imageUrl = "",
   showToggle = true,
+  soldOutStampUrl,
   gifDelayMultiplier = 3.5,
   onMediaReady,
 }: OneShotSigCardProps) {
@@ -56,6 +60,21 @@ export default function OneShotSigCard({
           gifDelayMultiplier={gifDelayMultiplier}
           onReady={onMediaReady}
         />
+        {sold && soldOutStampUrl ? (
+          <>
+            <div className="absolute inset-0 z-[5] bg-black/45" aria-hidden />
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-[min(12%,1rem)]">
+              <Image
+                src={soldOutStampUrl}
+                alt="판매 완료"
+                width={112}
+                height={112}
+                unoptimized
+                className="h-auto w-auto max-h-[min(7rem,55%)] max-w-[min(7rem,55%)] object-contain object-center"
+              />
+            </div>
+          </>
+        ) : null}
       </div>
       <div className={`relative ${compact ? "flex flex-col gap-0.5" : "flex flex-wrap items-center justify-between gap-3"}`}>
         <div>

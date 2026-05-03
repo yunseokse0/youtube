@@ -65,7 +65,14 @@ export default function RouletteHistoryModal({ open, item, onClose, onLoadReadon
           onToggleSold={() => {}}
         />
         <div className="mt-3">
-          <OneShotSigCard name="한방 시그" price={item.oneShotPrice} sold={true} disabled={true} onToggleSold={() => {}} />
+          <OneShotSigCard
+            name="한방 시그"
+            price={item.oneShotPrice}
+            sold={true}
+            soldOutStampUrl="/images/sigs/stamp.png"
+            disabled={true}
+            onToggleSold={() => {}}
+          />
         </div>
         <div className="mt-3 rounded border border-white/10 bg-black/30 p-3 text-sm">
           <div>당첨 시그: {item.selectedSigs.map((s) => s.name).join(", ") || "-"}</div>

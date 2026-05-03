@@ -50,16 +50,14 @@ export default function SelectedSigs({
   const trailingActive = Boolean(trailingSlot);
   const cellCount = items.length + (trailingActive ? 1 : 0);
   const columnCount = Math.min(6, Math.max(1, cellCount));
-  /** compact(오버레이): 1fr 이면 당첨 1개일 때 한 칸이 1120px까지 늘어나 이미지가 비정상적으로 큼 → 열 너비 상한 */
-  const gridTemplateColumns = compact
-    ? `repeat(${columnCount}, minmax(0, min(10.5rem, 46vw)))`
-    : `repeat(${columnCount}, minmax(0, 1fr))`;
+  /** 열은 항상 1fr(균등·축소 가능) — 오버레이에서 가로 스크롤 없이 카드 폭 확보, 자식은 min-w-0 */
+  const gridTemplateColumns = `repeat(${columnCount}, minmax(0, 1fr))`;
   const gridAlign = compact && trailingActive ? "items-start" : "";
   const justifyCompact =
     compact && compactGridJustify === "start" ? "justify-start" : compact ? "justify-center" : "";
   return (
     <section
-      className={`grid w-full gap-1.5 ${justifyCompact} ${gridAlign} ${className}`.trim()}
+      className={`grid w-full min-w-0 max-w-full gap-1.5 ${justifyCompact} ${gridAlign} ${className}`.trim()}
       style={{ gridTemplateColumns }}
     >
       {items.map((item, idx) => {
@@ -84,7 +82,7 @@ export default function SelectedSigs({
             initial={entrance.initial}
             animate={entrance.animate}
             transition={entrance.transition}
-            className={`relative overflow-hidden rounded-xl border bg-neutral-900/70 ${isLatestConfirmed ? "border-yellow-300 shadow-[0_0_24px_rgba(250,204,21,0.45)]" : "border-white/20"}`}
+            className={`relative min-w-0 overflow-hidden rounded-xl border bg-neutral-900/70 ${isLatestConfirmed ? "border-yellow-300 shadow-[0_0_24px_rgba(250,204,21,0.45)]" : "border-white/20"}`}
           >
             {showConfirmedBadge ? (
               <div className="absolute left-2 top-2 z-20 rounded bg-emerald-600/90 px-2 py-0.5 text-[10px] font-black text-white">
@@ -146,7 +144,7 @@ export default function SelectedSigs({
         );
       })}
       {trailingSlot ? (
-        <div className={compact ? "flex min-h-0 justify-center pt-0.5" : "min-h-[280px]"}>{trailingSlot}</div>
+        <div className={compact ? "flex min-h-0 min-w-0 max-w-full justify-center pt-0.5" : "min-h-[280px]"}>{trailingSlot}</div>
       ) : null}
     </section>
   );

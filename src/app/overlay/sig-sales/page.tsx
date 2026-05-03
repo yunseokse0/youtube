@@ -1130,7 +1130,7 @@ export default function SigSalesOverlayPage() {
   }, [machine.phase, machine.sessionId, machine.selectedSigs]);
 
   return (
-    <main className="relative min-h-screen bg-transparent p-4 text-white">
+    <main className="relative max-h-[100dvh] min-h-0 overflow-hidden bg-transparent p-4 text-white">
       <div className="mx-auto max-w-[1280px] space-y-4">
         <section className="relative flex w-full flex-col items-center gap-4 bg-transparent p-0">
           <div
@@ -1289,21 +1289,22 @@ export default function SigSalesOverlayPage() {
               />
             </motion.div>
           ) : null}
-          {/* 휠 아래·왼쪽(방송 화면 기준 시그 결과 영역). 회전판 페이드와 무관하게 유지 */}
+          {/* 휠 아래·왼쪽(방송 화면 기준 시그 결과 영역). 스크롤바 없음(overflow hidden) — 카드는 열 1fr로 너비만 조절, 나온 뒤 레이아웃 점프 최소화 */}
           <div
-            className={`pointer-events-none relative z-[70] w-full max-w-[min(22rem,min(100%,92vw))] shrink-0 self-start overflow-x-hidden overflow-y-auto px-3 pb-2 pt-1 max-h-[min(46vh,520px)] md:max-w-[24rem] md:px-5 md:pb-3 md:pt-2 ${showWheelVisual ? "mt-2 md:mt-3" : "mt-0"}`}
+            className={`pointer-events-none relative z-[70] w-full max-w-[min(36rem,min(100%,98vw))] shrink-0 self-start overflow-hidden px-3 pb-2 pt-1 md:max-w-[40rem] md:px-5 md:pb-3 md:pt-2 ${showWheelVisual ? "mt-2 md:mt-3" : "mt-0"}`}
             aria-live="polite"
           >
-            <div className="pointer-events-auto">
+            <div className="pointer-events-auto min-w-0 w-full max-w-full">
               <AnimatePresence>
                 {resultOverlayVisible ? (
                   <motion.div
                     key={`result-${spinCompletionKey}`}
-                    initial={{ opacity: 0, y: 16 }}
+                    layout={false}
+                    initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0.95, y: 8 }}
+                    exit={{ opacity: 0.95, y: 6 }}
                     transition={{ duration: Math.min(0.35, revealMotionSec), ease: [0.22, 1, 0.36, 1] }}
-                    className="w-full drop-shadow-[0_4px_24px_rgba(0,0,0,0.65)]"
+                    className="w-full min-w-0 max-w-full drop-shadow-[0_4px_24px_rgba(0,0,0,0.65)]"
                   >
                     <ResultOverlay
                       visible
