@@ -44,6 +44,7 @@ import { appendSettlementRecordAndSync, appendSigMatchIncentiveSettlementAndSync
 import { formatSigMatchStat, getSigMatchRankings } from "@/lib/settlement-utils";
 import { getEffectiveRemainingTime, pauseTimer, resumeTimer } from "@/lib/timer-utils";
 import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
+import { DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
 import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
 import { getVisibleAdminNavItems, isAdminNavSectionVisible, type AdminNavKey } from "@/app/admin/admin-nav-config";
 
@@ -4621,7 +4622,7 @@ export default function AdminPage() {
                   <div className="text-[11px] text-neutral-500">완판 시 시그 이미지 정중앙에 겹쳐 표시됩니다.</div>
                   <div className="flex items-center gap-2">
                     <div className="relative h-14 w-14 overflow-hidden rounded border border-white/10 bg-black/30">
-                      <Image src={state.sigSoldOutStampUrl || "/images/sigs/stamp.png"} alt="완판 오버레이 미리보기" fill unoptimized className="object-contain" />
+                      <Image src={state.sigSoldOutStampUrl || DEFAULT_SIG_SOLD_STAMP_URL} alt="완판 오버레이 미리보기" fill unoptimized className="object-contain" />
                     </div>
                     <span className="text-xs text-neutral-400">{state.sigSoldOutStampUrl ? "커스텀 이미지 사용 중" : "기본 도장 사용 중"}</span>
                   </div>
@@ -4759,7 +4760,7 @@ export default function AdminPage() {
                         <div className="flex items-center gap-1">
                           {item.maxCount <= 1 && item.soldCount >= 1 ? (
                             <Image
-                              src={state.sigSoldOutStampUrl || "/images/sigs/stamp.png"}
+                              src={state.sigSoldOutStampUrl || DEFAULT_SIG_SOLD_STAMP_URL}
                               alt="완판 도장"
                               width={28}
                               height={28}

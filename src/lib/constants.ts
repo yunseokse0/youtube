@@ -1,5 +1,8 @@
 import type { SigItem } from "@/types";
 
+/** 저장소에 미설정 시 완판 오버레이·관리 화면 기본 도장(`public` 실파일과 동일 경로 유지) */
+export const DEFAULT_SIG_SOLD_STAMP_URL = "/images/sigs/stamp.svg";
+
 /** 방송에서 자주 쓰는 시그 기본 목록(애교·댄스·식사권 외 프리셋) */
 export const BROADCAST_SIG_PRESET_NAMES = [
   "애교",

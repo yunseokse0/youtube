@@ -23,7 +23,7 @@ type SelectedSigsProps = {
   compactGridJustify?: "center" | "start";
   showConfirmedBadge?: boolean;
   className?: string;
-  /** GIF 시그 프레임 유지 배수 (오버레이 `sigGifDelay` 등과 동일 의미, 기본 3.5) */
+  /** GIF 프레임 배수 (1=원본, 1 초과=느림). 오버레이 `sigGifDelay`와 동일 */
   gifDelayMultiplier?: number;
   /** true: 맨 마지막으로 추가된 카드만 등장 연출(순차 공개 시 이전 카드가 다시 튀지 않게) */
   entranceOnlyLatest?: boolean;
@@ -43,7 +43,7 @@ export default function SelectedSigs({
   compactGridJustify = "center",
   showConfirmedBadge = true,
   className = "",
-  gifDelayMultiplier = 3.5,
+  gifDelayMultiplier = 1,
   entranceOnlyLatest = false,
 }: SelectedSigsProps) {
   /** 고정 5·6열은 카드가 적을 때도 빈 칸이 남아 미리 깔린 것처럼 보임 → 실제 개수만큼 열만 사용 */
@@ -72,9 +72,17 @@ export default function SelectedSigs({
           entranceOnlyLatest && !isNewest
             ? { initial: false as const, animate: undefined, transition: undefined }
             : {
-                initial: { opacity: 0, y: 28, scale: 0.92 } as const,
+                /** 순차 공개: 첫 장이 화면을 과하게 채우지 않도록 등장 폭·이동 완화 */
+                initial: {
+                  opacity: 0,
+                  y: entranceOnlyLatest ? 14 : 28,
+                  scale: entranceOnlyLatest ? 0.97 : 0.92,
+                } as const,
                 animate: { opacity: 1, y: 0, scale: 1 } as const,
-                transition: { delay: entranceOnlyLatest ? 0 : idx * 0.08, duration: 0.35 },
+                transition: {
+                  delay: entranceOnlyLatest ? 0 : idx * 0.08,
+                  duration: entranceOnlyLatest ? 0.28 : 0.35,
+                },
               };
         return (
           <motion.article
@@ -82,7 +90,9 @@ export default function SelectedSigs({
             initial={entrance.initial}
             animate={entrance.animate}
             transition={entrance.transition}
-            className={`relative min-w-0 overflow-hidden rounded-xl border bg-neutral-900/70 ${isLatestConfirmed ? "border-yellow-300 shadow-[0_0_24px_rgba(250,204,21,0.45)]" : "border-white/20"}`}
+            className={`relative min-w-0 overflow-hidden rounded-xl border bg-neutral-900/70 ${
+              compact ? "w-full max-w-[168px] justify-self-start" : ""
+            } ${isLatestConfirmed ? "border-yellow-300 shadow-[0_0_24px_rgba(250,204,21,0.45)]" : "border-white/20"}`}
           >
             {showConfirmedBadge ? (
               <div className="absolute left-2 top-2 z-20 rounded bg-emerald-600/90 px-2 py-0.5 text-[10px] font-black text-white">
@@ -144,7 +154,7 @@ export default function SelectedSigs({
         );
       })}
       {trailingSlot ? (
-        <div className={compact ? "flex min-h-0 min-w-0 max-w-full justify-center pt-0.5" : "min-h-[280px]"}>{trailingSlot}</div>
+        <div className={compact ? "flex min-h-0 min-w-0 max-w-full justify-start pt-0.5" : "min-h-[280px]"}>{trailingSlot}</div>
       ) : null}
     </section>
   );

@@ -31,31 +31,35 @@ export default function OneShotSigCard({
   imageUrl = "",
   showToggle = true,
   soldOutStampUrl,
-  gifDelayMultiplier = 3.5,
+  gifDelayMultiplier = 1,
   onMediaReady,
 }: OneShotSigCardProps) {
   return (
     <motion.section
-      initial={{ opacity: 0, scale: 0.85, y: 24 }}
+      initial={
+        compact
+          ? { opacity: 0, scale: 0.97, y: 10 }
+          : { opacity: 0, scale: 0.85, y: 24 }
+      }
       animate={{ opacity: 1, scale: 1, y: 0 }}
-      transition={{ duration: 0.45, ease: "easeOut" }}
+      transition={{ duration: compact ? 0.32 : 0.45, ease: "easeOut" }}
       className={`relative border border-yellow-300/70 bg-[linear-gradient(135deg,rgba(245,158,11,0.25),rgba(234,179,8,0.1))] shadow-[0_0_30px_rgba(250,204,21,0.35)] ${
         compact
-          ? "mx-auto w-full max-w-[148px] self-start overflow-visible rounded-xl p-1 pb-1.5"
+          ? "mx-auto w-full max-w-[232px] self-start overflow-visible rounded-xl p-1.5 pb-2"
           : "overflow-hidden rounded-2xl p-4"
       }`}
     >
       <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.35),transparent_65%)]" />
       <div
         className={`relative overflow-hidden rounded-lg border border-yellow-200/25 bg-black/25 ${
-          compact ? "mb-1 h-[100px] w-full sm:h-[108px]" : "mb-2 h-40"
+          compact ? "mb-1 h-[132px] w-full sm:h-[142px]" : "mb-2 h-40"
         }`}
       >
         <SigSaleMedia
           src={resolveSigImageUrl(name, imageUrl)}
           alt={name}
           fill
-          sizes={compact ? "110px" : "160px"}
+          sizes={compact ? "232px" : "160px"}
           className="object-cover object-center"
           gifDelayMultiplier={gifDelayMultiplier}
           onReady={onMediaReady}
@@ -79,19 +83,19 @@ export default function OneShotSigCard({
       <div className={`relative ${compact ? "flex flex-col gap-0.5" : "flex flex-wrap items-center justify-between gap-3"}`}>
         <div>
           <h3
-            className={`font-black ${compact ? "text-[11px] text-neutral-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]" : "text-lg text-yellow-100"}`}
+            className={`font-black ${compact ? "text-[12px] text-neutral-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]" : "text-lg text-yellow-100"}`}
           >
             {name}
           </h3>
           <p
-            className={`${compact ? "text-[9px] text-neutral-200/95" : "text-sm text-yellow-200/85"}`}
+            className={`${compact ? "text-[10px] text-neutral-200/95" : "text-sm text-yellow-200/85"}`}
           >
             선정된 5개 시그 합산 금액
           </p>
         </div>
         <div className={compact ? "" : "text-right"}>
           <div
-            className={`${compact ? "text-sm" : "text-2xl"} font-black tabular-nums text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.88)]`}
+            className={`${compact ? "text-base" : "text-2xl"} font-black tabular-nums text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.88)]`}
           >
             {formatWon(price)}
           </div>

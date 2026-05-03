@@ -1,5 +1,6 @@
 "use client";
 
+import { DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
 import type { SigItem } from "@/types";
 import SelectedSigs from "@/components/sig-sales/SelectedSigs";
 import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
@@ -59,7 +60,7 @@ export default function RouletteHistoryModal({ open, item, onClose, onLoadReadon
         </div>
         <SelectedSigs
           items={fakeSigItems}
-          soldOutStampUrl="/images/sigs/stamp.png"
+          soldOutStampUrl={DEFAULT_SIG_SOLD_STAMP_URL}
           manualSoldSet={new Set(fakeSigItems.map((x) => x.id))}
           disabled={true}
           onToggleSold={() => {}}
@@ -69,7 +70,7 @@ export default function RouletteHistoryModal({ open, item, onClose, onLoadReadon
             name="한방 시그"
             price={item.oneShotPrice}
             sold={true}
-            soldOutStampUrl="/images/sigs/stamp.png"
+            soldOutStampUrl={DEFAULT_SIG_SOLD_STAMP_URL}
             disabled={true}
             onToggleSold={() => {}}
           />

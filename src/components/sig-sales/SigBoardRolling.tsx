@@ -21,7 +21,7 @@ export default function SigBoardRolling({
   inventory,
   soldOutStampUrl,
   className = "",
-  gifDelayMultiplier = 3.5,
+  gifDelayMultiplier = 1,
   autoAdvancePages = true,
 }: SigBoardRollingProps) {
   const rollingItems = useMemo(() => inventory.filter((x) => x.isRolling), [inventory]);

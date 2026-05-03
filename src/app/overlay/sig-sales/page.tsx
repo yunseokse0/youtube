@@ -13,7 +13,7 @@ import {
   getOverlayMemberFilterIdFromSearchParams,
   getOverlayUserIdFromSearchParams,
 } from "@/lib/overlay-params";
-import { resolveSigImageUrl, setSigImagePlaceholderOnlyForOverlay } from "@/lib/constants";
+import { DEFAULT_SIG_SOLD_STAMP_URL, resolveSigImageUrl, setSigImagePlaceholderOnlyForOverlay } from "@/lib/constants";
 import {
   ONE_SHOT_SIG_ID,
   ROULETTE_WHEEL_SFX_ENABLED,
@@ -145,12 +145,20 @@ export default function SigSalesOverlayPage() {
     if (!Number.isFinite(n)) return 85;
     return Math.max(55, Math.min(140, n));
   })();
-  /** GIF 시그 프레임 유지 시간 배수 (1=원본, 기본 3.5). `sigGifSpeed` 동일 의미 */
+  /** 휠 언마운트 후에도 RouletteWheel과 동일 높이를 유지해 결과 카드가 위로 튀지 않게 함 */
+  const wheelFramePlaceholderPx = useMemo(() => {
+    const ws = Math.max(55, Math.min(140, Math.floor(Number(wheelScalePct) || 100))) / 100;
+    return {
+      height: Math.round(360 * ws),
+      maxWidth: Math.round(680 * ws),
+    };
+  }, [wheelScalePct]);
+  /** GIF 프레임 배수(1=원본·부드러움, 1 초과=느리게). `sigGifSpeed` 동의어. 느린 캔버스 연출은 1보다 큰 값 */
   const sigGifDelayMultiplier = (() => {
     const raw = sp.get("sigGifDelay") || sp.get("sigGifSpeed") || "";
-    if (!raw.trim()) return 3.5;
+    if (!raw.trim()) return 1;
     const n = parseFloat(String(raw).replace(",", "."));
-    if (!Number.isFinite(n)) return 3.5;
+    if (!Number.isFinite(n)) return 1;
     return Math.max(1, Math.min(10, n));
   })();
   /** 착지 후 이 시간(ms)이 지나야 시그 카드·휠 퇴장 연출 시작. `cardRevealDelayMs` 동의어. 미지정 시 기본 지연(즉시=0은 URL에 `resultRevealDelayMs=0`) */
@@ -325,7 +333,7 @@ export default function SigSalesOverlayPage() {
 
   // 결과 배치는 운영자가 reset 할 때까지 유지한다.
 
-  const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || "/images/sigs/stamp.png";
+  const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || DEFAULT_SIG_SOLD_STAMP_URL;
   const menuCount = useMemo(() => {
     if (menuCountParam != null) return menuCountParam;
     const persisted = Number(state?.rouletteState?.menuCount);
@@ -1139,7 +1147,7 @@ export default function SigSalesOverlayPage() {
                 ? { ...overlayScaleStyle, backgroundColor: "transparent" }
                 : { backgroundColor: "transparent" }
             }
-            className="relative mx-auto flex w-full max-w-[1120px] flex-col items-center gap-0"
+            className="relative mx-auto flex w-full max-w-[min(1400px,98vw)] flex-col items-center gap-0"
           >
           {showWheelVisual ? (
             <motion.div
@@ -1288,10 +1296,24 @@ export default function SigSalesOverlayPage() {
                 }}
               />
             </motion.div>
+          ) : !showWheelVisual && resultOverlayVisible ? (
+            <div
+              role="presentation"
+              className="pointer-events-none flex w-full shrink-0 justify-center"
+              aria-hidden
+            >
+              <div
+                className="mx-auto w-full"
+                style={{
+                  height: wheelFramePlaceholderPx.height,
+                  maxWidth: wheelFramePlaceholderPx.maxWidth,
+                }}
+              />
+            </div>
           ) : null}
-          {/* 휠 아래·왼쪽(방송 화면 기준 시그 결과 영역). 스크롤바 없음(overflow hidden) — 카드는 열 1fr로 너비만 조절, 나온 뒤 레이아웃 점프 최소화 */}
+          {/* 휠 아래·왼쪽(방송 화면 기준 시그 결과 영역). 휠 제거 시 위 플레이스홀더로 세로 위치 유지 */}
           <div
-            className={`pointer-events-none relative z-[70] w-full max-w-[min(36rem,min(100%,98vw))] shrink-0 self-start overflow-hidden px-3 pb-2 pt-1 md:max-w-[40rem] md:px-5 md:pb-3 md:pt-2 ${showWheelVisual ? "mt-2 md:mt-3" : "mt-0"}`}
+            className="pointer-events-none relative z-[70] mt-2 w-full max-w-[min(72rem,min(100%,99vw))] shrink-0 self-start overflow-hidden px-3 pb-2 pt-1 md:max-w-[min(80rem,99vw)] md:px-6 md:pb-3 md:pt-3"
             aria-live="polite"
           >
             <div className="pointer-events-auto min-w-0 w-full max-w-full">

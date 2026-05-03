@@ -32,7 +32,7 @@ export default function ResultOverlay({
   signImageUrl,
   showOneShotReveal,
   className = "",
-  gifDelayMultiplier = 3.5,
+  gifDelayMultiplier = 1,
   soldOverrideSet,
   entranceOnlyLatest = false,
 }: ResultOverlayProps) {
@@ -61,7 +61,7 @@ export default function ResultOverlay({
 
   const oneShotTrailing =
     oneShot && showOneShotReveal ? (
-      <div className="relative w-full max-w-[152px] justify-self-center">
+      <div className="relative w-full max-w-[min(100%,232px)] justify-self-start">
         <OneShotSigCard
           name={oneShot.name}
           price={oneShot.price}
