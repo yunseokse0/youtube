@@ -123,7 +123,7 @@ export default function ResultOverlay({
         showToggle={false}
         compact
         matchOneShotCardSize
-        showConfirmedBadge={false}
+        showConfirmedBadge
         trailingSlot={oneShotTrailing}
         compactGridJustify="center"
         className="max-w-full justify-center"

@@ -231,19 +231,28 @@ export default function SigSalesOverlayPage() {
     return devSequentialTest ? Math.max(base, 600) : base;
   }, [sp, devSequentialTest]);
   const overlayScale = overlayScalePct / 100;
-  /** 휠만 작게 두면(`wheelScalePct` 낮음) 결과·휠 전체가 쪼그라 보임 → URL·배율 유지한 채 열만 살짝 키움. 끄려면 `wheelBoost=0` */
+  /**
+   * 휠만 작게 두면(`wheelScalePct` 낮음) 휠 열만 보정(scale). 확정 카드까지 같이 키우면 한 화면에 안 들어가므로
+   * 부스트는 휠·플레이스홀더 래퍼에만 적용한다. 끄려면 `wheelBoost=0`
+   */
   const wheelColumnBoost =
     sp.get("wheelBoost") === "0" || String(sp.get("noWheelBoost") || "").toLowerCase() === "true"
       ? 1
       : wheelScalePct < 85
         ? Math.min(1.38, 85 / Math.max(55, wheelScalePct))
         : 1;
-  const combinedOverlayScale = overlayScale * wheelColumnBoost;
-  const overlayScaleStyle =
-    Math.abs(combinedOverlayScale - 1) < 0.001
+  const overlayUserScaleStyle =
+    Math.abs(overlayScale - 1) < 0.001
       ? undefined
       : ({
-          transform: `scale(${combinedOverlayScale})`,
+          transform: `scale(${overlayScale})`,
+          transformOrigin: "top center",
+        } as React.CSSProperties);
+  const wheelColumnBoostScaleStyle =
+    Math.abs(wheelColumnBoost - 1) < 0.001
+      ? undefined
+      : ({
+          transform: `scale(${wheelColumnBoost})`,
           transformOrigin: "top center",
         } as React.CSSProperties);
   const [state, setState] = useState<AppState | null>(null);
@@ -1203,11 +1212,19 @@ export default function SigSalesOverlayPage() {
         <section className="relative flex w-full flex-col items-center gap-4 bg-transparent p-0">
           <div
             style={
-              overlayScaleStyle
-                ? { ...overlayScaleStyle, backgroundColor: "transparent" }
+              overlayUserScaleStyle
+                ? { ...overlayUserScaleStyle, backgroundColor: "transparent" }
                 : { backgroundColor: "transparent" }
             }
             className="relative mx-auto flex w-full max-w-[min(1400px,98vw)] flex-col items-center gap-0"
+          >
+          <div
+            style={
+              wheelColumnBoostScaleStyle
+                ? { ...wheelColumnBoostScaleStyle, backgroundColor: "transparent" }
+                : { backgroundColor: "transparent" }
+            }
+            className="flex w-full shrink-0 flex-col items-center"
           >
           {showWheelVisual ? (
             <motion.div
@@ -1265,7 +1282,8 @@ export default function SigSalesOverlayPage() {
                   const lastIdx = selectedQueue.length - 1;
                   const isLastRound = sequentialRoundIndex >= lastIdx;
 
-                  if (seqMulti) {
+                  /** wheelSequential=0 단일 휠: 여러 당첨이어도 연속 회전 분기 타면 landed() 미호출·카드 미표시 */
+                  if (seqMulti && useSequentialWheel) {
                     if (!isLastRound) {
                       /** 지연 LANDED 가 다음 회전 애니 중에 실행되면 wheelPhase 가 spinning 이 아니게 되어 2회차 onTransitionEnd 가 전부 막힘 */
                       if (wheelSettleLandTimerRef.current != null) {
@@ -1371,6 +1389,7 @@ export default function SigSalesOverlayPage() {
               />
             </div>
           ) : null}
+          </div>
           {/* 휠 아래·왼쪽(방송 화면 기준 시그 결과 영역). 휠 제거 시 위 플레이스홀더로 세로 위치 유지. hanbangOnly 시 한방만 화면 하단 고정 */}
           <div
             className={

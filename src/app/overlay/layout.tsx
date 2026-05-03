@@ -30,11 +30,12 @@ export default function OverlayLayout({
         .overlay-root table { -webkit-backface-visibility: hidden; backface-visibility: hidden; }
         .overlay-root table td { font-size: inherit !important; }
         .overlay-root table thead td { line-height: 1.2; padding: 0.18em 0.25em !important; }
-        .overlay-root table .overlay-total-row td { font-size: 1.15em !important; padding: 0.3em 0.35em !important; line-height: 1.25; min-height: 1.8em; font-weight: 600; }
+        .overlay-root table:not(.overlay-elegant-table) .overlay-total-row td { font-size: 1.15em !important; padding: 0.3em 0.35em !important; line-height: 1.25; min-height: 1.8em; font-weight: 600; }
         .overlay-root table .overlay-rank-cell { white-space: nowrap !important; }
-        .overlay-root table td { writing-mode: horizontal-tb; text-orientation: mixed; white-space: nowrap !important; overflow: hidden !important; }
-        .overlay-root table td { container-type: inline-size; font-size: min(1em, 18cqw) !important; }
-        .overlay-root table .overlay-total-row td { font-size: min(1.15em, 20cqw) !important; }
+        .overlay-root table:not(.overlay-elegant-table) td { writing-mode: horizontal-tb; text-orientation: mixed; white-space: nowrap !important; overflow: hidden !important; container-type: inline-size; font-size: min(1em, 18cqw) !important; }
+        .overlay-root table:not(.overlay-elegant-table) .overlay-total-row td { font-size: min(1.15em, 20cqw) !important; }
+        .overlay-root table.overlay-elegant-table td { writing-mode: horizontal-tb; text-orientation: mixed; white-space: nowrap !important; overflow: visible !important; container-type: inline-size; font-size: inherit !important; }
+        .overlay-root table.overlay-elegant-table .overlay-total-row td { font-size: 1.15em !important; padding: 0.3em 0.35em !important; line-height: 1.25; min-height: 1.8em; font-weight: 600; }
         /* 파스텔 테마: 구분선 없이 행 배경만 교차 */
         table.pastel-member-table tbody tr.overlay-row:nth-child(odd) td { background-color: rgba(199, 206, 234, 0.32) !important; }
         table.pastel-member-table tbody tr.overlay-row:nth-child(even) td { background-color: rgba(226, 240, 203, 0.36) !important; }

@@ -25,7 +25,7 @@ type Args = {
 /**
  * 후원 합계가 목표 이상이면 해당 오버레이 프리셋의 goal 필드를 자동 상향해 `/api/state`에 반영한다.
  * 비활성: URL에 `goalAutoStretch=0` 또는 `noGoalAutoStretch=true`
- * URL로 `goal`을 직접 지정한 경우에는 호출하지 말 것(enabled에서 이미 제외).
+ * URL에 `goal=`만 있으면 자동 상향 비활성(통합 오버레이). Prism/OBS(`host`)에서는 준비 후 프리셋 우선이라 예외 처리함.
  */
 export function useGoalPresetAutoEscalate(args: Args): void {
   const inFlight = useRef(false);

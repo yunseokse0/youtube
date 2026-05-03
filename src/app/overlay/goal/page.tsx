@@ -62,6 +62,8 @@ export default function GoalOverlayPage() {
   const sp = useSearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
   const { state, ready } = useRemoteState(userId);
+  const hostParam = (sp.get("host") || "").toLowerCase();
+  const externalHost = hostParam === "prism" || hostParam === "obs" || hostParam === "external";
 
   const activePreset = useMemo(() => {
     const presets = (state?.overlayPresets || []) as OverlayPresetLike[];
@@ -83,12 +85,14 @@ export default function GoalOverlayPage() {
   }, [state, sp]);
 
   const goal = useMemo(() => {
+    const fromPreset = Number(activePreset?.goal || 0);
+    const presetGoalOk = Number.isFinite(fromPreset) && fromPreset > 0;
+    if (externalHost && ready && presetGoalOk) return Math.floor(fromPreset);
     const fromUrl = Number(sp.get("goal"));
     if (Number.isFinite(fromUrl) && fromUrl > 0) return Math.floor(fromUrl);
-    const fromPreset = Number(activePreset?.goal || 0);
-    if (Number.isFinite(fromPreset) && fromPreset > 0) return Math.floor(fromPreset);
+    if (presetGoalOk) return Math.floor(fromPreset);
     return 0;
-  }, [sp, activePreset?.goal]);
+  }, [sp, activePreset, externalHost, ready]);
 
   const goalLabel = (sp.get("goalLabel") || activePreset?.goalLabel || "후원").trim();
   const width = useMemo(() => {
@@ -130,7 +134,9 @@ export default function GoalOverlayPage() {
       const g = sp.get("goal");
       if (g === null || String(g).trim() === "") return false;
       const n = parseInt(String(g), 10);
-      return Number.isFinite(n) && n > 0;
+      if (!Number.isFinite(n) || n <= 0) return false;
+      if (externalHost && ready) return false;
+      return true;
     })();
   useGoalPresetAutoEscalate({
     enabled:

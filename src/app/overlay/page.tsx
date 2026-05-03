@@ -1,5 +1,5 @@
 "use client";
-import { Suspense, useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi, loadState, totalToon, totalCombined, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers } from "@/lib/state";
 import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
@@ -1205,6 +1205,8 @@ function OverlayInner() {
     }),
     [rawSp, presetParams]
   );
+  const hostParam = (rawSp.get("host") || "").toLowerCase();
+  const externalHost = hostParam === "prism" || hostParam === "obs" || hostParam === "external";
   const demoMode = ((sp.get("demo") || "").toLowerCase() === "true") || ((sp.get("test") || "").toLowerCase() === "true");
   useEffect(() => {
     let cancelled = false;
@@ -1338,12 +1340,15 @@ function OverlayInner() {
   const showTimerRaw = (sp.get("showTimer") || "").toLowerCase();
   const showTimer = effectiveTableOnly ? false : (timerOnlyMode ? showTimerRaw !== "false" : showTimerRaw === "true");
   const goal = useMemo(() => {
-    const fromUrl = parseInt(sp.get("goal") || "0", 10);
-    if (Number.isFinite(fromUrl) && fromUrl > 0) return fromUrl;
     const fromPreset = Number((activePreset as any)?.goal || 0);
-    if (Number.isFinite(fromPreset) && fromPreset > 0) return Math.floor(fromPreset);
+    const presetGoalOk = Number.isFinite(fromPreset) && fromPreset > 0;
+    /** Prism/OBS 등(`host`): 저장된 프리셋이 우선 → 자동 목표 상향 후 새로고침해도 반영됨(URL의 goal= 고정 해제) */
+    if (externalHost && ready && presetGoalOk) return Math.floor(fromPreset);
+    const fromMerged = parseInt(sp.get("goal") || "0", 10);
+    if (Number.isFinite(fromMerged) && fromMerged > 0) return fromMerged;
+    if (presetGoalOk) return Math.floor(fromPreset);
     return 0;
-  }, [sp, activePreset]);
+  }, [sp, activePreset, externalHost, ready]);
   const goalLabel = (sp.get("goalLabel") || (activePreset as any)?.goalLabel || "후원").trim();
   const goalWidth = useMemo(() => {
     const fromUrl = parseInt(sp.get("goalWidth") || "0", 10);
@@ -1578,8 +1583,6 @@ function OverlayInner() {
   const isPreviewGuide = sp.get("previewGuide") === "true";
   const autoFit = (sp.get("autoFit") || "none").toLowerCase() as "none" | "width" | "height" | "contain" | "cover";
   const zoomMode = ((sp.get("zoomMode") || "follow").toLowerCase() as "follow" | "invert" | "neutral");
-  const hostParam = (sp.get("host") || "").toLowerCase();
-  const externalHost = hostParam === "prism" || hostParam === "obs" || hostParam === "external";
   const fitPin = centerFixed ? "cc" : ((sp.get("fitPin") || "cc").toLowerCase() as "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr");
   const showGuide = (sp.get("guide") || "false").toLowerCase() === "true";
   const boxMode = (sp.get("box") || "full").toLowerCase() as "full" | "tight";
@@ -1790,6 +1793,9 @@ function OverlayInner() {
   const [autoTotalSize, setAutoTotalSize] = useState(totalSize);
   const [autoDonorSize, setAutoDonorSize] = useState(donorsSize);
   const tableBoxRef = useRef<HTMLDivElement | HTMLTableElement | null>(null);
+  /** 멤버 표만 너비 기준으로 자동 폰트 축소(티커 등 형제 폭 제외) */
+  const memberTableClampRef = useRef<HTMLDivElement | null>(null);
+  const [memberTableFitFactor, setMemberTableFitFactor] = useState(1);
   const [donorBoxWidth, setDonorBoxWidth] = useState<number | null>(null);
   const contextualTickerWidth = donorBoxWidth ? Math.max(donorBoxWidth, tickerWidth) : tickerWidth;
   useEffect(() => {
@@ -1879,7 +1885,9 @@ function OverlayInner() {
       const g = rawSp.get("goal");
       if (g === null || String(g).trim() === "") return false;
       const n = parseInt(String(g), 10);
-      return Number.isFinite(n) && n > 0;
+      if (!Number.isFinite(n) || n <= 0) return false;
+      if (externalHost && ready) return false;
+      return true;
     })();
   useGoalPresetAutoEscalate({
     enabled:
@@ -1956,6 +1964,69 @@ function OverlayInner() {
       return { m, rank };
     });
   }, [unpinned, getMemberRole]);
+
+  const memberTableFitSig = useMemo(() => {
+    const rc = Math.max(6, Math.min(14, members.reduce((max, m) => Math.max(max, getMemberRole(m).length), 2)));
+    const cols = hasRoleColumn
+      ? `3|${rc}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`
+      : `3|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`;
+    const rows = ranked.map(({ m }) => `${m.account}|${m.toon}|${Number(m.contribution || 0)}`).join(";");
+    const pinRows = pinned.map((m) => `${m.account}|${m.toon}|${Number(m.contribution || 0)}`).join(";");
+    return `${cols}#${rows}~${pinRows}`;
+  }, [
+    ranked,
+    pinned,
+    hasRoleColumn,
+    nameCh,
+    bankCh,
+    toonCh,
+    totalCh,
+    contributionCh,
+    members,
+    getMemberRole,
+  ]);
+
+  useLayoutEffect(() => {
+    if (!showMembers) return;
+    const clampEl = memberTableClampRef.current;
+    const table = tableBoxRef.current as HTMLTableElement | null;
+    if (!clampEl || !table) return;
+
+    const run = () => {
+      const avail = clampEl.clientWidth;
+      if (avail < 8) return;
+      let lo = 0.22;
+      let hi = 1;
+      let best = lo;
+      const minPx = 8;
+      for (let i = 0; i < 22; i++) {
+        const mid = (lo + hi) / 2;
+        const fs = Math.max(minPx, Math.round(mSize * mid));
+        table.style.fontSize = `${fs}px`;
+        void table.offsetWidth;
+        if (table.scrollWidth <= avail + 2) {
+          best = mid;
+          lo = mid;
+        } else {
+          hi = mid;
+        }
+      }
+      table.style.removeProperty("font-size");
+      setMemberTableFitFactor(best);
+    };
+
+    run();
+    const ro = new ResizeObserver(() => run());
+    ro.observe(clampEl);
+    return () => {
+      ro.disconnect();
+      try {
+        table.style.removeProperty("font-size");
+      } catch {
+        /* noop */
+      }
+    };
+  }, [showMembers, mSize, memberTableFitSig]);
 
   const allOrderKeys = [...ranked.map(({ m }) => m.id), ...pinned.map((m) => `${m.id}-p`)];
   const setRowRef = useFlip(allOrderKeys, 500);
@@ -2181,14 +2252,17 @@ function OverlayInner() {
       ` }} />
     );
     const nameWrapCls = "truncate";
+    const tfTable = memberTableFitFactor;
+    const memberFontPx = Math.max(8, Math.round(mSize * tfTable));
+    const totalFontPx = Math.max(8, Math.round(tSize * tfTable));
     const centerFixedStyle = centerFixed ? (
       <style dangerouslySetInnerHTML={{ __html: `
         html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
-        .overlay-center-fixed .overlay-row td,
-        .overlay-center-fixed thead td { font-size: min(${mSize}px, 18cqw) !important; min-height: ${Math.round(mSize * 1.5)}px !important; line-height: 1.2 !important; padding: ${Math.round(mSize * 0.25)}px ${Math.round(mSize * 0.4)}px !important; }
-        .overlay-center-fixed .overlay-total-row td { font-size: min(${tSize}px, 20cqw) !important; min-height: ${Math.round(tSize * 1.5)}px !important; padding: ${Math.round(tSize * 0.2)}px ${Math.round(tSize * 0.3)}px !important; font-weight: 600 !important; }
+        .overlay-center-fixed table.overlay-elegant-table .overlay-row td,
+        .overlay-center-fixed table.overlay-elegant-table thead td { font-size: ${memberFontPx}px !important; min-height: ${Math.round(memberFontPx * 1.5)}px !important; line-height: 1.2 !important; padding: ${Math.round(memberFontPx * 0.25)}px ${Math.round(memberFontPx * 0.4)}px !important; }
+        .overlay-center-fixed table.overlay-elegant-table .overlay-total-row td { font-size: ${totalFontPx}px !important; min-height: ${Math.round(totalFontPx * 1.5)}px !important; padding: ${Math.round(totalFontPx * 0.2)}px ${Math.round(totalFontPx * 0.3)}px !important; font-weight: 600 !important; }
         .overlay-center-fixed table { background: rgba(0,0,0,0.5) !important; }
-        .overlay-center-fixed table td { container-type: inline-size; white-space: nowrap !important; overflow: hidden !important; }
+        .overlay-center-fixed table.overlay-elegant-table td { container-type: inline-size; white-space: nowrap !important; overflow: visible !important; }
       ` }} />
     ) : null;
     const colorOverrideStyle = (accountColor || toonColor) ? (
@@ -2204,8 +2278,7 @@ function OverlayInner() {
           width: 100%;
           max-width: 100%;
           min-width: 0;
-          overflow: hidden;
-          text-overflow: ellipsis;
+          overflow: visible;
           white-space: nowrap;
           font-variant-numeric: tabular-nums;
         }
@@ -2214,7 +2287,7 @@ function OverlayInner() {
         .overlay-root td.overlay-col-total,
         .overlay-root td.overlay-col-contribution {
           white-space: nowrap !important;
-          overflow: hidden !important;
+          overflow: visible !important;
           vertical-align: middle;
         }
       ` }} />
@@ -2326,7 +2399,7 @@ function OverlayInner() {
                   <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
                 </div>
               )}
-              <div className="relative min-w-0 overflow-hidden" style={{ borderRadius: 0 }}>
+              <div ref={memberTableClampRef} className="relative min-w-0 flex-1 overflow-hidden" style={{ borderRadius: 0 }}>
                 {showTableBgGif ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -2344,7 +2417,7 @@ function OverlayInner() {
                       ref={tableBoxRef as any}
                       className={`${effectiveTableCls} overlay-elegant-table${membersThemeId === "pastel" ? " pastel-member-table" : ""}`}
                       style={{
-                        fontSize: mSize,
+                        fontSize: memberFontPx,
                         borderSpacing: 0,
                         tableLayout: "fixed",
                         width: `calc(${excelTableWidthCalc})`,
@@ -2390,9 +2463,6 @@ function OverlayInner() {
                             className={`${effectiveRowCls} overlay-col-role`}
                             style={{
                               whiteSpace: "nowrap",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              maxWidth: `${roleCh}ch`,
                             }}
                           >
                             {getMemberRole(m) || "-"}

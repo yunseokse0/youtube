@@ -139,7 +139,11 @@ function readColor(sp: URLSearchParams, key: string, fallback: string): string {
   return raw || fallback;
 }
 
-/** 저장값이 `transparent`일 때 밝은 카메라 배경에서도 보이도록 방송용 기본값 사용(URL로 덮어쓰기 가능) */
+/**
+ * 패널 등: 저장값이 `transparent`일 때 방송 기본 채색(URL 덮어쓰기 가능).
+ * 구버전은 여기서 알파가 큰 그라데이션을 넣어 슬라이더와 무관하게 항상 어둡게 보였음 → 기본은 불투명 단색으로 두고,
+ * `overlayOpacity`를 별도 레이어로 곱해 실제 투명도처럼 동작하게 한다.
+ */
 function resolveThemeColor(
   sp: URLSearchParams,
   key: string,
@@ -198,12 +202,12 @@ function RankingColumn({
     return String(idx + 1);
   };
   const outerClass = unified
-    ? `flex min-w-0 flex-1 flex-col overflow-hidden ${
+    ? `relative z-[1] flex min-w-0 flex-1 flex-col overflow-hidden ${
         showColumnDivider
           ? "border-b border-solid border-r-0 md:border-b-0 md:border-r md:border-solid"
           : ""
       }`
-    : "w-full overflow-hidden rounded-2xl border shadow-[0_10px_28px_rgba(76,5,25,0.32)] backdrop-blur-md";
+    : "relative z-[1] w-full overflow-hidden rounded-2xl border shadow-[0_10px_28px_rgba(76,5,25,0.32)] backdrop-blur-md";
   const outerStyle: CSSProperties | undefined = unified
     ? { borderColor }
     : {
@@ -226,7 +230,8 @@ function RankingColumn({
           className="absolute inset-0"
           style={{
             background: headerBg,
-            opacity: Math.max(0, Math.min(100, headerOpacity)) / 100,
+            /** unified: 패널 전체가 `overlayOpacity`로 어두워지므로 헤더 그라데이션은 또 곱하지 않음 */
+            opacity: unified ? 1 : Math.max(0, Math.min(100, headerOpacity)) / 100,
           }}
         />
         <span className="relative z-10">{title}</span>
@@ -283,12 +288,7 @@ export default function DonorRankingsOverlayPage() {
   const zoomPct = Math.floor(readNumber(sp, "zoomPct", 100, 30, 300));
   const zoomScale = zoomPct / 100;
   const bg = readColor(sp, "bg", savedTheme.bg) || "transparent";
-  const panelBg = resolveThemeColor(
-    sp,
-    "panelBg",
-    savedTheme.panelBg,
-    "linear-gradient(180deg, rgba(26,10,22,0.88) 0%, rgba(14,6,14,0.84) 100%)"
-  );
+  const panelBg = resolveThemeColor(sp, "panelBg", savedTheme.panelBg, "rgba(18, 10, 17, 1)");
   const borderColor = resolveThemeColor(
     sp,
     "border",
@@ -308,6 +308,7 @@ export default function DonorRankingsOverlayPage() {
   const showBgLayer = overlayCfg.isBgEnabled && Boolean(overlayCfg.bgGifUrl.trim());
   const bgGifSrc = useMemo(() => resolveGifUrlForEmbed(overlayCfg.bgGifUrl), [overlayCfg.bgGifUrl]);
   const bgOpacityPct = Math.max(0, Math.min(100, overlayCfg.bgOpacity)) / 100;
+  const overlayOpacityFrac = Math.max(0, Math.min(100, overlayOpacity)) / 100;
 
   const { accountTop, toonTop } = useMemo(() => {
     if (useTest) {
@@ -367,12 +368,20 @@ export default function DonorRankingsOverlayPage() {
           </div>
         )}
         <div
-          className="grid grid-cols-1 overflow-hidden rounded-2xl border shadow-[0_10px_28px_rgba(76,5,25,0.32)] backdrop-blur-md md:grid-cols-2 md:gap-0"
+          className="relative grid grid-cols-1 overflow-hidden rounded-2xl border shadow-[0_10px_28px_rgba(76,5,25,0.32)] backdrop-blur-md md:grid-cols-2 md:gap-0"
           style={{
-            background: panelBg,
             borderColor,
+            backgroundColor: "transparent",
           }}
         >
+          <div
+            className="pointer-events-none absolute inset-0 z-0 rounded-[inherit]"
+            aria-hidden
+            style={{
+              background: panelBg,
+              opacity: overlayOpacityFrac,
+            }}
+          />
           <RankingColumn
             title="계좌 후원 순위"
             items={accountTop}

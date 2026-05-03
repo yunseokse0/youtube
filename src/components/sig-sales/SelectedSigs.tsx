@@ -77,7 +77,7 @@ export default function SelectedSigs({
     <section
       className={
         broadcastMatch
-          ? `flex w-full min-w-0 max-w-full flex-wrap justify-center gap-1 sm:gap-1.5 ${className}`.trim()
+          ? `flex w-full min-w-0 max-w-full flex-wrap justify-center gap-1 sm:gap-1 ${className}`.trim()
           : `grid w-full min-w-0 max-w-full gap-2 ${justifyCompact} ${gridAlign} ${className}`.trim()
       }
       style={broadcastMatch ? undefined : { gridTemplateColumns }}
@@ -181,14 +181,14 @@ export default function SelectedSigs({
               }`}
             >
               <div
-                className={`truncate font-bold text-white ${broadcastMatch ? "text-[13px]" : compact ? "text-[10px]" : "text-sm"}`}
+                className={`truncate font-bold text-white ${broadcastMatch ? "text-[11px] leading-tight sm:text-[12px]" : compact ? "text-[10px]" : "text-sm"}`}
               >
                 {item.name}
               </div>
               <div
                 className={`${
                   broadcastMatch
-                    ? "text-lg font-black tabular-nums text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.88)]"
+                    ? "text-xs font-black tabular-nums text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.88)] sm:text-[13px]"
                     : compact
                       ? "text-[9px] font-semibold tabular-nums text-neutral-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]"
                       : "text-xs font-semibold tabular-nums text-neutral-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]"
