@@ -833,7 +833,7 @@ async function postAppStateWithAuthRecovery(json: string, userId?: string | null
   return res;
 }
 
-/** 관리자 /api/state 저장 시 — 스핀 결과(phase 등)는 보내지 않고 메뉴 수·오버레이 UI 설정만 전달 */
+/** 관리자 /api/state 저장 시 — 스핀 결과(phase 등)는 보내지 않고 메뉴 수·오버레이 UI 설정만 전달(서버에서 병합) */
 function appStatePayloadForApi(next: AppState): Partial<AppState> {
   const { rouletteState, ...rest } = next;
   if (!rouletteState) return rest;
@@ -846,7 +846,7 @@ function appStatePayloadForApi(next: AppState): Partial<AppState> {
       overlayOpacity: rouletteState.overlayOpacity,
       ...(Array.isArray(rouletteState.historyLogs) ? { historyLogs: rouletteState.historyLogs } : {}),
     },
-  };
+  } as Partial<AppState>;
 }
 
 export function saveState(state: AppState, userId?: string | null) {
