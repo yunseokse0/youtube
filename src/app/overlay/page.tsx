@@ -9,6 +9,7 @@ import MissionBoard from "@/components/MissionBoard";
 import MissionBoardSlot from "@/components/MissionBoardSlot";
 import { GoalBar } from "@/components/GoalBar";
 import { useSSEConnection } from "@/lib/sse-client";
+import { useGoalPresetAutoEscalate } from "@/hooks/useGoalPresetAutoEscalate";
 
 function tryDecodeSnapshot(str: string | null): AppState | null {
   if (!str) return null;
@@ -1872,6 +1873,30 @@ function OverlayInner() {
     () => members.reduce((sum, m) => sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)), 0),
     [members]
   );
+  const goalPinnedByRawUrl =
+    (() => {
+      const g = rawSp.get("goal");
+      if (g === null || String(g).trim() === "") return false;
+      const n = parseInt(String(g), 10);
+      return Number.isFinite(n) && n > 0;
+    })();
+  useGoalPresetAutoEscalate({
+    enabled:
+      rawSp.get("goalAutoStretch") !== "0" &&
+      String(rawSp.get("noGoalAutoStretch") || "").toLowerCase() !== "true" &&
+      !demoMode &&
+      !isPreviewGuide &&
+      !snap &&
+      goal > 0 &&
+      !goalPinnedByRawUrl &&
+      Boolean(activePreset?.id),
+    userId,
+    presetId: activePreset?.id ?? null,
+    goalAmount: goal,
+    liveTotal: liveGoalCurrent,
+    overlayPresets,
+    skipPersist: !ready,
+  });
   const resolvedMemberRoles = useMemo<Record<string, string>>(() => {
     if (memberPositionMode !== "rankLinked") return memberPositionsMap;
     const roleMap: Record<string, string> = {};
@@ -2082,6 +2107,8 @@ function OverlayInner() {
     const excelGridCols = hasRoleColumn
       ? ["3ch", `${roleCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`]
       : ["3ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`];
+    /** 숫자 자리 증가로 표 전체가 밀려 나가지 않도록 너비 상한 고정 */
+    const excelTableWidthCalc = excelGridCols.join(" + ");
     const columnGradients = hasRoleColumn
       ? [
           "rgba(255, 212, 231, 0.70)", // rank
@@ -2171,11 +2198,23 @@ function OverlayInner() {
     ) : null;
     const numericNoWrapStyle = (
       <style dangerouslySetInnerHTML={{ __html: `
+        .overlay-root .overlay-num-cell-inner {
+          display: block;
+          width: 100%;
+          max-width: 100%;
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          font-variant-numeric: tabular-nums;
+        }
         .overlay-root .overlay-account-cell,
-        .overlay-root .overlay-toon-cell {
+        .overlay-root .overlay-toon-cell,
+        .overlay-root td.overlay-col-total,
+        .overlay-root td.overlay-col-contribution {
           white-space: nowrap !important;
           overflow: hidden !important;
-          text-overflow: clip !important;
+          vertical-align: middle;
         }
       ` }} />
     );
@@ -2279,17 +2318,14 @@ function OverlayInner() {
         <div style={viewportInnerStyle} className="overlay-scale-target">
           <main className="transparent-bg no-select" style={{ ...scaledMainStyle, minHeight: FIT_H, width: FIT_W, background: "transparent" }}>
         {showMembers && (ready || isPreviewGuide || externalHost) && (
-          <div className={`absolute ${listPosClass}`} style={{ maxWidth: FIT_W, maxHeight: FIT_H, ...listPosStyle }}>
-            <div ref={containerRef} className="flex items-start gap-3" style={{ width: "fit-content", maxWidth: FIT_W }}>
+          <div className={`absolute ${listPosClass}`} style={{ maxWidth: FIT_W, maxHeight: FIT_H, minWidth: 0, ...listPosStyle }}>
+            <div ref={containerRef} className="flex min-w-0 items-start gap-3" style={{ width: "fit-content", maxWidth: FIT_W }}>
               {showSideDonors && donorsSide === "left" && (
                 <div style={{ width: donorsWidth }}>
                   <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
                 </div>
               )}
-              <div
-                className="relative overflow-hidden"
-                style={{ borderRadius: 0 }}
-              >
+              <div className="relative min-w-0 overflow-hidden" style={{ borderRadius: 0 }}>
                 {showTableBgGif ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -2306,7 +2342,13 @@ function OverlayInner() {
                     <table
                       ref={tableBoxRef as any}
                       className={`${effectiveTableCls} overlay-elegant-table${membersThemeId === "pastel" ? " pastel-member-table" : ""}`}
-                      style={{ fontSize: mSize, borderSpacing: 0, tableLayout: "fixed" }}
+                      style={{
+                        fontSize: mSize,
+                        borderSpacing: 0,
+                        tableLayout: "fixed",
+                        width: `calc(${excelTableWidthCalc})`,
+                        maxWidth: "100%",
+                      }}
                     >
                   <colgroup>
                     {excelGridCols.map((w, idx) => (
@@ -2354,10 +2396,18 @@ function OverlayInner() {
                           </td>
                         )}
                         <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
-                        <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
-                        <td className={`${effectiveRowCls} overlay-col-toon ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
-                        <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>{fmtTotalCell(m.account + m.toon)}</td>
-                        <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>{fmt((m.account || 0) + (m.toon || 0))}</td>
+                        <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`}>
+                          <span className="overlay-num-cell-inner">{fmt(m.account)}</span>
+                        </td>
+                        <td className={`${effectiveRowCls} overlay-col-toon ${membersTheme.toonCls} overlay-toon-cell text-right`}>
+                          <span className="overlay-num-cell-inner">{fmt(m.toon)}</span>
+                        </td>
+                        <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>
+                          <span className="overlay-num-cell-inner">{fmtTotalCell(m.account + m.toon)}</span>
+                        </td>
+                        <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
+                          <span className="overlay-num-cell-inner">{fmt((m.account || 0) + (m.toon || 0))}</span>
+                        </td>
                       </tr>
                     ))}
                     {pinned.map((m) => (
@@ -2365,20 +2415,36 @@ function OverlayInner() {
                         <td className={`${effectiveRowCls} overlay-col-rank text-right overlay-rank-cell`}>—</td>
                         {hasRoleColumn && <td className={`${effectiveRowCls} overlay-col-role`}></td>}
                         <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
-                        <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.account)}</td>
-                        <td className={`${effectiveRowCls} overlay-col-toon ${membersTheme.toonCls} overlay-toon-cell text-right`} style={{ textOverflow: "clip" }}>{fmt(m.toon)}</td>
-                        <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>{fmtTotalCell(m.account + m.toon)}</td>
-                        <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>{fmt((m.account || 0) + (m.toon || 0))}</td>
+                        <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`}>
+                          <span className="overlay-num-cell-inner">{fmt(m.account)}</span>
+                        </td>
+                        <td className={`${effectiveRowCls} overlay-col-toon ${membersTheme.toonCls} overlay-toon-cell text-right`}>
+                          <span className="overlay-num-cell-inner">{fmt(m.toon)}</span>
+                        </td>
+                        <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>
+                          <span className="overlay-num-cell-inner">{fmtTotalCell(m.account + m.toon)}</span>
+                        </td>
+                        <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
+                          <span className="overlay-num-cell-inner">{fmt((m.account || 0) + (m.toon || 0))}</span>
+                        </td>
                       </tr>
                     ))}
                     {showTotal && ready && (
                       <tr className="overlay-total-row">
                         <td className={totalWrapClsTintedMode} colSpan={hasRoleColumn ? 2 : 1}>총합</td>
                         <td className={totalWrapClsTintedMode} />
-                        <td className={`${totalWrapClsTintedMode} text-right`}>{fmt(sumAccount)}</td>
-                        <td className={`${totalWrapClsTintedMode} text-right`}>{fmt(sumToon)}</td>
-                        <td className={`${totalWrapClsTintedMode} text-right`}>{fmt(rounded)}</td>
-                        <td className={`${totalWrapClsTintedMode} text-right`}>{fmt(sumContribution)}</td>
+                        <td className={`${totalWrapClsTintedMode} overlay-col-account overlay-account-cell text-right`}>
+                          <span className="overlay-num-cell-inner">{fmt(sumAccount)}</span>
+                        </td>
+                        <td className={`${totalWrapClsTintedMode} overlay-col-toon overlay-toon-cell text-right`}>
+                          <span className="overlay-num-cell-inner">{fmt(sumToon)}</span>
+                        </td>
+                        <td className={`${totalWrapClsTintedMode} overlay-col-total text-right`}>
+                          <span className="overlay-num-cell-inner">{fmt(rounded)}</span>
+                        </td>
+                        <td className={`${totalWrapClsTintedMode} overlay-col-contribution text-right`}>
+                          <span className="overlay-num-cell-inner">{fmt(sumContribution)}</span>
+                        </td>
                       </tr>
                     )}
                   </tbody>

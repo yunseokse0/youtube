@@ -32,6 +32,8 @@ import { useImagePreload } from "@/hooks/useImagePreload";
  * 2) 클라이언트는 위 배열을 받은 뒤, `sequentialRoundIndex` 등으로 휠·결과 카드 연출만 라운드별로 나누어
  *    재생한다. 연출 순서는 서버가 밀어주는 게 아니라 이 페이지의 상태·타이밍이 책임진다.
  * 3) `menuCount`·`minSpinCount`·`minWinsCount` 등 쿼리는 휠 **칸 수(표시)** 조절용이며, 당첨 개수·API `spinCount`와는 무관하다.
+ * 4) `winnersOnly=1`·`onlyWinners=1`: 확정 당첨 시그만 회전판에 올리고(미당첨 메뉴 숨김), 시그 보드 롤링은 끈다. 당첨 전(IDLE)에는 기존처럼 전체 풀.
+ * 5) `wheelSequential=0` 또는 `singleWheel=true`: 당첨이 여러 개여도 휠 연출 1회만(한 화면 레이아웃용). 카드 공개 간격은 `sigResultStaggerMs` 기본·기존과 동일.
  */
 const POLL_MS = 1000;
 /** cinematic 스핀 최대 당첨 수와 맞춤(API spinCount·풀 한도). 예전 5슬롯 제한은 확대됨 */
@@ -134,6 +136,28 @@ export default function SigSalesOverlayPage() {
   const allowSigBoardWithResults =
     sp.get("sigBoardWithResults") === "1" ||
     String(sp.get("sigBoardWithResults") || "").toLowerCase() === "true";
+  /**
+   * 개별 당첨 미니 카드 숨기고 한방 시그만(하단 고정). 방송 합산 강조용.
+   * `hanbangOnly=1` · `oneShotOnly=1` (동의어)
+   */
+  const hanbangOnlyResultLayout =
+    sp.get("hanbangOnly") === "1" ||
+    String(sp.get("hanbangOnly") || "").toLowerCase() === "true" ||
+    sp.get("oneShotOnly") === "1" ||
+    String(sp.get("oneShotOnly") || "").toLowerCase() === "true";
+  /** 회전판·연출에서 미당첨 시그 숨김. 동의어: onlyWinners */
+  const winnersOnlyOverlay =
+    sp.get("winnersOnly") === "1" ||
+    String(sp.get("winnersOnly") || "").toLowerCase() === "true" ||
+    sp.get("onlyWinners") === "1" ||
+    String(sp.get("onlyWinners") || "").toLowerCase() === "true";
+  /**
+   * 당첨이 여러 개여도 휠을 N번 돌리지 않고 1번만 돌린다(서버 result는 보통 마지막 당첨과 동일).
+   * 예전처럼 당첨 수만큼 연속 회전을 쓰려면 `wheelSequential=1`. 동의어: `singleWheel=true`
+   */
+  const wheelSequentialOff =
+    sp.get("wheelSequential") === "0" ||
+    String(sp.get("singleWheel") || "").toLowerCase() === "true";
   const overlayScalePct = (() => {
     const raw = sp.get("scalePct") || sp.get("zoomPct") || "100";
     const n = parseInt(raw.replace(/[^\d]/g, ""), 10);
@@ -367,7 +391,27 @@ export default function SigSalesOverlayPage() {
         (!memberFilterId || (x.memberId || "") === memberFilterId)
     );
   }, [state, rouletteDemo, memberFilterId]);
+  /** 당첨만 휠에 올릴 때 슬라이스 순서·중복 당첨 유지 */
+  const winnerRowsForWheelOnly = useMemo(() => {
+    if ((machine.selectedSigs?.length ?? 0) > 0) {
+      return machine.selectedSigs!.slice(0, CONFIRMED_VISIBLE_SLOTS);
+    }
+    if (pendingLanding?.selected?.length) {
+      return pendingLanding.selected.slice(0, CONFIRMED_VISIBLE_SLOTS);
+    }
+    return (broadcastStickySigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
+  }, [machine.selectedSigs, pendingLanding?.selected, broadcastStickySigs]);
   const wheelDisplayPool = useMemo(() => {
+    if (winnersOnlyOverlay && winnerRowsForWheelOnly.length > 0) {
+      return winnerRowsForWheelOnly.map((raw, i) => {
+        const canon = canonicalSigIdFromWheelSliceId(raw.id);
+        const fromInv =
+          state?.sigInventory?.find((x) => x.id === canon) ||
+          state?.sigInventory?.find((x) => x.id === raw.id);
+        const base = fromInv ? { ...fromInv } : { ...raw, id: canon };
+        return { ...base, id: `${canon}__wslot_${i}` };
+      });
+    }
     // 후보 풀은 최소 menuCount까지 채운다(회전판 칸 수와 무관하게 후보 확보).
     const targetCount = Math.max(CONFIRMED_VISIBLE_SLOTS, menuCount);
     const unique = new Map<string, SigItem>();
@@ -408,10 +452,15 @@ export default function SigSalesOverlayPage() {
     menuFillFromDemo,
     machine.selectedSigs,
     pendingLanding?.selected,
+    winnersOnlyOverlay,
+    winnerRowsForWheelOnly,
   ]);
 
   /** 고유 시그가 적어도 menuCount만큼 칸을 순환 채움(각 칸은 고유 slice id) */
   const wheelSlices = useMemo(() => {
+    if (winnersOnlyOverlay && winnerRowsForWheelOnly.length > 0 && wheelDisplayPool.length > 0) {
+      return wheelDisplayPool.map((x) => ({ ...x }));
+    }
     const n = Math.max(1, menuCount);
     const pool =
       wheelDisplayPool.length > 0
@@ -426,7 +475,7 @@ export default function SigSalesOverlayPage() {
       out.push({ ...canonical, id: `${canonical.id}__wslot_${i}` });
     }
     return out;
-  }, [wheelDisplayPool, menuCount, rouletteDemo]);
+  }, [wheelDisplayPool, menuCount, rouletteDemo, winnersOnlyOverlay, winnerRowsForWheelOnly.length]);
 
   const spinQueueSelected = useMemo(
     () =>
@@ -436,7 +485,7 @@ export default function SigSalesOverlayPage() {
       ),
     [pendingLanding?.selected, machine.selectedSigs],
   );
-  const useSequentialWheel = spinQueueSelected.length > 1;
+  const useSequentialWheel = spinQueueSelected.length > 1 && !wheelSequentialOff;
   /**
    * 순차 회전: `sequentialRoundIndex`가 당첨 수(n)를 넘으면 `selected[n]`이 undefined →
    * 이전엔 `sequentialRoundRealId`가 null이 되고 `machine.resultId`로 폴백되어
@@ -819,11 +868,13 @@ export default function SigSalesOverlayPage() {
     );
   }, [oneShotRevealUnlocked, machine.oneShot, machine.selectedSigs]);
   const showSigBoardRollingSection = useMemo(() => {
+    if (winnersOnlyOverlay) return false;
     if (hideSigBoard || !state || (state.sigInventory || []).length === 0) return false;
     if (displaySelectedSigs.length > 0 && resultOverlayVisible && !allowSigBoardWithResults) return false;
     if (sigBoardDuringSpin) return true;
     return Boolean(hideWheelAfterComplete && showResultPanel && resultsPanelGateOpen);
   }, [
+    winnersOnlyOverlay,
     hideSigBoard,
     state,
     displaySelectedSigs.length,
@@ -1320,9 +1371,13 @@ export default function SigSalesOverlayPage() {
               />
             </div>
           ) : null}
-          {/* 휠 아래·왼쪽(방송 화면 기준 시그 결과 영역). 휠 제거 시 위 플레이스홀더로 세로 위치 유지 */}
+          {/* 휠 아래·왼쪽(방송 화면 기준 시그 결과 영역). 휠 제거 시 위 플레이스홀더로 세로 위치 유지. hanbangOnly 시 한방만 화면 하단 고정 */}
           <div
-            className="pointer-events-none relative z-[70] mt-2 w-full max-w-[min(72rem,min(100%,99vw))] shrink-0 self-center overflow-hidden px-3 pb-2 pt-1 md:max-w-[min(80rem,99vw)] md:px-6 md:pb-3 md:pt-3"
+            className={
+              hanbangOnlyResultLayout && resultOverlayVisible
+                ? "pointer-events-none fixed bottom-0 left-0 right-0 z-[80] flex w-full max-w-full justify-center overflow-visible px-3 pb-2 pt-1 md:px-6 md:pb-4"
+                : "pointer-events-none relative z-[70] mt-2 w-full max-w-[min(1400px,min(100%,99vw))] shrink-0 self-center overflow-hidden px-3 pb-2 pt-1 md:px-6 md:pb-3 md:pt-3"
+            }
             aria-live="polite"
           >
             <div className="pointer-events-auto mx-auto flex min-w-0 w-full max-w-full justify-center">
@@ -1348,6 +1403,7 @@ export default function SigSalesOverlayPage() {
                       className="w-full"
                       gifDelayMultiplier={sigGifDelayMultiplier}
                       entranceOnlyLatest
+                      hanbangOnly={hanbangOnlyResultLayout}
                     />
                   </motion.div>
                 ) : null}

@@ -1056,6 +1056,12 @@ export function formatManThousand(n: number): string {
   return thousandDigit ? `${man}.${thousandDigit}` : `${man}`;
 }
 
+/** 원 단위 전 자리 표기(관리자 후원 목록·누적 등). 비음수 정수로 반올림 후 천 단위 구분 */
+export function formatWonFull(n: number): string {
+  const safe = Math.max(0, Math.round(Number(n) || 0));
+  return safe.toLocaleString("ko-KR");
+}
+
 export function formatChatLine(state: AppState): string {
   const members = state.members
     .map((m) => `${m.name}${formatManThousand(m.account)}(${formatManThousand(m.toon)})`)

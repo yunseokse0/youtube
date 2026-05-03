@@ -11,6 +11,39 @@ export function canonicalSigIdFromWheelSliceId(sliceId: string): string {
 }
 
 /**
+ * 휠 조각 id(`원본id__wslot_N`)와 서버에서 넘어오는 당첨 id(캐노니컬만)가 다를 때 `===` 매칭이 실패해
+ * 항상 0번 칸으로 착지하던 문제를 막는다.
+ */
+export function findSliceIndexForResult(items: SigItem[], resultId: string | null): number {
+  if (!resultId || items.length === 0) return 0;
+  const exact = items.findIndex((x) => x.id === resultId);
+  if (exact >= 0) return exact;
+  const targetCanon = canonicalSigIdFromWheelSliceId(resultId);
+  const byCanon = items.findIndex((x) => canonicalSigIdFromWheelSliceId(x.id) === targetCanon);
+  return byCanon >= 0 ? byCanon : 0;
+}
+
+/**
+ * 시네마틱 휠 감속 구간 최종 회전 각도(도). `RouletteWheel`과 동일한 수식.
+ */
+export function calculateSpinFinalAngle(
+  items: SigItem[],
+  targetId: string | null,
+  count: number,
+  currentBase: number,
+  minTurns: number
+): number {
+  if (!targetId || !items.length) return currentBase + Math.max(1, minTurns) * 360;
+  const idx = findSliceIndexForResult(items, targetId);
+  const seg = 360 / Math.max(1, count);
+  const targetCenter = idx * seg + seg / 2;
+  const normalizedTarget = ((360 - targetCenter) % 360 + 360) % 360;
+  const currentNorm = ((currentBase % 360) + 360) % 360;
+  const deltaToTarget = ((normalizedTarget - currentNorm) % 360 + 360) % 360;
+  return currentBase + minTurns * 360 + deltaToTarget;
+}
+
+/**
  * 방송 오버레이·휠은 재고 `sigInventory` 기준 이름/이미지를 쓰고, 당첨 배열은 API 스냅샷이라 불일치할 수 있음.
  * 동일 시그 id로 인벤 행을 합쳐 표시를 맞춘다(당첨 금액은 요청 항목 우선).
  */

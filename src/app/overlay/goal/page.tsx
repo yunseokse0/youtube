@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { defaultState, loadState, loadStateFromApi, storageKey, type AppState } from "@/lib/state";
 import { getOverlayUserIdFromSearchParams, type OverlayPresetLike } from "@/lib/overlay-params";
 import { GoalBar } from "@/components/GoalBar";
+import { useGoalPresetAutoEscalate } from "@/hooks/useGoalPresetAutoEscalate";
 
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
   const [state, setState] = useState<AppState | null>(null);
@@ -123,6 +124,28 @@ export default function GoalOverlayPage() {
 
   // 목표바 현재값은 항상 실시간 후원 합계와 동기화한다.
   const current = Math.max(0, totalCombined);
+
+  const goalPinnedByRawUrl =
+    (() => {
+      const g = sp.get("goal");
+      if (g === null || String(g).trim() === "") return false;
+      const n = parseInt(String(g), 10);
+      return Number.isFinite(n) && n > 0;
+    })();
+  useGoalPresetAutoEscalate({
+    enabled:
+      sp.get("goalAutoStretch") !== "0" &&
+      String(sp.get("noGoalAutoStretch") || "").toLowerCase() !== "true" &&
+      goal > 0 &&
+      !goalPinnedByRawUrl &&
+      Boolean(activePreset?.id),
+    userId: userId || "finalent",
+    presetId: activePreset?.id ?? null,
+    goalAmount: goal,
+    liveTotal: current,
+    overlayPresets: state?.overlayPresets as unknown[] | undefined,
+    skipPersist: !ready,
+  });
 
   if (!ready) return null;
 

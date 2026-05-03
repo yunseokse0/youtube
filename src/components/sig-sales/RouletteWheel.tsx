@@ -6,7 +6,8 @@ import type { AnimationPlaybackControls } from "framer-motion";
 import { Howl } from "howler";
 import type { SigItem } from "@/types";
 import {
-  canonicalSigIdFromWheelSliceId,
+  calculateSpinFinalAngle,
+  findSliceIndexForResult,
   ROULETTE_WHEEL_SFX_ENABLED,
   ROULETTE_WHEEL_WAV_ASSETS_ENABLED,
   SOUND_ASSETS_ENABLED,
@@ -31,19 +32,6 @@ type RouletteWheelProps = {
   onTransitionEnd?: () => void;
   onLanded?: (resultId?: string | null) => void;
 };
-
-/**
- * 휠 조각 id(`원본id__wslot_N`)와 서버에서 넘어오는 당첨 id(캐노니컬만)가 다를 때 `===` 매칭이 실패해
- * 항상 0번 칸으로 착지하던 문제를 막는다. 오버레이 `wheelResultSliceId`와 동일한 규칙.
- */
-function findSliceIndexForResult(items: SigItem[], resultId: string | null): number {
-  if (!resultId || items.length === 0) return 0;
-  const exact = items.findIndex((x) => x.id === resultId);
-  if (exact >= 0) return exact;
-  const targetCanon = canonicalSigIdFromWheelSliceId(resultId);
-  const byCanon = items.findIndex((x) => canonicalSigIdFromWheelSliceId(x.id) === targetCanon);
-  return byCanon >= 0 ? byCanon : 0;
-}
 
 const COLORS = [
   "#fb7185", "#f59e0b", "#22d3ee", "#a78bfa", "#34d399", "#f472b6", "#facc15", "#60a5fa",
@@ -137,12 +125,21 @@ export default function RouletteWheel({
 
   const segmentCount = Math.max(1, items.length);
   const segment = 360 / segmentCount;
+  /** `border-8`과 동기: 색 영역 바깥 테두리 두께만큼 반지름에서 뺌 */
+  const wheelBorderPx = 8;
   const wheelScale = Math.max(55, Math.min(140, Math.floor(Number(scalePct) || 100))) / 100;
   const frameHeightPx = Math.round(360 * wheelScale);
   const frameMaxWidthPx = Math.round(680 * wheelScale);
   const wheelSizePx = Math.round(270 * wheelScale);
   const pointerSizePx = Math.max(28, Math.round(36 * wheelScale));
-  const labelRadiusPx = Math.round(96 * wheelScale);
+  /** 부채꼴 무게중심까지 거리: (4R sin(φ/2)) / (3φ), φ=섹션 라디안 → 메뉴명이 칸 중앙에 오도록 */
+  const labelRadiusPx = (() => {
+    const R = Math.max(1, wheelSizePx / 2 - wheelBorderPx);
+    const phi = (2 * Math.PI) / segmentCount;
+    if (segmentCount <= 1) return 0;
+    const radial = (R * (4 * Math.sin(phi / 2))) / (3 * phi);
+    return Math.max(12, Math.round(radial));
+  })();
   const labelWidthPx = Math.max(70, Math.round(96 * wheelScale));
   const labelHeightPx = Math.max(34, Math.round(46 * wheelScale));
   const labelFontPx = Math.max(11, Math.round(13 * wheelScale));
@@ -241,15 +238,7 @@ export default function RouletteWheel({
   }, [rotate]);
 
   const calculateFinalAngle = useCallback((targetId: string | null, count: number, currentBase: number, minTurns: number) => {
-    const currentItems = itemsRef.current;
-    if (!targetId || !currentItems.length) return currentBase + Math.max(1, minTurns) * 360;
-    const idx = findSliceIndexForResult(currentItems, targetId);
-    const seg = 360 / Math.max(1, count);
-    const targetCenter = idx * seg + seg / 2;
-    const normalizedTarget = ((360 - targetCenter) % 360 + 360) % 360;
-    const currentNorm = ((currentBase % 360) + 360) % 360;
-    const deltaToTarget = ((normalizedTarget - currentNorm) % 360 + 360) % 360;
-    return currentBase + minTurns * 360 + deltaToTarget;
+    return calculateSpinFinalAngle(itemsRef.current, targetId, count, currentBase, minTurns);
   }, []);
 
   const stopAllAnimations = useCallback(() => {
@@ -462,40 +451,43 @@ export default function RouletteWheel({
             const isWin = idx === winnerIndex && !isRolling;
             return (
               <div key={`${item.id}-${idx}`} className="absolute left-1/2 top-1/2 h-0 w-0" style={{ transform: `rotate(${labelAngle}deg) translateY(-${labelRadiusPx}px)` }}>
-                <motion.div
-                  className={`relative z-10 -translate-x-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-center font-black ${
-                    isWin
-                      ? "border border-yellow-200/80 bg-black/65 text-yellow-100 shadow-[0_0_14px_rgba(250,204,21,0.42)]"
-                      : "border border-transparent bg-transparent text-white"
-                  }`}
-                  style={{
-                    width: `${labelWidthPx}px`,
-                    minHeight: `${labelHeightPx}px`,
-                    fontSize: `${labelFontPx}px`,
-                    transform: `rotate(${-labelAngle - currentAngle}deg)`,
-                    lineHeight: 1.15,
-                    textShadow: "0 0 2px rgba(0,0,0,0.95), 0 1px 1px rgba(0,0,0,0.95), 0 -1px 1px rgba(0,0,0,0.95), 1px 0 1px rgba(0,0,0,0.95), -1px 0 1px rgba(0,0,0,0.95)",
-                    WebkitTextStroke: "0.6px rgba(0,0,0,0.92)",
-                    paintOrder: "stroke fill",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    whiteSpace: "normal",
-                    wordBreak: "keep-all",
-                    overflowWrap: "anywhere",
-                  }}
-                  animate={
-                    isWin
-                      ? {
-                          scale: [1, 1.06, 1],
-                          textShadow: ["0 0 4px rgba(0,0,0,0.95)", "0 0 10px rgba(250,204,21,0.65)", "0 0 4px rgba(0,0,0,0.95)"],
-                        }
-                      : {}
-                  }
-                  transition={{ duration: 1.4, repeat: isWin ? Infinity : 0 }}
-                >
-                  {item.name}
-                </motion.div>
+                {/* motion scale이 style.transform 을 통째로 덮을 수 있어, 중앙 정렬 translate 는 바깥에 둔다 */}
+                <div className="relative z-10" style={{ transform: "translate(-50%, -50%)" }}>
+                  <motion.div
+                    className={`rounded-full px-2 py-1 text-center font-black ${
+                      isWin
+                        ? "border border-yellow-200/80 bg-black/65 text-yellow-100 shadow-[0_0_14px_rgba(250,204,21,0.42)]"
+                        : "border border-transparent bg-transparent text-white"
+                    }`}
+                    style={{
+                      width: `${labelWidthPx}px`,
+                      minHeight: `${labelHeightPx}px`,
+                      fontSize: `${labelFontPx}px`,
+                      transform: `rotate(${-labelAngle - currentAngle}deg)`,
+                      lineHeight: 1.15,
+                      textShadow: "0 0 2px rgba(0,0,0,0.95), 0 1px 1px rgba(0,0,0,0.95), 0 -1px 1px rgba(0,0,0,0.95), 1px 0 1px rgba(0,0,0,0.95), -1px 0 1px rgba(0,0,0,0.95)",
+                      WebkitTextStroke: "0.6px rgba(0,0,0,0.92)",
+                      paintOrder: "stroke fill",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      whiteSpace: "normal",
+                      wordBreak: "keep-all",
+                      overflowWrap: "anywhere",
+                    }}
+                    animate={
+                      isWin
+                        ? {
+                            scale: [1, 1.06, 1],
+                            textShadow: ["0 0 4px rgba(0,0,0,0.95)", "0 0 10px rgba(250,204,21,0.65)", "0 0 4px rgba(0,0,0,0.95)"],
+                          }
+                        : {}
+                    }
+                    transition={{ duration: 1.4, repeat: isWin ? Infinity : 0 }}
+                  >
+                    {item.name}
+                  </motion.div>
+                </div>
               </div>
             );
           })}

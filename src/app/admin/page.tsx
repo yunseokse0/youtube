@@ -26,6 +26,7 @@ import {
   loadDailyLog,
   DailyLogEntry,
   formatManThousand,
+  formatWonFull,
   confirmHighAmount,
   MissionItem,
   totalCombined,
@@ -892,7 +893,9 @@ export default function AdminPage() {
     if (sigSalesMenuCount !== asText) setSigSalesMenuCount(asText);
   }, [state.rouletteState?.menuCount, sigSalesMenuCount]);
   const rouletteQuickUrls = useMemo(() => {
-    const baseProgressPath = `/overlay/sig-sales?u=${rouletteUserId}&menuCount=${getSigSalesMenuCount()}`;
+    /** 당첨이 여러 개여도 휠 1회만(한 화면에 맞춘 레이아웃). 카드는 기본 간격으로 순차 공개 */
+    const bundleLayoutQs = "&wheelSequential=0";
+    const baseProgressPath = `/overlay/sig-sales?u=${rouletteUserId}&menuCount=${getSigSalesMenuCount()}${bundleLayoutQs}`;
     const progressPath = selectedMemberId
       ? `${baseProgressPath}&memberId=${encodeURIComponent(selectedMemberId)}`
       : baseProgressPath;
@@ -4407,13 +4410,13 @@ export default function AdminPage() {
                     ))}
                   </select>
                   <code className="text-neutral-300 break-all">
-                    /overlay/sig-sales?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}&wheelScalePct=85&menuCount={getSigSalesMenuCount()}{selectedMemberId ? `&memberId=${selectedMemberId}` : ""}
+                    /overlay/sig-sales?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}&wheelScalePct=85&menuCount={getSigSalesMenuCount()}{selectedMemberId ? `&memberId=${selectedMemberId}` : ""}&wheelSequential=0
                   </code>
                   <button
                     type="button"
                     className={`rounded px-2 py-1 text-xs shrink-0 ${copiedId === "dash-sig-sales" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
                     onClick={() => {
-                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}`;
+                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&wheelSequential=0`;
                       void copyUrl(u, "dash-sig-sales");
                     }}
                   >
@@ -4422,7 +4425,7 @@ export default function AdminPage() {
                   <button
                     type="button"
                     className="rounded bg-[#6366f1] px-2 py-1 text-xs hover:bg-[#4f46e5]"
-                    onClick={() => window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}`, "_blank", "noopener,noreferrer")}
+                    onClick={() => window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&wheelSequential=0`, "_blank", "noopener,noreferrer")}
                   >
                     미리보기 열기
                   </button>
@@ -4430,7 +4433,7 @@ export default function AdminPage() {
                     type="button"
                     className={`rounded px-2 py-1 text-xs shrink-0 ${copiedId === "dash-sig-sales-demo" ? "bg-emerald-600" : "bg-fuchsia-700 hover:bg-fuchsia-600"}`}
                     onClick={() => {
-                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}`;
+                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&wheelSequential=0`;
                       void copyUrl(u, "dash-sig-sales-demo");
                     }}
                   >
@@ -4439,7 +4442,7 @@ export default function AdminPage() {
                   <button
                     type="button"
                     className="rounded bg-fuchsia-700 px-2 py-1 text-xs hover:bg-fuchsia-600"
-                    onClick={() => window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}`, "_blank", "noopener,noreferrer")}
+                    onClick={() => window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&wheelSequential=0`, "_blank", "noopener,noreferrer")}
                   >
                     데모 열기
                   </button>
@@ -5251,7 +5254,7 @@ export default function AdminPage() {
                             <td className="p-1">{d.name}</td>
                             <td className="p-1 text-neutral-300">{m?.name || d.memberId}</td>
                             <td className="p-1">{(d.target || "account") === "toon" ? <span className="text-amber-300">투네</span> : <span className="text-emerald-300">계좌</span>}</td>
-                            <td className="p-1 text-right">{formatManThousand(d.amount)}</td>
+                            <td className="p-1 text-right whitespace-nowrap">{formatWonFull(d.amount)}</td>
                             <td className="p-1 text-right">
                               <button
                                 className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700"
@@ -5328,7 +5331,7 @@ export default function AdminPage() {
                             <td className="p-1 text-neutral-400"><ClientTime ts={log.at} /></td>
                             <td className="p-1 text-neutral-300">{member?.name || log.memberId}</td>
                             <td className="p-1">{log.delta > 0 ? <span className="text-cyan-300">추가</span> : <span className="text-rose-300">차감</span>}</td>
-                            <td className="p-1 text-right">{formatManThousand(log.amount)}</td>
+                            <td className="p-1 text-right whitespace-nowrap">{formatWonFull(log.amount)}</td>
                             <td className="p-1 text-neutral-400">{log.note || "-"}</td>
                             <td className="p-1 text-right">
                               <div className="flex justify-end gap-1">
@@ -5405,9 +5408,9 @@ export default function AdminPage() {
                     {donorTotalsByName.map((row) => (
                       <tr key={row.name} className="border-t border-white/10">
                         <td className="p-1">{row.name}</td>
-                        <td className="p-1 text-right text-emerald-300">{formatManThousand(row.account)}</td>
-                        <td className="p-1 text-right text-amber-300">{formatManThousand(row.toon)}</td>
-                        <td className="p-1 text-right font-semibold">{formatManThousand(row.total)}</td>
+                        <td className="p-1 text-right whitespace-nowrap text-emerald-300">{formatWonFull(row.account)}</td>
+                        <td className="p-1 text-right whitespace-nowrap text-amber-300">{formatWonFull(row.toon)}</td>
+                        <td className="p-1 text-right whitespace-nowrap font-semibold">{formatWonFull(row.total)}</td>
                         <td className="p-1 text-right text-neutral-400">{row.count}</td>
                       </tr>
                     ))}
@@ -6179,6 +6182,10 @@ export default function AdminPage() {
                                 <div className="p-3 grid grid-cols-1 sm:grid-cols-[100px_minmax(0,1fr)] items-center gap-1">
                                   <label className="text-xs text-neutral-400">후원(원)</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" type="number" value={p.goal} onChange={(e) => updatePreset(p.id, { goal: e.target.value })} />
+                                  <p className="col-span-1 sm:col-span-2 text-[11px] text-neutral-500 leading-snug">
+                                    통합·목표 오버레이: 후원 합계가 목표 이상이면 이 금액이 자동으로 약 20% 증가합니다. 비활성: OBS URL에{" "}
+                                    <code className="rounded bg-black/40 px-1 text-neutral-400">goalAutoStretch=0</code>
+                                  </p>
                                   <label className="text-xs text-neutral-400">라벨</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.goalLabel} onChange={(e) => updatePreset(p.id, { goalLabel: e.target.value })} />
                                   <label className="text-xs text-neutral-400">총 금액(현재 후원액, 원)</label>

@@ -6,7 +6,7 @@ import SelectedSigs from "@/components/sig-sales/SelectedSigs";
 import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
 import { useImagePreload } from "@/hooks/useImagePreload";
 import { canonicalSigIdFromWheelSliceId, ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
-import { SIG_OVERLAY_CARD_MAX_PX } from "@/components/sig-sales/sig-overlay-card-size";
+import { sigOverlayBroadcastCardShellStyle } from "@/components/sig-sales/sig-overlay-card-size";
 
 type ResultOverlayProps = {
   visible: boolean;
@@ -21,6 +21,10 @@ type ResultOverlayProps = {
   soldOverrideSet?: Set<string>;
   /** 순차 시그 공개: 새로 붙는 카드만 등장 연출 */
   entranceOnlyLatest?: boolean;
+  /** true면 한방 영역 「이미지 로딩 중…」 게이트 없음(로컬 미리보기 등) */
+  skipHanbangSignLoadingOverlay?: boolean;
+  /** true면 개별 당첨 카드 줄을 숨기고 한방 시그 카드만 표시(?hanbangOnly=1) */
+  hanbangOnly?: boolean;
 };
 
 const EMPTY_SOLD_SET = new Set<string>();
@@ -36,11 +40,17 @@ export default function ResultOverlay({
   gifDelayMultiplier = 1,
   soldOverrideSet,
   entranceOnlyLatest = false,
+  skipHanbangSignLoadingOverlay = false,
+  hanbangOnly = false,
 }: ResultOverlayProps) {
-  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(() => skipHanbangSignLoadingOverlay);
   useEffect(() => {
+    if (skipHanbangSignLoadingOverlay) {
+      setImageLoaded(true);
+      return;
+    }
     setImageLoaded(false);
-  }, [signImageUrl]);
+  }, [signImageUrl, skipHanbangSignLoadingOverlay]);
 
   useImagePreload(
     signImageUrl,
@@ -72,13 +82,7 @@ export default function ResultOverlay({
 
   const oneShotTrailing =
     oneShot && showOneShotReveal ? (
-      <div
-        className="relative shrink-0"
-        style={{
-          width: `min(100%, ${SIG_OVERLAY_CARD_MAX_PX}px)`,
-          maxWidth: SIG_OVERLAY_CARD_MAX_PX,
-        }}
-      >
+      <div className="relative shrink-0" style={sigOverlayBroadcastCardShellStyle()}>
         <OneShotSigCard
           name={oneShot.name}
           price={oneShot.price}
@@ -92,13 +96,21 @@ export default function ResultOverlay({
           gifDelayMultiplier={gifDelayMultiplier}
           onMediaReady={() => setImageLoaded(true)}
         />
-        {!imageLoaded ? (
+        {!skipHanbangSignLoadingOverlay && !imageLoaded ? (
           <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-xl bg-black/40 text-[10px] font-semibold text-neutral-100">
             이미지 로딩 중...
           </div>
         ) : null}
       </div>
     ) : undefined;
+
+  if (hanbangOnly) {
+    return (
+      <div className={`flex w-full flex-col items-center justify-center ${className}`.trim()}>
+        {oneShotTrailing ?? null}
+      </div>
+    );
+  }
 
   return (
     <div className={`flex w-full flex-col items-center space-y-2 ${className}`.trim()}>

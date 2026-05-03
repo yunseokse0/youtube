@@ -7,7 +7,11 @@ import type { SigItem } from "@/types";
 import { canonicalSigIdFromWheelSliceId, formatWon } from "@/lib/sig-roulette";
 import { resolveSigImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
-import { SIG_OVERLAY_CARD_MAX_PX } from "@/components/sig-sales/sig-overlay-card-size";
+import {
+  SIG_OVERLAY_CARD_MEDIA_BOX_CLASS,
+  SIG_OVERLAY_CARD_MAX_PX,
+  sigOverlayBroadcastCardShellStyle,
+} from "@/components/sig-sales/sig-overlay-card-size";
 
 type SelectedSigsProps = {
   items: SigItem[];
@@ -57,7 +61,8 @@ export default function SelectedSigs({
   const trailingActive = Boolean(trailingSlot);
   const cellCount = items.length + (trailingActive ? 1 : 0);
   const columnCount = Math.min(6, Math.max(1, cellCount));
-  const broadcastMatch = Boolean(compact && matchOneShotCardSize);
+  /** 방송 오버레이(compact·토글 숨김)는 한방 카드와 같은 폭·비율을 기본 적용 */
+  const broadcastMatch = Boolean(compact && (matchOneShotCardSize || !showToggle));
   /**
    * 오버레이(compact): 열을 auto → 카드 실제 너비만 차지해 순서대로 붙음(1fr면 행 전체를 나눠 간격만 벌어짐).
    * 관리 화면 등: 1fr로 균등 분할 유지.
@@ -107,15 +112,10 @@ export default function SelectedSigs({
             initial={entrance.initial}
             animate={entrance.animate}
             transition={entrance.transition}
-            style={
-              broadcastMatch
-                ? {
-                    width: `min(100%, ${SIG_OVERLAY_CARD_MAX_PX}px)`,
-                    maxWidth: SIG_OVERLAY_CARD_MAX_PX,
-                  }
-                : undefined
-            }
-            className={`relative min-w-0 overflow-hidden rounded-xl border bg-neutral-900/70 ${
+            style={broadcastMatch ? sigOverlayBroadcastCardShellStyle() : undefined}
+            className={`relative overflow-hidden rounded-xl border bg-neutral-900/70 ${
+              broadcastMatch ? "" : "min-w-0"
+            } ${
               broadcastMatch
                 ? "shrink-0 border-white/25 bg-neutral-900/85 px-1.5 py-2 shadow-[0_0_28px_rgba(0,0,0,0.55)]"
                 : compact
@@ -139,7 +139,7 @@ export default function SelectedSigs({
             <div
               className={`relative overflow-hidden rounded-lg border border-white/20 bg-black/40 ${
                 broadcastMatch
-                  ? "mb-1.5 aspect-[4/3] min-h-[200px] w-full sm:min-h-[224px]"
+                  ? SIG_OVERLAY_CARD_MEDIA_BOX_CLASS
                   : compact
                     ? "aspect-[3/4]"
                     : "aspect-[4/5]"
@@ -212,14 +212,7 @@ export default function SelectedSigs({
       })}
       {trailingSlot ? (
         <div
-          style={
-            broadcastMatch
-              ? {
-                  width: `min(100%, ${SIG_OVERLAY_CARD_MAX_PX}px)`,
-                  maxWidth: SIG_OVERLAY_CARD_MAX_PX,
-                }
-              : undefined
-          }
+          style={broadcastMatch ? sigOverlayBroadcastCardShellStyle() : undefined}
           className={
             broadcastMatch
               ? "flex min-h-0 shrink-0 justify-center pt-0.5"

@@ -9,29 +9,49 @@ export function useImagePreload(
   onError?: (url: string) => void
 ) {
   const loadedRef = useRef<Record<string, boolean>>({});
+  /** 의존성에 넣으면 매 렌더마다 effect가 재실행되어 img 핸들러가 지워져 onLoad가 영원히 안 올 수 있음 */
+  const onLoadRef = useRef(onLoad);
+  const onErrorRef = useRef(onError);
+  onLoadRef.current = onLoad;
+  onErrorRef.current = onError;
 
   useEffect(() => {
     const raw = String(url || "").trim();
-    if (!raw) return;
+    if (!raw) {
+      onErrorRef.current?.("");
+      return;
+    }
     const src = getSigImagePlaceholderOnlyForOverlay()
       ? "/images/sigs/dummy-sig.svg"
       : normalizeSigImageUrlStored(raw) || raw;
-    if (!src) return;
-    if (loadedRef.current[src]) return;
+    if (!src) {
+      onErrorRef.current?.(raw);
+      return;
+    }
+    if (loadedRef.current[src]) {
+      onLoadRef.current?.(src);
+      return;
+    }
 
     const img = new Image();
-    img.onload = () => {
+    const fireLoad = () => {
       loadedRef.current[src] = true;
-      onLoad?.(src);
+      onLoadRef.current?.(src);
     };
-    img.onerror = () => {
-      onError?.(src);
+    const fireErr = () => {
+      onErrorRef.current?.(src);
     };
+    img.onload = fireLoad;
+    img.onerror = fireErr;
     img.src = src;
+    /** SVG·캐시 히트는 `naturalHeight`가 0인 경우가 많아 여기서만 보면 영원히 로드 안 된 것처럼 남음 */
+    if (img.complete) {
+      fireLoad();
+    }
     return () => {
       img.onload = null;
       img.onerror = null;
     };
-  }, [url, onLoad, onError]);
+  }, [url]);
 }
 

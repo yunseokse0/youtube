@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { isLikelyGifUrl } from "@/lib/sigGif";
 import SigSlowGif from "./SigSlowGif";
 
@@ -36,11 +36,21 @@ export default function SigSaleMedia({
 }: SigSaleMediaProps) {
   const [displaySrc, setDisplaySrc] = useState(src);
   const [gifFail, setGifFail] = useState(false);
+  const readyFiredRef = useRef(false);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
 
   useEffect(() => {
     setDisplaySrc(src);
     setGifFail(false);
+    readyFiredRef.current = false;
   }, [src]);
+
+  const notifyReady = useCallback(() => {
+    if (readyFiredRef.current) return;
+    readyFiredRef.current = true;
+    onReadyRef.current?.();
+  }, []);
 
   const handleImageError = useCallback(
     (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
@@ -66,10 +76,12 @@ export default function SigSaleMedia({
           alt={alt}
           fill={fill}
           sizes={sizes}
+          priority={Boolean(fill)}
           unoptimized={unoptimized ?? true}
           className={className}
           onError={handleImageError}
-          onLoad={onReady}
+          onLoad={notifyReady}
+          onLoadingComplete={notifyReady}
         />
       );
     }
@@ -92,10 +104,12 @@ export default function SigSaleMedia({
       alt={alt}
       fill={fill}
       sizes={sizes}
+      priority={Boolean(fill)}
       unoptimized={unoptimized ?? true}
       className={className}
       onError={handleImageError}
-      onLoad={onReady}
+      onLoad={notifyReady}
+      onLoadingComplete={notifyReady}
     />
   );
 }
