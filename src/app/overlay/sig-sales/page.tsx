@@ -26,6 +26,12 @@ const CONFIRMED_VISIBLE_SLOTS = 5;
 const MIN_ONE_SHOT_SIGS = 2;
 /** OBS 소스 로드 지연 등으로 오버레이가 늦게 붙어도 같은 회차 복원 허용 */
 const RECENT_SPIN_WINDOW_MS = 180_000;
+/** URL 미지정 시: 착지 직후 카드·게이트가 같은 틱에 열려 렉처럼 보이는 것 완화 */
+const DEFAULT_RESULT_REVEAL_DELAY_MS = 480;
+/** 순차 라운드: wheelPhase가 result가 된 뒤 카드 한 장을 올리기까지(ms) */
+const DEFAULT_SEQUENTIAL_CARD_EMERGE_MS = 200;
+/** 순차 라운드: 한 라운드 착지 후 다음 회전 시작까지(ms). LANDED 지연(280ms)·카드 공개보다 길게 */
+const DEFAULT_SEQUENTIAL_NEXT_SPIN_MS = 860;
 const DEMO_POOL = [
   { id: "demo_1", name: "애교", price: 77000, imageUrl: "/images/sigs/애교.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
   { id: "demo_2", name: "댄스", price: 100000, imageUrl: "/images/sigs/댄스.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
@@ -110,11 +116,12 @@ export default function SigSalesOverlayPage() {
     if (!Number.isFinite(n)) return 3.5;
     return Math.max(1, Math.min(10, n));
   })();
-  /** 착지 후 이 시간(ms)이 지나야 시그 카드·휠 퇴장 연출 시작. `cardRevealDelayMs` 동의어 */
+  /** 착지 후 이 시간(ms)이 지나야 시그 카드·휠 퇴장 연출 시작. `cardRevealDelayMs` 동의어. 미지정 시 기본 지연(즉시=0은 URL에 `resultRevealDelayMs=0`) */
   const resultRevealDelayMs = useMemo(() => {
     const raw = sp.get("resultRevealDelayMs") || sp.get("cardRevealDelayMs") || "";
+    if (!raw.trim()) return DEFAULT_RESULT_REVEAL_DELAY_MS;
     const n = parseInt(String(raw).replace(/[^\d]/g, ""), 10);
-    if (!Number.isFinite(n) || n < 0) return 0;
+    if (!Number.isFinite(n) || n < 0) return DEFAULT_RESULT_REVEAL_DELAY_MS;
     return Math.min(120_000, n);
   }, [sp]);
   /** 휠 페이드·카드 슬라이드 duration (ms). `wheelFadeMs` 동의어 */
@@ -133,6 +140,22 @@ export default function SigSalesOverlayPage() {
     const n = parseInt(String(raw).replace(/[^\d]/g, ""), 10);
     if (!Number.isFinite(n)) return 750;
     return Math.max(120, Math.min(12000, n));
+  }, [sp]);
+  /** 순차 라운드당 카드 등장 지연. `sigRoundRevealDelayMs` 동의어 */
+  const sequentialCardEmergeMs = useMemo(() => {
+    const raw = sp.get("sequentialCardEmergeMs") || sp.get("sigRoundRevealDelayMs") || "";
+    if (!raw.trim()) return DEFAULT_SEQUENTIAL_CARD_EMERGE_MS;
+    const n = parseInt(String(raw).replace(/[^\d]/g, ""), 10);
+    if (!Number.isFinite(n) || n < 0) return DEFAULT_SEQUENTIAL_CARD_EMERGE_MS;
+    return Math.min(3000, n);
+  }, [sp]);
+  /** 순차 라운드 사이 다음 스핀까지 대기(ms) */
+  const sequentialNextSpinMs = useMemo(() => {
+    const raw = sp.get("sequentialNextSpinMs") || "";
+    if (!raw.trim()) return DEFAULT_SEQUENTIAL_NEXT_SPIN_MS;
+    const n = parseInt(String(raw).replace(/[^\d]/g, ""), 10);
+    if (!Number.isFinite(n) || n < 0) return DEFAULT_SEQUENTIAL_NEXT_SPIN_MS;
+    return Math.max(400, Math.min(6000, n));
   }, [sp]);
   const overlayScale = overlayScalePct / 100;
   const overlayScaleStyle = overlayScale === 1
@@ -642,9 +665,10 @@ export default function SigSalesOverlayPage() {
     phaseRef.current = wheelPhase;
   }, [wheelPhase]);
 
-  /** 순차 회전: 카드 공개는 휠 연출이 완전히 멈춘 뒤(result)에만 +1 (settling 중 노출 방지) */
+  /** 순차 회전: result 전환 직후 한 프레임에 카드가 붙는 느낌 완화 → 짧은 지연 후 +1 */
   useEffect(() => {
     const prev = wheelPhasePrevRef.current;
+    let tid: number | undefined;
     if (
       useSequentialWheel &&
       prev === "settling" &&
@@ -654,10 +678,15 @@ export default function SigSalesOverlayPage() {
         CONFIRMED_VISIBLE_SLOTS,
         Math.max(1, spinQueueSelected.length),
       );
-      setRevealedSigCount((n) => Math.min(n + 1, cap));
+      tid = window.setTimeout(() => {
+        setRevealedSigCount((n) => Math.min(n + 1, cap));
+      }, sequentialCardEmergeMs);
     }
     wheelPhasePrevRef.current = wheelPhase;
-  }, [wheelPhase, useSequentialWheel, spinQueueSelected.length]);
+    return () => {
+      if (tid !== undefined) window.clearTimeout(tid);
+    };
+  }, [wheelPhase, useSequentialWheel, spinQueueSelected.length, sequentialCardEmergeMs]);
 
   useEffect(() => {
     if (!hideWheelAfterComplete) {
@@ -886,7 +915,7 @@ export default function SigSalesOverlayPage() {
                         setSequentialRoundIndex((v) => v + 1);
                         dispatch({ type: "RESET" });
                         dispatch({ type: "START_SPIN" });
-                      }, 420);
+                      }, sequentialNextSpinMs);
                       return;
                     }
                   }
