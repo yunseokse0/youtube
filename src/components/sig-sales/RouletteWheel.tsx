@@ -439,10 +439,11 @@ export default function RouletteWheel({
           style={{ height: `${wheelSizePx}px`, width: `${wheelSizePx}px`, rotate, background: gradient }}
         >
           {items.map((item, idx) => {
-            const angle = idx * segment;
+            /** conic-gradient 칸 경계가 아니라 각 조각의 중심 각도(포인터·착지 로직과 동일) */
+            const labelAngle = idx * segment + segment / 2;
             const isWin = idx === winnerIndex && !isRolling;
             return (
-              <div key={`${item.id}-${idx}`} className="absolute left-1/2 top-1/2 h-0 w-0" style={{ transform: `rotate(${angle}deg) translateY(-${labelRadiusPx}px)` }}>
+              <div key={`${item.id}-${idx}`} className="absolute left-1/2 top-1/2 h-0 w-0" style={{ transform: `rotate(${labelAngle}deg) translateY(-${labelRadiusPx}px)` }}>
                 <motion.div
                   className={`relative z-10 -translate-x-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-center font-black ${
                     isWin
@@ -453,7 +454,7 @@ export default function RouletteWheel({
                     width: `${labelWidthPx}px`,
                     minHeight: `${labelHeightPx}px`,
                     fontSize: `${labelFontPx}px`,
-                    transform: `rotate(${-angle - currentAngle}deg)`,
+                    transform: `rotate(${-labelAngle - currentAngle}deg)`,
                     lineHeight: 1.15,
                     textShadow: "0 0 2px rgba(0,0,0,0.95), 0 1px 1px rgba(0,0,0,0.95), 0 -1px 1px rgba(0,0,0,0.95), 1px 0 1px rgba(0,0,0,0.95), -1px 0 1px rgba(0,0,0,0.95)",
                     WebkitTextStroke: "0.6px rgba(0,0,0,0.92)",
