@@ -13,6 +13,7 @@ import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { resolveSigImageUrl } from "@/lib/constants";
 import {
   ONE_SHOT_SIG_ID,
+  ROULETTE_WHEEL_SFX_ENABLED,
   SOUND_ASSETS_ENABLED,
   SPIN_SOUND_PATHS,
   canonicalSigIdFromWheelSliceId,
@@ -904,11 +905,13 @@ export default function SigSalesOverlayPage() {
                   if (seqMulti && buildOneShotFromSelected(selectedQueue)) {
                     window.setTimeout(() => setOneShotRevealUnlocked(true), sigResultStaggerMs);
                   }
-                  if (oneShotSound && !hasOneShotSoundErrorRef.current) {
-                    oneShotSound.stop();
-                    oneShotSound.play();
-                  } else {
-                    playFallbackOneShot();
+                  if (ROULETTE_WHEEL_SFX_ENABLED) {
+                    if (oneShotSound && !hasOneShotSoundErrorRef.current) {
+                      oneShotSound.stop();
+                      oneShotSound.play();
+                    } else {
+                      playFallbackOneShot();
+                    }
                   }
                   setDemoSpin(null);
                   setPendingLanding(null);

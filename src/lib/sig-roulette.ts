@@ -18,6 +18,8 @@ export const SPIN_SOUND_PATHS = {
 export const SOUND_ASSETS_ENABLED = true;
 /** false: 회전판은 wav 대신 Web Audio 절차음만 사용(더 절제된 톤). 오버레이 한방 등 다른 경로는 `SOUND_ASSETS_ENABLED` 유지 */
 export const ROULETTE_WHEEL_WAV_ASSETS_ENABLED = false;
+/** false: 회전 틱·착지·한방 착지 효과음 전부 끔(추후 다시 켤 때 true) */
+export const ROULETTE_WHEEL_SFX_ENABLED = false;
 
 export function pickDistinctSigs(pool: SigItem[], count: number): SigItem[] {
   const copy = [...pool];

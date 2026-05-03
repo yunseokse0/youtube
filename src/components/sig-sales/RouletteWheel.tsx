@@ -6,6 +6,7 @@ import type { AnimationPlaybackControls } from "framer-motion";
 import { Howl } from "howler";
 import type { SigItem } from "@/types";
 import {
+  ROULETTE_WHEEL_SFX_ENABLED,
   ROULETTE_WHEEL_WAV_ASSETS_ENABLED,
   SOUND_ASSETS_ENABLED,
   SPIN_SOUND_PATHS,
@@ -63,7 +64,7 @@ export default function RouletteWheel({
   const volumeRef = useRef(volume);
   /** speedNorm 0~1: 빠를수록 살짝 크게(회전 감각) */
   const playSpinTickScaled = useCallback((speedNorm: number) => {
-    if (mutedRef.current) return;
+    if (!ROULETTE_WHEEL_SFX_ENABLED || mutedRef.current) return;
     const ctx = getOrCreateSpinAudioContext(audioCtxRef.current);
     if (!ctx) return;
     audioCtxRef.current = ctx;
@@ -72,7 +73,7 @@ export default function RouletteWheel({
   }, []);
 
   const playProceduralLand = useCallback(() => {
-    if (mutedRef.current) return;
+    if (!ROULETTE_WHEEL_SFX_ENABLED || mutedRef.current) return;
     const ctx = getOrCreateSpinAudioContext(audioCtxRef.current);
     if (!ctx) return;
     audioCtxRef.current = ctx;
@@ -81,7 +82,7 @@ export default function RouletteWheel({
 
   /** wav 모드 폴백용 짧은 사인 틱 */
   const playFallbackTone = useCallback((freq: number, durationMs: number, gain = 0.03) => {
-    if (mutedRef.current) return;
+    if (!ROULETTE_WHEEL_SFX_ENABLED || mutedRef.current) return;
     if (typeof window === "undefined") return;
     const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
     if (!Ctx) return;
@@ -139,7 +140,7 @@ export default function RouletteWheel({
   }, [items, segment]);
 
   useEffect(() => {
-    if (!SOUND_ASSETS_ENABLED || !ROULETTE_WHEEL_WAV_ASSETS_ENABLED) {
+    if (!ROULETTE_WHEEL_SFX_ENABLED || !SOUND_ASSETS_ENABLED || !ROULETTE_WHEEL_WAV_ASSETS_ENABLED) {
       setSounds(null);
       return;
     }
@@ -246,7 +247,7 @@ export default function RouletteWheel({
     isCancelled: () => boolean,
     tickSound: Howl | null
   ) => {
-    if (!tickSound || durationMs <= 0) return;
+    if (!ROULETTE_WHEEL_SFX_ENABLED || !tickSound || durationMs <= 0) return;
     const startedAt = Date.now();
     while (!isCancelled()) {
       const elapsed = Date.now() - startedAt;
@@ -353,13 +354,15 @@ export default function RouletteWheel({
         soundsRef.current?.tick.stop();
         soundsRef.current?.final.stop();
         soundsRef.current?.success.stop();
-        if (!ROULETTE_WHEEL_WAV_ASSETS_ENABLED) {
-          playProceduralLand();
-        } else {
-          playWinChime();
-          if (soundsRef.current?.success && !hasSoundAssetErrorRef.current) {
-            soundsRef.current.success.volume(volumeRef.current * 0.22);
-            window.setTimeout(() => soundsRef.current?.success?.play(), 40);
+        if (ROULETTE_WHEEL_SFX_ENABLED) {
+          if (!ROULETTE_WHEEL_WAV_ASSETS_ENABLED) {
+            playProceduralLand();
+          } else {
+            playWinChime();
+            if (soundsRef.current?.success && !hasSoundAssetErrorRef.current) {
+              soundsRef.current.success.volume(volumeRef.current * 0.22);
+              window.setTimeout(() => soundsRef.current?.success?.play(), 40);
+            }
           }
         }
         if (!hasLandedRef.current) {
