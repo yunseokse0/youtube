@@ -20,6 +20,7 @@ import {
   SOUND_ASSETS_ENABLED,
   SPIN_SOUND_PATHS,
   canonicalSigIdFromWheelSliceId,
+  hydrateSigItemFromInventory,
 } from "@/lib/sig-roulette";
 import { useSigSalesState } from "@/hooks/useSigSalesState";
 import { useImagePreload } from "@/hooks/useImagePreload";
@@ -634,6 +635,12 @@ export default function SigSalesOverlayPage() {
     machine.phase,
     useSequentialWheel,
   ]);
+  /** 당첨 배열을 재고와 맞춰 휠 라벨·이미지와 동일 시그로 표시 */
+  const displaySelectedSigsForUi = useMemo(
+    () =>
+      displaySelectedSigs.map((s) => hydrateSigItemFromInventory(s, state?.sigInventory)),
+    [displaySelectedSigs, state?.sigInventory],
+  );
   const completedTargetCount = useMemo(() => {
     if (pendingLanding?.selected?.length) return Math.max(1, Math.min(CONFIRMED_VISIBLE_SLOTS, pendingLanding.selected.length));
     if (machine.selectedSigs?.length) return Math.max(1, Math.min(CONFIRMED_VISIBLE_SLOTS, machine.selectedSigs.length));
@@ -853,18 +860,24 @@ export default function SigSalesOverlayPage() {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     const fromOneShot = (oneShotItem?.imageUrl || "").trim();
     if (fromOneShot) return resolveSigImageUrl(oneShotItem?.name || "한방 시그", fromOneShot);
-    const pick = displaySelectedSigs.find((x) => (x.imageUrl || "").trim());
+    const pick = displaySelectedSigsForUi.find((x) => (x.imageUrl || "").trim());
     if (pick) return resolveSigImageUrl(pick.name, pick.imageUrl);
     const poolPick = activeNormalPool.find((x) => (x.imageUrl || "").trim());
     if (poolPick) return resolveSigImageUrl(poolPick.name, poolPick.imageUrl);
     return resolveSigImageUrl("", "");
-  }, [state?.sigInventory, displaySelectedSigs, activeNormalPool]);
+  }, [state?.sigInventory, displaySelectedSigsForUi, activeNormalPool]);
   const getSignImageUrl = useCallback((id?: string | null) => {
     if (!id) return "";
+    const canon = canonicalSigIdFromWheelSliceId(String(id));
+    const inv = state?.sigInventory;
+    const fromInv = inv?.find((x) => x.id === canon) || inv?.find((x) => x.id === id);
+    if (fromInv) return resolveSigImageUrl(fromInv.name, fromInv.imageUrl || "");
     const pool = [...(machine.selectedSigs || []), ...(activeNormalPool || []), ...(DEMO_POOL || [])];
-    const found = pool.find((item) => item.id === id);
+    const found = pool.find(
+      (item) => item.id === id || canonicalSigIdFromWheelSliceId(item.id) === canon,
+    );
     return resolveSigImageUrl(found?.name || "", found?.imageUrl || "");
-  }, [machine.selectedSigs, activeNormalPool]);
+  }, [machine.selectedSigs, activeNormalPool, state?.sigInventory]);
   /** pendingLanding 복원 전·서버 isRolling 불일치 때도 휠 프레임이 돌아가야 함 */
   const hasServerSpinToPlay = useMemo(() => {
     const hasSelection = Boolean(
@@ -1342,7 +1355,7 @@ export default function SigSalesOverlayPage() {
                   >
                     <ResultOverlay
                       visible
-                      selectedSigs={displaySelectedSigs}
+                      selectedSigs={displaySelectedSigsForUi}
                       soldOutStampUrl={soldOutStampUrl}
                       soldOverrideSet={inventorySoldOutIdSet}
                       oneShot={oneShotForResultOverlay}

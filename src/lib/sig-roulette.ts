@@ -9,6 +9,29 @@ export function canonicalSigIdFromWheelSliceId(sliceId: string): string {
   const m = /^(.+)__wslot_(\d+)$/.exec(raw);
   return m?.[1] || raw;
 }
+
+/**
+ * 방송 오버레이·휠은 재고 `sigInventory` 기준 이름/이미지를 쓰고, 당첨 배열은 API 스냅샷이라 불일치할 수 있음.
+ * 동일 시그 id로 인벤 행을 합쳐 표시를 맞춘다(당첨 금액은 요청 항목 우선).
+ */
+export function hydrateSigItemFromInventory(item: SigItem, inventory: SigItem[] | undefined): SigItem {
+  const canon = canonicalSigIdFromWheelSliceId(item.id);
+  if (!inventory?.length) {
+    return { ...item, id: canon };
+  }
+  const fromInv =
+    inventory.find((x) => x.id === canon) ||
+    inventory.find((x) => x.id === item.id);
+  if (!fromInv) {
+    return { ...item, id: canon };
+  }
+  const price = Math.max(0, Math.floor(Number(item.price ?? fromInv.price ?? 0)));
+  return {
+    ...fromInv,
+    id: canon,
+    price,
+  };
+}
 export const SPIN_SOUND_PATHS = {
   tick: "/sounds/spin-tick.wav",
   final: "/sounds/spin-final.wav",
