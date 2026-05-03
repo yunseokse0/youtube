@@ -25,6 +25,8 @@ type ResultOverlayProps = {
   skipHanbangSignLoadingOverlay?: boolean;
   /** true면 개별 당첨 카드 줄을 숨기고 한방 시그 카드만 표시(?hanbangOnly=1) */
   hanbangOnly?: boolean;
+  /** false면 「확정」 배지 숨김(방송: 서버 CONFIRMED 전까지 당첨만 표시할 때) */
+  showConfirmedBadge?: boolean;
 };
 
 const EMPTY_SOLD_SET = new Set<string>();
@@ -42,6 +44,7 @@ export default function ResultOverlay({
   entranceOnlyLatest = false,
   skipHanbangSignLoadingOverlay = false,
   hanbangOnly = false,
+  showConfirmedBadge = true,
 }: ResultOverlayProps) {
   const [imageLoaded, setImageLoaded] = useState(() => skipHanbangSignLoadingOverlay);
   useEffect(() => {
@@ -123,7 +126,7 @@ export default function ResultOverlay({
         showToggle={false}
         compact
         matchOneShotCardSize
-        showConfirmedBadge
+        showConfirmedBadge={showConfirmedBadge}
         trailingSlot={oneShotTrailing}
         compactGridJustify="center"
         className="max-w-full justify-center"

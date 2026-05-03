@@ -34,6 +34,7 @@ import { useImagePreload } from "@/hooks/useImagePreload";
  * 3) `menuCount`·`minSpinCount`·`minWinsCount` 등 쿼리는 휠 **칸 수(표시)** 조절용이며, 당첨 개수·API `spinCount`와는 무관하다.
  * 4) `winnersOnly=1`·`onlyWinners=1`: 확정 당첨 시그만 회전판에 올리고(미당첨 메뉴 숨김), 시그 보드 롤링은 끈다. 당첨 전(IDLE)에는 기존처럼 전체 풀.
  * 5) `wheelSequential=0` 또는 `singleWheel=true`: 당첨이 여러 개여도 휠 연출 1회만(한 화면 레이아웃용). 카드 공개 간격은 `sigResultStaggerMs` 기본·기존과 동일.
+ *    CONFIRM_PENDING 에도 `revealedSigCount` 로 같은 속도를 유지한다(관리자 확정 클릭 직후 한꺼번에 깔리지 않게).
  * 6) `sigResultScalePct` / `resultScalePct`: 확정 카드 줄만 추가 축소(zoom%, 기본 78). URL이 없으면 관리자에 저장된 `rouletteState.sigResultScalePct` 사용.
  */
 const POLL_MS = 1000;
@@ -670,14 +671,13 @@ export default function SigSalesOverlayPage() {
     }
     if (machine.phase === "CONFIRM_PENDING" || machine.phase === "CONFIRMED") {
       if (machine.phase === "CONFIRMED") return fullSelectedSigs;
-      if (
-        useSequentialWheel &&
-        revealedSigCount > 0 &&
-        revealedSigCount < fullSelectedSigs.length
-      ) {
-        return fullSelectedSigs.slice(0, Math.min(revealedSigCount, fullSelectedSigs.length));
-      }
-      return fullSelectedSigs;
+      /**
+       * 확정 처리 중(CONFIRM_PENDING): 예전에는 단일 휠(`wheelSequential=0`)일 때 여기서 전체 배열을 주어
+       * 스태거 중인 카드가 한 프레임에 모두 깔림. LANDED·progressive 와 같은 cap 으로 맞춘다.
+       */
+      const cap =
+        revealedSigCount === 0 && fullSelectedSigs.length > 0 ? 1 : revealedSigCount;
+      return fullSelectedSigs.slice(0, Math.min(cap, fullSelectedSigs.length));
     }
     if (useSequentialWheel && revealedSigCount > 0) {
       return fullSelectedSigs.slice(0, Math.min(revealedSigCount, fullSelectedSigs.length));
@@ -1443,6 +1443,7 @@ export default function SigSalesOverlayPage() {
                         gifDelayMultiplier={sigGifDelayMultiplier}
                         entranceOnlyLatest
                         hanbangOnly={hanbangOnlyResultLayout}
+                        showConfirmedBadge={machine.phase === "CONFIRMED"}
                       />
                     </div>
                   </motion.div>
