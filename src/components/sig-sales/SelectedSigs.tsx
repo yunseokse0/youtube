@@ -27,6 +27,11 @@ type SelectedSigsProps = {
   gifDelayMultiplier?: number;
   /** true: 맨 마지막으로 추가된 카드만 등장 연출(순차 공개 시 이전 카드가 다시 튀지 않게) */
   entranceOnlyLatest?: boolean;
+  /**
+   * 방송 오버레이: 개별 시그 카드 폭·미디어 영역을 한방 시그(compact)와 동일하게 맞춤.
+   * true면 한 줄 flex-wrap + 중앙 정렬(휠 아래 동일 밴드).
+   */
+  matchOneShotCardSize?: boolean;
 };
 
 export default function SelectedSigs({
@@ -45,11 +50,13 @@ export default function SelectedSigs({
   className = "",
   gifDelayMultiplier = 1,
   entranceOnlyLatest = false,
+  matchOneShotCardSize = false,
 }: SelectedSigsProps) {
   /** 고정 5·6열은 카드가 적을 때도 빈 칸이 남아 미리 깔린 것처럼 보임 → 실제 개수만큼 열만 사용 */
   const trailingActive = Boolean(trailingSlot);
   const cellCount = items.length + (trailingActive ? 1 : 0);
   const columnCount = Math.min(6, Math.max(1, cellCount));
+  const broadcastMatch = Boolean(compact && matchOneShotCardSize);
   /**
    * 오버레이(compact): 열을 auto → 카드 실제 너비만 차지해 순서대로 붙음(1fr면 행 전체를 나눠 간격만 벌어짐).
    * 관리 화면 등: 1fr로 균등 분할 유지.
@@ -62,8 +69,12 @@ export default function SelectedSigs({
     compact && compactGridJustify === "start" ? "justify-start" : compact ? "justify-center" : "";
   return (
     <section
-      className={`grid w-full min-w-0 max-w-full gap-2 ${justifyCompact} ${gridAlign} ${className}`.trim()}
-      style={{ gridTemplateColumns }}
+      className={
+        broadcastMatch
+          ? `flex w-full min-w-0 max-w-full flex-wrap justify-center gap-2 ${className}`.trim()
+          : `grid w-full min-w-0 max-w-full gap-2 ${justifyCompact} ${gridAlign} ${className}`.trim()
+      }
+      style={broadcastMatch ? undefined : { gridTemplateColumns }}
     >
       {items.map((item, idx) => {
         const canonId = canonicalSigIdFromWheelSliceId(item.id);
@@ -96,8 +107,12 @@ export default function SelectedSigs({
             animate={entrance.animate}
             transition={entrance.transition}
             className={`relative min-w-0 overflow-hidden rounded-xl border bg-neutral-900/70 ${
-              compact ? "w-full max-w-[188px] justify-self-start" : ""
-            } ${isLatestConfirmed ? "border-yellow-300 shadow-[0_0_24px_rgba(250,204,21,0.45)]" : "border-white/20"}`}
+              broadcastMatch
+                ? "w-[288px] max-w-[288px] shrink-0 border-white/25 bg-neutral-900/85 p-1.5 shadow-[0_0_24px_rgba(0,0,0,0.5)]"
+                : compact
+                  ? "w-full max-w-[188px] justify-self-start"
+                  : ""
+            } ${isLatestConfirmed ? "border-yellow-300 shadow-[0_0_24px_rgba(250,204,21,0.45)]" : broadcastMatch ? "" : "border-white/20"}`}
           >
             {showConfirmedBadge ? (
               <div className="absolute left-2 top-2 z-20 rounded bg-emerald-600/90 px-2 py-0.5 text-[10px] font-black text-white">
@@ -112,13 +127,25 @@ export default function SelectedSigs({
                 transition={{ duration: 0.9, repeat: 1 }}
               />
             ) : null}
-            <div className={`relative overflow-hidden ${compact ? "aspect-[3/4]" : "aspect-[4/5]"}`}>
+            <div
+              className={`relative overflow-hidden rounded-lg border border-white/20 bg-black/40 ${
+                broadcastMatch
+                  ? "mb-1 aspect-[4/3] min-h-[168px] w-full sm:min-h-[180px]"
+                  : compact
+                    ? "aspect-[3/4]"
+                    : "aspect-[4/5]"
+              }`}
+            >
               <SigSaleMedia
                 src={resolveSigImageUrl(item.name, item.imageUrl)}
                 alt={item.name}
                 fill
-                sizes={compact ? "(max-width:768px) 45vw, 188px" : "240px"}
-                className="object-cover object-center"
+                sizes={
+                  broadcastMatch ? "288px" : compact ? "(max-width:768px) 45vw, 188px" : "240px"
+                }
+                className={
+                  broadcastMatch ? "object-contain object-center" : "object-cover object-center"
+                }
                 gifDelayMultiplier={gifDelayMultiplier}
               />
               {sold ? (
@@ -137,10 +164,24 @@ export default function SelectedSigs({
                 </>
               ) : null}
             </div>
-            <div className={`${compact ? "space-y-0 p-1" : "space-y-1 p-2"}`}>
-              <div className={`truncate font-bold text-white ${compact ? "text-[10px]" : "text-sm"}`}>{item.name}</div>
+            <div
+              className={`${
+                broadcastMatch ? "space-y-0.5 px-0.5 pt-1" : compact ? "space-y-0 p-1" : "space-y-1 p-2"
+              }`}
+            >
               <div
-                className={`${compact ? "text-[9px]" : "text-xs"} font-semibold tabular-nums text-neutral-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]`}
+                className={`truncate font-bold text-white ${broadcastMatch ? "text-[12px]" : compact ? "text-[10px]" : "text-sm"}`}
+              >
+                {item.name}
+              </div>
+              <div
+                className={`${
+                  broadcastMatch
+                    ? "text-base font-black tabular-nums text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.88)]"
+                    : compact
+                      ? "text-[9px] font-semibold tabular-nums text-neutral-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]"
+                      : "text-xs font-semibold tabular-nums text-neutral-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]"
+                }`}
               >
                 {formatWon(item.price)}
               </div>
@@ -159,7 +200,17 @@ export default function SelectedSigs({
         );
       })}
       {trailingSlot ? (
-        <div className={compact ? "flex min-h-0 min-w-0 max-w-full justify-start pt-0.5" : "min-h-[280px]"}>{trailingSlot}</div>
+        <div
+          className={
+            broadcastMatch
+              ? "flex min-h-0 w-[288px] max-w-[288px] shrink-0 justify-center pt-0.5"
+              : compact
+                ? "flex min-h-0 min-w-0 max-w-full justify-start pt-0.5"
+                : "min-h-[280px]"
+          }
+        >
+          {trailingSlot}
+        </div>
       ) : null}
     </section>
   );

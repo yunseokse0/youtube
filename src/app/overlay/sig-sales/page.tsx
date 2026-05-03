@@ -1325,10 +1325,10 @@ export default function SigSalesOverlayPage() {
           ) : null}
           {/* 휠 아래·왼쪽(방송 화면 기준 시그 결과 영역). 휠 제거 시 위 플레이스홀더로 세로 위치 유지 */}
           <div
-            className="pointer-events-none relative z-[70] mt-2 w-full max-w-[min(72rem,min(100%,99vw))] shrink-0 self-start overflow-hidden px-3 pb-2 pt-1 md:max-w-[min(80rem,99vw)] md:px-6 md:pb-3 md:pt-3"
+            className="pointer-events-none relative z-[70] mt-2 w-full max-w-[min(72rem,min(100%,99vw))] shrink-0 self-center overflow-hidden px-3 pb-2 pt-1 md:max-w-[min(80rem,99vw)] md:px-6 md:pb-3 md:pt-3"
             aria-live="polite"
           >
-            <div className="pointer-events-auto min-w-0 w-full max-w-full">
+            <div className="pointer-events-auto mx-auto flex min-w-0 w-full max-w-full justify-center">
               <AnimatePresence>
                 {resultOverlayVisible ? (
                   <motion.div

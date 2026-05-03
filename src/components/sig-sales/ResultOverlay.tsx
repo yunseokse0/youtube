@@ -61,7 +61,7 @@ export default function ResultOverlay({
 
   const oneShotTrailing =
     oneShot && showOneShotReveal ? (
-      <div className="relative w-full max-w-[min(100%,304px)] justify-self-start">
+      <div className="relative w-[288px] max-w-[288px] shrink-0">
         <OneShotSigCard
           name={oneShot.name}
           price={oneShot.price}
@@ -84,7 +84,7 @@ export default function ResultOverlay({
     ) : undefined;
 
   return (
-    <div className={`space-y-2 ${className}`.trim()}>
+    <div className={`flex w-full flex-col items-center space-y-2 ${className}`.trim()}>
       <SelectedSigs
         items={selectedSigs}
         soldOutStampUrl={soldOutStampUrl}
@@ -93,10 +93,11 @@ export default function ResultOverlay({
         onToggleSold={() => {}}
         showToggle={false}
         compact
+        matchOneShotCardSize
         showConfirmedBadge={false}
         trailingSlot={oneShotTrailing}
-        compactGridJustify="start"
-        className="max-w-full"
+        compactGridJustify="center"
+        className="max-w-full justify-center"
         gifDelayMultiplier={gifDelayMultiplier}
         entranceOnlyLatest={entranceOnlyLatest}
       />
