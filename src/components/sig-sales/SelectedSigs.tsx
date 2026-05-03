@@ -108,7 +108,7 @@ export default function SelectedSigs({
             transition={entrance.transition}
             className={`relative min-w-0 overflow-hidden rounded-xl border bg-neutral-900/70 ${
               broadcastMatch
-                ? "w-[288px] max-w-[288px] shrink-0 border-white/25 bg-neutral-900/85 p-1.5 shadow-[0_0_24px_rgba(0,0,0,0.5)]"
+                ? "w-[288px] max-w-[288px] shrink-0 border-white/25 bg-neutral-900/85 px-1 py-1.5 shadow-[0_0_24px_rgba(0,0,0,0.5)]"
                 : compact
                   ? "w-full max-w-[188px] justify-self-start"
                   : ""
@@ -143,9 +143,7 @@ export default function SelectedSigs({
                 sizes={
                   broadcastMatch ? "288px" : compact ? "(max-width:768px) 45vw, 188px" : "240px"
                 }
-                className={
-                  broadcastMatch ? "object-contain object-center" : "object-cover object-center"
-                }
+                className="object-cover object-center"
                 gifDelayMultiplier={gifDelayMultiplier}
               />
               {sold ? (
@@ -166,7 +164,7 @@ export default function SelectedSigs({
             </div>
             <div
               className={`${
-                broadcastMatch ? "space-y-0.5 px-0.5 pt-1" : compact ? "space-y-0 p-1" : "space-y-1 p-2"
+                broadcastMatch ? "space-y-0.5 px-1 pt-1" : compact ? "space-y-0 p-1" : "space-y-1 p-2"
               }`}
             >
               <div

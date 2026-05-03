@@ -52,7 +52,7 @@ export default function OneShotSigCard({
       transition={{ duration: compact ? 0.32 : 0.45, ease: "easeOut" }}
       className={`relative border border-yellow-300/70 bg-[linear-gradient(135deg,rgba(245,158,11,0.25),rgba(234,179,8,0.1))] shadow-[0_0_30px_rgba(250,204,21,0.35)] ${
         compact
-          ? "mx-auto w-full max-w-[288px] self-start overflow-visible rounded-xl p-1.5 pb-2"
+          ? "mx-auto w-full max-w-[288px] self-start overflow-visible rounded-xl px-1 py-1.5 pb-2"
           : "overflow-hidden rounded-2xl p-4"
       }`}
     >
@@ -67,9 +67,7 @@ export default function OneShotSigCard({
           alt={name}
           fill
           sizes={compact ? "288px" : "160px"}
-          className={
-            compact ? "object-contain object-center" : "object-cover object-center"
-          }
+          className="object-cover object-center"
           gifDelayMultiplier={gifDelayMultiplier}
           onReady={onMediaReady}
         />
