@@ -50,8 +50,13 @@ export default function SelectedSigs({
   const trailingActive = Boolean(trailingSlot);
   const cellCount = items.length + (trailingActive ? 1 : 0);
   const columnCount = Math.min(6, Math.max(1, cellCount));
-  /** 열은 항상 1fr(균등·축소 가능) — 오버레이에서 가로 스크롤 없이 카드 폭 확보, 자식은 min-w-0 */
-  const gridTemplateColumns = `repeat(${columnCount}, minmax(0, 1fr))`;
+  /**
+   * 오버레이(compact): 열을 auto → 카드 실제 너비만 차지해 순서대로 붙음(1fr면 행 전체를 나눠 간격만 벌어짐).
+   * 관리 화면 등: 1fr로 균등 분할 유지.
+   */
+  const gridTemplateColumns = compact
+    ? `repeat(${columnCount}, auto)`
+    : `repeat(${columnCount}, minmax(0, 1fr))`;
   const gridAlign = compact && trailingActive ? "items-start" : "";
   const justifyCompact =
     compact && compactGridJustify === "start" ? "justify-start" : compact ? "justify-center" : "";
