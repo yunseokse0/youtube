@@ -437,7 +437,17 @@ export default function SigSalesOverlayPage() {
     [pendingLanding?.selected, machine.selectedSigs],
   );
   const useSequentialWheel = spinQueueSelected.length > 1;
-  const sequentialRoundRealId = spinQueueSelected[sequentialRoundIndex]?.id ?? null;
+  /**
+   * 순차 회전: `sequentialRoundIndex`가 당첨 수(n)를 넘으면 `selected[n]`이 undefined →
+   * 이전엔 `sequentialRoundRealId`가 null이 되고 `machine.resultId`로 폴백되어
+   * 휠(시그5)과 결과 카드(시그4·출항)가 어긋남. 항상 큐 범위로 클램프.
+   */
+  const sequentialRoundRealId = useMemo(() => {
+    if (!useSequentialWheel || spinQueueSelected.length === 0) return null;
+    const maxIdx = spinQueueSelected.length - 1;
+    const idx = Math.max(0, Math.min(sequentialRoundIndex, maxIdx));
+    return spinQueueSelected[idx]?.id ?? null;
+  }, [useSequentialWheel, spinQueueSelected, sequentialRoundIndex]);
 
   const wheelItemsWithResult = useMemo(() => {
     const base = [...wheelSlices];

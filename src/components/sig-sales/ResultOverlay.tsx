@@ -55,10 +55,20 @@ export default function ResultOverlay({
 
   if (!visible) return null;
 
-  const oneShotSold =
-    soldOverrideSet &&
-    (soldOverrideSet.has(ONE_SHOT_SIG_ID) ||
-      soldOverrideSet.has(canonicalSigIdFromWheelSliceId(ONE_SHOT_SIG_ID)));
+  const oneShotSold = (() => {
+    if (!soldOverrideSet) return false;
+    if (
+      soldOverrideSet.has(ONE_SHOT_SIG_ID) ||
+      soldOverrideSet.has(canonicalSigIdFromWheelSliceId(ONE_SHOT_SIG_ID))
+    ) {
+      return true;
+    }
+    if (selectedSigs.length === 0) return false;
+    return selectedSigs.every((item) => {
+      const canon = canonicalSigIdFromWheelSliceId(item.id);
+      return soldOverrideSet.has(item.id) || soldOverrideSet.has(canon);
+    });
+  })();
 
   const oneShotTrailing =
     oneShot && showOneShotReveal ? (
