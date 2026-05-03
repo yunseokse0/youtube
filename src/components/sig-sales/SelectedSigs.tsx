@@ -62,7 +62,7 @@ export default function SelectedSigs({
     compact && compactGridJustify === "start" ? "justify-start" : compact ? "justify-center" : "";
   return (
     <section
-      className={`grid w-full min-w-0 max-w-full gap-1.5 ${justifyCompact} ${gridAlign} ${className}`.trim()}
+      className={`grid w-full min-w-0 max-w-full gap-2 ${justifyCompact} ${gridAlign} ${className}`.trim()}
       style={{ gridTemplateColumns }}
     >
       {items.map((item, idx) => {
@@ -96,7 +96,7 @@ export default function SelectedSigs({
             animate={entrance.animate}
             transition={entrance.transition}
             className={`relative min-w-0 overflow-hidden rounded-xl border bg-neutral-900/70 ${
-              compact ? "w-full max-w-[168px] justify-self-start" : ""
+              compact ? "w-full max-w-[188px] justify-self-start" : ""
             } ${isLatestConfirmed ? "border-yellow-300 shadow-[0_0_24px_rgba(250,204,21,0.45)]" : "border-white/20"}`}
           >
             {showConfirmedBadge ? (
@@ -117,7 +117,7 @@ export default function SelectedSigs({
                 src={resolveSigImageUrl(item.name, item.imageUrl)}
                 alt={item.name}
                 fill
-                sizes={compact ? "(max-width:768px) 40vw, 168px" : "240px"}
+                sizes={compact ? "(max-width:768px) 45vw, 188px" : "240px"}
                 className="object-cover object-center"
                 gifDelayMultiplier={gifDelayMultiplier}
               />
@@ -138,9 +138,9 @@ export default function SelectedSigs({
               ) : null}
             </div>
             <div className={`${compact ? "space-y-0 p-1" : "space-y-1 p-2"}`}>
-              <div className={`truncate font-bold text-white ${compact ? "text-[9px]" : "text-sm"}`}>{item.name}</div>
+              <div className={`truncate font-bold text-white ${compact ? "text-[10px]" : "text-sm"}`}>{item.name}</div>
               <div
-                className={`${compact ? "text-[8px]" : "text-xs"} font-semibold tabular-nums text-neutral-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]`}
+                className={`${compact ? "text-[9px]" : "text-xs"} font-semibold tabular-nums text-neutral-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]`}
               >
                 {formatWon(item.price)}
               </div>

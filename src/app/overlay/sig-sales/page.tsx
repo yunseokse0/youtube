@@ -140,9 +140,9 @@ export default function SigSalesOverlayPage() {
     return Math.max(50, Math.min(300, n));
   })();
   const wheelScalePct = (() => {
-    const raw = sp.get("wheelScalePct") || sp.get("wheelPct") || "85";
+    const raw = sp.get("wheelScalePct") || sp.get("wheelPct") || "100";
     const n = parseInt(raw.replace(/[^\d]/g, ""), 10);
-    if (!Number.isFinite(n)) return 85;
+    if (!Number.isFinite(n)) return 100;
     return Math.max(55, Math.min(140, n));
   })();
   /** 휠 언마운트 후에도 RouletteWheel과 동일 높이를 유지해 결과 카드가 위로 튀지 않게 함 */
@@ -214,9 +214,21 @@ export default function SigSalesOverlayPage() {
     return devSequentialTest ? Math.max(base, 600) : base;
   }, [sp, devSequentialTest]);
   const overlayScale = overlayScalePct / 100;
-  const overlayScaleStyle = overlayScale === 1
-    ? undefined
-    : ({ transform: `scale(${overlayScale})`, transformOrigin: "top center" } as React.CSSProperties);
+  /** 휠만 작게 두면(`wheelScalePct` 낮음) 결과·휠 전체가 쪼그라 보임 → URL·배율 유지한 채 열만 살짝 키움. 끄려면 `wheelBoost=0` */
+  const wheelColumnBoost =
+    sp.get("wheelBoost") === "0" || String(sp.get("noWheelBoost") || "").toLowerCase() === "true"
+      ? 1
+      : wheelScalePct < 85
+        ? Math.min(1.38, 85 / Math.max(55, wheelScalePct))
+        : 1;
+  const combinedOverlayScale = overlayScale * wheelColumnBoost;
+  const overlayScaleStyle =
+    Math.abs(combinedOverlayScale - 1) < 0.001
+      ? undefined
+      : ({
+          transform: `scale(${combinedOverlayScale})`,
+          transformOrigin: "top center",
+        } as React.CSSProperties);
   const [state, setState] = useState<AppState | null>(null);
   const [pendingLanding, setPendingLanding] = useState<{ selected: SigItem[]; oneShot: { id: string; name: string; price: number } | null; resultId: string | null; persist: boolean } | null>(null);
   const [demoSpin, setDemoSpin] = useState<{ startedAt: number; resultId: string | null } | null>(null);
@@ -1138,7 +1150,7 @@ export default function SigSalesOverlayPage() {
   }, [machine.phase, machine.sessionId, machine.selectedSigs]);
 
   return (
-    <main className="relative max-h-[100dvh] min-h-0 overflow-hidden bg-transparent p-4 text-white">
+    <main className="relative max-h-[100dvh] min-h-0 overflow-hidden bg-transparent px-3 py-3 text-white sm:px-5 sm:py-4">
       <div className="mx-auto max-w-[1280px] space-y-4">
         <section className="relative flex w-full flex-col items-center gap-4 bg-transparent p-0">
           <div
