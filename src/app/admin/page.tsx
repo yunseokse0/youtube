@@ -907,9 +907,6 @@ export default function AdminPage() {
       `[통합 오버레이] ${rouletteQuickUrls.progressAbs}`,
       `[통합 데모] ${rouletteQuickUrls.progressDemoAbs}`,
     ];
-    if (rouletteQuickUrls.memberProgressAbs) {
-      lines.push(`[멤버 통합] ${rouletteQuickUrls.memberProgressAbs}`);
-    }
     return lines.join("\n");
   }, [rouletteQuickUrls]);
   const rouletteServerStatus = useMemo(() => {
@@ -4283,24 +4280,19 @@ export default function AdminPage() {
                     <button type="button" className="rounded bg-fuchsia-700 px-2 py-1 text-xs hover:bg-fuchsia-600" onClick={() => window.open(rouletteQuickUrls.progressDemoPath, "_blank", "noopener,noreferrer")}>
                       통합 데모
                     </button>
-                    <button
-                      type="button"
-                      disabled={!rouletteQuickUrls.memberProgressPath}
-                      className="rounded bg-indigo-700 px-2 py-1 text-xs hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                      onClick={() => {
-                        if (!rouletteQuickUrls.memberProgressPath) return;
-                        window.open(rouletteQuickUrls.memberProgressPath, "_blank", "noopener,noreferrer");
-                      }}
-                    >
-                      멤버 통합 열기
-                    </button>
                   </div>
                   <p className="text-[11px] text-neutral-400">
-                    점검 순서: <span className="text-neutral-200">통합 데모</span> → <span className="text-neutral-200">실제 통합</span> → <span className="text-neutral-200">멤버 통합</span>
+                    점검 순서: <span className="text-neutral-200">통합 데모</span> → <span className="text-neutral-200">실제 통합</span>
+                    {selectedMemberId ? (
+                      <>
+                        {" "}(멤버 필터는 아래 드롭다운으로 선택된 상태가 URL에 포함됩니다)
+                      </>
+                    ) : null}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
-                  <span>회전판 진행 오버레이 URL:</span>
+                  <span>통합 오버레이 URL</span>
+                  <span className="text-neutral-500">(메뉴 수 · 멤버)</span>
                   <span>메뉴 수</span>
                   <input
                     className="w-16 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs"
@@ -4370,6 +4362,19 @@ export default function AdminPage() {
                     />
                     데모 풀 보충
                   </label>
+                  <span className="text-neutral-500">멤버</span>
+                  <select
+                    className="rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs"
+                    value={selectedMemberId}
+                    onChange={(e) => setSelectedMemberId(e.target.value)}
+                  >
+                    <option value="">전체(필터 없음)</option>
+                    {(state.members || []).map((m) => (
+                      <option key={`sig-progress-member-${m.id}`} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
                   <code className="text-neutral-300 break-all">
                     /overlay/sig-sales?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}&wheelScalePct=85&menuCount={getSigSalesMenuCount()}{selectedMemberId ? `&memberId=${selectedMemberId}` : ""}
                   </code>
@@ -4406,47 +4411,6 @@ export default function AdminPage() {
                     onClick={() => window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}`, "_blank", "noopener,noreferrer")}
                   >
                     데모 열기
-                  </button>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
-                  <span>멤버별 진행 URL:</span>
-                  <select
-                    className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs"
-                    value={selectedMemberId}
-                    onChange={(e) => setSelectedMemberId(e.target.value)}
-                  >
-                    <option value="">멤버 선택</option>
-                    {(state.members || []).map((m) => (
-                      <option key={`sig-progress-member-${m.id}`} value={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
-                  </select>
-                  <code className="text-neutral-300 break-all">
-                    /overlay/sig-sales?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}&wheelScalePct=85&menuCount={getSigSalesMenuCount()}{selectedMemberId ? `&memberId=${selectedMemberId}` : ""}
-                  </code>
-                  <button
-                    type="button"
-                    disabled={!selectedMemberId}
-                    className={`rounded px-2 py-1 text-xs shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${copiedId === "dash-sig-sales-member" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
-                    onClick={() => {
-                      if (!selectedMemberId) return;
-                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}&memberId=${encodeURIComponent(selectedMemberId)}`;
-                      void copyUrl(u, "dash-sig-sales-member");
-                    }}
-                  >
-                    {copiedId === "dash-sig-sales-member" ? "복사됨!" : "URL 복사"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!selectedMemberId}
-                    className="rounded bg-[#6366f1] px-2 py-1 text-xs hover:bg-[#4f46e5] disabled:opacity-50 disabled:cursor-not-allowed"
-                    onClick={() => {
-                      if (!selectedMemberId) return;
-                      window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}&memberId=${encodeURIComponent(selectedMemberId)}`, "_blank", "noopener,noreferrer");
-                    }}
-                  >
-                    미리보기 열기
                   </button>
                 </div>
                 <div className="rounded-lg border border-white/10 bg-black/30 p-3">
