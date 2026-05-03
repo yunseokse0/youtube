@@ -1467,7 +1467,10 @@ function OverlayInner() {
   const bankCh = Math.max(3, Math.min(12, defBankCh));
   const toonCh = Math.max(4, Math.min(12, defToonCh));
   const totalCh = Math.max(4, Math.min(10, defTotalCh));
-  const contributionCh = Math.max(4, Math.min(10, defContributionCh));
+  /** 순위 열: 헤더「순위」·「#12」 등이 잘리지 않도록 `ch` 하한 확보(URL `rankCh`) */
+  const rankColCh = Math.max(5, Math.min(10, parseInt(sp.get("rankCh") || "5", 10)));
+  /** 기여도 열: 헤더「기여도」(한글·스트로크) 폭 확보 — 과거 최소 4ch는 헤더 클리핑 발생 */
+  const contributionCh = Math.max(7, Math.min(12, defContributionCh));
   const showSideDonors = false;
   const donorsSide = (sp.get("donorsSide") || "right").toLowerCase();
   const donorsWidth = Math.max(120, Math.min(600, parseInt(sp.get("donorsWidth") || "220", 10)));
@@ -1968,8 +1971,8 @@ function OverlayInner() {
   const memberTableFitSig = useMemo(() => {
     const rc = Math.max(6, Math.min(14, members.reduce((max, m) => Math.max(max, getMemberRole(m).length), 2)));
     const cols = hasRoleColumn
-      ? `3|${rc}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`
-      : `3|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`;
+      ? `${rankColCh}|${rc}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`
+      : `${rankColCh}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`;
     const rows = ranked.map(({ m }) => `${m.account}|${m.toon}|${Number(m.contribution || 0)}`).join(";");
     const pinRows = pinned.map((m) => `${m.account}|${m.toon}|${Number(m.contribution || 0)}`).join(";");
     return `${cols}#${rows}~${pinRows}`;
@@ -1982,6 +1985,7 @@ function OverlayInner() {
     toonCh,
     totalCh,
     contributionCh,
+    rankColCh,
     members,
     getMemberRole,
   ]);
@@ -2177,8 +2181,8 @@ function OverlayInner() {
 
     const roleCh = Math.max(6, Math.min(14, members.reduce((max, m) => Math.max(max, getMemberRole(m).length), 2)));
     const excelGridCols = hasRoleColumn
-      ? ["3ch", `${roleCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`]
-      : ["3ch", `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`];
+      ? [`${rankColCh}ch`, `${roleCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`]
+      : [`${rankColCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`];
     /** 숫자 자리 증가로 표 전체가 밀려 나가지 않도록 너비 상한 고정 */
     const excelTableWidthCalc = excelGridCols.join(" + ");
     const columnGradients = hasRoleColumn
@@ -2355,6 +2359,13 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td.overlay-col-total,
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution {
           background: rgba(244, 170, 205, ${useTableOpacity ? 0.78 : 0.62}) !important;
+        }
+        /* 순위·기여도 헤더: 고정 폭 칸에서 스트로크·굵은 글자가 칸 경계에서 잘리지 않도록 */
+        .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-contribution {
+          overflow: visible !important;
+          padding-left: 0.32em !important;
+          padding-right: 0.32em !important;
         }
         .overlay-root .overlay-elegant-table tbody tr:hover td {
           filter: brightness(1.06) saturate(1.03);

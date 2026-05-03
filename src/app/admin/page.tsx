@@ -96,6 +96,12 @@ function clampSigSalesMenuCount(raw: string | number | null | undefined): number
   return Math.max(5, Math.min(20, Math.floor(n)));
 }
 
+function clampSigSalesResultScalePct(raw: string | number | null | undefined): number {
+  const n = typeof raw === "number" ? raw : parseInt(String(raw || "").replace(/[^\d]/g, "") || "78", 10);
+  if (!Number.isFinite(n)) return 78;
+  return Math.max(50, Math.min(100, Math.floor(n)));
+}
+
 function isBrokenSigImageUrl(raw?: string): boolean {
   const v = String(raw || "").trim().toLowerCase();
   if (!v) return false;
@@ -888,7 +894,8 @@ export default function AdminPage() {
   }, [state.rouletteState?.menuCount, sigSalesMenuCount]);
   const rouletteQuickUrls = useMemo(() => {
     /** 당첨이 여러 개여도 휠 1회만(한 화면에 맞춘 레이아웃). 카드는 기본 간격으로 순차 공개 */
-    const bundleLayoutQs = "&wheelSequential=0";
+    const rsScale = clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct);
+    const bundleLayoutQs = `&wheelSequential=0&sigResultScalePct=${rsScale}`;
     const baseProgressPath = `/overlay/sig-sales?u=${rouletteUserId}&menuCount=${getSigSalesMenuCount()}${bundleLayoutQs}`;
     const progressPath = selectedMemberId
       ? `${baseProgressPath}&memberId=${encodeURIComponent(selectedMemberId)}`
@@ -906,7 +913,7 @@ export default function AdminPage() {
       progressDemoAbs: origin ? `${origin}${progressDemoPath}` : "",
       memberProgressAbs: origin && memberProgressPath ? `${origin}${memberProgressPath}` : "",
     };
-  }, [rouletteUserId, selectedMemberId, getSigSalesMenuCount]);
+  }, [rouletteUserId, selectedMemberId, getSigSalesMenuCount, state.rouletteState?.sigResultScalePct]);
   const rouletteQuickSummaryText = useMemo(() => {
     const lines = [
       `[통합 오버레이] ${rouletteQuickUrls.progressAbs}`,
@@ -4390,6 +4397,43 @@ export default function AdminPage() {
                     />
                     데모 풀 보충
                   </label>
+                  <div className="basis-full rounded border border-white/10 bg-black/20 px-3 py-2 max-w-xl">
+                    <div className="text-xs text-neutral-300 mb-1">확정 결과 카드 크기 (%)</div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min={50}
+                        max={100}
+                        step={1}
+                        value={clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct)}
+                        onChange={(e) => {
+                          const n = clampSigSalesResultScalePct(Number(e.target.value));
+                          setState((prev) => {
+                            const prevN = clampSigSalesResultScalePct(prev.rouletteState?.sigResultScalePct);
+                            if (prevN === n) return prev;
+                            const next: AppState = {
+                              ...prev,
+                              rouletteState: {
+                                ...prev.rouletteState,
+                                sigResultScalePct: n,
+                              },
+                            };
+                            persistState(next);
+                            return next;
+                          });
+                        }}
+                        className="flex-1 min-w-[120px]"
+                      />
+                      <div className="w-14 text-right text-xs text-neutral-200">
+                        {clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct)}%
+                      </div>
+                    </div>
+                    <p className="mt-1 text-[11px] text-neutral-500 leading-snug">
+                      OBS에서 결과만 과하게 크면 슬라이더를 내리세요. 저장값은 URL 없이도 오버레이에 적용되며, 필요 시{" "}
+                      <code className="rounded bg-black/30 px-1 text-neutral-400">sigResultScalePct</code>로 한 번 더 덮어쓸 수
+                      있습니다.
+                    </p>
+                  </div>
                   <span className="text-neutral-500">멤버</span>
                   <select
                     className="rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs"
@@ -4404,13 +4448,16 @@ export default function AdminPage() {
                     ))}
                   </select>
                   <code className="text-neutral-300 break-all">
-                    /overlay/sig-sales?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}&wheelScalePct=85&menuCount={getSigSalesMenuCount()}{selectedMemberId ? `&memberId=${selectedMemberId}` : ""}&wheelSequential=0
+                    /overlay/sig-sales?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}&wheelScalePct=85&menuCount={getSigSalesMenuCount()}
+                    {selectedMemberId ? `&memberId=${selectedMemberId}` : ""}&sigResultScalePct=
+                    {clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct)}&wheelSequential=0
                   </code>
                   <button
                     type="button"
                     className={`rounded px-2 py-1 text-xs shrink-0 ${copiedId === "dash-sig-sales" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
                     onClick={() => {
-                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&wheelSequential=0`;
+                      const rs = clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct);
+                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}&wheelSequential=0`;
                       void copyUrl(u, "dash-sig-sales");
                     }}
                   >
@@ -4419,7 +4466,14 @@ export default function AdminPage() {
                   <button
                     type="button"
                     className="rounded bg-[#6366f1] px-2 py-1 text-xs hover:bg-[#4f46e5]"
-                    onClick={() => window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&wheelSequential=0`, "_blank", "noopener,noreferrer")}
+                    onClick={() => {
+                      const rs = clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct);
+                      window.open(
+                        `/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}&wheelSequential=0`,
+                        "_blank",
+                        "noopener,noreferrer"
+                      );
+                    }}
                   >
                     미리보기 열기
                   </button>
@@ -4427,7 +4481,8 @@ export default function AdminPage() {
                     type="button"
                     className={`rounded px-2 py-1 text-xs shrink-0 ${copiedId === "dash-sig-sales-demo" ? "bg-emerald-600" : "bg-fuchsia-700 hover:bg-fuchsia-600"}`}
                     onClick={() => {
-                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&wheelSequential=0`;
+                      const rs = clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct);
+                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}&wheelSequential=0`;
                       void copyUrl(u, "dash-sig-sales-demo");
                     }}
                   >
@@ -4436,7 +4491,14 @@ export default function AdminPage() {
                   <button
                     type="button"
                     className="rounded bg-fuchsia-700 px-2 py-1 text-xs hover:bg-fuchsia-600"
-                    onClick={() => window.open(`/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&wheelSequential=0`, "_blank", "noopener,noreferrer")}
+                    onClick={() => {
+                      const rs = clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct);
+                      window.open(
+                        `/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}&wheelSequential=0`,
+                        "_blank",
+                        "noopener,noreferrer"
+                      );
+                    }}
                   >
                     데모 열기
                   </button>

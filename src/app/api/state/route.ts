@@ -75,6 +75,12 @@ function mergeRouletteUiPrefsOntoCurrent(
       out.overlayOpacity = Math.max(0.4, Math.min(1, o));
     }
   }
+  if (patchRs.sigResultScalePct !== undefined) {
+    const p = Number(patchRs.sigResultScalePct);
+    if (Number.isFinite(p)) {
+      out.sigResultScalePct = Math.max(50, Math.min(100, Math.floor(p)));
+    }
+  }
   if (Array.isArray(patchRs.historyLogs)) {
     out.historyLogs = patchRs.historyLogs
       .filter((x) => x && typeof x === "object")

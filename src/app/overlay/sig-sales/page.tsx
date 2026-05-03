@@ -34,6 +34,7 @@ import { useImagePreload } from "@/hooks/useImagePreload";
  * 3) `menuCount`·`minSpinCount`·`minWinsCount` 등 쿼리는 휠 **칸 수(표시)** 조절용이며, 당첨 개수·API `spinCount`와는 무관하다.
  * 4) `winnersOnly=1`·`onlyWinners=1`: 확정 당첨 시그만 회전판에 올리고(미당첨 메뉴 숨김), 시그 보드 롤링은 끈다. 당첨 전(IDLE)에는 기존처럼 전체 풀.
  * 5) `wheelSequential=0` 또는 `singleWheel=true`: 당첨이 여러 개여도 휠 연출 1회만(한 화면 레이아웃용). 카드 공개 간격은 `sigResultStaggerMs` 기본·기존과 동일.
+ * 6) `sigResultScalePct` / `resultScalePct`: 확정 카드 줄만 추가 축소(zoom%, 기본 78). URL이 없으면 관리자에 저장된 `rouletteState.sigResultScalePct` 사용.
  */
 const POLL_MS = 1000;
 /** cinematic 스핀 최대 당첨 수와 맞춤(API spinCount·풀 한도). 예전 5슬롯 제한은 확대됨 */
@@ -388,6 +389,21 @@ export default function SigSalesOverlayPage() {
     if (raw === "false" || raw === "0") return false;
     return state?.rouletteState?.menuFillFromDemo === true;
   }, [sp, state?.rouletteState?.menuFillFromDemo]);
+  /** URL 우선. 미지정 시 서버 저장 `rouletteState.sigResultScalePct`(기본 78). 동의어: `resultScalePct` */
+  const sigResultScalePctUrlOverride = useMemo(() => {
+    const raw = sp.get("sigResultScalePct") || sp.get("resultScalePct") || "";
+    if (!raw.trim()) return null;
+    const n = parseInt(String(raw).replace(/[^\d]/g, ""), 10);
+    if (!Number.isFinite(n)) return null;
+    return Math.max(50, Math.min(100, n));
+  }, [sp]);
+  const sigResultScalePct = useMemo(() => {
+    if (sigResultScalePctUrlOverride != null) return sigResultScalePctUrlOverride;
+    const persisted = Number(state?.rouletteState?.sigResultScalePct);
+    if (Number.isFinite(persisted)) return Math.max(50, Math.min(100, Math.floor(persisted)));
+    return 78;
+  }, [sigResultScalePctUrlOverride, state?.rouletteState?.sigResultScalePct]);
+  const sigResultBandZoomStyle = { zoom: sigResultScalePct / 100 } as React.CSSProperties;
   const activeNormalPool = useMemo(() => {
     if (rouletteDemo) return DEMO_POOL;
     if (!state) return [];
@@ -1395,11 +1411,11 @@ export default function SigSalesOverlayPage() {
             className={
               hanbangOnlyResultLayout && resultOverlayVisible
                 ? "pointer-events-none fixed bottom-0 left-0 right-0 z-[80] flex w-full max-w-full justify-center overflow-visible px-3 pb-2 pt-1 md:px-6 md:pb-4"
-                : "pointer-events-none relative z-[70] mt-2 w-full max-w-[min(1400px,min(100%,99vw))] shrink-0 self-center overflow-hidden px-3 pb-2 pt-1 md:px-6 md:pb-3 md:pt-3"
+                : "pointer-events-none relative z-[70] mt-2 w-full max-w-[min(960px,min(94vw,99vw))] shrink-0 self-center overflow-visible px-2 pb-2 pt-1 md:max-w-[min(1100px,96vw)] md:px-4 md:pb-3 md:pt-3"
             }
             aria-live="polite"
           >
-            <div className="pointer-events-auto mx-auto flex min-w-0 w-full max-w-full justify-center">
+            <div className="pointer-events-auto mx-auto flex min-w-0 w-full max-w-full justify-center overflow-visible">
               <AnimatePresence>
                 {resultOverlayVisible ? (
                   <motion.div
@@ -1411,19 +1427,24 @@ export default function SigSalesOverlayPage() {
                     transition={{ duration: Math.min(0.35, revealMotionSec), ease: [0.22, 1, 0.36, 1] }}
                     className="w-full min-w-0 max-w-full drop-shadow-[0_4px_24px_rgba(0,0,0,0.65)]"
                   >
-                    <ResultOverlay
-                      visible
-                      selectedSigs={displaySelectedSigsForUi}
-                      soldOutStampUrl={soldOutStampUrl}
-                      soldOverrideSet={inventorySoldOutIdSet}
-                      oneShot={oneShotForResultOverlay}
-                      signImageUrl={oneShotImageUrl || currentSignImageUrl}
-                      showOneShotReveal={Boolean(oneShotForResultOverlay)}
-                      className="w-full"
-                      gifDelayMultiplier={sigGifDelayMultiplier}
-                      entranceOnlyLatest
-                      hanbangOnly={hanbangOnlyResultLayout}
-                    />
+                    <div
+                      className="mx-auto flex w-full max-w-full justify-center origin-top"
+                      style={sigResultBandZoomStyle}
+                    >
+                      <ResultOverlay
+                        visible
+                        selectedSigs={displaySelectedSigsForUi}
+                        soldOutStampUrl={soldOutStampUrl}
+                        soldOverrideSet={inventorySoldOutIdSet}
+                        oneShot={oneShotForResultOverlay}
+                        signImageUrl={oneShotImageUrl || currentSignImageUrl}
+                        showOneShotReveal={Boolean(oneShotForResultOverlay)}
+                        className="w-full max-w-full"
+                        gifDelayMultiplier={sigGifDelayMultiplier}
+                        entranceOnlyLatest
+                        hanbangOnly={hanbangOnlyResultLayout}
+                      />
+                    </div>
                   </motion.div>
                 ) : null}
               </AnimatePresence>

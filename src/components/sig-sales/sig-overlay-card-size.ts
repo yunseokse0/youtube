@@ -1,7 +1,10 @@
 import type { CSSProperties } from "react";
 
-/** 참조 아트 기준 가로 202px · 세로 미디어 300px(비율 202:300). `/overlay/sig-sales` 결과 카드 셸 폭 상한 */
-export const SIG_OVERLAY_CARD_MAX_PX = 202;
+/**
+ * 방송 결과 카드 셸 폭 상한(px). 원본 아트 비율은 202×300이나 OBS 세로 합성에서는 더 작게 두는 편이 안전함.
+ * 추가 축소는 `/overlay/sig-sales` 의 `sigResultScalePct`(zoom)로 조절.
+ */
+export const SIG_OVERLAY_CARD_MAX_PX = 168;
 
 /**
  * 방송용 미디어 박스: **202×300** 세로형(약 2:3) — 개별 시그·한방 카드 동일 비율.
