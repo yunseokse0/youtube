@@ -1562,6 +1562,8 @@ function OverlayInner() {
   const effectiveTableCls = useTableOpacity ? stripBg(membersTheme.tableCls) : membersTheme.tableCls;
   // Strip row backgrounds for tinted/GIF sheet; keep header & total bar colors when shown.
   const effectiveRowCls = stripBg(membersTheme.rowCls);
+  /** 멤버 표 thead: 테마별 색 띠·테두리 없이 텍스트만 (방송 오버레이용) */
+  const effectiveHeaderCls = stripBorder(stripBg(membersTheme.headerCls));
   const mutedTotalWrapCls = stripBorder(stripBg(totalTheme.totalWrapCls));
   const totalWrapClsTintedMode = totalLineVisible ? totalTheme.totalWrapCls : mutedTotalWrapCls;
   const effectiveTotalWrapCls = totalLineVisible
@@ -2202,10 +2204,12 @@ function OverlayInner() {
         }
         .overlay-root .overlay-elegant-table thead td {
           color: #ffffff !important;
+          background: transparent !important;
           text-shadow: ${excelTextOutline};
           -webkit-text-stroke: 0.9px rgba(6, 12, 24, 0.95) !important;
           paint-order: stroke fill;
-          box-shadow: inset 0 -1px 0 rgba(255, 228, 244, 0.46), inset 0 1px 0 rgba(255,255,255,0.20);
+          box-shadow: none !important;
+          border: none !important;
         }
         .overlay-root .overlay-elegant-table td span,
         .overlay-root .overlay-elegant-table td strong {
@@ -2319,13 +2323,13 @@ function OverlayInner() {
                   </colgroup>
                   <thead>
                     <tr>
-                      <td className={`${membersTheme.headerCls} overlay-col-rank overlay-rank-cell`}>순위</td>
-                      {hasRoleColumn && <td className={`${membersTheme.headerCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>직급</td>}
-                      <td className={`${membersTheme.headerCls} overlay-col-name`}>이름</td>
-                      <td className={`${membersTheme.headerCls} overlay-col-account text-right`}>계좌</td>
-                      <td className={`${membersTheme.headerCls} overlay-col-toon text-right`}>투네</td>
-                      <td className={`${membersTheme.headerCls} overlay-col-total text-right`}>{totalHeaderLabel}</td>
-                      <td className={`${membersTheme.headerCls} overlay-col-contribution text-right`}>기여도</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-rank overlay-rank-cell`}>순위</td>
+                      {hasRoleColumn && <td className={`${effectiveHeaderCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>직급</td>}
+                      <td className={`${effectiveHeaderCls} overlay-col-name`}>이름</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-account text-right`}>계좌</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-toon text-right`}>투네</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-total text-right`}>{totalHeaderLabel}</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-contribution text-right`}>기여도</td>
                     </tr>
                   </thead>
                   <tbody>
@@ -2389,13 +2393,13 @@ function OverlayInner() {
                   </colgroup>
                   <thead>
                     <tr>
-                      <td className={`${membersTheme.headerCls} overlay-col-rank overlay-rank-cell`}>순위</td>
-                      {hasRoleColumn && <td className={`${membersTheme.headerCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>직급</td>}
-                      <td className={`${membersTheme.headerCls} overlay-col-name`}>이름</td>
-                      <td className={`${membersTheme.headerCls} overlay-col-account text-right`}>계좌</td>
-                      <td className={`${membersTheme.headerCls} overlay-col-toon text-right`}>투네</td>
-                      <td className={`${membersTheme.headerCls} overlay-col-total text-right`}>{totalHeaderLabel}</td>
-                      <td className={`${membersTheme.headerCls} overlay-col-contribution text-right`}>기여도</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-rank overlay-rank-cell`}>순위</td>
+                      {hasRoleColumn && <td className={`${effectiveHeaderCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>직급</td>}
+                      <td className={`${effectiveHeaderCls} overlay-col-name`}>이름</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-account text-right`}>계좌</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-toon text-right`}>투네</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-total text-right`}>{totalHeaderLabel}</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-contribution text-right`}>기여도</td>
                     </tr>
                   </thead>
                   <tbody>

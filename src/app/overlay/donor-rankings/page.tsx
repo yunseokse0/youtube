@@ -158,8 +158,6 @@ function RankingColumn({
   items,
   suffix,
   headerBg,
-  rowEvenBg,
-  rowOddBg,
   panelBg,
   borderColor,
   titleSize,
@@ -175,8 +173,6 @@ function RankingColumn({
   items: DonorRow[];
   suffix?: string;
   headerBg: string;
-  rowEvenBg: string;
-  rowOddBg: string;
   panelBg: string;
   borderColor: string;
   titleSize: number;
@@ -221,7 +217,7 @@ function RankingColumn({
         />
         <span className="relative z-10">{title}</span>
       </div>
-      <div className="space-y-1.5 p-2.5">
+      <div className="space-y-1 p-2.5">
         <AnimatePresence initial={false}>
           {items.map((item, idx) => (
             <motion.div
@@ -231,10 +227,8 @@ function RankingColumn({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -12 }}
               transition={{ type: "spring", stiffness: 420, damping: 34, mass: 0.8 }}
-              className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border px-3 py-2 transition-all duration-200 hover:brightness-110 hover:saturate-110"
+              className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 px-1 py-1"
               style={{
-                borderColor,
-                background: idx % 2 === 0 ? rowEvenBg : rowOddBg,
                 fontSize: `${rowSize}px`,
               }}
             >
@@ -293,18 +287,6 @@ export default function DonorRankingsOverlayPage() {
   const headerToonBg =
     readColor(sp, "headerToonBg", savedTheme.headerToonBg) ||
     "linear-gradient(135deg, #ffd2e8 0%, #ff8ebf 56%, #ef4f96 100%)";
-  const rowEvenBg = resolveThemeColor(
-    sp,
-    "rowEvenBg",
-    savedTheme.rowEvenBg,
-    "linear-gradient(135deg, rgba(255,141,184,0.38) 0%, rgba(244,114,182,0.32) 52%, rgba(232,121,249,0.28) 100%)"
-  );
-  const rowOddBg = resolveThemeColor(
-    sp,
-    "rowOddBg",
-    savedTheme.rowOddBg,
-    "linear-gradient(135deg, rgba(244,114,182,0.32) 0%, rgba(251,113,133,0.28) 52%, rgba(217,70,239,0.26) 100%)"
-  );
   const rankColor = readColor(sp, "rankColor", savedTheme.rankColor) || "#fff5f9";
   const nameColor = readColor(sp, "nameColor", savedTheme.nameColor) || "#fff7fb";
   const amountColor = readColor(sp, "amountColor", savedTheme.amountColor) || "#fff7ed";
@@ -375,8 +357,6 @@ export default function DonorRankingsOverlayPage() {
             title="계좌 후원 순위"
             items={accountTop}
             headerBg={headerAccountBg}
-            rowEvenBg={rowEvenBg}
-            rowOddBg={rowOddBg}
             panelBg={panelBg}
             borderColor={borderColor}
             titleSize={titleSize}
@@ -393,8 +373,6 @@ export default function DonorRankingsOverlayPage() {
             items={toonTop}
             suffix="캐시"
             headerBg={headerToonBg}
-            rowEvenBg={rowEvenBg}
-            rowOddBg={rowOddBg}
             panelBg={panelBg}
             borderColor={borderColor}
             titleSize={titleSize}
