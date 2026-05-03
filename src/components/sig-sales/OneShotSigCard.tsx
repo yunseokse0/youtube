@@ -83,19 +83,19 @@ export default function OneShotSigCard({
         />
         {sold && soldOutStampUrl ? (
           <>
-            <div
-              className="absolute inset-0 z-[3] bg-white/[0.38]"
-              aria-hidden
-            />
-            <div className="absolute inset-0 z-[5] bg-black/45" aria-hidden />
+            <div className="absolute inset-0 z-[5] bg-black/18" aria-hidden />
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-[min(12%,1rem)]">
+              <div
+                className="absolute h-[min(8.8rem,72%)] w-[min(8.8rem,72%)] rounded-full bg-white/70 blur-[1.4px]"
+                aria-hidden
+              />
               <Image
                 src={soldOutStampUrl}
                 alt="판매 완료"
                 width={112}
                 height={112}
                 unoptimized
-                className="h-auto w-auto max-h-[min(7rem,55%)] max-w-[min(7rem,55%)] object-contain object-center"
+                className="relative h-auto w-auto max-h-[min(7.8rem,66%)] max-w-[min(7.8rem,66%)] object-contain object-center opacity-95 drop-shadow-[0_2px_6px_rgba(0,0,0,0.42)]"
               />
             </div>
           </>

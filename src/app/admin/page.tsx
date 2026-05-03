@@ -893,9 +893,9 @@ export default function AdminPage() {
     if (sigSalesMenuCount !== asText) setSigSalesMenuCount(asText);
   }, [state.rouletteState?.menuCount, sigSalesMenuCount]);
   const rouletteQuickUrls = useMemo(() => {
-    /** 당첨이 여러 개여도 휠 1회만(한 화면에 맞춘 레이아웃). 카드는 기본 간격으로 순차 공개 */
+    /** 서버 selectedSigs를 프론트에서 항상 순차 연출하므로 단일휠 강제 파라미터는 붙이지 않는다. */
     const rsScale = clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct);
-    const bundleLayoutQs = `&wheelSequential=0&sigResultScalePct=${rsScale}`;
+    const bundleLayoutQs = `&sigResultScalePct=${rsScale}`;
     const baseProgressPath = `/overlay/sig-sales?u=${rouletteUserId}&menuCount=${getSigSalesMenuCount()}${bundleLayoutQs}`;
     const progressPath = selectedMemberId
       ? `${baseProgressPath}&memberId=${encodeURIComponent(selectedMemberId)}`
@@ -4450,14 +4450,14 @@ export default function AdminPage() {
                   <code className="text-neutral-300 break-all">
                     /overlay/sig-sales?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}&wheelScalePct=85&menuCount={getSigSalesMenuCount()}
                     {selectedMemberId ? `&memberId=${selectedMemberId}` : ""}&sigResultScalePct=
-                    {clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct)}&wheelSequential=0
+                    {clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct)}
                   </code>
                   <button
                     type="button"
                     className={`rounded px-2 py-1 text-xs shrink-0 ${copiedId === "dash-sig-sales" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
                     onClick={() => {
                       const rs = clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct);
-                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}&wheelSequential=0`;
+                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}`;
                       void copyUrl(u, "dash-sig-sales");
                     }}
                   >
@@ -4469,7 +4469,7 @@ export default function AdminPage() {
                     onClick={() => {
                       const rs = clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct);
                       window.open(
-                        `/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}&wheelSequential=0`,
+                        `/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}`,
                         "_blank",
                         "noopener,noreferrer"
                       );
@@ -4482,7 +4482,7 @@ export default function AdminPage() {
                     className={`rounded px-2 py-1 text-xs shrink-0 ${copiedId === "dash-sig-sales-demo" ? "bg-emerald-600" : "bg-fuchsia-700 hover:bg-fuchsia-600"}`}
                     onClick={() => {
                       const rs = clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct);
-                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}&wheelSequential=0`;
+                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}`;
                       void copyUrl(u, "dash-sig-sales-demo");
                     }}
                   >
@@ -4494,7 +4494,7 @@ export default function AdminPage() {
                     onClick={() => {
                       const rs = clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct);
                       window.open(
-                        `/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}&wheelSequential=0`,
+                        `/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}`,
                         "_blank",
                         "noopener,noreferrer"
                       );

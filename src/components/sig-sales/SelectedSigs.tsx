@@ -161,15 +161,20 @@ export default function SelectedSigs({
               />
               {sold ? (
                 <>
-                  <div className="absolute inset-0 z-[5] bg-black/45" aria-hidden />
+                  {/* 판매 완료에서도 원본 이미지가 충분히 보이도록 전체 딤은 약하게 유지 */}
+                  <div className="absolute inset-0 z-[5] bg-black/18" aria-hidden />
                   <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-[min(12%,1rem)]">
+                    <div
+                      className="absolute h-[min(8.6rem,70%)] w-[min(8.6rem,70%)] rounded-full bg-white/68 blur-[1.4px]"
+                      aria-hidden
+                    />
                     <Image
                       src={soldOutStampUrl}
                       alt="판매 완료"
                       width={112}
                       height={112}
                       unoptimized
-                      className="h-auto w-auto max-h-[min(7rem,55%)] max-w-[min(7rem,55%)] object-contain object-center"
+                      className="relative h-auto w-auto max-h-[min(7.6rem,64%)] max-w-[min(7.6rem,64%)] object-contain object-center opacity-95 drop-shadow-[0_2px_6px_rgba(0,0,0,0.42)]"
                     />
                   </div>
                 </>

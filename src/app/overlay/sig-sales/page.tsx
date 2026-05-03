@@ -33,7 +33,7 @@ import { useImagePreload } from "@/hooks/useImagePreload";
  *    재생한다. 연출 순서는 서버가 밀어주는 게 아니라 이 페이지의 상태·타이밍이 책임진다.
  * 3) `menuCount`·`minSpinCount`·`minWinsCount` 등 쿼리는 휠 **칸 수(표시)** 조절용이며, 당첨 개수·API `spinCount`와는 무관하다.
  * 4) `winnersOnly=1`·`onlyWinners=1`: 확정 당첨 시그만 회전판에 올리고(미당첨 메뉴 숨김), 시그 보드 롤링은 끈다. 당첨 전(IDLE)에는 기존처럼 전체 풀.
- * 5) `wheelSequential=0` 또는 `singleWheel=true`: 당첨이 여러 개여도 휠 연출 1회만(한 화면 레이아웃용). 카드 공개 간격은 `sigResultStaggerMs` 기본·기존과 동일.
+ * 5) 서버가 `selectedSigs[]`를 한 번에 주더라도 프론트는 항상 한 장씩 순차 회전·공개한다(멀티 당첨 연출 고정).
  *    CONFIRM_PENDING 에도 `revealedSigCount` 로 같은 속도를 유지한다(관리자 확정 클릭 직후 한꺼번에 깔리지 않게).
  * 6) `sigResultScalePct` / `resultScalePct`: 확정 카드 줄만 추가 축소(zoom%, 기본 78). URL이 없으면 관리자에 저장된 `rouletteState.sigResultScalePct` 사용.
  */
@@ -153,13 +153,6 @@ export default function SigSalesOverlayPage() {
     String(sp.get("winnersOnly") || "").toLowerCase() === "true" ||
     sp.get("onlyWinners") === "1" ||
     String(sp.get("onlyWinners") || "").toLowerCase() === "true";
-  /**
-   * 당첨이 여러 개여도 휠을 N번 돌리지 않고 1번만 돌린다(서버 result는 보통 마지막 당첨과 동일).
-   * 예전처럼 당첨 수만큼 연속 회전을 쓰려면 `wheelSequential=1`. 동의어: `singleWheel=true`
-   */
-  const wheelSequentialOff =
-    sp.get("wheelSequential") === "0" ||
-    String(sp.get("singleWheel") || "").toLowerCase() === "true";
   const overlayScalePct = (() => {
     const raw = sp.get("scalePct") || sp.get("zoomPct") || "100";
     const n = parseInt(raw.replace(/[^\d]/g, ""), 10);
@@ -511,7 +504,8 @@ export default function SigSalesOverlayPage() {
       ),
     [pendingLanding?.selected, machine.selectedSigs],
   );
-  const useSequentialWheel = spinQueueSelected.length > 1 && !wheelSequentialOff;
+  /** 서버가 selectedSigs를 한 번에 주더라도 프론트에서는 항상 라운드별 순차 회전을 강제한다. */
+  const useSequentialWheel = spinQueueSelected.length > 1;
   /**
    * 순차 회전: `sequentialRoundIndex`가 당첨 수(n)를 넘으면 `selected[n]`이 undefined →
    * 이전엔 `sequentialRoundRealId`가 null이 되고 `machine.resultId`로 폴백되어
@@ -671,10 +665,7 @@ export default function SigSalesOverlayPage() {
     }
     if (machine.phase === "CONFIRM_PENDING" || machine.phase === "CONFIRMED") {
       if (machine.phase === "CONFIRMED") return fullSelectedSigs;
-      /**
-       * 확정 처리 중(CONFIRM_PENDING): 예전에는 단일 휠(`wheelSequential=0`)일 때 여기서 전체 배열을 주어
-       * 스태거 중인 카드가 한 프레임에 모두 깔림. LANDED·progressive 와 같은 cap 으로 맞춘다.
-       */
+      /** 확정 처리 중(CONFIRM_PENDING)도 LANDED·progressive와 같은 cap으로 유지한다. */
       const cap =
         revealedSigCount === 0 && fullSelectedSigs.length > 0 ? 1 : revealedSigCount;
       return fullSelectedSigs.slice(0, Math.min(cap, fullSelectedSigs.length));
@@ -1298,7 +1289,7 @@ export default function SigSalesOverlayPage() {
                   const lastIdx = selectedQueue.length - 1;
                   const isLastRound = sequentialRoundIndex >= lastIdx;
 
-                  /** wheelSequential=0 단일 휠: 여러 당첨이어도 연속 회전 분기 타면 landed() 미호출·카드 미표시 */
+                  /** 멀티 당첨은 항상 라운드별 순차 회전으로 처리한다. */
                   if (seqMulti && useSequentialWheel) {
                     if (!isLastRound) {
                       /** 지연 LANDED 가 다음 회전 애니 중에 실행되면 wheelPhase 가 spinning 이 아니게 되어 2회차 onTransitionEnd 가 전부 막힘 */
