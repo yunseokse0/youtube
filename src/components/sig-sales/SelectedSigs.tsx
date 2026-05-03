@@ -143,7 +143,9 @@ export default function SelectedSigs({
                 sizes={
                   broadcastMatch ? "288px" : compact ? "(max-width:768px) 45vw, 188px" : "240px"
                 }
-                className="object-cover object-center"
+                className={
+                  broadcastMatch ? "object-contain object-center" : "object-cover object-center"
+                }
                 gifDelayMultiplier={gifDelayMultiplier}
               />
               {sold ? (

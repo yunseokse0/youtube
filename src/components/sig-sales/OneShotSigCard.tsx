@@ -67,7 +67,9 @@ export default function OneShotSigCard({
           alt={name}
           fill
           sizes={compact ? "288px" : "160px"}
-          className="object-cover object-center"
+          className={
+            compact ? "object-contain object-center" : "object-cover object-center"
+          }
           gifDelayMultiplier={gifDelayMultiplier}
           onReady={onMediaReady}
         />
