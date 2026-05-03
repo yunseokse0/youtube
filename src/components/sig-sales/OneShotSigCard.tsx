@@ -5,6 +5,7 @@ import Image from "next/image";
 import { formatWon } from "@/lib/sig-roulette";
 import { resolveSigImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
+import { SIG_OVERLAY_CARD_MAX_PX } from "@/components/sig-sales/sig-overlay-card-size";
 
 type OneShotSigCardProps = {
   name: string;
@@ -50,23 +51,33 @@ export default function OneShotSigCard({
       }
       animate={{ opacity: 1, scale: 1, y: 0 }}
       transition={{ duration: compact ? 0.32 : 0.45, ease: "easeOut" }}
+      style={
+        compact
+          ? {
+              maxWidth: SIG_OVERLAY_CARD_MAX_PX,
+              width: `min(100%, ${SIG_OVERLAY_CARD_MAX_PX}px)`,
+            }
+          : undefined
+      }
       className={`relative border border-yellow-300/70 bg-[linear-gradient(135deg,rgba(245,158,11,0.25),rgba(234,179,8,0.1))] shadow-[0_0_30px_rgba(250,204,21,0.35)] ${
         compact
-          ? "mx-auto w-full max-w-[288px] self-start overflow-visible rounded-xl px-1 py-1.5 pb-2"
+          ? "mx-auto w-full self-start overflow-visible rounded-xl px-1.5 py-2 pb-2"
           : "overflow-hidden rounded-2xl p-4"
       }`}
     >
       <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.35),transparent_65%)]" />
       <div
         className={`relative overflow-hidden rounded-lg border border-yellow-200/40 bg-gradient-to-b from-amber-950/55 via-neutral-950/75 to-black ${
-          compact ? "mb-1 aspect-[4/3] min-h-[168px] w-full sm:min-h-[180px]" : "mb-2 h-40"
+          compact
+            ? "mb-1.5 aspect-[4/3] min-h-[200px] w-full sm:min-h-[224px]"
+            : "mb-2 h-40"
         }`}
       >
         <SigSaleMedia
           src={resolveSigImageUrl(name, imageUrl)}
           alt={name}
           fill
-          sizes={compact ? "288px" : "160px"}
+          sizes={compact ? `${SIG_OVERLAY_CARD_MAX_PX}px` : "160px"}
           className={
             compact
               ? "object-cover object-center brightness-[1.15] contrast-[1.08] saturate-[1.12]"

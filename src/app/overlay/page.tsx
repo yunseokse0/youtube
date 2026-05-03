@@ -2200,22 +2200,21 @@ function OverlayInner() {
           -webkit-font-smoothing: antialiased;
           text-rendering: geometricPrecision;
         }
-        /* 관리자 미리보기와 동일: 분홍 헤더 띠 위에는 흰색 외곽선 대신 진한 글자 */
         .overlay-root .overlay-elegant-table thead td {
-          color: #111827 !important;
+          color: #ffffff !important;
           background: transparent !important;
           font-weight: 800 !important;
-          text-shadow: none !important;
-          -webkit-text-stroke: 0 !important;
-          paint-order: normal;
+          text-shadow: ${excelTextOutline} !important;
+          -webkit-text-stroke: 0.75px rgba(6, 12, 24, 0.95) !important;
+          paint-order: stroke fill;
           box-shadow: none !important;
           border: none !important;
         }
         .overlay-root .overlay-elegant-table thead td span,
         .overlay-root .overlay-elegant-table thead td strong {
-          color: inherit !important;
-          text-shadow: none !important;
-          -webkit-text-stroke: 0 !important;
+          color: #ffffff !important;
+          text-shadow: ${excelTextOutline} !important;
+          -webkit-text-stroke: 0.75px rgba(6, 12, 24, 0.95) !important;
         }
         .overlay-root .overlay-elegant-table tbody td span,
         .overlay-root .overlay-elegant-table tbody td strong {

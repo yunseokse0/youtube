@@ -7,6 +7,7 @@ import type { SigItem } from "@/types";
 import { canonicalSigIdFromWheelSliceId, formatWon } from "@/lib/sig-roulette";
 import { resolveSigImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
+import { SIG_OVERLAY_CARD_MAX_PX } from "@/components/sig-sales/sig-overlay-card-size";
 
 type SelectedSigsProps = {
   items: SigItem[];
@@ -106,9 +107,17 @@ export default function SelectedSigs({
             initial={entrance.initial}
             animate={entrance.animate}
             transition={entrance.transition}
+            style={
+              broadcastMatch
+                ? {
+                    width: `min(100%, ${SIG_OVERLAY_CARD_MAX_PX}px)`,
+                    maxWidth: SIG_OVERLAY_CARD_MAX_PX,
+                  }
+                : undefined
+            }
             className={`relative min-w-0 overflow-hidden rounded-xl border bg-neutral-900/70 ${
               broadcastMatch
-                ? "w-[288px] max-w-[288px] shrink-0 border-white/25 bg-neutral-900/85 px-1 py-1.5 shadow-[0_0_24px_rgba(0,0,0,0.5)]"
+                ? "shrink-0 border-white/25 bg-neutral-900/85 px-1.5 py-2 shadow-[0_0_28px_rgba(0,0,0,0.55)]"
                 : compact
                   ? "w-full max-w-[188px] justify-self-start"
                   : ""
@@ -130,7 +139,7 @@ export default function SelectedSigs({
             <div
               className={`relative overflow-hidden rounded-lg border border-white/20 bg-black/40 ${
                 broadcastMatch
-                  ? "mb-1 aspect-[4/3] min-h-[168px] w-full sm:min-h-[180px]"
+                  ? "mb-1.5 aspect-[4/3] min-h-[200px] w-full sm:min-h-[224px]"
                   : compact
                     ? "aspect-[3/4]"
                     : "aspect-[4/5]"
@@ -141,11 +150,13 @@ export default function SelectedSigs({
                 alt={item.name}
                 fill
                 sizes={
-                  broadcastMatch ? "288px" : compact ? "(max-width:768px) 45vw, 188px" : "240px"
+                  broadcastMatch
+                    ? `${SIG_OVERLAY_CARD_MAX_PX}px`
+                    : compact
+                      ? "(max-width:768px) 45vw, 188px"
+                      : "240px"
                 }
-                className={
-                  broadcastMatch ? "object-contain object-center" : "object-cover object-center"
-                }
+                className="object-cover object-center"
                 gifDelayMultiplier={gifDelayMultiplier}
               />
               {sold ? (
@@ -170,14 +181,14 @@ export default function SelectedSigs({
               }`}
             >
               <div
-                className={`truncate font-bold text-white ${broadcastMatch ? "text-[12px]" : compact ? "text-[10px]" : "text-sm"}`}
+                className={`truncate font-bold text-white ${broadcastMatch ? "text-[13px]" : compact ? "text-[10px]" : "text-sm"}`}
               >
                 {item.name}
               </div>
               <div
                 className={`${
                   broadcastMatch
-                    ? "text-base font-black tabular-nums text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.88)]"
+                    ? "text-lg font-black tabular-nums text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.88)]"
                     : compact
                       ? "text-[9px] font-semibold tabular-nums text-neutral-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]"
                       : "text-xs font-semibold tabular-nums text-neutral-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]"
@@ -201,9 +212,17 @@ export default function SelectedSigs({
       })}
       {trailingSlot ? (
         <div
+          style={
+            broadcastMatch
+              ? {
+                  width: `min(100%, ${SIG_OVERLAY_CARD_MAX_PX}px)`,
+                  maxWidth: SIG_OVERLAY_CARD_MAX_PX,
+                }
+              : undefined
+          }
           className={
             broadcastMatch
-              ? "flex min-h-0 w-[288px] max-w-[288px] shrink-0 justify-center pt-0.5"
+              ? "flex min-h-0 shrink-0 justify-center pt-0.5"
               : compact
                 ? "flex min-h-0 min-w-0 max-w-full justify-start pt-0.5"
                 : "min-h-[280px]"

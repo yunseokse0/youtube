@@ -6,6 +6,7 @@ import type { AnimationPlaybackControls } from "framer-motion";
 import { Howl } from "howler";
 import type { SigItem } from "@/types";
 import {
+  canonicalSigIdFromWheelSliceId,
   ROULETTE_WHEEL_SFX_ENABLED,
   ROULETTE_WHEEL_WAV_ASSETS_ENABLED,
   SOUND_ASSETS_ENABLED,
@@ -30,6 +31,19 @@ type RouletteWheelProps = {
   onTransitionEnd?: () => void;
   onLanded?: (resultId?: string | null) => void;
 };
+
+/**
+ * 휠 조각 id(`원본id__wslot_N`)와 서버에서 넘어오는 당첨 id(캐노니컬만)가 다를 때 `===` 매칭이 실패해
+ * 항상 0번 칸으로 착지하던 문제를 막는다. 오버레이 `wheelResultSliceId`와 동일한 규칙.
+ */
+function findSliceIndexForResult(items: SigItem[], resultId: string | null): number {
+  if (!resultId || items.length === 0) return 0;
+  const exact = items.findIndex((x) => x.id === resultId);
+  if (exact >= 0) return exact;
+  const targetCanon = canonicalSigIdFromWheelSliceId(resultId);
+  const byCanon = items.findIndex((x) => canonicalSigIdFromWheelSliceId(x.id) === targetCanon);
+  return byCanon >= 0 ? byCanon : 0;
+}
 
 const COLORS = [
   "#fb7185", "#f59e0b", "#22d3ee", "#a78bfa", "#34d399", "#f472b6", "#facc15", "#60a5fa",
@@ -229,7 +243,7 @@ export default function RouletteWheel({
   const calculateFinalAngle = useCallback((targetId: string | null, count: number, currentBase: number, minTurns: number) => {
     const currentItems = itemsRef.current;
     if (!targetId || !currentItems.length) return currentBase + Math.max(1, minTurns) * 360;
-    const idx = Math.max(0, currentItems.findIndex((x) => x.id === targetId));
+    const idx = findSliceIndexForResult(currentItems, targetId);
     const seg = 360 / Math.max(1, count);
     const targetCenter = idx * seg + seg / 2;
     const normalizedTarget = ((360 - targetCenter) % 360 + 360) % 360;
@@ -306,7 +320,7 @@ export default function RouletteWheel({
     if (activeSpinKeyRef.current === spinKey) return;
     activeSpinKeyRef.current = spinKey;
 
-    const idx = Math.max(0, spinItems.findIndex((x) => x.id === resultId));
+    const idx = findSliceIndexForResult(spinItems, resultId);
     setWinnerIndex(idx);
     hasLandedRef.current = false;
     stopAllAnimations();
