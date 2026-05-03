@@ -1843,8 +1843,9 @@ function OverlayInner() {
     }
     return base;
   }, [demoMode, membersRemote, ready, isPreviewGuide, externalHost]);
+  /** 멤버별 기여도 필드 합계(「기여도 기록부」·후원 반영 시 동기화된 값; 합계 열과 다를 수 있음) */
   const sumContribution = useMemo(
-    () => members.reduce((sum, m) => sum + Math.max(0, (m.account || 0) + (m.toon || 0)), 0),
+    () => members.reduce((sum, m) => sum + Math.max(0, Number(m.contribution || 0)), 0),
     [members]
   );
   const donors = useMemo(() => {
@@ -2375,7 +2376,9 @@ function OverlayInner() {
                       <td className={`${effectiveHeaderCls} overlay-col-account text-right`}>계좌</td>
                       <td className={`${effectiveHeaderCls} overlay-col-toon text-right`}>투네</td>
                       <td className={`${effectiveHeaderCls} overlay-col-total text-right`}>{totalHeaderLabel}</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-contribution text-right`}>기여도</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-contribution text-right`} title="관리자「기여도 기록부」값. 후원 입력 시에는 보통 계좌+투네 합과 같습니다.">
+                        기여도
+                      </td>
                     </tr>
                   </thead>
                   <tbody>
@@ -2406,7 +2409,7 @@ function OverlayInner() {
                           <span className="overlay-num-cell-inner">{fmtTotalCell(m.account + m.toon)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
-                          <span className="overlay-num-cell-inner">{fmt((m.account || 0) + (m.toon || 0))}</span>
+                          <span className="overlay-num-cell-inner">{fmt(Math.max(0, Number(m.contribution || 0)))}</span>
                         </td>
                       </tr>
                     ))}
@@ -2425,7 +2428,7 @@ function OverlayInner() {
                           <span className="overlay-num-cell-inner">{fmtTotalCell(m.account + m.toon)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
-                          <span className="overlay-num-cell-inner">{fmt((m.account || 0) + (m.toon || 0))}</span>
+                          <span className="overlay-num-cell-inner">{fmt(Math.max(0, Number(m.contribution || 0)))}</span>
                         </td>
                       </tr>
                     ))}
