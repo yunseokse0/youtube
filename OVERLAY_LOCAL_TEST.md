@@ -12,13 +12,17 @@ npm run dev
 
 ## 바로 회전판 테스트 (한 번에 열기)
 
-개발 서버 실행 후 **아래 주소만** 열면 데모 회전판이 자동으로 시작합니다.
+`npm run dev` 후 **주소창에 `http://localhost:3000` 만** 입력해도 됩니다. 로컬에서는 루트가 회전판 데모 오버레이로 연결됩니다.
+
+짧은 주소만 쓰고 싶으면:
 
 ```
-http://localhost:3000/overlay/sig-sales/demo
+http://localhost:3000/wheel
 ```
 
-→ `/overlay/sig-sales` 로 리다이렉트되며 `rouletteDemo=1`, `menuCount=5`, `devSequentialTest=1` 가 붙습니다.
+`/overlay/sig-sales/demo` 도 동일하게 데모 쿼리로 리다이렉트됩니다 (`rouletteDemo=1`, `menuCount=5`, `devSequentialTest=1`).
+
+관리자 화면은 로컬에서 **`http://localhost:3000/admin`** 으로 직접 들어가면 됩니다.
 
 ## 순차 연출만 보기 (서버·Redis 없이)
 

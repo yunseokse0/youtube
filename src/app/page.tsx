@@ -9,7 +9,11 @@ export default async function Home() {
   const headerStore = await headers();
   const host = (headerStore.get("host") || "").toLowerCase().split(":")[0];
   const isLocal = host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
-  if (userCookie || isLocal) redirect("/admin");
+  /** 로컬에서는 루트가 관리자로만 가면 회전판 데모를 못 봄 → `/wheel` 데모로 우선 연결 */
+  if (isLocal) {
+    redirect("/wheel");
+  }
+  if (userCookie) redirect("/admin");
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-[#1a1a1a]">
