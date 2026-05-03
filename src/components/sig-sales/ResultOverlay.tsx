@@ -61,13 +61,14 @@ export default function ResultOverlay({
 
   const oneShotTrailing =
     oneShot && showOneShotReveal ? (
-      <div className="relative w-full max-w-[min(100%,232px)] justify-self-start">
+      <div className="relative w-full max-w-[min(100%,280px)] justify-self-start">
         <OneShotSigCard
           name={oneShot.name}
           price={oneShot.price}
           imageUrl={signImageUrl}
           sold={Boolean(oneShotSold)}
           soldOutStampUrl={soldOutStampUrl}
+          selectedSigCount={selectedSigs.length}
           onToggleSold={() => {}}
           showToggle={false}
           compact

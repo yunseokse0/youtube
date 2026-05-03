@@ -664,6 +664,7 @@ export default function AdminSigSalesPage() {
                     imageUrl={oneShotImageUrl}
                     sold={oneShotSold}
                     soldOutStampUrl={soldOutStampUrl}
+                    selectedSigCount={displaySelectedSigs.length}
                     disabled={controlsDisabled}
                     compact
                     onToggleSold={() => setOneShotSold((v) => !v)}

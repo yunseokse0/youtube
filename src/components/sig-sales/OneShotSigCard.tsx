@@ -17,6 +17,8 @@ type OneShotSigCardProps = {
   showToggle?: boolean;
   /** 판매 완료 시 미디어 위 스탬프(관리·오버레이 공통). 없으면 스탬프 레이어 없음 */
   soldOutStampUrl?: string;
+  /** 합산에 쓰인 개별 시그 수(문구 `선정된 N개 시그…`에 사용) */
+  selectedSigCount?: number;
   gifDelayMultiplier?: number;
   onMediaReady?: () => void;
 };
@@ -31,9 +33,14 @@ export default function OneShotSigCard({
   imageUrl = "",
   showToggle = true,
   soldOutStampUrl,
+  selectedSigCount,
   gifDelayMultiplier = 1,
   onMediaReady,
 }: OneShotSigCardProps) {
+  const sumLine =
+    typeof selectedSigCount === "number" && selectedSigCount > 0
+      ? `선정된 ${selectedSigCount}개 시그 합산 금액`
+      : "선정된 시그 합산 금액";
   return (
     <motion.section
       initial={
@@ -45,22 +52,24 @@ export default function OneShotSigCard({
       transition={{ duration: compact ? 0.32 : 0.45, ease: "easeOut" }}
       className={`relative border border-yellow-300/70 bg-[linear-gradient(135deg,rgba(245,158,11,0.25),rgba(234,179,8,0.1))] shadow-[0_0_30px_rgba(250,204,21,0.35)] ${
         compact
-          ? "mx-auto w-full max-w-[232px] self-start overflow-visible rounded-xl p-1.5 pb-2"
+          ? "mx-auto w-full max-w-[260px] self-start overflow-visible rounded-xl p-1.5 pb-2"
           : "overflow-hidden rounded-2xl p-4"
       }`}
     >
       <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.35),transparent_65%)]" />
       <div
-        className={`relative overflow-hidden rounded-lg border border-yellow-200/25 bg-black/25 ${
-          compact ? "mb-1 h-[132px] w-full sm:h-[142px]" : "mb-2 h-40"
+        className={`relative overflow-hidden rounded-lg border border-yellow-200/25 bg-black/40 ${
+          compact ? "mb-1 aspect-[4/3] min-h-[156px] w-full sm:min-h-[168px]" : "mb-2 h-40"
         }`}
       >
         <SigSaleMedia
           src={resolveSigImageUrl(name, imageUrl)}
           alt={name}
           fill
-          sizes={compact ? "232px" : "160px"}
-          className="object-cover object-center"
+          sizes={compact ? "260px" : "160px"}
+          className={
+            compact ? "object-contain object-center" : "object-cover object-center"
+          }
           gifDelayMultiplier={gifDelayMultiplier}
           onReady={onMediaReady}
         />
@@ -90,7 +99,7 @@ export default function OneShotSigCard({
           <p
             className={`${compact ? "text-[10px] text-neutral-200/95" : "text-sm text-yellow-200/85"}`}
           >
-            선정된 5개 시그 합산 금액
+            {sumLine}
           </p>
         </div>
         <div className={compact ? "" : "text-right"}>

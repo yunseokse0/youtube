@@ -71,6 +71,7 @@ export default function RouletteHistoryModal({ open, item, onClose, onLoadReadon
             price={item.oneShotPrice}
             sold={true}
             soldOutStampUrl={DEFAULT_SIG_SOLD_STAMP_URL}
+            selectedSigCount={item.selectedSigs.length}
             disabled={true}
             onToggleSold={() => {}}
           />
