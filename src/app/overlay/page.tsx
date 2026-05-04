@@ -10,6 +10,7 @@ import MissionBoardSlot from "@/components/MissionBoardSlot";
 import { GoalBar } from "@/components/GoalBar";
 import { useSSEConnection } from "@/lib/sse-client";
 import { useGoalPresetAutoEscalate } from "@/hooks/useGoalPresetAutoEscalate";
+import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
 
 function tryDecodeSnapshot(str: string | null): AppState | null {
   if (!str) return null;
@@ -1551,6 +1552,7 @@ function OverlayInner() {
     return raw === "true";
   })();
   const showTableBgGif = Boolean(tableBgGifUrl);
+  const tableBgAnimated = useMemo(() => resolveAnimatedSourceForEmbed(tableBgGifUrl), [tableBgGifUrl]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     (window as any).__overlayTickerConfig = {
@@ -2429,15 +2431,28 @@ function OverlayInner() {
               )}
               <div ref={memberTableClampRef} className="relative min-w-0 flex-1 overflow-hidden" style={{ borderRadius: 0 }}>
                 {showTableBgGif ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={tableBgGifUrl}
-                    alt=""
-                    className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-                    style={{ opacity: tableBgGifOpacity / 100, filter: `brightness(${tableBgGifBrightness}%)` }}
-                    loading="eager"
-                    decoding="async"
-                  />
+                  tableBgAnimated.kind === "video" ? (
+                    <video
+                      src={tableBgAnimated.src}
+                      className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+                      style={{ opacity: tableBgGifOpacity / 100, filter: `brightness(${tableBgGifBrightness}%)` }}
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                      preload="auto"
+                    />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={tableBgAnimated.src}
+                      alt=""
+                      className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+                      style={{ opacity: tableBgGifOpacity / 100, filter: `brightness(${tableBgGifBrightness}%)` }}
+                      loading="eager"
+                      decoding="async"
+                    />
+                  )
                 ) : null}
                 <div className="relative z-[1]">
                 <div className="relative overflow-hidden" style={{ borderRadius: 0, backgroundColor: `rgba(${(TABLE_BG_RGB[themeId] || defaultTableBgRgb).join(",")}, ${tableTintAlpha})` }}>

@@ -11,7 +11,7 @@ import {
   storageKey,
   type AppState,
 } from "@/lib/state";
-import { resolveGifUrlForEmbed } from "@/lib/gif-url";
+import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 
 type DonorRow = {
@@ -377,7 +377,7 @@ export default function DonorRankingsOverlayPage() {
   const amountColor = readColor(sp, "amountColor", savedTheme.amountColor) || "#fff7ed";
   const outlineColor = readColor(sp, "outline", savedTheme.outlineColor) || "rgba(58, 6, 28, 0.85)";
   const showBgLayer = overlayCfg.isBgEnabled && Boolean(overlayCfg.bgGifUrl.trim());
-  const bgGifSrc = useMemo(() => resolveGifUrlForEmbed(overlayCfg.bgGifUrl), [overlayCfg.bgGifUrl]);
+  const bgAnimated = useMemo(() => resolveAnimatedSourceForEmbed(overlayCfg.bgGifUrl), [overlayCfg.bgGifUrl]);
   const bgOpacityPct = Math.max(0, Math.min(100, overlayCfg.bgOpacity)) / 100;
   const overlayOpacityFrac = Math.max(0, Math.min(100, overlayOpacity)) / 100;
 
@@ -411,18 +411,33 @@ export default function DonorRankingsOverlayPage() {
     <main className="relative min-h-screen w-full overflow-hidden p-5" style={{ backgroundColor: bg }}>
       {showBgLayer ? (
         <div className="pointer-events-none fixed inset-0 z-0" aria-hidden>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={bgGifSrc.trim()}
-            alt=""
-            width={1920}
-            height={1080}
-            className="h-full w-full object-cover"
-            style={{ opacity: bgOpacityPct }}
-            loading="eager"
-            decoding="async"
-            fetchPriority="high"
-          />
+          {bgAnimated.kind === "video" ? (
+            <video
+              src={bgAnimated.src.trim()}
+              className="h-full w-full object-cover"
+              style={{ opacity: bgOpacityPct }}
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="auto"
+            />
+          ) : (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={bgAnimated.src.trim()}
+                alt=""
+                width={1920}
+                height={1080}
+                className="h-full w-full object-cover"
+                style={{ opacity: bgOpacityPct }}
+                loading="eager"
+                decoding="async"
+                fetchPriority="high"
+              />
+            </>
+          )}
         </div>
       ) : null}
       <div

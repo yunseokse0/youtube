@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
 import { defaultState, loadState, loadStateFromApi, normalizeDonationListsOverlayConfig, storageKey, type AppState } from "@/lib/state";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
-import { resolveGifUrlForEmbed } from "@/lib/gif-url";
+import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
 import { sortMembersForRanking } from "@/lib/utils";
 
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
@@ -149,7 +149,7 @@ export default function DonationListsOverlayPage() {
     [state?.donationListsOverlayConfig]
   );
   const showBgLayer = overlayCfg.isBgEnabled && Boolean(overlayCfg.bgGifUrl.trim());
-  const bgGifSrc = useMemo(() => resolveGifUrlForEmbed(overlayCfg.bgGifUrl), [overlayCfg.bgGifUrl]);
+  const bgAnimated = useMemo(() => resolveAnimatedSourceForEmbed(overlayCfg.bgGifUrl), [overlayCfg.bgGifUrl]);
   const bgOpacityPct = Math.max(0, Math.min(100, overlayCfg.bgOpacity)) / 100;
 
   const ranking = useMemo(
@@ -167,19 +167,33 @@ export default function DonationListsOverlayPage() {
     <main className="relative min-h-screen w-full overflow-hidden bg-transparent p-6 text-white">
       {showBgLayer ? (
         <div className="pointer-events-none fixed inset-0 z-0" aria-hidden>
-          {/* 엑셀표 배경은 원본 GIF를 그대로 보여야 하므로 마스크/블렌드 없이 렌더링 */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={bgGifSrc.trim()}
-            alt=""
-            width={1920}
-            height={1080}
-            className="h-full w-full object-cover"
-            style={{ opacity: bgOpacityPct }}
-            loading="eager"
-            decoding="async"
-            fetchPriority="high"
-          />
+          {bgAnimated.kind === "video" ? (
+            <video
+              src={bgAnimated.src.trim()}
+              className="h-full w-full object-cover"
+              style={{ opacity: bgOpacityPct }}
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="auto"
+            />
+          ) : (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={bgAnimated.src.trim()}
+                alt=""
+                width={1920}
+                height={1080}
+                className="h-full w-full object-cover"
+                style={{ opacity: bgOpacityPct }}
+                loading="eager"
+                decoding="async"
+                fetchPriority="high"
+              />
+            </>
+          )}
         </div>
       ) : null}
       <div className="relative z-10 mx-auto max-w-[1020px]">
