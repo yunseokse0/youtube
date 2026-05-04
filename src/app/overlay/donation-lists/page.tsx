@@ -167,31 +167,19 @@ export default function DonationListsOverlayPage() {
     <main className="relative min-h-screen w-full overflow-hidden bg-transparent p-6 text-white">
       {showBgLayer ? (
         <div className="pointer-events-none fixed inset-0 z-0" aria-hidden>
-          <div
-            className="absolute inset-0"
-            style={{
-              WebkitMaskImage:
-                "radial-gradient(ellipse 92% 88% at 50% 44%, rgba(0,0,0,1) 48%, rgba(0,0,0,0) 100%)",
-              maskImage: "radial-gradient(ellipse 92% 88% at 50% 44%, rgba(0,0,0,1) 48%, rgba(0,0,0,0) 100%)",
-            }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={bgGifSrc.trim()}
-              alt=""
-              width={1920}
-              height={1080}
-              className="h-full w-full object-cover"
-              style={{ opacity: bgOpacityPct }}
-              loading="eager"
-              decoding="async"
-              fetchPriority="high"
-            />
-            <div
-              className="absolute inset-0 mix-blend-multiply bg-gradient-to-br from-pink-300/55 via-fuchsia-200/45 to-rose-200/50"
-              aria-hidden
-            />
-          </div>
+          {/* 엑셀표 배경은 원본 GIF를 그대로 보여야 하므로 마스크/블렌드 없이 렌더링 */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={bgGifSrc.trim()}
+            alt=""
+            width={1920}
+            height={1080}
+            className="h-full w-full object-cover"
+            style={{ opacity: bgOpacityPct }}
+            loading="eager"
+            decoding="async"
+            fetchPriority="high"
+          />
         </div>
       ) : null}
       <div className="relative z-10 mx-auto max-w-[1020px]">
