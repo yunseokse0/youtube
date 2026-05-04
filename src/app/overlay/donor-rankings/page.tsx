@@ -142,7 +142,7 @@ function readColor(sp: URLSearchParams, key: string, fallback: string): string {
 /**
  * 패널 등: 저장값이 `transparent`일 때 방송 기본 채색(URL 덮어쓰기 가능).
  * 구버전은 여기서 알파가 큰 그라데이션을 넣어 슬라이더와 무관하게 항상 어둡게 보였음 → 기본은 불투명 단색으로 두고,
- * 목록 영역만 `overlayOpacity`를 곱한다(제목 바 분홍은 유지).
+ * 헤더(`headerBg`)·목록(`panelBg`) 배경에 동일하게 `overlayOpacity`를 곱한다.
  */
 function resolveThemeColor(
   sp: URLSearchParams,
@@ -194,7 +194,7 @@ function RankingColumn({
   unified?: boolean;
   /** unified일 때 좌측 칼럼 오른쪽 구분선(md 이상) */
   showColumnDivider?: boolean;
-  /** unified: 목록 영역에만 `panelBg`×투명도(제목 바는 항상 선명한 분홍 유지) */
+  /** unified: 헤더·목록 배경에 동일하게 `panelBg`/`headerBg`×투명도 */
   panelOpacityFrac?: number;
 }) {
   const outlined = { textShadow: `-1px -1px 0 ${outlineColor},1px -1px 0 ${outlineColor},-1px 1px 0 ${outlineColor},1px 1px 0 ${outlineColor},0 2px 6px rgba(0,0,0,0.38)` } as const;
@@ -263,8 +263,9 @@ function RankingColumn({
           className="absolute inset-0"
           style={{
             background: headerBg,
-            /** unified: 제목 배경은 슬라이더와 무관하게 불투명(목록만 `panelOpacityFrac`) */
-            opacity: unified ? 1 : Math.max(0, Math.min(100, headerOpacity)) / 100,
+            opacity: unified
+              ? Math.max(0, Math.min(1, panelOpacityFrac ?? 1))
+              : Math.max(0, Math.min(100, headerOpacity)) / 100,
           }}
         />
         <span className="relative z-10">{title}</span>

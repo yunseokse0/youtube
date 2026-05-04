@@ -3764,7 +3764,7 @@ export default function AdminPage() {
                         <div className="text-xs text-neutral-300">{state.donorRankingsTheme.rankSize}px</div>
                       </label>
                       <label className="text-[11px] text-neutral-400">
-                        오버레이 투명도(순위 목록 영역만 · 계좌/투네 제목 바는 분홍 유지)
+                        오버레이 투명도(헤더·순위 목록 배경 공통, 색상은 유지)
                         <input
                           type="range"
                           min={0}
@@ -3893,7 +3893,7 @@ export default function AdminPage() {
                   </div>
                   <div className="rounded border border-white/10 bg-black/20 px-3 py-2">
                     <div className="text-xs text-neutral-300 mb-1">
-                      후원 리스트 패널 배경 투명도(실시간 · 순위 목록만, 헤더 제외)
+                      후원 리스트 패널 배경 투명도(실시간 · 계좌/투네 헤더·목록 공통)
                     </div>
                     <div className="flex items-center gap-2">
                       <input
@@ -5661,7 +5661,7 @@ export default function AdminPage() {
                 </button>
               </div>
               <div className="mb-3 rounded border border-white/10 bg-black/20 px-3 py-2">
-                <div className="text-xs text-neutral-300 mb-1">후원 리스트 목록 배경 투명도(실시간 · 헤더 제외)</div>
+                <div className="text-xs text-neutral-300 mb-1">후원 리스트 배경 투명도(실시간 · 헤더·목록)</div>
                 <div className="flex items-center gap-2">
                   <input
                     type="range"
