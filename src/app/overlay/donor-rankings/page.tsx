@@ -157,6 +157,56 @@ function resolveThemeColor(
   return broadcastDefault;
 }
 
+/**
+ * 슬라이더 불투명도를 배경에 반영. hex/rgb/rgba는 알파를 색에 직접 넣어 헤더·목록이 동일 규칙으로 섞이게 하고,
+ * linear-gradient 등은 레이어 opacity 유지(OBS·backdrop-blur 조합에서 안정적).
+ */
+function backgroundWithOpacityFrac(
+  bg: string,
+  frac: number
+): { background: string; opacity?: number } {
+  const f = Math.max(0, Math.min(1, frac));
+  if (f <= 0) return { background: "transparent" };
+  const t = (bg || "").trim();
+  if (!t || t.toLowerCase() === "transparent") return { background: "transparent" };
+
+  if (/^linear-gradient\s*\(/i.test(t) || /^radial-gradient\s*\(/i.test(t) || /^url\s*\(/i.test(t)) {
+    return { background: t, opacity: f };
+  }
+
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{8}|[0-9a-f]{6})$/i.exec(t);
+  if (hex) {
+    const h = hex[1];
+    const expand = (s: string) =>
+      s.length === 3 ? s.split("").map((c) => c + c).join("") : s;
+    const full = expand(h);
+    if (full.length === 8) {
+      const r = parseInt(full.slice(0, 2), 16);
+      const g = parseInt(full.slice(2, 4), 16);
+      const b = parseInt(full.slice(4, 6), 16);
+      const aByte = parseInt(full.slice(6, 8), 16) / 255;
+      return { background: `rgba(${r},${g},${b},${aByte * f})` };
+    }
+    const r = parseInt(full.slice(0, 2), 16);
+    const g = parseInt(full.slice(2, 4), 16);
+    const b = parseInt(full.slice(4, 6), 16);
+    return { background: `rgba(${r},${g},${b},${f})` };
+  }
+
+  const rgb = /^rgb\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\)$/i.exec(t);
+  if (rgb) {
+    return { background: `rgba(${rgb[1]},${rgb[2]},${rgb[3]},${f})` };
+  }
+
+  const rgbaM = /^rgba\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\)$/i.exec(t);
+  if (rgbaM) {
+    const a = Number(rgbaM[4]) * f;
+    return { background: `rgba(${rgbaM[1]},${rgbaM[2]},${rgbaM[3]},${a})` };
+  }
+
+  return { background: t, opacity: f };
+}
+
 function RankingColumn({
   title,
   items,
@@ -218,6 +268,11 @@ function RankingColumn({
         borderColor,
       };
 
+  const headerOpacityFrac = unified
+    ? Math.max(0, Math.min(1, panelOpacityFrac ?? 1))
+    : Math.max(0, Math.min(100, headerOpacity)) / 100;
+  const headerBgResolved = backgroundWithOpacityFrac(headerBg, headerOpacityFrac);
+
   const rowList = (
     <AnimatePresence initial={false}>
       {items.map((item, idx) => (
@@ -262,10 +317,8 @@ function RankingColumn({
         <div
           className="absolute inset-0"
           style={{
-            background: headerBg,
-            opacity: unified
-              ? Math.max(0, Math.min(1, panelOpacityFrac ?? 1))
-              : Math.max(0, Math.min(100, headerOpacity)) / 100,
+            background: headerBgResolved.background,
+            ...(headerBgResolved.opacity !== undefined ? { opacity: headerBgResolved.opacity } : {}),
           }}
         />
         <span className="relative z-10">{title}</span>
@@ -275,10 +328,7 @@ function RankingColumn({
           <div
             className="pointer-events-none absolute inset-0 z-0 rounded-none"
             aria-hidden
-            style={{
-              background: panelBg,
-              opacity: Math.max(0, Math.min(1, panelOpacityFrac ?? 1)),
-            }}
+            style={backgroundWithOpacityFrac(panelBg, Math.max(0, Math.min(1, panelOpacityFrac ?? 1)))}
           />
           <div className="relative z-[1] space-y-1 px-3 py-2.5">{rowList}</div>
         </div>
