@@ -214,10 +214,11 @@ const DEFAULT_DONOR_RANKINGS_THEME: DonorRankingsTheme = {
   rankSize: 24,
   overlayOpacity: 100,
   bg: "transparent",
-  panelBg: "transparent",
+  /** 투명도 슬라이더는 목록 영역만 적용 — 어두운 기본값은 방송 합성 시 탁해 보임 */
+  panelBg: "rgba(255, 248, 252, 1)",
   borderColor: "transparent",
   headerAccountBg: "#F8BBD0",
-  headerToonBg: "#F06292",
+  headerToonBg: "#f9a8d4",
   rowEvenBg: "transparent",
   rowOddBg: "transparent",
   rankColor: "#F06292",

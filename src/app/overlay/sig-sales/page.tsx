@@ -496,34 +496,51 @@ export default function SigSalesOverlayPage() {
     return out;
   }, [wheelDisplayPool, menuCount, rouletteDemo, winnersOnlyOverlay, winnerRowsForWheelOnly.length]);
 
-  const spinQueueSelected = useMemo(
-    () =>
-      (pendingLanding?.selected?.length ? pendingLanding.selected : machine.selectedSigs || []).slice(
-        0,
-        CONFIRMED_VISIBLE_SLOTS,
-      ),
-    [pendingLanding?.selected, machine.selectedSigs],
-  );
+  /**
+   * 당첨 큐: 항상 서버 `machine.selectedSigs` 우선(폴링 갱신·순서의 단일 소스).
+   * `pendingLanding` 은 SPINNING 직후·HYDRATE 전 복원용이며, 둘을 섞으면 휠 라운드 id와
+   * 결과 카드 `displaySelectedSigs` 순서가 어긋날 수 있음.
+   */
+  const spinQueueSelected = useMemo(() => {
+    const fromServer = (machine.selectedSigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
+    if (fromServer.length > 0) return fromServer;
+    return (pendingLanding?.selected || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
+  }, [machine.selectedSigs, pendingLanding?.selected]);
   /** 서버가 selectedSigs를 한 번에 주더라도 프론트에서는 항상 라운드별 순차 회전을 강제한다. */
   const useSequentialWheel = spinQueueSelected.length > 1;
   /**
-   * 순차 회전: `sequentialRoundIndex`가 당첨 수(n)를 넘으면 `selected[n]`이 undefined →
-   * 이전엔 `sequentialRoundRealId`가 null이 되고 `machine.resultId`로 폴백되어
-   * 휠(시그5)과 결과 카드(시그4·출항)가 어긋남. 항상 큐 범위로 클램프.
+   * 휠 착지용 당첨 id — **확정 큐(`spinQueueSelected`) + `sequentialRoundIndex`** 를 단일 소스로 둔다.
+   * 단일 당첨도 예전엔 `sequentialRoundRealId` 가 비어 `machine.resultId`/pending 순으로 새어
+   * 서버 큐와 착지가 어긋날 수 있었음.
    */
-  const sequentialRoundRealId = useMemo(() => {
-    if (!useSequentialWheel || spinQueueSelected.length === 0) return null;
-    const maxIdx = spinQueueSelected.length - 1;
-    const idx = Math.max(0, Math.min(sequentialRoundIndex, maxIdx));
-    return spinQueueSelected[idx]?.id ?? null;
-  }, [useSequentialWheel, spinQueueSelected, sequentialRoundIndex]);
+  const wheelLandingRealId = useMemo((): string | null => {
+    if (spinQueueSelected.length > 0) {
+      const maxIdx = spinQueueSelected.length - 1;
+      const idx = Math.max(0, Math.min(sequentialRoundIndex, maxIdx));
+      const id = spinQueueSelected[idx]?.id;
+      if (id) return id;
+    }
+    return (
+      machine.resultId ||
+      demoSpin?.resultId ||
+      pendingLanding?.resultId ||
+      (pendingLanding?.selected?.length ? pendingLanding.selected[pendingLanding.selected.length - 1]?.id : null) ||
+      (machine.selectedSigs?.length ? machine.selectedSigs[machine.selectedSigs.length - 1]?.id : null) ||
+      null
+    );
+  }, [
+    spinQueueSelected,
+    sequentialRoundIndex,
+    machine.resultId,
+    demoSpin?.resultId,
+    pendingLanding?.resultId,
+    pendingLanding?.selected,
+    machine.selectedSigs,
+  ]);
 
   const wheelItemsWithResult = useMemo(() => {
     const base = [...wheelSlices];
-    const rid =
-      useSequentialWheel && sequentialRoundRealId
-        ? sequentialRoundRealId
-        : demoSpin?.resultId || machine.resultId || pendingLanding?.resultId || null;
+    const rid = wheelLandingRealId;
     if (!rid || base.length === 0) return base;
     const hasWinner = base.some((s) => canonicalSigIdFromWheelSliceId(s.id) === rid);
     if (hasWinner) return base;
@@ -537,11 +554,7 @@ export default function SigSalesOverlayPage() {
     return base;
   }, [
     wheelSlices,
-    useSequentialWheel,
-    sequentialRoundRealId,
-    demoSpin?.resultId,
-    machine.resultId,
-    pendingLanding?.resultId,
+    wheelLandingRealId,
     pendingLanding?.selected,
     machine.selectedSigs,
     activeNormalPool,
@@ -549,28 +562,11 @@ export default function SigSalesOverlayPage() {
 
   /** 서버 당첨 id(real) → 휠 세그먼트 id */
   const wheelResultSliceId = useMemo(() => {
-    const realId =
-      useSequentialWheel && sequentialRoundRealId
-        ? sequentialRoundRealId
-        : machine.resultId ||
-          demoSpin?.resultId ||
-          pendingLanding?.resultId ||
-          (pendingLanding?.selected?.length ? pendingLanding.selected[pendingLanding.selected.length - 1]?.id : null) ||
-          (machine.selectedSigs?.length ? machine.selectedSigs[machine.selectedSigs.length - 1]?.id : null) ||
-          null;
+    const realId = wheelLandingRealId;
     if (!realId || wheelItemsWithResult.length === 0) return null;
     const idx = wheelItemsWithResult.findIndex((s) => canonicalSigIdFromWheelSliceId(s.id) === realId);
     return idx >= 0 ? wheelItemsWithResult[idx]!.id : wheelItemsWithResult[wheelItemsWithResult.length - 1]!.id;
-  }, [
-    useSequentialWheel,
-    sequentialRoundRealId,
-    machine.resultId,
-    demoSpin?.resultId,
-    pendingLanding?.resultId,
-    pendingLanding?.selected,
-    machine.selectedSigs,
-    wheelItemsWithResult,
-  ]);
+  }, [wheelLandingRealId, wheelItemsWithResult]);
   /** 회전 중·착지 전에는 비우고, 착지 후에는 순차 공개용 전체 목록 */
   const fullSelectedSigs = useMemo(() => {
     const startedAtNum = Number(machine.startedAt || 0);
@@ -1276,7 +1272,7 @@ export default function SigSalesOverlayPage() {
                   }, 280);
                 }}
                 onLanded={(landedId) => {
-                  const selectedQueue = (pendingLanding?.selected || machine.selectedSigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
+                  const selectedQueue = spinQueueSelected;
                   if (selectedQueue.length === 0) {
                     setDemoSpin(null);
                     setOverlayHoldResults(true);

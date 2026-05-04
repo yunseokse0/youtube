@@ -3764,7 +3764,7 @@ export default function AdminPage() {
                         <div className="text-xs text-neutral-300">{state.donorRankingsTheme.rankSize}px</div>
                       </label>
                       <label className="text-[11px] text-neutral-400">
-                        오버레이 투명도(패널 본문 배경)
+                        오버레이 투명도(순위 목록 영역만 · 계좌/투네 제목 바는 분홍 유지)
                         <input
                           type="range"
                           min={0}
@@ -3892,7 +3892,9 @@ export default function AdminPage() {
                     </button>
                   </div>
                   <div className="rounded border border-white/10 bg-black/20 px-3 py-2">
-                    <div className="text-xs text-neutral-300 mb-1">후원 리스트 패널 배경 투명도(실시간)</div>
+                    <div className="text-xs text-neutral-300 mb-1">
+                      후원 리스트 패널 배경 투명도(실시간 · 순위 목록만, 헤더 제외)
+                    </div>
                     <div className="flex items-center gap-2">
                       <input
                         type="range"
@@ -5659,7 +5661,7 @@ export default function AdminPage() {
                 </button>
               </div>
               <div className="mb-3 rounded border border-white/10 bg-black/20 px-3 py-2">
-                <div className="text-xs text-neutral-300 mb-1">후원 리스트 타이틀 배경 투명도(실시간)</div>
+                <div className="text-xs text-neutral-300 mb-1">후원 리스트 목록 배경 투명도(실시간 · 헤더 제외)</div>
                 <div className="flex items-center gap-2">
                   <input
                     type="range"
@@ -6239,7 +6241,7 @@ export default function AdminPage() {
                                   <label className="text-xs text-neutral-400">후원(원)</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" type="number" value={p.goal} onChange={(e) => updatePreset(p.id, { goal: e.target.value })} />
                                   <p className="col-span-1 sm:col-span-2 text-[11px] text-neutral-500 leading-snug">
-                                    통합·목표 오버레이: 후원 합계가 목표 이상이면 이 금액이 자동으로 약 20% 증가합니다. OBS URL에{" "}
+                                    통합·목표 오버레이: 후원 합계가 목표 이상이면 이 금액이 자동으로 약 10% 증가합니다. OBS URL에{" "}
                                     <code className="rounded bg-black/40 px-1 text-neutral-400">goal=숫자</code>
                                     가 있으면 상향이 적용되지 않습니다(관리자 Prism 복사 URL에는 포함하지 않음). 비활성:{" "}
                                     <code className="rounded bg-black/40 px-1 text-neutral-400">goalAutoStretch=0</code>

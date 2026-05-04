@@ -2,11 +2,11 @@
 
 import { useEffect, useRef } from "react";
 
-const GOAL_STRETCH_FACTOR = 1.2;
+const GOAL_STRETCH_FACTOR = 1.1;
 const PATCH_COOLDOWN_MS = 1400;
 
-/** 현재 목표 금액의 20%만큼 상향(원 단위, 최소 +1원) */
-export function nextGoalTwentyPercentIncrease(goal: number): number {
+/** 현재 목표 금액의 10%만큼 상향(원 단위, 최소 +1원) */
+export function nextGoalTenPercentIncrease(goal: number): number {
   const g = Math.max(1, Math.floor(Number(goal) || 0));
   return Math.max(g + 1, Math.ceil(g * GOAL_STRETCH_FACTOR));
 }
@@ -39,7 +39,7 @@ export function useGoalPresetAutoEscalate(args: Args): void {
     const presets = args.overlayPresets;
     if (!Array.isArray(presets) || presets.length === 0) return;
 
-    const nextGoal = nextGoalTwentyPercentIncrease(goal);
+    const nextGoal = nextGoalTenPercentIncrease(goal);
     if (nextGoal <= goal) return;
 
     const now = Date.now();

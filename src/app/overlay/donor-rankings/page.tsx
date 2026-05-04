@@ -142,7 +142,7 @@ function readColor(sp: URLSearchParams, key: string, fallback: string): string {
 /**
  * 패널 등: 저장값이 `transparent`일 때 방송 기본 채색(URL 덮어쓰기 가능).
  * 구버전은 여기서 알파가 큰 그라데이션을 넣어 슬라이더와 무관하게 항상 어둡게 보였음 → 기본은 불투명 단색으로 두고,
- * `overlayOpacity`를 별도 레이어로 곱해 실제 투명도처럼 동작하게 한다.
+ * 목록 영역만 `overlayOpacity`를 곱한다(제목 바 분홍은 유지).
  */
 function resolveThemeColor(
   sp: URLSearchParams,
@@ -174,6 +174,7 @@ function RankingColumn({
   headerOpacity,
   unified,
   showColumnDivider,
+  panelOpacityFrac,
 }: {
   title: string;
   items: DonorRow[];
@@ -193,6 +194,8 @@ function RankingColumn({
   unified?: boolean;
   /** unified일 때 좌측 칼럼 오른쪽 구분선(md 이상) */
   showColumnDivider?: boolean;
+  /** unified: 목록 영역에만 `panelBg`×투명도(제목 바는 항상 선명한 분홍 유지) */
+  panelOpacityFrac?: number;
 }) {
   const outlined = { textShadow: `-1px -1px 0 ${outlineColor},1px -1px 0 ${outlineColor},-1px 1px 0 ${outlineColor},1px 1px 0 ${outlineColor},0 2px 6px rgba(0,0,0,0.38)` } as const;
   const rankLabel = (idx: number): string => {
@@ -207,13 +210,43 @@ function RankingColumn({
           ? "border-b border-solid border-r-0 md:border-b-0 md:border-r md:border-solid"
           : ""
       }`
-    : "relative z-[1] w-full overflow-hidden rounded-2xl border shadow-[0_10px_28px_rgba(76,5,25,0.32)] backdrop-blur-md";
+    : "relative z-[1] w-full overflow-hidden rounded-2xl border shadow-[0_12px_32px_rgba(236,72,153,0.14)] backdrop-blur-md";
   const outerStyle: CSSProperties | undefined = unified
     ? { borderColor }
     : {
         background: panelBg,
         borderColor,
       };
+
+  const rowList = (
+    <AnimatePresence initial={false}>
+      {items.map((item, idx) => (
+        <motion.div
+          key={item.name}
+          layout
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -12 }}
+          transition={{ type: "spring", stiffness: 420, damping: 34, mass: 0.8 }}
+          className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 px-1 py-1"
+          style={{
+            fontSize: `${rowSize}px`,
+          }}
+        >
+          <span className="font-black text-center" style={{ color: rankColor, fontSize: `${rankSize}px`, ...outlined }}>
+            {rankLabel(idx)}
+          </span>
+          <span className="truncate font-bold" style={{ color: nameColor, ...outlined }}>
+            {item.name}
+          </span>
+          <span className="font-black tabular-nums text-right" style={{ color: amountColor, ...outlined }}>
+            {item.amount.toLocaleString("ko-KR")}
+            {suffix ? ` ${suffix}` : " 원"}
+          </span>
+        </motion.div>
+      ))}
+    </AnimatePresence>
+  );
 
   return (
     <section className={outerClass} style={outerStyle}>
@@ -230,41 +263,27 @@ function RankingColumn({
           className="absolute inset-0"
           style={{
             background: headerBg,
-            /** unified: 패널 전체가 `overlayOpacity`로 어두워지므로 헤더 그라데이션은 또 곱하지 않음 */
+            /** unified: 제목 배경은 슬라이더와 무관하게 불투명(목록만 `panelOpacityFrac`) */
             opacity: unified ? 1 : Math.max(0, Math.min(100, headerOpacity)) / 100,
           }}
         />
         <span className="relative z-10">{title}</span>
       </div>
-      <div className={`space-y-1 ${unified ? "flex-1 px-3 py-2.5" : "p-2.5"}`}>
-        <AnimatePresence initial={false}>
-          {items.map((item, idx) => (
-            <motion.div
-              key={item.name}
-              layout
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -12 }}
-              transition={{ type: "spring", stiffness: 420, damping: 34, mass: 0.8 }}
-              className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 px-1 py-1"
-              style={{
-                fontSize: `${rowSize}px`,
-              }}
-            >
-              <span className="font-black text-center" style={{ color: rankColor, fontSize: `${rankSize}px`, ...outlined }}>
-                {rankLabel(idx)}
-              </span>
-              <span className="truncate font-bold" style={{ color: nameColor, ...outlined }}>
-                {item.name}
-              </span>
-              <span className="font-black tabular-nums text-right" style={{ color: amountColor, ...outlined }}>
-                {item.amount.toLocaleString("ko-KR")}
-                {suffix ? ` ${suffix}` : " 원"}
-              </span>
-            </motion.div>
-          ))}
-        </AnimatePresence>
-      </div>
+      {unified ? (
+        <div className="relative min-h-0 flex-1">
+          <div
+            className="pointer-events-none absolute inset-0 z-0 rounded-none"
+            aria-hidden
+            style={{
+              background: panelBg,
+              opacity: Math.max(0, Math.min(1, panelOpacityFrac ?? 1)),
+            }}
+          />
+          <div className="relative z-[1] space-y-1 px-3 py-2.5">{rowList}</div>
+        </div>
+      ) : (
+        <div className="space-y-1 p-2.5">{rowList}</div>
+      )}
     </section>
   );
 }
@@ -288,7 +307,8 @@ export default function DonorRankingsOverlayPage() {
   const zoomPct = Math.floor(readNumber(sp, "zoomPct", 100, 30, 300));
   const zoomScale = zoomPct / 100;
   const bg = readColor(sp, "bg", savedTheme.bg) || "transparent";
-  const panelBg = resolveThemeColor(sp, "panelBg", savedTheme.panelBg, "rgba(18, 10, 17, 1)");
+  /** 어두운 기본값 + 투명도 시 방송 화면과 섞여 버건디로 보이므로 밝은 파스텔 핑크를 기본으로 */
+  const panelBg = resolveThemeColor(sp, "panelBg", savedTheme.panelBg, "rgba(255, 248, 252, 1)");
   const borderColor = resolveThemeColor(
     sp,
     "border",
@@ -297,10 +317,10 @@ export default function DonorRankingsOverlayPage() {
   );
   const headerAccountBg =
     readColor(sp, "headerAccountBg", savedTheme.headerAccountBg) ||
-    "linear-gradient(135deg, #ffd6ea 0%, #ff9ec8 56%, #f75c9c 100%)";
+    "linear-gradient(135deg, #fff5fa 0%, #ffd6ea 48%, #ffb7d6 100%)";
   const headerToonBg =
     readColor(sp, "headerToonBg", savedTheme.headerToonBg) ||
-    "linear-gradient(135deg, #ffd2e8 0%, #ff8ebf 56%, #ef4f96 100%)";
+    "linear-gradient(135deg, #fff4f9 0%, #ffc8e6 48%, #ffa3cf 100%)";
   const rankColor = readColor(sp, "rankColor", savedTheme.rankColor) || "#fff5f9";
   const nameColor = readColor(sp, "nameColor", savedTheme.nameColor) || "#fff7fb";
   const amountColor = readColor(sp, "amountColor", savedTheme.amountColor) || "#fff7ed";
@@ -368,20 +388,12 @@ export default function DonorRankingsOverlayPage() {
           </div>
         )}
         <div
-          className="relative grid grid-cols-1 overflow-hidden rounded-2xl border shadow-[0_10px_28px_rgba(76,5,25,0.32)] backdrop-blur-md md:grid-cols-2 md:gap-0"
+          className="relative grid grid-cols-1 overflow-hidden rounded-2xl border shadow-[0_12px_32px_rgba(236,72,153,0.14)] backdrop-blur-md md:grid-cols-2 md:gap-0"
           style={{
             borderColor,
             backgroundColor: "transparent",
           }}
         >
-          <div
-            className="pointer-events-none absolute inset-0 z-0 rounded-[inherit]"
-            aria-hidden
-            style={{
-              background: panelBg,
-              opacity: overlayOpacityFrac,
-            }}
-          />
           <RankingColumn
             title="계좌 후원 순위"
             items={accountTop}
@@ -398,6 +410,7 @@ export default function DonorRankingsOverlayPage() {
             headerOpacity={overlayOpacity}
             unified
             showColumnDivider
+            panelOpacityFrac={overlayOpacityFrac}
           />
           <RankingColumn
             title="투네 후원 순위"
@@ -415,6 +428,7 @@ export default function DonorRankingsOverlayPage() {
             outlineColor={outlineColor}
             headerOpacity={overlayOpacity}
             unified
+            panelOpacityFrac={overlayOpacityFrac}
           />
         </div>
       </div>
