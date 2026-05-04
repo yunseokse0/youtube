@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi, loadState, totalToon, totalCombined, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers } from "@/lib/state";
+import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi, loadState, totalToon, totalCombined, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig } from "@/lib/state";
 import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
 import { getEffectiveRemainingTime } from "@/lib/timer-utils";
 import { useFlip } from "@/lib/flip";
@@ -1456,18 +1456,19 @@ function OverlayInner() {
   const timerBaseText = serverTimer.text || elapsed || (timerOnlyMode ? "00:00:00" : null);
   const timerText = formatTimerText(timerBaseText, serverTimer.remainingSeconds, timerShowHours);
 
-  const nameCh = Math.max(6, Math.min(40, parseInt(sp.get("nameCh") || (compact ? "10" : (isVertical ? "14" : "12")), 10)));
+  // 숫자 컬럼 가독성 우선: 이름 기본 폭을 줄여 계좌/투네 겹침 여유를 확보한다.
+  const nameCh = Math.max(6, Math.min(40, parseInt(sp.get("nameCh") || (compact ? "8" : (isVertical ? "12" : "9")), 10)));
   const nameGrow = (sp.get("nameGrow") || "true").toLowerCase() === "true";
   const currencyFull = (sp.get("currencyFull") || "false").toLowerCase() === "true";
   const nameMaxCh = Math.max(nameCh, Math.min(80, parseInt(sp.get("nameMaxCh") || String(nameCh + 8), 10)));
   const fullAmountMode = sp.get("donorsFormat") === "full" || currencyFull;
   // 기본 열 폭이 너무 작으면 4자리 이상 숫자에서 스트로크 텍스트가 인접 열과 겹치므로 기본/상한을 확장한다.
-  const defBankCh = (sp.get("bankCh") && parseInt(sp.get("bankCh")!, 10)) || (fullAmountMode ? (compact ? 9 : 11) : (compact ? 6 : 7));
-  const defToonCh = (sp.get("toonCh") && parseInt(sp.get("toonCh")!, 10)) || (fullAmountMode ? (compact ? 9 : 11) : (compact ? 6 : 7));
+  const defBankCh = (sp.get("bankCh") && parseInt(sp.get("bankCh")!, 10)) || (fullAmountMode ? (compact ? 10 : 12) : (compact ? 8 : 9));
+  const defToonCh = (sp.get("toonCh") && parseInt(sp.get("toonCh")!, 10)) || (fullAmountMode ? (compact ? 10 : 12) : (compact ? 8 : 9));
   const defTotalCh = (sp.get("totalCh") && parseInt(sp.get("totalCh")!, 10)) || (fullAmountMode ? (compact ? 8 : 9) : (compact ? 6 : 7));
   const defContributionCh = (sp.get("contributionCh") && parseInt(sp.get("contributionCh")!, 10)) || (fullAmountMode ? (compact ? 8 : 9) : (compact ? 8 : 9));
-  const bankCh = Math.max(6, Math.min(16, defBankCh));
-  const toonCh = Math.max(6, Math.min(16, defToonCh));
+  const bankCh = Math.max(8, Math.min(18, defBankCh));
+  const toonCh = Math.max(8, Math.min(18, defToonCh));
   const totalCh = Math.max(6, Math.min(12, defTotalCh));
   /** 순위 열: 헤더「순위」·「#12」 등이 잘리지 않도록 `ch` 하한 확보(URL `rankCh`) */
   const rankColCh = Math.max(5, Math.min(10, parseInt(sp.get("rankCh") || "5", 10)));
@@ -1522,14 +1523,28 @@ function OverlayInner() {
     if (rawPreset === "false") return false;
     return false;
   })();
-  const tableBgGifUrl = ((sp.get("tableBgGifUrl") || "").trim() || String((activePreset as any)?.tableBgGifUrl || "").trim());
+  const donationListsCfg = normalizeDonationListsOverlayConfig(s?.donationListsOverlayConfig);
+  const tableBgGifUrl = (
+    (sp.get("tableBgGifUrl") || "").trim() ||
+    String((activePreset as any)?.tableBgGifUrl || "").trim() ||
+    (donationListsCfg.isBgEnabled ? donationListsCfg.bgGifUrl.trim() : "")
+  );
   const tableBgGifOpacity = (() => {
     const rawUrl = (sp.get("tableBgGifOpacity") || "").trim();
     const rawPreset = String((activePreset as any)?.tableBgGifOpacity || "").trim();
-    const raw = rawUrl || rawPreset;
+    const rawFallback = donationListsCfg.isBgEnabled ? String(donationListsCfg.bgOpacity) : "";
+    const raw = rawUrl || rawPreset || rawFallback;
     if (!raw) return 45;
     const n = parseInt(raw, 10);
     return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 45;
+  })();
+  const tableBgGifBrightness = (() => {
+    const rawUrl = (sp.get("tableBgGifBrightness") || "").trim();
+    const rawPreset = String((activePreset as any)?.tableBgGifBrightness || "").trim();
+    const raw = rawUrl || rawPreset;
+    if (!raw) return 100;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? Math.max(40, Math.min(200, n)) : 100;
   })();
   const totalLineVisible = (() => {
     const raw = (sp.get("totalLineVisible") || "").trim().toLowerCase();
@@ -2419,7 +2434,7 @@ function OverlayInner() {
                     src={tableBgGifUrl}
                     alt=""
                     className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-                    style={{ opacity: tableBgGifOpacity / 100 }}
+                    style={{ opacity: tableBgGifOpacity / 100, filter: `brightness(${tableBgGifBrightness}%)` }}
                     loading="eager"
                     decoding="async"
                   />

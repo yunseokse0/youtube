@@ -74,7 +74,7 @@ type OverlayPreset = {
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
-  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; host?: string;
+  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; host?: string;
 };
 
 /** 미션 목록이 비었을 때 미션 전광판 UI 확인용 placeholder */
@@ -231,6 +231,7 @@ export default function AdminPage() {
     totalLineVisible: false,
     tableBgGifUrl: "",
     tableBgGifOpacity: "45",
+    tableBgGifBrightness: "100",
     accountColor: "",
     toonColor: "",
     ...overrides,
@@ -5817,6 +5818,23 @@ export default function AdminPage() {
                                       className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
                                       value={p.tableBgGifOpacity || "45"}
                                       onChange={(e) => updatePreset(p.id, { tableBgGifOpacity: e.target.value.replace(/[^\\d]/g, "") })}
+                                    />
+                                    <span className="text-xs text-neutral-500">%</span>
+                                  </div>
+                                  <label className="text-xs text-neutral-400">GIF 밝기</label>
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="range"
+                                      min="40"
+                                      max="200"
+                                      value={p.tableBgGifBrightness || "100"}
+                                      onChange={(e) => updatePreset(p.id, { tableBgGifBrightness: e.target.value })}
+                                      className="flex-1 accent-emerald-500"
+                                    />
+                                    <input
+                                      className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                                      value={p.tableBgGifBrightness || "100"}
+                                      onChange={(e) => updatePreset(p.id, { tableBgGifBrightness: e.target.value.replace(/[^\d]/g, "") })}
                                     />
                                     <span className="text-xs text-neutral-500">%</span>
                                   </div>
