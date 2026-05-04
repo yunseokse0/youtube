@@ -5,6 +5,10 @@ export function getSigSalesWheelDemoPath(): string {
     rouletteDemo: "1",
     menuCount: "5",
     devSequentialTest: "1",
+    /** 라운드 간 다음 회전까지 대기(ms) — 순차 연출이 눈에 잘 들어오게 */
+    sequentialNextSpinMs: "900",
+    /** 휠 result 직후 카드 +1까지(ms) */
+    sequentialCardEmergeMs: "400",
   });
   return `/overlay/sig-sales?${q.toString()}`;
 }

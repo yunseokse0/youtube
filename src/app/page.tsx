@@ -8,9 +8,18 @@ export default async function Home() {
   const userCookie = cookieStore.get(AUTH_COOKIE)?.value;
   const headerStore = await headers();
   const host = (headerStore.get("host") || "").toLowerCase().split(":")[0];
-  const isLocal = host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+  const isLocal =
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    host === "[::1]";
+  /** 같은 PC의 다른 기기·LAN IP로 접속할 때도 데모 바로 보기 */
+  const isLanDev =
+    /^192\.168\.\d{1,3}\.\d{1,3}$/.test(host) ||
+    /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) ||
+    host.endsWith(".local");
   /** 로컬에서는 루트가 관리자로만 가면 회전판 데모를 못 봄 → `/wheel` 데모로 우선 연결 */
-  if (isLocal) {
+  if (isLocal || isLanDev) {
     redirect("/wheel");
   }
   if (userCookie) redirect("/admin");
