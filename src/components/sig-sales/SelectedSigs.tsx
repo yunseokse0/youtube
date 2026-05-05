@@ -123,6 +123,10 @@ export default function SelectedSigs({
                   : ""
             } ${isLatestConfirmed ? "border-yellow-300 shadow-[0_0_24px_rgba(250,204,21,0.45)]" : broadcastMatch ? "" : "border-white/20"}`}
           >
+            {sold ? (
+              <div className="pointer-events-none absolute inset-0 z-[1] rounded-[inherit] bg-white/93" aria-hidden />
+            ) : null}
+            <div className="relative z-[2]">
             {showConfirmedBadge ? (
               <div className="absolute left-2 top-2 z-20 rounded bg-emerald-600/90 px-2 py-0.5 text-[10px] font-black text-white">
                 확정
@@ -145,12 +149,6 @@ export default function SelectedSigs({
                     : "aspect-[4/5]"
               }`}
             >
-              {sold ? (
-                <div
-                  className="absolute inset-0 z-[1] rounded-[inherit] bg-white/93"
-                  aria-hidden
-                />
-              ) : null}
               <SigSaleMedia
                 src={resolveSigImageUrl(item.name, item.imageUrl)}
                 alt={item.name}
@@ -213,6 +211,7 @@ export default function SelectedSigs({
                   {sold ? "판매 취소" : "판매 완료"}
                 </button>
               ) : null}
+            </div>
             </div>
           </motion.article>
         );

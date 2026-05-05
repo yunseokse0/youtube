@@ -76,9 +76,14 @@ export async function POST(req: Request) {
     } catch {}
     const rs = normalizeRouletteState(s.rouletteState);
     const sessionId = String(body.sessionId || rs.sessionId || "").trim();
-    const selectedSigs = Array.isArray(body.selectedSigs) && body.selectedSigs.length > 0
-      ? body.selectedSigs
-      : (rs.selectedSigs || rs.results || []);
+    // 확정 데이터는 서버가 보관한 당첨 목록을 우선 사용한다.
+    // (클라이언트 로컬 표시 상태가 늦거나 어긋난 경우에도 당첨/확정 불일치 방지)
+    const selectedSigs =
+      (rs.selectedSigs && rs.selectedSigs.length > 0)
+        ? rs.selectedSigs
+        : (rs.results && rs.results.length > 0)
+          ? rs.results
+          : (Array.isArray(body.selectedSigs) && body.selectedSigs.length > 0 ? body.selectedSigs : []);
     const oneShotPrice = Math.max(0, Math.floor(Number(body.oneShotResult?.price ?? rs.oneShotResult?.price ?? 0)));
     const finalPhase = body.finalPhase === "CANCELLED" ? "CANCELLED" : "CONFIRMED";
 

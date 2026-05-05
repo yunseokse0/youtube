@@ -62,15 +62,18 @@ export default function OneShotSigCard({
           : "overflow-hidden rounded-2xl p-4"
       }`}
     >
+      {sold ? (
+        <div className="pointer-events-none absolute inset-0 z-[1] rounded-[inherit] bg-white/93" aria-hidden />
+      ) : null}
       <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.35),transparent_65%)]" />
+      <div
+        className="relative z-[2]"
+      >
       <div
         className={`relative overflow-hidden rounded-lg border border-yellow-200/40 bg-gradient-to-b from-amber-950/55 via-neutral-950/75 to-black ${
           compact ? SIG_OVERLAY_CARD_MEDIA_BOX_CLASS : "mb-2 h-40"
         }`}
       >
-        {sold ? (
-          <div className="absolute inset-0 z-[1] rounded-[inherit] bg-white/93" aria-hidden />
-        ) : null}
         <SigSaleMedia
           src={resolveSigImageUrl(name, imageUrl)}
           alt={name}
@@ -132,6 +135,7 @@ export default function OneShotSigCard({
             </button>
           ) : null}
         </div>
+      </div>
       </div>
     </motion.section>
   );
