@@ -115,9 +115,6 @@ function RollingCardColumn({
               draggable={false}
             />
           </div>
-          <div className="px-2 py-2 text-center">
-            <div className="truncate text-sm font-bold pastel-text-outline">{current.label?.trim() || "\u00a0"}</div>
-          </div>
         </div>
       </div>
     );
@@ -155,9 +152,6 @@ function RollingCardColumn({
             draggable={false}
             onTransitionEnd={onFadeEnd || undefined}
           />
-        </div>
-        <div className="px-2 py-2 text-center">
-          <div className="truncate text-sm font-bold pastel-text-outline">{current.label?.trim() || "\u00a0"}</div>
         </div>
       </div>
     </div>
