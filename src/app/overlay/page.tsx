@@ -1457,19 +1457,19 @@ function OverlayInner() {
   const timerBaseText = serverTimer.text || elapsed || (timerOnlyMode ? "00:00:00" : null);
   const timerText = formatTimerText(timerBaseText, serverTimer.remainingSeconds, timerShowHours);
 
-  // 숫자 컬럼 가독성 우선: 이름 기본 폭을 줄여 계좌/투네 겹침 여유를 확보한다.
-  const nameCh = Math.max(6, Math.min(40, parseInt(sp.get("nameCh") || (compact ? "8" : (isVertical ? "12" : "9")), 10)));
+  // 숫자 컬럼 가독성 우선: 이름 기본 폭을 줄이고 계좌·투네 기본 폭을 넓혀 숫자 겹침을 줄인다(URL nameCh·bankCh·toonCh 로 조정 가능).
+  const nameCh = Math.max(6, Math.min(40, parseInt(sp.get("nameCh") || (compact ? "7" : (isVertical ? "11" : "7")), 10)));
   const nameGrow = (sp.get("nameGrow") || "true").toLowerCase() === "true";
   const currencyFull = (sp.get("currencyFull") || "false").toLowerCase() === "true";
   const nameMaxCh = Math.max(nameCh, Math.min(80, parseInt(sp.get("nameMaxCh") || String(nameCh + 8), 10)));
   const fullAmountMode = sp.get("donorsFormat") === "full" || currencyFull;
   // 기본 열 폭이 너무 작으면 4자리 이상 숫자에서 스트로크 텍스트가 인접 열과 겹치므로 기본/상한을 확장한다.
-  const defBankCh = (sp.get("bankCh") && parseInt(sp.get("bankCh")!, 10)) || (fullAmountMode ? (compact ? 10 : 12) : (compact ? 8 : 9));
-  const defToonCh = (sp.get("toonCh") && parseInt(sp.get("toonCh")!, 10)) || (fullAmountMode ? (compact ? 10 : 12) : (compact ? 8 : 9));
+  const defBankCh = (sp.get("bankCh") && parseInt(sp.get("bankCh")!, 10)) || (fullAmountMode ? (compact ? 11 : 13) : (compact ? 10 : 12));
+  const defToonCh = (sp.get("toonCh") && parseInt(sp.get("toonCh")!, 10)) || (fullAmountMode ? (compact ? 11 : 13) : (compact ? 10 : 12));
   const defTotalCh = (sp.get("totalCh") && parseInt(sp.get("totalCh")!, 10)) || (fullAmountMode ? (compact ? 8 : 9) : (compact ? 6 : 7));
   const defContributionCh = (sp.get("contributionCh") && parseInt(sp.get("contributionCh")!, 10)) || (fullAmountMode ? (compact ? 8 : 9) : (compact ? 8 : 9));
-  const bankCh = Math.max(8, Math.min(18, defBankCh));
-  const toonCh = Math.max(8, Math.min(18, defToonCh));
+  const bankCh = Math.max(8, Math.min(20, defBankCh));
+  const toonCh = Math.max(8, Math.min(20, defToonCh));
   const totalCh = Math.max(6, Math.min(12, defTotalCh));
   /** 순위 열: 헤더「순위」·「#12」 등이 잘리지 않도록 `ch` 하한 확보(URL `rankCh`) */
   const rankColCh = Math.max(5, Math.min(10, parseInt(sp.get("rankCh") || "5", 10)));
