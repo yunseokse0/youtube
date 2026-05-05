@@ -1325,24 +1325,34 @@ export default function SigSalesOverlayPage() {
                   const snapSession = machine.sessionId;
                   const snapStarted = machine.startedAt;
                   const canonicalLand = landedId ? canonicalSigIdFromWheelSliceId(landedId) : null;
+                  const landedQueue = (() => {
+                    if (!canonicalLand) return selectedQueue;
+                    const idx = selectedQueue.findIndex(
+                      (item) => canonicalSigIdFromWheelSliceId(item.id) === canonicalLand
+                    );
+                    if (idx < 0 || idx === selectedQueue.length - 1) return selectedQueue;
+                    const picked = selectedQueue[idx]!;
+                    const rest = selectedQueue.filter((_, i) => i !== idx);
+                    return [...rest, picked];
+                  })();
                   const expectedReal =
                     pendingLanding?.resultId ||
                     machine.resultId ||
-                    selectedQueue[selectedQueue.length - 1]?.id ||
+                    landedQueue[landedQueue.length - 1]?.id ||
                     null;
 
-                  const oneShot = buildOneShotFromSelected(selectedQueue);
+                  const oneShot = buildOneShotFromSelected(landedQueue);
                   const machineSpinKey = `${machine.startedAt || 0}:${machine.sessionId || ""}:${machine.resultId || ""}`;
                   completedSpinKeyRef.current = machineSpinKey;
                   const finalResultId =
+                    landedQueue[landedQueue.length - 1]?.id ||
                     pendingLanding?.resultId ||
                     machine.resultId ||
                     expectedReal ||
                     canonicalLand ||
-                    selectedQueue[selectedQueue.length - 1]?.id ||
-                    selectedQueue[0]!.id;
-                  landed(selectedQueue, oneShot, finalResultId);
-                  if (buildOneShotFromSelected(selectedQueue)) {
+                    landedQueue[0]!.id;
+                  landed(landedQueue, oneShot, finalResultId);
+                  if (buildOneShotFromSelected(landedQueue)) {
                     window.setTimeout(() => setOneShotRevealUnlocked(true), sigResultStaggerMs);
                   }
                   if (ROULETTE_WHEEL_SFX_ENABLED) {
@@ -1369,7 +1379,7 @@ export default function SigSalesOverlayPage() {
                           body: JSON.stringify({
                             sessionId: snapSession,
                             startedAt: snapStarted,
-                            selectedSigs: selectedQueue,
+                            selectedSigs: landedQueue,
                             oneShotResult: oneShot,
                           }),
                         });

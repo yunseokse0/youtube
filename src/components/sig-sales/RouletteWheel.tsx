@@ -132,16 +132,18 @@ export default function RouletteWheel({
   const frameMaxWidthPx = Math.round(680 * wheelScale);
   const wheelSizePx = Math.round(270 * wheelScale);
   const pointerSizePx = Math.max(28, Math.round(36 * wheelScale));
+  const labelWidthPx = Math.max(70, Math.round(96 * wheelScale));
+  const labelHeightPx = Math.max(34, Math.round(46 * wheelScale));
   /** 부채꼴 무게중심까지 거리: (4R sin(φ/2)) / (3φ), φ=섹션 라디안 → 메뉴명이 칸 중앙에 오도록 */
   const labelRadiusPx = (() => {
     const R = Math.max(1, wheelSizePx / 2 - wheelBorderPx);
     const phi = (2 * Math.PI) / segmentCount;
     if (segmentCount <= 1) return 0;
     const radial = (R * (4 * Math.sin(phi / 2))) / (3 * phi);
-    return Math.max(12, Math.round(radial));
+    // 텍스트 블럭이 원판 경계 밖으로 튀어나오지 않도록 안전 여백을 둔다.
+    const safeInside = R - Math.max(18, Math.round(labelHeightPx * 0.55));
+    return Math.max(12, Math.round(Math.min(radial, safeInside)));
   })();
-  const labelWidthPx = Math.max(70, Math.round(96 * wheelScale));
-  const labelHeightPx = Math.max(34, Math.round(46 * wheelScale));
   const labelFontPx = Math.max(11, Math.round(13 * wheelScale));
   const centerSizePx = Math.max(36, Math.round(48 * wheelScale));
   const gradient = useMemo(() => {

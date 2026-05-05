@@ -232,13 +232,18 @@ export async function POST(req: Request) {
         { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }
       );
     }
-    const rollingPool = inv.filter((x) => x.isRolling && x.soldCount < x.maxCount);
-    const pool = rollingPool.length > 0 ? rollingPool : inv.filter((x) => x.soldCount < x.maxCount);
-    const usePool = pool.length > 0 ? pool : inv;
-    const runtimePool = (usePool.length > 0 ? usePool : inv).filter((x) => x.id !== ONE_SHOT_SIG_ID);
+    const runtimePool = inv.filter(
+      (x) => x.id !== ONE_SHOT_SIG_ID && x.isActive && x.soldCount < x.maxCount
+    );
     if (runtimePool.length === 0) {
       return Response.json(
         { error: "empty_inventory" },
+        { status: 400, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }
+      );
+    }
+    if (runtimePool.length < spinCount) {
+      return Response.json(
+        { error: "not_enough_active_sigs", need: spinCount, have: runtimePool.length },
         { status: 400, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }
       );
     }
