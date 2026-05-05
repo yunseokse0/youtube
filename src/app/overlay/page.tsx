@@ -1458,23 +1458,24 @@ function OverlayInner() {
   const timerText = formatTimerText(timerBaseText, serverTimer.remainingSeconds, timerShowHours);
 
   // 숫자 컬럼 가독성 우선: 이름 기본 폭을 줄이고 계좌·투네 기본 폭을 넓혀 숫자 겹침을 줄인다(URL nameCh·bankCh·toonCh 로 조정 가능).
-  const nameCh = Math.max(6, Math.min(40, parseInt(sp.get("nameCh") || (compact ? "7" : (isVertical ? "11" : "7")), 10)));
+  // 가로 엑셀: 이름 기본을 짧게 해 오른쪽「기여도」열이 잘리지 않게 함(nameCh URL로 확대 가능).
+  const nameCh = Math.max(4, Math.min(40, parseInt(sp.get("nameCh") || (compact ? "6" : (isVertical ? "11" : "5")), 10)));
   const nameGrow = (sp.get("nameGrow") || "true").toLowerCase() === "true";
   const currencyFull = (sp.get("currencyFull") || "false").toLowerCase() === "true";
   const nameMaxCh = Math.max(nameCh, Math.min(80, parseInt(sp.get("nameMaxCh") || String(nameCh + 8), 10)));
   const fullAmountMode = sp.get("donorsFormat") === "full" || currencyFull;
   // 기본 열 폭이 너무 작으면 4자리 이상 숫자에서 스트로크 텍스트가 인접 열과 겹치므로 기본/상한을 확장한다.
-  const defBankCh = (sp.get("bankCh") && parseInt(sp.get("bankCh")!, 10)) || (fullAmountMode ? (compact ? 11 : 13) : (compact ? 10 : 12));
-  const defToonCh = (sp.get("toonCh") && parseInt(sp.get("toonCh")!, 10)) || (fullAmountMode ? (compact ? 11 : 13) : (compact ? 10 : 12));
+  const defBankCh = (sp.get("bankCh") && parseInt(sp.get("bankCh")!, 10)) || (fullAmountMode ? (compact ? 11 : 13) : (compact ? 10 : 11));
+  const defToonCh = (sp.get("toonCh") && parseInt(sp.get("toonCh")!, 10)) || (fullAmountMode ? (compact ? 11 : 13) : (compact ? 10 : 11));
   const defTotalCh = (sp.get("totalCh") && parseInt(sp.get("totalCh")!, 10)) || (fullAmountMode ? (compact ? 8 : 9) : (compact ? 6 : 7));
-  const defContributionCh = (sp.get("contributionCh") && parseInt(sp.get("contributionCh")!, 10)) || (fullAmountMode ? (compact ? 8 : 9) : (compact ? 8 : 9));
+  const defContributionCh = (sp.get("contributionCh") && parseInt(sp.get("contributionCh")!, 10)) || (fullAmountMode ? (compact ? 9 : 10) : (compact ? 9 : 10));
   const bankCh = Math.max(8, Math.min(20, defBankCh));
   const toonCh = Math.max(8, Math.min(20, defToonCh));
   const totalCh = Math.max(6, Math.min(12, defTotalCh));
   /** 순위 열: 헤더「순위」·「#12」 등이 잘리지 않도록 `ch` 하한 확보(URL `rankCh`) */
   const rankColCh = Math.max(5, Math.min(10, parseInt(sp.get("rankCh") || "5", 10)));
-  /** 기여도 열: 헤더「기여도」(한글·스트로크) 폭 확보 — 과거 최소 4ch는 헤더 클리핑 발생 */
-  const contributionCh = Math.max(8, Math.min(14, defContributionCh));
+  /** 기여도 열: 헤더「기여도」(한글·스트로크) 폭 확보 */
+  const contributionCh = Math.max(9, Math.min(14, defContributionCh));
   const showSideDonors = false;
   const donorsSide = (sp.get("donorsSide") || "right").toLowerCase();
   const donorsWidth = Math.max(120, Math.min(600, parseInt(sp.get("donorsWidth") || "220", 10)));
@@ -2198,7 +2199,8 @@ function OverlayInner() {
     : { width: responsiveTickerWidth };
   const tickerPosClass = hasTickerFreePos ? "" : posClass(tickerAnchor);
 
-    const roleCh = Math.max(6, Math.min(14, members.reduce((max, m) => Math.max(max, getMemberRole(m).length), 2)));
+    /** 직급 열이 과도하게 넓어지면 이름·기여도가 밀려 잘림 → 상한 10ch */
+    const roleCh = Math.max(4, Math.min(10, members.reduce((max, m) => Math.max(max, getMemberRole(m).length), 2)));
     const excelGridCols = hasRoleColumn
       ? [`${rankColCh}ch`, `${roleCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`]
       : [`${rankColCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`];
@@ -2389,6 +2391,10 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table tbody tr:hover td {
           filter: brightness(1.06) saturate(1.03);
           transform: scale(1.009);
+        }
+        /* table-layout:fixed + col 너비 안에서 이름 열만 말줄임이 안정적으로 적용되도록 */
+        .overlay-root .overlay-elegant-table td.overlay-col-name {
+          max-width: 0;
         }
       ` }} />
     );
