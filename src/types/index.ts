@@ -291,6 +291,23 @@ export type OverlayConfig = {
   isBgEnabled: boolean;
 };
 
+/** `/overlay/sig-rolling` — 이미지/GIF 순환(크로스페이드) 한 장 항목 */
+export type SigRollingItem = {
+  id: string;
+  /** `/uploads/...` 등 공개 URL */
+  url: string;
+  /** 카드 하단 표시 텍스트 */
+  label: string;
+};
+
+export type SigRollingSettings = {
+  items: SigRollingItem[];
+  /** 다음 장으로 넘어갈 때 크로스페이드 길이(ms) */
+  fadeMs: number;
+  /** GIF가 아닌 정지 이미지·파싱 실패 시 한 장당 표시 시간(ms) */
+  staticHoldMs: number;
+};
+
 export type AppState = {
   /** 멤버 목록 */
   members: Member[];
@@ -342,6 +359,8 @@ export type AppState = {
   sigSalesExcludedIds: string[];
   /** 후원 동기화 라우팅(중복 반영 방지): none | mealBattle | sigMatch | sigSales */
   donationSyncMode?: "none" | "mealBattle" | "sigMatch" | "sigSales";
+  /** 시그 롤링 오버레이 (`/overlay/sig-rolling`) 이미지 목록·전환 설정 */
+  sigRolling: SigRollingSettings;
   /** 마지막 저장 시각(epoch ms), 원격-로컬 최신성 비교 기준 */
   updatedAt: number;
 };

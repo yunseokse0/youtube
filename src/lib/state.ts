@@ -18,6 +18,8 @@ import type {
   SigMatchState,
   TimerDisplayStyle,
   TimerState,
+  SigRollingItem,
+  SigRollingSettings,
 } from "@/types";
 export type {
   AppState,
@@ -41,7 +43,28 @@ export type {
   SigMatchState,
   TimerDisplayStyle,
   TimerState,
+  SigRollingItem,
+  SigRollingSettings,
 } from "@/types";
+
+/** 시그 롤링 오버레이 설정 정규화 */
+export function normalizeSigRolling(input: unknown): SigRollingSettings {
+  const v = input && typeof input === "object" ? (input as Partial<SigRollingSettings>) : {};
+  const rawItems: unknown[] = Array.isArray(v.items) ? (v.items as unknown[]) : [];
+  const items = rawItems
+    .filter((x): x is Record<string, unknown> => Boolean(x && typeof x === "object"))
+    .map((x) => ({
+      id: String(x.id || `sr_${Math.random().toString(36).slice(2, 10)}`),
+      url: String(x.url || "").trim(),
+      label: typeof x.label === "string" ? x.label.trim() : "",
+    }))
+    .filter((x) => x.url);
+  const fadeMs = Number.isFinite(v.fadeMs) ? Math.max(120, Math.min(5000, Math.floor(Number(v.fadeMs)))) : 800;
+  const staticHoldMs = Number.isFinite(v.staticHoldMs)
+    ? Math.max(400, Math.min(120_000, Math.floor(Number(v.staticHoldMs))))
+    : 5000;
+  return { items, fadeMs, staticHoldMs };
+}
 
 /** 시그 풀: 멤버는 최대 한 풀에만, 풀은 1인 이상(1인 팀·1:2·삼자 구분용) */
 export function normalizeSigMatchPools(raw: unknown, validMemberIds: Set<string>): SigMatchPool[] {
@@ -518,6 +541,7 @@ export function defaultState(): AppState {
     donorRankingsOverlayConfig: normalizeDonorRankingsOverlayConfig(null),
     donationListsOverlayConfig: normalizeDonationListsOverlayConfig(null),
     donationSyncMode: "mealBattle",
+    sigRolling: normalizeSigRolling(null),
     updatedAt: Date.now(),
   };
 }
@@ -839,6 +863,7 @@ export function loadState(userId?: string | null): AppState {
     data.timerDisplayStyles = normalizeTimerDisplayStyles((data as AppState).timerDisplayStyles);
     data.donorRankingsOverlayConfig = normalizeDonorRankingsOverlayConfig((data as AppState).donorRankingsOverlayConfig);
     data.donationListsOverlayConfig = normalizeDonationListsOverlayConfig((data as AppState).donationListsOverlayConfig);
+    data.sigRolling = normalizeSigRolling((data as AppState).sigRolling);
     data.overlayPresets = Array.isArray(data.overlayPresets)
       ? data.overlayPresets
       : Array.isArray(data.overlaySettings?.presets)
@@ -1036,6 +1061,7 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
       data.timerDisplayStyles = normalizeTimerDisplayStyles((data as AppState).timerDisplayStyles);
       data.donorRankingsOverlayConfig = normalizeDonorRankingsOverlayConfig((data as AppState).donorRankingsOverlayConfig);
       data.donationListsOverlayConfig = normalizeDonationListsOverlayConfig((data as AppState).donationListsOverlayConfig);
+      data.sigRolling = normalizeSigRolling((data as AppState).sigRolling);
       data.overlayPresets = Array.isArray(data.overlayPresets)
         ? data.overlayPresets
         : Array.isArray(data.overlaySettings?.presets)

@@ -36,6 +36,7 @@ import {
   normalizeSigMatchPools,
   normalizeSigMatchParticipantIds,
   normalizeDonationListsOverlayConfig,
+  normalizeSigRolling,
   type OverlayConfig,
 } from "@/lib/state";
 import Link from "next/link";
@@ -2052,6 +2053,58 @@ export default function AdminPage() {
       if (!url) return;
       updateSigSoldOutStampUrl(url);
     })();
+  };
+
+  const addSigRollingFromFiles = async (files: FileList | null) => {
+    if (!files?.length) return;
+    const list = Array.from(files).filter((f) => /image\/(gif|png|jpe?g|webp)/i.test(f.type));
+    const appended: { url: string; label: string }[] = [];
+    for (const f of list) {
+      const url = await uploadSigImageFile(f);
+      if (!url) continue;
+      const label = f.name.replace(/\.[^.]+$/, "");
+      appended.push({ url, label });
+    }
+    if (!appended.length) return;
+    setState((prev) => {
+      const sr = normalizeSigRolling(prev.sigRolling);
+      const nextItems = [
+        ...sr.items,
+        ...appended.map((x, i) => ({
+          id: `sr_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 8)}`,
+          url: x.url,
+          label: x.label,
+        })),
+      ];
+      const next = { ...prev, sigRolling: { ...sr, items: nextItems } };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const removeSigRollingItem = (id: string) => {
+    setState((prev) => {
+      const sr = normalizeSigRolling(prev.sigRolling);
+      const next = { ...prev, sigRolling: { ...sr, items: sr.items.filter((x) => x.id !== id) } };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const moveSigRollingItem = (id: string, delta: number) => {
+    setState((prev) => {
+      const sr = normalizeSigRolling(prev.sigRolling);
+      const ix = sr.items.findIndex((x) => x.id === id);
+      if (ix < 0) return prev;
+      const j = ix + delta;
+      if (j < 0 || j >= sr.items.length) return prev;
+      const items = [...sr.items];
+      const [row] = items.splice(ix, 1);
+      items.splice(j, 0, row);
+      const next = { ...prev, sigRolling: { ...sr, items } };
+      persistState(next);
+      return next;
+    });
   };
 
   const uploadTableBgGifImage = (presetId: string, file: File | null) => {
@@ -4694,6 +4747,168 @@ export default function AdminPage() {
                     체크된 시그는 <code>/overlay/sig-sales</code> 화면 표시와 <code>/api/roulette/spin</code> 추첨 후보에서 제외됩니다.
                   </p>
                 </div>
+              </div>
+              <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold">시그 롤링</h3>
+                    <p className="text-xs text-neutral-400">
+                      GIF는 1회 재생 길이 후 크로스페이드, PNG 등은 표시 시간 후 전환합니다. OBS 브라우저 소스로 추가하세요.
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-stretch gap-2 sm:items-end">
+                    <div className="text-xs text-neutral-400 flex flex-wrap items-center justify-end gap-2">
+                      <span>오버레이 URL:</span>
+                      <code className="text-neutral-300 break-all text-left">
+                        /overlay/sig-rolling?u={user?.id || "finalent"}
+                      </code>
+                      <button
+                        type="button"
+                        className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-sig-rolling" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                        onClick={() => {
+                          const u = `${window.location.origin}/overlay/sig-rolling?u=${user?.id || "finalent"}`;
+                          void copyUrl(u, "dash-sig-rolling");
+                        }}
+                      >
+                        {copiedId === "dash-sig-rolling" ? "복사됨!" : "URL 복사"}
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      className="px-2 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-xs self-end"
+                      onClick={() => window.open(`/overlay/sig-rolling?u=${user?.id || "finalent"}`, "_blank", "noopener,noreferrer")}
+                    >
+                      오버레이 열기
+                    </button>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="cursor-pointer rounded bg-sky-800 px-3 py-1.5 text-sm hover:bg-sky-700">
+                    파일 선택 (여러 장)
+                    <input
+                      type="file"
+                      accept="image/gif,image/png,image/jpeg,image/webp"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        void addSigRollingFromFiles(e.target.files);
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                  <label className="cursor-pointer rounded bg-violet-800 px-3 py-1.5 text-sm hover:bg-violet-700">
+                    폴더 선택
+                    <input
+                      type="file"
+                      accept="image/gif,image/png,image/jpeg,image/webp"
+                      multiple
+                      {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
+                      className="hidden"
+                      onChange={(e) => {
+                        void addSigRollingFromFiles(e.target.files);
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block text-xs text-neutral-300">
+                    크로스페이드 (ms)
+                    <input
+                      type="number"
+                      min={120}
+                      max={5000}
+                      step={20}
+                      className="mt-1 w-full rounded border border-white/10 bg-neutral-950/80 px-2 py-1"
+                      value={normalizeSigRolling(state.sigRolling).fadeMs}
+                      onChange={(e) => {
+                        const v = Math.max(120, Math.min(5000, parseInt(e.target.value, 10) || 800));
+                        setState((prev) => {
+                          const sr = normalizeSigRolling(prev.sigRolling);
+                          const next = { ...prev, sigRolling: { ...sr, fadeMs: v } };
+                          persistState(next);
+                          return next;
+                        });
+                      }}
+                    />
+                  </label>
+                  <label className="block text-xs text-neutral-300">
+                    정지 이미지 표시 (ms)
+                    <input
+                      type="number"
+                      min={400}
+                      max={120000}
+                      step={100}
+                      className="mt-1 w-full rounded border border-white/10 bg-neutral-950/80 px-2 py-1"
+                      value={normalizeSigRolling(state.sigRolling).staticHoldMs}
+                      onChange={(e) => {
+                        const v = Math.max(400, Math.min(120000, parseInt(e.target.value, 10) || 5000));
+                        setState((prev) => {
+                          const sr = normalizeSigRolling(prev.sigRolling);
+                          const next = { ...prev, sigRolling: { ...sr, staticHoldMs: v } };
+                          persistState(next);
+                          return next;
+                        });
+                      }}
+                    />
+                  </label>
+                </div>
+                <ul className="space-y-2">
+                  {normalizeSigRolling(state.sigRolling).items.length === 0 ? (
+                    <li className="text-xs text-neutral-500">등록된 이미지가 없습니다.</li>
+                  ) : (
+                    normalizeSigRolling(state.sigRolling).items.map((it, pos, arr) => (
+                      <li
+                        key={it.id}
+                        className="flex flex-wrap items-center gap-2 rounded border border-white/10 bg-black/30 px-2 py-2"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={it.url} alt="" className="h-14 w-14 shrink-0 rounded object-cover" />
+                        <input
+                          type="text"
+                          className="min-w-[120px] flex-1 rounded border border-white/10 bg-neutral-950/80 px-2 py-1 text-sm"
+                          value={it.label}
+                          placeholder="표시 이름"
+                          onChange={(e) => {
+                            const label = e.target.value;
+                            setState((prev) => {
+                              const sr = normalizeSigRolling(prev.sigRolling);
+                              const items = sr.items.map((x) => (x.id === it.id ? { ...x, label } : x));
+                              const next = { ...prev, sigRolling: { ...sr, items } };
+                              persistState(next);
+                              return next;
+                            });
+                          }}
+                        />
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            className="rounded bg-neutral-700 px-2 py-1 text-xs disabled:opacity-40"
+                            disabled={pos === 0}
+                            onClick={() => moveSigRollingItem(it.id, -1)}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded bg-neutral-700 px-2 py-1 text-xs disabled:opacity-40"
+                            disabled={pos >= arr.length - 1}
+                            onClick={() => moveSigRollingItem(it.id, 1)}
+                          >
+                            ↓
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded bg-red-900/70 px-2 py-1 text-xs hover:bg-red-800"
+                            onClick={() => removeSigRollingItem(it.id)}
+                          >
+                            삭제
+                          </button>
+                        </div>
+                      </li>
+                    ))
+                  )}
+                </ul>
               </div>
               <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
