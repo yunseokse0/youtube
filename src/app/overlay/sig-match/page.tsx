@@ -314,10 +314,27 @@ function SigMatchOverlayInner() {
     duelData.mode === "dual"
       ? (() => {
           const t = duelData.left.score + duelData.right.score;
-          const leftPct = t > 0 ? Math.max(0, Math.min(100, (duelData.left.score / t) * 100)) : 50;
+          const noRight = duelData.right.ids.length === 0 || duelData.right.label === "—";
+          const noLeft = duelData.left.ids.length === 0 || duelData.left.label === "—";
+          let leftPct: number;
+          let rightPct: number;
+          if (t > 0) {
+            leftPct = Math.max(0, Math.min(100, (duelData.left.score / t) * 100));
+            rightPct = 100 - leftPct;
+          } else if (noRight && !noLeft) {
+            /** 1인(또는 한쪽만): 점수 0이어도 막대는 참가 쪽 100% — 50/50 은 '대결' 오해 유발 */
+            leftPct = 100;
+            rightPct = 0;
+          } else if (noLeft && !noRight) {
+            leftPct = 0;
+            rightPct = 100;
+          } else {
+            leftPct = 50;
+            rightPct = 50;
+          }
           return {
             leftPct,
-            rightPct: 100 - leftPct,
+            rightPct,
             leftLeading: duelData.left.score > duelData.right.score,
             rightLeading: duelData.right.score > duelData.left.score,
           };
