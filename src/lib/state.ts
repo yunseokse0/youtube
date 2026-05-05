@@ -337,11 +337,24 @@ export function loadMissionsBackup(userId?: string | null): MissionItem[] | null
 }
 
 export function defaultMembers(): Member[] {
-  return [
-    { id: "m1", name: "멤버1", realName: "", account: 0, toon: 0, contribution: 0, operating: false },
-    { id: "m2", name: "멤버2", realName: "", account: 0, toon: 0, contribution: 0, operating: false },
-    { id: "m3", name: "멤버3", realName: "", account: 0, toon: 0, contribution: 0, operating: false },
-  ];
+  return buildDefaultMembersCount(3);
+}
+
+/** 정산「멤버 초기화」 시 멤버 슬롯 수(1~30). id 는 m1… 순서 */
+export function buildDefaultMembersCount(count: number): Member[] {
+  const n = Math.max(1, Math.min(30, Math.floor(Number(count) || 0)));
+  return Array.from({ length: n }, (_, i) => {
+    const idx = i + 1;
+    return {
+      id: `m${idx}`,
+      name: `멤버${idx}`,
+      realName: "",
+      account: 0,
+      toon: 0,
+      contribution: 0,
+      operating: false,
+    };
+  });
 }
 
 function normalizeMember(m: Member): Member {

@@ -8,6 +8,7 @@ import {
   Donor,
   DonorTarget,
   defaultState,
+  buildDefaultMembersCount,
   loadState,
   saveState,
   saveStateAsync,
@@ -275,6 +276,8 @@ export default function AdminPage() {
     danger: true,
   });
   const [resetSheetOpen, setResetSheetOpen] = useState(false);
+  /** 정산「멤버 초기화」 시 생성할 멤버 슬롯 수(1~30) */
+  const [resetMemberSlotCount, setResetMemberSlotCount] = useState(3);
   const [activeNav, setActiveNav] = useState<AdminNavKey>("dashboard");
   const panelCardClass = "rounded-xl border border-white/10 bg-[#252525] shadow-[0_8px_24px_rgba(0,0,0,0.28)]";
   const simpleMode = false;
@@ -2509,10 +2512,38 @@ export default function AdminPage() {
       try { window.localStorage.setItem(dailyLogStorageKey(user?.id), JSON.stringify(serverLog)); } catch {}
     }).catch(() => setDailyLog(loadDailyLog(user?.id)));
     const resetPresets = resetOverlayPresetsGoalForDonationInit(state.overlayPresets) as OverlayPreset[];
-    const next = {
-      ...defaultState(),
-      overlayPresets: resetPresets,
+    const slotN = Math.max(1, Math.min(30, Math.floor(Number(resetMemberSlotCount) || 3)));
+    const ds = defaultState();
+    const next: AppState = {
+      ...ds,
+      members: buildDefaultMembersCount(slotN),
+      memberPositions: {},
+      rankPositionLabels: state.rankPositionLabels,
+      memberPositionMode: state.memberPositionMode,
+      sigInventory: state.sigInventory,
+      sigSoldOutStampUrl: state.sigSoldOutStampUrl,
+      sigSalesMemberPresets: state.sigSalesMemberPresets,
+      sigSalesExcludedIds: state.sigSalesExcludedIds,
+      rouletteState: state.rouletteState,
+      donationListsOverlayConfig: state.donationListsOverlayConfig,
+      donorRankingsOverlayConfig: state.donorRankingsOverlayConfig,
+      donorRankingsTheme: state.donorRankingsTheme,
+      donorRankingsPresets: state.donorRankingsPresets,
+      donorRankingsPresetId: state.donorRankingsPresetId,
       missions: state.missions || [],
+      overlayPresets: resetPresets,
+      overlaySettings: state.overlaySettings,
+      sigMatch: state.sigMatch,
+      sigMatchSettings: state.sigMatchSettings,
+      mealBattle: state.mealBattle,
+      mealMatch: state.mealMatch,
+      mealMatchSettings: state.mealMatchSettings,
+      generalTimer: state.generalTimer,
+      matchTimerEnabled: state.matchTimerEnabled,
+      timerDisplayStyles: state.timerDisplayStyles,
+      forbiddenWords: state.forbiddenWords,
+      donationSyncMode: state.donationSyncMode,
+      updatedAt: Date.now(),
     };
     setPresets(resetPresets);
     try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(resetPresets)); } catch {}
@@ -6914,7 +6945,30 @@ export default function AdminPage() {
           <div className="relative w-full max-w-md lg:rounded-2xl rounded-t-2xl border-t lg:border border-white/10 bg-[#202020] p-4 lg:mx-4">
             <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-3 lg:hidden" />
             <div className="text-sm font-semibold text-white">정산 리셋 (로그 기록)</div>
-            <div className="text-xs text-neutral-400 mt-1">멤버 초기화 여부를 선택하세요.</div>
+            <div className="text-xs text-neutral-400 mt-1">
+              멤버 초기화 여부를 선택하세요. 시그 재고·회전판·식대전·미션 등 방송 설정은 멤버 초기화에서도 유지됩니다.
+            </div>
+            <div className="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+              <label className="block text-[11px] font-medium text-neutral-300">멤버 초기화 시 멤버 수 (1~30)</label>
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={resetMemberSlotCount}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    if (!Number.isFinite(v)) return;
+                    setResetMemberSlotCount(Math.max(1, Math.min(30, v)));
+                  }}
+                  className="w-24 rounded-md border border-white/15 bg-neutral-900 px-2 py-1.5 text-sm text-white"
+                />
+                <span className="text-[11px] text-neutral-500">명 (기본 슬롯·이름은 멤버1… 순)</span>
+              </div>
+              <p className="mt-1.5 text-[10px] text-neutral-500 leading-snug">
+                후원 목표는 저장된 기준선(goalBaseline)이 있으면 그 금액으로 되돌리고, 없으면 자동 상향만 역추정합니다. 확실히 맞추려면 오버레이 프리셋에서 목표 금액을 한 번 저장해 주세요.
+              </p>
+            </div>
             <div className="space-y-2 mt-4">
               <button
                 className="w-full px-3 py-2.5 rounded-lg bg-neutral-700 hover:bg-neutral-600 text-sm text-left"
@@ -6928,7 +6982,9 @@ export default function AdminPage() {
                 onClick={onResetInitMembers}
               >
                 <span className="font-medium text-white">멤버 초기화</span>
-                <span className="block text-xs text-white/80 mt-0.5">멤버를 기본 3명으로 초기화</span>
+                <span className="block text-xs text-white/80 mt-0.5">
+                  위에서 지정한 인원 수로 멤버 슬롯만 새로 잡고, 후원·정산 데이터는 비움
+                </span>
               </button>
               <button
                 className="w-full px-3 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-sm"
