@@ -617,6 +617,42 @@ function normalizeMealMatchSettings(input: unknown): MealMatchSettings {
   };
 }
 
+function syncBattleStateWithMembers(data: AppState): AppState {
+  const validMemberIds = new Set((data.members || []).map((m) => m.id));
+
+  const syncedMealBattle: MealBattleState = {
+    ...data.mealBattle,
+    participants: (data.mealBattle?.participants || []).filter((p) => validMemberIds.has(p.memberId)),
+    memberGaugeColors: Object.fromEntries(
+      Object.entries(data.mealBattle?.memberGaugeColors || {}).filter(([memberId]) => validMemberIds.has(memberId))
+    ),
+    teamAMemberIds: (data.mealBattle?.teamAMemberIds || []).filter((memberId) => validMemberIds.has(memberId)),
+    teamBMemberIds: (data.mealBattle?.teamBMemberIds || []).filter((memberId) => validMemberIds.has(memberId)),
+  };
+
+  const syncedMealMatch = Object.fromEntries(
+    Object.entries(data.mealMatch || {}).filter(([memberId]) => validMemberIds.has(memberId))
+  ) as AppState["mealMatch"];
+
+  const syncedSigMatch = Object.fromEntries(
+    Object.entries(data.sigMatch || {}).filter(([memberId]) => validMemberIds.has(memberId))
+  ) as AppState["sigMatch"];
+
+  const syncedMealMatchSettings: MealMatchSettings = {
+    ...data.mealMatchSettings,
+    teamAMemberIds: (data.mealMatchSettings?.teamAMemberIds || []).filter((memberId) => validMemberIds.has(memberId)),
+    teamBMemberIds: (data.mealMatchSettings?.teamBMemberIds || []).filter((memberId) => validMemberIds.has(memberId)),
+  };
+
+  return {
+    ...data,
+    mealBattle: syncedMealBattle,
+    mealMatch: syncedMealMatch,
+    sigMatch: syncedSigMatch,
+    mealMatchSettings: syncedMealMatchSettings,
+  };
+}
+
 function normalizeTimerState(input: unknown): TimerState {
   const t = input && typeof input === "object" ? (input as Partial<TimerState>) : {};
   return {
@@ -808,7 +844,7 @@ export function loadState(userId?: string | null): AppState {
       : Array.isArray(data.overlaySettings?.presets)
         ? data.overlaySettings?.presets
         : [];
-    return data;
+    return syncBattleStateWithMembers(data);
   } catch {
     return defaultState();
   }
@@ -872,7 +908,7 @@ function appStatePayloadForApi(next: AppState): Partial<AppState> {
 export function saveState(state: AppState, userId?: string | null) {
   if (typeof window === "undefined") return;
   try {
-    const next = { ...state, updatedAt: Date.now() };
+    const next = syncBattleStateWithMembers({ ...state, updatedAt: Date.now() });
     const json = JSON.stringify(next);
     window.localStorage.setItem(storageKey(userId), json);
     void postAppStateWithAuthRecovery(JSON.stringify(appStatePayloadForApi(next)), userId)
@@ -888,7 +924,7 @@ export function saveState(state: AppState, userId?: string | null) {
 
 export async function saveStateAsync(state: AppState, userId?: string | null): Promise<boolean> {
   if (typeof window === "undefined") return false;
-  const next = { ...state, updatedAt: Date.now() };
+  const next = syncBattleStateWithMembers({ ...state, updatedAt: Date.now() });
   const json = JSON.stringify(next);
   try { window.localStorage.setItem(storageKey(userId), json); } catch {}
   try {
@@ -1005,7 +1041,7 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
         : Array.isArray(data.overlaySettings?.presets)
           ? data.overlaySettings?.presets
           : [];
-      return data as AppState;
+      return syncBattleStateWithMembers(data as AppState);
     }
     return null;
   } catch {
