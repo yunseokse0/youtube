@@ -2,7 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { defaultState, loadState, loadStateFromApi, normalizeSigRolling, storageKey, type AppState } from "@/lib/state";
+import {
+  defaultState,
+  loadState,
+  loadStateFromApi,
+  normalizeSigRolling,
+  storageKey,
+  type AppState,
+  type SigRollingItem,
+} from "@/lib/state";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { getSigRollingHoldMs } from "@/lib/sig-rolling-duration";
 
@@ -74,6 +82,88 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   return { state, ready: state !== null };
 }
 
+function RollingCardColumn({
+  current,
+  nextItem,
+  fading,
+  transitionActive,
+  replayKey,
+  useCrossfade,
+  onFadeEnd,
+}: {
+  current: SigRollingItem | null;
+  nextItem: SigRollingItem | null;
+  fading: boolean;
+  transitionActive: string;
+  replayKey: number;
+  useCrossfade: boolean;
+  onFadeEnd?: (e: React.TransitionEvent<HTMLImageElement>) => void;
+}) {
+  if (!current) return null;
+
+  if (!useCrossfade) {
+    return (
+      <div className="w-[min(44vw,220px)] shrink-0">
+        <div className="glass-pastel-card overflow-hidden rounded-3xl shadow-lg">
+          <div className="relative aspect-[4/5] w-full bg-black/20">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              key={replayKey}
+              src={current.url}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+              draggable={false}
+            />
+          </div>
+          <div className="px-2 py-2 text-center">
+            <div className="truncate text-sm font-bold pastel-text-outline">{current.label?.trim() || "\u00a0"}</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const under = nextItem || current;
+  return (
+    <div className="w-[min(44vw,220px)] shrink-0">
+      <div className="glass-pastel-card overflow-hidden rounded-3xl shadow-lg">
+        <div className="relative aspect-[4/5] w-full bg-black/20">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            key={`under-${under.id}`}
+            src={under.url}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover"
+            style={{
+              opacity: fading ? 1 : 0,
+              transition: fading ? transitionActive : "none",
+              zIndex: 1,
+            }}
+            draggable={false}
+          />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            key={`over-${current.id}`}
+            src={current.url}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover"
+            style={{
+              opacity: fading ? 0 : 1,
+              transition: fading ? transitionActive : "none",
+              zIndex: 2,
+            }}
+            draggable={false}
+            onTransitionEnd={onFadeEnd || undefined}
+          />
+        </div>
+        <div className="px-2 py-2 text-center">
+          <div className="truncate text-sm font-bold pastel-text-outline">{current.label?.trim() || "\u00a0"}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SigRollingOverlayPage() {
   const sp = useSearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
@@ -84,18 +174,23 @@ export default function SigRollingOverlayPage() {
   const fadeMs = rolling.fadeMs;
   const staticHoldMs = rolling.staticHoldMs;
 
-  const [idx, setIdx] = useState(0);
+  /** 한 줄에 왼쪽·오른쪽 카드가 함께 넘어가도록 페어 시작 인덱스(짝 단위 +2) */
+  const [pairStart, setPairStart] = useState(0);
   const [fading, setFading] = useState(false);
   const [replayKey, setReplayKey] = useState(0);
 
   const n = items.length;
-  const current = n ? items[idx % n] : null;
-  const upcoming = n > 1 ? items[(idx + 1) % n] : null;
+  const leftCurrent = n ? items[pairStart % n] : null;
+  const rightCurrent = n ? items[(pairStart + 1) % n] : null;
+  const leftNext = n ? items[(pairStart + 2) % n] : null;
+  const rightNext = n ? items[(pairStart + 3) % n] : null;
 
   const itemsSig = useMemo(() => items.map((x) => x.id).join("|"), [items]);
 
+  const useCrossfade = n >= 3;
+
   useEffect(() => {
-    setIdx(0);
+    setPairStart(0);
     setReplayKey(0);
     setFading(false);
   }, [itemsSig]);
@@ -107,12 +202,24 @@ export default function SigRollingOverlayPage() {
     let timerId: number | undefined;
 
     void (async () => {
-      const url = items[idx % n]?.url;
-      if (!url) return;
-      const hold = await getSigRollingHoldMs(url, staticHoldMs);
+      let hold = staticHoldMs;
+      if (n === 1) {
+        const url = items[0]?.url;
+        if (!url) return;
+        hold = await getSigRollingHoldMs(url, staticHoldMs);
+      } else if (n === 2) {
+        const h0 = await getSigRollingHoldMs(items[0].url, staticHoldMs);
+        const h1 = await getSigRollingHoldMs(items[1].url, staticHoldMs);
+        hold = Math.max(h0, h1);
+      } else {
+        const uL = items[pairStart % n]?.url;
+        const uR = items[(pairStart + 1) % n]?.url;
+        if (!uL || !uR) return;
+        hold = Math.max(await getSigRollingHoldMs(uL, staticHoldMs), await getSigRollingHoldMs(uR, staticHoldMs));
+      }
       if (cancelled) return;
       timerId = window.setTimeout(() => {
-        if (n <= 1) {
+        if (n <= 2) {
           setReplayKey((k) => k + 1);
         } else {
           setFading(true);
@@ -124,13 +231,13 @@ export default function SigRollingOverlayPage() {
       cancelled = true;
       if (timerId !== undefined) window.clearTimeout(timerId);
     };
-  }, [ready, n, idx, fading, items, staticHoldMs, replayKey]);
+  }, [ready, n, pairStart, fading, items, staticHoldMs, replayKey]);
 
   const onFadeEnd = useCallback(
     (e: React.TransitionEvent<HTMLImageElement>) => {
       if (!fading || e.propertyName !== "opacity") return;
-      if (n <= 1) return;
-      setIdx((i) => (i + 1) % n);
+      if (n < 3) return;
+      setPairStart((p) => (p + 2) % n);
       setFading(false);
     },
     [fading, n]
@@ -150,54 +257,24 @@ export default function SigRollingOverlayPage() {
 
   return (
     <main className="overlay-root min-h-screen w-full bg-transparent p-4 text-pastel-ink">
-      <div className="inline-block w-[min(92vw,260px)]">
-        <div className="glass-pastel-card overflow-hidden rounded-3xl shadow-lg">
-          <div className="relative aspect-[4/5] w-full bg-black/20">
-            {n === 1 && current ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                key={replayKey}
-                src={current.url}
-                alt=""
-                className="absolute inset-0 h-full w-full object-cover"
-                draggable={false}
-              />
-            ) : current && upcoming ? (
-              <>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  key={`under-${idx}`}
-                  src={upcoming.url}
-                  alt=""
-                  className="absolute inset-0 h-full w-full object-cover"
-                  style={{
-                    opacity: fading ? 1 : 0,
-                    transition: fading ? transitionActive : "none",
-                    zIndex: 1,
-                  }}
-                  draggable={false}
-                />
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  key={`over-${current.id}-${idx}`}
-                  src={current.url}
-                  alt=""
-                  className="absolute inset-0 h-full w-full object-cover"
-                  style={{
-                    opacity: fading ? 0 : 1,
-                    transition: fading ? transitionActive : "none",
-                    zIndex: 2,
-                  }}
-                  draggable={false}
-                  onTransitionEnd={onFadeEnd}
-                />
-              </>
-            ) : null}
-          </div>
-          <div className="px-2 py-2 text-center">
-            <div className="truncate text-sm font-bold pastel-text-outline">{current?.label?.trim() || "\u00a0"}</div>
-          </div>
-        </div>
+      <div className="flex flex-row flex-wrap items-start gap-3">
+        <RollingCardColumn
+          current={leftCurrent}
+          nextItem={useCrossfade ? leftNext : null}
+          fading={fading}
+          transitionActive={transitionActive}
+          replayKey={replayKey}
+          useCrossfade={useCrossfade}
+          onFadeEnd={useCrossfade ? onFadeEnd : undefined}
+        />
+        <RollingCardColumn
+          current={rightCurrent ?? leftCurrent}
+          nextItem={useCrossfade ? rightNext : null}
+          fading={fading}
+          transitionActive={transitionActive}
+          replayKey={replayKey}
+          useCrossfade={useCrossfade}
+        />
       </div>
     </main>
   );

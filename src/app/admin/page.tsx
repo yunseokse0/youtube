@@ -184,6 +184,8 @@ export default function AdminPage() {
   const [newSigImageUploading, setNewSigImageUploading] = useState(false);
   const [sigPreviewMap, setSigPreviewMap] = useState<Record<string, string>>({});
   const [sigExcelResult, setSigExcelResult] = useState("");
+  /** 시그 롤링 업로드 결과 메시지 */
+  const [sigRollingUploadMessage, setSigRollingUploadMessage] = useState("");
   const [sigPresetMemberId, setSigPresetMemberId] = useState("");
   /** 회차별 금액 범위(최소/최대). 빈칸이면 해당 회차는 금액 제한 없이 남은 시그 중 랜덤(중복 없음) */
   const [rouletteSpinCount, setRouletteSpinCount] = useState("5");
@@ -490,6 +492,12 @@ export default function AdminPage() {
       !!local.overlaySettings && Object.keys(local.overlaySettings).length > 0;
     if (incomingOverlaySettingsEmpty && localOverlaySettingsHasData) {
       merged = { ...merged, overlaySettings: local.overlaySettings };
+      didPreserve = true;
+    }
+    const incomingSr = normalizeSigRolling(incoming.sigRolling);
+    const localSr = normalizeSigRolling(local.sigRolling);
+    if (localSr.items.length > 0 && incomingSr.items.length === 0) {
+      merged = { ...merged, sigRolling: localSr };
       didPreserve = true;
     }
     return { merged, didPreserve };
@@ -2055,17 +2063,37 @@ export default function AdminPage() {
     })();
   };
 
+  const isSigRollingPickableFile = (f: File) => {
+    const mime = String(f.type || "").toLowerCase();
+    const name = String(f.name || "").toLowerCase();
+    return /image\/(gif|png|jpe?g|webp)/i.test(mime) || /\.(gif|png|jpe?g|webp)$/i.test(name);
+  };
+
   const addSigRollingFromFiles = async (files: FileList | null) => {
+    setSigRollingUploadMessage("");
     if (!files?.length) return;
-    const list = Array.from(files).filter((f) => /image\/(gif|png|jpe?g|webp)/i.test(f.type));
+    const list = Array.from(files).filter(isSigRollingPickableFile);
+    if (!list.length) {
+      setSigRollingUploadMessage(
+        "선택한 파일에 gif/png/jpg/webp가 없습니다. 폴더 선택 시 형식(MIME)이 비어 있을 수 있어 확장자로도 골랐습니다 — 파일명 끝이 .gif 등인지 확인해 주세요."
+      );
+      return;
+    }
     const appended: { url: string; label: string }[] = [];
+    const failures: string[] = [];
     for (const f of list) {
       const url = await uploadSigImageFile(f);
-      if (!url) continue;
+      if (!url) {
+        failures.push(f.name);
+        continue;
+      }
       const label = f.name.replace(/\.[^.]+$/, "");
       appended.push({ url, label });
     }
-    if (!appended.length) return;
+    if (!appended.length) {
+      setSigRollingUploadMessage(`업로드 실패 (${failures.length}개). 로그인·네트워크·저장소(Supabase) 설정을 확인해 주세요.`);
+      return;
+    }
     setState((prev) => {
       const sr = normalizeSigRolling(prev.sigRolling);
       const nextItems = [
@@ -2076,10 +2104,14 @@ export default function AdminPage() {
           label: x.label,
         })),
       ];
-      const next = { ...prev, sigRolling: { ...sr, items: nextItems } };
+      const next: AppState = { ...prev, sigRolling: { ...sr, items: nextItems }, updatedAt: Date.now() };
       persistState(next);
       return next;
     });
+    const failSuffix = failures.length ? ` · 실패: ${failures.slice(0, 5).join(", ")}${failures.length > 5 ? "…" : ""}` : "";
+    setSigRollingUploadMessage(
+      `${appended.length}개 업로드되어 목록에 추가했습니다.${failSuffix} (${new Date().toLocaleTimeString("ko-KR")})`
+    );
   };
 
   const removeSigRollingItem = (id: string) => {
@@ -4800,7 +4832,7 @@ export default function AdminPage() {
                     폴더 선택
                     <input
                       type="file"
-                      accept="image/gif,image/png,image/jpeg,image/webp"
+                      accept="image/*"
                       multiple
                       {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
                       className="hidden"
@@ -4811,6 +4843,11 @@ export default function AdminPage() {
                     />
                   </label>
                 </div>
+                {sigRollingUploadMessage ? (
+                  <p className="text-xs text-emerald-300/95 whitespace-pre-wrap rounded border border-emerald-500/30 bg-emerald-950/30 px-2 py-1.5">
+                    {sigRollingUploadMessage}
+                  </p>
+                ) : null}
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="block text-xs text-neutral-300">
                     크로스페이드 (ms)
