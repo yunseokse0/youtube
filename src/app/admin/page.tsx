@@ -2490,6 +2490,10 @@ export default function AdminPage() {
       ...state,
       members: state.members.map((m) => ({ ...m, account: 0, toon: 0, contribution: 0 })),
       donors: [],
+      mealBattle: {
+        ...state.mealBattle,
+        participants: (state.mealBattle?.participants || []).map((p) => ({ ...p, score: 0 })),
+      },
       overlayPresets: resetPresets,
       missions: state.missions || [],
       updatedAt: Date.now(),
@@ -2513,9 +2517,14 @@ export default function AdminPage() {
     const resetPresets = resetOverlayPresetsGoalForDonationInit(state.overlayPresets) as OverlayPreset[];
     const slotN = Math.max(1, Math.min(30, Math.floor(Number(resetMemberSlotCount) || 3)));
     const ds = defaultState();
+    const nextMembers = buildDefaultMembersCount(slotN);
+    const nextMemberIds = new Set(nextMembers.map((m) => m.id));
+    const filteredMealParticipants = (state.mealBattle?.participants || [])
+      .filter((p) => nextMemberIds.has(p.memberId))
+      .map((p) => ({ ...p, score: 0 }));
     const next: AppState = {
       ...ds,
-      members: buildDefaultMembersCount(slotN),
+      members: nextMembers,
       memberPositions: {},
       rankPositionLabels: state.rankPositionLabels,
       memberPositionMode: state.memberPositionMode,
@@ -2532,10 +2541,22 @@ export default function AdminPage() {
       missions: state.missions || [],
       overlayPresets: resetPresets,
       overlaySettings: state.overlaySettings,
-      sigMatch: state.sigMatch,
+      sigMatch: Object.fromEntries(
+        Object.entries(state.sigMatch || {}).filter(([memberId]) => nextMemberIds.has(memberId))
+      ),
       sigMatchSettings: state.sigMatchSettings,
-      mealBattle: state.mealBattle,
-      mealMatch: state.mealMatch,
+      mealBattle: {
+        ...state.mealBattle,
+        participants: filteredMealParticipants,
+        memberGaugeColors: Object.fromEntries(
+          Object.entries(state.mealBattle?.memberGaugeColors || {}).filter(([memberId]) => nextMemberIds.has(memberId))
+        ),
+        teamAMemberIds: (state.mealBattle?.teamAMemberIds || []).filter((memberId) => nextMemberIds.has(memberId)),
+        teamBMemberIds: (state.mealBattle?.teamBMemberIds || []).filter((memberId) => nextMemberIds.has(memberId)),
+      },
+      mealMatch: Object.fromEntries(
+        Object.entries(state.mealMatch || {}).filter(([memberId]) => nextMemberIds.has(memberId))
+      ),
       mealMatchSettings: state.mealMatchSettings,
       generalTimer: state.generalTimer,
       matchTimerEnabled: state.matchTimerEnabled,
