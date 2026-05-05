@@ -2468,12 +2468,7 @@ export default function AdminPage() {
 
   const onResetKeepMembers = () => {
     if (resetInProgressRef.current) return;
-    const total = totalCombined(state);
-    const hasDonors = state.donors.length > 0;
-    if (total === 0 && !hasDonors) {
-      setResetSheetOpen(false);
-      return;
-    }
+    /** 후원 합·후원자가 없어도 실행 허용: 목표 기준선 복구·금액 필드 재동기 등이 필요할 수 있음 */
     resetInProgressRef.current = true;
     setResetSheetOpen(false);
     appendDailyLog(state, user?.id);
@@ -2498,12 +2493,7 @@ export default function AdminPage() {
   };
   const onResetInitMembers = () => {
     if (resetInProgressRef.current) return;
-    const total = totalCombined(state);
-    const hasDonors = state.donors.length > 0;
-    if (total === 0 && !hasDonors) {
-      setResetSheetOpen(false);
-      return;
-    }
+    /** 후원액이 이미 0이어도 멤버 슬롯만 새로 잡는 경우가 많음 — 금액 조건으로 막지 않음 */
     resetInProgressRef.current = true;
     setResetSheetOpen(false);
     appendDailyLog(state, user?.id);
