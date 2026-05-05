@@ -253,6 +253,7 @@ export default function AdminPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [sigMatchPreviewIframeKey, setSigMatchPreviewIframeKey] = useState(0);
+  const [mealMatchPreviewIframeKey, setMealMatchPreviewIframeKey] = useState(0);
   const [battleScalePct, setBattleScalePct] = useState("100");
   /** 시그/식사 대전 오버레이 본문 max-width (%), URL contentWidthPct */
   const [battleContentWidthPct, setBattleContentWidthPct] = useState("100");
@@ -886,6 +887,8 @@ export default function AdminPage() {
 
   const sigMatchPreviewUrlRef = useRef("");
   const [sigMatchPreviewIframeSrc, setSigMatchPreviewIframeSrc] = useState("");
+  const mealMatchPreviewUrlRef = useRef("");
+  const [mealMatchPreviewIframeSrc, setMealMatchPreviewIframeSrc] = useState("");
   /** 대전 배율·유저 변경 시 미리보기 iframe URL을 즉시 동기화(기존: 최초 1회만 세팅되어 배율 미반영) */
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -893,6 +896,12 @@ export default function AdminPage() {
     sigMatchPreviewUrlRef.current = url;
     setSigMatchPreviewIframeSrc(url);
   }, [buildSigMatchLiveUrl]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = buildMealMatchLiveUrl();
+    mealMatchPreviewUrlRef.current = url;
+    setMealMatchPreviewIframeSrc(url);
+  }, [buildMealMatchLiveUrl]);
 
   const copyUrl = async (url: string, id: string) => {
     try {
@@ -3340,6 +3349,50 @@ export default function AdminPage() {
                   >
                     식사대전 오버레이 열기
                   </button>
+                </div>
+                <p className="text-[11px] text-neutral-500">
+                  위 &quot;대전 배율(%)&quot;·&quot;가로 폭(%)&quot;는 시그 대전과 공유됩니다. 아래 미리보기는 스냅샷이 아닌{" "}
+                  <code className="text-neutral-400">/overlay/meal-match</code> 실시간 URL이며, 식사 대전 설정·점수 변경이 곧바로
+                  반영됩니다.
+                </p>
+                <div className="mt-3 rounded-lg border border-white/10 bg-black/50 overflow-hidden">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 px-2 py-1.5">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-xs font-medium text-neutral-300">식사 대전 오버레이 미리보기</span>
+                      <span className="text-[10px] text-neutral-500">
+                        scalePct={getBattleScalePct()} · contentWidthPct={getBattleContentWidthPct()} 반영 · 변경 시 자동 갱신
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-emerald-500/60 hover:text-emerald-200"
+                      onClick={() => {
+                        mealMatchPreviewUrlRef.current = `${buildMealMatchLiveUrl()}&_t=${Date.now()}`;
+                        setMealMatchPreviewIframeSrc(mealMatchPreviewUrlRef.current);
+                        setMealMatchPreviewIframeKey((k) => k + 1);
+                      }}
+                    >
+                      새로고침
+                    </button>
+                  </div>
+                  <div
+                    className="relative w-full overflow-auto bg-black/40"
+                    style={{
+                      height: `${Math.min(720, Math.max(280, Math.round(280 * (getBattleScalePct() / 100))))}px`,
+                    }}
+                  >
+                    {mealMatchPreviewIframeSrc ? (
+                      <iframe
+                        key={`meal-match-${mealMatchPreviewIframeKey}-${mealMatchPreviewIframeSrc.slice(0, 120)}`}
+                        src={mealMatchPreviewIframeSrc}
+                        title="식사 대전 오버레이 미리보기"
+                        className="absolute inset-0 h-full w-full border-0"
+                        style={{ background: "transparent" }}
+                      />
+                    ) : (
+                      <div className="flex h-[280px] items-center justify-center text-xs text-neutral-500">미리보기 URL 생성 중…</div>
+                    )}
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   <label className="block space-y-1">

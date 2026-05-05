@@ -341,6 +341,22 @@ function SigMatchOverlayInner() {
         })()
       : null;
 
+  /** 한쪽만 참가자가 있을 때(관리자 미리보기·1인 방송): VS 2열이 아니라 단일 축으로 표시 */
+  const soloDualSide =
+    duelData.mode === "dual" && dualBar
+      ? duelData.left.ids.length > 0
+        ? duelData.left
+        : duelData.right.ids.length > 0
+          ? duelData.right
+          : null
+      : null;
+  const totalDualMemberIds =
+    duelData.mode === "dual" ? duelData.left.ids.length + duelData.right.ids.length : 0;
+  const isSoloDualLayout =
+    duelData.mode === "dual" &&
+    totalDualMemberIds === 1 &&
+    duelData.left.ids.length === 0 !== (duelData.right.ids.length === 0);
+
   const tripleBar =
     duelData.mode === "triple"
       ? (() => {
@@ -390,7 +406,36 @@ function SigMatchOverlayInner() {
               <span style={timerTextOutlineStyle}>{timerText}</span>
             </div>
           ) : null}
-          {dualBar && duelData.mode === "dual" ? (
+          {dualBar && duelData.mode === "dual" && isSoloDualLayout && soloDualSide ? (
+            <>
+              <div className="mt-8 flex flex-col items-center gap-1 text-xs text-white/80">
+                <span
+                  className={`inline-flex max-w-[95%] truncate rounded-full bg-white/80 px-4 py-1.5 text-sm font-black ${
+                    soloDualSide === duelData.left ? "text-pink-600" : "text-sky-600"
+                  }`}
+                >
+                  👑 {soloDualSide.label}
+                </span>
+                <span className="text-[10px] font-semibold text-white/50">1인 시그</span>
+              </div>
+              <div className="mt-2 h-4 w-full overflow-hidden rounded-full">
+                <div className="flex h-full w-full">
+                  <div
+                    className="h-full bg-pink-300 transition-[width] duration-700 ease-out"
+                    style={{ width: `${dualBar.leftPct}%` }}
+                  />
+                  <div
+                    className="h-full bg-sky-300 transition-[width] duration-700 ease-out"
+                    style={{ width: `${dualBar.rightPct}%` }}
+                  />
+                </div>
+              </div>
+              <div className="mt-1 text-center text-[11px] text-white/75 tabular-nums">
+                {formatSigMatchStat(soloDualSide.score)}
+              </div>
+            </>
+          ) : null}
+          {dualBar && duelData.mode === "dual" && !isSoloDualLayout ? (
             <>
               <div className="mt-8 flex items-center justify-between gap-2 text-xs text-white/80">
                 <span className="inline-flex max-w-[42%] truncate rounded-full bg-white/80 px-3 py-1 font-black text-pink-600">
