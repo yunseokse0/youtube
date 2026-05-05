@@ -235,8 +235,13 @@ export async function POST(req: Request) {
     const rollingPool = inv.filter((x) => x.isRolling && x.soldCount < x.maxCount);
     const pool = rollingPool.length > 0 ? rollingPool : inv.filter((x) => x.soldCount < x.maxCount);
     const usePool = pool.length > 0 ? pool : inv;
-    let runtimePool = (usePool.length > 0 ? usePool : inv).filter((x) => x.id !== ONE_SHOT_SIG_ID);
-    if (runtimePool.length === 0) runtimePool = buildFallbackPool(10);
+    const runtimePool = (usePool.length > 0 ? usePool : inv).filter((x) => x.id !== ONE_SHOT_SIG_ID);
+    if (runtimePool.length === 0) {
+      return Response.json(
+        { error: "empty_inventory" },
+        { status: 400, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }
+      );
+    }
 
     const plan: (number | null)[] = [];
     const planRanges: ({ min: number | null; max: number | null } | null)[] = [];
@@ -272,7 +277,7 @@ export async function POST(req: Request) {
 
     /** 한 번의 스핀 안에서는 같은 시그 id가 중복 당첨되지 않도록 무복원 추첨 */
     const results: SigItem[] = [];
-    let fallbackUsed = usePool.length === 0;
+    const fallbackUsed = false;
     let remaining: SigItem[] = runtimePool.map((x) => ({ ...x }));
 
     for (let i = 0; i < spinCount; i++) {
