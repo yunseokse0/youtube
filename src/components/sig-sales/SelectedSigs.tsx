@@ -145,6 +145,12 @@ export default function SelectedSigs({
                     : "aspect-[4/5]"
               }`}
             >
+              {sold ? (
+                <div
+                  className="absolute inset-0 z-[1] rounded-[inherit] bg-white/93"
+                  aria-hidden
+                />
+              ) : null}
               <SigSaleMedia
                 src={resolveSigImageUrl(item.name, item.imageUrl)}
                 alt={item.name}
@@ -156,7 +162,7 @@ export default function SelectedSigs({
                       ? "(max-width:768px) 45vw, 188px"
                       : "240px"
                 }
-                className="object-cover object-center"
+                className={`relative z-[2] object-cover object-center ${sold ? "brightness-[1.02]" : ""}`}
                 gifDelayMultiplier={gifDelayMultiplier}
               />
               {sold ? (
@@ -164,10 +170,6 @@ export default function SelectedSigs({
                   {/* 판매 완료에서도 원본 이미지가 충분히 보이도록 전체 딤은 약하게 유지 */}
                   <div className="absolute inset-0 z-[5] bg-black/18" aria-hidden />
                   <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-[min(12%,1rem)]">
-                    <div
-                      className="absolute h-[min(8.6rem,70%)] w-[min(8.6rem,70%)] rounded-full bg-white/68 blur-[1.4px]"
-                      aria-hidden
-                    />
                     <Image
                       src={soldOutStampUrl}
                       alt="판매 완료"

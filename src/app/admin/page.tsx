@@ -45,6 +45,7 @@ import { appendSettlementRecordAndSync, appendSigMatchIncentiveSettlementAndSync
 import { formatSigMatchStat, getSigMatchRankings } from "@/lib/settlement-utils";
 import { getEffectiveRemainingTime, pauseTimer, resumeTimer } from "@/lib/timer-utils";
 import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
+import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
 import { DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
 import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
 import { getVisibleAdminNavItems, isAdminNavSectionVisible, type AdminNavKey } from "@/app/admin/admin-nav-config";
@@ -68,7 +69,10 @@ type OverlayPreset = {
   missionWidth?: string; missionDuration?: string; missionBgOpacity?: string; missionBgColor?: string; missionItemColor?: string; missionTitleColor?: string; missionTitleText?: string; missionTitleEffect?: string; missionFontSize?: string; missionEffect?: string; missionEffectHotOnly?: string; missionDisplayMode?: string; missionVisibleCount?: string; missionSpeed?: string; missionGapSize?: string;
   showMembers: boolean; showTotal: boolean;
   totalMode?: "total";
-  showGoal: boolean; goal: string; goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string; goalOpacity?: string; goalOpacityText?: boolean;
+  showGoal: boolean; goal: string;
+  /** 후원 초기화 시 복원할 목표(수동 저장·첫 자동 상향 직전 스냅샷). 없으면 수학적 되감기 사용 */
+  goalBaseline?: string;
+  goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string; goalOpacity?: string; goalOpacityText?: boolean;
   showPersonalGoal?: boolean; personalGoalTheme?: string; personalGoalAnchor?: string; personalGoalLimit?: string; personalGoalFree?: boolean; personalGoalX?: string; personalGoalY?: string;
   tickerInMembers?: boolean; tickerInGoal?: boolean; tickerInPersonalGoal?: boolean;
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
@@ -235,6 +239,12 @@ export default function AdminPage() {
     accountColor: "",
     toonColor: "",
     ...overrides,
+    goalBaseline:
+      overrides.goalBaseline !== undefined && String(overrides.goalBaseline).trim() !== ""
+        ? String(overrides.goalBaseline)
+        : overrides.goal !== undefined
+          ? String(overrides.goal)
+          : "0",
   });
   const [presets, setPresets] = useState<OverlayPreset[]>([]);
   const [presetRev, setPresetRev] = useState(0);
@@ -653,7 +663,11 @@ export default function AdminPage() {
     setEditingId(p.id);
   };
   const updatePreset = (id: string, patch: Partial<OverlayPreset>) => {
-    const nextPresets = presets.map(p => p.id === id ? { ...p, ...patch } : p);
+    const mergedPatch = { ...patch };
+    if (patch.goal !== undefined) {
+      mergedPatch.goalBaseline = String(patch.goal);
+    }
+    const nextPresets = presets.map((p) => (p.id === id ? { ...p, ...mergedPatch } : p));
     setPresets(nextPresets);
     try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(nextPresets)); } catch {}
     setState((prev: AppState) => {
@@ -2464,14 +2478,17 @@ export default function AdminPage() {
       setDailyLog(serverLog);
       try { window.localStorage.setItem(dailyLogStorageKey(user?.id), JSON.stringify(serverLog)); } catch {}
     }).catch(() => setDailyLog(loadDailyLog(user?.id)));
+    const resetPresets = resetOverlayPresetsGoalForDonationInit(state.overlayPresets) as OverlayPreset[];
     const next: AppState = {
       ...state,
       members: state.members.map((m) => ({ ...m, account: 0, toon: 0, contribution: 0 })),
       donors: [],
-      overlayPresets: state.overlayPresets || [],
+      overlayPresets: resetPresets,
       missions: state.missions || [],
       updatedAt: Date.now(),
     };
+    setPresets(resetPresets);
+    try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(resetPresets)); } catch {}
     setState(next);
     persistState(next);
     resetInProgressRef.current = false;
@@ -2491,11 +2508,14 @@ export default function AdminPage() {
       setDailyLog(serverLog);
       try { window.localStorage.setItem(dailyLogStorageKey(user?.id), JSON.stringify(serverLog)); } catch {}
     }).catch(() => setDailyLog(loadDailyLog(user?.id)));
+    const resetPresets = resetOverlayPresetsGoalForDonationInit(state.overlayPresets) as OverlayPreset[];
     const next = {
       ...defaultState(),
-      overlayPresets: state.overlayPresets || [],
+      overlayPresets: resetPresets,
       missions: state.missions || [],
     };
+    setPresets(resetPresets);
+    try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(resetPresets)); } catch {}
     setState(next);
     persistState(next);
     resetInProgressRef.current = false;

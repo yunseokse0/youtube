@@ -41,6 +41,8 @@ export type OverlayPresetLike = {
   totalMode?: "total" | "contribution";
   showGoal?: boolean;
   goal?: string;
+  /** 후원 초기화 시 복원할 목표(백오피스·자동 상향 스냅샷) */
+  goalBaseline?: string;
   goalLabel?: string;
   goalWidth?: string;
   goalAnchor?: string;

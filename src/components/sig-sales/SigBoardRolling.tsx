@@ -82,14 +82,17 @@ export default function SigBoardRolling({
               return (
                 <div key={item.id} className="glass-pastel-card relative overflow-hidden rounded-3xl">
                   <div className="relative aspect-[4/5] w-full overflow-hidden">
+                    {soldOut ? (
+                      <div className="absolute inset-0 z-[1] rounded-[inherit] bg-white/93" aria-hidden />
+                    ) : null}
                     <SigSaleMedia
                       src={resolveSigImageUrl(item.name, item.imageUrl)}
                       alt={item.name}
                       fill
-                      className="relative z-0 object-cover object-center"
+                      className={`object-cover object-center ${soldOut ? "relative z-[2]" : "relative z-0"}`}
                       gifDelayMultiplier={gifDelayMultiplier}
                     />
-                    {soldOut ? <div className="absolute inset-0 z-[5] bg-pastel-ink/25" aria-hidden /> : null}
+                    {soldOut ? <div className="absolute inset-0 z-[5] bg-pastel-ink/20" aria-hidden /> : null}
                     <AnimatePresence>
                       {soldOut && (
                         <motion.div

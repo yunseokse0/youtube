@@ -21,6 +21,7 @@ import {
   SPIN_SOUND_PATHS,
   canonicalSigIdFromWheelSliceId,
   hydrateSigItemFromInventory,
+  pickWheelSliceIdForWin,
 } from "@/lib/sig-roulette";
 import { useSigSalesState } from "@/hooks/useSigSalesState";
 import { useImagePreload } from "@/hooks/useImagePreload";
@@ -542,15 +543,17 @@ export default function SigSalesOverlayPage() {
     const base = [...wheelSlices];
     const rid = wheelLandingRealId;
     if (!rid || base.length === 0) return base;
-    const hasWinner = base.some((s) => canonicalSigIdFromWheelSliceId(s.id) === rid);
+    const ridCanon = canonicalSigIdFromWheelSliceId(rid);
+    const hasWinner = base.some((s) => canonicalSigIdFromWheelSliceId(s.id) === ridCanon);
     if (hasWinner) return base;
+    const matchCanon = (x: SigItem) => canonicalSigIdFromWheelSliceId(x.id) === ridCanon;
     const found =
-      activeNormalPool.find((item) => item.id === rid) ||
-      (pendingLanding?.selected || []).find((x) => x.id === rid) ||
-      (machine.selectedSigs || []).find((x) => x.id === rid) ||
-      DEMO_POOL.find((x) => x.id === rid);
+      activeNormalPool.find(matchCanon) ||
+      (pendingLanding?.selected || []).find(matchCanon) ||
+      (machine.selectedSigs || []).find(matchCanon) ||
+      DEMO_POOL.find(matchCanon);
     if (!found) return base;
-    base[base.length - 1] = { ...found, id: `${found.id}__wslot_${base.length - 1}` };
+    base[base.length - 1] = { ...found, id: `${canonicalSigIdFromWheelSliceId(found.id)}__wslot_${base.length - 1}` };
     return base;
   }, [
     wheelSlices,
@@ -564,9 +567,11 @@ export default function SigSalesOverlayPage() {
   const wheelResultSliceId = useMemo(() => {
     const realId = wheelLandingRealId;
     if (!realId || wheelItemsWithResult.length === 0) return null;
-    const idx = wheelItemsWithResult.findIndex((s) => canonicalSigIdFromWheelSliceId(s.id) === realId);
-    return idx >= 0 ? wheelItemsWithResult[idx]!.id : wheelItemsWithResult[wheelItemsWithResult.length - 1]!.id;
-  }, [wheelLandingRealId, wheelItemsWithResult]);
+    return (
+      pickWheelSliceIdForWin(wheelItemsWithResult, realId, sequentialRoundIndex) ??
+      wheelItemsWithResult[wheelItemsWithResult.length - 1]!.id
+    );
+  }, [wheelLandingRealId, wheelItemsWithResult, sequentialRoundIndex]);
   /** 회전 중·착지 전에는 비우고, 착지 후에는 순차 공개용 전체 목록 */
   const fullSelectedSigs = useMemo(() => {
     const startedAtNum = Number(machine.startedAt || 0);

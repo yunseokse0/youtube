@@ -68,16 +68,21 @@ export default function OneShotSigCard({
           compact ? SIG_OVERLAY_CARD_MEDIA_BOX_CLASS : "mb-2 h-40"
         }`}
       >
+        {sold ? (
+          <div className="absolute inset-0 z-[1] rounded-[inherit] bg-white/93" aria-hidden />
+        ) : null}
         <SigSaleMedia
           src={resolveSigImageUrl(name, imageUrl)}
           alt={name}
           fill
           sizes={compact ? `${SIG_OVERLAY_CARD_MAX_PX}px` : "160px"}
-          className={
+          className={`relative z-[2] object-cover object-center ${
             compact
-              ? "object-cover object-center brightness-[1.15] contrast-[1.08] saturate-[1.12]"
-              : "object-cover object-center"
-          }
+              ? sold
+                ? "brightness-[1.08] contrast-[1.05] saturate-[1.08]"
+                : "brightness-[1.15] contrast-[1.08] saturate-[1.12]"
+              : ""
+          }`}
           gifDelayMultiplier={gifDelayMultiplier}
           onReady={onMediaReady}
         />
@@ -85,10 +90,6 @@ export default function OneShotSigCard({
           <>
             <div className="absolute inset-0 z-[5] bg-black/18" aria-hidden />
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-[min(12%,1rem)]">
-              <div
-                className="absolute h-[min(8.8rem,72%)] w-[min(8.8rem,72%)] rounded-full bg-white/70 blur-[1.4px]"
-                aria-hidden
-              />
               <Image
                 src={soldOutStampUrl}
                 alt="판매 완료"

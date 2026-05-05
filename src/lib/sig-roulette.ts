@@ -24,6 +24,28 @@ export function findSliceIndexForResult(items: SigItem[], resultId: string | nul
 }
 
 /**
+ * 당첨 id(재고 id 또는 `__wslot_n` 접미사 포함)에 맞는 휠 슬라이스 id를 고른다.
+ * 동일 시그가 여러 칸이면 `duplicatePick`(순차 라운드 인덱스 등)으로 어느 칸을 쓸지 나눈다.
+ * 오버레이에서 `realId`만 캐노니컬로 비교하고 `=== rid`로 걸면 매칭 실패 → 마지막 칸 폴백으로
+ * 휠과 결과 카드가 엇갈리던 문제를 막는다.
+ */
+export function pickWheelSliceIdForWin(
+  items: SigItem[],
+  winningRealId: string | null,
+  duplicatePick = 0
+): string | null {
+  if (!winningRealId || items.length === 0) return null;
+  const winCanon = canonicalSigIdFromWheelSliceId(winningRealId);
+  const indices: number[] = [];
+  for (let i = 0; i < items.length; i++) {
+    if (canonicalSigIdFromWheelSliceId(items[i]!.id) === winCanon) indices.push(i);
+  }
+  if (indices.length === 0) return null;
+  const slot = indices[Math.max(0, duplicatePick) % indices.length]!;
+  return items[slot]!.id;
+}
+
+/**
  * 시네마틱 휠 감속 구간 최종 회전 각도(도). `RouletteWheel`과 동일한 수식.
  */
 export function calculateSpinFinalAngle(

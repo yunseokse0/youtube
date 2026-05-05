@@ -1,15 +1,11 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { nextGoalTenPercentIncrease } from "@/lib/goal-preset-math";
 
-const GOAL_STRETCH_FACTOR = 1.1;
 const PATCH_COOLDOWN_MS = 1400;
 
-/** 현재 목표 금액의 10%만큼 상향(원 단위, 최소 +1원) */
-export function nextGoalTenPercentIncrease(goal: number): number {
-  const g = Math.max(1, Math.floor(Number(goal) || 0));
-  return Math.max(g + 1, Math.ceil(g * GOAL_STRETCH_FACTOR));
-}
+export { nextGoalTenPercentIncrease } from "@/lib/goal-preset-math";
 
 type Args = {
   enabled: boolean;
@@ -52,7 +48,12 @@ export function useGoalPresetAutoEscalate(args: Args): void {
     const updated = presets.map((raw) => {
       const x = raw as Record<string, unknown>;
       if (String(x.id || "") !== args.presetId) return raw;
-      return { ...x, goal: String(nextGoal) };
+      const currentGoalStr = String(x.goal ?? "").trim();
+      const existingBaseline = x.goalBaseline != null ? String(x.goalBaseline).trim() : "";
+      /** 첫 자동 상향 전 목표를 고정해 두었다가 후원 초기화 시 여기로 되돌린다 */
+      const goalBaseline =
+        existingBaseline !== "" ? existingBaseline : currentGoalStr !== "" ? currentGoalStr : String(goal);
+      return { ...x, goal: String(nextGoal), goalBaseline };
     });
 
     void fetch(`/api/state?user=${encodeURIComponent(args.userId)}`, {

@@ -4,6 +4,7 @@ import {
   calculateSpinFinalAngle,
   canonicalSigIdFromWheelSliceId,
   findSliceIndexForResult,
+  pickWheelSliceIdForWin,
 } from "./sig-roulette";
 
 function item(id: string, price = 0): SigItem {
@@ -27,6 +28,25 @@ describe("canonicalSigIdFromWheelSliceId", () => {
 
   it("접미사가 없으면 그대로 둔다", () => {
     expect(canonicalSigIdFromWheelSliceId("plain")).toBe("plain");
+  });
+});
+
+describe("pickWheelSliceIdForWin", () => {
+  const dupWheel: SigItem[] = [
+    item("a__wslot_0"),
+    item("b__wslot_1"),
+    item("a__wslot_2"),
+  ];
+
+  it("당첨 id에 `__wslot_n`이 붙어 있어도 캐노니컬로 슬라이스와 매칭한다", () => {
+    expect(pickWheelSliceIdForWin(dupWheel, "b__wslot_99", 0)).toBe("b__wslot_1");
+    expect(pickWheelSliceIdForWin(dupWheel, "a__wslot_0", 0)).toBe("a__wslot_0");
+  });
+
+  it("동일 시그가 여러 칸이면 duplicatePick으로 칸을 고른다", () => {
+    expect(pickWheelSliceIdForWin(dupWheel, "a", 0)).toBe("a__wslot_0");
+    expect(pickWheelSliceIdForWin(dupWheel, "a", 1)).toBe("a__wslot_2");
+    expect(pickWheelSliceIdForWin(dupWheel, "a", 2)).toBe("a__wslot_0");
   });
 });
 
