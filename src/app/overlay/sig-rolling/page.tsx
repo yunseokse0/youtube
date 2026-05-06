@@ -41,6 +41,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   }, [userId]);
 
   useEffect(() => {
+    /** 로컬 저장 없이 default만 쓸 때 updatedAt이 방금(ms)이라 서버 타임스탬프보다 항상 크게 나와 OBS 등에서 API 동기화가 영구히 건너뛰어짐 → goal 오버레이와 동일하게 ref=0 */
     const local = readLocalStateIfExists();
     if (local) {
       setState(local);
@@ -48,7 +49,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
     } else {
       const base = defaultState();
       setState(base);
-      lastUpdatedRef.current = base.updatedAt || 0;
+      lastUpdatedRef.current = 0;
     }
 
     const syncFromApi = async () => {
@@ -58,7 +59,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
         const remote = await loadStateFromApi(userId);
         if (!remote) return;
         const remoteUpdatedAt = remote.updatedAt || 0;
-        if (remoteUpdatedAt >= lastUpdatedRef.current) {
+        if (lastUpdatedRef.current <= 0 || remoteUpdatedAt >= lastUpdatedRef.current) {
           lastUpdatedRef.current = remoteUpdatedAt;
           setState(remote);
         }

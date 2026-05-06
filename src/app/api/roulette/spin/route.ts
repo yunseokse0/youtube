@@ -161,22 +161,18 @@ export async function POST(req: Request) {
         return Response.json({ error: "not_enough_active_sigs" }, { status: 400, headers: { "Content-Type": "application/json" } });
       }
       const expandedPool = candidatePool;
-      const shuffled = [...expandedPool];
-      for (let i = shuffled.length - 1; i > 0; i--) {
-        const u = new Uint32Array(1);
-        crypto.getRandomValues(u);
-        const j = u[0]! % (i + 1);
-        const t = shuffled[i]!;
-        shuffled[i] = shuffled[j]!;
-        shuffled[j] = t;
-      }
       /** 명시된 회전 수: 최대 40까지(통합 관리자 회전판과 유사). 미지정 시 레거시 최대 5·풀 크기 */
       const CINEMATIC5_MAX_EXPLICIT = 40;
       const CINEMATIC5_MAX_LEGACY = 5;
       const selectedCount = spinCountExplicit
-        ? Math.max(1, Math.min(CINEMATIC5_MAX_EXPLICIT, spinCount, shuffled.length))
-        : Math.max(1, Math.min(CINEMATIC5_MAX_LEGACY, shuffled.length));
-      const selectedSigs = shuffled.slice(0, selectedCount).map((x) => ({ ...x, maxCount: 1 }));
+        ? Math.max(1, Math.min(CINEMATIC5_MAX_EXPLICIT, spinCount))
+        : Math.max(1, Math.min(CINEMATIC5_MAX_LEGACY, expandedPool.length));
+      /** 후보 풀에서 매 회차 독립 추첨(복원) — 확정된 시그와 동일 id가 N번 나와도 허용 */
+      const selectedSigs: SigItem[] = [];
+      for (let k = 0; k < selectedCount; k++) {
+        const pick = pickRandom(expandedPool);
+        selectedSigs.push({ ...pick, maxCount: 1 });
+      }
       const oneShot = selectedSigs.length >= 2
         ? {
             id: ONE_SHOT_SIG_ID,
@@ -241,12 +237,7 @@ export async function POST(req: Request) {
         { status: 400, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }
       );
     }
-    if (runtimePool.length < spinCount) {
-      return Response.json(
-        { error: "not_enough_active_sigs", need: spinCount, have: runtimePool.length },
-        { status: 400, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }
-      );
-    }
+    /** 복원 추첨이므로 후보 1개만 있어도 spinCount 회까지 반복 당첨 가능 → 길이 비교 거절 제거 */
 
     const plan: (number | null)[] = [];
     const planRanges: ({ min: number | null; max: number | null } | null)[] = [];
@@ -265,34 +256,14 @@ export async function POST(req: Request) {
       for (let i = 0; i < spinCount; i++) planRanges.push(null);
     }
 
-    const noPriceFilters =
-      legacyPriceFilter == null &&
-      (!priceFilters || priceFilters.every((x) => x == null)) &&
-      plan.every((t) => t == null) &&
-      planRanges.every((r) => r == null);
-    if (noPriceFilters) {
-      const uniq = new Set(runtimePool.map((x) => x.id)).size;
-      if (uniq < spinCount) {
-        return Response.json(
-          { error: "not_enough_unique_sigs", need: spinCount, have: uniq },
-          { status: 400, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }
-        );
-      }
-    }
-
-    /** 한 번의 스핀 안에서는 같은 시그 id가 중복 당첨되지 않도록 무복원 추첨 */
+    /** 회차별 독립 추첨(복원) — 한 세션에서 동일 시그 id가 여러 번 당첨되어도 허용(확정 재추첨·회전판 동일 면 등) */
     const results: SigItem[] = [];
     const fallbackUsed = false;
-    let remaining: SigItem[] = runtimePool.map((x) => ({ ...x }));
 
     for (let i = 0; i < spinCount; i++) {
       const tier = plan[i] ?? null;
       const range = planRanges[i] ?? null;
-      let tierPool = filterPoolByTierAndRange(remaining, tier, range);
-      if (tierPool.length === 0) {
-        /** 금액/티어 조건을 만족하는 시그가 remaining에 없으면, 아직 당첨되지 않은 id만 전체 풀에서 탐색 */
-        tierPool = filterPoolByTierAndRange(runtimePool, tier, range).filter((x) => !results.some((r) => r.id === x.id));
-      }
+      const tierPool = filterPoolByTierAndRange(runtimePool, tier, range);
       if (tierPool.length === 0) {
         return Response.json(
           { error: "empty_price_range", round: i + 1 },
@@ -301,7 +272,6 @@ export async function POST(req: Request) {
       }
       const picked = pickRandom(tierPool);
       results.push({ ...picked });
-      remaining = remaining.filter((x) => x.id !== picked.id);
     }
 
     const last = results[results.length - 1]!;
