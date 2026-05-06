@@ -310,6 +310,12 @@ export type SigRollingSettings = {
   staticHoldMs: number;
 };
 
+/** 시그 롤링 메타(판매 리스트 기반 통합): 라벨/정렬 순서 */
+export type SigRollingMetaEntry = {
+  label?: string;
+  order?: number;
+};
+
 export type AppState = {
   /** 멤버 목록 */
   members: Member[];
@@ -363,6 +369,8 @@ export type AppState = {
   donationSyncMode?: "none" | "mealBattle" | "sigMatch" | "sigSales";
   /** 시그 롤링 오버레이 (`/overlay/sig-rolling`) 이미지 목록·전환 설정 */
   sigRolling: SigRollingSettings;
+  /** 시그 롤링 전용 메타(라벨/정렬). 실제 항목 소스는 sigInventory(isRolling=true) 우선 */
+  sigRollingMeta?: Record<string, SigRollingMetaEntry>;
   /** 마지막 저장 시각(epoch ms), 원격-로컬 최신성 비교 기준 */
   updatedAt: number;
 };

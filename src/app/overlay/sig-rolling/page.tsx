@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   defaultState,
+  getUnifiedSigRollingItems,
   loadState,
   loadStateFromApi,
   normalizeSigRolling,
@@ -29,9 +30,10 @@ const mediaFrameStyle: CSSProperties = {
 };
 
 /** 폴링으로 `state` 객체만 바뀌고 내용은 같을 때도 참조가 매번 바뀌지 않도록 문자열 키로 구분 (타이머 effect 무한 리셋 방지) */
-function sigRollingScheduleKey(raw: unknown): string {
-  const r = normalizeSigRolling(raw);
-  return `${r.fadeMs}|${r.staticHoldMs}|${r.items.map((x) => `${x.id}\u001f${x.url}`).join("\u001e")}`;
+function sigRollingScheduleKey(state: AppState | null): string {
+  const r = normalizeSigRolling(state?.sigRolling);
+  const items = getUnifiedSigRollingItems(state);
+  return `${r.fadeMs}|${r.staticHoldMs}|${items.map((x) => `${x.id}\u001f${x.url}`).join("\u001e")}`;
 }
 
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
@@ -205,7 +207,7 @@ export default function SigRollingOverlayPage() {
   const { state, ready } = useRemoteState(userId);
 
   const rolling = useMemo(() => normalizeSigRolling(state?.sigRolling), [state?.sigRolling]);
-  const items = rolling.items;
+  const items = useMemo(() => getUnifiedSigRollingItems(state), [state]);
   const fadeMs = rolling.fadeMs;
 
   /** 한 줄에 왼쪽·오른쪽 카드가 함께 넘어가도록 페어 시작 인덱스(짝 단위 +2) */
@@ -219,7 +221,7 @@ export default function SigRollingOverlayPage() {
   const leftNext = n ? items[(pairStart + 2) % n] : null;
   const rightNext = n ? items[(pairStart + 3) % n] : null;
 
-  const scheduleKey = sigRollingScheduleKey(state?.sigRolling);
+  const scheduleKey = sigRollingScheduleKey(state);
   const rollingRef = useRef(rolling);
   rollingRef.current = rolling;
 

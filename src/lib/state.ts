@@ -19,6 +19,7 @@ import type {
   TimerDisplayStyle,
   TimerState,
   SigRollingItem,
+  SigRollingMetaEntry,
   SigRollingSettings,
 } from "@/types";
 export type {
@@ -44,6 +45,7 @@ export type {
   TimerDisplayStyle,
   TimerState,
   SigRollingItem,
+  SigRollingMetaEntry,
   SigRollingSettings,
 } from "@/types";
 
@@ -65,6 +67,51 @@ export function normalizeSigRolling(input: unknown): SigRollingSettings {
     ? Math.max(400, Math.min(120_000, Math.floor(Number(v.staticHoldMs))))
     : 5000;
   return { items, fadeMs, staticHoldMs };
+}
+
+function normalizeSigRollingMeta(input: unknown): Record<string, SigRollingMetaEntry> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return {};
+  const out: Record<string, SigRollingMetaEntry> = {};
+  for (const [rawId, rawEntry] of Object.entries(input as Record<string, unknown>)) {
+    const id = String(rawId || "").trim();
+    if (!id || !rawEntry || typeof rawEntry !== "object") continue;
+    const e = rawEntry as Record<string, unknown>;
+    const label = typeof e.label === "string" ? e.label.trim() : "";
+    const orderNum = Number(e.order);
+    const order = Number.isFinite(orderNum) ? Math.max(0, Math.floor(orderNum)) : undefined;
+    if (!label && order === undefined) continue;
+    out[id] = {};
+    if (label) out[id]!.label = label;
+    if (order !== undefined) out[id]!.order = order;
+  }
+  return out;
+}
+
+/**
+ * 시그 롤링 목록의 단일 소스는 `sigInventory(isRolling=true)`를 우선 사용한다.
+ * 구버전 `sigRolling.items`는 호환(fallback)으로만 유지한다.
+ */
+export function getUnifiedSigRollingItems(state: Pick<AppState, "sigInventory" | "sigRolling" | "sigRollingMeta"> | null | undefined): SigRollingItem[] {
+  if (!state) return [];
+  const meta = normalizeSigRollingMeta(state.sigRollingMeta);
+  const rows = (state.sigInventory || [])
+    .filter((x) => x.id !== "sig_one_shot" && Boolean(x.isRolling))
+    .map((x, idx) => {
+      const m = meta[x.id] || {};
+      return {
+        id: x.id,
+        url: normalizeSigImageUrlStored(x.imageUrl).trim(),
+        label: (m.label && String(m.label).trim()) || String(x.name || "").trim(),
+        order: m.order ?? idx,
+      };
+    })
+    .filter((x) => x.url);
+  if (rows.length > 0) {
+    return rows
+      .sort((a, b) => a.order - b.order)
+      .map(({ id, url, label }) => ({ id, url, label }));
+  }
+  return normalizeSigRolling(state.sigRolling).items;
 }
 
 /** 시그 풀: 멤버는 최대 한 풀에만, 풀은 1인 이상(1인 팀·1:2·삼자 구분용) */
@@ -547,6 +594,7 @@ export function defaultState(): AppState {
     donationListsOverlayConfig: normalizeDonationListsOverlayConfig(null),
     donationSyncMode: "mealBattle",
     sigRolling: normalizeSigRolling(null),
+    sigRollingMeta: {},
     updatedAt: Date.now(),
   };
 }
@@ -869,6 +917,7 @@ export function loadState(userId?: string | null): AppState {
     data.donorRankingsOverlayConfig = normalizeDonorRankingsOverlayConfig((data as AppState).donorRankingsOverlayConfig);
     data.donationListsOverlayConfig = normalizeDonationListsOverlayConfig((data as AppState).donationListsOverlayConfig);
     data.sigRolling = normalizeSigRolling((data as AppState).sigRolling);
+    data.sigRollingMeta = normalizeSigRollingMeta((data as AppState).sigRollingMeta);
     data.overlayPresets = Array.isArray(data.overlayPresets)
       ? data.overlayPresets
       : Array.isArray(data.overlaySettings?.presets)
@@ -1077,6 +1126,7 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
       data.donorRankingsOverlayConfig = normalizeDonorRankingsOverlayConfig((data as AppState).donorRankingsOverlayConfig);
       data.donationListsOverlayConfig = normalizeDonationListsOverlayConfig((data as AppState).donationListsOverlayConfig);
       data.sigRolling = normalizeSigRolling((data as AppState).sigRolling);
+      data.sigRollingMeta = normalizeSigRollingMeta((data as AppState).sigRollingMeta);
       data.overlayPresets = Array.isArray(data.overlayPresets)
         ? data.overlayPresets
         : Array.isArray(data.overlaySettings?.presets)

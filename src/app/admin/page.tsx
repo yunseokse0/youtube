@@ -36,6 +36,7 @@ import {
   normalizeSigMatchPools,
   normalizeSigMatchParticipantIds,
   normalizeDonationListsOverlayConfig,
+  getUnifiedSigRollingItems,
   normalizeSigRolling,
   type OverlayConfig,
 } from "@/lib/state";
@@ -186,6 +187,9 @@ export default function AdminPage() {
   const [sigExcelResult, setSigExcelResult] = useState("");
   /** 시그 롤링 업로드 결과 메시지 */
   const [sigRollingUploadMessage, setSigRollingUploadMessage] = useState("");
+  const rollingItemsForAdmin = useMemo(() => getUnifiedSigRollingItems(state), [state]);
+  const [ocrBusyIds, setOcrBusyIds] = useState<Record<string, boolean>>({});
+  const [ocrAllBusy, setOcrAllBusy] = useState(false);
   const [sigPresetMemberId, setSigPresetMemberId] = useState("");
   /** 회차별 금액 범위(최소/최대). 빈칸이면 해당 회차는 금액 제한 없이 남은 시그 중 랜덤(중복 없음) */
   const [rouletteSpinCount, setRouletteSpinCount] = useState("5");
@@ -494,10 +498,10 @@ export default function AdminPage() {
       merged = { ...merged, overlaySettings: local.overlaySettings };
       didPreserve = true;
     }
-    const incomingSr = normalizeSigRolling(incoming.sigRolling);
-    const localSr = normalizeSigRolling(local.sigRolling);
-    if (localSr.items.length > 0 && incomingSr.items.length === 0) {
-      merged = { ...merged, sigRolling: localSr };
+    const incomingRollingItems = getUnifiedSigRollingItems(incoming);
+    const localRollingItems = getUnifiedSigRollingItems(local);
+    if (localRollingItems.length > 0 && incomingRollingItems.length === 0) {
+      merged = { ...merged, sigRollingMeta: local.sigRollingMeta ?? {} };
       didPreserve = true;
     }
     return { merged, didPreserve };
@@ -1564,8 +1568,17 @@ export default function AdminPage() {
   const toggleSigRollingItem = (id: string, checked: boolean) => {
     if (id === ONE_SHOT_SIG_ID) return;
     setState((prev: AppState) => {
+      const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
+      if (checked) {
+        const existingOrders = Object.values(meta)
+          .map((x) => Number(x?.order))
+          .filter((x) => Number.isFinite(x)) as number[];
+        const nextOrder = existingOrders.length ? Math.max(...existingOrders) + 1 : 0;
+        meta[id] = { ...(meta[id] || {}), order: meta[id]?.order ?? nextOrder };
+      }
       const draft: AppState = {
         ...prev,
+        sigRollingMeta: meta,
         sigInventory: (prev.sigInventory || []).map((x) => (x.id === id ? { ...x, isRolling: checked } : x)),
       };
       const next = syncOneShotSigItem(draft);
@@ -1845,7 +1858,8 @@ export default function AdminPage() {
         name,
         price,
         imageUrl: newSigImageUrl.trim(),
-        memberId: newSigMemberId || prev.members[0]?.id || "",
+        /** 초기 등록은 기본값을 전체(공통)로 둔다. */
+        memberId: "",
         maxCount: 1,
         soldCount: 0,
         isRolling: true,
@@ -2019,6 +2033,140 @@ export default function AdminPage() {
     return j.url;
   };
 
+  const parseDetectedSigAmount = useCallback((rawText: string): number | null => {
+    const text = String(rawText || "");
+    if (!text.trim()) return null;
+    const candidates: number[] = [];
+    const manRegex = /(\d{1,3})\s*만(?:\s*([0-9]{1,4}))?/g;
+    for (const m of text.matchAll(manRegex)) {
+      const man = Number(m[1] || 0);
+      const tail = Number(m[2] || 0);
+      const amount = man * 10000 + tail;
+      if (Number.isFinite(amount) && amount >= 1000 && amount <= 100000000) candidates.push(amount);
+    }
+    const numberRegex = /\d[\d,\.\s]{2,}/g;
+    for (const m of text.matchAll(numberRegex)) {
+      const digits = String(m[0] || "").replace(/[^\d]/g, "");
+      if (!digits) continue;
+      const amount = Number(digits);
+      if (Number.isFinite(amount) && amount >= 1000 && amount <= 100000000) {
+        candidates.push(amount);
+      }
+    }
+    if (!candidates.length) return null;
+    return Math.max(...candidates);
+  }, []);
+
+  const detectSigPriceFromImage = useCallback(async (file: File): Promise<number | null> => {
+    try {
+      if (typeof window === "undefined") return null;
+      const TextDetectorCtor = (window as any).TextDetector as
+        | { new (): { detect: (input: ImageBitmap | HTMLCanvasElement) => Promise<Array<{ rawValue?: string }>> } }
+        | undefined;
+      if (!TextDetectorCtor) return null;
+      const bitmap = await createImageBitmap(file);
+      const maxSide = 1600;
+      const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+      const w = Math.max(1, Math.floor(bitmap.width * scale));
+      const h = Math.max(1, Math.floor(bitmap.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      ctx.drawImage(bitmap, 0, 0, w, h);
+      bitmap.close();
+      const detector = new (window as any).TextDetector([]);
+      const blocks = await detector.detect(canvas);
+      const merged = blocks.map((b: any) => String((b as any).rawValue || "")).join("\n");
+      return parseDetectedSigAmount(merged);
+    } catch {
+      return null;
+    }
+  }, [parseDetectedSigAmount]);
+
+  const detectSigPriceFromImageUrl = useCallback(async (imageUrl: string): Promise<number | null> => {
+    try {
+      if (typeof window === "undefined") return null;
+      const TextDetectorCtor = (window as any).TextDetector as
+        | { new (): { detect: (input: ImageBitmap | HTMLCanvasElement) => Promise<Array<{ rawValue?: string }>> } }
+        | undefined;
+      if (!TextDetectorCtor) return null;
+      const img = new window.Image();
+      img.crossOrigin = "anonymous";
+      img.referrerPolicy = "no-referrer";
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("image_load_failed"));
+        img.src = imageUrl;
+      });
+      const maxSide = 1600;
+      const scale = Math.min(1, maxSide / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+      const w = Math.max(1, Math.floor((img.naturalWidth || 1) * scale));
+      const h = Math.max(1, Math.floor((img.naturalHeight || 1) * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      ctx.drawImage(img, 0, 0, w, h);
+      const detector = new (window as any).TextDetector([]);
+      const blocks = await detector.detect(canvas);
+      const merged = blocks.map((b: any) => String((b as any).rawValue || "")).join("\n");
+      return parseDetectedSigAmount(merged);
+    } catch {
+      return null;
+    }
+  }, [parseDetectedSigAmount]);
+
+  const runOcrForSigItem = useCallback(async (id: string, imageUrl: string, name?: string) => {
+    const src = String(imageUrl || "").trim();
+    if (!src) {
+      setSigExcelResult(`OCR 실패: 이미지 URL이 비어 있습니다 (${name || id})`);
+      return;
+    }
+    setOcrBusyIds((prev) => ({ ...prev, [id]: true }));
+    try {
+      const price = await detectSigPriceFromImageUrl(src);
+      if (price == null) {
+        setSigExcelResult(`OCR 인식 실패: 금액을 찾지 못했습니다 (${name || id})`);
+        return;
+      }
+      updateSigItem(id, { price });
+      setSigExcelResult(`OCR 적용 완료: ${name || id} → ${price.toLocaleString("ko-KR")}원`);
+    } finally {
+      setOcrBusyIds((prev) => ({ ...prev, [id]: false }));
+    }
+  }, [detectSigPriceFromImageUrl]);
+
+  const runOcrForAllSigItems = useCallback(async () => {
+    if (ocrAllBusy) return;
+    const items = (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID && String(x.imageUrl || "").trim());
+    if (!items.length) {
+      setSigExcelResult("OCR 대상 시그가 없습니다.");
+      return;
+    }
+    setOcrAllBusy(true);
+    let ok = 0;
+    let fail = 0;
+    for (const item of items) {
+      setOcrBusyIds((prev) => ({ ...prev, [item.id]: true }));
+      try {
+        const price = await detectSigPriceFromImageUrl(String(item.imageUrl || "").trim());
+        if (price == null) {
+          fail += 1;
+          continue;
+        }
+        updateSigItem(item.id, { price });
+        ok += 1;
+      } finally {
+        setOcrBusyIds((prev) => ({ ...prev, [item.id]: false }));
+      }
+    }
+    setOcrAllBusy(false);
+    setSigExcelResult(`OCR 일괄 완료: 성공 ${ok}건 / 실패 ${fail}건`);
+  }, [ocrAllBusy, state.sigInventory, detectSigPriceFromImageUrl]);
+
   const uploadSigImage = (id: string, file: File | null) => {
     if (!file) return;
     setSigPreviewMap((prev) => ({ ...prev, [id]: URL.createObjectURL(file) }));
@@ -2026,6 +2174,10 @@ export default function AdminPage() {
       const url = await uploadSigImageFile(file);
       if (!url) return;
       updateSigItem(id, { imageUrl: url });
+      const ocrPrice = await detectSigPriceFromImage(file);
+      if (ocrPrice != null) {
+        updateSigItem(id, { price: ocrPrice });
+      }
       setSigPreviewMap((prev) => ({ ...prev, [id]: "" }));
     })();
   };
@@ -2035,10 +2187,14 @@ export default function AdminPage() {
     setNewSigImageUploading(true);
     setNewSigPreviewUrl(URL.createObjectURL(file));
     void (async () => {
+      const ocrPrice = await detectSigPriceFromImage(file);
       const url = await uploadSigImageFile(file);
       if (url) {
         setNewSigImageUrl(url);
         setNewSigPreviewUrl("");
+        if (ocrPrice != null) {
+          setNewSigPrice(String(ocrPrice));
+        }
       }
       setNewSigImageUploading(false);
     })();
@@ -2079,32 +2235,52 @@ export default function AdminPage() {
       );
       return;
     }
-    const appended: { url: string; label: string }[] = [];
+    const appended: { url: string; label: string; price: number }[] = [];
     const failures: string[] = [];
     for (const f of list) {
+      const ocrPrice = await detectSigPriceFromImage(f);
       const url = await uploadSigImageFile(f);
       if (!url) {
         failures.push(f.name);
         continue;
       }
       const label = f.name.replace(/\.[^.]+$/, "");
-      appended.push({ url, label });
+      appended.push({ url, label, price: ocrPrice ?? 0 });
     }
     if (!appended.length) {
       setSigRollingUploadMessage(`업로드 실패 (${failures.length}개). 로그인·네트워크·저장소(Supabase) 설정을 확인해 주세요.`);
       return;
     }
     setState((prev) => {
-      const sr = normalizeSigRolling(prev.sigRolling);
-      const nextItems = [
-        ...sr.items,
-        ...appended.map((x, i) => ({
-          id: `sr_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 8)}`,
-          url: x.url,
-          label: x.label,
-        })),
-      ];
-      const next: AppState = { ...prev, sigRolling: { ...sr, items: nextItems }, updatedAt: Date.now() };
+      const existingIds = new Set((prev.sigInventory || []).map((x) => x.id));
+      const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
+      const currentRolling = getUnifiedSigRollingItems(prev);
+      const nextInventory = [...(prev.sigInventory || [])];
+      appended.forEach((x, i) => {
+        let id = `sig_roll_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 8)}`;
+        while (existingIds.has(id)) {
+          id = `sig_roll_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 8)}`;
+        }
+        existingIds.add(id);
+        nextInventory.push({
+          id,
+          name: x.label || `롤링 시그 ${i + 1}`,
+          price: Math.max(0, Math.floor(Number(x.price || 0))),
+          imageUrl: x.url,
+          memberId: "",
+          maxCount: 1,
+          soldCount: 0,
+          isRolling: true,
+          isActive: true,
+        });
+        meta[id] = { label: x.label || "", order: currentRolling.length + i };
+      });
+      const next: AppState = {
+        ...prev,
+        sigInventory: nextInventory,
+        sigRollingMeta: meta,
+        updatedAt: Date.now(),
+      };
       persistState(next);
       return next;
     });
@@ -2116,8 +2292,13 @@ export default function AdminPage() {
 
   const removeSigRollingItem = (id: string) => {
     setState((prev) => {
-      const sr = normalizeSigRolling(prev.sigRolling);
-      const next = { ...prev, sigRolling: { ...sr, items: sr.items.filter((x) => x.id !== id) } };
+      const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
+      delete meta[id];
+      const next = {
+        ...prev,
+        sigInventory: (prev.sigInventory || []).map((x) => (x.id === id ? { ...x, isRolling: false } : x)),
+        sigRollingMeta: meta,
+      };
       persistState(next);
       return next;
     });
@@ -2125,15 +2306,20 @@ export default function AdminPage() {
 
   const moveSigRollingItem = (id: string, delta: number) => {
     setState((prev) => {
-      const sr = normalizeSigRolling(prev.sigRolling);
-      const ix = sr.items.findIndex((x) => x.id === id);
+      const rows = getUnifiedSigRollingItems(prev);
+      const ix = rows.findIndex((x) => x.id === id);
       if (ix < 0) return prev;
       const j = ix + delta;
-      if (j < 0 || j >= sr.items.length) return prev;
-      const items = [...sr.items];
+      if (j < 0 || j >= rows.length) return prev;
+      const items = [...rows];
       const [row] = items.splice(ix, 1);
       items.splice(j, 0, row);
-      const next = { ...prev, sigRolling: { ...sr, items } };
+      const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
+      items.forEach((it, idx) => {
+        const cur = meta[it.id] || {};
+        meta[it.id] = { ...cur, order: idx };
+      });
+      const next = { ...prev, sigRollingMeta: meta };
       persistState(next);
       return next;
     });
@@ -4895,16 +5081,16 @@ export default function AdminPage() {
                     <span className="inline-flex flex-wrap items-center gap-2">
                       등록된 이미지 목록
                       <span className="rounded bg-white/10 px-1.5 py-0.5 text-[11px] text-neutral-400">
-                        {normalizeSigRolling(state.sigRolling).items.length}개
+                        {rollingItemsForAdmin.length}개
                       </span>
                       <span className="text-[11px] text-neutral-500">클릭하여 접기·펼치기</span>
                     </span>
                   </summary>
                   <ul className="space-y-2 border-t border-white/10 p-2 pt-3">
-                    {normalizeSigRolling(state.sigRolling).items.length === 0 ? (
+                    {rollingItemsForAdmin.length === 0 ? (
                       <li className="text-xs text-neutral-500">등록된 이미지가 없습니다.</li>
                     ) : (
-                      normalizeSigRolling(state.sigRolling).items.map((it, pos, arr) => (
+                      rollingItemsForAdmin.map((it, pos, arr) => (
                         <li
                           key={it.id}
                           className="flex flex-wrap items-center gap-2 rounded border border-white/10 bg-black/30 px-2 py-2"
@@ -4919,9 +5105,10 @@ export default function AdminPage() {
                             onChange={(e) => {
                               const label = e.target.value;
                               setState((prev) => {
-                                const sr = normalizeSigRolling(prev.sigRolling);
-                                const items = sr.items.map((x) => (x.id === it.id ? { ...x, label } : x));
-                                const next = { ...prev, sigRolling: { ...sr, items } };
+                                const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
+                                const cur = meta[it.id] || {};
+                                meta[it.id] = { ...cur, label };
+                                const next = { ...prev, sigRollingMeta: meta };
                                 persistState(next);
                                 return next;
                               });
@@ -4949,7 +5136,7 @@ export default function AdminPage() {
                               className="rounded bg-red-900/70 px-2 py-1 text-xs hover:bg-red-800"
                               onClick={() => removeSigRollingItem(it.id)}
                             >
-                              삭제
+                              롤링 제외
                             </button>
                           </div>
                         </li>
@@ -5008,6 +5195,14 @@ export default function AdminPage() {
                     onClick={() => clearSigSalesPresetForMember(sigPresetMemberId)}
                   >
                     프리셋 삭제
+                  </button>
+                  <button
+                    type="button"
+                    className="px-2 py-1 rounded bg-violet-800 hover:bg-violet-700 text-xs disabled:opacity-50"
+                    onClick={() => void runOcrForAllSigItems()}
+                    disabled={ocrAllBusy}
+                  >
+                    {ocrAllBusy ? "OCR 전체 처리 중..." : "금액 OCR 전체 적용"}
                   </button>
                   <span className="text-[11px] text-neutral-500">
                     저장: 선택 멤버 시그의 현재 판매 활성 상태 / 적용: 해당 멤버 시그만 판매 활성
@@ -5199,6 +5394,44 @@ export default function AdminPage() {
                             <span>판매 활성</span>
                           </label>
                           <span className="font-semibold">{item.name}</span>
+                          {!isOneShot ? (
+                            <>
+                              <input
+                                type="number"
+                                min={0}
+                                className="w-16 rounded border border-white/10 bg-neutral-900/80 px-2 py-0.5 text-[11px]"
+                                placeholder="순서"
+                                value={Number(state.sigRollingMeta?.[item.id]?.order ?? 0)}
+                                onChange={(e) => {
+                                  const order = Math.max(0, Math.floor(Number(e.target.value || 0)));
+                                  setState((prev) => {
+                                    const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
+                                    const cur = meta[item.id] || {};
+                                    meta[item.id] = { ...cur, order };
+                                    const next = { ...prev, sigRollingMeta: meta };
+                                    persistState(next);
+                                    return next;
+                                  });
+                                }}
+                              />
+                              <input
+                                className="w-28 rounded border border-white/10 bg-neutral-900/80 px-2 py-0.5 text-[11px]"
+                                placeholder="롤링 라벨(선택)"
+                                value={state.sigRollingMeta?.[item.id]?.label || ""}
+                                onChange={(e) => {
+                                  const label = e.target.value;
+                                  setState((prev) => {
+                                    const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
+                                    const cur = meta[item.id] || {};
+                                    meta[item.id] = { ...cur, label };
+                                    const next = { ...prev, sigRollingMeta: meta };
+                                    persistState(next);
+                                    return next;
+                                  });
+                                }}
+                              />
+                            </>
+                          ) : null}
                         </div>
                         <div className="text-xs text-neutral-400">가격 {item.price.toLocaleString("ko-KR")}</div>
                         <div className="flex items-center gap-1">
@@ -5214,6 +5447,13 @@ export default function AdminPage() {
                           ) : null}
                           {!isOneShot && (
                             <>
+                              <button
+                                className="px-2 py-1 rounded bg-violet-800 hover:bg-violet-700 text-xs disabled:opacity-50"
+                                disabled={Boolean(ocrBusyIds[item.id])}
+                                onClick={() => void runOcrForSigItem(item.id, item.imageUrl || "", item.name)}
+                              >
+                                {ocrBusyIds[item.id] ? "OCR..." : "OCR"}
+                              </button>
                               <button className="px-2 py-1 rounded bg-red-900/70 hover:bg-red-800 text-xs" onClick={() => adjustSigSoldCount(item.id, -1)}>취소 -1</button>
                               <button className="px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-xs" onClick={() => adjustSigSoldCount(item.id, 1)}>판매 +1</button>
                               <button className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs" onClick={() => removeSigItem(item.id)}>삭제</button>
