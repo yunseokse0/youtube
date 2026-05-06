@@ -213,6 +213,7 @@ export default function SigRollingOverlayPage() {
 
   const rolling = useMemo(() => normalizeSigRolling(state?.sigRolling), [state?.sigRolling]);
   const items = useMemo(() => getUnifiedSigRollingItems(state), [state]);
+  const rollingUnified = useMemo(() => ({ ...rolling, items }), [rolling, items]);
   const fadeMs = rolling.fadeMs;
 
   /** 한 줄에 왼쪽·오른쪽 카드가 함께 넘어가도록 페어 시작 인덱스(짝 단위 +2) */
@@ -227,8 +228,8 @@ export default function SigRollingOverlayPage() {
   const rightNext = n ? items[(pairStart + 3) % n] : null;
 
   const scheduleKey = sigRollingScheduleKey(state);
-  const rollingRef = useRef(rolling);
-  rollingRef.current = rolling;
+  const rollingRef = useRef(rollingUnified);
+  rollingRef.current = rollingUnified;
 
   const useCrossfade = n >= 3;
 

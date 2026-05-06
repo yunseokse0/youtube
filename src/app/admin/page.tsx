@@ -501,7 +501,11 @@ export default function AdminPage() {
     const incomingRollingItems = getUnifiedSigRollingItems(incoming);
     const localRollingItems = getUnifiedSigRollingItems(local);
     if (localRollingItems.length > 0 && incomingRollingItems.length === 0) {
-      merged = { ...merged, sigRollingMeta: local.sigRollingMeta ?? {} };
+      merged = {
+        ...merged,
+        sigRolling: local.sigRolling,
+        sigRollingMeta: local.sigRollingMeta ?? {},
+      };
       didPreserve = true;
     }
     return { merged, didPreserve };

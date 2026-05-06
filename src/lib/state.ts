@@ -94,7 +94,7 @@ function normalizeSigRollingMeta(input: unknown): Record<string, SigRollingMetaE
 export function getUnifiedSigRollingItems(state: Pick<AppState, "sigInventory" | "sigRolling" | "sigRollingMeta"> | null | undefined): SigRollingItem[] {
   if (!state) return [];
   const meta = normalizeSigRollingMeta(state.sigRollingMeta);
-  const rows = (state.sigInventory || [])
+  const invRows = (state.sigInventory || [])
     .filter((x) => x.id !== "sig_one_shot" && Boolean(x.isRolling))
     .map((x, idx) => {
       const m = meta[x.id] || {};
@@ -106,12 +106,28 @@ export function getUnifiedSigRollingItems(state: Pick<AppState, "sigInventory" |
       };
     })
     .filter((x) => x.url);
-  if (rows.length > 0) {
-    return rows
-      .sort((a, b) => a.order - b.order)
-      .map(({ id, url, label }) => ({ id, url, label }));
+  const legacy = normalizeSigRolling(state.sigRolling).items;
+  if (invRows.length === 0) return legacy;
+
+  const invById = new Set(invRows.map((x) => x.id));
+  const invByUrl = new Set(invRows.map((x) => x.url));
+  const merged = [...invRows];
+  for (const it of legacy) {
+    const id = String(it.id || "");
+    const url = normalizeSigImageUrlStored(it.url).trim();
+    if (!url) continue;
+    if (invById.has(id) || invByUrl.has(url)) continue;
+    const m = meta[id] || {};
+    merged.push({
+      id,
+      url,
+      label: (m.label && String(m.label).trim()) || String(it.label || "").trim(),
+      order: m.order ?? merged.length,
+    });
   }
-  return normalizeSigRolling(state.sigRolling).items;
+  return merged
+    .sort((a, b) => a.order - b.order)
+    .map(({ id, url, label }) => ({ id, url, label }));
 }
 
 /** 시그 풀: 멤버는 최대 한 풀에만, 풀은 1인 이상(1인 팀·1:2·삼자 구분용) */
