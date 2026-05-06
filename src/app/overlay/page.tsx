@@ -1475,8 +1475,8 @@ function OverlayInner() {
   const totalCh = Math.max(6, Math.min(12, defTotalCh));
   /** 순위 열: 헤더「순위」·「#12」 등이 잘리지 않도록 `ch` 하한 확보(URL `rankCh`) */
   const rankColCh = Math.max(5, Math.min(10, parseInt(sp.get("rankCh") || "5", 10)));
-  /** 기여도 열: 헤더「기여도」(한글 3자+굵기+스트로크) — 9ch면 미리보기·고정레이아웃에서 잘림 빈번 */
-  const contributionCh = Math.max(11, Math.min(16, defContributionCh));
+  /** 기여도 열: 헤더「기여도」(한글 3자+굵기+스트로크) — ch가 작으면 압축 시 마지막 열부터 잘림 */
+  const contributionCh = Math.max(13, Math.min(16, defContributionCh));
   const showSideDonors = false;
   const donorsSide = (sp.get("donorsSide") || "right").toLowerCase();
   const donorsWidth = Math.max(120, Math.min(600, parseInt(sp.get("donorsWidth") || "220", 10)));
@@ -2019,25 +2019,37 @@ function OverlayInner() {
     if (!clampEl || !table) return;
 
     const run = () => {
-      const avail = clampEl.clientWidth;
+      const padStyle = getComputedStyle(clampEl);
+      const padX =
+        (parseFloat(padStyle.paddingLeft) || 0) + (parseFloat(padStyle.paddingRight) || 0);
+      const avail = Math.max(0, clampEl.clientWidth - padX);
       if (avail < 8) return;
+      /** `maxWidth:100%`로 테이블이 눌리면 scrollWidth≈clientWidth가 되어 축소 탐색이 무력화됨 → 측정 중만 해제 */
+      const prevMax = table.style.maxWidth;
+      table.style.maxWidth = "none";
       let lo = 0.22;
       let hi = 1;
       let best = lo;
       const minPx = 8;
-      for (let i = 0; i < 22; i++) {
-        const mid = (lo + hi) / 2;
-        const fs = Math.max(minPx, Math.round(mSize * mid));
-        table.style.fontSize = `${fs}px`;
-        void table.offsetWidth;
-        if (table.scrollWidth <= avail + 2) {
-          best = mid;
-          lo = mid;
-        } else {
-          hi = mid;
+      /** 헤더 text-stroke·그림자가 scrollWidth 밖으로 살짝 나가는 여유 */
+      const widthMarginPx = 12;
+      try {
+        for (let i = 0; i < 22; i++) {
+          const mid = (lo + hi) / 2;
+          const fs = Math.max(minPx, Math.round(mSize * mid));
+          table.style.fontSize = `${fs}px`;
+          void table.offsetWidth;
+          if (table.scrollWidth <= avail - widthMarginPx) {
+            best = mid;
+            lo = mid;
+          } else {
+            hi = mid;
+          }
         }
+      } finally {
+        table.style.maxWidth = prevMax;
+        table.style.removeProperty("font-size");
       }
-      table.style.removeProperty("font-size");
       setMemberTableFitFactor(best);
     };
 
@@ -2324,7 +2336,7 @@ function OverlayInner() {
       <style dangerouslySetInnerHTML={{ __html: `
         .overlay-root .overlay-elegant-table {
           border-radius: 0 !important;
-          overflow: hidden;
+          overflow: visible;
           border: 1px solid rgba(255, 236, 246, 0.72);
           box-shadow: 0 12px 24px rgba(118, 36, 79, 0.18), inset 0 1px 0 rgba(255,255,255,0.22);
           backdrop-filter: none;
@@ -2437,7 +2449,11 @@ function OverlayInner() {
                   <DonorTicker donors={donors} theme={tickerBaseTheme} fontSize={dSize} color={donorsColor} bgColor={donorsBgColor} bgOpacity={donorsBgOpacity} full={donorsFormat ? donorsFormat === "full" : currencyFull} duration={donorsSpeed} gap={donorsGap} limit={donorsLimit} unit={donorsUnit} locale={currencyLocale} />
                 </div>
               )}
-              <div ref={memberTableClampRef} className="relative min-w-0 flex-1 overflow-hidden" style={{ borderRadius: 0 }}>
+              <div
+                ref={memberTableClampRef}
+                className="relative min-w-0 flex-1 overflow-hidden pr-2"
+                style={{ borderRadius: 0 }}
+              >
                 {showTableBgGif ? (
                   tableBgAnimated.kind === "video" ? (
                     <video
@@ -2463,7 +2479,7 @@ function OverlayInner() {
                   )
                 ) : null}
                 <div className="relative z-[1]">
-                <div className="relative overflow-hidden" style={{ borderRadius: 0, backgroundColor: `rgba(${(TABLE_BG_RGB[themeId] || defaultTableBgRgb).join(",")}, ${tableTintAlpha})` }}>
+                <div className="relative overflow-visible" style={{ borderRadius: 0, backgroundColor: `rgba(${(TABLE_BG_RGB[themeId] || defaultTableBgRgb).join(",")}, ${tableTintAlpha})` }}>
                     <table
                       ref={tableBoxRef as any}
                       className={`${effectiveTableCls} overlay-elegant-table${membersThemeId === "pastel" ? " pastel-member-table" : ""}`}
@@ -2472,7 +2488,6 @@ function OverlayInner() {
                         borderSpacing: 0,
                         tableLayout: "fixed",
                         width: `calc(${excelTableWidthCalc})`,
-                        maxWidth: "100%",
                       }}
                     >
                   <colgroup>

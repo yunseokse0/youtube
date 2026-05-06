@@ -141,7 +141,9 @@ export default function SelectedSigs({
               />
             ) : null}
             <div
-              className={`relative overflow-hidden rounded-lg border border-white/20 bg-black/40 ${
+              className={`relative overflow-hidden rounded-lg border border-white/20 ${
+                sold ? "bg-white" : "bg-black/40"
+              } ${
                 broadcastMatch
                   ? SIG_OVERLAY_CARD_MEDIA_BOX_CLASS
                   : compact

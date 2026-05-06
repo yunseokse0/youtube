@@ -70,7 +70,9 @@ export default function OneShotSigCard({
         className="relative z-[2]"
       >
       <div
-        className={`relative overflow-hidden rounded-lg border border-yellow-200/40 bg-gradient-to-b from-amber-950/55 via-neutral-950/75 to-black ${
+        className={`relative overflow-hidden rounded-lg border border-yellow-200/40 ${
+          sold ? "bg-white" : "bg-gradient-to-b from-amber-950/55 via-neutral-950/75 to-black"
+        } ${
           compact ? SIG_OVERLAY_CARD_MEDIA_BOX_CLASS : "mb-2 h-40"
         }`}
       >
