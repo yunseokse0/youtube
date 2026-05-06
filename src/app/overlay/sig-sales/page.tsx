@@ -1519,6 +1519,7 @@ export default function SigSalesOverlayPage() {
             <SigBoardRolling
               inventory={state.sigInventory || []}
               soldOutStampUrl={soldOutStampUrl}
+              soldOverrideSet={resultSoldOverrideSet}
               className="pb-2"
               gifDelayMultiplier={sigGifDelayMultiplier}
               autoAdvancePages={sigBoardDuringSpin}

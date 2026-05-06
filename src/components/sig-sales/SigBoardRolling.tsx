@@ -6,10 +6,13 @@ import Image from "next/image";
 import type { SigItem } from "@/types";
 import { resolveSigImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
+import { canonicalSigIdFromWheelSliceId } from "@/lib/sig-roulette";
 
 type SigBoardRollingProps = {
   inventory: SigItem[];
   soldOutStampUrl: string;
+  /** 완판 외에도 현재 회차 판매 확정 시그를 강제로 sold 처리할 때 사용 */
+  soldOverrideSet?: Set<string>;
   className?: string;
   gifDelayMultiplier?: number;
   /** false면 2.6초마다 페이지가 넘어가지 않음(방송 오버레이에서 GIF+롤링 이중 움직임 방지) */
@@ -20,6 +23,7 @@ type SigBoardRollingProps = {
 export default function SigBoardRolling({
   inventory,
   soldOutStampUrl,
+  soldOverrideSet,
   className = "",
   gifDelayMultiplier = 1,
   autoAdvancePages = true,
@@ -44,14 +48,17 @@ export default function SigBoardRolling({
   useEffect(() => {
     const current: Record<string, boolean> = {};
     for (const item of rollingItems) {
-      const isSoldOut = item.soldCount >= item.maxCount;
+      const canonId = canonicalSigIdFromWheelSliceId(item.id);
+      const isSoldOut =
+        item.soldCount >= item.maxCount ||
+        Boolean(soldOverrideSet?.has(item.id) || soldOverrideSet?.has(canonId));
       current[item.id] = isSoldOut;
       if (isSoldOut && !prevSoldOutRef.current[item.id]) {
         setStampBurstIds((prev) => ({ ...prev, [item.id]: Date.now() }));
       }
     }
     prevSoldOutRef.current = current;
-  }, [rollingItems]);
+  }, [rollingItems, soldOverrideSet]);
 
   const visible = useMemo(() => {
     const start = page * pageSize;
@@ -75,7 +82,10 @@ export default function SigBoardRolling({
             className="grid grid-cols-2 md:grid-cols-4 gap-1"
           >
             {visible.map((item) => {
-              const soldOut = item.soldCount >= item.maxCount;
+              const canonId = canonicalSigIdFromWheelSliceId(item.id);
+              const soldOut =
+                item.soldCount >= item.maxCount ||
+                Boolean(soldOverrideSet?.has(item.id) || soldOverrideSet?.has(canonId));
               const stampBurstKey = stampBurstIds[item.id] || 0;
               const pct = Math.min(100, (item.soldCount / Math.max(1, item.maxCount)) * 100);
               const isSingleSale = item.maxCount <= 1;
