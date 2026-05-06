@@ -201,6 +201,8 @@ export default function AdminPage() {
   }, [state.sigInventory, state.sigRolling]);
   const [ocrBusyIds, setOcrBusyIds] = useState<Record<string, boolean>>({});
   const [ocrAllBusy, setOcrAllBusy] = useState(false);
+  /** OCR 결과 — 시그 목록 바로 위에 표시(스크롤 시에도 확인 가능) */
+  const [sigOcrBanner, setSigOcrBanner] = useState("");
   const [sigPresetMemberId, setSigPresetMemberId] = useState("");
   /** 회차별 금액 범위(최소/최대). 빈칸이면 해당 회차는 금액 제한 없이 남은 시그 중 랜덤(중복 없음) */
   const [rouletteSpinCount, setRouletteSpinCount] = useState("5");
@@ -2049,13 +2051,18 @@ export default function AdminPage() {
   };
 
   const runOcrForSigItem = useCallback(async (id: string, imageUrl: string, name?: string) => {
+    const label = name || id;
+    const pushOcrMsg = (msg: string) => {
+      setSigExcelResult(msg);
+      setSigOcrBanner(msg);
+    };
     const src = String(imageUrl || "").trim();
     if (!src) {
-      setSigExcelResult(`OCR 실패: 이미지 URL이 비어 있습니다 (${name || id})`);
+      pushOcrMsg(`OCR 실패: 이미지 URL이 비어 있습니다 (${label})`);
       return;
     }
     if (!isSigOcrSupported()) {
-      setSigExcelResult(`OCR 미지원: Chromium 계열 브라우저(Chrome/Edge)에서 시도해 주세요. (${name || id})`);
+      pushOcrMsg(`OCR 미지원: Chromium 계열 브라우저(Chrome/Edge)에서 시도해 주세요. (${label})`);
       return;
     }
     setOcrBusyIds((prev) => ({ ...prev, [id]: true }));
@@ -2063,18 +2070,21 @@ export default function AdminPage() {
       const detail = await detectSigPriceFromImageUrlDetailed(src);
       if (detail.price == null) {
         if (detail.reason === "unsupported_browser") {
-          setSigExcelResult(`OCR 미지원: Chromium 계열 브라우저에서 시도해 주세요. (${name || id})`);
+          pushOcrMsg(`OCR 미지원: Chromium 계열 브라우저에서 시도해 주세요. (${label})`);
         } else if (detail.reason === "image_load_failed") {
-          setSigExcelResult(`OCR 실패: 이미지를 불러오지 못했습니다(URL·CORS·404 확인). (${name || id})`);
+          pushOcrMsg(`OCR 실패: 이미지를 불러오지 못했습니다(URL·404·CORS). (${label})`);
         } else {
-          setSigExcelResult(
-            `OCR 인식 실패: 금액을 찾지 못했습니다 (${name || id})${detail.previewText ? ` · 감지 텍스트: ${detail.previewText}` : ""}`
+          pushOcrMsg(
+            `OCR 인식 실패: 금액을 찾지 못했습니다 (${label})${detail.previewText ? ` · 감지 텍스트: ${detail.previewText}` : ""}`
           );
         }
         return;
       }
       updateSigItem(id, { price: detail.price });
-      setSigExcelResult(`OCR 적용 완료: ${name || id} → ${detail.price.toLocaleString("ko-KR")}원`);
+      pushOcrMsg(`OCR 적용 완료: ${label} → ${detail.price.toLocaleString("ko-KR")}원`);
+    } catch (e) {
+      console.error(e);
+      pushOcrMsg(`OCR 처리 중 오류 (${label}). 이미지 URL·네트워크를 확인해 주세요.`);
     } finally {
       setOcrBusyIds((prev) => ({ ...prev, [id]: false }));
     }
@@ -2083,44 +2093,55 @@ export default function AdminPage() {
   const runOcrForAllSigItems = useCallback(async () => {
     if (ocrAllBusy) return;
     if (!isSigOcrSupported()) {
-      setSigExcelResult("OCR 미지원: Chromium 계열 브라우저(Chrome/Edge)에서 시도해 주세요.");
+      const m = "OCR 미지원: Chromium 계열 브라우저(Chrome/Edge)에서 시도해 주세요.";
+      setSigExcelResult(m);
+      setSigOcrBanner(m);
       return;
     }
     const items = (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID && String(x.imageUrl || "").trim());
     if (!items.length) {
-      setSigExcelResult("OCR 대상 시그가 없습니다.");
+      const m = "OCR 대상 시그가 없습니다.";
+      setSigExcelResult(m);
+      setSigOcrBanner(m);
       return;
     }
     setOcrAllBusy(true);
     const priceById = new Map<string, number>();
-    for (const item of items) {
-      setOcrBusyIds((prev) => ({ ...prev, [item.id]: true }));
-      try {
-        const detail = await detectSigPriceFromImageUrlDetailed(String(item.imageUrl || "").trim());
-        if (detail.price != null) {
-          priceById.set(item.id, detail.price);
+    try {
+      for (const item of items) {
+        setOcrBusyIds((prev) => ({ ...prev, [item.id]: true }));
+        try {
+          const detail = await detectSigPriceFromImageUrlDetailed(String(item.imageUrl || "").trim());
+          if (detail.price != null) {
+            priceById.set(item.id, detail.price);
+          }
+          await new Promise((r) => setTimeout(r, 16));
+        } catch (e) {
+          console.error(e);
+        } finally {
+          setOcrBusyIds((prev) => ({ ...prev, [item.id]: false }));
         }
-        await new Promise((r) => setTimeout(r, 16));
-      } finally {
-        setOcrBusyIds((prev) => ({ ...prev, [item.id]: false }));
       }
-    }
-    const ok = priceById.size;
-    const fail = items.length - ok;
-    if (ok > 0) {
-      setState((prev: AppState) => {
-        const sigInventory = (prev.sigInventory || []).map((x) => {
-          const pr = priceById.get(x.id);
-          return pr != null ? { ...x, price: pr } : x;
+      const ok = priceById.size;
+      const fail = items.length - ok;
+      if (ok > 0) {
+        setState((prev: AppState) => {
+          const sigInventory = (prev.sigInventory || []).map((x) => {
+            const pr = priceById.get(x.id);
+            return pr != null ? { ...x, price: pr } : x;
+          });
+          const draft: AppState = { ...prev, sigInventory };
+          const next = syncOneShotSigItem(draft);
+          persistState(next);
+          return next;
         });
-        const draft: AppState = { ...prev, sigInventory };
-        const next = syncOneShotSigItem(draft);
-        persistState(next);
-        return next;
-      });
+      }
+      const summary = `OCR 일괄 완료: 성공 ${ok}건 / 실패 ${fail}건`;
+      setSigExcelResult(summary);
+      setSigOcrBanner(summary);
+    } finally {
+      setOcrAllBusy(false);
     }
-    setOcrAllBusy(false);
-    setSigExcelResult(`OCR 일괄 완료: 성공 ${ok}건 / 실패 ${fail}건`);
   }, [ocrAllBusy, state.sigInventory]);
 
   const uploadSigImage = (id: string, file: File | null) => {
@@ -5324,6 +5345,7 @@ export default function AdminPage() {
                     className="px-2 py-1 rounded bg-violet-800 hover:bg-violet-700 text-xs disabled:opacity-50"
                     onClick={() => void runOcrForAllSigItems()}
                     disabled={ocrAllBusy}
+                    title="시그 목록 바로 위에도 동일 버튼이 있습니다."
                   >
                     {ocrAllBusy ? "OCR 전체 처리 중..." : "금액 OCR 전체 적용"}
                   </button>
@@ -5492,28 +5514,45 @@ export default function AdminPage() {
                       </div>
                     ) : null}
                   </div>
+                  {sigOcrBanner ? (
+                    <div className="rounded border border-violet-400/45 bg-violet-950/50 px-3 py-2 text-sm leading-snug text-violet-50 whitespace-pre-wrap shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                      {sigOcrBanner}
+                    </div>
+                  ) : null}
                   <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-white/10 bg-black/25 px-2 py-1.5 text-xs">
-                    <span className="text-neutral-400">시그 행 접기: 헤더만 보고 필요 시 펼칩니다.</span>
-                    <div className="flex flex-wrap gap-1">
+                    <span className="text-neutral-400">
+                      시그 행 접기 · OCR 결과는 바로 위 보라색 칸에 표시됩니다.
+                    </span>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <div className="flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          className="rounded bg-neutral-700 px-2 py-1 hover:bg-neutral-600"
+                          onClick={() => {
+                            const ids = (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID).map((x) => x.id);
+                            setSigInventoryRowOpen(Object.fromEntries(ids.map((id) => [id, true])));
+                          }}
+                        >
+                          모두 펼치기
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded bg-neutral-700 px-2 py-1 hover:bg-neutral-600"
+                          onClick={() => {
+                            const ids = (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID).map((x) => x.id);
+                            setSigInventoryRowOpen(Object.fromEntries(ids.map((id) => [id, false])));
+                          }}
+                        >
+                          모두 접기
+                        </button>
+                      </div>
                       <button
                         type="button"
-                        className="rounded bg-neutral-700 px-2 py-1 hover:bg-neutral-600"
-                        onClick={() => {
-                          const ids = (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID).map((x) => x.id);
-                          setSigInventoryRowOpen(Object.fromEntries(ids.map((id) => [id, true])));
-                        }}
+                        className="rounded bg-violet-600 px-3 py-1.5 text-sm font-bold text-white shadow hover:bg-violet-500 disabled:opacity-50"
+                        disabled={ocrAllBusy}
+                        onClick={() => void runOcrForAllSigItems()}
                       >
-                        모두 펼치기
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded bg-neutral-700 px-2 py-1 hover:bg-neutral-600"
-                        onClick={() => {
-                          const ids = (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID).map((x) => x.id);
-                          setSigInventoryRowOpen(Object.fromEntries(ids.map((id) => [id, false])));
-                        }}
-                      >
-                        모두 접기
+                        {ocrAllBusy ? "전체 OCR 처리 중..." : "금액 OCR 전체 적용"}
                       </button>
                     </div>
                   </div>
@@ -5576,15 +5615,16 @@ export default function AdminPage() {
                             {!isOneShot && (
                               <>
                                 <button
+                                  type="button"
                                   className="px-2 py-1 rounded bg-violet-800 hover:bg-violet-700 text-xs disabled:opacity-50"
                                   disabled={Boolean(ocrBusyIds[item.id])}
                                   onClick={() => void runOcrForSigItem(item.id, item.imageUrl || "", item.name)}
                                 >
                                   {ocrBusyIds[item.id] ? "OCR..." : "OCR"}
                                 </button>
-                                <button className="px-2 py-1 rounded bg-red-900/70 hover:bg-red-800 text-xs" onClick={() => adjustSigSoldCount(item.id, -1)}>취소 -1</button>
-                                <button className="px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-xs" onClick={() => adjustSigSoldCount(item.id, 1)}>판매 +1</button>
-                                <button className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs" onClick={() => removeSigItem(item.id)}>삭제</button>
+                                <button type="button" className="px-2 py-1 rounded bg-red-900/70 hover:bg-red-800 text-xs" onClick={() => adjustSigSoldCount(item.id, -1)}>취소 -1</button>
+                                <button type="button" className="px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-xs" onClick={() => adjustSigSoldCount(item.id, 1)}>판매 +1</button>
+                                <button type="button" className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs" onClick={() => removeSigItem(item.id)}>삭제</button>
                               </>
                             )}
                           </div>
