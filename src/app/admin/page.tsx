@@ -52,6 +52,7 @@ import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
 import { DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
 import { detectSigPriceFromImageFile, detectSigPriceFromImageUrlDetailed } from "@/lib/sig-image-ocr";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
+import { normalizeSigDedupKeyImageUrl } from "@/lib/sig-inventory-dedup";
 import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
 import { getVisibleAdminNavItems, isAdminNavSectionVisible, type AdminNavKey } from "@/app/admin/admin-nav-config";
 
@@ -187,6 +188,10 @@ export default function AdminPage() {
   const [newSigImageUploading, setNewSigImageUploading] = useState(false);
   const [sigPreviewMap, setSigPreviewMap] = useState<Record<string, string>>({});
   const [sigImagePreviewModal, setSigImagePreviewModal] = useState<{ src: string; name: string; rawUrl: string } | null>(null);
+  /** 가격 입력은 타이핑 중 draft만 유지하고 blur/Enter에 1회 저장 */
+  const [sigPriceDraftMap, setSigPriceDraftMap] = useState<Record<string, string>>({});
+  const sigPriceDraftMapRef = useRef<Record<string, string>>({});
+  const sigPriceCommitTimerRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [sigExcelResult, setSigExcelResult] = useState("");
   /** 시그 롤링 업로드 결과 메시지 */
   const [sigRollingUploadMessage, setSigRollingUploadMessage] = useState("");
@@ -222,6 +227,10 @@ export default function AdminPage() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [sigImagePreviewModal]);
+
+  useEffect(() => {
+    sigPriceDraftMapRef.current = sigPriceDraftMap;
+  }, [sigPriceDraftMap]);
   const [rouletteSpinBusy, setRouletteSpinBusy] = useState(false);
   const [donorRankingPresetName, setDonorRankingPresetName] = useState("");
   const [settlementTitle, setSettlementTitle] = useState("");
@@ -1848,6 +1857,36 @@ export default function AdminPage() {
     });
   };
 
+  const commitSigPriceDraft = (id: string, fallbackPrice: number) => {
+    const draftRaw = sigPriceDraftMapRef.current[id];
+    if (draftRaw == null) return;
+    const nextPrice = Math.max(0, Math.floor(Number(draftRaw || 0) || 0));
+    setSigPriceDraftMap((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    if (nextPrice !== fallbackPrice) {
+      updateSigItem(id, { price: nextPrice });
+    }
+  };
+
+  const scheduleSigPriceDraftCommit = (id: string) => {
+    const timer = sigPriceCommitTimerRef.current[id];
+    if (timer) clearTimeout(timer);
+    sigPriceCommitTimerRef.current[id] = setTimeout(() => {
+      const curPrice = (state.sigInventory || []).find((x) => x.id === id)?.price ?? 0;
+      commitSigPriceDraft(id, curPrice);
+      delete sigPriceCommitTimerRef.current[id];
+    }, 900);
+  };
+
+  useEffect(() => {
+    return () => {
+      Object.values(sigPriceCommitTimerRef.current).forEach((t) => clearTimeout(t));
+    };
+  }, []);
+
   const removeSigItem = (id: string) => {
     if (id === ONE_SHOT_SIG_ID) return;
     setState((prev: AppState) => {
@@ -2471,6 +2510,48 @@ export default function AdminPage() {
       persistState(next);
       return next;
     });
+  };
+
+  const dedupeSigRollingByImageUrl = () => {
+    if (!confirm("시그 롤링에서 같은 이미지 URL은 위쪽 항목만 남기고 나머지를 롤링 제외합니다. 계속할까요?")) return;
+    let removedCount = 0;
+    setState((prev) => {
+      const rows = getUnifiedSigRollingItems(prev);
+      if (rows.length < 2) return prev;
+
+      const seen = new Set<string>();
+      const duplicateIds = new Set<string>();
+      for (const row of rows) {
+        const key = normalizeSigDedupKeyImageUrl(row.url);
+        if (seen.has(key)) {
+          duplicateIds.add(row.id);
+        } else {
+          seen.add(key);
+        }
+      }
+      if (!duplicateIds.size) return prev;
+
+      removedCount = duplicateIds.size;
+      const sr = normalizeSigRolling(prev.sigRolling);
+      const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
+      for (const id of duplicateIds) delete meta[id];
+
+      const next = {
+        ...prev,
+        sigInventory: (prev.sigInventory || []).map((x) =>
+          duplicateIds.has(x.id) ? { ...x, isRolling: false } : x
+        ),
+        sigRolling: { ...sr, items: sr.items.filter((x) => !duplicateIds.has(x.id)) },
+        sigRollingMeta: meta,
+      };
+      persistState(next);
+      return next;
+    });
+    setSigRollingUploadMessage(
+      removedCount > 0
+        ? `시그 롤링 중복 제거 완료: ${removedCount}개를 롤링 제외했습니다.`
+        : "시그 롤링 중복 항목이 없습니다."
+    );
   };
 
   const uploadTableBgGifImage = (presetId: string, file: File | null) => {
@@ -5184,6 +5265,14 @@ export default function AdminPage() {
                   >
                     판매 시그로 전체 치환{legacyOnlyRollingCount > 0 ? ` (${legacyOnlyRollingCount})` : ""}
                   </button>
+                  <button
+                    type="button"
+                    className="rounded bg-amber-900/80 px-3 py-1.5 text-sm hover:bg-amber-800"
+                    title="같은 이미지 URL은 위쪽 항목만 유지"
+                    onClick={dedupeSigRollingByImageUrl}
+                  >
+                    롤링 중복 제거(URL)
+                  </button>
                 </div>
                 {sigRollingUploadMessage ? (
                   <p className="text-xs text-emerald-300/95 whitespace-pre-wrap rounded border border-emerald-500/30 bg-emerald-950/30 px-2 py-1.5">
@@ -5730,9 +5819,21 @@ export default function AdminPage() {
                           className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
                           type="number"
                           min={0}
-                          value={item.price}
+                          value={sigPriceDraftMap[item.id] ?? String(item.price)}
                           disabled={isOneShot}
-                          onChange={(e) => updateSigItem(item.id, { price: Math.max(0, Math.floor(Number(e.target.value || 0) || 0)) })}
+                          onChange={(e) =>
+                            setSigPriceDraftMap((prev) => ({
+                              ...prev,
+                              [item.id]: e.target.value,
+                            }))
+                          }
+                          onInput={() => scheduleSigPriceDraftCommit(item.id)}
+                          onBlur={() => commitSigPriceDraft(item.id, item.price)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.currentTarget.blur();
+                            }
+                          }}
                         />
                         <select
                           className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
