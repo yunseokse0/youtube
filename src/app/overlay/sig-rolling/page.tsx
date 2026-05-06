@@ -99,6 +99,7 @@ function RollingCardColumn({
   transitionActive,
   replayKey,
   useCrossfade,
+  pairSide,
 }: {
   current: SigRollingItem | null;
   nextItem: SigRollingItem | null;
@@ -106,13 +107,22 @@ function RollingCardColumn({
   transitionActive: string;
   replayKey: number;
   useCrossfade: boolean;
+  /** 한 줄에 두 장일 때 맞닿는 쪽 패딩·모서리만 줄여 간격 최소화 */
+  pairSide?: "left" | "right";
 }) {
   if (!current) return null;
 
+  const shellClass =
+    pairSide === "left"
+      ? "glass-pastel-card overflow-hidden rounded-l-3xl rounded-r-none shadow-lg pt-1.5 pb-1.5 pl-1.5 pr-0"
+      : pairSide === "right"
+        ? "glass-pastel-card overflow-hidden rounded-r-3xl rounded-l-none shadow-lg pt-1.5 pb-1.5 pr-1.5 pl-0"
+        : "glass-pastel-card overflow-hidden rounded-3xl shadow-lg p-1.5";
+
   if (!useCrossfade) {
     return (
-      <div className="flex w-[min(46vw,280px)] shrink-0 justify-center">
-        <div className="glass-pastel-card overflow-hidden rounded-3xl shadow-lg p-1.5">
+      <div className="shrink-0 max-w-[min(46vw,280px)]">
+        <div className={shellClass}>
           <div className="flex min-h-[100px] items-center justify-center rounded-2xl bg-black/25 px-0.5 py-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -131,8 +141,8 @@ function RollingCardColumn({
 
   const under = nextItem || current;
   return (
-    <div className="flex w-[min(46vw,280px)] shrink-0 justify-center">
-      <div className="glass-pastel-card overflow-hidden rounded-3xl shadow-lg p-1.5">
+    <div className="shrink-0 max-w-[min(46vw,280px)]">
+      <div className={shellClass}>
         <div
           className="relative grid min-h-[100px] place-items-center rounded-2xl bg-black/25 px-0.5 py-2 [&>img]:col-start-1 [&>img]:row-start-1"
           style={{ gridTemplateColumns: "1fr", gridTemplateRows: "1fr" }}
@@ -266,7 +276,10 @@ export default function SigRollingOverlayPage() {
   if (n === 0) {
     return (
       <main className="overlay-root min-h-screen w-full bg-transparent p-4">
-        <p className="text-xs text-white/40">시그 롤링 · 이미지 없음 (관리자에서 추가)</p>
+        <p className="max-w-[min(92vw,26rem)] text-xs leading-snug text-white/45">
+          시그 롤링 · 등록된 이미지가 없거나 서버에 아직 반영되지 않았습니다. 관리자에서 업로드 후 저장(로그인·네트워크)이 되어야 OBS 등 다른 브라우저에서도 보입니다. URL에{" "}
+          <code className="rounded bg-white/10 px-1">?u=본인아이디</code> 가 포함되는지 확인하세요.
+        </p>
       </main>
     );
   }
@@ -275,7 +288,7 @@ export default function SigRollingOverlayPage() {
 
   return (
     <main className="overlay-root min-h-screen w-full bg-transparent p-4 text-pastel-ink">
-      <div className="flex flex-row flex-wrap items-start gap-3">
+      <div className="flex flex-row flex-wrap items-start gap-0">
         <RollingCardColumn
           current={leftCurrent}
           nextItem={useCrossfade ? leftNext : null}
@@ -283,6 +296,7 @@ export default function SigRollingOverlayPage() {
           transitionActive={transitionActive}
           replayKey={replayKey}
           useCrossfade={useCrossfade}
+          pairSide="left"
         />
         <RollingCardColumn
           current={rightCurrent}
@@ -291,6 +305,7 @@ export default function SigRollingOverlayPage() {
           transitionActive={transitionActive}
           replayKey={replayKey}
           useCrossfade={useCrossfade}
+          pairSide="right"
         />
       </div>
     </main>

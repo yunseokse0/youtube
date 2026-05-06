@@ -1459,7 +1459,7 @@ function OverlayInner() {
 
   // 숫자 컬럼 가독성 우선: 이름 기본 폭을 줄이고 계좌·투네 기본 폭을 넓혀 숫자 겹침을 줄인다(URL nameCh·bankCh·toonCh 로 조정 가능).
   // 가로 엑셀: 이름 기본을 짧게 해 오른쪽「기여도」열이 잘리지 않게 함(nameCh URL로 확대 가능).
-  const nameCh = Math.max(4, Math.min(40, parseInt(sp.get("nameCh") || (compact ? "6" : (isVertical ? "11" : "5")), 10)));
+  const nameCh = Math.max(4, Math.min(40, parseInt(sp.get("nameCh") || (compact ? "6" : (isVertical ? "11" : "4")), 10)));
   const nameGrow = (sp.get("nameGrow") || "true").toLowerCase() === "true";
   const currencyFull = (sp.get("currencyFull") || "false").toLowerCase() === "true";
   const nameMaxCh = Math.max(nameCh, Math.min(80, parseInt(sp.get("nameMaxCh") || String(nameCh + 8), 10)));
@@ -1468,14 +1468,15 @@ function OverlayInner() {
   const defBankCh = (sp.get("bankCh") && parseInt(sp.get("bankCh")!, 10)) || (fullAmountMode ? (compact ? 11 : 13) : (compact ? 10 : 11));
   const defToonCh = (sp.get("toonCh") && parseInt(sp.get("toonCh")!, 10)) || (fullAmountMode ? (compact ? 11 : 13) : (compact ? 10 : 11));
   const defTotalCh = (sp.get("totalCh") && parseInt(sp.get("totalCh")!, 10)) || (fullAmountMode ? (compact ? 8 : 9) : (compact ? 6 : 7));
-  const defContributionCh = (sp.get("contributionCh") && parseInt(sp.get("contributionCh")!, 10)) || (fullAmountMode ? (compact ? 9 : 10) : (compact ? 9 : 10));
+  const defContributionCh =
+    (sp.get("contributionCh") && parseInt(sp.get("contributionCh")!, 10)) || (fullAmountMode ? (compact ? 10 : 11) : (compact ? 10 : 11));
   const bankCh = Math.max(8, Math.min(20, defBankCh));
   const toonCh = Math.max(8, Math.min(20, defToonCh));
   const totalCh = Math.max(6, Math.min(12, defTotalCh));
   /** 순위 열: 헤더「순위」·「#12」 등이 잘리지 않도록 `ch` 하한 확보(URL `rankCh`) */
   const rankColCh = Math.max(5, Math.min(10, parseInt(sp.get("rankCh") || "5", 10)));
-  /** 기여도 열: 헤더「기여도」(한글·스트로크) 폭 확보 */
-  const contributionCh = Math.max(9, Math.min(14, defContributionCh));
+  /** 기여도 열: 헤더「기여도」(한글 3자+굵기+스트로크) — 9ch면 미리보기·고정레이아웃에서 잘림 빈번 */
+  const contributionCh = Math.max(11, Math.min(16, defContributionCh));
   const showSideDonors = false;
   const donorsSide = (sp.get("donorsSide") || "right").toLowerCase();
   const donorsWidth = Math.max(120, Math.min(600, parseInt(sp.get("donorsWidth") || "220", 10)));
@@ -1989,9 +1990,10 @@ function OverlayInner() {
   }, [unpinned, getMemberRole]);
 
   const memberTableFitSig = useMemo(() => {
-    const rc = Math.max(6, Math.min(14, members.reduce((max, m) => Math.max(max, getMemberRole(m).length), 2)));
+    /** `excelGridCols` 의 직급 열(roleCh)과 동일해야 폰트 축소 측정이 실제 표와 일치 */
+    const roleColFit = Math.max(4, Math.min(10, members.reduce((max, m) => Math.max(max, getMemberRole(m).length), 2)));
     const cols = hasRoleColumn
-      ? `${rankColCh}|${rc}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`
+      ? `${rankColCh}|${roleColFit}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`
       : `${rankColCh}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`;
     const rows = ranked.map(({ m }) => `${m.account}|${m.toon}|${Number(m.contribution || 0)}`).join(";");
     const pinRows = pinned.map((m) => `${m.account}|${m.toon}|${Number(m.contribution || 0)}`).join(";");

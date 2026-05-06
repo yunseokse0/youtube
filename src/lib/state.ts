@@ -55,7 +55,8 @@ export function normalizeSigRolling(input: unknown): SigRollingSettings {
     .filter((x): x is Record<string, unknown> => Boolean(x && typeof x === "object"))
     .map((x) => ({
       id: String(x.id || `sr_${Math.random().toString(36).slice(2, 10)}`),
-      url: String(x.url || "").trim(),
+      /** 레거시 `/images/sig/` 등 오타 보정 — 미리보기·OBS 동일 URL 사용 */
+      url: normalizeSigImageUrlStored(x.url).trim(),
       label: typeof x.label === "string" ? x.label.trim() : "",
     }))
     .filter((x) => x.url);
@@ -102,7 +103,7 @@ export function normalizeSigMatchParticipantIds(raw: unknown, validMemberIds: Se
   }
   return out;
 }
-import { DEFAULT_SIG_INVENTORY, normalizeSigInventory } from "./constants";
+import { DEFAULT_SIG_INVENTORY, normalizeSigImageUrlStored, normalizeSigInventory } from "./constants";
 
 export function normalizeRouletteState(raw: unknown): RouletteState {
   const def: RouletteState = {
@@ -885,7 +886,11 @@ function notifyAdminSessionExpired() {
 
 async function postAppStateJson(json: string, effectiveUserId?: string | null): Promise<Response> {
   const q = new URLSearchParams();
-  if (effectiveUserId) q.set("user", effectiveUserId);
+  if (effectiveUserId) {
+    q.set("user", effectiveUserId);
+    /** GET과 동일하게 `u` 도 붙여 프록시·게이트웨이 호환 */
+    q.set("u", effectiveUserId);
+  }
   const url = q.toString() ? `/api/state?${q.toString()}` : "/api/state";
   return fetch(url, {
     method: "POST",
@@ -972,7 +977,9 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
       /** `/api/state` 가 `u` 만 받는 프록시·구버전 호환 */
       q.set("u", userId);
     }
-    const res = await fetch(`/api/state?${q.toString()}`, { cache: "no-store", credentials: "include" });
+    /** `userId` 있으면 URL로 사용자 특정 → 쿠키 불필요(OBS·브라우저 소스는 쿠키 없음). 없으면 관리자 세션 쿠키로 조회 */
+    const credentials = userId ? "omit" : "include";
+    const res = await fetch(`/api/state?${q.toString()}`, { cache: "no-store", credentials });
     if (res.status === 401) {
       notifyAdminSessionExpired();
       return null;

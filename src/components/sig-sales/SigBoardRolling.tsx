@@ -72,7 +72,7 @@ export default function SigBoardRolling({
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -40 }}
             transition={{ duration: 0.35, ease: "easeOut" }}
-            className="grid grid-cols-2 md:grid-cols-4 gap-3"
+            className="grid grid-cols-2 md:grid-cols-4 gap-1"
           >
             {visible.map((item) => {
               const soldOut = item.soldCount >= item.maxCount;

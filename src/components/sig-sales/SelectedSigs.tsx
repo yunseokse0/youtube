@@ -78,7 +78,7 @@ export default function SelectedSigs({
       className={
         broadcastMatch
           ? `flex w-full min-w-0 max-w-full flex-wrap justify-center gap-1 sm:gap-1 ${className}`.trim()
-          : `grid w-full min-w-0 max-w-full gap-2 ${justifyCompact} ${gridAlign} ${className}`.trim()
+          : `grid w-full min-w-0 max-w-full gap-1 ${justifyCompact} ${gridAlign} ${className}`.trim()
       }
       style={broadcastMatch ? undefined : { gridTemplateColumns }}
     >

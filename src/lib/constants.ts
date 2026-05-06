@@ -37,10 +37,20 @@ export function getSigImagePlaceholderOnlyForOverlay(): boolean {
   return sigImagePlaceholderOnlyForOverlay;
 }
 
-/** 저장된 시그 이미지 경로 보정(`/images/sig/` 오타 → `/images/sigs/`) — 인벤·당첨 배열 모두 적용 */
+/** 저장된 시그 이미지 경로 보정(`/images/sig/` 오타 → `/images/sigs/`) — 인벤·시그롤링·당첨 배열 모두 적용 */
 export function normalizeSigImageUrlStored(raw: unknown): string {
-  const s = String(raw ?? "").trim().replace(/\\/g, "/");
+  let s = String(raw ?? "").trim().replace(/\\/g, "/");
   if (!s) return "";
+  /** 상대 경로 `images/…` `uploads/…` → 절대 경로화 (레거시 URL) */
+  if (
+    !s.startsWith("/") &&
+    !s.startsWith("http://") &&
+    !s.startsWith("https://") &&
+    !s.startsWith("data:") &&
+    !s.startsWith("blob:")
+  ) {
+    if (s.startsWith("images/") || s.startsWith("uploads/")) s = `/${s}`;
+  }
   if (s.startsWith("/images/sig/")) {
     return s.replace(/^\/images\/sig\//, "/images/sigs/");
   }
