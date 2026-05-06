@@ -4890,62 +4890,73 @@ export default function AdminPage() {
                     />
                   </label>
                 </div>
-                <ul className="space-y-2">
-                  {normalizeSigRolling(state.sigRolling).items.length === 0 ? (
-                    <li className="text-xs text-neutral-500">등록된 이미지가 없습니다.</li>
-                  ) : (
-                    normalizeSigRolling(state.sigRolling).items.map((it, pos, arr) => (
-                      <li
-                        key={it.id}
-                        className="flex flex-wrap items-center gap-2 rounded border border-white/10 bg-black/30 px-2 py-2"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={it.url} alt="" className="h-14 w-14 shrink-0 rounded object-cover" />
-                        <input
-                          type="text"
-                          className="min-w-[120px] flex-1 rounded border border-white/10 bg-neutral-950/80 px-2 py-1 text-sm"
-                          value={it.label}
-                          placeholder="표시 이름"
-                          onChange={(e) => {
-                            const label = e.target.value;
-                            setState((prev) => {
-                              const sr = normalizeSigRolling(prev.sigRolling);
-                              const items = sr.items.map((x) => (x.id === it.id ? { ...x, label } : x));
-                              const next = { ...prev, sigRolling: { ...sr, items } };
-                              persistState(next);
-                              return next;
-                            });
-                          }}
-                        />
-                        <div className="flex gap-1">
-                          <button
-                            type="button"
-                            className="rounded bg-neutral-700 px-2 py-1 text-xs disabled:opacity-40"
-                            disabled={pos === 0}
-                            onClick={() => moveSigRollingItem(it.id, -1)}
-                          >
-                            ↑
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded bg-neutral-700 px-2 py-1 text-xs disabled:opacity-40"
-                            disabled={pos >= arr.length - 1}
-                            onClick={() => moveSigRollingItem(it.id, 1)}
-                          >
-                            ↓
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded bg-red-900/70 px-2 py-1 text-xs hover:bg-red-800"
-                            onClick={() => removeSigRollingItem(it.id)}
-                          >
-                            삭제
-                          </button>
-                        </div>
-                      </li>
-                    ))
-                  )}
-                </ul>
+                <details open className="rounded border border-white/15 bg-black/25">
+                  <summary className="cursor-pointer list-none px-2 py-2 text-xs font-medium text-neutral-300 hover:bg-white/5 [&::-webkit-details-marker]:hidden">
+                    <span className="inline-flex flex-wrap items-center gap-2">
+                      등록된 이미지 목록
+                      <span className="rounded bg-white/10 px-1.5 py-0.5 text-[11px] text-neutral-400">
+                        {normalizeSigRolling(state.sigRolling).items.length}개
+                      </span>
+                      <span className="text-[11px] text-neutral-500">클릭하여 접기·펼치기</span>
+                    </span>
+                  </summary>
+                  <ul className="space-y-2 border-t border-white/10 p-2 pt-3">
+                    {normalizeSigRolling(state.sigRolling).items.length === 0 ? (
+                      <li className="text-xs text-neutral-500">등록된 이미지가 없습니다.</li>
+                    ) : (
+                      normalizeSigRolling(state.sigRolling).items.map((it, pos, arr) => (
+                        <li
+                          key={it.id}
+                          className="flex flex-wrap items-center gap-2 rounded border border-white/10 bg-black/30 px-2 py-2"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={it.url} alt="" className="h-14 w-14 shrink-0 rounded object-cover" />
+                          <input
+                            type="text"
+                            className="min-w-[120px] flex-1 rounded border border-white/10 bg-neutral-950/80 px-2 py-1 text-sm"
+                            value={it.label}
+                            placeholder="표시 이름"
+                            onChange={(e) => {
+                              const label = e.target.value;
+                              setState((prev) => {
+                                const sr = normalizeSigRolling(prev.sigRolling);
+                                const items = sr.items.map((x) => (x.id === it.id ? { ...x, label } : x));
+                                const next = { ...prev, sigRolling: { ...sr, items } };
+                                persistState(next);
+                                return next;
+                              });
+                            }}
+                          />
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              className="rounded bg-neutral-700 px-2 py-1 text-xs disabled:opacity-40"
+                              disabled={pos === 0}
+                              onClick={() => moveSigRollingItem(it.id, -1)}
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded bg-neutral-700 px-2 py-1 text-xs disabled:opacity-40"
+                              disabled={pos >= arr.length - 1}
+                              onClick={() => moveSigRollingItem(it.id, 1)}
+                            >
+                              ↓
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded bg-red-900/70 px-2 py-1 text-xs hover:bg-red-800"
+                              onClick={() => removeSigRollingItem(it.id)}
+                            >
+                              삭제
+                            </button>
+                          </div>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                </details>
               </div>
               <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">

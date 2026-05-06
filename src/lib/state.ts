@@ -967,7 +967,11 @@ export async function saveStateAsync(state: AppState, userId?: string | null): P
 export async function loadStateFromApi(userId?: string): Promise<AppState | null> {
   try {
     const q = new URLSearchParams({ _t: String(Date.now()) });
-    if (userId) q.set("user", userId);
+    if (userId) {
+      q.set("user", userId);
+      /** `/api/state` 가 `u` 만 받는 프록시·구버전 호환 */
+      q.set("u", userId);
+    }
     const res = await fetch(`/api/state?${q.toString()}`, { cache: "no-store", credentials: "include" });
     if (res.status === 401) {
       notifyAdminSessionExpired();

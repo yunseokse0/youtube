@@ -14,6 +14,10 @@ import {
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { getSigRollingHoldMs } from "@/lib/sig-rolling-duration";
 
+/** 세로·가로 GIF 모두 잘리지 않게 — 높이 상한만 두고 object-contain */
+const IMG_BOX =
+  "pointer-events-none select-none max-h-[min(85vh,720px)] w-auto max-w-full object-contain object-center";
+
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
   const [state, setState] = useState<AppState | null>(null);
   const lastUpdatedRef = useRef(0);
@@ -103,16 +107,17 @@ function RollingCardColumn({
 
   if (!useCrossfade) {
     return (
-      <div className="w-[min(44vw,220px)] shrink-0">
+      <div className="flex w-[min(46vw,280px)] shrink-0 justify-center">
         <div className="glass-pastel-card overflow-hidden rounded-3xl shadow-lg">
-          <div className="relative aspect-[4/5] w-full bg-black/20">
+          <div className="flex min-h-[100px] items-center justify-center bg-black/25 px-1 py-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               key={replayKey}
               src={current.url}
               alt=""
-              className="absolute inset-0 h-full w-full object-cover"
+              className={IMG_BOX}
               draggable={false}
+              decoding="async"
             />
           </div>
         </div>
@@ -122,34 +127,39 @@ function RollingCardColumn({
 
   const under = nextItem || current;
   return (
-    <div className="w-[min(44vw,220px)] shrink-0">
+    <div className="flex w-[min(46vw,280px)] shrink-0 justify-center">
       <div className="glass-pastel-card overflow-hidden rounded-3xl shadow-lg">
-        <div className="relative aspect-[4/5] w-full bg-black/20">
+        <div
+          className="relative grid min-h-[100px] place-items-center bg-black/25 px-1 py-2 [&>img]:col-start-1 [&>img]:row-start-1"
+          style={{ gridTemplateColumns: "1fr", gridTemplateRows: "1fr" }}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             key={`under-${under.id}`}
             src={under.url}
             alt=""
-            className="absolute inset-0 h-full w-full object-cover"
+            className={IMG_BOX}
             style={{
               opacity: fading ? 1 : 0,
               transition: fading ? transitionActive : "none",
               zIndex: 1,
             }}
             draggable={false}
+            decoding="async"
           />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             key={`over-${current.id}`}
             src={current.url}
             alt=""
-            className="absolute inset-0 h-full w-full object-cover"
+            className={IMG_BOX}
             style={{
               opacity: fading ? 0 : 1,
               transition: fading ? transitionActive : "none",
               zIndex: 2,
             }}
             draggable={false}
+            decoding="async"
             onTransitionEnd={onFadeEnd || undefined}
           />
         </div>
@@ -262,7 +272,7 @@ export default function SigRollingOverlayPage() {
           onFadeEnd={useCrossfade ? onFadeEnd : undefined}
         />
         <RollingCardColumn
-          current={rightCurrent ?? leftCurrent}
+          current={rightCurrent}
           nextItem={useCrossfade ? rightNext : null}
           fading={fading}
           transitionActive={transitionActive}
