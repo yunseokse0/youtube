@@ -242,8 +242,12 @@ export default function AdminSigSalesPage() {
   const showFinalShowcase = displaySelectedSigs.length >= targetSelectionCount && !demoSpin && !pendingLanding;
   const oneShotImageUrl = useMemo(() => {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
-    return oneShotItem?.imageUrl || "/images/sigs/dummy-sig.svg";
-  }, [state?.sigInventory]);
+    const fromOneShot = (oneShotItem?.imageUrl || "").trim();
+    if (fromOneShot) return fromOneShot;
+    const pick = displaySelectedSigs.find((x) => (x.imageUrl || "").trim());
+    if (pick) return pick.imageUrl || "/images/sigs/dummy-sig.svg";
+    return "/images/sigs/dummy-sig.svg";
+  }, [state?.sigInventory, displaySelectedSigs]);
 
   useEffect(() => {
     if (!showFinalShowcase || !displayOneShot) {

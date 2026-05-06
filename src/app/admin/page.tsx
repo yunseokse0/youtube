@@ -348,7 +348,12 @@ export default function AdminPage() {
   const syncOneShotSigItem = useCallback((prev: AppState): AppState => {
     const inv = prev.sigInventory || [];
     const totalAmount = inv
-      .filter((x) => x.id !== ONE_SHOT_SIG_ID && Boolean(x.isActive))
+      .filter(
+        (x) =>
+          x.id !== ONE_SHOT_SIG_ID &&
+          Boolean(x.isActive) &&
+          Math.max(0, Number(x.soldCount || 0)) < Math.max(1, Number(x.maxCount || 1))
+      )
       .reduce((sum, x) => sum + Math.max(0, Number(x.price || 0)), 0);
     const oneShot = inv.find((x) => x.id === ONE_SHOT_SIG_ID);
     if (!oneShot) {
@@ -1104,7 +1109,12 @@ export default function AdminPage() {
     const hasOneShot = (state.sigInventory || []).some((x) => x.id === ONE_SHOT_SIG_ID);
     const hasMultiCountItem = (state.sigInventory || []).some((x) => x.id !== ONE_SHOT_SIG_ID && Number(x.maxCount || 1) !== 1);
     const totalAmount = (state.sigInventory || [])
-      .filter((x) => x.id !== ONE_SHOT_SIG_ID && Boolean(x.isActive))
+      .filter(
+        (x) =>
+          x.id !== ONE_SHOT_SIG_ID &&
+          Boolean(x.isActive) &&
+          Math.max(0, Number(x.soldCount || 0)) < Math.max(1, Number(x.maxCount || 1))
+      )
       .reduce((sum, x) => sum + Math.max(0, Number(x.price || 0)), 0);
     const oneShot = (state.sigInventory || []).find((x) => x.id === ONE_SHOT_SIG_ID);
     const needsSync =
