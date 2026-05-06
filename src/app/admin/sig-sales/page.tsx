@@ -21,6 +21,7 @@ import {
 } from "@/lib/sig-roulette";
 import { useSigSalesState } from "@/hooks/useSigSalesState";
 import { detectSigPriceFromImageUrlDetailed } from "@/lib/sig-image-ocr";
+import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 
 const POLL_MS = 1000;
 const STEP_CONFIRM_PAUSE_MS = 3000;
@@ -591,6 +592,25 @@ export default function AdminSigSalesPage() {
     }
   }, [ocrAllBusy, state, persistInventoryPatch]);
 
+  const dedupeSigInventoryItems = useCallback(
+    (strategy: "imageUrl" | "nameAndPrice") => {
+      const label = strategy === "imageUrl" ? "이미지 URL" : "이름+가격";
+      if (!confirm(`동일 ${label}인 시그는 위쪽 행만 남기고 삭제합니다. 계속할까요?`)) return;
+      void persistInventoryPatch((prev) => {
+        if (!prev) return prev;
+        const { nextInventory, removedCount } = dedupeSigInventory(prev.sigInventory || [], strategy);
+        queueMicrotask(() => {
+          setToast(
+            removedCount === 0 ? "중복된 시그 행이 없습니다." : `중복 제거(${label}): ${removedCount}건 삭제`
+          );
+        });
+        if (removedCount === 0) return prev;
+        return { ...prev, sigInventory: nextInventory, updatedAt: Date.now() };
+      });
+    },
+    [persistInventoryPatch]
+  );
+
   return (
     <main className="min-h-screen bg-neutral-950 p-6 text-white">
       <div className="mx-auto max-w-[1280px] space-y-4">
@@ -879,6 +899,24 @@ export default function AdminSigSalesPage() {
               {ocrAllBusy && ocrBatchProgress
                 ? `OCR 처리 중 ${ocrBatchProgress.current}/${ocrBatchProgress.total}`
                 : "금액 OCR 전체 적용"}
+            </button>
+            <button
+              type="button"
+              title="같은 이미지 URL(경로 기준)은 첫 행만 유지"
+              className="rounded bg-amber-900/80 px-3 py-1.5 text-xs font-bold hover:bg-amber-800 disabled:opacity-50"
+              disabled={ocrAllBusy}
+              onClick={() => dedupeSigInventoryItems("imageUrl")}
+            >
+              중복 제거(URL)
+            </button>
+            <button
+              type="button"
+              title="같은 이름+가격은 첫 행만 유지"
+              className="rounded bg-amber-900/80 px-3 py-1.5 text-xs font-bold hover:bg-amber-800 disabled:opacity-50"
+              disabled={ocrAllBusy}
+              onClick={() => dedupeSigInventoryItems("nameAndPrice")}
+            >
+              중복 제거(이름+가격)
             </button>
           </div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded border border-white/10 bg-black/25 px-2 py-1.5 text-[11px] text-neutral-400">

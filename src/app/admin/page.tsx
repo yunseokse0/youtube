@@ -51,6 +51,7 @@ import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
 import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
 import { DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
 import { detectSigPriceFromImageFile, detectSigPriceFromImageUrlDetailed } from "@/lib/sig-image-ocr";
+import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
 import { getVisibleAdminNavItems, isAdminNavSectionVisible, type AdminNavKey } from "@/app/admin/admin-nav-config";
 
@@ -1920,6 +1921,25 @@ export default function AdminPage() {
     });
     setSigExcelResult("시그 목록을 전체 삭제했습니다.");
   };
+
+  const dedupeSigInventoryItems = useCallback(
+    (strategy: "imageUrl" | "nameAndPrice") => {
+      const label = strategy === "imageUrl" ? "이미지 URL" : "이름+가격";
+      if (!confirm(`동일 ${label}인 시그는 목록에서 위쪽(먼저 있는) 행만 남기고 삭제합니다. 계속할까요?`)) return;
+      let removed = 0;
+      setState((prev: AppState) => {
+        const { nextInventory, removedCount } = dedupeSigInventory(prev.sigInventory || [], strategy);
+        removed = removedCount;
+        if (removedCount === 0) return prev;
+        const draft: AppState = { ...prev, sigInventory: nextInventory };
+        const next = syncOneShotSigItem(draft);
+        persistState(next);
+        return next;
+      });
+      setSigExcelResult(removed === 0 ? "중복된 시그 행이 없습니다." : `중복 제거(${label}): ${removed}건 삭제`);
+    },
+    [persistState, syncOneShotSigItem]
+  );
 
   const uploadSigExcel = async (file: File | null) => {
     if (!file) return;
@@ -5378,6 +5398,22 @@ export default function AdminPage() {
                     onClick={clearAllSigItems}
                   >
                     전체 지우기
+                  </button>
+                  <button
+                    type="button"
+                    className="px-3 py-1 rounded bg-amber-900/75 hover:bg-amber-800 text-sm"
+                    title="같은 이미지 URL(경로 기준)은 첫 행만 유지"
+                    onClick={() => dedupeSigInventoryItems("imageUrl")}
+                  >
+                    중복 제거(URL)
+                  </button>
+                  <button
+                    type="button"
+                    className="px-3 py-1 rounded bg-amber-900/75 hover:bg-amber-800 text-sm"
+                    title="같은 이름+가격은 첫 행만 유지"
+                    onClick={() => dedupeSigInventoryItems("nameAndPrice")}
+                  >
+                    중복 제거(이름+가격)
                   </button>
                   {sigExcelResult ? <span className="text-xs text-neutral-300">{sigExcelResult}</span> : null}
                 </div>
