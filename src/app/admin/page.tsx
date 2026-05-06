@@ -188,6 +188,10 @@ export default function AdminPage() {
   /** 시그 롤링 업로드 결과 메시지 */
   const [sigRollingUploadMessage, setSigRollingUploadMessage] = useState("");
   const rollingItemsForAdmin = useMemo(() => getUnifiedSigRollingItems(state), [state]);
+  const legacyOnlyRollingCount = useMemo(() => {
+    const invIds = new Set((state.sigInventory || []).map((x) => x.id));
+    return normalizeSigRolling(state.sigRolling).items.filter((x) => !invIds.has(x.id)).length;
+  }, [state.sigInventory, state.sigRolling]);
   const [ocrBusyIds, setOcrBusyIds] = useState<Record<string, boolean>>({});
   const [ocrAllBusy, setOcrAllBusy] = useState(false);
   const [sigPresetMemberId, setSigPresetMemberId] = useState("");
@@ -2400,6 +2404,52 @@ export default function AdminPage() {
         sigRollingMeta: meta,
       };
       persistState(next);
+      return next;
+    });
+  };
+
+  const convertAllLegacyRollingToSigInventory = () => {
+    setState((prev) => {
+      const sr = normalizeSigRolling(prev.sigRolling);
+      if (!sr.items.length) return prev;
+      const invIds = new Set((prev.sigInventory || []).map((x) => x.id));
+      const rows = getUnifiedSigRollingItems(prev);
+      const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
+      const nextInventory = [...(prev.sigInventory || [])];
+      const convertedIds = new Set<string>();
+      let appended = 0;
+
+      sr.items.forEach((legacy, idx) => {
+        if (!legacy?.id || !legacy?.url) return;
+        if (invIds.has(legacy.id)) return;
+        invIds.add(legacy.id);
+        convertedIds.add(legacy.id);
+        const order = Math.max(0, rows.findIndex((x) => x.id === legacy.id));
+        const cur = meta[legacy.id] || {};
+        meta[legacy.id] = { ...cur, label: legacy.label || cur.label || "", order: cur.order ?? order ?? rows.length + idx };
+        nextInventory.push({
+          id: legacy.id,
+          name: legacy.label || "롤링 시그",
+          price: 0,
+          imageUrl: legacy.url,
+          memberId: "",
+          maxCount: 1,
+          soldCount: 0,
+          isRolling: true,
+          isActive: true,
+        });
+        appended += 1;
+      });
+
+      if (!appended) return prev;
+      const next = {
+        ...prev,
+        sigInventory: nextInventory,
+        sigRolling: { ...sr, items: sr.items.filter((x) => !convertedIds.has(x.id)) },
+        sigRollingMeta: meta,
+      };
+      persistState(next);
+      setSigRollingUploadMessage(`레거시 롤링 ${appended}개를 판매 시그로 전체 치환했습니다.`);
       return next;
     });
   };
@@ -5128,6 +5178,14 @@ export default function AdminPage() {
                       }}
                     />
                   </label>
+                  <button
+                    type="button"
+                    className="rounded bg-emerald-800 px-3 py-1.5 text-sm hover:bg-emerald-700 disabled:opacity-50"
+                    disabled={legacyOnlyRollingCount <= 0}
+                    onClick={convertAllLegacyRollingToSigInventory}
+                  >
+                    판매 시그로 전체 치환{legacyOnlyRollingCount > 0 ? ` (${legacyOnlyRollingCount})` : ""}
+                  </button>
                 </div>
                 {sigRollingUploadMessage ? (
                   <p className="text-xs text-emerald-300/95 whitespace-pre-wrap rounded border border-emerald-500/30 bg-emerald-950/30 px-2 py-1.5">
