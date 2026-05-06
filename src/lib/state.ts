@@ -88,8 +88,8 @@ function normalizeSigRollingMeta(input: unknown): Record<string, SigRollingMetaE
 }
 
 /**
- * 시그 롤링 목록의 단일 소스는 `sigInventory(isRolling=true)`를 우선 사용한다.
- * 구버전 `sigRolling.items`는 호환(fallback)으로만 유지한다.
+ * 시그 롤링 목록의 단일 소스는 `sigInventory(isRolling=true)`다.
+ * 인벤토리에 롤링 대상이 하나라도 있으면 구버전 `sigRolling.items`는 사용하지 않는다.
  */
 export function getUnifiedSigRollingItems(state: Pick<AppState, "sigInventory" | "sigRolling" | "sigRollingMeta"> | null | undefined): SigRollingItem[] {
   if (!state) return [];
@@ -108,24 +108,7 @@ export function getUnifiedSigRollingItems(state: Pick<AppState, "sigInventory" |
     .filter((x) => x.url);
   const legacy = normalizeSigRolling(state.sigRolling).items;
   if (invRows.length === 0) return legacy;
-
-  const invById = new Set(invRows.map((x) => x.id));
-  const invByUrl = new Set(invRows.map((x) => x.url));
-  const merged = [...invRows];
-  for (const it of legacy) {
-    const id = String(it.id || "");
-    const url = normalizeSigImageUrlStored(it.url).trim();
-    if (!url) continue;
-    if (invById.has(id) || invByUrl.has(url)) continue;
-    const m = meta[id] || {};
-    merged.push({
-      id,
-      url,
-      label: (m.label && String(m.label).trim()) || String(it.label || "").trim(),
-      order: m.order ?? merged.length,
-    });
-  }
-  return merged
+  return invRows
     .sort((a, b) => a.order - b.order)
     .map(({ id, url, label }) => ({ id, url, label }));
 }

@@ -2308,6 +2308,102 @@ export default function AdminPage() {
     });
   };
 
+  const renameSigRollingItem = (id: string, value: string) => {
+    const nextName = String(value || "");
+    setState((prev) => {
+      const hasInventory = (prev.sigInventory || []).some((x) => x.id === id);
+      if (hasInventory) {
+        const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
+        const cur = meta[id] || {};
+        meta[id] = { ...cur, label: nextName };
+        const next = {
+          ...prev,
+          sigInventory: (prev.sigInventory || []).map((x) => (x.id === id ? { ...x, name: nextName } : x)),
+          sigRollingMeta: meta,
+        };
+        persistState(next);
+        return next;
+      }
+      const sr = normalizeSigRolling(prev.sigRolling);
+      const next = {
+        ...prev,
+        sigRolling: {
+          ...sr,
+          items: sr.items.map((x) => (x.id === id ? { ...x, label: nextName } : x)),
+        },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const replaceSigRollingItemImage = (id: string, file: File | null) => {
+    if (!file) return;
+    void (async () => {
+      const url = await uploadSigImageFile(file);
+      if (!url) return;
+      setState((prev) => {
+        const hasInventory = (prev.sigInventory || []).some((x) => x.id === id);
+        if (hasInventory) {
+          const next = {
+            ...prev,
+            sigInventory: (prev.sigInventory || []).map((x) =>
+              x.id === id ? { ...x, imageUrl: url, isRolling: true } : x
+            ),
+          };
+          persistState(next);
+          return next;
+        }
+        const sr = normalizeSigRolling(prev.sigRolling);
+        const next = {
+          ...prev,
+          sigRolling: {
+            ...sr,
+            items: sr.items.map((x) => (x.id === id ? { ...x, url } : x)),
+          },
+        };
+        persistState(next);
+        return next;
+      });
+      setSigRollingUploadMessage(`이미지 교체 완료: ${id}`);
+    })();
+  };
+
+  const convertLegacyRollingToSigInventory = (id: string) => {
+    setState((prev) => {
+      if ((prev.sigInventory || []).some((x) => x.id === id)) return prev;
+      const sr = normalizeSigRolling(prev.sigRolling);
+      const legacy = sr.items.find((x) => x.id === id);
+      if (!legacy) return prev;
+      const rows = getUnifiedSigRollingItems(prev);
+      const order = Math.max(0, rows.findIndex((x) => x.id === id));
+      const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
+      const cur = meta[id] || {};
+      meta[id] = { ...cur, label: legacy.label || cur.label || "", order: cur.order ?? order };
+      const next = {
+        ...prev,
+        sigInventory: [
+          ...(prev.sigInventory || []),
+          {
+            id,
+            name: legacy.label || "롤링 시그",
+            price: 0,
+            imageUrl: legacy.url,
+            memberId: "",
+            maxCount: 1,
+            soldCount: 0,
+            isRolling: true,
+            isActive: true,
+          },
+        ],
+        sigRolling: { ...sr, items: sr.items.filter((x) => x.id !== id) },
+        sigRollingMeta: meta,
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
   const moveSigRollingItem = (id: string, delta: number) => {
     setState((prev) => {
       const rows = getUnifiedSigRollingItems(prev);
@@ -5094,7 +5190,9 @@ export default function AdminPage() {
                     {rollingItemsForAdmin.length === 0 ? (
                       <li className="text-xs text-neutral-500">등록된 이미지가 없습니다.</li>
                     ) : (
-                      rollingItemsForAdmin.map((it, pos, arr) => (
+                      rollingItemsForAdmin.map((it, pos, arr) => {
+                        const inInventory = (state.sigInventory || []).some((x) => x.id === it.id);
+                        return (
                         <li
                           key={it.id}
                           className="flex flex-wrap items-center gap-2 rounded border border-white/10 bg-black/30 px-2 py-2"
@@ -5107,17 +5205,31 @@ export default function AdminPage() {
                             value={it.label}
                             placeholder="표시 이름"
                             onChange={(e) => {
-                              const label = e.target.value;
-                              setState((prev) => {
-                                const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
-                                const cur = meta[it.id] || {};
-                                meta[it.id] = { ...cur, label };
-                                const next = { ...prev, sigRollingMeta: meta };
-                                persistState(next);
-                                return next;
-                              });
+                              renameSigRollingItem(it.id, e.target.value);
                             }}
                           />
+                          {!inInventory ? (
+                            <button
+                              type="button"
+                              className="rounded bg-sky-800 px-2 py-1 text-xs hover:bg-sky-700"
+                              onClick={() => convertLegacyRollingToSigInventory(it.id)}
+                            >
+                              판매 시그로 치환
+                            </button>
+                          ) : null}
+                          <label className="rounded bg-violet-800 px-2 py-1 text-xs hover:bg-violet-700 cursor-pointer">
+                            이미지 교체
+                            <input
+                              type="file"
+                              accept="image/gif,image/png,image/jpeg,image/webp"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0] || null;
+                                replaceSigRollingItemImage(it.id, file);
+                                e.currentTarget.value = "";
+                              }}
+                            />
+                          </label>
                           <div className="flex gap-1">
                             <button
                               type="button"
@@ -5144,7 +5256,8 @@ export default function AdminPage() {
                             </button>
                           </div>
                         </li>
-                      ))
+                        );
+                      })
                     )}
                   </ul>
                 </details>
