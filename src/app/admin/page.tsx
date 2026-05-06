@@ -186,6 +186,7 @@ export default function AdminPage() {
   const [newSigPreviewUrl, setNewSigPreviewUrl] = useState("");
   const [newSigImageUploading, setNewSigImageUploading] = useState(false);
   const [sigPreviewMap, setSigPreviewMap] = useState<Record<string, string>>({});
+  const [sigImagePreviewModal, setSigImagePreviewModal] = useState<{ src: string; name: string; rawUrl: string } | null>(null);
   const [sigExcelResult, setSigExcelResult] = useState("");
   /** 시그 롤링 업로드 결과 메시지 */
   const [sigRollingUploadMessage, setSigRollingUploadMessage] = useState("");
@@ -212,6 +213,15 @@ export default function AdminPage() {
   const [rouletteResetBusy, setRouletteResetBusy] = useState(false);
   /** 회전판 돌리기/초기화 결과 — sigExcelResult(엑셀)와 분리해 버튼 바로 아래에 표시 */
   const [rouletteActionMessage, setRouletteActionMessage] = useState("");
+
+  useEffect(() => {
+    if (!sigImagePreviewModal) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSigImagePreviewModal(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [sigImagePreviewModal]);
   const [rouletteSpinBusy, setRouletteSpinBusy] = useState(false);
   const [donorRankingPresetName, setDonorRankingPresetName] = useState("");
   const [settlementTitle, setSettlementTitle] = useState("");
@@ -5756,7 +5766,18 @@ export default function AdminPage() {
                       </div>
                       {(sigPreviewMap[item.id] || item.imageUrl) ? (
                         <div className="mt-2 flex items-start gap-2">
-                          <div className="relative h-16 w-16 overflow-hidden rounded border border-white/10 bg-black/30">
+                          <button
+                            type="button"
+                            className="relative h-16 w-16 overflow-hidden rounded border border-white/10 bg-black/30 transition hover:border-violet-300/70"
+                            title="클릭해서 크게 보기"
+                            onClick={() =>
+                              setSigImagePreviewModal({
+                                src: sigPreviewMap[item.id] || resolveSigPreviewSrc(item.imageUrl),
+                                name: item.name,
+                                rawUrl: item.imageUrl || "",
+                              })
+                            }
+                          >
                             <Image
                               src={sigPreviewMap[item.id] || resolveSigPreviewSrc(item.imageUrl)}
                               alt={`${item.name} 미리보기`}
@@ -5769,7 +5790,7 @@ export default function AdminPage() {
                                 e.currentTarget.src = SIG_DUMMY_IMAGE;
                               }}
                             />
-                          </div>
+                          </button>
                           <div className="text-xs text-neutral-400 break-all">
                             이미지 설정됨: {item.imageUrl.startsWith("data:image/") ? "업로드 이미지(data URL)" : item.imageUrl}
                             {hasLegacyLocalUrl ? (
@@ -5799,6 +5820,47 @@ export default function AdminPage() {
                 <div className="text-xs text-neutral-500">
                   「보드 노출」은 <code>/overlay/sig-sales</code> 상단 롤링 그리드,「판매 활성」은 회전판 메뉴 후보에 포함됩니다. 시그 추가/멤버 지정/판매량 조절은 즉시 `/api/state`를 통해 Redis에 반영됩니다.
                 </div>
+              {sigImagePreviewModal ? (
+                <div
+                  className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4 py-6"
+                  onClick={() => setSigImagePreviewModal(null)}
+                >
+                  <div
+                    className="w-full max-w-4xl rounded-xl border border-white/20 bg-neutral-950/95 p-3 shadow-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-white">{sigImagePreviewModal.name}</div>
+                        <div className="truncate text-[11px] text-neutral-400">
+                          {sigImagePreviewModal.rawUrl || sigImagePreviewModal.src}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="rounded bg-neutral-700 px-2 py-1 text-xs text-white hover:bg-neutral-600"
+                        onClick={() => setSigImagePreviewModal(null)}
+                      >
+                        닫기
+                      </button>
+                    </div>
+                    <div className="relative h-[70vh] w-full overflow-hidden rounded border border-white/10 bg-black/40">
+                      <Image
+                        src={sigImagePreviewModal.src}
+                        alt={`${sigImagePreviewModal.name} 원본 미리보기`}
+                        fill
+                        unoptimized
+                        sizes="90vw"
+                        className="object-contain"
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = SIG_DUMMY_IMAGE;
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
               </div>
               <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
                 <div>
