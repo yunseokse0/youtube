@@ -557,25 +557,30 @@ export default function AdminSigSalesPage() {
       return;
     }
     setOcrAllBusy(true);
-    let ok = 0;
-    let fail = 0;
+    const priceById = new Map<string, number>();
     for (const item of targets) {
       setOcrBusyIds((prev) => ({ ...prev, [item.id]: true }));
       try {
         const detail = await detectSigPriceFromImageUrlDetailed(String(item.imageUrl || "").trim());
-        if (detail.price == null) {
-          fail += 1;
-          continue;
+        if (detail.price != null) {
+          priceById.set(item.id, detail.price);
         }
-        await persistInventoryPatch((prev) => ({
-          ...prev,
-          sigInventory: (prev.sigInventory || []).map((x) => (x.id === item.id ? { ...x, price: detail.price! } : x)),
-          updatedAt: Date.now(),
-        }));
-        ok += 1;
+        await new Promise((r) => setTimeout(r, 16));
       } finally {
         setOcrBusyIds((prev) => ({ ...prev, [item.id]: false }));
       }
+    }
+    const ok = priceById.size;
+    const fail = targets.length - ok;
+    if (ok > 0) {
+      await persistInventoryPatch((prev) => ({
+        ...prev,
+        sigInventory: (prev.sigInventory || []).map((x) => {
+          const pr = priceById.get(x.id);
+          return pr != null ? { ...x, price: pr } : x;
+        }),
+        updatedAt: Date.now(),
+      }));
     }
     setOcrAllBusy(false);
     setToast(`OCR 일괄 완료: 성공 ${ok}건 / 실패 ${fail}건`);

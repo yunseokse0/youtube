@@ -2092,25 +2092,36 @@ export default function AdminPage() {
       return;
     }
     setOcrAllBusy(true);
-    let ok = 0;
-    let fail = 0;
+    const priceById = new Map<string, number>();
     for (const item of items) {
       setOcrBusyIds((prev) => ({ ...prev, [item.id]: true }));
       try {
         const detail = await detectSigPriceFromImageUrlDetailed(String(item.imageUrl || "").trim());
-        if (detail.price == null) {
-          fail += 1;
-          continue;
+        if (detail.price != null) {
+          priceById.set(item.id, detail.price);
         }
-        updateSigItem(item.id, { price: detail.price });
-        ok += 1;
+        await new Promise((r) => setTimeout(r, 16));
       } finally {
         setOcrBusyIds((prev) => ({ ...prev, [item.id]: false }));
       }
     }
+    const ok = priceById.size;
+    const fail = items.length - ok;
+    if (ok > 0) {
+      setState((prev: AppState) => {
+        const sigInventory = (prev.sigInventory || []).map((x) => {
+          const pr = priceById.get(x.id);
+          return pr != null ? { ...x, price: pr } : x;
+        });
+        const draft: AppState = { ...prev, sigInventory };
+        const next = syncOneShotSigItem(draft);
+        persistState(next);
+        return next;
+      });
+    }
     setOcrAllBusy(false);
     setSigExcelResult(`OCR 일괄 완료: 성공 ${ok}건 / 실패 ${fail}건`);
-  }, [ocrAllBusy, state.sigInventory, updateSigItem]);
+  }, [ocrAllBusy, state.sigInventory]);
 
   const uploadSigImage = (id: string, file: File | null) => {
     if (!file) return;

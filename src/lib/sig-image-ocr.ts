@@ -67,6 +67,24 @@ function resolveAbsoluteImageUrl(imageUrl: string): string | null {
   }
 }
 
+async function loadImageBitmapViaApiProxy(absoluteUrl: string): Promise<ImageBitmap | null> {
+  if (typeof window === "undefined") return null;
+  if (!/^https?:\/\//i.test(absoluteUrl)) return null;
+  try {
+    const proxyUrl = `/api/ocr-proxy?url=${encodeURIComponent(absoluteUrl)}`;
+    const sig =
+      typeof AbortSignal !== "undefined" && typeof (AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal }).timeout === "function"
+        ? (AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }).timeout(28000)
+        : undefined;
+    const res = await fetch(proxyUrl, { method: "GET", credentials: "same-origin", signal: sig });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await createImageBitmap(blob);
+  } catch {
+    return null;
+  }
+}
+
 async function loadImageBitmapForOcr(imageUrl: string): Promise<ImageBitmap | null> {
   if (typeof window === "undefined") return null;
   const abs = resolveAbsoluteImageUrl(imageUrl);
@@ -103,34 +121,49 @@ async function loadImageBitmapForOcr(imageUrl: string): Promise<ImageBitmap | nu
     const img = await loadImg("anonymous");
     return await createImageBitmap(img);
   } catch {
-    return null;
+    /* fall through */
   }
+
+  const proxied = await loadImageBitmapViaApiProxy(abs);
+  if (proxied) return proxied;
+
+  return null;
 }
 
-async function detectPriceFromBitmap(source: ImageBitmap | HTMLCanvasElement): Promise<number | null> {
+const OCR_SCALE_STEPS = [1, 1.5, 2, 2.5, 3] as const;
+
+async function detectPriceFromBitmap(bitmap: ImageBitmap): Promise<number | null> {
   const TD = (window as unknown as { TextDetector?: new (features: string[]) => { detect: (input: ImageBitmap | HTMLCanvasElement) => Promise<Array<{ rawValue?: string }>> } }).TextDetector;
-  if (!TD) return null;
+  if (!TD || bitmap.width < 1 || bitmap.height < 1) return null;
   const detector = new TD([]);
-  let blocks = await detector.detect(source);
+  const maxSide = 2000;
+
+  let blocks = await detector.detect(bitmap);
   let merged = blocks.map((b) => String((b as { rawValue?: string }).rawValue || "")).join("\n");
   let price = parseSigAmountFromText(merged);
   if (price != null) return price;
 
-  if (source instanceof ImageBitmap && source.width > 0 && source.height > 0) {
+  for (const scale of OCR_SCALE_STEPS) {
     const canvas = document.createElement("canvas");
-    const scale = 2;
-    canvas.width = Math.max(1, Math.floor(source.width * scale));
-    canvas.height = Math.max(1, Math.floor(source.height * scale));
-    const ctx = canvas.getContext("2d");
-    if (ctx) {
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = "high";
-      ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
-      blocks = await detector.detect(canvas);
-      merged = blocks.map((b) => String((b as { rawValue?: string }).rawValue || "")).join("\n");
-      price = parseSigAmountFromText(merged);
-      if (price != null) return price;
+    let w = Math.max(1, Math.floor(bitmap.width * scale));
+    let h = Math.max(1, Math.floor(bitmap.height * scale));
+    const longest = Math.max(w, h);
+    if (longest > maxSide) {
+      const r = maxSide / longest;
+      w = Math.max(1, Math.floor(w * r));
+      h = Math.max(1, Math.floor(h * r));
     }
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) continue;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    blocks = await detector.detect(canvas);
+    merged = blocks.map((b) => String((b as { rawValue?: string }).rawValue || "")).join("\n");
+    price = parseSigAmountFromText(merged);
+    if (price != null) return price;
   }
   return null;
 }
