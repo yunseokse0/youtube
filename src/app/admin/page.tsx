@@ -50,11 +50,7 @@ import { getEffectiveRemainingTime, pauseTimer, resumeTimer } from "@/lib/timer-
 import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
 import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
 import { DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
-import {
-  detectSigPriceFromImageFile,
-  detectSigPriceFromImageUrlDetailed,
-  isSigOcrSupported,
-} from "@/lib/sig-image-ocr";
+import { detectSigPriceFromImageFile, detectSigPriceFromImageUrlDetailed } from "@/lib/sig-image-ocr";
 import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
 import { getVisibleAdminNavItems, isAdminNavSectionVisible, type AdminNavKey } from "@/app/admin/admin-nav-config";
 
@@ -201,6 +197,8 @@ export default function AdminPage() {
   }, [state.sigInventory, state.sigRolling]);
   const [ocrBusyIds, setOcrBusyIds] = useState<Record<string, boolean>>({});
   const [ocrAllBusy, setOcrAllBusy] = useState(false);
+  /** 일괄 OCR 진행률(현재 인덱스 / 전체) */
+  const [ocrBatchProgress, setOcrBatchProgress] = useState<{ current: number; total: number } | null>(null);
   /** OCR 결과 — 시그 목록 바로 위에 표시(스크롤 시에도 확인 가능) */
   const [sigOcrBanner, setSigOcrBanner] = useState("");
   const [sigPresetMemberId, setSigPresetMemberId] = useState("");
@@ -2061,16 +2059,12 @@ export default function AdminPage() {
       pushOcrMsg(`OCR 실패: 이미지 URL이 비어 있습니다 (${label})`);
       return;
     }
-    if (!isSigOcrSupported()) {
-      pushOcrMsg(`OCR 미지원: Chromium 계열 브라우저(Chrome/Edge)에서 시도해 주세요. (${label})`);
-      return;
-    }
     setOcrBusyIds((prev) => ({ ...prev, [id]: true }));
     try {
       const detail = await detectSigPriceFromImageUrlDetailed(src);
       if (detail.price == null) {
         if (detail.reason === "unsupported_browser") {
-          pushOcrMsg(`OCR 미지원: Chromium 계열 브라우저에서 시도해 주세요. (${label})`);
+          pushOcrMsg(`OCR 실행 불가: 브라우저 클라이언트에서만 사용할 수 있습니다. (${label})`);
         } else if (detail.reason === "image_load_failed") {
           pushOcrMsg(`OCR 실패: 이미지를 불러오지 못했습니다(URL·404·CORS). (${label})`);
         } else {
@@ -2092,12 +2086,6 @@ export default function AdminPage() {
 
   const runOcrForAllSigItems = useCallback(async () => {
     if (ocrAllBusy) return;
-    if (!isSigOcrSupported()) {
-      const m = "OCR 미지원: Chromium 계열 브라우저(Chrome/Edge)에서 시도해 주세요.";
-      setSigExcelResult(m);
-      setSigOcrBanner(m);
-      return;
-    }
     const items = (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID && String(x.imageUrl || "").trim());
     if (!items.length) {
       const m = "OCR 대상 시그가 없습니다.";
@@ -2106,9 +2094,15 @@ export default function AdminPage() {
       return;
     }
     setOcrAllBusy(true);
+    setSigOcrBanner(`OCR 일괄 준비 중… (총 ${items.length}건)`);
     const priceById = new Map<string, number>();
     try {
-      for (const item of items) {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        setOcrBatchProgress({ current: i + 1, total: items.length });
+        setSigOcrBanner(
+          `OCR 일괄 진행 중: ${i + 1} / ${items.length}${item.name ? ` · ${item.name}` : ""}`
+        );
         setOcrBusyIds((prev) => ({ ...prev, [item.id]: true }));
         try {
           const detail = await detectSigPriceFromImageUrlDetailed(String(item.imageUrl || "").trim());
@@ -2140,6 +2134,7 @@ export default function AdminPage() {
       setSigExcelResult(summary);
       setSigOcrBanner(summary);
     } finally {
+      setOcrBatchProgress(null);
       setOcrAllBusy(false);
     }
   }, [ocrAllBusy, state.sigInventory]);
@@ -5347,7 +5342,9 @@ export default function AdminPage() {
                     disabled={ocrAllBusy}
                     title="시그 목록 바로 위에도 동일 버튼이 있습니다."
                   >
-                    {ocrAllBusy ? "OCR 전체 처리 중..." : "금액 OCR 전체 적용"}
+                    {ocrAllBusy && ocrBatchProgress
+                      ? `OCR 처리 중 ${ocrBatchProgress.current}/${ocrBatchProgress.total}`
+                      : "금액 OCR 전체 적용"}
                   </button>
                   <span className="text-[11px] text-neutral-500">
                     저장: 선택 멤버 시그의 현재 판매 활성 상태 / 적용: 해당 멤버 시그만 판매 활성
@@ -5552,7 +5549,9 @@ export default function AdminPage() {
                         disabled={ocrAllBusy}
                         onClick={() => void runOcrForAllSigItems()}
                       >
-                        {ocrAllBusy ? "전체 OCR 처리 중..." : "금액 OCR 전체 적용"}
+                        {ocrAllBusy && ocrBatchProgress
+                          ? `OCR 처리 중 ${ocrBatchProgress.current}/${ocrBatchProgress.total}`
+                          : "금액 OCR 전체 적용"}
                       </button>
                     </div>
                   </div>

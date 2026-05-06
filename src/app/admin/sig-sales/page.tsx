@@ -20,7 +20,7 @@ import {
   canonicalSigIdFromWheelSliceId,
 } from "@/lib/sig-roulette";
 import { useSigSalesState } from "@/hooks/useSigSalesState";
-import { detectSigPriceFromImageUrlDetailed, isSigOcrSupported } from "@/lib/sig-image-ocr";
+import { detectSigPriceFromImageUrlDetailed } from "@/lib/sig-image-ocr";
 
 const POLL_MS = 1000;
 const STEP_CONFIRM_PAUSE_MS = 3000;
@@ -90,6 +90,7 @@ export default function AdminSigSalesPage() {
   const [oneShotReveal, setOneShotReveal] = useState(false);
   const [ocrBusyIds, setOcrBusyIds] = useState<Record<string, boolean>>({});
   const [ocrAllBusy, setOcrAllBusy] = useState(false);
+  const [ocrBatchProgress, setOcrBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [sigSalesSigRowOpen, setSigSalesSigRowOpen] = useState<Record<string, boolean>>({});
   const nextSpinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [oneShotSound] = useState(() => new Howl({ src: [SPIN_SOUND_PATHS.oneShot], preload: true, volume: 0.7 }));
@@ -517,15 +518,13 @@ export default function AdminSigSalesPage() {
       setToast(`OCR 실패: ${item.name} 이미지 URL이 비어있습니다.`);
       return;
     }
-    if (!isSigOcrSupported()) {
-      setToast(`OCR 미지원: Chrome/Edge 등 Chromium 브라우저에서 시도해 주세요. (${item.name})`);
-      return;
-    }
     setOcrBusyIds((prev) => ({ ...prev, [item.id]: true }));
     try {
       const detail = await detectSigPriceFromImageUrlDetailed(src);
       if (detail.price == null) {
-        if (detail.reason === "image_load_failed") {
+        if (detail.reason === "unsupported_browser") {
+          setToast(`OCR 실행 불가: 브라우저에서만 사용할 수 있습니다. (${item.name})`);
+        } else if (detail.reason === "image_load_failed") {
           setToast(`OCR 실패: 이미지를 불러오지 못했습니다(404·CORS). (${item.name})`);
         } else {
           setToast(
@@ -547,43 +546,47 @@ export default function AdminSigSalesPage() {
 
   const runOcrForAll = useCallback(async () => {
     if (ocrAllBusy || !state) return;
-    if (!isSigOcrSupported()) {
-      setToast("OCR 미지원: Chrome/Edge 등 Chromium 브라우저에서 시도해 주세요.");
-      return;
-    }
     const targets = (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID && String(x.imageUrl || "").trim());
     if (!targets.length) {
       setToast("OCR 대상 시그가 없습니다.");
       return;
     }
     setOcrAllBusy(true);
+    setToast(`OCR 일괄 준비 중… (총 ${targets.length}건)`);
     const priceById = new Map<string, number>();
-    for (const item of targets) {
-      setOcrBusyIds((prev) => ({ ...prev, [item.id]: true }));
-      try {
-        const detail = await detectSigPriceFromImageUrlDetailed(String(item.imageUrl || "").trim());
-        if (detail.price != null) {
-          priceById.set(item.id, detail.price);
+    try {
+      for (let i = 0; i < targets.length; i++) {
+        const item = targets[i];
+        setOcrBatchProgress({ current: i + 1, total: targets.length });
+        setToast(`OCR 일괄 진행: ${i + 1}/${targets.length}${item.name ? ` · ${item.name}` : ""}`);
+        setOcrBusyIds((prev) => ({ ...prev, [item.id]: true }));
+        try {
+          const detail = await detectSigPriceFromImageUrlDetailed(String(item.imageUrl || "").trim());
+          if (detail.price != null) {
+            priceById.set(item.id, detail.price);
+          }
+          await new Promise((r) => setTimeout(r, 16));
+        } finally {
+          setOcrBusyIds((prev) => ({ ...prev, [item.id]: false }));
         }
-        await new Promise((r) => setTimeout(r, 16));
-      } finally {
-        setOcrBusyIds((prev) => ({ ...prev, [item.id]: false }));
       }
+      const ok = priceById.size;
+      const fail = targets.length - ok;
+      if (ok > 0) {
+        await persistInventoryPatch((prev) => ({
+          ...prev,
+          sigInventory: (prev.sigInventory || []).map((x) => {
+            const pr = priceById.get(x.id);
+            return pr != null ? { ...x, price: pr } : x;
+          }),
+          updatedAt: Date.now(),
+        }));
+      }
+      setToast(`OCR 일괄 완료: 성공 ${ok}건 / 실패 ${fail}건`);
+    } finally {
+      setOcrBatchProgress(null);
+      setOcrAllBusy(false);
     }
-    const ok = priceById.size;
-    const fail = targets.length - ok;
-    if (ok > 0) {
-      await persistInventoryPatch((prev) => ({
-        ...prev,
-        sigInventory: (prev.sigInventory || []).map((x) => {
-          const pr = priceById.get(x.id);
-          return pr != null ? { ...x, price: pr } : x;
-        }),
-        updatedAt: Date.now(),
-      }));
-    }
-    setOcrAllBusy(false);
-    setToast(`OCR 일괄 완료: 성공 ${ok}건 / 실패 ${fail}건`);
   }, [ocrAllBusy, state, persistInventoryPatch]);
 
   return (
@@ -871,7 +874,9 @@ export default function AdminSigSalesPage() {
               disabled={ocrAllBusy}
               className="rounded bg-violet-700 px-3 py-1.5 text-xs font-bold hover:bg-violet-600 disabled:opacity-50"
             >
-              {ocrAllBusy ? "OCR 전체 처리 중..." : "금액 OCR 전체 적용"}
+              {ocrAllBusy && ocrBatchProgress
+                ? `OCR 처리 중 ${ocrBatchProgress.current}/${ocrBatchProgress.total}`
+                : "금액 OCR 전체 적용"}
             </button>
           </div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded border border-white/10 bg-black/25 px-2 py-1.5 text-[11px] text-neutral-400">

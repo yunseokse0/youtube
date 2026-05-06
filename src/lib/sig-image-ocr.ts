@@ -1,9 +1,15 @@
 /**
- * 시그 이미지에서 금액 추출 (브라우저 Shape Detection API — Chromium 계열).
- * Safari/Firefox 등에서는 미지원일 수 있음.
+ * 시그 이미지에서 금액 추출.
+ * 1) Chromium TextDetector(가능 시)
+ * 2) tesseract.js(kor+eng) 폴백 — Safari/Firefox 등에서도 시도 가능
  */
 
 export function isSigOcrSupported(): boolean {
+  return typeof window !== "undefined";
+}
+
+/** Shape Detection API(TextDetector) 사용 가능 여부 (Chromium 등) */
+export function isNativeTextDetectorAvailable(): boolean {
   return typeof window !== "undefined" && typeof (window as unknown as { TextDetector?: unknown }).TextDetector === "function";
 }
 
@@ -91,6 +97,7 @@ async function loadImageBitmapForOcr(imageUrl: string): Promise<ImageBitmap | nu
   if (!abs) return null;
   const origin = window.location.origin;
   const sameOrigin = abs.startsWith(origin);
+  const isHttp = /^https?:\/\//i.test(abs);
 
   const loadImg = (crossOrigin: "" | "anonymous") =>
     new Promise<HTMLImageElement>((resolve, reject) => {
@@ -102,37 +109,52 @@ async function loadImageBitmapForOcr(imageUrl: string): Promise<ImageBitmap | nu
       img.src = abs;
     });
 
-  try {
-    const img = await loadImg(sameOrigin ? "" : "anonymous");
-    return await createImageBitmap(img);
-  } catch {
+  const tryFetchBlob = async (): Promise<ImageBitmap | null> => {
     try {
-      if (!sameOrigin) {
-        const res = await fetch(abs, { mode: "cors", credentials: "omit" });
-        if (!res.ok) throw new Error("fetch");
-        const blob = await res.blob();
-        return await createImageBitmap(blob);
-      }
+      const res = await fetch(abs, {
+        mode: sameOrigin ? "same-origin" : "cors",
+        credentials: sameOrigin ? "same-origin" : "omit",
+      });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return await createImageBitmap(blob);
     } catch {
-      /* try anonymous img */
+      return null;
     }
+  };
+
+  if (sameOrigin) {
+    try {
+      const img = await loadImg("");
+      return await createImageBitmap(img);
+    } catch {
+      /* continue */
+    }
+    const fb = await tryFetchBlob();
+    if (fb) return fb;
+    return null;
   }
+
+  // 크로스 오리진: 프록시를 먼저 시도(캔버스 오염·CORS 우회)
+  if (isHttp) {
+    const proxied = await loadImageBitmapViaApiProxy(abs);
+    if (proxied) return proxied;
+  }
+
+  const corsBitmap = await tryFetchBlob();
+  if (corsBitmap) return corsBitmap;
+
   try {
     const img = await loadImg("anonymous");
     return await createImageBitmap(img);
   } catch {
-    /* fall through */
+    return null;
   }
-
-  const proxied = await loadImageBitmapViaApiProxy(abs);
-  if (proxied) return proxied;
-
-  return null;
 }
 
 const OCR_SCALE_STEPS = [1, 1.5, 2, 2.5, 3] as const;
 
-async function detectPriceFromBitmap(bitmap: ImageBitmap): Promise<number | null> {
+async function detectPriceFromBitmapNative(bitmap: ImageBitmap): Promise<number | null> {
   const TD = (window as unknown as { TextDetector?: new (features: string[]) => { detect: (input: ImageBitmap | HTMLCanvasElement) => Promise<Array<{ rawValue?: string }>> } }).TextDetector;
   if (!TD || bitmap.width < 1 || bitmap.height < 1) return null;
   const detector = new TD([]);
@@ -168,6 +190,70 @@ async function detectPriceFromBitmap(bitmap: ImageBitmap): Promise<number | null
   return null;
 }
 
+async function detectPriceWithTesseractDetailed(bitmap: ImageBitmap): Promise<{ price: number | null; rawText: string }> {
+  if (typeof window === "undefined") return { price: null, rawText: "" };
+
+  const canvas = document.createElement("canvas");
+  const maxSide = 1800;
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const w = Math.max(1, Math.floor(bitmap.width * scale));
+  const h = Math.max(1, Math.floor(bitmap.height * scale));
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return { price: null, rawText: "" };
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(bitmap, 0, 0, w, h);
+
+  try {
+    const { createWorker } = await import("tesseract.js");
+    const worker = await createWorker("kor+eng", undefined, {
+      logger: () => {},
+    });
+    try {
+      const {
+        data: { text },
+      } = await worker.recognize(canvas);
+      const trimmed = String(text || "").trim();
+      return { price: parseSigAmountFromText(trimmed), rawText: trimmed };
+    } finally {
+      await worker.terminate();
+    }
+  } catch (e) {
+    console.warn("[sig ocr] tesseract failed", e);
+    return { price: null, rawText: "" };
+  }
+}
+
+async function detectPriceFromBitmapDetailed(bitmap: ImageBitmap): Promise<{ price: number | null; previewText?: string }> {
+  if (bitmap.width < 1 || bitmap.height < 1) return { price: null };
+
+  const TD = (window as unknown as { TextDetector?: new (features: string[]) => { detect: (input: ImageBitmap | HTMLCanvasElement) => Promise<Array<{ rawValue?: string }>> } }).TextDetector;
+
+  if (TD) {
+    const native = await detectPriceFromBitmapNative(bitmap);
+    if (native != null) return { price: native };
+  }
+
+  const tess = await detectPriceWithTesseractDetailed(bitmap);
+  if (tess.price != null) return { price: tess.price };
+
+  let previewText = tess.rawText ? tess.rawText.replace(/\s+/g, " ").slice(0, 120) : undefined;
+  if (!previewText && TD) {
+    const detector = new TD([]);
+    const blocks = await detector.detect(bitmap);
+    previewText = blocks.map((b) => String((b as { rawValue?: string }).rawValue || "")).join(" ").slice(0, 120) || undefined;
+  }
+
+  return { price: null, previewText };
+}
+
+async function detectPriceFromBitmap(bitmap: ImageBitmap): Promise<number | null> {
+  const d = await detectPriceFromBitmapDetailed(bitmap);
+  return d.price;
+}
+
 export async function detectSigPriceFromImageUrl(imageUrl: string): Promise<number | null> {
   const meta = await detectSigPriceFromImageUrlDetailed(imageUrl);
   return meta.price;
@@ -180,7 +266,7 @@ export type SigOcrDetail = {
 };
 
 export async function detectSigPriceFromImageUrlDetailed(imageUrl: string): Promise<SigOcrDetail> {
-  if (!isSigOcrSupported()) {
+  if (typeof window === "undefined") {
     return { price: null, reason: "unsupported_browser" };
   }
   const bitmap = await loadImageBitmapForOcr(imageUrl);
@@ -188,15 +274,8 @@ export async function detectSigPriceFromImageUrlDetailed(imageUrl: string): Prom
     return { price: null, reason: "image_load_failed" };
   }
   try {
-    const price = await detectPriceFromBitmap(bitmap);
+    const { price, previewText } = await detectPriceFromBitmapDetailed(bitmap);
     if (price == null) {
-      const TD = (window as unknown as { TextDetector?: new (f: string[]) => { detect: (i: ImageBitmap) => Promise<Array<{ rawValue?: string }>> } }).TextDetector;
-      let previewText = "";
-      if (TD) {
-        const detector = new TD([]);
-        const blocks = await detector.detect(bitmap);
-        previewText = blocks.map((b) => String((b as { rawValue?: string }).rawValue || "")).join(" ").slice(0, 120);
-      }
       return { price: null, reason: "no_amount_found", previewText: previewText || undefined };
     }
     return { price };
@@ -210,7 +289,7 @@ export async function detectSigPriceFromImageUrlDetailed(imageUrl: string): Prom
 }
 
 export async function detectSigPriceFromImageFile(file: File): Promise<number | null> {
-  if (!isSigOcrSupported()) return null;
+  if (typeof window === "undefined") return null;
   try {
     const bitmap = await createImageBitmap(file);
     try {
