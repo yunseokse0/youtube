@@ -381,6 +381,11 @@ export default function AdminSigSalesPage() {
     },
     [setOpacity, persistRouletteState]
   );
+  const onForceOverlayReload = useCallback(() => {
+    const prev = Number(state?.rouletteState?.overlayReloadNonce || 0);
+    void persistRouletteState({ overlayReloadNonce: prev + 1 });
+    setToast("오버레이 새로고침 신호를 보냈습니다.");
+  }, [state?.rouletteState?.overlayReloadNonce, persistRouletteState]);
 
   const onConfirmSale = useCallback(async () => {
     if (!state || displaySelectedSigs.length === 0) return;
@@ -574,6 +579,14 @@ export default function AdminSigSalesPage() {
             <input type="checkbox" checked={autoResetAfterConfirm} onChange={(e) => setAutoResetAfterConfirm(e.target.checked)} />
             5초 후 자동 초기화
           </label>
+          <button
+            type="button"
+            onClick={onForceOverlayReload}
+            disabled={controlsDisabled}
+            className="ml-3 rounded bg-slate-700 px-3 py-1.5 text-xs font-bold hover:bg-slate-600 disabled:opacity-50"
+          >
+            오버레이 강제 새로고침
+          </button>
         </section>
 
         <section style={{ backgroundColor: "transparent" }} className="relative rounded-2xl border border-yellow-200/20 p-4">

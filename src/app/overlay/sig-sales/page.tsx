@@ -336,6 +336,7 @@ export default function SigSalesOverlayPage() {
       : null
   );
   const { machine, landed, resetToIdle } = useSigSalesState(userId, state);
+  const overlayReloadSeenRef = useRef<number | null>(null);
 
   const loadRemote = useCallback(async () => {
     if (rouletteDemo) return;
@@ -354,6 +355,18 @@ export default function SigSalesOverlayPage() {
     const id = window.setInterval(() => void loadRemote(), POLL_MS);
     return () => window.clearInterval(id);
   }, [rouletteDemo, loadRemote]);
+  useEffect(() => {
+    const nonce = Number(state?.rouletteState?.overlayReloadNonce || 0);
+    if (!Number.isFinite(nonce)) return;
+    if (overlayReloadSeenRef.current == null) {
+      overlayReloadSeenRef.current = nonce;
+      return;
+    }
+    if (nonce !== overlayReloadSeenRef.current) {
+      overlayReloadSeenRef.current = nonce;
+      window.location.reload();
+    }
+  }, [state?.rouletteState?.overlayReloadNonce]);
 
   useEffect(() => {
     return () => {
@@ -913,6 +926,27 @@ export default function SigSalesOverlayPage() {
     }
     return next;
   }, [state?.sigInventory]);
+  /**
+   * "판매 처리(확정)" 직후에는 재고 완판이 아니어도 결과 카드에 판매 상태(흰 배경/스탬프)를 보여야 한다.
+   * 기존은 `soldCount >= maxCount`만 반영되어, 확정 직후에는 판매 카드가 일반 상태처럼 보일 수 있었다.
+   */
+  const confirmedRoundSoldIdSet = useMemo(() => {
+    const next = new Set<string>();
+    if (machine.phase !== "CONFIRMED" && machine.phase !== "CONFIRM_PENDING") {
+      return next;
+    }
+    for (const s of machine.selectedSigs || []) {
+      const canon = canonicalSigIdFromWheelSliceId(s.id);
+      next.add(s.id);
+      next.add(canon);
+    }
+    return next;
+  }, [machine.phase, machine.selectedSigs]);
+  const resultSoldOverrideSet = useMemo(() => {
+    const next = new Set<string>(inventorySoldOutIdSet);
+    for (const id of confirmedRoundSoldIdSet) next.add(id);
+    return next;
+  }, [inventorySoldOutIdSet, confirmedRoundSoldIdSet]);
   const oneShotImageUrl = useMemo(() => {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     const fromOneShot = (oneShotItem?.imageUrl || "").trim();
@@ -1437,7 +1471,7 @@ export default function SigSalesOverlayPage() {
                         visible
                         selectedSigs={displaySelectedSigsForUi}
                         soldOutStampUrl={soldOutStampUrl}
-                        soldOverrideSet={inventorySoldOutIdSet}
+                        soldOverrideSet={resultSoldOverrideSet}
                         oneShot={oneShotForResultOverlay}
                         signImageUrl={oneShotImageUrl || currentSignImageUrl}
                         showOneShotReveal={Boolean(oneShotForResultOverlay)}

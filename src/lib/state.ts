@@ -174,6 +174,9 @@ export function normalizeRouletteState(raw: unknown): RouletteState {
     : 78;
   const menuFillFromAllActive = typeof o.menuFillFromAllActive === "boolean" ? o.menuFillFromAllActive : true;
   const menuFillFromDemo = typeof o.menuFillFromDemo === "boolean" ? o.menuFillFromDemo : false;
+  const overlayReloadNonce = Number.isFinite(Number(o.overlayReloadNonce))
+    ? Math.max(0, Math.floor(Number(o.overlayReloadNonce)))
+    : 0;
   const oneShotRaw = o.oneShotResult;
   const oneShotResult =
     oneShotRaw && typeof oneShotRaw === "object"
@@ -223,6 +226,7 @@ export function normalizeRouletteState(raw: unknown): RouletteState {
     sigResultScalePct,
     menuFillFromAllActive,
     menuFillFromDemo,
+    overlayReloadNonce,
     sessionId: typeof o.sessionId === "string" ? o.sessionId : undefined,
     lastFinishedAt: Number.isFinite(Number(o.lastFinishedAt)) ? Math.max(0, Math.floor(Number(o.lastFinishedAt))) : undefined,
     historyLogs,
