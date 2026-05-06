@@ -28,6 +28,10 @@ const mediaFrameStyle: CSSProperties = {
   width: SIG_ROLLING_MEDIA_WIDTH_PX,
   height: SIG_ROLLING_MEDIA_HEIGHT_PX,
 };
+const SHELL_PAD_PX = 6;
+const SHELL_OUTER_WIDTH_PX = SIG_ROLLING_MEDIA_WIDTH_PX + SHELL_PAD_PX * 2;
+const SHELL_OUTER_HEIGHT_PX = SIG_ROLLING_MEDIA_HEIGHT_PX + SHELL_PAD_PX * 2;
+const TWO_CARD_BASE_WIDTH_PX = SHELL_OUTER_WIDTH_PX * 2;
 
 /** 폴링으로 `state` 객체만 바뀌고 내용은 같을 때도 참조가 매번 바뀌지 않도록 문자열 키로 구분 (타이머 effect 무한 리셋 방지) */
 function sigRollingScheduleKey(state: AppState | null): string {
@@ -132,18 +136,24 @@ function RollingCardColumn({
   const shellBase = "overflow-hidden shadow-lg border border-white/20 bg-white/35";
   const shellClass =
     pairSide === "left"
-      ? `${shellBase} rounded-l-3xl rounded-r-none pt-1.5 pb-1.5 pl-1.5 pr-0`
+      ? `${shellBase} rounded-l-3xl rounded-r-none p-1.5`
       : pairSide === "right"
-        ? `${shellBase} rounded-r-3xl rounded-l-none pt-1.5 pb-1.5 pr-1.5 pl-0`
+        ? `${shellBase} rounded-r-3xl rounded-l-none p-1.5`
         : `${shellBase} rounded-3xl p-1.5`;
 
   if (!useCrossfade) {
     return (
-      <div className="shrink-0">
-        <div className={shellClass}>
+      <div className="shrink-0" style={{ width: SHELL_OUTER_WIDTH_PX, height: SHELL_OUTER_HEIGHT_PX }}>
+        <div className={shellClass} style={{ width: SHELL_OUTER_WIDTH_PX, height: SHELL_OUTER_HEIGHT_PX }}>
           <div
             className="flex items-center justify-center overflow-hidden rounded-2xl bg-white/15"
-            style={mediaFrameStyle}
+            style={{
+              ...mediaFrameStyle,
+              minWidth: SIG_ROLLING_MEDIA_WIDTH_PX,
+              maxWidth: SIG_ROLLING_MEDIA_WIDTH_PX,
+              minHeight: SIG_ROLLING_MEDIA_HEIGHT_PX,
+              maxHeight: SIG_ROLLING_MEDIA_HEIGHT_PX,
+            }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -162,12 +172,16 @@ function RollingCardColumn({
 
   const under = nextItem || current;
   return (
-    <div className="shrink-0">
-      <div className={shellClass}>
+    <div className="shrink-0" style={{ width: SHELL_OUTER_WIDTH_PX, height: SHELL_OUTER_HEIGHT_PX }}>
+      <div className={shellClass} style={{ width: SHELL_OUTER_WIDTH_PX, height: SHELL_OUTER_HEIGHT_PX }}>
         <div
           className="relative grid place-items-center overflow-hidden rounded-2xl bg-white/15 [&>img]:col-start-1 [&>img]:row-start-1"
           style={{
             ...mediaFrameStyle,
+            minWidth: SIG_ROLLING_MEDIA_WIDTH_PX,
+            maxWidth: SIG_ROLLING_MEDIA_WIDTH_PX,
+            minHeight: SIG_ROLLING_MEDIA_HEIGHT_PX,
+            maxHeight: SIG_ROLLING_MEDIA_HEIGHT_PX,
             gridTemplateColumns: "1fr",
             gridTemplateRows: "1fr",
           }}
@@ -220,6 +234,7 @@ export default function SigRollingOverlayPage() {
   const [pairStart, setPairStart] = useState(0);
   const [fading, setFading] = useState(false);
   const [replayKey, setReplayKey] = useState(0);
+  const [viewportW, setViewportW] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 0));
 
   const n = items.length;
   const leftCurrent = n ? items[pairStart % n] : null;
@@ -232,6 +247,18 @@ export default function SigRollingOverlayPage() {
   rollingRef.current = rollingUnified;
 
   const useCrossfade = n >= 3;
+  const twoCardScale = useMemo(() => {
+    if (viewportW <= 0) return 1;
+    const safeW = Math.max(260, viewportW - 8);
+    return Math.max(0.6, Math.min(1, safeW / TWO_CARD_BASE_WIDTH_PX));
+  }, [viewportW]);
+
+  useEffect(() => {
+    const update = () => setViewportW(window.innerWidth || 0);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
 
   useEffect(() => {
     setPairStart(0);
@@ -301,7 +328,7 @@ export default function SigRollingOverlayPage() {
 
   if (n === 0) {
     return (
-      <main className="overlay-root min-h-screen w-full bg-transparent p-4">
+      <main className="overlay-root inline-block w-fit bg-transparent p-1">
         <p className="max-w-[min(92vw,26rem)] text-xs leading-snug text-white/45">
           시그 롤링 · 등록된 이미지가 없거나 서버에 아직 반영되지 않았습니다. 관리자에서 업로드 후 저장(로그인·네트워크)이 되어야 OBS 등 다른 브라우저에서도 보입니다. URL에{" "}
           <code className="rounded bg-white/10 px-1">?u=본인아이디</code> 가 포함되는지 확인하세요.
@@ -313,26 +340,34 @@ export default function SigRollingOverlayPage() {
   const transitionActive = `opacity ${fadeMs}ms ease-in-out`;
 
   return (
-    <main className="overlay-root min-h-screen w-full bg-transparent p-4 text-pastel-ink">
-      <div className="flex flex-row flex-wrap items-start gap-0">
-        <RollingCardColumn
-          current={leftCurrent}
-          nextItem={useCrossfade ? leftNext : null}
-          fading={fading}
-          transitionActive={transitionActive}
-          replayKey={replayKey}
-          useCrossfade={useCrossfade}
-          pairSide="left"
-        />
-        <RollingCardColumn
-          current={rightCurrent}
-          nextItem={useCrossfade ? rightNext : null}
-          fading={fading}
-          transitionActive={transitionActive}
-          replayKey={replayKey}
-          useCrossfade={useCrossfade}
-          pairSide="right"
-        />
+    <main className="overlay-root inline-block w-fit bg-transparent p-1 text-pastel-ink">
+      <div
+        style={{
+          width: TWO_CARD_BASE_WIDTH_PX,
+          transform: `scale(${twoCardScale})`,
+          transformOrigin: "top left",
+        }}
+      >
+        <div className="flex flex-row flex-nowrap items-start gap-0">
+          <RollingCardColumn
+            current={leftCurrent}
+            nextItem={useCrossfade ? leftNext : null}
+            fading={fading}
+            transitionActive={transitionActive}
+            replayKey={replayKey}
+            useCrossfade={useCrossfade}
+            pairSide="left"
+          />
+          <RollingCardColumn
+            current={rightCurrent}
+            nextItem={useCrossfade ? rightNext : null}
+            fading={fading}
+            transitionActive={transitionActive}
+            replayKey={replayKey}
+            useCrossfade={useCrossfade}
+            pairSide="right"
+          />
+        </div>
       </div>
     </main>
   );
