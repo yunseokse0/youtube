@@ -1475,8 +1475,8 @@ function OverlayInner() {
   const totalCh = Math.max(6, Math.min(12, defTotalCh));
   /** 순위 열: 헤더「순위」·「#12」 등이 잘리지 않도록 `ch` 하한 확보(URL `rankCh`) */
   const rankColCh = Math.max(5, Math.min(10, parseInt(sp.get("rankCh") || "5", 10)));
-  /** 기여도 열: 헤더「기여도」(한글 3자+굵기+스트로크) — ch가 작으면 압축 시 마지막 열부터 잘림 */
-  const contributionCh = Math.max(13, Math.min(16, defContributionCh));
+  /** 기여도 열: 고정 폭은 너무 키우지 않고, 대신 전체 자동 축소로 오버레이 범위 내에 맞춘다 */
+  const contributionCh = Math.max(11, Math.min(16, defContributionCh));
   const showSideDonors = false;
   const donorsSide = (sp.get("donorsSide") || "right").toLowerCase();
   const donorsWidth = Math.max(120, Math.min(600, parseInt(sp.get("donorsWidth") || "220", 10)));
@@ -2027,24 +2027,42 @@ function OverlayInner() {
       /** `maxWidth:100%`로 테이블이 눌리면 scrollWidth≈clientWidth가 되어 축소 탐색이 무력화됨 → 측정 중만 해제 */
       const prevMax = table.style.maxWidth;
       table.style.maxWidth = "none";
-      let lo = 0.22;
+      let lo = 0.08;
       let hi = 1;
       let best = lo;
-      const minPx = 8;
+      const minPx = 4;
       /** 헤더 text-stroke·그림자가 scrollWidth 밖으로 살짝 나가는 여유 */
-      const widthMarginPx = 12;
+      const widthMarginPx = 20;
+      const maxAvail = Math.max(4, avail - widthMarginPx);
+      const measureWidth = () => {
+        const rectW = table.getBoundingClientRect().width;
+        return Math.max(table.scrollWidth, rectW);
+      };
       try {
         for (let i = 0; i < 22; i++) {
           const mid = (lo + hi) / 2;
           const fs = Math.max(minPx, Math.round(mSize * mid));
           table.style.fontSize = `${fs}px`;
           void table.offsetWidth;
-          if (table.scrollWidth <= avail - widthMarginPx) {
+          if (measureWidth() <= maxAvail) {
             best = mid;
             lo = mid;
           } else {
             hi = mid;
           }
+        }
+        /**
+         * 이진 탐색 하한에서도 간헐적으로 1~2px 넘는 경우(브라우저 반올림/스트로크)에 대비한 최종 안전 보정.
+         * 범위 내 완전 포함을 우선한다.
+         */
+        let guard = 0;
+        while (guard < 8) {
+          const fs = Math.max(minPx, Math.floor(mSize * best));
+          table.style.fontSize = `${fs}px`;
+          void table.offsetWidth;
+          if (measureWidth() <= maxAvail) break;
+          best = Math.max(0.04, best - 0.02);
+          guard += 1;
         }
       } finally {
         table.style.maxWidth = prevMax;
@@ -2451,7 +2469,7 @@ function OverlayInner() {
               )}
               <div
                 ref={memberTableClampRef}
-                className="relative min-w-0 flex-1 overflow-hidden pr-2"
+                className="relative min-w-0 flex-1 overflow-hidden pr-4"
                 style={{ borderRadius: 0 }}
               >
                 {showTableBgGif ? (
