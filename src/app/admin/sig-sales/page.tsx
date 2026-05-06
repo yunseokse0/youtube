@@ -524,8 +524,10 @@ export default function AdminSigSalesPage() {
       if (detail.price == null) {
         if (detail.reason === "unsupported_browser") {
           setToast(`OCR 실행 불가: 브라우저에서만 사용할 수 있습니다. (${item.name})`);
+        } else if (detail.reason === "image_not_found") {
+          setToast(`OCR 실패: 이미지 없음(404). 다시 업로드하거나 유효한 이미지 URL로 변경하세요. (${item.name})`);
         } else if (detail.reason === "image_load_failed") {
-          setToast(`OCR 실패: 이미지를 불러오지 못했습니다(404·CORS). (${item.name})`);
+          setToast(`OCR 실패: 이미지를 불러오지 못했습니다(CORS·네트워크). (${item.name})`);
         } else {
           setToast(
             `OCR 실패: 금액을 찾지 못했습니다. (${item.name})${detail.previewText ? ` 감지: ${detail.previewText}` : ""}`

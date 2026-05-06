@@ -2065,8 +2065,12 @@ export default function AdminPage() {
       if (detail.price == null) {
         if (detail.reason === "unsupported_browser") {
           pushOcrMsg(`OCR 실행 불가: 브라우저 클라이언트에서만 사용할 수 있습니다. (${label})`);
+        } else if (detail.reason === "image_not_found") {
+          pushOcrMsg(
+            `OCR 실패: 이미지가 서버에 없습니다(404). /images/sigs/ 등 로컬 경로는 배포 서버에 파일이 없으면 깨집니다. 이미지를 다시 업로드하거나 Supabase URL로 바꿔 주세요. (${label})`
+          );
         } else if (detail.reason === "image_load_failed") {
-          pushOcrMsg(`OCR 실패: 이미지를 불러오지 못했습니다(URL·404·CORS). (${label})`);
+          pushOcrMsg(`OCR 실패: 이미지를 불러오지 못했습니다(URL·CORS·네트워크). (${label})`);
         } else {
           pushOcrMsg(
             `OCR 인식 실패: 금액을 찾지 못했습니다 (${label})${detail.previewText ? ` · 감지 텍스트: ${detail.previewText}` : ""}`

@@ -13,9 +13,18 @@ export function isNativeTextDetectorAvailable(): boolean {
   return typeof window !== "undefined" && typeof (window as unknown as { TextDetector?: unknown }).TextDetector === "function";
 }
 
+/** OCR 잡음 제거: 전각 숫자·통화 기호 정규화 */
+function normalizeOcrTextForAmountParse(raw: string): string {
+  let s = String(raw || "");
+  s = s.replace(/[\uFF10-\uFF19]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xff10 + 0x30));
+  s = s.replace(/\uFF0C/g, ","); // 전각 쉼표 → 반각
+  s = s.replace(/[₩￦]/g, "원");
+  return s.replace(/\s+/g, " ").trim();
+}
+
 /** OCR로 읽은 문자열에서 한국어 금액 후보 파싱 */
 export function parseSigAmountFromText(rawText: string): number | null {
-  const text = String(rawText || "").replace(/\s+/g, " ");
+  const text = normalizeOcrTextForAmountParse(rawText);
   if (!text.trim()) return null;
   const candidates: number[] = [];
 
@@ -36,6 +45,13 @@ export function parseSigAmountFromText(rawText: string): number | null {
 
   const wonCommaRegex = /(\d{1,3}(?:,\d{3})+|\d{4,})\s*원/g;
   for (const m of text.matchAll(wonCommaRegex)) {
+    const digits = String(m[1] || "").replace(/[^\d]/g, "");
+    const amount = Number(digits);
+    if (Number.isFinite(amount) && amount >= 1000 && amount <= 100000000) candidates.push(amount);
+  }
+
+  const wonTightRegex = /(\d{1,3}(?:,\d{3})+|\d{4,})원/g;
+  for (const m of text.matchAll(wonTightRegex)) {
     const digits = String(m[1] || "").replace(/[^\d]/g, "");
     const amount = Number(digits);
     if (Number.isFinite(amount) && amount >= 1000 && amount <= 100000000) candidates.push(amount);
@@ -64,6 +80,7 @@ export function parseSigAmountFromText(rawText: string): number | null {
 function resolveAbsoluteImageUrl(imageUrl: string): string | null {
   const s = String(imageUrl || "").trim();
   if (!s) return null;
+  if (s.startsWith("data:") || s.startsWith("blob:")) return s;
   try {
     if (s.startsWith("http://") || s.startsWith("https://")) return s;
     if (typeof window !== "undefined") return new URL(s, window.location.origin).href;
@@ -72,6 +89,12 @@ function resolveAbsoluteImageUrl(imageUrl: string): string | null {
     return null;
   }
 }
+
+export type SigImageLoadInfo = {
+  bitmap: ImageBitmap | null;
+  /** fetch 실패 시 HTTP 상태(예: 404). 알 수 없으면 생략 */
+  failedHttpStatus?: number;
+};
 
 async function loadImageBitmapViaApiProxy(absoluteUrl: string): Promise<ImageBitmap | null> {
   if (typeof window === "undefined") return null;
@@ -91,13 +114,26 @@ async function loadImageBitmapViaApiProxy(absoluteUrl: string): Promise<ImageBit
   }
 }
 
-async function loadImageBitmapForOcr(imageUrl: string): Promise<ImageBitmap | null> {
-  if (typeof window === "undefined") return null;
+async function loadImageForOcr(imageUrl: string): Promise<SigImageLoadInfo> {
+  if (typeof window === "undefined") return { bitmap: null };
   const abs = resolveAbsoluteImageUrl(imageUrl);
-  if (!abs) return null;
+  if (!abs) return { bitmap: null };
+
   const origin = window.location.origin;
   const sameOrigin = abs.startsWith(origin);
   const isHttp = /^https?:\/\//i.test(abs);
+
+  if (abs.startsWith("blob:") || abs.startsWith("data:")) {
+    try {
+      const res = await fetch(abs);
+      if (!res.ok) return { bitmap: null, failedHttpStatus: res.status };
+      const blob = await res.blob();
+      const bitmap = await createImageBitmap(blob);
+      return { bitmap };
+    } catch {
+      return { bitmap: null };
+    }
+  }
 
   const loadImg = (crossOrigin: "" | "anonymous") =>
     new Promise<HTMLImageElement>((resolve, reject) => {
@@ -109,46 +145,53 @@ async function loadImageBitmapForOcr(imageUrl: string): Promise<ImageBitmap | nu
       img.src = abs;
     });
 
-  const tryFetchBlob = async (): Promise<ImageBitmap | null> => {
+  const fetchAsBitmap = async (url: string, init: RequestInit): Promise<SigImageLoadInfo> => {
     try {
-      const res = await fetch(abs, {
-        mode: sameOrigin ? "same-origin" : "cors",
-        credentials: sameOrigin ? "same-origin" : "omit",
-      });
-      if (!res.ok) return null;
+      const res = await fetch(url, init);
+      if (!res.ok) return { bitmap: null, failedHttpStatus: res.status };
       const blob = await res.blob();
-      return await createImageBitmap(blob);
+      const bitmap = await createImageBitmap(blob);
+      return { bitmap };
     } catch {
-      return null;
+      return { bitmap: null };
     }
   };
 
+  // 동일 출처: fetch로 먼저 시도 → 404 등 원인 파악 가능(배포 서버에 /public 파일 없음 등)
   if (sameOrigin) {
+    const direct = await fetchAsBitmap(abs, { mode: "same-origin", credentials: "same-origin" });
+    if (direct.bitmap) return direct;
+    const failSt = direct.failedHttpStatus;
     try {
       const img = await loadImg("");
-      return await createImageBitmap(img);
+      const bitmap = await createImageBitmap(img);
+      return { bitmap };
     } catch {
-      /* continue */
+      return { bitmap: null, failedHttpStatus: failSt };
     }
-    const fb = await tryFetchBlob();
-    if (fb) return fb;
-    return null;
   }
 
-  // 크로스 오리진: 프록시를 먼저 시도(캔버스 오염·CORS 우회)
+  // 크로스 오리진 HTTP(S): 프록시 우선
   if (isHttp) {
     const proxied = await loadImageBitmapViaApiProxy(abs);
-    if (proxied) return proxied;
+    if (proxied) return { bitmap: proxied };
+    const corsTry = await fetchAsBitmap(abs, { mode: "cors", credentials: "omit" });
+    if (corsTry.bitmap) return corsTry;
+    try {
+      const img = await loadImg("anonymous");
+      const bitmap = await createImageBitmap(img);
+      return { bitmap };
+    } catch {
+      return { bitmap: null, failedHttpStatus: corsTry.failedHttpStatus };
+    }
   }
-
-  const corsBitmap = await tryFetchBlob();
-  if (corsBitmap) return corsBitmap;
 
   try {
     const img = await loadImg("anonymous");
-    return await createImageBitmap(img);
+    const bitmap = await createImageBitmap(img);
+    return { bitmap };
   } catch {
-    return null;
+    return { bitmap: null };
   }
 }
 
@@ -207,11 +250,14 @@ async function detectPriceWithTesseractDetailed(bitmap: ImageBitmap): Promise<{ 
   ctx.drawImage(bitmap, 0, 0, w, h);
 
   try {
-    const { createWorker } = await import("tesseract.js");
+    const { createWorker, PSM } = await import("tesseract.js");
     const worker = await createWorker("kor+eng", undefined, {
       logger: () => {},
     });
     try {
+      await worker.setParameters({
+        tessedit_pageseg_mode: PSM.AUTO,
+      });
       const {
         data: { text },
       } = await worker.recognize(canvas);
@@ -261,17 +307,22 @@ export async function detectSigPriceFromImageUrl(imageUrl: string): Promise<numb
 
 export type SigOcrDetail = {
   price: number | null;
-  reason?: "unsupported_browser" | "image_load_failed" | "no_amount_found";
+  reason?: "unsupported_browser" | "image_load_failed" | "image_not_found" | "no_amount_found";
   previewText?: string;
+  /** 이미지 로드 실패 시 알려진 HTTP 상태(주로 404) */
+  imageHttpStatus?: number;
 };
 
 export async function detectSigPriceFromImageUrlDetailed(imageUrl: string): Promise<SigOcrDetail> {
   if (typeof window === "undefined") {
     return { price: null, reason: "unsupported_browser" };
   }
-  const bitmap = await loadImageBitmapForOcr(imageUrl);
+  const { bitmap, failedHttpStatus } = await loadImageForOcr(imageUrl);
   if (!bitmap) {
-    return { price: null, reason: "image_load_failed" };
+    if (failedHttpStatus === 404) {
+      return { price: null, reason: "image_not_found", imageHttpStatus: 404 };
+    }
+    return { price: null, reason: "image_load_failed", imageHttpStatus: failedHttpStatus };
   }
   try {
     const { price, previewText } = await detectPriceFromBitmapDetailed(bitmap);
