@@ -50,6 +50,11 @@ import { getEffectiveRemainingTime, pauseTimer, resumeTimer } from "@/lib/timer-
 import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
 import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
 import { DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
+import {
+  detectSigPriceFromImageFile,
+  detectSigPriceFromImageUrlDetailed,
+  isSigOcrSupported,
+} from "@/lib/sig-image-ocr";
 import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
 import { getVisibleAdminNavItems, isAdminNavSectionVisible, type AdminNavKey } from "@/app/admin/admin-nav-config";
 
@@ -187,6 +192,8 @@ export default function AdminPage() {
   const [sigExcelResult, setSigExcelResult] = useState("");
   /** 시그 롤링 업로드 결과 메시지 */
   const [sigRollingUploadMessage, setSigRollingUploadMessage] = useState("");
+  /** 시그 판매 목록: 행 접기(기본 접힘 — 긴 목록 스크롤 완화) */
+  const [sigInventoryRowOpen, setSigInventoryRowOpen] = useState<Record<string, boolean>>({});
   const rollingItemsForAdmin = useMemo(() => getUnifiedSigRollingItems(state), [state]);
   const legacyOnlyRollingCount = useMemo(() => {
     const invIds = new Set((state.sigInventory || []).map((x) => x.id));
@@ -2041,114 +2048,44 @@ export default function AdminPage() {
     return j.url;
   };
 
-  const parseDetectedSigAmount = useCallback((rawText: string): number | null => {
-    const text = String(rawText || "");
-    if (!text.trim()) return null;
-    const candidates: number[] = [];
-    const manRegex = /(\d{1,3})\s*만(?:\s*([0-9]{1,4}))?/g;
-    for (const m of text.matchAll(manRegex)) {
-      const man = Number(m[1] || 0);
-      const tail = Number(m[2] || 0);
-      const amount = man * 10000 + tail;
-      if (Number.isFinite(amount) && amount >= 1000 && amount <= 100000000) candidates.push(amount);
-    }
-    const numberRegex = /\d[\d,\.\s]{2,}/g;
-    for (const m of text.matchAll(numberRegex)) {
-      const digits = String(m[0] || "").replace(/[^\d]/g, "");
-      if (!digits) continue;
-      const amount = Number(digits);
-      if (Number.isFinite(amount) && amount >= 1000 && amount <= 100000000) {
-        candidates.push(amount);
-      }
-    }
-    if (!candidates.length) return null;
-    return Math.max(...candidates);
-  }, []);
-
-  const detectSigPriceFromImage = useCallback(async (file: File): Promise<number | null> => {
-    try {
-      if (typeof window === "undefined") return null;
-      const TextDetectorCtor = (window as any).TextDetector as
-        | { new (): { detect: (input: ImageBitmap | HTMLCanvasElement) => Promise<Array<{ rawValue?: string }>> } }
-        | undefined;
-      if (!TextDetectorCtor) return null;
-      const bitmap = await createImageBitmap(file);
-      const maxSide = 1600;
-      const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
-      const w = Math.max(1, Math.floor(bitmap.width * scale));
-      const h = Math.max(1, Math.floor(bitmap.height * scale));
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return null;
-      ctx.drawImage(bitmap, 0, 0, w, h);
-      bitmap.close();
-      const detector = new (window as any).TextDetector([]);
-      const blocks = await detector.detect(canvas);
-      const merged = blocks.map((b: any) => String((b as any).rawValue || "")).join("\n");
-      return parseDetectedSigAmount(merged);
-    } catch {
-      return null;
-    }
-  }, [parseDetectedSigAmount]);
-
-  const detectSigPriceFromImageUrl = useCallback(async (imageUrl: string): Promise<number | null> => {
-    try {
-      if (typeof window === "undefined") return null;
-      const TextDetectorCtor = (window as any).TextDetector as
-        | { new (): { detect: (input: ImageBitmap | HTMLCanvasElement) => Promise<Array<{ rawValue?: string }>> } }
-        | undefined;
-      if (!TextDetectorCtor) return null;
-      const img = new window.Image();
-      img.crossOrigin = "anonymous";
-      img.referrerPolicy = "no-referrer";
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error("image_load_failed"));
-        img.src = imageUrl;
-      });
-      const maxSide = 1600;
-      const scale = Math.min(1, maxSide / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
-      const w = Math.max(1, Math.floor((img.naturalWidth || 1) * scale));
-      const h = Math.max(1, Math.floor((img.naturalHeight || 1) * scale));
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return null;
-      ctx.drawImage(img, 0, 0, w, h);
-      const detector = new (window as any).TextDetector([]);
-      const blocks = await detector.detect(canvas);
-      const merged = blocks.map((b: any) => String((b as any).rawValue || "")).join("\n");
-      return parseDetectedSigAmount(merged);
-    } catch {
-      return null;
-    }
-  }, [parseDetectedSigAmount]);
-
   const runOcrForSigItem = useCallback(async (id: string, imageUrl: string, name?: string) => {
     const src = String(imageUrl || "").trim();
     if (!src) {
       setSigExcelResult(`OCR 실패: 이미지 URL이 비어 있습니다 (${name || id})`);
       return;
     }
+    if (!isSigOcrSupported()) {
+      setSigExcelResult(`OCR 미지원: Chromium 계열 브라우저(Chrome/Edge)에서 시도해 주세요. (${name || id})`);
+      return;
+    }
     setOcrBusyIds((prev) => ({ ...prev, [id]: true }));
     try {
-      const price = await detectSigPriceFromImageUrl(src);
-      if (price == null) {
-        setSigExcelResult(`OCR 인식 실패: 금액을 찾지 못했습니다 (${name || id})`);
+      const detail = await detectSigPriceFromImageUrlDetailed(src);
+      if (detail.price == null) {
+        if (detail.reason === "unsupported_browser") {
+          setSigExcelResult(`OCR 미지원: Chromium 계열 브라우저에서 시도해 주세요. (${name || id})`);
+        } else if (detail.reason === "image_load_failed") {
+          setSigExcelResult(`OCR 실패: 이미지를 불러오지 못했습니다(URL·CORS·404 확인). (${name || id})`);
+        } else {
+          setSigExcelResult(
+            `OCR 인식 실패: 금액을 찾지 못했습니다 (${name || id})${detail.previewText ? ` · 감지 텍스트: ${detail.previewText}` : ""}`
+          );
+        }
         return;
       }
-      updateSigItem(id, { price });
-      setSigExcelResult(`OCR 적용 완료: ${name || id} → ${price.toLocaleString("ko-KR")}원`);
+      updateSigItem(id, { price: detail.price });
+      setSigExcelResult(`OCR 적용 완료: ${name || id} → ${detail.price.toLocaleString("ko-KR")}원`);
     } finally {
       setOcrBusyIds((prev) => ({ ...prev, [id]: false }));
     }
-  }, [detectSigPriceFromImageUrl]);
+  }, [updateSigItem]);
 
   const runOcrForAllSigItems = useCallback(async () => {
     if (ocrAllBusy) return;
+    if (!isSigOcrSupported()) {
+      setSigExcelResult("OCR 미지원: Chromium 계열 브라우저(Chrome/Edge)에서 시도해 주세요.");
+      return;
+    }
     const items = (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID && String(x.imageUrl || "").trim());
     if (!items.length) {
       setSigExcelResult("OCR 대상 시그가 없습니다.");
@@ -2160,12 +2097,12 @@ export default function AdminPage() {
     for (const item of items) {
       setOcrBusyIds((prev) => ({ ...prev, [item.id]: true }));
       try {
-        const price = await detectSigPriceFromImageUrl(String(item.imageUrl || "").trim());
-        if (price == null) {
+        const detail = await detectSigPriceFromImageUrlDetailed(String(item.imageUrl || "").trim());
+        if (detail.price == null) {
           fail += 1;
           continue;
         }
-        updateSigItem(item.id, { price });
+        updateSigItem(item.id, { price: detail.price });
         ok += 1;
       } finally {
         setOcrBusyIds((prev) => ({ ...prev, [item.id]: false }));
@@ -2173,7 +2110,7 @@ export default function AdminPage() {
     }
     setOcrAllBusy(false);
     setSigExcelResult(`OCR 일괄 완료: 성공 ${ok}건 / 실패 ${fail}건`);
-  }, [ocrAllBusy, state.sigInventory, detectSigPriceFromImageUrl]);
+  }, [ocrAllBusy, state.sigInventory, updateSigItem]);
 
   const uploadSigImage = (id: string, file: File | null) => {
     if (!file) return;
@@ -2182,7 +2119,7 @@ export default function AdminPage() {
       const url = await uploadSigImageFile(file);
       if (!url) return;
       updateSigItem(id, { imageUrl: url });
-      const ocrPrice = await detectSigPriceFromImage(file);
+      const ocrPrice = await detectSigPriceFromImageFile(file);
       if (ocrPrice != null) {
         updateSigItem(id, { price: ocrPrice });
       }
@@ -2195,7 +2132,7 @@ export default function AdminPage() {
     setNewSigImageUploading(true);
     setNewSigPreviewUrl(URL.createObjectURL(file));
     void (async () => {
-      const ocrPrice = await detectSigPriceFromImage(file);
+      const ocrPrice = await detectSigPriceFromImageFile(file);
       const url = await uploadSigImageFile(file);
       if (url) {
         setNewSigImageUrl(url);
@@ -2246,7 +2183,7 @@ export default function AdminPage() {
     const appended: { url: string; label: string; price: number }[] = [];
     const failures: string[] = [];
     for (const f of list) {
-      const ocrPrice = await detectSigPriceFromImage(f);
+      const ocrPrice = await detectSigPriceFromImageFile(f);
       const url = await uploadSigImageFile(f);
       if (!url) {
         failures.push(f.name);
@@ -5544,98 +5481,144 @@ export default function AdminPage() {
                       </div>
                     ) : null}
                   </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-white/10 bg-black/25 px-2 py-1.5 text-xs">
+                    <span className="text-neutral-400">시그 행 접기: 헤더만 보고 필요 시 펼칩니다.</span>
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        className="rounded bg-neutral-700 px-2 py-1 hover:bg-neutral-600"
+                        onClick={() => {
+                          const ids = (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID).map((x) => x.id);
+                          setSigInventoryRowOpen(Object.fromEntries(ids.map((id) => [id, true])));
+                        }}
+                      >
+                        모두 펼치기
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded bg-neutral-700 px-2 py-1 hover:bg-neutral-600"
+                        onClick={() => {
+                          const ids = (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID).map((x) => x.id);
+                          setSigInventoryRowOpen(Object.fromEntries(ids.map((id) => [id, false])));
+                        }}
+                      >
+                        모두 접기
+                      </button>
+                    </div>
+                  </div>
                   {(state.sigInventory || []).map((item) => {
                     const isOneShot = item.id === ONE_SHOT_SIG_ID;
                     const hasLegacyLocalUrl = isLegacyLocalSigImageUrl(item.imageUrl);
                     const hasBrokenUrl = isBrokenSigImageUrl(item.imageUrl);
+                    const rowOpen = isOneShot ? true : Boolean(sigInventoryRowOpen[item.id]);
                     return (
-                    <div key={item.id} className="rounded border border-white/10 bg-[#1f1f1f] px-3 py-2">
-                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                        <div className="flex flex-wrap items-center gap-3 text-sm">
-                          <label className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={Boolean(item.isRolling)}
-                              onChange={(e) => toggleSigRollingItem(item.id, e.target.checked)}
-                            />
-                            <span>보드 노출</span>
-                          </label>
-                          <label className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={Boolean(item.isActive)}
-                              onChange={(e) => toggleSigActiveItem(item.id, e.target.checked)}
-                            />
-                            <span>판매 활성</span>
-                          </label>
-                          <span className="font-semibold">{item.name}</span>
-                          {!isOneShot ? (
-                            <>
+                    <div key={item.id} className="rounded border border-white/10 bg-[#1f1f1f] overflow-hidden">
+                      <div className="flex flex-wrap items-center gap-2 border-b border-white/5 bg-black/15 px-2 py-2">
+                        {!isOneShot ? (
+                          <button
+                            type="button"
+                            className="shrink-0 rounded px-1.5 py-0.5 text-neutral-400 hover:bg-white/10"
+                            aria-expanded={rowOpen}
+                            aria-label={rowOpen ? "행 접기" : "행 펼치기"}
+                            onClick={() =>
+                              setSigInventoryRowOpen((p) => ({
+                                ...p,
+                                [item.id]: !Boolean(p[item.id]),
+                              }))
+                            }
+                          >
+                            {rowOpen ? "▼" : "▶"}
+                          </button>
+                        ) : null}
+                        <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-3 text-sm">
+                            <label className="flex items-center gap-2">
                               <input
-                                type="number"
-                                min={0}
-                                className="w-16 rounded border border-white/10 bg-neutral-900/80 px-2 py-0.5 text-[11px]"
-                                placeholder="순서"
-                                value={Number(state.sigRollingMeta?.[item.id]?.order ?? 0)}
-                                onChange={(e) => {
-                                  const order = Math.max(0, Math.floor(Number(e.target.value || 0)));
-                                  setState((prev) => {
-                                    const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
-                                    const cur = meta[item.id] || {};
-                                    meta[item.id] = { ...cur, order };
-                                    const next = { ...prev, sigRollingMeta: meta };
-                                    persistState(next);
-                                    return next;
-                                  });
-                                }}
+                                type="checkbox"
+                                checked={Boolean(item.isRolling)}
+                                onChange={(e) => toggleSigRollingItem(item.id, e.target.checked)}
                               />
+                              <span>보드 노출</span>
+                            </label>
+                            <label className="flex items-center gap-2">
                               <input
-                                className="w-28 rounded border border-white/10 bg-neutral-900/80 px-2 py-0.5 text-[11px]"
-                                placeholder="롤링 라벨(선택)"
-                                value={state.sigRollingMeta?.[item.id]?.label || ""}
-                                onChange={(e) => {
-                                  const label = e.target.value;
-                                  setState((prev) => {
-                                    const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
-                                    const cur = meta[item.id] || {};
-                                    meta[item.id] = { ...cur, label };
-                                    const next = { ...prev, sigRollingMeta: meta };
-                                    persistState(next);
-                                    return next;
-                                  });
-                                }}
+                                type="checkbox"
+                                checked={Boolean(item.isActive)}
+                                onChange={(e) => toggleSigActiveItem(item.id, e.target.checked)}
                               />
-                            </>
-                          ) : null}
-                        </div>
-                        <div className="text-xs text-neutral-400">가격 {item.price.toLocaleString("ko-KR")}</div>
-                        <div className="flex items-center gap-1">
-                          {item.maxCount <= 1 && item.soldCount >= 1 ? (
-                            <Image
-                              src={state.sigSoldOutStampUrl || DEFAULT_SIG_SOLD_STAMP_URL}
-                              alt="완판 도장"
-                              width={28}
-                              height={28}
-                              unoptimized
-                              className="h-7 w-7 object-contain opacity-90"
-                            />
-                          ) : null}
-                          {!isOneShot && (
-                            <>
-                              <button
-                                className="px-2 py-1 rounded bg-violet-800 hover:bg-violet-700 text-xs disabled:opacity-50"
-                                disabled={Boolean(ocrBusyIds[item.id])}
-                                onClick={() => void runOcrForSigItem(item.id, item.imageUrl || "", item.name)}
-                              >
-                                {ocrBusyIds[item.id] ? "OCR..." : "OCR"}
-                              </button>
-                              <button className="px-2 py-1 rounded bg-red-900/70 hover:bg-red-800 text-xs" onClick={() => adjustSigSoldCount(item.id, -1)}>취소 -1</button>
-                              <button className="px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-xs" onClick={() => adjustSigSoldCount(item.id, 1)}>판매 +1</button>
-                              <button className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs" onClick={() => removeSigItem(item.id)}>삭제</button>
-                            </>
-                          )}
+                              <span>판매 활성</span>
+                            </label>
+                            <span className="font-semibold">{item.name}</span>
+                          </div>
+                          <div className="text-xs text-neutral-400">가격 {item.price.toLocaleString("ko-KR")}</div>
+                          <div className="flex flex-wrap items-center gap-1">
+                            {item.maxCount <= 1 && item.soldCount >= 1 ? (
+                              <Image
+                                src={state.sigSoldOutStampUrl || DEFAULT_SIG_SOLD_STAMP_URL}
+                                alt="완판 도장"
+                                width={28}
+                                height={28}
+                                unoptimized
+                                className="h-7 w-7 object-contain opacity-90"
+                              />
+                            ) : null}
+                            {!isOneShot && (
+                              <>
+                                <button
+                                  className="px-2 py-1 rounded bg-violet-800 hover:bg-violet-700 text-xs disabled:opacity-50"
+                                  disabled={Boolean(ocrBusyIds[item.id])}
+                                  onClick={() => void runOcrForSigItem(item.id, item.imageUrl || "", item.name)}
+                                >
+                                  {ocrBusyIds[item.id] ? "OCR..." : "OCR"}
+                                </button>
+                                <button className="px-2 py-1 rounded bg-red-900/70 hover:bg-red-800 text-xs" onClick={() => adjustSigSoldCount(item.id, -1)}>취소 -1</button>
+                                <button className="px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-xs" onClick={() => adjustSigSoldCount(item.id, 1)}>판매 +1</button>
+                                <button className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs" onClick={() => removeSigItem(item.id)}>삭제</button>
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
+                      {rowOpen ? (
+                      <div className="space-y-2 px-3 py-2">
+                      {!isOneShot ? (
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                          <input
+                            type="number"
+                            min={0}
+                            className="w-16 rounded border border-white/10 bg-neutral-900/80 px-2 py-0.5 text-[11px]"
+                            placeholder="순서"
+                            value={Number(state.sigRollingMeta?.[item.id]?.order ?? 0)}
+                            onChange={(e) => {
+                              const order = Math.max(0, Math.floor(Number(e.target.value || 0)));
+                              setState((prev) => {
+                                const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
+                                const cur = meta[item.id] || {};
+                                meta[item.id] = { ...cur, order };
+                                const next = { ...prev, sigRollingMeta: meta };
+                                persistState(next);
+                                return next;
+                              });
+                            }}
+                          />
+                          <input
+                            className="min-w-[140px] flex-1 rounded border border-white/10 bg-neutral-900/80 px-2 py-0.5 text-[11px]"
+                            placeholder="롤링 라벨(선택)"
+                            value={state.sigRollingMeta?.[item.id]?.label || ""}
+                            onChange={(e) => {
+                              const label = e.target.value;
+                              setState((prev) => {
+                                const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
+                                const cur = meta[item.id] || {};
+                                meta[item.id] = { ...cur, label };
+                                const next = { ...prev, sigRollingMeta: meta };
+                                persistState(next);
+                                return next;
+                              });
+                            }}
+                          />
+                        </div>
+                      ) : null}
                       <div className="grid grid-cols-1 md:grid-cols-[1fr_120px_1fr_1.3fr] gap-2">
                         <input
                           className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
@@ -5716,6 +5699,8 @@ export default function AdminPage() {
                         <div className="mt-2 text-[11px] text-fuchsia-300">
                           한방 시그 금액은 나온 시그 합계(판매량×가격)로 자동 계산됩니다.
                         </div>
+                      ) : null}
+                      </div>
                       ) : null}
                     </div>
                   );

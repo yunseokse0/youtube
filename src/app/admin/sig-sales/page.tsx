@@ -20,6 +20,7 @@ import {
   canonicalSigIdFromWheelSliceId,
 } from "@/lib/sig-roulette";
 import { useSigSalesState } from "@/hooks/useSigSalesState";
+import { detectSigPriceFromImageUrlDetailed, isSigOcrSupported } from "@/lib/sig-image-ocr";
 
 const POLL_MS = 1000;
 const STEP_CONFIRM_PAUSE_MS = 3000;
@@ -89,6 +90,7 @@ export default function AdminSigSalesPage() {
   const [oneShotReveal, setOneShotReveal] = useState(false);
   const [ocrBusyIds, setOcrBusyIds] = useState<Record<string, boolean>>({});
   const [ocrAllBusy, setOcrAllBusy] = useState(false);
+  const [sigSalesSigRowOpen, setSigSalesSigRowOpen] = useState<Record<string, boolean>>({});
   const nextSpinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [oneShotSound] = useState(() => new Howl({ src: [SPIN_SOUND_PATHS.oneShot], preload: true, volume: 0.7 }));
   const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || DEFAULT_SIG_SOLD_STAMP_URL;
@@ -509,86 +511,46 @@ export default function AdminSigSalesPage() {
     });
   }, [userId]);
 
-  const parseDetectedSigAmount = useCallback((rawText: string): number | null => {
-    const text = String(rawText || "");
-    if (!text.trim()) return null;
-    const candidates: number[] = [];
-    const manRegex = /(\d{1,3})\s*만(?:\s*([0-9]{1,4}))?/g;
-    for (const m of text.matchAll(manRegex)) {
-      const man = Number(m[1] || 0);
-      const tail = Number(m[2] || 0);
-      const amount = man * 10000 + tail;
-      if (Number.isFinite(amount) && amount >= 1000 && amount <= 100000000) candidates.push(amount);
-    }
-    const numberRegex = /\d[\d,\.\s]{2,}/g;
-    for (const m of text.matchAll(numberRegex)) {
-      const digits = String(m[0] || "").replace(/[^\d]/g, "");
-      if (!digits) continue;
-      const amount = Number(digits);
-      if (Number.isFinite(amount) && amount >= 1000 && amount <= 100000000) candidates.push(amount);
-    }
-    if (!candidates.length) return null;
-    return Math.max(...candidates);
-  }, []);
-
-  const detectSigPriceFromImageUrl = useCallback(async (imageUrl: string): Promise<number | null> => {
-    try {
-      if (typeof window === "undefined") return null;
-      const TextDetectorCtor = (window as any).TextDetector as unknown;
-      if (!TextDetectorCtor) return null;
-      const img = new window.Image();
-      img.crossOrigin = "anonymous";
-      img.referrerPolicy = "no-referrer";
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error("image_load_failed"));
-        img.src = imageUrl;
-      });
-      const maxSide = 1600;
-      const scale = Math.min(1, maxSide / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
-      const w = Math.max(1, Math.floor((img.naturalWidth || 1) * scale));
-      const h = Math.max(1, Math.floor((img.naturalHeight || 1) * scale));
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return null;
-      ctx.drawImage(img, 0, 0, w, h);
-      const detector = new (window as any).TextDetector([]);
-      const blocks = await detector.detect(canvas);
-      const merged = blocks.map((b: any) => String((b as any).rawValue || "")).join("\n");
-      return parseDetectedSigAmount(merged);
-    } catch {
-      return null;
-    }
-  }, [parseDetectedSigAmount]);
-
   const runOcrForItem = useCallback(async (item: SigItem) => {
     const src = String(item.imageUrl || "").trim();
     if (!src) {
       setToast(`OCR 실패: ${item.name} 이미지 URL이 비어있습니다.`);
       return;
     }
+    if (!isSigOcrSupported()) {
+      setToast(`OCR 미지원: Chrome/Edge 등 Chromium 브라우저에서 시도해 주세요. (${item.name})`);
+      return;
+    }
     setOcrBusyIds((prev) => ({ ...prev, [item.id]: true }));
     try {
-      const price = await detectSigPriceFromImageUrl(src);
-      if (price == null) {
-        setToast(`OCR 실패: ${item.name} 금액을 찾지 못했습니다.`);
+      const detail = await detectSigPriceFromImageUrlDetailed(src);
+      if (detail.price == null) {
+        if (detail.reason === "image_load_failed") {
+          setToast(`OCR 실패: 이미지를 불러오지 못했습니다(404·CORS). (${item.name})`);
+        } else {
+          setToast(
+            `OCR 실패: 금액을 찾지 못했습니다. (${item.name})${detail.previewText ? ` 감지: ${detail.previewText}` : ""}`
+          );
+        }
         return;
       }
       await persistInventoryPatch((prev) => ({
         ...prev,
-        sigInventory: (prev.sigInventory || []).map((x) => (x.id === item.id ? { ...x, price } : x)),
+        sigInventory: (prev.sigInventory || []).map((x) => (x.id === item.id ? { ...x, price: detail.price! } : x)),
         updatedAt: Date.now(),
       }));
-      setToast(`OCR 적용: ${item.name} ${price.toLocaleString("ko-KR")}원`);
+      setToast(`OCR 적용: ${item.name} ${detail.price.toLocaleString("ko-KR")}원`);
     } finally {
       setOcrBusyIds((prev) => ({ ...prev, [item.id]: false }));
     }
-  }, [detectSigPriceFromImageUrl, persistInventoryPatch]);
+  }, [persistInventoryPatch]);
 
   const runOcrForAll = useCallback(async () => {
     if (ocrAllBusy || !state) return;
+    if (!isSigOcrSupported()) {
+      setToast("OCR 미지원: Chrome/Edge 등 Chromium 브라우저에서 시도해 주세요.");
+      return;
+    }
     const targets = (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID && String(x.imageUrl || "").trim());
     if (!targets.length) {
       setToast("OCR 대상 시그가 없습니다.");
@@ -600,14 +562,14 @@ export default function AdminSigSalesPage() {
     for (const item of targets) {
       setOcrBusyIds((prev) => ({ ...prev, [item.id]: true }));
       try {
-        const price = await detectSigPriceFromImageUrl(String(item.imageUrl || "").trim());
-        if (price == null) {
+        const detail = await detectSigPriceFromImageUrlDetailed(String(item.imageUrl || "").trim());
+        if (detail.price == null) {
           fail += 1;
           continue;
         }
         await persistInventoryPatch((prev) => ({
           ...prev,
-          sigInventory: (prev.sigInventory || []).map((x) => (x.id === item.id ? { ...x, price } : x)),
+          sigInventory: (prev.sigInventory || []).map((x) => (x.id === item.id ? { ...x, price: detail.price! } : x)),
           updatedAt: Date.now(),
         }));
         ok += 1;
@@ -617,7 +579,7 @@ export default function AdminSigSalesPage() {
     }
     setOcrAllBusy(false);
     setToast(`OCR 일괄 완료: 성공 ${ok}건 / 실패 ${fail}건`);
-  }, [ocrAllBusy, state, detectSigPriceFromImageUrl, persistInventoryPatch]);
+  }, [ocrAllBusy, state, persistInventoryPatch]);
 
   return (
     <main className="min-h-screen bg-neutral-950 p-6 text-white">
@@ -907,52 +869,101 @@ export default function AdminSigSalesPage() {
               {ocrAllBusy ? "OCR 전체 처리 중..." : "금액 OCR 전체 적용"}
             </button>
           </div>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded border border-white/10 bg-black/25 px-2 py-1.5 text-[11px] text-neutral-400">
+            <span>행 접기: 헤더만 표시 · 금액/멤버/URL은 펼친 뒤 수정</span>
+            <div className="flex gap-1">
+              <button
+                type="button"
+                className="rounded bg-neutral-700 px-2 py-1 text-[11px] hover:bg-neutral-600"
+                onClick={() => {
+                  const ids = (state?.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID).map((x) => x.id);
+                  setSigSalesSigRowOpen(Object.fromEntries(ids.map((id) => [id, true])));
+                }}
+              >
+                모두 펼치기
+              </button>
+              <button
+                type="button"
+                className="rounded bg-neutral-700 px-2 py-1 text-[11px] hover:bg-neutral-600"
+                onClick={() => {
+                  const ids = (state?.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID).map((x) => x.id);
+                  setSigSalesSigRowOpen(Object.fromEntries(ids.map((id) => [id, false])));
+                }}
+              >
+                모두 접기
+              </button>
+            </div>
+          </div>
           <div className="space-y-2">
-            {(state?.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID).map((item) => (
-              <div key={item.id} className="flex flex-wrap items-center gap-2 rounded border border-white/10 bg-[#1f1f1f] px-2 py-2 text-xs">
-                <span className="min-w-[110px] font-semibold text-neutral-100">{item.name}</span>
-                <input
-                  type="number"
-                  min={0}
-                  className="w-24 rounded border border-white/10 bg-neutral-900 px-2 py-1 text-xs"
-                  value={item.price}
-                  onChange={(e) => {
-                    const price = Math.max(0, Math.floor(Number(e.target.value || 0) || 0));
-                    void persistInventoryPatch((prev) => ({
-                      ...prev,
-                      sigInventory: (prev.sigInventory || []).map((x) => (x.id === item.id ? { ...x, price } : x)),
-                      updatedAt: Date.now(),
-                    }));
-                  }}
-                />
-                <select
-                  className="rounded border border-white/10 bg-neutral-900 px-2 py-1 text-xs"
-                  value={item.memberId || ""}
-                  onChange={(e) => {
-                    const memberId = e.target.value;
-                    void persistInventoryPatch((prev) => ({
-                      ...prev,
-                      sigInventory: (prev.sigInventory || []).map((x) => (x.id === item.id ? { ...x, memberId } : x)),
-                      updatedAt: Date.now(),
-                    }));
-                  }}
-                >
-                  <option value="">공통(전체 멤버)</option>
-                  {(state?.members || []).map((m) => (
-                    <option key={`sig-member-${item.id}-${m.id}`} value={m.id}>{m.name}</option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => void runOcrForItem(item)}
-                  disabled={Boolean(ocrBusyIds[item.id])}
-                  className="rounded bg-violet-800 px-2 py-1 text-xs font-bold hover:bg-violet-700 disabled:opacity-50"
-                >
-                  {ocrBusyIds[item.id] ? "OCR..." : "OCR"}
-                </button>
-                <span className="truncate text-neutral-400">{item.imageUrl || "(이미지 URL 없음)"}</span>
+            {(state?.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID).map((item) => {
+              const rowOpen = Boolean(sigSalesSigRowOpen[item.id]);
+              return (
+              <div key={item.id} className="overflow-hidden rounded border border-white/10 bg-[#1f1f1f] text-xs">
+                <div className="flex flex-wrap items-center gap-2 border-b border-white/5 bg-black/20 px-2 py-2">
+                  <button
+                    type="button"
+                    className="shrink-0 rounded px-1.5 py-0.5 text-neutral-400 hover:bg-white/10"
+                    aria-expanded={rowOpen}
+                    aria-label={rowOpen ? "행 접기" : "행 펼치기"}
+                    onClick={() =>
+                      setSigSalesSigRowOpen((p) => ({
+                        ...p,
+                        [item.id]: !Boolean(p[item.id]),
+                      }))
+                    }
+                  >
+                    {rowOpen ? "▼" : "▶"}
+                  </button>
+                  <span className="min-w-[100px] font-semibold text-neutral-100">{item.name}</span>
+                  <span className="text-neutral-500">{item.price.toLocaleString("ko-KR")}원</span>
+                  <button
+                    type="button"
+                    onClick={() => void runOcrForItem(item)}
+                    disabled={Boolean(ocrBusyIds[item.id])}
+                    className="ml-auto rounded bg-violet-800 px-2 py-1 text-xs font-bold hover:bg-violet-700 disabled:opacity-50"
+                  >
+                    {ocrBusyIds[item.id] ? "OCR..." : "OCR"}
+                  </button>
+                </div>
+                {rowOpen ? (
+                  <div className="flex flex-wrap items-center gap-2 px-2 py-2">
+                    <input
+                      type="number"
+                      min={0}
+                      className="w-24 rounded border border-white/10 bg-neutral-900 px-2 py-1 text-xs"
+                      value={item.price}
+                      onChange={(e) => {
+                        const price = Math.max(0, Math.floor(Number(e.target.value || 0) || 0));
+                        void persistInventoryPatch((prev) => ({
+                          ...prev,
+                          sigInventory: (prev.sigInventory || []).map((x) => (x.id === item.id ? { ...x, price } : x)),
+                          updatedAt: Date.now(),
+                        }));
+                      }}
+                    />
+                    <select
+                      className="rounded border border-white/10 bg-neutral-900 px-2 py-1 text-xs"
+                      value={item.memberId || ""}
+                      onChange={(e) => {
+                        const memberId = e.target.value;
+                        void persistInventoryPatch((prev) => ({
+                          ...prev,
+                          sigInventory: (prev.sigInventory || []).map((x) => (x.id === item.id ? { ...x, memberId } : x)),
+                          updatedAt: Date.now(),
+                        }));
+                      }}
+                    >
+                      <option value="">공통(전체 멤버)</option>
+                      {(state?.members || []).map((m) => (
+                        <option key={`sig-member-${item.id}-${m.id}`} value={m.id}>{m.name}</option>
+                      ))}
+                    </select>
+                    <span className="min-w-0 flex-1 truncate text-neutral-400">{item.imageUrl || "(이미지 URL 없음)"}</span>
+                  </div>
+                ) : null}
               </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       </div>
