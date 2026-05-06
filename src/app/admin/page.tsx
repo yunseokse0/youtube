@@ -191,7 +191,6 @@ export default function AdminPage() {
   /** 가격 입력은 타이핑 중 draft만 유지하고 blur/Enter에 1회 저장 */
   const [sigPriceDraftMap, setSigPriceDraftMap] = useState<Record<string, string>>({});
   const sigPriceDraftMapRef = useRef<Record<string, string>>({});
-  const sigPriceCommitTimerRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [sigExcelResult, setSigExcelResult] = useState("");
   /** 시그 롤링 업로드 결과 메시지 */
   const [sigRollingUploadMessage, setSigRollingUploadMessage] = useState("");
@@ -214,10 +213,35 @@ export default function AdminPage() {
   const [roulettePriceRanges, setRoulettePriceRanges] = useState<Array<{ min: string; max: string }>>(() =>
     Array.from({ length: 5 }, () => ({ min: "", max: "" }))
   );
+  const [sigMatchNumericDraft, setSigMatchNumericDraft] = useState<{
+    targetCount: string;
+    incentivePerPoint: string;
+    overlayTimerDurationSec: string;
+  }>({
+    targetCount: "100",
+    incentivePerPoint: "1000",
+    overlayTimerDurationSec: "180",
+  });
+  const sigMatchNumericEditingRef = useRef<Record<keyof typeof sigMatchNumericDraft, boolean>>({
+    targetCount: false,
+    incentivePerPoint: false,
+    overlayTimerDurationSec: false,
+  });
   const ROULETTE_ROUND_UI_CAP = 40;
   const [rouletteResetBusy, setRouletteResetBusy] = useState(false);
   /** 회전판 돌리기/초기화 결과 — sigExcelResult(엑셀)와 분리해 버튼 바로 아래에 표시 */
   const [rouletteActionMessage, setRouletteActionMessage] = useState("");
+
+  useEffect(() => {
+    const s = state.sigMatchSettings || {};
+    setSigMatchNumericDraft((prev) => ({
+      targetCount: sigMatchNumericEditingRef.current.targetCount ? prev.targetCount : String(s.targetCount ?? 100),
+      incentivePerPoint: sigMatchNumericEditingRef.current.incentivePerPoint ? prev.incentivePerPoint : String(s.incentivePerPoint ?? 1000),
+      overlayTimerDurationSec: sigMatchNumericEditingRef.current.overlayTimerDurationSec
+        ? prev.overlayTimerDurationSec
+        : String(s.overlayTimerDurationSec ?? 180),
+    }));
+  }, [state.sigMatchSettings]);
 
   useEffect(() => {
     if (!sigImagePreviewModal) return;
@@ -1350,6 +1374,34 @@ export default function AdminPage() {
     });
   };
 
+  const setSigMatchDraftEditing = (key: keyof typeof sigMatchNumericDraft, editing: boolean) => {
+    sigMatchNumericEditingRef.current[key] = editing;
+  };
+
+  const commitSigMatchTargetCountDraft = () => {
+    setSigMatchDraftEditing("targetCount", false);
+    const n = Number.parseInt(sigMatchNumericDraft.targetCount || "100", 10);
+    const next = Number.isFinite(n) ? Math.max(1, n) : 100;
+    setSigMatchNumericDraft((prev) => ({ ...prev, targetCount: String(next) }));
+    updateSigMatchSettings({ targetCount: next });
+  };
+
+  const commitSigMatchIncentiveDraft = () => {
+    setSigMatchDraftEditing("incentivePerPoint", false);
+    const n = Number.parseInt(sigMatchNumericDraft.incentivePerPoint || "1000", 10);
+    const next = Number.isFinite(n) ? Math.max(0, n) : 1000;
+    setSigMatchNumericDraft((prev) => ({ ...prev, incentivePerPoint: String(next) }));
+    updateSigMatchSettings({ incentivePerPoint: next });
+  };
+
+  const commitSigMatchTimerDurationDraft = () => {
+    setSigMatchDraftEditing("overlayTimerDurationSec", false);
+    const n = Number.parseInt(sigMatchNumericDraft.overlayTimerDurationSec || "0", 10);
+    const next = Number.isFinite(n) ? Math.max(0, Math.min(86400, n)) : 0;
+    setSigMatchNumericDraft((prev) => ({ ...prev, overlayTimerDurationSec: String(next) }));
+    updateSigMatchSettings({ overlayTimerDurationSec: next });
+  };
+
   const updateMealMatchSettings = (patch: Partial<AppState["mealMatchSettings"]>) => {
     setState((prev: AppState) => {
       const next: AppState = {
@@ -1870,22 +1922,6 @@ export default function AdminPage() {
       updateSigItem(id, { price: nextPrice });
     }
   };
-
-  const scheduleSigPriceDraftCommit = (id: string) => {
-    const timer = sigPriceCommitTimerRef.current[id];
-    if (timer) clearTimeout(timer);
-    sigPriceCommitTimerRef.current[id] = setTimeout(() => {
-      const curPrice = (state.sigInventory || []).find((x) => x.id === id)?.price ?? 0;
-      commitSigPriceDraft(id, curPrice);
-      delete sigPriceCommitTimerRef.current[id];
-    }, 900);
-  };
-
-  useEffect(() => {
-    return () => {
-      Object.values(sigPriceCommitTimerRef.current).forEach((t) => clearTimeout(t));
-    };
-  }, []);
 
   const removeSigItem = (id: string) => {
     if (id === ONE_SHOT_SIG_ID) return;
@@ -3499,10 +3535,14 @@ export default function AdminPage() {
                     className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
                     type="number"
                     min={1}
-                    value={state.sigMatchSettings?.targetCount || 100}
-                    onChange={(e) => {
-                      const n = Number.parseInt(e.target.value || "100", 10);
-                      updateSigMatchSettings({ targetCount: Number.isFinite(n) ? Math.max(1, n) : 100 });
+                    value={sigMatchNumericDraft.targetCount}
+                    onFocus={() => setSigMatchDraftEditing("targetCount", true)}
+                    onChange={(e) =>
+                      setSigMatchNumericDraft((prev) => ({ ...prev, targetCount: e.target.value.replace(/[^\d]/g, "") }))
+                    }
+                    onBlur={commitSigMatchTargetCountDraft}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") e.currentTarget.blur();
                     }}
                   />
                   <select
@@ -3540,10 +3580,14 @@ export default function AdminPage() {
                     type="number"
                     min={0}
                     placeholder="포인트당 정산 단가"
-                    value={state.sigMatchSettings?.incentivePerPoint ?? 1000}
-                    onChange={(e) => {
-                      const n = Number.parseInt(e.target.value || "1000", 10);
-                      updateSigMatchSettings({ incentivePerPoint: Number.isFinite(n) ? Math.max(0, n) : 1000 });
+                    value={sigMatchNumericDraft.incentivePerPoint}
+                    onFocus={() => setSigMatchDraftEditing("incentivePerPoint", true)}
+                    onChange={(e) =>
+                      setSigMatchNumericDraft((prev) => ({ ...prev, incentivePerPoint: e.target.value.replace(/[^\d]/g, "") }))
+                    }
+                    onBlur={commitSigMatchIncentiveDraft}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") e.currentTarget.blur();
                     }}
                   />
                   <div className="text-xs text-neutral-400">세션 종료 시 &quot;시그 인센티브 정산&quot;이 자동 생성됩니다. (count 모드: 점수 x 단가, amount 모드: 점수=금액)</div>
@@ -3557,10 +3601,14 @@ export default function AdminPage() {
                       min={0}
                       max={86400}
                       placeholder="초(0=숨김)"
-                      value={state.sigMatchSettings?.overlayTimerDurationSec ?? 180}
-                      onChange={(e) => {
-                        const n = Number.parseInt(e.target.value || "0", 10);
-                        updateSigMatchSettings({ overlayTimerDurationSec: Number.isFinite(n) ? Math.max(0, Math.min(86400, n)) : 0 });
+                      value={sigMatchNumericDraft.overlayTimerDurationSec}
+                      onFocus={() => setSigMatchDraftEditing("overlayTimerDurationSec", true)}
+                      onChange={(e) =>
+                        setSigMatchNumericDraft((prev) => ({ ...prev, overlayTimerDurationSec: e.target.value.replace(/[^\d]/g, "") }))
+                      }
+                      onBlur={commitSigMatchTimerDurationDraft}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.currentTarget.blur();
                       }}
                     />
                     <div className="flex flex-wrap items-center gap-2">
@@ -5827,7 +5875,6 @@ export default function AdminPage() {
                               [item.id]: e.target.value,
                             }))
                           }
-                          onInput={() => scheduleSigPriceDraftCommit(item.id)}
                           onBlur={() => commitSigPriceDraft(item.id, item.price)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") {
