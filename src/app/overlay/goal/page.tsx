@@ -170,7 +170,7 @@ export default function GoalOverlayPage() {
             />
           </section>
         ) : (
-          <section className="rounded-xl border border-amber-300/50 bg-black/35 px-4 py-2 text-sm font-semibold text-amber-100">
+          <section className="rounded-xl border border-amber-300/50 bg-transparent px-4 py-2 text-sm font-semibold text-amber-100 md:bg-black/35">
             후원 목표 금액이 설정되지 않았습니다. 백오피스에서 입력해주세요.
           </section>
         )}

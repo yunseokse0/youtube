@@ -60,7 +60,7 @@ export default function SigSalesResultPreviewPage() {
   );
 
   return (
-    <main className="flex min-h-[100dvh] flex-col items-center justify-center bg-black px-3 py-6 text-white md:px-6">
+    <main className="flex min-h-[100dvh] flex-col items-center justify-center bg-transparent px-3 py-6 text-white md:bg-black md:px-6">
       <ResultOverlay
         visible
         selectedSigs={selectedSigs}

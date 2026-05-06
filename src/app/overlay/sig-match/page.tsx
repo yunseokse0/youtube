@@ -385,8 +385,8 @@ function SigMatchOverlayInner() {
 
   if (!ready || !state) {
     return (
-      <main className="min-h-screen w-full bg-[#0b1020] p-6 text-white">
-        <div className="mx-auto max-w-3xl rounded-2xl border border-white/20 bg-black/40 p-4 text-sm">
+      <main className="min-h-screen w-full bg-transparent p-6 text-white md:bg-[#0b1020]">
+        <div className="mx-auto max-w-3xl rounded-2xl border border-white/20 bg-transparent p-4 text-sm md:bg-black/40">
           시그 대전 오버레이 로딩 중...
         </div>
       </main>
@@ -394,7 +394,11 @@ function SigMatchOverlayInner() {
   }
 
   return (
-    <main className={`min-h-screen w-full p-4 text-white ${previewGuide ? "bg-[#111827]" : "bg-transparent"}`}>
+    <main
+      className={`min-h-screen w-full p-4 text-white ${
+        previewGuide ? "bg-transparent md:bg-[#111827]" : "bg-transparent"
+      }`}
+    >
       <div className="mx-auto p-4" style={overlayContainerStyle}>
         <div className="relative mb-4 p-3">
           {timerVisible ? (
@@ -520,7 +524,7 @@ function SigMatchOverlayInner() {
         </div>
 
         {ranking.length === 0 ? (
-          <div className="rounded-xl border border-white/10 bg-black/25 px-3 py-4 text-center text-xs text-white/70">
+          <div className="rounded-xl border border-white/10 bg-transparent px-3 py-4 text-center text-xs text-white/70 md:bg-black/25">
             표시할 멤버 데이터가 없습니다.
           </div>
         ) : null}
@@ -538,7 +542,9 @@ export default function SigMatchOverlayPage() {
     <Suspense
       fallback={
         <main className="min-h-screen w-full bg-transparent p-8 text-white/60">
-          <div className="mx-auto max-w-3xl rounded-3xl border border-white/10 bg-black/20 p-6 text-center text-sm">시그 대전 오버레이 로딩…</div>
+          <div className="mx-auto max-w-3xl rounded-3xl border border-white/10 bg-transparent p-6 text-center text-sm md:bg-black/20">
+            시그 대전 오버레이 로딩…
+          </div>
         </main>
       }
     >

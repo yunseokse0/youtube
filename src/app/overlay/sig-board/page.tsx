@@ -15,7 +15,7 @@ export default function SigBoardOverlayRedirectPage() {
 
   return (
     <main className="min-h-screen bg-transparent p-4 text-white">
-      <div className="mx-auto max-w-[960px] rounded-xl border border-white/20 bg-black/40 p-4 text-center text-sm">
+      <div className="mx-auto max-w-[960px] rounded-xl border border-white/20 bg-transparent p-4 text-center text-sm md:bg-black/40">
         <code>/overlay/sig-sales</code> 로 이동 중...
       </div>
     </main>

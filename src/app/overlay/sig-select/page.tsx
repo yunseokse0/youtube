@@ -15,7 +15,7 @@ export default function SigSelectOverlayRedirectPage() {
 
   return (
     <main className="min-h-screen bg-transparent p-4 text-white">
-      <div className="mx-auto max-w-[960px] rounded-xl border border-white/20 bg-black/40 p-4 text-center text-sm">
+      <div className="mx-auto max-w-[960px] rounded-xl border border-white/20 bg-transparent p-4 text-center text-sm md:bg-black/40">
         회전판 오버레이가 <code>/overlay/sig-sales</code>로 통합되었습니다. 이동 중…
       </div>
     </main>

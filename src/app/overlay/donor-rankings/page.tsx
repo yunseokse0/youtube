@@ -408,7 +408,10 @@ export default function DonorRankingsOverlayPage() {
   if (!ready && !useTest) return null;
 
   return (
-    <main className="relative min-h-screen w-full overflow-hidden p-5" style={{ backgroundColor: bg }}>
+    <main
+      className="relative min-h-screen w-full overflow-hidden bg-transparent p-5 md:[background:var(--ov-donor-bg)]"
+      style={{ ["--ov-donor-bg" as string]: bg } as CSSProperties}
+    >
       {showBgLayer ? (
         <div className="pointer-events-none fixed inset-0 z-0" aria-hidden>
           {bgAnimated.kind === "video" ? (

@@ -32,8 +32,13 @@ export default function OverlayLayout({
       }}
     >
       <style dangerouslySetInnerHTML={{ __html: `
-        html, body, #__next { background: transparent !important; }
-        .overlay-route { background: transparent !important; -webkit-font-smoothing: antialiased; -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+        html, body, #__next { background: transparent !important; background-color: transparent !important; }
+        .overlay-route { background: transparent !important; background-color: transparent !important; -webkit-font-smoothing: antialiased; -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+        /* 모바일 방송 합성·세로 화면: 전역 다크 바디가 비치지 않도록 */
+        @media (max-width: 767px) {
+          html, body, #__next { background: transparent !important; background-color: transparent !important; }
+          body { background-image: none !important; }
+        }
         .overlay-root { font-size: 100%; -webkit-font-smoothing: antialiased; }
         .overlay-row td { padding: 0.18em 0.25em !important; min-height: 1.5em; line-height: 1.2; vertical-align: middle; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
         .overlay-row { min-height: 1.5em; }

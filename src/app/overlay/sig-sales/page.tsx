@@ -1489,7 +1489,7 @@ export default function SigSalesOverlayPage() {
           </div>
           </div>
           {machine.phase === "CONFIRM_PENDING" ? (
-            <div className="pointer-events-none absolute inset-0 z-50 grid place-items-center bg-black/55">
+            <div className="pointer-events-none absolute inset-0 z-50 grid max-md:bg-transparent place-items-center bg-black/55">
               <div className="rounded-xl border border-yellow-300/50 bg-neutral-900/90 px-6 py-4 text-center">
                 <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-yellow-300 border-t-transparent" />
                 <p className="mt-2 text-sm font-semibold text-yellow-100">판매 확정 처리 중...</p>
