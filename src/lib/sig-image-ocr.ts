@@ -341,19 +341,43 @@ async function detectPriceWithTesseractDetailed(bitmap: ImageBitmap): Promise<{ 
   const colorCanvas = buildScaledColorCanvasForOcr(bitmap);
   if (!colorCanvas) return { price: null, rawText: "" };
 
-  try {
+  const makeDownscaled = (src: HTMLCanvasElement, maxSide: number): HTMLCanvasElement => {
+    const longest = Math.max(src.width, src.height);
+    if (longest <= maxSide) return src;
+    const r = maxSide / longest;
+    const w = Math.max(1, Math.floor(src.width * r));
+    const h = Math.max(1, Math.floor(src.height * r));
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d");
+    if (!ctx) return src;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(src, 0, 0, w, h);
+    return c;
+  };
+
+  const grayCanvas = canvasToGrayscale(colorCanvas);
+  const smallColorCanvas = makeDownscaled(colorCanvas, 1400);
+  const smallGrayCanvas = makeDownscaled(grayCanvas, 1400);
+
+  const attemptLang = async (langs: string): Promise<{ price: number | null; rawText: string }> => {
     const { createWorker, PSM } = await import("tesseract.js");
-    const worker = await createWorker("kor+eng", undefined, {
+    const worker = await createWorker(langs, undefined, {
       logger: () => {},
+      errorHandler: () => {},
     });
     let longestText = "";
     try {
-      const modes = [PSM.SPARSE_TEXT, PSM.SINGLE_BLOCK, PSM.AUTO] as const;
+      const modes = [PSM.SPARSE_TEXT, PSM.SINGLE_BLOCK, PSM.SINGLE_LINE, PSM.AUTO] as const;
+      const canvases = [colorCanvas, grayCanvas, smallColorCanvas, smallGrayCanvas];
 
-      const runCanvas = async (canvas: HTMLCanvasElement): Promise<{ price: number; rawText: string } | null> => {
+      for (const canvas of canvases) {
         for (const psm of modes) {
           await worker.setParameters({
             tessedit_pageseg_mode: psm,
+            tessedit_char_whitelist: "0123456789,.-만원천원 ",
           });
           const {
             data: { text },
@@ -363,22 +387,25 @@ async function detectPriceWithTesseractDetailed(bitmap: ImageBitmap): Promise<{ 
           const price = parseSigAmountFromText(trimmed);
           if (price != null) return { price, rawText: trimmed };
         }
-        return null;
-      };
-
-      const fromColor = await runCanvas(colorCanvas);
-      if (fromColor) return fromColor;
-
-      const grayCanvas = canvasToGrayscale(colorCanvas);
-      const fromGray = await runCanvas(grayCanvas);
-      if (fromGray) return fromGray;
-
+      }
       return { price: null, rawText: longestText };
     } finally {
       await worker.terminate();
     }
+  };
+
+  // 숫자 OCR은 eng가 훨씬 가볍고 wasm 오류가 적어서 먼저 시도
+  try {
+    const eng = await attemptLang("eng");
+    if (eng.price != null || eng.rawText) return eng;
   } catch (e) {
-    console.warn("[sig ocr] tesseract failed", e);
+    console.warn("[sig ocr] tesseract eng failed", e);
+  }
+
+  try {
+    return await attemptLang("kor+eng");
+  } catch (e) {
+    console.warn("[sig ocr] tesseract kor+eng failed", e);
     return { price: null, rawText: "" };
   }
 }
