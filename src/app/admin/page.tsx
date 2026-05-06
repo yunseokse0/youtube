@@ -163,6 +163,8 @@ export default function AdminPage() {
   const lastLocalPersistAtRef = useRef<number>(0);
   const syncStatusRef = useRef<"loading" | "synced" | "local" | "error">("loading");
   const pendingUnsyncedRef = useRef<boolean>(false);
+  /** 금액/숫자 입력 중에는 원격 동기화 적용을 잠시 보류해 타이핑 값 초기화를 방지 */
+  const amountInputEditingRef = useRef<boolean>(false);
   const [dailyLog, setDailyLog] = useState<Record<string, DailyLogEntry[]>>({});
   const [donorName, setDonorName] = useState("");
   const [donorAmount, setDonorAmount] = useState("");
@@ -242,6 +244,43 @@ export default function AdminPage() {
         : String(s.overlayTimerDurationSec ?? 180),
     }));
   }, [state.sigMatchSettings]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const isAmountLikeEditor = (el: EventTarget | null): boolean => {
+      if (!(el instanceof HTMLElement)) return false;
+      if (el instanceof HTMLInputElement) {
+        const type = String(el.type || "").toLowerCase();
+        const inputMode = String(el.inputMode || "").toLowerCase();
+        const hint = `${el.placeholder || ""} ${el.name || ""} ${el.id || ""}`.toLowerCase();
+        return (
+          type === "number" ||
+          inputMode === "numeric" ||
+          inputMode === "decimal" ||
+          /(amount|price|goal|ratio|tax|opacity|count|금액|가격|목표|비율|세율|개수|회전|원)/.test(hint)
+        );
+      }
+      return false;
+    };
+    const refreshEditingFlag = (target?: EventTarget | null) => {
+      if (isAmountLikeEditor(target ?? document.activeElement)) {
+        amountInputEditingRef.current = true;
+        return;
+      }
+      amountInputEditingRef.current = isAmountLikeEditor(document.activeElement);
+    };
+    const onFocusIn = (e: FocusEvent) => refreshEditingFlag(e.target);
+    const onFocusOut = () => {
+      window.setTimeout(() => refreshEditingFlag(), 0);
+    };
+    document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("focusout", onFocusOut);
+    refreshEditingFlag();
+    return () => {
+      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("focusout", onFocusOut);
+    };
+  }, []);
 
   useEffect(() => {
     if (!sigImagePreviewModal) return;
@@ -691,6 +730,7 @@ export default function AdminPage() {
         // 구버전 원격 데이터로 최신 로컬 덮어쓰기 방지: 원격이 더 최신일 때만 적용
         const shouldApplyRemote = remoteUpdatedAt > stateUpdatedAtRef.current;
         if (shouldApplyRemote) {
+          if (amountInputEditingRef.current) return;
           stateUpdatedAtRef.current = remoteUpdatedAt;
           const prev = stateRef.current;
           const { merged: toApply, didPreserve } = mergeIncomingStateSafely(remote, prev);
@@ -1161,6 +1201,7 @@ export default function AdminPage() {
           const incoming = JSON.parse(e.newValue) as AppState;
           const incomingUpdatedAt = incoming.updatedAt || 0;
           if (incomingUpdatedAt <= stateUpdatedAtRef.current) return;
+          if (amountInputEditingRef.current) return;
           stateUpdatedAtRef.current = incomingUpdatedAt;
           setState((prev) => {
             const { merged, didPreserve } = mergeIncomingStateSafely(incoming, prev);
