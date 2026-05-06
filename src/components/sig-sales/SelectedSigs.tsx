@@ -160,7 +160,7 @@ export default function SelectedSigs({
                       ? "(max-width:768px) 45vw, 188px"
                       : "240px"
                 }
-                className={`relative z-[2] object-cover object-center ${sold ? "brightness-[1.02]" : ""}`}
+                className={`relative z-[2] object-contain object-center ${sold ? "brightness-[1.02]" : ""}`}
                 gifDelayMultiplier={gifDelayMultiplier}
               />
               {sold ? (

@@ -89,7 +89,7 @@ export default function SigBoardRolling({
                       src={resolveSigImageUrl(item.name, item.imageUrl)}
                       alt={item.name}
                       fill
-                      className={`object-cover object-center ${soldOut ? "relative z-[2]" : "relative z-0"}`}
+                      className={`object-contain object-center ${soldOut ? "relative z-[2]" : "relative z-0"}`}
                       gifDelayMultiplier={gifDelayMultiplier}
                     />
                     {soldOut ? <div className="absolute inset-0 z-[5] bg-pastel-ink/20" aria-hidden /> : null}

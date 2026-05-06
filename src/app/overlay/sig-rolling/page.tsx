@@ -14,9 +14,15 @@ import {
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { getSigRollingHoldMs } from "@/lib/sig-rolling-duration";
 
-/** 세로·가로 GIF 모두 잘리지 않게 — 높이 상한만 두고 object-contain */
+/** 세로·가로 GIF 모두 잘리지 않게 — 높이 상한만 두고 object-contain (`block`으로 인라인 베이스라인 여백 제거) */
 const IMG_BOX =
-  "pointer-events-none select-none max-h-[min(85vh,720px)] w-auto max-w-full object-contain object-center";
+  "pointer-events-none select-none block max-h-[min(85vh,720px)] w-auto max-w-full object-contain object-center";
+
+/** 폴링으로 `state` 객체만 바뀌고 내용은 같을 때도 참조가 매번 바뀌지 않도록 문자열 키로 구분 (타이머 effect 무한 리셋 방지) */
+function sigRollingScheduleKey(raw: unknown): string {
+  const r = normalizeSigRolling(raw);
+  return `${r.fadeMs}|${r.staticHoldMs}|${r.items.map((x) => `${x.id}\u001f${x.url}`).join("\u001e")}`;
+}
 
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
   const [state, setState] = useState<AppState | null>(null);
@@ -93,7 +99,6 @@ function RollingCardColumn({
   transitionActive,
   replayKey,
   useCrossfade,
-  onFadeEnd,
 }: {
   current: SigRollingItem | null;
   nextItem: SigRollingItem | null;
@@ -101,15 +106,14 @@ function RollingCardColumn({
   transitionActive: string;
   replayKey: number;
   useCrossfade: boolean;
-  onFadeEnd?: (e: React.TransitionEvent<HTMLImageElement>) => void;
 }) {
   if (!current) return null;
 
   if (!useCrossfade) {
     return (
       <div className="flex w-[min(46vw,280px)] shrink-0 justify-center">
-        <div className="glass-pastel-card overflow-hidden rounded-3xl shadow-lg">
-          <div className="flex min-h-[100px] items-center justify-center bg-black/25 px-1 py-2">
+        <div className="glass-pastel-card overflow-hidden rounded-3xl shadow-lg p-1.5">
+          <div className="flex min-h-[100px] items-center justify-center rounded-2xl bg-black/25 px-0.5 py-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               key={replayKey}
@@ -128,9 +132,9 @@ function RollingCardColumn({
   const under = nextItem || current;
   return (
     <div className="flex w-[min(46vw,280px)] shrink-0 justify-center">
-      <div className="glass-pastel-card overflow-hidden rounded-3xl shadow-lg">
+      <div className="glass-pastel-card overflow-hidden rounded-3xl shadow-lg p-1.5">
         <div
-          className="relative grid min-h-[100px] place-items-center bg-black/25 px-1 py-2 [&>img]:col-start-1 [&>img]:row-start-1"
+          className="relative grid min-h-[100px] place-items-center rounded-2xl bg-black/25 px-0.5 py-2 [&>img]:col-start-1 [&>img]:row-start-1"
           style={{ gridTemplateColumns: "1fr", gridTemplateRows: "1fr" }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -160,7 +164,6 @@ function RollingCardColumn({
             }}
             draggable={false}
             decoding="async"
-            onTransitionEnd={onFadeEnd || undefined}
           />
         </div>
       </div>
@@ -176,7 +179,6 @@ export default function SigRollingOverlayPage() {
   const rolling = useMemo(() => normalizeSigRolling(state?.sigRolling), [state?.sigRolling]);
   const items = rolling.items;
   const fadeMs = rolling.fadeMs;
-  const staticHoldMs = rolling.staticHoldMs;
 
   /** 한 줄에 왼쪽·오른쪽 카드가 함께 넘어가도록 페어 시작 인덱스(짝 단위 +2) */
   const [pairStart, setPairStart] = useState(0);
@@ -189,7 +191,9 @@ export default function SigRollingOverlayPage() {
   const leftNext = n ? items[(pairStart + 2) % n] : null;
   const rightNext = n ? items[(pairStart + 3) % n] : null;
 
-  const itemsSig = useMemo(() => items.map((x) => x.id).join("|"), [items]);
+  const scheduleKey = sigRollingScheduleKey(state?.sigRolling);
+  const rollingRef = useRef(rolling);
+  rollingRef.current = rolling;
 
   const useCrossfade = n >= 3;
 
@@ -197,7 +201,21 @@ export default function SigRollingOverlayPage() {
     setPairStart(0);
     setReplayKey(0);
     setFading(false);
-  }, [itemsSig]);
+  }, [scheduleKey]);
+
+  /** 크로스페이드 종료: CSS transitionEnd는 누락될 수 있어 fadeMs 타이머로만 진행 */
+  useEffect(() => {
+    if (!fading || n < 3) return;
+    const ms = Math.max(120, fadeMs);
+    const id = window.setTimeout(() => {
+      setPairStart((p) => {
+        const len = rollingRef.current.items.length;
+        return len < 3 ? p : (p + 2) % len;
+      });
+      setFading(false);
+    }, ms);
+    return () => window.clearTimeout(id);
+  }, [fading, n, fadeMs]);
 
   useEffect(() => {
     if (!ready || n === 0 || fading) return;
@@ -206,24 +224,30 @@ export default function SigRollingOverlayPage() {
     let timerId: number | undefined;
 
     void (async () => {
-      let hold = staticHoldMs;
-      if (n === 1) {
-        const url = items[0]?.url;
+      const r = rollingRef.current;
+      const list = r.items;
+      const nn = list.length;
+      const holdMs = r.staticHoldMs;
+      if (nn === 0) return;
+
+      let hold = holdMs;
+      if (nn === 1) {
+        const url = list[0]?.url;
         if (!url) return;
-        hold = await getSigRollingHoldMs(url, staticHoldMs);
-      } else if (n === 2) {
-        const h0 = await getSigRollingHoldMs(items[0].url, staticHoldMs);
-        const h1 = await getSigRollingHoldMs(items[1].url, staticHoldMs);
+        hold = await getSigRollingHoldMs(url, holdMs);
+      } else if (nn === 2) {
+        const h0 = await getSigRollingHoldMs(list[0].url, holdMs);
+        const h1 = await getSigRollingHoldMs(list[1].url, holdMs);
         hold = Math.max(h0, h1);
       } else {
-        const uL = items[pairStart % n]?.url;
-        const uR = items[(pairStart + 1) % n]?.url;
+        const uL = list[pairStart % nn]?.url;
+        const uR = list[(pairStart + 1) % nn]?.url;
         if (!uL || !uR) return;
-        hold = Math.max(await getSigRollingHoldMs(uL, staticHoldMs), await getSigRollingHoldMs(uR, staticHoldMs));
+        hold = Math.max(await getSigRollingHoldMs(uL, holdMs), await getSigRollingHoldMs(uR, holdMs));
       }
       if (cancelled) return;
       timerId = window.setTimeout(() => {
-        if (n <= 2) {
+        if (nn <= 2) {
           setReplayKey((k) => k + 1);
         } else {
           setFading(true);
@@ -235,17 +259,7 @@ export default function SigRollingOverlayPage() {
       cancelled = true;
       if (timerId !== undefined) window.clearTimeout(timerId);
     };
-  }, [ready, n, pairStart, fading, items, staticHoldMs, replayKey]);
-
-  const onFadeEnd = useCallback(
-    (e: React.TransitionEvent<HTMLImageElement>) => {
-      if (!fading || e.propertyName !== "opacity") return;
-      if (n < 3) return;
-      setPairStart((p) => (p + 2) % n);
-      setFading(false);
-    },
-    [fading, n]
-  );
+  }, [ready, n, pairStart, fading, scheduleKey, replayKey]);
 
   if (!ready) return null;
 
@@ -269,7 +283,6 @@ export default function SigRollingOverlayPage() {
           transitionActive={transitionActive}
           replayKey={replayKey}
           useCrossfade={useCrossfade}
-          onFadeEnd={useCrossfade ? onFadeEnd : undefined}
         />
         <RollingCardColumn
           current={rightCurrent}

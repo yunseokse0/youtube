@@ -79,7 +79,7 @@ export default function OneShotSigCard({
           alt={name}
           fill
           sizes={compact ? `${SIG_OVERLAY_CARD_MAX_PX}px` : "160px"}
-          className={`relative z-[2] object-cover object-center ${
+          className={`relative z-[2] object-contain object-center ${
             compact
               ? sold
                 ? "brightness-[1.08] contrast-[1.05] saturate-[1.08]"
