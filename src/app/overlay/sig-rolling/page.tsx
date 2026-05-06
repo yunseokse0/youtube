@@ -125,19 +125,24 @@ function RollingCardColumn({
 }) {
   if (!current) return null;
 
+  /**
+   * 모바일(WebView/Safari)에서는 backdrop-filter 계열이 투명 캔버스와 겹칠 때
+   * 카드 외곽이 검은 타일처럼 보이는 경우가 있어, sig-rolling은 블러 없이 고정 셸 사용.
+   */
+  const shellBase = "overflow-hidden shadow-lg border border-white/20 bg-white/35";
   const shellClass =
     pairSide === "left"
-      ? "glass-pastel-card overflow-hidden rounded-l-3xl rounded-r-none shadow-lg pt-1.5 pb-1.5 pl-1.5 pr-0"
+      ? `${shellBase} rounded-l-3xl rounded-r-none pt-1.5 pb-1.5 pl-1.5 pr-0`
       : pairSide === "right"
-        ? "glass-pastel-card overflow-hidden rounded-r-3xl rounded-l-none shadow-lg pt-1.5 pb-1.5 pr-1.5 pl-0"
-        : "glass-pastel-card overflow-hidden rounded-3xl shadow-lg p-1.5";
+        ? `${shellBase} rounded-r-3xl rounded-l-none pt-1.5 pb-1.5 pr-1.5 pl-0`
+        : `${shellBase} rounded-3xl p-1.5`;
 
   if (!useCrossfade) {
     return (
       <div className="shrink-0">
         <div className={shellClass}>
           <div
-            className="flex items-center justify-center overflow-hidden rounded-2xl bg-black/25"
+            className="flex items-center justify-center overflow-hidden rounded-2xl bg-white/15"
             style={mediaFrameStyle}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -160,7 +165,7 @@ function RollingCardColumn({
     <div className="shrink-0">
       <div className={shellClass}>
         <div
-          className="relative grid place-items-center overflow-hidden rounded-2xl bg-black/25 [&>img]:col-start-1 [&>img]:row-start-1"
+          className="relative grid place-items-center overflow-hidden rounded-2xl bg-white/15 [&>img]:col-start-1 [&>img]:row-start-1"
           style={{
             ...mediaFrameStyle,
             gridTemplateColumns: "1fr",
