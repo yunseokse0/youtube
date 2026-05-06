@@ -10,4 +10,9 @@ describe("parseSigAmountFromText", () => {
   it("공백 없이 숫자+원 패턴을 인식한다", () => {
     expect(parseSigAmountFromText("247000원")).toBe(247000);
   });
+
+  it("소수 만·천 원 표기를 인식한다", () => {
+    expect(parseSigAmountFromText("특가 7.7만")).toBe(77000);
+    expect(parseSigAmountFromText("350 천 원")).toBe(350000);
+  });
 });

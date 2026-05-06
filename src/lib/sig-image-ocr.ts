@@ -28,11 +28,26 @@ export function parseSigAmountFromText(rawText: string): number | null {
   if (!text.trim()) return null;
   const candidates: number[] = [];
 
+  /** 소수 만을 정수 만보다 먼저 (예: 7.7만 → 7만으로 오인 방지) */
+  const manDecimalRegex = /(\d+(?:\.\d+)?)\s*만\s*원?/g;
+  for (const m of text.matchAll(manDecimalRegex)) {
+    const n = parseFloat(String(m[1] || "").replace(/,/g, ""));
+    if (!Number.isFinite(n)) continue;
+    const amount = Math.round(n * 10000);
+    if (amount >= 1000 && amount <= 100000000) candidates.push(amount);
+  }
+
   const manRegex = /(\d{1,3})\s*만(?:\s*([0-9]{1,4}))?/g;
   for (const m of text.matchAll(manRegex)) {
     const man = Number(m[1] || 0);
     const tail = Number(m[2] || 0);
     const amount = man * 10000 + tail;
+    if (Number.isFinite(amount) && amount >= 1000 && amount <= 100000000) candidates.push(amount);
+  }
+
+  const cheonWonRegex = /(\d{1,4})\s*천\s*원/g;
+  for (const m of text.matchAll(cheonWonRegex)) {
+    const amount = Number(m[1] || 0) * 1000;
     if (Number.isFinite(amount) && amount >= 1000 && amount <= 100000000) candidates.push(amount);
   }
 
@@ -195,6 +210,93 @@ async function loadImageForOcr(imageUrl: string): Promise<SigImageLoadInfo> {
   }
 }
 
+/** GIF/WebP 애니 등 첫 프레임으로 고정 + OCR용 업스케일 */
+const OCR_MAX_SIDE = 2400;
+const OCR_MIN_SHORT_EDGE = 360;
+
+async function flattenToStaticImageBitmap(bitmap: ImageBitmap): Promise<ImageBitmap> {
+  if (bitmap.width < 1 || bitmap.height < 1) return bitmap;
+  const c = document.createElement("canvas");
+  c.width = bitmap.width;
+  c.height = bitmap.height;
+  const ctx = c.getContext("2d");
+  if (!ctx) return bitmap;
+  ctx.drawImage(bitmap, 0, 0);
+  return await createImageBitmap(c);
+}
+
+function canvasToGrayscale(canvas: HTMLCanvasElement): HTMLCanvasElement {
+  const out = document.createElement("canvas");
+  out.width = canvas.width;
+  out.height = canvas.height;
+  const ctx = out.getContext("2d");
+  if (!ctx) return canvas;
+  ctx.drawImage(canvas, 0, 0);
+  const imgData = ctx.getImageData(0, 0, out.width, out.height);
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const y = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    d[i] = d[i + 1] = d[i + 2] = y;
+  }
+  ctx.putImageData(imgData, 0, 0);
+  return out;
+}
+
+function buildScaledColorCanvasForOcr(bitmap: ImageBitmap): HTMLCanvasElement | null {
+  const w0 = bitmap.width;
+  const h0 = bitmap.height;
+  if (w0 < 1 || h0 < 1) return null;
+  let scale = 1;
+  const short = Math.min(w0, h0);
+  if (short < OCR_MIN_SHORT_EDGE) {
+    scale = OCR_MIN_SHORT_EDGE / short;
+  }
+  let nw = Math.max(1, Math.floor(w0 * scale));
+  let nh = Math.max(1, Math.floor(h0 * scale));
+  const longest = Math.max(nw, nh);
+  if (longest > OCR_MAX_SIDE) {
+    const r = OCR_MAX_SIDE / longest;
+    nw = Math.max(1, Math.floor(nw * r));
+    nh = Math.max(1, Math.floor(nh * r));
+  }
+  const color = document.createElement("canvas");
+  color.width = nw;
+  color.height = nh;
+  const ctx = color.getContext("2d");
+  if (!ctx) return null;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(bitmap, 0, 0, nw, nh);
+  return color;
+}
+
+/** 업로드 파일: `<img>` 첫 프레임 디코딩(GIF·저해상도 호환) */
+async function decodeFileToFirstFrameBitmap(file: File): Promise<ImageBitmap> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("decode_failed"));
+      el.src = url;
+    });
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    if (w < 1 || h < 1) return await createImageBitmap(file);
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return await createImageBitmap(file);
+    ctx.drawImage(img, 0, 0);
+    return await createImageBitmap(canvas);
+  } catch {
+    return await createImageBitmap(file);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 const OCR_SCALE_STEPS = [1, 1.5, 2, 2.5, 3] as const;
 
 async function detectPriceFromBitmapNative(bitmap: ImageBitmap): Promise<number | null> {
@@ -236,33 +338,42 @@ async function detectPriceFromBitmapNative(bitmap: ImageBitmap): Promise<number 
 async function detectPriceWithTesseractDetailed(bitmap: ImageBitmap): Promise<{ price: number | null; rawText: string }> {
   if (typeof window === "undefined") return { price: null, rawText: "" };
 
-  const canvas = document.createElement("canvas");
-  const maxSide = 1800;
-  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
-  const w = Math.max(1, Math.floor(bitmap.width * scale));
-  const h = Math.max(1, Math.floor(bitmap.height * scale));
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return { price: null, rawText: "" };
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(bitmap, 0, 0, w, h);
+  const colorCanvas = buildScaledColorCanvasForOcr(bitmap);
+  if (!colorCanvas) return { price: null, rawText: "" };
 
   try {
     const { createWorker, PSM } = await import("tesseract.js");
     const worker = await createWorker("kor+eng", undefined, {
       logger: () => {},
     });
+    let longestText = "";
     try {
-      await worker.setParameters({
-        tessedit_pageseg_mode: PSM.AUTO,
-      });
-      const {
-        data: { text },
-      } = await worker.recognize(canvas);
-      const trimmed = String(text || "").trim();
-      return { price: parseSigAmountFromText(trimmed), rawText: trimmed };
+      const modes = [PSM.SPARSE_TEXT, PSM.SINGLE_BLOCK, PSM.AUTO] as const;
+
+      const runCanvas = async (canvas: HTMLCanvasElement): Promise<{ price: number; rawText: string } | null> => {
+        for (const psm of modes) {
+          await worker.setParameters({
+            tessedit_pageseg_mode: psm,
+          });
+          const {
+            data: { text },
+          } = await worker.recognize(canvas);
+          const trimmed = String(text || "").trim();
+          if (trimmed.length > longestText.length) longestText = trimmed;
+          const price = parseSigAmountFromText(trimmed);
+          if (price != null) return { price, rawText: trimmed };
+        }
+        return null;
+      };
+
+      const fromColor = await runCanvas(colorCanvas);
+      if (fromColor) return fromColor;
+
+      const grayCanvas = canvasToGrayscale(colorCanvas);
+      const fromGray = await runCanvas(grayCanvas);
+      if (fromGray) return fromGray;
+
+      return { price: null, rawText: longestText };
     } finally {
       await worker.terminate();
     }
@@ -317,12 +428,18 @@ export async function detectSigPriceFromImageUrlDetailed(imageUrl: string): Prom
   if (typeof window === "undefined") {
     return { price: null, reason: "unsupported_browser" };
   }
-  const { bitmap, failedHttpStatus } = await loadImageForOcr(imageUrl);
-  if (!bitmap) {
+  const { bitmap: loaded, failedHttpStatus } = await loadImageForOcr(imageUrl);
+  if (!loaded) {
     if (failedHttpStatus === 404) {
       return { price: null, reason: "image_not_found", imageHttpStatus: 404 };
     }
     return { price: null, reason: "image_load_failed", imageHttpStatus: failedHttpStatus };
+  }
+  const bitmap = await flattenToStaticImageBitmap(loaded);
+  try {
+    loaded.close();
+  } catch {
+    /* ignore */
   }
   try {
     const { price, previewText } = await detectPriceFromBitmapDetailed(bitmap);
@@ -342,7 +459,13 @@ export async function detectSigPriceFromImageUrlDetailed(imageUrl: string): Prom
 export async function detectSigPriceFromImageFile(file: File): Promise<number | null> {
   if (typeof window === "undefined") return null;
   try {
-    const bitmap = await createImageBitmap(file);
+    const raw = await decodeFileToFirstFrameBitmap(file);
+    const bitmap = await flattenToStaticImageBitmap(raw);
+    try {
+      raw.close();
+    } catch {
+      /* ignore */
+    }
     try {
       return await detectPriceFromBitmap(bitmap);
     } finally {
