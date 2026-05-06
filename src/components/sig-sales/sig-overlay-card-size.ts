@@ -6,6 +6,10 @@ import type { CSSProperties } from "react";
  */
 export const SIG_OVERLAY_CARD_MAX_PX = 168;
 
+/** 시그 롤링 오버레이 등: 원본 해상도와 무관하게 표시할 고정 프레임(px) — 첨부 아트와 동일 */
+export const SIG_ROLLING_MEDIA_WIDTH_PX = 202;
+export const SIG_ROLLING_MEDIA_HEIGHT_PX = 300;
+
 /**
  * 방송용 미디어 박스: **202×300** 세로형(약 2:3) — 개별 시그·한방 카드 동일 비율.
  * min-height 제거: aspect만으로 높이 고정되어 왜곡·과대 없음.

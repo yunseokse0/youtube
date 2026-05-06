@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
@@ -13,10 +14,19 @@ import {
 } from "@/lib/state";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { getSigRollingHoldMs } from "@/lib/sig-rolling-duration";
+import {
+  SIG_ROLLING_MEDIA_HEIGHT_PX,
+  SIG_ROLLING_MEDIA_WIDTH_PX,
+} from "@/components/sig-sales/sig-overlay-card-size";
 
-/** 세로·가로 GIF 모두 잘리지 않게 — 높이 상한만 두고 object-contain (`block`으로 인라인 베이스라인 여백 제거) */
-const IMG_BOX =
-  "pointer-events-none select-none block max-h-[min(85vh,720px)] w-auto max-w-full object-contain object-center";
+/** 202×300 프레임 안에 맞춤 — 원본 GIF/PNG 해상도와 무관, 잘림 없음(object-contain + flex/grid 최소크기 이슈 방지) */
+const IMG_IN_FRAME =
+  "pointer-events-none select-none block h-full w-full max-h-full max-w-full min-h-0 min-w-0 object-contain object-center";
+
+const mediaFrameStyle: CSSProperties = {
+  width: SIG_ROLLING_MEDIA_WIDTH_PX,
+  height: SIG_ROLLING_MEDIA_HEIGHT_PX,
+};
 
 /** 폴링으로 `state` 객체만 바뀌고 내용은 같을 때도 참조가 매번 바뀌지 않도록 문자열 키로 구분 (타이머 effect 무한 리셋 방지) */
 function sigRollingScheduleKey(raw: unknown): string {
@@ -122,15 +132,18 @@ function RollingCardColumn({
 
   if (!useCrossfade) {
     return (
-      <div className="shrink-0 max-w-[min(46vw,280px)]">
+      <div className="shrink-0">
         <div className={shellClass}>
-          <div className="flex min-h-[100px] items-center justify-center rounded-2xl bg-black/25 px-0.5 py-2">
+          <div
+            className="flex items-center justify-center overflow-hidden rounded-2xl bg-black/25"
+            style={mediaFrameStyle}
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               key={replayKey}
               src={current.url}
               alt=""
-              className={IMG_BOX}
+              className={IMG_IN_FRAME}
               draggable={false}
               decoding="async"
             />
@@ -142,18 +155,22 @@ function RollingCardColumn({
 
   const under = nextItem || current;
   return (
-    <div className="shrink-0 max-w-[min(46vw,280px)]">
+    <div className="shrink-0">
       <div className={shellClass}>
         <div
-          className="relative grid min-h-[100px] place-items-center rounded-2xl bg-black/25 px-0.5 py-2 [&>img]:col-start-1 [&>img]:row-start-1"
-          style={{ gridTemplateColumns: "1fr", gridTemplateRows: "1fr" }}
+          className="relative grid place-items-center overflow-hidden rounded-2xl bg-black/25 [&>img]:col-start-1 [&>img]:row-start-1"
+          style={{
+            ...mediaFrameStyle,
+            gridTemplateColumns: "1fr",
+            gridTemplateRows: "1fr",
+          }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             key={`under-${under.id}`}
             src={under.url}
             alt=""
-            className={IMG_BOX}
+            className={IMG_IN_FRAME}
             style={{
               opacity: fading ? 1 : 0,
               transition: fading ? transitionActive : "none",
@@ -167,7 +184,7 @@ function RollingCardColumn({
             key={`over-${current.id}`}
             src={current.url}
             alt=""
-            className={IMG_BOX}
+            className={IMG_IN_FRAME}
             style={{
               opacity: fading ? 0 : 1,
               transition: fading ? transitionActive : "none",
