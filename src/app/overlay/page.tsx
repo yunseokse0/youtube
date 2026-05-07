@@ -1873,10 +1873,16 @@ function OverlayInner() {
     }
     return base;
   }, [demoMode, membersRemote, ready, isPreviewGuide, externalHost]);
+  const getContributionValue = useCallback((m: Member) => {
+    const raw = (m as Member & { contribution?: unknown }).contribution;
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed)) return Math.max(0, parsed);
+    return Math.max(0, Number(m.account || 0) + Number(m.toon || 0));
+  }, []);
   /** 멤버별 기여도 필드 합계(「기여도 기록부」·후원 반영 시 동기화된 값; 합계 열과 다를 수 있음) */
   const sumContribution = useMemo(
-    () => members.reduce((sum, m) => sum + Math.max(0, Number(m.contribution || 0)), 0),
-    [members]
+    () => members.reduce((sum, m) => sum + getContributionValue(m), 0),
+    [members, getContributionValue]
   );
   const donors = useMemo(() => {
     if (demoMode) {
@@ -1995,8 +2001,8 @@ function OverlayInner() {
     const cols = hasRoleColumn
       ? `${rankColCh}|${roleColFit}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`
       : `${rankColCh}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`;
-    const rows = ranked.map(({ m }) => `${m.account}|${m.toon}|${Number(m.contribution || 0)}`).join(";");
-    const pinRows = pinned.map((m) => `${m.account}|${m.toon}|${Number(m.contribution || 0)}`).join(";");
+    const rows = ranked.map(({ m }) => `${m.account}|${m.toon}|${getContributionValue(m)}`).join(";");
+    const pinRows = pinned.map((m) => `${m.account}|${m.toon}|${getContributionValue(m)}`).join(";");
     return `${cols}#${rows}~${pinRows}`;
   }, [
     ranked,
@@ -2010,10 +2016,15 @@ function OverlayInner() {
     rankColCh,
     members,
     getMemberRole,
+    getContributionValue,
   ]);
 
   useLayoutEffect(() => {
     if (!showMembers) return;
+    if (externalHost && members.length <= 1) {
+      setMemberTableFitFactor(1);
+      return;
+    }
     const clampEl = memberTableClampRef.current;
     const table = tableBoxRef.current as HTMLTableElement | null;
     if (!clampEl || !table) return;
@@ -2082,7 +2093,7 @@ function OverlayInner() {
         /* noop */
       }
     };
-  }, [showMembers, mSize, memberTableFitSig]);
+  }, [showMembers, mSize, memberTableFitSig, externalHost, members.length]);
 
   const allOrderKeys = [...ranked.map(({ m }) => m.id), ...pinned.map((m) => `${m.id}-p`)];
   const setRowRef = useFlip(allOrderKeys, 500);
@@ -2563,7 +2574,7 @@ function OverlayInner() {
                           <span className="overlay-num-cell-inner">{fmtTotalCell(m.account + m.toon)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
-                          <span className="overlay-num-cell-inner">{fmt(Math.max(0, Number(m.contribution || 0)))}</span>
+                          <span className="overlay-num-cell-inner">{fmt(getContributionValue(m))}</span>
                         </td>
                       </tr>
                     ))}
@@ -2582,7 +2593,7 @@ function OverlayInner() {
                           <span className="overlay-num-cell-inner">{fmtTotalCell(m.account + m.toon)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
-                          <span className="overlay-num-cell-inner">{fmt(Math.max(0, Number(m.contribution || 0)))}</span>
+                          <span className="overlay-num-cell-inner">{fmt(getContributionValue(m))}</span>
                         </td>
                       </tr>
                     ))}
