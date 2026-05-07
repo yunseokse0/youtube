@@ -1475,8 +1475,8 @@ function OverlayInner() {
   const totalCh = Math.max(6, Math.min(12, defTotalCh));
   /** 순위 열: 헤더「순위」·「#12」 등이 잘리지 않도록 `ch` 하한 확보(URL `rankCh`) */
   const rankColCh = Math.max(5, Math.min(10, parseInt(sp.get("rankCh") || "5", 10)));
-  /** 기여도 열: OBS 가독성 우선으로 기본 폭을 한 단계 넓힌다 */
-  const contributionCh = Math.max(13, Math.min(18, defContributionCh));
+  /** 기여도 열: 고정 폭은 너무 키우지 않고, 대신 전체 자동 축소로 오버레이 범위 내에 맞춘다 */
+  const contributionCh = Math.max(11, Math.min(16, defContributionCh));
   const showSideDonors = false;
   const donorsSide = (sp.get("donorsSide") || "right").toLowerCase();
   const donorsWidth = Math.max(120, Math.min(600, parseInt(sp.get("donorsWidth") || "220", 10)));
@@ -1873,17 +1873,10 @@ function OverlayInner() {
     }
     return base;
   }, [demoMode, membersRemote, ready, isPreviewGuide, externalHost]);
-  const getContributionValue = useCallback((m: Member) => {
-    const raw = (m as Member & { contribution?: unknown }).contribution;
-    const parsed = Number(raw);
-    if (Number.isFinite(parsed)) return Math.max(0, parsed);
-    // Legacy rows may not have contribution; fallback to visible 합계.
-    return Math.max(0, Number(m.account || 0) + Number(m.toon || 0));
-  }, []);
   /** 멤버별 기여도 필드 합계(「기여도 기록부」·후원 반영 시 동기화된 값; 합계 열과 다를 수 있음) */
   const sumContribution = useMemo(
-    () => members.reduce((sum, m) => sum + getContributionValue(m), 0),
-    [members, getContributionValue]
+    () => members.reduce((sum, m) => sum + Math.max(0, Number(m.contribution || 0)), 0),
+    [members]
   );
   const donors = useMemo(() => {
     if (demoMode) {
@@ -2002,8 +1995,8 @@ function OverlayInner() {
     const cols = hasRoleColumn
       ? `${rankColCh}|${roleColFit}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`
       : `${rankColCh}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`;
-    const rows = ranked.map(({ m }) => `${m.account}|${m.toon}|${getContributionValue(m)}`).join(";");
-    const pinRows = pinned.map((m) => `${m.account}|${m.toon}|${getContributionValue(m)}`).join(";");
+    const rows = ranked.map(({ m }) => `${m.account}|${m.toon}|${Number(m.contribution || 0)}`).join(";");
+    const pinRows = pinned.map((m) => `${m.account}|${m.toon}|${Number(m.contribution || 0)}`).join(";");
     return `${cols}#${rows}~${pinRows}`;
   }, [
     ranked,
@@ -2017,7 +2010,6 @@ function OverlayInner() {
     rankColCh,
     members,
     getMemberRole,
-    getContributionValue,
   ]);
 
   useLayoutEffect(() => {
@@ -2370,7 +2362,7 @@ function OverlayInner() {
         }
         .overlay-root .overlay-elegant-table td {
           color: #ffffff !important;
-          transition: none !important;
+          transition: filter 180ms ease, transform 180ms ease, background-size 220ms ease;
           background: transparent !important;
           text-shadow: ${excelTextOutline} !important;
           -webkit-text-stroke: 0.75px rgba(6, 12, 24, 0.95) !important;
@@ -2410,11 +2402,7 @@ function OverlayInner() {
           outline: none !important;
         }
         `}
-        .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution {
-          color: #ffffff !important;
-          font-weight: 800 !important;
-          letter-spacing: 0.01em;
-        }
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution { color: #fff7fa !important; }
         /* 반투명 테이블 모드에서도 헤더 분홍 띠 유지(예전엔 transparent 로 헤더만 사라짐) */
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
         .overlay-root .overlay-elegant-table thead td.overlay-col-role,
@@ -2432,7 +2420,10 @@ function OverlayInner() {
           padding-left: 0.32em !important;
           padding-right: 0.32em !important;
         }
-        .overlay-root .overlay-elegant-table tbody tr:hover td { filter: none !important; }
+        .overlay-root .overlay-elegant-table tbody tr:hover td {
+          filter: brightness(1.06) saturate(1.03);
+          transform: scale(1.009);
+        }
         /* table-layout:fixed + col 너비 안에서 이름 열만 말줄임이 안정적으로 적용되도록 */
         .overlay-root .overlay-elegant-table td.overlay-col-name {
           max-width: 0;
@@ -2549,7 +2540,7 @@ function OverlayInner() {
                   </thead>
                   <tbody>
                     {ranked.map(({m, rank}) => (
-                      <tr key={m.id} ref={setRowRef(m.id)} className={`overlay-row ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
+                      <tr key={m.id} ref={setRowRef(m.id)} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
                         <td className={`${effectiveRowCls} overlay-col-rank text-left overlay-rank-cell`}>{rank == null ? "—" : `#${rank}`}</td>
                         {hasRoleColumn && (
                           <td
@@ -2572,12 +2563,12 @@ function OverlayInner() {
                           <span className="overlay-num-cell-inner">{fmtTotalCell(m.account + m.toon)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
-                          <span className="overlay-num-cell-inner">{fmt(getContributionValue(m))}</span>
+                          <span className="overlay-num-cell-inner">{fmt(Math.max(0, Number(m.contribution || 0)))}</span>
                         </td>
                       </tr>
                     ))}
                     {pinned.map((m) => (
-                      <tr key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`overlay-row ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
+                      <tr key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
                         <td className={`${effectiveRowCls} overlay-col-rank text-right overlay-rank-cell`}>—</td>
                         {hasRoleColumn && <td className={`${effectiveRowCls} overlay-col-role`}></td>}
                         <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
@@ -2591,7 +2582,7 @@ function OverlayInner() {
                           <span className="overlay-num-cell-inner">{fmtTotalCell(m.account + m.toon)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
-                          <span className="overlay-num-cell-inner">{fmt(getContributionValue(m))}</span>
+                          <span className="overlay-num-cell-inner">{fmt(Math.max(0, Number(m.contribution || 0)))}</span>
                         </td>
                       </tr>
                     ))}
