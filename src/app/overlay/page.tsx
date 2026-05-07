@@ -2325,18 +2325,11 @@ function OverlayInner() {
       fitPin === "cl" ? "left center" :
       fitPin === "cr" ? "right center" :
       "center center";
-    const freezeScaleInExternalHost =
-      externalHost &&
-      zoomMode === "neutral" &&
-      !hasExplicitScale &&
-      Math.abs(effectiveScale - 1) < 0.02;
-    const scaleStyleTag = freezeScaleInExternalHost
-      ? null
-      : (
-        <style dangerouslySetInnerHTML={{ __html: `
-          .overlay-scale-target { transform: scale(${effectiveScale}) !important; -webkit-transform: scale(${effectiveScale}) !important; transform-origin: ${origin} !important; }
-        ` }} />
-      );
+    const scaleStyleTag = (
+      <style dangerouslySetInnerHTML={{ __html: `
+        .overlay-scale-target { transform: scale(${effectiveScale}) !important; -webkit-transform: scale(${effectiveScale}) !important; transform-origin: ${origin} !important; }
+      ` }} />
+    );
     const nameWrapCls = "truncate";
     const tfTable = memberTableFitFactor;
     const memberFontPx = Math.max(8, Math.round(mSize * tfTable));
@@ -2378,10 +2371,7 @@ function OverlayInner() {
         }
       ` }} />
     );
-  const excelTextOutline = externalHost
-    ? "0 1px 2px rgba(0,0,0,0.45)"
-    : "-1px -1px 0 rgba(6, 12, 24, 0.95), 1px -1px 0 rgba(6, 12, 24, 0.95), -1px 1px 0 rgba(6, 12, 24, 0.95), 1px 1px 0 rgba(6, 12, 24, 0.95), 0 2px 6px rgba(0,0,0,0.42)";
-  const excelTextStroke = externalHost ? 0 : 0.75;
+  const excelTextOutline = "-1px -1px 0 rgba(6, 12, 24, 0.95), 1px -1px 0 rgba(6, 12, 24, 0.95), -1px 1px 0 rgba(6, 12, 24, 0.95), 1px 1px 0 rgba(6, 12, 24, 0.95), 0 2px 6px rgba(0,0,0,0.42)";
   const tableVisualStyle = (
       <style dangerouslySetInnerHTML={{ __html: `
         .overlay-root .overlay-elegant-table {
@@ -2397,7 +2387,7 @@ function OverlayInner() {
           transition: none !important;
           background: transparent !important;
           text-shadow: ${excelTextOutline} !important;
-          -webkit-text-stroke: ${excelTextStroke}px rgba(6, 12, 24, 0.95) !important;
+          -webkit-text-stroke: 0.75px rgba(6, 12, 24, 0.95) !important;
           paint-order: stroke fill;
           -webkit-font-smoothing: antialiased;
           text-rendering: geometricPrecision;
@@ -2407,7 +2397,7 @@ function OverlayInner() {
           background: transparent !important;
           font-weight: 800 !important;
           text-shadow: ${excelTextOutline} !important;
-          -webkit-text-stroke: ${excelTextStroke}px rgba(6, 12, 24, 0.95) !important;
+          -webkit-text-stroke: 0.75px rgba(6, 12, 24, 0.95) !important;
           paint-order: stroke fill;
           box-shadow: none !important;
           border: none !important;
@@ -2416,12 +2406,12 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td strong {
           color: #ffffff !important;
           text-shadow: ${excelTextOutline} !important;
-          -webkit-text-stroke: ${excelTextStroke}px rgba(6, 12, 24, 0.95) !important;
+          -webkit-text-stroke: 0.75px rgba(6, 12, 24, 0.95) !important;
         }
         .overlay-root .overlay-elegant-table tbody td span,
         .overlay-root .overlay-elegant-table tbody td strong {
           text-shadow: ${excelTextOutline} !important;
-          -webkit-text-stroke: ${excelTextStroke}px rgba(6, 12, 24, 0.95) !important;
+          -webkit-text-stroke: 0.75px rgba(6, 12, 24, 0.95) !important;
           paint-order: stroke fill;
         }
         .overlay-root .overlay-elegant-table tbody td.overlay-col-total { color: #fff9f0 !important; }

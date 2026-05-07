@@ -225,7 +225,6 @@ function RankingColumn({
   unified,
   showColumnDivider,
   panelOpacityFrac,
-  motionEnabled,
 }: {
   title: string;
   items: DonorRow[];
@@ -247,7 +246,6 @@ function RankingColumn({
   showColumnDivider?: boolean;
   /** unified: 헤더·목록 배경에 동일하게 `panelBg`/`headerBg`×투명도 */
   panelOpacityFrac?: number;
-  motionEnabled: boolean;
 }) {
   const outlined = { textShadow: `-1px -1px 0 ${outlineColor},1px -1px 0 ${outlineColor},-1px 1px 0 ${outlineColor},1px 1px 0 ${outlineColor},0 2px 6px rgba(0,0,0,0.38)` } as const;
   const rankLabel = (idx: number): string => {
@@ -275,22 +273,7 @@ function RankingColumn({
     : Math.max(0, Math.min(100, headerOpacity)) / 100;
   const headerBgResolved = backgroundWithOpacityFrac(headerBg, headerOpacityFrac);
 
-  const prevOrderSigRef = useRef<string>("");
-  const [animateRows, setAnimateRows] = useState(false);
-  useEffect(() => {
-    const sig = items.map((item) => item.name).join("|");
-    const prev = prevOrderSigRef.current;
-    prevOrderSigRef.current = sig;
-    if (!motionEnabled || !prev || prev === sig) {
-      setAnimateRows(false);
-      return;
-    }
-    setAnimateRows(true);
-    const t = window.setTimeout(() => setAnimateRows(false), 700);
-    return () => window.clearTimeout(t);
-  }, [items, motionEnabled]);
-
-  const rowList = motionEnabled && animateRows ? (
+  const rowList = (
     <AnimatePresence initial={false}>
       {items.map((item, idx) => (
         <motion.div
@@ -318,27 +301,6 @@ function RankingColumn({
         </motion.div>
       ))}
     </AnimatePresence>
-  ) : (
-    <>
-      {items.map((item, idx) => (
-        <div
-          key={item.name}
-          className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 px-1 py-1"
-          style={{ fontSize: `${rowSize}px` }}
-        >
-          <span className="font-black text-center" style={{ color: rankColor, fontSize: `${rankSize}px`, ...outlined }}>
-            {rankLabel(idx)}
-          </span>
-          <span className="truncate font-bold" style={{ color: nameColor, ...outlined }}>
-            {item.name}
-          </span>
-          <span className="font-black tabular-nums text-right" style={{ color: amountColor, ...outlined }}>
-            {item.amount.toLocaleString("ko-KR")}
-            {suffix ? ` ${suffix}` : " 원"}
-          </span>
-        </div>
-      ))}
-    </>
   );
 
   return (
@@ -387,10 +349,6 @@ export default function DonorRankingsOverlayPage() {
   );
 
   const useTest = (sp.get("test") || "false").toLowerCase() === "true";
-  const hostParam = (sp.get("host") || "").toLowerCase();
-  const externalHost = hostParam === "prism" || hostParam === "obs" || hostParam === "external";
-  // 기본은 ON이지만, 실제 애니메이션은 RankingColumn 내부에서 "순위 변동 시"에만 실행한다.
-  const rowMotionEnabled = (sp.get("rowMotion") || "true").toLowerCase() === "true";
   const savedTheme = state?.donorRankingsTheme || defaultState().donorRankingsTheme;
 
   const titleSize = readNumber(sp, "titleSize", savedTheme.titleSize, 14, 80);
@@ -399,7 +357,6 @@ export default function DonorRankingsOverlayPage() {
   const overlayOpacity = readNumber(sp, "overlayOpacity", savedTheme.overlayOpacity, 0, 100);
   const zoomPct = Math.floor(readNumber(sp, "zoomPct", 100, 30, 300));
   const zoomScale = zoomPct / 100;
-  const freezeScaleInExternalHost = externalHost && sp.get("zoomPct") === null;
   const bg = readColor(sp, "bg", savedTheme.bg) || "transparent";
   /** 어두운 기본값 + 투명도 시 방송 화면과 섞여 버건디로 보이므로 밝은 파스텔 핑크를 기본으로 */
   const panelBg = resolveThemeColor(sp, "panelBg", savedTheme.panelBg, "rgba(255, 248, 252, 1)");
@@ -489,13 +446,9 @@ export default function DonorRankingsOverlayPage() {
       <div
         className="relative z-10 mx-auto max-w-[1500px]"
         style={{
-          ...(freezeScaleInExternalHost
-            ? {}
-            : {
-                transform: `scale(${zoomScale})`,
-                transformOrigin: "top center",
-                width: `${100 / zoomScale}%`,
-              }),
+          transform: `scale(${zoomScale})`,
+          transformOrigin: "top center",
+          width: `${100 / zoomScale}%`,
         }}
       >
         {useTest && (
@@ -527,7 +480,6 @@ export default function DonorRankingsOverlayPage() {
             unified
             showColumnDivider
             panelOpacityFrac={overlayOpacityFrac}
-            motionEnabled={rowMotionEnabled}
           />
           <RankingColumn
             title="투네 후원 순위"
@@ -546,7 +498,6 @@ export default function DonorRankingsOverlayPage() {
             headerOpacity={overlayOpacity}
             unified
             panelOpacityFrac={overlayOpacityFrac}
-            motionEnabled={rowMotionEnabled}
           />
         </div>
       </div>
