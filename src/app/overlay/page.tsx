@@ -2097,22 +2097,11 @@ function OverlayInner() {
 
   const allOrderKeys = [...ranked.map(({ m }) => m.id), ...pinned.map((m) => `${m.id}-p`)];
   const setRowRef = useFlip(allOrderKeys, 500);
-  const rowMotionEnabled = (
-    (sp.get("rowMotion") || (externalHost ? "false" : "true")).toLowerCase() === "true"
-  );
 
   const prevTotalsRef = useRef<Map<string, number>>(new Map());
   const [changedIds, setChangedIds] = useState<Set<string>>(new Set());
   const isInitialMount = useRef(true);
   useEffect(() => {
-    if (!rowMotionEnabled) {
-      prevTotalsRef.current = new Map(
-        members.map((m) => [m.id, (m.account || 0) + (m.toon || 0)])
-      );
-      setChangedIds(new Set());
-      isInitialMount.current = false;
-      return;
-    }
     const next = new Map<string, number>();
     const changed = new Set<string>();
     for (const m of members) {
@@ -2130,7 +2119,7 @@ function OverlayInner() {
       const t = setTimeout(() => setChangedIds(new Set()), 800);
       return () => clearTimeout(t);
     }
-  }, [members, rowMotionEnabled]);
+  }, [members]);
 
   useEffect(() => {
     const html = document.documentElement;
@@ -2563,11 +2552,7 @@ function OverlayInner() {
                   </thead>
                   <tbody>
                     {ranked.map(({m, rank}) => (
-                      <tr
-                        key={m.id}
-                        ref={rowMotionEnabled ? setRowRef(m.id) : undefined}
-                        className={`overlay-row ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
-                      >
+                      <tr key={m.id} ref={setRowRef(m.id)} className={`overlay-row ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
                         <td className={`${effectiveRowCls} overlay-col-rank text-left overlay-rank-cell`}>{rank == null ? "—" : `#${rank}`}</td>
                         {hasRoleColumn && (
                           <td
@@ -2595,11 +2580,7 @@ function OverlayInner() {
                       </tr>
                     ))}
                     {pinned.map((m) => (
-                      <tr
-                        key={m.id + "-p"}
-                        ref={rowMotionEnabled ? setRowRef(m.id + "-p") : undefined}
-                        className={`overlay-row ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
-                      >
+                      <tr key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`overlay-row ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
                         <td className={`${effectiveRowCls} overlay-col-rank text-right overlay-rank-cell`}>—</td>
                         {hasRoleColumn && <td className={`${effectiveRowCls} overlay-col-role`}></td>}
                         <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
