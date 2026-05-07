@@ -1606,9 +1606,7 @@ function OverlayInner() {
   const renderH = sp.get("renderHeight") ? parseInt(sp.get("renderHeight")!, 10) : null;
   const isPreviewGuide = sp.get("previewGuide") === "true";
   const autoFit = (sp.get("autoFit") || "none").toLowerCase() as "none" | "width" | "height" | "contain" | "cover";
-  const zoomMode = (
-    (sp.get("zoomMode") || (externalHost ? "neutral" : "follow")).toLowerCase() as "follow" | "invert" | "neutral"
-  );
+  const zoomMode = ((sp.get("zoomMode") || "follow").toLowerCase() as "follow" | "invert" | "neutral");
   const fitPin = centerFixed ? "cc" : ((sp.get("fitPin") || "cc").toLowerCase() as "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr");
   const showGuide = (sp.get("guide") || "false").toLowerCase() === "true";
   const boxMode = (sp.get("box") || "full").toLowerCase() as "full" | "tight";
@@ -1635,8 +1633,7 @@ function OverlayInner() {
         const sy = window.innerHeight / Math.max(1, b.h);
         s = Math.min(sx, sy);
       }
-      const nextScale = Math.max(0.1, Math.min(8, Math.round(s * 1000) / 1000));
-      setCenterZoomScale((prev) => (Math.abs(prev - nextScale) < 0.01 ? prev : nextScale));
+      setCenterZoomScale(Math.max(0.1, Math.min(8, s)));
     };
     update();
     const vv: any = (window as any).visualViewport;
