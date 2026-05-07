@@ -19,23 +19,6 @@ type DonorRow = {
   amount: number;
 };
 
-function buildDonorOverlaySignature(state: AppState | null): string {
-  if (!state) return "";
-  const donors = (state.donors || []).map((d) => ({
-    id: d.id,
-    name: d.name,
-    amount: d.amount,
-    target: d.target || "account",
-    memberId: d.memberId,
-    at: d.at,
-  }));
-  return JSON.stringify({
-    donors,
-    donorRankingsTheme: state.donorRankingsTheme || null,
-    donorRankingsOverlayConfig: state.donorRankingsOverlayConfig || null,
-  });
-}
-
 const TEST_ACCOUNT_ROWS: DonorRow[] = [
   { name: "artaiker", amount: 3849000 },
   { name: "서동", amount: 2614000 },
@@ -60,7 +43,6 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   const [state, setState] = useState<AppState | null>(null);
   const lastUpdatedRef = useRef(0);
   const syncingRef = useRef(false);
-  const lastSigRef = useRef("");
 
   const readLocalStateIfExists = useCallback((): AppState | null => {
     if (typeof window === "undefined") return null;
@@ -77,15 +59,11 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   useEffect(() => {
     const local = readLocalStateIfExists();
     if (local) {
-      const sig = buildDonorOverlaySignature(local);
       setState(local);
-      lastSigRef.current = sig;
       lastUpdatedRef.current = local.updatedAt || 0;
     } else {
       const fallback = defaultState();
-      const sig = buildDonorOverlaySignature(fallback);
       setState(fallback);
-      lastSigRef.current = sig;
       lastUpdatedRef.current = fallback.updatedAt || 0;
     }
 
@@ -96,14 +74,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
         const remote = await loadStateFromApi(userId);
         if (!remote) return;
         const remoteUpdatedAt = remote.updatedAt || 0;
-        if (remoteUpdatedAt <= lastUpdatedRef.current) return;
-        const nextSig = buildDonorOverlaySignature(remote);
-        if (nextSig === lastSigRef.current) {
-          lastUpdatedRef.current = remoteUpdatedAt;
-          return;
-        }
         lastUpdatedRef.current = remoteUpdatedAt;
-        lastSigRef.current = nextSig;
         setState(remote);
       } finally {
         syncingRef.current = false;
@@ -115,14 +86,8 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       const localNow = readLocalStateIfExists();
       if (!localNow) return;
       const localUpdatedAt = localNow.updatedAt || 0;
-      if (localUpdatedAt > lastUpdatedRef.current) {
-        const nextSig = buildDonorOverlaySignature(localNow);
-        if (nextSig === lastSigRef.current) {
-          lastUpdatedRef.current = localUpdatedAt;
-          return;
-        }
+      if (localUpdatedAt >= lastUpdatedRef.current) {
         lastUpdatedRef.current = localUpdatedAt;
-        lastSigRef.current = nextSig;
         setState(localNow);
       }
     };
@@ -424,7 +389,6 @@ export default function DonorRankingsOverlayPage() {
   const useTest = (sp.get("test") || "false").toLowerCase() === "true";
   const hostParam = (sp.get("host") || "").toLowerCase();
   const externalHost = hostParam === "prism" || hostParam === "obs" || hostParam === "external";
-  const allowExternalScale = (sp.get("allowExternalScale") || "false").toLowerCase() === "true";
   // 기본은 ON이지만, 실제 애니메이션은 RankingColumn 내부에서 "순위 변동 시"에만 실행한다.
   const rowMotionEnabled = (sp.get("rowMotion") || "true").toLowerCase() === "true";
   const savedTheme = state?.donorRankingsTheme || defaultState().donorRankingsTheme;
@@ -435,7 +399,7 @@ export default function DonorRankingsOverlayPage() {
   const overlayOpacity = readNumber(sp, "overlayOpacity", savedTheme.overlayOpacity, 0, 100);
   const zoomPct = Math.floor(readNumber(sp, "zoomPct", 100, 30, 300));
   const zoomScale = zoomPct / 100;
-  const freezeScaleInExternalHost = externalHost && !allowExternalScale;
+  const freezeScaleInExternalHost = externalHost && sp.get("zoomPct") === null;
   const bg = readColor(sp, "bg", savedTheme.bg) || "transparent";
   /** 어두운 기본값 + 투명도 시 방송 화면과 섞여 버건디로 보이므로 밝은 파스텔 핑크를 기본으로 */
   const panelBg = resolveThemeColor(sp, "panelBg", savedTheme.panelBg, "rgba(255, 248, 252, 1)");

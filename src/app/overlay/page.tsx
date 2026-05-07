@@ -2005,15 +2005,9 @@ function OverlayInner() {
     const cols = hasRoleColumn
       ? `${rankColCh}|${roleColFit}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`
       : `${rankColCh}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`;
-    // 숫자 값(계좌/투네/기여도) 변화마다 fit 재탐색이 돌면 OBS에서 미세 흔들림이 발생할 수 있다.
-    // fit 시그니처는 "레이아웃 구조" 중심(열/이름/직급 길이)으로 제한한다.
-    const rowShape = ranked
-      .map(({ m }) => `${(m.name || "").length}|${getMemberRole(m).length}`)
-      .join(";");
-    const pinShape = pinned
-      .map((m) => `${(m.name || "").length}|${getMemberRole(m).length}`)
-      .join(";");
-    return `${cols}#${rowShape}~${pinShape}`;
+    const rows = ranked.map(({ m }) => `${m.account}|${m.toon}|${getContributionValue(m)}`).join(";");
+    const pinRows = pinned.map((m) => `${m.account}|${m.toon}|${getContributionValue(m)}`).join(";");
+    return `${cols}#${rows}~${pinRows}`;
   }, [
     ranked,
     pinned,
@@ -2026,6 +2020,7 @@ function OverlayInner() {
     rankColCh,
     members,
     getMemberRole,
+    getContributionValue,
   ]);
 
   useLayoutEffect(() => {
@@ -2084,7 +2079,7 @@ function OverlayInner() {
         table.style.maxWidth = prevMax;
         table.style.removeProperty("font-size");
       }
-      setMemberTableFitFactor((prev) => (Math.abs(prev - best) < 0.015 ? prev : best));
+      setMemberTableFitFactor(best);
     };
 
     run();
