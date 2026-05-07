@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence } from "framer-motion";
 import { useSearchParams } from "next/navigation";
 import {
   defaultState,
@@ -325,40 +325,12 @@ function RankingColumn({
     return () => window.clearTimeout(t);
   }, [items, motionEnabled]);
 
-  const rowList = motionEnabled && animateRows ? (
-    <AnimatePresence initial={false}>
-      {items.map((item, idx) => (
-        <motion.div
-          key={item.name}
-          layout
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -12 }}
-          transition={{ type: "spring", stiffness: 420, damping: 34, mass: 0.8 }}
-          className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 px-1 py-1"
-          style={{
-            fontSize: `${rowSize}px`,
-          }}
-        >
-          <span className="font-black text-center" style={{ color: rankColor, fontSize: `${rankSize}px`, ...outlined }}>
-            {rankLabel(idx)}
-          </span>
-          <span className="truncate font-bold" style={{ color: nameColor, ...outlined }}>
-            {item.name}
-          </span>
-          <span className="font-black tabular-nums text-right" style={{ color: amountColor, ...outlined }}>
-            {item.amount.toLocaleString("ko-KR")}
-            {suffix ? ` ${suffix}` : " 원"}
-          </span>
-        </motion.div>
-      ))}
-    </AnimatePresence>
-  ) : (
+  const rowList = (
     <>
       {items.map((item, idx) => (
         <div
           key={item.name}
-          className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 px-1 py-1"
+          className={`grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 px-1 py-1 ${motionEnabled && animateRows ? "animate-row-flash" : ""}`}
           style={{ fontSize: `${rowSize}px` }}
         >
           <span className="font-black text-center" style={{ color: rankColor, fontSize: `${rankSize}px`, ...outlined }}>
