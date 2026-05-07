@@ -2439,9 +2439,9 @@ function OverlayInner() {
         }
       ` }} />
     );
-    // If a preset id is explicitly requested, hold first paint until that preset resolves.
-    // This prevents reloading-time layout jumps caused by default render -> preset render.
-    const waitForPreset = Boolean(presetId) && !activePreset;
+    // Preset id가 있어도 원격 상태 준비 전까지만 잠시 대기한다.
+    // 준비 이후에도 preset을 못 찾으면(삭제/누락) 기본 렌더로 폴백해야 화면이 비지 않는다.
+    const waitForPreset = Boolean(presetId) && !activePreset && !ready;
     if (waitForPreset) {
       return <div className="overlay-root" style={{ position: "fixed", inset: 0, background: "transparent" }} />;
     }
