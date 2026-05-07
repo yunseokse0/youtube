@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
 import {
   defaultState,
@@ -18,6 +17,25 @@ type DonorRow = {
   name: string;
   amount: number;
 };
+
+function buildDonorOverlaySignature(state: AppState | null): string {
+  if (!state) return "";
+  const donors = (state.donors || []).map((d) => ({
+    id: d.id,
+    name: d.name,
+    amount: d.amount,
+    target: d.target || "account",
+    memberId: d.memberId,
+    at: d.at,
+  }));
+  return JSON.stringify({
+    donors,
+    memberPositions: state.memberPositions || {},
+    rankPositionLabels: state.rankPositionLabels || [],
+    donorRankingsTheme: state.donorRankingsTheme || null,
+    donorRankingsOverlayConfig: state.donorRankingsOverlayConfig || null,
+  });
+}
 
 const TEST_ACCOUNT_ROWS: DonorRow[] = [
   { name: "artaiker", amount: 3849000 },
@@ -43,6 +61,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   const [state, setState] = useState<AppState | null>(null);
   const lastUpdatedRef = useRef(0);
   const syncingRef = useRef(false);
+  const lastSigRef = useRef("");
 
   const readLocalStateIfExists = useCallback((): AppState | null => {
     if (typeof window === "undefined") return null;
@@ -59,11 +78,15 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   useEffect(() => {
     const local = readLocalStateIfExists();
     if (local) {
+      const sig = buildDonorOverlaySignature(local);
       setState(local);
+      lastSigRef.current = sig;
       lastUpdatedRef.current = local.updatedAt || 0;
     } else {
       const fallback = defaultState();
+      const sig = buildDonorOverlaySignature(fallback);
       setState(fallback);
+      lastSigRef.current = sig;
       lastUpdatedRef.current = fallback.updatedAt || 0;
     }
 
@@ -74,7 +97,14 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
         const remote = await loadStateFromApi(userId);
         if (!remote) return;
         const remoteUpdatedAt = remote.updatedAt || 0;
+        if (remoteUpdatedAt <= lastUpdatedRef.current) return;
+        const nextSig = buildDonorOverlaySignature(remote);
+        if (nextSig === lastSigRef.current) {
+          lastUpdatedRef.current = remoteUpdatedAt;
+          return;
+        }
         lastUpdatedRef.current = remoteUpdatedAt;
+        lastSigRef.current = nextSig;
         setState(remote);
       } finally {
         syncingRef.current = false;
@@ -86,8 +116,14 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       const localNow = readLocalStateIfExists();
       if (!localNow) return;
       const localUpdatedAt = localNow.updatedAt || 0;
-      if (localUpdatedAt >= lastUpdatedRef.current) {
+      if (localUpdatedAt > lastUpdatedRef.current) {
+        const nextSig = buildDonorOverlaySignature(localNow);
+        if (nextSig === lastSigRef.current) {
+          lastUpdatedRef.current = localUpdatedAt;
+          return;
+        }
         lastUpdatedRef.current = localUpdatedAt;
+        lastSigRef.current = nextSig;
         setState(localNow);
       }
     };
@@ -247,6 +283,21 @@ function RankingColumn({
   /** unified: 헤더·목록 배경에 동일하게 `panelBg`/`headerBg`×투명도 */
   panelOpacityFrac?: number;
 }) {
+  const prevOrderSigRef = useRef<string>("");
+  const [orderChangedFlash, setOrderChangedFlash] = useState(false);
+  useEffect(() => {
+    const sig = items.map((item) => item.name).join("|");
+    const prev = prevOrderSigRef.current;
+    prevOrderSigRef.current = sig;
+    if (!prev || prev === sig) {
+      setOrderChangedFlash(false);
+      return;
+    }
+    setOrderChangedFlash(true);
+    const t = window.setTimeout(() => setOrderChangedFlash(false), 700);
+    return () => window.clearTimeout(t);
+  }, [items]);
+
   const outlined = { textShadow: `-1px -1px 0 ${outlineColor},1px -1px 0 ${outlineColor},-1px 1px 0 ${outlineColor},1px 1px 0 ${outlineColor},0 2px 6px rgba(0,0,0,0.38)` } as const;
   const rankLabel = (idx: number): string => {
     if (idx === 0) return "🥇";
@@ -274,16 +325,11 @@ function RankingColumn({
   const headerBgResolved = backgroundWithOpacityFrac(headerBg, headerOpacityFrac);
 
   const rowList = (
-    <AnimatePresence initial={false}>
+    <>
       {items.map((item, idx) => (
-        <motion.div
+        <div
           key={item.name}
-          layout
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -12 }}
-          transition={{ type: "spring", stiffness: 420, damping: 34, mass: 0.8 }}
-          className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 px-1 py-1"
+          className={`grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 px-1 py-1 ${orderChangedFlash ? "animate-row-flash" : ""}`}
           style={{
             fontSize: `${rowSize}px`,
           }}
@@ -298,9 +344,9 @@ function RankingColumn({
             {item.amount.toLocaleString("ko-KR")}
             {suffix ? ` ${suffix}` : " 원"}
           </span>
-        </motion.div>
+        </div>
       ))}
-    </AnimatePresence>
+    </>
   );
 
   return (
