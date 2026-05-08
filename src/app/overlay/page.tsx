@@ -2474,6 +2474,31 @@ function OverlayInner() {
           padding-left: 0.55em !important;
           padding-right: 0.55em !important;
         }
+        /* 직급↔이름 사이는 한 칸 더 넓게: 직급 우측, 이름 좌측 패딩을 추가로 늘려 시각 분리. */
+        .overlay-root .overlay-elegant-table thead td.overlay-col-role,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-role {
+          padding-right: 0.95em !important;
+        }
+        .overlay-root .overlay-elegant-table thead td.overlay-col-name,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-name {
+          padding-left: 0.95em !important;
+        }
+        /* 헤더에만 컬럼 사이 세로 구분선(본문은 깔끔하게 유지). 마지막 셀에는 줄을 두지 않는다. */
+        .overlay-root .overlay-elegant-table thead td {
+          border-right: 1px solid rgba(255, 255, 255, 0.55) !important;
+        }
+        .overlay-root .overlay-elegant-table thead td:last-child {
+          border-right: none !important;
+        }
+        /* 순위 없음(—)·직급 없음(-) 표기를 어떤 행에서도 동일한 모양으로: 폭 고정 + 가운데 정렬 + 동일 굵기. */
+        .overlay-root .overlay-elegant-table tbody td .overlay-rank-mark {
+          display: inline-block;
+          min-width: 1.2em;
+          text-align: center;
+          font-weight: 700;
+          font-feature-settings: "tnum" 1;
+          letter-spacing: 0;
+        }
         .overlay-root .overlay-elegant-table tbody tr:hover td {
           filter: brightness(1.06) saturate(1.03);
           transform: scale(1.009);
@@ -2599,7 +2624,9 @@ function OverlayInner() {
                         ref={rowMotionEnabled ? setRowRef(m.id) : undefined}
                         className={`overlay-row ${rowMotionEnabled ? "transition-transform will-change-transform" : ""} ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
                       >
-                        <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>{rank == null ? "—" : `#${rank}`}</td>
+                        <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
+                          {rank == null ? <span className="overlay-rank-mark">—</span> : `#${rank}`}
+                        </td>
                         {hasRoleColumn && (
                           <td
                             className={`${effectiveRowCls} overlay-col-role`}
@@ -2607,7 +2634,7 @@ function OverlayInner() {
                               whiteSpace: "nowrap",
                             }}
                           >
-                            {getMemberRole(m) || "-"}
+                            {getMemberRole(m) || <span className="overlay-rank-mark">-</span>}
                           </td>
                         )}
                         <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
@@ -2631,8 +2658,14 @@ function OverlayInner() {
                         ref={rowMotionEnabled ? setRowRef(m.id + "-p") : undefined}
                         className={`overlay-row ${rowMotionEnabled ? "transition-transform will-change-transform" : ""} ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
                       >
-                        <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>—</td>
-                        {hasRoleColumn && <td className={`${effectiveRowCls} overlay-col-role`}></td>}
+                        <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
+                          <span className="overlay-rank-mark">—</span>
+                        </td>
+                        {hasRoleColumn && (
+                          <td className={`${effectiveRowCls} overlay-col-role`}>
+                            <span className="overlay-rank-mark">-</span>
+                          </td>
+                        )}
                         <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
                         <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`}>
                           <span className="overlay-num-cell-inner">{fmt(m.account)}</span>
