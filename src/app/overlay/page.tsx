@@ -2449,8 +2449,22 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution {
           overflow: visible !important;
-          padding-left: 0.32em !important;
-          padding-right: 0.32em !important;
+        }
+        /* 순위 헤더는 바디 셀과 좌우 위치가 일치해야 한다(텍스트가 칸 안에서 동일 위치). */
+        .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-rank {
+          text-align: center !important;
+        }
+        /* 좌측 텍스트 칸들(순위/직급/이름)이 너무 붙어 보이지 않도록 헤더·바디 모두 좌우 여유를 둔다.
+           기본 셀 패딩(0.25em)으로는 글자가 서로 붙은 것처럼 보임 → 각 칸당 0.55em 확보. */
+        .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-rank,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-role,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-role,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-name,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-name {
+          padding-left: 0.55em !important;
+          padding-right: 0.55em !important;
         }
         .overlay-root .overlay-elegant-table tbody tr:hover td {
           filter: brightness(1.06) saturate(1.03);
@@ -2508,7 +2522,7 @@ function OverlayInner() {
                   tableBgAnimated.kind === "video" ? (
                     <video
                       src={tableBgAnimated.src}
-                      className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+                      className="pointer-events-none absolute inset-y-0 left-0 right-4 h-full object-cover"
                       style={{ opacity: tableBgGifOpacity / 100, filter: `brightness(${tableBgGifBrightness}%)` }}
                       autoPlay
                       muted
@@ -2521,7 +2535,7 @@ function OverlayInner() {
                     <img
                       src={tableBgAnimated.src}
                       alt=""
-                      className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+                      className="pointer-events-none absolute inset-y-0 left-0 right-4 h-full object-cover"
                       style={{ opacity: tableBgGifOpacity / 100, filter: `brightness(${tableBgGifBrightness}%)` }}
                       loading="eager"
                       decoding="async"
@@ -2559,7 +2573,7 @@ function OverlayInner() {
                   </colgroup>
                   <thead>
                     <tr>
-                      <td className={`${effectiveHeaderCls} overlay-col-rank overlay-rank-cell`}>순위</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-rank overlay-rank-cell text-center`}>순위</td>
                       {hasRoleColumn && <td className={`${effectiveHeaderCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>직급</td>}
                       <td className={`${effectiveHeaderCls} overlay-col-name`}>이름</td>
                       <td className={`${effectiveHeaderCls} overlay-col-account text-right`}>계좌</td>
@@ -2577,7 +2591,7 @@ function OverlayInner() {
                         ref={rowMotionEnabled ? setRowRef(m.id) : undefined}
                         className={`overlay-row ${rowMotionEnabled ? "transition-transform will-change-transform" : ""} ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
                       >
-                        <td className={`${effectiveRowCls} overlay-col-rank text-left overlay-rank-cell`}>{rank == null ? "—" : `#${rank}`}</td>
+                        <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>{rank == null ? "—" : `#${rank}`}</td>
                         {hasRoleColumn && (
                           <td
                             className={`${effectiveRowCls} overlay-col-role`}
@@ -2609,7 +2623,7 @@ function OverlayInner() {
                         ref={rowMotionEnabled ? setRowRef(m.id + "-p") : undefined}
                         className={`overlay-row ${rowMotionEnabled ? "transition-transform will-change-transform" : ""} ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
                       >
-                        <td className={`${effectiveRowCls} overlay-col-rank text-right overlay-rank-cell`}>—</td>
+                        <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>—</td>
                         {hasRoleColumn && <td className={`${effectiveRowCls} overlay-col-role`}></td>}
                         <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
                         <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`}>
