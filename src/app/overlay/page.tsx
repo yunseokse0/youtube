@@ -1606,7 +1606,9 @@ function OverlayInner() {
   const renderH = sp.get("renderHeight") ? parseInt(sp.get("renderHeight")!, 10) : null;
   const isPreviewGuide = sp.get("previewGuide") === "true";
   const autoFit = (sp.get("autoFit") || "none").toLowerCase() as "none" | "width" | "height" | "contain" | "cover";
-  const zoomMode = ((sp.get("zoomMode") || "follow").toLowerCase() as "follow" | "invert" | "neutral");
+  const zoomMode = (
+    (sp.get("zoomMode") || (externalHost ? "neutral" : "follow")).toLowerCase() as "follow" | "invert" | "neutral"
+  );
   const fitPin = centerFixed ? "cc" : ((sp.get("fitPin") || "cc").toLowerCase() as "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr");
   const showGuide = (sp.get("guide") || "false").toLowerCase() === "true";
   const boxMode = (sp.get("box") || "full").toLowerCase() as "full" | "tight";
@@ -1633,7 +1635,8 @@ function OverlayInner() {
         const sy = window.innerHeight / Math.max(1, b.h);
         s = Math.min(sx, sy);
       }
-      setCenterZoomScale(Math.max(0.1, Math.min(8, s)));
+      const nextScale = Math.max(0.1, Math.min(8, Math.round(s * 1000) / 1000));
+      setCenterZoomScale((prev) => (Math.abs(prev - nextScale) < 0.01 ? prev : nextScale));
     };
     update();
     const vv: any = (window as any).visualViewport;
@@ -2021,7 +2024,7 @@ function OverlayInner() {
 
   useLayoutEffect(() => {
     if (!showMembers) return;
-    if (externalHost && members.length <= 1) {
+    if (externalHost) {
       setMemberTableFitFactor(1);
       return;
     }
@@ -2093,15 +2096,26 @@ function OverlayInner() {
         /* noop */
       }
     };
-  }, [showMembers, mSize, memberTableFitSig, externalHost, members.length]);
+  }, [showMembers, mSize, memberTableFitSig, externalHost]);
 
   const allOrderKeys = [...ranked.map(({ m }) => m.id), ...pinned.map((m) => `${m.id}-p`)];
   const setRowRef = useFlip(allOrderKeys, 500);
+  const rowMotionEnabled = (
+    (sp.get("rowMotion") || (externalHost ? "false" : "true")).toLowerCase() === "true"
+  );
 
   const prevTotalsRef = useRef<Map<string, number>>(new Map());
   const [changedIds, setChangedIds] = useState<Set<string>>(new Set());
   const isInitialMount = useRef(true);
   useEffect(() => {
+    if (!rowMotionEnabled) {
+      prevTotalsRef.current = new Map(
+        members.map((m) => [m.id, (m.account || 0) + (m.toon || 0)])
+      );
+      setChangedIds(new Set());
+      isInitialMount.current = false;
+      return;
+    }
     const next = new Map<string, number>();
     const changed = new Set<string>();
     for (const m of members) {
@@ -2119,7 +2133,7 @@ function OverlayInner() {
       const t = setTimeout(() => setChangedIds(new Set()), 800);
       return () => clearTimeout(t);
     }
-  }, [members]);
+  }, [members, rowMotionEnabled]);
 
   useEffect(() => {
     const html = document.documentElement;
@@ -2314,11 +2328,18 @@ function OverlayInner() {
       fitPin === "cl" ? "left center" :
       fitPin === "cr" ? "right center" :
       "center center";
-    const scaleStyleTag = (
-      <style dangerouslySetInnerHTML={{ __html: `
-        .overlay-scale-target { transform: scale(${effectiveScale}) !important; -webkit-transform: scale(${effectiveScale}) !important; transform-origin: ${origin} !important; }
-      ` }} />
-    );
+    const freezeScaleInExternalHost =
+      externalHost &&
+      zoomMode === "neutral" &&
+      !hasExplicitScale &&
+      Math.abs(effectiveScale - 1) < 0.02;
+    const scaleStyleTag = freezeScaleInExternalHost
+      ? null
+      : (
+        <style dangerouslySetInnerHTML={{ __html: `
+          .overlay-scale-target { transform: scale(${effectiveScale}) !important; -webkit-transform: scale(${effectiveScale}) !important; transform-origin: ${origin} !important; }
+        ` }} />
+      );
     const nameWrapCls = "truncate";
     const tfTable = memberTableFitFactor;
     const memberFontPx = Math.max(8, Math.round(mSize * tfTable));
@@ -2551,7 +2572,11 @@ function OverlayInner() {
                   </thead>
                   <tbody>
                     {ranked.map(({m, rank}) => (
-                      <tr key={m.id} ref={setRowRef(m.id)} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
+                      <tr
+                        key={m.id}
+                        ref={rowMotionEnabled ? setRowRef(m.id) : undefined}
+                        className={`overlay-row ${rowMotionEnabled ? "transition-transform will-change-transform" : ""} ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
+                      >
                         <td className={`${effectiveRowCls} overlay-col-rank text-left overlay-rank-cell`}>{rank == null ? "—" : `#${rank}`}</td>
                         {hasRoleColumn && (
                           <td
@@ -2579,7 +2604,11 @@ function OverlayInner() {
                       </tr>
                     ))}
                     {pinned.map((m) => (
-                      <tr key={m.id + "-p"} ref={setRowRef(m.id + "-p")} className={`overlay-row transition-transform will-change-transform ${changedIds.has(m.id) ? "animate-row-flash" : ""}`}>
+                      <tr
+                        key={m.id + "-p"}
+                        ref={rowMotionEnabled ? setRowRef(m.id + "-p") : undefined}
+                        className={`overlay-row ${rowMotionEnabled ? "transition-transform will-change-transform" : ""} ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
+                      >
                         <td className={`${effectiveRowCls} overlay-col-rank text-right overlay-rank-cell`}>—</td>
                         {hasRoleColumn && <td className={`${effectiveRowCls} overlay-col-role`}></td>}
                         <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
