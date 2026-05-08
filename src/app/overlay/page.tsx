@@ -1592,7 +1592,8 @@ function OverlayInner() {
   /** 미리보기와 동일하게 항상 시트 틴트+colgroup 경로 사용 → 테이블 클래스 배경은 제거 */
   const effectiveTableCls = stripBg(membersTheme.tableCls);
   // Strip row backgrounds for tinted/GIF sheet; keep header & total bar colors when shown.
-  const effectiveRowCls = stripBg(membersTheme.rowCls);
+  // 행 사이 가로 구분선은 헤더(테두리 없음)와 일관성을 위해 제거 → 순위 없음(—) 행 위·아래가 동일하게 보임.
+  const effectiveRowCls = stripBorder(stripBg(membersTheme.rowCls));
   /** 멤버 표 thead: 테마별 색 띠·테두리 없이 텍스트만 (방송 오버레이용) */
   const effectiveHeaderCls = stripBorder(stripBg(membersTheme.headerCls));
   const mutedTotalWrapCls = stripBorder(stripBg(totalTheme.totalWrapCls));
@@ -2387,10 +2388,17 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table {
           border-radius: 0 !important;
           overflow: visible;
-          border: 1px solid rgba(255, 236, 246, 0.72);
-          box-shadow: 0 12px 24px rgba(118, 36, 79, 0.18), inset 0 1px 0 rgba(255,255,255,0.22);
+          border: none !important;
+          box-shadow: 0 12px 24px rgba(118, 36, 79, 0.18);
           backdrop-filter: none;
           -webkit-backdrop-filter: none;
+        }
+        /* 헤더 아래 가로줄 및 행 사이 구분선 모두 제거(헤더/행 위·아래 표시 일관). */
+        .overlay-root .overlay-elegant-table thead td,
+        .overlay-root .overlay-elegant-table tbody td {
+          border: none !important;
+          border-bottom: none !important;
+          border-top: none !important;
         }
         .overlay-root .overlay-elegant-table td {
           color: #ffffff !important;
