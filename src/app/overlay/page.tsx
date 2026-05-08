@@ -2257,8 +2257,9 @@ function OverlayInner() {
     : { width: responsiveTickerWidth };
   const tickerPosClass = hasTickerFreePos ? "" : posClass(tickerAnchor);
 
-    /** 직급 열이 과도하게 넓어지면 이름·기여도가 밀려 잘림 → 상한 10ch */
-    const roleCh = Math.max(4, Math.min(10, members.reduce((max, m) => Math.max(max, getMemberRole(m).length), 2)));
+    /** 직급 열이 과도하게 넓어지면 이름·기여도가 밀려 잘림 → 상한 10ch.
+     *  하한은 6ch: 헤더「직급」 굵은 글자 + 좌우 패딩(0.55em + 0.95em) + 세로 구분선까지 들어가야 잘리지 않음. */
+    const roleCh = Math.max(6, Math.min(10, members.reduce((max, m) => Math.max(max, getMemberRole(m).length), 2)));
     const excelGridCols = hasRoleColumn
       ? [`${rankColCh}ch`, `${roleCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`]
       : [`${rankColCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`];
@@ -2490,14 +2491,22 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td:last-child {
           border-right: none !important;
         }
-        /* 순위 없음(—)·직급 없음(-) 표기를 어떤 행에서도 동일한 모양으로: 폭 고정 + 가운데 정렬 + 동일 굵기. */
+        /* 순위 없음(—)·직급 없음(-) 표기를 어떤 행에서도 동일한 모양으로: 폭 고정 + 가운데 정렬 + 동일 굵기.
+           inline-flex 로 span 안의 글자 자체를 가운데 배치해, 셀 내 text-align 과 무관하게 행마다 같은 X 위치에 떨어지게 한다. */
         .overlay-root .overlay-elegant-table tbody td .overlay-rank-mark {
-          display: inline-block;
-          min-width: 1.2em;
-          text-align: center;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 1.2em;
+          height: 1em;
+          line-height: 1;
           font-weight: 700;
           font-feature-settings: "tnum" 1;
           letter-spacing: 0;
+          vertical-align: middle;
+        }
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-rank {
+          text-align: center !important;
         }
         .overlay-root .overlay-elegant-table tbody tr:hover td {
           filter: brightness(1.06) saturate(1.03);
