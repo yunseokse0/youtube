@@ -2258,8 +2258,8 @@ function OverlayInner() {
   const tickerPosClass = hasTickerFreePos ? "" : posClass(tickerAnchor);
 
     /** 직급 열이 과도하게 넓어지면 이름·기여도가 밀려 잘림 → 상한 10ch.
-     *  하한은 6ch: 헤더「직급」 굵은 글자 + 좌우 패딩(0.55em + 0.95em) + 세로 구분선까지 들어가야 잘리지 않음. */
-    const roleCh = Math.max(6, Math.min(10, members.reduce((max, m) => Math.max(max, getMemberRole(m).length), 2)));
+     *  하한은 7ch로 올려 이름 열과 겹쳐 보이는 케이스를 줄인다. */
+    const roleCh = Math.max(7, Math.min(10, members.reduce((max, m) => Math.max(max, getMemberRole(m).length), 2)));
     const excelGridCols = hasRoleColumn
       ? [`${rankColCh}ch`, `${roleCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`]
       : [`${rankColCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`];
@@ -2484,12 +2484,15 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table tbody td.overlay-col-name {
           padding-left: 0.95em !important;
         }
-        /* 헤더에만 컬럼 사이 세로 구분선(본문은 깔끔하게 유지). 마지막 셀에는 줄을 두지 않는다. */
+        /* 헤더 세로선 제거: 스트림 오버레이에서 칸 분리선 없이 한 덩어리로 보이게 한다. */
         .overlay-root .overlay-elegant-table thead td {
-          border-right: 1px solid rgba(255, 255, 255, 0.55) !important;
-        }
-        .overlay-root .overlay-elegant-table thead td:last-child {
           border-right: none !important;
+        }
+        /* 직급 셀 텍스트가 길 때 이름 열로 침범하지 않도록 잘라서 표시 */
+        .overlay-root .overlay-elegant-table thead td.overlay-col-role,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-role {
+          overflow: hidden !important;
+          text-overflow: ellipsis !important;
         }
         /* 순위 없음(—)·직급 없음(-) 표기를 어떤 행에서도 동일한 모양으로: 폭 고정 + 가운데 정렬 + 동일 굵기.
            inline-flex 로 span 안의 글자 자체를 가운데 배치해, 셀 내 text-align 과 무관하게 행마다 같은 X 위치에 떨어지게 한다. */
@@ -2557,14 +2560,14 @@ function OverlayInner() {
               )}
               <div
                 ref={memberTableClampRef}
-                className="relative min-w-0 flex-1 overflow-hidden pr-4"
+                className="relative min-w-0 flex-1 overflow-hidden"
                 style={{ borderRadius: 0 }}
               >
                 {showTableBgGif ? (
                   tableBgAnimated.kind === "video" ? (
                     <video
                       src={tableBgAnimated.src}
-                      className="pointer-events-none absolute inset-y-0 left-0 right-4 h-full object-cover"
+                      className="pointer-events-none absolute inset-0 h-full w-full object-cover"
                       style={{ opacity: tableBgGifOpacity / 100, filter: `brightness(${tableBgGifBrightness}%)` }}
                       autoPlay
                       muted
@@ -2577,7 +2580,7 @@ function OverlayInner() {
                     <img
                       src={tableBgAnimated.src}
                       alt=""
-                      className="pointer-events-none absolute inset-y-0 left-0 right-4 h-full object-cover"
+                      className="pointer-events-none absolute inset-0 h-full w-full object-cover"
                       style={{ opacity: tableBgGifOpacity / 100, filter: `brightness(${tableBgGifBrightness}%)` }}
                       loading="eager"
                       decoding="async"
