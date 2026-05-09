@@ -436,7 +436,12 @@ export default function DonorRankingsOverlayPage() {
   const titleSize = readNumber(sp, "titleSize", savedTheme.titleSize, 14, 80);
   const rowSize = readNumber(sp, "rowSize", savedTheme.rowSize, 12, 64);
   const rankSize = readNumber(sp, "rankSize", savedTheme.rankSize, 12, 72);
-  const overlayOpacity = readNumber(sp, "overlayOpacity", savedTheme.overlayOpacity, 0, 100);
+  // 구버전/부분 저장 테마에서 overlayOpacity가 비어있거나 0~1 스케일일 수 있어 안전 정규화한다.
+  const savedOverlayOpacityRaw = Number(savedTheme.overlayOpacity);
+  const savedOverlayOpacity = Number.isFinite(savedOverlayOpacityRaw)
+    ? (savedOverlayOpacityRaw <= 1 ? savedOverlayOpacityRaw * 100 : savedOverlayOpacityRaw)
+    : 100;
+  const overlayOpacity = readNumber(sp, "overlayOpacity", savedOverlayOpacity, 0, 100);
   const zoomPct = Math.floor(readNumber(sp, "zoomPct", 100, 30, 300));
   const zoomScale = zoomPct / 100;
   const bg = readColor(sp, "bg", savedTheme.bg) || "transparent";

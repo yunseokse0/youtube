@@ -1475,8 +1475,8 @@ function OverlayInner() {
   const totalCh = Math.max(6, Math.min(12, defTotalCh));
   /** 순위 열: 헤더「순위」·「#12」 등이 잘리지 않도록 `ch` 하한 확보(URL `rankCh`) */
   const rankColCh = Math.max(5, Math.min(10, parseInt(sp.get("rankCh") || "5", 10)));
-  /** 기여도 열: 고정 폭은 너무 키우지 않고, 대신 전체 자동 축소로 오버레이 범위 내에 맞춘다 */
-  const contributionCh = Math.max(11, Math.min(16, defContributionCh));
+  /** 기여도 열: 마지막 열 특성상 우측 경계 잘림이 생기기 쉬워 최소 폭을 한 단계 올린다. */
+  const contributionCh = Math.max(12, Math.min(16, defContributionCh));
   const showSideDonors = false;
   const donorsSide = (sp.get("donorsSide") || "right").toLowerCase();
   const donorsWidth = Math.max(120, Math.min(600, parseInt(sp.get("donorsWidth") || "220", 10)));
@@ -2483,6 +2483,12 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td.overlay-col-name,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-name {
           padding-left: 0.95em !important;
+        }
+        /* 마지막 열(기여도)은 외곽선(stroke)까지 안전하게 보이도록 우측 여유를 더 준다. */
+        .overlay-root .overlay-elegant-table thead td.overlay-col-contribution,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution {
+          padding-left: 0.6em !important;
+          padding-right: 0.85em !important;
         }
         /* 헤더 세로선 제거: 스트림 오버레이에서 칸 분리선 없이 한 덩어리로 보이게 한다. */
         .overlay-root .overlay-elegant-table thead td {
