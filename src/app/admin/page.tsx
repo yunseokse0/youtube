@@ -55,6 +55,9 @@ import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 import { normalizeSigDedupKeyImageUrl } from "@/lib/sig-inventory-dedup";
 import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
 import { getVisibleAdminNavItems, isAdminNavSectionVisible, type AdminNavKey } from "@/app/admin/admin-nav-config";
+import { startToonationListener, stopToonationListener } from "@/lib/donation/toonation/listener";
+import { processDonationEvent } from "@/lib/donation/processor";
+import type { DonationEvent, DonorAlias } from "@/lib/donation/types";
 
 /** 후원 계열 오버레이 배경 GIF 프리셋 — 외부 URL은 방송망에서 차단될 수 있음 */
 const DONATION_LISTS_BG_GIF_PRESETS: { label: string; url: string }[] = [
@@ -170,6 +173,16 @@ export default function AdminPage() {
   const [donorAmount, setDonorAmount] = useState("");
   const [donorMemberId, setDonorMemberId] = useState<string | null>(null);
   const [donorTarget, setDonorTarget] = useState<DonorTarget>("account");
+  const [toonationAutoEnabled, setToonationAutoEnabled] = useState(false);
+  const [toonationAlertboxUrl, setToonationAlertboxUrl] = useState("");
+  const [toonationStatus, setToonationStatus] = useState<"idle" | "running" | "error">("idle");
+  const [toonationBackoffMs, setToonationBackoffMs] = useState(0);
+  const [toonationRetryAttempt, setToonationRetryAttempt] = useState(0);
+  const [toonationLogs, setToonationLogs] = useState<Array<{ id: string; at: number; message: string }>>([]);
+  const [unmatchedEvents, setUnmatchedEvents] = useState<DonationEvent[]>([]);
+  const [unmatchedAssignMap, setUnmatchedAssignMap] = useState<Record<string, string>>({});
+  const [aliasInputMap, setAliasInputMap] = useState<Record<string, string>>({});
+  const [donorAliases, setDonorAliases] = useState<DonorAlias[]>([]);
   const [contributionAmount, setContributionAmount] = useState("");
   const [contributionMemberId, setContributionMemberId] = useState<string | null>(null);
   const [contributionDelta, setContributionDelta] = useState<1 | -1>(1);
@@ -2903,6 +2916,176 @@ export default function AdminPage() {
     setDonorName("");
     setDonorAmount("");
   };
+
+  const fetchUnmatchedEvents = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    const uid = user?.id || "";
+    if (!uid) return;
+    try {
+      const res = await fetch(`/api/donations/unmatched?u=${encodeURIComponent(uid)}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { items?: DonationEvent[] };
+      setUnmatchedEvents(Array.isArray(data.items) ? data.items : []);
+    } catch {
+      // noop
+    }
+  }, [user?.id]);
+
+  const pushToonationLog = useCallback((message: string) => {
+    setToonationLogs((prev) => [{ id: `tl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, at: Date.now(), message }, ...prev].slice(0, 80));
+  }, []);
+
+  const fetchDonationAliases = useCallback(async () => {
+    const uid = user?.id || "";
+    if (!uid) return;
+    try {
+      const res = await fetch(`/api/donations/aliases?u=${encodeURIComponent(uid)}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { items?: DonorAlias[] };
+      setDonorAliases(Array.isArray(data.items) ? data.items : []);
+    } catch {
+      // noop
+    }
+  }, [user?.id]);
+
+  const removeUnmatchedEvent = useCallback(async (id: string) => {
+    const uid = user?.id || "";
+    if (!uid || !id) return;
+    await fetch(`/api/donations/unmatched/resolve?u=${encodeURIComponent(uid)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    }).catch(() => {});
+    await fetchUnmatchedEvents();
+  }, [fetchUnmatchedEvents, user?.id]);
+
+  const injectToonationTestEvent = useCallback(async () => {
+    const amount = parseAmount(donorAmount || "10000");
+    const name = (donorName || "투네테스트").trim();
+    if (amount <= 0) return;
+    const event: DonationEvent = {
+      id: `toonation:test:${Date.now()}`,
+      provider: "toonation",
+      externalId: `manual-${Date.now()}`,
+      donorName: name,
+      amount,
+      message: "admin-manual-test",
+      at: new Date().toISOString(),
+      target: "toon",
+      status: "queued",
+    };
+    await processDonationEvent(event, user?.id);
+    await fetchUnmatchedEvents();
+    setDonorAmount("");
+  }, [donorAmount, donorName, fetchUnmatchedEvents, user?.id]);
+
+  const applyUnmatchedEvent = useCallback(async (event: DonationEvent) => {
+    const selectedMemberId = unmatchedAssignMap[event.id] || donorMemberId || state.members[0]?.id || "";
+    if (!selectedMemberId) return;
+    const member = state.members.find((m) => m.id === selectedMemberId);
+    if (!member) return;
+
+    await processDonationEvent(
+      {
+        ...event,
+        donorName: member.name,
+        target: "toon",
+        status: "queued",
+      },
+      user?.id
+    );
+    await removeUnmatchedEvent(event.id);
+  }, [donorMemberId, removeUnmatchedEvent, state.members, unmatchedAssignMap, user?.id]);
+
+  const saveAliasForUnmatched = useCallback(async (event: DonationEvent) => {
+    const uid = user?.id || "";
+    if (!uid) return;
+    const selectedMemberId = unmatchedAssignMap[event.id] || donorMemberId || state.members[0]?.id || "";
+    if (!selectedMemberId) return;
+    const alias = (aliasInputMap[event.id] || event.donorName || "").trim();
+    if (!alias) return;
+    await fetch(`/api/donations/aliases?u=${encodeURIComponent(uid)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ alias, memberId: selectedMemberId }),
+    }).catch(() => {});
+    await fetchDonationAliases();
+    pushToonationLog(`별칭 저장: ${alias} -> ${state.members.find((m) => m.id === selectedMemberId)?.name || selectedMemberId}`);
+  }, [aliasInputMap, donorMemberId, fetchDonationAliases, pushToonationLog, state.members, unmatchedAssignMap, user?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const enabledRaw = window.localStorage.getItem("donationAutomation.toonation.enabled");
+      const urlRaw = window.localStorage.getItem("donationAutomation.toonation.alertboxUrl");
+      const envUrl = (process.env.NEXT_PUBLIC_TOONATION_ALERTBOX_URL || "").trim();
+      setToonationAutoEnabled(enabledRaw === "true");
+      setToonationAlertboxUrl(urlRaw || envUrl || "");
+    } catch {
+      // noop
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem("donationAutomation.toonation.enabled", String(toonationAutoEnabled));
+      window.localStorage.setItem("donationAutomation.toonation.alertboxUrl", toonationAlertboxUrl);
+    } catch {
+      // noop
+    }
+  }, [toonationAlertboxUrl, toonationAutoEnabled]);
+
+  useEffect(() => {
+    if (!toonationAutoEnabled || !toonationAlertboxUrl.trim()) {
+      stopToonationListener();
+      setToonationStatus("idle");
+      setToonationBackoffMs(0);
+      setToonationRetryAttempt(0);
+      return;
+    }
+    try {
+      startToonationListener(toonationAlertboxUrl.trim(), {
+        userId: user?.id,
+        onStatus: (s) => {
+          if (s.kind === "connected") {
+            setToonationStatus("running");
+            setToonationBackoffMs(0);
+            setToonationRetryAttempt(0);
+          } else if (s.kind === "reconnect_attempt") {
+            setToonationStatus("running");
+            setToonationRetryAttempt(s.attempt || 0);
+            setToonationBackoffMs(s.nextDelayMs || 0);
+          } else if (s.kind === "connect_error" || s.kind === "reconnect_error" || s.kind === "reconnect_failed") {
+            setToonationStatus("error");
+          }
+          pushToonationLog(s.message);
+        },
+      });
+      setToonationStatus("running");
+      pushToonationLog("투네 자동수집 시작");
+    } catch {
+      setToonationStatus("error");
+      pushToonationLog("투네 자동수집 시작 실패");
+    }
+    return () => {
+      stopToonationListener();
+      pushToonationLog("투네 자동수집 중지");
+    };
+  }, [toonationAlertboxUrl, toonationAutoEnabled, user?.id, pushToonationLog]);
+
+  useEffect(() => {
+    void fetchUnmatchedEvents();
+    void fetchDonationAliases();
+  }, [fetchUnmatchedEvents, fetchDonationAliases]);
+
+  useEffect(() => {
+    if (toonationBackoffMs <= 0) return;
+    const t = window.setInterval(() => {
+      setToonationBackoffMs((prev) => Math.max(0, prev - 1000));
+    }, 1000);
+    return () => window.clearInterval(t);
+  }, [toonationBackoffMs]);
 
   const addContribution = () => {
     const amount = parseAmount(contributionAmount);
@@ -6343,6 +6526,179 @@ export default function AdminPage() {
                 </button>
               </div>
               <div className="text-sm text-neutral-400 mt-2">입력값에 콤마/문자 포함되어도 숫자만 인식</div>
+              <div className="mt-4 rounded border border-cyan-500/20 bg-cyan-500/5 p-3 space-y-3">
+                <div className="rounded border border-white/10 bg-black/25 px-3 py-2">
+                  <div className="text-xs font-semibold text-cyan-200">투네 Alertbox URL 설정</div>
+                  <div className="text-[11px] text-neutral-400 mt-1">
+                    투네이션 위젯 URL(예: https://toon.at/widget/alertbox/...)을 넣으면 자동수집과 재연결이 동작합니다.
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className={`px-3 py-1.5 rounded text-xs font-semibold ${toonationAutoEnabled ? "bg-emerald-600 hover:bg-emerald-500" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                    onClick={() => setToonationAutoEnabled((v) => !v)}
+                  >
+                    투네 자동수집 {toonationAutoEnabled ? "ON" : "OFF"}
+                  </button>
+                  <span className={`text-xs ${toonationStatus === "running" ? "text-emerald-300" : toonationStatus === "error" ? "text-rose-300" : "text-neutral-400"}`}>
+                    상태: {toonationStatus === "running" ? "연결중" : toonationStatus === "error" ? "오류" : "대기"}
+                  </span>
+                  {toonationRetryAttempt > 0 && (
+                    <span className="text-xs text-amber-300">
+                      재시도 #{toonationRetryAttempt} / 다음 시도 {Math.ceil(toonationBackoffMs / 1000)}초
+                    </span>
+                  )}
+                </div>
+                <input
+                  className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                  placeholder="투네 Alertbox URL (예: https://toon.at/widget/alertbox/KEY)"
+                  value={toonationAlertboxUrl}
+                  onChange={(e) => setToonationAlertboxUrl(e.target.value)}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
+                    onClick={() => setToonationAlertboxUrl("https://toon.at/widget/alertbox/f28dc2204fbaf86fd9df74c12f435c73")}
+                  >
+                    제공된 URL 채우기
+                  </button>
+                  {toonationAlertboxUrl.trim() ? (
+                    <a
+                      href={toonationAlertboxUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-2 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-xs"
+                    >
+                      Alertbox 열기
+                    </a>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 rounded bg-fuchsia-700 hover:bg-fuchsia-600 text-xs font-semibold"
+                    onClick={injectToonationTestEvent}
+                  >
+                    테스트 이벤트 주입(투네)
+                  </button>
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
+                    onClick={() => void fetchUnmatchedEvents()}
+                  >
+                    미매칭 새로고침
+                  </button>
+                </div>
+                <div className="rounded border border-white/10 bg-black/20 p-2">
+                  <div className="text-xs text-neutral-300 mb-2">미매칭 후원 목록 ({unmatchedEvents.length})</div>
+                  <div className="max-h-[220px] overflow-auto pr-1 space-y-2">
+                    {unmatchedEvents.length === 0 && (
+                      <div className="text-xs text-neutral-500">현재 미매칭 후원이 없습니다.</div>
+                    )}
+                    {unmatchedEvents.map((evt) => (
+                      <div key={evt.id} className="rounded border border-white/10 bg-neutral-900/60 p-2">
+                        <div className="text-xs text-neutral-300">
+                          {evt.donorName} / {evt.amount.toLocaleString("ko-KR")}원
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <select
+                            className="px-2 py-1 rounded bg-neutral-900 border border-white/10 text-xs"
+                            value={unmatchedAssignMap[evt.id] || donorMemberId || state.members[0]?.id || ""}
+                            onChange={(e) => setUnmatchedAssignMap((prev) => ({ ...prev, [evt.id]: e.target.value }))}
+                          >
+                            {state.members.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-xs"
+                            onClick={() => void applyUnmatchedEvent(evt)}
+                          >
+                            선택 멤버로 반영
+                          </button>
+                          <input
+                            className="px-2 py-1 rounded bg-neutral-900 border border-white/10 text-xs min-w-[140px]"
+                            placeholder="별칭 (기본: 후원자명)"
+                            value={aliasInputMap[evt.id] ?? evt.donorName}
+                            onChange={(e) => setAliasInputMap((prev) => ({ ...prev, [evt.id]: e.target.value }))}
+                          />
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded bg-sky-700 hover:bg-sky-600 text-xs"
+                            onClick={() => void saveAliasForUnmatched(evt)}
+                          >
+                            별칭 저장
+                          </button>
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-xs"
+                            onClick={async () => {
+                              await saveAliasForUnmatched(evt);
+                              await applyUnmatchedEvent(evt);
+                            }}
+                          >
+                            별칭 저장 후 반영
+                          </button>
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded bg-rose-700 hover:bg-rose-600 text-xs"
+                            onClick={() => void removeUnmatchedEvent(evt.id)}
+                          >
+                            목록에서 제거
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded border border-white/10 bg-black/20 p-2">
+                  <div className="text-xs text-neutral-300 mb-2">별칭 목록 ({donorAliases.length})</div>
+                  <div className="max-h-[140px] overflow-auto pr-1 space-y-1">
+                    {donorAliases.length === 0 && (
+                      <div className="text-xs text-neutral-500">등록된 별칭이 없습니다.</div>
+                    )}
+                    {donorAliases.map((a) => (
+                      <div key={`${a.alias}:${a.memberId}`} className="text-xs text-neutral-300 flex items-center justify-between gap-2">
+                        <span>{a.alias} → {state.members.find((m) => m.id === a.memberId)?.name || a.memberId}</span>
+                        <button
+                          type="button"
+                          className="px-2 py-0.5 rounded bg-neutral-700 hover:bg-neutral-600 text-[11px]"
+                          onClick={async () => {
+                            const uid = user?.id || "";
+                            if (!uid) return;
+                            await fetch(`/api/donations/aliases?u=${encodeURIComponent(uid)}`, {
+                              method: "DELETE",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ alias: a.alias }),
+                            }).catch(() => {});
+                            await fetchDonationAliases();
+                          }}
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded border border-white/10 bg-black/20 p-2">
+                  <div className="text-xs text-neutral-300 mb-2">자동수집 시작/중지 로그 ({toonationLogs.length})</div>
+                  <div className="max-h-[160px] overflow-auto pr-1 space-y-1">
+                    {toonationLogs.length === 0 && (
+                      <div className="text-xs text-neutral-500">로그가 없습니다.</div>
+                    )}
+                    {toonationLogs.map((log) => (
+                      <div key={log.id} className="text-xs text-neutral-300">
+                        [{new Date(log.at).toLocaleTimeString("ko-KR", { hour12: false })}] {log.message}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </section>
 
             <section id="contribution-management" className={`${panelCardClass} p-4 md:p-6`}>
