@@ -2025,10 +2025,6 @@ function OverlayInner() {
 
   useLayoutEffect(() => {
     if (!showMembers) return;
-    if (externalHost) {
-      setMemberTableFitFactor(1);
-      return;
-    }
     const clampEl = memberTableClampRef.current;
     const table = tableBoxRef.current as HTMLTableElement | null;
     if (!clampEl || !table) return;
@@ -2566,7 +2562,7 @@ function OverlayInner() {
               )}
               <div
                 ref={memberTableClampRef}
-                className="relative min-w-0 flex-1 overflow-hidden"
+                className="relative min-w-0 flex-1 overflow-visible"
                 style={{ borderRadius: 0 }}
               >
                 {showTableBgGif ? (
