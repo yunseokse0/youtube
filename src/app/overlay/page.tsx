@@ -47,9 +47,38 @@ function tryReadSnapshotFromStorage(snapKey: string | null): AppState | null {
   return null;
 }
 
+function buildOverlayVisualSignature(state: AppState | null): string {
+  if (!state) return "";
+  const members = (state.members || [])
+    .map((m) => ({
+      id: m.id,
+      name: m.name,
+      account: m.account || 0,
+      toon: m.toon || 0,
+      operating: Boolean(m.operating),
+    }))
+    .sort((a, b) => String(a.id || "").localeCompare(String(b.id || "")));
+  const donors = (state.donors || [])
+    .map((d) => ({
+      id: d.id,
+      name: d.name,
+      amount: d.amount || 0,
+      target: d.target || "",
+      at: d.at || 0,
+    }))
+    .sort((a, b) => String(a.id || "").localeCompare(String(b.id || "")));
+  return JSON.stringify({
+    members,
+    donors,
+    memberPositions: state.memberPositions || {},
+    rankPositionLabels: state.rankPositionLabels || [],
+  });
+}
+
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
   const [state, setState] = useState<AppState | null>(null);
   const lastUpdatedRef = useRef(0);
+  const lastVisualSigRef = useRef("");
   const loadRef = useRef(() => loadStateFromApi(userId));
   loadRef.current = () => loadStateFromApi(userId);
   const syncingRef = useRef(false);
@@ -105,11 +134,13 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
     const local = readLocalStateIfExists();
     const lastGood = loadLastGood();
     if (local && isViable(local)) {
+      lastVisualSigRef.current = buildOverlayVisualSignature(local);
       setState(local);
       lastUpdatedRef.current = local.updatedAt || 0;
       lastGoodRef.current = local;
       saveLastGood(local);
     } else if (lastGood && isViable(lastGood)) {
+      lastVisualSigRef.current = buildOverlayVisualSignature(lastGood);
       setState(lastGood);
       lastUpdatedRef.current = lastGood.updatedAt || 0;
       lastGoodRef.current = lastGood;
@@ -125,16 +156,24 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       try {
         const localNow = readLocalStateIfExists();
         if (localNow && localNow.updatedAt && localNow.updatedAt > lastUpdatedRef.current && !shouldDiscardEmpty(localNow)) {
+          const nextSig = buildOverlayVisualSignature(localNow);
           lastUpdatedRef.current = localNow.updatedAt;
-          setState(localNow);
+          if (nextSig !== lastVisualSigRef.current) {
+            lastVisualSigRef.current = nextSig;
+            setState(localNow);
+          }
           if (isViable(localNow)) { lastGoodRef.current = localNow; saveLastGood(localNow); }
         }
         const data = await loadRef.current();
         // Keep local state when API is stale (e.g. API save failed),
         // and only accept strictly newer snapshots from server.
         if (data && data.updatedAt && data.updatedAt > lastUpdatedRef.current && !shouldDiscardEmpty(data)) {
+          const nextSig = buildOverlayVisualSignature(data);
           lastUpdatedRef.current = data.updatedAt;
-          setState(data);
+          if (nextSig !== lastVisualSigRef.current) {
+            lastVisualSigRef.current = nextSig;
+            setState(data);
+          }
           if (isViable(data)) { lastGoodRef.current = data; saveLastGood(data); }
         } else if (!localNow && !data) {
           // API 실패 + localStorage 비어있음 → 기본 상태로라도 프리뷰 표시
@@ -151,13 +190,18 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       if (e.key !== storageKey(userId ?? undefined)) return;
       const localNow = readLocalStateIfExists();
       if (localNow && localNow.updatedAt && localNow.updatedAt > lastUpdatedRef.current && !shouldDiscardEmpty(localNow)) {
+        const nextSig = buildOverlayVisualSignature(localNow);
         lastUpdatedRef.current = localNow.updatedAt;
-        setState(localNow);
+        if (nextSig !== lastVisualSigRef.current) {
+          lastVisualSigRef.current = nextSig;
+          setState(localNow);
+        }
         if (isViable(localNow)) { lastGoodRef.current = localNow; saveLastGood(localNow); }
       }
     };
     // Faster cadence for donor/member sync in overlay runtime.
-    const POLL_MS = 700;
+    const host = (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("host") : "") || "";
+    const POLL_MS = host ? 1200 : 700;
     const timer = window.setInterval(() => {
       void syncOnce();
     }, POLL_MS);
@@ -1179,7 +1223,6 @@ function OverlayInner() {
     () => ((ready && s && Array.isArray((s as AppState).rankPositionLabels)) ? (s as AppState).rankPositionLabels : []),
     [ready, s]
   );
-  const displaySum = useCountUp(rounded, 800);
   const presetId = (rawSp.get("p") || "").trim();
   const activePreset = useMemo(() => {
     if (presetId) return overlayPresets.find((x) => x.id === presetId) || null;
@@ -2039,6 +2082,11 @@ function OverlayInner() {
 
   useLayoutEffect(() => {
     if (!showMembers) return;
+    // 외부 호스트(OBS/Prism)에서는 자동 재측정 자체가 미세 흔들림 원인이 되므로 고정 렌더로 잠근다.
+    if (externalHost) {
+      setMemberTableFitFactor(1);
+      return;
+    }
     const clampEl = memberTableClampRef.current;
     const table = tableBoxRef.current as HTMLTableElement | null;
     if (!clampEl || !table) return;
@@ -2111,9 +2159,10 @@ function OverlayInner() {
 
   const allOrderKeys = [...ranked.map(({ m }) => m.id), ...pinned.map((m) => `${m.id}-p`)];
   const setRowRef = useFlip(allOrderKeys, 500);
-  const rowMotionEnabled = (
-    (sp.get("rowMotion") || (externalHost ? "false" : "true")).toLowerCase() === "true"
-  );
+  // 실참여자가 1명(또는 1명+운영비)인 경우 순위 변동 애니메이션을 막고,
+  // 그 외 다인 모드에서는 애니메이션을 허용한다.
+  const rowMotionRequested = (sp.get("rowMotion") || "true").toLowerCase() === "true";
+  const rowMotionEnabled = rowMotionRequested && unpinned.length > 1;
 
   const prevTotalsRef = useRef<Map<string, number>>(new Map());
   const [changedIds, setChangedIds] = useState<Set<string>>(new Set());
@@ -2413,7 +2462,7 @@ function OverlayInner() {
         }
         .overlay-root .overlay-elegant-table td {
           color: #ffffff !important;
-          transition: filter 180ms ease, transform 180ms ease, background-size 220ms ease;
+          transition: ${externalHost ? "none" : "filter 180ms ease, transform 180ms ease, background-size 220ms ease"};
           background: transparent !important;
           text-shadow: ${excelTextOutline} !important;
           -webkit-text-stroke: 0.75px rgba(6, 12, 24, 0.95) !important;
