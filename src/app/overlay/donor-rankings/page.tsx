@@ -20,14 +20,17 @@ type DonorRow = {
 
 function buildDonorOverlaySignature(state: AppState | null): string {
   if (!state) return "";
-  const donors = (state.donors || []).map((d) => ({
-    id: d.id,
-    name: d.name,
-    amount: d.amount,
-    target: d.target || "account",
-    memberId: d.memberId,
-    at: d.at,
-  }));
+  // 폴링 응답의 배열 순서만 바뀐 경우는 동일 상태로 간주해 불필요한 리렌더를 막는다.
+  const donors = (state.donors || [])
+    .map((d) => ({
+      id: d.id,
+      name: d.name,
+      amount: d.amount,
+      target: d.target || "account",
+      memberId: d.memberId,
+      at: d.at,
+    }))
+    .sort((a, b) => String(a.id || "").localeCompare(String(b.id || "")));
   return JSON.stringify({
     donors,
     memberPositions: state.memberPositions || {},
@@ -159,7 +162,10 @@ function aggregateAll(rows: DonorRow[]): DonorRow[] {
   }
   return Array.from(byName.entries())
     .map(([name, amount]) => ({ name, amount }))
-    .sort((a, b) => b.amount - a.amount);
+    .sort((a, b) => {
+      if (b.amount !== a.amount) return b.amount - a.amount;
+      return a.name.localeCompare(b.name, "ko");
+    });
 }
 
 function readNumber(sp: URLSearchParams, key: string, fallback: number, min: number, max: number): number {
@@ -444,6 +450,7 @@ export default function DonorRankingsOverlayPage() {
   const overlayOpacity = readNumber(sp, "overlayOpacity", savedOverlayOpacity, 0, 100);
   const zoomPct = Math.floor(readNumber(sp, "zoomPct", 100, 30, 300));
   const zoomScale = zoomPct / 100;
+  const scaledWidthPct = Number((100 / zoomScale).toFixed(4));
   const bg = readColor(sp, "bg", savedTheme.bg) || "transparent";
   /** 어두운 기본값 + 투명도 시 방송 화면과 섞여 버건디로 보이므로 밝은 파스텔 핑크를 기본으로 */
   const panelBg = resolveThemeColor(sp, "panelBg", savedTheme.panelBg, "rgba(255, 248, 252, 1)");
@@ -536,9 +543,12 @@ export default function DonorRankingsOverlayPage() {
       <div
         className="relative z-10 mx-auto max-w-[1500px]"
         style={{
-          transform: `scale(${zoomScale})`,
+          // OBS 브라우저 소스에서 scale 합성 시 미세 떨림을 줄이기 위한 GPU 레이어 고정.
+          transform: `translate3d(0, 0, 0) scale(${zoomScale})`,
           transformOrigin: "top center",
-          width: `${100 / zoomScale}%`,
+          width: `${scaledWidthPct}%`,
+          willChange: "transform",
+          backfaceVisibility: "hidden",
         }}
       >
         {useTest && (
