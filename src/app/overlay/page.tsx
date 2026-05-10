@@ -1946,7 +1946,14 @@ function OverlayInner() {
     const representative = members.find((m) => (memberPositionsMap[m.id] || "").trim() === "대표") || null;
     const others = members
       .filter((m) => !representative || m.id !== representative.id)
-      .sort((a, b) => ((b.account || 0) + (b.toon || 0)) - ((a.account || 0) + (a.toon || 0)));
+      .sort((a, b) => {
+        const ta = (a.account || 0) + (a.toon || 0);
+        const tb = (b.account || 0) + (b.toon || 0);
+        if (tb !== ta) return tb - ta;
+        const byName = String(a.name || "").localeCompare(String(b.name || ""), "ko");
+        if (byName !== 0) return byName;
+        return String(a.id || "").localeCompare(String(b.id || ""));
+      });
     if (representative) roleMap[representative.id] = "대표";
     const startIdx = representative ? 1 : 0;
     others.forEach((m, idx) => {
@@ -1988,7 +1995,14 @@ function OverlayInner() {
     [members, getMemberRole]
   );
   const ranked = useMemo(() => {
-    const arr = [...unpinned].sort((a, b) => (b.account + b.toon) - (a.account + a.toon));
+    const arr = [...unpinned].sort((a, b) => {
+      const ta = (a.account || 0) + (a.toon || 0);
+      const tb = (b.account || 0) + (b.toon || 0);
+      if (tb !== ta) return tb - ta;
+      const byName = String(a.name || "").localeCompare(String(b.name || ""), "ko");
+      if (byName !== 0) return byName;
+      return String(a.id || "").localeCompare(String(b.id || ""));
+    });
     let nextRank = 1;
     return arr.map((m) => {
       const role = getMemberRole(m).trim();
