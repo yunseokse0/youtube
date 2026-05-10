@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from "react";
 
-export function useFlip(keys: string[], duration = 500) {
+export function useFlip(keys: string[], duration = 500, enabled = true) {
   const prevRects = useRef(new Map<string, DOMRect>());
   const elements = useRef(new Map<string, HTMLElement>());
   const keySignature = keys.join("|");
@@ -11,6 +11,14 @@ export function useFlip(keys: string[], duration = 500) {
   };
 
   useLayoutEffect(() => {
+    if (!enabled) {
+      prevRects.current = new Map();
+      for (const el of elements.current.values()) {
+        el.style.transition = "";
+        el.style.transform = "";
+      }
+      return;
+    }
     const rects = new Map<string, DOMRect>();
     for (const [k, el] of elements.current.entries()) {
       rects.set(k, el.getBoundingClientRect());
@@ -38,7 +46,7 @@ export function useFlip(keys: string[], duration = 500) {
       }
     }
     prevRects.current = rects;
-  }, [keySignature, duration]);
+  }, [keySignature, duration, enabled]);
 
   return setEl;
 }
