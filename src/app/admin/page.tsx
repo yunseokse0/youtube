@@ -3228,9 +3228,10 @@ export default function AdminPage() {
       sigMatchDonors,
       state.members || [],
       state.sigMatchSettings,
-      state.sigMatch || {}
+      state.sigMatch || {},
+      state.memberPositions || {}
     ),
-    [sigMatchDonors, state.members, state.sigMatchSettings, state.sigMatch]
+    [sigMatchDonors, state.members, state.sigMatchSettings, state.sigMatch, state.memberPositions]
   );
   const sigSignatureAmountsInput = useMemo(
     () => (state.sigMatchSettings?.signatureAmounts || []).join(", "),
@@ -3246,7 +3247,8 @@ export default function AdminPage() {
         sigMatchDonors,
         state.members || [],
         state.sigMatchSettings,
-        state.sigMatch || {}
+        state.sigMatch || {},
+        state.memberPositions || {}
       );
       const title = `${state.sigMatchSettings?.title || "시그 대전"} 인센티브 정산`;
       await appendSigMatchIncentiveSettlementAndSync(

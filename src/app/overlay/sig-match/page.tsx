@@ -198,19 +198,25 @@ function SigMatchOverlayInner() {
         sigMatchDonors,
         state?.members || [],
         state?.sigMatchSettings || defaultState().sigMatchSettings,
-        state?.sigMatch || {}
+        state?.sigMatch || {},
+        state?.memberPositions || {}
       ),
-    [sigMatchDonors, state?.members, state?.sigMatchSettings, state?.sigMatch]
+    [sigMatchDonors, state?.members, state?.sigMatchSettings, state?.sigMatch, state?.memberPositions]
   );
   const memberMap = useMemo(() => new Map((state?.members || []).map((m) => [m.id, m.name])), [state?.members]);
   const blockedMemberIds = useMemo(
     () =>
       new Set(
         (state?.members || [])
-          .filter((m) => Boolean(m.operating) || /운영비/i.test(String(m.name || "")))
+          .filter(
+            (m) =>
+              Boolean(m.operating) ||
+              /운영비/i.test(String(m.name || "")) ||
+              /운영비/i.test(String(state?.memberPositions?.[m.id] || ""))
+          )
           .map((m) => m.id)
       ),
-    [state?.members]
+    [state?.members, state?.memberPositions]
   );
   const duelData = useMemo((): SigMatchDuelLayout => {
     const pools = (state?.sigMatchSettings?.sigMatchPools || []).filter(

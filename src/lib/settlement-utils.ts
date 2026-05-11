@@ -120,12 +120,17 @@ export function getSigMatchRankings(
   donors: Donor[],
   members: Member[],
   settings: SigMatchSettings,
-  manualAdjustments?: Record<string, number>
+  manualAdjustments?: Record<string, number>,
+  memberPositions?: Record<string, string>
 ): SigMatchRankingItem[] {
   const allMembers = members || [];
+  const positionMap = memberPositions || {};
   // 운영비는 시그 대결 참가/집계 대상에서 항상 제외
   const playableMembers = allMembers.filter(
-    (m) => !Boolean(m.operating) && !/운영비/i.test(String(m.name || ""))
+    (m) =>
+      !Boolean(m.operating) &&
+      !/운영비/i.test(String(m.name || "")) &&
+      !/운영비/i.test(String(positionMap[m.id] || ""))
   );
   const rawParticipants = settings.participantMemberIds || [];
   let rankingMembers = playableMembers;

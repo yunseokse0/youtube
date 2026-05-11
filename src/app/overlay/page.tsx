@@ -1257,6 +1257,8 @@ function OverlayInner() {
   );
   const hostParam = (rawSp.get("host") || "").toLowerCase();
   const externalHost = hostParam === "prism" || hostParam === "obs" || hostParam === "external";
+  // OBS/Prism는 렌더러 특성상 텍스트·transform 미세 떨림이 발생하기 쉬워 기본 안전 모드 ON.
+  const externalSafeMode = externalHost && (rawSp.get("externalSafe") || "true").toLowerCase() !== "false";
   // 강제 고정 모드: 미세 떨림 원인(자동 맞춤/스케일/모션)을 진단용으로 일괄 차단한다.
   const stableMode = (sp.get("stable") || "false").toLowerCase() === "true";
   const demoMode = ((sp.get("demo") || "").toLowerCase() === "true") || ((sp.get("test") || "").toLowerCase() === "true");
@@ -2139,6 +2141,7 @@ function OverlayInner() {
   const rowMotionParam = externalHost ? rowMotionParamRaw : sp.get("rowMotion");
   const rowMotionRequested =
     !stableMode &&
+    !externalSafeMode &&
     (rowMotionParam !== null && String(rowMotionParam).trim() !== ""
       ? String(rowMotionParam).toLowerCase() === "true"
       : !externalHost);
@@ -2448,9 +2451,10 @@ function OverlayInner() {
       fitPin === "cr" ? "right center" :
       "center center";
     const freezeScaleInExternalHost =
-      externalHost &&
-      !hasExplicitScale &&
-      Math.abs(effectiveScale - 1) < 0.02;
+      externalSafeMode ||
+      (externalHost &&
+        !hasExplicitScale &&
+        Math.abs(effectiveScale - 1) < 0.02);
     const scaleCss = Number.isFinite(effectiveScale) ? Number(effectiveScale.toFixed(4)) : 1;
     const scaleTransform = externalHost
       ? `translate3d(0, 0, 0) scale(${scaleCss})`
@@ -2574,13 +2578,14 @@ function OverlayInner() {
         /* 마지막 열(기여도): 합성 환경에서 stroke로 인한 우측 1~2px 잘림 방지 */
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution {
-          -webkit-text-stroke: 0.55px rgba(6, 12, 24, 0.92) !important;
-          text-shadow: -1px -1px 0 rgba(6, 12, 24, 0.92), 1px -1px 0 rgba(6, 12, 24, 0.92), -1px 1px 0 rgba(6, 12, 24, 0.92), 1px 1px 0 rgba(6, 12, 24, 0.92), 0 1px 4px rgba(0,0,0,0.36) !important;
+          ${externalSafeMode
+            ? "-webkit-text-stroke: 0 !important; text-shadow: 0 1px 2px rgba(0,0,0,0.72) !important;"
+            : "-webkit-text-stroke: 0.55px rgba(6, 12, 24, 0.92) !important; text-shadow: -1px -1px 0 rgba(6, 12, 24, 0.92), 1px -1px 0 rgba(6, 12, 24, 0.92), -1px 1px 0 rgba(6, 12, 24, 0.92), 1px 1px 0 rgba(6, 12, 24, 0.92), 0 1px 4px rgba(0,0,0,0.36) !important;"}
         }
         .overlay-root .overlay-elegant-table td.overlay-col-contribution .overlay-num-cell-inner {
           display: inline-block;
           min-width: max-content;
-          transform: translateX(-0.16em);
+          transform: ${externalSafeMode ? "translateX(-0.08em)" : "translateX(-0.16em)"};
         }
         /* 반투명 테이블 모드에서도 헤더 분홍 띠 유지(예전엔 transparent 로 헤더만 사라짐) */
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,

@@ -897,7 +897,12 @@ export function loadState(userId?: string | null): AppState {
     data.mealMatch = data.mealMatch && typeof data.mealMatch === "object" ? data.mealMatch : {};
     const validSigMemberIds = new Set(
       data.members
-        .filter((m: Member) => !Boolean(m.operating) && !/운영비/i.test(String(m.name || "")))
+        .filter(
+          (m: Member) =>
+            !Boolean(m.operating) &&
+            !/운영비/i.test(String(m.name || "")) &&
+            !/운영비/i.test(String((data.memberPositions as Record<string, string> | undefined)?.[m.id] || ""))
+        )
         .map((m: Member) => m.id)
     );
     data.sigMatchSettings = {
@@ -1110,7 +1115,12 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
       data.mealMatch = data.mealMatch && typeof data.mealMatch === "object" ? data.mealMatch : {};
       const validSigMemberIdsApi = new Set<string>(
         (data.members as Member[])
-          .filter((m) => !Boolean(m.operating) && !/운영비/i.test(String(m.name || "")))
+          .filter(
+            (m) =>
+              !Boolean(m.operating) &&
+              !/운영비/i.test(String(m.name || "")) &&
+              !/운영비/i.test(String((data.memberPositions as Record<string, string> | undefined)?.[m.id] || ""))
+          )
           .map((m) => m.id)
       );
       data.sigMatchSettings = {
