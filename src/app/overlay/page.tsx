@@ -1524,8 +1524,9 @@ function OverlayInner() {
   const defBankCh = (sp.get("bankCh") && parseInt(sp.get("bankCh")!, 10)) || (fullAmountMode ? (compact ? 11 : 13) : (compact ? 10 : 11));
   const defToonCh = (sp.get("toonCh") && parseInt(sp.get("toonCh")!, 10)) || (fullAmountMode ? (compact ? 11 : 13) : (compact ? 10 : 11));
   const defTotalCh = (sp.get("totalCh") && parseInt(sp.get("totalCh")!, 10)) || (fullAmountMode ? (compact ? 8 : 9) : (compact ? 6 : 7));
+  const contributionChParam = externalHost ? rawSp.get("contributionCh") : sp.get("contributionCh");
   const defContributionCh =
-    (sp.get("contributionCh") && parseInt(sp.get("contributionCh")!, 10)) || (fullAmountMode ? (compact ? 10 : 11) : (compact ? 10 : 11));
+    (contributionChParam && parseInt(contributionChParam, 10)) || (fullAmountMode ? (compact ? 10 : 11) : (compact ? 10 : 11));
   const bankCh = Math.max(8, Math.min(20, defBankCh));
   const toonCh = Math.max(8, Math.min(20, defToonCh));
   const totalCh = Math.max(6, Math.min(12, defTotalCh));
@@ -2083,7 +2084,8 @@ function OverlayInner() {
   const unpinned = useMemo(() => members.filter((m) => !pinnedFilter(m)), [members, pinnedFilter]);
   const pinned = useMemo(() => members.filter(pinnedFilter), [members, pinnedFilter]);
   // 운영비 행은 기본적으로 숨기고, 필요 시 URL로 명시적으로 노출한다.
-  const showOperatingRows = (sp.get("showOperatingRows") || "false").toLowerCase() === "true";
+  const showOperatingRowsParam = externalHost ? rawSp.get("showOperatingRows") : sp.get("showOperatingRows");
+  const showOperatingRows = (showOperatingRowsParam || "false").toLowerCase() === "true";
   const visiblePinned = showOperatingRows ? pinned : [];
   const hasRoleColumn = useMemo(
     () => members.some((m) => getMemberRole(m).trim().length > 0),
