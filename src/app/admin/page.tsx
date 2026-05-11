@@ -79,7 +79,7 @@ type OverlayPreset = {
   showMembers: boolean; showTotal: boolean;
   totalMode?: "total";
   showGoal: boolean; goal: string;
-  /** 후원 초기화 시 복원할 목표(수동 저장·첫 자동 상향 직전 스냅샷). 없으면 수학적 되감기 사용 */
+  /** 후원 초기화 시 복원할 목표(수동 저장·첫 자동 상향 직전 스냅샷). 없으면 초기화 시 goal 숫자 유지 */
   goalBaseline?: string;
   goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string; goalOpacity?: string; goalOpacityText?: boolean;
   showPersonalGoal?: boolean; personalGoalTheme?: string; personalGoalAnchor?: string; personalGoalLimit?: string; personalGoalFree?: boolean; personalGoalX?: string; personalGoalY?: string;
@@ -175,6 +175,7 @@ export default function AdminPage() {
   const [donorTarget, setDonorTarget] = useState<DonorTarget>("account");
   const [toonationAutoEnabled, setToonationAutoEnabled] = useState(false);
   const [toonationAutoProcessEnabled, setToonationAutoProcessEnabled] = useState(false);
+  const [toonationSocketDebug, setToonationSocketDebug] = useState(false);
   const [toonationAlertboxUrl, setToonationAlertboxUrl] = useState("");
   const [toonationStatus, setToonationStatus] = useState<"idle" | "running" | "error">("idle");
   const [toonationBackoffMs, setToonationBackoffMs] = useState(0);
@@ -3064,9 +3065,11 @@ export default function AdminPage() {
       const enabledRaw = window.localStorage.getItem("donationAutomation.toonation.enabled");
       const autoProcessRaw = window.localStorage.getItem("donationAutomation.toonation.autoProcess");
       const urlRaw = window.localStorage.getItem("donationAutomation.toonation.alertboxUrl");
+      const socketDebugRaw = window.localStorage.getItem("donationAutomation.toonation.socketDebug");
       const envUrl = (process.env.NEXT_PUBLIC_TOONATION_ALERTBOX_URL || "").trim();
       setToonationAutoEnabled(enabledRaw === "true");
       setToonationAutoProcessEnabled(autoProcessRaw === "true");
+      setToonationSocketDebug(socketDebugRaw === "true");
       setToonationAlertboxUrl(urlRaw || envUrl || "");
     } catch {
       // noop
@@ -3078,11 +3081,12 @@ export default function AdminPage() {
     try {
       window.localStorage.setItem("donationAutomation.toonation.enabled", String(toonationAutoEnabled));
       window.localStorage.setItem("donationAutomation.toonation.autoProcess", String(toonationAutoProcessEnabled));
+      window.localStorage.setItem("donationAutomation.toonation.socketDebug", String(toonationSocketDebug));
       window.localStorage.setItem("donationAutomation.toonation.alertboxUrl", toonationAlertboxUrl);
     } catch {
       // noop
     }
-  }, [toonationAlertboxUrl, toonationAutoEnabled, toonationAutoProcessEnabled]);
+  }, [toonationAlertboxUrl, toonationAutoEnabled, toonationAutoProcessEnabled, toonationSocketDebug]);
 
   useEffect(() => {
     if (!toonationAutoEnabled || !toonationAlertboxUrl.trim()) {
@@ -3095,6 +3099,7 @@ export default function AdminPage() {
     try {
       startToonationListener(toonationAlertboxUrl.trim(), {
         userId: user?.id,
+        socketDebug: toonationSocketDebug,
         onStatus: (s) => {
           if (s.kind === "connected") {
             setToonationStatus("running");
@@ -3120,7 +3125,7 @@ export default function AdminPage() {
       stopToonationListener();
       pushToonationLog("투네 자동수집 중지");
     };
-  }, [toonationAlertboxUrl, toonationAutoEnabled, user?.id, pushToonationLog]);
+  }, [toonationAlertboxUrl, toonationAutoEnabled, toonationSocketDebug, user?.id, pushToonationLog]);
 
   useEffect(() => {
     void fetchUnmatchedEvents();
@@ -6624,6 +6629,14 @@ export default function AdminPage() {
                   >
                     큐 자동반영 {toonationAutoProcessEnabled ? "ON" : "OFF"}
                   </button>
+                  <button
+                    type="button"
+                    className={`px-3 py-1.5 rounded text-xs font-semibold ${toonationSocketDebug ? "bg-amber-700 hover:bg-amber-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                    onClick={() => setToonationSocketDebug((v) => !v)}
+                    title="브라우저 개발자 도구 콘솔에 투네 소켓 이벤트명·JSON 출력"
+                  >
+                    소켓 콘솔 로그 {toonationSocketDebug ? "ON" : "OFF"}
+                  </button>
                 </div>
                 <input
                   className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm"
@@ -7914,7 +7927,7 @@ export default function AdminPage() {
                                   <label className="text-xs text-neutral-400">후원(원)</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" type="number" value={p.goal} onChange={(e) => updatePreset(p.id, { goal: e.target.value })} />
                                   <p className="col-span-1 sm:col-span-2 text-[11px] text-neutral-500 leading-snug">
-                                    통합·목표 오버레이: 후원 합계가 목표 이상이면 이 금액이 자동으로 약 10% 증가합니다. OBS URL에{" "}
+                                    통합·목표 오버레이: 후원 합계가 목표 이상이면 이 금액이 자동으로 고정 200만 원씩 증가합니다. OBS URL에{" "}
                                     <code className="rounded bg-black/40 px-1 text-neutral-400">goal=숫자</code>
                                     가 있으면 상향이 적용되지 않습니다(관리자 Prism 복사 URL에는 포함하지 않음). 비활성:{" "}
                                     <code className="rounded bg-black/40 px-1 text-neutral-400">goalAutoStretch=0</code>
@@ -8570,7 +8583,7 @@ export default function AdminPage() {
                 <span className="text-[11px] text-neutral-500">명 (기본 슬롯·이름은 멤버1… 순)</span>
               </div>
               <p className="mt-1.5 text-[10px] text-neutral-500 leading-snug">
-                후원 목표는 저장된 기준선(goalBaseline)이 있으면 그 금액으로 되돌리고, 없으면 자동 상향만 역추정합니다. 확실히 맞추려면 오버레이 프리셋에서 목표 금액을 한 번 저장해 주세요.
+                후원 초기화 시 목표는 저장된 기준선(goalBaseline)이 있으면 그 금액으로 되돌립니다. 기준선이 없으면 목표 숫자는 바꾸지 않습니다. 달성 시 자동 상향은 항상 고정 200만 원입니다.
               </p>
             </div>
             <div className="space-y-2 mt-4">

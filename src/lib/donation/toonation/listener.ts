@@ -17,6 +17,8 @@ export type ToonationListenerStatus = {
 type ListenerOptions = {
   userId?: string;
   onStatus?: (status: ToonationListenerStatus) => void;
+  /** true: 수신하는 모든 Socket 이벤트명·첫 인자를 브라우저 콘솔에 출력(데이터 구조 파악용) */
+  socketDebug?: boolean;
 };
 
 function safeRead(obj: unknown, key: string): unknown {
@@ -108,6 +110,7 @@ export function startToonationListener(alertboxUrl: string, options?: ListenerOp
   if (toonationSocket) toonationSocket.disconnect();
   const onStatus = options?.onStatus;
   const userId = options?.userId;
+  const socketDebug = Boolean(options?.socketDebug);
 
   const key = new URL(alertboxUrl).pathname.split("/").filter(Boolean).pop();
   if (!key) throw new Error("invalid_toonation_alertbox_url");
@@ -130,6 +133,18 @@ export function startToonationListener(alertboxUrl: string, options?: ListenerOp
   });
 
   toonationSocket.onAny((eventName: string, ...args: unknown[]) => {
+    if (socketDebug) {
+      try {
+        const first = args[0];
+        const body =
+          first !== undefined && typeof first === "object"
+            ? JSON.stringify(first).slice(0, 6000)
+            : String(first);
+        console.info("[toonation socket]", eventName, body);
+      } catch {
+        console.info("[toonation socket]", eventName, "(serialize failed)", args.length);
+      }
+    }
     const isDonationLike = eventName.includes("donation") || eventName.includes("alert");
     if (!isDonationLike) return;
     const event = toDonationEvent(args[0]);

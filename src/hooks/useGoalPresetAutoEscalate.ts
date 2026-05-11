@@ -20,6 +20,7 @@ type Args = {
 
 /**
  * 후원 합계가 목표 이상이면 해당 오버레이 프리셋의 goal 필드를 자동 상향해 `/api/state`에 반영한다.
+ * 상향량: 목표 금액과 무관하게 고정 **+200만 원**(`GOAL_AUTO_INCREASE_STEP`).
  * 비활성: URL에 `goalAutoStretch=0` 또는 `noGoalAutoStretch=true`
  * URL에 `goal=`만 있으면 자동 상향 비활성(통합 오버레이). Prism/OBS(`host`)에서는 준비 후 프리셋 우선이라 예외 처리함.
  */

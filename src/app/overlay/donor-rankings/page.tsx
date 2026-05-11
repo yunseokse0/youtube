@@ -139,6 +139,98 @@ function readColor(sp: URLSearchParams, key: string, fallback: string): string {
   return raw || fallback;
 }
 
+/** URL 쿼리 `donorsB64` 최대 길이(과도한 쿼리 방지) */
+const DONORS_B64_MAX_LEN = 24_000;
+
+function decodeDonorsB64Param(b64: string): Array<Record<string, unknown>> {
+  const t = b64.trim();
+  if (!t || t.length > DONORS_B64_MAX_LEN) return [];
+  try {
+    const pad = t.length % 4 === 0 ? "" : "=".repeat(4 - (t.length % 4));
+    const bin = atob(t.replace(/-/g, "+").replace(/_/g, "/") + pad);
+    const parsed = JSON.parse(bin) as unknown;
+    if (Array.isArray(parsed)) return parsed.filter((x) => x && typeof x === "object") as Array<Record<string, unknown>>;
+    if (parsed && typeof parsed === "object") {
+      const o = parsed as Record<string, unknown>;
+      const arr = o.donors ?? o.items;
+      if (Array.isArray(arr)) return arr.filter((x) => x && typeof x === "object") as Array<Record<string, unknown>>;
+    }
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
+
+/**
+ * `donorsSrc` / `donorsB64`로 후원 행을 URL에서 가져올 때 사용.
+ * - `donorsB64`: base64(JSON 배열 또는 `{ donors: [...] }`) — OBS·링크만으로 주입 가능
+ * - `donorsSrc`: 같은 오리진의 JSON URL을 `donorsPollMs`마다 폴링(기본 2500). 배열 또는 `{ donors }` / `{ items }`
+ * @returns `undefined`면 `/api/state`의 donors 사용. 배열이면 그걸로만 집계.
+ */
+function useDonorsOverrideFromUrl(sp: URLSearchParams): Array<Record<string, unknown>> | undefined {
+  const donorsB64 = (sp.get("donorsB64") || "").trim();
+  const donorsSrc = (sp.get("donorsSrc") || "").trim();
+  const pollMs = Math.floor(readNumber(sp, "donorsPollMs", 2500, 2000, 120_000));
+
+  const b64Rows = useMemo(() => {
+    if (!donorsB64) return undefined;
+    return decodeDonorsB64Param(donorsB64);
+  }, [donorsB64]);
+
+  const [srcRows, setSrcRows] = useState<Array<Record<string, unknown>> | undefined>(undefined);
+
+  useEffect(() => {
+    if (donorsB64) {
+      setSrcRows(undefined);
+      return;
+    }
+    if (!donorsSrc) {
+      setSrcRows(undefined);
+      return;
+    }
+
+    let cancelled = false;
+    const tick = async () => {
+      if (typeof window === "undefined") return;
+      let href: string;
+      try {
+        const u = new URL(donorsSrc, window.location.origin);
+        if (u.origin !== window.location.origin) return;
+        href = u.href;
+      } catch {
+        return;
+      }
+      try {
+        const res = await fetch(href, { cache: "no-store", credentials: "omit" });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as unknown;
+        let arr: unknown[] = [];
+        if (Array.isArray(data)) arr = data;
+        else if (data && typeof data === "object") {
+          const o = data as Record<string, unknown>;
+          if (Array.isArray(o.donors)) arr = o.donors;
+          else if (Array.isArray(o.items)) arr = o.items;
+        }
+        const rows = arr.filter((x) => x && typeof x === "object") as Array<Record<string, unknown>>;
+        if (!cancelled) setSrcRows(rows);
+      } catch {
+        if (!cancelled) setSrcRows([]);
+      }
+    };
+
+    void tick();
+    const id = window.setInterval(() => void tick(), pollMs);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [donorsB64, donorsSrc, pollMs]);
+
+  if (donorsB64) return b64Rows;
+  if (donorsSrc) return srcRows;
+  return undefined;
+}
+
 /**
  * 패널 등: 저장값이 `transparent`일 때 방송 기본 채색(URL 덮어쓰기 가능).
  * 구버전은 여기서 알파가 큰 그라데이션을 넣어 슬라이더와 무관하게 항상 어둡게 보였음 → 기본은 불투명 단색으로 두고,
@@ -381,6 +473,8 @@ export default function DonorRankingsOverlayPage() {
   const bgOpacityPct = Math.max(0, Math.min(100, overlayCfg.bgOpacity)) / 100;
   const overlayOpacityFrac = Math.max(0, Math.min(100, overlayOpacity)) / 100;
 
+  const donorsOverride = useDonorsOverrideFromUrl(sp);
+
   const { accountTop, toonTop } = useMemo(() => {
     if (useTest) {
       return {
@@ -388,7 +482,7 @@ export default function DonorRankingsOverlayPage() {
         toonTop: [...TEST_TOON_ROWS],
       };
     }
-    const donors = (state?.donors || []) as Array<Record<string, unknown>>;
+    const donors = (donorsOverride !== undefined ? donorsOverride : state?.donors || []) as Array<Record<string, unknown>>;
     const accountRows: DonorRow[] = [];
     const toonRows: DonorRow[] = [];
     for (const d of donors) {
@@ -403,7 +497,7 @@ export default function DonorRankingsOverlayPage() {
       accountTop: aggregateAll(accountRows),
       toonTop: aggregateAll(toonRows),
     };
-  }, [state?.donors, useTest]);
+  }, [state?.donors, useTest, donorsOverride]);
 
   if (!ready && !useTest) return null;
 
