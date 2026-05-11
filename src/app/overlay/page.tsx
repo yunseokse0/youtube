@@ -2599,11 +2599,11 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table tbody td.overlay-col-name {
           padding-left: 0.95em !important;
         }
-        /* 마지막 열(기여도)은 외곽선(stroke)까지 안전하게 보이도록 우측 여유를 더 준다. */
+        /* 마지막 열(기여도): 너무 오른쪽으로 밀려 보이지 않게 투네/합계 열과 유사한 간격으로 조정 */
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution {
-          padding-left: 0.6em !important;
-          padding-right: 0.85em !important;
+          padding-left: 0.42em !important;
+          padding-right: 0.48em !important;
         }
         /* 헤더 세로선 제거: 스트림 오버레이에서 칸 분리선 없이 한 덩어리로 보이게 한다. */
         .overlay-root .overlay-elegant-table thead td {
