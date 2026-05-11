@@ -2122,8 +2122,14 @@ function OverlayInner() {
     getContributionValueForMember,
   ]);
 
-  /** OBS·Prism 등 외부 임베드에서는 FLIP 행 이동이 합성·소수 픽셀과 맞물려 떨림처럼 보이는 경우가 많아 기본은 끈다. 브라우저만 쓸 때는 예전처럼 기본 켜짐. */
-  const rowMotionParam = sp.get("rowMotion");
+  /**
+   * OBS·Prism 외부 임베드:
+   * - 기본 OFF
+   * - URL raw query(rowMotion)로 명시했을 때만 ON/OFF 허용
+   *   (프리셋 값으로는 외부 호스트의 기본 안전값을 덮지 않음)
+   */
+  const rowMotionParamRaw = rawSp.get("rowMotion");
+  const rowMotionParam = externalHost ? rowMotionParamRaw : sp.get("rowMotion");
   const rowMotionRequested =
     !stableMode &&
     (rowMotionParam !== null && String(rowMotionParam).trim() !== ""
@@ -2633,7 +2639,7 @@ function OverlayInner() {
           text-align: center !important;
         }
         ${
-          stableMode
+          stableMode || externalHost
             ? ""
             : `
         .overlay-root .overlay-elegant-table tbody tr:hover td {
