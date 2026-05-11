@@ -2153,11 +2153,40 @@ function OverlayInner() {
   useLayoutEffect(() => {
     if (!showMembers) return;
     if (externalSafeMode) {
-      // OBS/Prism 하드 고정 모드: 재측정 루프는 끄되, 기본값은 약간 축소해 마지막 열 클리핑을 방지
-      const safeFixed = 0.88;
-      memberTableFitPrevRef.current = safeFixed;
-      setMemberTableFitFactor(safeFixed);
-      return;
+      // OBS/Prism 하드 고정 모드: 프레임 범위 내에 표 전체가 들어오도록 1회(및 리사이즈 시) 고정 비율만 계산
+      const clampEl = memberTableClampRef.current;
+      const table = tableBoxRef.current as HTMLTableElement | null;
+      if (!clampEl || !table) return;
+      const updateSafeFit = () => {
+        const padStyle = getComputedStyle(clampEl);
+        const padX =
+          (parseFloat(padStyle.paddingLeft) || 0) + (parseFloat(padStyle.paddingRight) || 0);
+        const avail = Math.max(0, clampEl.clientWidth - padX);
+        if (avail < 8) return;
+        const prevMax = table.style.maxWidth;
+        const prevInlineFont = table.style.fontSize;
+        try {
+          table.style.maxWidth = "none";
+          table.style.fontSize = `${mSize}px`;
+          void table.offsetWidth;
+          const measured = Math.max(table.scrollWidth, table.getBoundingClientRect().width);
+          if (!Number.isFinite(measured) || measured <= 0) return;
+          // 마지막 열 클리핑 방지를 위해 10px 안전 여유를 둔다.
+          const raw = (avail - 10) / measured;
+          const next = Math.max(0.55, Math.min(1, Math.floor(raw * 100) / 100));
+          if (Math.abs(next - memberTableFitPrevRef.current) < 0.005) return;
+          memberTableFitPrevRef.current = next;
+          setMemberTableFitFactor(next);
+        } finally {
+          table.style.maxWidth = prevMax;
+          if (prevInlineFont) table.style.fontSize = prevInlineFont;
+          else table.style.removeProperty("font-size");
+        }
+      };
+      updateSafeFit();
+      const ro = new ResizeObserver(() => updateSafeFit());
+      ro.observe(clampEl);
+      return () => ro.disconnect();
     }
     const clampEl = memberTableClampRef.current;
     const table = tableBoxRef.current as HTMLTableElement | null;
