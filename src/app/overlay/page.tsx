@@ -1660,10 +1660,12 @@ function OverlayInner() {
   const renderW = sp.get("renderWidth") ? parseInt(sp.get("renderWidth")!, 10) : null;
   const renderH = sp.get("renderHeight") ? parseInt(sp.get("renderHeight")!, 10) : null;
   const isPreviewGuide = sp.get("previewGuide") === "true";
-  const autoFitRaw = (sp.get("autoFit") || "none").toLowerCase() as "none" | "width" | "height" | "contain" | "cover";
+  const autoFitParam = externalHost ? rawSp.get("autoFit") : sp.get("autoFit");
+  const autoFitRaw = ((autoFitParam || "none").toLowerCase()) as "none" | "width" | "height" | "contain" | "cover";
   const autoFit = stableMode ? "none" : autoFitRaw;
+  const zoomModeParam = externalHost ? rawSp.get("zoomMode") : sp.get("zoomMode");
   const zoomMode = (
-    (sp.get("zoomMode") || (externalHost ? "neutral" : "follow")).toLowerCase() as "follow" | "invert" | "neutral"
+    (zoomModeParam || (externalHost ? "neutral" : "follow")).toLowerCase() as "follow" | "invert" | "neutral"
   );
   const fitPin = centerFixed ? "cc" : ((sp.get("fitPin") || "cc").toLowerCase() as "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr");
   const showGuide = (sp.get("guide") || "false").toLowerCase() === "true";
@@ -2077,6 +2079,9 @@ function OverlayInner() {
 
   const unpinned = useMemo(() => members.filter((m) => !pinnedFilter(m)), [members, pinnedFilter]);
   const pinned = useMemo(() => members.filter(pinnedFilter), [members, pinnedFilter]);
+  // 운영비 행은 기본적으로 숨기고, 필요 시 URL로 명시적으로 노출한다.
+  const showOperatingRows = (sp.get("showOperatingRows") || "false").toLowerCase() === "true";
+  const visiblePinned = showOperatingRows ? pinned : [];
   const hasRoleColumn = useMemo(
     () => members.some((m) => getMemberRole(m).trim().length > 0),
     [members, getMemberRole]
@@ -2107,11 +2112,11 @@ function OverlayInner() {
       ? `${rankColCh}|${roleColFit}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`
       : `${rankColCh}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`;
     const rows = ranked.map(({ m }) => `${m.account}|${m.toon}|${getContributionValueForMember(m)}`).join(";");
-    const pinRows = pinned.map((m) => `${m.account}|${m.toon}|0`).join(";");
+    const pinRows = visiblePinned.map((m) => `${m.account}|${m.toon}|0`).join(";");
     return `${cols}#${rows}~${pinRows}`;
   }, [
     ranked,
-    pinned,
+    visiblePinned,
     hasRoleColumn,
     nameCh,
     bankCh,
@@ -2214,7 +2219,7 @@ function OverlayInner() {
     };
   }, [showMembers, mSize, memberTableFitSig]);
 
-  const allOrderKeys = [...ranked.map(({ m }) => m.id), ...pinned.map((m) => `${m.id}-p`)];
+  const allOrderKeys = [...ranked.map(({ m }) => m.id), ...visiblePinned.map((m) => `${m.id}-p`)];
   const setRowRef = useFlip(allOrderKeys, 500, rowMotionEnabled);
 
   const prevTotalsRef = useRef<Map<string, number>>(new Map());
@@ -2444,7 +2449,6 @@ function OverlayInner() {
       "center center";
     const freezeScaleInExternalHost =
       externalHost &&
-      zoomMode === "neutral" &&
       !hasExplicitScale &&
       Math.abs(effectiveScale - 1) < 0.02;
     const scaleCss = Number.isFinite(effectiveScale) ? Number(effectiveScale.toFixed(4)) : 1;
@@ -2825,7 +2829,7 @@ function OverlayInner() {
                         </td>
                       </tr>
                     ))}
-                    {pinned.map((m) => (
+                    {visiblePinned.map((m) => (
                       <tr
                         key={m.id + "-p"}
                         ref={rowMotionEnabled ? setRowRef(m.id + "-p") : undefined}
