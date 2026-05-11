@@ -1952,17 +1952,6 @@ function OverlayInner() {
     }
     return base;
   }, [demoMode, membersRemote, ready, isPreviewGuide, externalHost]);
-  const getContributionValue = useCallback((m: Member) => {
-    const raw = (m as Member & { contribution?: unknown }).contribution;
-    const parsed = Number(raw);
-    if (Number.isFinite(parsed)) return Math.max(0, parsed);
-    return Math.max(0, Number(m.account || 0) + Number(m.toon || 0));
-  }, []);
-  /** 멤버별 기여도 필드 합계(「기여도 기록부」·후원 반영 시 동기화된 값; 합계 열과 다를 수 있음) */
-  const sumContribution = useMemo(
-    () => members.reduce((sum, m) => sum + getContributionValue(m), 0),
-    [members, getContributionValue]
-  );
   const donors = useMemo(() => {
     if (demoMode) {
       return [
@@ -2043,6 +2032,27 @@ function OverlayInner() {
     (m: Member) => Boolean(m.operating) || /운영비/i.test(m.name) || /운영비/i.test(getMemberRole(m)),
     [getMemberRole]
   );
+  /**
+   * 기여도 숫자: 저장 필드가 0인데 계좌+투네 합은 있는 경우(멤버 재추가·자동 후원만 반영 등) 합계로 표시.
+   * 운영비 행은 책정 대상이 아니므로 합계·표시는 별도 처리(pinnedFilter).
+   */
+  const getContributionValueForMember = useCallback((m: Member) => {
+    const raw = (m as Member & { contribution?: unknown }).contribution;
+    const parsed = Number(raw);
+    const total = Math.max(0, Number(m.account || 0) + Number(m.toon || 0));
+    if (!Number.isFinite(parsed)) return total;
+    const c = Math.max(0, parsed);
+    if (c === 0 && total > 0) return total;
+    return c;
+  }, []);
+  /** 운영비(핀) 제외 멤버 기여도 합 — 총합 행과 정산 분배 기준에 맞춤 */
+  const sumContribution = useMemo(
+    () =>
+      members
+        .filter((m) => !pinnedFilter(m))
+        .reduce((sum, m) => sum + getContributionValueForMember(m), 0),
+    [members, pinnedFilter, getContributionValueForMember]
+  );
   const showPersonalGoal = useMemo(() => {
     const raw = sp.get("showPersonalGoal");
     if (raw === "true") return true;
@@ -2094,8 +2104,8 @@ function OverlayInner() {
     const cols = hasRoleColumn
       ? `${rankColCh}|${roleColFit}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`
       : `${rankColCh}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`;
-    const rows = ranked.map(({ m }) => `${m.account}|${m.toon}|${getContributionValue(m)}`).join(";");
-    const pinRows = pinned.map((m) => `${m.account}|${m.toon}|${getContributionValue(m)}`).join(";");
+    const rows = ranked.map(({ m }) => `${m.account}|${m.toon}|${getContributionValueForMember(m)}`).join(";");
+    const pinRows = pinned.map((m) => `${m.account}|${m.toon}|0`).join(";");
     return `${cols}#${rows}~${pinRows}`;
   }, [
     ranked,
@@ -2109,7 +2119,7 @@ function OverlayInner() {
     rankColCh,
     members,
     getMemberRole,
-    getContributionValue,
+    getContributionValueForMember,
   ]);
 
   /** OBS·Prism 등 외부 임베드에서는 FLIP 행 이동이 합성·소수 픽셀과 맞물려 떨림처럼 보이는 경우가 많아 기본은 끈다. 브라우저만 쓸 때는 예전처럼 기본 켜짐. */
@@ -2756,7 +2766,7 @@ function OverlayInner() {
                       <td className={`${effectiveHeaderCls} overlay-col-account text-right`}>계좌</td>
                       <td className={`${effectiveHeaderCls} overlay-col-toon text-right`}>투네</td>
                       <td className={`${effectiveHeaderCls} overlay-col-total text-right`}>{totalHeaderLabel}</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-contribution text-right`} title="관리자「기여도 기록부」값. 후원 입력 시에는 보통 계좌+투네 합과 같습니다.">
+                      <td className={`${effectiveHeaderCls} overlay-col-contribution text-right`} title="관리자「기여도 기록부」값. 후원만 반영된 경우 계좌+투네 합으로 표시. 운영비 행은 기여도 미표시(—), 총합은 운영비 제외 합산.">
                         기여도
                       </td>
                     </tr>
@@ -2792,7 +2802,7 @@ function OverlayInner() {
                           <span className="overlay-num-cell-inner">{fmtTotalCell(m.account + m.toon)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
-                          <span className="overlay-num-cell-inner">{fmt(getContributionValue(m))}</span>
+                          <span className="overlay-num-cell-inner">{fmt(getContributionValueForMember(m))}</span>
                         </td>
                       </tr>
                     ))}
@@ -2821,7 +2831,7 @@ function OverlayInner() {
                           <span className="overlay-num-cell-inner">{fmtTotalCell(m.account + m.toon)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
-                          <span className="overlay-num-cell-inner">{fmt(getContributionValue(m))}</span>
+                          <span className="overlay-num-cell-inner overlay-rank-mark">—</span>
                         </td>
                       </tr>
                     ))}

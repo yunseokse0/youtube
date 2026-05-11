@@ -66,9 +66,15 @@ export async function processDonationEvent(rawEvent: DonationEvent, userId?: str
     const updatedMembers = currentState.members.map((member) => {
       if (member.id !== newDonor.memberId) return member;
       const field = newDonor.target === "toon" ? "toon" : "account";
+      const nextAccount = field === "account" ? (member.account || 0) + newDonor.amount : (member.account || 0);
+      const nextToon = field === "toon" ? (member.toon || 0) + newDonor.amount : (member.toon || 0);
+      const isOperating =
+        Boolean(member.operating) || /운영비/i.test(String(member.name || ""));
       return {
         ...member,
         [field]: (member[field] || 0) + newDonor.amount,
+        /** 관리자 수동 후원과 동일하게 기여도 합계를 맞춤. 운영비 행은 기여도 책정 제외 */
+        contribution: isOperating ? Math.max(0, Number(member.contribution) || 0) : nextAccount + nextToon,
       };
     });
 
