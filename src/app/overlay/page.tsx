@@ -1950,14 +1950,15 @@ function OverlayInner() {
     }
     const base = membersRemote;
     if (base.length > 0) return base;
-    if ((!ready) && (isPreviewGuide || externalHost)) {
+    // 실제 방송(외부호스트)에서는 기본 멤버 폴백을 쓰지 않는다.
+    if ((!ready) && isPreviewGuide) {
       return defaultState().members;
     }
-    if ((isPreviewGuide || externalHost) && base.length === 0) {
+    if (isPreviewGuide && base.length === 0) {
       return defaultState().members;
     }
     return base;
-  }, [demoMode, membersRemote, ready, isPreviewGuide, externalHost]);
+  }, [demoMode, membersRemote, ready, isPreviewGuide]);
   const donors = useMemo(() => {
     if (demoMode) {
       return [
@@ -2150,9 +2151,10 @@ function OverlayInner() {
   useLayoutEffect(() => {
     if (!showMembers) return;
     if (externalSafeMode) {
-      // OBS/Prism 하드 고정 모드: 측정 루프 자체를 꺼서 폰트 재계산 떨림 방지
-      memberTableFitPrevRef.current = 1;
-      setMemberTableFitFactor(1);
+      // OBS/Prism 하드 고정 모드: 재측정 루프는 끄되, 기본값은 약간 축소해 마지막 열 클리핑을 방지
+      const safeFixed = 0.88;
+      memberTableFitPrevRef.current = safeFixed;
+      setMemberTableFitFactor(safeFixed);
       return;
     }
     const clampEl = memberTableClampRef.current;
