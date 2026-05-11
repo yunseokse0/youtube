@@ -12,6 +12,7 @@ export interface DonationEvent {
   status: "queued" | "processed" | "failed" | "unmatched";
   memberId?: string;
   error?: string;
+  sigListSnapshot?: QueueSigItem[];
 }
 
 export interface Donor {
@@ -26,4 +27,13 @@ export interface Donor {
 export interface DonorAlias {
   alias: string;
   memberId: string;
+}
+
+export interface QueueSigItem {
+  id: string;
+  name: string;
+  price: number;
+  isActive: boolean;
+  soldCount?: number;
+  maxCount?: number;
 }

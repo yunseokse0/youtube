@@ -1,10 +1,11 @@
 "use client";
 
 import { io, type Socket } from "socket.io-client";
-import type { DonationEvent } from "../types";
-import { processDonationEvent } from "../processor";
+import type { DonationEvent, QueueSigItem } from "../types";
 
 let toonationSocket: Socket | null = null;
+let sigSnapshotCache: QueueSigItem[] = [];
+let sigSnapshotCacheAt = 0;
 
 export type ToonationListenerStatus = {
   kind: "connected" | "disconnected" | "reconnect_attempt" | "reconnect_error" | "reconnect_failed" | "connect_error";
@@ -69,6 +70,40 @@ function toDonationEvent(data: unknown): DonationEvent | null {
   };
 }
 
+async function enqueueMonitoringEvent(event: DonationEvent, userId?: string): Promise<void> {
+  const sigListSnapshot = await loadSigListSnapshot(userId);
+  const q = userId ? `?u=${encodeURIComponent(userId)}` : "";
+  await fetch(`/api/donations/queue${q}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...event, status: "queued", sigListSnapshot }),
+  }).catch(() => {});
+}
+
+async function loadSigListSnapshot(userId?: string): Promise<QueueSigItem[]> {
+  if (Date.now() - sigSnapshotCacheAt < 10000 && sigSnapshotCache.length > 0) {
+    return sigSnapshotCache;
+  }
+  const q = userId ? `?u=${encodeURIComponent(userId)}` : "";
+  const res = await fetch(`/api/state${q}`, { cache: "no-store" }).catch(() => null);
+  if (!res || !res.ok) return sigSnapshotCache;
+  const data = (await res.json()) as { sigInventory?: Array<Record<string, unknown>> };
+  const inv = Array.isArray(data.sigInventory) ? data.sigInventory : [];
+  const snapshot: QueueSigItem[] = inv
+    .filter((x) => Boolean(x && x.id && x.name))
+    .map((x) => ({
+      id: String(x.id),
+      name: String(x.name),
+      price: Math.max(0, Math.round(Number(x.price || 0))),
+      isActive: Boolean(x.isActive),
+      soldCount: Number.isFinite(Number(x.soldCount)) ? Math.max(0, Math.floor(Number(x.soldCount))) : undefined,
+      maxCount: Number.isFinite(Number(x.maxCount)) ? Math.max(0, Math.floor(Number(x.maxCount))) : undefined,
+    }));
+  sigSnapshotCache = snapshot;
+  sigSnapshotCacheAt = Date.now();
+  return snapshot;
+}
+
 export function startToonationListener(alertboxUrl: string, options?: ListenerOptions) {
   if (toonationSocket) toonationSocket.disconnect();
   const onStatus = options?.onStatus;
@@ -99,7 +134,7 @@ export function startToonationListener(alertboxUrl: string, options?: ListenerOp
     if (!isDonationLike) return;
     const event = toDonationEvent(args[0]);
     if (!event) return;
-    void processDonationEvent(event, userId);
+    void enqueueMonitoringEvent(event, userId);
   });
 
   toonationSocket.on("disconnect", (reason: string) => {

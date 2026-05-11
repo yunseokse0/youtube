@@ -174,11 +174,13 @@ export default function AdminPage() {
   const [donorMemberId, setDonorMemberId] = useState<string | null>(null);
   const [donorTarget, setDonorTarget] = useState<DonorTarget>("account");
   const [toonationAutoEnabled, setToonationAutoEnabled] = useState(false);
+  const [toonationAutoProcessEnabled, setToonationAutoProcessEnabled] = useState(false);
   const [toonationAlertboxUrl, setToonationAlertboxUrl] = useState("");
   const [toonationStatus, setToonationStatus] = useState<"idle" | "running" | "error">("idle");
   const [toonationBackoffMs, setToonationBackoffMs] = useState(0);
   const [toonationRetryAttempt, setToonationRetryAttempt] = useState(0);
   const [toonationLogs, setToonationLogs] = useState<Array<{ id: string; at: number; message: string }>>([]);
+  const [toonationQueue, setToonationQueue] = useState<DonationEvent[]>([]);
   const [unmatchedEvents, setUnmatchedEvents] = useState<DonationEvent[]>([]);
   const [unmatchedAssignMap, setUnmatchedAssignMap] = useState<Record<string, string>>({});
   const [aliasInputMap, setAliasInputMap] = useState<Record<string, string>>({});
@@ -2948,6 +2950,49 @@ export default function AdminPage() {
     }
   }, [user?.id]);
 
+  const fetchToonationQueue = useCallback(async () => {
+    const uid = user?.id || "";
+    if (!uid) return;
+    try {
+      const res = await fetch(`/api/donations/queue?u=${encodeURIComponent(uid)}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { items?: DonationEvent[] };
+      setToonationQueue(Array.isArray(data.items) ? data.items : []);
+    } catch {
+      // noop
+    }
+  }, [user?.id]);
+
+  const removeQueueEvent = useCallback(async (id: string) => {
+    const uid = user?.id || "";
+    if (!uid || !id) return;
+    await fetch(`/api/donations/queue?u=${encodeURIComponent(uid)}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    }).catch(() => {});
+  }, [user?.id]);
+
+  const approveQueueEvent = useCallback(async (evt: DonationEvent) => {
+    await processDonationEvent({ ...evt, status: "queued", target: "toon" }, user?.id);
+    await removeQueueEvent(evt.id);
+    await fetchToonationQueue();
+    await fetchUnmatchedEvents();
+    pushToonationLog(`큐 승인 반영: ${evt.donorName} ${evt.amount.toLocaleString("ko-KR")}원`);
+  }, [fetchToonationQueue, fetchUnmatchedEvents, pushToonationLog, removeQueueEvent, user?.id]);
+
+  const approveAllQueueEvents = useCallback(async () => {
+    for (const evt of toonationQueue) {
+      await processDonationEvent({ ...evt, status: "queued", target: "toon" }, user?.id);
+      await removeQueueEvent(evt.id);
+    }
+    await fetchToonationQueue();
+    await fetchUnmatchedEvents();
+    if (toonationQueue.length > 0) {
+      pushToonationLog(`큐 일괄 승인 반영: ${toonationQueue.length}건`);
+    }
+  }, [fetchToonationQueue, fetchUnmatchedEvents, pushToonationLog, removeQueueEvent, toonationQueue, user?.id]);
+
   const removeUnmatchedEvent = useCallback(async (id: string) => {
     const uid = user?.id || "";
     if (!uid || !id) return;
@@ -3017,9 +3062,11 @@ export default function AdminPage() {
     if (typeof window === "undefined") return;
     try {
       const enabledRaw = window.localStorage.getItem("donationAutomation.toonation.enabled");
+      const autoProcessRaw = window.localStorage.getItem("donationAutomation.toonation.autoProcess");
       const urlRaw = window.localStorage.getItem("donationAutomation.toonation.alertboxUrl");
       const envUrl = (process.env.NEXT_PUBLIC_TOONATION_ALERTBOX_URL || "").trim();
       setToonationAutoEnabled(enabledRaw === "true");
+      setToonationAutoProcessEnabled(autoProcessRaw === "true");
       setToonationAlertboxUrl(urlRaw || envUrl || "");
     } catch {
       // noop
@@ -3030,11 +3077,12 @@ export default function AdminPage() {
     if (typeof window === "undefined") return;
     try {
       window.localStorage.setItem("donationAutomation.toonation.enabled", String(toonationAutoEnabled));
+      window.localStorage.setItem("donationAutomation.toonation.autoProcess", String(toonationAutoProcessEnabled));
       window.localStorage.setItem("donationAutomation.toonation.alertboxUrl", toonationAlertboxUrl);
     } catch {
       // noop
     }
-  }, [toonationAlertboxUrl, toonationAutoEnabled]);
+  }, [toonationAlertboxUrl, toonationAutoEnabled, toonationAutoProcessEnabled]);
 
   useEffect(() => {
     if (!toonationAutoEnabled || !toonationAlertboxUrl.trim()) {
@@ -3077,7 +3125,25 @@ export default function AdminPage() {
   useEffect(() => {
     void fetchUnmatchedEvents();
     void fetchDonationAliases();
-  }, [fetchUnmatchedEvents, fetchDonationAliases]);
+    void fetchToonationQueue();
+  }, [fetchUnmatchedEvents, fetchDonationAliases, fetchToonationQueue]);
+
+  useEffect(() => {
+    if (!toonationAutoEnabled) return;
+    const t = window.setInterval(() => {
+      void fetchToonationQueue();
+    }, 3000);
+    return () => window.clearInterval(t);
+  }, [fetchToonationQueue, toonationAutoEnabled]);
+
+  useEffect(() => {
+    if (!toonationAutoProcessEnabled) return;
+    if (toonationQueue.length === 0) return;
+    const t = window.setTimeout(() => {
+      void approveQueueEvent(toonationQueue[0]);
+    }, 1200);
+    return () => window.clearTimeout(t);
+  }, [approveQueueEvent, toonationAutoProcessEnabled, toonationQueue]);
 
   useEffect(() => {
     if (toonationBackoffMs <= 0) return;
@@ -6549,6 +6615,13 @@ export default function AdminPage() {
                       재시도 #{toonationRetryAttempt} / 다음 시도 {Math.ceil(toonationBackoffMs / 1000)}초
                     </span>
                   )}
+                  <button
+                    type="button"
+                    className={`px-3 py-1.5 rounded text-xs font-semibold ${toonationAutoProcessEnabled ? "bg-violet-600 hover:bg-violet-500" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                    onClick={() => setToonationAutoProcessEnabled((v) => !v)}
+                  >
+                    큐 자동반영 {toonationAutoProcessEnabled ? "ON" : "OFF"}
+                  </button>
                 </div>
                 <input
                   className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm"
@@ -6590,6 +6663,101 @@ export default function AdminPage() {
                   >
                     미매칭 새로고침
                   </button>
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
+                    onClick={() => void fetchToonationQueue()}
+                  >
+                    대기 리스트 새로고침
+                  </button>
+                </div>
+                <div className="rounded border border-white/10 bg-black/20 p-2">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="text-xs text-neutral-300">투네이션 대기 리스트(모니터링) ({toonationQueue.length})</div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="px-2 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-[11px]"
+                        onClick={() => void approveAllQueueEvents()}
+                      >
+                        일괄 승인 반영
+                      </button>
+                      <button
+                        type="button"
+                        className="px-2 py-0.5 rounded bg-neutral-700 hover:bg-neutral-600 text-[11px]"
+                        onClick={async () => {
+                          const uid = user?.id || "";
+                          if (!uid) return;
+                          await fetch(`/api/donations/queue?u=${encodeURIComponent(uid)}`, {
+                            method: "DELETE",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ clearAll: true }),
+                          }).catch(() => {});
+                          await fetchToonationQueue();
+                        }}
+                      >
+                        모두 비우기
+                      </button>
+                    </div>
+                  </div>
+                  <div className="max-h-[200px] overflow-auto pr-1 space-y-1">
+                    {toonationQueue.length === 0 && (
+                      <div className="text-xs text-neutral-500">대기 이벤트가 없습니다.</div>
+                    )}
+                    {toonationQueue.map((evt) => (
+                      <div key={evt.id} className="text-xs text-neutral-300 flex items-center justify-between gap-2 rounded border border-white/10 bg-neutral-900/50 px-2 py-1">
+                        <div className="w-full">
+                          <div className="flex items-center justify-between gap-2">
+                            <span>
+                              [{new Date(evt.at).toLocaleTimeString("ko-KR", { hour12: false })}] {evt.donorName} / {evt.amount.toLocaleString("ko-KR")}원
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                className="px-2 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-[11px]"
+                                onClick={() => void approveQueueEvent(evt)}
+                              >
+                                승인 반영
+                              </button>
+                              <button
+                                type="button"
+                                className="px-2 py-0.5 rounded bg-neutral-700 hover:bg-neutral-600 text-[11px]"
+                                onClick={async () => {
+                                  await removeQueueEvent(evt.id);
+                                  await fetchToonationQueue();
+                                }}
+                              >
+                                반려/제거
+                              </button>
+                            </div>
+                          </div>
+                          <div className="mt-1 text-[11px] text-neutral-400">
+                            <div className="text-neutral-500 mb-0.5">대기 중 시그</div>
+                            {(() => {
+                              const list = evt.sigListSnapshot || [];
+                              const waiting = list.filter(
+                                (s) =>
+                                  s.isActive &&
+                                  (s.maxCount == null || Number.isNaN(Number(s.maxCount)) || (s.soldCount || 0) < s.maxCount)
+                              );
+                              if (waiting.length === 0) {
+                                return <div className="text-neutral-600">없음</div>;
+                              }
+                              return (
+                                <ul className="max-h-[88px] overflow-y-auto space-y-0.5 pl-3 list-disc text-neutral-300">
+                                  {waiting.map((s) => (
+                                    <li key={`${evt.id}-${s.id}`}>
+                                      {s.name} ({s.price.toLocaleString("ko-KR")}원)
+                                    </li>
+                                  ))}
+                                </ul>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
                 <div className="rounded border border-white/10 bg-black/20 p-2">
                   <div className="text-xs text-neutral-300 mb-2">미매칭 후원 목록 ({unmatchedEvents.length})</div>

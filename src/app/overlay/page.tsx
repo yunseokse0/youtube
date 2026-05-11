@@ -2112,7 +2112,13 @@ function OverlayInner() {
     getContributionValue,
   ]);
 
-  const rowMotionRequested = !stableMode && (sp.get("rowMotion") || "true").toLowerCase() === "true";
+  /** OBS·Prism 등 외부 임베드에서는 FLIP 행 이동이 합성·소수 픽셀과 맞물려 떨림처럼 보이는 경우가 많아 기본은 끈다. 브라우저만 쓸 때는 예전처럼 기본 켜짐. */
+  const rowMotionParam = sp.get("rowMotion");
+  const rowMotionRequested =
+    !stableMode &&
+    (rowMotionParam !== null && String(rowMotionParam).trim() !== ""
+      ? String(rowMotionParam).toLowerCase() === "true"
+      : !externalHost);
   const rowMotionEnabled = rowMotionRequested && unpinned.length > 1;
 
   useLayoutEffect(() => {
