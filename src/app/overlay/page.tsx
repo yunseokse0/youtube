@@ -1304,10 +1304,12 @@ function OverlayInner() {
   const fitBase = Math.max(240, Math.min(1600, parseInt(sp.get("fitBase") || (isVertical ? "400" : "480"), 10)));
   const fitMinMember = Math.max(8, Math.min(40, parseInt(sp.get("fitMinMember") || (isVertical ? "22" : "10"), 10)));
   const fitMaxMember = Math.max(fitMinMember, Math.min(80, parseInt(sp.get("fitMaxMember") || (isVertical ? "44" : "24"), 10)));
+  // 외부 호스트는 프리셋 scale 복원으로 리프레시 때 떨림이 재발할 수 있어 raw URL에 명시된 경우만 scale을 반영한다.
+  const scaleParam = externalHost ? rawSp.get("scale") : sp.get("scale");
   // 기본 비정수 스케일(1.1)은 OBS/브라우저에서 텍스트 가장자리를 흐리게 만들 수 있어 기본을 1로 유지한다.
-  const parsedScale = Math.max(0.5, Math.min(4, parseFloat(sp.get("scale") || (isVertical ? "1" : (compact ? "0.9" : "1")))));
+  const parsedScale = Math.max(0.5, Math.min(4, parseFloat(scaleParam || (isVertical ? "1" : (compact ? "0.9" : "1")))));
   const scale = stableMode ? 1 : parsedScale;
-  const hasExplicitScale = sp.get("scale") !== null;
+  const hasExplicitScale = scaleParam !== null;
   const memberSize = Math.max(10, Math.min(80, parseInt(sp.get("memberSize") || (compact ? "16" : (isVertical ? "40" : "24")), 10)));
   const totalSize = Math.max(14, Math.min(160, parseInt(sp.get("totalSize") || (isVertical ? "48" : "30"), 10)));
   const dense = (sp.get("dense") || "false").toLowerCase() === "true";
@@ -1527,8 +1529,8 @@ function OverlayInner() {
   const totalCh = Math.max(6, Math.min(12, defTotalCh));
   /** 순위 열: 헤더「순위」·「#12」 등이 잘리지 않도록 `ch` 하한 확보(URL `rankCh`) */
   const rankColCh = Math.max(5, Math.min(10, parseInt(sp.get("rankCh") || "5", 10)));
-  /** 기여도 열: 마지막 열 특성상 우측 경계 잘림이 생기기 쉬워 최소 폭을 한 단계 올린다. */
-  const contributionCh = Math.max(12, Math.min(16, defContributionCh));
+  /** 기여도 열: 우측 과도 이격을 줄이기 위해 total 열과 유사한 폭으로 맞춘다. */
+  const contributionCh = Math.max(9, Math.min(13, defContributionCh));
   const showSideDonors = false;
   const donorsSide = (sp.get("donorsSide") || "right").toLowerCase();
   const donorsWidth = Math.max(120, Math.min(600, parseInt(sp.get("donorsWidth") || "220", 10)));
