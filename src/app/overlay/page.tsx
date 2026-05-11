@@ -2149,6 +2149,12 @@ function OverlayInner() {
 
   useLayoutEffect(() => {
     if (!showMembers) return;
+    if (externalSafeMode) {
+      // OBS/Prism 하드 고정 모드: 측정 루프 자체를 꺼서 폰트 재계산 떨림 방지
+      memberTableFitPrevRef.current = 1;
+      setMemberTableFitFactor(1);
+      return;
+    }
     const clampEl = memberTableClampRef.current;
     const table = tableBoxRef.current as HTMLTableElement | null;
     if (!clampEl || !table) return;
@@ -2220,7 +2226,7 @@ function OverlayInner() {
         /* noop */
       }
     };
-  }, [showMembers, mSize, memberTableFitSig]);
+  }, [showMembers, mSize, memberTableFitSig, externalSafeMode]);
 
   const allOrderKeys = [...ranked.map(({ m }) => m.id), ...visiblePinned.map((m) => `${m.id}-p`)];
   const setRowRef = useFlip(allOrderKeys, 500, rowMotionEnabled);
@@ -2563,6 +2569,47 @@ function OverlayInner() {
           text-shadow: ${excelTextOutline} !important;
           -webkit-text-stroke: 0.75px rgba(6, 12, 24, 0.95) !important;
           paint-order: stroke fill;
+        }
+        ${
+          externalSafeMode
+            ? `
+        /* 외부호스트 하드 고정 모드(OBS/Prism): 변환/애니메이션/컨테이너쿼리/스트로크를 강제 차단 */
+        .overlay-root *,
+        .overlay-root *::before,
+        .overlay-root *::after {
+          animation: none !important;
+          transition: none !important;
+        }
+        .overlay-root .overlay-scale-target,
+        .overlay-root .overlay-elegant-table,
+        .overlay-root .overlay-elegant-table tr,
+        .overlay-root .overlay-elegant-table td,
+        .overlay-root .overlay-elegant-table td .overlay-num-cell-inner {
+          transform: none !important;
+          -webkit-transform: none !important;
+        }
+        .overlay-root .overlay-elegant-table td,
+        .overlay-root .overlay-elegant-table thead td {
+          container-type: normal !important;
+          font-size: ${memberFontPx}px !important;
+          line-height: 1.2 !important;
+          -webkit-text-stroke: 0 !important;
+          text-shadow: 0 1px 2px rgba(0,0,0,0.72) !important;
+          text-rendering: auto !important;
+        }
+        .overlay-root .overlay-elegant-table tbody td span,
+        .overlay-root .overlay-elegant-table tbody td strong,
+        .overlay-root .overlay-elegant-table thead td span,
+        .overlay-root .overlay-elegant-table thead td strong {
+          -webkit-text-stroke: 0 !important;
+          text-shadow: 0 1px 2px rgba(0,0,0,0.72) !important;
+        }
+        .overlay-root .overlay-elegant-table .overlay-total-row td {
+          font-size: ${totalFontPx}px !important;
+          line-height: 1.2 !important;
+        }
+        `
+            : ""
         }
         .overlay-root .overlay-elegant-table tbody td.overlay-col-total { color: #fff9f0 !important; }
         ${totalLineVisible ? "" : `
