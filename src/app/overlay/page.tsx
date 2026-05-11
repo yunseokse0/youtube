@@ -1257,6 +1257,8 @@ function OverlayInner() {
   );
   const hostParam = (rawSp.get("host") || "").toLowerCase();
   const externalHost = hostParam === "prism" || hostParam === "obs" || hostParam === "external";
+  // 강제 고정 모드: 미세 떨림 원인(자동 맞춤/스케일/모션)을 진단용으로 일괄 차단한다.
+  const stableMode = (sp.get("stable") || "false").toLowerCase() === "true";
   const demoMode = ((sp.get("demo") || "").toLowerCase() === "true") || ((sp.get("test") || "").toLowerCase() === "true");
   useEffect(() => {
     let cancelled = false;
@@ -1286,7 +1288,7 @@ function OverlayInner() {
   const fitWidthToViewport = (px: number, margin = 24) => `min(${Math.max(1, Math.round(px))}px, calc(100vw - ${margin}px))`;
 
   const compact = (sp.get("compact") || "false").toLowerCase() === "true";
-  const autoFont = (sp.get("autoFont") || "false").toLowerCase() === "true";
+  const autoFont = !stableMode && (sp.get("autoFont") || "false").toLowerCase() === "true";
   const tight = (sp.get("tight") || "false").toLowerCase() === "true";
   const verticalParam = (sp.get("vertical") || "false").toLowerCase() === "true";
   const [isVertical, setIsVertical] = useState(
@@ -1303,7 +1305,8 @@ function OverlayInner() {
   const fitMinMember = Math.max(8, Math.min(40, parseInt(sp.get("fitMinMember") || (isVertical ? "22" : "10"), 10)));
   const fitMaxMember = Math.max(fitMinMember, Math.min(80, parseInt(sp.get("fitMaxMember") || (isVertical ? "44" : "24"), 10)));
   // 기본 비정수 스케일(1.1)은 OBS/브라우저에서 텍스트 가장자리를 흐리게 만들 수 있어 기본을 1로 유지한다.
-  const scale = Math.max(0.5, Math.min(4, parseFloat(sp.get("scale") || (isVertical ? "1" : (compact ? "0.9" : "1")))));
+  const parsedScale = Math.max(0.5, Math.min(4, parseFloat(sp.get("scale") || (isVertical ? "1" : (compact ? "0.9" : "1")))));
+  const scale = stableMode ? 1 : parsedScale;
   const hasExplicitScale = sp.get("scale") !== null;
   const memberSize = Math.max(10, Math.min(80, parseInt(sp.get("memberSize") || (compact ? "16" : (isVertical ? "40" : "24")), 10)));
   const totalSize = Math.max(14, Math.min(160, parseInt(sp.get("totalSize") || (isVertical ? "48" : "30"), 10)));
@@ -1602,7 +1605,7 @@ function OverlayInner() {
     const raw = (sp.get("totalLineVisible") || "").trim().toLowerCase();
     return raw === "true";
   })();
-  const showTableBgGif = Boolean(tableBgGifUrl);
+  const showTableBgGif = !stableMode && Boolean(tableBgGifUrl);
   const tableBgAnimated = useMemo(() => resolveAnimatedSourceForEmbed(tableBgGifUrl), [tableBgGifUrl]);
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1655,7 +1658,8 @@ function OverlayInner() {
   const renderW = sp.get("renderWidth") ? parseInt(sp.get("renderWidth")!, 10) : null;
   const renderH = sp.get("renderHeight") ? parseInt(sp.get("renderHeight")!, 10) : null;
   const isPreviewGuide = sp.get("previewGuide") === "true";
-  const autoFit = (sp.get("autoFit") || "none").toLowerCase() as "none" | "width" | "height" | "contain" | "cover";
+  const autoFitRaw = (sp.get("autoFit") || "none").toLowerCase() as "none" | "width" | "height" | "contain" | "cover";
+  const autoFit = stableMode ? "none" : autoFitRaw;
   const zoomMode = (
     (sp.get("zoomMode") || (externalHost ? "neutral" : "follow")).toLowerCase() as "follow" | "invert" | "neutral"
   );
@@ -2108,7 +2112,7 @@ function OverlayInner() {
     getContributionValue,
   ]);
 
-  const rowMotionRequested = (sp.get("rowMotion") || "true").toLowerCase() === "true";
+  const rowMotionRequested = !stableMode && (sp.get("rowMotion") || "true").toLowerCase() === "true";
   const rowMotionEnabled = rowMotionRequested && unpinned.length > 1;
 
   useLayoutEffect(() => {
@@ -2498,7 +2502,7 @@ function OverlayInner() {
         }
         .overlay-root .overlay-elegant-table td {
           color: #ffffff !important;
-          transition: ${externalHost ? "none" : "filter 180ms ease, transform 180ms ease, background-size 220ms ease"};
+          transition: ${externalHost || stableMode ? "none" : "filter 180ms ease, transform 180ms ease, background-size 220ms ease"};
           background: transparent !important;
           text-shadow: ${excelTextOutline} !important;
           -webkit-text-stroke: 0.75px rgba(6, 12, 24, 0.95) !important;
@@ -2612,9 +2616,15 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table tbody td.overlay-col-rank {
           text-align: center !important;
         }
+        ${
+          stableMode
+            ? ""
+            : `
         .overlay-root .overlay-elegant-table tbody tr:hover td {
           filter: brightness(1.06) saturate(1.03);
           transform: scale(1.009);
+        }
+        `
         }
         /* table-layout:fixed + col 너비 안에서 이름 열만 말줄임이 안정적으로 적용되도록 */
         .overlay-root .overlay-elegant-table td.overlay-col-name {
