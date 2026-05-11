@@ -2038,10 +2038,10 @@ function OverlayInner() {
    */
   const getContributionValueForMember = useCallback((m: Member) => {
     const raw = (m as Member & { contribution?: unknown }).contribution;
-    const parsed = Number(raw);
+    let parsed = typeof raw === "number" ? raw : Number(typeof raw === "string" ? String(raw).replace(/,/g, "").trim() : raw);
     const total = Math.max(0, Number(m.account || 0) + Number(m.toon || 0));
     if (!Number.isFinite(parsed)) return total;
-    const c = Math.max(0, parsed);
+    const c = Math.max(0, Math.floor(parsed));
     if (c === 0 && total > 0) return total;
     return c;
   }, []);

@@ -431,14 +431,32 @@ export function buildDefaultMembersCount(count: number): Member[] {
   });
 }
 
+/** Redis/API·엑셀 등에서 금액이 문자열·콤마 문자열로 올 때 복원 */
+function parseOptionalNonNegativeMoney(input: unknown): number | undefined {
+  if (input === undefined || input === null) return undefined;
+  if (typeof input === "number" && Number.isFinite(input)) return Math.max(0, Math.floor(input));
+  if (typeof input === "string") {
+    const t = input.replace(/,/g, "").trim();
+    if (t === "") return undefined;
+    const n = Number(t);
+    if (!Number.isFinite(n)) return undefined;
+    return Math.max(0, Math.floor(n));
+  }
+  return undefined;
+}
+
 function normalizeMember(m: Member): Member {
-  const goal = typeof m.goal === "number" && Number.isFinite(m.goal) ? Math.max(0, Math.floor(m.goal)) : undefined;
-  const contribution = typeof m.contribution === "number" && Number.isFinite(m.contribution)
-    ? Math.max(0, Math.floor(m.contribution))
-    : 0;
+  const rec = m as Record<string, unknown>;
+  const goalParsed = parseOptionalNonNegativeMoney(rec.goal);
+  const goal = goalParsed !== undefined ? goalParsed : undefined;
+  const contribution = parseOptionalNonNegativeMoney(rec.contribution) ?? 0;
+  const account = parseOptionalNonNegativeMoney(rec.account) ?? 0;
+  const toon = parseOptionalNonNegativeMoney(rec.toon) ?? 0;
   return {
     ...m,
     realName: m.realName ?? "",
+    account,
+    toon,
     contribution,
     goal,
     operating: m.operating ?? /운영비/i.test(m.name),
