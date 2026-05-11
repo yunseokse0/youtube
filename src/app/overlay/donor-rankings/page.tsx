@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
 import {
   defaultState,
@@ -17,28 +18,6 @@ type DonorRow = {
   name: string;
   amount: number;
 };
-
-function buildDonorOverlaySignature(state: AppState | null): string {
-  if (!state) return "";
-  // 폴링 응답의 배열 순서만 바뀐 경우는 동일 상태로 간주해 불필요한 리렌더를 막는다.
-  const donors = (state.donors || [])
-    .map((d) => ({
-      id: d.id,
-      name: d.name,
-      amount: d.amount,
-      target: d.target || "account",
-      memberId: d.memberId,
-      at: d.at,
-    }))
-    .sort((a, b) => String(a.id || "").localeCompare(String(b.id || "")));
-  return JSON.stringify({
-    donors,
-    memberPositions: state.memberPositions || {},
-    rankPositionLabels: state.rankPositionLabels || [],
-    donorRankingsTheme: state.donorRankingsTheme || null,
-    donorRankingsOverlayConfig: state.donorRankingsOverlayConfig || null,
-  });
-}
 
 const TEST_ACCOUNT_ROWS: DonorRow[] = [
   { name: "artaiker", amount: 3849000 },
@@ -64,7 +43,6 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   const [state, setState] = useState<AppState | null>(null);
   const lastUpdatedRef = useRef(0);
   const syncingRef = useRef(false);
-  const lastSigRef = useRef("");
 
   const readLocalStateIfExists = useCallback((): AppState | null => {
     if (typeof window === "undefined") return null;
@@ -81,15 +59,11 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   useEffect(() => {
     const local = readLocalStateIfExists();
     if (local) {
-      const sig = buildDonorOverlaySignature(local);
       setState(local);
-      lastSigRef.current = sig;
       lastUpdatedRef.current = local.updatedAt || 0;
     } else {
       const fallback = defaultState();
-      const sig = buildDonorOverlaySignature(fallback);
       setState(fallback);
-      lastSigRef.current = sig;
       lastUpdatedRef.current = fallback.updatedAt || 0;
     }
 
@@ -100,14 +74,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
         const remote = await loadStateFromApi(userId);
         if (!remote) return;
         const remoteUpdatedAt = remote.updatedAt || 0;
-        if (remoteUpdatedAt <= lastUpdatedRef.current) return;
-        const nextSig = buildDonorOverlaySignature(remote);
-        if (nextSig === lastSigRef.current) {
-          lastUpdatedRef.current = remoteUpdatedAt;
-          return;
-        }
         lastUpdatedRef.current = remoteUpdatedAt;
-        lastSigRef.current = nextSig;
         setState(remote);
       } finally {
         syncingRef.current = false;
@@ -119,14 +86,8 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       const localNow = readLocalStateIfExists();
       if (!localNow) return;
       const localUpdatedAt = localNow.updatedAt || 0;
-      if (localUpdatedAt > lastUpdatedRef.current) {
-        const nextSig = buildDonorOverlaySignature(localNow);
-        if (nextSig === lastSigRef.current) {
-          lastUpdatedRef.current = localUpdatedAt;
-          return;
-        }
+      if (localUpdatedAt >= lastUpdatedRef.current) {
         lastUpdatedRef.current = localUpdatedAt;
-        lastSigRef.current = nextSig;
         setState(localNow);
       }
     };
@@ -162,10 +123,7 @@ function aggregateAll(rows: DonorRow[]): DonorRow[] {
   }
   return Array.from(byName.entries())
     .map(([name, amount]) => ({ name, amount }))
-    .sort((a, b) => {
-      if (b.amount !== a.amount) return b.amount - a.amount;
-      return a.name.localeCompare(b.name, "ko");
-    });
+    .sort((a, b) => b.amount - a.amount);
 }
 
 function readNumber(sp: URLSearchParams, key: string, fallback: number, min: number, max: number): number {
@@ -200,65 +158,8 @@ function resolveThemeColor(
 }
 
 /**
- * hex(`#rgb`/`#rrggbb`/`#rrggbbaa`)·`rgb(...)`·`rgba(...)`를 알파 곱한 rgba 문자열로 변환.
- * 매칭이 안 되면 null을 반환해 호출부가 원본 보존을 선택할 수 있게 한다.
- */
-function colorToRgbaWithAlpha(color: string, frac: number): string | null {
-  const t = (color || "").trim();
-  if (!t) return null;
-  if (t.toLowerCase() === "transparent") return "rgba(0,0,0,0)";
-
-  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(t);
-  if (hex) {
-    const expand = (s: string) =>
-      s.length === 3 ? s.split("").map((c) => c + c).join("") : s;
-    const full = expand(hex[1]);
-    const r = parseInt(full.slice(0, 2), 16);
-    const g = parseInt(full.slice(2, 4), 16);
-    const b = parseInt(full.slice(4, 6), 16);
-    const a = full.length === 8 ? parseInt(full.slice(6, 8), 16) / 255 : 1;
-    return `rgba(${r},${g},${b},${a * frac})`;
-  }
-
-  const rgba = /^rgba\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\)$/i.exec(t);
-  if (rgba) {
-    return `rgba(${rgba[1]},${rgba[2]},${rgba[3]},${Number(rgba[4]) * frac})`;
-  }
-
-  const rgb = /^rgb\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\)$/i.exec(t);
-  if (rgb) {
-    return `rgba(${rgb[1]},${rgb[2]},${rgb[3]},${frac})`;
-  }
-
-  return null;
-}
-
-/**
- * 그라데이션 문자열 안의 색 정지점(hex/rgb/rgba)을 모두 `rgba(..., alpha*frac)`로 치환.
- * 별도 `opacity` 프로퍼티로 거는 방식보다 stacking-context·합성 영향이 적어 OBS에서 일관되게 보인다.
- */
-function bakeAlphaIntoGradient(gradient: string, frac: number): string {
-  let out = gradient;
-  out = out.replace(/rgba\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\)/gi, (_, r, g, b, a) =>
-    `rgba(${r},${g},${b},${Number(a) * frac})`);
-  out = out.replace(/rgb\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\)/gi, (_, r, g, b) =>
-    `rgba(${r},${g},${b},${frac})`);
-  out = out.replace(/#([0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3})\b/gi, (_, hex) => {
-    const expand = (s: string) => (s.length === 3 ? s.split("").map((c) => c + c).join("") : s);
-    const full = expand(hex);
-    const r = parseInt(full.slice(0, 2), 16);
-    const g = parseInt(full.slice(2, 4), 16);
-    const b = parseInt(full.slice(4, 6), 16);
-    const a = full.length === 8 ? parseInt(full.slice(6, 8), 16) / 255 : 1;
-    return `rgba(${r},${g},${b},${a * frac})`;
-  });
-  return out;
-}
-
-/**
- * 슬라이더 불투명도를 배경에 반영. 색상은 알파를 직접 박아 넣고, 그라데이션도 색 정지점 단계에서 알파를 합쳐
- * 별도 `opacity` 프로퍼티 없이 단일 `background` 한 줄로 동일 효과를 내도록 정리.
- * url(...)처럼 알파를 박을 수 없는 경우만 레이어 opacity로 폴백한다.
+ * 슬라이더 불투명도를 배경에 반영. hex/rgb/rgba는 알파를 색에 직접 넣어 헤더·목록이 동일 규칙으로 섞이게 하고,
+ * linear-gradient 등은 레이어 opacity 유지(OBS·backdrop-blur 조합에서 안정적).
  */
 function backgroundWithOpacityFrac(
   bg: string,
@@ -269,16 +170,39 @@ function backgroundWithOpacityFrac(
   const t = (bg || "").trim();
   if (!t || t.toLowerCase() === "transparent") return { background: "transparent" };
 
-  if (/^linear-gradient\s*\(/i.test(t) || /^radial-gradient\s*\(/i.test(t)) {
-    return { background: bakeAlphaIntoGradient(t, f) };
-  }
-
-  if (/^url\s*\(/i.test(t)) {
+  if (/^linear-gradient\s*\(/i.test(t) || /^radial-gradient\s*\(/i.test(t) || /^url\s*\(/i.test(t)) {
     return { background: t, opacity: f };
   }
 
-  const baked = colorToRgbaWithAlpha(t, f);
-  if (baked) return { background: baked };
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{8}|[0-9a-f]{6})$/i.exec(t);
+  if (hex) {
+    const h = hex[1];
+    const expand = (s: string) =>
+      s.length === 3 ? s.split("").map((c) => c + c).join("") : s;
+    const full = expand(h);
+    if (full.length === 8) {
+      const r = parseInt(full.slice(0, 2), 16);
+      const g = parseInt(full.slice(2, 4), 16);
+      const b = parseInt(full.slice(4, 6), 16);
+      const aByte = parseInt(full.slice(6, 8), 16) / 255;
+      return { background: `rgba(${r},${g},${b},${aByte * f})` };
+    }
+    const r = parseInt(full.slice(0, 2), 16);
+    const g = parseInt(full.slice(2, 4), 16);
+    const b = parseInt(full.slice(4, 6), 16);
+    return { background: `rgba(${r},${g},${b},${f})` };
+  }
+
+  const rgb = /^rgb\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\)$/i.exec(t);
+  if (rgb) {
+    return { background: `rgba(${rgb[1]},${rgb[2]},${rgb[3]},${f})` };
+  }
+
+  const rgbaM = /^rgba\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\)$/i.exec(t);
+  if (rgbaM) {
+    const a = Number(rgbaM[4]) * f;
+    return { background: `rgba(${rgbaM[1]},${rgbaM[2]},${rgbaM[3]},${a})` };
+  }
 
   return { background: t, opacity: f };
 }
@@ -323,21 +247,6 @@ function RankingColumn({
   /** unified: 헤더·목록 배경에 동일하게 `panelBg`/`headerBg`×투명도 */
   panelOpacityFrac?: number;
 }) {
-  const prevOrderSigRef = useRef<string>("");
-  const [orderChangedFlash, setOrderChangedFlash] = useState(false);
-  useEffect(() => {
-    const sig = items.map((item) => item.name).join("|");
-    const prev = prevOrderSigRef.current;
-    prevOrderSigRef.current = sig;
-    if (!prev || prev === sig) {
-      setOrderChangedFlash(false);
-      return;
-    }
-    setOrderChangedFlash(true);
-    const t = window.setTimeout(() => setOrderChangedFlash(false), 700);
-    return () => window.clearTimeout(t);
-  }, [items]);
-
   const outlined = { textShadow: `-1px -1px 0 ${outlineColor},1px -1px 0 ${outlineColor},-1px 1px 0 ${outlineColor},1px 1px 0 ${outlineColor},0 2px 6px rgba(0,0,0,0.38)` } as const;
   const rankLabel = (idx: number): string => {
     if (idx === 0) return "🥇";
@@ -363,15 +272,18 @@ function RankingColumn({
     ? Math.max(0, Math.min(1, panelOpacityFrac ?? 1))
     : Math.max(0, Math.min(100, headerOpacity)) / 100;
   const headerBgResolved = backgroundWithOpacityFrac(headerBg, headerOpacityFrac);
-  /** 헤더 하단 구분선도 같은 알파를 곱해 슬라이더로 옅어진 헤더 위에 진한 흰 줄이 남지 않게 한다. */
-  const headerDividerColor = `rgba(255, 232, 244, ${0.55 * headerOpacityFrac})`;
 
   const rowList = (
-    <>
+    <AnimatePresence initial={false}>
       {items.map((item, idx) => (
-        <div
+        <motion.div
           key={item.name}
-          className={`grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 px-1 py-1 ${orderChangedFlash ? "animate-row-flash" : ""}`}
+          layout
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -12 }}
+          transition={{ type: "spring", stiffness: 420, damping: 34, mass: 0.8 }}
+          className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 px-1 py-1"
           style={{
             fontSize: `${rowSize}px`,
           }}
@@ -386,9 +298,9 @@ function RankingColumn({
             {item.amount.toLocaleString("ko-KR")}
             {suffix ? ` ${suffix}` : " 원"}
           </span>
-        </div>
+        </motion.div>
       ))}
-    </>
+    </AnimatePresence>
   );
 
   return (
@@ -396,7 +308,7 @@ function RankingColumn({
       <div
         className="relative overflow-hidden px-4 py-3 font-black border-b text-center"
         style={{
-          borderColor: headerDividerColor,
+          borderColor: "rgba(255, 232, 244, 0.55)",
           color: "#fff7fb",
           fontSize: `${titleSize}px`,
           ...outlined,
@@ -442,15 +354,9 @@ export default function DonorRankingsOverlayPage() {
   const titleSize = readNumber(sp, "titleSize", savedTheme.titleSize, 14, 80);
   const rowSize = readNumber(sp, "rowSize", savedTheme.rowSize, 12, 64);
   const rankSize = readNumber(sp, "rankSize", savedTheme.rankSize, 12, 72);
-  // 구버전/부분 저장 테마에서 overlayOpacity가 비어있거나 0~1 스케일일 수 있어 안전 정규화한다.
-  const savedOverlayOpacityRaw = Number(savedTheme.overlayOpacity);
-  const savedOverlayOpacity = Number.isFinite(savedOverlayOpacityRaw)
-    ? (savedOverlayOpacityRaw <= 1 ? savedOverlayOpacityRaw * 100 : savedOverlayOpacityRaw)
-    : 100;
-  const overlayOpacity = readNumber(sp, "overlayOpacity", savedOverlayOpacity, 0, 100);
+  const overlayOpacity = readNumber(sp, "overlayOpacity", savedTheme.overlayOpacity, 0, 100);
   const zoomPct = Math.floor(readNumber(sp, "zoomPct", 100, 30, 300));
   const zoomScale = zoomPct / 100;
-  const scaledWidthPct = Number((100 / zoomScale).toFixed(4));
   const bg = readColor(sp, "bg", savedTheme.bg) || "transparent";
   /** 어두운 기본값 + 투명도 시 방송 화면과 섞여 버건디로 보이므로 밝은 파스텔 핑크를 기본으로 */
   const panelBg = resolveThemeColor(sp, "panelBg", savedTheme.panelBg, "rgba(255, 248, 252, 1)");
@@ -474,9 +380,6 @@ export default function DonorRankingsOverlayPage() {
   const bgAnimated = useMemo(() => resolveAnimatedSourceForEmbed(overlayCfg.bgGifUrl), [overlayCfg.bgGifUrl]);
   const bgOpacityPct = Math.max(0, Math.min(100, overlayCfg.bgOpacity)) / 100;
   const overlayOpacityFrac = Math.max(0, Math.min(100, overlayOpacity)) / 100;
-  /** 외곽 카드 테두리·그림자도 슬라이더 값을 따라 옅어지도록 한다(헤더만 줄어들고 테두리는 그대로면 박스가 여전히 진해 보임). */
-  const effectiveBorderColor = colorToRgbaWithAlpha(borderColor, overlayOpacityFrac) ?? borderColor;
-  const effectiveCardShadow = `0 12px 32px rgba(236,72,153,${0.14 * overlayOpacityFrac})`;
 
   const { accountTop, toonTop } = useMemo(() => {
     if (useTest) {
@@ -543,12 +446,9 @@ export default function DonorRankingsOverlayPage() {
       <div
         className="relative z-10 mx-auto max-w-[1500px]"
         style={{
-          // OBS 브라우저 소스에서 scale 합성 시 미세 떨림을 줄이기 위한 GPU 레이어 고정.
-          transform: `translate3d(0, 0, 0) scale(${zoomScale})`,
+          transform: `scale(${zoomScale})`,
           transformOrigin: "top center",
-          width: `${scaledWidthPct}%`,
-          willChange: "transform",
-          backfaceVisibility: "hidden",
+          width: `${100 / zoomScale}%`,
         }}
       >
         {useTest && (
@@ -557,13 +457,10 @@ export default function DonorRankingsOverlayPage() {
           </div>
         )}
         <div
-          className="relative grid grid-cols-1 overflow-hidden rounded-2xl border md:grid-cols-2 md:gap-0"
+          className="relative grid grid-cols-1 overflow-hidden rounded-2xl border shadow-[0_12px_32px_rgba(236,72,153,0.14)] backdrop-blur-md md:grid-cols-2 md:gap-0"
           style={{
-            borderColor: effectiveBorderColor,
+            borderColor,
             backgroundColor: "transparent",
-            boxShadow: effectiveCardShadow,
-            backdropFilter: overlayOpacityFrac > 0.05 ? `blur(${Math.round(12 * overlayOpacityFrac)}px)` : "none",
-            WebkitBackdropFilter: overlayOpacityFrac > 0.05 ? `blur(${Math.round(12 * overlayOpacityFrac)}px)` : "none",
           }}
         >
           <RankingColumn
@@ -571,7 +468,7 @@ export default function DonorRankingsOverlayPage() {
             items={accountTop}
             headerBg={headerAccountBg}
             panelBg={panelBg}
-            borderColor={effectiveBorderColor}
+            borderColor={borderColor}
             titleSize={titleSize}
             rowSize={rowSize}
             rankSize={rankSize}
@@ -590,7 +487,7 @@ export default function DonorRankingsOverlayPage() {
             suffix="캐시"
             headerBg={headerToonBg}
             panelBg={panelBg}
-            borderColor={effectiveBorderColor}
+            borderColor={borderColor}
             titleSize={titleSize}
             rowSize={rowSize}
             rankSize={rankSize}
