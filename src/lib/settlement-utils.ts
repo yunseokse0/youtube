@@ -123,12 +123,16 @@ export function getSigMatchRankings(
   manualAdjustments?: Record<string, number>
 ): SigMatchRankingItem[] {
   const allMembers = members || [];
+  // 운영비는 시그 대결 참가/집계 대상에서 항상 제외
+  const playableMembers = allMembers.filter(
+    (m) => !Boolean(m.operating) && !/운영비/i.test(String(m.name || ""))
+  );
   const rawParticipants = settings.participantMemberIds || [];
-  let rankingMembers = allMembers;
+  let rankingMembers = playableMembers;
   if (Array.isArray(rawParticipants) && rawParticipants.length > 0) {
-    const allow = new Set(rawParticipants.filter((id) => allMembers.some((m) => m.id === id)));
+    const allow = new Set(rawParticipants.filter((id) => playableMembers.some((m) => m.id === id)));
     if (allow.size > 0) {
-      rankingMembers = allMembers.filter((m) => allow.has(m.id));
+      rankingMembers = playableMembers.filter((m) => allow.has(m.id));
     }
   }
 

@@ -203,13 +203,22 @@ function SigMatchOverlayInner() {
     [sigMatchDonors, state?.members, state?.sigMatchSettings, state?.sigMatch]
   );
   const memberMap = useMemo(() => new Map((state?.members || []).map((m) => [m.id, m.name])), [state?.members]);
+  const blockedMemberIds = useMemo(
+    () =>
+      new Set(
+        (state?.members || [])
+          .filter((m) => Boolean(m.operating) || /운영비/i.test(String(m.name || "")))
+          .map((m) => m.id)
+      ),
+    [state?.members]
+  );
   const duelData = useMemo((): SigMatchDuelLayout => {
     const pools = (state?.sigMatchSettings?.sigMatchPools || []).filter(
       (p) => Array.isArray(p.memberIds) && p.memberIds.length >= 1
     );
     const scoreMap = new Map(ranking.map((r) => [r.memberId, r.score]));
     const makeSide = (memberIds: string[], fallbackLabel: string): SigMatchSide => {
-      const ids = [...new Set(memberIds.filter(Boolean))];
+      const ids = [...new Set(memberIds.filter((id) => Boolean(id) && !blockedMemberIds.has(id)))];
       const label = ids.map((id) => memberMap.get(id) || id).join(" · ") || fallbackLabel;
       const score = ids.reduce((sum, id) => sum + (scoreMap.get(id) || 0), 0);
       return { ids, label, score };
@@ -276,7 +285,7 @@ function SigMatchOverlayInner() {
       score: items.reduce((s, x) => s + x.score, 0),
     });
     return { mode: "dual", left: pack(leftList), right: pack(rightList) };
-  }, [ranking, state?.sigMatchSettings?.sigMatchPools, memberMap]);
+  }, [ranking, state?.sigMatchSettings?.sigMatchPools, memberMap, blockedMemberIds]);
   /** 식사대전(/overlay/meal-match)과 동일하게 generalTimer + 서버 동기화(lastUpdated) 기준 */
   const timerState = state?.generalTimer || null;
   const [, setTimerTick] = useState(0);

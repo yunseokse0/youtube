@@ -895,7 +895,11 @@ export function loadState(userId?: string | null): AppState {
     data.sigMatch = data.sigMatch && typeof data.sigMatch === "object" ? data.sigMatch : {};
     data.mealBattle = normalizeMealBattle((data as AppState).mealBattle);
     data.mealMatch = data.mealMatch && typeof data.mealMatch === "object" ? data.mealMatch : {};
-    const validSigMemberIds = new Set(data.members.map((m: Member) => m.id));
+    const validSigMemberIds = new Set(
+      data.members
+        .filter((m: Member) => !Boolean(m.operating) && !/운영비/i.test(String(m.name || "")))
+        .map((m: Member) => m.id)
+    );
     data.sigMatchSettings = {
       isActive: Boolean(data.sigMatchSettings?.isActive),
       targetCount: Number.isFinite(data.sigMatchSettings?.targetCount)
@@ -1104,7 +1108,11 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
       data.sigMatch = data.sigMatch && typeof data.sigMatch === "object" ? data.sigMatch : {};
       data.mealBattle = normalizeMealBattle((data as AppState).mealBattle);
       data.mealMatch = data.mealMatch && typeof data.mealMatch === "object" ? data.mealMatch : {};
-      const validSigMemberIdsApi = new Set<string>((data.members as Member[]).map((m) => m.id));
+      const validSigMemberIdsApi = new Set<string>(
+        (data.members as Member[])
+          .filter((m) => !Boolean(m.operating) && !/운영비/i.test(String(m.name || "")))
+          .map((m) => m.id)
+      );
       data.sigMatchSettings = {
         isActive: Boolean(data.sigMatchSettings?.isActive),
         targetCount: Number.isFinite(data.sigMatchSettings?.targetCount)

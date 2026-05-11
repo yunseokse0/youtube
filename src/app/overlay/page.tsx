@@ -1529,8 +1529,8 @@ function OverlayInner() {
   const totalCh = Math.max(6, Math.min(12, defTotalCh));
   /** 순위 열: 헤더「순위」·「#12」 등이 잘리지 않도록 `ch` 하한 확보(URL `rankCh`) */
   const rankColCh = Math.max(5, Math.min(10, parseInt(sp.get("rankCh") || "5", 10)));
-  /** 기여도 열: 우측 과도 이격을 줄이기 위해 total 열과 유사한 폭으로 맞춘다. */
-  const contributionCh = Math.max(9, Math.min(13, defContributionCh));
+  /** 기여도 열: 우측 이격은 줄이되, 방송 합성 환경에서 마지막 열 잘림이 나지 않게 최소폭을 보장 */
+  const contributionCh = Math.max(10, Math.min(14, defContributionCh));
   const showSideDonors = false;
   const donorsSide = (sp.get("donorsSide") || "right").toLowerCase();
   const donorsWidth = Math.max(120, Math.min(600, parseInt(sp.get("donorsWidth") || "220", 10)));
@@ -2158,8 +2158,8 @@ function OverlayInner() {
       let hi = 1;
       let best = lo;
       const minPx = 4;
-      /** 헤더 text-stroke·그림자가 scrollWidth 밖으로 살짝 나가는 여유 */
-      const widthMarginPx = 20;
+      /** 헤더 text-stroke·그림자가 scrollWidth 밖으로 살짝 나가는 여유(마지막 열 잘림 방지) */
+      const widthMarginPx = 36;
       const maxAvail = Math.max(4, avail - widthMarginPx);
       const measureWidth = () => {
         const rectW = table.getBoundingClientRect().width;
@@ -2567,6 +2567,17 @@ function OverlayInner() {
         }
         `}
         .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution { color: #fff7fa !important; }
+        /* 마지막 열(기여도): 합성 환경에서 stroke로 인한 우측 1~2px 잘림 방지 */
+        .overlay-root .overlay-elegant-table thead td.overlay-col-contribution,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution {
+          -webkit-text-stroke: 0.55px rgba(6, 12, 24, 0.92) !important;
+          text-shadow: -1px -1px 0 rgba(6, 12, 24, 0.92), 1px -1px 0 rgba(6, 12, 24, 0.92), -1px 1px 0 rgba(6, 12, 24, 0.92), 1px 1px 0 rgba(6, 12, 24, 0.92), 0 1px 4px rgba(0,0,0,0.36) !important;
+        }
+        .overlay-root .overlay-elegant-table td.overlay-col-contribution .overlay-num-cell-inner {
+          display: inline-block;
+          min-width: max-content;
+          transform: translateX(-0.16em);
+        }
         /* 반투명 테이블 모드에서도 헤더 분홍 띠 유지(예전엔 transparent 로 헤더만 사라짐) */
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
         .overlay-root .overlay-elegant-table thead td.overlay-col-role,
@@ -2611,7 +2622,7 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution {
           padding-left: 0.42em !important;
-          padding-right: 0.48em !important;
+          padding-right: 0.36em !important;
         }
         /* 헤더 세로선 제거: 스트림 오버레이에서 칸 분리선 없이 한 덩어리로 보이게 한다. */
         .overlay-root .overlay-elegant-table thead td {
