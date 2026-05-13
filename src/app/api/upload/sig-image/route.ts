@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { createClient } from "@supabase/supabase-js";
 import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
+import { shouldServeSigImagesFromDisk } from "@/lib/sig-image-mode";
 
 export const runtime = "nodejs";
 export const revalidate = 0;
@@ -152,6 +153,22 @@ async function uploadToImageKit(data: Buffer, fileName: string, contentType: str
   }
 }
 
+async function writeSigImageToPublicUploads(
+  safeUid: string,
+  fileName: string,
+  data: Buffer
+): Promise<string> {
+  const storagePath = `sigs/${safeUid}/${fileName}`;
+  const roots = getUploadRootCandidates();
+  for (const root of roots) {
+    const dir = path.join(root, "uploads", "sigs", safeUid);
+    await mkdir(dir, { recursive: true });
+    const fullPath = path.join(dir, fileName);
+    await writeFile(fullPath, data);
+  }
+  return `/uploads/${storagePath}`;
+}
+
 export async function POST(req: Request) {
   try {
     const uid = resolveUploadUserId(req);
@@ -180,6 +197,11 @@ export async function POST(req: Request) {
     const contentType = String(file.type || "application/octet-stream");
     const imagekitConfig = getImageKitConfig();
     const supabaseConfig = getSupabaseStorageConfig();
+
+    if (shouldServeSigImagesFromDisk()) {
+      const url = await writeSigImageToPublicUploads(safeUid, fileName, data);
+      return Response.json({ ok: true, url }, { status: 200 });
+    }
 
     if (imagekitConfig) {
       const folder = `/${imagekitConfig.folderPrefix}/${safeUid}`;
@@ -217,21 +239,7 @@ export async function POST(req: Request) {
       return Response.json({ ok: true, url: publicUrl }, { status: 200 });
     }
 
-    if (process.env.NODE_ENV === "production") {
-      return Response.json(
-        { ok: false, error: "storage_not_configured: set IMAGEKIT_PRIVATE_KEY or SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY" },
-        { status: 500 }
-      );
-    }
-
-    const roots = getUploadRootCandidates();
-    for (const root of roots) {
-      const dir = path.join(root, "uploads", "sigs", safeUid);
-      await mkdir(dir, { recursive: true });
-      const fullPath = path.join(dir, fileName);
-      await writeFile(fullPath, data);
-    }
-    const url = `/uploads/${storagePath}`;
+    const url = await writeSigImageToPublicUploads(safeUid, fileName, data);
     return Response.json({ ok: true, url }, { status: 200 });
   } catch (e) {
     return Response.json({ ok: false, error: String(e) }, { status: 500 });

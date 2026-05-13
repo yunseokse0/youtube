@@ -103,7 +103,6 @@ const ONE_SHOT_SIG_NAME = "한방 시그";
 const MAX_SIG_UPLOAD_BYTES = 30 * 1024 * 1024;
 const SIG_DUMMY_IMAGE = "/images/sigs/dummy-sig.svg";
 const BROKEN_SIG_UID_PATTERN = /(_257b_2522id_2522|%257b%2522id%2522|%7b%22id%22)/i;
-type ImageKitAsset = { fileId: string; name: string; url: string; thumbnailUrl: string };
 type SigImagePickerTarget =
   | { kind: "inventory"; id: string }
   | { kind: "rolling"; id: string }
@@ -207,15 +206,20 @@ export default function AdminPage() {
   const [newSigImageUploading, setNewSigImageUploading] = useState(false);
   const [sigPreviewMap, setSigPreviewMap] = useState<Record<string, string>>({});
   const [sigImagePreviewModal, setSigImagePreviewModal] = useState<{ src: string; name: string; rawUrl: string } | null>(null);
-  const [sigImagePickerTarget, setSigImagePickerTarget] = useState<SigImagePickerTarget | null>(null);
-  const [imageKitAssets, setImageKitAssets] = useState<ImageKitAsset[]>([]);
-  const [imageKitAssetsLoading, setImageKitAssetsLoading] = useState(false);
-  const [imageKitAssetsError, setImageKitAssetsError] = useState("");
-  const [imageKitAssetQuery, setImageKitAssetQuery] = useState("");
+  /** 시그 이미지: PC 파일 선택 → 업로드 API 후 URL 반영 */
+  const sigLocalPickTargetRef = useRef<SigImagePickerTarget | null>(null);
+  const sigLocalPickInputRef = useRef<HTMLInputElement | null>(null);
   /** 가격 입력은 타이핑 중 draft만 유지하고 blur/Enter에 1회 저장 */
   const [sigPriceDraftMap, setSigPriceDraftMap] = useState<Record<string, string>>({});
   const sigPriceDraftMapRef = useRef<Record<string, string>>({});
   const [sigExcelResult, setSigExcelResult] = useState("");
+  const [ftpListModalOpen, setFtpListModalOpen] = useState(false);
+  const [ftpListPathInput, setFtpListPathInput] = useState("/");
+  const [ftpListLoading, setFtpListLoading] = useState(false);
+  const [ftpListError, setFtpListError] = useState("");
+  const [ftpListEntries, setFtpListEntries] = useState<
+    Array<{ name: string; type: string; size?: number; rawModifiedAt?: string }>
+  >([]);
   /** 시그 롤링 업로드 결과 메시지 */
   const [sigRollingUploadMessage, setSigRollingUploadMessage] = useState("");
   /** 시그 판매 목록: 행 접기(기본 접힘 — 긴 목록 스크롤 완화) */
@@ -225,13 +229,6 @@ export default function AdminPage() {
     const invIds = new Set((state.sigInventory || []).map((x) => x.id));
     return normalizeSigRolling(state.sigRolling).items.filter((x) => !invIds.has(x.id)).length;
   }, [state.sigInventory, state.sigRolling]);
-  const filteredImageKitAssets = useMemo(() => {
-    const q = imageKitAssetQuery.trim().toLowerCase();
-    if (!q) return imageKitAssets;
-    return imageKitAssets.filter((x) =>
-      x.name.toLowerCase().includes(q) || x.url.toLowerCase().includes(q)
-    );
-  }, [imageKitAssets, imageKitAssetQuery]);
   const [ocrBusyIds, setOcrBusyIds] = useState<Record<string, boolean>>({});
   const [ocrAllBusy, setOcrAllBusy] = useState(false);
   /** 일괄 OCR 진행률(현재 인덱스 / 전체) */
@@ -2240,104 +2237,6 @@ export default function AdminPage() {
     return j.url;
   };
 
-  const loadImageKitAssets = useCallback(async () => {
-    setImageKitAssetsLoading(true);
-    setImageKitAssetsError("");
-    try {
-      const q = new URLSearchParams({ limit: "300" });
-      const uid = String(user?.id || "").trim();
-      if (uid) {
-        q.set("user", uid);
-        q.set("u", uid);
-      }
-      const listUrl = `/api/imagekit/files?${q.toString()}`;
-      const res = await fetch(listUrl, {
-        method: "GET",
-        credentials: "include",
-        cache: "no-store",
-      });
-      const j = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        files?: Array<{ fileId?: string; name?: string; url?: string; thumbnailUrl?: string }>;
-        error?: string;
-      };
-      if (!res.ok || !j.ok) {
-        const err = String(j.error || res.status || "unknown");
-        setImageKitAssetsError(err);
-        return;
-      }
-      const files = Array.isArray(j.files) ? j.files : [];
-      setImageKitAssets(
-        files
-          .map((x) => ({
-            fileId: String(x.fileId || ""),
-            name: String(x.name || ""),
-            url: String(x.url || ""),
-            thumbnailUrl: String(x.thumbnailUrl || x.url || ""),
-          }))
-          .filter((x) => x.url)
-      );
-    } catch (e) {
-      setImageKitAssetsError(String(e));
-    } finally {
-      setImageKitAssetsLoading(false);
-    }
-  }, [user?.id]);
-
-  const openSigImagePicker = (target: SigImagePickerTarget) => {
-    setSigImagePickerTarget(target);
-    setImageKitAssetQuery("");
-    if (!imageKitAssets.length) {
-      void loadImageKitAssets();
-    }
-  };
-
-  const applyImageKitAssetToTarget = (assetUrl: string) => {
-    const target = sigImagePickerTarget;
-    if (!target) return;
-    if (target.kind === "newSig") {
-      setNewSigImageUrl(assetUrl);
-      setNewSigPreviewUrl(assetUrl);
-      setSigImagePickerTarget(null);
-      return;
-    }
-    if (target.kind === "soldOutStamp") {
-      updateSigSoldOutStampUrl(assetUrl);
-      setSigImagePickerTarget(null);
-      return;
-    }
-    if (target.kind === "inventory") {
-      updateSigItem(target.id, { imageUrl: assetUrl });
-      setSigImagePickerTarget(null);
-      return;
-    }
-    setState((prev) => {
-      const hasInventory = (prev.sigInventory || []).some((x) => x.id === target.id);
-      if (hasInventory) {
-        const next = {
-          ...prev,
-          sigInventory: (prev.sigInventory || []).map((x) =>
-            x.id === target.id ? { ...x, imageUrl: assetUrl, isRolling: true } : x
-          ),
-        };
-        persistState(next);
-        return next;
-      }
-      const sr = normalizeSigRolling(prev.sigRolling);
-      const next = {
-        ...prev,
-        sigRolling: {
-          ...sr,
-          items: sr.items.map((x) => (x.id === target.id ? { ...x, url: assetUrl } : x)),
-        },
-      };
-      persistState(next);
-      return next;
-    });
-    setSigRollingUploadMessage(`이미지 선택 완료: ${target.id}`);
-    setSigImagePickerTarget(null);
-  };
-
   const runOcrForSigItem = useCallback(async (id: string, imageUrl: string, name?: string) => {
     const label = name || id;
     const pushOcrMsg = (msg: string) => {
@@ -2475,6 +2374,104 @@ export default function AdminPage() {
       persistState(next);
       return next;
     });
+  };
+
+  const applySigImageUrlToPickerTarget = (target: SigImagePickerTarget, assetUrl: string) => {
+    if (target.kind === "newSig") {
+      setNewSigImageUrl(assetUrl);
+      setNewSigPreviewUrl(assetUrl);
+      return;
+    }
+    if (target.kind === "soldOutStamp") {
+      updateSigSoldOutStampUrl(assetUrl);
+      return;
+    }
+    if (target.kind === "inventory") {
+      updateSigItem(target.id, { imageUrl: assetUrl });
+      return;
+    }
+    setState((prev) => {
+      const hasInventory = (prev.sigInventory || []).some((x) => x.id === target.id);
+      if (hasInventory) {
+        const next = {
+          ...prev,
+          sigInventory: (prev.sigInventory || []).map((x) =>
+            x.id === target.id ? { ...x, imageUrl: assetUrl, isRolling: true } : x
+          ),
+        };
+        persistState(next);
+        return next;
+      }
+      const sr = normalizeSigRolling(prev.sigRolling);
+      const next = {
+        ...prev,
+        sigRolling: {
+          ...sr,
+          items: sr.items.map((x) => (x.id === target.id ? { ...x, url: assetUrl } : x)),
+        },
+      };
+      persistState(next);
+      return next;
+    });
+    setSigRollingUploadMessage(`이미지 선택 완료: ${target.id}`);
+  };
+
+  const openSigImageFromLocalPc = (target: SigImagePickerTarget) => {
+    sigLocalPickTargetRef.current = target;
+    requestAnimationFrame(() => {
+      sigLocalPickInputRef.current?.click();
+    });
+  };
+
+  const onSigLocalImagePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.currentTarget;
+    const file = input.files?.[0] ?? null;
+    input.value = "";
+    const target = sigLocalPickTargetRef.current;
+    sigLocalPickTargetRef.current = null;
+    if (!file || !target) return;
+    const url = await uploadSigImageFile(file);
+    if (!url) return;
+    applySigImageUrlToPickerTarget(target, url);
+  };
+
+  const fetchFtpListByPath = async (nextPath: string) => {
+    const normalized = nextPath.startsWith("/") ? nextPath : `/${nextPath}`;
+    setFtpListLoading(true);
+    setFtpListError("");
+    setFtpListPathInput(normalized);
+    try {
+      const q = new URLSearchParams({ path: normalized });
+      const uid = String(user?.id || "").trim();
+      if (uid) {
+        q.set("user", uid);
+        q.set("u", uid);
+      }
+      const res = await fetch(`/api/ftp/list?${q.toString()}`, {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+        headers: uid ? { "x-user-id": uid } : undefined,
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        path?: string;
+        entries?: Array<{ name: string; type: string; size?: number; rawModifiedAt?: string }>;
+        error?: string;
+      };
+      if (!res.ok || !j.ok) {
+        setFtpListError(String(j.error || res.status));
+        setFtpListEntries([]);
+        return;
+      }
+      setFtpListPathInput(String(j.path || normalized));
+      setFtpListEntries(Array.isArray(j.entries) ? j.entries : []);
+    } catch (e) {
+      setFtpListError(String(e));
+      setFtpListEntries([]);
+    } finally {
+      setFtpListLoading(false);
+    }
   };
 
   const uploadSigSoldOutStampImage = (file: File | null) => {
@@ -5800,9 +5797,9 @@ export default function AdminPage() {
                           <button
                             type="button"
                             className="rounded bg-indigo-800 px-2 py-1 text-xs hover:bg-indigo-700"
-                            onClick={() => openSigImagePicker({ kind: "rolling", id: it.id })}
+                            onClick={() => openSigImageFromLocalPc({ kind: "rolling", id: it.id })}
                           >
-                            기존 이미지 선택
+                            PC에서 선택
                           </button>
                           <div className="flex gap-1">
                             <button
@@ -5943,6 +5940,18 @@ export default function AdminPage() {
                   >
                     중복 제거(이름+가격)
                   </button>
+                  <button
+                    type="button"
+                    className="px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-sm"
+                    title="서버 환경변수 FTP_HOST, FTP_USER, FTP_PASSWORD 설정 시 D:\\siggif 등 원격 폴더 목록"
+                    onClick={() => {
+                      setFtpListModalOpen(true);
+                      setFtpListPathInput("/");
+                      void fetchFtpListByPath("/");
+                    }}
+                  >
+                    FTP 폴더 보기
+                  </button>
                   {sigExcelResult ? <span className="text-xs text-neutral-300">{sigExcelResult}</span> : null}
                 </div>
                 <div className="rounded border border-white/10 bg-black/25 p-2 grid grid-cols-1 md:grid-cols-[180px_1fr] gap-2 items-center">
@@ -5963,9 +5972,9 @@ export default function AdminPage() {
                     <button
                       type="button"
                       className="px-2 py-1 rounded bg-indigo-800 hover:bg-indigo-700 text-xs"
-                      onClick={() => openSigImagePicker({ kind: "soldOutStamp" })}
+                      onClick={() => openSigImageFromLocalPc({ kind: "soldOutStamp" })}
                     >
-                      기존 이미지 선택
+                      PC에서 선택
                     </button>
                     <button
                       type="button"
@@ -6029,9 +6038,9 @@ export default function AdminPage() {
                       <button
                         type="button"
                         className="w-fit rounded bg-indigo-800 px-2 py-1 text-xs hover:bg-indigo-700"
-                        onClick={() => openSigImagePicker({ kind: "newSig" })}
+                        onClick={() => openSigImageFromLocalPc({ kind: "newSig" })}
                       >
-                        기존 이미지 선택
+                        PC에서 선택
                       </button>
                     </div>
                     <button
@@ -6308,9 +6317,9 @@ export default function AdminPage() {
                           <button
                             type="button"
                             className="w-fit rounded bg-indigo-800 px-2 py-1 text-xs hover:bg-indigo-700"
-                            onClick={() => openSigImagePicker({ kind: "inventory", id: item.id })}
+                            onClick={() => openSigImageFromLocalPc({ kind: "inventory", id: item.id })}
                           >
-                            기존 이미지 선택
+                            PC에서 선택
                           </button>
                         </div>
                       </div>
@@ -6368,73 +6377,121 @@ export default function AdminPage() {
                   })}
                 </div>
                 <div className="text-xs text-neutral-500">
-                  「보드 노출」은 <code>/overlay/sig-sales</code> 상단 롤링 그리드,「판매 활성」은 회전판 메뉴 후보에 포함됩니다. 시그 추가/멤버 지정/판매량 조절은 즉시 `/api/state`를 통해 Redis에 반영됩니다.
+                  「보드 노출」은 <code>/overlay/sig-sales</code> 상단 롤링 그리드,「판매 활성」은 회전판 메뉴 후보에 포함됩니다. 시그 추가/멤버 지정/판매량 조절은 즉시 `/api/state`를 통해 Redis에 반영됩니다.{" "}
+                  <span className="text-neutral-400">
+                    「PC에서 선택」은 이 PC에서 파일을 고른 뒤 업로드 API로 보내 URL을 붙입니다.{" "}
+                    <code className="text-neutral-300">SIG_SERVE_SIG_IMAGES_FROM_DISK=true</code> 이면 ImageKit 대신{" "}
+                    <code className="text-neutral-300">public/uploads/sigs</code> 에 저장·<code className="text-neutral-300">/uploads/…</code> 로
+                    제공합니다(같은 PC에서 Next를 띄우면 그 PC가 이미지 서버).{" "}
+                    <code className="text-neutral-300">NEXT_PUBLIC_SIG_USE_LOCAL_ASSETS=true</code> 이면 레거시 경로를 ImageKit으로 바꾸지 않고{" "}
+                    <code className="text-neutral-300">/images/sigs</code>·업로드 경로만 씁니다. Render 등 원격 호스트는 디스크가 비영구일 수 있습니다.
+                  </span>
                 </div>
-              {sigImagePickerTarget ? (
+              <input
+                ref={sigLocalPickInputRef}
+                type="file"
+                className="hidden"
+                accept=".gif,.png,.jpg,.jpeg,.webp,image/gif,image/png,image/jpeg,image/webp"
+                onChange={onSigLocalImagePicked}
+              />
+              {ftpListModalOpen ? (
                 <div
-                  className="fixed inset-0 z-[210] flex items-center justify-center bg-black/80 px-4 py-6"
-                  onClick={() => setSigImagePickerTarget(null)}
+                  className="fixed inset-0 z-[205] flex items-center justify-center bg-black/80 px-4 py-6"
+                  onClick={() => setFtpListModalOpen(false)}
                 >
                   <div
-                    className="w-full max-w-5xl rounded-xl border border-white/20 bg-neutral-950/95 p-3 shadow-2xl"
+                    className="w-full max-w-3xl rounded-xl border border-white/20 bg-neutral-950/95 p-3 shadow-2xl"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <div className="text-sm font-semibold text-white">ImageKit 기존 이미지 선택</div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          className="rounded bg-neutral-700 px-2 py-1 text-xs text-white hover:bg-neutral-600"
-                          onClick={() => void loadImageKitAssets()}
-                        >
-                          새로고침
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded bg-neutral-700 px-2 py-1 text-xs text-white hover:bg-neutral-600"
-                          onClick={() => setSigImagePickerTarget(null)}
-                        >
-                          닫기
-                        </button>
-                      </div>
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-sm font-semibold text-white">FTP 폴더 목록</div>
+                      <button
+                        type="button"
+                        className="rounded bg-neutral-700 px-2 py-1 text-xs text-white hover:bg-neutral-600"
+                        onClick={() => setFtpListModalOpen(false)}
+                      >
+                        닫기
+                      </button>
                     </div>
-                    <div className="mb-2 flex items-center gap-2">
+                    <p className="mb-2 text-[11px] text-neutral-400">
+                      서버에 <code className="text-neutral-300">FTP_HOST</code>, <code className="text-neutral-300">FTP_USER</code>,{" "}
+                      <code className="text-neutral-300">FTP_PASSWORD</code> 를 설정해야 합니다. (Render에서 집 PC로 보려면 포트 개방·터널 필요)
+                    </p>
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
                       <input
-                        className="w-full rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs"
-                        placeholder="파일명 검색"
-                        value={imageKitAssetQuery}
-                        onChange={(e) => setImageKitAssetQuery(e.target.value)}
+                        className="min-w-[200px] flex-1 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs"
+                        value={ftpListPathInput}
+                        onChange={(e) => setFtpListPathInput(e.target.value)}
+                        placeholder="/"
                       />
+                      <button
+                        type="button"
+                        className="rounded bg-indigo-800 px-2 py-1 text-xs text-white hover:bg-indigo-700"
+                        onClick={() => void fetchFtpListByPath(ftpListPathInput)}
+                      >
+                        이동
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded bg-neutral-700 px-2 py-1 text-xs text-white hover:bg-neutral-600"
+                        onClick={() => {
+                          const p = ftpListPathInput.replace(/\/+$/, "") || "/";
+                          const i = p.lastIndexOf("/");
+                          const parent = i <= 0 ? "/" : p.slice(0, i) || "/";
+                          void fetchFtpListByPath(parent);
+                        }}
+                      >
+                        상위 폴더
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded bg-neutral-700 px-2 py-1 text-xs text-white hover:bg-neutral-600"
+                        onClick={() => void fetchFtpListByPath(ftpListPathInput)}
+                      >
+                        새로고침
+                      </button>
                     </div>
-                    {imageKitAssetsError ? (
+                    {ftpListError ? (
                       <div className="mb-2 rounded border border-rose-400/40 bg-rose-900/25 px-2 py-1 text-xs text-rose-100">
-                        목록 조회 실패: {imageKitAssetsError}
+                        {ftpListError}
                       </div>
                     ) : null}
-                    <div className="max-h-[70vh] overflow-auto rounded border border-white/10 bg-black/30 p-2">
-                      {imageKitAssetsLoading ? (
-                        <div className="text-xs text-neutral-400">이미지 목록 불러오는 중...</div>
-                      ) : filteredImageKitAssets.length === 0 ? (
-                        <div className="text-xs text-neutral-400">표시할 이미지가 없습니다.</div>
+                    <div className="max-h-[60vh] overflow-auto rounded border border-white/10 bg-black/30">
+                      {ftpListLoading ? (
+                        <div className="p-3 text-xs text-neutral-400">목록 불러오는 중…</div>
                       ) : (
-                        <div className="grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-6">
-                          {filteredImageKitAssets.map((asset) => (
-                            <button
-                              key={asset.fileId || asset.url}
-                              type="button"
-                              className="rounded border border-white/10 bg-black/30 p-1 text-left hover:border-violet-300/60"
-                              onClick={() => applyImageKitAssetToTarget(asset.url)}
-                            >
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={asset.thumbnailUrl || asset.url}
-                                alt={asset.name || "asset"}
-                                className="h-24 w-full rounded object-cover"
-                              />
-                              <div className="mt-1 truncate text-[11px] text-neutral-200">{asset.name || asset.url}</div>
-                            </button>
-                          ))}
-                        </div>
+                        <ul className="divide-y divide-white/10 text-xs">
+                          {ftpListEntries.length === 0 ? (
+                            <li className="p-3 text-neutral-500">항목이 없습니다.</li>
+                          ) : (
+                            ftpListEntries.map((row) => {
+                              const joinPath = (base: string, name: string) => {
+                                const b = base.replace(/\/+$/, "") || "";
+                                if (!b || b === "/") return `/${name}`;
+                                return `${b}/${name}`;
+                              };
+                              return (
+                                <li key={`${row.type}:${row.name}`} className="flex flex-wrap items-center gap-2 px-2 py-1.5 hover:bg-white/5">
+                                  {row.type === "dir" ? (
+                                    <button
+                                      type="button"
+                                      className="text-left text-sky-300 hover:underline"
+                                      onClick={() => void fetchFtpListByPath(joinPath(ftpListPathInput, row.name))}
+                                    >
+                                      [폴더] {row.name}
+                                    </button>
+                                  ) : (
+                                    <span className="text-neutral-200">[파일] {row.name}</span>
+                                  )}
+                                  <span className="text-neutral-500">{row.type}</span>
+                                  {typeof row.size === "number" ? (
+                                    <span className="text-neutral-500">{row.size.toLocaleString("ko-KR")} B</span>
+                                  ) : null}
+                                </li>
+                              );
+                            })
+                          )}
+                        </ul>
                       )}
                     </div>
                   </div>

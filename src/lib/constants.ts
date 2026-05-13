@@ -1,4 +1,5 @@
 import type { SigItem } from "@/types";
+import { isSigLocalAssetsOnlyMode } from "@/lib/sig-image-mode";
 
 /** 저장소에 미설정 시 완판 오버레이·관리 화면 기본 도장(`public` 실파일과 동일 경로 유지) */
 export const DEFAULT_SIG_SOLD_STAMP_URL = "/images/sigs/stamp.svg";
@@ -82,6 +83,9 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
     s = s.replace(/^\/images\/sig\//, "/images/sigs/");
   }
   if (s.startsWith("/images/sigs/")) {
+    if (isSigLocalAssetsOnlyMode()) {
+      return s;
+    }
     const rel = s.replace(/^\/images\/sigs\//, "");
     return toCdnUrlFromRelativePath(rel);
   }
@@ -89,7 +93,10 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
     /^https?:\/\/[^/]*supabase\.co\/storage\/v1\/object\/public\//i.test(s) &&
     /\/sigs\//i.test(s)
   ) {
-    // Supabase 공개 URL도 파일명만 동일하면 ImageKit에서 그대로 표시
+    if (isSigLocalAssetsOnlyMode()) {
+      const fileName = s.split("/").filter(Boolean).pop() || "";
+      return fileName ? `/images/sigs/${encodeURIComponent(fileName)}` : BUNDLED_SIG_PLACEHOLDER_URL;
+    }
     return toCdnUrlFromFileName(s);
   }
   return s;

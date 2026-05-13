@@ -1,5 +1,6 @@
 import { readFile } from "fs/promises";
 import path from "path";
+import { isSigLocalAssetsOnlyMode } from "@/lib/sig-image-mode";
 
 function getLegacySigCdnBaseUrl(): string {
   return (process.env.SIG_CDN_BASE_URL || process.env.NEXT_PUBLIC_SIG_CDN_BASE_URL || "https://ik.imagekit.io/lwcsfeswl")
@@ -43,6 +44,7 @@ export async function readLegacySigFromPublicDisk(relPath: string): Promise<Buff
 
 /** 레거시 파일명을 ImageKit 등 외부 CDN에서 그대로 조회 */
 export async function fetchLegacySigFromCdn(relPath: string): Promise<Buffer | null> {
+  if (isSigLocalAssetsOnlyMode()) return null;
   const base = getLegacySigCdnBaseUrl();
   if (!base) return null;
   const encodedPath = relPath
