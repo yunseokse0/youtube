@@ -49,7 +49,7 @@ import * as XLSX from "xlsx";
 import { appendSettlementRecordAndSync, appendSigMatchIncentiveSettlementAndSync, SettlementMemberRatioOverrides } from "@/lib/settlement";
 import { formatSigMatchStat, getSigMatchRankings } from "@/lib/settlement-utils";
 import { getEffectiveRemainingTime, pauseTimer, resumeTimer } from "@/lib/timer-utils";
-import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
+import { appendAdminPreviewEmbedToOverlayUrl, presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
 import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
 import { detectSigPriceFromImageFile, detectSigPriceFromImageUrlDetailed } from "@/lib/sig-image-ocr";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
@@ -791,7 +791,7 @@ export default function AdminPage() {
     const onVisibility = () => {
       if (document.visibilityState === "visible") void syncFromApi();
     };
-    const timer = window.setInterval(() => { void syncFromApi(); }, 4000);
+    const timer = window.setInterval(() => { void syncFromApi(); }, 8000);
     window.addEventListener("focus", onFocus);
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
@@ -1050,13 +1050,13 @@ export default function AdminPage() {
     if (typeof window === "undefined") return;
     const url = buildSigMatchLiveUrl();
     sigMatchPreviewUrlRef.current = url;
-    setSigMatchPreviewIframeSrc(url);
+    setSigMatchPreviewIframeSrc(appendAdminPreviewEmbedToOverlayUrl(url));
   }, [buildSigMatchLiveUrl]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const url = buildMealMatchLiveUrl();
     mealMatchPreviewUrlRef.current = url;
-    setMealMatchPreviewIframeSrc(url);
+    setMealMatchPreviewIframeSrc(appendAdminPreviewEmbedToOverlayUrl(url));
   }, [buildMealMatchLiveUrl]);
 
   const copyUrl = async (url: string, id: string) => {
@@ -4340,7 +4340,7 @@ export default function AdminPage() {
                       className="rounded border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-emerald-500/60 hover:text-emerald-200"
                       onClick={() => {
                         sigMatchPreviewUrlRef.current = `${buildSigMatchLiveUrl()}&_t=${Date.now()}`;
-                        setSigMatchPreviewIframeSrc(sigMatchPreviewUrlRef.current);
+                        setSigMatchPreviewIframeSrc(appendAdminPreviewEmbedToOverlayUrl(sigMatchPreviewUrlRef.current));
                         setSigMatchPreviewIframeKey((k) => k + 1);
                       }}
                     >
@@ -4401,7 +4401,7 @@ export default function AdminPage() {
                       className="rounded border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-emerald-500/60 hover:text-emerald-200"
                       onClick={() => {
                         mealMatchPreviewUrlRef.current = `${buildMealMatchLiveUrl()}&_t=${Date.now()}`;
-                        setMealMatchPreviewIframeSrc(mealMatchPreviewUrlRef.current);
+                        setMealMatchPreviewIframeSrc(appendAdminPreviewEmbedToOverlayUrl(mealMatchPreviewUrlRef.current));
                         setMealMatchPreviewIframeKey((k) => k + 1);
                       }}
                     >
@@ -7629,7 +7629,7 @@ export default function AdminPage() {
                 <div className="relative w-full bg-black/40" style={{ minHeight: "260px", aspectRatio: "16 / 9" }}>
                   <iframe
                     key={`donor-rankings-${donorRankingsPreviewIframeKey}-${user?.id || "finalent"}`}
-                    src={`/overlay/donor-rankings?u=${user?.id || "finalent"}&zoomPct=${getDonorRankingsZoomPct()}`}
+                    src={appendAdminPreviewEmbedToOverlayUrl(`/overlay/donor-rankings?u=${user?.id || "finalent"}&zoomPct=${getDonorRankingsZoomPct()}`)}
                     title="후원 리스트 오버레이 미리보기"
                     className="absolute inset-0 h-full w-full border-0"
                     style={{ background: "transparent" }}
@@ -8938,9 +8938,9 @@ function VerticalPreview({ url }: { url: string }) {
     try {
       const u = new URL(url);
       u.searchParams.set("previewGuide", "true");
-      return u.toString();
+      return appendAdminPreviewEmbedToOverlayUrl(u.toString());
     } catch {
-      return url;
+      return appendAdminPreviewEmbedToOverlayUrl(url);
     }
   }, [url]);
   useEffect(() => {

@@ -278,3 +278,34 @@ export function getOverlayMemberFilterIdFromSearchParams(searchParams: SearchPar
   }
   return raw;
 }
+
+/** 관리자 대시보드 안 `<iframe>` 미리보기 — 과다 `/api/state`·SSE로 동기화가 막히는 것을 줄이기 위한 플래그 */
+export function isAdminDashboardPreviewEmbed(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return new URLSearchParams(window.location.search).get("adminPreviewEmbed") === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 관리자 iframe `src`에만 붙입니다. OBS·방송용으로 복사하는 URL에는 넣지 마세요.
+ * 상대 경로(`/overlay/...`)도 처리합니다.
+ */
+export function appendAdminPreviewEmbedToOverlayUrl(url: string): string {
+  const u = String(url || "").trim();
+  if (!u) return u;
+  try {
+    const base = typeof window !== "undefined" ? window.location.origin : "http://localhost";
+    const parsed = u.startsWith("http://") || u.startsWith("https://") ? new URL(u) : new URL(u, base);
+    if (parsed.searchParams.get("adminPreviewEmbed") === "1") {
+      return u.startsWith("http://") || u.startsWith("https://") ? u : `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
+    parsed.searchParams.set("adminPreviewEmbed", "1");
+    if (u.startsWith("http://") || u.startsWith("https://")) return parsed.toString();
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return u.includes("adminPreviewEmbed=1") ? u : `${u}${u.includes("?") ? "&" : "?"}adminPreviewEmbed=1`;
+  }
+}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createModuleLogger } from './logger';
+import { isAdminDashboardPreviewEmbed } from './overlay-params';
 import { sendSSEUpdate as postSseUpdate } from './sse-post';
 
 const logger = createModuleLogger('SSE');
@@ -17,6 +18,10 @@ export function useSSEConnection(onMessage: (data: any) => void) {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    /** 관리자 미리보기 iframe: SSE가 메인 탭과 겹쳐 연결·`/api/state` 폭주 → 생략 */
+    if (isAdminDashboardPreviewEmbed()) {
+      return () => {};
+    }
 
     const scheduleReconnect = () => {
       if (reconnectTimerRef.current) return;
