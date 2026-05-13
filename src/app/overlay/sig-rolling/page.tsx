@@ -13,6 +13,8 @@ import {
   type AppState,
   type SigRollingItem,
 } from "@/lib/state";
+import { normalizeSigImageUrlStored, resolveSigImageUrl } from "@/lib/constants";
+import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { getSigRollingHoldMs } from "@/lib/sig-rolling-duration";
 import {
@@ -141,6 +143,10 @@ function RollingCardColumn({
         ? `${shellBase} rounded-r-3xl rounded-l-none p-1.5`
         : `${shellBase} rounded-3xl p-1.5`;
 
+  const under = nextItem || current;
+  const srcCurrent = resolveSigImageUrl(current.label || "", current.url);
+  const srcUnder = resolveSigImageUrl(under.label || "", under.url);
+
   if (!useCrossfade) {
     return (
       <div className="shrink-0" style={{ width: SHELL_OUTER_WIDTH_PX, height: SHELL_OUTER_HEIGHT_PX }}>
@@ -158,7 +164,7 @@ function RollingCardColumn({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               key={replayKey}
-              src={current.url}
+              src={srcCurrent}
               alt=""
               className={IMG_IN_FRAME}
               draggable={false}
@@ -170,7 +176,6 @@ function RollingCardColumn({
     );
   }
 
-  const under = nextItem || current;
   return (
     <div className="shrink-0" style={{ width: SHELL_OUTER_WIDTH_PX, height: SHELL_OUTER_HEIGHT_PX }}>
       <div className={shellClass} style={{ width: SHELL_OUTER_WIDTH_PX, height: SHELL_OUTER_HEIGHT_PX }}>
@@ -189,7 +194,7 @@ function RollingCardColumn({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             key={`under-${under.id}`}
-            src={under.url}
+            src={srcUnder}
             alt=""
             className={IMG_IN_FRAME}
             style={{
@@ -203,7 +208,7 @@ function RollingCardColumn({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             key={`over-${current.id}`}
-            src={current.url}
+            src={srcCurrent}
             alt=""
             className={IMG_IN_FRAME}
             style={{
@@ -324,15 +329,47 @@ export default function SigRollingOverlayPage() {
     };
   }, [ready, n, pairStart, fading, scheduleKey, replayKey]);
 
-  if (!ready) return null;
+  const emptyDetail = useMemo(() => {
+    if (!state) return "";
+    const inv = state.sigInventory || [];
+    const rows = inv.filter((x) => x.id !== ONE_SHOT_SIG_ID);
+    const rollingWithUrl = rows.filter(
+      (x) => x.isRolling && normalizeSigImageUrlStored(x.imageUrl).trim()
+    );
+    const anyImage = rows.some((x) => Boolean(normalizeSigImageUrlStored(x.imageUrl).trim()));
+    const anyRollingFlag = rows.some((x) => x.isRolling);
+    if (anyImage && rollingWithUrl.length === 0) {
+      return "시그 인벤에 이미지는 있으나 「보드 노출」이 꺼져 롤링 목록이 비었습니다. 관리자 → 시그 판매 → 시그 롤링에서 노출할 시그의 보드 노출을 켜 주세요.";
+    }
+    if (anyRollingFlag && rollingWithUrl.length === 0) {
+      return "보드 노출은 켜져 있으나 이미지 URL이 비어 있어 표시할 수 없습니다. 시그에 이미지를 등록해 주세요.";
+    }
+    return "";
+  }, [state]);
+
+  if (!ready) {
+    return (
+      <main className="overlay-root inline-block w-fit p-1">
+        <div className="max-w-[min(92vw,26rem)] rounded-lg border border-white/25 bg-black/80 px-3 py-2 text-[11px] leading-snug text-white shadow-md">
+          시그 롤링 · 상태 불러오는 중…
+        </div>
+      </main>
+    );
+  }
 
   if (n === 0) {
     return (
-      <main className="overlay-root inline-block w-fit bg-transparent p-1">
-        <p className="max-w-[min(92vw,26rem)] text-xs leading-snug text-white/45">
-          시그 롤링 · 등록된 이미지가 없거나 서버에 아직 반영되지 않았습니다. 관리자에서 업로드 후 저장(로그인·네트워크)이 되어야 OBS 등 다른 브라우저에서도 보입니다. URL에{" "}
-          <code className="rounded bg-white/10 px-1">?u=본인아이디</code> 가 포함되는지 확인하세요.
-        </p>
+      <main className="overlay-root inline-block w-fit p-1">
+        <div className="max-w-[min(92vw,28rem)] space-y-2 rounded-lg border border-white/25 bg-black/80 px-3 py-2.5 text-[11px] leading-snug text-white shadow-md">
+          <p className="font-semibold text-amber-100">시그 롤링 · 표시할 이미지가 없습니다</p>
+          {emptyDetail ? <p className="text-white/95">{emptyDetail}</p> : null}
+          <p className="text-white/85">
+            <code className="rounded bg-white/15 px-1">/overlay/sig-rolling</code> 는{" "}
+            <strong className="text-white">후원 랭킹 오버레이와 별도의 브라우저 소스</strong>로 추가해야 합니다. URL에{" "}
+            <code className="rounded bg-white/15 px-1">?u=본인아이디</code>(예: finalent)가 맞는지 확인하세요. 관리자에서 저장한 뒤 서버(
+            Redis)에 반영되어야 OBS에서도 보입니다.
+          </p>
+        </div>
       </main>
     );
   }
