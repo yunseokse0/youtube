@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createModuleLogger } from './logger';
+import { sendSSEUpdate as postSseUpdate } from './sse-post';
 
 const logger = createModuleLogger('SSE');
 
@@ -101,13 +102,7 @@ export function useSSEConnection(onMessage: (data: any) => void) {
 
 export async function sendSSEUpdate(data: any) {
   try {
-    await fetch('/api/events', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
-    });
+    await postSseUpdate(data);
     logger.debug('SSE 업데이트 전송 성공', data);
   } catch (error) {
     logger.error('SSE 업데이트 전송 실패', error);
