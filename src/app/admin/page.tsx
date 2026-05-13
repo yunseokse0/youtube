@@ -38,7 +38,6 @@ import {
   normalizeDonationListsOverlayConfig,
   getUnifiedSigRollingItems,
   normalizeSigRolling,
-  stripSigRollingImagesKeepItems,
   type OverlayConfig,
 } from "@/lib/state";
 import { resolveSigImageUrl, stripSigInventoryImagesKeepList, DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
@@ -2326,10 +2325,10 @@ export default function AdminPage() {
     }
   }, [ocrAllBusy, state.sigInventory]);
 
-  const clearAllSigImagesKeepList = useCallback(() => {
+  const clearSigInventoryImagesOnly = useCallback(() => {
     if (
       !window.confirm(
-        "시그 인벤·롤링 수동 목록·완판 도장의 이미지 URL을 모두 기본 더미로 바꿉니다.\n이름·가격·판매 수·멤버 지정은 유지됩니다. 계속할까요?"
+        "시그 인벤(판매 목록)에 붙은 이미지 URL만 기본 더미로 바꿉니다.\n롤링 수동 이미지·완판 도장은 그대로 둡니다.\n이름·가격·판매 수·멤버 지정은 유지됩니다. 계속할까요?"
       )
     ) {
       return;
@@ -2342,14 +2341,12 @@ export default function AdminPage() {
       const next: AppState = {
         ...prev,
         sigInventory: stripSigInventoryImagesKeepList(prev.sigInventory),
-        sigRolling: stripSigRollingImagesKeepItems(prev.sigRolling),
-        sigSoldOutStampUrl: "",
       };
       const synced = syncOneShotSigItem(next);
       persistState(synced);
       return synced;
     });
-    setSigExcelResult("시그 이미지 URL을 일괄 제거했습니다. 필요 시 PC에서 선택으로 다시 올려 주세요.");
+    setSigExcelResult("시그 인벤 이미지 URL만 제거했습니다. 필요 시 PC에서 선택으로 다시 올려 주세요.");
     setSigOcrBanner("");
   }, [syncOneShotSigItem]);
 
@@ -6179,9 +6176,9 @@ export default function AdminPage() {
                         type="button"
                         className="rounded bg-rose-800/90 px-3 py-1.5 text-sm font-semibold text-white shadow hover:bg-rose-700 disabled:opacity-50"
                         disabled={ocrAllBusy}
-                        onClick={() => clearAllSigImagesKeepList()}
+                        onClick={() => clearSigInventoryImagesOnly()}
                       >
-                        시그 이미지 URL 일괄 제거
+                        시그 이미지만 지우기
                       </button>
                     </div>
                   </div>

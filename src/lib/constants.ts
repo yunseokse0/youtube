@@ -114,7 +114,7 @@ export function normalizeSigInventory(input: unknown): SigItem[] {
   return list.length > 0 ? list : DEFAULT_SIG_INVENTORY.map((x) => ({ ...x }));
 }
 
-/** 시그 항목(id·이름·가격·판매량 등)은 유지하고 이미지 URL만 공용 더미로 통일 */
+/** 시그 인벤(`sigInventory`)만: id·이름·가격·판매량 등은 유지하고 `imageUrl`만 공용 더미로 통일 */
 export function stripSigInventoryImagesKeepList(items: SigItem[] | null | undefined): SigItem[] {
   if (!Array.isArray(items)) return [];
   return items.map((x) => ({ ...x, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL }));
