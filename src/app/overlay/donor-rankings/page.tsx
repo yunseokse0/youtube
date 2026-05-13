@@ -12,6 +12,8 @@ import {
   type AppState,
 } from "@/lib/state";
 import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
+import { readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
+import { useSSEConnection } from "@/lib/sse-client";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 
 type DonorRow = {
@@ -43,6 +45,11 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   const [state, setState] = useState<AppState | null>(null);
   const lastUpdatedRef = useRef(0);
   const syncingRef = useRef(false);
+  const syncFromApiRef = useRef<() => Promise<void>>(async () => {});
+
+  useSSEConnection((d: unknown) => {
+    if ((d as { type?: string })?.type === "state_updated") void syncFromApiRef.current();
+  });
 
   const readLocalStateIfExists = useCallback((): AppState | null => {
     if (typeof window === "undefined") return null;
@@ -92,14 +99,16 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       }
     };
 
-    const timer = window.setInterval(() => {
-      void syncFromApi();
-    }, 2500);
+    syncFromApiRef.current = syncFromApi;
+
+    const pollMs = readOverlayPollIntervalMs();
+    let pollTimer: number | undefined;
+    if (pollMs > 0) pollTimer = window.setInterval(() => void syncFromApi(), pollMs);
 
     window.addEventListener("storage", onStorage);
     void syncFromApi();
     return () => {
-      window.clearInterval(timer);
+      if (pollTimer) window.clearInterval(pollTimer);
       window.removeEventListener("storage", onStorage);
     };
   }, [readLocalStateIfExists, userId]);

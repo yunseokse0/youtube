@@ -5,12 +5,19 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
 import { defaultState, loadState, loadStateFromApi, storageKey, type AppState } from "@/lib/state";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
+import { readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
+import { useSSEConnection } from "@/lib/sse-client";
 import { getEffectiveRemainingTime } from "@/lib/timer-utils";
 
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
   const [state, setState] = useState<AppState | null>(null);
   const lastUpdatedRef = useRef(0);
   const syncingRef = useRef(false);
+  const syncFromApiRef = useRef<() => Promise<void>>(async () => {});
+
+  useSSEConnection((d: unknown) => {
+    if ((d as { type?: string })?.type === "state_updated") void syncFromApiRef.current();
+  });
 
   const readLocalStateIfExists = useCallback((): AppState | null => {
     if (typeof window === "undefined") return null;
@@ -62,13 +69,15 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       }
     };
 
-    const timer = window.setInterval(() => {
-      void syncFromApi();
-    }, 3000);
+    syncFromApiRef.current = syncFromApi;
+
+    const pollMs = readOverlayPollIntervalMs();
+    let pollTimer: number | undefined;
+    if (pollMs > 0) pollTimer = window.setInterval(() => void syncFromApi(), pollMs);
     window.addEventListener("storage", onStorage);
     void syncFromApi();
     return () => {
-      window.clearInterval(timer);
+      if (pollTimer) window.clearInterval(pollTimer);
       window.removeEventListener("storage", onStorage);
     };
   }, [readLocalStateIfExists, userId]);

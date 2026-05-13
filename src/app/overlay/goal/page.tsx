@@ -6,11 +6,18 @@ import { defaultState, loadState, loadStateFromApi, storageKey, type AppState } 
 import { getOverlayUserIdFromSearchParams, type OverlayPresetLike } from "@/lib/overlay-params";
 import { GoalBar } from "@/components/GoalBar";
 import { useGoalPresetAutoEscalate } from "@/hooks/useGoalPresetAutoEscalate";
+import { readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
+import { useSSEConnection } from "@/lib/sse-client";
 
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
   const [state, setState] = useState<AppState | null>(null);
   const lastUpdatedRef = useRef(0);
   const syncingRef = useRef(false);
+  const syncFromApiRef = useRef<() => Promise<void>>(async () => {});
+
+  useSSEConnection((d: unknown) => {
+    if ((d as { type?: string })?.type === "state_updated") void syncFromApiRef.current();
+  });
 
   useEffect(() => {
     let hasLocalSnapshot = false;
@@ -50,9 +57,22 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       }
     };
 
+    syncFromApiRef.current = syncFromApi;
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== storageKey(userId ?? undefined)) return;
+      void syncFromApi();
+    };
+
     void syncFromApi();
-    const id = window.setInterval(() => void syncFromApi(), 2500);
-    return () => window.clearInterval(id);
+    const pollMs = readOverlayPollIntervalMs();
+    let pollId: number | undefined;
+    if (pollMs > 0) pollId = window.setInterval(() => void syncFromApi(), pollMs);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      if (pollId) window.clearInterval(pollId);
+      window.removeEventListener("storage", onStorage);
+    };
   }, [userId]);
 
   return { state, ready: state !== null };

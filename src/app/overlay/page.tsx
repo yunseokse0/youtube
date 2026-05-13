@@ -11,6 +11,7 @@ import { GoalBar } from "@/components/GoalBar";
 import { useSSEConnection } from "@/lib/sse-client";
 import { useGoalPresetAutoEscalate } from "@/hooks/useGoalPresetAutoEscalate";
 import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
+import { readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
 
 function tryDecodeSnapshot(str: string | null): AppState | null {
   if (!str) return null;
@@ -212,16 +213,13 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
         if (isViable(localNow)) { lastGoodRef.current = localNow; saveLastGood(localNow); }
       }
     };
-    // Faster cadence for donor/member sync in overlay runtime.
-    const host = (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("host") : "") || "";
-    const POLL_MS = host ? 1200 : 700;
-    const timer = window.setInterval(() => {
-      void syncOnce();
-    }, POLL_MS);
+    const pollMs = readOverlayPollIntervalMs();
+    let pollTimer: number | undefined;
+    if (pollMs > 0) pollTimer = window.setInterval(() => void syncOnce(), pollMs);
     window.addEventListener("storage", onStorage);
     void syncOnce();
     return () => {
-      window.clearInterval(timer);
+      if (pollTimer) window.clearInterval(pollTimer);
       window.removeEventListener("storage", onStorage);
     };
   }, [userId, loadLastGood, readLocalStateIfExists, saveLastGood]);

@@ -8,7 +8,7 @@ import type { SigItem } from "@/types";
 import RouletteWheel from "@/components/sig-sales/RouletteWheel";
 import ResultOverlay from "@/components/sig-sales/ResultOverlay";
 import SigBoardRolling from "@/components/sig-sales/SigBoardRolling";
-import { loadStateFromApi, type AppState } from "@/lib/state";
+import { loadStateFromApi, storageKey, type AppState } from "@/lib/state";
 import {
   getOverlayMemberFilterIdFromSearchParams,
   getOverlayUserIdFromSearchParams,
@@ -25,6 +25,8 @@ import {
 } from "@/lib/sig-roulette";
 import { useSigSalesState } from "@/hooks/useSigSalesState";
 import { useImagePreload } from "@/hooks/useImagePreload";
+import { useSSEConnection } from "@/lib/sse-client";
+import { readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
 
 /**
  * [계약] 시그 판매 오버레이는 아래를 전제로 구현돼 있어야 한다(“될 수도”가 아님).
@@ -38,7 +40,7 @@ import { useImagePreload } from "@/hooks/useImagePreload";
  *    CONFIRM_PENDING 에도 `revealedSigCount` 로 같은 속도를 유지한다(관리자 확정 클릭 직후 한꺼번에 깔리지 않게).
  * 6) `sigResultScalePct` / `resultScalePct`: 확정 카드 줄만 추가 축소(zoom%, 기본 78). URL이 없으면 관리자에 저장된 `rouletteState.sigResultScalePct` 사용.
  */
-const POLL_MS = 1000;
+/** 기본은 폴링 없음. `?overlayPollMs=` 로만 주기 GET 복구(overlay-pull-policy). */
 /** cinematic 스핀 최대 당첨 수와 맞춤(API spinCount·풀 한도). 예전 5슬롯 제한은 확대됨 */
 const CONFIRMED_VISIBLE_SLOTS = 20;
 const MIN_ONE_SHOT_SIGS = 2;
@@ -319,6 +321,13 @@ export default function SigSalesOverlayPage() {
     if (remote) setState(remote);
   }, [userId]);
 
+  const loadRemoteRef = useRef(loadRemote);
+  loadRemoteRef.current = loadRemote;
+  useSSEConnection((d: unknown) => {
+    const o = d as { type?: string };
+    if (o?.type === "state_updated") void loadRemoteRef.current();
+  });
+
   useEffect(() => {
     setSigImagePlaceholderOnlyForOverlay(sigPlaceholder);
     return () => setSigImagePlaceholderOnlyForOverlay(false);
@@ -326,9 +335,20 @@ export default function SigSalesOverlayPage() {
 
   useEffect(() => {
     void loadRemote();
-    const id = window.setInterval(() => void loadRemote(), POLL_MS);
-    return () => window.clearInterval(id);
-  }, [loadRemote]);
+    const pollMs = readOverlayPollIntervalMs();
+    let pollId: number | undefined;
+    if (pollMs > 0) pollId = window.setInterval(() => void loadRemote(), pollMs);
+    const key = storageKey(userId ?? undefined);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== key) return;
+      void loadRemote();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      if (pollId) window.clearInterval(pollId);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [loadRemote, userId]);
   useEffect(() => {
     const nonce = Number(state?.rouletteState?.overlayReloadNonce || 0);
     if (!Number.isFinite(nonce)) return;
