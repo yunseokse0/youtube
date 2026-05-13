@@ -1025,7 +1025,12 @@ async function postAppStateWithAuthRecovery(json: string, userId?: string | null
 /** 관리자 /api/state 저장 시 — 스핀 결과(phase 등)는 보내지 않고 메뉴 수·오버레이 UI 설정만 전달(서버에서 병합) */
 function appStatePayloadForApi(next: AppState): Partial<AppState> {
   const normalizedSigInventory = normalizeSigInventory(next.sigInventory);
-  const { rouletteState, ...rest } = { ...next, sigInventory: normalizedSigInventory };
+  const normalizedSigRolling = normalizeSigRolling(next.sigRolling);
+  const { rouletteState, ...rest } = {
+    ...next,
+    sigInventory: normalizedSigInventory,
+    sigRolling: normalizedSigRolling,
+  };
   if (!rouletteState) return rest;
   return {
     ...rest,
@@ -1042,6 +1047,7 @@ function normalizeStateForPersistence(state: AppState): AppState {
   return {
     ...state,
     sigInventory: normalizeSigInventory(state.sigInventory),
+    sigRolling: normalizeSigRolling(state.sigRolling),
   };
 }
 

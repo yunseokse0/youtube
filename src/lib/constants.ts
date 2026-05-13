@@ -51,6 +51,11 @@ function isCorruptSigImageUrlString(s: string): boolean {
   return false;
 }
 
+/** Twip·구 호스팅 등 배포본에 없는 경로 → 404만 연쇄 */
+function isPriorKnownDeadSigImagePath(s: string): boolean {
+  return /\/sig_images(\/|$|\?)/i.test(s) || /^sig_images(\/|$|\?)/i.test(s);
+}
+
 /** 저장된 시그 이미지 경로 보정(`/images/sig/` 오타 → `/images/sigs/`) — 인벤·시그롤링·당첨 배열 모두 적용 */
 export function normalizeSigImageUrlStored(raw: unknown): string {
   let s = String(raw ?? "").trim().replace(/\\/g, "/");
@@ -58,6 +63,9 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
   s = s.replace(/^:\s*/, "");
   if (!s) return "";
   if (isCorruptSigImageUrlString(s)) {
+    return BUNDLED_SIG_PLACEHOLDER_URL;
+  }
+  if (isPriorKnownDeadSigImagePath(s)) {
     return BUNDLED_SIG_PLACEHOLDER_URL;
   }
   /** 상대 경로 `images/…` `uploads/…` → 절대 경로화 (레거시 URL) */
@@ -85,6 +93,10 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
       return fileName ? `/images/sigs/${encodeURIComponent(fileName)}` : BUNDLED_SIG_PLACEHOLDER_URL;
     }
     return s;
+  }
+  /** Supabase 시그 스토리지 외 http(s)는 일괄 더미(404·ERR_INSUFFICIENT_RESOURCES 완화). 필요 시 다시 업로드 */
+  if (/^https?:\/\//i.test(s)) {
+    return BUNDLED_SIG_PLACEHOLDER_URL;
   }
   return s;
 }
