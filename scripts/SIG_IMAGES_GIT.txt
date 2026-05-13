@@ -1,0 +1,30 @@
+시그 GIF를 Git으로 배포에 포함하는 방법 (요약)
+============================================
+
+1) Google Drive에서 폴더 전체 ZIP 다운로드 후 압축 해제
+
+2) 프로젝트 루트에서 복사 스크립트 실행 (경로는 본인 PC 기준으로 바꿈)
+
+   npm run sig:import -- "D:\Downloads\siggif"
+
+   → public/images/sigs/from-drive/ 아래에 .gif 가 복사됩니다.
+
+3) Git에 올리기
+
+   git add public/images/sigs/from-drive .gitattributes scripts/
+   git status
+   git commit -m "chore: 시그 GIF 번들(from-drive)"
+   git push
+
+4) 관리자(시그 판매)에서 각 시그의 이미지 URL을 다음 형태로 지정
+
+   /images/sigs/from-drive/파일이름.gif
+
+   (배포 Origin 기준 동일 오리진 경로)
+
+5) 용량이 많을 때
+
+   - 저장소·clone 크기가 커지므로, GIF가 매우 많으면 Git LFS 사용을 검토하세요.
+   - 또는 Supabase Storage 등 외부 저장소 + 업로드 API 경로를 유지하는 편이 나을 수 있습니다.
+
+참고: NEXT_PUBLIC_SIG_IMAGES_PLACEHOLDER_ONLY=1 이면 커스텀 /images/sigs/… 가 더미로 바뀌므로 끄세요.

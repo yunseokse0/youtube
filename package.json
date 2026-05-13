@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build"
+    "build-storybook": "storybook build",
+    "sig:import": "node scripts/copy-sigs-from-folder.mjs"
   },
   "dependencies": {
     "@capacitor-community/file-opener": "^8.0.0",

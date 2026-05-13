@@ -1,0 +1,2 @@
+# 시그 번들 GIF — 바이너리로 취급(줄바꿈·merge 충돌 완화)
+public/images/sigs/**/*.gif binary
