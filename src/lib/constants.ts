@@ -1,8 +1,8 @@
 import type { SigItem } from "@/types";
 import { isSigImagesPlaceholderOnlyEnv, isSigLocalAssetsOnlyMode } from "@/lib/sig-image-mode";
 
-/** 저장소에 미설정 시 완판 오버레이·관리 화면 기본 도장(`public` 실파일과 동일 경로 유지) */
-export const DEFAULT_SIG_SOLD_STAMP_URL = "/images/sigs/stamp.svg";
+/** 저장소에 미설정 시 완판 오버레이·관리 화면 기본 도장(`public/img/sig-sold-stamp.svg`) */
+export const DEFAULT_SIG_SOLD_STAMP_URL = "/img/sig-sold-stamp.svg";
 
 /** Git·Render 배포본에 포함된 공통 시그 이미지(`public/images/sigs/dummy-sig.svg`) */
 export const BUNDLED_SIG_PLACEHOLDER_URL = "/images/sigs/dummy-sig.svg";
@@ -78,7 +78,10 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
     !s.startsWith("data:") &&
     !s.startsWith("blob:")
   ) {
-    if (s.startsWith("images/") || s.startsWith("uploads/")) s = `/${s}`;
+    if (s.startsWith("images/") || s.startsWith("uploads/") || s.startsWith("img/")) s = `/${s}`;
+  }
+  if (s.startsWith("/img/")) {
+    return s;
   }
   if (s.startsWith("/images/sig/")) {
     s = s.replace(/^\/images\/sig\//, "/images/sigs/");
@@ -88,8 +91,11 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
       const lower = s.toLowerCase();
       const keepBundled =
         lower.includes("dummy-sig.svg") ||
+        lower.includes("/siggif/") ||
         lower.endsWith("/stamp.svg") ||
-        lower.endsWith("stamp.svg");
+        lower.endsWith("stamp.svg") ||
+        lower.endsWith("/sig-sold-stamp.svg") ||
+        lower.endsWith("sig-sold-stamp.svg");
       if (!keepBundled) return BUNDLED_SIG_PLACEHOLDER_URL;
     }
     return s;
