@@ -150,7 +150,7 @@ function getImageKitConfig():
 
 async function uploadToImageKit(data: Buffer, fileName: string, contentType: string, folder: string, privateKey: string): Promise<string> {
   const encoded = data.toString("base64");
-  const body = new URLSearchParams();
+  const body = new FormData();
   body.set("fileName", fileName);
   body.set("file", `data:${contentType};base64,${encoded}`);
   body.set("folder", folder);
@@ -160,9 +160,8 @@ async function uploadToImageKit(data: Buffer, fileName: string, contentType: str
     method: "POST",
     headers: {
       Authorization: `Basic ${auth}`,
-      "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: body.toString(),
+    body,
   });
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
