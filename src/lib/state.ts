@@ -1,6 +1,7 @@
 import type {
   AppState,
   Donor,
+  DonorTarget,
   ContributionLog,
   MatchTimerEnabled,
   DonorRankingsTheme,
@@ -832,6 +833,28 @@ export function parseAmount(input: string | number): number {
   return isNaN(n) ? 0 : n;
 }
 
+/** 서버/로컬 JSON 손상 시 `donors`가 객체·숫자 등으로 오면 관리자 표 렌더가 전부 중단됨 → 항상 배열로 복구 */
+export function normalizeDonorsArray(input: unknown): Donor[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .filter((x): x is Record<string, unknown> => Boolean(x && typeof x === "object"))
+    .map((x) => {
+      const idRaw = String(x.id ?? "").trim();
+      const targetRaw = x.target;
+      const target: DonorTarget | undefined =
+        targetRaw === "toon" ? "toon" : targetRaw === "account" ? "account" : undefined;
+      const row: Donor = {
+        id: idRaw || `d_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        name: typeof x.name === "string" ? x.name : String(x.name ?? ""),
+        amount: Math.max(0, Math.floor(Number(x.amount) || 0)),
+        memberId: String(x.memberId ?? ""),
+        at: Number.isFinite(Number(x.at)) ? Math.floor(Number(x.at)) : Date.now(),
+      };
+      if (target) row.target = target;
+      return row;
+    });
+}
+
 // ex) "3.5" => 35,000 (3만5천원), "2" => 20,000, "2.0" => 20,000
 // Only first decimal digit is used as thousands; other characters are ignored.
 export function parseTenThousandThousand(input: string | number): number {
@@ -881,7 +904,7 @@ export function loadState(userId?: string | null): AppState {
     data.donorRankingsPresetId = typeof (data as AppState).donorRankingsPresetId === "string" && (data as AppState).donorRankingsPresetId
       ? (data as AppState).donorRankingsPresetId
       : undefined;
-    data.donors = data.donors || [];
+    data.donors = normalizeDonorsArray(data.donors);
     data.contributionLogs = Array.isArray((data as AppState).contributionLogs)
       ? ((data as AppState).contributionLogs as ContributionLog[])
           .filter((x) => x && typeof x === "object")
@@ -1112,7 +1135,7 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
       data.donorRankingsPresetId = typeof (data as AppState).donorRankingsPresetId === "string" && (data as AppState).donorRankingsPresetId
         ? (data as AppState).donorRankingsPresetId
         : undefined;
-      data.donors = data.donors || [];
+      data.donors = normalizeDonorsArray(data.donors);
       data.contributionLogs = Array.isArray((data as AppState).contributionLogs)
         ? ((data as AppState).contributionLogs as ContributionLog[])
             .filter((x) => x && typeof x === "object")
@@ -1264,7 +1287,8 @@ export function isDefaultLikeState(state: AppState): boolean {
   const m = state.members || [];
   if (m.length !== def.length) return false;
   const allDefaultNames = m.every((mm, i) => mm.id === def[i].id && mm.name === def[i].name);
-  const noData = totalCombined(state) === 0 && (!state.donors || state.donors.length === 0);
+  const donorsSafe = normalizeDonorsArray(state.donors);
+  const noData = totalCombined(state) === 0 && donorsSafe.length === 0;
   return allDefaultNames && noData;
 }
 
@@ -1286,7 +1310,7 @@ export function formatChatLine(state: AppState): string {
     .map((m) => `${m.name}${formatManThousand(m.account)}(${formatManThousand(m.toon)})`)
     .join(",");
   const accAgg = new Map<string, number>();
-  for (const d of state.donors) {
+  for (const d of normalizeDonorsArray(state.donors)) {
     if ((d.target || "account") === "toon") continue;
     accAgg.set(d.name, (accAgg.get(d.name) || 0) + d.amount);
   }

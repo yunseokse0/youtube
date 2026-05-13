@@ -16,6 +16,7 @@ import {
   saveMissionsBackup,
   loadMissionsBackup,
   isDefaultLikeState,
+  normalizeDonorsArray,
   ensureMissionItems,
   appendDailyLog,
   loadDailyLogFromApi,
@@ -594,12 +595,13 @@ export default function AdminPage() {
     const localHasData = !isDefaultLikeState(local);
     // 서버가 기본 데이터만 반환하면, 이미 로컬에 있는 기존 상태를 최대한 그대로 유지한다.
     if (incomingDefaultLike && localHasData) {
+      const merged = {
+        ...incoming,
+        ...local,
+        updatedAt: Math.max(incoming.updatedAt || 0, local.updatedAt || 0) || Date.now(),
+      };
       return {
-        merged: {
-          ...incoming,
-          ...local,
-          updatedAt: Math.max(incoming.updatedAt || 0, local.updatedAt || 0) || Date.now(),
-        },
+        merged: { ...merged, donors: normalizeDonorsArray(merged.donors) },
         didPreserve: true,
       };
     }
@@ -632,7 +634,7 @@ export default function AdminPage() {
       };
       didPreserve = true;
     }
-    return { merged, didPreserve };
+    return { merged: { ...merged, donors: normalizeDonorsArray(merged.donors) }, didPreserve };
   }, []);
 
   useEffect(() => {
