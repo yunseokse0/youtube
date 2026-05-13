@@ -2,30 +2,12 @@ import { randomUUID } from "crypto";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { createClient } from "@supabase/supabase-js";
-import { AUTH_COOKIE, isDevAuthBypassRequest } from "@/lib/auth";
+import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
 
 export const runtime = "nodejs";
 export const revalidate = 0;
 
 const MAX_BYTES = 30 * 1024 * 1024;
-
-function decodeRepeated(value: string, maxDepth = 4): string {
-  let out = value;
-  for (let i = 0; i < maxDepth; i += 1) {
-    try {
-      const next = decodeURIComponent(out);
-      if (next === out) break;
-      out = next;
-    } catch {
-      break;
-    }
-  }
-  return out;
-}
-
-function isValidUserId(value: string): boolean {
-  return /^[a-zA-Z0-9_-]{1,64}$/.test(value);
-}
 
 function getUploadRootCandidates(): string[] {
   const cwd = process.cwd();
@@ -33,45 +15,6 @@ function getUploadRootCandidates(): string[] {
     path.join(cwd, "public"),
     path.join(cwd, ".next", "standalone", "public"),
   ];
-}
-
-function tryParseUserCookie(raw: string): { id?: string } | null {
-  if (!raw) return null;
-  const decoded = decodeRepeated(raw);
-  const candidates = [raw, decodeURIComponent(raw), decoded];
-  for (const cand of candidates) {
-    const trimmed = String(cand).trim().replace(/^"|"$/g, "");
-    if (!trimmed) continue;
-    const deeplyDecoded = decodeRepeated(trimmed);
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (parsed && typeof parsed === "object") return parsed as { id?: string };
-    } catch {}
-    try {
-      const parsed = JSON.parse(deeplyDecoded);
-      if (parsed && typeof parsed === "object") return parsed as { id?: string };
-    } catch {}
-    // 하위 호환: 쿠키 값이 JSON이 아니라 user id 문자열 자체인 경우
-    if (!trimmed.startsWith("{") && !trimmed.startsWith("[") && isValidUserId(trimmed)) {
-      return { id: trimmed };
-    }
-    if (!deeplyDecoded.startsWith("{") && !deeplyDecoded.startsWith("[") && isValidUserId(deeplyDecoded)) {
-      return { id: deeplyDecoded };
-    }
-  }
-  return null;
-}
-
-function getUserId(req: Request): string | null {
-  if (isDevAuthBypassRequest(req)) return "finalent";
-  const cookie = req.headers.get("cookie") || "";
-  const escaped = AUTH_COOKIE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = cookie.match(new RegExp(`${escaped}=([^;]+)`));
-  if (!match) return null;
-  const parsed = tryParseUserCookie(match[1] || "");
-  const uid = typeof parsed?.id === "string" ? parsed.id.trim() : "";
-  if (uid && !isValidUserId(uid)) return null;
-  return uid || null;
 }
 
 function extFrom(file: File): string | null {
@@ -139,9 +82,62 @@ function getSupabaseStorageConfig():
   return { url, serviceRoleKey, buckets };
 }
 
+function getImageKitConfig():
+  | { privateKey: string; folderPrefix: string }
+  | null {
+  const privateKey = (process.env.IMAGEKIT_PRIVATE_KEY || "").trim();
+  if (!privateKey) return null;
+  const folderPrefix = (process.env.IMAGEKIT_FOLDER_PREFIX || "sigs").trim().replace(/^\/+|\/+$/g, "");
+  return { privateKey, folderPrefix: folderPrefix || "sigs" };
+}
+
+async function uploadToImageKit(data: Buffer, fileName: string, contentType: string, folder: string, privateKey: string): Promise<string> {
+  const auth = Buffer.from(`${privateKey}:`).toString("base64");
+  const endpoint = "https://upload.imagekit.io/api/v1/files/upload";
+
+  const tryUpload = async (mode: "binary" | "dataUrl"): Promise<string> => {
+    const body = new FormData();
+    body.set("fileName", fileName);
+    if (mode === "binary") {
+      body.set("file", new Blob([data], { type: contentType }), fileName);
+    } else {
+      body.set("file", `data:${contentType};base64,${data.toString("base64")}`);
+    }
+    body.set("folder", folder);
+    body.set("useUniqueFileName", "true");
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${auth}`,
+      },
+      body,
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`imagekit_upload_failed:${res.status}:${txt.slice(0, 400)}`);
+    }
+    const json = await res.json() as { url?: string };
+    const url = String(json?.url || "").trim();
+    if (!url) throw new Error("imagekit_upload_failed:no_url");
+    return url;
+  };
+
+  // 1) 바이너리 업로드 우선 시도
+  try {
+    return await tryUpload("binary");
+  } catch (binaryErr) {
+    // 2) 일부 환경에서 바이너리 multipart 실패 시 data URL 방식으로 1회 재시도
+    try {
+      return await tryUpload("dataUrl");
+    } catch (dataErr) {
+      throw new Error(`${String(binaryErr)} | fallback:${String(dataErr)}`);
+    }
+  }
+}
+
 export async function POST(req: Request) {
   try {
-    const uid = getUserId(req);
+    const uid = getUserIdFromRequest(req);
     if (!uid) {
       return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
     }
@@ -164,7 +160,15 @@ export async function POST(req: Request) {
     const fileName = `${Date.now()}_${randomUUID().slice(0, 8)}${ext}`;
     const data = Buffer.from(ab);
     const storagePath = `sigs/${safeUid}/${fileName}`;
+    const contentType = String(file.type || "application/octet-stream");
+    const imagekitConfig = getImageKitConfig();
     const supabaseConfig = getSupabaseStorageConfig();
+
+    if (imagekitConfig) {
+      const folder = `/${imagekitConfig.folderPrefix}/${safeUid}`;
+      const imagekitUrl = await uploadToImageKit(data, fileName, contentType, folder, imagekitConfig.privateKey);
+      return Response.json({ ok: true, url: imagekitUrl }, { status: 200 });
+    }
 
     if (supabaseConfig) {
       const supabase = createClient(supabaseConfig.url, supabaseConfig.serviceRoleKey, {
@@ -176,7 +180,7 @@ export async function POST(req: Request) {
         const { error } = await supabase.storage
           .from(bucket)
           .upload(storagePath, data, {
-            contentType: String(file.type || "application/octet-stream"),
+            contentType,
             upsert: false,
           });
         if (!error) {
@@ -198,7 +202,7 @@ export async function POST(req: Request) {
 
     if (process.env.NODE_ENV === "production") {
       return Response.json(
-        { ok: false, error: "storage_not_configured: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY" },
+        { ok: false, error: "storage_not_configured: set IMAGEKIT_PRIVATE_KEY or SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY" },
         { status: 500 }
       );
     }

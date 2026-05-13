@@ -162,7 +162,6 @@ export function normalizeRouletteState(raw: unknown): RouletteState {
     menuCount: 10,
     sigResultScalePct: 78,
     menuFillFromAllActive: true,
-    menuFillFromDemo: false,
     oneShotResult: null,
   };
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return def;
@@ -219,7 +218,6 @@ export function normalizeRouletteState(raw: unknown): RouletteState {
     ? Math.max(50, Math.min(100, Math.floor(sigResultScalePctRaw)))
     : 78;
   const menuFillFromAllActive = typeof o.menuFillFromAllActive === "boolean" ? o.menuFillFromAllActive : true;
-  const menuFillFromDemo = typeof o.menuFillFromDemo === "boolean" ? o.menuFillFromDemo : false;
   const overlayReloadNonce = Number.isFinite(Number(o.overlayReloadNonce))
     ? Math.max(0, Math.floor(Number(o.overlayReloadNonce)))
     : 0;
@@ -271,7 +269,6 @@ export function normalizeRouletteState(raw: unknown): RouletteState {
     menuCount,
     sigResultScalePct,
     menuFillFromAllActive,
-    menuFillFromDemo,
     overlayReloadNonce,
     sessionId: typeof o.sessionId === "string" ? o.sessionId : undefined,
     lastFinishedAt: Number.isFinite(Number(o.lastFinishedAt)) ? Math.max(0, Math.floor(Number(o.lastFinishedAt))) : undefined,
@@ -431,14 +428,32 @@ export function buildDefaultMembersCount(count: number): Member[] {
   });
 }
 
+/** Redis/API·엑셀 등에서 금액이 문자열·콤마 문자열로 올 때 복원 */
+function parseOptionalNonNegativeMoney(input: unknown): number | undefined {
+  if (input === undefined || input === null) return undefined;
+  if (typeof input === "number" && Number.isFinite(input)) return Math.max(0, Math.floor(input));
+  if (typeof input === "string") {
+    const t = input.replace(/,/g, "").trim();
+    if (t === "") return undefined;
+    const n = Number(t);
+    if (!Number.isFinite(n)) return undefined;
+    return Math.max(0, Math.floor(n));
+  }
+  return undefined;
+}
+
 function normalizeMember(m: Member): Member {
-  const goal = typeof m.goal === "number" && Number.isFinite(m.goal) ? Math.max(0, Math.floor(m.goal)) : undefined;
-  const contribution = typeof m.contribution === "number" && Number.isFinite(m.contribution)
-    ? Math.max(0, Math.floor(m.contribution))
-    : 0;
+  const rec = m as Record<string, unknown>;
+  const goalParsed = parseOptionalNonNegativeMoney(rec.goal);
+  const goal = goalParsed !== undefined ? goalParsed : undefined;
+  const contribution = parseOptionalNonNegativeMoney(rec.contribution) ?? 0;
+  const account = parseOptionalNonNegativeMoney(rec.account) ?? 0;
+  const toon = parseOptionalNonNegativeMoney(rec.toon) ?? 0;
   return {
     ...m,
     realName: m.realName ?? "",
+    account,
+    toon,
     contribution,
     goal,
     operating: m.operating ?? /운영비/i.test(m.name),
@@ -877,7 +892,16 @@ export function loadState(userId?: string | null): AppState {
     data.sigMatch = data.sigMatch && typeof data.sigMatch === "object" ? data.sigMatch : {};
     data.mealBattle = normalizeMealBattle((data as AppState).mealBattle);
     data.mealMatch = data.mealMatch && typeof data.mealMatch === "object" ? data.mealMatch : {};
-    const validSigMemberIds = new Set(data.members.map((m: Member) => m.id));
+    const validSigMemberIds = new Set(
+      data.members
+        .filter(
+          (m: Member) =>
+            !Boolean(m.operating) &&
+            !/운영비/i.test(String(m.name || "")) &&
+            !/운영비/i.test(String((data.memberPositions as Record<string, string> | undefined)?.[m.id] || ""))
+        )
+        .map((m: Member) => m.id)
+    );
     data.sigMatchSettings = {
       isActive: Boolean(data.sigMatchSettings?.isActive),
       targetCount: Number.isFinite(data.sigMatchSettings?.targetCount)
@@ -973,24 +997,31 @@ async function postAppStateWithAuthRecovery(json: string, userId?: string | null
 
 /** 관리자 /api/state 저장 시 — 스핀 결과(phase 등)는 보내지 않고 메뉴 수·오버레이 UI 설정만 전달(서버에서 병합) */
 function appStatePayloadForApi(next: AppState): Partial<AppState> {
-  const { rouletteState, ...rest } = next;
+  const normalizedSigInventory = normalizeSigInventory(next.sigInventory);
+  const { rouletteState, ...rest } = { ...next, sigInventory: normalizedSigInventory };
   if (!rouletteState) return rest;
   return {
     ...rest,
     rouletteState: {
       menuCount: rouletteState.menuCount,
       menuFillFromAllActive: rouletteState.menuFillFromAllActive,
-      menuFillFromDemo: rouletteState.menuFillFromDemo,
       overlayOpacity: rouletteState.overlayOpacity,
       ...(Array.isArray(rouletteState.historyLogs) ? { historyLogs: rouletteState.historyLogs } : {}),
     },
   } as Partial<AppState>;
 }
 
+function normalizeStateForPersistence(state: AppState): AppState {
+  return {
+    ...state,
+    sigInventory: normalizeSigInventory(state.sigInventory),
+  };
+}
+
 export function saveState(state: AppState, userId?: string | null) {
   if (typeof window === "undefined") return;
   try {
-    const next = syncBattleStateWithMembers({ ...state, updatedAt: Date.now() });
+    const next = normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() }));
     const json = JSON.stringify(next);
     window.localStorage.setItem(storageKey(userId), json);
     void postAppStateWithAuthRecovery(JSON.stringify(appStatePayloadForApi(next)), userId)
@@ -1006,7 +1037,7 @@ export function saveState(state: AppState, userId?: string | null) {
 
 export async function saveStateAsync(state: AppState, userId?: string | null): Promise<boolean> {
   if (typeof window === "undefined") return false;
-  const next = syncBattleStateWithMembers({ ...state, updatedAt: Date.now() });
+  const next = normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() }));
   const json = JSON.stringify(next);
   try { window.localStorage.setItem(storageKey(userId), json); } catch {}
   try {
@@ -1086,7 +1117,16 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
       data.sigMatch = data.sigMatch && typeof data.sigMatch === "object" ? data.sigMatch : {};
       data.mealBattle = normalizeMealBattle((data as AppState).mealBattle);
       data.mealMatch = data.mealMatch && typeof data.mealMatch === "object" ? data.mealMatch : {};
-      const validSigMemberIdsApi = new Set<string>((data.members as Member[]).map((m) => m.id));
+      const validSigMemberIdsApi = new Set<string>(
+        (data.members as Member[])
+          .filter(
+            (m) =>
+              !Boolean(m.operating) &&
+              !/운영비/i.test(String(m.name || "")) &&
+              !/운영비/i.test(String((data.memberPositions as Record<string, string> | undefined)?.[m.id] || ""))
+          )
+          .map((m) => m.id)
+      );
       data.sigMatchSettings = {
         isActive: Boolean(data.sigMatchSettings?.isActive),
         targetCount: Number.isFinite(data.sigMatchSettings?.targetCount)

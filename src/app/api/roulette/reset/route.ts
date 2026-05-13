@@ -36,7 +36,6 @@ export async function POST(req: Request) {
       menuCount: cur.menuCount,
       sigResultScalePct: cur.sigResultScalePct,
       menuFillFromAllActive: cur.menuFillFromAllActive,
-      menuFillFromDemo: cur.menuFillFromDemo,
       overlayOpacity: cur.overlayOpacity,
       historyLogs: cur.historyLogs,
     };

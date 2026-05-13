@@ -40,6 +40,7 @@ import {
   normalizeSigRolling,
   type OverlayConfig,
 } from "@/lib/state";
+import { resolveSigImageUrl } from "@/lib/constants";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -55,6 +56,9 @@ import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 import { normalizeSigDedupKeyImageUrl } from "@/lib/sig-inventory-dedup";
 import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
 import { getVisibleAdminNavItems, isAdminNavSectionVisible, type AdminNavKey } from "@/app/admin/admin-nav-config";
+import { startToonationListener, stopToonationListener } from "@/lib/donation/toonation/listener";
+import { processDonationEvent } from "@/lib/donation/processor";
+import type { DonationEvent, DonorAlias } from "@/lib/donation/types";
 
 /** 후원 계열 오버레이 배경 GIF 프리셋 — 외부 URL은 방송망에서 차단될 수 있음 */
 const DONATION_LISTS_BG_GIF_PRESETS: { label: string; url: string }[] = [
@@ -76,7 +80,7 @@ type OverlayPreset = {
   showMembers: boolean; showTotal: boolean;
   totalMode?: "total";
   showGoal: boolean; goal: string;
-  /** 후원 초기화 시 복원할 목표(수동 저장·첫 자동 상향 직전 스냅샷). 없으면 수학적 되감기 사용 */
+  /** 후원 초기화 시 복원할 목표(수동 저장·첫 자동 상향 직전 스냅샷). 없으면 초기화 시 goal 숫자 유지 */
   goalBaseline?: string;
   goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string; goalOpacity?: string; goalOpacityText?: boolean;
   showPersonalGoal?: boolean; personalGoalTheme?: string; personalGoalAnchor?: string; personalGoalLimit?: string; personalGoalFree?: boolean; personalGoalX?: string; personalGoalY?: string;
@@ -99,6 +103,12 @@ const ONE_SHOT_SIG_NAME = "한방 시그";
 const MAX_SIG_UPLOAD_BYTES = 30 * 1024 * 1024;
 const SIG_DUMMY_IMAGE = "/images/sigs/dummy-sig.svg";
 const BROKEN_SIG_UID_PATTERN = /(_257b_2522id_2522|%257b%2522id%2522|%7b%22id%22)/i;
+type ImageKitAsset = { fileId: string; name: string; url: string; thumbnailUrl: string };
+type SigImagePickerTarget =
+  | { kind: "inventory"; id: string }
+  | { kind: "rolling"; id: string }
+  | { kind: "newSig" }
+  | { kind: "soldOutStamp" };
 
 function clampSigSalesMenuCount(raw: string | number | null | undefined): number {
   const n = typeof raw === "number" ? raw : parseInt(String(raw || "").replace(/[^\d]/g, "") || "10", 10);
@@ -128,16 +138,10 @@ function isLegacyLocalSigImageUrl(raw?: string): boolean {
   );
 }
 
-function resolveSigPreviewSrc(raw?: string): string {
-  const v = String(raw || "").trim().replace(/\\/g, "/");
-  if (!v) return SIG_DUMMY_IMAGE;
+function resolveSigPreviewSrc(raw?: string, name?: string): string {
+  const v = String(raw || "").trim();
   if (isBrokenSigImageUrl(v)) return SIG_DUMMY_IMAGE;
-  if (v.startsWith("/")) return v;
-  if (v.startsWith("uploads/")) return `/${v}`;
-  if (v.startsWith("images/")) return `/${v}`;
-  if (v.startsWith("http://") || v.startsWith("https://")) return v;
-  if (v.startsWith("data:image/") || v.startsWith("blob:")) return v;
-  return SIG_DUMMY_IMAGE;
+  return resolveSigImageUrl(String(name || "").trim(), v);
 }
 
 function ClientTime({ ts }: { ts: number | string }) {
@@ -170,6 +174,19 @@ export default function AdminPage() {
   const [donorAmount, setDonorAmount] = useState("");
   const [donorMemberId, setDonorMemberId] = useState<string | null>(null);
   const [donorTarget, setDonorTarget] = useState<DonorTarget>("account");
+  const [toonationAutoEnabled, setToonationAutoEnabled] = useState(false);
+  const [toonationAutoProcessEnabled, setToonationAutoProcessEnabled] = useState(false);
+  const [toonationSocketDebug, setToonationSocketDebug] = useState(false);
+  const [toonationAlertboxUrl, setToonationAlertboxUrl] = useState("");
+  const [toonationStatus, setToonationStatus] = useState<"idle" | "running" | "error">("idle");
+  const [toonationBackoffMs, setToonationBackoffMs] = useState(0);
+  const [toonationRetryAttempt, setToonationRetryAttempt] = useState(0);
+  const [toonationLogs, setToonationLogs] = useState<Array<{ id: string; at: number; message: string }>>([]);
+  const [toonationQueue, setToonationQueue] = useState<DonationEvent[]>([]);
+  const [unmatchedEvents, setUnmatchedEvents] = useState<DonationEvent[]>([]);
+  const [unmatchedAssignMap, setUnmatchedAssignMap] = useState<Record<string, string>>({});
+  const [aliasInputMap, setAliasInputMap] = useState<Record<string, string>>({});
+  const [donorAliases, setDonorAliases] = useState<DonorAlias[]>([]);
   const [contributionAmount, setContributionAmount] = useState("");
   const [contributionMemberId, setContributionMemberId] = useState<string | null>(null);
   const [contributionDelta, setContributionDelta] = useState<1 | -1>(1);
@@ -190,6 +207,11 @@ export default function AdminPage() {
   const [newSigImageUploading, setNewSigImageUploading] = useState(false);
   const [sigPreviewMap, setSigPreviewMap] = useState<Record<string, string>>({});
   const [sigImagePreviewModal, setSigImagePreviewModal] = useState<{ src: string; name: string; rawUrl: string } | null>(null);
+  const [sigImagePickerTarget, setSigImagePickerTarget] = useState<SigImagePickerTarget | null>(null);
+  const [imageKitAssets, setImageKitAssets] = useState<ImageKitAsset[]>([]);
+  const [imageKitAssetsLoading, setImageKitAssetsLoading] = useState(false);
+  const [imageKitAssetsError, setImageKitAssetsError] = useState("");
+  const [imageKitAssetQuery, setImageKitAssetQuery] = useState("");
   /** 가격 입력은 타이핑 중 draft만 유지하고 blur/Enter에 1회 저장 */
   const [sigPriceDraftMap, setSigPriceDraftMap] = useState<Record<string, string>>({});
   const sigPriceDraftMapRef = useRef<Record<string, string>>({});
@@ -203,6 +225,13 @@ export default function AdminPage() {
     const invIds = new Set((state.sigInventory || []).map((x) => x.id));
     return normalizeSigRolling(state.sigRolling).items.filter((x) => !invIds.has(x.id)).length;
   }, [state.sigInventory, state.sigRolling]);
+  const filteredImageKitAssets = useMemo(() => {
+    const q = imageKitAssetQuery.trim().toLowerCase();
+    if (!q) return imageKitAssets;
+    return imageKitAssets.filter((x) =>
+      x.name.toLowerCase().includes(q) || x.url.toLowerCase().includes(q)
+    );
+  }, [imageKitAssets, imageKitAssetQuery]);
   const [ocrBusyIds, setOcrBusyIds] = useState<Record<string, boolean>>({});
   const [ocrAllBusy, setOcrAllBusy] = useState(false);
   /** 일괄 OCR 진행률(현재 인덱스 / 전체) */
@@ -1044,26 +1073,19 @@ export default function AdminPage() {
     const progressPath = selectedMemberId
       ? `${baseProgressPath}&memberId=${encodeURIComponent(selectedMemberId)}`
       : baseProgressPath;
-    const progressDemoPath = `${progressPath}&rouletteDemo=1`;
     const memberProgressPath = selectedMemberId
       ? progressPath
       : "";
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     return {
       progressPath,
-      progressDemoPath,
       memberProgressPath,
       progressAbs: origin ? `${origin}${progressPath}` : "",
-      progressDemoAbs: origin ? `${origin}${progressDemoPath}` : "",
       memberProgressAbs: origin && memberProgressPath ? `${origin}${memberProgressPath}` : "",
     };
   }, [rouletteUserId, selectedMemberId, getSigSalesMenuCount, state.rouletteState?.sigResultScalePct]);
   const rouletteQuickSummaryText = useMemo(() => {
-    const lines = [
-      `[통합 오버레이] ${rouletteQuickUrls.progressAbs}`,
-      `[통합 데모] ${rouletteQuickUrls.progressDemoAbs}`,
-    ];
-    return lines.join("\n");
+    return `[통합 오버레이] ${rouletteQuickUrls.progressAbs}`;
   }, [rouletteQuickUrls]);
   const rouletteServerStatus = useMemo(() => {
     const rs = state.rouletteState;
@@ -2002,7 +2024,7 @@ export default function AdminPage() {
       return;
     }
     let createdId = "";
-    const previewSrcCandidate = (newSigPreviewUrl || resolveSigPreviewSrc(newSigImageUrl)).trim();
+    const previewSrcCandidate = (newSigPreviewUrl || resolveSigPreviewSrc(newSigImageUrl, newSigName)).trim();
     setState((prev: AppState) => {
       createdId = `sig_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const nextItem = {
@@ -2038,8 +2060,8 @@ export default function AdminPage() {
 
   const downloadSigExcelTemplate = () => {
     const rows = [
-      { name: "애교", price: 77000, maxCount: 1, memberName: "", imageUrl: "/images/sigs/애교.png", isRolling: "Y" },
-      { name: "댄스", price: 100000, maxCount: 1, memberName: "", imageUrl: "/images/sigs/댄스.png", isRolling: "Y" },
+      { name: "애교", price: 77000, maxCount: 1, memberName: "", imageUrl: SIG_DUMMY_IMAGE, isRolling: "Y" },
+      { name: "댄스", price: 100000, maxCount: 1, memberName: "", imageUrl: SIG_DUMMY_IMAGE, isRolling: "Y" },
     ];
     const sheet = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -2163,7 +2185,14 @@ export default function AdminPage() {
     fd.append("file", file);
     let res: Response;
     try {
-      res = await fetch("/api/upload/sig-image", {
+      const q = new URLSearchParams();
+      const uid = String(user?.id || "").trim();
+      if (uid) {
+        q.set("user", uid);
+        q.set("u", uid);
+      }
+      const uploadUrl = q.toString() ? `/api/upload/sig-image?${q.toString()}` : "/api/upload/sig-image";
+      res = await fetch(uploadUrl, {
         method: "POST",
         credentials: "include",
         body: fd,
@@ -2191,6 +2220,12 @@ export default function AdminPage() {
               ? "파일 용량이 너무 큽니다. 30MB 이하 파일만 업로드할 수 있습니다."
               : normalized === "missing_file"
                 ? "업로드할 파일을 찾지 못했습니다. 파일을 다시 선택해 주세요."
+                : normalized.includes("imagekit_upload_failed:401")
+                  ? "ImageKit 인증 실패입니다. IMAGEKIT_PRIVATE_KEY 값을 다시 확인해 주세요."
+                  : normalized.includes("imagekit_upload_failed:413") || normalized.includes("payload too large")
+                    ? "ImageKit 업로드 용량 제한에 걸렸습니다. 파일을 더 작게 줄여 주세요."
+                    : normalized.includes("imagekit_upload_failed")
+                      ? `ImageKit 업로드 실패(${rawError}). 잠시 후 다시 시도해 주세요.`
                 : String(res.status).startsWith("5")
                   ? "서버 오류로 업로드에 실패했습니다. 잠시 후 다시 시도해 주세요."
                   : `알 수 없는 오류(${rawError})가 발생했습니다.`;
@@ -2202,6 +2237,104 @@ export default function AdminPage() {
       return null;
     }
     return j.url;
+  };
+
+  const loadImageKitAssets = useCallback(async () => {
+    setImageKitAssetsLoading(true);
+    setImageKitAssetsError("");
+    try {
+      const q = new URLSearchParams({ limit: "300" });
+      const uid = String(user?.id || "").trim();
+      if (uid) {
+        q.set("user", uid);
+        q.set("u", uid);
+      }
+      const listUrl = `/api/imagekit/files?${q.toString()}`;
+      const res = await fetch(listUrl, {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        files?: Array<{ fileId?: string; name?: string; url?: string; thumbnailUrl?: string }>;
+        error?: string;
+      };
+      if (!res.ok || !j.ok) {
+        const err = String(j.error || res.status || "unknown");
+        setImageKitAssetsError(err);
+        return;
+      }
+      const files = Array.isArray(j.files) ? j.files : [];
+      setImageKitAssets(
+        files
+          .map((x) => ({
+            fileId: String(x.fileId || ""),
+            name: String(x.name || ""),
+            url: String(x.url || ""),
+            thumbnailUrl: String(x.thumbnailUrl || x.url || ""),
+          }))
+          .filter((x) => x.url)
+      );
+    } catch (e) {
+      setImageKitAssetsError(String(e));
+    } finally {
+      setImageKitAssetsLoading(false);
+    }
+  }, [user?.id]);
+
+  const openSigImagePicker = (target: SigImagePickerTarget) => {
+    setSigImagePickerTarget(target);
+    setImageKitAssetQuery("");
+    if (!imageKitAssets.length) {
+      void loadImageKitAssets();
+    }
+  };
+
+  const applyImageKitAssetToTarget = (assetUrl: string) => {
+    const target = sigImagePickerTarget;
+    if (!target) return;
+    if (target.kind === "newSig") {
+      setNewSigImageUrl(assetUrl);
+      setNewSigPreviewUrl(assetUrl);
+      setSigImagePickerTarget(null);
+      return;
+    }
+    if (target.kind === "soldOutStamp") {
+      updateSigSoldOutStampUrl(assetUrl);
+      setSigImagePickerTarget(null);
+      return;
+    }
+    if (target.kind === "inventory") {
+      updateSigItem(target.id, { imageUrl: assetUrl });
+      setSigImagePickerTarget(null);
+      return;
+    }
+    setState((prev) => {
+      const hasInventory = (prev.sigInventory || []).some((x) => x.id === target.id);
+      if (hasInventory) {
+        const next = {
+          ...prev,
+          sigInventory: (prev.sigInventory || []).map((x) =>
+            x.id === target.id ? { ...x, imageUrl: assetUrl, isRolling: true } : x
+          ),
+        };
+        persistState(next);
+        return next;
+      }
+      const sr = normalizeSigRolling(prev.sigRolling);
+      const next = {
+        ...prev,
+        sigRolling: {
+          ...sr,
+          items: sr.items.map((x) => (x.id === target.id ? { ...x, url: assetUrl } : x)),
+        },
+      };
+      persistState(next);
+      return next;
+    });
+    setSigRollingUploadMessage(`이미지 선택 완료: ${target.id}`);
+    setSigImagePickerTarget(null);
   };
 
   const runOcrForSigItem = useCallback(async (id: string, imageUrl: string, name?: string) => {
@@ -2904,6 +3037,244 @@ export default function AdminPage() {
     setDonorAmount("");
   };
 
+  const fetchUnmatchedEvents = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    const uid = user?.id || "";
+    if (!uid) return;
+    try {
+      const res = await fetch(`/api/donations/unmatched?u=${encodeURIComponent(uid)}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { items?: DonationEvent[] };
+      setUnmatchedEvents(Array.isArray(data.items) ? data.items : []);
+    } catch {
+      // noop
+    }
+  }, [user?.id]);
+
+  const pushToonationLog = useCallback((message: string) => {
+    setToonationLogs((prev) => [{ id: `tl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, at: Date.now(), message }, ...prev].slice(0, 80));
+  }, []);
+
+  const fetchDonationAliases = useCallback(async () => {
+    const uid = user?.id || "";
+    if (!uid) return;
+    try {
+      const res = await fetch(`/api/donations/aliases?u=${encodeURIComponent(uid)}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { items?: DonorAlias[] };
+      setDonorAliases(Array.isArray(data.items) ? data.items : []);
+    } catch {
+      // noop
+    }
+  }, [user?.id]);
+
+  const fetchToonationQueue = useCallback(async () => {
+    const uid = user?.id || "";
+    if (!uid) return;
+    try {
+      const res = await fetch(`/api/donations/queue?u=${encodeURIComponent(uid)}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { items?: DonationEvent[] };
+      setToonationQueue(Array.isArray(data.items) ? data.items : []);
+    } catch {
+      // noop
+    }
+  }, [user?.id]);
+
+  const removeQueueEvent = useCallback(async (id: string) => {
+    const uid = user?.id || "";
+    if (!uid || !id) return;
+    await fetch(`/api/donations/queue?u=${encodeURIComponent(uid)}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    }).catch(() => {});
+  }, [user?.id]);
+
+  const approveQueueEvent = useCallback(async (evt: DonationEvent) => {
+    await processDonationEvent({ ...evt, status: "queued", target: "toon" }, user?.id);
+    await removeQueueEvent(evt.id);
+    await fetchToonationQueue();
+    await fetchUnmatchedEvents();
+    pushToonationLog(`큐 승인 반영: ${evt.donorName} ${evt.amount.toLocaleString("ko-KR")}원`);
+  }, [fetchToonationQueue, fetchUnmatchedEvents, pushToonationLog, removeQueueEvent, user?.id]);
+
+  const approveAllQueueEvents = useCallback(async () => {
+    for (const evt of toonationQueue) {
+      await processDonationEvent({ ...evt, status: "queued", target: "toon" }, user?.id);
+      await removeQueueEvent(evt.id);
+    }
+    await fetchToonationQueue();
+    await fetchUnmatchedEvents();
+    if (toonationQueue.length > 0) {
+      pushToonationLog(`큐 일괄 승인 반영: ${toonationQueue.length}건`);
+    }
+  }, [fetchToonationQueue, fetchUnmatchedEvents, pushToonationLog, removeQueueEvent, toonationQueue, user?.id]);
+
+  const removeUnmatchedEvent = useCallback(async (id: string) => {
+    const uid = user?.id || "";
+    if (!uid || !id) return;
+    await fetch(`/api/donations/unmatched/resolve?u=${encodeURIComponent(uid)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    }).catch(() => {});
+    await fetchUnmatchedEvents();
+  }, [fetchUnmatchedEvents, user?.id]);
+
+  const injectToonationTestEvent = useCallback(async () => {
+    const amount = parseAmount(donorAmount || "10000");
+    const name = (donorName || "투네테스트").trim();
+    if (amount <= 0) return;
+    const event: DonationEvent = {
+      id: `toonation:test:${Date.now()}`,
+      provider: "toonation",
+      externalId: `manual-${Date.now()}`,
+      donorName: name,
+      amount,
+      message: "admin-manual-test",
+      at: new Date().toISOString(),
+      target: "toon",
+      status: "queued",
+    };
+    await processDonationEvent(event, user?.id);
+    await fetchUnmatchedEvents();
+    setDonorAmount("");
+  }, [donorAmount, donorName, fetchUnmatchedEvents, user?.id]);
+
+  const applyUnmatchedEvent = useCallback(async (event: DonationEvent) => {
+    const selectedMemberId = unmatchedAssignMap[event.id] || donorMemberId || state.members[0]?.id || "";
+    if (!selectedMemberId) return;
+    const member = state.members.find((m) => m.id === selectedMemberId);
+    if (!member) return;
+
+    await processDonationEvent(
+      {
+        ...event,
+        donorName: member.name,
+        target: "toon",
+        status: "queued",
+      },
+      user?.id
+    );
+    await removeUnmatchedEvent(event.id);
+  }, [donorMemberId, removeUnmatchedEvent, state.members, unmatchedAssignMap, user?.id]);
+
+  const saveAliasForUnmatched = useCallback(async (event: DonationEvent) => {
+    const uid = user?.id || "";
+    if (!uid) return;
+    const selectedMemberId = unmatchedAssignMap[event.id] || donorMemberId || state.members[0]?.id || "";
+    if (!selectedMemberId) return;
+    const alias = (aliasInputMap[event.id] || event.donorName || "").trim();
+    if (!alias) return;
+    await fetch(`/api/donations/aliases?u=${encodeURIComponent(uid)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ alias, memberId: selectedMemberId }),
+    }).catch(() => {});
+    await fetchDonationAliases();
+    pushToonationLog(`별칭 저장: ${alias} -> ${state.members.find((m) => m.id === selectedMemberId)?.name || selectedMemberId}`);
+  }, [aliasInputMap, donorMemberId, fetchDonationAliases, pushToonationLog, state.members, unmatchedAssignMap, user?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const enabledRaw = window.localStorage.getItem("donationAutomation.toonation.enabled");
+      const autoProcessRaw = window.localStorage.getItem("donationAutomation.toonation.autoProcess");
+      const urlRaw = window.localStorage.getItem("donationAutomation.toonation.alertboxUrl");
+      const socketDebugRaw = window.localStorage.getItem("donationAutomation.toonation.socketDebug");
+      const envUrl = (process.env.NEXT_PUBLIC_TOONATION_ALERTBOX_URL || "").trim();
+      setToonationAutoEnabled(enabledRaw === "true");
+      setToonationAutoProcessEnabled(autoProcessRaw === "true");
+      setToonationSocketDebug(socketDebugRaw === "true");
+      setToonationAlertboxUrl(urlRaw || envUrl || "");
+    } catch {
+      // noop
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem("donationAutomation.toonation.enabled", String(toonationAutoEnabled));
+      window.localStorage.setItem("donationAutomation.toonation.autoProcess", String(toonationAutoProcessEnabled));
+      window.localStorage.setItem("donationAutomation.toonation.socketDebug", String(toonationSocketDebug));
+      window.localStorage.setItem("donationAutomation.toonation.alertboxUrl", toonationAlertboxUrl);
+    } catch {
+      // noop
+    }
+  }, [toonationAlertboxUrl, toonationAutoEnabled, toonationAutoProcessEnabled, toonationSocketDebug]);
+
+  useEffect(() => {
+    if (!toonationAutoEnabled || !toonationAlertboxUrl.trim()) {
+      stopToonationListener();
+      setToonationStatus("idle");
+      setToonationBackoffMs(0);
+      setToonationRetryAttempt(0);
+      return;
+    }
+    try {
+      startToonationListener(toonationAlertboxUrl.trim(), {
+        userId: user?.id,
+        socketDebug: toonationSocketDebug,
+        onStatus: (s) => {
+          if (s.kind === "connected") {
+            setToonationStatus("running");
+            setToonationBackoffMs(0);
+            setToonationRetryAttempt(0);
+          } else if (s.kind === "reconnect_attempt") {
+            setToonationStatus("running");
+            setToonationRetryAttempt(s.attempt || 0);
+            setToonationBackoffMs(s.nextDelayMs || 0);
+          } else if (s.kind === "connect_error" || s.kind === "reconnect_error" || s.kind === "reconnect_failed") {
+            setToonationStatus("error");
+          }
+          pushToonationLog(s.message);
+        },
+      });
+      setToonationStatus("running");
+      pushToonationLog("투네 자동수집 시작");
+    } catch {
+      setToonationStatus("error");
+      pushToonationLog("투네 자동수집 시작 실패");
+    }
+    return () => {
+      stopToonationListener();
+      pushToonationLog("투네 자동수집 중지");
+    };
+  }, [toonationAlertboxUrl, toonationAutoEnabled, toonationSocketDebug, user?.id, pushToonationLog]);
+
+  useEffect(() => {
+    void fetchUnmatchedEvents();
+    void fetchDonationAliases();
+    void fetchToonationQueue();
+  }, [fetchUnmatchedEvents, fetchDonationAliases, fetchToonationQueue]);
+
+  useEffect(() => {
+    if (!toonationAutoEnabled) return;
+    const t = window.setInterval(() => {
+      void fetchToonationQueue();
+    }, 3000);
+    return () => window.clearInterval(t);
+  }, [fetchToonationQueue, toonationAutoEnabled]);
+
+  useEffect(() => {
+    if (!toonationAutoProcessEnabled) return;
+    if (toonationQueue.length === 0) return;
+    const t = window.setTimeout(() => {
+      void approveQueueEvent(toonationQueue[0]);
+    }, 1200);
+    return () => window.clearTimeout(t);
+  }, [approveQueueEvent, toonationAutoProcessEnabled, toonationQueue]);
+
+  useEffect(() => {
+    if (toonationBackoffMs <= 0) return;
+    const t = window.setInterval(() => {
+      setToonationBackoffMs((prev) => Math.max(0, prev - 1000));
+    }, 1000);
+    return () => window.clearInterval(t);
+  }, [toonationBackoffMs]);
+
   const addContribution = () => {
     const amount = parseAmount(contributionAmount);
     if (!contributionMemberId) return;
@@ -2979,9 +3350,10 @@ export default function AdminPage() {
       sigMatchDonors,
       state.members || [],
       state.sigMatchSettings,
-      state.sigMatch || {}
+      state.sigMatch || {},
+      state.memberPositions || {}
     ),
-    [sigMatchDonors, state.members, state.sigMatchSettings, state.sigMatch]
+    [sigMatchDonors, state.members, state.sigMatchSettings, state.sigMatch, state.memberPositions]
   );
   const sigSignatureAmountsInput = useMemo(
     () => (state.sigMatchSettings?.signatureAmounts || []).join(", "),
@@ -2997,7 +3369,8 @@ export default function AdminPage() {
         sigMatchDonors,
         state.members || [],
         state.sigMatchSettings,
-        state.sigMatch || {}
+        state.sigMatch || {},
+        state.memberPositions || {}
       );
       const title = `${state.sigMatchSettings?.title || "시그 대전"} 인센티브 정산`;
       await appendSigMatchIncentiveSettlementAndSync(
@@ -5029,12 +5402,9 @@ export default function AdminPage() {
                     <button type="button" className="rounded bg-[#6366f1] px-2 py-1 text-xs hover:bg-[#4f46e5]" onClick={() => window.open(rouletteQuickUrls.progressPath, "_blank", "noopener,noreferrer")}>
                       통합 열기
                     </button>
-                    <button type="button" className="rounded bg-fuchsia-700 px-2 py-1 text-xs hover:bg-fuchsia-600" onClick={() => window.open(rouletteQuickUrls.progressDemoPath, "_blank", "noopener,noreferrer")}>
-                      통합 데모
-                    </button>
                   </div>
                   <p className="text-[11px] text-neutral-400">
-                    점검 순서: <span className="text-neutral-200">통합 데모</span> → <span className="text-neutral-200">실제 통합</span>
+                    방송·점검은 <span className="text-neutral-200">통합 오버레이</span> URL만 사용하세요.
                     {selectedMemberId ? (
                       <>
                         {" "}(멤버 필터는 아래 드롭다운으로 선택된 상태가 URL에 포함됩니다)
@@ -5090,29 +5460,6 @@ export default function AdminPage() {
                       }}
                     />
                     전체 활성 시그 보충
-                  </label>
-                  <label className="inline-flex items-center gap-1 rounded border border-white/10 bg-black/20 px-2 py-1 text-[11px] text-neutral-300">
-                    <input
-                      type="checkbox"
-                      checked={state.rouletteState?.menuFillFromDemo === true}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setState((prev) => {
-                          const prevVal = prev.rouletteState?.menuFillFromDemo === true;
-                          if (prevVal === checked) return prev;
-                          const next = {
-                            ...prev,
-                            rouletteState: {
-                              ...prev.rouletteState,
-                              menuFillFromDemo: checked,
-                            },
-                          };
-                          persistState(next);
-                          return next;
-                        });
-                      }}
-                    />
-                    데모 풀 보충
                   </label>
                   <div className="basis-full rounded border border-white/10 bg-black/20 px-3 py-2 max-w-xl">
                     <div className="text-xs text-neutral-300 mb-1">확정 결과 카드 크기 (%)</div>
@@ -5193,31 +5540,6 @@ export default function AdminPage() {
                     }}
                   >
                     미리보기 열기
-                  </button>
-                  <button
-                    type="button"
-                    className={`rounded px-2 py-1 text-xs shrink-0 ${copiedId === "dash-sig-sales-demo" ? "bg-emerald-600" : "bg-fuchsia-700 hover:bg-fuchsia-600"}`}
-                    onClick={() => {
-                      const rs = clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct);
-                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}`;
-                      void copyUrl(u, "dash-sig-sales-demo");
-                    }}
-                  >
-                    {copiedId === "dash-sig-sales-demo" ? "복사됨!" : "데모 URL"}
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded bg-fuchsia-700 px-2 py-1 text-xs hover:bg-fuchsia-600"
-                    onClick={() => {
-                      const rs = clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct);
-                      window.open(
-                        `/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}`,
-                        "_blank",
-                        "noopener,noreferrer"
-                      );
-                    }}
-                  >
-                    데모 열기
                   </button>
                 </div>
                 <div className="rounded-lg border border-white/10 bg-black/30 p-3">
@@ -5474,6 +5796,13 @@ export default function AdminPage() {
                               }}
                             />
                           </label>
+                          <button
+                            type="button"
+                            className="rounded bg-indigo-800 px-2 py-1 text-xs hover:bg-indigo-700"
+                            onClick={() => openSigImagePicker({ kind: "rolling", id: it.id })}
+                          >
+                            기존 이미지 선택
+                          </button>
                           <div className="flex gap-1">
                             <button
                               type="button"
@@ -5632,6 +5961,13 @@ export default function AdminPage() {
                     />
                     <button
                       type="button"
+                      className="px-2 py-1 rounded bg-indigo-800 hover:bg-indigo-700 text-xs"
+                      onClick={() => openSigImagePicker({ kind: "soldOutStamp" })}
+                    >
+                      기존 이미지 선택
+                    </button>
+                    <button
+                      type="button"
                       className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
                       onClick={() => updateSigSoldOutStampUrl("")}
                     >
@@ -5689,6 +6025,13 @@ export default function AdminPage() {
                           uploadNewSigImage(file);
                         }}
                       />
+                      <button
+                        type="button"
+                        className="w-fit rounded bg-indigo-800 px-2 py-1 text-xs hover:bg-indigo-700"
+                        onClick={() => openSigImagePicker({ kind: "newSig" })}
+                      >
+                        기존 이미지 선택
+                      </button>
                     </div>
                     <button
                       className="px-3 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-sm disabled:opacity-60 disabled:cursor-not-allowed"
@@ -5703,7 +6046,7 @@ export default function AdminPage() {
                       <div className="text-[11px] text-neutral-400 mb-2">신규 시그 이미지 미리보기</div>
                       <div className="relative h-20 w-20 overflow-hidden rounded border border-white/10 bg-black/30">
                         <Image
-                          src={newSigPreviewUrl || resolveSigPreviewSrc(newSigImageUrl)}
+                          src={newSigPreviewUrl || resolveSigPreviewSrc(newSigImageUrl, newSigName)}
                           alt="신규 시그 미리보기"
                           fill
                           unoptimized
@@ -5961,6 +6304,13 @@ export default function AdminPage() {
                               uploadSigImage(item.id, file);
                             }}
                           />
+                          <button
+                            type="button"
+                            className="w-fit rounded bg-indigo-800 px-2 py-1 text-xs hover:bg-indigo-700"
+                            onClick={() => openSigImagePicker({ kind: "inventory", id: item.id })}
+                          >
+                            기존 이미지 선택
+                          </button>
                         </div>
                       </div>
                       {(sigPreviewMap[item.id] || item.imageUrl) ? (
@@ -5971,14 +6321,14 @@ export default function AdminPage() {
                             title="클릭해서 크게 보기"
                             onClick={() =>
                               setSigImagePreviewModal({
-                                src: sigPreviewMap[item.id] || resolveSigPreviewSrc(item.imageUrl),
+                                src: sigPreviewMap[item.id] || resolveSigPreviewSrc(item.imageUrl, item.name),
                                 name: item.name,
                                 rawUrl: item.imageUrl || "",
                               })
                             }
                           >
                             <Image
-                              src={sigPreviewMap[item.id] || resolveSigPreviewSrc(item.imageUrl)}
+                              src={sigPreviewMap[item.id] || resolveSigPreviewSrc(item.imageUrl, item.name)}
                               alt={`${item.name} 미리보기`}
                               fill
                               unoptimized
@@ -6019,6 +6369,76 @@ export default function AdminPage() {
                 <div className="text-xs text-neutral-500">
                   「보드 노출」은 <code>/overlay/sig-sales</code> 상단 롤링 그리드,「판매 활성」은 회전판 메뉴 후보에 포함됩니다. 시그 추가/멤버 지정/판매량 조절은 즉시 `/api/state`를 통해 Redis에 반영됩니다.
                 </div>
+              {sigImagePickerTarget ? (
+                <div
+                  className="fixed inset-0 z-[210] flex items-center justify-center bg-black/80 px-4 py-6"
+                  onClick={() => setSigImagePickerTarget(null)}
+                >
+                  <div
+                    className="w-full max-w-5xl rounded-xl border border-white/20 bg-neutral-950/95 p-3 shadow-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="text-sm font-semibold text-white">ImageKit 기존 이미지 선택</div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="rounded bg-neutral-700 px-2 py-1 text-xs text-white hover:bg-neutral-600"
+                          onClick={() => void loadImageKitAssets()}
+                        >
+                          새로고침
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded bg-neutral-700 px-2 py-1 text-xs text-white hover:bg-neutral-600"
+                          onClick={() => setSigImagePickerTarget(null)}
+                        >
+                          닫기
+                        </button>
+                      </div>
+                    </div>
+                    <div className="mb-2 flex items-center gap-2">
+                      <input
+                        className="w-full rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs"
+                        placeholder="파일명 검색"
+                        value={imageKitAssetQuery}
+                        onChange={(e) => setImageKitAssetQuery(e.target.value)}
+                      />
+                    </div>
+                    {imageKitAssetsError ? (
+                      <div className="mb-2 rounded border border-rose-400/40 bg-rose-900/25 px-2 py-1 text-xs text-rose-100">
+                        목록 조회 실패: {imageKitAssetsError}
+                      </div>
+                    ) : null}
+                    <div className="max-h-[70vh] overflow-auto rounded border border-white/10 bg-black/30 p-2">
+                      {imageKitAssetsLoading ? (
+                        <div className="text-xs text-neutral-400">이미지 목록 불러오는 중...</div>
+                      ) : filteredImageKitAssets.length === 0 ? (
+                        <div className="text-xs text-neutral-400">표시할 이미지가 없습니다.</div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-6">
+                          {filteredImageKitAssets.map((asset) => (
+                            <button
+                              key={asset.fileId || asset.url}
+                              type="button"
+                              className="rounded border border-white/10 bg-black/30 p-1 text-left hover:border-violet-300/60"
+                              onClick={() => applyImageKitAssetToTarget(asset.url)}
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={asset.thumbnailUrl || asset.url}
+                                alt={asset.name || "asset"}
+                                className="h-24 w-full rounded object-cover"
+                              />
+                              <div className="mt-1 truncate text-[11px] text-neutral-200">{asset.name || asset.url}</div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
               {sigImagePreviewModal ? (
                 <div
                   className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4 py-6"
@@ -6343,6 +6763,289 @@ export default function AdminPage() {
                 </button>
               </div>
               <div className="text-sm text-neutral-400 mt-2">입력값에 콤마/문자 포함되어도 숫자만 인식</div>
+              <div className="mt-4 rounded border border-cyan-500/20 bg-cyan-500/5 p-3 space-y-3">
+                <div className="rounded border border-white/10 bg-black/25 px-3 py-2">
+                  <div className="text-xs font-semibold text-cyan-200">투네 Alertbox URL 설정</div>
+                  <div className="text-[11px] text-neutral-400 mt-1">
+                    투네이션 위젯 URL(예: https://toon.at/widget/alertbox/...)을 넣으면 자동수집과 재연결이 동작합니다.
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className={`px-3 py-1.5 rounded text-xs font-semibold ${toonationAutoEnabled ? "bg-emerald-600 hover:bg-emerald-500" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                    onClick={() => setToonationAutoEnabled((v) => !v)}
+                  >
+                    투네 자동수집 {toonationAutoEnabled ? "ON" : "OFF"}
+                  </button>
+                  <span className={`text-xs ${toonationStatus === "running" ? "text-emerald-300" : toonationStatus === "error" ? "text-rose-300" : "text-neutral-400"}`}>
+                    상태: {toonationStatus === "running" ? "연결중" : toonationStatus === "error" ? "오류" : "대기"}
+                  </span>
+                  {toonationRetryAttempt > 0 && (
+                    <span className="text-xs text-amber-300">
+                      재시도 #{toonationRetryAttempt} / 다음 시도 {Math.ceil(toonationBackoffMs / 1000)}초
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className={`px-3 py-1.5 rounded text-xs font-semibold ${toonationAutoProcessEnabled ? "bg-violet-600 hover:bg-violet-500" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                    onClick={() => setToonationAutoProcessEnabled((v) => !v)}
+                  >
+                    큐 자동반영 {toonationAutoProcessEnabled ? "ON" : "OFF"}
+                  </button>
+                  <button
+                    type="button"
+                    className={`px-3 py-1.5 rounded text-xs font-semibold ${toonationSocketDebug ? "bg-amber-700 hover:bg-amber-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                    onClick={() => setToonationSocketDebug((v) => !v)}
+                    title="브라우저 개발자 도구 콘솔에 투네 소켓 이벤트명·JSON 출력"
+                  >
+                    소켓 콘솔 로그 {toonationSocketDebug ? "ON" : "OFF"}
+                  </button>
+                </div>
+                <input
+                  className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                  placeholder="투네 Alertbox URL (예: https://toon.at/widget/alertbox/KEY)"
+                  value={toonationAlertboxUrl}
+                  onChange={(e) => setToonationAlertboxUrl(e.target.value)}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
+                    onClick={() => setToonationAlertboxUrl("https://toon.at/widget/alertbox/f28dc2204fbaf86fd9df74c12f435c73")}
+                  >
+                    제공된 URL 채우기
+                  </button>
+                  {toonationAlertboxUrl.trim() ? (
+                    <a
+                      href={toonationAlertboxUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-2 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-xs"
+                    >
+                      Alertbox 열기
+                    </a>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 rounded bg-fuchsia-700 hover:bg-fuchsia-600 text-xs font-semibold"
+                    onClick={injectToonationTestEvent}
+                  >
+                    테스트 이벤트 주입(투네)
+                  </button>
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
+                    onClick={() => void fetchUnmatchedEvents()}
+                  >
+                    미매칭 새로고침
+                  </button>
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
+                    onClick={() => void fetchToonationQueue()}
+                  >
+                    대기 리스트 새로고침
+                  </button>
+                </div>
+                <div className="rounded border border-white/10 bg-black/20 p-2">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="text-xs text-neutral-300">투네이션 대기 리스트(모니터링) ({toonationQueue.length})</div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="px-2 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-[11px]"
+                        onClick={() => void approveAllQueueEvents()}
+                      >
+                        일괄 승인 반영
+                      </button>
+                      <button
+                        type="button"
+                        className="px-2 py-0.5 rounded bg-neutral-700 hover:bg-neutral-600 text-[11px]"
+                        onClick={async () => {
+                          const uid = user?.id || "";
+                          if (!uid) return;
+                          await fetch(`/api/donations/queue?u=${encodeURIComponent(uid)}`, {
+                            method: "DELETE",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ clearAll: true }),
+                          }).catch(() => {});
+                          await fetchToonationQueue();
+                        }}
+                      >
+                        모두 비우기
+                      </button>
+                    </div>
+                  </div>
+                  <div className="max-h-[200px] overflow-auto pr-1 space-y-1">
+                    {toonationQueue.length === 0 && (
+                      <div className="text-xs text-neutral-500">대기 이벤트가 없습니다.</div>
+                    )}
+                    {toonationQueue.map((evt) => (
+                      <div key={evt.id} className="text-xs text-neutral-300 flex items-center justify-between gap-2 rounded border border-white/10 bg-neutral-900/50 px-2 py-1">
+                        <div className="w-full">
+                          <div className="flex items-center justify-between gap-2">
+                            <span>
+                              [{new Date(evt.at).toLocaleTimeString("ko-KR", { hour12: false })}] {evt.donorName} / {evt.amount.toLocaleString("ko-KR")}원
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                className="px-2 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-[11px]"
+                                onClick={() => void approveQueueEvent(evt)}
+                              >
+                                승인 반영
+                              </button>
+                              <button
+                                type="button"
+                                className="px-2 py-0.5 rounded bg-neutral-700 hover:bg-neutral-600 text-[11px]"
+                                onClick={async () => {
+                                  await removeQueueEvent(evt.id);
+                                  await fetchToonationQueue();
+                                }}
+                              >
+                                반려/제거
+                              </button>
+                            </div>
+                          </div>
+                          <div className="mt-1 text-[11px] text-neutral-400">
+                            <div className="text-neutral-500 mb-0.5">대기 중 시그</div>
+                            {(() => {
+                              const list = evt.sigListSnapshot || [];
+                              const waiting = list.filter(
+                                (s) =>
+                                  s.isActive &&
+                                  (s.maxCount == null || Number.isNaN(Number(s.maxCount)) || (s.soldCount || 0) < s.maxCount)
+                              );
+                              if (waiting.length === 0) {
+                                return <div className="text-neutral-600">없음</div>;
+                              }
+                              return (
+                                <ul className="max-h-[88px] overflow-y-auto space-y-0.5 pl-3 list-disc text-neutral-300">
+                                  {waiting.map((s) => (
+                                    <li key={`${evt.id}-${s.id}`}>
+                                      {s.name} ({s.price.toLocaleString("ko-KR")}원)
+                                    </li>
+                                  ))}
+                                </ul>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded border border-white/10 bg-black/20 p-2">
+                  <div className="text-xs text-neutral-300 mb-2">미매칭 후원 목록 ({unmatchedEvents.length})</div>
+                  <div className="max-h-[220px] overflow-auto pr-1 space-y-2">
+                    {unmatchedEvents.length === 0 && (
+                      <div className="text-xs text-neutral-500">현재 미매칭 후원이 없습니다.</div>
+                    )}
+                    {unmatchedEvents.map((evt) => (
+                      <div key={evt.id} className="rounded border border-white/10 bg-neutral-900/60 p-2">
+                        <div className="text-xs text-neutral-300">
+                          {evt.donorName} / {evt.amount.toLocaleString("ko-KR")}원
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <select
+                            className="px-2 py-1 rounded bg-neutral-900 border border-white/10 text-xs"
+                            value={unmatchedAssignMap[evt.id] || donorMemberId || state.members[0]?.id || ""}
+                            onChange={(e) => setUnmatchedAssignMap((prev) => ({ ...prev, [evt.id]: e.target.value }))}
+                          >
+                            {state.members.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-xs"
+                            onClick={() => void applyUnmatchedEvent(evt)}
+                          >
+                            선택 멤버로 반영
+                          </button>
+                          <input
+                            className="px-2 py-1 rounded bg-neutral-900 border border-white/10 text-xs min-w-[140px]"
+                            placeholder="별칭 (기본: 후원자명)"
+                            value={aliasInputMap[evt.id] ?? evt.donorName}
+                            onChange={(e) => setAliasInputMap((prev) => ({ ...prev, [evt.id]: e.target.value }))}
+                          />
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded bg-sky-700 hover:bg-sky-600 text-xs"
+                            onClick={() => void saveAliasForUnmatched(evt)}
+                          >
+                            별칭 저장
+                          </button>
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-xs"
+                            onClick={async () => {
+                              await saveAliasForUnmatched(evt);
+                              await applyUnmatchedEvent(evt);
+                            }}
+                          >
+                            별칭 저장 후 반영
+                          </button>
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded bg-rose-700 hover:bg-rose-600 text-xs"
+                            onClick={() => void removeUnmatchedEvent(evt.id)}
+                          >
+                            목록에서 제거
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded border border-white/10 bg-black/20 p-2">
+                  <div className="text-xs text-neutral-300 mb-2">별칭 목록 ({donorAliases.length})</div>
+                  <div className="max-h-[140px] overflow-auto pr-1 space-y-1">
+                    {donorAliases.length === 0 && (
+                      <div className="text-xs text-neutral-500">등록된 별칭이 없습니다.</div>
+                    )}
+                    {donorAliases.map((a) => (
+                      <div key={`${a.alias}:${a.memberId}`} className="text-xs text-neutral-300 flex items-center justify-between gap-2">
+                        <span>{a.alias} → {state.members.find((m) => m.id === a.memberId)?.name || a.memberId}</span>
+                        <button
+                          type="button"
+                          className="px-2 py-0.5 rounded bg-neutral-700 hover:bg-neutral-600 text-[11px]"
+                          onClick={async () => {
+                            const uid = user?.id || "";
+                            if (!uid) return;
+                            await fetch(`/api/donations/aliases?u=${encodeURIComponent(uid)}`, {
+                              method: "DELETE",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ alias: a.alias }),
+                            }).catch(() => {});
+                            await fetchDonationAliases();
+                          }}
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded border border-white/10 bg-black/20 p-2">
+                  <div className="text-xs text-neutral-300 mb-2">자동수집 시작/중지 로그 ({toonationLogs.length})</div>
+                  <div className="max-h-[160px] overflow-auto pr-1 space-y-1">
+                    {toonationLogs.length === 0 && (
+                      <div className="text-xs text-neutral-500">로그가 없습니다.</div>
+                    )}
+                    {toonationLogs.map((log) => (
+                      <div key={log.id} className="text-xs text-neutral-300">
+                        [{new Date(log.at).toLocaleTimeString("ko-KR", { hour12: false })}] {log.message}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </section>
 
             <section id="contribution-management" className={`${panelCardClass} p-4 md:p-6`}>
@@ -7388,7 +8091,7 @@ export default function AdminPage() {
                                   <label className="text-xs text-neutral-400">후원(원)</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" type="number" value={p.goal} onChange={(e) => updatePreset(p.id, { goal: e.target.value })} />
                                   <p className="col-span-1 sm:col-span-2 text-[11px] text-neutral-500 leading-snug">
-                                    통합·목표 오버레이: 후원 합계가 목표 이상이면 이 금액이 자동으로 약 10% 증가합니다. OBS URL에{" "}
+                                    통합·목표 오버레이: 후원 합계가 목표 이상이면 이 금액이 자동으로 고정 200만 원씩 증가합니다. OBS URL에{" "}
                                     <code className="rounded bg-black/40 px-1 text-neutral-400">goal=숫자</code>
                                     가 있으면 상향이 적용되지 않습니다(관리자 Prism 복사 URL에는 포함하지 않음). 비활성:{" "}
                                     <code className="rounded bg-black/40 px-1 text-neutral-400">goalAutoStretch=0</code>
@@ -8044,7 +8747,7 @@ export default function AdminPage() {
                 <span className="text-[11px] text-neutral-500">명 (기본 슬롯·이름은 멤버1… 순)</span>
               </div>
               <p className="mt-1.5 text-[10px] text-neutral-500 leading-snug">
-                후원 목표는 저장된 기준선(goalBaseline)이 있으면 그 금액으로 되돌리고, 없으면 자동 상향만 역추정합니다. 확실히 맞추려면 오버레이 프리셋에서 목표 금액을 한 번 저장해 주세요.
+                후원 초기화 시 목표는 저장된 기준선(goalBaseline)이 있으면 그 금액으로 되돌립니다. 기준선이 없으면 목표 숫자는 바꾸지 않습니다. 달성 시 자동 상향은 항상 고정 200만 원입니다.
               </p>
             </div>
             <div className="space-y-2 mt-4">

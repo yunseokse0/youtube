@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
-import { getSigSalesWheelDemoPath } from "@/lib/sig-sales-wheel-demo";
 
-/** 짧은 주소: http://localhost:3000/wheel */
+/** 짧은 주소: 회전판은 `/overlay/sig-sales` 사용 */
 export default function WheelShortcutPage() {
-  redirect(getSigSalesWheelDemoPath());
+  redirect("/overlay/sig-sales");
 }

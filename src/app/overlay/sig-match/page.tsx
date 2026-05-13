@@ -198,18 +198,41 @@ function SigMatchOverlayInner() {
         sigMatchDonors,
         state?.members || [],
         state?.sigMatchSettings || defaultState().sigMatchSettings,
-        state?.sigMatch || {}
+        state?.sigMatch || {},
+        state?.memberPositions || {}
       ),
-    [sigMatchDonors, state?.members, state?.sigMatchSettings, state?.sigMatch]
+    [sigMatchDonors, state?.members, state?.sigMatchSettings, state?.sigMatch, state?.memberPositions]
   );
   const memberMap = useMemo(() => new Map((state?.members || []).map((m) => [m.id, m.name])), [state?.members]);
+  const blockedMemberIds = useMemo(
+    () =>
+      new Set(
+        (state?.members || [])
+          .filter(
+            (m) =>
+              Boolean(m.operating) ||
+              /운영비/i.test(String(m.name || "")) ||
+              /운영비/i.test(String(state?.memberPositions?.[m.id] || ""))
+          )
+          .map((m) => m.id)
+      ),
+    [state?.members, state?.memberPositions]
+  );
   const duelData = useMemo((): SigMatchDuelLayout => {
     const pools = (state?.sigMatchSettings?.sigMatchPools || []).filter(
       (p) => Array.isArray(p.memberIds) && p.memberIds.length >= 1
     );
     const scoreMap = new Map(ranking.map((r) => [r.memberId, r.score]));
+    /** 집계(ranking)에 올라온 멤버만 대결 표시 — 운영비 등 집계 제외 멤버가 풀에 있어도 VS 상대로 나오지 않게 함 */
+    const playableIdSet = new Set(ranking.map((r) => r.memberId));
     const makeSide = (memberIds: string[], fallbackLabel: string): SigMatchSide => {
-      const ids = [...new Set(memberIds.filter(Boolean))];
+      const ids = [
+        ...new Set(
+          memberIds.filter(
+            (id) => Boolean(id) && playableIdSet.has(id) && !blockedMemberIds.has(id)
+          )
+        ),
+      ];
       const label = ids.map((id) => memberMap.get(id) || id).join(" · ") || fallbackLabel;
       const score = ids.reduce((sum, id) => sum + (scoreMap.get(id) || 0), 0);
       return { ids, label, score };
@@ -276,7 +299,7 @@ function SigMatchOverlayInner() {
       score: items.reduce((s, x) => s + x.score, 0),
     });
     return { mode: "dual", left: pack(leftList), right: pack(rightList) };
-  }, [ranking, state?.sigMatchSettings?.sigMatchPools, memberMap]);
+  }, [ranking, state?.sigMatchSettings?.sigMatchPools, memberMap, blockedMemberIds]);
   /** 식사대전(/overlay/meal-match)과 동일하게 generalTimer + 서버 동기화(lastUpdated) 기준 */
   const timerState = state?.generalTimer || null;
   const [, setTimerTick] = useState(0);

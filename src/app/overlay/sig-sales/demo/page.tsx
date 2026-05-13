@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
-import { getSigSalesWheelDemoPath } from "@/lib/sig-sales-wheel-demo";
 
-/** 로컬에서 바로 회전판 순차 연출 테스트 — `npm run dev` 후 이 경로만 열면 됨 */
+/** 예전 데모 경로 — 통합 오버레이로 연결 */
 export default function SigSalesWheelDemoPage() {
-  redirect(getSigSalesWheelDemoPath());
+  redirect("/overlay/sig-sales");
 }

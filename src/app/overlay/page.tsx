@@ -47,9 +47,38 @@ function tryReadSnapshotFromStorage(snapKey: string | null): AppState | null {
   return null;
 }
 
+function buildOverlayVisualSignature(state: AppState | null): string {
+  if (!state) return "";
+  const members = (state.members || [])
+    .map((m) => ({
+      id: m.id,
+      name: m.name,
+      account: m.account || 0,
+      toon: m.toon || 0,
+      operating: Boolean(m.operating),
+    }))
+    .sort((a, b) => String(a.id || "").localeCompare(String(b.id || "")));
+  const donors = (state.donors || [])
+    .map((d) => ({
+      id: d.id,
+      name: d.name,
+      amount: d.amount || 0,
+      target: d.target || "",
+      at: d.at || 0,
+    }))
+    .sort((a, b) => String(a.id || "").localeCompare(String(b.id || "")));
+  return JSON.stringify({
+    members,
+    donors,
+    memberPositions: state.memberPositions || {},
+    rankPositionLabels: state.rankPositionLabels || [],
+  });
+}
+
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
   const [state, setState] = useState<AppState | null>(null);
   const lastUpdatedRef = useRef(0);
+  const lastVisualSigRef = useRef("");
   const loadRef = useRef(() => loadStateFromApi(userId));
   loadRef.current = () => loadStateFromApi(userId);
   const syncingRef = useRef(false);
@@ -84,8 +113,14 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
     if (!incoming) return;
     if (shouldDiscardEmpty(incoming as AppState)) return;
     const ts = (incoming as any).updatedAt || Date.now();
-    lastUpdatedRef.current = ts;
     const next = incoming as AppState;
+    const nextSig = buildOverlayVisualSignature(next);
+    if (nextSig === lastVisualSigRef.current) {
+      lastUpdatedRef.current = Math.max(lastUpdatedRef.current, ts);
+      return;
+    }
+    lastVisualSigRef.current = nextSig;
+    lastUpdatedRef.current = ts;
     setState(next);
     if (isViable(next)) { lastGoodRef.current = next; saveLastGood(next); }
   }, [saveLastGood]);
@@ -105,11 +140,13 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
     const local = readLocalStateIfExists();
     const lastGood = loadLastGood();
     if (local && isViable(local)) {
+      lastVisualSigRef.current = buildOverlayVisualSignature(local);
       setState(local);
       lastUpdatedRef.current = local.updatedAt || 0;
       lastGoodRef.current = local;
       saveLastGood(local);
     } else if (lastGood && isViable(lastGood)) {
+      lastVisualSigRef.current = buildOverlayVisualSignature(lastGood);
       setState(lastGood);
       lastUpdatedRef.current = lastGood.updatedAt || 0;
       lastGoodRef.current = lastGood;
@@ -125,16 +162,24 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       try {
         const localNow = readLocalStateIfExists();
         if (localNow && localNow.updatedAt && localNow.updatedAt > lastUpdatedRef.current && !shouldDiscardEmpty(localNow)) {
+          const nextSig = buildOverlayVisualSignature(localNow);
           lastUpdatedRef.current = localNow.updatedAt;
-          setState(localNow);
+          if (nextSig !== lastVisualSigRef.current) {
+            lastVisualSigRef.current = nextSig;
+            setState(localNow);
+          }
           if (isViable(localNow)) { lastGoodRef.current = localNow; saveLastGood(localNow); }
         }
         const data = await loadRef.current();
         // Keep local state when API is stale (e.g. API save failed),
         // and only accept strictly newer snapshots from server.
         if (data && data.updatedAt && data.updatedAt > lastUpdatedRef.current && !shouldDiscardEmpty(data)) {
+          const nextSig = buildOverlayVisualSignature(data);
           lastUpdatedRef.current = data.updatedAt;
-          setState(data);
+          if (nextSig !== lastVisualSigRef.current) {
+            lastVisualSigRef.current = nextSig;
+            setState(data);
+          }
           if (isViable(data)) { lastGoodRef.current = data; saveLastGood(data); }
         } else if (!localNow && !data) {
           // API 실패 + localStorage 비어있음 → 기본 상태로라도 프리뷰 표시
@@ -151,13 +196,18 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       if (e.key !== storageKey(userId ?? undefined)) return;
       const localNow = readLocalStateIfExists();
       if (localNow && localNow.updatedAt && localNow.updatedAt > lastUpdatedRef.current && !shouldDiscardEmpty(localNow)) {
+        const nextSig = buildOverlayVisualSignature(localNow);
         lastUpdatedRef.current = localNow.updatedAt;
-        setState(localNow);
+        if (nextSig !== lastVisualSigRef.current) {
+          lastVisualSigRef.current = nextSig;
+          setState(localNow);
+        }
         if (isViable(localNow)) { lastGoodRef.current = localNow; saveLastGood(localNow); }
       }
     };
     // Faster cadence for donor/member sync in overlay runtime.
-    const POLL_MS = 700;
+    const host = (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("host") : "") || "";
+    const POLL_MS = host ? 1200 : 700;
     const timer = window.setInterval(() => {
       void syncOnce();
     }, POLL_MS);
@@ -1179,7 +1229,6 @@ function OverlayInner() {
     () => ((ready && s && Array.isArray((s as AppState).rankPositionLabels)) ? (s as AppState).rankPositionLabels : []),
     [ready, s]
   );
-  const displaySum = useCountUp(rounded, 800);
   const presetId = (rawSp.get("p") || "").trim();
   const activePreset = useMemo(() => {
     if (presetId) return overlayPresets.find((x) => x.id === presetId) || null;
@@ -1208,6 +1257,10 @@ function OverlayInner() {
   );
   const hostParam = (rawSp.get("host") || "").toLowerCase();
   const externalHost = hostParam === "prism" || hostParam === "obs" || hostParam === "external";
+  // OBS/Prism는 렌더러 특성상 텍스트·transform 미세 떨림이 발생하기 쉬워 기본 안전 모드 ON.
+  const externalSafeMode = externalHost && (rawSp.get("externalSafe") || "true").toLowerCase() !== "false";
+  // 강제 고정 모드: 미세 떨림 원인(자동 맞춤/스케일/모션)을 진단용으로 일괄 차단한다.
+  const stableMode = (sp.get("stable") || "false").toLowerCase() === "true";
   const demoMode = ((sp.get("demo") || "").toLowerCase() === "true") || ((sp.get("test") || "").toLowerCase() === "true");
   useEffect(() => {
     let cancelled = false;
@@ -1237,7 +1290,7 @@ function OverlayInner() {
   const fitWidthToViewport = (px: number, margin = 24) => `min(${Math.max(1, Math.round(px))}px, calc(100vw - ${margin}px))`;
 
   const compact = (sp.get("compact") || "false").toLowerCase() === "true";
-  const autoFont = (sp.get("autoFont") || "false").toLowerCase() === "true";
+  const autoFont = !stableMode && (sp.get("autoFont") || "false").toLowerCase() === "true";
   const tight = (sp.get("tight") || "false").toLowerCase() === "true";
   const verticalParam = (sp.get("vertical") || "false").toLowerCase() === "true";
   const [isVertical, setIsVertical] = useState(
@@ -1253,9 +1306,12 @@ function OverlayInner() {
   const fitBase = Math.max(240, Math.min(1600, parseInt(sp.get("fitBase") || (isVertical ? "400" : "480"), 10)));
   const fitMinMember = Math.max(8, Math.min(40, parseInt(sp.get("fitMinMember") || (isVertical ? "22" : "10"), 10)));
   const fitMaxMember = Math.max(fitMinMember, Math.min(80, parseInt(sp.get("fitMaxMember") || (isVertical ? "44" : "24"), 10)));
+  // 외부 호스트는 프리셋 scale 복원으로 리프레시 때 떨림이 재발할 수 있어 raw URL에 명시된 경우만 scale을 반영한다.
+  const scaleParam = externalHost ? rawSp.get("scale") : sp.get("scale");
   // 기본 비정수 스케일(1.1)은 OBS/브라우저에서 텍스트 가장자리를 흐리게 만들 수 있어 기본을 1로 유지한다.
-  const scale = Math.max(0.5, Math.min(4, parseFloat(sp.get("scale") || (isVertical ? "1" : (compact ? "0.9" : "1")))));
-  const hasExplicitScale = sp.get("scale") !== null;
+  const parsedScale = Math.max(0.5, Math.min(4, parseFloat(scaleParam || (isVertical ? "1" : (compact ? "0.9" : "1")))));
+  const scale = stableMode ? 1 : parsedScale;
+  const hasExplicitScale = scaleParam !== null;
   const memberSize = Math.max(10, Math.min(80, parseInt(sp.get("memberSize") || (compact ? "16" : (isVertical ? "40" : "24")), 10)));
   const totalSize = Math.max(14, Math.min(160, parseInt(sp.get("totalSize") || (isVertical ? "48" : "30"), 10)));
   const dense = (sp.get("dense") || "false").toLowerCase() === "true";
@@ -1468,15 +1524,16 @@ function OverlayInner() {
   const defBankCh = (sp.get("bankCh") && parseInt(sp.get("bankCh")!, 10)) || (fullAmountMode ? (compact ? 11 : 13) : (compact ? 10 : 11));
   const defToonCh = (sp.get("toonCh") && parseInt(sp.get("toonCh")!, 10)) || (fullAmountMode ? (compact ? 11 : 13) : (compact ? 10 : 11));
   const defTotalCh = (sp.get("totalCh") && parseInt(sp.get("totalCh")!, 10)) || (fullAmountMode ? (compact ? 8 : 9) : (compact ? 6 : 7));
+  const contributionChParam = externalHost ? rawSp.get("contributionCh") : sp.get("contributionCh");
   const defContributionCh =
-    (sp.get("contributionCh") && parseInt(sp.get("contributionCh")!, 10)) || (fullAmountMode ? (compact ? 10 : 11) : (compact ? 10 : 11));
+    (contributionChParam && parseInt(contributionChParam, 10)) || (fullAmountMode ? (compact ? 10 : 11) : (compact ? 10 : 11));
   const bankCh = Math.max(8, Math.min(20, defBankCh));
   const toonCh = Math.max(8, Math.min(20, defToonCh));
   const totalCh = Math.max(6, Math.min(12, defTotalCh));
   /** 순위 열: 헤더「순위」·「#12」 등이 잘리지 않도록 `ch` 하한 확보(URL `rankCh`) */
   const rankColCh = Math.max(5, Math.min(10, parseInt(sp.get("rankCh") || "5", 10)));
-  /** 기여도 열: 마지막 열 특성상 우측 경계 잘림이 생기기 쉬워 최소 폭을 한 단계 올린다. */
-  const contributionCh = Math.max(12, Math.min(16, defContributionCh));
+  /** 기여도 열: 우측 이격은 줄이되, 방송 합성 환경에서 마지막 열 잘림이 나지 않게 최소폭을 보장 */
+  const contributionCh = Math.max(10, Math.min(14, defContributionCh));
   const showSideDonors = false;
   const donorsSide = (sp.get("donorsSide") || "right").toLowerCase();
   const donorsWidth = Math.max(120, Math.min(600, parseInt(sp.get("donorsWidth") || "220", 10)));
@@ -1553,7 +1610,7 @@ function OverlayInner() {
     const raw = (sp.get("totalLineVisible") || "").trim().toLowerCase();
     return raw === "true";
   })();
-  const showTableBgGif = Boolean(tableBgGifUrl);
+  const showTableBgGif = !stableMode && Boolean(tableBgGifUrl);
   const tableBgAnimated = useMemo(() => resolveAnimatedSourceForEmbed(tableBgGifUrl), [tableBgGifUrl]);
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1606,9 +1663,12 @@ function OverlayInner() {
   const renderW = sp.get("renderWidth") ? parseInt(sp.get("renderWidth")!, 10) : null;
   const renderH = sp.get("renderHeight") ? parseInt(sp.get("renderHeight")!, 10) : null;
   const isPreviewGuide = sp.get("previewGuide") === "true";
-  const autoFit = (sp.get("autoFit") || "none").toLowerCase() as "none" | "width" | "height" | "contain" | "cover";
+  const autoFitParam = externalHost ? rawSp.get("autoFit") : sp.get("autoFit");
+  const autoFitRaw = ((autoFitParam || "none").toLowerCase()) as "none" | "width" | "height" | "contain" | "cover";
+  const autoFit = stableMode ? "none" : autoFitRaw;
+  const zoomModeParam = externalHost ? rawSp.get("zoomMode") : sp.get("zoomMode");
   const zoomMode = (
-    (sp.get("zoomMode") || (externalHost ? "neutral" : "follow")).toLowerCase() as "follow" | "invert" | "neutral"
+    (zoomModeParam || (externalHost ? "neutral" : "follow")).toLowerCase() as "follow" | "invert" | "neutral"
   );
   const fitPin = centerFixed ? "cc" : ((sp.get("fitPin") || "cc").toLowerCase() as "cc" | "tl" | "tr" | "bl" | "br" | "tc" | "bc" | "cl" | "cr");
   const showGuide = (sp.get("guide") || "false").toLowerCase() === "true";
@@ -1621,6 +1681,9 @@ function OverlayInner() {
   const [centerZoomScale, setCenterZoomScale] = useState(1);
   useEffect(() => {
     if (!centerFixed) { setCenterZoomScale(1); return; }
+    // Prism/OBS 등 외부 호스트는 고정 캔버스이며 visualViewport/윈도우 변화에 맞출 필요가 없다.
+    // 잦은 scale 갱신이 transform: scale()을 흔들리게 만드는 주요 원인이 됨.
+    if (externalHost) { setCenterZoomScale(1); return; }
     if (typeof window === "undefined") return;
     if (!baseViewportRef.current) {
       baseViewportRef.current = { w: window.innerWidth, h: window.innerHeight };
@@ -1647,7 +1710,7 @@ function OverlayInner() {
       vv?.removeEventListener?.("resize", update);
       window.removeEventListener("resize", update);
     };
-  }, [centerFixed]);
+  }, [centerFixed, externalHost]);
   // 외부 호스트 판단 이후에 미션 옵션을 계산
   const missionAnchor = (externalHost && activePreset?.missionAnchor)
     ? String(activePreset.missionAnchor).toLowerCase()
@@ -1801,6 +1864,7 @@ function OverlayInner() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [contentW, setContentW] = useState<number>(BASE_W);
   const [contentH, setContentH] = useState<number>(BASE_H);
+  const lastContentSizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
   useEffect(() => {
     if (typeof window === "undefined") return;
     const el = containerRef.current;
@@ -1809,6 +1873,16 @@ function OverlayInner() {
       const r = el.getBoundingClientRect();
       const w = Math.max(1, Math.round(r.width));
       const h = Math.max(1, Math.round(r.height));
+      const last = lastContentSizeRef.current;
+      if (
+        externalHost &&
+        last.w > 0 &&
+        Math.abs(w - last.w) < 2 &&
+        Math.abs(h - last.h) < 2
+      ) {
+        return;
+      }
+      lastContentSizeRef.current = { w, h };
       setContentW(w);
       setContentH(h);
     };
@@ -1816,7 +1890,7 @@ function OverlayInner() {
     const ro = new (window as any).ResizeObserver(updateSize);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [externalHost]);
   const [autoMemberSize, setAutoMemberSize] = useState(memberSize);
   const [autoTotalSize, setAutoTotalSize] = useState(totalSize);
   const [autoDonorSize, setAutoDonorSize] = useState(donorsSize);
@@ -1824,7 +1898,9 @@ function OverlayInner() {
   /** 멤버 표만 너비 기준으로 자동 폰트 축소(티커 등 형제 폭 제외) */
   const memberTableClampRef = useRef<HTMLDivElement | null>(null);
   const [memberTableFitFactor, setMemberTableFitFactor] = useState(1);
+  const memberTableFitPrevRef = useRef(1);
   const [donorBoxWidth, setDonorBoxWidth] = useState<number | null>(null);
+  const lastDonorBoxWRef = useRef<number | null>(null);
   const contextualTickerWidth = donorBoxWidth ? Math.max(donorBoxWidth, tickerWidth) : tickerWidth;
   useEffect(() => {
     if (!autoFont) return;
@@ -1852,12 +1928,18 @@ function OverlayInner() {
   useEffect(() => {
     const el = tableBoxRef.current;
     if (!el) return;
-    const update = () => setDonorBoxWidth(Math.round(el.getBoundingClientRect().width));
+    const update = () => {
+      const raw = Math.round(el.getBoundingClientRect().width);
+      const prev = lastDonorBoxWRef.current;
+      if (externalHost && prev !== null && Math.abs(raw - prev) < 2) return;
+      lastDonorBoxWRef.current = raw;
+      setDonorBoxWidth(raw);
+    };
     update();
     const ro = new (window as any).ResizeObserver(update);
     ro.observe(el);
     return () => { try { ro.disconnect(); } catch {} };
-  }, [showMembers, themeId, mSize, nameCh, bankCh, toonCh, totalCh, lockWidth, effectiveNameGrow]);
+  }, [showMembers, themeId, mSize, nameCh, bankCh, toonCh, totalCh, lockWidth, effectiveNameGrow, externalHost]);
 
   const members = useMemo(() => {
     if (demoMode) {
@@ -1869,25 +1951,15 @@ function OverlayInner() {
     }
     const base = membersRemote;
     if (base.length > 0) return base;
-    if ((!ready) && (isPreviewGuide || externalHost)) {
+    // 실제 방송(외부호스트)에서는 기본 멤버 폴백을 쓰지 않는다.
+    if ((!ready) && isPreviewGuide) {
       return defaultState().members;
     }
-    if ((isPreviewGuide || externalHost) && base.length === 0) {
+    if (isPreviewGuide && base.length === 0) {
       return defaultState().members;
     }
     return base;
-  }, [demoMode, membersRemote, ready, isPreviewGuide, externalHost]);
-  const getContributionValue = useCallback((m: Member) => {
-    const raw = (m as Member & { contribution?: unknown }).contribution;
-    const parsed = Number(raw);
-    if (Number.isFinite(parsed)) return Math.max(0, parsed);
-    return Math.max(0, Number(m.account || 0) + Number(m.toon || 0));
-  }, []);
-  /** 멤버별 기여도 필드 합계(「기여도 기록부」·후원 반영 시 동기화된 값; 합계 열과 다를 수 있음) */
-  const sumContribution = useMemo(
-    () => members.reduce((sum, m) => sum + getContributionValue(m), 0),
-    [members, getContributionValue]
-  );
+  }, [demoMode, membersRemote, ready, isPreviewGuide]);
   const donors = useMemo(() => {
     if (demoMode) {
       return [
@@ -1946,7 +2018,14 @@ function OverlayInner() {
     const representative = members.find((m) => (memberPositionsMap[m.id] || "").trim() === "대표") || null;
     const others = members
       .filter((m) => !representative || m.id !== representative.id)
-      .sort((a, b) => ((b.account || 0) + (b.toon || 0)) - ((a.account || 0) + (a.toon || 0)));
+      .sort((a, b) => {
+        const ta = (a.account || 0) + (a.toon || 0);
+        const tb = (b.account || 0) + (b.toon || 0);
+        if (tb !== ta) return tb - ta;
+        const byName = String(a.name || "").localeCompare(String(b.name || ""), "ko");
+        if (byName !== 0) return byName;
+        return String(a.id || "").localeCompare(String(b.id || ""));
+      });
     if (representative) roleMap[representative.id] = "대표";
     const startIdx = representative ? 1 : 0;
     others.forEach((m, idx) => {
@@ -1960,6 +2039,27 @@ function OverlayInner() {
   const pinnedFilter = useCallback(
     (m: Member) => Boolean(m.operating) || /운영비/i.test(m.name) || /운영비/i.test(getMemberRole(m)),
     [getMemberRole]
+  );
+  /**
+   * 기여도 숫자: 저장 필드가 0인데 계좌+투네 합은 있는 경우(멤버 재추가·자동 후원만 반영 등) 합계로 표시.
+   * 운영비 행은 책정 대상이 아니므로 합계·표시는 별도 처리(pinnedFilter).
+   */
+  const getContributionValueForMember = useCallback((m: Member) => {
+    const raw = (m as Member & { contribution?: unknown }).contribution;
+    let parsed = typeof raw === "number" ? raw : Number(typeof raw === "string" ? String(raw).replace(/,/g, "").trim() : raw);
+    const total = Math.max(0, Number(m.account || 0) + Number(m.toon || 0));
+    if (!Number.isFinite(parsed)) return total;
+    const c = Math.max(0, Math.floor(parsed));
+    if (c === 0 && total > 0) return total;
+    return c;
+  }, []);
+  /** 운영비(핀) 제외 멤버 기여도 합 — 총합 행과 정산 분배 기준에 맞춤 */
+  const sumContribution = useMemo(
+    () =>
+      members
+        .filter((m) => !pinnedFilter(m))
+        .reduce((sum, m) => sum + getContributionValueForMember(m), 0),
+    [members, pinnedFilter, getContributionValueForMember]
   );
   const showPersonalGoal = useMemo(() => {
     const raw = sp.get("showPersonalGoal");
@@ -1983,12 +2083,23 @@ function OverlayInner() {
 
   const unpinned = useMemo(() => members.filter((m) => !pinnedFilter(m)), [members, pinnedFilter]);
   const pinned = useMemo(() => members.filter(pinnedFilter), [members, pinnedFilter]);
+  // 운영비 행은 기본적으로 숨기고, 필요 시 URL로 명시적으로 노출한다.
+  const showOperatingRowsParam = externalHost ? rawSp.get("showOperatingRows") : sp.get("showOperatingRows");
+  const showOperatingRows = (showOperatingRowsParam || "false").toLowerCase() === "true";
+  const visiblePinned = showOperatingRows ? pinned : [];
   const hasRoleColumn = useMemo(
     () => members.some((m) => getMemberRole(m).trim().length > 0),
     [members, getMemberRole]
   );
   const ranked = useMemo(() => {
-    const arr = [...unpinned].sort((a, b) => (b.account + b.toon) - (a.account + a.toon));
+    const arr = [...unpinned].sort((a, b) => {
+      const ta = (a.account || 0) + (a.toon || 0);
+      const tb = (b.account || 0) + (b.toon || 0);
+      if (tb !== ta) return tb - ta;
+      const byName = String(a.name || "").localeCompare(String(b.name || ""), "ko");
+      if (byName !== 0) return byName;
+      return String(a.id || "").localeCompare(String(b.id || ""));
+    });
     let nextRank = 1;
     return arr.map((m) => {
       const role = getMemberRole(m).trim();
@@ -2005,12 +2116,12 @@ function OverlayInner() {
     const cols = hasRoleColumn
       ? `${rankColCh}|${roleColFit}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`
       : `${rankColCh}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`;
-    const rows = ranked.map(({ m }) => `${m.account}|${m.toon}|${getContributionValue(m)}`).join(";");
-    const pinRows = pinned.map((m) => `${m.account}|${m.toon}|${getContributionValue(m)}`).join(";");
+    const rows = ranked.map(({ m }) => `${m.account}|${m.toon}|${getContributionValueForMember(m)}`).join(";");
+    const pinRows = visiblePinned.map((m) => `${m.account}|${m.toon}|0`).join(";");
     return `${cols}#${rows}~${pinRows}`;
   }, [
     ranked,
-    pinned,
+    visiblePinned,
     hasRoleColumn,
     nameCh,
     bankCh,
@@ -2020,11 +2131,63 @@ function OverlayInner() {
     rankColCh,
     members,
     getMemberRole,
-    getContributionValue,
+    getContributionValueForMember,
   ]);
+
+  /**
+   * OBS·Prism 외부 임베드:
+   * - 기본 OFF
+   * - URL raw query(rowMotion)로 명시했을 때만 ON/OFF 허용
+   *   (프리셋 값으로는 외부 호스트의 기본 안전값을 덮지 않음)
+   */
+  const rowMotionParamRaw = rawSp.get("rowMotion");
+  const rowMotionParam = externalHost ? rowMotionParamRaw : sp.get("rowMotion");
+  const rowMotionRequested =
+    !stableMode &&
+    !externalSafeMode &&
+    (rowMotionParam !== null && String(rowMotionParam).trim() !== ""
+      ? String(rowMotionParam).toLowerCase() === "true"
+      : !externalHost);
+  const rowMotionEnabled = rowMotionRequested && unpinned.length > 1;
 
   useLayoutEffect(() => {
     if (!showMembers) return;
+    if (externalSafeMode) {
+      // OBS/Prism 하드 고정 모드: 프레임 범위 내에 표 전체가 들어오도록 1회(및 리사이즈 시) 고정 비율만 계산
+      const clampEl = memberTableClampRef.current;
+      const table = tableBoxRef.current as HTMLTableElement | null;
+      if (!clampEl || !table) return;
+      const updateSafeFit = () => {
+        const padStyle = getComputedStyle(clampEl);
+        const padX =
+          (parseFloat(padStyle.paddingLeft) || 0) + (parseFloat(padStyle.paddingRight) || 0);
+        const avail = Math.max(0, clampEl.clientWidth - padX);
+        if (avail < 8) return;
+        const prevMax = table.style.maxWidth;
+        const prevInlineFont = table.style.fontSize;
+        try {
+          table.style.maxWidth = "none";
+          table.style.fontSize = `${mSize}px`;
+          void table.offsetWidth;
+          const measured = Math.max(table.scrollWidth, table.getBoundingClientRect().width);
+          if (!Number.isFinite(measured) || measured <= 0) return;
+          // 마지막 열 클리핑 방지를 위해 10px 안전 여유를 둔다.
+          const raw = (avail - 10) / measured;
+          const next = Math.max(0.55, Math.min(1, Math.floor(raw * 100) / 100));
+          if (Math.abs(next - memberTableFitPrevRef.current) < 0.005) return;
+          memberTableFitPrevRef.current = next;
+          setMemberTableFitFactor(next);
+        } finally {
+          table.style.maxWidth = prevMax;
+          if (prevInlineFont) table.style.fontSize = prevInlineFont;
+          else table.style.removeProperty("font-size");
+        }
+      };
+      updateSafeFit();
+      const ro = new ResizeObserver(() => updateSafeFit());
+      ro.observe(clampEl);
+      return () => ro.disconnect();
+    }
     const clampEl = memberTableClampRef.current;
     const table = tableBoxRef.current as HTMLTableElement | null;
     if (!clampEl || !table) return;
@@ -2042,8 +2205,8 @@ function OverlayInner() {
       let hi = 1;
       let best = lo;
       const minPx = 4;
-      /** 헤더 text-stroke·그림자가 scrollWidth 밖으로 살짝 나가는 여유 */
-      const widthMarginPx = 20;
+      /** 헤더 text-stroke·그림자가 scrollWidth 밖으로 살짝 나가는 여유(마지막 열 잘림 방지) */
+      const widthMarginPx = 36;
       const maxAvail = Math.max(4, avail - widthMarginPx);
       const measureWidth = () => {
         const rectW = table.getBoundingClientRect().width;
@@ -2079,6 +2242,9 @@ function OverlayInner() {
         table.style.maxWidth = prevMax;
         table.style.removeProperty("font-size");
       }
+      const prevFit = memberTableFitPrevRef.current;
+      if (Math.abs(best - prevFit) < 0.008) return;
+      memberTableFitPrevRef.current = best;
       setMemberTableFitFactor(best);
     };
 
@@ -2093,13 +2259,10 @@ function OverlayInner() {
         /* noop */
       }
     };
-  }, [showMembers, mSize, memberTableFitSig, externalHost]);
+  }, [showMembers, mSize, memberTableFitSig, externalSafeMode]);
 
-  const allOrderKeys = [...ranked.map(({ m }) => m.id), ...pinned.map((m) => `${m.id}-p`)];
-  const setRowRef = useFlip(allOrderKeys, 500);
-  const rowMotionEnabled = (
-    (sp.get("rowMotion") || (externalHost ? "false" : "true")).toLowerCase() === "true"
-  );
+  const allOrderKeys = [...ranked.map(({ m }) => m.id), ...visiblePinned.map((m) => `${m.id}-p`)];
+  const setRowRef = useFlip(allOrderKeys, 500, rowMotionEnabled);
 
   const prevTotalsRef = useRef<Map<string, number>>(new Map());
   const [changedIds, setChangedIds] = useState<Set<string>>(new Set());
@@ -2327,15 +2490,25 @@ function OverlayInner() {
       fitPin === "cr" ? "right center" :
       "center center";
     const freezeScaleInExternalHost =
-      externalHost &&
-      zoomMode === "neutral" &&
-      !hasExplicitScale &&
-      Math.abs(effectiveScale - 1) < 0.02;
+      externalSafeMode ||
+      (externalHost &&
+        !hasExplicitScale &&
+        Math.abs(effectiveScale - 1) < 0.02);
+    const scaleCss = Number.isFinite(effectiveScale) ? Number(effectiveScale.toFixed(4)) : 1;
+    const scaleTransform = externalHost
+      ? `translate3d(0, 0, 0) scale(${scaleCss})`
+      : `scale(${scaleCss})`;
     const scaleStyleTag = freezeScaleInExternalHost
       ? null
       : (
         <style dangerouslySetInnerHTML={{ __html: `
-          .overlay-scale-target { transform: scale(${effectiveScale}) !important; -webkit-transform: scale(${effectiveScale}) !important; transform-origin: ${origin} !important; }
+          .overlay-scale-target {
+            transform: ${scaleTransform} !important;
+            -webkit-transform: ${scaleTransform} !important;
+            transform-origin: ${origin} !important;
+            -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
+          }
         ` }} />
       );
     const nameWrapCls = "truncate";
@@ -2389,6 +2562,7 @@ function OverlayInner() {
           box-shadow: 0 12px 24px rgba(118, 36, 79, 0.18);
           backdrop-filter: none;
           -webkit-backdrop-filter: none;
+          ${externalHost ? "contain: layout style;" : ""}
         }
         /* 헤더 아래 가로줄 및 행 사이 구분선 모두 제거(헤더/행 위·아래 표시 일관). */
         .overlay-root .overlay-elegant-table thead td,
@@ -2399,13 +2573,13 @@ function OverlayInner() {
         }
         .overlay-root .overlay-elegant-table td {
           color: #ffffff !important;
-          transition: filter 180ms ease, transform 180ms ease, background-size 220ms ease;
+          transition: ${externalHost || stableMode ? "none" : "filter 180ms ease, transform 180ms ease, background-size 220ms ease"};
           background: transparent !important;
           text-shadow: ${excelTextOutline} !important;
           -webkit-text-stroke: 0.75px rgba(6, 12, 24, 0.95) !important;
           paint-order: stroke fill;
           -webkit-font-smoothing: antialiased;
-          text-rendering: geometricPrecision;
+          text-rendering: ${externalHost ? "auto" : "geometricPrecision"};
         }
         .overlay-root .overlay-elegant-table thead td {
           color: #ffffff !important;
@@ -2429,6 +2603,47 @@ function OverlayInner() {
           -webkit-text-stroke: 0.75px rgba(6, 12, 24, 0.95) !important;
           paint-order: stroke fill;
         }
+        ${
+          externalSafeMode
+            ? `
+        /* 외부호스트 하드 고정 모드(OBS/Prism): 변환/애니메이션/컨테이너쿼리/스트로크를 강제 차단 */
+        .overlay-root *,
+        .overlay-root *::before,
+        .overlay-root *::after {
+          animation: none !important;
+          transition: none !important;
+        }
+        .overlay-root .overlay-scale-target,
+        .overlay-root .overlay-elegant-table,
+        .overlay-root .overlay-elegant-table tr,
+        .overlay-root .overlay-elegant-table td,
+        .overlay-root .overlay-elegant-table td .overlay-num-cell-inner {
+          transform: none !important;
+          -webkit-transform: none !important;
+        }
+        .overlay-root .overlay-elegant-table td,
+        .overlay-root .overlay-elegant-table thead td {
+          container-type: normal !important;
+          font-size: ${memberFontPx}px !important;
+          line-height: 1.2 !important;
+          -webkit-text-stroke: 0 !important;
+          text-shadow: 0 1px 2px rgba(0,0,0,0.72) !important;
+          text-rendering: auto !important;
+        }
+        .overlay-root .overlay-elegant-table tbody td span,
+        .overlay-root .overlay-elegant-table tbody td strong,
+        .overlay-root .overlay-elegant-table thead td span,
+        .overlay-root .overlay-elegant-table thead td strong {
+          -webkit-text-stroke: 0 !important;
+          text-shadow: 0 1px 2px rgba(0,0,0,0.72) !important;
+        }
+        .overlay-root .overlay-elegant-table .overlay-total-row td {
+          font-size: ${totalFontPx}px !important;
+          line-height: 1.2 !important;
+        }
+        `
+            : ""
+        }
         .overlay-root .overlay-elegant-table tbody td.overlay-col-total { color: #fff9f0 !important; }
         ${totalLineVisible ? "" : `
         .overlay-root .overlay-elegant-table tbody td.overlay-col-total,
@@ -2440,6 +2655,18 @@ function OverlayInner() {
         }
         `}
         .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution { color: #fff7fa !important; }
+        /* 마지막 열(기여도): 합성 환경에서 stroke로 인한 우측 1~2px 잘림 방지 */
+        .overlay-root .overlay-elegant-table thead td.overlay-col-contribution,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution {
+          ${externalSafeMode
+            ? "-webkit-text-stroke: 0 !important; text-shadow: 0 1px 2px rgba(0,0,0,0.72) !important;"
+            : "-webkit-text-stroke: 0.55px rgba(6, 12, 24, 0.92) !important; text-shadow: -1px -1px 0 rgba(6, 12, 24, 0.92), 1px -1px 0 rgba(6, 12, 24, 0.92), -1px 1px 0 rgba(6, 12, 24, 0.92), 1px 1px 0 rgba(6, 12, 24, 0.92), 0 1px 4px rgba(0,0,0,0.36) !important;"}
+        }
+        .overlay-root .overlay-elegant-table td.overlay-col-contribution .overlay-num-cell-inner {
+          display: inline-block;
+          min-width: max-content;
+          transform: ${externalSafeMode ? "translateX(-0.08em)" : "translateX(-0.16em)"};
+        }
         /* 반투명 테이블 모드에서도 헤더 분홍 띠 유지(예전엔 transparent 로 헤더만 사라짐) */
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
         .overlay-root .overlay-elegant-table thead td.overlay-col-role,
@@ -2480,11 +2707,11 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table tbody td.overlay-col-name {
           padding-left: 0.95em !important;
         }
-        /* 마지막 열(기여도)은 외곽선(stroke)까지 안전하게 보이도록 우측 여유를 더 준다. */
+        /* 마지막 열(기여도): 너무 오른쪽으로 밀려 보이지 않게 투네/합계 열과 유사한 간격으로 조정 */
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution {
-          padding-left: 0.6em !important;
-          padding-right: 0.85em !important;
+          padding-left: 0.42em !important;
+          padding-right: 0.36em !important;
         }
         /* 헤더 세로선 제거: 스트림 오버레이에서 칸 분리선 없이 한 덩어리로 보이게 한다. */
         .overlay-root .overlay-elegant-table thead td {
@@ -2513,13 +2740,34 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table tbody td.overlay-col-rank {
           text-align: center !important;
         }
+        ${
+          stableMode || externalHost
+            ? ""
+            : `
         .overlay-root .overlay-elegant-table tbody tr:hover td {
           filter: brightness(1.06) saturate(1.03);
           transform: scale(1.009);
         }
+        `
+        }
         /* table-layout:fixed + col 너비 안에서 이름 열만 말줄임이 안정적으로 적용되도록 */
         .overlay-root .overlay-elegant-table td.overlay-col-name {
           max-width: 0;
+        }
+        ${
+          externalHost
+            ? `
+        /* OBS/Prism: 호버 시 미세 scale/filter 가 포커스·합성과 겹치며 떨림처럼 보일 수 있음 */
+        .overlay-root .overlay-elegant-table tbody tr:hover td {
+          filter: none !important;
+          transform: none !important;
+        }
+        .overlay-root .overlay-scale-target {
+          -webkit-backface-visibility: hidden;
+          backface-visibility: hidden;
+        }
+        `
+            : ""
         }
       ` }} />
     );
@@ -2626,7 +2874,7 @@ function OverlayInner() {
                       <td className={`${effectiveHeaderCls} overlay-col-account text-right`}>계좌</td>
                       <td className={`${effectiveHeaderCls} overlay-col-toon text-right`}>투네</td>
                       <td className={`${effectiveHeaderCls} overlay-col-total text-right`}>{totalHeaderLabel}</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-contribution text-right`} title="관리자「기여도 기록부」값. 후원 입력 시에는 보통 계좌+투네 합과 같습니다.">
+                      <td className={`${effectiveHeaderCls} overlay-col-contribution text-right`} title="관리자「기여도 기록부」값. 후원만 반영된 경우 계좌+투네 합으로 표시. 운영비 행은 기여도 미표시(—), 총합은 운영비 제외 합산.">
                         기여도
                       </td>
                     </tr>
@@ -2662,11 +2910,11 @@ function OverlayInner() {
                           <span className="overlay-num-cell-inner">{fmtTotalCell(m.account + m.toon)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
-                          <span className="overlay-num-cell-inner">{fmt(getContributionValue(m))}</span>
+                          <span className="overlay-num-cell-inner">{fmt(getContributionValueForMember(m))}</span>
                         </td>
                       </tr>
                     ))}
-                    {pinned.map((m) => (
+                    {visiblePinned.map((m) => (
                       <tr
                         key={m.id + "-p"}
                         ref={rowMotionEnabled ? setRowRef(m.id + "-p") : undefined}
@@ -2691,7 +2939,7 @@ function OverlayInner() {
                           <span className="overlay-num-cell-inner">{fmtTotalCell(m.account + m.toon)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
-                          <span className="overlay-num-cell-inner">{fmt(getContributionValue(m))}</span>
+                          <span className="overlay-num-cell-inner overlay-rank-mark">—</span>
                         </td>
                       </tr>
                     ))}

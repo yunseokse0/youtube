@@ -50,19 +50,6 @@ const DEFAULT_RESULT_REVEAL_DELAY_MS = 480;
 const DEFAULT_SEQUENTIAL_CARD_EMERGE_MS = 200;
 /** 순차 라운드: 다음 회전 시작까지(ms). 기본 0 = 착지 직후 바로 다음 회전 */
 const DEFAULT_SEQUENTIAL_NEXT_SPIN_MS = 0;
-/** 저장소에 한글 파일명 PNG가 없으면 404만 줄줄이 나와 콘솔·미디어가 막히므로 공통 더미 사용 */
-const DEMO_POOL = [
-  { id: "demo_1", name: "애교", price: 77000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_2", name: "댄스", price: 100000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_3", name: "식사권", price: 333000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_4", name: "보이스", price: 50000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_5", name: "노래", price: 120000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_6", name: "토크", price: 55000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_7", name: "하트", price: 30000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_8", name: "게임", price: 88000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_9", name: "보너스", price: 150000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "demo_10", name: "특전", price: 220000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-];
 const buildOneShotFromSelected = (selected: SigItem[]) => {
   if (selected.length < MIN_ONE_SHOT_SIGS) return null;
   return {
@@ -106,7 +93,6 @@ export default function SigSalesOverlayPage() {
     if (!Number.isFinite(n)) return null;
     return Math.max(5, Math.min(20, n));
   })();
-  const rouletteDemo = sp.get("rouletteDemo") === "1" || sp.get("rouletteDemo") === "true";
   /**
    * 시그 PNG 없이 결과 UI만 볼 때: 모든 이미지를 더미 SVG로 고정(404·콘솔 스팸 방지).
    * 개발(`npm run dev`)에서는 기본 ON · 배포 빌드에서는 기본 OFF.
@@ -119,10 +105,6 @@ export default function SigSalesOverlayPage() {
       : sigPlaceholderParam === "0" || sigPlaceholderParam === "false"
         ? false
         : process.env.NODE_ENV === "development";
-  /** 로컬에서 순차 연출이 보이도록 타이밍만 살짝 늘림(?devSequentialTest=1) */
-  const devSequentialTest =
-    sp.get("devSequentialTest") === "1" ||
-    String(sp.get("devSequentialTest") || "").toLowerCase() === "true";
   /** 기본: 시그 보드는 회전 완료·결과 패널과 함께만 표시. SPINNING 중에도 보이게 하려면 sigBoardDuringSpin=1 */
   const hideSigBoard =
     sp.get("hideSigBoard") === "1" ||
@@ -188,9 +170,8 @@ export default function SigSalesOverlayPage() {
     if (!raw.trim()) return DEFAULT_RESULT_REVEAL_DELAY_MS;
     const n = parseInt(String(raw).replace(/[^\d]/g, ""), 10);
     if (!Number.isFinite(n) || n < 0) return DEFAULT_RESULT_REVEAL_DELAY_MS;
-    const base = Math.min(120_000, n);
-    return devSequentialTest ? Math.max(base, 550) : base;
-  }, [sp, devSequentialTest]);
+    return Math.min(120_000, n);
+  }, [sp]);
   /** 휠 페이드·카드 슬라이드 duration (ms). `wheelFadeMs` 동의어 */
   const revealMotionMs = useMemo(() => {
     const raw = sp.get("revealMotionMs") || sp.get("wheelFadeMs") || "";
@@ -214,18 +195,16 @@ export default function SigSalesOverlayPage() {
     if (!raw.trim()) return DEFAULT_SEQUENTIAL_CARD_EMERGE_MS;
     const n = parseInt(String(raw).replace(/[^\d]/g, ""), 10);
     if (!Number.isFinite(n) || n < 0) return DEFAULT_SEQUENTIAL_CARD_EMERGE_MS;
-    const base = Math.min(3000, n);
-    return devSequentialTest ? Math.max(base, 420) : base;
-  }, [sp, devSequentialTest]);
+    return Math.min(3000, n);
+  }, [sp]);
   /** 순차 라운드 사이 다음 스핀까지 대기(ms) */
   const sequentialNextSpinMs = useMemo(() => {
     const raw = sp.get("sequentialNextSpinMs") || "";
     if (!raw.trim()) return DEFAULT_SEQUENTIAL_NEXT_SPIN_MS;
     const n = parseInt(String(raw).replace(/[^\d]/g, ""), 10);
     if (!Number.isFinite(n) || n < 0) return DEFAULT_SEQUENTIAL_NEXT_SPIN_MS;
-    const base = Math.max(0, Math.min(6000, n));
-    return devSequentialTest ? Math.max(base, 600) : base;
-  }, [sp, devSequentialTest]);
+    return Math.max(0, Math.min(6000, n));
+  }, [sp]);
   const overlayScale = overlayScalePct / 100;
   /**
    * 휠만 작게 두면(`wheelScalePct` 낮음) 휠 열만 보정(scale). 확정 카드까지 같이 키우면 한 화면에 안 들어가므로
@@ -286,9 +265,6 @@ export default function SigSalesOverlayPage() {
   const handledSpinKeyRef = useRef("");
   const completedSpinKeyRef = useRef("");
   const wheelPhasePrevRef = useRef<WheelPhase>("idle");
-  const demoBootedRef = useRef(false);
-  /** rouletteDemo 최초 1회만 idle→START_SPIN 보정(라운드 간 타임아웃 스핀과 중복 안 함) */
-  const demoWheelPrimedRef = useRef(false);
   const hasOneShotSoundErrorRef = useRef(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const playFallbackOneShot = useCallback(() => {
@@ -339,10 +315,9 @@ export default function SigSalesOverlayPage() {
   const overlayReloadSeenRef = useRef<number | null>(null);
 
   const loadRemote = useCallback(async () => {
-    if (rouletteDemo) return;
     const remote = await loadStateFromApi(userId);
     if (remote) setState(remote);
-  }, [rouletteDemo, userId]);
+  }, [userId]);
 
   useEffect(() => {
     setSigImagePlaceholderOnlyForOverlay(sigPlaceholder);
@@ -350,11 +325,10 @@ export default function SigSalesOverlayPage() {
   }, [sigPlaceholder]);
 
   useEffect(() => {
-    if (rouletteDemo) return;
     void loadRemote();
     const id = window.setInterval(() => void loadRemote(), POLL_MS);
     return () => window.clearInterval(id);
-  }, [rouletteDemo, loadRemote]);
+  }, [loadRemote]);
   useEffect(() => {
     const nonce = Number(state?.rouletteState?.overlayReloadNonce || 0);
     if (!Number.isFinite(nonce)) return;
@@ -391,12 +365,6 @@ export default function SigSalesOverlayPage() {
     if (raw === "false" || raw === "0") return false;
     return state?.rouletteState?.menuFillFromAllActive === true;
   }, [sp, state?.rouletteState?.menuFillFromAllActive]);
-  const menuFillFromDemo = useMemo(() => {
-    const raw = (sp.get("menuFillFromDemo") || "").toLowerCase();
-    if (raw === "true" || raw === "1") return true;
-    if (raw === "false" || raw === "0") return false;
-    return state?.rouletteState?.menuFillFromDemo === true;
-  }, [sp, state?.rouletteState?.menuFillFromDemo]);
   /** URL 우선. 미지정 시 서버 저장 `rouletteState.sigResultScalePct`(기본 78). 동의어: `resultScalePct` */
   const sigResultScalePctUrlOverride = useMemo(() => {
     const raw = sp.get("sigResultScalePct") || sp.get("resultScalePct") || "";
@@ -413,7 +381,6 @@ export default function SigSalesOverlayPage() {
   }, [sigResultScalePctUrlOverride, state?.rouletteState?.sigResultScalePct]);
   const sigResultBandZoomStyle = { zoom: sigResultScalePct / 100 } as React.CSSProperties;
   const activeNormalPool = useMemo(() => {
-    if (rouletteDemo) return DEMO_POOL;
     if (!state) return [];
     const excluded = new Set((state.sigSalesExcludedIds || []).map((x) => String(x)));
     return (state.sigInventory || []).filter(
@@ -423,7 +390,7 @@ export default function SigSalesOverlayPage() {
         !excluded.has(x.id) &&
         (!memberFilterId || (x.memberId || "") === memberFilterId)
     );
-  }, [state, rouletteDemo, memberFilterId]);
+  }, [state, memberFilterId]);
   /** 당첨만 휠에 올릴 때 슬라이스 순서·중복 당첨 유지 */
   const winnerRowsForWheelOnly = useMemo(() => {
     if ((machine.selectedSigs?.length ?? 0) > 0) {
@@ -469,20 +436,12 @@ export default function SigSalesOverlayPage() {
         if (unique.size >= targetCount) break;
       }
     }
-    if (menuFillFromDemo && unique.size < targetCount) {
-      const fillers = DEMO_POOL;
-      for (const item of fillers) {
-        unique.set(item.id, item);
-        if (unique.size >= targetCount) break;
-      }
-    }
     return Array.from(unique.values());
   }, [
     activeNormalPool,
     menuCount,
     state,
     menuFillFromAllActive,
-    menuFillFromDemo,
     machine.selectedSigs,
     pendingLanding?.selected,
     winnersOnlyOverlay,
@@ -495,12 +454,7 @@ export default function SigSalesOverlayPage() {
       return wheelDisplayPool.map((x) => ({ ...x }));
     }
     const n = Math.max(1, menuCount);
-    const pool =
-      wheelDisplayPool.length > 0
-        ? wheelDisplayPool
-        : rouletteDemo
-          ? DEMO_POOL
-          : [];
+    const pool = wheelDisplayPool.length > 0 ? wheelDisplayPool : [];
     if (pool.length === 0) return [] as SigItem[];
     const out: SigItem[] = [];
     for (let i = 0; i < n; i++) {
@@ -508,7 +462,7 @@ export default function SigSalesOverlayPage() {
       out.push({ ...canonical, id: `${canonical.id}__wslot_${i}` });
     }
     return out;
-  }, [wheelDisplayPool, menuCount, rouletteDemo, winnersOnlyOverlay, winnerRowsForWheelOnly.length]);
+  }, [wheelDisplayPool, menuCount, winnersOnlyOverlay, winnerRowsForWheelOnly.length]);
 
   /**
    * 당첨 큐: 항상 서버 `machine.selectedSigs` 우선(폴링 갱신·순서의 단일 소스).
@@ -563,8 +517,7 @@ export default function SigSalesOverlayPage() {
     const found =
       activeNormalPool.find(matchCanon) ||
       (pendingLanding?.selected || []).find(matchCanon) ||
-      (machine.selectedSigs || []).find(matchCanon) ||
-      DEMO_POOL.find(matchCanon);
+      (machine.selectedSigs || []).find(matchCanon);
     if (!found) return base;
     base[base.length - 1] = { ...found, id: `${canonicalSigIdFromWheelSliceId(found.id)}__wslot_${base.length - 1}` };
     return base;
@@ -591,12 +544,10 @@ export default function SigSalesOverlayPage() {
     /** startedAt 이 0이면「오래된 SPINNING」으로 오인해 당첨 배열을 비우면 안 됨(메타 누락·폴링 지연) */
     const spinningFreshEnough =
       machine.phase !== "SPINNING" ||
-      rouletteDemo ||
       startedAtNum <= 0 ||
       Date.now() - startedAtNum <= RECENT_SPIN_WINDOW_MS;
     /** 서버 phase가 예전 회차 SPINNING으로 남아 있으면 OBS만 켠 것처럼 보일 때 카드가 미리 깔리는 현상 방지 */
     if (
-      !rouletteDemo &&
       machine.phase === "SPINNING" &&
       !spinningFreshEnough &&
       !pendingLanding &&
@@ -634,7 +585,6 @@ export default function SigSalesOverlayPage() {
     machine.selectedSigs,
     machine.phase,
     machine.startedAt,
-    rouletteDemo,
     pendingLanding,
     demoSpin,
     wheelPhase,
@@ -665,10 +615,9 @@ export default function SigSalesOverlayPage() {
       machine.phase === "IDLE" &&
       (machine.selectedSigs?.length ?? 0) === 0 &&
       !pendingLanding &&
-      !demoSpin &&
-      !rouletteDemo;
+      !demoSpin;
     if (idleClean) setStaggerSessionPin(null);
-  }, [machine.phase, machine.selectedSigs?.length, pendingLanding, demoSpin, rouletteDemo]);
+  }, [machine.phase, machine.selectedSigs?.length, pendingLanding, demoSpin]);
   const displaySelectedSigs = useMemo(() => {
     if (fullSelectedSigs.length === 0) return [];
     if (
@@ -852,13 +801,11 @@ export default function SigSalesOverlayPage() {
    * 결과 패널·휠 래퍼가 통째로 리마운트되며 카드가 한꺼번에 다시 그려지는 현상 발생.
    */
   const spinCompletionKey = useMemo(() => {
-    /** demoSpin 시작 시점으로 키가 바뀌면 휠·결과 트리가 리마운트되어 회전 애니가 끊김 → 데모는 고정 키 */
-    if (rouletteDemo) return "roulette-demo";
     const sid = String(machine.sessionId || "").trim();
     /** startedAt 폴링 지연으로 키가 바뀌며 순차 회전이 끊기지 않게 sessionId 우선 */
     if (sid) return `spin:${sid}`;
     return `spin:t-${Number(machine.startedAt || 0)}`;
-  }, [rouletteDemo, machine.sessionId, machine.startedAt]);
+  }, [machine.sessionId, machine.startedAt]);
   const showWheelVisual = useMemo(
     () => !wheelFadeScheduled || !revealGateOpen || wheelFadePhase !== "off",
     [wheelFadeScheduled, revealGateOpen, wheelFadePhase],
@@ -877,7 +824,7 @@ export default function SigSalesOverlayPage() {
     resultsPanelGateOpen &&
       (displaySelectedSigs.length > 0 || oneShotRevealUnlocked) &&
       (machine.phase === "IDLE"
-        ? rouletteDemo || (broadcastStickySigs?.length ?? 0) > 0
+        ? (broadcastStickySigs?.length ?? 0) > 0
         : (showResultPanel && hideWheelAfterComplete) ||
           machine.phase === "SPINNING" ||
           machine.phase === "LANDED" ||
@@ -963,7 +910,7 @@ export default function SigSalesOverlayPage() {
     const inv = state?.sigInventory;
     const fromInv = inv?.find((x) => x.id === canon) || inv?.find((x) => x.id === id);
     if (fromInv) return resolveSigImageUrl(fromInv.name, fromInv.imageUrl || "");
-    const pool = [...(machine.selectedSigs || []), ...(activeNormalPool || []), ...(DEMO_POOL || [])];
+    const pool = [...(machine.selectedSigs || []), ...(activeNormalPool || [])];
     const found = pool.find(
       (item) => item.id === id || canonicalSigIdFromWheelSliceId(item.id) === canon,
     );
@@ -1102,7 +1049,6 @@ export default function SigSalesOverlayPage() {
   ]);
 
   useEffect(() => {
-    if (rouletteDemo) return;
     // appState 수신 전 기본 IDLE이면 건드리지 않음(HYDRATE SPINNING과 경쟁 방지)
     if (!state) return;
     if (machine.phase !== "IDLE") return;
@@ -1124,7 +1070,7 @@ export default function SigSalesOverlayPage() {
     transitionHandledKeyRef.current = "";
     handledSpinKeyRef.current = "";
     setSequentialRoundIndex(0);
-  }, [machine.phase, state, rouletteDemo]);
+  }, [machine.phase, state]);
 
   useEffect(() => {
     if (machine.phase !== "SPINNING" && machine.phase !== "LANDED") return;
@@ -1155,15 +1101,6 @@ export default function SigSalesOverlayPage() {
     pendingLanding,
     demoSpin,
   ]);
-
-  useEffect(() => {
-    if (!rouletteDemo || !demoSpin || !pendingLanding?.selected?.length) return;
-    if (wheelPhase !== "idle") return;
-    if (demoWheelPrimedRef.current) return;
-    demoWheelPrimedRef.current = true;
-    dispatch({ type: "RESET" });
-    dispatch({ type: "START_SPIN" });
-  }, [rouletteDemo, demoSpin, pendingLanding?.selected?.length, wheelPhase]);
 
   useEffect(() => {
     if (machine.phase !== "LANDED" && machine.phase !== "CONFIRM_PENDING" && machine.phase !== "CONFIRMED") return;
@@ -1206,27 +1143,6 @@ export default function SigSalesOverlayPage() {
       img.src = resolveSigImageUrl(item.name, item.imageUrl);
     });
   }, [pendingLanding]);
-
-  useEffect(() => {
-    if (!rouletteDemo) return;
-    if (demoBootedRef.current) return;
-    if (pendingLanding || demoSpin) return;
-    const sourcePool = activeNormalPool.length > 0 ? activeNormalPool : DEMO_POOL;
-    const shuffled = [...sourcePool].sort(() => Math.random() - 0.5);
-    const selected = shuffled.slice(0, Math.max(1, Math.min(CONFIRMED_VISIBLE_SLOTS, shuffled.length)));
-    const resultId = selected[selected.length - 1]?.id || null;
-    if (selected.length === 0) return;
-    demoBootedRef.current = true;
-    setPendingLanding({
-      selected,
-      oneShot: buildOneShotFromSelected(selected),
-      resultId,
-      persist: false,
-    });
-    setShowResultPanel(false);
-    setCurrentSignImageUrl("");
-    setDemoSpin({ startedAt: Date.now(), resultId });
-  }, [rouletteDemo, pendingLanding, demoSpin, activeNormalPool]);
 
   useEffect(() => {
     if (machine.selectedSigs.length > 0) {
@@ -1316,7 +1232,7 @@ export default function SigSalesOverlayPage() {
                     setDemoSpin(null);
                     setOverlayHoldResults(true);
                     setShowResultPanel(true);
-                    if (!rouletteDemo) void loadRemote();
+                    void loadRemote();
                     return;
                   }
 
@@ -1403,7 +1319,7 @@ export default function SigSalesOverlayPage() {
                   setShowResultPanel(true);
                   const signUrl = getSignImageUrl(finalResultId);
                   setCurrentSignImageUrl(signUrl || "");
-                  if (!rouletteDemo && snapSession) {
+                  if (snapSession) {
                     void (async () => {
                       try {
                         const res = await fetch(`/api/roulette/land?user=${encodeURIComponent(userId)}`, {

@@ -66,9 +66,6 @@ function mergeRouletteUiPrefsOntoCurrent(
   if (typeof patchRs.menuFillFromAllActive === "boolean") {
     out.menuFillFromAllActive = patchRs.menuFillFromAllActive;
   }
-  if (typeof patchRs.menuFillFromDemo === "boolean") {
-    out.menuFillFromDemo = patchRs.menuFillFromDemo;
-  }
   if (patchRs.overlayOpacity !== undefined) {
     const o = Number(patchRs.overlayOpacity);
     if (Number.isFinite(o)) {
