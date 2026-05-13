@@ -6,17 +6,20 @@ export const DEFAULT_SIG_SOLD_STAMP_URL = "/images/sigs/stamp.svg";
 /** Git·Render 배포본에 포함된 공통 시그 이미지(`public/images/sigs/dummy-sig.svg`) */
 export const BUNDLED_SIG_PLACEHOLDER_URL = "/images/sigs/dummy-sig.svg";
 
-/** 예전 기본 인벤이 가리키던 PNG — 레포에 없어 배포 시 404 → 플레이스홀더로 치환 */
-const LEGACY_MISSING_REPO_SIG_IMAGE_PATHS = new Set<string>([
-  "/images/sigs/애교.png",
-  "/images/sigs/댄스.png",
-  "/images/sigs/식사권.png",
-  "/images/sigs/보이스.png",
-  "/images/sigs/노래.png",
-  "/images/sigs/토크.png",
-  "/images/sigs/하트.png",
-  "/images/sigs/게임.png",
-]);
+/** 레거시 `/images/sigs/<파일명>`를 외부 CDN(ImageKit)로 매핑 */
+const LEGACY_SIG_CDN_BASE = (process.env.NEXT_PUBLIC_SIG_CDN_BASE_URL || "https://ik.imagekit.io/lwcsfeswl")
+  .trim()
+  .replace(/\/+$/, "");
+
+function toCdnUrlFromRelativePath(relPath: string): string {
+  const normalized = String(relPath || "").replace(/^\/+/, "");
+  const encodedPath = normalized
+    .split("/")
+    .filter(Boolean)
+    .map((seg) => encodeURIComponent(seg))
+    .join("/");
+  return encodedPath ? `${LEGACY_SIG_CDN_BASE}/${encodedPath}` : BUNDLED_SIG_PLACEHOLDER_URL;
+}
 
 /** 방송에서 자주 쓰는 시그 기본 목록(애교·댄스·식사권 외 프리셋) */
 export const BROADCAST_SIG_PRESET_NAMES = [
@@ -69,8 +72,9 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
   if (s.startsWith("/images/sig/")) {
     s = s.replace(/^\/images\/sig\//, "/images/sigs/");
   }
-  if (LEGACY_MISSING_REPO_SIG_IMAGE_PATHS.has(s)) {
-    return BUNDLED_SIG_PLACEHOLDER_URL;
+  if (s.startsWith("/images/sigs/")) {
+    const rel = s.replace(/^\/images\/sigs\//, "");
+    return toCdnUrlFromRelativePath(rel);
   }
   return s;
 }

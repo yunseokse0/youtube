@@ -1,17 +1,10 @@
-import { createClient } from "@supabase/supabase-js";
 import { readFile } from "fs/promises";
 import path from "path";
 
-/** 업로드 API(`sig-image`)와 동일한 버킷 후보 */
-function getSupabaseForLegacyRead():
-  | { url: string; serviceRoleKey: string; buckets: string[] }
-  | null {
-  const url = (process.env.SUPABASE_URL || "").trim();
-  const serviceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
-  const preferredBucket = (process.env.SUPABASE_STORAGE_BUCKET || "").trim();
-  const buckets = [preferredBucket, "image", "images"].filter(Boolean).filter((name, idx, arr) => arr.indexOf(name) === idx);
-  if (!url || !serviceRoleKey || buckets.length === 0) return null;
-  return { url, serviceRoleKey, buckets };
+function getLegacySigCdnBaseUrl(): string {
+  return (process.env.SIG_CDN_BASE_URL || process.env.NEXT_PUBLIC_SIG_CDN_BASE_URL || "https://ik.imagekit.io/lwcsfeswl")
+    .trim()
+    .replace(/\/+$/, "");
 }
 
 export function mimeFromFileName(fileName: string): string {
@@ -48,23 +41,23 @@ export async function readLegacySigFromPublicDisk(relPath: string): Promise<Buff
   }
 }
 
-/** Storage 키는 URL과 동일하게 `images/sigs/<relPath>` 만 사용 */
-export async function fetchLegacySigFromSupabase(relPath: string): Promise<Buffer | null> {
-  const cfg = getSupabaseForLegacyRead();
-  if (!cfg) return null;
-  const supabase = createClient(cfg.url, cfg.serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const objectPath = `images/sigs/${relPath}`;
-  for (const bucket of cfg.buckets) {
-    const { data, error } = await supabase.storage.from(bucket).download(objectPath);
-    if (error || !data) continue;
-    try {
-      const ab = await data.arrayBuffer();
-      return Buffer.from(ab);
-    } catch {
-      continue;
-    }
+/** 레거시 파일명을 ImageKit 등 외부 CDN에서 그대로 조회 */
+export async function fetchLegacySigFromCdn(relPath: string): Promise<Buffer | null> {
+  const base = getLegacySigCdnBaseUrl();
+  if (!base) return null;
+  const encodedPath = relPath
+    .split("/")
+    .filter(Boolean)
+    .map((seg) => encodeURIComponent(seg))
+    .join("/");
+  if (!encodedPath) return null;
+  const url = `${base}/${encodedPath}`;
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return null;
+    const ab = await res.arrayBuffer();
+    return Buffer.from(ab);
+  } catch {
+    return null;
   }
-  return null;
 }

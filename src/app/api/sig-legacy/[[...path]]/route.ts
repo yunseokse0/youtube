@@ -1,5 +1,5 @@
 import {
-  fetchLegacySigFromSupabase,
+  fetchLegacySigFromCdn,
   mimeFromFileName,
   readLegacySigFromPublicDisk,
   safeSigLegacyRelativePath,
@@ -20,7 +20,7 @@ export async function GET(
   const contentType = mimeFromFileName(fileName);
 
   let buf: Buffer | null = await readLegacySigFromPublicDisk(rel);
-  if (!buf) buf = await fetchLegacySigFromSupabase(rel);
+  if (!buf) buf = await fetchLegacySigFromCdn(rel);
 
   if (!buf) {
     return new Response("Not found", { status: 404 });
