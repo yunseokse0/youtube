@@ -21,6 +21,13 @@ function toCdnUrlFromRelativePath(relPath: string): string {
   return encodedPath ? `${LEGACY_SIG_CDN_BASE}/${encodedPath}` : BUNDLED_SIG_PLACEHOLDER_URL;
 }
 
+function toCdnUrlFromFileName(rawPathOrUrl: string): string {
+  const normalized = String(rawPathOrUrl || "").replace(/\\/g, "/").trim();
+  if (!normalized) return BUNDLED_SIG_PLACEHOLDER_URL;
+  const fileName = normalized.split("/").filter(Boolean).pop() || "";
+  return fileName ? toCdnUrlFromRelativePath(fileName) : BUNDLED_SIG_PLACEHOLDER_URL;
+}
+
 /** 방송에서 자주 쓰는 시그 기본 목록(애교·댄스·식사권 외 프리셋) */
 export const BROADCAST_SIG_PRESET_NAMES = [
   "애교",
@@ -58,6 +65,8 @@ export function getSigImagePlaceholderOnlyForOverlay(): boolean {
 /** 저장된 시그 이미지 경로 보정(`/images/sig/` 오타 → `/images/sigs/`) — 인벤·시그롤링·당첨 배열 모두 적용 */
 export function normalizeSigImageUrlStored(raw: unknown): string {
   let s = String(raw ?? "").trim().replace(/\\/g, "/");
+  // 콘솔/메신저 복붙 시 붙는 `: ` 프리픽스 제거
+  s = s.replace(/^:\s*/, "");
   if (!s) return "";
   /** 상대 경로 `images/…` `uploads/…` → 절대 경로화 (레거시 URL) */
   if (
@@ -75,6 +84,13 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
   if (s.startsWith("/images/sigs/")) {
     const rel = s.replace(/^\/images\/sigs\//, "");
     return toCdnUrlFromRelativePath(rel);
+  }
+  if (
+    /^https?:\/\/[^/]*supabase\.co\/storage\/v1\/object\/public\//i.test(s) &&
+    /\/sigs\//i.test(s)
+  ) {
+    // Supabase 공개 URL도 파일명만 동일하면 ImageKit에서 그대로 표시
+    return toCdnUrlFromFileName(s);
   }
   return s;
 }
