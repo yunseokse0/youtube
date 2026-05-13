@@ -13,14 +13,13 @@ export default async function Home() {
     host === "127.0.0.1" ||
     host === "::1" ||
     host === "[::1]";
-  /** 같은 PC의 다른 기기·LAN IP로 접속할 때도 데모 바로 보기 */
   const isLanDev =
     /^192\.168\.\d{1,3}\.\d{1,3}$/.test(host) ||
     /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) ||
     host.endsWith(".local");
-  /** 로컬에서는 루트가 관리자로만 가면 회전판 데모를 못 봄 → `/wheel` 데모로 우선 연결 */
+  /** 로컬·LAN에서는 바로 시그 판매 오버레이로 연결(회전은 서버 스핀 또는 관리자에서 시작) */
   if (isLocal || isLanDev) {
-    redirect("/wheel");
+    redirect("/overlay/sig-sales");
   }
   if (userCookie) redirect("/admin");
 

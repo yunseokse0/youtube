@@ -96,8 +96,6 @@ export type RouletteState = {
   sigResultScalePct?: number;
   /** 메뉴가 부족할 때 전체 활성 시그에서 자동 보충 */
   menuFillFromAllActive?: boolean;
-  /** 메뉴가 여전히 부족할 때 데모 풀로 자동 보충 */
-  menuFillFromDemo?: boolean;
   /** 관리자 옵션: 값을 올리면 시그 오버레이가 즉시 강제 새로고침됨(OBS 캐시 우회) */
   overlayReloadNonce?: number;
   /** 최근 세션 식별자 */

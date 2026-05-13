@@ -223,8 +223,16 @@ function SigMatchOverlayInner() {
       (p) => Array.isArray(p.memberIds) && p.memberIds.length >= 1
     );
     const scoreMap = new Map(ranking.map((r) => [r.memberId, r.score]));
+    /** 집계(ranking)에 올라온 멤버만 대결 표시 — 운영비 등 집계 제외 멤버가 풀에 있어도 VS 상대로 나오지 않게 함 */
+    const playableIdSet = new Set(ranking.map((r) => r.memberId));
     const makeSide = (memberIds: string[], fallbackLabel: string): SigMatchSide => {
-      const ids = [...new Set(memberIds.filter((id) => Boolean(id) && !blockedMemberIds.has(id)))];
+      const ids = [
+        ...new Set(
+          memberIds.filter(
+            (id) => Boolean(id) && playableIdSet.has(id) && !blockedMemberIds.has(id)
+          )
+        ),
+      ];
       const label = ids.map((id) => memberMap.get(id) || id).join(" · ") || fallbackLabel;
       const score = ids.reduce((sum, id) => sum + (scoreMap.get(id) || 0), 0);
       return { ids, label, score };

@@ -162,7 +162,6 @@ export function normalizeRouletteState(raw: unknown): RouletteState {
     menuCount: 10,
     sigResultScalePct: 78,
     menuFillFromAllActive: true,
-    menuFillFromDemo: false,
     oneShotResult: null,
   };
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return def;
@@ -219,7 +218,6 @@ export function normalizeRouletteState(raw: unknown): RouletteState {
     ? Math.max(50, Math.min(100, Math.floor(sigResultScalePctRaw)))
     : 78;
   const menuFillFromAllActive = typeof o.menuFillFromAllActive === "boolean" ? o.menuFillFromAllActive : true;
-  const menuFillFromDemo = typeof o.menuFillFromDemo === "boolean" ? o.menuFillFromDemo : false;
   const overlayReloadNonce = Number.isFinite(Number(o.overlayReloadNonce))
     ? Math.max(0, Math.floor(Number(o.overlayReloadNonce)))
     : 0;
@@ -271,7 +269,6 @@ export function normalizeRouletteState(raw: unknown): RouletteState {
     menuCount,
     sigResultScalePct,
     menuFillFromAllActive,
-    menuFillFromDemo,
     overlayReloadNonce,
     sessionId: typeof o.sessionId === "string" ? o.sessionId : undefined,
     lastFinishedAt: Number.isFinite(Number(o.lastFinishedAt)) ? Math.max(0, Math.floor(Number(o.lastFinishedAt))) : undefined,
@@ -1007,7 +1004,6 @@ function appStatePayloadForApi(next: AppState): Partial<AppState> {
     rouletteState: {
       menuCount: rouletteState.menuCount,
       menuFillFromAllActive: rouletteState.menuFillFromAllActive,
-      menuFillFromDemo: rouletteState.menuFillFromDemo,
       overlayOpacity: rouletteState.overlayOpacity,
       ...(Array.isArray(rouletteState.historyLogs) ? { historyLogs: rouletteState.historyLogs } : {}),
     },

@@ -1060,26 +1060,19 @@ export default function AdminPage() {
     const progressPath = selectedMemberId
       ? `${baseProgressPath}&memberId=${encodeURIComponent(selectedMemberId)}`
       : baseProgressPath;
-    const progressDemoPath = `${progressPath}&rouletteDemo=1`;
     const memberProgressPath = selectedMemberId
       ? progressPath
       : "";
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     return {
       progressPath,
-      progressDemoPath,
       memberProgressPath,
       progressAbs: origin ? `${origin}${progressPath}` : "",
-      progressDemoAbs: origin ? `${origin}${progressDemoPath}` : "",
       memberProgressAbs: origin && memberProgressPath ? `${origin}${memberProgressPath}` : "",
     };
   }, [rouletteUserId, selectedMemberId, getSigSalesMenuCount, state.rouletteState?.sigResultScalePct]);
   const rouletteQuickSummaryText = useMemo(() => {
-    const lines = [
-      `[통합 오버레이] ${rouletteQuickUrls.progressAbs}`,
-      `[통합 데모] ${rouletteQuickUrls.progressDemoAbs}`,
-    ];
-    return lines.join("\n");
+    return `[통합 오버레이] ${rouletteQuickUrls.progressAbs}`;
   }, [rouletteQuickUrls]);
   const rouletteServerStatus = useMemo(() => {
     const rs = state.rouletteState;
@@ -5285,12 +5278,9 @@ export default function AdminPage() {
                     <button type="button" className="rounded bg-[#6366f1] px-2 py-1 text-xs hover:bg-[#4f46e5]" onClick={() => window.open(rouletteQuickUrls.progressPath, "_blank", "noopener,noreferrer")}>
                       통합 열기
                     </button>
-                    <button type="button" className="rounded bg-fuchsia-700 px-2 py-1 text-xs hover:bg-fuchsia-600" onClick={() => window.open(rouletteQuickUrls.progressDemoPath, "_blank", "noopener,noreferrer")}>
-                      통합 데모
-                    </button>
                   </div>
                   <p className="text-[11px] text-neutral-400">
-                    점검 순서: <span className="text-neutral-200">통합 데모</span> → <span className="text-neutral-200">실제 통합</span>
+                    방송·점검은 <span className="text-neutral-200">통합 오버레이</span> URL만 사용하세요.
                     {selectedMemberId ? (
                       <>
                         {" "}(멤버 필터는 아래 드롭다운으로 선택된 상태가 URL에 포함됩니다)
@@ -5346,29 +5336,6 @@ export default function AdminPage() {
                       }}
                     />
                     전체 활성 시그 보충
-                  </label>
-                  <label className="inline-flex items-center gap-1 rounded border border-white/10 bg-black/20 px-2 py-1 text-[11px] text-neutral-300">
-                    <input
-                      type="checkbox"
-                      checked={state.rouletteState?.menuFillFromDemo === true}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setState((prev) => {
-                          const prevVal = prev.rouletteState?.menuFillFromDemo === true;
-                          if (prevVal === checked) return prev;
-                          const next = {
-                            ...prev,
-                            rouletteState: {
-                              ...prev.rouletteState,
-                              menuFillFromDemo: checked,
-                            },
-                          };
-                          persistState(next);
-                          return next;
-                        });
-                      }}
-                    />
-                    데모 풀 보충
                   </label>
                   <div className="basis-full rounded border border-white/10 bg-black/20 px-3 py-2 max-w-xl">
                     <div className="text-xs text-neutral-300 mb-1">확정 결과 카드 크기 (%)</div>
@@ -5449,31 +5416,6 @@ export default function AdminPage() {
                     }}
                   >
                     미리보기 열기
-                  </button>
-                  <button
-                    type="button"
-                    className={`rounded px-2 py-1 text-xs shrink-0 ${copiedId === "dash-sig-sales-demo" ? "bg-emerald-600" : "bg-fuchsia-700 hover:bg-fuchsia-600"}`}
-                    onClick={() => {
-                      const rs = clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct);
-                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}`;
-                      void copyUrl(u, "dash-sig-sales-demo");
-                    }}
-                  >
-                    {copiedId === "dash-sig-sales-demo" ? "복사됨!" : "데모 URL"}
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded bg-fuchsia-700 px-2 py-1 text-xs hover:bg-fuchsia-600"
-                    onClick={() => {
-                      const rs = clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct);
-                      window.open(
-                        `/overlay/sig-sales?u=${user?.id || "finalent"}&rouletteDemo=1&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}`,
-                        "_blank",
-                        "noopener,noreferrer"
-                      );
-                    }}
-                  >
-                    데모 열기
                   </button>
                 </div>
                 <div className="rounded-lg border border-white/10 bg-black/30 p-3">
