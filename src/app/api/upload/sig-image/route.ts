@@ -149,28 +149,47 @@ function getImageKitConfig():
 }
 
 async function uploadToImageKit(data: Buffer, fileName: string, contentType: string, folder: string, privateKey: string): Promise<string> {
-  const encoded = data.toString("base64");
-  const body = new FormData();
-  body.set("fileName", fileName);
-  body.set("file", `data:${contentType};base64,${encoded}`);
-  body.set("folder", folder);
-  body.set("useUniqueFileName", "false");
   const auth = Buffer.from(`${privateKey}:`).toString("base64");
-  const res = await fetch("https://upload.imagekit.io/api/v1/files/upload", {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${auth}`,
-    },
-    body,
-  });
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    throw new Error(`imagekit_upload_failed:${res.status}:${txt.slice(0, 400)}`);
+  const endpoint = "https://upload.imagekit.io/api/v1/files/upload";
+
+  const tryUpload = async (mode: "binary" | "dataUrl"): Promise<string> => {
+    const body = new FormData();
+    body.set("fileName", fileName);
+    if (mode === "binary") {
+      body.set("file", new Blob([data], { type: contentType }), fileName);
+    } else {
+      body.set("file", `data:${contentType};base64,${data.toString("base64")}`);
+    }
+    body.set("folder", folder);
+    body.set("useUniqueFileName", "true");
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${auth}`,
+      },
+      body,
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`imagekit_upload_failed:${res.status}:${txt.slice(0, 400)}`);
+    }
+    const json = await res.json() as { url?: string };
+    const url = String(json?.url || "").trim();
+    if (!url) throw new Error("imagekit_upload_failed:no_url");
+    return url;
+  };
+
+  // 1) 바이너리 업로드 우선 시도
+  try {
+    return await tryUpload("binary");
+  } catch (binaryErr) {
+    // 2) 일부 환경에서 바이너리 multipart 실패 시 data URL 방식으로 1회 재시도
+    try {
+      return await tryUpload("dataUrl");
+    } catch (dataErr) {
+      throw new Error(`${String(binaryErr)} | fallback:${String(dataErr)}`);
+    }
   }
-  const json = await res.json() as { url?: string };
-  const url = String(json?.url || "").trim();
-  if (!url) throw new Error("imagekit_upload_failed:no_url");
-  return url;
 }
 
 export async function POST(req: Request) {

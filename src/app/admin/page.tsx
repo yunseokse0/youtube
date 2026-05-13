@@ -2213,6 +2213,12 @@ export default function AdminPage() {
               ? "파일 용량이 너무 큽니다. 30MB 이하 파일만 업로드할 수 있습니다."
               : normalized === "missing_file"
                 ? "업로드할 파일을 찾지 못했습니다. 파일을 다시 선택해 주세요."
+                : normalized.includes("imagekit_upload_failed:401")
+                  ? "ImageKit 인증 실패입니다. IMAGEKIT_PRIVATE_KEY 값을 다시 확인해 주세요."
+                  : normalized.includes("imagekit_upload_failed:413") || normalized.includes("payload too large")
+                    ? "ImageKit 업로드 용량 제한에 걸렸습니다. 파일을 더 작게 줄여 주세요."
+                    : normalized.includes("imagekit_upload_failed")
+                      ? `ImageKit 업로드 실패(${rawError}). 잠시 후 다시 시도해 주세요.`
                 : String(res.status).startsWith("5")
                   ? "서버 오류로 업로드에 실패했습니다. 잠시 후 다시 시도해 주세요."
                   : `알 수 없는 오류(${rawError})가 발생했습니다.`;
