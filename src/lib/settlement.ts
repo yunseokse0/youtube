@@ -38,12 +38,21 @@ function sortLatest(records: SettlementRecord[]): SettlementRecord[] {
   return [...records].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 
-function settlementRowIsOperating(m: Pick<SettlementMemberResult, "name" | "operating">): boolean {
-  return Boolean(m.operating) || /운영비/i.test(m.name || "");
+function settlementRowIsOperating(
+  m: Pick<SettlementMemberResult, "name" | "operating" | "memberId" | "realName">,
+  positions?: Record<string, string> | null
+): boolean {
+  return isOperatingSettlementMember(
+    { id: m.memberId, name: m.name, operating: m.operating, realName: m.realName },
+    positions
+  );
 }
 
-function normalizeOperatingMember(m: SettlementMemberResult): SettlementMemberResult {
-  if (!settlementRowIsOperating(m)) return m;
+function normalizeOperatingMember(
+  m: SettlementMemberResult,
+  positions?: Record<string, string> | null
+): SettlementMemberResult {
+  if (!settlementRowIsOperating(m, positions)) return m;
   const account = Math.max(0, m.account || 0);
   const toon = Math.max(0, m.toon || 0);
   const gross = account + toon;
@@ -60,7 +69,19 @@ function normalizeOperatingMember(m: SettlementMemberResult): SettlementMemberRe
 }
 
 function migrateSettlementRecord(record: SettlementRecord): SettlementRecord {
-  const members = (record.members || []).map(normalizeOperatingMember);
+  const positions = record.memberPositionsAtSettlement;
+  const members = (record.members || []).map((m) =>
+    normalizeOperatingMember(
+      {
+        ...m,
+        operating: isOperatingSettlementMember(
+          { id: m.memberId, name: m.name, operating: m.operating, realName: m.realName },
+          positions
+        ),
+      },
+      positions
+    )
+  );
   const totalGross = members.reduce((s, r) => s + (r.gross || 0), 0);
   const totalFee = members.reduce((s, r) => s + (r.fee || 0), 0);
   const totalNet = members.reduce((s, r) => s + (r.net || 0), 0);
@@ -198,6 +219,7 @@ export function appendSettlementRecord(
     title: title.trim() || "정산",
     createdAt: Date.now(),
     ...body,
+    memberPositionsAtSettlement: memberPositions && typeof memberPositions === "object" ? { ...memberPositions } : {},
     ...(donors && donors.length > 0 ? { donors } : {}),
   };
   const prev = loadSettlementRecords(userId);
@@ -330,6 +352,7 @@ export async function appendSigMatchIncentiveSettlementAndSync(
     toonRatio: 0,
     feeRate: 0,
     members: rows,
+    memberPositionsAtSettlement: {},
     totalGross: total,
     totalFee: 0,
     totalNet: total,
@@ -355,7 +378,7 @@ export async function deleteSettlementRecordAndSync(recordId: string, reason = "
 export function toSettlementFormulaLine(record: SettlementRecord, m: SettlementMemberResult): string {
   const accSrc = formatManThousand(m.account);
   const toonSrc = formatManThousand(m.toon);
-  if (settlementRowIsOperating(m)) {
+  if (settlementRowIsOperating(m, record.memberPositionsAtSettlement)) {
     return `${m.name} 운영비 예외: 계좌${accSrc} + 투네${toonSrc} = ${m.gross.toLocaleString()} (비율/세금 미적용)`;
   }
   const accRatio = Number((m.accountRatio ?? record.accountRatio).toFixed(3));
@@ -366,8 +389,9 @@ export function toSettlementFormulaLine(record: SettlementRecord, m: SettlementM
 /** 정산 export/표시용 멤버 순서: 정산금액(net) 내림차순, 운영비는 맨 아래 */
 export function getMembersForExport(record: SettlementRecord): SettlementMemberResult[] {
   const members = record.members || [];
-  const operating = members.filter((m) => settlementRowIsOperating(m));
-  const nonOperating = members.filter((m) => !settlementRowIsOperating(m));
+  const pos = record.memberPositionsAtSettlement;
+  const operating = members.filter((m) => settlementRowIsOperating(m, pos));
+  const nonOperating = members.filter((m) => !settlementRowIsOperating(m, pos));
   const sortByNet = (a: SettlementMemberResult, b: SettlementMemberResult) => (b.net || 0) - (a.net || 0);
   return [...nonOperating.sort(sortByNet), ...operating.sort(sortByNet)];
 }
@@ -461,8 +485,9 @@ function fmtPct(r: number): string {
  */
 export function recordToReadableInput(record: SettlementRecord): ReadableSettlementInput {
   const taxRate = record.feeRate ?? 0.033;
+  const pos = record.memberPositionsAtSettlement;
   const members: ReadableSettlementMember[] = getMembersForExport(record).map((m) => {
-    if (settlementRowIsOperating(m)) {
+    if (settlementRowIsOperating(m, pos)) {
       return {
         name: `${m.name}${m.realName ? ` (${m.realName})` : ""}`,
         sources: [

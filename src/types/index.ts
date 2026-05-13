@@ -413,6 +413,8 @@ export type SettlementRecord = {
   totalGross: number;
   totalFee: number;
   totalNet: number;
+  /** 정산 시점 멤버별 직급 맵(스냅샷). 직급에「운영비」만 켜 둔 경우 엑셀·요약에서도 운영비 행으로 인식 */
+  memberPositionsAtSettlement?: Record<string, string>;
   /** 정산 당시 후원 스냅샷 */
   donors?: Donor[];
 };

@@ -1,4 +1,5 @@
 import { loadStateFromApi, saveState } from "@/lib/state";
+import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 import type { AppState, Donor as AppDonor } from "@/types";
 import { mapToMember } from "./mapper";
 import type { DonationEvent, Donor, DonorAlias } from "./types";
@@ -68,8 +69,10 @@ export async function processDonationEvent(rawEvent: DonationEvent, userId?: str
       const field = newDonor.target === "toon" ? "toon" : "account";
       const nextAccount = field === "account" ? (member.account || 0) + newDonor.amount : (member.account || 0);
       const nextToon = field === "toon" ? (member.toon || 0) + newDonor.amount : (member.toon || 0);
-      const isOperating =
-        Boolean(member.operating) || /운영비/i.test(String(member.name || ""));
+      const isOperating = isOperatingSettlementMember(
+        { id: member.id, name: member.name, operating: member.operating, realName: member.realName },
+        currentState.memberPositions || null
+      );
       return {
         ...member,
         [field]: (member[field] || 0) + newDonor.amount,

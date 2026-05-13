@@ -17,15 +17,16 @@ function floorToHundreds(value: number): number {
   return Math.floor(Math.max(0, value) / 100) * 100;
 }
 
-/** 오버레이·후원 처리와 동일: 체크박스, 닉네임, 직급 텍스트 중 하나라도 운영비면 운영비 행 */
+/** 오버레이·후원 처리와 동일: 체크박스, 닉네임, 실명, 직급 텍스트 중 하나라도 운영비면 운영비 행 */
 export function isOperatingSettlementMember(
-  m: Pick<Member, "id" | "name" | "operating">,
+  m: Pick<Member, "id" | "name" | "operating"> & { realName?: string },
   memberPositions?: Record<string, string> | null
 ): boolean {
   const pos = String(memberPositions?.[m.id] || "").trim();
   return (
     Boolean(m.operating) ||
     /운영비/i.test(String(m.name || "")) ||
+    /운영비/i.test(String(m.realName || "")) ||
     /운영비/i.test(pos)
   );
 }
@@ -46,7 +47,10 @@ export function computeSettlement(
     // 정산(엑셀/CVS/TXT 포함)은 원금 기준을 100원 단위 버림으로 통일.
     const account = floorToHundreds(Math.max(0, m.account || 0));
     const toon = floorToHundreds(Math.max(0, m.toon || 0));
-    const isOperating = isOperatingSettlementMember(m, memberPositions);
+    const isOperating = isOperatingSettlementMember(
+      { id: m.id, name: m.name, operating: m.operating, realName: m.realName },
+      memberPositions
+    );
     const perMember = memberRatioOverrides?.[m.id];
     const effectiveAccountRatio = toSafeRate(
       isOperating
@@ -143,6 +147,7 @@ export function getSigMatchRankings(
     (m) =>
       !Boolean(m.operating) &&
       !/운영비/i.test(String(m.name || "")) &&
+      !/운영비/i.test(String(m.realName || "")) &&
       !/운영비/i.test(String(positionMap[m.id] || ""))
   );
   const rawParticipants = settings.participantMemberIds || [];
