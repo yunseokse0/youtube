@@ -59,12 +59,35 @@ function extractGiphyId(raw: string): string | null {
 }
 
 /**
+ * 오버레이 배경(GIF/MP4) URL: ImageKit 등 제거된 CDN·404 유발 주소는 빈 문자열로 두어
+ * 브라우저 요청·동기화 실패(콘솔 폭주)를 막습니다.
+ * — Supabase Storage 공개 URL, Giphy, 상대 경로는 유지합니다.
+ */
+export function sanitizeOverlayEmbedMediaUrl(raw: unknown): string {
+  const s = String(raw ?? "").trim().replace(/\\/g, "/");
+  if (!s) return "";
+  if (s.startsWith("data:") || s.startsWith("blob:")) return s;
+  const lower = s.toLowerCase();
+  if (lower.includes("imagekit.io")) return "";
+  if (/\/sig_images(\/|$|\?)/i.test(s) || /^sig_images(\/|$|\?)/i.test(s)) return "";
+  if (/^https?:\/\//i.test(s)) {
+    if (/^https?:\/\/[^/]*supabase\.co\/storage\/v1\/object\/public\//i.test(s)) return s;
+    if (lower.includes("giphy.com")) return s;
+    if (lower.includes("i.giphy.com")) return s;
+    if (lower.includes("media.giphy.com")) return s;
+    return "";
+  }
+  return s;
+}
+
+/**
  * 반복 재생이 필요한 배경용 소스 해석.
  * - giphy 계열은 루프가 더 부드러운 mp4를 우선 사용
  * - 그 외는 확장자 기준으로 이미지/비디오 판별
  */
 export function resolveAnimatedSourceForEmbed(raw: string): AnimatedEmbedSource {
-  const s = (raw || "").trim();
+  const s0 = sanitizeOverlayEmbedMediaUrl(raw);
+  const s = s0.trim();
   if (!s) return { src: "", kind: "image" };
 
   const giphyId = extractGiphyId(s);

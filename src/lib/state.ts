@@ -24,6 +24,7 @@ import type {
   SigRollingSettings,
 } from "@/types";
 import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
+import { sanitizeOverlayEmbedMediaUrl } from "@/lib/gif-url";
 import {
   DEFAULT_SIG_INVENTORY,
   normalizeSigImageUrlStored,
@@ -528,15 +529,30 @@ export function normalizeDonationListsOverlayConfig(input: unknown): OverlayConf
   let op = Number(v.bgOpacity);
   if (!Number.isFinite(op)) op = 40;
   op = Math.max(0, Math.min(100, Math.round(op)));
+  const bgGifUrl = sanitizeOverlayEmbedMediaUrl(urlRaw);
   return {
-    bgGifUrl: urlRaw,
+    bgGifUrl,
     bgOpacity: op,
-    isBgEnabled: Boolean(v.isBgEnabled),
+    isBgEnabled: Boolean(bgGifUrl && v.isBgEnabled),
   };
 }
 
 export function normalizeDonorRankingsOverlayConfig(input: unknown): OverlayConfig {
   return normalizeDonationListsOverlayConfig(input);
+}
+
+/** 오버레이 프리셋에 남은 ImageKit 등 외부 GIF URL 제거(로드·저장 공통) */
+function normalizeOverlayPresetsMedia(input: unknown): unknown[] {
+  if (!Array.isArray(input)) return [];
+  return input.map((p) => {
+    if (!p || typeof p !== "object") return p;
+    const o = p as Record<string, unknown>;
+    const next = { ...o };
+    if (typeof o.tableBgGifUrl === "string") {
+      next.tableBgGifUrl = sanitizeOverlayEmbedMediaUrl(o.tableBgGifUrl);
+    }
+    return next;
+  });
 }
 
 function normalizeSigSalesExcludedIds(input: unknown): string[] {
@@ -920,7 +936,7 @@ export function loadState(userId?: string | null): AppState {
     data.forbiddenWords = data.forbiddenWords || [];
     data.missions = ensureMissionItems(data.missions);
     data.sigInventory = normalizeSigInventory((data as AppState).sigInventory);
-    data.sigSoldOutStampUrl = typeof (data as AppState).sigSoldOutStampUrl === "string" ? (data as AppState).sigSoldOutStampUrl : "";
+    data.sigSoldOutStampUrl = normalizeSigImageUrlStored((data as AppState).sigSoldOutStampUrl);
     data.sigSalesMemberPresets =
       (data as AppState).sigSalesMemberPresets && typeof (data as AppState).sigSalesMemberPresets === "object"
         ? Object.fromEntries(
@@ -991,11 +1007,13 @@ export function loadState(userId?: string | null): AppState {
     data.donationListsOverlayConfig = normalizeDonationListsOverlayConfig((data as AppState).donationListsOverlayConfig);
     data.sigRolling = normalizeSigRolling((data as AppState).sigRolling);
     data.sigRollingMeta = normalizeSigRollingMeta((data as AppState).sigRollingMeta);
-    data.overlayPresets = Array.isArray(data.overlayPresets)
-      ? data.overlayPresets
-      : Array.isArray(data.overlaySettings?.presets)
-        ? data.overlaySettings?.presets
-        : [];
+    data.overlayPresets = normalizeOverlayPresetsMedia(
+      Array.isArray(data.overlayPresets)
+        ? data.overlayPresets
+        : Array.isArray(data.overlaySettings?.presets)
+          ? data.overlaySettings?.presets
+          : []
+    );
     return syncBattleStateWithMembers(data);
   } catch {
     return defaultState();
@@ -1071,6 +1089,10 @@ function normalizeStateForPersistence(state: AppState): AppState {
     ...state,
     sigInventory: normalizeSigInventory(state.sigInventory),
     sigRolling: normalizeSigRolling(state.sigRolling),
+    sigSoldOutStampUrl: normalizeSigImageUrlStored(state.sigSoldOutStampUrl),
+    donationListsOverlayConfig: normalizeDonationListsOverlayConfig(state.donationListsOverlayConfig),
+    donorRankingsOverlayConfig: normalizeDonorRankingsOverlayConfig(state.donorRankingsOverlayConfig),
+    overlayPresets: normalizeOverlayPresetsMedia(state.overlayPresets),
   };
 }
 
@@ -1151,7 +1173,7 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
       data.forbiddenWords = data.forbiddenWords || [];
       data.missions = ensureMissionItems(data.missions);
       data.sigInventory = normalizeSigInventory((data as AppState).sigInventory);
-      data.sigSoldOutStampUrl = typeof (data as AppState).sigSoldOutStampUrl === "string" ? (data as AppState).sigSoldOutStampUrl : "";
+      data.sigSoldOutStampUrl = normalizeSigImageUrlStored((data as AppState).sigSoldOutStampUrl);
       data.sigSalesMemberPresets =
         (data as AppState).sigSalesMemberPresets && typeof (data as AppState).sigSalesMemberPresets === "object"
           ? Object.fromEntries(
@@ -1222,11 +1244,13 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
       data.donationListsOverlayConfig = normalizeDonationListsOverlayConfig((data as AppState).donationListsOverlayConfig);
       data.sigRolling = normalizeSigRolling((data as AppState).sigRolling);
       data.sigRollingMeta = normalizeSigRollingMeta((data as AppState).sigRollingMeta);
-      data.overlayPresets = Array.isArray(data.overlayPresets)
-        ? data.overlayPresets
-        : Array.isArray(data.overlaySettings?.presets)
-          ? data.overlaySettings?.presets
-          : [];
+      data.overlayPresets = normalizeOverlayPresetsMedia(
+        Array.isArray(data.overlayPresets)
+          ? data.overlayPresets
+          : Array.isArray(data.overlaySettings?.presets)
+            ? data.overlaySettings?.presets
+            : []
+      );
       return syncBattleStateWithMembers(data as AppState);
     }
     return null;
