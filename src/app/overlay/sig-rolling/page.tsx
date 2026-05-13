@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   defaultState,
+  filterSigInventoryForSalesDisplay,
   getUnifiedSigRollingItems,
   loadState,
   loadStateFromApi,
@@ -15,7 +16,7 @@ import {
 } from "@/lib/state";
 import { normalizeSigImageUrlStored, resolveSigImageUrl } from "@/lib/constants";
 import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
-import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
+import { getOverlayMemberFilterIdFromSearchParams, getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { getSigRollingHoldMs } from "@/lib/sig-rolling-duration";
 import {
   SIG_ROLLING_MEDIA_HEIGHT_PX,
@@ -36,9 +37,9 @@ const SHELL_OUTER_HEIGHT_PX = SIG_ROLLING_MEDIA_HEIGHT_PX + SHELL_PAD_PX * 2;
 const TWO_CARD_BASE_WIDTH_PX = SHELL_OUTER_WIDTH_PX * 2;
 
 /** 폴링으로 `state` 객체만 바뀌고 내용은 같을 때도 참조가 매번 바뀌지 않도록 문자열 키로 구분 (타이머 effect 무한 리셋 방지) */
-function sigRollingScheduleKey(state: AppState | null): string {
+function sigRollingScheduleKey(state: AppState | null, memberFilterId: string): string {
   const r = normalizeSigRolling(state?.sigRolling);
-  const items = getUnifiedSigRollingItems(state);
+  const items = getUnifiedSigRollingItems(state, memberFilterId);
   return `${r.fadeMs}|${r.staticHoldMs}|${items.map((x) => `${x.id}\u001f${x.url}`).join("\u001e")}`;
 }
 
@@ -228,10 +229,11 @@ function RollingCardColumn({
 export default function SigRollingOverlayPage() {
   const sp = useSearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
+  const memberFilterId = getOverlayMemberFilterIdFromSearchParams(sp);
   const { state, ready } = useRemoteState(userId);
 
   const rolling = useMemo(() => normalizeSigRolling(state?.sigRolling), [state?.sigRolling]);
-  const items = useMemo(() => getUnifiedSigRollingItems(state), [state]);
+  const items = useMemo(() => getUnifiedSigRollingItems(state, memberFilterId), [state, memberFilterId]);
   const rollingUnified = useMemo(() => ({ ...rolling, items }), [rolling, items]);
   const fadeMs = rolling.fadeMs;
 
@@ -247,7 +249,7 @@ export default function SigRollingOverlayPage() {
   const leftNext = n ? items[(pairStart + 2) % n] : null;
   const rightNext = n ? items[(pairStart + 3) % n] : null;
 
-  const scheduleKey = sigRollingScheduleKey(state);
+  const scheduleKey = sigRollingScheduleKey(state, memberFilterId);
   const rollingRef = useRef(rollingUnified);
   rollingRef.current = rollingUnified;
 
@@ -333,19 +335,18 @@ export default function SigRollingOverlayPage() {
     if (!state) return "";
     const inv = state.sigInventory || [];
     const rows = inv.filter((x) => x.id !== ONE_SHOT_SIG_ID);
-    const rollingWithUrl = rows.filter(
-      (x) => x.isRolling && normalizeSigImageUrlStored(x.imageUrl).trim()
-    );
+    const salesRows = filterSigInventoryForSalesDisplay(state, memberFilterId);
+    const rollingWithUrl = salesRows.filter((x) => Boolean(normalizeSigImageUrlStored(x.imageUrl).trim()));
     const anyImage = rows.some((x) => Boolean(normalizeSigImageUrlStored(x.imageUrl).trim()));
-    const anyRollingFlag = rows.some((x) => x.isRolling);
-    if (anyImage && rollingWithUrl.length === 0) {
-      return "시그 인벤에 이미지는 있으나 「보드 노출」이 꺼져 롤링 목록이 비었습니다. 관리자 → 시그 판매 → 시그 롤링에서 노출할 시그의 보드 노출을 켜 주세요.";
+    const anyActiveInPool = salesRows.length > 0;
+    if (anyImage && anyActiveInPool && rollingWithUrl.length === 0) {
+      return "판매 활성 시그는 있으나 이미지 URL이 비어 있어 표시할 수 없습니다. 시그 판매 관리에서 이미지를 등록해 주세요.";
     }
-    if (anyRollingFlag && rollingWithUrl.length === 0) {
-      return "보드 노출은 켜져 있으나 이미지 URL이 비어 있어 표시할 수 없습니다. 시그에 이미지를 등록해 주세요.";
+    if (anyImage && !anyActiveInPool) {
+      return "시그 인벤에 이미지는 있으나 「판매 활성」이 꺼져 있거나 판매 제외·멤버 필터 때문에 목록이 비었습니다. 시그 판매 관리 기준으로 활성·멤버를 맞춰 주세요.";
     }
     return "";
-  }, [state]);
+  }, [state, memberFilterId]);
 
   if (!ready) {
     return (

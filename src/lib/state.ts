@@ -22,6 +22,7 @@ import type {
   SigRollingMetaEntry,
   SigRollingSettings,
 } from "@/types";
+import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 export type {
   AppState,
   ContributionLog,
@@ -88,14 +89,36 @@ function normalizeSigRollingMeta(input: unknown): Record<string, SigRollingMetaE
 }
 
 /**
- * 시그 롤링 목록의 단일 소스는 `sigInventory(isRolling=true)`다.
- * 인벤토리에 롤링 대상이 하나라도 있으면 구버전 `sigRolling.items`는 사용하지 않는다.
+ * 시그 판매 관리(회전판 후보)와 동일: 판매 활성·판매 제외·멤버 필터.
+ * `memberFilterId`가 비어 있으면 멤버 구분 없이 전체 활성 시그.
  */
-export function getUnifiedSigRollingItems(state: Pick<AppState, "sigInventory" | "sigRolling" | "sigRollingMeta"> | null | undefined): SigRollingItem[] {
+export function filterSigInventoryForSalesDisplay(
+  state: Pick<AppState, "sigInventory" | "sigSalesExcludedIds"> | null | undefined,
+  memberFilterId?: string | null
+): SigItem[] {
+  if (!state) return [];
+  const excluded = new Set((state.sigSalesExcludedIds || []).map((x) => String(x)));
+  const mid = String(memberFilterId ?? "").trim();
+  return (state.sigInventory || []).filter(
+    (x) =>
+      x.id !== ONE_SHOT_SIG_ID &&
+      Boolean(x.isActive) &&
+      !excluded.has(x.id) &&
+      (!mid || (x.memberId || "") === mid)
+  );
+}
+
+/**
+ * 시그 롤링 목록은 시그 판매 관리의 판매 활성 풀과 동일 기준이다.
+ * 인벤토리에 해당 행이 하나라도 있으면 구버전 `sigRolling.items`는 사용하지 않는다.
+ */
+export function getUnifiedSigRollingItems(
+  state: Pick<AppState, "sigInventory" | "sigRolling" | "sigRollingMeta" | "sigSalesExcludedIds"> | null | undefined,
+  memberFilterId?: string | null
+): SigRollingItem[] {
   if (!state) return [];
   const meta = normalizeSigRollingMeta(state.sigRollingMeta);
-  const invRows = (state.sigInventory || [])
-    .filter((x) => x.id !== "sig_one_shot" && Boolean(x.isRolling))
+  const invRows = filterSigInventoryForSalesDisplay(state, memberFilterId)
     .map((x, idx) => {
       const m = meta[x.id] || {};
       return {

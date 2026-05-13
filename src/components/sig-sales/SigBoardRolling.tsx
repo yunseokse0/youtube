@@ -6,13 +6,17 @@ import Image from "next/image";
 import type { SigItem } from "@/types";
 import { resolveSigImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
-import { canonicalSigIdFromWheelSliceId } from "@/lib/sig-roulette";
+import { canonicalSigIdFromWheelSliceId, ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 
 type SigBoardRollingProps = {
   inventory: SigItem[];
   soldOutStampUrl: string;
   /** 완판 외에도 현재 회차 판매 확정 시그를 강제로 sold 처리할 때 사용 */
   soldOverrideSet?: Set<string>;
+  /** 시그 판매 관리와 동일: 판매 제외 ID (`sigSalesExcludedIds`) */
+  sigSalesExcludedIds?: string[];
+  /** 시그 판매 오버레이 `memberId`와 동일하면 해당 멤버 시그만 표시 */
+  memberFilterId?: string;
   className?: string;
   gifDelayMultiplier?: number;
   /** false면 2.6초마다 페이지가 넘어가지 않음(방송 오버레이에서 GIF+롤링 이중 움직임 방지) */
@@ -24,11 +28,24 @@ export default function SigBoardRolling({
   inventory,
   soldOutStampUrl,
   soldOverrideSet,
+  sigSalesExcludedIds = [],
+  memberFilterId = "",
   className = "",
   gifDelayMultiplier = 1,
   autoAdvancePages = true,
 }: SigBoardRollingProps) {
-  const rollingItems = useMemo(() => inventory.filter((x) => x.isRolling), [inventory]);
+  /** 시그 판매 관리 `activeNormalPool`과 동일: 판매 활성·제외·멤버 (구 `isRolling` 단독 필터 제거) */
+  const rollingItems = useMemo(() => {
+    const excluded = new Set(sigSalesExcludedIds.map(String));
+    const mid = String(memberFilterId || "").trim();
+    return inventory.filter(
+      (x) =>
+        x.id !== ONE_SHOT_SIG_ID &&
+        Boolean(x.isActive) &&
+        !excluded.has(x.id) &&
+        (!mid || (x.memberId || "") === mid)
+    );
+  }, [inventory, sigSalesExcludedIds, memberFilterId]);
 
   const pageSize = 4;
   const pageCount = Math.max(1, Math.ceil(rollingItems.length / pageSize));

@@ -1436,6 +1436,8 @@ export default function SigSalesOverlayPage() {
               inventory={state.sigInventory || []}
               soldOutStampUrl={soldOutStampUrl}
               soldOverrideSet={resultSoldOverrideSet}
+              sigSalesExcludedIds={state.sigSalesExcludedIds || []}
+              memberFilterId={memberFilterId}
               className="pb-2"
               gifDelayMultiplier={sigGifDelayMultiplier}
               autoAdvancePages={sigBoardDuringSpin}
