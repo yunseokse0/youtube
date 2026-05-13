@@ -38,9 +38,10 @@ import {
   normalizeDonationListsOverlayConfig,
   getUnifiedSigRollingItems,
   normalizeSigRolling,
+  stripSigRollingImagesKeepItems,
   type OverlayConfig,
 } from "@/lib/state";
-import { resolveSigImageUrl } from "@/lib/constants";
+import { resolveSigImageUrl, stripSigInventoryImagesKeepList, DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -50,7 +51,6 @@ import { formatSigMatchStat, getSigMatchRankings } from "@/lib/settlement-utils"
 import { getEffectiveRemainingTime, pauseTimer, resumeTimer } from "@/lib/timer-utils";
 import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
 import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
-import { DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
 import { detectSigPriceFromImageFile, detectSigPriceFromImageUrlDetailed } from "@/lib/sig-image-ocr";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 import { normalizeSigDedupKeyImageUrl } from "@/lib/sig-inventory-dedup";
@@ -2325,6 +2325,33 @@ export default function AdminPage() {
       setOcrAllBusy(false);
     }
   }, [ocrAllBusy, state.sigInventory]);
+
+  const clearAllSigImagesKeepList = useCallback(() => {
+    if (
+      !window.confirm(
+        "시그 인벤·롤링 수동 목록·완판 도장의 이미지 URL을 모두 기본 더미로 바꿉니다.\n이름·가격·판매 수·멤버 지정은 유지됩니다. 계속할까요?"
+      )
+    ) {
+      return;
+    }
+    setSigPreviewMap({});
+    setNewSigPreviewUrl("");
+    setNewSigImageUrl("");
+    setSigImagePreviewModal(null);
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        sigInventory: stripSigInventoryImagesKeepList(prev.sigInventory),
+        sigRolling: stripSigRollingImagesKeepItems(prev.sigRolling),
+        sigSoldOutStampUrl: "",
+      };
+      const synced = syncOneShotSigItem(next);
+      persistState(synced);
+      return synced;
+    });
+    setSigExcelResult("시그 이미지 URL을 일괄 제거했습니다. 필요 시 PC에서 선택으로 다시 올려 주세요.");
+    setSigOcrBanner("");
+  }, [syncOneShotSigItem]);
 
   const uploadSigImage = (id: string, file: File | null) => {
     if (!file) return;
@@ -6059,13 +6086,13 @@ export default function AdminPage() {
                     <div className="rounded border border-white/10 bg-black/20 p-2">
                       <div className="text-[11px] text-neutral-400 mb-2">신규 시그 이미지 미리보기</div>
                       <div className="relative h-20 w-20 overflow-hidden rounded border border-white/10 bg-black/30">
-                        <Image
+                        {/* next/image는 비정상 URL 시 _next/static 조합 버그가 나올 수 있어 동적 시그는 native img 사용 */}
+                        <img
                           src={newSigPreviewUrl || resolveSigPreviewSrc(newSigImageUrl, newSigName)}
                           alt="신규 시그 미리보기"
-                          fill
-                          unoptimized
-                          sizes="80px"
-                          className="object-cover"
+                          className="absolute inset-0 h-full w-full object-cover"
+                          loading="lazy"
+                          decoding="async"
                           onError={(e) => {
                             e.currentTarget.onerror = null;
                             e.currentTarget.src = SIG_DUMMY_IMAGE;
@@ -6147,6 +6174,14 @@ export default function AdminPage() {
                         {ocrAllBusy && ocrBatchProgress
                           ? `OCR 처리 중 ${ocrBatchProgress.current}/${ocrBatchProgress.total}`
                           : "금액 OCR 전체 적용"}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded bg-rose-800/90 px-3 py-1.5 text-sm font-semibold text-white shadow hover:bg-rose-700 disabled:opacity-50"
+                        disabled={ocrAllBusy}
+                        onClick={() => clearAllSigImagesKeepList()}
+                      >
+                        시그 이미지 URL 일괄 제거
                       </button>
                     </div>
                   </div>
@@ -6341,13 +6376,12 @@ export default function AdminPage() {
                               })
                             }
                           >
-                            <Image
+                            <img
                               src={sigPreviewMap[item.id] || resolveSigPreviewSrc(item.imageUrl, item.name)}
                               alt={`${item.name} 미리보기`}
-                              fill
-                              unoptimized
-                              sizes="64px"
-                              className="object-cover"
+                              className="absolute inset-0 h-full w-full object-cover"
+                              loading="lazy"
+                              decoding="async"
                               onError={(e) => {
                                 e.currentTarget.onerror = null;
                                 e.currentTarget.src = SIG_DUMMY_IMAGE;
@@ -6527,14 +6561,13 @@ export default function AdminPage() {
                         닫기
                       </button>
                     </div>
-                    <div className="relative h-[70vh] w-full overflow-hidden rounded border border-white/10 bg-black/40">
-                      <Image
+                    <div className="relative flex min-h-[40vh] w-full items-center justify-center overflow-hidden rounded border border-white/10 bg-black/40 p-2">
+                      <img
                         src={sigImagePreviewModal.src}
                         alt={`${sigImagePreviewModal.name} 원본 미리보기`}
-                        fill
-                        unoptimized
-                        sizes="90vw"
-                        className="object-contain"
+                        className="max-h-[70vh] max-w-full object-contain"
+                        loading="lazy"
+                        decoding="async"
                         onError={(e) => {
                           e.currentTarget.onerror = null;
                           e.currentTarget.src = SIG_DUMMY_IMAGE;

@@ -41,12 +41,25 @@ export function getSigImagePlaceholderOnlyForOverlay(): boolean {
   return sigImagePlaceholderOnlyForOverlay;
 }
 
+/** 쿼리스트링이 경로에 붙거나 `/static/user=…` 등으로 잘못 저장된 값 → 무한 요청·ERR_INSUFFICIENT_RESOURCES 유발 가능 */
+function isCorruptSigImageUrlString(s: string): boolean {
+  const t = s.trim();
+  if (!t || t.startsWith("data:") || t.startsWith("blob:")) return false;
+  if (/\/static\/user=/i.test(t)) return true;
+  if (/\/_next\/static\/[^?]+\?user=/i.test(t)) return true;
+  if (/^\/[^?\s]*user=[^&\s]+\&u=[^&\s]+/i.test(t)) return true;
+  return false;
+}
+
 /** 저장된 시그 이미지 경로 보정(`/images/sig/` 오타 → `/images/sigs/`) — 인벤·시그롤링·당첨 배열 모두 적용 */
 export function normalizeSigImageUrlStored(raw: unknown): string {
   let s = String(raw ?? "").trim().replace(/\\/g, "/");
   // 콘솔/메신저 복붙 시 붙는 `: ` 프리픽스 제거
   s = s.replace(/^:\s*/, "");
   if (!s) return "";
+  if (isCorruptSigImageUrlString(s)) {
+    return BUNDLED_SIG_PLACEHOLDER_URL;
+  }
   /** 상대 경로 `images/…` `uploads/…` → 절대 경로화 (레거시 URL) */
   if (
     !s.startsWith("/") &&
@@ -99,6 +112,12 @@ export function normalizeSigInventory(input: unknown): SigItem[] {
     })
     .map((x) => ({ ...x, soldCount: Math.min(x.soldCount, x.maxCount) }));
   return list.length > 0 ? list : DEFAULT_SIG_INVENTORY.map((x) => ({ ...x }));
+}
+
+/** 시그 항목(id·이름·가격·판매량 등)은 유지하고 이미지 URL만 공용 더미로 통일 */
+export function stripSigInventoryImagesKeepList(items: SigItem[] | null | undefined): SigItem[] {
+  if (!Array.isArray(items)) return [];
+  return items.map((x) => ({ ...x, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL }));
 }
 
 export function resolveSigImageUrl(name: string, imageUrl?: string): string {

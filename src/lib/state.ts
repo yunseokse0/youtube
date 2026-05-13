@@ -23,6 +23,12 @@ import type {
   SigRollingSettings,
 } from "@/types";
 import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
+import {
+  BUNDLED_SIG_PLACEHOLDER_URL,
+  DEFAULT_SIG_INVENTORY,
+  normalizeSigImageUrlStored,
+  normalizeSigInventory,
+} from "./constants";
 export type {
   AppState,
   ContributionLog,
@@ -68,6 +74,15 @@ export function normalizeSigRolling(input: unknown): SigRollingSettings {
     ? Math.max(400, Math.min(120_000, Math.floor(Number(v.staticHoldMs))))
     : 5000;
   return { items, fadeMs, staticHoldMs };
+}
+
+/** 롤링 수동 목록의 URL만 더미로 바꿉니다(항목·라벨·fade 설정 유지). */
+export function stripSigRollingImagesKeepItems(input: unknown): SigRollingSettings {
+  const base = normalizeSigRolling(input);
+  return {
+    ...base,
+    items: base.items.map((it) => ({ ...it, url: BUNDLED_SIG_PLACEHOLDER_URL })),
+  };
 }
 
 function normalizeSigRollingMeta(input: unknown): Record<string, SigRollingMetaEntry> {
@@ -172,7 +187,6 @@ export function normalizeSigMatchParticipantIds(raw: unknown, validMemberIds: Se
   }
   return out;
 }
-import { DEFAULT_SIG_INVENTORY, normalizeSigImageUrlStored, normalizeSigInventory } from "./constants";
 
 export function normalizeRouletteState(raw: unknown): RouletteState {
   const def: RouletteState = {
