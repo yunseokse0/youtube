@@ -3,6 +3,21 @@ import type { SigItem } from "@/types";
 /** 저장소에 미설정 시 완판 오버레이·관리 화면 기본 도장(`public` 실파일과 동일 경로 유지) */
 export const DEFAULT_SIG_SOLD_STAMP_URL = "/images/sigs/stamp.svg";
 
+/** Git·Render 배포본에 포함된 공통 시그 이미지(`public/images/sigs/dummy-sig.svg`) */
+export const BUNDLED_SIG_PLACEHOLDER_URL = "/images/sigs/dummy-sig.svg";
+
+/** 예전 기본 인벤이 가리키던 PNG — 레포에 없어 배포 시 404 → 플레이스홀더로 치환 */
+const LEGACY_MISSING_REPO_SIG_IMAGE_PATHS = new Set<string>([
+  "/images/sigs/애교.png",
+  "/images/sigs/댄스.png",
+  "/images/sigs/식사권.png",
+  "/images/sigs/보이스.png",
+  "/images/sigs/노래.png",
+  "/images/sigs/토크.png",
+  "/images/sigs/하트.png",
+  "/images/sigs/게임.png",
+]);
+
 /** 방송에서 자주 쓰는 시그 기본 목록(애교·댄스·식사권 외 프리셋) */
 export const BROADCAST_SIG_PRESET_NAMES = [
   "애교",
@@ -16,14 +31,14 @@ export const BROADCAST_SIG_PRESET_NAMES = [
 ] as const;
 
 export const DEFAULT_SIG_INVENTORY: SigItem[] = [
-  { id: "sig_aegyo", name: "애교", price: 77000, imageUrl: "/images/sigs/애교.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "sig_dance", name: "댄스", price: 100000, imageUrl: "/images/sigs/댄스.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "sig_meal", name: "식사권", price: 333000, imageUrl: "/images/sigs/식사권.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "sig_voice", name: "보이스", price: 50000, imageUrl: "/images/sigs/보이스.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: true },
-  { id: "sig_song", name: "노래", price: 120000, imageUrl: "/images/sigs/노래.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: false },
-  { id: "sig_talk", name: "토크", price: 55000, imageUrl: "/images/sigs/토크.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: false },
-  { id: "sig_heart", name: "하트", price: 30000, imageUrl: "/images/sigs/하트.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: false },
-  { id: "sig_game", name: "게임", price: 88000, imageUrl: "/images/sigs/게임.png", memberId: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: false },
+  { id: "sig_aegyo", name: "애교", price: 77000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "sig_dance", name: "댄스", price: 100000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "sig_meal", name: "식사권", price: 333000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "sig_voice", name: "보이스", price: 50000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, memberId: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: true },
+  { id: "sig_song", name: "노래", price: 120000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, memberId: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: false },
+  { id: "sig_talk", name: "토크", price: 55000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, memberId: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: false },
+  { id: "sig_heart", name: "하트", price: 30000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, memberId: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: false },
+  { id: "sig_game", name: "게임", price: 88000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, memberId: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: false },
 ];
 
 /** 오버레이 UI 확인용: true 이면 resolveSigImageUrl 이 항상 더미 SVG 반환(실패 PNG 요청·404 방지) */
@@ -52,7 +67,10 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
     if (s.startsWith("images/") || s.startsWith("uploads/")) s = `/${s}`;
   }
   if (s.startsWith("/images/sig/")) {
-    return s.replace(/^\/images\/sig\//, "/images/sigs/");
+    s = s.replace(/^\/images\/sig\//, "/images/sigs/");
+  }
+  if (LEGACY_MISSING_REPO_SIG_IMAGE_PATHS.has(s)) {
+    return BUNDLED_SIG_PLACEHOLDER_URL;
   }
   return s;
 }
@@ -83,12 +101,12 @@ export function normalizeSigInventory(input: unknown): SigItem[] {
 
 export function resolveSigImageUrl(name: string, imageUrl?: string): string {
   if (sigImagePlaceholderOnlyForOverlay) {
-    return "/images/sigs/dummy-sig.svg";
+    return BUNDLED_SIG_PLACEHOLDER_URL;
   }
   const raw = normalizeSigImageUrlStored(imageUrl);
   if (raw) {
     if (/(?:_257b_2522id_2522|%257b%2522id%2522|%7b%22id%22)/i.test(raw)) {
-      return "/images/sigs/dummy-sig.svg";
+      return BUNDLED_SIG_PLACEHOLDER_URL;
     }
     if (
       raw.startsWith("http://") ||
@@ -102,7 +120,7 @@ export function resolveSigImageUrl(name: string, imageUrl?: string): string {
     if (raw.startsWith("uploads/") || raw.startsWith("images/")) return `/${raw}`;
   }
   const safeName = String(name || "").trim();
-  if (!safeName) return "/images/sigs/dummy-sig.svg";
+  if (!safeName) return BUNDLED_SIG_PLACEHOLDER_URL;
   /** public 에 이름별 PNG 가 없으면 404만 줄줄이 남음 → 공통 더미(이미지 URL을 비운 시그) */
-  return "/images/sigs/dummy-sig.svg";
+  return BUNDLED_SIG_PLACEHOLDER_URL;
 }

@@ -40,6 +40,7 @@ import {
   normalizeSigRolling,
   type OverlayConfig,
 } from "@/lib/state";
+import { resolveSigImageUrl } from "@/lib/constants";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -131,16 +132,10 @@ function isLegacyLocalSigImageUrl(raw?: string): boolean {
   );
 }
 
-function resolveSigPreviewSrc(raw?: string): string {
-  const v = String(raw || "").trim().replace(/\\/g, "/");
-  if (!v) return SIG_DUMMY_IMAGE;
+function resolveSigPreviewSrc(raw?: string, name?: string): string {
+  const v = String(raw || "").trim();
   if (isBrokenSigImageUrl(v)) return SIG_DUMMY_IMAGE;
-  if (v.startsWith("/")) return v;
-  if (v.startsWith("uploads/")) return `/${v}`;
-  if (v.startsWith("images/")) return `/${v}`;
-  if (v.startsWith("http://") || v.startsWith("https://")) return v;
-  if (v.startsWith("data:image/") || v.startsWith("blob:")) return v;
-  return SIG_DUMMY_IMAGE;
+  return resolveSigImageUrl(String(name || "").trim(), v);
 }
 
 function ClientTime({ ts }: { ts: number | string }) {
@@ -2011,7 +2006,7 @@ export default function AdminPage() {
       return;
     }
     let createdId = "";
-    const previewSrcCandidate = (newSigPreviewUrl || resolveSigPreviewSrc(newSigImageUrl)).trim();
+    const previewSrcCandidate = (newSigPreviewUrl || resolveSigPreviewSrc(newSigImageUrl, newSigName)).trim();
     setState((prev: AppState) => {
       createdId = `sig_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const nextItem = {
@@ -2047,8 +2042,8 @@ export default function AdminPage() {
 
   const downloadSigExcelTemplate = () => {
     const rows = [
-      { name: "애교", price: 77000, maxCount: 1, memberName: "", imageUrl: "/images/sigs/애교.png", isRolling: "Y" },
-      { name: "댄스", price: 100000, maxCount: 1, memberName: "", imageUrl: "/images/sigs/댄스.png", isRolling: "Y" },
+      { name: "애교", price: 77000, maxCount: 1, memberName: "", imageUrl: SIG_DUMMY_IMAGE, isRolling: "Y" },
+      { name: "댄스", price: 100000, maxCount: 1, memberName: "", imageUrl: SIG_DUMMY_IMAGE, isRolling: "Y" },
     ];
     const sheet = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -5901,7 +5896,7 @@ export default function AdminPage() {
                       <div className="text-[11px] text-neutral-400 mb-2">신규 시그 이미지 미리보기</div>
                       <div className="relative h-20 w-20 overflow-hidden rounded border border-white/10 bg-black/30">
                         <Image
-                          src={newSigPreviewUrl || resolveSigPreviewSrc(newSigImageUrl)}
+                          src={newSigPreviewUrl || resolveSigPreviewSrc(newSigImageUrl, newSigName)}
                           alt="신규 시그 미리보기"
                           fill
                           unoptimized
@@ -6169,14 +6164,14 @@ export default function AdminPage() {
                             title="클릭해서 크게 보기"
                             onClick={() =>
                               setSigImagePreviewModal({
-                                src: sigPreviewMap[item.id] || resolveSigPreviewSrc(item.imageUrl),
+                                src: sigPreviewMap[item.id] || resolveSigPreviewSrc(item.imageUrl, item.name),
                                 name: item.name,
                                 rawUrl: item.imageUrl || "",
                               })
                             }
                           >
                             <Image
-                              src={sigPreviewMap[item.id] || resolveSigPreviewSrc(item.imageUrl)}
+                              src={sigPreviewMap[item.id] || resolveSigPreviewSrc(item.imageUrl, item.name)}
                               alt={`${item.name} 미리보기`}
                               fill
                               unoptimized

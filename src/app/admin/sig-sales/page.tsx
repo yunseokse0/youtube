@@ -10,7 +10,7 @@ import SelectedSigs from "@/components/sig-sales/SelectedSigs";
 import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
 import ConfirmationModal from "@/components/sig-sales/ConfirmationModal";
 import RouletteHistoryModal from "@/components/sig-sales/RouletteHistoryModal";
-import { DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
+import { BUNDLED_SIG_PLACEHOLDER_URL, DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
 import { loadState, loadStateFromApi, saveStateAsync, type AppState } from "@/lib/state";
 import {
   ONE_SHOT_SIG_ID,
@@ -48,16 +48,16 @@ const buildOneShotFromSelected = (selected: SigItem[]) => {
 };
 
 const PREVIEW_FILLER_POOL: SigItem[] = [
-  { id: "preview_1", name: "애교", price: 77000, imageUrl: "/images/sigs/애교.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "preview_2", name: "댄스", price: 100000, imageUrl: "/images/sigs/댄스.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "preview_3", name: "식사권", price: 333000, imageUrl: "/images/sigs/식사권.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "preview_4", name: "보이스", price: 50000, imageUrl: "/images/sigs/보이스.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "preview_5", name: "노래", price: 120000, imageUrl: "/images/sigs/노래.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "preview_6", name: "토크", price: 55000, imageUrl: "/images/sigs/토크.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "preview_7", name: "하트", price: 30000, imageUrl: "/images/sigs/하트.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "preview_8", name: "게임", price: 88000, imageUrl: "/images/sigs/게임.png", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "preview_9", name: "보너스", price: 150000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "preview_10", name: "특전", price: 220000, imageUrl: "/images/sigs/dummy-sig.svg", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "preview_1", name: "애교", price: 77000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "preview_2", name: "댄스", price: 100000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "preview_3", name: "식사권", price: 333000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "preview_4", name: "보이스", price: 50000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "preview_5", name: "노래", price: 120000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "preview_6", name: "토크", price: 55000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "preview_7", name: "하트", price: 30000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "preview_8", name: "게임", price: 88000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "preview_9", name: "보너스", price: 150000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+  { id: "preview_10", name: "특전", price: 220000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
 ];
 
 export default function AdminSigSalesPage() {
