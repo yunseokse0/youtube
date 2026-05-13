@@ -1204,7 +1204,12 @@ async function doLoadStateFromApi(userId?: string): Promise<AppState | null> {
     }
     /** `userId` 있으면 URL로 사용자 특정 → 쿠키 불필요(OBS·브라우저 소스는 쿠키 없음). 없으면 관리자 세션 쿠키로 조회 */
     const credentials = userId ? "omit" : "include";
-    const res = await fetch(`/api/state?${q.toString()}`, { cache: "no-store", credentials });
+    const signal =
+      typeof AbortSignal !== "undefined" &&
+      typeof (AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal }).timeout === "function"
+        ? (AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }).timeout(25000)
+        : undefined;
+    const res = await fetch(`/api/state?${q.toString()}`, { cache: "no-store", credentials, signal });
     if (res.status === 401) {
       notifyAdminSessionExpired();
       return null;

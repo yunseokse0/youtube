@@ -1,4 +1,3 @@
-export const runtime = "edge";
 export const revalidate = 0;
 
 import type { RouletteState } from "@/types";
@@ -8,7 +7,6 @@ import { createModuleLogger } from "@/lib/logger";
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { isRouletteLocked } from "../roulette/roulette-lock";
-import { loadAppStateForRoulette } from "../roulette/edge-state-store";
 import { getUserIdFromRequest } from "../_shared/user-id";
 import {
   getRedisEnv,
@@ -201,10 +199,9 @@ export async function GET(req: Request) {
       logger.warn('Redis/메모리 모두 비어있음 - 기본값 반환 (서버 재시작 시 발생. Redis 설정 권장)', { userId });
     }
     let mergedForResponse = effective as AppState;
-    // Edge 런타임에서 상태 경합이 있을 수 있어, 회전판 전용 저장소의 최신 rouletteState를 응답에 우선 반영
-    // (spin 직후 오버레이가 회전 상태를 놓치지 않도록 보강)
+    /** 위에서 이미 동일 키로 조회한 `effective`를 쓴다. GET당 Upstash 2회 호출은 지연·대기열을 키워 pending 폭주에 기여함 */
     try {
-      const rouletteStateSource = await loadAppStateForRoulette(userId);
+      const rouletteStateSource = effective as AppState;
       if (rouletteStateSource?.rouletteState) {
         const rs = rouletteStateSource.rouletteState;
         const effectiveRs = (effective as AppState).rouletteState;

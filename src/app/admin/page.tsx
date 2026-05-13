@@ -791,7 +791,7 @@ export default function AdminPage() {
     const onVisibility = () => {
       if (document.visibilityState === "visible") void syncFromApi();
     };
-    const timer = window.setInterval(() => { void syncFromApi(); }, 1200);
+    const timer = window.setInterval(() => { void syncFromApi(); }, 4000);
     window.addEventListener("focus", onFocus);
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
