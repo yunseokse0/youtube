@@ -61,6 +61,8 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
   let s = String(raw ?? "").trim().replace(/\\/g, "/");
   // 콘솔/메신저 복붙 시 붙는 `: ` 프리픽스 제거
   s = s.replace(/^:\s*/, "");
+  /** `//cdn.example/...` 는 브라우저가 현재 origin 기준 https로 요청 → ImageKit 등이 정규화를 빠져나가지 않게 https: 로 고정 */
+  if (s.startsWith("//")) s = `https:${s}`;
   if (!s) return "";
   if (isCorruptSigImageUrlString(s)) {
     return BUNDLED_SIG_PLACEHOLDER_URL;
@@ -92,6 +94,10 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
       const fileName = s.split("/").filter(Boolean).pop() || "";
       return fileName ? `/images/sigs/${encodeURIComponent(fileName)}` : BUNDLED_SIG_PLACEHOLDER_URL;
     }
+    return s;
+  }
+  /** Next 앱 FTP 프록시(시그 이미지) — 배포 Origin 기준 절대 URL */
+  if (/^https?:\/\//i.test(s) && /\/api\/ftp\/image\//i.test(s)) {
     return s;
   }
   /** Supabase 시그 스토리지 외 http(s)는 일괄 더미(404·ERR_INSUFFICIENT_RESOURCES 완화). 필요 시 다시 업로드 */

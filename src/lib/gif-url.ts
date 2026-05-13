@@ -3,7 +3,8 @@
  * 이미 media/i.giphy.com 등 직링크면 그대로 둡니다.
  */
 export function resolveGifUrlForEmbed(raw: string): string {
-  const s = (raw || "").trim();
+  let s = (raw || "").trim();
+  if (s.startsWith("//")) s = `https:${s}`;
   if (!s) return s;
   const lower = s.toLowerCase();
   if (lower.includes("i.giphy.com/") || lower.includes("media.giphy.com/media/")) return s;
@@ -29,7 +30,8 @@ export type AnimatedEmbedSource = {
 };
 
 function extractGiphyId(raw: string): string | null {
-  const s = (raw || "").trim();
+  let s = (raw || "").trim();
+  if (s.startsWith("//")) s = `https:${s}`;
   if (!s) return null;
   try {
     const u = new URL(s);
@@ -64,7 +66,8 @@ function extractGiphyId(raw: string): string | null {
  * — Supabase Storage 공개 URL, Giphy, 상대 경로는 유지합니다.
  */
 export function sanitizeOverlayEmbedMediaUrl(raw: unknown): string {
-  const s = String(raw ?? "").trim().replace(/\\/g, "/");
+  let s = String(raw ?? "").trim().replace(/\\/g, "/");
+  if (s.startsWith("//")) s = `https:${s}`;
   if (!s) return "";
   if (s.startsWith("data:") || s.startsWith("blob:")) return s;
   const lower = s.toLowerCase();
@@ -72,6 +75,7 @@ export function sanitizeOverlayEmbedMediaUrl(raw: unknown): string {
   if (/\/sig_images(\/|$|\?)/i.test(s) || /^sig_images(\/|$|\?)/i.test(s)) return "";
   if (/^https?:\/\//i.test(s)) {
     if (/^https?:\/\/[^/]*supabase\.co\/storage\/v1\/object\/public\//i.test(s)) return s;
+    if (/\/api\/ftp\/image\//i.test(s)) return s;
     if (lower.includes("giphy.com")) return s;
     if (lower.includes("i.giphy.com")) return s;
     if (lower.includes("media.giphy.com")) return s;
