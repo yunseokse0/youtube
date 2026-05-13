@@ -1,0 +1,6 @@
+# Railway(Nixpacks) 빌드 안정화: Node 20 고정 + Next 빌드 시 힙 상향(작은 빌더에서 OOM 완화)
+# https://nixpacks.com/docs/configuration/file
+
+[variables]
+NIXPACKS_NODE_VERSION = "20"
+NODE_OPTIONS = "--max-old-space-size=8192"

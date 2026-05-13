@@ -39,9 +39,15 @@ import {
   normalizeDonationListsOverlayConfig,
   getUnifiedSigRollingItems,
   normalizeSigRolling,
+  normalizeRouletteState,
   type OverlayConfig,
 } from "@/lib/state";
-import { resolveSigImageUrl, stripSigInventoryImagesKeepList, DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
+import {
+  resolveSigImageUrl,
+  stripSigInventoryImagesKeepList,
+  DEFAULT_SIG_SOLD_STAMP_URL,
+  DEFAULT_SIG_INVENTORY,
+} from "@/lib/constants";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -2088,6 +2094,33 @@ export default function AdminPage() {
       return next;
     });
     setSigExcelResult("시그 목록을 전체 삭제했습니다.");
+  };
+
+  /** 시그 판매 인벤·제외 목록·멤버 프리셋·회전판·롤링 설정을 앱 기본값으로 되돌림(완판 도장 URL은 유지) */
+  const resetSigInventoryToDefaults = () => {
+    if (
+      !confirm(
+        "시그 판매 목록을 기본(애교·댄스·식사권 등 프리셋)으로 되돌리고, 판매 제외·멤버 프리셋·회전판·롤링 전환 설정도 초기화합니다. 계속할까요?"
+      )
+    ) {
+      return;
+    }
+    setState((prev: AppState) => {
+      const draft: AppState = {
+        ...prev,
+        sigInventory: DEFAULT_SIG_INVENTORY.map((x) => ({ ...x })),
+        sigSalesExcludedIds: [],
+        sigSalesMemberPresets: {},
+        sigRolling: normalizeSigRolling(null),
+        sigRollingMeta: {},
+        rouletteState: normalizeRouletteState(null),
+        updatedAt: Date.now(),
+      };
+      const next = syncOneShotSigItem(draft);
+      persistState(next);
+      return next;
+    });
+    setSigExcelResult("시그 목록·관련 설정을 기본값으로 초기화했습니다.");
   };
 
   const dedupeSigInventoryItems = useCallback(
@@ -5960,6 +5993,14 @@ export default function AdminPage() {
                       }}
                     />
                   </label>
+                  <button
+                    type="button"
+                    className="px-3 py-1 rounded bg-orange-900/80 hover:bg-orange-800 text-sm"
+                    title="앱 설치 직후와 동일한 시그 행·판매 제외·멤버 프리셋·회전판·롤링 설정"
+                    onClick={resetSigInventoryToDefaults}
+                  >
+                    기본 목록으로 초기화
+                  </button>
                   <button
                     className="px-3 py-1 rounded bg-red-900/80 hover:bg-red-800 text-sm"
                     onClick={clearAllSigItems}
