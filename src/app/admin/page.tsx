@@ -166,6 +166,9 @@ export default function AdminPage() {
   const lastLocalPersistAtRef = useRef<number>(0);
   const syncStatusRef = useRef<"loading" | "synced" | "local" | "error">("loading");
   const pendingUnsyncedRef = useRef<boolean>(false);
+  /** 주기 폴링에서 didPreserve로 서버에 다시 올릴 때 최소 간격 — 연속 POST·SSE 대기 완화 */
+  const lastPollMergePersistAtRef = useRef<number>(0);
+  const POLL_MERGE_PERSIST_MIN_MS = 6000;
   /** 금액/숫자 입력 중에는 원격 동기화 적용을 잠시 보류해 타이핑 값 초기화를 방지 */
   const amountInputEditingRef = useRef<boolean>(false);
   const [dailyLog, setDailyLog] = useState<Record<string, DailyLogEntry[]>>({});
@@ -584,6 +587,9 @@ export default function AdminPage() {
     stateRef.current = state;
   }, [state]);
   useEffect(() => {
+    lastPollMergePersistAtRef.current = 0;
+  }, [user?.id]);
+  useEffect(() => {
     stateUpdatedAtRef.current = state.updatedAt || 0;
   }, [state.updatedAt]);
   useEffect(() => {
@@ -761,7 +767,13 @@ export default function AdminPage() {
           stateUpdatedAtRef.current = remoteUpdatedAt;
           const prev = stateRef.current;
           const { merged: toApply, didPreserve } = mergeIncomingStateSafely(remote, prev);
-          if (didPreserve) persistState(toApply);
+          if (didPreserve) {
+            const t = Date.now();
+            if (t - lastPollMergePersistAtRef.current >= POLL_MERGE_PERSIST_MIN_MS) {
+              lastPollMergePersistAtRef.current = t;
+              persistState(toApply);
+            }
+          }
           setState(toApply);
           if (Array.isArray(toApply.overlayPresets)) {
             setPresets(toApply.overlayPresets as OverlayPreset[]);
