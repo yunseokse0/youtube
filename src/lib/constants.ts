@@ -1,5 +1,5 @@
 import type { SigItem } from "@/types";
-import { isSigLocalAssetsOnlyMode } from "@/lib/sig-image-mode";
+import { isSigImagesPlaceholderOnlyEnv, isSigLocalAssetsOnlyMode } from "@/lib/sig-image-mode";
 
 /** 저장소에 미설정 시 완판 오버레이·관리 화면 기본 도장(`public` 실파일과 동일 경로 유지) */
 export const DEFAULT_SIG_SOLD_STAMP_URL = "/images/sigs/stamp.svg";
@@ -84,12 +84,24 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
     s = s.replace(/^\/images\/sig\//, "/images/sigs/");
   }
   if (s.startsWith("/images/sigs/")) {
+    if (isSigImagesPlaceholderOnlyEnv()) {
+      const lower = s.toLowerCase();
+      const keepBundled =
+        lower.includes("dummy-sig.svg") ||
+        lower.endsWith("/stamp.svg") ||
+        lower.endsWith("stamp.svg");
+      if (!keepBundled) return BUNDLED_SIG_PLACEHOLDER_URL;
+    }
     return s;
+  }
+  if (isSigImagesPlaceholderOnlyEnv() && s.startsWith("/uploads/")) {
+    return BUNDLED_SIG_PLACEHOLDER_URL;
   }
   if (
     /^https?:\/\/[^/]*supabase\.co\/storage\/v1\/object\/public\//i.test(s) &&
     /\/sigs\//i.test(s)
   ) {
+    if (isSigImagesPlaceholderOnlyEnv()) return BUNDLED_SIG_PLACEHOLDER_URL;
     if (isSigLocalAssetsOnlyMode()) {
       const fileName = s.split("/").filter(Boolean).pop() || "";
       return fileName ? `/images/sigs/${encodeURIComponent(fileName)}` : BUNDLED_SIG_PLACEHOLDER_URL;
@@ -98,6 +110,7 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
   }
   /** Next 앱 FTP 프록시(시그 이미지) — 배포 Origin 기준 절대 URL */
   if (/^https?:\/\//i.test(s) && /\/api\/ftp\/image\//i.test(s)) {
+    if (isSigImagesPlaceholderOnlyEnv()) return BUNDLED_SIG_PLACEHOLDER_URL;
     return s;
   }
   /** Supabase 시그 스토리지 외 http(s)는 일괄 더미(404·ERR_INSUFFICIENT_RESOURCES 완화). 필요 시 다시 업로드 */

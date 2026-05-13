@@ -1,4 +1,5 @@
 import { mimeFromFileName, readLegacySigFromPublicDisk, safeSigLegacyRelativePath } from "@/lib/sig-legacy-image";
+import { isSigLegacyImageApiDisabled } from "@/lib/sig-image-mode";
 
 export const dynamic = "force-dynamic";
 
@@ -6,6 +7,12 @@ export async function GET(
   _request: Request,
   context: { params: { path?: string[] } },
 ): Promise<Response> {
+  if (isSigLegacyImageApiDisabled()) {
+    return new Response("Sig legacy image API disabled (SIG_LEGACY_IMAGE_API_DISABLED)", {
+      status: 503,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
   const segments = context.params.path ?? [];
   const rel = safeSigLegacyRelativePath(segments);
   if (!rel) {
