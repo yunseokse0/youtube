@@ -598,7 +598,7 @@ export default function AdminSigSalesPage() {
 
   const dedupeSigInventoryItems = useCallback(
     (strategy: "imageUrl" | "nameAndPrice") => {
-      const label = strategy === "imageUrl" ? "이미지 URL" : "이름+가격";
+      const label = strategy === "imageUrl" ? "이미지 URL 또는 이름" : "이름+가격";
       if (!confirm(`동일 ${label}인 시그는 위쪽 행만 남기고 삭제합니다. 계속할까요?`)) return;
       void persistInventoryPatch((prev) => {
         if (!prev) return prev;
@@ -906,12 +906,12 @@ export default function AdminSigSalesPage() {
             </button>
             <button
               type="button"
-              title="같은 이미지 URL(경로 기준)은 첫 행만 유지"
+              title="같은 이미지 URL(경로 기준) 또는 같은 시그 이름은 첫 행만 유지"
               className="rounded bg-amber-900/80 px-3 py-1.5 text-xs font-bold hover:bg-amber-800 disabled:opacity-50"
               disabled={ocrAllBusy}
               onClick={() => dedupeSigInventoryItems("imageUrl")}
             >
-              중복 제거(URL)
+              중복 제거(URL·이름)
             </button>
             <button
               type="button"

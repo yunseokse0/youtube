@@ -3,6 +3,7 @@ import type { SigItem } from "@/types";
 import {
   dedupeSigInventory,
   normalizeSigDedupKeyImageUrl,
+  normalizeSigDedupKeyName,
   normalizeSigDedupKeyNamePrice,
 } from "./sig-inventory-dedup";
 import { ONE_SHOT_SIG_ID } from "./sig-roulette";
@@ -29,11 +30,22 @@ describe("normalizeSigDedupKeyImageUrl", () => {
 });
 
 describe("dedupeSigInventory", () => {
-  it("이미지 URL 기준으로 위쪽 행만 남긴다", () => {
+  it("이미지 URL 기준으로 위쪽 행만 남긴다(이름은 행마다 다름)", () => {
     const inv: SigItem[] = [
-      base({ id: "1", imageUrl: "https://cdn/a.gif" }),
-      base({ id: "2", imageUrl: "https://cdn/a.gif?v=2" }),
-      base({ id: "3", imageUrl: "https://cdn/b.gif" }),
+      base({ id: "1", name: "A", imageUrl: "https://cdn/a.gif" }),
+      base({ id: "2", name: "B", imageUrl: "https://cdn/a.gif?v=2" }),
+      base({ id: "3", name: "C", imageUrl: "https://cdn/b.gif" }),
+    ];
+    const { nextInventory, removedCount } = dedupeSigInventory(inv, "imageUrl");
+    expect(removedCount).toBe(1);
+    expect(nextInventory.map((x) => x.id)).toEqual(["1", "3"]);
+  });
+
+  it("imageUrl 전략: URL은 다르지만 이름이 같으면 아래쪽 행을 제거한다", () => {
+    const inv: SigItem[] = [
+      base({ id: "1", name: "애교", imageUrl: "https://cdn/a.gif" }),
+      base({ id: "2", name: "애 교", imageUrl: "https://cdn/b.gif" }),
+      base({ id: "3", name: "댄스", imageUrl: "https://cdn/c.gif" }),
     ];
     const { nextInventory, removedCount } = dedupeSigInventory(inv, "imageUrl");
     expect(removedCount).toBe(1);
@@ -65,5 +77,11 @@ describe("dedupeSigInventory", () => {
 describe("normalizeSigDedupKeyNamePrice", () => {
   it("공백 정규화 후 동일 키", () => {
     expect(normalizeSigDedupKeyNamePrice("  A  ", 100)).toBe(normalizeSigDedupKeyNamePrice("A", 100));
+  });
+});
+
+describe("normalizeSigDedupKeyName", () => {
+  it("엑셀 업로드와 동일하게 공백 제거 후 소문자로 통일", () => {
+    expect(normalizeSigDedupKeyName("애 교")).toBe(normalizeSigDedupKeyName("애교"));
   });
 });

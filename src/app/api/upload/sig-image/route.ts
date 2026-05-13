@@ -9,6 +9,23 @@ export const revalidate = 0;
 
 const MAX_BYTES = 30 * 1024 * 1024;
 
+function isValidUserId(value: string): boolean {
+  return /^[a-zA-Z0-9_-]{1,64}$/.test(value);
+}
+
+function resolveUploadUserId(req: Request): string | null {
+  try {
+    const url = new URL(req.url);
+    const fromQuery = (url.searchParams.get("user") || url.searchParams.get("u") || "").trim();
+    if (fromQuery && isValidUserId(fromQuery)) return fromQuery;
+  } catch {}
+  const fromHeader = (req.headers.get("x-user-id") || "").trim();
+  if (fromHeader && isValidUserId(fromHeader)) return fromHeader;
+  const parsed = getUserIdFromRequest(req);
+  if (parsed && isValidUserId(parsed)) return parsed;
+  return null;
+}
+
 function getUploadRootCandidates(): string[] {
   const cwd = process.cwd();
   return [
@@ -137,7 +154,7 @@ async function uploadToImageKit(data: Buffer, fileName: string, contentType: str
 
 export async function POST(req: Request) {
   try {
-    const uid = getUserIdFromRequest(req);
+    const uid = resolveUploadUserId(req);
     if (!uid) {
       return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
     }

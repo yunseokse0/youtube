@@ -17,6 +17,15 @@ export function normalizeSigDedupKeyImageUrl(raw: string): string {
   return s.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }
 
+/** 이름만 비교할 때(엑셀 업로드 중복 검사와 동일: 공백 제거 후 소문자) */
+export function normalizeSigDedupKeyName(raw: string): string {
+  const n = String(raw || "")
+    .trim()
+    .replace(/\s+/g, "")
+    .toLowerCase();
+  return n || "__empty_name__";
+}
+
 export function normalizeSigDedupKeyNamePrice(name: string, price: number): string {
   const n = String(name || "")
     .trim()
@@ -36,7 +45,9 @@ export function dedupeSigInventory(
   inventory: SigItem[],
   strategy: SigDedupeStrategy
 ): { nextInventory: SigItem[]; removedCount: number } {
-  const seen = new Set<string>();
+  const seenUrl = new Set<string>();
+  const seenName = new Set<string>();
+  const seenNamePrice = new Set<string>();
   const out: SigItem[] = [];
   let removedCount = 0;
 
@@ -45,15 +56,24 @@ export function dedupeSigInventory(
       out.push(item);
       continue;
     }
-    const key =
-      strategy === "imageUrl"
-        ? normalizeSigDedupKeyImageUrl(item.imageUrl)
-        : normalizeSigDedupKeyNamePrice(item.name, item.price);
-    if (seen.has(key)) {
+    if (strategy === "imageUrl") {
+      const urlKey = normalizeSigDedupKeyImageUrl(item.imageUrl);
+      const nameKey = normalizeSigDedupKeyName(item.name);
+      if (seenUrl.has(urlKey) || seenName.has(nameKey)) {
+        removedCount++;
+        continue;
+      }
+      seenUrl.add(urlKey);
+      seenName.add(nameKey);
+      out.push(item);
+      continue;
+    }
+    const key = normalizeSigDedupKeyNamePrice(item.name, item.price);
+    if (seenNamePrice.has(key)) {
       removedCount++;
       continue;
     }
-    seen.add(key);
+    seenNamePrice.add(key);
     out.push(item);
   }
 
