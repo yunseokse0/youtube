@@ -1,5 +1,5 @@
 import { formatManThousand } from "@/lib/state";
-import { computeSettlement, type SigMatchRankingItem } from "@/lib/settlement-utils";
+import { computeSettlement, isOperatingSettlementMember, type SigMatchRankingItem } from "@/lib/settlement-utils";
 import type {
   Donor,
   Member,
@@ -25,7 +25,7 @@ export type {
   SettlementMemberResult,
   SettlementRecord,
 };
-export { computeSettlement };
+export { computeSettlement, isOperatingSettlementMember };
 
 function pruneOlderThan3Years(records: SettlementRecord[]): SettlementRecord[] {
   const now = Date.now();
@@ -38,9 +38,12 @@ function sortLatest(records: SettlementRecord[]): SettlementRecord[] {
   return [...records].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 
+function settlementRowIsOperating(m: Pick<SettlementMemberResult, "name" | "operating">): boolean {
+  return Boolean(m.operating) || /운영비/i.test(m.name || "");
+}
+
 function normalizeOperatingMember(m: SettlementMemberResult): SettlementMemberResult {
-  const isOperating = /운영비/i.test(m.name || "");
-  if (!isOperating) return m;
+  if (!settlementRowIsOperating(m)) return m;
   const account = Math.max(0, m.account || 0);
   const toon = Math.max(0, m.toon || 0);
   const gross = account + toon;
@@ -186,9 +189,10 @@ export function appendSettlementRecord(
   feeRate = 0.033,
   memberRatioOverrides?: SettlementMemberRatioOverrides,
   donors?: Donor[],
-  userId?: string | null
+  userId?: string | null,
+  memberPositions?: Record<string, string> | null
 ): SettlementRecord {
-  const body = computeSettlement(members, accountRatio, toonRatio, feeRate, memberRatioOverrides);
+  const body = computeSettlement(members, accountRatio, toonRatio, feeRate, memberRatioOverrides, memberPositions);
   const rec: SettlementRecord = {
     id: `st_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     title: title.trim() || "정산",
@@ -268,9 +272,20 @@ export async function appendSettlementRecordAndSync(
   feeRate = 0.033,
   memberRatioOverrides?: SettlementMemberRatioOverrides,
   donors?: Donor[],
-  userId?: string | null
+  userId?: string | null,
+  memberPositions?: Record<string, string> | null
 ): Promise<SettlementRecord> {
-  const rec = appendSettlementRecord(title, members, accountRatio, toonRatio, feeRate, memberRatioOverrides, donors, userId);
+  const rec = appendSettlementRecord(
+    title,
+    members,
+    accountRatio,
+    toonRatio,
+    feeRate,
+    memberRatioOverrides,
+    donors,
+    userId,
+    memberPositions
+  );
   const local = loadSettlementRecords(userId);
   await saveSettlementRecordsToApi(local, userId);
   return rec;
@@ -340,8 +355,7 @@ export async function deleteSettlementRecordAndSync(recordId: string, reason = "
 export function toSettlementFormulaLine(record: SettlementRecord, m: SettlementMemberResult): string {
   const accSrc = formatManThousand(m.account);
   const toonSrc = formatManThousand(m.toon);
-  const isOperating = /운영비/i.test(m.name || "");
-  if (isOperating) {
+  if (settlementRowIsOperating(m)) {
     return `${m.name} 운영비 예외: 계좌${accSrc} + 투네${toonSrc} = ${m.gross.toLocaleString()} (비율/세금 미적용)`;
   }
   const accRatio = Number((m.accountRatio ?? record.accountRatio).toFixed(3));
@@ -352,8 +366,8 @@ export function toSettlementFormulaLine(record: SettlementRecord, m: SettlementM
 /** 정산 export/표시용 멤버 순서: 정산금액(net) 내림차순, 운영비는 맨 아래 */
 export function getMembersForExport(record: SettlementRecord): SettlementMemberResult[] {
   const members = record.members || [];
-  const operating = members.filter((m) => /운영비/i.test(m.name || ""));
-  const nonOperating = members.filter((m) => !/운영비/i.test(m.name || ""));
+  const operating = members.filter((m) => settlementRowIsOperating(m));
+  const nonOperating = members.filter((m) => !settlementRowIsOperating(m));
   const sortByNet = (a: SettlementMemberResult, b: SettlementMemberResult) => (b.net || 0) - (a.net || 0);
   return [...nonOperating.sort(sortByNet), ...operating.sort(sortByNet)];
 }
@@ -448,8 +462,7 @@ function fmtPct(r: number): string {
 export function recordToReadableInput(record: SettlementRecord): ReadableSettlementInput {
   const taxRate = record.feeRate ?? 0.033;
   const members: ReadableSettlementMember[] = getMembersForExport(record).map((m) => {
-    const isOperating = /운영비/i.test(m.name || "");
-    if (isOperating) {
+    if (settlementRowIsOperating(m)) {
       return {
         name: `${m.name}${m.realName ? ` (${m.realName})` : ""}`,
         sources: [

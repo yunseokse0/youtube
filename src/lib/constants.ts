@@ -7,28 +7,6 @@ export const DEFAULT_SIG_SOLD_STAMP_URL = "/images/sigs/stamp.svg";
 /** Git·Render 배포본에 포함된 공통 시그 이미지(`public/images/sigs/dummy-sig.svg`) */
 export const BUNDLED_SIG_PLACEHOLDER_URL = "/images/sigs/dummy-sig.svg";
 
-/** 레거시 `/images/sigs/<파일명>`를 외부 CDN(ImageKit)로 매핑 */
-const LEGACY_SIG_CDN_BASE = (process.env.NEXT_PUBLIC_SIG_CDN_BASE_URL || "https://ik.imagekit.io/lwcsfeswl")
-  .trim()
-  .replace(/\/+$/, "");
-
-function toCdnUrlFromRelativePath(relPath: string): string {
-  const normalized = String(relPath || "").replace(/^\/+/, "");
-  const encodedPath = normalized
-    .split("/")
-    .filter(Boolean)
-    .map((seg) => encodeURIComponent(seg))
-    .join("/");
-  return encodedPath ? `${LEGACY_SIG_CDN_BASE}/${encodedPath}` : BUNDLED_SIG_PLACEHOLDER_URL;
-}
-
-function toCdnUrlFromFileName(rawPathOrUrl: string): string {
-  const normalized = String(rawPathOrUrl || "").replace(/\\/g, "/").trim();
-  if (!normalized) return BUNDLED_SIG_PLACEHOLDER_URL;
-  const fileName = normalized.split("/").filter(Boolean).pop() || "";
-  return fileName ? toCdnUrlFromRelativePath(fileName) : BUNDLED_SIG_PLACEHOLDER_URL;
-}
-
 /** 방송에서 자주 쓰는 시그 기본 목록(애교·댄스·식사권 외 프리셋) */
 export const BROADCAST_SIG_PRESET_NAMES = [
   "애교",
@@ -83,11 +61,7 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
     s = s.replace(/^\/images\/sig\//, "/images/sigs/");
   }
   if (s.startsWith("/images/sigs/")) {
-    if (isSigLocalAssetsOnlyMode()) {
-      return s;
-    }
-    const rel = s.replace(/^\/images\/sigs\//, "");
-    return toCdnUrlFromRelativePath(rel);
+    return s;
   }
   if (
     /^https?:\/\/[^/]*supabase\.co\/storage\/v1\/object\/public\//i.test(s) &&
@@ -97,7 +71,7 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
       const fileName = s.split("/").filter(Boolean).pop() || "";
       return fileName ? `/images/sigs/${encodeURIComponent(fileName)}` : BUNDLED_SIG_PLACEHOLDER_URL;
     }
-    return toCdnUrlFromFileName(s);
+    return s;
   }
   return s;
 }

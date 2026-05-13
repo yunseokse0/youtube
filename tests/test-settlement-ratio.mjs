@@ -28,7 +28,7 @@ async function runTest() {
   let allPass = true;
 
   for (const m of result.members) {
-    const isOperating = /운영비/i.test(m.name);
+    const isOperating = Boolean(m.operating) || /운영비/i.test(m.name);
     const expectedGross = isOperating
       ? m.account + m.toon
       : Math.round(m.account * (overrides[m.memberId]?.accountRatio ?? 0.7)) +

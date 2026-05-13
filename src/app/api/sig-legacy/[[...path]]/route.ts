@@ -1,9 +1,4 @@
-import {
-  fetchLegacySigFromCdn,
-  mimeFromFileName,
-  readLegacySigFromPublicDisk,
-  safeSigLegacyRelativePath,
-} from "@/lib/sig-legacy-image";
+import { mimeFromFileName, readLegacySigFromPublicDisk, safeSigLegacyRelativePath } from "@/lib/sig-legacy-image";
 
 export const dynamic = "force-dynamic";
 
@@ -19,8 +14,7 @@ export async function GET(
   const fileName = rel.split("/").pop() || rel;
   const contentType = mimeFromFileName(fileName);
 
-  let buf: Buffer | null = await readLegacySigFromPublicDisk(rel);
-  if (!buf) buf = await fetchLegacySigFromCdn(rel);
+  const buf: Buffer | null = await readLegacySigFromPublicDisk(rel);
 
   if (!buf) {
     return new Response("Not found", { status: 404 });

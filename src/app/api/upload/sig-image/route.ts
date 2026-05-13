@@ -4,6 +4,13 @@ import path from "path";
 import { createClient } from "@supabase/supabase-js";
 import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
 import { shouldServeSigImagesFromDisk } from "@/lib/sig-image-mode";
+import {
+  ftpPublicImageUrlPath,
+  ftpRemotePathForSigAsset,
+  shouldServeSigImagesFromFtp,
+  uploadSigBufferToFtp,
+} from "@/lib/ftp-sig-storage";
+import { getFtpAccessConfig } from "@/lib/ftp-config";
 
 export const runtime = "nodejs";
 export const revalidate = 0;
@@ -100,59 +107,6 @@ function getSupabaseStorageConfig():
   return { url, serviceRoleKey, buckets };
 }
 
-function getImageKitConfig():
-  | { privateKey: string; folderPrefix: string }
-  | null {
-  const privateKey = (process.env.IMAGEKIT_PRIVATE_KEY || "").trim();
-  if (!privateKey) return null;
-  const folderPrefix = (process.env.IMAGEKIT_FOLDER_PREFIX || "sigs").trim().replace(/^\/+|\/+$/g, "");
-  return { privateKey, folderPrefix: folderPrefix || "sigs" };
-}
-
-async function uploadToImageKit(data: Buffer, fileName: string, contentType: string, folder: string, privateKey: string): Promise<string> {
-  const auth = Buffer.from(`${privateKey}:`).toString("base64");
-  const endpoint = "https://upload.imagekit.io/api/v1/files/upload";
-
-  const tryUpload = async (mode: "binary" | "dataUrl"): Promise<string> => {
-    const body = new FormData();
-    body.set("fileName", fileName);
-    if (mode === "binary") {
-      body.set("file", new Blob([data], { type: contentType }), fileName);
-    } else {
-      body.set("file", `data:${contentType};base64,${data.toString("base64")}`);
-    }
-    body.set("folder", folder);
-    body.set("useUniqueFileName", "true");
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${auth}`,
-      },
-      body,
-    });
-    if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      throw new Error(`imagekit_upload_failed:${res.status}:${txt.slice(0, 400)}`);
-    }
-    const json = await res.json() as { url?: string };
-    const url = String(json?.url || "").trim();
-    if (!url) throw new Error("imagekit_upload_failed:no_url");
-    return url;
-  };
-
-  // 1) 바이너리 업로드 우선 시도
-  try {
-    return await tryUpload("binary");
-  } catch (binaryErr) {
-    // 2) 일부 환경에서 바이너리 multipart 실패 시 data URL 방식으로 1회 재시도
-    try {
-      return await tryUpload("dataUrl");
-    } catch (dataErr) {
-      throw new Error(`${String(binaryErr)} | fallback:${String(dataErr)}`);
-    }
-  }
-}
-
 async function writeSigImageToPublicUploads(
   safeUid: string,
   fileName: string,
@@ -195,7 +149,6 @@ export async function POST(req: Request) {
     const data = Buffer.from(ab);
     const storagePath = `sigs/${safeUid}/${fileName}`;
     const contentType = String(file.type || "application/octet-stream");
-    const imagekitConfig = getImageKitConfig();
     const supabaseConfig = getSupabaseStorageConfig();
 
     if (shouldServeSigImagesFromDisk()) {
@@ -203,10 +156,14 @@ export async function POST(req: Request) {
       return Response.json({ ok: true, url }, { status: 200 });
     }
 
-    if (imagekitConfig) {
-      const folder = `/${imagekitConfig.folderPrefix}/${safeUid}`;
-      const imagekitUrl = await uploadToImageKit(data, fileName, contentType, folder, imagekitConfig.privateKey);
-      return Response.json({ ok: true, url: imagekitUrl }, { status: 200 });
+    if (shouldServeSigImagesFromFtp() && getFtpAccessConfig()) {
+      try {
+        const remote = ftpRemotePathForSigAsset(safeUid, fileName);
+        await uploadSigBufferToFtp(remote, data);
+        return Response.json({ ok: true, url: ftpPublicImageUrlPath(safeUid, fileName) }, { status: 200 });
+      } catch {
+        /* FTP 실패 시 Supabase·로컬로 폴백 */
+      }
     }
 
     if (supabaseConfig) {

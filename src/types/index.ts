@@ -385,6 +385,8 @@ export type SettlementMemberResult = {
   memberId: string;
   name: string;
   realName?: string;
+  /** 정산 시점 운영비 행 여부(체크박스·이름·직급 중 하나로 판정). 엑셀/가독 텍스트와 계산식 정렬에 사용 */
+  operating?: boolean;
   bankName?: string;
   bankAccount?: string;
   accountHolder?: string;

@@ -2218,12 +2218,6 @@ export default function AdminPage() {
               ? "파일 용량이 너무 큽니다. 30MB 이하 파일만 업로드할 수 있습니다."
               : normalized === "missing_file"
                 ? "업로드할 파일을 찾지 못했습니다. 파일을 다시 선택해 주세요."
-                : normalized.includes("imagekit_upload_failed:401")
-                  ? "ImageKit 인증 실패입니다. IMAGEKIT_PRIVATE_KEY 값을 다시 확인해 주세요."
-                  : normalized.includes("imagekit_upload_failed:413") || normalized.includes("payload too large")
-                    ? "ImageKit 업로드 용량 제한에 걸렸습니다. 파일을 더 작게 줄여 주세요."
-                    : normalized.includes("imagekit_upload_failed")
-                      ? `ImageKit 업로드 실패(${rawError}). 잠시 후 다시 시도해 주세요.`
                 : String(res.status).startsWith("5")
                   ? "서버 오류로 업로드에 실패했습니다. 잠시 후 다시 시도해 주세요."
                   : `알 수 없는 오류(${rawError})가 발생했습니다.`;
@@ -3632,7 +3626,17 @@ export default function AdminPage() {
       `${new Date().toISOString().slice(0, 10)} 정산`;
     await saveStateAsync(state, user?.id);
     appendDailyLog(state, user?.id);
-    const rec = await appendSettlementRecordAndSync(title, state.members, accountRatio, toonRatio, taxRate, memberRatioOverrides, state.donors, user?.id);
+    const rec = await appendSettlementRecordAndSync(
+      title,
+      state.members,
+      accountRatio,
+      toonRatio,
+      taxRate,
+      memberRatioOverrides,
+      state.donors,
+      user?.id,
+      state.memberPositions || null
+    );
     router.push(`/settlements/${rec.id}`);
   };
   const sigImageUrlIssues = (state.sigInventory || [])
@@ -6380,11 +6384,11 @@ export default function AdminPage() {
                   「보드 노출」은 <code>/overlay/sig-sales</code> 상단 롤링 그리드,「판매 활성」은 회전판 메뉴 후보에 포함됩니다. 시그 추가/멤버 지정/판매량 조절은 즉시 `/api/state`를 통해 Redis에 반영됩니다.{" "}
                   <span className="text-neutral-400">
                     「PC에서 선택」은 이 PC에서 파일을 고른 뒤 업로드 API로 보내 URL을 붙입니다.{" "}
-                    <code className="text-neutral-300">SIG_SERVE_SIG_IMAGES_FROM_DISK=true</code> 이면 ImageKit 대신{" "}
+                    <code className="text-neutral-300">SIG_SERVE_SIG_IMAGES_FROM_DISK=true</code> 이면{" "}
                     <code className="text-neutral-300">public/uploads/sigs</code> 에 저장·<code className="text-neutral-300">/uploads/…</code> 로
                     제공합니다(같은 PC에서 Next를 띄우면 그 PC가 이미지 서버).{" "}
-                    <code className="text-neutral-300">NEXT_PUBLIC_SIG_USE_LOCAL_ASSETS=true</code> 이면 레거시 경로를 ImageKit으로 바꾸지 않고{" "}
-                    <code className="text-neutral-300">/images/sigs</code>·업로드 경로만 씁니다. Render 등 원격 호스트는 디스크가 비영구일 수 있습니다.
+                    <code className="text-neutral-300">NEXT_PUBLIC_SIG_USE_LOCAL_ASSETS=true</code> 이면 Supabase 공개 URL을{" "}
+                    <code className="text-neutral-300">/images/sigs</code>·동일 오리진 경로로 바꿔 요청합니다. Render 등 원격 호스트는 디스크가 비영구일 수 있습니다.
                   </span>
                 </div>
               <input
@@ -6415,7 +6419,9 @@ export default function AdminPage() {
                     </div>
                     <p className="mb-2 text-[11px] text-neutral-400">
                       서버에 <code className="text-neutral-300">FTP_HOST</code>, <code className="text-neutral-300">FTP_USER</code>,{" "}
-                      <code className="text-neutral-300">FTP_PASSWORD</code> 를 설정해야 합니다. (Render에서 집 PC로 보려면 포트 개방·터널 필요)
+                      <code className="text-neutral-300">FTP_PASSWORD</code> 를 설정해야 합니다. (Render에서 집 PC로 보려면 포트 개방·터널 필요) 시그
+                      PC 업로드는 <code className="text-neutral-300">SIG_FTP_IMAGE_UPLOAD=true</code> 이면 FTP에 저장 후{" "}
+                      <code className="text-neutral-300">/api/ftp/image/sigs/…</code> URL을 붙입니다.
                     </p>
                     <div className="mb-2 flex flex-wrap items-center gap-2">
                       <input
