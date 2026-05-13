@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { createModuleLogger } from '@/lib/logger';
 
-export const runtime = 'edge';
+/** Edge는 장시간 SSE·인메모리 클라이언트 목록에 부적합한 환경이 많음(Render 등) → Node 런타임 유지 */
 
 const logger = createModuleLogger('API/Events');
 

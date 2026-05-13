@@ -6,6 +6,10 @@ const logger = createModuleLogger('SSE');
 
 export function useSSEConnection(onMessage: (data: any) => void) {
   const [connected, setConnected] = useState(false);
+  /** 콜백이 매 렌더마다 바뀌어도 effect를 다시 돌리지 않음 → EventSource 무한 끊김·재연결 폭주 방지 */
+  const onMessageRef = useRef(onMessage);
+  onMessageRef.current = onMessage;
+
   const eventSourceRef = useRef<EventSource | null>(null);
   const retryDelayRef = useRef(1000); // ms, exponential backoff
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -40,7 +44,7 @@ export function useSSEConnection(onMessage: (data: any) => void) {
       }
 
       const eventSource = new EventSource('/api/events');
-      
+
       eventSource.onopen = () => {
         setConnected(true);
         logger.info('SSE 연결됨');
@@ -49,10 +53,10 @@ export function useSSEConnection(onMessage: (data: any) => void) {
 
       eventSource.onmessage = (event) => {
         if (event.data === 'ping') return;
-        
+
         try {
           const data = JSON.parse(event.data);
-          onMessage(data);
+          onMessageRef.current(data);
         } catch (error) {
           logger.error('메시지 파싱 실패', error);
         }
@@ -67,8 +71,8 @@ export function useSSEConnection(onMessage: (data: any) => void) {
           logger.warn(`SSE 연결 끊김, ${retryDelayRef.current}ms 후 재연결`);
           lastWarnAtRef.current = now;
         }
-        // 지수 백오프 (최대 15초)
-        retryDelayRef.current = Math.min(retryDelayRef.current * 2, 15000);
+        // 지수 백오프 (최대 30초)
+        retryDelayRef.current = Math.min(retryDelayRef.current * 2, 30000);
         scheduleReconnect();
       };
 
@@ -76,8 +80,11 @@ export function useSSEConnection(onMessage: (data: any) => void) {
     };
 
     const onVisibility = () => {
-      if (document.visibilityState === 'visible' && !eventSourceRef.current) {
-        // 즉시 재연결
+      const es = eventSourceRef.current;
+      const busy =
+        es &&
+        (es.readyState === EventSource.OPEN || es.readyState === EventSource.CONNECTING);
+      if (document.visibilityState === 'visible' && !busy) {
         retryDelayRef.current = 1000;
         connect();
       }
@@ -95,7 +102,7 @@ export function useSSEConnection(onMessage: (data: any) => void) {
       eventSourceRef.current?.close();
       eventSourceRef.current = null;
     };
-  }, [onMessage]);
+  }, []);
 
   return { connected };
 }
