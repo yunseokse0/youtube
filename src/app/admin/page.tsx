@@ -2185,7 +2185,14 @@ export default function AdminPage() {
     fd.append("file", file);
     let res: Response;
     try {
-      res = await fetch("/api/upload/sig-image", {
+      const q = new URLSearchParams();
+      const uid = String(user?.id || "").trim();
+      if (uid) {
+        q.set("user", uid);
+        q.set("u", uid);
+      }
+      const uploadUrl = q.toString() ? `/api/upload/sig-image?${q.toString()}` : "/api/upload/sig-image";
+      res = await fetch(uploadUrl, {
         method: "POST",
         credentials: "include",
         body: fd,
@@ -2236,7 +2243,14 @@ export default function AdminPage() {
     setImageKitAssetsLoading(true);
     setImageKitAssetsError("");
     try {
-      const res = await fetch("/api/imagekit/files?limit=300", {
+      const q = new URLSearchParams({ limit: "300" });
+      const uid = String(user?.id || "").trim();
+      if (uid) {
+        q.set("user", uid);
+        q.set("u", uid);
+      }
+      const listUrl = `/api/imagekit/files?${q.toString()}`;
+      const res = await fetch(listUrl, {
         method: "GET",
         credentials: "include",
         cache: "no-store",
@@ -2267,7 +2281,7 @@ export default function AdminPage() {
     } finally {
       setImageKitAssetsLoading(false);
     }
-  }, []);
+  }, [user?.id]);
 
   const openSigImagePicker = (target: SigImagePickerTarget) => {
     setSigImagePickerTarget(target);

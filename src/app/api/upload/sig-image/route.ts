@@ -2,30 +2,12 @@ import { randomUUID } from "crypto";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { createClient } from "@supabase/supabase-js";
-import { AUTH_COOKIE, isDevAuthBypassRequest } from "@/lib/auth";
+import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
 
 export const runtime = "nodejs";
 export const revalidate = 0;
 
 const MAX_BYTES = 30 * 1024 * 1024;
-
-function decodeRepeated(value: string, maxDepth = 4): string {
-  let out = value;
-  for (let i = 0; i < maxDepth; i += 1) {
-    try {
-      const next = decodeURIComponent(out);
-      if (next === out) break;
-      out = next;
-    } catch {
-      break;
-    }
-  }
-  return out;
-}
-
-function isValidUserId(value: string): boolean {
-  return /^[a-zA-Z0-9_-]{1,64}$/.test(value);
-}
 
 function getUploadRootCandidates(): string[] {
   const cwd = process.cwd();
@@ -33,45 +15,6 @@ function getUploadRootCandidates(): string[] {
     path.join(cwd, "public"),
     path.join(cwd, ".next", "standalone", "public"),
   ];
-}
-
-function tryParseUserCookie(raw: string): { id?: string } | null {
-  if (!raw) return null;
-  const decoded = decodeRepeated(raw);
-  const candidates = [raw, decodeURIComponent(raw), decoded];
-  for (const cand of candidates) {
-    const trimmed = String(cand).trim().replace(/^"|"$/g, "");
-    if (!trimmed) continue;
-    const deeplyDecoded = decodeRepeated(trimmed);
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (parsed && typeof parsed === "object") return parsed as { id?: string };
-    } catch {}
-    try {
-      const parsed = JSON.parse(deeplyDecoded);
-      if (parsed && typeof parsed === "object") return parsed as { id?: string };
-    } catch {}
-    // 하위 호환: 쿠키 값이 JSON이 아니라 user id 문자열 자체인 경우
-    if (!trimmed.startsWith("{") && !trimmed.startsWith("[") && isValidUserId(trimmed)) {
-      return { id: trimmed };
-    }
-    if (!deeplyDecoded.startsWith("{") && !deeplyDecoded.startsWith("[") && isValidUserId(deeplyDecoded)) {
-      return { id: deeplyDecoded };
-    }
-  }
-  return null;
-}
-
-function getUserId(req: Request): string | null {
-  if (isDevAuthBypassRequest(req)) return "finalent";
-  const cookie = req.headers.get("cookie") || "";
-  const escaped = AUTH_COOKIE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = cookie.match(new RegExp(`${escaped}=([^;]+)`));
-  if (!match) return null;
-  const parsed = tryParseUserCookie(match[1] || "");
-  const uid = typeof parsed?.id === "string" ? parsed.id.trim() : "";
-  if (uid && !isValidUserId(uid)) return null;
-  return uid || null;
 }
 
 function extFrom(file: File): string | null {
@@ -194,7 +137,7 @@ async function uploadToImageKit(data: Buffer, fileName: string, contentType: str
 
 export async function POST(req: Request) {
   try {
-    const uid = getUserId(req);
+    const uid = getUserIdFromRequest(req);
     if (!uid) {
       return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
     }

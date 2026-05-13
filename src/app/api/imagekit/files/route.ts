@@ -1,4 +1,4 @@
-import { AUTH_COOKIE, isDevAuthBypassRequest } from "@/lib/auth";
+import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
 
 export const runtime = "nodejs";
 export const revalidate = 0;
@@ -36,49 +36,9 @@ async function listImageKitFiles(
   return Array.isArray(data) ? data : [];
 }
 
-function decodeRepeated(value: string, maxDepth = 4): string {
-  let out = value;
-  for (let i = 0; i < maxDepth; i += 1) {
-    try {
-      const next = decodeURIComponent(out);
-      if (next === out) break;
-      out = next;
-    } catch {
-      break;
-    }
-  }
-  return out;
-}
-
-function isValidUserId(value: string): boolean {
-  return /^[a-zA-Z0-9_-]{1,64}$/.test(value);
-}
-
-function getUserId(req: Request): string | null {
-  if (isDevAuthBypassRequest(req)) return "finalent";
-  const cookie = req.headers.get("cookie") || "";
-  const escaped = AUTH_COOKIE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = cookie.match(new RegExp(`${escaped}=([^;]+)`));
-  if (!match?.[1]) return null;
-  const candidates = [match[1], decodeRepeated(match[1])];
-  for (const cand of candidates) {
-    const trimmed = String(cand || "").trim().replace(/^"|"$/g, "");
-    if (!trimmed) continue;
-    try {
-      const parsed = JSON.parse(trimmed) as { id?: unknown };
-      const uid = typeof parsed?.id === "string" ? parsed.id.trim() : "";
-      if (uid && isValidUserId(uid)) return uid;
-    } catch {}
-    if (!trimmed.startsWith("{") && !trimmed.startsWith("[") && isValidUserId(trimmed)) {
-      return trimmed;
-    }
-  }
-  return null;
-}
-
 export async function GET(req: Request) {
   try {
-    const uid = getUserId(req);
+    const uid = getUserIdFromRequest(req);
     if (!uid) {
       return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
     }
