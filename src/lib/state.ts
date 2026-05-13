@@ -997,7 +997,8 @@ async function postAppStateWithAuthRecovery(json: string, userId?: string | null
 
 /** 관리자 /api/state 저장 시 — 스핀 결과(phase 등)는 보내지 않고 메뉴 수·오버레이 UI 설정만 전달(서버에서 병합) */
 function appStatePayloadForApi(next: AppState): Partial<AppState> {
-  const { rouletteState, ...rest } = next;
+  const normalizedSigInventory = normalizeSigInventory(next.sigInventory);
+  const { rouletteState, ...rest } = { ...next, sigInventory: normalizedSigInventory };
   if (!rouletteState) return rest;
   return {
     ...rest,
@@ -1010,10 +1011,17 @@ function appStatePayloadForApi(next: AppState): Partial<AppState> {
   } as Partial<AppState>;
 }
 
+function normalizeStateForPersistence(state: AppState): AppState {
+  return {
+    ...state,
+    sigInventory: normalizeSigInventory(state.sigInventory),
+  };
+}
+
 export function saveState(state: AppState, userId?: string | null) {
   if (typeof window === "undefined") return;
   try {
-    const next = syncBattleStateWithMembers({ ...state, updatedAt: Date.now() });
+    const next = normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() }));
     const json = JSON.stringify(next);
     window.localStorage.setItem(storageKey(userId), json);
     void postAppStateWithAuthRecovery(JSON.stringify(appStatePayloadForApi(next)), userId)
@@ -1029,7 +1037,7 @@ export function saveState(state: AppState, userId?: string | null) {
 
 export async function saveStateAsync(state: AppState, userId?: string | null): Promise<boolean> {
   if (typeof window === "undefined") return false;
-  const next = syncBattleStateWithMembers({ ...state, updatedAt: Date.now() });
+  const next = normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() }));
   const json = JSON.stringify(next);
   try { window.localStorage.setItem(storageKey(userId), json); } catch {}
   try {
