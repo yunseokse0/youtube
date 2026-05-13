@@ -103,6 +103,12 @@ const ONE_SHOT_SIG_NAME = "한방 시그";
 const MAX_SIG_UPLOAD_BYTES = 30 * 1024 * 1024;
 const SIG_DUMMY_IMAGE = "/images/sigs/dummy-sig.svg";
 const BROKEN_SIG_UID_PATTERN = /(_257b_2522id_2522|%257b%2522id%2522|%7b%22id%22)/i;
+type ImageKitAsset = { fileId: string; name: string; url: string; thumbnailUrl: string };
+type SigImagePickerTarget =
+  | { kind: "inventory"; id: string }
+  | { kind: "rolling"; id: string }
+  | { kind: "newSig" }
+  | { kind: "soldOutStamp" };
 
 function clampSigSalesMenuCount(raw: string | number | null | undefined): number {
   const n = typeof raw === "number" ? raw : parseInt(String(raw || "").replace(/[^\d]/g, "") || "10", 10);
@@ -201,6 +207,11 @@ export default function AdminPage() {
   const [newSigImageUploading, setNewSigImageUploading] = useState(false);
   const [sigPreviewMap, setSigPreviewMap] = useState<Record<string, string>>({});
   const [sigImagePreviewModal, setSigImagePreviewModal] = useState<{ src: string; name: string; rawUrl: string } | null>(null);
+  const [sigImagePickerTarget, setSigImagePickerTarget] = useState<SigImagePickerTarget | null>(null);
+  const [imageKitAssets, setImageKitAssets] = useState<ImageKitAsset[]>([]);
+  const [imageKitAssetsLoading, setImageKitAssetsLoading] = useState(false);
+  const [imageKitAssetsError, setImageKitAssetsError] = useState("");
+  const [imageKitAssetQuery, setImageKitAssetQuery] = useState("");
   /** 가격 입력은 타이핑 중 draft만 유지하고 blur/Enter에 1회 저장 */
   const [sigPriceDraftMap, setSigPriceDraftMap] = useState<Record<string, string>>({});
   const sigPriceDraftMapRef = useRef<Record<string, string>>({});
@@ -214,6 +225,13 @@ export default function AdminPage() {
     const invIds = new Set((state.sigInventory || []).map((x) => x.id));
     return normalizeSigRolling(state.sigRolling).items.filter((x) => !invIds.has(x.id)).length;
   }, [state.sigInventory, state.sigRolling]);
+  const filteredImageKitAssets = useMemo(() => {
+    const q = imageKitAssetQuery.trim().toLowerCase();
+    if (!q) return imageKitAssets;
+    return imageKitAssets.filter((x) =>
+      x.name.toLowerCase().includes(q) || x.url.toLowerCase().includes(q)
+    );
+  }, [imageKitAssets, imageKitAssetQuery]);
   const [ocrBusyIds, setOcrBusyIds] = useState<Record<string, boolean>>({});
   const [ocrAllBusy, setOcrAllBusy] = useState(false);
   /** 일괄 OCR 진행률(현재 인덱스 / 전체) */
@@ -2206,6 +2224,97 @@ export default function AdminPage() {
       return null;
     }
     return j.url;
+  };
+
+  const loadImageKitAssets = useCallback(async () => {
+    setImageKitAssetsLoading(true);
+    setImageKitAssetsError("");
+    try {
+      const res = await fetch("/api/imagekit/files?limit=300", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        files?: Array<{ fileId?: string; name?: string; url?: string; thumbnailUrl?: string }>;
+        error?: string;
+      };
+      if (!res.ok || !j.ok) {
+        const err = String(j.error || res.status || "unknown");
+        setImageKitAssetsError(err);
+        return;
+      }
+      const files = Array.isArray(j.files) ? j.files : [];
+      setImageKitAssets(
+        files
+          .map((x) => ({
+            fileId: String(x.fileId || ""),
+            name: String(x.name || ""),
+            url: String(x.url || ""),
+            thumbnailUrl: String(x.thumbnailUrl || x.url || ""),
+          }))
+          .filter((x) => x.url)
+      );
+    } catch (e) {
+      setImageKitAssetsError(String(e));
+    } finally {
+      setImageKitAssetsLoading(false);
+    }
+  }, []);
+
+  const openSigImagePicker = (target: SigImagePickerTarget) => {
+    setSigImagePickerTarget(target);
+    setImageKitAssetQuery("");
+    if (!imageKitAssets.length) {
+      void loadImageKitAssets();
+    }
+  };
+
+  const applyImageKitAssetToTarget = (assetUrl: string) => {
+    const target = sigImagePickerTarget;
+    if (!target) return;
+    if (target.kind === "newSig") {
+      setNewSigImageUrl(assetUrl);
+      setNewSigPreviewUrl(assetUrl);
+      setSigImagePickerTarget(null);
+      return;
+    }
+    if (target.kind === "soldOutStamp") {
+      updateSigSoldOutStampUrl(assetUrl);
+      setSigImagePickerTarget(null);
+      return;
+    }
+    if (target.kind === "inventory") {
+      updateSigItem(target.id, { imageUrl: assetUrl });
+      setSigImagePickerTarget(null);
+      return;
+    }
+    setState((prev) => {
+      const hasInventory = (prev.sigInventory || []).some((x) => x.id === target.id);
+      if (hasInventory) {
+        const next = {
+          ...prev,
+          sigInventory: (prev.sigInventory || []).map((x) =>
+            x.id === target.id ? { ...x, imageUrl: assetUrl, isRolling: true } : x
+          ),
+        };
+        persistState(next);
+        return next;
+      }
+      const sr = normalizeSigRolling(prev.sigRolling);
+      const next = {
+        ...prev,
+        sigRolling: {
+          ...sr,
+          items: sr.items.map((x) => (x.id === target.id ? { ...x, url: assetUrl } : x)),
+        },
+      };
+      persistState(next);
+      return next;
+    });
+    setSigRollingUploadMessage(`이미지 선택 완료: ${target.id}`);
+    setSigImagePickerTarget(null);
   };
 
   const runOcrForSigItem = useCallback(async (id: string, imageUrl: string, name?: string) => {
@@ -5667,6 +5776,13 @@ export default function AdminPage() {
                               }}
                             />
                           </label>
+                          <button
+                            type="button"
+                            className="rounded bg-indigo-800 px-2 py-1 text-xs hover:bg-indigo-700"
+                            onClick={() => openSigImagePicker({ kind: "rolling", id: it.id })}
+                          >
+                            기존 이미지 선택
+                          </button>
                           <div className="flex gap-1">
                             <button
                               type="button"
@@ -5825,6 +5941,13 @@ export default function AdminPage() {
                     />
                     <button
                       type="button"
+                      className="px-2 py-1 rounded bg-indigo-800 hover:bg-indigo-700 text-xs"
+                      onClick={() => openSigImagePicker({ kind: "soldOutStamp" })}
+                    >
+                      기존 이미지 선택
+                    </button>
+                    <button
+                      type="button"
                       className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
                       onClick={() => updateSigSoldOutStampUrl("")}
                     >
@@ -5882,6 +6005,13 @@ export default function AdminPage() {
                           uploadNewSigImage(file);
                         }}
                       />
+                      <button
+                        type="button"
+                        className="w-fit rounded bg-indigo-800 px-2 py-1 text-xs hover:bg-indigo-700"
+                        onClick={() => openSigImagePicker({ kind: "newSig" })}
+                      >
+                        기존 이미지 선택
+                      </button>
                     </div>
                     <button
                       className="px-3 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-sm disabled:opacity-60 disabled:cursor-not-allowed"
@@ -6154,6 +6284,13 @@ export default function AdminPage() {
                               uploadSigImage(item.id, file);
                             }}
                           />
+                          <button
+                            type="button"
+                            className="w-fit rounded bg-indigo-800 px-2 py-1 text-xs hover:bg-indigo-700"
+                            onClick={() => openSigImagePicker({ kind: "inventory", id: item.id })}
+                          >
+                            기존 이미지 선택
+                          </button>
                         </div>
                       </div>
                       {(sigPreviewMap[item.id] || item.imageUrl) ? (
@@ -6212,6 +6349,76 @@ export default function AdminPage() {
                 <div className="text-xs text-neutral-500">
                   「보드 노출」은 <code>/overlay/sig-sales</code> 상단 롤링 그리드,「판매 활성」은 회전판 메뉴 후보에 포함됩니다. 시그 추가/멤버 지정/판매량 조절은 즉시 `/api/state`를 통해 Redis에 반영됩니다.
                 </div>
+              {sigImagePickerTarget ? (
+                <div
+                  className="fixed inset-0 z-[210] flex items-center justify-center bg-black/80 px-4 py-6"
+                  onClick={() => setSigImagePickerTarget(null)}
+                >
+                  <div
+                    className="w-full max-w-5xl rounded-xl border border-white/20 bg-neutral-950/95 p-3 shadow-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="text-sm font-semibold text-white">ImageKit 기존 이미지 선택</div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="rounded bg-neutral-700 px-2 py-1 text-xs text-white hover:bg-neutral-600"
+                          onClick={() => void loadImageKitAssets()}
+                        >
+                          새로고침
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded bg-neutral-700 px-2 py-1 text-xs text-white hover:bg-neutral-600"
+                          onClick={() => setSigImagePickerTarget(null)}
+                        >
+                          닫기
+                        </button>
+                      </div>
+                    </div>
+                    <div className="mb-2 flex items-center gap-2">
+                      <input
+                        className="w-full rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs"
+                        placeholder="파일명 검색"
+                        value={imageKitAssetQuery}
+                        onChange={(e) => setImageKitAssetQuery(e.target.value)}
+                      />
+                    </div>
+                    {imageKitAssetsError ? (
+                      <div className="mb-2 rounded border border-rose-400/40 bg-rose-900/25 px-2 py-1 text-xs text-rose-100">
+                        목록 조회 실패: {imageKitAssetsError}
+                      </div>
+                    ) : null}
+                    <div className="max-h-[70vh] overflow-auto rounded border border-white/10 bg-black/30 p-2">
+                      {imageKitAssetsLoading ? (
+                        <div className="text-xs text-neutral-400">이미지 목록 불러오는 중...</div>
+                      ) : filteredImageKitAssets.length === 0 ? (
+                        <div className="text-xs text-neutral-400">표시할 이미지가 없습니다.</div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-6">
+                          {filteredImageKitAssets.map((asset) => (
+                            <button
+                              key={asset.fileId || asset.url}
+                              type="button"
+                              className="rounded border border-white/10 bg-black/30 p-1 text-left hover:border-violet-300/60"
+                              onClick={() => applyImageKitAssetToTarget(asset.url)}
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={asset.thumbnailUrl || asset.url}
+                                alt={asset.name || "asset"}
+                                className="h-24 w-full rounded object-cover"
+                              />
+                              <div className="mt-1 truncate text-[11px] text-neutral-200">{asset.name || asset.url}</div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
               {sigImagePreviewModal ? (
                 <div
                   className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4 py-6"

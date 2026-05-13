@@ -139,6 +139,41 @@ function getSupabaseStorageConfig():
   return { url, serviceRoleKey, buckets };
 }
 
+function getImageKitConfig():
+  | { privateKey: string; folderPrefix: string }
+  | null {
+  const privateKey = (process.env.IMAGEKIT_PRIVATE_KEY || "").trim();
+  if (!privateKey) return null;
+  const folderPrefix = (process.env.IMAGEKIT_FOLDER_PREFIX || "sigs").trim().replace(/^\/+|\/+$/g, "");
+  return { privateKey, folderPrefix: folderPrefix || "sigs" };
+}
+
+async function uploadToImageKit(data: Buffer, fileName: string, contentType: string, folder: string, privateKey: string): Promise<string> {
+  const encoded = data.toString("base64");
+  const body = new URLSearchParams();
+  body.set("fileName", fileName);
+  body.set("file", `data:${contentType};base64,${encoded}`);
+  body.set("folder", folder);
+  body.set("useUniqueFileName", "false");
+  const auth = Buffer.from(`${privateKey}:`).toString("base64");
+  const res = await fetch("https://upload.imagekit.io/api/v1/files/upload", {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: body.toString(),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`imagekit_upload_failed:${res.status}:${txt.slice(0, 400)}`);
+  }
+  const json = await res.json() as { url?: string };
+  const url = String(json?.url || "").trim();
+  if (!url) throw new Error("imagekit_upload_failed:no_url");
+  return url;
+}
+
 export async function POST(req: Request) {
   try {
     const uid = getUserId(req);
@@ -164,7 +199,15 @@ export async function POST(req: Request) {
     const fileName = `${Date.now()}_${randomUUID().slice(0, 8)}${ext}`;
     const data = Buffer.from(ab);
     const storagePath = `sigs/${safeUid}/${fileName}`;
+    const contentType = String(file.type || "application/octet-stream");
+    const imagekitConfig = getImageKitConfig();
     const supabaseConfig = getSupabaseStorageConfig();
+
+    if (imagekitConfig) {
+      const folder = `/${imagekitConfig.folderPrefix}/${safeUid}`;
+      const imagekitUrl = await uploadToImageKit(data, fileName, contentType, folder, imagekitConfig.privateKey);
+      return Response.json({ ok: true, url: imagekitUrl }, { status: 200 });
+    }
 
     if (supabaseConfig) {
       const supabase = createClient(supabaseConfig.url, supabaseConfig.serviceRoleKey, {
@@ -176,7 +219,7 @@ export async function POST(req: Request) {
         const { error } = await supabase.storage
           .from(bucket)
           .upload(storagePath, data, {
-            contentType: String(file.type || "application/octet-stream"),
+            contentType,
             upsert: false,
           });
         if (!error) {
@@ -198,7 +241,7 @@ export async function POST(req: Request) {
 
     if (process.env.NODE_ENV === "production") {
       return Response.json(
-        { ok: false, error: "storage_not_configured: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY" },
+        { ok: false, error: "storage_not_configured: set IMAGEKIT_PRIVATE_KEY or SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY" },
         { status: 500 }
       );
     }
