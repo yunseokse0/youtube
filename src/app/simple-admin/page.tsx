@@ -287,7 +287,10 @@ export default function AdminPage() {
       
       if (response.ok) {
         setState(updatedState);
-        sendSSEUpdate({ type: 'overlay_update', ...updatedState });
+        sendSSEUpdate({
+          type: "state_updated",
+          updatedAt: typeof updatedState.updatedAt === "number" ? updatedState.updatedAt : Date.now(),
+        });
       }
     } catch (error) {
       logger.error('프리셋 저장 실패', error);

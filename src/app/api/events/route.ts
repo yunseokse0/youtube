@@ -52,6 +52,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const maxBytes = 512_000;
+    const cl = request.headers.get("content-length");
+    if (cl && Number(cl) > maxBytes) {
+      return new Response("Payload too large", { status: 413 });
+    }
     const data = await request.json();
     logger.debug('이벤트 데이터 수신', { dataType: typeof data, hasData: !!data });
     

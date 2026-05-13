@@ -227,8 +227,22 @@ export function appendSettlementRecord(
   return rec;
 }
 
+const settlementLoadInflight = new Map<string, Promise<SettlementRecord[] | null>>();
+
 export async function loadSettlementRecordsFromApi(userId?: string | null): Promise<SettlementRecord[] | null> {
   if (typeof window === "undefined") return null;
+  const dedupeKey = userId ?? "__cookie__";
+  const existing = settlementLoadInflight.get(dedupeKey);
+  if (existing) return existing;
+  const created = doLoadSettlementRecordsFromApi(userId);
+  settlementLoadInflight.set(dedupeKey, created);
+  created.finally(() => {
+    if (settlementLoadInflight.get(dedupeKey) === created) settlementLoadInflight.delete(dedupeKey);
+  });
+  return created;
+}
+
+async function doLoadSettlementRecordsFromApi(userId?: string | null): Promise<SettlementRecord[] | null> {
   try {
     const q = new URLSearchParams({ _t: String(Date.now()) });
     if (userId) q.set("user", userId);
@@ -242,12 +256,24 @@ export async function loadSettlementRecordsFromApi(userId?: string | null): Prom
   }
 }
 
-export async function saveSettlementRecordsToApi(records: SettlementRecord[], userId?: string | null): Promise<boolean> {
-  if (typeof window === "undefined") return false;
+type SettlementSaveJob = {
+  records: SettlementRecord[];
+  userId: string | null | undefined;
+  resolveAll: Array<(ok: boolean) => void>;
+};
+
+let settlementSaveInFlight = false;
+let settlementSavePending: SettlementSaveJob | null = null;
+
+async function runSettlementSaveQueue(): Promise<void> {
+  if (settlementSaveInFlight || !settlementSavePending) return;
+  settlementSaveInFlight = true;
+  const job = settlementSavePending;
+  settlementSavePending = null;
   try {
-    const normalized = normalizeSettlementRecords(records);
+    const normalized = normalizeSettlementRecords(job.records);
     const q = new URLSearchParams();
-    if (userId) q.set("user", userId);
+    if (job.userId) q.set("user", job.userId);
     const url = q.toString() ? `/api/settlements?${q.toString()}` : "/api/settlements";
     const res = await fetch(url, {
       method: "POST",
@@ -255,10 +281,28 @@ export async function saveSettlementRecordsToApi(records: SettlementRecord[], us
       body: JSON.stringify(normalized),
       credentials: "include",
     });
-    return res.ok;
+    const ok = res.ok;
+    for (const fn of job.resolveAll) fn(ok);
   } catch {
-    return false;
+    for (const fn of job.resolveAll) fn(false);
+  } finally {
+    settlementSaveInFlight = false;
+    if (settlementSavePending) void runSettlementSaveQueue();
   }
+}
+
+export async function saveSettlementRecordsToApi(records: SettlementRecord[], userId?: string | null): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  return new Promise((resolve) => {
+    if (!settlementSavePending) {
+      settlementSavePending = { records, userId, resolveAll: [resolve] };
+    } else {
+      settlementSavePending.records = records;
+      settlementSavePending.userId = userId;
+      settlementSavePending.resolveAll.push(resolve);
+    }
+    void runSettlementSaveQueue();
+  });
 }
 
 export async function loadSettlementRecordsPreferApi(userId?: string | null): Promise<SettlementRecord[]> {

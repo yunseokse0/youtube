@@ -82,6 +82,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   const loadRef = useRef(() => loadStateFromApi(userId));
   loadRef.current = () => loadStateFromApi(userId);
   const syncingRef = useRef(false);
+  const syncOnceRef = useRef<() => Promise<void>>(async () => {});
   const lastGoodRef = useRef<AppState | null>(null);
   const LAST_GOOD_KEY = typeof window !== "undefined" ? `overlay-last-good-${userId || "default"}` : "overlay-last-good";
   const KEEP_EMPTY_GRACE_MS = 60000;
@@ -111,7 +112,12 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   };
   const onSSE = useCallback((incoming: any) => {
     if (!incoming) return;
+    if (incoming.type === "state_updated" && typeof incoming.updatedAt === "number") {
+      void syncOnceRef.current();
+      return;
+    }
     if (shouldDiscardEmpty(incoming as AppState)) return;
+    if (!Array.isArray((incoming as AppState).members)) return;
     const ts = (incoming as any).updatedAt || Date.now();
     const next = incoming as AppState;
     const nextSig = buildOverlayVisualSignature(next);
@@ -192,6 +198,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       }
       syncingRef.current = false;
     };
+    syncOnceRef.current = syncOnce;
     const onStorage = (e: StorageEvent) => {
       if (e.key !== storageKey(userId ?? undefined)) return;
       const localNow = readLocalStateIfExists();

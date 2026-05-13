@@ -1064,7 +1064,7 @@ async function postAppStateWithAuthRecovery(json: string, userId?: string | null
 /**
  * 동시에 수백 개의 POST가 쌓이면 Chrome이 `net::ERR_INSUFFICIENT_RESOURCES`를 낸다.
  * `/api/state` 저장은 한 번에 하나만 진행하고, 진행 중 추가 요청은 최신 페이로드로 합친다.
- * SSE(`/api/events`)는 POST 성공 후 비동기로 전송한다(저장 완료 대기 시간 단축, 전송은 sse-post 큐가 직렬화).
+ * SSE(`/api/events`)는 POST 성공 후 비동기로 **경량** 페이로드만 전송한다(`state_updated` + updatedAt).
  */
 type ServerSaveJob = {
   apiBodyJson: string;
@@ -1105,7 +1105,11 @@ async function runServerSaveQueue(): Promise<void> {
     if (ok) {
       try {
         const { sendSSEUpdate } = require("./sse-post") as { sendSSEUpdate: (d: unknown) => Promise<void> };
-        void sendSSEUpdate(job.ssePayload).catch(() => {});
+        const pl = job.ssePayload as { updatedAt?: number } | null;
+        const updatedAt =
+          typeof pl?.updatedAt === "number" && Number.isFinite(pl.updatedAt) ? pl.updatedAt : Date.now();
+        /** 전체 AppState를 SSE로내면 JSON 직렬화·전송이 커져 요청이 오래 pending 될 수 있음 → 타임스탬프만 브로드캐스트 */
+        void sendSSEUpdate({ type: "state_updated", updatedAt }).catch(() => {});
       } catch {
         /* ignore */
       }
