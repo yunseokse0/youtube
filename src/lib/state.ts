@@ -399,8 +399,6 @@ export function ensureMembers(items: unknown[] | undefined | null): Member[] {
   }).map((m) => normalizeMember(m as Member));
 }
 
-import { sendSSEUpdate } from "./sse-client";
-
 export const STORAGE_KEY = "excel-broadcast-state-v1";
 export const DAILY_LOG_KEY = "excel-broadcast-daily-log-v1";
 export const FORBID_EVENTS_KEY = "excel-broadcast-forbid-events-v1";
@@ -1063,6 +1061,64 @@ async function postAppStateWithAuthRecovery(json: string, userId?: string | null
   return res;
 }
 
+/**
+ * 동시에 수백 개의 POST가 쌓이면 Chrome이 `net::ERR_INSUFFICIENT_RESOURCES`를 낸다.
+ * `/api/state` 저장은 한 번에 하나만 진행하고, 진행 중 추가 요청은 최신 페이로드로 합친다.
+ * SSE(`/api/events`)는 POST 성공 직후에만 순차 전송한다.
+ */
+type ServerSaveJob = {
+  apiBodyJson: string;
+  userId: string | null | undefined;
+  ssePayload: unknown;
+  resolveAll: Array<(ok: boolean) => void>;
+};
+
+let serverSaveInFlight = false;
+let serverSavePending: ServerSaveJob | null = null;
+
+function enqueueServerSave(
+  apiBodyJson: string,
+  userId: string | null | undefined,
+  ssePayload: unknown
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (!serverSavePending) {
+      serverSavePending = { apiBodyJson, userId, ssePayload, resolveAll: [resolve] };
+    } else {
+      serverSavePending.apiBodyJson = apiBodyJson;
+      serverSavePending.userId = userId;
+      serverSavePending.ssePayload = ssePayload;
+      serverSavePending.resolveAll.push(resolve);
+    }
+    void runServerSaveQueue();
+  });
+}
+
+async function runServerSaveQueue(): Promise<void> {
+  if (serverSaveInFlight || !serverSavePending) return;
+  serverSaveInFlight = true;
+  const job = serverSavePending;
+  serverSavePending = null;
+  try {
+    const res = await postAppStateWithAuthRecovery(job.apiBodyJson, job.userId);
+    const ok = res.ok;
+    if (ok) {
+      try {
+        const { sendSSEUpdate } = require("./sse-post") as { sendSSEUpdate: (d: unknown) => Promise<void> };
+        await sendSSEUpdate(job.ssePayload);
+      } catch {
+        /* ignore */
+      }
+    }
+    for (const fn of job.resolveAll) fn(ok);
+  } catch {
+    for (const fn of job.resolveAll) fn(false);
+  } finally {
+    serverSaveInFlight = false;
+    if (serverSavePending) void runServerSaveQueue();
+  }
+}
+
 /** 관리자 /api/state 저장 시 — 스핀 결과(phase 등)는 보내지 않고 메뉴 수·오버레이 UI 설정만 전달(서버에서 병합) */
 function appStatePayloadForApi(next: AppState): Partial<AppState> {
   const normalizedSigInventory = normalizeSigInventory(next.sigInventory);
@@ -1102,12 +1158,7 @@ export function saveState(state: AppState, userId?: string | null) {
     const next = normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() }));
     const json = JSON.stringify(next);
     window.localStorage.setItem(storageKey(userId), json);
-    void postAppStateWithAuthRecovery(JSON.stringify(appStatePayloadForApi(next)), userId)
-      .catch(() => {});
-    try {
-      const { sendSSEUpdate } = require("./sse-post") as { sendSSEUpdate: (d: unknown) => Promise<void> };
-      void sendSSEUpdate(next);
-    } catch {}
+    void enqueueServerSave(JSON.stringify(appStatePayloadForApi(next)), userId, next).catch(() => {});
   } catch {
     // ignore
   }
@@ -1119,18 +1170,27 @@ export async function saveStateAsync(state: AppState, userId?: string | null): P
   const json = JSON.stringify(next);
   try { window.localStorage.setItem(storageKey(userId), json); } catch {}
   try {
-    const res = await postAppStateWithAuthRecovery(JSON.stringify(appStatePayloadForApi(next)), userId);
-    try {
-      const { sendSSEUpdate } = require("./sse-post") as { sendSSEUpdate: (d: unknown) => Promise<void> };
-      void sendSSEUpdate(next);
-    } catch {}
-    return res.ok;
+    return await enqueueServerSave(JSON.stringify(appStatePayloadForApi(next)), userId, next);
   } catch {
     return false;
   }
 }
 
+const loadStateInflight = new Map<string, Promise<AppState | null>>();
+
 export async function loadStateFromApi(userId?: string): Promise<AppState | null> {
+  const dedupeKey = userId ?? "__cookie__";
+  const existing = loadStateInflight.get(dedupeKey);
+  if (existing) return existing;
+  const created = doLoadStateFromApi(userId);
+  loadStateInflight.set(dedupeKey, created);
+  created.finally(() => {
+    if (loadStateInflight.get(dedupeKey) === created) loadStateInflight.delete(dedupeKey);
+  });
+  return created;
+}
+
+async function doLoadStateFromApi(userId?: string): Promise<AppState | null> {
   try {
     const q = new URLSearchParams({ _t: String(Date.now()) });
     if (userId) {
