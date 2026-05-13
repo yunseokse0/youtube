@@ -1,36 +1,21 @@
 /**
- * 폴더 안의 .gif 를 public/images/sigs/<대상폴더>/ 로 복사합니다.
+ * Google Drive 등에서 받은 폴더의 GIF를 public/images/sigs/from-drive/ 로 복사합니다.
+ * 이후 git add / commit / push 하면 Render 등 배포본에 포함됩니다.
  *
  * 사용:
- *   node scripts/copy-sigs-from-folder.mjs "C:\path\to\siggif"
- *   node scripts/copy-sigs-from-folder.mjs "C:\path\to\siggif" siggif
- *   npm run sig:import -- "D:\Downloads\siggif"
- *   npm run sig:import:siggif -- "D:\Downloads\siggif"
+ *   node scripts/copy-sigs-from-folder.mjs "C:\Users\me\Downloads\siggif"
+ *   npm run sig:import -- "D:\path\to\folder"
  */
 import fs from "fs/promises";
 import path from "path";
 
-const args = process.argv.slice(2);
-/** `npm run sig:import:siggif -- "원본"` 한 인자만 넘길 때 대상을 siggif 로 고정 */
-if (process.env.npm_lifecycle_event === "sig:import:siggif" && args.length === 1) {
-  args.push("siggif");
-}
-if (args.length === 0 || args[0] === "-h" || args[0] === "--help") {
-  console.error(
-    '사용법: node scripts/copy-sigs-from-folder.mjs "<원본_폴더>" [대상하위폴더]\n' +
-      "  대상하위폴더 기본값: from-drive  (예: siggif → public/images/sigs/siggif/)"
-  );
+const srcDir = process.argv[2];
+const destDir = path.join(process.cwd(), "public", "images", "sigs", "from-drive");
+
+if (!srcDir || srcDir === "-h" || srcDir === "--help") {
+  console.error('사용법: node scripts/copy-sigs-from-folder.mjs "<원본_폴더_경로>"');
   process.exit(1);
 }
-
-const srcDir = args[0];
-let destSub = args[1] || "from-drive";
-if (!/^[a-zA-Z0-9_-]+$/.test(destSub)) {
-  console.error("대상 하위 폴더 이름은 영문·숫자·-_ 만 허용:", destSub);
-  process.exit(1);
-}
-
-const destDir = path.join(process.cwd(), "public", "images", "sigs", destSub);
 
 const absSrc = path.resolve(srcDir);
 let stat;
