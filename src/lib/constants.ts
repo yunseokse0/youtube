@@ -120,6 +120,38 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
   return s;
 }
 
+/**
+ * 시그 롤링·보드만: `/images/sigs/…` 를 GitHub `public/` raw URL로 바꿔 OBS 등에서 배포 오리진과 무관하게 로드.
+ * `NEXT_PUBLIC_SIG_ROLLING_GITHUB_BASE` 가 `0`/`off` 이면 치환 안 함. 미설정 시 본 저장소 `main` 기본값.
+ */
+function getSigRollingGithubRawRoot(): string {
+  const raw = typeof process !== "undefined" ? String(process.env.NEXT_PUBLIC_SIG_ROLLING_GITHUB_BASE ?? "").trim() : "";
+  if (raw === "0" || raw.toLowerCase() === "off") return "";
+  if (raw) return raw.replace(/\/$/, "");
+  return "https://raw.githubusercontent.com/yunseokse0/youtube/main/public";
+}
+
+export function rewriteSigPathForRollingGithubIfConfigured(resolvedUrl: string): string {
+  const s = String(resolvedUrl || "").trim();
+  if (!s.startsWith("/images/sigs/")) return resolvedUrl;
+  const root = getSigRollingGithubRawRoot();
+  if (!root) return resolvedUrl;
+  const rel = s.startsWith("/") ? s.slice(1) : s;
+  const parts = rel.split("/").filter(Boolean).map((seg) => encodeURIComponent(seg));
+  return `${root}/${parts.join("/")}`;
+}
+
+/** 롤링 카드·GIF 홀드 계산용 — `resolveSigImageUrl` 후 GitHub raw 적용 */
+export function resolveSigRollingImageUrl(name: string, imageUrl?: string): string {
+  return rewriteSigPathForRollingGithubIfConfigured(resolveSigImageUrl(name, imageUrl));
+}
+
+/** 완판 도장 URL — 롤링 오버레이에서만 GitHub raw로 동일 규칙 적용 */
+export function resolveSigRollingStampUrl(storedOrEmpty?: string): string {
+  const raw = String(storedOrEmpty || "").trim();
+  return rewriteSigPathForRollingGithubIfConfigured(resolveSigImageUrl("stamp", raw || DEFAULT_SIG_SOLD_STAMP_URL));
+}
+
 export function normalizeSigInventory(input: unknown): SigItem[] {
   if (!Array.isArray(input)) return DEFAULT_SIG_INVENTORY.map((x) => ({ ...x }));
   const list = input

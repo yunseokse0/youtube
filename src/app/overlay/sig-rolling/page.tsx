@@ -14,7 +14,7 @@ import {
   type AppState,
   type SigRollingItem,
 } from "@/lib/state";
-import { normalizeSigImageUrlStored, resolveSigImageUrl } from "@/lib/constants";
+import { normalizeSigImageUrlStored, resolveSigRollingImageUrl } from "@/lib/constants";
 import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 import { getOverlayMemberFilterIdFromSearchParams, getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { getSigRollingHoldMs } from "@/lib/sig-rolling-duration";
@@ -154,8 +154,8 @@ function RollingCardColumn({
         : `${shellBase} rounded-3xl p-1.5`;
 
   const under = nextItem || current;
-  const srcCurrent = resolveSigImageUrl(current.label || "", current.url);
-  const srcUnder = resolveSigImageUrl(under.label || "", under.url);
+  const srcCurrent = resolveSigRollingImageUrl(current.label || "", current.url);
+  const srcUnder = resolveSigRollingImageUrl(under.label || "", under.url);
 
   if (!useCrossfade) {
     return (
@@ -311,18 +311,21 @@ export default function SigRollingOverlayPage() {
 
       let hold = holdMs;
       if (nn === 1) {
-        const url = list[0]?.url;
-        if (!url) return;
-        hold = await getSigRollingHoldMs(url, holdMs);
+        const it = list[0];
+        if (!it?.url) return;
+        hold = await getSigRollingHoldMs(resolveSigRollingImageUrl(it.label || "", it.url), holdMs);
       } else if (nn === 2) {
-        const h0 = await getSigRollingHoldMs(list[0].url, holdMs);
-        const h1 = await getSigRollingHoldMs(list[1].url, holdMs);
+        const h0 = await getSigRollingHoldMs(resolveSigRollingImageUrl(list[0].label || "", list[0].url), holdMs);
+        const h1 = await getSigRollingHoldMs(resolveSigRollingImageUrl(list[1].label || "", list[1].url), holdMs);
         hold = Math.max(h0, h1);
       } else {
-        const uL = list[pairStart % nn]?.url;
-        const uR = list[(pairStart + 1) % nn]?.url;
-        if (!uL || !uR) return;
-        hold = Math.max(await getSigRollingHoldMs(uL, holdMs), await getSigRollingHoldMs(uR, holdMs));
+        const uL = list[pairStart % nn];
+        const uR = list[(pairStart + 1) % nn];
+        if (!uL?.url || !uR?.url) return;
+        hold = Math.max(
+          await getSigRollingHoldMs(resolveSigRollingImageUrl(uL.label || "", uL.url), holdMs),
+          await getSigRollingHoldMs(resolveSigRollingImageUrl(uR.label || "", uR.url), holdMs)
+        );
       }
       if (cancelled) return;
       timerId = window.setTimeout(() => {

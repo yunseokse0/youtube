@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
 import type { SigItem } from "@/types";
-import { resolveSigImageUrl } from "@/lib/constants";
+import { resolveSigRollingImageUrl, resolveSigRollingStampUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 import { canonicalSigIdFromWheelSliceId, ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 
@@ -113,7 +113,7 @@ export default function SigBoardRolling({
                       <div className="absolute inset-0 z-[1] rounded-[inherit] bg-white/93" aria-hidden />
                     ) : null}
                     <SigSaleMedia
-                      src={resolveSigImageUrl(item.name, item.imageUrl)}
+                      src={resolveSigRollingImageUrl(item.name, item.imageUrl)}
                       alt={item.name}
                       fill
                       className={`object-contain object-center ${soldOut ? "relative z-[2]" : "relative z-0"}`}
@@ -137,7 +137,7 @@ export default function SigBoardRolling({
                             className="relative flex max-h-[min(7rem,52%)] max-w-[min(7rem,52%)] items-center justify-center"
                           >
                             <motion.img
-                              src={soldOutStampUrl}
+                              src={resolveSigRollingStampUrl(soldOutStampUrl)}
                               alt="stamp"
                               className="relative z-[1] h-auto w-auto max-h-full max-w-full object-contain object-center opacity-95 drop-shadow-[0_2px_12px_rgba(0,0,0,0.55)]"
                             />
