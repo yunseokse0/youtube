@@ -16,7 +16,7 @@ import {
 } from "@/lib/state";
 import { normalizeSigImageUrlStored, resolveSigRollingImageUrl } from "@/lib/constants";
 import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
-import { getOverlayMemberFilterIdFromSearchParams, getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
+import { getOverlayMemberFilterIdFromSearchParams, getOverlayUserIdFromSearchParams, shouldSuppressOverlaySseConnection } from "@/lib/overlay-params";
 import { getSigRollingHoldMs } from "@/lib/sig-rolling-duration";
 import { readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
 import { useSSEConnection } from "@/lib/sse-client";
@@ -111,7 +111,9 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
     let pollTimer: number | undefined;
     if (pollMs > 0) pollTimer = window.setInterval(() => void syncFromApi(), pollMs);
     window.addEventListener("storage", onStorage);
-    void syncFromApi();
+    if (!shouldSuppressOverlaySseConnection() || !local) {
+      void syncFromApi();
+    }
     return () => {
       if (pollTimer) window.clearInterval(pollTimer);
       window.removeEventListener("storage", onStorage);

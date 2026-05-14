@@ -335,11 +335,22 @@ export default function SigSalesOverlayPage() {
   }, [sigPlaceholder]);
 
   useEffect(() => {
-    void loadRemote();
+    if (shouldSuppressOverlaySseConnection()) {
+      try {
+        const local = loadState(userId ?? undefined);
+        if (local) setState(local);
+        else void loadRemote();
+      } catch {
+        void loadRemote();
+      }
+    } else {
+      void loadRemote();
+    }
     const pollMs = readOverlayPollIntervalMs();
     let pollId: number | undefined;
     if (pollMs > 0) pollId = window.setInterval(() => void loadRemote(), pollMs);
     const key = storageKey(userId ?? undefined);
+    let storageDebounce: ReturnType<typeof setTimeout> | null = null;
     const onStorage = (e: StorageEvent) => {
       if (e.key !== key) return;
       /** 관리자 iframe: 부모가 이미 localStorage에 최신을 썼으므로 GET 생략 */
@@ -352,11 +363,16 @@ export default function SigSalesOverlayPage() {
         }
         return;
       }
-      void loadRemote();
+      if (storageDebounce) clearTimeout(storageDebounce);
+      storageDebounce = setTimeout(() => {
+        storageDebounce = null;
+        void loadRemote();
+      }, 400);
     };
     window.addEventListener("storage", onStorage);
     return () => {
       if (pollId) window.clearInterval(pollId);
+      if (storageDebounce) clearTimeout(storageDebounce);
       window.removeEventListener("storage", onStorage);
     };
   }, [loadRemote, userId]);

@@ -136,13 +136,19 @@ export default function AdminSigSalesPage() {
       pollId = window.setInterval(() => void loadRemote(), pollMs);
     }
     const key = storageKey(userId);
+    let storageDebounce: ReturnType<typeof setTimeout> | null = null;
     const onStorage = (e: StorageEvent) => {
       if (e.key !== key) return;
-      void loadRemote();
+      if (storageDebounce) clearTimeout(storageDebounce);
+      storageDebounce = setTimeout(() => {
+        storageDebounce = null;
+        void loadRemote();
+      }, 400);
     };
     window.addEventListener("storage", onStorage);
     return () => {
       if (pollId) window.clearInterval(pollId);
+      if (storageDebounce) clearTimeout(storageDebounce);
       window.removeEventListener("storage", onStorage);
     };
   }, [authReady, userId, loadRemote]);

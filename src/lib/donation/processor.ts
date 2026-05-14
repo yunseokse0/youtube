@@ -128,14 +128,22 @@ async function resolveUnmatched(id: string, userId?: string): Promise<void> {
 }
 
 async function loadAliases(userId?: string): Promise<DonorAlias[]> {
-  if (Date.now() - aliasCacheAt < 15000 && aliasCache.length > 0) {
+  const now = Date.now();
+  if (aliasCacheAt > 0 && now - aliasCacheAt < 15000) {
     return aliasCache;
   }
   const q = userId ? `?u=${encodeURIComponent(userId)}` : "";
   const res = await fetch(`/api/donations/aliases${q}`, { cache: "no-store" }).catch(() => null);
-  if (!res || !res.ok) return aliasCache;
-  const data = (await res.json()) as { items?: DonorAlias[] };
-  aliasCache = Array.isArray(data.items) ? data.items : [];
+  if (!res || !res.ok) {
+    aliasCacheAt = Date.now();
+    return aliasCache;
+  }
+  try {
+    const data = (await res.json()) as { items?: DonorAlias[] };
+    aliasCache = Array.isArray(data.items) ? data.items : [];
+  } catch {
+    /* keep previous aliasCache */
+  }
   aliasCacheAt = Date.now();
   return aliasCache;
 }

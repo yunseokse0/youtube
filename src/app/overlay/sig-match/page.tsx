@@ -13,7 +13,7 @@ import {
   normalizeSigMatchPools,
   storageKey,
 } from "@/lib/state";
-import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
+import { getOverlayUserIdFromSearchParams, shouldSuppressOverlaySseConnection } from "@/lib/overlay-params";
 import { readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
 import { useSSEConnection } from "@/lib/sse-client";
 import { getEffectiveRemainingTime } from "@/lib/timer-utils";
@@ -154,7 +154,9 @@ function useSigMatchState(userId: string | undefined, lockedSnapshot: AppState |
     if (pollMs > 0) pollTimer = window.setInterval(() => void syncFromApi(), pollMs);
 
     window.addEventListener("storage", onStorage);
-    void syncFromApi();
+    if (!shouldSuppressOverlaySseConnection() || !local) {
+      void syncFromApi();
+    }
 
     return () => {
       if (pollTimer) window.clearInterval(pollTimer);

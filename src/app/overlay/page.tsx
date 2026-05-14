@@ -2,7 +2,7 @@
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi, loadState, totalToon, totalCombined, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig } from "@/lib/state";
-import { presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
+import { presetToParams, shouldSuppressOverlaySseConnection, type OverlayPresetLike } from "@/lib/overlay-params";
 import { getEffectiveRemainingTime } from "@/lib/timer-utils";
 import { useFlip } from "@/lib/flip";
 import MissionBoard from "@/components/MissionBoard";
@@ -176,6 +176,14 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
             setState(localNow);
           }
           if (isViable(localNow)) { lastGoodRef.current = localNow; saveLastGood(localNow); }
+        }
+        /** 관리자 미리보기 iframe: 로컬 스냅샷이 있으면 동일 탭 저장마다 GET /api/state 반복 생략 */
+        if (shouldSuppressOverlaySseConnection()) {
+          const peek = readLocalStateIfExists();
+          if (peek && (peek.updatedAt || 0) > 0) {
+            syncingRef.current = false;
+            return;
+          }
         }
         const data = await loadRef.current();
         // Keep local state when API is stale (e.g. API save failed),

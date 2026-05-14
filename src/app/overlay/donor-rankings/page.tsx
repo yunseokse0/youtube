@@ -14,7 +14,7 @@ import {
 import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
 import { readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
 import { useSSEConnection } from "@/lib/sse-client";
-import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
+import { getOverlayUserIdFromSearchParams, shouldSuppressOverlaySseConnection } from "@/lib/overlay-params";
 
 type DonorRow = {
   name: string;
@@ -106,7 +106,9 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
     if (pollMs > 0) pollTimer = window.setInterval(() => void syncFromApi(), pollMs);
 
     window.addEventListener("storage", onStorage);
-    void syncFromApi();
+    if (!shouldSuppressOverlaySseConnection() || !local) {
+      void syncFromApi();
+    }
     return () => {
       if (pollTimer) window.clearInterval(pollTimer);
       window.removeEventListener("storage", onStorage);

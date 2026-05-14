@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
 import { defaultState, loadState, loadStateFromApi, normalizeDonationListsOverlayConfig, storageKey, type AppState } from "@/lib/state";
-import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
+import { getOverlayUserIdFromSearchParams, shouldSuppressOverlaySseConnection } from "@/lib/overlay-params";
 import { readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
 import { useSSEConnection } from "@/lib/sse-client";
 import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
@@ -77,7 +77,9 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
     if (pollMs > 0) pollTimer = window.setInterval(() => void syncFromApi(), pollMs);
 
     window.addEventListener("storage", onStorage);
-    void syncFromApi();
+    if (!shouldSuppressOverlaySseConnection() || !local) {
+      void syncFromApi();
+    }
     return () => {
       if (pollTimer) window.clearInterval(pollTimer);
       window.removeEventListener("storage", onStorage);

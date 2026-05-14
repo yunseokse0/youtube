@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { defaultState, loadState, loadStateFromApi, storageKey, type AppState } from "@/lib/state";
-import { getOverlayUserIdFromSearchParams, type OverlayPresetLike } from "@/lib/overlay-params";
+import { getOverlayUserIdFromSearchParams, shouldSuppressOverlaySseConnection, type OverlayPresetLike } from "@/lib/overlay-params";
 import { GoalBar } from "@/components/GoalBar";
 import { useGoalPresetAutoEscalate } from "@/hooks/useGoalPresetAutoEscalate";
 import { readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
@@ -61,10 +61,29 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
 
     const onStorage = (e: StorageEvent) => {
       if (e.key !== storageKey(userId ?? undefined)) return;
+      /** 관리자 iframe: 부모 탭이 localStorage에 쓴 값이 곧 최신 */
+      if (shouldSuppressOverlaySseConnection()) {
+        try {
+          const local = loadState(userId ?? undefined);
+          if (!local) return;
+          const u = local.updatedAt || 0;
+          if (lastUpdatedRef.current <= 0 || u >= lastUpdatedRef.current) {
+            lastUpdatedRef.current = u;
+            setState(local);
+          }
+        } catch {
+          /* noop */
+        }
+        return;
+      }
       void syncFromApi();
     };
 
-    void syncFromApi();
+    if (shouldSuppressOverlaySseConnection()) {
+      if (!hasLocalSnapshot) void syncFromApi();
+    } else {
+      void syncFromApi();
+    }
     const pollMs = readOverlayPollIntervalMs();
     let pollId: number | undefined;
     if (pollMs > 0) pollId = window.setInterval(() => void syncFromApi(), pollMs);
