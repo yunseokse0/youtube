@@ -94,10 +94,18 @@ async function loadSigListSnapshot(userId?: string): Promise<QueueSigItem[]> {
   }
   if (sigSnapshotInflight) return sigSnapshotInflight;
 
-  const q = userId ? `?u=${encodeURIComponent(userId)}` : "";
+  const params = new URLSearchParams();
+  if (userId) {
+    params.set("u", userId);
+    params.set("user", userId);
+  }
+  /** 전체 오버레이 JSON이 아니라 시그 목록만 — 대기 큐 메타용 스냅샷 */
+  params.set("pick", "sigInventory");
+  const qs = params.toString();
+
   sigSnapshotInflight = (async () => {
     try {
-      const res = await fetch(`/api/state${q}`, { cache: "no-store" }).catch(() => null);
+      const res = await fetch(`/api/state?${qs}`, { cache: "no-store" }).catch(() => null);
       if (!res || !res.ok) {
         sigSnapshotCacheAt = Date.now();
         return sigSnapshotCache;

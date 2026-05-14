@@ -157,7 +157,15 @@ async function upstashSet(key: string, value: unknown) {
   return upstashSetJsonWithPipeline(key, value);
 }
 
+const STATE_PICK_SIG_INVENTORY = "sigInventory";
+
 export async function GET(req: Request) {
+  let pick = "";
+  try {
+    pick = (new URL(req.url).searchParams.get("pick") || "").trim();
+  } catch {
+    pick = "";
+  }
   try {
     const userId = getUserId(req);
     if (!userId) {
@@ -173,7 +181,11 @@ export async function GET(req: Request) {
         logger.warn('Redis 미설정 - 메모리만 사용 (서버 재시작 시 데이터 초기화됨. UPSTASH_REDIS_* 환경변수 설정 권장)');
       }
       logger.debug('메모리 상태 반환', { membersCount: state.members.length, donorsCount: state.donors.length });
-      return new Response(JSON.stringify(state), {
+      const body =
+        pick === STATE_PICK_SIG_INVENTORY
+          ? { updatedAt: state.updatedAt, sigInventory: state.sigInventory || [] }
+          : state;
+      return new Response(JSON.stringify(body), {
         headers: {
           "Content-Type": "application/json",
           "Cache-Control":
@@ -231,7 +243,11 @@ export async function GET(req: Request) {
     } catch {}
 
     logger.debug('Redis 상태 반환', { hasState: !!state, usedMemory: !!getServerMemoryAppState(), userId });
-    return new Response(JSON.stringify(mergedForResponse), {
+    const body =
+      pick === STATE_PICK_SIG_INVENTORY
+        ? { updatedAt: mergedForResponse.updatedAt, sigInventory: mergedForResponse.sigInventory || [] }
+        : mergedForResponse;
+    return new Response(JSON.stringify(body), {
       headers: {
         "Content-Type": "application/json",
         "Cache-Control":
@@ -241,7 +257,11 @@ export async function GET(req: Request) {
   } catch (error) {
     logger.error('상태 조회 실패', error);
     const fallback = getServerMemoryAppState() || defaultState();
-    return new Response(JSON.stringify(fallback), {
+    const body =
+      pick === STATE_PICK_SIG_INVENTORY
+        ? { updatedAt: fallback.updatedAt, sigInventory: fallback.sigInventory || [] }
+        : fallback;
+    return new Response(JSON.stringify(body), {
       headers: { "Content-Type": "application/json" },
       status: 200,
     });
