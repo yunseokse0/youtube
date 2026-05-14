@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createModuleLogger } from './logger';
-import { isAdminDashboardPreviewEmbed } from './overlay-params';
+import { shouldSuppressOverlaySseConnection } from './overlay-params';
 import { sendSSEUpdate as postSseUpdate } from './sse-post';
 
 const logger = createModuleLogger('SSE');
@@ -18,8 +18,8 @@ export function useSSEConnection(onMessage: (data: any) => void) {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    /** 관리자 미리보기 iframe: SSE가 메인 탭과 겹쳐 연결·`/api/state` 폭주 → 생략 */
-    if (isAdminDashboardPreviewEmbed()) {
+    /** 관리자 미리보기 iframe 등: SSE가 메인 탭과 겹쳐 `/api/events`·연쇄 GET 폭주 */
+    if (shouldSuppressOverlaySseConnection()) {
       return () => {};
     }
 

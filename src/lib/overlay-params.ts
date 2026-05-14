@@ -290,6 +290,33 @@ export function isAdminDashboardPreviewEmbed(): boolean {
 }
 
 /**
+ * 동일 오리진에서 `/admin`이 `<iframe src="/overlay...">`로 넣은 경우.
+ * `adminPreviewEmbed=1`이 빠진 구 URL·캐시 번들에서도 `/api/events`·연쇄 GET이 겹치지 않게 한다.
+ */
+export function isEmbeddedInSameOriginAdminFrame(): boolean {
+  if (typeof window === "undefined") return false;
+  if (window.parent === window) return false;
+  try {
+    if (window.parent.location.origin !== window.location.origin) return false;
+    const p = window.parent.location.pathname || "";
+    return p.startsWith("/admin");
+  } catch {
+    return false;
+  }
+}
+
+/** 미리보기 iframe 등에서 SSE 생략. 디버그 시 `?overlayAllowSse=1`로 다시 켤 수 있음. */
+export function shouldSuppressOverlaySseConnection(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    if (new URLSearchParams(window.location.search).get("overlayAllowSse") === "1") return false;
+  } catch {
+    /* noop */
+  }
+  return isAdminDashboardPreviewEmbed() || isEmbeddedInSameOriginAdminFrame();
+}
+
+/**
  * 관리자 iframe `src`에만 붙입니다. OBS·방송용으로 복사하는 URL에는 넣지 마세요.
  * 상대 경로(`/overlay/...`)도 처리합니다.
  */

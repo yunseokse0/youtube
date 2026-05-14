@@ -8,10 +8,11 @@ import type { SigItem } from "@/types";
 import RouletteWheel from "@/components/sig-sales/RouletteWheel";
 import ResultOverlay from "@/components/sig-sales/ResultOverlay";
 import SigBoardRolling from "@/components/sig-sales/SigBoardRolling";
-import { loadStateFromApi, storageKey, type AppState } from "@/lib/state";
+import { loadStateFromApi, loadState, storageKey, type AppState } from "@/lib/state";
 import {
   getOverlayMemberFilterIdFromSearchParams,
   getOverlayUserIdFromSearchParams,
+  shouldSuppressOverlaySseConnection,
 } from "@/lib/overlay-params";
 import { DEFAULT_SIG_SOLD_STAMP_URL, resolveSigImageUrl, setSigImagePlaceholderOnlyForOverlay } from "@/lib/constants";
 import {
@@ -341,6 +342,16 @@ export default function SigSalesOverlayPage() {
     const key = storageKey(userId ?? undefined);
     const onStorage = (e: StorageEvent) => {
       if (e.key !== key) return;
+      /** 관리자 iframe: 부모가 이미 localStorage에 최신을 썼으므로 GET 생략 */
+      if (shouldSuppressOverlaySseConnection()) {
+        try {
+          const local = loadState(userId ?? undefined);
+          if (local) setState(local);
+        } catch {
+          /* noop */
+        }
+        return;
+      }
       void loadRemote();
     };
     window.addEventListener("storage", onStorage);
