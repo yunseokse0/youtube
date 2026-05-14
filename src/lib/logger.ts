@@ -9,8 +9,12 @@ export const LOG_LEVELS = {
 type LogLevel = typeof LOG_LEVELS[keyof typeof LOG_LEVELS];
 
 // 환경 변수에서 로그 레벨 읽기 (기본값: INFO)
+// 서버(API·RSC 등)에서는 `LOG_LEVEL`을 우선해 브라우저 번들에 노출되지 않게 조용히 둘 수 있음.
 const getLogLevel = (): LogLevel => {
-  const envLevel = process.env.NEXT_PUBLIC_LOG_LEVEL?.toUpperCase();
+  const isServer = typeof window === "undefined";
+  const envLevel = (
+    isServer ? process.env.LOG_LEVEL ?? process.env.NEXT_PUBLIC_LOG_LEVEL : process.env.NEXT_PUBLIC_LOG_LEVEL
+  )?.toUpperCase();
   switch (envLevel) {
     case 'ERROR': return LOG_LEVELS.ERROR;
     case 'WARN': return LOG_LEVELS.WARN;

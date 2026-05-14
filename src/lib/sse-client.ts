@@ -52,7 +52,7 @@ export function useSSEConnection(onMessage: (data: any) => void) {
 
       eventSource.onopen = () => {
         setConnected(true);
-        logger.info('SSE 연결됨');
+        logger.debug('SSE 연결됨');
         retryDelayRef.current = 1000; // 성공 시 지연 초기화
       };
 

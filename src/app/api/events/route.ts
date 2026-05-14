@@ -5,37 +5,35 @@ import { createModuleLogger } from '@/lib/logger';
 
 const logger = createModuleLogger('API/Events');
 
+/** DevTools EventStream·서버 로그 부담을 줄이기 위해 ping은 길게 유지(프록시 idle 타임아웃보다 짧지 않게 환경에 맞게 조정) */
+const SSE_PING_MS = 60_000;
+
 let clients: ReadableStreamDefaultController[] = [];
 
 export async function GET(request: NextRequest) {
   const stream = new ReadableStream({
     start(controller) {
       clients.push(controller);
-      logger.debug('새로운 SSE 클라이언트 연결', { totalClients: clients.length });
-      
+
       // 연결 직후 재시도 지시 및 초기 keepalive 전송
       try {
         controller.enqueue(`retry: 5000\n\n`);
         controller.enqueue(`event: hello\ndata: "ok"\n\n`);
       } catch {}
 
-      // 연결 유지를 위한 ping (더 자주 연결 상태 확인)
       const interval = setInterval(() => {
         try {
           controller.enqueue(`data: ping\n\n`);
-          logger.debug('SSE ping 전송');
         } catch {
           clearInterval(interval);
           clients = clients.filter(c => c !== controller);
-          logger.debug('연결 끊긴 클라이언트 제거', { totalClients: clients.length });
         }
-      }, 25000); // keepalive: 너무 짧으면 멀티 탭·멀티 인스턴스에서 부담 (과도한 enqueue·로그)
+      }, SSE_PING_MS);
 
       // 연결 종료 시 정리
       request.signal.addEventListener('abort', () => {
         clearInterval(interval);
         clients = clients.filter(c => c !== controller);
-        logger.debug('클라이언트 연결 종료', { totalClients: clients.length });
       });
     },
   });
@@ -58,8 +56,7 @@ export async function POST(request: NextRequest) {
       return new Response("Payload too large", { status: 413 });
     }
     const data = await request.json();
-    logger.debug('이벤트 데이터 수신', { dataType: typeof data, hasData: !!data });
-    
+
     // 모든 클라이언트에게 데이터 전송
     clients.forEach(controller => {
       try {
@@ -70,7 +67,6 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    logger.debug('이벤트 브로드캐스트 완료', { totalClients: clients.length });
     return new Response('OK', { status: 200 });
   } catch (error) {
     logger.error('이벤트 처리 실패', error);

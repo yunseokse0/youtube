@@ -1,8 +1,11 @@
 import { loadStateFromApi, saveState } from "@/lib/state";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
+import { createModuleLogger } from "@/lib/logger";
 import type { AppState, Donor as AppDonor } from "@/types";
 import { mapToMember } from "./mapper";
 import type { DonationEvent, Donor, DonorAlias } from "./types";
+
+const log = createModuleLogger("Donation/Processor");
 
 const processedEventIds = new Set<string>();
 const unresolvedEventIds = new Set<string>();
@@ -26,7 +29,7 @@ function toAppDonor(donor: Donor): AppDonor {
 }
 
 export async function processDonationEvent(rawEvent: DonationEvent, userId?: string) {
-  console.log("donation: processing", rawEvent.donorName, rawEvent.amount);
+  log.debug("processing", rawEvent.donorName, rawEvent.amount);
   try {
     const dedupeKey = `${rawEvent.provider}:${rawEvent.externalId || rawEvent.id}`;
     if (processedEventIds.has(dedupeKey)) {
@@ -41,7 +44,7 @@ export async function processDonationEvent(rawEvent: DonationEvent, userId?: str
     const aliases = await loadAliases(userId);
     const processedEvent = mapToMember(rawEvent, currentState.members || [], aliases);
     if (processedEvent.status === "unmatched" || !processedEvent.memberId) {
-      console.warn("donation: unmatched donor", processedEvent.donorName);
+      log.warn("unmatched donor", processedEvent.donorName);
       if (!unresolvedEventIds.has(dedupeKey)) {
         unresolvedEventIds.add(dedupeKey);
         await saveUnmatched(processedEvent, userId);
@@ -92,11 +95,11 @@ export async function processDonationEvent(rawEvent: DonationEvent, userId?: str
     processedEventIds.add(dedupeKey);
     unresolvedEventIds.delete(dedupeKey);
     await resolveUnmatched(processedEvent.id, userId);
-    console.log("donation: processed", newDonor.name, newDonor.amount);
+    log.debug("processed", newDonor.name, newDonor.amount);
     return processedEvent;
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown_error";
-    console.error("donation: process failed", message);
+    log.error("process failed", message);
     return { ...rawEvent, status: "failed" as const, error: message };
   }
 }

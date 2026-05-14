@@ -11,6 +11,12 @@ let sigSnapshotInflight: Promise<QueueSigItem[]> | null = null;
 
 const SIG_SNAPSHOT_MIN_MS = 10_000;
 
+/** `NEXT_PUBLIC_TOONATION_SOCKET_ENABLED=true`(또는 `1`)일 때만 toon.at 소켓 연결. 그 외에는 연결하지 않음. */
+function isToonationSocketEnabled(): boolean {
+  const v = String(process.env.NEXT_PUBLIC_TOONATION_SOCKET_ENABLED ?? "").trim().toLowerCase();
+  return v === "true" || v === "1";
+}
+
 export type ToonationListenerStatus = {
   kind: "connected" | "disconnected" | "reconnect_attempt" | "reconnect_error" | "reconnect_failed" | "connect_error";
   message: string;
@@ -133,7 +139,11 @@ async function loadSigListSnapshot(userId?: string): Promise<QueueSigItem[]> {
   return sigSnapshotInflight;
 }
 
-export function startToonationListener(alertboxUrl: string, options?: ListenerOptions) {
+export function startToonationListener(alertboxUrl: string, options?: ListenerOptions): Socket | null {
+  if (!isToonationSocketEnabled()) {
+    stopToonationListener();
+    return null;
+  }
   if (toonationSocket) toonationSocket.disconnect();
   const onStatus = options?.onStatus;
   const userId = options?.userId;
