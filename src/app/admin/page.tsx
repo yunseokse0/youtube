@@ -1221,13 +1221,14 @@ export default function AdminPage() {
 
   useEffect(() => {
     // Retry unsynced writes quickly to minimize cross-device drift.
+    // `state`를 deps에 넣지 않음: 매 렌더마다 interval이 갈아엎어지며 POST·GET 폭주·동기화 꼬임을 유발할 수 있음.
     const id = setInterval(() => {
       if (pendingUnsyncedRef.current || syncStatusRef.current === "error") {
-        persistState(state);
+        persistState(stateRef.current);
       }
     }, 5000);
     return () => clearInterval(id);
-  }, [state, persistState]);
+  }, [persistState]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !user?.id) return;
