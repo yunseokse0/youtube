@@ -1,0 +1,21 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# 대시보드에서 New → Blueprint → 이 저장소 연결 시 자동 생성됩니다.
+# 수동 Web Service를 쓸 때는 아래 값을 그대로 복사해 쓰면 됩니다.
+
+services:
+  - type: web
+    name: youtube-finalent
+    runtime: node
+    region: oregon # frankfurt, singapore(플랜에 따라) 등으로 변경 가능
+    plan: free # 유료 starter 이상이면 슬립 없음·빌드 여유
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      # 프로덕션 필수 권장 (.env.example 참고)
+      # - key: UPSTASH_REDIS_REST_URL
+      #   sync: false
+      # - key: UPSTASH_REDIS_REST_TOKEN
+      #   sync: false
