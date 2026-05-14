@@ -174,6 +174,8 @@ export default function AdminPage() {
   const pendingUnsyncedRef = useRef<boolean>(false);
   /** 주기 폴링에서 didPreserve로 서버에 다시 올릴 때 최소 간격 — 연속 POST·SSE 대기 완화 */
   const lastPollMergePersistAtRef = useRef<number>(0);
+  /** 다른 탭·창 `storage` 반영 시 즉시 POST하면 탭 간 ping-pong으로 /api/state·/api/events 폭주 가능 */
+  const lastStorageMergePersistAtRef = useRef<number>(0);
   const POLL_MERGE_PERSIST_MIN_MS = 6000;
   /** 금액/숫자 입력 중에는 원격 동기화 적용을 잠시 보류해 타이핑 값 초기화를 방지 */
   const amountInputEditingRef = useRef<boolean>(false);
@@ -589,6 +591,7 @@ export default function AdminPage() {
   }, [state]);
   useEffect(() => {
     lastPollMergePersistAtRef.current = 0;
+    lastStorageMergePersistAtRef.current = 0;
   }, [user?.id]);
   useEffect(() => {
     stateUpdatedAtRef.current = state.updatedAt || 0;
@@ -1239,7 +1242,15 @@ export default function AdminPage() {
           stateUpdatedAtRef.current = incomingUpdatedAt;
           setState((prev) => {
             const { merged, didPreserve } = mergeIncomingStateSafely(incoming, prev);
-            if (didPreserve) queueMicrotask(() => persistState(merged));
+            if (didPreserve) {
+              const t = Date.now();
+              if (t - lastStorageMergePersistAtRef.current >= POLL_MERGE_PERSIST_MIN_MS) {
+                lastStorageMergePersistAtRef.current = t;
+                queueMicrotask(() => persistState(merged));
+              } else {
+                pendingUnsyncedRef.current = true;
+              }
+            }
             return merged;
           });
         } catch {
