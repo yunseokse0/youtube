@@ -510,17 +510,11 @@ export default function AdminPage() {
     const now = Date.now();
     lastLocalPersistAtRef.current = now;
     pendingUnsyncedRef.current = true;
-    setSyncStatus("loading");
+    /** 배지를 매 저장마다 `loading`으로 두면 느린 서버에서 GET/POST가 쌓일 때 "동기화 중"이 계속 보임. 네트워크와 분리해 이전 상태를 유지한 뒤 결과만 반영 */
     saveStateAsync(s, user?.id).then((r) => {
       if (r.ok) {
         if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
           stateUpdatedAtRef.current = r.serverUpdatedAt;
-        } else {
-          void loadStateFromApi(user?.id).then((remote) => {
-            if (remote && typeof remote.updatedAt === "number" && Number.isFinite(remote.updatedAt)) {
-              stateUpdatedAtRef.current = remote.updatedAt;
-            }
-          });
         }
         pendingUnsyncedRef.current = false;
         setSyncStatus("synced");
@@ -796,7 +790,7 @@ export default function AdminPage() {
       }
     };
     const onFocus = () => { void syncFromApi(); };
-    const onOnline = () => { setSyncStatus("loading"); void syncFromApi(); };
+    const onOnline = () => { void syncFromApi(); };
     const onOffline = () => { setSyncStatus("local"); };
     const onVisibility = () => {
       if (document.visibilityState === "visible") void syncFromApi();
