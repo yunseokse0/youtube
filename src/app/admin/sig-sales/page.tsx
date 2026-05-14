@@ -11,7 +11,9 @@ import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
 import ConfirmationModal from "@/components/sig-sales/ConfirmationModal";
 import RouletteHistoryModal from "@/components/sig-sales/RouletteHistoryModal";
 import { BUNDLED_SIG_PLACEHOLDER_URL, DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
-import { loadState, loadStateFromApi, saveStateAsync, type AppState } from "@/lib/state";
+import { loadState, loadStateFromApi, saveStateAsync, storageKey, type AppState } from "@/lib/state";
+import { useSSEConnection } from "@/lib/sse-client";
+import { readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
 import {
   ONE_SHOT_SIG_ID,
   SPIN_SOUND_PATHS,
@@ -23,7 +25,6 @@ import { useSigSalesState } from "@/hooks/useSigSalesState";
 import { detectSigPriceFromImageUrlDetailed } from "@/lib/sig-image-ocr";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 
-const POLL_MS = 1000;
 const STEP_CONFIRM_PAUSE_MS = 3000;
 const MAX_SELECTED_SIGS = 20;
 const MIN_ONE_SHOT_SIGS = 2;
@@ -118,12 +119,32 @@ export default function AdminSigSalesPage() {
     if (remote) setState(remote);
   }, [authReady, userId]);
 
+  const loadRemoteRef = useRef(loadRemote);
+  loadRemoteRef.current = loadRemote;
+  useSSEConnection((d: unknown) => {
+    const o = d as { type?: string };
+    if (o?.type === "state_updated") void loadRemoteRef.current();
+  });
+
   useEffect(() => {
     if (!authReady) return;
     setState(loadState(userId));
     void loadRemote();
-    const id = window.setInterval(() => void loadRemote(), POLL_MS);
-    return () => window.clearInterval(id);
+    const pollMs = readOverlayPollIntervalMs();
+    let pollId: number | undefined;
+    if (pollMs > 0) {
+      pollId = window.setInterval(() => void loadRemote(), pollMs);
+    }
+    const key = storageKey(userId);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== key) return;
+      void loadRemote();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      if (pollId) window.clearInterval(pollId);
+      window.removeEventListener("storage", onStorage);
+    };
   }, [authReady, userId, loadRemote]);
 
   const loadHistory = useCallback(async (limit = 8) => {
@@ -301,6 +322,7 @@ export default function AdminSigSalesPage() {
       setManualSoldSet(new Set());
       setOneShotSold(false);
       setShowConfirmModal(false);
+      void loadRemote();
     } catch (e) {
       const code = e instanceof Error ? e.message : "";
       if (code === "not_enough_active_sigs") {
@@ -339,6 +361,7 @@ export default function AdminSigSalesPage() {
     spin,
     resetToIdle,
     cancelConfirm,
+    loadRemote,
   ]);
 
   const onRerollReset = useCallback(() => {
