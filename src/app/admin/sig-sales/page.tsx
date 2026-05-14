@@ -13,7 +13,7 @@ import RouletteHistoryModal from "@/components/sig-sales/RouletteHistoryModal";
 import { BUNDLED_SIG_PLACEHOLDER_URL, DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
 import { loadState, loadStateFromApi, saveStateAsync, storageKey, type AppState } from "@/lib/state";
 import { useSSEConnection } from "@/lib/sse-client";
-import { readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
+import { createStateUpdatedScheduler, readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
 import {
   ONE_SHOT_SIG_ID,
   SPIN_SOUND_PATHS,
@@ -121,13 +121,21 @@ export default function AdminSigSalesPage() {
 
   const loadRemoteRef = useRef(loadRemote);
   loadRemoteRef.current = loadRemote;
+  const scheduleSseLoadRef = useRef<(() => void) | null>(null);
   useSSEConnection((d: unknown) => {
     const o = d as { type?: string };
-    if (o?.type === "state_updated") void loadRemoteRef.current();
+    if (o?.type === "state_updated") scheduleSseLoadRef.current?.();
   });
 
   useEffect(() => {
-    if (!authReady) return;
+    if (!authReady) {
+      scheduleSseLoadRef.current = null;
+      return;
+    }
+    const { schedule, cancel } = createStateUpdatedScheduler(() => {
+      void loadRemoteRef.current();
+    });
+    scheduleSseLoadRef.current = schedule;
     setState(loadState(userId));
     void loadRemote();
     const pollMs = readOverlayPollIntervalMs();
@@ -147,6 +155,8 @@ export default function AdminSigSalesPage() {
     };
     window.addEventListener("storage", onStorage);
     return () => {
+      cancel();
+      scheduleSseLoadRef.current = null;
       if (pollId) window.clearInterval(pollId);
       if (storageDebounce) clearTimeout(storageDebounce);
       window.removeEventListener("storage", onStorage);
@@ -487,11 +497,11 @@ export default function AdminSigSalesPage() {
       updatedAt: finishedAt,
     };
     let saved = await saveStateAsync(next, userId);
-    if (!saved) {
+    if (!saved.ok) {
       await new Promise((r) => setTimeout(r, 400));
       saved = await saveStateAsync(next, userId);
     }
-    if (saved) {
+    if (saved.ok) {
       setState(next);
       void loadHistory(8);
       setToast("판매 확정 완료!");

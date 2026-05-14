@@ -27,7 +27,7 @@ import {
 import { useSigSalesState } from "@/hooks/useSigSalesState";
 import { useImagePreload } from "@/hooks/useImagePreload";
 import { useSSEConnection } from "@/lib/sse-client";
-import { readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
+import { createStateUpdatedScheduler, readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
 
 /**
  * [계약] 시그 판매 오버레이는 아래를 전제로 구현돼 있어야 한다(“될 수도”가 아님).
@@ -324,9 +324,10 @@ export default function SigSalesOverlayPage() {
 
   const loadRemoteRef = useRef(loadRemote);
   loadRemoteRef.current = loadRemote;
+  const scheduleSseLoadRef = useRef<(() => void) | null>(null);
   useSSEConnection((d: unknown) => {
     const o = d as { type?: string };
-    if (o?.type === "state_updated") void loadRemoteRef.current();
+    if (o?.type === "state_updated") scheduleSseLoadRef.current?.();
   });
 
   useEffect(() => {
@@ -335,6 +336,10 @@ export default function SigSalesOverlayPage() {
   }, [sigPlaceholder]);
 
   useEffect(() => {
+    const { schedule, cancel } = createStateUpdatedScheduler(() => {
+      void loadRemoteRef.current();
+    });
+    scheduleSseLoadRef.current = schedule;
     if (shouldSuppressOverlaySseConnection()) {
       try {
         const local = loadState(userId ?? undefined);
@@ -371,6 +376,8 @@ export default function SigSalesOverlayPage() {
     };
     window.addEventListener("storage", onStorage);
     return () => {
+      cancel();
+      scheduleSseLoadRef.current = null;
       if (pollId) window.clearInterval(pollId);
       if (storageDebounce) clearTimeout(storageDebounce);
       window.removeEventListener("storage", onStorage);

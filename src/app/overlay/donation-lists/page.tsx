@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
 import { defaultState, loadState, loadStateFromApi, normalizeDonationListsOverlayConfig, storageKey, type AppState } from "@/lib/state";
 import { getOverlayUserIdFromSearchParams, shouldSuppressOverlaySseConnection } from "@/lib/overlay-params";
-import { readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
+import { createStateUpdatedScheduler, readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
 import { useSSEConnection } from "@/lib/sse-client";
 import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
 import { sortMembersForRanking } from "@/lib/utils";
@@ -15,9 +15,10 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   const lastUpdatedRef = useRef(0);
   const syncingRef = useRef(false);
   const syncFromApiRef = useRef<() => Promise<void>>(async () => {});
+  const scheduleSseSyncRef = useRef<(() => void) | null>(null);
 
   useSSEConnection((d: unknown) => {
-    if ((d as { type?: string })?.type === "state_updated") void syncFromApiRef.current();
+    if ((d as { type?: string })?.type === "state_updated") scheduleSseSyncRef.current?.();
   });
 
   const readLocalStateIfExists = useCallback((): AppState | null => {
@@ -72,6 +73,11 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
 
     syncFromApiRef.current = syncFromApi;
 
+    const { schedule, cancel } = createStateUpdatedScheduler(() => {
+      void syncFromApiRef.current();
+    });
+    scheduleSseSyncRef.current = schedule;
+
     const pollMs = readOverlayPollIntervalMs();
     let pollTimer: number | undefined;
     if (pollMs > 0) pollTimer = window.setInterval(() => void syncFromApi(), pollMs);
@@ -81,6 +87,8 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       void syncFromApi();
     }
     return () => {
+      cancel();
+      scheduleSseSyncRef.current = null;
       if (pollTimer) window.clearInterval(pollTimer);
       window.removeEventListener("storage", onStorage);
     };

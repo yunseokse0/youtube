@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
           clients = clients.filter(c => c !== controller);
           logger.debug('연결 끊긴 클라이언트 제거', { totalClients: clients.length });
         }
-      }, 10000); // 30초 → 10초로 단축
+      }, 25000); // keepalive: 너무 짧으면 멀티 탭·멀티 인스턴스에서 부담 (과도한 enqueue·로그)
 
       // 연결 종료 시 정리
       request.signal.addEventListener('abort', () => {

@@ -1066,11 +1066,13 @@ async function postAppStateWithAuthRecovery(json: string, userId?: string | null
  * `/api/state` 저장은 한 번에 하나만 진행하고, 진행 중 추가 요청은 최신 페이로드로 합친다.
  * SSE(`/api/events`)는 POST 성공 후 비동기로 **경량** 페이로드만 전송한다(`state_updated` + updatedAt).
  */
+export type SaveStateAsyncResult = { ok: boolean; serverUpdatedAt?: number };
+
 type ServerSaveJob = {
   apiBodyJson: string;
   userId: string | null | undefined;
   ssePayload: unknown;
-  resolveAll: Array<(ok: boolean) => void>;
+  resolveAll: Array<(result: SaveStateAsyncResult) => void>;
 };
 
 let serverSaveInFlight = false;
@@ -1080,7 +1082,7 @@ function enqueueServerSave(
   apiBodyJson: string,
   userId: string | null | undefined,
   ssePayload: unknown
-): Promise<boolean> {
+): Promise<SaveStateAsyncResult> {
   return new Promise((resolve) => {
     if (!serverSavePending) {
       serverSavePending = { apiBodyJson, userId, ssePayload, resolveAll: [resolve] };
@@ -1102,21 +1104,33 @@ async function runServerSaveQueue(): Promise<void> {
   try {
     const res = await postAppStateWithAuthRecovery(job.apiBodyJson, job.userId);
     const ok = res.ok;
+    let serverUpdatedAt: number | undefined;
     if (ok) {
+      try {
+        const parsed = (await res.json()) as { updatedAt?: unknown };
+        const u = parsed?.updatedAt;
+        if (typeof u === "number" && Number.isFinite(u)) serverUpdatedAt = u;
+      } catch {
+        /* ignore malformed body */
+      }
       try {
         const { sendSSEUpdate } = require("./sse-post") as { sendSSEUpdate: (d: unknown) => Promise<void> };
         const pl = job.ssePayload as { updatedAt?: number } | null;
         const updatedAt =
-          typeof pl?.updatedAt === "number" && Number.isFinite(pl.updatedAt) ? pl.updatedAt : Date.now();
+          typeof serverUpdatedAt === "number" && Number.isFinite(serverUpdatedAt)
+            ? serverUpdatedAt
+            : typeof pl?.updatedAt === "number" && Number.isFinite(pl.updatedAt)
+              ? pl.updatedAt
+              : Date.now();
         /** 전체 AppState를 SSE로내면 JSON 직렬화·전송이 커져 요청이 오래 pending 될 수 있음 → 타임스탬프만 브로드캐스트 */
         void sendSSEUpdate({ type: "state_updated", updatedAt }).catch(() => {});
       } catch {
         /* ignore */
       }
     }
-    for (const fn of job.resolveAll) fn(ok);
+    for (const fn of job.resolveAll) fn({ ok, serverUpdatedAt });
   } catch {
-    for (const fn of job.resolveAll) fn(false);
+    for (const fn of job.resolveAll) fn({ ok: false });
   } finally {
     serverSaveInFlight = false;
     if (serverSavePending) void runServerSaveQueue();
@@ -1168,19 +1182,32 @@ export function saveState(state: AppState, userId?: string | null) {
   }
 }
 
-export async function saveStateAsync(state: AppState, userId?: string | null): Promise<boolean> {
-  if (typeof window === "undefined") return false;
+export async function saveStateAsync(state: AppState, userId?: string | null): Promise<SaveStateAsyncResult> {
+  if (typeof window === "undefined") return { ok: false };
   const next = normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() }));
   const json = JSON.stringify(next);
   try { window.localStorage.setItem(storageKey(userId), json); } catch {}
   try {
     return await enqueueServerSave(JSON.stringify(appStatePayloadForApi(next)), userId, next);
   } catch {
-    return false;
+    return { ok: false };
   }
 }
 
 const loadStateInflight = new Map<string, Promise<AppState | null>>();
+
+let warnedMemoryStateBackend = false;
+
+function maybeWarnMemoryStateBackend(res: Response): void {
+  if (typeof window === "undefined" || warnedMemoryStateBackend) return;
+  if (res.headers.get("x-broadcast-state-storage") !== "memory") return;
+  const h = window.location.hostname;
+  if (h === "localhost" || h === "127.0.0.1" || h === "[::1]" || h.endsWith(".local")) return;
+  warnedMemoryStateBackend = true;
+  console.warn(
+    "[방송 정산] 서버가 상태를 메모리에만 두고 있습니다. 호스팅에서 인스턴스가 2개 이상이면 기기·탭 간 동기화가 깨질 수 있습니다. UPSTASH_REDIS_REST_URL·UPSTASH_REDIS_REST_TOKEN(또는 KV_REST_*)를 설정하거나 인스턴스를 1개로 맞추세요."
+  );
+}
 
 export async function loadStateFromApi(userId?: string): Promise<AppState | null> {
   const dedupeKey = userId ?? "__cookie__";
@@ -1215,6 +1242,7 @@ async function doLoadStateFromApi(userId?: string): Promise<AppState | null> {
       return null;
     }
     if (!res.ok) return null;
+    maybeWarnMemoryStateBackend(res);
     const data = await res.json();
     if (data && data.members) {
       data.members = (() => { const v = ensureMembers(data.members); return v.length > 0 ? v : defaultMembers().map(normalizeMember); })();

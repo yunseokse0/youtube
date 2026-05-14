@@ -6,7 +6,7 @@ import { defaultState, loadState, loadStateFromApi, storageKey, type AppState } 
 import { getOverlayUserIdFromSearchParams, shouldSuppressOverlaySseConnection, type OverlayPresetLike } from "@/lib/overlay-params";
 import { GoalBar } from "@/components/GoalBar";
 import { useGoalPresetAutoEscalate } from "@/hooks/useGoalPresetAutoEscalate";
-import { readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
+import { createStateUpdatedScheduler, readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
 import { useSSEConnection } from "@/lib/sse-client";
 
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
@@ -14,9 +14,10 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   const lastUpdatedRef = useRef(0);
   const syncingRef = useRef(false);
   const syncFromApiRef = useRef<() => Promise<void>>(async () => {});
+  const scheduleSseSyncRef = useRef<(() => void) | null>(null);
 
   useSSEConnection((d: unknown) => {
-    if ((d as { type?: string })?.type === "state_updated") void syncFromApiRef.current();
+    if ((d as { type?: string })?.type === "state_updated") scheduleSseSyncRef.current?.();
   });
 
   useEffect(() => {
@@ -59,6 +60,11 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
 
     syncFromApiRef.current = syncFromApi;
 
+    const { schedule, cancel } = createStateUpdatedScheduler(() => {
+      void syncFromApiRef.current();
+    });
+    scheduleSseSyncRef.current = schedule;
+
     const onStorage = (e: StorageEvent) => {
       if (e.key !== storageKey(userId ?? undefined)) return;
       /** 관리자 iframe: 부모 탭이 localStorage에 쓴 값이 곧 최신 */
@@ -89,6 +95,8 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
     if (pollMs > 0) pollId = window.setInterval(() => void syncFromApi(), pollMs);
     window.addEventListener("storage", onStorage);
     return () => {
+      cancel();
+      scheduleSseSyncRef.current = null;
       if (pollId) window.clearInterval(pollId);
       window.removeEventListener("storage", onStorage);
     };

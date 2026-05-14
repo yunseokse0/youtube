@@ -11,7 +11,7 @@ import { GoalBar } from "@/components/GoalBar";
 import { useSSEConnection } from "@/lib/sse-client";
 import { useGoalPresetAutoEscalate } from "@/hooks/useGoalPresetAutoEscalate";
 import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
-import { readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
+import { createStateUpdatedScheduler, readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
 
 function tryDecodeSnapshot(str: string | null): AppState | null {
   if (!str) return null;
@@ -84,6 +84,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   loadRef.current = () => loadStateFromApi(userId);
   const syncingRef = useRef(false);
   const syncOnceRef = useRef<() => Promise<void>>(async () => {});
+  const scheduleStateUpdatedRef = useRef<(() => void) | null>(null);
   const lastGoodRef = useRef<AppState | null>(null);
   const LAST_GOOD_KEY = typeof window !== "undefined" ? `overlay-last-good-${userId || "default"}` : "overlay-last-good";
   const KEEP_EMPTY_GRACE_MS = 60000;
@@ -114,7 +115,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   const onSSE = useCallback((incoming: any) => {
     if (!incoming) return;
     if (incoming.type === "state_updated" && typeof incoming.updatedAt === "number") {
-      void syncOnceRef.current();
+      scheduleStateUpdatedRef.current?.();
       return;
     }
     if (shouldDiscardEmpty(incoming as AppState)) return;
@@ -207,6 +208,10 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       }
       syncingRef.current = false;
     };
+    const { schedule, cancel: cancelStateUpdatedSchedule } = createStateUpdatedScheduler(() => {
+      void syncOnceRef.current();
+    });
+    scheduleStateUpdatedRef.current = schedule;
     syncOnceRef.current = syncOnce;
     const onStorage = (e: StorageEvent) => {
       if (e.key !== storageKey(userId ?? undefined)) return;
@@ -227,6 +232,8 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
     window.addEventListener("storage", onStorage);
     void syncOnce();
     return () => {
+      cancelStateUpdatedSchedule();
+      scheduleStateUpdatedRef.current = null;
       if (pollTimer) window.clearInterval(pollTimer);
       window.removeEventListener("storage", onStorage);
     };

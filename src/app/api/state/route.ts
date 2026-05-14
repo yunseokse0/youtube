@@ -159,6 +159,9 @@ async function upstashSet(key: string, value: unknown) {
 
 const STATE_PICK_SIG_INVENTORY = "sigInventory";
 
+/** 클라이언트가 라이브 동기화 이슈(멀티 인스턴스·메모리 폴백)를 구분할 수 있도록 */
+const HDR_STATE_STORAGE = "X-Broadcast-State-Storage";
+
 export async function GET(req: Request) {
   let pick = "";
   try {
@@ -190,6 +193,7 @@ export async function GET(req: Request) {
           "Content-Type": "application/json",
           "Cache-Control":
             "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",
+          [HDR_STATE_STORAGE]: "memory",
         },
       });
     }
@@ -252,6 +256,7 @@ export async function GET(req: Request) {
         "Content-Type": "application/json",
         "Cache-Control":
           "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",
+        [HDR_STATE_STORAGE]: "redis",
       },
     });
   } catch (error) {
@@ -262,7 +267,7 @@ export async function GET(req: Request) {
         ? { updatedAt: fallback.updatedAt, sigInventory: fallback.sigInventory || [] }
         : fallback;
     return new Response(JSON.stringify(body), {
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", [HDR_STATE_STORAGE]: "memory" },
       status: 200,
     });
   }
@@ -295,7 +300,7 @@ export async function POST(req: Request) {
     if (!base || !token) {
       setServerMemoryAppState(next);
       logger.info('메모리 상태 업데이트', { updatedAt: next.updatedAt });
-      return new Response(JSON.stringify({ ok: true }), {
+      return new Response(JSON.stringify({ ok: true, updatedAt: next.updatedAt }), {
         headers: {
           "Content-Type": "application/json",
           "Cache-Control":
@@ -314,26 +319,38 @@ export async function POST(req: Request) {
     } else {
       setServerMemoryAppState(next);
     }
-    return new Response(JSON.stringify({ ok: true, fallback: ok ? undefined : "memory" }), {
-      headers: {
-        "Content-Type": "application/json",
-        "Cache-Control":
-          "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",
-      },
-      status: 200,
-    });
+    return new Response(
+      JSON.stringify({ ok: true, updatedAt: next.updatedAt, fallback: ok ? undefined : "memory" }),
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control":
+            "no-store, max-age=0, s-maxage=0, stale-while-revalidate=0",
+        },
+        status: 200,
+      }
+    );
   } catch (error) {
     logger.error('상태 업데이트 실패', error);
     // 예외 발생 시에도 메모리에 저장 시도
+    let memUpdatedAt: number | undefined;
     try {
       const body = (await req.json()) as AppState;
       const memNext = { ...body, updatedAt: Date.now() };
+      memUpdatedAt = memNext.updatedAt;
       setServerMemoryAppState(memNext);
       logger.warn('예외 발생으로 메모리에 기록', { updatedAt: memNext.updatedAt });
     } catch {}
-    return new Response(JSON.stringify({ ok: true, fallback: "memory" }), {
-      headers: { "Content-Type": "application/json" },
-      status: 200,
-    });
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        fallback: "memory",
+        ...(typeof memUpdatedAt === "number" ? { updatedAt: memUpdatedAt } : {}),
+      }),
+      {
+        headers: { "Content-Type": "application/json" },
+        status: 200,
+      }
+    );
   }
 }

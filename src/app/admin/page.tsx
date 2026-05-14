@@ -509,11 +509,19 @@ export default function AdminPage() {
   const persistState = useCallback((s: AppState) => {
     const now = Date.now();
     lastLocalPersistAtRef.current = now;
-    stateUpdatedAtRef.current = now;
     pendingUnsyncedRef.current = true;
     setSyncStatus("loading");
-    saveStateAsync(s, user?.id).then((ok) => {
-      if (ok) {
+    saveStateAsync(s, user?.id).then((r) => {
+      if (r.ok) {
+        if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
+          stateUpdatedAtRef.current = r.serverUpdatedAt;
+        } else {
+          void loadStateFromApi(user?.id).then((remote) => {
+            if (remote && typeof remote.updatedAt === "number" && Number.isFinite(remote.updatedAt)) {
+              stateUpdatedAtRef.current = remote.updatedAt;
+            }
+          });
+        }
         pendingUnsyncedRef.current = false;
         setSyncStatus("synced");
       } else {
@@ -593,9 +601,6 @@ export default function AdminPage() {
     lastPollMergePersistAtRef.current = 0;
     lastStorageMergePersistAtRef.current = 0;
   }, [user?.id]);
-  useEffect(() => {
-    stateUpdatedAtRef.current = state.updatedAt || 0;
-  }, [state.updatedAt]);
   useEffect(() => {
     syncStatusRef.current = syncStatus;
   }, [syncStatus]);
@@ -698,6 +703,7 @@ export default function AdminPage() {
     loadStateFromApi(user?.id).then((apiState) => {
       const local = loadState(user?.id);
       if (apiState) {
+        stateUpdatedAtRef.current = apiState.updatedAt || 0;
         const { merged: toApply, didPreserve } = mergeIncomingStateSafely(apiState, local);
         if (didPreserve) persistState(toApply);
         setState(toApply);
@@ -735,7 +741,7 @@ export default function AdminPage() {
         // 의미 있는 데이터가 있을 때만 서버에 업로드 (초기 기본값 덮어쓰기 방지)
         const hasMeaningfulData = totalCombined(local) > 0 || (local.donors && local.donors.length > 0);
         if (!offline && hasMeaningfulData) {
-          saveStateAsync(local, user?.id).then((ok) => { if (ok) setSyncStatus("synced"); });
+          saveStateAsync(local, user?.id).then((r) => { if (r.ok) setSyncStatus("synced"); });
         }
       }
     });
@@ -795,7 +801,7 @@ export default function AdminPage() {
     const onVisibility = () => {
       if (document.visibilityState === "visible") void syncFromApi();
     };
-    const timer = window.setInterval(() => { void syncFromApi(); }, 8000);
+    const timer = window.setInterval(() => { void syncFromApi(); }, 5000);
     window.addEventListener("focus", onFocus);
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
