@@ -62,7 +62,7 @@ import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 import { normalizeSigDedupKeyImageUrl } from "@/lib/sig-inventory-dedup";
 import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
 import { getVisibleAdminNavItems, isAdminNavSectionVisible, type AdminNavKey } from "@/app/admin/admin-nav-config";
-import { startToonationListener, stopToonationListener } from "@/lib/donation/toonation/listener";
+import { stopToonationListener } from "@/lib/donation/toonation/listener";
 import { processDonationEvent } from "@/lib/donation/processor";
 import type { DonationEvent, DonorAlias } from "@/lib/donation/types";
 
@@ -182,13 +182,8 @@ export default function AdminPage() {
   const [donorAmount, setDonorAmount] = useState("");
   const [donorMemberId, setDonorMemberId] = useState<string | null>(null);
   const [donorTarget, setDonorTarget] = useState<DonorTarget>("account");
-  const [toonationAutoEnabled, setToonationAutoEnabled] = useState(false);
   const [toonationAutoProcessEnabled, setToonationAutoProcessEnabled] = useState(false);
-  const [toonationSocketDebug, setToonationSocketDebug] = useState(false);
   const [toonationAlertboxUrl, setToonationAlertboxUrl] = useState("");
-  const [toonationStatus, setToonationStatus] = useState<"idle" | "running" | "error">("idle");
-  const [toonationBackoffMs, setToonationBackoffMs] = useState(0);
-  const [toonationRetryAttempt, setToonationRetryAttempt] = useState(0);
   const [toonationLogs, setToonationLogs] = useState<Array<{ id: string; at: number; message: string }>>([]);
   const [toonationQueue, setToonationQueue] = useState<DonationEvent[]>([]);
   const [unmatchedEvents, setUnmatchedEvents] = useState<DonationEvent[]>([]);
@@ -3243,15 +3238,13 @@ export default function AdminPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
-      const enabledRaw = window.localStorage.getItem("donationAutomation.toonation.enabled");
       const autoProcessRaw = window.localStorage.getItem("donationAutomation.toonation.autoProcess");
       const urlRaw = window.localStorage.getItem("donationAutomation.toonation.alertboxUrl");
-      const socketDebugRaw = window.localStorage.getItem("donationAutomation.toonation.socketDebug");
       const envUrl = (process.env.NEXT_PUBLIC_TOONATION_ALERTBOX_URL || "").trim();
-      setToonationAutoEnabled(enabledRaw === "true");
       setToonationAutoProcessEnabled(autoProcessRaw === "true");
-      setToonationSocketDebug(socketDebugRaw === "true");
       setToonationAlertboxUrl(urlRaw || envUrl || "");
+      window.localStorage.removeItem("donationAutomation.toonation.enabled");
+      window.localStorage.removeItem("donationAutomation.toonation.socketDebug");
     } catch {
       // noop
     }
@@ -3260,67 +3253,26 @@ export default function AdminPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
-      window.localStorage.setItem("donationAutomation.toonation.enabled", String(toonationAutoEnabled));
       window.localStorage.setItem("donationAutomation.toonation.autoProcess", String(toonationAutoProcessEnabled));
-      window.localStorage.setItem("donationAutomation.toonation.socketDebug", String(toonationSocketDebug));
       window.localStorage.setItem("donationAutomation.toonation.alertboxUrl", toonationAlertboxUrl);
     } catch {
       // noop
     }
-  }, [toonationAlertboxUrl, toonationAutoEnabled, toonationAutoProcessEnabled, toonationSocketDebug]);
+  }, [toonationAlertboxUrl, toonationAutoProcessEnabled]);
 
+  /** 투네 소켓 자동수집 제거: 열려 있던 연결을 끊고 이전 설정 키를 정리 */
   useEffect(() => {
-    if (!toonationAutoEnabled || !toonationAlertboxUrl.trim()) {
-      stopToonationListener();
-      setToonationStatus("idle");
-      setToonationBackoffMs(0);
-      setToonationRetryAttempt(0);
-      return;
-    }
-    try {
-      startToonationListener(toonationAlertboxUrl.trim(), {
-        userId: user?.id,
-        socketDebug: toonationSocketDebug,
-        onStatus: (s) => {
-          if (s.kind === "connected") {
-            setToonationStatus("running");
-            setToonationBackoffMs(0);
-            setToonationRetryAttempt(0);
-          } else if (s.kind === "reconnect_attempt") {
-            setToonationStatus("running");
-            setToonationRetryAttempt(s.attempt || 0);
-            setToonationBackoffMs(s.nextDelayMs || 0);
-          } else if (s.kind === "connect_error" || s.kind === "reconnect_error" || s.kind === "reconnect_failed") {
-            setToonationStatus("error");
-          }
-          pushToonationLog(s.message);
-        },
-      });
-      setToonationStatus("running");
-      pushToonationLog("투네 자동수집 시작");
-    } catch {
-      setToonationStatus("error");
-      pushToonationLog("투네 자동수집 시작 실패");
-    }
+    stopToonationListener();
     return () => {
       stopToonationListener();
-      pushToonationLog("투네 자동수집 중지");
     };
-  }, [toonationAlertboxUrl, toonationAutoEnabled, toonationSocketDebug, user?.id, pushToonationLog]);
+  }, []);
 
   useEffect(() => {
     void fetchUnmatchedEvents();
     void fetchDonationAliases();
     void fetchToonationQueue();
   }, [fetchUnmatchedEvents, fetchDonationAliases, fetchToonationQueue]);
-
-  useEffect(() => {
-    if (!toonationAutoEnabled) return;
-    const t = window.setInterval(() => {
-      void fetchToonationQueue();
-    }, 3000);
-    return () => window.clearInterval(t);
-  }, [fetchToonationQueue, toonationAutoEnabled]);
 
   useEffect(() => {
     if (!toonationAutoProcessEnabled) return;
@@ -3330,14 +3282,6 @@ export default function AdminPage() {
     }, 1200);
     return () => window.clearTimeout(t);
   }, [approveQueueEvent, toonationAutoProcessEnabled, toonationQueue]);
-
-  useEffect(() => {
-    if (toonationBackoffMs <= 0) return;
-    const t = window.setInterval(() => {
-      setToonationBackoffMs((prev) => Math.max(0, prev - 1000));
-    }, 1000);
-    return () => window.clearInterval(t);
-  }, [toonationBackoffMs]);
 
   const addContribution = () => {
     const amount = parseAmount(contributionAmount);
@@ -6917,39 +6861,16 @@ export default function AdminPage() {
                 <div className="rounded border border-white/10 bg-black/25 px-3 py-2">
                   <div className="text-xs font-semibold text-cyan-200">투네 Alertbox URL 설정</div>
                   <div className="text-[11px] text-neutral-400 mt-1">
-                    투네이션 위젯 URL(예: https://toon.at/widget/alertbox/...)을 넣으면 자동수집과 재연결이 동작합니다.
+                    투네이션 위젯 URL(예: https://toon.at/widget/alertbox/...)을 넣으면 대기 큐·테스트 주입 등에 사용합니다. 실시간 소켓 자동수집은 사용하지 않습니다.
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    className={`px-3 py-1.5 rounded text-xs font-semibold ${toonationAutoEnabled ? "bg-emerald-600 hover:bg-emerald-500" : "bg-neutral-700 hover:bg-neutral-600"}`}
-                    onClick={() => setToonationAutoEnabled((v) => !v)}
-                  >
-                    투네 자동수집 {toonationAutoEnabled ? "ON" : "OFF"}
-                  </button>
-                  <span className={`text-xs ${toonationStatus === "running" ? "text-emerald-300" : toonationStatus === "error" ? "text-rose-300" : "text-neutral-400"}`}>
-                    상태: {toonationStatus === "running" ? "연결중" : toonationStatus === "error" ? "오류" : "대기"}
-                  </span>
-                  {toonationRetryAttempt > 0 && (
-                    <span className="text-xs text-amber-300">
-                      재시도 #{toonationRetryAttempt} / 다음 시도 {Math.ceil(toonationBackoffMs / 1000)}초
-                    </span>
-                  )}
                   <button
                     type="button"
                     className={`px-3 py-1.5 rounded text-xs font-semibold ${toonationAutoProcessEnabled ? "bg-violet-600 hover:bg-violet-500" : "bg-neutral-700 hover:bg-neutral-600"}`}
                     onClick={() => setToonationAutoProcessEnabled((v) => !v)}
                   >
                     큐 자동반영 {toonationAutoProcessEnabled ? "ON" : "OFF"}
-                  </button>
-                  <button
-                    type="button"
-                    className={`px-3 py-1.5 rounded text-xs font-semibold ${toonationSocketDebug ? "bg-amber-700 hover:bg-amber-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
-                    onClick={() => setToonationSocketDebug((v) => !v)}
-                    title="브라우저 개발자 도구 콘솔에 투네 소켓 이벤트명·JSON 출력"
-                  >
-                    소켓 콘솔 로그 {toonationSocketDebug ? "ON" : "OFF"}
                   </button>
                 </div>
                 <input
@@ -7183,7 +7104,7 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <div className="rounded border border-white/10 bg-black/20 p-2">
-                  <div className="text-xs text-neutral-300 mb-2">자동수집 시작/중지 로그 ({toonationLogs.length})</div>
+                  <div className="text-xs text-neutral-400 mb-2">작업 로그 ({toonationLogs.length})</div>
                   <div className="max-h-[160px] overflow-auto pr-1 space-y-1">
                     {toonationLogs.length === 0 && (
                       <div className="text-xs text-neutral-500">로그가 없습니다.</div>
