@@ -6,6 +6,10 @@ import type { DonationEvent, QueueSigItem } from "../types";
 let toonationSocket: Socket | null = null;
 let sigSnapshotCache: QueueSigItem[] = [];
 let sigSnapshotCacheAt = 0;
+/** 동시에 여러 알림이 들어올 때 동일 스냅샷 요청을 한 번으로 합침 */
+let sigSnapshotInflight: Promise<QueueSigItem[]> | null = null;
+
+const SIG_SNAPSHOT_MIN_MS = 10_000;
 
 export type ToonationListenerStatus = {
   kind: "connected" | "disconnected" | "reconnect_attempt" | "reconnect_error" | "reconnect_failed" | "connect_error";
@@ -83,27 +87,42 @@ async function enqueueMonitoringEvent(event: DonationEvent, userId?: string): Pr
 }
 
 async function loadSigListSnapshot(userId?: string): Promise<QueueSigItem[]> {
-  if (Date.now() - sigSnapshotCacheAt < 10000 && sigSnapshotCache.length > 0) {
+  const now = Date.now();
+  /** 빈 배열이어도 캐시 시간이 유효하면 재요청하지 않음(알림 폭주 시 GET /api/state 수천 방지) */
+  if (sigSnapshotCacheAt > 0 && now - sigSnapshotCacheAt < SIG_SNAPSHOT_MIN_MS) {
     return sigSnapshotCache;
   }
+  if (sigSnapshotInflight) return sigSnapshotInflight;
+
   const q = userId ? `?u=${encodeURIComponent(userId)}` : "";
-  const res = await fetch(`/api/state${q}`, { cache: "no-store" }).catch(() => null);
-  if (!res || !res.ok) return sigSnapshotCache;
-  const data = (await res.json()) as { sigInventory?: Array<Record<string, unknown>> };
-  const inv = Array.isArray(data.sigInventory) ? data.sigInventory : [];
-  const snapshot: QueueSigItem[] = inv
-    .filter((x) => Boolean(x && x.id && x.name))
-    .map((x) => ({
-      id: String(x.id),
-      name: String(x.name),
-      price: Math.max(0, Math.round(Number(x.price || 0))),
-      isActive: Boolean(x.isActive),
-      soldCount: Number.isFinite(Number(x.soldCount)) ? Math.max(0, Math.floor(Number(x.soldCount))) : undefined,
-      maxCount: Number.isFinite(Number(x.maxCount)) ? Math.max(0, Math.floor(Number(x.maxCount))) : undefined,
-    }));
-  sigSnapshotCache = snapshot;
-  sigSnapshotCacheAt = Date.now();
-  return snapshot;
+  sigSnapshotInflight = (async () => {
+    try {
+      const res = await fetch(`/api/state${q}`, { cache: "no-store" }).catch(() => null);
+      if (!res || !res.ok) {
+        sigSnapshotCacheAt = Date.now();
+        return sigSnapshotCache;
+      }
+      const data = (await res.json()) as { sigInventory?: Array<Record<string, unknown>> };
+      const inv = Array.isArray(data.sigInventory) ? data.sigInventory : [];
+      const snapshot: QueueSigItem[] = inv
+        .filter((x) => Boolean(x && x.id && x.name))
+        .map((x) => ({
+          id: String(x.id),
+          name: String(x.name),
+          price: Math.max(0, Math.round(Number(x.price || 0))),
+          isActive: Boolean(x.isActive),
+          soldCount: Number.isFinite(Number(x.soldCount)) ? Math.max(0, Math.floor(Number(x.soldCount))) : undefined,
+          maxCount: Number.isFinite(Number(x.maxCount)) ? Math.max(0, Math.floor(Number(x.maxCount))) : undefined,
+        }));
+      sigSnapshotCache = snapshot;
+      sigSnapshotCacheAt = Date.now();
+      return snapshot;
+    } finally {
+      sigSnapshotInflight = null;
+    }
+  })();
+
+  return sigSnapshotInflight;
 }
 
 export function startToonationListener(alertboxUrl: string, options?: ListenerOptions) {
