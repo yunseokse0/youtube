@@ -2418,7 +2418,7 @@ export default function AdminPage() {
     void (async () => {
       const url = await uploadSigImageFile(file);
       if (!url) return;
-      updateSigItem(id, { imageUrl: url });
+      updateSigItem(id, { imageUrl: url, isActive: true, isRolling: true });
       const ocrPrice = await detectSigPriceFromImageFile(file);
       if (ocrPrice != null) {
         updateSigItem(id, { price: ocrPrice });
@@ -2467,7 +2467,8 @@ export default function AdminPage() {
       return;
     }
     if (target.kind === "inventory") {
-      updateSigItem(target.id, { imageUrl: assetUrl });
+      /** `/overlay/sig-rolling` 풀은 `isActive` 기준이라, 이미지 지정 시 롤링·판매에 같이 켜 둔다. */
+      updateSigItem(target.id, { imageUrl: assetUrl, isActive: true, isRolling: true });
       return;
     }
     setState((prev) => {
@@ -2476,7 +2477,7 @@ export default function AdminPage() {
         const next = {
           ...prev,
           sigInventory: (prev.sigInventory || []).map((x) =>
-            x.id === target.id ? { ...x, imageUrl: assetUrl, isRolling: true } : x
+            x.id === target.id ? { ...x, imageUrl: assetUrl, isRolling: true, isActive: true } : x
           ),
         };
         persistState(next);
@@ -2798,7 +2799,7 @@ export default function AdminPage() {
           const next = {
             ...prev,
             sigInventory: (prev.sigInventory || []).map((x) =>
-              x.id === id ? { ...x, imageUrl: url, isRolling: true } : x
+              x.id === id ? { ...x, imageUrl: url, isRolling: true, isActive: true } : x
             ),
           };
           persistState(next);

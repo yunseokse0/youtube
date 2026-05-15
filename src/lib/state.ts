@@ -118,6 +118,7 @@ export function filterSigInventoryForSalesDisplay(
 /**
  * 시그 롤링 목록은 시그 판매 관리의 판매 활성 풀과 동일 기준이다.
  * 인벤토리에 해당 행이 하나라도 있으면 구버전 `sigRolling.items`는 사용하지 않는다.
+ * (`isRolling`만 켜고 `isActive`가 꺼져 있으면 이 목록에 안 들어가 `/overlay/sig-rolling`에 안 나온다.)
  */
 export function getUnifiedSigRollingItems(
   state: Pick<AppState, "sigInventory" | "sigRolling" | "sigRollingMeta" | "sigSalesExcludedIds"> | null | undefined,
@@ -483,7 +484,10 @@ function normalizeMember(m: Member): Member {
     toon,
     contribution,
     goal,
-    operating: m.operating ?? /운영비/i.test(m.name),
+    operating:
+      Boolean(m.operating) ||
+      /운영비/i.test(String(m.name || "")) ||
+      /운영비/i.test(String(m.realName || "")),
   };
 }
 

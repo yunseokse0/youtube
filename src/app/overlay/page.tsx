@@ -2103,11 +2103,8 @@ function OverlayInner() {
 
   const unpinned = useMemo(() => members.filter((m) => !pinnedFilter(m)), [members, pinnedFilter]);
   const pinned = useMemo(() => members.filter(pinnedFilter), [members, pinnedFilter]);
-  /** 운영비 멤버는 기본으로 표에 포함. 방송 등에서 숨길 때만 `showOperatingRows=false`(또는 `0`). */
-  const showOperatingRowsParam = externalHost ? rawSp.get("showOperatingRows") : sp.get("showOperatingRows");
-  const rawShowOp = (showOperatingRowsParam ?? "").trim().toLowerCase();
-  const showOperatingRows = !(rawShowOp === "false" || rawShowOp === "0");
-  const visiblePinned = showOperatingRows ? pinned : [];
+  /** 운영비 행은 순위·기여도 표시 규칙만 다르게 하고, URL/프리셋 옵션과 무관하게 항상 표에 포함한다. */
+  const visiblePinned = pinned;
   const hasRoleColumn = useMemo(
     () => members.some((m) => getMemberRole(m).trim().length > 0),
     [members, getMemberRole]
