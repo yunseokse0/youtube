@@ -46,6 +46,7 @@ import { useSSEConnection } from "@/lib/sse-client";
 import { createStateUpdatedScheduler } from "@/lib/overlay-pull-policy";
 import {
   resolveSigImageUrl,
+  rewriteSigPathForRollingGithubIfConfigured,
   stripSigInventoryImagesKeepList,
   DEFAULT_SIG_SOLD_STAMP_URL,
   DEFAULT_SIG_INVENTORY,
@@ -6814,14 +6815,15 @@ export default function AdminPage() {
                                   <div className="relative mx-auto flex h-28 w-full items-center justify-center bg-black/40 p-1">
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
-                                      src={p}
+                                      src={rewriteSigPathForRollingGithubIfConfigured(p)}
                                       alt=""
                                       className="max-h-full max-w-full object-contain"
                                       loading="lazy"
                                       decoding="async"
+                                      referrerPolicy="no-referrer"
                                       onError={(e) => {
                                         e.currentTarget.onerror = null;
-                                        e.currentTarget.src = SIG_DUMMY_IMAGE;
+                                        e.currentTarget.src = rewriteSigPathForRollingGithubIfConfigured(SIG_DUMMY_IMAGE);
                                       }}
                                     />
                                   </div>

@@ -157,22 +157,23 @@ function listBundledSigImagePaths(): string[] {
   return out;
 }
 
+function normalizeBundledPathKey(p: string): string {
+  return p.replace(/\\/g, "/").replace(/\/+/g, "/").toLowerCase();
+}
+
 function mergePaths(disk: string[], remote: string[] | null): string[] {
-  if (!remote?.length) return disk.slice(0, MAX_FILES);
   const seen = new Set<string>();
   const merged: string[] = [];
-  for (const p of disk) {
-    if (merged.length >= MAX_FILES) break;
-    if (seen.has(p)) continue;
-    seen.add(p);
-    merged.push(p);
-  }
-  for (const p of remote) {
-    if (merged.length >= MAX_FILES) break;
-    if (seen.has(p)) continue;
-    seen.add(p);
-    merged.push(p);
-  }
+  const add = (raw: string) => {
+    if (merged.length >= MAX_FILES) return;
+    const norm = raw.replace(/\\/g, "/").replace(/\/+/g, "/");
+    const key = normalizeBundledPathKey(norm);
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push(norm);
+  };
+  for (const p of disk) add(p);
+  for (const p of remote || []) add(p);
   merged.sort((a, b) => a.localeCompare(b, "ko"));
   return merged.slice(0, MAX_FILES);
 }
