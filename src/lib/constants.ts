@@ -1,5 +1,6 @@
 import type { SigItem } from "@/types";
 import { isSigImagesPlaceholderOnlyEnv, isSigLocalAssetsOnlyMode } from "@/lib/sig-image-mode";
+import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 
 /** 저장소에 미설정 시 완판 오버레이·관리 화면 기본 도장(`public` 실파일과 동일 경로 유지) */
 export const DEFAULT_SIG_SOLD_STAMP_URL = "/images/sigs/stamp.svg";
@@ -157,19 +158,23 @@ export function normalizeSigInventory(input: unknown): SigItem[] {
   const list = input
     .filter((x): x is Record<string, unknown> => Boolean(x && typeof x === "object"))
     .map((x) => {
-      const rolling = Boolean(x.isRolling);
+      const rollingRaw = x.isRolling;
       const activeRaw = x.isActive;
-      const isActive = typeof activeRaw === "boolean" ? activeRaw : rolling;
-      /** 판매 활성(시그 판매 관리) 기준과 롤링·보드 노출을 1:1로 맞춤 */
+      const isActive =
+        typeof activeRaw === "boolean" ? activeRaw : typeof rollingRaw === "boolean" ? Boolean(rollingRaw) : false;
+      /** 판매 활성(`isActive`)과 이미지 롤링 노출(`isRolling`)은 별도 — 관리자 「롤링 제외」가 저장 후에도 유지되게 함 */
+      let isRolling = typeof rollingRaw === "boolean" ? Boolean(rollingRaw) : isActive;
+      const id = String(x.id || `sig_${Math.random().toString(36).slice(2, 8)}`);
+      if (id === ONE_SHOT_SIG_ID) isRolling = false;
       return {
-        id: String(x.id || `sig_${Math.random().toString(36).slice(2, 8)}`),
+        id,
         name: String(x.name || "시그"),
         price: Math.max(0, Math.floor(Number(x.price || 0) || 0)),
         imageUrl: normalizeSigImageUrlStored(x.imageUrl),
         memberId: String(x.memberId || ""),
         maxCount: Math.max(1, Math.floor(Number(x.maxCount || 1) || 1)),
         soldCount: Math.max(0, Math.floor(Number(x.soldCount || 0) || 0)),
-        isRolling: isActive,
+        isRolling,
         isActive,
       };
     })

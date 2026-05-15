@@ -116,9 +116,9 @@ export function filterSigInventoryForSalesDisplay(
 }
 
 /**
- * 시그 롤링 목록은 시그 판매 관리의 판매 활성 풀과 동일 기준이다.
+ * `/overlay/sig-rolling`·관리자 「시그 롤링」 목록.
+ * 판매 활성(`isActive`)·판매 제외·멤버 필터에 더해 **`isRolling`이 켜진 시그만** 포함한다.
  * 인벤토리에 해당 행이 하나라도 있으면 구버전 `sigRolling.items`는 사용하지 않는다.
- * (`isRolling`만 켜고 `isActive`가 꺼져 있으면 이 목록에 안 들어가 `/overlay/sig-rolling`에 안 나온다.)
  */
 export function getUnifiedSigRollingItems(
   state: Pick<AppState, "sigInventory" | "sigRolling" | "sigRollingMeta" | "sigSalesExcludedIds"> | null | undefined,
@@ -127,6 +127,7 @@ export function getUnifiedSigRollingItems(
   if (!state) return [];
   const meta = normalizeSigRollingMeta(state.sigRollingMeta);
   const invRows = filterSigInventoryForSalesDisplay(state, memberFilterId)
+    .filter((x) => Boolean(x.isRolling))
     .map((x, idx) => {
       const m = meta[x.id] || {};
       return {
@@ -137,7 +138,13 @@ export function getUnifiedSigRollingItems(
       };
     })
     .filter((x) => x.url);
-  const legacy = normalizeSigRolling(state.sigRolling).items;
+  const invById = new Map((state.sigInventory || []).map((x) => [x.id, x]));
+  const legacy = normalizeSigRolling(state.sigRolling).items.filter((x) => {
+    if (x.id === ONE_SHOT_SIG_ID) return false;
+    const inv = invById.get(x.id);
+    if (inv) return Boolean(inv.isRolling);
+    return true;
+  });
   if (invRows.length === 0) return legacy;
   return invRows
     .sort((a, b) => a.order - b.order)
