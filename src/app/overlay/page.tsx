@@ -2645,7 +2645,14 @@ function OverlayInner() {
           font-size: ${memberFontPx}px !important;
           line-height: 1.2 !important;
           -webkit-text-stroke: 0 !important;
-          text-shadow: 0 1px 2px rgba(0,0,0,0.72) !important;
+          /* 스트로크 대신 다층 그림자로 외곽선(OBS CEF에서 stroke 생략) */
+          text-shadow:
+            -1px -1px 0 rgba(6, 12, 24, 0.92),
+            1px -1px 0 rgba(6, 12, 24, 0.92),
+            -1px 1px 0 rgba(6, 12, 24, 0.92),
+            1px 1px 0 rgba(6, 12, 24, 0.92),
+            0 0 3px rgba(6, 12, 24, 0.55),
+            0 2px 6px rgba(0, 0, 0, 0.45) !important;
           text-rendering: auto !important;
         }
         .overlay-root .overlay-elegant-table tbody td span,
@@ -2653,7 +2660,13 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td span,
         .overlay-root .overlay-elegant-table thead td strong {
           -webkit-text-stroke: 0 !important;
-          text-shadow: 0 1px 2px rgba(0,0,0,0.72) !important;
+          text-shadow:
+            -1px -1px 0 rgba(6, 12, 24, 0.92),
+            1px -1px 0 rgba(6, 12, 24, 0.92),
+            -1px 1px 0 rgba(6, 12, 24, 0.92),
+            1px 1px 0 rgba(6, 12, 24, 0.92),
+            0 0 3px rgba(6, 12, 24, 0.55),
+            0 2px 6px rgba(0, 0, 0, 0.45) !important;
         }
         .overlay-root .overlay-elegant-table .overlay-total-row td {
           font-size: ${totalFontPx}px !important;
@@ -2677,7 +2690,7 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution {
           ${externalSafeMode
-            ? "-webkit-text-stroke: 0 !important; text-shadow: 0 1px 2px rgba(0,0,0,0.72) !important;"
+            ? "-webkit-text-stroke: 0 !important; text-shadow: -1px -1px 0 rgba(6, 12, 24, 0.92), 1px -1px 0 rgba(6, 12, 24, 0.92), -1px 1px 0 rgba(6, 12, 24, 0.92), 1px 1px 0 rgba(6, 12, 24, 0.92), 0 0 3px rgba(6, 12, 24, 0.55), 0 2px 6px rgba(0,0,0,0.45) !important;"
             : "-webkit-text-stroke: 0.55px rgba(6, 12, 24, 0.92) !important; text-shadow: -1px -1px 0 rgba(6, 12, 24, 0.92), 1px -1px 0 rgba(6, 12, 24, 0.92), -1px 1px 0 rgba(6, 12, 24, 0.92), 1px 1px 0 rgba(6, 12, 24, 0.92), 0 1px 4px rgba(0,0,0,0.36) !important;"}
         }
         .overlay-root .overlay-elegant-table td.overlay-col-contribution .overlay-num-cell-inner {
