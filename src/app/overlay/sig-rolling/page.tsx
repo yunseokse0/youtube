@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   defaultState,
@@ -189,6 +189,7 @@ function RollingCardColumn({
               className={IMG_IN_FRAME}
               draggable={false}
               decoding="async"
+              referrerPolicy="no-referrer"
             />
           </div>
         </div>
@@ -217,6 +218,7 @@ function RollingCardColumn({
             src={srcUnder}
             alt=""
             className={IMG_IN_FRAME}
+            referrerPolicy="no-referrer"
             style={{
               opacity: fading ? 1 : 0,
               transition: fading ? transitionActive : "none",
@@ -231,6 +233,7 @@ function RollingCardColumn({
             src={srcCurrent}
             alt=""
             className={IMG_IN_FRAME}
+            referrerPolicy="no-referrer"
             style={{
               opacity: fading ? 0 : 1,
               transition: fading ? transitionActive : "none",
@@ -245,7 +248,14 @@ function RollingCardColumn({
   );
 }
 
-export default function SigRollingOverlayPage() {
+const overlayNoticeBoxStyle: CSSProperties = {
+  color: "#f8fafc",
+  backgroundColor: "rgba(15, 23, 42, 0.92)",
+  border: "1px solid rgba(255,255,255,0.22)",
+  boxShadow: "0 4px 14px rgba(0,0,0,0.35)",
+};
+
+function SigRollingOverlayInner() {
   const sp = useSearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
   const memberFilterId = getOverlayMemberFilterIdFromSearchParams(sp);
@@ -274,9 +284,11 @@ export default function SigRollingOverlayPage() {
 
   const useCrossfade = n >= 3;
   const twoCardScale = useMemo(() => {
-    if (viewportW <= 0) return 1;
+    if (!Number.isFinite(viewportW) || viewportW <= 0) return 1;
     const safeW = Math.max(260, viewportW - 8);
-    return Math.max(0.6, Math.min(1, safeW / TWO_CARD_BASE_WIDTH_PX));
+    const ratio = safeW / TWO_CARD_BASE_WIDTH_PX;
+    if (!Number.isFinite(ratio)) return 1;
+    return Math.max(0.6, Math.min(1, ratio));
   }, [viewportW]);
 
   useEffect(() => {
@@ -373,7 +385,10 @@ export default function SigRollingOverlayPage() {
   if (!ready) {
     return (
       <main className="overlay-root inline-block w-fit p-1">
-        <div className="max-w-[min(92vw,26rem)] rounded-lg border border-white/25 bg-black/80 px-3 py-2 text-[11px] leading-snug text-white shadow-md">
+        <div
+          className="max-w-[min(92vw,26rem)] rounded-lg border border-white/25 bg-black/80 px-3 py-2 text-[11px] leading-snug text-white shadow-md"
+          style={overlayNoticeBoxStyle}
+        >
           시그 롤링 · 상태 불러오는 중…
         </div>
       </main>
@@ -383,10 +398,15 @@ export default function SigRollingOverlayPage() {
   if (n === 0) {
     return (
       <main className="overlay-root inline-block w-fit p-1">
-        <div className="max-w-[min(92vw,28rem)] space-y-2 rounded-lg border border-white/25 bg-black/80 px-3 py-2.5 text-[11px] leading-snug text-white shadow-md">
-          <p className="font-semibold text-amber-100">시그 롤링 · 표시할 이미지가 없습니다</p>
-          {emptyDetail ? <p className="text-white/95">{emptyDetail}</p> : null}
-          <p className="text-white/85">
+        <div
+          className="max-w-[min(92vw,28rem)] space-y-2 rounded-lg border border-white/25 bg-black/80 px-3 py-2.5 text-[11px] leading-snug text-white shadow-md"
+          style={overlayNoticeBoxStyle}
+        >
+          <p className="font-semibold text-amber-100" style={{ color: "#fde68a" }}>
+            시그 롤링 · 표시할 이미지가 없습니다
+          </p>
+          {emptyDetail ? <p className="text-white/95" style={{ color: "rgba(248,250,252,0.96)" }}>{emptyDetail}</p> : null}
+          <p className="text-white/85" style={{ color: "rgba(248,250,252,0.88)" }}>
             <code className="rounded bg-white/15 px-1">/overlay/sig-rolling</code> 는{" "}
             <strong className="text-white">후원 랭킹 오버레이와 별도의 브라우저 소스</strong>로 추가해야 합니다. URL에{" "}
             <code className="rounded bg-white/15 px-1">?u=본인아이디</code>(예: finalent)가 맞는지 확인하세요. 관리자에서 저장한 뒤 서버(
@@ -400,7 +420,10 @@ export default function SigRollingOverlayPage() {
   const transitionActive = `opacity ${fadeMs}ms ease-in-out`;
 
   return (
-    <main className="overlay-root inline-block w-fit bg-transparent p-1 text-pastel-ink">
+    <main
+      className="overlay-root inline-block w-fit bg-transparent p-1 text-pastel-ink"
+      style={{ minWidth: TWO_CARD_BASE_WIDTH_PX + 8, minHeight: SHELL_OUTER_HEIGHT_PX + 16 }}
+    >
       <div
         style={{
           width: TWO_CARD_BASE_WIDTH_PX,
@@ -430,5 +453,26 @@ export default function SigRollingOverlayPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+function SigRollingSuspenseFallback() {
+  return (
+    <main className="overlay-root inline-block w-fit p-1">
+      <div
+        className="rounded-lg px-3 py-2 text-[11px] leading-snug"
+        style={overlayNoticeBoxStyle}
+      >
+        시그 롤링 · 준비 중…
+      </div>
+    </main>
+  );
+}
+
+export default function SigRollingOverlayPage() {
+  return (
+    <Suspense fallback={<SigRollingSuspenseFallback />}>
+      <SigRollingOverlayInner />
+    </Suspense>
   );
 }
