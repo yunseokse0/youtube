@@ -1,5 +1,6 @@
 /**
- * 오버레이 기본: GET /api/state 주기 폴링 없음(관리자 저장 시 SSE `state_updated`·`storage`로만 갱신).
+ * 오버레이 기본: GET /api/state 주기 폴링 없음(저장 시 SSE `state_updated`·`storage`로만 갱신).
+ * `/admin` 메인도 동일하게 SSE + `createStateUpdatedScheduler`를 쓰고, 폴백만 `ADMIN_STATE_FALLBACK_POLL_MS`(page.tsx).
  * 디버그·OBS에서만 예외적으로 폴링을 켜려면 URL에 `?overlayPollMs=3000` (700~120000 ms).
  */
 

@@ -42,6 +42,8 @@ import {
   normalizeRouletteState,
   type OverlayConfig,
 } from "@/lib/state";
+import { useSSEConnection } from "@/lib/sse-client";
+import { createStateUpdatedScheduler } from "@/lib/overlay-pull-policy";
 import {
   resolveSigImageUrl,
   stripSigInventoryImagesKeepList,
@@ -162,6 +164,9 @@ function ClientTime({ ts }: { ts: number | string }) {
   return <span suppressHydrationWarning>{text}</span>;
 }
 
+/** 평시 동기화는 SSE `state_updated` + 디바운스. 주기 폴링은 연결 끊김 대비용만 */
+const ADMIN_STATE_FALLBACK_POLL_MS = 120_000;
+
 export default function AdminPage() {
   const router = useRouter();
   const [user, setUser] = useState<{ id: string; companyName: string; name?: string; remainingDays?: number | null; unlimited?: boolean } | null>(null);
@@ -176,6 +181,8 @@ export default function AdminPage() {
   const lastPollMergePersistAtRef = useRef<number>(0);
   /** 다른 탭·창 `storage` 반영 시 즉시 POST하면 탭 간 ping-pong으로 /api/state·/api/events 폭주 가능 */
   const lastStorageMergePersistAtRef = useRef<number>(0);
+  /** `createStateUpdatedScheduler` — 다른 기기·탭에서 저장 시에만 GET 묶음 */
+  const adminStateSseScheduleRef = useRef<(() => void) | null>(null);
   const POLL_MERGE_PERSIST_MIN_MS = 6000;
   /** 금액/숫자 입력 중에는 원격 동기화 적용을 잠시 보류해 타이핑 값 초기화를 방지 */
   const amountInputEditingRef = useRef<boolean>(false);
@@ -234,6 +241,13 @@ export default function AdminPage() {
   const [sigBundledLoading, setSigBundledLoading] = useState(false);
   const [sigBundledErr, setSigBundledErr] = useState("");
   const [sigBundledSelected, setSigBundledSelected] = useState<string[]>([]);
+  const [sigBundledMeta, setSigBundledMeta] = useState<{
+    diskCount: number;
+    remoteCount: number;
+    githubTried: boolean;
+    githubFetchFailed: boolean;
+    githubSkipReason: "list_disabled" | "rolling_disabled" | "unparseable_base" | null;
+  } | null>(null);
   /** 시그 롤링 업로드 결과 메시지 */
   const [sigRollingUploadMessage, setSigRollingUploadMessage] = useState("");
   /** 시그 판매 목록: 행 접기(기본 접힘 — 긴 목록 스크롤 완화) */
@@ -273,6 +287,12 @@ export default function AdminPage() {
   const [rouletteResetBusy, setRouletteResetBusy] = useState(false);
   /** 회전판 돌리기/초기화 결과 — sigExcelResult(엑셀)와 분리해 버튼 바로 아래에 표시 */
   const [rouletteActionMessage, setRouletteActionMessage] = useState("");
+
+  useSSEConnection((d: unknown) => {
+    const o = d as { type?: string };
+    if (o?.type !== "state_updated") return;
+    adminStateSseScheduleRef.current?.();
+  });
 
   useEffect(() => {
     const s = state.sigMatchSettings || {};
@@ -754,8 +774,7 @@ export default function AdminPage() {
     return () => window.clearInterval(id);
   }, []);
 
-  // Keep admin amounts synchronized across mobile/PC sessions.
-  // Server state is treated as source of truth across devices.
+  // 다른 기기·OBS 저장 반영: SSE `state_updated` → 디바운스 GET, 저주기 폴링은 폴백만.
   useEffect(() => {
     if (!user) return;
     let running = true;
@@ -797,25 +816,29 @@ export default function AdminPage() {
         inFlight = false;
       }
     };
-    const onFocus = () => { void syncFromApi(); };
-    const onOnline = () => { void syncFromApi(); };
-    const onOffline = () => { setSyncStatus("local"); };
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") void syncFromApi();
+    const { schedule, cancel } = createStateUpdatedScheduler(() => {
+      void syncFromApi();
+    });
+    adminStateSseScheduleRef.current = schedule;
+    const onOnline = () => {
+      void syncFromApi();
     };
-    const timer = window.setInterval(() => { void syncFromApi(); }, 5000);
-    window.addEventListener("focus", onFocus);
+    const onOffline = () => {
+      setSyncStatus("local");
+    };
+    const timer = window.setInterval(() => {
+      void syncFromApi();
+    }, ADMIN_STATE_FALLBACK_POLL_MS);
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
-    document.addEventListener("visibilitychange", onVisibility);
     void syncFromApi();
     return () => {
       running = false;
+      cancel();
+      adminStateSseScheduleRef.current = null;
       window.clearInterval(timer);
-      window.removeEventListener("focus", onFocus);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
-      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [user, persistState, mergeIncomingStateSafely]);
 
@@ -2639,16 +2662,52 @@ export default function AdminPage() {
     setSigBundledErr("");
     try {
       const res = await fetch("/api/sig-bundled-images", { credentials: "include", cache: "no-store" });
-      const j = (await res.json()) as { ok?: boolean; paths?: string[]; error?: string };
+      const j = (await res.json()) as {
+        ok?: boolean;
+        paths?: string[];
+        error?: string;
+        meta?: {
+          diskCount: number;
+          remoteCount: number;
+          githubTried: boolean;
+          githubFetchFailed: boolean;
+          githubSkipReason: "list_disabled" | "rolling_disabled" | "unparseable_base" | null;
+        };
+      };
       if (!res.ok || !j.ok) {
         setSigBundledErr(String(j.error || res.statusText || String(res.status)));
         setSigBundledPaths([]);
+        setSigBundledMeta(null);
         return;
       }
       setSigBundledPaths(Array.isArray(j.paths) ? j.paths : []);
+      const m = j.meta;
+      if (
+        m &&
+        typeof m.diskCount === "number" &&
+        typeof m.remoteCount === "number" &&
+        typeof m.githubTried === "boolean" &&
+        typeof m.githubFetchFailed === "boolean"
+      ) {
+        setSigBundledMeta({
+          diskCount: m.diskCount,
+          remoteCount: m.remoteCount,
+          githubTried: m.githubTried,
+          githubFetchFailed: m.githubFetchFailed,
+          githubSkipReason:
+            m.githubSkipReason === "list_disabled" ||
+            m.githubSkipReason === "rolling_disabled" ||
+            m.githubSkipReason === "unparseable_base"
+              ? m.githubSkipReason
+              : null,
+        });
+      } else {
+        setSigBundledMeta(null);
+      }
     } catch (e) {
       setSigBundledErr(String(e));
       setSigBundledPaths([]);
+      setSigBundledMeta(null);
     } finally {
       setSigBundledLoading(false);
     }
@@ -2660,6 +2719,7 @@ export default function AdminPage() {
     setSigBundledMode("single");
     setSigBundledSelected([]);
     setSigBundledErr("");
+    setSigBundledMeta(null);
   }, []);
 
   const openSigBundledPickerSingle = useCallback(
@@ -6634,9 +6694,47 @@ export default function AdminPage() {
                       </div>
                     </div>
                     <p className="px-3 py-2 text-[11px] text-neutral-400">
-                      Git에 커밋·푸시된 <code className="text-neutral-300">public/images/sigs</code> 아래 gif/png/webp/svg만 표시합니다(최대 600개).
+                      <code className="text-neutral-300">public/images/sigs</code> 아래 gif/png/webp/svg(최대 600개)입니다. 배포 디스크에 있는 파일과 GitHub 트리 API 결과를 합칩니다(
+                      <code className="text-neutral-300">NEXT_PUBLIC_SIG_ROLLING_GITHUB_BASE</code>에서 owner/repo/ref를 쓰거나{" "}
+                      <code className="text-neutral-300">SIG_BUNDLED_GITHUB_REPO</code> 지정). Git에만 있어도 목록에 나올 수 있습니다. 끄려면{" "}
+                      <code className="text-neutral-300">SIG_BUNDLED_GITHUB_LIST=off</code>.
                       {sigBundledMode === "single" ? " 항목을 한 번 클릭하면 해당 시그에 경로가 적용됩니다." : " 체크 후「선택 항목 롤링에 추가」를 누르세요."}
                     </p>
+                    {sigBundledMeta?.githubFetchFailed ? (
+                      <div className="mx-3 mb-2 rounded border border-amber-400/40 bg-amber-900/20 px-2 py-1.5 text-[11px] text-amber-100">
+                        GitHub에서 시그 디렉터리 트리를 불러오지 못했습니다. 저장소가 비공개이면{" "}
+                        <code className="text-amber-50/90">GITHUB_TOKEN</code> 또는{" "}
+                        <code className="text-amber-50/90">SIG_BUNDLED_GITHUB_TOKEN</code>을 Render 등 서버 환경에 넣으세요. API 한도·네트워크 오류 시 잠시 후 새로고침하세요.
+                      </div>
+                    ) : null}
+                    {sigBundledMeta?.githubSkipReason === "rolling_disabled" ? (
+                      <div className="mx-3 mb-2 rounded border border-sky-500/35 bg-sky-950/40 px-2 py-1.5 text-[11px] text-sky-100">
+                        <code className="text-sky-200/90">NEXT_PUBLIC_SIG_ROLLING_GITHUB_BASE</code>가 꺼져 있어(0/off) GitHub와 목록을 합치지 않습니다. 합치려면 BASE를 켜거나{" "}
+                        <code className="text-sky-200/90">SIG_BUNDLED_GITHUB_REPO=소유자/저장소</code>·<code className="text-sky-200/90">SIG_BUNDLED_GITHUB_REF</code>를 설정하세요.
+                      </div>
+                    ) : null}
+                    {sigBundledMeta?.githubSkipReason === "unparseable_base" ? (
+                      <div className="mx-3 mb-2 rounded border border-sky-500/35 bg-sky-950/40 px-2 py-1.5 text-[11px] text-sky-100">
+                        롤링용 URL에서 GitHub owner/repo/ref를 읽을 수 없습니다(GitHub raw 또는 jsDelivr{" "}
+                        <code className="text-sky-200/90">…/gh/owner/repo@ref/…</code> 형식).{" "}
+                        <code className="text-sky-200/90">SIG_BUNDLED_GITHUB_REPO</code>를 지정하세요.
+                      </div>
+                    ) : null}
+                    {sigBundledMeta?.githubSkipReason === "list_disabled" ? (
+                      <div className="mx-3 mb-2 rounded border border-neutral-600 bg-neutral-900/60 px-2 py-1.5 text-[11px] text-neutral-300">
+                        <code className="text-neutral-200">SIG_BUNDLED_GITHUB_LIST=off</code> 로 GitHub 합병이 비활성화되어 있습니다.
+                      </div>
+                    ) : null}
+                    {sigBundledMeta && !sigBundledLoading ? (
+                      <p className="px-3 pb-1 text-[10px] text-neutral-500">
+                        출처: 디스크 {sigBundledMeta.diskCount}개
+                        {sigBundledMeta.githubTried
+                          ? sigBundledMeta.githubFetchFailed
+                            ? " · GitHub 트리 조회 실패"
+                            : ` · GitHub public/images/sigs 일치 ${sigBundledMeta.remoteCount}개`
+                          : " · GitHub 미병합"}
+                      </p>
+                    ) : null}
                     {sigBundledErr ? (
                       <div className="mx-3 mb-2 rounded border border-rose-400/40 bg-rose-900/25 px-2 py-1 text-xs text-rose-100">
                         {sigBundledErr}
@@ -6677,8 +6775,10 @@ export default function AdminPage() {
                         <div className="p-4 text-xs text-neutral-400">목록 불러오는 중…</div>
                       ) : sigBundledPaths.length === 0 ? (
                         <div className="p-4 text-xs text-neutral-500">
-                          파일이 없습니다. 로컬에서는 <code className="text-neutral-400">public/images/sigs</code>에 넣고, Render 등에서는 Git에 푸시 후 재배포해
-                          주세요.
+                          파일이 없습니다. <code className="text-neutral-400">public/images/sigs</code>에 넣고 Git에 푸시했는지, 운영 환경에{" "}
+                          <code className="text-neutral-400">NEXT_PUBLIC_SIG_ROLLING_GITHUB_BASE</code>(또는{" "}
+                          <code className="text-neutral-400">SIG_BUNDLED_GITHUB_REPO</code>)가 올바른지 확인하세요. GitHub만 쓰는 경우에도 재배포 없이 트리에 있으면
+                          여기에 나옵니다.
                         </div>
                       ) : (
                         <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
