@@ -8505,6 +8505,11 @@ export default function AdminPage() {
                                   <button key={key} className={`px-2 py-0.5 rounded border text-xs ${p[key] ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { [key]: !p[key] })}>{label} {p[key] ? "ON" : "OFF"}</button>
                                 ))}
                               </div>
+                              {!p.showGoal ? (
+                                <p className="mt-2 text-[10px] text-amber-200/90 leading-snug">
+                                  엑셀표 아래 후원 목표 막대(0만원 / N만원)를 쓰려면 위에서 <strong className="font-semibold">목표바 ON</strong>을 켜 주세요.
+                                </p>
+                              ) : null}
                             </details>
 
                             <div className="h-px bg-white/10 my-1" />
@@ -8569,19 +8574,42 @@ export default function AdminPage() {
                             {/* 후원 티커 기능 제거됨 */}
 
                             {p.showGoal && (
-                              <details className="rounded border border-white/10 bg-neutral-900/40">
-                                <summary className="cursor-pointer select-none px-3 py-2 text-xs text-neutral-300">목표</summary>
-                                <div className="p-3 grid grid-cols-1 sm:grid-cols-[100px_minmax(0,1fr)] items-center gap-1">
-                                  <label className="text-xs text-neutral-400">후원(원)</label>
-                                  <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" type="number" value={p.goal} onChange={(e) => updatePreset(p.id, { goal: e.target.value })} />
+                              <>
+                                <div className="mb-2 rounded border border-fuchsia-500/30 bg-fuchsia-950/25 px-3 py-2">
+                                  <div className="mb-1.5 text-[11px] font-semibold text-fuchsia-100/95">후원 목표 금액 (엑셀표 아래 막대)</div>
+                                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] text-neutral-400">목표(원)</label>
+                                      <input
+                                        className="w-full px-2 py-1.5 rounded bg-neutral-900/90 border border-white/15 text-sm"
+                                        type="number"
+                                        min={0}
+                                        value={p.goal}
+                                        onChange={(e) => updatePreset(p.id, { goal: e.target.value })}
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] text-neutral-400">막대 라벨</label>
+                                      <input
+                                        className="w-full px-2 py-1.5 rounded bg-neutral-900/90 border border-white/15 text-sm"
+                                        value={p.goalLabel}
+                                        onChange={(e) => updatePreset(p.id, { goalLabel: e.target.value })}
+                                      />
+                                    </div>
+                                  </div>
+                                  <p className="mt-1.5 text-[10px] text-neutral-500 leading-snug">
+                                    합계가 목표 이상이면 자동으로 200만 원씩 상향됩니다. OBS URL에 <code className="rounded bg-black/40 px-1">goal=숫자</code>가 있으면 상향 안 함.
+                                  </p>
+                                </div>
+                                <details className="rounded border border-white/10 bg-neutral-900/40">
+                                  <summary className="cursor-pointer select-none px-3 py-2 text-xs text-neutral-300">후원 목표 — 추가 설정</summary>
+                                  <div className="p-3 grid grid-cols-1 sm:grid-cols-[100px_minmax(0,1fr)] items-center gap-1">
                                   <p className="col-span-1 sm:col-span-2 text-[11px] text-neutral-500 leading-snug">
                                     통합·목표 오버레이: 후원 합계가 목표 이상이면 이 금액이 자동으로 고정 200만 원씩 증가합니다. OBS URL에{" "}
                                     <code className="rounded bg-black/40 px-1 text-neutral-400">goal=숫자</code>
                                     가 있으면 상향이 적용되지 않습니다(관리자 Prism 복사 URL에는 포함하지 않음). 비활성:{" "}
                                     <code className="rounded bg-black/40 px-1 text-neutral-400">goalAutoStretch=0</code>
                                   </p>
-                                  <label className="text-xs text-neutral-400">라벨</label>
-                                  <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.goalLabel} onChange={(e) => updatePreset(p.id, { goalLabel: e.target.value })} />
                                   <label className="text-xs text-neutral-400">총 금액(현재 후원액, 원)</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="미지정 시 자동" value={p.goalCurrent || ""} onChange={(e) => updatePreset(p.id, { goalCurrent: e.target.value })} />
                                   <div className="col-span-1 sm:col-span-2">
@@ -8629,6 +8657,7 @@ export default function AdminPage() {
                                   )}
                                 </div>
                               </details>
+                              </>
                             )}
 
                             {p.showPersonalGoal && (
