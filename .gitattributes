@@ -1,2 +1,5 @@
 # 시그 번들 GIF — 바이너리로 취급(줄바꿈·merge 충돌 완화)
 public/images/sigs/**/*.gif binary
+
+# OBS/CI와 동일한 파싱·diff (Windows core.autocrlf와 무관하게 LF 고정)
+src/app/overlay/sig-rolling/page.tsx text eol=lf
