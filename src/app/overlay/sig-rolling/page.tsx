@@ -137,7 +137,7 @@ function RollingCardColumn({
   fading,
   transitionActive,
   replayKey,
-  crossfadeEnabled,
+  crossFadeEnabled,
   pairSide,
 }: {
   current: SigRollingItem | null;
@@ -145,7 +145,7 @@ function RollingCardColumn({
   fading: boolean;
   transitionActive: string;
   replayKey: number;
-  crossfadeEnabled: boolean;
+  crossFadeEnabled: boolean;
   /** 한 줄에 두 장일 때 맞닿는 쪽 패딩·모서리만 줄여 간격 최소화 */
   pairSide?: "left" | "right";
 }) {
@@ -167,7 +167,7 @@ function RollingCardColumn({
   const srcCurrent = resolveSigRollingImageUrl(current.label || "", current.url);
   const srcUnder = resolveSigRollingImageUrl(under.label || "", under.url);
 
-  if (!crossfadeEnabled) {
+  if (!crossFadeEnabled) {
     return (
       <div className="shrink-0" style={{ width: SHELL_OUTER_WIDTH_PX, height: SHELL_OUTER_HEIGHT_PX }}>
         <div className={shellClass} style={{ width: SHELL_OUTER_WIDTH_PX, height: SHELL_OUTER_HEIGHT_PX }}>
@@ -282,7 +282,7 @@ function SigRollingOverlayInner() {
   const rollingRef = useRef(rollingUnified);
   rollingRef.current = rollingUnified;
 
-  const crossfadeEnabled = n >= 3;
+  const crossFadeEnabled = n >= 3;
   const twoCardScale = useMemo(() => {
     if (!Number.isFinite(viewportW) || viewportW <= 0) return 1;
     const safeW = Math.max(260, viewportW - 8);
@@ -434,20 +434,20 @@ function SigRollingOverlayInner() {
         <div className="flex flex-row flex-nowrap items-start gap-0">
           <RollingCardColumn
             current={leftCurrent}
-            nextItem={crossfadeEnabled ? leftNext : null}
+            nextItem={crossFadeEnabled ? leftNext : null}
             fading={fading}
             transitionActive={transitionActive}
             replayKey={replayKey}
-            crossfadeEnabled={crossfadeEnabled}
+            crossFadeEnabled={crossFadeEnabled}
             pairSide="left"
           />
           <RollingCardColumn
             current={rightCurrent}
-            nextItem={crossfadeEnabled ? rightNext : null}
+            nextItem={crossFadeEnabled ? rightNext : null}
             fading={fading}
             transitionActive={transitionActive}
             replayKey={replayKey}
-            crossfadeEnabled={crossfadeEnabled}
+            crossFadeEnabled={crossFadeEnabled}
             pairSide="right"
           />
         </div>
