@@ -226,6 +226,14 @@ export default function AdminPage() {
   const [ftpListEntries, setFtpListEntries] = useState<
     Array<{ name: string; type: string; size?: number; rawModifiedAt?: string }>
   >([]);
+  /** `public/images/sigs` — Git에 포함된 파일 선택 모달 */
+  const [sigBundledOpen, setSigBundledOpen] = useState(false);
+  const [sigBundledMode, setSigBundledMode] = useState<"single" | "bulk">("single");
+  const [sigBundledTarget, setSigBundledTarget] = useState<SigImagePickerTarget | null>(null);
+  const [sigBundledPaths, setSigBundledPaths] = useState<string[]>([]);
+  const [sigBundledLoading, setSigBundledLoading] = useState(false);
+  const [sigBundledErr, setSigBundledErr] = useState("");
+  const [sigBundledSelected, setSigBundledSelected] = useState<string[]>([]);
   /** 시그 롤링 업로드 결과 메시지 */
   const [sigRollingUploadMessage, setSigRollingUploadMessage] = useState("");
   /** 시그 판매 목록: 행 접기(기본 접힘 — 긴 목록 스크롤 완화) */
@@ -2624,6 +2632,117 @@ export default function AdminPage() {
       `${appended.length}개 업로드되어 목록에 추가했습니다.${failSuffix} (${new Date().toLocaleTimeString("ko-KR")})`
     );
   };
+
+  const refreshSigBundledPaths = useCallback(async () => {
+    setSigBundledLoading(true);
+    setSigBundledErr("");
+    try {
+      const res = await fetch("/api/sig-bundled-images", { credentials: "include", cache: "no-store" });
+      const j = (await res.json()) as { ok?: boolean; paths?: string[]; error?: string };
+      if (!res.ok || !j.ok) {
+        setSigBundledErr(String(j.error || res.statusText || String(res.status)));
+        setSigBundledPaths([]);
+        return;
+      }
+      setSigBundledPaths(Array.isArray(j.paths) ? j.paths : []);
+    } catch (e) {
+      setSigBundledErr(String(e));
+      setSigBundledPaths([]);
+    } finally {
+      setSigBundledLoading(false);
+    }
+  }, []);
+
+  const closeSigBundledPicker = useCallback(() => {
+    setSigBundledOpen(false);
+    setSigBundledTarget(null);
+    setSigBundledMode("single");
+    setSigBundledSelected([]);
+    setSigBundledErr("");
+  }, []);
+
+  const openSigBundledPickerSingle = useCallback(
+    (target: SigImagePickerTarget) => {
+      setSigBundledMode("single");
+      setSigBundledTarget(target);
+      setSigBundledSelected([]);
+      setSigBundledOpen(true);
+      void refreshSigBundledPaths();
+    },
+    [refreshSigBundledPaths]
+  );
+
+  const openSigBundledPickerBulk = useCallback(() => {
+    setSigBundledMode("bulk");
+    setSigBundledTarget(null);
+    setSigBundledSelected([]);
+    setSigBundledOpen(true);
+    void refreshSigBundledPaths();
+  }, [refreshSigBundledPaths]);
+
+  const toggleSigBundledPath = useCallback((p: string) => {
+    setSigBundledSelected((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
+  }, []);
+
+  const addSigRollingFromBundledPaths = useCallback(
+    (pathsIn: string[]) => {
+      const list = pathsIn.filter((p) => typeof p === "string" && p.startsWith("/images/sigs/"));
+      if (!list.length) return;
+      setSigRollingUploadMessage("");
+      const appended: { url: string; label: string; price: number }[] = list.map((url) => {
+        const base = url.split("/").filter(Boolean).pop() || "sig";
+        const label = base.replace(/\.[^.]+$/, "");
+        return { url, label, price: 0 };
+      });
+      setState((prev) => {
+        const existingIds = new Set((prev.sigInventory || []).map((x) => x.id));
+        const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
+        const currentRolling = getUnifiedSigRollingItems(prev);
+        const nextInventory = [...(prev.sigInventory || [])];
+        appended.forEach((x, i) => {
+          let id = `sig_roll_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 8)}`;
+          while (existingIds.has(id)) {
+            id = `sig_roll_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 8)}`;
+          }
+          existingIds.add(id);
+          nextInventory.push({
+            id,
+            name: x.label || `롤링 시그 ${i + 1}`,
+            price: Math.max(0, Math.floor(Number(x.price || 0))),
+            imageUrl: x.url,
+            memberId: "",
+            maxCount: 1,
+            soldCount: 0,
+            isRolling: true,
+            isActive: true,
+          });
+          meta[id] = { label: x.label || "", order: currentRolling.length + i };
+        });
+        const next: AppState = {
+          ...prev,
+          sigInventory: nextInventory,
+          sigRollingMeta: meta,
+          updatedAt: Date.now(),
+        };
+        persistState(next);
+        return next;
+      });
+      setSigRollingUploadMessage(
+        `${appended.length}개 저장소 경로로 롤링 목록에 추가했습니다. (${new Date().toLocaleTimeString("ko-KR")})`
+      );
+    },
+    []
+  );
+
+  const confirmSigBundledBulkAdd = useCallback(() => {
+    const skipDummy = sigBundledSelected.filter((p) => !/\/dummy-sig\.svg$/i.test(p));
+    if (!skipDummy.length) {
+      setSigRollingUploadMessage("추가할 항목을 선택해 주세요. (dummy-sig.svg는 제외)");
+      return;
+    }
+    addSigRollingFromBundledPaths(skipDummy);
+    closeSigBundledPicker();
+  }, [sigBundledSelected, addSigRollingFromBundledPaths, closeSigBundledPicker]);
 
   const removeSigRollingItem = (id: string) => {
     setState((prev) => {
@@ -5709,6 +5828,14 @@ export default function AdminPage() {
                   </label>
                   <button
                     type="button"
+                    className="rounded bg-cyan-900 px-3 py-1.5 text-sm hover:bg-cyan-800"
+                    title="Git에 포함된 public/images/sigs 파일 목록에서 여러 개 선택해 롤링에 추가"
+                    onClick={openSigBundledPickerBulk}
+                  >
+                    저장소에서 일괄 추가
+                  </button>
+                  <button
+                    type="button"
                     className="rounded bg-emerald-800 px-3 py-1.5 text-sm hover:bg-emerald-700 disabled:opacity-50"
                     disabled={legacyOnlyRollingCount <= 0}
                     onClick={convertAllLegacyRollingToSigInventory}
@@ -5831,6 +5958,14 @@ export default function AdminPage() {
                             onClick={() => openSigImageFromLocalPc({ kind: "rolling", id: it.id })}
                           >
                             PC에서 선택
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded bg-cyan-900 px-2 py-1 text-xs hover:bg-cyan-800"
+                            title="public/images/sigs 에 푸시된 파일 중 선택"
+                            onClick={() => openSigBundledPickerSingle({ kind: "rolling", id: it.id })}
+                          >
+                            저장소
                           </button>
                           <div className="flex gap-1">
                             <button
@@ -6017,6 +6152,14 @@ export default function AdminPage() {
                     </button>
                     <button
                       type="button"
+                      className="px-2 py-1 rounded bg-cyan-900 hover:bg-cyan-800 text-xs"
+                      title="public/images/sigs 경로에서 선택"
+                      onClick={() => openSigBundledPickerSingle({ kind: "soldOutStamp" })}
+                    >
+                      저장소
+                    </button>
+                    <button
+                      type="button"
                       className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
                       onClick={() => updateSigSoldOutStampUrl("")}
                     >
@@ -6080,6 +6223,14 @@ export default function AdminPage() {
                         onClick={() => openSigImageFromLocalPc({ kind: "newSig" })}
                       >
                         PC에서 선택
+                      </button>
+                      <button
+                        type="button"
+                        className="w-fit rounded bg-cyan-900 px-2 py-1 text-xs hover:bg-cyan-800"
+                        title="public/images/sigs 에 푸시된 파일"
+                        onClick={() => openSigBundledPickerSingle({ kind: "newSig" })}
+                      >
+                        저장소에서 선택
                       </button>
                     </div>
                     <button
@@ -6368,6 +6519,14 @@ export default function AdminPage() {
                           >
                             PC에서 선택
                           </button>
+                          <button
+                            type="button"
+                            className="w-fit rounded bg-cyan-900 px-2 py-1 text-xs hover:bg-cyan-800"
+                            title="Git에 포함된 public/images/sigs"
+                            onClick={() => openSigBundledPickerSingle({ kind: "inventory", id: item.id })}
+                          >
+                            저장소
+                          </button>
                         </div>
                       </div>
                       {(sigPreviewMap[item.id] || item.imageUrl) ? (
@@ -6425,7 +6584,9 @@ export default function AdminPage() {
                 <div className="text-xs text-neutral-500">
                   「보드 노출」은 <code>/overlay/sig-sales</code> 상단 롤링 그리드,「판매 활성」은 회전판 메뉴 후보에 포함됩니다. 시그 추가/멤버 지정/판매량 조절은 즉시 `/api/state`를 통해 Redis에 반영됩니다.{" "}
                   <span className="text-neutral-400">
-                    「PC에서 선택」은 이 PC에서 파일을 고른 뒤 업로드 API로 보내 URL을 붙입니다.{" "}
+                    「PC에서 선택」은 이 PC에서 파일을 고른 뒤 업로드 API로 보내 URL을 붙입니다.「저장소」는 배포 서버의{" "}
+                    <code className="text-neutral-300">public/images/sigs</code>(Git 푸시본) 목록에서 <code className="text-neutral-300">/images/sigs/…</code> 경로를
+                    붙입니다.{" "}
                     <code className="text-neutral-300">SIG_SERVE_SIG_IMAGES_FROM_DISK=true</code> 이면{" "}
                     <code className="text-neutral-300">public/uploads/sigs</code> 에 저장·<code className="text-neutral-300">/uploads/…</code> 로
                     제공합니다(같은 PC에서 Next를 띄우면 그 PC가 이미지 서버).{" "}
@@ -6440,6 +6601,144 @@ export default function AdminPage() {
                 accept=".gif,.png,.jpg,.jpeg,.webp,image/gif,image/png,image/jpeg,image/webp"
                 onChange={onSigLocalImagePicked}
               />
+              {sigBundledOpen ? (
+                <div
+                  className="fixed inset-0 z-[206] flex items-center justify-center bg-black/80 px-3 py-6"
+                  onClick={closeSigBundledPicker}
+                >
+                  <div
+                    className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-xl border border-white/20 bg-neutral-950/95 shadow-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 px-3 py-2">
+                      <div className="text-sm font-semibold text-white">
+                        {sigBundledMode === "bulk" ? "저장소 시그 이미지 — 일괄 추가" : "저장소 시그 이미지 — 한 장 선택"}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          className="rounded bg-neutral-700 px-2 py-1 text-xs text-white hover:bg-neutral-600"
+                          onClick={() => void refreshSigBundledPaths()}
+                          disabled={sigBundledLoading}
+                        >
+                          새로고침
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded bg-neutral-700 px-2 py-1 text-xs text-white hover:bg-neutral-600"
+                          onClick={closeSigBundledPicker}
+                        >
+                          닫기
+                        </button>
+                      </div>
+                    </div>
+                    <p className="px-3 py-2 text-[11px] text-neutral-400">
+                      Git에 커밋·푸시된 <code className="text-neutral-300">public/images/sigs</code> 아래 gif/png/webp/svg만 표시합니다(최대 600개).
+                      {sigBundledMode === "single" ? " 항목을 한 번 클릭하면 해당 시그에 경로가 적용됩니다." : " 체크 후「선택 항목 롤링에 추가」를 누르세요."}
+                    </p>
+                    {sigBundledErr ? (
+                      <div className="mx-3 mb-2 rounded border border-rose-400/40 bg-rose-900/25 px-2 py-1 text-xs text-rose-100">
+                        {sigBundledErr}
+                      </div>
+                    ) : null}
+                    {sigBundledMode === "bulk" ? (
+                      <div className="flex flex-wrap items-center gap-2 border-b border-white/10 px-3 py-2">
+                        <button
+                          type="button"
+                          className="rounded bg-neutral-800 px-2 py-1 text-xs hover:bg-neutral-700"
+                          onClick={() =>
+                            setSigBundledSelected(
+                              sigBundledPaths.filter((p) => !/\/dummy-sig\.svg$/i.test(p))
+                            )
+                          }
+                        >
+                          전체 선택(더미 제외)
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded bg-neutral-800 px-2 py-1 text-xs hover:bg-neutral-700"
+                          onClick={() => setSigBundledSelected([])}
+                        >
+                          선택 해제
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded bg-emerald-800 px-3 py-1 text-sm hover:bg-emerald-700 disabled:opacity-50"
+                          disabled={sigBundledSelected.length === 0}
+                          onClick={confirmSigBundledBulkAdd}
+                        >
+                          선택 {sigBundledSelected.length}개 롤링에 추가
+                        </button>
+                      </div>
+                    ) : null}
+                    <div className="min-h-0 flex-1 overflow-auto px-2 pb-3">
+                      {sigBundledLoading ? (
+                        <div className="p-4 text-xs text-neutral-400">목록 불러오는 중…</div>
+                      ) : sigBundledPaths.length === 0 ? (
+                        <div className="p-4 text-xs text-neutral-500">
+                          파일이 없습니다. 로컬에서는 <code className="text-neutral-400">public/images/sigs</code>에 넣고, Render 등에서는 Git에 푸시 후 재배포해
+                          주세요.
+                        </div>
+                      ) : (
+                        <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+                          {sigBundledPaths.map((p) => {
+                            const isDummy = /\/dummy-sig\.svg$/i.test(p);
+                            const selected = sigBundledSelected.includes(p);
+                            return (
+                              <li key={p}>
+                                <button
+                                  type="button"
+                                  className={`flex w-full flex-col overflow-hidden rounded border text-left transition ${
+                                    selected ? "border-emerald-500/70 bg-emerald-950/40" : "border-white/10 bg-black/30 hover:border-white/25"
+                                  }`}
+                                  onClick={() => {
+                                    if (sigBundledMode === "bulk") {
+                                      toggleSigBundledPath(p);
+                                      return;
+                                    }
+                                    if (sigBundledTarget) {
+                                      applySigImageUrlToPickerTarget(sigBundledTarget, p);
+                                      closeSigBundledPicker();
+                                    }
+                                  }}
+                                >
+                                  {sigBundledMode === "bulk" ? (
+                                    <div className="flex items-center justify-between gap-2 border-b border-white/10 px-2 py-1">
+                                      <span className="truncate text-[10px] text-neutral-400">{p.replace(/^\/images\/sigs\//, "")}</span>
+                                      <span className={`shrink-0 text-xs font-semibold ${selected ? "text-emerald-400" : "text-neutral-600"}`}>
+                                        {selected ? "✓" : ""}
+                                      </span>
+                                    </div>
+                                  ) : null}
+                                  <div className="relative mx-auto flex h-28 w-full items-center justify-center bg-black/40 p-1">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={p}
+                                      alt=""
+                                      className="max-h-full max-w-full object-contain"
+                                      loading="lazy"
+                                      decoding="async"
+                                      onError={(e) => {
+                                        e.currentTarget.onerror = null;
+                                        e.currentTarget.src = SIG_DUMMY_IMAGE;
+                                      }}
+                                    />
+                                  </div>
+                                  {sigBundledMode === "single" ? (
+                                    <div className="truncate px-2 py-1 text-[10px] text-neutral-400" title={p}>
+                                      {isDummy ? "dummy-sig" : p.replace(/^\/images\/sigs\//, "")}
+                                    </div>
+                                  ) : null}
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
               {ftpListModalOpen ? (
                 <div
                   className="fixed inset-0 z-[205] flex items-center justify-center bg-black/80 px-4 py-6"
