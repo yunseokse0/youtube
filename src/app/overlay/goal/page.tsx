@@ -176,22 +176,8 @@ export default function GoalOverlayPage() {
   // 목표바 현재값은 항상 실시간 후원 합계와 동기화한다.
   const current = Math.max(0, totalCombined);
 
-  const goalPinnedByRawUrl =
-    (() => {
-      const g = sp.get("goal");
-      if (g === null || String(g).trim() === "") return false;
-      const n = parseInt(String(g), 10);
-      if (!Number.isFinite(n) || n <= 0) return false;
-      if (externalHost && ready) return false;
-      return true;
-    })();
   useGoalPresetAutoEscalate({
-    enabled:
-      sp.get("goalAutoStretch") !== "0" &&
-      String(sp.get("noGoalAutoStretch") || "").toLowerCase() !== "true" &&
-      goal > 0 &&
-      !goalPinnedByRawUrl &&
-      Boolean(activePreset?.id),
+    enabled: goal > 0 && Boolean(activePreset?.id),
     userId: userId || "finalent",
     presetId: activePreset?.id ?? null,
     goalAmount: goal,

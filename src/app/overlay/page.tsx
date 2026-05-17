@@ -1987,24 +1987,12 @@ function OverlayInner() {
     () => members.reduce((sum, m) => sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)), 0),
     [members]
   );
-  const goalPinnedByRawUrl =
-    (() => {
-      const g = rawSp.get("goal");
-      if (g === null || String(g).trim() === "") return false;
-      const n = parseInt(String(g), 10);
-      if (!Number.isFinite(n) || n <= 0) return false;
-      if (externalHost && ready) return false;
-      return true;
-    })();
   useGoalPresetAutoEscalate({
     enabled:
-      rawSp.get("goalAutoStretch") !== "0" &&
-      String(rawSp.get("noGoalAutoStretch") || "").toLowerCase() !== "true" &&
       !demoMode &&
       !isPreviewGuide &&
       !snap &&
       goal > 0 &&
-      !goalPinnedByRawUrl &&
       Boolean(activePreset?.id),
     userId,
     presetId: activePreset?.id ?? null,

@@ -8768,17 +8768,14 @@ export default function AdminPage() {
                                     </div>
                                   </div>
                                   <p className="mt-1.5 text-[10px] text-neutral-500 leading-snug">
-                                    합계가 목표 이상이면 자동으로 200만 원씩 상향됩니다. OBS URL에 <code className="rounded bg-black/40 px-1">goal=숫자</code>가 있으면 상향 안 함.
+                                    합계가 목표 이상이면 자동으로 200만 원씩 상향됩니다(OBS URL에 goal= 이 있어도 동일).
                                   </p>
                                 </div>
                                 <details className="rounded border border-white/10 bg-neutral-900/40">
                                   <summary className="cursor-pointer select-none px-3 py-2 text-xs text-neutral-300">후원 목표 — 추가 설정</summary>
                                   <div className="p-3 grid grid-cols-1 sm:grid-cols-[100px_minmax(0,1fr)] items-center gap-1">
                                   <p className="col-span-1 sm:col-span-2 text-[11px] text-neutral-500 leading-snug">
-                                    통합·목표 오버레이: 후원 합계가 목표 이상이면 이 금액이 자동으로 고정 200만 원씩 증가합니다. OBS URL에{" "}
-                                    <code className="rounded bg-black/40 px-1 text-neutral-400">goal=숫자</code>
-                                    가 있으면 상향이 적용되지 않습니다(관리자 Prism 복사 URL에는 포함하지 않음). 비활성:{" "}
-                                    <code className="rounded bg-black/40 px-1 text-neutral-400">goalAutoStretch=0</code>
+                                    통합·목표 오버레이: 후원 합계가 목표 이상이면 이 금액이 자동으로 200만 원씩 증가합니다. 초기화 시 기준선(goalBaseline) 200만 원으로 복구됩니다.
                                   </p>
                                   <label className="text-xs text-neutral-400">총 금액(현재 후원액, 원)</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="미지정 시 자동" value={p.goalCurrent || ""} onChange={(e) => updatePreset(p.id, { goalCurrent: e.target.value })} />
