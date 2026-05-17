@@ -312,6 +312,11 @@ export default function RouletteWheel({
     activeSpinKeyRef.current = spinKey;
 
     const idx = findSliceIndexForResult(spinItems, resultId);
+    if (idx < 0) {
+      console.error("[RouletteWheel] resultId not on wheel — spin aborted", resultId);
+      activeSpinKeyRef.current = "";
+      return;
+    }
     setWinnerIndex(idx);
     hasLandedRef.current = false;
     stopAllAnimations();

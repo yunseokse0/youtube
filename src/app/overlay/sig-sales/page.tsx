@@ -20,9 +20,11 @@ import {
   ROULETTE_WHEEL_SFX_ENABLED,
   SOUND_ASSETS_ENABLED,
   SPIN_SOUND_PATHS,
+  buildWheelMenuSlices,
   canonicalSigIdFromWheelSliceId,
   hydrateSigItemFromInventory,
-  pickWheelSliceIdForWin,
+  resolveWheelSpinTarget,
+  wheelSliceMatchesServerWinner,
 } from "@/lib/sig-roulette";
 import { useSigSalesState } from "@/hooks/useSigSalesState";
 import { useImagePreload } from "@/hooks/useImagePreload";
@@ -505,17 +507,12 @@ export default function SigSalesOverlayPage() {
   /** 고유 시그가 적어도 menuCount만큼 칸을 순환 채움(각 칸은 고유 slice id) */
   const wheelSlices = useMemo(() => {
     if (winnersOnlyOverlay && winnerRowsForWheelOnly.length > 0 && wheelDisplayPool.length > 0) {
-      return wheelDisplayPool.map((x) => ({ ...x }));
+      return wheelDisplayPool.map((x, i) => ({
+        ...x,
+        id: `${canonicalSigIdFromWheelSliceId(x.id)}__wslot_${i}`,
+      }));
     }
-    const n = Math.max(1, menuCount);
-    const pool = wheelDisplayPool.length > 0 ? wheelDisplayPool : [];
-    if (pool.length === 0) return [] as SigItem[];
-    const out: SigItem[] = [];
-    for (let i = 0; i < n; i++) {
-      const canonical = pool[i % pool.length]!;
-      out.push({ ...canonical, id: `${canonical.id}__wslot_${i}` });
-    }
-    return out;
+    return buildWheelMenuSlices(wheelDisplayPool, menuCount);
   }, [wheelDisplayPool, menuCount, winnersOnlyOverlay, winnerRowsForWheelOnly.length]);
 
   /**
@@ -530,68 +527,17 @@ export default function SigSalesOverlayPage() {
   }, [machine.selectedSigs, pendingLanding?.selected]);
   /** 서버가 selectedSigs를 한 번에 주더라도 프론트에서는 항상 라운드별 순차 회전을 강제한다. */
   const useSequentialWheel = spinQueueSelected.length > 1;
-  /**
-   * 휠 착지용 당첨 id — **확정 큐(`spinQueueSelected`) + `sequentialRoundIndex`** 를 단일 소스로 둔다.
-   * 단일 당첨도 예전엔 `sequentialRoundRealId` 가 비어 `machine.resultId`/pending 순으로 새어
-   * 서버 큐와 착지가 어긋날 수 있었음.
-   */
-  const wheelLandingRealId = useMemo((): string | null => {
-    if (spinQueueSelected.length > 0) {
-      const maxIdx = spinQueueSelected.length - 1;
-      const idx = Math.max(0, Math.min(sequentialRoundIndex, maxIdx));
-      const id = spinQueueSelected[idx]?.id;
-      if (id) return id;
-    }
-    return (
-      machine.resultId ||
-      demoSpin?.resultId ||
-      pendingLanding?.resultId ||
-      (pendingLanding?.selected?.length ? pendingLanding.selected[pendingLanding.selected.length - 1]?.id : null) ||
-      (machine.selectedSigs?.length ? machine.selectedSigs[machine.selectedSigs.length - 1]?.id : null) ||
-      null
-    );
-  }, [
-    spinQueueSelected,
-    sequentialRoundIndex,
-    machine.resultId,
-    demoSpin?.resultId,
-    pendingLanding?.resultId,
-    pendingLanding?.selected,
-    machine.selectedSigs,
-  ]);
+  /** 서버 당첨(이번 회차)이 휠에 반드시 포함되도록 보장 — 카드·휠 단일 소스 */
+  const wheelSpinTarget = useMemo(() => {
+    const queue = spinQueueSelected;
+    const roundIdx = queue.length > 0 ? Math.min(sequentialRoundIndex, queue.length - 1) : 0;
+    const serverWinner = queue[roundIdx] ?? null;
+    return resolveWheelSpinTarget(wheelSlices, serverWinner, roundIdx);
+  }, [wheelSlices, spinQueueSelected, sequentialRoundIndex]);
 
-  const wheelItemsWithResult = useMemo(() => {
-    const base = [...wheelSlices];
-    const rid = wheelLandingRealId;
-    if (!rid || base.length === 0) return base;
-    const ridCanon = canonicalSigIdFromWheelSliceId(rid);
-    const hasWinner = base.some((s) => canonicalSigIdFromWheelSliceId(s.id) === ridCanon);
-    if (hasWinner) return base;
-    const matchCanon = (x: SigItem) => canonicalSigIdFromWheelSliceId(x.id) === ridCanon;
-    const found =
-      activeNormalPool.find(matchCanon) ||
-      (pendingLanding?.selected || []).find(matchCanon) ||
-      (machine.selectedSigs || []).find(matchCanon);
-    if (!found) return base;
-    base[base.length - 1] = { ...found, id: `${canonicalSigIdFromWheelSliceId(found.id)}__wslot_${base.length - 1}` };
-    return base;
-  }, [
-    wheelSlices,
-    wheelLandingRealId,
-    pendingLanding?.selected,
-    machine.selectedSigs,
-    activeNormalPool,
-  ]);
+  const wheelItemsWithResult = wheelSpinTarget.items;
 
-  /** 서버 당첨 id(real) → 휠 세그먼트 id */
-  const wheelResultSliceId = useMemo(() => {
-    const realId = wheelLandingRealId;
-    if (!realId || wheelItemsWithResult.length === 0) return null;
-    return (
-      pickWheelSliceIdForWin(wheelItemsWithResult, realId, sequentialRoundIndex) ??
-      wheelItemsWithResult[wheelItemsWithResult.length - 1]!.id
-    );
-  }, [wheelLandingRealId, wheelItemsWithResult, sequentialRoundIndex]);
+  const wheelResultSliceId = wheelSpinTarget.sliceId;
   /** 회전 중·착지 전에는 비우고, 착지 후에는 순차 공개용 전체 목록 */
   const fullSelectedSigs = useMemo(() => {
     const startedAtNum = Number(machine.startedAt || 0);
@@ -1328,35 +1274,30 @@ export default function SigSalesOverlayPage() {
 
                   const snapSession = machine.sessionId;
                   const snapStarted = machine.startedAt;
-                  const canonicalLand = landedId ? canonicalSigIdFromWheelSliceId(landedId) : null;
-                  const landedQueue = (() => {
-                    if (!canonicalLand) return selectedQueue;
-                    const idx = selectedQueue.findIndex(
-                      (item) => canonicalSigIdFromWheelSliceId(item.id) === canonicalLand
-                    );
-                    if (idx < 0 || idx === selectedQueue.length - 1) return selectedQueue;
-                    const picked = selectedQueue[idx]!;
-                    const rest = selectedQueue.filter((_, i) => i !== idx);
-                    return [...rest, picked];
-                  })();
-                  const expectedReal =
-                    pendingLanding?.resultId ||
-                    machine.resultId ||
-                    landedQueue[landedQueue.length - 1]?.id ||
-                    null;
-
-                  const oneShot = buildOneShotFromSelected(landedQueue);
+                  const serverWinner = selectedQueue[lastIdx] ?? null;
+                  if (
+                    serverWinner &&
+                    landedId &&
+                    !wheelSliceMatchesServerWinner(landedId, serverWinner)
+                  ) {
+                    console.warn("[sig-sales overlay] wheel/card mismatch — using server queue", {
+                      landedId,
+                      serverId: serverWinner.id,
+                    });
+                  }
+                  const finalQueue = selectedQueue;
+                  const oneShot = buildOneShotFromSelected(finalQueue);
                   const machineSpinKey = `${machine.startedAt || 0}:${machine.sessionId || ""}:${machine.resultId || ""}`;
                   completedSpinKeyRef.current = machineSpinKey;
                   const finalResultId =
-                    landedQueue[landedQueue.length - 1]?.id ||
+                    serverWinner?.id ||
+                    wheelResultSliceId ||
                     pendingLanding?.resultId ||
                     machine.resultId ||
-                    expectedReal ||
-                    canonicalLand ||
-                    landedQueue[0]!.id;
-                  landed(landedQueue, oneShot, finalResultId);
-                  if (buildOneShotFromSelected(landedQueue)) {
+                    finalQueue[finalQueue.length - 1]?.id ||
+                    null;
+                  landed(finalQueue, oneShot, finalResultId);
+                  if (buildOneShotFromSelected(finalQueue)) {
                     window.setTimeout(() => setOneShotRevealUnlocked(true), sigResultStaggerMs);
                   }
                   if (ROULETTE_WHEEL_SFX_ENABLED) {
@@ -1383,7 +1324,7 @@ export default function SigSalesOverlayPage() {
                           body: JSON.stringify({
                             sessionId: snapSession,
                             startedAt: snapStarted,
-                            selectedSigs: landedQueue,
+                            selectedSigs: finalQueue,
                             oneShotResult: oneShot,
                           }),
                         });

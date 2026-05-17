@@ -19,7 +19,10 @@ import {
   SPIN_SOUND_PATHS,
   clampOverlayOpacity,
   cancelRouletteSession,
+  buildWheelMenuSlices,
   canonicalSigIdFromWheelSliceId,
+  resolveWheelSpinTarget,
+  wheelSliceMatchesServerWinner,
 } from "@/lib/sig-roulette";
 import { useSigSalesState } from "@/hooks/useSigSalesState";
 import { detectSigPriceFromImageUrlDetailed, terminateSharedSigOcrWorker } from "@/lib/sig-image-ocr";
@@ -254,15 +257,17 @@ export default function AdminSigSalesPage() {
     const filler = PREVIEW_FILLER_POOL.filter((f) => !base.some((b) => b.name === f.name));
     return [...base, ...filler].slice(0, 10);
   }, [activeNormalPool]);
-  const wheelItemsWithResult = useMemo(() => {
-    const resultId = demoSpin?.resultId || machine.resultId;
-    if (!resultId) return wheelItems;
-    if (wheelItems.some((item) => item.id === resultId)) return wheelItems;
-    const found = activeNormalPool.find((item) => item.id === resultId);
-    if (!found) return wheelItems;
-    if (!wheelItems.length) return [found];
-    return [...wheelItems.slice(0, Math.max(0, wheelItems.length - 1)), found];
-  }, [wheelItems, demoSpin?.resultId, machine.resultId, activeNormalPool]);
+  const wheelMenuSlices = useMemo(
+    () => buildWheelMenuSlices(wheelItems, Math.max(8, wheelItems.length)),
+    [wheelItems]
+  );
+  const wheelSpinTarget = useMemo(() => {
+    const queue = (pendingLanding?.selected || machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
+    const serverWinner = queue[spinStep] ?? null;
+    return resolveWheelSpinTarget(wheelMenuSlices, serverWinner, spinStep);
+  }, [wheelMenuSlices, pendingLanding?.selected, machine.selectedSigs, spinStep]);
+  const wheelItemsWithResult = wheelSpinTarget.items;
+  const wheelResultSliceId = wheelSpinTarget.sliceId;
   const displaySelectedSigs = useMemo(() => {
     if (stagedSelected.length > 0) return stagedSelected.slice(0, MAX_SELECTED_SIGS);
     return machine.selectedSigs.slice(0, MAX_SELECTED_SIGS);
@@ -330,7 +335,11 @@ export default function AdminSigSalesPage() {
       const selected = (data.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
       const oneShot = buildOneShotFromSelected(selected);
       setPendingLanding({ selected, oneShot, resultId: data.result?.id || selected[selected.length - 1]?.id || null, persist: true });
-      setDemoSpin({ startedAt: Date.now(), resultId: selected[0]?.id || null });
+      const firstTarget = resolveWheelSpinTarget(wheelMenuSlices, selected[0] ?? null, 0);
+      setDemoSpin({
+        startedAt: Date.now(),
+        resultId: firstTarget.sliceId || selected[0]?.id || null,
+      });
       setSpinStep(0);
       setStagedSelected([]);
       setHighlightId(null);
@@ -355,7 +364,11 @@ export default function AdminSigSalesPage() {
         resultId,
         persist: false,
       });
-      setDemoSpin({ startedAt: Date.now(), resultId: selected[0]?.id || resultId });
+      const demoTarget = resolveWheelSpinTarget(wheelMenuSlices, selected[0] ?? null, 0);
+      setDemoSpin({
+        startedAt: Date.now(),
+        resultId: demoTarget.sliceId || selected[0]?.id || resultId,
+      });
       setSpinStep(0);
       setStagedSelected([]);
       setHighlightId(null);
@@ -378,6 +391,7 @@ export default function AdminSigSalesPage() {
     resetToIdle,
     cancelConfirm,
     loadRemote,
+    wheelMenuSlices,
   ]);
 
   const onRerollReset = useCallback(() => {
@@ -760,7 +774,7 @@ export default function AdminSigSalesPage() {
           {!showFinalShowcase ? <RouletteWheel
             items={wheelItemsWithResult}
             isRolling={Boolean(demoSpin) || machine.isRolling || machine.phase === "SPINNING"}
-            resultId={demoSpin?.resultId || machine.resultId}
+            resultId={wheelResultSliceId || demoSpin?.resultId || machine.resultId}
             startedAt={demoSpin?.startedAt || machine.startedAt}
             volume={volume}
             muted={muted}
@@ -768,9 +782,18 @@ export default function AdminSigSalesPage() {
               if (!pendingLanding) return;
               const selectedQueue = pendingLanding.selected.slice(0, MAX_SELECTED_SIGS);
               if (selectedQueue.length === 0) return;
-              const byResult = landedId ? selectedQueue.find((x) => x.id === landedId) : null;
-              const fallback = selectedQueue[Math.min(spinStep, selectedQueue.length - 1)];
-              const current = byResult || fallback;
+              const serverWinner = selectedQueue[Math.min(spinStep, selectedQueue.length - 1)];
+              if (
+                serverWinner &&
+                landedId &&
+                !wheelSliceMatchesServerWinner(landedId, serverWinner)
+              ) {
+                console.warn("[sig-sales admin] wheel/card mismatch — using server queue", {
+                  landedId,
+                  serverId: serverWinner.id,
+                });
+              }
+              const current = serverWinner;
               if (!current) return;
               const nextSelected = [...stagedSelected, current].filter((item, idx, arr) => arr.findIndex((x) => x.id === item.id) === idx);
               const nextStep = spinStep + 1;
@@ -784,7 +807,15 @@ export default function AdminSigSalesPage() {
                 if (nextSpinTimerRef.current) clearTimeout(nextSpinTimerRef.current);
                 nextSpinTimerRef.current = setTimeout(() => {
                   setLastConfirmedText("");
-                  setDemoSpin({ startedAt: Date.now(), resultId: selectedQueue[nextStep].id });
+                  const nextTarget = resolveWheelSpinTarget(
+                    wheelMenuSlices,
+                    selectedQueue[nextStep] ?? null,
+                    nextStep
+                  );
+                  setDemoSpin({
+                    startedAt: Date.now(),
+                    resultId: nextTarget.sliceId || selectedQueue[nextStep]?.id || null,
+                  });
                 }, STEP_CONFIRM_PAUSE_MS);
                 return;
               }

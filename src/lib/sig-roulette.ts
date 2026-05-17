@@ -15,12 +15,75 @@ export function canonicalSigIdFromWheelSliceId(sliceId: string): string {
  * 항상 0번 칸으로 착지하던 문제를 막는다.
  */
 export function findSliceIndexForResult(items: SigItem[], resultId: string | null): number {
-  if (!resultId || items.length === 0) return 0;
+  if (!resultId || items.length === 0) return -1;
   const exact = items.findIndex((x) => x.id === resultId);
   if (exact >= 0) return exact;
   const targetCanon = canonicalSigIdFromWheelSliceId(resultId);
   const byCanon = items.findIndex((x) => canonicalSigIdFromWheelSliceId(x.id) === targetCanon);
-  return byCanon >= 0 ? byCanon : 0;
+  return byCanon >= 0 ? byCanon : -1;
+}
+
+/** 휠 메뉴 칸(5~20) — 동일 시그는 `__wslot_i` 로 칸마다 구분 */
+export function buildWheelMenuSlices(pool: SigItem[], menuCount: number): SigItem[] {
+  const n = Math.max(1, Math.min(20, Math.floor(menuCount || 1)));
+  if (!pool.length) return [];
+  const out: SigItem[] = [];
+  for (let i = 0; i < n; i++) {
+    const canonical = pool[i % pool.length]!;
+    const canon = canonicalSigIdFromWheelSliceId(canonical.id);
+    out.push({ ...canonical, id: `${canon}__wslot_${i}` });
+  }
+  return out;
+}
+
+export type WheelSpinTarget = {
+  items: SigItem[];
+  sliceId: string | null;
+  expectedCanon: string | null;
+};
+
+/**
+ * 서버 당첨 시그가 휠에 반드시 있도록 보장하고, 해당 회차 착지용 slice id를 반환한다.
+ * (카드 A / 휠 B 불일치 방지 — 당첨은 서버 큐, 휠은 이 함수 출력만 사용)
+ */
+export function resolveWheelSpinTarget(
+  wheelSlices: SigItem[],
+  serverWinner: SigItem | null,
+  roundIndex: number
+): WheelSpinTarget {
+  if (!serverWinner || wheelSlices.length === 0) {
+    return { items: wheelSlices, sliceId: null, expectedCanon: null };
+  }
+  const expectedCanon = canonicalSigIdFromWheelSliceId(serverWinner.id);
+  let items = [...wheelSlices];
+  let sliceId = pickWheelSliceIdForWin(items, serverWinner.id, roundIndex);
+  if (!sliceId) {
+    const slotIdx = Math.max(0, roundIndex) % items.length;
+    const canon = expectedCanon;
+    items = [...items];
+    items[slotIdx] = {
+      ...serverWinner,
+      id: `${canon}__wslot_${slotIdx}`,
+      name: String(serverWinner.name || items[slotIdx]?.name || canon).trim() || canon,
+    };
+    sliceId = items[slotIdx]!.id;
+  }
+  const idx = findSliceIndexForResult(items, sliceId);
+  if (idx < 0) {
+    return { items: wheelSlices, sliceId: null, expectedCanon };
+  }
+  return { items, sliceId, expectedCanon };
+}
+
+/** 착지 slice id가 이번 회차 서버 당첨과 같은 시그인지 */
+export function wheelSliceMatchesServerWinner(
+  landedSliceId: string | null,
+  serverWinner: SigItem | null
+): boolean {
+  if (!landedSliceId || !serverWinner) return false;
+  return (
+    canonicalSigIdFromWheelSliceId(landedSliceId) === canonicalSigIdFromWheelSliceId(serverWinner.id)
+  );
 }
 
 /**
@@ -57,6 +120,7 @@ export function calculateSpinFinalAngle(
 ): number {
   if (!targetId || !items.length) return currentBase + Math.max(1, minTurns) * 360;
   const idx = findSliceIndexForResult(items, targetId);
+  if (idx < 0) return currentBase + Math.max(1, minTurns) * 360;
   const seg = 360 / Math.max(1, count);
   const targetCenter = idx * seg + seg / 2;
   const normalizedTarget = ((360 - targetCenter) % 360 + 360) % 360;

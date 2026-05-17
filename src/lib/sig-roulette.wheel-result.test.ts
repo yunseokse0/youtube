@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { SigItem } from "@/types";
 import {
+  buildWheelMenuSlices,
   calculateSpinFinalAngle,
   canonicalSigIdFromWheelSliceId,
   findSliceIndexForResult,
   pickWheelSliceIdForWin,
+  resolveWheelSpinTarget,
+  wheelSliceMatchesServerWinner,
 } from "./sig-roulette";
 
 function item(id: string, price = 0): SigItem {
@@ -65,8 +68,28 @@ describe("findSliceIndexForResult", () => {
     expect(findSliceIndexForResult(wheel, "gamma")).toBe(2);
   });
 
-  it("매칭 실패 시 0번으로 폴백", () => {
-    expect(findSliceIndexForResult(wheel, "unknown")).toBe(0);
+  it("매칭 실패 시 -1 (잘못된 0번 착지 방지)", () => {
+    expect(findSliceIndexForResult(wheel, "unknown")).toBe(-1);
+  });
+});
+
+describe("resolveWheelSpinTarget", () => {
+  const pool = ["a", "b", "c", "d"].map((id) => item(`${id}__wslot_0`));
+
+  it("서버 당첨이 휠에 없으면 해당 회차 칸에 주입한다", () => {
+    const slices = buildWheelMenuSlices(pool, 4);
+    const target = resolveWheelSpinTarget(slices, item("z", 99), 2);
+    expect(target.sliceId).toBe("z__wslot_2");
+    expect(findSliceIndexForResult(target.items, target.sliceId!)).toBe(2);
+    expect(wheelSliceMatchesServerWinner(target.sliceId, item("z"))).toBe(true);
+  });
+
+  it("동일 시그 중복 칸이면 roundIndex로 칸을 고른다", () => {
+    const slices: SigItem[] = [item("a__wslot_0"), item("b__wslot_1"), item("a__wslot_2")];
+    const t0 = resolveWheelSpinTarget(slices, item("a"), 0);
+    const t1 = resolveWheelSpinTarget(slices, item("a"), 1);
+    expect(t0.sliceId).toBe("a__wslot_0");
+    expect(t1.sliceId).toBe("a__wslot_2");
   });
 });
 
