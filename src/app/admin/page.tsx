@@ -158,7 +158,11 @@ function isLegacyLocalSigImageUrl(raw?: string): boolean {
 function resolveSigPreviewSrc(raw?: string, name?: string): string {
   const v = String(raw || "").trim();
   if (isBrokenSigImageUrl(v)) return SIG_DUMMY_IMAGE;
-  return resolveSigImageUrl(String(name || "").trim(), v);
+  const resolved = resolveSigImageUrl(String(name || "").trim(), v);
+  if (resolved.startsWith("/images/sigs/")) {
+    return rewriteSigPathForRollingGithubIfConfigured(resolved);
+  }
+  return resolved;
 }
 
 function ClientTime({ ts }: { ts: number | string }) {
@@ -2750,7 +2754,7 @@ export default function AdminPage() {
     setSigBundledErr("");
     try {
       const res = await fetch("/api/sig-bundled-images", { credentials: "include", cache: "no-store" });
-      const j = (await res.json()) as {
+      const j = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         paths?: string[];
         error?: string;
@@ -3382,8 +3386,8 @@ export default function AdminPage() {
     try {
       const res = await fetch(`/api/donations/unmatched?u=${encodeURIComponent(uid)}`, { cache: "no-store" });
       if (!res.ok) return;
-      const data = (await res.json()) as { items?: DonationEvent[] };
-      setUnmatchedEvents(Array.isArray(data.items) ? data.items : []);
+      const data = (await res.json().catch(() => null)) as { items?: DonationEvent[] } | null;
+      setUnmatchedEvents(Array.isArray(data?.items) ? data.items : []);
     } catch {
       // noop
     }
@@ -3399,8 +3403,8 @@ export default function AdminPage() {
     try {
       const res = await fetch(`/api/donations/aliases?u=${encodeURIComponent(uid)}`, { cache: "no-store" });
       if (!res.ok) return;
-      const data = (await res.json()) as { items?: DonorAlias[] };
-      setDonorAliases(Array.isArray(data.items) ? data.items : []);
+      const data = (await res.json().catch(() => null)) as { items?: DonorAlias[] } | null;
+      setDonorAliases(Array.isArray(data?.items) ? data.items : []);
     } catch {
       // noop
     }
@@ -3412,8 +3416,8 @@ export default function AdminPage() {
     try {
       const res = await fetch(`/api/donations/queue?u=${encodeURIComponent(uid)}`, { cache: "no-store" });
       if (!res.ok) return;
-      const data = (await res.json()) as { items?: DonationEvent[] };
-      setToonationQueue(Array.isArray(data.items) ? data.items : []);
+      const data = (await res.json().catch(() => null)) as { items?: DonationEvent[] } | null;
+      setToonationQueue(Array.isArray(data?.items) ? data.items : []);
     } catch {
       // noop
     }

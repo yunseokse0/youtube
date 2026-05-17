@@ -8,11 +8,26 @@ const logger = createModuleLogger('API/Events');
 /** DevTools EventStream·서버 로그 부담을 줄이기 위해 ping은 길게 유지(프록시 idle 타임아웃보다 짧지 않게 환경에 맞게 조정) */
 const SSE_PING_MS = 60_000;
 
+/** Render 무료 인스턴스: SSE·OBS 소스가 많으면 연결 폭주 → 502 유발 가능 */
+const MAX_SSE_CLIENTS = 80;
+
 let clients: ReadableStreamDefaultController[] = [];
+
+function trimSseClients() {
+  while (clients.length > MAX_SSE_CLIENTS) {
+    const old = clients.shift();
+    try {
+      old?.close();
+    } catch {
+      /* ignore */
+    }
+  }
+}
 
 export async function GET(request: NextRequest) {
   const stream = new ReadableStream({
     start(controller) {
+      trimSseClients();
       clients.push(controller);
 
       // 연결 직후 재시도 지시 및 초기 keepalive 전송
@@ -57,13 +72,12 @@ export async function POST(request: NextRequest) {
     }
     const data = await request.json();
 
-    // 모든 클라이언트에게 데이터 전송
-    clients.forEach(controller => {
+    trimSseClients();
+    clients.forEach((controller) => {
       try {
         controller.enqueue(`data: ${JSON.stringify(data)}\n\n`);
       } catch {
-        // 연결 끊긴 클라이언트 제거
-        clients = clients.filter(c => c !== controller);
+        clients = clients.filter((c) => c !== controller);
       }
     });
 

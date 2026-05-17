@@ -10,7 +10,7 @@ services:
     plan: free # 유료 starter 이상이면 슬립 없음·빌드 여유
     buildCommand: npm ci && npm run build
     startCommand: npm start
-    healthCheckPath: /
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
         value: "20"

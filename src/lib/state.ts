@@ -1118,7 +1118,8 @@ async function runServerSaveQueue(): Promise<void> {
     let serverUpdatedAt: number | undefined;
     if (ok) {
       try {
-        const parsed = (await res.json()) as { updatedAt?: unknown };
+        const raw = await res.text();
+        const parsed = raw.trim() ? (JSON.parse(raw) as { updatedAt?: unknown }) : null;
         const u = parsed?.updatedAt;
         if (typeof u === "number" && Number.isFinite(u)) serverUpdatedAt = u;
       } catch {
@@ -1254,7 +1255,14 @@ async function doLoadStateFromApi(userId?: string): Promise<AppState | null> {
     }
     if (!res.ok) return null;
     maybeWarnMemoryStateBackend(res);
-    const data = await res.json();
+    const text = await res.text();
+    if (!text.trim()) return null;
+    let data: AppState;
+    try {
+      data = JSON.parse(text) as AppState;
+    } catch {
+      return null;
+    }
     if (data && data.members) {
       data.members = (() => { const v = ensureMembers(data.members); return v.length > 0 ? v : defaultMembers().map(normalizeMember); })();
       data.memberPositions = normalizeMemberPositions((data as AppState).memberPositions, data.members);

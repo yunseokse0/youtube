@@ -9,13 +9,17 @@ const nextConfig = {
     ];
   },
   async rewrites() {
-    return [
-      // 끝 슬래시만 메인 오버레이로 통일 (하위 경로 /overlay/meal-match 등은 그대로 두어야 함)
-      { source: '/overlay/', destination: '/overlay' },
-      // public 에 없는 레거시 /images/sig(s)/… 는 API에서 Supabase·외부 베이스·디스크로 폴백
-      { source: '/images/sigs/:path*', destination: '/api/sig-legacy/:path*' },
-      { source: '/images/sig/:path*', destination: '/api/sig-legacy/:path*' },
-    ];
+    return {
+      afterFiles: [
+        // 끝 슬래시만 메인 오버레이로 통일 (하위 경로 /overlay/meal-match 등은 그대로 두어야 함)
+        { source: "/overlay/", destination: "/overlay" },
+      ],
+      /** public/ 에 파일이 없을 때만 Node API로 — 있으면 정적 파일 우선(시그 GIF 수백 장 시 502 완화) */
+      fallback: [
+        { source: "/images/sigs/:path*", destination: "/api/sig-legacy/:path*" },
+        { source: "/images/sig/:path*", destination: "/api/sig-legacy/:path*" },
+      ],
+    };
   },
   async headers() {
     return [
