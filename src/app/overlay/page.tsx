@@ -12,6 +12,7 @@ import { useSSEConnection } from "@/lib/sse-client";
 import { useGoalPresetAutoEscalate } from "@/hooks/useGoalPresetAutoEscalate";
 import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
 import { createStateUpdatedScheduler, readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
+import { buildOverlaySyncSignature } from "@/lib/overlay-sync-signature";
 
 function tryDecodeSnapshot(str: string | null): AppState | null {
   if (!str) return null;
@@ -46,34 +47,6 @@ function tryReadSnapshotFromStorage(snapKey: string | null): AppState | null {
     }
   } catch {}
   return null;
-}
-
-function buildOverlayVisualSignature(state: AppState | null): string {
-  if (!state) return "";
-  const members = (state.members || [])
-    .map((m) => ({
-      id: m.id,
-      name: m.name,
-      account: m.account || 0,
-      toon: m.toon || 0,
-      operating: Boolean(m.operating),
-    }))
-    .sort((a, b) => String(a.id || "").localeCompare(String(b.id || "")));
-  const donors = (state.donors || [])
-    .map((d) => ({
-      id: d.id,
-      name: d.name,
-      amount: d.amount || 0,
-      target: d.target || "",
-      at: d.at || 0,
-    }))
-    .sort((a, b) => String(a.id || "").localeCompare(String(b.id || "")));
-  return JSON.stringify({
-    members,
-    donors,
-    memberPositions: state.memberPositions || {},
-    rankPositionLabels: state.rankPositionLabels || [],
-  });
 }
 
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
@@ -122,7 +95,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
     if (!Array.isArray((incoming as AppState).members)) return;
     const ts = (incoming as any).updatedAt || Date.now();
     const next = incoming as AppState;
-    const nextSig = buildOverlayVisualSignature(next);
+    const nextSig = buildOverlaySyncSignature(next);
     if (nextSig === lastVisualSigRef.current) {
       lastUpdatedRef.current = Math.max(lastUpdatedRef.current, ts);
       return;
@@ -148,13 +121,13 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
     const local = readLocalStateIfExists();
     const lastGood = loadLastGood();
     if (local && isViable(local)) {
-      lastVisualSigRef.current = buildOverlayVisualSignature(local);
+      lastVisualSigRef.current = buildOverlaySyncSignature(local);
       setState(local);
       lastUpdatedRef.current = local.updatedAt || 0;
       lastGoodRef.current = local;
       saveLastGood(local);
     } else if (lastGood && isViable(lastGood)) {
-      lastVisualSigRef.current = buildOverlayVisualSignature(lastGood);
+      lastVisualSigRef.current = buildOverlaySyncSignature(lastGood);
       setState(lastGood);
       lastUpdatedRef.current = lastGood.updatedAt || 0;
       lastGoodRef.current = lastGood;
@@ -170,7 +143,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       try {
         const localNow = readLocalStateIfExists();
         if (localNow && localNow.updatedAt && localNow.updatedAt > lastUpdatedRef.current && !shouldDiscardEmpty(localNow)) {
-          const nextSig = buildOverlayVisualSignature(localNow);
+          const nextSig = buildOverlaySyncSignature(localNow);
           lastUpdatedRef.current = localNow.updatedAt;
           if (nextSig !== lastVisualSigRef.current) {
             lastVisualSigRef.current = nextSig;
@@ -190,7 +163,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
         // Keep local state when API is stale (e.g. API save failed),
         // and only accept strictly newer snapshots from server.
         if (data && data.updatedAt && data.updatedAt > lastUpdatedRef.current && !shouldDiscardEmpty(data)) {
-          const nextSig = buildOverlayVisualSignature(data);
+          const nextSig = buildOverlaySyncSignature(data);
           lastUpdatedRef.current = data.updatedAt;
           if (nextSig !== lastVisualSigRef.current) {
             lastVisualSigRef.current = nextSig;
@@ -217,7 +190,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       if (e.key !== storageKey(userId ?? undefined)) return;
       const localNow = readLocalStateIfExists();
       if (localNow && localNow.updatedAt && localNow.updatedAt > lastUpdatedRef.current && !shouldDiscardEmpty(localNow)) {
-        const nextSig = buildOverlayVisualSignature(localNow);
+        const nextSig = buildOverlaySyncSignature(localNow);
         lastUpdatedRef.current = localNow.updatedAt;
         if (nextSig !== lastVisualSigRef.current) {
           lastVisualSigRef.current = nextSig;
@@ -1136,14 +1109,22 @@ function Timer({
   const hasCustomOutlineColor = Boolean(outlineColor && outlineColor.trim());
   const effectiveOutlineColor = hasCustomOutlineColor ? outlineColor : "rgba(6, 12, 24, 0.95)";
   const effectiveOutlineWidth = Number.isFinite(outlineWidth) ? Math.max(0, Math.min(3, outlineWidth as number)) : 0.8;
+  const bgLower = String(bgColor || "").trim().toLowerCase();
+  const borderLower = String(borderColor || "").trim().toLowerCase();
+  const opacity = Math.max(0, Math.min(100, bgOpacity ?? 40));
+  const noBackground =
+    opacity <= 0 || bgLower === "transparent" || bgLower === "none" || bgLower === "rgba(0,0,0,0)";
+  const noBorder = noBackground || borderLower === "transparent" || borderLower === "none";
   return (
     <div
-      className="inline-flex min-w-[4.5ch] items-center justify-center rounded-full px-4 py-1.5 backdrop-blur-md"
+      className={`inline-flex min-w-[4.5ch] items-center justify-center rounded-full px-4 py-1.5 ${noBackground ? "" : "backdrop-blur-md"}`}
       style={{
-        borderColor: borderColor || "rgba(255,255,255,0.2)",
-        borderWidth: 1,
-        borderStyle: "solid",
-        backgroundColor: bgColor || `rgba(255,255,255,${Math.max(0, Math.min(100, bgOpacity ?? 40)) / 100})`,
+        borderColor: noBorder ? "transparent" : borderColor || "rgba(255,255,255,0.2)",
+        borderWidth: noBorder ? 0 : 1,
+        borderStyle: noBorder ? "none" : "solid",
+        backgroundColor: noBackground
+          ? "transparent"
+          : bgColor || `rgba(255,255,255,${opacity / 100})`,
       }}
       suppressHydrationWarning
     >
