@@ -1581,21 +1581,9 @@ export default function AdminPage() {
     setState((prev: AppState) => {
       const base = normalizeDonationListsOverlayConfig(prev.donationListsOverlayConfig);
       const merged = normalizeDonationListsOverlayConfig({ ...base, ...patch });
-      const activeId = String(prev.activePresetId || "").trim();
-      const presets = Array.isArray(prev.presets)
-        ? prev.presets.map((p) => {
-            if (String(p.id) !== activeId) return p;
-            return {
-              ...p,
-              tableBgGifUrl: merged.isBgEnabled ? merged.bgGifUrl : "",
-              tableBgGifOpacity: String(merged.bgOpacity),
-            };
-          })
-        : prev.presets;
       const next: AppState = {
         ...prev,
         donationListsOverlayConfig: merged,
-        presets,
       };
       persistState(next);
       return next;
