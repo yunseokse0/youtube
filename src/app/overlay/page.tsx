@@ -1587,14 +1587,14 @@ function OverlayInner() {
   const donationListsCfg = normalizeDonationListsOverlayConfig(s?.donationListsOverlayConfig);
   const tableBgGifUrl = (
     (sp.get("tableBgGifUrl") || "").trim() ||
-    String((activePreset as any)?.tableBgGifUrl || "").trim() ||
-    (donationListsCfg.isBgEnabled ? donationListsCfg.bgGifUrl.trim() : "")
+    (donationListsCfg.isBgEnabled ? donationListsCfg.bgGifUrl.trim() : "") ||
+    String((activePreset as any)?.tableBgGifUrl || "").trim()
   );
   const tableBgGifOpacity = (() => {
     const rawUrl = (sp.get("tableBgGifOpacity") || "").trim();
+    const rawFromLists = donationListsCfg.isBgEnabled ? String(donationListsCfg.bgOpacity) : "";
     const rawPreset = String((activePreset as any)?.tableBgGifOpacity || "").trim();
-    const rawFallback = donationListsCfg.isBgEnabled ? String(donationListsCfg.bgOpacity) : "";
-    const raw = rawUrl || rawPreset || rawFallback;
+    const raw = rawUrl || rawFromLists || rawPreset;
     if (!raw) return 45;
     const n = parseInt(raw, 10);
     return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 45;
@@ -1646,7 +1646,14 @@ function OverlayInner() {
       .trim();
   // GIF 배경은 테이블/열 불투명 배경 아래에 깔리므로, GIF 사용 시에도 stripBg + 틴트 경로를 태워야 보임
   const useTableOpacity = tableBgOpacity < 100 || showTableBgGif;
-  const tableTintAlpha = showTableBgGif ? Math.min(tableBgOpacity / 100, 0.88) : tableBgOpacity / 100;
+  /** GIF 모드: 시트 색막을 얇게 — tableBgOpacity 기본 100이어도 GIF가 검게 가려지지 않게 */
+  const tableTintAlpha = (() => {
+    if (!showTableBgGif) return tableBgOpacity / 100;
+    const sheetFromTable = (100 - tableBgOpacity) / 100;
+    const sheetFromGif = (100 - tableBgGifOpacity) / 100;
+    const blended = sheetFromTable * 0.35 + sheetFromGif * 0.65;
+    return Math.min(0.48, Math.max(0.04, blended * 0.42));
+  })();
   /** 미리보기와 동일하게 항상 시트 틴트+colgroup 경로 사용 → 테이블 클래스 배경은 제거 */
   const effectiveTableCls = stripBg(membersTheme.tableCls);
   // Strip row backgrounds for tinted/GIF sheet; keep header & total bar colors when shown.
@@ -2508,7 +2515,7 @@ function OverlayInner() {
         .overlay-center-fixed table.overlay-elegant-table .overlay-row td,
         .overlay-center-fixed table.overlay-elegant-table thead td { font-size: ${memberFontPx}px !important; min-height: ${Math.round(memberFontPx * 1.5)}px !important; line-height: 1.2 !important; padding: ${Math.round(memberFontPx * 0.25)}px ${Math.round(memberFontPx * 0.4)}px !important; }
         .overlay-center-fixed table.overlay-elegant-table .overlay-total-row td { font-size: ${totalFontPx}px !important; min-height: ${Math.round(totalFontPx * 1.5)}px !important; padding: ${Math.round(totalFontPx * 0.2)}px ${Math.round(totalFontPx * 0.3)}px !important; font-weight: 600 !important; }
-        .overlay-center-fixed table { background: rgba(0,0,0,0.5) !important; }
+        .overlay-center-fixed table { background: ${showTableBgGif ? "transparent" : "rgba(0,0,0,0.5)"} !important; }
         .overlay-center-fixed table.overlay-elegant-table td { container-type: inline-size; white-space: nowrap !important; overflow: visible !important; }
       ` }} />
     ) : null;

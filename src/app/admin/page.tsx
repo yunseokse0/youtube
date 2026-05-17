@@ -1580,9 +1580,22 @@ export default function AdminPage() {
   const updateDonationListsOverlayConfig = (patch: Partial<OverlayConfig>) => {
     setState((prev: AppState) => {
       const base = normalizeDonationListsOverlayConfig(prev.donationListsOverlayConfig);
+      const merged = normalizeDonationListsOverlayConfig({ ...base, ...patch });
+      const activeId = String(prev.activePresetId || "").trim();
+      const presets = Array.isArray(prev.presets)
+        ? prev.presets.map((p) => {
+            if (String(p.id) !== activeId) return p;
+            return {
+              ...p,
+              tableBgGifUrl: merged.isBgEnabled ? merged.bgGifUrl : "",
+              tableBgGifOpacity: String(merged.bgOpacity),
+            };
+          })
+        : prev.presets;
       const next: AppState = {
         ...prev,
-        donationListsOverlayConfig: { ...base, ...patch },
+        donationListsOverlayConfig: merged,
+        presets,
       };
       persistState(next);
       return next;
@@ -5471,8 +5484,9 @@ export default function AdminPage() {
                   <div className="min-w-0">
                     <h4 className="text-sm font-semibold text-pink-100">후원 엑셀표 · 배경 GIF</h4>
                     <p className="mt-1 max-w-xl text-xs text-pink-100/75">
-                      멤버 랭킹 표(<code className="text-pink-50/90">/overlay/donation-lists</code>) 배경입니다. Giphy <span className="text-pink-50/90">페이지</span> 주소(
-                      <code className="break-all">giphy.com/gifs/…</code>)도 오버레이에서 자동으로 직접 GIF로 바뀝니다. 저장이 막히면(콘솔 401) 로그인을 다시 하면 서버·OBS에 반영됩니다.
+                      후원 엑셀표 배경 GIF입니다. 통합 오버레이(<code className="text-pink-50/90">/overlay</code>)·단독(
+                      <code className="text-pink-50/90">/overlay/donation-lists</code>) 모두 반영됩니다. Giphy <span className="text-pink-50/90">페이지</span> 주소(
+                      <code className="break-all">giphy.com/gifs/…</code>)도 자동으로 직접 GIF/MP4로 바뀝니다. GIF 선명도를 높이면 표 뒤 애니메이션이 더 잘 보입니다.
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-2 shrink-0">
@@ -5543,7 +5557,7 @@ export default function AdminPage() {
                         />
                       </label>
                       <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90 md:col-span-2">
-                        배경 투명도 ({dlCfg.bgOpacity}%)
+                        GIF 선명도 ({dlCfg.bgOpacity}% · 높을수록 잘 보임)
                         <input
                           type="range"
                           min={0}
