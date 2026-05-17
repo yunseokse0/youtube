@@ -9,6 +9,13 @@ import {
   resolveSigImageUrl,
   rewriteSigPathForRollingGithubIfConfigured,
 } from "@/lib/constants";
+import {
+  createBitmapsFromGifBuffer,
+  isGifArrayBuffer,
+  pickConsensusSigPrice,
+} from "@/lib/sig-gif-ocr-frames";
+import { applySigNamePriceFallback, refineCommonSigOcrMisreads } from "@/lib/sig-price-ocr-refine";
+import { isProbablyGifPath } from "@/lib/sig-rolling-duration";
 
 export function isSigOcrSupported(): boolean {
   return typeof window !== "undefined";
@@ -158,16 +165,27 @@ export function parseSigAmountFromText(rawText: string): number | null {
     if (Number.isFinite(amount) && amount >= 1000 && amount <= 100000000) candidates.push(amount);
   }
 
+  /** OCR이 붙여 읽은 5자리 시그 가격(38700·31200 등) — 느슨한 파싱보다 우선 */
+  for (const m of text.matchAll(/(?<!\d)(\d{5})(?!\d)/g)) {
+    const amount = Number(m[1] || 0);
+    if (Number.isFinite(amount) && amount >= 20_000 && amount <= 150_000) candidates.push(amount);
+  }
+
   const digitRuns = text.match(/\d{4,}/g);
   if (digitRuns) {
     for (const run of digitRuns) {
+      if (run.length > 7) continue;
       const amount = Number(run);
       if (Number.isFinite(amount) && amount >= 1000 && amount <= 100000000) candidates.push(amount);
     }
   }
 
   if (!candidates.length) return null;
-  return Math.max(...candidates);
+  if (candidates.length === 1) {
+    return refineCommonSigOcrMisreads(candidates[0]!);
+  }
+  const picked = pickConsensusSigPrice(candidates);
+  return picked != null ? refineCommonSigOcrMisreads(picked) : null;
 }
 
 function resolveAbsoluteImageUrl(imageUrl: string): string | null {
@@ -204,6 +222,69 @@ async function loadImageBitmapViaApiProxy(absoluteUrl: string): Promise<ImageBit
     return await createImageBitmap(blob);
   } catch {
     return null;
+  }
+}
+
+async function fetchOcrResourceBytes(imageUrl: string): Promise<{ bytes: ArrayBuffer | null; failedHttpStatus?: number }> {
+  if (typeof window === "undefined") return { bytes: null };
+  const abs = resolveAbsoluteImageUrl(imageUrl);
+  if (!abs) return { bytes: null };
+
+  const origin = window.location.origin;
+  const sameOrigin = abs.startsWith(origin);
+  const isHttp = /^https?:\/\//i.test(abs);
+
+  const readRes = async (res: Response): Promise<{ bytes: ArrayBuffer | null; failedHttpStatus?: number }> => {
+    if (!res.ok) return { bytes: null, failedHttpStatus: res.status };
+    try {
+      return { bytes: await res.arrayBuffer() };
+    } catch {
+      return { bytes: null };
+    }
+  };
+
+  if (abs.startsWith("blob:") || abs.startsWith("data:")) {
+    try {
+      const res = await fetch(abs);
+      return await readRes(res);
+    } catch {
+      return { bytes: null };
+    }
+  }
+
+  if (sameOrigin) {
+    try {
+      const res = await fetch(abs, { mode: "same-origin", credentials: "same-origin" });
+      const out = await readRes(res);
+      if (out.bytes) return out;
+      if (out.failedHttpStatus) return out;
+    } catch {
+      /* fall through */
+    }
+  }
+
+  if (isHttp) {
+    try {
+      const proxyUrl = `/api/ocr-proxy?url=${encodeURIComponent(abs)}`;
+      const res = await fetch(proxyUrl, { method: "GET", credentials: "same-origin" });
+      const proxied = await readRes(res);
+      if (proxied.bytes) return proxied;
+    } catch {
+      /* ignore */
+    }
+    try {
+      const res = await fetch(abs, { mode: "cors", credentials: "omit" });
+      return await readRes(res);
+    } catch {
+      return { bytes: null };
+    }
+  }
+
+  try {
+    const res = await fetch(abs, { mode: "cors", credentials: "omit" });
+    return await readRes(res);
+  } catch {
+    return { bytes: null };
   }
 }
 
@@ -290,7 +371,7 @@ async function loadImageForOcr(imageUrl: string): Promise<SigImageLoadInfo> {
 
 /** GIF/WebP 애니 등 첫 프레임으로 고정 + OCR용 업스케일 */
 const OCR_MAX_SIDE = 2400;
-const OCR_MIN_SHORT_EDGE = 480;
+const OCR_MIN_SHORT_EDGE = 640;
 
 async function flattenToStaticImageBitmap(bitmap: ImageBitmap): Promise<ImageBitmap> {
   if (bitmap.width < 1 || bitmap.height < 1) return bitmap;
@@ -378,9 +459,11 @@ function buildOcrCanvasSet(colorCanvas: HTMLCanvasElement): HTMLCanvasElement[] 
   const binary = canvasToBinary(colorCanvas);
   const bottom = cropCanvasFraction(colorCanvas, 0.45, 1, 0.05, 0.95);
   const bottomBin = canvasToBinary(bottom);
+  const priceBand = cropCanvasFraction(colorCanvas, 0.52, 0.92, 0.1, 0.9);
+  const priceBandBin = canvasToBinary(priceBand);
   const center = cropCanvasFraction(colorCanvas, 0.25, 0.85, 0.08, 0.92);
   const centerBin = canvasToBinary(center);
-  return [colorCanvas, gray, binary, bottom, bottomBin, center, centerBin];
+  return [colorCanvas, gray, binary, bottom, bottomBin, priceBand, priceBandBin, center, centerBin];
 }
 
 function buildScaledColorCanvasForOcr(bitmap: ImageBitmap): HTMLCanvasElement | null {
@@ -517,6 +600,7 @@ async function recognizeAmountOnCanvases(
   modes: number[]
 ): Promise<{ price: number | null; rawText: string }> {
   const texts: string[] = [];
+  const candidates: number[] = [];
   for (const canvas of canvases) {
     for (const psm of modes) {
       try {
@@ -529,14 +613,16 @@ async function recognizeAmountOnCanvases(
         const trimmed = String(text || "").trim();
         if (trimmed) texts.push(trimmed);
         const price = parseSigAmountFromText(trimmed);
-        if (price != null) return { price, rawText: trimmed };
+        if (price != null) candidates.push(price);
       } catch {
         /* 다음 모드·캔버스 시도 */
       }
     }
   }
   const merged = texts.join("\n");
-  const price = parseSigAmountFromText(merged);
+  const mergedPrice = parseSigAmountFromText(merged);
+  if (mergedPrice != null) candidates.push(mergedPrice);
+  const price = pickConsensusSigPrice(candidates);
   return { price, rawText: merged };
 }
 
@@ -559,10 +645,15 @@ async function detectPriceWithTesseractDetailed(bitmap: ImageBitmap): Promise<{ 
 
   try {
     const eng = await attemptLang("eng");
-    if (eng.price != null) return eng;
     const kor = await attemptLang("kor+eng");
     const merged = [eng.rawText, kor.rawText].filter(Boolean).join("\n");
-    const price = parseSigAmountFromText(merged);
+    const candidates: number[] = [];
+    if (eng.price != null) candidates.push(eng.price);
+    if (kor.price != null) candidates.push(kor.price);
+    const mergedPrice = parseSigAmountFromText(merged);
+    if (mergedPrice != null) candidates.push(mergedPrice);
+    let price = pickConsensusSigPrice(candidates);
+    if (price != null) price = refineCommonSigOcrMisreads(price);
     if (price != null) return { price, rawText: merged };
     return { price: null, rawText: merged || eng.rawText || kor.rawText };
   } catch (e) {
@@ -599,6 +690,46 @@ async function detectPriceFromBitmap(bitmap: ImageBitmap): Promise<number | null
   return d.price;
 }
 
+const GIF_OCR_MAX_FRAMES = 20;
+
+async function detectSigPriceFromGifBufferDetailed(
+  buf: ArrayBuffer,
+  sigName?: string
+): Promise<{ price: number | null; previewText?: string }> {
+  if (typeof window === "undefined" || !isGifArrayBuffer(buf)) {
+    return { price: null };
+  }
+  const decoded = await createBitmapsFromGifBuffer(buf, GIF_OCR_MAX_FRAMES);
+  if (!decoded?.bitmaps.length) return { price: null };
+
+  const candidates: number[] = [];
+  let previewText: string | undefined;
+  const hitCount = new Map<number, number>();
+
+  for (const bitmap of decoded.bitmaps) {
+    try {
+      const { price, previewText: pt } = await detectPriceFromBitmapDetailed(bitmap);
+      if (pt && !previewText) previewText = pt;
+      if (price == null) continue;
+      candidates.push(price);
+      const n = (hitCount.get(price) || 0) + 1;
+      hitCount.set(price, n);
+      if (n >= 2) break;
+    } finally {
+      try {
+        bitmap.close();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  const raw = pickConsensusSigPrice(candidates);
+  let price = raw != null ? refineCommonSigOcrMisreads(raw) : null;
+  price = applySigNamePriceFallback(sigName, price);
+  return { price, previewText };
+}
+
 export async function detectSigPriceFromImageUrl(imageUrl: string): Promise<number | null> {
   const meta = await detectSigPriceFromImageUrlDetailed(imageUrl);
   return meta.price;
@@ -623,6 +754,19 @@ export async function detectSigPriceFromImageUrlDetailed(
   if (!ocrSrc) {
     return { price: null, reason: "image_load_failed" };
   }
+
+  if (isProbablyGifPath(ocrSrc)) {
+    const { bytes, failedHttpStatus } = await fetchOcrResourceBytes(ocrSrc);
+    if (bytes && isGifArrayBuffer(bytes)) {
+      const gifResult = await detectSigPriceFromGifBufferDetailed(bytes, options?.sigName);
+      const gifPrice = applySigNamePriceFallback(options?.sigName, gifResult.price);
+      if (gifPrice != null) return { price: gifPrice };
+    }
+    if (failedHttpStatus === 404) {
+      return { price: null, reason: "image_not_found", imageHttpStatus: 404 };
+    }
+  }
+
   const { bitmap: loaded, failedHttpStatus } = await loadImageForOcr(ocrSrc);
   if (!loaded) {
     if (failedHttpStatus === 404) {
@@ -638,10 +782,14 @@ export async function detectSigPriceFromImageUrlDetailed(
   }
   try {
     const { price, previewText } = await detectPriceFromBitmapDetailed(bitmap);
-    if (price == null) {
+    const finalPrice = applySigNamePriceFallback(
+      options?.sigName,
+      price != null ? refineCommonSigOcrMisreads(price) : null
+    );
+    if (finalPrice == null) {
       return { price: null, reason: "no_amount_found", previewText: previewText || undefined };
     }
-    return { price };
+    return { price: finalPrice };
   } finally {
     try {
       bitmap.close();
@@ -654,6 +802,15 @@ export async function detectSigPriceFromImageUrlDetailed(
 export async function detectSigPriceFromImageFile(file: File): Promise<number | null> {
   if (typeof window === "undefined") return null;
   try {
+    const name = String(file.name || "").toLowerCase();
+    if (file.type === "image/gif" || name.endsWith(".gif")) {
+      const buf = await file.arrayBuffer();
+      if (isGifArrayBuffer(buf)) {
+        const fromGif = await detectSigPriceFromGifBufferDetailed(buf, file.name.replace(/\.[^.]+$/, ""));
+        const fb = applySigNamePriceFallback(file.name.replace(/\.[^.]+$/, ""), fromGif.price);
+        if (fb != null) return fb;
+      }
+    }
     const raw = await decodeFileToFirstFrameBitmap(file);
     const bitmap = await flattenToStaticImageBitmap(raw);
     try {
