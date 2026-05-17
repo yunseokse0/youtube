@@ -4,8 +4,38 @@
  * 2) tesseract.js(kor+eng) 폴백 — Safari/Firefox 등에서도 시도 가능
  */
 
+import { BUNDLED_SIG_PLACEHOLDER_URL, resolveSigImageUrl } from "@/lib/constants";
+
 export function isSigOcrSupported(): boolean {
   return typeof window !== "undefined";
+}
+
+/** 저장 URL·더미 치환 후에도 OCR이 실제 픽셀을 읽도록 절대 URL로 해석 */
+export function resolveSigImageUrlForOcr(imageUrl: string, name?: string): string {
+  const raw = String(imageUrl || "").trim();
+  if (!raw) return "";
+  if (raw.startsWith("data:") || raw.startsWith("blob:")) return raw;
+  const resolved = resolveSigImageUrl(String(name || "").trim(), raw);
+  const pick =
+    resolved && resolved !== BUNDLED_SIG_PLACEHOLDER_URL
+      ? resolved
+      : /^https?:\/\//i.test(raw)
+        ? raw
+        : raw.startsWith("/")
+          ? raw
+          : resolved;
+  if (typeof window === "undefined") return pick;
+  if (pick.startsWith("http://") || pick.startsWith("https://") || pick.startsWith("data:") || pick.startsWith("blob:")) {
+    return pick;
+  }
+  if (pick.startsWith("/")) {
+    try {
+      return new URL(pick, window.location.origin).href;
+    } catch {
+      return pick;
+    }
+  }
+  return pick;
 }
 
 /** Shape Detection API(TextDetector) 사용 가능 여부 (Chromium 등) */
@@ -451,11 +481,18 @@ export type SigOcrDetail = {
   imageHttpStatus?: number;
 };
 
-export async function detectSigPriceFromImageUrlDetailed(imageUrl: string): Promise<SigOcrDetail> {
+export async function detectSigPriceFromImageUrlDetailed(
+  imageUrl: string,
+  options?: { sigName?: string }
+): Promise<SigOcrDetail> {
   if (typeof window === "undefined") {
     return { price: null, reason: "unsupported_browser" };
   }
-  const { bitmap: loaded, failedHttpStatus } = await loadImageForOcr(imageUrl);
+  const ocrSrc = resolveSigImageUrlForOcr(imageUrl, options?.sigName);
+  if (!ocrSrc) {
+    return { price: null, reason: "image_load_failed" };
+  }
+  const { bitmap: loaded, failedHttpStatus } = await loadImageForOcr(ocrSrc);
   if (!loaded) {
     if (failedHttpStatus === 404) {
       return { price: null, reason: "image_not_found", imageHttpStatus: 404 };

@@ -564,7 +564,7 @@ export default function AdminSigSalesPage() {
     }
     setOcrBusyIds((prev) => ({ ...prev, [item.id]: true }));
     try {
-      const detail = await detectSigPriceFromImageUrlDetailed(src);
+      const detail = await detectSigPriceFromImageUrlDetailed(src, { sigName: item.name });
       if (detail.price == null) {
         if (detail.reason === "unsupported_browser") {
           setToast(`OCR 실행 불가: 브라우저에서만 사용할 수 있습니다. (${item.name})`);

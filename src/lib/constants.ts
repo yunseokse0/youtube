@@ -1,5 +1,9 @@
 import type { SigItem } from "@/types";
-import { isSigImagesPlaceholderOnlyEnv, isSigLocalAssetsOnlyMode } from "@/lib/sig-image-mode";
+import {
+  isSigImagesPlaceholderOnlyEnv,
+  isSigLocalAssetsOnlyMode,
+  shouldStripUntrustedExternalSigImageUrls,
+} from "@/lib/sig-image-mode";
 import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 
 /** 저장소에 미설정 시 완판 오버레이·관리 화면 기본 도장(`public` 실파일과 동일 경로 유지) */
@@ -55,6 +59,33 @@ function isCorruptSigImageUrlString(s: string): boolean {
 /** Twip·구 호스팅 등 배포본에 없는 경로 → 404만 연쇄 */
 function isPriorKnownDeadSigImagePath(s: string): boolean {
   return /\/sig_images(\/|$|\?)/i.test(s) || /^sig_images(\/|$|\?)/i.test(s);
+}
+
+/** 배포 오리진 절대 URL → `/uploads/sigs/...` 상대 경로(재배포·OCR 동일 오리진) */
+function toRelativeSigUploadPathIfApplicable(s: string): string {
+  try {
+    const u = new URL(s);
+    const m = u.pathname.match(/(\/uploads\/sigs\/[^?#]+)/i);
+    if (m?.[1]) return m[1];
+  } catch {
+    /* ignore */
+  }
+  return s;
+}
+
+/** OCR·표시에 쓸 수 있는 신뢰 https 시그 URL */
+export function isTrustedStoredSigImageHttpUrl(s: string): boolean {
+  try {
+    const u = new URL(s);
+    const path = u.pathname;
+    if (/\/uploads\/sigs\//i.test(path)) return true;
+    if (/\/api\/ftp\/image\//i.test(path)) return true;
+    if (/^https?:\/\/[^/]*supabase\.co\/storage\/v1\/object\/public\//i.test(s) && /\/sigs\//i.test(s)) return true;
+    if (/raw\.githubusercontent\.com/i.test(u.hostname) && /\/images\/sigs\//i.test(path)) return true;
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 /** 저장된 시그 이미지 경로 보정(`/images/sig/` 오타 → `/images/sigs/`) — 인벤·시그롤링·당첨 배열 모두 적용 */
@@ -114,9 +145,12 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
     if (isSigImagesPlaceholderOnlyEnv()) return BUNDLED_SIG_PLACEHOLDER_URL;
     return s;
   }
-  /** Supabase 시그 스토리지 외 http(s)는 일괄 더미(404·ERR_INSUFFICIENT_RESOURCES 완화). 필요 시 다시 업로드 */
   if (/^https?:\/\//i.test(s)) {
-    return BUNDLED_SIG_PLACEHOLDER_URL;
+    const relUpload = toRelativeSigUploadPathIfApplicable(s);
+    if (relUpload !== s) return relUpload;
+    if (isTrustedStoredSigImageHttpUrl(s)) return s;
+    if (shouldStripUntrustedExternalSigImageUrls()) return BUNDLED_SIG_PLACEHOLDER_URL;
+    return s;
   }
   return s;
 }

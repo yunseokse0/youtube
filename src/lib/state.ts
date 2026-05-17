@@ -1424,6 +1424,34 @@ export function isDefaultLikeState(state: AppState): boolean {
   return allDefaultNames && noData;
 }
 
+/** 멤버1·멤버2… 초기 슬롯만 있고 금액·후원이 없는 목록(인원 수는 1~30) */
+export function isDefaultPlaceholderMemberList(members: Member[] | null | undefined): boolean {
+  if (!Array.isArray(members) || members.length === 0) return true;
+  return members.every((m, i) => {
+    const n = i + 1;
+    const idOk = m.id === `m${n}`;
+    const nameOk = !String(m.name || "").trim() || m.name === `멤버${n}`;
+    return idOk && nameOk;
+  });
+}
+
+export function membersDifferByIds(a: Member[], b: Member[]): boolean {
+  const sig = (list: Member[]) =>
+    list
+      .map((m) => m.id)
+      .sort()
+      .join("\u001e");
+  return sig(a) !== sig(b);
+}
+
+/** 로컬에 실제 방송 데이터(커스텀 멤버·금액·후원)가 있는지 */
+export function hasMeaningfulBroadcastData(state: AppState): boolean {
+  if (!isDefaultLikeState(state)) return true;
+  if (totalCombined(state) > 0) return true;
+  if (normalizeDonorsArray(state.donors).length > 0) return true;
+  return false;
+}
+
 export function formatManThousand(n: number): string {
   const safe = Math.max(0, Math.round(n / 1000) * 1000);
   const man = Math.floor(safe / 10000);

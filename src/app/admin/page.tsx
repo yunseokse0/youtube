@@ -16,6 +16,9 @@ import {
   saveMissionsBackup,
   loadMissionsBackup,
   isDefaultLikeState,
+  isDefaultPlaceholderMemberList,
+  membersDifferByIds,
+  hasMeaningfulBroadcastData,
   normalizeDonorsArray,
   ensureMissionItems,
   appendDailyLog,
@@ -40,6 +43,7 @@ import {
   getUnifiedSigRollingItems,
   normalizeSigRolling,
   normalizeRouletteState,
+  normalizeMemberPositions,
   type OverlayConfig,
 } from "@/lib/state";
 import { useSSEConnection } from "@/lib/sse-client";
@@ -61,6 +65,7 @@ import { getEffectiveRemainingTime, pauseTimer, resumeTimer } from "@/lib/timer-
 import { appendAdminPreviewEmbedToOverlayUrl, presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
 import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
 import { detectSigPriceFromImageFile, detectSigPriceFromImageUrlDetailed } from "@/lib/sig-image-ocr";
+import { planSigBulkReupload } from "@/lib/sig-image-bulk";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 import { normalizeSigDedupKeyImageUrl } from "@/lib/sig-inventory-dedup";
 import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
@@ -262,6 +267,8 @@ export default function AdminPage() {
   const [ocrAllBusy, setOcrAllBusy] = useState(false);
   /** 일괄 OCR 진행률(현재 인덱스 / 전체) */
   const [ocrBatchProgress, setOcrBatchProgress] = useState<{ current: number; total: number } | null>(null);
+  const [sigBulkReuploadBusy, setSigBulkReuploadBusy] = useState(false);
+  const sigBulkReuploadInputRef = useRef<HTMLInputElement | null>(null);
   /** OCR 결과 — 시그 목록 바로 위에 표시(스크롤 시에도 확인 가능) */
   const [sigOcrBanner, setSigOcrBanner] = useState("");
   const [sigPresetMemberId, setSigPresetMemberId] = useState("");
@@ -630,12 +637,15 @@ export default function AdminPage() {
 
   const mergeIncomingStateSafely = useCallback((incoming: AppState, local: AppState): { merged: AppState; didPreserve: boolean } => {
     const incomingDefaultLike = isDefaultLikeState(incoming);
-    const localHasData = !isDefaultLikeState(local);
-    // 서버가 기본 데이터만 반환하면, 이미 로컬에 있는 기존 상태를 최대한 그대로 유지한다.
-    if (incomingDefaultLike && localHasData) {
+    const incomingPlaceholderMembers = isDefaultPlaceholderMemberList(incoming.members);
+    const localHasData = hasMeaningfulBroadcastData(local);
+    // 서버가 초기 멤버 슬롯(멤버1·2·3 등)만 있으면 로컬 멤버 구성을 유지한다.
+    if ((incomingDefaultLike || incomingPlaceholderMembers) && localHasData) {
       const merged = {
         ...incoming,
         ...local,
+        members: local.members,
+        memberPositions: normalizeMemberPositions(local.memberPositions, local.members),
         updatedAt: Math.max(incoming.updatedAt || 0, local.updatedAt || 0) || Date.now(),
       };
       return {
@@ -2329,7 +2339,7 @@ export default function AdminPage() {
     }
     setOcrBusyIds((prev) => ({ ...prev, [id]: true }));
     try {
-      const detail = await detectSigPriceFromImageUrlDetailed(src);
+      const detail = await detectSigPriceFromImageUrlDetailed(src, { sigName: name });
       if (detail.price == null) {
         if (detail.reason === "unsupported_browser") {
           pushOcrMsg(`OCR 실행 불가: 브라우저 클라이언트에서만 사용할 수 있습니다. (${label})`);
@@ -2377,7 +2387,9 @@ export default function AdminPage() {
         );
         setOcrBusyIds((prev) => ({ ...prev, [item.id]: true }));
         try {
-          const detail = await detectSigPriceFromImageUrlDetailed(String(item.imageUrl || "").trim());
+          const detail = await detectSigPriceFromImageUrlDetailed(String(item.imageUrl || "").trim(), {
+            sigName: item.name,
+          });
           if (detail.price != null) {
             priceById.set(item.id, detail.price);
           }
@@ -2410,6 +2422,76 @@ export default function AdminPage() {
       setOcrAllBusy(false);
     }
   }, [ocrAllBusy, state.sigInventory]);
+
+  const bulkReuploadSigInventoryFromFiles = useCallback(
+    async (files: FileList | File[] | null) => {
+      if (sigBulkReuploadBusy) return;
+      const list = Array.from(files || []).filter((f) => isSigRollingPickableFile(f));
+      if (!list.length) {
+        setSigOcrBanner("선택한 파일에 gif/png/jpg/webp가 없습니다. 파일명 끝 확장자를 확인해 주세요.");
+        return;
+      }
+      const items = (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID);
+      const plans = planSigBulkReupload(list, items);
+      if (!plans.length) {
+        setSigOcrBanner(
+          "매칭된 시그가 없습니다. 파일명을 시그 이름과 같게 하거나(예: 애교.gif), 재업로드가 필요한 시그 행이 있는지 확인해 주세요."
+        );
+        return;
+      }
+      const unmatched = list.length - plans.length;
+      const ok = window.confirm(
+        `시그 이미지 일괄 재업로드\n\n` +
+          `선택 파일: ${list.length}개\n` +
+          `적용 예정: ${plans.length}개 (이름 매칭 + 재업로드 필요 행)\n` +
+          (unmatched > 0 ? `매칭 안 됨: ${unmatched}개 (파일명·시그 이름 확인)\n` : "") +
+          `\nSupabase(또는 서버 저장소)에 올린 뒤 URL을 갱신하고, 가능하면 금액 OCR도 적용합니다. 계속할까요?`
+      );
+      if (!ok) return;
+
+      setSigBulkReuploadBusy(true);
+      let uploaded = 0;
+      let ocrOk = 0;
+      const failures: string[] = [];
+      try {
+        for (let i = 0; i < plans.length; i++) {
+          const { file, item, matchedBy } = plans[i];
+          setSigOcrBanner(
+            `일괄 재업로드 ${i + 1}/${plans.length}: ${item.name} ← ${file.name}${matchedBy === "fallback" ? " (순서)" : ""}`
+          );
+          const url = await uploadSigImageFile(file);
+          if (!url) {
+            failures.push(file.name);
+            continue;
+          }
+          uploaded += 1;
+          let price: number | undefined;
+          const ocrPrice = await detectSigPriceFromImageFile(file);
+          if (ocrPrice != null) {
+            price = ocrPrice;
+            ocrOk += 1;
+          }
+          updateSigItem(item.id, {
+            imageUrl: url,
+            isActive: true,
+            isRolling: true,
+            ...(price != null ? { price } : {}),
+          });
+          await new Promise((r) => setTimeout(r, 80));
+        }
+        const summary =
+          `일괄 재업로드 완료: 업로드 ${uploaded}/${plans.length}건 · OCR 금액 ${ocrOk}건` +
+          (failures.length ? ` · 실패: ${failures.slice(0, 4).join(", ")}${failures.length > 4 ? "…" : ""}` : "") +
+          (unmatched > 0 ? ` · 미매칭 파일 ${unmatched}개` : "");
+        setSigExcelResult(summary);
+        setSigOcrBanner(summary);
+      } finally {
+        setSigBulkReuploadBusy(false);
+        if (sigBulkReuploadInputRef.current) sigBulkReuploadInputRef.current.value = "";
+      }
+    },
+    [sigBulkReuploadBusy, state.sigInventory, updateSigItem]
+  );
 
   const clearSigInventoryImagesOnly = useCallback(() => {
     if (
@@ -3744,17 +3826,55 @@ export default function AdminPage() {
     const remote = await loadStateFromApi(user?.id);
     if (!remote) {
       setSyncStatus("error");
-      if (typeof window !== "undefined") window.alert("서버에서 상태를 가져오지 못했습니다.");
+      if (typeof window !== "undefined") {
+        window.alert(
+          "서버에서 상태를 가져오지 못했습니다.\n" +
+            "로그인·네트워크·Render 한도(402 등)를 확인한 뒤 다시 시도하세요.\n" +
+            "로컬 내용을 서버에 올리려면 멤버 보드에서 수정 후 잠시 기다리면 자동 저장됩니다."
+        );
+      }
       return;
     }
-    stateUpdatedAtRef.current = remote.updatedAt || 0;
-    pendingUnsyncedRef.current = false;
-    setState(remote);
-    if (Array.isArray(remote.overlayPresets)) {
-      setPresets(remote.overlayPresets as OverlayPreset[]);
-      try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(remote.overlayPresets)); } catch {}
+    const local = stateRef.current;
+    const { merged, didPreserve } = mergeIncomingStateSafely(remote, local);
+
+    if (
+      !didPreserve &&
+      membersDifferByIds(local.members || [], remote.members || []) &&
+      typeof window !== "undefined"
+    ) {
+      const localNames = (local.members || []).map((m) => m.name || m.id).join(", ");
+      const remoteNames = (remote.members || []).map((m) => m.name || m.id).join(", ");
+      const ok = window.confirm(
+        `서버에 저장된 멤버 ${remote.members.length}명으로 로컬 ${local.members.length}명 설정을 덮어씁니다.\n\n` +
+          `로컬: ${localNames || "(없음)"}\n` +
+          `서버: ${remoteNames || "(없음)"}\n\n` +
+          `로컬만 바꾼 내용은 사라질 수 있습니다. 계속할까요?`
+      );
+      if (!ok) {
+        setSyncStatus("synced");
+        return;
+      }
     }
-    try { window.localStorage.setItem(storageKey(user?.id), JSON.stringify(remote)); } catch {}
+
+    const toApply = didPreserve ? merged : remote;
+    stateUpdatedAtRef.current = toApply.updatedAt || 0;
+    pendingUnsyncedRef.current = false;
+    setState(toApply);
+    if (didPreserve) {
+      persistState(toApply);
+      if (typeof window !== "undefined") {
+        window.alert(
+          "서버 데이터가 비어 있거나 초기 멤버 슬롯(멤버1·2·3)만 있어, 현재 로컬 멤버 구성을 유지했습니다.\n" +
+            "이 구성을 서버에 반영하려면 멤버 보드에서 한 번 더 저장되도록 잠시 기다리거나 금액을 살짝 수정해 보세요."
+        );
+      }
+    }
+    if (Array.isArray(toApply.overlayPresets)) {
+      setPresets(toApply.overlayPresets as OverlayPreset[]);
+      try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(toApply.overlayPresets)); } catch {}
+    }
+    try { window.localStorage.setItem(storageKey(user?.id), JSON.stringify(toApply)); } catch {}
     setSyncStatus("synced");
   };
   const runPullRefresh = async () => {
@@ -6178,6 +6298,15 @@ export default function AdminPage() {
                   </button>
                   <button
                     type="button"
+                    className="px-3 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-sm disabled:opacity-50"
+                    disabled={sigBulkReuploadBusy}
+                    title="siggif 폴더 등 — 파일명을 시그 이름과 맞추면 자동 매칭(애교.gif)"
+                    onClick={() => sigBulkReuploadInputRef.current?.click()}
+                  >
+                    {sigBulkReuploadBusy ? "일괄 재업로드 중…" : "PC 시그 일괄 재업로드"}
+                  </button>
+                  <button
+                    type="button"
                     className="px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-sm"
                     title="서버 환경변수 FTP_HOST, FTP_USER, FTP_PASSWORD 설정 시 D:\\siggif 등 원격 폴더 목록"
                     onClick={() => {
@@ -6388,8 +6517,17 @@ export default function AdminPage() {
                       </div>
                       <button
                         type="button"
+                        className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-bold text-white shadow hover:bg-emerald-600 disabled:opacity-50"
+                        disabled={sigBulkReuploadBusy || ocrAllBusy}
+                        title="PC 폴더(siggif 등)에서 여러 GIF 선택 · 파일명=시그 이름(예: 애교.gif)"
+                        onClick={() => sigBulkReuploadInputRef.current?.click()}
+                      >
+                        {sigBulkReuploadBusy ? "일괄 재업로드 중…" : "PC 시그 일괄 재업로드"}
+                      </button>
+                      <button
+                        type="button"
                         className="rounded bg-violet-600 px-3 py-1.5 text-sm font-bold text-white shadow hover:bg-violet-500 disabled:opacity-50"
-                        disabled={ocrAllBusy}
+                        disabled={ocrAllBusy || sigBulkReuploadBusy}
                         onClick={() => void runOcrForAllSigItems()}
                       >
                         {ocrAllBusy && ocrBatchProgress
@@ -6399,7 +6537,7 @@ export default function AdminPage() {
                       <button
                         type="button"
                         className="rounded bg-rose-800/90 px-3 py-1.5 text-sm font-semibold text-white shadow hover:bg-rose-700 disabled:opacity-50"
-                        disabled={ocrAllBusy}
+                        disabled={ocrAllBusy || sigBulkReuploadBusy}
                         onClick={() => clearSigInventoryImagesOnly()}
                       >
                         시그 이미지만 지우기
@@ -6662,6 +6800,16 @@ export default function AdminPage() {
                 className="hidden"
                 accept=".gif,.png,.jpg,.jpeg,.webp,image/gif,image/png,image/jpeg,image/webp"
                 onChange={onSigLocalImagePicked}
+              />
+              <input
+                ref={sigBulkReuploadInputRef}
+                type="file"
+                className="hidden"
+                multiple
+                accept=".gif,.png,.jpg,.jpeg,.webp,image/gif,image/png,image/jpeg,image/webp"
+                onChange={(e) => {
+                  void bulkReuploadSigInventoryFromFiles(e.target.files);
+                }}
               />
               {sigBundledOpen ? (
                 <div

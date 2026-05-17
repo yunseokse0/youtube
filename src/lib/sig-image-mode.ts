@@ -30,3 +30,9 @@ export function shouldServeSigImagesFromDisk(): boolean {
   const v = String(process.env.SIG_SERVE_SIG_IMAGES_FROM_DISK ?? "").trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes";
 }
+
+/** true 이면 Supabase·/uploads·GitHub 시그 경로 외 https URL을 저장 시 더미로 치환(구 동작) */
+export function shouldStripUntrustedExternalSigImageUrls(): boolean {
+  const v = String(process.env.NEXT_PUBLIC_SIG_STRIP_EXTERNAL_IMAGE_URLS ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
