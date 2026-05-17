@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_DONATION_GOAL,
-  DONATION_GOAL_FORCE_LOCK,
+  GOAL_AUTO_INCREASE_STEP,
+  isDonationGoalAutoEscalateEnabled,
   normalizeOverlayPresetDonationGoals,
   nextGoalTenPercentIncrease,
   resetOverlayPresetsGoalForDonationInit,
@@ -9,14 +10,18 @@ import {
 } from "./goal-preset-math";
 
 describe("normalizeOverlayPresetDonationGoals", () => {
-  it("목표바 ON 프리셋을 200만 원으로 강제한다", () => {
-    expect(DONATION_GOAL_FORCE_LOCK).toBe(true);
+  it("기준선 200만 원, 3천만 원은 200만으로, 상향된 goal 은 유지", () => {
+    expect(isDonationGoalAutoEscalateEnabled()).toBe(true);
+    expect(GOAL_AUTO_INCREASE_STEP).toBe(DEFAULT_DONATION_GOAL);
     expect(
       normalizeOverlayPresetDonationGoals([
-        { id: "a", showGoal: true, goal: "30000000", goalBaseline: "36000000" },
-        { id: "b", showGoal: false, goal: "5000000" },
-      ])[0]
-    ).toMatchObject({ goal: String(DEFAULT_DONATION_GOAL), goalBaseline: String(DEFAULT_DONATION_GOAL) });
+        { id: "a", showGoal: true, goal: "30000000", goalBaseline: "30000000" },
+        { id: "b", showGoal: true, goal: "4000000", goalBaseline: "2000000" },
+      ])
+    ).toEqual([
+      { id: "a", showGoal: true, goal: "2000000", goalBaseline: "2000000" },
+      { id: "b", showGoal: true, goal: "4000000", goalBaseline: "2000000" },
+    ]);
   });
 });
 

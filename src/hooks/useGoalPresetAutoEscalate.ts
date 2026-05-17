@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { isDonationGoalAutoEscalateEnabled, nextGoalTenPercentIncrease } from "@/lib/goal-preset-math";
+import {
+  DEFAULT_DONATION_GOAL,
+  isDonationGoalAutoEscalateEnabled,
+  nextGoalTenPercentIncrease,
+} from "@/lib/goal-preset-math";
 
 const PATCH_COOLDOWN_MS = 1400;
 
@@ -50,12 +54,8 @@ export function useGoalPresetAutoEscalate(args: Args): void {
     const updated = presets.map((raw) => {
       const x = raw as Record<string, unknown>;
       if (String(x.id || "") !== args.presetId) return raw;
-      const currentGoalStr = String(x.goal ?? "").trim();
-      const existingBaseline = x.goalBaseline != null ? String(x.goalBaseline).trim() : "";
-      /** 첫 자동 상향 전 목표를 고정해 두었다가 후원 초기화 시 여기로 되돌린다 */
-      const goalBaseline =
-        existingBaseline !== "" ? existingBaseline : currentGoalStr !== "" ? currentGoalStr : String(goal);
-      return { ...x, goal: String(nextGoal), goalBaseline };
+      /** 후원 초기화 시 항상 200만 원 기준선으로 복구 */
+      return { ...x, goal: String(nextGoal), goalBaseline: String(DEFAULT_DONATION_GOAL) };
     });
 
     void fetch(`/api/state?user=${encodeURIComponent(args.userId)}`, {

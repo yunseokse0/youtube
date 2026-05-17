@@ -1,33 +1,52 @@
 /** 통합 오버레이 프리셋 목표 자동 상향·후원 초기화용 */
 
-/** 기본·강제 후원 목표 금액(원) */
+/** 기본 후원 목표·초기화 기준선(원) */
 export const DEFAULT_DONATION_GOAL = 2_000_000;
 
-/** true: 목표바 프리셋 goal·goalBaseline 을 항상 {@link DEFAULT_DONATION_GOAL} 로 고정, 자동 상향 비활성 */
-export const DONATION_GOAL_FORCE_LOCK = true;
+/** 예전 3천만 원 목표 — 로드 시 {@link DEFAULT_DONATION_GOAL} 로 맞춤 */
+const LEGACY_DONATION_GOAL_30M = 30_000_000;
 
-/** 100% 달성 시 목표에 더하는 고정 금액(원) — 1천만 원 미만·이상 공통 */
+/** 100% 달성 시 목표에 더하는 고정 금액(원) — 기본 목표와 동일(200만 원씩 상향) */
 export const GOAL_AUTO_INCREASE_STEP = 2_000_000;
 
 function presetShowsDonationGoal(p: Record<string, unknown>): boolean {
   return p.showGoal === true || p.showGoal === "true" || p.showGoal === 1 || p.showGoal === "1";
 }
 
-/** 오버레이 프리셋 목표 금액 — {@link DONATION_GOAL_FORCE_LOCK} 시 목표바 ON 프리셋을 200만 원으로 강제 */
+function parseGoalAmount(raw: unknown): number | null {
+  const v = String(raw ?? "").trim().replace(/,/g, "");
+  if (!v) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.floor(n) : null;
+}
+
+function normalizeGoalAmount(raw: unknown): number {
+  const n = parseGoalAmount(raw);
+  if (n == null || n <= 0) return DEFAULT_DONATION_GOAL;
+  if (n === LEGACY_DONATION_GOAL_30M) return DEFAULT_DONATION_GOAL;
+  return n;
+}
+
+/**
+ * 목표바 ON 프리셋: 기준선(goalBaseline)은 200만 원, 현재 goal 은 상향 이력 유지(4M·6M…).
+ * 비어 있거나 3천만 원이면 200만 원으로 맞춤.
+ */
 export function normalizeOverlayPresetDonationGoals(presets: unknown[]): unknown[] {
   if (!Array.isArray(presets)) return [];
-  const forced = String(DEFAULT_DONATION_GOAL);
+  const baselineStr = String(DEFAULT_DONATION_GOAL);
   return presets.map((raw) => {
     if (!raw || typeof raw !== "object") return raw;
     const p = raw as Record<string, unknown>;
-    if (!DONATION_GOAL_FORCE_LOCK) return { ...p };
     if (!presetShowsDonationGoal(p)) return { ...p };
-    return { ...p, goal: forced, goalBaseline: forced };
+    let goal = normalizeGoalAmount(p.goal);
+    if (goal < DEFAULT_DONATION_GOAL) goal = DEFAULT_DONATION_GOAL;
+    return { ...p, goal: String(goal), goalBaseline: baselineStr };
   });
 }
 
+/** 후원 합계 ≥ 목표 시 +200만 원 자동 상향 */
 export function isDonationGoalAutoEscalateEnabled(): boolean {
-  return !DONATION_GOAL_FORCE_LOCK;
+  return true;
 }
 
 /**

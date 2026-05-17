@@ -391,7 +391,7 @@ export default function AdminPage() {
     { name: "표만 (엑셀)", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true } },
     { name: "멤버 목록만", preset: { showMembers: true, showTotal: false, showBottomDonors: false, tickerInMembers: false } },
     { name: "총합만", preset: { showMembers: false, showTotal: true, totalSize: "60" } },
-    { name: "목표 프로그레스바", preset: { showMembers: false, showTotal: false, showGoal: true, goal: "500000", goalLabel: "후원", goalWidth: "500" } },
+    { name: "목표 프로그레스바", preset: { showMembers: false, showTotal: false, showGoal: true, goal: "2000000", goalLabel: "후원", goalWidth: "500" } },
     { name: "개인 골", preset: { showMembers: false, showTotal: false, showPersonalGoal: true, personalGoalAnchor: "tl" } },
     { name: "미션 전광판", preset: { showMembers: false, showTotal: false, showMission: true, missionAnchor: "bc" } },
   ];

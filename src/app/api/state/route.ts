@@ -85,7 +85,7 @@ function mergeRouletteUiPrefsOntoCurrent(
   return out;
 }
 
-function applyForcedDonationGoalState(state: AppState): AppState {
+function applyDonationGoalPresetNormalization(state: AppState): AppState {
   const presets = normalizeOverlayPresetDonationGoals(
     Array.isArray(state.overlayPresets) ? state.overlayPresets : []
   );
@@ -187,7 +187,7 @@ export async function GET(req: Request) {
     }
     const { base, token } = getRedisEnv();
     if (!base || !token) {
-      const state = applyForcedDonationGoalState(getServerMemoryAppState() || defaultState());
+      const state = applyDonationGoalPresetNormalization(getServerMemoryAppState() || defaultState());
       if (!getServerMemoryAppState()) {
         logger.warn('Redis 미설정 - 메모리만 사용 (서버 재시작 시 데이터 초기화됨. UPSTASH_REDIS_* 환경변수 설정 권장)');
       }
@@ -222,7 +222,7 @@ export async function GET(req: Request) {
     if (!state && !getServerMemoryAppState()) {
       logger.warn('Redis/메모리 모두 비어있음 - 기본값 반환 (서버 재시작 시 발생. Redis 설정 권장)', { userId });
     }
-    let mergedForResponse = applyForcedDonationGoalState(effective as AppState);
+    let mergedForResponse = applyDonationGoalPresetNormalization(effective as AppState);
     /** 위에서 이미 동일 키로 조회한 `effective`를 쓴다. GET당 Upstash 2회 호출은 지연·대기열을 키워 pending 폭주에 기여함 */
     try {
       const rouletteStateSource = effective as AppState;
@@ -254,7 +254,7 @@ export async function GET(req: Request) {
       }
     } catch {}
 
-    mergedForResponse = applyForcedDonationGoalState(mergedForResponse);
+    mergedForResponse = applyDonationGoalPresetNormalization(mergedForResponse);
 
     logger.debug('Redis 상태 반환', { hasState: !!state, usedMemory: !!getServerMemoryAppState(), userId });
     const body =
@@ -271,7 +271,7 @@ export async function GET(req: Request) {
     });
   } catch (error) {
     logger.error('상태 조회 실패', error);
-    const fallback = applyForcedDonationGoalState(getServerMemoryAppState() || defaultState());
+    const fallback = applyDonationGoalPresetNormalization(getServerMemoryAppState() || defaultState());
     const body =
       pick === STATE_PICK_SIG_INVENTORY
         ? { updatedAt: fallback.updatedAt, sigInventory: fallback.sigInventory || [] }
@@ -305,7 +305,7 @@ export async function POST(req: Request) {
       ? mergeDonorsForMultiTabSave(body.donors || [], baseState.donors)
       : baseState.donors;
     const merged = mergePartialState(baseState, body, userId);
-    const next: AppState = applyForcedDonationGoalState({
+    const next: AppState = applyDonationGoalPresetNormalization({
       ...merged,
       donors: mergedDonors,
       updatedAt: Date.now(),
