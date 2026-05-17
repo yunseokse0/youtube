@@ -15,4 +15,11 @@ describe("parseSigAmountFromText", () => {
     expect(parseSigAmountFromText("특가 7.7만")).toBe(77000);
     expect(parseSigAmountFromText("350 천 원")).toBe(350000);
   });
+
+  it("OCR 잡음·원 없는 천단위·붙은 만원을 인식한다", () => {
+    expect(parseSigAmountFromText("7 7 , 0 0 0")).toBe(77000);
+    expect(parseSigAmountFromText("77.000")).toBe(77000);
+    expect(parseSigAmountFromText("5O,OOO")).toBe(50000);
+    expect(parseSigAmountFromText("12.5만원")).toBe(125000);
+  });
 });

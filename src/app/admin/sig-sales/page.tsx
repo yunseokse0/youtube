@@ -22,7 +22,7 @@ import {
   canonicalSigIdFromWheelSliceId,
 } from "@/lib/sig-roulette";
 import { useSigSalesState } from "@/hooks/useSigSalesState";
-import { detectSigPriceFromImageUrlDetailed } from "@/lib/sig-image-ocr";
+import { detectSigPriceFromImageUrlDetailed, terminateSharedSigOcrWorker } from "@/lib/sig-image-ocr";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 
 const STEP_CONFIRM_PAUSE_MS = 3000;
@@ -564,7 +564,7 @@ export default function AdminSigSalesPage() {
     }
     setOcrBusyIds((prev) => ({ ...prev, [item.id]: true }));
     try {
-      const detail = await detectSigPriceFromImageUrlDetailed(src, { sigName: item.name });
+      const detail = await detectSigPriceFromImageUrlDetailed(src, { sigName: item.name || item.id });
       if (detail.price == null) {
         if (detail.reason === "unsupported_browser") {
           setToast(`OCR 실행 불가: 브라우저에서만 사용할 수 있습니다. (${item.name})`);
@@ -607,11 +607,13 @@ export default function AdminSigSalesPage() {
         setToast(`OCR 일괄 진행: ${i + 1}/${targets.length}${item.name ? ` · ${item.name}` : ""}`);
         setOcrBusyIds((prev) => ({ ...prev, [item.id]: true }));
         try {
-          const detail = await detectSigPriceFromImageUrlDetailed(String(item.imageUrl || "").trim());
+          const detail = await detectSigPriceFromImageUrlDetailed(String(item.imageUrl || "").trim(), {
+            sigName: item.name,
+          });
           if (detail.price != null) {
             priceById.set(item.id, detail.price);
           }
-          await new Promise((r) => setTimeout(r, 16));
+          await new Promise((r) => setTimeout(r, 80));
         } finally {
           setOcrBusyIds((prev) => ({ ...prev, [item.id]: false }));
         }
@@ -630,6 +632,7 @@ export default function AdminSigSalesPage() {
       }
       setToast(`OCR 일괄 완료: 성공 ${ok}건 / 실패 ${fail}건`);
     } finally {
+      await terminateSharedSigOcrWorker();
       setOcrBatchProgress(null);
       setOcrAllBusy(false);
     }

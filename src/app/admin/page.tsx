@@ -64,7 +64,11 @@ import { formatSigMatchStat, getSigMatchRankings } from "@/lib/settlement-utils"
 import { getEffectiveRemainingTime, pauseTimer, resumeTimer } from "@/lib/timer-utils";
 import { appendAdminPreviewEmbedToOverlayUrl, presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
 import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
-import { detectSigPriceFromImageFile, detectSigPriceFromImageUrlDetailed } from "@/lib/sig-image-ocr";
+import {
+  detectSigPriceFromImageFile,
+  detectSigPriceFromImageUrlDetailed,
+  terminateSharedSigOcrWorker,
+} from "@/lib/sig-image-ocr";
 import { planSigBulkReupload } from "@/lib/sig-image-bulk";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 import { normalizeSigDedupKeyImageUrl } from "@/lib/sig-inventory-dedup";
@@ -2418,6 +2422,7 @@ export default function AdminPage() {
       setSigExcelResult(summary);
       setSigOcrBanner(summary);
     } finally {
+      await terminateSharedSigOcrWorker();
       setOcrBatchProgress(null);
       setOcrAllBusy(false);
     }

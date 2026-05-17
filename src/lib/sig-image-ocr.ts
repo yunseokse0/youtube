@@ -4,7 +4,11 @@
  * 2) tesseract.js(kor+eng) 폴백 — Safari/Firefox 등에서도 시도 가능
  */
 
-import { BUNDLED_SIG_PLACEHOLDER_URL, resolveSigImageUrl } from "@/lib/constants";
+import {
+  BUNDLED_SIG_PLACEHOLDER_URL,
+  resolveSigImageUrl,
+  rewriteSigPathForRollingGithubIfConfigured,
+} from "@/lib/constants";
 
 export function isSigOcrSupported(): boolean {
   return typeof window !== "undefined";
@@ -28,6 +32,10 @@ export function resolveSigImageUrlForOcr(imageUrl: string, name?: string): strin
   if (pick.startsWith("http://") || pick.startsWith("https://") || pick.startsWith("data:") || pick.startsWith("blob:")) {
     return pick;
   }
+  if (pick.startsWith("/images/sigs/")) {
+    const gh = rewriteSigPathForRollingGithubIfConfigured(pick);
+    if (/^https?:\/\//i.test(gh)) return gh;
+  }
   if (pick.startsWith("/")) {
     try {
       return new URL(pick, window.location.origin).href;
@@ -36,6 +44,29 @@ export function resolveSigImageUrlForOcr(imageUrl: string, name?: string): strin
     }
   }
   return pick;
+}
+
+/** OCR 자주 틀리는 글자 → 숫자 */
+function fixOcrDigitConfusions(s: string): string {
+  return s
+    .replace(/[OoQＯｏ]/g, "0")
+    .replace(/[Il|Ｉｌ|丨]/g, "1")
+    .replace(/[Ss\$]/g, "5")
+    .replace(/[Bb]/g, "8")
+    .replace(/[Zz]/g, "2")
+    .replace(/[gG]/g, "9");
+}
+
+/** "7 7 , 0 0 0" → "77,000" */
+function collapseSpacedDigits(s: string): string {
+  let prev = "";
+  let cur = s;
+  for (let n = 0; n < 8; n++) {
+    cur = cur.replace(/(\d)[\s\u00a0·•]+(?=\d)/g, "$1");
+    if (cur === prev) break;
+    prev = cur;
+  }
+  return cur;
 }
 
 /** Shape Detection API(TextDetector) 사용 가능 여부 (Chromium 등) */
@@ -49,6 +80,8 @@ function normalizeOcrTextForAmountParse(raw: string): string {
   s = s.replace(/[\uFF10-\uFF19]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xff10 + 0x30));
   s = s.replace(/\uFF0C/g, ","); // 전각 쉼표 → 반각
   s = s.replace(/[₩￦]/g, "원");
+  s = fixOcrDigitConfusions(s);
+  s = collapseSpacedDigits(s);
   return s.replace(/\s+/g, " ").trim();
 }
 
@@ -100,6 +133,21 @@ export function parseSigAmountFromText(rawText: string): number | null {
     const digits = String(m[1] || "").replace(/[^\d]/g, "");
     const amount = Number(digits);
     if (Number.isFinite(amount) && amount >= 1000 && amount <= 100000000) candidates.push(amount);
+  }
+
+  /** OCR이 "원" 없이 77.000 / 77,000 만 출력하는 경우 */
+  const groupedThousandsRegex = /(\d{1,3})[,.](\d{3})(?!\d)/g;
+  for (const m of text.matchAll(groupedThousandsRegex)) {
+    const amount = Number(`${m[1] || ""}${m[2] || ""}`);
+    if (Number.isFinite(amount) && amount >= 1000 && amount <= 100000000) candidates.push(amount);
+  }
+
+  const manTightRegex = /(\d+(?:\.\d+)?)만원?/g;
+  for (const m of text.matchAll(manTightRegex)) {
+    const n = parseFloat(String(m[1] || "").replace(/,/g, ""));
+    if (!Number.isFinite(n)) continue;
+    const amount = Math.round(n * 10000);
+    if (amount >= 1000 && amount <= 100000000) candidates.push(amount);
   }
 
   const numberRegex = /\d[\d,\.\s]{2,}/g;
@@ -242,7 +290,7 @@ async function loadImageForOcr(imageUrl: string): Promise<SigImageLoadInfo> {
 
 /** GIF/WebP 애니 등 첫 프레임으로 고정 + OCR용 업스케일 */
 const OCR_MAX_SIDE = 2400;
-const OCR_MIN_SHORT_EDGE = 360;
+const OCR_MIN_SHORT_EDGE = 480;
 
 async function flattenToStaticImageBitmap(bitmap: ImageBitmap): Promise<ImageBitmap> {
   if (bitmap.width < 1 || bitmap.height < 1) return bitmap;
@@ -270,6 +318,69 @@ function canvasToGrayscale(canvas: HTMLCanvasElement): HTMLCanvasElement {
   }
   ctx.putImageData(imgData, 0, 0);
   return out;
+}
+
+/** 배경이 어두운 시그 GIF용 이진화(숫자 대비 강화) */
+function canvasToBinary(canvas: HTMLCanvasElement): HTMLCanvasElement {
+  const out = document.createElement("canvas");
+  out.width = canvas.width;
+  out.height = canvas.height;
+  const ctx = out.getContext("2d");
+  if (!ctx) return canvas;
+  ctx.drawImage(canvas, 0, 0);
+  const { width: w, height: h } = out;
+  const imgData = ctx.getImageData(0, 0, w, h);
+  const d = imgData.data;
+  let sum = 0;
+  const lum = new Float32Array(w * h);
+  for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+    const y = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    lum[p] = y;
+    sum += y;
+  }
+  const mean = sum / Math.max(1, lum.length);
+  const threshold = mean * 0.9;
+  const invert = mean < 110;
+  for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+    let v = lum[p] > threshold ? 255 : 0;
+    if (invert) v = 255 - v;
+    d[i] = d[i + 1] = d[i + 2] = v;
+    d[i + 3] = 255;
+  }
+  ctx.putImageData(imgData, 0, 0);
+  return out;
+}
+
+function cropCanvasFraction(
+  canvas: HTMLCanvasElement,
+  y0Frac: number,
+  y1Frac: number,
+  x0Frac = 0,
+  x1Frac = 1
+): HTMLCanvasElement {
+  const x0 = Math.max(0, Math.floor(canvas.width * x0Frac));
+  const x1 = Math.min(canvas.width, Math.ceil(canvas.width * x1Frac));
+  const y0 = Math.max(0, Math.floor(canvas.height * y0Frac));
+  const y1 = Math.min(canvas.height, Math.ceil(canvas.height * y1Frac));
+  const w = Math.max(1, x1 - x0);
+  const h = Math.max(1, y1 - y0);
+  const out = document.createElement("canvas");
+  out.width = w;
+  out.height = h;
+  const ctx = out.getContext("2d");
+  if (!ctx) return canvas;
+  ctx.drawImage(canvas, x0, y0, w, h, 0, 0, w, h);
+  return out;
+}
+
+function buildOcrCanvasSet(colorCanvas: HTMLCanvasElement): HTMLCanvasElement[] {
+  const gray = canvasToGrayscale(colorCanvas);
+  const binary = canvasToBinary(colorCanvas);
+  const bottom = cropCanvasFraction(colorCanvas, 0.45, 1, 0.05, 0.95);
+  const bottomBin = canvasToBinary(bottom);
+  const center = cropCanvasFraction(colorCanvas, 0.25, 0.85, 0.08, 0.92);
+  const centerBin = canvasToBinary(center);
+  return [colorCanvas, gray, binary, bottom, bottomBin, center, centerBin];
 }
 
 function buildScaledColorCanvasForOcr(bitmap: ImageBitmap): HTMLCanvasElement | null {
@@ -329,6 +440,41 @@ async function decodeFileToFirstFrameBitmap(file: File): Promise<ImageBitmap> {
 
 const OCR_SCALE_STEPS = [1, 1.5, 2, 2.5, 3] as const;
 
+type TessWorker = {
+  setParameters: (p: Record<string, unknown>) => Promise<unknown>;
+  recognize: (input: HTMLCanvasElement) => Promise<{ data: { text: string } }>;
+  terminate: () => Promise<unknown>;
+};
+
+let sharedTesseractWorker: TessWorker | null = null;
+let sharedTesseractLang: string | null = null;
+
+async function getSharedTesseractWorker(langs: string): Promise<TessWorker> {
+  if (sharedTesseractWorker && sharedTesseractLang === langs) {
+    return sharedTesseractWorker;
+  }
+  await terminateSharedSigOcrWorker();
+  const { createWorker } = await import("tesseract.js");
+  sharedTesseractWorker = (await createWorker(langs, undefined, {
+    logger: () => {},
+    errorHandler: () => {},
+  })) as unknown as TessWorker;
+  sharedTesseractLang = langs;
+  return sharedTesseractWorker;
+}
+
+/** 일괄 OCR 종료 시 wasm 워커 정리 */
+export async function terminateSharedSigOcrWorker(): Promise<void> {
+  if (!sharedTesseractWorker) return;
+  try {
+    await sharedTesseractWorker.terminate();
+  } catch {
+    /* ignore */
+  }
+  sharedTesseractWorker = null;
+  sharedTesseractLang = null;
+}
+
 async function detectPriceFromBitmapNative(bitmap: ImageBitmap): Promise<number | null> {
   const TD = (window as unknown as { TextDetector?: new (features: string[]) => { detect: (input: ImageBitmap | HTMLCanvasElement) => Promise<Array<{ rawValue?: string }>> } }).TextDetector;
   if (!TD || bitmap.width < 1 || bitmap.height < 1) return null;
@@ -365,77 +511,62 @@ async function detectPriceFromBitmapNative(bitmap: ImageBitmap): Promise<number 
   return null;
 }
 
+async function recognizeAmountOnCanvases(
+  worker: TessWorker,
+  canvases: HTMLCanvasElement[],
+  modes: number[]
+): Promise<{ price: number | null; rawText: string }> {
+  const texts: string[] = [];
+  for (const canvas of canvases) {
+    for (const psm of modes) {
+      try {
+        await worker.setParameters({
+          tessedit_pageseg_mode: psm,
+        });
+        const {
+          data: { text },
+        } = await worker.recognize(canvas);
+        const trimmed = String(text || "").trim();
+        if (trimmed) texts.push(trimmed);
+        const price = parseSigAmountFromText(trimmed);
+        if (price != null) return { price, rawText: trimmed };
+      } catch {
+        /* 다음 모드·캔버스 시도 */
+      }
+    }
+  }
+  const merged = texts.join("\n");
+  const price = parseSigAmountFromText(merged);
+  return { price, rawText: merged };
+}
+
 async function detectPriceWithTesseractDetailed(bitmap: ImageBitmap): Promise<{ price: number | null; rawText: string }> {
   if (typeof window === "undefined") return { price: null, rawText: "" };
 
   const colorCanvas = buildScaledColorCanvasForOcr(bitmap);
   if (!colorCanvas) return { price: null, rawText: "" };
 
-  const makeDownscaled = (src: HTMLCanvasElement, maxSide: number): HTMLCanvasElement => {
-    const longest = Math.max(src.width, src.height);
-    if (longest <= maxSide) return src;
-    const r = maxSide / longest;
-    const w = Math.max(1, Math.floor(src.width * r));
-    const h = Math.max(1, Math.floor(src.height * r));
-    const c = document.createElement("canvas");
-    c.width = w;
-    c.height = h;
-    const ctx = c.getContext("2d");
-    if (!ctx) return src;
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(src, 0, 0, w, h);
-    return c;
-  };
-
-  const grayCanvas = canvasToGrayscale(colorCanvas);
-  const smallColorCanvas = makeDownscaled(colorCanvas, 1400);
-  const smallGrayCanvas = makeDownscaled(grayCanvas, 1400);
+  const canvases = buildOcrCanvasSet(colorCanvas);
+  const { PSM } = await import("tesseract.js");
+  const modes: number[] = [PSM.SINGLE_LINE, PSM.SINGLE_BLOCK, PSM.SPARSE_TEXT, PSM.AUTO].map((m) =>
+    Number(m)
+  );
 
   const attemptLang = async (langs: string): Promise<{ price: number | null; rawText: string }> => {
-    const { createWorker, PSM } = await import("tesseract.js");
-    const worker = await createWorker(langs, undefined, {
-      logger: () => {},
-      errorHandler: () => {},
-    });
-    let longestText = "";
-    try {
-      const modes = [PSM.SPARSE_TEXT, PSM.SINGLE_BLOCK, PSM.SINGLE_LINE, PSM.AUTO] as const;
-      const canvases = [colorCanvas, grayCanvas, smallColorCanvas, smallGrayCanvas];
-
-      for (const canvas of canvases) {
-        for (const psm of modes) {
-          await worker.setParameters({
-            tessedit_pageseg_mode: psm,
-            tessedit_char_whitelist: "0123456789,.-만원천원 ",
-          });
-          const {
-            data: { text },
-          } = await worker.recognize(canvas);
-          const trimmed = String(text || "").trim();
-          if (trimmed.length > longestText.length) longestText = trimmed;
-          const price = parseSigAmountFromText(trimmed);
-          if (price != null) return { price, rawText: trimmed };
-        }
-      }
-      return { price: null, rawText: longestText };
-    } finally {
-      await worker.terminate();
-    }
+    const worker = await getSharedTesseractWorker(langs);
+    return recognizeAmountOnCanvases(worker, canvases, modes);
   };
 
-  // 숫자 OCR은 eng가 훨씬 가볍고 wasm 오류가 적어서 먼저 시도
   try {
     const eng = await attemptLang("eng");
-    if (eng.price != null || eng.rawText) return eng;
+    if (eng.price != null) return eng;
+    const kor = await attemptLang("kor+eng");
+    const merged = [eng.rawText, kor.rawText].filter(Boolean).join("\n");
+    const price = parseSigAmountFromText(merged);
+    if (price != null) return { price, rawText: merged };
+    return { price: null, rawText: merged || eng.rawText || kor.rawText };
   } catch (e) {
-    console.warn("[sig ocr] tesseract eng failed", e);
-  }
-
-  try {
-    return await attemptLang("kor+eng");
-  } catch (e) {
-    console.warn("[sig ocr] tesseract kor+eng failed", e);
+    console.warn("[sig ocr] tesseract failed", e);
     return { price: null, rawText: "" };
   }
 }
