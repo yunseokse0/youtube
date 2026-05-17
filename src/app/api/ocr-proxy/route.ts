@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
   }
 
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), 25_000);
+  const timer = setTimeout(() => ac.abort(), 55_000);
 
   try {
     const res = await fetch(target.href, {

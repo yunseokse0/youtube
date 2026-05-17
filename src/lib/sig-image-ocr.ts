@@ -39,7 +39,13 @@ export function resolveSigImageUrlForOcr(imageUrl: string, name?: string): strin
   if (pick.startsWith("http://") || pick.startsWith("https://") || pick.startsWith("data:") || pick.startsWith("blob:")) {
     return pick;
   }
+  /** Render 등 배포 서버의 `public/images/sigs` 우선 — GitHub raw는 대용량·한글 경로에서 실패·지연 잦음 */
   if (pick.startsWith("/images/sigs/")) {
+    try {
+      return new URL(pick, window.location.origin).href;
+    } catch {
+      /* fall through */
+    }
     const gh = rewriteSigPathForRollingGithubIfConfigured(pick);
     if (/^https?:\/\//i.test(gh)) return gh;
   }
@@ -51,6 +57,22 @@ export function resolveSigImageUrlForOcr(imageUrl: string, name?: string): strin
     }
   }
   return pick;
+}
+
+/** OCR fetch 실패 시 GitHub raw 등 대체 URL */
+export function resolveSigImageUrlForOcrFallback(imageUrl: string, name?: string): string | null {
+  const raw = String(imageUrl || "").trim();
+  if (!raw) return null;
+  const resolved = resolveSigImageUrl(String(name || "").trim(), raw);
+  const pick =
+    resolved && resolved !== BUNDLED_SIG_PLACEHOLDER_URL
+      ? resolved
+      : raw.startsWith("/")
+        ? raw
+        : resolved;
+  if (!pick.startsWith("/images/sigs/")) return null;
+  const gh = rewriteSigPathForRollingGithubIfConfigured(pick);
+  return /^https?:\/\//i.test(gh) ? gh : null;
 }
 
 /** OCR 자주 틀리는 글자 → 숫자 */
@@ -225,7 +247,23 @@ async function loadImageBitmapViaApiProxy(absoluteUrl: string): Promise<ImageBit
   }
 }
 
-async function fetchOcrResourceBytes(imageUrl: string): Promise<{ bytes: ArrayBuffer | null; failedHttpStatus?: number }> {
+async function fetchUrlBytes(
+  abs: string,
+  init: RequestInit
+): Promise<{ bytes: ArrayBuffer | null; failedHttpStatus?: number }> {
+  try {
+    const res = await fetch(abs, init);
+    if (!res.ok) return { bytes: null, failedHttpStatus: res.status };
+    return { bytes: await res.arrayBuffer() };
+  } catch {
+    return { bytes: null };
+  }
+}
+
+async function fetchOcrResourceBytes(
+  imageUrl: string,
+  opts?: { fallbackUrl?: string | null }
+): Promise<{ bytes: ArrayBuffer | null; failedHttpStatus?: number }> {
   if (typeof window === "undefined") return { bytes: null };
   const abs = resolveAbsoluteImageUrl(imageUrl);
   if (!abs) return { bytes: null };
@@ -234,58 +272,38 @@ async function fetchOcrResourceBytes(imageUrl: string): Promise<{ bytes: ArrayBu
   const sameOrigin = abs.startsWith(origin);
   const isHttp = /^https?:\/\//i.test(abs);
 
-  const readRes = async (res: Response): Promise<{ bytes: ArrayBuffer | null; failedHttpStatus?: number }> => {
-    if (!res.ok) return { bytes: null, failedHttpStatus: res.status };
-    try {
-      return { bytes: await res.arrayBuffer() };
-    } catch {
-      return { bytes: null };
-    }
-  };
-
   if (abs.startsWith("blob:") || abs.startsWith("data:")) {
-    try {
-      const res = await fetch(abs);
-      return await readRes(res);
-    } catch {
-      return { bytes: null };
-    }
+    return fetchUrlBytes(abs, {});
   }
 
   if (sameOrigin) {
-    try {
-      const res = await fetch(abs, { mode: "same-origin", credentials: "same-origin" });
-      const out = await readRes(res);
-      if (out.bytes) return out;
-      if (out.failedHttpStatus) return out;
-    } catch {
-      /* fall through */
+    const out = await fetchUrlBytes(abs, { mode: "same-origin", credentials: "same-origin" });
+    if (out.bytes) return out;
+    if (out.failedHttpStatus) {
+      const fb = opts?.fallbackUrl ? resolveAbsoluteImageUrl(opts.fallbackUrl) : null;
+      if (fb && fb !== abs) {
+        const alt = await fetchOcrResourceBytes(fb);
+        if (alt.bytes) return alt;
+      }
+      return out;
     }
   }
 
   if (isHttp) {
-    try {
-      const proxyUrl = `/api/ocr-proxy?url=${encodeURIComponent(abs)}`;
-      const res = await fetch(proxyUrl, { method: "GET", credentials: "same-origin" });
-      const proxied = await readRes(res);
-      if (proxied.bytes) return proxied;
-    } catch {
-      /* ignore */
+    const proxyUrl = `/api/ocr-proxy?url=${encodeURIComponent(abs)}`;
+    const proxied = await fetchUrlBytes(proxyUrl, { method: "GET", credentials: "same-origin" });
+    if (proxied.bytes) return proxied;
+    const corsTry = await fetchUrlBytes(abs, { mode: "cors", credentials: "omit" });
+    if (corsTry.bytes) return corsTry;
+    const fb = opts?.fallbackUrl ? resolveAbsoluteImageUrl(opts.fallbackUrl) : null;
+    if (fb && fb !== abs) {
+      const alt = await fetchOcrResourceBytes(fb);
+      if (alt.bytes) return alt;
     }
-    try {
-      const res = await fetch(abs, { mode: "cors", credentials: "omit" });
-      return await readRes(res);
-    } catch {
-      return { bytes: null };
-    }
+    return corsTry;
   }
 
-  try {
-    const res = await fetch(abs, { mode: "cors", credentials: "omit" });
-    return await readRes(res);
-  } catch {
-    return { bytes: null };
-  }
+  return fetchUrlBytes(abs, { mode: "cors", credentials: "omit" });
 }
 
 async function loadImageForOcr(imageUrl: string): Promise<SigImageLoadInfo> {
@@ -454,6 +472,17 @@ function cropCanvasFraction(
   return out;
 }
 
+const OCR_MIN_CANVAS_W = 80;
+const OCR_MIN_CANVAS_H = 32;
+
+function ensureMinOcrCanvas(canvas: HTMLCanvasElement): HTMLCanvasElement {
+  const minW = OCR_MIN_CANVAS_W;
+  const minH = OCR_MIN_CANVAS_H;
+  if (canvas.width >= minW && canvas.height >= minH) return canvas;
+  const scale = Math.max(minW / Math.max(1, canvas.width), minH / Math.max(1, canvas.height), 2);
+  return upscaleCanvas(canvas, scale);
+}
+
 function upscaleCanvas(canvas: HTMLCanvasElement, factor: number): HTMLCanvasElement {
   const w = Math.max(1, Math.floor(canvas.width * factor));
   const h = Math.max(1, Math.floor(canvas.height * factor));
@@ -483,10 +512,15 @@ function buildOcrCanvasSet(colorCanvas: HTMLCanvasElement): HTMLCanvasElement[] 
 /** 빠른 1차 OCR — 금액 영역·하단 이진화 위주(캔버스 4장) */
 function buildOcrCanvasSetFast(colorCanvas: HTMLCanvasElement): HTMLCanvasElement[] {
   const priceBand = cropCanvasFraction(colorCanvas, 0.52, 0.92, 0.1, 0.9);
-  const priceBandBin = canvasToBinary(priceBand);
+  const priceBandBin = ensureMinOcrCanvas(canvasToBinary(priceBand));
   const bottom = cropCanvasFraction(colorCanvas, 0.45, 1, 0.05, 0.95);
-  const bottomBin = canvasToBinary(bottom);
-  return [priceBandBin, bottomBin, upscaleCanvas(priceBandBin, 2), canvasToBinary(colorCanvas)];
+  const bottomBin = ensureMinOcrCanvas(canvasToBinary(bottom));
+  return [
+    priceBandBin,
+    bottomBin,
+    ensureMinOcrCanvas(upscaleCanvas(priceBandBin, 2)),
+    ensureMinOcrCanvas(canvasToBinary(colorCanvas)),
+  ];
 }
 
 function isConfidentSigOcrPrice(price: number): boolean {
@@ -565,12 +599,24 @@ async function getSharedTesseractWorker(langs: string): Promise<TessWorker> {
   }
   await terminateSharedSigOcrWorker();
   const { createWorker } = await import("tesseract.js");
-  sharedTesseractWorker = (await createWorker(langs, undefined, {
-    logger: () => {},
-    errorHandler: () => {},
-  })) as unknown as TessWorker;
-  sharedTesseractLang = langs;
-  return sharedTesseractWorker;
+  const boot = async (lang: string) =>
+    (await createWorker(lang, undefined, {
+      logger: () => {},
+      errorHandler: () => {},
+    })) as unknown as TessWorker;
+  try {
+    sharedTesseractWorker = await boot(langs);
+    sharedTesseractLang = langs;
+    return sharedTesseractWorker;
+  } catch (e) {
+    if (langs !== "eng") {
+      console.warn("[sig ocr] worker lang failed, fallback to eng", langs, e);
+      sharedTesseractWorker = await boot("eng");
+      sharedTesseractLang = "eng";
+      return sharedTesseractWorker;
+    }
+    throw e;
+  }
 }
 
 const TESS_OCR_LANGS = "kor+eng";
@@ -665,12 +711,13 @@ async function recognizeAmountOnCanvases(
   const texts: string[] = [];
   const candidates: number[] = [];
   for (const canvas of canvases) {
+    const ocrCanvas = ensureMinOcrCanvas(canvas);
     for (const psm of modes) {
       try {
         await configureSigOcrWorker(worker, psm);
         const {
           data: { text },
-        } = await worker.recognize(canvas);
+        } = await worker.recognize(ocrCanvas);
         const trimmed = String(text || "").trim();
         if (trimmed) texts.push(trimmed);
         const price = parseSigAmountFromText(trimmed);
@@ -818,24 +865,37 @@ export async function detectSigPriceFromImageUrlDetailed(
   if (!ocrSrc) {
     return { price: null, reason: "image_load_failed" };
   }
+  const ocrFetchFallback = resolveSigImageUrlForOcrFallback(imageUrl, options?.sigName);
 
-  if (isProbablyGifPath(ocrSrc)) {
-    const { bytes, failedHttpStatus } = await fetchOcrResourceBytes(ocrSrc);
+  if (isProbablyGifPath(ocrSrc) || isProbablyGifPath(imageUrl)) {
+    const { bytes, failedHttpStatus } = await fetchOcrResourceBytes(ocrSrc, {
+      fallbackUrl: ocrFetchFallback,
+    });
     if (bytes && isGifArrayBuffer(bytes)) {
       const gifResult = await detectSigPriceFromGifBufferDetailed(bytes, options?.sigName);
       const gifPrice = applySigNamePriceFallback(options?.sigName, gifResult.price);
       if (gifPrice != null) return { price: gifPrice };
     }
     if (failedHttpStatus === 404) {
+      const byName = applySigNamePriceFallback(options?.sigName, null);
+      if (byName != null) return { price: byName, imageHttpStatus: 404 };
       return { price: null, reason: "image_not_found", imageHttpStatus: 404 };
+    }
+    if (isProbablyGifPath(imageUrl) || isProbablyGifPath(ocrSrc)) {
+      const byName = applySigNamePriceFallback(options?.sigName, null);
+      if (byName != null) return { price: byName };
     }
   }
 
   const { bitmap: loaded, failedHttpStatus } = await loadImageForOcr(ocrSrc);
   if (!loaded) {
     if (failedHttpStatus === 404) {
+      const byName = applySigNamePriceFallback(options?.sigName, null);
+      if (byName != null) return { price: byName, imageHttpStatus: 404 };
       return { price: null, reason: "image_not_found", imageHttpStatus: 404 };
     }
+    const byName = applySigNamePriceFallback(options?.sigName, null);
+    if (byName != null) return { price: byName, imageHttpStatus: failedHttpStatus };
     return { price: null, reason: "image_load_failed", imageHttpStatus: failedHttpStatus };
   }
   const bitmap = await flattenToStaticImageBitmap(loaded);
@@ -851,6 +911,8 @@ export async function detectSigPriceFromImageUrlDetailed(
       price != null ? refineCommonSigOcrMisreads(price) : null
     );
     if (finalPrice == null) {
+      const byName = applySigNamePriceFallback(options?.sigName, null);
+      if (byName != null) return { price: byName };
       return { price: null, reason: "no_amount_found", previewText: previewText || undefined };
     }
     return { price: finalPrice };
