@@ -30,6 +30,7 @@ import {
   normalizeSigImageUrlStored,
   normalizeSigInventory,
 } from "./constants";
+import { normalizeOverlayPresetDonationGoals } from "@/lib/goal-preset-math";
 export type {
   AppState,
   ContributionLog,
@@ -553,7 +554,7 @@ export function normalizeDonorRankingsOverlayConfig(input: unknown): OverlayConf
 /** 오버레이 프리셋에 남은 ImageKit 등 외부 GIF URL 제거(로드·저장 공통) */
 function normalizeOverlayPresetsMedia(input: unknown): unknown[] {
   if (!Array.isArray(input)) return [];
-  return input.map((p) => {
+  const withMedia = input.map((p) => {
     if (!p || typeof p !== "object") return p;
     const o = p as Record<string, unknown>;
     const next = { ...o };
@@ -562,6 +563,7 @@ function normalizeOverlayPresetsMedia(input: unknown): unknown[] {
     }
     return next;
   });
+  return normalizeOverlayPresetDonationGoals(withMedia) as unknown[];
 }
 
 function normalizeSigSalesExcludedIds(input: unknown): string[] {

@@ -21,7 +21,7 @@ const defaultState = {
     showMembers: true,
     showTotal: true,
     showGoal: true,
-    goal: 1000000,
+    goal: 2000000,
     goalLabel: "목표 금액",
     goalWidth: 400,
     goalAnchor: "bc",
