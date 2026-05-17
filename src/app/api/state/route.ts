@@ -2,6 +2,7 @@ export const revalidate = 0;
 
 import type { RouletteState } from "@/types";
 import type { AppState } from "@/lib/state";
+import { normalizeOverlayPresetDonationGoals } from "@/lib/goal-preset-math";
 import { defaultState, mergeDonorsForMultiTabSave, normalizeRouletteState, normalizeSigRolling } from "@/lib/state";
 import { createModuleLogger } from "@/lib/logger";
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
@@ -82,6 +83,13 @@ function mergeRouletteUiPrefsOntoCurrent(
       .slice(0, 50) as RouletteState["historyLogs"];
   }
   return out;
+}
+
+function applyForcedDonationGoalState(state: AppState): AppState {
+  const presets = normalizeOverlayPresetDonationGoals(
+    Array.isArray(state.overlayPresets) ? state.overlayPresets : []
+  );
+  return { ...state, overlayPresets: presets as AppState["overlayPresets"] };
 }
 
 function mergePartialState(base: AppState, patch: Partial<AppState>, userId: string): AppState {
@@ -179,7 +187,7 @@ export async function GET(req: Request) {
     }
     const { base, token } = getRedisEnv();
     if (!base || !token) {
-      const state = getServerMemoryAppState() || defaultState();
+      const state = applyForcedDonationGoalState(getServerMemoryAppState() || defaultState());
       if (!getServerMemoryAppState()) {
         logger.warn('Redis 미설정 - 메모리만 사용 (서버 재시작 시 데이터 초기화됨. UPSTASH_REDIS_* 환경변수 설정 권장)');
       }
@@ -214,7 +222,7 @@ export async function GET(req: Request) {
     if (!state && !getServerMemoryAppState()) {
       logger.warn('Redis/메모리 모두 비어있음 - 기본값 반환 (서버 재시작 시 발생. Redis 설정 권장)', { userId });
     }
-    let mergedForResponse = effective as AppState;
+    let mergedForResponse = applyForcedDonationGoalState(effective as AppState);
     /** 위에서 이미 동일 키로 조회한 `effective`를 쓴다. GET당 Upstash 2회 호출은 지연·대기열을 키워 pending 폭주에 기여함 */
     try {
       const rouletteStateSource = effective as AppState;
@@ -246,6 +254,8 @@ export async function GET(req: Request) {
       }
     } catch {}
 
+    mergedForResponse = applyForcedDonationGoalState(mergedForResponse);
+
     logger.debug('Redis 상태 반환', { hasState: !!state, usedMemory: !!getServerMemoryAppState(), userId });
     const body =
       pick === STATE_PICK_SIG_INVENTORY
@@ -261,7 +271,7 @@ export async function GET(req: Request) {
     });
   } catch (error) {
     logger.error('상태 조회 실패', error);
-    const fallback = getServerMemoryAppState() || defaultState();
+    const fallback = applyForcedDonationGoalState(getServerMemoryAppState() || defaultState());
     const body =
       pick === STATE_PICK_SIG_INVENTORY
         ? { updatedAt: fallback.updatedAt, sigInventory: fallback.sigInventory || [] }
@@ -295,7 +305,11 @@ export async function POST(req: Request) {
       ? mergeDonorsForMultiTabSave(body.donors || [], baseState.donors)
       : baseState.donors;
     const merged = mergePartialState(baseState, body, userId);
-    const next: AppState = { ...merged, donors: mergedDonors, updatedAt: Date.now() };
+    const next: AppState = applyForcedDonationGoalState({
+      ...merged,
+      donors: mergedDonors,
+      updatedAt: Date.now(),
+    });
 
     if (!base || !token) {
       setServerMemoryAppState(next);

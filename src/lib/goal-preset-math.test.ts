@@ -1,19 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_DONATION_GOAL,
-  normalizeDonationGoalField,
+  DONATION_GOAL_FORCE_LOCK,
   normalizeOverlayPresetDonationGoals,
   nextGoalTenPercentIncrease,
   resetOverlayPresetsGoalForDonationInit,
   unwindGoalForDonationReset,
 } from "./goal-preset-math";
 
-describe("normalizeDonationGoalField", () => {
-  it("3천만 원 목표를 200만 원으로 맞춘다", () => {
-    expect(normalizeDonationGoalField("30000000")).toBe(String(DEFAULT_DONATION_GOAL));
-    expect(normalizeOverlayPresetDonationGoals([
-      { id: "a", goal: "30000000", goalBaseline: "30000000" },
-    ])[0]).toMatchObject({ goal: "2000000", goalBaseline: "2000000" });
+describe("normalizeOverlayPresetDonationGoals", () => {
+  it("목표바 ON 프리셋을 200만 원으로 강제한다", () => {
+    expect(DONATION_GOAL_FORCE_LOCK).toBe(true);
+    expect(
+      normalizeOverlayPresetDonationGoals([
+        { id: "a", showGoal: true, goal: "30000000", goalBaseline: "36000000" },
+        { id: "b", showGoal: false, goal: "5000000" },
+      ])[0]
+    ).toMatchObject({ goal: String(DEFAULT_DONATION_GOAL), goalBaseline: String(DEFAULT_DONATION_GOAL) });
   });
 });
 

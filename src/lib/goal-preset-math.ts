@@ -1,36 +1,33 @@
 /** 통합 오버레이 프리셋 목표 자동 상향·후원 초기화용 */
 
-/** 기본 후원 목표 금액(원) */
+/** 기본·강제 후원 목표 금액(원) */
 export const DEFAULT_DONATION_GOAL = 2_000_000;
 
-/** 예전에 쓰이던 3천만 원 목표 — 로드 시 {@link DEFAULT_DONATION_GOAL} 로 맞춤 */
-const LEGACY_DONATION_GOAL_30M = 30_000_000;
+/** true: 목표바 프리셋 goal·goalBaseline 을 항상 {@link DEFAULT_DONATION_GOAL} 로 고정, 자동 상향 비활성 */
+export const DONATION_GOAL_FORCE_LOCK = true;
 
 /** 100% 달성 시 목표에 더하는 고정 금액(원) — 1천만 원 미만·이상 공통 */
 export const GOAL_AUTO_INCREASE_STEP = 2_000_000;
 
-/** 프리셋 goal·goalBaseline 문자열 정규화(3천만 → 200만) */
-export function normalizeDonationGoalField(raw: unknown): string | undefined {
-  const v = String(raw ?? "").trim().replace(/,/g, "");
-  if (!v) return undefined;
-  const n = Number(v);
-  if (Number.isFinite(n) && n === LEGACY_DONATION_GOAL_30M) return String(DEFAULT_DONATION_GOAL);
-  return v;
+function presetShowsDonationGoal(p: Record<string, unknown>): boolean {
+  return p.showGoal === true || p.showGoal === "true" || p.showGoal === 1 || p.showGoal === "1";
 }
 
-/** 오버레이 프리셋 배열의 목표 금액 필드 정규화 */
+/** 오버레이 프리셋 목표 금액 — {@link DONATION_GOAL_FORCE_LOCK} 시 목표바 ON 프리셋을 200만 원으로 강제 */
 export function normalizeOverlayPresetDonationGoals(presets: unknown[]): unknown[] {
   if (!Array.isArray(presets)) return [];
+  const forced = String(DEFAULT_DONATION_GOAL);
   return presets.map((raw) => {
     if (!raw || typeof raw !== "object") return raw;
     const p = raw as Record<string, unknown>;
-    const next = { ...p };
-    const goal = normalizeDonationGoalField(p.goal);
-    if (goal !== undefined) next.goal = goal;
-    const baseline = normalizeDonationGoalField(p.goalBaseline);
-    if (baseline !== undefined) next.goalBaseline = baseline;
-    return next;
+    if (!DONATION_GOAL_FORCE_LOCK) return { ...p };
+    if (!presetShowsDonationGoal(p)) return { ...p };
+    return { ...p, goal: forced, goalBaseline: forced };
   });
+}
+
+export function isDonationGoalAutoEscalateEnabled(): boolean {
+  return !DONATION_GOAL_FORCE_LOCK;
 }
 
 /**

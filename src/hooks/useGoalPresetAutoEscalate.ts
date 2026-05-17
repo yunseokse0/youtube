@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { nextGoalTenPercentIncrease } from "@/lib/goal-preset-math";
+import { isDonationGoalAutoEscalateEnabled, nextGoalTenPercentIncrease } from "@/lib/goal-preset-math";
 
 const PATCH_COOLDOWN_MS = 1400;
 
@@ -29,6 +29,7 @@ export function useGoalPresetAutoEscalate(args: Args): void {
   const lastPatchAt = useRef(0);
 
   useEffect(() => {
+    if (!isDonationGoalAutoEscalateEnabled()) return;
     if (!args.enabled || args.skipPersist) return;
     if (!args.presetId) return;
     const goal = args.goalAmount;
