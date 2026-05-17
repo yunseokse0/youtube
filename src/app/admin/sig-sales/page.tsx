@@ -25,7 +25,11 @@ import {
   wheelSliceMatchesServerWinner,
 } from "@/lib/sig-roulette";
 import { useSigSalesState } from "@/hooks/useSigSalesState";
-import { detectSigPriceFromImageUrlDetailed, terminateSharedSigOcrWorker } from "@/lib/sig-image-ocr";
+import {
+  detectSigPriceFromImageUrlDetailed,
+  prewarmSigOcrWorker,
+  terminateSharedSigOcrWorker,
+} from "@/lib/sig-image-ocr";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 
 const STEP_CONFIRM_PAUSE_MS = 3000;
@@ -612,9 +616,10 @@ export default function AdminSigSalesPage() {
       return;
     }
     setOcrAllBusy(true);
-    setToast(`OCR 일괄 준비 중… (총 ${targets.length}건)`);
+    setToast(`OCR 일괄 준비 중… (총 ${targets.length}건, 워커 로드)`);
     const priceById = new Map<string, number>();
     try {
+      await prewarmSigOcrWorker();
       for (let i = 0; i < targets.length; i++) {
         const item = targets[i];
         setOcrBatchProgress({ current: i + 1, total: targets.length });
@@ -626,8 +631,16 @@ export default function AdminSigSalesPage() {
           });
           if (detail.price != null) {
             priceById.set(item.id, detail.price);
+            const pr = detail.price;
+            await persistInventoryPatch((prev) => ({
+              ...prev,
+              sigInventory: (prev.sigInventory || []).map((x) =>
+                x.id === item.id ? { ...x, price: pr } : x
+              ),
+              updatedAt: Date.now(),
+            }));
           }
-          await new Promise((r) => setTimeout(r, 80));
+          await new Promise((r) => setTimeout(r, 16));
         } finally {
           setOcrBusyIds((prev) => ({ ...prev, [item.id]: false }));
         }

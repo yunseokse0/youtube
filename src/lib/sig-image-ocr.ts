@@ -454,6 +454,20 @@ function cropCanvasFraction(
   return out;
 }
 
+function upscaleCanvas(canvas: HTMLCanvasElement, factor: number): HTMLCanvasElement {
+  const w = Math.max(1, Math.floor(canvas.width * factor));
+  const h = Math.max(1, Math.floor(canvas.height * factor));
+  const out = document.createElement("canvas");
+  out.width = w;
+  out.height = h;
+  const ctx = out.getContext("2d");
+  if (!ctx) return canvas;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(canvas, 0, 0, w, h);
+  return out;
+}
+
 function buildOcrCanvasSet(colorCanvas: HTMLCanvasElement): HTMLCanvasElement[] {
   const gray = canvasToGrayscale(colorCanvas);
   const binary = canvasToBinary(colorCanvas);
@@ -464,6 +478,19 @@ function buildOcrCanvasSet(colorCanvas: HTMLCanvasElement): HTMLCanvasElement[] 
   const center = cropCanvasFraction(colorCanvas, 0.25, 0.85, 0.08, 0.92);
   const centerBin = canvasToBinary(center);
   return [colorCanvas, gray, binary, bottom, bottomBin, priceBand, priceBandBin, center, centerBin];
+}
+
+/** 빠른 1차 OCR — 금액 영역·하단 이진화 위주(캔버스 4장) */
+function buildOcrCanvasSetFast(colorCanvas: HTMLCanvasElement): HTMLCanvasElement[] {
+  const priceBand = cropCanvasFraction(colorCanvas, 0.52, 0.92, 0.1, 0.9);
+  const priceBandBin = canvasToBinary(priceBand);
+  const bottom = cropCanvasFraction(colorCanvas, 0.45, 1, 0.05, 0.95);
+  const bottomBin = canvasToBinary(bottom);
+  return [priceBandBin, bottomBin, upscaleCanvas(priceBandBin, 2), canvasToBinary(colorCanvas)];
+}
+
+function isConfidentSigOcrPrice(price: number): boolean {
+  return price >= 20_000 && price <= 150_000 && price % 100 === 0;
 }
 
 function buildScaledColorCanvasForOcr(bitmap: ImageBitmap): HTMLCanvasElement | null {
@@ -546,6 +573,41 @@ async function getSharedTesseractWorker(langs: string): Promise<TessWorker> {
   return sharedTesseractWorker;
 }
 
+const TESS_OCR_LANGS = "kor+eng";
+const TESS_DIGIT_WHITELIST = "0123456789,만원천.· ";
+
+async function configureSigOcrWorker(worker: TessWorker, psm?: number): Promise<void> {
+  const params: Record<string, unknown> = {
+    tessedit_char_whitelist: TESS_DIGIT_WHITELIST,
+  };
+  if (psm != null) params.tessedit_pageseg_mode = psm;
+  await worker.setParameters(params);
+}
+
+/** 일괄 OCR 시작 전 워커·언어팩 1회 로드(첫 GIF에서 멈추는 현상 완화) */
+export async function prewarmSigOcrWorker(): Promise<void> {
+  if (typeof window === "undefined") return;
+  try {
+    const { PSM } = await import("tesseract.js");
+    const worker = await getSharedTesseractWorker(TESS_OCR_LANGS);
+    await configureSigOcrWorker(worker, Number(PSM.SINGLE_LINE));
+    const c = document.createElement("canvas");
+    c.width = 80;
+    c.height = 36;
+    const ctx = c.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = "#111";
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 22px sans-serif";
+      ctx.fillText("31200", 6, 26);
+    }
+    await worker.recognize(c);
+  } catch {
+    /* 워밍업 실패해도 본 OCR은 계속 시도 */
+  }
+}
+
 /** 일괄 OCR 종료 시 wasm 워커 정리 */
 export async function terminateSharedSigOcrWorker(): Promise<void> {
   if (!sharedTesseractWorker) return;
@@ -597,23 +659,31 @@ async function detectPriceFromBitmapNative(bitmap: ImageBitmap): Promise<number 
 async function recognizeAmountOnCanvases(
   worker: TessWorker,
   canvases: HTMLCanvasElement[],
-  modes: number[]
+  modes: number[],
+  opts?: { earlyExit?: boolean }
 ): Promise<{ price: number | null; rawText: string }> {
   const texts: string[] = [];
   const candidates: number[] = [];
   for (const canvas of canvases) {
     for (const psm of modes) {
       try {
-        await worker.setParameters({
-          tessedit_pageseg_mode: psm,
-        });
+        await configureSigOcrWorker(worker, psm);
         const {
           data: { text },
         } = await worker.recognize(canvas);
         const trimmed = String(text || "").trim();
         if (trimmed) texts.push(trimmed);
         const price = parseSigAmountFromText(trimmed);
-        if (price != null) candidates.push(price);
+        if (price != null) {
+          candidates.push(price);
+          if (opts?.earlyExit) {
+            const refined = refineCommonSigOcrMisreads(price);
+            const hits = candidates.filter((p) => refineCommonSigOcrMisreads(p) === refined).length;
+            if (hits >= 2 || isConfidentSigOcrPrice(refined)) {
+              return { price: refined, rawText: texts.join("\n") };
+            }
+          }
+        }
       } catch {
         /* 다음 모드·캔버스 시도 */
       }
@@ -622,7 +692,8 @@ async function recognizeAmountOnCanvases(
   const merged = texts.join("\n");
   const mergedPrice = parseSigAmountFromText(merged);
   if (mergedPrice != null) candidates.push(mergedPrice);
-  const price = pickConsensusSigPrice(candidates);
+  let price = pickConsensusSigPrice(candidates);
+  if (price != null) price = refineCommonSigOcrMisreads(price);
   return { price, rawText: merged };
 }
 
@@ -632,30 +703,21 @@ async function detectPriceWithTesseractDetailed(bitmap: ImageBitmap): Promise<{ 
   const colorCanvas = buildScaledColorCanvasForOcr(bitmap);
   if (!colorCanvas) return { price: null, rawText: "" };
 
-  const canvases = buildOcrCanvasSet(colorCanvas);
   const { PSM } = await import("tesseract.js");
-  const modes: number[] = [PSM.SINGLE_LINE, PSM.SINGLE_BLOCK, PSM.SPARSE_TEXT, PSM.AUTO].map((m) =>
-    Number(m)
-  );
-
-  const attemptLang = async (langs: string): Promise<{ price: number | null; rawText: string }> => {
-    const worker = await getSharedTesseractWorker(langs);
-    return recognizeAmountOnCanvases(worker, canvases, modes);
-  };
+  const fastModes: number[] = [Number(PSM.SINGLE_LINE), Number(PSM.SINGLE_BLOCK)];
+  const fullModes: number[] = [Number(PSM.SINGLE_LINE), Number(PSM.SINGLE_BLOCK), Number(PSM.SPARSE_TEXT)];
 
   try {
-    const eng = await attemptLang("eng");
-    const kor = await attemptLang("kor+eng");
-    const merged = [eng.rawText, kor.rawText].filter(Boolean).join("\n");
-    const candidates: number[] = [];
-    if (eng.price != null) candidates.push(eng.price);
-    if (kor.price != null) candidates.push(kor.price);
-    const mergedPrice = parseSigAmountFromText(merged);
-    if (mergedPrice != null) candidates.push(mergedPrice);
-    let price = pickConsensusSigPrice(candidates);
-    if (price != null) price = refineCommonSigOcrMisreads(price);
-    if (price != null) return { price, rawText: merged };
-    return { price: null, rawText: merged || eng.rawText || kor.rawText };
+    const worker = await getSharedTesseractWorker(TESS_OCR_LANGS);
+    const fast = await recognizeAmountOnCanvases(worker, buildOcrCanvasSetFast(colorCanvas), fastModes, {
+      earlyExit: true,
+    });
+    if (fast.price != null) return fast;
+
+    const full = await recognizeAmountOnCanvases(worker, buildOcrCanvasSet(colorCanvas), fullModes, {
+      earlyExit: true,
+    });
+    return full;
   } catch (e) {
     console.warn("[sig ocr] tesseract failed", e);
     return { price: null, rawText: "" };
@@ -690,7 +752,8 @@ async function detectPriceFromBitmap(bitmap: ImageBitmap): Promise<number | null
   return d.price;
 }
 
-const GIF_OCR_MAX_FRAMES = 20;
+/** GIF 1건당 OCR 프레임 상한(후반 우선 샘플) */
+const GIF_OCR_MAX_FRAMES = 8;
 
 async function detectSigPriceFromGifBufferDetailed(
   buf: ArrayBuffer,
@@ -711,10 +774,11 @@ async function detectSigPriceFromGifBufferDetailed(
       const { price, previewText: pt } = await detectPriceFromBitmapDetailed(bitmap);
       if (pt && !previewText) previewText = pt;
       if (price == null) continue;
-      candidates.push(price);
-      const n = (hitCount.get(price) || 0) + 1;
-      hitCount.set(price, n);
-      if (n >= 2) break;
+      const refined = refineCommonSigOcrMisreads(price);
+      candidates.push(refined);
+      const n = (hitCount.get(refined) || 0) + 1;
+      hitCount.set(refined, n);
+      if (n >= 2 || isConfidentSigOcrPrice(refined)) break;
     } finally {
       try {
         bitmap.close();

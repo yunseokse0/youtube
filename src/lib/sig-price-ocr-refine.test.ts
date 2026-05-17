@@ -14,5 +14,7 @@ describe("refineCommonSigOcrMisreads", () => {
     expect(applySigNamePriceFallback("간바레센빠이", 31200)).toBe(31200);
     expect(applySigNamePriceFallback("APT", 38700)).toBe(38900);
     expect(applySigNamePriceFallback("APT", 38900)).toBe(38900);
+    expect(applySigNamePriceFallback("고민중독", null)).toBe(38700);
+    expect(applySigNamePriceFallback("04클럽춤", 0)).toBe(23000);
   });
 });

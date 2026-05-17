@@ -22,6 +22,18 @@ const SIG_PRICE_BY_NAME: ReadonlyArray<{
     match: (n) => /^APT$/i.test(n),
     price: 38900,
     replaceWhen: [38700, 39000],
+    fallbackWhenBelow: 20_000,
+  },
+  {
+    match: (n) => n.includes("고민중독"),
+    price: 38700,
+    replaceWhen: [35700, 39000],
+    fallbackWhenBelow: 20_000,
+  },
+  {
+    match: (n) => (n.includes("클럽") && (n.includes("춤") || n.includes("송"))) || n.includes("04클럽"),
+    price: 23000,
+    fallbackWhenBelow: 20_000,
   },
 ];
 

@@ -67,6 +67,7 @@ import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
 import {
   detectSigPriceFromImageFile,
   detectSigPriceFromImageUrlDetailed,
+  prewarmSigOcrWorker,
   terminateSharedSigOcrWorker,
 } from "@/lib/sig-image-ocr";
 import { planSigBulkReupload } from "@/lib/sig-image-bulk";
@@ -2384,9 +2385,11 @@ export default function AdminPage() {
       return;
     }
     setOcrAllBusy(true);
-    setSigOcrBanner(`OCR 일괄 준비 중… (총 ${items.length}건)`);
+    setSigOcrBanner(`OCR 일괄 준비 중… (총 ${items.length}건, 워커 로드)`);
     const priceById = new Map<string, number>();
     try {
+      await prewarmSigOcrWorker();
+      setSigOcrBanner(`OCR 일괄 진행 시작 (총 ${items.length}건)`);
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
         setOcrBatchProgress({ current: i + 1, total: items.length });
@@ -2400,6 +2403,16 @@ export default function AdminPage() {
           });
           if (detail.price != null) {
             priceById.set(item.id, detail.price);
+            const pr = detail.price;
+            setState((prev: AppState) => {
+              const sigInventory = (prev.sigInventory || []).map((x) =>
+                x.id === item.id ? { ...x, price: pr } : x
+              );
+              const draft: AppState = { ...prev, sigInventory };
+              const next = syncOneShotSigItem(draft);
+              persistState(next);
+              return next;
+            });
           }
           await new Promise((r) => setTimeout(r, 16));
         } catch (e) {

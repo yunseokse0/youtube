@@ -45,6 +45,11 @@ export function pickGifFrameIndices(frameCount: number, maxFrames = 20): number[
   return result;
 }
 
+/** 금액이 애니 후반에 나오는 시그 GIF — OCR은 뒤쪽 프레임부터 시도 */
+export function orderGifFrameIndicesForOcr(indices: number[]): number[] {
+  return [...indices].sort((a, b) => b - a);
+}
+
 const SIG_PRICE_MIN = 1000;
 const SIG_PRICE_MAX = 1_500_000;
 /** 단일 프레임 OCR만으로는 이 금액 이상을 신뢰하지 않음(잡음 방지) */
@@ -209,7 +214,7 @@ export async function createBitmapsFromGifBuffer(
     const gif = parseGIF(buf);
     const frames = decompressFrames(gif, true);
     if (!frames.length) return null;
-    const indices = pickGifFrameIndices(frames.length, maxFrames);
+    const indices = orderGifFrameIndicesForOcr(pickGifFrameIndices(frames.length, maxFrames));
     const bitmaps: ImageBitmap[] = [];
     for (const idx of indices) {
       const canvas = renderGifCompositeCanvas(gif, frames, idx);
