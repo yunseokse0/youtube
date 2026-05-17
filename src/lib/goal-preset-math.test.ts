@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_DONATION_GOAL,
   GOAL_AUTO_INCREASE_STEP,
+  computeEscalatedDonationGoal,
   isDonationGoalAutoEscalateEnabled,
   normalizeOverlayPresetDonationGoals,
   nextGoalTenPercentIncrease,
@@ -31,6 +32,16 @@ describe("nextGoalTenPercentIncrease", () => {
     expect(nextGoalTenPercentIncrease(1)).toBe(1 + 2_000_000);
     expect(nextGoalTenPercentIncrease(9_500_000)).toBe(9_500_000 + 2_000_000);
     expect(nextGoalTenPercentIncrease(15_000_000)).toBe(15_000_000 + 2_000_000);
+  });
+});
+
+describe("computeEscalatedDonationGoal", () => {
+  it("100% 달성마다 200만 원씩 연속 상향", () => {
+    expect(computeEscalatedDonationGoal(2_000_000, 1_900_000)).toBe(2_000_000);
+    expect(computeEscalatedDonationGoal(2_000_000, 2_000_000)).toBe(4_000_000);
+    expect(computeEscalatedDonationGoal(2_000_000, 4_500_000)).toBe(6_000_000);
+    expect(computeEscalatedDonationGoal(4_000_000, 5_500_000)).toBe(6_000_000);
+    expect(computeEscalatedDonationGoal(2_000_000, 6_000_000)).toBe(8_000_000);
   });
 });
 

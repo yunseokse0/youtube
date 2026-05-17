@@ -3,8 +3,8 @@
 import { useEffect, useRef } from "react";
 import {
   DEFAULT_DONATION_GOAL,
+  computeEscalatedDonationGoal,
   isDonationGoalAutoEscalateEnabled,
-  nextGoalTenPercentIncrease,
 } from "@/lib/goal-preset-math";
 
 const PATCH_COOLDOWN_MS = 1400;
@@ -41,8 +41,9 @@ export function useGoalPresetAutoEscalate(args: Args): void {
     const presets = args.overlayPresets;
     if (!Array.isArray(presets) || presets.length === 0) return;
 
-    const nextGoal = nextGoalTenPercentIncrease(goal);
-    if (nextGoal <= goal) return;
+    const storedGoal = Math.max(DEFAULT_DONATION_GOAL, Math.floor(goal));
+    const nextGoal = computeEscalatedDonationGoal(storedGoal, args.liveTotal);
+    if (nextGoal <= storedGoal) return;
 
     const now = Date.now();
     if (now - lastPatchAt.current < PATCH_COOLDOWN_MS) return;

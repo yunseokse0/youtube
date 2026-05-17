@@ -50,12 +50,33 @@ export function isDonationGoalAutoEscalateEnabled(): boolean {
 }
 
 /**
- * 현재 목표 금액에 고정 200만 원을 더한 다음 목표(원, 내림).
- * `useGoalPresetAutoEscalate`와 동일. (함수명 `nextGoalTenPercentIncrease`는 호환용)
+ * 현재 목표 금액에 고정 200만 원을 더한 다음 목표(원).
+ * (함수명 `nextGoalTenPercentIncrease`는 호환용)
  */
 export function nextGoalTenPercentIncrease(goal: number): number {
   const g = Math.max(1, Math.floor(Number(goal) || 0));
   return g + GOAL_AUTO_INCREASE_STEP;
+}
+
+/**
+ * 후원 합계가 목표를 넘길 때마다 200만 원씩 올린 최종 목표.
+ * 한 번에 여러 단계(예: 2M→6M)를 밀어넣어야 할 때도 연속 반영.
+ */
+export function computeEscalatedDonationGoal(
+  currentGoal: number,
+  liveTotal: number,
+  baseline: number = DEFAULT_DONATION_GOAL,
+  step: number = GOAL_AUTO_INCREASE_STEP
+): number {
+  let g = Math.max(baseline, Math.floor(Number(currentGoal) || 0));
+  if (g < baseline) g = baseline;
+  const total = Math.max(0, Math.floor(Number(liveTotal) || 0));
+  let guard = 0;
+  while (total >= g && guard < 64) {
+    g += step;
+    guard += 1;
+  }
+  return g;
 }
 
 /**
