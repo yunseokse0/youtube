@@ -472,15 +472,42 @@ function cropCanvasFraction(
   return out;
 }
 
-const OCR_MIN_CANVAS_W = 80;
-const OCR_MIN_CANVAS_H = 32;
+/** Tesseract LSTM이 안정적으로 읽을 최소 크기(콘솔 `Image too small to scale` 방지) */
+const OCR_MIN_CANVAS_W = 200;
+const OCR_MIN_CANVAS_H = 72;
+const OCR_MIN_TESS_WIDTH = 48;
 
-function ensureMinOcrCanvas(canvas: HTMLCanvasElement): HTMLCanvasElement {
-  const minW = OCR_MIN_CANVAS_W;
-  const minH = OCR_MIN_CANVAS_H;
-  if (canvas.width >= minW && canvas.height >= minH) return canvas;
-  const scale = Math.max(minW / Math.max(1, canvas.width), minH / Math.max(1, canvas.height), 2);
-  return upscaleCanvas(canvas, scale);
+function isOcrCanvasViable(canvas: HTMLCanvasElement): boolean {
+  return canvas.width >= OCR_MIN_TESS_WIDTH && canvas.height >= 16;
+}
+
+/** 잘린 금액 영역을 검은 배경 위에 크게 올려 Tesseract에 전달 */
+function padCanvasForOcr(canvas: HTMLCanvasElement): HTMLCanvasElement {
+  const srcW = Math.max(1, canvas.width);
+  const srcH = Math.max(1, canvas.height);
+  const outW = Math.max(OCR_MIN_CANVAS_W, Math.min(960, srcW * 3));
+  const outH = Math.max(OCR_MIN_CANVAS_H, Math.min(720, srcH * 3));
+  const out = document.createElement("canvas");
+  out.width = outW;
+  out.height = outH;
+  const ctx = out.getContext("2d");
+  if (!ctx) return canvas;
+  ctx.fillStyle = "#0a0a0a";
+  ctx.fillRect(0, 0, outW, outH);
+  const scale = Math.min((outW * 0.92) / srcW, (outH * 0.92) / srcH);
+  const dw = Math.max(1, Math.floor(srcW * scale));
+  const dh = Math.max(1, Math.floor(srcH * scale));
+  const dx = Math.floor((outW - dw) / 2);
+  const dy = Math.floor((outH - dh) / 2);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(canvas, dx, dy, dw, dh);
+  return out;
+}
+
+function prepareOcrCanvas(canvas: HTMLCanvasElement): HTMLCanvasElement | null {
+  const padded = padCanvasForOcr(canvas);
+  return isOcrCanvasViable(padded) ? padded : null;
 }
 
 function upscaleCanvas(canvas: HTMLCanvasElement, factor: number): HTMLCanvasElement {
@@ -509,17 +536,17 @@ function buildOcrCanvasSet(colorCanvas: HTMLCanvasElement): HTMLCanvasElement[] 
   return [colorCanvas, gray, binary, bottom, bottomBin, priceBand, priceBandBin, center, centerBin];
 }
 
-/** 빠른 1차 OCR — 금액 영역·하단 이진화 위주(캔버스 4장) */
+/** 빠른 1차 OCR — 전체·하단·금액 밴드(패딩 후 Tesseract) */
 function buildOcrCanvasSetFast(colorCanvas: HTMLCanvasElement): HTMLCanvasElement[] {
   const priceBand = cropCanvasFraction(colorCanvas, 0.52, 0.92, 0.1, 0.9);
-  const priceBandBin = ensureMinOcrCanvas(canvasToBinary(priceBand));
   const bottom = cropCanvasFraction(colorCanvas, 0.45, 1, 0.05, 0.95);
-  const bottomBin = ensureMinOcrCanvas(canvasToBinary(bottom));
   return [
-    priceBandBin,
-    bottomBin,
-    ensureMinOcrCanvas(upscaleCanvas(priceBandBin, 2)),
-    ensureMinOcrCanvas(canvasToBinary(colorCanvas)),
+    colorCanvas,
+    canvasToBinary(colorCanvas),
+    bottom,
+    canvasToBinary(bottom),
+    priceBand,
+    canvasToBinary(priceBand),
   ];
 }
 
@@ -620,14 +647,12 @@ async function getSharedTesseractWorker(langs: string): Promise<TessWorker> {
 }
 
 const TESS_OCR_LANGS = "kor+eng";
-const TESS_DIGIT_WHITELIST = "0123456789,만원천.· ";
 
 async function configureSigOcrWorker(worker: TessWorker, psm?: number): Promise<void> {
-  const params: Record<string, unknown> = {
-    tessedit_char_whitelist: TESS_DIGIT_WHITELIST,
-  };
-  if (psm != null) params.tessedit_pageseg_mode = psm;
-  await worker.setParameters(params);
+  if (psm == null) return;
+  await worker.setParameters({
+    tessedit_pageseg_mode: psm,
+  });
 }
 
 /** 일괄 OCR 시작 전 워커·언어팩 1회 로드(첫 GIF에서 멈추는 현상 완화) */
@@ -637,17 +662,20 @@ export async function prewarmSigOcrWorker(): Promise<void> {
     const { PSM } = await import("tesseract.js");
     const worker = await getSharedTesseractWorker(TESS_OCR_LANGS);
     await configureSigOcrWorker(worker, Number(PSM.SINGLE_LINE));
-    const c = document.createElement("canvas");
-    c.width = 80;
-    c.height = 36;
-    const ctx = c.getContext("2d");
-    if (ctx) {
-      ctx.fillStyle = "#111";
-      ctx.fillRect(0, 0, c.width, c.height);
-      ctx.fillStyle = "#fff";
-      ctx.font = "bold 22px sans-serif";
-      ctx.fillText("31200", 6, 26);
-    }
+    const c = padCanvasForOcr((() => {
+      const raw = document.createElement("canvas");
+      raw.width = 120;
+      raw.height = 40;
+      const ctx = raw.getContext("2d");
+      if (ctx) {
+        ctx.fillStyle = "#111";
+        ctx.fillRect(0, 0, raw.width, raw.height);
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 22px sans-serif";
+        ctx.fillText("31200", 8, 28);
+      }
+      return raw;
+    })());
     await worker.recognize(c);
   } catch {
     /* 워밍업 실패해도 본 OCR은 계속 시도 */
@@ -711,7 +739,8 @@ async function recognizeAmountOnCanvases(
   const texts: string[] = [];
   const candidates: number[] = [];
   for (const canvas of canvases) {
-    const ocrCanvas = ensureMinOcrCanvas(canvas);
+    const ocrCanvas = prepareOcrCanvas(canvas);
+    if (!ocrCanvas) continue;
     for (const psm of modes) {
       try {
         await configureSigOcrWorker(worker, psm);
