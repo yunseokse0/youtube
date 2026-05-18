@@ -44,7 +44,12 @@ function parseArgs(argv) {
     out: get("--out") || DEFAULT_OUT,
     apply: has("--apply"),
     fromJson: get("--from-json"),
-    baseUrl: (get("--base-url") || get("--url") || process.env.SIG_OCR_BASE_URL || "").replace(/\/$/, ""),
+    baseUrl: (
+      get("--base-url") ||
+      get("--url") ||
+      process.env.SIG_OCR_BASE_URL ||
+      "https://youtube-5g1a.onrender.com"
+    ).replace(/\/$/, ""),
     user: get("--user") || get("-u") || process.env.SIG_OCR_USER || "finalent",
     cookie: get("--cookie") || process.env.SIG_OCR_COOKIE || "",
     setImageUrl: !has("--no-set-image-url"),
