@@ -5,10 +5,12 @@ import type { AppState } from "@/lib/state";
 import { normalizeRouletteState } from "@/lib/state";
 import { normalizeSigInventory } from "@/lib/constants";
 import type { SigItem } from "@/types";
-import { getRouletteUserId, loadAppStateForRoulette, saveAppStateForRoulette } from "../edge-state-store";
+import { getRouletteUserId, saveAppStateForRoulette } from "../edge-state-store";
 import { setRouletteLock } from "../roulette-lock";
-import { forwardCookieHeader } from "../../_shared/internal-state-headers";
-import { broadcastStateUpdatedAt } from "@/lib/sse-post";
+import {
+  loadAppStateForRouletteRequest,
+  publishRouletteStateAfterSave,
+} from "../roulette-state-sync";
 const ONE_SHOT_SIG_ID = "sig_one_shot";
 
 function buildFallbackPool(size = 10): SigItem[] {
@@ -113,20 +115,7 @@ export async function POST(req: Request) {
       /* body 없음 → 1회 */
     }
 
-    let s = await loadAppStateForRoulette(userId);
-    // Redis 미설정 시 Edge isolate 간 메모리가 분리될 수 있어 /api/state 최신본을 우선 조회
-    try {
-      const stateUrl = new URL(req.url);
-      stateUrl.pathname = "/api/state";
-      stateUrl.search = `?user=${encodeURIComponent(userId)}`;
-      const stateRes = await fetch(stateUrl.toString(), { cache: "no-store", headers: forwardCookieHeader(req) });
-      if (stateRes.ok) {
-        const remote = (await stateRes.json()) as AppState;
-        if (remote && Array.isArray(remote.members)) {
-          s = remote;
-        }
-      }
-    } catch {}
+    const s = await loadAppStateForRouletteRequest(req, userId);
     const excludedSet = new Set(
       Array.isArray((s as AppState).sigSalesExcludedIds)
         ? (s as AppState).sigSalesExcludedIds.map((x) => String(x))
@@ -202,19 +191,10 @@ export async function POST(req: Request) {
         updatedAt: Date.now(),
       };
       await saveAppStateForRoulette(userId, next);
-      try {
-        const url = new URL(req.url);
-        url.pathname = "/api/state";
-        url.search = `?user=${encodeURIComponent(userId)}`;
-        await fetch(url.toString(), {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...forwardCookieHeader(req) },
-          body: JSON.stringify({
-            rouletteState: next.rouletteState,
-            updatedAt: next.updatedAt,
-          }),
-        });
-      } catch {}
+      await publishRouletteStateAfterSave(req, userId, {
+        rouletteState: next.rouletteState,
+        updatedAt: next.updatedAt,
+      });
       return Response.json(
         {
           ok: true,
@@ -309,21 +289,10 @@ export async function POST(req: Request) {
       updatedAt: Date.now(),
     };
     await saveAppStateForRoulette(userId, next);
-    // Redis 미설정 환경(Edge 인메모리 분리)에서도 /api/state 응답이 즉시 최신 rouletteState를 보게 동기화
-    try {
-      const url = new URL(req.url);
-      url.pathname = "/api/state";
-      url.search = `?user=${encodeURIComponent(userId)}`;
-      await fetch(url.toString(), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...forwardCookieHeader(req) },
-        body: JSON.stringify({
-          rouletteState: next.rouletteState,
-          updatedAt: next.updatedAt,
-        }),
-      });
-    } catch {}
-    void broadcastStateUpdatedAt(next.updatedAt);
+    await publishRouletteStateAfterSave(req, userId, {
+      rouletteState: next.rouletteState,
+      updatedAt: next.updatedAt,
+    });
     return Response.json(
       { ok: true, result: last, results, spinCount, spinPriceFilters: plan, spinPriceRanges: planRanges, fallbackUsed },
       { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }

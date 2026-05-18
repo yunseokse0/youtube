@@ -6,9 +6,11 @@ import { normalizeRouletteState } from "@/lib/state";
 import { normalizeSigInventory } from "@/lib/constants";
 import type { SigItem } from "@/types";
 import { saveRouletteLog } from "@/lib/sig-roulette";
-import { getRouletteUserId, loadAppStateForRoulette, saveAppStateForRoulette } from "../edge-state-store";
-import { forwardCookieHeader } from "../../_shared/internal-state-headers";
-import { broadcastStateUpdatedAt } from "@/lib/sse-post";
+import { getRouletteUserId, saveAppStateForRoulette } from "../edge-state-store";
+import {
+  loadAppStateForRouletteRequest,
+  publishRouletteStateAfterSave,
+} from "../roulette-state-sync";
 
 const ONE_SHOT_SIG_ID = "sig_one_shot";
 
@@ -40,19 +42,7 @@ export async function POST(req: Request) {
       return Response.json({ error: "selected_required" }, { status: 400, headers: { "Content-Type": "application/json" } });
     }
 
-    let s = await loadAppStateForRoulette(userId);
-    try {
-      const stateUrl = new URL(req.url);
-      stateUrl.pathname = "/api/state";
-      stateUrl.search = `?user=${encodeURIComponent(userId)}`;
-      const stateRes = await fetch(stateUrl.toString(), { cache: "no-store", headers: forwardCookieHeader(req) });
-      if (stateRes.ok) {
-        const remote = (await stateRes.json()) as AppState;
-        if (remote && Array.isArray(remote.members)) {
-          s = remote;
-        }
-      }
-    } catch {}
+    const s = await loadAppStateForRouletteRequest(req, userId);
 
     const rs = normalizeRouletteState(s.rouletteState);
     const srvSession = String(rs.sessionId || "").trim();
@@ -108,19 +98,10 @@ export async function POST(req: Request) {
       updatedAt: Date.now(),
     };
     await saveAppStateForRoulette(userId, next);
-    try {
-      const url = new URL(req.url);
-      url.pathname = "/api/state";
-      url.search = `?user=${encodeURIComponent(userId)}`;
-      await fetch(url.toString(), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...forwardCookieHeader(req) },
-        body: JSON.stringify({
-          rouletteState: next.rouletteState,
-          updatedAt: next.updatedAt,
-        }),
-      });
-    } catch {}
+    await publishRouletteStateAfterSave(req, userId, {
+      rouletteState: next.rouletteState,
+      updatedAt: next.updatedAt,
+    });
 
     const oneShotPrice = Math.max(0, Math.floor(Number(oneShotResult?.price || 0)));
     try {
@@ -145,7 +126,6 @@ export async function POST(req: Request) {
       }
     }
 
-    void broadcastStateUpdatedAt(next.updatedAt);
     return Response.json({ ok: true }, { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
   } catch (e) {
     return Response.json({ ok: false, error: String(e) }, { status: 500, headers: { "Content-Type": "application/json" } });

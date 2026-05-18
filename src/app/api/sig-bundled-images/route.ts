@@ -1,6 +1,11 @@
 import fs from "fs";
 import path from "path";
 import { NextResponse } from "next/server";
+import {
+  readSigGithubTreeCache,
+  writeSigGithubTreeCache,
+  type SigGithubTreeCtx,
+} from "@/lib/sig-bundled-github-cache";
 
 /**
  * `public/images/sigs` 정적 파일 목록 — 관리자「저장소에서」선택용.
@@ -23,6 +28,7 @@ export type SigBundledImagesMeta = {
   githubFetchFailed: boolean;
   /** 트리 요청을 하지 않은 이유(ctx 가 없을 때) */
   githubSkipReason: "list_disabled" | "rolling_disabled" | "unparseable_base" | null;
+  githubCacheHit?: boolean;
 };
 
 function parseOwnerRepoRefFromRollingRoot(root: string): { owner: string; repo: string; ref: string } | null {
@@ -60,11 +66,10 @@ function parseGithubContextForBundledList(): {
   return { ctx: parsed, skipReason: null };
 }
 
-async function listGithubTreeSigPaths(ctx: {
-  owner: string;
-  repo: string;
-  ref: string;
-}): Promise<string[] | null> {
+async function listGithubTreeSigPaths(ctx: SigGithubTreeCtx): Promise<string[] | null> {
+  const cached = readSigGithubTreeCache(ctx);
+  if (cached) return cached;
+
   const token =
     process.env.SIG_BUNDLED_GITHUB_TOKEN?.trim() ||
     process.env.GITHUB_TOKEN?.trim() ||
@@ -82,7 +87,6 @@ async function listGithubTreeSigPaths(ctx: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         "User-Agent": "excel-broadcast-sig-bundled-images",
       },
-      next: { revalidate: 120 },
     });
   } catch {
     return null;
@@ -184,7 +188,9 @@ export async function GET() {
     const { ctx, skipReason } = parseGithubContextForBundledList();
     let remote: string[] | null = null;
     let githubFetchFailed = false;
+    let githubCacheHit = false;
     if (ctx) {
+      githubCacheHit = readSigGithubTreeCache(ctx) !== null;
       try {
         remote = await listGithubTreeSigPaths(ctx);
         if (remote === null) githubFetchFailed = true;
@@ -200,10 +206,11 @@ export async function GET() {
       githubTried: Boolean(ctx),
       githubFetchFailed,
       githubSkipReason: ctx ? null : skipReason,
+      githubCacheHit,
     };
     return NextResponse.json(
       { ok: true as const, paths, meta },
-      { headers: { "Cache-Control": "private, max-age=30" } }
+      { headers: { "Cache-Control": "private, max-age=300" } }
     );
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
