@@ -16,7 +16,9 @@
     "test:watch": "vitest",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
-    "sig:import": "node scripts/copy-sigs-from-folder.mjs"
+    "sig:import": "node scripts/copy-sigs-from-folder.mjs",
+    "sig:ocr-test": "node scripts/test-sig-ocr-local.mjs",
+    "sig:ocr-batch": "node scripts/batch-sig-ocr-apply.mjs"
   },
   "dependencies": {
     "@capacitor-community/file-opener": "^8.0.0",
@@ -53,6 +55,7 @@
     "@types/react": "18.2.66",
     "@types/react-dom": "18.2.22",
     "autoprefixer": "10.4.17",
+    "canvas": "^3.2.3",
     "eslint": "8.57.0",
     "eslint-config-next": "14.2.35",
     "postcss": "8.4.35",

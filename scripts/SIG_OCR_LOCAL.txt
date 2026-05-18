@@ -1,0 +1,47 @@
+로컬 PC에서 시그 GIF 금액 OCR → 서버 반영
+==========================================
+
+왜 로컬?
+  - 관리자 브라우저 OCR은 Render 서버·네트워크·GIF 다운로드 때문에 느리고 실패가 잦음
+  - PC에서 tesseract.js + canvas로 `public/images/sigs/from-drive` GIF를 직접 읽으면 빠름
+
+준비 (최초 1회)
+  cd d:\excel\youtube-git
+  npm install
+
+1) GIF 준비
+  npm run sig:import -- "d:\excel\youtube-git\siggif"
+  (또는 이미 from-drive에 있으면 생략)
+
+2) OCR만 (결과 JSON)
+  npm run sig:ocr-batch
+  npm run sig:ocr-batch -- --only APT,고민중독
+  npm run sig:ocr-batch -- --limit 10
+
+  → sig-ocr-results.json 생성
+
+3) 서버에 가격 반영 (관리자 로그인 쿠키 필요)
+  - 브라우저에서 관리자 로그인 후 F12 → Application → Cookies → sb_user 복사
+
+  npm run sig:ocr-batch -- --apply ^
+    --base-url https://youtube-ovvv.onrender.com ^
+    --user finalent ^
+    --cookie "sb_user=여기에_값"
+
+  환경변수로도 가능:
+    set SIG_OCR_BASE_URL=https://youtube-ovvv.onrender.com
+    set SIG_OCR_USER=finalent
+    set SIG_OCR_COOKIE=sb_user=...
+    npm run sig:ocr-batch -- --apply
+
+4) JSON 수동 수정 후 재반영
+  npm run sig:ocr-batch -- --apply --from-json sig-ocr-results.json --base-url ... --cookie ...
+
+옵션
+  --no-set-image-url   가격만 바꾸고 imageUrl은 건드리지 않음
+  --dry-run            --apply와 함께 써도 POST 안 함
+
+주의
+  - 파일명과 시그 이름이 같아야 자동 매칭됨 (예: APT.gif ↔ 시그명 APT)
+  - Git에 GIF를 올렸어도 Render 재배포 전에는 /images/sigs/from-drive/ URL이 404일 수 있음
+  - OCR 실패 행은 JSON에서 price를 직접 넣고 --from-json --apply 로 반영
