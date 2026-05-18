@@ -4,6 +4,7 @@ import {
   buildWheelMenuSlices,
   calculateSpinFinalAngle,
   canonicalSigIdFromWheelSliceId,
+  formatWheelSegmentLabel,
   findSliceIndexForResult,
   pickWheelSliceIdForWin,
   resolveWheelSpinTarget,
@@ -22,6 +23,17 @@ function item(id: string, price = 0): SigItem {
     isActive: true,
   };
 }
+
+describe("formatWheelSegmentLabel", () => {
+  it("칸이 많을수록 짧게 자른다", () => {
+    expect(formatWheelSegmentLabel("귀여워서미안해", 20)).toBe("귀여워서…");
+    expect(formatWheelSegmentLabel("APT", 8)).toBe("APT");
+  });
+
+  it("빈 문자열은 대시", () => {
+    expect(formatWheelSegmentLabel("  ", 10)).toBe("—");
+  });
+});
 
 describe("canonicalSigIdFromWheelSliceId", () => {
   it("슬라이스 접미사를 제거해 재고 id와 맞춘다", () => {

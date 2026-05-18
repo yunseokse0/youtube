@@ -9,6 +9,7 @@ import { listRouletteLogs, saveRouletteLog } from "@/lib/sig-roulette";
 import { getRouletteUserId, loadAppStateForRoulette, saveAppStateForRoulette } from "../edge-state-store";
 import { clearRouletteLock } from "../roulette-lock";
 import { forwardCookieHeader } from "../../_shared/internal-state-headers";
+import { broadcastStateUpdatedAt } from "@/lib/sse-post";
 
 /** 회전판 애니메이션 종료 후 isRolling=false (당첨 result는 유지) */
 const finishSchema = z.object({
@@ -131,6 +132,7 @@ export async function POST(req: Request) {
         }),
       });
     } catch {}
+    void broadcastStateUpdatedAt(next.updatedAt);
     clearRouletteLock(userId);
     if (typeof console !== "undefined" && console.info) {
       const names = selectedSigs.map((s) => s.name).join(", ");

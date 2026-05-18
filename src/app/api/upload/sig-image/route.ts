@@ -4,6 +4,7 @@ import path from "path";
 import { createClient } from "@supabase/supabase-js";
 import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
 import { shouldServeSigImagesFromDisk } from "@/lib/sig-image-mode";
+import { getSigUploadPublicRoots } from "@/lib/sig-upload-storage";
 import {
   ftpPublicImageUrlPath,
   ftpRemotePathForSigAsset,
@@ -34,12 +35,11 @@ function resolveUploadUserId(req: Request): string | null {
   return null;
 }
 
-function getUploadRootCandidates(): string[] {
-  const cwd = process.cwd();
-  return [
-    path.join(cwd, "public"),
-    path.join(cwd, ".next", "standalone", "public"),
-  ];
+function isEphemeralCloudUpload(): boolean {
+  if (process.env.NODE_ENV !== "production") return false;
+  if (getSupabaseStorageConfig()) return false;
+  if (shouldServeSigImagesFromFtp() && getFtpAccessConfig()) return false;
+  return true;
 }
 
 function extFrom(file: File): string | null {
@@ -113,7 +113,7 @@ async function writeSigImageToPublicUploads(
   data: Buffer
 ): Promise<string> {
   const storagePath = `sigs/${safeUid}/${fileName}`;
-  const roots = getUploadRootCandidates();
+  const roots = getSigUploadPublicRoots();
   for (const root of roots) {
     const dir = path.join(root, "uploads", "sigs", safeUid);
     await mkdir(dir, { recursive: true });
@@ -153,7 +153,10 @@ export async function POST(req: Request) {
 
     if (shouldServeSigImagesFromDisk()) {
       const url = await writeSigImageToPublicUploads(safeUid, fileName, data);
-      return Response.json({ ok: true, url }, { status: 200 });
+      return Response.json(
+        { ok: true, url, storage: "disk", ephemeral: isEphemeralCloudUpload() },
+        { status: 200 }
+      );
     }
 
     if (shouldServeSigImagesFromFtp() && getFtpAccessConfig()) {
@@ -193,11 +196,22 @@ export async function POST(req: Request) {
         .getPublicUrl(storagePath);
       const publicUrl = publicData?.publicUrl || "";
       if (!publicUrl) return Response.json({ ok: false, error: "supabase_public_url_failed" }, { status: 500 });
-      return Response.json({ ok: true, url: publicUrl }, { status: 200 });
+      return Response.json({ ok: true, url: publicUrl, storage: "supabase" }, { status: 200 });
+    }
+
+    if (isEphemeralCloudUpload()) {
+      return Response.json(
+        {
+          ok: false,
+          error:
+            "supabase_required: Render 등 프로덕션에서는 SUPABASE_URL·SUPABASE_SERVICE_ROLE_KEY·SUPABASE_STORAGE_BUCKET 환경 변수가 필요합니다. (디스크 업로드는 재배포 시 삭제됩니다)",
+        },
+        { status: 503 }
+      );
     }
 
     const url = await writeSigImageToPublicUploads(safeUid, fileName, data);
-    return Response.json({ ok: true, url }, { status: 200 });
+    return Response.json({ ok: true, url, storage: "disk", ephemeral: false }, { status: 200 });
   } catch (e) {
     return Response.json({ ok: false, error: String(e) }, { status: 500 });
   }

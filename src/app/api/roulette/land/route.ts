@@ -8,6 +8,7 @@ import type { SigItem } from "@/types";
 import { saveRouletteLog } from "@/lib/sig-roulette";
 import { getRouletteUserId, loadAppStateForRoulette, saveAppStateForRoulette } from "../edge-state-store";
 import { forwardCookieHeader } from "../../_shared/internal-state-headers";
+import { broadcastStateUpdatedAt } from "@/lib/sse-post";
 
 const ONE_SHOT_SIG_ID = "sig_one_shot";
 
@@ -144,6 +145,7 @@ export async function POST(req: Request) {
       }
     }
 
+    void broadcastStateUpdatedAt(next.updatedAt);
     return Response.json({ ok: true }, { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
   } catch (e) {
     return Response.json({ ok: false, error: String(e) }, { status: 500, headers: { "Content-Type": "application/json" } });

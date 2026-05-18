@@ -1223,11 +1223,19 @@ function maybeWarnMemoryStateBackend(res: Response): void {
   );
 }
 
-export async function loadStateFromApi(userId?: string): Promise<AppState | null> {
-  const dedupeKey = userId ?? "__cookie__";
+export type LoadStateFromApiOptions = {
+  /** 클라이언트가 이미 가진 `updatedAt` — 서버가 같거나 오래되면 304(본문 없음) */
+  ifUpdatedSince?: number;
+};
+
+export async function loadStateFromApi(
+  userId?: string,
+  options?: LoadStateFromApiOptions
+): Promise<AppState | null> {
+  const dedupeKey = `${userId ?? "__cookie__"}:${options?.ifUpdatedSince ?? 0}`;
   const existing = loadStateInflight.get(dedupeKey);
   if (existing) return existing;
-  const created = doLoadStateFromApi(userId);
+  const created = doLoadStateFromApi(userId, options);
   loadStateInflight.set(dedupeKey, created);
   created.finally(() => {
     if (loadStateInflight.get(dedupeKey) === created) loadStateInflight.delete(dedupeKey);
@@ -1235,9 +1243,15 @@ export async function loadStateFromApi(userId?: string): Promise<AppState | null
   return created;
 }
 
-async function doLoadStateFromApi(userId?: string): Promise<AppState | null> {
+async function doLoadStateFromApi(
+  userId?: string,
+  options?: LoadStateFromApiOptions
+): Promise<AppState | null> {
   try {
-    const q = new URLSearchParams({ _t: String(Date.now()) });
+    const since = Number(options?.ifUpdatedSince || 0);
+    const q = new URLSearchParams();
+    if (since > 0) q.set("since", String(Math.floor(since)));
+    else q.set("_t", String(Date.now()));
     if (userId) {
       q.set("user", userId);
       /** `/api/state` 가 `u` 만 받는 프록시·구버전 호환 */
@@ -1255,6 +1269,7 @@ async function doLoadStateFromApi(userId?: string): Promise<AppState | null> {
       notifyAdminSessionExpired();
       return null;
     }
+    if (res.status === 304) return null;
     if (!res.ok) return null;
     maybeWarnMemoryStateBackend(res);
     const text = await res.text();

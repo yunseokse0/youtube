@@ -3,18 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
-import {
-  defaultState,
-  loadState,
-  loadStateFromApi,
-  normalizeDonorRankingsOverlayConfig,
-  storageKey,
-  type AppState,
-} from "@/lib/state";
+import { defaultState, normalizeDonorRankingsOverlayConfig, type AppState } from "@/lib/state";
 import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
-import { createStateUpdatedScheduler, readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
-import { useSSEConnection } from "@/lib/sse-client";
-import { getOverlayUserIdFromSearchParams, shouldSuppressOverlaySseConnection } from "@/lib/overlay-params";
+import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
+import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 
 type DonorRow = {
   name: string;
@@ -40,91 +32,6 @@ const TEST_TOON_ROWS: DonorRow[] = [
   { name: "초승달", amount: 50000 },
   { name: "콩콩", amount: 10000 },
 ];
-
-function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
-  const [state, setState] = useState<AppState | null>(null);
-  const lastUpdatedRef = useRef(0);
-  const syncingRef = useRef(false);
-  const syncFromApiRef = useRef<() => Promise<void>>(async () => {});
-  const scheduleSseSyncRef = useRef<(() => void) | null>(null);
-
-  useSSEConnection((d: unknown) => {
-    if ((d as { type?: string })?.type === "state_updated") scheduleSseSyncRef.current?.();
-  });
-
-  const readLocalStateIfExists = useCallback((): AppState | null => {
-    if (typeof window === "undefined") return null;
-    try {
-      const key = storageKey(userId);
-      const raw = window.localStorage.getItem(key);
-      if (!raw) return null;
-      return loadState(userId ?? undefined);
-    } catch {
-      return null;
-    }
-  }, [userId]);
-
-  useEffect(() => {
-    const local = readLocalStateIfExists();
-    if (local) {
-      setState(local);
-      lastUpdatedRef.current = local.updatedAt || 0;
-    } else {
-      const fallback = defaultState();
-      setState(fallback);
-      lastUpdatedRef.current = fallback.updatedAt || 0;
-    }
-
-    const syncFromApi = async () => {
-      if (syncingRef.current) return;
-      syncingRef.current = true;
-      try {
-        const remote = await loadStateFromApi(userId);
-        if (!remote) return;
-        const remoteUpdatedAt = remote.updatedAt || 0;
-        lastUpdatedRef.current = remoteUpdatedAt;
-        setState(remote);
-      } finally {
-        syncingRef.current = false;
-      }
-    };
-
-    const onStorage = (e: StorageEvent) => {
-      if (e.key !== storageKey(userId ?? undefined)) return;
-      const localNow = readLocalStateIfExists();
-      if (!localNow) return;
-      const localUpdatedAt = localNow.updatedAt || 0;
-      if (localUpdatedAt >= lastUpdatedRef.current) {
-        lastUpdatedRef.current = localUpdatedAt;
-        setState(localNow);
-      }
-    };
-
-    syncFromApiRef.current = syncFromApi;
-
-    const { schedule, cancel } = createStateUpdatedScheduler(() => {
-      void syncFromApiRef.current();
-    });
-    scheduleSseSyncRef.current = schedule;
-
-    const pollMs = readOverlayPollIntervalMs();
-    let pollTimer: number | undefined;
-    if (pollMs > 0) pollTimer = window.setInterval(() => void syncFromApi(), pollMs);
-
-    window.addEventListener("storage", onStorage);
-    if (!shouldSuppressOverlaySseConnection() || !local) {
-      void syncFromApi();
-    }
-    return () => {
-      cancel();
-      scheduleSseSyncRef.current = null;
-      if (pollTimer) window.clearInterval(pollTimer);
-      window.removeEventListener("storage", onStorage);
-    };
-  }, [readLocalStateIfExists, userId]);
-
-  return { state, ready: state !== null };
-}
 
 function normalizeTarget(donor: Record<string, unknown>): "account" | "toon" {
   const rawType = String(donor.type || "").trim();
@@ -453,7 +360,7 @@ function RankingColumn({
 export default function DonorRankingsOverlayPage() {
   const sp = useSearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
-  const { state, ready } = useRemoteState(userId);
+  const { state, ready } = useOverlayRemoteState(userId);
   const overlayCfg = useMemo(
     () => normalizeDonorRankingsOverlayConfig(state?.donorRankingsOverlayConfig),
     [state?.donorRankingsOverlayConfig]

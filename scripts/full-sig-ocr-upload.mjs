@@ -4,6 +4,7 @@
  *
  * node scripts/full-sig-ocr-upload.mjs
  * node scripts/full-sig-ocr-upload.mjs --limit 5
+ * node scripts/full-sig-ocr-upload.mjs --apply-json
  */
 import fs from "fs";
 import path from "path";
@@ -23,9 +24,15 @@ const ONE_SHOT_SIG_ID = "sig_one_shot";
 
 function parseArgs() {
   const limitIdx = process.argv.indexOf("--limit");
+  const jsonIdx = process.argv.indexOf("--json");
   return {
     limit: limitIdx >= 0 ? Number(process.argv[limitIdx + 1]) : 0,
     retryFailures: process.argv.includes("--retry-failures"),
+    applyJson: process.argv.includes("--apply-json"),
+    jsonPath:
+      jsonIdx >= 0
+        ? process.argv[jsonIdx + 1]
+        : path.join(process.cwd(), "sig-ocr-results.json"),
   };
 }
 
@@ -84,8 +91,36 @@ async function postState(body) {
   }
 }
 
+async function applyFromJson(jsonPath) {
+  const data = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+  const priceById = new Map();
+  for (const r of data.results || []) {
+    const p = Number(r.price);
+    if (r.sigId && p > 0) priceById.set(r.sigId, p);
+  }
+  const remote = await fetchState();
+  const inventory = (remote.sigInventory || []).map((item) => {
+    const p = priceById.get(item.id);
+    return p != null ? { ...item, price: p } : item;
+  });
+  const withPrice = inventory.filter((x) => Number(x.price) > 0).length;
+  console.log(
+    `JSON 반영: 금액 ${withPrice}건 / 시그 ${inventory.length}개 (${path.basename(jsonPath)})`
+  );
+  const res = await postState({
+    sigInventory: inventory,
+    sigRollingMeta: remote.sigRollingMeta || {},
+    updatedAt: Date.now(),
+  });
+  console.log("저장 완료", res.updatedAt ? `updatedAt=${res.updatedAt}` : "");
+}
+
 async function main() {
-  const { limit, retryFailures } = parseArgs();
+  const { limit, retryFailures, applyJson, jsonPath } = parseArgs();
+  if (applyJson) {
+    await applyFromJson(jsonPath);
+    return;
+  }
   const speed = resolveOcrSpeed();
   const resultsPath = path.join(process.cwd(), "sig-ocr-results.json");
 

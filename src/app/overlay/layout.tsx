@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import OverlayBroadcastHygiene from "@/components/overlay/OverlayBroadcastHygiene";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +56,7 @@ export default function OverlayLayout({
         table.pastel-member-table tbody tr.overlay-row:nth-child(odd) td { background-color: rgba(199, 206, 234, 0.32) !important; }
         table.pastel-member-table tbody tr.overlay-row:nth-child(even) td { background-color: rgba(226, 240, 203, 0.36) !important; }
       ` }} />
+      <OverlayBroadcastHygiene />
       {children}
     </div>
   );

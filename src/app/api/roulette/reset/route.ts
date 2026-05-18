@@ -6,6 +6,7 @@ import { normalizeRouletteState } from "@/lib/state";
 import { getRouletteUserId, loadAppStateForRoulette, saveAppStateForRoulette } from "../edge-state-store";
 import { clearRouletteLock } from "../roulette-lock";
 import { forwardCookieHeader } from "../../_shared/internal-state-headers";
+import { broadcastStateUpdatedAt } from "@/lib/sse-post";
 
 /** 회전판만 IDLE로 되돌림(메뉴 수·히스토리 로그 등은 유지). 방송 전 오버레이 유령 결과 제거용 */
 export async function POST(req: Request) {
@@ -60,6 +61,7 @@ export async function POST(req: Request) {
         }),
       });
     } catch {}
+    void broadcastStateUpdatedAt(next.updatedAt);
 
     return Response.json(
       { ok: true, phase: nextRs.phase },

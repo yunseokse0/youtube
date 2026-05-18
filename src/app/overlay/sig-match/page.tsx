@@ -7,15 +7,11 @@ import type { AppState } from "@/lib/state";
 import {
   defaultState,
   ensureMembers,
-  loadState,
-  loadStateFromApi,
   normalizeSigMatchParticipantIds,
   normalizeSigMatchPools,
-  storageKey,
 } from "@/lib/state";
-import { getOverlayUserIdFromSearchParams, shouldSuppressOverlaySseConnection } from "@/lib/overlay-params";
-import { createStateUpdatedScheduler, readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
-import { useSSEConnection } from "@/lib/sse-client";
+import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
+import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 import { getEffectiveRemainingTime } from "@/lib/timer-utils";
 import { formatSigMatchStat, getSigMatchRankings } from "@/lib/settlement-utils";
 
@@ -83,97 +79,10 @@ function parseSigMatchSnapshot(sp: URLSearchParams): AppState | null {
 }
 
 function useSigMatchState(userId: string | undefined, lockedSnapshot: AppState | null): { state: AppState | null; ready: boolean } {
-  const [state, setState] = useState<AppState | null>(lockedSnapshot || defaultState());
-  const lastUpdatedRef = useRef(0);
-  const syncingRef = useRef(false);
-  const syncFromApiRef = useRef<() => Promise<void>>(async () => {});
-  const scheduleSseSyncRef = useRef<(() => void) | null>(null);
-
-  useSSEConnection((d: unknown) => {
-    if (lockedSnapshot) return;
-    if ((d as { type?: string })?.type === "state_updated") scheduleSseSyncRef.current?.();
+  return useOverlayRemoteState(userId, {
+    frozenState: lockedSnapshot ?? undefined,
+    enabled: !lockedSnapshot,
   });
-
-  const readLocalState = useCallback((): AppState | null => {
-    if (typeof window === "undefined") return null;
-    try {
-      const key = storageKey(userId);
-      const raw = window.localStorage.getItem(key);
-      if (!raw) return null;
-      return loadState(userId ?? undefined);
-    } catch {
-      return null;
-    }
-  }, [userId]);
-
-  useEffect(() => {
-    if (lockedSnapshot) {
-      scheduleSseSyncRef.current = null;
-      setState(lockedSnapshot);
-      lastUpdatedRef.current = lockedSnapshot.updatedAt || Date.now();
-      syncFromApiRef.current = async () => {};
-      return;
-    }
-
-    const local = readLocalState();
-    if (local) {
-      setState(local);
-      lastUpdatedRef.current = local.updatedAt || 0;
-    } else {
-      setState(defaultState());
-      lastUpdatedRef.current = 0;
-    }
-
-    const syncFromApi = async () => {
-      if (syncingRef.current) return;
-      syncingRef.current = true;
-      try {
-        const data = await loadStateFromApi(userId);
-        if (data && (data.updatedAt || 0) >= lastUpdatedRef.current) {
-          lastUpdatedRef.current = data.updatedAt || Date.now();
-          setState(data);
-        }
-      } finally {
-        syncingRef.current = false;
-      }
-    };
-
-    const onStorage = (e: StorageEvent) => {
-      if (e.key !== storageKey(userId ?? undefined)) return;
-      const localNow = readLocalState();
-      if (!localNow) return;
-      const incomingUpdatedAt = localNow.updatedAt || 0;
-      if (incomingUpdatedAt >= lastUpdatedRef.current) {
-        lastUpdatedRef.current = incomingUpdatedAt;
-        setState(localNow);
-      }
-    };
-
-    syncFromApiRef.current = syncFromApi;
-
-    const { schedule, cancel } = createStateUpdatedScheduler(() => {
-      void syncFromApiRef.current();
-    });
-    scheduleSseSyncRef.current = schedule;
-
-    const pollMs = readOverlayPollIntervalMs();
-    let pollTimer: number | undefined;
-    if (pollMs > 0) pollTimer = window.setInterval(() => void syncFromApi(), pollMs);
-
-    window.addEventListener("storage", onStorage);
-    if (!shouldSuppressOverlaySseConnection() || !local) {
-      void syncFromApi();
-    }
-
-    return () => {
-      cancel();
-      scheduleSseSyncRef.current = null;
-      if (pollTimer) window.clearInterval(pollTimer);
-      window.removeEventListener("storage", onStorage);
-    };
-  }, [readLocalState, userId, lockedSnapshot]);
-
-  return { state, ready: state !== null };
 }
 
 function SigMatchOverlayInner() {

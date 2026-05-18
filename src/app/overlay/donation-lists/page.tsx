@@ -3,99 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
-import { defaultState, loadState, loadStateFromApi, normalizeDonationListsOverlayConfig, storageKey, type AppState } from "@/lib/state";
-import { getOverlayUserIdFromSearchParams, shouldSuppressOverlaySseConnection } from "@/lib/overlay-params";
-import { createStateUpdatedScheduler, readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
-import { useSSEConnection } from "@/lib/sse-client";
+import { normalizeDonationListsOverlayConfig, type AppState } from "@/lib/state";
+import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
+import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
 import { sortMembersForRanking } from "@/lib/utils";
-
-function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
-  const [state, setState] = useState<AppState | null>(null);
-  const lastUpdatedRef = useRef(0);
-  const syncingRef = useRef(false);
-  const syncFromApiRef = useRef<() => Promise<void>>(async () => {});
-  const scheduleSseSyncRef = useRef<(() => void) | null>(null);
-
-  useSSEConnection((d: unknown) => {
-    if ((d as { type?: string })?.type === "state_updated") scheduleSseSyncRef.current?.();
-  });
-
-  const readLocalStateIfExists = useCallback((): AppState | null => {
-    if (typeof window === "undefined") return null;
-    try {
-      const key = storageKey(userId);
-      const raw = window.localStorage.getItem(key);
-      if (!raw) return null;
-      return loadState(userId ?? undefined);
-    } catch {
-      return null;
-    }
-  }, [userId]);
-
-  useEffect(() => {
-    const local = readLocalStateIfExists();
-    if (local) {
-      setState(local);
-      lastUpdatedRef.current = local.updatedAt || 0;
-    } else {
-      const fallback = defaultState();
-      setState(fallback);
-      lastUpdatedRef.current = fallback.updatedAt || 0;
-    }
-
-    const syncFromApi = async () => {
-      if (syncingRef.current) return;
-      syncingRef.current = true;
-      try {
-        const remote = await loadStateFromApi(userId);
-        if (!remote) return;
-        const remoteUpdatedAt = remote.updatedAt || 0;
-        if (remoteUpdatedAt >= lastUpdatedRef.current) {
-          lastUpdatedRef.current = remoteUpdatedAt;
-          setState(remote);
-        }
-      } finally {
-        syncingRef.current = false;
-      }
-    };
-
-    const onStorage = (e: StorageEvent) => {
-      if (e.key !== storageKey(userId ?? undefined)) return;
-      const localNow = readLocalStateIfExists();
-      if (!localNow) return;
-      const localUpdatedAt = localNow.updatedAt || 0;
-      if (localUpdatedAt >= lastUpdatedRef.current) {
-        lastUpdatedRef.current = localUpdatedAt;
-        setState(localNow);
-      }
-    };
-
-    syncFromApiRef.current = syncFromApi;
-
-    const { schedule, cancel } = createStateUpdatedScheduler(() => {
-      void syncFromApiRef.current();
-    });
-    scheduleSseSyncRef.current = schedule;
-
-    const pollMs = readOverlayPollIntervalMs();
-    let pollTimer: number | undefined;
-    if (pollMs > 0) pollTimer = window.setInterval(() => void syncFromApi(), pollMs);
-
-    window.addEventListener("storage", onStorage);
-    if (!shouldSuppressOverlaySseConnection() || !local) {
-      void syncFromApi();
-    }
-    return () => {
-      cancel();
-      scheduleSseSyncRef.current = null;
-      if (pollTimer) window.clearInterval(pollTimer);
-      window.removeEventListener("storage", onStorage);
-    };
-  }, [readLocalStateIfExists, userId]);
-
-  return { state, ready: state !== null };
-}
 
 function RankingTable({
   items,
@@ -161,7 +73,7 @@ function RankingTable({
 export default function DonationListsOverlayPage() {
   const sp = useSearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
-  const { state, ready } = useRemoteState(userId);
+  const { state, ready } = useOverlayRemoteState(userId);
 
   const overlayCfg = useMemo(
     () => normalizeDonationListsOverlayConfig(state?.donationListsOverlayConfig),

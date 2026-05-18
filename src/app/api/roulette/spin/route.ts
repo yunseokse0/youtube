@@ -8,6 +8,7 @@ import type { SigItem } from "@/types";
 import { getRouletteUserId, loadAppStateForRoulette, saveAppStateForRoulette } from "../edge-state-store";
 import { setRouletteLock } from "../roulette-lock";
 import { forwardCookieHeader } from "../../_shared/internal-state-headers";
+import { broadcastStateUpdatedAt } from "@/lib/sse-post";
 const ONE_SHOT_SIG_ID = "sig_one_shot";
 
 function buildFallbackPool(size = 10): SigItem[] {
@@ -322,6 +323,7 @@ export async function POST(req: Request) {
         }),
       });
     } catch {}
+    void broadcastStateUpdatedAt(next.updatedAt);
     return Response.json(
       { ok: true, result: last, results, spinCount, spinPriceFilters: plan, spinPriceRanges: planRanges, fallbackUsed },
       { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }

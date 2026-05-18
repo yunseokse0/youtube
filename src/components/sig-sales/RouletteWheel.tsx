@@ -8,6 +8,7 @@ import type { SigItem } from "@/types";
 import {
   calculateSpinFinalAngle,
   findSliceIndexForResult,
+  formatWheelSegmentLabel,
   ROULETTE_WHEEL_SFX_ENABLED,
   ROULETTE_WHEEL_WAV_ASSETS_ENABLED,
   SOUND_ASSETS_ENABLED,
@@ -31,6 +32,8 @@ type RouletteWheelProps = {
   muted?: boolean;
   onTransitionEnd?: () => void;
   onLanded?: (resultId?: string | null) => void;
+  /** 미지정 시 `item.name`. 관리자 시그 롤링 짧은 라벨 등 */
+  getLabel?: (item: SigItem) => string;
 };
 
 const COLORS = [
@@ -51,6 +54,7 @@ export default function RouletteWheel({
   muted = false,
   onTransitionEnd,
   onLanded,
+  getLabel,
 }: RouletteWheelProps) {
   const rotate = useMotionValue(0);
   const [currentAngle, setCurrentAngle] = useState(0);
@@ -144,7 +148,10 @@ export default function RouletteWheel({
     const safeInside = R - Math.max(18, Math.round(labelHeightPx * 0.55));
     return Math.max(12, Math.round(Math.min(radial, safeInside)));
   })();
-  const labelFontPx = Math.max(11, Math.round(13 * wheelScale));
+  const labelFontPx = Math.max(
+    9,
+    Math.round((segmentCount >= 16 ? 10 : segmentCount >= 12 ? 11 : 13) * wheelScale)
+  );
   const centerSizePx = Math.max(36, Math.round(48 * wheelScale));
   const gradient = useMemo(() => {
     const stops = items.map((_, i) => {
@@ -449,13 +456,15 @@ export default function RouletteWheel({
       </div>
       <div className="absolute inset-0 grid place-items-center">
         <motion.div
-          className="relative rounded-full border-8 border-yellow-300 shadow-[0_0_45px_rgba(251,191,36,0.38)]"
+          className="relative overflow-visible rounded-full border-8 border-yellow-300 shadow-[0_0_45px_rgba(251,191,36,0.38)]"
           style={{ height: `${wheelSizePx}px`, width: `${wheelSizePx}px`, rotate, background: gradient }}
         >
           {items.map((item, idx) => {
             /** conic-gradient 칸 경계가 아니라 각 조각의 중심 각도(포인터·착지 로직과 동일) */
             const labelAngle = idx * segment + segment / 2;
             const isWin = idx === winnerIndex && !isRolling;
+            const fullLabel = (getLabel ? getLabel(item) : item.name) || item.name || "—";
+            const displayLabel = formatWheelSegmentLabel(fullLabel, segmentCount);
             return (
               <div key={`${item.id}-${idx}`} className="absolute left-1/2 top-1/2 h-0 w-0" style={{ transform: `rotate(${labelAngle}deg) translateY(-${labelRadiusPx}px)` }}>
                 {/* motion scale이 style.transform 을 통째로 덮을 수 있어, 중앙 정렬 translate 는 바깥에 둔다 */}
@@ -478,10 +487,15 @@ export default function RouletteWheel({
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      whiteSpace: "normal",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
                       wordBreak: "keep-all",
-                      overflowWrap: "anywhere",
+                      overflowWrap: "normal",
+                      fontFamily:
+                        '"Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif',
                     }}
+                    title={fullLabel !== displayLabel ? fullLabel : undefined}
                     animate={
                       isWin
                         ? {
@@ -492,7 +506,7 @@ export default function RouletteWheel({
                     }
                     transition={{ duration: 1.4, repeat: isWin ? Infinity : 0 }}
                   >
-                    {item.name}
+                    {displayLabel}
                   </motion.div>
                 </div>
               </div>

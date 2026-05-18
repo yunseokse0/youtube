@@ -170,8 +170,28 @@ const STATE_PICK_SIG_INVENTORY = "sigInventory";
 /** 클라이언트가 라이브 동기화 이슈(멀티 인스턴스·메모리 폴백)를 구분할 수 있도록 */
 const HDR_STATE_STORAGE = "X-Broadcast-State-Storage";
 
+function parseSinceParam(req: Request): number {
+  try {
+    const n = Number(new URL(req.url).searchParams.get("since") || 0);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function stateNotModifiedResponse(storage: string): Response {
+  return new Response(null, {
+    status: 304,
+    headers: {
+      "Cache-Control": "no-store, max-age=0, s-maxage=0",
+      [HDR_STATE_STORAGE]: storage,
+    },
+  });
+}
+
 export async function GET(req: Request) {
   let pick = "";
+  const since = parseSinceParam(req);
   try {
     pick = (new URL(req.url).searchParams.get("pick") || "").trim();
   } catch {
@@ -192,6 +212,9 @@ export async function GET(req: Request) {
         logger.warn('Redis 미설정 - 메모리만 사용 (서버 재시작 시 데이터 초기화됨. UPSTASH_REDIS_* 환경변수 설정 권장)');
       }
       logger.debug('메모리 상태 반환', { membersCount: state.members.length, donorsCount: state.donors.length });
+      if (since > 0 && (state.updatedAt || 0) <= since) {
+        return stateNotModifiedResponse("memory");
+      }
       const body =
         pick === STATE_PICK_SIG_INVENTORY
           ? { updatedAt: state.updatedAt, sigInventory: state.sigInventory || [] }
@@ -255,6 +278,10 @@ export async function GET(req: Request) {
     } catch {}
 
     mergedForResponse = applyDonationGoalPresetNormalization(mergedForResponse);
+
+    if (since > 0 && (mergedForResponse.updatedAt || 0) <= since) {
+      return stateNotModifiedResponse("redis");
+    }
 
     logger.debug('Redis 상태 반환', { hasState: !!state, usedMemory: !!getServerMemoryAppState(), userId });
     const body =

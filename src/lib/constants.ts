@@ -222,6 +222,13 @@ export function stripSigInventoryImagesKeepList(items: SigItem[] | null | undefi
   return items.map((x) => ({ ...x, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL }));
 }
 
+/** 번들 시그(`/images/sigs/…`)를 GitHub raw로 우회해 Render 아웃바운드 절감(기본 on, `NEXT_PUBLIC_SIG_ROLLING_GITHUB_BASE=off` 시 비활성) */
+function offloadBundledSigPathIfConfigured(path: string): string {
+  const s = String(path || "").trim();
+  if (!s.startsWith("/images/sigs/")) return s;
+  return rewriteSigPathForRollingGithubIfConfigured(s);
+}
+
 export function resolveSigImageUrl(name: string, imageUrl?: string): string {
   if (sigImagePlaceholderOnlyForOverlay) {
     return BUNDLED_SIG_PLACEHOLDER_URL;
@@ -239,8 +246,10 @@ export function resolveSigImageUrl(name: string, imageUrl?: string): string {
     ) {
       return raw;
     }
-    if (raw.startsWith("/")) return raw;
-    if (raw.startsWith("uploads/") || raw.startsWith("images/")) return `/${raw}`;
+    if (raw.startsWith("/")) return offloadBundledSigPathIfConfigured(raw);
+    if (raw.startsWith("uploads/") || raw.startsWith("images/")) {
+      return offloadBundledSigPathIfConfigured(`/${raw}`);
+    }
   }
   const safeName = String(name || "").trim();
   if (!safeName) return BUNDLED_SIG_PLACEHOLDER_URL;

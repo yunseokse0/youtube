@@ -48,3 +48,10 @@ export async function sendSSEUpdate(data: unknown): Promise<void> {
   const body = JSON.stringify(data);
   await enqueueSsePost(body);
 }
+
+/** 저장·회전판 등 상태 변경 후 OBS 오버레이에만 알림(전체 JSON은 보내지 않음) */
+export async function broadcastStateUpdatedAt(updatedAt: number): Promise<void> {
+  const ts = Number(updatedAt);
+  if (!Number.isFinite(ts) || ts <= 0) return;
+  await sendSSEUpdate({ type: "state_updated", updatedAt: ts });
+}

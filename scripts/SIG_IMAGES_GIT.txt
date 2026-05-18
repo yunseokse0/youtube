@@ -29,4 +29,4 @@
 
 참고: NEXT_PUBLIC_SIG_IMAGES_PLACEHOLDER_ONLY=1 이면 커스텀 /images/sigs/… 가 더미로 바뀌므로 끄세요.
 
-오버레이 동기화: 기본은 주기 GET 없음(SSE state_updated·storage). 폴링이 필요하면 URL에 overlayPollMs=3000 등(700~120000 ms).
+오버레이 동기화: 기본은 주기 GET 없음(SSE state_updated·변동 시 GET). overlayPollMs URL은 제거·무시됨.

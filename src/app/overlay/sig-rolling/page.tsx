@@ -4,22 +4,17 @@ import type { CSSProperties } from "react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
-  defaultState,
   filterSigInventoryForSalesDisplay,
   getUnifiedSigRollingItems,
-  loadState,
-  loadStateFromApi,
   normalizeSigRolling,
-  storageKey,
   type AppState,
   type SigRollingItem,
 } from "@/lib/state";
 import { normalizeSigImageUrlStored, resolveSigRollingImageUrl } from "@/lib/constants";
 import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
-import { getOverlayMemberFilterIdFromSearchParams, getOverlayUserIdFromSearchParams, shouldSuppressOverlaySseConnection } from "@/lib/overlay-params";
+import { getOverlayMemberFilterIdFromSearchParams, getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { getSigRollingHoldMs } from "@/lib/sig-rolling-duration";
-import { createStateUpdatedScheduler, readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
-import { useSSEConnection } from "@/lib/sse-client";
+import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 import {
   SIG_ROLLING_MEDIA_HEIGHT_PX,
   SIG_ROLLING_MEDIA_WIDTH_PX,
@@ -43,92 +38,6 @@ function sigRollingScheduleKey(state: AppState | null, memberFilterId: string): 
   const r = normalizeSigRolling(state?.sigRolling);
   const items = getUnifiedSigRollingItems(state, memberFilterId);
   return `${r.fadeMs}|${r.staticHoldMs}|${items.map((x) => `${x.id}\u001f${x.url}`).join("\u001e")}`;
-}
-
-function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
-  const [state, setState] = useState<AppState | null>(null);
-  const lastUpdatedRef = useRef(0);
-  const syncingRef = useRef(false);
-  const syncFromApiRef = useRef<() => Promise<void>>(async () => {});
-  const scheduleSseSyncRef = useRef<(() => void) | null>(null);
-
-  useSSEConnection((d: unknown) => {
-    if ((d as { type?: string })?.type === "state_updated") scheduleSseSyncRef.current?.();
-  });
-
-  const readLocalStateIfExists = useCallback((): AppState | null => {
-    if (typeof window === "undefined") return null;
-    try {
-      const raw = window.localStorage.getItem(storageKey(userId));
-      if (!raw) return null;
-      return loadState(userId ?? undefined);
-    } catch {
-      return null;
-    }
-  }, [userId]);
-
-  useEffect(() => {
-    /** 로컬 저장 없이 default만 쓸 때 updatedAt이 방금(ms)이라 서버 타임스탬프보다 항상 크게 나와 OBS 등에서 API 동기화가 영구히 건너뛰어짐 → goal 오버레이와 동일하게 ref=0 */
-    const local = readLocalStateIfExists();
-    if (local) {
-      setState(local);
-      lastUpdatedRef.current = local.updatedAt || 0;
-    } else {
-      const base = defaultState();
-      setState(base);
-      lastUpdatedRef.current = 0;
-    }
-
-    const syncFromApi = async () => {
-      if (syncingRef.current) return;
-      syncingRef.current = true;
-      try {
-        const remote = await loadStateFromApi(userId);
-        if (!remote) return;
-        const remoteUpdatedAt = remote.updatedAt || 0;
-        if (lastUpdatedRef.current <= 0 || remoteUpdatedAt >= lastUpdatedRef.current) {
-          lastUpdatedRef.current = remoteUpdatedAt;
-          setState(remote);
-        }
-      } finally {
-        syncingRef.current = false;
-      }
-    };
-
-    const onStorage = (e: StorageEvent) => {
-      if (e.key !== storageKey(userId ?? undefined)) return;
-      const localNow = readLocalStateIfExists();
-      if (!localNow) return;
-      const localUpdatedAt = localNow.updatedAt || 0;
-      if (localUpdatedAt >= lastUpdatedRef.current) {
-        lastUpdatedRef.current = localUpdatedAt;
-        setState(localNow);
-      }
-    };
-
-    syncFromApiRef.current = syncFromApi;
-
-    const { schedule, cancel } = createStateUpdatedScheduler(() => {
-      void syncFromApiRef.current();
-    });
-    scheduleSseSyncRef.current = schedule;
-
-    const pollMs = readOverlayPollIntervalMs();
-    let pollTimer: number | undefined;
-    if (pollMs > 0) pollTimer = window.setInterval(() => void syncFromApi(), pollMs);
-    window.addEventListener("storage", onStorage);
-    if (!shouldSuppressOverlaySseConnection() || !local) {
-      void syncFromApi();
-    }
-    return () => {
-      cancel();
-      scheduleSseSyncRef.current = null;
-      if (pollTimer) window.clearInterval(pollTimer);
-      window.removeEventListener("storage", onStorage);
-    };
-  }, [readLocalStateIfExists, userId]);
-
-  return { state, ready: state !== null };
 }
 
 function RollingCardColumn({
@@ -259,7 +168,7 @@ function SigRollingOverlayInner() {
   const sp = useSearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
   const memberFilterId = getOverlayMemberFilterIdFromSearchParams(sp);
-  const { state, ready } = useRemoteState(userId);
+  const { state, ready } = useOverlayRemoteState(userId);
 
   const rolling = useMemo(() => normalizeSigRolling(state?.sigRolling), [state?.sigRolling]);
   const items = useMemo(() => getUnifiedSigRollingItems(state, memberFilterId), [state, memberFilterId]);

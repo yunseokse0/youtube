@@ -305,6 +305,40 @@ export function isEmbeddedInSameOriginAdminFrame(): boolean {
   }
 }
 
+export const OVERLAY_POLL_MS_QUERY = "overlayPollMs";
+
+/** 방송·OBS용 URL에서 주기 폴링 쿼리 제거(관리자 복사·북마크 정리) */
+export function sanitizeBroadcastOverlayUrl(url: string): string {
+  const raw = String(url || "").trim();
+  if (!raw) return raw;
+  try {
+    const base = typeof window !== "undefined" ? window.location.origin : "http://localhost";
+    const parsed = raw.startsWith("http://") || raw.startsWith("https://") ? new URL(raw) : new URL(raw, base);
+    parsed.searchParams.delete(OVERLAY_POLL_MS_QUERY);
+    if (raw.startsWith("http://") || raw.startsWith("https://")) return parsed.toString();
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return raw
+      .replace(/([?&])overlayPollMs=[^&]*&?/gi, "$1")
+      .replace(/[?&]$/, "")
+      .replace(/\?&/, "?");
+  }
+}
+
+/** 로드 시 주소창에서 overlayPollMs 제거 — OBS 북마크에 남아 있어도 폴링 안 함 */
+export function stripOverlayPollMsFromBrowserLocation(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const u = new URL(window.location.href);
+    if (!u.searchParams.has(OVERLAY_POLL_MS_QUERY)) return;
+    u.searchParams.delete(OVERLAY_POLL_MS_QUERY);
+    const next = `${u.pathname}${u.search}${u.hash}`;
+    window.history.replaceState(window.history.state, "", next);
+  } catch {
+    /* noop */
+  }
+}
+
 /** 미리보기 iframe 등에서 SSE 생략. 디버그 시 `?overlayAllowSse=1`로 다시 켤 수 있음. */
 export function shouldSuppressOverlaySseConnection(): boolean {
   if (typeof window === "undefined") return false;

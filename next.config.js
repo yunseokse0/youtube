@@ -18,6 +18,7 @@ const nextConfig = {
       fallback: [
         { source: "/images/sigs/:path*", destination: "/api/sig-legacy/:path*" },
         { source: "/images/sig/:path*", destination: "/api/sig-legacy/:path*" },
+        { source: "/uploads/sigs/:path*", destination: "/api/uploads-sigs/:path*" },
       ],
     };
   },

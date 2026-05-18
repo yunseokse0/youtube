@@ -62,7 +62,12 @@ import * as XLSX from "xlsx";
 import { appendSettlementRecordAndSync, appendSigMatchIncentiveSettlementAndSync, SettlementMemberRatioOverrides } from "@/lib/settlement";
 import { formatSigMatchStat, getSigMatchRankings } from "@/lib/settlement-utils";
 import { getEffectiveRemainingTime, pauseTimer, resumeTimer } from "@/lib/timer-utils";
-import { appendAdminPreviewEmbedToOverlayUrl, presetToParams, type OverlayPresetLike } from "@/lib/overlay-params";
+import {
+  appendAdminPreviewEmbedToOverlayUrl,
+  presetToParams,
+  sanitizeBroadcastOverlayUrl,
+  type OverlayPresetLike,
+} from "@/lib/overlay-params";
 import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
 import {
   detectSigPriceFromImageFile,
@@ -1115,9 +1120,10 @@ export default function AdminPage() {
   }, [buildMealMatchLiveUrl]);
 
   const copyUrl = async (url: string, id: string) => {
+    const clean = sanitizeBroadcastOverlayUrl(url);
     try {
-      if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(url); }
-      else { const ta = document.createElement("textarea"); ta.value = url; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); }
+      if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(clean); }
+      else { const ta = document.createElement("textarea"); ta.value = clean; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); }
       setCopiedId(id); setTimeout(() => setCopiedId(null), 1500);
     } catch {}
   };
@@ -2310,14 +2316,22 @@ export default function AdminPage() {
       alert(networkLike ? "이미지 업로드 실패: 네트워크 오류입니다. 인터넷 연결을 확인해 주세요." : `이미지 업로드 실패: ${msg}`);
       return null;
     }
-    const j = (await res.json().catch(() => ({}))) as { ok?: boolean; url?: string; error?: string };
+    const j = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      url?: string;
+      error?: string;
+      ephemeral?: boolean;
+      storage?: string;
+    };
     if (!res.ok || !j.ok || !j.url) {
       const rawError = typeof j.error === "string" && j.error.trim() ? j.error.trim() : String(res.status);
       const normalized = rawError.toLowerCase();
       const message =
         normalized === "unauthorized" || String(res.status) === "401"
           ? "로그인이 만료되었거나 권한이 없습니다. 새로고침 후 다시 로그인해 주세요."
-          : normalized === "invalid_type"
+          : normalized.includes("supabase_required")
+            ? "운영 서버(Render)에 Supabase 저장소 환경 변수(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_STORAGE_BUCKET)가 없습니다. Render 대시보드에 설정 후 다시 업로드해 주세요."
+            : normalized === "invalid_type"
             ? "지원하지 않는 파일 형식입니다. GIF/PNG/JPG/WEBP 파일만 업로드할 수 있습니다."
             : normalized === "file_too_large" || String(res.status) === "413"
               ? "파일 용량이 너무 큽니다. 30MB 이하 파일만 업로드할 수 있습니다."
@@ -2328,6 +2342,11 @@ export default function AdminPage() {
                   : `알 수 없는 오류(${rawError})가 발생했습니다.`;
       alert(`이미지 업로드 실패: ${message}`);
       return null;
+    }
+    if (j.ephemeral || (j.storage === "disk" && j.url.startsWith("/uploads/"))) {
+      setSigExcelResult(
+        "업로드됨(임시 디스크). Render 재배포 시 사라질 수 있습니다 — Supabase 환경 변수 설정을 권장합니다."
+      );
     }
     if (isBrokenSigImageUrl(j.url)) {
       alert("이미지 업로드 실패: 사용자 경로 파싱 오류가 발생했습니다. 다시 로그인 후 재시도해 주세요.");
@@ -6384,7 +6403,13 @@ export default function AdminPage() {
                   <div className="text-[11px] text-neutral-500">완판 시 시그 이미지 정중앙에 겹쳐 표시됩니다.</div>
                   <div className="flex items-center gap-2">
                     <div className="relative h-14 w-14 overflow-hidden rounded border border-white/10 bg-black/30">
-                      <Image src={state.sigSoldOutStampUrl || DEFAULT_SIG_SOLD_STAMP_URL} alt="완판 오버레이 미리보기" fill unoptimized className="object-contain" />
+                      <Image
+                        src={resolveSigImageUrl("stamp", state.sigSoldOutStampUrl || DEFAULT_SIG_SOLD_STAMP_URL)}
+                        alt="완판 오버레이 미리보기"
+                        fill
+                        unoptimized
+                        className="object-contain"
+                      />
                     </div>
                     <span className="text-xs text-neutral-400">{state.sigSoldOutStampUrl ? "커스텀 이미지 사용 중" : "기본 도장 사용 중"}</span>
                   </div>

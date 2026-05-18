@@ -1,114 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import { useSearchParams } from "next/navigation";
-import { defaultState, loadState, loadStateFromApi, storageKey, type AppState } from "@/lib/state";
-import { getOverlayUserIdFromSearchParams, shouldSuppressOverlaySseConnection, type OverlayPresetLike } from "@/lib/overlay-params";
+import type { AppState } from "@/lib/state";
+import { getOverlayUserIdFromSearchParams, type OverlayPresetLike } from "@/lib/overlay-params";
 import { GoalBar } from "@/components/GoalBar";
 import { useGoalPresetAutoEscalate } from "@/hooks/useGoalPresetAutoEscalate";
-import { createStateUpdatedScheduler, readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
-import { useSSEConnection } from "@/lib/sse-client";
-
-function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
-  const [state, setState] = useState<AppState | null>(null);
-  const lastUpdatedRef = useRef(0);
-  const syncingRef = useRef(false);
-  const syncFromApiRef = useRef<() => Promise<void>>(async () => {});
-  const scheduleSseSyncRef = useRef<(() => void) | null>(null);
-
-  useSSEConnection((d: unknown) => {
-    if ((d as { type?: string })?.type === "state_updated") scheduleSseSyncRef.current?.();
-  });
-
-  useEffect(() => {
-    let hasLocalSnapshot = false;
-    if (typeof window !== "undefined") {
-      try {
-        const raw = window.localStorage.getItem(storageKey(userId));
-        if (raw) {
-          const local = loadState(userId ?? undefined);
-          setState(local);
-          lastUpdatedRef.current = local.updatedAt || 0;
-          hasLocalSnapshot = true;
-        }
-      } catch {
-        // ignore local read error
-      }
-    }
-    if (!hasLocalSnapshot) {
-      const fallback = defaultState();
-      setState(fallback);
-      // No persisted local snapshot: allow API state to win immediately.
-      lastUpdatedRef.current = 0;
-    }
-
-    const syncFromApi = async () => {
-      if (syncingRef.current) return;
-      syncingRef.current = true;
-      try {
-        const remote = await loadStateFromApi(userId);
-        if (!remote) return;
-        const remoteUpdatedAt = remote.updatedAt || 0;
-        if (lastUpdatedRef.current <= 0 || remoteUpdatedAt >= lastUpdatedRef.current) {
-          lastUpdatedRef.current = remoteUpdatedAt;
-          setState(remote);
-        }
-      } finally {
-        syncingRef.current = false;
-      }
-    };
-
-    syncFromApiRef.current = syncFromApi;
-
-    const { schedule, cancel } = createStateUpdatedScheduler(() => {
-      void syncFromApiRef.current();
-    });
-    scheduleSseSyncRef.current = schedule;
-
-    const onStorage = (e: StorageEvent) => {
-      if (e.key !== storageKey(userId ?? undefined)) return;
-      /** 관리자 iframe: 부모 탭이 localStorage에 쓴 값이 곧 최신 */
-      if (shouldSuppressOverlaySseConnection()) {
-        try {
-          const local = loadState(userId ?? undefined);
-          if (!local) return;
-          const u = local.updatedAt || 0;
-          if (lastUpdatedRef.current <= 0 || u >= lastUpdatedRef.current) {
-            lastUpdatedRef.current = u;
-            setState(local);
-          }
-        } catch {
-          /* noop */
-        }
-        return;
-      }
-      void syncFromApi();
-    };
-
-    if (shouldSuppressOverlaySseConnection()) {
-      if (!hasLocalSnapshot) void syncFromApi();
-    } else {
-      void syncFromApi();
-    }
-    const pollMs = readOverlayPollIntervalMs();
-    let pollId: number | undefined;
-    if (pollMs > 0) pollId = window.setInterval(() => void syncFromApi(), pollMs);
-    window.addEventListener("storage", onStorage);
-    return () => {
-      cancel();
-      scheduleSseSyncRef.current = null;
-      if (pollId) window.clearInterval(pollId);
-      window.removeEventListener("storage", onStorage);
-    };
-  }, [userId]);
-
-  return { state, ready: state !== null };
-}
+import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 
 export default function GoalOverlayPage() {
   const sp = useSearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
-  const { state, ready } = useRemoteState(userId);
+  const { state, ready } = useOverlayRemoteState(userId, { storageDebounceMs: 0 });
   const hostParam = (sp.get("host") || "").toLowerCase();
   const externalHost = hostParam === "prism" || hostParam === "obs" || hostParam === "external";
 

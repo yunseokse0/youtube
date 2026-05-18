@@ -29,7 +29,12 @@ import {
 import { useSigSalesState } from "@/hooks/useSigSalesState";
 import { useImagePreload } from "@/hooks/useImagePreload";
 import { useSSEConnection } from "@/lib/sse-client";
-import { createStateUpdatedScheduler, readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
+import {
+  createStateUpdatedScheduler,
+  readOverlayPollIntervalMs,
+  readOverlaySseFallbackPollMs,
+  shouldSyncOverlayFromStateUpdatedEvent,
+} from "@/lib/overlay-pull-policy";
 
 /**
  * [계약] 시그 판매 오버레이는 아래를 전제로 구현돼 있어야 한다(“될 수도”가 아님).
@@ -43,7 +48,7 @@ import { createStateUpdatedScheduler, readOverlayPollIntervalMs } from "@/lib/ov
  *    CONFIRM_PENDING 에도 `revealedSigCount` 로 같은 속도를 유지한다(관리자 확정 클릭 직후 한꺼번에 깔리지 않게).
  * 6) `sigResultScalePct` / `resultScalePct`: 확정 카드 줄만 추가 축소(zoom%, 기본 78). URL이 없으면 관리자에 저장된 `rouletteState.sigResultScalePct` 사용.
  */
-/** 기본은 폴링 없음. `?overlayPollMs=` 로만 주기 GET 복구(overlay-pull-policy). */
+/** 기본은 폴링 없음(SSE·변동 시 GET). `overlayPollMs` URL은 로드 시 제거됨. */
 /** cinematic 스핀 최대 당첨 수와 맞춤(API spinCount·풀 한도). 예전 5슬롯 제한은 확대됨 */
 const CONFIRMED_VISIBLE_SLOTS = 20;
 const MIN_ONE_SHOT_SIGS = 2;
@@ -319,17 +324,25 @@ export default function SigSalesOverlayPage() {
   const { machine, landed, resetToIdle } = useSigSalesState(userId, state);
   const overlayReloadSeenRef = useRef<number | null>(null);
 
+  const lastSyncedUpdatedAtRef = useRef(0);
   const loadRemote = useCallback(async () => {
-    const remote = await loadStateFromApi(userId);
-    if (remote) setState(remote);
+    const remote = await loadStateFromApi(userId, {
+      ifUpdatedSince: lastSyncedUpdatedAtRef.current,
+    });
+    if (!remote) return;
+    const ts = remote.updatedAt || 0;
+    if (ts > 0) lastSyncedUpdatedAtRef.current = Math.max(lastSyncedUpdatedAtRef.current, ts);
+    setState(remote);
   }, [userId]);
 
   const loadRemoteRef = useRef(loadRemote);
   loadRemoteRef.current = loadRemote;
   const scheduleSseLoadRef = useRef<(() => void) | null>(null);
-  useSSEConnection((d: unknown) => {
-    const o = d as { type?: string };
-    if (o?.type === "state_updated") scheduleSseLoadRef.current?.();
+  const { connected: sseConnected } = useSSEConnection((d: unknown) => {
+    const o = d as { type?: string; updatedAt?: number };
+    if (o?.type !== "state_updated") return;
+    if (!shouldSyncOverlayFromStateUpdatedEvent(o.updatedAt, lastSyncedUpdatedAtRef.current)) return;
+    scheduleSseLoadRef.current?.();
   });
 
   useEffect(() => {
@@ -356,6 +369,11 @@ export default function SigSalesOverlayPage() {
     const pollMs = readOverlayPollIntervalMs();
     let pollId: number | undefined;
     if (pollMs > 0) pollId = window.setInterval(() => void loadRemote(), pollMs);
+    const sseFallbackMs = pollMs > 0 ? 0 : readOverlaySseFallbackPollMs();
+    let sseFallbackId: number | undefined;
+    if (sseFallbackMs > 0 && !sseConnected) {
+      sseFallbackId = window.setInterval(() => void loadRemote(), sseFallbackMs);
+    }
     const key = storageKey(userId ?? undefined);
     let storageDebounce: ReturnType<typeof setTimeout> | null = null;
     const onStorage = (e: StorageEvent) => {
@@ -381,10 +399,11 @@ export default function SigSalesOverlayPage() {
       cancel();
       scheduleSseLoadRef.current = null;
       if (pollId) window.clearInterval(pollId);
+      if (sseFallbackId) window.clearInterval(sseFallbackId);
       if (storageDebounce) clearTimeout(storageDebounce);
       window.removeEventListener("storage", onStorage);
     };
-  }, [loadRemote, userId]);
+  }, [loadRemote, userId, sseConnected]);
   useEffect(() => {
     const nonce = Number(state?.rouletteState?.overlayReloadNonce || 0);
     if (!Number.isFinite(nonce)) return;
@@ -536,6 +555,15 @@ export default function SigSalesOverlayPage() {
   }, [wheelSlices, spinQueueSelected, sequentialRoundIndex]);
 
   const wheelItemsWithResult = wheelSpinTarget.items;
+
+  const getWheelLabel = useCallback(
+    (item: SigItem) => {
+      const canon = canonicalSigIdFromWheelSliceId(item.id);
+      const metaLabel = state?.sigRollingMeta?.[canon]?.label?.trim();
+      return metaLabel || String(item.name || "").trim() || canon;
+    },
+    [state?.sigRollingMeta]
+  );
 
   const wheelResultSliceId = wheelSpinTarget.sliceId;
   /** 회전 중·착지 전에는 비우고, 착지 후에는 순차 공개용 전체 목록 */
@@ -1199,6 +1227,7 @@ export default function SigSalesOverlayPage() {
                 key={`wheel-${sequentialRoundIndex}-${wheelResultSliceId || "none"}`}
                 spinReplayNonce={useSequentialWheel ? sequentialRoundIndex : 0}
                 items={wheelItemsWithResult}
+                getLabel={getWheelLabel}
                 /** settling 동안 false면 휠 effect가 조기 종료·정리되어 onTransitionEnd/onLanded 이후에도 상태가 꼬일 수 있음 */
                 isRolling={
                   wheelPhase === "spinning" ||

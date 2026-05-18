@@ -3,97 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
-import { defaultState, loadState, loadStateFromApi, storageKey, type AppState } from "@/lib/state";
-import { getOverlayUserIdFromSearchParams, shouldSuppressOverlaySseConnection } from "@/lib/overlay-params";
-import { createStateUpdatedScheduler, readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
-import { useSSEConnection } from "@/lib/sse-client";
+import type { AppState } from "@/lib/state";
+import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
+import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 import { getEffectiveRemainingTime } from "@/lib/timer-utils";
-
-function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
-  const [state, setState] = useState<AppState | null>(null);
-  const lastUpdatedRef = useRef(0);
-  const syncingRef = useRef(false);
-  const syncFromApiRef = useRef<() => Promise<void>>(async () => {});
-  const scheduleSseSyncRef = useRef<(() => void) | null>(null);
-
-  useSSEConnection((d: unknown) => {
-    if ((d as { type?: string })?.type === "state_updated") scheduleSseSyncRef.current?.();
-  });
-
-  const readLocalStateIfExists = useCallback((): AppState | null => {
-    if (typeof window === "undefined") return null;
-    try {
-      const key = storageKey(userId);
-      const raw = window.localStorage.getItem(key);
-      if (!raw) return null;
-      return loadState(userId ?? undefined);
-    } catch {
-      return null;
-    }
-  }, [userId]);
-
-  useEffect(() => {
-    const local = readLocalStateIfExists();
-    if (local) {
-      setState(local);
-      lastUpdatedRef.current = local.updatedAt || 0;
-    } else {
-      const base = defaultState();
-      setState(base);
-      lastUpdatedRef.current = base.updatedAt || 0;
-    }
-
-    const syncFromApi = async () => {
-      if (syncingRef.current) return;
-      syncingRef.current = true;
-      try {
-        const remote = await loadStateFromApi(userId);
-        if (!remote) return;
-        const remoteUpdatedAt = remote.updatedAt || 0;
-        if (remoteUpdatedAt >= lastUpdatedRef.current) {
-          lastUpdatedRef.current = remoteUpdatedAt;
-          setState(remote);
-        }
-      } finally {
-        syncingRef.current = false;
-      }
-    };
-
-    const onStorage = (e: StorageEvent) => {
-      if (e.key !== storageKey(userId ?? undefined)) return;
-      const localNow = readLocalStateIfExists();
-      if (!localNow) return;
-      const localUpdatedAt = localNow.updatedAt || 0;
-      if (localUpdatedAt >= lastUpdatedRef.current) {
-        lastUpdatedRef.current = localUpdatedAt;
-        setState(localNow);
-      }
-    };
-
-    syncFromApiRef.current = syncFromApi;
-
-    const { schedule, cancel } = createStateUpdatedScheduler(() => {
-      void syncFromApiRef.current();
-    });
-    scheduleSseSyncRef.current = schedule;
-
-    const pollMs = readOverlayPollIntervalMs();
-    let pollTimer: number | undefined;
-    if (pollMs > 0) pollTimer = window.setInterval(() => void syncFromApi(), pollMs);
-    window.addEventListener("storage", onStorage);
-    if (!shouldSuppressOverlaySseConnection() || !local) {
-      void syncFromApi();
-    }
-    return () => {
-      cancel();
-      scheduleSseSyncRef.current = null;
-      if (pollTimer) window.clearInterval(pollTimer);
-      window.removeEventListener("storage", onStorage);
-    };
-  }, [readLocalStateIfExists, userId]);
-
-  return { state, ready: state !== null };
-}
 
 function outlineStyle(): React.CSSProperties {
   return { textShadow: "0 1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 -1px 0 #000, 0 0 8px rgba(0,0,0,.55)" };
@@ -140,7 +53,7 @@ export default function MealMatchOverlayPage() {
   };
   const demoEnabled = sp.get("demo") === "true";
   const demoMode = (sp.get("demoMode") || "member").toLowerCase();
-  const { state, ready } = useRemoteState(userId);
+  const { state, ready } = useOverlayRemoteState(userId);
   const [overtakeText, setOvertakeText] = useState<string | null>(null);
   const lastLeaderRef = useRef<string>("");
   const [, setTimerTick] = useState(0);

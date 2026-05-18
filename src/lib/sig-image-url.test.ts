@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isTrustedStoredSigImageHttpUrl, normalizeSigImageUrlStored } from "@/lib/constants";
+import {
+  isTrustedStoredSigImageHttpUrl,
+  normalizeSigImageUrlStored,
+  resolveSigImageUrl,
+} from "@/lib/constants";
 import { matchSigInventoryItemByFileName, planSigBulkReupload } from "@/lib/sig-image-bulk";
 import type { SigItem } from "@/types";
 
@@ -65,6 +69,14 @@ describe("sig bulk reupload", () => {
     expect(plans[0].matchedBy).toBe("name");
     expect(plans[1].item.id).toBe("b");
     expect(plans[1].matchedBy).toBe("fallback");
+  });
+});
+
+describe("resolveSigImageUrl", () => {
+  it("offloads bundled /images/sigs paths to GitHub raw by default", () => {
+    const url = resolveSigImageUrl("테스트", "/images/sigs/from-drive/foo.gif");
+    expect(url).toContain("raw.githubusercontent.com");
+    expect(url).toContain("/images/sigs/");
   });
 });
 
