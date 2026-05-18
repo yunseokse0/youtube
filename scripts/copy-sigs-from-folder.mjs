@@ -1,19 +1,22 @@
 /**
- * Google Drive 등에서 받은 폴더의 GIF를 public/images/sigs/from-drive/ 로 복사합니다.
- * 이후 git add / commit / push 하면 Render 등 배포본에 포함됩니다.
+ * PC 폴더 → public/images/sigs/from-drive/ 복사 (Git push 후 관리자 「저장소」·「신규만 추가」)
  *
  * 사용:
- *   node scripts/copy-sigs-from-folder.mjs "C:\Users\me\Downloads\siggif"
- *   npm run sig:import -- "D:\path\to\folder"
+ *   npm run sig:import -- "D:\siggif"
+ *   npm run sig:import:new -- "D:\siggif"     ← 이미 있는 파일명은 건너뜀
+ *   node scripts/copy-sigs-from-folder.mjs --new-only "D:\siggif"
  */
 import fs from "fs/promises";
 import path from "path";
 
-const srcDir = process.argv[2];
+const argv = process.argv.slice(2);
+const newOnly = argv.includes("--new-only") || argv.includes("-n");
+const srcDir = argv.find((a) => !a.startsWith("-"));
 const destDir = path.join(process.cwd(), "public", "images", "sigs", "from-drive");
+const ALLOWED = /\.(gif|png|webp|jpe?g)$/i;
 
 if (!srcDir || srcDir === "-h" || srcDir === "--help") {
-  console.error('사용법: node scripts/copy-sigs-from-folder.mjs "<원본_폴더_경로>"');
+  console.error('사용법: node scripts/copy-sigs-from-folder.mjs [--new-only] "<원본_폴더_경로>"');
   process.exit(1);
 }
 
@@ -32,18 +35,31 @@ if (!stat.isDirectory()) {
 
 await fs.mkdir(destDir, { recursive: true });
 const names = await fs.readdir(absSrc);
-let n = 0;
+let copied = 0;
+let skipped = 0;
 for (const name of names) {
-  if (!/\.gif$/i.test(name)) continue;
+  if (!ALLOWED.test(name)) continue;
   const from = path.join(absSrc, name);
   const st = await fs.stat(from);
   if (!st.isFile()) continue;
   const to = path.join(destDir, name);
+  if (newOnly) {
+    try {
+      await fs.access(to);
+      skipped += 1;
+      console.log("건너뜀(이미 있음):", name);
+      continue;
+    } catch {
+      /* copy */
+    }
+  }
   await fs.copyFile(from, to);
-  n += 1;
+  copied += 1;
   console.log("복사:", name);
 }
-console.log(`완료: ${n}개 GIF → ${path.relative(process.cwd(), destDir)}`);
-if (n === 0) {
-  console.warn("GIF가 없습니다. 폴더 안 파일 확장자가 .gif 인지 확인하세요.");
+console.log(
+  `완료: ${copied}개 복사, ${skipped}개 건너뜀 → ${path.relative(process.cwd(), destDir)}${newOnly ? " (--new-only)" : ""}`
+);
+if (copied === 0 && skipped === 0) {
+  console.warn("복사할 이미지가 없습니다. .gif .png .webp .jpg 를 확인하세요.");
 }

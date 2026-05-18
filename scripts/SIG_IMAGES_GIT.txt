@@ -1,32 +1,32 @@
-시그 GIF를 Git으로 배포에 포함하는 방법 (요약)
-============================================
+시그 이미지 · GitHub · Render (요약)
+====================================
 
-1) Google Drive에서 폴더 전체 ZIP 다운로드 후 압축 해제
+■ 완판 도장(STAMP) — 시그 판매 완료 오버레이
+  경로: public/images/sigs/stamp.png  (기본값)
+  「기본 도장 사용」= /images/sigs/stamp.png. 다른 파일은 관리자 → 완판 도장 → 「저장소」.
 
-2) 프로젝트 루트에서 복사 스크립트 실행 (경로는 본인 PC 기준으로 바꿈)
+■ 신규 롤링 시그 GIF (추가만, 기존 파일 덮어쓰기 안 함)
+  1) PC 폴더 → 프로젝트 (신규 파일만):
+       npm run sig:import:new -- "D:\Downloads\siggif"
+     → public/images/sigs/from-drive/  (이미 있으면 건너뜀)
 
-   npm run sig:import -- "D:\Downloads\siggif"
+  2) Git (추가된 파일만 add 권장):
+       git add public/images/sigs/from-drive/새파일.gif
+       git commit -m "chore: 시그 GIF 추가"
+       git push
 
-   → public/images/sigs/from-drive/ 아래에 .gif 가 복사됩니다.
+  3) Render 관리자 → 시그 롤링:
+       「GitHub 신규만 롤링 추가」 버튼 (목록에 없는 /images/sigs/… 만 추가)
+       또는 「저장소에서 일괄 추가」
 
-3) Git에 올리기
+  OBS는 GIF를 raw.githubusercontent.com 에서 직접 로드(캐시).
+  변경된 목록만 /api/state 로 동기화(SSE+304).
 
-   git add public/images/sigs/from-drive .gitattributes scripts/
-   git status
-   git commit -m "chore: 시그 GIF 번들(from-drive)"
-   git push
+■ 환경 변수 (Render, Supabase 없음)
+  NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY=true
+  NEXT_PUBLIC_SIG_ROLLING_GITHUB_BASE=https://raw.githubusercontent.com/OWNER/REPO/main/public
 
-4) 관리자(시그 판매)에서 각 시그의 이미지 URL을 다음 형태로 지정
+■ 전체 덮어쓰기가 필요할 때만
+  npm run sig:import -- "D:\folder"   (--new-only 없음)
 
-   /images/sigs/from-drive/파일이름.gif
-
-   (배포 Origin 기준 동일 오리진 경로)
-
-5) 용량이 많을 때
-
-   - 저장소·clone 크기가 커지므로, GIF가 매우 많으면 Git LFS 사용을 검토하세요.
-   - 또는 Supabase Storage 등 외부 저장소 + 업로드 API 경로를 유지하는 편이 나을 수 있습니다.
-
-참고: NEXT_PUBLIC_SIG_IMAGES_PLACEHOLDER_ONLY=1 이면 커스텀 /images/sigs/… 가 더미로 바뀌므로 끄세요.
-
-오버레이 동기화: 기본은 주기 GET 없음(SSE state_updated·변동 시 GET). overlayPollMs URL은 제거·무시됨.
+참고: NEXT_PUBLIC_SIG_IMAGES_PLACEHOLDER_ONLY=1 이면 /images/sigs/… 가 더미로 바뀌므로 끄세요.

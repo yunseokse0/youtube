@@ -76,6 +76,7 @@ import {
   terminateSharedSigOcrWorker,
 } from "@/lib/sig-image-ocr";
 import { planSigBulkReupload } from "@/lib/sig-image-bulk";
+import { collectUsedSigImageKeys, filterBundledPathsNotInUse } from "@/lib/sig-bundled-sync";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 import { normalizeSigDedupKeyImageUrl } from "@/lib/sig-inventory-dedup";
 import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
@@ -2929,6 +2930,33 @@ export default function AdminPage() {
     addSigRollingFromBundledPaths(skipDummy);
     closeSigBundledPicker();
   }, [sigBundledSelected, addSigRollingFromBundledPaths, closeSigBundledPicker]);
+
+  const addNewBundledSigsToRollingOnly = useCallback(async () => {
+    setSigRollingUploadMessage("");
+    try {
+      const res = await fetch("/api/sig-bundled-images", { credentials: "include", cache: "no-store" });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; paths?: string[]; error?: string };
+      if (!res.ok || !j.ok) {
+        setSigRollingUploadMessage(`신규 추가 실패: ${String(j.error || res.status)}`);
+        return;
+      }
+      const paths = Array.isArray(j.paths) ? j.paths : [];
+      const used = collectUsedSigImageKeys(state);
+      const fresh = filterBundledPathsNotInUse(paths, used);
+      if (!fresh.length) {
+        setSigRollingUploadMessage(
+          "추가할 신규 시그가 없습니다. Git에 push 했는지, 파일이 public/images/sigs/ 아래인지 확인하세요."
+        );
+        return;
+      }
+      addSigRollingFromBundledPaths(fresh);
+      setSigRollingUploadMessage(
+        `GitHub·저장소 기준 신규 ${fresh.length}개만 롤링에 추가했습니다. (${new Date().toLocaleTimeString("ko-KR")})`
+      );
+    } catch (e) {
+      setSigRollingUploadMessage(`신규 추가 실패: ${String(e)}`);
+    }
+  }, [state, addSigRollingFromBundledPaths]);
 
   const removeSigRollingItem = (id: string) => {
     setState((prev) => {
@@ -6061,6 +6089,14 @@ export default function AdminPage() {
                   </button>
                   <button
                     type="button"
+                    className="rounded bg-teal-900 px-3 py-1.5 text-sm hover:bg-teal-800"
+                    title="GitHub/저장소 목록 중 롤링·인벤에 아직 없는 /images/sigs/ 경로만 한 번에 추가"
+                    onClick={() => void addNewBundledSigsToRollingOnly()}
+                  >
+                    GitHub 신규만 롤링 추가
+                  </button>
+                  <button
+                    type="button"
                     className="rounded bg-emerald-800 px-3 py-1.5 text-sm hover:bg-emerald-700 disabled:opacity-50"
                     disabled={legacyOnlyRollingCount <= 0}
                     onClick={convertAllLegacyRollingToSigInventory}
@@ -6957,6 +6993,20 @@ export default function AdminPage() {
                           onClick={() => setSigBundledSelected([])}
                         >
                           선택 해제
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded bg-teal-900 px-2 py-1 text-xs hover:bg-teal-800"
+                          onClick={() => {
+                            const used = collectUsedSigImageKeys(state);
+                            const fresh = filterBundledPathsNotInUse(sigBundledPaths, used);
+                            setSigBundledSelected(fresh);
+                            if (!fresh.length) {
+                              setSigRollingUploadMessage("선택 가능한 신규 경로가 없습니다.");
+                            }
+                          }}
+                        >
+                          신규만 선택
                         </button>
                         <button
                           type="button"

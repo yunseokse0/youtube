@@ -17,6 +17,7 @@
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "sig:import": "node scripts/copy-sigs-from-folder.mjs",
+    "sig:import:new": "node scripts/copy-sigs-from-folder.mjs --new-only",
     "sig:ocr-test": "node scripts/test-sig-ocr-local.mjs",
     "sig:ocr-batch": "node scripts/batch-sig-ocr-apply.mjs",
     "sig:ocr-upload": "node scripts/full-sig-ocr-upload.mjs",
