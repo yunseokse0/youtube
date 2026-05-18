@@ -22,6 +22,19 @@ describe("normalizeSigImageUrlStored", () => {
     ).toBe("/uploads/sigs/finalent/123.gif");
   });
 
+  it("maps legacy /uploads to /images/sigs when github-only mode", () => {
+    const prev = process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY;
+    process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY = "true";
+    try {
+      expect(normalizeSigImageUrlStored("/uploads/sigs/finalent/123.gif")).toBe(
+        "/images/sigs/123.gif"
+      );
+    } finally {
+      if (prev === undefined) delete process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY;
+      else process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY = prev;
+    }
+  });
+
   it("does not strip arbitrary https by default", () => {
     const cdn = "https://cdn.example.com/sig/price.gif";
     expect(normalizeSigImageUrlStored(cdn)).toBe(cdn);

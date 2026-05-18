@@ -28,11 +28,40 @@ export function isSigLocalAssetsOnlyMode(): boolean {
 
 export function shouldServeSigImagesFromDisk(): boolean {
   const v = String(process.env.SIG_SERVE_SIG_IMAGES_FROM_DISK ?? "").trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes";
+  const enabled = v === "1" || v === "true" || v === "yes";
+  if (!enabled) return false;
+  /** Render 디스크는 재배포 시 삭제됨 — Supabase 없이 디스크 업로드만 쓰면 404가 반복됨 */
+  if (
+    process.env.RENDER === "true" &&
+    process.env.NODE_ENV === "production" &&
+    String(process.env.SIG_SERVE_SIG_IMAGES_FROM_DISK_ON_RENDER ?? "")
+      .trim()
+      .toLowerCase() !== "1"
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /** true 이면 Supabase·/uploads·GitHub 시그 경로 외 https URL을 저장 시 더미로 치환(구 동작) */
 export function shouldStripUntrustedExternalSigImageUrls(): boolean {
   const v = String(process.env.NEXT_PUBLIC_SIG_STRIP_EXTERNAL_IMAGE_URLS ?? "").trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes";
+}
+
+/**
+ * Supabase·Render `/uploads` 없이 Git `public/images/sigs` + raw.githubusercontent 만 사용.
+ * 롤링 OBS: 상태(JSON)는 변동 시만, GIF는 브라우저→GitHub 직접(캐시).
+ */
+export function isSigImagesGithubOnlyMode(): boolean {
+  const v = String(process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+/** `/uploads/sigs/<uid>/<file>` → `/images/sigs/<file>` (Git 번들 경로) */
+export function coerceSigUrlToGithubBundledPath(url: string): string {
+  const s = String(url || "").trim();
+  const m = s.match(/\/uploads\/sigs\/[^/]+\/([^?#/]+)/i);
+  if (m?.[1]) return `/images/sigs/${m[1]}`;
+  return s;
 }

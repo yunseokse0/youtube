@@ -3,8 +3,8 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { createClient } from "@supabase/supabase-js";
 import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
-import { shouldServeSigImagesFromDisk } from "@/lib/sig-image-mode";
-import { getSigUploadPublicRoots } from "@/lib/sig-upload-storage";
+import { isSigImagesGithubOnlyMode, shouldServeSigImagesFromDisk } from "@/lib/sig-image-mode";
+import { getSigUploadPublicRoots, getSupabaseStorageConfig } from "@/lib/sig-upload-storage";
 import {
   ftpPublicImageUrlPath,
   ftpRemotePathForSigAsset,
@@ -95,18 +95,6 @@ function extFromBytes(buf: Uint8Array): string | null {
   return null;
 }
 
-function getSupabaseStorageConfig():
-  | { url: string; serviceRoleKey: string; buckets: string[] }
-  | null {
-  const url = (process.env.SUPABASE_URL || "").trim();
-  const serviceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
-  const preferredBucket = (process.env.SUPABASE_STORAGE_BUCKET || "").trim();
-  const buckets = [preferredBucket, "image", "images"].filter(Boolean)
-    .filter((name, idx, arr) => arr.indexOf(name) === idx);
-  if (!url || !serviceRoleKey) return null;
-  return { url, serviceRoleKey, buckets };
-}
-
 async function writeSigImageToPublicUploads(
   safeUid: string,
   fileName: string,
@@ -125,6 +113,16 @@ async function writeSigImageToPublicUploads(
 
 export async function POST(req: Request) {
   try {
+    if (isSigImagesGithubOnlyMode()) {
+      return Response.json(
+        {
+          ok: false,
+          error:
+            "github_only: 시그 GIF는 GitHub public/images/sigs 에 커밋·푸시한 뒤 관리자 「저장소」에서 경로를 선택하세요. (PC 업로드·Supabase 미사용)",
+        },
+        { status: 503 }
+      );
+    }
     const uid = resolveUploadUserId(req);
     if (!uid) {
       return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });

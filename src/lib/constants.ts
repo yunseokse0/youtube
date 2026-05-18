@@ -1,5 +1,7 @@
 import type { SigItem } from "@/types";
 import {
+  coerceSigUrlToGithubBundledPath,
+  isSigImagesGithubOnlyMode,
   isSigImagesPlaceholderOnlyEnv,
   isSigLocalAssetsOnlyMode,
   shouldStripUntrustedExternalSigImageUrls,
@@ -129,6 +131,10 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
   if (isSigImagesPlaceholderOnlyEnv() && s.startsWith("/uploads/")) {
     return BUNDLED_SIG_PLACEHOLDER_URL;
   }
+  if (isSigImagesGithubOnlyMode() && /\/uploads\/sigs\//i.test(s)) {
+    s = coerceSigUrlToGithubBundledPath(s);
+    if (s.startsWith("/images/sigs/")) return s;
+  }
   if (
     /^https?:\/\/[^/]*supabase\.co\/storage\/v1\/object\/public\//i.test(s) &&
     /\/sigs\//i.test(s)
@@ -146,7 +152,10 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
     return s;
   }
   if (/^https?:\/\//i.test(s)) {
-    const relUpload = toRelativeSigUploadPathIfApplicable(s);
+    let relUpload = toRelativeSigUploadPathIfApplicable(s);
+    if (relUpload !== s && isSigImagesGithubOnlyMode()) {
+      relUpload = coerceSigUrlToGithubBundledPath(relUpload);
+    }
     if (relUpload !== s) return relUpload;
     if (isTrustedStoredSigImageHttpUrl(s)) return s;
     if (shouldStripUntrustedExternalSigImageUrls()) return BUNDLED_SIG_PLACEHOLDER_URL;

@@ -1,5 +1,5 @@
 import { mimeFromFileName } from "@/lib/sig-legacy-image";
-import { readSigUploadFromPublicDisk, safeSigUploadRelativePath } from "@/lib/sig-upload-storage";
+import { readSigUploadBuffer, safeSigUploadRelativePath } from "@/lib/sig-upload-storage";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,7 @@ export async function GET(
   if (!rel) {
     return new Response("Bad path", { status: 400 });
   }
-  const buf = await readSigUploadFromPublicDisk(rel);
+  const buf = await readSigUploadBuffer(rel);
   if (!buf) {
     return new Response("Not found", { status: 404 });
   }
