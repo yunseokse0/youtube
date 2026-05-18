@@ -23,7 +23,17 @@ const ONE_SHOT_SIG_ID = "sig_one_shot";
 
 function parseArgs() {
   const limitIdx = process.argv.indexOf("--limit");
-  return { limit: limitIdx >= 0 ? Number(process.argv[limitIdx + 1]) : 0 };
+  return {
+    limit: limitIdx >= 0 ? Number(process.argv[limitIdx + 1]) : 0,
+    retryFailures: process.argv.includes("--retry-failures"),
+  };
+}
+
+function normName(s) {
+  return String(s || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "");
 }
 
 function listGifs(limit) {
@@ -75,20 +85,32 @@ async function postState(body) {
 }
 
 async function main() {
-  const { limit } = parseArgs();
+  const { limit, retryFailures } = parseArgs();
   const speed = resolveOcrSpeed();
-  const files = listGifs(limit);
-  console.log(
-    `OCR 대상 ${files.length}개 · 모드=${speed} (${speed === "fast" ? "빠름, 기본" : "정밀 --full"})`
-  );
+  const resultsPath = path.join(process.cwd(), "sig-ocr-results.json");
 
   const remote = await fetchState();
-  const remoteInv = Array.isArray(remote.sigInventory) ? remote.sigInventory : [];
-  const oneShot = remoteInv.find((x) => x?.id === ONE_SHOT_SIG_ID);
+  let remoteInv = Array.isArray(remote.sigInventory) ? remote.sigInventory : [];
+
+  let files = listGifs(limit);
+  if (retryFailures) {
+    const prev = JSON.parse(fs.readFileSync(resultsPath, "utf8"));
+    files = (prev.results || [])
+      .filter((r) => !r.price || Number(r.price) <= 0)
+      .map((r) => String(r.file || "").trim())
+      .filter((f) => f && fs.existsSync(path.join(DEFAULT_SIG_GIF_DIR, f)));
+    console.log(`실패분 재시도 ${files.length}건 · 모드=${speed}`);
+  } else {
+    console.log(
+      `OCR 대상 ${files.length}개 · 모드=${speed} (${speed === "fast" ? "빠름, 기본" : "정밀 --full"})`
+    );
+  }
+
+  const invByName = new Map(remoteInv.map((x) => [normName(x.name), x]));
 
   const t0 = Date.now();
   const { workers, modes, terminate } = await createLocalSigOcrWorkers(speed);
-  const built = [];
+  const resultRows = [];
   let ok = 0;
   let fail = 0;
   try {
@@ -97,31 +119,44 @@ async function main() {
       const fp = path.join(DEFAULT_SIG_GIF_DIR, file);
       process.stderr.write(`[${i + 1}/${files.length}] ${file} …\r`);
       const price = await detectGifFile(workers, modes, fp, speed);
-      const item = buildItemFromFile(file, price);
-      const hit = matchSigInventoryItemByFileName(remoteInv, file);
-      if (hit?.id) item.id = hit.id;
-      if (hit?.soldCount != null) item.soldCount = hit.soldCount;
-      if (hit?.memberId) item.memberId = hit.memberId;
-      if (price != null) ok++;
-      else fail++;
-      built.push(item);
+      const name = file.replace(/\.gif$/i, "");
+      const hit = matchSigInventoryItemByFileName(remoteInv, file) || invByName.get(normName(name));
+      const item = hit
+        ? { ...hit }
+        : buildItemFromFile(file, price);
+      const finalPrice = applySigNamePriceFallback(name, price);
+      if (finalPrice != null && finalPrice > 0) {
+        item.price = finalPrice;
+        ok++;
+      } else {
+        fail++;
+      }
+      invByName.set(normName(item.name), item);
+      resultRows.push({
+        file,
+        sigId: item.id,
+        sigName: item.name,
+        price: item.price || 0,
+        imageUrl: item.imageUrl,
+      });
     }
     process.stderr.write("\n");
   } finally {
     await terminate();
   }
 
-  const inventory = oneShot ? [oneShot, ...built] : built;
+  const inventory = [...invByName.values()];
   const sigRollingMeta = { ...(remote.sigRollingMeta || {}) };
-  built.forEach((item, idx) => {
+  inventory.forEach((item, idx) => {
     if (!sigRollingMeta[item.id]) {
       sigRollingMeta[item.id] = { label: item.name, order: idx };
     }
   });
 
   const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+  const withPrice = inventory.filter((x) => Number(x.price) > 0).length;
   console.log(
-    `OCR 성공 ${ok} / 실패 ${fail} · ${elapsed}s (평균 ${(Number(elapsed) / Math.max(1, files.length)).toFixed(1)}s/건) → 서버 반영 (${inventory.length}개 시그)`
+    `OCR 이번 ${ok}/${files.length} · 서버 시그 ${inventory.length}개(금액 ${withPrice}개) · ${elapsed}s → 업로드`
   );
   const res = await postState({
     sigInventory: inventory,
@@ -130,29 +165,35 @@ async function main() {
   });
   console.log("저장 완료", res.updatedAt ? `updatedAt=${res.updatedAt}` : "");
 
-  const out = path.join(process.cwd(), "sig-ocr-results.json");
+  let allResults = resultRows;
+  if (retryFailures && fs.existsSync(resultsPath)) {
+    const prev = JSON.parse(fs.readFileSync(resultsPath, "utf8"));
+    const byFile = new Map((prev.results || []).map((r) => [r.file, r]));
+    for (const r of resultRows) byFile.set(r.file, r);
+    allResults = [...byFile.values()];
+  }
+
   fs.writeFileSync(
-    out,
+    resultsPath,
     JSON.stringify(
       {
         generatedAt: new Date().toISOString(),
         baseUrl: BASE_URL,
         user: USER,
-        summary: { ok, fail, total: files.length },
-        results: built.map((item) => ({
-          file: `${item.name}.gif`,
-          sigId: item.id,
-          sigName: item.name,
-          price: item.price,
-          imageUrl: item.imageUrl,
-        })),
+        speed,
+        summary: {
+          ok: allResults.filter((r) => r.price > 0).length,
+          fail: allResults.filter((r) => !r.price).length,
+          total: allResults.length,
+        },
+        results: allResults,
       },
       null,
       2
     ),
     "utf8"
   );
-  console.log(`결과: ${out}`);
+  console.log(`결과: ${resultsPath}`);
 }
 
 main().catch((e) => {

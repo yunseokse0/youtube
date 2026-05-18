@@ -426,7 +426,7 @@ export function applySigNamePriceFallback(sigName, price) {
 
 export async function createLocalSigOcrWorkers(speed = resolveOcrSpeed()) {
   if (speed === "fast") {
-    const worker = await createWorker("eng", 1, { logger: () => {} });
+    const worker = await createWorker("kor+eng", 1, { logger: () => {} });
     return {
       speed,
       workers: [worker],
