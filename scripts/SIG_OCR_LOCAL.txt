@@ -13,10 +13,15 @@
   npm run sig:import -- "d:\excel\youtube-git\siggif"
   (또는 이미 from-drive에 있으면 생략)
 
-2) OCR만 (결과 JSON)
+2) OCR만 (결과 JSON) — 기본 fast 모드(건당 수 초대)
   npm run sig:ocr-batch
   npm run sig:ocr-batch -- --only APT,고민중독
   npm run sig:ocr-batch -- --limit 10
+  npm run sig:ocr-upload          # OCR + 서버 반영 한 번에
+  npm run sig:ocr-upload -- --limit 20
+
+  느리지만 정밀: npm run sig:ocr-batch -- --full
+  환경변수: set SIG_OCR_MODE=full
 
   → sig-ocr-results.json 생성
 

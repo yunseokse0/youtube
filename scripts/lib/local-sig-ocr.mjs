@@ -4,7 +4,7 @@
  */
 import fs from "fs";
 import path from "path";
-import { createCanvas, loadImage } from "canvas";
+import { createCanvas } from "canvas";
 import { createWorker, PSM } from "tesseract.js";
 import { decompressFrames, parseGIF } from "gifuct-js";
 
@@ -13,6 +13,21 @@ export const DEFAULT_SIG_GIF_DIR = path.join(process.cwd(), "public", "images", 
 const OCR_MIN_SHORT_EDGE = 640;
 const OCR_MAX_SIDE = 2400;
 const GIF_OCR_MAX_FRAMES = 20;
+const GIF_OCR_MAX_FRAMES_FAST = 3;
+const OCR_MIN_CANVAS_W = 200;
+const OCR_MIN_CANVAS_H = 72;
+const OCR_MIN_TESS_WIDTH = 48;
+
+/** `fast`(기본) | `full` — env SIG_OCR_MODE 또는 --full */
+export function resolveOcrSpeed(argv = process.argv) {
+  if (argv.includes("--full")) return "full";
+  const env = String(process.env.SIG_OCR_MODE || "fast").trim().toLowerCase();
+  return env === "full" || env === "quality" ? "full" : "fast";
+}
+
+function isConfidentSigOcrPrice(price) {
+  return price >= 20_000 && price <= 150_000 && price % 100 === 0;
+}
 
 function fixOcrDigitConfusions(s) {
   return s
@@ -128,6 +143,54 @@ function pickGifFrameIndices(frameCount, maxFrames = GIF_OCR_MAX_FRAMES) {
     result.sort((a, b) => a - b);
   }
   return result;
+}
+
+/** 금액이 보통 나오는 후반 프레임만 (최대 3장, 뒤에서부터) */
+function pickGifFrameIndicesFast(frameCount) {
+  if (frameCount <= 0) return [];
+  if (frameCount === 1) return [0];
+  const last = frameCount - 1;
+  const set = new Set([
+    last,
+    Math.max(0, Math.round(last * 0.72)),
+    Math.max(0, Math.round(last * 0.45)),
+  ]);
+  return [...set].sort((a, b) => b - a);
+}
+
+function cropCanvasFraction(canvas, y0Frac, y1Frac, x0Frac, x1Frac) {
+  const x0 = Math.max(0, Math.floor(canvas.width * x0Frac));
+  const x1 = Math.min(canvas.width, Math.ceil(canvas.width * x1Frac));
+  const y0 = Math.max(0, Math.floor(canvas.height * y0Frac));
+  const y1 = Math.min(canvas.height, Math.ceil(canvas.height * y1Frac));
+  const w = Math.max(1, x1 - x0);
+  const h = Math.max(1, y1 - y0);
+  const out = createCanvas(w, h);
+  out.getContext("2d").drawImage(canvas, x0, y0, w, h, 0, 0, w, h);
+  return out;
+}
+
+function padCanvasForOcr(canvas) {
+  const srcW = Math.max(1, canvas.width);
+  const srcH = Math.max(1, canvas.height);
+  const outW = Math.max(OCR_MIN_CANVAS_W, Math.min(960, srcW * 3));
+  const outH = Math.max(OCR_MIN_CANVAS_H, Math.min(720, srcH * 3));
+  const out = createCanvas(outW, outH);
+  const ctx = out.getContext("2d");
+  ctx.fillStyle = "#0a0a0a";
+  ctx.fillRect(0, 0, outW, outH);
+  const scale = Math.min((outW * 0.92) / srcW, (outH * 0.92) / srcH);
+  const dw = Math.max(1, Math.floor(srcW * scale));
+  const dh = Math.max(1, Math.floor(srcH * scale));
+  const dx = Math.floor((outW - dw) / 2);
+  const dy = Math.floor((outH - dh) / 2);
+  ctx.drawImage(canvas, dx, dy, dw, dh);
+  return out;
+}
+
+function prepareOcrCanvas(canvas) {
+  if (canvas.width < OCR_MIN_TESS_WIDTH || canvas.height < 16) return null;
+  return padCanvasForOcr(canvas);
 }
 
 const SIG_PRICE_MIN = 1000;
@@ -289,45 +352,55 @@ function cropBottom(canvas) {
   return out;
 }
 
-async function recognizeAmount(worker, canvas, modes) {
-  const buf = canvas.toBuffer("image/png");
-  const candidates = [];
+async function recognizeAmount(worker, canvas, modes, acc) {
+  const prepared = prepareOcrCanvas(canvas);
+  if (!prepared) return null;
+  const buf = prepared.toBuffer("image/png");
   for (const psm of modes) {
+    if (acc.done) break;
     await worker.setParameters({ tessedit_pageseg_mode: psm });
     const {
       data: { text },
     } = await worker.recognize(buf);
     const price = parseSigAmountFromText(text);
-    if (price != null) candidates.push(price);
+    if (price == null) continue;
+    const refined = refineCommonSigOcrMisreads(price);
+    acc.candidates.push(refined);
+    const hits = acc.candidates.filter((p) => p === refined).length;
+    if (hits >= 2 || isConfidentSigOcrPrice(refined)) {
+      acc.done = true;
+      return refined;
+    }
   }
-  const p = pickConsensusSigPrice(candidates);
-  return p != null ? refineCommonSigOcrMisreads(p) : null;
+  return null;
 }
 
-async function detectFromCanvas(worker, colorCanvas, modes) {
-  const candidates = [];
-  const cropBand = (canvas) => {
-    const y0 = Math.floor(canvas.height * 0.52);
-    const y1 = Math.floor(canvas.height * 0.92);
-    const x0 = Math.floor(canvas.width * 0.1);
-    const x1 = Math.floor(canvas.width * 0.9);
-    const out = createCanvas(x1 - x0, y1 - y0);
-    out.getContext("2d").drawImage(canvas, x0, y0, x1 - x0, y1 - y0, 0, 0, x1 - x0, y1 - y0);
-    return out;
+async function detectFromCanvas(worker, colorCanvas, modes, { fast = false } = {}) {
+  const acc = { candidates: [], done: false };
+  const priceBand = cropCanvasFraction(colorCanvas, 0.52, 0.92, 0.1, 0.9);
+  const variants = fast
+    ? [priceBand, canvasToBinary(priceBand)]
+    : [
+        colorCanvas,
+        canvasToBinary(colorCanvas),
+        cropBottom(colorCanvas),
+        canvasToBinary(cropBottom(colorCanvas)),
+        priceBand,
+        canvasToBinary(priceBand),
+      ];
+  const pass = async (modeList) => {
+    for (const v of variants) {
+      if (acc.done) break;
+      await recognizeAmount(worker, v, modeList, acc);
+    }
   };
-  const variants = [
-    colorCanvas,
-    canvasToBinary(colorCanvas),
-    cropBottom(colorCanvas),
-    canvasToBinary(cropBottom(colorCanvas)),
-    cropBand(colorCanvas),
-    canvasToBinary(cropBand(colorCanvas)),
-  ];
-  for (const v of variants) {
-    const p = await recognizeAmount(worker, v, modes);
-    if (p != null) candidates.push(p);
+  if (fast) {
+    await pass([modes[0]]);
+    if (!acc.done && modes.length > 1) await pass(modes);
+  } else {
+    await pass(modes);
   }
-  const p = pickConsensusSigPrice(candidates);
+  const p = pickConsensusSigPrice(acc.candidates);
   return p != null ? refineCommonSigOcrMisreads(p) : null;
 }
 
@@ -336,7 +409,9 @@ export function applySigNamePriceFallback(sigName, price) {
   if (name.includes("간바레") || name.includes("센빠이") || name.includes("센베이")) {
     if (price == null || price < 20000) return 31200;
   }
-  if (/^APT$/i.test(name) && (price === 38700 || price === 39000)) return 38900;
+  if (/^APT$/i.test(name) && (price == null || price < 20_000 || price === 38700 || price === 39000)) {
+    return 38900;
+  }
   if (name.includes("고민중독") && (price === 35700 || price === 39000 || price == null || price < 20000)) {
     return 38700;
   }
@@ -349,34 +424,50 @@ export function applySigNamePriceFallback(sigName, price) {
   return price;
 }
 
-export async function createLocalSigOcrWorkers() {
-  const modes = [PSM.SINGLE_LINE, PSM.SINGLE_BLOCK, PSM.SPARSE_TEXT, PSM.AUTO].map(Number);
+export async function createLocalSigOcrWorkers(speed = resolveOcrSpeed()) {
+  if (speed === "fast") {
+    const worker = await createWorker("eng", 1, { logger: () => {} });
+    return {
+      speed,
+      workers: [worker],
+      modes: [Number(PSM.SINGLE_LINE), Number(PSM.SINGLE_BLOCK)],
+      terminate: async () => {
+        await worker.terminate();
+      },
+    };
+  }
+  const modes = [PSM.SINGLE_LINE, PSM.SINGLE_BLOCK, PSM.SPARSE_TEXT].map(Number);
   const workerEng = await createWorker("eng", 1, { logger: () => {} });
-  const workerKor = await createWorker("kor+eng", 1, { logger: () => {} });
-  return { workers: [workerEng, workerKor], modes, terminate: async () => {
-    await workerEng.terminate();
-    await workerKor.terminate();
-  } };
+  return {
+    speed: "full",
+    workers: [workerEng],
+    modes,
+    terminate: async () => {
+      await workerEng.terminate();
+    },
+  };
 }
 
-export async function detectGifFile(workers, modes, filePath) {
+export async function detectGifFile(workers, modes, filePath, speed = resolveOcrSpeed()) {
   const buf = fs.readFileSync(filePath);
   const gif = parseGIF(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
   const frames = decompressFrames(gif, true);
   if (!frames.length) return null;
-  const indices = pickGifFrameIndices(frames.length);
+  const fast = speed === "fast";
+  const indices =
+    fast ? pickGifFrameIndicesFast(frames.length) : pickGifFrameIndices(frames.length, 8);
   const candidates = [];
-  for (const worker of workers) {
-    for (const idx of indices) {
-      const composite = renderGifComposite(gif, frames, idx);
-      const scaled = scaleCanvas(composite);
-      const p = await detectFromCanvas(worker, scaled, modes);
-      if (p != null) {
-        candidates.push(p);
-        if (candidates.filter((x) => x === p).length >= 2) break;
-      }
+  const worker = workers[0];
+  if (!worker) return null;
+  for (const idx of indices) {
+    const composite = renderGifComposite(gif, frames, idx);
+    const scaled = scaleCanvas(composite);
+    const p = await detectFromCanvas(worker, scaled, modes, { fast });
+    if (p != null) {
+      candidates.push(p);
+      if (fast && isConfidentSigOcrPrice(p)) break;
+      if (candidates.filter((x) => x === p).length >= 2) break;
     }
-    if (candidates.filter((x, i, a) => a.indexOf(x) !== i).length) break;
   }
   const p = pickConsensusSigPrice(candidates);
   const refined = p != null ? refineCommonSigOcrMisreads(p) : null;

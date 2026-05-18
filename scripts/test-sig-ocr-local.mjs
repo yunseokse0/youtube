@@ -8,6 +8,7 @@ import {
   DEFAULT_SIG_GIF_DIR,
   createLocalSigOcrWorkers,
   detectGifFile,
+  resolveOcrSpeed,
 } from "./lib/local-sig-ocr.mjs";
 
 const SIG_DIR = DEFAULT_SIG_GIF_DIR;
@@ -41,12 +42,15 @@ async function main() {
   }
   if (limit > 0) files = files.slice(0, limit);
 
-  const { workers, modes, terminate } = await createLocalSigOcrWorkers();
+  const speed = resolveOcrSpeed();
+  console.log(`모드: ${speed}`);
+  const t0 = Date.now();
+  const { workers, modes, terminate } = await createLocalSigOcrWorkers(speed);
   const rows = [];
   try {
     for (const file of files) {
       const fp = path.join(SIG_DIR, file);
-      const multi = await detectGifFile(workers, modes, fp);
+      const multi = await detectGifFile(workers, modes, fp, speed);
       rows.push({ file, multi });
       console.log(`${file}\t${multi != null ? multi : "null"}`);
     }
@@ -55,7 +59,8 @@ async function main() {
   }
 
   const ok = rows.filter((r) => r.multi != null).length;
-  console.log(`\n--- 요약: ${ok}/${rows.length} 다중프레임 인식 ---`);
+  const sec = ((Date.now() - t0) / 1000).toFixed(1);
+  console.log(`\n--- 요약: ${ok}/${rows.length} 인식 · ${sec}s (평균 ${(Number(sec) / Math.max(1, rows.length)).toFixed(1)}s/건) ---`);
 }
 
 main().catch((e) => {

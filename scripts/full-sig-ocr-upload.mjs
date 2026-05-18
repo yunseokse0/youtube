@@ -14,6 +14,7 @@ import {
   createLocalSigOcrWorkers,
   detectGifFile,
   matchSigInventoryItemByFileName,
+  resolveOcrSpeed,
 } from "./lib/local-sig-ocr.mjs";
 
 const BASE_URL = (process.env.SIG_OCR_BASE_URL || "https://youtube-5g1a.onrender.com").replace(/\/$/, "");
@@ -75,14 +76,18 @@ async function postState(body) {
 
 async function main() {
   const { limit } = parseArgs();
+  const speed = resolveOcrSpeed();
   const files = listGifs(limit);
-  console.log(`OCR 대상 ${files.length}개 (${DEFAULT_SIG_GIF_DIR})`);
+  console.log(
+    `OCR 대상 ${files.length}개 · 모드=${speed} (${speed === "fast" ? "빠름, 기본" : "정밀 --full"})`
+  );
 
   const remote = await fetchState();
   const remoteInv = Array.isArray(remote.sigInventory) ? remote.sigInventory : [];
   const oneShot = remoteInv.find((x) => x?.id === ONE_SHOT_SIG_ID);
 
-  const { workers, modes, terminate } = await createLocalSigOcrWorkers();
+  const t0 = Date.now();
+  const { workers, modes, terminate } = await createLocalSigOcrWorkers(speed);
   const built = [];
   let ok = 0;
   let fail = 0;
@@ -91,7 +96,7 @@ async function main() {
       const file = files[i];
       const fp = path.join(DEFAULT_SIG_GIF_DIR, file);
       process.stderr.write(`[${i + 1}/${files.length}] ${file} …\r`);
-      const price = await detectGifFile(workers, modes, fp);
+      const price = await detectGifFile(workers, modes, fp, speed);
       const item = buildItemFromFile(file, price);
       const hit = matchSigInventoryItemByFileName(remoteInv, file);
       if (hit?.id) item.id = hit.id;
@@ -114,7 +119,10 @@ async function main() {
     }
   });
 
-  console.log(`OCR 성공 ${ok} / 실패 ${fail} → 서버 반영 (${inventory.length}개 시그)`);
+  const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+  console.log(
+    `OCR 성공 ${ok} / 실패 ${fail} · ${elapsed}s (평균 ${(Number(elapsed) / Math.max(1, files.length)).toFixed(1)}s/건) → 서버 반영 (${inventory.length}개 시그)`
+  );
   const res = await postState({
     sigInventory: inventory,
     sigRollingMeta,

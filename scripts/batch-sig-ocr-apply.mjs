@@ -20,6 +20,7 @@ import {
   createLocalSigOcrWorkers,
   detectGifFile,
   matchSigInventoryItemByFileName,
+  resolveOcrSpeed,
   sigImageFileBaseName,
 } from "./lib/local-sig-ocr.mjs";
 
@@ -54,6 +55,7 @@ function parseArgs(argv) {
     cookie: get("--cookie") || process.env.SIG_OCR_COOKIE || "",
     setImageUrl: !has("--no-set-image-url"),
     dryRun: has("--dry-run") || (!has("--apply") && !get("--from-json")),
+    speed: resolveOcrSpeed(argv),
   };
 }
 
@@ -104,16 +106,16 @@ async function postSigInventory(baseUrl, user, cookie, sigInventory) {
   }
 }
 
-async function runOcr(dir, limit, only) {
+async function runOcr(dir, limit, only, speed) {
   const files = listGifFiles(dir, limit, only);
-  const { workers, modes, terminate } = await createLocalSigOcrWorkers();
+  const { workers, modes, terminate } = await createLocalSigOcrWorkers(speed);
   const rows = [];
   try {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const fp = path.join(dir, file);
       process.stderr.write(`[${i + 1}/${files.length}] OCR ${file}…\r`);
-      const price = await detectGifFile(workers, modes, fp);
+      const price = await detectGifFile(workers, modes, fp, speed);
       rows.push({
         file,
         imageUrl: bundledFromDriveImageUrl(file),
@@ -183,8 +185,8 @@ async function main() {
     rows = Array.isArray(raw) ? raw : raw.results || [];
     console.log(`JSON에서 ${rows.length}건 로드: ${args.fromJson}`);
   } else {
-    console.log(`로컬 OCR 시작: ${args.dir}`);
-    rows = await runOcr(args.dir, args.limit, args.only);
+    console.log(`로컬 OCR 시작: ${args.dir} (모드=${args.speed})`);
+    rows = await runOcr(args.dir, args.limit, args.only, args.speed);
     const ok = rows.filter((r) => r.price != null).length;
     console.log(`OCR 완료: 성공 ${ok} / ${rows.length}`);
   }
