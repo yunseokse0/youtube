@@ -3,6 +3,7 @@ import {
   isTrustedStoredSigImageHttpUrl,
   normalizeSigImageUrlStored,
   resolveSigImageUrl,
+  toGithubRawSigAssetUrl,
 } from "@/lib/constants";
 import { matchSigInventoryItemByFileName, planSigBulkReupload } from "@/lib/sig-image-bulk";
 import type { SigItem } from "@/types";
@@ -90,6 +91,14 @@ describe("resolveSigImageUrl", () => {
     const url = resolveSigImageUrl("테스트", "/images/sigs/from-drive/foo.gif");
     expect(url).toContain("raw.githubusercontent.com");
     expect(url).toContain("/images/sigs/");
+  });
+});
+
+describe("toGithubRawSigAssetUrl", () => {
+  it("maps uploads path to github images path", () => {
+    const url = toGithubRawSigAssetUrl("/uploads/sigs/finalent/foo.gif");
+    expect(url).toContain("raw.githubusercontent.com");
+    expect(url).toContain("/images/sigs/foo.gif");
   });
 });
 

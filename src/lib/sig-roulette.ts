@@ -10,12 +10,20 @@ export function canonicalSigIdFromWheelSliceId(sliceId: string): string {
   return m?.[1] || raw;
 }
 
-/** 회전판 칸 수에 맞춰 시그명을 그래핌 단위로 줄인다(overflow 클립 시 글자 깨짐 방지). */
+/** 회전판·관리자 표시용 — 깨진 대체 문자()·제어문자 제거 */
+export function sanitizeWheelDisplayName(name: string): string {
+  return String(name || "")
+    .replace(/\uFFFD/g, "")
+    .replace(/[\u0000-\u001F\u007F]/g, "")
+    .trim();
+}
+
+/** 회전판 칸 수에 맞춰 시그명을 그래핌 단위로 줄인다(CSS ellipsis 대신 여기서만 자름). */
 export function formatWheelSegmentLabel(name: string, segmentCount: number): string {
-  const raw = String(name || "").trim();
+  const raw = sanitizeWheelDisplayName(name);
   if (!raw) return "—";
   const n = Math.max(1, Math.floor(segmentCount || 1));
-  const maxChars = n >= 18 ? 5 : n >= 14 ? 6 : n >= 10 ? 7 : 9;
+  const maxChars = n >= 18 ? 6 : n >= 14 ? 7 : n >= 10 ? 8 : 10;
   const chars = [...raw];
   if (chars.length <= maxChars) return raw;
   return `${chars.slice(0, Math.max(1, maxChars - 1)).join("")}…`;

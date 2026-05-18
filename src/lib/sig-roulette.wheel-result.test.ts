@@ -5,6 +5,7 @@ import {
   calculateSpinFinalAngle,
   canonicalSigIdFromWheelSliceId,
   formatWheelSegmentLabel,
+  sanitizeWheelDisplayName,
   findSliceIndexForResult,
   pickWheelSliceIdForWin,
   resolveWheelSpinTarget,
@@ -26,12 +27,22 @@ function item(id: string, price = 0): SigItem {
 
 describe("formatWheelSegmentLabel", () => {
   it("칸이 많을수록 짧게 자른다", () => {
-    expect(formatWheelSegmentLabel("귀여워서미안해", 20)).toBe("귀여워서…");
+    expect(formatWheelSegmentLabel("귀여워서미안해", 20)).toBe("귀여워서미…");
     expect(formatWheelSegmentLabel("APT", 8)).toBe("APT");
+  });
+
+  it("5글자 시그명은 20칸 휠에서도 그대로 표시", () => {
+    expect(formatWheelSegmentLabel("퍼킹뱅어", 20)).toBe("퍼킹뱅어");
   });
 
   it("빈 문자열은 대시", () => {
     expect(formatWheelSegmentLabel("  ", 10)).toBe("—");
+  });
+});
+
+describe("sanitizeWheelDisplayName", () => {
+  it("대체 문자를 제거한다", () => {
+    expect(sanitizeWheelDisplayName("퍼킹\uFFFD뱅어")).toBe("퍼킹뱅어");
   });
 });
 

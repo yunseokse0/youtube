@@ -167,10 +167,10 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
 }
 
 /**
- * 시그 롤링·보드만: `/images/sigs/…` 를 GitHub `public/` raw URL로 바꿔 OBS 등에서 배포 오리진과 무관하게 로드.
+ * 시그 롤링·보드: `/images/sigs/…` 를 GitHub `public/` raw URL로 바꿔 Render 아웃바운드 절감.
  * `NEXT_PUBLIC_SIG_ROLLING_GITHUB_BASE` 가 `0`/`off` 이면 치환 안 함. 미설정 시 본 저장소 `main` 기본값.
  */
-function getSigRollingGithubRawRoot(): string {
+export function getSigRollingGithubRawRoot(): string {
   const raw = typeof process !== "undefined" ? String(process.env.NEXT_PUBLIC_SIG_ROLLING_GITHUB_BASE ?? "").trim() : "";
   if (raw === "0" || raw.toLowerCase() === "off") return "";
   if (raw) return raw.replace(/\/$/, "");
@@ -185,6 +185,31 @@ export function rewriteSigPathForRollingGithubIfConfigured(resolvedUrl: string):
   const rel = s.startsWith("/") ? s.slice(1) : s;
   const parts = rel.split("/").filter(Boolean).map((seg) => encodeURIComponent(seg));
   return `${root}/${parts.join("/")}`;
+}
+
+/** `/images/sigs/…`·레거시 `/uploads/sigs/…` → GitHub raw(설정 시). 미들웨어 307·클라이언트 공통 */
+export function toGithubRawSigAssetUrl(pathOrUrl: string): string | null {
+  let s = String(pathOrUrl || "").trim();
+  if (!s) return null;
+  if (/^https?:\/\//i.test(s)) {
+    if (/raw\.githubusercontent\.com/i.test(s)) return s;
+    try {
+      const u = new URL(s);
+      const m = u.pathname.match(/(\/images\/sigs\/[^?#]+)/i);
+      if (m?.[1]) s = m[1];
+      else if (/\/uploads\/sigs\//i.test(u.pathname)) {
+        s = coerceSigUrlToGithubBundledPath(u.pathname);
+      } else return null;
+    } catch {
+      return null;
+    }
+  }
+  if (s.startsWith("uploads/") || s.startsWith("images/")) s = `/${s}`;
+  if (/\/uploads\/sigs\//i.test(s)) s = coerceSigUrlToGithubBundledPath(s);
+  if (!s.startsWith("/images/sigs/")) return null;
+  const root = getSigRollingGithubRawRoot();
+  if (!root) return null;
+  return rewriteSigPathForRollingGithubIfConfigured(s);
 }
 
 /** 롤링 카드·GIF 홀드 계산용 — `resolveSigImageUrl` 후 GitHub raw 적용 */

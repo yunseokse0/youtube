@@ -136,7 +136,7 @@ export default function RouletteWheel({
   const frameMaxWidthPx = Math.round(680 * wheelScale);
   const wheelSizePx = Math.round(270 * wheelScale);
   const pointerSizePx = Math.max(28, Math.round(36 * wheelScale));
-  const labelWidthPx = Math.max(70, Math.round(96 * wheelScale));
+  const labelWidthPx = Math.max(72, Math.round((segmentCount >= 16 ? 104 : 96) * wheelScale));
   const labelHeightPx = Math.max(34, Math.round(46 * wheelScale));
   /** 부채꼴 무게중심까지 거리: (4R sin(φ/2)) / (3φ), φ=섹션 라디안 → 메뉴명이 칸 중앙에 오도록 */
   const labelRadiusPx = (() => {
@@ -465,6 +465,11 @@ export default function RouletteWheel({
             const isWin = idx === winnerIndex && !isRolling;
             const fullLabel = (getLabel ? getLabel(item) : item.name) || item.name || "—";
             const displayLabel = formatWheelSegmentLabel(fullLabel, segmentCount);
+            const labelChars = [...displayLabel].length;
+            const chipWidthPx = Math.min(
+              labelWidthPx,
+              Math.max(56, Math.round(labelChars * labelFontPx * 1.05 + 14))
+            );
             return (
               <div key={`${item.id}-${idx}`} className="absolute left-1/2 top-1/2 h-0 w-0" style={{ transform: `rotate(${labelAngle}deg) translateY(-${labelRadiusPx}px)` }}>
                 {/* motion scale이 style.transform 을 통째로 덮을 수 있어, 중앙 정렬 translate 는 바깥에 둔다 */}
@@ -476,7 +481,8 @@ export default function RouletteWheel({
                         : "border border-transparent bg-transparent text-white"
                     }`}
                     style={{
-                      width: `${labelWidthPx}px`,
+                      width: `${chipWidthPx}px`,
+                      maxWidth: `${labelWidthPx}px`,
                       minHeight: `${labelHeightPx}px`,
                       fontSize: `${labelFontPx}px`,
                       transform: `rotate(${-labelAngle - currentAngle}deg)`,
@@ -488,8 +494,7 @@ export default function RouletteWheel({
                       alignItems: "center",
                       justifyContent: "center",
                       whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
+                      overflow: "visible",
                       wordBreak: "keep-all",
                       overflowWrap: "normal",
                       fontFamily:

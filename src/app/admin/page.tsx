@@ -311,11 +311,13 @@ export default function AdminPage() {
   /** 회전판 돌리기/초기화 결과 — sigExcelResult(엑셀)와 분리해 버튼 바로 아래에 표시 */
   const [rouletteActionMessage, setRouletteActionMessage] = useState("");
 
-  useSSEConnection((d: unknown) => {
+  const { connected: adminSseConnected } = useSSEConnection((d: unknown) => {
     const o = d as { type?: string };
     if (o?.type !== "state_updated") return;
     adminStateSseScheduleRef.current?.();
   });
+  const adminSseConnectedRef = useRef(adminSseConnected);
+  adminSseConnectedRef.current = adminSseConnected;
 
   useEffect(() => {
     const s = state.sigMatchSettings || {};
@@ -853,6 +855,7 @@ export default function AdminPage() {
       setSyncStatus("local");
     };
     const timer = window.setInterval(() => {
+      if (adminSseConnectedRef.current) return;
       void syncFromApi();
     }, ADMIN_STATE_FALLBACK_POLL_MS);
     window.addEventListener("online", onOnline);

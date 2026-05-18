@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { AUTH_COOKIE, isDevAuthBypassRequest } from "@/lib/auth";
+import { toGithubRawSigAssetUrl } from "@/lib/constants";
 
 const PROTECTED_PATHS = ["/admin", "/settlements"];
 
@@ -44,6 +45,13 @@ function extractUserIdFromBrokenSigSegment(seg: string): string | null {
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  /** 시그 GIF/PNG — Render·sig-legacy 대신 GitHub raw로 307(대역폭 절감) */
+  if (pathname.startsWith("/images/sigs/") || pathname.startsWith("/uploads/sigs/")) {
+    const github = toGithubRawSigAssetUrl(pathname);
+    if (github) return NextResponse.redirect(github, 307);
+  }
+
   const brokenSigPath = pathname.match(/^\/uploads\/sigs\/([^/]+)\/([^/]+)$/i);
   if (brokenSigPath) {
     const [, uidSeg, fileName] = brokenSigPath;
@@ -80,5 +88,13 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin", "/admin/:path*", "/settlements", "/settlements/:path*", "/login", "/uploads/sigs/:path*"],
+  matcher: [
+    "/admin",
+    "/admin/:path*",
+    "/settlements",
+    "/settlements/:path*",
+    "/login",
+    "/images/sigs/:path*",
+    "/uploads/sigs/:path*",
+  ],
 };

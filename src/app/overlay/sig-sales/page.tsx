@@ -24,6 +24,7 @@ import {
   canonicalSigIdFromWheelSliceId,
   hydrateSigItemFromInventory,
   resolveWheelSpinTarget,
+  sanitizeWheelDisplayName,
   wheelSliceMatchesServerWinner,
 } from "@/lib/sig-roulette";
 import { useSigSalesState } from "@/hooks/useSigSalesState";
@@ -560,7 +561,8 @@ export default function SigSalesOverlayPage() {
     (item: SigItem) => {
       const canon = canonicalSigIdFromWheelSliceId(item.id);
       const metaLabel = state?.sigRollingMeta?.[canon]?.label?.trim();
-      return metaLabel || String(item.name || "").trim() || canon;
+      const raw = metaLabel || String(item.name || "").trim() || canon;
+      return sanitizeWheelDisplayName(raw) || raw;
     },
     [state?.sigRollingMeta]
   );
