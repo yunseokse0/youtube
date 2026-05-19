@@ -24,6 +24,18 @@ export function getUserById(id: string): { id: string; companyName: string } | n
   return { id: id.trim().toLowerCase(), companyName: u.companyName };
 }
 
+/**
+ * 로그인 쿠키 Secure 플래그.
+ * - HTTPS 없이 IP/HTTP만 쓸 때: AUTH_COOKIE_SECURE=false
+ * - HTTPS 배포 후: true 또는 미설정(production 기본 true)
+ */
+export function authCookieSecure(): boolean {
+  const v = String(process.env.AUTH_COOKIE_SECURE ?? "").trim().toLowerCase();
+  if (v === "false" || v === "0" || v === "no") return false;
+  if (v === "true" || v === "1" || v === "yes") return true;
+  return process.env.NODE_ENV === "production";
+}
+
 function isLocalHost(hostname: string): boolean {
   if (!hostname) return false;
   if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]") return true;

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { validateUser } from "@/lib/auth";
+import { authCookieSecure, validateUser } from "@/lib/auth";
 import { loadAccounts } from "@/lib/accounts-storage";
 
 const COOKIE_NAME = "sb_user";
@@ -39,7 +39,7 @@ export async function POST(req: Request) {
     const res = NextResponse.json({ ok: true, user });
     res.cookies.set(COOKIE_NAME, cookieValue, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: authCookieSecure(),
       sameSite: "lax",
       maxAge: COOKIE_MAX_AGE,
       path: "/",
