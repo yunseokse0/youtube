@@ -22,6 +22,7 @@ import type {
   SigRollingItem,
   SigRollingMetaEntry,
   SigRollingSettings,
+  DonorsAmountFormat,
 } from "@/types";
 import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 import { sanitizeOverlayEmbedMediaUrl } from "@/lib/gif-url";
@@ -635,6 +636,7 @@ export function defaultState(): AppState {
     donorRankingsPresets: [],
     donorRankingsPresetId: undefined,
     donors: [],
+    donorsFormat: "full",
     contributionLogs: [],
     forbiddenWords: ["금칙어", "욕설", "비속어"],
     sigInventory: DEFAULT_SIG_INVENTORY.map((x) => ({ ...x })),
@@ -939,6 +941,7 @@ export function loadState(userId?: string | null): AppState {
       ? (data as AppState).donorRankingsPresetId
       : undefined;
     data.donors = normalizeDonorsArray(data.donors);
+    data.donorsFormat = normalizeDonorsFormat((data as AppState).donorsFormat);
     data.contributionLogs = Array.isArray((data as AppState).contributionLogs)
       ? ((data as AppState).contributionLogs as ContributionLog[])
           .filter((x) => x && typeof x === "object")
@@ -1212,6 +1215,7 @@ function appStatePayloadForApi(next: AppState): Partial<AppState> {
 function normalizeStateForPersistence(state: AppState): AppState {
   return {
     ...state,
+    donorsFormat: normalizeDonorsFormat(state.donorsFormat),
     sigInventory: normalizeSigInventory(state.sigInventory),
     sigRolling: normalizeSigRolling(state.sigRolling),
     sigSoldOutStampUrl: normalizeSigImageUrlStored(state.sigSoldOutStampUrl),
@@ -1345,6 +1349,7 @@ async function doLoadStateFromApi(
         ? (data as AppState).donorRankingsPresetId
         : undefined;
       data.donors = normalizeDonorsArray(data.donors);
+      data.donorsFormat = normalizeDonorsFormat((data as AppState).donorsFormat);
       data.contributionLogs = Array.isArray((data as AppState).contributionLogs)
         ? ((data as AppState).contributionLogs as ContributionLog[])
             .filter((x) => x && typeof x === "object")
@@ -1542,6 +1547,20 @@ export function formatManThousand(n: number): string {
 export function formatWonFull(n: number): string {
   const safe = Math.max(0, Math.round(Number(n) || 0));
   return safe.toLocaleString("ko-KR");
+}
+
+export function normalizeDonorsFormat(raw: unknown, fallback: DonorsAmountFormat = "full"): DonorsAmountFormat {
+  const v = String(raw ?? "").trim();
+  if (v === "full") return "full";
+  if (v === "short") return "short";
+  return fallback;
+}
+
+/** 후원·오버레이 공통 금액 문자열 (full=천원 반올림+locale / short=만원 축약) */
+export function formatDonorsAmount(n: number, format: DonorsAmountFormat, locale = "ko-KR"): string {
+  const safe = Math.max(0, Math.round(Number(n) || 0));
+  if (format === "full") return roundToThousand(safe).toLocaleString(locale);
+  return formatManThousand(safe);
 }
 
 export function formatChatLine(state: AppState): string {

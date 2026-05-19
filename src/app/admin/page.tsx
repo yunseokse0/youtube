@@ -31,6 +31,8 @@ import {
   loadDailyLog,
   DailyLogEntry,
   formatManThousand,
+  formatDonorsAmount,
+  normalizeDonorsFormat,
   formatWonFull,
   confirmHighAmount,
   MissionItem,
@@ -591,6 +593,31 @@ export default function AdminPage() {
       }
     });
   }, [user?.id]);
+  const donorsAmountFormat = useMemo(
+    () => normalizeDonorsFormat(state.donorsFormat, "full"),
+    [state.donorsFormat]
+  );
+  const applyGlobalDonorsFormat = useCallback(
+    (format: "full" | "short") => {
+      setState((prev) => {
+        const basePresets =
+          Array.isArray(prev.overlayPresets) && prev.overlayPresets.length > 0
+            ? (prev.overlayPresets as OverlayPreset[])
+            : presets;
+        const nextPresets = basePresets.map((p) => ({ ...p, donorsFormat: format }));
+        setPresets(nextPresets);
+        const next: AppState = {
+          ...prev,
+          donorsFormat: format,
+          overlayPresets: nextPresets,
+          updatedAt: Date.now(),
+        };
+        persistState(next);
+        return next;
+      });
+    },
+    [persistState, presets]
+  );
   const ThemeThumbs = ({ value, options, onChange }: { value: string; options: string[]; onChange: (v: string) => void }) => (
     <div className="flex flex-wrap gap-1.5 mt-1">
       {options.map((opt) => (
@@ -951,7 +978,10 @@ export default function AdminPage() {
       /** goal·goalCurrent 미포함: `/api/state` 프리셋과 동기·목표 자동 상향(useGoalPresetAutoEscalate)에 맞춤 */
       goalOnly.searchParams.set("goalLabel", (p.goalLabel || "후원").trim());
       goalOnly.searchParams.set("goalWidth", String(Math.max(260, Math.min(1200, parseInt((p.goalWidth || "560") as any, 10) || 560))));
-      goalOnly.searchParams.set("donorsFormat", (p.donorsFormat || "short").trim() === "full" ? "full" : "short");
+      goalOnly.searchParams.set(
+        "donorsFormat",
+        normalizeDonorsFormat(p.donorsFormat || state.donorsFormat, "short") === "full" ? "full" : "short"
+      );
       if (String(p.currencyLocale || "").trim()) {
         goalOnly.searchParams.set("currencyLocale", String(p.currencyLocale).trim());
       }
@@ -974,15 +1004,18 @@ export default function AdminPage() {
       "tableBgOpacity",
       p.tableBgOpacity && String(p.tableBgOpacity).trim() ? String(p.tableBgOpacity).trim() : "100"
     );
+    q.set(
+      "donorsFormat",
+      normalizeDonorsFormat(p.donorsFormat || state.donorsFormat, "short") === "full" ? "full" : "short"
+    );
+    if (String(p.currencyLocale || "").trim()) {
+      q.set("currencyLocale", String(p.currencyLocale).trim());
+    }
     q.set("showGoal", p.showGoal ? "true" : "false");
     if (p.showGoal) {
       /** goal·goalCurrent 미포함 → 저장 프리셋·자동 목표 상향이 OBS와 일치 */
       q.set("goalLabel", (p.goalLabel || "후원").trim());
       q.set("goalWidth", String(Math.max(200, Math.min(800, parseInt((p.goalWidth || "400") as any, 10) || 400))));
-      q.set("donorsFormat", (p.donorsFormat || "short").trim() === "full" ? "full" : "short");
-      if (String(p.currencyLocale || "").trim()) {
-        q.set("currencyLocale", String(p.currencyLocale).trim());
-      }
       if (String(p.goalOpacity || "").trim()) {
         q.set("goalOpacity", String(Math.max(0, Math.min(100, parseInt(String(p.goalOpacity), 10) || 100))));
       }
@@ -1025,7 +1058,10 @@ export default function AdminPage() {
       goalOnly.searchParams.set("goal", String(Math.max(0, parseInt((p.goal || "0") as any, 10) || 0)));
       goalOnly.searchParams.set("goalLabel", (p.goalLabel || "후원").trim());
       goalOnly.searchParams.set("goalWidth", String(Math.max(260, Math.min(1200, parseInt((p.goalWidth || "560") as any, 10) || 560))));
-      goalOnly.searchParams.set("donorsFormat", (p.donorsFormat || "short").trim() === "full" ? "full" : "short");
+      goalOnly.searchParams.set(
+        "donorsFormat",
+        normalizeDonorsFormat(p.donorsFormat || state.donorsFormat, "short") === "full" ? "full" : "short"
+      );
       if (String(p.currencyLocale || "").trim()) {
         goalOnly.searchParams.set("currencyLocale", String(p.currencyLocale).trim());
       }
@@ -7509,6 +7545,32 @@ export default function AdminPage() {
             <>
             <section id="donor-management" className={`${panelCardClass} p-4 md:p-6`}>
               <h2 className="text-lg font-semibold mb-3">후원자 기록부</h2>
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <span className="text-xs text-neutral-400">금액 표시</span>
+                <button
+                  type="button"
+                  className={`px-2.5 py-1 rounded border text-xs font-medium ${
+                    donorsAmountFormat === "full"
+                      ? "border-emerald-400 bg-emerald-800/60 text-emerald-100"
+                      : "border-white/15 bg-neutral-800 text-neutral-300"
+                  }`}
+                  onClick={() => applyGlobalDonorsFormat("full")}
+                >
+                  풀 (1,000,000)
+                </button>
+                <button
+                  type="button"
+                  className={`px-2.5 py-1 rounded border text-xs font-medium ${
+                    donorsAmountFormat === "short"
+                      ? "border-emerald-400 bg-emerald-800/60 text-emerald-100"
+                      : "border-white/15 bg-neutral-800 text-neutral-300"
+                  }`}
+                  onClick={() => applyGlobalDonorsFormat("short")}
+                >
+                  만원 (100만)
+                </button>
+                <span className="text-[11px] text-neutral-500">오버레이·후원 리스트·목표 막대에도 동일 적용</span>
+              </div>
               <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_auto_auto_auto] gap-3">
                 <input
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
@@ -7518,7 +7580,9 @@ export default function AdminPage() {
                 />
                 <input
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
-                  placeholder="입금액 (예: 35000)"
+                  placeholder={
+                    donorsAmountFormat === "full" ? "입금액 (예: 35000)" : "입금액 (예: 38 또는 38000)"
+                  }
                   inputMode="numeric"
                   value={donorAmount}
                   onChange={(e) => setDonorAmount(e.target.value)}
@@ -7907,7 +7971,7 @@ export default function AdminPage() {
                             <td className="p-1">{d.name}</td>
                             <td className="p-1 text-neutral-300">{m?.name || d.memberId}</td>
                             <td className="p-1">{(d.target || "account") === "toon" ? <span className="text-amber-300">투네</span> : <span className="text-emerald-300">계좌</span>}</td>
-                            <td className="p-1 text-right whitespace-nowrap">{formatWonFull(d.amount)}</td>
+                            <td className="p-1 text-right whitespace-nowrap">{formatDonorsAmount(d.amount, donorsAmountFormat)}</td>
                             <td className="p-1 text-right">
                               <button
                                 className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700"
@@ -7984,7 +8048,7 @@ export default function AdminPage() {
                             <td className="p-1 text-neutral-400"><ClientTime ts={log.at} /></td>
                             <td className="p-1 text-neutral-300">{member?.name || log.memberId}</td>
                             <td className="p-1">{log.delta > 0 ? <span className="text-cyan-300">추가</span> : <span className="text-rose-300">차감</span>}</td>
-                            <td className="p-1 text-right whitespace-nowrap">{formatWonFull(log.amount)}</td>
+                            <td className="p-1 text-right whitespace-nowrap">{formatDonorsAmount(log.amount, donorsAmountFormat)}</td>
                             <td className="p-1 text-neutral-400">{log.note || "-"}</td>
                             <td className="p-1 text-right">
                               <div className="flex justify-end gap-1">
@@ -8061,9 +8125,9 @@ export default function AdminPage() {
                     {donorTotalsByName.map((row) => (
                       <tr key={row.name} className="border-t border-white/10">
                         <td className="p-1">{row.name}</td>
-                        <td className="p-1 text-right whitespace-nowrap text-emerald-300">{formatWonFull(row.account)}</td>
-                        <td className="p-1 text-right whitespace-nowrap text-amber-300">{formatWonFull(row.toon)}</td>
-                        <td className="p-1 text-right whitespace-nowrap font-semibold">{formatWonFull(row.total)}</td>
+                        <td className="p-1 text-right whitespace-nowrap text-emerald-300">{formatDonorsAmount(row.account, donorsAmountFormat)}</td>
+                        <td className="p-1 text-right whitespace-nowrap text-amber-300">{formatDonorsAmount(row.toon, donorsAmountFormat)}</td>
+                        <td className="p-1 text-right whitespace-nowrap font-semibold">{formatDonorsAmount(row.total, donorsAmountFormat)}</td>
                         <td className="p-1 text-right text-neutral-400">{row.count}</td>
                       </tr>
                     ))}
@@ -8351,7 +8415,28 @@ export default function AdminPage() {
                         </div>
                       </div>
                       {isOpen && (
-                        <div className={`px-3 pb-3 grid grid-cols-1 lg:grid-cols-2 gap-3 border-t border-white/10 pt-3 ${simpleMode ? "hidden" : ""}`}>
+                        <div className={`border-t border-white/10 ${simpleMode ? "hidden" : ""}`}>
+                          <div
+                            id="overlay-amount-format"
+                            className="mx-3 mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-emerald-500/35 bg-emerald-950/30 px-3 py-2.5"
+                          >
+                            <span className="text-xs font-semibold text-emerald-200">금액 표시 (멤버표·목표막대)</span>
+                            <button
+                              type="button"
+                              className={`px-2.5 py-1 rounded border text-xs font-medium ${(p.donorsFormat || "short") === "full" ? "border-emerald-400 bg-emerald-800/60 text-emerald-100" : "border-white/15 bg-neutral-800 text-neutral-300"}`}
+                              onClick={() =>
+                                updatePreset(p.id, {
+                                  donorsFormat: (p.donorsFormat || "short") === "full" ? "short" : "full",
+                                })
+                              }
+                            >
+                              {(p.donorsFormat || "short") === "full" ? "풀 (1,000,000)" : "만원 (100만)"}
+                            </button>
+                            <span className="text-[10px] text-neutral-400 leading-snug">
+                              변경 후 <strong className="text-neutral-300">URL 복사</strong> 또는 OBS 소스 새로고침
+                            </span>
+                          </div>
+                        <div className="px-3 pb-3 grid grid-cols-1 lg:grid-cols-2 gap-3 pt-3">
                           <div className="space-y-2 lg:order-2">
                             <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
                               <label className="text-xs text-neutral-400">테마</label>
@@ -8859,7 +8944,12 @@ export default function AdminPage() {
                                   const goalUrl = new URL(`${window.location.origin}/overlay/goal`);
                                   goalUrl.searchParams.set("u", user?.id || "finalent");
                                   if (p.id) goalUrl.searchParams.set("p", p.id);
-                                  goalUrl.searchParams.set("donorsFormat", (p.donorsFormat || "short").trim() === "full" ? "full" : "short");
+                                  goalUrl.searchParams.set(
+                                    "donorsFormat",
+                                    normalizeDonorsFormat(p.donorsFormat || state.donorsFormat, "short") === "full"
+                                      ? "full"
+                                      : "short"
+                                  );
                                   if (String(p.currencyLocale || "").trim()) {
                                     goalUrl.searchParams.set("currencyLocale", String(p.currencyLocale).trim());
                                   }
@@ -9306,6 +9396,7 @@ export default function AdminPage() {
                               <ClientPreviewWrapper preset={p} buildUrl={buildStablePreviewUrl} />
                             )}
                           </div>
+                        </div>
                         </div>
                       )}
                     </div>

@@ -116,6 +116,7 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
   if (!("donorRankingsTheme" in patch)) next.donorRankingsTheme = base.donorRankingsTheme;
   if (!("donorRankingsPresets" in patch)) next.donorRankingsPresets = base.donorRankingsPresets;
   if (!("donorRankingsPresetId" in patch)) next.donorRankingsPresetId = base.donorRankingsPresetId;
+  if (!("donorsFormat" in patch)) next.donorsFormat = base.donorsFormat;
   if (!("forbiddenWords" in patch)) next.forbiddenWords = base.forbiddenWords;
   if (!("missions" in patch)) next.missions = base.missions;
   if (!("sigInventory" in patch)) next.sigInventory = base.sigInventory;

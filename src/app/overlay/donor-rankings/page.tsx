@@ -3,7 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
-import { defaultState, normalizeDonorRankingsOverlayConfig, type AppState } from "@/lib/state";
+import {
+  defaultState,
+  formatDonorsAmount,
+  normalizeDonorRankingsOverlayConfig,
+  normalizeDonorsFormat,
+  type AppState,
+} from "@/lib/state";
+import type { DonorsAmountFormat } from "@/types";
 import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { useDonorRankingsRemoteState } from "@/hooks/useDonorRankingsRemoteState";
@@ -230,6 +237,7 @@ function RankingColumn({
   title,
   items,
   suffix,
+  amountFormat,
   headerBg,
   panelBg,
   borderColor,
@@ -248,6 +256,7 @@ function RankingColumn({
   title: string;
   items: DonorRow[];
   suffix?: string;
+  amountFormat: DonorsAmountFormat;
   headerBg: string;
   panelBg: string;
   borderColor: string;
@@ -314,8 +323,9 @@ function RankingColumn({
             {item.name}
           </span>
           <span className="font-black tabular-nums text-right" style={{ color: amountColor, ...outlined }}>
-            {item.amount.toLocaleString("ko-KR")}
-            {suffix ? ` ${suffix}` : " 원"}
+            {amountFormat === "short"
+              ? `${formatDonorsAmount(item.amount, "short")}만`
+              : `${formatDonorsAmount(item.amount, "full")}${suffix ? ` ${suffix}` : " 원"}`}
           </span>
         </motion.div>
       ))}
@@ -399,6 +409,7 @@ export default function DonorRankingsOverlayPage() {
   const bgAnimated = useMemo(() => resolveAnimatedSourceForEmbed(overlayCfg.bgGifUrl), [overlayCfg.bgGifUrl]);
   const bgOpacityPct = Math.max(0, Math.min(100, overlayCfg.bgOpacity)) / 100;
   const overlayOpacityFrac = Math.max(0, Math.min(100, overlayOpacity)) / 100;
+  const amountFormat = normalizeDonorsFormat(state?.donorsFormat, "full");
 
   const donorsOverride = useDonorsOverrideFromUrl(sp);
 
@@ -487,6 +498,7 @@ export default function DonorRankingsOverlayPage() {
           <RankingColumn
             title="계좌 후원 순위"
             items={accountTop}
+            amountFormat={amountFormat}
             headerBg={headerAccountBg}
             panelBg={panelBg}
             borderColor={borderColor}
@@ -506,6 +518,7 @@ export default function DonorRankingsOverlayPage() {
             title="투네 후원 순위"
             items={toonTop}
             suffix="캐시"
+            amountFormat={amountFormat}
             headerBg={headerToonBg}
             panelBg={panelBg}
             borderColor={borderColor}

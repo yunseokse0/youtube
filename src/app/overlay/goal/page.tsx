@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useSearchParams } from "next/navigation";
-import type { AppState } from "@/lib/state";
+import { normalizeDonorsFormat, type AppState } from "@/lib/state";
 import { getOverlayUserIdFromSearchParams, type OverlayPresetLike } from "@/lib/overlay-params";
 import { GoalBar } from "@/components/GoalBar";
 import { useGoalPresetAutoEscalate } from "@/hooks/useGoalPresetAutoEscalate";
@@ -47,10 +47,10 @@ export default function GoalOverlayPage() {
   const goalLabel = (sp.get("goalLabel") || activePreset?.goalLabel || "후원").trim();
   const amountFormat = useMemo(() => {
     const fromUrl = (sp.get("donorsFormat") || "").trim();
-    if (fromUrl === "full") return "full" as const;
-    if (fromUrl === "short") return "short" as const;
-    return (activePreset?.donorsFormat || "short").trim() === "full" ? "full" : "short";
-  }, [sp, activePreset?.donorsFormat]);
+    if (fromUrl === "full" || fromUrl === "short") return fromUrl;
+    if (ready && state?.donorsFormat) return normalizeDonorsFormat(state.donorsFormat, "short");
+    return normalizeDonorsFormat(activePreset?.donorsFormat, "short");
+  }, [sp, ready, state?.donorsFormat, activePreset?.donorsFormat]);
   const currencyLocale = (sp.get("currencyLocale") || activePreset?.currencyLocale || "ko-KR").trim();
   const width = useMemo(() => {
     const fromUrl = Number(sp.get("goalWidth"));

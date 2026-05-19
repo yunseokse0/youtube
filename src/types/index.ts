@@ -314,6 +314,9 @@ export type SigRollingMetaEntry = {
   order?: number;
 };
 
+/** 후원·오버레이 금액 표시: full=천원 반올림+구분 / short=만원 축약 */
+export type DonorsAmountFormat = "full" | "short";
+
 export type AppState = {
   /** 멤버 목록 */
   members: Member[];
@@ -331,6 +334,8 @@ export type AppState = {
   donorRankingsPresetId?: string;
   /** 후원 원장(멀티탭 병합 대상) */
   donors: Donor[];
+  /** 관리자 후원 입력·리스트·오버레이 기본 금액 표기 */
+  donorsFormat?: DonorsAmountFormat;
   /** 기여도 수동 조정 로그 */
   contributionLogs: ContributionLog[];
   forbiddenWords: string[];

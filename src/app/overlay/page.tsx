@@ -2,6 +2,7 @@
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi, loadState, totalToon, totalCombined, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig } from "@/lib/state";
+import { maxOverlayAmountDisplayLength } from "@/lib/overlay-amount-display";
 import { presetToParams, shouldSuppressOverlaySseConnection, type OverlayPresetLike } from "@/lib/overlay-params";
 import { getEffectiveRemainingTime } from "@/lib/timer-utils";
 import { useFlip } from "@/lib/flip";
@@ -1538,21 +1539,30 @@ function OverlayInner() {
   const nameGrow = (sp.get("nameGrow") || "true").toLowerCase() === "true";
   const currencyFull = (sp.get("currencyFull") || "false").toLowerCase() === "true";
   const nameMaxCh = Math.max(nameCh, Math.min(80, parseInt(sp.get("nameMaxCh") || String(nameCh + 8), 10)));
-  const fullAmountMode = sp.get("donorsFormat") === "full" || currencyFull;
+  const donorsFormat = useMemo(() => {
+    const urlFmt = (rawSp.get("donorsFormat") || "").trim();
+    if (urlFmt === "full" || urlFmt === "short") return urlFmt;
+    if (ready && s?.donorsFormat) return s.donorsFormat === "full" ? "full" : "short";
+    const presetFmt = String((activePreset as any)?.donorsFormat || "").trim();
+    if (presetFmt === "full") return "full";
+    if (presetFmt === "short") return "short";
+    return sp.get("donorsFormat") === "full" ? "full" : "short";
+  }, [rawSp, ready, s?.donorsFormat, activePreset, sp]);
+  const fullAmountMode = donorsFormat === "full" || currencyFull;
   // 기본 열 폭이 너무 작으면 4자리 이상 숫자에서 스트로크 텍스트가 인접 열과 겹치므로 기본/상한을 확장한다.
   const defBankCh = (sp.get("bankCh") && parseInt(sp.get("bankCh")!, 10)) || (fullAmountMode ? (compact ? 11 : 13) : (compact ? 10 : 11));
   const defToonCh = (sp.get("toonCh") && parseInt(sp.get("toonCh")!, 10)) || (fullAmountMode ? (compact ? 11 : 13) : (compact ? 10 : 11));
-  const defTotalCh = (sp.get("totalCh") && parseInt(sp.get("totalCh")!, 10)) || (fullAmountMode ? (compact ? 8 : 9) : (compact ? 6 : 7));
+  const defTotalCh = (sp.get("totalCh") && parseInt(sp.get("totalCh")!, 10)) || (fullAmountMode ? (compact ? 10 : 12) : (compact ? 6 : 7));
   const contributionChParam = externalHost ? rawSp.get("contributionCh") : sp.get("contributionCh");
   const defContributionCh =
     (contributionChParam && parseInt(contributionChParam, 10)) || (fullAmountMode ? (compact ? 10 : 11) : (compact ? 10 : 11));
-  const bankCh = Math.max(8, Math.min(20, defBankCh));
-  const toonCh = Math.max(8, Math.min(20, defToonCh));
-  const totalCh = Math.max(6, Math.min(12, defTotalCh));
+  const bankChBase = Math.max(8, Math.min(20, defBankCh));
+  const toonChBase = Math.max(8, Math.min(20, defToonCh));
+  const totalChBase = Math.max(6, Math.min(18, defTotalCh));
   /** 순위 열: 헤더「순위」·「#12」 등이 잘리지 않도록 `ch` 하한 확보(URL `rankCh`) */
   const rankColCh = Math.max(5, Math.min(10, parseInt(sp.get("rankCh") || "5", 10)));
   /** 기여도 열: 우측 이격은 줄이되, 방송 합성 환경에서 마지막 열 잘림이 나지 않게 최소폭을 보장 */
-  const contributionCh = Math.max(10, Math.min(14, defContributionCh));
+  const contributionChBase = Math.max(10, Math.min(18, defContributionCh));
   const showSideDonors = false;
   const donorsSide = (sp.get("donorsSide") || "right").toLowerCase();
   const donorsWidth = Math.max(120, Math.min(600, parseInt(sp.get("donorsWidth") || "220", 10)));
@@ -1567,7 +1577,6 @@ function OverlayInner() {
   const donorsGap = Math.max(0, Math.min(48, parseInt(sp.get("donorsGap") || (tight ? "8" : "16"), 10)));
   const donorsSpeed = Math.max(10, Math.min(7200, parseFloat(sp.get("donorsSpeed") || "60"))); // seconds per loop (기본 60초, 최대 2시간)
   const donorsLimit = Math.max(1, Math.min(50, parseInt(sp.get("donorsLimit") || "8", 10)));
-  const donorsFormat = sp.get("donorsFormat") === "full" ? "full" : "short"; // only full|short
   const donorsUnit = sp.get("donorsUnit") || sp.get("currencyUnit") || "";
   const currencyLocale = sp.get("currencyLocale") || "ko-KR";
   const previewGuide = sp.get("previewGuide") === "true";
@@ -1646,6 +1655,12 @@ function OverlayInner() {
       ? roundToThousand(n).toLocaleString(currencyLocale)
       : formatManThousand(n);
   const fmtTotalCell = (n: number) => fmt(n);
+  /** OBS·Prism에서 CSS만으로는 숫자·직급 외곽선이 빠지는 경우가 있어 인라인으로도 적용 */
+  const overlayCellOutlineStyle: React.CSSProperties = {
+    textShadow:
+      "-1px -1px 0 rgba(6, 12, 24, 0.95), 1px -1px 0 rgba(6, 12, 24, 0.95), -1px 1px 0 rgba(6, 12, 24, 0.95), 1px 1px 0 rgba(6, 12, 24, 0.95), 0 2px 6px rgba(0, 0, 0, 0.45)",
+    WebkitTextStroke: 0,
+  };
   const stripBg = (cls: string) =>
     cls
       // Remove any solid bg-* utilities
@@ -1951,22 +1966,6 @@ function OverlayInner() {
   const tSize = autoFont ? autoTotalSize : totalSize;
   const dSize = autoFont ? autoDonorSize : donorsSize;
 
-  useEffect(() => {
-    const el = tableBoxRef.current;
-    if (!el) return;
-    const update = () => {
-      const raw = Math.round(el.getBoundingClientRect().width);
-      const prev = lastDonorBoxWRef.current;
-      if (externalHost && prev !== null && Math.abs(raw - prev) < 2) return;
-      lastDonorBoxWRef.current = raw;
-      setDonorBoxWidth(raw);
-    };
-    update();
-    const ro = new (window as any).ResizeObserver(update);
-    ro.observe(el);
-    return () => { try { ro.disconnect(); } catch {} };
-  }, [showMembers, themeId, mSize, nameCh, bankCh, toonCh, totalCh, lockWidth, effectiveNameGrow, externalHost]);
-
   const members = useMemo(() => {
     if (demoMode) {
       return [
@@ -2075,6 +2074,54 @@ function OverlayInner() {
         .reduce((sum, m) => sum + getContributionValueForMember(m), 0),
     [members, pinnedFilter, getContributionValueForMember]
   );
+  /** 실제 표시 문자열 길이에 맞춰 숫자 열 `ch` 하한을 올림(표 전체 폭은 고정·셀 overflow visible) */
+  const amountDisplayMinCh = useMemo(() => {
+    if (!showMembers) return 0;
+    const amounts: number[] = [];
+    for (const m of members) {
+      amounts.push(
+        Number(m.account || 0),
+        Number(m.toon || 0),
+        Number(m.account || 0) + Number(m.toon || 0),
+        getContributionValueForMember(m)
+      );
+    }
+    if (ready) {
+      amounts.push(sumAccount, sumToon, rounded, sumContribution);
+    }
+    const maxLen = maxOverlayAmountDisplayLength(amounts, donorsFormat, currencyLocale);
+    return maxLen > 0 ? maxLen + 1 : 0;
+  }, [
+    showMembers,
+    members,
+    donorsFormat,
+    currencyLocale,
+    ready,
+    sumAccount,
+    sumToon,
+    rounded,
+    sumContribution,
+    getContributionValueForMember,
+  ]);
+  const bankCh = Math.max(8, Math.min(20, Math.max(bankChBase, amountDisplayMinCh)));
+  const toonCh = Math.max(8, Math.min(20, Math.max(toonChBase, amountDisplayMinCh)));
+  const totalCh = Math.max(6, Math.min(18, Math.max(totalChBase, amountDisplayMinCh)));
+  const contributionCh = Math.max(10, Math.min(18, Math.max(contributionChBase, amountDisplayMinCh)));
+  useEffect(() => {
+    const el = tableBoxRef.current;
+    if (!el) return;
+    const update = () => {
+      const raw = Math.round(el.getBoundingClientRect().width);
+      const prev = lastDonorBoxWRef.current;
+      if (externalHost && prev !== null && Math.abs(raw - prev) < 2) return;
+      lastDonorBoxWRef.current = raw;
+      setDonorBoxWidth(raw);
+    };
+    update();
+    const ro = new (window as any).ResizeObserver(update);
+    ro.observe(el);
+    return () => { try { ro.disconnect(); } catch {} };
+  }, [showMembers, themeId, mSize, nameCh, bankCh, toonCh, totalCh, lockWidth, effectiveNameGrow, externalHost]);
   const showPersonalGoal = useMemo(() => {
     const raw = sp.get("showPersonalGoal");
     if (raw === "true") return true;
@@ -2125,13 +2172,13 @@ function OverlayInner() {
   const memberTableFitSig = useMemo(() => {
     /** 직급 열 너비(`roleColEm`)와 동일 — CJK는 `ch`보다 `em`이 안전 */
     const roleColFit = Math.max(
-      3.6,
+      5,
       Math.min(
-        9,
+        10,
         members.reduce((max, m) => {
           const len = getMemberRole(m).length;
-          return Math.max(max, len > 0 ? len * 1.15 + 1.8 : 3.6);
-        }, 3.6)
+          return Math.max(max, len > 0 ? len * 1.25 + 2.6 : 5);
+        }, 5)
       )
     );
     const cols = hasRoleColumn
@@ -2439,13 +2486,13 @@ function OverlayInner() {
 
     /** 직급: `ch`는 한글 글자 폭과 어긋나 「대표」 둘째 글자가 잘려 작아 보일 수 있음 → `em` 사용 */
     const roleColEm = Math.max(
-      3.6,
+      5,
       Math.min(
-        9,
+        10,
         members.reduce((max, m) => {
           const len = getMemberRole(m).length;
-          return Math.max(max, len > 0 ? len * 1.15 + 1.8 : 3.6);
-        }, 3.6)
+          return Math.max(max, len > 0 ? len * 1.25 + 2.6 : 5);
+        }, 5)
       )
     );
     const excelGridCols = hasRoleColumn
@@ -2565,7 +2612,6 @@ function OverlayInner() {
     /** OBS/Prism: stroke 대신 다층 shadow만 씀(숫자 열에도 동일 적용) */
     const overlayNumericOutlineShadow =
       "-1px -1px 0 rgba(6, 12, 24, 0.92), 1px -1px 0 rgba(6, 12, 24, 0.92), -1px 1px 0 rgba(6, 12, 24, 0.92), 1px 1px 0 rgba(6, 12, 24, 0.92), 0 0 3px rgba(6, 12, 24, 0.55), 0 2px 6px rgba(0, 0, 0, 0.45)";
-    const numericOutlineOnHost = externalSafeMode || externalHost;
     const numericNoWrapStyle = (
       <style dangerouslySetInnerHTML={{ __html: `
         .overlay-root .overlay-elegant-table .overlay-num-cell-inner {
@@ -2576,9 +2622,9 @@ function OverlayInner() {
           white-space: nowrap;
           font-variant-numeric: tabular-nums;
           vertical-align: middle;
-          text-shadow: ${numericOutlineOnHost ? overlayNumericOutlineShadow : excelTextOutline} !important;
-          -webkit-text-stroke: ${numericOutlineOnHost ? "0" : "0.75px rgba(6, 12, 24, 0.95)"} !important;
-          paint-order: ${numericOutlineOnHost ? "normal" : "stroke fill"};
+          text-shadow: ${overlayNumericOutlineShadow} !important;
+          -webkit-text-stroke: 0 !important;
+          paint-order: normal !important;
           -webkit-font-smoothing: antialiased;
         }
         .overlay-root .overlay-account-cell,
@@ -2773,11 +2819,18 @@ function OverlayInner() {
           text-overflow: clip !important;
           text-align: center !important;
         }
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-role,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-role .overlay-role-label {
+          -webkit-text-stroke: 0 !important;
+          paint-order: normal !important;
+          text-shadow: ${overlayNumericOutlineShadow} !important;
+        }
         .overlay-root .overlay-elegant-table tbody td.overlay-col-role .overlay-role-label {
           display: inline-block;
           max-width: 100%;
           white-space: nowrap;
           vertical-align: middle;
+          letter-spacing: 0.04em;
         }
         /* 순위 없음(—)·직급 없음(-) 표기를 어떤 행에서도 동일한 모양으로: 폭 고정 + 가운데 정렬 + 동일 굵기.
            inline-flex 로 span 안의 글자 자체를 가운데 배치해, 셀 내 text-align 과 무관하게 행마다 같은 X 위치에 떨어지게 한다. */
@@ -2953,7 +3006,9 @@ function OverlayInner() {
                             }}
                           >
                             {getMemberRole(m) ? (
-                              <span className="overlay-role-label">{getMemberRole(m)}</span>
+                              <span className="overlay-role-label" style={overlayCellOutlineStyle}>
+                                {getMemberRole(m)}
+                              </span>
                             ) : (
                               <span className="overlay-rank-mark">-</span>
                             )}
@@ -2961,16 +3016,16 @@ function OverlayInner() {
                         )}
                         <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
                         <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`}>
-                          <span className="overlay-num-cell-inner">{fmt(m.account)}</span>
+                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(m.account)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-toon ${membersTheme.toonCls} overlay-toon-cell text-right`}>
-                          <span className="overlay-num-cell-inner">{fmt(m.toon)}</span>
+                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(m.toon)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>
-                          <span className="overlay-num-cell-inner">{fmtTotalCell(m.account + m.toon)}</span>
+                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmtTotalCell(m.account + m.toon)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
-                          <span className="overlay-num-cell-inner">{fmt(getContributionValueForMember(m))}</span>
+                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(getContributionValueForMember(m))}</span>
                         </td>
                       </tr>
                     ))}
@@ -2990,13 +3045,13 @@ function OverlayInner() {
                         )}
                         <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
                         <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`}>
-                          <span className="overlay-num-cell-inner">{fmt(m.account)}</span>
+                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(m.account)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-toon ${membersTheme.toonCls} overlay-toon-cell text-right`}>
-                          <span className="overlay-num-cell-inner">{fmt(m.toon)}</span>
+                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(m.toon)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>
-                          <span className="overlay-num-cell-inner">{fmtTotalCell(m.account + m.toon)}</span>
+                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmtTotalCell(m.account + m.toon)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
                           <span className="overlay-num-cell-inner overlay-rank-mark">—</span>
@@ -3008,16 +3063,16 @@ function OverlayInner() {
                         <td className={totalWrapClsTintedMode} colSpan={hasRoleColumn ? 2 : 1}>총합</td>
                         <td className={totalWrapClsTintedMode} />
                         <td className={`${totalWrapClsTintedMode} overlay-col-account overlay-account-cell text-right`}>
-                          <span className="overlay-num-cell-inner">{fmt(sumAccount)}</span>
+                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(sumAccount)}</span>
                         </td>
                         <td className={`${totalWrapClsTintedMode} overlay-col-toon overlay-toon-cell text-right`}>
-                          <span className="overlay-num-cell-inner">{fmt(sumToon)}</span>
+                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(sumToon)}</span>
                         </td>
                         <td className={`${totalWrapClsTintedMode} overlay-col-total text-right`}>
-                          <span className="overlay-num-cell-inner">{fmt(rounded)}</span>
+                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(rounded)}</span>
                         </td>
                         <td className={`${totalWrapClsTintedMode} overlay-col-contribution text-right`}>
-                          <span className="overlay-num-cell-inner">{fmt(sumContribution)}</span>
+                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(sumContribution)}</span>
                         </td>
                       </tr>
                     )}
