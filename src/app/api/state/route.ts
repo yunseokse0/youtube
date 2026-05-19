@@ -165,9 +165,11 @@ async function upstashSet(key: string, value: unknown) {
   return upstashSetAppStateJson(key, value);
 }
 
+import { computeDonorRankingsUpdatedAt } from "@/lib/donor-rankings-rev";
 import {
   parseStateApiPick,
   projectStateForGetPick,
+  revisionForStatePick,
   STATE_PICK_SIG_INVENTORY,
 } from "@/lib/state-api-pick";
 
@@ -209,6 +211,9 @@ export async function GET(req: Request) {
   }
   const bodyForPick = (state: AppState) =>
     pickMode ? projectStateForGetPick(state, pickMode) : state;
+  const revisionAt = (state: AppState) =>
+    pickMode ? revisionForStatePick(state, pickMode) : state.updatedAt || 0;
+  const isNotModified = (state: AppState) => since > 0 && revisionAt(state) <= since;
   try {
     const userId = getUserId(req);
     if (!userId) {
@@ -224,7 +229,7 @@ export async function GET(req: Request) {
         logger.warn('Redis 미설정 - 메모리만 사용 (서버 재시작 시 데이터 초기화됨. UPSTASH_REDIS_* 환경변수 설정 권장)');
       }
       logger.debug('메모리 상태 반환', { membersCount: state.members.length, donorsCount: state.donors.length });
-      if (since > 0 && (state.updatedAt || 0) <= since) {
+      if (isNotModified(state)) {
         return stateNotModifiedResponse("memory");
       }
       return new Response(JSON.stringify(bodyForPick(state)), {
@@ -287,7 +292,7 @@ export async function GET(req: Request) {
 
     mergedForResponse = applyDonationGoalPresetNormalization(mergedForResponse);
 
-    if (since > 0 && (mergedForResponse.updatedAt || 0) <= since) {
+    if (isNotModified(mergedForResponse)) {
       return stateNotModifiedResponse("redis");
     }
 
@@ -331,10 +336,18 @@ export async function POST(req: Request) {
     const mergedDonors = Array.isArray(body.donors)
       ? mergeDonorsForMultiTabSave(body.donors || [], baseState.donors)
       : baseState.donors;
+    const donorsInPatch = Array.isArray(body.donors);
     const merged = mergePartialState(baseState, body, userId);
+    const draft: AppState = { ...merged, donors: mergedDonors };
+    const donorRankingsUpdatedAt = computeDonorRankingsUpdatedAt(
+      baseState,
+      draft,
+      body,
+      donorsInPatch
+    );
     const next: AppState = applyDonationGoalPresetNormalization({
-      ...merged,
-      donors: mergedDonors,
+      ...draft,
+      donorRankingsUpdatedAt,
       updatedAt: Date.now(),
     });
 

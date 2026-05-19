@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { defaultState, normalizeDonorRankingsOverlayConfig, type AppState } from "@/lib/state";
 import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
-import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
+import { useDonorRankingsRemoteState } from "@/hooks/useDonorRankingsRemoteState";
 
 type DonorRow = {
   name: string;
@@ -90,13 +90,13 @@ function decodeDonorsB64Param(b64: string): Array<Record<string, unknown>> {
 /**
  * `donorsSrc` / `donorsB64`로 후원 행을 URL에서 가져올 때 사용.
  * - `donorsB64`: base64(JSON 배열 또는 `{ donors: [...] }`) — OBS·링크만으로 주입 가능
- * - `donorsSrc`: 같은 오리진의 JSON URL을 `donorsPollMs`마다 폴링(기본 2500). 배열 또는 `{ donors }` / `{ items }`
+ * - `donorsSrc`: 같은 오리진 JSON URL — `donorsPollMs` 지정 시에만 폴링(기본 0, SSE·후원 변경 시 동기화)
  * @returns `undefined`면 `/api/state`의 donors 사용. 배열이면 그걸로만 집계.
  */
 function useDonorsOverrideFromUrl(sp: URLSearchParams): Array<Record<string, unknown>> | undefined {
   const donorsB64 = (sp.get("donorsB64") || "").trim();
   const donorsSrc = (sp.get("donorsSrc") || "").trim();
-  const pollMs = Math.floor(readNumber(sp, "donorsPollMs", 2500, 2000, 120_000));
+  const pollMs = Math.floor(readNumber(sp, "donorsPollMs", 0, 0, 120_000));
 
   const b64Rows = useMemo(() => {
     if (!donorsB64) return undefined;
@@ -145,6 +145,7 @@ function useDonorsOverrideFromUrl(sp: URLSearchParams): Array<Record<string, unk
     };
 
     void tick();
+    if (pollMs <= 0) return;
     const id = window.setInterval(() => void tick(), pollMs);
     return () => {
       cancelled = true;
@@ -360,7 +361,7 @@ function RankingColumn({
 export default function DonorRankingsOverlayPage() {
   const sp = useSearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
-  const { state, ready } = useOverlayRemoteState(userId, { statePick: "overlay-donors" });
+  const { state, ready } = useDonorRankingsRemoteState(userId);
   const overlayCfg = useMemo(
     () => normalizeDonorRankingsOverlayConfig(state?.donorRankingsOverlayConfig),
     [state?.donorRankingsOverlayConfig]

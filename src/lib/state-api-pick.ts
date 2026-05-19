@@ -1,16 +1,19 @@
 import type { AppState, RouletteState } from "@/types";
+import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
 import { capDonorsForOverlayWire, slimSigInventoryForWire } from "@/lib/state-wire-slim";
 
 export const STATE_PICK_SIG_INVENTORY = "sigInventory";
 export const STATE_PICK_OVERLAY = "overlay";
 export const STATE_PICK_OVERLAY_DONORS = "overlay-donors";
 export const STATE_PICK_SIG_SALES = "sig-sales";
+export const STATE_PICK_DONOR_RANKINGS = "donor-rankings";
 
 export type StateApiPick =
   | typeof STATE_PICK_SIG_INVENTORY
   | typeof STATE_PICK_OVERLAY
   | typeof STATE_PICK_OVERLAY_DONORS
-  | typeof STATE_PICK_SIG_SALES;
+  | typeof STATE_PICK_SIG_SALES
+  | typeof STATE_PICK_DONOR_RANKINGS;
 
 export function parseStateApiPick(raw: string): StateApiPick | null {
   const v = String(raw || "").trim();
@@ -18,11 +21,18 @@ export function parseStateApiPick(raw: string): StateApiPick | null {
     v === STATE_PICK_SIG_INVENTORY ||
     v === STATE_PICK_OVERLAY ||
     v === STATE_PICK_OVERLAY_DONORS ||
-    v === STATE_PICK_SIG_SALES
+    v === STATE_PICK_SIG_SALES ||
+    v === STATE_PICK_DONOR_RANKINGS
   ) {
     return v;
   }
   return null;
+}
+
+/** pick별 304·since 비교에 쓸 revision */
+export function revisionForStatePick(state: AppState, pick: StateApiPick): number {
+  if (pick === STATE_PICK_DONOR_RANKINGS) return readDonorRankingsRevision(state);
+  return Number(state.updatedAt || 0);
 }
 
 function stripRouletteForOverlay(rs: RouletteState | undefined): RouletteState | undefined {
@@ -89,12 +99,28 @@ export function projectStateForGetPick(state: AppState, pick: StateApiPick): unk
   if (pick === STATE_PICK_OVERLAY) {
     return overlayCoreFields(state, rs, false);
   }
+  if (pick === STATE_PICK_DONOR_RANKINGS) {
+    return {
+      updatedAt: state.updatedAt,
+      donorRankingsUpdatedAt: revisionForStatePick(state, STATE_PICK_DONOR_RANKINGS),
+      donors: capDonorsForOverlayWire(state.donors),
+      donorRankingsTheme: state.donorRankingsTheme,
+      donorRankingsPresets: state.donorRankingsPresets,
+      donorRankingsPresetId: state.donorRankingsPresetId,
+      donorRankingsOverlayConfig: state.donorRankingsOverlayConfig,
+    };
+  }
   return overlayCoreFields(state, rs, true);
 }
 
-/** pick=overlay* 부분 JSON → 클라이언트 AppState 병합용 */
+/** pick=overlay*·donor-rankings 부분 JSON → 클라이언트 AppState 병합용 */
 export function isOverlayPickPartial(data: unknown): boolean {
   if (!data || typeof data !== "object") return false;
   const o = data as Record<string, unknown>;
   return "updatedAt" in o && !("forbiddenWords" in o) && !("contributionLogs" in o);
+}
+
+export function isDonorRankingsPickPartial(data: unknown): boolean {
+  if (!isOverlayPickPartial(data)) return false;
+  return "donors" in (data as Record<string, unknown>);
 }

@@ -371,6 +371,8 @@ export type AppState = {
   sigRollingMeta?: Record<string, SigRollingMetaEntry>;
   /** 마지막 저장 시각(epoch ms), 원격-로컬 최신성 비교 기준 */
   updatedAt: number;
+  /** 후원 순위 오버레이 전용 revision — donors·순위 테마 변경 시만 증가(회전판만 바뀌면 증가 안 함) */
+  donorRankingsUpdatedAt?: number;
 };
 
 export type SettlementMemberRatioOverrides = Record<

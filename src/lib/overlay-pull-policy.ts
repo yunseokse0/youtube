@@ -92,3 +92,16 @@ export function shouldSyncOverlayFromStateUpdatedEvent(
   if (!Number.isFinite(ts) || ts <= 0) return true;
   return ts > lastSyncedUpdatedAt;
 }
+
+/**
+ * 후원 순위 오버레이: `donorRankingsUpdatedAt` 가 올라갔을 때만 GET.
+ * 회전판 등만 바뀐 이벤트(updatedAt만)는 무시.
+ */
+export function shouldSyncDonorRankingsFromStateUpdatedEvent(
+  event: { updatedAt?: unknown; donorRankingsUpdatedAt?: unknown },
+  lastSyncedDonorRankingsAt: number
+): boolean {
+  const dr = Number(event.donorRankingsUpdatedAt);
+  if (Number.isFinite(dr) && dr > 0) return dr > lastSyncedDonorRankingsAt;
+  return false;
+}

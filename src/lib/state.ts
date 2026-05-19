@@ -31,7 +31,11 @@ import {
   normalizeSigInventory,
 } from "./constants";
 import { normalizeOverlayPresetDonationGoals } from "@/lib/goal-preset-math";
-import { isOverlayPickPartial, type StateApiPick } from "@/lib/state-api-pick";
+import {
+  isDonorRankingsPickPartial,
+  isOverlayPickPartial,
+  type StateApiPick,
+} from "@/lib/state-api-pick";
 import { slimSigInventoryForWire } from "@/lib/state-wire-slim";
 export type {
   AppState,
@@ -667,6 +671,7 @@ export function defaultState(): AppState {
     sigRolling: normalizeSigRolling(null),
     sigRollingMeta: {},
     updatedAt: Date.now(),
+    donorRankingsUpdatedAt: Date.now(),
   };
 }
 
@@ -1139,7 +1144,18 @@ async function runServerSaveQueue(): Promise<void> {
               ? pl.updatedAt
               : Date.now();
         /** 전체 AppState를 SSE로내면 JSON 직렬화·전송이 커져 요청이 오래 pending 될 수 있음 → 타임스탬프만 브로드캐스트 */
-        void sendSSEUpdate({ type: "state_updated", updatedAt }).catch(() => {});
+        const plFull = job.ssePayload as AppState | null;
+        const dr =
+          plFull && typeof plFull.donorRankingsUpdatedAt === "number"
+            ? plFull.donorRankingsUpdatedAt
+            : undefined;
+        void sendSSEUpdate({
+          type: "state_updated",
+          updatedAt,
+          ...(typeof dr === "number" && Number.isFinite(dr) && dr > 0
+            ? { donorRankingsUpdatedAt: dr }
+            : {}),
+        }).catch(() => {});
       } catch {
         /* ignore */
       }
@@ -1286,7 +1302,10 @@ async function doLoadStateFromApi(
     } catch {
       return null;
     }
-    if (isOverlayPickPartial(data)) {
+    if (isDonorRankingsPickPartial(data)) {
+      const base = defaultState();
+      data = { ...base, ...data } as AppState;
+    } else if (isOverlayPickPartial(data)) {
       const base = defaultState();
       data = {
         ...base,
