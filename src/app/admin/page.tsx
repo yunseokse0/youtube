@@ -49,8 +49,10 @@ import {
 import { useSSEConnection } from "@/lib/sse-client";
 import { createStateUpdatedScheduler } from "@/lib/overlay-pull-policy";
 import {
+  resolveSigAdminPreviewFallbackSrc,
+  resolveSigAdminPreviewSrc,
   resolveSigImageUrl,
-  rewriteSigPathForRollingGithubIfConfigured,
+  toGithubRawSigAssetUrl,
   stripSigInventoryImagesKeepList,
   DEFAULT_SIG_SOLD_STAMP_URL,
   DEFAULT_SIG_INVENTORY,
@@ -163,13 +165,25 @@ function isLegacyLocalSigImageUrl(raw?: string): boolean {
 }
 
 function resolveSigPreviewSrc(raw?: string, name?: string): string {
-  const v = String(raw || "").trim();
-  if (isBrokenSigImageUrl(v)) return SIG_DUMMY_IMAGE;
-  const resolved = resolveSigImageUrl(String(name || "").trim(), v);
-  if (resolved.startsWith("/images/sigs/")) {
-    return rewriteSigPathForRollingGithubIfConfigured(resolved);
+  if (isBrokenSigImageUrl(String(raw || "").trim())) {
+    return toGithubRawSigAssetUrl(SIG_DUMMY_IMAGE) || SIG_DUMMY_IMAGE;
   }
-  return resolved;
+  return resolveSigAdminPreviewSrc(raw, name);
+}
+
+function handleSigPreviewImgError(
+  e: React.SyntheticEvent<HTMLImageElement>,
+  raw?: string,
+  name?: string
+) {
+  const el = e.currentTarget;
+  const fallback = resolveSigAdminPreviewFallbackSrc(raw, name);
+  if (fallback && el.src !== fallback) {
+    el.src = fallback;
+    return;
+  }
+  el.onerror = null;
+  el.src = toGithubRawSigAssetUrl(SIG_DUMMY_IMAGE) || SIG_DUMMY_IMAGE;
 }
 
 function ClientTime({ ts }: { ts: number | string }) {
@@ -6443,7 +6457,10 @@ export default function AdminPage() {
                   <div className="flex items-center gap-2">
                     <div className="relative h-14 w-14 overflow-hidden rounded border border-white/10 bg-black/30">
                       <Image
-                        src={resolveSigImageUrl("stamp", state.sigSoldOutStampUrl || DEFAULT_SIG_SOLD_STAMP_URL)}
+                        src={resolveSigAdminPreviewSrc(
+                          state.sigSoldOutStampUrl || DEFAULT_SIG_SOLD_STAMP_URL,
+                          "stamp"
+                        )}
                         alt="완판 오버레이 미리보기"
                         fill
                         unoptimized
@@ -6531,10 +6548,7 @@ export default function AdminPage() {
                           className="absolute inset-0 h-full w-full object-cover"
                           loading="lazy"
                           decoding="async"
-                          onError={(e) => {
-                            e.currentTarget.onerror = null;
-                            e.currentTarget.src = SIG_DUMMY_IMAGE;
-                          }}
+                          onError={(e) => handleSigPreviewImgError(e, newSigImageUrl, newSigName)}
                         />
                       </div>
                     </div>
@@ -6837,10 +6851,9 @@ export default function AdminPage() {
                               className="absolute inset-0 h-full w-full object-cover"
                               loading="lazy"
                               decoding="async"
-                              onError={(e) => {
-                                e.currentTarget.onerror = null;
-                                e.currentTarget.src = SIG_DUMMY_IMAGE;
-                              }}
+                              onError={(e) =>
+                                handleSigPreviewImgError(e, item.imageUrl, item.name)
+                              }
                             />
                           </button>
                           <div className="text-xs text-neutral-400 break-all">
@@ -7065,16 +7078,13 @@ export default function AdminPage() {
                                   <div className="relative mx-auto flex h-28 w-full items-center justify-center bg-black/40 p-1">
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
-                                      src={rewriteSigPathForRollingGithubIfConfigured(p)}
+                                      src={toGithubRawSigAssetUrl(p) || p}
                                       alt=""
                                       className="max-h-full max-w-full object-contain"
                                       loading="lazy"
                                       decoding="async"
                                       referrerPolicy="no-referrer"
-                                      onError={(e) => {
-                                        e.currentTarget.onerror = null;
-                                        e.currentTarget.src = rewriteSigPathForRollingGithubIfConfigured(SIG_DUMMY_IMAGE);
-                                      }}
+                                      onError={(e) => handleSigPreviewImgError(e, p)}
                                     />
                                   </div>
                                   {sigBundledMode === "single" ? (
@@ -7228,10 +7238,13 @@ export default function AdminPage() {
                         className="max-h-[70vh] max-w-full object-contain"
                         loading="lazy"
                         decoding="async"
-                        onError={(e) => {
-                          e.currentTarget.onerror = null;
-                          e.currentTarget.src = SIG_DUMMY_IMAGE;
-                        }}
+                        onError={(e) =>
+                          handleSigPreviewImgError(
+                            e,
+                            sigImagePreviewModal.rawUrl,
+                            sigImagePreviewModal.name
+                          )
+                        }
                       />
                     </div>
                   </div>

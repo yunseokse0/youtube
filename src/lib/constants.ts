@@ -177,13 +177,21 @@ export function getSigRollingGithubRawRoot(): string {
   return "https://raw.githubusercontent.com/yunseokse0/youtube/main/public";
 }
 
+function encodeGithubRawPathSegment(seg: string): string {
+  try {
+    return encodeURIComponent(decodeURIComponent(seg));
+  } catch {
+    return encodeURIComponent(seg);
+  }
+}
+
 export function rewriteSigPathForRollingGithubIfConfigured(resolvedUrl: string): string {
   const s = String(resolvedUrl || "").trim();
   if (!s.startsWith("/images/sigs/")) return resolvedUrl;
   const root = getSigRollingGithubRawRoot();
   if (!root) return resolvedUrl;
   const rel = s.startsWith("/") ? s.slice(1) : s;
-  const parts = rel.split("/").filter(Boolean).map((seg) => encodeURIComponent(seg));
+  const parts = rel.split("/").filter(Boolean).map(encodeGithubRawPathSegment);
   return `${root}/${parts.join("/")}`;
 }
 
@@ -263,6 +271,46 @@ function offloadBundledSigPathIfConfigured(path: string): string {
   const s = String(path || "").trim();
   if (!s.startsWith("/images/sigs/")) return s;
   return rewriteSigPathForRollingGithubIfConfigured(s);
+}
+
+/**
+ * `public/images/sigs/파일.gif` 만 저장된 레거시 — 실제 파일은 `from-drive/` 아래인 경우가 많음.
+ */
+export function sigBundledFromDriveFallbackPath(storedPath: string): string | null {
+  const s = String(storedPath || "").trim();
+  if (!/^\/images\/sigs\/[^/]+\.[a-z0-9]+$/i.test(s)) return null;
+  if (s.includes("/from-drive/")) return null;
+  return s.replace(/^\/images\/sigs\//i, "/images/sigs/from-drive/");
+}
+
+/** 관리자 미리보기 — GitHub raw 우선(동일 오리진 404·Render 디스크 비움 방지) */
+export function resolveSigAdminPreviewSrc(raw?: string, name?: string): string {
+  const v = String(raw ?? "").trim();
+  if (/(?:_257b_2522id_2522|%257b%2522id%2522|%7b%22id%22)/i.test(v)) {
+    return toGithubRawSigAssetUrl(BUNDLED_SIG_PLACEHOLDER_URL) || BUNDLED_SIG_PLACEHOLDER_URL;
+  }
+  const resolved = resolveSigImageUrl(String(name ?? "").trim(), v);
+  return toGithubRawSigAssetUrl(resolved) || resolved;
+}
+
+/** 미리보기 1차 404 시 시도할 from-drive 경로(GitHub raw) */
+export function resolveSigAdminPreviewFallbackSrc(raw?: string, name?: string): string | null {
+  const v = String(raw ?? "").trim();
+  const resolved = resolveSigImageUrl(String(name ?? "").trim(), v);
+  let path = resolved;
+  if (/^https?:\/\//i.test(resolved)) {
+    try {
+      const u = new URL(resolved);
+      const m = u.pathname.match(/(\/images\/sigs\/[^?#]+)/i);
+      path = m?.[1] || resolved;
+    } catch {
+      return null;
+    }
+  }
+  const alt = sigBundledFromDriveFallbackPath(path);
+  if (!alt) return null;
+  const url = toGithubRawSigAssetUrl(alt);
+  return url && url !== resolveSigAdminPreviewSrc(raw, name) ? url : null;
 }
 
 export function resolveSigImageUrl(name: string, imageUrl?: string): string {
