@@ -80,6 +80,7 @@ function parseSigMatchSnapshot(sp: URLSearchParams): AppState | null {
 
 function useSigMatchState(userId: string | undefined, lockedSnapshot: AppState | null): { state: AppState | null; ready: boolean } {
   return useOverlayRemoteState(userId, {
+    statePick: "overlay-donors",
     frozenState: lockedSnapshot ?? undefined,
     enabled: !lockedSnapshot,
   });

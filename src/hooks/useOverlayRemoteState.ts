@@ -11,9 +11,14 @@ import {
 } from "@/lib/overlay-pull-policy";
 import { useSSEConnection } from "@/lib/sse-client";
 
+import type { StateApiPick } from "@/lib/state-api-pick";
+import { STATE_PICK_OVERLAY, STATE_PICK_OVERLAY_DONORS } from "@/lib/state-api-pick";
+
 export type UseOverlayRemoteStateOptions = {
   /** false면 동기화 비활성 */
   enabled?: boolean;
+  /** 기본 `overlay`. 후원 목록 필요 시 `overlay-donors` */
+  statePick?: StateApiPick;
   /** 고정 스냅샷(시그 대전 미리보기 등) — 설정 시 폴링·SSE 생략 */
   frozenState?: AppState | null;
   /** 로컬 스냅샷 없을 때 lastUpdated 초기값 — `default`면 defaultState().updatedAt */
@@ -42,6 +47,7 @@ export function useOverlayRemoteState(
 ): { state: AppState | null; ready: boolean } {
   const frozen = options.frozenState ?? null;
   const enabled = options.enabled !== false && frozen == null;
+  const statePick = options.statePick ?? STATE_PICK_OVERLAY;
   const [state, setState] = useState<AppState | null>(frozen);
   const lastSyncedUpdatedAtRef = useRef(0);
   const syncingRef = useRef(false);
@@ -54,6 +60,7 @@ export function useOverlayRemoteState(
     try {
       const remote = await loadStateFromApi(userId, {
         ifUpdatedSince: lastSyncedUpdatedAtRef.current,
+        pick: statePick,
       });
       if (!remote) return;
       const ts = remote.updatedAt || 0;
@@ -62,7 +69,7 @@ export function useOverlayRemoteState(
     } finally {
       syncingRef.current = false;
     }
-  }, [enabled, userId]);
+  }, [enabled, userId, statePick]);
 
   const { connected: sseConnected } = useSSEConnection((d: unknown) => {
     if (!enabled) return;

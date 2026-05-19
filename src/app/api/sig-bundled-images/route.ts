@@ -210,7 +210,7 @@ export async function GET() {
     };
     return NextResponse.json(
       { ok: true as const, paths, meta },
-      { headers: { "Cache-Control": "private, max-age=300" } }
+      { headers: { "Cache-Control": "private, max-age=3600" } }
     );
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

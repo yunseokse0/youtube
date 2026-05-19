@@ -31,6 +31,8 @@ import {
   normalizeSigInventory,
 } from "./constants";
 import { normalizeOverlayPresetDonationGoals } from "@/lib/goal-preset-math";
+import { isOverlayPickPartial, type StateApiPick } from "@/lib/state-api-pick";
+import { slimSigInventoryForWire } from "@/lib/state-wire-slim";
 export type {
   AppState,
   ContributionLog,
@@ -1151,9 +1153,9 @@ async function runServerSaveQueue(): Promise<void> {
   }
 }
 
-/** 관리자 /api/state 저장 시 — 스핀 결과(phase 등)는 보내지 않고 메뉴 수·오버레이 UI 설정만 전달(서버에서 병합) */
+/** 관리자 /api/state 저장 시 — 스핀 결과·historyLogs는 서버 전용(POST 생략으로 대역폭 절감) */
 function appStatePayloadForApi(next: AppState): Partial<AppState> {
-  const normalizedSigInventory = normalizeSigInventory(next.sigInventory);
+  const normalizedSigInventory = slimSigInventoryForWire(normalizeSigInventory(next.sigInventory));
   const normalizedSigRolling = normalizeSigRolling(next.sigRolling);
   const { rouletteState, ...rest } = {
     ...next,
@@ -1167,7 +1169,8 @@ function appStatePayloadForApi(next: AppState): Partial<AppState> {
       menuCount: rouletteState.menuCount,
       menuFillFromAllActive: rouletteState.menuFillFromAllActive,
       overlayOpacity: rouletteState.overlayOpacity,
-      ...(Array.isArray(rouletteState.historyLogs) ? { historyLogs: rouletteState.historyLogs } : {}),
+      sigResultScalePct: rouletteState.sigResultScalePct,
+      overlayReloadNonce: rouletteState.overlayReloadNonce,
     },
   } as Partial<AppState>;
 }
@@ -1226,13 +1229,15 @@ function maybeWarnMemoryStateBackend(res: Response): void {
 export type LoadStateFromApiOptions = {
   /** 클라이언트가 이미 가진 `updatedAt` — 서버가 같거나 오래되면 304(본문 없음) */
   ifUpdatedSince?: number;
+  /** OBS·오버레이: 서버가 축소 JSON 반환 (`overlay` | `overlay-donors` | `sig-sales`) */
+  pick?: StateApiPick;
 };
 
 export async function loadStateFromApi(
   userId?: string,
   options?: LoadStateFromApiOptions
 ): Promise<AppState | null> {
-  const dedupeKey = `${userId ?? "__cookie__"}:${options?.ifUpdatedSince ?? 0}`;
+  const dedupeKey = `${userId ?? "__cookie__"}:${options?.ifUpdatedSince ?? 0}:${options?.pick ?? "full"}`;
   const existing = loadStateInflight.get(dedupeKey);
   if (existing) return existing;
   const created = doLoadStateFromApi(userId, options);
@@ -1257,6 +1262,7 @@ async function doLoadStateFromApi(
       /** `/api/state` 가 `u` 만 받는 프록시·구버전 호환 */
       q.set("u", userId);
     }
+    if (options?.pick) q.set("pick", options.pick);
     /** `userId` 있으면 URL로 사용자 특정 → 쿠키 불필요(OBS·브라우저 소스는 쿠키 없음). 없으면 관리자 세션 쿠키로 조회 */
     const credentials = userId ? "omit" : "include";
     const signal =
@@ -1279,6 +1285,17 @@ async function doLoadStateFromApi(
       data = JSON.parse(text) as AppState;
     } catch {
       return null;
+    }
+    if (isOverlayPickPartial(data)) {
+      const base = defaultState();
+      data = {
+        ...base,
+        ...data,
+        rouletteState: {
+          ...base.rouletteState,
+          ...(data.rouletteState && typeof data.rouletteState === "object" ? data.rouletteState : {}),
+        },
+      } as AppState;
     }
     if (data && data.members) {
       data.members = (() => { const v = ensureMembers(data.members); return v.length > 0 ? v : defaultMembers().map(normalizeMember); })();

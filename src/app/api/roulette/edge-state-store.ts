@@ -2,11 +2,11 @@ import type { AppState } from "@/lib/state";
 import { defaultState } from "@/lib/state";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { getUserIdFromRequest } from "../_shared/user-id";
+import { getRedisEnv } from "../_shared/upstash";
 import {
-  getRedisEnv,
-  upstashGetJson,
-  upstashSetJsonWithPipeline,
-} from "../_shared/upstash";
+  upstashGetAppStateJson,
+  upstashSetAppStateJson,
+} from "../_shared/upstash-app-state";
 
 const STORAGE_KEY_BASE = "excel-broadcast-state-v1";
 const STORAGE_KEY_LEGACY = "excel-broadcast-state-v1";
@@ -20,11 +20,11 @@ function stateKey(userId: string | null): string {
 }
 
 async function upstashGet(key: string): Promise<unknown | null> {
-  return upstashGetJson(key);
+  return upstashGetAppStateJson(key);
 }
 
 async function upstashSet(key: string, value: unknown): Promise<boolean> {
-  return upstashSetJsonWithPipeline(key, value);
+  return upstashSetAppStateJson(key, value);
 }
 
 export async function loadAppStateForRoulette(userId: string): Promise<AppState> {

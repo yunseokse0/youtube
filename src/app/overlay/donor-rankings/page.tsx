@@ -360,7 +360,7 @@ function RankingColumn({
 export default function DonorRankingsOverlayPage() {
   const sp = useSearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
-  const { state, ready } = useOverlayRemoteState(userId);
+  const { state, ready } = useOverlayRemoteState(userId, { statePick: "overlay-donors" });
   const overlayCfg = useMemo(
     () => normalizeDonorRankingsOverlayConfig(state?.donorRankingsOverlayConfig),
     [state?.donorRankingsOverlayConfig]

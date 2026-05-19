@@ -57,8 +57,11 @@ export function middleware(req: NextRequest) {
     const [, uidSeg, fileName] = brokenSigPath;
     const uid = extractUserIdFromBrokenSigSegment(uidSeg);
     if (uid) {
+      const fixedPath = `/uploads/sigs/${uid}/${fileName}`;
+      const github = toGithubRawSigAssetUrl(fixedPath);
+      if (github) return NextResponse.redirect(github, 307);
       const nextUrl = req.nextUrl.clone();
-      nextUrl.pathname = `/uploads/sigs/${uid}/${fileName}`;
+      nextUrl.pathname = fixedPath;
       return NextResponse.rewrite(nextUrl);
     }
   }

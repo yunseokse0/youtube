@@ -53,8 +53,8 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   const [state, setState] = useState<AppState | null>(null);
   const lastUpdatedRef = useRef(0);
   const lastVisualSigRef = useRef("");
-  const loadRef = useRef(() => loadStateFromApi(userId));
-  loadRef.current = () => loadStateFromApi(userId);
+  const loadRef = useRef(() => loadStateFromApi(userId, { pick: "overlay-donors" }));
+  loadRef.current = () => loadStateFromApi(userId, { pick: "overlay-donors" });
   const syncingRef = useRef(false);
   const syncOnceRef = useRef<() => Promise<void>>(async () => {});
   const scheduleStateUpdatedRef = useRef<(() => void) | null>(null);

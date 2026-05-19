@@ -63,6 +63,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "host not allowed" }, { status: 403 });
   }
 
+  /** GitHub raw 시그 — 본문 프록시 없이 클라이언트가 직접 받게 307(Render 대역폭·Service-Initiated 절감) */
+  if (/^raw\.githubusercontent\.com$/i.test(target.hostname)) {
+    return NextResponse.redirect(target.href, 307);
+  }
+
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 55_000);
 

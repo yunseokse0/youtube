@@ -9,11 +9,11 @@ import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { isRouletteLocked } from "../roulette/roulette-lock";
 import { getUserIdFromRequest } from "../_shared/user-id";
+import { getRedisEnv } from "../_shared/upstash";
 import {
-  getRedisEnv,
-  upstashGetJson,
-  upstashSetJsonWithPipeline,
-} from "../_shared/upstash";
+  upstashGetAppStateJson,
+  upstashSetAppStateJson,
+} from "../_shared/upstash-app-state";
 
 const logger = createModuleLogger('API/State');
 
@@ -158,14 +158,23 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
 }
 
 async function upstashGet<T = unknown>(key: string): Promise<T | null> {
-  return upstashGetJson<T>(key);
+  return upstashGetAppStateJson<T>(key);
 }
 
 async function upstashSet(key: string, value: unknown) {
-  return upstashSetJsonWithPipeline(key, value);
+  return upstashSetAppStateJson(key, value);
 }
 
-const STATE_PICK_SIG_INVENTORY = "sigInventory";
+import {
+  parseStateApiPick,
+  projectStateForGetPick,
+  STATE_PICK_SIG_INVENTORY,
+} from "@/lib/state-api-pick";
+
+function overlayPickEnabled(): boolean {
+  const v = process.env.STATE_API_OVERLAY_PICK?.trim().toLowerCase();
+  return !(v === "0" || v === "false" || v === "off");
+}
 
 /** 클라이언트가 라이브 동기화 이슈(멀티 인스턴스·메모리 폴백)를 구분할 수 있도록 */
 const HDR_STATE_STORAGE = "X-Broadcast-State-Storage";
@@ -190,13 +199,16 @@ function stateNotModifiedResponse(storage: string): Response {
 }
 
 export async function GET(req: Request) {
-  let pick = "";
   const since = parseSinceParam(req);
+  let pickMode: ReturnType<typeof parseStateApiPick> = null;
   try {
-    pick = (new URL(req.url).searchParams.get("pick") || "").trim();
+    pickMode = parseStateApiPick(new URL(req.url).searchParams.get("pick") || "");
+    if (pickMode && pickMode !== STATE_PICK_SIG_INVENTORY && !overlayPickEnabled()) pickMode = null;
   } catch {
-    pick = "";
+    pickMode = null;
   }
+  const bodyForPick = (state: AppState) =>
+    pickMode ? projectStateForGetPick(state, pickMode) : state;
   try {
     const userId = getUserId(req);
     if (!userId) {
@@ -215,11 +227,7 @@ export async function GET(req: Request) {
       if (since > 0 && (state.updatedAt || 0) <= since) {
         return stateNotModifiedResponse("memory");
       }
-      const body =
-        pick === STATE_PICK_SIG_INVENTORY
-          ? { updatedAt: state.updatedAt, sigInventory: state.sigInventory || [] }
-          : state;
-      return new Response(JSON.stringify(body), {
+      return new Response(JSON.stringify(bodyForPick(state)), {
         headers: {
           "Content-Type": "application/json",
           "Cache-Control":
@@ -284,11 +292,7 @@ export async function GET(req: Request) {
     }
 
     logger.debug('Redis 상태 반환', { hasState: !!state, usedMemory: !!getServerMemoryAppState(), userId });
-    const body =
-      pick === STATE_PICK_SIG_INVENTORY
-        ? { updatedAt: mergedForResponse.updatedAt, sigInventory: mergedForResponse.sigInventory || [] }
-        : mergedForResponse;
-    return new Response(JSON.stringify(body), {
+    return new Response(JSON.stringify(bodyForPick(mergedForResponse)), {
       headers: {
         "Content-Type": "application/json",
         "Cache-Control":
@@ -299,11 +303,7 @@ export async function GET(req: Request) {
   } catch (error) {
     logger.error('상태 조회 실패', error);
     const fallback = applyDonationGoalPresetNormalization(getServerMemoryAppState() || defaultState());
-    const body =
-      pick === STATE_PICK_SIG_INVENTORY
-        ? { updatedAt: fallback.updatedAt, sigInventory: fallback.sigInventory || [] }
-        : fallback;
-    return new Response(JSON.stringify(body), {
+    return new Response(JSON.stringify(bodyForPick(fallback)), {
       headers: { "Content-Type": "application/json", [HDR_STATE_STORAGE]: "memory" },
       status: 200,
     });

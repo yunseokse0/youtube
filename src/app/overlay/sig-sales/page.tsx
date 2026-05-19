@@ -329,6 +329,7 @@ export default function SigSalesOverlayPage() {
   const loadRemote = useCallback(async () => {
     const remote = await loadStateFromApi(userId, {
       ifUpdatedSince: lastSyncedUpdatedAtRef.current,
+      pick: "sig-sales",
     });
     if (!remote) return;
     const ts = remote.updatedAt || 0;
