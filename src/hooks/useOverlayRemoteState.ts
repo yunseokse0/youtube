@@ -5,10 +5,14 @@ import { defaultState, loadState, loadStateFromApi, storageKey, type AppState } 
 import { shouldSuppressOverlaySseConnection } from "@/lib/overlay-params";
 import {
   createStateUpdatedScheduler,
+  DONOR_STATE_UPDATED_DEBOUNCE_MS,
+  DONOR_STATE_UPDATED_MAX_WAIT_MS,
   readOverlayPollIntervalMs,
   readOverlaySseFallbackPollMs,
+  shouldSyncDonorRankingsFromStateUpdatedEvent,
   shouldSyncOverlayFromStateUpdatedEvent,
 } from "@/lib/overlay-pull-policy";
+import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
 import { useSSEConnection } from "@/lib/sse-client";
 
 import type { StateApiPick } from "@/lib/state-api-pick";
@@ -50,6 +54,7 @@ export function useOverlayRemoteState(
   const statePick = options.statePick ?? STATE_PICK_OVERLAY;
   const [state, setState] = useState<AppState | null>(frozen);
   const lastSyncedUpdatedAtRef = useRef(0);
+  const lastSyncedDonorRevRef = useRef(0);
   const syncingRef = useRef(false);
   const syncFromApiRef = useRef<() => Promise<void>>(async () => {});
   const scheduleSseSyncRef = useRef<(() => void) | null>(null);
@@ -65,6 +70,10 @@ export function useOverlayRemoteState(
       if (!remote) return;
       const ts = remote.updatedAt || 0;
       if (ts > 0) lastSyncedUpdatedAtRef.current = Math.max(lastSyncedUpdatedAtRef.current, ts);
+      if (statePick === STATE_PICK_OVERLAY_DONORS) {
+        const dr = readDonorRankingsRevision(remote);
+        if (dr > 0) lastSyncedDonorRevRef.current = Math.max(lastSyncedDonorRevRef.current, dr);
+      }
       setState(remote);
     } finally {
       syncingRef.current = false;
@@ -73,8 +82,17 @@ export function useOverlayRemoteState(
 
   const { connected: sseConnected } = useSSEConnection((d: unknown) => {
     if (!enabled) return;
-    const o = d as { type?: string; updatedAt?: number };
+    const o = d as { type?: string; updatedAt?: number; donorRankingsUpdatedAt?: number };
     if (o?.type !== "state_updated") return;
+    const donorRev = Number(o.donorRankingsUpdatedAt);
+    const isDonorPick = statePick === STATE_PICK_OVERLAY_DONORS;
+    if (isDonorPick && Number.isFinite(donorRev) && donorRev > 0) {
+      if (shouldSyncDonorRankingsFromStateUpdatedEvent(o, lastSyncedDonorRevRef.current)) {
+        lastSyncedDonorRevRef.current = Math.max(lastSyncedDonorRevRef.current, donorRev);
+        void syncFromApiRef.current();
+        return;
+      }
+    }
     if (!shouldSyncOverlayFromStateUpdatedEvent(o.updatedAt, lastSyncedUpdatedAtRef.current)) return;
     scheduleSseSyncRef.current?.();
   });
@@ -90,6 +108,9 @@ export function useOverlayRemoteState(
     if (local) {
       setState(local);
       lastSyncedUpdatedAtRef.current = local.updatedAt || 0;
+      if (statePick === STATE_PICK_OVERLAY_DONORS) {
+        lastSyncedDonorRevRef.current = readDonorRankingsRevision(local);
+      }
     } else {
       const base = defaultState();
       setState(base);
@@ -99,9 +120,13 @@ export function useOverlayRemoteState(
 
     syncFromApiRef.current = syncFromApi;
 
+    const debounceOpts =
+      statePick === STATE_PICK_OVERLAY_DONORS
+        ? { debounceMs: DONOR_STATE_UPDATED_DEBOUNCE_MS, maxWaitMs: DONOR_STATE_UPDATED_MAX_WAIT_MS }
+        : undefined;
     const { schedule, cancel } = createStateUpdatedScheduler(() => {
       void syncFromApiRef.current();
-    });
+    }, debounceOpts);
     scheduleSseSyncRef.current = schedule;
 
     const runInitialSync = () => {
@@ -173,6 +198,7 @@ export function useOverlayRemoteState(
     sseConnected,
     options.noLocalBaseline,
     options.storageDebounceMs,
+    statePick,
   ]);
 
   return { state: frozen ?? state, ready: (frozen ?? state) !== null };

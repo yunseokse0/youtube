@@ -1086,7 +1086,11 @@ async function postAppStateWithAuthRecovery(json: string, userId?: string | null
  * `/api/state` 저장은 한 번에 하나만 진행하고, 진행 중 추가 요청은 최신 페이로드로 합친다.
  * SSE(`/api/events`)는 POST 성공 후 비동기로 **경량** 페이로드만 전송한다(`state_updated` + updatedAt).
  */
-export type SaveStateAsyncResult = { ok: boolean; serverUpdatedAt?: number };
+export type SaveStateAsyncResult = {
+  ok: boolean;
+  serverUpdatedAt?: number;
+  donorRankingsUpdatedAt?: number;
+};
 
 type ServerSaveJob = {
   apiBodyJson: string;
@@ -1125,42 +1129,47 @@ async function runServerSaveQueue(): Promise<void> {
     const res = await postAppStateWithAuthRecovery(job.apiBodyJson, job.userId);
     const ok = res.ok;
     let serverUpdatedAt: number | undefined;
+    let serverDonorRankingsUpdatedAt: number | undefined;
     if (ok) {
       try {
         const raw = await res.text();
-        const parsed = raw.trim() ? (JSON.parse(raw) as { updatedAt?: unknown }) : null;
+        const parsed = raw.trim()
+          ? (JSON.parse(raw) as { updatedAt?: unknown; donorRankingsUpdatedAt?: unknown })
+          : null;
         const u = parsed?.updatedAt;
         if (typeof u === "number" && Number.isFinite(u)) serverUpdatedAt = u;
+        const dr = parsed?.donorRankingsUpdatedAt;
+        if (typeof dr === "number" && Number.isFinite(dr)) serverDonorRankingsUpdatedAt = dr;
       } catch {
         /* ignore malformed body */
       }
       try {
         const { sendSSEUpdate } = require("./sse-post") as { sendSSEUpdate: (d: unknown) => Promise<void> };
-        const pl = job.ssePayload as { updatedAt?: number } | null;
+        const pl = job.ssePayload as { updatedAt?: number; donorRankingsUpdatedAt?: number } | null;
         const updatedAt =
           typeof serverUpdatedAt === "number" && Number.isFinite(serverUpdatedAt)
             ? serverUpdatedAt
             : typeof pl?.updatedAt === "number" && Number.isFinite(pl.updatedAt)
               ? pl.updatedAt
               : Date.now();
-        /** 전체 AppState를 SSE로내면 JSON 직렬화·전송이 커져 요청이 오래 pending 될 수 있음 → 타임스탬프만 브로드캐스트 */
-        const plFull = job.ssePayload as AppState | null;
-        const dr =
-          plFull && typeof plFull.donorRankingsUpdatedAt === "number"
-            ? plFull.donorRankingsUpdatedAt
-            : undefined;
+        const donorRankingsUpdatedAt =
+          typeof serverDonorRankingsUpdatedAt === "number" && Number.isFinite(serverDonorRankingsUpdatedAt)
+            ? serverDonorRankingsUpdatedAt
+            : typeof pl?.donorRankingsUpdatedAt === "number" && Number.isFinite(pl.donorRankingsUpdatedAt)
+              ? pl.donorRankingsUpdatedAt
+              : undefined;
         void sendSSEUpdate({
           type: "state_updated",
           updatedAt,
-          ...(typeof dr === "number" && Number.isFinite(dr) && dr > 0
-            ? { donorRankingsUpdatedAt: dr }
+          ...(typeof donorRankingsUpdatedAt === "number" && donorRankingsUpdatedAt > 0
+            ? { donorRankingsUpdatedAt }
             : {}),
         }).catch(() => {});
       } catch {
         /* ignore */
       }
     }
-    for (const fn of job.resolveAll) fn({ ok, serverUpdatedAt });
+    for (const fn of job.resolveAll) fn({ ok, serverUpdatedAt, donorRankingsUpdatedAt: serverDonorRankingsUpdatedAt });
   } catch {
     for (const fn of job.resolveAll) fn({ ok: false });
   } finally {
@@ -1178,9 +1187,18 @@ function appStatePayloadForApi(next: AppState): Partial<AppState> {
     sigInventory: normalizedSigInventory,
     sigRolling: normalizedSigRolling,
   };
-  if (!rouletteState) return rest;
-  return {
+  const donors = Array.isArray(next.donors) ? next.donors : rest.donors;
+  const donorRankingsUpdatedAt = next.donorRankingsUpdatedAt;
+  const base: Partial<AppState> = {
     ...rest,
+    donors,
+    ...(typeof donorRankingsUpdatedAt === "number" && Number.isFinite(donorRankingsUpdatedAt)
+      ? { donorRankingsUpdatedAt }
+      : {}),
+  };
+  if (!rouletteState) return base;
+  return {
+    ...base,
     rouletteState: {
       menuCount: rouletteState.menuCount,
       menuFillFromAllActive: rouletteState.menuFillFromAllActive,

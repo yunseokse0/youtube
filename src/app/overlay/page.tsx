@@ -11,7 +11,12 @@ import { GoalBar } from "@/components/GoalBar";
 import { useSSEConnection } from "@/lib/sse-client";
 import { useGoalPresetAutoEscalate } from "@/hooks/useGoalPresetAutoEscalate";
 import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
-import { createStateUpdatedScheduler, readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
+import {
+  createStateUpdatedScheduler,
+  DONOR_STATE_UPDATED_DEBOUNCE_MS,
+  DONOR_STATE_UPDATED_MAX_WAIT_MS,
+  readOverlayPollIntervalMs,
+} from "@/lib/overlay-pull-policy";
 import { buildOverlaySyncSignature } from "@/lib/overlay-sync-signature";
 
 function tryDecodeSnapshot(str: string | null): AppState | null {
@@ -53,8 +58,11 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   const [state, setState] = useState<AppState | null>(null);
   const lastUpdatedRef = useRef(0);
   const lastVisualSigRef = useRef("");
-  const loadRef = useRef(() => loadStateFromApi(userId, { pick: "overlay-donors" }));
-  loadRef.current = () => loadStateFromApi(userId, { pick: "overlay-donors" });
+  const loadRef = useRef(() =>
+    loadStateFromApi(userId, { pick: "overlay-donors", ifUpdatedSince: lastUpdatedRef.current })
+  );
+  loadRef.current = () =>
+    loadStateFromApi(userId, { pick: "overlay-donors", ifUpdatedSince: lastUpdatedRef.current });
   const syncingRef = useRef(false);
   const syncOnceRef = useRef<() => Promise<void>>(async () => {});
   const scheduleStateUpdatedRef = useRef<(() => void) | null>(null);
@@ -87,8 +95,15 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   };
   const onSSE = useCallback((incoming: any) => {
     if (!incoming) return;
-    if (incoming.type === "state_updated" && typeof incoming.updatedAt === "number") {
-      scheduleStateUpdatedRef.current?.();
+    if (incoming.type === "state_updated") {
+      const dr = Number(incoming.donorRankingsUpdatedAt);
+      if (Number.isFinite(dr) && dr > 0) {
+        void syncOnceRef.current();
+        return;
+      }
+      if (typeof incoming.updatedAt === "number") {
+        scheduleStateUpdatedRef.current?.();
+      }
       return;
     }
     if (shouldDiscardEmpty(incoming as AppState)) return;
@@ -181,9 +196,12 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       }
       syncingRef.current = false;
     };
-    const { schedule, cancel: cancelStateUpdatedSchedule } = createStateUpdatedScheduler(() => {
-      void syncOnceRef.current();
-    });
+    const { schedule, cancel: cancelStateUpdatedSchedule } = createStateUpdatedScheduler(
+      () => {
+        void syncOnceRef.current();
+      },
+      { debounceMs: DONOR_STATE_UPDATED_DEBOUNCE_MS, maxWaitMs: DONOR_STATE_UPDATED_MAX_WAIT_MS }
+    );
     scheduleStateUpdatedRef.current = schedule;
     syncOnceRef.current = syncOnce;
     const onStorage = (e: StorageEvent) => {
@@ -2985,6 +3003,8 @@ function OverlayInner() {
               width={goalWidth}
               opacityPercent={goalOpacity}
               opacityAffectsText={goalOpacityAffectsText}
+              amountFormat={donorsFormat}
+              locale={currencyLocale}
             />
           </div>
         )}

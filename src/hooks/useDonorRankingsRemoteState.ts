@@ -7,6 +7,8 @@ import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
 import { shouldSuppressOverlaySseConnection } from "@/lib/overlay-params";
 import {
   createStateUpdatedScheduler,
+  DONOR_STATE_UPDATED_DEBOUNCE_MS,
+  DONOR_STATE_UPDATED_MAX_WAIT_MS,
   readOverlayPollIntervalMs,
   readOverlaySseFallbackPollMs,
   shouldSyncDonorRankingsFromStateUpdatedEvent,
@@ -57,6 +59,12 @@ export function useDonorRankingsRemoteState(
     const o = d as { type?: string; updatedAt?: number; donorRankingsUpdatedAt?: number };
     if (o?.type !== "state_updated") return;
     if (!shouldSyncDonorRankingsFromStateUpdatedEvent(o, lastSyncedRevRef.current)) return;
+    const dr = Number(o.donorRankingsUpdatedAt);
+    if (Number.isFinite(dr) && dr > 0) {
+      lastSyncedRevRef.current = Math.max(lastSyncedRevRef.current, dr);
+      void syncFromApiRef.current();
+      return;
+    }
     scheduleSseSyncRef.current?.();
   });
 
@@ -72,9 +80,12 @@ export function useDonorRankingsRemoteState(
     }
 
     syncFromApiRef.current = syncFromApi;
-    const { schedule, cancel } = createStateUpdatedScheduler(() => {
-      void syncFromApiRef.current();
-    });
+    const { schedule, cancel } = createStateUpdatedScheduler(
+      () => {
+        void syncFromApiRef.current();
+      },
+      { debounceMs: DONOR_STATE_UPDATED_DEBOUNCE_MS, maxWaitMs: DONOR_STATE_UPDATED_MAX_WAIT_MS }
+    );
     scheduleSseSyncRef.current = schedule;
 
     if (shouldSuppressOverlaySseConnection()) {

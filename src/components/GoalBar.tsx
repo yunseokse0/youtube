@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { formatManThousand, roundToThousand } from "@/lib/state";
 
 function useCountUp(value: number, durationMs = 600) {
   const [display, setDisplay] = useState(value);
@@ -38,6 +39,8 @@ export function GoalBar({
   compactLabel = false,
   opacityPercent = 100,
   opacityAffectsText = false,
+  amountFormat = "short",
+  locale = "ko-KR",
 }: {
   current: number;
   goal: number;
@@ -46,6 +49,9 @@ export function GoalBar({
   compactLabel?: boolean;
   opacityPercent?: number;
   opacityAffectsText?: boolean;
+  /** `short` = 만원 단위(멤버 표와 동일), `full` = 천 단위 콤마 */
+  amountFormat?: "full" | "short";
+  locale?: string;
 }) {
   const pct = goal > 0 ? Math.min(100, (current / goal) * 100) : 0;
   const displayPct = useCountUp(Math.round(pct * 10) / 10, 600);
@@ -57,8 +63,13 @@ export function GoalBar({
     if (compact.includes("목표")) return "후원";
     return raw;
   })();
-  const toMan = (n: number) =>
-    `${(Math.max(0, n) / 10000).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}만원`;
+  const formatAmount = (n: number) => {
+    const safe = Math.max(0, Number(n) || 0);
+    if (amountFormat === "full") {
+      return roundToThousand(safe).toLocaleString(locale || "ko-KR");
+    }
+    return `${formatManThousand(safe)}만원`;
+  };
   const fillOpacity = Math.max(0, Math.min(100, opacityPercent)) / 100;
   const containerOpacity = opacityAffectsText ? fillOpacity : 1;
   const barFillOpacity = opacityAffectsText ? 1 : fillOpacity;
@@ -107,7 +118,7 @@ export function GoalBar({
           </span>
           <span style={{ color: "#fff7fb", fontWeight: 700, textShadow: goalTextOutline, lineHeight: 1 }}>
             {compactLabel ? "후원 " : ""}
-            {toMan(current)} / {toMan(goal)}{" "}
+            {formatAmount(current)} / {formatAmount(goal)}{" "}
             <span style={{ color: pct <= 0 ? "#e5e7eb" : "#fff7fb" }}>({displayPct}%)</span>
           </span>
         </div>

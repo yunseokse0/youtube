@@ -10,6 +10,9 @@
 export const DEFAULT_STATE_UPDATED_DEBOUNCE_MS = 320;
 /** 연속 이벤트가 끊이지 않아도 이 간격(ms)마다 최소 1회는 동기화 */
 export const DEFAULT_STATE_UPDATED_MAX_WAIT_MS = 2400;
+/** 후원·순위 반영 — 짧은 디바운스(느리게 느껴지지 않게) */
+export const DONOR_STATE_UPDATED_DEBOUNCE_MS = 60;
+export const DONOR_STATE_UPDATED_MAX_WAIT_MS = 350;
 
 export type StateUpdatedScheduler = { schedule: () => void; cancel: () => void };
 

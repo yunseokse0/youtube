@@ -45,6 +45,13 @@ export default function GoalOverlayPage() {
   }, [sp, activePreset, externalHost, ready]);
 
   const goalLabel = (sp.get("goalLabel") || activePreset?.goalLabel || "후원").trim();
+  const amountFormat = useMemo(() => {
+    const fromUrl = (sp.get("donorsFormat") || "").trim();
+    if (fromUrl === "full") return "full" as const;
+    if (fromUrl === "short") return "short" as const;
+    return (activePreset?.donorsFormat || "short").trim() === "full" ? "full" : "short";
+  }, [sp, activePreset?.donorsFormat]);
+  const currencyLocale = (sp.get("currencyLocale") || activePreset?.currencyLocale || "ko-KR").trim();
   const width = useMemo(() => {
     const fromUrl = Number(sp.get("goalWidth"));
     if (Number.isFinite(fromUrl)) return Math.max(260, Math.min(1200, Math.floor(fromUrl)));
@@ -103,6 +110,8 @@ export default function GoalOverlayPage() {
               width={width}
               opacityPercent={goalOpacity}
               opacityAffectsText={goalOpacityAffectsText}
+              amountFormat={amountFormat}
+              locale={currencyLocale}
             />
           </section>
         ) : (

@@ -951,6 +951,10 @@ export default function AdminPage() {
       /** goal·goalCurrent 미포함: `/api/state` 프리셋과 동기·목표 자동 상향(useGoalPresetAutoEscalate)에 맞춤 */
       goalOnly.searchParams.set("goalLabel", (p.goalLabel || "후원").trim());
       goalOnly.searchParams.set("goalWidth", String(Math.max(260, Math.min(1200, parseInt((p.goalWidth || "560") as any, 10) || 560))));
+      goalOnly.searchParams.set("donorsFormat", (p.donorsFormat || "short").trim() === "full" ? "full" : "short");
+      if (String(p.currencyLocale || "").trim()) {
+        goalOnly.searchParams.set("currencyLocale", String(p.currencyLocale).trim());
+      }
       if (String(p.goalOpacity || "").trim()) {
         goalOnly.searchParams.set("goalOpacity", String(Math.max(0, Math.min(100, parseInt(String(p.goalOpacity), 10) || 100))));
       }
@@ -975,6 +979,10 @@ export default function AdminPage() {
       /** goal·goalCurrent 미포함 → 저장 프리셋·자동 목표 상향이 OBS와 일치 */
       q.set("goalLabel", (p.goalLabel || "후원").trim());
       q.set("goalWidth", String(Math.max(200, Math.min(800, parseInt((p.goalWidth || "400") as any, 10) || 400))));
+      q.set("donorsFormat", (p.donorsFormat || "short").trim() === "full" ? "full" : "short");
+      if (String(p.currencyLocale || "").trim()) {
+        q.set("currencyLocale", String(p.currencyLocale).trim());
+      }
       if (String(p.goalOpacity || "").trim()) {
         q.set("goalOpacity", String(Math.max(0, Math.min(100, parseInt(String(p.goalOpacity), 10) || 100))));
       }
@@ -1017,6 +1025,10 @@ export default function AdminPage() {
       goalOnly.searchParams.set("goal", String(Math.max(0, parseInt((p.goal || "0") as any, 10) || 0)));
       goalOnly.searchParams.set("goalLabel", (p.goalLabel || "후원").trim());
       goalOnly.searchParams.set("goalWidth", String(Math.max(260, Math.min(1200, parseInt((p.goalWidth || "560") as any, 10) || 560))));
+      goalOnly.searchParams.set("donorsFormat", (p.donorsFormat || "short").trim() === "full" ? "full" : "short");
+      if (String(p.currencyLocale || "").trim()) {
+        goalOnly.searchParams.set("currencyLocale", String(p.currencyLocale).trim());
+      }
       if (String(p.goalOpacity || "").trim()) {
         goalOnly.searchParams.set("goalOpacity", String(Math.max(0, Math.min(100, parseInt(String(p.goalOpacity), 10) || 100))));
       }
@@ -3441,10 +3453,13 @@ export default function AdminPage() {
               donor.at
             )
           : (prev.mealBattle?.participants || []);
+      const now = Date.now();
       const next: AppState = {
         ...prev,
         members,
         donors,
+        donorRankingsUpdatedAt: now,
+        updatedAt: now,
         mealBattle: {
           ...prev.mealBattle,
           participants: mealParticipants,
@@ -8704,6 +8719,23 @@ export default function AdminPage() {
                                   </button>
                                   <span className="text-[10px] text-neutral-500">기본은 OFF(합계 컬럼/합계행 선 제거)</span>
                                 </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <label className="text-xs text-neutral-400">금액 표시</label>
+                                  <button
+                                    type="button"
+                                    className={`px-2 py-0.5 rounded border text-xs ${(p.donorsFormat || "short") === "full" ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`}
+                                    onClick={() =>
+                                      updatePreset(p.id, {
+                                        donorsFormat: (p.donorsFormat || "short") === "full" ? "short" : "full",
+                                      })
+                                    }
+                                  >
+                                    {(p.donorsFormat || "short") === "full" ? "풀(1,000,000)" : "만원(100만)"}
+                                  </button>
+                                  <span className="text-[10px] text-neutral-500">
+                                    멤버 표·후원 목표 막대. OBS URL에 donorsFormat=full 반영
+                                  </span>
+                                </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
                                   <label className="text-xs text-neutral-400">표 배경 투명도</label>
                                   <div className="flex items-center gap-2">
@@ -8824,8 +8856,14 @@ export default function AdminPage() {
                                 className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-xs"
                                 onClick={() => {
                                   if (typeof window === "undefined") return;
-                                  const url = `${window.location.origin}/overlay/goal?u=${user?.id || "finalent"}${p.id ? `&p=${encodeURIComponent(p.id)}` : ""}`;
-                                  window.open(url, "_blank");
+                                  const goalUrl = new URL(`${window.location.origin}/overlay/goal`);
+                                  goalUrl.searchParams.set("u", user?.id || "finalent");
+                                  if (p.id) goalUrl.searchParams.set("p", p.id);
+                                  goalUrl.searchParams.set("donorsFormat", (p.donorsFormat || "short").trim() === "full" ? "full" : "short");
+                                  if (String(p.currencyLocale || "").trim()) {
+                                    goalUrl.searchParams.set("currencyLocale", String(p.currencyLocale).trim());
+                                  }
+                                  window.open(goalUrl.toString(), "_blank");
                                 }}
                               >
                                 목표 달성 바(전용)

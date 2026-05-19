@@ -354,7 +354,13 @@ export async function POST(req: Request) {
     if (!base || !token) {
       setServerMemoryAppState(next);
       logger.info('메모리 상태 업데이트', { updatedAt: next.updatedAt });
-      return new Response(JSON.stringify({ ok: true, updatedAt: next.updatedAt }), {
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          updatedAt: next.updatedAt,
+          donorRankingsUpdatedAt: next.donorRankingsUpdatedAt,
+        }),
+        {
         headers: {
           "Content-Type": "application/json",
           "Cache-Control":
@@ -374,7 +380,12 @@ export async function POST(req: Request) {
       setServerMemoryAppState(next);
     }
     return new Response(
-      JSON.stringify({ ok: true, updatedAt: next.updatedAt, fallback: ok ? undefined : "memory" }),
+      JSON.stringify({
+        ok: true,
+        updatedAt: next.updatedAt,
+        donorRankingsUpdatedAt: next.donorRankingsUpdatedAt,
+        fallback: ok ? undefined : "memory",
+      }),
       {
         headers: {
           "Content-Type": "application/json",
