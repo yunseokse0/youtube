@@ -2123,8 +2123,17 @@ function OverlayInner() {
   }, [unpinned, getMemberRole]);
 
   const memberTableFitSig = useMemo(() => {
-    /** `excelGridCols` 의 직급 열(roleCh)과 동일해야 폰트 축소 측정이 실제 표와 일치 */
-    const roleColFit = Math.max(4, Math.min(10, members.reduce((max, m) => Math.max(max, getMemberRole(m).length), 2)));
+    /** 직급 열 너비(`roleColEm`)와 동일 — CJK는 `ch`보다 `em`이 안전 */
+    const roleColFit = Math.max(
+      3.6,
+      Math.min(
+        9,
+        members.reduce((max, m) => {
+          const len = getMemberRole(m).length;
+          return Math.max(max, len > 0 ? len * 1.15 + 1.8 : 3.6);
+        }, 3.6)
+      )
+    );
     const cols = hasRoleColumn
       ? `${rankColCh}|${roleColFit}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`
       : `${rankColCh}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`;
@@ -2428,11 +2437,19 @@ function OverlayInner() {
     : { width: responsiveTickerWidth };
   const tickerPosClass = hasTickerFreePos ? "" : posClass(tickerAnchor);
 
-    /** 직급 열이 과도하게 넓어지면 이름·기여도가 밀려 잘림 → 상한 10ch.
-     *  하한은 7ch로 올려 이름 열과 겹쳐 보이는 케이스를 줄인다. */
-    const roleCh = Math.max(7, Math.min(10, members.reduce((max, m) => Math.max(max, getMemberRole(m).length), 2)));
+    /** 직급: `ch`는 한글 글자 폭과 어긋나 「대표」 둘째 글자가 잘려 작아 보일 수 있음 → `em` 사용 */
+    const roleColEm = Math.max(
+      3.6,
+      Math.min(
+        9,
+        members.reduce((max, m) => {
+          const len = getMemberRole(m).length;
+          return Math.max(max, len > 0 ? len * 1.15 + 1.8 : 3.6);
+        }, 3.6)
+      )
+    );
     const excelGridCols = hasRoleColumn
-      ? [`${rankColCh}ch`, `${roleCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`]
+      ? [`${rankColCh}ch`, `${roleColEm}em`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`]
       : [`${rankColCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`];
     /** 숫자 자리 증가로 표 전체가 밀려 나가지 않도록 너비 상한 고정 */
     const excelTableWidthCalc = excelGridCols.join(" + ");
@@ -2543,16 +2560,26 @@ function OverlayInner() {
         toonColor && `.overlay-root .overlay-toon-cell { color: ${toonColor} !important; }`,
       ].filter(Boolean).join("\n") }} />
     ) : null;
+    const excelTextOutline =
+      "-1px -1px 0 rgba(6, 12, 24, 0.95), 1px -1px 0 rgba(6, 12, 24, 0.95), -1px 1px 0 rgba(6, 12, 24, 0.95), 1px 1px 0 rgba(6, 12, 24, 0.95), 0 2px 6px rgba(0,0,0,0.42)";
+    /** OBS/Prism: stroke 대신 다층 shadow만 씀(숫자 열에도 동일 적용) */
+    const overlayNumericOutlineShadow =
+      "-1px -1px 0 rgba(6, 12, 24, 0.92), 1px -1px 0 rgba(6, 12, 24, 0.92), -1px 1px 0 rgba(6, 12, 24, 0.92), 1px 1px 0 rgba(6, 12, 24, 0.92), 0 0 3px rgba(6, 12, 24, 0.55), 0 2px 6px rgba(0, 0, 0, 0.45)";
+    const numericOutlineOnHost = externalSafeMode || externalHost;
     const numericNoWrapStyle = (
       <style dangerouslySetInnerHTML={{ __html: `
-        .overlay-root .overlay-num-cell-inner {
-          display: block;
-          width: 100%;
+        .overlay-root .overlay-elegant-table .overlay-num-cell-inner {
+          display: inline-block;
+          min-width: max-content;
           max-width: 100%;
-          min-width: 0;
           overflow: visible;
           white-space: nowrap;
           font-variant-numeric: tabular-nums;
+          vertical-align: middle;
+          text-shadow: ${numericOutlineOnHost ? overlayNumericOutlineShadow : excelTextOutline} !important;
+          -webkit-text-stroke: ${numericOutlineOnHost ? "0" : "0.75px rgba(6, 12, 24, 0.95)"} !important;
+          paint-order: ${numericOutlineOnHost ? "normal" : "stroke fill"};
+          -webkit-font-smoothing: antialiased;
         }
         .overlay-root .overlay-account-cell,
         .overlay-root .overlay-toon-cell,
@@ -2564,7 +2591,6 @@ function OverlayInner() {
         }
       ` }} />
     );
-  const excelTextOutline = "-1px -1px 0 rgba(6, 12, 24, 0.95), 1px -1px 0 rgba(6, 12, 24, 0.95), -1px 1px 0 rgba(6, 12, 24, 0.95), 1px 1px 0 rgba(6, 12, 24, 0.95), 0 2px 6px rgba(0,0,0,0.42)";
   const tableVisualStyle = (
       <style dangerouslySetInnerHTML={{ __html: `
         .overlay-root .overlay-elegant-table {
@@ -2688,8 +2714,6 @@ function OverlayInner() {
             : "-webkit-text-stroke: 0.55px rgba(6, 12, 24, 0.92) !important; text-shadow: -1px -1px 0 rgba(6, 12, 24, 0.92), 1px -1px 0 rgba(6, 12, 24, 0.92), -1px 1px 0 rgba(6, 12, 24, 0.92), 1px 1px 0 rgba(6, 12, 24, 0.92), 0 1px 4px rgba(0,0,0,0.36) !important;"}
         }
         .overlay-root .overlay-elegant-table td.overlay-col-contribution .overlay-num-cell-inner {
-          display: inline-block;
-          min-width: max-content;
           transform: ${externalSafeMode ? "translateX(-0.08em)" : "translateX(-0.16em)"};
         }
         /* 반투명 테이블 모드에서도 헤더 분홍 띠 유지(예전엔 transparent 로 헤더만 사라짐) */
@@ -2742,11 +2766,18 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td {
           border-right: none !important;
         }
-        /* 직급 셀 텍스트가 길 때 이름 열로 침범하지 않도록 잘라서 표시 */
+        /* 직급: ellipsis+hidden 은 스트로크 있는 한글(대표 등) 끝 글자가 잘려 작아 보임 → 가운데 정렬·잘림 없음 */
         .overlay-root .overlay-elegant-table thead td.overlay-col-role,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-role {
-          overflow: hidden !important;
-          text-overflow: ellipsis !important;
+          overflow: visible !important;
+          text-overflow: clip !important;
+          text-align: center !important;
+        }
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-role .overlay-role-label {
+          display: inline-block;
+          max-width: 100%;
+          white-space: nowrap;
+          vertical-align: middle;
         }
         /* 순위 없음(—)·직급 없음(-) 표기를 어떤 행에서도 동일한 모양으로: 폭 고정 + 가운데 정렬 + 동일 굵기.
            inline-flex 로 span 안의 글자 자체를 가운데 배치해, 셀 내 text-align 과 무관하게 행마다 같은 X 위치에 떨어지게 한다. */
@@ -2921,7 +2952,11 @@ function OverlayInner() {
                               whiteSpace: "nowrap",
                             }}
                           >
-                            {getMemberRole(m) || <span className="overlay-rank-mark">-</span>}
+                            {getMemberRole(m) ? (
+                              <span className="overlay-role-label">{getMemberRole(m)}</span>
+                            ) : (
+                              <span className="overlay-rank-mark">-</span>
+                            )}
                           </td>
                         )}
                         <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
