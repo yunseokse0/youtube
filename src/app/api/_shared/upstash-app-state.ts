@@ -1,4 +1,4 @@
-import { gunzipSync, gzipSync } from "zlib";
+import { gzip, ungzip } from "pako";
 import { getRedisEnv, upstashGetJson, upstashSetJsonWithPipeline } from "./upstash";
 
 const GZIP_MARKER = "__gzipB64";
@@ -7,6 +7,29 @@ type GzipEnvelope = { [GZIP_MARKER]: string };
 
 function isGzipEnvelope(v: unknown): v is GzipEnvelope {
   return Boolean(v && typeof v === "object" && typeof (v as GzipEnvelope)[GZIP_MARKER] === "string");
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(bytes).toString("base64");
+  }
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 1) {
+    binary += String.fromCharCode(bytes[i]!);
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+  if (typeof Buffer !== "undefined") {
+    return new Uint8Array(Buffer.from(b64, "base64"));
+  }
+  const binary = atob(b64);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    out[i] = binary.charCodeAt(i);
+  }
+  return out;
 }
 
 export function isUpstashAppStateGzipEnabled(): boolean {
@@ -28,7 +51,7 @@ export async function upstashGetAppStateJson<T = unknown>(key: string): Promise<
   if (!raw) return null;
   if (!isGzipEnvelope(raw)) return raw as T;
   try {
-    const json = gunzipSync(Buffer.from(raw[GZIP_MARKER], "base64")).toString("utf8");
+    const json = new TextDecoder().decode(ungzip(base64ToBytes(raw[GZIP_MARKER])));
     return JSON.parse(json) as T;
   } catch {
     return null;
@@ -43,8 +66,8 @@ export async function upstashSetAppStateJson(key: string, value: unknown): Promi
     return upstashSetJsonWithPipeline(key, value);
   }
   try {
-    const gz = gzipSync(Buffer.from(json, "utf8"));
-    const envelope: GzipEnvelope = { [GZIP_MARKER]: gz.toString("base64") };
+    const gz = gzip(json);
+    const envelope: GzipEnvelope = { [GZIP_MARKER]: bytesToBase64(gz) };
     return upstashSetJsonWithPipeline(key, envelope);
   } catch {
     return upstashSetJsonWithPipeline(key, value);
