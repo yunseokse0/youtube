@@ -35,9 +35,17 @@ function fileBaseKey(urlOrPath) {
   return safeDecodeURIComponent(s.split("/").filter(Boolean).pop() || "");
 }
 
+function normalizeNameKey(raw) {
+  return String(raw || "")
+    .trim()
+    .replace(/\s+/g, "")
+    .toLowerCase();
+}
+
 function collectUsed(state) {
   const paths = new Set();
   const bases = new Set();
+  const names = new Set();
   const add = (raw) => {
     const u = String(raw || "").trim();
     if (!u) return;
@@ -47,13 +55,15 @@ function collectUsed(state) {
   };
   for (const item of state?.sigInventory || []) {
     add(item.imageUrl);
+    const nk = normalizeNameKey(item?.name);
+    if (nk) names.add(nk);
   }
   const sr = state?.sigRolling;
   if (sr && typeof sr === "object" && Array.isArray(sr.items)) {
     for (const row of sr.items) add(row?.url);
   }
   add(state?.sigSoldOutStampUrl);
-  return { paths, bases };
+  return { paths, bases, names };
 }
 
 function filterFresh(bundledPaths, used) {
@@ -64,6 +74,8 @@ function filterFresh(bundledPaths, used) {
     if (used.paths.has(pathKey(norm))) return false;
     const base = fileBaseKey(norm);
     if (base && used.bases.has(base)) return false;
+    const name = normalizeNameKey(base.replace(/\.[^.]+$/, ""));
+    if (name && used.names.has(name)) return false;
     return true;
   });
 }
