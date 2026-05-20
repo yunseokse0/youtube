@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
+import { createPortal, flushSync } from "react-dom";
 import MemberRow from "@/components/MemberRow";
 import Toast from "@/components/Toast";
 import {
@@ -134,35 +135,68 @@ const BROKEN_SIG_UID_PATTERN = /(_257b_2522id_2522|%257b%2522id%2522|%7b%22id%22
 
 type SigUploadProgress = { current: number; total: number; label: string };
 
-function SigUploadProgressPanel({ progress, prominent = false }: { progress: SigUploadProgress | null; prominent?: boolean }) {
-  if (!progress) return null;
+function SigUploadProgressPanel({
+  progress,
+  prominent = false,
+  busy = false,
+}: {
+  progress: SigUploadProgress;
+  prominent?: boolean;
+  busy?: boolean;
+}) {
   const pct = Math.min(100, Math.round((progress.current / Math.max(1, progress.total)) * 100));
+  const indeterminate = progress.current <= 0;
   return (
     <div
       className={
         prominent
-          ? "fixed left-1/2 top-3 z-[300] w-[min(520px,calc(100vw-1.5rem))] -translate-x-1/2 rounded-xl border border-indigo-300/50 bg-indigo-950/95 px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur-sm"
+          ? "pointer-events-none w-[min(560px,calc(100vw-1.5rem))] rounded-xl border-2 border-indigo-300/70 bg-indigo-950/98 px-4 py-3.5 shadow-[0_16px_48px_rgba(0,0,0,0.65)] backdrop-blur-md"
           : "rounded border border-indigo-400/45 bg-indigo-950/55 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
       }
-      role="status"
-      aria-live="polite"
+      role="progressbar"
+      aria-live="assertive"
+      aria-busy={busy}
       aria-valuenow={pct}
       aria-valuemin={0}
       aria-valuemax={100}
     >
-      <div className={`mb-1.5 flex flex-wrap items-center justify-between gap-2 ${prominent ? "text-sm" : "text-xs"} text-indigo-100`}>
-        <span className="font-semibold">{progress.label}</span>
-        <span className="tabular-nums text-indigo-200/90">
+      <div className={`mb-2 flex flex-wrap items-center justify-between gap-2 ${prominent ? "text-sm" : "text-xs"} text-indigo-50`}>
+        <span className="font-bold tracking-tight">{busy ? "시그 업로드 진행 중" : "시그 업로드"}</span>
+        <span className="tabular-nums font-semibold text-sky-200">
           {progress.current}/{progress.total} ({pct}%)
         </span>
       </div>
-      <div className={`overflow-hidden rounded-full bg-black/45 ${prominent ? "h-3" : "h-2.5"}`}>
-        <div
-          className="h-full rounded-full bg-gradient-to-r from-indigo-600 to-sky-400 transition-[width] duration-300 ease-out"
-          style={{ width: `${pct}%` }}
-        />
+      <p className={`mb-2 truncate ${prominent ? "text-xs" : "text-[11px]"} text-indigo-100/95`}>{progress.label}</p>
+      <div className={`relative overflow-hidden rounded-full bg-black/50 ${prominent ? "h-4" : "h-2.5"}`}>
+        {indeterminate ? (
+          <div className="absolute inset-y-0 left-0 w-2/5 animate-[sigUploadIndeterminate_1.1s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-indigo-500 via-sky-400 to-indigo-500" />
+        ) : (
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-sky-400 transition-[width] duration-200 ease-out"
+            style={{ width: `${Math.max(pct, busy ? 2 : 0)}%` }}
+          />
+        )}
       </div>
     </div>
+  );
+}
+
+function SigUploadProgressOverlay({
+  progress,
+  busy,
+}: {
+  progress: SigUploadProgress | null;
+  busy: boolean;
+}) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted || (!busy && !progress)) return null;
+  const panel = progress ?? { current: 0, total: 1, label: "업로드 준비 중…" };
+  return createPortal(
+    <div className="pointer-events-none fixed inset-0 z-[9999] flex items-start justify-center bg-black/35 px-3 pt-4 sm:pt-6">
+      <SigUploadProgressPanel progress={panel} prominent busy={busy} />
+    </div>,
+    document.body
   );
 }
 
@@ -305,6 +339,15 @@ export default function AdminPage() {
   const [sigBulkReuploadBusy, setSigBulkReuploadBusy] = useState(false);
   const [sigUploadProgress, setSigUploadProgress] = useState<SigUploadProgress | null>(null);
   const sigBulkReuploadInputRef = useRef<HTMLInputElement | null>(null);
+  const beginSigBulkUploadUi = useCallback((total: number, label: string) => {
+    const safeTotal = Math.max(1, total);
+    flushSync(() => {
+      setSigBulkReuploadBusy(true);
+      setSigUploadProgress({ current: 0, total: safeTotal, label });
+      setSigExcelResult(label);
+      setSigOcrBanner(label);
+    });
+  }, []);
   /** OCR 결과 — 시그 목록 바로 위에 표시(스크롤 시에도 확인 가능) */
   const [sigOcrBanner, setSigOcrBanner] = useState("");
   const [sigPresetMemberId, setSigPresetMemberId] = useState("");
@@ -2594,11 +2637,14 @@ export default function AdminPage() {
     async (files: File[], options?: { skipBusyGuard?: boolean }) => {
       if (!files.length) return;
       if (!options?.skipBusyGuard && sigBulkReuploadBusy) return;
-      if (!options?.skipBusyGuard) setSigBulkReuploadBusy(true);
+      if (!options?.skipBusyGuard) {
+        beginSigBulkUploadUi(files.length, `${files.length}개 파일 업로드 준비 중…`);
+      } else {
+        flushSync(() => {
+          setSigUploadProgress({ current: 0, total: files.length, label: `${files.length}개 파일 업로드 준비 중…` });
+        });
+      }
       setSigRollingUploadMessage(`${files.length}개 파일 업로드 시작…`);
-      setSigExcelResult(`${files.length}개 파일 업로드 중…`);
-      setSigOcrBanner(`${files.length}개 파일 업로드 중… (금액 OCR은 업로드 후 「금액 OCR 전체 적용」으로 실행)`);
-      setSigUploadProgress({ current: 0, total: files.length, label: `${files.length}개 파일 업로드 준비 중…` });
       let uploaded = 0;
       const failures: string[] = [];
       const pendingRows: { url: string; label: string; price: number }[] = [];
@@ -2608,18 +2654,21 @@ export default function AdminPage() {
       try {
         for (let i = 0; i < files.length; i++) {
           const f = files[i]!;
-          if (i % 3 === 0 || i === files.length - 1) {
-            setSigUploadProgress({
-              current: i,
-              total: files.length,
-              label: `업로드 중 (${i + 1}/${files.length}): ${f.name}`,
-            });
-          }
+          setSigUploadProgress({
+            current: i,
+            total: files.length,
+            label: `업로드 중 (${i + 1}/${files.length}): ${f.name}`,
+          });
           const { url, status } = await uploadSigImageFile(f, { silent: true });
           if (!url) {
             failures.push(f.name);
             if (status === 413) {
               consecutive413 += 1;
+              setSigUploadProgress({
+                current: i,
+                total: files.length,
+                label: `413 오류 (${i + 1}/${files.length}): ${f.name}`,
+              });
               if (consecutive413 >= 2) {
                 setSigOcrBanner(NGINX_413_HINT);
                 setSigExcelResult(NGINX_413_HINT);
@@ -2635,13 +2684,11 @@ export default function AdminPage() {
           const label = f.name.replace(/\.[^.]+$/, "");
           pendingRows.push({ url, label, price: 0 });
           uploaded += 1;
-          if (i % 5 === 0 || i === files.length - 1) {
-            setSigUploadProgress({
-              current: i + 1,
-              total: files.length,
-              label: `완료 (${i + 1}/${files.length}): ${label}`,
-            });
-          }
+          setSigUploadProgress({
+            current: i + 1,
+            total: files.length,
+            label: `완료 (${i + 1}/${files.length}): ${label}`,
+          });
           await new Promise((r) => setTimeout(r, 8));
         }
         if (pendingRows.length) {
@@ -2676,11 +2723,11 @@ export default function AdminPage() {
         setSigOcrBanner(msg);
       } finally {
         setSigBulkReuploadBusy(false);
-        window.setTimeout(() => setSigUploadProgress(null), 2000);
+        window.setTimeout(() => setSigUploadProgress(null), 4000);
         if (sigBulkReuploadInputRef.current) sigBulkReuploadInputRef.current.value = "";
       }
     },
-    [sigBulkReuploadBusy, appendSigInventoryRows, uploadSigImageFile]
+    [sigBulkReuploadBusy, appendSigInventoryRows, uploadSigImageFile, beginSigBulkUploadUi]
   );
 
   const bulkReuploadSigInventoryFromFiles = useCallback(
@@ -2693,10 +2740,7 @@ export default function AdminPage() {
         setSigExcelResult(msg);
         return;
       }
-      setSigBulkReuploadBusy(true);
-      setSigUploadProgress({ current: 0, total: list.length, label: `${list.length}개 파일 선택됨…` });
-      setSigExcelResult(`${list.length}개 파일 처리 준비 중…`);
-      setSigOcrBanner(`${list.length}개 파일 처리 준비 중…`);
+      beginSigBulkUploadUi(list.length, `${list.length}개 파일 선택됨 — 처리 시작…`);
       const items = (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID);
       const plans = planSigBulkReupload(list, items);
       if (!plans.length) {
@@ -2771,7 +2815,7 @@ export default function AdminPage() {
         if (sigBulkReuploadInputRef.current) sigBulkReuploadInputRef.current.value = "";
       }
     },
-    [sigBulkReuploadBusy, state.sigInventory, updateSigItem, bulkAddSigInventoryFromFiles]
+    [sigBulkReuploadBusy, state.sigInventory, updateSigItem, bulkAddSigInventoryFromFiles, beginSigBulkUploadUi]
   );
 
   const clearSigInventoryImagesOnly = useCallback(() => {
@@ -2869,10 +2913,7 @@ export default function AdminPage() {
       setSigExcelResult(msg);
       return;
     }
-    setSigBulkReuploadBusy(true);
-    setSigUploadProgress({ current: 0, total: list.length, label: `${list.length}개 파일 선택됨…` });
-    setSigExcelResult(`${list.length}개 파일 업로드 준비…`);
-    setSigOcrBanner(`${list.length}개 파일 업로드 준비…`);
+    beginSigBulkUploadUi(list.length, `${list.length}개 파일 업로드 준비…`);
     try {
       await bulkAddSigInventoryFromFiles(list, { skipBusyGuard: true });
     } catch (e) {
@@ -4003,7 +4044,7 @@ export default function AdminPage() {
       onTouchEnd={handleTouchEnd}
     >
       <Toast />
-      {sigUploadProgress ? <SigUploadProgressPanel progress={sigUploadProgress} prominent /> : null}
+      <SigUploadProgressOverlay progress={sigUploadProgress} busy={sigBulkReuploadBusy} />
       <div className="lg:hidden fixed left-1/2 -translate-x-1/2 top-2 z-40 pointer-events-none">
         <div
           className={`px-3 py-1 rounded-full text-[11px] border border-white/10 transition-all ${
@@ -5990,6 +6031,16 @@ export default function AdminPage() {
                       multiple
                       className="hidden"
                       onChange={(e) => {
+                        const rawCount = e.target.files?.length ?? 0;
+                        if (rawCount > 0) {
+                          flushSync(() => {
+                            setSigUploadProgress({
+                              current: 0,
+                              total: rawCount,
+                              label: `${rawCount}개 파일 선택됨 — 목록 확인 중…`,
+                            });
+                          });
+                        }
                         void addSigRollingFromFiles(e.target.files);
                         e.currentTarget.value = "";
                       }}
@@ -6004,6 +6055,16 @@ export default function AdminPage() {
                       {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
                       className="hidden"
                       onChange={(e) => {
+                        const rawCount = e.target.files?.length ?? 0;
+                        if (rawCount > 0) {
+                          flushSync(() => {
+                            setSigUploadProgress({
+                              current: 0,
+                              total: rawCount,
+                              label: `${rawCount}개 파일 선택됨 — 목록 확인 중…`,
+                            });
+                          });
+                        }
                         void addSigRollingFromFiles(e.target.files);
                         e.currentTarget.value = "";
                       }}
@@ -6026,7 +6087,9 @@ export default function AdminPage() {
                     롤링 중복 제거(URL)
                   </button>
                 </div>
-                <SigUploadProgressPanel progress={sigUploadProgress} />
+                {sigUploadProgress ? (
+                  <SigUploadProgressPanel progress={sigUploadProgress} busy={sigBulkReuploadBusy} />
+                ) : null}
                 {sigRollingUploadMessage ? (
                   <p className="text-xs text-emerald-300/95 whitespace-pre-wrap rounded border border-emerald-500/30 bg-emerald-950/30 px-2 py-1.5">
                     {sigRollingUploadMessage}
@@ -6286,7 +6349,9 @@ export default function AdminPage() {
                   </button>
                   {sigExcelResult ? <span className="text-xs text-neutral-300">{sigExcelResult}</span> : null}
                 </div>
-                <SigUploadProgressPanel progress={sigUploadProgress} />
+                {sigUploadProgress ? (
+                  <SigUploadProgressPanel progress={sigUploadProgress} busy={sigBulkReuploadBusy} />
+                ) : null}
                 <div className="rounded border border-white/10 bg-black/25 p-2 grid grid-cols-1 md:grid-cols-[180px_1fr] gap-2 items-center">
                   <div className="text-xs text-neutral-300">판매 완료 오버레이 이미지</div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -6737,6 +6802,16 @@ export default function AdminPage() {
                 multiple
                 accept=".gif,.png,.jpg,.jpeg,.webp,image/gif,image/png,image/jpeg,image/webp"
                 onChange={(e) => {
+                  const rawCount = e.target.files?.length ?? 0;
+                  if (rawCount > 0) {
+                    flushSync(() => {
+                      setSigUploadProgress({
+                        current: 0,
+                        total: rawCount,
+                        label: `${rawCount}개 파일 선택됨 — 처리 시작…`,
+                      });
+                    });
+                  }
                   void bulkReuploadSigInventoryFromFiles(e.target.files);
                 }}
               />

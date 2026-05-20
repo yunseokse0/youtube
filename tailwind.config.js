@@ -48,10 +48,15 @@ module.exports = {
           "0%, 100%": { opacity: "1", color: "#a86b6a" },
           "50%": { opacity: "0.72", color: "#FFB7B2" },
         },
+        sigUploadIndeterminate: {
+          "0%": { transform: "translateX(-120%)" },
+          "100%": { transform: "translateX(320%)" },
+        },
       },
       animation: {
         flashGold: "flashGold 0.8s ease-out",
         "pastel-timer-low": "pastelTimerLow 1.1s ease-in-out infinite",
+        sigUploadIndeterminate: "sigUploadIndeterminate 1.1s ease-in-out infinite",
       },
     },
   },
