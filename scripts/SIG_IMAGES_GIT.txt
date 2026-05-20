@@ -2,8 +2,8 @@
 ====================================
 
 ■ 완판 도장(STAMP) — 시그 판매 완료 오버레이
-  경로: public/images/sigs/stamp.png  (기본값)
-  「기본 도장 사용」= /images/sigs/stamp.png. 다른 파일은 관리자 → 완판 도장 → 「저장소」.
+  경로: public/images/sigs/stamp.svg  (기본값)
+  「기본 도장 사용」= /images/sigs/stamp.svg. 다른 파일은 관리자 → 완판 도장 → 「저장소」.
 
 ■ 신규 롤링 시그 GIF (추가만, 기존 파일 덮어쓰기 안 함)
   1) PC 폴더 → 프로젝트 (신규 파일만):
