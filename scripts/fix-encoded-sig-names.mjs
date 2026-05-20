@@ -17,10 +17,21 @@ function safeDecodeURIComponent(s) {
   }
 }
 
+function decodePercentDeep(raw) {
+  let out = String(raw || "");
+  for (let i = 0; i < 4; i++) {
+    if (!/%[0-9a-f]{2}/i.test(out)) break;
+    const next = safeDecodeURIComponent(out);
+    if (next === out) break;
+    out = next;
+  }
+  return out;
+}
+
 function decodeSigLabel(raw) {
   const s = String(raw || "");
   if (!/%[0-9a-f]{2}/i.test(s)) return s;
-  return safeDecodeURIComponent(s);
+  return decodePercentDeep(s);
 }
 
 async function fetchState() {

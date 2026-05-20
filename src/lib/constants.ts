@@ -37,6 +37,21 @@ export const DEFAULT_SIG_INVENTORY: SigItem[] = [
   { id: "sig_game", name: "게임", price: 88000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, memberId: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: false },
 ];
 
+function decodePercentEncodedText(raw: unknown): string {
+  let out = String(raw ?? "").trim();
+  for (let i = 0; i < 4; i++) {
+    if (!/%[0-9a-f]{2}/i.test(out)) break;
+    try {
+      const next = decodeURIComponent(out);
+      if (next === out) break;
+      out = next;
+    } catch {
+      break;
+    }
+  }
+  return out;
+}
+
 /** 오버레이 UI 확인용: true 이면 resolveSigImageUrl 이 항상 더미 SVG 반환(실패 PNG 요청·404 방지) */
 let sigImagePlaceholderOnlyForOverlay = false;
 
@@ -246,7 +261,7 @@ export function normalizeSigInventory(input: unknown): SigItem[] {
       if (id === ONE_SHOT_SIG_ID) isRolling = false;
       return {
         id,
-        name: String(x.name || "시그"),
+        name: decodePercentEncodedText(x.name || "시그") || "시그",
         price: Math.max(0, Math.floor(Number(x.price || 0) || 0)),
         imageUrl: normalizeSigImageUrlStored(x.imageUrl),
         memberId: String(x.memberId || ""),

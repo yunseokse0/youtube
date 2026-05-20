@@ -67,6 +67,20 @@ export type {
 
 /** 시그 롤링 오버레이 설정 정규화 */
 export function normalizeSigRolling(input: unknown): SigRollingSettings {
+  const decodeText = (raw: unknown): string => {
+    let out = String(raw ?? "").trim();
+    for (let i = 0; i < 4; i++) {
+      if (!/%[0-9a-f]{2}/i.test(out)) break;
+      try {
+        const next = decodeURIComponent(out);
+        if (next === out) break;
+        out = next;
+      } catch {
+        break;
+      }
+    }
+    return out;
+  };
   const v = input && typeof input === "object" ? (input as Partial<SigRollingSettings>) : {};
   const rawItems: unknown[] = Array.isArray(v.items) ? (v.items as unknown[]) : [];
   const items = rawItems
@@ -75,7 +89,7 @@ export function normalizeSigRolling(input: unknown): SigRollingSettings {
       id: String(x.id || `sr_${Math.random().toString(36).slice(2, 10)}`),
       /** 레거시 `/images/sig/` 등 오타 보정 — 미리보기·OBS 동일 URL 사용 */
       url: normalizeSigImageUrlStored(x.url).trim(),
-      label: typeof x.label === "string" ? x.label.trim() : "",
+      label: decodeText(x.label),
     }))
     .filter((x) => x.url);
   const fadeMs = Number.isFinite(v.fadeMs) ? Math.max(120, Math.min(5000, Math.floor(Number(v.fadeMs)))) : 800;
@@ -86,13 +100,27 @@ export function normalizeSigRolling(input: unknown): SigRollingSettings {
 }
 
 function normalizeSigRollingMeta(input: unknown): Record<string, SigRollingMetaEntry> {
+  const decodeText = (raw: unknown): string => {
+    let out = String(raw ?? "").trim();
+    for (let i = 0; i < 4; i++) {
+      if (!/%[0-9a-f]{2}/i.test(out)) break;
+      try {
+        const next = decodeURIComponent(out);
+        if (next === out) break;
+        out = next;
+      } catch {
+        break;
+      }
+    }
+    return out;
+  };
   if (!input || typeof input !== "object" || Array.isArray(input)) return {};
   const out: Record<string, SigRollingMetaEntry> = {};
   for (const [rawId, rawEntry] of Object.entries(input as Record<string, unknown>)) {
     const id = String(rawId || "").trim();
     if (!id || !rawEntry || typeof rawEntry !== "object") continue;
     const e = rawEntry as Record<string, unknown>;
-    const label = typeof e.label === "string" ? e.label.trim() : "";
+    const label = decodeText(e.label);
     const orderNum = Number(e.order);
     const order = Number.isFinite(orderNum) ? Math.max(0, Math.floor(orderNum)) : undefined;
     if (!label && order === undefined) continue;
