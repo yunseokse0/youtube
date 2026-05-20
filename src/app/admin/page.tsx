@@ -134,25 +134,29 @@ const BROKEN_SIG_UID_PATTERN = /(_257b_2522id_2522|%257b%2522id%2522|%7b%22id%22
 
 type SigUploadProgress = { current: number; total: number; label: string };
 
-function SigUploadProgressPanel({ progress }: { progress: SigUploadProgress | null }) {
+function SigUploadProgressPanel({ progress, prominent = false }: { progress: SigUploadProgress | null; prominent?: boolean }) {
   if (!progress) return null;
   const pct = Math.min(100, Math.round((progress.current / Math.max(1, progress.total)) * 100));
   return (
     <div
-      className="rounded border border-indigo-400/45 bg-indigo-950/55 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+      className={
+        prominent
+          ? "fixed left-1/2 top-3 z-[300] w-[min(520px,calc(100vw-1.5rem))] -translate-x-1/2 rounded-xl border border-indigo-300/50 bg-indigo-950/95 px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur-sm"
+          : "rounded border border-indigo-400/45 bg-indigo-950/55 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+      }
       role="status"
       aria-live="polite"
       aria-valuenow={pct}
       aria-valuemin={0}
       aria-valuemax={100}
     >
-      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-indigo-100">
-        <span className="font-medium">{progress.label}</span>
+      <div className={`mb-1.5 flex flex-wrap items-center justify-between gap-2 ${prominent ? "text-sm" : "text-xs"} text-indigo-100`}>
+        <span className="font-semibold">{progress.label}</span>
         <span className="tabular-nums text-indigo-200/90">
           {progress.current}/{progress.total} ({pct}%)
         </span>
       </div>
-      <div className="h-2.5 overflow-hidden rounded-full bg-black/45">
+      <div className={`overflow-hidden rounded-full bg-black/45 ${prominent ? "h-3" : "h-2.5"}`}>
         <div
           className="h-full rounded-full bg-gradient-to-r from-indigo-600 to-sky-400 transition-[width] duration-300 ease-out"
           style={{ width: `${pct}%` }}
@@ -2341,7 +2345,14 @@ export default function AdminPage() {
     setSigExcelResult(`엑셀 업로드 완료: ${added}개 추가, ${skipped}개 중복/무효로 건너뜀`);
   };
 
-  const uploadSigImageFile = async (file: File | null): Promise<string | null> => {
+  const uploadSigImageFile = async (
+    file: File | null,
+    options?: { silent?: boolean }
+  ): Promise<string | null> => {
+    const silent = Boolean(options?.silent);
+    const notify = (message: string) => {
+      if (!silent) alert(message);
+    };
     if (!file) return null;
     const mime = String(file.type || "").toLowerCase();
     const name = String(file.name || "").toLowerCase();
@@ -2349,11 +2360,11 @@ export default function AdminPage() {
     const isAllowedExt = /\.(gif|png|jpe?g|webp)$/i.test(name);
     const isAllowed = isAllowedMime || isAllowedExt;
     if (!isAllowed) {
-      alert("gif, png, jpg(jpeg), webp 파일만 업로드 가능합니다.");
+      notify("gif, png, jpg(jpeg), webp 파일만 업로드 가능합니다.");
       return null;
     }
     if (file.size > MAX_SIG_UPLOAD_BYTES) {
-      alert(
+      notify(
         `이미지 용량이 30MB를 초과합니다. (${(file.size / (1024 * 1024)).toFixed(1)}MB) 더 작은 파일을 선택해 주세요.`
       );
       return null;
@@ -2382,7 +2393,7 @@ export default function AdminPage() {
         normalized.includes("network") ||
         normalized.includes("failed to fetch") ||
         normalized.includes("load failed");
-      alert(networkLike ? "이미지 업로드 실패: 네트워크 오류입니다. 인터넷 연결을 확인해 주세요." : `이미지 업로드 실패: ${msg}`);
+      notify(networkLike ? "이미지 업로드 실패: 네트워크 오류입니다. 인터넷 연결을 확인해 주세요." : `이미지 업로드 실패: ${msg}`);
       return null;
     }
     const j = (await res.json().catch(() => ({}))) as {
@@ -2412,16 +2423,16 @@ export default function AdminPage() {
                 : String(res.status).startsWith("5")
                   ? "서버 오류로 업로드에 실패했습니다. 잠시 후 다시 시도해 주세요."
                   : `알 수 없는 오류(${rawError})가 발생했습니다.`;
-      alert(`이미지 업로드 실패: ${message}`);
+      notify(`이미지 업로드 실패: ${message}`);
       return null;
     }
-    if (j.ephemeral || (j.storage === "disk" && j.url.startsWith("/uploads/"))) {
+    if (!silent && (j.ephemeral || (j.storage === "disk" && j.url.startsWith("/uploads/")))) {
       setSigExcelResult(
         "업로드 완료. 파일은 서버 디스크(/uploads/sigs)에 저장됩니다."
       );
     }
     if (isBrokenSigImageUrl(j.url)) {
-      alert("이미지 업로드 실패: 사용자 경로 파싱 오류가 발생했습니다. 다시 로그인 후 재시도해 주세요.");
+      notify("이미지 업로드 실패: 사용자 경로 파싱 오류가 발생했습니다. 다시 로그인 후 재시도해 주세요.");
       return null;
     }
     return j.url;
@@ -2537,91 +2548,109 @@ export default function AdminPage() {
     }
   }, [ocrAllBusy, state.sigInventory]);
 
+  const appendSigInventoryRow = useCallback(
+    (row: { url: string; label: string; price: number }) => {
+      setState((prev) => {
+        const existingIds = new Set((prev.sigInventory || []).map((x) => x.id));
+        const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
+        const currentRolling = getUnifiedSigRollingItems(prev);
+        let id = `sig_roll_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        while (existingIds.has(id)) {
+          id = `sig_roll_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        }
+        const nextInventory = [
+          ...(prev.sigInventory || []),
+          {
+            id,
+            name: row.label || "시그",
+            price: Math.max(0, Math.floor(Number(row.price || 0))),
+            imageUrl: row.url,
+            memberId: "",
+            maxCount: 1,
+            soldCount: 0,
+            isRolling: true,
+            isActive: true,
+          },
+        ];
+        meta[id] = { label: row.label || "", order: currentRolling.length };
+        const next: AppState = {
+          ...prev,
+          sigInventory: nextInventory,
+          sigRollingMeta: meta,
+          updatedAt: Date.now(),
+        };
+        persistState(next);
+        return next;
+      });
+    },
+    [persistState]
+  );
+
   const bulkAddSigInventoryFromFiles = useCallback(
-    async (files: File[]) => {
-      if (sigBulkReuploadBusy || !files.length) return;
-      setSigBulkReuploadBusy(true);
-      setSigRollingUploadMessage("");
-      setSigUploadProgress({ current: 0, total: files.length, label: "업로드 준비 중…" });
-      const appended: { url: string; label: string; price: number }[] = [];
+    async (files: File[], options?: { skipBusyGuard?: boolean }) => {
+      if (!files.length) return;
+      if (!options?.skipBusyGuard && sigBulkReuploadBusy) return;
+      if (!options?.skipBusyGuard) setSigBulkReuploadBusy(true);
+      setSigRollingUploadMessage(`${files.length}개 파일 업로드 시작…`);
+      setSigExcelResult(`${files.length}개 파일 업로드 중…`);
+      setSigOcrBanner(`${files.length}개 파일 업로드 중… (금액 OCR은 업로드 후 「금액 OCR 전체 적용」으로 실행)`);
+      setSigUploadProgress({ current: 0, total: files.length, label: `${files.length}개 파일 업로드 준비 중…` });
+      let uploaded = 0;
       const failures: string[] = [];
       try {
         for (let i = 0; i < files.length; i++) {
           const f = files[i]!;
           setSigUploadProgress({
-            current: i + 1,
+            current: i,
             total: files.length,
             label: `업로드 중 (${i + 1}/${files.length}): ${f.name}`,
           });
-          const ocrPrice = await detectSigPriceFromImageFile(f);
-          const url = await uploadSigImageFile(f);
+          setSigOcrBanner(`업로드 중 ${i + 1}/${files.length}: ${f.name}`);
+          const url = await uploadSigImageFile(f, { silent: true });
           if (!url) {
             failures.push(f.name);
             continue;
           }
           const label = f.name.replace(/\.[^.]+$/, "");
-          appended.push({ url, label, price: ocrPrice ?? 0 });
+          appendSigInventoryRow({ url, label, price: 0 });
+          uploaded += 1;
+          setSigUploadProgress({
+            current: i + 1,
+            total: files.length,
+            label: `완료 (${i + 1}/${files.length}): ${label}`,
+          });
         }
-        if (!appended.length) {
-          setSigRollingUploadMessage(
-            `업로드 실패 (${failures.length}개). 로그인·네트워크·서버 업로드 설정을 확인해 주세요.`
-          );
-          setSigOcrBanner(`업로드 실패 (${failures.length}개). 서버 설정을 확인해 주세요.`);
+        if (uploaded === 0) {
+          const msg = `업로드 실패 (${failures.length}개). Nginx client_max_body_size(35M) 설정·로그인을 확인해 주세요.`;
+          setSigRollingUploadMessage(msg);
+          setSigExcelResult(msg);
+          setSigOcrBanner(msg);
           return;
         }
-        setState((prev) => {
-          const existingIds = new Set((prev.sigInventory || []).map((x) => x.id));
-          const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
-          const currentRolling = getUnifiedSigRollingItems(prev);
-          const nextInventory = [...(prev.sigInventory || [])];
-          appended.forEach((x, i) => {
-            let id = `sig_roll_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 8)}`;
-            while (existingIds.has(id)) {
-              id = `sig_roll_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 8)}`;
-            }
-            existingIds.add(id);
-            nextInventory.push({
-              id,
-              name: x.label || `시그 ${i + 1}`,
-              price: Math.max(0, Math.floor(Number(x.price || 0))),
-              imageUrl: x.url,
-              memberId: "",
-              maxCount: 1,
-              soldCount: 0,
-              isRolling: true,
-              isActive: true,
-            });
-            meta[id] = { label: x.label || "", order: currentRolling.length + i };
-          });
-          const next: AppState = {
-            ...prev,
-            sigInventory: nextInventory,
-            sigRollingMeta: meta,
-            updatedAt: Date.now(),
-          };
-          persistState(next);
-          return next;
-        });
+        const failSuffix =
+          failures.length > 0
+            ? ` · 실패 ${failures.length}개: ${failures.slice(0, 3).join(", ")}${failures.length > 3 ? "…" : ""}`
+            : "";
+        const summary = `${uploaded}개 시그 추가 완료${failSuffix}`;
+        setSigExcelResult(summary);
+        setSigRollingUploadMessage(`${summary} (${new Date().toLocaleTimeString("ko-KR")})`);
+        setSigOcrBanner(summary);
         setSigUploadProgress({
           current: files.length,
           total: files.length,
           label: "업로드 완료",
         });
-        const failSuffix =
-          failures.length > 0
-            ? ` · 실패: ${failures.slice(0, 5).join(", ")}${failures.length > 5 ? "…" : ""}`
-            : "";
-        const summary = `${appended.length}개 시그를 새로 추가했습니다.${failSuffix}`;
-        setSigExcelResult(summary);
-        setSigRollingUploadMessage(`${summary} (${new Date().toLocaleTimeString("ko-KR")})`);
-        setSigOcrBanner(summary);
+      } catch (e) {
+        const msg = `일괄 업로드 오류: ${e instanceof Error ? e.message : String(e)}`;
+        setSigExcelResult(msg);
+        setSigOcrBanner(msg);
       } finally {
         setSigBulkReuploadBusy(false);
-        window.setTimeout(() => setSigUploadProgress(null), 1200);
+        window.setTimeout(() => setSigUploadProgress(null), 2000);
         if (sigBulkReuploadInputRef.current) sigBulkReuploadInputRef.current.value = "";
       }
     },
-    [sigBulkReuploadBusy, persistState]
+    [sigBulkReuploadBusy, appendSigInventoryRow, uploadSigImageFile]
   );
 
   const bulkReuploadSigInventoryFromFiles = useCallback(
@@ -2629,19 +2658,19 @@ export default function AdminPage() {
       if (sigBulkReuploadBusy) return;
       const list = Array.from(files || []).filter((f) => isSigRollingPickableFile(f));
       if (!list.length) {
-        setSigOcrBanner("선택한 파일에 gif/png/jpg/webp가 없습니다. 파일명 끝 확장자를 확인해 주세요.");
+        const msg = "선택한 파일에 gif/png/jpg/webp가 없습니다. 파일명 끝 확장자를 확인해 주세요.";
+        setSigOcrBanner(msg);
+        setSigExcelResult(msg);
         return;
       }
+      setSigBulkReuploadBusy(true);
+      setSigUploadProgress({ current: 0, total: list.length, label: `${list.length}개 파일 선택됨…` });
+      setSigExcelResult(`${list.length}개 파일 처리 준비 중…`);
+      setSigOcrBanner(`${list.length}개 파일 처리 준비 중…`);
       const items = (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID);
       const plans = planSigBulkReupload(list, items);
       if (!plans.length) {
-        const ok = window.confirm(
-          items.length === 0
-            ? `시그 목록이 비어 있습니다.\n선택한 ${list.length}개 파일을 새 시그로 추가할까요?\n(파일명이 시그 이름이 됩니다. 예: 애교.gif → 애교)`
-            : `기존 시그와 이름이 매칭되지 않습니다.\n선택한 ${list.length}개 파일을 새 시그로 추가할까요?`
-        );
-        if (!ok) return;
-        await bulkAddSigInventoryFromFiles(list);
+        await bulkAddSigInventoryFromFiles(list, { skipBusyGuard: true });
         return;
       }
       const unmatched = list.length - plans.length;
@@ -2652,9 +2681,12 @@ export default function AdminPage() {
           (unmatched > 0 ? `매칭 안 됨: ${unmatched}개 (파일명·시그 이름 확인)\n` : "") +
           `\n서버에 다시 업로드한 뒤 URL을 갱신하고, 가능하면 금액 OCR도 적용합니다. 계속할까요?`
       );
-      if (!ok) return;
+      if (!ok) {
+        setSigBulkReuploadBusy(false);
+        setSigUploadProgress(null);
+        return;
+      }
 
-      setSigBulkReuploadBusy(true);
       setSigUploadProgress({ current: 0, total: plans.length, label: "재업로드 준비 중…" });
       let uploaded = 0;
       let ocrOk = 0;
@@ -2670,17 +2702,19 @@ export default function AdminPage() {
           setSigOcrBanner(
             `일괄 재업로드 ${i + 1}/${plans.length}: ${item.name} ← ${file.name}${matchedBy === "fallback" ? " (순서)" : ""}`
           );
-          const url = await uploadSigImageFile(file);
+          const url = await uploadSigImageFile(file, { silent: true });
           if (!url) {
             failures.push(file.name);
             continue;
           }
           uploaded += 1;
           let price: number | undefined;
-          const ocrPrice = await detectSigPriceFromImageFile(file);
-          if (ocrPrice != null) {
-            price = ocrPrice;
-            ocrOk += 1;
+          if (plans.length <= 20) {
+            const ocrPrice = await detectSigPriceFromImageFile(file);
+            if (ocrPrice != null) {
+              price = ocrPrice;
+              ocrOk += 1;
+            }
           }
           updateSigItem(item.id, {
             imageUrl: url,
@@ -2795,16 +2829,29 @@ export default function AdminPage() {
 
   const addSigRollingFromFiles = async (files: FileList | null) => {
     if (sigBulkReuploadBusy) return;
-    setSigRollingUploadMessage("");
     if (!files?.length) return;
     const list = Array.from(files).filter(isSigRollingPickableFile);
     if (!list.length) {
-      setSigRollingUploadMessage(
-        "선택한 파일에 gif/png/jpg/webp가 없습니다. 폴더 선택 시 형식(MIME)이 비어 있을 수 있어 확장자로도 골랐습니다 — 파일명 끝이 .gif 등인지 확인해 주세요."
-      );
+      const msg =
+        "선택한 파일에 gif/png/jpg/webp가 없습니다. 폴더 선택 시 확장자(.gif 등)를 확인해 주세요.";
+      setSigRollingUploadMessage(msg);
+      setSigOcrBanner(msg);
+      setSigExcelResult(msg);
       return;
     }
-    await bulkAddSigInventoryFromFiles(list);
+    setSigBulkReuploadBusy(true);
+    setSigUploadProgress({ current: 0, total: list.length, label: `${list.length}개 파일 선택됨…` });
+    setSigExcelResult(`${list.length}개 파일 업로드 준비…`);
+    setSigOcrBanner(`${list.length}개 파일 업로드 준비…`);
+    try {
+      await bulkAddSigInventoryFromFiles(list, { skipBusyGuard: true });
+    } catch (e) {
+      const msg = `업로드 시작 실패: ${e instanceof Error ? e.message : String(e)}`;
+      setSigRollingUploadMessage(msg);
+      setSigOcrBanner(msg);
+      setSigBulkReuploadBusy(false);
+      setSigUploadProgress(null);
+    }
   };
 
   const removeSigRollingItem = (id: string) => {
@@ -3926,6 +3973,7 @@ export default function AdminPage() {
       onTouchEnd={handleTouchEnd}
     >
       <Toast />
+      {sigUploadProgress ? <SigUploadProgressPanel progress={sigUploadProgress} prominent /> : null}
       <div className="lg:hidden fixed left-1/2 -translate-x-1/2 top-2 z-40 pointer-events-none">
         <div
           className={`px-3 py-1 rounded-full text-[11px] border border-white/10 transition-all ${
