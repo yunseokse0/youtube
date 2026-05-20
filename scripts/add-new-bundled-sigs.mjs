@@ -14,6 +14,14 @@ const FROM_DRIVE = path.join(process.cwd(), "public", "images", "sigs", "from-dr
 const ALLOWED = /\.(gif|png|webp|jpe?g)$/i;
 const SKIP = /\/(dummy-sig\.svg|stamp\.(svg|png|gif|webp))$/i;
 
+function safeDecodeURIComponent(s) {
+  try {
+    return decodeURIComponent(String(s || ""));
+  } catch {
+    return String(s || "");
+  }
+}
+
 function pathKey(p) {
   return String(p || "")
     .trim()
@@ -24,7 +32,7 @@ function pathKey(p) {
 
 function fileBaseKey(urlOrPath) {
   const s = pathKey(urlOrPath);
-  return s.split("/").filter(Boolean).pop() || "";
+  return safeDecodeURIComponent(s.split("/").filter(Boolean).pop() || "");
 }
 
 function collectUsed(state) {
@@ -107,7 +115,7 @@ function appendToInventory(state, paths) {
 
   for (let i = 0; i < paths.length; i++) {
     const url = paths[i];
-    const base = url.split("/").filter(Boolean).pop() || "sig";
+    const base = safeDecodeURIComponent(url.split("/").filter(Boolean).pop() || "sig");
     const label = base.replace(/\.[^.]+$/, "");
     let id = `sig_roll_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 8)}`;
     while (existingIds.has(id)) {
