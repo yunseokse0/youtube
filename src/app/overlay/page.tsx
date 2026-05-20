@@ -1560,7 +1560,7 @@ function OverlayInner() {
   const toonChBase = Math.max(8, Math.min(20, defToonCh));
   const totalChBase = Math.max(6, Math.min(18, defTotalCh));
   /** 순위 열: 헤더「순위」·「#12」 등이 잘리지 않도록 `ch` 하한 확보(URL `rankCh`) */
-  const rankColCh = Math.max(5, Math.min(10, parseInt(sp.get("rankCh") || "5", 10)));
+  const rankColCh = Math.max(6, Math.min(12, parseInt(sp.get("rankCh") || "6", 10)));
   /** 기여도 열: 우측 이격은 줄이되, 방송 합성 환경에서 마지막 열 잘림이 나지 않게 최소폭을 보장 */
   const contributionChBase = Math.max(10, Math.min(18, defContributionCh));
   const showSideDonors = false;
@@ -2106,7 +2106,7 @@ function OverlayInner() {
   const bankCh = Math.max(8, Math.min(20, Math.max(bankChBase, amountDisplayMinCh)));
   const toonCh = Math.max(8, Math.min(20, Math.max(toonChBase, amountDisplayMinCh)));
   const totalCh = Math.max(6, Math.min(18, Math.max(totalChBase, amountDisplayMinCh)));
-  const contributionCh = Math.max(10, Math.min(18, Math.max(contributionChBase, amountDisplayMinCh)));
+  const contributionCh = Math.max(11, Math.min(20, Math.max(contributionChBase, amountDisplayMinCh)));
   useEffect(() => {
     const el = tableBoxRef.current;
     if (!el) return;
@@ -2760,7 +2760,7 @@ function OverlayInner() {
             : "-webkit-text-stroke: 0.55px rgba(6, 12, 24, 0.92) !important; text-shadow: -1px -1px 0 rgba(6, 12, 24, 0.92), 1px -1px 0 rgba(6, 12, 24, 0.92), -1px 1px 0 rgba(6, 12, 24, 0.92), 1px 1px 0 rgba(6, 12, 24, 0.92), 0 1px 4px rgba(0,0,0,0.36) !important;"}
         }
         .overlay-root .overlay-elegant-table td.overlay-col-contribution .overlay-num-cell-inner {
-          transform: ${externalSafeMode ? "translateX(-0.08em)" : "translateX(-0.16em)"};
+          transform: ${externalSafeMode ? "translateX(0)" : "translateX(0)"};
         }
         /* 반투명 테이블 모드에서도 헤더 분홍 띠 유지(예전엔 transparent 로 헤더만 사라짐) */
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
@@ -2806,7 +2806,8 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution {
           padding-left: 0.42em !important;
-          padding-right: 0.36em !important;
+          padding-right: 0.62em !important;
+          overflow: visible !important;
         }
         /* 헤더 세로선 제거: 스트림 오버레이에서 칸 분리선 없이 한 덩어리로 보이게 한다. */
         .overlay-root .overlay-elegant-table thead td {
