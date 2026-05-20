@@ -463,6 +463,9 @@ export default function RouletteWheel({
             /** conic-gradient 칸 경계가 아니라 각 조각의 중심 각도(포인터·착지 로직과 동일) */
             const labelAngle = idx * segment + segment / 2;
             const isWin = idx === winnerIndex && !isRolling;
+            const maxCount = Math.max(1, Math.floor(Number(item.maxCount || 1)));
+            const soldCount = Math.max(0, Math.floor(Number(item.soldCount || 0)));
+            const isSoldOut = soldCount >= maxCount;
             const fullLabel = (getLabel ? getLabel(item) : item.name) || item.name || "—";
             const displayLabel = formatWheelSegmentLabel(fullLabel, segmentCount);
             const labelChars = [...displayLabel].length;
@@ -478,7 +481,9 @@ export default function RouletteWheel({
                     className={`rounded-full px-2 py-1 text-center font-black ${
                       isWin
                         ? "border border-yellow-200/80 bg-black/65 text-yellow-100 shadow-[0_0_14px_rgba(250,204,21,0.42)]"
-                        : "border border-transparent bg-transparent text-white"
+                        : isSoldOut
+                          ? "border border-zinc-500/60 bg-zinc-700/65 text-zinc-200 opacity-80"
+                          : "border border-transparent bg-transparent text-white"
                     }`}
                     style={{
                       width: `${chipWidthPx}px`,

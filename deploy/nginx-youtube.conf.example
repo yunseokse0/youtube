@@ -1,0 +1,21 @@
+# /etc/nginx/sites-available/youtube (또는 default) server { } 블록 안에 추가
+# 시그 GIF 업로드: Nginx 기본 client_max_body_size 는 1MB → 413 Request Entity Too Large
+# 앱 한도(30MB)보다 Nginx가 먼저 막으면 관리자에 「30MB 이하」 오류처럼 보일 수 있음
+
+server {
+    listen 80;
+    server_name _;
+
+    client_max_body_size 35M;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

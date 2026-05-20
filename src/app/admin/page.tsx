@@ -80,7 +80,6 @@ import {
   terminateSharedSigOcrWorker,
 } from "@/lib/sig-image-ocr";
 import { planSigBulkReupload } from "@/lib/sig-image-bulk";
-import { collectUsedSigImageKeys, filterBundledPathsNotInUse } from "@/lib/sig-bundled-sync";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 import { normalizeSigDedupKeyImageUrl } from "@/lib/sig-inventory-dedup";
 import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
@@ -132,11 +131,36 @@ const ONE_SHOT_SIG_NAME = "한방 시그";
 const MAX_SIG_UPLOAD_BYTES = 30 * 1024 * 1024;
 const SIG_DUMMY_IMAGE = "/images/sigs/dummy-sig.svg";
 const BROKEN_SIG_UID_PATTERN = /(_257b_2522id_2522|%257b%2522id%2522|%7b%22id%22)/i;
-type SigImagePickerTarget =
-  | { kind: "inventory"; id: string }
-  | { kind: "rolling"; id: string }
-  | { kind: "newSig" }
-  | { kind: "soldOutStamp" };
+
+type SigUploadProgress = { current: number; total: number; label: string };
+
+function SigUploadProgressPanel({ progress }: { progress: SigUploadProgress | null }) {
+  if (!progress) return null;
+  const pct = Math.min(100, Math.round((progress.current / Math.max(1, progress.total)) * 100));
+  return (
+    <div
+      className="rounded border border-indigo-400/45 bg-indigo-950/55 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+      role="status"
+      aria-live="polite"
+      aria-valuenow={pct}
+      aria-valuemin={0}
+      aria-valuemax={100}
+    >
+      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-indigo-100">
+        <span className="font-medium">{progress.label}</span>
+        <span className="tabular-nums text-indigo-200/90">
+          {progress.current}/{progress.total} ({pct}%)
+        </span>
+      </div>
+      <div className="h-2.5 overflow-hidden rounded-full bg-black/45">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-indigo-600 to-sky-400 transition-[width] duration-300 ease-out"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
 
 function clampSigSalesMenuCount(raw: string | number | null | undefined): number {
   const n = typeof raw === "number" ? raw : parseInt(String(raw || "").replace(/[^\d]/g, "") || "10", 10);
@@ -257,34 +281,10 @@ export default function AdminPage() {
   const [sigPreviewMap, setSigPreviewMap] = useState<Record<string, string>>({});
   const [sigImagePreviewModal, setSigImagePreviewModal] = useState<{ src: string; name: string; rawUrl: string } | null>(null);
   /** 시그 이미지: PC 파일 선택 → 업로드 API 후 URL 반영 */
-  const sigLocalPickTargetRef = useRef<SigImagePickerTarget | null>(null);
-  const sigLocalPickInputRef = useRef<HTMLInputElement | null>(null);
+  const [sigExcelResult, setSigExcelResult] = useState("");
   /** 가격 입력은 타이핑 중 draft만 유지하고 blur/Enter에 1회 저장 */
   const [sigPriceDraftMap, setSigPriceDraftMap] = useState<Record<string, string>>({});
   const sigPriceDraftMapRef = useRef<Record<string, string>>({});
-  const [sigExcelResult, setSigExcelResult] = useState("");
-  const [ftpListModalOpen, setFtpListModalOpen] = useState(false);
-  const [ftpListPathInput, setFtpListPathInput] = useState("/");
-  const [ftpListLoading, setFtpListLoading] = useState(false);
-  const [ftpListError, setFtpListError] = useState("");
-  const [ftpListEntries, setFtpListEntries] = useState<
-    Array<{ name: string; type: string; size?: number; rawModifiedAt?: string }>
-  >([]);
-  /** `public/images/sigs` — Git에 포함된 파일 선택 모달 */
-  const [sigBundledOpen, setSigBundledOpen] = useState(false);
-  const [sigBundledMode, setSigBundledMode] = useState<"single" | "bulk">("single");
-  const [sigBundledTarget, setSigBundledTarget] = useState<SigImagePickerTarget | null>(null);
-  const [sigBundledPaths, setSigBundledPaths] = useState<string[]>([]);
-  const [sigBundledLoading, setSigBundledLoading] = useState(false);
-  const [sigBundledErr, setSigBundledErr] = useState("");
-  const [sigBundledSelected, setSigBundledSelected] = useState<string[]>([]);
-  const [sigBundledMeta, setSigBundledMeta] = useState<{
-    diskCount: number;
-    remoteCount: number;
-    githubTried: boolean;
-    githubFetchFailed: boolean;
-    githubSkipReason: "list_disabled" | "rolling_disabled" | "unparseable_base" | null;
-  } | null>(null);
   /** 시그 롤링 업로드 결과 메시지 */
   const [sigRollingUploadMessage, setSigRollingUploadMessage] = useState("");
   /** 시그 판매 목록: 행 접기(기본 접힘 — 긴 목록 스크롤 완화) */
@@ -299,6 +299,7 @@ export default function AdminPage() {
   /** 일괄 OCR 진행률(현재 인덱스 / 전체) */
   const [ocrBatchProgress, setOcrBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [sigBulkReuploadBusy, setSigBulkReuploadBusy] = useState(false);
+  const [sigUploadProgress, setSigUploadProgress] = useState<SigUploadProgress | null>(null);
   const sigBulkReuploadInputRef = useRef<HTMLInputElement | null>(null);
   /** OCR 결과 — 시그 목록 바로 위에 표시(스크롤 시에도 확인 가능) */
   const [sigOcrBanner, setSigOcrBanner] = useState("");
@@ -2352,7 +2353,9 @@ export default function AdminPage() {
       return null;
     }
     if (file.size > MAX_SIG_UPLOAD_BYTES) {
-      alert("이미지 용량은 최대 30MB까지 업로드 가능합니다.");
+      alert(
+        `이미지 용량이 30MB를 초과합니다. (${(file.size / (1024 * 1024)).toFixed(1)}MB) 더 작은 파일을 선택해 주세요.`
+      );
       return null;
     }
     const fd = new FormData();
@@ -2396,11 +2399,14 @@ export default function AdminPage() {
         normalized === "unauthorized" || String(res.status) === "401"
           ? "로그인이 만료되었거나 권한이 없습니다. 새로고침 후 다시 로그인해 주세요."
           : normalized.includes("supabase_required")
-            ? "운영 서버(Render)에 Supabase 저장소 환경 변수(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_STORAGE_BUCKET)가 없습니다. Render 대시보드에 설정 후 다시 업로드해 주세요."
+            ? "서버에 이미지 저장 설정이 없습니다. AWS 등 자체 서버에서는 디스크 업로드가 기본입니다. 로그인 후 다시 시도해 주세요."
             : normalized === "invalid_type"
             ? "지원하지 않는 파일 형식입니다. GIF/PNG/JPG/WEBP 파일만 업로드할 수 있습니다."
-            : normalized === "file_too_large" || String(res.status) === "413"
-              ? "파일 용량이 너무 큽니다. 30MB 이하 파일만 업로드할 수 있습니다."
+            : normalized === "file_too_large"
+              ? `파일 용량이 30MB를 초과합니다. (${(file.size / (1024 * 1024)).toFixed(1)}MB)`
+              : String(res.status) === "413"
+                ? `서버 업로드 한도(413)에 걸렸습니다. 파일은 ${(file.size / (1024 * 1024)).toFixed(1)}MB입니다. ` +
+                  "Nginx 기본 한도(1MB)일 수 있습니다 — EC2에서 client_max_body_size 35M 설정 후 sudo nginx -t && sudo systemctl reload nginx"
               : normalized === "missing_file"
                 ? "업로드할 파일을 찾지 못했습니다. 파일을 다시 선택해 주세요."
                 : String(res.status).startsWith("5")
@@ -2411,7 +2417,7 @@ export default function AdminPage() {
     }
     if (j.ephemeral || (j.storage === "disk" && j.url.startsWith("/uploads/"))) {
       setSigExcelResult(
-        "업로드됨(임시 디스크). Render 재배포 시 사라질 수 있습니다 — Supabase 환경 변수 설정을 권장합니다."
+        "업로드 완료. 파일은 서버 디스크(/uploads/sigs)에 저장됩니다."
       );
     }
     if (isBrokenSigImageUrl(j.url)) {
@@ -2531,6 +2537,93 @@ export default function AdminPage() {
     }
   }, [ocrAllBusy, state.sigInventory]);
 
+  const bulkAddSigInventoryFromFiles = useCallback(
+    async (files: File[]) => {
+      if (sigBulkReuploadBusy || !files.length) return;
+      setSigBulkReuploadBusy(true);
+      setSigRollingUploadMessage("");
+      setSigUploadProgress({ current: 0, total: files.length, label: "업로드 준비 중…" });
+      const appended: { url: string; label: string; price: number }[] = [];
+      const failures: string[] = [];
+      try {
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i]!;
+          setSigUploadProgress({
+            current: i + 1,
+            total: files.length,
+            label: `업로드 중 (${i + 1}/${files.length}): ${f.name}`,
+          });
+          const ocrPrice = await detectSigPriceFromImageFile(f);
+          const url = await uploadSigImageFile(f);
+          if (!url) {
+            failures.push(f.name);
+            continue;
+          }
+          const label = f.name.replace(/\.[^.]+$/, "");
+          appended.push({ url, label, price: ocrPrice ?? 0 });
+        }
+        if (!appended.length) {
+          setSigRollingUploadMessage(
+            `업로드 실패 (${failures.length}개). 로그인·네트워크·서버 업로드 설정을 확인해 주세요.`
+          );
+          setSigOcrBanner(`업로드 실패 (${failures.length}개). 서버 설정을 확인해 주세요.`);
+          return;
+        }
+        setState((prev) => {
+          const existingIds = new Set((prev.sigInventory || []).map((x) => x.id));
+          const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
+          const currentRolling = getUnifiedSigRollingItems(prev);
+          const nextInventory = [...(prev.sigInventory || [])];
+          appended.forEach((x, i) => {
+            let id = `sig_roll_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 8)}`;
+            while (existingIds.has(id)) {
+              id = `sig_roll_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 8)}`;
+            }
+            existingIds.add(id);
+            nextInventory.push({
+              id,
+              name: x.label || `시그 ${i + 1}`,
+              price: Math.max(0, Math.floor(Number(x.price || 0))),
+              imageUrl: x.url,
+              memberId: "",
+              maxCount: 1,
+              soldCount: 0,
+              isRolling: true,
+              isActive: true,
+            });
+            meta[id] = { label: x.label || "", order: currentRolling.length + i };
+          });
+          const next: AppState = {
+            ...prev,
+            sigInventory: nextInventory,
+            sigRollingMeta: meta,
+            updatedAt: Date.now(),
+          };
+          persistState(next);
+          return next;
+        });
+        setSigUploadProgress({
+          current: files.length,
+          total: files.length,
+          label: "업로드 완료",
+        });
+        const failSuffix =
+          failures.length > 0
+            ? ` · 실패: ${failures.slice(0, 5).join(", ")}${failures.length > 5 ? "…" : ""}`
+            : "";
+        const summary = `${appended.length}개 시그를 새로 추가했습니다.${failSuffix}`;
+        setSigExcelResult(summary);
+        setSigRollingUploadMessage(`${summary} (${new Date().toLocaleTimeString("ko-KR")})`);
+        setSigOcrBanner(summary);
+      } finally {
+        setSigBulkReuploadBusy(false);
+        window.setTimeout(() => setSigUploadProgress(null), 1200);
+        if (sigBulkReuploadInputRef.current) sigBulkReuploadInputRef.current.value = "";
+      }
+    },
+    [sigBulkReuploadBusy, persistState]
+  );
+
   const bulkReuploadSigInventoryFromFiles = useCallback(
     async (files: FileList | File[] | null) => {
       if (sigBulkReuploadBusy) return;
@@ -2542,9 +2635,13 @@ export default function AdminPage() {
       const items = (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID);
       const plans = planSigBulkReupload(list, items);
       if (!plans.length) {
-        setSigOcrBanner(
-          "매칭된 시그가 없습니다. 파일명을 시그 이름과 같게 하거나(예: 애교.gif), 재업로드가 필요한 시그 행이 있는지 확인해 주세요."
+        const ok = window.confirm(
+          items.length === 0
+            ? `시그 목록이 비어 있습니다.\n선택한 ${list.length}개 파일을 새 시그로 추가할까요?\n(파일명이 시그 이름이 됩니다. 예: 애교.gif → 애교)`
+            : `기존 시그와 이름이 매칭되지 않습니다.\n선택한 ${list.length}개 파일을 새 시그로 추가할까요?`
         );
+        if (!ok) return;
+        await bulkAddSigInventoryFromFiles(list);
         return;
       }
       const unmatched = list.length - plans.length;
@@ -2553,17 +2650,23 @@ export default function AdminPage() {
           `선택 파일: ${list.length}개\n` +
           `적용 예정: ${plans.length}개 (이름 매칭 + 재업로드 필요 행)\n` +
           (unmatched > 0 ? `매칭 안 됨: ${unmatched}개 (파일명·시그 이름 확인)\n` : "") +
-          `\nSupabase(또는 서버 저장소)에 올린 뒤 URL을 갱신하고, 가능하면 금액 OCR도 적용합니다. 계속할까요?`
+          `\n서버에 다시 업로드한 뒤 URL을 갱신하고, 가능하면 금액 OCR도 적용합니다. 계속할까요?`
       );
       if (!ok) return;
 
       setSigBulkReuploadBusy(true);
+      setSigUploadProgress({ current: 0, total: plans.length, label: "재업로드 준비 중…" });
       let uploaded = 0;
       let ocrOk = 0;
       const failures: string[] = [];
       try {
         for (let i = 0; i < plans.length; i++) {
-          const { file, item, matchedBy } = plans[i];
+          const { file, item, matchedBy } = plans[i]!;
+          setSigUploadProgress({
+            current: i + 1,
+            total: plans.length,
+            label: `재업로드 (${i + 1}/${plans.length}): ${item.name} ← ${file.name}${matchedBy === "fallback" ? " (순서)" : ""}`,
+          });
           setSigOcrBanner(
             `일괄 재업로드 ${i + 1}/${plans.length}: ${item.name} ← ${file.name}${matchedBy === "fallback" ? " (순서)" : ""}`
           );
@@ -2587,6 +2690,11 @@ export default function AdminPage() {
           });
           await new Promise((r) => setTimeout(r, 80));
         }
+        setSigUploadProgress({
+          current: plans.length,
+          total: plans.length,
+          label: "재업로드 완료",
+        });
         const summary =
           `일괄 재업로드 완료: 업로드 ${uploaded}/${plans.length}건 · OCR 금액 ${ocrOk}건` +
           (failures.length ? ` · 실패: ${failures.slice(0, 4).join(", ")}${failures.length > 4 ? "…" : ""}` : "") +
@@ -2595,10 +2703,11 @@ export default function AdminPage() {
         setSigOcrBanner(summary);
       } finally {
         setSigBulkReuploadBusy(false);
+        window.setTimeout(() => setSigUploadProgress(null), 1200);
         if (sigBulkReuploadInputRef.current) sigBulkReuploadInputRef.current.value = "";
       }
     },
-    [sigBulkReuploadBusy, state.sigInventory, updateSigItem]
+    [sigBulkReuploadBusy, state.sigInventory, updateSigItem, bulkAddSigInventoryFromFiles]
   );
 
   const clearSigInventoryImagesOnly = useCallback(() => {
@@ -2670,105 +2779,6 @@ export default function AdminPage() {
     });
   };
 
-  const applySigImageUrlToPickerTarget = (target: SigImagePickerTarget, assetUrl: string) => {
-    if (target.kind === "newSig") {
-      setNewSigImageUrl(assetUrl);
-      setNewSigPreviewUrl(assetUrl);
-      return;
-    }
-    if (target.kind === "soldOutStamp") {
-      updateSigSoldOutStampUrl(assetUrl);
-      return;
-    }
-    if (target.kind === "inventory") {
-      /** `/overlay/sig-rolling` 풀은 `isActive` 기준이라, 이미지 지정 시 롤링·판매에 같이 켜 둔다. */
-      updateSigItem(target.id, { imageUrl: assetUrl, isActive: true, isRolling: true });
-      return;
-    }
-    setState((prev) => {
-      const hasInventory = (prev.sigInventory || []).some((x) => x.id === target.id);
-      if (hasInventory) {
-        const next = {
-          ...prev,
-          sigInventory: (prev.sigInventory || []).map((x) =>
-            x.id === target.id ? { ...x, imageUrl: assetUrl, isRolling: true, isActive: true } : x
-          ),
-        };
-        persistState(next);
-        return next;
-      }
-      const sr = normalizeSigRolling(prev.sigRolling);
-      const next = {
-        ...prev,
-        sigRolling: {
-          ...sr,
-          items: sr.items.map((x) => (x.id === target.id ? { ...x, url: assetUrl } : x)),
-        },
-      };
-      persistState(next);
-      return next;
-    });
-    setSigRollingUploadMessage(`이미지 선택 완료: ${target.id}`);
-  };
-
-  const openSigImageFromLocalPc = (target: SigImagePickerTarget) => {
-    sigLocalPickTargetRef.current = target;
-    requestAnimationFrame(() => {
-      sigLocalPickInputRef.current?.click();
-    });
-  };
-
-  const onSigLocalImagePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const input = e.currentTarget;
-    const file = input.files?.[0] ?? null;
-    input.value = "";
-    const target = sigLocalPickTargetRef.current;
-    sigLocalPickTargetRef.current = null;
-    if (!file || !target) return;
-    const url = await uploadSigImageFile(file);
-    if (!url) return;
-    applySigImageUrlToPickerTarget(target, url);
-  };
-
-  const fetchFtpListByPath = async (nextPath: string) => {
-    const normalized = nextPath.startsWith("/") ? nextPath : `/${nextPath}`;
-    setFtpListLoading(true);
-    setFtpListError("");
-    setFtpListPathInput(normalized);
-    try {
-      const q = new URLSearchParams({ path: normalized });
-      const uid = String(user?.id || "").trim();
-      if (uid) {
-        q.set("user", uid);
-        q.set("u", uid);
-      }
-      const res = await fetch(`/api/ftp/list?${q.toString()}`, {
-        method: "GET",
-        credentials: "include",
-        cache: "no-store",
-        headers: uid ? { "x-user-id": uid } : undefined,
-      });
-      const j = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        path?: string;
-        entries?: Array<{ name: string; type: string; size?: number; rawModifiedAt?: string }>;
-        error?: string;
-      };
-      if (!res.ok || !j.ok) {
-        setFtpListError(String(j.error || res.status));
-        setFtpListEntries([]);
-        return;
-      }
-      setFtpListPathInput(String(j.path || normalized));
-      setFtpListEntries(Array.isArray(j.entries) ? j.entries : []);
-    } catch (e) {
-      setFtpListError(String(e));
-      setFtpListEntries([]);
-    } finally {
-      setFtpListLoading(false);
-    }
-  };
-
   const uploadSigSoldOutStampImage = (file: File | null) => {
     void (async () => {
       const url = await uploadSigImageFile(file);
@@ -2784,6 +2794,7 @@ export default function AdminPage() {
   };
 
   const addSigRollingFromFiles = async (files: FileList | null) => {
+    if (sigBulkReuploadBusy) return;
     setSigRollingUploadMessage("");
     if (!files?.length) return;
     const list = Array.from(files).filter(isSigRollingPickableFile);
@@ -2793,235 +2804,8 @@ export default function AdminPage() {
       );
       return;
     }
-    const appended: { url: string; label: string; price: number }[] = [];
-    const failures: string[] = [];
-    for (const f of list) {
-      const ocrPrice = await detectSigPriceFromImageFile(f);
-      const url = await uploadSigImageFile(f);
-      if (!url) {
-        failures.push(f.name);
-        continue;
-      }
-      const label = f.name.replace(/\.[^.]+$/, "");
-      appended.push({ url, label, price: ocrPrice ?? 0 });
-    }
-    if (!appended.length) {
-      setSigRollingUploadMessage(`업로드 실패 (${failures.length}개). 로그인·네트워크·저장소(Supabase) 설정을 확인해 주세요.`);
-      return;
-    }
-    setState((prev) => {
-      const existingIds = new Set((prev.sigInventory || []).map((x) => x.id));
-      const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
-      const currentRolling = getUnifiedSigRollingItems(prev);
-      const nextInventory = [...(prev.sigInventory || [])];
-      appended.forEach((x, i) => {
-        let id = `sig_roll_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 8)}`;
-        while (existingIds.has(id)) {
-          id = `sig_roll_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 8)}`;
-        }
-        existingIds.add(id);
-        nextInventory.push({
-          id,
-          name: x.label || `롤링 시그 ${i + 1}`,
-          price: Math.max(0, Math.floor(Number(x.price || 0))),
-          imageUrl: x.url,
-          memberId: "",
-          maxCount: 1,
-          soldCount: 0,
-          isRolling: true,
-          isActive: true,
-        });
-        meta[id] = { label: x.label || "", order: currentRolling.length + i };
-      });
-      const next: AppState = {
-        ...prev,
-        sigInventory: nextInventory,
-        sigRollingMeta: meta,
-        updatedAt: Date.now(),
-      };
-      persistState(next);
-      return next;
-    });
-    const failSuffix = failures.length ? ` · 실패: ${failures.slice(0, 5).join(", ")}${failures.length > 5 ? "…" : ""}` : "";
-    setSigRollingUploadMessage(
-      `${appended.length}개 업로드되어 목록에 추가했습니다.${failSuffix} (${new Date().toLocaleTimeString("ko-KR")})`
-    );
+    await bulkAddSigInventoryFromFiles(list);
   };
-
-  const refreshSigBundledPaths = useCallback(async () => {
-    setSigBundledLoading(true);
-    setSigBundledErr("");
-    try {
-      const res = await fetch("/api/sig-bundled-images", { credentials: "include", cache: "no-store" });
-      const j = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        paths?: string[];
-        error?: string;
-        meta?: {
-          diskCount: number;
-          remoteCount: number;
-          githubTried: boolean;
-          githubFetchFailed: boolean;
-          githubSkipReason: "list_disabled" | "rolling_disabled" | "unparseable_base" | null;
-        };
-      };
-      if (!res.ok || !j.ok) {
-        setSigBundledErr(String(j.error || res.statusText || String(res.status)));
-        setSigBundledPaths([]);
-        setSigBundledMeta(null);
-        return;
-      }
-      setSigBundledPaths(Array.isArray(j.paths) ? j.paths : []);
-      const m = j.meta;
-      if (
-        m &&
-        typeof m.diskCount === "number" &&
-        typeof m.remoteCount === "number" &&
-        typeof m.githubTried === "boolean" &&
-        typeof m.githubFetchFailed === "boolean"
-      ) {
-        setSigBundledMeta({
-          diskCount: m.diskCount,
-          remoteCount: m.remoteCount,
-          githubTried: m.githubTried,
-          githubFetchFailed: m.githubFetchFailed,
-          githubSkipReason:
-            m.githubSkipReason === "list_disabled" ||
-            m.githubSkipReason === "rolling_disabled" ||
-            m.githubSkipReason === "unparseable_base"
-              ? m.githubSkipReason
-              : null,
-        });
-      } else {
-        setSigBundledMeta(null);
-      }
-    } catch (e) {
-      setSigBundledErr(String(e));
-      setSigBundledPaths([]);
-      setSigBundledMeta(null);
-    } finally {
-      setSigBundledLoading(false);
-    }
-  }, []);
-
-  const closeSigBundledPicker = useCallback(() => {
-    setSigBundledOpen(false);
-    setSigBundledTarget(null);
-    setSigBundledMode("single");
-    setSigBundledSelected([]);
-    setSigBundledErr("");
-    setSigBundledMeta(null);
-  }, []);
-
-  const openSigBundledPickerSingle = useCallback(
-    (target: SigImagePickerTarget) => {
-      setSigBundledMode("single");
-      setSigBundledTarget(target);
-      setSigBundledSelected([]);
-      setSigBundledOpen(true);
-      void refreshSigBundledPaths();
-    },
-    [refreshSigBundledPaths]
-  );
-
-  const openSigBundledPickerBulk = useCallback(() => {
-    setSigBundledMode("bulk");
-    setSigBundledTarget(null);
-    setSigBundledSelected([]);
-    setSigBundledOpen(true);
-    void refreshSigBundledPaths();
-  }, [refreshSigBundledPaths]);
-
-  const toggleSigBundledPath = useCallback((p: string) => {
-    setSigBundledSelected((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
-  }, []);
-
-  const addSigRollingFromBundledPaths = useCallback(
-    (pathsIn: string[]) => {
-      const list = pathsIn.filter((p) => typeof p === "string" && p.startsWith("/images/sigs/"));
-      if (!list.length) return;
-      setSigRollingUploadMessage("");
-      const appended: { url: string; label: string; price: number }[] = list.map((url) => {
-        const base = url.split("/").filter(Boolean).pop() || "sig";
-        const label = base.replace(/\.[^.]+$/, "");
-        return { url, label, price: 0 };
-      });
-      setState((prev) => {
-        const existingIds = new Set((prev.sigInventory || []).map((x) => x.id));
-        const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
-        const currentRolling = getUnifiedSigRollingItems(prev);
-        const nextInventory = [...(prev.sigInventory || [])];
-        appended.forEach((x, i) => {
-          let id = `sig_roll_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 8)}`;
-          while (existingIds.has(id)) {
-            id = `sig_roll_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 8)}`;
-          }
-          existingIds.add(id);
-          nextInventory.push({
-            id,
-            name: x.label || `롤링 시그 ${i + 1}`,
-            price: Math.max(0, Math.floor(Number(x.price || 0))),
-            imageUrl: x.url,
-            memberId: "",
-            maxCount: 1,
-            soldCount: 0,
-            isRolling: true,
-            isActive: true,
-          });
-          meta[id] = { label: x.label || "", order: currentRolling.length + i };
-        });
-        const next: AppState = {
-          ...prev,
-          sigInventory: nextInventory,
-          sigRollingMeta: meta,
-          updatedAt: Date.now(),
-        };
-        persistState(next);
-        return next;
-      });
-      setSigRollingUploadMessage(
-        `${appended.length}개 저장소 경로로 롤링 목록에 추가했습니다. (${new Date().toLocaleTimeString("ko-KR")})`
-      );
-    },
-    []
-  );
-
-  const confirmSigBundledBulkAdd = useCallback(() => {
-    const skipDummy = sigBundledSelected.filter((p) => !/\/dummy-sig\.svg$/i.test(p));
-    if (!skipDummy.length) {
-      setSigRollingUploadMessage("추가할 항목을 선택해 주세요. (dummy-sig.svg는 제외)");
-      return;
-    }
-    addSigRollingFromBundledPaths(skipDummy);
-    closeSigBundledPicker();
-  }, [sigBundledSelected, addSigRollingFromBundledPaths, closeSigBundledPicker]);
-
-  const addNewBundledSigsToRollingOnly = useCallback(async () => {
-    setSigRollingUploadMessage("");
-    try {
-      const res = await fetch("/api/sig-bundled-images", { credentials: "include", cache: "no-store" });
-      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; paths?: string[]; error?: string };
-      if (!res.ok || !j.ok) {
-        setSigRollingUploadMessage(`신규 추가 실패: ${String(j.error || res.status)}`);
-        return;
-      }
-      const paths = Array.isArray(j.paths) ? j.paths : [];
-      const used = collectUsedSigImageKeys(state);
-      const fresh = filterBundledPathsNotInUse(paths, used);
-      if (!fresh.length) {
-        setSigRollingUploadMessage(
-          "추가할 신규 시그가 없습니다. Git에 push 했는지, 파일이 public/images/sigs/ 아래인지 확인하세요."
-        );
-        return;
-      }
-      addSigRollingFromBundledPaths(fresh);
-      setSigRollingUploadMessage(
-        `GitHub·저장소 기준 신규 ${fresh.length}개만 롤링에 추가했습니다. (${new Date().toLocaleTimeString("ko-KR")})`
-      );
-    } catch (e) {
-      setSigRollingUploadMessage(`신규 추가 실패: ${String(e)}`);
-    }
-  }, [state, addSigRollingFromBundledPaths]);
 
   const removeSigRollingItem = (id: string) => {
     setState((prev) => {
@@ -6120,7 +5904,7 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <label className="cursor-pointer rounded bg-sky-800 px-3 py-1.5 text-sm hover:bg-sky-700">
+                  <label className={`cursor-pointer rounded bg-sky-800 px-3 py-1.5 text-sm hover:bg-sky-700 ${sigBulkReuploadBusy ? "pointer-events-none opacity-50" : ""}`}>
                     파일 선택 (여러 장)
                     <input
                       type="file"
@@ -6133,7 +5917,7 @@ export default function AdminPage() {
                       }}
                     />
                   </label>
-                  <label className="cursor-pointer rounded bg-violet-800 px-3 py-1.5 text-sm hover:bg-violet-700">
+                  <label className={`cursor-pointer rounded bg-violet-800 px-3 py-1.5 text-sm hover:bg-violet-700 ${sigBulkReuploadBusy ? "pointer-events-none opacity-50" : ""}`}>
                     폴더 선택
                     <input
                       type="file"
@@ -6147,22 +5931,6 @@ export default function AdminPage() {
                       }}
                     />
                   </label>
-                  <button
-                    type="button"
-                    className="rounded bg-cyan-900 px-3 py-1.5 text-sm hover:bg-cyan-800"
-                    title="Git에 포함된 public/images/sigs 파일 목록에서 여러 개 선택해 롤링에 추가"
-                    onClick={openSigBundledPickerBulk}
-                  >
-                    저장소에서 일괄 추가
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded bg-teal-900 px-3 py-1.5 text-sm hover:bg-teal-800"
-                    title="GitHub/저장소 목록 중 롤링·인벤에 아직 없는 /images/sigs/ 경로만 한 번에 추가"
-                    onClick={() => void addNewBundledSigsToRollingOnly()}
-                  >
-                    GitHub 신규만 롤링 추가
-                  </button>
                   <button
                     type="button"
                     className="rounded bg-emerald-800 px-3 py-1.5 text-sm hover:bg-emerald-700 disabled:opacity-50"
@@ -6180,6 +5948,7 @@ export default function AdminPage() {
                     롤링 중복 제거(URL)
                   </button>
                 </div>
+                <SigUploadProgressPanel progress={sigUploadProgress} />
                 {sigRollingUploadMessage ? (
                   <p className="text-xs text-emerald-300/95 whitespace-pre-wrap rounded border border-emerald-500/30 bg-emerald-950/30 px-2 py-1.5">
                     {sigRollingUploadMessage}
@@ -6281,21 +6050,6 @@ export default function AdminPage() {
                               }}
                             />
                           </label>
-                          <button
-                            type="button"
-                            className="rounded bg-indigo-800 px-2 py-1 text-xs hover:bg-indigo-700"
-                            onClick={() => openSigImageFromLocalPc({ kind: "rolling", id: it.id })}
-                          >
-                            PC에서 선택
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded bg-cyan-900 px-2 py-1 text-xs hover:bg-cyan-800"
-                            title="public/images/sigs 에 푸시된 파일 중 선택"
-                            onClick={() => openSigBundledPickerSingle({ kind: "rolling", id: it.id })}
-                          >
-                            저장소
-                          </button>
                           <div className="flex gap-1">
                             <button
                               type="button"
@@ -6447,25 +6201,14 @@ export default function AdminPage() {
                     type="button"
                     className="px-3 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-sm disabled:opacity-50"
                     disabled={sigBulkReuploadBusy}
-                    title="siggif 폴더 등 — 파일명을 시그 이름과 맞추면 자동 매칭(애교.gif)"
+                    title="PC에서 여러 GIF 선택 · 목록이 비어 있으면 새 시그로 추가, 있으면 이름 매칭 후 재업로드"
                     onClick={() => sigBulkReuploadInputRef.current?.click()}
                   >
-                    {sigBulkReuploadBusy ? "일괄 재업로드 중…" : "PC 시그 일괄 재업로드"}
-                  </button>
-                  <button
-                    type="button"
-                    className="px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-sm"
-                    title="서버 환경변수 FTP_HOST, FTP_USER, FTP_PASSWORD 설정 시 D:\\siggif 등 원격 폴더 목록"
-                    onClick={() => {
-                      setFtpListModalOpen(true);
-                      setFtpListPathInput("/");
-                      void fetchFtpListByPath("/");
-                    }}
-                  >
-                    FTP 폴더 보기
+                    {sigBulkReuploadBusy ? "업로드 중…" : "PC 시그 일괄 업로드"}
                   </button>
                   {sigExcelResult ? <span className="text-xs text-neutral-300">{sigExcelResult}</span> : null}
                 </div>
+                <SigUploadProgressPanel progress={sigUploadProgress} />
                 <div className="rounded border border-white/10 bg-black/25 p-2 grid grid-cols-1 md:grid-cols-[180px_1fr] gap-2 items-center">
                   <div className="text-xs text-neutral-300">판매 완료 오버레이 이미지</div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -6475,27 +6218,15 @@ export default function AdminPage() {
                       value={state.sigSoldOutStampUrl || ""}
                       onChange={(e) => updateSigSoldOutStampUrl(e.target.value)}
                     />
-                    <input
-                      className="text-xs"
-                      type="file"
-                      accept=".gif,.png,.jpg,.jpeg,image/gif,image/png,image/jpeg"
-                      onChange={(e) => uploadSigSoldOutStampImage(e.target.files?.[0] || null)}
-                    />
-                    <button
-                      type="button"
-                      className="px-2 py-1 rounded bg-indigo-800 hover:bg-indigo-700 text-xs"
-                      onClick={() => openSigImageFromLocalPc({ kind: "soldOutStamp" })}
-                    >
-                      PC에서 선택
-                    </button>
-                    <button
-                      type="button"
-                      className="px-2 py-1 rounded bg-cyan-900 hover:bg-cyan-800 text-xs"
-                      title="public/images/sigs 경로에서 선택"
-                      onClick={() => openSigBundledPickerSingle({ kind: "soldOutStamp" })}
-                    >
-                      저장소
-                    </button>
+                    <label className="cursor-pointer rounded bg-indigo-800 px-2 py-1 text-xs hover:bg-indigo-700">
+                      이미지 업로드
+                      <input
+                        className="hidden"
+                        type="file"
+                        accept=".gif,.png,.jpg,.jpeg,image/gif,image/png,image/jpeg"
+                        onChange={(e) => uploadSigSoldOutStampImage(e.target.files?.[0] || null)}
+                      />
+                    </label>
                     <button
                       type="button"
                       className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
@@ -6554,31 +6285,20 @@ export default function AdminPage() {
                         value={newSigImageUrl}
                         onChange={(e) => setNewSigImageUrl(e.target.value)}
                       />
-                      <input
-                        className="text-xs"
-                        type="file"
-                        accept=".gif,.png,.jpg,.jpeg,image/gif,image/png,image/jpeg"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          uploadNewSigImage(file);
-                        }}
-                      />
-                      <button
-                        type="button"
-                        className="w-fit rounded bg-indigo-800 px-2 py-1 text-xs hover:bg-indigo-700"
-                        onClick={() => openSigImageFromLocalPc({ kind: "newSig" })}
-                      >
-                        PC에서 선택
-                      </button>
-                      <button
-                        type="button"
-                        className="w-fit rounded bg-cyan-900 px-2 py-1 text-xs hover:bg-cyan-800"
-                        title="public/images/sigs 에 푸시된 파일"
-                        onClick={() => openSigBundledPickerSingle({ kind: "newSig" })}
-                      >
-                        저장소에서 선택
-                      </button>
+                      <label className="cursor-pointer w-fit rounded bg-indigo-800 px-2 py-1 text-xs hover:bg-indigo-700">
+                        이미지 업로드 (PC)
+                        <input
+                          className="hidden"
+                          type="file"
+                          accept=".gif,.png,.jpg,.jpeg,image/gif,image/png,image/jpeg"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            uploadNewSigImage(file);
+                            e.currentTarget.value = "";
+                          }}
+                        />
+                      </label>
                     </div>
                     <button
                       className="px-3 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-sm disabled:opacity-60 disabled:cursor-not-allowed"
@@ -6672,10 +6392,14 @@ export default function AdminPage() {
                         type="button"
                         className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-bold text-white shadow hover:bg-emerald-600 disabled:opacity-50"
                         disabled={sigBulkReuploadBusy || ocrAllBusy}
-                        title="PC 폴더(siggif 등)에서 여러 GIF 선택 · 파일명=시그 이름(예: 애교.gif)"
+                        title="PC에서 여러 GIF 선택 · 목록이 비어 있으면 새 시그로 추가"
                         onClick={() => sigBulkReuploadInputRef.current?.click()}
                       >
-                        {sigBulkReuploadBusy ? "일괄 재업로드 중…" : "PC 시그 일괄 재업로드"}
+                        {sigBulkReuploadBusy
+                          ? sigUploadProgress
+                            ? `업로드 중 ${sigUploadProgress.current}/${sigUploadProgress.total}…`
+                            : "업로드 중…"
+                          : "PC 시그 일괄 업로드"}
                       </button>
                       <button
                         type="button"
@@ -6855,31 +6579,20 @@ export default function AdminPage() {
                             value={item.imageUrl || ""}
                             onChange={(e) => updateSigItem(item.id, { imageUrl: e.target.value })}
                           />
-                          <input
-                            className="text-xs"
-                            type="file"
-                            accept=".gif,.png,.jpg,.jpeg,image/gif,image/png,image/jpeg"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (!file) return;
-                              uploadSigImage(item.id, file);
-                            }}
-                          />
-                          <button
-                            type="button"
-                            className="w-fit rounded bg-indigo-800 px-2 py-1 text-xs hover:bg-indigo-700"
-                            onClick={() => openSigImageFromLocalPc({ kind: "inventory", id: item.id })}
-                          >
-                            PC에서 선택
-                          </button>
-                          <button
-                            type="button"
-                            className="w-fit rounded bg-cyan-900 px-2 py-1 text-xs hover:bg-cyan-800"
-                            title="Git에 포함된 public/images/sigs"
-                            onClick={() => openSigBundledPickerSingle({ kind: "inventory", id: item.id })}
-                          >
-                            저장소
-                          </button>
+                          <label className="cursor-pointer w-fit rounded bg-indigo-800 px-2 py-1 text-xs hover:bg-indigo-700">
+                            이미지 업로드
+                            <input
+                              className="hidden"
+                              type="file"
+                              accept=".gif,.png,.jpg,.jpeg,image/gif,image/png,image/jpeg"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                uploadSigImage(item.id, file);
+                                e.currentTarget.value = "";
+                              }}
+                            />
+                          </label>
                         </div>
                       </div>
                       {(sigPreviewMap[item.id] || item.imageUrl) ? (
@@ -6910,8 +6623,8 @@ export default function AdminPage() {
                           <div className="text-xs text-neutral-400 break-all">
                             이미지 설정됨: {item.imageUrl.startsWith("data:image/") ? "업로드 이미지(data URL)" : item.imageUrl}
                             {hasLegacyLocalUrl ? (
-                              <div className="mt-1 text-rose-300">
-                                경고: 구형 /uploads 경로입니다. 운영 환경에서 404가 날 수 있어 재업로드가 필요합니다.
+                              <div className="mt-1 text-neutral-400">
+                                서버 업로드 경로(/uploads)입니다.
                               </div>
                             ) : null}
                             {hasBrokenUrl ? (
@@ -6936,23 +6649,9 @@ export default function AdminPage() {
                 <div className="text-xs text-neutral-500">
                   「보드 노출」은 <code>/overlay/sig-sales</code> 상단 롤링 그리드,「판매 활성」은 회전판 메뉴 후보에 포함됩니다. 시그 추가/멤버 지정/판매량 조절은 즉시 `/api/state`를 통해 Redis에 반영됩니다.{" "}
                   <span className="text-neutral-400">
-                    「PC에서 선택」은 이 PC에서 파일을 고른 뒤 업로드 API로 보내 URL을 붙입니다.「저장소」는 배포 서버의{" "}
-                    <code className="text-neutral-300">public/images/sigs</code>(Git 푸시본) 목록에서 <code className="text-neutral-300">/images/sigs/…</code> 경로를
-                    붙입니다.{" "}
-                    <code className="text-neutral-300">SIG_SERVE_SIG_IMAGES_FROM_DISK=true</code> 이면{" "}
-                    <code className="text-neutral-300">public/uploads/sigs</code> 에 저장·<code className="text-neutral-300">/uploads/…</code> 로
-                    제공합니다(같은 PC에서 Next를 띄우면 그 PC가 이미지 서버).{" "}
-                    <code className="text-neutral-300">NEXT_PUBLIC_SIG_USE_LOCAL_ASSETS=true</code> 이면 Supabase 공개 URL을{" "}
-                    <code className="text-neutral-300">/images/sigs</code>·동일 오리진 경로로 바꿔 요청합니다. Render 등 원격 호스트는 디스크가 비영구일 수 있습니다.
+                    시그 이미지는 PC에서 파일을 선택하면 서버 디스크(<code className="text-neutral-300">/uploads/sigs/…</code>)에 저장되고 URL이 자동으로 붙습니다.
                   </span>
                 </div>
-              <input
-                ref={sigLocalPickInputRef}
-                type="file"
-                className="hidden"
-                accept=".gif,.png,.jpg,.jpeg,.webp,image/gif,image/png,image/jpeg,image/webp"
-                onChange={onSigLocalImagePicked}
-              />
               <input
                 ref={sigBulkReuploadInputRef}
                 type="file"
@@ -6963,301 +6662,6 @@ export default function AdminPage() {
                   void bulkReuploadSigInventoryFromFiles(e.target.files);
                 }}
               />
-              {sigBundledOpen ? (
-                <div
-                  className="fixed inset-0 z-[206] flex items-center justify-center bg-black/80 px-3 py-6"
-                  onClick={closeSigBundledPicker}
-                >
-                  <div
-                    className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-xl border border-white/20 bg-neutral-950/95 shadow-2xl"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 px-3 py-2">
-                      <div className="text-sm font-semibold text-white">
-                        {sigBundledMode === "bulk" ? "저장소 시그 이미지 — 일괄 추가" : "저장소 시그 이미지 — 한 장 선택"}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          className="rounded bg-neutral-700 px-2 py-1 text-xs text-white hover:bg-neutral-600"
-                          onClick={() => void refreshSigBundledPaths()}
-                          disabled={sigBundledLoading}
-                        >
-                          새로고침
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded bg-neutral-700 px-2 py-1 text-xs text-white hover:bg-neutral-600"
-                          onClick={closeSigBundledPicker}
-                        >
-                          닫기
-                        </button>
-                      </div>
-                    </div>
-                    <p className="px-3 py-2 text-[11px] text-neutral-400">
-                      <code className="text-neutral-300">public/images/sigs</code> 아래 gif/png/webp/svg(최대 600개)입니다. 배포 디스크에 있는 파일과 GitHub 트리 API 결과를 합칩니다(
-                      <code className="text-neutral-300">NEXT_PUBLIC_SIG_ROLLING_GITHUB_BASE</code>에서 owner/repo/ref를 쓰거나{" "}
-                      <code className="text-neutral-300">SIG_BUNDLED_GITHUB_REPO</code> 지정). Git에만 있어도 목록에 나올 수 있습니다. 끄려면{" "}
-                      <code className="text-neutral-300">SIG_BUNDLED_GITHUB_LIST=off</code>.
-                      {sigBundledMode === "single" ? " 항목을 한 번 클릭하면 해당 시그에 경로가 적용됩니다." : " 체크 후「선택 항목 롤링에 추가」를 누르세요."}
-                    </p>
-                    {sigBundledMeta?.githubFetchFailed ? (
-                      <div className="mx-3 mb-2 rounded border border-amber-400/40 bg-amber-900/20 px-2 py-1.5 text-[11px] text-amber-100">
-                        GitHub에서 시그 디렉터리 트리를 불러오지 못했습니다. 저장소가 비공개이면{" "}
-                        <code className="text-amber-50/90">GITHUB_TOKEN</code> 또는{" "}
-                        <code className="text-amber-50/90">SIG_BUNDLED_GITHUB_TOKEN</code>을 Render 등 서버 환경에 넣으세요. API 한도·네트워크 오류 시 잠시 후 새로고침하세요.
-                      </div>
-                    ) : null}
-                    {sigBundledMeta?.githubSkipReason === "rolling_disabled" ? (
-                      <div className="mx-3 mb-2 rounded border border-sky-500/35 bg-sky-950/40 px-2 py-1.5 text-[11px] text-sky-100">
-                        <code className="text-sky-200/90">NEXT_PUBLIC_SIG_ROLLING_GITHUB_BASE</code>가 꺼져 있어(0/off) GitHub와 목록을 합치지 않습니다. 합치려면 BASE를 켜거나{" "}
-                        <code className="text-sky-200/90">SIG_BUNDLED_GITHUB_REPO=소유자/저장소</code>·<code className="text-sky-200/90">SIG_BUNDLED_GITHUB_REF</code>를 설정하세요.
-                      </div>
-                    ) : null}
-                    {sigBundledMeta?.githubSkipReason === "unparseable_base" ? (
-                      <div className="mx-3 mb-2 rounded border border-sky-500/35 bg-sky-950/40 px-2 py-1.5 text-[11px] text-sky-100">
-                        롤링용 URL에서 GitHub owner/repo/ref를 읽을 수 없습니다(GitHub raw 또는 jsDelivr{" "}
-                        <code className="text-sky-200/90">…/gh/owner/repo@ref/…</code> 형식).{" "}
-                        <code className="text-sky-200/90">SIG_BUNDLED_GITHUB_REPO</code>를 지정하세요.
-                      </div>
-                    ) : null}
-                    {sigBundledMeta?.githubSkipReason === "list_disabled" ? (
-                      <div className="mx-3 mb-2 rounded border border-neutral-600 bg-neutral-900/60 px-2 py-1.5 text-[11px] text-neutral-300">
-                        <code className="text-neutral-200">SIG_BUNDLED_GITHUB_LIST=off</code> 로 GitHub 합병이 비활성화되어 있습니다.
-                      </div>
-                    ) : null}
-                    {sigBundledMeta && !sigBundledLoading ? (
-                      <p className="px-3 pb-1 text-[10px] text-neutral-500">
-                        출처: 디스크 {sigBundledMeta.diskCount}개
-                        {sigBundledMeta.githubTried
-                          ? sigBundledMeta.githubFetchFailed
-                            ? " · GitHub 트리 조회 실패"
-                            : ` · GitHub public/images/sigs 일치 ${sigBundledMeta.remoteCount}개`
-                          : " · GitHub 미병합"}
-                      </p>
-                    ) : null}
-                    {sigBundledErr ? (
-                      <div className="mx-3 mb-2 rounded border border-rose-400/40 bg-rose-900/25 px-2 py-1 text-xs text-rose-100">
-                        {sigBundledErr}
-                      </div>
-                    ) : null}
-                    {sigBundledMode === "bulk" ? (
-                      <div className="flex flex-wrap items-center gap-2 border-b border-white/10 px-3 py-2">
-                        <button
-                          type="button"
-                          className="rounded bg-neutral-800 px-2 py-1 text-xs hover:bg-neutral-700"
-                          onClick={() =>
-                            setSigBundledSelected(
-                              sigBundledPaths.filter((p) => !/\/dummy-sig\.svg$/i.test(p))
-                            )
-                          }
-                        >
-                          전체 선택(더미 제외)
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded bg-neutral-800 px-2 py-1 text-xs hover:bg-neutral-700"
-                          onClick={() => setSigBundledSelected([])}
-                        >
-                          선택 해제
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded bg-teal-900 px-2 py-1 text-xs hover:bg-teal-800"
-                          onClick={() => {
-                            const used = collectUsedSigImageKeys(state);
-                            const fresh = filterBundledPathsNotInUse(sigBundledPaths, used);
-                            setSigBundledSelected(fresh);
-                            if (!fresh.length) {
-                              setSigRollingUploadMessage("선택 가능한 신규 경로가 없습니다.");
-                            }
-                          }}
-                        >
-                          신규만 선택
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded bg-emerald-800 px-3 py-1 text-sm hover:bg-emerald-700 disabled:opacity-50"
-                          disabled={sigBundledSelected.length === 0}
-                          onClick={confirmSigBundledBulkAdd}
-                        >
-                          선택 {sigBundledSelected.length}개 롤링에 추가
-                        </button>
-                      </div>
-                    ) : null}
-                    <div className="min-h-0 flex-1 overflow-auto px-2 pb-3">
-                      {sigBundledLoading ? (
-                        <div className="p-4 text-xs text-neutral-400">목록 불러오는 중…</div>
-                      ) : sigBundledPaths.length === 0 ? (
-                        <div className="p-4 text-xs text-neutral-500">
-                          파일이 없습니다. <code className="text-neutral-400">public/images/sigs</code>에 넣고 Git에 푸시했는지, 운영 환경에{" "}
-                          <code className="text-neutral-400">NEXT_PUBLIC_SIG_ROLLING_GITHUB_BASE</code>(또는{" "}
-                          <code className="text-neutral-400">SIG_BUNDLED_GITHUB_REPO</code>)가 올바른지 확인하세요. GitHub만 쓰는 경우에도 재배포 없이 트리에 있으면
-                          여기에 나옵니다.
-                        </div>
-                      ) : (
-                        <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-                          {sigBundledPaths.map((p) => {
-                            const isDummy = /\/dummy-sig\.svg$/i.test(p);
-                            const selected = sigBundledSelected.includes(p);
-                            return (
-                              <li key={p}>
-                                <button
-                                  type="button"
-                                  className={`flex w-full flex-col overflow-hidden rounded border text-left transition ${
-                                    selected ? "border-emerald-500/70 bg-emerald-950/40" : "border-white/10 bg-black/30 hover:border-white/25"
-                                  }`}
-                                  onClick={() => {
-                                    if (sigBundledMode === "bulk") {
-                                      toggleSigBundledPath(p);
-                                      return;
-                                    }
-                                    if (sigBundledTarget) {
-                                      applySigImageUrlToPickerTarget(sigBundledTarget, p);
-                                      closeSigBundledPicker();
-                                    }
-                                  }}
-                                >
-                                  {sigBundledMode === "bulk" ? (
-                                    <div className="flex items-center justify-between gap-2 border-b border-white/10 px-2 py-1">
-                                      <span className="truncate text-[10px] text-neutral-400">{p.replace(/^\/images\/sigs\//, "")}</span>
-                                      <span className={`shrink-0 text-xs font-semibold ${selected ? "text-emerald-400" : "text-neutral-600"}`}>
-                                        {selected ? "✓" : ""}
-                                      </span>
-                                    </div>
-                                  ) : null}
-                                  <div className="relative mx-auto flex h-28 w-full items-center justify-center bg-black/40 p-1">
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img
-                                      src={toGithubRawSigAssetUrl(p) || p}
-                                      alt=""
-                                      className="max-h-full max-w-full object-contain"
-                                      loading="lazy"
-                                      decoding="async"
-                                      referrerPolicy="no-referrer"
-                                      onError={(e) => handleSigPreviewImgError(e, p)}
-                                    />
-                                  </div>
-                                  {sigBundledMode === "single" ? (
-                                    <div className="truncate px-2 py-1 text-[10px] text-neutral-400" title={p}>
-                                      {isDummy ? "dummy-sig" : p.replace(/^\/images\/sigs\//, "")}
-                                    </div>
-                                  ) : null}
-                                </button>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-              {ftpListModalOpen ? (
-                <div
-                  className="fixed inset-0 z-[205] flex items-center justify-center bg-black/80 px-4 py-6"
-                  onClick={() => setFtpListModalOpen(false)}
-                >
-                  <div
-                    className="w-full max-w-3xl rounded-xl border border-white/20 bg-neutral-950/95 p-3 shadow-2xl"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-sm font-semibold text-white">FTP 폴더 목록</div>
-                      <button
-                        type="button"
-                        className="rounded bg-neutral-700 px-2 py-1 text-xs text-white hover:bg-neutral-600"
-                        onClick={() => setFtpListModalOpen(false)}
-                      >
-                        닫기
-                      </button>
-                    </div>
-                    <p className="mb-2 text-[11px] text-neutral-400">
-                      서버에 <code className="text-neutral-300">FTP_HOST</code>, <code className="text-neutral-300">FTP_USER</code>,{" "}
-                      <code className="text-neutral-300">FTP_PASSWORD</code> 를 설정해야 합니다. (Render에서 집 PC로 보려면 포트 개방·터널 필요) 시그
-                      PC 업로드는 <code className="text-neutral-300">SIG_FTP_IMAGE_UPLOAD=true</code> 이면 FTP에 저장 후{" "}
-                      <code className="text-neutral-300">/api/ftp/image/sigs/…</code> URL을 붙입니다.
-                    </p>
-                    <div className="mb-2 flex flex-wrap items-center gap-2">
-                      <input
-                        className="min-w-[200px] flex-1 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs"
-                        value={ftpListPathInput}
-                        onChange={(e) => setFtpListPathInput(e.target.value)}
-                        placeholder="/"
-                      />
-                      <button
-                        type="button"
-                        className="rounded bg-indigo-800 px-2 py-1 text-xs text-white hover:bg-indigo-700"
-                        onClick={() => void fetchFtpListByPath(ftpListPathInput)}
-                      >
-                        이동
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded bg-neutral-700 px-2 py-1 text-xs text-white hover:bg-neutral-600"
-                        onClick={() => {
-                          const p = ftpListPathInput.replace(/\/+$/, "") || "/";
-                          const i = p.lastIndexOf("/");
-                          const parent = i <= 0 ? "/" : p.slice(0, i) || "/";
-                          void fetchFtpListByPath(parent);
-                        }}
-                      >
-                        상위 폴더
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded bg-neutral-700 px-2 py-1 text-xs text-white hover:bg-neutral-600"
-                        onClick={() => void fetchFtpListByPath(ftpListPathInput)}
-                      >
-                        새로고침
-                      </button>
-                    </div>
-                    {ftpListError ? (
-                      <div className="mb-2 rounded border border-rose-400/40 bg-rose-900/25 px-2 py-1 text-xs text-rose-100">
-                        {ftpListError}
-                      </div>
-                    ) : null}
-                    <div className="max-h-[60vh] overflow-auto rounded border border-white/10 bg-black/30">
-                      {ftpListLoading ? (
-                        <div className="p-3 text-xs text-neutral-400">목록 불러오는 중…</div>
-                      ) : (
-                        <ul className="divide-y divide-white/10 text-xs">
-                          {ftpListEntries.length === 0 ? (
-                            <li className="p-3 text-neutral-500">항목이 없습니다.</li>
-                          ) : (
-                            ftpListEntries.map((row) => {
-                              const joinPath = (base: string, name: string) => {
-                                const b = base.replace(/\/+$/, "") || "";
-                                if (!b || b === "/") return `/${name}`;
-                                return `${b}/${name}`;
-                              };
-                              return (
-                                <li key={`${row.type}:${row.name}`} className="flex flex-wrap items-center gap-2 px-2 py-1.5 hover:bg-white/5">
-                                  {row.type === "dir" ? (
-                                    <button
-                                      type="button"
-                                      className="text-left text-sky-300 hover:underline"
-                                      onClick={() => void fetchFtpListByPath(joinPath(ftpListPathInput, row.name))}
-                                    >
-                                      [폴더] {row.name}
-                                    </button>
-                                  ) : (
-                                    <span className="text-neutral-200">[파일] {row.name}</span>
-                                  )}
-                                  <span className="text-neutral-500">{row.type}</span>
-                                  {typeof row.size === "number" ? (
-                                    <span className="text-neutral-500">{row.size.toLocaleString("ko-KR")} B</span>
-                                  ) : null}
-                                </li>
-                              );
-                            })
-                          )}
-                        </ul>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ) : null}
               {sigImagePreviewModal ? (
                 <div
                   className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4 py-6"

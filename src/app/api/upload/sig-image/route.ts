@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { createClient } from "@supabase/supabase-js";
 import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
-import { isSigImagesGithubOnlyMode, shouldServeSigImagesFromDisk } from "@/lib/sig-image-mode";
+import { shouldServeSigImagesFromDisk } from "@/lib/sig-image-mode";
 import { getSigUploadPublicRoots, getSupabaseStorageConfig } from "@/lib/sig-upload-storage";
 import {
   ftpPublicImageUrlPath,
@@ -39,7 +39,15 @@ function isEphemeralCloudUpload(): boolean {
   if (process.env.NODE_ENV !== "production") return false;
   if (getSupabaseStorageConfig()) return false;
   if (shouldServeSigImagesFromFtp() && getFtpAccessConfig()) return false;
-  return true;
+  /** Render 디스크만 비영구. AWS·자체 서버는 로컬 디스크 업로드 허용 */
+  return process.env.RENDER === "true";
+}
+
+/** Supabase/FTP 없을 때 디스크 저장 허용 여부 */
+function shouldUseDiskSigUpload(): boolean {
+  if (shouldServeSigImagesFromDisk()) return true;
+  if (process.env.NODE_ENV !== "production") return true;
+  return process.env.RENDER !== "true";
 }
 
 function extFrom(file: File): string | null {
@@ -113,16 +121,6 @@ async function writeSigImageToPublicUploads(
 
 export async function POST(req: Request) {
   try {
-    if (isSigImagesGithubOnlyMode()) {
-      return Response.json(
-        {
-          ok: false,
-          error:
-            "github_only: 시그 GIF는 GitHub public/images/sigs 에 커밋·푸시한 뒤 관리자 「저장소」에서 경로를 선택하세요. (PC 업로드·Supabase 미사용)",
-        },
-        { status: 503 }
-      );
-    }
     const uid = resolveUploadUserId(req);
     if (!uid) {
       return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
@@ -149,7 +147,7 @@ export async function POST(req: Request) {
     const contentType = String(file.type || "application/octet-stream");
     const supabaseConfig = getSupabaseStorageConfig();
 
-    if (shouldServeSigImagesFromDisk()) {
+    if (shouldUseDiskSigUpload()) {
       const url = await writeSigImageToPublicUploads(safeUid, fileName, data);
       return Response.json(
         { ok: true, url, storage: "disk", ephemeral: isEphemeralCloudUpload() },

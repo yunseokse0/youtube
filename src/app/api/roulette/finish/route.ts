@@ -12,6 +12,7 @@ import {
   loadAppStateForRouletteRequest,
   publishRouletteStateAfterSave,
 } from "../roulette-state-sync";
+import { canonicalSigIdFromWheelSliceId } from "@/lib/sig-roulette";
 
 /** 회전판 애니메이션 종료 후 isRolling=false (당첨 result는 유지) */
 const finishSchema = z.object({
@@ -88,8 +89,35 @@ export async function POST(req: Request) {
       reason: body.reason,
     });
 
+    const soldDeltaById =
+      finalPhase === "CONFIRMED"
+        ? selectedSigs.reduce<Record<string, number>>((acc, row) => {
+            const key = canonicalSigIdFromWheelSliceId(String(row?.id || ""));
+            if (!key) return acc;
+            acc[key] = (acc[key] || 0) + 1;
+            return acc;
+          }, {})
+        : {};
+    const nextInventory =
+      finalPhase === "CONFIRMED"
+        ? (s.sigInventory || []).map((row) => {
+            const key = canonicalSigIdFromWheelSliceId(String(row.id || ""));
+            const delta = soldDeltaById[key] || 0;
+            if (!delta) return row;
+            const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
+            const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)));
+            const nextSold = Math.min(maxCount, soldCount + delta);
+            return {
+              ...row,
+              soldCount: nextSold,
+              isActive: nextSold >= maxCount ? false : row.isActive,
+            };
+          })
+        : s.sigInventory;
+
     const next: AppState = {
       ...s,
+      sigInventory: nextInventory,
       rouletteState: {
         ...rs,
         isRolling: false,
