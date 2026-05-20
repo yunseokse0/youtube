@@ -2345,15 +2345,17 @@ export default function AdminPage() {
     setSigExcelResult(`엑셀 업로드 완료: ${added}개 추가, ${skipped}개 중복/무효로 건너뜀`);
   };
 
+  type SigImageUploadResult = { url: string | null; status: number };
+
   const uploadSigImageFile = async (
     file: File | null,
     options?: { silent?: boolean }
-  ): Promise<string | null> => {
+  ): Promise<SigImageUploadResult> => {
     const silent = Boolean(options?.silent);
     const notify = (message: string) => {
       if (!silent) alert(message);
     };
-    if (!file) return null;
+    if (!file) return { url: null, status: 0 };
     const mime = String(file.type || "").toLowerCase();
     const name = String(file.name || "").toLowerCase();
     const isAllowedMime = /image\/(gif|png|jpe?g|webp)/i.test(mime);
@@ -2361,13 +2363,13 @@ export default function AdminPage() {
     const isAllowed = isAllowedMime || isAllowedExt;
     if (!isAllowed) {
       notify("gif, png, jpg(jpeg), webp 파일만 업로드 가능합니다.");
-      return null;
+      return { url: null, status: 400 };
     }
     if (file.size > MAX_SIG_UPLOAD_BYTES) {
       notify(
         `이미지 용량이 30MB를 초과합니다. (${(file.size / (1024 * 1024)).toFixed(1)}MB) 더 작은 파일을 선택해 주세요.`
       );
-      return null;
+      return { url: null, status: 413 };
     }
     const fd = new FormData();
     fd.append("file", file);
@@ -2394,7 +2396,7 @@ export default function AdminPage() {
         normalized.includes("failed to fetch") ||
         normalized.includes("load failed");
       notify(networkLike ? "이미지 업로드 실패: 네트워크 오류입니다. 인터넷 연결을 확인해 주세요." : `이미지 업로드 실패: ${msg}`);
-      return null;
+      return { url: null, status: 0 };
     }
     const j = (await res.json().catch(() => ({}))) as {
       ok?: boolean;
@@ -2424,7 +2426,7 @@ export default function AdminPage() {
                   ? "서버 오류로 업로드에 실패했습니다. 잠시 후 다시 시도해 주세요."
                   : `알 수 없는 오류(${rawError})가 발생했습니다.`;
       notify(`이미지 업로드 실패: ${message}`);
-      return null;
+      return { url: null, status: res.status };
     }
     if (!silent && (j.ephemeral || (j.storage === "disk" && j.url.startsWith("/uploads/")))) {
       setSigExcelResult(
@@ -2433,9 +2435,9 @@ export default function AdminPage() {
     }
     if (isBrokenSigImageUrl(j.url)) {
       notify("이미지 업로드 실패: 사용자 경로 파싱 오류가 발생했습니다. 다시 로그인 후 재시도해 주세요.");
-      return null;
+      return { url: null, status: res.status };
     }
-    return j.url;
+    return { url: j.url, status: res.status };
   };
 
   const runOcrForSigItem = useCallback(async (id: string, imageUrl: string, name?: string) => {
@@ -2548,19 +2550,21 @@ export default function AdminPage() {
     }
   }, [ocrAllBusy, state.sigInventory]);
 
-  const appendSigInventoryRow = useCallback(
-    (row: { url: string; label: string; price: number }) => {
+  const appendSigInventoryRows = useCallback(
+    (rows: { url: string; label: string; price: number }[], options?: { persist?: boolean }) => {
+      if (!rows.length) return;
       setState((prev) => {
         const existingIds = new Set((prev.sigInventory || []).map((x) => x.id));
         const meta = { ...(prev.sigRollingMeta || {}) } as Record<string, { label?: string; order?: number }>;
         const currentRolling = getUnifiedSigRollingItems(prev);
-        let id = `sig_roll_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        while (existingIds.has(id)) {
-          id = `sig_roll_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        }
-        const nextInventory = [
-          ...(prev.sigInventory || []),
-          {
+        const nextInventory = [...(prev.sigInventory || [])];
+        rows.forEach((row, i) => {
+          let id = `sig_roll_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 8)}`;
+          while (existingIds.has(id)) {
+            id = `sig_roll_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 8)}`;
+          }
+          existingIds.add(id);
+          nextInventory.push({
             id,
             name: row.label || "시그",
             price: Math.max(0, Math.floor(Number(row.price || 0))),
@@ -2570,16 +2574,16 @@ export default function AdminPage() {
             soldCount: 0,
             isRolling: true,
             isActive: true,
-          },
-        ];
-        meta[id] = { label: row.label || "", order: currentRolling.length };
+          });
+          meta[id] = { label: row.label || "", order: currentRolling.length + i };
+        });
         const next: AppState = {
           ...prev,
           sigInventory: nextInventory,
           sigRollingMeta: meta,
           updatedAt: Date.now(),
         };
-        persistState(next);
+        if (options?.persist !== false) persistState(next);
         return next;
       });
     },
@@ -2597,31 +2601,57 @@ export default function AdminPage() {
       setSigUploadProgress({ current: 0, total: files.length, label: `${files.length}개 파일 업로드 준비 중…` });
       let uploaded = 0;
       const failures: string[] = [];
+      const pendingRows: { url: string; label: string; price: number }[] = [];
+      let consecutive413 = 0;
+      const NGINX_413_HINT =
+        "서버 Nginx 업로드 한도(기본 1MB) 때문에 413 오류입니다. EC2에서 /etc/nginx/sites-available/default 의 server { } 안에 client_max_body_size 35M; 추가 후 sudo nginx -t && sudo systemctl reload nginx";
       try {
         for (let i = 0; i < files.length; i++) {
           const f = files[i]!;
-          setSigUploadProgress({
-            current: i,
-            total: files.length,
-            label: `업로드 중 (${i + 1}/${files.length}): ${f.name}`,
-          });
-          setSigOcrBanner(`업로드 중 ${i + 1}/${files.length}: ${f.name}`);
-          const url = await uploadSigImageFile(f, { silent: true });
+          if (i % 3 === 0 || i === files.length - 1) {
+            setSigUploadProgress({
+              current: i,
+              total: files.length,
+              label: `업로드 중 (${i + 1}/${files.length}): ${f.name}`,
+            });
+          }
+          const { url, status } = await uploadSigImageFile(f, { silent: true });
           if (!url) {
             failures.push(f.name);
+            if (status === 413) {
+              consecutive413 += 1;
+              if (consecutive413 >= 2) {
+                setSigOcrBanner(NGINX_413_HINT);
+                setSigExcelResult(NGINX_413_HINT);
+                break;
+              }
+            } else {
+              consecutive413 = 0;
+            }
+            await new Promise((r) => setTimeout(r, 8));
             continue;
           }
+          consecutive413 = 0;
           const label = f.name.replace(/\.[^.]+$/, "");
-          appendSigInventoryRow({ url, label, price: 0 });
+          pendingRows.push({ url, label, price: 0 });
           uploaded += 1;
-          setSigUploadProgress({
-            current: i + 1,
-            total: files.length,
-            label: `완료 (${i + 1}/${files.length}): ${label}`,
-          });
+          if (i % 5 === 0 || i === files.length - 1) {
+            setSigUploadProgress({
+              current: i + 1,
+              total: files.length,
+              label: `완료 (${i + 1}/${files.length}): ${label}`,
+            });
+          }
+          await new Promise((r) => setTimeout(r, 8));
+        }
+        if (pendingRows.length) {
+          appendSigInventoryRows(pendingRows);
         }
         if (uploaded === 0) {
-          const msg = `업로드 실패 (${failures.length}개). Nginx client_max_body_size(35M) 설정·로그인을 확인해 주세요.`;
+          const msg =
+            consecutive413 > 0
+              ? NGINX_413_HINT
+              : `업로드 실패 (${failures.length}개). 로그인·네트워크를 확인해 주세요.`;
           setSigRollingUploadMessage(msg);
           setSigExcelResult(msg);
           setSigOcrBanner(msg);
@@ -2650,7 +2680,7 @@ export default function AdminPage() {
         if (sigBulkReuploadInputRef.current) sigBulkReuploadInputRef.current.value = "";
       }
     },
-    [sigBulkReuploadBusy, appendSigInventoryRow, uploadSigImageFile]
+    [sigBulkReuploadBusy, appendSigInventoryRows, uploadSigImageFile]
   );
 
   const bulkReuploadSigInventoryFromFiles = useCallback(
@@ -2702,7 +2732,7 @@ export default function AdminPage() {
           setSigOcrBanner(
             `일괄 재업로드 ${i + 1}/${plans.length}: ${item.name} ← ${file.name}${matchedBy === "fallback" ? " (순서)" : ""}`
           );
-          const url = await uploadSigImageFile(file, { silent: true });
+          const { url } = await uploadSigImageFile(file, { silent: true });
           if (!url) {
             failures.push(file.name);
             continue;
@@ -2773,7 +2803,7 @@ export default function AdminPage() {
     if (!file) return;
     setSigPreviewMap((prev) => ({ ...prev, [id]: URL.createObjectURL(file) }));
     void (async () => {
-      const url = await uploadSigImageFile(file);
+      const { url } = await uploadSigImageFile(file);
       if (!url) return;
       updateSigItem(id, { imageUrl: url, isActive: true, isRolling: true });
       const ocrPrice = await detectSigPriceFromImageFile(file);
@@ -2790,7 +2820,7 @@ export default function AdminPage() {
     setNewSigPreviewUrl(URL.createObjectURL(file));
     void (async () => {
       const ocrPrice = await detectSigPriceFromImageFile(file);
-      const url = await uploadSigImageFile(file);
+      const { url } = await uploadSigImageFile(file);
       if (url) {
         setNewSigImageUrl(url);
         setNewSigPreviewUrl("");
@@ -2815,7 +2845,7 @@ export default function AdminPage() {
 
   const uploadSigSoldOutStampImage = (file: File | null) => {
     void (async () => {
-      const url = await uploadSigImageFile(file);
+      const { url } = await uploadSigImageFile(file);
       if (!url) return;
       updateSigSoldOutStampUrl(url);
     })();
@@ -2900,7 +2930,7 @@ export default function AdminPage() {
   const replaceSigRollingItemImage = (id: string, file: File | null) => {
     if (!file) return;
     void (async () => {
-      const url = await uploadSigImageFile(file);
+      const { url } = await uploadSigImageFile(file);
       if (!url) return;
       setState((prev) => {
         const hasInventory = (prev.sigInventory || []).some((x) => x.id === id);
@@ -3076,7 +3106,7 @@ export default function AdminPage() {
   const uploadTableBgGifImage = (presetId: string, file: File | null) => {
     if (!file) return;
     void (async () => {
-      const url = await uploadSigImageFile(file);
+      const { url } = await uploadSigImageFile(file);
       if (!url) return;
       updatePreset(presetId, { tableBgGifUrl: url });
     })();
