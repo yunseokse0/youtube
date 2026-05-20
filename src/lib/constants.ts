@@ -4,6 +4,9 @@ import {
   isSigImagesGithubOnlyMode,
   isSigImagesPlaceholderOnlyEnv,
   isSigLocalAssetsOnlyMode,
+  repairDiskUploadSigImagePath,
+  shouldOffloadSigImagesToGithubRaw,
+  shouldServeSigImagesFromDisk,
   shouldStripUntrustedExternalSigImageUrls,
 } from "@/lib/sig-image-mode";
 import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
@@ -148,7 +151,7 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
   if (isSigImagesPlaceholderOnlyEnv() && s.startsWith("/uploads/")) {
     return BUNDLED_SIG_PLACEHOLDER_URL;
   }
-  if (isSigImagesGithubOnlyMode() && /\/uploads\/sigs\//i.test(s)) {
+  if (isSigImagesGithubOnlyMode() && !shouldServeSigImagesFromDisk() && /\/uploads\/sigs\//i.test(s)) {
     s = coerceSigUrlToGithubBundledPath(s);
     if (s.startsWith("/images/sigs/")) return s;
   }
@@ -186,6 +189,7 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
  * `NEXT_PUBLIC_SIG_ROLLING_GITHUB_BASE` 가 `0`/`off` 이면 치환 안 함. 미설정 시 본 저장소 `main` 기본값.
  */
 export function getSigRollingGithubRawRoot(): string {
+  if (!shouldOffloadSigImagesToGithubRaw()) return "";
   const raw = typeof process !== "undefined" ? String(process.env.NEXT_PUBLIC_SIG_ROLLING_GITHUB_BASE ?? "").trim() : "";
   if (raw === "0" || raw.toLowerCase() === "off") return "";
   if (raw) return raw.replace(/\/$/, "");
@@ -212,8 +216,10 @@ export function rewriteSigPathForRollingGithubIfConfigured(resolvedUrl: string):
 
 /** `/images/sigs/…`·레거시 `/uploads/sigs/…` → GitHub raw(설정 시). 미들웨어 307·클라이언트 공통 */
 export function toGithubRawSigAssetUrl(pathOrUrl: string): string | null {
+  if (!shouldOffloadSigImagesToGithubRaw()) return null;
   let s = String(pathOrUrl || "").trim();
   if (!s) return null;
+  if (/\/uploads\/sigs\//i.test(s)) return null;
   if (/^https?:\/\//i.test(s)) {
     if (/raw\.githubusercontent\.com/i.test(s)) return s;
     try {
@@ -235,9 +241,10 @@ export function toGithubRawSigAssetUrl(pathOrUrl: string): string | null {
   return rewriteSigPathForRollingGithubIfConfigured(s);
 }
 
-/** 롤링 카드·GIF 홀드 계산용 — `resolveSigImageUrl` 후 GitHub raw 적용 */
-export function resolveSigRollingImageUrl(name: string, imageUrl?: string): string {
-  return rewriteSigPathForRollingGithubIfConfigured(resolveSigImageUrl(name, imageUrl));
+/** 롤링 카드·GIF 홀드 계산용 — `resolveSigImageUrl` 후 GitHub raw 적용(디스크 업로드 시 동일 오리진) */
+export function resolveSigRollingImageUrl(name: string, imageUrl?: string, userId?: string): string {
+  const repaired = repairDiskUploadSigImagePath(String(imageUrl ?? ""), userId);
+  return rewriteSigPathForRollingGithubIfConfigured(resolveSigImageUrl(name, repaired || imageUrl));
 }
 
 /** 완판 도장 URL — 롤링 오버레이에서만 GitHub raw로 동일 규칙 적용 */
@@ -298,19 +305,20 @@ export function sigBundledFromDriveFallbackPath(storedPath: string): string | nu
   return s.replace(/^\/images\/sigs\//i, "/images/sigs/from-drive/");
 }
 
-/** 관리자 미리보기 — GitHub raw 우선(동일 오리진 404·Render 디스크 비움 방지) */
-export function resolveSigAdminPreviewSrc(raw?: string, name?: string): string {
-  const v = String(raw ?? "").trim();
+/** 관리자 미리보기 — 디스크 업로드 시 동일 오리진, Render GitHub-only 시 raw 우선 */
+export function resolveSigAdminPreviewSrc(raw?: string, name?: string, userId?: string): string {
+  const v = repairDiskUploadSigImagePath(String(raw ?? "").trim(), userId);
   if (/(?:_257b_2522id_2522|%257b%2522id%2522|%7b%22id%22)/i.test(v)) {
     return toGithubRawSigAssetUrl(BUNDLED_SIG_PLACEHOLDER_URL) || BUNDLED_SIG_PLACEHOLDER_URL;
   }
   const resolved = resolveSigImageUrl(String(name ?? "").trim(), v);
+  if (!shouldOffloadSigImagesToGithubRaw()) return resolved;
   return toGithubRawSigAssetUrl(resolved) || resolved;
 }
 
 /** 미리보기 1차 404 시 시도할 from-drive 경로(GitHub raw) */
-export function resolveSigAdminPreviewFallbackSrc(raw?: string, name?: string): string | null {
-  const v = String(raw ?? "").trim();
+export function resolveSigAdminPreviewFallbackSrc(raw?: string, name?: string, userId?: string): string | null {
+  const v = repairDiskUploadSigImagePath(String(raw ?? "").trim(), userId);
   const resolved = resolveSigImageUrl(String(name ?? "").trim(), v);
   let path = resolved;
   if (/^https?:\/\//i.test(resolved)) {
@@ -325,7 +333,7 @@ export function resolveSigAdminPreviewFallbackSrc(raw?: string, name?: string): 
   const alt = sigBundledFromDriveFallbackPath(path);
   if (!alt) return null;
   const url = toGithubRawSigAssetUrl(alt);
-  return url && url !== resolveSigAdminPreviewSrc(raw, name) ? url : null;
+  return url && url !== resolveSigAdminPreviewSrc(raw, name, userId) ? url : null;
 }
 
 export function resolveSigImageUrl(name: string, imageUrl?: string): string {

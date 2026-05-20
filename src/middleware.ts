@@ -46,8 +46,11 @@ function extractUserIdFromBrokenSigSegment(seg: string): string | null {
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  /** 시그 GIF/PNG — Render·sig-legacy 대신 GitHub raw로 307(대역폭 절감) */
-  if (pathname.startsWith("/images/sigs/") || pathname.startsWith("/uploads/sigs/")) {
+  /** 시그 GIF/PNG — 디스크 업로드는 동일 오리진, 번들만 GitHub raw 307(Render 대역폭 절감) */
+  if (pathname.startsWith("/uploads/sigs/")) {
+    return NextResponse.next();
+  }
+  if (pathname.startsWith("/images/sigs/")) {
     const github = toGithubRawSigAssetUrl(pathname);
     if (github) return NextResponse.redirect(github, 307);
   }
@@ -58,8 +61,6 @@ export function middleware(req: NextRequest) {
     const uid = extractUserIdFromBrokenSigSegment(uidSeg);
     if (uid) {
       const fixedPath = `/uploads/sigs/${uid}/${fileName}`;
-      const github = toGithubRawSigAssetUrl(fixedPath);
-      if (github) return NextResponse.redirect(github, 307);
       const nextUrl = req.nextUrl.clone();
       nextUrl.pathname = fixedPath;
       return NextResponse.rewrite(nextUrl);

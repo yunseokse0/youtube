@@ -48,6 +48,7 @@ function RollingCardColumn({
   replayKey,
   enableCrossfade,
   pairSide,
+  overlayUserId,
 }: {
   current: SigRollingItem | null;
   nextItem: SigRollingItem | null;
@@ -57,6 +58,7 @@ function RollingCardColumn({
   enableCrossfade: boolean;
   /** 한 줄에 두 장일 때 맞닿는 쪽 패딩·모서리만 줄여 간격 최소화 */
   pairSide?: "left" | "right";
+  overlayUserId?: string;
 }) {
   if (!current) return null;
 
@@ -73,8 +75,8 @@ function RollingCardColumn({
         : `${shellBase} rounded-3xl p-1.5`;
 
   const under = nextItem || current;
-  const srcCurrent = resolveSigRollingImageUrl(current.label || "", current.url);
-  const srcUnder = resolveSigRollingImageUrl(under.label || "", under.url);
+  const srcCurrent = resolveSigRollingImageUrl(current.label || "", current.url, overlayUserId);
+  const srcUnder = resolveSigRollingImageUrl(under.label || "", under.url, overlayUserId);
 
   if (!enableCrossfade) {
     return (
@@ -245,18 +247,18 @@ function SigRollingOverlayInner() {
       if (nn === 1) {
         const it = list[0];
         if (!it?.url) return;
-        hold = await getSigRollingHoldMs(resolveSigRollingImageUrl(it.label || "", it.url), holdMs);
+        hold = await getSigRollingHoldMs(resolveSigRollingImageUrl(it.label || "", it.url, userId), holdMs);
       } else if (nn === 2) {
-        const h0 = await getSigRollingHoldMs(resolveSigRollingImageUrl(list[0].label || "", list[0].url), holdMs);
-        const h1 = await getSigRollingHoldMs(resolveSigRollingImageUrl(list[1].label || "", list[1].url), holdMs);
+        const h0 = await getSigRollingHoldMs(resolveSigRollingImageUrl(list[0].label || "", list[0].url, userId), holdMs);
+        const h1 = await getSigRollingHoldMs(resolveSigRollingImageUrl(list[1].label || "", list[1].url, userId), holdMs);
         hold = Math.max(h0, h1);
       } else {
         const uL = list[pairStart % nn];
         const uR = list[(pairStart + 1) % nn];
         if (!uL?.url || !uR?.url) return;
         hold = Math.max(
-          await getSigRollingHoldMs(resolveSigRollingImageUrl(uL.label || "", uL.url), holdMs),
-          await getSigRollingHoldMs(resolveSigRollingImageUrl(uR.label || "", uR.url), holdMs)
+          await getSigRollingHoldMs(resolveSigRollingImageUrl(uL.label || "", uL.url, userId), holdMs),
+          await getSigRollingHoldMs(resolveSigRollingImageUrl(uR.label || "", uR.url, userId), holdMs)
         );
       }
       if (cancelled) return;
@@ -350,6 +352,7 @@ function SigRollingOverlayInner() {
             replayKey={replayKey}
             enableCrossfade={enableCrossfade}
             pairSide="left"
+            overlayUserId={userId}
           />
           <RollingCardColumn
             current={rightCurrent}
@@ -359,6 +362,7 @@ function SigRollingOverlayInner() {
             replayKey={replayKey}
             enableCrossfade={enableCrossfade}
             pairSide="right"
+            overlayUserId={userId}
           />
         </div>
       </div>

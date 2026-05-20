@@ -87,18 +87,41 @@ describe("sig bulk reupload", () => {
 });
 
 describe("resolveSigImageUrl", () => {
-  it("offloads bundled /images/sigs paths to GitHub raw by default", () => {
-    const url = resolveSigImageUrl("테스트", "/images/sigs/from-drive/foo.gif");
-    expect(url).toContain("raw.githubusercontent.com");
-    expect(url).toContain("/images/sigs/");
+  it("offloads bundled /images/sigs paths to GitHub raw when github-only mode", () => {
+    const prev = process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY;
+    process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY = "true";
+    try {
+      const url = resolveSigImageUrl("테스트", "/images/sigs/from-drive/foo.gif");
+      expect(url).toContain("raw.githubusercontent.com");
+      expect(url).toContain("/images/sigs/");
+    } finally {
+      if (prev === undefined) delete process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY;
+      else process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY = prev;
+    }
+  });
+
+  it("keeps disk upload paths on same origin by default", () => {
+    const url = resolveSigImageUrl("테스트", "/uploads/sigs/finalent/1234567890_abcd1234.gif");
+    expect(url).toBe("/uploads/sigs/finalent/1234567890_abcd1234.gif");
   });
 });
 
 describe("toGithubRawSigAssetUrl", () => {
-  it("maps uploads path to github images path", () => {
-    const url = toGithubRawSigAssetUrl("/uploads/sigs/finalent/foo.gif");
-    expect(url).toContain("raw.githubusercontent.com");
-    expect(url).toContain("/images/sigs/foo.gif");
+  it("does not rewrite disk upload paths", () => {
+    expect(toGithubRawSigAssetUrl("/uploads/sigs/finalent/foo.gif")).toBeNull();
+  });
+
+  it("maps uploads path to github images path when github-only offload is on", () => {
+    const prev = process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY;
+    process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY = "true";
+    try {
+      const url = toGithubRawSigAssetUrl("/images/sigs/from-drive/foo.gif");
+      expect(url).toContain("raw.githubusercontent.com");
+      expect(url).toContain("/images/sigs/from-drive/foo.gif");
+    } finally {
+      if (prev === undefined) delete process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY;
+      else process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY = prev;
+    }
   });
 });
 

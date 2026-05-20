@@ -65,3 +65,42 @@ export function coerceSigUrlToGithubBundledPath(url: string): string {
   if (m?.[1]) return `/images/sigs/${m[1]}`;
   return s;
 }
+
+/** PC 디스크 업로드 파일명 패턴 (업로드 API: `${Date.now()}_${uuid8}.ext`) */
+const DISK_UPLOAD_FILE_PATTERN = /^(\d+_[a-z0-9]{8}\.(?:gif|png|jpe?g|webp))$/i;
+
+/**
+ * GitHub-only 모드에서 `/uploads/sigs/…` 가 `/images/sigs/<file>` 로 잘못 저장된 경우
+ * 동일 파일명으로 디스크 경로 복구.
+ */
+export function repairDiskUploadSigImagePath(stored: string, userId?: string): string {
+  const s = String(stored || "").trim();
+  if (!s || !userId) return s;
+  if (s.startsWith("/uploads/sigs/")) return s;
+
+  let fileName: string | null = null;
+  const flat = s.match(/^\/images\/sigs\/([^/?#]+)$/i);
+  if (flat?.[1] && DISK_UPLOAD_FILE_PATTERN.test(flat[1])) fileName = flat[1];
+
+  const gh = s.match(/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/[^/]+\/public\/images\/sigs\/([^/?#]+)/i);
+  if (gh?.[1] && DISK_UPLOAD_FILE_PATTERN.test(gh[1])) fileName = gh[1];
+
+  if (!fileName) return s;
+  const safeUid = String(userId).replace(/[^a-zA-Z0-9_-]/g, "_") || "user";
+  return `/uploads/sigs/${safeUid}/${fileName}`;
+}
+
+/**
+ * Render 대역폭 절감용 GitHub raw 우회.
+ * AWS·자체 서버 디스크 업로드 또는 `NEXT_PUBLIC_SIG_ROLLING_GITHUB_BASE=off` 이면 비활성.
+ */
+export function shouldOffloadSigImagesToGithubRaw(): boolean {
+  const rollingOff = String(process.env.NEXT_PUBLIC_SIG_ROLLING_GITHUB_BASE ?? "").trim().toLowerCase();
+  if (rollingOff === "0" || rollingOff === "off") return false;
+  if (shouldServeSigImagesFromDisk()) return false;
+  if (isSigImagesGithubOnlyMode()) return true;
+  if (process.env.RENDER === "true" && process.env.NODE_ENV === "production") return true;
+  const customBase = String(process.env.NEXT_PUBLIC_SIG_ROLLING_GITHUB_BASE ?? "").trim();
+  if (customBase) return true;
+  return false;
+}

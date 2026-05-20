@@ -17,6 +17,8 @@ type SigBoardRollingProps = {
   sigSalesExcludedIds?: string[];
   /** 시그 판매 오버레이 `memberId`와 동일하면 해당 멤버 시그만 표시 */
   memberFilterId?: string;
+  /** 디스크 업로드 URL 복구용 계정 id */
+  overlayUserId?: string;
   className?: string;
   gifDelayMultiplier?: number;
   /** false면 2.6초마다 페이지가 넘어가지 않음(방송 오버레이에서 GIF+롤링 이중 움직임 방지) */
@@ -30,6 +32,7 @@ export default function SigBoardRolling({
   soldOverrideSet,
   sigSalesExcludedIds = [],
   memberFilterId = "",
+  overlayUserId = "",
   className = "",
   gifDelayMultiplier = 1,
   autoAdvancePages = true,
@@ -113,7 +116,7 @@ export default function SigBoardRolling({
                       <div className="absolute inset-0 z-[1] rounded-[inherit] bg-white/93" aria-hidden />
                     ) : null}
                     <SigSaleMedia
-                      src={resolveSigRollingImageUrl(item.name, item.imageUrl)}
+                      src={resolveSigRollingImageUrl(item.name, item.imageUrl, overlayUserId || undefined)}
                       alt={item.name}
                       fill
                       className={`object-contain object-center ${soldOut ? "relative z-[2]" : "relative z-0"}`}

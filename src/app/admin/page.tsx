@@ -81,6 +81,7 @@ import {
   terminateSharedSigOcrWorker,
 } from "@/lib/sig-image-ocr";
 import { planSigBulkReupload } from "@/lib/sig-image-bulk";
+import { repairDiskUploadSigImagePath } from "@/lib/sig-image-mode";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 import { normalizeSigDedupKeyImageUrl } from "@/lib/sig-inventory-dedup";
 import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
@@ -228,20 +229,21 @@ function isLegacyLocalSigImageUrl(raw?: string): boolean {
   );
 }
 
-function resolveSigPreviewSrc(raw?: string, name?: string): string {
+function resolveSigPreviewSrc(raw?: string, name?: string, userId?: string): string {
   if (isBrokenSigImageUrl(String(raw || "").trim())) {
     return toGithubRawSigAssetUrl(SIG_DUMMY_IMAGE) || SIG_DUMMY_IMAGE;
   }
-  return resolveSigAdminPreviewSrc(raw, name);
+  return resolveSigAdminPreviewSrc(raw, name, userId);
 }
 
 function handleSigPreviewImgError(
   e: React.SyntheticEvent<HTMLImageElement>,
   raw?: string,
-  name?: string
+  name?: string,
+  userId?: string
 ) {
   const el = e.currentTarget;
-  const fallback = resolveSigAdminPreviewFallbackSrc(raw, name);
+  const fallback = resolveSigAdminPreviewFallbackSrc(raw, name, userId);
   if (fallback && el.src !== fallback) {
     el.src = fallback;
     return;
@@ -641,6 +643,24 @@ export default function AdminPage() {
       }
     });
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    setState((prev) => {
+      let changed = false;
+      const sigInventory = (prev.sigInventory || []).map((item) => {
+        const fixed = repairDiskUploadSigImagePath(String(item.imageUrl || ""), user.id);
+        if (fixed === item.imageUrl) return item;
+        changed = true;
+        return { ...item, imageUrl: fixed };
+      });
+      if (!changed) return prev;
+      const next: AppState = { ...prev, sigInventory, updatedAt: Date.now() };
+      persistState(next);
+      return next;
+    });
+  }, [user?.id, persistState]);
+
   const donorsAmountFormat = useMemo(
     () => normalizeDonorsFormat(state.donorsFormat, "full"),
     [state.donorsFormat]
@@ -2219,7 +2239,7 @@ export default function AdminPage() {
       return;
     }
     let createdId = "";
-    const previewSrcCandidate = (newSigPreviewUrl || resolveSigPreviewSrc(newSigImageUrl, newSigName)).trim();
+    const previewSrcCandidate = (newSigPreviewUrl || resolveSigPreviewSrc(newSigImageUrl, newSigName, user?.id)).trim();
     setState((prev: AppState) => {
       createdId = `sig_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const nextItem = {
@@ -6457,12 +6477,12 @@ export default function AdminPage() {
                       <div className="relative h-20 w-20 overflow-hidden rounded border border-white/10 bg-black/30">
                         {/* next/image는 비정상 URL 시 _next/static 조합 버그가 나올 수 있어 동적 시그는 native img 사용 */}
                         <img
-                          src={newSigPreviewUrl || resolveSigPreviewSrc(newSigImageUrl, newSigName)}
+                          src={newSigPreviewUrl || resolveSigPreviewSrc(newSigImageUrl, newSigName, user?.id)}
                           alt="신규 시그 미리보기"
                           className="absolute inset-0 h-full w-full object-cover"
                           loading="lazy"
                           decoding="async"
-                          onError={(e) => handleSigPreviewImgError(e, newSigImageUrl, newSigName)}
+                          onError={(e) => handleSigPreviewImgError(e, newSigImageUrl, newSigName, user?.id)}
                         />
                       </div>
                     </div>
@@ -6746,20 +6766,20 @@ export default function AdminPage() {
                             title="클릭해서 크게 보기"
                             onClick={() =>
                               setSigImagePreviewModal({
-                                src: sigPreviewMap[item.id] || resolveSigPreviewSrc(item.imageUrl, item.name),
+                                src: sigPreviewMap[item.id] || resolveSigPreviewSrc(item.imageUrl, item.name, user?.id),
                                 name: item.name,
                                 rawUrl: item.imageUrl || "",
                               })
                             }
                           >
                             <img
-                              src={sigPreviewMap[item.id] || resolveSigPreviewSrc(item.imageUrl, item.name)}
+                              src={sigPreviewMap[item.id] || resolveSigPreviewSrc(item.imageUrl, item.name, user?.id)}
                               alt={`${item.name} 미리보기`}
                               className="absolute inset-0 h-full w-full object-cover"
                               loading="lazy"
                               decoding="async"
                               onError={(e) =>
-                                handleSigPreviewImgError(e, item.imageUrl, item.name)
+                                handleSigPreviewImgError(e, item.imageUrl, item.name, user?.id)
                               }
                             />
                           </button>
@@ -6850,7 +6870,8 @@ export default function AdminPage() {
                           handleSigPreviewImgError(
                             e,
                             sigImagePreviewModal.rawUrl,
-                            sigImagePreviewModal.name
+                            sigImagePreviewModal.name,
+                            user?.id
                           )
                         }
                       />
