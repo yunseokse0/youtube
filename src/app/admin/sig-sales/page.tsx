@@ -328,8 +328,10 @@ export default function AdminSigSalesPage() {
     if (machine.selectedSigs?.length) return Math.max(1, Math.min(MAX_SELECTED_SIGS, machine.selectedSigs.length));
     return 1;
   }, [pendingLanding?.selected, machine.selectedSigs]);
-  /** 당첨 쇼케이스 중에는 휠을 숨김 — 새 회차 시작 시에는 휠이 보여야 함 */
+  /** 당첨 쇼케이스 중에만 휠 숨김(IDLE·SPINNING·회전 중에는 항상 표시) */
   const showFinalShowcase =
+    machine.phase !== "IDLE" &&
+    machine.phase !== "SPINNING" &&
     !demoSpin &&
     !pendingLanding &&
     !loadingSpin &&
@@ -363,19 +365,29 @@ export default function AdminSigSalesPage() {
   }, [state?.members, memberFilterId]);
 
   const persistRouletteState = useCallback(
-    async (nextPartial: Partial<AppState["rouletteState"]>) => {
-      if (!state) return;
-      const next: AppState = {
-        ...state,
-        rouletteState: {
-          ...state.rouletteState,
-          ...nextPartial,
-        },
-      };
-      setState(next);
-      await saveStateAsync(next, userId);
+    async (
+      nextPartial:
+        | Partial<AppState["rouletteState"]>
+        | ((rs: NonNullable<AppState["rouletteState"]>) => Partial<AppState["rouletteState"]>)
+    ) => {
+      let snapshot: AppState | null = null;
+      setState((prev) => {
+        if (!prev) return prev;
+        const base = prev.rouletteState || {};
+        const patch = typeof nextPartial === "function" ? nextPartial(base) : nextPartial;
+        snapshot = {
+          ...prev,
+          rouletteState: {
+            ...base,
+            ...patch,
+          },
+        };
+        return snapshot;
+      });
+      if (!snapshot) return;
+      await saveStateAsync(snapshot, userId);
     },
-    [state, userId]
+    [userId]
   );
 
   const onOpacityChange = useCallback(
@@ -387,10 +399,11 @@ export default function AdminSigSalesPage() {
     [setOpacity, persistRouletteState]
   );
   const onForceOverlayReload = useCallback(() => {
-    const prev = Number(state?.rouletteState?.overlayReloadNonce || 0);
-    void persistRouletteState({ overlayReloadNonce: prev + 1 });
+    void persistRouletteState((rs) => ({
+      overlayReloadNonce: Number(rs.overlayReloadNonce || 0) + 1,
+    }));
     setToast("오버레이 새로고침 신호를 보냈습니다.");
-  }, [state?.rouletteState?.overlayReloadNonce, persistRouletteState]);
+  }, [persistRouletteState]);
 
   const clearLocalSpinUi = useCallback(() => {
     if (nextSpinTimerRef.current) {
@@ -426,10 +439,11 @@ export default function AdminSigSalesPage() {
       }
       clearLocalSpinUi();
       await loadRemote();
-      const prev = Number(state?.rouletteState?.overlayReloadNonce || 0);
-      await persistRouletteState({ overlayReloadNonce: prev + 1 });
+      await persistRouletteState((rs) => ({
+        overlayReloadNonce: Number(rs.overlayReloadNonce || 0) + 1,
+      }));
     },
-    [userId, clearLocalSpinUi, loadRemote, state?.rouletteState?.overlayReloadNonce, persistRouletteState]
+    [userId, clearLocalSpinUi, loadRemote, persistRouletteState]
   );
 
   const onRerollReset = useCallback(() => {
@@ -480,26 +494,21 @@ export default function AdminSigSalesPage() {
     const distinctAvailable = activeNormalPool.length;
     const requestedSpin = Math.max(1, Math.min(MAX_SELECTED_SIGS, Math.floor(cinematicSpinCount) || 5));
     const nSpin = Math.min(requestedSpin, distinctAvailable);
-    const needsServerIdle =
-      machine.phase !== "IDLE" ||
-      (machine.selectedSigs?.length ?? 0) > 0 ||
-      showFinalShowcase;
     setLoadingSpin(true);
     try {
       if (machine.phase === "CONFIRM_PENDING") {
         cancelConfirm();
         setShowConfirmModal(false);
       }
-      if (needsServerIdle) {
-        await resetRouletteOnServer(false);
-      } else {
+      if (machine.phase === "LANDED" || machine.phase === "CONFIRMED") {
         resetToIdle();
-        setPendingLanding(null);
-        setDemoSpin(null);
-        setStagedSelected([]);
-        setSpinStep(0);
-        setResultsPanelCollapsed(false);
       }
+      setPendingLanding(null);
+      setDemoSpin(null);
+      setStagedSelected([]);
+      setSpinStep(0);
+      setHighlightId(null);
+      setResultsPanelCollapsed(false);
       if (nSpin < requestedSpin) {
         setToast(`당첨 시그 수를 활성 ${distinctAvailable}개에 맞춰 ${nSpin}회로 시작합니다.`);
       }
@@ -523,7 +532,26 @@ export default function AdminSigSalesPage() {
       setManualSoldSet(new Set());
       setOneShotSold(false);
       setShowConfirmModal(false);
-      void loadRemote();
+      setState((prev) => {
+        if (!prev) return prev;
+        const ts = data.startedAt || Date.now();
+        return {
+          ...prev,
+          updatedAt: Math.max(prev.updatedAt || 0, ts),
+          rouletteState: {
+            ...prev.rouletteState,
+            phase: "SPINNING",
+            isRolling: true,
+            startedAt: ts,
+            sessionId: data.sessionId || prev.rouletteState?.sessionId || "",
+            result: data.result || null,
+            results: selected,
+            selectedSigs: selected,
+            oneShotResult: oneShot,
+            spinCount: selected.length,
+          },
+        };
+      });
     } catch (e) {
       const code = e instanceof Error ? e.message : "";
       if (code === "spin_blocked") {
@@ -571,11 +599,8 @@ export default function AdminSigSalesPage() {
     cinematicSpinCount,
     machine.phase,
     machine.isFinishLoading,
-    machine.selectedSigs?.length,
     activeNormalPool.length,
-    showFinalShowcase,
     spin,
-    resetRouletteOnServer,
     resetToIdle,
     cancelConfirm,
     loadRemote,
@@ -999,6 +1024,7 @@ export default function AdminSigSalesPage() {
             isRolling={Boolean(demoSpin) || machine.isRolling || machine.phase === "SPINNING"}
             resultId={wheelResultSliceId || demoSpin?.resultId || machine.resultId}
             startedAt={demoSpin?.startedAt || machine.startedAt}
+            spinReplayNonce={spinStep}
             volume={volume}
             muted={muted}
             onLanded={(landedId) => {

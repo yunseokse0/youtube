@@ -140,6 +140,16 @@ export function useSigSalesState(userId: string, appState: AppState | null) {
       prevUpdatedAtRef.current = incomingTs;
       return;
     }
+    // 로컬 회전(SPINNING) 중 서버 폴링이 이전 IDLE/LANDED 스냅샷으로 되돌리는 것 방지
+    if (
+      cur.phase === "SPINNING" &&
+      incoming.phase !== "SPINNING" &&
+      Number(cur.startedAt || 0) > 0 &&
+      Number(incoming.startedAt || 0) <= Number(cur.startedAt || 0)
+    ) {
+      prevUpdatedAtRef.current = incomingTs;
+      return;
+    }
 
     prevUpdatedAtRef.current = incomingTs;
     dispatch({ type: "HYDRATE", payload: incoming });
