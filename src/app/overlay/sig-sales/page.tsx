@@ -21,7 +21,9 @@ import {
   ROULETTE_WHEEL_SFX_ENABLED,
   SOUND_ASSETS_ENABLED,
   SPIN_SOUND_PATHS,
+  buildSigSalesWheelDisplayPool,
   buildWheelMenuSlices,
+  clampSigSalesMenuCount,
   canonicalSigIdFromWheelSliceId,
   hydrateSigItemFromInventory,
   resolveWheelSpinTarget,
@@ -44,7 +46,7 @@ import {
  *    목록·순서다. 서버는 라운드마다 따로 값을 흘려보내는 모델이 아니다.
  * 2) 클라이언트는 위 배열을 받은 뒤, `sequentialRoundIndex` 등으로 휠·결과 카드 연출만 라운드별로 나누어
  *    재생한다. 연출 순서는 서버가 밀어주는 게 아니라 이 페이지의 상태·타이밍이 책임진다.
- * 3) `menuCount`·`minSpinCount`·`minWinsCount` 등 쿼리는 휠 **칸 수(표시)** 조절용이며, 당첨 개수·API `spinCount`와는 무관하다.
+ * 3) `menuCount` 쿼리만 휠 **칸 수(표시)** 를 덮어씀(미지정 시 서버 저장값). `minSpinCount` 등은 당첨 회차와 혼동되므로 칸 수에 쓰지 않음.
  * 4) `winnersOnly=1`·`onlyWinners=1`: 확정 당첨 시그만 회전판에 올리고(미당첨 메뉴 숨김), 시그 보드 롤링은 끈다. 당첨 전(IDLE)에는 기존처럼 전체 풀.
  * 5) 서버가 `selectedSigs[]`를 한 번에 주더라도 프론트는 항상 한 장씩 순차 회전·공개한다(멀티 당첨 연출 고정).
  *    CONFIRM_PENDING 에도 `revealedSigCount` 로 같은 속도를 유지한다(관리자 확정 클릭 직후 한꺼번에 깔리지 않게).
@@ -91,19 +93,9 @@ export default function SigSalesOverlayPage() {
   const userId = getOverlayUserIdFromSearchParams(sp);
   const memberFilterId = getOverlayMemberFilterIdFromSearchParams(sp);
   const menuCountParam = (() => {
-    const raw =
-      sp.get("menuCount") ||
-      sp.get("minSpinCount") ||
-      sp.get("minWinsCount") ||
-      sp.get("minWinCount") ||
-      sp.get("wheelCount") ||
-      sp.get("itemsCount") ||
-      sp.get("winnersCount") ||
-      sp.get("M") ||
-      "";
-    const n = parseInt(raw.replace(/[^\d]/g, ""), 10);
-    if (!Number.isFinite(n)) return null;
-    return Math.max(5, Math.min(20, n));
+    const raw = sp.get("menuCount") || "";
+    if (!raw.trim()) return null;
+    return clampSigSalesMenuCount(raw);
   })();
   /**
    * 시그 PNG 없이 결과 UI만 볼 때: 모든 이미지를 더미 SVG로 고정(404·콘솔 스팸 방지).
@@ -445,9 +437,7 @@ export default function SigSalesOverlayPage() {
   const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || DEFAULT_SIG_SOLD_STAMP_URL;
   const menuCount = useMemo(() => {
     if (menuCountParam != null) return menuCountParam;
-    const persisted = Number(state?.rouletteState?.menuCount);
-    if (Number.isFinite(persisted)) return Math.max(5, Math.min(20, Math.floor(persisted)));
-    return 10;
+    return clampSigSalesMenuCount(state?.rouletteState?.menuCount);
   }, [menuCountParam, state?.rouletteState?.menuCount]);
   const menuFillFromAllActive = useMemo(() => {
     const raw = (sp.get("menuFillFromAllActive") || "").toLowerCase();
@@ -507,39 +497,20 @@ export default function SigSalesOverlayPage() {
         return { ...base, id: `${canon}__wslot_${i}` };
       });
     }
-    // 후보 풀은 최소 menuCount까지 채운다(회전판 칸 수와 무관하게 후보 확보).
-    const targetCount = Math.max(CONFIRMED_VISIBLE_SLOTS, menuCount);
-    const unique = new Map<string, SigItem>();
-    /** 서버 추첨 결과가 로컬 필터(멤버·비활성 등)에서 빠지면 wheelSlices=[] → 애니 미실행 → onLanded 미호출 → phase SPINNING 고착 */
-    const serverWinners = [...(machine.selectedSigs || []), ...(pendingLanding?.selected || [])];
-    for (const raw of serverWinners) {
-      if (!raw?.id) continue;
-      const canon = canonicalSigIdFromWheelSliceId(raw.id);
-      const fromInv =
-        state?.sigInventory?.find((x) => x.id === canon) ||
-        state?.sigInventory?.find((x) => x.id === raw.id);
-      unique.set(canon, fromInv ? { ...fromInv } : { ...raw, id: canon });
-    }
-    for (const item of activeNormalPool) unique.set(item.id, item);
-    if (menuFillFromAllActive && unique.size < targetCount && state) {
-      const excluded = new Set((state.sigSalesExcludedIds || []).map((x) => String(x)));
-      const broadActivePool = (state.sigInventory || []).filter(
-        (x) =>
-          x.isActive &&
-          x.id !== ONE_SHOT_SIG_ID &&
-          !excluded.has(x.id) &&
-          x.soldCount < x.maxCount
-      );
-      for (const item of broadActivePool) {
-        unique.set(item.id, item);
-        if (unique.size >= targetCount) break;
-      }
-    }
-    return Array.from(unique.values());
+    if (!state) return [];
+    return buildSigSalesWheelDisplayPool({
+      inventory: state.sigInventory || [],
+      sigSalesExcludedIds: state.sigSalesExcludedIds,
+      sessionExcludedSigIds: state.rouletteState?.sessionExcludedSigIds,
+      memberFilterId,
+      menuCount,
+      menuFillFromAllActive,
+      ensureItems: [...(machine.selectedSigs || []), ...(pendingLanding?.selected || [])],
+    });
   }, [
-    activeNormalPool,
-    menuCount,
     state,
+    memberFilterId,
+    menuCount,
     menuFillFromAllActive,
     machine.selectedSigs,
     pendingLanding?.selected,

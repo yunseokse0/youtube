@@ -24,7 +24,9 @@ import {
   SPIN_SOUND_PATHS,
   clampOverlayOpacity,
   cancelRouletteSession,
+  buildSigSalesWheelDisplayPool,
   buildWheelMenuSlices,
+  clampSigSalesMenuCount,
   canonicalSigIdFromWheelSliceId,
   hydrateSigItemFromInventory,
   resolveWheelSpinTarget,
@@ -263,15 +265,33 @@ export default function AdminSigSalesPage() {
         (!memberFilterId || (x.memberId || "") === memberFilterId)
     );
   }, [state, memberFilterId]);
-  const wheelItems = useMemo(() => {
-    const base = activeNormalPool.slice(0, 12);
-    if (base.length >= 8) return base;
-    const filler = PREVIEW_FILLER_POOL.filter((f) => !base.some((b) => b.name === f.name));
-    return [...base, ...filler].slice(0, 10);
-  }, [activeNormalPool]);
+  const menuCount = useMemo(
+    () => clampSigSalesMenuCount(state?.rouletteState?.menuCount),
+    [state?.rouletteState?.menuCount]
+  );
+  const menuFillFromAllActive = state?.rouletteState?.menuFillFromAllActive === true;
+  const wheelDisplayPool = useMemo(() => {
+    if (!state) return [];
+    return buildSigSalesWheelDisplayPool({
+      inventory: state.sigInventory || [],
+      sigSalesExcludedIds: state.sigSalesExcludedIds,
+      sessionExcludedSigIds: state.rouletteState?.sessionExcludedSigIds,
+      memberFilterId,
+      menuCount,
+      menuFillFromAllActive,
+      ensureItems: [...(pendingLanding?.selected || []), ...(machine.selectedSigs || [])],
+    });
+  }, [
+    state,
+    memberFilterId,
+    menuCount,
+    menuFillFromAllActive,
+    pendingLanding?.selected,
+    machine.selectedSigs,
+  ]);
   const wheelMenuSlices = useMemo(
-    () => buildWheelMenuSlices(wheelItems, Math.max(8, wheelItems.length)),
-    [wheelItems]
+    () => buildWheelMenuSlices(wheelDisplayPool, menuCount),
+    [wheelDisplayPool, menuCount]
   );
   const wheelSpinTarget = useMemo(() => {
     const queue = (pendingLanding?.selected || machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
@@ -519,12 +539,11 @@ export default function AdminSigSalesPage() {
     const q = new URLSearchParams();
     q.set("u", userId);
     if (memberFilterId) q.set("memberId", memberFilterId);
-    const mc = Number(state?.rouletteState?.menuCount);
-    if (Number.isFinite(mc)) q.set("menuCount", String(Math.floor(mc)));
+    q.set("menuCount", String(menuCount));
     const rs = Number(state?.rouletteState?.sigResultScalePct);
     if (Number.isFinite(rs)) q.set("sigResultScalePct", String(Math.floor(rs)));
     return `${window.location.origin}/overlay/sig-sales?${q.toString()}`;
-  }, [userId, memberFilterId, state?.rouletteState?.menuCount, state?.rouletteState?.sigResultScalePct]);
+  }, [userId, memberFilterId, menuCount, state?.rouletteState?.sigResultScalePct]);
 
   const onConfirmSale = useCallback(async () => {
     if (!state || displaySelectedSigs.length === 0) return;
@@ -764,7 +783,10 @@ export default function AdminSigSalesPage() {
           <div>
             <h1 className="text-2xl font-black text-yellow-200">시그 판매 회전판</h1>
             <p className="text-sm text-neutral-300">IDLE → SPINNING → LANDED → CONFIRM_PENDING → CONFIRMED 단일 플로우</p>
-            <p className="mt-1 text-xs text-yellow-200/90">현재 상태: {machine.phase}</p>
+            <p className="mt-1 text-xs text-yellow-200/90">
+              현재 상태: {machine.phase} · 회전판 칸 수: {menuCount}
+              {menuFillFromAllActive ? " (전체 활성 시그로 채움)" : ""}
+            </p>
             {overlayObsUrl ? (
               <p className="mt-2 max-w-xl text-[11px] text-neutral-400">
                 OBS 소스 URL (u={userId}
@@ -786,6 +808,21 @@ export default function AdminSigSalesPage() {
                 </option>
               ))}
             </select>
+            <label className="flex flex-col gap-0.5 text-[11px] text-neutral-400">
+              회전판 칸 수
+              <input
+                type="number"
+                min={5}
+                max={20}
+                value={menuCount}
+                disabled={controlsDisabled}
+                onChange={(e) => {
+                  const n = clampSigSalesMenuCount(e.target.value);
+                  void persistRouletteState({ menuCount: n });
+                }}
+                className="w-16 rounded border border-white/15 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-100"
+              />
+            </label>
             <label className="flex flex-col gap-0.5 text-[11px] text-neutral-400">
               당첨 시그 수
               <input

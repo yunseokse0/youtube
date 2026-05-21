@@ -43,9 +43,75 @@ export function findSliceIndexForResult(items: SigItem[], resultId: string | nul
   return byCanon >= 0 ? byCanon : -1;
 }
 
+/** 회전판 표시 칸 수(5~20) — 관리자·OBS 공통 */
+export function clampSigSalesMenuCount(raw: string | number | null | undefined): number {
+  const n =
+    typeof raw === "number" ? raw : parseInt(String(raw || "").replace(/[^\d]/g, "") || "10", 10);
+  if (!Number.isFinite(n)) return 10;
+  return Math.max(5, Math.min(20, Math.floor(n)));
+}
+
+export type BuildSigSalesWheelDisplayPoolOptions = {
+  inventory: SigItem[];
+  sigSalesExcludedIds?: string[];
+  sessionExcludedSigIds?: string[];
+  memberFilterId?: string;
+  menuCount: number;
+  menuFillFromAllActive?: boolean;
+  /** 스핀 당첨·pending — 휠 후보에 반드시 포함 */
+  ensureItems?: SigItem[];
+};
+
+/** 관리자·OBS 동일 후보 풀(칸 수는 `buildWheelMenuSlices`에서 적용) */
+export function buildSigSalesWheelDisplayPool(opts: BuildSigSalesWheelDisplayPoolOptions): SigItem[] {
+  const {
+    inventory,
+    sigSalesExcludedIds = [],
+    sessionExcludedSigIds = [],
+    memberFilterId = "",
+    menuCount,
+    menuFillFromAllActive = false,
+    ensureItems = [],
+  } = opts;
+  const excluded = new Set(sigSalesExcludedIds.map((x) => String(x)));
+  const sessionExcluded = new Set(sessionExcludedSigIds.map((x) => String(x)));
+  const activeNormalPool = inventory.filter(
+    (x) =>
+      x.isActive &&
+      x.id !== ONE_SHOT_SIG_ID &&
+      !excluded.has(x.id) &&
+      !sessionExcluded.has(x.id) &&
+      x.soldCount < x.maxCount &&
+      (!memberFilterId || (x.memberId || "") === memberFilterId)
+  );
+  const targetCount = Math.max(20, clampSigSalesMenuCount(menuCount));
+  const unique = new Map<string, SigItem>();
+  for (const raw of ensureItems) {
+    if (!raw?.id) continue;
+    const canon = canonicalSigIdFromWheelSliceId(raw.id);
+    const fromInv = inventory.find((x) => x.id === canon) || inventory.find((x) => x.id === raw.id);
+    unique.set(canon, fromInv ? { ...fromInv } : { ...raw, id: canon });
+  }
+  for (const item of activeNormalPool) unique.set(item.id, item);
+  if (menuFillFromAllActive && unique.size < targetCount) {
+    const broadActivePool = inventory.filter(
+      (x) =>
+        x.isActive &&
+        x.id !== ONE_SHOT_SIG_ID &&
+        !excluded.has(x.id) &&
+        x.soldCount < x.maxCount
+    );
+    for (const item of broadActivePool) {
+      unique.set(item.id, item);
+      if (unique.size >= targetCount) break;
+    }
+  }
+  return Array.from(unique.values());
+}
+
 /** 휠 메뉴 칸(5~20) — 동일 시그는 `__wslot_i` 로 칸마다 구분 */
 export function buildWheelMenuSlices(pool: SigItem[], menuCount: number): SigItem[] {
-  const n = Math.max(1, Math.min(20, Math.floor(menuCount || 1)));
+  const n = clampSigSalesMenuCount(menuCount);
   if (!pool.length) return [];
   const out: SigItem[] = [];
   for (let i = 0; i < n; i++) {
