@@ -3,6 +3,7 @@ import {
   coerceSigUrlToGithubBundledPath,
   isSigImagesGithubOnlyMode,
   isSigImagesPlaceholderOnlyEnv,
+  isDiskUploadFlatSigImagePath,
   isSigLocalAssetsOnlyMode,
   repairDiskUploadSigImagePath,
   shouldOffloadSigImagesToGithubRaw,
@@ -352,6 +353,11 @@ export function resolveSigImageUrl(name: string, imageUrl?: string, userId?: str
       raw.startsWith("blob:")
     ) {
       return raw;
+    }
+    if (raw.startsWith("/uploads/sigs/")) return raw;
+    if (isDiskUploadFlatSigImagePath(raw)) {
+      const diskPath = repairDiskUploadSigImagePath(raw, userId);
+      if (diskPath.startsWith("/uploads/sigs/")) return diskPath;
     }
     if (raw.startsWith("/")) return offloadBundledSigPathIfConfigured(raw);
     if (raw.startsWith("uploads/") || raw.startsWith("images/")) {

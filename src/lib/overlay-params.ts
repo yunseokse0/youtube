@@ -1,3 +1,5 @@
+import type { SigItem } from "@/types";
+
 /** 프리셋 → URL 쿼리 변환. OBS 등 별도 컨텍스트에서 API 없이 동작하도록 URL에 설정 포함 */
 export type OverlayPresetLike = {
   id?: string;
@@ -258,6 +260,28 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
 type SearchParamsLike = {
   get(name: string): string | null;
 };
+
+/** 인벤 `imageUrl` 의 `/uploads/sigs/<uid>/` 에서 이미지 소유 계정 추론(OBS `u=` 오타 시 복구) */
+export function inferSigUploadUserIdFromInventory(
+  inventory: SigItem[] | undefined,
+  fallback: string
+): string {
+  if (!inventory?.length) return fallback;
+  const counts = new Map<string, number>();
+  for (const item of inventory) {
+    const m = String(item.imageUrl || "").match(/\/uploads\/sigs\/([a-zA-Z0-9_-]{1,64})\//i);
+    if (m?.[1]) counts.set(m[1]!, (counts.get(m[1]!) || 0) + 1);
+  }
+  let best = "";
+  let bestN = 0;
+  for (const [uid, n] of counts) {
+    if (n > bestN) {
+      best = uid;
+      bestN = n;
+    }
+  }
+  return best || fallback;
+}
 
 export function getOverlayUserIdFromSearchParams(
   searchParams: SearchParamsLike,

@@ -96,6 +96,23 @@ describe("resolveSigImageUrl", () => {
     expect(url).toBe("/uploads/sigs/finalent/1730000000_abcd1234.gif");
   });
 
+  it("does not rewrite disk upload paths to GitHub raw when offload is enabled", () => {
+    const prevDisk = process.env.SIG_SERVE_SIG_IMAGES_FROM_DISK;
+    const prevGh = process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY;
+    process.env.SIG_SERVE_SIG_IMAGES_FROM_DISK = "true";
+    process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY = "true";
+    try {
+      expect(
+        resolveSigImageUrl("테스트", "/uploads/sigs/finalent/1730000000_abcd1234.gif", "finalent")
+      ).toBe("/uploads/sigs/finalent/1730000000_abcd1234.gif");
+    } finally {
+      if (prevDisk === undefined) delete process.env.SIG_SERVE_SIG_IMAGES_FROM_DISK;
+      else process.env.SIG_SERVE_SIG_IMAGES_FROM_DISK = prevDisk;
+      if (prevGh === undefined) delete process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY;
+      else process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY = prevGh;
+    }
+  });
+
   it("offloads bundled /images/sigs paths to GitHub raw when github-only mode", () => {
     const prev = process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY;
     process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY = "true";

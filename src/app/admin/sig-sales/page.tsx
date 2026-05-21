@@ -411,25 +411,6 @@ export default function AdminSigSalesPage() {
     wheelMenuSlices,
   ]);
 
-  const onRerollReset = useCallback(() => {
-    if (nextSpinTimerRef.current) {
-      clearTimeout(nextSpinTimerRef.current);
-      nextSpinTimerRef.current = null;
-    }
-    setPendingLanding(null);
-    setDemoSpin(null);
-    setStagedSelected([]);
-    setSpinStep(0);
-    setHighlightId(null);
-    setOneShotReveal(false);
-    setLastConfirmedText("");
-    setManualSoldSet(new Set());
-    setOneShotSold(false);
-    setShowConfirmModal(false);
-    resetToIdle();
-    setToast(memberFilterId ? "선택 멤버 회차를 초기화했습니다." : "현재 회차를 초기화했습니다. 회전판 시작으로 다시 진행하세요.");
-  }, [resetToIdle, memberFilterId]);
-
   useEffect(() => {
     if (!state?.members?.length) return;
     if (!memberFilterId) return;
@@ -466,6 +447,84 @@ export default function AdminSigSalesPage() {
     void persistRouletteState({ overlayReloadNonce: prev + 1 });
     setToast("오버레이 새로고침 신호를 보냈습니다.");
   }, [state?.rouletteState?.overlayReloadNonce, persistRouletteState]);
+
+  const clearLocalSpinUi = useCallback(() => {
+    if (nextSpinTimerRef.current) {
+      clearTimeout(nextSpinTimerRef.current);
+      nextSpinTimerRef.current = null;
+    }
+    setPendingLanding(null);
+    setDemoSpin(null);
+    setStagedSelected([]);
+    setSpinStep(0);
+    setHighlightId(null);
+    setOneShotReveal(false);
+    setLastConfirmedText("");
+    setManualSoldSet(new Set());
+    setOneShotSold(false);
+    setShowConfirmModal(false);
+    setResultsPanelCollapsed(false);
+    cancelConfirm();
+    resetToIdle();
+  }, [resetToIdle, cancelConfirm]);
+
+  const resetRouletteOnServer = useCallback(
+    async (clearWonPool: boolean) => {
+      const res = await fetch(`/api/roulette/reset?user=${encodeURIComponent(userId)}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clearWonPool }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok) {
+        throw new Error(j.error || String(res.status));
+      }
+      clearLocalSpinUi();
+      await loadRemote();
+      const prev = Number(state?.rouletteState?.overlayReloadNonce || 0);
+      await persistRouletteState({ overlayReloadNonce: prev + 1 });
+    },
+    [userId, clearLocalSpinUi, loadRemote, state?.rouletteState?.overlayReloadNonce, persistRouletteState]
+  );
+
+  const onRerollReset = useCallback(() => {
+    void (async () => {
+      try {
+        await resetRouletteOnServer(false);
+        setToast(
+          memberFilterId
+            ? "서버·OBS 회전 상태를 초기화했습니다. 같은 멤버로 다시 「회전판 시작」하세요."
+            : "서버·OBS 회전 상태를 초기화했습니다. 「회전판 시작」으로 다시 진행하세요."
+        );
+      } catch (e) {
+        setToast(`초기화 실패: ${String(e)}`);
+      }
+    })();
+  }, [resetRouletteOnServer, memberFilterId]);
+
+  const onResetRouletteIdle = useCallback(() => {
+    void (async () => {
+      try {
+        await resetRouletteOnServer(true);
+        setToast("회전판 IDLE + 당첨 제외 목록 비움. OBS도 새로고침됩니다.");
+      } catch (e) {
+        setToast(`회전판 초기화 실패: ${String(e)}`);
+      }
+    })();
+  }, [resetRouletteOnServer]);
+
+  const overlayObsUrl = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    const q = new URLSearchParams();
+    q.set("u", userId);
+    if (memberFilterId) q.set("memberId", memberFilterId);
+    const mc = Number(state?.rouletteState?.menuCount);
+    if (Number.isFinite(mc)) q.set("menuCount", String(Math.floor(mc)));
+    const rs = Number(state?.rouletteState?.sigResultScalePct);
+    if (Number.isFinite(rs)) q.set("sigResultScalePct", String(Math.floor(rs)));
+    return `${window.location.origin}/overlay/sig-sales?${q.toString()}`;
+  }, [userId, memberFilterId, state?.rouletteState?.menuCount, state?.rouletteState?.sigResultScalePct]);
 
   const onConfirmSale = useCallback(async () => {
     if (!state || displaySelectedSigs.length === 0) return;
@@ -706,6 +765,13 @@ export default function AdminSigSalesPage() {
             <h1 className="text-2xl font-black text-yellow-200">시그 판매 회전판</h1>
             <p className="text-sm text-neutral-300">IDLE → SPINNING → LANDED → CONFIRM_PENDING → CONFIRMED 단일 플로우</p>
             <p className="mt-1 text-xs text-yellow-200/90">현재 상태: {machine.phase}</p>
+            {overlayObsUrl ? (
+              <p className="mt-2 max-w-xl text-[11px] text-neutral-400">
+                OBS 소스 URL (u={userId}
+                {memberFilterId ? ` · memberId=${memberFilterId}` : ""}):{" "}
+                <code className="break-all text-emerald-300/90">{overlayObsUrl}</code>
+              </p>
+            ) : null}
           </div>
           <div className="flex items-center gap-2">
             <select
@@ -757,12 +823,32 @@ export default function AdminSigSalesPage() {
             )}
             <button
               type="button"
+              onClick={onResetRouletteIdle}
+              disabled={loadingSpin || machine.isFinishLoading}
+              className="rounded border border-amber-400/50 bg-amber-950/60 px-3 py-2 text-xs font-bold text-amber-100 hover:bg-amber-900/80 disabled:opacity-50"
+            >
+              회전판 초기화
+            </button>
+            <button
+              type="button"
               onClick={onRerollReset}
-              disabled={loadingSpin}
+              disabled={loadingSpin || machine.isFinishLoading}
               className="rounded bg-slate-700 px-4 py-2 text-sm font-bold hover:bg-slate-600 disabled:opacity-50"
             >
               다시 돌리기
             </button>
+            {overlayObsUrl ? (
+              <button
+                type="button"
+                className="rounded border border-white/20 px-2 py-2 text-xs text-neutral-200 hover:bg-white/10"
+                onClick={() => {
+                  void navigator.clipboard.writeText(overlayObsUrl);
+                  setToast("OBS URL을 복사했습니다.");
+                }}
+              >
+                OBS URL 복사
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => void onStartRoulette()}
