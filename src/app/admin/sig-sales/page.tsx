@@ -328,7 +328,15 @@ export default function AdminSigSalesPage() {
     if (machine.selectedSigs?.length) return Math.max(1, Math.min(MAX_SELECTED_SIGS, machine.selectedSigs.length));
     return 1;
   }, [pendingLanding?.selected, machine.selectedSigs]);
-  const showFinalShowcase = displaySelectedSigs.length >= targetSelectionCount && !demoSpin && !pendingLanding;
+  /** 당첨 쇼케이스 중에는 휠을 숨김 — 새 회차 시작 시에는 휠이 보여야 함 */
+  const showFinalShowcase =
+    !demoSpin &&
+    !pendingLanding &&
+    !loadingSpin &&
+    (machine.phase === "LANDED" ||
+      machine.phase === "CONFIRM_PENDING" ||
+      machine.phase === "CONFIRMED") &&
+    displaySelectedSigs.length >= targetSelectionCount;
   const oneShotImageUrl = useMemo(() => {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     const fromOneShot = (oneShotItem?.imageUrl || "").trim();
@@ -346,100 +354,6 @@ export default function AdminSigSalesPage() {
     const id = window.setTimeout(() => setOneShotReveal(true), 950);
     return () => window.clearTimeout(id);
   }, [showFinalShowcase, displayOneShot]);
-
-  const onStartRoulette = useCallback(async () => {
-    if (!authReady) return;
-    if (loadingSpin) return;
-    if (!memberFilterId) {
-      setToast("회전 전 멤버를 먼저 선택해주세요.");
-      return;
-    }
-    if (machine.isFinishLoading) {
-      setToast("판매 확정 처리 중입니다. 잠시 후 다시 시도하세요.");
-      return;
-    }
-    /** reset 직후에도 useCallback spin이 이전 phase를 보므로 API 가드 우회 */
-    let forceSpinAfterRecover = false;
-    if (machine.phase === "CONFIRM_PENDING") {
-      cancelConfirm();
-      resetToIdle();
-      setShowConfirmModal(false);
-      setToast("이전 처리 상태를 복구하고 새 회차를 시작합니다.");
-      forceSpinAfterRecover = true;
-    }
-    if (machine.phase === "LANDED" || machine.phase === "CONFIRMED") {
-      // 운영 중 멈춤 체감 방지를 위해 이전 회차를 자동 초기화하고 새 회차 시작
-      resetToIdle();
-    }
-    if (activeNormalPool.length < 1) {
-      setToast("선택한 멤버의 활성 시그가 없습니다. 멤버 시그를 추가/활성화해주세요.");
-      return;
-    }
-    const nSpin = Math.max(1, Math.min(MAX_SELECTED_SIGS, Math.floor(cinematicSpinCount) || 5));
-    setLoadingSpin(true);
-    try {
-      const data = await spin({ memberId: memberFilterId || null, force: forceSpinAfterRecover, spinCount: nSpin });
-      const selected = (data.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
-      const oneShot = buildOneShotFromSelected(selected);
-      setPendingLanding({ selected, oneShot, resultId: data.result?.id || selected[selected.length - 1]?.id || null, persist: true });
-      const firstTarget = resolveWheelSpinTarget(wheelMenuSlices, selected[0] ?? null, 0);
-      setDemoSpin({
-        startedAt: Date.now(),
-        resultId: firstTarget.sliceId || selected[0]?.id || null,
-      });
-      setSpinStep(0);
-      setStagedSelected([]);
-      setHighlightId(null);
-      confetti({ particleCount: 70, spread: 65, origin: { y: 0.25 } });
-      setManualSoldSet(new Set());
-      setOneShotSold(false);
-      setShowConfirmModal(false);
-      void loadRemote();
-    } catch (e) {
-      const code = e instanceof Error ? e.message : "";
-      if (code === "not_enough_active_sigs") {
-        setToast(memberFilterId ? "선택 멤버의 활성 시그가 없습니다." : "활성 시그가 없습니다.");
-        return;
-      }
-      // API 장애가 있어도 현장 테스트를 계속할 수 있도록 데모 회차로 즉시 대체
-      const shuffled = [...PREVIEW_FILLER_POOL].sort(() => Math.random() - 0.5);
-      const selected = shuffled.slice(0, Math.max(1, Math.min(MAX_SELECTED_SIGS, shuffled.length)));
-      const resultId = selected[selected.length - 1]?.id || null;
-      setPendingLanding({
-        selected,
-        oneShot: buildOneShotFromSelected(selected),
-        resultId,
-        persist: false,
-      });
-      const demoTarget = resolveWheelSpinTarget(wheelMenuSlices, selected[0] ?? null, 0);
-      setDemoSpin({
-        startedAt: Date.now(),
-        resultId: demoTarget.sliceId || selected[0]?.id || resultId,
-      });
-      setSpinStep(0);
-      setStagedSelected([]);
-      setHighlightId(null);
-      setManualSoldSet(new Set());
-      setOneShotSold(false);
-      setShowConfirmModal(false);
-      setToast("서버 응답 실패로 데모 회차로 실행했습니다.");
-    } finally {
-      setLoadingSpin(false);
-    }
-  }, [
-    authReady,
-    loadingSpin,
-    memberFilterId,
-    cinematicSpinCount,
-    machine.phase,
-    machine.isFinishLoading,
-    activeNormalPool.length,
-    spin,
-    resetToIdle,
-    cancelConfirm,
-    loadRemote,
-    wheelMenuSlices,
-  ]);
 
   useEffect(() => {
     if (!state?.members?.length) return;
@@ -543,6 +457,130 @@ export default function AdminSigSalesPage() {
       }
     })();
   }, [resetRouletteOnServer]);
+
+  const onStartRoulette = useCallback(async () => {
+    if (!authReady) return;
+    if (loadingSpin) return;
+    if (!memberFilterId) {
+      setToast("회전 전 멤버를 먼저 선택해주세요.");
+      return;
+    }
+    if (machine.isFinishLoading) {
+      setToast("판매 확정 처리 중입니다. 잠시 후 다시 시도하세요.");
+      return;
+    }
+    if (activeNormalPool.length < 1) {
+      setToast("선택한 멤버의 활성 시그가 없습니다. 멤버 시그를 추가/활성화해주세요.");
+      return;
+    }
+    if (wheelMenuSlices.length < 1) {
+      setToast("회전판 메뉴가 비었습니다. 활성 시그·회전판 칸 수를 확인하세요.");
+      return;
+    }
+    const distinctAvailable = activeNormalPool.length;
+    const requestedSpin = Math.max(1, Math.min(MAX_SELECTED_SIGS, Math.floor(cinematicSpinCount) || 5));
+    const nSpin = Math.min(requestedSpin, distinctAvailable);
+    const needsServerIdle =
+      machine.phase !== "IDLE" ||
+      (machine.selectedSigs?.length ?? 0) > 0 ||
+      showFinalShowcase;
+    setLoadingSpin(true);
+    try {
+      if (machine.phase === "CONFIRM_PENDING") {
+        cancelConfirm();
+        setShowConfirmModal(false);
+      }
+      if (needsServerIdle) {
+        await resetRouletteOnServer(false);
+      } else {
+        resetToIdle();
+        setPendingLanding(null);
+        setDemoSpin(null);
+        setStagedSelected([]);
+        setSpinStep(0);
+        setResultsPanelCollapsed(false);
+      }
+      if (nSpin < requestedSpin) {
+        setToast(`당첨 시그 수를 활성 ${distinctAvailable}개에 맞춰 ${nSpin}회로 시작합니다.`);
+      }
+      const data = await spin({
+        memberId: memberFilterId || null,
+        force: true,
+        spinCount: nSpin,
+      });
+      const selected = (data.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
+      const oneShot = buildOneShotFromSelected(selected);
+      setPendingLanding({ selected, oneShot, resultId: data.result?.id || selected[selected.length - 1]?.id || null, persist: true });
+      const firstTarget = resolveWheelSpinTarget(wheelMenuSlices, selected[0] ?? null, 0);
+      setDemoSpin({
+        startedAt: Date.now(),
+        resultId: firstTarget.sliceId || selected[0]?.id || null,
+      });
+      setSpinStep(0);
+      setStagedSelected([]);
+      setHighlightId(null);
+      confetti({ particleCount: 70, spread: 65, origin: { y: 0.25 } });
+      setManualSoldSet(new Set());
+      setOneShotSold(false);
+      setShowConfirmModal(false);
+      void loadRemote();
+    } catch (e) {
+      const code = e instanceof Error ? e.message : "";
+      if (code === "spin_blocked") {
+        setToast("이전 회전 상태가 남아 있습니다. 「다시 돌리기」 또는 「회전판 초기화」 후 시도하세요.");
+        return;
+      }
+      if (code === "not_enough_active_sigs") {
+        setToast(memberFilterId ? "선택 멤버의 활성 시그가 없습니다." : "활성 시그가 없습니다.");
+        return;
+      }
+      if (code === "not_enough_distinct_sigs") {
+        setToast(
+          `서로 다른 시그가 부족합니다. 당첨 시그 수를 ${distinctAvailable} 이하로 줄이거나 활성 시그를 추가하세요.`
+        );
+        return;
+      }
+      const shuffled = [...PREVIEW_FILLER_POOL].sort(() => Math.random() - 0.5);
+      const selected = shuffled.slice(0, Math.max(1, Math.min(MAX_SELECTED_SIGS, shuffled.length)));
+      const resultId = selected[selected.length - 1]?.id || null;
+      setPendingLanding({
+        selected,
+        oneShot: buildOneShotFromSelected(selected),
+        resultId,
+        persist: false,
+      });
+      const demoTarget = resolveWheelSpinTarget(wheelMenuSlices, selected[0] ?? null, 0);
+      setDemoSpin({
+        startedAt: Date.now(),
+        resultId: demoTarget.sliceId || selected[0]?.id || resultId,
+      });
+      setSpinStep(0);
+      setStagedSelected([]);
+      setHighlightId(null);
+      setManualSoldSet(new Set());
+      setOneShotSold(false);
+      setShowConfirmModal(false);
+      setToast("서버 응답 실패로 데모 회차로 실행했습니다.");
+    } finally {
+      setLoadingSpin(false);
+    }
+  }, [
+    authReady,
+    loadingSpin,
+    memberFilterId,
+    cinematicSpinCount,
+    machine.phase,
+    machine.isFinishLoading,
+    machine.selectedSigs?.length,
+    activeNormalPool.length,
+    showFinalShowcase,
+    spin,
+    resetRouletteOnServer,
+    resetToIdle,
+    cancelConfirm,
+    loadRemote,
+    wheelMenuSlices,
+  ]);
 
   const overlayObsUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
