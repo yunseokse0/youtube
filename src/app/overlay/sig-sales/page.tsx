@@ -27,6 +27,7 @@ import {
   resolveSigSalesMenuCount,
   canonicalSigIdFromWheelSliceId,
   hydrateSigItemFromInventory,
+  sigMatchesMemberFilter,
   resolveWheelSpinTarget,
   sanitizeWheelDisplayName,
   wheelSliceMatchesServerWinner,
@@ -474,7 +475,7 @@ export default function SigSalesOverlayPage() {
         !excluded.has(x.id) &&
         !sessionExcluded.has(x.id) &&
         x.soldCount < x.maxCount &&
-        (!memberFilterId || (x.memberId || "") === memberFilterId)
+        sigMatchesMemberFilter(x, memberFilterId)
     );
   }, [state, memberFilterId]);
   const effectiveMenuCount = useMemo(

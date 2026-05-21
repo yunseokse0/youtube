@@ -44,6 +44,7 @@ import {
   canonicalSigIdFromWheelSliceId,
   hydrateSigItemFromInventory,
   resolveWheelSpinTarget,
+  sigMatchesMemberFilter,
   wheelSliceMatchesServerWinner,
 } from "@/lib/sig-roulette";
 import { useSigSalesState } from "@/hooks/useSigSalesState";
@@ -277,7 +278,7 @@ export default function AdminSigSalesPage() {
         x.id !== ONE_SHOT_SIG_ID &&
         !excluded.has(x.id) &&
         x.soldCount < x.maxCount &&
-        (!memberFilterId || (x.memberId || "") === memberFilterId)
+        sigMatchesMemberFilter(x, memberFilterId)
     );
   }, [state, memberFilterId]);
   const menuCountSetting = useMemo(

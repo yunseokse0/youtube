@@ -11,6 +11,7 @@ import {
   pickWheelSliceIdForWin,
   resolveSigSalesMenuCount,
   resolveWheelSpinTarget,
+  sigMatchesMemberFilter,
   wheelSliceMatchesServerWinner,
 } from "./sig-roulette";
 
@@ -168,5 +169,22 @@ describe("resolveSigSalesMenuCount", () => {
 
   it("관리자 설정이 최소보다 크면 그대로 쓴다", () => {
     expect(resolveSigSalesMenuCount(20, 5)).toBe(20);
+  });
+});
+
+describe("sigMatchesMemberFilter", () => {
+  const memberA = { memberId: "m-a" };
+  const common = { memberId: "" };
+
+  it("필터 없으면 모두 포함", () => {
+    expect(sigMatchesMemberFilter(memberA, "")).toBe(true);
+    expect(sigMatchesMemberFilter(memberA, null)).toBe(true);
+    expect(sigMatchesMemberFilter(common, undefined)).toBe(true);
+  });
+
+  it("멤버 선택 시 해당 멤버 + 공통 시그만 포함", () => {
+    expect(sigMatchesMemberFilter(memberA, "m-a")).toBe(true);
+    expect(sigMatchesMemberFilter(common, "m-a")).toBe(true);
+    expect(sigMatchesMemberFilter({ memberId: "m-b" }, "m-a")).toBe(false);
   });
 });

@@ -4,6 +4,21 @@ import { getServerMemoryRouletteLogs, setServerMemoryRouletteLogs } from "@/lib/
 
 export const ONE_SHOT_SIG_ID = "sig_one_shot";
 
+/**
+ * 멤버 필터 매칭. `memberFilterId`가 있으면 해당 멤버 전용 시그 + 공통(`memberId` 빈 값) 시그를 포함한다.
+ * 필터가 비어 있으면 멤버 구분 없이 전체(호출 측에서 활성·제외 등 추가 필터).
+ */
+export function sigMatchesMemberFilter(
+  item: Pick<SigItem, "memberId">,
+  memberFilterId?: string | null
+): boolean {
+  const mid = String(memberFilterId ?? "").trim();
+  if (!mid) return true;
+  const sigMid = String(item.memberId ?? "").trim();
+  if (!sigMid) return true;
+  return sigMid === mid;
+}
+
 /** 회전판 메뉴 슬라이스 id(`실제SigId__wslot_n`) → 재고 `SigItem.id` */
 export function canonicalSigIdFromWheelSliceId(sliceId: string): string {
   const raw = String(sliceId || "").trim();
@@ -99,7 +114,7 @@ export function buildSigSalesWheelDisplayPool(opts: BuildSigSalesWheelDisplayPoo
       !excluded.has(x.id) &&
       !sessionExcluded.has(x.id) &&
       x.soldCount < x.maxCount &&
-      (!memberFilterId || (x.memberId || "") === memberFilterId)
+      sigMatchesMemberFilter(x, memberFilterId)
   );
   const targetCount = Math.max(20, clampSigSalesMenuCount(menuCount));
   const unique = new Map<string, SigItem>();

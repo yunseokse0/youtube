@@ -8,6 +8,7 @@ import type { SigItem } from "@/types";
 import {
   normalizeSigPickNameKey,
   pickDistinctSigsByIdAndName,
+  sigMatchesMemberFilter,
 } from "@/lib/sig-roulette";
 import { getRouletteUserId, saveAppStateForRoulette } from "../edge-state-store";
 import { setRouletteLock } from "../roulette-lock";
@@ -143,7 +144,7 @@ export async function POST(req: Request) {
           (x) =>
             x.isActive &&
             x.soldCount < x.maxCount &&
-            (!memberIdFilter || (x.memberId || "") === memberIdFilter)
+            sigMatchesMemberFilter(x, memberIdFilter)
         )
       );
       // 라이브 운영 중 필터/활성 상태 때문에 후보가 5개 미만이어도

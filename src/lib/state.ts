@@ -24,7 +24,7 @@ import type {
   SigRollingSettings,
   DonorsAmountFormat,
 } from "@/types";
-import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
+import { ONE_SHOT_SIG_ID, sigMatchesMemberFilter } from "@/lib/sig-roulette";
 import { sanitizeOverlayEmbedMediaUrl } from "@/lib/gif-url";
 import {
   DEFAULT_SIG_INVENTORY,
@@ -134,6 +134,7 @@ function normalizeSigRollingMeta(input: unknown): Record<string, SigRollingMetaE
 /**
  * 시그 판매 관리(회전판 후보)와 동일: 판매 활성·판매 제외·멤버 필터.
  * `memberFilterId`가 비어 있으면 멤버 구분 없이 전체 활성 시그.
+ * 멤버가 지정되면 해당 멤버 전용 + 공통(`memberId` 빈 값) 시그.
  */
 export function filterSigInventoryForSalesDisplay(
   state: Pick<AppState, "sigInventory" | "sigSalesExcludedIds"> | null | undefined,
@@ -141,13 +142,12 @@ export function filterSigInventoryForSalesDisplay(
 ): SigItem[] {
   if (!state) return [];
   const excluded = new Set((state.sigSalesExcludedIds || []).map((x) => String(x)));
-  const mid = String(memberFilterId ?? "").trim();
   return (state.sigInventory || []).filter(
     (x) =>
       x.id !== ONE_SHOT_SIG_ID &&
       Boolean(x.isActive) &&
       !excluded.has(x.id) &&
-      (!mid || (x.memberId || "") === mid)
+      sigMatchesMemberFilter(x, memberFilterId)
   );
 }
 

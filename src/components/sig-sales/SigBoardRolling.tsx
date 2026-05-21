@@ -6,7 +6,7 @@ import Image from "next/image";
 import type { SigItem } from "@/types";
 import { resolveSigRollingImageUrl, resolveSigRollingStampUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
-import { canonicalSigIdFromWheelSliceId, ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
+import { canonicalSigIdFromWheelSliceId, ONE_SHOT_SIG_ID, sigMatchesMemberFilter } from "@/lib/sig-roulette";
 
 type SigBoardRollingProps = {
   inventory: SigItem[];
@@ -40,13 +40,12 @@ export default function SigBoardRolling({
   /** 시그 판매 관리 `activeNormalPool`과 동일: 판매 활성·제외·멤버 (구 `isRolling` 단독 필터 제거) */
   const rollingItems = useMemo(() => {
     const excluded = new Set(sigSalesExcludedIds.map(String));
-    const mid = String(memberFilterId || "").trim();
     return inventory.filter(
       (x) =>
         x.id !== ONE_SHOT_SIG_ID &&
         Boolean(x.isActive) &&
         !excluded.has(x.id) &&
-        (!mid || (x.memberId || "") === mid)
+        sigMatchesMemberFilter(x, memberFilterId)
     );
   }, [inventory, sigSalesExcludedIds, memberFilterId]);
 
