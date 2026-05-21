@@ -5,6 +5,13 @@ import { sendSSEUpdate as postSseUpdate } from './sse-post';
 
 const logger = createModuleLogger('SSE');
 
+/** OBS Browser Source는 `visibilityState=hidden` 인 경우가 많아, 오버레이는 숨김 탭에서도 SSE를 연다 */
+function shouldConnectSseDespiteHiddenTab(): boolean {
+  if (typeof window === "undefined") return false;
+  const p = window.location.pathname || "";
+  return p.startsWith("/overlay");
+}
+
 export function useSSEConnection(onMessage: (data: any) => void) {
   const [connected, setConnected] = useState(false);
   /** 콜백이 매 렌더마다 바뀌어도 effect를 다시 돌리지 않음 → EventSource 무한 끊김·재연결 폭주 방지 */
@@ -28,12 +35,11 @@ export function useSSEConnection(onMessage: (data: any) => void) {
       const delay = retryDelayRef.current;
       reconnectTimerRef.current = setTimeout(() => {
         reconnectTimerRef.current = null;
-        if (document.visibilityState === 'hidden') {
-          // 대기: 탭 비활성화 시 과도한 재연결 방지
-          scheduleReconnect();
-          return;
-        }
-        connect();
+      if (document.visibilityState === "hidden" && !shouldConnectSseDespiteHiddenTab()) {
+        scheduleReconnect();
+        return;
+      }
+      connect();
       }, delay);
     };
 
@@ -42,13 +48,12 @@ export function useSSEConnection(onMessage: (data: any) => void) {
       eventSourceRef.current?.close();
       eventSourceRef.current = null;
 
-      // 가시성 체크: 숨겨진 상태면 잠시 대기
-      if (document.visibilityState === 'hidden') {
+      if (document.visibilityState === "hidden" && !shouldConnectSseDespiteHiddenTab()) {
         scheduleReconnect();
         return;
       }
 
-      const eventSource = new EventSource('/api/events');
+      const eventSource = new EventSource("/api/events");
 
       eventSource.onopen = () => {
         setConnected(true);

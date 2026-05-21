@@ -3,6 +3,7 @@
  * - 관리자 「현재 설정 저장」·회전판 spin/finish 등 → SSE `state_updated`(updatedAt만) → 디바운스 후 GET 1회
  * - `?since=` + 304: 서버 상태가 이미 최신이면 본문 생략
  * - SSE 끊김 시에만 `readOverlaySseFallbackPollMs()` (기본 90s, env로 조절)
+ * - 시그 판매 OBS(`/overlay/sig-sales`): `readSigSalesOverlayPollMs()` 기본 2s (OBS CEF·SSE 불안정 대비)
  * - 주기 폴링 URL 쿼리 `overlayPollMs` 는 사용하지 않음(로드 시 제거·무시). 디버그만 env `NEXT_PUBLIC_OVERLAY_DEBUG_POLL_MS`
  */
 
@@ -77,6 +78,19 @@ export function readOverlayPollIntervalMs(): number {
   return Math.max(700, Math.min(120_000, n));
 }
 
+/** OBS 시그 판매 회전판 — CEF에서 SSE가 끊겨도 SPINNING을 잡기 위한 기본 주기(ms). `NEXT_PUBLIC_SIG_SALES_OVERLAY_POLL_MS=0` 으로 끔 */
+export const DEFAULT_SIG_SALES_OVERLAY_POLL_MS = 2000;
+
+export function readSigSalesOverlayPollMs(): number {
+  if (typeof window === "undefined") return DEFAULT_SIG_SALES_OVERLAY_POLL_MS;
+  const env = String(process.env.NEXT_PUBLIC_SIG_SALES_OVERLAY_POLL_MS ?? "").trim();
+  if (env === "0") return 0;
+  if (!env) return DEFAULT_SIG_SALES_OVERLAY_POLL_MS;
+  const n = parseInt(env.replace(/[^\d]/g, ""), 10);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_SIG_SALES_OVERLAY_POLL_MS;
+  return Math.max(800, Math.min(30_000, n));
+}
+
 /** SSE 연결 끊김 시에만 쓰는 느린 폴백(기본 90s). `NEXT_PUBLIC_OVERLAY_SSE_FALLBACK_MS=0` 으로 끔 */
 export function readOverlaySseFallbackPollMs(): number {
   if (typeof window === "undefined") return 0;
@@ -94,6 +108,17 @@ export function shouldSyncOverlayFromStateUpdatedEvent(
   const ts = Number(eventUpdatedAt);
   if (!Number.isFinite(ts) || ts <= 0) return true;
   return ts > lastSyncedUpdatedAt;
+}
+
+/** 회전판 SSE에 실린 sessionId가 바뀌면 updatedAt 경합과 무관하게 OBS가 한 번 더 당겨야 함 */
+export function shouldSyncSigSalesFromRouletteSseHint(
+  event: { roulettePhase?: unknown; rouletteSessionId?: unknown },
+  lastSeenRouletteSessionId: string
+): boolean {
+  if (String(event.roulettePhase || "") !== "SPINNING") return false;
+  const sid = String(event.rouletteSessionId || "").trim();
+  if (!sid) return false;
+  return sid !== lastSeenRouletteSessionId;
 }
 
 /**

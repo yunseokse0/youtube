@@ -53,17 +53,28 @@ export type StateUpdatedSsePayload = {
   type: "state_updated";
   updatedAt: number;
   donorRankingsUpdatedAt?: number;
+  /** 시그 판매 OBS: 회전 시작 직후 동기화 힌트(sessionId가 바뀌면 GET 강제) */
+  roulettePhase?: string;
+  rouletteSessionId?: string;
 };
 
 /** 저장·회전판 등 상태 변경 후 OBS 알림(전체 JSON은 보내지 않음) */
 export async function broadcastStateUpdatedAt(
   updatedAt: number,
-  extra?: { donorRankingsUpdatedAt?: number }
+  extra?: {
+    donorRankingsUpdatedAt?: number;
+    roulettePhase?: string;
+    rouletteSessionId?: string;
+  }
 ): Promise<void> {
   const ts = Number(updatedAt);
   if (!Number.isFinite(ts) || ts <= 0) return;
   const payload: StateUpdatedSsePayload = { type: "state_updated", updatedAt: ts };
   const dr = Number(extra?.donorRankingsUpdatedAt);
   if (Number.isFinite(dr) && dr > 0) payload.donorRankingsUpdatedAt = dr;
+  const phase = String(extra?.roulettePhase || "").trim();
+  const sid = String(extra?.rouletteSessionId || "").trim();
+  if (phase) payload.roulettePhase = phase;
+  if (sid) payload.rouletteSessionId = sid;
   await sendSSEUpdate(payload);
 }

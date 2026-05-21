@@ -46,7 +46,11 @@ export async function publishRouletteStateAfterSave(
   userId: string,
   patch: { rouletteState: AppState["rouletteState"]; updatedAt: number }
 ): Promise<void> {
-  void broadcastStateUpdatedAt(patch.updatedAt);
+  const rs = patch.rouletteState;
+  void broadcastStateUpdatedAt(patch.updatedAt, {
+    roulettePhase: rs?.phase,
+    rouletteSessionId: rs?.sessionId,
+  });
   if (isRouletteSharedRedisConfigured()) return;
   try {
     const url = new URL(req.url);

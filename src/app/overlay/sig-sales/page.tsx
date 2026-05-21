@@ -43,7 +43,9 @@ import {
   createStateUpdatedScheduler,
   readOverlayPollIntervalMs,
   readOverlaySseFallbackPollMs,
+  readSigSalesOverlayPollMs,
   shouldSyncOverlayFromStateUpdatedEvent,
+  shouldSyncSigSalesFromRouletteSseHint,
 } from "@/lib/overlay-pull-policy";
 
 /**
@@ -371,6 +373,7 @@ export default function SigSalesOverlayPage() {
   const overlayReloadSeenRef = useRef<number | null>(null);
 
   const lastSyncedUpdatedAtRef = useRef(0);
+  const lastRouletteSessionSeenRef = useRef("");
   const loadRemote = useCallback(async (opts?: { forceFull?: boolean }) => {
     const remote = await loadStateFromApi(userId, {
       ifUpdatedSince: opts?.forceFull ? 0 : lastSyncedUpdatedAtRef.current,
@@ -380,6 +383,8 @@ export default function SigSalesOverlayPage() {
     if (!remote) return;
     const ts = remote.updatedAt || 0;
     if (ts > 0) lastSyncedUpdatedAtRef.current = Math.max(lastSyncedUpdatedAtRef.current, ts);
+    const sid = String(remote.rouletteState?.sessionId || "").trim();
+    if (sid) lastRouletteSessionSeenRef.current = sid;
     setState(remote);
   }, [userId]);
 
@@ -387,9 +392,26 @@ export default function SigSalesOverlayPage() {
   loadRemoteRef.current = loadRemote;
   const scheduleSseLoadRef = useRef<(() => void) | null>(null);
   const { connected: sseConnected } = useSSEConnection((d: unknown) => {
-    const o = d as { type?: string; updatedAt?: number };
+    const o = d as {
+      type?: string;
+      updatedAt?: number;
+      roulettePhase?: string;
+      rouletteSessionId?: string;
+    };
     if (o?.type !== "state_updated") return;
-    if (!shouldSyncOverlayFromStateUpdatedEvent(o.updatedAt, lastSyncedUpdatedAtRef.current)) return;
+    const rouletteHint = shouldSyncSigSalesFromRouletteSseHint(
+      o,
+      lastRouletteSessionSeenRef.current,
+    );
+    if (
+      !rouletteHint &&
+      !shouldSyncOverlayFromStateUpdatedEvent(o.updatedAt, lastSyncedUpdatedAtRef.current)
+    ) {
+      return;
+    }
+    if (rouletteHint && o.rouletteSessionId) {
+      lastRouletteSessionSeenRef.current = String(o.rouletteSessionId).trim();
+    }
     scheduleSseLoadRef.current?.();
   });
 
@@ -416,9 +438,16 @@ export default function SigSalesOverlayPage() {
       void loadRemote({ forceFull: true });
     }
     const pollMs = readOverlayPollIntervalMs();
+    const sigSalesPollMs = pollMs > 0 ? 0 : readSigSalesOverlayPollMs();
     let pollId: number | undefined;
     if (pollMs > 0) pollId = window.setInterval(() => void loadRemote(), pollMs);
-    const sseFallbackMs = pollMs > 0 ? 0 : readOverlaySseFallbackPollMs();
+    let sigSalesPollId: number | undefined;
+    if (sigSalesPollMs > 0) {
+      sigSalesPollId = window.setInterval(() => {
+        void loadRemoteRef.current();
+      }, sigSalesPollMs);
+    }
+    const sseFallbackMs = pollMs > 0 || sigSalesPollMs > 0 ? 0 : readOverlaySseFallbackPollMs();
     let sseFallbackId: number | undefined;
     if (sseFallbackMs > 0 && !sseConnected) {
       sseFallbackId = window.setInterval(() => void loadRemote(), sseFallbackMs);
@@ -453,6 +482,7 @@ export default function SigSalesOverlayPage() {
       cancel();
       scheduleSseLoadRef.current = null;
       if (pollId) window.clearInterval(pollId);
+      if (sigSalesPollId) window.clearInterval(sigSalesPollId);
       if (sseFallbackId) window.clearInterval(sseFallbackId);
       if (storageDebounce) clearTimeout(storageDebounce);
       window.removeEventListener("storage", onStorage);
