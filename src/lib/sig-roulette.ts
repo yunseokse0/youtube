@@ -194,6 +194,20 @@ export function resolveWheelSpinTarget(
   return { items, sliceId, expectedCanon };
 }
 
+/**
+ * 휠 `RouletteWheel` `resultId` prop.
+ * `machine.result` 는 cinematic5 다중 당첨 시 **마지막** 시그 id → 1·2회차에 쓰면 휠·카드 불일치.
+ */
+export function pickWheelAnimationResultId(
+  sliceId: string | null,
+  roundWinner: SigItem | null,
+  demoResultId?: string | null
+): string | null {
+  if (sliceId) return sliceId;
+  if (roundWinner?.id) return roundWinner.id;
+  return demoResultId ?? null;
+}
+
 /** 착지 slice id가 이번 회차 서버 당첨과 같은 시그인지 */
 export function wheelSliceMatchesServerWinner(
   landedSliceId: string | null,

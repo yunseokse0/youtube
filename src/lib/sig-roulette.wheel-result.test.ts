@@ -8,6 +8,7 @@ import {
   sanitizeWheelDisplayName,
   findSliceIndexForResult,
   pickDistinctSigsByIdAndName,
+  pickWheelAnimationResultId,
   pickWheelSliceIdForWin,
   rememberUsedWheelSliceId,
   resolveSigSalesMenuCount,
@@ -71,6 +72,20 @@ describe("canonicalSigIdFromWheelSliceId", () => {
 
   it("접미사가 없으면 그대로 둔다", () => {
     expect(canonicalSigIdFromWheelSliceId("plain")).toBe("plain");
+  });
+});
+
+describe("pickWheelAnimationResultId", () => {
+  it("다중 당첨 시 machine.result(마지막 id) 폴백을 쓰지 않는다", () => {
+    const last = item("sig_swim");
+    const first = item("sig_dance");
+    last.name = "SWIM";
+    first.name = "복고댄스";
+    expect(pickWheelAnimationResultId(null, first, last.id)).toBe("sig_dance");
+    expect(pickWheelAnimationResultId(null, null, last.id)).toBe("sig_swim");
+    expect(pickWheelAnimationResultId("sig_dance__wslot_2", first, last.id)).toBe(
+      "sig_dance__wslot_2"
+    );
   });
 });
 

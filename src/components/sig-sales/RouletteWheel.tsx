@@ -369,6 +369,9 @@ export default function RouletteWheel({
           ease: "linear",
         });
         if (cancelled) return;
+        /** easing 오차로 인접 칸(SWIM)이 포인터에 보이는 것 방지 — 당첨 칸 중심으로 각도 고정 */
+        rotate.set(target);
+        setCurrentAngle(((target % 360) + 360) % 360);
         onTransitionEndRef.current?.();
 
         soundsRef.current?.tick.stop();

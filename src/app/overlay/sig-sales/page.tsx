@@ -32,6 +32,7 @@ import {
   canonicalSigIdFromWheelSliceId,
   hydrateSigItemFromInventory,
   sigMatchesMemberFilter,
+  pickWheelAnimationResultId,
   rememberUsedWheelSliceId,
   resolveWheelSpinTarget,
   sanitizeWheelDisplayName,
@@ -109,7 +110,7 @@ function bootstrapOverlaySpinPlayback(
 } {
   const firstTarget = resolveWheelSpinTarget(wheelSlices, selected[0] ?? null, 0, usedSliceIds);
   const spinStartedAt = resolveOverlayWheelStartedAt(startedAt, sessionId);
-  const rid = resultId || selected[selected.length - 1]?.id || null;
+  const rid = firstTarget.sliceId || selected[0]?.id || null;
   return {
     pendingLanding: {
       selected,
@@ -119,7 +120,7 @@ function bootstrapOverlaySpinPlayback(
     },
     demoSpin: {
       startedAt: spinStartedAt,
-      resultId: firstTarget.sliceId || selected[0]?.id || rid,
+      resultId: rid,
     },
   };
 }
@@ -686,6 +687,15 @@ export default function SigSalesOverlayPage() {
   );
 
   const wheelResultSliceId = wheelSpinTarget.sliceId;
+  const currentRoundWinner =
+    spinQueueSelected.length > 0
+      ? spinQueueSelected[Math.min(sequentialRoundIndex, spinQueueSelected.length - 1)] ?? null
+      : null;
+  const wheelAnimationResultId = pickWheelAnimationResultId(
+    wheelResultSliceId,
+    currentRoundWinner,
+    demoSpin?.resultId ?? null
+  );
   /** 회전 중·착지 전에는 비우고, 착지 후에는 순차 공개용 전체 목록 */
   const fullSelectedSigs = useMemo(() => {
     const startedAtNum = Number(machine.startedAt || 0);
@@ -1426,7 +1436,7 @@ export default function SigSalesOverlayPage() {
                   Boolean(demoSpin) ||
                   hasServerSpinToPlay
                 }
-                resultId={wheelResultSliceId || demoSpin?.resultId || machine.resultId}
+                resultId={wheelAnimationResultId}
                 startedAt={wheelAnimationStartedAt || demoSpin?.startedAt || 0}
                 scalePct={wheelScalePct}
                 volume={0.7}
@@ -1553,9 +1563,9 @@ export default function SigSalesOverlayPage() {
                   completedSpinKeyRef.current = machineSpinKey;
                   const finalResultId =
                     serverWinner?.id ||
-                    wheelResultSliceId ||
+                    wheelAnimationResultId ||
                     pendingLanding?.resultId ||
-                    machine.resultId ||
+                    finalQueue[Math.min(sequentialRoundIndex, lastIdx)]?.id ||
                     finalQueue[finalQueue.length - 1]?.id ||
                     null;
                   landed(finalQueue, oneShot, finalResultId);

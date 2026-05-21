@@ -43,6 +43,7 @@ import {
   resolveSigSalesMenuCount,
   canonicalSigIdFromWheelSliceId,
   hydrateSigItemFromInventory,
+  pickWheelAnimationResultId,
   rememberUsedWheelSliceId,
   resolveWheelSpinTarget,
   sigMatchesMemberFilter,
@@ -367,6 +368,12 @@ export default function AdminSigSalesPage() {
   }, [wheelSlicesForSpin, spinQueueSelected, spinStep]);
   const wheelItemsWithResult = wheelSpinTarget.items;
   const wheelResultSliceId = wheelSpinTarget.sliceId;
+  const currentRoundWinner = spinQueueSelected[spinStep] ?? null;
+  const wheelAnimationResultId = pickWheelAnimationResultId(
+    wheelResultSliceId,
+    currentRoundWinner,
+    demoSpin?.resultId ?? null
+  );
   const displaySelectedSigs = useMemo(() => {
     if (stagedSelected.length > 0) return stagedSelected.slice(0, MAX_SELECTED_SIGS);
     return machine.selectedSigs.slice(0, MAX_SELECTED_SIGS);
@@ -1100,7 +1107,7 @@ export default function AdminSigSalesPage() {
           {!showFinalShowcase ? <RouletteWheel
             items={wheelItemsWithResult}
             isRolling={Boolean(demoSpin) || machine.isRolling || machine.phase === "SPINNING"}
-            resultId={wheelResultSliceId || demoSpin?.resultId || machine.resultId}
+            resultId={wheelAnimationResultId}
             startedAt={demoSpin?.startedAt || machine.startedAt}
             spinReplayNonce={spinStep}
             volume={volume}
