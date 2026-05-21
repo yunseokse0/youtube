@@ -4,7 +4,8 @@ import type { CSSProperties } from "react";
  * 방송 결과 카드 셸 폭 상한(px). 원본 아트 비율은 202×300이나 OBS 세로 합성에서는 더 작게 두는 편이 안전함.
  * 추가 축소는 `/overlay/sig-sales` 의 `sigResultScalePct`(zoom)로 조절.
  */
-export const SIG_OVERLAY_CARD_MAX_PX = 168;
+/** 개별·한방 결과 카드 공통 폭(SelectedSigs compact `max-w-[188px]` 와 동일) */
+export const SIG_OVERLAY_CARD_MAX_PX = 188;
 
 /** 시그 롤링 오버레이 등: 원본 해상도와 무관하게 표시할 고정 프레임(px) — 첨부 아트와 동일 */
 export const SIG_ROLLING_MEDIA_WIDTH_PX = 202;
@@ -27,6 +28,10 @@ export const SIG_OVERLAY_CARD_PRICE_CLASS =
 /** 방송 오버레이 카드 셸(개별 시그) — 한방 카드도 동일 패딩·모서리 */
 export const SIG_OVERLAY_CARD_SHELL_CLASS =
   "shrink-0 overflow-hidden rounded-xl border border-white/25 bg-neutral-900/85 px-1.5 py-2 shadow-[0_0_28px_rgba(0,0,0,0.55)]";
+
+/** 한방 시그 — 개별 카드와 동일 px·비율, 금색 테두리만 다름 */
+export const SIG_OVERLAY_CARD_ONESHOT_SHELL_CLASS =
+  "shrink-0 w-full overflow-hidden rounded-xl border border-yellow-300/70 bg-[linear-gradient(135deg,rgba(245,158,11,0.25),rgba(234,179,8,0.1))] px-1.5 py-2 shadow-[0_0_30px_rgba(250,204,21,0.35)]";
 
 /**
  * flex 줄에서 카드가 줄어들지 않도록 고정.

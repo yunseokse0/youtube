@@ -1228,6 +1228,8 @@ export default function AdminSigSalesPage() {
                 manualSoldSet={manualSoldSet}
                 disabled={controlsDisabled}
                 highlightId={highlightId}
+                compact
+                matchOneShotCardSize
                 compactGridJustify="start"
                 trailingSlot={displayOneShot && oneShotReveal ? (
                   <OneShotSigCard
@@ -1240,6 +1242,7 @@ export default function AdminSigSalesPage() {
                     selectedSigCount={displaySelectedSigsForUi.length}
                     disabled={controlsDisabled}
                     compact
+                    matchSigCardSize
                     onToggleSold={() => setOneShotSold((v) => !v)}
                   />
                 ) : null}

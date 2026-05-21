@@ -86,7 +86,7 @@ export default function ResultOverlay({
 
   const oneShotTrailing =
     oneShot && showOneShotReveal ? (
-      <div className="relative shrink-0">
+      <div className="relative w-full min-w-0 shrink-0">
         <OneShotSigCard
           name={oneShot.name}
           price={oneShot.price}
@@ -97,6 +97,7 @@ export default function ResultOverlay({
           onToggleSold={() => {}}
           showToggle={false}
           compact
+          matchSigCardSize
           gifDelayMultiplier={gifDelayMultiplier}
           onMediaReady={() => setImageLoaded(true)}
         />

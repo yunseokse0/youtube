@@ -249,10 +249,9 @@ export default function SelectedSigs({
       {sigCards}
       {trailingSlot ? (
         <div
-          style={broadcastMatch ? sigOverlayBroadcastCardShellStyle() : undefined}
           className={
             broadcastMatch || compact
-              ? "flex min-h-0 shrink-0 self-start"
+              ? "flex min-h-0 w-full min-w-0 shrink-0 self-start"
               : "min-h-[280px]"
           }
         >

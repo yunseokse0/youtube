@@ -11,6 +11,7 @@ import {
   SIG_OVERLAY_CARD_MAX_PX,
   SIG_OVERLAY_CARD_NAME_CLASS,
   SIG_OVERLAY_CARD_PRICE_CLASS,
+  SIG_OVERLAY_CARD_ONESHOT_SHELL_CLASS,
   sigOverlayBroadcastCardShellStyle,
 } from "@/components/sig-sales/sig-overlay-card-size";
 
@@ -30,6 +31,8 @@ type OneShotSigCardProps = {
   gifDelayMultiplier?: number;
   onMediaReady?: () => void;
   sigImageUserId?: string;
+  /** 방송·관리자 결과 줄: 개별 시그 카드와 동일 폭·미디어 비율 */
+  matchSigCardSize?: boolean;
 };
 
 export default function OneShotSigCard({
@@ -46,9 +49,12 @@ export default function OneShotSigCard({
   gifDelayMultiplier = 1,
   onMediaReady,
   sigImageUserId,
+  matchSigCardSize = false,
 }: OneShotSigCardProps) {
-  /** 방송 오버레이(compact·토글 없음): 개별 당첨 카드와 동일 셸·2줄 푸터만 */
-  const broadcastOverlay = Boolean(compact && !showToggle);
+  /** 개별 당첨 카드와 동일 폭·미디어(관리자 토글 있어도 matchSigCardSize 시 적용) */
+  const matchBroadcastCard = Boolean(compact && (matchSigCardSize || !showToggle));
+  /** OBS 등 토글 없음: 이름+금액 2줄만(합산 문구는 title) */
+  const broadcastOverlay = Boolean(matchBroadcastCard && !showToggle);
   const sumLine =
     typeof selectedSigCount === "number" && selectedSigCount > 0
       ? `선정된 ${selectedSigCount}개 시그 합산 금액`
@@ -62,14 +68,14 @@ export default function OneShotSigCard({
       }
       animate={{ opacity: 1, scale: 1, y: 0 }}
       transition={{ duration: compact ? 0.32 : 0.45, ease: "easeOut" }}
-      style={compact ? sigOverlayBroadcastCardShellStyle() : undefined}
-      className={`relative border border-yellow-300/70 bg-[linear-gradient(135deg,rgba(245,158,11,0.25),rgba(234,179,8,0.1))] shadow-[0_0_30px_rgba(250,204,21,0.35)] ${
-        broadcastOverlay
-          ? "w-full shrink-0 self-start overflow-hidden rounded-xl px-1.5 py-2"
+      style={matchBroadcastCard ? sigOverlayBroadcastCardShellStyle() : undefined}
+      className={
+        matchBroadcastCard
+          ? SIG_OVERLAY_CARD_ONESHOT_SHELL_CLASS
           : compact
-            ? "w-full shrink-0 self-start overflow-visible rounded-xl px-1.5 py-2"
-            : "overflow-hidden rounded-2xl p-4"
-      }`}
+            ? "relative w-full max-w-[188px] shrink-0 self-start overflow-visible rounded-xl border border-yellow-300/70 bg-[linear-gradient(135deg,rgba(245,158,11,0.25),rgba(234,179,8,0.1))] px-1.5 py-2 shadow-[0_0_30px_rgba(250,204,21,0.35)]"
+            : "relative overflow-hidden rounded-2xl border border-yellow-300/70 bg-[linear-gradient(135deg,rgba(245,158,11,0.25),rgba(234,179,8,0.1))] p-4 shadow-[0_0_30px_rgba(250,204,21,0.35)]"
+      }
     >
       {sold ? (
         <div className="pointer-events-none absolute inset-0 z-[1] rounded-[inherit] bg-white/93" aria-hidden />
@@ -82,7 +88,7 @@ export default function OneShotSigCard({
         className={`relative overflow-hidden rounded-lg border border-yellow-200/40 ${
           sold ? "bg-white" : "bg-gradient-to-b from-amber-950/55 via-neutral-950/75 to-black"
         } ${
-          compact ? SIG_OVERLAY_CARD_MEDIA_BOX_CLASS : "mb-2 h-40"
+          matchBroadcastCard ? SIG_OVERLAY_CARD_MEDIA_BOX_CLASS : compact ? SIG_OVERLAY_CARD_MEDIA_BOX_CLASS : "mb-2 h-40"
         }`}
       >
         <SigSaleMedia
@@ -91,7 +97,7 @@ export default function OneShotSigCard({
           sigImageUserId={sigImageUserId}
           alt={name}
           fill
-          sizes={compact ? `${SIG_OVERLAY_CARD_MAX_PX}px` : "160px"}
+          sizes={matchBroadcastCard || compact ? `${SIG_OVERLAY_CARD_MAX_PX}px` : "160px"}
           className={`relative z-[2] object-contain object-center ${
             compact
               ? sold
