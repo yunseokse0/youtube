@@ -698,9 +698,7 @@ export default function SigSalesOverlayPage() {
       /** OBS 새로고침·서버 LANDED 복원: hold 중인데 휠 연출이 idle이면 당첨 전부 표시(관리자와 동기) */
       const serverCatchUp =
         (overlayHoldResults || showResultPanel) &&
-        (machine.phase === "LANDED" ||
-          machine.phase === "CONFIRM_PENDING" ||
-          machine.phase === "CONFIRMED") &&
+        machine.phase === "LANDED" &&
         wheelPhase !== "spinning" &&
         wheelPhase !== "settling";
       /** revealedSigCount 가 순차 공개 타이머(sequentialCardEmergeMs 등) 전에 0이면 slice(0,0) 이 되어 당첨 2개·멀티 라운드에서 결과 그리드가 비어 보임 */
