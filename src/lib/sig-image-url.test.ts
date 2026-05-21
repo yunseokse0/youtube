@@ -130,6 +130,22 @@ describe("resolveSigImageUrl", () => {
     const url = resolveSigImageUrl("테스트", "/uploads/sigs/finalent/1234567890_abcd1234.gif");
     expect(url).toBe("/uploads/sigs/finalent/1234567890_abcd1234.gif");
   });
+
+  it("maps github raw disk filename to /uploads when SIG_SERVE_SIG_IMAGES_FROM_DISK", () => {
+    const prevDisk = process.env.SIG_SERVE_SIG_IMAGES_FROM_DISK;
+    process.env.SIG_SERVE_SIG_IMAGES_FROM_DISK = "true";
+    try {
+      const url = resolveSigImageUrl(
+        "홀리",
+        "https://raw.githubusercontent.com/yunseokse0/youtube/main/public/images/sigs/1730000000_abcd1234.gif",
+        "finalent"
+      );
+      expect(url).toBe("/uploads/sigs/finalent/1730000000_abcd1234.gif");
+    } finally {
+      if (prevDisk === undefined) delete process.env.SIG_SERVE_SIG_IMAGES_FROM_DISK;
+      else process.env.SIG_SERVE_SIG_IMAGES_FROM_DISK = prevDisk;
+    }
+  });
 });
 
 describe("toGithubRawSigAssetUrl", () => {

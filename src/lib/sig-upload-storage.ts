@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { readFile } from "fs/promises";
+import { readdir, readFile } from "fs/promises";
 import path from "path";
+import { isDiskUploadFlatFileName } from "@/lib/sig-image-mode";
 
 export function getSupabaseStorageConfig():
   | { url: string; serviceRoleKey: string; buckets: string[] }
@@ -78,4 +79,30 @@ export async function readSigUploadBuffer(relUnderSigs: string): Promise<Buffer 
   const disk = await readSigUploadFromPublicDisk(relUnderSigs);
   if (disk) return disk;
   return readSigUploadFromSupabase(relUnderSigs);
+}
+
+/**
+ * 인벤에 `/images/sigs/<timestamp>_<id>.ext` 만 저장된 레거시 — 실제 파일은 `uploads/sigs/<uid>/` 아래인 경우.
+ */
+export async function readSigUploadBufferByFileName(fileName: string): Promise<Buffer | null> {
+  const safe = path.basename(String(fileName || "").trim());
+  if (!isDiskUploadFlatFileName(safe)) return null;
+  for (const root of getSigUploadPublicRoots()) {
+    const base = path.resolve(root, "uploads", "sigs");
+    try {
+      const entries = await readdir(base, { withFileTypes: true });
+      for (const ent of entries) {
+        if (!ent.isDirectory()) continue;
+        const full = path.join(base, ent.name, safe);
+        try {
+          return await readFile(full);
+        } catch {
+          /* try next uid dir */
+        }
+      }
+    } catch {
+      /* try next public root */
+    }
+  }
+  return null;
 }

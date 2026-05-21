@@ -1,5 +1,6 @@
 import { mimeFromFileName, readLegacySigFromPublicDisk, safeSigLegacyRelativePath } from "@/lib/sig-legacy-image";
-import { isSigLegacyImageApiDisabled } from "@/lib/sig-image-mode";
+import { isDiskUploadFlatFileName, isSigLegacyImageApiDisabled, shouldServeSigImagesFromDisk } from "@/lib/sig-image-mode";
+import { readSigUploadBufferByFileName } from "@/lib/sig-upload-storage";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,10 @@ export async function GET(
   const fileName = rel.split("/").pop() || rel;
   const contentType = mimeFromFileName(fileName);
 
-  const buf: Buffer | null = await readLegacySigFromPublicDisk(rel);
+  let buf: Buffer | null = await readLegacySigFromPublicDisk(rel);
+  if (!buf && shouldServeSigImagesFromDisk() && isDiskUploadFlatFileName(fileName)) {
+    buf = await readSigUploadBufferByFileName(fileName);
+  }
 
   if (!buf) {
     return new Response("Not found", { status: 404 });

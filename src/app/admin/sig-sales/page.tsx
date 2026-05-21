@@ -961,14 +961,30 @@ export default function AdminSigSalesPage() {
               setStagedSelected(finalSelected);
               setSpinStep(0);
               setDemoSpin(null);
+              const snapSession = machine.sessionId;
+              const snapStarted = machine.startedAt;
+              const shouldPersist = pendingLanding.persist;
               setPendingLanding(null);
-              if (!pendingLanding.persist) return;
-              void persistRouletteState({
-                phase: "LANDED",
-                isRolling: false,
-                selectedSigs: finalSelected,
-                oneShotResult: oneShot,
-              });
+              if (!shouldPersist) return;
+              void (async () => {
+                if (!snapSession) return;
+                try {
+                  const res = await fetch(`/api/roulette/land?user=${encodeURIComponent(userId)}`, {
+                    method: "POST",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      sessionId: snapSession,
+                      startedAt: snapStarted,
+                      selectedSigs: finalSelected,
+                      oneShotResult: oneShot,
+                    }),
+                  });
+                  if (res.ok) void loadRemote();
+                } catch {
+                  /* land 실패 시에도 로컬 landed() UX는 유지 */
+                }
+              })();
             }}
           /> : null}
 

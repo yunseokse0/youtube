@@ -1298,6 +1298,8 @@ function maybeWarnMemoryStateBackend(res: Response): void {
 export type LoadStateFromApiOptions = {
   /** 클라이언트가 이미 가진 `updatedAt` — 서버가 같거나 오래되면 304(본문 없음) */
   ifUpdatedSince?: number;
+  /** true면 since 무시·캐시 버스터로 전체 본문 수신(OBS 새로고침·pageshow) */
+  forceFull?: boolean;
   /** OBS·오버레이: 서버가 축소 JSON 반환 (`overlay` | `overlay-donors` | `sig-sales`) */
   pick?: StateApiPick;
 };
@@ -1306,7 +1308,7 @@ export async function loadStateFromApi(
   userId?: string,
   options?: LoadStateFromApiOptions
 ): Promise<AppState | null> {
-  const dedupeKey = `${userId ?? "__cookie__"}:${options?.ifUpdatedSince ?? 0}:${options?.pick ?? "full"}`;
+  const dedupeKey = `${userId ?? "__cookie__"}:${options?.forceFull ? "full" : options?.ifUpdatedSince ?? 0}:${options?.pick ?? "full"}`;
   const existing = loadStateInflight.get(dedupeKey);
   if (existing) return existing;
   const created = doLoadStateFromApi(userId, options);
@@ -1322,7 +1324,7 @@ async function doLoadStateFromApi(
   options?: LoadStateFromApiOptions
 ): Promise<AppState | null> {
   try {
-    const since = Number(options?.ifUpdatedSince || 0);
+    const since = options?.forceFull ? 0 : Number(options?.ifUpdatedSince || 0);
     const q = new URLSearchParams();
     if (since > 0) q.set("since", String(Math.floor(since)));
     else q.set("_t", String(Date.now()));

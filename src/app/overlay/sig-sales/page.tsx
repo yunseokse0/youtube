@@ -332,9 +332,10 @@ export default function SigSalesOverlayPage() {
   const overlayReloadSeenRef = useRef<number | null>(null);
 
   const lastSyncedUpdatedAtRef = useRef(0);
-  const loadRemote = useCallback(async () => {
+  const loadRemote = useCallback(async (opts?: { forceFull?: boolean }) => {
     const remote = await loadStateFromApi(userId, {
-      ifUpdatedSince: lastSyncedUpdatedAtRef.current,
+      ifUpdatedSince: opts?.forceFull ? 0 : lastSyncedUpdatedAtRef.current,
+      forceFull: opts?.forceFull,
       pick: "sig-sales",
     });
     if (!remote) return;
@@ -372,7 +373,7 @@ export default function SigSalesOverlayPage() {
         void loadRemote();
       }
     } else {
-      void loadRemote();
+      void loadRemote({ forceFull: true });
     }
     const pollMs = readOverlayPollIntervalMs();
     let pollId: number | undefined;
@@ -403,6 +404,11 @@ export default function SigSalesOverlayPage() {
       }, 400);
     };
     window.addEventListener("storage", onStorage);
+    const onPageShow = (ev: PageTransitionEvent) => {
+      if (ev.persisted) lastSyncedUpdatedAtRef.current = 0;
+      void loadRemoteRef.current({ forceFull: true });
+    };
+    window.addEventListener("pageshow", onPageShow);
     return () => {
       cancel();
       scheduleSseLoadRef.current = null;
@@ -410,6 +416,7 @@ export default function SigSalesOverlayPage() {
       if (sseFallbackId) window.clearInterval(sseFallbackId);
       if (storageDebounce) clearTimeout(storageDebounce);
       window.removeEventListener("storage", onStorage);
+      window.removeEventListener("pageshow", onPageShow);
     };
   }, [loadRemote, userId, sseConnected]);
   useEffect(() => {
@@ -688,9 +695,18 @@ export default function SigSalesOverlayPage() {
       overlayHoldResults ||
       showResultPanel;
     if (progressive) {
+      /** OBS 새로고침·서버 LANDED 복원: hold 중인데 휠 연출이 idle이면 당첨 전부 표시(관리자와 동기) */
+      const serverCatchUp =
+        (overlayHoldResults || showResultPanel) &&
+        (machine.phase === "LANDED" ||
+          machine.phase === "CONFIRM_PENDING" ||
+          machine.phase === "CONFIRMED") &&
+        wheelPhase !== "spinning" &&
+        wheelPhase !== "settling";
       /** revealedSigCount 가 순차 공개 타이머(sequentialCardEmergeMs 등) 전에 0이면 slice(0,0) 이 되어 당첨 2개·멀티 라운드에서 결과 그리드가 비어 보임 */
-      const cap =
-        revealedSigCount === 0 && wheelPhase === "result" && fullSelectedSigs.length > 0
+      const cap = serverCatchUp
+        ? fullSelectedSigs.length
+        : revealedSigCount === 0 && wheelPhase === "result" && fullSelectedSigs.length > 0
           ? 1
           : revealedSigCount;
       return fullSelectedSigs.slice(0, Math.min(cap, fullSelectedSigs.length));
@@ -1061,19 +1077,43 @@ export default function SigSalesOverlayPage() {
     showResultPanel,
   ]);
 
+  const serverCatchUpKeyRef = useRef("");
   useEffect(() => {
-    // 오버레이가 서버 상태만으로도 재생될 수 있도록 대기열을 자동 복원한다.
     if (pendingLanding || demoSpin) return;
-    const machineSpinKey = `${machine.startedAt || 0}:${machine.sessionId || ""}:${machine.resultId || ""}`;
-    if (machineSpinKey === completedSpinKeyRef.current) return;
     const selectedFromServer = (machine.selectedSigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
     if (selectedFromServer.length === 0) return;
+    const machineSpinKey = `${machine.startedAt || 0}:${machine.sessionId || ""}:${machine.resultId || ""}`;
+    const catchUpKey = `${machine.phase}:${machineSpinKey}`;
     const startedAt = Number(machine.startedAt || 0);
     const withinWindow = startedAt > 0 && Date.now() - startedAt <= RECENT_SPIN_WINDOW_MS;
-    /** startedAt 만 빠졌을 때(session_* 등은 있음) OBS 복원 가능해야 함 */
     const recentEnough = withinWindow || (startedAt <= 0 && Boolean(machine.sessionId));
+
+    if (
+      machine.phase === "LANDED" ||
+      machine.phase === "CONFIRM_PENDING" ||
+      machine.phase === "CONFIRMED"
+    ) {
+      if (!recentEnough) return;
+      if (serverCatchUpKeyRef.current === catchUpKey) return;
+      serverCatchUpKeyRef.current = catchUpKey;
+      completedSpinKeyRef.current = machineSpinKey;
+      setOverlayHoldResults(true);
+      setShowResultPanel(true);
+      setRevealedSigCount(selectedFromServer.length);
+      setSequentialRoundIndex(Math.max(0, selectedFromServer.length - 1));
+      if (wheelPhase !== "spinning" && wheelPhase !== "settling") {
+        dispatch({ type: "LANDED" });
+      }
+      if (buildOneShotFromSelected(selectedFromServer)) {
+        setOneShotRevealUnlocked(true);
+      }
+      return;
+    }
+
+    if (machine.phase !== "SPINNING") return;
     if (!recentEnough) return;
-    if (machine.phase !== "SPINNING" && machine.phase !== "LANDED") return;
+    if (machineSpinKey === completedSpinKeyRef.current) return;
+    serverCatchUpKeyRef.current = catchUpKey;
     const derivedOneShot = buildOneShotFromSelected(selectedFromServer);
     setPendingLanding({
       selected: selectedFromServer,
@@ -1092,6 +1132,7 @@ export default function SigSalesOverlayPage() {
     demoSpin,
     machine.startedAt,
     machine.sessionId,
+    wheelPhase,
   ]);
 
   useEffect(() => {
@@ -1115,6 +1156,7 @@ export default function SigSalesOverlayPage() {
     }
     transitionHandledKeyRef.current = "";
     handledSpinKeyRef.current = "";
+    serverCatchUpKeyRef.current = "";
     setSequentialRoundIndex(0);
   }, [machine.phase, state]);
 
@@ -1198,15 +1240,17 @@ export default function SigSalesOverlayPage() {
 
   useEffect(() => {
     const sid = String(machine.sessionId || "").trim();
+    if (sid && lastPinnedSessionIdRef.current !== null && lastPinnedSessionIdRef.current !== sid) {
+      setBroadcastStickySigs(null);
+      serverCatchUpKeyRef.current = "";
+    }
     if (machine.phase === "SPINNING" && sid) {
-      if (lastPinnedSessionIdRef.current !== null && lastPinnedSessionIdRef.current !== sid) {
-        setBroadcastStickySigs(null);
-      }
       lastPinnedSessionIdRef.current = sid;
     }
     if (machine.phase === "IDLE" && !sid && machine.selectedSigs.length === 0) {
       lastPinnedSessionIdRef.current = null;
       setBroadcastStickySigs(null);
+      serverCatchUpKeyRef.current = "";
     }
   }, [machine.phase, machine.sessionId, machine.selectedSigs]);
 

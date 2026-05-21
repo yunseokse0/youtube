@@ -340,8 +340,14 @@ export function resolveSigImageUrl(name: string, imageUrl?: string, userId?: str
   if (sigImagePlaceholderOnlyForOverlay) {
     return BUNDLED_SIG_PLACEHOLDER_URL;
   }
-  const repaired = repairDiskUploadSigImagePath(String(imageUrl ?? "").trim(), userId);
-  const raw = normalizeSigImageUrlStored(repaired || imageUrl);
+  const input = String(imageUrl ?? "").trim();
+  let repaired = repairDiskUploadSigImagePath(input, userId);
+  let raw = normalizeSigImageUrlStored(repaired || imageUrl);
+  if (shouldServeSigImagesFromDisk()) {
+    repaired = repairDiskUploadSigImagePath(raw, userId);
+    if (repaired.startsWith("/uploads/sigs/")) return repaired;
+    raw = repaired;
+  }
   if (raw) {
     if (/(?:_257b_2522id_2522|%257b%2522id%2522|%7b%22id%22)/i.test(raw)) {
       return BUNDLED_SIG_PLACEHOLDER_URL;
@@ -352,6 +358,10 @@ export function resolveSigImageUrl(name: string, imageUrl?: string, userId?: str
       raw.startsWith("data:image/") ||
       raw.startsWith("blob:")
     ) {
+      if (shouldServeSigImagesFromDisk()) {
+        const diskFromHttp = repairDiskUploadSigImagePath(raw, userId);
+        if (diskFromHttp.startsWith("/uploads/sigs/")) return diskFromHttp;
+      }
       return raw;
     }
     if (raw.startsWith("/uploads/sigs/")) return raw;

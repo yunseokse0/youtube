@@ -69,6 +69,13 @@ export function coerceSigUrlToGithubBundledPath(url: string): string {
 /** PC 디스크 업로드 파일명 패턴 (업로드 API: `${Date.now()}_${uuid8}.ext`) */
 const DISK_UPLOAD_FILE_PATTERN = /^(\d+_[a-z0-9]{8}\.(?:gif|png|jpe?g|webp))$/i;
 
+export function isDiskUploadFlatFileName(fileName: string): boolean {
+  const s = String(fileName || "").trim();
+  const i = Math.max(s.lastIndexOf("/"), s.lastIndexOf("\\"));
+  const base = i >= 0 ? s.slice(i + 1) : s;
+  return DISK_UPLOAD_FILE_PATTERN.test(base);
+}
+
 /**
  * GitHub-only 모드에서 `/uploads/sigs/…` 가 `/images/sigs/<file>` 로 잘못 저장된 경우
  * 동일 파일명으로 디스크 경로 복구.
@@ -94,7 +101,7 @@ export function repairDiskUploadSigImagePath(stored: string, userId?: string): s
 /** 미들웨어: 디스크 업로드 flat 경로(`/images/sigs/<timestamp>_<id>.ext`) 여부 */
 export function isDiskUploadFlatSigImagePath(pathname: string): boolean {
   const m = String(pathname || "").match(/^\/images\/sigs\/([^/?#]+)$/i);
-  return Boolean(m?.[1] && DISK_UPLOAD_FILE_PATTERN.test(m[1]));
+  return Boolean(m?.[1] && isDiskUploadFlatFileName(m[1]));
 }
 
 /**
