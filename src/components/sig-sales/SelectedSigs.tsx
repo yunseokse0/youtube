@@ -156,6 +156,8 @@ export default function SelectedSigs({
             >
               <SigSaleMedia
                 src={resolveSigRollingImageUrl(item.name, item.imageUrl, sigImageUserId)}
+                storedImageUrl={item.imageUrl}
+                sigImageUserId={sigImageUserId}
                 alt={item.name}
                 fill
                 sizes={

@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import Image from "next/image";
 import { formatWon } from "@/lib/sig-roulette";
-import { resolveSigImageUrl } from "@/lib/constants";
+import { resolveSigRollingImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 import {
   SIG_OVERLAY_CARD_MEDIA_BOX_CLASS,
@@ -26,6 +26,7 @@ type OneShotSigCardProps = {
   selectedSigCount?: number;
   gifDelayMultiplier?: number;
   onMediaReady?: () => void;
+  sigImageUserId?: string;
 };
 
 export default function OneShotSigCard({
@@ -41,6 +42,7 @@ export default function OneShotSigCard({
   selectedSigCount,
   gifDelayMultiplier = 1,
   onMediaReady,
+  sigImageUserId,
 }: OneShotSigCardProps) {
   const sumLine =
     typeof selectedSigCount === "number" && selectedSigCount > 0
@@ -77,7 +79,9 @@ export default function OneShotSigCard({
         }`}
       >
         <SigSaleMedia
-          src={resolveSigImageUrl(name, imageUrl)}
+          src={resolveSigRollingImageUrl(name, imageUrl, sigImageUserId)}
+          storedImageUrl={imageUrl}
+          sigImageUserId={sigImageUserId}
           alt={name}
           fill
           sizes={compact ? `${SIG_OVERLAY_CARD_MAX_PX}px` : "160px"}

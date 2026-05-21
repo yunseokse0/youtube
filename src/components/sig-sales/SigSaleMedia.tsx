@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isLikelyGifUrl } from "@/lib/sigGif";
+import { repairDiskUploadSigImagePath } from "@/lib/sig-image-mode";
 import SigSlowGif from "./SigSlowGif";
 
 const FALLBACK_SRC = "/images/sigs/dummy-sig.svg";
@@ -17,6 +18,9 @@ type SigSaleMediaProps = {
   onError?: (e: React.SyntheticEvent<HTMLImageElement, Event>) => void;
   onReady?: () => void;
   gifDelayMultiplier?: number;
+  /** 1차 404 시 저장 경로를 `/uploads/sigs/<user>/…` 로 재시도 */
+  sigImageUserId?: string;
+  storedImageUrl?: string;
 };
 
 /**
@@ -33,9 +37,12 @@ export default function SigSaleMedia({
   onError,
   onReady,
   gifDelayMultiplier = 1,
+  sigImageUserId,
+  storedImageUrl,
 }: SigSaleMediaProps) {
   const [displaySrc, setDisplaySrc] = useState(src);
   const [gifFail, setGifFail] = useState(false);
+  const retriedRepairRef = useRef(false);
   const readyFiredRef = useRef(false);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
@@ -43,6 +50,7 @@ export default function SigSaleMedia({
   useEffect(() => {
     setDisplaySrc(src);
     setGifFail(false);
+    retriedRepairRef.current = false;
     readyFiredRef.current = false;
   }, [src]);
 
@@ -54,13 +62,24 @@ export default function SigSaleMedia({
 
   const handleImageError = useCallback(
     (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+      if (!retriedRepairRef.current && sigImageUserId) {
+        const repaired = repairDiskUploadSigImagePath(
+          String(storedImageUrl || src || ""),
+          sigImageUserId
+        );
+        if (repaired && repaired !== displaySrc) {
+          retriedRepairRef.current = true;
+          setDisplaySrc(repaired);
+          return;
+        }
+      }
       if (displaySrc !== FALLBACK_SRC) {
         setDisplaySrc(FALLBACK_SRC);
         return;
       }
       onError?.(e);
     },
-    [displaySrc, onError]
+    [displaySrc, onError, sigImageUserId, storedImageUrl, src]
   );
 
   const handleGifError = useCallback(() => {

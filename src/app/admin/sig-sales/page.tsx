@@ -11,7 +11,11 @@ import SelectedSigs from "@/components/sig-sales/SelectedSigs";
 import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
 import ConfirmationModal from "@/components/sig-sales/ConfirmationModal";
 import RouletteHistoryModal from "@/components/sig-sales/RouletteHistoryModal";
-import { BUNDLED_SIG_PLACEHOLDER_URL, DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
+import {
+  BUNDLED_SIG_PLACEHOLDER_URL,
+  DEFAULT_SIG_SOLD_STAMP_URL,
+  resolveSigAdminPreviewSrc,
+} from "@/lib/constants";
 import { loadState, loadStateFromApi, saveStateAsync, storageKey, type AppState } from "@/lib/state";
 import { useSSEConnection } from "@/lib/sse-client";
 import { createStateUpdatedScheduler, readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
@@ -22,6 +26,7 @@ import {
   cancelRouletteSession,
   buildWheelMenuSlices,
   canonicalSigIdFromWheelSliceId,
+  hydrateSigItemFromInventory,
   resolveWheelSpinTarget,
   wheelSliceMatchesServerWinner,
 } from "@/lib/sig-roulette";
@@ -102,6 +107,7 @@ export default function AdminSigSalesPage() {
   const [ocrAllBusy, setOcrAllBusy] = useState(false);
   const [ocrBatchProgress, setOcrBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [sigSalesSigRowOpen, setSigSalesSigRowOpen] = useState<Record<string, boolean>>({});
+  const [resultsPanelCollapsed, setResultsPanelCollapsed] = useState(false);
   const nextSpinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [oneShotSound] = useState(() => new Howl({ src: [SPIN_SOUND_PATHS.oneShot], preload: true, volume: 0.7 }));
   const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || DEFAULT_SIG_SOLD_STAMP_URL;
@@ -278,6 +284,11 @@ export default function AdminSigSalesPage() {
     if (stagedSelected.length > 0) return stagedSelected.slice(0, MAX_SELECTED_SIGS);
     return machine.selectedSigs.slice(0, MAX_SELECTED_SIGS);
   }, [machine.selectedSigs, stagedSelected]);
+  const displaySelectedSigsForUi = useMemo(
+    () =>
+      displaySelectedSigs.map((s) => hydrateSigItemFromInventory(s, state?.sigInventory, userId)),
+    [displaySelectedSigs, state?.sigInventory, userId]
+  );
   const displayOneShot = useMemo(() => {
     if (displaySelectedSigs.length < MIN_ONE_SHOT_SIGS) return null;
     return buildOneShotFromSelected(displaySelectedSigs);
@@ -291,11 +302,11 @@ export default function AdminSigSalesPage() {
   const oneShotImageUrl = useMemo(() => {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     const fromOneShot = (oneShotItem?.imageUrl || "").trim();
-    if (fromOneShot) return fromOneShot;
-    const pick = displaySelectedSigs.find((x) => (x.imageUrl || "").trim());
-    if (pick) return pick.imageUrl || "/images/sigs/dummy-sig.svg";
-    return "/images/sigs/dummy-sig.svg";
-  }, [state?.sigInventory, displaySelectedSigs]);
+    if (fromOneShot) return resolveSigAdminPreviewSrc(fromOneShot, oneShotItem?.name || "한방 시그", userId);
+    const pick = displaySelectedSigsForUi.find((x) => (x.imageUrl || "").trim());
+    if (pick) return resolveSigAdminPreviewSrc(pick.imageUrl, pick.name, userId);
+    return BUNDLED_SIG_PLACEHOLDER_URL;
+  }, [state?.sigInventory, displaySelectedSigsForUi, userId]);
 
   useEffect(() => {
     if (!showFinalShowcase || !displayOneShot) {
@@ -458,6 +469,7 @@ export default function AdminSigSalesPage() {
 
   const onConfirmSale = useCallback(async () => {
     if (!state || displaySelectedSigs.length === 0) return;
+    setShowConfirmModal(false);
     markConfirmPending();
     try {
       const pr = await fetch(`/api/roulette/pending?user=${encodeURIComponent(userId)}`, {
@@ -689,7 +701,7 @@ export default function AdminSigSalesPage() {
   return (
     <main className="min-h-screen bg-neutral-950 p-6 text-white">
       <div className="mx-auto max-w-[1280px] space-y-4">
-        <header className="flex flex-wrap items-end justify-between gap-3">
+        <header className="sticky top-0 z-[200] -mx-2 flex flex-wrap items-end justify-between gap-3 rounded-xl border border-white/10 bg-neutral-950/95 px-3 py-3 shadow-lg backdrop-blur-md">
           <div>
             <h1 className="text-2xl font-black text-yellow-200">시그 판매 회전판</h1>
             <p className="text-sm text-neutral-300">IDLE → SPINNING → LANDED → CONFIRM_PENDING → CONFIRMED 단일 플로우</p>
@@ -729,6 +741,20 @@ export default function AdminSigSalesPage() {
             >
               대시보드 모달
             </Link>
+            {(machine.phase === "CONFIRM_PENDING" || machine.isFinishLoading) && (
+              <button
+                type="button"
+                onClick={() => {
+                  cancelConfirm();
+                  setShowConfirmModal(false);
+                  resetToIdle();
+                  setToast("확정 처리를 중단하고 IDLE로 복구했습니다.");
+                }}
+                className="rounded bg-rose-700 px-3 py-2 text-xs font-bold hover:bg-rose-600"
+              >
+                확정 멈춤·복구
+              </button>
+            )}
             <button
               type="button"
               onClick={onRerollReset}
@@ -861,22 +887,37 @@ export default function AdminSigSalesPage() {
           /> : null}
 
           {machine.phase === "CONFIRM_PENDING" ? (
-            <div className="pointer-events-none absolute inset-0 z-50 grid place-items-center bg-black/55">
-              <div className="rounded-xl border border-yellow-300/50 bg-neutral-900/90 px-6 py-4 text-center">
-                <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-yellow-300 border-t-transparent" />
-                <p className="mt-2 text-sm font-semibold text-yellow-100">판매 확정 처리 중...</p>
-                <div className="mt-2 h-1.5 w-48 overflow-hidden rounded-full bg-white/15">
-                  <div className="h-full w-full animate-pulse bg-gradient-to-r from-amber-300 to-yellow-500" />
-                </div>
+            <div className="pointer-events-none absolute bottom-2 left-1/2 z-30 -translate-x-1/2 rounded-xl border border-yellow-300/40 bg-black/70 px-4 py-2">
+              <div className="flex items-center gap-3 text-center">
+                <div className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-yellow-300 border-t-transparent" />
+                <p className="text-sm font-semibold text-yellow-100">판매 확정 처리 중…</p>
               </div>
             </div>
           ) : null}
 
           {(machine.phase === "SPINNING" || machine.phase === "LANDED" || machine.phase === "CONFIRM_PENDING" || machine.phase === "CONFIRMED" || stagedSelected.length > 0) &&
           displaySelectedSigs.length > 0 ? (
-            <div className={`mt-4 space-y-4 transition-all duration-700 ${showFinalShowcase ? "-translate-y-[260px]" : "translate-y-0"}`}>
+            <div className="mt-4 space-y-3">
+              {showFinalShowcase ? (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-yellow-100">당첨 결과 ({displaySelectedSigsForUi.length}개)</p>
+                  <button
+                    type="button"
+                    className="rounded border border-white/20 px-2 py-1 text-xs text-neutral-200 hover:bg-white/10"
+                    onClick={() => setResultsPanelCollapsed((v) => !v)}
+                  >
+                    {resultsPanelCollapsed ? "결과 펼치기" : "결과 접기 (휠·컨트롤 보기)"}
+                  </button>
+                </div>
+              ) : null}
+              <div
+                className={`space-y-4 ${showFinalShowcase && resultsPanelCollapsed ? "hidden" : ""} ${
+                  showFinalShowcase ? "max-h-[min(58vh,560px)] overflow-y-auto pr-1" : ""
+                }`}
+              >
               <SelectedSigs
-                items={displaySelectedSigs}
+                items={displaySelectedSigsForUi}
+                sigImageUserId={userId}
                 soldOutStampUrl={soldOutStampUrl}
                 manualSoldSet={manualSoldSet}
                 disabled={controlsDisabled}
@@ -886,9 +927,10 @@ export default function AdminSigSalesPage() {
                     name={displayOneShot?.name || "한방 시그"}
                     price={displayOneShot?.price || 0}
                     imageUrl={oneShotImageUrl}
+                    sigImageUserId={userId}
                     sold={oneShotSold}
                     soldOutStampUrl={soldOutStampUrl}
-                    selectedSigCount={displaySelectedSigs.length}
+                    selectedSigCount={displaySelectedSigsForUi.length}
                     disabled={controlsDisabled}
                     compact
                     onToggleSold={() => setOneShotSold((v) => !v)}
@@ -912,6 +954,7 @@ export default function AdminSigSalesPage() {
                 >
                   {machine.phase === "CONFIRM_PENDING" ? "처리 중..." : "Confirm Sale (수동 확정)"}
                 </button>
+              </div>
               </div>
             </div>
           ) : null}
@@ -1116,8 +1159,8 @@ export default function AdminSigSalesPage() {
         </section>
       </div>
       <ConfirmationModal
-        open={showConfirmModal && machine.phase !== "CONFIRMED"}
-        loading={machine.phase === "CONFIRM_PENDING" || machine.isFinishLoading}
+        open={showConfirmModal && machine.phase !== "CONFIRMED" && machine.phase !== "CONFIRM_PENDING"}
+        loading={machine.isFinishLoading}
         onCancel={() => {
           setShowConfirmModal(false);
           cancelConfirm();
