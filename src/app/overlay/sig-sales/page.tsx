@@ -32,6 +32,7 @@ import {
   canonicalSigIdFromWheelSliceId,
   hydrateSigItemFromInventory,
   sigMatchesMemberFilter,
+  rememberUsedWheelSliceId,
   resolveWheelSpinTarget,
   sanitizeWheelDisplayName,
   wheelSliceMatchesServerWinner,
@@ -95,7 +96,8 @@ function bootstrapOverlaySpinPlayback(
   wheelSlices: SigItem[],
   startedAt: number,
   sessionId: string,
-  resultId: string | null
+  resultId: string | null,
+  usedSliceIds?: ReadonlySet<string>
 ): {
   pendingLanding: {
     selected: SigItem[];
@@ -105,7 +107,7 @@ function bootstrapOverlaySpinPlayback(
   };
   demoSpin: { startedAt: number; resultId: string | null };
 } {
-  const firstTarget = resolveWheelSpinTarget(wheelSlices, selected[0] ?? null, 0);
+  const firstTarget = resolveWheelSpinTarget(wheelSlices, selected[0] ?? null, 0, usedSliceIds);
   const spinStartedAt = resolveOverlayWheelStartedAt(startedAt, sessionId);
   const rid = resultId || selected[selected.length - 1]?.id || null;
   return {
@@ -309,6 +311,12 @@ export default function SigSalesOverlayPage() {
   const [oneShotRevealUnlocked, setOneShotRevealUnlocked] = useState(false);
   /** [계약] 당첨 목록은 스핀 시점에 이미 확정·여기 인덱스는 서버 동기화용이 아니라 현재 몇 번째 휠 라운드 연출인지만 나타냄(0..n-1) */
   const [sequentialRoundIndex, setSequentialRoundIndex] = useState(0);
+  /** 한 sessionId 동안 휠 칸 배치 고정 — 중간 폴링으로 `__wslot_n`↔시그 매핑이 바뀌면 2회차 착지가 엇갈림 */
+  const [pinnedWheelLayout, setPinnedWheelLayout] = useState<{
+    sessionId: string;
+    slices: SigItem[];
+  } | null>(null);
+  const usedWheelSliceIdsRef = useRef<Set<string>>(new Set());
   /** 폴링/IDLE 순간에 selectedSigs 가 비어도 방송 화면에 당첨이 남도록 마지막 확정 목록 보존(초기화·신규 세션 때만 제거) */
   const [broadcastStickySigs, setBroadcastStickySigs] = useState<SigItem[] | null>(null);
   /**
@@ -611,6 +619,32 @@ export default function SigSalesOverlayPage() {
     return buildWheelMenuSlices(wheelDisplayPool, effectiveMenuCount);
   }, [wheelDisplayPool, effectiveMenuCount, winnersOnlyOverlay, winnerRowsForWheelOnly.length]);
 
+  useEffect(() => {
+    const sid = String(machine.sessionId || "").trim();
+    if (!sid || machine.phase === "IDLE") {
+      setPinnedWheelLayout(null);
+      usedWheelSliceIdsRef.current = new Set();
+      return;
+    }
+    if (wheelSlices.length === 0) return;
+    if (
+      machine.phase !== "SPINNING" &&
+      machine.phase !== "LANDED" &&
+      machine.phase !== "CONFIRM_PENDING" &&
+      machine.phase !== "CONFIRMED"
+    ) {
+      return;
+    }
+    setPinnedWheelLayout((prev) =>
+      prev?.sessionId === sid ? prev : { sessionId: sid, slices: wheelSlices }
+    );
+  }, [machine.phase, machine.sessionId, wheelSlices]);
+
+  const wheelSlicesForSpin =
+    pinnedWheelLayout?.sessionId === machine.sessionId && pinnedWheelLayout.slices.length > 0
+      ? pinnedWheelLayout.slices
+      : wheelSlices;
+
   /**
    * 당첨 큐: 항상 서버 `machine.selectedSigs` 우선(폴링 갱신·순서의 단일 소스).
    * `pendingLanding` 은 SPINNING 직후·HYDRATE 전 복원용이며, 둘을 섞으면 휠 라운드 id와
@@ -628,8 +662,13 @@ export default function SigSalesOverlayPage() {
     const queue = spinQueueSelected;
     const roundIdx = queue.length > 0 ? Math.min(sequentialRoundIndex, queue.length - 1) : 0;
     const serverWinner = queue[roundIdx] ?? null;
-    return resolveWheelSpinTarget(wheelSlices, serverWinner, roundIdx);
-  }, [wheelSlices, spinQueueSelected, sequentialRoundIndex]);
+    return resolveWheelSpinTarget(
+      wheelSlicesForSpin,
+      serverWinner,
+      roundIdx,
+      usedWheelSliceIdsRef.current
+    );
+  }, [wheelSlicesForSpin, spinQueueSelected, sequentialRoundIndex]);
 
   const wheelItemsWithResult = wheelSpinTarget.items;
 
@@ -1179,10 +1218,11 @@ export default function SigSalesOverlayPage() {
     serverCatchUpKeyRef.current = catchUpKey;
     const boot = bootstrapOverlaySpinPlayback(
       selectedFromServer,
-      wheelSlices,
+      wheelSlicesForSpin,
       machine.startedAt,
       machine.sessionId,
-      machine.resultId
+      machine.resultId,
+      usedWheelSliceIdsRef.current
     );
     setPendingLanding(boot.pendingLanding);
     setDemoSpin(boot.demoSpin);
@@ -1195,7 +1235,7 @@ export default function SigSalesOverlayPage() {
     machine.startedAt,
     machine.sessionId,
     wheelPhase,
-    wheelSlices,
+    wheelSlicesForSpin,
   ]);
 
   useEffect(() => {
@@ -1229,10 +1269,11 @@ export default function SigSalesOverlayPage() {
     if (selectedFromServer.length > 0 && !pendingLanding && !demoSpin) {
       const boot = bootstrapOverlaySpinPlayback(
         selectedFromServer,
-        wheelSlices,
+        wheelSlicesForSpin,
         machine.startedAt,
         machine.sessionId,
-        machine.resultId
+        machine.resultId,
+        usedWheelSliceIdsRef.current
       );
       setPendingLanding(boot.pendingLanding);
       setDemoSpin(boot.demoSpin);
@@ -1245,7 +1286,7 @@ export default function SigSalesOverlayPage() {
     machine.resultId,
     pendingLanding,
     demoSpin,
-    wheelSlices,
+    wheelSlicesForSpin,
   ]);
 
   useEffect(() => {
@@ -1460,14 +1501,12 @@ export default function SigSalesOverlayPage() {
                           })
                           .catch(() => {});
                       }
+                      rememberUsedWheelSliceId(
+                        usedWheelSliceIdsRef.current,
+                        landedId || wheelResultSliceId
+                      );
                       transitionHandledKeyRef.current = "";
                       const nextRound = sequentialRoundIndex + 1;
-                      const nextWinner = selectedQueue[nextRound] ?? null;
-                      const nextTarget = resolveWheelSpinTarget(
-                        wheelSlices,
-                        nextWinner,
-                        nextRound
-                      );
                       window.setTimeout(() => {
                         setSequentialRoundIndex(nextRound);
                         setDemoSpin({
@@ -1475,8 +1514,7 @@ export default function SigSalesOverlayPage() {
                             machine.startedAt,
                             machine.sessionId
                           ),
-                          resultId:
-                            nextTarget.sliceId || nextWinner?.id || null,
+                          resultId: null,
                         });
                         dispatch({ type: "RESET" });
                         dispatch({ type: "START_SPIN" });
@@ -1490,6 +1528,10 @@ export default function SigSalesOverlayPage() {
                   const roundIdx = seqMulti
                     ? Math.min(sequentialRoundIndex, lastIdx)
                     : lastIdx;
+                  rememberUsedWheelSliceId(
+                    usedWheelSliceIdsRef.current,
+                    landedId || wheelResultSliceId
+                  );
                   const serverWinner = selectedQueue[roundIdx] ?? selectedQueue[lastIdx] ?? null;
                   if (
                     serverWinner &&

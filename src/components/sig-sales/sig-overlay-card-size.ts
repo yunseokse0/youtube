@@ -17,6 +17,17 @@ export const SIG_ROLLING_MEDIA_HEIGHT_PX = 300;
 export const SIG_OVERLAY_CARD_MEDIA_BOX_CLASS =
   "mb-1 aspect-[202/300] w-full";
 
+/** 방송 오버레이: 개별·한방 카드 하단 이름·금액 줄(동일 높이) */
+export const SIG_OVERLAY_CARD_FOOTER_CLASS = "space-y-0.5 px-1 pt-1";
+export const SIG_OVERLAY_CARD_NAME_CLASS =
+  "truncate font-bold text-white text-[11px] leading-tight sm:text-[12px]";
+export const SIG_OVERLAY_CARD_PRICE_CLASS =
+  "text-xs font-black tabular-nums text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.88)] sm:text-[13px]";
+
+/** 방송 오버레이 카드 셸(개별 시그) — 한방 카드도 동일 패딩·모서리 */
+export const SIG_OVERLAY_CARD_SHELL_CLASS =
+  "shrink-0 overflow-hidden rounded-xl border border-white/25 bg-neutral-900/85 px-1.5 py-2 shadow-[0_0_28px_rgba(0,0,0,0.55)]";
+
 /**
  * flex 줄에서 카드가 줄어들지 않도록 고정.
  * width/min(100%)로 좁은 뷰포트에서는 한 줄당 한 장까지 줄어들게 한다.

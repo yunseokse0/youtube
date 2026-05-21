@@ -43,6 +43,7 @@ import {
   resolveSigSalesMenuCount,
   canonicalSigIdFromWheelSliceId,
   hydrateSigItemFromInventory,
+  rememberUsedWheelSliceId,
   resolveWheelSpinTarget,
   sigMatchesMemberFilter,
   wheelSliceMatchesServerWinner,
@@ -116,6 +117,11 @@ export default function AdminSigSalesPage() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [stagedSelected, setStagedSelected] = useState<SigItem[]>([]);
   const [spinStep, setSpinStep] = useState(0);
+  const [pinnedWheelLayout, setPinnedWheelLayout] = useState<{
+    sessionId: string;
+    slices: SigItem[];
+  } | null>(null);
+  const usedWheelSliceIdsRef = useRef<Set<string>>(new Set());
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [lastConfirmedText, setLastConfirmedText] = useState("");
   const [lastConfirmedFxKey, setLastConfirmedFxKey] = useState(0);
@@ -317,6 +323,33 @@ export default function AdminSigSalesPage() {
     () => buildWheelMenuSlices(wheelDisplayPool, effectiveMenuCount),
     [wheelDisplayPool, effectiveMenuCount]
   );
+
+  useEffect(() => {
+    const sid = String(machine.sessionId || "").trim();
+    if (!sid || machine.phase === "IDLE") {
+      setPinnedWheelLayout(null);
+      usedWheelSliceIdsRef.current = new Set();
+      return;
+    }
+    if (wheelMenuSlices.length === 0) return;
+    if (
+      machine.phase !== "SPINNING" &&
+      machine.phase !== "LANDED" &&
+      machine.phase !== "CONFIRM_PENDING" &&
+      machine.phase !== "CONFIRMED"
+    ) {
+      return;
+    }
+    setPinnedWheelLayout((prev) =>
+      prev?.sessionId === sid ? prev : { sessionId: sid, slices: wheelMenuSlices }
+    );
+  }, [machine.phase, machine.sessionId, wheelMenuSlices]);
+
+  const wheelSlicesForSpin =
+    pinnedWheelLayout?.sessionId === machine.sessionId && pinnedWheelLayout.slices.length > 0
+      ? pinnedWheelLayout.slices
+      : wheelMenuSlices;
+
   /** OBS와 동일: 서버 `machine.selectedSigs`가 당첨 큐 단일 소스 */
   const spinQueueSelected = useMemo(() => {
     const fromServer = (machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
@@ -325,8 +358,13 @@ export default function AdminSigSalesPage() {
   }, [machine.selectedSigs, pendingLanding?.selected]);
   const wheelSpinTarget = useMemo(() => {
     const serverWinner = spinQueueSelected[spinStep] ?? null;
-    return resolveWheelSpinTarget(wheelMenuSlices, serverWinner, spinStep);
-  }, [wheelMenuSlices, spinQueueSelected, spinStep]);
+    return resolveWheelSpinTarget(
+      wheelSlicesForSpin,
+      serverWinner,
+      spinStep,
+      usedWheelSliceIdsRef.current
+    );
+  }, [wheelSlicesForSpin, spinQueueSelected, spinStep]);
   const wheelItemsWithResult = wheelSpinTarget.items;
   const wheelResultSliceId = wheelSpinTarget.sliceId;
   const displaySelectedSigs = useMemo(() => {
@@ -540,6 +578,11 @@ export default function AdminSigSalesPage() {
       const oneShot = buildOneShotFromSelected(selected);
       setPendingLanding({ selected, oneShot, resultId: data.result?.id || selected[selected.length - 1]?.id || null, persist: true });
       const firstTarget = resolveWheelSpinTarget(wheelMenuSlices, selected[0] ?? null, 0);
+      setPinnedWheelLayout({
+        sessionId: String(data.sessionId || "").trim(),
+        slices: wheelMenuSlices,
+      });
+      usedWheelSliceIdsRef.current = new Set();
       setDemoSpin({
         startedAt: Date.now(),
         resultId: firstTarget.sliceId || selected[0]?.id || null,
@@ -1090,19 +1133,18 @@ export default function AdminSigSalesPage() {
               setLastConfirmedFxKey((v) => v + 1);
 
               if (nextStep < selectedQueue.length) {
+                rememberUsedWheelSliceId(
+                  usedWheelSliceIdsRef.current,
+                  landedId || wheelResultSliceId
+                );
                 setStagedSelected(nextSelected);
                 setSpinStep(nextStep);
                 if (nextSpinTimerRef.current) clearTimeout(nextSpinTimerRef.current);
                 nextSpinTimerRef.current = setTimeout(() => {
                   setLastConfirmedText("");
-                  const nextTarget = resolveWheelSpinTarget(
-                    wheelMenuSlices,
-                    selectedQueue[nextStep] ?? null,
-                    nextStep
-                  );
                   setDemoSpin({
                     startedAt: Date.now(),
-                    resultId: nextTarget.sliceId || selectedQueue[nextStep]?.id || null,
+                    resultId: null,
                   });
                 }, STEP_CONFIRM_PAUSE_MS);
                 return;

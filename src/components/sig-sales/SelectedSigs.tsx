@@ -8,8 +8,12 @@ import { canonicalSigIdFromWheelSliceId, formatWon } from "@/lib/sig-roulette";
 import { resolveSigRollingImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 import {
+  SIG_OVERLAY_CARD_FOOTER_CLASS,
   SIG_OVERLAY_CARD_MEDIA_BOX_CLASS,
   SIG_OVERLAY_CARD_MAX_PX,
+  SIG_OVERLAY_CARD_NAME_CLASS,
+  SIG_OVERLAY_CARD_PRICE_CLASS,
+  SIG_OVERLAY_CARD_SHELL_CLASS,
   sigOverlayBroadcastCardShellStyle,
 } from "@/components/sig-sales/sig-overlay-card-size";
 
@@ -128,7 +132,7 @@ export default function SelectedSigs({
               broadcastMatch ? "" : "min-w-0"
             } ${
               broadcastMatch
-                ? "shrink-0 border-white/25 bg-neutral-900/85 px-1.5 py-2 shadow-[0_0_28px_rgba(0,0,0,0.55)]"
+                ? SIG_OVERLAY_CARD_SHELL_CLASS
                 : compact
                   ? "w-full max-w-[188px] justify-self-start"
                   : ""
@@ -196,23 +200,31 @@ export default function SelectedSigs({
               ) : null}
             </div>
             <div
-              className={`${
-                broadcastMatch ? "space-y-0.5 px-1 pt-1" : compact ? "space-y-0 p-1" : "space-y-1 p-2"
-              }`}
+              className={
+                broadcastMatch
+                  ? SIG_OVERLAY_CARD_FOOTER_CLASS
+                  : compact
+                    ? "space-y-0 p-1"
+                    : "space-y-1 p-2"
+              }
             >
               <div
-                className={`truncate font-bold text-white ${broadcastMatch ? "text-[11px] leading-tight sm:text-[12px]" : compact ? "text-[10px]" : "text-sm"}`}
+                className={
+                  broadcastMatch
+                    ? SIG_OVERLAY_CARD_NAME_CLASS
+                    : `truncate font-bold text-white ${compact ? "text-[10px]" : "text-sm"}`
+                }
               >
                 {item.name}
               </div>
               <div
-                className={`${
+                className={
                   broadcastMatch
-                    ? "text-xs font-black tabular-nums text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.88)] sm:text-[13px]"
+                    ? SIG_OVERLAY_CARD_PRICE_CLASS
                     : compact
                       ? "text-[9px] font-semibold tabular-nums text-neutral-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]"
                       : "text-xs font-semibold tabular-nums text-neutral-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]"
-                }`}
+                }
               >
                 {formatWon(item.price)}
               </div>

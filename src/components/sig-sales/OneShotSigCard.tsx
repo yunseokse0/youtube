@@ -6,8 +6,11 @@ import { formatWon } from "@/lib/sig-roulette";
 import { resolveSigRollingImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 import {
+  SIG_OVERLAY_CARD_FOOTER_CLASS,
   SIG_OVERLAY_CARD_MEDIA_BOX_CLASS,
   SIG_OVERLAY_CARD_MAX_PX,
+  SIG_OVERLAY_CARD_NAME_CLASS,
+  SIG_OVERLAY_CARD_PRICE_CLASS,
   sigOverlayBroadcastCardShellStyle,
 } from "@/components/sig-sales/sig-overlay-card-size";
 
@@ -59,9 +62,11 @@ export default function OneShotSigCard({
       transition={{ duration: compact ? 0.32 : 0.45, ease: "easeOut" }}
       style={compact ? sigOverlayBroadcastCardShellStyle() : undefined}
       className={`relative border border-yellow-300/70 bg-[linear-gradient(135deg,rgba(245,158,11,0.25),rgba(234,179,8,0.1))] shadow-[0_0_30px_rgba(250,204,21,0.35)] ${
-        compact
-          ? "w-full shrink-0 self-start overflow-visible rounded-xl px-1.5 py-2 pb-2"
-          : "overflow-hidden rounded-2xl p-4"
+        broadcastOverlay
+          ? "w-full shrink-0 self-start overflow-hidden rounded-xl px-1.5 py-2"
+          : compact
+            ? "w-full shrink-0 self-start overflow-visible rounded-xl px-1.5 py-2"
+            : "overflow-hidden rounded-2xl p-4"
       }`}
     >
       {sold ? (
@@ -111,7 +116,24 @@ export default function OneShotSigCard({
           </>
         ) : null}
       </div>
-      <div className={`relative ${compact ? "flex flex-col gap-0.5" : "flex flex-wrap items-center justify-between gap-3"}`}>
+      <div
+        className={
+          broadcastOverlay
+            ? SIG_OVERLAY_CARD_FOOTER_CLASS
+            : compact
+              ? "relative flex flex-col gap-0.5"
+              : "relative flex flex-wrap items-center justify-between gap-3"
+        }
+      >
+        {broadcastOverlay ? (
+          <>
+            <div className={SIG_OVERLAY_CARD_NAME_CLASS} title={sumLine}>
+              {name}
+            </div>
+            <div className={SIG_OVERLAY_CARD_PRICE_CLASS}>{formatWon(price)}</div>
+          </>
+        ) : (
+          <>
         <div>
           <h3
             className={`font-black ${compact ? "text-[12px] text-neutral-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]" : "text-lg text-yellow-100"}`}
@@ -141,6 +163,8 @@ export default function OneShotSigCard({
             </button>
           ) : null}
         </div>
+          </>
+        )}
       </div>
       </div>
     </motion.section>

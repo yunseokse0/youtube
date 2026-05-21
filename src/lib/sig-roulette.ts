@@ -167,14 +167,15 @@ export type WheelSpinTarget = {
 export function resolveWheelSpinTarget(
   wheelSlices: SigItem[],
   serverWinner: SigItem | null,
-  roundIndex: number
+  roundIndex: number,
+  usedSliceIds?: ReadonlySet<string>
 ): WheelSpinTarget {
   if (!serverWinner || wheelSlices.length === 0) {
     return { items: wheelSlices, sliceId: null, expectedCanon: null };
   }
   const expectedCanon = canonicalSigIdFromWheelSliceId(serverWinner.id);
   let items = [...wheelSlices];
-  let sliceId = pickWheelSliceIdForWin(items, serverWinner.id, roundIndex);
+  let sliceId = pickWheelSliceIdForWin(items, serverWinner.id, roundIndex, usedSliceIds);
   if (!sliceId) {
     const slotIdx = Math.max(0, roundIndex) % items.length;
     const canon = expectedCanon;
@@ -213,7 +214,8 @@ export function wheelSliceMatchesServerWinner(
 export function pickWheelSliceIdForWin(
   items: SigItem[],
   winningRealId: string | null,
-  duplicatePick = 0
+  duplicatePick = 0,
+  usedSliceIds?: ReadonlySet<string>
 ): string | null {
   if (!winningRealId || items.length === 0) return null;
   const winCanon = canonicalSigIdFromWheelSliceId(winningRealId);
@@ -222,8 +224,19 @@ export function pickWheelSliceIdForWin(
     if (canonicalSigIdFromWheelSliceId(items[i]!.id) === winCanon) indices.push(i);
   }
   if (indices.length === 0) return null;
-  const slot = indices[Math.max(0, duplicatePick) % indices.length]!;
+  let pickFrom = indices;
+  if (usedSliceIds && usedSliceIds.size > 0) {
+    const unused = indices.filter((i) => !usedSliceIds.has(items[i]!.id));
+    if (unused.length > 0) pickFrom = unused;
+  }
+  const slot = pickFrom[Math.max(0, duplicatePick) % pickFrom.length]!;
   return items[slot]!.id;
+}
+
+/** 순차 회전: 이미 착지한 슬라이스 id는 다음 라운드 후보에서 제외(동일 시그 재당첨 시 다른 칸) */
+export function rememberUsedWheelSliceId(used: Set<string>, sliceId: string | null | undefined): void {
+  const id = String(sliceId || "").trim();
+  if (id) used.add(id);
 }
 
 /**

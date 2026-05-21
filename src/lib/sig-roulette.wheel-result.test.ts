@@ -9,6 +9,7 @@ import {
   findSliceIndexForResult,
   pickDistinctSigsByIdAndName,
   pickWheelSliceIdForWin,
+  rememberUsedWheelSliceId,
   resolveSigSalesMenuCount,
   resolveWheelSpinTarget,
   sigMatchesMemberFilter,
@@ -89,6 +90,40 @@ describe("pickWheelSliceIdForWin", () => {
     expect(pickWheelSliceIdForWin(dupWheel, "a", 0)).toBe("a__wslot_0");
     expect(pickWheelSliceIdForWin(dupWheel, "a", 1)).toBe("a__wslot_2");
     expect(pickWheelSliceIdForWin(dupWheel, "a", 2)).toBe("a__wslot_0");
+  });
+
+  it("이미 착지한 슬라이스는 다음 라운드에서 다른 칸을 고른다", () => {
+    const used = new Set<string>();
+    const first = pickWheelSliceIdForWin(dupWheel, "a", 0, used);
+    expect(first).toBe("a__wslot_0");
+    rememberUsedWheelSliceId(used, first);
+    expect(pickWheelSliceIdForWin(dupWheel, "a", 1, used)).toBe("a__wslot_2");
+  });
+});
+
+describe("sequential same winner on pinned wheel", () => {
+  it("2회차 동일 당첨도 착지 slice가 서버 당첨과 일치하고 다른 칸을 쓴다", () => {
+    const pool: SigItem[] = [
+      { ...item("sig_fox"), name: "여우" },
+      { ...item("sig_family"), name: "괴짜가족" },
+      item("sig_b"),
+      item("sig_c"),
+      item("sig_d"),
+      item("sig_e"),
+    ];
+    const slices = buildWheelMenuSlices(pool, 8);
+    const winner = { ...item("sig_family"), name: "괴짜가족" };
+    const used = new Set<string>();
+    const t0 = resolveWheelSpinTarget(slices, winner, 0, used);
+    expect(wheelSliceMatchesServerWinner(t0.sliceId, winner)).toBe(true);
+    rememberUsedWheelSliceId(used, t0.sliceId);
+    const t1 = resolveWheelSpinTarget(slices, winner, 1, used);
+    expect(wheelSliceMatchesServerWinner(t1.sliceId, winner)).toBe(true);
+    expect(t1.sliceId).not.toBe(t0.sliceId);
+    const landIdx = findSliceIndexForResult(t1.items, t1.sliceId);
+    const foxIdx = findSliceIndexForResult(t1.items, "sig_fox__wslot_0");
+    expect(landIdx).toBeGreaterThanOrEqual(0);
+    if (foxIdx >= 0) expect(landIdx).not.toBe(foxIdx);
   });
 });
 
