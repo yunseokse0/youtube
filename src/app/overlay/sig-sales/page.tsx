@@ -24,6 +24,7 @@ import {
   buildSigSalesWheelDisplayPool,
   buildWheelMenuSlices,
   clampSigSalesMenuCount,
+  resolveSigSalesMenuCount,
   canonicalSigIdFromWheelSliceId,
   hydrateSigItemFromInventory,
   resolveWheelSpinTarget,
@@ -435,7 +436,7 @@ export default function SigSalesOverlayPage() {
   // 결과 배치는 운영자가 reset 할 때까지 유지한다.
 
   const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || DEFAULT_SIG_SOLD_STAMP_URL;
-  const menuCount = useMemo(() => {
+  const menuCountSetting = useMemo(() => {
     if (menuCountParam != null) return menuCountParam;
     return clampSigSalesMenuCount(state?.rouletteState?.menuCount);
   }, [menuCountParam, state?.rouletteState?.menuCount]);
@@ -476,6 +477,10 @@ export default function SigSalesOverlayPage() {
         (!memberFilterId || (x.memberId || "") === memberFilterId)
     );
   }, [state, memberFilterId]);
+  const effectiveMenuCount = useMemo(
+    () => resolveSigSalesMenuCount(menuCountSetting, activeNormalPool.length),
+    [menuCountSetting, activeNormalPool.length]
+  );
   /** 당첨만 휠에 올릴 때 슬라이스 순서·중복 당첨 유지 */
   const winnerRowsForWheelOnly = useMemo(() => {
     if ((machine.selectedSigs?.length ?? 0) > 0) {
@@ -503,14 +508,14 @@ export default function SigSalesOverlayPage() {
       sigSalesExcludedIds: state.sigSalesExcludedIds,
       sessionExcludedSigIds: state.rouletteState?.sessionExcludedSigIds,
       memberFilterId,
-      menuCount,
+      menuCount: effectiveMenuCount,
       menuFillFromAllActive,
       ensureItems: [...(machine.selectedSigs || []), ...(pendingLanding?.selected || [])],
     });
   }, [
     state,
     memberFilterId,
-    menuCount,
+    effectiveMenuCount,
     menuFillFromAllActive,
     machine.selectedSigs,
     pendingLanding?.selected,
@@ -526,8 +531,8 @@ export default function SigSalesOverlayPage() {
         id: `${canonicalSigIdFromWheelSliceId(x.id)}__wslot_${i}`,
       }));
     }
-    return buildWheelMenuSlices(wheelDisplayPool, menuCount);
-  }, [wheelDisplayPool, menuCount, winnersOnlyOverlay, winnerRowsForWheelOnly.length]);
+    return buildWheelMenuSlices(wheelDisplayPool, effectiveMenuCount);
+  }, [wheelDisplayPool, effectiveMenuCount, winnersOnlyOverlay, winnerRowsForWheelOnly.length]);
 
   /**
    * 당첨 큐: 항상 서버 `machine.selectedSigs` 우선(폴링 갱신·순서의 단일 소스).

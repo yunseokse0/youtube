@@ -9,6 +9,7 @@ import {
   findSliceIndexForResult,
   pickDistinctSigsByIdAndName,
   pickWheelSliceIdForWin,
+  resolveSigSalesMenuCount,
   resolveWheelSpinTarget,
   wheelSliceMatchesServerWinner,
 } from "./sig-roulette";
@@ -156,5 +157,16 @@ describe("calculateSpinFinalAngle", () => {
 
   it("targetId 없으면 빈 회전만(minTurns * 360) 더한다", () => {
     expect(calculateSpinFinalAngle(four, null, 4, 50, 2)).toBe(50 + 2 * 360);
+  });
+});
+
+describe("resolveSigSalesMenuCount", () => {
+  it("활성 시그보다 많은 칸을 보장한다", () => {
+    expect(resolveSigSalesMenuCount(8, 10)).toBe(11);
+    expect(resolveSigSalesMenuCount(15, 10)).toBe(15);
+  });
+
+  it("관리자 설정이 최소보다 크면 그대로 쓴다", () => {
+    expect(resolveSigSalesMenuCount(20, 5)).toBe(20);
   });
 });

@@ -27,6 +27,8 @@ import {
   buildSigSalesWheelDisplayPool,
   buildWheelMenuSlices,
   clampSigSalesMenuCount,
+  minSigSalesMenuCountForActive,
+  resolveSigSalesMenuCount,
   canonicalSigIdFromWheelSliceId,
   hydrateSigItemFromInventory,
   resolveWheelSpinTarget,
@@ -265,9 +267,17 @@ export default function AdminSigSalesPage() {
         (!memberFilterId || (x.memberId || "") === memberFilterId)
     );
   }, [state, memberFilterId]);
-  const menuCount = useMemo(
+  const menuCountSetting = useMemo(
     () => clampSigSalesMenuCount(state?.rouletteState?.menuCount),
     [state?.rouletteState?.menuCount]
+  );
+  const menuCountMin = useMemo(
+    () => minSigSalesMenuCountForActive(activeNormalPool.length),
+    [activeNormalPool.length]
+  );
+  const effectiveMenuCount = useMemo(
+    () => resolveSigSalesMenuCount(menuCountSetting, activeNormalPool.length),
+    [menuCountSetting, activeNormalPool.length]
   );
   const menuFillFromAllActive = state?.rouletteState?.menuFillFromAllActive === true;
   const wheelDisplayPool = useMemo(() => {
@@ -277,21 +287,21 @@ export default function AdminSigSalesPage() {
       sigSalesExcludedIds: state.sigSalesExcludedIds,
       sessionExcludedSigIds: state.rouletteState?.sessionExcludedSigIds,
       memberFilterId,
-      menuCount,
+      menuCount: effectiveMenuCount,
       menuFillFromAllActive,
       ensureItems: [...(pendingLanding?.selected || []), ...(machine.selectedSigs || [])],
     });
   }, [
     state,
     memberFilterId,
-    menuCount,
+    effectiveMenuCount,
     menuFillFromAllActive,
     pendingLanding?.selected,
     machine.selectedSigs,
   ]);
   const wheelMenuSlices = useMemo(
-    () => buildWheelMenuSlices(wheelDisplayPool, menuCount),
-    [wheelDisplayPool, menuCount]
+    () => buildWheelMenuSlices(wheelDisplayPool, effectiveMenuCount),
+    [wheelDisplayPool, effectiveMenuCount]
   );
   const wheelSpinTarget = useMemo(() => {
     const queue = (pendingLanding?.selected || machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
@@ -539,11 +549,11 @@ export default function AdminSigSalesPage() {
     const q = new URLSearchParams();
     q.set("u", userId);
     if (memberFilterId) q.set("memberId", memberFilterId);
-    q.set("menuCount", String(menuCount));
+    q.set("menuCount", String(effectiveMenuCount));
     const rs = Number(state?.rouletteState?.sigResultScalePct);
     if (Number.isFinite(rs)) q.set("sigResultScalePct", String(Math.floor(rs)));
     return `${window.location.origin}/overlay/sig-sales?${q.toString()}`;
-  }, [userId, memberFilterId, menuCount, state?.rouletteState?.sigResultScalePct]);
+  }, [userId, memberFilterId, effectiveMenuCount, state?.rouletteState?.sigResultScalePct]);
 
   const onConfirmSale = useCallback(async () => {
     if (!state || displaySelectedSigs.length === 0) return;
@@ -784,8 +794,12 @@ export default function AdminSigSalesPage() {
             <h1 className="text-2xl font-black text-yellow-200">시그 판매 회전판</h1>
             <p className="text-sm text-neutral-300">IDLE → SPINNING → LANDED → CONFIRM_PENDING → CONFIRMED 단일 플로우</p>
             <p className="mt-1 text-xs text-yellow-200/90">
-              현재 상태: {machine.phase} · 회전판 칸 수: {menuCount}
-              {menuFillFromAllActive ? " (전체 활성 시그로 채움)" : ""}
+              현재 상태: {machine.phase} · 회전판 {effectiveMenuCount}칸
+              {activeNormalPool.length > 0 ? ` (활성 시그 ${activeNormalPool.length}개)` : ""}
+              {effectiveMenuCount > menuCountSetting
+                ? ` · 설정 ${menuCountSetting} → 최소 ${menuCountMin}칸 적용`
+                : ""}
+              {menuFillFromAllActive ? " · 전체 활성으로 풀 보충" : ""}
             </p>
             {overlayObsUrl ? (
               <p className="mt-2 max-w-xl text-[11px] text-neutral-400">
@@ -812,10 +826,11 @@ export default function AdminSigSalesPage() {
               회전판 칸 수
               <input
                 type="number"
-                min={5}
+                min={menuCountMin}
                 max={20}
-                value={menuCount}
+                value={menuCountSetting}
                 disabled={controlsDisabled}
+                title={`활성 시그보다 많은 칸(최소 ${menuCountMin}). 표시는 ${effectiveMenuCount}칸`}
                 onChange={(e) => {
                   const n = clampSigSalesMenuCount(e.target.value);
                   void persistRouletteState({ menuCount: n });

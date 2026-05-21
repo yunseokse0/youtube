@@ -51,6 +51,23 @@ export function clampSigSalesMenuCount(raw: string | number | null | undefined):
   return Math.max(5, Math.min(20, Math.floor(n)));
 }
 
+/** 활성 시그가 있으면 회전판 칸 수는 활성 수보다 많아야 함(중복 칸으로 채움). */
+export function minSigSalesMenuCountForActive(activeSigCount: number): number {
+  const n = Math.max(0, Math.floor(activeSigCount));
+  if (n <= 0) return 5;
+  return Math.min(20, n + 1);
+}
+
+/** 관리자 설정값과 활성 시그 수를 반영한 실제 휠 칸 수 */
+export function resolveSigSalesMenuCount(
+  adminMenuCount: string | number | null | undefined,
+  activeSigCount: number
+): number {
+  const admin = clampSigSalesMenuCount(adminMenuCount);
+  const floor = minSigSalesMenuCountForActive(activeSigCount);
+  return Math.max(admin, floor);
+}
+
 export type BuildSigSalesWheelDisplayPoolOptions = {
   inventory: SigItem[];
   sigSalesExcludedIds?: string[];
@@ -109,9 +126,9 @@ export function buildSigSalesWheelDisplayPool(opts: BuildSigSalesWheelDisplayPoo
   return Array.from(unique.values());
 }
 
-/** 휠 메뉴 칸(5~20) — 동일 시그는 `__wslot_i` 로 칸마다 구분 */
+/** 휠 메뉴 칸(5~20) — 동일 시그는 `__wslot_i` 로 칸마다 구분. `menuCount`는 보통 `resolveSigSalesMenuCount` 결과 */
 export function buildWheelMenuSlices(pool: SigItem[], menuCount: number): SigItem[] {
-  const n = clampSigSalesMenuCount(menuCount);
+  const n = Math.max(1, Math.min(20, Math.floor(menuCount || 1)));
   if (!pool.length) return [];
   const out: SigItem[] = [];
   for (let i = 0; i < n; i++) {
