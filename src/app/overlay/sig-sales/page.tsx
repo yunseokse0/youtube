@@ -2,10 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
 import { Howl } from "howler";
 import type { SigItem } from "@/types";
-import RouletteWheel from "@/components/sig-sales/RouletteWheel";
+
+const RouletteWheel = dynamic(() => import("@/components/sig-sales/RouletteWheel"), {
+  ssr: false,
+});
 import ResultOverlay from "@/components/sig-sales/ResultOverlay";
 import SigBoardRolling from "@/components/sig-sales/SigBoardRolling";
 import { loadStateFromApi, loadState, storageKey, type AppState } from "@/lib/state";
@@ -74,6 +78,47 @@ const buildOneShotFromSelected = (selected: SigItem[]) => {
     price: selected.reduce((sum, x) => sum + x.price, 0),
   };
 };
+
+function resolveOverlayWheelStartedAt(startedAt: number, sessionId: string): number {
+  const t = Number(startedAt || 0);
+  if (t > 0) return t;
+  const m = /^session_(\d+)$/.exec(String(sessionId || "").trim());
+  if (m) return Number(m[1]);
+  return Date.now();
+}
+
+/** OBS: 서버 SPINNING 수신 시 휠·당첨 큐를 한 번에 맞춤(슬라이스 id·startedAt 정합) */
+function bootstrapOverlaySpinPlayback(
+  selected: SigItem[],
+  wheelSlices: SigItem[],
+  startedAt: number,
+  sessionId: string,
+  resultId: string | null
+): {
+  pendingLanding: {
+    selected: SigItem[];
+    oneShot: { id: string; name: string; price: number } | null;
+    resultId: string | null;
+    persist: boolean;
+  };
+  demoSpin: { startedAt: number; resultId: string | null };
+} {
+  const firstTarget = resolveWheelSpinTarget(wheelSlices, selected[0] ?? null, 0);
+  const spinStartedAt = resolveOverlayWheelStartedAt(startedAt, sessionId);
+  const rid = resultId || selected[selected.length - 1]?.id || null;
+  return {
+    pendingLanding: {
+      selected,
+      oneShot: buildOneShotFromSelected(selected),
+      resultId: rid,
+      persist: true,
+    },
+    demoSpin: {
+      startedAt: spinStartedAt,
+      resultId: firstTarget.sliceId || selected[0]?.id || rid,
+    },
+  };
+}
 type WheelPhase = "idle" | "spinning" | "settling" | "result";
 const wheelReducer = (state: WheelPhase, action: { type: string }): WheelPhase => {
   switch (action.type) {
@@ -355,7 +400,8 @@ export default function SigSalesOverlayPage() {
 
   useEffect(() => {
     const { schedule, cancel } = createStateUpdatedScheduler(() => {
-      void loadRemoteRef.current();
+      /** SSE는 updatedAt만 전달 → 304·since 경합 시 SPINNING을 놓치지 않도록 전체 본문 수신 */
+      void loadRemoteRef.current({ forceFull: true });
     });
     scheduleSseLoadRef.current = schedule;
     if (shouldSuppressOverlaySseConnection()) {
@@ -1089,16 +1135,15 @@ export default function SigSalesOverlayPage() {
     if (!recentEnough) return;
     if (machineSpinKey === completedSpinKeyRef.current) return;
     serverCatchUpKeyRef.current = catchUpKey;
-    const derivedOneShot = buildOneShotFromSelected(selectedFromServer);
-    setPendingLanding({
-      selected: selectedFromServer,
-      oneShot: derivedOneShot,
-      resultId: machine.resultId || selectedFromServer[selectedFromServer.length - 1]?.id || null,
-      persist: true,
-    });
-    const finalRealId =
-      machine.resultId || selectedFromServer[selectedFromServer.length - 1]?.id || selectedFromServer[0]?.id || null;
-    setDemoSpin({ startedAt: Date.now(), resultId: finalRealId });
+    const boot = bootstrapOverlaySpinPlayback(
+      selectedFromServer,
+      wheelSlices,
+      machine.startedAt,
+      machine.sessionId,
+      machine.resultId
+    );
+    setPendingLanding(boot.pendingLanding);
+    setDemoSpin(boot.demoSpin);
   }, [
     machine.phase,
     machine.selectedSigs,
@@ -1108,6 +1153,7 @@ export default function SigSalesOverlayPage() {
     machine.startedAt,
     machine.sessionId,
     wheelPhase,
+    wheelSlices,
   ]);
 
   useEffect(() => {
@@ -1134,6 +1180,31 @@ export default function SigSalesOverlayPage() {
     serverCatchUpKeyRef.current = "";
     setSequentialRoundIndex(0);
   }, [machine.phase, state]);
+
+  useEffect(() => {
+    if (machine.phase !== "SPINNING") return;
+    const selectedFromServer = (machine.selectedSigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
+    if (selectedFromServer.length > 0 && !pendingLanding && !demoSpin) {
+      const boot = bootstrapOverlaySpinPlayback(
+        selectedFromServer,
+        wheelSlices,
+        machine.startedAt,
+        machine.sessionId,
+        machine.resultId
+      );
+      setPendingLanding(boot.pendingLanding);
+      setDemoSpin(boot.demoSpin);
+    }
+  }, [
+    machine.phase,
+    machine.selectedSigs,
+    machine.startedAt,
+    machine.sessionId,
+    machine.resultId,
+    pendingLanding,
+    demoSpin,
+    wheelSlices,
+  ]);
 
   useEffect(() => {
     if (machine.phase !== "SPINNING" && machine.phase !== "LANDED") return;
@@ -1272,8 +1343,8 @@ export default function SigSalesOverlayPage() {
                   Boolean(demoSpin) ||
                   hasServerSpinToPlay
                 }
-                resultId={wheelResultSliceId}
-                startedAt={demoSpin?.startedAt || wheelAnimationStartedAt}
+                resultId={wheelResultSliceId || demoSpin?.resultId || machine.resultId}
+                startedAt={wheelAnimationStartedAt || demoSpin?.startedAt || 0}
                 scalePct={wheelScalePct}
                 volume={0.7}
                 muted={false}

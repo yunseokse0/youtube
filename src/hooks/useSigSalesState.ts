@@ -150,6 +150,17 @@ export function useSigSalesState(userId: string, appState: AppState | null) {
       prevUpdatedAtRef.current = incomingTs;
       return;
     }
+    // 관리자 새 회차(SPINNING) — OBS·관리자 모두 서버 당첨 큐를 최신 session으로 맞춤
+    if (
+      incoming.phase === "SPINNING" &&
+      incoming.sessionId &&
+      incoming.sessionId !== cur.sessionId &&
+      Number(incoming.startedAt || 0) >= Number(cur.startedAt || 0)
+    ) {
+      prevUpdatedAtRef.current = incomingTs;
+      dispatch({ type: "HYDRATE", payload: incoming });
+      return;
+    }
 
     prevUpdatedAtRef.current = incomingTs;
     dispatch({ type: "HYDRATE", payload: incoming });
