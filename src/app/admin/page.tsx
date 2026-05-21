@@ -2148,7 +2148,7 @@ export default function AdminPage() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ clearWonPool: true }),
       });
       const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!res.ok) {
@@ -2162,7 +2162,9 @@ export default function AdminPage() {
           window.localStorage.setItem(storageKey(uid), JSON.stringify(remote));
         } catch {}
       }
-      setRouletteActionMessage("회전판 상태를 IDLE로 초기화했습니다. 오버레이 유령 결과가 사라집니다.");
+      setRouletteActionMessage(
+        "회전판 상태를 IDLE로 초기화했습니다. 당첨 제외 목록도 비웠습니다. 오버레이 유령 결과가 사라집니다."
+      );
     } catch (e) {
       setRouletteActionMessage(`회전판 초기화 오류: ${String(e)}`);
     } finally {

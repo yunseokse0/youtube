@@ -12,7 +12,7 @@ import {
   loadAppStateForRouletteRequest,
   publishRouletteStateAfterSave,
 } from "../roulette-state-sync";
-import { canonicalSigIdFromWheelSliceId } from "@/lib/sig-roulette";
+import { canonicalSigIdFromWheelSliceId, mergeSessionExcludedSigIds } from "@/lib/sig-roulette";
 
 /** 회전판 애니메이션 종료 후 isRolling=false (당첨 result는 유지) */
 const finishSchema = z.object({
@@ -115,6 +115,16 @@ export async function POST(req: Request) {
           })
         : s.sigInventory;
 
+    const sessionExcludedSigIds =
+      finalPhase === "CANCELLED"
+        ? (() => {
+            const drop = new Set(
+              selectedSigs.map((row) => canonicalSigIdFromWheelSliceId(String(row?.id || ""))).filter(Boolean)
+            );
+            return (rs.sessionExcludedSigIds || []).filter((id) => !drop.has(id));
+          })()
+        : mergeSessionExcludedSigIds(rs.sessionExcludedSigIds, selectedSigs);
+
     const next: AppState = {
       ...s,
       sigInventory: nextInventory,
@@ -131,6 +141,7 @@ export async function POST(req: Request) {
         sessionId: sessionId || rs.sessionId,
         lastFinishedAt: Date.now(),
         historyLogs: logResult.logs.slice(0, 50),
+        sessionExcludedSigIds,
       },
       updatedAt: Date.now(),
     };

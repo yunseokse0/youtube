@@ -5,7 +5,7 @@ import type { AppState } from "@/lib/state";
 import { normalizeRouletteState } from "@/lib/state";
 import { normalizeSigInventory } from "@/lib/constants";
 import type { SigItem } from "@/types";
-import { saveRouletteLog } from "@/lib/sig-roulette";
+import { mergeSessionExcludedSigIds, saveRouletteLog } from "@/lib/sig-roulette";
 import { getRouletteUserId, saveAppStateForRoulette } from "../edge-state-store";
 import {
   loadAppStateForRouletteRequest,
@@ -52,10 +52,10 @@ export async function POST(req: Request) {
     if (rs.phase === "CONFIRMED") {
       return Response.json({ error: "already_confirmed" }, { status: 409, headers: { "Content-Type": "application/json" } });
     }
-    if (rs.phase === "LANDED" || rs.phase === "CONFIRM_PENDING") {
+    if (rs.phase === "CONFIRM_PENDING") {
       return Response.json({ ok: true, idempotent: true }, { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     }
-    if (rs.phase !== "SPINNING") {
+    if (rs.phase !== "SPINNING" && rs.phase !== "LANDED") {
       return Response.json({ error: "bad_phase", phase: rs.phase }, { status: 409, headers: { "Content-Type": "application/json" } });
     }
     const bodyStartedAt = Number(body.startedAt || 0);
@@ -64,7 +64,11 @@ export async function POST(req: Request) {
       return Response.json({ error: "startedAt_mismatch" }, { status: 409, headers: { "Content-Type": "application/json" } });
     }
 
-    const result = selectedSigs[selectedSigs.length - 1] || rs.result || null;
+    const serverSpinSelected = rs.selectedSigs?.length ? rs.selectedSigs : selectedSigs;
+    /** 순차 연출 중간 land 는 제외 목록만 갱신하고, 서버가 확정한 전체 당첨 배열은 유지한다 */
+    const keepSelectedSigs =
+      serverSpinSelected.length >= selectedSigs.length ? serverSpinSelected : selectedSigs;
+    const result = keepSelectedSigs[keepSelectedSigs.length - 1] || rs.result || null;
     let oneShotResult =
       body.oneShotResult && typeof body.oneShotResult === "object"
         ? {
@@ -73,23 +77,25 @@ export async function POST(req: Request) {
             price: Math.max(0, Math.floor(Number(body.oneShotResult.price || 0))),
           }
         : rs.oneShotResult;
-    if (!oneShotResult && selectedSigs.length >= 2) {
+    if (!oneShotResult && keepSelectedSigs.length >= 2) {
       oneShotResult = {
         id: ONE_SHOT_SIG_ID,
         name: "한방 시그",
-        price: selectedSigs.reduce((sum, x) => sum + Math.max(0, Math.floor(Number(x.price || 0))), 0),
+        price: keepSelectedSigs.reduce((sum, x) => sum + Math.max(0, Math.floor(Number(x.price || 0))), 0),
       };
     }
 
+    const cumulativeExcluded = mergeSessionExcludedSigIds(rs.sessionExcludedSigIds, selectedSigs);
     const nextRs = {
       ...rs,
       phase: "LANDED" as const,
       isRolling: false,
-      selectedSigs,
-      results: selectedSigs,
+      selectedSigs: keepSelectedSigs,
+      results: keepSelectedSigs,
       result,
       oneShotResult,
-      spinCount: selectedSigs.length,
+      spinCount: keepSelectedSigs.length,
+      sessionExcludedSigIds: cumulativeExcluded,
     };
 
     const next: AppState = {

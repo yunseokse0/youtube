@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { AUTH_COOKIE, isDevAuthBypassRequest } from "@/lib/auth";
 import { toGithubRawSigAssetUrl } from "@/lib/constants";
+import { isDiskUploadFlatSigImagePath, shouldServeSigImagesFromDisk } from "@/lib/sig-image-mode";
 
 const PROTECTED_PATHS = ["/admin", "/settlements"];
 
@@ -51,6 +52,10 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
   if (pathname.startsWith("/images/sigs/")) {
+    /** EC2 디스크 업로드가 `/images/sigs/<file>` 로만 저장된 경우 GitHub 307 시 404 → 동일 오리진 정적·rewrite 유지 */
+    if (shouldServeSigImagesFromDisk() && isDiskUploadFlatSigImagePath(pathname)) {
+      return NextResponse.next();
+    }
     const github = toGithubRawSigAssetUrl(pathname);
     if (github) return NextResponse.redirect(github, 307);
   }

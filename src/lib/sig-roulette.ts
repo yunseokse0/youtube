@@ -192,6 +192,10 @@ export const ROULETTE_WHEEL_WAV_ASSETS_ENABLED = false;
 /** false: 회전 틱·착지·한방 착지 효과음 전부 끔(추후 다시 켤 때 true) */
 export const ROULETTE_WHEEL_SFX_ENABLED = false;
 
+export function normalizeSigPickNameKey(name: string): string {
+  return sanitizeWheelDisplayName(name).toLowerCase();
+}
+
 export function pickDistinctSigs(pool: SigItem[], count: number): SigItem[] {
   const copy = [...pool];
   for (let i = copy.length - 1; i > 0; i--) {
@@ -201,6 +205,45 @@ export function pickDistinctSigs(pool: SigItem[], count: number): SigItem[] {
     copy[j] = t;
   }
   return copy.slice(0, Math.max(0, Math.min(count, copy.length)));
+}
+
+/** id·표시명(동일 이름 중복 행) 모두 한 세션에서 한 번만 당첨 */
+export function pickDistinctSigsByIdAndName(pool: SigItem[], count: number): SigItem[] {
+  const copy = [...pool];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const u = new Uint32Array(1);
+    crypto.getRandomValues(u);
+    const j = u[0]! % (i + 1);
+    const t = copy[i]!;
+    copy[i] = copy[j]!;
+    copy[j] = t;
+  }
+  const out: SigItem[] = [];
+  const usedIds = new Set<string>();
+  const usedNames = new Set<string>();
+  for (const item of copy) {
+    if (out.length >= count) break;
+    const id = String(item.id || "").trim();
+    if (!id || usedIds.has(id)) continue;
+    const nameKey = normalizeSigPickNameKey(item.name);
+    if (nameKey && usedNames.has(nameKey)) continue;
+    usedIds.add(id);
+    if (nameKey) usedNames.add(nameKey);
+    out.push(item);
+  }
+  return out;
+}
+
+export function mergeSessionExcludedSigIds(
+  existing: string[] | undefined,
+  winners: SigItem[]
+): string[] {
+  const next = new Set((existing || []).map((x) => String(x).trim()).filter(Boolean));
+  for (const sig of winners) {
+    const canon = canonicalSigIdFromWheelSliceId(sig.id);
+    if (canon) next.add(canon);
+  }
+  return Array.from(next);
 }
 
 export function calcOneShotPriceFromSelected(selected: SigItem[]): number {

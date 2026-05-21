@@ -100,6 +100,8 @@ export type RouletteState = {
   overlayReloadNonce?: number;
   /** 최근 세션 식별자 */
   sessionId?: string;
+  /** 착지·확정된 시그 id — 다음 회전 추첨 후보에서 제외(회전판 초기화 시 유지, 수동 초기화 시만 비움) */
+  sessionExcludedSigIds?: string[];
   /** 최근 확정 로그 */
   lastFinishedAt?: number;
   /** 최근 이력 스냅샷(최대 50) */

@@ -5,7 +5,10 @@ import type { AppState } from "@/lib/state";
 import { normalizeRouletteState } from "@/lib/state";
 import { normalizeSigInventory } from "@/lib/constants";
 import type { SigItem } from "@/types";
-import { pickDistinctSigs } from "@/lib/sig-roulette";
+import {
+  normalizeSigPickNameKey,
+  pickDistinctSigsByIdAndName,
+} from "@/lib/sig-roulette";
 import { getRouletteUserId, saveAppStateForRoulette } from "../edge-state-store";
 import { setRouletteLock } from "../roulette-lock";
 import {
@@ -123,27 +126,32 @@ export async function POST(req: Request) {
         : []
     );
     const inv = normalizeSigInventory(s.sigInventory).filter((x) => !excludedSet.has(x.id));
+    const prevRs = normalizeRouletteState(s.rouletteState);
+    const sessionExcluded = new Set(
+      (prevRs.sessionExcludedSigIds || []).map((x) => String(x).trim()).filter(Boolean)
+    );
+    const allowPool = (list: SigItem[]) =>
+      list.filter((x) => x.id !== ONE_SHOT_SIG_ID && !sessionExcluded.has(x.id));
     const invById = new Map(inv.map((row) => [row.id, row]));
     const enrichPick = (pick: SigItem): SigItem => {
       const row = invById.get(pick.id);
       return row ? { ...row, price: Math.max(0, Math.floor(Number(pick.price ?? row.price ?? 0))) } : { ...pick };
     };
     if (mode === "cinematic5") {
-      const pool = inv.filter(
-        (x) =>
-          x.isActive &&
-          x.id !== ONE_SHOT_SIG_ID &&
-          x.soldCount < x.maxCount &&
-          (!memberIdFilter || (x.memberId || "") === memberIdFilter)
+      const pool = allowPool(
+        inv.filter(
+          (x) =>
+            x.isActive &&
+            x.soldCount < x.maxCount &&
+            (!memberIdFilter || (x.memberId || "") === memberIdFilter)
+        )
       );
       // 라이브 운영 중 필터/활성 상태 때문에 후보가 5개 미만이어도
       // 회전판이 멈추지 않도록 단계적으로 풀을 확장한다.
-      const broadActivePool = inv.filter(
-        (x) => x.isActive && x.id !== ONE_SHOT_SIG_ID && x.soldCount < x.maxCount
+      const broadActivePool = allowPool(
+        inv.filter((x) => x.isActive && x.soldCount < x.maxCount)
       );
-      const broadAnyPool = inv.filter(
-        (x) => x.id !== ONE_SHOT_SIG_ID && x.soldCount < x.maxCount
-      );
+      const broadAnyPool = allowPool(inv.filter((x) => x.soldCount < x.maxCount));
       const uniqueById = new Map<string, SigItem>();
       for (const item of pool) uniqueById.set(item.id, item);
       if (uniqueById.size < 5) {
@@ -169,7 +177,19 @@ export async function POST(req: Request) {
           { status: 400, headers: { "Content-Type": "application/json" } }
         );
       }
-      const selectedSigs = pickDistinctSigs(expandedPool, selectedCount).map((pick) => ({
+      const distinctPicks = pickDistinctSigsByIdAndName(expandedPool, selectedCount);
+      if (distinctPicks.length < selectedCount) {
+        return Response.json(
+          {
+            error: "not_enough_distinct_sigs",
+            need: selectedCount,
+            have: distinctPicks.length,
+            sessionExcluded: sessionExcluded.size,
+          },
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      const selectedSigs = distinctPicks.map((pick) => ({
         ...enrichPick(pick),
         maxCount: 1,
       }));
@@ -180,7 +200,6 @@ export async function POST(req: Request) {
             price: selectedSigs.reduce((sum, x) => sum + Math.max(0, Math.floor(Number(x.price || 0))), 0),
           }
         : null;
-      const prevRs = normalizeRouletteState(s.rouletteState);
       const result = selectedSigs[selectedSigs.length - 1] || null;
       setRouletteLock(userId, 10_000);
       const next: AppState = {
@@ -188,6 +207,7 @@ export async function POST(req: Request) {
         sigInventory: inv,
         rouletteState: {
           ...prevRs,
+          sessionExcludedSigIds: prevRs.sessionExcludedSigIds,
           phase: "SPINNING",
           isRolling: true,
           spinCount: selectedSigs.length,
@@ -219,8 +239,8 @@ export async function POST(req: Request) {
         { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }
       );
     }
-    const runtimePool = inv.filter(
-      (x) => x.id !== ONE_SHOT_SIG_ID && x.isActive && x.soldCount < x.maxCount
+    const runtimePool = allowPool(
+      inv.filter((x) => x.isActive && x.soldCount < x.maxCount)
     );
     if (runtimePool.length === 0) {
       return Response.json(
@@ -251,19 +271,31 @@ export async function POST(req: Request) {
     const results: SigItem[] = [];
     const fallbackUsed = false;
     const pickedIds = new Set<string>();
+    const pickedNames = new Set<string>();
 
     for (let i = 0; i < spinCount; i++) {
       const tier = plan[i] ?? null;
       const range = planRanges[i] ?? null;
-      const tierPool = filterPoolByTierAndRange(runtimePool, tier, range).filter((x) => !pickedIds.has(x.id));
+      const tierPool = filterPoolByTierAndRange(runtimePool, tier, range).filter((x) => {
+        if (pickedIds.has(x.id)) return false;
+        const nameKey = normalizeSigPickNameKey(x.name);
+        if (nameKey && pickedNames.has(nameKey)) return false;
+        return true;
+      });
       if (tierPool.length === 0) {
         return Response.json(
-          { error: results.length > 0 ? "not_enough_distinct_sigs" : "empty_price_range", round: i + 1 },
+          {
+            error: results.length > 0 ? "not_enough_distinct_sigs" : "empty_price_range",
+            round: i + 1,
+            sessionExcluded: sessionExcluded.size,
+          },
           { status: 400, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }
         );
       }
       const picked = pickRandom(tierPool);
       pickedIds.add(picked.id);
+      const nameKey = normalizeSigPickNameKey(picked.name);
+      if (nameKey) pickedNames.add(nameKey);
       results.push(enrichPick(picked));
     }
 
@@ -278,7 +310,6 @@ export async function POST(req: Request) {
           }
         : null;
 
-    const prevRs = normalizeRouletteState(s.rouletteState);
     // Spin 직후 짧은 시간 동안 rouletteState를 보호하여 다른 저장이 덮어쓰지 못하게 함.
     setRouletteLock(userId, 10_000);
     const next: AppState = {
@@ -286,6 +317,7 @@ export async function POST(req: Request) {
       sigInventory: inv,
       rouletteState: {
         ...prevRs,
+        sessionExcludedSigIds: prevRs.sessionExcludedSigIds,
         phase: "SPINNING",
         isRolling: true,
         result: last,

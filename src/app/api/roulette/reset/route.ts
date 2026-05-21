@@ -18,6 +18,14 @@ export async function POST(req: Request) {
       return Response.json({ error: "unauthorized" }, { status: 401, headers: { "Content-Type": "application/json" } });
     }
 
+    let clearWonPool = false;
+    try {
+      const j = (await req.json()) as { clearWonPool?: boolean };
+      clearWonPool = Boolean(j?.clearWonPool);
+    } catch {
+      /* body 없음 → 당첨 제외 목록 유지(자동 초기화 후 다음 회전) */
+    }
+
     const s = await loadAppStateForRouletteRequest(req, userId);
 
     const cur = normalizeRouletteState(s.rouletteState);
@@ -29,6 +37,7 @@ export async function POST(req: Request) {
       menuFillFromAllActive: cur.menuFillFromAllActive,
       overlayOpacity: cur.overlayOpacity,
       historyLogs: cur.historyLogs,
+      sessionExcludedSigIds: clearWonPool ? [] : cur.sessionExcludedSigIds,
     };
 
     const next: AppState = {

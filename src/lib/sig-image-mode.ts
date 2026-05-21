@@ -75,7 +75,7 @@ const DISK_UPLOAD_FILE_PATTERN = /^(\d+_[a-z0-9]{8}\.(?:gif|png|jpe?g|webp))$/i;
  */
 export function repairDiskUploadSigImagePath(stored: string, userId?: string): string {
   const s = String(stored || "").trim();
-  if (!s || !userId) return s;
+  if (!s) return s;
   if (s.startsWith("/uploads/sigs/")) return s;
 
   let fileName: string | null = null;
@@ -86,8 +86,15 @@ export function repairDiskUploadSigImagePath(stored: string, userId?: string): s
   if (gh?.[1] && DISK_UPLOAD_FILE_PATTERN.test(gh[1])) fileName = gh[1];
 
   if (!fileName) return s;
-  const safeUid = String(userId).replace(/[^a-zA-Z0-9_-]/g, "_") || "user";
+  const safeUid = String(userId || "").replace(/[^a-zA-Z0-9_-]/g, "_");
+  if (!safeUid) return s;
   return `/uploads/sigs/${safeUid}/${fileName}`;
+}
+
+/** 미들웨어: 디스크 업로드 flat 경로(`/images/sigs/<timestamp>_<id>.ext`) 여부 */
+export function isDiskUploadFlatSigImagePath(pathname: string): boolean {
+  const m = String(pathname || "").match(/^\/images\/sigs\/([^/?#]+)$/i);
+  return Boolean(m?.[1] && DISK_UPLOAD_FILE_PATTERN.test(m[1]));
 }
 
 /**

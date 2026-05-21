@@ -5,7 +5,7 @@ import Image from "next/image";
 import type { ReactNode } from "react";
 import type { SigItem } from "@/types";
 import { canonicalSigIdFromWheelSliceId, formatWon } from "@/lib/sig-roulette";
-import { resolveSigImageUrl } from "@/lib/constants";
+import { resolveSigRollingImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 import {
   SIG_OVERLAY_CARD_MEDIA_BOX_CLASS,
@@ -155,7 +155,7 @@ export default function SelectedSigs({
               }`}
             >
               <SigSaleMedia
-                src={resolveSigImageUrl(item.name, item.imageUrl, sigImageUserId)}
+                src={resolveSigRollingImageUrl(item.name, item.imageUrl, sigImageUserId)}
                 alt={item.name}
                 fill
                 sizes={

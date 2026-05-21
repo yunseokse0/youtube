@@ -7,6 +7,7 @@ import {
   formatWheelSegmentLabel,
   sanitizeWheelDisplayName,
   findSliceIndexForResult,
+  pickDistinctSigsByIdAndName,
   pickWheelSliceIdForWin,
   resolveWheelSpinTarget,
   wheelSliceMatchesServerWinner,
@@ -24,6 +25,19 @@ function item(id: string, price = 0): SigItem {
     isActive: true,
   };
 }
+
+describe("pickDistinctSigsByIdAndName", () => {
+  it("동일 표시명·다른 id 중복 당첨을 막는다", () => {
+    const pool: SigItem[] = [
+      { ...item("a1"), name: "마티니" },
+      { ...item("a2"), name: "마티니" },
+      { ...item("b1"), name: "우치다" },
+    ];
+    const picked = pickDistinctSigsByIdAndName(pool, 3);
+    expect(picked).toHaveLength(2);
+    expect(new Set(picked.map((x) => x.name))).toEqual(new Set(["마티니", "우치다"]));
+  });
+});
 
 describe("formatWheelSegmentLabel", () => {
   it("칸이 많을수록 짧게 자른다", () => {

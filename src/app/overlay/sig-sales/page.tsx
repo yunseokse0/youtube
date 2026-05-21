@@ -460,11 +460,15 @@ export default function SigSalesOverlayPage() {
   const activeNormalPool = useMemo(() => {
     if (!state) return [];
     const excluded = new Set((state.sigSalesExcludedIds || []).map((x) => String(x)));
+    const sessionExcluded = new Set(
+      (state.rouletteState?.sessionExcludedSigIds || []).map((x) => String(x))
+    );
     return (state.sigInventory || []).filter(
       (x) =>
         x.isActive &&
         x.id !== ONE_SHOT_SIG_ID &&
         !excluded.has(x.id) &&
+        !sessionExcluded.has(x.id) &&
         x.soldCount < x.maxCount &&
         (!memberFilterId || (x.memberId || "") === memberFilterId)
     );
@@ -1299,6 +1303,25 @@ export default function SigSalesOverlayPage() {
                       /** 중간 회차에서도 당첨 카드·progressive 가 꺼지지 않게 함(2번째 회전 전에 사라짐 방지) */
                       setOverlayHoldResults(true);
                       setShowResultPanel(true);
+                      const partialQueue = selectedQueue.slice(0, revealedAfterRound);
+                      const snapSessionMid = machine.sessionId;
+                      if (snapSessionMid && partialQueue.length > 0) {
+                        void fetch(`/api/roulette/land?user=${encodeURIComponent(userId)}`, {
+                          method: "POST",
+                          credentials: "include",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            sessionId: snapSessionMid,
+                            startedAt: machine.startedAt,
+                            selectedSigs: partialQueue,
+                            oneShotResult: buildOneShotFromSelected(partialQueue),
+                          }),
+                        })
+                          .then((res) => {
+                            if (res.ok) void loadRemote();
+                          })
+                          .catch(() => {});
+                      }
                       transitionHandledKeyRef.current = "";
                       window.setTimeout(() => {
                         setSequentialRoundIndex((v) => v + 1);

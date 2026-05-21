@@ -344,6 +344,9 @@ export function normalizeRouletteState(raw: unknown): RouletteState {
     menuFillFromAllActive,
     overlayReloadNonce,
     sessionId: typeof o.sessionId === "string" ? o.sessionId : undefined,
+    sessionExcludedSigIds: Array.isArray(o.sessionExcludedSigIds)
+      ? o.sessionExcludedSigIds.map((x) => String(x).trim()).filter(Boolean)
+      : undefined,
     lastFinishedAt: Number.isFinite(Number(o.lastFinishedAt)) ? Math.max(0, Math.floor(Number(o.lastFinishedAt))) : undefined,
     historyLogs,
     spinPriceFilters,
