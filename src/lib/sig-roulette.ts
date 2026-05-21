@@ -1,4 +1,5 @@
 import type { SigItem } from "@/types";
+import { repairDiskUploadSigImagePath } from "@/lib/sig-image-mode";
 import { getServerMemoryRouletteLogs, setServerMemoryRouletteLogs } from "@/lib/server-memory-roulette-logs";
 
 export const ONE_SHOT_SIG_ID = "sig_one_shot";
@@ -152,22 +153,31 @@ export function calculateSpinFinalAngle(
  * 방송 오버레이·휠은 재고 `sigInventory` 기준 이름/이미지를 쓰고, 당첨 배열은 API 스냅샷이라 불일치할 수 있음.
  * 동일 시그 id로 인벤 행을 합쳐 표시를 맞춘다(당첨 금액은 요청 항목 우선).
  */
-export function hydrateSigItemFromInventory(item: SigItem, inventory: SigItem[] | undefined): SigItem {
+export function hydrateSigItemFromInventory(
+  item: SigItem,
+  inventory: SigItem[] | undefined,
+  userId?: string
+): SigItem {
   const canon = canonicalSigIdFromWheelSliceId(item.id);
   if (!inventory?.length) {
-    return { ...item, id: canon };
+    const imageUrl = repairDiskUploadSigImagePath(String(item.imageUrl || ""), userId);
+    return { ...item, id: canon, imageUrl: imageUrl || item.imageUrl };
   }
   const fromInv =
     inventory.find((x) => x.id === canon) ||
     inventory.find((x) => x.id === item.id);
   if (!fromInv) {
-    return { ...item, id: canon };
+    const imageUrl = repairDiskUploadSigImagePath(String(item.imageUrl || ""), userId);
+    return { ...item, id: canon, imageUrl: imageUrl || item.imageUrl };
   }
   const price = Math.max(0, Math.floor(Number(item.price ?? fromInv.price ?? 0)));
+  const rawImage = String(fromInv.imageUrl || item.imageUrl || "").trim();
+  const imageUrl = repairDiskUploadSigImagePath(rawImage, userId) || rawImage;
   return {
     ...fromInv,
     id: canon,
     price,
+    imageUrl,
   };
 }
 export const SPIN_SOUND_PATHS = {

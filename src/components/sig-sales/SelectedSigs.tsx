@@ -30,6 +30,8 @@ type SelectedSigsProps = {
   className?: string;
   /** GIF 프레임 배수 (1=원본, 1 초과=느림). 오버레이 `sigGifDelay`와 동일 */
   gifDelayMultiplier?: number;
+  /** 디스크 업로드 경로 복구(`/images/sigs/타임스탬프_…` → `/uploads/sigs/<user>/…`) */
+  sigImageUserId?: string;
   /** true: 맨 마지막으로 추가된 카드만 등장 연출(순차 공개 시 이전 카드가 다시 튀지 않게) */
   entranceOnlyLatest?: boolean;
   /**
@@ -56,6 +58,7 @@ export default function SelectedSigs({
   gifDelayMultiplier = 1,
   entranceOnlyLatest = false,
   matchOneShotCardSize = false,
+  sigImageUserId,
 }: SelectedSigsProps) {
   /** 고정 5·6열은 카드가 적을 때도 빈 칸이 남아 미리 깔린 것처럼 보임 → 실제 개수만큼 열만 사용 */
   const trailingActive = Boolean(trailingSlot);
@@ -152,7 +155,7 @@ export default function SelectedSigs({
               }`}
             >
               <SigSaleMedia
-                src={resolveSigImageUrl(item.name, item.imageUrl)}
+                src={resolveSigImageUrl(item.name, item.imageUrl, sigImageUserId)}
                 alt={item.name}
                 fill
                 sizes={

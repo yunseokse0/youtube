@@ -243,8 +243,7 @@ export function toGithubRawSigAssetUrl(pathOrUrl: string): string | null {
 
 /** 롤링 카드·GIF 홀드 계산용 — `resolveSigImageUrl` 후 GitHub raw 적용(디스크 업로드 시 동일 오리진) */
 export function resolveSigRollingImageUrl(name: string, imageUrl?: string, userId?: string): string {
-  const repaired = repairDiskUploadSigImagePath(String(imageUrl ?? ""), userId);
-  return rewriteSigPathForRollingGithubIfConfigured(resolveSigImageUrl(name, repaired || imageUrl));
+  return rewriteSigPathForRollingGithubIfConfigured(resolveSigImageUrl(name, imageUrl, userId));
 }
 
 /** 완판 도장 URL — 롤링 오버레이에서만 GitHub raw로 동일 규칙 적용 */
@@ -336,11 +335,12 @@ export function resolveSigAdminPreviewFallbackSrc(raw?: string, name?: string, u
   return url && url !== resolveSigAdminPreviewSrc(raw, name, userId) ? url : null;
 }
 
-export function resolveSigImageUrl(name: string, imageUrl?: string): string {
+export function resolveSigImageUrl(name: string, imageUrl?: string, userId?: string): string {
   if (sigImagePlaceholderOnlyForOverlay) {
     return BUNDLED_SIG_PLACEHOLDER_URL;
   }
-  const raw = normalizeSigImageUrlStored(imageUrl);
+  const repaired = repairDiskUploadSigImagePath(String(imageUrl ?? "").trim(), userId);
+  const raw = normalizeSigImageUrlStored(repaired || imageUrl);
   if (raw) {
     if (/(?:_257b_2522id_2522|%257b%2522id%2522|%7b%22id%22)/i.test(raw)) {
       return BUNDLED_SIG_PLACEHOLDER_URL;

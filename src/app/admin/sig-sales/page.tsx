@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import confetti from "canvas-confetti";
 import { Howl } from "howler";
 import type { SigItem } from "@/types";
@@ -252,6 +253,7 @@ export default function AdminSigSalesPage() {
         x.isActive &&
         x.id !== ONE_SHOT_SIG_ID &&
         !excluded.has(x.id) &&
+        x.soldCount < x.maxCount &&
         (!memberFilterId || (x.memberId || "") === memberFilterId)
     );
   }, [state, memberFilterId]);
@@ -721,6 +723,12 @@ export default function AdminSigSalesPage() {
                 className="w-16 rounded border border-white/15 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-100"
               />
             </label>
+            <Link
+              href="/admin?sigSales=wheel"
+              className="rounded border border-white/20 bg-black/40 px-3 py-2 text-xs text-neutral-200 hover:bg-white/10"
+            >
+              대시보드 모달
+            </Link>
             <button
               type="button"
               onClick={onRerollReset}

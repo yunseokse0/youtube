@@ -27,6 +27,7 @@ type ResultOverlayProps = {
   hanbangOnly?: boolean;
   /** false면 「확정」 배지 숨김(방송: 서버 CONFIRMED 전까지 당첨만 표시할 때) */
   showConfirmedBadge?: boolean;
+  sigImageUserId?: string;
 };
 
 const EMPTY_SOLD_SET = new Set<string>();
@@ -45,6 +46,7 @@ export default function ResultOverlay({
   skipHanbangSignLoadingOverlay = false,
   hanbangOnly = false,
   showConfirmedBadge = true,
+  sigImageUserId,
 }: ResultOverlayProps) {
   const [imageLoaded, setImageLoaded] = useState(() => skipHanbangSignLoadingOverlay);
   useEffect(() => {
@@ -132,6 +134,7 @@ export default function ResultOverlay({
         className="max-w-full justify-center"
         gifDelayMultiplier={gifDelayMultiplier}
         entranceOnlyLatest={entranceOnlyLatest}
+        sigImageUserId={sigImageUserId}
       />
     </div>
   );

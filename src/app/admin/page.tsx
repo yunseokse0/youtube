@@ -81,6 +81,7 @@ import {
   terminateSharedSigOcrWorker,
 } from "@/lib/sig-image-ocr";
 import { planSigBulkReupload } from "@/lib/sig-image-bulk";
+import { applySigPriceExcelRows, sigInventoryToExcelRows } from "@/lib/sig-inventory-excel";
 import { repairDiskUploadSigImagePath } from "@/lib/sig-image-mode";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 import { normalizeSigDedupKeyImageUrl } from "@/lib/sig-inventory-dedup";
@@ -98,6 +99,8 @@ const DONATION_LISTS_BG_GIF_PRESETS: { label: string; url: string }[] = [
 ];
 import MissionBoard from "@/components/MissionBoard";
 import MissionBoardSlot from "@/components/MissionBoardSlot";
+import SigSalesHybridModal, { type SigSalesHybridTab } from "@/components/admin/SigSalesHybridModal";
+import SigSalesCompactCard from "@/components/admin/SigSalesCompactCard";
 
 type OverlayPreset = {
   id: string; name: string; scale: string; memberSize: string; totalSize: string;
@@ -340,7 +343,33 @@ export default function AdminPage() {
   const [ocrBatchProgress, setOcrBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [sigBulkReuploadBusy, setSigBulkReuploadBusy] = useState(false);
   const [sigUploadProgress, setSigUploadProgress] = useState<SigUploadProgress | null>(null);
+  const [sigSalesModalOpen, setSigSalesModalOpen] = useState(false);
+  const [sigSalesModalTab, setSigSalesModalTab] = useState<SigSalesHybridTab>("inventory");
   const sigBulkReuploadInputRef = useRef<HTMLInputElement | null>(null);
+  const openSigSalesModal = useCallback((tab: SigSalesHybridTab = "inventory") => {
+    setSigSalesModalTab(tab);
+    setSigSalesModalOpen(true);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const tab = new URLSearchParams(window.location.search).get("sigSales");
+    if (tab === "wheel" || tab === "rolling" || tab === "inventory") {
+      openSigSalesModal(tab);
+    } else if (tab === "1" || tab === "open") {
+      openSigSalesModal("inventory");
+    }
+  }, [openSigSalesModal]);
+
+  const sigInventoryCount = useMemo(
+    () => (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID).length,
+    [state.sigInventory]
+  );
+  const sigActiveCount = useMemo(
+    () => (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID && x.isActive).length,
+    [state.sigInventory]
+  );
+
   const beginSigBulkUploadUi = useCallback((total: number, label: string) => {
     const safeTotal = Math.max(1, total);
     flushSync(() => {
@@ -2282,6 +2311,55 @@ export default function AdminPage() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, sheet, "sig_inventory");
     XLSX.writeFile(wb, "sig-inventory-template.xlsx");
+  };
+
+  const downloadSigPricesExcel = () => {
+    const items = (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID);
+    if (!items.length) {
+      setSigExcelResult("다운로드할 시그가 없습니다. 먼저 시그를 추가해 주세요.");
+      return;
+    }
+    const rows = sigInventoryToExcelRows(items, state.members || []);
+    const sheet = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet, "sig_prices");
+    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    XLSX.writeFile(wb, `sig-prices-${stamp}.xlsx`);
+    setSigExcelResult(`현재 시그 ${items.length}개 가격·설정을 엑셀로 저장했습니다.`);
+  };
+
+  const uploadSigPricesExcel = async (file: File | null) => {
+    if (!file) return;
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array" });
+    const first = wb.SheetNames[0];
+    if (!first) {
+      setSigExcelResult("엑셀 시트가 비어 있습니다.");
+      return;
+    }
+    const sheet = wb.Sheets[first];
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+    if (!rows.length) {
+      setSigExcelResult("엑셀에 데이터 행이 없습니다.");
+      return;
+    }
+    setState((prev: AppState) => {
+      const inventory = (prev.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID);
+      const { nextInventory, result } = applySigPriceExcelRows(inventory, rows, prev.members || []);
+      const oneShot = (prev.sigInventory || []).find((x) => x.id === ONE_SHOT_SIG_ID);
+      const merged = oneShot ? [oneShot, ...nextInventory] : nextInventory;
+      const draft: AppState = { ...prev, sigInventory: merged, updatedAt: Date.now() };
+      const next = syncOneShotSigItem(draft);
+      persistState(next);
+      const failSuffix =
+        result.notFound.length > 0
+          ? ` · 미매칭 ${result.notFound.length}개: ${result.notFound.slice(0, 4).join(", ")}${result.notFound.length > 4 ? "…" : ""}`
+          : "";
+      setSigExcelResult(
+        `가격 엑셀 반영: ${result.updated}건 업데이트, ${result.skipped}건 건너뜀${failSuffix}`
+      );
+      return next;
+    });
   };
 
   const clearAllSigItems = () => {
@@ -5609,23 +5687,25 @@ export default function AdminPage() {
                   );
                 })()}
               </div>
-              <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
-                <div className="rounded-xl border border-yellow-300/40 bg-gradient-to-r from-yellow-500/10 to-fuchsia-500/10 p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <div className="text-sm font-bold text-yellow-200">시그 판매 회전판 (신규)</div>
-                      <div className="text-xs text-neutral-300">시네마틱 단일 플로우 관리 페이지</div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded bg-white/10 px-2 py-1 text-[11px] text-neutral-200">
-                        현재 상태: {rouletteServerStatus.phase}
-                      </span>
-                      <Link href="/admin/sig-sales" className="rounded bg-yellow-500 px-3 py-1.5 text-xs font-bold text-black hover:bg-yellow-400">
-                        페이지 열기
-                      </Link>
-                    </div>
-                  </div>
-                </div>
+              {!sigSalesModalOpen ? (
+                <SigSalesCompactCard
+                  sigCount={sigInventoryCount}
+                  activeCount={sigActiveCount}
+                  rollingCount={rollingItemsForAdmin.length}
+                  roulettePhase={rouletteServerStatus.phase}
+                  uploadBusy={sigBulkReuploadBusy}
+                  onOpen={openSigSalesModal}
+                />
+              ) : null}
+              <SigSalesHybridModal
+                open={sigSalesModalOpen}
+                activeTab={sigSalesModalTab}
+                onTabChange={setSigSalesModalTab}
+                onClose={() => setSigSalesModalOpen(false)}
+                newTabHref="/admin/sig-sales"
+              >
+                {sigSalesModalTab === "wheel" ? (
+              <div className="rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h3 className="text-base font-semibold">시그 판매 및 회전판 추첨 관리</h3>
@@ -6008,7 +6088,9 @@ export default function AdminPage() {
                   </p>
                 </div>
               </div>
-              <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
+                ) : null}
+                {sigSalesModalTab === "rolling" ? (
+              <div className="rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <h3 className="text-base font-semibold">시그 롤링</h3>
@@ -6243,7 +6325,9 @@ export default function AdminPage() {
                   </ul>
                 </details>
               </div>
-              <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
+                ) : null}
+                {sigSalesModalTab === "inventory" ? (
+              <div className="rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <h3 className="text-base font-semibold">시그 판매 관리</h3>
@@ -6311,13 +6395,33 @@ export default function AdminPage() {
                 </div>
                 <div className="rounded border border-white/10 bg-black/25 p-2 flex flex-wrap items-center gap-2">
                   <button
+                    className="px-3 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-sm"
+                    onClick={downloadSigPricesExcel}
+                    title="현재 시그 목록의 이름·가격·판매 설정을 엑셀로 저장"
+                  >
+                    시그 가격 엑셀 다운로드
+                  </button>
+                  <label className="px-3 py-1 rounded bg-teal-700 hover:bg-teal-600 text-sm cursor-pointer">
+                    시그 가격 엑셀 업로드
+                    <input
+                      className="hidden"
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={(e) => {
+                        void uploadSigPricesExcel(e.target.files?.[0] || null);
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                  <button
                     className="px-3 py-1 rounded bg-sky-700 hover:bg-sky-600 text-sm"
                     onClick={downloadSigExcelTemplate}
+                    title="새 시그 추가용 빈 양식"
                   >
-                    기본 엑셀 폼 다운로드
+                    새 시그 추가 양식
                   </button>
-                  <label className="px-3 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-sm cursor-pointer">
-                    엑셀 업로드
+                  <label className="px-3 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-sm cursor-pointer" title="양식 기준 새 시그 행 추가(기존 이름은 건너뜀)">
+                    새 시그 엑셀 추가
                     <input
                       className="hidden"
                       type="file"
@@ -6368,6 +6472,9 @@ export default function AdminPage() {
                     {sigBulkReuploadBusy ? "업로드 중…" : "PC 시그 일괄 업로드"}
                   </button>
                   {sigExcelResult ? <span className="text-xs text-neutral-300">{sigExcelResult}</span> : null}
+                  <span className="text-[11px] text-neutral-500 w-full">
+                    「가격 다운로드 → 엑셀에서 가격 수정 → 가격 업로드」로 일괄 반영. id 또는 이름으로 매칭합니다.
+                  </span>
                 </div>
                 {sigUploadProgress ? (
                   <SigUploadProgressPanel progress={sigUploadProgress} busy={sigBulkReuploadBusy} />
@@ -6815,6 +6922,9 @@ export default function AdminPage() {
                     시그 이미지는 PC에서 파일을 선택하면 서버 디스크(<code className="text-neutral-300">/uploads/sigs/…</code>)에 저장되고 URL이 자동으로 붙습니다.
                   </span>
                 </div>
+              </div>
+                ) : null}
+              </SigSalesHybridModal>
               <input
                 ref={sigBulkReuploadInputRef}
                 type="file"
@@ -6837,7 +6947,7 @@ export default function AdminPage() {
               />
               {sigImagePreviewModal ? (
                 <div
-                  className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4 py-6"
+                  className="fixed inset-0 z-[500] flex items-center justify-center bg-black/80 px-4 py-6"
                   onClick={() => setSigImagePreviewModal(null)}
                 >
                   <div
@@ -6879,7 +6989,6 @@ export default function AdminPage() {
                   </div>
                 </div>
               ) : null}
-              </div>
               <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
                 <div>
                   <h3 className="text-base font-semibold">타이머 제어</h3>

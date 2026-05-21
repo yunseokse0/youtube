@@ -106,16 +106,16 @@ export default function SigSalesOverlayPage() {
   })();
   /**
    * 시그 PNG 없이 결과 UI만 볼 때: 모든 이미지를 더미 SVG로 고정(404·콘솔 스팸 방지).
-   * 개발(`npm run dev`)에서는 기본 ON · 배포 빌드에서는 기본 OFF.
-   * 강제 ON: `sigPlaceholder=1` · 실제 이미지 경로 사용: `sigPlaceholder=0`
+   * 기본 OFF. 강제 ON: `sigPlaceholder=1` · 명시 OFF: `sigPlaceholder=0`
    */
   const sigPlaceholderParam = sp.get("sigPlaceholder");
+  /** 기본 OFF — 실제 시그 이미지 사용. 더미만: `?sigPlaceholder=1` */
   const sigPlaceholder =
     sigPlaceholderParam === "1" || sigPlaceholderParam === "true"
       ? true
       : sigPlaceholderParam === "0" || sigPlaceholderParam === "false"
         ? false
-        : process.env.NODE_ENV === "development";
+        : false;
   /** 기본: 시그 보드는 회전 완료·결과 패널과 함께만 표시. SPINNING 중에도 보이게 하려면 sigBoardDuringSpin=1 */
   const hideSigBoard =
     sp.get("hideSigBoard") === "1" ||
@@ -465,6 +465,7 @@ export default function SigSalesOverlayPage() {
         x.isActive &&
         x.id !== ONE_SHOT_SIG_ID &&
         !excluded.has(x.id) &&
+        x.soldCount < x.maxCount &&
         (!memberFilterId || (x.memberId || "") === memberFilterId)
     );
   }, [state, memberFilterId]);
@@ -506,7 +507,11 @@ export default function SigSalesOverlayPage() {
     if (menuFillFromAllActive && unique.size < targetCount && state) {
       const excluded = new Set((state.sigSalesExcludedIds || []).map((x) => String(x)));
       const broadActivePool = (state.sigInventory || []).filter(
-        (x) => x.isActive && x.id !== ONE_SHOT_SIG_ID && !excluded.has(x.id)
+        (x) =>
+          x.isActive &&
+          x.id !== ONE_SHOT_SIG_ID &&
+          !excluded.has(x.id) &&
+          x.soldCount < x.maxCount
       );
       for (const item of broadActivePool) {
         unique.set(item.id, item);
@@ -697,8 +702,8 @@ export default function SigSalesOverlayPage() {
   /** 당첨 배열을 재고와 맞춰 휠 라벨·이미지와 동일 시그로 표시 */
   const displaySelectedSigsForUi = useMemo(
     () =>
-      displaySelectedSigs.map((s) => hydrateSigItemFromInventory(s, state?.sigInventory)),
-    [displaySelectedSigs, state?.sigInventory],
+      displaySelectedSigs.map((s) => hydrateSigItemFromInventory(s, state?.sigInventory, userId)),
+    [displaySelectedSigs, state?.sigInventory, userId],
   );
   const completedTargetCount = useMemo(() => {
     if (pendingLanding?.selected?.length) return Math.max(1, Math.min(CONFIRMED_VISIBLE_SLOTS, pendingLanding.selected.length));
@@ -928,25 +933,25 @@ export default function SigSalesOverlayPage() {
   const oneShotImageUrl = useMemo(() => {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     const fromOneShot = (oneShotItem?.imageUrl || "").trim();
-    if (fromOneShot) return resolveSigImageUrl(oneShotItem?.name || "한방 시그", fromOneShot);
+    if (fromOneShot) return resolveSigImageUrl(oneShotItem?.name || "한방 시그", fromOneShot, userId);
     const pick = displaySelectedSigsForUi.find((x) => (x.imageUrl || "").trim());
-    if (pick) return resolveSigImageUrl(pick.name, pick.imageUrl);
+    if (pick) return resolveSigImageUrl(pick.name, pick.imageUrl, userId);
     const poolPick = activeNormalPool.find((x) => (x.imageUrl || "").trim());
-    if (poolPick) return resolveSigImageUrl(poolPick.name, poolPick.imageUrl);
-    return resolveSigImageUrl("", "");
-  }, [state?.sigInventory, displaySelectedSigsForUi, activeNormalPool]);
+    if (poolPick) return resolveSigImageUrl(poolPick.name, poolPick.imageUrl, userId);
+    return resolveSigImageUrl("", "", userId);
+  }, [state?.sigInventory, displaySelectedSigsForUi, activeNormalPool, userId]);
   const getSignImageUrl = useCallback((id?: string | null) => {
     if (!id) return "";
     const canon = canonicalSigIdFromWheelSliceId(String(id));
     const inv = state?.sigInventory;
     const fromInv = inv?.find((x) => x.id === canon) || inv?.find((x) => x.id === id);
-    if (fromInv) return resolveSigImageUrl(fromInv.name, fromInv.imageUrl || "");
+    if (fromInv) return resolveSigImageUrl(fromInv.name, fromInv.imageUrl || "", userId);
     const pool = [...(machine.selectedSigs || []), ...(activeNormalPool || [])];
     const found = pool.find(
       (item) => item.id === id || canonicalSigIdFromWheelSliceId(item.id) === canon,
     );
-    return resolveSigImageUrl(found?.name || "", found?.imageUrl || "");
-  }, [machine.selectedSigs, activeNormalPool, state?.sigInventory]);
+    return resolveSigImageUrl(found?.name || "", found?.imageUrl || "", userId);
+  }, [machine.selectedSigs, activeNormalPool, state?.sigInventory, userId]);
   /** pendingLanding 복원 전·서버 isRolling 불일치 때도 휠 프레임이 돌아가야 함 */
   const hasServerSpinToPlay = useMemo(() => {
     const hasSelection = Boolean(
@@ -1171,9 +1176,9 @@ export default function SigSalesOverlayPage() {
     const queue = pendingLanding?.selected || [];
     queue.forEach((item) => {
       const img = new Image();
-      img.src = resolveSigImageUrl(item.name, item.imageUrl);
+      img.src = resolveSigImageUrl(item.name, item.imageUrl, userId);
     });
-  }, [pendingLanding]);
+  }, [pendingLanding, userId]);
 
   useEffect(() => {
     if (machine.selectedSigs.length > 0) {
@@ -1423,6 +1428,7 @@ export default function SigSalesOverlayPage() {
                         entranceOnlyLatest
                         hanbangOnly={hanbangOnlyResultLayout}
                         showConfirmedBadge={machine.phase === "CONFIRMED"}
+                        sigImageUserId={userId}
                       />
                     </div>
                   </motion.div>

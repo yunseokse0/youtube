@@ -5,6 +5,7 @@ import type { AppState } from "@/lib/state";
 import { normalizeRouletteState } from "@/lib/state";
 import { normalizeSigInventory } from "@/lib/constants";
 import type { SigItem } from "@/types";
+import { pickDistinctSigs } from "@/lib/sig-roulette";
 import { getRouletteUserId, saveAppStateForRoulette } from "../edge-state-store";
 import { setRouletteLock } from "../roulette-lock";
 import {
@@ -122,6 +123,11 @@ export async function POST(req: Request) {
         : []
     );
     const inv = normalizeSigInventory(s.sigInventory).filter((x) => !excludedSet.has(x.id));
+    const invById = new Map(inv.map((row) => [row.id, row]));
+    const enrichPick = (pick: SigItem): SigItem => {
+      const row = invById.get(pick.id);
+      return row ? { ...row, price: Math.max(0, Math.floor(Number(pick.price ?? row.price ?? 0))) } : { ...pick };
+    };
     if (mode === "cinematic5") {
       const pool = inv.filter(
         (x) =>
@@ -157,12 +163,16 @@ export async function POST(req: Request) {
       const selectedCount = spinCountExplicit
         ? Math.max(1, Math.min(CINEMATIC5_MAX_EXPLICIT, spinCount))
         : Math.max(1, Math.min(CINEMATIC5_MAX_LEGACY, expandedPool.length));
-      /** 후보 풀에서 매 회차 독립 추첨(복원) — 확정된 시그와 동일 id가 N번 나와도 허용 */
-      const selectedSigs: SigItem[] = [];
-      for (let k = 0; k < selectedCount; k++) {
-        const pick = pickRandom(expandedPool);
-        selectedSigs.push({ ...pick, maxCount: 1 });
+      if (selectedCount > expandedPool.length) {
+        return Response.json(
+          { error: "not_enough_distinct_sigs", need: selectedCount, have: expandedPool.length },
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
       }
+      const selectedSigs = pickDistinctSigs(expandedPool, selectedCount).map((pick) => ({
+        ...enrichPick(pick),
+        maxCount: 1,
+      }));
       const oneShot = selectedSigs.length >= 2
         ? {
             id: ONE_SHOT_SIG_ID,
@@ -237,22 +247,24 @@ export async function POST(req: Request) {
       for (let i = 0; i < spinCount; i++) planRanges.push(null);
     }
 
-    /** 회차별 독립 추첨(복원) — 한 세션에서 동일 시그 id가 여러 번 당첨되어도 허용(확정 재추첨·회전판 동일 면 등) */
+    /** 한 세션·회차 내 동일 시그 id 중복 당첨 방지(가격 필터는 회차별, 후보는 회차마다 소진) */
     const results: SigItem[] = [];
     const fallbackUsed = false;
+    const pickedIds = new Set<string>();
 
     for (let i = 0; i < spinCount; i++) {
       const tier = plan[i] ?? null;
       const range = planRanges[i] ?? null;
-      const tierPool = filterPoolByTierAndRange(runtimePool, tier, range);
+      const tierPool = filterPoolByTierAndRange(runtimePool, tier, range).filter((x) => !pickedIds.has(x.id));
       if (tierPool.length === 0) {
         return Response.json(
-          { error: "empty_price_range", round: i + 1 },
+          { error: results.length > 0 ? "not_enough_distinct_sigs" : "empty_price_range", round: i + 1 },
           { status: 400, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }
         );
       }
       const picked = pickRandom(tierPool);
-      results.push({ ...picked });
+      pickedIds.add(picked.id);
+      results.push(enrichPick(picked));
     }
 
     const last = results[results.length - 1]!;

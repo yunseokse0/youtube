@@ -87,6 +87,15 @@ describe("sig bulk reupload", () => {
 });
 
 describe("resolveSigImageUrl", () => {
+  it("restores disk upload path from /images/sigs timestamp filename when userId is given", () => {
+    const url = resolveSigImageUrl(
+      "홀리몰리",
+      "/images/sigs/1730000000_abcd1234.gif",
+      "finalent"
+    );
+    expect(url).toBe("/uploads/sigs/finalent/1730000000_abcd1234.gif");
+  });
+
   it("offloads bundled /images/sigs paths to GitHub raw when github-only mode", () => {
     const prev = process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY;
     process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY = "true";
