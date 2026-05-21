@@ -130,8 +130,8 @@ export default function ResultOverlay({
         matchOneShotCardSize
         showConfirmedBadge={showConfirmedBadge}
         trailingSlot={oneShotTrailing}
-        compactGridJustify="center"
-        className="max-w-full justify-center"
+        compactGridJustify="start"
+        className="max-w-full"
         gifDelayMultiplier={gifDelayMultiplier}
         entranceOnlyLatest={entranceOnlyLatest}
         sigImageUserId={sigImageUserId}

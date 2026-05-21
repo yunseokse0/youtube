@@ -1008,6 +1008,7 @@ export default function AdminSigSalesPage() {
                 manualSoldSet={manualSoldSet}
                 disabled={controlsDisabled}
                 highlightId={highlightId}
+                compactGridJustify="start"
                 trailingSlot={displayOneShot && oneShotReveal ? (
                   <OneShotSigCard
                     name={displayOneShot?.name || "한방 시그"}

@@ -36,7 +36,7 @@ type SelectedSigsProps = {
   entranceOnlyLatest?: boolean;
   /**
    * 방송 오버레이: 개별 시그 카드 폭·미디어 영역을 한방 시그(compact)와 동일하게 맞춤.
-   * true면 한 줄 flex-wrap + 중앙 정렬(휠 아래 동일 밴드).
+   * true면 한 줄 flex-wrap(휠 아래 동일 밴드). trailing(한방) 있으면 확정 시그 왼쪽·한방 맨 오른쪽.
    */
   matchOneShotCardSize?: boolean;
 };
@@ -76,16 +76,22 @@ export default function SelectedSigs({
   const gridAlign = compact && trailingActive ? "items-start" : "";
   const justifyCompact =
     compact && compactGridJustify === "start" ? "justify-start" : compact ? "justify-center" : "";
-  return (
-    <section
-      className={
-        broadcastMatch
-          ? `flex w-full min-w-0 max-w-full flex-wrap justify-center gap-1 sm:gap-1 ${className}`.trim()
-          : `grid w-full min-w-0 max-w-full gap-1 ${justifyCompact} ${gridAlign} ${className}`.trim()
-      }
-      style={broadcastMatch ? undefined : { gridTemplateColumns }}
-    >
-      {items.map((item, idx) => {
+  /** 한방 시그(trailing)는 확정 시그들 오른쪽 끝에 고정 — 개별 카드만 wrap */
+  const rowTrailingRight = trailingActive;
+  const sigRowJustify = rowTrailingRight
+    ? "justify-start"
+    : compact && compactGridJustify === "start"
+      ? "justify-start"
+      : broadcastMatch || compact
+        ? "justify-center"
+        : "";
+  const sectionClass = rowTrailingRight
+    ? `flex w-full min-w-0 max-w-full items-start gap-1 sm:gap-1 ${className}`.trim()
+    : broadcastMatch
+      ? `flex w-full min-w-0 max-w-full flex-wrap justify-center gap-1 sm:gap-1 ${className}`.trim()
+      : `grid w-full min-w-0 max-w-full gap-1 ${justifyCompact} ${gridAlign} ${className}`.trim();
+
+  const sigCards = items.map((item, idx) => {
         const canonId = canonicalSigIdFromWheelSliceId(item.id);
         const sold = soldOverrideSet
           ? soldOverrideSet.has(item.id) || soldOverrideSet.has(canonId)
@@ -222,15 +228,23 @@ export default function SelectedSigs({
             </div>
           </motion.article>
         );
-      })}
+      });
+
+  return (
+    <section className={sectionClass} style={rowTrailingRight || broadcastMatch ? undefined : { gridTemplateColumns }}>
+      {rowTrailingRight ? (
+        <div className={`flex min-w-0 flex-1 flex-wrap items-start gap-1 sm:gap-1 ${sigRowJustify}`}>{sigCards}</div>
+      ) : (
+        sigCards
+      )}
       {trailingSlot ? (
         <div
           style={broadcastMatch ? sigOverlayBroadcastCardShellStyle() : undefined}
           className={
             broadcastMatch
-              ? "flex min-h-0 shrink-0 justify-center pt-0.5"
+              ? "flex min-h-0 shrink-0 self-start pt-0.5"
               : compact
-                ? "flex min-h-0 min-w-0 max-w-full justify-start pt-0.5"
+                ? "flex min-h-0 shrink-0 self-start pt-0.5"
                 : "min-h-[280px]"
           }
         >
