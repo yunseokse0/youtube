@@ -47,6 +47,8 @@ export default function OneShotSigCard({
   onMediaReady,
   sigImageUserId,
 }: OneShotSigCardProps) {
+  /** 방송 오버레이(compact·토글 없음): 개별 당첨 카드와 동일 셸·2줄 푸터만 */
+  const broadcastOverlay = Boolean(compact && !showToggle);
   const sumLine =
     typeof selectedSigCount === "number" && selectedSigCount > 0
       ? `선정된 ${selectedSigCount}개 시그 합산 금액`
