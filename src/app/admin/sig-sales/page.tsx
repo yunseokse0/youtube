@@ -3,10 +3,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import confetti from "canvas-confetti";
 import { Howl } from "howler";
 import type { SigItem } from "@/types";
-import RouletteWheel from "@/components/sig-sales/RouletteWheel";
+
+const RouletteWheel = dynamic(() => import("@/components/sig-sales/RouletteWheel"), {
+  ssr: false,
+  loading: () => (
+    <div
+      className="flex items-center justify-center text-sm text-neutral-400"
+      style={{ height: 360, maxWidth: 680 }}
+    >
+      회전판 로딩…
+    </div>
+  ),
+});
 import SelectedSigs from "@/components/sig-sales/SelectedSigs";
 import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
 import ConfirmationModal from "@/components/sig-sales/ConfirmationModal";
@@ -112,6 +124,7 @@ export default function AdminSigSalesPage() {
   const [ocrBatchProgress, setOcrBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [sigSalesSigRowOpen, setSigSalesSigRowOpen] = useState<Record<string, boolean>>({});
   const [resultsPanelCollapsed, setResultsPanelCollapsed] = useState(false);
+  const [overlayObsUrl, setOverlayObsUrl] = useState("");
   const nextSpinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [oneShotSound] = useState(() => new Howl({ src: [SPIN_SOUND_PATHS.oneShot], preload: true, volume: 0.7 }));
   const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || DEFAULT_SIG_SOLD_STAMP_URL;
@@ -607,15 +620,15 @@ export default function AdminSigSalesPage() {
     wheelMenuSlices,
   ]);
 
-  const overlayObsUrl = useMemo(() => {
-    if (typeof window === "undefined") return "";
+  useEffect(() => {
+    if (typeof window === "undefined") return;
     const q = new URLSearchParams();
     q.set("u", userId);
     if (memberFilterId) q.set("memberId", memberFilterId);
     q.set("menuCount", String(effectiveMenuCount));
     const rs = Number(state?.rouletteState?.sigResultScalePct);
     if (Number.isFinite(rs)) q.set("sigResultScalePct", String(Math.floor(rs)));
-    return `${window.location.origin}/overlay/sig-sales?${q.toString()}`;
+    setOverlayObsUrl(`${window.location.origin}/overlay/sig-sales?${q.toString()}`);
   }, [userId, memberFilterId, effectiveMenuCount, state?.rouletteState?.sigResultScalePct]);
 
   const onConfirmSale = useCallback(async () => {
@@ -864,6 +877,11 @@ export default function AdminSigSalesPage() {
                 : ""}
               {menuFillFromAllActive ? " · 전체 활성으로 풀 보충" : ""}
             </p>
+            {authReady && !memberFilterId ? (
+              <p className="mt-1 text-xs font-semibold text-amber-300">
+                「회전판 시작」 전 상단에서 멤버를 선택하세요. (미선택 시 버튼이 동작하지 않습니다)
+              </p>
+            ) : null}
             {overlayObsUrl ? (
               <p className="mt-2 max-w-xl text-[11px] text-neutral-400">
                 OBS 소스 URL (u={userId}
@@ -966,9 +984,20 @@ export default function AdminSigSalesPage() {
             ) : null}
             <button
               type="button"
-              onClick={() => void onStartRoulette()}
-              disabled={loadingSpin || !memberFilterId}
-              className="rounded bg-fuchsia-700 px-4 py-2 text-sm font-bold hover:bg-fuchsia-600 disabled:opacity-50"
+              onClick={() => {
+                if (!memberFilterId) {
+                  setToast("회전 전 멤버를 먼저 선택해주세요.");
+                  return;
+                }
+                void onStartRoulette();
+              }}
+              disabled={loadingSpin}
+              title={!memberFilterId ? "멤버 선택 후 시작" : undefined}
+              className={`rounded px-4 py-2 text-sm font-bold disabled:opacity-50 ${
+                memberFilterId
+                  ? "bg-fuchsia-700 hover:bg-fuchsia-600"
+                  : "cursor-not-allowed bg-fuchsia-900/50 text-fuchsia-200/70"
+              }`}
             >
               {loadingSpin ? "추첨 준비중..." : "회전판 시작"}
             </button>
@@ -1235,7 +1264,7 @@ export default function AdminSigSalesPage() {
                   <div className="mt-0.5 text-neutral-300">
                     한방 시그: {h.oneShotPrice.toLocaleString("ko-KR")}원 · 합계 {h.totalPrice.toLocaleString("ko-KR")}원
                   </div>
-                  <div className="mt-1 text-[11px] text-neutral-400">
+                  <div className="mt-1 text-[11px] text-neutral-400" suppressHydrationWarning>
                     {new Date(h.timestamp).toLocaleString("ko-KR")}
                   </div>
                 </button>
