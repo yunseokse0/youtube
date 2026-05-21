@@ -60,7 +60,7 @@ export default function OneShotSigCard({
       style={compact ? sigOverlayBroadcastCardShellStyle() : undefined}
       className={`relative border border-yellow-300/70 bg-[linear-gradient(135deg,rgba(245,158,11,0.25),rgba(234,179,8,0.1))] shadow-[0_0_30px_rgba(250,204,21,0.35)] ${
         compact
-          ? "mx-auto w-full shrink-0 self-start overflow-visible rounded-xl px-1.5 py-2 pb-2"
+          ? "w-full shrink-0 self-start overflow-visible rounded-xl px-1.5 py-2 pb-2"
           : "overflow-hidden rounded-2xl p-4"
       }`}
     >

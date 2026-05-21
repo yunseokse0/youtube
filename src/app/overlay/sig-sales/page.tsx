@@ -603,14 +603,17 @@ export default function SigSalesOverlayPage() {
 
   const wheelItemsWithResult = wheelSpinTarget.items;
 
+  /** 당첨 카드(`hydrateSigItemFromInventory`)와 동일한 재고 이름 — 롤링 메타 짧은 라벨만 쓰면 휠·카드 문구가 달라 보임 */
   const getWheelLabel = useCallback(
     (item: SigItem) => {
       const canon = canonicalSigIdFromWheelSliceId(item.id);
-      const metaLabel = state?.sigRollingMeta?.[canon]?.label?.trim();
-      const raw = metaLabel || String(item.name || "").trim() || canon;
+      const fromInv =
+        state?.sigInventory?.find((x) => x.id === canon) ||
+        state?.sigInventory?.find((x) => x.id === item.id);
+      const raw = String(fromInv?.name || item.name || "").trim() || canon;
       return sanitizeWheelDisplayName(raw) || raw;
     },
-    [state?.sigRollingMeta]
+    [state?.sigInventory]
   );
 
   const wheelResultSliceId = wheelSpinTarget.sliceId;
@@ -653,12 +656,20 @@ export default function SigSalesOverlayPage() {
               (wheelAnimating || (wheelPhase === "idle" && machine.phase === "SPINNING"))
             : wheelAnimating || (wheelPhase === "idle" && machine.phase === "SPINNING");
     if (inSpinUx) return [];
-    if (machine.selectedSigs.length > 0) return machine.selectedSigs.slice(0, CONFIRMED_VISIBLE_SLOTS);
-    if (pendingLanding?.selected?.length) return pendingLanding.selected.slice(0, CONFIRMED_VISIBLE_SLOTS);
-    if (broadcastStickySigs?.length) return broadcastStickySigs.slice(0, CONFIRMED_VISIBLE_SLOTS);
+    const queue = spinQueueSelected;
+    if (queue.length > 0) return queue;
+    if (
+      broadcastStickySigs?.length &&
+      (overlayHoldResults ||
+        machine.phase === "LANDED" ||
+        machine.phase === "CONFIRM_PENDING" ||
+        machine.phase === "CONFIRMED")
+    ) {
+      return broadcastStickySigs.slice(0, CONFIRMED_VISIBLE_SLOTS);
+    }
     return [];
   }, [
-    machine.selectedSigs,
+    spinQueueSelected,
     machine.phase,
     machine.startedAt,
     pendingLanding,
@@ -668,6 +679,7 @@ export default function SigSalesOverlayPage() {
     revealedSigCount,
     sequentialRoundIndex,
     broadcastStickySigs,
+    overlayHoldResults,
   ]);
   /**
    * startedAt 가 폴링 중 0→실값으로 바뀌면 키가 바뀌어 순차 상태가 초기화될 수 있음 → staggerSessionPin 으로 완화.
@@ -1419,8 +1431,23 @@ export default function SigSalesOverlayPage() {
                           .catch(() => {});
                       }
                       transitionHandledKeyRef.current = "";
+                      const nextRound = sequentialRoundIndex + 1;
+                      const nextWinner = selectedQueue[nextRound] ?? null;
+                      const nextTarget = resolveWheelSpinTarget(
+                        wheelSlices,
+                        nextWinner,
+                        nextRound
+                      );
                       window.setTimeout(() => {
-                        setSequentialRoundIndex((v) => v + 1);
+                        setSequentialRoundIndex(nextRound);
+                        setDemoSpin({
+                          startedAt: resolveOverlayWheelStartedAt(
+                            machine.startedAt,
+                            machine.sessionId
+                          ),
+                          resultId:
+                            nextTarget.sliceId || nextWinner?.id || null,
+                        });
                         dispatch({ type: "RESET" });
                         dispatch({ type: "START_SPIN" });
                       }, sequentialNextSpinMs);
@@ -1430,7 +1457,10 @@ export default function SigSalesOverlayPage() {
 
                   const snapSession = machine.sessionId;
                   const snapStarted = machine.startedAt;
-                  const serverWinner = selectedQueue[lastIdx] ?? null;
+                  const roundIdx = seqMulti
+                    ? Math.min(sequentialRoundIndex, lastIdx)
+                    : lastIdx;
+                  const serverWinner = selectedQueue[roundIdx] ?? selectedQueue[lastIdx] ?? null;
                   if (
                     serverWinner &&
                     landedId &&
@@ -1439,9 +1469,13 @@ export default function SigSalesOverlayPage() {
                     console.warn("[sig-sales overlay] wheel/card mismatch — using server queue", {
                       landedId,
                       serverId: serverWinner.id,
+                      roundIdx,
                     });
                   }
                   const finalQueue = selectedQueue;
+                  setRevealedSigCount((c) =>
+                    Math.max(c, Math.min(finalQueue.length, roundIdx + 1, CONFIRMED_VISIBLE_SLOTS))
+                  );
                   const oneShot = buildOneShotFromSelected(finalQueue);
                   const machineSpinKey = `${machine.startedAt || 0}:${machine.sessionId || ""}:${machine.resultId || ""}`;
                   completedSpinKeyRef.current = machineSpinKey;

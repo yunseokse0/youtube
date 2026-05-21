@@ -172,6 +172,62 @@ describe("resolveSigSalesMenuCount", () => {
   });
 });
 
+/** 휠 착지 slice ↔ 서버 당첨 카드 정합(회차별) */
+describe("wheel spin queue aligns with result cards", () => {
+  it("각 회차 resolveWheelSpinTarget 착지가 서버 당첨과 캐노니컬 id로 일치한다", () => {
+    const pool: SigItem[] = [
+      { ...item("sig_a"), name: "애교" },
+      { ...item("sig_b"), name: "댄스" },
+      { ...item("sig_c"), name: "노래" },
+      { ...item("sig_d"), name: "토크" },
+      { ...item("sig_e"), name: "게임" },
+      { ...item("sig_f"), name: "식사권" },
+    ];
+    const slices = buildWheelMenuSlices(pool, 8);
+    const winners = pickDistinctSigsByIdAndName(pool, 5);
+    expect(winners.length).toBe(5);
+    for (let round = 0; round < winners.length; round++) {
+      const winner = winners[round]!;
+      const target = resolveWheelSpinTarget(slices, winner, round);
+      expect(target.sliceId, `round ${round}`).toBeTruthy();
+      expect(wheelSliceMatchesServerWinner(target.sliceId, winner)).toBe(true);
+      const idx = findSliceIndexForResult(target.items, target.sliceId);
+      expect(idx).toBeGreaterThanOrEqual(0);
+      const sliceItem = target.items[idx]!;
+      expect(canonicalSigIdFromWheelSliceId(sliceItem.id)).toBe(
+        canonicalSigIdFromWheelSliceId(winner.id)
+      );
+    }
+  });
+
+  it("당첨이 휠 풀에 없어도 주입 후 착지·카드 id가 같다", () => {
+    const slices = buildWheelMenuSlices([item("only_a"), item("only_b")], 4);
+    const offPool = item("off_pool_winner", 88000);
+    offPool.name = "오프풀당첨";
+    const target = resolveWheelSpinTarget(slices, offPool, 1);
+    expect(wheelSliceMatchesServerWinner(target.sliceId, offPool)).toBe(true);
+    const idx = findSliceIndexForResult(target.items, target.sliceId);
+    expect(target.items[idx]?.name).toBe("오프풀당첨");
+  });
+
+  it("calculateSpinFinalAngle 착지 각도가 sliceId 칸 중심과 일치한다", () => {
+    const slices = buildWheelMenuSlices(
+      ["a", "b", "c", "d", "e"].map((id) => item(id)),
+      5
+    );
+    const winner = item("c");
+    const target = resolveWheelSpinTarget(slices, winner, 0);
+    const count = target.items.length;
+    const seg = 360 / count;
+    const idx = findSliceIndexForResult(target.items, target.sliceId);
+    const targetCenter = idx * seg + seg / 2;
+    const expectedPointerNorm = ((360 - targetCenter) % 360 + 360) % 360;
+    const finalAngle = calculateSpinFinalAngle(target.items, target.sliceId, count, 500, 2);
+    const landedNorm = ((finalAngle % 360) + 360) % 360;
+    expect(landedNorm).toBeCloseTo(expectedPointerNorm, 8);
+  });
+});
+
 describe("sigMatchesMemberFilter", () => {
   const memberA = { memberId: "m-a" };
   const common = { memberId: "" };

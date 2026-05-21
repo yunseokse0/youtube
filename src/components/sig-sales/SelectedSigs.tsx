@@ -36,7 +36,7 @@ type SelectedSigsProps = {
   entranceOnlyLatest?: boolean;
   /**
    * 방송 오버레이: 개별 시그 카드 폭·미디어 영역을 한방 시그(compact)와 동일하게 맞춤.
-   * true면 한 줄 flex-wrap(휠 아래 동일 밴드). trailing(한방) 있으면 확정 시그 왼쪽·한방 맨 오른쪽.
+   * true면 한 줄 flex-nowrap(휠 아래 동일 밴드). trailing(한방)은 당첨 카드 바로 옆에 붙음.
    */
   matchOneShotCardSize?: boolean;
 };
@@ -66,6 +66,8 @@ export default function SelectedSigs({
   const columnCount = Math.min(6, Math.max(1, cellCount));
   /** 방송 오버레이(compact·토글 숨김)는 한방 카드와 같은 폭·비율을 기본 적용 */
   const broadcastMatch = Boolean(compact && (matchOneShotCardSize || !showToggle));
+  /** 방송 오버레이: 당첨 카드 + 한방을 한 줄에 배치(줄바꿈 없음) */
+  const overlaySingleRow = broadcastMatch;
   /**
    * 오버레이(compact): 열을 auto → 카드 실제 너비만 차지해 순서대로 붙음(1fr면 행 전체를 나눠 간격만 벌어짐).
    * 관리 화면 등: 1fr로 균등 분할 유지.
@@ -76,17 +78,17 @@ export default function SelectedSigs({
   const gridAlign = compact && trailingActive ? "items-start" : "";
   const justifyCompact =
     compact && compactGridJustify === "start" ? "justify-start" : compact ? "justify-center" : "";
-  /** 한방 시그(trailing)는 확정 시그들 오른쪽 끝에 고정 — 개별 카드만 wrap */
-  const rowTrailingRight = trailingActive;
-  const sigRowJustify = rowTrailingRight
-    ? "justify-start"
-    : compact && compactGridJustify === "start"
-      ? "justify-start"
-      : broadcastMatch || compact
-        ? "justify-center"
-        : "";
-  const sectionClass = rowTrailingRight
-    ? `flex w-full min-w-0 max-w-full items-start gap-1 sm:gap-1 ${className}`.trim()
+  const sigRowJustify =
+    overlaySingleRow
+      ? "justify-center"
+      : compact && compactGridJustify === "start"
+        ? "justify-start"
+        : broadcastMatch || compact
+          ? "justify-center"
+          : "";
+  const nowrapRow = overlaySingleRow ? "flex-nowrap overflow-x-auto" : "flex-wrap";
+  const sectionClass = overlaySingleRow
+    ? `flex w-full min-w-0 max-w-full ${nowrapRow} items-start ${sigRowJustify} gap-1 sm:gap-1 ${className}`.trim()
     : broadcastMatch
       ? `flex w-full min-w-0 max-w-full flex-wrap justify-center gap-1 sm:gap-1 ${className}`.trim()
       : `grid w-full min-w-0 max-w-full gap-1 ${justifyCompact} ${gridAlign} ${className}`.trim();
@@ -231,21 +233,15 @@ export default function SelectedSigs({
       });
 
   return (
-    <section className={sectionClass} style={rowTrailingRight || broadcastMatch ? undefined : { gridTemplateColumns }}>
-      {rowTrailingRight ? (
-        <div className={`flex min-w-0 flex-1 flex-wrap items-start gap-1 sm:gap-1 ${sigRowJustify}`}>{sigCards}</div>
-      ) : (
-        sigCards
-      )}
+    <section className={sectionClass} style={overlaySingleRow || broadcastMatch ? undefined : { gridTemplateColumns }}>
+      {sigCards}
       {trailingSlot ? (
         <div
           style={broadcastMatch ? sigOverlayBroadcastCardShellStyle() : undefined}
           className={
-            broadcastMatch
-              ? "flex min-h-0 shrink-0 self-start pt-0.5"
-              : compact
-                ? "flex min-h-0 shrink-0 self-start pt-0.5"
-                : "min-h-[280px]"
+            broadcastMatch || compact
+              ? "flex min-h-0 shrink-0 self-start"
+              : "min-h-[280px]"
           }
         >
           {trailingSlot}

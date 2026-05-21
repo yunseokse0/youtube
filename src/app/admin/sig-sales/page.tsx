@@ -317,11 +317,16 @@ export default function AdminSigSalesPage() {
     () => buildWheelMenuSlices(wheelDisplayPool, effectiveMenuCount),
     [wheelDisplayPool, effectiveMenuCount]
   );
+  /** OBS와 동일: 서버 `machine.selectedSigs`가 당첨 큐 단일 소스 */
+  const spinQueueSelected = useMemo(() => {
+    const fromServer = (machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
+    if (fromServer.length > 0) return fromServer;
+    return (pendingLanding?.selected || []).slice(0, MAX_SELECTED_SIGS);
+  }, [machine.selectedSigs, pendingLanding?.selected]);
   const wheelSpinTarget = useMemo(() => {
-    const queue = (pendingLanding?.selected || machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
-    const serverWinner = queue[spinStep] ?? null;
+    const serverWinner = spinQueueSelected[spinStep] ?? null;
     return resolveWheelSpinTarget(wheelMenuSlices, serverWinner, spinStep);
-  }, [wheelMenuSlices, pendingLanding?.selected, machine.selectedSigs, spinStep]);
+  }, [wheelMenuSlices, spinQueueSelected, spinStep]);
   const wheelItemsWithResult = wheelSpinTarget.items;
   const wheelResultSliceId = wheelSpinTarget.sliceId;
   const displaySelectedSigs = useMemo(() => {
@@ -1059,7 +1064,11 @@ export default function AdminSigSalesPage() {
             muted={muted}
             onLanded={(landedId) => {
               if (!pendingLanding) return;
-              const selectedQueue = pendingLanding.selected.slice(0, MAX_SELECTED_SIGS);
+              const selectedQueue = (
+                pendingLanding?.selected?.length
+                  ? pendingLanding.selected
+                  : spinQueueSelected
+              ).slice(0, MAX_SELECTED_SIGS);
               if (selectedQueue.length === 0) return;
               const serverWinner = selectedQueue[Math.min(spinStep, selectedQueue.length - 1)];
               if (
