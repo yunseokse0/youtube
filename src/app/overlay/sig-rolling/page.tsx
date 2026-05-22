@@ -69,23 +69,13 @@ function RollingCardColumn({
   pairSide?: "left" | "right";
   overlayUserId?: string;
 }) {
-  if (!current) return null;
-
-  /**
-   * 모바일(WebView/Safari)에서는 backdrop-filter 계열이 투명 캔버스와 겹칠 때
-   * 카드 외곽이 검은 타일처럼 보이는 경우가 있어, sig-rolling은 블러 없이 고정 셸 사용.
-   */
-  const shellBase = "overflow-hidden shadow-lg border border-white/20 bg-white/35";
-  const shellClass =
-    pairSide === "left"
-      ? `${shellBase} rounded-l-3xl rounded-r-none p-1.5`
-      : pairSide === "right"
-        ? `${shellBase} rounded-r-3xl rounded-l-none p-1.5`
-        : `${shellBase} rounded-3xl p-1.5`;
-
-  const under = nextItem || current;
-  const srcCurrentRaw = resolveSigRollingImageUrl(current.label || "", current.url, overlayUserId);
-  const srcUnderRaw = resolveSigRollingImageUrl(under.label || "", under.url, overlayUserId);
+  const under = current ? nextItem || current : null;
+  const srcCurrentRaw = current
+    ? resolveSigRollingImageUrl(current.label || "", current.url, overlayUserId)
+    : "";
+  const srcUnderRaw = under
+    ? resolveSigRollingImageUrl(under.label || "", under.url, overlayUserId)
+    : "";
   const srcCurrent = toSigOverlayAbsoluteAssetUrl(srcCurrentRaw);
   const srcUnder = toSigOverlayAbsoluteAssetUrl(srcUnderRaw);
   const [imgSrc, setImgSrc] = useState(srcCurrent);
@@ -101,6 +91,22 @@ function RollingCardColumn({
     if (which === "over") setImgSrc(fallback);
     else setImgUnderSrc(fallback);
   }, []);
+
+  if (!current) return null;
+
+  const cardUnder = nextItem || current;
+
+  /**
+   * 모바일(WebView/Safari)에서는 backdrop-filter 계열이 투명 캔버스와 겹칠 때
+   * 카드 외곽이 검은 타일처럼 보이는 경우가 있어, sig-rolling은 블러 없이 고정 셸 사용.
+   */
+  const shellBase = "overflow-hidden shadow-lg border border-white/20 bg-white/35";
+  const shellClass =
+    pairSide === "left"
+      ? `${shellBase} rounded-l-3xl rounded-r-none p-1.5`
+      : pairSide === "right"
+        ? `${shellBase} rounded-r-3xl rounded-l-none p-1.5`
+        : `${shellBase} rounded-3xl p-1.5`;
 
   if (!enableCrossfade) {
     return (
@@ -150,7 +156,7 @@ function RollingCardColumn({
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            key={`under-${under.id}`}
+            key={`under-${cardUnder.id}`}
             src={imgUnderSrc}
             alt=""
             className={IMG_IN_FRAME}
