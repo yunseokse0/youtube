@@ -31,7 +31,15 @@ import {
 } from "@/lib/constants";
 import { loadState, loadStateFromApi, saveStateAsync, storageKey, type AppState } from "@/lib/state";
 import { useSSEConnection } from "@/lib/sse-client";
-import { createStateUpdatedScheduler, readOverlayPollIntervalMs } from "@/lib/overlay-pull-policy";
+import {
+  createStateUpdatedScheduler,
+  readOverlayPollIntervalMs,
+  readSigSalesOverlayPollMs,
+  shouldSyncOverlayFromStateUpdatedEvent,
+  shouldSyncSigSalesFromRouletteSseHint,
+  sigSalesRouletteSyncCursorFromState,
+  type SigSalesRouletteSyncCursor,
+} from "@/lib/overlay-pull-policy";
 import {
   ONE_SHOT_SIG_ID,
   SPIN_SOUND_PATHS,
@@ -45,11 +53,9 @@ import {
   resolveSigSalesMenuCount,
   canonicalSigIdFromWheelSliceId,
   hydrateSigItemFromInventory,
-  pickWheelAnimationResultId,
   rememberUsedWheelSliceId,
-  wheelDuplicatePickForWinner,
   resolveSpinQueueForSession,
-  resolveWheelSpinTarget,
+  bindWheelAnimationToRoundWinner,
   type SpinQueueSessionPin,
   sigMatchesMemberFilter,
   wheelSliceMatchesServerWinner,
@@ -159,18 +165,42 @@ export default function AdminSigSalesPage() {
       .finally(() => setAuthReady(true));
   }, [router]);
 
+  const lastSyncedUpdatedAtRef = useRef(0);
+  const lastRouletteSyncRef = useRef<SigSalesRouletteSyncCursor>({ sessionId: "", phase: "" });
   const loadRemote = useCallback(async () => {
     if (!authReady) return;
     const remote = await loadStateFromApi(userId);
-    if (remote) setState(remote);
+    if (!remote) return;
+    const ts = remote.updatedAt || 0;
+    if (ts > 0) lastSyncedUpdatedAtRef.current = Math.max(lastSyncedUpdatedAtRef.current, ts);
+    lastRouletteSyncRef.current = sigSalesRouletteSyncCursorFromState(remote.rouletteState);
+    setState(remote);
   }, [authReady, userId]);
 
   const loadRemoteRef = useRef(loadRemote);
   loadRemoteRef.current = loadRemote;
   const scheduleSseLoadRef = useRef<(() => void) | null>(null);
   useSSEConnection((d: unknown) => {
-    const o = d as { type?: string };
-    if (o?.type === "state_updated") scheduleSseLoadRef.current?.();
+    const o = d as {
+      type?: string;
+      updatedAt?: number;
+      roulettePhase?: string;
+      rouletteSessionId?: string;
+    };
+    if (o?.type !== "state_updated") return;
+    const rouletteHint = shouldSyncSigSalesFromRouletteSseHint(o, lastRouletteSyncRef.current);
+    if (
+      !rouletteHint &&
+      !shouldSyncOverlayFromStateUpdatedEvent(o.updatedAt, lastSyncedUpdatedAtRef.current)
+    ) {
+      return;
+    }
+    if (rouletteHint) {
+      const sid = String(o.rouletteSessionId || lastRouletteSyncRef.current.sessionId || "").trim();
+      const phase = String(o.roulettePhase || lastRouletteSyncRef.current.phase || "").trim();
+      if (sid) lastRouletteSyncRef.current = { sessionId: sid, phase };
+    }
+    scheduleSseLoadRef.current?.();
   });
 
   useEffect(() => {
@@ -185,9 +215,11 @@ export default function AdminSigSalesPage() {
     setState(loadState(userId));
     void loadRemote();
     const pollMs = readOverlayPollIntervalMs();
+    const sigSalesPollMs = pollMs > 0 ? 0 : readSigSalesOverlayPollMs();
     let pollId: number | undefined;
-    if (pollMs > 0) {
-      pollId = window.setInterval(() => void loadRemote(), pollMs);
+    const effectivePollMs = pollMs > 0 ? pollMs : sigSalesPollMs;
+    if (effectivePollMs > 0) {
+      pollId = window.setInterval(() => void loadRemote(), effectivePollMs);
     }
     const key = storageKey(userId);
     let storageDebounce: ReturnType<typeof setTimeout> | null = null;
@@ -380,13 +412,6 @@ export default function AdminSigSalesPage() {
     () => spinQueueSelected.slice(0, Math.max(0, spinStep)),
     [spinQueueSelected, spinStep]
   );
-  const wheelDuplicatePick = useMemo(
-    () =>
-      currentRoundWinner
-        ? wheelDuplicatePickForWinner(priorRoundWinners, currentRoundWinner)
-        : 0,
-    [priorRoundWinners, currentRoundWinner]
-  );
   const wheelSpinning =
     machine.phase !== "LANDED" &&
     machine.phase !== "CONFIRM_PENDING" &&
@@ -411,24 +436,20 @@ export default function AdminSigSalesPage() {
     ]
   );
 
-  const wheelSpinTarget = useMemo(
+  const wheelRoundBinding = useMemo(
     () =>
-      resolveWheelSpinTarget(
-        wheelSlicesForSpin,
-        currentRoundWinner,
-        useSequentialWheel ? spinStep : 0,
-        useSequentialWheel ? usedWheelSliceIdsRef.current : undefined,
-        useSequentialWheel ? priorRoundWinners : undefined
-      ),
+      bindWheelAnimationToRoundWinner({
+        wheelSlices: wheelSlicesForSpin,
+        roundWinner: currentRoundWinner,
+        roundIndex: useSequentialWheel ? spinStep : 0,
+        usedSliceIds: useSequentialWheel ? usedWheelSliceIdsRef.current : undefined,
+        priorWinners: useSequentialWheel ? priorRoundWinners : undefined,
+      }),
     [wheelSlicesForSpin, currentRoundWinner, useSequentialWheel, spinStep, priorRoundWinners]
   );
-  const wheelItemsWithResult = wheelSpinTarget.items;
-  const wheelResultSliceId = wheelSpinTarget.sliceId;
-  const wheelAnimationResultId = pickWheelAnimationResultId(wheelResultSliceId, currentRoundWinner, {
-    wheelItems: wheelItemsWithResult,
-    duplicatePick: useSequentialWheel ? wheelDuplicatePick : 0,
-    usedSliceIds: useSequentialWheel ? usedWheelSliceIdsRef.current : undefined,
-  });
+  const wheelItemsWithResult = wheelRoundBinding.items;
+  const wheelResultSliceId = wheelRoundBinding.sliceId;
+  const wheelAnimationResultId = wheelRoundBinding.animationResultId;
   const displaySelectedSigs = useMemo(() => {
     const fromServer = (machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
     const fromStaged = stagedSelected.slice(0, MAX_SELECTED_SIGS);
@@ -1265,9 +1286,10 @@ export default function AdminSigSalesPage() {
                   landedId || wheelResultSliceId
                 );
                 setStagedSelected(nextSelected);
-                setSpinStep(nextStep);
                 if (nextSpinTimerRef.current) clearTimeout(nextSpinTimerRef.current);
                 nextSpinTimerRef.current = setTimeout(() => {
+                  /** 착지 직후 spinStep+1 → 휠이 다음 회차 시그로 재바인딩됨. 다음 회전 시작 직전에만 증가 */
+                  setSpinStep(nextStep);
                   setLastConfirmedText("");
                   setDemoSpin({
                     startedAt: Date.now(),
@@ -1294,6 +1316,17 @@ export default function AdminSigSalesPage() {
               const shouldPersist = pendingLanding.persist;
               setPendingLanding(null);
               if (!shouldPersist) return;
+              void persistRouletteState({
+                phase: "LANDED",
+                isRolling: false,
+                selectedSigs: finalSelected,
+                results: finalSelected,
+                oneShotResult: oneShot,
+                result: finalSelected[finalSelected.length - 1] || null,
+                spinCount: finalSelected.length,
+                sessionId: snapSession,
+                startedAt: snapStarted,
+              });
               void (async () => {
                 if (!snapSession) return;
                 try {

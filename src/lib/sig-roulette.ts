@@ -111,13 +111,13 @@ export function buildSigSalesWheelDisplayPool(opts: BuildSigSalesWheelDisplayPoo
     ensureItems = [],
   } = opts;
   const excluded = new Set(sigSalesExcludedIds.map((x) => String(x)));
-  const sessionExcluded = new Set(sessionExcludedSigIds.map((x) => String(x)));
+  const sessionExclusion = buildSessionSpinExclusion(inventory, sessionExcludedSigIds);
   const activeNormalPool = inventory.filter(
     (x) =>
       x.isActive &&
       x.id !== ONE_SHOT_SIG_ID &&
       !excluded.has(x.id) &&
-      !sessionExcluded.has(x.id) &&
+      sigEligibleForSessionSpinPool(x, sessionExclusion) &&
       x.soldCount < x.maxCount &&
       sigMatchesMemberFilter(x, memberFilterId)
   );
@@ -180,6 +180,51 @@ export type WheelSpinTarget = {
   sliceId: string | null;
   expectedCanon: string | null;
 };
+
+/** 이미 당첨된 시그(세션 제외 목록) — id + 표시명(재고에 동일 이름 다른 id) */
+export function buildSessionSpinExclusion(
+  inventory: SigItem[],
+  sessionExcludedSigIds: string[] | undefined,
+  priorWinners: Pick<SigItem, "id" | "name">[] = []
+): { excludedIds: Set<string>; excludedNameKeys: Set<string> } {
+  const excludedIds = new Set<string>();
+  const excludedNameKeys = new Set<string>();
+  for (const raw of sessionExcludedSigIds || []) {
+    const canon = canonicalSigIdFromWheelSliceId(String(raw || "").trim());
+    if (canon) excludedIds.add(canon);
+  }
+  for (const row of inventory) {
+    const canon = canonicalSigIdFromWheelSliceId(row.id);
+    if (!excludedIds.has(canon)) continue;
+    const nk = normalizeSigPickNameKey(row.name);
+    if (nk) excludedNameKeys.add(nk);
+  }
+  for (const w of priorWinners) {
+    const canon = canonicalSigIdFromWheelSliceId(w.id);
+    if (!canon || !excludedIds.has(canon)) continue;
+    const nk = normalizeSigPickNameKey(w.name);
+    if (nk) excludedNameKeys.add(nk);
+  }
+  return { excludedIds, excludedNameKeys };
+}
+
+/** 스핀 후보·휠 메뉴 풀에서 제외 */
+export function sigEligibleForSessionSpinPool(
+  item: Pick<SigItem, "id" | "name">,
+  exclusion: { excludedIds: Set<string>; excludedNameKeys: Set<string> }
+): boolean {
+  if (item.id === ONE_SHOT_SIG_ID) return false;
+  const canon = canonicalSigIdFromWheelSliceId(item.id);
+  if (exclusion.excludedIds.has(canon)) return false;
+  const nk = normalizeSigPickNameKey(item.name);
+  if (nk && exclusion.excludedNameKeys.has(nk)) return false;
+  return true;
+}
+
+/** 당첨 큐에 id·표시명 중복이 없는지 */
+export function isSigQueueDistinctByIdAndName(queue: SigItem[]): boolean {
+  return dedupeSigQueueByIdAndName(queue).length === queue.length;
+}
 
 /** 순차 회전 당첨 큐 — id·표시명 중복 제거(이미 나온 시그가 다음 회차에 또 당첨되는 것 방지) */
 export function dedupeSigQueueByIdAndName(queue: SigItem[]): SigItem[] {
@@ -259,6 +304,50 @@ export function resolveWheelSpinTarget(
     return { items, sliceId: null, expectedCanon };
   }
   return { items, sliceId, expectedCanon };
+}
+
+export type BindWheelToRoundWinnerOptions = {
+  wheelSlices: SigItem[];
+  /** 이번에 나올(서버 큐) 시그 — 회전판·카드의 기준 */
+  roundWinner: SigItem | null;
+  roundIndex: number;
+  usedSliceIds?: ReadonlySet<string>;
+  priorWinners?: readonly SigItem[];
+};
+
+/**
+ * 단일 규칙: `roundWinner`(이번에 나올 시그)에 맞춰 휠 칸·감속 `resultId`를 한 번에 결정.
+ * 관리자·OBS는 이 함수 출력만 `RouletteWheel`에 넘긴다(`machine.result` 사용 금지).
+ */
+export function bindWheelAnimationToRoundWinner(opts: BindWheelToRoundWinnerOptions): {
+  items: SigItem[];
+  sliceId: string | null;
+  animationResultId: string | null;
+  duplicatePick: number;
+} {
+  const prior = opts.priorWinners;
+  const target = resolveWheelSpinTarget(
+    opts.wheelSlices,
+    opts.roundWinner,
+    opts.roundIndex,
+    opts.usedSliceIds,
+    prior
+  );
+  const duplicatePick =
+    prior !== undefined && opts.roundWinner
+      ? wheelDuplicatePickForWinner(prior, opts.roundWinner)
+      : Math.max(0, opts.roundIndex);
+  const animationResultId = pickWheelAnimationResultId(target.sliceId, opts.roundWinner, {
+    wheelItems: target.items,
+    duplicatePick,
+    usedSliceIds: opts.usedSliceIds,
+  });
+  return {
+    items: target.items,
+    sliceId: target.sliceId,
+    animationResultId,
+    duplicatePick,
+  };
 }
 
 /** 이번 회차 당첨 1개만 휠에 올릴 때(테스트·레거시; 연출 기본은 `resolveWheelSlicesForSpinVisual`) */
@@ -534,7 +623,7 @@ export function pickDistinctSigsByIdAndName(pool: SigItem[], count: number): Sig
   const usedNames = new Set<string>();
   for (const item of copy) {
     if (out.length >= count) break;
-    const id = String(item.id || "").trim();
+    const id = canonicalSigIdFromWheelSliceId(item.id);
     if (!id || usedIds.has(id)) continue;
     const nameKey = normalizeSigPickNameKey(item.name);
     if (nameKey && usedNames.has(nameKey)) continue;

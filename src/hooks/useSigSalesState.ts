@@ -142,6 +142,17 @@ export function useSigSalesState(userId: string, appState: AppState | null) {
 
     const incoming = toMachine(appState.rouletteState);
     const cur = machineRef.current;
+    /** 같은 회차에서 서버 단계가 더 진행됐으면 항상 반영(관리자 LANDED·확정 → OBS) */
+    if (
+      incoming.sessionId &&
+      cur.sessionId &&
+      incoming.sessionId === cur.sessionId &&
+      salesPhaseRank(incoming.phase) > salesPhaseRank(cur.phase)
+    ) {
+      prevUpdatedAtRef.current = incomingTs;
+      dispatch({ type: "HYDRATE", payload: incoming });
+      return;
+    }
     // 서버가 아직 SPINNING인데 로컬은 착지(LANDED)·확정대기(CONFIRM_PENDING)면 폴링이 단계를 되돌리지 않음
     if (
       incoming.phase === "SPINNING" &&

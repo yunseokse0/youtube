@@ -10,22 +10,46 @@ describe("shouldSyncSigSalesFromRouletteSseHint", () => {
     expect(
       shouldSyncSigSalesFromRouletteSseHint(
         { roulettePhase: "SPINNING", rouletteSessionId: "session_2" },
-        "session_1",
+        { sessionId: "session_1", phase: "IDLE" },
       ),
     ).toBe(true);
   });
 
-  it("ignores same session or non-SPINNING", () => {
+  it("triggers on LANDED for new session (admin showcase)", () => {
+    expect(
+      shouldSyncSigSalesFromRouletteSseHint(
+        { roulettePhase: "LANDED", rouletteSessionId: "session_2" },
+        { sessionId: "session_1", phase: "CONFIRMED" },
+      ),
+    ).toBe(true);
+  });
+
+  it("triggers when same session advances phase", () => {
+    expect(
+      shouldSyncSigSalesFromRouletteSseHint(
+        { roulettePhase: "LANDED", rouletteSessionId: "session_1" },
+        { sessionId: "session_1", phase: "SPINNING" },
+      ),
+    ).toBe(true);
+    expect(
+      shouldSyncSigSalesFromRouletteSseHint(
+        { roulettePhase: "CONFIRM_PENDING", rouletteSessionId: "session_1" },
+        { sessionId: "session_1", phase: "LANDED" },
+      ),
+    ).toBe(true);
+  });
+
+  it("ignores same session same or lower phase", () => {
     expect(
       shouldSyncSigSalesFromRouletteSseHint(
         { roulettePhase: "SPINNING", rouletteSessionId: "session_1" },
-        "session_1",
+        { sessionId: "session_1", phase: "SPINNING" },
       ),
     ).toBe(false);
     expect(
       shouldSyncSigSalesFromRouletteSseHint(
-        { roulettePhase: "LANDED", rouletteSessionId: "session_2" },
-        "session_1",
+        { roulettePhase: "SPINNING", rouletteSessionId: "session_1" },
+        { sessionId: "session_1", phase: "LANDED" },
       ),
     ).toBe(false);
   });

@@ -33,11 +33,9 @@ import {
   canonicalSigIdFromWheelSliceId,
   hydrateSigItemFromInventory,
   sigMatchesMemberFilter,
-  pickWheelAnimationResultId,
   rememberUsedWheelSliceId,
-  wheelDuplicatePickForWinner,
   resolveSpinQueueForSession,
-  resolveWheelSpinTarget,
+  bindWheelAnimationToRoundWinner,
   type SpinQueueSessionPin,
   sanitizeWheelDisplayName,
   wheelSliceMatchesServerWinner,
@@ -52,6 +50,9 @@ import {
   readSigSalesOverlayPollMs,
   shouldSyncOverlayFromStateUpdatedEvent,
   shouldSyncSigSalesFromRouletteSseHint,
+  sigSalesPhaseRank,
+  sigSalesRouletteSyncCursorFromState,
+  type SigSalesRouletteSyncCursor,
 } from "@/lib/overlay-pull-policy";
 
 /**
@@ -116,9 +117,14 @@ function bootstrapOverlaySpinPlayback(
   };
   demoSpin: { startedAt: number; resultId: string | null };
 } {
-  const firstTarget = resolveWheelSpinTarget(spinVisualSlices, selected[0] ?? null, 0, usedSliceIds);
+  const firstBound = bindWheelAnimationToRoundWinner({
+    wheelSlices: spinVisualSlices,
+    roundWinner: selected[0] ?? null,
+    roundIndex: 0,
+    usedSliceIds,
+  });
   const spinStartedAt = resolveOverlayWheelStartedAt(startedAt, sessionId);
-  const rid = firstTarget.sliceId || selected[0]?.id || null;
+  const rid = firstBound.animationResultId || firstBound.sliceId || selected[0]?.id || null;
   return {
     pendingLanding: {
       selected,
@@ -387,7 +393,7 @@ export default function SigSalesOverlayPage() {
   const overlayReloadSeenRef = useRef<number | null>(null);
 
   const lastSyncedUpdatedAtRef = useRef(0);
-  const lastRouletteSessionSeenRef = useRef("");
+  const lastRouletteSyncRef = useRef<SigSalesRouletteSyncCursor>({ sessionId: "", phase: "" });
   const loadRemote = useCallback(async (opts?: { forceFull?: boolean }) => {
     const remote = await loadStateFromApi(userId, {
       ifUpdatedSince: opts?.forceFull ? 0 : lastSyncedUpdatedAtRef.current,
@@ -397,8 +403,7 @@ export default function SigSalesOverlayPage() {
     if (!remote) return;
     const ts = remote.updatedAt || 0;
     if (ts > 0) lastSyncedUpdatedAtRef.current = Math.max(lastSyncedUpdatedAtRef.current, ts);
-    const sid = String(remote.rouletteState?.sessionId || "").trim();
-    if (sid) lastRouletteSessionSeenRef.current = sid;
+    lastRouletteSyncRef.current = sigSalesRouletteSyncCursorFromState(remote.rouletteState);
     setState(remote);
   }, [userId]);
 
@@ -413,18 +418,17 @@ export default function SigSalesOverlayPage() {
       rouletteSessionId?: string;
     };
     if (o?.type !== "state_updated") return;
-    const rouletteHint = shouldSyncSigSalesFromRouletteSseHint(
-      o,
-      lastRouletteSessionSeenRef.current,
-    );
+    const rouletteHint = shouldSyncSigSalesFromRouletteSseHint(o, lastRouletteSyncRef.current);
     if (
       !rouletteHint &&
       !shouldSyncOverlayFromStateUpdatedEvent(o.updatedAt, lastSyncedUpdatedAtRef.current)
     ) {
       return;
     }
-    if (rouletteHint && o.rouletteSessionId) {
-      lastRouletteSessionSeenRef.current = String(o.rouletteSessionId).trim();
+    if (rouletteHint) {
+      const sid = String(o.rouletteSessionId || lastRouletteSyncRef.current.sessionId || "").trim();
+      const phase = String(o.roulettePhase || lastRouletteSyncRef.current.phase || "").trim();
+      if (sid) lastRouletteSyncRef.current = { sessionId: sid, phase };
     }
     scheduleSseLoadRef.current?.();
   });
@@ -673,14 +677,6 @@ export default function SigSalesOverlayPage() {
     () => spinQueueSelected.slice(0, Math.max(0, sequentialRoundIndex)),
     [spinQueueSelected, sequentialRoundIndex]
   );
-  const wheelDuplicatePick = useMemo(
-    () =>
-      currentRoundWinner
-        ? wheelDuplicatePickForWinner(priorRoundWinners, currentRoundWinner)
-        : 0,
-    [priorRoundWinners, currentRoundWinner]
-  );
-
   const wheelSpinning =
     wheelPhase === "spinning" ||
     wheelPhase === "settling" ||
@@ -709,15 +705,15 @@ export default function SigSalesOverlayPage() {
     ]
   );
 
-  const wheelSpinTarget = useMemo(
+  const wheelRoundBinding = useMemo(
     () =>
-      resolveWheelSpinTarget(
-        wheelSlicesForSpin,
-        currentRoundWinner,
-        useSequentialWheel ? sequentialRoundIndex : 0,
-        useSequentialWheel ? usedWheelSliceIdsRef.current : undefined,
-        useSequentialWheel ? priorRoundWinners : undefined
-      ),
+      bindWheelAnimationToRoundWinner({
+        wheelSlices: wheelSlicesForSpin,
+        roundWinner: currentRoundWinner,
+        roundIndex: useSequentialWheel ? sequentialRoundIndex : 0,
+        usedSliceIds: useSequentialWheel ? usedWheelSliceIdsRef.current : undefined,
+        priorWinners: useSequentialWheel ? priorRoundWinners : undefined,
+      }),
     [
       wheelSlicesForSpin,
       currentRoundWinner,
@@ -727,7 +723,7 @@ export default function SigSalesOverlayPage() {
     ]
   );
 
-  const wheelItemsWithResult = wheelSpinTarget.items;
+  const wheelItemsWithResult = wheelRoundBinding.items;
 
   /** 당첨 카드(`hydrateSigItemFromInventory`)와 동일한 재고 이름 — 롤링 메타 짧은 라벨만 쓰면 휠·카드 문구가 달라 보임 */
   const getWheelLabel = useCallback(
@@ -742,12 +738,8 @@ export default function SigSalesOverlayPage() {
     [state?.sigInventory]
   );
 
-  const wheelResultSliceId = wheelSpinTarget.sliceId;
-  const wheelAnimationResultId = pickWheelAnimationResultId(wheelResultSliceId, currentRoundWinner, {
-    wheelItems: wheelItemsWithResult,
-    duplicatePick: useSequentialWheel ? wheelDuplicatePick : 0,
-    usedSliceIds: useSequentialWheel ? usedWheelSliceIdsRef.current : undefined,
-  });
+  const wheelResultSliceId = wheelRoundBinding.sliceId;
+  const wheelAnimationResultId = wheelRoundBinding.animationResultId;
 
   useEffect(() => {
     if (!currentRoundWinner || !wheelResultSliceId) return;
@@ -1287,48 +1279,51 @@ export default function SigSalesOverlayPage() {
 
   const serverCatchUpKeyRef = useRef("");
   useEffect(() => {
-    if (pendingLanding || demoSpin) return;
-    const selectedFromServer = (machine.selectedSigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
+    const rs = state?.rouletteState;
+    const serverPhase = String(rs?.phase || "").trim();
+    const selectedFromServer = (rs?.selectedSigs || rs?.results || machine.selectedSigs || []).slice(
+      0,
+      CONFIRMED_VISIBLE_SLOTS
+    );
     if (selectedFromServer.length === 0) return;
     const machineSpinKey = overlaySpinSessionKey(machine.startedAt, machine.sessionId || "");
-    const catchUpKey = `${machine.phase}:${machineSpinKey}`;
+    const catchUpKey = `${serverPhase}:${machine.phase}:${machineSpinKey}:${selectedFromServer.length}:${revealedSigCount}`;
     const queueLen = selectedFromServer.length;
-    const sequentialPlaybackActive =
-      queueLen > 1 &&
-      revealedSigCount > 0 &&
-      revealedSigCount < queueLen &&
-      (sequentialRoundIndex < queueLen - 1 ||
-        wheelPhase === "spinning" ||
-        wheelPhase === "settling" ||
-        Boolean(demoSpin));
-    const startedAt = Number(machine.startedAt || 0);
+    const serverShowcase =
+      serverPhase === "LANDED" ||
+      serverPhase === "CONFIRM_PENDING" ||
+      serverPhase === "CONFIRMED";
+    const serverAheadOfReveal = selectedFromServer.length > revealedSigCount;
+    const serverFinishedSpin = serverShowcase && !rs?.isRolling;
+    const startedAt = Number(machine.startedAt || rs?.startedAt || 0);
     const withinWindow = startedAt > 0 && Date.now() - startedAt <= RECENT_SPIN_WINDOW_MS;
-    const recentEnough = withinWindow || (startedAt <= 0 && Boolean(machine.sessionId));
+    const recentEnough = withinWindow || (startedAt <= 0 && Boolean(machine.sessionId || rs?.sessionId));
 
-    if (
-      machine.phase === "LANDED" ||
-      machine.phase === "CONFIRM_PENDING" ||
-      machine.phase === "CONFIRMED"
-    ) {
-      /** 중간 land 폴링이 LANDED 로 오면 순차 인덱스·공개 수를 끝으로 점프해 휠이 이전 당첨에 다시 착지함 */
-      if (sequentialPlaybackActive) return;
+    if (serverShowcase && (serverAheadOfReveal || serverFinishedSpin)) {
       if (!recentEnough) return;
       if (serverCatchUpKeyRef.current === catchUpKey) return;
       serverCatchUpKeyRef.current = catchUpKey;
       completedSpinKeyRef.current = machineSpinKey;
+      setDemoSpin(null);
+      setPendingLanding(null);
       setOverlayHoldResults(true);
       setShowResultPanel(true);
       setRevealedSigCount(selectedFromServer.length);
       setSequentialRoundIndex(Math.max(0, selectedFromServer.length - 1));
+      const oneShot = rs?.oneShotResult || buildOneShotFromSelected(selectedFromServer);
+      const resultId =
+        rs?.result?.id || selectedFromServer[selectedFromServer.length - 1]?.id || machine.resultId;
+      if (sigSalesPhaseRank(serverPhase) > sigSalesPhaseRank(machine.phase)) {
+        landed(selectedFromServer, oneShot, resultId || null);
+      }
       if (wheelPhase !== "spinning" && wheelPhase !== "settling") {
         dispatch({ type: "LANDED" });
       }
-      if (buildOneShotFromSelected(selectedFromServer)) {
-        setOneShotRevealUnlocked(true);
-      }
+      if (oneShot) setOneShotRevealUnlocked(true);
       return;
     }
 
+    if (pendingLanding || demoSpin) return;
     if (machine.phase !== "SPINNING") return;
     if (!recentEnough) return;
     if (machineSpinKey === completedSpinKeyRef.current) return;
@@ -1343,16 +1338,19 @@ export default function SigSalesOverlayPage() {
     setPendingLanding(boot.pendingLanding);
     setDemoSpin(boot.demoSpin);
   }, [
+    state?.rouletteState,
+    state?.updatedAt,
     machine.phase,
     machine.selectedSigs,
-    pendingLanding,
-    demoSpin,
     machine.startedAt,
     machine.sessionId,
+    machine.resultId,
+    pendingLanding,
+    demoSpin,
     wheelPhase,
     revealedSigCount,
-    sequentialRoundIndex,
     wheelSlicesForSpin,
+    landed,
   ]);
 
   useEffect(() => {
@@ -1623,9 +1621,10 @@ export default function SigSalesOverlayPage() {
                       );
                       transitionHandledKeyRef.current = "";
                       const nextRound = roundNow + 1;
-                      sequentialRoundIndexRef.current = nextRound;
-                      setSequentialRoundIndex(nextRound);
+                      /** 착지 직후 index+1 하면 휠·카드가 다음 회차 시그로 바뀜(1회차에 2회차 당첨 노출) → 다음 스핀 직전에만 올림 */
                       window.setTimeout(() => {
+                        sequentialRoundIndexRef.current = nextRound;
+                        setSequentialRoundIndex(nextRound);
                         setDemoSpin({
                           startedAt: resolveOverlayWheelStartedAt(
                             machine.startedAt,

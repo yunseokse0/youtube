@@ -6,9 +6,13 @@ import { normalizeRouletteState } from "@/lib/state";
 import { normalizeSigInventory } from "@/lib/constants";
 import type { SigItem } from "@/types";
 import {
+  buildSessionSpinExclusion,
+  canonicalSigIdFromWheelSliceId,
   dedupeSigQueueByIdAndName,
+  isSigQueueDistinctByIdAndName,
   normalizeSigPickNameKey,
   pickDistinctSigsByIdAndName,
+  sigEligibleForSessionSpinPool,
   sigMatchesMemberFilter,
 } from "@/lib/sig-roulette";
 import { getRouletteUserId, saveAppStateForRoulette } from "../edge-state-store";
@@ -129,11 +133,18 @@ export async function POST(req: Request) {
     );
     const inv = normalizeSigInventory(s.sigInventory).filter((x) => !excludedSet.has(x.id));
     const prevRs = normalizeRouletteState(s.rouletteState);
-    const sessionExcluded = new Set(
-      (prevRs.sessionExcludedSigIds || []).map((x) => String(x).trim()).filter(Boolean)
+    const priorWinners = [
+      ...(prevRs.selectedSigs || []),
+      ...(prevRs.results || []),
+      ...(prevRs.result ? [prevRs.result] : []),
+    ];
+    const sessionExclusion = buildSessionSpinExclusion(
+      inv,
+      prevRs.sessionExcludedSigIds,
+      priorWinners
     );
     const allowPool = (list: SigItem[]) =>
-      list.filter((x) => x.id !== ONE_SHOT_SIG_ID && !sessionExcluded.has(x.id));
+      list.filter((x) => sigEligibleForSessionSpinPool(x, sessionExclusion));
     const invById = new Map(inv.map((row) => [row.id, row]));
     const enrichPick = (pick: SigItem): SigItem => {
       const row = invById.get(pick.id);
@@ -186,7 +197,7 @@ export async function POST(req: Request) {
             error: "not_enough_distinct_sigs",
             need: selectedCount,
             have: distinctPicks.length,
-            sessionExcluded: sessionExcluded.size,
+            sessionExcluded: sessionExclusion.excludedIds.size,
           },
           { status: 400, headers: { "Content-Type": "application/json" } }
         );
@@ -197,13 +208,13 @@ export async function POST(req: Request) {
           maxCount: 1,
         }))
       );
-      if (selectedSigs.length < selectedCount) {
+      if (selectedSigs.length < selectedCount || !isSigQueueDistinctByIdAndName(selectedSigs)) {
         return Response.json(
           {
             error: "not_enough_distinct_sigs",
             need: selectedCount,
             have: selectedSigs.length,
-            sessionExcluded: sessionExcluded.size,
+            sessionExcluded: sessionExclusion.excludedIds.size,
           },
           { status: 400, headers: { "Content-Type": "application/json" } }
         );
@@ -292,7 +303,8 @@ export async function POST(req: Request) {
       const tier = plan[i] ?? null;
       const range = planRanges[i] ?? null;
       const tierPool = filterPoolByTierAndRange(runtimePool, tier, range).filter((x) => {
-        if (pickedIds.has(x.id)) return false;
+        const canon = canonicalSigIdFromWheelSliceId(x.id) || x.id;
+        if (pickedIds.has(canon)) return false;
         const nameKey = normalizeSigPickNameKey(x.name);
         if (nameKey && pickedNames.has(nameKey)) return false;
         return true;
@@ -302,13 +314,13 @@ export async function POST(req: Request) {
           {
             error: results.length > 0 ? "not_enough_distinct_sigs" : "empty_price_range",
             round: i + 1,
-            sessionExcluded: sessionExcluded.size,
+            sessionExcluded: sessionExclusion.excludedIds.size,
           },
           { status: 400, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }
         );
       }
       const picked = pickRandom(tierPool);
-      pickedIds.add(picked.id);
+      pickedIds.add(canonicalSigIdFromWheelSliceId(picked.id) || picked.id);
       const nameKey = normalizeSigPickNameKey(picked.name);
       if (nameKey) pickedNames.add(nameKey);
       results.push(enrichPick(picked));

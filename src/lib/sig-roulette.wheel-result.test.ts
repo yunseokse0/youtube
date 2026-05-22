@@ -8,6 +8,8 @@ import {
   sigOverlayBroadcastCardTotalHeightPx,
 } from "@/components/sig-sales/sig-overlay-card-size";
 import {
+  buildSessionSpinExclusion,
+  buildSigSalesWheelDisplayPool,
   buildWheelMenuSlices,
   buildWheelMenuSlicesFromWinnerQueue,
   buildWheelSlicesForCurrentRoundWinner,
@@ -24,8 +26,10 @@ import {
   dedupeSigQueueByIdAndName,
   resolveSpinQueueForSession,
   resolveWheelSlicesForSpinVisual,
+  bindWheelAnimationToRoundWinner,
   resolveWheelSpinTarget,
   wheelDuplicatePickForWinner,
+  sigEligibleForSessionSpinPool,
   sigMatchesMemberFilter,
   wheelSliceMatchesServerWinner,
 } from "./sig-roulette";
@@ -248,6 +252,52 @@ describe("buildWheelMenuSlicesFromWinnerQueue", () => {
     expect(canonicalSigIdFromWheelSliceId(remaining[0]!.id)).toBe("sig_b");
     const target = resolveWheelSpinTarget(remaining, winners[1]!, 0);
     expect(wheelSliceMatchesServerWinner(target.sliceId, winners[1]!)).toBe(true);
+  });
+});
+
+describe("bindWheelAnimationToRoundWinner", () => {
+  it("순차 1·2회차는 각각 큐 0번·1번 시그에 착지한다(회차 인덱스 선행 증가 버그 회귀)", () => {
+    const queue = ["r0", "r1", "r2"].map((id) => item(id));
+    queue[0]!.name = "1회차";
+    queue[1]!.name = "2회차";
+    queue[2]!.name = "3회차";
+    const menu = buildWheelMenuSlices(
+      ["a", "b", "c", "d", "e", "f"].map((id) => item(id)),
+      6
+    );
+    const r0 = bindWheelAnimationToRoundWinner({
+      wheelSlices: menu,
+      roundWinner: queue[0]!,
+      roundIndex: 0,
+      priorWinners: [],
+    });
+    expect(wheelSliceMatchesServerWinner(r0.animationResultId, queue[0]!)).toBe(true);
+    const r1 = bindWheelAnimationToRoundWinner({
+      wheelSlices: menu,
+      roundWinner: queue[1]!,
+      roundIndex: 1,
+      priorWinners: [queue[0]!],
+    });
+    expect(wheelSliceMatchesServerWinner(r1.animationResultId, queue[1]!)).toBe(true);
+    expect(wheelSliceMatchesServerWinner(r1.animationResultId, queue[0]!)).toBe(false);
+  });
+
+  it("이번 회차 당첨 시그에 맞춰 animationResultId가 착지한다", () => {
+    const slices = buildWheelMenuSlices(
+      ["a", "b", "c", "d", "e"].map((id) => item(id)),
+      5
+    );
+    const winner = item("z_round");
+    winner.name = "이번당첨";
+    const bound = bindWheelAnimationToRoundWinner({
+      wheelSlices: slices,
+      roundWinner: winner,
+      roundIndex: 0,
+    });
+    expect(bound.animationResultId).toBeTruthy();
+    expect(wheelSliceMatchesServerWinner(bound.animationResultId, winner)).toBe(true);
+    const idx = findSliceIndexForResult(bound.items, bound.animationResultId);
+    expect(bound.items[idx]?.name).toBe("이번당첨");
   });
 });
 
@@ -520,6 +570,37 @@ describe("wheel spin queue aligns with result cards", () => {
     const finalAngle = calculateSpinFinalAngle(target.items, target.sliceId, count, 500, 2);
     const landedNorm = ((finalAngle % 360) + 360) % 360;
     expect(landedNorm).toBeCloseTo(expectedPointerNorm, 8);
+  });
+});
+
+describe("buildSessionSpinExclusion", () => {
+  it("이미 당첨된 표시명(다른 id)은 다음 스핀 풀에서 제외한다", () => {
+    const sakuraA: SigItem = { ...item("sig_sakura_a"), name: "사쿠란보", price: 42500 };
+    const sakuraB: SigItem = { ...item("sig_sakura_b"), name: "사쿠란보", price: 43000 };
+    const other: SigItem = { ...item("sig_other"), name: "우치다" };
+    const inventory = [sakuraA, sakuraB, other];
+    const exclusion = buildSessionSpinExclusion(
+      inventory,
+      ["sig_sakura_a"],
+      [sakuraA]
+    );
+    expect(sigEligibleForSessionSpinPool(sakuraA, exclusion)).toBe(false);
+    expect(sigEligibleForSessionSpinPool(sakuraB, exclusion)).toBe(false);
+    expect(sigEligibleForSessionSpinPool(other, exclusion)).toBe(true);
+  });
+
+  it("휠 표시 풀에도 동일 표시명 중복 행이 들어가지 않는다", () => {
+    const sakuraA: SigItem = { ...item("sig_sakura_a"), name: "사쿠란보" };
+    const sakuraB: SigItem = { ...item("sig_sakura_b"), name: "사쿠란보" };
+    const other: SigItem = { ...item("sig_other"), name: "우치다" };
+    const pool = buildSigSalesWheelDisplayPool({
+      inventory: [sakuraA, sakuraB, other],
+      sessionExcludedSigIds: ["sig_sakura_a"],
+      menuCount: 20,
+    });
+    const names = pool.map((x) => x.name);
+    expect(names.filter((n) => n === "사쿠란보")).toHaveLength(0);
+    expect(names).toContain("우치다");
   });
 });
 

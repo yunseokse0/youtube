@@ -110,15 +110,57 @@ export function shouldSyncOverlayFromStateUpdatedEvent(
   return ts > lastSyncedUpdatedAt;
 }
 
-/** 회전판 SSE에 실린 sessionId가 바뀌면 updatedAt 경합과 무관하게 OBS가 한 번 더 당겨야 함 */
+const SIG_SALES_PHASE_RANK: Record<string, number> = {
+  IDLE: 0,
+  SPINNING: 1,
+  LANDED: 2,
+  CONFIRM_PENDING: 3,
+  CONFIRMED: 4,
+};
+
+export type SigSalesRouletteSyncCursor = {
+  sessionId: string;
+  phase: string;
+};
+
+export function sigSalesPhaseRank(phase: string | undefined): number {
+  return SIG_SALES_PHASE_RANK[String(phase || "").trim()] ?? -1;
+}
+
+/**
+ * 회전판 SSE — 새 session SPINNING 또는 같은 session에서 단계가 진행됐을 때 GET.
+ * (관리자 LANDED·확정대기 시 OBS가 updatedAt 경합으로 놓치는 것 방지)
+ */
 export function shouldSyncSigSalesFromRouletteSseHint(
   event: { roulettePhase?: unknown; rouletteSessionId?: unknown },
-  lastSeenRouletteSessionId: string
+  lastSeen: SigSalesRouletteSyncCursor | string
 ): boolean {
-  if (String(event.roulettePhase || "") !== "SPINNING") return false;
+  const cursor: SigSalesRouletteSyncCursor =
+    typeof lastSeen === "string"
+      ? { sessionId: lastSeen, phase: "" }
+      : lastSeen;
+  const phase = String(event.roulettePhase || "").trim();
   const sid = String(event.rouletteSessionId || "").trim();
-  if (!sid) return false;
-  return sid !== lastSeenRouletteSessionId;
+  if (!sid || !phase) return false;
+  const pr = sigSalesPhaseRank(phase);
+  if (pr < 0) return false;
+  const lastSid = String(cursor.sessionId || "").trim();
+  const lastPr = sigSalesPhaseRank(cursor.phase);
+  if (sid !== lastSid) {
+    return phase === "SPINNING" || pr >= sigSalesPhaseRank("LANDED");
+  }
+  return pr > lastPr;
+}
+
+/** GET 반영 후 SSE 커서 갱신 */
+export function sigSalesRouletteSyncCursorFromState(rs: {
+  sessionId?: string;
+  phase?: string;
+} | null | undefined): SigSalesRouletteSyncCursor {
+  return {
+    sessionId: String(rs?.sessionId || "").trim(),
+    phase: String(rs?.phase || "").trim(),
+  };
 }
 
 /**
