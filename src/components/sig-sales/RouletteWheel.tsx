@@ -142,7 +142,7 @@ export default function RouletteWheel({
   const labelRadiusPx = (() => {
     const R = Math.max(1, wheelSizePx / 2 - wheelBorderPx);
     const phi = (2 * Math.PI) / segmentCount;
-    if (segmentCount <= 1) return 0;
+    if (segmentCount <= 1) return Math.max(12, Math.round(R * 0.52));
     const radial = (R * (4 * Math.sin(phi / 2))) / (3 * phi);
     // 텍스트 블럭이 원판 경계 밖으로 튀어나오지 않도록 안전 여백을 둔다.
     const safeInside = R - Math.max(18, Math.round(labelHeightPx * 0.55));
@@ -303,9 +303,10 @@ export default function RouletteWheel({
   useEffect(() => {
     const spinKey = `${startedAt || 0}:${resultId || "none"}:${spinReplayNonce}`;
 
-    if (!isRolling || !startedAt) {
+    if (!isRolling || !startedAt || !resultId) {
       hasLandedRef.current = false;
       activeSpinKeyRef.current = "";
+      setWinnerIndex(-1);
       stopAllAnimations();
       soundsRef.current?.tick.stop();
       soundsRef.current?.final.stop();

@@ -686,8 +686,14 @@ export default function SigSalesOverlayPage() {
   /**
    * 회차별 휠은 **이번 당첨 1칸만** 사용 — 20칸 풀·남은 큐 휠에서 인접 칸/이전 당첨 착지 방지.
    */
+  const wheelSpinning =
+    wheelPhase === "spinning" ||
+    wheelPhase === "settling" ||
+    Boolean(demoSpin) ||
+    machine.phase === "SPINNING";
+
   const wheelSlicesForSpin = useMemo(() => {
-    if (currentRoundWinner && rouletteHasWinnerQueue) {
+    if (wheelSpinning && currentRoundWinner && rouletteHasWinnerQueue) {
       return buildWheelSlicesForCurrentRoundWinner(currentRoundWinner);
     }
     if (
@@ -698,6 +704,7 @@ export default function SigSalesOverlayPage() {
     }
     return wheelSlices;
   }, [
+    wheelSpinning,
     currentRoundWinner,
     rouletteHasWinnerQueue,
     pinnedWheelLayout,
@@ -1519,7 +1526,7 @@ export default function SigSalesOverlayPage() {
                   Boolean(demoSpin) ||
                   hasServerSpinToPlay
                 }
-                resultId={wheelAnimationResultId}
+                resultId={wheelSpinning ? wheelAnimationResultId : null}
                 startedAt={wheelAnimationStartedAt || demoSpin?.startedAt || 0}
                 scalePct={wheelScalePct}
                 volume={0.7}

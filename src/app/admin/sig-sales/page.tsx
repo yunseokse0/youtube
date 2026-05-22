@@ -379,9 +379,11 @@ export default function AdminSigSalesPage() {
   }, [machine.phase, machine.sessionId, wheelMenuSlices, spinQueueSelected, useSequentialWheel]);
 
   const currentRoundWinner = spinQueueSelected[spinStep] ?? null;
+  const wheelSpinning =
+    Boolean(demoSpin) || machine.isRolling || machine.phase === "SPINNING";
 
   const wheelSlicesForSpin = useMemo(() => {
-    if (currentRoundWinner && rouletteHasWinnerQueue) {
+    if (wheelSpinning && currentRoundWinner && rouletteHasWinnerQueue) {
       return buildWheelSlicesForCurrentRoundWinner(currentRoundWinner);
     }
     if (
@@ -392,6 +394,7 @@ export default function AdminSigSalesPage() {
     }
     return wheelMenuSlices;
   }, [
+    wheelSpinning,
     currentRoundWinner,
     rouletteHasWinnerQueue,
     pinnedWheelLayout,
@@ -1144,8 +1147,8 @@ export default function AdminSigSalesPage() {
           ) : null}
           {!showFinalShowcase ? <RouletteWheel
             items={wheelItemsWithResult}
-            isRolling={Boolean(demoSpin) || machine.isRolling || machine.phase === "SPINNING"}
-            resultId={wheelAnimationResultId}
+            isRolling={wheelSpinning}
+            resultId={wheelSpinning ? wheelAnimationResultId : null}
             startedAt={demoSpin?.startedAt || machine.startedAt}
             spinReplayNonce={spinStep}
             volume={volume}
