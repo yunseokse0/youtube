@@ -621,8 +621,10 @@ export default function AdminSigSalesPage() {
       const oneShot = buildOneShotFromSelected(selected);
       setPendingLanding({ selected, oneShot, resultId: data.result?.id || selected[selected.length - 1]?.id || null, persist: true });
       const firstTarget = resolveWheelSpinTarget(wheelMenuSlices, selected[0] ?? null, 0);
+      const queueSig = selected.map((s) => canonicalSigIdFromWheelSliceId(s.id)).join(",");
       setPinnedWheelLayout({
         sessionId: String(data.sessionId || "").trim(),
+        queueSig,
         slices: wheelMenuSlices,
       });
       usedWheelSliceIdsRef.current = new Set();
