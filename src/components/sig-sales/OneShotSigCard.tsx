@@ -71,7 +71,7 @@ export default function OneShotSigCard({
       style={matchBroadcastCard ? sigOverlayBroadcastCardShellStyle() : undefined}
       className={
         matchBroadcastCard
-          ? SIG_OVERLAY_CARD_ONESHOT_SHELL_CLASS
+          ? `${SIG_OVERLAY_CARD_ONESHOT_SHELL_CLASS} flex h-full min-h-0 flex-col`
           : compact
             ? "relative w-full max-w-[188px] shrink-0 self-start overflow-visible rounded-xl border border-yellow-300/70 bg-[linear-gradient(135deg,rgba(245,158,11,0.25),rgba(234,179,8,0.1))] px-1.5 py-2 shadow-[0_0_30px_rgba(250,204,21,0.35)]"
             : "relative overflow-hidden rounded-2xl border border-yellow-300/70 bg-[linear-gradient(135deg,rgba(245,158,11,0.25),rgba(234,179,8,0.1))] p-4 shadow-[0_0_30px_rgba(250,204,21,0.35)]"
@@ -81,9 +81,7 @@ export default function OneShotSigCard({
         <div className="pointer-events-none absolute inset-0 z-[1] rounded-[inherit] bg-white/93" aria-hidden />
       ) : null}
       <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.35),transparent_65%)]" />
-      <div
-        className="relative z-[2]"
-      >
+      <div className={`relative z-[2] ${matchBroadcastCard ? "flex min-h-0 flex-1 flex-col" : ""}`}>
       <div
         className={`relative overflow-hidden rounded-lg border border-yellow-200/40 ${
           sold ? "bg-white" : "bg-gradient-to-b from-amber-950/55 via-neutral-950/75 to-black"

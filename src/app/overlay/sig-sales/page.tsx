@@ -91,6 +91,11 @@ function resolveOverlayWheelStartedAt(startedAt: number, sessionId: string): num
   return Date.now();
 }
 
+/** 순차 연출 중 `machine.result`(마지막 당첨 id)가 바뀌어도 스핀 재시작 키가 흔들리지 않게 함 */
+function overlaySpinSessionKey(startedAt: number, sessionId: string): string {
+  return `${Number(startedAt) || 0}:${String(sessionId || "").trim()}`;
+}
+
 /** OBS: 서버 SPINNING 수신 시 휠·당첨 큐를 한 번에 맞춤(슬라이스 id·startedAt 정합) */
 function bootstrapOverlaySpinPlayback(
   selected: SigItem[],
@@ -118,9 +123,10 @@ function bootstrapOverlaySpinPlayback(
       resultId: rid,
       persist: true,
     },
+    /** resultId 는 휠 `wheelAnimationResultId` 전용 — demo 에 넣으면 2회차에 1회차 착지 id 로 다시 돎 */
     demoSpin: {
       startedAt: spinStartedAt,
-      resultId: rid,
+      resultId: null,
     },
   };
 }
@@ -694,7 +700,7 @@ export default function SigSalesOverlayPage() {
   const wheelAnimationResultId = pickWheelAnimationResultId(
     wheelResultSliceId,
     currentRoundWinner,
-    demoSpin?.resultId ?? null
+    null
   );
 
   useEffect(() => {
@@ -1210,8 +1216,17 @@ export default function SigSalesOverlayPage() {
     if (pendingLanding || demoSpin) return;
     const selectedFromServer = (machine.selectedSigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
     if (selectedFromServer.length === 0) return;
-    const machineSpinKey = `${machine.startedAt || 0}:${machine.sessionId || ""}:${machine.resultId || ""}`;
+    const machineSpinKey = overlaySpinSessionKey(machine.startedAt, machine.sessionId || "");
     const catchUpKey = `${machine.phase}:${machineSpinKey}`;
+    const queueLen = selectedFromServer.length;
+    const sequentialPlaybackActive =
+      queueLen > 1 &&
+      revealedSigCount > 0 &&
+      revealedSigCount < queueLen &&
+      (sequentialRoundIndex < queueLen - 1 ||
+        wheelPhase === "spinning" ||
+        wheelPhase === "settling" ||
+        Boolean(demoSpin));
     const startedAt = Number(machine.startedAt || 0);
     const withinWindow = startedAt > 0 && Date.now() - startedAt <= RECENT_SPIN_WINDOW_MS;
     const recentEnough = withinWindow || (startedAt <= 0 && Boolean(machine.sessionId));
@@ -1221,6 +1236,8 @@ export default function SigSalesOverlayPage() {
       machine.phase === "CONFIRM_PENDING" ||
       machine.phase === "CONFIRMED"
     ) {
+      /** 중간 land 폴링이 LANDED 로 오면 순차 인덱스·공개 수를 끝으로 점프해 휠이 이전 당첨에 다시 착지함 */
+      if (sequentialPlaybackActive) return;
       if (!recentEnough) return;
       if (serverCatchUpKeyRef.current === catchUpKey) return;
       serverCatchUpKeyRef.current = catchUpKey;
@@ -1255,13 +1272,14 @@ export default function SigSalesOverlayPage() {
   }, [
     machine.phase,
     machine.selectedSigs,
-    machine.resultId,
     pendingLanding,
     demoSpin,
     machine.startedAt,
     machine.sessionId,
     wheelPhase,
     wheelSlicesForSpin,
+    revealedSigCount,
+    sequentialRoundIndex,
   ]);
 
   useEffect(() => {
@@ -1318,7 +1336,7 @@ export default function SigSalesOverlayPage() {
   useEffect(() => {
     if (machine.phase !== "SPINNING" && machine.phase !== "LANDED") return;
     if (!pendingLanding && !demoSpin) return;
-    const spinKey = `${machine.startedAt || 0}:${machine.sessionId || ""}:${machine.resultId || ""}`;
+    const spinKey = overlaySpinSessionKey(machine.startedAt, machine.sessionId || "");
     if (spinKey === completedSpinKeyRef.current) return;
     if (handledSpinKeyRef.current === spinKey) return;
     /** startedAt 이 저장 상태에서 빠져도 sessionId 가 있으면 스핀 라운드 시작 */
@@ -1340,7 +1358,6 @@ export default function SigSalesOverlayPage() {
     machine.phase,
     machine.startedAt,
     machine.sessionId,
-    machine.resultId,
     pendingLanding,
     demoSpin,
   ]);
@@ -1505,6 +1522,7 @@ export default function SigSalesOverlayPage() {
                         CONFIRMED_VISIBLE_SLOTS,
                       );
                       setRevealedSigCount((c) => Math.max(c, revealedAfterRound));
+                      setDemoSpin(null);
                       /** 중간 회차에서도 당첨 카드·progressive 가 꺼지지 않게 함(2번째 회전 전에 사라짐 방지) */
                       setOverlayHoldResults(true);
                       setShowResultPanel(true);
@@ -1575,7 +1593,10 @@ export default function SigSalesOverlayPage() {
                     Math.max(c, Math.min(finalQueue.length, roundIdx + 1, CONFIRMED_VISIBLE_SLOTS))
                   );
                   const oneShot = buildOneShotFromSelected(finalQueue);
-                  const machineSpinKey = `${machine.startedAt || 0}:${machine.sessionId || ""}:${machine.resultId || ""}`;
+                  const machineSpinKey = overlaySpinSessionKey(
+                    machine.startedAt,
+                    machine.sessionId || ""
+                  );
                   completedSpinKeyRef.current = machineSpinKey;
                   const finalResultId =
                     serverWinner?.id ||

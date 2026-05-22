@@ -86,10 +86,13 @@ export async function POST(req: Request) {
     }
 
     const cumulativeExcluded = mergeSessionExcludedSigIds(rs.sessionExcludedSigIds, selectedSigs);
+    /** 순차 연출 중간 land: 아직 전체 당첨이 공개되지 않았으면 SPINNING 유지(폴링이 LANDED 로 끝내며 휠이 마지막 id 로 재시작됨) */
+    const sequentialPartialLand =
+      keepSelectedSigs.length > 1 && selectedSigs.length < keepSelectedSigs.length;
     const nextRs = {
       ...rs,
-      phase: "LANDED" as const,
-      isRolling: false,
+      phase: (sequentialPartialLand ? "SPINNING" : "LANDED") as "SPINNING" | "LANDED",
+      isRolling: sequentialPartialLand,
       selectedSigs: keepSelectedSigs,
       results: keepSelectedSigs,
       result,

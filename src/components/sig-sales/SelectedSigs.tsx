@@ -79,7 +79,8 @@ export default function SelectedSigs({
   const gridTemplateColumns = compact
     ? `repeat(${columnCount}, auto)`
     : `repeat(${columnCount}, minmax(0, 1fr))`;
-  const gridAlign = compact && trailingActive ? "items-start" : "";
+  const gridAlign =
+    compact && trailingActive && matchOneShotCardSize ? "items-stretch" : compact && trailingActive ? "items-start" : "";
   const justifyCompact =
     compact && compactGridJustify === "start" ? "justify-start" : compact ? "justify-center" : "";
   const sigRowJustify =
@@ -92,7 +93,7 @@ export default function SelectedSigs({
           : "";
   const nowrapRow = overlaySingleRow ? "flex-nowrap overflow-x-auto" : "flex-wrap";
   const sectionClass = overlaySingleRow
-    ? `flex w-full min-w-0 max-w-full ${nowrapRow} items-start ${sigRowJustify} gap-1 sm:gap-1 ${className}`.trim()
+    ? `flex w-full min-w-0 max-w-full ${nowrapRow} ${matchOneShotCardSize && trailingActive ? "items-stretch" : "items-start"} ${sigRowJustify} gap-1 sm:gap-1 ${className}`.trim()
     : broadcastMatch
       ? `flex w-full min-w-0 max-w-full flex-wrap justify-center gap-1 sm:gap-1 ${className}`.trim()
       : `grid w-full min-w-0 max-w-full gap-1 ${justifyCompact} ${gridAlign} ${className}`.trim();
@@ -129,7 +130,7 @@ export default function SelectedSigs({
             transition={entrance.transition}
             style={broadcastMatch ? sigOverlayBroadcastCardShellStyle() : undefined}
             className={`relative overflow-hidden rounded-xl border bg-neutral-900/70 ${
-              broadcastMatch ? "" : "min-w-0"
+              broadcastMatch ? "flex h-full min-h-0 flex-col" : "min-w-0"
             } ${
               broadcastMatch
                 ? SIG_OVERLAY_CARD_SHELL_CLASS

@@ -6,6 +6,7 @@ import SelectedSigs from "@/components/sig-sales/SelectedSigs";
 import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
 import { useImagePreload } from "@/hooks/useImagePreload";
 import { canonicalSigIdFromWheelSliceId, ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
+import { sigOverlayBroadcastCardShellStyle } from "@/components/sig-sales/sig-overlay-card-size";
 
 type ResultOverlayProps = {
   visible: boolean;
@@ -86,7 +87,10 @@ export default function ResultOverlay({
 
   const oneShotTrailing =
     oneShot && showOneShotReveal ? (
-      <div className="relative w-full min-w-0 shrink-0">
+      <div
+        className="relative flex h-full min-h-0 shrink-0 flex-col"
+        style={sigOverlayBroadcastCardShellStyle()}
+      >
         <OneShotSigCard
           name={oneShot.name}
           price={oneShot.price}
