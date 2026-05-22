@@ -1,7 +1,6 @@
 "use client";
 
 import { motion } from "framer-motion";
-import Image from "next/image";
 import type { ReactNode } from "react";
 import type { SigItem } from "@/types";
 import { canonicalSigIdFromWheelSliceId, formatWon } from "@/lib/sig-roulette";
@@ -16,6 +15,7 @@ import {
   SIG_OVERLAY_CARD_SHELL_CLASS,
   sigOverlayBroadcastCardShellStyle,
 } from "@/components/sig-sales/sig-overlay-card-size";
+import SigSoldStampOverlay from "@/components/sig-sales/SigSoldStampOverlay";
 
 type SelectedSigsProps = {
   items: SigItem[];
@@ -43,6 +43,8 @@ type SelectedSigsProps = {
    * true면 한 줄 flex-nowrap(휠 아래 동일 밴드). trailing(한방)은 당첨 카드 바로 옆에 붙음.
    */
   matchOneShotCardSize?: boolean;
+  /** `layoutSigOverlayResultRow` 결과 — 개별·한방 카드 동일 폭 */
+  cardScalePct?: number;
 };
 
 export default function SelectedSigs({
@@ -62,6 +64,7 @@ export default function SelectedSigs({
   gifDelayMultiplier = 1,
   entranceOnlyLatest = false,
   matchOneShotCardSize = false,
+  cardScalePct = 100,
   sigImageUserId,
 }: SelectedSigsProps) {
   /** 고정 5·6열은 카드가 적을 때도 빈 칸이 남아 미리 깔린 것처럼 보임 → 실제 개수만큼 열만 사용 */
@@ -91,10 +94,9 @@ export default function SelectedSigs({
         : broadcastMatch || compact
           ? "justify-center"
           : "";
-  /** 방송 오버레이: 가로 스크롤바 노출 방지(카드 많을 땐 sigResultScalePct 로 축소) */
-  const nowrapRow = overlaySingleRow ? "flex-nowrap overflow-x-hidden" : "flex-wrap";
+  const nowrapRow = overlaySingleRow ? "flex-nowrap overflow-visible" : "flex-wrap";
   const sectionClass = overlaySingleRow
-    ? `flex w-fit min-w-0 max-w-full ${nowrapRow} ${matchOneShotCardSize && trailingActive ? "items-stretch" : "items-start"} ${sigRowJustify} gap-1 sm:gap-1 ${className}`.trim()
+    ? `flex w-full min-w-0 max-w-full ${nowrapRow} ${matchOneShotCardSize && trailingActive ? "items-stretch" : "items-start"} justify-center gap-1 sm:gap-1 ${className}`.trim()
     : broadcastMatch
       ? `flex w-full min-w-0 max-w-full flex-wrap justify-center gap-1 sm:gap-1 ${className}`.trim()
       : `grid w-full min-w-0 max-w-full gap-1 ${justifyCompact} ${gridAlign} ${className}`.trim();
@@ -129,7 +131,7 @@ export default function SelectedSigs({
             initial={entrance.initial}
             animate={entrance.animate}
             transition={entrance.transition}
-            style={broadcastMatch ? sigOverlayBroadcastCardShellStyle() : undefined}
+            style={broadcastMatch ? sigOverlayBroadcastCardShellStyle(cardScalePct) : undefined}
             className={`relative overflow-hidden rounded-xl border bg-neutral-900/70 ${
               broadcastMatch ? "flex h-full min-h-0 flex-col" : "min-w-0"
             } ${
@@ -140,9 +142,6 @@ export default function SelectedSigs({
                   : ""
             } ${isLatestConfirmed ? "border-yellow-300 shadow-[0_0_24px_rgba(250,204,21,0.45)]" : broadcastMatch ? "" : "border-white/20"}`}
           >
-            {sold ? (
-              <div className="pointer-events-none absolute inset-0 z-[1] rounded-[inherit] bg-white/93" aria-hidden />
-            ) : null}
             <div className="relative z-[2]">
             {showConfirmedBadge ? (
               <div className="absolute left-2 top-2 z-20 rounded bg-emerald-600/90 px-2 py-0.5 text-[10px] font-black text-white">
@@ -158,9 +157,7 @@ export default function SelectedSigs({
               />
             ) : null}
             <div
-              className={`relative overflow-hidden rounded-lg border border-white/20 ${
-                sold ? "bg-white" : "bg-black/40"
-              } ${
+              className={`relative overflow-hidden rounded-lg border border-white/20 bg-black/40 ${
                 broadcastMatch
                   ? SIG_OVERLAY_CARD_MEDIA_BOX_CLASS
                   : compact
@@ -181,25 +178,10 @@ export default function SelectedSigs({
                       ? "(max-width:768px) 45vw, 188px"
                       : "240px"
                 }
-                className={`relative z-[2] object-contain object-center ${sold ? "brightness-[1.02]" : ""}`}
+                className="relative z-[2] object-contain object-center"
                 gifDelayMultiplier={gifDelayMultiplier}
               />
-              {sold ? (
-                <>
-                  {/* 판매 완료에서도 원본 이미지가 충분히 보이도록 전체 딤은 약하게 유지 */}
-                  <div className="absolute inset-0 z-[5] bg-black/18" aria-hidden />
-                  <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-[min(12%,1rem)]">
-                    <Image
-                      src={soldOutStampUrl}
-                      alt="판매 완료"
-                      width={112}
-                      height={112}
-                      unoptimized
-                      className="relative h-auto w-auto max-h-[min(7.6rem,64%)] max-w-[min(7.6rem,64%)] object-contain object-center opacity-95 drop-shadow-[0_2px_6px_rgba(0,0,0,0.42)]"
-                    />
-                  </div>
-                </>
-              ) : null}
+              {sold ? <SigSoldStampOverlay soldOutStampUrl={soldOutStampUrl} /> : null}
             </div>
             <div
               className={
@@ -253,9 +235,9 @@ export default function SelectedSigs({
         <div
           className={
             broadcastMatch && matchOneShotCardSize
-              ? "flex h-full min-h-0 w-full min-w-0 shrink-0 flex-col self-stretch"
+              ? "flex h-full min-h-0 shrink-0 flex-col self-stretch"
               : broadcastMatch || compact
-                ? "flex min-h-0 w-full min-w-0 shrink-0 self-stretch"
+                ? "flex min-h-0 shrink-0 self-stretch"
                 : "min-h-[280px]"
           }
         >

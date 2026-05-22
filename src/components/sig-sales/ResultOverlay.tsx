@@ -27,6 +27,7 @@ type ResultOverlayProps = {
   /** false면 「확정」 배지 숨김(방송: 서버 CONFIRMED 전까지 당첨만 표시할 때) */
   showConfirmedBadge?: boolean;
   sigImageUserId?: string;
+  cardScalePct?: number;
 };
 
 const EMPTY_SOLD_SET = new Set<string>();
@@ -46,6 +47,7 @@ export default function ResultOverlay({
   hanbangOnly = false,
   showConfirmedBadge = true,
   sigImageUserId,
+  cardScalePct = 100,
 }: ResultOverlayProps) {
   const [imageLoaded, setImageLoaded] = useState(() => skipHanbangSignLoadingOverlay);
   useEffect(() => {
@@ -86,7 +88,7 @@ export default function ResultOverlay({
 
   const oneShotTrailing =
     oneShot && showOneShotReveal ? (
-      <div className="relative flex h-full min-h-0 w-full min-w-0 shrink-0 flex-col self-stretch">
+      <div className="relative flex h-full min-h-0 shrink-0 flex-col self-stretch">
         <OneShotSigCard
           name={oneShot.name}
           price={oneShot.price}
@@ -98,6 +100,7 @@ export default function ResultOverlay({
           showToggle={false}
           compact
           matchSigCardSize
+          cardScalePct={cardScalePct}
           gifDelayMultiplier={gifDelayMultiplier}
           onMediaReady={() => setImageLoaded(true)}
         />
@@ -118,7 +121,7 @@ export default function ResultOverlay({
   }
 
   return (
-    <div className={`flex w-fit max-w-full flex-col items-stretch ${className}`.trim()}>
+    <div className={`flex w-full max-w-full flex-col items-stretch ${className}`.trim()}>
       <SelectedSigs
         items={selectedSigs}
         soldOutStampUrl={soldOutStampUrl}
@@ -128,10 +131,11 @@ export default function ResultOverlay({
         showToggle={false}
         compact
         matchOneShotCardSize
+        cardScalePct={cardScalePct}
         showConfirmedBadge={showConfirmedBadge}
         trailingSlot={oneShotTrailing}
         compactGridJustify="center"
-        className="w-fit max-w-full"
+        className="w-full max-w-full"
         gifDelayMultiplier={gifDelayMultiplier}
         entranceOnlyLatest={entranceOnlyLatest}
         sigImageUserId={sigImageUserId}

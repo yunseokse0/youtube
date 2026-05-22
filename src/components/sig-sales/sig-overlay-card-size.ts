@@ -69,8 +69,34 @@ export function sigOverlayBroadcastCardShellStyle(scalePct = 100): CSSProperties
   return {
     flexGrow: 0,
     flexShrink: 0,
-    flexBasis: `min(100%, ${max}px)`,
-    width: `min(100%, ${max}px)`,
+    flexBasis: `${max}px`,
+    width: `${max}px`,
+    minWidth: max,
     maxWidth: max,
+  };
+}
+
+/** 당첨 N장+한방이 한 줄에 잘리지 않도록 카드 폭을 행 너비에 맞춘다(줌 래퍼 대신 카드 자체 축소) */
+export function layoutSigOverlayResultRow(opts: {
+  cellCount: number;
+  userScalePct?: number;
+  maxRowWidthPx?: number;
+}): { cardScalePct: number; bandStyle: CSSProperties } {
+  const cells = Math.max(1, Math.floor(opts.cellCount || 1));
+  const user = clampSigOverlayResultScalePct(opts.userScalePct ?? 78) / 100;
+  const maxW = Math.max(360, Math.floor(opts.maxRowWidthPx ?? 1080));
+  const gapPx = 4;
+  const natural = cells * SIG_OVERLAY_CARD_MAX_PX + Math.max(0, cells - 1) * gapPx;
+  const fit = natural > 0 ? Math.min(1, maxW / natural) : 1;
+  const combined = Math.min(user, fit);
+  const cardScalePct = Math.max(50, Math.min(100, Math.floor(combined * 100)));
+  return {
+    cardScalePct,
+    bandStyle: {
+      width: "100%",
+      maxWidth: "100%",
+      marginLeft: "auto",
+      marginRight: "auto",
+    },
   };
 }

@@ -21,7 +21,7 @@ const RouletteWheel = dynamic(() => import("@/components/sig-sales/RouletteWheel
 });
 import SelectedSigs from "@/components/sig-sales/SelectedSigs";
 import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
-import { sigOverlayResultBandStyle } from "@/components/sig-sales/sig-overlay-card-size";
+import { layoutSigOverlayResultRow } from "@/components/sig-sales/sig-overlay-card-size";
 import ConfirmationModal from "@/components/sig-sales/ConfirmationModal";
 import RouletteHistoryModal from "@/components/sig-sales/RouletteHistoryModal";
 import {
@@ -313,10 +313,6 @@ export default function AdminSigSalesPage() {
     if (Number.isFinite(n)) return Math.max(50, Math.min(100, Math.floor(n)));
     return 78;
   }, [state?.rouletteState?.sigResultScalePct]);
-  const sigResultBandZoomStyle = useMemo(
-    () => sigOverlayResultBandStyle(sigResultScalePct),
-    [sigResultScalePct]
-  );
   const menuFillFromAllActive = state?.rouletteState?.menuFillFromAllActive === true;
   const wheelDisplayPool = useMemo(() => {
     if (!state) return [];
@@ -439,6 +435,15 @@ export default function AdminSigSalesPage() {
     if (displaySelectedSigs.length < MIN_ONE_SHOT_SIGS) return null;
     return buildOneShotFromSelected(displaySelectedSigs);
   }, [displaySelectedSigs]);
+  const resultCardCount = useMemo(() => {
+    let n = displaySelectedSigsForUi.length;
+    if (displayOneShot && oneShotReveal) n += 1;
+    return Math.max(1, n);
+  }, [displaySelectedSigsForUi.length, displayOneShot, oneShotReveal]);
+  const resultRowLayout = useMemo(
+    () => layoutSigOverlayResultRow({ cellCount: resultCardCount, userScalePct: sigResultScalePct }),
+    [resultCardCount, sigResultScalePct]
+  );
   const targetSelectionCount = useMemo(() => {
     if (pendingLanding?.selected?.length) return Math.max(1, Math.min(MAX_SELECTED_SIGS, pendingLanding.selected.length));
     if (machine.selectedSigs?.length) return Math.max(1, Math.min(MAX_SELECTED_SIGS, machine.selectedSigs.length));
@@ -1301,8 +1306,8 @@ export default function AdminSigSalesPage() {
                 }`}
               >
               <div
-                className="mx-auto flex w-fit max-w-full justify-center overflow-x-hidden origin-top"
-                style={sigResultBandZoomStyle}
+                className="mx-auto flex w-full max-w-full justify-center overflow-visible px-1"
+                style={resultRowLayout.bandStyle}
               >
                 <SelectedSigs
                   items={displaySelectedSigsForUi}
@@ -1313,8 +1318,9 @@ export default function AdminSigSalesPage() {
                   highlightId={highlightId}
                   compact
                   matchOneShotCardSize
+                  cardScalePct={resultRowLayout.cardScalePct}
                   compactGridJustify="center"
-                  className="w-fit max-w-full"
+                  className="w-full max-w-full"
                   trailingSlot={
                     displayOneShot && oneShotReveal ? (
                       <OneShotSigCard
@@ -1328,6 +1334,7 @@ export default function AdminSigSalesPage() {
                         disabled={controlsDisabled}
                         compact
                         matchSigCardSize
+                        cardScalePct={resultRowLayout.cardScalePct}
                         showToggle
                         onToggleSold={() => setOneShotSold((v) => !v)}
                       />

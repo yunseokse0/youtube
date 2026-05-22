@@ -4,8 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
 import type { SigItem } from "@/types";
-import { resolveSigRollingImageUrl, resolveSigRollingStampUrl } from "@/lib/constants";
+import { resolveSigRollingImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
+import SigSoldStampOverlay, { SIG_SOLD_STAMP_IMG_CLASS } from "@/components/sig-sales/SigSoldStampOverlay";
 import { canonicalSigIdFromWheelSliceId, ONE_SHOT_SIG_ID, sigMatchesMemberFilter } from "@/lib/sig-roulette";
 
 type SigBoardRollingProps = {
@@ -111,9 +112,6 @@ export default function SigBoardRolling({
               return (
                 <div key={item.id} className="glass-pastel-card relative overflow-hidden rounded-3xl">
                   <div className="relative aspect-[4/5] w-full overflow-hidden">
-                    {soldOut ? (
-                      <div className="absolute inset-0 z-[1] rounded-[inherit] bg-white/93" aria-hidden />
-                    ) : null}
                     <SigSaleMedia
                       src={resolveSigRollingImageUrl(item.name, item.imageUrl, overlayUserId || undefined)}
                       alt={item.name}
@@ -121,7 +119,6 @@ export default function SigBoardRolling({
                       className={`object-contain object-center ${soldOut ? "relative z-[2]" : "relative z-0"}`}
                       gifDelayMultiplier={gifDelayMultiplier}
                     />
-                    {soldOut ? <div className="absolute inset-0 z-[5] bg-pastel-ink/20" aria-hidden /> : null}
                     <AnimatePresence>
                       {soldOut && (
                         <motion.div
@@ -130,20 +127,12 @@ export default function SigBoardRolling({
                           animate={{ opacity: 1 }}
                           exit={{ opacity: 0 }}
                           transition={{ duration: 0.35, ease: "easeOut" }}
-                          className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-[min(10%,1rem)]"
+                          className="absolute inset-0 z-20"
                         >
-                          <motion.div
-                            initial={{ scale: 2.2, rotate: -12 }}
-                            animate={{ scale: 1, rotate: -8 }}
-                            transition={{ duration: 0.35, ease: "easeOut" }}
-                            className="relative flex max-h-[min(7rem,52%)] max-w-[min(7rem,52%)] items-center justify-center"
-                          >
-                            <motion.img
-                              src={resolveSigRollingStampUrl(soldOutStampUrl)}
-                              alt="stamp"
-                              className="relative z-[1] h-auto w-auto max-h-full max-w-full object-contain object-center opacity-95 drop-shadow-[0_2px_12px_rgba(0,0,0,0.55)]"
-                            />
-                          </motion.div>
+                          <SigSoldStampOverlay
+                            soldOutStampUrl={soldOutStampUrl}
+                            stampMaxClass={`${SIG_SOLD_STAMP_IMG_CLASS} max-h-[min(7rem,52%)] max-w-[min(7rem,52%)]`}
+                          />
                         </motion.div>
                       )}
                     </AnimatePresence>

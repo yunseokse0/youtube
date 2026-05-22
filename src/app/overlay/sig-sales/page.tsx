@@ -11,7 +11,7 @@ const RouletteWheel = dynamic(() => import("@/components/sig-sales/RouletteWheel
   ssr: false,
 });
 import ResultOverlay from "@/components/sig-sales/ResultOverlay";
-import { sigOverlayResultBandStyle } from "@/components/sig-sales/sig-overlay-card-size";
+import { layoutSigOverlayResultRow } from "@/components/sig-sales/sig-overlay-card-size";
 import SigBoardRolling from "@/components/sig-sales/SigBoardRolling";
 import { loadStateFromApi, loadState, storageKey, type AppState } from "@/lib/state";
 import {
@@ -550,10 +550,6 @@ export default function SigSalesOverlayPage() {
     if (Number.isFinite(persisted)) return Math.max(50, Math.min(100, Math.floor(persisted)));
     return 78;
   }, [sigResultScalePctUrlOverride, state?.rouletteState?.sigResultScalePct]);
-  const sigResultBandZoomStyle = useMemo(
-    () => sigOverlayResultBandStyle(sigResultScalePct),
-    [sigResultScalePct]
-  );
   const activeNormalPool = useMemo(() => {
     if (!state) return [];
     const excluded = new Set((state.sigSalesExcludedIds || []).map((x) => String(x)));
@@ -1092,6 +1088,15 @@ export default function SigSalesOverlayPage() {
       buildOneShotFromSelected(machine.selectedSigs.slice(0, CONFIRMED_VISIBLE_SLOTS))
     );
   }, [oneShotRevealUnlocked, machine.oneShot, machine.selectedSigs]);
+  const resultCardCount = useMemo(() => {
+    let n = displaySelectedSigsForUi.length;
+    if (oneShotForResultOverlay) n += 1;
+    return Math.max(1, n);
+  }, [displaySelectedSigsForUi.length, oneShotForResultOverlay]);
+  const resultRowLayout = useMemo(
+    () => layoutSigOverlayResultRow({ cellCount: resultCardCount, userScalePct: sigResultScalePct }),
+    [resultCardCount, sigResultScalePct]
+  );
   const showSigBoardRollingSection = useMemo(() => {
     if (winnersOnlyOverlay) return false;
     if (hideSigBoard || !state || (state.sigInventory || []).length === 0) return false;
@@ -1710,7 +1715,7 @@ export default function SigSalesOverlayPage() {
             }
             aria-live="polite"
           >
-            <div className="pointer-events-auto mx-auto flex min-w-0 w-full max-w-full justify-center overflow-x-hidden overflow-y-visible">
+            <div className="pointer-events-auto mx-auto flex min-w-0 w-full max-w-full justify-center overflow-visible overflow-y-visible">
               <AnimatePresence>
                 {resultOverlayVisible ? (
                   <motion.div
@@ -1723,8 +1728,8 @@ export default function SigSalesOverlayPage() {
                     className="w-full min-w-0 max-w-full drop-shadow-[0_4px_24px_rgba(0,0,0,0.65)]"
                   >
                     <div
-                      className="mx-auto flex w-fit max-w-full justify-center overflow-x-hidden origin-top"
-                      style={sigResultBandZoomStyle}
+                      className="mx-auto flex w-full max-w-full justify-center overflow-visible px-1"
+                      style={resultRowLayout.bandStyle}
                     >
                       <ResultOverlay
                         visible
@@ -1734,6 +1739,7 @@ export default function SigSalesOverlayPage() {
                         oneShot={oneShotForResultOverlay}
                         signImageUrl={oneShotImageUrl || currentSignImageUrl}
                         showOneShotReveal={Boolean(oneShotForResultOverlay)}
+                        cardScalePct={resultRowLayout.cardScalePct}
                         className="w-full max-w-full"
                         gifDelayMultiplier={sigGifDelayMultiplier}
                         entranceOnlyLatest

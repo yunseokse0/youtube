@@ -1,7 +1,6 @@
 "use client";
 
 import { motion } from "framer-motion";
-import Image from "next/image";
 import { formatWon } from "@/lib/sig-roulette";
 import { resolveSigRollingImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
@@ -14,6 +13,7 @@ import {
   SIG_OVERLAY_CARD_ONESHOT_SHELL_CLASS,
   sigOverlayBroadcastCardShellStyle,
 } from "@/components/sig-sales/sig-overlay-card-size";
+import SigSoldStampOverlay from "@/components/sig-sales/SigSoldStampOverlay";
 
 type OneShotSigCardProps = {
   name: string;
@@ -33,6 +33,7 @@ type OneShotSigCardProps = {
   sigImageUserId?: string;
   /** 방송·관리자 결과 줄: 개별 시그 카드와 동일 폭·미디어 비율 */
   matchSigCardSize?: boolean;
+  cardScalePct?: number;
 };
 
 export default function OneShotSigCard({
@@ -50,6 +51,7 @@ export default function OneShotSigCard({
   onMediaReady,
   sigImageUserId,
   matchSigCardSize = false,
+  cardScalePct = 100,
 }: OneShotSigCardProps) {
   /** 개별 당첨 카드와 동일 폭·미디어·푸터 높이(matchSigCardSize 시 관리자 토글 있어도 동일) */
   const useBroadcastSizing = Boolean(compact && (matchSigCardSize || !showToggle));
@@ -68,7 +70,7 @@ export default function OneShotSigCard({
       }
       animate={{ opacity: 1, y: 0, ...(useBroadcastSizing ? {} : { scale: 1 }) }}
       transition={{ duration: compact ? 0.32 : 0.45, ease: "easeOut" }}
-      style={useBroadcastSizing ? sigOverlayBroadcastCardShellStyle() : undefined}
+      style={useBroadcastSizing ? sigOverlayBroadcastCardShellStyle(cardScalePct) : undefined}
       className={
         useBroadcastSizing
           ? `${SIG_OVERLAY_CARD_ONESHOT_SHELL_CLASS} flex h-full min-h-0 w-full flex-col`
@@ -83,9 +85,7 @@ export default function OneShotSigCard({
       <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.35),transparent_65%)]" />
       <div className={`relative z-[2] ${useBroadcastSizing ? "flex min-h-0 flex-1 flex-col" : ""}`}>
       <div
-        className={`relative overflow-hidden rounded-lg border border-yellow-200/40 ${
-          sold ? "bg-white" : "bg-gradient-to-b from-amber-950/55 via-neutral-950/75 to-black"
-        } ${
+        className={`relative overflow-hidden rounded-lg border border-yellow-200/40 bg-gradient-to-b from-amber-950/55 via-neutral-950/75 to-black ${
           useBroadcastSizing ? SIG_OVERLAY_CARD_MEDIA_BOX_CLASS : compact ? SIG_OVERLAY_CARD_MEDIA_BOX_CLASS : "mb-2 h-40"
         }`}
       >
@@ -106,21 +106,7 @@ export default function OneShotSigCard({
           gifDelayMultiplier={gifDelayMultiplier}
           onReady={onMediaReady}
         />
-        {sold && soldOutStampUrl ? (
-          <>
-            <div className="absolute inset-0 z-[5] bg-black/18" aria-hidden />
-            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-[min(12%,1rem)]">
-              <Image
-                src={soldOutStampUrl}
-                alt="판매 완료"
-                width={112}
-                height={112}
-                unoptimized
-                className="relative h-auto w-auto max-h-[min(7.8rem,66%)] max-w-[min(7.8rem,66%)] object-contain object-center opacity-95 drop-shadow-[0_2px_6px_rgba(0,0,0,0.42)]"
-              />
-            </div>
-          </>
-        ) : null}
+        {sold && soldOutStampUrl ? <SigSoldStampOverlay soldOutStampUrl={soldOutStampUrl} /> : null}
       </div>
       <div
         className={

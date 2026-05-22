@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { SigItem } from "@/types";
 import {
+  layoutSigOverlayResultRow,
+  SIG_OVERLAY_CARD_MAX_PX,
+} from "@/components/sig-sales/sig-overlay-card-size";
+import {
   buildWheelMenuSlices,
   buildWheelMenuSlicesFromWinnerQueue,
   buildWheelSlicesForCurrentRoundWinner,
@@ -308,6 +312,20 @@ describe("resolveSpinQueueForSession", () => {
       5
     );
     expect(flicker.queue.map((x) => x.id)).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("layoutSigOverlayResultRow", () => {
+  it("6칸이면 행 너비에 맞춰 cardScalePct를 줄인다", () => {
+    const { cardScalePct } = layoutSigOverlayResultRow({
+      cellCount: 6,
+      userScalePct: 100,
+      maxRowWidthPx: 1080,
+    });
+    const natural = 6 * SIG_OVERLAY_CARD_MAX_PX + 5 * 4;
+    const expected = Math.floor((1080 / natural) * 100);
+    expect(cardScalePct).toBeLessThanOrEqual(expected);
+    expect(cardScalePct).toBeGreaterThanOrEqual(50);
   });
 });
 
