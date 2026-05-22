@@ -28,6 +28,8 @@ type ResultOverlayProps = {
   showConfirmedBadge?: boolean;
   sigImageUserId?: string;
   cardScalePct?: number;
+  /** 회전판 제거 후 당첨 카드 고정(이동·등장 연출 없음) */
+  disableCardMotion?: boolean;
 };
 
 const EMPTY_SOLD_SET = new Set<string>();
@@ -48,6 +50,7 @@ export default function ResultOverlay({
   showConfirmedBadge = true,
   sigImageUserId,
   cardScalePct = 100,
+  disableCardMotion = false,
 }: ResultOverlayProps) {
   const [imageLoaded, setImageLoaded] = useState(() => skipHanbangSignLoadingOverlay);
   useEffect(() => {
@@ -101,6 +104,7 @@ export default function ResultOverlay({
           compact
           matchSigCardSize
           cardScalePct={cardScalePct}
+          disableCardMotion={disableCardMotion}
           gifDelayMultiplier={gifDelayMultiplier}
           onMediaReady={() => setImageLoaded(true)}
         />
@@ -132,6 +136,7 @@ export default function ResultOverlay({
         compact
         matchOneShotCardSize
         cardScalePct={cardScalePct}
+        disableCardMotion={disableCardMotion}
         showConfirmedBadge={showConfirmedBadge}
         trailingSlot={oneShotTrailing}
         compactGridJustify="center"

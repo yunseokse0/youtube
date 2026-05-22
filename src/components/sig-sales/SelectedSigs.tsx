@@ -46,6 +46,8 @@ type SelectedSigsProps = {
   matchOneShotCardSize?: boolean;
   /** `layoutSigOverlayResultRow` 결과 — 개별·한방 카드 동일 폭 */
   cardScalePct?: number;
+  /** true면 y/scale 등장 연출 없음(회전판 제거 후 고정 배치) */
+  disableCardMotion?: boolean;
 };
 
 export default function SelectedSigs({
@@ -66,6 +68,7 @@ export default function SelectedSigs({
   entranceOnlyLatest = false,
   matchOneShotCardSize = false,
   cardScalePct = 100,
+  disableCardMotion = false,
   sigImageUserId,
 }: SelectedSigsProps) {
   /** 고정 5·6열은 카드가 적을 때도 빈 칸이 남아 미리 깔린 것처럼 보임 → 실제 개수만큼 열만 사용 */
@@ -110,8 +113,9 @@ export default function SelectedSigs({
         const isLatestConfirmed = highlightId === item.id;
         const latestIdx = items.length - 1;
         const isNewest = idx === latestIdx;
-        const entrance =
-          entranceOnlyLatest && !isNewest
+        const entrance = disableCardMotion
+          ? { initial: false as const, animate: undefined, transition: undefined }
+          : entranceOnlyLatest && !isNewest
             ? { initial: false as const, animate: undefined, transition: undefined }
             : {
                 /** 순차 공개: 첫 장이 화면을 과하게 채우지 않도록 등장 폭·이동 완화 */

@@ -1719,10 +1719,14 @@ export default function SigSalesOverlayPage() {
                   <motion.div
                     key={`result-${spinCompletionKey}`}
                     layout={false}
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0.95, y: 6 }}
-                    transition={{ duration: Math.min(0.35, revealMotionSec), ease: [0.22, 1, 0.36, 1] }}
+                    initial={hideWheelAfterComplete ? false : { opacity: 0, y: 12 }}
+                    animate={hideWheelAfterComplete ? undefined : { opacity: 1, y: 0 }}
+                    exit={hideWheelAfterComplete ? undefined : { opacity: 0.95, y: 6 }}
+                    transition={
+                      hideWheelAfterComplete
+                        ? undefined
+                        : { duration: Math.min(0.35, revealMotionSec), ease: [0.22, 1, 0.36, 1] }
+                    }
                     className="w-full min-w-0 max-w-full drop-shadow-[0_4px_24px_rgba(0,0,0,0.65)]"
                   >
                     <div
@@ -1740,7 +1744,8 @@ export default function SigSalesOverlayPage() {
                         cardScalePct={resultRowLayout.cardScalePct}
                         className="w-full max-w-full"
                         gifDelayMultiplier={sigGifDelayMultiplier}
-                        entranceOnlyLatest
+                        entranceOnlyLatest={!hideWheelAfterComplete}
+                        disableCardMotion={hideWheelAfterComplete}
                         hanbangOnly={hanbangOnlyResultLayout}
                         showConfirmedBadge={machine.phase === "CONFIRMED"}
                         sigImageUserId={sigImageUserId}

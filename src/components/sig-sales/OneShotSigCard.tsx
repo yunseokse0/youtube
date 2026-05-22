@@ -35,6 +35,8 @@ type OneShotSigCardProps = {
   /** 방송·관리자 결과 줄: 개별 시그 카드와 동일 폭·미디어 비율 */
   matchSigCardSize?: boolean;
   cardScalePct?: number;
+  /** true면 y/scale 등장 연출 없음 */
+  disableCardMotion?: boolean;
 };
 
 export default function OneShotSigCard({
@@ -53,6 +55,7 @@ export default function OneShotSigCard({
   sigImageUserId,
   matchSigCardSize = false,
   cardScalePct = 100,
+  disableCardMotion = false,
 }: OneShotSigCardProps) {
   /** 결과 줄: 개별 시그 카드와 동일 폭·미디어·셸 높이 */
   const useBroadcastSizing = Boolean(matchSigCardSize || (compact && !showToggle));
@@ -67,14 +70,18 @@ export default function OneShotSigCard({
   return (
     <motion.section
       initial={
-        useBroadcastSizing
-          ? { opacity: 0, y: 10 }
-          : compact
-            ? { opacity: 0, scale: 0.97, y: 10 }
-            : { opacity: 0, scale: 0.85, y: 24 }
+        disableCardMotion
+          ? false
+          : useBroadcastSizing
+            ? { opacity: 0, y: 10 }
+            : compact
+              ? { opacity: 0, scale: 0.97, y: 10 }
+              : { opacity: 0, scale: 0.85, y: 24 }
       }
-      animate={{ opacity: 1, y: 0, ...(useBroadcastSizing ? {} : { scale: 1 }) }}
-      transition={{ duration: compact ? 0.32 : 0.45, ease: "easeOut" }}
+      animate={
+        disableCardMotion ? undefined : { opacity: 1, y: 0, ...(useBroadcastSizing ? {} : { scale: 1 }) }
+      }
+      transition={disableCardMotion ? undefined : { duration: compact ? 0.32 : 0.45, ease: "easeOut" }}
       style={shellStyle}
       className={
         useBroadcastSizing

@@ -1318,6 +1318,7 @@ export default function AdminSigSalesPage() {
                   compact
                   matchOneShotCardSize
                   cardScalePct={resultRowLayout.cardScalePct}
+                  disableCardMotion={showFinalShowcase}
                   compactGridJustify="center"
                   className="w-full max-w-full"
                   trailingSlot={
@@ -1334,6 +1335,7 @@ export default function AdminSigSalesPage() {
                         compact
                         matchSigCardSize
                         cardScalePct={resultRowLayout.cardScalePct}
+                        disableCardMotion={showFinalShowcase}
                         showToggle
                         onToggleSold={() => setOneShotSold((v) => !v)}
                       />
