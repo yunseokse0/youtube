@@ -118,7 +118,7 @@ export default function ResultOverlay({
   }
 
   return (
-    <div className={`flex w-full flex-col items-center space-y-2 ${className}`.trim()}>
+    <div className={`flex w-fit max-w-full flex-col items-stretch ${className}`.trim()}>
       <SelectedSigs
         items={selectedSigs}
         soldOutStampUrl={soldOutStampUrl}
@@ -130,8 +130,8 @@ export default function ResultOverlay({
         matchOneShotCardSize
         showConfirmedBadge={showConfirmedBadge}
         trailingSlot={oneShotTrailing}
-        compactGridJustify="start"
-        className="max-w-full"
+        compactGridJustify="center"
+        className="w-fit max-w-full"
         gifDelayMultiplier={gifDelayMultiplier}
         entranceOnlyLatest={entranceOnlyLatest}
         sigImageUserId={sigImageUserId}

@@ -14,6 +14,8 @@ import {
   pickWheelSliceIdForWin,
   rememberUsedWheelSliceId,
   resolveSigSalesMenuCount,
+  resolveSpinQueueForSession,
+  resolveWheelSlicesForSpinVisual,
   resolveWheelSpinTarget,
   sigMatchesMemberFilter,
   wheelSliceMatchesServerWinner,
@@ -287,6 +289,90 @@ describe("resolveSigSalesMenuCount", () => {
 });
 
 /** 휠 착지 slice ↔ 서버 당첨 카드 정합(회차별) */
+describe("resolveSpinQueueForSession", () => {
+  it("폴링 순간 primary가 비어도 같은 session 당첨 큐를 유지한다", () => {
+    const winners = [item("a"), item("b"), item("c")];
+    const first = resolveSpinQueueForSession(
+      { sessionId: "", queue: [] },
+      "session_1",
+      winners,
+      [],
+      5
+    );
+    expect(first.queue.map((x) => x.id)).toEqual(["a", "b", "c"]);
+    const flicker = resolveSpinQueueForSession(
+      first.pin,
+      "session_1",
+      [],
+      [],
+      5
+    );
+    expect(flicker.queue.map((x) => x.id)).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("resolveWheelSlicesForSpinVisual", () => {
+  it("기본은 메뉴 풀 칸 수만큼 여러 칸을 만든다", () => {
+    const pool = ["a", "b", "c", "d", "e", "f"].map((id) => item(id));
+    const slices = resolveWheelSlicesForSpinVisual({ menuPool: pool, menuCount: 8 });
+    expect(slices.length).toBe(8);
+  });
+
+  it("winnersOnly면 당첨 큐 길이만큼 칸을 만든다", () => {
+    const winners = [item("a"), item("b"), item("c")];
+    const slices = resolveWheelSlicesForSpinVisual({
+      menuPool: [],
+      menuCount: 20,
+      winnersOnly: true,
+      winnerQueue: winners,
+    });
+    expect(slices).toHaveLength(3);
+  });
+});
+
+describe("sequential menu wheel per round", () => {
+  it("N칸 메뉴 휠에서 회차별 착지가 서버 당첨과 일치한다", () => {
+    const pool: SigItem[] = [
+      { ...item("sig_a"), name: "A" },
+      { ...item("sig_b"), name: "B" },
+      { ...item("sig_c"), name: "C" },
+      { ...item("sig_d"), name: "D" },
+      { ...item("sig_e"), name: "E" },
+      { ...item("sig_f"), name: "F" },
+    ];
+    const menuSlices = resolveWheelSlicesForSpinVisual({ menuPool: pool, menuCount: 10 });
+    expect(menuSlices.length).toBeGreaterThan(1);
+    const winners = pickDistinctSigsByIdAndName(pool, 5);
+    const used = new Set<string>();
+    const last = winners[winners.length - 1]!;
+    for (let round = 0; round < winners.length; round++) {
+      const winner = winners[round]!;
+      const target = resolveWheelSpinTarget(menuSlices, winner, round, used);
+      const animId = pickWheelAnimationResultId(target.sliceId, winner, last.id);
+      expect(wheelSliceMatchesServerWinner(animId, winner), `round ${round}`).toBe(true);
+      rememberUsedWheelSliceId(used, target.sliceId);
+    }
+  });
+});
+
+describe("sequential one-slice wheel per round", () => {
+  it("회차별 1칸 휠 착지 id가 서버 당첨 큐 순서와 일치한다", () => {
+    const winners = pickDistinctSigsByIdAndName(
+      ["a", "b", "c", "d", "e"].map((id) => item(id)),
+      5
+    );
+    const used = new Set<string>();
+    for (let round = 0; round < winners.length; round++) {
+      const winner = winners[round]!;
+      const slices = buildWheelSlicesForCurrentRoundWinner(winner);
+      const target = resolveWheelSpinTarget(slices, winner, round, used);
+      const animId = pickWheelAnimationResultId(target.sliceId, winner, winners[4]!.id);
+      expect(wheelSliceMatchesServerWinner(animId, winner), `round ${round}`).toBe(true);
+      rememberUsedWheelSliceId(used, target.sliceId);
+    }
+  });
+});
+
 describe("wheel spin queue aligns with result cards", () => {
   it("각 회차 resolveWheelSpinTarget 착지가 서버 당첨과 캐노니컬 id로 일치한다", () => {
     const pool: SigItem[] = [

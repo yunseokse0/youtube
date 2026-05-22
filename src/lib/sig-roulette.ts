@@ -218,10 +218,33 @@ export function resolveWheelSpinTarget(
   return { items, sliceId, expectedCanon };
 }
 
-/** 이번 회차 당첨 1개만 휠에 올릴 때(인접 칸 착지·이전 당첨 재노출 방지) */
+/** 이번 회차 당첨 1개만 휠에 올릴 때(테스트·레거시; 연출 기본은 `resolveWheelSlicesForSpinVisual`) */
 export function buildWheelSlicesForCurrentRoundWinner(winner: SigItem | null): SigItem[] {
   if (!winner) return [];
   return buildWheelMenuSlicesFromWinnerQueue([winner]);
+}
+
+export type ResolveWheelSlicesForSpinVisualOptions = {
+  menuPool: SigItem[];
+  menuCount: number;
+  /** `winnersOnly` 오버레이: 당첨 큐만 칸으로 표시 */
+  winnersOnly?: boolean;
+  winnerQueue?: SigItem[];
+  /** 세션 동안 고정된 칸 배치(폴링으로 `__wslot_n` 매핑이 바뀌지 않게) */
+  pinnedSlices?: SigItem[] | null;
+};
+
+/** 회전 연출용 휠 — 여러 칸(메뉴 풀)을 보여 주고 착지는 `resolveWheelSpinTarget`으로 맞춘다 */
+export function resolveWheelSlicesForSpinVisual(
+  opts: ResolveWheelSlicesForSpinVisualOptions
+): SigItem[] {
+  const pinned = opts.pinnedSlices;
+  if (pinned?.length) return pinned;
+  const queue = opts.winnerQueue || [];
+  if (opts.winnersOnly && queue.length > 0) {
+    return buildWheelMenuSlicesFromWinnerQueue(queue);
+  }
+  return buildWheelMenuSlices(opts.menuPool, opts.menuCount);
 }
 
 /**
@@ -275,6 +298,41 @@ export function pickWheelSliceIdForWin(
   }
   const slot = pickFrom[Math.max(0, duplicatePick) % pickFrom.length]!;
   return items[slot]!.id;
+}
+
+export type SpinQueueSessionPin = { sessionId: string; queue: SigItem[] };
+
+/**
+ * 폴링/SSE 순간에 `selectedSigs`가 비었다가 다시 오면 순차 인덱스·당첨 큐가 리셋되어
+ * 휠·카드가 엇갈리거나 이미 나온 시그가 다시 당첨되는 것처럼 보이는 것을 막는다.
+ */
+export function resolveSpinQueueForSession(
+  pin: SpinQueueSessionPin,
+  sessionId: string,
+  primary: SigItem[],
+  fallback: SigItem[],
+  maxSlots: number
+): { pin: SpinQueueSessionPin; queue: SigItem[] } {
+  const sid = String(sessionId || "").trim();
+  const cap = Math.max(1, Math.floor(maxSlots || 1));
+  const primarySlice = primary.slice(0, cap);
+  const fallbackSlice = fallback.slice(0, cap);
+  const pick = primarySlice.length > 0 ? primarySlice : fallbackSlice;
+  if (pick.length > 0) {
+    if (!sid || pin.sessionId !== sid) {
+      const next = { sessionId: sid, queue: pick };
+      return { pin: next, queue: pick };
+    }
+    if (pick.length >= pin.queue.length) {
+      const next = { sessionId: sid, queue: pick };
+      return { pin: next, queue: pick };
+    }
+    return { pin, queue: pin.queue };
+  }
+  if (sid && pin.sessionId === sid && pin.queue.length > 0) {
+    return { pin, queue: pin.queue };
+  }
+  return { pin: { sessionId: sid, queue: [] }, queue: [] };
 }
 
 /** 순차 회전: 이미 착지한 슬라이스 id는 다음 라운드 후보에서 제외(동일 시그 재당첨 시 다른 칸) */

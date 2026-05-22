@@ -27,9 +27,7 @@ import {
   SOUND_ASSETS_ENABLED,
   SPIN_SOUND_PATHS,
   buildSigSalesWheelDisplayPool,
-  buildWheelMenuSlices,
-  buildWheelMenuSlicesFromWinnerQueue,
-  buildWheelSlicesForCurrentRoundWinner,
+  resolveWheelSlicesForSpinVisual,
   clampSigSalesMenuCount,
   resolveSigSalesMenuCount,
   canonicalSigIdFromWheelSliceId,
@@ -37,7 +35,9 @@ import {
   sigMatchesMemberFilter,
   pickWheelAnimationResultId,
   rememberUsedWheelSliceId,
+  resolveSpinQueueForSession,
   resolveWheelSpinTarget,
+  type SpinQueueSessionPin,
   sanitizeWheelDisplayName,
   wheelSliceMatchesServerWinner,
 } from "@/lib/sig-roulette";
@@ -102,10 +102,9 @@ function overlaySpinSessionKey(startedAt: number, sessionId: string): string {
 /** OBS: 서버 SPINNING 수신 시 휠·당첨 큐를 한 번에 맞춤(슬라이스 id·startedAt 정합) */
 function bootstrapOverlaySpinPlayback(
   selected: SigItem[],
-  wheelSlices: SigItem[],
+  spinVisualSlices: SigItem[],
   startedAt: number,
   sessionId: string,
-  resultId: string | null,
   usedSliceIds?: ReadonlySet<string>
 ): {
   pendingLanding: {
@@ -116,7 +115,7 @@ function bootstrapOverlaySpinPlayback(
   };
   demoSpin: { startedAt: number; resultId: string | null };
 } {
-  const firstTarget = resolveWheelSpinTarget(wheelSlices, selected[0] ?? null, 0, usedSliceIds);
+  const firstTarget = resolveWheelSpinTarget(spinVisualSlices, selected[0] ?? null, 0, usedSliceIds);
   const spinStartedAt = resolveOverlayWheelStartedAt(startedAt, sessionId);
   const rid = firstTarget.sliceId || selected[0]?.id || null;
   return {
@@ -213,14 +212,6 @@ export default function SigSalesOverlayPage() {
     if (!Number.isFinite(n)) return 100;
     return Math.max(55, Math.min(140, n));
   })();
-  /** 휠 언마운트 후에도 RouletteWheel과 동일 높이를 유지해 결과 카드가 위로 튀지 않게 함 */
-  const wheelFramePlaceholderPx = useMemo(() => {
-    const ws = Math.max(55, Math.min(140, Math.floor(Number(wheelScalePct) || 100))) / 100;
-    return {
-      height: Math.round(360 * ws),
-      maxWidth: Math.round(680 * ws),
-    };
-  }, [wheelScalePct]);
   /** GIF 프레임 배수(1=원본·부드러움, 1 초과=느리게). `sigGifSpeed` 동의어. 느린 캔버스 연출은 1보다 큰 값 */
   const sigGifDelayMultiplier = (() => {
     const raw = sp.get("sigGifDelay") || sp.get("sigGifSpeed") || "";
@@ -330,6 +321,7 @@ export default function SigSalesOverlayPage() {
     slices: SigItem[];
   } | null>(null);
   const usedWheelSliceIdsRef = useRef<Set<string>>(new Set());
+  const spinQueuePinRef = useRef<SpinQueueSessionPin>({ sessionId: "", queue: [] });
   /** 폴링/IDLE 순간에 selectedSigs 가 비어도 방송 화면에 당첨이 남도록 마지막 확정 목록 보존(초기화·신규 세션 때만 제거) */
   const [broadcastStickySigs, setBroadcastStickySigs] = useState<SigItem[] | null>(null);
   /**
@@ -586,35 +578,31 @@ export default function SigSalesOverlayPage() {
    * 당첨 큐 단일 소스(휠·결과 카드·순차 인덱스). 서버 `selectedSigs` 우선.
    */
   const spinQueueSelected = useMemo(() => {
-    const fromServer = (machine.selectedSigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
-    if (fromServer.length > 0) return fromServer;
-    if (pendingLanding?.selected?.length) {
-      return pendingLanding.selected.slice(0, CONFIRMED_VISIBLE_SLOTS);
-    }
+    const resolved = resolveSpinQueueForSession(
+      spinQueuePinRef.current,
+      machine.sessionId || "",
+      machine.selectedSigs || [],
+      pendingLanding?.selected?.length
+        ? pendingLanding.selected
+        : broadcastStickySigs || [],
+      CONFIRMED_VISIBLE_SLOTS
+    );
+    spinQueuePinRef.current = resolved.pin;
+    if (resolved.queue.length > 0) return resolved.queue;
     return (broadcastStickySigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
-  }, [machine.selectedSigs, pendingLanding?.selected, broadcastStickySigs]);
+  }, [
+    machine.selectedSigs,
+    machine.sessionId,
+    pendingLanding?.selected,
+    broadcastStickySigs,
+  ]);
   const useSequentialWheel = spinQueueSelected.length > 1;
   const rouletteHasWinnerQueue =
     machine.phase === "SPINNING" ||
     machine.phase === "LANDED" ||
     machine.phase === "CONFIRM_PENDING" ||
     machine.phase === "CONFIRMED";
-  /** 당첨이 정해진 회차: 휠·카드 모두 spinQueueSelected 기준 */
-  const useWinnerQueueWheel =
-    (winnersOnlyOverlay && spinQueueSelected.length > 0) ||
-    (rouletteHasWinnerQueue && spinQueueSelected.length > 0);
-
   const wheelDisplayPool = useMemo(() => {
-    if (useWinnerQueueWheel && spinQueueSelected.length > 0) {
-      return spinQueueSelected.map((raw, i) => {
-        const canon = canonicalSigIdFromWheelSliceId(raw.id);
-        const fromInv =
-          state?.sigInventory?.find((x) => x.id === canon) ||
-          state?.sigInventory?.find((x) => x.id === raw.id);
-        const base = fromInv ? { ...fromInv } : { ...raw, id: canon };
-        return { ...base, id: `${canon}__wslot_${i}` };
-      });
-    }
     if (!state) return [];
     return buildSigSalesWheelDisplayPool({
       inventory: state.sigInventory || [],
@@ -634,17 +622,21 @@ export default function SigSalesOverlayPage() {
     pendingLanding?.selected,
     winnersOnlyOverlay,
     spinQueueSelected,
-    useWinnerQueueWheel,
     rouletteHasWinnerQueue,
   ]);
 
-  /** 고유 시그가 적어도 menuCount만큼 칸을 순환 채움(각 칸은 고유 slice id) */
-  const wheelSlices = useMemo(() => {
-    if (useWinnerQueueWheel && spinQueueSelected.length > 0) {
-      return buildWheelMenuSlicesFromWinnerQueue(spinQueueSelected);
-    }
-    return buildWheelMenuSlices(wheelDisplayPool, effectiveMenuCount);
-  }, [wheelDisplayPool, effectiveMenuCount, useWinnerQueueWheel, spinQueueSelected]);
+  /** 회전 연출·OBS 휠 표시 칸(기본: 메뉴 풀 N칸). `winnersOnly` URL만 당첨 큐 칸 */
+  const wheelVisualSlices = useMemo(
+    () =>
+      resolveWheelSlicesForSpinVisual({
+        menuPool: wheelDisplayPool,
+        menuCount: effectiveMenuCount,
+        winnersOnly: winnersOnlyOverlay,
+        winnerQueue: spinQueueSelected,
+        pinnedSlices: null,
+      }),
+    [wheelDisplayPool, effectiveMenuCount, winnersOnlyOverlay, spinQueueSelected]
+  );
 
   useEffect(() => {
     const sid = String(machine.sessionId || "").trim();
@@ -653,7 +645,7 @@ export default function SigSalesOverlayPage() {
       usedWheelSliceIdsRef.current = new Set();
       return;
     }
-    if (wheelSlices.length === 0) return;
+    if (wheelVisualSlices.length === 0) return;
     if (
       machine.phase !== "SPINNING" &&
       machine.phase !== "LANDED" &&
@@ -671,9 +663,9 @@ export default function SigSalesOverlayPage() {
         return prev;
       }
       usedWheelSliceIdsRef.current = new Set();
-      return { sessionId: sid, queueSig, slices: wheelSlices };
+      return { sessionId: sid, queueSig, slices: wheelVisualSlices };
     });
-  }, [machine.phase, machine.sessionId, wheelSlices, machine.selectedSigs, pendingLanding?.selected]);
+  }, [machine.phase, machine.sessionId, wheelVisualSlices, machine.selectedSigs, pendingLanding?.selected]);
 
   const currentRoundWinner = useMemo(
     () =>
@@ -683,38 +675,43 @@ export default function SigSalesOverlayPage() {
     [spinQueueSelected, sequentialRoundIndex]
   );
 
-  /**
-   * 회차별 휠은 **이번 당첨 1칸만** 사용 — 20칸 풀·남은 큐 휠에서 인접 칸/이전 당첨 착지 방지.
-   */
   const wheelSpinning =
     wheelPhase === "spinning" ||
     wheelPhase === "settling" ||
     Boolean(demoSpin) ||
     machine.phase === "SPINNING";
 
-  const wheelSlicesForSpin = useMemo(() => {
-    if (wheelSpinning && currentRoundWinner && rouletteHasWinnerQueue) {
-      return buildWheelSlicesForCurrentRoundWinner(currentRoundWinner);
-    }
-    if (
-      pinnedWheelLayout?.sessionId === machine.sessionId &&
-      pinnedWheelLayout.slices.length > 0
-    ) {
-      return pinnedWheelLayout.slices;
-    }
-    return wheelSlices;
-  }, [
-    wheelSpinning,
-    currentRoundWinner,
-    rouletteHasWinnerQueue,
-    pinnedWheelLayout,
-    machine.sessionId,
-    wheelSlices,
-  ]);
+  const wheelSlicesForSpin = useMemo(
+    () =>
+      resolveWheelSlicesForSpinVisual({
+        menuPool: wheelDisplayPool,
+        menuCount: effectiveMenuCount,
+        winnersOnly: winnersOnlyOverlay,
+        winnerQueue: spinQueueSelected,
+        pinnedSlices:
+          pinnedWheelLayout?.sessionId === machine.sessionId
+            ? pinnedWheelLayout.slices
+            : null,
+      }),
+    [
+      wheelDisplayPool,
+      effectiveMenuCount,
+      winnersOnlyOverlay,
+      spinQueueSelected,
+      pinnedWheelLayout,
+      machine.sessionId,
+    ]
+  );
 
   const wheelSpinTarget = useMemo(
-    () => resolveWheelSpinTarget(wheelSlicesForSpin, currentRoundWinner, 0, undefined),
-    [wheelSlicesForSpin, currentRoundWinner]
+    () =>
+      resolveWheelSpinTarget(
+        wheelSlicesForSpin,
+        currentRoundWinner,
+        useSequentialWheel ? sequentialRoundIndex : 0,
+        useSequentialWheel ? usedWheelSliceIdsRef.current : undefined
+      ),
+    [wheelSlicesForSpin, currentRoundWinner, useSequentialWheel, sequentialRoundIndex]
   );
 
   const wheelItemsWithResult = wheelSpinTarget.items;
@@ -841,7 +838,10 @@ export default function SigSalesOverlayPage() {
       (machine.selectedSigs?.length ?? 0) === 0 &&
       !pendingLanding &&
       !demoSpin;
-    if (idleClean) setStaggerSessionPin(null);
+    if (idleClean) {
+      setStaggerSessionPin(null);
+      spinQueuePinRef.current = { sessionId: "", queue: [] };
+    }
   }, [machine.phase, machine.selectedSigs?.length, pendingLanding, demoSpin]);
   const displaySelectedSigs = useMemo(() => {
     if (fullSelectedSigs.length === 0) return [];
@@ -883,6 +883,9 @@ export default function SigSalesOverlayPage() {
     }
     /** LANDED인데 아직 wheelPhase가 result로 안 넘어온 타이밍은 빈 그리드 */
     if (machine.phase === "LANDED") {
+      if (overlayHoldResults || showResultPanel) {
+        return fullSelectedSigs.slice(0, fullSelectedSigs.length);
+      }
       return [];
     }
     return fullSelectedSigs;
@@ -934,37 +937,23 @@ export default function SigSalesOverlayPage() {
     return (pendingLanding?.selected || []).slice(0, CONFIRMED_VISIBLE_SLOTS).map((s) => s.id).join(",");
   }, [machine.selectedSigs, pendingLanding?.selected]);
 
+  const prevStaggerAnchorKeyRef = useRef(staggerAnchorKey);
   useEffect(() => {
     if (wheelSettleLandTimerRef.current != null) {
       window.clearTimeout(wheelSettleLandTimerRef.current);
       wheelSettleLandTimerRef.current = null;
     }
-    const queueLen = Math.max(
-      machine.selectedSigs?.length ?? 0,
-      pendingLanding?.selected?.length ?? 0
-    );
-    const midSequential =
-      queueLen > 1 &&
-      (revealedSigCount > 0 ||
-        sequentialRoundIndex > 0 ||
-        wheelPhase === "spinning" ||
-        wheelPhase === "settling" ||
-        wheelPhase === "result");
-    if (!midSequential) {
+    if (prevStaggerAnchorKeyRef.current !== staggerAnchorKey) {
+      prevStaggerAnchorKeyRef.current = staggerAnchorKey;
       setRevealedSigCount(0);
       setSequentialRoundIndex(0);
+      sequentialRoundIndexRef.current = 0;
       usedWheelSliceIdsRef.current = new Set();
+      spinQueuePinRef.current = { sessionId: "", queue: [] };
+      setOneShotRevealUnlocked(false);
+      staggerRanSessionRef.current = "";
     }
-    setOneShotRevealUnlocked(false);
-    staggerRanSessionRef.current = "";
-  }, [
-    staggerAnchorKey,
-    machine.selectedSigs?.length,
-    pendingLanding?.selected?.length,
-    revealedSigCount,
-    sequentialRoundIndex,
-    wheelPhase,
-  ]);
+  }, [staggerAnchorKey]);
 
   useEffect(() => {
     if (wheelPhase !== "spinning" && wheelPhase !== "settling") return;
@@ -1039,16 +1028,25 @@ export default function SigSalesOverlayPage() {
     sigResultStaggerMs,
   ]);
 
-  const hideWheelAfterComplete =
-    machine.selectedSigs.length >= completedTargetCount &&
-    !pendingLanding &&
-    !demoSpin &&
-    wheelPhase !== "spinning" &&
-    wheelPhase !== "settling" &&
-    (wheelPhase === "result" || overlayHoldResults || showResultPanel) &&
-    individualSigsRevealDone;
-  /** 한방 공개 여부와 무관하게, 개별 시그 연출만 끝나면 회전판 페이드 예약 */
-  const wheelFadeScheduled = useMemo(() => hideWheelAfterComplete, [hideWheelAfterComplete]);
+  /** 개별 당첨 카드가 전부 공개되면 회전판 제거(한방 로딩·페이드와 무관) */
+  const hideWheelAfterComplete = useMemo(() => {
+    if (pendingLanding || demoSpin) return false;
+    if (wheelPhase === "spinning" || wheelPhase === "settling") return false;
+    if (completedTargetCount < 1) return false;
+    return (
+      revealedSigCount >= completedTargetCount &&
+      displaySelectedSigs.length >= completedTargetCount &&
+      individualSigsRevealDone
+    );
+  }, [
+    pendingLanding,
+    demoSpin,
+    wheelPhase,
+    completedTargetCount,
+    revealedSigCount,
+    displaySelectedSigs.length,
+    individualSigsRevealDone,
+  ]);
   /**
    * 회차 단위로만 바뀌게 함. selectedSigs/resultId를 넣으면 landed() 직후 키가 바뀌어
    * 결과 패널·휠 래퍼가 통째로 리마운트되며 카드가 한꺼번에 다시 그려지는 현상 발생.
@@ -1059,10 +1057,7 @@ export default function SigSalesOverlayPage() {
     if (sid) return `spin:${sid}`;
     return `spin:t-${Number(machine.startedAt || 0)}`;
   }, [machine.sessionId, machine.startedAt]);
-  const showWheelVisual = useMemo(
-    () => !wheelFadeScheduled || !revealGateOpen || wheelFadePhase !== "off",
-    [wheelFadeScheduled, revealGateOpen, wheelFadePhase],
-  );
+  const showWheelVisual = !hideWheelAfterComplete;
   /**
    * 스핀 중 showResultPanel=false 이어도 당첨 시그가 이미 확정되어 있으면 결과 그리드를 반드시 연다.
    * (그리드 데이터만 채우고 패널을 숨기면「돌다가 비었다가 한꺼번에」가 그대로 발생함)
@@ -1321,7 +1316,6 @@ export default function SigSalesOverlayPage() {
       wheelSlicesForSpin,
       machine.startedAt,
       machine.sessionId,
-      machine.resultId,
       usedWheelSliceIdsRef.current
     );
     setPendingLanding(boot.pendingLanding);
@@ -1334,9 +1328,9 @@ export default function SigSalesOverlayPage() {
     machine.startedAt,
     machine.sessionId,
     wheelPhase,
-    wheelSlicesForSpin,
     revealedSigCount,
     sequentialRoundIndex,
+    wheelSlicesForSpin,
   ]);
 
   useEffect(() => {
@@ -1373,7 +1367,6 @@ export default function SigSalesOverlayPage() {
         wheelSlicesForSpin,
         machine.startedAt,
         machine.sessionId,
-        machine.resultId,
         usedWheelSliceIdsRef.current
       );
       setPendingLanding(boot.pendingLanding);
@@ -1384,7 +1377,6 @@ export default function SigSalesOverlayPage() {
     machine.selectedSigs,
     machine.startedAt,
     machine.sessionId,
-    machine.resultId,
     pendingLanding,
     demoSpin,
     wheelSlicesForSpin,
@@ -1609,9 +1601,9 @@ export default function SigSalesOverlayPage() {
                       );
                       transitionHandledKeyRef.current = "";
                       const nextRound = roundNow + 1;
-                      usedWheelSliceIdsRef.current = new Set();
+                      sequentialRoundIndexRef.current = nextRound;
+                      setSequentialRoundIndex(nextRound);
                       window.setTimeout(() => {
-                        setSequentialRoundIndex(nextRound);
                         setDemoSpin({
                           startedAt: resolveOverlayWheelStartedAt(
                             machine.startedAt,
@@ -1707,20 +1699,6 @@ export default function SigSalesOverlayPage() {
                 }}
               />
             </motion.div>
-          ) : !showWheelVisual && resultOverlayVisible ? (
-            <div
-              role="presentation"
-              className="pointer-events-none flex w-full shrink-0 justify-center"
-              aria-hidden
-            >
-              <div
-                className="mx-auto w-full"
-                style={{
-                  height: wheelFramePlaceholderPx.height,
-                  maxWidth: wheelFramePlaceholderPx.maxWidth,
-                }}
-              />
-            </div>
           ) : null}
           </div>
           {/* 휠 아래·왼쪽(방송 화면 기준 시그 결과 영역). 휠 제거 시 위 플레이스홀더로 세로 위치 유지. hanbangOnly 시 한방만 화면 하단 고정 */}
@@ -1745,7 +1723,7 @@ export default function SigSalesOverlayPage() {
                     className="w-full min-w-0 max-w-full drop-shadow-[0_4px_24px_rgba(0,0,0,0.65)]"
                   >
                     <div
-                      className="mx-auto flex w-full max-w-full justify-center overflow-x-hidden origin-top"
+                      className="mx-auto flex w-fit max-w-full justify-center overflow-x-hidden origin-top"
                       style={sigResultBandZoomStyle}
                     >
                       <ResultOverlay

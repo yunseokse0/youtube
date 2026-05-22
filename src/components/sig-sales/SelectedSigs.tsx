@@ -94,7 +94,7 @@ export default function SelectedSigs({
   /** 방송 오버레이: 가로 스크롤바 노출 방지(카드 많을 땐 sigResultScalePct 로 축소) */
   const nowrapRow = overlaySingleRow ? "flex-nowrap overflow-x-hidden" : "flex-wrap";
   const sectionClass = overlaySingleRow
-    ? `flex w-full min-w-0 max-w-full ${nowrapRow} ${matchOneShotCardSize && trailingActive ? "items-stretch" : "items-start"} ${sigRowJustify} gap-1 sm:gap-1 ${className}`.trim()
+    ? `flex w-fit min-w-0 max-w-full ${nowrapRow} ${matchOneShotCardSize && trailingActive ? "items-stretch" : "items-start"} ${sigRowJustify} gap-1 sm:gap-1 ${className}`.trim()
     : broadcastMatch
       ? `flex w-full min-w-0 max-w-full flex-wrap justify-center gap-1 sm:gap-1 ${className}`.trim()
       : `grid w-full min-w-0 max-w-full gap-1 ${justifyCompact} ${gridAlign} ${className}`.trim();

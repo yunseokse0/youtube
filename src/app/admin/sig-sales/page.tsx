@@ -39,8 +39,7 @@ import {
   cancelRouletteSession,
   buildSigSalesWheelDisplayPool,
   buildWheelMenuSlices,
-  buildWheelMenuSlicesFromWinnerQueue,
-  buildWheelSlicesForCurrentRoundWinner,
+  resolveWheelSlicesForSpinVisual,
   clampSigSalesMenuCount,
   minSigSalesMenuCountForActive,
   resolveSigSalesMenuCount,
@@ -48,7 +47,9 @@ import {
   hydrateSigItemFromInventory,
   pickWheelAnimationResultId,
   rememberUsedWheelSliceId,
+  resolveSpinQueueForSession,
   resolveWheelSpinTarget,
+  type SpinQueueSessionPin,
   sigMatchesMemberFilter,
   wheelSliceMatchesServerWinner,
 } from "@/lib/sig-roulette";
@@ -127,6 +128,7 @@ export default function AdminSigSalesPage() {
     slices: SigItem[];
   } | null>(null);
   const usedWheelSliceIdsRef = useRef<Set<string>>(new Set());
+  const spinQueuePinRef = useRef<SpinQueueSessionPin>({ sessionId: "", queue: [] });
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [lastConfirmedText, setLastConfirmedText] = useState("");
   const [lastConfirmedFxKey, setLastConfirmedFxKey] = useState(0);
@@ -263,6 +265,8 @@ export default function AdminSigSalesPage() {
     setOneShotReveal(false);
     setPendingLanding(null);
     setDemoSpin(null);
+    spinQueuePinRef.current = { sessionId: "", queue: [] };
+    usedWheelSliceIdsRef.current = new Set();
   }, [machine.phase]);
 
   useEffect(() => {
@@ -334,24 +338,22 @@ export default function AdminSigSalesPage() {
     machine.selectedSigs,
   ]);
   const spinQueueSelected = useMemo(() => {
-    const fromServer = (machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
-    if (fromServer.length > 0) return fromServer;
-    return (pendingLanding?.selected || []).slice(0, MAX_SELECTED_SIGS);
-  }, [machine.selectedSigs, pendingLanding?.selected]);
+    const resolved = resolveSpinQueueForSession(
+      spinQueuePinRef.current,
+      machine.sessionId || "",
+      machine.selectedSigs || [],
+      pendingLanding?.selected || [],
+      MAX_SELECTED_SIGS
+    );
+    spinQueuePinRef.current = resolved.pin;
+    return resolved.queue;
+  }, [machine.selectedSigs, machine.sessionId, pendingLanding?.selected]);
   const useSequentialWheel = spinQueueSelected.length > 1;
-  const rouletteHasWinnerQueue =
-    machine.phase === "SPINNING" ||
-    machine.phase === "LANDED" ||
-    machine.phase === "CONFIRM_PENDING" ||
-    machine.phase === "CONFIRMED";
-  const useWinnerQueueWheel = rouletteHasWinnerQueue && spinQueueSelected.length > 0;
-
-  const wheelMenuSlices = useMemo(() => {
-    if (useWinnerQueueWheel && spinQueueSelected.length > 0) {
-      return buildWheelMenuSlicesFromWinnerQueue(spinQueueSelected);
-    }
-    return buildWheelMenuSlices(wheelDisplayPool, effectiveMenuCount);
-  }, [wheelDisplayPool, effectiveMenuCount, useWinnerQueueWheel, spinQueueSelected]);
+  /** 회전·대기 화면 모두 메뉴 칸 수(5~20) 풀 — 당첨 큐만으로 1~N칸 휠을 만들지 않음(시청자 랜덤감) */
+  const wheelMenuSlices = useMemo(
+    () => buildWheelMenuSlices(wheelDisplayPool, effectiveMenuCount),
+    [wheelDisplayPool, effectiveMenuCount]
+  );
 
   useEffect(() => {
     const sid = String(machine.sessionId || "").trim();
@@ -361,7 +363,6 @@ export default function AdminSigSalesPage() {
       return;
     }
     if (wheelMenuSlices.length === 0) return;
-    if (useSequentialWheel) return;
     if (
       machine.phase !== "SPINNING" &&
       machine.phase !== "LANDED" &&
@@ -376,47 +377,59 @@ export default function AdminSigSalesPage() {
         ? prev
         : { sessionId: sid, queueSig, slices: wheelMenuSlices }
     );
-  }, [machine.phase, machine.sessionId, wheelMenuSlices, spinQueueSelected, useSequentialWheel]);
+  }, [machine.phase, machine.sessionId, wheelMenuSlices, spinQueueSelected]);
 
   const currentRoundWinner = spinQueueSelected[spinStep] ?? null;
   const wheelSpinning =
     Boolean(demoSpin) || machine.isRolling || machine.phase === "SPINNING";
 
-  const wheelSlicesForSpin = useMemo(() => {
-    if (wheelSpinning && currentRoundWinner && rouletteHasWinnerQueue) {
-      return buildWheelSlicesForCurrentRoundWinner(currentRoundWinner);
-    }
-    if (
-      pinnedWheelLayout?.sessionId === machine.sessionId &&
-      pinnedWheelLayout.slices.length > 0
-    ) {
-      return pinnedWheelLayout.slices;
-    }
-    return wheelMenuSlices;
-  }, [
-    wheelSpinning,
-    currentRoundWinner,
-    rouletteHasWinnerQueue,
-    pinnedWheelLayout,
-    machine.sessionId,
-    wheelMenuSlices,
-  ]);
+  const wheelSlicesForSpin = useMemo(
+    () =>
+      resolveWheelSlicesForSpinVisual({
+        menuPool: wheelDisplayPool,
+        menuCount: effectiveMenuCount,
+        pinnedSlices:
+          pinnedWheelLayout?.sessionId === machine.sessionId
+            ? pinnedWheelLayout.slices
+            : null,
+      }),
+    [
+      wheelDisplayPool,
+      effectiveMenuCount,
+      pinnedWheelLayout,
+      machine.sessionId,
+    ]
+  );
 
   const wheelSpinTarget = useMemo(
-    () => resolveWheelSpinTarget(wheelSlicesForSpin, currentRoundWinner, 0, undefined),
-    [wheelSlicesForSpin, currentRoundWinner]
+    () =>
+      resolveWheelSpinTarget(
+        wheelSlicesForSpin,
+        currentRoundWinner,
+        useSequentialWheel ? spinStep : 0,
+        useSequentialWheel ? usedWheelSliceIdsRef.current : undefined
+      ),
+    [wheelSlicesForSpin, currentRoundWinner, useSequentialWheel, spinStep]
   );
   const wheelItemsWithResult = wheelSpinTarget.items;
   const wheelResultSliceId = wheelSpinTarget.sliceId;
   const wheelAnimationResultId = pickWheelAnimationResultId(
     wheelResultSliceId,
     currentRoundWinner,
-    demoSpin?.resultId ?? null
+    null
   );
   const displaySelectedSigs = useMemo(() => {
-    if (stagedSelected.length > 0) return stagedSelected.slice(0, MAX_SELECTED_SIGS);
-    return machine.selectedSigs.slice(0, MAX_SELECTED_SIGS);
-  }, [machine.selectedSigs, stagedSelected]);
+    const fromServer = (machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
+    const fromStaged = stagedSelected.slice(0, MAX_SELECTED_SIGS);
+    const terminalPhase =
+      machine.phase === "LANDED" ||
+      machine.phase === "CONFIRM_PENDING" ||
+      machine.phase === "CONFIRMED";
+    /** 착지 후·폴링 복원: 서버 `selectedSigs`가 정본(순차 연출 중 `stagedSelected`가 3개만 남는 경우 방지) */
+    if (terminalPhase && fromServer.length > 0) return fromServer;
+    if (fromStaged.length > 0) return fromStaged;
+    return fromServer;
+  }, [machine.selectedSigs, stagedSelected, machine.phase]);
   const displaySelectedSigsForUi = useMemo(
     () =>
       displaySelectedSigs.map((s) => hydrateSigItemFromInventory(s, state?.sigInventory, userId)),
@@ -456,9 +469,23 @@ export default function AdminSigSalesPage() {
       setOneShotReveal(false);
       return;
     }
-    const id = window.setTimeout(() => setOneShotReveal(true), 950);
-    return () => window.clearTimeout(id);
+    setOneShotReveal(true);
   }, [showFinalShowcase, displayOneShot]);
+
+  useEffect(() => {
+    if (
+      machine.phase !== "LANDED" &&
+      machine.phase !== "CONFIRM_PENDING" &&
+      machine.phase !== "CONFIRMED"
+    ) {
+      return;
+    }
+    const fromServer = (machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
+    if (fromServer.length === 0) return;
+    setStagedSelected((prev) =>
+      fromServer.length >= prev.length ? fromServer : prev
+    );
+  }, [machine.phase, machine.selectedSigs]);
 
   useEffect(() => {
     if (!state?.members?.length) return;
@@ -623,7 +650,6 @@ export default function AdminSigSalesPage() {
       const selected = (data.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
       const oneShot = buildOneShotFromSelected(selected);
       setPendingLanding({ selected, oneShot, resultId: data.result?.id || selected[selected.length - 1]?.id || null, persist: true });
-      const firstTarget = resolveWheelSpinTarget(wheelMenuSlices, selected[0] ?? null, 0);
       const queueSig = selected.map((s) => canonicalSigIdFromWheelSliceId(s.id)).join(",");
       setPinnedWheelLayout({
         sessionId: String(data.sessionId || "").trim(),
@@ -633,7 +659,7 @@ export default function AdminSigSalesPage() {
       usedWheelSliceIdsRef.current = new Set();
       setDemoSpin({
         startedAt: Date.now(),
-        resultId: firstTarget.sliceId || selected[0]?.id || null,
+        resultId: null,
       });
       setSpinStep(0);
       setStagedSelected([]);
@@ -687,10 +713,9 @@ export default function AdminSigSalesPage() {
         resultId,
         persist: false,
       });
-      const demoTarget = resolveWheelSpinTarget(wheelMenuSlices, selected[0] ?? null, 0);
       setDemoSpin({
         startedAt: Date.now(),
-        resultId: demoTarget.sliceId || selected[0]?.id || resultId,
+        resultId: null,
       });
       setSpinStep(0);
       setStagedSelected([]);
@@ -1200,7 +1225,11 @@ export default function AdminSigSalesPage() {
 
               const finalSelected = nextSelected;
               const oneShot = buildOneShotFromSelected(finalSelected);
-              landed(finalSelected, oneShot, pendingLanding.resultId || current.id);
+              landed(
+                finalSelected,
+                oneShot,
+                wheelAnimationResultId || current.id || finalSelected[finalSelected.length - 1]?.id || null
+              );
               oneShotSound.stop();
               oneShotSound.play();
               setStagedSelected(finalSelected);
@@ -1244,10 +1273,19 @@ export default function AdminSigSalesPage() {
 
           {(machine.phase === "SPINNING" || machine.phase === "LANDED" || machine.phase === "CONFIRM_PENDING" || machine.phase === "CONFIRMED" || stagedSelected.length > 0) &&
           displaySelectedSigs.length > 0 ? (
-            <div className="mt-4 space-y-3">
+            <div
+              className={
+                showFinalShowcase
+                  ? "mt-4 flex w-full flex-col items-center space-y-3"
+                  : "mt-4 space-y-3"
+              }
+            >
               {showFinalShowcase ? (
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-yellow-100">당첨 결과 ({displaySelectedSigsForUi.length}개)</p>
+                <div className="flex w-full max-w-full flex-wrap items-center justify-between gap-2 px-1">
+                  <p className="text-sm font-semibold text-yellow-100">
+                    당첨 시그 {displaySelectedSigsForUi.length}개
+                    {displayOneShot ? " + 한방 시그" : ""}
+                  </p>
                   <button
                     type="button"
                     className="rounded border border-white/20 px-2 py-1 text-xs text-neutral-200 hover:bg-white/10"
@@ -1263,7 +1301,7 @@ export default function AdminSigSalesPage() {
                 }`}
               >
               <div
-                className="mx-auto flex w-full max-w-full justify-center overflow-x-hidden origin-top"
+                className="mx-auto flex w-fit max-w-full justify-center overflow-x-hidden origin-top"
                 style={sigResultBandZoomStyle}
               >
                 <SelectedSigs
@@ -1275,8 +1313,8 @@ export default function AdminSigSalesPage() {
                   highlightId={highlightId}
                   compact
                   matchOneShotCardSize
-                  compactGridJustify="start"
-                  className="w-full max-w-full"
+                  compactGridJustify="center"
+                  className="w-fit max-w-full"
                   trailingSlot={
                     displayOneShot && oneShotReveal ? (
                       <OneShotSigCard
@@ -1290,6 +1328,7 @@ export default function AdminSigSalesPage() {
                         disabled={controlsDisabled}
                         compact
                         matchSigCardSize
+                        showToggle
                         onToggleSold={() => setOneShotSold((v) => !v)}
                       />
                     ) : null

@@ -49,10 +49,15 @@ export function clampSigOverlayResultScalePct(raw: string | number | null | unde
  */
 export function sigOverlayResultBandStyle(scalePct: number): CSSProperties {
   const scale = clampSigOverlayResultScalePct(scalePct) / 100;
+  const base: CSSProperties = {
+    width: "max-content",
+    maxWidth: "100%",
+  };
   if (Math.abs(scale - 1) < 0.001) {
-    return { transformOrigin: "top center" };
+    return { ...base, transformOrigin: "top center" };
   }
   return {
+    ...base,
     zoom: scale,
     transform: `scale(${scale})`,
     transformOrigin: "top center",
