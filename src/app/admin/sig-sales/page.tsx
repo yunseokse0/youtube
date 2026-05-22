@@ -21,6 +21,7 @@ const RouletteWheel = dynamic(() => import("@/components/sig-sales/RouletteWheel
 });
 import SelectedSigs from "@/components/sig-sales/SelectedSigs";
 import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
+import { sigOverlayResultBandStyle } from "@/components/sig-sales/sig-overlay-card-size";
 import ConfirmationModal from "@/components/sig-sales/ConfirmationModal";
 import RouletteHistoryModal from "@/components/sig-sales/RouletteHistoryModal";
 import {
@@ -38,6 +39,8 @@ import {
   cancelRouletteSession,
   buildSigSalesWheelDisplayPool,
   buildWheelMenuSlices,
+  buildWheelMenuSlicesFromWinnerQueue,
+  buildWheelSlicesForCurrentRoundWinner,
   clampSigSalesMenuCount,
   minSigSalesMenuCountForActive,
   resolveSigSalesMenuCount,
@@ -120,6 +123,7 @@ export default function AdminSigSalesPage() {
   const [spinStep, setSpinStep] = useState(0);
   const [pinnedWheelLayout, setPinnedWheelLayout] = useState<{
     sessionId: string;
+    queueSig: string;
     slices: SigItem[];
   } | null>(null);
   const usedWheelSliceIdsRef = useRef<Set<string>>(new Set());
@@ -300,6 +304,15 @@ export default function AdminSigSalesPage() {
     () => resolveSigSalesMenuCount(menuCountSetting, activeNormalPool.length),
     [menuCountSetting, activeNormalPool.length]
   );
+  const sigResultScalePct = useMemo(() => {
+    const n = Number(state?.rouletteState?.sigResultScalePct);
+    if (Number.isFinite(n)) return Math.max(50, Math.min(100, Math.floor(n)));
+    return 78;
+  }, [state?.rouletteState?.sigResultScalePct]);
+  const sigResultBandZoomStyle = useMemo(
+    () => sigOverlayResultBandStyle(sigResultScalePct),
+    [sigResultScalePct]
+  );
   const menuFillFromAllActive = state?.rouletteState?.menuFillFromAllActive === true;
   const wheelDisplayPool = useMemo(() => {
     if (!state) return [];
@@ -320,10 +333,25 @@ export default function AdminSigSalesPage() {
     pendingLanding?.selected,
     machine.selectedSigs,
   ]);
-  const wheelMenuSlices = useMemo(
-    () => buildWheelMenuSlices(wheelDisplayPool, effectiveMenuCount),
-    [wheelDisplayPool, effectiveMenuCount]
-  );
+  const spinQueueSelected = useMemo(() => {
+    const fromServer = (machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
+    if (fromServer.length > 0) return fromServer;
+    return (pendingLanding?.selected || []).slice(0, MAX_SELECTED_SIGS);
+  }, [machine.selectedSigs, pendingLanding?.selected]);
+  const useSequentialWheel = spinQueueSelected.length > 1;
+  const rouletteHasWinnerQueue =
+    machine.phase === "SPINNING" ||
+    machine.phase === "LANDED" ||
+    machine.phase === "CONFIRM_PENDING" ||
+    machine.phase === "CONFIRMED";
+  const useWinnerQueueWheel = rouletteHasWinnerQueue && spinQueueSelected.length > 0;
+
+  const wheelMenuSlices = useMemo(() => {
+    if (useWinnerQueueWheel && spinQueueSelected.length > 0) {
+      return buildWheelMenuSlicesFromWinnerQueue(spinQueueSelected);
+    }
+    return buildWheelMenuSlices(wheelDisplayPool, effectiveMenuCount);
+  }, [wheelDisplayPool, effectiveMenuCount, useWinnerQueueWheel, spinQueueSelected]);
 
   useEffect(() => {
     const sid = String(machine.sessionId || "").trim();
@@ -333,6 +361,7 @@ export default function AdminSigSalesPage() {
       return;
     }
     if (wheelMenuSlices.length === 0) return;
+    if (useSequentialWheel) return;
     if (
       machine.phase !== "SPINNING" &&
       machine.phase !== "LANDED" &&
@@ -341,34 +370,41 @@ export default function AdminSigSalesPage() {
     ) {
       return;
     }
+    const queueSig = spinQueueSelected.map((s) => canonicalSigIdFromWheelSliceId(s.id)).join(",");
     setPinnedWheelLayout((prev) =>
-      prev?.sessionId === sid ? prev : { sessionId: sid, slices: wheelMenuSlices }
+      prev?.sessionId === sid && prev.queueSig === queueSig
+        ? prev
+        : { sessionId: sid, queueSig, slices: wheelMenuSlices }
     );
-  }, [machine.phase, machine.sessionId, wheelMenuSlices]);
+  }, [machine.phase, machine.sessionId, wheelMenuSlices, spinQueueSelected, useSequentialWheel]);
 
-  const wheelSlicesForSpin =
-    pinnedWheelLayout?.sessionId === machine.sessionId && pinnedWheelLayout.slices.length > 0
-      ? pinnedWheelLayout.slices
-      : wheelMenuSlices;
+  const currentRoundWinner = spinQueueSelected[spinStep] ?? null;
 
-  /** OBS와 동일: 서버 `machine.selectedSigs`가 당첨 큐 단일 소스 */
-  const spinQueueSelected = useMemo(() => {
-    const fromServer = (machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
-    if (fromServer.length > 0) return fromServer;
-    return (pendingLanding?.selected || []).slice(0, MAX_SELECTED_SIGS);
-  }, [machine.selectedSigs, pendingLanding?.selected]);
-  const wheelSpinTarget = useMemo(() => {
-    const serverWinner = spinQueueSelected[spinStep] ?? null;
-    return resolveWheelSpinTarget(
-      wheelSlicesForSpin,
-      serverWinner,
-      spinStep,
-      usedWheelSliceIdsRef.current
-    );
-  }, [wheelSlicesForSpin, spinQueueSelected, spinStep]);
+  const wheelSlicesForSpin = useMemo(() => {
+    if (currentRoundWinner && rouletteHasWinnerQueue) {
+      return buildWheelSlicesForCurrentRoundWinner(currentRoundWinner);
+    }
+    if (
+      pinnedWheelLayout?.sessionId === machine.sessionId &&
+      pinnedWheelLayout.slices.length > 0
+    ) {
+      return pinnedWheelLayout.slices;
+    }
+    return wheelMenuSlices;
+  }, [
+    currentRoundWinner,
+    rouletteHasWinnerQueue,
+    pinnedWheelLayout,
+    machine.sessionId,
+    wheelMenuSlices,
+  ]);
+
+  const wheelSpinTarget = useMemo(
+    () => resolveWheelSpinTarget(wheelSlicesForSpin, currentRoundWinner, 0, undefined),
+    [wheelSlicesForSpin, currentRoundWinner]
+  );
   const wheelItemsWithResult = wheelSpinTarget.items;
   const wheelResultSliceId = wheelSpinTarget.sliceId;
-  const currentRoundWinner = spinQueueSelected[spinStep] ?? null;
   const wheelAnimationResultId = pickWheelAnimationResultId(
     wheelResultSliceId,
     currentRoundWinner,
@@ -1221,40 +1257,48 @@ export default function AdminSigSalesPage() {
                   showFinalShowcase ? "max-h-[min(58vh,560px)] overflow-y-auto pr-1" : ""
                 }`}
               >
-              <SelectedSigs
-                items={displaySelectedSigsForUi}
-                sigImageUserId={userId}
-                soldOutStampUrl={soldOutStampUrl}
-                manualSoldSet={manualSoldSet}
-                disabled={controlsDisabled}
-                highlightId={highlightId}
-                compact
-                matchOneShotCardSize
-                compactGridJustify="start"
-                trailingSlot={displayOneShot && oneShotReveal ? (
-                  <OneShotSigCard
-                    name={displayOneShot?.name || "한방 시그"}
-                    price={displayOneShot?.price || 0}
-                    imageUrl={oneShotImageUrl}
-                    sigImageUserId={userId}
-                    sold={oneShotSold}
-                    soldOutStampUrl={soldOutStampUrl}
-                    selectedSigCount={displaySelectedSigsForUi.length}
-                    disabled={controlsDisabled}
-                    compact
-                    matchSigCardSize
-                    onToggleSold={() => setOneShotSold((v) => !v)}
-                  />
-                ) : null}
-                onToggleSold={(id) =>
-                  setManualSoldSet((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(id)) next.delete(id);
-                    else next.add(id);
-                    return next;
-                  })
-                }
-              />
+              <div
+                className="mx-auto flex w-full max-w-full justify-center overflow-x-hidden origin-top"
+                style={sigResultBandZoomStyle}
+              >
+                <SelectedSigs
+                  items={displaySelectedSigsForUi}
+                  sigImageUserId={userId}
+                  soldOutStampUrl={soldOutStampUrl}
+                  manualSoldSet={manualSoldSet}
+                  disabled={controlsDisabled}
+                  highlightId={highlightId}
+                  compact
+                  matchOneShotCardSize
+                  compactGridJustify="start"
+                  className="w-full max-w-full"
+                  trailingSlot={
+                    displayOneShot && oneShotReveal ? (
+                      <OneShotSigCard
+                        name={displayOneShot?.name || "한방 시그"}
+                        price={displayOneShot?.price || 0}
+                        imageUrl={oneShotImageUrl}
+                        sigImageUserId={userId}
+                        sold={oneShotSold}
+                        soldOutStampUrl={soldOutStampUrl}
+                        selectedSigCount={displaySelectedSigsForUi.length}
+                        disabled={controlsDisabled}
+                        compact
+                        matchSigCardSize
+                        onToggleSold={() => setOneShotSold((v) => !v)}
+                      />
+                    ) : null
+                  }
+                  onToggleSold={(id) =>
+                    setManualSoldSet((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(id)) next.delete(id);
+                      else next.add(id);
+                      return next;
+                    })
+                  }
+                />
+              </div>
               <div className={`flex ${showFinalShowcase ? "justify-center" : "justify-end"}`}>
                 <button
                   type="button"

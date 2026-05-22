@@ -51,10 +51,8 @@ export default function OneShotSigCard({
   sigImageUserId,
   matchSigCardSize = false,
 }: OneShotSigCardProps) {
-  /** 개별 당첨 카드와 동일 폭·미디어(관리자 토글 있어도 matchSigCardSize 시 적용) */
-  const matchBroadcastCard = Boolean(compact && (matchSigCardSize || !showToggle));
-  /** OBS 등 토글 없음: 이름+금액 2줄만(합산 문구는 title) */
-  const broadcastOverlay = Boolean(matchBroadcastCard && !showToggle);
+  /** 개별 당첨 카드와 동일 폭·미디어·푸터 높이(matchSigCardSize 시 관리자 토글 있어도 동일) */
+  const useBroadcastSizing = Boolean(compact && (matchSigCardSize || !showToggle));
   const sumLine =
     typeof selectedSigCount === "number" && selectedSigCount > 0
       ? `선정된 ${selectedSigCount}개 시그 합산 금액`
@@ -62,16 +60,18 @@ export default function OneShotSigCard({
   return (
     <motion.section
       initial={
-        compact
-          ? { opacity: 0, scale: 0.97, y: 10 }
-          : { opacity: 0, scale: 0.85, y: 24 }
+        useBroadcastSizing
+          ? { opacity: 0, y: 10 }
+          : compact
+            ? { opacity: 0, scale: 0.97, y: 10 }
+            : { opacity: 0, scale: 0.85, y: 24 }
       }
-      animate={{ opacity: 1, scale: 1, y: 0 }}
+      animate={{ opacity: 1, y: 0, ...(useBroadcastSizing ? {} : { scale: 1 }) }}
       transition={{ duration: compact ? 0.32 : 0.45, ease: "easeOut" }}
-      style={matchBroadcastCard ? sigOverlayBroadcastCardShellStyle() : undefined}
+      style={useBroadcastSizing ? sigOverlayBroadcastCardShellStyle() : undefined}
       className={
-        matchBroadcastCard
-          ? `${SIG_OVERLAY_CARD_ONESHOT_SHELL_CLASS} flex h-full min-h-0 flex-col`
+        useBroadcastSizing
+          ? `${SIG_OVERLAY_CARD_ONESHOT_SHELL_CLASS} flex h-full min-h-0 w-full flex-col`
           : compact
             ? "relative w-full max-w-[188px] shrink-0 self-start overflow-visible rounded-xl border border-yellow-300/70 bg-[linear-gradient(135deg,rgba(245,158,11,0.25),rgba(234,179,8,0.1))] px-1.5 py-2 shadow-[0_0_30px_rgba(250,204,21,0.35)]"
             : "relative overflow-hidden rounded-2xl border border-yellow-300/70 bg-[linear-gradient(135deg,rgba(245,158,11,0.25),rgba(234,179,8,0.1))] p-4 shadow-[0_0_30px_rgba(250,204,21,0.35)]"
@@ -81,12 +81,12 @@ export default function OneShotSigCard({
         <div className="pointer-events-none absolute inset-0 z-[1] rounded-[inherit] bg-white/93" aria-hidden />
       ) : null}
       <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.35),transparent_65%)]" />
-      <div className={`relative z-[2] ${matchBroadcastCard ? "flex min-h-0 flex-1 flex-col" : ""}`}>
+      <div className={`relative z-[2] ${useBroadcastSizing ? "flex min-h-0 flex-1 flex-col" : ""}`}>
       <div
         className={`relative overflow-hidden rounded-lg border border-yellow-200/40 ${
           sold ? "bg-white" : "bg-gradient-to-b from-amber-950/55 via-neutral-950/75 to-black"
         } ${
-          matchBroadcastCard ? SIG_OVERLAY_CARD_MEDIA_BOX_CLASS : compact ? SIG_OVERLAY_CARD_MEDIA_BOX_CLASS : "mb-2 h-40"
+          useBroadcastSizing ? SIG_OVERLAY_CARD_MEDIA_BOX_CLASS : compact ? SIG_OVERLAY_CARD_MEDIA_BOX_CLASS : "mb-2 h-40"
         }`}
       >
         <SigSaleMedia
@@ -95,7 +95,7 @@ export default function OneShotSigCard({
           sigImageUserId={sigImageUserId}
           alt={name}
           fill
-          sizes={matchBroadcastCard || compact ? `${SIG_OVERLAY_CARD_MAX_PX}px` : "160px"}
+          sizes={useBroadcastSizing || compact ? `${SIG_OVERLAY_CARD_MAX_PX}px` : "160px"}
           className={`relative z-[2] object-contain object-center ${
             compact
               ? sold
@@ -124,19 +124,29 @@ export default function OneShotSigCard({
       </div>
       <div
         className={
-          broadcastOverlay
+          useBroadcastSizing
             ? SIG_OVERLAY_CARD_FOOTER_CLASS
             : compact
               ? "relative flex flex-col gap-0.5"
               : "relative flex flex-wrap items-center justify-between gap-3"
         }
       >
-        {broadcastOverlay ? (
+        {useBroadcastSizing ? (
           <>
             <div className={SIG_OVERLAY_CARD_NAME_CLASS} title={sumLine}>
               {name}
             </div>
             <div className={SIG_OVERLAY_CARD_PRICE_CLASS}>{formatWon(price)}</div>
+            {showToggle ? (
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={onToggleSold}
+                className={`mt-1 w-full rounded px-2 py-1 text-[10px] font-bold disabled:cursor-not-allowed disabled:opacity-50 ${sold ? "bg-rose-700 text-white" : "bg-amber-500 text-black"}`}
+              >
+                {sold ? "한방 판매 취소" : "한방 판매 완료"}
+              </button>
+            ) : null}
           </>
         ) : (
           <>

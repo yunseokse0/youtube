@@ -141,6 +141,22 @@ export function buildSigSalesWheelDisplayPool(opts: BuildSigSalesWheelDisplayPoo
   return Array.from(unique.values());
 }
 
+/**
+ * 확정 당첨 큐만으로 휠 칸 구성(칸당 시그 1개).
+ * 순차 연출에서 이미 공개된 시그 칸이 남아 다시 착지하는 것을 막는다.
+ */
+export function buildWheelMenuSlicesFromWinnerQueue(winners: SigItem[]): SigItem[] {
+  if (!winners.length) return [];
+  return winners.map((raw, i) => {
+    const canon = canonicalSigIdFromWheelSliceId(raw.id);
+    return {
+      ...raw,
+      id: `${canon}__wslot_${i}`,
+      name: String(raw.name || canon).trim() || canon,
+    };
+  });
+}
+
 /** 휠 메뉴 칸(5~20) — 동일 시그는 `__wslot_i` 로 칸마다 구분. `menuCount`는 보통 `resolveSigSalesMenuCount` 결과 */
 export function buildWheelMenuSlices(pool: SigItem[], menuCount: number): SigItem[] {
   const n = Math.max(1, Math.min(20, Math.floor(menuCount || 1)));
@@ -197,9 +213,15 @@ export function resolveWheelSpinTarget(
     }
   }
   if (idx < 0) {
-    return { items: wheelSlices, sliceId: null, expectedCanon };
+    return { items, sliceId: null, expectedCanon };
   }
   return { items, sliceId, expectedCanon };
+}
+
+/** 이번 회차 당첨 1개만 휠에 올릴 때(인접 칸 착지·이전 당첨 재노출 방지) */
+export function buildWheelSlicesForCurrentRoundWinner(winner: SigItem | null): SigItem[] {
+  if (!winner) return [];
+  return buildWheelMenuSlicesFromWinnerQueue([winner]);
 }
 
 /**

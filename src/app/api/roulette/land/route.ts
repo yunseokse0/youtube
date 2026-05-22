@@ -85,10 +85,13 @@ export async function POST(req: Request) {
       };
     }
 
-    const cumulativeExcluded = mergeSessionExcludedSigIds(rs.sessionExcludedSigIds, selectedSigs);
     /** 순차 연출 중간 land: 아직 전체 당첨이 공개되지 않았으면 SPINNING 유지(폴링이 LANDED 로 끝내며 휠이 마지막 id 로 재시작됨) */
     const sequentialPartialLand =
       keepSelectedSigs.length > 1 && selectedSigs.length < keepSelectedSigs.length;
+    /** 중간 land 에서 sessionExcluded 를 올리면 다음 회차 휠·풀이 꼬이고 이미 나온 시그 칸에 다시 착지함 */
+    const cumulativeExcluded = sequentialPartialLand
+      ? rs.sessionExcludedSigIds || []
+      : mergeSessionExcludedSigIds(rs.sessionExcludedSigIds, selectedSigs);
     const nextRs = {
       ...rs,
       phase: (sequentialPartialLand ? "SPINNING" : "LANDED") as "SPINNING" | "LANDED",

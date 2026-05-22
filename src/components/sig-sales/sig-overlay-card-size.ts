@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 
 /**
  * 방송 결과 카드 셸 폭 상한(px). 원본 아트 비율은 202×300이나 OBS 세로 합성에서는 더 작게 두는 편이 안전함.
- * 추가 축소는 `/overlay/sig-sales` 의 `sigResultScalePct`(zoom)로 조절.
+ * 추가 축소는 `/overlay/sig-sales` 의 `sigResultScalePct`(50~100%)로 조절.
  */
 /** 개별·한방 결과 카드 공통 폭(SelectedSigs compact `max-w-[188px]` 와 동일) */
 export const SIG_OVERLAY_CARD_MAX_PX = 188;
@@ -37,8 +37,30 @@ export const SIG_OVERLAY_CARD_ONESHOT_SHELL_CLASS =
  * flex 줄에서 카드가 줄어들지 않도록 고정.
  * width/min(100%)로 좁은 뷰포트에서는 한 줄당 한 장까지 줄어들게 한다.
  */
-export function sigOverlayBroadcastCardShellStyle(): CSSProperties {
-  const max = SIG_OVERLAY_CARD_MAX_PX;
+export function clampSigOverlayResultScalePct(raw: string | number | null | undefined): number {
+  const n = typeof raw === "number" ? raw : parseInt(String(raw || "").replace(/[^\d]/g, "") || "78", 10);
+  if (!Number.isFinite(n)) return 78;
+  return Math.max(50, Math.min(100, Math.floor(n)));
+}
+
+/**
+ * 확정 결과 카드 줄(개별+한방) 축소. `width: 100/scale%` 보정은 레이아웃 폭을 키워 가로 스크롤이 생김 → 사용 안 함.
+ * Chromium OBS: `zoom` 우선, 미지원 시 `transform: scale` (부모 `overflow-x-hidden` 권장).
+ */
+export function sigOverlayResultBandStyle(scalePct: number): CSSProperties {
+  const scale = clampSigOverlayResultScalePct(scalePct) / 100;
+  if (Math.abs(scale - 1) < 0.001) {
+    return { transformOrigin: "top center" };
+  }
+  return {
+    zoom: scale,
+    transform: `scale(${scale})`,
+    transformOrigin: "top center",
+  };
+}
+
+export function sigOverlayBroadcastCardShellStyle(scalePct = 100): CSSProperties {
+  const max = Math.round((SIG_OVERLAY_CARD_MAX_PX * clampSigOverlayResultScalePct(scalePct)) / 100);
   return {
     flexGrow: 0,
     flexShrink: 0,

@@ -91,7 +91,8 @@ export default function SelectedSigs({
         : broadcastMatch || compact
           ? "justify-center"
           : "";
-  const nowrapRow = overlaySingleRow ? "flex-nowrap overflow-x-auto" : "flex-wrap";
+  /** 방송 오버레이: 가로 스크롤바 노출 방지(카드 많을 땐 sigResultScalePct 로 축소) */
+  const nowrapRow = overlaySingleRow ? "flex-nowrap overflow-x-hidden" : "flex-wrap";
   const sectionClass = overlaySingleRow
     ? `flex w-full min-w-0 max-w-full ${nowrapRow} ${matchOneShotCardSize && trailingActive ? "items-stretch" : "items-start"} ${sigRowJustify} gap-1 sm:gap-1 ${className}`.trim()
     : broadcastMatch
@@ -251,9 +252,11 @@ export default function SelectedSigs({
       {trailingSlot ? (
         <div
           className={
-            broadcastMatch || compact
-              ? "flex min-h-0 w-full min-w-0 shrink-0 self-start"
-              : "min-h-[280px]"
+            broadcastMatch && matchOneShotCardSize
+              ? "flex h-full min-h-0 w-full min-w-0 shrink-0 flex-col self-stretch"
+              : broadcastMatch || compact
+                ? "flex min-h-0 w-full min-w-0 shrink-0 self-stretch"
+                : "min-h-[280px]"
           }
         >
           {trailingSlot}

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { SigItem } from "@/types";
 import {
   buildWheelMenuSlices,
+  buildWheelMenuSlicesFromWinnerQueue,
+  buildWheelSlicesForCurrentRoundWinner,
   calculateSpinFinalAngle,
   canonicalSigIdFromWheelSliceId,
   formatWheelSegmentLabel,
@@ -193,6 +195,34 @@ describe("findSliceIndexForResult", () => {
 
   it("매칭 실패 시 -1 (잘못된 0번 착지 방지)", () => {
     expect(findSliceIndexForResult(wheel, "unknown")).toBe(-1);
+  });
+});
+
+describe("buildWheelSlicesForCurrentRoundWinner", () => {
+  it("이번 회차 당첨 1칸 휠은 해당 시그만 착지한다", () => {
+    const winner = { ...item("sig_fox"), name: "여우" };
+    const slices = buildWheelSlicesForCurrentRoundWinner(winner);
+    expect(slices).toHaveLength(1);
+    const target = resolveWheelSpinTarget(slices, winner, 0);
+    expect(wheelSliceMatchesServerWinner(target.sliceId, winner)).toBe(true);
+    const angle = calculateSpinFinalAngle(slices, target.sliceId, 1, 0, 1);
+    expect(findSliceIndexForResult(slices, target.sliceId)).toBe(0);
+    expect(angle).toBeGreaterThan(0);
+  });
+});
+
+describe("buildWheelMenuSlicesFromWinnerQueue", () => {
+  it("당첨 큐만으로 칸을 만들고 순차 남은 큐의 0번이 첫 칸이다", () => {
+    const winners = [
+      { ...item("sig_a"), name: "A" },
+      { ...item("sig_b"), name: "B" },
+      { ...item("sig_c"), name: "C" },
+    ];
+    const remaining = buildWheelMenuSlicesFromWinnerQueue(winners.slice(1));
+    expect(remaining).toHaveLength(2);
+    expect(canonicalSigIdFromWheelSliceId(remaining[0]!.id)).toBe("sig_b");
+    const target = resolveWheelSpinTarget(remaining, winners[1]!, 0);
+    expect(wheelSliceMatchesServerWinner(target.sliceId, winners[1]!)).toBe(true);
   });
 });
 
