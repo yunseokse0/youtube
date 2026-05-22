@@ -10,9 +10,18 @@ import {
   type AppState,
   type SigRollingItem,
 } from "@/lib/state";
-import { normalizeSigImageUrlStored, resolveSigRollingImageUrl } from "@/lib/constants";
+import {
+  BUNDLED_SIG_PLACEHOLDER_URL,
+  normalizeSigImageUrlStored,
+  resolveSigRollingImageUrl,
+  toSigOverlayAbsoluteAssetUrl,
+} from "@/lib/constants";
 import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
-import { getOverlayMemberFilterIdFromSearchParams, getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
+import {
+  getOverlayMemberFilterIdFromSearchParams,
+  getOverlayUserIdFromSearchParams,
+  inferSigUploadUserIdFromInventory,
+} from "@/lib/overlay-params";
 import { getSigRollingHoldMs } from "@/lib/sig-rolling-duration";
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 import {
@@ -75,8 +84,23 @@ function RollingCardColumn({
         : `${shellBase} rounded-3xl p-1.5`;
 
   const under = nextItem || current;
-  const srcCurrent = resolveSigRollingImageUrl(current.label || "", current.url, overlayUserId);
-  const srcUnder = resolveSigRollingImageUrl(under.label || "", under.url, overlayUserId);
+  const srcCurrentRaw = resolveSigRollingImageUrl(current.label || "", current.url, overlayUserId);
+  const srcUnderRaw = resolveSigRollingImageUrl(under.label || "", under.url, overlayUserId);
+  const srcCurrent = toSigOverlayAbsoluteAssetUrl(srcCurrentRaw);
+  const srcUnder = toSigOverlayAbsoluteAssetUrl(srcUnderRaw);
+  const [imgSrc, setImgSrc] = useState(srcCurrent);
+  const [imgUnderSrc, setImgUnderSrc] = useState(srcUnder);
+
+  useEffect(() => {
+    setImgSrc(srcCurrent);
+    setImgUnderSrc(srcUnder);
+  }, [srcCurrent, srcUnder]);
+
+  const onImgError = useCallback((which: "over" | "under") => {
+    const fallback = toSigOverlayAbsoluteAssetUrl(BUNDLED_SIG_PLACEHOLDER_URL);
+    if (which === "over") setImgSrc(fallback);
+    else setImgUnderSrc(fallback);
+  }, []);
 
   if (!enableCrossfade) {
     return (
@@ -95,12 +119,13 @@ function RollingCardColumn({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               key={replayKey}
-              src={srcCurrent}
+              src={imgSrc}
               alt=""
               className={IMG_IN_FRAME}
               draggable={false}
               decoding="async"
               referrerPolicy="no-referrer"
+              onError={() => onImgError("over")}
             />
           </div>
         </div>
@@ -126,7 +151,7 @@ function RollingCardColumn({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             key={`under-${under.id}`}
-            src={srcUnder}
+            src={imgUnderSrc}
             alt=""
             className={IMG_IN_FRAME}
             referrerPolicy="no-referrer"
@@ -137,11 +162,12 @@ function RollingCardColumn({
             }}
             draggable={false}
             decoding="async"
+            onError={() => onImgError("under")}
           />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             key={`over-${current.id}`}
-            src={srcCurrent}
+            src={imgSrc}
             alt=""
             className={IMG_IN_FRAME}
             referrerPolicy="no-referrer"
@@ -152,6 +178,7 @@ function RollingCardColumn({
             }}
             draggable={false}
             decoding="async"
+            onError={() => onImgError("over")}
           />
         </div>
       </div>
@@ -171,6 +198,10 @@ function SigRollingOverlayInner() {
   const userId = getOverlayUserIdFromSearchParams(sp);
   const memberFilterId = getOverlayMemberFilterIdFromSearchParams(sp);
   const { state, ready } = useOverlayRemoteState(userId);
+  const overlayUserId = useMemo(
+    () => inferSigUploadUserIdFromInventory(state?.sigInventory, userId),
+    [state?.sigInventory, userId]
+  );
 
   const rolling = useMemo(() => normalizeSigRolling(state?.sigRolling), [state?.sigRolling]);
   const items = useMemo(() => getUnifiedSigRollingItems(state, memberFilterId), [state, memberFilterId]);
@@ -247,18 +278,33 @@ function SigRollingOverlayInner() {
       if (nn === 1) {
         const it = list[0];
         if (!it?.url) return;
-        hold = await getSigRollingHoldMs(resolveSigRollingImageUrl(it.label || "", it.url, userId), holdMs);
+        hold = await getSigRollingHoldMs(
+          resolveSigRollingImageUrl(it.label || "", it.url, overlayUserId),
+          holdMs
+        );
       } else if (nn === 2) {
-        const h0 = await getSigRollingHoldMs(resolveSigRollingImageUrl(list[0].label || "", list[0].url, userId), holdMs);
-        const h1 = await getSigRollingHoldMs(resolveSigRollingImageUrl(list[1].label || "", list[1].url, userId), holdMs);
+        const h0 = await getSigRollingHoldMs(
+          resolveSigRollingImageUrl(list[0].label || "", list[0].url, overlayUserId),
+          holdMs
+        );
+        const h1 = await getSigRollingHoldMs(
+          resolveSigRollingImageUrl(list[1].label || "", list[1].url, overlayUserId),
+          holdMs
+        );
         hold = Math.max(h0, h1);
       } else {
         const uL = list[pairStart % nn];
         const uR = list[(pairStart + 1) % nn];
         if (!uL?.url || !uR?.url) return;
         hold = Math.max(
-          await getSigRollingHoldMs(resolveSigRollingImageUrl(uL.label || "", uL.url, userId), holdMs),
-          await getSigRollingHoldMs(resolveSigRollingImageUrl(uR.label || "", uR.url, userId), holdMs)
+          await getSigRollingHoldMs(
+            resolveSigRollingImageUrl(uL.label || "", uL.url, overlayUserId),
+            holdMs
+          ),
+          await getSigRollingHoldMs(
+            resolveSigRollingImageUrl(uR.label || "", uR.url, overlayUserId),
+            holdMs
+          )
         );
       }
       if (cancelled) return;
@@ -275,7 +321,7 @@ function SigRollingOverlayInner() {
       cancelled = true;
       if (timerId !== undefined) window.clearTimeout(timerId);
     };
-  }, [ready, n, pairStart, fading, scheduleKey, replayKey]);
+  }, [ready, n, pairStart, fading, scheduleKey, replayKey, overlayUserId]);
 
   const emptyDetail = useMemo(() => {
     if (!state) return "";
@@ -352,7 +398,7 @@ function SigRollingOverlayInner() {
             replayKey={replayKey}
             enableCrossfade={enableCrossfade}
             pairSide="left"
-            overlayUserId={userId}
+            overlayUserId={overlayUserId}
           />
           <RollingCardColumn
             current={rightCurrent}
@@ -362,7 +408,7 @@ function SigRollingOverlayInner() {
             replayKey={replayKey}
             enableCrossfade={enableCrossfade}
             pairSide="right"
-            overlayUserId={userId}
+            overlayUserId={overlayUserId}
           />
         </div>
       </div>

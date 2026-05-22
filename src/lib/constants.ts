@@ -152,9 +152,9 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
   if (isSigImagesPlaceholderOnlyEnv() && s.startsWith("/uploads/")) {
     return BUNDLED_SIG_PLACEHOLDER_URL;
   }
-  if (isSigImagesGithubOnlyMode() && !shouldServeSigImagesFromDisk() && /\/uploads\/sigs\//i.test(s)) {
-    s = coerceSigUrlToGithubBundledPath(s);
-    if (s.startsWith("/images/sigs/")) return s;
+  /** 사용자 업로드 — OBS·롤링이 배포 오리진 `/api/uploads-sigs` 로 받음(GitHub 파일명만 남기면 404) */
+  if (s.startsWith("/uploads/sigs/")) {
+    return s;
   }
   if (
     /^https?:\/\/[^/]*supabase\.co\/storage\/v1\/object\/public\//i.test(s) &&
@@ -242,9 +242,20 @@ export function toGithubRawSigAssetUrl(pathOrUrl: string): string | null {
   return rewriteSigPathForRollingGithubIfConfigured(s);
 }
 
-/** 롤링 카드·GIF 홀드 계산용 — `resolveSigImageUrl` 후 GitHub raw 적용(디스크 업로드 시 동일 오리진) */
+/** 롤링·시그 보드 — 당첨 카드와 동일(업로드 동일 오리진, 번들은 from-drive·raw) */
 export function resolveSigRollingImageUrl(name: string, imageUrl?: string, userId?: string): string {
-  return rewriteSigPathForRollingGithubIfConfigured(resolveSigImageUrl(name, imageUrl, userId));
+  return resolveSigOverlayCardImageUrl(name, imageUrl, userId);
+}
+
+/** OBS `<img>`용 — 상대 경로를 현재 오리진 절대 URL로(브라우저 소스 기준) */
+export function toSigOverlayAbsoluteAssetUrl(pathOrUrl: string): string {
+  const s = String(pathOrUrl || "").trim();
+  if (!s || typeof window === "undefined") return s;
+  if (s.startsWith("http://") || s.startsWith("https://") || s.startsWith("data:") || s.startsWith("blob:")) {
+    return s;
+  }
+  if (s.startsWith("/")) return `${window.location.origin}${s}`;
+  return s;
 }
 
 /**

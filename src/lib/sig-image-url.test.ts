@@ -23,12 +23,12 @@ describe("normalizeSigImageUrlStored", () => {
     ).toBe("/uploads/sigs/finalent/123.gif");
   });
 
-  it("maps legacy /uploads to /images/sigs when github-only mode", () => {
+  it("github-only 모드에서도 /uploads/sigs 저장 경로는 유지한다", () => {
     const prev = process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY;
     process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY = "true";
     try {
       expect(normalizeSigImageUrlStored("/uploads/sigs/finalent/123.gif")).toBe(
-        "/images/sigs/123.gif"
+        "/uploads/sigs/finalent/123.gif"
       );
     } finally {
       if (prev === undefined) delete process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY;

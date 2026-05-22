@@ -7,7 +7,8 @@ export function slimSigInventoryForWire(items: SigItem[] | undefined): SigItem[]
   if (!Array.isArray(items)) return [];
   return items.map((item) => {
     let imageUrl = normalizeSigImageUrlStored(item.imageUrl);
-    if (isSigImagesGithubOnlyMode()) {
+    /** 업로드 경로는 서버·OBS 동일 오리진 — 파일명만 `/images/sigs/` 로 바꾸면 404 */
+    if (isSigImagesGithubOnlyMode() && !imageUrl.startsWith("/uploads/sigs/")) {
       imageUrl = coerceSigUrlToGithubBundledPath(imageUrl);
     }
     return imageUrl === item.imageUrl ? item : { ...item, imageUrl };

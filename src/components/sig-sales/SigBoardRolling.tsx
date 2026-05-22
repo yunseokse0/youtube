@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
 import type { SigItem } from "@/types";
-import { resolveSigRollingImageUrl } from "@/lib/constants";
+import { resolveSigOverlayCardImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 import SigSoldStampOverlay, { SIG_SOLD_STAMP_IMG_CLASS } from "@/components/sig-sales/SigSoldStampOverlay";
 import { canonicalSigIdFromWheelSliceId, ONE_SHOT_SIG_ID, sigMatchesMemberFilter } from "@/lib/sig-roulette";
@@ -113,7 +113,9 @@ export default function SigBoardRolling({
                 <div key={item.id} className="glass-pastel-card relative overflow-hidden rounded-3xl">
                   <div className="relative aspect-[4/5] w-full overflow-hidden">
                     <SigSaleMedia
-                      src={resolveSigRollingImageUrl(item.name, item.imageUrl, overlayUserId || undefined)}
+                      src={resolveSigOverlayCardImageUrl(item.name, item.imageUrl, overlayUserId || undefined)}
+                      storedImageUrl={item.imageUrl}
+                      sigImageUserId={overlayUserId || undefined}
                       alt={item.name}
                       fill
                       className={`object-contain object-center ${soldOut ? "relative z-[2]" : "relative z-0"}`}
