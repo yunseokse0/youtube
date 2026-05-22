@@ -696,6 +696,22 @@ export default function SigSalesOverlayPage() {
     currentRoundWinner,
     demoSpin?.resultId ?? null
   );
+
+  useEffect(() => {
+    if (!currentRoundWinner || !wheelResultSliceId) return;
+    if (!wheelSliceMatchesServerWinner(wheelResultSliceId, currentRoundWinner)) {
+      console.warn("[sig-sales overlay] wheel target slice ≠ current round winner", {
+        round: sequentialRoundIndex,
+        sliceId: wheelResultSliceId,
+        winnerId: currentRoundWinner.id,
+        winnerName: currentRoundWinner.name,
+      });
+    }
+  }, [
+    wheelResultSliceId,
+    currentRoundWinner,
+    sequentialRoundIndex,
+  ]);
   /** 회전 중·착지 전에는 비우고, 착지 후에는 순차 공개용 전체 목록 */
   const fullSelectedSigs = useMemo(() => {
     const startedAtNum = Number(machine.startedAt || 0);

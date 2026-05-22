@@ -75,6 +75,40 @@ describe("canonicalSigIdFromWheelSliceId", () => {
   });
 });
 
+describe("wheel animation id per round (regression)", () => {
+  it("5회 당첨 큐 각 라운드는 해당 시그 sliceId로만 애니한다", () => {
+    const pool: SigItem[] = [
+      { ...item("sig_dance"), name: "복고댄스" },
+      { ...item("sig_swim"), name: "SWIM" },
+      { ...item("sig_apt"), name: "APT" },
+      { ...item("sig_london"), name: "LONDON" },
+      { ...item("sig_fox"), name: "여우" },
+      { ...item("sig_ice"), name: "아이스크림" },
+    ];
+    const slices = buildWheelMenuSlices(pool, 10);
+    const winners = pickDistinctSigsByIdAndName(pool, 5);
+    const used = new Set<string>();
+    const last = winners[winners.length - 1]!;
+    for (let round = 0; round < winners.length; round++) {
+      const winner = winners[round]!;
+      const target = resolveWheelSpinTarget(slices, winner, round, used);
+      const animId = pickWheelAnimationResultId(target.sliceId, winner, last.id);
+      expect(animId, `round ${round}`).toBeTruthy();
+      expect(wheelSliceMatchesServerWinner(animId, winner)).toBe(true);
+      expect(
+        canonicalSigIdFromWheelSliceId(animId),
+        `round ${round} must not use last winner ${last.id}`
+      ).toBe(canonicalSigIdFromWheelSliceId(winner.id));
+      rememberUsedWheelSliceId(used, target.sliceId);
+      const idx = findSliceIndexForResult(target.items, animId!);
+      const seg = 360 / target.items.length;
+      const norm = ((360 - (idx * seg + seg / 2)) % 360 + 360) % 360;
+      const angle = calculateSpinFinalAngle(target.items, animId, target.items.length, 0, 1);
+      expect(((angle % 360) + 360) % 360).toBeCloseTo(norm, 8);
+    }
+  });
+});
+
 describe("pickWheelAnimationResultId", () => {
   it("다중 당첨 시 machine.result(마지막 id) 폴백을 쓰지 않는다", () => {
     const last = item("sig_swim");

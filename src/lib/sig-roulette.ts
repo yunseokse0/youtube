@@ -187,7 +187,15 @@ export function resolveWheelSpinTarget(
     };
     sliceId = items[slotIdx]!.id;
   }
-  const idx = findSliceIndexForResult(items, sliceId);
+  let idx = findSliceIndexForResult(items, sliceId);
+  if (idx < 0) {
+    /** 주입·슬라이스 id가 있는데 인덱스만 실패하면 원본 휠로 되돌리지 않고 한 번 더 맞춤 */
+    const retry = pickWheelSliceIdForWin(items, sliceId, roundIndex, usedSliceIds);
+    if (retry) {
+      sliceId = retry;
+      idx = findSliceIndexForResult(items, sliceId);
+    }
+  }
   if (idx < 0) {
     return { items: wheelSlices, sliceId: null, expectedCanon };
   }
