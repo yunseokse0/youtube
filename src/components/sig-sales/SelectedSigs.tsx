@@ -14,6 +14,7 @@ import {
   SIG_OVERLAY_CARD_PRICE_CLASS,
   SIG_OVERLAY_CARD_SHELL_CLASS,
   sigOverlayBroadcastCardShellStyle,
+  sigOverlayBroadcastMediaBoxStyle,
 } from "@/components/sig-sales/sig-overlay-card-size";
 import SigSoldStampOverlay from "@/components/sig-sales/SigSoldStampOverlay";
 
@@ -131,9 +132,13 @@ export default function SelectedSigs({
             initial={entrance.initial}
             animate={entrance.animate}
             transition={entrance.transition}
-            style={broadcastMatch ? sigOverlayBroadcastCardShellStyle(cardScalePct) : undefined}
+            style={
+              broadcastMatch
+                ? sigOverlayBroadcastCardShellStyle(cardScalePct, { withToggle: showToggle })
+                : undefined
+            }
             className={`relative overflow-hidden rounded-xl border bg-neutral-900/70 ${
-              broadcastMatch ? "flex h-full min-h-0 flex-col" : "min-w-0"
+              broadcastMatch ? "flex h-full min-h-0 w-full max-w-full flex-col" : "min-w-0"
             } ${
               broadcastMatch
                 ? SIG_OVERLAY_CARD_SHELL_CLASS
@@ -142,7 +147,11 @@ export default function SelectedSigs({
                   : ""
             } ${isLatestConfirmed ? "border-yellow-300 shadow-[0_0_24px_rgba(250,204,21,0.45)]" : broadcastMatch ? "" : "border-white/20"}`}
           >
-            <div className="relative z-[2]">
+            <div
+              className={
+                broadcastMatch ? "relative z-[2] flex min-h-0 flex-1 flex-col" : "relative z-[2]"
+              }
+            >
             {showConfirmedBadge ? (
               <div className="absolute left-2 top-2 z-20 rounded bg-emerald-600/90 px-2 py-0.5 text-[10px] font-black text-white">
                 확정
@@ -157,9 +166,10 @@ export default function SelectedSigs({
               />
             ) : null}
             <div
+              style={broadcastMatch ? sigOverlayBroadcastMediaBoxStyle(cardScalePct) : undefined}
               className={`relative overflow-hidden rounded-lg border border-white/20 bg-black/40 ${
                 broadcastMatch
-                  ? SIG_OVERLAY_CARD_MEDIA_BOX_CLASS
+                  ? `${SIG_OVERLAY_CARD_MEDIA_BOX_CLASS} shrink-0`
                   : compact
                     ? "aspect-[3/4]"
                     : "aspect-[4/5]"
@@ -235,7 +245,7 @@ export default function SelectedSigs({
         <div
           className={
             broadcastMatch && matchOneShotCardSize
-              ? "flex h-full min-h-0 shrink-0 flex-col self-stretch"
+              ? "flex h-full min-h-0 w-full shrink-0 flex-col self-stretch"
               : broadcastMatch || compact
                 ? "flex min-h-0 shrink-0 self-stretch"
                 : "min-h-[280px]"

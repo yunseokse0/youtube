@@ -12,6 +12,7 @@ import {
   SIG_OVERLAY_CARD_PRICE_CLASS,
   SIG_OVERLAY_CARD_ONESHOT_SHELL_CLASS,
   sigOverlayBroadcastCardShellStyle,
+  sigOverlayBroadcastMediaBoxStyle,
 } from "@/components/sig-sales/sig-overlay-card-size";
 import SigSoldStampOverlay from "@/components/sig-sales/SigSoldStampOverlay";
 
@@ -53,8 +54,12 @@ export default function OneShotSigCard({
   matchSigCardSize = false,
   cardScalePct = 100,
 }: OneShotSigCardProps) {
-  /** 개별 당첨 카드와 동일 폭·미디어·푸터 높이(matchSigCardSize 시 관리자 토글 있어도 동일) */
-  const useBroadcastSizing = Boolean(compact && (matchSigCardSize || !showToggle));
+  /** 결과 줄: 개별 시그 카드와 동일 폭·미디어·셸 높이 */
+  const useBroadcastSizing = Boolean(matchSigCardSize || (compact && !showToggle));
+  const shellStyle = useBroadcastSizing
+    ? sigOverlayBroadcastCardShellStyle(cardScalePct, { withToggle: showToggle })
+    : undefined;
+  const mediaBoxStyle = useBroadcastSizing ? sigOverlayBroadcastMediaBoxStyle(cardScalePct) : undefined;
   const sumLine =
     typeof selectedSigCount === "number" && selectedSigCount > 0
       ? `선정된 ${selectedSigCount}개 시그 합산 금액`
@@ -70,10 +75,10 @@ export default function OneShotSigCard({
       }
       animate={{ opacity: 1, y: 0, ...(useBroadcastSizing ? {} : { scale: 1 }) }}
       transition={{ duration: compact ? 0.32 : 0.45, ease: "easeOut" }}
-      style={useBroadcastSizing ? sigOverlayBroadcastCardShellStyle(cardScalePct) : undefined}
+      style={shellStyle}
       className={
         useBroadcastSizing
-          ? `${SIG_OVERLAY_CARD_ONESHOT_SHELL_CLASS} flex h-full min-h-0 w-full flex-col`
+          ? `${SIG_OVERLAY_CARD_ONESHOT_SHELL_CLASS} flex h-full min-h-0 w-full max-w-full flex-col`
           : compact
             ? "relative w-full max-w-[188px] shrink-0 self-start overflow-visible rounded-xl border border-yellow-300/70 bg-[linear-gradient(135deg,rgba(245,158,11,0.25),rgba(234,179,8,0.1))] px-1.5 py-2 shadow-[0_0_30px_rgba(250,204,21,0.35)]"
             : "relative overflow-hidden rounded-2xl border border-yellow-300/70 bg-[linear-gradient(135deg,rgba(245,158,11,0.25),rgba(234,179,8,0.1))] p-4 shadow-[0_0_30px_rgba(250,204,21,0.35)]"
@@ -85,8 +90,9 @@ export default function OneShotSigCard({
       <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.35),transparent_65%)]" />
       <div className={`relative z-[2] ${useBroadcastSizing ? "flex min-h-0 flex-1 flex-col" : ""}`}>
       <div
+        style={mediaBoxStyle}
         className={`relative overflow-hidden rounded-lg border border-yellow-200/40 bg-gradient-to-b from-amber-950/55 via-neutral-950/75 to-black ${
-          useBroadcastSizing ? SIG_OVERLAY_CARD_MEDIA_BOX_CLASS : compact ? SIG_OVERLAY_CARD_MEDIA_BOX_CLASS : "mb-2 h-40"
+          useBroadcastSizing ? `${SIG_OVERLAY_CARD_MEDIA_BOX_CLASS} shrink-0` : compact ? SIG_OVERLAY_CARD_MEDIA_BOX_CLASS : "mb-2 h-40"
         }`}
       >
         <SigSaleMedia

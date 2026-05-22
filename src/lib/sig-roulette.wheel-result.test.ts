@@ -3,6 +3,8 @@ import type { SigItem } from "@/types";
 import {
   layoutSigOverlayResultRow,
   SIG_OVERLAY_CARD_MAX_PX,
+  sigOverlayBroadcastCardWidthPx,
+  sigOverlayBroadcastMediaHeightPx,
 } from "@/components/sig-sales/sig-overlay-card-size";
 import {
   buildWheelMenuSlices,
@@ -129,6 +131,14 @@ describe("pickWheelAnimationResultId", () => {
       "sig_dance__wslot_2"
     );
   });
+
+  it("sliceId 없을 때 wheelItems로 중복 칸 중 올바른 sliceId를 고른다", () => {
+    const slices: SigItem[] = [item("a__wslot_0"), item("b__wslot_1"), item("a__wslot_2")];
+    const winner = item("a");
+    expect(
+      pickWheelAnimationResultId(null, winner, { wheelItems: slices, duplicatePick: 1 })
+    ).toBe("a__wslot_2");
+  });
 });
 
 describe("pickWheelSliceIdForWin", () => {
@@ -197,6 +207,12 @@ describe("findSliceIndexForResult", () => {
 
   it("서버가 캐노니컬 id만 넘겨도 슬라이스와 매칭된다", () => {
     expect(findSliceIndexForResult(wheel, "gamma")).toBe(2);
+  });
+
+  it("동일 시그 중복 칸이면 duplicatePick으로 인덱스를 고른다", () => {
+    const dup: SigItem[] = [item("a__wslot_0"), item("b__wslot_1"), item("a__wslot_2")];
+    expect(findSliceIndexForResult(dup, "a", 0)).toBe(0);
+    expect(findSliceIndexForResult(dup, "a", 1)).toBe(2);
   });
 
   it("매칭 실패 시 -1 (잘못된 0번 착지 방지)", () => {
@@ -312,6 +328,29 @@ describe("resolveSpinQueueForSession", () => {
       5
     );
     expect(flicker.queue.map((x) => x.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("같은 session·같은 당첨 집합이면 primary 순서만 바뀌어도 큐 순서를 유지한다", () => {
+    const pin = { sessionId: "s1", queue: [item("a"), item("b"), item("c")] };
+    const reordered = [item("c"), item("a"), item("b")];
+    const out = resolveSpinQueueForSession(pin, "s1", reordered, [], 5);
+    expect(out.queue.map((x) => x.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("같은 session에서 당첨 수가 늘면 기존 순서 뒤에만 붙인다", () => {
+    const pin = { sessionId: "s1", queue: [item("a"), item("b")] };
+    const extended = [item("a"), item("b"), item("c")];
+    const out = resolveSpinQueueForSession(pin, "s1", extended, [], 5);
+    expect(out.queue.map((x) => x.id)).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("sigOverlayBroadcast card metrics", () => {
+  it("한방·개별 카드가 동일 폭·미디어 높이(px)를 쓴다", () => {
+    const w = sigOverlayBroadcastCardWidthPx(78);
+    const mediaH = sigOverlayBroadcastMediaHeightPx(78);
+    expect(w).toBe(Math.round(188 * 0.78));
+    expect(mediaH).toBe(Math.round(w * (300 / 202)));
   });
 });
 

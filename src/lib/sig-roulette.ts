@@ -49,13 +49,18 @@ export function formatWheelSegmentLabel(name: string, segmentCount: number): str
  * 휠 조각 id(`원본id__wslot_N`)와 서버에서 넘어오는 당첨 id(캐노니컬만)가 다를 때 `===` 매칭이 실패해
  * 항상 0번 칸으로 착지하던 문제를 막는다.
  */
-export function findSliceIndexForResult(items: SigItem[], resultId: string | null): number {
+export function findSliceIndexForResult(
+  items: SigItem[],
+  resultId: string | null,
+  duplicatePick = 0,
+  usedSliceIds?: ReadonlySet<string>
+): number {
   if (!resultId || items.length === 0) return -1;
   const exact = items.findIndex((x) => x.id === resultId);
   if (exact >= 0) return exact;
-  const targetCanon = canonicalSigIdFromWheelSliceId(resultId);
-  const byCanon = items.findIndex((x) => canonicalSigIdFromWheelSliceId(x.id) === targetCanon);
-  return byCanon >= 0 ? byCanon : -1;
+  const picked = pickWheelSliceIdForWin(items, resultId, duplicatePick, usedSliceIds);
+  if (!picked) return -1;
+  return items.findIndex((x) => x.id === picked);
 }
 
 /** 회전판 표시 칸 수(5~20) — 관리자·OBS 공통 */
@@ -247,18 +252,39 @@ export function resolveWheelSlicesForSpinVisual(
   return buildWheelMenuSlices(opts.menuPool, opts.menuCount);
 }
 
+export type PickWheelAnimationResultIdOptions = {
+  wheelItems?: SigItem[] | null;
+  duplicatePick?: number;
+  usedSliceIds?: ReadonlySet<string>;
+  demoResultId?: string | null;
+};
+
 /**
  * 휠 `RouletteWheel` `resultId` prop.
  * `machine.result` 는 cinematic5 다중 당첨 시 **마지막** 시그 id → 1·2회차에 쓰면 휠·카드 불일치.
+ * 캐노니컬 id만 넘기면 동일 시그 중복 칸 중 **첫 칸**으로 착지하므로 `wheelItems`·`duplicatePick`을 넘긴다.
  */
 export function pickWheelAnimationResultId(
   sliceId: string | null,
   roundWinner: SigItem | null,
-  demoResultId?: string | null
+  opts?: string | null | PickWheelAnimationResultIdOptions
 ): string | null {
+  const o: PickWheelAnimationResultIdOptions =
+    typeof opts === "string" || opts === null || opts === undefined
+      ? { demoResultId: opts ?? undefined }
+      : opts;
   if (sliceId) return sliceId;
+  if (roundWinner?.id && o.wheelItems?.length) {
+    const picked = pickWheelSliceIdForWin(
+      o.wheelItems,
+      roundWinner.id,
+      o.duplicatePick ?? 0,
+      o.usedSliceIds
+    );
+    if (picked) return picked;
+  }
   if (roundWinner?.id) return roundWinner.id;
-  return demoResultId ?? null;
+  return o.demoResultId ?? null;
 }
 
 /** 착지 slice id가 이번 회차 서버 당첨과 같은 시그인지 */
@@ -302,6 +328,19 @@ export function pickWheelSliceIdForWin(
 
 export type SpinQueueSessionPin = { sessionId: string; queue: SigItem[] };
 
+function spinQueueCanonKey(queue: SigItem[]): string {
+  return queue
+    .map((s) => canonicalSigIdFromWheelSliceId(s.id))
+    .sort()
+    .join(",");
+}
+
+/** 같은 session·같은 당첨 집합이면 폴링으로 순서만 바뀐 primary를 무시한다 */
+function spinQueueSameCanonSet(a: SigItem[], b: SigItem[]): boolean {
+  if (a.length !== b.length) return false;
+  return spinQueueCanonKey(a) === spinQueueCanonKey(b);
+}
+
 /**
  * 폴링/SSE 순간에 `selectedSigs`가 비었다가 다시 오면 순차 인덱스·당첨 큐가 리셋되어
  * 휠·카드가 엇갈리거나 이미 나온 시그가 다시 당첨되는 것처럼 보이는 것을 막는다.
@@ -323,7 +362,15 @@ export function resolveSpinQueueForSession(
       const next = { sessionId: sid, queue: pick };
       return { pin: next, queue: pick };
     }
-    if (pick.length >= pin.queue.length) {
+    if (pick.length > pin.queue.length) {
+      const extended = [...pin.queue, ...pick.slice(pin.queue.length)];
+      const next = { sessionId: sid, queue: extended };
+      return { pin: next, queue: extended };
+    }
+    if (pick.length === pin.queue.length) {
+      if (spinQueueSameCanonSet(pick, pin.queue)) {
+        return { pin, queue: pin.queue };
+      }
       const next = { sessionId: sid, queue: pick };
       return { pin: next, queue: pick };
     }

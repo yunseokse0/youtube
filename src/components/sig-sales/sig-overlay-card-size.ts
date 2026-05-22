@@ -64,8 +64,36 @@ export function sigOverlayResultBandStyle(scalePct: number): CSSProperties {
   };
 }
 
-export function sigOverlayBroadcastCardShellStyle(scalePct = 100): CSSProperties {
-  const max = Math.round((SIG_OVERLAY_CARD_MAX_PX * clampSigOverlayResultScalePct(scalePct)) / 100);
+/** `cardScalePct` 반영 폭(px) — 미디어·셸 높이 계산 공통 */
+export function sigOverlayBroadcastCardWidthPx(scalePct = 100): number {
+  return Math.round((SIG_OVERLAY_CARD_MAX_PX * clampSigOverlayResultScalePct(scalePct)) / 100);
+}
+
+/** 개별·한방 동일 202×300 미디어 영역 높이(px) */
+export function sigOverlayBroadcastMediaHeightPx(scalePct = 100): number {
+  const w = sigOverlayBroadcastCardWidthPx(scalePct);
+  return Math.round(w * (SIG_ROLLING_MEDIA_HEIGHT_PX / SIG_ROLLING_MEDIA_WIDTH_PX));
+}
+
+export function sigOverlayBroadcastMediaBoxStyle(scalePct = 100): CSSProperties {
+  const h = sigOverlayBroadcastMediaHeightPx(scalePct);
+  return {
+    width: "100%",
+    height: `${h}px`,
+    minHeight: `${h}px`,
+    maxHeight: `${h}px`,
+    flexShrink: 0,
+  };
+}
+
+export function sigOverlayBroadcastCardShellStyle(
+  scalePct = 100,
+  opts?: { withToggle?: boolean }
+): CSSProperties {
+  const max = sigOverlayBroadcastCardWidthPx(scalePct);
+  const mediaH = sigOverlayBroadcastMediaHeightPx(scalePct);
+  const footerH = opts?.withToggle ? 72 : 44;
+  const shellPad = 16;
   return {
     flexGrow: 0,
     flexShrink: 0,
@@ -73,6 +101,10 @@ export function sigOverlayBroadcastCardShellStyle(scalePct = 100): CSSProperties
     width: `${max}px`,
     minWidth: max,
     maxWidth: max,
+    minHeight: mediaH + footerH + shellPad,
+    height: "100%",
+    alignSelf: "stretch",
+    boxSizing: "border-box",
   };
 }
 

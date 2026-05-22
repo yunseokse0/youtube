@@ -88,7 +88,7 @@ export default function ResultOverlay({
 
   const oneShotTrailing =
     oneShot && showOneShotReveal ? (
-      <div className="relative flex h-full min-h-0 shrink-0 flex-col self-stretch">
+      <div className="relative flex h-full min-h-0 w-full max-w-full flex-1 flex-col self-stretch">
         <OneShotSigCard
           name={oneShot.name}
           price={oneShot.price}

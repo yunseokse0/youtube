@@ -246,9 +246,11 @@ export default function RouletteWheel({
     return () => unsub();
   }, [rotate]);
 
-  const calculateFinalAngle = useCallback((targetId: string | null, count: number, currentBase: number, minTurns: number) => {
-    return calculateSpinFinalAngle(itemsRef.current, targetId, count, currentBase, minTurns);
-  }, []);
+  const calculateFinalAngle = useCallback(
+    (spinItems: SigItem[], targetId: string | null, count: number, currentBase: number, minTurns: number) =>
+      calculateSpinFinalAngle(spinItems, targetId, count, currentBase, minTurns),
+    []
+  );
 
   const stopAllAnimations = useCallback(() => {
     animationRef.current?.stop();
@@ -314,7 +316,8 @@ export default function RouletteWheel({
       return;
     }
 
-    const spinItems = itemsRef.current;
+    /** 스핀 중 items prop(폴링·주입)이 바뀌면 감속 각도와 칸 라벨이 어긋남 — 시작 시점 스냅샷 고정 */
+    const spinItems = itemsRef.current.map((x) => ({ ...x }));
     if (!spinItems.length) return;
     if (activeSpinKeyRef.current === spinKey) return;
     activeSpinKeyRef.current = spinKey;
@@ -354,7 +357,13 @@ export default function RouletteWheel({
         if (cancelled) return;
 
         // 3) 감속 착지: 서서히 감속하며 목표 위치로 자연스럽게 정지
-        const target = calculateFinalAngle(resultId, Math.max(1, spinItems.length), cruiseTarget, 1);
+        const target = calculateFinalAngle(
+          spinItems,
+          resultId,
+          Math.max(1, spinItems.length),
+          cruiseTarget,
+          1
+        );
         await Promise.all([
           runAnimation(target, {
             duration: 2.9 * SPIN_DURATION_SCALE,

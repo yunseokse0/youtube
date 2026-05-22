@@ -368,11 +368,10 @@ export default function AdminSigSalesPage() {
       return;
     }
     const queueSig = spinQueueSelected.map((s) => canonicalSigIdFromWheelSliceId(s.id)).join(",");
-    setPinnedWheelLayout((prev) =>
-      prev?.sessionId === sid && prev.queueSig === queueSig
-        ? prev
-        : { sessionId: sid, queueSig, slices: wheelMenuSlices }
-    );
+    setPinnedWheelLayout((prev) => {
+      if (prev?.sessionId === sid && (prev.slices?.length ?? 0) > 0) return prev;
+      return { sessionId: sid, queueSig, slices: wheelMenuSlices };
+    });
   }, [machine.phase, machine.sessionId, wheelMenuSlices, spinQueueSelected]);
 
   const currentRoundWinner = spinQueueSelected[spinStep] ?? null;
@@ -409,11 +408,11 @@ export default function AdminSigSalesPage() {
   );
   const wheelItemsWithResult = wheelSpinTarget.items;
   const wheelResultSliceId = wheelSpinTarget.sliceId;
-  const wheelAnimationResultId = pickWheelAnimationResultId(
-    wheelResultSliceId,
-    currentRoundWinner,
-    null
-  );
+  const wheelAnimationResultId = pickWheelAnimationResultId(wheelResultSliceId, currentRoundWinner, {
+    wheelItems: wheelItemsWithResult,
+    duplicatePick: useSequentialWheel ? spinStep : 0,
+    usedSliceIds: useSequentialWheel ? usedWheelSliceIdsRef.current : undefined,
+  });
   const displaySelectedSigs = useMemo(() => {
     const fromServer = (machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
     const fromStaged = stagedSelected.slice(0, MAX_SELECTED_SIGS);

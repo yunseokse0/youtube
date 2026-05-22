@@ -655,9 +655,7 @@ export default function SigSalesOverlayPage() {
       .map((s) => canonicalSigIdFromWheelSliceId(s.id))
       .join(",");
     setPinnedWheelLayout((prev) => {
-      if (prev?.sessionId === sid && prev.queueSig === queueSig && prev.slices.length > 0) {
-        return prev;
-      }
+      if (prev?.sessionId === sid && prev.slices.length > 0) return prev;
       usedWheelSliceIdsRef.current = new Set();
       return { sessionId: sid, queueSig, slices: wheelVisualSlices };
     });
@@ -726,11 +724,11 @@ export default function SigSalesOverlayPage() {
   );
 
   const wheelResultSliceId = wheelSpinTarget.sliceId;
-  const wheelAnimationResultId = pickWheelAnimationResultId(
-    wheelResultSliceId,
-    currentRoundWinner,
-    null
-  );
+  const wheelAnimationResultId = pickWheelAnimationResultId(wheelResultSliceId, currentRoundWinner, {
+    wheelItems: wheelItemsWithResult,
+    duplicatePick: useSequentialWheel ? sequentialRoundIndex : 0,
+    usedSliceIds: useSequentialWheel ? usedWheelSliceIdsRef.current : undefined,
+  });
 
   useEffect(() => {
     if (!currentRoundWinner || !wheelResultSliceId) return;
