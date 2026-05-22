@@ -96,7 +96,7 @@ describe("wheel animation id per round (regression)", () => {
       expect(animId, `round ${round}`).toBeTruthy();
       expect(wheelSliceMatchesServerWinner(animId, winner)).toBe(true);
       expect(
-        canonicalSigIdFromWheelSliceId(animId),
+        canonicalSigIdFromWheelSliceId(animId!),
         `round ${round} must not use last winner ${last.id}`
       ).toBe(canonicalSigIdFromWheelSliceId(winner.id));
       rememberUsedWheelSliceId(used, target.sliceId);
