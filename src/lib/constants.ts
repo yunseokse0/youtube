@@ -247,6 +247,33 @@ export function resolveSigRollingImageUrl(name: string, imageUrl?: string, userI
   return rewriteSigPathForRollingGithubIfConfigured(resolveSigImageUrl(name, imageUrl, userId));
 }
 
+/**
+ * OBS·당첨 카드 — `/uploads/sigs/` 는 배포 오리진 그대로(GitHub raw로 바꾸면 404·검은 칸).
+ * 번들 `/images/sigs/` 만 raw 우회(설정 시).
+ */
+export function resolveSigOverlayCardImageUrl(name: string, imageUrl?: string, userId?: string): string {
+  if (sigImagePlaceholderOnlyForOverlay) {
+    return BUNDLED_SIG_PLACEHOLDER_URL;
+  }
+  const repaired = repairDiskUploadSigImagePath(String(imageUrl ?? "").trim(), userId);
+  let raw = normalizeSigImageUrlStored(repaired || imageUrl);
+  if (shouldServeSigImagesFromDisk() && raw.startsWith("/uploads/sigs/")) {
+    return raw;
+  }
+  if (raw.startsWith("/uploads/sigs/")) {
+    return raw;
+  }
+  if (raw.startsWith("/images/sigs/")) {
+    const fromDrive = sigBundledFromDriveFallbackPath(raw);
+    const path = fromDrive || raw;
+    const offloaded = rewriteSigPathForRollingGithubIfConfigured(path);
+    return offloaded || path;
+  }
+  const resolved = resolveSigImageUrl(name, imageUrl, userId);
+  if (resolved.startsWith("/uploads/sigs/")) return resolved;
+  return resolved;
+}
+
 /** 완판 도장 URL — 롤링 오버레이에서만 GitHub raw로 동일 규칙 적용 */
 export function resolveSigRollingStampUrl(storedOrEmpty?: string): string {
   const raw = String(storedOrEmpty || "").trim();

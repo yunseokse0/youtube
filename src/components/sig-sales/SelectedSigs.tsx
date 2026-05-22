@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import type { ReactNode } from "react";
 import type { SigItem } from "@/types";
 import { canonicalSigIdFromWheelSliceId, formatWon } from "@/lib/sig-roulette";
-import { resolveSigRollingImageUrl } from "@/lib/constants";
+import { resolveSigOverlayCardImageUrl, resolveSigRollingImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 import {
   SIG_OVERLAY_CARD_FOOTER_CLASS,
@@ -181,7 +181,11 @@ export default function SelectedSigs({
               }`}
             >
               <SigSaleMedia
-                src={resolveSigRollingImageUrl(item.name, item.imageUrl, sigImageUserId)}
+                src={
+                  sigImageUserId
+                    ? resolveSigOverlayCardImageUrl(item.name, item.imageUrl, sigImageUserId)
+                    : resolveSigRollingImageUrl(item.name, item.imageUrl, sigImageUserId)
+                }
                 storedImageUrl={item.imageUrl}
                 sigImageUserId={sigImageUserId}
                 alt={item.name}

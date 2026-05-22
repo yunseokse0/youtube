@@ -26,8 +26,10 @@ import {
   ROULETTE_WHEEL_SFX_ENABLED,
   SOUND_ASSETS_ENABLED,
   SPIN_SOUND_PATHS,
+  buildSessionSpinExclusion,
   buildSigSalesWheelDisplayPool,
   resolveWheelSlicesForSpinVisual,
+  sigEligibleForSessionSpinPool,
   clampSigSalesMenuCount,
   resolveSigSalesMenuCount,
   canonicalSigIdFromWheelSliceId,
@@ -558,15 +560,16 @@ export default function SigSalesOverlayPage() {
   const activeNormalPool = useMemo(() => {
     if (!state) return [];
     const excluded = new Set((state.sigSalesExcludedIds || []).map((x) => String(x)));
-    const sessionExcluded = new Set(
-      (state.rouletteState?.sessionExcludedSigIds || []).map((x) => String(x))
+    const sessionExclusion = buildSessionSpinExclusion(
+      state.sigInventory || [],
+      state.rouletteState?.sessionExcludedSigIds
     );
     return (state.sigInventory || []).filter(
       (x) =>
         x.isActive &&
         x.id !== ONE_SHOT_SIG_ID &&
         !excluded.has(x.id) &&
-        !sessionExcluded.has(x.id) &&
+        sigEligibleForSessionSpinPool(x, sessionExclusion) &&
         x.soldCount < x.maxCount &&
         sigMatchesMemberFilter(x, memberFilterId)
     );
@@ -1304,12 +1307,21 @@ export default function SigSalesOverlayPage() {
       if (serverCatchUpKeyRef.current === catchUpKey) return;
       serverCatchUpKeyRef.current = catchUpKey;
       completedSpinKeyRef.current = machineSpinKey;
+      const sequentialStillPlaying =
+        selectedFromServer.length > 1 &&
+        (Boolean(demoSpin) ||
+          wheelPhase === "spinning" ||
+          wheelPhase === "settling" ||
+          machine.phase === "SPINNING");
       setDemoSpin(null);
       setPendingLanding(null);
       setOverlayHoldResults(true);
       setShowResultPanel(true);
-      setRevealedSigCount(selectedFromServer.length);
-      setSequentialRoundIndex(Math.max(0, selectedFromServer.length - 1));
+      setRevealedSigCount((c) => Math.max(c, selectedFromServer.length));
+      /** 순차 연출 중 LANDED 폴링이 오면 roundIndex 를 끝으로 점프 → 1회차에 마지막 당첨 시그가 휠에 착지함 */
+      if (!sequentialStillPlaying) {
+        setSequentialRoundIndex(Math.max(0, selectedFromServer.length - 1));
+      }
       const oneShot = rs?.oneShotResult || buildOneShotFromSelected(selectedFromServer);
       const resultId =
         rs?.result?.id || selectedFromServer[selectedFromServer.length - 1]?.id || machine.resultId;
@@ -1610,9 +1622,6 @@ export default function SigSalesOverlayPage() {
                             oneShotResult: buildOneShotFromSelected(partialQueue),
                           }),
                         })
-                          .then((res) => {
-                            if (res.ok) void loadRemote();
-                          })
                           .catch(() => {});
                       }
                       rememberUsedWheelSliceId(

@@ -195,8 +195,12 @@ export function buildSessionSpinExclusion(
   }
   for (const row of inventory) {
     const canon = canonicalSigIdFromWheelSliceId(row.id);
-    if (!excludedIds.has(canon)) continue;
     const nk = normalizeSigPickNameKey(row.name);
+    if (row.soldCount >= row.maxCount) {
+      excludedIds.add(canon);
+      if (nk) excludedNameKeys.add(nk);
+    }
+    if (!excludedIds.has(canon)) continue;
     if (nk) excludedNameKeys.add(nk);
   }
   for (const w of priorWinners) {

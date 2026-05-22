@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { formatWon } from "@/lib/sig-roulette";
-import { resolveSigRollingImageUrl } from "@/lib/constants";
+import { resolveSigOverlayCardImageUrl, resolveSigRollingImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 import {
   SIG_OVERLAY_CARD_FOOTER_CLASS,
@@ -114,7 +114,11 @@ export default function OneShotSigCard({
         }`}
       >
         <SigSaleMedia
-          src={resolveSigRollingImageUrl(name, imageUrl, sigImageUserId)}
+          src={
+            sigImageUserId
+              ? resolveSigOverlayCardImageUrl(name, imageUrl, sigImageUserId)
+              : resolveSigRollingImageUrl(name, imageUrl, sigImageUserId)
+          }
           storedImageUrl={imageUrl}
           sigImageUserId={sigImageUserId}
           alt={name}

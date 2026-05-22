@@ -589,6 +589,14 @@ describe("buildSessionSpinExclusion", () => {
     expect(sigEligibleForSessionSpinPool(other, exclusion)).toBe(true);
   });
 
+  it("완판(soldCount>=maxCount) 시그는 이름·id 모두 제외한다", () => {
+    const sold: SigItem = { ...item("sig_sold"), name: "완판됨", soldCount: 1, maxCount: 1 };
+    const fresh: SigItem = { ...item("sig_fresh"), name: "신규" };
+    const exclusion = buildSessionSpinExclusion([sold, fresh], []);
+    expect(sigEligibleForSessionSpinPool(sold, exclusion)).toBe(false);
+    expect(sigEligibleForSessionSpinPool(fresh, exclusion)).toBe(true);
+  });
+
   it("휠 표시 풀에도 동일 표시명 중복 행이 들어가지 않는다", () => {
     const sakuraA: SigItem = { ...item("sig_sakura_a"), name: "사쿠란보" };
     const sakuraB: SigItem = { ...item("sig_sakura_b"), name: "사쿠란보" };
