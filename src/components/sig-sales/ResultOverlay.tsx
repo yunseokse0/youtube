@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { SigItem } from "@/types";
 import SelectedSigs from "@/components/sig-sales/SelectedSigs";
 import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
+import { sigOverlayBroadcastCardShellStyle } from "@/components/sig-sales/sig-overlay-card-size";
 import { useImagePreload } from "@/hooks/useImagePreload";
 import { canonicalSigIdFromWheelSliceId, ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 
@@ -91,7 +92,10 @@ export default function ResultOverlay({
 
   const oneShotTrailing =
     oneShot && showOneShotReveal ? (
-      <div className="relative flex h-full min-h-0 w-full max-w-full flex-1 flex-col self-stretch">
+      <div
+        className="relative flex shrink-0 flex-col self-stretch"
+        style={sigOverlayBroadcastCardShellStyle(cardScalePct, { withToggle: false })}
+      >
         <OneShotSigCard
           name={oneShot.name}
           price={oneShot.price}
@@ -105,6 +109,7 @@ export default function ResultOverlay({
           matchSigCardSize
           cardScalePct={cardScalePct}
           disableCardMotion={disableCardMotion}
+          fillRowCell
           gifDelayMultiplier={gifDelayMultiplier}
           onMediaReady={() => setImageLoaded(true)}
         />

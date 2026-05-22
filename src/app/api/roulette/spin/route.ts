@@ -6,6 +6,7 @@ import { normalizeRouletteState } from "@/lib/state";
 import { normalizeSigInventory } from "@/lib/constants";
 import type { SigItem } from "@/types";
 import {
+  dedupeSigQueueByIdAndName,
   normalizeSigPickNameKey,
   pickDistinctSigsByIdAndName,
   sigMatchesMemberFilter,
@@ -190,10 +191,23 @@ export async function POST(req: Request) {
           { status: 400, headers: { "Content-Type": "application/json" } }
         );
       }
-      const selectedSigs = distinctPicks.map((pick) => ({
-        ...enrichPick(pick),
-        maxCount: 1,
-      }));
+      const selectedSigs = dedupeSigQueueByIdAndName(
+        distinctPicks.map((pick) => ({
+          ...enrichPick(pick),
+          maxCount: 1,
+        }))
+      );
+      if (selectedSigs.length < selectedCount) {
+        return Response.json(
+          {
+            error: "not_enough_distinct_sigs",
+            need: selectedCount,
+            have: selectedSigs.length,
+            sessionExcluded: sessionExcluded.size,
+          },
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
       const oneShot = selectedSigs.length >= 2
         ? {
             id: ONE_SHOT_SIG_ID,

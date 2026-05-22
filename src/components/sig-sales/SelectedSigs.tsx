@@ -8,6 +8,7 @@ import { resolveSigRollingImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 import {
   SIG_OVERLAY_CARD_FOOTER_CLASS,
+  SIG_OVERLAY_CARD_MEDIA_BOX_BROADCAST_CLASS,
   SIG_OVERLAY_CARD_MEDIA_BOX_CLASS,
   SIG_OVERLAY_CARD_MAX_PX,
   SIG_OVERLAY_CARD_NAME_CLASS,
@@ -142,7 +143,7 @@ export default function SelectedSigs({
                 : undefined
             }
             className={`relative overflow-hidden rounded-xl border bg-neutral-900/70 ${
-              broadcastMatch ? "flex h-full min-h-0 w-full max-w-full flex-col" : "min-w-0"
+              broadcastMatch ? "flex w-full max-w-full flex-col" : "min-w-0"
             } ${
               broadcastMatch
                 ? SIG_OVERLAY_CARD_SHELL_CLASS
@@ -153,7 +154,7 @@ export default function SelectedSigs({
           >
             <div
               className={
-                broadcastMatch ? "relative z-[2] flex min-h-0 flex-1 flex-col" : "relative z-[2]"
+                broadcastMatch ? "relative z-[2] flex flex-1 flex-col" : "relative z-[2]"
               }
             >
             {showConfirmedBadge ? (
@@ -171,12 +172,12 @@ export default function SelectedSigs({
             ) : null}
             <div
               style={broadcastMatch ? sigOverlayBroadcastMediaBoxStyle(cardScalePct) : undefined}
-              className={`relative overflow-hidden rounded-lg border border-white/20 bg-black/40 ${
+              className={`overflow-hidden rounded-lg border border-white/20 bg-black/40 ${
                 broadcastMatch
-                  ? `${SIG_OVERLAY_CARD_MEDIA_BOX_CLASS} shrink-0`
+                  ? SIG_OVERLAY_CARD_MEDIA_BOX_BROADCAST_CLASS
                   : compact
-                    ? "aspect-[3/4]"
-                    : "aspect-[4/5]"
+                    ? "relative aspect-[3/4]"
+                    : "relative aspect-[4/5]"
               }`}
             >
               <SigSaleMedia
@@ -249,7 +250,7 @@ export default function SelectedSigs({
         <div
           className={
             broadcastMatch && matchOneShotCardSize
-              ? "flex h-full min-h-0 w-full shrink-0 flex-col self-stretch"
+              ? "flex shrink-0 flex-col self-stretch"
               : broadcastMatch || compact
                 ? "flex min-h-0 shrink-0 self-stretch"
                 : "min-h-[280px]"

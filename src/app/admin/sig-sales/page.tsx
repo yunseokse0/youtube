@@ -47,6 +47,7 @@ import {
   hydrateSigItemFromInventory,
   pickWheelAnimationResultId,
   rememberUsedWheelSliceId,
+  wheelDuplicatePickForWinner,
   resolveSpinQueueForSession,
   resolveWheelSpinTarget,
   type SpinQueueSessionPin,
@@ -375,8 +376,22 @@ export default function AdminSigSalesPage() {
   }, [machine.phase, machine.sessionId, wheelMenuSlices, spinQueueSelected]);
 
   const currentRoundWinner = spinQueueSelected[spinStep] ?? null;
+  const priorRoundWinners = useMemo(
+    () => spinQueueSelected.slice(0, Math.max(0, spinStep)),
+    [spinQueueSelected, spinStep]
+  );
+  const wheelDuplicatePick = useMemo(
+    () =>
+      currentRoundWinner
+        ? wheelDuplicatePickForWinner(priorRoundWinners, currentRoundWinner)
+        : 0,
+    [priorRoundWinners, currentRoundWinner]
+  );
   const wheelSpinning =
-    Boolean(demoSpin) || machine.isRolling || machine.phase === "SPINNING";
+    machine.phase !== "LANDED" &&
+    machine.phase !== "CONFIRM_PENDING" &&
+    machine.phase !== "CONFIRMED" &&
+    (Boolean(demoSpin) || machine.isRolling || machine.phase === "SPINNING");
 
   const wheelSlicesForSpin = useMemo(
     () =>
@@ -402,15 +417,16 @@ export default function AdminSigSalesPage() {
         wheelSlicesForSpin,
         currentRoundWinner,
         useSequentialWheel ? spinStep : 0,
-        useSequentialWheel ? usedWheelSliceIdsRef.current : undefined
+        useSequentialWheel ? usedWheelSliceIdsRef.current : undefined,
+        useSequentialWheel ? priorRoundWinners : undefined
       ),
-    [wheelSlicesForSpin, currentRoundWinner, useSequentialWheel, spinStep]
+    [wheelSlicesForSpin, currentRoundWinner, useSequentialWheel, spinStep, priorRoundWinners]
   );
   const wheelItemsWithResult = wheelSpinTarget.items;
   const wheelResultSliceId = wheelSpinTarget.sliceId;
   const wheelAnimationResultId = pickWheelAnimationResultId(wheelResultSliceId, currentRoundWinner, {
     wheelItems: wheelItemsWithResult,
-    duplicatePick: useSequentialWheel ? spinStep : 0,
+    duplicatePick: useSequentialWheel ? wheelDuplicatePick : 0,
     usedSliceIds: useSequentialWheel ? usedWheelSliceIdsRef.current : undefined,
   });
   const displaySelectedSigs = useMemo(() => {
@@ -486,10 +502,44 @@ export default function AdminSigSalesPage() {
     }
     const fromServer = (machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
     if (fromServer.length === 0) return;
-    setStagedSelected((prev) =>
-      fromServer.length >= prev.length ? fromServer : prev
-    );
+    setDemoSpin(null);
+    setPendingLanding(null);
+    setStagedSelected(fromServer);
+    setSpinStep(0);
+    setHighlightId(null);
+    setLastConfirmedText("");
+    if (nextSpinTimerRef.current) {
+      clearTimeout(nextSpinTimerRef.current);
+      nextSpinTimerRef.current = null;
+    }
   }, [machine.phase, machine.selectedSigs]);
+
+  /** OBS·서버가 먼저 착지(LANDED)했는데 관리자만 로컬 demoSpin 으로 휠이 도는 경우 */
+  useEffect(() => {
+    const fromServer = (machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
+    if (fromServer.length === 0) return;
+    if (machine.phase !== "SPINNING") return;
+    if (machine.isRolling) return;
+    if (!demoSpin && !pendingLanding) return;
+    const oneShot = buildOneShotFromSelected(fromServer);
+    setDemoSpin(null);
+    setPendingLanding(null);
+    setStagedSelected(fromServer);
+    setSpinStep(0);
+    landed(
+      fromServer,
+      oneShot,
+      machine.resultId || fromServer[fromServer.length - 1]?.id || null
+    );
+  }, [
+    machine.phase,
+    machine.isRolling,
+    machine.selectedSigs,
+    machine.resultId,
+    demoSpin,
+    pendingLanding,
+    landed,
+  ]);
 
   useEffect(() => {
     if (!state?.members?.length) return;

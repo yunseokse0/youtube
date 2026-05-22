@@ -5,6 +5,7 @@ import {
   SIG_OVERLAY_CARD_MAX_PX,
   sigOverlayBroadcastCardWidthPx,
   sigOverlayBroadcastMediaHeightPx,
+  sigOverlayBroadcastCardTotalHeightPx,
 } from "@/components/sig-sales/sig-overlay-card-size";
 import {
   buildWheelMenuSlices,
@@ -20,9 +21,11 @@ import {
   pickWheelSliceIdForWin,
   rememberUsedWheelSliceId,
   resolveSigSalesMenuCount,
+  dedupeSigQueueByIdAndName,
   resolveSpinQueueForSession,
   resolveWheelSlicesForSpinVisual,
   resolveWheelSpinTarget,
+  wheelDuplicatePickForWinner,
   sigMatchesMemberFilter,
   wheelSliceMatchesServerWinner,
 } from "./sig-roulette";
@@ -101,7 +104,7 @@ describe("wheel animation id per round (regression)", () => {
     const last = winners[winners.length - 1]!;
     for (let round = 0; round < winners.length; round++) {
       const winner = winners[round]!;
-      const target = resolveWheelSpinTarget(slices, winner, round, used);
+      const target = resolveWheelSpinTarget(slices, winner, round, used, winners.slice(0, round));
       const animId = pickWheelAnimationResultId(target.sliceId, winner, last.id);
       expect(animId, `round ${round}`).toBeTruthy();
       expect(wheelSliceMatchesServerWinner(animId, winner)).toBe(true);
@@ -184,7 +187,7 @@ describe("sequential same winner on pinned wheel", () => {
     const t0 = resolveWheelSpinTarget(slices, winner, 0, used);
     expect(wheelSliceMatchesServerWinner(t0.sliceId, winner)).toBe(true);
     rememberUsedWheelSliceId(used, t0.sliceId);
-    const t1 = resolveWheelSpinTarget(slices, winner, 1, used);
+    const t1 = resolveWheelSpinTarget(slices, winner, 1, used, [winner]);
     expect(wheelSliceMatchesServerWinner(t1.sliceId, winner)).toBe(true);
     expect(t1.sliceId).not.toBe(t0.sliceId);
     const landIdx = findSliceIndexForResult(t1.items, t1.sliceId);
@@ -262,7 +265,7 @@ describe("resolveWheelSpinTarget", () => {
   it("동일 시그 중복 칸이면 roundIndex로 칸을 고른다", () => {
     const slices: SigItem[] = [item("a__wslot_0"), item("b__wslot_1"), item("a__wslot_2")];
     const t0 = resolveWheelSpinTarget(slices, item("a"), 0);
-    const t1 = resolveWheelSpinTarget(slices, item("a"), 1);
+    const t1 = resolveWheelSpinTarget(slices, item("a"), 1, undefined, [item("a")]);
     expect(t0.sliceId).toBe("a__wslot_0");
     expect(t1.sliceId).toBe("a__wslot_2");
   });
@@ -309,6 +312,27 @@ describe("resolveSigSalesMenuCount", () => {
 });
 
 /** 휠 착지 slice ↔ 서버 당첨 카드 정합(회차별) */
+describe("dedupeSigQueueByIdAndName", () => {
+  it("큐에서 id·표시명 중복을 제거한다", () => {
+    const q = dedupeSigQueueByIdAndName([
+      { ...item("sig_a"), name: "슈퍼맨" },
+      { ...item("sig_b"), name: "댄스" },
+      { ...item("sig_c"), name: "슈퍼맨" },
+      { ...item("sig_a"), name: "다른이름" },
+    ]);
+    expect(q.map((x) => x.id)).toEqual(["sig_a", "sig_b"]);
+  });
+});
+
+describe("wheelDuplicatePickForWinner", () => {
+  it("이전 회차에 없으면 0, 같은 시그가 또 나오면 1+", () => {
+    const a = item("sig_a");
+    expect(wheelDuplicatePickForWinner([], a)).toBe(0);
+    expect(wheelDuplicatePickForWinner([a], a)).toBe(1);
+    expect(wheelDuplicatePickForWinner([a, item("sig_b")], a)).toBe(1);
+  });
+});
+
 describe("resolveSpinQueueForSession", () => {
   it("폴링 순간 primary가 비어도 같은 session 당첨 큐를 유지한다", () => {
     const winners = [item("a"), item("b"), item("c")];
@@ -343,6 +367,13 @@ describe("resolveSpinQueueForSession", () => {
     const out = resolveSpinQueueForSession(pin, "s1", extended, [], 5);
     expect(out.queue.map((x) => x.id)).toEqual(["a", "b", "c"]);
   });
+
+  it("폴링으로 큐에 id 중복이 섞여도 dedupe 한다", () => {
+    const pin = { sessionId: "s1", queue: [] };
+    const dup = [item("a"), item("b"), item("a"), item("c")];
+    const out = resolveSpinQueueForSession(pin, "s1", dup, [], 5);
+    expect(out.queue.map((x) => x.id)).toEqual(["a", "b", "c"]);
+  });
 });
 
 describe("sigOverlayBroadcast card metrics", () => {
@@ -351,6 +382,13 @@ describe("sigOverlayBroadcast card metrics", () => {
     const mediaH = sigOverlayBroadcastMediaHeightPx(78);
     expect(w).toBe(Math.round(188 * 0.78));
     expect(mediaH).toBe(Math.round(w * (300 / 202)));
+  });
+
+  it("한방·개별 셸 전체 높이가 동일(px)", () => {
+    const h = sigOverlayBroadcastCardTotalHeightPx(78, false);
+    const mediaH = sigOverlayBroadcastMediaHeightPx(78);
+    expect(h).toBeGreaterThan(mediaH);
+    expect(sigOverlayBroadcastCardTotalHeightPx(78, true)).toBeGreaterThan(h);
   });
 });
 
@@ -404,7 +442,7 @@ describe("sequential menu wheel per round", () => {
     const last = winners[winners.length - 1]!;
     for (let round = 0; round < winners.length; round++) {
       const winner = winners[round]!;
-      const target = resolveWheelSpinTarget(menuSlices, winner, round, used);
+      const target = resolveWheelSpinTarget(menuSlices, winner, round, used, winners.slice(0, round));
       const animId = pickWheelAnimationResultId(target.sliceId, winner, last.id);
       expect(wheelSliceMatchesServerWinner(animId, winner), `round ${round}`).toBe(true);
       rememberUsedWheelSliceId(used, target.sliceId);
@@ -422,7 +460,7 @@ describe("sequential one-slice wheel per round", () => {
     for (let round = 0; round < winners.length; round++) {
       const winner = winners[round]!;
       const slices = buildWheelSlicesForCurrentRoundWinner(winner);
-      const target = resolveWheelSpinTarget(slices, winner, round, used);
+      const target = resolveWheelSpinTarget(slices, winner, round, used, winners.slice(0, round));
       const animId = pickWheelAnimationResultId(target.sliceId, winner, winners[4]!.id);
       expect(wheelSliceMatchesServerWinner(animId, winner), `round ${round}`).toBe(true);
       rememberUsedWheelSliceId(used, target.sliceId);
@@ -445,7 +483,7 @@ describe("wheel spin queue aligns with result cards", () => {
     expect(winners.length).toBe(5);
     for (let round = 0; round < winners.length; round++) {
       const winner = winners[round]!;
-      const target = resolveWheelSpinTarget(slices, winner, round);
+      const target = resolveWheelSpinTarget(slices, winner, round, undefined, winners.slice(0, round));
       expect(target.sliceId, `round ${round}`).toBeTruthy();
       expect(wheelSliceMatchesServerWinner(target.sliceId, winner)).toBe(true);
       const idx = findSliceIndexForResult(target.items, target.sliceId);

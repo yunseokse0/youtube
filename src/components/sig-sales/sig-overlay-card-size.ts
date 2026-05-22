@@ -13,10 +13,14 @@ export const SIG_ROLLING_MEDIA_HEIGHT_PX = 300;
 
 /**
  * 방송용 미디어 박스: **202×300** 세로형(약 2:3) — 개별 시그·한방 카드 동일 비율.
- * min-height 제거: aspect만으로 높이 고정되어 왜곡·과대 없음.
+ * 고정 px 높이(`sigOverlayBroadcastMediaBoxStyle`)와 함께 쓸 때는 aspect 클래스를 쓰지 않는다(충돌 시 한방 카드만 납작해짐).
  */
 export const SIG_OVERLAY_CARD_MEDIA_BOX_CLASS =
   "mb-1 aspect-[202/300] w-full";
+
+/** 방송 결과 줄: 미디어 영역 고정 높이(px) — aspect 없음 */
+export const SIG_OVERLAY_CARD_MEDIA_BOX_BROADCAST_CLASS =
+  "relative mb-1 w-full shrink-0 overflow-hidden";
 
 /** 방송 오버레이: 개별·한방 카드 하단 이름·금액 줄(동일 높이) */
 export const SIG_OVERLAY_CARD_FOOTER_CLASS = "space-y-0.5 px-1 pt-1";
@@ -86,14 +90,23 @@ export function sigOverlayBroadcastMediaBoxStyle(scalePct = 100): CSSProperties 
   };
 }
 
+/** 개별·한방 결과 카드 셸 전체 높이(px) — 동일 값으로 맞춤 */
+export function sigOverlayBroadcastCardTotalHeightPx(
+  scalePct = 100,
+  withToggle = false
+): number {
+  const mediaH = sigOverlayBroadcastMediaHeightPx(scalePct);
+  const footerH = withToggle ? 72 : 44;
+  const shellPad = 16;
+  return mediaH + footerH + shellPad;
+}
+
 export function sigOverlayBroadcastCardShellStyle(
   scalePct = 100,
   opts?: { withToggle?: boolean }
 ): CSSProperties {
   const max = sigOverlayBroadcastCardWidthPx(scalePct);
-  const mediaH = sigOverlayBroadcastMediaHeightPx(scalePct);
-  const footerH = opts?.withToggle ? 72 : 44;
-  const shellPad = 16;
+  const totalH = sigOverlayBroadcastCardTotalHeightPx(scalePct, Boolean(opts?.withToggle));
   return {
     flexGrow: 0,
     flexShrink: 0,
@@ -101,10 +114,12 @@ export function sigOverlayBroadcastCardShellStyle(
     width: `${max}px`,
     minWidth: max,
     maxWidth: max,
-    minHeight: mediaH + footerH + shellPad,
-    height: "100%",
+    height: totalH,
+    minHeight: totalH,
     alignSelf: "stretch",
     boxSizing: "border-box",
+    display: "flex",
+    flexDirection: "column",
   };
 }
 

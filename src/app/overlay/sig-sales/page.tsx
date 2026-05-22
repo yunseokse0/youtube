@@ -35,6 +35,7 @@ import {
   sigMatchesMemberFilter,
   pickWheelAnimationResultId,
   rememberUsedWheelSliceId,
+  wheelDuplicatePickForWinner,
   resolveSpinQueueForSession,
   resolveWheelSpinTarget,
   type SpinQueueSessionPin,
@@ -668,6 +669,17 @@ export default function SigSalesOverlayPage() {
         : null,
     [spinQueueSelected, sequentialRoundIndex]
   );
+  const priorRoundWinners = useMemo(
+    () => spinQueueSelected.slice(0, Math.max(0, sequentialRoundIndex)),
+    [spinQueueSelected, sequentialRoundIndex]
+  );
+  const wheelDuplicatePick = useMemo(
+    () =>
+      currentRoundWinner
+        ? wheelDuplicatePickForWinner(priorRoundWinners, currentRoundWinner)
+        : 0,
+    [priorRoundWinners, currentRoundWinner]
+  );
 
   const wheelSpinning =
     wheelPhase === "spinning" ||
@@ -703,9 +715,16 @@ export default function SigSalesOverlayPage() {
         wheelSlicesForSpin,
         currentRoundWinner,
         useSequentialWheel ? sequentialRoundIndex : 0,
-        useSequentialWheel ? usedWheelSliceIdsRef.current : undefined
+        useSequentialWheel ? usedWheelSliceIdsRef.current : undefined,
+        useSequentialWheel ? priorRoundWinners : undefined
       ),
-    [wheelSlicesForSpin, currentRoundWinner, useSequentialWheel, sequentialRoundIndex]
+    [
+      wheelSlicesForSpin,
+      currentRoundWinner,
+      useSequentialWheel,
+      sequentialRoundIndex,
+      priorRoundWinners,
+    ]
   );
 
   const wheelItemsWithResult = wheelSpinTarget.items;
@@ -726,7 +745,7 @@ export default function SigSalesOverlayPage() {
   const wheelResultSliceId = wheelSpinTarget.sliceId;
   const wheelAnimationResultId = pickWheelAnimationResultId(wheelResultSliceId, currentRoundWinner, {
     wheelItems: wheelItemsWithResult,
-    duplicatePick: useSequentialWheel ? sequentialRoundIndex : 0,
+    duplicatePick: useSequentialWheel ? wheelDuplicatePick : 0,
     usedSliceIds: useSequentialWheel ? usedWheelSliceIdsRef.current : undefined,
   });
 

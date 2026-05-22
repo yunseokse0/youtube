@@ -181,6 +181,39 @@ export type WheelSpinTarget = {
   expectedCanon: string | null;
 };
 
+/** 순차 회전 당첨 큐 — id·표시명 중복 제거(이미 나온 시그가 다음 회차에 또 당첨되는 것 방지) */
+export function dedupeSigQueueByIdAndName(queue: SigItem[]): SigItem[] {
+  const out: SigItem[] = [];
+  const usedIds = new Set<string>();
+  const usedNames = new Set<string>();
+  for (const item of queue) {
+    const id = canonicalSigIdFromWheelSliceId(item.id);
+    if (!id || usedIds.has(id)) continue;
+    const nameKey = normalizeSigPickNameKey(item.name);
+    if (nameKey && usedNames.has(nameKey)) continue;
+    usedIds.add(id);
+    if (nameKey) usedNames.add(nameKey);
+    out.push(item);
+  }
+  return out;
+}
+
+/**
+ * 동일 시그가 휠에 여러 칸일 때, 이번 회차 당첨 전에 같은 시그가 몇 번 나왔는지(슬라이스 pick용).
+ * `roundIndex` 를 그대로 쓰면 다른 시그 2회차가 2번째 칸으로 착지하는 등 오동작이 난다.
+ */
+export function wheelDuplicatePickForWinner(
+  priorWinners: readonly SigItem[],
+  serverWinner: SigItem
+): number {
+  const canon = canonicalSigIdFromWheelSliceId(serverWinner.id);
+  let n = 0;
+  for (const w of priorWinners) {
+    if (canonicalSigIdFromWheelSliceId(w.id) === canon) n++;
+  }
+  return n;
+}
+
 /**
  * 서버 당첨 시그가 휠에 반드시 있도록 보장하고, 해당 회차 착지용 slice id를 반환한다.
  * (카드 A / 휠 B 불일치 방지 — 당첨은 서버 큐, 휠은 이 함수 출력만 사용)
@@ -189,14 +222,19 @@ export function resolveWheelSpinTarget(
   wheelSlices: SigItem[],
   serverWinner: SigItem | null,
   roundIndex: number,
-  usedSliceIds?: ReadonlySet<string>
+  usedSliceIds?: ReadonlySet<string>,
+  priorWinners?: readonly SigItem[]
 ): WheelSpinTarget {
   if (!serverWinner || wheelSlices.length === 0) {
     return { items: wheelSlices, sliceId: null, expectedCanon: null };
   }
   const expectedCanon = canonicalSigIdFromWheelSliceId(serverWinner.id);
+  const duplicatePick =
+    priorWinners !== undefined
+      ? wheelDuplicatePickForWinner(priorWinners, serverWinner)
+      : Math.max(0, roundIndex);
   let items = [...wheelSlices];
-  let sliceId = pickWheelSliceIdForWin(items, serverWinner.id, roundIndex, usedSliceIds);
+  let sliceId = pickWheelSliceIdForWin(items, serverWinner.id, duplicatePick, usedSliceIds);
   if (!sliceId) {
     const slotIdx = Math.max(0, roundIndex) % items.length;
     const canon = expectedCanon;
@@ -211,7 +249,7 @@ export function resolveWheelSpinTarget(
   let idx = findSliceIndexForResult(items, sliceId);
   if (idx < 0) {
     /** 주입·슬라이스 id가 있는데 인덱스만 실패하면 원본 휠로 되돌리지 않고 한 번 더 맞춤 */
-    const retry = pickWheelSliceIdForWin(items, sliceId, roundIndex, usedSliceIds);
+    const retry = pickWheelSliceIdForWin(items, sliceId, duplicatePick, usedSliceIds);
     if (retry) {
       sliceId = retry;
       idx = findSliceIndexForResult(items, sliceId);
@@ -358,21 +396,25 @@ export function resolveSpinQueueForSession(
   const fallbackSlice = fallback.slice(0, cap);
   const pick = primarySlice.length > 0 ? primarySlice : fallbackSlice;
   if (pick.length > 0) {
+    const dedupedPick = dedupeSigQueueByIdAndName(pick);
     if (!sid || pin.sessionId !== sid) {
-      const next = { sessionId: sid, queue: pick };
-      return { pin: next, queue: pick };
+      const next = { sessionId: sid, queue: dedupedPick };
+      return { pin: next, queue: dedupedPick };
     }
-    if (pick.length > pin.queue.length) {
-      const extended = [...pin.queue, ...pick.slice(pin.queue.length)];
+    if (dedupedPick.length > pin.queue.length) {
+      const extended = dedupeSigQueueByIdAndName([
+        ...pin.queue,
+        ...dedupedPick.slice(pin.queue.length),
+      ]);
       const next = { sessionId: sid, queue: extended };
       return { pin: next, queue: extended };
     }
-    if (pick.length === pin.queue.length) {
-      if (spinQueueSameCanonSet(pick, pin.queue)) {
+    if (dedupedPick.length === pin.queue.length) {
+      if (spinQueueSameCanonSet(dedupedPick, pin.queue)) {
         return { pin, queue: pin.queue };
       }
-      const next = { sessionId: sid, queue: pick };
-      return { pin: next, queue: pick };
+      const next = { sessionId: sid, queue: dedupedPick };
+      return { pin: next, queue: dedupedPick };
     }
     return { pin, queue: pin.queue };
   }
@@ -386,6 +428,15 @@ export function resolveSpinQueueForSession(
 export function rememberUsedWheelSliceId(used: Set<string>, sliceId: string | null | undefined): void {
   const id = String(sliceId || "").trim();
   if (id) used.add(id);
+}
+
+/** 순차 회전: 이미 당첨 확정된 시그(캐노니컬 id) — 큐 검증·연출 보조 */
+export function rememberUsedWheelCanonSigId(
+  used: Set<string>,
+  winner: SigItem | null | undefined
+): void {
+  const canon = canonicalSigIdFromWheelSliceId(String(winner?.id || ""));
+  if (canon) used.add(canon);
 }
 
 /**

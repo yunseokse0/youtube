@@ -6,6 +6,19 @@ import { clampOverlayOpacity } from "@/lib/sig-roulette";
 
 type SalesPhase = NonNullable<RouletteState["phase"]>;
 
+const SALES_PHASE_RANK: Record<SalesPhase, number> = {
+  IDLE: 0,
+  SPINNING: 1,
+  LANDED: 2,
+  CONFIRM_PENDING: 3,
+  CONFIRMED: 4,
+};
+
+function salesPhaseRank(phase: SalesPhase | undefined): number {
+  if (!phase) return 0;
+  return SALES_PHASE_RANK[phase] ?? 0;
+}
+
 type SigSalesMachine = {
   phase: SalesPhase;
   isRolling: boolean;
@@ -140,12 +153,20 @@ export function useSigSalesState(userId: string, appState: AppState | null) {
       prevUpdatedAtRef.current = incomingTs;
       return;
     }
-    // 로컬 회전(SPINNING) 중 서버 폴링이 이전 IDLE/LANDED 스냅샷으로 되돌리는 것 방지
+    /**
+     * 로컬 회전(SPINNING) 중 서버가 **같은 회차·더 낮은 단계**(IDLE 등)로 되돌리는 폴링만 무시.
+     * 같은 session·startedAt 에서 LANDED 로 진행되는 것(OBS land 후)은 반드시 반영한다.
+     */
     if (
       cur.phase === "SPINNING" &&
+      incoming.phase &&
       incoming.phase !== "SPINNING" &&
+      cur.sessionId &&
+      incoming.sessionId &&
+      cur.sessionId === incoming.sessionId &&
       Number(cur.startedAt || 0) > 0 &&
-      Number(incoming.startedAt || 0) <= Number(cur.startedAt || 0)
+      Number(incoming.startedAt || 0) <= Number(cur.startedAt || 0) &&
+      salesPhaseRank(incoming.phase) <= salesPhaseRank(cur.phase)
     ) {
       prevUpdatedAtRef.current = incomingTs;
       return;
