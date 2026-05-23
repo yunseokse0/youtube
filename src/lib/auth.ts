@@ -26,14 +26,14 @@ export function getUserById(id: string): { id: string; companyName: string } | n
 
 /**
  * 로그인 쿠키 Secure 플래그.
- * - HTTPS 없이 IP/HTTP만 쓸 때: AUTH_COOKIE_SECURE=false
- * - HTTPS 배포 후: true 또는 미설정(production 기본 true)
+ * - HTTP·IP(EC2) 배포: 미설정 또는 AUTH_COOKIE_SECURE=false (기본 Secure 끔)
+ * - HTTPS(도메인) 배포: AUTH_COOKIE_SECURE=true
  */
 export function authCookieSecure(): boolean {
   const v = String(process.env.AUTH_COOKIE_SECURE ?? "").trim().toLowerCase();
   if (v === "false" || v === "0" || v === "no") return false;
   if (v === "true" || v === "1" || v === "yes") return true;
-  return process.env.NODE_ENV === "production";
+  return false;
 }
 
 function isLocalHost(hostname: string): boolean {

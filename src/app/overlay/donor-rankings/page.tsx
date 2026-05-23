@@ -14,11 +14,12 @@ import type { DonorsAmountFormat } from "@/types";
 import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { useDonorRankingsRemoteState } from "@/hooks/useDonorRankingsRemoteState";
+import {
+  buildDonorRankingsFromDonors,
+  type DonorRankingRow,
+} from "@/lib/donor-rankings-aggregate";
 
-type DonorRow = {
-  name: string;
-  amount: number;
-};
+type DonorRow = DonorRankingRow;
 
 const TEST_ACCOUNT_ROWS: DonorRow[] = [
   { name: "artaiker", amount: 3849000 },
@@ -39,25 +40,6 @@ const TEST_TOON_ROWS: DonorRow[] = [
   { name: "초승달", amount: 50000 },
   { name: "콩콩", amount: 10000 },
 ];
-
-function normalizeTarget(donor: Record<string, unknown>): "account" | "toon" {
-  const rawType = String(donor.type || "").trim();
-  if (rawType === "계좌") return "account";
-  if (rawType === "투네이션") return "toon";
-  const rawTarget = String(donor.target || "").trim().toLowerCase();
-  return rawTarget === "toon" ? "toon" : "account";
-}
-
-function aggregateAll(rows: DonorRow[]): DonorRow[] {
-  const byName = new Map<string, number>();
-  for (const row of rows) {
-    const key = row.name.trim() || "무명";
-    byName.set(key, (byName.get(key) || 0) + Math.max(0, row.amount || 0));
-  }
-  return Array.from(byName.entries())
-    .map(([name, amount]) => ({ name, amount }))
-    .sort((a, b) => b.amount - a.amount);
-}
 
 function readNumber(sp: URLSearchParams, key: string, fallback: number, min: number, max: number): number {
   const raw = sp.get(key);
@@ -378,8 +360,10 @@ export default function DonorRankingsOverlayPage() {
   );
 
   const useTest = (sp.get("test") || "false").toLowerCase() === "true";
+  const layoutDual = (sp.get("layout") || "").toLowerCase() === "dual";
   const savedTheme = state?.donorRankingsTheme || defaultState().donorRankingsTheme;
 
+  const topN = readNumber(sp, "top", savedTheme.top, 1, 50);
   const titleSize = readNumber(sp, "titleSize", savedTheme.titleSize, 14, 80);
   const rowSize = readNumber(sp, "rowSize", savedTheme.rowSize, 12, 64);
   const rankSize = readNumber(sp, "rankSize", savedTheme.rankSize, 12, 72);
@@ -401,6 +385,8 @@ export default function DonorRankingsOverlayPage() {
   const headerToonBg =
     readColor(sp, "headerToonBg", savedTheme.headerToonBg) ||
     "linear-gradient(135deg, #fff4f9 0%, #ffc8e6 48%, #ffa3cf 100%)";
+  const headerUnifiedBg = readColor(sp, "headerBg", headerAccountBg) || headerAccountBg;
+  const rankingTitle = (sp.get("title") || "").trim() || "후원 순위";
   const rankColor = readColor(sp, "rankColor", savedTheme.rankColor) || "#fff5f9";
   const nameColor = readColor(sp, "nameColor", savedTheme.nameColor) || "#fff7fb";
   const amountColor = readColor(sp, "amountColor", savedTheme.amountColor) || "#fff7ed";
@@ -413,29 +399,21 @@ export default function DonorRankingsOverlayPage() {
 
   const donorsOverride = useDonorsOverrideFromUrl(sp);
 
-  const { accountTop, toonTop } = useMemo(() => {
+  const { accountTop, toonTop, unifiedTop } = useMemo(() => {
     if (useTest) {
-      return {
-        accountTop: [...TEST_ACCOUNT_ROWS],
-        toonTop: [...TEST_TOON_ROWS],
-      };
+      return buildDonorRankingsFromDonors(
+        [
+          ...TEST_ACCOUNT_ROWS.map((row) => ({ name: row.name, amount: row.amount, target: "account" })),
+          ...TEST_TOON_ROWS.map((row) => ({ name: row.name, amount: row.amount, target: "toon" })),
+        ],
+        topN
+      );
     }
-    const donors = (donorsOverride !== undefined ? donorsOverride : state?.donors || []) as Array<Record<string, unknown>>;
-    const accountRows: DonorRow[] = [];
-    const toonRows: DonorRow[] = [];
-    for (const d of donors) {
-      const row = {
-        name: String(d.name || "무명"),
-        amount: Number(d.amount || 0),
-      };
-      if (normalizeTarget(d) === "toon") toonRows.push(row);
-      else accountRows.push(row);
-    }
-    return {
-      accountTop: aggregateAll(accountRows),
-      toonTop: aggregateAll(toonRows),
-    };
-  }, [state?.donors, useTest, donorsOverride]);
+    const donors = (donorsOverride !== undefined ? donorsOverride : state?.donors || []) as Array<
+      Record<string, unknown>
+    >;
+    return buildDonorRankingsFromDonors(donors, topN);
+  }, [state?.donors, useTest, donorsOverride, topN]);
 
   if (!ready && !useTest) return null;
 
@@ -488,52 +466,81 @@ export default function DonorRankingsOverlayPage() {
             TEST MODE
           </div>
         )}
-        <div
-          className="relative grid grid-cols-1 overflow-hidden rounded-2xl border shadow-[0_12px_32px_rgba(236,72,153,0.14)] backdrop-blur-md md:grid-cols-2 md:gap-0"
-          style={{
-            borderColor,
-            backgroundColor: "transparent",
-          }}
-        >
-          <RankingColumn
-            title="계좌 후원 순위"
-            items={accountTop}
-            amountFormat={amountFormat}
-            headerBg={headerAccountBg}
-            panelBg={panelBg}
-            borderColor={borderColor}
-            titleSize={titleSize}
-            rowSize={rowSize}
-            rankSize={rankSize}
-            rankColor={rankColor}
-            nameColor={nameColor}
-            amountColor={amountColor}
-            outlineColor={outlineColor}
-            headerOpacity={overlayOpacity}
-            unified
-            showColumnDivider
-            panelOpacityFrac={overlayOpacityFrac}
-          />
-          <RankingColumn
-            title="투네 후원 순위"
-            items={toonTop}
-            suffix="캐시"
-            amountFormat={amountFormat}
-            headerBg={headerToonBg}
-            panelBg={panelBg}
-            borderColor={borderColor}
-            titleSize={titleSize}
-            rowSize={rowSize}
-            rankSize={rankSize}
-            rankColor={rankColor}
-            nameColor={nameColor}
-            amountColor={amountColor}
-            outlineColor={outlineColor}
-            headerOpacity={overlayOpacity}
-            unified
-            panelOpacityFrac={overlayOpacityFrac}
-          />
-        </div>
+        {layoutDual ? (
+          <div
+            className="relative grid grid-cols-1 overflow-hidden rounded-2xl border shadow-[0_12px_32px_rgba(236,72,153,0.14)] backdrop-blur-md md:grid-cols-2 md:gap-0"
+            style={{
+              borderColor,
+              backgroundColor: "transparent",
+            }}
+          >
+            <RankingColumn
+              title="계좌 후원 순위"
+              items={accountTop}
+              amountFormat={amountFormat}
+              headerBg={headerAccountBg}
+              panelBg={panelBg}
+              borderColor={borderColor}
+              titleSize={titleSize}
+              rowSize={rowSize}
+              rankSize={rankSize}
+              rankColor={rankColor}
+              nameColor={nameColor}
+              amountColor={amountColor}
+              outlineColor={outlineColor}
+              headerOpacity={overlayOpacity}
+              unified
+              showColumnDivider
+              panelOpacityFrac={overlayOpacityFrac}
+            />
+            <RankingColumn
+              title="투네 후원 순위"
+              items={toonTop}
+              suffix="캐시"
+              amountFormat={amountFormat}
+              headerBg={headerToonBg}
+              panelBg={panelBg}
+              borderColor={borderColor}
+              titleSize={titleSize}
+              rowSize={rowSize}
+              rankSize={rankSize}
+              rankColor={rankColor}
+              nameColor={nameColor}
+              amountColor={amountColor}
+              outlineColor={outlineColor}
+              headerOpacity={overlayOpacity}
+              unified
+              panelOpacityFrac={overlayOpacityFrac}
+            />
+          </div>
+        ) : (
+          <div
+            className="relative mx-auto max-w-[760px] overflow-hidden rounded-2xl border shadow-[0_12px_32px_rgba(236,72,153,0.14)] backdrop-blur-md"
+            style={{
+              borderColor,
+              backgroundColor: "transparent",
+            }}
+          >
+            <RankingColumn
+              title={rankingTitle}
+              items={unifiedTop}
+              amountFormat={amountFormat}
+              headerBg={headerUnifiedBg}
+              panelBg={panelBg}
+              borderColor={borderColor}
+              titleSize={titleSize}
+              rowSize={rowSize}
+              rankSize={rankSize}
+              rankColor={rankColor}
+              nameColor={nameColor}
+              amountColor={amountColor}
+              outlineColor={outlineColor}
+              headerOpacity={overlayOpacity}
+              unified
+              panelOpacityFrac={overlayOpacityFrac}
+            />
+          </div>
+        )}
       </div>
     </main>
   );

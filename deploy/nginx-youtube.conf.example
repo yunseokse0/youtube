@@ -1,4 +1,5 @@
 # /etc/nginx/sites-available/youtube (또는 default) server { } 블록 안에 추가
+# HTTP(IP) 전용 — listen 80 만 사용. certbot HTTPS 리다이렉트는 쓰지 않음.
 # 시그 GIF 업로드: Nginx 기본 client_max_body_size 는 1MB → 413 Request Entity Too Large
 # 앱 한도(30MB)보다 Nginx가 먼저 막으면 관리자에 「30MB 이하」 오류처럼 보일 수 있음
 

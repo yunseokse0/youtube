@@ -5273,18 +5273,25 @@ export default function AdminPage() {
                 </div>
                 <div className="rounded border border-white/10 bg-black/20 p-3 space-y-2">
                   <div>
-                    <h4 className="text-sm font-semibold">후원 순위 오버레이 (계좌/투네 분리)</h4>
+                    <h4 className="text-sm font-semibold">후원 순위 오버레이</h4>
                     <p className="text-xs text-neutral-400 mt-1">
-                      계좌/투네 후원 순위를 각각 표시합니다. 아래 슬라이더/컬러피커로 조정한 뒤 프리셋으로 저장할 수 있습니다.
+                      계좌·투네 후원을 합쳐 「후원 순위」 한 목록으로 표시합니다. 예전처럼 두 칸으로 나누려면 URL에{" "}
+                      <code className="text-neutral-300">layout=dual</code> 을 붙이세요.
                     </p>
                   </div>
                   <div className="rounded border border-white/10 bg-neutral-900/40 p-2 space-y-2">
                     <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
                       <label className="text-[11px] text-neutral-400">
                         표시 개수
-                        <div className="mt-2 rounded border border-white/10 bg-black/20 px-2 py-2 text-xs text-neutral-300">
-                          전체 표시 (고정)
-                        </div>
+                        <input
+                          type="range"
+                          min={1}
+                          max={20}
+                          value={state.donorRankingsTheme.top}
+                          onChange={(e) => updateDonorRankingsTheme({ top: Number(e.target.value) })}
+                          className="w-full"
+                        />
+                        <div className="text-xs text-neutral-300">{state.donorRankingsTheme.top}명</div>
                       </label>
                       <label className="text-[11px] text-neutral-400">
                         제목 폰트
@@ -5337,8 +5344,8 @@ export default function AdminPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
                       {[
-                        ["headerAccountBg", "계좌 헤더"],
-                        ["headerToonBg", "투네 헤더"],
+                        ["headerAccountBg", "순위 헤더(통합)"],
+                        ["headerToonBg", "투네 헤더(dual만)"],
                         ["rankColor", "순위 색"],
                         ["nameColor", "닉네임 색"],
                         ["amountColor", "금액 색"],
