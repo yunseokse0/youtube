@@ -78,18 +78,21 @@ function RollingCardColumn({
     : "";
   const srcCurrent = toSigOverlayAbsoluteAssetUrl(srcCurrentRaw);
   const srcUnder = toSigOverlayAbsoluteAssetUrl(srcUnderRaw);
-  const [imgSrc, setImgSrc] = useState(srcCurrent);
-  const [imgUnderSrc, setImgUnderSrc] = useState(srcUnder);
+  const [errOverSrc, setErrOverSrc] = useState<string | null>(null);
+  const [errUnderSrc, setErrUnderSrc] = useState<string | null>(null);
 
   useEffect(() => {
-    setImgSrc(srcCurrent);
-    setImgUnderSrc(srcUnder);
+    setErrOverSrc(null);
+    setErrUnderSrc(null);
   }, [srcCurrent, srcUnder]);
+
+  const overDisplay = errOverSrc ?? srcCurrent;
+  const underDisplay = errUnderSrc ?? srcUnder;
 
   const onImgError = useCallback((which: "over" | "under") => {
     const fallback = toSigOverlayAbsoluteAssetUrl(BUNDLED_SIG_PLACEHOLDER_URL);
-    if (which === "over") setImgSrc(fallback);
-    else setImgUnderSrc(fallback);
+    if (which === "over") setErrOverSrc(fallback);
+    else setErrUnderSrc(fallback);
   }, []);
 
   if (!current) return null;
@@ -100,7 +103,8 @@ function RollingCardColumn({
    * 모바일(WebView/Safari)에서는 backdrop-filter 계열이 투명 캔버스와 겹칠 때
    * 카드 외곽이 검은 타일처럼 보이는 경우가 있어, sig-rolling은 블러 없이 고정 셸 사용.
    */
-  const shellBase = "overflow-hidden shadow-lg border border-white/20 bg-white/35";
+  const shellBase =
+    "overflow-hidden shadow-lg border border-white/20 bg-white/35 [transform:translateZ(0)] [backface-visibility:hidden]";
   const shellClass =
     pairSide === "left"
       ? `${shellBase} rounded-l-3xl rounded-r-none p-1.5`
@@ -125,7 +129,7 @@ function RollingCardColumn({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               key={replayKey}
-              src={imgSrc}
+              src={overDisplay}
               alt=""
               className={IMG_IN_FRAME}
               draggable={false}
@@ -152,28 +156,31 @@ function RollingCardColumn({
             maxHeight: SIG_ROLLING_MEDIA_HEIGHT_PX,
             gridTemplateColumns: "1fr",
             gridTemplateRows: "1fr",
+            contain: "layout style paint",
           }}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            key={`under-${cardUnder.id}`}
-            src={imgUnderSrc}
-            alt=""
-            className={IMG_IN_FRAME}
-            referrerPolicy="no-referrer"
-            style={{
-              opacity: fading ? 1 : 0,
-              transition: fading ? transitionActive : "none",
-              zIndex: 1,
-            }}
-            draggable={false}
-            decoding="async"
-            onError={() => onImgError("under")}
-          />
+          {fading ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              key={`under-${cardUnder.id}`}
+              src={underDisplay}
+              alt=""
+              className={IMG_IN_FRAME}
+              referrerPolicy="no-referrer"
+              style={{
+                opacity: 1,
+                transition: transitionActive,
+                zIndex: 1,
+              }}
+              draggable={false}
+              decoding="sync"
+              onError={() => onImgError("under")}
+            />
+          ) : null}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             key={`over-${current.id}`}
-            src={imgSrc}
+            src={overDisplay}
             alt=""
             className={IMG_IN_FRAME}
             referrerPolicy="no-referrer"
@@ -183,7 +190,7 @@ function RollingCardColumn({
               zIndex: 2,
             }}
             draggable={false}
-            decoding="async"
+            decoding="sync"
             onError={() => onImgError("over")}
           />
         </div>
@@ -203,6 +210,12 @@ function SigRollingOverlayInner() {
   const sp = useSearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
   const memberFilterId = getOverlayMemberFilterIdFromSearchParams(sp);
+  const hostParam = (sp.get("host") || "").toLowerCase();
+  const obsSafe =
+    hostParam === "obs" ||
+    hostParam === "external" ||
+    (sp.get("obsSafe") || "").toLowerCase() === "true" ||
+    (sp.get("obsSafe") || "").toLowerCase() === "1";
   const { state, ready } = useOverlayRemoteState(userId);
   const overlayUserId = useMemo(
     () => inferSigUploadUserIdFromInventory(state?.sigInventory, userId),
@@ -230,8 +243,22 @@ function SigRollingOverlayInner() {
   const rollingRef = useRef(rollingUnified);
   rollingRef.current = rollingUnified;
 
-  /** 페어 크로스페이드는 항목 3개 이상일 때만 (n>=1 등으로 바꾸면 표시/타이머가 어긋남) */
-  const enableCrossfade = n >= 3;
+  /** 페어 크로스페이드 — OBS는 이중 GIF 레이어에서 깜빡임이 나기 쉬워 host=obs 시 즉시 전환 */
+  const enableCrossfade = n >= 3 && !obsSafe;
+
+  const preloadRollingImage = useCallback(
+    (item: SigRollingItem | null | undefined) => {
+      if (!item?.url || typeof window === "undefined") return;
+      const src = toSigOverlayAbsoluteAssetUrl(
+        resolveSigRollingImageUrl(item.label || "", item.url, overlayUserId)
+      );
+      if (!src) return;
+      const img = new window.Image();
+      img.decoding = "async";
+      img.src = src;
+    },
+    [overlayUserId]
+  );
   const twoCardScale = useMemo(() => {
     if (!Number.isFinite(viewportW) || viewportW <= 0) return 1;
     const safeW = Math.max(260, viewportW - 8);
@@ -317,9 +344,18 @@ function SigRollingOverlayInner() {
       timerId = window.setTimeout(() => {
         if (nn <= 2) {
           setReplayKey((k) => k + 1);
-        } else {
-          setFading(true);
+          return;
         }
+        if (obsSafe) {
+          preloadRollingImage(list[(pairStart + 2) % nn]);
+          preloadRollingImage(list[(pairStart + 3) % nn]);
+          setPairStart((p) => (p + 2) % nn);
+          setReplayKey((k) => k + 1);
+          return;
+        }
+        preloadRollingImage(list[(pairStart + 2) % nn]);
+        preloadRollingImage(list[(pairStart + 3) % nn]);
+        setFading(true);
       }, hold);
     })();
 
@@ -327,7 +363,7 @@ function SigRollingOverlayInner() {
       cancelled = true;
       if (timerId !== undefined) window.clearTimeout(timerId);
     };
-  }, [ready, n, pairStart, fading, scheduleKey, replayKey, overlayUserId]);
+  }, [ready, n, pairStart, fading, scheduleKey, replayKey, overlayUserId, obsSafe, preloadRollingImage]);
 
   const emptyDetail = useMemo(() => {
     if (!state) return "";
@@ -395,7 +431,7 @@ function SigRollingOverlayInner() {
           transformOrigin: "top left",
         }}
       >
-        <div className="flex flex-row flex-nowrap items-start gap-0">
+        <div className="flex flex-row flex-nowrap items-start gap-0 [isolation:isolate]">
           <RollingCardColumn
             current={leftCurrent}
             nextItem={enableCrossfade ? leftNext : null}

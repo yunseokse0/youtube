@@ -6111,13 +6111,13 @@ export default function AdminPage() {
                     <div className="text-xs text-neutral-400 flex flex-wrap items-center justify-end gap-2">
                       <span>오버레이 URL:</span>
                       <code className="text-neutral-300 break-all text-left">
-                        /overlay/sig-rolling?u={user?.id || "finalent"}
+                        /overlay/sig-rolling?u={user?.id || "finalent"}&host=obs
                       </code>
                       <button
                         type="button"
                         className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-sig-rolling" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
                         onClick={() => {
-                          const u = `${window.location.origin}/overlay/sig-rolling?u=${user?.id || "finalent"}`;
+                          const u = `${window.location.origin}/overlay/sig-rolling?u=${user?.id || "finalent"}&host=obs`;
                           void copyUrl(u, "dash-sig-rolling");
                         }}
                       >
@@ -6127,7 +6127,13 @@ export default function AdminPage() {
                     <button
                       type="button"
                       className="px-2 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-xs self-end"
-                      onClick={() => window.open(`/overlay/sig-rolling?u=${user?.id || "finalent"}`, "_blank", "noopener,noreferrer")}
+                      onClick={() =>
+                        window.open(
+                          `/overlay/sig-rolling?u=${user?.id || "finalent"}&host=obs`,
+                          "_blank",
+                          "noopener,noreferrer"
+                        )
+                      }
                     >
                       오버레이 열기
                     </button>
