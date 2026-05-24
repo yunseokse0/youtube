@@ -349,18 +349,11 @@ export function sanitizeBroadcastOverlayUrl(url: string): string {
   }
 }
 
-/** 로드 시 주소창에서 overlayPollMs 제거 — OBS 북마크에 남아 있어도 폴링 안 함 */
+/**
+ * @deprecated OverlayBroadcastHygiene 가 `router.replace` 로 처리. 직접 `history.replaceState` 는 App Router 오류 유발.
+ */
 export function stripOverlayPollMsFromBrowserLocation(): void {
-  if (typeof window === "undefined") return;
-  try {
-    const u = new URL(window.location.href);
-    if (!u.searchParams.has(OVERLAY_POLL_MS_QUERY)) return;
-    u.searchParams.delete(OVERLAY_POLL_MS_QUERY);
-    const next = `${u.pathname}${u.search}${u.hash}`;
-    window.history.replaceState(window.history.state, "", next);
-  } catch {
-    /* noop */
-  }
+  /* noop — 레이아웃 OverlayBroadcastHygiene 사용 */
 }
 
 /** 미리보기 iframe 등에서 SSE 생략. 디버그 시 `?overlayAllowSse=1`로 다시 켤 수 있음. */

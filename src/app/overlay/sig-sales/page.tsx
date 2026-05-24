@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
@@ -10,9 +10,14 @@ import type { SigItem } from "@/types";
 const RouletteWheel = dynamic(() => import("@/components/sig-sales/RouletteWheel"), {
   ssr: false,
 });
-import ResultOverlay from "@/components/sig-sales/ResultOverlay";
 import { layoutSigOverlayResultRow } from "@/components/sig-sales/sig-overlay-card-size";
-import SigBoardRolling from "@/components/sig-sales/SigBoardRolling";
+
+const ResultOverlay = dynamic(() => import("@/components/sig-sales/ResultOverlay"), {
+  ssr: false,
+});
+const SigBoardRolling = dynamic(() => import("@/components/sig-sales/SigBoardRolling"), {
+  ssr: false,
+});
 import { loadStateFromApi, loadState, storageKey, type AppState } from "@/lib/state";
 import {
   getOverlayMemberFilterIdFromSearchParams,
@@ -38,6 +43,7 @@ import {
   rememberUsedWheelSliceId,
   resolveSpinQueueForSession,
   bindWheelAnimationToRoundWinner,
+  findSliceIndexForResult,
   type SpinQueueSessionPin,
   sanitizeWheelDisplayName,
   wheelSliceMatchesServerWinner,
@@ -56,6 +62,16 @@ import {
   sigSalesRouletteSyncCursorFromState,
   type SigSalesRouletteSyncCursor,
 } from "@/lib/overlay-pull-policy";
+import {
+  WHEEL_DEMO_MENU_COUNT,
+  WHEEL_DEMO_WIN_COUNT,
+  getWheelDemoMenuCountFromSearchParams,
+  getWheelDemoWinCountFromSearchParams,
+  isWheelDemoAutoSpinFromSearchParams,
+  isWheelDemoModeFromSearchParams,
+  mergeWheelDemoSigInventory,
+  pickWheelDemoWinners,
+} from "@/lib/sig-wheel-demo-pool";
 
 /**
  * [계약] 시그 판매 오버레이는 아래를 전제로 구현돼 있어야 한다(“될 수도”가 아님).
@@ -147,7 +163,7 @@ const wheelReducer = (state: WheelPhase, action: { type: string }): WheelPhase =
     case "START_SPIN":
       return "spinning";
     case "SETTLING":
-      return "settling";
+      return state === "spinning" ? "settling" : state;
     case "LANDED":
       return "result";
     case "RESET":
@@ -157,11 +173,50 @@ const wheelReducer = (state: WheelPhase, action: { type: string }): WheelPhase =
   }
 };
 
+/** SSR·Suspense fallback·클라이언트 첫 페인트가 동일한 `<main>` — 하이드레이션 불일치 방지 */
+function OverlayHydrationShell({
+  message = "오버레이 불러오는 중…",
+}: {
+  message?: string;
+}) {
+  return (
+    <main className="relative min-h-[100dvh] max-h-[100dvh] overflow-hidden bg-neutral-950 px-3 py-3 text-white sm:px-5 sm:py-4">
+      <p className="flex min-h-[50dvh] items-center justify-center text-sm text-neutral-300">{message}</p>
+    </main>
+  );
+}
+
 export default function SigSalesOverlayPage() {
+  return (
+    <Suspense fallback={<OverlayHydrationShell />}>
+      <SigSalesOverlayPageInner />
+    </Suspense>
+  );
+}
+
+function SigSalesOverlayPageInner() {
   const sp = useSearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
+  const [clientBoot, setClientBoot] = useState<{ ready: boolean; host: string | null }>({
+    ready: false,
+    host: null,
+  });
+  useEffect(() => {
+    setClientBoot({ ready: true, host: window.location.hostname });
+  }, []);
+  const clientHost = clientBoot.host;
+  const wheelDemoActive = useMemo(
+    () => (clientHost != null ? isWheelDemoModeFromSearchParams(sp, clientHost) : false),
+    [sp, clientHost]
+  );
+  const wheelDemoAutoSpin = useMemo(
+    () => isWheelDemoAutoSpinFromSearchParams(sp, wheelDemoActive),
+    [sp, wheelDemoActive]
+  );
   const memberFilterId = getOverlayMemberFilterIdFromSearchParams(sp);
   const menuCountParam = (() => {
+    const demoMenu = getWheelDemoMenuCountFromSearchParams(sp, wheelDemoActive);
+    if (demoMenu != null) return demoMenu;
     const raw = sp.get("menuCount") || "";
     if (!raw.trim()) return null;
     return clampSigSalesMenuCount(raw);
@@ -296,6 +351,10 @@ export default function SigSalesOverlayPage() {
           transformOrigin: "top center",
         } as React.CSSProperties);
   const [state, setState] = useState<AppState | null>(null);
+  const wheelInventory = useMemo(
+    () => mergeWheelDemoSigInventory(state?.sigInventory, wheelDemoActive),
+    [state?.sigInventory, wheelDemoActive]
+  );
   /** OBS URL `u=` 가 틀려도 인벤 업로드 경로에서 이미지 계정을 맞춤(관리자 미리보기와 동일) */
   const sigImageUserId = useMemo(
     () => inferSigUploadUserIdFromInventory(state?.sigInventory, userId),
@@ -344,6 +403,7 @@ export default function SigSalesOverlayPage() {
   const wheelSettleLandTimerRef = useRef<number | null>(null);
   const handledSpinKeyRef = useRef("");
   const completedSpinKeyRef = useRef("");
+  const wheelDemoAutoRanRef = useRef(false);
   const wheelPhasePrevRef = useRef<WheelPhase>("idle");
   const hasOneShotSoundErrorRef = useRef(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -561,10 +621,10 @@ export default function SigSalesOverlayPage() {
     if (!state) return [];
     const excluded = new Set((state.sigSalesExcludedIds || []).map((x) => String(x)));
     const sessionExclusion = buildSessionSpinExclusion(
-      state.sigInventory || [],
+      wheelInventory,
       state.rouletteState?.sessionExcludedSigIds
     );
-    return (state.sigInventory || []).filter(
+    return wheelInventory.filter(
       (x) =>
         x.isActive &&
         x.id !== ONE_SHOT_SIG_ID &&
@@ -573,7 +633,7 @@ export default function SigSalesOverlayPage() {
         x.soldCount < x.maxCount &&
         sigMatchesMemberFilter(x, memberFilterId)
     );
-  }, [state, memberFilterId]);
+  }, [state, wheelInventory, memberFilterId]);
   const effectiveMenuCount = useMemo(
     () => resolveSigSalesMenuCount(menuCountSetting, activeNormalPool.length),
     [menuCountSetting, activeNormalPool.length]
@@ -609,7 +669,7 @@ export default function SigSalesOverlayPage() {
   const wheelDisplayPool = useMemo(() => {
     if (!state) return [];
     return buildSigSalesWheelDisplayPool({
-      inventory: state.sigInventory || [],
+      inventory: wheelInventory,
       sigSalesExcludedIds: state.sigSalesExcludedIds,
       sessionExcludedSigIds: state.rouletteState?.sessionExcludedSigIds,
       memberFilterId,
@@ -619,6 +679,7 @@ export default function SigSalesOverlayPage() {
     });
   }, [
     state,
+    wheelInventory,
     memberFilterId,
     effectiveMenuCount,
     menuFillFromAllActive,
@@ -685,6 +746,9 @@ export default function SigSalesOverlayPage() {
     wheelPhase === "settling" ||
     Boolean(demoSpin) ||
     machine.phase === "SPINNING";
+  /** 착지 직후 `result` 에서도 resultId 유지 — effect 조기 cleanup 으로 각도·스냅이 끊기는 것 방지 */
+  const wheelKeepsSpinBinding =
+    wheelSpinning || wheelPhase === "result";
 
   const wheelSlicesForSpin = useMemo(
     () =>
@@ -733,16 +797,19 @@ export default function SigSalesOverlayPage() {
     (item: SigItem) => {
       const canon = canonicalSigIdFromWheelSliceId(item.id);
       const fromInv =
+        wheelInventory.find((x) => x.id === canon) ||
+        wheelInventory.find((x) => x.id === item.id) ||
         state?.sigInventory?.find((x) => x.id === canon) ||
         state?.sigInventory?.find((x) => x.id === item.id);
       const raw = String(fromInv?.name || item.name || "").trim() || canon;
       return sanitizeWheelDisplayName(raw) || raw;
     },
-    [state?.sigInventory]
+    [wheelInventory, state?.sigInventory]
   );
 
   const wheelResultSliceId = wheelRoundBinding.sliceId;
   const wheelAnimationResultId = wheelRoundBinding.animationResultId;
+  const wheelTargetSliceIndex = wheelRoundBinding.targetSliceIndex;
 
   useEffect(() => {
     if (!currentRoundWinner || !wheelResultSliceId) return;
@@ -909,8 +976,8 @@ export default function SigSalesOverlayPage() {
   /** 당첨 배열을 재고와 맞춰 휠 라벨·이미지와 동일 시그로 표시 */
   const displaySelectedSigsForUi = useMemo(
     () =>
-      displaySelectedSigs.map((s) => hydrateSigItemFromInventory(s, state?.sigInventory, sigImageUserId)),
-    [displaySelectedSigs, state?.sigInventory, sigImageUserId],
+      displaySelectedSigs.map((s) => hydrateSigItemFromInventory(s, wheelInventory, sigImageUserId)),
+    [displaySelectedSigs, wheelInventory, sigImageUserId],
   );
   const completedTargetCount = useMemo(() => {
     if (pendingLanding?.selected?.length) return Math.max(1, Math.min(CONFIRMED_VISIBLE_SLOTS, pendingLanding.selected.length));
@@ -1110,6 +1177,7 @@ export default function SigSalesOverlayPage() {
     [resultCardCount, sigResultScalePct]
   );
   const showSigBoardRollingSection = useMemo(() => {
+    if (wheelDemoActive) return false;
     if (winnersOnlyOverlay) return false;
     if (hideSigBoard || !state || (state.sigInventory || []).length === 0) return false;
     if (displaySelectedSigs.length > 0 && resultOverlayVisible && !allowSigBoardWithResults) return false;
@@ -1126,6 +1194,7 @@ export default function SigSalesOverlayPage() {
     hideWheelAfterComplete,
     showResultPanel,
     resultsPanelGateOpen,
+    wheelDemoActive,
   ]);
   /** 관리자가 재고에서 완판 처리한 시그 → 방송 결과 카드에도 스탬프 표시 */
   const inventorySoldOutIdSet = useMemo(() => {
@@ -1369,6 +1438,8 @@ export default function SigSalesOverlayPage() {
     // appState 수신 전 기본 IDLE이면 건드리지 않음(HYDRATE SPINNING과 경쟁 방지)
     if (!state) return;
     if (machine.phase !== "IDLE") return;
+    /** 로컬 휠 데모 자동 스핀 중에는 폴링마다 demoSpin 이 지워지지 않게 함 */
+    if (wheelDemoAutoSpin && (demoSpin || pendingLanding)) return;
     if (wheelSettleLandTimerRef.current != null) {
       window.clearTimeout(wheelSettleLandTimerRef.current);
       wheelSettleLandTimerRef.current = null;
@@ -1388,7 +1459,45 @@ export default function SigSalesOverlayPage() {
     handledSpinKeyRef.current = "";
     serverCatchUpKeyRef.current = "";
     setSequentialRoundIndex(0);
-  }, [machine.phase, state]);
+  }, [machine.phase, state, wheelDemoAutoSpin, demoSpin, pendingLanding]);
+
+  /** 로컬 wheelDemo: 서버 스핀 없이 20칸 휠 + 당첨 5개 + 한방 시그 연출 1회 자동 재생 */
+  useEffect(() => {
+    if (!wheelDemoAutoSpin || !state) return;
+    if (wheelDemoAutoRanRef.current) return;
+    if (machine.phase !== "IDLE") return;
+    if (demoSpin || pendingLanding) return;
+    const demoMenuN = getWheelDemoMenuCountFromSearchParams(sp, wheelDemoActive) ?? WHEEL_DEMO_MENU_COUNT;
+    if (wheelSlicesForSpin.length < demoMenuN) return;
+
+    wheelDemoAutoRanRef.current = true;
+    const winN = getWheelDemoWinCountFromSearchParams(sp, wheelDemoActive);
+    const selected = pickWheelDemoWinners(winN);
+    const sessionId = `wheel_demo_local_${Date.now()}`;
+    const startedAt = Date.now();
+    const boot = bootstrapOverlaySpinPlayback(
+      selected,
+      wheelSlicesForSpin,
+      startedAt,
+      sessionId,
+      usedWheelSliceIdsRef.current
+    );
+    setPendingLanding({ ...boot.pendingLanding, persist: false });
+    setDemoSpin(boot.demoSpin);
+    setBroadcastStickySigs(selected);
+    setShowResultPanel(true);
+    setOverlayHoldResults(false);
+    dispatch({ type: "START_SPIN" });
+  }, [
+    wheelDemoAutoSpin,
+    wheelDemoActive,
+    sp,
+    state,
+    machine.phase,
+    demoSpin,
+    pendingLanding,
+    wheelSlicesForSpin,
+  ]);
 
   useEffect(() => {
     if (machine.phase !== "SPINNING") return;
@@ -1507,8 +1616,21 @@ export default function SigSalesOverlayPage() {
     }
   }, [machine.phase, machine.sessionId, machine.selectedSigs]);
 
+  const mainClassName = wheelDemoActive
+    ? "relative min-h-[100dvh] max-h-[100dvh] overflow-hidden bg-neutral-950 px-3 py-3 text-white sm:px-5 sm:py-4"
+    : "relative max-h-[100dvh] min-h-0 overflow-hidden bg-transparent px-3 py-3 text-white sm:px-5 sm:py-4";
+
+  if (!clientBoot.ready) {
+    return <OverlayHydrationShell />;
+  }
+
   return (
-    <main className="relative max-h-[100dvh] min-h-0 overflow-hidden bg-transparent px-3 py-3 text-white sm:px-5 sm:py-4">
+    <main className={mainClassName} suppressHydrationWarning>
+      {wheelDemoActive && !state ? (
+        <p className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center text-sm text-neutral-300">
+          휠 데모 불러오는 중…
+        </p>
+      ) : null}
       <div className="mx-auto max-w-[1280px] space-y-4">
         <section className="relative flex w-full flex-col items-center gap-4 bg-transparent p-0">
           <div
@@ -1550,14 +1672,15 @@ export default function SigSalesOverlayPage() {
                   Boolean(demoSpin) ||
                   hasServerSpinToPlay
                 }
-                resultId={wheelSpinning ? wheelAnimationResultId : null}
-                startedAt={wheelAnimationStartedAt || demoSpin?.startedAt || 0}
+                resultId={wheelKeepsSpinBinding ? wheelAnimationResultId : null}
+                targetSliceIndex={wheelKeepsSpinBinding ? wheelTargetSliceIndex : null}
+                startedAt={demoSpin?.startedAt || wheelAnimationStartedAt || 0}
                 scalePct={wheelScalePct}
                 volume={0.7}
                 muted={false}
                 onTransitionEnd={() => {
                   if (wheelPhaseSyncRef.current !== "spinning") return;
-                  const transitionKey = `${machine.startedAt}:${wheelResultSliceId || "none"}:${useSequentialWheel ? sequentialRoundIndex : 0}`;
+                  const transitionKey = `${demoSpin?.startedAt || machine.startedAt}:${wheelResultSliceId || "none"}:${useSequentialWheel ? sequentialRoundIndex : 0}`;
                   if (transitionHandledKeyRef.current === transitionKey) return;
                   transitionHandledKeyRef.current = transitionKey;
                   dispatch({ type: "SETTLING" });
@@ -1632,15 +1755,12 @@ export default function SigSalesOverlayPage() {
                       const nextRound = roundNow + 1;
                       /** 착지 직후 index+1 하면 휠·카드가 다음 회차 시그로 바뀜(1회차에 2회차 당첨 노출) → 다음 스핀 직전에만 올림 */
                       window.setTimeout(() => {
-                        sequentialRoundIndexRef.current = nextRound;
-                        setSequentialRoundIndex(nextRound);
-                        setDemoSpin({
-                          startedAt: resolveOverlayWheelStartedAt(
-                            machine.startedAt,
-                            machine.sessionId
-                          ),
-                          resultId: null,
-                        });
+                      sequentialRoundIndexRef.current = nextRound;
+                      setSequentialRoundIndex(nextRound);
+                      setDemoSpin({
+                        startedAt: Date.now(),
+                        resultId: null,
+                      });
                         dispatch({ type: "RESET" });
                         dispatch({ type: "START_SPIN" });
                       }, sequentialNextSpinMs);

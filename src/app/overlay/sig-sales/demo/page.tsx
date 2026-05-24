@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
+import { getWheelDemoOverlayPath } from "@/lib/sig-wheel-demo-pool";
 
-/** 예전 데모 경로 — 통합 오버레이로 연결 */
+/** `/overlay/sig-sales/demo` → 경량 휠 데모 페이지 */
 export default function SigSalesWheelDemoPage() {
-  redirect("/overlay/sig-sales");
+  redirect(getWheelDemoOverlayPath());
 }

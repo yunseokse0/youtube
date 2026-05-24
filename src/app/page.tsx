@@ -17,9 +17,9 @@ export default async function Home() {
     /^192\.168\.\d{1,3}\.\d{1,3}$/.test(host) ||
     /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) ||
     host.endsWith(".local");
-  /** 로컬·LAN에서는 바로 시그 판매 오버레이로 연결(회전은 서버 스핀 또는 관리자에서 시작) */
+  /** 로컬·LAN: 휠 데모 20칸·5당첨·한방 자동 스핀으로 바로 점검 */
   if (isLocal || isLanDev) {
-    redirect("/overlay/sig-sales");
+    redirect("/overlay/sig-sales?u=finalent&wheelDemo=1&menuCount=20&wheelDemoWins=5&wheelDemoAuto=1");
   }
   if (userCookie) redirect("/admin");
 

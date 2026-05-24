@@ -7,6 +7,13 @@ import type { AppState } from "@/lib/state";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 import { getEffectiveRemainingTime } from "@/lib/timer-utils";
+import {
+  mealTimerShellClass,
+  mealTimerShellStyle,
+  mealTimerTextClass,
+  resolveMealGaugeEffects,
+  resolveMealTimerTheme,
+} from "@/lib/meal-gauge-effects";
 
 function outlineStyle(): React.CSSProperties {
   return { textShadow: "0 1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 -1px 0 #000, 0 0 8px rgba(0,0,0,.55)" };
@@ -26,6 +33,13 @@ function segmentBarStyle(seg: { memberId: string; color: string }): React.CSSPro
   if (seg.memberId === "__teamB") return { backgroundColor: seg.color };
   return { backgroundColor: seg.color };
 }
+
+type FloatingScoreBurst = {
+  id: number;
+  value: string;
+  color: string;
+  x: number;
+};
 
 export default function MealMatchOverlayPage() {
   const sp = useSearchParams();
@@ -55,7 +69,10 @@ export default function MealMatchOverlayPage() {
   const demoMode = (sp.get("demoMode") || "member").toLowerCase();
   const { state, ready } = useOverlayRemoteState(userId);
   const [overtakeText, setOvertakeText] = useState<string | null>(null);
+  const [floatingScores, setFloatingScores] = useState<FloatingScoreBurst[]>([]);
   const lastLeaderRef = useRef<string>("");
+  const lastScoresRef = useRef<Record<string, number>>({});
+  const floatingScoreIdRef = useRef(0);
   const [, setTimerTick] = useState(0);
 
   const timerState = state?.generalTimer || null;
@@ -70,7 +87,16 @@ export default function MealMatchOverlayPage() {
   const timerText = `${String(Math.floor(Math.max(0, remaining) / 60)).padStart(2, "0")}:${String(Math.max(0, remaining) % 60).padStart(2, "0")}`;
   const showMealMatchTimer = state?.matchTimerEnabled?.general !== false;
   const timerSize = Math.max(16, Math.min(120, state?.mealBattle?.timerSize || 36));
-  const timerLowTime = remaining < 10 && remaining > 0 && !paused;
+  const gaugeFx = useMemo(
+    () => resolveMealGaugeEffects(state?.mealBattle?.gaugeEffects, sp),
+    [state?.mealBattle?.gaugeEffects, sp]
+  );
+  const timerTheme = useMemo(
+    () => resolveMealTimerTheme(state?.mealBattle?.timerTheme, sp),
+    [state?.mealBattle?.timerTheme, sp]
+  );
+  const timerLowTime =
+    gaugeFx.timerTension && remaining < 10 && remaining > 0 && !paused;
 
   const defaultGoal = Math.max(1, state?.mealBattle?.totalGoal || 100);
   const participants = useMemo(() => {
@@ -163,6 +189,20 @@ export default function MealMatchOverlayPage() {
     }
     return Math.min(100, (totalScore / totalGoalsSum) * 100);
   }, [fillGaugeMode, soloMealParticipant, totalScore, totalGoalsSum, defaultGoal]);
+
+  const remainingSeconds = shouldRenderMealMatchTimer ? Math.max(0, remaining) : null;
+  const isCritical =
+    gaugeFx.critical &&
+    ((fillGaugeMode && fillPercent >= 90) ||
+      (remainingSeconds !== null && remainingSeconds <= 10 && remainingSeconds > 0 && !paused));
+
+  const gaugeShadow = isCritical
+    ? "0 0 35px 10px rgba(239, 68, 68, 0.55)"
+    : "0 10px 15px -3px rgb(0 0 0 / 0.25)";
+
+  const criticalFillBackground = isCritical
+    ? `linear-gradient(90deg, ${gaugeFillColor}, #f87171, ${gaugeFillColor})`
+    : gaugeFillColor;
   const scoreTextColor = mb?.scoreTextColor || "#ffffff";
   const nameTagBg = "rgba(255, 255, 255, 0.82)";
   const nameTagTextColor = "#ec4899";
@@ -304,15 +344,52 @@ export default function MealMatchOverlayPage() {
     fillGaugeMode && teamBattleEnabled && hasTeamRoster && totalScore > 0 && !operatingExcludedSoloUi;
 
   useEffect(() => {
-    if (!ready || !leaderKey) return;
+    if (!ready || !leaderKey || !gaugeFx.rankUp) return;
     const prev = lastLeaderRef.current;
     if (prev && prev !== leaderKey) {
       setOvertakeText("RANK UP!");
-      const t = window.setTimeout(() => setOvertakeText(null), 1400);
+      const t = window.setTimeout(() => setOvertakeText(null), 1800);
       return () => window.clearTimeout(t);
     }
     lastLeaderRef.current = leaderKey;
-  }, [leaderKey, ready]);
+  }, [leaderKey, ready, gaugeFx.rankUp]);
+
+  useEffect(() => {
+    if (!ready) return;
+    const currentScores: Record<string, number> = {};
+    for (const p of participants) {
+      currentScores[p.memberId] = p.score;
+    }
+    const prev = lastScoresRef.current;
+    const hasPrev = Object.keys(prev).length > 0;
+
+    if (hasPrev && gaugeFx.floatingScore) {
+      for (const p of participants) {
+        const oldScore = prev[p.memberId] ?? 0;
+        const newScore = p.score;
+        if (newScore <= oldScore) continue;
+        const diff = newScore - oldScore;
+        const seg = segments.find((s) => s.memberId === p.memberId);
+        const x = fillGaugeMode
+          ? Math.random() * 60 + 20
+          : seg?.center ?? 50;
+        const floatId = ++floatingScoreIdRef.current;
+        setFloatingScores((burst) => [
+          ...burst,
+          {
+            id: floatId,
+            value: `+${Math.round(diff)}`,
+            color: p.color || "#fff",
+            x,
+          },
+        ]);
+        window.setTimeout(() => {
+          setFloatingScores((burst) => burst.filter((f) => f.id !== floatId));
+        }, 1300);
+      }
+    }
+    lastScoresRef.current = currentScores;
+  }, [participants, segments, fillGaugeMode, ready, gaugeFx.floatingScore]);
 
   return (
     <main className="min-h-screen w-full bg-transparent text-white p-5">
@@ -322,25 +399,53 @@ export default function MealMatchOverlayPage() {
             {overlayTitle}
           </div>
           {demoEnabled && (
-            <div className="mx-auto mt-2 inline-flex rounded-full border border-pink-200/80 bg-pink-300/35 px-3 py-1 text-xs font-bold text-pink-100">
-              DEMO · {demoMode === "team" ? "팀 모드" : demoMode === "individual" ? "개인(단일게이지) 모드" : "개인 분할 모드"}
+            <div className="mx-auto mt-2 flex flex-col items-center gap-1">
+              <div className="inline-flex rounded-full border border-pink-200/80 bg-pink-300/35 px-3 py-1 text-xs font-bold text-pink-100">
+                DEMO · {demoMode === "team" ? "팀 모드" : demoMode === "individual" ? "개인(단일게이지) 모드" : "개인 분할 모드"}
+              </div>
+              {sp.get("fx") || sp.get("gaugeFx") || sp.get("timerTheme") ? (
+                <div className="text-[10px] font-medium text-pink-200/90">
+                  {sp.get("fx") || sp.get("gaugeFx") ? (
+                    <>
+                      fx:{" "}
+                      {[
+                        gaugeFx.critical && "critical",
+                        gaugeFx.floatingScore && "floating",
+                        gaugeFx.rankUp && "rank",
+                        gaugeFx.timerTension && "timer",
+                      ]
+                        .filter(Boolean)
+                        .join(", ") || "none"}
+                    </>
+                  ) : null}
+                  {sp.get("timerTheme") ? (
+                    <span>{sp.get("fx") || sp.get("gaugeFx") ? " · " : ""}timerTheme: {timerTheme}</span>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           )}
           {shouldRenderMealMatchTimer ? (
-            <div
-              className={`mx-auto mt-2 inline-flex min-w-[5.5ch] items-center justify-center rounded-full border border-white/20 bg-white/40 px-5 py-2 backdrop-blur-md ${
-                paused ? "animate-pulse opacity-90" : ""
-              }`}
-              style={{ borderColor: "rgba(251, 207, 232, 0.55)", background: "rgba(251, 207, 232, 0.35)" }}
-            >
-              <span
-                className={`font-extrabold tabular-nums pastel-text-outline ${
-                  paused ? "text-pastel-orange" : timerLowTime ? "text-pastel-alert animate-pastel-timer-low" : "text-pastel-ink"
-                }`}
+            <div className={mealTimerShellClass(timerTheme, paused)} style={mealTimerShellStyle(timerTheme)}>
+              <motion.span
+                className={mealTimerTextClass(timerTheme, paused, timerLowTime)}
                 style={{ fontSize: `${timerSize}px`, lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}
+                animate={{
+                  scale:
+                    gaugeFx.timerTension && !paused && remaining > 0 && remaining <= 5
+                      ? [1, 1.14, 1]
+                      : 1,
+                }}
+                transition={{
+                  scale: {
+                    duration: 0.5,
+                    repeat: gaugeFx.timerTension && !paused && remaining > 0 && remaining <= 5 ? Infinity : 0,
+                    ease: "easeInOut",
+                  },
+                }}
               >
                 {timerText}
-              </span>
+              </motion.span>
             </div>
           ) : null}
         </div>
@@ -356,11 +461,26 @@ export default function MealMatchOverlayPage() {
               </div>
             ) : null}
             <div className={`absolute left-0 right-0 ${missionBubble ? "top-14" : "top-2"}`}>
-              <div
-                className={`relative h-14 rounded-full overflow-hidden ${showGaugeTrackBorder ? "border" : ""}`}
+              <motion.div
+                className={`relative h-14 rounded-full overflow-hidden shadow-xl ${showGaugeTrackBorder ? "border" : ""}`}
                 style={{
                   backgroundColor: gaugeTrackBg,
+                  boxShadow: gaugeShadow,
                   ...(showGaugeTrackBorder ? { borderColor: gaugeTrackBorderColor } : {}),
+                }}
+                animate={{
+                  scale: isCritical ? [1, 1.04, 1] : 1,
+                  boxShadow: isCritical
+                    ? [
+                        "0 0 30px 12px rgba(248, 113, 113, 0.65)",
+                        "0 0 40px 14px rgba(248, 113, 113, 0.85)",
+                        "0 0 30px 12px rgba(248, 113, 113, 0.65)",
+                      ]
+                    : gaugeShadow,
+                }}
+                transition={{
+                  scale: { duration: 0.7, repeat: isCritical ? Infinity : 0, repeatType: "reverse" },
+                  boxShadow: { duration: 1.1, repeat: isCritical ? Infinity : 0 },
                 }}
               >
                 {fillGaugeMode ? (
@@ -372,7 +492,7 @@ export default function MealMatchOverlayPage() {
                       transition={{ type: "spring", stiffness: 115, damping: 22 }}
                     >
                       {showTeamStripeInFill ? (
-                        <div className="flex h-full w-full">
+                        <div className="relative flex h-full w-full overflow-hidden">
                           <div
                             className="h-full shrink-0"
                             style={{
@@ -390,20 +510,45 @@ export default function MealMatchOverlayPage() {
                           {unassignedScore > 0 ? (
                             <div
                               className="h-full min-w-0 flex-1"
+                              style={{ backgroundColor: "rgba(0,0,0,0.35)" }}
+                            />
+                          ) : null}
+                          {isCritical ? (
+                            <motion.div
+                              className="pointer-events-none absolute inset-0"
                               style={{
-                                backgroundColor: "rgba(0,0,0,0.35)",
+                                background:
+                                  "repeating-linear-gradient(90deg, transparent, transparent 40%, rgba(255,255,255,0.22) 40%, rgba(255,255,255,0.22) 60%)",
+                                backgroundSize: "80px 100%",
                               }}
+                              animate={{ backgroundPositionX: ["0px", "80px"] }}
+                              transition={{ duration: 1.8, repeat: Infinity, ease: "linear" }}
+                              aria-hidden
                             />
                           ) : null}
                         </div>
                       ) : (
-                        <div className="relative h-full w-full overflow-hidden">
-                          <div
-                            className="h-full w-full"
-                            style={{ backgroundColor: gaugeFillColor }}
-                          />
-                          <div className="pointer-events-none absolute left-0 right-0 top-0 h-[20%] bg-white/20" />
-                        </div>
+                        <motion.div
+                          className="relative h-full w-full overflow-hidden"
+                          style={{
+                            background: criticalFillBackground,
+                            backgroundSize: isCritical ? "200% 100%" : undefined,
+                          }}
+                          animate={
+                            isCritical
+                              ? { backgroundPosition: ["0% 50%", "200% 50%"] }
+                              : { backgroundPosition: "0% 50%" }
+                          }
+                          transition={{
+                            backgroundPosition: {
+                              duration: 2.5,
+                              repeat: isCritical ? Infinity : 0,
+                              ease: "linear",
+                            },
+                          }}
+                        >
+                          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/25 to-transparent" />
+                        </motion.div>
                       )}
                     </motion.div>
                     <div
@@ -428,17 +573,80 @@ export default function MealMatchOverlayPage() {
                         className="relative h-full"
                       >
                         <motion.div
-                          className="h-full"
-                          animate={{ width: `${Math.max(0, Math.min(100, (seg as any).fillPercent ?? seg.percent))}%` }}
+                          className="h-full overflow-hidden"
+                          animate={{ width: `${Math.max(0, Math.min(100, (seg as { fillPercent?: number }).fillPercent ?? seg.percent))}%` }}
                           transition={{ type: "spring", stiffness: 120, damping: 20 }}
                           style={segmentBarStyle(seg)}
-                        />
+                        >
+                          {isCritical ? (
+                            <motion.div
+                              className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/20 to-transparent"
+                              animate={{ opacity: [0.35, 0.65, 0.35] }}
+                              transition={{ duration: 0.9, repeat: Infinity }}
+                              aria-hidden
+                            />
+                          ) : null}
+                        </motion.div>
                       </motion.div>
                     ))}
-                    <div className="pointer-events-none absolute left-0 right-0 top-0 h-[20%] bg-white/20" />
+                    <div className="pointer-events-none absolute left-0 right-0 top-0 z-[1] h-[20%] bg-white/20" />
                   </motion.div>
                 )}
-              </div>
+
+                {isCritical ? (
+                  <motion.div
+                    className="pointer-events-none absolute inset-0 z-[3] bg-gradient-to-r from-transparent via-white/35 to-transparent"
+                    animate={{ x: ["-120%", "220%"] }}
+                    transition={{ duration: 1.6, repeat: Infinity, ease: "linear" }}
+                    aria-hidden
+                  />
+                ) : null}
+
+                <div className="pointer-events-none absolute inset-0 z-[4] overflow-hidden">
+                  {floatingScores.map((item) => (
+                    <motion.div
+                      key={item.id}
+                      className="absolute -translate-x-1/2 text-2xl font-black tabular-nums drop-shadow-lg sm:text-3xl"
+                      style={{
+                        left: `${item.x}%`,
+                        top: "32%",
+                        color: item.color,
+                        ...outlineStyle(),
+                      }}
+                      initial={{ opacity: 0, y: 0, scale: 0.6 }}
+                      animate={{
+                        opacity: [0, 1, 1, 0],
+                        y: -80,
+                        scale: [0.6, 1.12, 1],
+                      }}
+                      transition={{ duration: 1.3, ease: "easeOut" }}
+                    >
+                      {item.value}
+                    </motion.div>
+                  ))}
+                </div>
+              </motion.div>
+
+              <AnimatePresence>
+                {overtakeText ? (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.3, y: 20 }}
+                    animate={{
+                      opacity: [0, 1, 1, 0],
+                      scale: [0.3, 1.25, 1.08, 1],
+                      y: [20, -15, -25, -18],
+                    }}
+                    exit={{ opacity: 0, scale: 1.05, y: -28 }}
+                    transition={{ duration: 1.8, ease: "easeOut" }}
+                    className="pastel-text-outline pointer-events-none absolute -top-7 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 text-3xl font-black tracking-widest text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.9)] sm:text-4xl"
+                    style={outlineStyle()}
+                  >
+                    <span className="text-yellow-300">👑</span>
+                    {overtakeText}
+                    <span className="text-yellow-300">👑</span>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
             </div>
 
             {!fillGaugeMode
@@ -476,20 +684,6 @@ export default function MealMatchOverlayPage() {
           </div>
         </div>
 
-        <AnimatePresence>
-          {overtakeText ? (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 1.1, y: -12 }}
-              transition={{ duration: 0.35 }}
-              className="pastel-text-outline mt-6 text-center text-6xl font-black text-pastel-yellow"
-              style={outlineStyle()}
-            >
-              {overtakeText}
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
       </div>
     </main>
   );

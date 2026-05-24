@@ -55,6 +55,17 @@ body {
   background: transparent !important;
 }
 
+/* 회전판 라벨: stroke·pill 배경이 흰 원처럼 보이는 것 방지 */
+[data-wheel-slot-label] span {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  -webkit-text-stroke: 0 !important;
+  paint-order: normal !important;
+}
+
 /* 오버레이 세로/모바일 모드: 기본 폰트 확대 */
 .overlay-vertical {
   font-size: 20px;

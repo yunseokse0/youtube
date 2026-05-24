@@ -16,6 +16,9 @@ import {
   calculateSpinFinalAngle,
   canonicalSigIdFromWheelSliceId,
   formatWheelSegmentLabel,
+  wheelSliceLabelRadiusPx,
+  wheelSliceLabelRotateDeg,
+  wheelSliceLabelMaxWidthPx,
   sanitizeWheelDisplayName,
   findSliceIndexForResult,
   pickDistinctSigsByIdAndName,
@@ -24,14 +27,32 @@ import {
   rememberUsedWheelSliceId,
   resolveSigSalesMenuCount,
   dedupeSigQueueByIdAndName,
+  evaluateWheelRenderSyncMetrics,
   resolveSpinQueueForSession,
   resolveWheelSlicesForSpinVisual,
   bindWheelAnimationToRoundWinner,
+  buildWheelRoundAlignmentReport,
+  findSliceIndexAtPointerRotation,
+  resolveWheelSliceIdAtPointer,
+  wheelRotationNormForSliceCenter,
+  wheelRotationNormForSliceIndex,
+  wheelRotationNormForTargetSlice,
+  wheelAngleUnderPointer,
+  wheelSliceCenterDeg,
+  wheelSliceIndexDelta,
+  wheelRotationCorrectionDeg,
+  wheelNormalizeDegDelta,
+  wheelConicGradientFromDeg,
+  buildWheelConicGradientCss,
+  wheelDiscRimTwelveOClockClientPoint,
+  measureWheelRotationDesync,
+  snapWheelRotateToTargetSlice,
   resolveWheelSpinTarget,
   wheelDuplicatePickForWinner,
   sigEligibleForSessionSpinPool,
   sigMatchesMemberFilter,
   wheelSliceMatchesServerWinner,
+  wheelSliceIdsReferToSameSlot,
 } from "./sig-roulette";
 
 function item(id: string, price = 0): SigItem {
@@ -57,6 +78,24 @@ describe("pickDistinctSigsByIdAndName", () => {
     const picked = pickDistinctSigsByIdAndName(pool, 3);
     expect(picked).toHaveLength(2);
     expect(new Set(picked.map((x) => x.name))).toEqual(new Set(["마티니", "우치다"]));
+  });
+});
+
+describe("wheelSliceLabel layout", () => {
+  it("20칸 라벨 반경은 허브와 림 사이", () => {
+    const r = wheelSliceLabelRadiusPx(127, 20, 24);
+    expect(r).toBeGreaterThan(36);
+    expect(r).toBeLessThan(115);
+  });
+
+  it("12시 칸은 방사형 회전 -90°", () => {
+    expect(wheelSliceLabelRotateDeg(9)).toBe(-81);
+  });
+
+  it("칸이 많을수록 호 길이 제한이 짧다", () => {
+    const w20 = wheelSliceLabelMaxWidthPx(20, 90);
+    const w8 = wheelSliceLabelMaxWidthPx(8, 90);
+    expect(w20).toBeLessThan(w8);
   });
 });
 
@@ -118,10 +157,8 @@ describe("wheel animation id per round (regression)", () => {
       ).toBe(canonicalSigIdFromWheelSliceId(winner.id));
       rememberUsedWheelSliceId(used, target.sliceId);
       const idx = findSliceIndexForResult(target.items, animId!);
-      const seg = 360 / target.items.length;
-      const norm = ((360 - (idx * seg + seg / 2)) % 360 + 360) % 360;
       const angle = calculateSpinFinalAngle(target.items, animId, target.items.length, 0, 1);
-      expect(((angle % 360) + 360) % 360).toBeCloseTo(norm, 8);
+      expect(findSliceIndexAtPointerRotation(angle, target.items.length)).toBe(idx);
     }
   });
 });
@@ -282,22 +319,218 @@ describe("bindWheelAnimationToRoundWinner", () => {
     expect(wheelSliceMatchesServerWinner(r1.animationResultId, queue[0]!)).toBe(false);
   });
 
-  it("이번 회차 당첨 시그에 맞춰 animationResultId가 착지한다", () => {
-    const slices = buildWheelMenuSlices(
-      ["a", "b", "c", "d", "e"].map((id) => item(id)),
-      5
-    );
-    const winner = item("z_round");
-    winner.name = "이번당첨";
+  it("2회차 bind는 1회차와 다른 animationResultId(다른 당첨)", () => {
+    const pool = ["a", "b", "c", "d", "e", "f"].map((id) => item(id));
+    const menu = buildWheelMenuSlices(pool, 8);
+    const q = [item("sig_r0"), item("sig_r1")];
+    q[0]!.name = "1회차";
+    q[1]!.name = "2회차";
+    const r0 = bindWheelAnimationToRoundWinner({
+      wheelSlices: menu,
+      roundWinner: q[0]!,
+      roundIndex: 0,
+    });
+    const used = new Set<string>();
+    rememberUsedWheelSliceId(used, r0.sliceId);
+    const r1 = bindWheelAnimationToRoundWinner({
+      wheelSlices: menu,
+      roundWinner: q[1]!,
+      roundIndex: 1,
+      usedSliceIds: used,
+      priorWinners: [q[0]!],
+    });
+    expect(wheelSliceMatchesServerWinner(r0.animationResultId, q[0]!)).toBe(true);
+    expect(wheelSliceMatchesServerWinner(r1.animationResultId, q[1]!)).toBe(true);
+    expect(wheelSliceMatchesServerWinner(r1.animationResultId, q[0]!)).toBe(false);
+  });
+});
+
+describe("buildWheelRoundAlignmentReport", () => {
+  it("목표 칸과 착지가 같으면 ok", () => {
+    const menu = buildWheelMenuSlices(["a", "b", "c", "d", "e"].map((id) => item(id)), 5);
+    const winner = menu[2]!;
     const bound = bindWheelAnimationToRoundWinner({
-      wheelSlices: slices,
+      wheelSlices: menu,
       roundWinner: winner,
       roundIndex: 0,
     });
-    expect(bound.animationResultId).toBeTruthy();
-    expect(wheelSliceMatchesServerWinner(bound.animationResultId, winner)).toBe(true);
-    const idx = findSliceIndexForResult(bound.items, bound.animationResultId);
-    expect(bound.items[idx]?.name).toBe("이번당첨");
+    const angle = calculateSpinFinalAngle(
+      bound.items,
+      bound.sliceId,
+      bound.items.length,
+      0,
+      1
+    );
+    const targetIdx = findSliceIndexForResult(bound.items, bound.sliceId);
+    const report = buildWheelRoundAlignmentReport({
+      wheelItems: bound.items,
+      serverWinner: winner,
+      targetSliceId: bound.sliceId,
+      animationResultId: bound.animationResultId,
+      landedSliceId: bound.sliceId,
+      pointerRotationDeg: angle,
+      visualPointerIndex: targetIdx,
+    });
+    expect(report.ok).toBe(true);
+    expect(report.matchesWinner).toBe(true);
+    expect(report.landedIndex).toBe(report.targetIndex);
+  });
+
+  it("pointerRotationDeg 가 있으면 포인터 칸 기준으로 ok 판정", () => {
+    const menu = buildWheelMenuSlices(["a", "b", "c"].map((id) => item(id)), 3);
+    const winner = menu[1]!;
+    const bound = bindWheelAnimationToRoundWinner({
+      wheelSlices: menu,
+      roundWinner: winner,
+      roundIndex: 0,
+    });
+    const angle = calculateSpinFinalAngle(
+      bound.items,
+      bound.sliceId,
+      bound.items.length,
+      0,
+      1
+    );
+    const targetIdx = findSliceIndexForResult(bound.items, bound.sliceId);
+    const report = buildWheelRoundAlignmentReport({
+      wheelItems: bound.items,
+      serverWinner: winner,
+      targetSliceId: bound.sliceId,
+      animationResultId: bound.animationResultId,
+      landedSliceId: bound.sliceId,
+      pointerRotationDeg: angle,
+      visualPointerIndex: targetIdx,
+      roundIndex: 0,
+    });
+    expect(report.pointerIndex).toBe(report.targetIndex);
+    expect(report.pointerMatchesWinner).toBe(true);
+    expect(report.ok).toBe(true);
+  });
+
+  it("캐노니컬 id vs __wslot id 문자열이 달라도 같은 칸·육안이면 ok", () => {
+    const menu = buildWheelMenuSlices(["a", "b", "c"].map((id) => item(id)), 3);
+    const winner = menu[1]!;
+    const bound = bindWheelAnimationToRoundWinner({
+      wheelSlices: menu,
+      roundWinner: winner,
+      roundIndex: 0,
+    });
+    const targetIdx = findSliceIndexForResult(bound.items, bound.sliceId);
+    const angle = calculateSpinFinalAngle(
+      bound.items,
+      bound.sliceId,
+      bound.items.length,
+      0,
+      1
+    );
+    expect(wheelSliceIdsReferToSameSlot(bound.items, "b", bound.sliceId!)).toBe(true);
+    const report = buildWheelRoundAlignmentReport({
+      wheelItems: bound.items,
+      serverWinner: winner,
+      targetSliceId: bound.sliceId,
+      animationResultId: bound.animationResultId,
+      landedSliceId: "b",
+      pointerRotationDeg: angle,
+      visualPointerIndex: targetIdx,
+    });
+    expect(report.sliceIdAligned).toBe(true);
+    expect(report.ok).toBe(true);
+  });
+
+  it("수식·육안 칸이 모두 목표와 같으면 ok", () => {
+    const menu = buildWheelMenuSlices(["a", "b", "c"].map((id) => item(id)), 3);
+    const winner = menu[0]!;
+    const bound = bindWheelAnimationToRoundWinner({
+      wheelSlices: menu,
+      roundWinner: winner,
+      roundIndex: 0,
+    });
+    const angle = wheelRotationNormForSliceIndex(0, 3);
+    const report = buildWheelRoundAlignmentReport({
+      wheelItems: bound.items,
+      serverWinner: winner,
+      targetSliceId: bound.sliceId,
+      animationResultId: bound.animationResultId,
+      landedSliceId: bound.sliceId,
+      pointerRotationDeg: angle,
+      visualPointerIndex: 0,
+    });
+    expect(report.ok).toBe(true);
+    expect(report.formulaPointerIndex).toBe(0);
+  });
+
+  it("수식 역산은 맞고 육안(라벨) 칸만 다르면 fail (거짓 OK 방지)", () => {
+    const menu = buildWheelMenuSlices(["a", "b", "c", "d", "e"].map((id) => item(id)), 5);
+    const winner = menu[0]!;
+    const bound = bindWheelAnimationToRoundWinner({
+      wheelSlices: menu,
+      roundWinner: winner,
+      roundIndex: 0,
+    });
+    const angle = wheelRotationNormForSliceIndex(0, 5);
+    const report = buildWheelRoundAlignmentReport({
+      wheelItems: bound.items,
+      serverWinner: winner,
+      targetSliceId: bound.sliceId,
+      animationResultId: bound.animationResultId,
+      landedSliceId: bound.sliceId,
+      pointerRotationDeg: angle,
+      visualPointerIndex: 1,
+    });
+    expect(report.formulaPointerIndex).toBe(0);
+    expect(report.ok).toBe(false);
+    expect(report.failReason).toMatch(/라벨|불일치|목표/);
+  });
+
+  it("slice id만 맞고 육안 칸이 다르면 fail (거짓 OK 방지)", () => {
+    const menu = buildWheelMenuSlices(["a", "b", "c"].map((id) => item(id)), 3);
+    const winner = menu[1]!;
+    const bound = bindWheelAnimationToRoundWinner({
+      wheelSlices: menu,
+      roundWinner: winner,
+      roundIndex: 0,
+    });
+    const angle = calculateSpinFinalAngle(
+      bound.items,
+      bound.sliceId,
+      bound.items.length,
+      0,
+      1
+    );
+    const targetIdx = findSliceIndexForResult(bound.items, bound.sliceId);
+    const wrongVisual = targetIdx === 0 ? 2 : 0;
+    const report = buildWheelRoundAlignmentReport({
+      wheelItems: bound.items,
+      serverWinner: winner,
+      targetSliceId: bound.sliceId,
+      animationResultId: bound.animationResultId,
+      landedSliceId: bound.sliceId,
+      pointerRotationDeg: angle,
+      visualPointerIndex: wrongVisual,
+    });
+    expect(report.ok).toBe(false);
+    expect(report.pointerIndex).toBe(wrongVisual);
+    expect(report.targetIndex).toBe(targetIdx);
+  });
+
+  it("착지가 다른 칸이면 fail", () => {
+    const menu = buildWheelMenuSlices(["a", "b", "c"].map((id) => item(id)), 3);
+    const winner = menu[0]!;
+    const bound = bindWheelAnimationToRoundWinner({
+      wheelSlices: menu,
+      roundWinner: winner,
+      roundIndex: 0,
+    });
+    const wrong = menu[2]!.id;
+    const report = buildWheelRoundAlignmentReport({
+      wheelItems: bound.items,
+      serverWinner: winner,
+      targetSliceId: bound.sliceId,
+      animationResultId: bound.animationResultId,
+      landedSliceId: wrong,
+    });
+    expect(report.ok).toBe(false);
+    expect(report.matchesWinner).toBe(false);
   });
 });
 
@@ -321,6 +554,92 @@ describe("resolveWheelSpinTarget", () => {
   });
 });
 
+describe("snapWheelRotateToTargetSlice", () => {
+  it("mod 360 이 목표 칸 norm 과 같다", () => {
+    const n = 20;
+    for (const idx of [0, 3, 7, 17, 19]) {
+      const snapped = snapWheelRotateToTargetSlice(4820, idx, n);
+      expect(((snapped % 360) + 360) % 360).toBeCloseTo(wheelRotationNormForSliceIndex(idx, n), 8);
+      expect(findSliceIndexAtPointerRotation(snapped, n)).toBe(idx);
+    }
+  });
+});
+
+describe("wheelSliceIndexDelta", () => {
+  it("최단 칸 차이를 반환한다", () => {
+    expect(wheelSliceIndexDelta(1, 3, 20)).toBe(2);
+    expect(wheelSliceIndexDelta(18, 1, 20)).toBe(3);
+    expect(wheelSliceIndexDelta(3, 3, 20)).toBe(0);
+  });
+});
+
+describe("wheelDiscRimTwelveOClockClientPoint", () => {
+  it("null when no element", () => {
+    expect(wheelDiscRimTwelveOClockClientPoint(null)).toBeNull();
+  });
+});
+
+describe("buildWheelConicGradientCss", () => {
+  it("20칸 conic from 0deg — 라벨 칸 중심(9°·27°…)과 동일 phase", () => {
+    expect(wheelConicGradientFromDeg(20)).toBe(0);
+    expect(buildWheelConicGradientCss(["#f00", "#0f0"], 20)).toContain("from 0deg");
+  });
+});
+
+describe("wheelRotationCorrectionDeg", () => {
+  it("포인터 아래 칸이 한 칸 앞서 있으면 R을 증가시킨다", () => {
+    const n = 20;
+    const r1 = wheelRotationNormForSliceIndex(1, n);
+    const r0 = wheelRotationNormForSliceIndex(0, n);
+    expect(wheelRotationCorrectionDeg(1, 0, n)).toBeCloseTo(
+      wheelNormalizeDegDelta(r0 - r1),
+      6
+    );
+    expect(findSliceIndexAtPointerRotation(r1 + wheelRotationCorrectionDeg(1, 0, n), n)).toBe(
+      0
+    );
+  });
+
+  it("제로투(0)에서 APT(1)로 가려면 R을 감소시킨다", () => {
+    const n = 20;
+    expect(wheelRotationCorrectionDeg(0, 1, n)).toBeLessThan(0);
+    const r0 = wheelRotationNormForSliceIndex(0, n);
+    expect(findSliceIndexAtPointerRotation(r0 + wheelRotationCorrectionDeg(0, 1, n), n)).toBe(1);
+  });
+});
+
+describe("measureWheelRotationDesync", () => {
+  it("DOM 없으면 diff null", () => {
+    const r = measureWheelRotationDesync(null, 297);
+    expect(r.motionModDeg).toBeCloseTo(297, 6);
+    expect(r.diffDeg).toBeNull();
+  });
+});
+
+describe("wheelAngleFromCenterClockwise", () => {
+  it("칸 중심각·역산 인덱스가 일치한다", () => {
+    const n = 20;
+    const seg = 360 / n;
+    for (const idx of [0, 8, 16, 19]) {
+      const center = idx * seg + seg / 2;
+      const r = wheelRotationNormForSliceIndex(idx, n);
+      expect(wheelAngleUnderPointer(r, n)).toBeCloseTo(center, 6);
+      expect(findSliceIndexAtPointerRotation(r, n)).toBe(idx);
+    }
+  });
+});
+
+describe("findSliceIndexAtPointerRotation", () => {
+  it("calculateSpinFinalAngle 착지각과 역산 인덱스가 일치", () => {
+    const four: SigItem[] = ["q", "r", "s", "t"].map((id) => item(`${id}__wslot_0`));
+    const targetId = "r";
+    const finalAngle = calculateSpinFinalAngle(four, targetId, 4, 100, 1);
+    const idx = findSliceIndexForResult(four, targetId);
+    expect(findSliceIndexAtPointerRotation(finalAngle, 4)).toBe(idx);
+    expect(resolveWheelSliceIdAtPointer(four, finalAngle)).toBe(four[idx]?.id);
+  });
+});
+
 describe("calculateSpinFinalAngle", () => {
   const four: SigItem[] = ["q", "r", "s", "t"].map((id) => item(`${id}__wslot_0`));
 
@@ -331,18 +650,12 @@ describe("calculateSpinFinalAngle", () => {
     expect(b - a).toBe(360);
   });
 
-  it("착지 후 (최종각 % 360)이 당첨 슬라이스 중심과 정합한다", () => {
+  it("착지 후 포인터 역산 인덱스가 당첨 슬라이스와 같다", () => {
     const count = four.length;
-    const currentBase = 100;
     const targetId = "r";
     const idx = findSliceIndexForResult(four, targetId);
-    const seg = 360 / count;
-    const targetCenter = idx * seg + seg / 2;
-    const expectedPointerNorm = ((360 - targetCenter) % 360 + 360) % 360;
-
-    const finalAngle = calculateSpinFinalAngle(four, targetId, count, currentBase, 1);
-    const landedNorm = ((finalAngle % 360) + 360) % 360;
-    expect(landedNorm).toBeCloseTo(expectedPointerNorm, 10);
+    const finalAngle = calculateSpinFinalAngle(four, targetId, count, 100, 1);
+    expect(findSliceIndexAtPointerRotation(finalAngle, count)).toBe(idx);
   });
 
   it("targetId 없으면 빈 회전만(minTurns * 360) 더한다", () => {
@@ -563,13 +876,49 @@ describe("wheel spin queue aligns with result cards", () => {
     const winner = item("c");
     const target = resolveWheelSpinTarget(slices, winner, 0);
     const count = target.items.length;
-    const seg = 360 / count;
     const idx = findSliceIndexForResult(target.items, target.sliceId);
-    const targetCenter = idx * seg + seg / 2;
-    const expectedPointerNorm = ((360 - targetCenter) % 360 + 360) % 360;
     const finalAngle = calculateSpinFinalAngle(target.items, target.sliceId, count, 500, 2);
-    const landedNorm = ((finalAngle % 360) + 360) % 360;
-    expect(landedNorm).toBeCloseTo(expectedPointerNorm, 8);
+    expect(findSliceIndexAtPointerRotation(finalAngle, count)).toBe(idx);
+  });
+
+  it("20칸: 제로투(0)·고민중독(16) 착지 역산이 육안 포인터와 같다", () => {
+    const n = 20;
+    const items = Array.from({ length: n }, (_, i) => item(`s${i}__wslot_${i}`));
+    for (const idx of [0, 16]) {
+      const angle = calculateSpinFinalAngle(items, items[idx]!.id, n, 0, 1);
+      expect(findSliceIndexAtPointerRotation(angle, n)).toBe(idx);
+      expect(((angle % 360) + 360) % 360).toBeCloseTo(
+        wheelRotationNormForSliceIndex(idx, n),
+        8
+      );
+    }
+  });
+
+  it("20칸 제로투: R·역산 0번", () => {
+    const n = 20;
+    const seg = 360 / n;
+    const items = Array.from({ length: n }, (_, i) => item(`s${i}__wslot_${i}`));
+    const angle = calculateSpinFinalAngle(items, items[0]!.id, n, 0, 1);
+    const norm = ((angle % 360) + 360) % 360;
+    const expectedR = wheelRotationNormForSliceIndex(0, n);
+    expect(findSliceIndexAtPointerRotation(angle, n)).toBe(0);
+    expect(norm).toBeCloseTo(expectedR, 8);
+    expect(expectedR).toBeCloseTo(351, 8);
+    expect(wheelRotationNormForSliceCenter(seg / 2, n)).toBeCloseTo(expectedR, 8);
+  });
+
+  it("20칸 4번 칸(인덱스 3): R·역산 일치", () => {
+    const n = 20;
+    const seg = 360 / n;
+    const idx = 3;
+    const items = Array.from({ length: n }, (_, i) => item(`s${i}__wslot_${i}`));
+    const angle = calculateSpinFinalAngle(items, items[idx]!.id, n, 0, 1);
+    const norm = ((angle % 360) + 360) % 360;
+    const center = idx * seg + seg / 2;
+    const expectedR = wheelRotationNormForSliceCenter(center, n);
+    expect(findSliceIndexAtPointerRotation(angle, n)).toBe(idx);
+    expect(norm).toBeCloseTo(expectedR, 8);
+    expect(wheelRotationNormForSliceCenter(center, n)).toBeCloseTo(expectedR, 8);
   });
 });
 
@@ -609,6 +958,52 @@ describe("buildSessionSpinExclusion", () => {
     const names = pool.map((x) => x.name);
     expect(names.filter((n) => n === "사쿠란보")).toHaveLength(0);
     expect(names).toContain("우치다");
+  });
+});
+
+describe("evaluateWheelRenderSyncMetrics", () => {
+  it("motion·DOM·육안이 목표와 같으면 ok", () => {
+    const n = 20;
+    const idx = 8;
+    const expected = wheelRotationNormForSliceIndex(idx, n);
+    const m = evaluateWheelRenderSyncMetrics({
+      sliceIndex: idx,
+      sliceCount: n,
+      motionModDeg: expected,
+      domMatrixDeg: expected,
+      visualPointerIndex: idx,
+    });
+    expect(m.ok).toBe(true);
+    expect(m.renderSyncOk).toBe(true);
+    expect(m.visualAlignOk).toBe(true);
+  });
+
+  it("motion과 DOM이 어긋나면 renderSyncOk=false", () => {
+    const m = evaluateWheelRenderSyncMetrics({
+      sliceIndex: 1,
+      sliceCount: 20,
+      motionModDeg: 207,
+      domMatrixDeg: 333,
+      visualPointerIndex: 1,
+    });
+    expect(m.renderSyncOk).toBe(false);
+    expect(m.ok).toBe(false);
+    expect(m.failReason).toMatch(/desync/i);
+  });
+
+  it("육안 칸이 목표와 다르면 visualAlignOk=false", () => {
+    const n = 20;
+    const idx = 8;
+    const expected = wheelRotationNormForSliceIndex(idx, n);
+    const m = evaluateWheelRenderSyncMetrics({
+      sliceIndex: idx,
+      sliceCount: n,
+      motionModDeg: expected,
+      domMatrixDeg: expected,
+      visualPointerIndex: 1,
+    });
+    expect(m.visualAlignOk).toBe(false);
+    expect(m.ok).toBe(false);
   });
 });
 

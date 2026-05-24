@@ -67,6 +67,17 @@ import {
   terminateSharedSigOcrWorker,
 } from "@/lib/sig-image-ocr";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
+import {
+  WHEEL_DEMO_MENU_COUNT,
+  WHEEL_DEMO_WIN_COUNT,
+  getWheelDemoOverlayPath,
+  getWheelDemoPlaythroughAutoPath,
+  getWheelDemoPlaythroughPath,
+  getSigSalesWheelDemoOverlayPath,
+  isWheelDemoHostAllowed,
+  mergeWheelDemoSigInventory,
+  pickWheelDemoWinners,
+} from "@/lib/sig-wheel-demo-pool";
 
 const STEP_CONFIRM_PAUSE_MS = 3000;
 const MAX_SELECTED_SIGS = 20;
@@ -91,19 +102,6 @@ const buildOneShotFromSelected = (selected: SigItem[]) => {
   };
 };
 
-const PREVIEW_FILLER_POOL: SigItem[] = [
-  { id: "preview_1", name: "애교", price: 77000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "preview_2", name: "댄스", price: 100000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "preview_3", name: "식사권", price: 333000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "preview_4", name: "보이스", price: 50000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "preview_5", name: "노래", price: 120000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "preview_6", name: "토크", price: 55000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "preview_7", name: "하트", price: 30000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "preview_8", name: "게임", price: 88000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "preview_9", name: "보너스", price: 150000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-  { id: "preview_10", name: "특전", price: 220000, imageUrl: BUNDLED_SIG_PLACEHOLDER_URL, maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
-];
-
 export default function AdminSigSalesPage() {
   const router = useRouter();
   const [user, setUser] = useState<{ id: string; companyName: string; name?: string; remainingDays?: number | null; unlimited?: boolean } | null>(null);
@@ -121,6 +119,8 @@ export default function AdminSigSalesPage() {
   const [manualSoldSet, setManualSoldSet] = useState<Set<string>>(new Set());
   const [oneShotSold, setOneShotSold] = useState(false);
   const [demoSpin, setDemoSpin] = useState<{ startedAt: number; resultId: string | null } | null>(null);
+  /** 로컬·LAN 전용 휠 데모 20칸(서버 인벤토리·Redis에는 저장되지 않음) */
+  const [wheelDemoMode, setWheelDemoMode] = useState(false);
   const [pendingLanding, setPendingLanding] = useState<{ selected: SigItem[]; oneShot: { id: string; name: string; price: number } | null; resultId: string | null; persist: boolean } | null>(null);
   const [volume, setVolume] = useState(0.7);
   const [muted, setMuted] = useState(false);
@@ -317,18 +317,28 @@ export default function AdminSigSalesPage() {
     return () => window.clearTimeout(id);
   }, [lastConfirmedText]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setWheelDemoMode(isWheelDemoHostAllowed(window.location.hostname));
+  }, []);
+
+  const wheelInventory = useMemo(
+    () => mergeWheelDemoSigInventory(state?.sigInventory, wheelDemoMode),
+    [state?.sigInventory, wheelDemoMode]
+  );
+
   const activeNormalPool = useMemo(() => {
     if (!state) return [];
     const excluded = new Set((state.sigSalesExcludedIds || []).map((x) => String(x)));
-    return (state.sigInventory || []).filter(
+    return wheelInventory.filter(
       (x) =>
         x.isActive &&
         x.id !== ONE_SHOT_SIG_ID &&
         !excluded.has(x.id) &&
         x.soldCount < x.maxCount &&
-        sigMatchesMemberFilter(x, memberFilterId)
+        (wheelDemoMode || sigMatchesMemberFilter(x, memberFilterId))
     );
-  }, [state, memberFilterId]);
+  }, [state, memberFilterId, wheelInventory, wheelDemoMode]);
   const menuCountSetting = useMemo(
     () => clampSigSalesMenuCount(state?.rouletteState?.menuCount),
     [state?.rouletteState?.menuCount]
@@ -337,10 +347,10 @@ export default function AdminSigSalesPage() {
     () => minSigSalesMenuCountForActive(activeNormalPool.length),
     [activeNormalPool.length]
   );
-  const effectiveMenuCount = useMemo(
-    () => resolveSigSalesMenuCount(menuCountSetting, activeNormalPool.length),
-    [menuCountSetting, activeNormalPool.length]
-  );
+  const effectiveMenuCount = useMemo(() => {
+    const setting = wheelDemoMode ? WHEEL_DEMO_MENU_COUNT : menuCountSetting;
+    return resolveSigSalesMenuCount(setting, activeNormalPool.length);
+  }, [menuCountSetting, activeNormalPool.length, wheelDemoMode]);
   const sigResultScalePct = useMemo(() => {
     const n = Number(state?.rouletteState?.sigResultScalePct);
     if (Number.isFinite(n)) return Math.max(50, Math.min(100, Math.floor(n)));
@@ -350,7 +360,7 @@ export default function AdminSigSalesPage() {
   const wheelDisplayPool = useMemo(() => {
     if (!state) return [];
     return buildSigSalesWheelDisplayPool({
-      inventory: state.sigInventory || [],
+      inventory: wheelInventory,
       sigSalesExcludedIds: state.sigSalesExcludedIds,
       sessionExcludedSigIds: state.rouletteState?.sessionExcludedSigIds,
       memberFilterId,
@@ -360,6 +370,7 @@ export default function AdminSigSalesPage() {
     });
   }, [
     state,
+    wheelInventory,
     memberFilterId,
     effectiveMenuCount,
     menuFillFromAllActive,
@@ -450,6 +461,7 @@ export default function AdminSigSalesPage() {
   const wheelItemsWithResult = wheelRoundBinding.items;
   const wheelResultSliceId = wheelRoundBinding.sliceId;
   const wheelAnimationResultId = wheelRoundBinding.animationResultId;
+  const wheelTargetSliceIndex = wheelRoundBinding.targetSliceIndex;
   const displaySelectedSigs = useMemo(() => {
     const fromServer = (machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
     const fromStaged = stagedSelected.slice(0, MAX_SELECTED_SIGS);
@@ -680,7 +692,7 @@ export default function AdminSigSalesPage() {
   const onStartRoulette = useCallback(async () => {
     if (!authReady) return;
     if (loadingSpin) return;
-    if (!memberFilterId) {
+    if (!memberFilterId && !wheelDemoMode) {
       setToast("회전 전 멤버를 먼저 선택해주세요.");
       return;
     }
@@ -779,8 +791,9 @@ export default function AdminSigSalesPage() {
         );
         return;
       }
-      const shuffled = [...PREVIEW_FILLER_POOL].sort(() => Math.random() - 0.5);
-      const selected = shuffled.slice(0, Math.max(1, Math.min(MAX_SELECTED_SIGS, shuffled.length)));
+      const selected = pickWheelDemoWinners(
+        Math.max(2, Math.min(MAX_SELECTED_SIGS, WHEEL_DEMO_WIN_COUNT))
+      );
       const resultId = selected[selected.length - 1]?.id || null;
       setPendingLanding({
         selected,
@@ -815,6 +828,7 @@ export default function AdminSigSalesPage() {
     cancelConfirm,
     loadRemote,
     wheelMenuSlices,
+    wheelDemoMode,
   ]);
 
   useEffect(() => {
@@ -823,14 +837,44 @@ export default function AdminSigSalesPage() {
     q.set("u", userId);
     if (memberFilterId) q.set("memberId", memberFilterId);
     q.set("menuCount", String(effectiveMenuCount));
+    if (wheelDemoMode) {
+      q.set("wheelDemo", "1");
+      q.set("menuCount", String(WHEEL_DEMO_MENU_COUNT));
+      q.set("wheelDemoWins", String(WHEEL_DEMO_WIN_COUNT));
+      q.set("wheelDemoAuto", "1");
+    }
     const rs = Number(state?.rouletteState?.sigResultScalePct);
     if (Number.isFinite(rs)) q.set("sigResultScalePct", String(Math.floor(rs)));
     setOverlayObsUrl(`${window.location.origin}/overlay/sig-sales?${q.toString()}`);
-  }, [userId, memberFilterId, effectiveMenuCount, state?.rouletteState?.sigResultScalePct]);
+  }, [userId, memberFilterId, effectiveMenuCount, wheelDemoMode, state?.rouletteState?.sigResultScalePct]);
 
   const onConfirmSale = useCallback(async () => {
     if (!state || displaySelectedSigs.length === 0) return;
     setShowConfirmModal(false);
+    if (wheelDemoMode) {
+      setManualSoldSet(new Set(displaySelectedSigs.map((x) => x.id)));
+      setOneShotSold(Boolean(displayOneShot));
+      const finishedAt = Date.now();
+      setState((prev) =>
+        prev
+          ? {
+              ...prev,
+              rouletteState: {
+                ...prev.rouletteState,
+                phase: "CONFIRMED",
+                isRolling: false,
+                lastFinishedAt: finishedAt,
+                selectedSigs: displaySelectedSigs,
+                oneShotResult: displayOneShot ?? prev.rouletteState?.oneShotResult ?? null,
+              },
+              updatedAt: finishedAt,
+            }
+          : prev
+      );
+      setToast("데모 판매 확정 완료 (로컬 연출만·데모 시그 재고는 서버에 저장되지 않음)");
+      confetti({ particleCount: 110, spread: 80, origin: { y: 0.22 } });
+      return;
+    }
     markConfirmPending();
     try {
       const pr = await fetch(`/api/roulette/pending?user=${encodeURIComponent(userId)}`, {
@@ -920,6 +964,7 @@ export default function AdminSigSalesPage() {
     cancelConfirm,
     loadRemote,
     loadHistory,
+    wheelDemoMode,
   ]);
 
   const onCancelConfirmedSession = useCallback(async () => {
@@ -1074,9 +1119,15 @@ export default function AdminSigSalesPage() {
                 : ""}
               {menuFillFromAllActive ? " · 전체 활성으로 풀 보충" : ""}
             </p>
-            {authReady && !memberFilterId ? (
+            {authReady && !memberFilterId && !wheelDemoMode ? (
               <p className="mt-1 text-xs font-semibold text-amber-300">
                 「회전판 시작」 전 상단에서 멤버를 선택하세요. (미선택 시 버튼이 동작하지 않습니다)
+              </p>
+            ) : null}
+            {wheelDemoMode ? (
+              <p className="mt-1 text-xs text-emerald-200/90">
+                로컬 휠 데모: 멤버 없이 「회전판 시작」 가능 · 판매 확정은 서버 재고에 반영되지 않습니다. 연출 확인은
+                「연출+판매 데모」 또는 OBS URL을 사용하세요.
               </p>
             ) : null}
             {overlayObsUrl ? (
@@ -1084,6 +1135,11 @@ export default function AdminSigSalesPage() {
                 OBS 소스 URL (u={userId}
                 {memberFilterId ? ` · memberId=${memberFilterId}` : ""}):{" "}
                 <code className="break-all text-emerald-300/90">{overlayObsUrl}</code>
+                {wheelDemoMode ? (
+                  <span className="mt-1 block text-amber-200/90">
+                    로컬 휠 데모 · 회전판 {WHEEL_DEMO_MENU_COUNT}칸 · 당첨 {WHEEL_DEMO_WIN_COUNT}개 + 한방 시그(서버 미저장)
+                  </span>
+                ) : null}
               </p>
             ) : null}
           </div>
@@ -1167,6 +1223,49 @@ export default function AdminSigSalesPage() {
             >
               다시 돌리기
             </button>
+            {wheelDemoMode ? (
+              <>
+                <button
+                  type="button"
+                  className="rounded bg-emerald-700 px-3 py-2 text-xs font-bold hover:bg-emerald-600"
+                  onClick={() => {
+                    window.open(
+                      `${window.location.origin}${getWheelDemoPlaythroughAutoPath()}`,
+                      "_blank",
+                      "noopener,noreferrer"
+                    );
+                  }}
+                >
+                  연출+판매 데모
+                </button>
+                <button
+                  type="button"
+                  className="rounded border border-sky-500/50 bg-sky-950/40 px-3 py-2 text-xs font-bold text-sky-100 hover:bg-sky-900/50"
+                  onClick={() => {
+                    window.open(
+                      `${window.location.origin}${getSigSalesWheelDemoOverlayPath(userId)}`,
+                      "_blank",
+                      "noopener,noreferrer"
+                    );
+                  }}
+                >
+                  OBS 5회전 데모
+                </button>
+                <button
+                  type="button"
+                  className="rounded border border-white/20 px-3 py-2 text-xs hover:bg-white/10"
+                  onClick={() => {
+                    window.open(
+                      `${window.location.origin}${getWheelDemoOverlayPath(userId)}`,
+                      "_blank",
+                      "noopener,noreferrer"
+                    );
+                  }}
+                >
+                  착지 정합 점검
+                </button>
+              </>
+            ) : null}
             {overlayObsUrl ? (
               <button
                 type="button"
@@ -1182,16 +1281,16 @@ export default function AdminSigSalesPage() {
             <button
               type="button"
               onClick={() => {
-                if (!memberFilterId) {
+                if (!memberFilterId && !wheelDemoMode) {
                   setToast("회전 전 멤버를 먼저 선택해주세요.");
                   return;
                 }
                 void onStartRoulette();
               }}
               disabled={loadingSpin}
-              title={!memberFilterId ? "멤버 선택 후 시작" : undefined}
+              title={!memberFilterId && !wheelDemoMode ? "멤버 선택 후 시작" : undefined}
               className={`rounded px-4 py-2 text-sm font-bold disabled:opacity-50 ${
-                memberFilterId
+                memberFilterId || wheelDemoMode
                   ? "bg-fuchsia-700 hover:bg-fuchsia-600"
                   : "cursor-not-allowed bg-fuchsia-900/50 text-fuchsia-200/70"
               }`}
@@ -1249,6 +1348,7 @@ export default function AdminSigSalesPage() {
             items={wheelItemsWithResult}
             isRolling={wheelSpinning}
             resultId={wheelSpinning ? wheelAnimationResultId : null}
+            targetSliceIndex={wheelSpinning ? wheelTargetSliceIndex : null}
             startedAt={demoSpin?.startedAt || machine.startedAt}
             spinReplayNonce={spinStep}
             volume={volume}

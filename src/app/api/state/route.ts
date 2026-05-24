@@ -4,6 +4,7 @@ import type { RouletteState } from "@/types";
 import type { AppState } from "@/lib/state";
 import { normalizeOverlayPresetDonationGoals } from "@/lib/goal-preset-math";
 import { defaultState, mergeDonorsForMultiTabSave, normalizeRouletteState, normalizeSigRolling } from "@/lib/state";
+import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
 import { createModuleLogger } from "@/lib/logger";
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
@@ -210,8 +211,10 @@ export async function GET(req: Request) {
   } catch {
     pickMode = null;
   }
-  const bodyForPick = (state: AppState) =>
-    pickMode ? projectStateForGetPick(state, pickMode) : state;
+  const bodyForPick = (state: AppState) => {
+    const cleaned = sanitizeAppStateWheelDemo(state);
+    return pickMode ? projectStateForGetPick(cleaned, pickMode) : cleaned;
+  };
   const revisionAt = (state: AppState) =>
     pickMode ? revisionForStatePick(state, pickMode) : state.updatedAt || 0;
   const isNotModified = (state: AppState) => since > 0 && revisionAt(state) <= since;
@@ -346,11 +349,13 @@ export async function POST(req: Request) {
       body,
       donorsInPatch
     );
-    const next: AppState = applyDonationGoalPresetNormalization({
-      ...draft,
-      donorRankingsUpdatedAt,
-      updatedAt: Date.now(),
-    });
+    const next: AppState = sanitizeAppStateWheelDemo(
+      applyDonationGoalPresetNormalization({
+        ...draft,
+        donorRankingsUpdatedAt,
+        updatedAt: Date.now(),
+      })
+    );
 
     if (!base || !token) {
       setServerMemoryAppState(next);

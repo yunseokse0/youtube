@@ -1,3 +1,4 @@
+import { DEFAULT_MEAL_GAUGE_EFFECTS, normalizeMealGaugeEffects } from "@/lib/meal-gauge-effects";
 import type {
   AppState,
   Donor,
@@ -38,6 +39,7 @@ import {
   type StateApiPick,
 } from "@/lib/state-api-pick";
 import { slimSigInventoryForWire } from "@/lib/state-wire-slim";
+import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
 export type {
   AppState,
   ContributionLog,
@@ -647,6 +649,7 @@ export function defaultState(): AppState {
     teamBMemberIds: [],
     teamAColor: "#2563eb",
     teamBColor: "#dc2626",
+    gaugeEffects: { ...DEFAULT_MEAL_GAUGE_EFFECTS },
   };
   const defaultMealSettings: MealMatchSettings = {
     isActive: false,
@@ -786,6 +789,7 @@ function normalizeMealBattle(input: unknown): MealBattleState {
       : [],
     teamAColor: String((v as Record<string, unknown>).teamAColor || "#2563eb"),
     teamBColor: String((v as Record<string, unknown>).teamBColor || "#dc2626"),
+    gaugeEffects: normalizeMealGaugeEffects((v as Record<string, unknown>).gaugeEffects),
   };
 }
 
@@ -1244,15 +1248,16 @@ function appStatePayloadForApi(next: AppState): Partial<AppState> {
 }
 
 function normalizeStateForPersistence(state: AppState): AppState {
+  const stripped = sanitizeAppStateWheelDemo(state);
   return {
-    ...state,
-    donorsFormat: normalizeDonorsFormat(state.donorsFormat),
-    sigInventory: normalizeSigInventory(state.sigInventory),
-    sigRolling: normalizeSigRolling(state.sigRolling),
-    sigSoldOutStampUrl: normalizeSigImageUrlStored(state.sigSoldOutStampUrl),
-    donationListsOverlayConfig: normalizeDonationListsOverlayConfig(state.donationListsOverlayConfig),
-    donorRankingsOverlayConfig: normalizeDonorRankingsOverlayConfig(state.donorRankingsOverlayConfig),
-    overlayPresets: normalizeOverlayPresetsMedia(state.overlayPresets),
+    ...stripped,
+    donorsFormat: normalizeDonorsFormat(stripped.donorsFormat),
+    sigInventory: normalizeSigInventory(stripped.sigInventory),
+    sigRolling: normalizeSigRolling(stripped.sigRolling),
+    sigSoldOutStampUrl: normalizeSigImageUrlStored(stripped.sigSoldOutStampUrl),
+    donationListsOverlayConfig: normalizeDonationListsOverlayConfig(stripped.donationListsOverlayConfig),
+    donorRankingsOverlayConfig: normalizeDonorRankingsOverlayConfig(stripped.donorRankingsOverlayConfig),
+    overlayPresets: normalizeOverlayPresetsMedia(stripped.overlayPresets),
   };
 }
 

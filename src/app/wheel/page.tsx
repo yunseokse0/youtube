@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
+import { getWheelDemoOverlayPath } from "@/lib/sig-wheel-demo-pool";
 
-/** 짧은 주소: 회전판은 `/overlay/sig-sales` 사용 */
+/** 짧은 주소: 로컬 휠 데모 20칸 + 5당첨·한방 자동 스핀 */
 export default function WheelShortcutPage() {
-  redirect("/overlay/sig-sales");
+  redirect(getWheelDemoOverlayPath());
 }

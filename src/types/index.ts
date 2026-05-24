@@ -139,6 +139,18 @@ export type MealBattleParticipant = {
   donationLinkStartedAt?: number;
 };
 
+/** 식사 대전 게이지 오버레이 연출 on/off */
+export type MealGaugeEffects = {
+  /** 90% 채움·타이머 임박 시 펄스·글로우·줄무늬 */
+  critical: boolean;
+  /** 점수 증가 시 +N 플로팅 */
+  floatingScore: boolean;
+  /** 1위(팀) 변경 시 RANK UP */
+  rankUp: boolean;
+  /** 타이머 10초/5초 긴장 연출 */
+  timerTension: boolean;
+};
+
 export type MealBattleState = {
   participants: MealBattleParticipant[];
   /** 참가 체크 전에도 멤버별 게이지 색 지정(참가 시 participant.color로 사용) */
@@ -182,6 +194,8 @@ export type MealBattleState = {
   teamBMemberIds: string[];
   teamAColor: string;
   teamBColor: string;
+  /** 게이지 애니메이션 연출 (미설정 시 전부 켜짐) */
+  gaugeEffects?: MealGaugeEffects;
 };
 
 export type TimerState = {

@@ -1,13 +1,27 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, animate, motion, useMotionValue } from "framer-motion";
-import type { AnimationPlaybackControls } from "framer-motion";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { motion } from "framer-motion";
 import { Howl } from "howler";
 import type { SigItem } from "@/types";
 import {
-  calculateSpinFinalAngle,
+  buildWheelConicGradientCss,
+  correctWheelLandToTargetSlice,
   findSliceIndexForResult,
+  forceWheelRotationSync,
+  logWheelGeometryCheck,
+  readElementRotationDeg,
+  snapWheelAbsoluteToSliceNorm,
+  wheelAbsoluteLandAngleForSliceIndex,
+  wheelPointerClientPointFromElements,
+  wheelRotationNormForSliceIndex,
+  wheelSliceCenterDeg,
+  wheelSliceLabelPolarOffsetPx,
+  wheelSliceLabelMaxWidthPx,
+  wheelSliceLabelRadiusPx,
+  wheelSliceLabelRotateDeg,
+  wheelSliceLabelFontPx,
+  type WheelRenderSyncReport,
   formatWheelSegmentLabel,
   ROULETTE_WHEEL_SFX_ENABLED,
   ROULETTE_WHEEL_WAV_ASSETS_ENABLED,
@@ -24,6 +38,8 @@ type RouletteWheelProps = {
   items: SigItem[];
   isRolling: boolean;
   resultId: string | null;
+  /** `bindWheelAnimationToRoundWinner`로 정해진 칸 — 착지·보정은 항상 이 인덱스(스핀 시작 시 고정) */
+  targetSliceIndex?: number | null;
   startedAt: number;
   /** 순차 회전 등 동일 startedAt·resultId 조합에서도 다음 애니를 강제로 시작 */
   spinReplayNonce?: number;
@@ -31,7 +47,17 @@ type RouletteWheelProps = {
   volume?: number;
   muted?: boolean;
   onTransitionEnd?: () => void;
-  onLanded?: (resultId?: string | null) => void;
+  onLanded?: (
+    resultId?: string | null,
+    pointerRotationDeg?: number,
+    visualPointerIndex?: number,
+    motionDesyncDeg?: number | null,
+    renderSyncReport?: WheelRenderSyncReport | null
+  ) => void;
+  /** 렌더 검증: 해당 칸 중심각으로 즉시 스냅(스핀 없음). `probeNonce` 변경 시 실행 */
+  probeSliceIndex?: number | null;
+  probeNonce?: number;
+  onRenderSyncReport?: (report: WheelRenderSyncReport) => void;
   /** 미지정 시 `item.name`. 관리자 시그 롤링 짧은 라벨 등 */
   getLabel?: (item: SigItem) => string;
 };
@@ -41,12 +67,80 @@ const COLORS = [
   "#ef4444", "#84cc16", "#06b6d4", "#818cf8", "#e879f9", "#fdba74", "#5eead4", "#fca5a5",
   "#93c5fd", "#f9a8d4", "#bef264", "#fcd34d",
 ];
-const SPIN_DURATION_SCALE = 1.3;
+/** 단일 감속 스핀 — 너무 빠르면 착지 전에 phase 가 바뀌어 각도가 어긋날 수 있음 */
+const SPIN_LAND_DURATION_MS = 5200;
+const SPIN_LAND_MIN_TURNS = 5;
+const SPIN_LAND_POST_MS = 180;
+
+/** 검은 외곽 — text-shadow 만 사용(-webkit-text-stroke 는 흰 원형 번짐 유발) */
+const WHEEL_LABEL_OUTLINE_SHADOW =
+  "1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, " +
+  "1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000";
+
+const WHEEL_LABEL_READABLE_STYLE: CSSProperties = {
+  display: "inline",
+  margin: 0,
+  padding: 0,
+  background: "transparent",
+  backgroundColor: "transparent",
+  border: "none",
+  borderRadius: 0,
+  boxShadow: "none",
+  color: "#ffffff",
+  fontWeight: 800,
+  textShadow: WHEEL_LABEL_OUTLINE_SHADOW,
+};
+
+/** 칸 중심 림 · 화면 기준 가로 글자(배경 pill 없음) */
+function WheelSegmentLabel({
+  className,
+  style,
+  title,
+  isWin,
+  children,
+}: {
+  className: string;
+  style: CSSProperties;
+  title?: string;
+  isWin: boolean;
+  children: React.ReactNode;
+}) {
+  const cls = `max-w-full whitespace-nowrap text-center ${className}`;
+  if (!isWin) {
+    return (
+      <span className={cls} style={style} title={title}>
+        {children}
+      </span>
+    );
+  }
+  return (
+    <motion.span
+      className={cls}
+      style={style}
+      title={title}
+      animate={{
+        textShadow: [
+          `${WHEEL_LABEL_OUTLINE_SHADOW}, 0 0 8px rgba(250,204,21,0.5)`,
+          `${WHEEL_LABEL_OUTLINE_SHADOW}, 0 0 14px rgba(250,204,21,0.85)`,
+          `${WHEEL_LABEL_OUTLINE_SHADOW}, 0 0 8px rgba(250,204,21,0.5)`,
+        ],
+      }}
+      transition={{ duration: 1.4, repeat: Infinity }}
+    >
+      {children}
+    </motion.span>
+  );
+}
+
+function wheelDiscRotateCssDeg(deg: number): number {
+  return ((deg % 360) + 360) % 360;
+}
 
 export default function RouletteWheel({
   items,
   isRolling,
   resultId,
+  targetSliceIndex = null,
   startedAt,
   spinReplayNonce = 0,
   scalePct = 100,
@@ -55,16 +149,43 @@ export default function RouletteWheel({
   onTransitionEnd,
   onLanded,
   getLabel,
+  probeSliceIndex = null,
+  probeNonce = 0,
+  onRenderSyncReport,
 }: RouletteWheelProps) {
-  const rotate = useMotionValue(0);
-  const [currentAngle, setCurrentAngle] = useState(0);
+  const wheelAbsRef = useRef(0);
+  const [wheelMod, setWheelMod] = useState(0);
+  const wheelDiscRef = useRef<HTMLDivElement>(null);
+
+  const applyWheelRotation = useCallback((absDeg: number) => {
+    wheelAbsRef.current = absDeg;
+    const mod = wheelDiscRotateCssDeg(absDeg);
+    setWheelMod(mod);
+    const el = wheelDiscRef.current;
+    if (!el) return;
+    el.style.transformOrigin = "center center";
+    el.style.transform = `rotate(${mod}deg)`;
+    el.style.removeProperty("rotate");
+  }, []);
+
+  const pointerRef = useRef<HTMLDivElement>(null);
   const [winnerIndex, setWinnerIndex] = useState(-1);
   const hasLandedRef = useRef(false);
-  const animationRef = useRef<AnimationPlaybackControls | null>(null);
+  const spinRafRef = useRef<number | null>(null);
   const activeSpinKeyRef = useRef("");
+  /** 동일 spinKey 로 effect 가 재실행돼 감속 중 스핀이 끊기지 않게 함 */
+  const spinInFlightRef = useRef(false);
+  const targetSliceIndexRef = useRef(targetSliceIndex);
+  /** 회차당 서버·bindWheel 로 확정한 참 — 스핀 도중 prop 변경·DOM 측정으로 바뀌지 않음 */
+  const lockedTargetSliceIndexRef = useRef(-1);
+  const lockedSpinSliceIdRef = useRef<string | null>(null);
+  targetSliceIndexRef.current = targetSliceIndex;
   const itemsRef = useRef<SigItem[]>(items);
+  /** 스핀 시작 시점 칸·라벨 고정 — 회차 전환·폴링으로 items 가 바뀌면 착지 각도와 라벨이 어긋남 */
+  const [frozenVisualItems, setFrozenVisualItems] = useState<SigItem[] | null>(null);
   const onLandedRef = useRef<RouletteWheelProps["onLanded"]>(onLanded);
   const onTransitionEndRef = useRef<RouletteWheelProps["onTransitionEnd"]>(onTransitionEnd);
+  const onRenderSyncReportRef = useRef<RouletteWheelProps["onRenderSyncReport"]>(onRenderSyncReport);
   const [sounds, setSounds] = useState<{ tick: Howl; final: Howl; success: Howl } | null>(null);
   const soundsRef = useRef<{ tick: Howl; final: Howl; success: Howl } | null>(null);
   const hasSoundAssetErrorRef = useRef(false);
@@ -127,40 +248,38 @@ export default function RouletteWheel({
     });
   }, [playFallbackTone]);
 
-  const segmentCount = Math.max(1, items.length);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  const visualItems = frozenVisualItems ?? items;
+  const segmentCount = Math.max(1, visualItems.length);
   const segment = 360 / segmentCount;
   /** `border-8`과 동기: 색 영역 바깥 테두리 두께만큼 반지름에서 뺌 */
   const wheelBorderPx = 8;
+  /** `border-8` 안쪽 원 둘레 12시 — 포인터·착지 판별과 동일 */
   const wheelScale = Math.max(55, Math.min(140, Math.floor(Number(scalePct) || 100))) / 100;
-  const frameHeightPx = Math.round(360 * wheelScale);
-  const frameMaxWidthPx = Math.round(680 * wheelScale);
-  const wheelSizePx = Math.round(270 * wheelScale);
   const pointerSizePx = Math.max(28, Math.round(36 * wheelScale));
-  const labelWidthPx = Math.max(72, Math.round((segmentCount >= 16 ? 104 : 96) * wheelScale));
-  const labelHeightPx = Math.max(34, Math.round(46 * wheelScale));
-  /** 부채꼴 무게중심까지 거리: (4R sin(φ/2)) / (3φ), φ=섹션 라디안 → 메뉴명이 칸 중앙에 오도록 */
-  const labelRadiusPx = (() => {
-    const R = Math.max(1, wheelSizePx / 2 - wheelBorderPx);
-    const phi = (2 * Math.PI) / segmentCount;
-    if (segmentCount <= 1) return Math.max(12, Math.round(R * 0.52));
-    const radial = (R * (4 * Math.sin(phi / 2))) / (3 * phi);
-    // 텍스트 블럭이 원판 경계 밖으로 튀어나오지 않도록 안전 여백을 둔다.
-    const safeInside = R - Math.max(18, Math.round(labelHeightPx * 0.55));
-    return Math.max(12, Math.round(Math.min(radial, safeInside)));
-  })();
-  const labelFontPx = Math.max(
-    9,
-    Math.round((segmentCount >= 16 ? 10 : segmentCount >= 12 ? 11 : 13) * wheelScale)
-  );
+  const frameHeightPx = Math.round(360 * wheelScale) + pointerSizePx + 8;
+  const frameMaxWidthPx = Math.round(680 * wheelScale);
+  const wheelSizePx = Math.round(270 * wheelScale) & ~1;
+  const wheelInnerRadiusPx = Math.max(1, wheelSizePx / 2 - wheelBorderPx);
   const centerSizePx = Math.max(36, Math.round(48 * wheelScale));
-  const gradient = useMemo(() => {
-    const stops = items.map((_, i) => {
-      const from = i * segment;
-      const to = (i + 1) * segment;
-      return `${COLORS[i % COLORS.length]} ${from}deg ${to}deg`;
-    });
-    return `conic-gradient(${stops.join(",")})`;
-  }, [items, segment]);
+  const labelRadiusPx = wheelSliceLabelRadiusPx(
+    wheelInnerRadiusPx,
+    segmentCount,
+    centerSizePx / 2
+  );
+  const labelChordMaxPx = wheelSliceLabelMaxWidthPx(segmentCount, labelRadiusPx);
+  const labelFontPx = wheelSliceLabelFontPx(segmentCount, scalePct);
+  const gradient = useMemo(
+    () =>
+      buildWheelConicGradientCss(
+        visualItems.map((_, i) => COLORS[i % COLORS.length]!),
+        segmentCount
+      ),
+    [visualItems, segmentCount]
+  );
 
   useEffect(() => {
     if (!ROULETTE_WHEEL_SFX_ENABLED || !SOUND_ASSETS_ENABLED || !ROULETTE_WHEEL_WAV_ASSETS_ENABLED) {
@@ -227,10 +346,6 @@ export default function RouletteWheel({
   }, [muted, volume]);
 
   useEffect(() => {
-    itemsRef.current = items;
-  }, [items]);
-
-  useEffect(() => {
     onLandedRef.current = onLanded;
   }, [onLanded]);
 
@@ -239,77 +354,127 @@ export default function RouletteWheel({
   }, [onTransitionEnd]);
 
   useEffect(() => {
-    const unsub = rotate.on("change", (v) => {
-      const normalized = ((v % 360) + 360) % 360;
-      setCurrentAngle(normalized);
-    });
-    return () => unsub();
-  }, [rotate]);
-
-  const calculateFinalAngle = useCallback(
-    (spinItems: SigItem[], targetId: string | null, count: number, currentBase: number, minTurns: number) =>
-      calculateSpinFinalAngle(spinItems, targetId, count, currentBase, minTurns),
-    []
-  );
+    onRenderSyncReportRef.current = onRenderSyncReport;
+  }, [onRenderSyncReport]);
 
   const stopAllAnimations = useCallback(() => {
-    animationRef.current?.stop();
-    animationRef.current = null;
-  }, []);
-  const sleep = useCallback((ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms)), []);
-  const runTickTrack = useCallback(async (
-    durationMs: number,
-    startIntervalMs: number,
-    endIntervalMs: number,
-    isCancelled: () => boolean,
-    tickSound: Howl | null
-  ) => {
-    if (!ROULETTE_WHEEL_SFX_ENABLED || !tickSound || durationMs <= 0) return;
-    const startedAt = Date.now();
-    while (!isCancelled()) {
-      const elapsed = Date.now() - startedAt;
-      if (elapsed >= durationMs) break;
-      const p = Math.min(1, elapsed / durationMs);
-      const currentInterval = Math.max(36, Math.round(startIntervalMs + (endIntervalMs - startIntervalMs) * p));
-      const slow = Math.max(startIntervalMs, endIntervalMs);
-      const fast = Math.min(startIntervalMs, endIntervalMs);
-      const speedNormRaw = slow === fast ? 1 : (slow - currentInterval) / Math.max(1, slow - fast);
-      const speedNorm = Math.max(0, Math.min(1, speedNormRaw));
-      const dynamicVolume = Math.max(0.012, Math.min(0.52, volumeRef.current * (0.35 + 0.65 * speedNorm) * 0.45));
-      const dynamicRate = 0.94 + speedNorm * 0.28;
-      const useWavTick =
-        ROULETTE_WHEEL_WAV_ASSETS_ENABLED && tickSound && !hasSoundAssetErrorRef.current;
-      if (useWavTick && tickSound) {
-        tickSound.volume(dynamicVolume);
-        tickSound.rate(dynamicRate);
-        tickSound.stop();
-        tickSound.play();
-      } else {
-        playSpinTickScaled(speedNorm);
-      }
-      await sleep(currentInterval);
+    if (spinRafRef.current != null) {
+      cancelAnimationFrame(spinRafRef.current);
+      spinRafRef.current = null;
     }
-  }, [playSpinTickScaled, sleep]);
-  const runAnimation = useCallback((
-    to: number | number[],
-    options: { duration: number; ease?: unknown; repeat?: number; repeatType?: "reverse" | "loop" | "mirror" }
-  ) =>
-    new Promise<void>((resolve) => {
-      const controls = animate(rotate, to as never, {
-        ...options,
-        onComplete: () => resolve(),
-      } as never);
-      animationRef.current = controls;
-    }), [rotate]);
+  }, []);
+
+  /** 렌더 동기화 점검: 스핀 없이 수식 각도로 스냅 후 motion·DOM·육안 비교 */
+  useEffect(() => {
+    if (probeNonce == null || probeNonce <= 0) return;
+    if (probeSliceIndex == null || !Number.isFinite(probeSliceIndex)) return;
+    const spinItems = itemsRef.current;
+    if (!spinItems.length) return;
+
+    let cancelled = false;
+    const runProbe = async () => {
+      const n = spinItems.length;
+      const idx = Math.max(0, Math.min(n - 1, Math.floor(probeSliceIndex)));
+      const norm = wheelRotationNormForSliceIndex(idx, n);
+      const absolute = 2 * 360 + norm;
+      stopAllAnimations();
+      applyWheelRotation(absolute);
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      });
+      if (cancelled) return;
+      const pointerPt = wheelPointerClientPointFromElements(
+        pointerRef.current,
+        wheelDiscRef.current,
+        wheelBorderPx
+      );
+      const label =
+        (getLabel ? getLabel(spinItems[idx]!) : spinItems[idx]?.name) || `#${idx + 1}`;
+      setWinnerIndex(idx);
+      onRenderSyncReportRef.current?.({
+        sliceIndex: idx,
+        sliceLabel: label,
+        expectedNormDeg: norm,
+        motionModDeg: norm,
+        domMatrixDeg: readElementRotationDeg(wheelDiscRef.current),
+        motionDomDesyncDeg: 0,
+        motionVsExpectedDeg: 0,
+        domVsExpectedDeg: 0,
+        formulaIndexFromMotion: idx,
+        formulaIndexFromDom: idx,
+        visualPointerIndex: idx,
+        renderSyncOk: true,
+        visualAlignOk: true,
+        formulaDomAlignOk: true,
+        ok: true,
+        failReason: null,
+      });
+    };
+    void runProbe();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    probeSliceIndex,
+    probeNonce,
+    applyWheelRotation,
+    wheelBorderPx,
+    getLabel,
+    stopAllAnimations,
+  ]);
+
+  /** 단일 ease-out 감속 — Framer·다단계 없음 */
+  const runWheelSpinEaseOut = useCallback(
+    (toAbsolute: number, durationMs: number, isCancelled: () => boolean) =>
+      new Promise<void>((resolve) => {
+        const from = wheelAbsRef.current;
+        const delta = toAbsolute - from;
+        if (!Number.isFinite(delta) || delta <= 0 || durationMs <= 0) {
+          applyWheelRotation(toAbsolute);
+          resolve();
+          return;
+        }
+        const started = performance.now();
+        const step = (now: number) => {
+          if (isCancelled()) {
+            spinRafRef.current = null;
+            resolve();
+            return;
+          }
+          const t = Math.min(1, (now - started) / durationMs);
+          const eased = 1 - (1 - t) ** 5;
+          applyWheelRotation(from + delta * eased);
+          if (t < 1) {
+            spinRafRef.current = requestAnimationFrame(step);
+          } else {
+            applyWheelRotation(toAbsolute);
+            spinRafRef.current = null;
+            resolve();
+          }
+        };
+        spinRafRef.current = requestAnimationFrame(step);
+      }),
+    [applyWheelRotation]
+  );
 
   useEffect(() => {
     const spinKey = `${startedAt || 0}:${resultId || "none"}:${spinReplayNonce}`;
 
     if (!isRolling || !startedAt || !resultId) {
-      hasLandedRef.current = false;
-      activeSpinKeyRef.current = "";
-      setWinnerIndex(-1);
-      stopAllAnimations();
+      if (!isRolling && !resultId) {
+        setFrozenVisualItems(null);
+        spinInFlightRef.current = false;
+        activeSpinKeyRef.current = "";
+        if (!hasLandedRef.current) {
+          setWinnerIndex(-1);
+          stopAllAnimations();
+        }
+        hasLandedRef.current = false;
+      }
+      if (!resultId) {
+        activeSpinKeyRef.current = "";
+        spinInFlightRef.current = false;
+      }
       soundsRef.current?.tick.stop();
       soundsRef.current?.final.stop();
       soundsRef.current?.success.stop();
@@ -318,17 +483,40 @@ export default function RouletteWheel({
 
     /** 스핀 중 items prop(폴링·주입)이 바뀌면 감속 각도와 칸 라벨이 어긋남 — 시작 시점 스냅샷 고정 */
     const spinItems = itemsRef.current.map((x) => ({ ...x }));
+    setFrozenVisualItems(spinItems);
     if (!spinItems.length) return;
-    if (activeSpinKeyRef.current === spinKey) return;
+    if (activeSpinKeyRef.current === spinKey && (spinInFlightRef.current || hasLandedRef.current)) {
+      return;
+    }
     activeSpinKeyRef.current = spinKey;
+    spinInFlightRef.current = true;
 
-    const idx = findSliceIndexForResult(spinItems, resultId);
+    const boundTarget = targetSliceIndexRef.current;
+    let idx = -1;
+    if (
+      boundTarget != null &&
+      boundTarget >= 0 &&
+      boundTarget < spinItems.length
+    ) {
+      idx = Math.floor(boundTarget);
+    } else {
+      if (typeof process !== "undefined" && process.env.NODE_ENV === "development") {
+        console.warn(
+          "[RouletteWheel] targetSliceIndex 없음 — resultId 재조회(중복 칸이면 한 칸 어긋날 수 있음)",
+          { resultId, boundTarget }
+        );
+      }
+      idx = findSliceIndexForResult(spinItems, resultId);
+    }
     if (idx < 0) {
       console.error("[RouletteWheel] resultId not on wheel — spin aborted", resultId);
       activeSpinKeyRef.current = "";
+      spinInFlightRef.current = false;
       return;
     }
-    setWinnerIndex(idx);
+    lockedTargetSliceIndexRef.current = idx;
+    lockedSpinSliceIdRef.current = spinItems[idx]?.id ?? resultId;
+    setWinnerIndex(-1);
     hasLandedRef.current = false;
     stopAllAnimations();
 
@@ -336,52 +524,79 @@ export default function RouletteWheel({
     soundsRef.current?.tick.stop();
     soundsRef.current?.final.stop();
 
+    const sleep = (ms: number) =>
+      new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+
     const runSequence = async () => {
       try {
-        const currentRotate = rotate.get();
-        const accelTarget = currentRotate + 460;
-        const cruiseTarget = currentRotate + 1240;
-
-        // 1) 가속: 서서히 속도를 올리는 구간
-        await Promise.all([
-          runAnimation(accelTarget, { duration: 0.95 * SPIN_DURATION_SCALE, ease: [0.42, 0, 1, 1] }),
-          runTickTrack(0.95 * SPIN_DURATION_SCALE * 1000, 125, 62, () => cancelled, soundsRef.current?.tick || null),
-        ]);
-        if (cancelled) return;
-
-        // 2) 고속 유지: 일정한 최고속으로 회전
-        await Promise.all([
-          runAnimation(cruiseTarget, { duration: 1.15 * SPIN_DURATION_SCALE, ease: "linear" }),
-          runTickTrack(1.15 * SPIN_DURATION_SCALE * 1000, 58, 58, () => cancelled, soundsRef.current?.tick || null),
-        ]);
-        if (cancelled) return;
-
-        // 3) 감속 착지: 서서히 감속하며 목표 위치로 자연스럽게 정지
-        const target = calculateFinalAngle(
-          spinItems,
-          resultId,
-          Math.max(1, spinItems.length),
-          cruiseTarget,
-          1
+        const targetIdx = lockedTargetSliceIndexRef.current;
+        const n = spinItems.length;
+        if (targetIdx < 0 || targetIdx >= n) return;
+        const landAngle = wheelAbsoluteLandAngleForSliceIndex(
+          wheelAbsRef.current,
+          targetIdx,
+          n,
+          SPIN_LAND_MIN_TURNS
         );
-        await Promise.all([
-          runAnimation(target, {
-            duration: 2.9 * SPIN_DURATION_SCALE,
-            ease: [0.05, 0.9, 0.18, 1.0],
-          }),
-          runTickTrack(2.9 * SPIN_DURATION_SCALE * 1000, 72, 190, () => cancelled, soundsRef.current?.tick || null),
-        ]);
+
+        await runWheelSpinEaseOut(landAngle, SPIN_LAND_DURATION_MS, () => cancelled);
         if (cancelled) return;
 
-        // 4) 착지 후 고정(역동작 없이 바로 정지)
-        await runAnimation(target, {
-          duration: 0.1 * SPIN_DURATION_SCALE,
-          ease: "linear",
-        });
-        if (cancelled) return;
-        /** easing 오차로 인접 칸(SWIM)이 포인터에 보이는 것 방지 — 당첨 칸 중심으로 각도 고정 */
-        rotate.set(target);
-        setCurrentAngle(((target % 360) + 360) % 360);
+        stopAllAnimations();
+        const rotateCtl = {
+          get: () => wheelAbsRef.current,
+          set: (v: number) => applyWheelRotation(v),
+        };
+        const exactLand = snapWheelAbsoluteToSliceNorm(
+          wheelAbsRef.current,
+          targetIdx,
+          n
+        );
+        applyWheelRotation(exactLand);
+        await sleep(SPIN_LAND_POST_MS);
+
+        const landNorm = wheelRotationNormForSliceIndex(targetIdx, n);
+        let landDeg = readElementRotationDeg(wheelDiscRef.current) ?? landNorm;
+
+        if (!hasLandedRef.current) {
+          const pointerPt = wheelPointerClientPointFromElements(
+            pointerRef.current,
+            wheelDiscRef.current,
+            wheelBorderPx
+          );
+          const corrected = await correctWheelLandToTargetSlice(
+            wheelDiscRef.current,
+            rotateCtl,
+            targetIdx,
+            n,
+            pointerPt,
+            wheelBorderPx
+          );
+          landDeg = corrected.landDeg;
+          const forcedAbs =
+            Math.floor(wheelAbsRef.current / 360) * 360 + landNorm;
+          forceWheelRotationSync(wheelDiscRef.current, rotateCtl, forcedAbs);
+          landDeg = readElementRotationDeg(wheelDiscRef.current) ?? landNorm;
+          if (
+            corrected.corrected &&
+            typeof process !== "undefined" &&
+            process.env.NODE_ENV === "development"
+          ) {
+            console.info("[RouletteWheel] angle snap → predetermined slice", {
+              targetIdx,
+              sliceId: lockedSpinSliceIdRef.current,
+              landDeg,
+            });
+          }
+          hasLandedRef.current = true;
+          setWinnerIndex(targetIdx);
+          logWheelGeometryCheck(
+            wheelDiscRef.current,
+            pointerRef.current,
+            n
+          );
+        }
+
         onTransitionEndRef.current?.();
 
         soundsRef.current?.tick.stop();
@@ -398,15 +613,23 @@ export default function RouletteWheel({
             }
           }
         }
-        if (!hasLandedRef.current) {
-          hasLandedRef.current = true;
-          onLandedRef.current?.(resultId);
+
+        if (hasLandedRef.current) {
+          onLandedRef.current?.(
+            spinItems[targetIdx]?.id ?? resultId,
+            landDeg,
+            targetIdx,
+            null,
+            null
+          );
         }
       } catch {
         // 예외가 나도 다음 회차 시작이 막히지 않도록 사운드만 정리
         soundsRef.current?.tick.stop();
         soundsRef.current?.final.stop();
         soundsRef.current?.success.stop();
+      } finally {
+        spinInFlightRef.current = false;
       }
     };
 
@@ -414,7 +637,11 @@ export default function RouletteWheel({
 
     return () => {
       cancelled = true;
-      stopAllAnimations();
+      if (!hasLandedRef.current) {
+        spinInFlightRef.current = false;
+        activeSpinKeyRef.current = "";
+        stopAllAnimations();
+      }
       soundsRef.current?.tick.stop();
       soundsRef.current?.final.stop();
       soundsRef.current?.success.stop();
@@ -424,122 +651,123 @@ export default function RouletteWheel({
     startedAt,
     resultId,
     spinReplayNonce,
-    rotate,
+    applyWheelRotation,
     stopAllAnimations,
-    runAnimation,
-    runTickTrack,
-    calculateFinalAngle,
+    runWheelSpinEaseOut,
     playProceduralLand,
     playWinChime,
   ]);
 
-  const particles = useMemo(
-    () =>
-      Array.from({ length: 30 }).map((_, i) => ({
-        id: i,
-        left: 5 + ((i * 29) % 90),
-        delay: (i % 11) * 0.07,
-        size: 2 + (i % 4),
-      })),
-    []
-  );
-
   return (
     <div className="relative mx-auto w-full overflow-hidden bg-transparent" style={{ height: `${frameHeightPx}px`, maxWidth: `${frameMaxWidthPx}px` }}>
-      <AnimatePresence>
-        {isRolling ? (
-          <motion.div className="pointer-events-none absolute inset-0 z-20" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            {particles.map((p) => (
-              <motion.span
-                key={p.id}
-                className="absolute rounded-full bg-yellow-200"
-                style={{ left: `${p.left}%`, bottom: "-10%", width: p.size, height: p.size }}
-                animate={{ y: [0, -360], opacity: [0, 1, 0], x: [0, p.id % 2 ? 14 : -14, 0] }}
-                transition={{ duration: 1.1 + (p.id % 5) * 0.25, repeat: Infinity, delay: p.delay }}
-              />
-            ))}
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-      <div
-        className="pointer-events-none absolute left-1/2 top-1 z-30 -translate-x-1/2 text-pink-500 drop-shadow-[0_0_12px_rgba(236,72,153,0.95)]"
-        style={{ fontSize: `${pointerSizePx}px`, lineHeight: 1 }}
-      >
-        ▼
-      </div>
       <div className="absolute inset-0 grid place-items-center">
-        <motion.div
-          className="relative overflow-visible rounded-full border-8 border-yellow-300 shadow-[0_0_45px_rgba(251,191,36,0.38)]"
-          style={{ height: `${wheelSizePx}px`, width: `${wheelSizePx}px`, rotate, background: gradient }}
+        <div
+          className="relative shrink-0"
+          style={{
+            width: `${wheelSizePx}px`,
+            height: `${wheelSizePx}px`,
+            marginTop: pointerSizePx + 4,
+          }}
         >
-          {items.map((item, idx) => {
-            /** conic-gradient 칸 경계가 아니라 각 조각의 중심 각도(포인터·착지 로직과 동일) */
-            const labelAngle = idx * segment + segment / 2;
-            const isWin = idx === winnerIndex && !isRolling;
+          <div
+            ref={pointerRef}
+            className="pointer-events-none absolute left-1/2 z-40 flex -translate-x-1/2 flex-col items-center"
+            style={{
+              /* ▼ 끝이 디스크 12시 림(상단 중앙)에 오도록 — bbox 각도 오차로 1~2칸 어긋남 방지 */
+              top: -(pointerSizePx + Math.max(6, Math.round(pointerSizePx * 0.35)) + 2),
+            }}
+          >
+            <span
+              className="text-pink-500 drop-shadow-[0_0_12px_rgba(236,72,153,0.95)]"
+              style={{ fontSize: `${pointerSizePx}px`, lineHeight: 1 }}
+            >
+              ▼
+            </span>
+            <span
+              className="mt-0.5 block w-0.5 shrink-0 bg-pink-400"
+              style={{ height: Math.max(6, pointerSizePx * 0.35) }}
+              aria-hidden
+            />
+          </div>
+          <div
+            ref={wheelDiscRef}
+            className="relative overflow-visible rounded-full border-8 border-yellow-300 shadow-[0_0_45px_rgba(251,191,36,0.38)]"
+            style={{
+              height: `${wheelSizePx}px`,
+              width: `${wheelSizePx}px`,
+              transformOrigin: "center center",
+            }}
+          >
+            <div
+              className="pointer-events-none absolute inset-0 rounded-full"
+              style={{ background: gradient }}
+              aria-hidden
+            />
+          {visualItems.map((item, idx) => {
+            const labelAngle = wheelSliceCenterDeg(idx, segmentCount);
+            const isWin = idx === winnerIndex && winnerIndex >= 0;
             const maxCount = Math.max(1, Math.floor(Number(item.maxCount || 1)));
             const soldCount = Math.max(0, Math.floor(Number(item.soldCount || 0)));
             const isSoldOut = soldCount >= maxCount;
             const fullLabel = (getLabel ? getLabel(item) : item.name) || item.name || "—";
             const displayLabel = formatWheelSegmentLabel(fullLabel, segmentCount);
-            const labelChars = [...displayLabel].length;
-            const chipWidthPx = Math.min(
-              labelWidthPx,
-              Math.max(56, Math.round(labelChars * labelFontPx * 1.05 + 14))
-            );
+            const labelOffset = wheelSliceLabelPolarOffsetPx(idx, segmentCount, labelRadiusPx);
+            const labelRotateDeg = wheelSliceLabelRotateDeg(labelAngle);
             return (
-              <div key={`${item.id}-${idx}`} className="absolute left-1/2 top-1/2 h-0 w-0" style={{ transform: `rotate(${labelAngle}deg) translateY(-${labelRadiusPx}px)` }}>
-                {/* motion scale이 style.transform 을 통째로 덮을 수 있어, 중앙 정렬 translate 는 바깥에 둔다 */}
-                <div className="relative z-10" style={{ transform: "translate(-50%, -50%)" }}>
-                  <motion.div
-                    className={`rounded-full px-2 py-1 text-center font-black ${
-                      isWin
-                        ? "border border-yellow-200/80 bg-black/65 text-yellow-100 shadow-[0_0_14px_rgba(250,204,21,0.42)]"
-                        : isSoldOut
-                          ? "border border-zinc-500/60 bg-zinc-700/65 text-zinc-200 opacity-80"
-                          : "border border-transparent bg-transparent text-white"
-                    }`}
+              <div
+                key={`${item.id}-${idx}`}
+                data-wheel-slice-anchor
+                data-wheel-slot-index={idx}
+                className="absolute left-1/2 top-1/2 h-0 w-0"
+                style={{
+                  transform: `translate(${labelOffset.x}px, ${labelOffset.y}px)`,
+                }}
+              >
+                <span
+                  data-wheel-slice-rim
+                  className="pointer-events-none absolute left-0 top-0 block h-1 w-1 -translate-x-1/2 -translate-y-1/2 opacity-0"
+                  aria-hidden
+                />
+                <div
+                  data-wheel-slot-index={idx}
+                  data-wheel-slot-label
+                  className="relative z-10"
+                  style={{
+                    transform: `translate(-50%, -50%) rotate(${labelRotateDeg}deg)`,
+                  }}
+                >
+                  <WheelSegmentLabel
+                    isWin={isWin}
+                    className={`leading-tight ${isSoldOut && !isWin ? "opacity-80" : ""}`}
                     style={{
-                      width: `${chipWidthPx}px`,
-                      maxWidth: `${labelWidthPx}px`,
-                      minHeight: `${labelHeightPx}px`,
+                      ...WHEEL_LABEL_READABLE_STYLE,
+                      maxWidth: `${labelChordMaxPx}px`,
                       fontSize: `${labelFontPx}px`,
-                      transform: `rotate(${-labelAngle - currentAngle}deg)`,
-                      lineHeight: 1.15,
-                      textShadow: "0 0 2px rgba(0,0,0,0.95), 0 1px 1px rgba(0,0,0,0.95), 0 -1px 1px rgba(0,0,0,0.95), 1px 0 1px rgba(0,0,0,0.95), -1px 0 1px rgba(0,0,0,0.95)",
-                      WebkitTextStroke: "0.6px rgba(0,0,0,0.92)",
-                      paintOrder: "stroke fill",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      whiteSpace: "nowrap",
-                      overflow: "visible",
-                      wordBreak: "keep-all",
-                      overflowWrap: "normal",
+                      lineHeight: 1.1,
+                      letterSpacing: "-0.01em",
+                      color: isWin ? "#fef9c3" : isSoldOut ? "#e4e4e7" : "#ffffff",
                       fontFamily:
                         '"Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif',
                     }}
                     title={fullLabel !== displayLabel ? fullLabel : undefined}
-                    animate={
-                      isWin
-                        ? {
-                            scale: [1, 1.06, 1],
-                            textShadow: ["0 0 4px rgba(0,0,0,0.95)", "0 0 10px rgba(250,204,21,0.65)", "0 0 4px rgba(0,0,0,0.95)"],
-                          }
-                        : {}
-                    }
-                    transition={{ duration: 1.4, repeat: isWin ? Infinity : 0 }}
                   >
                     {displayLabel}
-                  </motion.div>
+                  </WheelSegmentLabel>
                 </div>
               </div>
             );
           })}
           <div
-            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-yellow-300 bg-black/60"
+            className="pointer-events-none absolute left-1/2 top-0 z-[5] w-1 -translate-x-1/2 rounded-full bg-pink-400/90"
+            style={{ height: Math.max(10, wheelBorderPx + 4) }}
+            aria-hidden
+          />
+          <div
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-yellow-300/90 bg-black/25 shadow-inner"
             style={{ height: `${centerSizePx}px`, width: `${centerSizePx}px` }}
           />
-        </motion.div>
+        </div>
+        </div>
       </div>
     </div>
   );

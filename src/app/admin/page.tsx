@@ -86,6 +86,7 @@ import { repairDiskUploadSigImagePath } from "@/lib/sig-image-mode";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 import { normalizeSigDedupKeyImageUrl } from "@/lib/sig-inventory-dedup";
 import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
+import { normalizeMealGaugeEffects } from "@/lib/meal-gauge-effects";
 import { getVisibleAdminNavItems, isAdminNavSectionVisible, type AdminNavKey } from "@/app/admin/admin-nav-config";
 import { stopToonationListener } from "@/lib/donation/toonation/listener";
 import { processDonationEvent } from "@/lib/donation/processor";
@@ -5129,7 +5130,43 @@ export default function AdminPage() {
                       })
                     }
                   />
-                  <div className="text-xs text-neutral-400">타이머 크기: 16~120px, 테마/사이즈는 오버레이에 실시간 반영됩니다.</div>
+                  <div className="text-xs text-neutral-400">
+                    타이머 크기·테마는 meal-match 오버레이에 실시간 반영됩니다. URL 테스트:{" "}
+                    <code className="text-neutral-500">?timerTheme=neon</code>
+                  </div>
+                </div>
+                <div className="rounded border border-white/10 bg-neutral-900/50 p-3 space-y-2">
+                  <div className="text-xs font-semibold text-neutral-200">게이지 연출</div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
+                    {(
+                      [
+                        ["critical", "크리티컬 (90%·타이머 임박)"],
+                        ["floatingScore", "플로팅 +점수"],
+                        ["rankUp", "RANK UP"],
+                        ["timerTension", "타이머 긴장"],
+                      ] as const
+                    ).map(([key, label]) => {
+                      const ge = normalizeMealGaugeEffects(state.mealBattle?.gaugeEffects);
+                      return (
+                        <label key={key} className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={ge[key]}
+                            onChange={(e) =>
+                              updateMealBattle({
+                                gaugeEffects: { ...ge, [key]: e.target.checked },
+                              })
+                            }
+                          />
+                          <span className="text-neutral-300">{label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-neutral-500">
+                    오버레이 URL 테스트: <code className="text-neutral-400">?fx=none</code>,{" "}
+                    <code className="text-neutral-400">?fx=critical,rank</code> (상태 설정보다 URL이 우선)
+                  </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700 text-sm" onClick={resetMealMatchScores}>
