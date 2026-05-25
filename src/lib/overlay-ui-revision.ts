@@ -2,7 +2,7 @@
  * 오버레이 UI 빌드 식별 — DEMO 뱃지·data-overlay-ui·iframe URL 캐시 무효화.
  * UI를 바꿀 때마다 해당 rev 문자열을 올리고 dev는 `npm run dev:clean` 권장.
  */
-export const SIG_MATCH_OVERLAY_UI_REV = "v16" as const;
+export const SIG_MATCH_OVERLAY_UI_REV = "v23" as const;
 export const MEAL_MATCH_OVERLAY_UI_REV = "v8" as const;
 
 /** iframe URL에 남은 구 rev·빌드 파라미터 제거 */

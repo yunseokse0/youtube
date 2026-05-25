@@ -134,6 +134,15 @@ export function formatSigMatchScoreLabel(
   return scoringMode === "amount" ? `${n}원` : `${n} 시그`;
 }
 
+/** VS 중앙 — 선두와의 점수·금액 차이 */
+export function formatSigMatchGapLabel(
+  gap: number,
+  scoringMode: "count" | "amount"
+): string {
+  const n = formatSigMatchStat(Math.max(0, gap));
+  return scoringMode === "amount" ? `${n}원` : `${n} 시그`;
+}
+
 function findPoolForMember(memberId: string, pools: SigMatchPool[]): string[] | null {
   for (const p of pools || []) {
     const ids = [...new Set((p.memberIds || []).filter(Boolean))];
