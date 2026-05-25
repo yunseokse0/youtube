@@ -1,16 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { authCookieSecure } from "./auth";
 
 describe("authCookieSecure", () => {
   it("미설정 시 HTTP 배포 호환으로 false", () => {
     const prev = process.env.AUTH_COOKIE_SECURE;
-    const prevNode = process.env.NODE_ENV;
     delete process.env.AUTH_COOKIE_SECURE;
-    process.env.NODE_ENV = "production";
+    vi.stubEnv("NODE_ENV", "production");
     try {
       expect(authCookieSecure()).toBe(false);
     } finally {
-      process.env.NODE_ENV = prevNode;
+      vi.unstubAllEnvs();
       if (prev === undefined) delete process.env.AUTH_COOKIE_SECURE;
       else process.env.AUTH_COOKIE_SECURE = prev;
     }

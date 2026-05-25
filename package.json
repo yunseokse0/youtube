@@ -9,6 +9,7 @@
     "dev": "next dev -p 3000",
     "dev:clean": "node scripts/dev-clean.mjs",
     "verify:battle-ui": "node scripts/print-battle-verify-url.mjs",
+    "verify:overlay": "node scripts/verify-overlay.mjs",
     "build": "next build",
     "start": "node scripts/start.cjs",
     "lint": "next lint",

@@ -10,5 +10,5 @@ console.log(`
    ${url}
 
 통합 허브: http://localhost:3000/overlay/battle-effects-demo
-(시그 DEMO · v12 · VS 팀 합산 게이지 / 식사 v8 · 구 pill이면 npm run dev:clean)
+(시그 v16 · VS 게이지 / 식사 v8 · 구 UI면 npm run dev:clean)
 `);

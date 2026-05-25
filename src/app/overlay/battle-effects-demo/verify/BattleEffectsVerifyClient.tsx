@@ -110,9 +110,9 @@ export default function BattleEffectsVerifyClient() {
           <div>
             <h1 className="text-lg font-bold text-emerald-100">대전 연출 · UI 반영 확인</h1>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-neutral-400">
-              요청하신 레이아웃(식사: 점수 게이지 안 / 시그: 타이틀·세로 멤버·획득량)이 적용됐는지 체크합니다.
-              시그 DEMO 뱃지에 <strong className="text-white">· {OVERLAY_UI_REVISION.sig}</strong> 가 보이면 새
-              번들이 로드된 것입니다 (v2·v3이면 구 캐시 → dev:clean 후 새로고침).
+              요청하신 레이아웃(식사: 점수 게이지 안 / 시그: 타이틀·세로 멤버·원화 합산)이 적용됐는지 체크합니다.
+              iframe이 <strong className="text-white">하얗게 비면</strong> 서버 500(깨진 .next)일 수 있습니다 →{" "}
+              <code className="text-amber-300">npm run dev:clean</code> 후 Ctrl+Shift+R.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -183,6 +183,14 @@ export default function BattleEffectsVerifyClient() {
   );
 }
 
+type IframeProbeStatus = "idle" | "checking" | "ok" | "error";
+
+function probeIframeHtml(html: string, battle: "meal" | "sig"): boolean {
+  if (/statusCode":500|"Cannot find module '\.\//i.test(html)) return false;
+  if (battle === "meal") return /식사\s*대전/.test(html);
+  return /시그\s*대전|data-overlay-ui/.test(html);
+}
+
 function VerifyCasePanel({
   verifyCase,
   checked,
@@ -199,6 +207,7 @@ function VerifyCasePanel({
   mounted: boolean;
 }) {
   const isMeal = verifyCase.battle === "meal";
+  const [probe, setProbe] = useState<IframeProbeStatus>("idle");
   const iframeSrc = useMemo(() => {
     if (!mounted) return "";
     let base = "";
@@ -223,6 +232,29 @@ function VerifyCasePanel({
     mounted && iframeSrc && typeof window !== "undefined"
       ? `${window.location.origin}${iframeSrc}`
       : iframeSrc;
+
+  useEffect(() => {
+    if (!mounted || !iframeSrc) {
+      setProbe("idle");
+      return;
+    }
+    let cancelled = false;
+    setProbe("checking");
+    (async () => {
+      try {
+        const res = await fetch(iframeSrc, { cache: "no-store" });
+        const html = await res.text();
+        if (cancelled) return;
+        const ok = res.ok && probeIframeHtml(html, verifyCase.battle);
+        setProbe(ok ? "ok" : "error");
+      } catch {
+        if (!cancelled) setProbe("error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted, iframeSrc, iframeKey, verifyCase.battle]);
 
   const caseDone = verifyCase.checks.every((ch) => checked[checkKey(verifyCase.id, ch.id)]);
 
@@ -269,6 +301,20 @@ function VerifyCasePanel({
         </div>
       </div>
 
+      {probe === "error" ? (
+        <div
+          className="mb-3 rounded border border-red-500/50 bg-red-950/50 px-3 py-2 text-[11px] leading-relaxed text-red-100"
+          role="alert"
+        >
+          <strong>미리보기 로드 실패 (서버 500 가능)</strong>
+          <p className="mt-1 text-red-200/90">
+            터미널에 <code className="text-red-100">Cannot find module &apos;./8948.js&apos;</code> 등이 보이면 깨진
+            Next 캐시입니다. dev 서버를 끄고{" "}
+            <code className="font-semibold text-white">npm run dev:clean</code> 실행 후 이 페이지를 새로고침하세요.
+          </p>
+        </div>
+      ) : null}
+
       {mounted && iframeSrc ? (
         <iframe
           key={iframeKey}
@@ -277,6 +323,7 @@ function VerifyCasePanel({
           className="mb-3 w-full rounded border border-white/10 bg-black"
           style={{
             height: verifyCase.battle === "sig" ? "min(92vh, 920px)" : "min(62vh, 580px)",
+            opacity: probe === "error" ? 0.35 : 1,
           }}
         />
       ) : (

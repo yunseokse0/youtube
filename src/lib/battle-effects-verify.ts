@@ -99,9 +99,14 @@ export const BATTLE_EFFECTS_VERIFY_CASES: BattleEffectsVerifyCase[] = [
         label: "오버레이 바깥에 주황/노란 테두리 프레임이 없다 (OBS 투명용)",
       },
       {
+        id: "sig-vs-center",
+        label: "VS 글자가 핑크·블루 막대 정중앙에 크게 보이고(골드색), 원형 배지·배경 박스가 없다",
+        hint: "VS가 막대 위·아래에 떠 있거나 LIVE/집계 pill이 보이면 구 UI",
+      },
+      {
         id: "sig-rev",
-        label: `「UI ${OVERLAY_UI_REVISION.sig} · 팀 박스 + VS 막대」·「VS 팀 합산 게이지」와 DEMO 뱃지가 보인다`,
-        hint: "「멤버1·멤버2」 한 줄 pill만 있으면 구 JS 캐시 → dev:clean",
+        label: `UI ${OVERLAY_UI_REVISION.sig} · 팀 박스 + VS 막대(팀 합산 금액) · LIVE·집계 pill 없음`,
+        hint: "로컬 dev만 DEMO 뱃지 가능 · 「멤버1·멤버2」 한 줄 pill이면 dev:clean",
       },
     ],
   },
