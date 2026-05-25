@@ -10,6 +10,7 @@ export const DEFAULT_MEAL_GAUGE_EFFECTS: MealGaugeEffects = {
   floatingScore: true,
   rankUp: true,
   timerTension: true,
+  gaugeMotion: true,
 };
 
 export function normalizeMealGaugeEffects(input: unknown): MealGaugeEffects {
@@ -21,20 +22,27 @@ export function normalizeMealGaugeEffects(input: unknown): MealGaugeEffects {
     floatingScore: typeof v.floatingScore === "boolean" ? v.floatingScore : base.floatingScore,
     rankUp: typeof v.rankUp === "boolean" ? v.rankUp : base.rankUp,
     timerTension: typeof v.timerTension === "boolean" ? v.timerTension : base.timerTension,
+    gaugeMotion: typeof v.gaugeMotion === "boolean" ? v.gaugeMotion : base.gaugeMotion,
   };
 }
 
-/** URL `fx` / `gaugeFx`: none | all | critical,floating,rank,timer (쉼표 목록만 켜짐) */
+/** URL `fx` / `gaugeFx` / `ffx`(오타 호환): none | all | critical,floating,rank,timer,motion */
 export function resolveMealGaugeEffects(
   stateEffects: MealGaugeEffects | undefined,
   sp: Pick<URLSearchParams, "get">
 ): MealGaugeEffects {
   const base = normalizeMealGaugeEffects(stateEffects);
-  const raw = (sp.get("fx") || sp.get("gaugeFx") || "").trim();
+  const raw = (sp.get("fx") || sp.get("gaugeFx") || sp.get("ffx") || "").trim();
   if (!raw) return base;
   const lower = raw.toLowerCase();
   if (lower === "none" || lower === "off" || lower === "0") {
-    return { critical: false, floatingScore: false, rankUp: false, timerTension: false };
+    return {
+      critical: false,
+      floatingScore: false,
+      rankUp: false,
+      timerTension: false,
+      gaugeMotion: false,
+    };
   }
   if (lower === "all" || lower === "on" || lower === "1") {
     return { ...DEFAULT_MEAL_GAUGE_EFFECTS };
@@ -45,6 +53,9 @@ export function resolveMealGaugeEffects(
     floatingScore: tokens.some((t) => t === "floating" || t === "float" || t === "floatingscore" || t === "score"),
     rankUp: tokens.some((t) => t === "rank" || t === "rankup"),
     timerTension: tokens.some((t) => t === "timer" || t === "timertension" || t === "tension"),
+    gaugeMotion: tokens.some(
+      (t) => t === "motion" || t === "gauge" || t === "gaugemotion" || t === "pulse"
+    ),
   };
 }
 

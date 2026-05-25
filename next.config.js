@@ -6,6 +6,8 @@ const nextConfig = {
       { source: "/ui-demo", destination: "/admin", permanent: false },
       /** OBS 예전 URL: 하이픈 대신 밑줄로 붙인 소스는 404 → 통합 오버레이로 유지(쿼리 유지) */
       { source: "/overlay/sig_select", destination: "/overlay/sig-sales", permanent: false },
+      { source: "/overlay/sig_match/demo", destination: "/overlay/sig-match/demo", permanent: false },
+      { source: "/overlay/sig_match", destination: "/overlay/sig-match", permanent: false },
     ];
   },
   async rewrites() {
@@ -23,6 +25,10 @@ const nextConfig = {
     };
   },
   async headers() {
+    const staticCache =
+      process.env.NODE_ENV === "development"
+        ? "no-store, no-cache, must-revalidate"
+        : "public, max-age=31536000, immutable";
     return [
       {
         source: '/overlay',
@@ -32,11 +38,16 @@ const nextConfig = {
       },
       {
         source: '/_next/static/:path*',
-        headers: [
-          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
-        ],
+        headers: [{ key: 'Cache-Control', value: staticCache }],
       },
     ];
+  },
+  /** Windows dev: webpack pack 캐시 rename ENOENT → _next/static 404 방지 */
+  webpack: (config, { dev }) => {
+    if (dev) {
+      config.cache = { type: "memory" };
+    }
+    return config;
   },
 };
 

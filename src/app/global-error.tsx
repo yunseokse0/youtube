@@ -15,6 +15,13 @@ export default function GlobalError({
         <div className="w-full max-w-md rounded-xl border border-white/20 bg-white/5 p-5 text-center">
           <h2 className="text-xl font-bold">치명적 오류가 발생했습니다</h2>
           <p className="mt-2 text-sm text-neutral-300">페이지를 다시 불러오거나 아래 버튼을 눌러주세요.</p>
+          {/8948\.js|Cannot find module/i.test(String(error?.message ?? "")) ? (
+            <p className="mt-3 text-xs text-amber-200/90">
+              개발 서버 청크 불일치입니다. 터미널에서{" "}
+              <code className="text-emerald-300">npm run dev:clean</code> 실행 후 브라우저를{" "}
+              <strong>Ctrl+Shift+R</strong>로 새로고침하세요.
+            </p>
+          ) : null}
           <button
             type="button"
             onClick={reset}

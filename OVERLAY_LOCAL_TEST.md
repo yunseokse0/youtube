@@ -8,6 +8,14 @@ npm install
 npm run dev
 ```
 
+**`Cannot find module './xxxx.js'` / 500 / 흰 화면** → dev 서버를 끄고:
+
+```bash
+npm run dev:clean
+```
+
+브라우저 **Ctrl+Shift+R**(시크릿 창 권장).
+
 브라우저 기본 주소: `http://localhost:3000`
 
 로컬·LAN에서는 루트(`/`)가 **`/overlay/sig-sales`** 로 연결됩니다. 짧은 주소는 **`/wheel`** (동일하게 통합 오버레이).
@@ -43,6 +51,78 @@ npm run dev
 통합 오버레이(`wheelDemoAuto=1`)는 연출·한방 시그 카드까지 포함한 **풀 데모**이며, 메타마스크 등 SES 확장이 있으면 `next/image` 번들 충돌로 검은 화면이 날 수 있어 **정합만 볼 때는 `/wheel` 권장**합니다.
 
 관리자 **`/admin/sig-sales`** 는 로컬에서 열면 OBS URL에 `wheelDemo=1` 이 자동으로 붙습니다.
+
+## 대전 연출 · 통합 점검 (식사 + 시그)
+
+식사 대전 게이지 연출과 시그 대전 VS UI를 **한 허브**에서 모두 고를 수 있습니다.
+
+| 용도 | URL |
+|------|-----|
+| **통합 허브 (권장)** | `http://localhost:3000/overlay/battle-effects-demo` |
+| **UI 반영 확인 (체크리스트)** | `http://localhost:3000/overlay/battle-effects-demo/verify` |
+| 식사 대전만 | `http://localhost:3000/overlay/meal-match/gauge-demo` |
+| 시그 대전만 | `http://localhost:3000/overlay/sig-match/demo` |
+
+### UI 반영 확인 (v3)
+
+요청 레이아웃이 적용됐는지 한 페이지에서 검증합니다.
+
+1. `npm run dev` 후 **`/overlay/battle-effects-demo/verify`** 접속
+2. 식사·시그 iframe 각각 확인 → 체크리스트 체크
+3. **DEMO · v3** 뱃지가 보이면 새 UI 번들 로드됨 (안 보이면 Ctrl+Shift+R)
+4. 진행 **N / N 전체 통과** 시 반영 완료
+
+| 확인 항목 | 식사 대전 | 시그 대전 |
+|-----------|-----------|-----------|
+| 타이틀 | 「식사 대전」 | 「시그 대전」 |
+| 점수 위치 | 게이지 **막대 안** (`62 / 100`) | 멤버 행에 **이름 + 72 시그** |
+| 멤버 배치 | 이름 pill **막대 아래** | 좌·우 **세로** 목록 |
+| 구 UI 아님 | 점수가 막대 밖만 있음 ✗ | `멤버1·멤버2` 가로 한 줄 ✗ |
+
+직접 URL (허브 미리보기용 `hubPreview=1` 포함):
+
+- 식사: `http://localhost:3000/overlay/meal-match?demo=true&fx=all&gaugePreview=1&demoTimerSec=15&hubPreview=1&scalePct=90`
+- 시그: 통합 허브 → **시그 2팀 대결 · 자동 연출** 선택 (snap URL 자동 생성)
+
+## 식사 대전 · 게이지 연출 점검
+
+서버·Redis 없이 URL만으로 연출을 확인합니다. 관리자 **식사 대전 → 게이지 연출** 체크박스는 `/api/state` 저장값이며, 아래 URL의 `fx` / `timerTheme` 이 있으면 **URL이 우선**합니다.
+
+| 용도 | URL |
+|------|-----|
+| **연출 허브 (시나리오·iframe)** | `http://localhost:3000/overlay/meal-match/gauge-demo` |
+| **통합 허브** | `http://localhost:3000/overlay/battle-effects-demo` |
+| 연출 전체 + 자동 점수·타이머 | `http://localhost:3000/overlay/meal-match?demo=true&fx=all&gaugePreview=1&demoTimerSec=15` |
+| 연출 OFF 비교 | `http://localhost:3000/overlay/meal-match?demo=true&fx=none` |
+| neon 타이머 | `http://localhost:3000/overlay/meal-match?demo=true&timerTheme=neon&fx=timer&gaugePreview=1&demoTimerSec=12` |
+| 팀 분할 게이지 | `http://localhost:3000/overlay/meal-match?demo=true&demoMode=team&fx=all&gaugePreview=1` |
+
+### URL 파라미터
+
+| 파라미터 | 의미 |
+|----------|------|
+| `demo=true` | 데모 참가자·점수 (필수) |
+| `demoMode` | `member` \| `team` \| `individual` |
+| `fx` / `gaugeFx` | `all` \| `none` \| `critical,floating,rank,timer` |
+| `timerTheme` | `default` \| `neon` \| `minimal` \| `danger` |
+| `gaugePreview=1` | 3초마다 점수 변동·리더 교체, 로컬 타이머 카운트다운 |
+| `fx` … `motion` | 게이지 막대 스프링·맥동·채움 끝 하이라이트 (`gaugeMotion`, 기본 ON) |
+| `demoTimerSec` | gaugePreview 타이머 시작 초 (기본 15) |
+
+단위 테스트: `npm test -- src/lib/meal-gauge-effects.test.ts`
+
+## 시그 대전 (시그 판매·회전판과 별도)
+
+후원·시그 키워드로 **팀/개인 점수 대결** — OBS 경로는 `/overlay/sig-match` 입니다. 시그 판매 회전판(`/overlay/sig-sales`)과 다릅니다.
+
+| 용도 | URL |
+|------|-----|
+| **통합 허브 (권장)** | `http://localhost:3000/overlay/battle-effects-demo` |
+| **시그 대전 데모 허브** | `http://localhost:3000/overlay/sig-match/demo` |
+| 실시간 (서버·Redis) | `http://localhost:3000/overlay/sig-match?u=finalent` |
+| 관리자 | `http://localhost:3000/admin` → 「시그 대전 관리」·하단 iframe 미리보기 |
+
+데모 허브는 `snap` 쿼리로 멤버·풀·점수·타이머를 넣어 서버 없이 표시합니다. `sigPreview=1` 이면 3초마다 시그 점수가 변해 VS 막대·공동 목표바·리드 스윕을 확인할 수 있습니다.
 
 ## 통합 오버레이 URL
 

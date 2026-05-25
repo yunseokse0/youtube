@@ -685,9 +685,6 @@ function SigSalesOverlayPageInner() {
     menuFillFromAllActive,
     machine.selectedSigs,
     pendingLanding?.selected,
-    winnersOnlyOverlay,
-    spinQueueSelected,
-    rouletteHasWinnerQueue,
   ]);
 
   /** 회전 연출·OBS 휠 표시 칸(기본: 메뉴 풀 N칸). `winnersOnly` URL만 당첨 큐 칸 */

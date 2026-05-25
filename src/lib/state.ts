@@ -688,7 +688,7 @@ export function defaultState(): AppState {
       title: "시그 대전",
       keyword: "시그",
       signatureAmounts: [77, 100, 333],
-      scoringMode: "count",
+      scoringMode: "amount",
       incentivePerPoint: 1000,
       sigMatchPools: [],
       participantMemberIds: [],

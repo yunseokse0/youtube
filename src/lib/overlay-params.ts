@@ -303,6 +303,13 @@ export function getOverlayMemberFilterIdFromSearchParams(searchParams: SearchPar
   return raw;
 }
 
+import {
+  isOverlayToolsHubPath,
+  shouldUseOverlayScrollableShell,
+} from "@/lib/overlay-shell-layout";
+
+export { isOverlayToolsHubPath, shouldUseOverlayScrollableShell };
+
 /** 관리자 대시보드 안 `<iframe>` 미리보기 — 과다 `/api/state`·SSE로 동기화가 막히는 것을 줄이기 위한 플래그 */
 export function isAdminDashboardPreviewEmbed(): boolean {
   if (typeof window === "undefined") return false;
@@ -356,11 +363,17 @@ export function stripOverlayPollMsFromBrowserLocation(): void {
   /* noop — 레이아웃 OverlayBroadcastHygiene 사용 */
 }
 
-/** 미리보기 iframe 등에서 SSE 생략. 디버그 시 `?overlayAllowSse=1`로 다시 켤 수 있음. */
+/** 미리보기 iframe·데모 허브 등에서 SSE 생략. 디버그 시 `?overlayAllowSse=1`로 다시 켤 수 있음. */
 export function shouldSuppressOverlaySseConnection(): boolean {
   if (typeof window === "undefined") return false;
   try {
-    if (new URLSearchParams(window.location.search).get("overlayAllowSse") === "1") return false;
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.get("overlayAllowSse") === "1") return false;
+    if (isOverlayToolsHubPath(window.location.pathname)) return true;
+    if (sp.get("hubPreview") === "1") return true;
+    if (sp.get("demo") === "true") return true;
+    if (sp.has("snap") || sp.has("snapKey")) return true;
+    if (sp.has("_verify")) return true;
   } catch {
     /* noop */
   }
@@ -381,9 +394,12 @@ export function appendAdminPreviewEmbedToOverlayUrl(url: string): string {
       return u.startsWith("http://") || u.startsWith("https://") ? u : `${parsed.pathname}${parsed.search}${parsed.hash}`;
     }
     parsed.searchParams.set("adminPreviewEmbed", "1");
+    parsed.searchParams.set("hubPreview", "1");
+    if (!parsed.searchParams.has("scalePct")) parsed.searchParams.set("scalePct", "100");
     if (u.startsWith("http://") || u.startsWith("https://")) return parsed.toString();
     return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   } catch {
-    return u.includes("adminPreviewEmbed=1") ? u : `${u}${u.includes("?") ? "&" : "?"}adminPreviewEmbed=1`;
+    const extra = "adminPreviewEmbed=1&hubPreview=1&scalePct=100";
+    return u.includes("adminPreviewEmbed=1") ? u : `${u}${u.includes("?") ? "&" : "?"}${extra}`;
   }
 }

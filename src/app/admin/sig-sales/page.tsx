@@ -826,7 +826,6 @@ export default function AdminSigSalesPage() {
     spin,
     resetToIdle,
     cancelConfirm,
-    loadRemote,
     wheelMenuSlices,
     wheelDemoMode,
   ]);

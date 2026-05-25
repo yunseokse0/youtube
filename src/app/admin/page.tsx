@@ -2205,29 +2205,32 @@ export default function AdminPage() {
     });
   };
 
-  const updateSigItem = (id: string, patch: Partial<AppState["sigInventory"][number]>) => {
-    setState((prev: AppState) => {
-      const sanitizedPatch =
-        id === ONE_SHOT_SIG_ID
-          ? {
-              ...patch,
-              name: ONE_SHOT_SIG_NAME,
-              price: undefined,
-              maxCount: undefined,
-              soldCount: undefined,
-              isRolling: undefined,
-              isActive: undefined,
-            }
-          : patch;
-      const draft: AppState = {
-        ...prev,
-        sigInventory: (prev.sigInventory || []).map((x) => (x.id === id ? { ...x, ...sanitizedPatch } : x)),
-      };
-      const next = syncOneShotSigItem(draft);
-      persistState(next);
-      return next;
-    });
-  };
+  const updateSigItem = useCallback(
+    (id: string, patch: Partial<AppState["sigInventory"][number]>) => {
+      setState((prev: AppState) => {
+        const sanitizedPatch =
+          id === ONE_SHOT_SIG_ID
+            ? {
+                ...patch,
+                name: ONE_SHOT_SIG_NAME,
+                price: undefined,
+                maxCount: undefined,
+                soldCount: undefined,
+                isRolling: undefined,
+                isActive: undefined,
+              }
+            : patch;
+        const draft: AppState = {
+          ...prev,
+          sigInventory: (prev.sigInventory || []).map((x) => (x.id === id ? { ...x, ...sanitizedPatch } : x)),
+        };
+        const next = syncOneShotSigItem(draft);
+        persistState(next);
+        return next;
+      });
+    },
+    [persistState, syncOneShotSigItem]
+  );
 
   const commitSigPriceDraft = (id: string, fallbackPrice: number) => {
     const draftRaw = sigPriceDraftMapRef.current[id];
@@ -2491,7 +2494,7 @@ export default function AdminPage() {
 
   type SigImageUploadResult = { url: string | null; status: number };
 
-  const uploadSigImageFile = async (
+  const uploadSigImageFile = useCallback(async (
     file: File | null,
     options?: { silent?: boolean }
   ): Promise<SigImageUploadResult> => {
@@ -2582,7 +2585,7 @@ export default function AdminPage() {
       return { url: null, status: res.status };
     }
     return { url: j.url, status: res.status };
-  };
+  }, [user?.id]);
 
   const runOcrForSigItem = useCallback(async (id: string, imageUrl: string, name?: string) => {
     const label = name || id;
@@ -2692,7 +2695,7 @@ export default function AdminPage() {
       setOcrBatchProgress(null);
       setOcrAllBusy(false);
     }
-  }, [ocrAllBusy, state.sigInventory]);
+  }, [ocrAllBusy, state.sigInventory, persistState, syncOneShotSigItem]);
 
   const appendSigInventoryRows = useCallback(
     (rows: { url: string; label: string; price: number }[], options?: { persist?: boolean }) => {
@@ -2916,7 +2919,14 @@ export default function AdminPage() {
         if (sigBulkReuploadInputRef.current) sigBulkReuploadInputRef.current.value = "";
       }
     },
-    [sigBulkReuploadBusy, state.sigInventory, updateSigItem, bulkAddSigInventoryFromFiles, beginSigBulkUploadUi]
+    [
+      sigBulkReuploadBusy,
+      state.sigInventory,
+      updateSigItem,
+      uploadSigImageFile,
+      bulkAddSigInventoryFromFiles,
+      beginSigBulkUploadUi,
+    ]
   );
 
   const clearSigInventoryImagesOnly = useCallback(() => {
@@ -2942,7 +2952,7 @@ export default function AdminPage() {
     });
     setSigExcelResult("시그 인벤 이미지 URL만 제거했습니다. 필요 시 PC에서 선택으로 다시 올려 주세요.");
     setSigOcrBanner("");
-  }, [syncOneShotSigItem]);
+  }, [persistState, syncOneShotSigItem]);
 
   const uploadSigImage = (id: string, file: File | null) => {
     if (!file) return;
@@ -4410,6 +4420,22 @@ export default function AdminPage() {
                   <div>
                     <h3 className="text-base font-semibold">시그 대전 관리</h3>
                     <p className="text-xs text-neutral-400">Redis donors를 기준으로 점수를 실시간 집계하고, 긴급 보정값을 합산합니다.</p>
+                    <a
+                      href="/overlay/battle-effects-demo"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 mr-3 inline-block text-[11px] font-medium text-violet-400 hover:text-violet-300"
+                    >
+                      대전 연출 통합 허브 ↗
+                    </a>
+                    <a
+                      href="/overlay/sig-match/demo"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 inline-block text-[11px] font-medium text-amber-400 hover:text-amber-300"
+                    >
+                      시그 대전 데모 ↗
+                    </a>
                   </div>
                   <button
                     onClick={() => { void toggleSigMatchActive(); }}
@@ -5142,8 +5168,9 @@ export default function AdminPage() {
                       [
                         ["critical", "크리티컬 (90%·타이머 임박)"],
                         ["floatingScore", "플로팅 +점수"],
-                        ["rankUp", "RANK UP"],
+                        ["rankUp", "1등 왕관 (이름 옆)"],
                         ["timerTension", "타이머 긴장"],
+                        ["gaugeMotion", "게이지 막대 연출"],
                       ] as const
                     ).map(([key, label]) => {
                       const ge = normalizeMealGaugeEffects(state.mealBattle?.gaugeEffects);
@@ -5167,6 +5194,22 @@ export default function AdminPage() {
                     오버레이 URL 테스트: <code className="text-neutral-400">?fx=none</code>,{" "}
                     <code className="text-neutral-400">?fx=critical,rank</code> (상태 설정보다 URL이 우선)
                   </p>
+                  <a
+                    href="/overlay/battle-effects-demo"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mr-3 inline-block text-[11px] font-medium text-violet-400 hover:text-violet-300"
+                  >
+                    대전 연출 통합 허브 ↗
+                  </a>
+                  <a
+                    href="/overlay/meal-match/gauge-demo"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block text-[11px] font-medium text-emerald-400 hover:text-emerald-300"
+                  >
+                    식사 게이지 데모 ↗
+                  </a>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700 text-sm" onClick={resetMealMatchScores}>
@@ -6635,6 +6678,7 @@ export default function AdminPage() {
                       <div className="text-[11px] text-neutral-400 mb-2">신규 시그 이미지 미리보기</div>
                       <div className="relative h-20 w-20 overflow-hidden rounded border border-white/10 bg-black/30">
                         {/* next/image는 비정상 URL 시 _next/static 조합 버그가 나올 수 있어 동적 시그는 native img 사용 */}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={newSigPreviewUrl || resolveSigPreviewSrc(newSigImageUrl, newSigName, user?.id)}
                           alt="신규 시그 미리보기"
@@ -6931,6 +6975,7 @@ export default function AdminPage() {
                               })
                             }
                           >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                               src={sigPreviewMap[item.id] || resolveSigPreviewSrc(item.imageUrl, item.name, user?.id)}
                               alt={`${item.name} 미리보기`}
@@ -7022,6 +7067,7 @@ export default function AdminPage() {
                       </button>
                     </div>
                     <div className="relative flex min-h-[40vh] w-full items-center justify-center overflow-hidden rounded border border-white/10 bg-black/40 p-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={sigImagePreviewModal.src}
                         alt={`${sigImagePreviewModal.name} 원본 미리보기`}

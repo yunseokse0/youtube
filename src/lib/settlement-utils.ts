@@ -125,6 +125,15 @@ export function formatSigMatchStat(n: number): string {
   return rounded.toLocaleString("ko-KR", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
+/** 시그 대전 오버레이 — 개수/금액 모드에 맞는 표기 */
+export function formatSigMatchScoreLabel(
+  score: number,
+  scoringMode: "count" | "amount"
+): string {
+  const n = formatSigMatchStat(score);
+  return scoringMode === "amount" ? `${n}원` : `${n} 시그`;
+}
+
 function findPoolForMember(memberId: string, pools: SigMatchPool[]): string[] | null {
   for (const p of pools || []) {
     const ids = [...new Set((p.memberIds || []).filter(Boolean))];

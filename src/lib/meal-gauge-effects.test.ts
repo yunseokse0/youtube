@@ -13,16 +13,18 @@ describe("meal-gauge-effects", () => {
       floatingScore: true,
       rankUp: true,
       timerTension: true,
+      gaugeMotion: true,
     });
   });
 
   it("URL fx=none turns all off", () => {
     const sp = new URLSearchParams("fx=none");
-    expect(resolveMealGaugeEffects({ critical: true, floatingScore: true, rankUp: true, timerTension: true }, sp)).toEqual({
+    expect(resolveMealGaugeEffects({ critical: true, floatingScore: true, rankUp: true, timerTension: true, gaugeMotion: true }, sp)).toEqual({
       critical: false,
       floatingScore: false,
       rankUp: false,
       timerTension: false,
+      gaugeMotion: false,
     });
   });
 
@@ -33,16 +35,23 @@ describe("meal-gauge-effects", () => {
       floatingScore: false,
       rankUp: true,
       timerTension: false,
+      gaugeMotion: false,
     });
   });
 
   it("uses state when no URL override", () => {
     const sp = new URLSearchParams("");
-    expect(resolveMealGaugeEffects({ critical: false, floatingScore: true, rankUp: false, timerTension: true }, sp)).toEqual({
+    expect(
+      resolveMealGaugeEffects(
+        { critical: false, floatingScore: true, rankUp: false, timerTension: true, gaugeMotion: true },
+        sp
+      )
+    ).toEqual({
       critical: false,
       floatingScore: true,
       rankUp: false,
       timerTension: true,
+      gaugeMotion: true,
     });
   });
 

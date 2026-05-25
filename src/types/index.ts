@@ -145,10 +145,12 @@ export type MealGaugeEffects = {
   critical: boolean;
   /** 점수 증가 시 +N 플로팅 */
   floatingScore: boolean;
-  /** 1위(팀) 변경 시 RANK UP */
+  /** 1등 멤버(팀) 이름 옆 왕관 */
   rankUp: boolean;
   /** 타이머 10초/5초 긴장 연출 */
   timerTension: boolean;
+  /** 점수 변동 시 막대 스프링·맥동·채움 끝 하이라이트 */
+  gaugeMotion: boolean;
 };
 
 export type MealBattleState = {
