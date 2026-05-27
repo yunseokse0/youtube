@@ -74,6 +74,8 @@ export async function POST(req: Request) {
     let spinCountExplicit = false;
     let mode: "default" | "cinematic5" = "default";
     let memberIdFilter: string | null = null;
+    let fixedSigIds: string[] = [];
+    let oneShotImageUrl = "";
     let legacyPriceFilter: number | null = null;
     let priceFilters: (number | null)[] | null = null;
     let priceRanges: ({ min: number | null; max: number | null } | null)[] | null = null;
@@ -82,6 +84,8 @@ export async function POST(req: Request) {
         spinCount?: number;
         mode?: string;
         memberId?: string | null;
+        fixedSigIds?: string[];
+        oneShotImageUrl?: string;
         priceFilter?: number | null;
         priceFilters?: (number | null)[];
         priceRanges?: ({ min?: number | null; max?: number | null } | null)[];
@@ -96,6 +100,19 @@ export async function POST(req: Request) {
       if (typeof j?.memberId === "string") {
         const v = j.memberId.trim();
         memberIdFilter = v.length > 0 ? v : null;
+      }
+      if (Array.isArray(j?.fixedSigIds)) {
+        const deduped = new Set<string>();
+        for (const rawId of j.fixedSigIds) {
+          const id = String(rawId || "").trim();
+          if (!id) continue;
+          deduped.add(id);
+          if (deduped.size >= 40) break;
+        }
+        fixedSigIds = Array.from(deduped);
+      }
+      if (typeof j?.oneShotImageUrl === "string") {
+        oneShotImageUrl = j.oneShotImageUrl.trim();
       }
       if (j && typeof j.priceFilter === "number" && Number.isFinite(j.priceFilter) && j.priceFilter > 0) {
         legacyPriceFilter = Math.max(0, Math.floor(j.priceFilter));
@@ -151,6 +168,19 @@ export async function POST(req: Request) {
       return row ? { ...row, price: Math.max(0, Math.floor(Number(pick.price ?? row.price ?? 0))) } : { ...pick };
     };
     if (mode === "cinematic5") {
+      const forcedPoolById = new Map(inv.map((x) => [x.id, x]));
+      const forcedSelected =
+        fixedSigIds.length > 0
+          ? fixedSigIds
+              .map((id) => forcedPoolById.get(id))
+              .filter((x): x is SigItem => Boolean(x))
+          : [];
+      if (fixedSigIds.length > 0 && forcedSelected.length !== fixedSigIds.length) {
+        return Response.json(
+          { error: "invalid_fixed_sig_ids", need: fixedSigIds.length, have: forcedSelected.length },
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
       const pool = allowPool(
         inv.filter(
           (x) =>
@@ -181,16 +211,18 @@ export async function POST(req: Request) {
       /** 명시된 회전 수: 최대 40까지(통합 관리자 회전판과 유사). 미지정 시 레거시 최대 5·풀 크기 */
       const CINEMATIC5_MAX_EXPLICIT = 40;
       const CINEMATIC5_MAX_LEGACY = 5;
-      const selectedCount = spinCountExplicit
-        ? Math.max(1, Math.min(CINEMATIC5_MAX_EXPLICIT, spinCount))
-        : Math.max(1, Math.min(CINEMATIC5_MAX_LEGACY, expandedPool.length));
-      if (selectedCount > expandedPool.length) {
+      const selectedCount = fixedSigIds.length > 0
+        ? fixedSigIds.length
+        : spinCountExplicit
+          ? Math.max(1, Math.min(CINEMATIC5_MAX_EXPLICIT, spinCount))
+          : Math.max(1, Math.min(CINEMATIC5_MAX_LEGACY, expandedPool.length));
+      if (fixedSigIds.length === 0 && selectedCount > expandedPool.length) {
         return Response.json(
           { error: "not_enough_distinct_sigs", need: selectedCount, have: expandedPool.length },
           { status: 400, headers: { "Content-Type": "application/json" } }
         );
       }
-      const distinctPicks = pickDistinctSigsByIdAndName(expandedPool, selectedCount);
+      const distinctPicks = fixedSigIds.length > 0 ? forcedSelected : pickDistinctSigsByIdAndName(expandedPool, selectedCount);
       if (distinctPicks.length < selectedCount) {
         return Response.json(
           {
@@ -226,11 +258,14 @@ export async function POST(req: Request) {
             price: selectedSigs.reduce((sum, x) => sum + Math.max(0, Math.floor(Number(x.price || 0))), 0),
           }
         : null;
+      const nextInventory = oneShotImageUrl
+        ? inv.map((x) => (x.id === ONE_SHOT_SIG_ID ? { ...x, imageUrl: oneShotImageUrl } : x))
+        : inv;
       const result = selectedSigs[selectedSigs.length - 1] || null;
       setRouletteLock(userId, 10_000);
       const next: AppState = {
         ...s,
-        sigInventory: inv,
+        sigInventory: nextInventory,
         rouletteState: {
           ...prevRs,
           sessionExcludedSigIds: prevRs.sessionExcludedSigIds,
@@ -258,6 +293,7 @@ export async function POST(req: Request) {
           fallbackExpanded: candidatePool.length !== pool.length,
           startedAt: next.rouletteState.startedAt,
           sessionId: next.rouletteState.sessionId,
+          forced: fixedSigIds.length > 0,
           result,
           selectedSigs,
           oneShot,

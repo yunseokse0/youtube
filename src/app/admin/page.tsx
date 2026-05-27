@@ -388,6 +388,8 @@ export default function AdminPage() {
   const [roulettePriceRanges, setRoulettePriceRanges] = useState<Array<{ min: string; max: string }>>(() =>
     Array.from({ length: 5 }, () => ({ min: "", max: "" }))
   );
+  const [rouletteForcedSigIdsInput, setRouletteForcedSigIdsInput] = useState("");
+  const [rouletteForcedOneShotImageUrl, setRouletteForcedOneShotImageUrl] = useState("");
   const [sigMatchNumericDraft, setSigMatchNumericDraft] = useState<{
     targetCount: string;
     incentivePerPoint: string;
@@ -2070,11 +2072,29 @@ export default function AdminPage() {
       const priceRanges: Array<{ min: number | null; max: number | null } | null> = parts.map(toRange);
       const pad = priceRanges[priceRanges.length - 1] ?? null;
       while (priceRanges.length < n) priceRanges.push(pad);
+      const fixedSigIds = rouletteForcedSigIdsInput
+        .split(/[\s,]+/)
+        .map((x) => String(x || "").trim())
+        .filter(Boolean);
+      const useForcedCinematic = fixedSigIds.length > 0;
+      if (useForcedCinematic && fixedSigIds.length !== 5) {
+        setRouletteActionMessage("강제 판매는 시그 ID를 정확히 5개 입력해야 합니다. (쉼표/공백 구분)");
+        return;
+      }
       const res = await fetch(`/api/roulette/spin?user=${encodeURIComponent(uid)}`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spinCount: n, priceRanges }),
+        body: JSON.stringify(
+          useForcedCinematic
+            ? {
+                mode: "cinematic5",
+                spinCount: 5,
+                fixedSigIds,
+                oneShotImageUrl: String(rouletteForcedOneShotImageUrl || "").trim() || undefined,
+              }
+            : { spinCount: n, priceRanges }
+        ),
       });
       const j = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
@@ -2082,6 +2102,9 @@ export default function AdminPage() {
         round?: number;
         need?: number;
         have?: number;
+        sessionId?: string;
+        selectedSigs?: Array<{ id: string; name: string; price: number; imageUrl?: string }>;
+        oneShot?: { id?: string; name?: string; price?: number } | null;
       };
       if (!res.ok) {
         setRouletteActionMessage(
@@ -2101,6 +2124,8 @@ export default function AdminPage() {
                     ? typeof j.need === "number" && typeof j.have === "number"
                       ? `서로 다른 시그가 부족합니다(필요 ${j.need}개 · 후보 ${j.have}개). 인벤토리를 늘리거나 뽑기 개수를 줄이세요.`
                       : "서로 다른 시그 수가 부족합니다."
+                  : j.error === "invalid_fixed_sig_ids"
+                    ? "강제 지정한 시그 ID 중 일부를 찾을 수 없습니다. ID 5개를 다시 확인해 주세요."
                     : `회전판 실패: ${j.error || res.status}`
         );
         return;
@@ -2111,6 +2136,39 @@ export default function AdminPage() {
         try {
           window.localStorage.setItem(storageKey(uid), JSON.stringify(remote));
         } catch {}
+      }
+      if (useForcedCinematic) {
+        const finishRes = await fetch(`/api/roulette/finish?user=${encodeURIComponent(uid)}`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: "cinematic5",
+            finalPhase: "CONFIRMED",
+            sessionId: String(j.sessionId || ""),
+            selectedSigs: Array.isArray(j.selectedSigs) ? j.selectedSigs : undefined,
+            oneShotResult: j.oneShot || undefined,
+            reason: "forced5_immediate_confirm",
+          }),
+        });
+        const finishJ = (await finishRes.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (!finishRes.ok || !finishJ.ok) {
+          setRouletteActionMessage(
+            `강제 5개 결과 생성은 성공했지만 판매 완료 확정이 실패했습니다: ${finishJ.error || finishRes.status}`
+          );
+          return;
+        }
+        const afterFinish = await loadStateFromApi(uid);
+        if (afterFinish) {
+          setState(afterFinish);
+          try {
+            window.localStorage.setItem(storageKey(uid), JSON.stringify(afterFinish));
+          } catch {}
+        }
+        setRouletteActionMessage(
+          `강제 5개 판매 완료 처리까지 반영했습니다. 기존 판매 완료 이미지가 적용됩니다. 오버레이 /overlay/sig-sales-forced (u=${uid}) 에서 확인하세요.`,
+        );
+        return;
       }
       const uniq = Array.from(
         new Set(
@@ -8007,6 +8065,34 @@ export default function AdminPage() {
                   >
                     초기화
                   </button>
+                </div>
+                <div className="rounded border border-sky-400/25 bg-sky-500/10 p-2">
+                  <div className="text-[11px] font-semibold text-sky-200">강제 5개 판매 (회전 없이 결과 고정)</div>
+                  <div className="mt-1 grid gap-2 sm:grid-cols-2">
+                    <label className="flex flex-col text-[11px] text-neutral-400">
+                      시그 ID 5개 (쉼표/공백 구분)
+                      <input
+                        type="text"
+                        className="mt-0.5 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
+                        placeholder="sig_a, sig_b, sig_c, sig_d, sig_e"
+                        value={rouletteForcedSigIdsInput}
+                        onChange={(e) => setRouletteForcedSigIdsInput(e.target.value)}
+                      />
+                    </label>
+                    <label className="flex flex-col text-[11px] text-neutral-400">
+                      한방 시그 이미지 URL(선택)
+                      <input
+                        type="text"
+                        className="mt-0.5 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
+                        placeholder="/uploads/one-shot.gif 또는 https://..."
+                        value={rouletteForcedOneShotImageUrl}
+                        onChange={(e) => setRouletteForcedOneShotImageUrl(e.target.value)}
+                      />
+                    </label>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-snug text-sky-100/85">
+                    ID를 5개 입력하면 일반 회전 대신 강제 5개 결과로 저장됩니다. 합산 한방 금액은 자동 계산됩니다.
+                  </p>
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto_auto] gap-2 mb-3">
