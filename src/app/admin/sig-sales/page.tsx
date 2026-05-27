@@ -146,6 +146,11 @@ export default function AdminSigSalesPage() {
   const [sigSalesSigRowOpen, setSigSalesSigRowOpen] = useState<Record<string, boolean>>({});
   const [resultsPanelCollapsed, setResultsPanelCollapsed] = useState(false);
   const [overlayObsUrl, setOverlayObsUrl] = useState("");
+  const [manualSigIds, setManualSigIds] = useState<string[]>(["", "", "", "", ""]);
+  const [manualOneShotName, setManualOneShotName] = useState("한방 시그");
+  const [manualOneShotPriceInput, setManualOneShotPriceInput] = useState("");
+  const [manualOneShotImageUrl, setManualOneShotImageUrl] = useState("");
+  const [manualBusy, setManualBusy] = useState(false);
   const nextSpinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [oneShotSound] = useState(() => new Howl({ src: [SPIN_SOUND_PATHS.oneShot], preload: true, volume: 0.7 }));
   const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || DEFAULT_SIG_SOLD_STAMP_URL;
@@ -516,6 +521,31 @@ export default function AdminSigSalesPage() {
     if (pick) return resolveSigAdminPreviewSrc(pick.imageUrl, pick.name, userId);
     return BUNDLED_SIG_PLACEHOLDER_URL;
   }, [state?.sigInventory, displaySelectedSigsForUi, userId]);
+  const manualSigOptions = useMemo(
+    () => (state?.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID),
+    [state?.sigInventory]
+  );
+  const manualSelectedSigs = useMemo(() => {
+    const byId = new Map(manualSigOptions.map((x) => [x.id, x]));
+    return manualSigIds.map((id) => byId.get(id) || null);
+  }, [manualSigIds, manualSigOptions]);
+  const manualAutoOneShotPrice = useMemo(
+    () =>
+      manualSelectedSigs.reduce((sum, x) => sum + (x ? Math.max(0, Math.floor(Number(x.price || 0))) : 0), 0),
+    [manualSelectedSigs]
+  );
+  const manualParsedOneShotPrice = useMemo(() => {
+    const raw = String(manualOneShotPriceInput || "").replace(/[^\d]/g, "");
+    if (!raw) return manualAutoOneShotPrice;
+    return Math.max(0, Math.floor(Number.parseInt(raw, 10) || 0));
+  }, [manualOneShotPriceInput, manualAutoOneShotPrice]);
+  const manualReady = useMemo(() => {
+    if (manualSigIds.length !== 5) return false;
+    if (manualSigIds.some((id) => !id)) return false;
+    const uniq = new Set(manualSigIds);
+    if (uniq.size !== 5) return false;
+    return manualSelectedSigs.every((x) => Boolean(x));
+  }, [manualSigIds, manualSelectedSigs]);
 
   useEffect(() => {
     if (!showFinalShowcase || !displayOneShot) {
@@ -828,6 +858,137 @@ export default function AdminSigSalesPage() {
     cancelConfirm,
     wheelMenuSlices,
     wheelDemoMode,
+  ]);
+
+  const applyManualSelection = useCallback(async (confirmNow: boolean) => {
+    if (!state) return;
+    if (!manualReady) {
+      setToast("수동 설정은 서로 다른 시그 5개를 모두 선택해야 합니다.");
+      return;
+    }
+    if (manualParsedOneShotPrice <= 0) {
+      setToast("한방 시그 금액을 확인해 주세요. (자동 합산 또는 직접 입력)");
+      return;
+    }
+    const selected = manualSelectedSigs.map((x) => ({ ...(x as SigItem) }));
+    const oneShot = {
+      id: ONE_SHOT_SIG_ID,
+      name: String(manualOneShotName || "").trim() || "한방 시그",
+      price: manualParsedOneShotPrice,
+    };
+    const now = Date.now();
+    const sessionId = `manual_${now}`;
+    const oneShotImage = String(manualOneShotImageUrl || "").trim();
+    const inventoryWithOneShotImage = (state.sigInventory || []).map((row) =>
+      row.id === ONE_SHOT_SIG_ID && oneShotImage ? { ...row, imageUrl: oneShotImage } : row
+    );
+
+    setManualBusy(true);
+    try {
+      const landedState: AppState = {
+        ...state,
+        sigInventory: inventoryWithOneShotImage,
+        rouletteState: {
+          ...state.rouletteState,
+          phase: "LANDED",
+          isRolling: false,
+          startedAt: now,
+          sessionId,
+          result: selected[selected.length - 1] || null,
+          results: selected,
+          selectedSigs: selected,
+          oneShotResult: oneShot,
+          spinCount: selected.length,
+        },
+        updatedAt: now,
+      };
+      const landedSaved = await saveStateAsync(landedState, userId);
+      if (!landedSaved.ok) {
+        setToast("수동 설정 저장 실패. 잠시 후 다시 시도해 주세요.");
+        return;
+      }
+      landed(selected, oneShot, selected[selected.length - 1]?.id || null);
+      setState(landedState);
+      setPendingLanding(null);
+      setDemoSpin(null);
+      setStagedSelected(selected);
+      setSpinStep(0);
+      setHighlightId(null);
+      setManualSoldSet(new Set());
+      setOneShotSold(false);
+      setShowConfirmModal(false);
+      setResultsPanelCollapsed(false);
+
+      if (!confirmNow) {
+        setToast("수동 5개/한방 설정 적용 완료. 아래 Confirm Sale로 판매 완료 처리할 수 있습니다.");
+        return;
+      }
+
+      const soldDeltaById = selected.reduce<Record<string, number>>((acc, row) => {
+        const key = canonicalSigIdFromWheelSliceId(String(row?.id || ""));
+        if (!key) return acc;
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {});
+      const confirmedInventory = inventoryWithOneShotImage.map((row) => {
+        const key = canonicalSigIdFromWheelSliceId(String(row.id || ""));
+        const delta = soldDeltaById[key] || 0;
+        if (!delta) return row;
+        const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
+        const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)));
+        const nextSold = Math.min(maxCount, soldCount + delta);
+        return {
+          ...row,
+          soldCount: nextSold,
+          isActive: nextSold >= maxCount ? false : row.isActive,
+        };
+      });
+      await finish({
+        sessionId,
+        selectedSigs: selected,
+        oneShotResult: oneShot,
+        finalPhase: "CONFIRMED",
+      });
+      const confirmedAt = Date.now();
+      const confirmedState: AppState = {
+        ...landedState,
+        sigInventory: confirmedInventory,
+        rouletteState: {
+          ...landedState.rouletteState,
+          phase: "CONFIRMED",
+          isRolling: false,
+          lastFinishedAt: confirmedAt,
+          selectedSigs: selected,
+          oneShotResult: oneShot,
+          sessionId,
+        },
+        updatedAt: confirmedAt,
+      };
+      const confirmedSaved = await saveStateAsync(confirmedState, userId);
+      if (confirmedSaved.ok) {
+        setState(confirmedState);
+        setToast("수동 5개 판매 완료 처리까지 반영했습니다.");
+      } else {
+        setToast("판매 완료 API는 반영됐지만 최종 상태 저장이 지연됩니다. 새로고침 후 확인해 주세요.");
+        void loadRemote();
+      }
+    } catch (e) {
+      setToast(`수동 설정 처리 실패: ${String(e)}`);
+    } finally {
+      setManualBusy(false);
+    }
+  }, [
+    state,
+    manualReady,
+    manualParsedOneShotPrice,
+    manualSelectedSigs,
+    manualOneShotName,
+    manualOneShotImageUrl,
+    userId,
+    landed,
+    finish,
+    loadRemote,
+    manualSigIds,
   ]);
 
   useEffect(() => {
@@ -1332,6 +1493,95 @@ export default function AdminSigSalesPage() {
           >
             오버레이 강제 새로고침
           </button>
+        </section>
+
+        <section className="rounded-xl border border-sky-300/30 bg-sky-500/10 p-3">
+          <div className="mb-2 text-sm font-semibold text-sky-100">수동 설정(5개 + 한방)</div>
+          <p className="mb-3 text-[11px] text-sky-100/85">
+            기존 결과 UI를 그대로 사용합니다. 5개를 직접 지정하고 한방 금액/이미지를 수동 설정할 수 있습니다.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-5">
+            {Array.from({ length: 5 }, (_, idx) => (
+              <label key={`manual-slot-${idx}`} className="flex flex-col text-[11px] text-neutral-300">
+                {idx + 1}번째 시그
+                <select
+                  className="mt-1 rounded border border-white/15 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-100"
+                  value={manualSigIds[idx] || ""}
+                  onChange={(e) =>
+                    setManualSigIds((prev) => {
+                      const next = [...prev];
+                      next[idx] = e.target.value;
+                      return next;
+                    })
+                  }
+                >
+                  <option value="">선택</option>
+                  {manualSigOptions.map((item) => (
+                    <option key={`manual-opt-${idx}-${item.id}`} value={item.id}>
+                      {item.name} ({Math.max(0, Number(item.price || 0)).toLocaleString("ko-KR")}원)
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <label className="flex flex-col text-[11px] text-neutral-300">
+              한방 시그 이름
+              <input
+                type="text"
+                className="mt-1 rounded border border-white/15 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-100"
+                value={manualOneShotName}
+                onChange={(e) => setManualOneShotName(e.target.value)}
+                placeholder="한방 시그"
+              />
+            </label>
+            <label className="flex flex-col text-[11px] text-neutral-300">
+              한방 시그 금액(빈칸=자동합산)
+              <input
+                type="text"
+                inputMode="numeric"
+                className="mt-1 rounded border border-white/15 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-100"
+                value={manualOneShotPriceInput}
+                onChange={(e) => setManualOneShotPriceInput(e.target.value)}
+                placeholder={manualAutoOneShotPrice.toLocaleString("ko-KR")}
+              />
+            </label>
+            <label className="flex flex-col text-[11px] text-neutral-300">
+              한방 이미지 URL(선택)
+              <input
+                type="text"
+                className="mt-1 rounded border border-white/15 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-100"
+                value={manualOneShotImageUrl}
+                onChange={(e) => setManualOneShotImageUrl(e.target.value)}
+                placeholder="/uploads/one-shot.gif"
+              />
+            </label>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <span className="rounded bg-black/30 px-2 py-1 text-neutral-300">
+              자동합산: {manualAutoOneShotPrice.toLocaleString("ko-KR")}원
+            </span>
+            <span className="rounded bg-black/30 px-2 py-1 text-neutral-300">
+              적용금액: {manualParsedOneShotPrice.toLocaleString("ko-KR")}원
+            </span>
+            <button
+              type="button"
+              disabled={manualBusy || !manualReady}
+              className="rounded bg-sky-700 px-3 py-1.5 font-semibold text-sky-50 hover:bg-sky-600 disabled:opacity-50"
+              onClick={() => void applyManualSelection(false)}
+            >
+              {manualBusy ? "처리 중..." : "수동 결과 적용(LANDED)"}
+            </button>
+            <button
+              type="button"
+              disabled={manualBusy || !manualReady}
+              className="rounded bg-emerald-700 px-3 py-1.5 font-semibold text-emerald-50 hover:bg-emerald-600 disabled:opacity-50"
+              onClick={() => void applyManualSelection(true)}
+            >
+              {manualBusy ? "처리 중..." : "수동 적용 + 판매 완료(CONFIRMED)"}
+            </button>
+          </div>
         </section>
 
         <section style={{ backgroundColor: "transparent" }} className="relative rounded-2xl border border-yellow-200/20 p-4">

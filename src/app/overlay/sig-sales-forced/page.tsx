@@ -1,1 +1,7 @@
-export { default } from "../sig-sales/page";
+"use client";
+
+import SigSalesPage from "../sig-sales/page";
+
+export default function SigSalesForcedPage() {
+  return <SigSalesPage />;
+}

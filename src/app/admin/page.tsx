@@ -6164,6 +6164,11 @@ export default function AdminPage() {
                     {selectedMemberId ? `&memberId=${selectedMemberId}` : ""}&sigResultScalePct=
                     {clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct)}
                   </code>
+                  <code className="text-sky-300 break-all">
+                    /overlay/sig-sales-forced?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}&wheelScalePct=85&menuCount={getSigSalesMenuCount()}
+                    {selectedMemberId ? `&memberId=${selectedMemberId}` : ""}&sigResultScalePct=
+                    {clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct)}
+                  </code>
                   <button
                     type="button"
                     className={`rounded px-2 py-1 text-xs shrink-0 ${copiedId === "dash-sig-sales" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
@@ -6189,6 +6194,24 @@ export default function AdminPage() {
                   >
                     미리보기 열기
                   </button>
+                  <button
+                    type="button"
+                    className="rounded bg-sky-700 px-2 py-1 text-xs hover:bg-sky-600"
+                    onClick={() => {
+                      const rs = clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct);
+                      window.open(
+                        `/overlay/sig-sales-forced?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}`,
+                        "_blank",
+                        "noopener,noreferrer"
+                      );
+                    }}
+                  >
+                    강제 오버레이 열기
+                  </button>
+                  <div className="rounded border border-sky-400/30 bg-sky-500/10 px-2 py-1 text-[11px] text-sky-100">
+                    강제 5개 설정은 아래{" "}
+                    <span className="font-semibold text-sky-200">"강제 5개 판매 (회전 없이 결과 고정)"</span> 구역에서 입력합니다.
+                  </div>
                 </div>
                 <div className="rounded-lg border border-white/10 bg-black/30 p-3">
                   <p className="text-xs text-neutral-300">
