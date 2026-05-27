@@ -370,7 +370,6 @@ export default function AdminPage() {
     () => (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID && x.isActive).length,
     [state.sigInventory]
   );
-
   const beginSigBulkUploadUi = useCallback((total: number, label: string) => {
     const safeTotal = Math.max(1, total);
     flushSync(() => {
@@ -389,7 +388,23 @@ export default function AdminPage() {
     Array.from({ length: 5 }, () => ({ min: "", max: "" }))
   );
   const [rouletteForcedSigIdsInput, setRouletteForcedSigIdsInput] = useState("");
+  const [rouletteForcedSlotIds, setRouletteForcedSlotIds] = useState<string[]>(["", "", "", "", ""]);
   const [rouletteForcedOneShotImageUrl, setRouletteForcedOneShotImageUrl] = useState("");
+  const forcedSigPickOptions = useMemo(
+    () => (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID),
+    [state.sigInventory]
+  );
+  const forcedSlotsReady = useMemo(() => {
+    const ids = rouletteForcedSlotIds.map((x) => String(x || "").trim()).filter(Boolean);
+    return ids.length === 5 && new Set(ids).size === 5;
+  }, [rouletteForcedSlotIds]);
+  const forcedSlotsAutoOneShotPrice = useMemo(() => {
+    const byId = new Map(forcedSigPickOptions.map((x) => [x.id, x]));
+    return rouletteForcedSlotIds.reduce((sum, id) => {
+      const row = byId.get(id);
+      return sum + (row ? Math.max(0, Math.floor(Number(row.price || 0))) : 0);
+    }, 0);
+  }, [rouletteForcedSlotIds, forcedSigPickOptions]);
   const [sigMatchNumericDraft, setSigMatchNumericDraft] = useState<{
     targetCount: string;
     incentivePerPoint: string;
@@ -2007,7 +2022,7 @@ export default function AdminPage() {
     });
   };
 
-  const spinSigRoulette = async () => {
+  const spinSigRoulette = async (opts?: { forceFiveOnly?: boolean }) => {
     /** 오버레이 URL의 `u=` 와 동일해야 폴링 상태가 맞음 (`user` 미로드 시 finalent 등) */
     const uid = rouletteUserId;
     setRouletteSpinBusy(true);
@@ -2072,13 +2087,25 @@ export default function AdminPage() {
       const priceRanges: Array<{ min: number | null; max: number | null } | null> = parts.map(toRange);
       const pad = priceRanges[priceRanges.length - 1] ?? null;
       while (priceRanges.length < n) priceRanges.push(pad);
-      const fixedSigIds = rouletteForcedSigIdsInput
+      const slotIds = rouletteForcedSlotIds.map((x) => String(x || "").trim()).filter(Boolean);
+      const textIds = rouletteForcedSigIdsInput
         .split(/[\s,]+/)
         .map((x) => String(x || "").trim())
         .filter(Boolean);
-      const useForcedCinematic = fixedSigIds.length > 0;
-      if (useForcedCinematic && fixedSigIds.length !== 5) {
-        setRouletteActionMessage("강제 판매는 시그 ID를 정확히 5개 입력해야 합니다. (쉼표/공백 구분)");
+      const fixedSigIds =
+        slotIds.length === 5 && new Set(slotIds).size === 5
+          ? slotIds
+          : textIds.length === 5 && new Set(textIds).size === 5
+            ? textIds
+            : [];
+      const useForcedCinematic = fixedSigIds.length === 5;
+      if (opts?.forceFiveOnly) {
+        if (!useForcedCinematic) {
+          setRouletteActionMessage("강제 판매: 아래에서 서로 다른 시그 5개를 모두 선택한 뒤 「강제 5개 판매 실행」을 누르세요.");
+          return;
+        }
+      } else if ((slotIds.length > 0 || textIds.length > 0) && !useForcedCinematic) {
+        setRouletteActionMessage("강제 판매는 서로 다른 시그 5개가 필요합니다. (드롭다운 5칸 또는 ID 5개)");
         return;
       }
       const res = await fetch(`/api/roulette/spin?user=${encodeURIComponent(uid)}`, {
@@ -5882,6 +5909,98 @@ export default function AdminPage() {
               >
                 {sigSalesModalTab === "wheel" ? (
               <div className="rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
+                <div className="rounded-xl border-2 border-sky-400/50 bg-sky-500/15 p-3 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-base font-bold text-sky-100">강제 5개 판매 (수동 지정 · 회전 없음)</h3>
+                    <Link
+                      href="/admin/sig-sales"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded bg-yellow-500 px-2 py-1 text-[11px] font-bold text-black hover:bg-yellow-400"
+                    >
+                      상세 수동 UI 열기
+                    </Link>
+                  </div>
+                  <p className="text-[11px] leading-snug text-sky-100/90">
+                    시그 이름으로 5개를 고른 뒤 「강제 5개 판매 실행」을 누르면 결과 고정 + 판매 완료(기존 판매 완료 이미지)까지 처리됩니다.
+                    한방 금액은 자동 합산({forcedSlotsAutoOneShotPrice.toLocaleString("ko-KR")}원)됩니다.
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-5">
+                    {Array.from({ length: 5 }, (_, idx) => (
+                      <label key={`forced-slot-${idx}`} className="flex flex-col text-[11px] text-neutral-300">
+                        {idx + 1}번째 시그
+                        <select
+                          className="mt-1 rounded border border-white/15 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-100"
+                          value={rouletteForcedSlotIds[idx] || ""}
+                          onChange={(e) =>
+                            setRouletteForcedSlotIds((prev) => {
+                              const next = [...prev];
+                              next[idx] = e.target.value;
+                              return next;
+                            })
+                          }
+                        >
+                          <option value="">선택</option>
+                          {forcedSigPickOptions.map((item) => (
+                            <option key={`forced-pick-${idx}-${item.id}`} value={item.id}>
+                              {item.name} ({Math.max(0, Number(item.price || 0)).toLocaleString("ko-KR")}원)
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <label className="flex flex-col text-[11px] text-neutral-400">
+                      한방 시그 이미지 URL(선택)
+                      <input
+                        type="text"
+                        className="mt-0.5 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
+                        placeholder="/uploads/one-shot.gif"
+                        value={rouletteForcedOneShotImageUrl}
+                        onChange={(e) => setRouletteForcedOneShotImageUrl(e.target.value)}
+                      />
+                    </label>
+                    <label className="flex flex-col text-[11px] text-neutral-400">
+                      또는 시그 ID 5개 (고급 · 쉼표/공백)
+                      <input
+                        type="text"
+                        className="mt-0.5 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
+                        placeholder="sig_a sig_b sig_c sig_d sig_e"
+                        value={rouletteForcedSigIdsInput}
+                        onChange={(e) => setRouletteForcedSigIdsInput(e.target.value)}
+                      />
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={rouletteSpinBusy || !forcedSlotsReady}
+                      className="rounded bg-sky-600 px-4 py-2 text-sm font-bold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={() => {
+                        void spinSigRoulette({ forceFiveOnly: true });
+                      }}
+                    >
+                      {rouletteSpinBusy ? "처리 중…" : "강제 5개 판매 실행"}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded border border-white/20 px-2 py-1.5 text-xs text-neutral-200 hover:bg-white/10"
+                      onClick={() => {
+                        window.open(
+                          `/overlay/sig-sales-forced?u=${encodeURIComponent(user?.id || "finalent")}`,
+                          "_blank",
+                          "noopener,noreferrer"
+                        );
+                      }}
+                    >
+                      강제 오버레이 미리보기
+                    </button>
+                    {!forcedSlotsReady ? (
+                      <span className="text-[11px] text-amber-200">5칸 모두 서로 다른 시그를 선택해야 실행됩니다.</span>
+                    ) : null}
+                  </div>
+                </div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h3 className="text-base font-semibold">시그 판매 및 회전판 추첨 관리</h3>
@@ -6208,10 +6327,6 @@ export default function AdminPage() {
                   >
                     강제 오버레이 열기
                   </button>
-                  <div className="rounded border border-sky-400/30 bg-sky-500/10 px-2 py-1 text-[11px] text-sky-100">
-                    강제 5개 설정은 아래{" "}
-                    <span className="font-semibold text-sky-200">"강제 5개 판매 (회전 없이 결과 고정)"</span> 구역에서 입력합니다.
-                  </div>
                 </div>
                 <div className="rounded-lg border border-white/10 bg-black/30 p-3">
                   <p className="text-xs text-neutral-300">
@@ -6543,6 +6658,13 @@ export default function AdminPage() {
                       <code className="text-neutral-300">hideSigBoard=1</code>만 추가하면 됩니다.
                     </p>
                   </div>
+                </div>
+                <div className="rounded border border-amber-400/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                  5개·한방 <strong className="text-amber-50">전체 수동 설정</strong>은 이 탭이 아니라{" "}
+                  <Link href="/admin/sig-sales" target="_blank" rel="noopener noreferrer" className="font-semibold text-amber-200 underline">
+                    시그 판매 회전판(/admin/sig-sales)
+                  </Link>
+                  페이지 상단의 <strong className="text-amber-50">「수동 설정(5개 + 한방)」</strong> 섹션입니다. 모달 우측 상단 「새 탭에서 열기」로도 이동할 수 있습니다.
                 </div>
                 <div className="rounded border border-white/10 bg-black/25 p-2 flex flex-wrap items-center gap-2">
                   <span className="text-xs text-neutral-300">멤버별 판매 프리셋</span>
@@ -8088,34 +8210,6 @@ export default function AdminPage() {
                   >
                     초기화
                   </button>
-                </div>
-                <div className="rounded border border-sky-400/25 bg-sky-500/10 p-2">
-                  <div className="text-[11px] font-semibold text-sky-200">강제 5개 판매 (회전 없이 결과 고정)</div>
-                  <div className="mt-1 grid gap-2 sm:grid-cols-2">
-                    <label className="flex flex-col text-[11px] text-neutral-400">
-                      시그 ID 5개 (쉼표/공백 구분)
-                      <input
-                        type="text"
-                        className="mt-0.5 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
-                        placeholder="sig_a, sig_b, sig_c, sig_d, sig_e"
-                        value={rouletteForcedSigIdsInput}
-                        onChange={(e) => setRouletteForcedSigIdsInput(e.target.value)}
-                      />
-                    </label>
-                    <label className="flex flex-col text-[11px] text-neutral-400">
-                      한방 시그 이미지 URL(선택)
-                      <input
-                        type="text"
-                        className="mt-0.5 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
-                        placeholder="/uploads/one-shot.gif 또는 https://..."
-                        value={rouletteForcedOneShotImageUrl}
-                        onChange={(e) => setRouletteForcedOneShotImageUrl(e.target.value)}
-                      />
-                    </label>
-                  </div>
-                  <p className="mt-1 text-[11px] leading-snug text-sky-100/85">
-                    ID를 5개 입력하면 일반 회전 대신 강제 5개 결과로 저장됩니다. 합산 한방 금액은 자동 계산됩니다.
-                  </p>
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto_auto] gap-2 mb-3">
