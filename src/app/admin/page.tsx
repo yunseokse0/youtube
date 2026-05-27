@@ -2541,7 +2541,15 @@ export default function AdminPage() {
     let res: Response;
     try {
       const q = new URLSearchParams();
-      const uid = String(user?.id || "").trim();
+      const uidFromQuery =
+        typeof window !== "undefined"
+          ? String(
+              new URLSearchParams(window.location.search).get("u") ||
+                new URLSearchParams(window.location.search).get("user") ||
+                ""
+            ).trim()
+          : "";
+      const uid = String(user?.id || uidFromQuery || "finalent").trim();
       if (uid) {
         q.set("user", uid);
         q.set("u", uid);
@@ -2591,6 +2599,9 @@ export default function AdminPage() {
                   ? "서버 오류로 업로드에 실패했습니다. 잠시 후 다시 시도해 주세요."
                   : `알 수 없는 오류(${rawError})가 발생했습니다.`;
       notify(`이미지 업로드 실패: ${message}`);
+      if (!silent) {
+        setSigExcelResult(`이미지 업로드 실패(${res.status}): ${rawError}`);
+      }
       return { url: null, status: res.status };
     }
     if (!silent && (j.ephemeral || (j.storage === "disk" && j.url.startsWith("/uploads/")))) {
