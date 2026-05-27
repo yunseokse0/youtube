@@ -89,6 +89,7 @@ export default function ResultOverlay({
       return soldOverrideSet.has(item.id) || soldOverrideSet.has(canon);
     });
   })();
+  const soldAllAtOnceForOneShot = Boolean(oneShot && showOneShotReveal && oneShotSold);
 
   const oneShotTrailing =
     oneShot && showOneShotReveal ? (
@@ -148,6 +149,7 @@ export default function ResultOverlay({
         className="w-full max-w-full"
         gifDelayMultiplier={gifDelayMultiplier}
         entranceOnlyLatest={entranceOnlyLatest}
+        forceSoldAll={soldAllAtOnceForOneShot}
         sigImageUserId={sigImageUserId}
       />
     </div>

@@ -98,9 +98,6 @@ export default function OneShotSigCard({
             : "relative overflow-hidden rounded-2xl border border-yellow-300/70 bg-[linear-gradient(135deg,rgba(245,158,11,0.25),rgba(234,179,8,0.1))] p-4 shadow-[0_0_30px_rgba(250,204,21,0.35)]"
       }
     >
-      {sold ? (
-        <div className="pointer-events-none absolute inset-0 z-[1] rounded-[inherit] bg-white/93" aria-hidden />
-      ) : null}
       <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.35),transparent_65%)]" />
       <div className={`relative z-[2] ${useBroadcastSizing ? "flex flex-1 flex-col" : ""}`}>
       <div
@@ -113,6 +110,12 @@ export default function OneShotSigCard({
               : "relative mb-2 h-40"
         }`}
       >
+        {sold ? (
+          <div
+            className="pointer-events-none absolute inset-0 z-[1] rounded-[inherit] bg-white/93"
+            aria-hidden
+          />
+        ) : null}
         <SigSaleMedia
           src={
             sigImageUserId

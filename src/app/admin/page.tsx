@@ -2261,37 +2261,55 @@ export default function AdminPage() {
 
   const addSigItem = () => {
     const name = newSigName.trim();
-    if (!name) return;
+    if (!name) {
+      setSigExcelResult("시그 이름을 입력해 주세요.");
+      return;
+    }
     if (newSigImageUploading) {
       setSigExcelResult("이미지 업로드 중입니다. 완료 후 시그를 추가해 주세요.");
       return;
     }
     const price = Math.max(0, Math.floor(Number(newSigPrice || 0) || 0));
+    const maxCount = Math.max(1, Math.floor(Number(newSigMaxCount || 1) || 1));
     const normalizedName = name.replace(/\s+/g, "").toLowerCase();
-    const hasDuplicate = (state.sigInventory || []).some((x) => (x.name || "").replace(/\s+/g, "").toLowerCase() === normalizedName);
-    if (hasDuplicate) {
-      setSigExcelResult(`중복 이름이라 추가하지 않았습니다: ${name}`);
-      return;
-    }
     let createdId = "";
     const previewSrcCandidate = (newSigPreviewUrl || resolveSigPreviewSrc(newSigImageUrl, newSigName, user?.id)).trim();
     setState((prev: AppState) => {
-      createdId = `sig_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-      const nextItem = {
-        id: createdId,
-        name,
-        price,
-        imageUrl: newSigImageUrl.trim(),
-        /** 초기 등록은 기본값을 전체(공통)로 둔다. */
-        memberId: "",
-        maxCount: 1,
-        soldCount: 0,
-        isRolling: true,
-        isActive: true,
-      };
+      const duplicateIdx = (prev.sigInventory || []).findIndex(
+        (x) => (x.name || "").replace(/\s+/g, "").toLowerCase() === normalizedName
+      );
+      const hasImageInput = newSigImageUrl.trim().length > 0;
+      let nextInventory = [...(prev.sigInventory || [])];
+      if (duplicateIdx >= 0) {
+        const target = nextInventory[duplicateIdx];
+        nextInventory[duplicateIdx] = {
+          ...target,
+          name,
+          price,
+          imageUrl: hasImageInput ? newSigImageUrl.trim() : target.imageUrl,
+          memberId: newSigMemberId || "",
+          maxCount,
+          isActive: true,
+        };
+        createdId = target.id;
+      } else {
+        createdId = `sig_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const nextItem = {
+          id: createdId,
+          name,
+          price,
+          imageUrl: newSigImageUrl.trim(),
+          memberId: newSigMemberId || "",
+          maxCount,
+          soldCount: 0,
+          isRolling: true,
+          isActive: true,
+        };
+        nextInventory = [...nextInventory, nextItem];
+      }
       const draft: AppState = {
         ...prev,
-        sigInventory: [...(prev.sigInventory || []), nextItem],
+        sigInventory: nextInventory,
       };
       const next = syncOneShotSigItem(draft);
       persistState(next);
@@ -2305,7 +2323,7 @@ export default function AdminPage() {
     setNewSigMaxCount("1");
     setNewSigImageUrl("");
     setNewSigPreviewUrl("");
-    setSigExcelResult("");
+    setSigExcelResult(`시그 저장 완료: ${name} (${price.toLocaleString("ko-KR")}원)`);
   };
 
   const downloadSigExcelTemplate = () => {

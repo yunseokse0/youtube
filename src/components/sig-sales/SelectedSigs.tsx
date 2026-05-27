@@ -49,6 +49,8 @@ type SelectedSigsProps = {
   cardScalePct?: number;
   /** true면 y/scale 등장 연출 없음(회전판 제거 후 고정 배치) */
   disableCardMotion?: boolean;
+  /** 한방 시그 판매 확정 시, 보이는 당첨 카드에 판매완료 연출을 동시에 적용 */
+  forceSoldAll?: boolean;
 };
 
 export default function SelectedSigs({
@@ -70,6 +72,7 @@ export default function SelectedSigs({
   matchOneShotCardSize = false,
   cardScalePct = 100,
   disableCardMotion = false,
+  forceSoldAll = false,
   sigImageUserId,
 }: SelectedSigsProps) {
   /** 고정 5·6열은 카드가 적을 때도 빈 칸이 남아 미리 깔린 것처럼 보임 → 실제 개수만큼 열만 사용 */
@@ -108,9 +111,9 @@ export default function SelectedSigs({
 
   const sigCards = items.map((item, idx) => {
         const canonId = canonicalSigIdFromWheelSliceId(item.id);
-        const sold = soldOverrideSet
+        const sold = forceSoldAll || (soldOverrideSet
           ? soldOverrideSet.has(item.id) || soldOverrideSet.has(canonId)
-          : manualSoldSet.has(item.id) || manualSoldSet.has(canonId);
+          : manualSoldSet.has(item.id) || manualSoldSet.has(canonId));
         const isLatestConfirmed = highlightId === item.id;
         const latestIdx = items.length - 1;
         const isNewest = idx === latestIdx;

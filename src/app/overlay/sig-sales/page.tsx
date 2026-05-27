@@ -1178,7 +1178,18 @@ function SigSalesOverlayPageInner() {
     if (winnersOnlyOverlay) return false;
     if (hideSigBoard || !state || (state.sigInventory || []).length === 0) return false;
     if (displaySelectedSigs.length > 0 && resultOverlayVisible && !allowSigBoardWithResults) return false;
-    if (sigBoardDuringSpin) return true;
+    if (sigBoardDuringSpin) {
+      // 회전 중에만 보드를 노출하고, IDLE(회전 전)에서는 임시 카드 노출을 막는다.
+      return (
+        machine.phase === "SPINNING" ||
+        machine.phase === "LANDED" ||
+        machine.phase === "CONFIRM_PENDING" ||
+        wheelPhase === "spinning" ||
+        wheelPhase === "settling" ||
+        Boolean(demoSpin) ||
+        Boolean(pendingLanding)
+      );
+    }
     return Boolean(hideWheelAfterComplete && showResultPanel && resultsPanelGateOpen);
   }, [
     winnersOnlyOverlay,
@@ -1192,6 +1203,10 @@ function SigSalesOverlayPageInner() {
     showResultPanel,
     resultsPanelGateOpen,
     wheelDemoActive,
+    machine.phase,
+    wheelPhase,
+    demoSpin,
+    pendingLanding,
   ]);
   /** 관리자가 재고에서 완판 처리한 시그 → 방송 결과 카드에도 스탬프 표시 */
   const inventorySoldOutIdSet = useMemo(() => {
