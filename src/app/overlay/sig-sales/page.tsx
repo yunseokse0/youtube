@@ -97,6 +97,23 @@ const DEFAULT_RESULT_REVEAL_DELAY_MS = 480;
 const DEFAULT_SEQUENTIAL_CARD_EMERGE_MS = 200;
 /** 순차 라운드: 다음 회전 시작까지(ms). 기본 0 = 착지 직후 바로 다음 회전 */
 const DEFAULT_SEQUENTIAL_NEXT_SPIN_MS = 0;
+const DEMO_SIG_PRESET_IDS = new Set([
+  "sig_aegyo",
+  "sig_dance",
+  "sig_meal",
+  "sig_voice",
+  "sig_song",
+  "sig_talk",
+  "sig_heart",
+  "sig_game",
+]);
+
+function isDemoPlaceholderSig(item: SigItem): boolean {
+  const id = String(item?.id || "").trim();
+  const imageUrl = String(item?.imageUrl || "").toLowerCase();
+  return DEMO_SIG_PRESET_IDS.has(id) || imageUrl.includes("dummy-sig.svg");
+}
+
 const buildOneShotFromSelected = (selected: SigItem[]) => {
   if (selected.length < MIN_ONE_SHOT_SIGS) return null;
   return {
@@ -351,10 +368,12 @@ function SigSalesOverlayPageInner() {
           transformOrigin: "top center",
         } as React.CSSProperties);
   const [state, setState] = useState<AppState | null>(null);
-  const wheelInventory = useMemo(
-    () => mergeWheelDemoSigInventory(state?.sigInventory, wheelDemoActive),
-    [state?.sigInventory, wheelDemoActive]
-  );
+  const wheelInventory = useMemo(() => {
+    const merged = mergeWheelDemoSigInventory(state?.sigInventory, wheelDemoActive);
+    if (wheelDemoActive) return merged;
+    // 실방송/OBS에서는 기본 데모 시그(더미 이미지 포함)를 회전판/보드 후보에서 제외한다.
+    return merged.filter((item) => !isDemoPlaceholderSig(item));
+  }, [state?.sigInventory, wheelDemoActive]);
   /** OBS URL `u=` 가 틀려도 인벤 업로드 경로에서 이미지 계정을 맞춤(관리자 미리보기와 동일) */
   const sigImageUserId = useMemo(
     () => inferSigUploadUserIdFromInventory(state?.sigInventory, userId),
@@ -1945,7 +1964,7 @@ function SigSalesOverlayPageInner() {
             transition={{ duration: revealMotionSec, ease: [0.22, 1, 0.36, 1] }}
           >
             <SigBoardRolling
-              inventory={state.sigInventory || []}
+              inventory={wheelInventory || []}
               soldOutStampUrl={soldOutStampUrl}
               soldOverrideSet={resultSoldOverrideSet}
               sigSalesExcludedIds={state.sigSalesExcludedIds || []}
