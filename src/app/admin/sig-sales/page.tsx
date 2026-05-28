@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import confetti from "canvas-confetti";
@@ -82,6 +82,9 @@ import {
 const STEP_CONFIRM_PAUSE_MS = 3000;
 const MAX_SELECTED_SIGS = 20;
 const MIN_ONE_SHOT_SIGS = 2;
+const MAX_SIG_UPLOAD_BYTES = 30 * 1024 * 1024;
+const MANUAL_SIG_DRAFT_STORAGE_PREFIX = "admin-sig-sales-manual-draft-v1";
+const MANUAL_SIG_DRAFT_STATE_KEY = "sigSalesManualDraftV1";
 type HistoryItem = {
   id: string;
   sessionId: string;
@@ -92,6 +95,22 @@ type HistoryItem = {
   timestamp: number;
   adminId?: string | null;
   reason?: string | null;
+};
+type ManualSigDraft = {
+  sourceSigId?: string;
+  name: string;
+  priceInput: string;
+  imageUrl: string;
+};
+type ManualInputMode = "free" | "inventory";
+type ManualSigDraftPersist = {
+  inputMode?: ManualInputMode;
+  drafts: ManualSigDraft[];
+  oneShotName: string;
+  oneShotPriceInput: string;
+  oneShotImageUrl: string;
+  sigSoldFlags: boolean[];
+  oneShotMarkSold: boolean;
 };
 const buildOneShotFromSelected = (selected: SigItem[]) => {
   if (selected.length < MIN_ONE_SHOT_SIGS) return null;
@@ -104,6 +123,8 @@ const buildOneShotFromSelected = (selected: SigItem[]) => {
 
 export default function AdminSigSalesPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialView = searchParams.get("view") === "manual" ? "manual" : "default";
   const [user, setUser] = useState<{ id: string; companyName: string; name?: string; remainingDays?: number | null; unlimited?: boolean } | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const userId = user?.id || "finalent";
@@ -128,6 +149,7 @@ export default function AdminSigSalesPage() {
   const [toast, setToast] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [stagedSelected, setStagedSelected] = useState<SigItem[]>([]);
+  const [manualPreviewSelected, setManualPreviewSelected] = useState<SigItem[]>([]);
   const [spinStep, setSpinStep] = useState(0);
   const [pinnedWheelLayout, setPinnedWheelLayout] = useState<{
     sessionId: string;
@@ -146,16 +168,34 @@ export default function AdminSigSalesPage() {
   const [sigSalesSigRowOpen, setSigSalesSigRowOpen] = useState<Record<string, boolean>>({});
   const [resultsPanelCollapsed, setResultsPanelCollapsed] = useState(false);
   const [overlayObsUrl, setOverlayObsUrl] = useState("");
-  const [manualSigIds, setManualSigIds] = useState<string[]>(["", "", "", "", ""]);
+  const [overlayObsUrlManual, setOverlayObsUrlManual] = useState("");
+  const [overlayObsMode, setOverlayObsMode] = useState<"wheel" | "manual">("wheel");
+  const [manualInputMode, setManualInputMode] = useState<ManualInputMode>("free");
+  const [manualSigDrafts, setManualSigDrafts] = useState<ManualSigDraft[]>(
+    Array.from({ length: 5 }, () => ({ name: "", priceInput: "", imageUrl: "" }))
+  );
   const [manualOneShotName, setManualOneShotName] = useState("한방 시그");
   const [manualOneShotPriceInput, setManualOneShotPriceInput] = useState("");
   const [manualOneShotImageUrl, setManualOneShotImageUrl] = useState("");
+  const [manualSigSoldFlags, setManualSigSoldFlags] = useState<boolean[]>([false, false, false, false, false]);
+  const [manualOneShotMarkSold, setManualOneShotMarkSold] = useState(false);
   const [manualBusy, setManualBusy] = useState(false);
+  const [manualDebugInfo, setManualDebugInfo] = useState<string>("");
+  const [manualRowUploadBusy, setManualRowUploadBusy] = useState<Record<number, boolean>>({});
+  const [manualOneShotUploadBusy, setManualOneShotUploadBusy] = useState(false);
   const nextSpinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const manualSectionRef = useRef<HTMLDivElement | null>(null);
+  const manualDraftHydratedRef = useRef(false);
+  const latestStateRef = useRef<AppState | null>(null);
+  const manualDraftLastSavedRef = useRef<string>("");
   const [oneShotSound] = useState(() => new Howl({ src: [SPIN_SOUND_PATHS.oneShot], preload: true, volume: 0.7 }));
   const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || DEFAULT_SIG_SOLD_STAMP_URL;
   const { machine, spin, landed, markConfirmPending, cancelConfirm, resetToIdle, finish, setOpacity, setError } = useSigSalesState(userId, state);
   const controlsDisabled = !authReady || machine.phase === "CONFIRM_PENDING" || machine.isFinishLoading;
+
+  useEffect(() => {
+    latestStateRef.current = state;
+  }, [state]);
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -245,6 +285,134 @@ export default function AdminSigSalesPage() {
       window.removeEventListener("storage", onStorage);
     };
   }, [authReady, userId, loadRemote]);
+
+  useEffect(() => {
+    if (manualDraftHydratedRef.current) return;
+    const stateDraftRaw = (() => {
+      const os = state?.overlaySettings;
+      if (!os || typeof os !== "object") return null;
+      const raw = (os as Record<string, unknown>)[MANUAL_SIG_DRAFT_STATE_KEY];
+      return raw && typeof raw === "object" ? (raw as Partial<ManualSigDraftPersist>) : null;
+    })();
+    if (stateDraftRaw) {
+      if (Array.isArray(stateDraftRaw.drafts) && stateDraftRaw.drafts.length === 5) {
+        setManualSigDrafts(
+          stateDraftRaw.drafts.map((x) => ({
+            sourceSigId: String(x?.sourceSigId || "").trim() || undefined,
+            name: String(x?.name || ""),
+            priceInput: String(x?.priceInput || ""),
+            imageUrl: String(x?.imageUrl || ""),
+          }))
+        );
+      }
+      if (stateDraftRaw.inputMode === "free" || stateDraftRaw.inputMode === "inventory") {
+        setManualInputMode(stateDraftRaw.inputMode);
+      }
+      if (typeof stateDraftRaw.oneShotName === "string") setManualOneShotName(stateDraftRaw.oneShotName);
+      if (typeof stateDraftRaw.oneShotPriceInput === "string") setManualOneShotPriceInput(stateDraftRaw.oneShotPriceInput);
+      if (typeof stateDraftRaw.oneShotImageUrl === "string") setManualOneShotImageUrl(stateDraftRaw.oneShotImageUrl);
+      if (Array.isArray(stateDraftRaw.sigSoldFlags) && stateDraftRaw.sigSoldFlags.length === 5) {
+        setManualSigSoldFlags(stateDraftRaw.sigSoldFlags.map((v) => Boolean(v)));
+      }
+      if (typeof stateDraftRaw.oneShotMarkSold === "boolean") setManualOneShotMarkSold(stateDraftRaw.oneShotMarkSold);
+      manualDraftHydratedRef.current = true;
+      return;
+    }
+
+    if (typeof window === "undefined") return;
+    const key = `${MANUAL_SIG_DRAFT_STORAGE_PREFIX}:${userId || "default"}`;
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        inputMode?: ManualInputMode;
+        drafts?: ManualSigDraft[];
+        oneShotName?: string;
+        oneShotPriceInput?: string;
+        oneShotImageUrl?: string;
+        sigSoldFlags?: boolean[];
+        oneShotMarkSold?: boolean;
+      };
+      if (Array.isArray(parsed?.drafts) && parsed.drafts.length === 5) {
+        setManualSigDrafts(
+          parsed.drafts.map((x) => ({
+            sourceSigId: String(x?.sourceSigId || "").trim() || undefined,
+            name: String(x?.name || ""),
+            priceInput: String(x?.priceInput || ""),
+            imageUrl: String(x?.imageUrl || ""),
+          }))
+        );
+      }
+      if (parsed?.inputMode === "free" || parsed?.inputMode === "inventory") {
+        setManualInputMode(parsed.inputMode);
+      }
+      if (typeof parsed?.oneShotName === "string") setManualOneShotName(parsed.oneShotName);
+      if (typeof parsed?.oneShotPriceInput === "string") setManualOneShotPriceInput(parsed.oneShotPriceInput);
+      if (typeof parsed?.oneShotImageUrl === "string") setManualOneShotImageUrl(parsed.oneShotImageUrl);
+      if (Array.isArray(parsed?.sigSoldFlags) && parsed.sigSoldFlags.length === 5) {
+        setManualSigSoldFlags(parsed.sigSoldFlags.map((v) => Boolean(v)));
+      }
+      if (typeof parsed?.oneShotMarkSold === "boolean") setManualOneShotMarkSold(parsed.oneShotMarkSold);
+    } catch {
+      /* ignore malformed local draft */
+    } finally {
+      /** 초안이 비어 있어도 이후 자동저장은 반드시 동작해야 함 */
+      manualDraftHydratedRef.current = true;
+    }
+  }, [userId, state?.overlaySettings]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const key = `${MANUAL_SIG_DRAFT_STORAGE_PREFIX}:${userId || "default"}`;
+    const payload = {
+      inputMode: manualInputMode,
+      drafts: manualSigDrafts,
+      oneShotName: manualOneShotName,
+      oneShotPriceInput: manualOneShotPriceInput,
+      oneShotImageUrl: manualOneShotImageUrl,
+      sigSoldFlags: manualSigSoldFlags,
+      oneShotMarkSold: manualOneShotMarkSold,
+    };
+    try {
+      window.localStorage.setItem(key, JSON.stringify(payload));
+    } catch {
+      /* ignore quota/storage errors */
+    }
+    if (!authReady) return;
+    if (!manualDraftHydratedRef.current) return;
+    const tid = window.setTimeout(() => {
+      const current = latestStateRef.current;
+      if (!current) return;
+      const payloadText = JSON.stringify(payload);
+      if (manualDraftLastSavedRef.current === payloadText) return;
+      manualDraftLastSavedRef.current = payloadText;
+      const prevOverlaySettings =
+        current.overlaySettings && typeof current.overlaySettings === "object"
+          ? (current.overlaySettings as Record<string, unknown>)
+          : {};
+      const nextOverlaySettings: Record<string, unknown> = {
+        ...prevOverlaySettings,
+        [MANUAL_SIG_DRAFT_STATE_KEY]: payload,
+      };
+      const next: AppState = {
+        ...current,
+        overlaySettings: nextOverlaySettings,
+        updatedAt: Date.now(),
+      };
+      void saveStateAsync(next, userId);
+    }, 300);
+    return () => window.clearTimeout(tid);
+  }, [
+    authReady,
+    userId,
+    manualInputMode,
+    manualSigDrafts,
+    manualOneShotName,
+    manualOneShotPriceInput,
+    manualOneShotImageUrl,
+    manualSigSoldFlags,
+    manualOneShotMarkSold,
+  ]);
 
   const loadHistory = useCallback(async (limit = 8) => {
     if (!authReady) return;
@@ -470,6 +638,7 @@ export default function AdminSigSalesPage() {
   const displaySelectedSigs = useMemo(() => {
     const fromServer = (machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
     const fromStaged = stagedSelected.slice(0, MAX_SELECTED_SIGS);
+    const fromManualPreview = manualPreviewSelected.slice(0, MAX_SELECTED_SIGS);
     const terminalPhase =
       machine.phase === "LANDED" ||
       machine.phase === "CONFIRM_PENDING" ||
@@ -477,8 +646,9 @@ export default function AdminSigSalesPage() {
     /** 착지 후·폴링 복원: 서버 `selectedSigs`가 정본(순차 연출 중 `stagedSelected`가 3개만 남는 경우 방지) */
     if (terminalPhase && fromServer.length > 0) return fromServer;
     if (fromStaged.length > 0) return fromStaged;
+    if (fromManualPreview.length > 0) return fromManualPreview;
     return fromServer;
-  }, [machine.selectedSigs, stagedSelected, machine.phase]);
+  }, [machine.selectedSigs, stagedSelected, manualPreviewSelected, machine.phase]);
   const displaySelectedSigsForUi = useMemo(
     () =>
       displaySelectedSigs.map((s) => hydrateSigItemFromInventory(s, state?.sigInventory, userId)),
@@ -486,8 +656,19 @@ export default function AdminSigSalesPage() {
   );
   const displayOneShot = useMemo(() => {
     if (displaySelectedSigs.length < MIN_ONE_SHOT_SIGS) return null;
-    return buildOneShotFromSelected(displaySelectedSigs);
-  }, [displaySelectedSigs]);
+    const base = buildOneShotFromSelected(displaySelectedSigs);
+    if (!base) return null;
+    const soldPrice = displaySelectedSigs.reduce((sum, item) => {
+      const canon = canonicalSigIdFromWheelSliceId(String(item.id || ""));
+      const sold = manualSoldSet.has(item.id) || manualSoldSet.has(canon);
+      if (!sold) return sum;
+      return sum + Math.max(0, Math.floor(Number(item.price || 0)));
+    }, 0);
+    return {
+      ...base,
+      price: Math.max(0, Math.floor(Number(base.price || 0)) - soldPrice),
+    };
+  }, [displaySelectedSigs, manualSoldSet]);
   const resultCardCount = useMemo(() => {
     let n = displaySelectedSigsForUi.length;
     if (displayOneShot && oneShotReveal) n += 1;
@@ -521,18 +702,44 @@ export default function AdminSigSalesPage() {
     if (pick) return resolveSigAdminPreviewSrc(pick.imageUrl, pick.name, userId);
     return BUNDLED_SIG_PLACEHOLDER_URL;
   }, [state?.sigInventory, displaySelectedSigsForUi, userId]);
-  const manualSigOptions = useMemo(
-    () => (state?.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID),
-    [state?.sigInventory]
-  );
-  const manualSelectedSigs = useMemo(() => {
-    const byId = new Map(manualSigOptions.map((x) => [x.id, x]));
-    return manualSigIds.map((id) => byId.get(id) || null);
-  }, [manualSigIds, manualSigOptions]);
-  const manualAutoOneShotPrice = useMemo(
+  const manualParsedRows = useMemo(
     () =>
-      manualSelectedSigs.reduce((sum, x) => sum + (x ? Math.max(0, Math.floor(Number(x.price || 0))) : 0), 0),
-    [manualSelectedSigs]
+      manualSigDrafts.map((row) => {
+        const name = String(row.name || "").trim();
+        const digits = String(row.priceInput || "").replace(/[^\d]/g, "");
+        const price = digits ? Math.max(0, Math.floor(Number.parseInt(digits, 10) || 0)) : 0;
+        return {
+          name,
+          price,
+          imageUrl: String(row.imageUrl || "").trim(),
+        };
+      }),
+    [manualSigDrafts]
+  );
+  const manualInventoryOptions = useMemo(() => {
+    const mergedSource: SigItem[] = [
+      ...((state?.sigInventory || []) as SigItem[]),
+      ...(activeNormalPool || []),
+      ...(wheelInventory || []),
+      ...(displaySelectedSigsForUi || []),
+    ].filter((row) => row && row.id !== ONE_SHOT_SIG_ID);
+    const uniq = new Map<string, { id: string; name: string; price: number; imageUrl: string }>();
+    mergedSource.forEach((row) => {
+      const id = String(row.id || "").trim();
+      if (!id) return;
+      const name = String(row.name || "").trim() || id;
+      uniq.set(id, {
+        id,
+        name,
+        price: Math.max(0, Math.floor(Number(row.price || 0))),
+        imageUrl: String(row.imageUrl || "").trim(),
+      });
+    });
+    return Array.from(uniq.values()).sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  }, [state?.sigInventory, activeNormalPool, wheelInventory, displaySelectedSigsForUi]);
+  const manualAutoOneShotPrice = useMemo(
+    () => manualParsedRows.reduce((sum, row) => sum + row.price, 0),
+    [manualParsedRows]
   );
   const manualParsedOneShotPrice = useMemo(() => {
     const raw = String(manualOneShotPriceInput || "").replace(/[^\d]/g, "");
@@ -540,12 +747,24 @@ export default function AdminSigSalesPage() {
     return Math.max(0, Math.floor(Number.parseInt(raw, 10) || 0));
   }, [manualOneShotPriceInput, manualAutoOneShotPrice]);
   const manualReady = useMemo(() => {
-    if (manualSigIds.length !== 5) return false;
-    if (manualSigIds.some((id) => !id)) return false;
-    const uniq = new Set(manualSigIds);
+    if (manualParsedRows.length !== 5) return false;
+    if (manualParsedRows.some((row) => !row.name || row.price <= 0)) return false;
+    const uniq = new Set(
+      manualSigDrafts.map((row, idx) => {
+        const sourceKey = String(row?.sourceSigId || "").trim();
+        if (sourceKey) return `id:${sourceKey}`;
+        return `name:${String(manualParsedRows[idx]?.name || "").toLowerCase()}`;
+      })
+    );
     if (uniq.size !== 5) return false;
-    return manualSelectedSigs.every((x) => Boolean(x));
-  }, [manualSigIds, manualSelectedSigs]);
+    return true;
+  }, [manualParsedRows, manualSigDrafts]);
+
+  useEffect(() => {
+    if (!authReady) return;
+    if (manualInventoryOptions.length > 0) return;
+    void loadRemote();
+  }, [authReady, manualInventoryOptions.length, loadRemote]);
 
   useEffect(() => {
     if (!showFinalShowcase || !displayOneShot) {
@@ -660,6 +879,7 @@ export default function AdminSigSalesPage() {
     setPendingLanding(null);
     setDemoSpin(null);
     setStagedSelected([]);
+    setManualPreviewSelected([]);
     setSpinStep(0);
     setHighlightId(null);
     setOneShotReveal(false);
@@ -870,7 +1090,35 @@ export default function AdminSigSalesPage() {
       setToast("한방 시그 금액을 확인해 주세요. (자동 합산 또는 직접 입력)");
       return;
     }
-    const selected = manualSelectedSigs.map((x) => ({ ...(x as SigItem) }));
+    const tsId = Date.now();
+    const normalizeManualKey = (raw: string) => String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
+    const selected: SigItem[] = manualParsedRows.map((row, idx) => {
+      const safeName = row.name.replace(/\s+/g, "_").replace(/[^\w가-힣-]/g, "").slice(0, 24) || `sig_${idx + 1}`;
+      const sourceSigId = String(manualSigDrafts[idx]?.sourceSigId || "").trim();
+      const matchedInventoryItem = (state.sigInventory || []).find((item) => {
+        if (!item || item.id === ONE_SHOT_SIG_ID) return false;
+        if (sourceSigId) return String(item.id || "").trim() === sourceSigId;
+        const nameMatched = normalizeManualKey(item.name) === normalizeManualKey(row.name);
+        const priceMatched = Math.floor(Number(item.price || 0)) === Math.floor(Number(row.price || 0));
+        return nameMatched && priceMatched;
+      });
+      return {
+        id: matchedInventoryItem?.id || `manual_sig_${tsId}_${idx + 1}_${safeName}`,
+        name: row.name,
+        price: row.price,
+        imageUrl: row.imageUrl,
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      };
+    });
+    setManualDebugInfo(
+      `selected=${selected.length} | ${selected
+        .map((x) => `${x.name}:${Math.max(0, Math.floor(Number(x.price || 0))).toLocaleString("ko-KR")}`)
+        .join(" / ")}`
+    );
     const oneShot = {
       id: ONE_SHOT_SIG_ID,
       name: String(manualOneShotName || "").trim() || "한방 시그",
@@ -902,37 +1150,63 @@ export default function AdminSigSalesPage() {
         },
         updatedAt: now,
       };
-      const landedSaved = await saveStateAsync(landedState, userId);
-      if (!landedSaved.ok) {
-        setToast("수동 설정 저장 실패. 잠시 후 다시 시도해 주세요.");
-        return;
-      }
       landed(selected, oneShot, selected[selected.length - 1]?.id || null);
       setState(landedState);
       setPendingLanding(null);
       setDemoSpin(null);
       setStagedSelected(selected);
+      setManualPreviewSelected(selected);
       setSpinStep(0);
       setHighlightId(null);
-      setManualSoldSet(new Set());
-      setOneShotSold(false);
+      setManualSoldSet(
+        new Set(
+          selected
+            .filter((_, idx) => Boolean(manualSigSoldFlags[idx]))
+            .map((row) => row.id)
+        )
+      );
+      setOneShotSold(manualOneShotMarkSold);
       setShowConfirmModal(false);
       setResultsPanelCollapsed(false);
+      const landedSaved = await saveStateAsync(landedState, userId);
+      if (!landedSaved.ok) {
+        setToast("수동 결과는 먼저 표시했지만 서버 저장이 지연됩니다. 잠시 후 다시 확인해 주세요.");
+      }
 
       if (!confirmNow) {
         setToast("수동 5개/한방 설정 적용 완료. 아래 Confirm Sale로 판매 완료 처리할 수 있습니다.");
         return;
       }
 
-      const soldDeltaById = selected.reduce<Record<string, number>>((acc, row) => {
-        const key = canonicalSigIdFromWheelSliceId(String(row?.id || ""));
-        if (!key) return acc;
-        acc[key] = (acc[key] || 0) + 1;
-        return acc;
-      }, {});
+      const normalizeNameKey = (raw: string) => String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
+      const soldTargetIds = new Set<string>();
+      selected.forEach((row) => {
+        const byId = canonicalSigIdFromWheelSliceId(String(row?.id || ""));
+        if (byId && inventoryWithOneShotImage.some((x) => x.id === byId)) {
+          soldTargetIds.add(byId);
+          return;
+        }
+        const byNamePrice = inventoryWithOneShotImage.find((x) => {
+          if (!x || x.id === ONE_SHOT_SIG_ID) return false;
+          const nameMatched = normalizeNameKey(x.name) === normalizeNameKey(row.name);
+          const priceMatched = Math.floor(Number(x.price || 0)) === Math.floor(Number(row.price || 0));
+          return nameMatched && priceMatched;
+        });
+        if (byNamePrice?.id) soldTargetIds.add(byNamePrice.id);
+      });
       const confirmedInventory = inventoryWithOneShotImage.map((row) => {
+        if (row.id === ONE_SHOT_SIG_ID) {
+          const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
+          const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)));
+          const nextSold = Math.min(maxCount, soldCount + 1);
+          return {
+            ...row,
+            soldCount: nextSold,
+            isActive: nextSold >= maxCount ? false : row.isActive,
+          };
+        }
         const key = canonicalSigIdFromWheelSliceId(String(row.id || ""));
-        const delta = soldDeltaById[key] || 0;
+        const delta = soldTargetIds.has(key) ? 1 : 0;
         if (!delta) return row;
         const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
         const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)));
@@ -943,6 +1217,9 @@ export default function AdminSigSalesPage() {
           isActive: nextSold >= maxCount ? false : row.isActive,
         };
       });
+      const soldPreviewSet = new Set(selected.map((row) => row.id));
+      setManualSoldSet(soldPreviewSet);
+      setOneShotSold(Boolean(oneShot));
       await finish({
         sessionId,
         selectedSigs: selected,
@@ -966,6 +1243,8 @@ export default function AdminSigSalesPage() {
       };
       const confirmedSaved = await saveStateAsync(confirmedState, userId);
       if (confirmedSaved.ok) {
+        setManualSoldSet(new Set(selected.map((row) => row.id)));
+        setOneShotSold(Boolean(oneShot));
         setState(confirmedState);
         setToast("수동 5개 판매 완료 처리까지 반영했습니다.");
       } else {
@@ -973,6 +1252,7 @@ export default function AdminSigSalesPage() {
         void loadRemote();
       }
     } catch (e) {
+      setManualDebugInfo((prev) => `${prev} | error=${String(e)}`);
       setToast(`수동 설정 처리 실패: ${String(e)}`);
     } finally {
       setManualBusy(false);
@@ -981,15 +1261,87 @@ export default function AdminSigSalesPage() {
     state,
     manualReady,
     manualParsedOneShotPrice,
-    manualSelectedSigs,
+    manualParsedRows,
+    manualSigDrafts,
     manualOneShotName,
     manualOneShotImageUrl,
+    manualSigSoldFlags,
+    manualOneShotMarkSold,
     userId,
     landed,
     finish,
     loadRemote,
-    manualSigIds,
   ]);
+
+  const uploadManualSigImage = useCallback(async (file: File | null): Promise<string | null> => {
+    if (!file) return null;
+    const mime = String(file.type || "").toLowerCase();
+    const name = String(file.name || "").toLowerCase();
+    const isAllowedMime = /image\/(gif|png|jpe?g|webp)/i.test(mime);
+    const isAllowedExt = /\.(gif|png|jpe?g|webp)$/i.test(name);
+    if (!isAllowedMime && !isAllowedExt) {
+      setToast("gif/png/jpg/webp 파일만 업로드 가능합니다.");
+      return null;
+    }
+    if (file.size > MAX_SIG_UPLOAD_BYTES) {
+      setToast(`이미지 용량이 30MB를 초과했습니다. (${(file.size / (1024 * 1024)).toFixed(1)}MB)`);
+      return null;
+    }
+    const fd = new FormData();
+    fd.append("file", file);
+    const uid = String(userId || "finalent").trim() || "finalent";
+    const q = new URLSearchParams();
+    q.set("user", uid);
+    q.set("u", uid);
+    const uploadUrl = `/api/upload/sig-image?${q.toString()}`;
+    try {
+      const res = await fetch(uploadUrl, {
+        method: "POST",
+        credentials: "include",
+        headers: { "x-user-id": uid },
+        body: fd,
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; url?: string; error?: string };
+      if (!res.ok || !j.ok || !j.url) {
+        setToast(`이미지 업로드 실패: ${String(j.error || res.status)}`);
+        return null;
+      }
+      return String(j.url);
+    } catch (e) {
+      setToast(`이미지 업로드 오류: ${String(e)}`);
+      return null;
+    }
+  }, [userId]);
+
+  const handleManualRowFileUpload = useCallback(async (idx: number, file: File | null) => {
+    if (!file) return;
+    setManualRowUploadBusy((prev) => ({ ...prev, [idx]: true }));
+    try {
+      const url = await uploadManualSigImage(file);
+      if (!url) return;
+      setManualSigDrafts((prev) => {
+        const next = [...prev];
+        next[idx] = { ...(next[idx] || { name: "", priceInput: "", imageUrl: "" }), imageUrl: url };
+        return next;
+      });
+      setToast(`${idx + 1}번째 시그 이미지 업로드 완료`);
+    } finally {
+      setManualRowUploadBusy((prev) => ({ ...prev, [idx]: false }));
+    }
+  }, [uploadManualSigImage]);
+
+  const handleManualOneShotFileUpload = useCallback(async (file: File | null) => {
+    if (!file) return;
+    setManualOneShotUploadBusy(true);
+    try {
+      const url = await uploadManualSigImage(file);
+      if (!url) return;
+      setManualOneShotImageUrl(url);
+      setToast("한방 이미지 업로드 완료");
+    } finally {
+      setManualOneShotUploadBusy(false);
+    }
+  }, [uploadManualSigImage]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1006,7 +1358,48 @@ export default function AdminSigSalesPage() {
     const rs = Number(state?.rouletteState?.sigResultScalePct);
     if (Number.isFinite(rs)) q.set("sigResultScalePct", String(Math.floor(rs)));
     setOverlayObsUrl(`${window.location.origin}/overlay/sig-sales?${q.toString()}`);
-  }, [userId, memberFilterId, effectiveMenuCount, wheelDemoMode, state?.rouletteState?.sigResultScalePct]);
+    const qManual = new URLSearchParams();
+    qManual.set("u", userId);
+    if (memberFilterId) qManual.set("memberId", memberFilterId);
+    qManual.set("menuCount", String(effectiveMenuCount));
+    if (Number.isFinite(rs)) qManual.set("sigResultScalePct", String(Math.floor(rs)));
+    qManual.set("mode", "manual");
+    qManual.set("hideSigBoard", "1");
+    /**
+     * 개발 중 코드 수정/서버 재시작(메모리 state 초기화) 시에도 수동 오버레이가 비지 않도록
+     * URL에 핵심 텍스트 데이터(이름/금액)만 함께 싣는다. (이미지 URL은 길이 증가로 제외)
+     */
+    manualSigDrafts.forEach((row, idx) => {
+      const n = idx + 1;
+      const name = String(row?.name || "").trim();
+      const priceDigits = String(row?.priceInput || "").replace(/[^\d]/g, "");
+      if (name) qManual.set(`m${n}n`, name);
+      if (priceDigits) qManual.set(`m${n}p`, priceDigits);
+    });
+    const oneShotName = String(manualOneShotName || "").trim();
+    const oneShotPriceDigits = String(manualOneShotPriceInput || "").replace(/[^\d]/g, "");
+    if (oneShotName) qManual.set("osn", oneShotName);
+    if (oneShotPriceDigits) qManual.set("osp", oneShotPriceDigits);
+    setOverlayObsUrlManual(`${window.location.origin}/overlay/sig-sales?${qManual.toString()}`);
+  }, [
+    userId,
+    memberFilterId,
+    effectiveMenuCount,
+    wheelDemoMode,
+    state?.rouletteState?.sigResultScalePct,
+    manualSigDrafts,
+    manualOneShotName,
+    manualOneShotPriceInput,
+  ]);
+
+  useEffect(() => {
+    if (initialView !== "manual") return;
+    setOverlayObsMode("manual");
+    const tid = window.setTimeout(() => {
+      manualSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+    return () => window.clearTimeout(tid);
+  }, [initialView]);
 
   const onConfirmSale = useCallback(async () => {
     if (!state || displaySelectedSigs.length === 0) return;
@@ -1054,17 +1447,33 @@ export default function AdminSigSalesPage() {
     }
     const manualCanon = new Set([...manualSoldSet].map((id) => canonicalSigIdFromWheelSliceId(id)));
     const selectedCanon = new Set(displaySelectedSigs.map((x) => canonicalSigIdFromWheelSliceId(x.id)));
+    const normalizeNameKey = (raw: string) => String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
+    const selectedNamePriceSet = new Set(
+      displaySelectedSigs.map((x) => `${normalizeNameKey(x.name)}::${Math.floor(Number(x.price || 0))}`)
+    );
     /** 판매 확정 시: 이번 회차 당첨 시그는 모두 재고 +1. 한방 카드 토글(oneShotSold) 없이도 반영되도록 함 */
+    const soldAppliedNames: string[] = [];
     const nextInventory = state.sigInventory.map((item) => {
       const itemCanon = canonicalSigIdFromWheelSliceId(item.id);
       const markSold =
         manualCanon.has(itemCanon) ||
         selectedCanon.has(itemCanon) ||
+        selectedNamePriceSet.has(`${normalizeNameKey(item.name)}::${Math.floor(Number(item.price || 0))}`) ||
         (item.id === ONE_SHOT_SIG_ID && Boolean(displayOneShot));
       if (!markSold) return item;
-      const soldCount = Math.min(item.maxCount, Math.max(0, item.soldCount) + 1);
-      return { ...item, soldCount };
+      const maxCount = Math.max(1, Math.floor(Number(item.maxCount || 1)));
+      const soldCount = Math.max(0, Math.floor(Number(item.soldCount || 0)));
+      const nextSold = Math.min(maxCount, soldCount + 1);
+      soldAppliedNames.push(String(item.name || item.id || "").trim() || item.id);
+      return {
+        ...item,
+        soldCount: nextSold,
+        isActive: nextSold >= maxCount ? false : item.isActive,
+      };
     });
+    const soldPreviewSet = new Set(displaySelectedSigs.map((x) => x.id));
+    setManualSoldSet(soldPreviewSet);
+    setOneShotSold(Boolean(displayOneShot));
     try {
       await finish({
         sessionId: machine.sessionId,
@@ -1099,9 +1508,15 @@ export default function AdminSigSalesPage() {
       saved = await saveStateAsync(next, userId);
     }
     if (saved.ok) {
+      setManualSoldSet(new Set(displaySelectedSigs.map((x) => x.id)));
+      setOneShotSold(Boolean(displayOneShot));
       setState(next);
       void loadHistory(8);
-      setToast("판매 확정 완료!");
+      setToast(
+        soldAppliedNames.length > 0
+          ? `판매 확정 완료! 반영: ${soldAppliedNames.slice(0, 6).join(", ")}${soldAppliedNames.length > 6 ? " 외" : ""}`
+          : "판매 확정 완료! (반영 대상 없음)"
+      );
       confetti({ particleCount: 110, spread: 80, origin: { y: 0.22 } });
       setShowConfirmModal(false);
     } else {
@@ -1294,7 +1709,9 @@ export default function AdminSigSalesPage() {
               <p className="mt-2 max-w-xl text-[11px] text-neutral-400">
                 OBS 소스 URL (u={userId}
                 {memberFilterId ? ` · memberId=${memberFilterId}` : ""}):{" "}
-                <code className="break-all text-emerald-300/90">{overlayObsUrl}</code>
+                <code className="break-all text-emerald-300/90">
+                  {overlayObsMode === "manual" ? overlayObsUrlManual : overlayObsUrl}
+                </code>
                 {wheelDemoMode ? (
                   <span className="mt-1 block text-amber-200/90">
                     로컬 휠 데모 · 회전판 {WHEEL_DEMO_MENU_COUNT}칸 · 당첨 {WHEEL_DEMO_WIN_COUNT}개 + 한방 시그(서버 미저장)
@@ -1427,16 +1844,51 @@ export default function AdminSigSalesPage() {
               </>
             ) : null}
             {overlayObsUrl ? (
+              <select
+                value={overlayObsMode}
+                onChange={(e) => setOverlayObsMode(e.target.value === "manual" ? "manual" : "wheel")}
+                className="rounded border border-white/20 bg-neutral-900 px-2 py-2 text-xs text-neutral-200"
+                title="OBS 오버레이 표시 모드"
+              >
+                <option value="wheel">회전판 모드 URL</option>
+                <option value="manual">수동 결과 모드 URL</option>
+              </select>
+            ) : null}
+            {overlayObsUrl ? (
               <button
                 type="button"
                 className="rounded border border-white/20 px-2 py-2 text-xs text-neutral-200 hover:bg-white/10"
                 onClick={() => {
-                  void navigator.clipboard.writeText(overlayObsUrl);
+                  const targetUrl = overlayObsMode === "manual" ? overlayObsUrlManual : overlayObsUrl;
+                  void navigator.clipboard.writeText(targetUrl);
                   setToast("OBS URL을 복사했습니다.");
                 }}
               >
                 OBS URL 복사
               </button>
+            ) : null}
+            {overlayObsUrlManual ? (
+              <>
+                <button
+                  type="button"
+                  className="rounded border border-sky-400/50 bg-sky-950/40 px-2 py-2 text-xs text-sky-100 hover:bg-sky-900/50"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(overlayObsUrlManual);
+                    setToast("수동 결과 URL을 복사했습니다.");
+                  }}
+                >
+                  수동 URL 복사
+                </button>
+                <button
+                  type="button"
+                  className="rounded bg-sky-700 px-2 py-2 text-xs font-bold text-white hover:bg-sky-600"
+                  onClick={() => {
+                    window.open(overlayObsUrlManual, "_blank", "noopener,noreferrer");
+                  }}
+                >
+                  수동 오버레이 열기
+                </button>
+              </>
             ) : null}
             <button
               type="button"
@@ -1459,6 +1911,12 @@ export default function AdminSigSalesPage() {
             </button>
           </div>
         </header>
+        {overlayObsUrlManual ? (
+          <section className="rounded border border-sky-400/35 bg-sky-500/10 px-3 py-2">
+            <div className="text-[11px] font-semibold text-sky-200">수동 모드 전용 URL (항상 이 URL 사용)</div>
+            <code className="mt-1 block break-all text-[11px] text-sky-100/95">{overlayObsUrlManual}</code>
+          </section>
+        ) : null}
 
         <section className="rounded-xl border border-white/10 bg-black/35 p-3">
           <label className="flex items-center gap-3 text-sm text-neutral-200">
@@ -1495,34 +1953,160 @@ export default function AdminSigSalesPage() {
           </button>
         </section>
 
-        <section className="rounded-xl border border-sky-300/30 bg-sky-500/10 p-3">
+        <section ref={manualSectionRef} className="rounded-xl border border-sky-300/30 bg-sky-500/10 p-3">
           <div className="mb-2 text-sm font-semibold text-sky-100">수동 설정(5개 + 한방)</div>
           <p className="mb-3 text-[11px] text-sky-100/85">
-            기존 결과 UI를 그대로 사용합니다. 5개를 직접 지정하고 한방 금액/이미지를 수동 설정할 수 있습니다.
+            2가지 방식 지원: 완전 수동 입력 / 기존 시그 선택.
           </p>
-          <div className="grid gap-2 sm:grid-cols-5">
+          <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-sky-100">
+            <label className="inline-flex items-center gap-1">
+              <input
+                type="radio"
+                name="manual-input-mode"
+                checked={manualInputMode === "free"}
+                onChange={() => setManualInputMode("free")}
+              />
+              완전 수동 입력
+            </label>
+            <label className="inline-flex items-center gap-1">
+              <input
+                type="radio"
+                name="manual-input-mode"
+                checked={manualInputMode === "inventory"}
+                onChange={() => setManualInputMode("inventory")}
+              />
+              기존 시그 선택
+            </label>
+          </div>
+          <div className="space-y-2">
+            {manualInventoryOptions.length === 0 ? (
+              <div className="rounded border border-amber-300/40 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-100">
+                기존 시그 목록을 불러오는 중입니다. 잠시 후 다시 확인하거나 페이지 새로고침을 해주세요.
+              </div>
+            ) : null}
             {Array.from({ length: 5 }, (_, idx) => (
-              <label key={`manual-slot-${idx}`} className="flex flex-col text-[11px] text-neutral-300">
-                {idx + 1}번째 시그
-                <select
-                  className="mt-1 rounded border border-white/15 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-100"
-                  value={manualSigIds[idx] || ""}
-                  onChange={(e) =>
-                    setManualSigIds((prev) => {
-                      const next = [...prev];
-                      next[idx] = e.target.value;
-                      return next;
-                    })
-                  }
-                >
-                  <option value="">선택</option>
-                  {manualSigOptions.map((item) => (
-                    <option key={`manual-opt-${idx}-${item.id}`} value={item.id}>
-                      {item.name} ({Math.max(0, Number(item.price || 0)).toLocaleString("ko-KR")}원)
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div key={`manual-row-${idx}`} className="grid gap-2 rounded border border-white/10 bg-black/20 p-2 sm:grid-cols-3">
+                <label className="flex flex-col text-[11px] text-neutral-300 sm:col-span-3">
+                  {idx + 1}번째 기존 시그 선택(선택 시 자동 채움)
+                  <select
+                    className="mt-1 rounded border border-white/15 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-100"
+                    value={manualSigDrafts[idx]?.sourceSigId || ""}
+                    onChange={(e) => {
+                      const selectedId = String(e.target.value || "");
+                      const picked = manualInventoryOptions.find((x) => x.id === selectedId);
+                      setManualSigDrafts((prev) => {
+                        const next = [...prev];
+                        if (!selectedId || !picked) {
+                          next[idx] = { sourceSigId: "", name: "", priceInput: "", imageUrl: "" };
+                          return next;
+                        }
+                        next[idx] = {
+                          sourceSigId: picked.id,
+                          name: picked.name,
+                          priceInput: String(picked.price || ""),
+                          imageUrl: picked.imageUrl,
+                        };
+                        return next;
+                      });
+                    }}
+                  >
+                    <option value="">직접 입력(완전 수동)</option>
+                    {manualInventoryOptions.map((opt) => (
+                      <option key={`manual-opt-${idx}-${opt.id}`} value={opt.id}>
+                        {opt.name} ({opt.price.toLocaleString("ko-KR")}원)
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col text-[11px] text-neutral-300">
+                  {idx + 1}번째 시그 이름
+                  <input
+                    type="text"
+                    className="mt-1 rounded border border-white/15 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-100"
+                    value={manualSigDrafts[idx]?.name || ""}
+                    onChange={(e) =>
+                      setManualSigDrafts((prev) => {
+                        const next = [...prev];
+                        next[idx] = {
+                          ...(next[idx] || { sourceSigId: "", name: "", priceInput: "", imageUrl: "" }),
+                          sourceSigId: manualInputMode === "free" ? "" : (next[idx]?.sourceSigId || ""),
+                          name: e.target.value,
+                        };
+                        return next;
+                      })
+                    }
+                    placeholder={`시그 ${idx + 1}`}
+                  />
+                </label>
+                <label className="flex flex-col text-[11px] text-neutral-300">
+                  금액(원)
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    className="mt-1 rounded border border-white/15 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-100"
+                    value={manualSigDrafts[idx]?.priceInput || ""}
+                    onChange={(e) =>
+                      setManualSigDrafts((prev) => {
+                        const next = [...prev];
+                        next[idx] = {
+                          ...(next[idx] || { sourceSigId: "", name: "", priceInput: "", imageUrl: "" }),
+                          sourceSigId: manualInputMode === "free" ? "" : (next[idx]?.sourceSigId || ""),
+                          priceInput: e.target.value,
+                        };
+                        return next;
+                      })
+                    }
+                    placeholder="예: 100000"
+                  />
+                </label>
+                <label className="flex flex-col text-[11px] text-neutral-300">
+                  이미지 URL(선택)
+                  <input
+                    type="text"
+                    className="mt-1 rounded border border-white/15 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-100"
+                    value={manualSigDrafts[idx]?.imageUrl || ""}
+                    onChange={(e) =>
+                      setManualSigDrafts((prev) => {
+                        const next = [...prev];
+                        next[idx] = {
+                          ...(next[idx] || { sourceSigId: "", name: "", priceInput: "", imageUrl: "" }),
+                          sourceSigId: manualInputMode === "free" ? "" : (next[idx]?.sourceSigId || ""),
+                          imageUrl: e.target.value,
+                        };
+                        return next;
+                      })
+                    }
+                    placeholder="/uploads/sig.gif"
+                  />
+                  <input
+                    type="file"
+                    accept="image/gif,image/png,image/jpeg,image/webp"
+                    className="mt-1 text-[11px] text-neutral-300 file:mr-2 file:rounded file:border-0 file:bg-sky-700 file:px-2 file:py-1 file:text-xs file:font-semibold file:text-white hover:file:bg-sky-600"
+                    onChange={(e) => {
+                      const file = e.currentTarget.files?.[0] || null;
+                      void handleManualRowFileUpload(idx, file);
+                      e.currentTarget.value = "";
+                    }}
+                  />
+                  {manualRowUploadBusy[idx] ? (
+                    <span className="mt-1 text-[11px] text-sky-200">업로드 중...</span>
+                  ) : null}
+                  <label className="mt-1 inline-flex items-center gap-1 text-[11px] text-emerald-200">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(manualSigSoldFlags[idx])}
+                      onChange={(e) =>
+                        setManualSigSoldFlags((prev) => {
+                          const next = [...prev];
+                          next[idx] = e.target.checked;
+                          return next;
+                        })
+                      }
+                    />
+                    이 시그 판매완료 처리
+                  </label>
+                </label>
+              </div>
             ))}
           </div>
           <div className="mt-3 grid gap-2 sm:grid-cols-3">
@@ -1556,6 +2140,27 @@ export default function AdminSigSalesPage() {
                 onChange={(e) => setManualOneShotImageUrl(e.target.value)}
                 placeholder="/uploads/one-shot.gif"
               />
+              <input
+                type="file"
+                accept="image/gif,image/png,image/jpeg,image/webp"
+                className="mt-1 text-[11px] text-neutral-300 file:mr-2 file:rounded file:border-0 file:bg-emerald-700 file:px-2 file:py-1 file:text-xs file:font-semibold file:text-white hover:file:bg-emerald-600"
+                onChange={(e) => {
+                  const file = e.currentTarget.files?.[0] || null;
+                  void handleManualOneShotFileUpload(file);
+                  e.currentTarget.value = "";
+                }}
+              />
+              {manualOneShotUploadBusy ? (
+                <span className="mt-1 text-[11px] text-emerald-200">업로드 중...</span>
+              ) : null}
+              <label className="mt-1 inline-flex items-center gap-1 text-[11px] text-emerald-200">
+                <input
+                  type="checkbox"
+                  checked={manualOneShotMarkSold}
+                  onChange={(e) => setManualOneShotMarkSold(e.target.checked)}
+                />
+                한방도 판매완료 처리
+              </label>
             </label>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
@@ -1582,6 +2187,11 @@ export default function AdminSigSalesPage() {
               {manualBusy ? "처리 중..." : "수동 적용 + 판매 완료(CONFIRMED)"}
             </button>
           </div>
+          {manualDebugInfo ? (
+            <div className="mt-2 rounded border border-fuchsia-300/40 bg-fuchsia-500/10 px-2 py-1 text-[11px] text-fuchsia-100 break-all">
+              디버그: {manualDebugInfo}
+            </div>
+          ) : null}
         </section>
 
         <section style={{ backgroundColor: "transparent" }} className="relative rounded-2xl border border-yellow-200/20 p-4">
@@ -1707,7 +2317,7 @@ export default function AdminSigSalesPage() {
             </div>
           ) : null}
 
-          {(machine.phase === "SPINNING" || machine.phase === "LANDED" || machine.phase === "CONFIRM_PENDING" || machine.phase === "CONFIRMED" || stagedSelected.length > 0) &&
+          {(machine.phase === "SPINNING" || machine.phase === "LANDED" || machine.phase === "CONFIRM_PENDING" || machine.phase === "CONFIRMED" || stagedSelected.length > 0 || manualPreviewSelected.length > 0) &&
           displaySelectedSigs.length > 0 ? (
             <div
               className={

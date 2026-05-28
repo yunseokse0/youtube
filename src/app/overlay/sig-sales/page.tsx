@@ -97,6 +97,8 @@ const DEFAULT_RESULT_REVEAL_DELAY_MS = 480;
 const DEFAULT_SEQUENTIAL_CARD_EMERGE_MS = 200;
 /** 순차 라운드: 다음 회전 시작까지(ms). 기본 0 = 착지 직후 바로 다음 회전 */
 const DEFAULT_SEQUENTIAL_NEXT_SPIN_MS = 0;
+const MANUAL_SIG_DRAFT_STATE_KEY = "sigSalesManualDraftV1";
+const MANUAL_SIG_DRAFT_STORAGE_PREFIX = "admin-sig-sales-manual-draft-v1";
 const DEMO_SIG_PRESET_IDS = new Set([
   "sig_aegyo",
   "sig_dance",
@@ -213,6 +215,9 @@ export default function SigSalesOverlayPage() {
 
 function SigSalesOverlayPageInner() {
   const sp = useSearchParams();
+  const manualModeParam =
+    String(sp.get("mode") || "").toLowerCase() === "manual" ||
+    String(sp.get("overlayMode") || "").toLowerCase() === "manual";
   const userId = getOverlayUserIdFromSearchParams(sp);
   const [clientBoot, setClientBoot] = useState<{ ready: boolean; host: string | null }>({
     ready: false,
@@ -223,8 +228,8 @@ function SigSalesOverlayPageInner() {
   }, []);
   const clientHost = clientBoot.host;
   const wheelDemoActive = useMemo(
-    () => (clientHost != null ? isWheelDemoModeFromSearchParams(sp, clientHost) : false),
-    [sp, clientHost]
+    () => (manualModeParam ? false : clientHost != null ? isWheelDemoModeFromSearchParams(sp, clientHost) : false),
+    [sp, clientHost, manualModeParam]
   );
   const wheelDemoAutoSpin = useMemo(
     () => isWheelDemoAutoSpinFromSearchParams(sp, wheelDemoActive),
@@ -281,6 +286,8 @@ function SigSalesOverlayPageInner() {
     String(sp.get("winnersOnly") || "").toLowerCase() === "true" ||
     sp.get("onlyWinners") === "1" ||
     String(sp.get("onlyWinners") || "").toLowerCase() === "true";
+  /** mode=manual 이면 회전판 대신 결과 패널 중심으로 표시 */
+  const manualOverlayMode = manualModeParam;
   const overlayScalePct = (() => {
     const raw = sp.get("scalePct") || sp.get("zoomPct") || "100";
     const n = parseInt(raw.replace(/[^\d]/g, ""), 10);
@@ -368,6 +375,12 @@ function SigSalesOverlayPageInner() {
           transformOrigin: "top center",
         } as React.CSSProperties);
   const [state, setState] = useState<AppState | null>(null);
+  const [manualDraftFromLocal, setManualDraftFromLocal] = useState<{
+    drafts?: Array<{ name?: string; priceInput?: string; imageUrl?: string }>;
+    oneShotName?: string;
+    oneShotPriceInput?: string;
+    oneShotImageUrl?: string;
+  } | null>(null);
   const wheelInventory = useMemo(() => {
     const merged = mergeWheelDemoSigInventory(state?.sigInventory, wheelDemoActive);
     if (wheelDemoActive) return merged;
@@ -479,14 +492,14 @@ function SigSalesOverlayPageInner() {
     const remote = await loadStateFromApi(userId, {
       ifUpdatedSince: opts?.forceFull ? 0 : lastSyncedUpdatedAtRef.current,
       forceFull: opts?.forceFull,
-      pick: "sig-sales",
+      pick: manualOverlayMode ? undefined : "sig-sales",
     });
     if (!remote) return;
     const ts = remote.updatedAt || 0;
     if (ts > 0) lastSyncedUpdatedAtRef.current = Math.max(lastSyncedUpdatedAtRef.current, ts);
     lastRouletteSyncRef.current = sigSalesRouletteSyncCursorFromState(remote.rouletteState);
     setState(remote);
-  }, [userId]);
+  }, [userId, manualOverlayMode]);
 
   const loadRemoteRef = useRef(loadRemote);
   loadRemoteRef.current = loadRemote;
@@ -518,6 +531,28 @@ function SigSalesOverlayPageInner() {
     setSigImagePlaceholderOnlyForOverlay(sigPlaceholder);
     return () => setSigImagePlaceholderOnlyForOverlay(false);
   }, [sigPlaceholder]);
+
+  useEffect(() => {
+    if (!manualOverlayMode) return;
+    if (typeof window === "undefined") return;
+    const key = `${MANUAL_SIG_DRAFT_STORAGE_PREFIX}:${userId || "default"}`;
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) {
+        setManualDraftFromLocal(null);
+        return;
+      }
+      const parsed = JSON.parse(raw) as {
+        drafts?: Array<{ name?: string; priceInput?: string; imageUrl?: string }>;
+        oneShotName?: string;
+        oneShotPriceInput?: string;
+        oneShotImageUrl?: string;
+      };
+      setManualDraftFromLocal(parsed && typeof parsed === "object" ? parsed : null);
+    } catch {
+      setManualDraftFromLocal(null);
+    }
+  }, [manualOverlayMode, userId, state?.updatedAt]);
 
   useEffect(() => {
     const { schedule, cancel } = createStateUpdatedScheduler(() => {
@@ -990,11 +1025,72 @@ function SigSalesOverlayPageInner() {
     useSequentialWheel,
   ]);
   /** 당첨 배열을 재고와 맞춰 휠 라벨·이미지와 동일 시그로 표시 */
-  const displaySelectedSigsForUi = useMemo(
-    () =>
-      displaySelectedSigs.map((s) => hydrateSigItemFromInventory(s, wheelInventory, sigImageUserId)),
-    [displaySelectedSigs, wheelInventory, sigImageUserId],
-  );
+  const displaySelectedSigsForUi = useMemo(() => {
+    const hydrated = displaySelectedSigs.map((s) => hydrateSigItemFromInventory(s, wheelInventory, sigImageUserId));
+    if (!manualOverlayMode) return hydrated;
+    return hydrated.filter((item) => !isDemoPlaceholderSig(item));
+  }, [displaySelectedSigs, wheelInventory, sigImageUserId, manualOverlayMode]);
+  const manualDraftFromState = useMemo(() => {
+    if (!manualOverlayMode) return null;
+    const os = state?.overlaySettings;
+    if (!os || typeof os !== "object") return null;
+    const raw = (os as Record<string, unknown>)[MANUAL_SIG_DRAFT_STATE_KEY];
+    if (!raw || typeof raw !== "object") return null;
+    return raw as {
+      drafts?: Array<{ name?: string; priceInput?: string; imageUrl?: string }>;
+      oneShotName?: string;
+      oneShotPriceInput?: string;
+      oneShotImageUrl?: string;
+    };
+  }, [manualOverlayMode, state?.overlaySettings]);
+  const manualDraftFromUrl = useMemo(() => {
+    if (!manualOverlayMode) return null;
+    const drafts = Array.from({ length: 5 }, (_, idx) => {
+      const n = idx + 1;
+      const name = String(sp.get(`m${n}n`) || "").trim();
+      const priceInput = String(sp.get(`m${n}p`) || "").trim();
+      const imageUrl = String(sp.get(`m${n}i`) || "").trim();
+      return { name, priceInput, imageUrl };
+    });
+    const hasAnyDraft = drafts.some((x) => x.name || x.priceInput || x.imageUrl);
+    const oneShotName = String(sp.get("osn") || "").trim();
+    const oneShotPriceInput = String(sp.get("osp") || "").trim();
+    const oneShotImageUrl = String(sp.get("osi") || "").trim();
+    if (!hasAnyDraft && !oneShotName && !oneShotPriceInput && !oneShotImageUrl) return null;
+    return {
+      drafts,
+      oneShotName,
+      oneShotPriceInput,
+      oneShotImageUrl,
+    };
+  }, [manualOverlayMode, sp]);
+  const manualDraftEffective = manualDraftFromUrl || manualDraftFromState || manualDraftFromLocal;
+  const manualDraftSelectedForUi = useMemo(() => {
+    const rows = Array.isArray(manualDraftEffective?.drafts) ? manualDraftEffective!.drafts : [];
+    return rows
+      .map((row, idx) => {
+        const name = String(row?.name || "").trim();
+        const digits = String(row?.priceInput || "").replace(/[^\d]/g, "");
+        const price = digits ? Math.max(0, Math.floor(Number.parseInt(digits, 10) || 0)) : 0;
+        if (!name || price <= 0) return null;
+        return {
+          id: `manual_draft_${idx + 1}`,
+          name,
+          price,
+          imageUrl: String(row?.imageUrl || "").trim(),
+          memberId: "",
+          maxCount: 1,
+          soldCount: 0,
+          isRolling: true,
+          isActive: true,
+        } as SigItem;
+      })
+      .filter((x): x is SigItem => Boolean(x));
+  }, [manualDraftEffective]);
+  const effectiveSelectedSigsForUi = useMemo(() => {
+    if (!manualOverlayMode) return displaySelectedSigsForUi;
+    return displaySelectedSigsForUi.length > 0 ? displaySelectedSigsForUi : manualDraftSelectedForUi;
+  }, [manualOverlayMode, displaySelectedSigsForUi, manualDraftSelectedForUi]);
   const completedTargetCount = useMemo(() => {
     if (pendingLanding?.selected?.length) return Math.max(1, Math.min(CONFIRMED_VISIBLE_SLOTS, pendingLanding.selected.length));
     if (machine.selectedSigs?.length) return Math.max(1, Math.min(CONFIRMED_VISIBLE_SLOTS, machine.selectedSigs.length));
@@ -1148,7 +1244,7 @@ function SigSalesOverlayPageInner() {
     if (sid) return `spin:${sid}`;
     return `spin:t-${Number(machine.startedAt || 0)}`;
   }, [machine.sessionId, machine.startedAt]);
-  const showWheelVisual = !hideWheelAfterComplete;
+  const showWheelVisual = !hideWheelAfterComplete && !manualOverlayMode;
   /**
    * 스핀 중 showResultPanel=false 이어도 당첨 시그가 이미 확정되어 있으면 결과 그리드를 반드시 연다.
    * (그리드 데이터만 채우고 패널을 숨기면「돌다가 비었다가 한꺼번에」가 그대로 발생함)
@@ -1159,11 +1255,21 @@ function SigSalesOverlayPageInner() {
     overlayHoldResults ||
     (broadcastStickySigs?.length ?? 0) > 0 ||
     showResultPanel;
+  const manualModeHasResults =
+    manualOverlayMode &&
+    (effectiveSelectedSigsForUi.length > 0 ||
+      Boolean(machine.oneShot) ||
+      Boolean(String(manualDraftEffective?.oneShotPriceInput || "").replace(/[^\d]/g, "")) ||
+      Boolean(buildOneShotFromSelected(machine.selectedSigs.slice(0, CONFIRMED_VISIBLE_SLOTS))));
   const resultOverlayVisible = Boolean(
-    resultsPanelGateOpen &&
-      (displaySelectedSigs.length > 0 || oneShotRevealUnlocked) &&
+    (manualModeHasResults || resultsPanelGateOpen) &&
+      (manualOverlayMode
+        ? effectiveSelectedSigsForUi.length > 0 ||
+          Boolean(machine.oneShot) ||
+          Boolean(String(manualDraftEffective?.oneShotPriceInput || "").replace(/[^\d]/g, ""))
+        : displaySelectedSigs.length > 0 || oneShotRevealUnlocked) &&
       (machine.phase === "IDLE"
-        ? (broadcastStickySigs?.length ?? 0) > 0
+        ? manualModeHasResults || (broadcastStickySigs?.length ?? 0) > 0
         : (showResultPanel && hideWheelAfterComplete) ||
           machine.phase === "SPINNING" ||
           machine.phase === "LANDED" ||
@@ -1177,22 +1283,39 @@ function SigSalesOverlayPageInner() {
   );
 
   const oneShotForResultOverlay = useMemo(() => {
-    if (!oneShotRevealUnlocked) return null;
+    if (!manualOverlayMode && !oneShotRevealUnlocked) return null;
+    if (!manualOverlayMode && effectiveSelectedSigsForUi.length < MIN_ONE_SHOT_SIGS) return null;
+    const draftOneShot = manualOverlayMode
+      ? (() => {
+          const digits = String(manualDraftEffective?.oneShotPriceInput || "").replace(/[^\d]/g, "");
+          const price = digits ? Math.max(0, Math.floor(Number.parseInt(digits, 10) || 0)) : 0;
+          const autoPrice = effectiveSelectedSigsForUi.reduce((sum, x) => sum + Math.max(0, Math.floor(Number(x.price || 0))), 0);
+          const finalPrice = price > 0 ? price : autoPrice;
+          if (finalPrice <= 0) return null;
+          return {
+            id: ONE_SHOT_SIG_ID,
+            name: String(manualDraftEffective?.oneShotName || "한방 시그").trim() || "한방 시그",
+            price: finalPrice,
+          };
+        })()
+      : null;
     return (
+      draftOneShot ||
       machine.oneShot ||
-      buildOneShotFromSelected(machine.selectedSigs.slice(0, CONFIRMED_VISIBLE_SLOTS))
+      buildOneShotFromSelected(effectiveSelectedSigsForUi.slice(0, CONFIRMED_VISIBLE_SLOTS))
     );
-  }, [oneShotRevealUnlocked, machine.oneShot, machine.selectedSigs]);
+  }, [oneShotRevealUnlocked, machine.oneShot, effectiveSelectedSigsForUi, manualOverlayMode, manualDraftEffective]);
   const resultCardCount = useMemo(() => {
-    let n = displaySelectedSigsForUi.length;
+    let n = effectiveSelectedSigsForUi.length;
     if (oneShotForResultOverlay) n += 1;
     return Math.max(1, n);
-  }, [displaySelectedSigsForUi.length, oneShotForResultOverlay]);
+  }, [effectiveSelectedSigsForUi.length, oneShotForResultOverlay]);
   const resultRowLayout = useMemo(
     () => layoutSigOverlayResultRow({ cellCount: resultCardCount, userScalePct: sigResultScalePct }),
     [resultCardCount, sigResultScalePct]
   );
   const showSigBoardRollingSection = useMemo(() => {
+    if (manualOverlayMode) return false;
     if (wheelDemoActive) return false;
     if (winnersOnlyOverlay) return false;
     if (hideSigBoard || !state || (state.sigInventory || []).length === 0) return false;
@@ -1211,6 +1334,7 @@ function SigSalesOverlayPageInner() {
     }
     return Boolean(hideWheelAfterComplete && showResultPanel && resultsPanelGateOpen);
   }, [
+    manualOverlayMode,
     winnersOnlyOverlay,
     hideSigBoard,
     state,
@@ -1263,12 +1387,14 @@ function SigSalesOverlayPageInner() {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     const fromOneShot = (oneShotItem?.imageUrl || "").trim();
     if (fromOneShot) return resolveSigImageUrl(oneShotItem?.name || "한방 시그", fromOneShot, sigImageUserId);
-    const pick = displaySelectedSigsForUi.find((x) => (x.imageUrl || "").trim());
+    const draftOneShotImage = String(manualDraftEffective?.oneShotImageUrl || "").trim();
+    if (manualOverlayMode && draftOneShotImage) return resolveSigImageUrl("한방 시그", draftOneShotImage, sigImageUserId);
+    const pick = effectiveSelectedSigsForUi.find((x) => (x.imageUrl || "").trim());
     if (pick) return resolveSigImageUrl(pick.name, pick.imageUrl, sigImageUserId);
     const poolPick = activeNormalPool.find((x) => (x.imageUrl || "").trim());
     if (poolPick) return resolveSigImageUrl(poolPick.name, poolPick.imageUrl, sigImageUserId);
     return resolveSigImageUrl("", "", sigImageUserId);
-  }, [state?.sigInventory, displaySelectedSigsForUi, activeNormalPool, sigImageUserId]);
+  }, [state?.sigInventory, effectiveSelectedSigsForUi, activeNormalPool, sigImageUserId, manualDraftEffective, manualOverlayMode]);
   const getSignImageUrl = useCallback((id?: string | null) => {
     if (!id) return "";
     const canon = canonicalSigIdFromWheelSliceId(String(id));
@@ -1882,6 +2008,16 @@ function SigSalesOverlayPageInner() {
             </motion.div>
           ) : null}
           </div>
+          {manualOverlayMode && effectiveSelectedSigsForUi.length === 0 && !oneShotForResultOverlay ? (
+            <div className="pointer-events-none absolute inset-0 z-40 grid place-items-center">
+              <div className="rounded-xl border border-yellow-300/40 bg-black/65 px-5 py-3 text-center">
+                <p className="text-sm font-semibold text-yellow-100">수동 결과 데이터가 없습니다.</p>
+                <p className="mt-1 text-xs text-yellow-200/90">
+                  `/admin/sig-sales`에서 수동 5개를 적용한 뒤 다시 확인해 주세요.
+                </p>
+              </div>
+            </div>
+          ) : null}
           {/* 휠 아래·왼쪽(방송 화면 기준 시그 결과 영역). 휠 제거 시 위 플레이스홀더로 세로 위치 유지. hanbangOnly 시 한방만 화면 하단 고정 */}
           <div
             className={
@@ -1913,7 +2049,7 @@ function SigSalesOverlayPageInner() {
                     >
                       <ResultOverlay
                         visible
-                        selectedSigs={displaySelectedSigsForUi}
+                        selectedSigs={effectiveSelectedSigsForUi}
                         soldOutStampUrl={soldOutStampUrl}
                         soldOverrideSet={resultSoldOverrideSet}
                         oneShot={oneShotForResultOverlay}
