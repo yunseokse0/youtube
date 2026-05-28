@@ -1,14 +1,16 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import dynamic from "next/dynamic";
+import dynamicImport from "next/dynamic";
 import confetti from "canvas-confetti";
 import { Howl } from "howler";
 import type { SigItem } from "@/types";
 
-const RouletteWheel = dynamic(() => import("@/components/sig-sales/RouletteWheel"), {
+const RouletteWheel = dynamicImport(() => import("@/components/sig-sales/RouletteWheel"), {
   ssr: false,
   loading: () => (
     <div
