@@ -1679,13 +1679,11 @@ function OverlayInner() {
       .trim();
   // GIF 배경은 테이블/열 불투명 배경 아래에 깔리므로, GIF 사용 시에도 stripBg + 틴트 경로를 태워야 보임
   const useTableOpacity = tableBgOpacity < 100 || showTableBgGif;
-  /** GIF 모드: 시트 색막을 얇게 — tableBgOpacity 기본 100이어도 GIF가 검게 가려지지 않게 */
+  /** GIF 모드에서도 관리자 tableBgOpacity(0~100)를 그대로 반영 */
   const tableTintAlpha = (() => {
     if (!showTableBgGif) return tableBgOpacity / 100;
-    const sheetFromTable = (100 - tableBgOpacity) / 100;
-    const sheetFromGif = (100 - tableBgGifOpacity) / 100;
-    const blended = sheetFromTable * 0.35 + sheetFromGif * 0.65;
-    return Math.min(0.48, Math.max(0.04, blended * 0.42));
+    const direct = tableBgOpacity / 100;
+    return Math.max(0, Math.min(1, direct));
   })();
   /** 미리보기와 동일하게 항상 시트 틴트+colgroup 경로 사용 → 테이블 클래스 배경은 제거 */
   const effectiveTableCls = stripBg(membersTheme.tableCls);
