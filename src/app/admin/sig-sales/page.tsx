@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamicImport from "next/dynamic";
 import confetti from "canvas-confetti";
@@ -125,8 +125,7 @@ const buildOneShotFromSelected = (selected: SigItem[]) => {
 
 export default function AdminSigSalesPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const initialView = searchParams.get("view") === "manual" ? "manual" : "default";
+  const [initialView, setInitialView] = useState<"manual" | "default">("default");
   const [user, setUser] = useState<{ id: string; companyName: string; name?: string; remainingDays?: number | null; unlimited?: boolean } | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const userId = user?.id || "finalent";
@@ -1393,6 +1392,12 @@ export default function AdminSigSalesPage() {
     manualOneShotName,
     manualOneShotPriceInput,
   ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const view = new URLSearchParams(window.location.search).get("view") === "manual" ? "manual" : "default";
+    setInitialView(view);
+  }, []);
 
   useEffect(() => {
     if (initialView !== "manual") return;
