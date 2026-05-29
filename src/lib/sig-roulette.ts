@@ -1783,6 +1783,32 @@ export type RouletteSessionLog = {
   reason?: string;
 };
 
+/** AppState.rouletteState.historyLogs — GIF URL 제외·최소 필드만(Upstash/메모리 JSON 한도) */
+export function slimRouletteHistoryLogsForState(logs: RouletteSessionLog[]): RouletteSessionLog[] {
+  return logs.slice(0, 50).map((log) => ({
+    id: log.id,
+    sessionId: log.sessionId,
+    phase: log.phase,
+    selectedSigIds: [...(log.selectedSigIds || [])],
+    selectedSigs: (log.selectedSigIds || []).map((id) => ({
+      id,
+      name: log.selectedSigs.find((s) => s.id === id)?.name?.slice(0, 80) || "",
+      price: Math.max(0, Math.floor(Number(log.selectedSigs.find((s) => s.id === id)?.price || 0))),
+      imageUrl: "",
+      memberId: "",
+      maxCount: 1,
+      soldCount: 0,
+      isRolling: false,
+      isActive: true,
+    })),
+    oneShotPrice: log.oneShotPrice,
+    totalPrice: log.totalPrice,
+    timestamp: log.timestamp,
+    adminId: log.adminId,
+    reason: log.reason,
+  }));
+}
+
 const LOG_KEY_PREFIX = "excel-broadcast-roulette-log-v1";
 
 function getLogKey(userId: string) {
@@ -1813,13 +1839,23 @@ async function upstashGetJson<T>(key: string): Promise<T | null> {
 async function upstashSetJson(key: string, value: unknown): Promise<boolean> {
   const { base, token } = getEnv();
   if (!base || !token) return false;
+  let payload: string;
+  try {
+    payload = JSON.stringify(value);
+  } catch {
+    return false;
+  }
   const url = `${base.replace(/\/$/, "")}/pipeline`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify([["SET", key, JSON.stringify(value)]]),
-  });
-  return res.ok;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify([["SET", key, payload]]),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 export async function listRouletteLogs(userId: string): Promise<RouletteSessionLog[]> {

@@ -16,6 +16,7 @@ import {
   canonicalSigIdFromWheelSliceId,
   mergeSessionExcludedSigIds,
   ONE_SHOT_SIG_ID,
+  slimRouletteHistoryLogsForState,
 } from "@/lib/sig-roulette";
 
 function normalizeSigNameKey(raw: string): string {
@@ -89,16 +90,23 @@ export async function POST(req: Request) {
     const oneShotPrice = Math.max(0, Math.floor(Number(body.oneShotResult?.price ?? rs.oneShotResult?.price ?? 0)));
     const finalPhase = body.finalPhase === "CANCELLED" ? "CANCELLED" : "CONFIRMED";
 
-    // 로그 저장 우선 수행(실패 시 상태 확정 중단) → 사실상 원자적 처리
-    const logResult = await saveRouletteLog({
-      userId,
-      sessionId: sessionId || `session_${Date.now()}`,
-      phase: finalPhase,
-      selectedSigs,
-      oneShotPrice,
-      adminId: userId,
-      reason: body.reason,
-    });
+    let logResult: Awaited<ReturnType<typeof saveRouletteLog>>;
+    try {
+      logResult = await saveRouletteLog({
+        userId,
+        sessionId: sessionId || `session_${Date.now()}`,
+        phase: finalPhase,
+        selectedSigs,
+        oneShotPrice,
+        adminId: userId,
+        reason: body.reason,
+      });
+    } catch (logErr) {
+      return Response.json(
+        { ok: false, error: "log_save_failed", detail: String(logErr) },
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      );
+    }
 
     const hasExplicitSoldList =
       Array.isArray(body.soldSigIds) && body.soldSigIds.length > 0;
@@ -186,12 +194,19 @@ export async function POST(req: Request) {
         },
         sessionId: sessionId || rs.sessionId,
         lastFinishedAt: Date.now(),
-        historyLogs: logResult.logs.slice(0, 50),
+        historyLogs: slimRouletteHistoryLogsForState(logResult.logs),
         sessionExcludedSigIds,
       },
       updatedAt: Date.now(),
     };
-    await saveAppStateForRoulette(userId, next);
+    try {
+      await saveAppStateForRoulette(userId, next);
+    } catch (saveErr) {
+      return Response.json(
+        { ok: false, error: "state_save_failed", detail: String(saveErr) },
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      );
+    }
     await publishRouletteStateAfterSave(req, userId, {
       rouletteState: next.rouletteState,
       updatedAt: next.updatedAt,

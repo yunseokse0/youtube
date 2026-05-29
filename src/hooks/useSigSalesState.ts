@@ -329,9 +329,11 @@ export function useSigSalesState(userId: string, appState: AppState | null) {
         }),
       });
       if (!res.ok) {
+        const errBody = (await res.json().catch(() => ({}))) as { error?: string; detail?: string };
+        const detail = [errBody.error, errBody.detail].filter(Boolean).join(": ") || `HTTP ${res.status}`;
         dispatch({ type: "SET_FINISH_LOADING", payload: false });
-        dispatch({ type: "SET_ERROR", payload: "판매 확정 처리에 실패했습니다." });
-        throw new Error("finish_failed");
+        dispatch({ type: "SET_ERROR", payload: `판매 확정 처리에 실패했습니다. (${detail})` });
+        throw new Error(detail || "finish_failed");
       }
       dispatch({ type: "CONFIRMED", payload: Date.now() });
       return (await res.json()) as { ok: boolean; logId?: string; duplicate?: boolean };

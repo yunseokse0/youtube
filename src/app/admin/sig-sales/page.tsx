@@ -1348,6 +1348,10 @@ export default function AdminSigSalesPage() {
       });
       setManualSoldSet(soldPreviewSet);
       setOneShotSold(manualOneShotMarkSold);
+      const pendingResult = await postRoulettePending(userId, sessionId);
+      if (!pendingResult.ok) {
+        throw new Error(pendingResult.message);
+      }
       await finish({
         sessionId,
         selectedSigs: selected,
@@ -1593,6 +1597,15 @@ export default function AdminSigSalesPage() {
       setToast(`판매 확정 준비 실패: ${pendingResult.message}`);
       return;
     }
+    if (pendingResult.alreadyConfirmed) {
+      const afterRemote = await loadStateFromApi(userId);
+      if (afterRemote?.rouletteState?.phase === "CONFIRMED") {
+        setToast("이미 판매 확정된 회차입니다.");
+        cancelConfirm();
+        void loadRemote();
+        return;
+      }
+    }
     const soldSigIdsForFinish = collectSoldSigIdsForFinish(displaySelectedSigs, manualSoldSet);
     const soldMarksActive = soldSigIdsForFinish.length > 0;
     const soldCanonForFinish = new Set(soldSigIdsForFinish);
@@ -1649,7 +1662,11 @@ export default function AdminSigSalesPage() {
       setError("판매 확정 처리 실패");
       cancelConfirm();
       const detail = e instanceof Error ? e.message : String(e);
-      setToast(detail === "finish_failed" ? "판매 확정 API 실패 — 잠시 후 다시 시도" : `판매 확정 처리 실패: ${detail}`);
+      setToast(
+        detail === "finish_failed" || detail.includes("finish")
+          ? `판매 확정 API 실패 — ${detail}`
+          : `판매 확정 처리 실패: ${detail}`
+      );
       return;
     }
     const finishedAt = Date.now();
