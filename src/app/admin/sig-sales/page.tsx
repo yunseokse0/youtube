@@ -655,6 +655,41 @@ export default function AdminSigSalesPage() {
       displaySelectedSigs.map((s) => hydrateSigItemFromInventory(s, state?.sigInventory, userId)),
     [displaySelectedSigs, state?.sigInventory, userId]
   );
+  /** 확정·재고 완판 시 관리 화면·오버레이와 동일하게 판매 완료 스탬프 */
+  const adminSoldOverrideSet = useMemo(() => {
+    const next = new Set<string>();
+    for (const id of manualSoldSet) {
+      next.add(id);
+      next.add(canonicalSigIdFromWheelSliceId(id));
+    }
+    if (
+      machine.phase === "CONFIRMED" ||
+      machine.phase === "CONFIRM_PENDING"
+    ) {
+      for (const s of displaySelectedSigs) {
+        next.add(s.id);
+        next.add(canonicalSigIdFromWheelSliceId(s.id));
+      }
+      if (displaySelectedSigs.length >= MIN_ONE_SHOT_SIGS || oneShotSold) {
+        next.add(ONE_SHOT_SIG_ID);
+        next.add(canonicalSigIdFromWheelSliceId(ONE_SHOT_SIG_ID));
+      }
+    }
+    for (const row of state?.sigInventory || []) {
+      if (row.soldCount >= row.maxCount) {
+        next.add(row.id);
+        next.add(canonicalSigIdFromWheelSliceId(row.id));
+      }
+    }
+    return next;
+  }, [
+    manualSoldSet,
+    machine.phase,
+    displaySelectedSigs,
+    oneShotSold,
+    state?.sigInventory,
+  ]);
+
   const displayOneShot = useMemo(() => {
     if (displaySelectedSigs.length < MIN_ONE_SHOT_SIGS) return null;
     const base = buildOneShotFromSelected(displaySelectedSigs);
@@ -2362,6 +2397,7 @@ export default function AdminSigSalesPage() {
                   sigImageUserId={userId}
                   soldOutStampUrl={soldOutStampUrl}
                   manualSoldSet={manualSoldSet}
+                  soldOverrideSet={adminSoldOverrideSet}
                   disabled={controlsDisabled}
                   highlightId={highlightId}
                   compact

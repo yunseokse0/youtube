@@ -12,7 +12,15 @@ import {
   loadAppStateForRouletteRequest,
   publishRouletteStateAfterSave,
 } from "../roulette-state-sync";
-import { canonicalSigIdFromWheelSliceId, mergeSessionExcludedSigIds } from "@/lib/sig-roulette";
+import {
+  canonicalSigIdFromWheelSliceId,
+  mergeSessionExcludedSigIds,
+  ONE_SHOT_SIG_ID,
+} from "@/lib/sig-roulette";
+
+function normalizeSigNameKey(raw: string): string {
+  return String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
+}
 
 /** 회전판 애니메이션 종료 후 isRolling=false (당첨 result는 유지) */
 const finishSchema = z.object({
@@ -98,11 +106,28 @@ export async function POST(req: Request) {
             return acc;
           }, {})
         : {};
+    if (finalPhase === "CONFIRMED" && selectedSigs.length >= 2) {
+      soldDeltaById[ONE_SHOT_SIG_ID] = Math.max(soldDeltaById[ONE_SHOT_SIG_ID] || 0, 1);
+    }
+    const selectedNamePriceSet = new Set(
+      selectedSigs.map(
+        (x) => `${normalizeSigNameKey(x.name)}::${Math.floor(Number(x.price || 0))}`
+      )
+    );
     const nextInventory =
       finalPhase === "CONFIRMED"
         ? (s.sigInventory || []).map((row) => {
             const key = canonicalSigIdFromWheelSliceId(String(row.id || ""));
-            const delta = soldDeltaById[key] || 0;
+            let delta = soldDeltaById[key] || 0;
+            if (
+              !delta &&
+              row.id !== ONE_SHOT_SIG_ID &&
+              selectedNamePriceSet.has(
+                `${normalizeSigNameKey(row.name)}::${Math.floor(Number(row.price || 0))}`
+              )
+            ) {
+              delta = 1;
+            }
             if (!delta) return row;
             const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
             const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)));
@@ -131,7 +156,12 @@ export async function POST(req: Request) {
       rouletteState: {
         ...rs,
         isRolling: false,
-        phase: mode === "cinematic5" ? "CONFIRMED" : rs.phase,
+        phase:
+          finalPhase === "CANCELLED"
+            ? "CANCELLED"
+            : finalPhase === "CONFIRMED"
+              ? "CONFIRMED"
+              : rs.phase,
         selectedSigs,
         oneShotResult: {
           id: String(body.oneShotResult?.id || rs.oneShotResult?.id || "sig_one_shot"),

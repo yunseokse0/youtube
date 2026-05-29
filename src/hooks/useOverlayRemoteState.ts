@@ -88,7 +88,6 @@ export function useOverlayRemoteState(
     const isDonorPick = statePick === STATE_PICK_OVERLAY_DONORS;
     if (isDonorPick && Number.isFinite(donorRev) && donorRev > 0) {
       if (shouldSyncDonorRankingsFromStateUpdatedEvent(o, lastSyncedDonorRevRef.current)) {
-        lastSyncedDonorRevRef.current = Math.max(lastSyncedDonorRevRef.current, donorRev);
         void syncFromApiRef.current();
         return;
       }

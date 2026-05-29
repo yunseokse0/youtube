@@ -1,5 +1,9 @@
 import { mimeFromFileName } from "@/lib/sig-legacy-image";
-import { readSigUploadBuffer, safeSigUploadRelativePath } from "@/lib/sig-upload-storage";
+import {
+  readSigUploadBuffer,
+  readSigUploadByFileName,
+  safeSigUploadRelativePath,
+} from "@/lib/sig-upload-storage";
 
 export const dynamic = "force-dynamic";
 
@@ -9,14 +13,23 @@ export async function GET(
 ): Promise<Response> {
   const segments = context.params.path ?? [];
   const rel = safeSigUploadRelativePath(segments);
-  if (!rel) {
+  let buf: Buffer | null = null;
+  let fileName = "";
+  if (rel) {
+    buf = await readSigUploadBuffer(rel);
+    fileName = rel.split("/").pop() || rel;
+  } else if (segments.length === 1) {
+    fileName = String(segments[0] || "").trim();
+    if (!fileName || fileName.includes("..")) {
+      return new Response("Bad path", { status: 400 });
+    }
+    buf = await readSigUploadByFileName(fileName);
+  } else {
     return new Response("Bad path", { status: 400 });
   }
-  const buf = await readSigUploadBuffer(rel);
   if (!buf) {
     return new Response("Not found", { status: 404 });
   }
-  const fileName = rel.split("/").pop() || rel;
   return new Response(buf, {
     status: 200,
     headers: {

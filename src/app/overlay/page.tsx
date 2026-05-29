@@ -1538,14 +1538,14 @@ function OverlayInner() {
   const currencyFull = (sp.get("currencyFull") || "false").toLowerCase() === "true";
   const nameMaxCh = Math.max(nameCh, Math.min(80, parseInt(sp.get("nameMaxCh") || String(nameCh + 8), 10)));
   const donorsFormat = useMemo(() => {
+    if (ready && s?.donorsFormat) return s.donorsFormat === "full" ? "full" : "short";
     const urlFmt = (rawSp.get("donorsFormat") || "").trim();
     if (urlFmt === "full" || urlFmt === "short") return urlFmt;
-    if (ready && s?.donorsFormat) return s.donorsFormat === "full" ? "full" : "short";
     const presetFmt = String((activePreset as any)?.donorsFormat || "").trim();
     if (presetFmt === "full") return "full";
     if (presetFmt === "short") return "short";
-    return sp.get("donorsFormat") === "full" ? "full" : "short";
-  }, [rawSp, ready, s?.donorsFormat, activePreset, sp]);
+    return "short";
+  }, [rawSp, ready, s?.donorsFormat, activePreset]);
   const fullAmountMode = donorsFormat === "full" || currencyFull;
   // 기본 열 폭이 너무 작으면 4자리 이상 숫자에서 스트로크 텍스트가 인접 열과 겹치므로 기본/상한을 확장한다.
   const defBankCh = (sp.get("bankCh") && parseInt(sp.get("bankCh")!, 10)) || (fullAmountMode ? (compact ? 11 : 13) : (compact ? 10 : 11));
@@ -1569,6 +1569,8 @@ function OverlayInner() {
   const donorsBgColor = sp.get("donorsBgColor") || undefined;
   const accountColor = sp.get("accountColor") || undefined;
   const toonColor = sp.get("toonColor") || undefined;
+  const tableTextColorRaw = (sp.get("tableTextColor") || String((activePreset as { tableTextColor?: string })?.tableTextColor || "")).trim();
+  const tableTextColorCss = /^#[0-9a-fA-F]{3,8}$/.test(tableTextColorRaw) ? tableTextColorRaw : "#ffffff";
   const donorsBgOpacity = Math.max(0, Math.min(100, parseInt(sp.get("donorsBgOpacity") || "0", 10)));
   const showBottomDonors = false;
   const effectiveShowTicker = false;
@@ -2677,7 +2679,7 @@ function OverlayInner() {
           border-top: none !important;
         }
         .overlay-root .overlay-elegant-table td {
-          color: #ffffff !important;
+          color: ${tableTextColorCss} !important;
           transition: ${externalHost || stableMode ? "none" : "filter 180ms ease, transform 180ms ease, background-size 220ms ease"};
           background: transparent !important;
           text-shadow: ${excelTextOutline} !important;
@@ -2687,7 +2689,7 @@ function OverlayInner() {
           text-rendering: ${externalHost ? "auto" : "geometricPrecision"};
         }
         .overlay-root .overlay-elegant-table thead td {
-          color: #ffffff !important;
+          color: ${tableTextColorCss} !important;
           background: transparent !important;
           font-weight: 800 !important;
           text-shadow: ${excelTextOutline} !important;
@@ -2698,7 +2700,7 @@ function OverlayInner() {
         }
         .overlay-root .overlay-elegant-table thead td span,
         .overlay-root .overlay-elegant-table thead td strong {
-          color: #ffffff !important;
+          color: ${tableTextColorCss} !important;
           text-shadow: ${excelTextOutline} !important;
           -webkit-text-stroke: 0.75px rgba(6, 12, 24, 0.95) !important;
         }

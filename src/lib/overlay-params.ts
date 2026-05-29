@@ -118,6 +118,7 @@ export type OverlayPresetLike = {
   vertical?: boolean;
   accountColor?: string;
   toonColor?: string;
+  tableTextColor?: string;
 };
 
 export function presetToParams(preset: OverlayPresetLike | null): URLSearchParams {
@@ -252,6 +253,7 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.totalLineVisible) q.set("totalLineVisible", "true");
   if (preset.accountColor && preset.accountColor.trim()) q.set("accountColor", preset.accountColor.trim());
   if (preset.toonColor && preset.toonColor.trim()) q.set("toonColor", preset.toonColor.trim());
+  if (preset.tableTextColor && preset.tableTextColor.trim()) q.set("tableTextColor", preset.tableTextColor.trim());
   if (preset.vertical) q.set("vertical", "true");
   if (preset.host && preset.host.trim()) q.set("host", preset.host.trim());
   return q;

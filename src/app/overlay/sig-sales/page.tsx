@@ -1371,13 +1371,41 @@ function SigSalesOverlayPageInner() {
     if (machine.phase !== "CONFIRMED" && machine.phase !== "CONFIRM_PENDING") {
       return next;
     }
+    const normalizeNameKey = (raw: string) =>
+      String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
+    const selectedNamePriceSet = new Set(
+      (machine.selectedSigs || []).map(
+        (x) => `${normalizeNameKey(x.name)}::${Math.floor(Number(x.price || 0))}`
+      )
+    );
     for (const s of machine.selectedSigs || []) {
       const canon = canonicalSigIdFromWheelSliceId(s.id);
       next.add(s.id);
       next.add(canon);
     }
+    if (machine.phase === "CONFIRMED" && (machine.selectedSigs?.length ?? 0) >= 2) {
+      next.add(ONE_SHOT_SIG_ID);
+      next.add(canonicalSigIdFromWheelSliceId(ONE_SHOT_SIG_ID));
+    }
+    for (const row of state?.sigInventory || []) {
+      const canon = canonicalSigIdFromWheelSliceId(row.id);
+      if (row.soldCount >= row.maxCount) {
+        next.add(row.id);
+        next.add(canon);
+        continue;
+      }
+      if (
+        machine.phase === "CONFIRMED" &&
+        selectedNamePriceSet.has(
+          `${normalizeNameKey(row.name)}::${Math.floor(Number(row.price || 0))}`
+        )
+      ) {
+        next.add(row.id);
+        next.add(canon);
+      }
+    }
     return next;
-  }, [machine.phase, machine.selectedSigs]);
+  }, [machine.phase, machine.selectedSigs, state?.sigInventory]);
   const resultSoldOverrideSet = useMemo(() => {
     const next = new Set<string>(inventorySoldOutIdSet);
     for (const id of confirmedRoundSoldIdSet) next.add(id);

@@ -77,11 +77,26 @@ export function isDiskUploadFlatFileName(fileName: string): boolean {
 }
 
 /**
- * GitHub-only 모드에서 `/uploads/sigs/…` 가 `/images/sigs/<file>` 로 잘못 저장된 경우
- * 동일 파일명으로 디스크 경로 복구.
+ * 레거시·오타 경로 → `/uploads/sigs/<userId>/<file>` (OBS·rewrite 대상).
+ * 예: `/uploads/images/1738….gif`, `/uploads/sig/1.gif`
  */
+export function repairLegacySigUploadPath(stored: string, userId?: string): string {
+  let s = String(stored || "").trim().replace(/\\/g, "/");
+  if (!s) return s;
+  if (s.startsWith("/uploads/sigs/")) return s;
+  const safeUid = String(userId || "").replace(/[^a-zA-Z0-9_-]/g, "_");
+  const flatLegacy = s.match(/^\/uploads\/(?:images|sig)\/([^/?#]+)$/i);
+  if (flatLegacy?.[1] && safeUid) {
+    return `/uploads/sigs/${safeUid}/${flatLegacy[1]}`;
+  }
+  if (/^\/uploads\/sig\/(?!s)/i.test(s)) {
+    s = s.replace(/^\/uploads\/sig\//i, "/uploads/sigs/");
+  }
+  return s;
+}
+
 export function repairDiskUploadSigImagePath(stored: string, userId?: string): string {
-  const s = String(stored || "").trim();
+  const s = repairLegacySigUploadPath(String(stored || "").trim(), userId);
   if (!s) return s;
   if (s.startsWith("/uploads/sigs/")) return s;
 

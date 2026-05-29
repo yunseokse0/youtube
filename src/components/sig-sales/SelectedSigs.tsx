@@ -111,9 +111,13 @@ export default function SelectedSigs({
 
   const sigCards = items.map((item, idx) => {
         const canonId = canonicalSigIdFromWheelSliceId(item.id);
-        const sold = forceSoldAll || (soldOverrideSet
-          ? soldOverrideSet.has(item.id) || soldOverrideSet.has(canonId)
-          : manualSoldSet.has(item.id) || manualSoldSet.has(canonId));
+        const sold =
+          forceSoldAll ||
+          manualSoldSet.has(item.id) ||
+          manualSoldSet.has(canonId) ||
+          Boolean(
+            soldOverrideSet?.has(item.id) || soldOverrideSet?.has(canonId)
+          );
         const isLatestConfirmed = highlightId === item.id;
         const latestIdx = items.length - 1;
         const isNewest = idx === latestIdx;

@@ -1217,8 +1217,11 @@ async function runServerSaveQueue(): Promise<void> {
 }
 
 /** 관리자 /api/state 저장 시 — 스핀 결과·historyLogs는 서버 전용(POST 생략으로 대역폭 절감) */
-function appStatePayloadForApi(next: AppState): Partial<AppState> {
-  const normalizedSigInventory = slimSigInventoryForWire(normalizeSigInventory(next.sigInventory));
+function appStatePayloadForApi(next: AppState, userId?: string | null): Partial<AppState> {
+  const normalizedSigInventory = slimSigInventoryForWire(
+    normalizeSigInventory(next.sigInventory),
+    userId ?? undefined
+  );
   const normalizedSigRolling = normalizeSigRolling(next.sigRolling);
   const { rouletteState, ...rest } = {
     ...next,
@@ -1267,7 +1270,7 @@ export function saveState(state: AppState, userId?: string | null) {
     const next = normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() }));
     const json = JSON.stringify(next);
     window.localStorage.setItem(storageKey(userId), json);
-    void enqueueServerSave(JSON.stringify(appStatePayloadForApi(next)), userId, next).catch(() => {});
+    void enqueueServerSave(JSON.stringify(appStatePayloadForApi(next, userId)), userId, next).catch(() => {});
   } catch {
     // ignore
   }
@@ -1279,7 +1282,7 @@ export async function saveStateAsync(state: AppState, userId?: string | null): P
   const json = JSON.stringify(next);
   try { window.localStorage.setItem(storageKey(userId), json); } catch {}
   try {
-    return await enqueueServerSave(JSON.stringify(appStatePayloadForApi(next)), userId, next);
+    return await enqueueServerSave(JSON.stringify(appStatePayloadForApi(next, userId)), userId, next);
   } catch {
     return { ok: false };
   }

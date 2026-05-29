@@ -46,9 +46,9 @@ export default function GoalOverlayPage() {
 
   const goalLabel = (sp.get("goalLabel") || activePreset?.goalLabel || "후원").trim();
   const amountFormat = useMemo(() => {
+    if (ready && state?.donorsFormat) return normalizeDonorsFormat(state.donorsFormat, "short");
     const fromUrl = (sp.get("donorsFormat") || "").trim();
     if (fromUrl === "full" || fromUrl === "short") return fromUrl;
-    if (ready && state?.donorsFormat) return normalizeDonorsFormat(state.donorsFormat, "short");
     return normalizeDonorsFormat(activePreset?.donorsFormat, "short");
   }, [sp, ready, state?.donorsFormat, activePreset?.donorsFormat]);
   const currencyLocale = (sp.get("currencyLocale") || activePreset?.currencyLocale || "ko-KR").trim();

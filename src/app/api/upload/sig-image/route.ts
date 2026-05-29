@@ -4,7 +4,12 @@ import path from "path";
 import { createClient } from "@supabase/supabase-js";
 import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
 import { shouldServeSigImagesFromDisk } from "@/lib/sig-image-mode";
-import { getSigUploadPublicRoots, getSupabaseStorageConfig } from "@/lib/sig-upload-storage";
+import {
+  getSigUploadPersistentDataDir,
+  getSigUploadPublicRoots,
+  getSupabaseStorageConfig,
+  mirrorSigUploadToSupabase,
+} from "@/lib/sig-upload-storage";
 import {
   ftpPublicImageUrlPath,
   ftpRemotePathForSigAsset,
@@ -110,11 +115,24 @@ async function writeSigImageToPublicUploads(
 ): Promise<string> {
   const storagePath = `sigs/${safeUid}/${fileName}`;
   const roots = getSigUploadPublicRoots();
+  let wrote = false;
+  let lastErr: unknown;
   for (const root of roots) {
     const dir = path.join(root, "uploads", "sigs", safeUid);
-    await mkdir(dir, { recursive: true });
-    const fullPath = path.join(dir, fileName);
-    await writeFile(fullPath, data);
+    try {
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, fileName), data);
+      wrote = true;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  if (!wrote) {
+    const hint = getSigUploadPersistentDataDir()
+      ? `영구 폴더 쓰기 실패(${getSigUploadPersistentDataDir()}). sudo mkdir -p /var/lib/finalent/uploads/sigs && sudo chown -R $USER:$USER /var/lib/finalent`
+      : "SIG_UPLOADS_DATA_DIR 또는 public/uploads 쓰기 권한을 확인하세요.";
+    const msg = lastErr instanceof Error ? `${lastErr.message} — ${hint}` : hint;
+    throw new Error(msg);
   }
   return `/uploads/${storagePath}`;
 }
@@ -149,8 +167,19 @@ export async function POST(req: Request) {
 
     if (shouldUseDiskSigUpload()) {
       const url = await writeSigImageToPublicUploads(safeUid, fileName, data);
+      const mirrored = await mirrorSigUploadToSupabase(
+        `${safeUid}/${fileName}`,
+        data,
+        contentType
+      );
       return Response.json(
-        { ok: true, url, storage: "disk", ephemeral: isEphemeralCloudUpload() },
+        {
+          ok: true,
+          url,
+          storage: mirrored ? "disk+supabase" : "disk",
+          ephemeral: isEphemeralCloudUpload(),
+          dataDir: getSigUploadPersistentDataDir() || undefined,
+        },
         { status: 200 }
       );
     }
@@ -207,8 +236,18 @@ export async function POST(req: Request) {
     }
 
     const url = await writeSigImageToPublicUploads(safeUid, fileName, data);
-    return Response.json({ ok: true, url, storage: "disk", ephemeral: false }, { status: 200 });
+    const mirrored = await mirrorSigUploadToSupabase(`${safeUid}/${fileName}`, data, contentType);
+    return Response.json(
+      {
+        ok: true,
+        url,
+        storage: mirrored ? "disk+supabase" : "disk",
+        ephemeral: false,
+        dataDir: getSigUploadPersistentDataDir() || undefined,
+      },
+      { status: 200 }
+    );
   } catch (e) {
-    return Response.json({ ok: false, error: String(e) }, { status: 500 });
+    return Response.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 }

@@ -59,6 +59,7 @@ import {
   stripSigInventoryImagesKeepList,
   DEFAULT_SIG_SOLD_STAMP_URL,
   DEFAULT_SIG_INVENTORY,
+  normalizeSigImageUrlStored,
 } from "@/lib/constants";
 import Link from "next/link";
 import Image from "next/image";
@@ -123,7 +124,7 @@ type OverlayPreset = {
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
-  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; host?: string;
+  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; host?: string;
 };
 
 /** 미션 목록이 비었을 때 미션 전광판 UI 확인용 placeholder */
@@ -2202,9 +2203,16 @@ export default function AdminPage() {
             window.localStorage.setItem(storageKey(uid), JSON.stringify(afterFinish));
           } catch {}
         }
-        setRouletteActionMessage(
-          `강제 5개 판매 완료 처리까지 반영했습니다. 기존 판매 완료 이미지가 적용됩니다. 오버레이 /overlay/sig-sales-forced (u=${uid}) 에서 확인하세요.`,
-        );
+        const forcedWinners = Array.isArray(j.selectedSigs) ? j.selectedSigs : [];
+        if (forcedWinners.length > 0 && afterFinish?.rouletteState?.phase === "CONFIRMED") {
+          setRouletteActionMessage(
+            `강제 5개 판매 완료: ${forcedWinners.map((s) => s.name).join(", ")} · 재고·오버레이에 판매 완료 반영됨. OBS /overlay/sig-sales?u=${uid}`,
+          );
+        } else {
+          setRouletteActionMessage(
+            `강제 5개 판매 완료 처리까지 반영했습니다. 기존 판매 완료 이미지가 적용됩니다. 오버레이 /overlay/sig-sales?u=${uid} 에서 확인하세요.`,
+          );
+        }
         return;
       }
       const uniq = Array.from(
@@ -3078,13 +3086,31 @@ export default function AdminPage() {
     setSigOcrBanner("");
   }, [persistState, syncOneShotSigItem]);
 
+  const normalizeUploadedSigImageUrl = useCallback(
+    (url: string) => {
+      const uid =
+        String(user?.id || "").trim() ||
+        (typeof window !== "undefined"
+          ? String(
+              new URLSearchParams(window.location.search).get("u") ||
+                new URLSearchParams(window.location.search).get("user") ||
+                ""
+            ).trim()
+          : "") ||
+        "finalent";
+      return normalizeSigImageUrlStored(repairDiskUploadSigImagePath(url, uid));
+    },
+    [user?.id]
+  );
+
   const uploadSigImage = (id: string, file: File | null) => {
     if (!file) return;
     setSigPreviewMap((prev) => ({ ...prev, [id]: URL.createObjectURL(file) }));
     void (async () => {
       const { url } = await uploadSigImageFile(file);
       if (!url) return;
-      updateSigItem(id, { imageUrl: url, isActive: true, isRolling: true });
+      const storedUrl = normalizeUploadedSigImageUrl(url);
+      updateSigItem(id, { imageUrl: storedUrl, isActive: true, isRolling: true });
       const ocrPrice = await detectSigPriceFromImageFile(file);
       if (ocrPrice != null) {
         updateSigItem(id, { price: ocrPrice });
@@ -7186,6 +7212,15 @@ export default function AdminPage() {
                             placeholder="이미지 URL 또는 경로"
                             value={item.imageUrl || ""}
                             onChange={(e) => updateSigItem(item.id, { imageUrl: e.target.value })}
+                            onBlur={() => {
+                              const uid = String(user?.id || "finalent").trim() || "finalent";
+                              const fixed = normalizeSigImageUrlStored(
+                                repairDiskUploadSigImagePath(item.imageUrl || "", uid)
+                              );
+                              if (fixed && fixed !== item.imageUrl) {
+                                updateSigItem(item.id, { imageUrl: fixed });
+                              }
+                            }}
                           />
                           <label className="cursor-pointer w-fit rounded bg-indigo-800 px-2 py-1 text-xs hover:bg-indigo-700">
                             이미지 업로드
@@ -7258,7 +7293,7 @@ export default function AdminPage() {
                 <div className="text-xs text-neutral-500">
                   「보드 노출」은 <code>/overlay/sig-sales</code> 상단 롤링 그리드,「판매 활성」은 회전판 메뉴 후보에 포함됩니다. 시그 추가/멤버 지정/판매량 조절은 즉시 `/api/state`를 통해 Redis에 반영됩니다.{" "}
                   <span className="text-neutral-400">
-                    시그 이미지는 PC에서 파일을 선택하면 서버 디스크(<code className="text-neutral-300">/uploads/sigs/…</code>)에 저장되고 URL이 자동으로 붙습니다.
+                    시그 이미지는 PC에서 파일을 선택하면 서버에 저장되고 URL이 자동으로 붙습니다. EC2는 <code className="text-neutral-300">/var/lib/finalent/uploads/sigs</code> 영구 경로를 쓰며, 재시작 후에는 <strong className="text-amber-200/90">새 공인 IP</strong>로 접속해야 합니다(Elastic IP 권장).
                   </span>
                 </div>
               </div>
@@ -8796,6 +8831,17 @@ export default function AdminPage() {
                               </button>
                               <label className="text-xs text-neutral-400">이름 너비(ch)</label>
                               <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="(기본 자동)" value={p.nameCh || ""} onChange={(e) => updatePreset(p.id, { nameCh: e.target.value.replace(/[^\d]/g, "") })} />
+                              <label className="text-xs text-neutral-400">표 텍스트 색</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                  value={toColorPickerValue(p.tableTextColor, "#ffffff")}
+                                  onChange={(e) => updatePreset(p.id, { tableTextColor: e.target.value })}
+                                />
+                                <span className="text-xs text-neutral-400 font-mono">{p.tableTextColor || "#ffffff"}</span>
+                                <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableTextColor: "" })}>기본(흰색)</button>
+                              </div>
                               <label className="text-xs text-neutral-400">계좌 글자 색상</label>
                               <div className="flex items-center gap-2">
                                 <input

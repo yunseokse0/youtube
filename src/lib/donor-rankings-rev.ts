@@ -14,6 +14,7 @@ function donorsFingerprint(donors: AppState["donors"]): string {
 
 function rankingsUiFingerprint(state: AppState): string {
   return JSON.stringify({
+    donorsFormat: state.donorsFormat,
     theme: state.donorRankingsTheme,
     presets: state.donorRankingsPresets,
     presetId: state.donorRankingsPresetId,
@@ -31,6 +32,7 @@ export function computeDonorRankingsUpdatedAt(
   const prev = Number(base.donorRankingsUpdatedAt || base.updatedAt || 0);
   let changed = donorsChanged;
   if (
+    "donorsFormat" in patch ||
     "donorRankingsTheme" in patch ||
     "donorRankingsPresets" in patch ||
     "donorRankingsPresetId" in patch ||
