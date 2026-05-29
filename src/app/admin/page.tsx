@@ -91,11 +91,14 @@ import { applySigPriceExcelRows, sigInventoryToExcelRows } from "@/lib/sig-inven
 import { repairDiskUploadSigImagePath } from "@/lib/sig-image-mode";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 import { normalizeSigDedupKeyImageUrl } from "@/lib/sig-inventory-dedup";
-import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
+import {
+  applyMealBattleDonationToParticipants,
+  ensureMealBattleParticipantRow,
+} from "@/lib/meal-battle-donation";
 import { normalizeMealGaugeEffects } from "@/lib/meal-gauge-effects";
 import { getVisibleAdminNavItems, isAdminNavSectionVisible, type AdminNavKey } from "@/app/admin/admin-nav-config";
 import { stopToonationListener } from "@/lib/donation/toonation/listener";
-import { processDonationEvent } from "@/lib/donation/processor";
+import { processDonationEvent, type ProcessDonationResult } from "@/lib/donation/processor";
 import type { DonationEvent, DonorAlias } from "@/lib/donation/types";
 
 /** 후원 계열 오버레이 배경 GIF 프리셋 — 외부 URL은 방송망에서 차단될 수 있음 */
@@ -1941,6 +1944,38 @@ export default function AdminPage() {
     });
   };
 
+  /** 참가 체크 없이 연동만 켠 경우에도 참가자 행을 만들고, 동기화 모드를 식대전으로 맞춤 */
+  const toggleMealDonationLink = (memberId: string) => {
+    setState((prev: AppState) => {
+      const member = prev.members.find((m) => m.id === memberId);
+      if (!member) return prev;
+      const withRow = ensureMealBattleParticipantRow(prev.mealBattle, member, MEAL_PARTICIPANT_COLORS);
+      let enabling = false;
+      const participants = withRow.map((p) => {
+        if (p.memberId !== memberId) return p;
+        const nextActive = !p.donationLinkActive;
+        if (nextActive) enabling = true;
+        return {
+          ...p,
+          donationLinkActive: nextActive,
+          donationLinkStartedAt: nextActive ? Date.now() : undefined,
+        };
+      });
+      const donationSyncMode =
+        enabling && (!prev.donationSyncMode || prev.donationSyncMode === "none")
+          ? "mealBattle"
+          : prev.donationSyncMode;
+      const next: AppState = {
+        ...prev,
+        donationSyncMode,
+        mealBattle: { ...prev.mealBattle, participants },
+        updatedAt: Date.now(),
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
   const mergeMealMemberGaugeColor = (memberId: string, color: string) => {
     setState((prev: AppState) => {
       const next: AppState = {
@@ -3734,17 +3769,31 @@ export default function AdminPage() {
     }).catch(() => {});
   }, [user?.id]);
 
+  const applyProcessDonationResult = useCallback((result: ProcessDonationResult) => {
+    if (result.updatedState) setState(result.updatedState);
+  }, []);
+
   const approveQueueEvent = useCallback(async (evt: DonationEvent) => {
-    await processDonationEvent({ ...evt, status: "queued", target: "toon" }, user?.id);
+    const result = await processDonationEvent(
+      { ...evt, status: "queued", target: "toon" },
+      user?.id,
+      stateRef.current
+    );
+    applyProcessDonationResult(result);
     await removeQueueEvent(evt.id);
     await fetchToonationQueue();
     await fetchUnmatchedEvents();
     pushToonationLog(`큐 승인 반영: ${evt.donorName} ${evt.amount.toLocaleString("ko-KR")}원`);
-  }, [fetchToonationQueue, fetchUnmatchedEvents, pushToonationLog, removeQueueEvent, user?.id]);
+  }, [applyProcessDonationResult, fetchToonationQueue, fetchUnmatchedEvents, pushToonationLog, removeQueueEvent, user?.id]);
 
   const approveAllQueueEvents = useCallback(async () => {
     for (const evt of toonationQueue) {
-      await processDonationEvent({ ...evt, status: "queued", target: "toon" }, user?.id);
+      const result = await processDonationEvent(
+        { ...evt, status: "queued", target: "toon" },
+        user?.id,
+        stateRef.current
+      );
+      applyProcessDonationResult(result);
       await removeQueueEvent(evt.id);
     }
     await fetchToonationQueue();
@@ -3752,7 +3801,7 @@ export default function AdminPage() {
     if (toonationQueue.length > 0) {
       pushToonationLog(`큐 일괄 승인 반영: ${toonationQueue.length}건`);
     }
-  }, [fetchToonationQueue, fetchUnmatchedEvents, pushToonationLog, removeQueueEvent, toonationQueue, user?.id]);
+  }, [applyProcessDonationResult, fetchToonationQueue, fetchUnmatchedEvents, pushToonationLog, removeQueueEvent, toonationQueue, user?.id]);
 
   const removeUnmatchedEvent = useCallback(async (id: string) => {
     const uid = user?.id || "";
@@ -3780,10 +3829,11 @@ export default function AdminPage() {
       target: "toon",
       status: "queued",
     };
-    await processDonationEvent(event, user?.id);
+    const result = await processDonationEvent(event, user?.id, stateRef.current);
+    applyProcessDonationResult(result);
     await fetchUnmatchedEvents();
     setDonorAmount("");
-  }, [donorAmount, donorName, fetchUnmatchedEvents, user?.id]);
+  }, [applyProcessDonationResult, donorAmount, donorName, fetchUnmatchedEvents, user?.id]);
 
   const applyUnmatchedEvent = useCallback(async (event: DonationEvent) => {
     const selectedMemberId = unmatchedAssignMap[event.id] || donorMemberId || state.members[0]?.id || "";
@@ -3791,17 +3841,19 @@ export default function AdminPage() {
     const member = state.members.find((m) => m.id === selectedMemberId);
     if (!member) return;
 
-    await processDonationEvent(
+    const result = await processDonationEvent(
       {
         ...event,
         donorName: member.name,
         target: "toon",
         status: "queued",
       },
-      user?.id
+      user?.id,
+      stateRef.current
     );
+    applyProcessDonationResult(result);
     await removeUnmatchedEvent(event.id);
-  }, [donorMemberId, removeUnmatchedEvent, state.members, unmatchedAssignMap, user?.id]);
+  }, [applyProcessDonationResult, donorMemberId, removeUnmatchedEvent, state.members, unmatchedAssignMap, user?.id]);
 
   const saveAliasForUnmatched = useCallback(async (event: DonationEvent) => {
     const uid = user?.id || "";
@@ -4444,18 +4496,7 @@ export default function AdminPage() {
                     donationLinkActive={
                       mealParticipants.find((p) => p.memberId === m.id)?.donationLinkActive ?? null
                     }
-                    onToggleDonationLink={() => {
-                      const row = mealParticipants.find((p) => p.memberId === m.id);
-                      if (!row) return;
-                      updateMealParticipant(m.id, (p) => {
-                        const nextActive = !p.donationLinkActive;
-                        return {
-                          ...p,
-                          donationLinkActive: nextActive,
-                          donationLinkStartedAt: nextActive ? Date.now() : undefined,
-                        };
-                      });
-                    }}
+                    onToggleDonationLink={() => toggleMealDonationLink(m.id)}
                   />
                 ))}
               </div>
@@ -5415,6 +5456,9 @@ export default function AdminPage() {
                     );
                   })}
                 </div>
+                <p className="text-[11px] text-amber-200/90">
+                  후원 연동: 「식사대전 동기화」모드 + 참가자 「후원 연동 ON」이어야 게이지 점수에 반영됩니다. 연동 ON 시 참가 체크가 없으면 자동으로 참가 처리됩니다.
+                </p>
                 <div className="space-y-2">
                   {mealParticipants.map((row) => (
                     <div key={row.memberId} className="rounded border border-white/10 bg-[#1f1f1f] px-3 py-2 flex flex-wrap items-center justify-between gap-2">
@@ -5458,16 +5502,7 @@ export default function AdminPage() {
                           className={`px-2 py-1 rounded text-xs font-medium ${
                             row.donationLinkActive ? "bg-amber-700 hover:bg-amber-600 text-white" : "bg-neutral-700 hover:bg-neutral-600 text-neutral-200"
                           }`}
-                          onClick={() =>
-                            updateMealParticipant(row.memberId, (p) => {
-                              const nextActive = !p.donationLinkActive;
-                              return {
-                                ...p,
-                                donationLinkActive: nextActive,
-                                donationLinkStartedAt: nextActive ? Date.now() : undefined,
-                              };
-                            })
-                          }
+                          onClick={() => toggleMealDonationLink(row.memberId)}
                         >
                           후원 연동 {row.donationLinkActive ? "ON" : "OFF"}
                         </button>

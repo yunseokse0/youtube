@@ -99,6 +99,20 @@ const DEFAULT_SEQUENTIAL_CARD_EMERGE_MS = 200;
 const DEFAULT_SEQUENTIAL_NEXT_SPIN_MS = 0;
 const MANUAL_SIG_DRAFT_STATE_KEY = "sigSalesManualDraftV1";
 const MANUAL_SIG_DRAFT_STORAGE_PREFIX = "admin-sig-sales-manual-draft-v1";
+/** 관리자 `ManualSigDraftPersist`와 동일 필드 — OBS 판매완료 동기화용 */
+type ManualSigDraftPersistOverlay = {
+  drafts?: Array<{
+    sourceSigId?: string;
+    name?: string;
+    priceInput?: string;
+    imageUrl?: string;
+  }>;
+  oneShotName?: string;
+  oneShotPriceInput?: string;
+  oneShotImageUrl?: string;
+  sigSoldFlags?: boolean[];
+  oneShotMarkSold?: boolean;
+};
 const DEMO_SIG_PRESET_IDS = new Set([
   "sig_aegyo",
   "sig_dance",
@@ -375,12 +389,8 @@ function SigSalesOverlayPageInner() {
           transformOrigin: "top center",
         } as React.CSSProperties);
   const [state, setState] = useState<AppState | null>(null);
-  const [manualDraftFromLocal, setManualDraftFromLocal] = useState<{
-    drafts?: Array<{ name?: string; priceInput?: string; imageUrl?: string }>;
-    oneShotName?: string;
-    oneShotPriceInput?: string;
-    oneShotImageUrl?: string;
-  } | null>(null);
+  const [manualDraftFromLocal, setManualDraftFromLocal] =
+    useState<ManualSigDraftPersistOverlay | null>(null);
   const wheelInventory = useMemo(() => {
     const merged = mergeWheelDemoSigInventory(state?.sigInventory, wheelDemoActive);
     if (wheelDemoActive) return merged;
@@ -542,12 +552,7 @@ function SigSalesOverlayPageInner() {
         setManualDraftFromLocal(null);
         return;
       }
-      const parsed = JSON.parse(raw) as {
-        drafts?: Array<{ name?: string; priceInput?: string; imageUrl?: string }>;
-        oneShotName?: string;
-        oneShotPriceInput?: string;
-        oneShotImageUrl?: string;
-      };
+      const parsed = JSON.parse(raw) as ManualSigDraftPersistOverlay;
       setManualDraftFromLocal(parsed && typeof parsed === "object" ? parsed : null);
     } catch {
       setManualDraftFromLocal(null);
@@ -1031,21 +1036,14 @@ function SigSalesOverlayPageInner() {
     if (!manualOverlayMode) return hydrated;
     return hydrated.filter((item) => !isDemoPlaceholderSig(item));
   }, [displaySelectedSigs, wheelInventory, sigImageUserId, manualOverlayMode]);
-  const manualDraftFromState = useMemo(() => {
+  const manualDraftFromState = useMemo((): ManualSigDraftPersistOverlay | null => {
     const os = state?.overlaySettings;
     if (!os || typeof os !== "object") return null;
     const raw = (os as Record<string, unknown>)[MANUAL_SIG_DRAFT_STATE_KEY];
     if (!raw || typeof raw !== "object") return null;
-    return raw as {
-      drafts?: Array<{ sourceSigId?: string; name?: string; priceInput?: string; imageUrl?: string }>;
-      oneShotName?: string;
-      oneShotPriceInput?: string;
-      oneShotImageUrl?: string;
-      sigSoldFlags?: boolean[];
-      oneShotMarkSold?: boolean;
-    };
+    return raw as ManualSigDraftPersistOverlay;
   }, [state?.overlaySettings]);
-  const manualDraftFromUrl = useMemo(() => {
+  const manualDraftFromUrl = useMemo((): ManualSigDraftPersistOverlay | null => {
     if (!manualOverlayMode) return null;
     const drafts = Array.from({ length: 5 }, (_, idx) => {
       const n = idx + 1;
@@ -1067,7 +1065,8 @@ function SigSalesOverlayPageInner() {
     };
   }, [manualOverlayMode, sp]);
   /** 서버 저장 초안 우선 — OBS URL을 매번 바꿀 필요 없음(URL 초안은 레거시·오프라인 폴백) */
-  const manualDraftEffective = manualDraftFromState || manualDraftFromUrl || manualDraftFromLocal;
+  const manualDraftEffective: ManualSigDraftPersistOverlay | null =
+    manualDraftFromState || manualDraftFromUrl || manualDraftFromLocal;
   const manualDraftSelectedForUi = useMemo(() => {
     const rows = Array.isArray(manualDraftEffective?.drafts) ? manualDraftEffective!.drafts : [];
     return rows

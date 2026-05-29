@@ -1,4 +1,4 @@
-import { loadStateFromApi, saveState } from "@/lib/state";
+import { loadStateFromApi, saveStateAsync } from "@/lib/state";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
 import { createModuleLogger } from "@/lib/logger";
@@ -29,7 +29,23 @@ function toAppDonor(donor: Donor): AppDonor {
   };
 }
 
-export async function processDonationEvent(rawEvent: DonationEvent, userId?: string) {
+export type ProcessDonationResult = DonationEvent & { updatedState?: AppState };
+
+/** 관리자 화면의 식대전·동기화 모드는 서버보다 최신일 수 있음 — 후원 반영 시 우선 */
+function mergeAdminHintForDonation(server: AppState, hint?: AppState | null): AppState {
+  if (!hint) return server;
+  return {
+    ...server,
+    mealBattle: hint.mealBattle ?? server.mealBattle,
+    donationSyncMode: hint.donationSyncMode ?? server.donationSyncMode,
+  };
+}
+
+export async function processDonationEvent(
+  rawEvent: DonationEvent,
+  userId?: string,
+  hintState?: AppState | null
+): Promise<ProcessDonationResult> {
   log.debug("processing", rawEvent.donorName, rawEvent.amount);
   try {
     const dedupeKey = `${rawEvent.provider}:${rawEvent.externalId || rawEvent.id}`;
@@ -37,10 +53,11 @@ export async function processDonationEvent(rawEvent: DonationEvent, userId?: str
       return { ...rawEvent, status: "processed" as const };
     }
 
-    const currentState = await getCurrentAppState(userId);
-    if (!currentState) {
+    const loaded = await getCurrentAppState(userId);
+    if (!loaded) {
       return { ...rawEvent, status: "failed" as const, error: "state_not_available" };
     }
+    const currentState = mergeAdminHintForDonation(loaded, hintState);
 
     const aliases = await loadAliases(userId);
     const processedEvent = mapToMember(rawEvent, currentState.members || [], aliases);
@@ -108,12 +125,15 @@ export async function processDonationEvent(rawEvent: DonationEvent, userId?: str
       updatedAt: Date.now(),
     };
 
-    await saveCurrentAppState(updatedState, userId);
+    const saved = await saveCurrentAppState(updatedState, userId);
+    if (!saved.ok) {
+      return { ...rawEvent, status: "failed" as const, error: "state_save_failed" };
+    }
     processedEventIds.add(dedupeKey);
     unresolvedEventIds.delete(dedupeKey);
     await resolveUnmatched(processedEvent.id, userId);
     log.debug("processed", newDonor.name, newDonor.amount);
-    return processedEvent;
+    return { ...processedEvent, status: "processed" as const, updatedState };
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown_error";
     log.error("process failed", message);
@@ -125,8 +145,13 @@ async function getCurrentAppState(userId?: string): Promise<AppState | null> {
   return loadStateFromApi(userId);
 }
 
-async function saveCurrentAppState(state: AppState, userId?: string): Promise<void> {
-  saveState(state, userId);
+async function saveCurrentAppState(
+  state: AppState,
+  userId?: string
+): Promise<{ ok: boolean }> {
+  if (typeof window === "undefined") return { ok: false };
+  const result = await saveStateAsync(state, userId);
+  return { ok: Boolean(result.ok) };
 }
 
 async function saveUnmatched(event: DonationEvent, userId?: string): Promise<void> {
