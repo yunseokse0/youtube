@@ -17,7 +17,9 @@ import {
   sigOverlayBroadcastCardShellStyle,
   sigOverlayBroadcastMediaBoxStyle,
 } from "@/components/sig-sales/sig-overlay-card-size";
-import SigSoldStampOverlay from "@/components/sig-sales/SigSoldStampOverlay";
+import SigSoldStampOverlay, {
+  SIG_SOLD_STAMP_IMG_CLASS_BROADCAST,
+} from "@/components/sig-sales/SigSoldStampOverlay";
 
 type SelectedSigsProps = {
   items: SigItem[];
@@ -207,7 +209,12 @@ export default function SelectedSigs({
                 className="relative z-[2] object-contain object-center"
                 gifDelayMultiplier={gifDelayMultiplier}
               />
-              {sold ? <SigSoldStampOverlay soldOutStampUrl={soldOutStampUrl} /> : null}
+              {sold ? (
+                <SigSoldStampOverlay
+                  soldOutStampUrl={soldOutStampUrl}
+                  stampMaxClass={broadcastMatch ? SIG_SOLD_STAMP_IMG_CLASS_BROADCAST : undefined}
+                />
+              ) : null}
             </div>
             <div
               className={

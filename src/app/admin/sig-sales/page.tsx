@@ -81,6 +81,11 @@ import {
   mergeWheelDemoSigInventory,
   pickWheelDemoWinners,
 } from "@/lib/sig-wheel-demo-pool";
+import {
+  buildOneShotFromSelected,
+  computeNetOneShotPrice,
+  resolveOneShotDisplayPrice,
+} from "@/lib/sig-one-shot-price";
 
 const STEP_CONFIRM_PAUSE_MS = 3000;
 const MAX_SELECTED_SIGS = 20;
@@ -115,27 +120,6 @@ type ManualSigDraftPersist = {
   sigSoldFlags: boolean[];
   oneShotMarkSold: boolean;
 };
-const buildOneShotFromSelected = (selected: SigItem[]) => {
-  if (selected.length < MIN_ONE_SHOT_SIGS) return null;
-  return {
-    id: ONE_SHOT_SIG_ID,
-    name: "한방 시그",
-    price: selected.reduce((sum, x) => sum + x.price, 0),
-  };
-};
-
-function computeNetOneShotPrice(
-  items: Array<{ id: string; price: number }>,
-  soldIdSet: Set<string>
-): number {
-  const total = items.reduce((sum, x) => sum + Math.max(0, Math.floor(Number(x.price || 0))), 0);
-  const deducted = items.reduce((sum, item) => {
-    const canon = canonicalSigIdFromWheelSliceId(String(item.id || ""));
-    if (!soldIdSet.has(item.id) && !soldIdSet.has(canon)) return sum;
-    return sum + Math.max(0, Math.floor(Number(item.price || 0)));
-  }, 0);
-  return Math.max(0, total - deducted);
-}
 
 const normalizeManualNameKey = (raw: string) =>
   String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
@@ -857,22 +841,25 @@ export default function AdminSigSalesPage() {
     [manualAutoOneShotPrice, manualSoldDeduction]
   );
   const manualParsedOneShotPrice = useMemo(() => {
-    const raw = String(manualOneShotPriceInput || "").replace(/[^\d]/g, "");
-    if (!raw) return manualNetOneShotPrice;
-    return Math.max(0, Math.floor(Number.parseInt(raw, 10) || 0));
-  }, [manualOneShotPriceInput, manualNetOneShotPrice]);
+    if (displaySelectedSigs.length < MIN_ONE_SHOT_SIGS) return 0;
+    return (
+      resolveOneShotDisplayPrice({
+        selected: displaySelectedSigs,
+        soldIdSet: manualSoldSet,
+        manualPriceInput: manualOneShotPriceInput,
+        fallbackName: manualOneShotName,
+      })?.price ?? 0
+    );
+  }, [displaySelectedSigs, manualSoldSet, manualOneShotPriceInput, manualOneShotName]);
   const displayOneShot = useMemo(() => {
     if (displaySelectedSigs.length < MIN_ONE_SHOT_SIGS) return null;
-    const base = buildOneShotFromSelected(displaySelectedSigs);
-    if (!base) return null;
-    const net = computeNetOneShotPrice(displaySelectedSigs, manualSoldSet);
-    return {
-      ...base,
-      name: String(manualOneShotName || base.name).trim() || "한방 시그",
-      /** 수동 입력 금액(빈칸=자동합산·판매 차감) — Confirm Sale·오버레이 동기화에도 동일 적용 */
-      price: manualParsedOneShotPrice > 0 ? manualParsedOneShotPrice : net,
-    };
-  }, [displaySelectedSigs, manualSoldSet, manualOneShotName, manualParsedOneShotPrice]);
+    return resolveOneShotDisplayPrice({
+      selected: displaySelectedSigs,
+      soldIdSet: manualSoldSet,
+      manualPriceInput: manualOneShotPriceInput,
+      fallbackName: manualOneShotName,
+    });
+  }, [displaySelectedSigs, manualSoldSet, manualOneShotPriceInput, manualOneShotName]);
   const resultCardCount = useMemo(() => {
     let n = displaySelectedSigsForUi.length;
     if (displayOneShot && oneShotReveal) n += 1;
@@ -1791,14 +1778,14 @@ export default function AdminSigSalesPage() {
               price: row.price,
             }));
       if (selected.length < MIN_ONE_SHOT_SIGS) return null;
-      const net = computeNetOneShotPrice(selected, soldSet);
-      return {
-        id: ONE_SHOT_SIG_ID,
-        name: String(manualOneShotName || "한방 시그").trim() || "한방 시그",
-        price: manualParsedOneShotPrice > 0 ? manualParsedOneShotPrice : net,
-      };
+      return resolveOneShotDisplayPrice({
+        selected,
+        soldIdSet: soldSet,
+        manualPriceInput: manualOneShotPriceInput,
+        fallbackName: manualOneShotName,
+      });
     },
-    [displaySelectedSigs, manualParsedRows, manualSigDrafts, manualOneShotName, manualParsedOneShotPrice]
+    [displaySelectedSigs, manualParsedRows, manualSigDrafts, manualOneShotName, manualOneShotPriceInput]
   );
 
   const pushLiveRoundToServer = useCallback(
@@ -1809,9 +1796,13 @@ export default function AdminSigSalesPage() {
     ) => {
       if (!state) return;
       const oneShot = buildLiveOneShotSnapshot(soldSet);
-      let inventory = nextInventory;
+      let inventory = nextInventory.map((row) =>
+        row.id === ONE_SHOT_SIG_ID && oneShot
+          ? { ...row, name: oneShot.name, price: oneShot.price }
+          : row
+      );
       if (opts?.bumpOneShot) {
-        inventory = nextInventory.map((row) => {
+        inventory = inventory.map((row) => {
           if (row.id !== ONE_SHOT_SIG_ID) return row;
           const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
           const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)));

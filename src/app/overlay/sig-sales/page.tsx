@@ -26,6 +26,7 @@ import {
   shouldSuppressOverlaySseConnection,
 } from "@/lib/overlay-params";
 import { DEFAULT_SIG_SOLD_STAMP_URL, resolveSigImageUrl, setSigImagePlaceholderOnlyForOverlay } from "@/lib/constants";
+import { buildOneShotFromSelected, resolveOneShotDisplayPrice } from "@/lib/sig-one-shot-price";
 import {
   ONE_SHOT_SIG_ID,
   ROULETTE_WHEEL_SFX_ENABLED,
@@ -129,15 +130,6 @@ function isDemoPlaceholderSig(item: SigItem): boolean {
   const imageUrl = String(item?.imageUrl || "").toLowerCase();
   return DEMO_SIG_PRESET_IDS.has(id) || imageUrl.includes("dummy-sig.svg");
 }
-
-const buildOneShotFromSelected = (selected: SigItem[]) => {
-  if (selected.length < MIN_ONE_SHOT_SIGS) return null;
-  return {
-    id: ONE_SHOT_SIG_ID,
-    name: "한방 시그",
-    price: selected.reduce((sum, x) => sum + x.price, 0),
-  };
-};
 
 function resolveOverlayWheelStartedAt(startedAt: number, sessionId: string): number {
   const t = Number(startedAt || 0);
@@ -1284,38 +1276,6 @@ function SigSalesOverlayPageInner() {
           Boolean(pendingLanding))
   );
 
-  const oneShotForResultOverlay = useMemo(() => {
-    if (!manualOverlayMode && !oneShotRevealUnlocked) return null;
-    if (!manualOverlayMode && effectiveSelectedSigsForUi.length < MIN_ONE_SHOT_SIGS) return null;
-    const draftOneShot = manualOverlayMode
-      ? (() => {
-          const digits = String(manualDraftEffective?.oneShotPriceInput || "").replace(/[^\d]/g, "");
-          const price = digits ? Math.max(0, Math.floor(Number.parseInt(digits, 10) || 0)) : 0;
-          const autoPrice = effectiveSelectedSigsForUi.reduce((sum, x) => sum + Math.max(0, Math.floor(Number(x.price || 0))), 0);
-          const finalPrice = price > 0 ? price : autoPrice;
-          if (finalPrice <= 0) return null;
-          return {
-            id: ONE_SHOT_SIG_ID,
-            name: String(manualDraftEffective?.oneShotName || "한방 시그").trim() || "한방 시그",
-            price: finalPrice,
-          };
-        })()
-      : null;
-    return (
-      draftOneShot ||
-      machine.oneShot ||
-      buildOneShotFromSelected(effectiveSelectedSigsForUi.slice(0, CONFIRMED_VISIBLE_SLOTS))
-    );
-  }, [oneShotRevealUnlocked, machine.oneShot, effectiveSelectedSigsForUi, manualOverlayMode, manualDraftEffective]);
-  const resultCardCount = useMemo(() => {
-    let n = effectiveSelectedSigsForUi.length;
-    if (oneShotForResultOverlay) n += 1;
-    return Math.max(1, n);
-  }, [effectiveSelectedSigsForUi.length, oneShotForResultOverlay]);
-  const resultRowLayout = useMemo(
-    () => layoutSigOverlayResultRow({ cellCount: resultCardCount, userScalePct: sigResultScalePct }),
-    [resultCardCount, sigResultScalePct]
-  );
   const showSigBoardRollingSection = useMemo(() => {
     if (manualOverlayMode) return false;
     if (wheelDemoActive) return false;
@@ -1469,6 +1429,43 @@ function SigSalesOverlayPageInner() {
     for (const id of manualDraftSoldOverrideSet) next.add(id);
     return next;
   }, [inventorySoldOutIdSet, confirmedRoundSoldIdSet, manualDraftSoldOverrideSet]);
+  /** 당첨 시그 판매 시 한방 금액 차감 — 서버 oneShotResult·수동 입력 모두 동일 규칙 */
+  const oneShotForResultOverlay = useMemo(() => {
+    if (!manualOverlayMode && !oneShotRevealUnlocked) return null;
+    const selected = manualOverlayMode
+      ? effectiveSelectedSigsForUi.length >= MIN_ONE_SHOT_SIGS
+        ? effectiveSelectedSigsForUi
+        : manualDraftSelectedForUi
+      : effectiveSelectedSigsForUi.slice(0, CONFIRMED_VISIBLE_SLOTS);
+    if (!manualOverlayMode && selected.length < MIN_ONE_SHOT_SIGS) return null;
+    if (manualOverlayMode && selected.length < MIN_ONE_SHOT_SIGS) return null;
+    return resolveOneShotDisplayPrice({
+      selected,
+      soldIdSet: resultSoldOverrideSet,
+      manualPriceInput: manualOverlayMode ? manualDraftEffective?.oneShotPriceInput : undefined,
+      fallbackName: manualOverlayMode
+        ? manualDraftEffective?.oneShotName
+        : machine.oneShot?.name,
+    });
+  }, [
+    manualOverlayMode,
+    oneShotRevealUnlocked,
+    effectiveSelectedSigsForUi,
+    manualDraftSelectedForUi,
+    resultSoldOverrideSet,
+    manualDraftEffective?.oneShotPriceInput,
+    manualDraftEffective?.oneShotName,
+    machine.oneShot?.name,
+  ]);
+  const resultCardCount = useMemo(() => {
+    let n = effectiveSelectedSigsForUi.length;
+    if (oneShotForResultOverlay) n += 1;
+    return Math.max(1, n);
+  }, [effectiveSelectedSigsForUi.length, oneShotForResultOverlay]);
+  const resultRowLayout = useMemo(
+    () => layoutSigOverlayResultRow({ cellCount: resultCardCount, userScalePct: sigResultScalePct }),
+    [resultCardCount, sigResultScalePct]
+  );
   const oneShotImageUrl = useMemo(() => {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     const fromOneShot = (oneShotItem?.imageUrl || "").trim();

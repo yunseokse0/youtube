@@ -133,7 +133,7 @@ export default function SigBoardRolling({
                         >
                           <SigSoldStampOverlay
                             soldOutStampUrl={soldOutStampUrl}
-                            stampMaxClass={`${SIG_SOLD_STAMP_IMG_CLASS} max-h-[min(7rem,52%)] max-w-[min(7rem,52%)]`}
+                            stampMaxClass={`${SIG_SOLD_STAMP_IMG_CLASS} max-h-[min(8.5rem,70%)] max-w-[min(8.5rem,70%)]`}
                           />
                         </motion.div>
                       )}

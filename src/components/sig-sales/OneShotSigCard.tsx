@@ -16,7 +16,9 @@ import {
   sigOverlayBroadcastCardShellStyle,
   sigOverlayBroadcastMediaBoxStyle,
 } from "@/components/sig-sales/sig-overlay-card-size";
-import SigSoldStampOverlay from "@/components/sig-sales/SigSoldStampOverlay";
+import SigSoldStampOverlay, {
+  SIG_SOLD_STAMP_IMG_CLASS_BROADCAST,
+} from "@/components/sig-sales/SigSoldStampOverlay";
 
 type OneShotSigCardProps = {
   name: string;
@@ -137,7 +139,12 @@ export default function OneShotSigCard({
           gifDelayMultiplier={gifDelayMultiplier}
           onReady={onMediaReady}
         />
-        {sold && soldOutStampUrl ? <SigSoldStampOverlay soldOutStampUrl={soldOutStampUrl} /> : null}
+        {sold && soldOutStampUrl ? (
+          <SigSoldStampOverlay
+            soldOutStampUrl={soldOutStampUrl}
+            stampMaxClass={useBroadcastSizing ? SIG_SOLD_STAMP_IMG_CLASS_BROADCAST : undefined}
+          />
+        ) : null}
       </div>
       <div
         className={

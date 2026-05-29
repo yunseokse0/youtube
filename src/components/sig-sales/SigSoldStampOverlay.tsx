@@ -15,8 +15,13 @@ export const SIG_SOLD_WHITE_BACKDROP_CLASS = "pointer-events-none absolute inset
 export const SIG_SOLD_STAMP_BACKDROP_CLASS =
   "flex items-center justify-center shadow-[0_1px_8px_rgba(0,0,0,0.25)]";
 
+/** 관리자·일반 카드 */
 export const SIG_SOLD_STAMP_IMG_CLASS =
-  "relative z-[1] h-auto w-auto max-h-[min(7.6rem,64%)] max-w-[min(7.6rem,64%)] object-contain object-center bg-transparent opacity-95 drop-shadow-[0_2px_10px_rgba(0,0,0,0.55)]";
+  "relative z-[1] h-auto w-auto max-h-[min(8.75rem,76%)] max-w-[min(8.75rem,76%)] object-contain object-center bg-transparent opacity-95 drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)]";
+
+/** OBS·방송 결과 줄(개별·한방) — 미디어 영역 대비 더 크게 */
+export const SIG_SOLD_STAMP_IMG_CLASS_BROADCAST =
+  "relative z-[1] h-auto w-auto max-h-[min(11rem,90%)] max-w-[min(11rem,90%)] object-contain object-center bg-transparent opacity-95 drop-shadow-[0_3px_14px_rgba(0,0,0,0.65)]";
 
 type SigSoldStampOverlayProps = {
   soldOutStampUrl: string;
@@ -38,7 +43,7 @@ export default function SigSoldStampOverlay({
     <>
       <div className={SIG_SOLD_MEDIA_DIM_CLASS} aria-hidden />
       <div className={SIG_SOLD_WHITE_BACKDROP_CLASS} aria-hidden />
-      <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-[min(12%,1rem)]">
+      <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-[min(6%,0.5rem)]">
         {/* eslint-disable-next-line @next/next/no-img-element -- 스탬프 알파 채널 유지(Next/Image 흰 배경 이슈 방지) */}
         <img
           src={stampSrc}
