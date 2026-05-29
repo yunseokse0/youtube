@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { formatDonorsAmount, formatManThousand } from "@/lib/state";
+import { buildTextOutlineStyle } from "@/lib/text-outline-style";
 
 function useCountUp(value: number, durationMs = 600) {
   const [display, setDisplay] = useState(value);
@@ -41,6 +42,8 @@ export function GoalBar({
   opacityAffectsText = false,
   textColor = "#fff7fb",
   fontSizePx,
+  textOutlineColor,
+  textOutlineWidthPx,
   amountFormat = "short",
   locale = "ko-KR",
 }: {
@@ -54,6 +57,10 @@ export function GoalBar({
   textColor?: string;
   /** 지정 시 막대 너비 비례 자동 크기 대신 px 고정 */
   fontSizePx?: number;
+  /** 비우면 기본 진한 외곽선. hex/rgba */
+  textOutlineColor?: string;
+  /** 0이면 외곽선 없음. 미지정 시 글자 크기에 비례 */
+  textOutlineWidthPx?: number;
   /** `short` = 만원 축약, `full` = 입력한 원 그대로(쉼표만) */
   amountFormat?: "full" | "short";
   locale?: string;
@@ -88,8 +95,11 @@ export function GoalBar({
   })();
   const ambientPulse = "goalbar-ambient-pulse 4.8s ease-in-out infinite";
   const ambientSweep = "goalbar-ambient-sweep 5.2s linear infinite";
-  const goalTextOutline =
-    "-1px -1px 0 rgba(6, 12, 24, 0.95), 1px -1px 0 rgba(6, 12, 24, 0.95), -1px 1px 0 rgba(6, 12, 24, 0.95), 1px 1px 0 rgba(6, 12, 24, 0.95), 0 2px 6px rgba(0,0,0,0.42)";
+  const goalTextOutline = buildTextOutlineStyle({
+    fontSizePx: textFontPx,
+    outlineColor: textOutlineColor,
+    outlineWidthPx: textOutlineWidthPx,
+  });
 
   return (
     <div
@@ -148,13 +158,13 @@ export function GoalBar({
             style={{
               color: textColor,
               fontWeight: 900,
-              textShadow: goalTextOutline,
               lineHeight: 1,
+              ...goalTextOutline,
             }}
           >
             {normalizedLabel}
           </span>
-          <span style={{ color: textColor, fontWeight: 700, textShadow: goalTextOutline, lineHeight: 1 }}>
+          <span style={{ color: textColor, fontWeight: 700, lineHeight: 1, ...goalTextOutline }}>
             {compactLabel ? "후원 " : ""}
             {formatAmount(current)} / {formatAmount(goal)}{" "}
             <span style={{ color: pct <= 0 ? "#e5e7eb" : textColor }}>({displayPct}%)</span>

@@ -6,6 +6,8 @@ import { maxOverlayAmountDisplayLength } from "@/lib/overlay-amount-display";
 import {
   resolveGoalFontSizePx,
   resolveGoalTextColor,
+  resolveGoalTextOutlineColor,
+  resolveGoalTextOutlineWidthPx,
   resolveLivePresetStyleParam,
   presetToParams,
   shouldSuppressOverlaySseConnection,
@@ -1617,6 +1619,8 @@ function OverlayInner() {
   })();
   const goalTextColor = resolveGoalTextColor(rawSp, effectivePreset, { ready });
   const goalFontSizePx = resolveGoalFontSizePx(rawSp, effectivePreset, { ready });
+  const goalTextOutlineColor = resolveGoalTextOutlineColor(rawSp, effectivePreset, { ready });
+  const goalTextOutlineWidthPx = resolveGoalTextOutlineWidthPx(rawSp, effectivePreset, { ready });
   const donationListsCfg = normalizeDonationListsOverlayConfig(s?.donationListsOverlayConfig);
   const tableBgGifUrl = (
     (sp.get("tableBgGifUrl") || "").trim() ||
@@ -3141,6 +3145,8 @@ function OverlayInner() {
               opacityAffectsText={goalOpacityAffectsText}
               textColor={goalTextColor}
               fontSizePx={goalFontSizePx}
+              textOutlineColor={goalTextOutlineColor}
+              textOutlineWidthPx={goalTextOutlineWidthPx}
               amountFormat={donorsFormat}
               locale={currencyLocale}
             />

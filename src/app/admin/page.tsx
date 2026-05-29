@@ -122,7 +122,7 @@ type OverlayPreset = {
   showGoal: boolean; goal: string;
   /** 후원 초기화 시 복원할 목표(수동 저장·첫 자동 상향 직전 스냅샷). 없으면 초기화 시 goal 숫자 유지 */
   goalBaseline?: string;
-  goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string; goalOpacity?: string; goalOpacityText?: boolean; goalTextColor?: string; goalFontSize?: string;
+  goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string; goalOpacity?: string; goalOpacityText?: boolean; goalTextColor?: string; goalFontSize?: string; goalTextOutlineColor?: string; goalTextOutlineWidth?: string;
   showPersonalGoal?: boolean; personalGoalTheme?: string; personalGoalAnchor?: string; personalGoalLimit?: string; personalGoalFree?: boolean; personalGoalX?: string; personalGoalY?: string;
   tickerInMembers?: boolean; tickerInGoal?: boolean; tickerInPersonalGoal?: boolean;
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
@@ -1063,6 +1063,16 @@ export default function AdminPage() {
     if (patch.goalTextColor !== undefined) {
       const normalized = normalizeGoalHexColor(String(patch.goalTextColor || ""));
       mergedPatch.goalTextColor = normalized || "";
+    }
+    if (patch.goalTextOutlineColor !== undefined) {
+      const normalized = normalizeGoalHexColor(String(patch.goalTextOutlineColor || ""));
+      mergedPatch.goalTextOutlineColor = normalized || "";
+    }
+    if (patch.goalTextOutlineWidth !== undefined) {
+      const w = parseFloat(String(patch.goalTextOutlineWidth || "").replace(/[^\d.]/g, "") || "0");
+      mergedPatch.goalTextOutlineWidth = Number.isFinite(w)
+        ? String(Math.max(0, Math.min(3, w)))
+        : "";
     }
     const nextPresets = presets.map((p) => (p.id === id ? { ...p, ...mergedPatch } : p));
     setPresets(nextPresets);
@@ -9222,9 +9232,67 @@ export default function AdminPage() {
                                         />
                                       </div>
                                     </div>
+                                    <div className="space-y-1 sm:col-span-2">
+                                      <label className="text-[11px] text-neutral-400">목표 글자 외곽선 색</label>
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="color"
+                                          value={toColorPickerValue(p.goalTextOutlineColor || "#060c18", "#060c18")}
+                                          onChange={(e) => updatePreset(p.id, { goalTextOutlineColor: e.target.value })}
+                                          className="h-9 w-12 rounded border border-white/20 bg-transparent p-0.5"
+                                        />
+                                        <input
+                                          className="flex-1 px-2 py-1 rounded bg-neutral-900/90 border border-white/15 text-xs font-mono"
+                                          value={p.goalTextOutlineColor || ""}
+                                          onChange={(e) => updatePreset(p.id, { goalTextOutlineColor: e.target.value })}
+                                          placeholder="기본(진한 테두리)"
+                                        />
+                                        <button
+                                          type="button"
+                                          className="shrink-0 rounded bg-neutral-800 px-2 py-1 text-[10px] hover:bg-neutral-700"
+                                          onClick={() => updatePreset(p.id, { goalTextOutlineColor: "" })}
+                                        >
+                                          기본
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] text-neutral-400">목표 글자 외곽선 두께</label>
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="range"
+                                          min={0}
+                                          max={3}
+                                          step={0.1}
+                                          value={(() => {
+                                            const n = parseFloat(String(p.goalTextOutlineWidth ?? ""));
+                                            return Number.isFinite(n) ? Math.min(3, Math.max(0, n)) : 0.8;
+                                          })()}
+                                          onChange={(e) =>
+                                            updatePreset(p.id, { goalTextOutlineWidth: e.target.value })
+                                          }
+                                          className="flex-1 accent-fuchsia-500"
+                                        />
+                                        <input
+                                          className="w-14 px-2 py-1 rounded bg-neutral-900/90 border border-white/15 text-xs text-right"
+                                          type="number"
+                                          min={0}
+                                          max={3}
+                                          step={0.1}
+                                          value={p.goalTextOutlineWidth ?? ""}
+                                          onChange={(e) =>
+                                            updatePreset(p.id, {
+                                              goalTextOutlineWidth: e.target.value.replace(/[^\d.]/g, "").slice(0, 3),
+                                            })
+                                          }
+                                          placeholder="자동"
+                                        />
+                                      </div>
+                                      <p className="text-[10px] text-neutral-500">0이면 외곽선 없음. 비우면 글자 크기에 맞춰 자동.</p>
+                                    </div>
                                   </div>
                                   <p className="mt-1 text-[10px] text-emerald-400/90 leading-snug">
-                                    Prism/OBS(`host=prism`)는 저장 후 브라우저 소스만 새로고침하면 색·크기가 바로 반영됩니다.
+                                    Prism/OBS(`host=prism`)는 저장 후 브라우저 소스만 새로고침하면 색·크기·외곽선이 바로 반영됩니다.
                                   </p>
                                 </div>
                                 <details className="rounded border border-white/10 bg-neutral-900/40">
@@ -9307,8 +9375,59 @@ export default function AdminPage() {
                                             placeholder="자동"
                                           />
                                         </div>
+                                        <label className="text-xs text-neutral-400">글자 외곽선 색</label>
+                                        <div className="flex items-center gap-2">
+                                          <input
+                                            type="color"
+                                            value={toColorPickerValue(p.goalTextOutlineColor || "#060c18", "#060c18")}
+                                            onChange={(e) => updatePreset(p.id, { goalTextOutlineColor: e.target.value })}
+                                            className="h-8 w-10 rounded border border-white/20 bg-transparent p-0.5"
+                                          />
+                                          <input
+                                            className="flex-1 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm font-mono"
+                                            value={p.goalTextOutlineColor || ""}
+                                            onChange={(e) => updatePreset(p.id, { goalTextOutlineColor: e.target.value })}
+                                            placeholder="기본"
+                                          />
+                                          <button
+                                            type="button"
+                                            className="shrink-0 rounded bg-neutral-800 px-2 py-1 text-[10px] hover:bg-neutral-700"
+                                            onClick={() => updatePreset(p.id, { goalTextOutlineColor: "" })}
+                                          >
+                                            기본
+                                          </button>
+                                        </div>
+                                        <label className="text-xs text-neutral-400">글자 외곽선 두께</label>
+                                        <div className="flex items-center gap-2">
+                                          <input
+                                            type="range"
+                                            min="0"
+                                            max="3"
+                                            step="0.1"
+                                            value={(() => {
+                                              const n = parseFloat(String(p.goalTextOutlineWidth ?? ""));
+                                              return Number.isFinite(n) ? Math.min(3, Math.max(0, n)) : 0.8;
+                                            })()}
+                                            onChange={(e) => updatePreset(p.id, { goalTextOutlineWidth: e.target.value })}
+                                            className="flex-1 accent-fuchsia-500"
+                                          />
+                                          <input
+                                            className="w-14 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                                            type="number"
+                                            min="0"
+                                            max="3"
+                                            step="0.1"
+                                            value={p.goalTextOutlineWidth ?? ""}
+                                            onChange={(e) =>
+                                              updatePreset(p.id, {
+                                                goalTextOutlineWidth: e.target.value.replace(/[^\d.]/g, "").slice(0, 3),
+                                              })
+                                            }
+                                            placeholder="자동"
+                                          />
+                                        </div>
                                         <p className="col-span-1 sm:col-span-2 text-[10px] text-neutral-500">
-                                          글자 크기를 비우면 막대 너비에 맞춰 자동 조절됩니다.
+                                          글자 크기를 비우면 막대 너비에 맞춰 자동 조절됩니다. 외곽선 두께 0이면 끔.
                                         </p>
                                       </div>
                                     </details>

@@ -53,6 +53,8 @@ export type OverlayPresetLike = {
   goalOpacityText?: boolean;
   goalTextColor?: string;
   goalFontSize?: string;
+  goalTextOutlineColor?: string;
+  goalTextOutlineWidth?: string;
   showPersonalGoal?: boolean;
   personalGoalTheme?: string;
   personalGoalAnchor?: string;
@@ -272,6 +274,8 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set(["goal", "goalCurrent"]);
 export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "goalTextColor",
   "goalFontSize",
+  "goalTextOutlineColor",
+  "goalTextOutlineWidth",
   "goalOpacity",
   "goalOpacityText",
   "memberSize",
@@ -343,6 +347,34 @@ export function resolveGoalFontSizePx(
   return Number.isFinite(n) && n > 0 ? Math.max(10, Math.min(48, n)) : undefined;
 }
 
+export function resolveGoalTextOutlineColor(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string | undefined {
+  const merged = resolveLivePresetStyleParam(
+    "goalTextOutlineColor",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  const hex = normalizeGoalHexColor(merged || "");
+  return hex || undefined;
+}
+
+export function resolveGoalTextOutlineWidthPx(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): number | undefined {
+  const raw =
+    resolveLivePresetStyleParam("goalTextOutlineWidth", rawSp, presetToParams(preset), opts) || "";
+  if (!raw.trim()) return undefined;
+  const n = parseFloat(raw);
+  if (!Number.isFinite(n)) return undefined;
+  return Math.max(0, Math.min(3, n));
+}
+
 /** 후원 목표 막대 글자색·폰트(px) — OBS URL·프리셋 공통 */
 export function appendGoalBarStyleParams(target: URLSearchParams, preset: OverlayPresetLike): void {
   const goalTextColor = normalizeGoalHexColor((preset.goalTextColor || "").trim());
@@ -351,6 +383,13 @@ export function appendGoalBarStyleParams(target: URLSearchParams, preset: Overla
   if (goalFontRaw) {
     const gfs = Math.max(10, Math.min(48, parseInt(goalFontRaw, 10) || 0));
     if (gfs > 0) target.set("goalFontSize", String(gfs));
+  }
+  const goalOutlineColor = normalizeGoalHexColor((preset.goalTextOutlineColor || "").trim());
+  if (goalOutlineColor) target.set("goalTextOutlineColor", goalOutlineColor);
+  const outlineW = (preset.goalTextOutlineWidth || "").trim();
+  if (outlineW) {
+    const w = Math.max(0, Math.min(3, parseFloat(outlineW) || 0));
+    target.set("goalTextOutlineWidth", String(w));
   }
 }
 

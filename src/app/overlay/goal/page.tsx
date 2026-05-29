@@ -8,6 +8,8 @@ import {
   presetToParams,
   resolveGoalFontSizePx,
   resolveGoalTextColor,
+  resolveGoalTextOutlineColor,
+  resolveGoalTextOutlineWidthPx,
   resolveLivePresetStyleParam,
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
@@ -89,6 +91,14 @@ export default function GoalOverlayPage() {
     () => resolveGoalFontSizePx(sp, activePreset, { ready }),
     [sp, activePreset, ready]
   );
+  const goalTextOutlineColor = useMemo(
+    () => resolveGoalTextOutlineColor(sp, activePreset, { ready }),
+    [sp, activePreset, ready]
+  );
+  const goalTextOutlineWidthPx = useMemo(
+    () => resolveGoalTextOutlineWidthPx(sp, activePreset, { ready }),
+    [sp, activePreset, ready]
+  );
 
   const totalCombined = useMemo(
     () => (state?.members || []).reduce((sum, m) => sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)), 0),
@@ -124,6 +134,8 @@ export default function GoalOverlayPage() {
               opacityAffectsText={goalOpacityAffectsText}
               textColor={goalTextColor}
               fontSizePx={goalFontSizePx}
+              textOutlineColor={goalTextOutlineColor}
+              textOutlineWidthPx={goalTextOutlineWidthPx}
               amountFormat={amountFormat}
               locale={currencyLocale}
             />

@@ -781,26 +781,6 @@ export default function AdminSigSalesPage() {
     state?.sigInventory,
   ]);
 
-  const displayOneShot = useMemo(() => {
-    if (displaySelectedSigs.length < MIN_ONE_SHOT_SIGS) return null;
-    const base = buildOneShotFromSelected(displaySelectedSigs);
-    if (!base) return null;
-    const net = computeNetOneShotPrice(displaySelectedSigs, manualSoldSet);
-    return {
-      ...base,
-      name: String(manualOneShotName || base.name).trim() || "한방 시그",
-      price: net,
-    };
-  }, [displaySelectedSigs, manualSoldSet, manualOneShotName]);
-  const resultCardCount = useMemo(() => {
-    let n = displaySelectedSigsForUi.length;
-    if (displayOneShot && oneShotReveal) n += 1;
-    return Math.max(1, n);
-  }, [displaySelectedSigsForUi.length, displayOneShot, oneShotReveal]);
-  const resultRowLayout = useMemo(
-    () => layoutSigOverlayResultRow({ cellCount: resultCardCount, userScalePct: sigResultScalePct }),
-    [resultCardCount, sigResultScalePct]
-  );
   const targetSelectionCount = useMemo(() => {
     if (pendingLanding?.selected?.length) return Math.max(1, Math.min(MAX_SELECTED_SIGS, pendingLanding.selected.length));
     if (machine.selectedSigs?.length) return Math.max(1, Math.min(MAX_SELECTED_SIGS, machine.selectedSigs.length));
@@ -881,6 +861,27 @@ export default function AdminSigSalesPage() {
     if (!raw) return manualNetOneShotPrice;
     return Math.max(0, Math.floor(Number.parseInt(raw, 10) || 0));
   }, [manualOneShotPriceInput, manualNetOneShotPrice]);
+  const displayOneShot = useMemo(() => {
+    if (displaySelectedSigs.length < MIN_ONE_SHOT_SIGS) return null;
+    const base = buildOneShotFromSelected(displaySelectedSigs);
+    if (!base) return null;
+    const net = computeNetOneShotPrice(displaySelectedSigs, manualSoldSet);
+    return {
+      ...base,
+      name: String(manualOneShotName || base.name).trim() || "한방 시그",
+      /** 수동 입력 금액(빈칸=자동합산·판매 차감) — Confirm Sale·오버레이 동기화에도 동일 적용 */
+      price: manualParsedOneShotPrice > 0 ? manualParsedOneShotPrice : net,
+    };
+  }, [displaySelectedSigs, manualSoldSet, manualOneShotName, manualParsedOneShotPrice]);
+  const resultCardCount = useMemo(() => {
+    let n = displaySelectedSigsForUi.length;
+    if (displayOneShot && oneShotReveal) n += 1;
+    return Math.max(1, n);
+  }, [displaySelectedSigsForUi.length, displayOneShot, oneShotReveal]);
+  const resultRowLayout = useMemo(
+    () => layoutSigOverlayResultRow({ cellCount: resultCardCount, userScalePct: sigResultScalePct }),
+    [resultCardCount, sigResultScalePct]
+  );
   const manualReady = useMemo(() => {
     if (manualParsedRows.length !== 5) return false;
     if (manualParsedRows.some((row) => !row.name || row.price <= 0)) return false;
@@ -1790,13 +1791,14 @@ export default function AdminSigSalesPage() {
               price: row.price,
             }));
       if (selected.length < MIN_ONE_SHOT_SIGS) return null;
+      const net = computeNetOneShotPrice(selected, soldSet);
       return {
         id: ONE_SHOT_SIG_ID,
         name: String(manualOneShotName || "한방 시그").trim() || "한방 시그",
-        price: computeNetOneShotPrice(selected, soldSet),
+        price: manualParsedOneShotPrice > 0 ? manualParsedOneShotPrice : net,
       };
     },
-    [displaySelectedSigs, manualParsedRows, manualSigDrafts, manualOneShotName]
+    [displaySelectedSigs, manualParsedRows, manualSigDrafts, manualOneShotName, manualParsedOneShotPrice]
   );
 
   const pushLiveRoundToServer = useCallback(
