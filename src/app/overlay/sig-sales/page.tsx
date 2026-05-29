@@ -1064,7 +1064,8 @@ function SigSalesOverlayPageInner() {
       oneShotImageUrl,
     };
   }, [manualOverlayMode, sp]);
-  const manualDraftEffective = manualDraftFromUrl || manualDraftFromState || manualDraftFromLocal;
+  /** 서버 저장 초안 우선 — OBS URL을 매번 바꿀 필요 없음(URL 초안은 레거시·오프라인 폴백) */
+  const manualDraftEffective = manualDraftFromState || manualDraftFromUrl || manualDraftFromLocal;
   const manualDraftSelectedForUi = useMemo(() => {
     const rows = Array.isArray(manualDraftEffective?.drafts) ? manualDraftEffective!.drafts : [];
     return rows

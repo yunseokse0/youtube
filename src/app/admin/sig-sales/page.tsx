@@ -1464,27 +1464,7 @@ export default function AdminSigSalesPage() {
     if (Number.isFinite(rs)) qManual.set("sigResultScalePct", String(Math.floor(rs)));
     qManual.set("mode", "manual");
     qManual.set("hideSigBoard", "1");
-    /**
-     * 개발 중 코드 수정/서버 재시작(메모리 state 초기화) 시에도 수동 오버레이가 비지 않도록
-     * URL에 핵심 텍스트 데이터(이름/금액)와 짧은 이미지 경로를 함께 싣는다.
-     * - m{n}n: 이름, m{n}p: 가격(숫자), m{n}i: 이미지 URL(예: /uploads/sigs/uid/....gif)
-     * - osn/osp/osi: 한방 이름/가격/이미지 URL
-     */
-    manualSigDrafts.forEach((row, idx) => {
-      const n = idx + 1;
-      const name = String(row?.name || "").trim();
-      const priceDigits = String(row?.priceInput || "").replace(/[^\d]/g, "");
-      const imageUrl = String(row?.imageUrl || "").trim();
-      if (name) qManual.set(`m${n}n`, name);
-      if (priceDigits) qManual.set(`m${n}p`, priceDigits);
-      if (imageUrl && imageUrl.length <= 256) qManual.set(`m${n}i`, imageUrl);
-    });
-    const oneShotName = String(manualOneShotName || "").trim();
-    const oneShotImage = String(manualOneShotImageUrl || "").trim();
-    if (oneShotName) qManual.set("osn", oneShotName);
-    const ospDigits = String(manualParsedOneShotPrice || "").replace(/[^\d]/g, "");
-    if (ospDigits) qManual.set("osp", ospDigits);
-    if (oneShotImage && oneShotImage.length <= 256) qManual.set("osi", oneShotImage);
+    /** 시그·한방·판매완료는 overlaySettings.sigSalesManualDraftV1 + rouletteState 로 실시간 동기화 — URL 재복사 불필요 */
     setOverlayObsUrlManual(`${window.location.origin}/overlay/sig-sales?${qManual.toString()}`);
   }, [
     userId,
@@ -1492,9 +1472,6 @@ export default function AdminSigSalesPage() {
     effectiveMenuCount,
     wheelDemoMode,
     state?.rouletteState?.sigResultScalePct,
-    manualSigDrafts,
-    manualOneShotName,
-    manualParsedOneShotPrice,
   ]);
 
   useEffect(() => {
@@ -2246,7 +2223,10 @@ export default function AdminSigSalesPage() {
         </header>
         {overlayObsUrlManual ? (
           <section className="rounded border border-sky-400/35 bg-sky-500/10 px-3 py-2">
-            <div className="text-[11px] font-semibold text-sky-200">수동 모드 전용 URL (항상 이 URL 사용)</div>
+            <div className="text-[11px] font-semibold text-sky-200">수동 모드 OBS URL (한 번만 등록)</div>
+            <p className="mt-1 text-[10px] text-sky-100/75 leading-snug">
+              시그 입력·판매 완료 체크 후에도 URL은 바뀌지 않습니다. OBS는 이 주소 그대로 두고 소스 새로고침만 하면 서버 상태가 반영됩니다.
+            </p>
             <code className="mt-1 block break-all text-[11px] text-sky-100/95">{overlayObsUrlManual}</code>
           </section>
         ) : null}
