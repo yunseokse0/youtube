@@ -3,7 +3,12 @@ import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCal
 import { useSearchParams } from "next/navigation";
 import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig } from "@/lib/state";
 import { maxOverlayAmountDisplayLength } from "@/lib/overlay-amount-display";
-import { presetToParams, shouldSuppressOverlaySseConnection, type OverlayPresetLike } from "@/lib/overlay-params";
+import {
+  OVERLAY_LIVE_PRESET_STYLE_KEYS,
+  presetToParams,
+  shouldSuppressOverlaySseConnection,
+  type OverlayPresetLike,
+} from "@/lib/overlay-params";
 import { getEffectiveRemainingTime } from "@/lib/timer-utils";
 import { useFlip } from "@/lib/flip";
 import MissionBoard from "@/components/MissionBoard";
@@ -1263,18 +1268,28 @@ function OverlayInner() {
   }, [activePreset]);
   const effectivePreset = activePreset || lastStablePresetRef.current;
   const presetParams = useMemo(() => presetToParams(effectivePreset), [effectivePreset]);
+  const hostParam = (rawSp.get("host") || "").toLowerCase();
+  const externalHost = hostParam === "prism" || hostParam === "obs" || hostParam === "external";
   const sp = useMemo(
     () => ({
       get: (key: string) => {
+        const fromPreset = presetParams.get(key);
+        if (
+          externalHost &&
+          ready &&
+          OVERLAY_LIVE_PRESET_STYLE_KEYS.has(key) &&
+          fromPreset !== null &&
+          fromPreset !== ""
+        ) {
+          return fromPreset;
+        }
         const direct = rawSp.get(key);
         if (direct !== null && direct !== "") return direct;
-        return presetParams.get(key);
+        return fromPreset;
       },
     }),
-    [rawSp, presetParams]
+    [rawSp, presetParams, externalHost, ready]
   );
-  const hostParam = (rawSp.get("host") || "").toLowerCase();
-  const externalHost = hostParam === "prism" || hostParam === "obs" || hostParam === "external";
   // OBS/Prism는 렌더러 특성상 텍스트·transform 미세 떨림이 발생하기 쉬워 기본 안전 모드 ON.
   const externalSafeMode = externalHost && (rawSp.get("externalSafe") || "true").toLowerCase() !== "false";
   // 강제 고정 모드: 미세 떨림 원인(자동 맞춤/스케일/모션)을 진단용으로 일괄 차단한다.

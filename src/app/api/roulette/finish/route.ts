@@ -51,6 +51,9 @@ const finishSchema = z.object({
     .optional(),
   finalPhase: z.enum(["CONFIRMED", "CANCELLED"]).optional(),
   reason: z.string().trim().max(200).optional(),
+  /** 지정 시 해당 시그만 재고 soldCount +1 (미지정 시 selectedSigs 전체) */
+  soldSigIds: z.array(z.string().trim().min(1)).optional(),
+  oneShotInventorySold: z.boolean().optional(),
 });
 
 export async function POST(req: Request) {
@@ -97,17 +100,28 @@ export async function POST(req: Request) {
       reason: body.reason,
     });
 
-    const soldDeltaById =
-      finalPhase === "CONFIRMED"
-        ? selectedSigs.reduce<Record<string, number>>((acc, row) => {
-            const key = canonicalSigIdFromWheelSliceId(String(row?.id || ""));
-            if (!key) return acc;
-            acc[key] = (acc[key] || 0) + 1;
-            return acc;
-          }, {})
-        : {};
-    if (finalPhase === "CONFIRMED" && selectedSigs.length >= 2) {
-      soldDeltaById[ONE_SHOT_SIG_ID] = Math.max(soldDeltaById[ONE_SHOT_SIG_ID] || 0, 1);
+    const soldDeltaById: Record<string, number> = {};
+    if (finalPhase === "CONFIRMED") {
+      const explicitSoldIds = Array.isArray(body.soldSigIds)
+        ? body.soldSigIds.map((id) => canonicalSigIdFromWheelSliceId(String(id || ""))).filter(Boolean)
+        : [];
+      if (explicitSoldIds.length > 0) {
+        for (const key of explicitSoldIds) {
+          soldDeltaById[key] = (soldDeltaById[key] || 0) + 1;
+        }
+      } else {
+        for (const row of selectedSigs) {
+          const key = canonicalSigIdFromWheelSliceId(String(row?.id || ""));
+          if (!key) continue;
+          soldDeltaById[key] = (soldDeltaById[key] || 0) + 1;
+        }
+      }
+      const hasExplicitSoldList = Array.isArray(body.soldSigIds);
+      if (body.oneShotInventorySold === true) {
+        soldDeltaById[ONE_SHOT_SIG_ID] = Math.max(soldDeltaById[ONE_SHOT_SIG_ID] || 0, 1);
+      } else if (!hasExplicitSoldList && selectedSigs.length >= 2) {
+        soldDeltaById[ONE_SHOT_SIG_ID] = Math.max(soldDeltaById[ONE_SHOT_SIG_ID] || 0, 1);
+      }
     }
     const selectedNamePriceSet = new Set(
       selectedSigs.map(

@@ -78,26 +78,31 @@ export default function GoalOverlayPage() {
     return false;
   }, [sp, activePreset]);
   const goalTextColor = useMemo(() => {
+    const fromPreset = String((activePreset as any)?.goalTextColor || "").trim();
+    if (externalHost && ready && /^#[0-9a-fA-F]{3,8}$/.test(fromPreset)) return fromPreset;
     const fromUrl = (sp.get("goalTextColor") || "").trim();
     if (/^#[0-9a-fA-F]{3,8}$/.test(fromUrl)) return fromUrl;
-    const fromPreset = String((activePreset as any)?.goalTextColor || "").trim();
     if (/^#[0-9a-fA-F]{3,8}$/.test(fromPreset)) return fromPreset;
     return "#fff7fb";
-  }, [sp, activePreset]);
+  }, [sp, activePreset, externalHost, ready]);
   const goalFontSizePx = useMemo(() => {
     const parse = (raw: string) => {
       const n = parseInt(raw, 10);
       return Number.isFinite(n) && n > 0 ? Math.max(10, Math.min(48, n)) : undefined;
     };
+    const fromPreset = String((activePreset as any)?.goalFontSize || "").trim();
+    if (externalHost && ready && fromPreset) {
+      const n = parse(fromPreset);
+      if (n != null) return n;
+    }
     const fromUrl = (sp.get("goalFontSize") || "").trim();
     if (fromUrl) {
       const n = parse(fromUrl);
       if (n != null) return n;
     }
-    const fromPreset = String((activePreset as any)?.goalFontSize || "").trim();
     if (fromPreset) return parse(fromPreset);
     return undefined;
-  }, [sp, activePreset]);
+  }, [sp, activePreset, externalHost, ready]);
 
   const totalCombined = useMemo(
     () => (state?.members || []).reduce((sum, m) => sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)), 0),

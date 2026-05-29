@@ -1368,7 +1368,11 @@ function SigSalesOverlayPageInner() {
    */
   const confirmedRoundSoldIdSet = useMemo(() => {
     const next = new Set<string>();
-    if (machine.phase !== "CONFIRMED" && machine.phase !== "CONFIRM_PENDING") {
+    if (
+      machine.phase !== "CONFIRMED" &&
+      machine.phase !== "CONFIRM_PENDING" &&
+      machine.phase !== "LANDED"
+    ) {
       return next;
     }
     const normalizeNameKey = (raw: string) =>
@@ -1378,31 +1382,32 @@ function SigSalesOverlayPageInner() {
         (x) => `${normalizeNameKey(x.name)}::${Math.floor(Number(x.price || 0))}`
       )
     );
+    const selectedIdSet = new Set<string>();
     for (const s of machine.selectedSigs || []) {
-      const canon = canonicalSigIdFromWheelSliceId(s.id);
-      next.add(s.id);
-      next.add(canon);
+      selectedIdSet.add(s.id);
+      selectedIdSet.add(canonicalSigIdFromWheelSliceId(s.id));
     }
-    if (machine.phase === "CONFIRMED" && (machine.selectedSigs?.length ?? 0) >= 2) {
-      next.add(ONE_SHOT_SIG_ID);
-      next.add(canonicalSigIdFromWheelSliceId(ONE_SHOT_SIG_ID));
+    /** 확정 처리 중: 당첨 카드 전체에 스탬프 미리보기 */
+    if (machine.phase === "CONFIRM_PENDING") {
+      for (const id of selectedIdSet) next.add(id);
+      if ((machine.selectedSigs?.length ?? 0) >= MIN_ONE_SHOT_SIGS) {
+        next.add(ONE_SHOT_SIG_ID);
+        next.add(canonicalSigIdFromWheelSliceId(ONE_SHOT_SIG_ID));
+      }
+      return next;
     }
+    /** LANDED·CONFIRMED: 재고 soldCount가 올라간 당첨 시그만 스탬프(체크 즉시 반영) */
     for (const row of state?.sigInventory || []) {
       const canon = canonicalSigIdFromWheelSliceId(row.id);
-      if (row.soldCount >= row.maxCount) {
-        next.add(row.id);
-        next.add(canon);
-        continue;
-      }
-      if (
-        machine.phase === "CONFIRMED" &&
+      const inRound =
+        selectedIdSet.has(row.id) ||
+        selectedIdSet.has(canon) ||
         selectedNamePriceSet.has(
           `${normalizeNameKey(row.name)}::${Math.floor(Number(row.price || 0))}`
-        )
-      ) {
-        next.add(row.id);
-        next.add(canon);
-      }
+        );
+      if (!inRound || row.soldCount <= 0) continue;
+      next.add(row.id);
+      next.add(canon);
     }
     return next;
   }, [machine.phase, machine.selectedSigs, state?.sigInventory]);

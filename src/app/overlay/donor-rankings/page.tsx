@@ -54,6 +54,37 @@ function readColor(sp: URLSearchParams, key: string, fallback: string): string {
   return raw || fallback;
 }
 
+/** 관리자 저장 테마를 실시간 반영(URL에 예전 색·크기가 남아 있어도 덮어쓰지 않음) */
+function liveThemeNumber(
+  ready: boolean,
+  useTest: boolean,
+  saved: number,
+  sp: URLSearchParams,
+  key: string,
+  min: number,
+  max: number
+): number {
+  if (ready && !useTest) return Math.max(min, Math.min(max, saved));
+  return readNumber(sp, key, saved, min, max);
+}
+
+function liveThemeColor(
+  ready: boolean,
+  useTest: boolean,
+  saved: string,
+  sp: URLSearchParams,
+  key: string,
+  fallback: string
+): string {
+  if (ready && !useTest) {
+    const s = (saved || "").trim();
+    if (s && s.toLowerCase() !== "transparent") return s;
+    return fallback;
+  }
+  const mergedFallback = (saved || "").trim() || fallback;
+  return readColor(sp, key, mergedFallback);
+}
+
 /** URL 쿼리 `donorsB64` 최대 길이(과도한 쿼리 방지) */
 const DONORS_B64_MAX_LEN = 24_000;
 
@@ -163,6 +194,22 @@ function resolveThemeColor(
   const s = (saved || "").trim();
   if (s && s.toLowerCase() !== "transparent") return s;
   return broadcastDefault;
+}
+
+function resolveThemeColorLive(
+  ready: boolean,
+  useTest: boolean,
+  sp: URLSearchParams,
+  key: string,
+  saved: string | undefined,
+  broadcastDefault: string
+): string {
+  if (ready && !useTest) {
+    const s = (saved || "").trim();
+    if (s && s.toLowerCase() !== "transparent") return s;
+    return broadcastDefault;
+  }
+  return resolveThemeColor(sp, key, saved, broadcastDefault);
 }
 
 /**
@@ -365,35 +412,57 @@ export default function DonorRankingsOverlayPage() {
   const layoutDual = (sp.get("layout") || "").toLowerCase() === "dual";
   const savedTheme = state?.donorRankingsTheme || defaultState().donorRankingsTheme;
 
-  const topN = readNumber(sp, "top", savedTheme.top, 1, 50);
-  const titleSize = readNumber(sp, "titleSize", savedTheme.titleSize, 14, 80);
-  const rowSize = readNumber(sp, "rowSize", savedTheme.rowSize, 12, 64);
-  const rankSize = readNumber(sp, "rankSize", savedTheme.rankSize, 12, 72);
-  const overlayOpacity = readNumber(sp, "overlayOpacity", savedTheme.overlayOpacity, 0, 100);
+  const topN = liveThemeNumber(ready, useTest, savedTheme.top, sp, "top", 1, 50);
+  const titleSize = liveThemeNumber(ready, useTest, savedTheme.titleSize, sp, "titleSize", 14, 80);
+  const rowSize = liveThemeNumber(ready, useTest, savedTheme.rowSize, sp, "rowSize", 12, 64);
+  const rankSize = liveThemeNumber(ready, useTest, savedTheme.rankSize, sp, "rankSize", 12, 72);
+  const overlayOpacity = liveThemeNumber(ready, useTest, savedTheme.overlayOpacity, sp, "overlayOpacity", 0, 100);
   const zoomPct = Math.floor(readNumber(sp, "zoomPct", 100, 30, 300));
   const zoomScale = zoomPct / 100;
-  const bg = readColor(sp, "bg", savedTheme.bg) || "transparent";
+  const bg =
+    ready && !useTest
+      ? (savedTheme.bg || "").trim() || "transparent"
+      : readColor(sp, "bg", savedTheme.bg) || "transparent";
   /** 어두운 기본값 + 투명도 시 방송 화면과 섞여 버건디로 보이므로 밝은 파스텔 핑크를 기본으로 */
-  const panelBg = resolveThemeColor(sp, "panelBg", savedTheme.panelBg, "rgba(255, 248, 252, 1)");
-  const borderColor = resolveThemeColor(
+  const panelBg = resolveThemeColorLive(ready, useTest, sp, "panelBg", savedTheme.panelBg, "rgba(255, 248, 252, 1)");
+  const borderColor = resolveThemeColorLive(
+    ready,
+    useTest,
     sp,
     "border",
     savedTheme.borderColor,
     "rgba(255, 210, 232, 0.42)"
   );
-  const headerAccountBg =
-    readColor(sp, "headerAccountBg", savedTheme.headerAccountBg) ||
-    "linear-gradient(135deg, #fff5fa 0%, #ffd6ea 48%, #ffb7d6 100%)";
-  const headerToonBg =
-    readColor(sp, "headerToonBg", savedTheme.headerToonBg) ||
-    "linear-gradient(135deg, #fff4f9 0%, #ffc8e6 48%, #ffa3cf 100%)";
+  const headerAccountBg = liveThemeColor(
+    ready,
+    useTest,
+    savedTheme.headerAccountBg,
+    sp,
+    "headerAccountBg",
+    "linear-gradient(135deg, #fff5fa 0%, #ffd6ea 48%, #ffb7d6 100%)"
+  );
+  const headerToonBg = liveThemeColor(
+    ready,
+    useTest,
+    savedTheme.headerToonBg,
+    sp,
+    "headerToonBg",
+    "linear-gradient(135deg, #fff4f9 0%, #ffc8e6 48%, #ffa3cf 100%)"
+  );
   const headerUnifiedBg = readColor(sp, "headerBg", headerAccountBg) || headerAccountBg;
   const rankingTitle = (sp.get("title") || "").trim() || "후원 순위";
-  const rankColor = readColor(sp, "rankColor", savedTheme.rankColor) || "#fff5f9";
-  const nameColor = readColor(sp, "nameColor", savedTheme.nameColor) || "#fff7fb";
-  const amountColor = readColor(sp, "amountColor", savedTheme.amountColor) || "#fff7ed";
-  const titleColor = readColor(sp, "titleColor", savedTheme.titleColor) || "#fff7fb";
-  const outlineColor = readColor(sp, "outline", savedTheme.outlineColor) || "rgba(58, 6, 28, 0.85)";
+  const rankColor = liveThemeColor(ready, useTest, savedTheme.rankColor, sp, "rankColor", "#fff5f9");
+  const nameColor = liveThemeColor(ready, useTest, savedTheme.nameColor, sp, "nameColor", "#fff7fb");
+  const amountColor = liveThemeColor(ready, useTest, savedTheme.amountColor, sp, "amountColor", "#fff7ed");
+  const titleColor = liveThemeColor(ready, useTest, savedTheme.titleColor, sp, "titleColor", "#fff7fb");
+  const outlineColor = liveThemeColor(
+    ready,
+    useTest,
+    savedTheme.outlineColor,
+    sp,
+    "outline",
+    "rgba(58, 6, 28, 0.85)"
+  );
   const showBgLayer = overlayCfg.isBgEnabled && Boolean(overlayCfg.bgGifUrl.trim());
   const bgAnimated = useMemo(() => resolveAnimatedSourceForEmbed(overlayCfg.bgGifUrl), [overlayCfg.bgGifUrl]);
   const bgOpacityPct = Math.max(0, Math.min(100, overlayCfg.bgOpacity)) / 100;

@@ -38,7 +38,13 @@ type Action =
   | { type: "HYDRATE"; payload: Partial<SigSalesMachine> }
   | { type: "SET_OPACITY"; payload: number }
   | { type: "SPINNING"; payload: Pick<SigSalesMachine, "startedAt" | "sessionId" | "resultId"> }
-  | { type: "LANDED"; payload: Pick<SigSalesMachine, "selectedSigs" | "oneShot" | "resultId"> }
+  | {
+      type: "LANDED";
+      payload: Pick<SigSalesMachine, "selectedSigs" | "oneShot" | "resultId"> & {
+        sessionId?: string;
+        startedAt?: number;
+      };
+    }
   | { type: "CONFIRM_PENDING" }
   | { type: "CANCEL_CONFIRM" }
   | { type: "RESET_IDLE" }
@@ -91,6 +97,8 @@ function reducer(state: SigSalesMachine, action: Action): SigSalesMachine {
         selectedSigs: action.payload.selectedSigs,
         oneShot: action.payload.oneShot,
         resultId: action.payload.resultId,
+        ...(action.payload.sessionId ? { sessionId: action.payload.sessionId } : {}),
+        ...(action.payload.startedAt ? { startedAt: action.payload.startedAt } : {}),
       };
     case "CONFIRM_PENDING":
       return { ...state, phase: "CONFIRM_PENDING", isFinishLoading: false };
@@ -257,9 +265,26 @@ export function useSigSalesState(userId: string, appState: AppState | null) {
     }
   }, [userId, machine.phase, machine.isFinishLoading]);
 
-  const landed = useCallback((selectedSigs: SigItem[], oneShot: { id: string; name: string; price: number } | null, resultId: string | null) => {
-    dispatch({ type: "LANDED", payload: { selectedSigs, oneShot, resultId } });
-  }, []);
+  const landed = useCallback(
+    (
+      selectedSigs: SigItem[],
+      oneShot: { id: string; name: string; price: number } | null,
+      resultId: string | null,
+      meta?: { sessionId?: string; startedAt?: number }
+    ) => {
+      const payload: {
+        selectedSigs: SigItem[];
+        oneShot: { id: string; name: string; price: number } | null;
+        resultId: string | null;
+        sessionId?: string;
+        startedAt?: number;
+      } = { selectedSigs, oneShot, resultId };
+      if (meta?.sessionId) payload.sessionId = meta.sessionId;
+      if (meta?.startedAt) payload.startedAt = meta.startedAt;
+      dispatch({ type: "LANDED", payload });
+    },
+    []
+  );
 
   const markConfirmPending = useCallback(() => {
     dispatch({ type: "CONFIRM_PENDING" });
@@ -282,6 +307,9 @@ export function useSigSalesState(userId: string, appState: AppState | null) {
     selectedSigs?: SigItem[];
     oneShotResult?: { id: string; name: string; price: number } | null;
     finalPhase?: "CONFIRMED" | "CANCELLED";
+    /** 재고 +1 대상(미지정 시 selectedSigs 전체 — 하위 호환) */
+    soldSigIds?: string[];
+    oneShotInventorySold?: boolean;
   }) => {
     dispatch({ type: "SET_FINISH_LOADING", payload: true });
     dispatch({ type: "SET_ERROR", payload: null });
@@ -296,6 +324,8 @@ export function useSigSalesState(userId: string, appState: AppState | null) {
           selectedSigs: payload?.selectedSigs || machine.selectedSigs,
           oneShotResult: payload?.oneShotResult || machine.oneShot,
           finalPhase: payload?.finalPhase || "CONFIRMED",
+          soldSigIds: payload?.soldSigIds,
+          oneShotInventorySold: payload?.oneShotInventorySold,
         }),
       });
       if (!res.ok) {

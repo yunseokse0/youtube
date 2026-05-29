@@ -1769,6 +1769,7 @@ export default function AdminPage() {
   };
 
   const updateDonorRankingsTheme = (patch: Partial<AppState["donorRankingsTheme"]>) => {
+    setDonorRankingsPreviewIframeKey((k) => k + 1);
     setState((prev: AppState) => {
       const next: AppState = {
         ...prev,
@@ -8386,18 +8387,92 @@ export default function AdminPage() {
                   오버레이 열기
                 </button>
               </div>
-              <div className="mb-3 rounded border border-white/10 bg-black/20 px-3 py-2">
-                <div className="text-xs text-neutral-300 mb-1">후원 리스트 배경 투명도(실시간 · 헤더·목록)</div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={state.donorRankingsTheme.overlayOpacity}
-                    onChange={(e) => updateDonorRankingsTheme({ overlayOpacity: Number(e.target.value) })}
-                    className="flex-1"
-                  />
-                  <div className="w-14 text-right text-xs text-neutral-200">{state.donorRankingsTheme.overlayOpacity}%</div>
+              <div className="mb-3 rounded border border-fuchsia-500/25 bg-fuchsia-950/20 p-3 space-y-3">
+                <div>
+                  <h4 className="text-sm font-semibold text-fuchsia-100">후원 순위 · 글자·색상</h4>
+                  <p className="mt-1 text-[11px] text-neutral-400 leading-snug">
+                    Prism/OBS 브라우저 소스는 <strong className="text-neutral-300">저장 즉시 반영</strong>됩니다(URL 재복사 불필요).
+                    상세·프리셋은 <button type="button" className="text-sky-400 underline" onClick={() => document.getElementById("donor-management")?.scrollIntoView({ behavior: "smooth" })}>후원자</button> 탭에도 있습니다.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                  <label className="text-[11px] text-neutral-400">
+                    제목(px)
+                    <input
+                      type="range"
+                      min={14}
+                      max={80}
+                      value={state.donorRankingsTheme.titleSize}
+                      onChange={(e) => updateDonorRankingsTheme({ titleSize: Number(e.target.value) })}
+                      className="w-full"
+                    />
+                    <span className="text-xs text-neutral-300">{state.donorRankingsTheme.titleSize}px</span>
+                  </label>
+                  <label className="text-[11px] text-neutral-400">
+                    행(px)
+                    <input
+                      type="range"
+                      min={12}
+                      max={64}
+                      value={state.donorRankingsTheme.rowSize}
+                      onChange={(e) => updateDonorRankingsTheme({ rowSize: Number(e.target.value) })}
+                      className="w-full"
+                    />
+                    <span className="text-xs text-neutral-300">{state.donorRankingsTheme.rowSize}px</span>
+                  </label>
+                  <label className="text-[11px] text-neutral-400">
+                    순위(px)
+                    <input
+                      type="range"
+                      min={12}
+                      max={72}
+                      value={state.donorRankingsTheme.rankSize}
+                      onChange={(e) => updateDonorRankingsTheme({ rankSize: Number(e.target.value) })}
+                      className="w-full"
+                    />
+                    <span className="text-xs text-neutral-300">{state.donorRankingsTheme.rankSize}px</span>
+                  </label>
+                  <label className="text-[11px] text-neutral-400">
+                    배경 투명도
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={state.donorRankingsTheme.overlayOpacity}
+                      onChange={(e) => updateDonorRankingsTheme({ overlayOpacity: Number(e.target.value) })}
+                      className="w-full"
+                    />
+                    <span className="text-xs text-neutral-300">{state.donorRankingsTheme.overlayOpacity}%</span>
+                  </label>
+                </div>
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+                  {(
+                    [
+                      ["titleColor", "제목 색"],
+                      ["rankColor", "순위 색"],
+                      ["nameColor", "닉네임 색"],
+                      ["amountColor", "금액 색"],
+                      ["headerAccountBg", "헤더 배경"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <label
+                      key={key}
+                      className="flex items-center justify-between gap-2 rounded border border-white/10 bg-black/25 px-2 py-1 text-[11px] text-neutral-400"
+                    >
+                      <span>{label}</span>
+                      <input
+                        type="color"
+                        value={toColorPickerValue(
+                          String((state.donorRankingsTheme as unknown as Record<string, unknown>)[key] ?? ""),
+                          "#ffffff"
+                        )}
+                        onChange={(e) =>
+                          updateDonorRankingsTheme({ [key]: e.target.value } as Partial<AppState["donorRankingsTheme"]>)
+                        }
+                        className="h-7 w-9 rounded border border-white/20 bg-transparent p-0.5"
+                      />
+                    </label>
+                  ))}
                 </div>
               </div>
               <div className="mb-3 rounded-lg border border-white/10 bg-black/30 overflow-hidden">
@@ -8485,8 +8560,9 @@ export default function AdminPage() {
                         <div className={`border-t border-white/10 ${simpleMode ? "hidden" : ""}`}>
                           <div
                             id="overlay-amount-format"
-                            className="mx-3 mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-emerald-500/35 bg-emerald-950/30 px-3 py-2.5"
+                            className="mx-3 mt-3 space-y-2 rounded-lg border border-emerald-500/35 bg-emerald-950/30 px-3 py-2.5"
                           >
+                            <div className="flex flex-wrap items-center gap-2">
                             <span className="text-xs font-semibold text-emerald-200">금액 표시 (멤버표·목표막대)</span>
                             <button
                               type="button"
@@ -8502,6 +8578,28 @@ export default function AdminPage() {
                             <span className="text-[10px] text-neutral-400 leading-snug">
                               변경 후 <strong className="text-neutral-300">URL 복사</strong> 또는 OBS 소스 새로고침
                             </span>
+                            </div>
+                            {(p.showMembers || p.showTotal) && (
+                              <div className="grid grid-cols-1 gap-2 border-t border-emerald-500/20 pt-2 sm:grid-cols-[120px_1fr_120px_1fr] sm:items-center">
+                                <label className="text-xs text-neutral-400">멤버 표 글자(px)</label>
+                                <input
+                                  className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                  inputMode="numeric"
+                                  value={p.memberSize}
+                                  onChange={(e) => updatePreset(p.id, { memberSize: e.target.value.replace(/[^\d]/g, "").slice(0, 2) })}
+                                />
+                                <label className="text-xs text-neutral-400">총합 글자(px)</label>
+                                <input
+                                  className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                  inputMode="numeric"
+                                  value={p.totalSize}
+                                  onChange={(e) => updatePreset(p.id, { totalSize: e.target.value.replace(/[^\d]/g, "").slice(0, 3) })}
+                                />
+                                <p className="sm:col-span-4 text-[10px] text-neutral-500 leading-snug">
+                                  「자동 글자 크기」ON이면 화면에 맞춰 줄어듭니다. Prism/OBS는 저장값이 실시간 반영됩니다.
+                                </p>
+                              </div>
+                            )}
                           </div>
                         <div className="px-3 pb-3 grid grid-cols-1 lg:grid-cols-2 gap-3 pt-3">
                           <div className="space-y-2 lg:order-2">
@@ -9072,6 +9170,55 @@ export default function AdminPage() {
                                   </div>
                                   <p className="mt-1.5 text-[10px] text-neutral-500 leading-snug">
                                     합계가 목표 이상이면 자동으로 200만 원씩 상향됩니다(OBS URL에 goal= 이 있어도 동일).
+                                  </p>
+                                  <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 border-t border-fuchsia-500/20 pt-2">
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] text-neutral-400">목표 글자 색</label>
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="color"
+                                          value={toColorPickerValue(p.goalTextColor || "#fff7fb", "#fff7fb")}
+                                          onChange={(e) => updatePreset(p.id, { goalTextColor: e.target.value })}
+                                          className="h-9 w-12 rounded border border-white/20 bg-transparent p-0.5"
+                                        />
+                                        <input
+                                          className="flex-1 px-2 py-1 rounded bg-neutral-900/90 border border-white/15 text-xs font-mono"
+                                          value={p.goalTextColor || ""}
+                                          onChange={(e) => updatePreset(p.id, { goalTextColor: e.target.value })}
+                                          placeholder="#fff7fb"
+                                        />
+                                      </div>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] text-neutral-400">목표 글자 크기(px)</label>
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="range"
+                                          min={10}
+                                          max={48}
+                                          value={(() => {
+                                            const n = parseInt(String(p.goalFontSize || ""), 10);
+                                            return Number.isFinite(n) && n >= 10 ? Math.min(48, n) : 14;
+                                          })()}
+                                          onChange={(e) => updatePreset(p.id, { goalFontSize: e.target.value })}
+                                          className="flex-1 accent-fuchsia-500"
+                                        />
+                                        <input
+                                          className="w-14 px-2 py-1 rounded bg-neutral-900/90 border border-white/15 text-xs text-right"
+                                          type="number"
+                                          min={10}
+                                          max={48}
+                                          value={p.goalFontSize || ""}
+                                          onChange={(e) =>
+                                            updatePreset(p.id, { goalFontSize: e.target.value.replace(/[^\d]/g, "").slice(0, 2) })
+                                          }
+                                          placeholder="자동"
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <p className="mt-1 text-[10px] text-emerald-400/90 leading-snug">
+                                    Prism/OBS(`host=prism`)는 저장 후 브라우저 소스만 새로고침하면 색·크기가 바로 반영됩니다.
                                   </p>
                                 </div>
                                 <details className="rounded border border-white/10 bg-neutral-900/40">

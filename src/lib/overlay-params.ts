@@ -265,6 +265,25 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
 /** OBS·Prism URL에 넣을 프리셋 시각 파라미터(goal·goalCurrent 제외 — 목표는 /api/state 동기) */
 const PRESET_BROADCAST_SKIP_KEYS = new Set(["goal", "goalCurrent"]);
 
+/**
+ * Prism/OBS(`host=prism` 등)에서는 URL에 박힌 예전 스타일보다 `/api/state` 프리셋을 우선한다.
+ * (관리자에서 색·크기 변경 시 URL 재복사 없이 실시간 반영)
+ */
+export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
+  "goalTextColor",
+  "goalFontSize",
+  "goalOpacity",
+  "goalOpacityText",
+  "memberSize",
+  "totalSize",
+  "tableTextColor",
+  "accountColor",
+  "toonColor",
+  "tableBgOpacity",
+  "tableBgGifOpacity",
+  "tableBgGifBrightness",
+]);
+
 /** 후원 목표 막대 글자색·폰트(px) — OBS URL·프리셋 공통 */
 export function appendGoalBarStyleParams(target: URLSearchParams, preset: OverlayPresetLike): void {
   const goalTextColor = (preset.goalTextColor || "").trim();
