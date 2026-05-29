@@ -9309,24 +9309,29 @@ export default function AdminPage() {
                                       <div className="p-3 grid grid-cols-1 sm:grid-cols-[100px_minmax(0,1fr)] items-center gap-1">
                                         <label className="text-xs text-neutral-400">너비(px)</label>
                                         <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.goalWidth} onChange={(e) => updatePreset(p.id, { goalWidth: e.target.value })} />
-                                        <label className="text-xs text-neutral-400">투명도(%)</label>
-                                        <div className="flex items-center gap-2">
-                                          <input
-                                            type="range"
-                                            min="0"
-                                            max="100"
-                                            value={p.goalOpacity ?? "100"}
-                                            onChange={(e) => updatePreset(p.id, { goalOpacity: e.target.value })}
-                                            className="flex-1 accent-fuchsia-500"
-                                          />
-                                          <input
-                                            className="w-14 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
-                                            type="number"
-                                            min="0"
-                                            max="100"
-                                            value={p.goalOpacity ?? "100"}
-                                            onChange={(e) => updatePreset(p.id, { goalOpacity: e.target.value.replace(/[^\d]/g, "").slice(0, 3) })}
-                                          />
+                                        <label className="text-xs text-neutral-400">전체 투명도(%)</label>
+                                        <div className="flex flex-col gap-1">
+                                          <div className="flex items-center gap-2">
+                                            <input
+                                              type="range"
+                                              min="0"
+                                              max="100"
+                                              value={p.goalOpacity ?? "100"}
+                                              onChange={(e) => updatePreset(p.id, { goalOpacity: e.target.value })}
+                                              className="flex-1 accent-fuchsia-500"
+                                            />
+                                            <input
+                                              className="w-14 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                                              type="number"
+                                              min="0"
+                                              max="100"
+                                              value={p.goalOpacity ?? "100"}
+                                              onChange={(e) => updatePreset(p.id, { goalOpacity: e.target.value.replace(/[^\d]/g, "").slice(0, 3) })}
+                                            />
+                                          </div>
+                                          <p className="text-[10px] text-neutral-500 leading-snug">
+                                            막대·채움은 항상 불투명합니다. 아래 「텍스트도 투명화」를 켠 경우에만 전체 위젯이 흐려집니다.
+                                          </p>
                                         </div>
                                         <label className="text-xs text-neutral-400">텍스트도 투명화</label>
                                         <label className="inline-flex items-center gap-2 text-xs text-neutral-300">
@@ -9335,7 +9340,7 @@ export default function AdminPage() {
                                             checked={Boolean(p.goalOpacityText)}
                                             onChange={(e) => updatePreset(p.id, { goalOpacityText: e.target.checked })}
                                           />
-                                          체크 시 텍스트/외곽선도 함께 투명화
+                                          체크 시 막대·글자 전체를 위 투명도(%)로 흐리게
                                         </label>
                                         <label className="text-xs text-neutral-400">글자색</label>
                                         <div className="flex items-center gap-2">

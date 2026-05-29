@@ -13,6 +13,11 @@ describe("sig admin preview", () => {
     expect(sigBundledFromDriveFallbackPath("/images/sigs/from-drive/APT.gif")).toBeNull();
   });
 
+  it("does not rewrite bundled root-only assets (dummy, stamp)", () => {
+    expect(sigBundledFromDriveFallbackPath("/images/sigs/dummy-sig.svg")).toBeNull();
+    expect(sigBundledFromDriveFallbackPath("/images/sigs/stamp.png")).toBeNull();
+  });
+
   it("builds github raw for bundled path when github-only mode", () => {
     const prev = process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY;
     process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY = "true";

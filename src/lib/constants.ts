@@ -333,13 +333,18 @@ function offloadBundledSigPathIfConfigured(path: string): string {
   return rewriteSigPathForRollingGithubIfConfigured(s);
 }
 
+/** `public/images/sigs/` 루트에만 있고 from-drive 로 옮기지 않은 번들 자산 */
+const BUNDLED_SIG_ROOT_ONLY_RE = /\/(dummy-sig\.svg|stamp\.(?:svg|png|gif|webp))$/i;
+
 /**
  * `public/images/sigs/파일.gif` 만 저장된 레거시 — 실제 파일은 `from-drive/` 아래인 경우가 많음.
+ * 더미·도장은 루트 경로만 사용(from-drive 로 바꾸면 404).
  */
 export function sigBundledFromDriveFallbackPath(storedPath: string): string | null {
   const s = String(storedPath || "").trim();
   if (!/^\/images\/sigs\/[^/]+\.[a-z0-9]+$/i.test(s)) return null;
   if (s.includes("/from-drive/")) return null;
+  if (BUNDLED_SIG_ROOT_ONLY_RE.test(s)) return null;
   return s.replace(/^\/images\/sigs\//i, "/images/sigs/from-drive/");
 }
 

@@ -82,11 +82,15 @@ export function GoalBar({
     const safe = Math.max(0, Number(n) || 0);
     return `${formatManThousand(safe)}만원`;
   };
-  const trackOpacity = Math.max(0, Math.min(100, opacityPercent)) / 100;
-  const containerOpacity = opacityAffectsText ? trackOpacity : 1;
-  /** 채움 막대는 항상 선명하게 — 투명도(%)는 트랙 배경만 (OBS에서 안 보이던 문제) */
-  const fillVisualOpacity = opacityAffectsText ? trackOpacity : 1;
+  /** 막대 본체는 항상 불투명 — goalOpacity는 「텍스트도 투명화」 체크 시에만 전체 위젯에만 적용 */
+  const fadeWholeWidget =
+    opacityAffectsText && Math.max(0, Math.min(100, opacityPercent)) < 100;
+  const containerOpacity = fadeWholeWidget
+    ? Math.max(0, Math.min(100, opacityPercent)) / 100
+    : 1;
   const fillWidthPct = pct <= 0 ? 0 : Math.min(100, Math.max(pct, 2));
+  const GOAL_TRACK_BG = "#2a1528";
+  const GOAL_TRACK_BORDER = "#ffc4dc";
   const textFontPx = (() => {
     if (fontSizePx != null && Number.isFinite(fontSizePx) && fontSizePx > 0) {
       return Math.max(10, Math.min(48, Math.round(fontSizePx)));
@@ -107,7 +111,7 @@ export function GoalBar({
         width,
         padding: "0.12rem",
         borderRadius: 8,
-        border: `1px solid rgba(255, 215, 232, ${0.55 + 0.45 * trackOpacity})`,
+        border: `1px solid ${GOAL_TRACK_BORDER}`,
         opacity: containerOpacity,
         boxShadow: "0 2px 10px rgba(0,0,0,0.35)",
       }}
@@ -117,7 +121,7 @@ export function GoalBar({
         style={{
           height: barH,
           borderRadius: 7,
-          background: `rgba(18, 12, 24, ${0.78 * trackOpacity})`,
+          background: GOAL_TRACK_BG,
           boxShadow: "inset 0 1px 3px rgba(0,0,0,0.45)",
         }}
       >
@@ -126,7 +130,6 @@ export function GoalBar({
           style={{
             width: `${fillWidthPct}%`,
             borderRadius: 7,
-            opacity: fillVisualOpacity,
             zIndex: 1,
             background:
               "linear-gradient(90deg, #ff9ec8 0%, #ff6eb5 42%, #ffc4e3 100%)",
@@ -141,7 +144,7 @@ export function GoalBar({
           style={{
             width: `${Math.min(100, fillWidthPct + 8)}%`,
             maxWidth: "100%",
-            opacity: fillVisualOpacity * 0.28,
+            opacity: 0.28,
             zIndex: 2,
             background:
               "linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.5) 50%, rgba(255,255,255,0) 100%)",
