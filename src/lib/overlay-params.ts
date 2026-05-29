@@ -266,8 +266,8 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
 const PRESET_BROADCAST_SKIP_KEYS = new Set(["goal", "goalCurrent"]);
 
 /**
- * Prism/OBS(`host=prism` 등)에서는 URL에 박힌 예전 스타일보다 `/api/state` 프리셋을 우선한다.
- * (관리자에서 색·크기 변경 시 URL 재복사 없이 실시간 반영)
+ * 오버레이가 `/api/state` 프리셋을 읽은 뒤에는 URL에 박힌 예전 스타일보다 프리셋을 우선한다.
+ * (관리자에서 색·크기 변경 시 URL 재복사·OBS 소스 재등록 없이 실시간 반영)
  */
 export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "goalTextColor",
@@ -284,10 +284,69 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "tableBgGifBrightness",
 ]);
 
+const GOAL_HEX_COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
+
+/** 후원 목표 글자색 — `#` 없이 입력해도 허용 */
+export function normalizeGoalHexColor(raw: string): string | null {
+  const s = String(raw || "").trim();
+  if (GOAL_HEX_COLOR_RE.test(s)) return s;
+  const bare = s.replace(/^#/, "");
+  if (/^[0-9a-fA-F]{3,8}$/.test(bare)) return `#${bare}`;
+  return null;
+}
+
+/**
+ * `/api/state` 프리셋이 준비되면 URL에 박힌 예전 스타일보다 프리셋 우선(OBS `host` 유무와 무관).
+ */
+export function resolveLivePresetStyleParam(
+  key: string,
+  rawSp: SearchParamsLike,
+  presetParams: URLSearchParams,
+  opts: { ready: boolean }
+): string | null {
+  const fromPreset = presetParams.get(key);
+  if (
+    opts.ready &&
+    OVERLAY_LIVE_PRESET_STYLE_KEYS.has(key) &&
+    fromPreset !== null &&
+    fromPreset !== ""
+  ) {
+    return fromPreset;
+  }
+  const direct = rawSp.get(key);
+  if (direct !== null && direct !== "") return direct;
+  return fromPreset;
+}
+
+export function resolveGoalTextColor(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string {
+  const merged = resolveLivePresetStyleParam(
+    "goalTextColor",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  return normalizeGoalHexColor(merged || "") || "#fff7fb";
+}
+
+export function resolveGoalFontSizePx(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): number | undefined {
+  const raw = resolveLivePresetStyleParam("goalFontSize", rawSp, presetToParams(preset), opts) || "";
+  if (!raw) return undefined;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? Math.max(10, Math.min(48, n)) : undefined;
+}
+
 /** 후원 목표 막대 글자색·폰트(px) — OBS URL·프리셋 공통 */
 export function appendGoalBarStyleParams(target: URLSearchParams, preset: OverlayPresetLike): void {
-  const goalTextColor = (preset.goalTextColor || "").trim();
-  if (/^#[0-9a-fA-F]{3,8}$/.test(goalTextColor)) target.set("goalTextColor", goalTextColor);
+  const goalTextColor = normalizeGoalHexColor((preset.goalTextColor || "").trim());
+  if (goalTextColor) target.set("goalTextColor", goalTextColor);
   const goalFontRaw = (preset.goalFontSize || "").trim();
   if (goalFontRaw) {
     const gfs = Math.max(10, Math.min(48, parseInt(goalFontRaw, 10) || 0));

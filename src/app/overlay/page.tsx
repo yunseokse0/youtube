@@ -4,7 +4,9 @@ import { useSearchParams } from "next/navigation";
 import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig } from "@/lib/state";
 import { maxOverlayAmountDisplayLength } from "@/lib/overlay-amount-display";
 import {
-  OVERLAY_LIVE_PRESET_STYLE_KEYS,
+  resolveGoalFontSizePx,
+  resolveGoalTextColor,
+  resolveLivePresetStyleParam,
   presetToParams,
   shouldSuppressOverlaySseConnection,
   type OverlayPresetLike,
@@ -1272,23 +1274,10 @@ function OverlayInner() {
   const externalHost = hostParam === "prism" || hostParam === "obs" || hostParam === "external";
   const sp = useMemo(
     () => ({
-      get: (key: string) => {
-        const fromPreset = presetParams.get(key);
-        if (
-          externalHost &&
-          ready &&
-          OVERLAY_LIVE_PRESET_STYLE_KEYS.has(key) &&
-          fromPreset !== null &&
-          fromPreset !== ""
-        ) {
-          return fromPreset;
-        }
-        const direct = rawSp.get(key);
-        if (direct !== null && direct !== "") return direct;
-        return fromPreset;
-      },
+      get: (key: string) =>
+        resolveLivePresetStyleParam(key, rawSp, presetParams, { ready }) ?? "",
     }),
-    [rawSp, presetParams, externalHost, ready]
+    [rawSp, presetParams, ready]
   );
   // OBS/Prism는 렌더러 특성상 텍스트·transform 미세 떨림이 발생하기 쉬워 기본 안전 모드 ON.
   const externalSafeMode = externalHost && (rawSp.get("externalSafe") || "true").toLowerCase() !== "false";
@@ -1626,26 +1615,8 @@ function OverlayInner() {
     if (rawPreset === "false") return false;
     return false;
   })();
-  const goalTextColor = (() => {
-    const rawUrl = (sp.get("goalTextColor") || "").trim();
-    if (/^#[0-9a-fA-F]{3,8}$/.test(rawUrl)) return rawUrl;
-    const rawPreset = String((activePreset as any)?.goalTextColor || "").trim();
-    if (/^#[0-9a-fA-F]{3,8}$/.test(rawPreset)) return rawPreset;
-    return "#fff7fb";
-  })();
-  const goalFontSizePx = (() => {
-    const rawUrl = (sp.get("goalFontSize") || "").trim();
-    if (rawUrl) {
-      const n = parseInt(rawUrl, 10);
-      if (Number.isFinite(n) && n > 0) return Math.max(10, Math.min(48, n));
-    }
-    const rawPreset = String((activePreset as any)?.goalFontSize || "").trim();
-    if (rawPreset) {
-      const n = parseInt(rawPreset, 10);
-      if (Number.isFinite(n) && n > 0) return Math.max(10, Math.min(48, n));
-    }
-    return undefined;
-  })();
+  const goalTextColor = resolveGoalTextColor(rawSp, effectivePreset, { ready });
+  const goalFontSizePx = resolveGoalFontSizePx(rawSp, effectivePreset, { ready });
   const donationListsCfg = normalizeDonationListsOverlayConfig(s?.donationListsOverlayConfig);
   const tableBgGifUrl = (
     (sp.get("tableBgGifUrl") || "").trim() ||

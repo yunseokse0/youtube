@@ -73,6 +73,7 @@ import {
   presetToParams,
   mergePresetBroadcastVisualParams,
   appendGoalBarStyleParams,
+  normalizeGoalHexColor,
   donorRankingsThemeToSearchParams,
   sanitizeBroadcastOverlayUrl,
   type OverlayPresetLike,
@@ -1059,6 +1060,10 @@ export default function AdminPage() {
     if (patch.goal !== undefined) {
       mergedPatch.goalBaseline = String(patch.goal);
     }
+    if (patch.goalTextColor !== undefined) {
+      const normalized = normalizeGoalHexColor(String(patch.goalTextColor || ""));
+      mergedPatch.goalTextColor = normalized || "";
+    }
     const nextPresets = presets.map((p) => (p.id === id ? { ...p, ...mergedPatch } : p));
     setPresets(nextPresets);
     try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(nextPresets)); } catch {}
@@ -1185,6 +1190,7 @@ export default function AdminPage() {
     if (isGoalOnlyPreset) {
       const goalOnly = new URL(`${window.location.origin}/overlay/goal`);
       goalOnly.searchParams.set("u", user?.id || "finalent");
+      goalOnly.searchParams.set("host", "prism");
       if (p.id) goalOnly.searchParams.set("p", p.id);
       goalOnly.searchParams.set("goal", String(Math.max(0, parseInt((p.goal || "0") as any, 10) || 0)));
       goalOnly.searchParams.set("goalLabel", (p.goalLabel || "후원").trim());

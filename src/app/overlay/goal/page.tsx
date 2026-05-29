@@ -3,7 +3,14 @@
 import { useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { normalizeDonorsFormat, type AppState } from "@/lib/state";
-import { getOverlayUserIdFromSearchParams, type OverlayPresetLike } from "@/lib/overlay-params";
+import {
+  getOverlayUserIdFromSearchParams,
+  presetToParams,
+  resolveGoalFontSizePx,
+  resolveGoalTextColor,
+  resolveLivePresetStyleParam,
+  type OverlayPresetLike,
+} from "@/lib/overlay-params";
 import { GoalBar } from "@/components/GoalBar";
 import { useGoalPresetAutoEscalate } from "@/hooks/useGoalPresetAutoEscalate";
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
@@ -59,50 +66,31 @@ export default function GoalOverlayPage() {
     if (Number.isFinite(fromPreset) && fromPreset > 0) return Math.max(260, Math.min(1200, Math.floor(fromPreset)));
     return 560;
   }, [sp, activePreset?.goalWidth]);
+  const presetParams = useMemo(() => presetToParams(activePreset), [activePreset]);
   const goalOpacity = useMemo(() => {
-    const rawUrl = (sp.get("goalOpacity") || "").trim();
-    const rawPreset = String((activePreset as any)?.goalOpacity || "").trim();
-    const rawTableOpacityPreset = String((activePreset as any)?.tableBgOpacity || "").trim();
-    const raw = rawUrl || rawPreset || rawTableOpacityPreset;
+    const raw =
+      resolveLivePresetStyleParam("goalOpacity", sp, presetParams, { ready }) ||
+      String((activePreset as any)?.tableBgOpacity || "").trim();
     if (!raw) return 100;
     const n = parseInt(raw, 10);
     return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 100;
-  }, [sp, activePreset]);
+  }, [sp, presetParams, activePreset, ready]);
   const goalOpacityAffectsText = useMemo(() => {
-    const rawUrl = (sp.get("goalOpacityText") || "").trim().toLowerCase();
-    if (rawUrl === "true") return true;
-    if (rawUrl === "false") return false;
-    const rawPreset = String((activePreset as any)?.goalOpacityText ?? "").trim().toLowerCase();
-    if (rawPreset === "true") return true;
-    if (rawPreset === "false") return false;
+    const raw = (resolveLivePresetStyleParam("goalOpacityText", sp, presetParams, { ready }) || "")
+      .trim()
+      .toLowerCase();
+    if (raw === "true") return true;
+    if (raw === "false") return false;
     return false;
-  }, [sp, activePreset]);
-  const goalTextColor = useMemo(() => {
-    const fromPreset = String((activePreset as any)?.goalTextColor || "").trim();
-    if (externalHost && ready && /^#[0-9a-fA-F]{3,8}$/.test(fromPreset)) return fromPreset;
-    const fromUrl = (sp.get("goalTextColor") || "").trim();
-    if (/^#[0-9a-fA-F]{3,8}$/.test(fromUrl)) return fromUrl;
-    if (/^#[0-9a-fA-F]{3,8}$/.test(fromPreset)) return fromPreset;
-    return "#fff7fb";
-  }, [sp, activePreset, externalHost, ready]);
-  const goalFontSizePx = useMemo(() => {
-    const parse = (raw: string) => {
-      const n = parseInt(raw, 10);
-      return Number.isFinite(n) && n > 0 ? Math.max(10, Math.min(48, n)) : undefined;
-    };
-    const fromPreset = String((activePreset as any)?.goalFontSize || "").trim();
-    if (externalHost && ready && fromPreset) {
-      const n = parse(fromPreset);
-      if (n != null) return n;
-    }
-    const fromUrl = (sp.get("goalFontSize") || "").trim();
-    if (fromUrl) {
-      const n = parse(fromUrl);
-      if (n != null) return n;
-    }
-    if (fromPreset) return parse(fromPreset);
-    return undefined;
-  }, [sp, activePreset, externalHost, ready]);
+  }, [sp, presetParams, ready]);
+  const goalTextColor = useMemo(
+    () => resolveGoalTextColor(sp, activePreset, { ready }),
+    [sp, activePreset, ready]
+  );
+  const goalFontSizePx = useMemo(
+    () => resolveGoalFontSizePx(sp, activePreset, { ready }),
+    [sp, activePreset, ready]
+  );
 
   const totalCombined = useMemo(
     () => (state?.members || []).reduce((sum, m) => sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)), 0),
