@@ -14,13 +14,14 @@ const DEFAULT_FULL_CONTRIB_CH = 11;
 describe("overlay amount display length vs column ch", () => {
   it("풀 표기: 억 단위까지 기본 계좌/투네 열(13ch)에 들어감", () => {
     const len = overlayFormattedAmountLength(99_999_999, "full");
-    expect(overlayFullAmountLabel(99_999_999)).toBe("100,000,000");
+    expect(overlayFullAmountLabel(99_999_999)).toBe("99,999,999");
     expect(len).toBeLessThanOrEqual(DEFAULT_FULL_BANK_CH);
   });
 
-  it("풀 표기: 10억 이상은 기본 계좌 열(13ch)을 넘을 수 있음 → bankCh URL 확대 필요", () => {
-    const len = overlayFormattedAmountLength(9_999_999_999, "full");
-    expect(overlayFullAmountLabel(9_999_999_999)).toBe("10,000,000,000");
+  it("풀 표기: 100억 이상은 기본 계좌 열(13ch)을 넘을 수 있음 → bankCh URL 확대 필요", () => {
+    const n = 10_000_000_000;
+    const len = overlayFormattedAmountLength(n, "full");
+    expect(overlayFullAmountLabel(n)).toBe("10,000,000,000");
     expect(len).toBeGreaterThan(DEFAULT_FULL_BANK_CH);
   });
 

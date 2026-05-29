@@ -15,6 +15,7 @@ type Args = {
   enabled: boolean;
   userId: string;
   presetId?: string | null;
+  activePreset?: unknown;
   goalAmount: number;
   liveTotal: number;
   overlayPresets: unknown[] | undefined;
@@ -33,7 +34,6 @@ export function useGoalPresetAutoEscalate(args: Args): void {
   useEffect(() => {
     if (!isDonationGoalAutoEscalateEnabled()) return;
     if (!args.enabled || args.skipPersist) return;
-    if (!args.presetId) return;
     const goal = args.goalAmount;
     if (goal <= 0 || args.liveTotal < goal) return;
     const presets = args.overlayPresets;
@@ -50,11 +50,30 @@ export function useGoalPresetAutoEscalate(args: Args): void {
     inFlight.current = true;
     lastPatchAt.current = now;
 
-    const updated = presets.map((raw) => {
-      const x = raw as Record<string, unknown>;
-      if (String(x.id || "") !== args.presetId) return raw;
+    const targetIndex = (() => {
+      if (args.presetId) {
+        const idxById = presets.findIndex((raw) => String((raw as Record<string, unknown>)?.id || "") === args.presetId);
+        if (idxById >= 0) return idxById;
+      }
+      if (args.activePreset) {
+        const idxByRef = presets.findIndex((raw) => raw === args.activePreset);
+        if (idxByRef >= 0) return idxByRef;
+      }
+      const idxByGoalVisible = presets.findIndex((raw) => {
+        const x = raw as Record<string, unknown>;
+        return x?.showGoal === true || String(x?.showGoal || "").toLowerCase() === "true";
+      });
+      if (idxByGoalVisible >= 0) return idxByGoalVisible;
+      return 0;
+    })();
+    const updated = presets.map((raw, idx) => {
+      if (idx !== targetIndex) return raw;
       /** 후원 초기화 시 항상 200만 원 기준선으로 복구 */
-      return { ...x, goal: String(nextGoal), goalBaseline: String(DEFAULT_DONATION_GOAL) };
+      return {
+        ...(raw as Record<string, unknown>),
+        goal: String(nextGoal),
+        goalBaseline: String(DEFAULT_DONATION_GOAL),
+      };
     });
 
     void fetch(`/api/state?user=${encodeURIComponent(args.userId)}`, {
@@ -71,6 +90,7 @@ export function useGoalPresetAutoEscalate(args: Args): void {
     args.enabled,
     args.skipPersist,
     args.presetId,
+    args.activePreset,
     args.goalAmount,
     args.liveTotal,
     args.overlayPresets,

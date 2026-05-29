@@ -70,6 +70,7 @@ import { getEffectiveRemainingTime, pauseTimer, resumeTimer } from "@/lib/timer-
 import {
   appendAdminPreviewEmbedToOverlayUrl,
   presetToParams,
+  mergePresetBroadcastVisualParams,
   sanitizeBroadcastOverlayUrl,
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
@@ -712,6 +713,13 @@ export default function AdminPage() {
     () => normalizeDonorsFormat(state.donorsFormat, "full"),
     [state.donorsFormat]
   );
+  const formatDonorAmountDisplay = useCallback(
+    (amount: number) =>
+      donorsAmountFormat === "full"
+        ? formatWonFull(amount)
+        : formatDonorsAmount(amount, donorsAmountFormat),
+    [donorsAmountFormat]
+  );
   const applyGlobalDonorsFormat = useCallback(
     (format: "full" | "short") => {
       setState((prev) => {
@@ -1073,6 +1081,7 @@ export default function AdminPage() {
     const q = new URLSearchParams();
     q.set("p", p.id);
     q.set("u", user?.id || "finalent");
+    mergePresetBroadcastVisualParams(q, p);
     return `${base}?${q.toString()}`;
   };
   /** 방송/OBS용: snap 없음 → 오버레이는 항상 `/api/state` 기준 실시간 반영 (스냅샷은 아래 프리뷰 iframe 전용) */
@@ -1138,6 +1147,7 @@ export default function AdminPage() {
         q.set("goalOpacityText", "true");
       }
     }
+    mergePresetBroadcastVisualParams(q, p);
     return `${base}?${q.toString()}`;
   };
   const buildPrismDemoOverlayUrl = (p: OverlayPreset, vertical: boolean): string => {
@@ -7586,7 +7596,9 @@ export default function AdminPage() {
                 >
                   만원 (100만)
                 </button>
-                <span className="text-[11px] text-neutral-500">오버레이·후원 리스트·목표 막대에도 동일 적용</span>
+                <span className="text-[11px] text-neutral-500">
+                  풀=입력한 원 그대로 · 만원=축약 표기 · 오버레이·목표 막대에도 동일(막대 총액만 천원 반올림)
+                </span>
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_auto_auto_auto] gap-3">
                 <input
@@ -7988,7 +8000,9 @@ export default function AdminPage() {
                             <td className="p-1">{d.name}</td>
                             <td className="p-1 text-neutral-300">{m?.name || d.memberId}</td>
                             <td className="p-1">{(d.target || "account") === "toon" ? <span className="text-amber-300">투네</span> : <span className="text-emerald-300">계좌</span>}</td>
-                            <td className="p-1 text-right whitespace-nowrap">{formatDonorsAmount(d.amount, donorsAmountFormat)}</td>
+                            <td className="p-1 text-right whitespace-nowrap" title={`저장값 ${d.amount.toLocaleString("ko-KR")}원`}>
+                              {formatDonorAmountDisplay(d.amount)}
+                            </td>
                             <td className="p-1 text-right">
                               <button
                                 className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700"
@@ -8065,7 +8079,9 @@ export default function AdminPage() {
                             <td className="p-1 text-neutral-400"><ClientTime ts={log.at} /></td>
                             <td className="p-1 text-neutral-300">{member?.name || log.memberId}</td>
                             <td className="p-1">{log.delta > 0 ? <span className="text-cyan-300">추가</span> : <span className="text-rose-300">차감</span>}</td>
-                            <td className="p-1 text-right whitespace-nowrap">{formatDonorsAmount(log.amount, donorsAmountFormat)}</td>
+                            <td className="p-1 text-right whitespace-nowrap" title={`저장값 ${log.amount.toLocaleString("ko-KR")}원`}>
+                              {formatDonorAmountDisplay(log.amount)}
+                            </td>
                             <td className="p-1 text-neutral-400">{log.note || "-"}</td>
                             <td className="p-1 text-right">
                               <div className="flex justify-end gap-1">
@@ -8142,9 +8158,15 @@ export default function AdminPage() {
                     {donorTotalsByName.map((row) => (
                       <tr key={row.name} className="border-t border-white/10">
                         <td className="p-1">{row.name}</td>
-                        <td className="p-1 text-right whitespace-nowrap text-emerald-300">{formatDonorsAmount(row.account, donorsAmountFormat)}</td>
-                        <td className="p-1 text-right whitespace-nowrap text-amber-300">{formatDonorsAmount(row.toon, donorsAmountFormat)}</td>
-                        <td className="p-1 text-right whitespace-nowrap font-semibold">{formatDonorsAmount(row.total, donorsAmountFormat)}</td>
+                        <td className="p-1 text-right whitespace-nowrap text-emerald-300" title={`저장값 ${row.account.toLocaleString("ko-KR")}원`}>
+                          {formatDonorAmountDisplay(row.account)}
+                        </td>
+                        <td className="p-1 text-right whitespace-nowrap text-amber-300" title={`저장값 ${row.toon.toLocaleString("ko-KR")}원`}>
+                          {formatDonorAmountDisplay(row.toon)}
+                        </td>
+                        <td className="p-1 text-right whitespace-nowrap font-semibold" title={`합계 ${row.total.toLocaleString("ko-KR")}원`}>
+                          {formatDonorAmountDisplay(row.total)}
+                        </td>
                         <td className="p-1 text-right text-neutral-400">{row.count}</td>
                       </tr>
                     ))}
@@ -8708,6 +8730,10 @@ export default function AdminPage() {
                               </div>
                               <label className="text-xs text-neutral-400">멤버 글자(px)</label>
                               <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.memberSize} onChange={(e) => updatePreset(p.id, { memberSize: e.target.value })} />
+                              <p className="text-[10px] text-neutral-500 col-span-full leading-snug">
+                                글꼴 종류는 고정(엑셀=모노) · 크기만 조절됩니다. OBS는 <strong className="text-neutral-400">URL 다시 복사</strong> 후 소스 새로고침.
+                                「자동 글자 크기」ON이면 px가 화면에 맞춰 줄어듭니다.
+                              </p>
                               <label className="text-xs text-neutral-400">총합 글자(px)</label>
                               <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.totalSize} onChange={(e) => updatePreset(p.id, { totalSize: e.target.value })} />
                               <label className="text-xs text-neutral-400">줄 간격</label>

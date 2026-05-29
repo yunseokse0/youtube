@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, totalAccount, Member, Donor, MissionItem, roundToThousand, formatManThousand, loadStateFromApi, loadState, totalToon, totalCombined, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig } from "@/lib/state";
+import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig } from "@/lib/state";
 import { maxOverlayAmountDisplayLength } from "@/lib/overlay-amount-display";
 import { presetToParams, shouldSuppressOverlaySseConnection, type OverlayPresetLike } from "@/lib/overlay-params";
 import { getEffectiveRemainingTime } from "@/lib/timer-utils";
@@ -1052,7 +1052,9 @@ function DonorTicker({ donors, theme, fontSize, color, bgColor, bgOpacity, full,
   };
   const amountText = (d: { account: number; toon: number }) => {
     const f = (n: number) => {
-      const base = full ? roundToThousand(n).toLocaleString(locale || "ko-KR") : formatManThousand(n);
+      const base = full
+        ? formatDonorsAmount(n, "full", locale || "ko-KR")
+        : formatManThousand(n);
       return unit ? `${base} ${unit}` : base;
     };
     const accountPart = d.account > 0 ? f(d.account) : "";
@@ -1233,10 +1235,6 @@ function OverlayInner() {
     const remote = ready && s && Array.isArray(s.overlayPresets) ? (s.overlayPresets as OverlayPresetLike[]) : [];
     return remote.length > 0 ? remote : localPresets;
   }, [ready, s, localPresets]);
-  const sumAccount = useMemo(() => (ready && s ? totalAccount(s) : 0), [ready, s]);
-  const sumToon = useMemo(() => (ready && s ? totalToon(s) : 0), [ready, s]);
-  const sumCombined = useMemo(() => (ready && s ? totalCombined(s) : 0), [ready, s]);
-  const rounded = useMemo(() => roundToThousand(sumCombined), [sumCombined]);
   const memberPositionsMap = useMemo<Record<string, string>>(
     () => ((ready && s && typeof (s as AppState).memberPositions === "object") ? ((s as AppState).memberPositions || {}) : {}),
     [ready, s]
@@ -1652,7 +1650,7 @@ function OverlayInner() {
   // Keep member/total amount format aligned with donor ticker format.
   const fmt = (n: number) =>
     donorsFormat === "full"
-      ? roundToThousand(n).toLocaleString(currencyLocale)
+      ? formatDonorsAmount(n, "full", currencyLocale)
       : formatManThousand(n);
   const fmtTotalCell = (n: number) => fmt(n);
   /** OBS·Prism에서 CSS만으로는 숫자·직급 외곽선이 빠지는 경우가 있어 인라인으로도 적용 */
@@ -1692,8 +1690,6 @@ function OverlayInner() {
   const effectiveRowCls = stripBorder(stripBg(membersTheme.rowCls));
   /** 멤버 표 thead: 테마별 색 띠·테두리 없이 텍스트만 (방송 오버레이용) */
   const effectiveHeaderCls = stripBorder(stripBg(membersTheme.headerCls));
-  const mutedTotalWrapCls = stripBorder(stripBg(totalTheme.totalWrapCls));
-  const totalWrapClsTintedMode = totalLineVisible ? totalTheme.totalWrapCls : mutedTotalWrapCls;
   const lockWidth = (sp.get("lockWidth") || "false").toLowerCase() === "true";
   const effectiveNameGrow = lockWidth ? false : nameGrow;
   const scaledMainStyle: React.CSSProperties = {};
@@ -1983,6 +1979,17 @@ function OverlayInner() {
     }
     return base;
   }, [demoMode, membersRemote, ready, isPreviewGuide]);
+  /** 총합 행: 화면에 그리는 `members` 기준(데모·스냅샷·API 불일치 시 0 방지) */
+  const sumAccount = useMemo(
+    () => members.reduce((sum, m) => sum + Math.max(0, Number(m.account || 0)), 0),
+    [members]
+  );
+  const sumToon = useMemo(
+    () => members.reduce((sum, m) => sum + Math.max(0, Number(m.toon || 0)), 0),
+    [members]
+  );
+  const sumCombined = useMemo(() => sumAccount + sumToon, [sumAccount, sumToon]);
+  const rounded = useMemo(() => roundToThousand(sumCombined), [sumCombined]);
   const donors = useMemo(() => {
     if (demoMode) {
       return [
@@ -2018,6 +2025,7 @@ function OverlayInner() {
       Boolean(activePreset?.id),
     userId,
     presetId: activePreset?.id ?? null,
+    activePreset,
     goalAmount: goal,
     liveTotal: liveGoalCurrent,
     overlayPresets,
@@ -2216,8 +2224,23 @@ function OverlayInner() {
       : !externalHost);
   const rowMotionEnabled = rowMotionRequested && unpinned.length > 1;
 
+  /** URL에 memberSize가 있거나 tableFit=off → 관리자가 지정한 px를 OBS에서도 그대로 쓰기 */
+  const lockMemberTableFontSize = useMemo(() => {
+    const fitRaw = (rawSp.get("tableFit") || "").trim().toLowerCase();
+    if (fitRaw === "off" || fitRaw === "false" || fitRaw === "0") return true;
+    const ms = (rawSp.get("memberSize") || "").trim();
+    return ms.length > 0 && Number.isFinite(parseInt(ms, 10));
+  }, [rawSp]);
+
   useLayoutEffect(() => {
     if (!showMembers) return;
+    if (lockMemberTableFontSize) {
+      if (memberTableFitPrevRef.current !== 1) {
+        memberTableFitPrevRef.current = 1;
+        setMemberTableFitFactor(1);
+      }
+      return;
+    }
     if (externalSafeMode) {
       // OBS/Prism 하드 고정 모드: 프레임 범위 내에 표 전체가 들어오도록 1회(및 리사이즈 시) 고정 비율만 계산
       const clampEl = memberTableClampRef.current;
@@ -2325,7 +2348,7 @@ function OverlayInner() {
         /* noop */
       }
     };
-  }, [showMembers, mSize, memberTableFitSig, externalSafeMode]);
+  }, [showMembers, mSize, memberTableFitSig, externalSafeMode, lockMemberTableFontSize]);
 
   const allOrderKeys = [...ranked.map(({ m }) => m.id), ...visiblePinned.map((m) => `${m.id}-p`)];
   const setRowRef = useFlip(allOrderKeys, 500, rowMotionEnabled);
@@ -2588,13 +2611,13 @@ function OverlayInner() {
     const nameWrapCls = "truncate";
     const tfTable = memberTableFitFactor;
     const memberFontPx = Math.max(8, Math.round(mSize * tfTable));
-    const totalFontPx = Math.max(8, Math.round(tSize * tfTable));
+    const overlayTotalRowCls = `${effectiveRowCls} font-semibold`;
     const centerFixedStyle = centerFixed ? (
       <style dangerouslySetInnerHTML={{ __html: `
         html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
         .overlay-center-fixed table.overlay-elegant-table .overlay-row td,
         .overlay-center-fixed table.overlay-elegant-table thead td { font-size: ${memberFontPx}px !important; min-height: ${Math.round(memberFontPx * 1.5)}px !important; line-height: 1.2 !important; padding: ${Math.round(memberFontPx * 0.25)}px ${Math.round(memberFontPx * 0.4)}px !important; }
-        .overlay-center-fixed table.overlay-elegant-table .overlay-total-row td { font-size: ${totalFontPx}px !important; min-height: ${Math.round(totalFontPx * 1.5)}px !important; padding: ${Math.round(totalFontPx * 0.2)}px ${Math.round(totalFontPx * 0.3)}px !important; font-weight: 600 !important; }
+        .overlay-center-fixed table.overlay-elegant-table .overlay-total-row td { font-size: ${memberFontPx}px !important; min-height: ${Math.round(memberFontPx * 1.5)}px !important; padding: ${Math.round(memberFontPx * 0.25)}px ${Math.round(memberFontPx * 0.4)}px !important; font-weight: 700 !important; }
         .overlay-center-fixed table { background: ${showTableBgGif ? "transparent" : "rgba(0,0,0,0.5)"} !important; }
         .overlay-center-fixed table.overlay-elegant-table td { container-type: inline-size; white-space: nowrap !important; overflow: visible !important; }
       ` }} />
@@ -2733,17 +2756,30 @@ function OverlayInner() {
             0 2px 6px rgba(0, 0, 0, 0.45) !important;
         }
         .overlay-root .overlay-elegant-table .overlay-total-row td {
-          font-size: ${totalFontPx}px !important;
+          font-size: ${memberFontPx}px !important;
           line-height: 1.2 !important;
         }
         `
             : ""
         }
+        /* 총합 행: 셀마다 그라데이션 박스 제거 → 본문과 동일한 투명 시트 */
+        .overlay-root .overlay-elegant-table .overlay-total-row td {
+          background: transparent !important;
+          background-image: none !important;
+          box-shadow: none !important;
+          backdrop-filter: none !important;
+          -webkit-backdrop-filter: none !important;
+          border-top: 2px solid rgba(244, 170, 205, 0.45) !important;
+          border-bottom: none !important;
+          padding: ${Math.round(memberFontPx * 0.28)}px ${Math.round(memberFontPx * 0.4)}px !important;
+          font-size: ${memberFontPx}px !important;
+          font-weight: 700 !important;
+          vertical-align: middle;
+        }
         .overlay-root .overlay-elegant-table tbody td.overlay-col-total { color: #fff9f0 !important; }
         ${totalLineVisible ? "" : `
         .overlay-root .overlay-elegant-table tbody td.overlay-col-total,
-        .overlay-root .overlay-elegant-table th.overlay-col-total,
-        .overlay-root .overlay-total-row td {
+        .overlay-root .overlay-elegant-table th.overlay-col-total {
           border: none !important;
           box-shadow: none !important;
           outline: none !important;
@@ -3059,18 +3095,18 @@ function OverlayInner() {
                     ))}
                     {showTotal && ready && (
                       <tr className="overlay-total-row">
-                        <td className={totalWrapClsTintedMode} colSpan={hasRoleColumn ? 2 : 1}>총합</td>
-                        <td className={totalWrapClsTintedMode} />
-                        <td className={`${totalWrapClsTintedMode} overlay-col-account overlay-account-cell text-right`}>
+                        <td className={`${overlayTotalRowCls} overlay-col-rank`} colSpan={hasRoleColumn ? 2 : 1}>총합</td>
+                        <td className={`${overlayTotalRowCls} overlay-col-name`} />
+                        <td className={`${overlayTotalRowCls} overlay-col-account overlay-account-cell text-right`}>
                           <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(sumAccount)}</span>
                         </td>
-                        <td className={`${totalWrapClsTintedMode} overlay-col-toon overlay-toon-cell text-right`}>
+                        <td className={`${overlayTotalRowCls} overlay-col-toon overlay-toon-cell text-right`}>
                           <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(sumToon)}</span>
                         </td>
-                        <td className={`${totalWrapClsTintedMode} overlay-col-total text-right`}>
-                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(rounded)}</span>
+                        <td className={`${overlayTotalRowCls} overlay-col-total text-right`}>
+                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(sumCombined)}</span>
                         </td>
-                        <td className={`${totalWrapClsTintedMode} overlay-col-contribution text-right`}>
+                        <td className={`${overlayTotalRowCls} overlay-col-contribution text-right`}>
                           <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(sumContribution)}</span>
                         </td>
                       </tr>

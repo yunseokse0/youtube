@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { formatManThousand, roundToThousand } from "@/lib/state";
+import { formatDonorsAmount, formatManThousand } from "@/lib/state";
 
 function useCountUp(value: number, durationMs = 600) {
   const [display, setDisplay] = useState(value);
@@ -49,7 +49,7 @@ export function GoalBar({
   compactLabel?: boolean;
   opacityPercent?: number;
   opacityAffectsText?: boolean;
-  /** `short` = 만원 단위(멤버 표와 동일), `full` = 천 단위 콤마 */
+  /** `short` = 만원 축약, `full` = 입력한 원 그대로(쉼표만) */
   amountFormat?: "full" | "short";
   locale?: string;
 }) {
@@ -64,10 +64,10 @@ export function GoalBar({
     return raw;
   })();
   const formatAmount = (n: number) => {
-    const safe = Math.max(0, Number(n) || 0);
     if (amountFormat === "full") {
-      return roundToThousand(safe).toLocaleString(locale || "ko-KR");
+      return formatDonorsAmount(n, "full", locale || "ko-KR");
     }
+    const safe = Math.max(0, Number(n) || 0);
     return `${formatManThousand(safe)}만원`;
   };
   const fillOpacity = Math.max(0, Math.min(100, opacityPercent)) / 100;

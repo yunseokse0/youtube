@@ -257,6 +257,20 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   return q;
 }
 
+/** OBS·Prism URL에 넣을 프리셋 시각 파라미터(goal·goalCurrent 제외 — 목표는 /api/state 동기) */
+const PRESET_BROADCAST_SKIP_KEYS = new Set(["goal", "goalCurrent"]);
+
+export function mergePresetBroadcastVisualParams(
+  target: URLSearchParams,
+  preset: OverlayPresetLike | null
+): void {
+  const pp = presetToParams(preset);
+  pp.forEach((value, key) => {
+    if (PRESET_BROADCAST_SKIP_KEYS.has(key)) return;
+    if (value !== "") target.set(key, value);
+  });
+}
+
 type SearchParamsLike = {
   get(name: string): string | null;
 };

@@ -1,5 +1,6 @@
 import { loadStateFromApi, saveState } from "@/lib/state";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
+import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
 import { createModuleLogger } from "@/lib/logger";
 import type { AppState, Donor as AppDonor } from "@/types";
 import { mapToMember } from "./mapper";
@@ -84,10 +85,26 @@ export async function processDonationEvent(rawEvent: DonationEvent, userId?: str
       };
     });
 
+    const syncMode = currentState.donationSyncMode || "mealBattle";
+    const mealParticipants =
+      syncMode === "mealBattle"
+        ? applyMealBattleDonationToParticipants(
+            currentState.mealBattle?.participants || [],
+            newDonor.memberId,
+            newDonor.amount,
+            1,
+            appDonor.at
+          )
+        : (currentState.mealBattle?.participants || []);
+
     const updatedState: AppState = {
       ...currentState,
       members: updatedMembers,
       donors: [...(currentState.donors || []), appDonor],
+      mealBattle: {
+        ...currentState.mealBattle,
+        participants: mealParticipants,
+      },
       updatedAt: Date.now(),
     };
 

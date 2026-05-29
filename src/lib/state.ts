@@ -1594,10 +1594,10 @@ export function normalizeDonorsFormat(raw: unknown, fallback: DonorsAmountFormat
   return fallback;
 }
 
-/** 후원·오버레이 공통 금액 문자열 (full=천원 반올림+locale / short=만원 축약) */
+/** 후원·오버레이 공통 금액 문자열 (full=원 단위 그대로 / short=만원 축약) */
 export function formatDonorsAmount(n: number, format: DonorsAmountFormat, locale = "ko-KR"): string {
   const safe = Math.max(0, Math.round(Number(n) || 0));
-  if (format === "full") return roundToThousand(safe).toLocaleString(locale);
+  if (format === "full") return safe.toLocaleString(locale);
   return formatManThousand(safe);
 }
 
