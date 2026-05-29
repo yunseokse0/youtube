@@ -276,6 +276,21 @@ function ClientTime({ ts }: { ts: number | string }) {
 /** 평시 동기화는 SSE `state_updated` + 디바운스. 주기 폴링은 연결 끊김 대비용만 */
 const ADMIN_STATE_FALLBACK_POLL_MS = 120_000;
 
+/** SSE·폴링 시 불필요한 setState 연쇄(버튼·effect 재실행) 방지용 */
+function adminSyncFingerprint(s: AppState): string {
+  const rs = s.rouletteState;
+  const inv = s.sigInventory || [];
+  return [
+    s.updatedAt ?? 0,
+    inv.length,
+    inv.map((x) => `${x.id}:${x.price}:${x.soldCount}:${x.isActive ? 1 : 0}`).join(","),
+    (s.donors || []).length,
+    String(rs?.phase ?? ""),
+    String(rs?.sessionId ?? ""),
+    Math.floor(Number(rs?.startedAt ?? 0)),
+  ].join("|");
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const [user, setUser] = useState<{ id: string; companyName: string; name?: string; remainingDays?: number | null; unlimited?: boolean } | null>(null);
@@ -292,7 +307,12 @@ export default function AdminPage() {
   const lastStorageMergePersistAtRef = useRef<number>(0);
   /** `createStateUpdatedScheduler` — 다른 기기·탭에서 저장 시에만 GET 묶음 */
   const adminStateSseScheduleRef = useRef<(() => void) | null>(null);
+  /** 동일 updatedAt 원격을 SSE·폴링이 반복 적용하지 않도록 */
+  const lastAppliedRemoteUpdatedAtRef = useRef<number>(0);
+  const oneShotSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const POLL_MERGE_PERSIST_MIN_MS = 6000;
+  /** 시그 추가·삭제 직후 서버 GET이 로컬 변경을 덮어쓰지 않도록 보호(ms) */
+  const SIG_INVENTORY_LOCAL_PROTECT_MS = 12_000;
   /** 금액/숫자 입력 중에는 원격 동기화 적용을 잠시 보류해 타이핑 값 초기화를 방지 */
   const amountInputEditingRef = useRef<boolean>(false);
   const [dailyLog, setDailyLog] = useState<Record<string, DailyLogEntry[]>>({});
@@ -675,12 +695,14 @@ export default function AdminPage() {
   const persistState = useCallback((s: AppState) => {
     const now = Date.now();
     lastLocalPersistAtRef.current = now;
+    stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, s.updatedAt || now, now);
     pendingUnsyncedRef.current = true;
     /** 배지를 매 저장마다 `loading`으로 두면 느린 서버에서 GET/POST가 쌓일 때 "동기화 중"이 계속 보임. 네트워크와 분리해 이전 상태를 유지한 뒤 결과만 반영 */
     saveStateAsync(s, user?.id).then((r) => {
       if (r.ok) {
         if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
           stateUpdatedAtRef.current = r.serverUpdatedAt;
+          lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
         }
         pendingUnsyncedRef.current = false;
         setSyncStatus("synced");
@@ -862,6 +884,16 @@ export default function AdminPage() {
       };
       didPreserve = true;
     }
+    /** 저장 대기 중에만 로컬 시그 목록 우선(시간 창 + didPreserve→POST 루프 방지) */
+    if (pendingUnsyncedRef.current) {
+      const localInv = local.sigInventory || [];
+      const incomingInv = merged.sigInventory || [];
+      const localSigIds = localInv.map((x) => x.id).join(",");
+      const incomingSigIds = incomingInv.map((x) => x.id).join(",");
+      if (localSigIds !== incomingSigIds) {
+        merged = { ...merged, sigInventory: localInv };
+      }
+    }
     return { merged: { ...merged, donors: normalizeDonorsArray(merged.donors) }, didPreserve };
   }, []);
 
@@ -985,22 +1017,30 @@ export default function AdminPage() {
         // 구버전 원격 데이터로 최신 로컬 덮어쓰기 방지: 원격이 더 최신일 때만 적용
         const shouldApplyRemote = remoteUpdatedAt > stateUpdatedAtRef.current;
         if (shouldApplyRemote) {
+          if (pendingUnsyncedRef.current) return;
           if (amountInputEditingRef.current) return;
-          stateUpdatedAtRef.current = remoteUpdatedAt;
+          if (remoteUpdatedAt <= lastAppliedRemoteUpdatedAtRef.current) return;
           const prev = stateRef.current;
-          const { merged: toApply, didPreserve } = mergeIncomingStateSafely(remote, prev);
-          if (didPreserve) {
-            const t = Date.now();
-            if (t - lastPollMergePersistAtRef.current >= POLL_MERGE_PERSIST_MIN_MS) {
-              lastPollMergePersistAtRef.current = t;
-              persistState(toApply);
-            }
+          const recentlyEditedSig =
+            Date.now() - lastLocalPersistAtRef.current < SIG_INVENTORY_LOCAL_PROTECT_MS;
+          let toApply: AppState;
+          if (recentlyEditedSig) {
+            const { merged } = mergeIncomingStateSafely(remote, prev);
+            toApply = { ...merged, sigInventory: prev.sigInventory || [] };
+          } else {
+            toApply = mergeIncomingStateSafely(remote, prev).merged;
           }
+          if (adminSyncFingerprint(prev) === adminSyncFingerprint(toApply)) {
+            lastAppliedRemoteUpdatedAtRef.current = remoteUpdatedAt;
+            stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, remoteUpdatedAt);
+            return;
+          }
+          stateUpdatedAtRef.current = remoteUpdatedAt;
+          lastAppliedRemoteUpdatedAtRef.current = remoteUpdatedAt;
           setState(toApply);
           if (Array.isArray(toApply.overlayPresets)) {
             setPresets(toApply.overlayPresets as OverlayPreset[]);
           }
-          pendingUnsyncedRef.current = false;
           try { window.localStorage.setItem(storageKey(user?.id), JSON.stringify(toApply)); } catch {}
         }
       } finally {
@@ -1445,49 +1485,72 @@ export default function AdminPage() {
   useEffect(() => {
     setChatDraft(formatChatLine(state));
     setChatDraftDirty(false);
-  }, [state, persistState]);
+  }, [state]);
 
   useEffect(() => {
-    const hasOneShot = (state.sigInventory || []).some((x) => x.id === ONE_SHOT_SIG_ID);
-    const hasMultiCountItem = (state.sigInventory || []).some((x) => x.id !== ONE_SHOT_SIG_ID && Number(x.maxCount || 1) !== 1);
-    const totalAmount = (state.sigInventory || [])
-      .filter(
-        (x) =>
-          x.id !== ONE_SHOT_SIG_ID &&
-          Boolean(x.isActive) &&
-          Math.max(0, Number(x.soldCount || 0)) < Math.max(1, Number(x.maxCount || 1))
-      )
-      .reduce((sum, x) => sum + Math.max(0, Number(x.price || 0)), 0);
-    const oneShot = (state.sigInventory || []).find((x) => x.id === ONE_SHOT_SIG_ID);
-    const needsSync =
-      !hasOneShot ||
-      hasMultiCountItem ||
-      !oneShot ||
-      oneShot.name !== ONE_SHOT_SIG_NAME ||
-      oneShot.price !== totalAmount ||
-      oneShot.maxCount !== 1 ||
-      oneShot.soldCount !== 0 ||
-      oneShot.isRolling !== false ||
-      oneShot.isActive !== true;
-    if (!needsSync) return;
-    setState((prev: AppState) => {
-      const clampedInventory = (prev.sigInventory || []).map((x) => {
-        if (x.id === ONE_SHOT_SIG_ID) return x;
-        return { ...x, maxCount: 1, soldCount: Math.max(0, Math.min(1, Number(x.soldCount || 0))) };
+    if (pendingUnsyncedRef.current) return;
+    if (Date.now() - lastLocalPersistAtRef.current < SIG_INVENTORY_LOCAL_PROTECT_MS) return;
+    if (oneShotSyncTimerRef.current) {
+      clearTimeout(oneShotSyncTimerRef.current);
+      oneShotSyncTimerRef.current = null;
+    }
+    oneShotSyncTimerRef.current = setTimeout(() => {
+      oneShotSyncTimerRef.current = null;
+      if (pendingUnsyncedRef.current) return;
+      setState((prev: AppState) => {
+        const inv = prev.sigInventory || [];
+        const needsClamp = inv.some(
+          (x) =>
+            x.id !== ONE_SHOT_SIG_ID &&
+            (Number(x.maxCount || 1) !== 1 || Number(x.soldCount || 0) > 1)
+        );
+        const totalAmount = inv
+          .filter(
+            (x) =>
+              x.id !== ONE_SHOT_SIG_ID &&
+              Boolean(x.isActive) &&
+              Math.max(0, Number(x.soldCount || 0)) < Math.max(1, Number(x.maxCount || 1))
+          )
+          .reduce((sum, x) => sum + Math.max(0, Number(x.price || 0)), 0);
+        const oneShot = inv.find((x) => x.id === ONE_SHOT_SIG_ID);
+        const needsOneShot =
+          !oneShot ||
+          oneShot.name !== ONE_SHOT_SIG_NAME ||
+          oneShot.price !== totalAmount ||
+          oneShot.maxCount !== 1 ||
+          oneShot.soldCount !== 0 ||
+          oneShot.isRolling !== false ||
+          oneShot.isActive !== true;
+        if (!needsClamp && !needsOneShot) return prev;
+        const clampedInventory = needsClamp
+          ? inv.map((x) => {
+              if (x.id === ONE_SHOT_SIG_ID) return x;
+              return { ...x, maxCount: 1, soldCount: Math.max(0, Math.min(1, Number(x.soldCount || 0))) };
+            })
+          : inv;
+        const draft: AppState = {
+          ...prev,
+          sigInventory: clampedInventory,
+          updatedAt: Date.now(),
+        };
+        const next = { ...syncOneShotSigItem(draft), updatedAt: draft.updatedAt };
+        if (next === prev || adminSyncFingerprint(next) === adminSyncFingerprint(prev)) return prev;
+        persistState(next);
+        return next;
       });
-      const draft = { ...prev, sigInventory: clampedInventory };
-      const next = syncOneShotSigItem(draft);
-      if (next === prev) return prev;
-      persistState(next);
-      return next;
-    });
+    }, 500);
+    return () => {
+      if (oneShotSyncTimerRef.current) {
+        clearTimeout(oneShotSyncTimerRef.current);
+        oneShotSyncTimerRef.current = null;
+      }
+    };
   }, [state.sigInventory, persistState, syncOneShotSigItem]);
 
   useEffect(() => {
-    // Retry unsynced writes quickly to minimize cross-device drift.
-    // `state`를 deps에 넣지 않음: 매 렌더마다 interval이 갈아엎어지며 POST·GET 폭주·동기화 꼬임을 유발할 수 있음.
+    /** 저장 실패 시에만 재시도 — pendingUnsynced마다 5초 POST하면 SSE·폴링 루프가 난다 */
     const id = setInterval(() => {
-      if (pendingUnsyncedRef.current || syncStatusRef.current === "error") {
+      if (syncStatusRef.current === "error") {
         persistState(stateRef.current);
       }
     }, 5000);
@@ -1504,19 +1567,12 @@ export default function AdminPage() {
           const incoming = JSON.parse(e.newValue) as AppState;
           const incomingUpdatedAt = incoming.updatedAt || 0;
           if (incomingUpdatedAt <= stateUpdatedAtRef.current) return;
+          if (pendingUnsyncedRef.current) return;
           if (amountInputEditingRef.current) return;
           stateUpdatedAtRef.current = incomingUpdatedAt;
           setState((prev) => {
-            const { merged, didPreserve } = mergeIncomingStateSafely(incoming, prev);
-            if (didPreserve) {
-              const t = Date.now();
-              if (t - lastStorageMergePersistAtRef.current >= POLL_MERGE_PERSIST_MIN_MS) {
-                lastStorageMergePersistAtRef.current = t;
-                queueMicrotask(() => persistState(merged));
-              } else {
-                pendingUnsyncedRef.current = true;
-              }
-            }
+            const { merged } = mergeIncomingStateSafely(incoming, prev);
+            if (adminSyncFingerprint(prev) === adminSyncFingerprint(merged)) return prev;
             return merged;
           });
         } catch {
@@ -2376,8 +2432,9 @@ export default function AdminPage() {
         const draft: AppState = {
           ...prev,
           sigInventory: (prev.sigInventory || []).map((x) => (x.id === id ? { ...x, ...sanitizedPatch } : x)),
+          updatedAt: Date.now(),
         };
-        const next = syncOneShotSigItem(draft);
+        const next = { ...syncOneShotSigItem(draft), updatedAt: draft.updatedAt };
         persistState(next);
         return next;
       });
@@ -2401,13 +2458,18 @@ export default function AdminPage() {
 
   const removeSigItem = (id: string) => {
     if (id === ONE_SHOT_SIG_ID) return;
+    const target = (state.sigInventory || []).find((x) => x.id === id);
+    const label = target?.name?.trim() || id;
+    if (!confirm(`「${label}」 시그를 목록에서 삭제할까요?`)) return;
     setState((prev: AppState) => {
       const draft: AppState = {
         ...prev,
         sigInventory: (prev.sigInventory || []).filter((x) => x.id !== id),
+        updatedAt: Date.now(),
       };
-      const next = syncOneShotSigItem(draft);
+      const next = { ...syncOneShotSigItem(draft), updatedAt: draft.updatedAt };
       persistState(next);
+      setSigExcelResult(`시그 삭제: ${label}`);
       return next;
     });
   };
@@ -2463,8 +2525,9 @@ export default function AdminPage() {
       const draft: AppState = {
         ...prev,
         sigInventory: nextInventory,
+        updatedAt: Date.now(),
       };
-      const next = syncOneShotSigItem(draft);
+      const next = { ...syncOneShotSigItem(draft), updatedAt: draft.updatedAt };
       persistState(next);
       return next;
     });

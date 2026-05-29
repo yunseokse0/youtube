@@ -276,13 +276,18 @@ export default function AdminSigSalesPage() {
   }, [router]);
 
   const lastSyncedUpdatedAtRef = useRef(0);
+  const lastAppliedRemoteUpdatedAtRef = useRef(0);
+  const pendingLocalSaveRef = useRef(false);
   const lastRouletteSyncRef = useRef<SigSalesRouletteSyncCursor>({ sessionId: "", phase: "" });
   const loadRemote = useCallback(async () => {
     if (!authReady) return;
+    if (pendingLocalSaveRef.current) return;
     const remote = await loadStateFromApi(userId);
     if (!remote) return;
     const ts = remote.updatedAt || 0;
+    if (ts > 0 && ts <= lastAppliedRemoteUpdatedAtRef.current) return;
     if (ts > 0) lastSyncedUpdatedAtRef.current = Math.max(lastSyncedUpdatedAtRef.current, ts);
+    lastAppliedRemoteUpdatedAtRef.current = ts;
     lastRouletteSyncRef.current = sigSalesRouletteSyncCursorFromState(remote.rouletteState);
     setState(remote);
   }, [authReady, userId]);
@@ -902,27 +907,31 @@ export default function AdminSigSalesPage() {
     setOneShotReveal(true);
   }, [showFinalShowcase, displayOneShot]);
 
+  const landedShowcaseSigKeyRef = useRef("");
   useEffect(() => {
+    if (pendingLanding || demoSpin) return;
     if (
       machine.phase !== "LANDED" &&
       machine.phase !== "CONFIRM_PENDING" &&
       machine.phase !== "CONFIRMED"
     ) {
+      landedShowcaseSigKeyRef.current = "";
       return;
     }
     const fromServer = (machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
     if (fromServer.length === 0) return;
-    setDemoSpin(null);
-    setPendingLanding(null);
+    const sigKey = `${machine.sessionId}:${fromServer.map((s) => s.id).join(",")}`;
+    if (landedShowcaseSigKeyRef.current === sigKey) return;
+    landedShowcaseSigKeyRef.current = sigKey;
     setStagedSelected(fromServer);
-    setSpinStep(0);
-    setHighlightId(null);
+    setSpinStep(Math.max(0, fromServer.length - 1));
+    setHighlightId(fromServer[fromServer.length - 1]?.id || null);
     setLastConfirmedText("");
     if (nextSpinTimerRef.current) {
       clearTimeout(nextSpinTimerRef.current);
       nextSpinTimerRef.current = null;
     }
-  }, [machine.phase, machine.selectedSigs]);
+  }, [machine.phase, machine.selectedSigs, machine.sessionId, pendingLanding, demoSpin]);
 
   /** OBS·서버가 먼저 착지(LANDED)했는데 관리자만 로컬 demoSpin 으로 휠이 도는 경우 */
   useEffect(() => {
@@ -931,6 +940,7 @@ export default function AdminSigSalesPage() {
     if (machine.phase !== "SPINNING") return;
     if (machine.isRolling) return;
     if (!demoSpin && !pendingLanding) return;
+    if (useSequentialWheel && spinQueueSelected.length > 1) return;
     const oneShot = buildOneShotFromSelected(fromServer);
     setDemoSpin(null);
     setPendingLanding(null);
@@ -979,7 +989,15 @@ export default function AdminSigSalesPage() {
         return snapshot;
       });
       if (!snapshot) return;
-      await saveStateAsync(snapshot, userId);
+      pendingLocalSaveRef.current = true;
+      try {
+        const saved = await saveStateAsync(snapshot, userId);
+        if (saved.ok && typeof saved.serverUpdatedAt === "number") {
+          lastAppliedRemoteUpdatedAtRef.current = saved.serverUpdatedAt;
+        }
+      } finally {
+        pendingLocalSaveRef.current = false;
+      }
     },
     [userId]
   );
