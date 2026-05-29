@@ -78,9 +78,11 @@ import {
   getWheelDemoPlaythroughPath,
   getSigSalesWheelDemoOverlayPath,
   isWheelDemoHostAllowed,
+  isWheelDemoModeFromSearchParams,
   mergeWheelDemoSigInventory,
   pickWheelDemoWinners,
 } from "@/lib/sig-wheel-demo-pool";
+import { stripBundledSigPlaceholderItems } from "@/lib/sig-placeholder";
 import {
   buildOneShotFromSelected,
   computeNetOneShotPrice,
@@ -563,13 +565,20 @@ export default function AdminSigSalesPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setWheelDemoMode(isWheelDemoHostAllowed(window.location.hostname));
+    const sp = new URLSearchParams(window.location.search);
+    setWheelDemoMode(
+      isWheelDemoModeFromSearchParams(
+        { get: (key) => sp.get(key) },
+        window.location.hostname
+      )
+    );
   }, []);
 
-  const wheelInventory = useMemo(
-    () => mergeWheelDemoSigInventory(state?.sigInventory, wheelDemoMode),
-    [state?.sigInventory, wheelDemoMode]
-  );
+  const wheelInventory = useMemo(() => {
+    const merged = mergeWheelDemoSigInventory(state?.sigInventory, wheelDemoMode);
+    if (wheelDemoMode) return merged;
+    return stripBundledSigPlaceholderItems(merged);
+  }, [state?.sigInventory, wheelDemoMode]);
 
   const activeNormalPool = useMemo(() => {
     if (!state) return [];
@@ -707,6 +716,8 @@ export default function AdminSigSalesPage() {
   const wheelAnimationResultId = wheelRoundBinding.animationResultId;
   const wheelTargetSliceIndex = wheelRoundBinding.targetSliceIndex;
   const displaySelectedSigs = useMemo(() => {
+    /** 회전 전(IDLE)에는 하단 당첨·수동 미리보기를 표시하지 않음 */
+    if (machine.phase === "IDLE") return [];
     const fromServer = (machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
     const fromStaged = stagedSelected.slice(0, MAX_SELECTED_SIGS);
     const fromManualPreview = manualPreviewSelected.slice(0, MAX_SELECTED_SIGS);
@@ -722,7 +733,9 @@ export default function AdminSigSalesPage() {
   }, [machine.selectedSigs, stagedSelected, manualPreviewSelected, machine.phase]);
   const displaySelectedSigsForUi = useMemo(
     () =>
-      displaySelectedSigs.map((s) => hydrateSigItemFromInventory(s, state?.sigInventory, userId)),
+      stripBundledSigPlaceholderItems(
+        displaySelectedSigs.map((s) => hydrateSigItemFromInventory(s, state?.sigInventory, userId))
+      ),
     [displaySelectedSigs, state?.sigInventory, userId]
   );
   /** 확정·재고 완판 시 관리 화면·오버레이와 동일하게 판매 완료 스탬프 */

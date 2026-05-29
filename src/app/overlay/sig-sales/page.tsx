@@ -73,6 +73,7 @@ import {
   mergeWheelDemoSigInventory,
   pickWheelDemoWinners,
 } from "@/lib/sig-wheel-demo-pool";
+import { stripBundledSigPlaceholderItems } from "@/lib/sig-placeholder";
 
 /**
  * [계약] 시그 판매 오버레이는 아래를 전제로 구현돼 있어야 한다(“될 수도”가 아님).
@@ -114,23 +115,6 @@ type ManualSigDraftPersistOverlay = {
   sigSoldFlags?: boolean[];
   oneShotMarkSold?: boolean;
 };
-const DEMO_SIG_PRESET_IDS = new Set([
-  "sig_aegyo",
-  "sig_dance",
-  "sig_meal",
-  "sig_voice",
-  "sig_song",
-  "sig_talk",
-  "sig_heart",
-  "sig_game",
-]);
-
-function isDemoPlaceholderSig(item: SigItem): boolean {
-  const id = String(item?.id || "").trim();
-  const imageUrl = String(item?.imageUrl || "").toLowerCase();
-  return DEMO_SIG_PRESET_IDS.has(id) || imageUrl.includes("dummy-sig.svg");
-}
-
 function resolveOverlayWheelStartedAt(startedAt: number, sessionId: string): number {
   const t = Number(startedAt || 0);
   if (t > 0) return t;
@@ -387,7 +371,7 @@ function SigSalesOverlayPageInner() {
     const merged = mergeWheelDemoSigInventory(state?.sigInventory, wheelDemoActive);
     if (wheelDemoActive) return merged;
     // 실방송/OBS에서는 기본 데모 시그(더미 이미지 포함)를 회전판/보드 후보에서 제외한다.
-    return merged.filter((item) => !isDemoPlaceholderSig(item));
+    return stripBundledSigPlaceholderItems(merged);
   }, [state?.sigInventory, wheelDemoActive]);
   /** OBS URL `u=` 가 틀려도 인벤 업로드 경로에서 이미지 계정을 맞춤(관리자 미리보기와 동일) */
   const sigImageUserId = useMemo(
@@ -693,24 +677,42 @@ function SigSalesOverlayPageInner() {
   /**
    * 당첨 큐 단일 소스(휠·결과 카드·순차 인덱스). 서버 `selectedSigs` 우선.
    */
+  /** 회전 시작 전 — 하단 당첨·수동 초안·이전 회차 sticky 를 모두 숨김 */
+  const overlayIdleBeforeSpin = useMemo(
+    () =>
+      machine.phase === "IDLE" &&
+      !pendingLanding &&
+      !demoSpin &&
+      wheelPhase === "idle",
+    [machine.phase, pendingLanding, demoSpin, wheelPhase]
+  );
+
   const spinQueueSelected = useMemo(() => {
+    const idleBeforeSpin = overlayIdleBeforeSpin && !wheelDemoAutoSpin;
     const resolved = resolveSpinQueueForSession(
       spinQueuePinRef.current,
       machine.sessionId || "",
-      machine.selectedSigs || [],
+      idleBeforeSpin ? [] : machine.selectedSigs || [],
       pendingLanding?.selected?.length
         ? pendingLanding.selected
-        : broadcastStickySigs || [],
+        : idleBeforeSpin
+          ? []
+          : broadcastStickySigs || [],
       CONFIRMED_VISIBLE_SLOTS
     );
     spinQueuePinRef.current = resolved.pin;
     if (resolved.queue.length > 0) return resolved.queue;
+    if (idleBeforeSpin) return [];
     return (broadcastStickySigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
   }, [
     machine.selectedSigs,
     machine.sessionId,
+    machine.phase,
     pendingLanding?.selected,
     broadcastStickySigs,
+    demoSpin,
+    wheelDemoAutoSpin,
+    overlayIdleBeforeSpin,
   ]);
   const useSequentialWheel = spinQueueSelected.length > 1;
   const rouletteHasWinnerQueue =
@@ -727,7 +729,9 @@ function SigSalesOverlayPageInner() {
       memberFilterId,
       menuCount: effectiveMenuCount,
       menuFillFromAllActive,
-      ensureItems: [...(machine.selectedSigs || []), ...(pendingLanding?.selected || [])],
+      ensureItems: rouletteHasWinnerQueue
+        ? [...(machine.selectedSigs || []), ...(pendingLanding?.selected || [])]
+        : [...(pendingLanding?.selected || [])],
     });
   }, [
     state,
@@ -735,6 +739,7 @@ function SigSalesOverlayPageInner() {
     memberFilterId,
     effectiveMenuCount,
     menuFillFromAllActive,
+    rouletteHasWinnerQueue,
     machine.selectedSigs,
     pendingLanding?.selected,
   ]);
@@ -877,6 +882,7 @@ function SigSalesOverlayPageInner() {
   ]);
   /** 회전 중·착지 전에는 비우고, 착지 후에는 순차 공개용 전체 목록 */
   const fullSelectedSigs = useMemo(() => {
+    if (overlayIdleBeforeSpin) return [];
     const startedAtNum = Number(machine.startedAt || 0);
     /** startedAt 이 0이면「오래된 SPINNING」으로 오인해 당첨 배열을 비우면 안 됨(메타 누락·폴링 지연) */
     const spinningFreshEnough =
@@ -938,6 +944,7 @@ function SigSalesOverlayPageInner() {
     sequentialRoundIndex,
     broadcastStickySigs,
     overlayHoldResults,
+    overlayIdleBeforeSpin,
   ]);
   /**
    * startedAt 가 폴링 중 0→실값으로 바뀌면 키가 바뀌어 순차 상태가 초기화될 수 있음 → staggerSessionPin 으로 완화.
@@ -1025,9 +1032,8 @@ function SigSalesOverlayPageInner() {
   /** 당첨 배열을 재고와 맞춰 휠 라벨·이미지와 동일 시그로 표시 */
   const displaySelectedSigsForUi = useMemo(() => {
     const hydrated = displaySelectedSigs.map((s) => hydrateSigItemFromInventory(s, wheelInventory, sigImageUserId));
-    if (!manualOverlayMode) return hydrated;
-    return hydrated.filter((item) => !isDemoPlaceholderSig(item));
-  }, [displaySelectedSigs, wheelInventory, sigImageUserId, manualOverlayMode]);
+    return stripBundledSigPlaceholderItems(hydrated);
+  }, [displaySelectedSigs, wheelInventory, sigImageUserId]);
   const manualDraftFromState = useMemo((): ManualSigDraftPersistOverlay | null => {
     const os = state?.overlaySettings;
     if (!os || typeof os !== "object") return null;
@@ -1083,8 +1089,11 @@ function SigSalesOverlayPageInner() {
   }, [manualDraftEffective]);
   const effectiveSelectedSigsForUi = useMemo(() => {
     if (!manualOverlayMode) return displaySelectedSigsForUi;
-    return displaySelectedSigsForUi.length > 0 ? displaySelectedSigsForUi : manualDraftSelectedForUi;
-  }, [manualOverlayMode, displaySelectedSigsForUi, manualDraftSelectedForUi]);
+    if (overlayIdleBeforeSpin) return displaySelectedSigsForUi;
+    return displaySelectedSigsForUi.length > 0
+      ? displaySelectedSigsForUi
+      : stripBundledSigPlaceholderItems(manualDraftSelectedForUi);
+  }, [manualOverlayMode, overlayIdleBeforeSpin, displaySelectedSigsForUi, manualDraftSelectedForUi]);
   const completedTargetCount = useMemo(() => {
     if (pendingLanding?.selected?.length) return Math.max(1, Math.min(CONFIRMED_VISIBLE_SLOTS, pendingLanding.selected.length));
     if (machine.selectedSigs?.length) return Math.max(1, Math.min(CONFIRMED_VISIBLE_SLOTS, machine.selectedSigs.length));
@@ -1247,33 +1256,30 @@ function SigSalesOverlayPageInner() {
   const resultsPanelGateOpen =
     revealGateOpen ||
     overlayHoldResults ||
-    (broadcastStickySigs?.length ?? 0) > 0 ||
+    (!overlayIdleBeforeSpin && (broadcastStickySigs?.length ?? 0) > 0) ||
     showResultPanel;
   const manualModeHasResults =
     manualOverlayMode &&
+    !overlayIdleBeforeSpin &&
     (effectiveSelectedSigsForUi.length > 0 ||
       Boolean(machine.oneShot) ||
-      Boolean(String(manualDraftEffective?.oneShotPriceInput || "").replace(/[^\d]/g, "")) ||
       Boolean(buildOneShotFromSelected(machine.selectedSigs.slice(0, CONFIRMED_VISIBLE_SLOTS))));
   const resultOverlayVisible = Boolean(
-    (manualModeHasResults || resultsPanelGateOpen) &&
+    !overlayIdleBeforeSpin &&
+      (manualModeHasResults || resultsPanelGateOpen) &&
       (manualOverlayMode
-        ? effectiveSelectedSigsForUi.length > 0 ||
-          Boolean(machine.oneShot) ||
-          Boolean(String(manualDraftEffective?.oneShotPriceInput || "").replace(/[^\d]/g, ""))
+        ? effectiveSelectedSigsForUi.length > 0 || Boolean(machine.oneShot)
         : displaySelectedSigs.length > 0 || oneShotRevealUnlocked) &&
-      (machine.phase === "IDLE"
-        ? manualModeHasResults || (broadcastStickySigs?.length ?? 0) > 0
-        : (showResultPanel && hideWheelAfterComplete) ||
-          machine.phase === "SPINNING" ||
-          machine.phase === "LANDED" ||
-          machine.phase === "CONFIRM_PENDING" ||
-          machine.phase === "CONFIRMED" ||
-          wheelPhase === "spinning" ||
-          wheelPhase === "settling" ||
-          wheelPhase === "result" ||
-          Boolean(demoSpin) ||
-          Boolean(pendingLanding))
+      ((showResultPanel && hideWheelAfterComplete) ||
+        machine.phase === "SPINNING" ||
+        machine.phase === "LANDED" ||
+        machine.phase === "CONFIRM_PENDING" ||
+        machine.phase === "CONFIRMED" ||
+        wheelPhase === "spinning" ||
+        wheelPhase === "settling" ||
+        wheelPhase === "result" ||
+        Boolean(demoSpin) ||
+        Boolean(pendingLanding))
   );
 
   const showSigBoardRollingSection = useMemo(() => {
@@ -1554,7 +1560,7 @@ function SigSalesOverlayPageInner() {
     /** 당첨 카드는 broadcastSticky·hold 동안 휠 페이드와 무관하게 유지 → 깜빡임 방지 */
     const keepResults =
       overlayHoldResults ||
-      (broadcastStickySigs?.length ?? 0) > 0 ||
+      (!overlayIdleBeforeSpin && (broadcastStickySigs?.length ?? 0) > 0) ||
       showResultPanel;
     if (keepResults) {
       setRevealGateOpen(true);
@@ -1587,6 +1593,7 @@ function SigSalesOverlayPageInner() {
     overlayHoldResults,
     broadcastStickySigs,
     showResultPanel,
+    overlayIdleBeforeSpin,
   ]);
 
   const serverCatchUpKeyRef = useRef("");
@@ -1598,6 +1605,8 @@ function SigSalesOverlayPageInner() {
       CONFIRMED_VISIBLE_SLOTS
     );
     if (selectedFromServer.length === 0) return;
+    /** 서버에만 남은 지난 회차 당첨으로 IDLE 화면에 카드가 깔리는 것 방지 */
+    if (machine.phase === "IDLE" && serverPhase !== "SPINNING") return;
     const machineSpinKey = overlaySpinSessionKey(machine.startedAt, machine.sessionId || "");
     const catchUpKey = `${serverPhase}:${machine.phase}:${machineSpinKey}:${selectedFromServer.length}:${revealedSigCount}`;
     const queueLen = selectedFromServer.length;
@@ -1802,6 +1811,10 @@ function SigSalesOverlayPageInner() {
     if (machine.phase === "IDLE") {
       setShowResultPanel(false);
       setOverlayHoldResults(false);
+      if (!pendingLanding && !demoSpin && (machine.selectedSigs?.length ?? 0) === 0) {
+        setBroadcastStickySigs(null);
+        spinQueuePinRef.current = { sessionId: "", queue: [] };
+      }
       return;
     }
     if (machine.phase === "SPINNING") {
@@ -1835,10 +1848,10 @@ function SigSalesOverlayPageInner() {
   }, [pendingLanding, sigImageUserId]);
 
   useEffect(() => {
-    if (machine.selectedSigs.length > 0) {
+    if (machine.selectedSigs.length > 0 && machine.phase !== "IDLE") {
       setBroadcastStickySigs(machine.selectedSigs.slice(0, CONFIRMED_VISIBLE_SLOTS));
     }
-  }, [machine.selectedSigs]);
+  }, [machine.selectedSigs, machine.phase]);
 
   useEffect(() => {
     const sid = String(machine.sessionId || "").trim();

@@ -1,5 +1,6 @@
 import type { SigItem } from "@/types";
 import { repairDiskUploadSigImagePath } from "@/lib/sig-image-mode";
+import { isBundledSigPlaceholderItem } from "@/lib/sig-placeholder";
 import { getServerMemoryRouletteLogs, setServerMemoryRouletteLogs } from "@/lib/server-memory-roulette-logs";
 
 export const ONE_SHOT_SIG_ID = "sig_one_shot";
@@ -130,6 +131,7 @@ export function buildSigSalesWheelDisplayPool(opts: BuildSigSalesWheelDisplayPoo
       x.isActive &&
       x.id !== ONE_SHOT_SIG_ID &&
       !excluded.has(x.id) &&
+      !isBundledSigPlaceholderItem(x) &&
       sigEligibleForSessionSpinPool(x, sessionExclusion) &&
       x.soldCount < x.maxCount &&
       sigMatchesMemberFilter(x, memberFilterId)
@@ -149,6 +151,7 @@ export function buildSigSalesWheelDisplayPool(opts: BuildSigSalesWheelDisplayPoo
         x.isActive &&
         x.id !== ONE_SHOT_SIG_ID &&
         !excluded.has(x.id) &&
+        !isBundledSigPlaceholderItem(x) &&
         x.soldCount < x.maxCount
     );
     for (const item of broadActivePool) {
