@@ -68,13 +68,11 @@ export default function GoalOverlayPage() {
   }, [sp, activePreset?.goalWidth]);
   const presetParams = useMemo(() => presetToParams(activePreset), [activePreset]);
   const goalOpacity = useMemo(() => {
-    const raw =
-      resolveLivePresetStyleParam("goalOpacity", sp, presetParams, { ready }) ||
-      String((activePreset as any)?.tableBgOpacity || "").trim();
+    const raw = resolveLivePresetStyleParam("goalOpacity", sp, presetParams, { ready }) || "";
     if (!raw) return 100;
     const n = parseInt(raw, 10);
     return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 100;
-  }, [sp, presetParams, activePreset, ready]);
+  }, [sp, presetParams, ready]);
   const goalOpacityAffectsText = useMemo(() => {
     const raw = (resolveLivePresetStyleParam("goalOpacityText", sp, presetParams, { ready }) || "")
       .trim()

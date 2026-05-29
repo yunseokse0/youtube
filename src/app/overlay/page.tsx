@@ -1602,9 +1602,9 @@ function OverlayInner() {
     const rawUrl = (sp.get("goalOpacity") || "").trim();
     const rawPreset = String((activePreset as any)?.goalOpacity || "").trim();
     const raw = rawUrl || rawPreset;
-    if (!raw) return tableBgOpacity;
+    if (!raw) return 100;
     const n = parseInt(raw, 10);
-    return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : tableBgOpacity;
+    return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 100;
   })();
   const goalOpacityAffectsText = (() => {
     const rawUrl = (sp.get("goalOpacityText") || "").trim().toLowerCase();

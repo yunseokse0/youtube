@@ -75,9 +75,11 @@ export function GoalBar({
     const safe = Math.max(0, Number(n) || 0);
     return `${formatManThousand(safe)}만원`;
   };
-  const fillOpacity = Math.max(0, Math.min(100, opacityPercent)) / 100;
-  const containerOpacity = opacityAffectsText ? fillOpacity : 1;
-  const barFillOpacity = opacityAffectsText ? 1 : fillOpacity;
+  const trackOpacity = Math.max(0, Math.min(100, opacityPercent)) / 100;
+  const containerOpacity = opacityAffectsText ? trackOpacity : 1;
+  /** 채움 막대는 항상 선명하게 — 투명도(%)는 트랙 배경만 (OBS에서 안 보이던 문제) */
+  const fillVisualOpacity = opacityAffectsText ? trackOpacity : 1;
+  const fillWidthPct = pct <= 0 ? 0 : Math.min(100, Math.max(pct, 2));
   const textFontPx = (() => {
     if (fontSizePx != null && Number.isFinite(fontSizePx) && fontSizePx > 0) {
       return Math.max(10, Math.min(48, Math.round(fontSizePx)));
@@ -90,32 +92,57 @@ export function GoalBar({
     "-1px -1px 0 rgba(6, 12, 24, 0.95), 1px -1px 0 rgba(6, 12, 24, 0.95), -1px 1px 0 rgba(6, 12, 24, 0.95), 1px 1px 0 rgba(6, 12, 24, 0.95), 0 2px 6px rgba(0,0,0,0.42)";
 
   return (
-    <div style={{ width, padding: "0.12rem", borderRadius: 8, border: "1px solid rgba(255, 215, 232, 0.9)", opacity: containerOpacity }}>
-      <div className="relative overflow-hidden" style={{ height: barH, borderRadius: 7, background: "transparent" }}>
+    <div
+      style={{
+        width,
+        padding: "0.12rem",
+        borderRadius: 8,
+        border: `1px solid rgba(255, 215, 232, ${0.55 + 0.45 * trackOpacity})`,
+        opacity: containerOpacity,
+        boxShadow: "0 2px 10px rgba(0,0,0,0.35)",
+      }}
+    >
+      <div
+        className="relative overflow-hidden"
+        style={{
+          height: barH,
+          borderRadius: 7,
+          background: `rgba(18, 12, 24, ${0.78 * trackOpacity})`,
+          boxShadow: "inset 0 1px 3px rgba(0,0,0,0.45)",
+        }}
+      >
         <div
-          className="goalbar-fill h-full transition-all duration-700 ease-out"
+          className="goalbar-fill absolute inset-y-0 left-0 transition-all duration-700 ease-out"
           style={{
-            width: `${pct}%`,
+            width: `${fillWidthPct}%`,
             borderRadius: 7,
-            opacity: barFillOpacity,
-            background: "linear-gradient(90deg, rgba(255, 199, 220, 0.98) 0%, rgba(255, 166, 201, 0.98) 45%, rgba(255, 214, 231, 0.98) 100%)",
-            boxShadow: "0 0 8px rgba(255, 182, 213, 0.42), inset 0 1px 0 rgba(255,255,255,0.35)",
+            opacity: fillVisualOpacity,
+            zIndex: 1,
+            background:
+              "linear-gradient(90deg, #ff9ec8 0%, #ff6eb5 42%, #ffc4e3 100%)",
+            boxShadow:
+              "inset 0 1px 0 rgba(255,255,255,0.45), 0 0 12px rgba(255, 110, 180, 0.55)",
             animation: ambientPulse,
           }}
         />
         <div
           aria-hidden
-          className="goalbar-sweep pointer-events-none absolute top-0 bottom-0 rounded-full"
+          className="goalbar-sweep pointer-events-none absolute top-0 bottom-0 left-0 rounded-full"
           style={{
-            width: "32%",
-            opacity: barFillOpacity * 0.22,
+            width: `${Math.min(100, fillWidthPct + 8)}%`,
+            maxWidth: "100%",
+            opacity: fillVisualOpacity * 0.28,
+            zIndex: 2,
             background:
-              "linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.42) 50%, rgba(255,255,255,0) 100%)",
+              "linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.5) 50%, rgba(255,255,255,0) 100%)",
             filter: "blur(1px)",
             animation: ambientSweep,
           }}
         />
-        <div className="absolute inset-0 flex items-center justify-between px-2" style={{ fontSize: textFontPx, letterSpacing: "-0.01em" }}>
+        <div
+          className="absolute inset-0 z-[3] flex items-center justify-between px-2"
+          style={{ fontSize: textFontPx, letterSpacing: "-0.01em" }}
+        >
           <span
             className="inline-flex items-center"
             style={{
