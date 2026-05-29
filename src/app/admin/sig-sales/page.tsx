@@ -1404,19 +1404,25 @@ export default function AdminSigSalesPage() {
     qManual.set("hideSigBoard", "1");
     /**
      * 개발 중 코드 수정/서버 재시작(메모리 state 초기화) 시에도 수동 오버레이가 비지 않도록
-     * URL에 핵심 텍스트 데이터(이름/금액)만 함께 싣는다. (이미지 URL은 길이 증가로 제외)
+     * URL에 핵심 텍스트 데이터(이름/금액)와 짧은 이미지 경로를 함께 싣는다.
+     * - m{n}n: 이름, m{n}p: 가격(숫자), m{n}i: 이미지 URL(예: /uploads/sigs/uid/....gif)
+     * - osn/osp/osi: 한방 이름/가격/이미지 URL
      */
     manualSigDrafts.forEach((row, idx) => {
       const n = idx + 1;
       const name = String(row?.name || "").trim();
       const priceDigits = String(row?.priceInput || "").replace(/[^\d]/g, "");
+      const imageUrl = String(row?.imageUrl || "").trim();
       if (name) qManual.set(`m${n}n`, name);
       if (priceDigits) qManual.set(`m${n}p`, priceDigits);
+      if (imageUrl && imageUrl.length <= 256) qManual.set(`m${n}i`, imageUrl);
     });
     const oneShotName = String(manualOneShotName || "").trim();
     const oneShotPriceDigits = String(manualOneShotPriceInput || "").replace(/[^\d]/g, "");
+    const oneShotImage = String(manualOneShotImageUrl || "").trim();
     if (oneShotName) qManual.set("osn", oneShotName);
     if (oneShotPriceDigits) qManual.set("osp", oneShotPriceDigits);
+    if (oneShotImage && oneShotImage.length <= 256) qManual.set("osi", oneShotImage);
     setOverlayObsUrlManual(`${window.location.origin}/overlay/sig-sales?${qManual.toString()}`);
   }, [
     userId,
