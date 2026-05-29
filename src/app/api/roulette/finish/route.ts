@@ -100,6 +100,8 @@ export async function POST(req: Request) {
       reason: body.reason,
     });
 
+    const hasExplicitSoldList =
+      Array.isArray(body.soldSigIds) && body.soldSigIds.length > 0;
     const soldDeltaById: Record<string, number> = {};
     if (finalPhase === "CONFIRMED") {
       const explicitSoldIds = Array.isArray(body.soldSigIds)
@@ -116,7 +118,6 @@ export async function POST(req: Request) {
           soldDeltaById[key] = (soldDeltaById[key] || 0) + 1;
         }
       }
-      const hasExplicitSoldList = Array.isArray(body.soldSigIds);
       if (body.oneShotInventorySold === true) {
         soldDeltaById[ONE_SHOT_SIG_ID] = Math.max(soldDeltaById[ONE_SHOT_SIG_ID] || 0, 1);
       } else if (!hasExplicitSoldList && selectedSigs.length >= 2) {
@@ -135,6 +136,7 @@ export async function POST(req: Request) {
             let delta = soldDeltaById[key] || 0;
             if (
               !delta &&
+              !hasExplicitSoldList &&
               row.id !== ONE_SHOT_SIG_ID &&
               selectedNamePriceSet.has(
                 `${normalizeSigNameKey(row.name)}::${Math.floor(Number(row.price || 0))}`
@@ -193,6 +195,7 @@ export async function POST(req: Request) {
     await publishRouletteStateAfterSave(req, userId, {
       rouletteState: next.rouletteState,
       updatedAt: next.updatedAt,
+      sigInventory: next.sigInventory,
     });
     clearRouletteLock(userId);
     if (typeof console !== "undefined" && console.info) {

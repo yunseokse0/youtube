@@ -44,7 +44,12 @@ export async function loadAppStateForRouletteRequest(
 export async function publishRouletteStateAfterSave(
   req: Request,
   userId: string,
-  patch: { rouletteState: AppState["rouletteState"]; updatedAt: number }
+  patch: {
+    rouletteState: AppState["rouletteState"];
+    updatedAt: number;
+    /** Edge·Node 메모리 분리 시 /api/state(노드)에 재고 반영 — finish 확정 등 */
+    sigInventory?: AppState["sigInventory"];
+  }
 ): Promise<void> {
   const rs = patch.rouletteState;
   void broadcastStateUpdatedAt(patch.updatedAt, {
@@ -56,13 +61,17 @@ export async function publishRouletteStateAfterSave(
     const url = new URL(req.url);
     url.pathname = "/api/state";
     url.search = `?user=${encodeURIComponent(userId)}`;
+    const body: Partial<AppState> = {
+      rouletteState: patch.rouletteState,
+      updatedAt: patch.updatedAt,
+    };
+    if (Array.isArray(patch.sigInventory)) {
+      body.sigInventory = patch.sigInventory;
+    }
     await fetch(url.toString(), {
       method: "POST",
       headers: { "Content-Type": "application/json", ...forwardCookieHeader(req) },
-      body: JSON.stringify({
-        rouletteState: patch.rouletteState,
-        updatedAt: patch.updatedAt,
-      }),
+      body: JSON.stringify(body),
     });
   } catch {
     /* noop */

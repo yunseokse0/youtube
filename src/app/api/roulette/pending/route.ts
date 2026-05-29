@@ -31,21 +31,42 @@ export async function POST(req: Request) {
 
     const rs = normalizeRouletteState(s.rouletteState);
     const srvSession = String(rs.sessionId || "").trim();
-    if (srvSession !== sessionId) {
-      return Response.json({ error: "session_mismatch" }, { status: 409, headers: { "Content-Type": "application/json" } });
-    }
+    const hasSelection =
+      (Array.isArray(rs.selectedSigs) && rs.selectedSigs.length > 0) ||
+      (Array.isArray(rs.results) && rs.results.length > 0);
+
     if (rs.phase === "CONFIRM_PENDING") {
       return Response.json({ ok: true, idempotent: true }, { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     }
     if (rs.phase === "CONFIRMED") {
-      return Response.json({ error: "already_confirmed" }, { status: 409, headers: { "Content-Type": "application/json" } });
+      return Response.json({ ok: true, idempotent: true, alreadyConfirmed: true }, { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     }
+
+    let adoptSessionId = sessionId;
+    if (srvSession && srvSession !== sessionId) {
+      /** 수동 회차: 클라이언트 sessionId가 최신이고 서버에 당첨 목록이 있으면 서버 sessionId 동기화 */
+      if (hasSelection && (rs.phase === "LANDED" || rs.phase === "SPINNING")) {
+        adoptSessionId = sessionId;
+      } else {
+        return Response.json(
+          { error: "session_mismatch", serverSessionId: srvSession, phase: rs.phase },
+          { status: 409, headers: { "Content-Type": "application/json" } }
+        );
+      }
+    } else if (!srvSession && sessionId) {
+      adoptSessionId = sessionId;
+    }
+
     if (rs.phase !== "LANDED" && rs.phase !== "SPINNING") {
-      return Response.json({ error: "bad_phase", phase: rs.phase }, { status: 409, headers: { "Content-Type": "application/json" } });
+      /** 당첨 데이터가 있으면 LANDED로 올린 뒤 확정 대기(수동 적용 직후 서버 phase 지연) */
+      if (!hasSelection) {
+        return Response.json({ error: "bad_phase", phase: rs.phase }, { status: 409, headers: { "Content-Type": "application/json" } });
+      }
     }
 
     const nextRs = {
       ...rs,
+      sessionId: adoptSessionId,
       phase: "CONFIRM_PENDING" as const,
       isRolling: false,
     };

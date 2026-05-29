@@ -178,6 +178,37 @@ function collectSoldSigIdsForFinish(
   return out;
 }
 
+async function postRoulettePending(
+  userId: string,
+  sessionId: string
+): Promise<{ ok: true; alreadyConfirmed?: boolean } | { ok: false; message: string }> {
+  const pr = await fetch(`/api/roulette/pending?user=${encodeURIComponent(userId)}`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId }),
+  });
+  const j = (await pr.json().catch(() => ({}))) as {
+    error?: string;
+    phase?: string;
+    serverSessionId?: string;
+    alreadyConfirmed?: boolean;
+  };
+  if (pr.ok) {
+    return { ok: true, alreadyConfirmed: Boolean(j.alreadyConfirmed) };
+  }
+  if (pr.status === 409 && j.error === "already_confirmed") {
+    return { ok: true, alreadyConfirmed: true };
+  }
+  if (pr.status === 409 && j.error === "session_mismatch" && j.serverSessionId) {
+    return { ok: false, message: `세션 불일치(서버: ${j.serverSessionId})` };
+  }
+  if (pr.status === 409 && j.error === "bad_phase") {
+    return { ok: false, message: `단계 불일치(${String(j.phase || "unknown")}) — 수동 결과 적용(LANDED) 후 다시 시도` };
+  }
+  return { ok: false, message: j.error || `pending_${pr.status}` };
+}
+
 export default function AdminSigSalesPage() {
   const router = useRouter();
   const [initialView, setInitialView] = useState<"manual" | "default">("default");
@@ -1521,21 +1552,45 @@ export default function AdminSigSalesPage() {
       confetti({ particleCount: 110, spread: 80, origin: { y: 0.22 } });
       return;
     }
-    markConfirmPending();
-    try {
-      const pr = await fetch(`/api/roulette/pending?user=${encodeURIComponent(userId)}`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: effectiveSessionId }),
+    const landedSyncState: AppState = {
+      ...state,
+      rouletteState: {
+        ...state.rouletteState,
+        phase: "LANDED",
+        isRolling: false,
+        sessionId: effectiveSessionId,
+        startedAt: state.rouletteState?.startedAt || machine.startedAt || Date.now(),
+        selectedSigs: displaySelectedSigs,
+        results: displaySelectedSigs,
+        result: displaySelectedSigs[displaySelectedSigs.length - 1] || state.rouletteState?.result || null,
+        oneShotResult: displayOneShot ?? state.rouletteState?.oneShotResult ?? null,
+      },
+      updatedAt: Date.now(),
+    };
+    const landedSaved = await saveStateAsync(landedSyncState, userId);
+    if (landedSaved.ok) {
+      setState(landedSyncState);
+      landed(displaySelectedSigs, displayOneShot, displaySelectedSigs[displaySelectedSigs.length - 1]?.id || null, {
+        sessionId: effectiveSessionId,
+        startedAt: landedSyncState.rouletteState?.startedAt,
       });
-      if (!pr.ok) {
-        throw new Error("pending_failed");
+    }
+
+    markConfirmPending();
+    let pendingResult = await postRoulettePending(userId, effectiveSessionId);
+    if (!pendingResult.ok && pendingResult.message.includes("세션 불일치")) {
+      await loadRemote();
+      const remoteSid = String(
+        (await loadStateFromApi(userId))?.rouletteState?.sessionId || effectiveSessionId
+      ).trim();
+      if (remoteSid) {
+        pendingResult = await postRoulettePending(userId, remoteSid);
       }
-    } catch {
+    }
+    if (!pendingResult.ok) {
       setError("판매 확정 준비 실패");
       cancelConfirm();
-      setToast("판매 확정 준비 실패");
+      setToast(`판매 확정 준비 실패: ${pendingResult.message}`);
       return;
     }
     const soldSigIdsForFinish = collectSoldSigIdsForFinish(displaySelectedSigs, manualSoldSet);
@@ -1560,6 +1615,7 @@ export default function AdminSigSalesPage() {
       if (!markSold) return item;
       const maxCount = Math.max(1, Math.floor(Number(item.maxCount || 1)));
       const soldCount = Math.max(0, Math.floor(Number(item.soldCount || 0)));
+      if (soldCount >= maxCount) return item;
       const nextSold = Math.min(maxCount, soldCount + 1);
       soldAppliedNames.push(String(item.name || item.id || "").trim() || item.id);
       return {
@@ -1589,10 +1645,11 @@ export default function AdminSigSalesPage() {
         oneShotInventorySold: Boolean(oneShotSold || manualOneShotMarkSold),
         finalPhase: "CONFIRMED",
       });
-    } catch {
+    } catch (e) {
       setError("판매 확정 처리 실패");
       cancelConfirm();
-      setToast("판매 확정 처리 실패");
+      const detail = e instanceof Error ? e.message : String(e);
+      setToast(detail === "finish_failed" ? "판매 확정 API 실패 — 잠시 후 다시 시도" : `판매 확정 처리 실패: ${detail}`);
       return;
     }
     const finishedAt = Date.now();
@@ -1638,12 +1695,14 @@ export default function AdminSigSalesPage() {
     state,
     displaySelectedSigs,
     machine.sessionId,
+    machine.startedAt,
     manualOneShotMarkSold,
     oneShotSold,
     displayOneShot,
     manualSoldSet,
     userId,
     finish,
+    landed,
     markConfirmPending,
     setError,
     cancelConfirm,
