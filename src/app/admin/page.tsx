@@ -83,6 +83,7 @@ import {
   terminateSharedSigOcrWorker,
 } from "@/lib/sig-image-ocr";
 import { planSigBulkReupload } from "@/lib/sig-image-bulk";
+import { formatSigImageUploadFailureMessage, SIG_UPLOAD_NGINX_413_HINT } from "@/lib/sig-upload-errors";
 import { applySigPriceExcelRows, sigInventoryToExcelRows } from "@/lib/sig-inventory-excel";
 import { repairDiskUploadSigImagePath } from "@/lib/sig-image-mode";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
@@ -2683,24 +2684,10 @@ export default function AdminPage() {
     };
     if (!res.ok || !j.ok || !j.url) {
       const rawError = typeof j.error === "string" && j.error.trim() ? j.error.trim() : String(res.status);
-      const normalized = rawError.toLowerCase();
       const message =
-        normalized === "unauthorized" || String(res.status) === "401"
-          ? "로그인이 만료되었거나 권한이 없습니다. 새로고침 후 다시 로그인해 주세요."
-          : normalized.includes("supabase_required")
-            ? "서버에 이미지 저장 설정이 없습니다. AWS 등 자체 서버에서는 디스크 업로드가 기본입니다. 로그인 후 다시 시도해 주세요."
-            : normalized === "invalid_type"
-            ? "지원하지 않는 파일 형식입니다. GIF/PNG/JPG/WEBP 파일만 업로드할 수 있습니다."
-            : normalized === "file_too_large"
-              ? `파일 용량이 30MB를 초과합니다. (${(file.size / (1024 * 1024)).toFixed(1)}MB)`
-              : String(res.status) === "413"
-                ? `서버 업로드 한도(413)에 걸렸습니다. 파일은 ${(file.size / (1024 * 1024)).toFixed(1)}MB입니다. ` +
-                  "Nginx 기본 한도(1MB)일 수 있습니다 — EC2에서 client_max_body_size 35M 설정 후 sudo nginx -t && sudo systemctl reload nginx"
-              : normalized === "missing_file"
-                ? "업로드할 파일을 찾지 못했습니다. 파일을 다시 선택해 주세요."
-                : String(res.status).startsWith("5")
-                  ? "서버 오류로 업로드에 실패했습니다. 잠시 후 다시 시도해 주세요."
-                  : `알 수 없는 오류(${rawError})가 발생했습니다.`;
+        rawError.toLowerCase() === "file_too_large"
+          ? `파일 용량이 30MB를 초과합니다. (${(file.size / (1024 * 1024)).toFixed(1)}MB)`
+          : formatSigImageUploadFailureMessage(res.status, file.size, j.error);
       notify(`이미지 업로드 실패: ${message}`);
       if (!silent) {
         setSigExcelResult(`이미지 업로드 실패(${res.status}): ${rawError}`);
@@ -2885,8 +2872,7 @@ export default function AdminPage() {
       const failures: string[] = [];
       const pendingRows: { url: string; label: string; price: number }[] = [];
       let consecutive413 = 0;
-      const NGINX_413_HINT =
-        "서버 Nginx 업로드 한도(기본 1MB) 때문에 413 오류입니다. EC2에서 /etc/nginx/sites-available/default 의 server { } 안에 client_max_body_size 35M; 추가 후 sudo nginx -t && sudo systemctl reload nginx";
+      const NGINX_413_HINT = SIG_UPLOAD_NGINX_413_HINT;
       try {
         for (let i = 0; i < files.length; i++) {
           const f = files[i]!;

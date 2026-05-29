@@ -1677,6 +1677,11 @@ function OverlayInner() {
       .replace(/\bshadow(?:-[^\s]+)?/g, "")
       .replace(/\s+/g, " ")
       .trim();
+  const hasTableTextColorOverride = /^#[0-9a-fA-F]{3,8}$/.test(tableTextColorRaw);
+  const stripTextColor = (cls: string) =>
+    hasTableTextColorOverride
+      ? cls.replace(/\btext-[^\s]+/g, "").replace(/\s+/g, " ").trim()
+      : cls;
   // GIF 배경은 테이블/열 불투명 배경 아래에 깔리므로, GIF 사용 시에도 stripBg + 틴트 경로를 태워야 보임
   const useTableOpacity = tableBgOpacity < 100 || showTableBgGif;
   /** GIF 모드에서도 관리자 tableBgOpacity(0~100)를 그대로 반영 */
@@ -1689,9 +1694,9 @@ function OverlayInner() {
   const effectiveTableCls = stripBg(membersTheme.tableCls);
   // Strip row backgrounds for tinted/GIF sheet; keep header & total bar colors when shown.
   // 행 사이 가로 구분선은 헤더(테두리 없음)와 일관성을 위해 제거 → 순위 없음(—) 행 위·아래가 동일하게 보임.
-  const effectiveRowCls = stripBorder(stripBg(membersTheme.rowCls));
+  const effectiveRowCls = stripBorder(stripBg(stripTextColor(membersTheme.rowCls)));
   /** 멤버 표 thead: 테마별 색 띠·테두리 없이 텍스트만 (방송 오버레이용) */
-  const effectiveHeaderCls = stripBorder(stripBg(membersTheme.headerCls));
+  const effectiveHeaderCls = stripBorder(stripBg(stripTextColor(membersTheme.headerCls)));
   const lockWidth = (sp.get("lockWidth") || "false").toLowerCase() === "true";
   const effectiveNameGrow = lockWidth ? false : nameGrow;
   const scaledMainStyle: React.CSSProperties = {};
@@ -2778,7 +2783,6 @@ function OverlayInner() {
           font-weight: 700 !important;
           vertical-align: middle;
         }
-        .overlay-root .overlay-elegant-table tbody td.overlay-col-total { color: #fff9f0 !important; }
         ${totalLineVisible ? "" : `
         .overlay-root .overlay-elegant-table tbody td.overlay-col-total,
         .overlay-root .overlay-elegant-table th.overlay-col-total {
@@ -2787,7 +2791,6 @@ function OverlayInner() {
           outline: none !important;
         }
         `}
-        .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution { color: #fff7fa !important; }
         /* 마지막 열(기여도): 합성 환경에서 stroke로 인한 우측 1~2px 잘림 방지 */
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution {

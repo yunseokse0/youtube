@@ -69,6 +69,7 @@ import {
   terminateSharedSigOcrWorker,
 } from "@/lib/sig-image-ocr";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
+import { formatSigImageUploadFailureMessage } from "@/lib/sig-upload-errors";
 import {
   WHEEL_DEMO_MENU_COUNT,
   WHEEL_DEMO_WIN_COUNT,
@@ -1339,7 +1340,7 @@ export default function AdminSigSalesPage() {
       });
       const j = (await res.json().catch(() => ({}))) as { ok?: boolean; url?: string; error?: string };
       if (!res.ok || !j.ok || !j.url) {
-        setToast(`이미지 업로드 실패: ${String(j.error || res.status)}`);
+        setToast(`이미지 업로드 실패: ${formatSigImageUploadFailureMessage(res.status, file.size, j.error)}`);
         return null;
       }
       return String(j.url);
