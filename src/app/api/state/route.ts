@@ -2,7 +2,11 @@ export const revalidate = 0;
 
 import type { RouletteState } from "@/types";
 import type { AppState } from "@/lib/state";
-import { normalizeOverlayPresetDonationGoals } from "@/lib/goal-preset-math";
+import {
+  isDonationInitGoalResetPatch,
+  mergeOverlayPresetsPreservingEscalatedGoals,
+  normalizeOverlayPresetDonationGoals,
+} from "@/lib/goal-preset-math";
 import { defaultState, mergeDonorsForMultiTabSave, normalizeRouletteState, normalizeSigRolling } from "@/lib/state";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
 import { createModuleLogger } from "@/lib/logger";
@@ -123,7 +127,16 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
   if (!("sigInventory" in patch)) next.sigInventory = base.sigInventory;
   if (!("sigSoldOutStampUrl" in patch)) next.sigSoldOutStampUrl = base.sigSoldOutStampUrl;
   if (!("sigSalesExcludedIds" in patch)) next.sigSalesExcludedIds = base.sigSalesExcludedIds;
-  if (!("overlayPresets" in patch)) next.overlayPresets = base.overlayPresets;
+  if (!("overlayPresets" in patch)) {
+    next.overlayPresets = base.overlayPresets;
+  } else if (isDonationInitGoalResetPatch(patch)) {
+    next.overlayPresets = patch.overlayPresets as AppState["overlayPresets"];
+  } else {
+    next.overlayPresets = mergeOverlayPresetsPreservingEscalatedGoals(
+      base.overlayPresets,
+      patch.overlayPresets
+    ) as AppState["overlayPresets"];
+  }
   if (!("overlaySettings" in patch)) next.overlaySettings = base.overlaySettings;
   if (!("sigMatch" in patch)) next.sigMatch = base.sigMatch;
   if (!("sigMatchSettings" in patch)) next.sigMatchSettings = base.sigMatchSettings;

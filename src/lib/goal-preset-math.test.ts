@@ -6,6 +6,7 @@ import {
   isDonationGoalAutoEscalateEnabled,
   normalizeOverlayPresetDonationGoals,
   nextGoalTenPercentIncrease,
+  mergeOverlayPresetsPreservingEscalatedGoals,
   resetOverlayPresetsGoalForDonationInit,
   unwindGoalForDonationReset,
 } from "./goal-preset-math";
@@ -57,6 +58,15 @@ describe("unwindGoalForDonationReset", () => {
     g = nextGoalTenPercentIncrease(g);
     g = nextGoalTenPercentIncrease(g);
     expect(unwindGoalForDonationReset(g, 2)).toBe(2_000_000);
+  });
+});
+
+describe("mergeOverlayPresetsPreservingEscalatedGoals", () => {
+  it("서버 4M·클라이언트 2M 저장 시 4M 유지", () => {
+    const base = [{ id: "a", showGoal: true, goal: "4000000", goalBaseline: "2000000" }];
+    const patch = [{ id: "a", showGoal: true, goal: "2000000", goalBaseline: "2000000" }];
+    const out = mergeOverlayPresetsPreservingEscalatedGoals(base, patch) as { goal: string }[];
+    expect(out[0]!.goal).toBe("4000000");
   });
 });
 

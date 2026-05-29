@@ -108,3 +108,65 @@ export function resetOverlayPresetsGoalForDonationInit(presets: unknown[] | unde
     return { ...p, goal: String(baselineRaw) };
   });
 }
+
+/** 후원·멤버 초기화 패치 — 이때만 서버가 goal 을 기준선(200만)으로 되돌릴 수 있음 */
+export function isDonationInitGoalResetPatch(patch: {
+  donors?: unknown;
+  members?: Array<{ account?: number; toon?: number }>;
+  overlayPresets?: unknown;
+}): boolean {
+  if (!Array.isArray(patch.donors) || patch.donors.length > 0) return false;
+  if (!Array.isArray(patch.members)) return false;
+  const membersZeroed = patch.members.every(
+    (m) => Math.max(0, Math.floor(Number(m?.account || 0))) === 0 && Math.max(0, Math.floor(Number(m?.toon || 0))) === 0
+  );
+  if (!membersZeroed) return false;
+  if (!Array.isArray(patch.overlayPresets)) return false;
+  return patch.overlayPresets.some((raw) => {
+    if (!raw || typeof raw !== "object") return false;
+    const p = raw as Record<string, unknown>;
+    if (!presetShowsDonationGoal(p)) return false;
+    const g = parseGoalAmount(p.goal);
+    const b = parseGoalAmount(p.goalBaseline ?? DEFAULT_DONATION_GOAL);
+    return g != null && b != null && g === b;
+  });
+}
+
+/**
+ * 오래된 관리자 탭 저장이 자동 상향된 goal(4M…)을 2M으로 덮어쓰지 않게 id별 max(goal) 병합.
+ */
+export function mergeOverlayPresetsPreservingEscalatedGoals(
+  basePresets: unknown[] | undefined,
+  patchPresets: unknown[] | undefined
+): unknown[] {
+  if (!Array.isArray(patchPresets)) return Array.isArray(basePresets) ? basePresets : [];
+  const baseById = new Map<string, Record<string, unknown>>();
+  for (const raw of basePresets || []) {
+    if (!raw || typeof raw !== "object") continue;
+    const p = raw as Record<string, unknown>;
+    const id = String(p.id || "").trim();
+    if (id) baseById.set(id, p);
+  }
+  const baselineStr = String(DEFAULT_DONATION_GOAL);
+  return patchPresets.map((raw) => {
+    if (!raw || typeof raw !== "object") return raw;
+    const p = { ...(raw as Record<string, unknown>) };
+    if (!presetShowsDonationGoal(p)) return p;
+    const id = String(p.id || "").trim();
+    const prev = id ? baseById.get(id) : undefined;
+    const patchGoal = normalizeGoalAmount(p.goal);
+    const prevGoal = prev ? normalizeGoalAmount(prev.goal) : DEFAULT_DONATION_GOAL;
+    const maxGoal = Math.max(prevGoal, patchGoal);
+    if (maxGoal > patchGoal) {
+      return {
+        ...p,
+        goal: String(maxGoal),
+        goalBaseline: String(p.goalBaseline ?? prev?.goalBaseline ?? baselineStr),
+      };
+    }
+    if (!String(p.goalBaseline ?? "").trim()) {
+      p.goalBaseline = String(prev?.goalBaseline ?? baselineStr);
+    }
+    return p;
+  });
+}
