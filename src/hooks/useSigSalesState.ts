@@ -12,6 +12,7 @@ const SALES_PHASE_RANK: Record<SalesPhase, number> = {
   LANDED: 2,
   CONFIRM_PENDING: 3,
   CONFIRMED: 4,
+  CANCELLED: 5,
 };
 
 function salesPhaseRank(phase: SalesPhase | undefined): number {

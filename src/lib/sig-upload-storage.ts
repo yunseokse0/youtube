@@ -25,9 +25,9 @@ function createSupabaseAdmin(): SupabaseClient | null {
 }
 
 /**
- * EC2·자체 서버: `git pull` / `npm run build` 후에도 업로드가 남도록 프로젝트 밖 경로.
- * `SIG_UPLOADS_DATA_DIR` — 그 안에 `uploads/sigs/<계정>/` 구조로 저장 (public 과 동일).
- * 미설정 시 Linux 프로덕션( Render 제외 )은 `/var/lib/finalent` 를 추가 시도.
+ * EC2·자체 서버: git pull / npm run build 후에도 업로드가 남도록 프로젝트 밖 경로.
+ * SIG_UPLOADS_DATA_DIR — 그 안에 uploads/sigs/<계정>/ 구조로 저장 (public 과 동일).
+ * 미설정 시 Linux 프로덕션(Render 제외)은 /var/lib/finalent 를 추가 시도.
  */
 export function getSigUploadPersistentDataDir(): string | null {
   const explicit = (process.env.SIG_UPLOADS_DATA_DIR || "").trim();
@@ -51,7 +51,7 @@ export function getSigUploadPublicRoots(): string[] {
   return [...new Set(roots.map((r) => path.resolve(r)))];
 }
 
-/** `uploads/sigs/<uid>/<file>` 상대 경로 (앞의 uploads/sigs 제외) */
+/** uploads/sigs/<uid>/<file> 상대 경로 (앞의 uploads/sigs 제외) */
 export function safeSigUploadRelativePath(segments: string[]): string | null {
   const parts = segments.map((s) => decodeURIComponent(String(s || "").trim())).filter(Boolean);
   if (parts.length < 2) return null;
@@ -77,14 +77,14 @@ export async function readSigUploadFromPublicDisk(relUnderSigs: string): Promise
   return null;
 }
 
-/** Supabase `sigs/<uid>/<file>` — 디스크에 없을 때 `/uploads/sigs/...` 요청 폴백 */
+/** Supabase sigs/<uid>/<file> — 디스크에 없을 때 /uploads/sigs/... 요청 폴백 */
 export async function readSigUploadFromSupabase(relUnderSigs: string): Promise<Buffer | null> {
   const clean = path.normalize(relUnderSigs).replace(/^(\.\.(\/|\\|$))+/, "");
   if (!clean || clean.startsWith("..")) return null;
   const supabase = createSupabaseAdmin();
   const cfg = getSupabaseStorageConfig();
   if (!supabase || !cfg) return null;
-  const storagePath = `sigs/${clean.replace(/\\/g, "/")}`;
+  const storagePath = "sigs/" + clean.replace(/\\/g, "/");
   for (const bucket of cfg.buckets) {
     const { data, error } = await supabase.storage.from(bucket).download(storagePath);
     if (!error && data) {
@@ -94,7 +94,7 @@ export async function readSigUploadFromSupabase(relUnderSigs: string): Promise<B
   return null;
 }
 
-/** `uploads/images/<file>` 또는 `uploads/sigs/*/<file>` 에서 파일명만으로 검색 */
+/** uploads/images/<file> 또는 uploads/sigs 하위 모든 uid 폴더에서 파일명만으로 검색 */
 export async function readSigUploadByFileName(fileName: string): Promise<Buffer | null> {
   const base = String(fileName || "").trim();
   if (!base || base.includes("/") || base.includes("..")) return null;
@@ -134,9 +134,6 @@ export async function readSigUploadBuffer(relUnderSigs: string): Promise<Buffer 
   return readSigUploadFromSupabase(relUnderSigs);
 }
 
-/**
- * 인벤에 `/images/sigs/<timestamp>_<id>.ext` 만 저장된 레거시 — 실제 파일은 `uploads/sigs/<uid>/` 아래인 경우.
- */
 /** 디스크 업로드 직후 Supabase에도 복제 — EC2 재시작·재배포 후 디스크 유실 시 GET 폴백 */
 export async function mirrorSigUploadToSupabase(
   relUnderSigs: string,
@@ -148,7 +145,7 @@ export async function mirrorSigUploadToSupabase(
   const supabase = createSupabaseAdmin();
   const cfg = getSupabaseStorageConfig();
   if (!supabase || !cfg) return false;
-  const storagePath = `sigs/${clean.replace(/\\/g, "/")}`;
+  const storagePath = "sigs/" + clean.replace(/\\/g, "/");
   for (const bucket of cfg.buckets) {
     const { error } = await supabase.storage.from(bucket).upload(storagePath, data, {
       contentType: contentType || "application/octet-stream",
@@ -159,6 +156,9 @@ export async function mirrorSigUploadToSupabase(
   return false;
 }
 
+/**
+ * 인벤에 /images/sigs/<timestamp>_<id>.ext 만 저장된 레거시 — 실제 파일은 uploads/sigs/<uid>/ 아래인 경우.
+ */
 export async function readSigUploadBufferByFileName(fileName: string): Promise<Buffer | null> {
   const safe = path.basename(String(fileName || "").trim());
   if (!isDiskUploadFlatFileName(safe)) return null;

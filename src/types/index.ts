@@ -67,7 +67,7 @@ export type SigItem = {
 
 /** 서버가 저장하는 회전판 상태(당첨은 서버에서만 결정) */
 export type RouletteState = {
-  phase?: "IDLE" | "SPINNING" | "LANDED" | "CONFIRM_PENDING" | "CONFIRMED";
+  phase?: "IDLE" | "SPINNING" | "LANDED" | "CONFIRM_PENDING" | "CONFIRMED" | "CANCELLED";
   isRolling: boolean;
   /** 마지막(또는 단일) 스핀 당첨 — 오버레이 릴 정렬용 */
   result: SigItem | null;
