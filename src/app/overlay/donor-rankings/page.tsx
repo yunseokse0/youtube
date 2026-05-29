@@ -229,6 +229,7 @@ function RankingColumn({
   rankColor,
   nameColor,
   amountColor,
+  titleColor,
   outlineColor,
   headerOpacity,
   unified,
@@ -248,6 +249,7 @@ function RankingColumn({
   rankColor: string;
   nameColor: string;
   amountColor: string;
+  titleColor: string;
   outlineColor: string;
   headerOpacity: number;
   /** true: 단일 외곽 패널 안의 칼럼(관리자 미리보기와 동일한 한 덩어리 레이아웃) */
@@ -320,7 +322,7 @@ function RankingColumn({
         className="relative overflow-hidden px-4 py-3 font-black border-b text-center"
         style={{
           borderColor: "rgba(255, 232, 244, 0.55)",
-          color: "#fff7fb",
+          color: titleColor,
           fontSize: `${titleSize}px`,
           ...outlined,
         }}
@@ -390,6 +392,7 @@ export default function DonorRankingsOverlayPage() {
   const rankColor = readColor(sp, "rankColor", savedTheme.rankColor) || "#fff5f9";
   const nameColor = readColor(sp, "nameColor", savedTheme.nameColor) || "#fff7fb";
   const amountColor = readColor(sp, "amountColor", savedTheme.amountColor) || "#fff7ed";
+  const titleColor = readColor(sp, "titleColor", savedTheme.titleColor) || "#fff7fb";
   const outlineColor = readColor(sp, "outline", savedTheme.outlineColor) || "rgba(58, 6, 28, 0.85)";
   const showBgLayer = overlayCfg.isBgEnabled && Boolean(overlayCfg.bgGifUrl.trim());
   const bgAnimated = useMemo(() => resolveAnimatedSourceForEmbed(overlayCfg.bgGifUrl), [overlayCfg.bgGifUrl]);
@@ -487,6 +490,7 @@ export default function DonorRankingsOverlayPage() {
               rankColor={rankColor}
               nameColor={nameColor}
               amountColor={amountColor}
+              titleColor={titleColor}
               outlineColor={outlineColor}
               headerOpacity={overlayOpacity}
               unified
@@ -507,6 +511,7 @@ export default function DonorRankingsOverlayPage() {
               rankColor={rankColor}
               nameColor={nameColor}
               amountColor={amountColor}
+              titleColor={titleColor}
               outlineColor={outlineColor}
               headerOpacity={overlayOpacity}
               unified
@@ -534,6 +539,7 @@ export default function DonorRankingsOverlayPage() {
               rankColor={rankColor}
               nameColor={nameColor}
               amountColor={amountColor}
+              titleColor={titleColor}
               outlineColor={outlineColor}
               headerOpacity={overlayOpacity}
               unified

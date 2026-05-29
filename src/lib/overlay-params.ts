@@ -1,4 +1,4 @@
-import type { SigItem } from "@/types";
+import type { DonorRankingsTheme, SigItem } from "@/types";
 
 /** 프리셋 → URL 쿼리 변환. OBS 등 별도 컨텍스트에서 API 없이 동작하도록 URL에 설정 포함 */
 export type OverlayPresetLike = {
@@ -51,6 +51,8 @@ export type OverlayPresetLike = {
   goalCurrent?: string;
   goalOpacity?: string;
   goalOpacityText?: boolean;
+  goalTextColor?: string;
+  goalFontSize?: string;
   showPersonalGoal?: boolean;
   personalGoalTheme?: string;
   personalGoalAnchor?: string;
@@ -176,6 +178,7 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
     if (preset.goalCurrent && preset.goalCurrent.trim()) q.set("goalCurrent", preset.goalCurrent.trim());
     if (preset.goalOpacity && preset.goalOpacity.trim()) q.set("goalOpacity", preset.goalOpacity.trim());
     if (preset.goalOpacityText) q.set("goalOpacityText", "true");
+    appendGoalBarStyleParams(q, preset);
   }
   if (preset.showPersonalGoal) q.set("showPersonalGoal", "true");
   if (preset.personalGoalTheme && preset.personalGoalTheme.trim()) q.set("personalGoalTheme", preset.personalGoalTheme.trim());
@@ -261,6 +264,38 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
 
 /** OBS·Prism URL에 넣을 프리셋 시각 파라미터(goal·goalCurrent 제외 — 목표는 /api/state 동기) */
 const PRESET_BROADCAST_SKIP_KEYS = new Set(["goal", "goalCurrent"]);
+
+/** 후원 목표 막대 글자색·폰트(px) — OBS URL·프리셋 공통 */
+export function appendGoalBarStyleParams(target: URLSearchParams, preset: OverlayPresetLike): void {
+  const goalTextColor = (preset.goalTextColor || "").trim();
+  if (/^#[0-9a-fA-F]{3,8}$/.test(goalTextColor)) target.set("goalTextColor", goalTextColor);
+  const goalFontRaw = (preset.goalFontSize || "").trim();
+  if (goalFontRaw) {
+    const gfs = Math.max(10, Math.min(48, parseInt(goalFontRaw, 10) || 0));
+    if (gfs > 0) target.set("goalFontSize", String(gfs));
+  }
+}
+
+/** 후원순위 OBS URL에 테마·폰트 크기 반영(관리자 저장값과 동일하게) */
+export function donorRankingsThemeToSearchParams(theme: DonorRankingsTheme): URLSearchParams {
+  const q = new URLSearchParams();
+  q.set("top", String(theme.top));
+  q.set("titleSize", String(theme.titleSize));
+  q.set("rowSize", String(theme.rowSize));
+  q.set("rankSize", String(theme.rankSize));
+  q.set("overlayOpacity", String(theme.overlayOpacity));
+  if (theme.bg.trim()) q.set("bg", theme.bg.trim());
+  if (theme.panelBg.trim()) q.set("panelBg", theme.panelBg.trim());
+  if (theme.borderColor.trim()) q.set("border", theme.borderColor.trim());
+  if (theme.headerAccountBg.trim()) q.set("headerAccountBg", theme.headerAccountBg.trim());
+  if (theme.headerToonBg.trim()) q.set("headerToonBg", theme.headerToonBg.trim());
+  if (theme.rankColor.trim()) q.set("rankColor", theme.rankColor.trim());
+  if (theme.nameColor.trim()) q.set("nameColor", theme.nameColor.trim());
+  if (theme.amountColor.trim()) q.set("amountColor", theme.amountColor.trim());
+  if (theme.titleColor.trim()) q.set("titleColor", theme.titleColor.trim());
+  if (theme.outlineColor.trim()) q.set("outline", theme.outlineColor.trim());
+  return q;
+}
 
 export function mergePresetBroadcastVisualParams(
   target: URLSearchParams,

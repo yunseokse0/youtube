@@ -373,6 +373,7 @@ const DEFAULT_DONOR_RANKINGS_THEME: DonorRankingsTheme = {
   rankColor: "#F06292",
   nameColor: "#ffffff",
   amountColor: "#fff59d",
+  titleColor: "#fff7fb",
   outlineColor: "rgba(0,0,0,0.92)",
 };
 
@@ -403,6 +404,7 @@ function normalizeDonorRankingsTheme(input: unknown): DonorRankingsTheme {
     rankColor: s(v.rankColor, DEFAULT_DONOR_RANKINGS_THEME.rankColor),
     nameColor: s(v.nameColor, DEFAULT_DONOR_RANKINGS_THEME.nameColor),
     amountColor: s(v.amountColor, DEFAULT_DONOR_RANKINGS_THEME.amountColor),
+    titleColor: s(v.titleColor, DEFAULT_DONOR_RANKINGS_THEME.titleColor),
     outlineColor: s(v.outlineColor, DEFAULT_DONOR_RANKINGS_THEME.outlineColor),
   };
 }

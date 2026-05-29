@@ -290,6 +290,8 @@ export type DonorRankingsTheme = {
   rankColor: string;
   nameColor: string;
   amountColor: string;
+  /** 칼럼 제목(헤더) 글자색 */
+  titleColor: string;
   outlineColor: string;
 };
 

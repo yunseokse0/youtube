@@ -42,6 +42,14 @@ type LocalSigSortMode = "priceAsc" | "nameAsc";
 type LocalSigViewMode = "capture" | "compact";
 type LocalSigOverride = { name: string; price: number };
 
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(String(value || ""));
+  } catch {
+    return String(value || "");
+  }
+}
+
 function parseSigPriceInput(raw: string): number {
   const src = String(raw || "")
     .trim()
@@ -191,7 +199,7 @@ function AddSigModal({
       name: n,
       price: p,
       category: "",
-      file: decodeURIComponent(file),
+      file: safeDecodeURIComponent(file),
       imageUrl: url || `/images/sigs/from-drive/${encodeURIComponent(`${n}.gif`)}`,
       priceSource: "local",
     });

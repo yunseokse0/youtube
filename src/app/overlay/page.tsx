@@ -1611,6 +1611,26 @@ function OverlayInner() {
     if (rawPreset === "false") return false;
     return false;
   })();
+  const goalTextColor = (() => {
+    const rawUrl = (sp.get("goalTextColor") || "").trim();
+    if (/^#[0-9a-fA-F]{3,8}$/.test(rawUrl)) return rawUrl;
+    const rawPreset = String((activePreset as any)?.goalTextColor || "").trim();
+    if (/^#[0-9a-fA-F]{3,8}$/.test(rawPreset)) return rawPreset;
+    return "#fff7fb";
+  })();
+  const goalFontSizePx = (() => {
+    const rawUrl = (sp.get("goalFontSize") || "").trim();
+    if (rawUrl) {
+      const n = parseInt(rawUrl, 10);
+      if (Number.isFinite(n) && n > 0) return Math.max(10, Math.min(48, n));
+    }
+    const rawPreset = String((activePreset as any)?.goalFontSize || "").trim();
+    if (rawPreset) {
+      const n = parseInt(rawPreset, 10);
+      if (Number.isFinite(n) && n > 0) return Math.max(10, Math.min(48, n));
+    }
+    return undefined;
+  })();
   const donationListsCfg = normalizeDonationListsOverlayConfig(s?.donationListsOverlayConfig);
   const tableBgGifUrl = (
     (sp.get("tableBgGifUrl") || "").trim() ||
@@ -3133,6 +3153,8 @@ function OverlayInner() {
               width={goalWidth}
               opacityPercent={goalOpacity}
               opacityAffectsText={goalOpacityAffectsText}
+              textColor={goalTextColor}
+              fontSizePx={goalFontSizePx}
               amountFormat={donorsFormat}
               locale={currencyLocale}
             />

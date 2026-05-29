@@ -72,6 +72,8 @@ import {
   appendAdminPreviewEmbedToOverlayUrl,
   presetToParams,
   mergePresetBroadcastVisualParams,
+  appendGoalBarStyleParams,
+  donorRankingsThemeToSearchParams,
   sanitizeBroadcastOverlayUrl,
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
@@ -119,7 +121,7 @@ type OverlayPreset = {
   showGoal: boolean; goal: string;
   /** 후원 초기화 시 복원할 목표(수동 저장·첫 자동 상향 직전 스냅샷). 없으면 초기화 시 goal 숫자 유지 */
   goalBaseline?: string;
-  goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string; goalOpacity?: string; goalOpacityText?: boolean;
+  goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string; goalOpacity?: string; goalOpacityText?: boolean; goalTextColor?: string; goalFontSize?: string;
   showPersonalGoal?: boolean; personalGoalTheme?: string; personalGoalAnchor?: string; personalGoalLimit?: string; personalGoalFree?: boolean; personalGoalX?: string; personalGoalY?: string;
   tickerInMembers?: boolean; tickerInGoal?: boolean; tickerInPersonalGoal?: boolean;
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
@@ -1117,6 +1119,7 @@ export default function AdminPage() {
       if (p.goalOpacityText) {
         goalOnly.searchParams.set("goalOpacityText", "true");
       }
+      appendGoalBarStyleParams(goalOnly.searchParams, p);
       return goalOnly.toString();
     }
     const base = `${window.location.origin}/overlay`;
@@ -1148,6 +1151,7 @@ export default function AdminPage() {
       if (p.goalOpacityText) {
         q.set("goalOpacityText", "true");
       }
+      appendGoalBarStyleParams(q, p);
     }
     mergePresetBroadcastVisualParams(q, p);
     return `${base}?${q.toString()}`;
@@ -1198,6 +1202,7 @@ export default function AdminPage() {
       if (p.goalOpacityText) {
         goalOnly.searchParams.set("goalOpacityText", "true");
       }
+      appendGoalBarStyleParams(goalOnly.searchParams, p);
       if (String(p.goalCurrent || "").trim()) {
         goalOnly.searchParams.set("goalCurrent", String(Math.max(0, parseInt(String(p.goalCurrent), 10) || 0)));
       }
@@ -1394,7 +1399,8 @@ export default function AdminPage() {
   };
   const buildDonorRankingsUrl = (opts?: { test?: boolean }): string => {
     if (typeof window === "undefined") return "";
-    const q = new URLSearchParams();
+    const theme = state.donorRankingsTheme || defaultState().donorRankingsTheme;
+    const q = donorRankingsThemeToSearchParams(theme);
     q.set("u", user?.id || "finalent");
     q.set("zoomPct", String(getDonorRankingsZoomPct()));
     if (opts?.test) q.set("test", "true");
@@ -5562,6 +5568,7 @@ export default function AdminPage() {
                       {[
                         ["headerAccountBg", "순위 헤더(통합)"],
                         ["headerToonBg", "투네 헤더(dual만)"],
+                        ["titleColor", "제목 색"],
                         ["rankColor", "순위 색"],
                         ["nameColor", "닉네임 색"],
                         ["amountColor", "금액 색"],
@@ -9109,6 +9116,47 @@ export default function AdminPage() {
                                           />
                                           체크 시 텍스트/외곽선도 함께 투명화
                                         </label>
+                                        <label className="text-xs text-neutral-400">글자색</label>
+                                        <div className="flex items-center gap-2">
+                                          <input
+                                            type="color"
+                                            value={toColorPickerValue(p.goalTextColor || "#fff7fb", "#fff7fb")}
+                                            onChange={(e) => updatePreset(p.id, { goalTextColor: e.target.value })}
+                                            className="h-8 w-10 rounded border border-white/20 bg-transparent p-0.5"
+                                          />
+                                          <input
+                                            className="flex-1 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm font-mono"
+                                            value={p.goalTextColor || ""}
+                                            onChange={(e) => updatePreset(p.id, { goalTextColor: e.target.value })}
+                                            placeholder="#fff7fb (비우면 기본)"
+                                          />
+                                        </div>
+                                        <label className="text-xs text-neutral-400">글자 크기(px)</label>
+                                        <div className="flex items-center gap-2">
+                                          <input
+                                            type="range"
+                                            min="10"
+                                            max="48"
+                                            value={(() => {
+                                              const n = parseInt(String(p.goalFontSize || ""), 10);
+                                              return Number.isFinite(n) && n >= 10 ? Math.min(48, n) : 14;
+                                            })()}
+                                            onChange={(e) => updatePreset(p.id, { goalFontSize: e.target.value })}
+                                            className="flex-1 accent-fuchsia-500"
+                                          />
+                                          <input
+                                            className="w-14 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                                            type="number"
+                                            min="10"
+                                            max="48"
+                                            value={p.goalFontSize || ""}
+                                            onChange={(e) => updatePreset(p.id, { goalFontSize: e.target.value.replace(/[^\d]/g, "").slice(0, 2) })}
+                                            placeholder="자동"
+                                          />
+                                        </div>
+                                        <p className="col-span-1 sm:col-span-2 text-[10px] text-neutral-500">
+                                          글자 크기를 비우면 막대 너비에 맞춰 자동 조절됩니다.
+                                        </p>
                                       </div>
                                     </details>
                                   </div>

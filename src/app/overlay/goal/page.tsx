@@ -77,6 +77,27 @@ export default function GoalOverlayPage() {
     if (rawPreset === "false") return false;
     return false;
   }, [sp, activePreset]);
+  const goalTextColor = useMemo(() => {
+    const fromUrl = (sp.get("goalTextColor") || "").trim();
+    if (/^#[0-9a-fA-F]{3,8}$/.test(fromUrl)) return fromUrl;
+    const fromPreset = String((activePreset as any)?.goalTextColor || "").trim();
+    if (/^#[0-9a-fA-F]{3,8}$/.test(fromPreset)) return fromPreset;
+    return "#fff7fb";
+  }, [sp, activePreset]);
+  const goalFontSizePx = useMemo(() => {
+    const parse = (raw: string) => {
+      const n = parseInt(raw, 10);
+      return Number.isFinite(n) && n > 0 ? Math.max(10, Math.min(48, n)) : undefined;
+    };
+    const fromUrl = (sp.get("goalFontSize") || "").trim();
+    if (fromUrl) {
+      const n = parse(fromUrl);
+      if (n != null) return n;
+    }
+    const fromPreset = String((activePreset as any)?.goalFontSize || "").trim();
+    if (fromPreset) return parse(fromPreset);
+    return undefined;
+  }, [sp, activePreset]);
 
   const totalCombined = useMemo(
     () => (state?.members || []).reduce((sum, m) => sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)), 0),
@@ -110,6 +131,8 @@ export default function GoalOverlayPage() {
               width={width}
               opacityPercent={goalOpacity}
               opacityAffectsText={goalOpacityAffectsText}
+              textColor={goalTextColor}
+              fontSizePx={goalFontSizePx}
               amountFormat={amountFormat}
               locale={currencyLocale}
             />

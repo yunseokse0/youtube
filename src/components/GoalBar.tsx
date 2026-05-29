@@ -39,6 +39,8 @@ export function GoalBar({
   compactLabel = false,
   opacityPercent = 100,
   opacityAffectsText = false,
+  textColor = "#fff7fb",
+  fontSizePx,
   amountFormat = "short",
   locale = "ko-KR",
 }: {
@@ -49,6 +51,9 @@ export function GoalBar({
   compactLabel?: boolean;
   opacityPercent?: number;
   opacityAffectsText?: boolean;
+  textColor?: string;
+  /** 지정 시 막대 너비 비례 자동 크기 대신 px 고정 */
+  fontSizePx?: number;
   /** `short` = 만원 축약, `full` = 입력한 원 그대로(쉼표만) */
   amountFormat?: "full" | "short";
   locale?: string;
@@ -73,6 +78,12 @@ export function GoalBar({
   const fillOpacity = Math.max(0, Math.min(100, opacityPercent)) / 100;
   const containerOpacity = opacityAffectsText ? fillOpacity : 1;
   const barFillOpacity = opacityAffectsText ? 1 : fillOpacity;
+  const textFontPx = (() => {
+    if (fontSizePx != null && Number.isFinite(fontSizePx) && fontSizePx > 0) {
+      return Math.max(10, Math.min(48, Math.round(fontSizePx)));
+    }
+    return Math.max(12, Math.round(width * 0.028));
+  })();
   const ambientPulse = "goalbar-ambient-pulse 4.8s ease-in-out infinite";
   const ambientSweep = "goalbar-ambient-sweep 5.2s linear infinite";
   const goalTextOutline =
@@ -104,11 +115,11 @@ export function GoalBar({
             animation: ambientSweep,
           }}
         />
-        <div className="absolute inset-0 flex items-center justify-between px-2" style={{ fontSize: Math.max(12, width * 0.028), letterSpacing: "-0.01em" }}>
+        <div className="absolute inset-0 flex items-center justify-between px-2" style={{ fontSize: textFontPx, letterSpacing: "-0.01em" }}>
           <span
             className="inline-flex items-center"
             style={{
-              color: "#fff7fb",
+              color: textColor,
               fontWeight: 900,
               textShadow: goalTextOutline,
               lineHeight: 1,
@@ -116,10 +127,10 @@ export function GoalBar({
           >
             {normalizedLabel}
           </span>
-          <span style={{ color: "#fff7fb", fontWeight: 700, textShadow: goalTextOutline, lineHeight: 1 }}>
+          <span style={{ color: textColor, fontWeight: 700, textShadow: goalTextOutline, lineHeight: 1 }}>
             {compactLabel ? "후원 " : ""}
             {formatAmount(current)} / {formatAmount(goal)}{" "}
-            <span style={{ color: pct <= 0 ? "#e5e7eb" : "#fff7fb" }}>({displayPct}%)</span>
+            <span style={{ color: pct <= 0 ? "#e5e7eb" : textColor }}>({displayPct}%)</span>
           </span>
         </div>
       </div>
