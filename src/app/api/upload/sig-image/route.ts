@@ -165,13 +165,18 @@ export async function POST(req: Request) {
     const contentType = String(file.type || "application/octet-stream");
     const supabaseConfig = getSupabaseStorageConfig();
 
+    const skipMirror =
+      new URL(req.url).searchParams.get("skipMirror") === "1" ||
+      req.headers.get("x-sig-upload-skip-mirror") === "1";
+
     if (shouldUseDiskSigUpload()) {
       const url = await writeSigImageToPublicUploads(safeUid, fileName, data);
-      const mirrored = await mirrorSigUploadToSupabase(
-        `${safeUid}/${fileName}`,
-        data,
-        contentType
-      );
+      let mirrored = false;
+      if (!skipMirror) {
+        mirrored = await mirrorSigUploadToSupabase(`${safeUid}/${fileName}`, data, contentType);
+      } else {
+        void mirrorSigUploadToSupabase(`${safeUid}/${fileName}`, data, contentType).catch(() => {});
+      }
       return Response.json(
         {
           ok: true,
@@ -236,7 +241,12 @@ export async function POST(req: Request) {
     }
 
     const url = await writeSigImageToPublicUploads(safeUid, fileName, data);
-    const mirrored = await mirrorSigUploadToSupabase(`${safeUid}/${fileName}`, data, contentType);
+    let mirrored = false;
+    if (!skipMirror) {
+      mirrored = await mirrorSigUploadToSupabase(`${safeUid}/${fileName}`, data, contentType);
+    } else {
+      void mirrorSigUploadToSupabase(`${safeUid}/${fileName}`, data, contentType).catch(() => {});
+    }
     return Response.json(
       {
         ok: true,

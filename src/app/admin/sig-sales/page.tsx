@@ -63,11 +63,6 @@ import {
   wheelSliceMatchesServerWinner,
 } from "@/lib/sig-roulette";
 import { useSigSalesState } from "@/hooks/useSigSalesState";
-import {
-  detectSigPriceFromImageUrlDetailed,
-  prewarmSigOcrWorker,
-  terminateSharedSigOcrWorker,
-} from "@/lib/sig-image-ocr";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 import { formatSigImageUploadFailureMessage } from "@/lib/sig-upload-errors";
 import {
@@ -235,9 +230,6 @@ export default function AdminSigSalesPage() {
   const [lastConfirmedText, setLastConfirmedText] = useState("");
   const [lastConfirmedFxKey, setLastConfirmedFxKey] = useState(0);
   const [oneShotReveal, setOneShotReveal] = useState(false);
-  const [ocrBusyIds, setOcrBusyIds] = useState<Record<string, boolean>>({});
-  const [ocrAllBusy, setOcrAllBusy] = useState(false);
-  const [ocrBatchProgress, setOcrBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [sigSalesSigRowOpen, setSigSalesSigRowOpen] = useState<Record<string, boolean>>({});
   const [resultsPanelCollapsed, setResultsPanelCollapsed] = useState(false);
   const [overlayObsUrl, setOverlayObsUrl] = useState("");
@@ -1961,97 +1953,6 @@ export default function AdminSigSalesPage() {
     [manualSigSoldFlags, buildSoldSetFromFlags, state, pushLiveRoundToServer]
   );
 
-  const runOcrForItem = useCallback(async (item: SigItem) => {
-    const src = String(item.imageUrl || "").trim();
-    if (!src) {
-      setToast(`OCR 실패: ${item.name} 이미지 URL이 비어있습니다.`);
-      return;
-    }
-    setOcrBusyIds((prev) => ({ ...prev, [item.id]: true }));
-    try {
-      const detail = await detectSigPriceFromImageUrlDetailed(src, { sigName: item.name || item.id });
-      if (detail.price == null) {
-        if (detail.reason === "unsupported_browser") {
-          setToast(`OCR 실행 불가: 브라우저에서만 사용할 수 있습니다. (${item.name})`);
-        } else if (detail.reason === "image_not_found") {
-          setToast(`OCR 실패: 이미지 없음(404). 다시 업로드하거나 유효한 이미지 URL로 변경하세요. (${item.name})`);
-        } else if (detail.reason === "image_load_failed") {
-          setToast(`OCR 실패: 이미지를 불러오지 못했습니다(CORS·네트워크). (${item.name})`);
-        } else {
-          setToast(
-            `OCR 실패: 금액을 찾지 못했습니다. (${item.name})${detail.previewText ? ` 감지: ${detail.previewText}` : ""}`
-          );
-        }
-        return;
-      }
-      await persistInventoryPatch((prev) => ({
-        ...prev,
-        sigInventory: (prev.sigInventory || []).map((x) => (x.id === item.id ? { ...x, price: detail.price! } : x)),
-        updatedAt: Date.now(),
-      }));
-      setToast(`OCR 적용: ${item.name} ${detail.price.toLocaleString("ko-KR")}원`);
-    } finally {
-      setOcrBusyIds((prev) => ({ ...prev, [item.id]: false }));
-    }
-  }, [persistInventoryPatch]);
-
-  const runOcrForAll = useCallback(async () => {
-    if (ocrAllBusy || !state) return;
-    const targets = (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID && String(x.imageUrl || "").trim());
-    if (!targets.length) {
-      setToast("OCR 대상 시그가 없습니다.");
-      return;
-    }
-    setOcrAllBusy(true);
-    setToast(`OCR 일괄 준비 중… (총 ${targets.length}건, 워커 로드)`);
-    const priceById = new Map<string, number>();
-    try {
-      await prewarmSigOcrWorker();
-      for (let i = 0; i < targets.length; i++) {
-        const item = targets[i];
-        setOcrBatchProgress({ current: i + 1, total: targets.length });
-        setToast(`OCR 일괄 진행: ${i + 1}/${targets.length}${item.name ? ` · ${item.name}` : ""}`);
-        setOcrBusyIds((prev) => ({ ...prev, [item.id]: true }));
-        try {
-          const detail = await detectSigPriceFromImageUrlDetailed(String(item.imageUrl || "").trim(), {
-            sigName: item.name,
-          });
-          if (detail.price != null) {
-            priceById.set(item.id, detail.price);
-            const pr = detail.price;
-            await persistInventoryPatch((prev) => ({
-              ...prev,
-              sigInventory: (prev.sigInventory || []).map((x) =>
-                x.id === item.id ? { ...x, price: pr } : x
-              ),
-              updatedAt: Date.now(),
-            }));
-          }
-          await new Promise((r) => setTimeout(r, 16));
-        } finally {
-          setOcrBusyIds((prev) => ({ ...prev, [item.id]: false }));
-        }
-      }
-      const ok = priceById.size;
-      const fail = targets.length - ok;
-      if (ok > 0) {
-        await persistInventoryPatch((prev) => ({
-          ...prev,
-          sigInventory: (prev.sigInventory || []).map((x) => {
-            const pr = priceById.get(x.id);
-            return pr != null ? { ...x, price: pr } : x;
-          }),
-          updatedAt: Date.now(),
-        }));
-      }
-      setToast(`OCR 일괄 완료: 성공 ${ok}건 / 실패 ${fail}건`);
-    } finally {
-      await terminateSharedSigOcrWorker();
-      setOcrBatchProgress(null);
-      setOcrAllBusy(false);
-    }
-  }, [ocrAllBusy, state, persistInventoryPatch]);
-
   const dedupeSigInventoryItems = useCallback(
     (strategy: "imageUrl" | "nameAndPrice") => {
       const label = strategy === "imageUrl" ? "이미지 URL 또는 이름" : "이름+가격";
@@ -2866,22 +2767,11 @@ export default function AdminSigSalesPage() {
         </section>
         <section className="rounded-xl border border-white/10 bg-black/35 p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-bold text-neutral-200">시그 관리 (멤버 지정 / OCR)</h2>
-            <button
-              type="button"
-              onClick={() => void runOcrForAll()}
-              disabled={ocrAllBusy}
-              className="rounded bg-violet-700 px-3 py-1.5 text-xs font-bold hover:bg-violet-600 disabled:opacity-50"
-            >
-              {ocrAllBusy && ocrBatchProgress
-                ? `OCR 처리 중 ${ocrBatchProgress.current}/${ocrBatchProgress.total}`
-                : "금액 OCR 전체 적용"}
-            </button>
+            <h2 className="text-sm font-bold text-neutral-200">시그 관리 (멤버 지정)</h2>
             <button
               type="button"
               title="같은 이미지 URL(경로 기준) 또는 같은 시그 이름은 첫 행만 유지"
               className="rounded bg-amber-900/80 px-3 py-1.5 text-xs font-bold hover:bg-amber-800 disabled:opacity-50"
-              disabled={ocrAllBusy}
               onClick={() => dedupeSigInventoryItems("imageUrl")}
             >
               중복 제거(URL·이름)
@@ -2890,7 +2780,6 @@ export default function AdminSigSalesPage() {
               type="button"
               title="같은 이름+가격은 첫 행만 유지"
               className="rounded bg-amber-900/80 px-3 py-1.5 text-xs font-bold hover:bg-amber-800 disabled:opacity-50"
-              disabled={ocrAllBusy}
               onClick={() => dedupeSigInventoryItems("nameAndPrice")}
             >
               중복 제거(이름+가격)
@@ -2943,14 +2832,6 @@ export default function AdminSigSalesPage() {
                   </button>
                   <span className="min-w-[100px] font-semibold text-neutral-100">{item.name}</span>
                   <span className="text-neutral-500">{item.price.toLocaleString("ko-KR")}원</span>
-                  <button
-                    type="button"
-                    onClick={() => void runOcrForItem(item)}
-                    disabled={Boolean(ocrBusyIds[item.id])}
-                    className="ml-auto rounded bg-violet-800 px-2 py-1 text-xs font-bold hover:bg-violet-700 disabled:opacity-50"
-                  >
-                    {ocrBusyIds[item.id] ? "OCR..." : "OCR"}
-                  </button>
                 </div>
                 {rowOpen ? (
                   <div className="flex flex-wrap items-center gap-2 px-2 py-2">

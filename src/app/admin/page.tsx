@@ -79,13 +79,8 @@ import {
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
 import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
-import {
-  detectSigPriceFromImageFile,
-  detectSigPriceFromImageUrlDetailed,
-  prewarmSigOcrWorker,
-  terminateSharedSigOcrWorker,
-} from "@/lib/sig-image-ocr";
 import { planSigBulkReupload } from "@/lib/sig-image-bulk";
+import { createSafeFilePreviewUrl, revokeSafeFilePreviewUrl } from "@/lib/safe-file-preview";
 import { formatSigImageUploadFailureMessage, SIG_UPLOAD_NGINX_413_HINT } from "@/lib/sig-upload-errors";
 import { applySigPriceExcelRows, sigInventoryToExcelRows } from "@/lib/sig-inventory-excel";
 import { repairDiskUploadSigImagePath } from "@/lib/sig-image-mode";
@@ -347,10 +342,6 @@ export default function AdminPage() {
     const invIds = new Set((state.sigInventory || []).map((x) => x.id));
     return normalizeSigRolling(state.sigRolling).items.filter((x) => !invIds.has(x.id)).length;
   }, [state.sigInventory, state.sigRolling]);
-  const [ocrBusyIds, setOcrBusyIds] = useState<Record<string, boolean>>({});
-  const [ocrAllBusy, setOcrAllBusy] = useState(false);
-  /** 일괄 OCR 진행률(현재 인덱스 / 전체) */
-  const [ocrBatchProgress, setOcrBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [sigBulkReuploadBusy, setSigBulkReuploadBusy] = useState(false);
   const [sigUploadProgress, setSigUploadProgress] = useState<SigUploadProgress | null>(null);
   const [sigSalesModalOpen, setSigSalesModalOpen] = useState(false);
@@ -388,7 +379,7 @@ export default function AdminPage() {
       setSigOcrBanner(label);
     });
   }, []);
-  /** OCR 결과 — 시그 목록 바로 위에 표시(스크롤 시에도 확인 가능) */
+  /** 시그 업로드·일괄 작업 상태(목록 위 배너) */
   const [sigOcrBanner, setSigOcrBanner] = useState("");
   const [sigPresetMemberId, setSigPresetMemberId] = useState("");
   /** 회차별 금액 범위(최소/최대). 빈칸이면 해당 회차는 금액 제한 없이 남은 시그 중 랜덤(중복 없음) */
@@ -2676,9 +2667,10 @@ export default function AdminPage() {
 
   const uploadSigImageFile = useCallback(async (
     file: File | null,
-    options?: { silent?: boolean }
+    options?: { silent?: boolean; /** 일괄 업로드: Supabase 미러 대기 생략(디스크 저장만 즉시 반환) */ skipMirror?: boolean }
   ): Promise<SigImageUploadResult> => {
     const silent = Boolean(options?.silent);
+    const skipMirror = Boolean(options?.skipMirror);
     const notify = (message: string) => {
       if (!silent) alert(message);
     };
@@ -2716,11 +2708,15 @@ export default function AdminPage() {
         q.set("user", uid);
         q.set("u", uid);
       }
+      if (skipMirror) q.set("skipMirror", "1");
       const uploadUrl = q.toString() ? `/api/upload/sig-image?${q.toString()}` : "/api/upload/sig-image";
       res = await fetch(uploadUrl, {
         method: "POST",
         credentials: "include",
-        headers: uid ? { "x-user-id": uid } : undefined,
+        headers: {
+          ...(uid ? { "x-user-id": uid } : {}),
+          ...(skipMirror ? { "x-sig-upload-skip-mirror": "1" } : {}),
+        },
         body: fd,
       });
     } catch (err) {
@@ -2763,116 +2759,6 @@ export default function AdminPage() {
     }
     return { url: j.url, status: res.status };
   }, [user?.id]);
-
-  const runOcrForSigItem = useCallback(async (id: string, imageUrl: string, name?: string) => {
-    const label = name || id;
-    const pushOcrMsg = (msg: string) => {
-      setSigExcelResult(msg);
-      setSigOcrBanner(msg);
-    };
-    const src = String(imageUrl || "").trim();
-    if (!src) {
-      pushOcrMsg(`OCR 실패: 이미지 URL이 비어 있습니다 (${label})`);
-      return;
-    }
-    setOcrBusyIds((prev) => ({ ...prev, [id]: true }));
-    try {
-      const detail = await detectSigPriceFromImageUrlDetailed(src, { sigName: name });
-      if (detail.price == null) {
-        if (detail.reason === "unsupported_browser") {
-          pushOcrMsg(`OCR 실행 불가: 브라우저 클라이언트에서만 사용할 수 있습니다. (${label})`);
-        } else if (detail.reason === "image_not_found") {
-          pushOcrMsg(
-            `OCR 실패: 이미지가 서버에 없습니다(404). /images/sigs/ 등 로컬 경로는 배포 서버에 파일이 없으면 깨집니다. 이미지를 다시 업로드하거나 Supabase URL로 바꿔 주세요. (${label})`
-          );
-        } else if (detail.reason === "image_load_failed") {
-          pushOcrMsg(`OCR 실패: 이미지를 불러오지 못했습니다(URL·CORS·네트워크). (${label})`);
-        } else {
-          pushOcrMsg(
-            `OCR 인식 실패: 금액을 찾지 못했습니다 (${label})${detail.previewText ? ` · 감지 텍스트: ${detail.previewText}` : ""}`
-          );
-        }
-        return;
-      }
-      updateSigItem(id, { price: detail.price });
-      pushOcrMsg(`OCR 적용 완료: ${label} → ${detail.price.toLocaleString("ko-KR")}원`);
-    } catch (e) {
-      console.error(e);
-      pushOcrMsg(`OCR 처리 중 오류 (${label}). 이미지 URL·네트워크를 확인해 주세요.`);
-    } finally {
-      setOcrBusyIds((prev) => ({ ...prev, [id]: false }));
-    }
-  }, [updateSigItem]);
-
-  const runOcrForAllSigItems = useCallback(async () => {
-    if (ocrAllBusy) return;
-    const items = (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID && String(x.imageUrl || "").trim());
-    if (!items.length) {
-      const m = "OCR 대상 시그가 없습니다.";
-      setSigExcelResult(m);
-      setSigOcrBanner(m);
-      return;
-    }
-    setOcrAllBusy(true);
-    setSigOcrBanner(`OCR 일괄 준비 중… (총 ${items.length}건, 워커 로드)`);
-    const priceById = new Map<string, number>();
-    try {
-      await prewarmSigOcrWorker();
-      setSigOcrBanner(`OCR 일괄 진행 시작 (총 ${items.length}건)`);
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        setOcrBatchProgress({ current: i + 1, total: items.length });
-        setSigOcrBanner(
-          `OCR 일괄 진행 중: ${i + 1} / ${items.length}${item.name ? ` · ${item.name}` : ""}`
-        );
-        setOcrBusyIds((prev) => ({ ...prev, [item.id]: true }));
-        try {
-          const detail = await detectSigPriceFromImageUrlDetailed(String(item.imageUrl || "").trim(), {
-            sigName: item.name,
-          });
-          if (detail.price != null) {
-            priceById.set(item.id, detail.price);
-            const pr = detail.price;
-            setState((prev: AppState) => {
-              const sigInventory = (prev.sigInventory || []).map((x) =>
-                x.id === item.id ? { ...x, price: pr } : x
-              );
-              const draft: AppState = { ...prev, sigInventory };
-              const next = syncOneShotSigItem(draft);
-              persistState(next);
-              return next;
-            });
-          }
-          await new Promise((r) => setTimeout(r, 16));
-        } catch (e) {
-          console.error(e);
-        } finally {
-          setOcrBusyIds((prev) => ({ ...prev, [item.id]: false }));
-        }
-      }
-      const ok = priceById.size;
-      const fail = items.length - ok;
-      if (ok > 0) {
-        setState((prev: AppState) => {
-          const sigInventory = (prev.sigInventory || []).map((x) => {
-            const pr = priceById.get(x.id);
-            return pr != null ? { ...x, price: pr } : x;
-          });
-          const draft: AppState = { ...prev, sigInventory };
-          const next = syncOneShotSigItem(draft);
-          persistState(next);
-          return next;
-        });
-      }
-      const summary = `OCR 일괄 완료: 성공 ${ok}건 / 실패 ${fail}건`;
-      setSigExcelResult(summary);
-      setSigOcrBanner(summary);
-    } finally {
-      await terminateSharedSigOcrWorker();
-      setOcrBatchProgress(null);
-      setOcrAllBusy(false);
-    }
-  }, [ocrAllBusy, state.sigInventory, persistState, syncOneShotSigItem]);
 
   const appendSigInventoryRows = useCallback(
     (rows: { url: string; label: string; price: number }[], options?: { persist?: boolean }) => {
@@ -2939,7 +2825,7 @@ export default function AdminPage() {
             total: files.length,
             label: `업로드 중 (${i + 1}/${files.length}): ${f.name}`,
           });
-          const { url, status } = await uploadSigImageFile(f, { silent: true });
+          const { url, status } = await uploadSigImageFile(f, { silent: true, skipMirror: true });
           if (!url) {
             failures.push(f.name);
             if (status === 413) {
@@ -3033,7 +2919,7 @@ export default function AdminPage() {
           `선택 파일: ${list.length}개\n` +
           `적용 예정: ${plans.length}개 (이름 매칭 + 재업로드 필요 행)\n` +
           (unmatched > 0 ? `매칭 안 됨: ${unmatched}개 (파일명·시그 이름 확인)\n` : "") +
-          `\n서버에 다시 업로드한 뒤 URL을 갱신하고, 가능하면 금액 OCR도 적용합니다. 계속할까요?`
+          `\n서버에 다시 업로드한 뒤 URL을 갱신합니다. 계속할까요?`
       );
       if (!ok) {
         setSigBulkReuploadBusy(false);
@@ -3043,40 +2929,47 @@ export default function AdminPage() {
 
       setSigUploadProgress({ current: 0, total: plans.length, label: "재업로드 준비 중…" });
       let uploaded = 0;
-      let ocrOk = 0;
       const failures: string[] = [];
+      const inventoryPatches: Array<{ id: string; patch: Partial<AppState["sigInventory"][number]> }> = [];
       try {
         for (let i = 0; i < plans.length; i++) {
           const { file, item, matchedBy } = plans[i]!;
           setSigUploadProgress({
-            current: i + 1,
+            current: i,
             total: plans.length,
             label: `재업로드 (${i + 1}/${plans.length}): ${item.name} ← ${file.name}${matchedBy === "fallback" ? " (순서)" : ""}`,
           });
           setSigOcrBanner(
             `일괄 재업로드 ${i + 1}/${plans.length}: ${item.name} ← ${file.name}${matchedBy === "fallback" ? " (순서)" : ""}`
           );
-          const { url } = await uploadSigImageFile(file, { silent: true });
+          const { url } = await uploadSigImageFile(file, { silent: true, skipMirror: true });
           if (!url) {
             failures.push(file.name);
             continue;
           }
           uploaded += 1;
-          let price: number | undefined;
-          if (plans.length <= 20) {
-            const ocrPrice = await detectSigPriceFromImageFile(file);
-            if (ocrPrice != null) {
-              price = ocrPrice;
-              ocrOk += 1;
-            }
-          }
-          updateSigItem(item.id, {
-            imageUrl: url,
-            isActive: true,
-            isRolling: true,
-            ...(price != null ? { price } : {}),
+          inventoryPatches.push({
+            id: item.id,
+            patch: { imageUrl: url, isActive: true, isRolling: true },
           });
-          await new Promise((r) => setTimeout(r, 80));
+          setSigUploadProgress({
+            current: i + 1,
+            total: plans.length,
+            label: `완료 (${i + 1}/${plans.length}): ${item.name}`,
+          });
+        }
+        if (inventoryPatches.length > 0) {
+          setState((prev: AppState) => {
+            const patchById = new Map(inventoryPatches.map((row) => [row.id, row.patch]));
+            const sigInventory = (prev.sigInventory || []).map((x) => {
+              const patch = patchById.get(x.id);
+              return patch ? { ...x, ...patch } : x;
+            });
+            const draft: AppState = { ...prev, sigInventory, updatedAt: Date.now() };
+            const next = syncOneShotSigItem(draft);
+            persistState(next);
+            return next;
+          });
         }
         setSigUploadProgress({
           current: plans.length,
@@ -3084,7 +2977,7 @@ export default function AdminPage() {
           label: "재업로드 완료",
         });
         const summary =
-          `일괄 재업로드 완료: 업로드 ${uploaded}/${plans.length}건 · OCR 금액 ${ocrOk}건` +
+          `일괄 재업로드 완료: 업로드 ${uploaded}/${plans.length}건` +
           (failures.length ? ` · 실패: ${failures.slice(0, 4).join(", ")}${failures.length > 4 ? "…" : ""}` : "") +
           (unmatched > 0 ? ` · 미매칭 파일 ${unmatched}개` : "");
         setSigExcelResult(summary);
@@ -3098,7 +2991,8 @@ export default function AdminPage() {
     [
       sigBulkReuploadBusy,
       state.sigInventory,
-      updateSigItem,
+      persistState,
+      syncOneShotSigItem,
       uploadSigImageFile,
       bulkAddSigInventoryFromFiles,
       beginSigBulkUploadUi,
@@ -3149,35 +3043,37 @@ export default function AdminPage() {
 
   const uploadSigImage = (id: string, file: File | null) => {
     if (!file) return;
-    setSigPreviewMap((prev) => ({ ...prev, [id]: URL.createObjectURL(file) }));
     void (async () => {
-      const { url } = await uploadSigImageFile(file);
-      if (!url) return;
-      const storedUrl = normalizeUploadedSigImageUrl(url);
-      updateSigItem(id, { imageUrl: storedUrl, isActive: true, isRolling: true });
-      const ocrPrice = await detectSigPriceFromImageFile(file);
-      if (ocrPrice != null) {
-        updateSigItem(id, { price: ocrPrice });
+      let previewUrl = "";
+      try {
+        previewUrl = await createSafeFilePreviewUrl(file);
+        if (previewUrl) setSigPreviewMap((prev) => ({ ...prev, [id]: previewUrl }));
+        const { url } = await uploadSigImageFile(file);
+        if (!url) return;
+        const storedUrl = normalizeUploadedSigImageUrl(url);
+        updateSigItem(id, { imageUrl: storedUrl, isActive: true, isRolling: true });
+      } finally {
+        revokeSafeFilePreviewUrl(previewUrl);
+        setSigPreviewMap((prev) => ({ ...prev, [id]: "" }));
       }
-      setSigPreviewMap((prev) => ({ ...prev, [id]: "" }));
     })();
   };
 
   const uploadNewSigImage = (file: File | null) => {
     if (!file) return;
     setNewSigImageUploading(true);
-    setNewSigPreviewUrl(URL.createObjectURL(file));
     void (async () => {
-      const ocrPrice = await detectSigPriceFromImageFile(file);
-      const { url } = await uploadSigImageFile(file);
-      if (url) {
-        setNewSigImageUrl(url);
+      let previewUrl = "";
+      try {
+        previewUrl = await createSafeFilePreviewUrl(file);
+        if (previewUrl) setNewSigPreviewUrl(previewUrl);
+        const { url } = await uploadSigImageFile(file);
+        if (url) setNewSigImageUrl(url);
+      } finally {
+        revokeSafeFilePreviewUrl(previewUrl);
         setNewSigPreviewUrl("");
-        if (ocrPrice != null) {
-          setNewSigPrice(String(ocrPrice));
-        }
+        setNewSigImageUploading(false);
       }
-      setNewSigImageUploading(false);
     })();
   };
 
@@ -6786,17 +6682,6 @@ export default function AdminPage() {
                   >
                     프리셋 삭제
                   </button>
-                  <button
-                    type="button"
-                    className="px-2 py-1 rounded bg-violet-800 hover:bg-violet-700 text-xs disabled:opacity-50"
-                    onClick={() => void runOcrForAllSigItems()}
-                    disabled={ocrAllBusy}
-                    title="시그 목록 바로 위에도 동일 버튼이 있습니다."
-                  >
-                    {ocrAllBusy && ocrBatchProgress
-                      ? `OCR 처리 중 ${ocrBatchProgress.current}/${ocrBatchProgress.total}`
-                      : "금액 OCR 전체 적용"}
-                  </button>
                   <span className="text-[11px] text-neutral-500">
                     저장: 선택 멤버 시그의 현재 판매 활성 상태 / 적용: 해당 멤버 시그만 판매 활성
                   </span>
@@ -7041,9 +6926,7 @@ export default function AdminPage() {
                     </div>
                   ) : null}
                   <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-white/10 bg-black/25 px-2 py-1.5 text-xs">
-                    <span className="text-neutral-400">
-                      시그 행 접기 · OCR 결과는 바로 위 보라색 칸에 표시됩니다.
-                    </span>
+                    <span className="text-neutral-400">시그 행 접기 · 업로드 상태는 바로 위 보라색 칸에 표시됩니다.</span>
                     <div className="flex flex-wrap items-center justify-end gap-2">
                       <div className="flex flex-wrap gap-1">
                         <button
@@ -7070,7 +6953,7 @@ export default function AdminPage() {
                       <button
                         type="button"
                         className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-bold text-white shadow hover:bg-emerald-600 disabled:opacity-50"
-                        disabled={sigBulkReuploadBusy || ocrAllBusy}
+                        disabled={sigBulkReuploadBusy}
                         title="PC에서 여러 GIF 선택 · 목록이 비어 있으면 새 시그로 추가"
                         onClick={() => sigBulkReuploadInputRef.current?.click()}
                       >
@@ -7082,18 +6965,8 @@ export default function AdminPage() {
                       </button>
                       <button
                         type="button"
-                        className="rounded bg-violet-600 px-3 py-1.5 text-sm font-bold text-white shadow hover:bg-violet-500 disabled:opacity-50"
-                        disabled={ocrAllBusy || sigBulkReuploadBusy}
-                        onClick={() => void runOcrForAllSigItems()}
-                      >
-                        {ocrAllBusy && ocrBatchProgress
-                          ? `OCR 처리 중 ${ocrBatchProgress.current}/${ocrBatchProgress.total}`
-                          : "금액 OCR 전체 적용"}
-                      </button>
-                      <button
-                        type="button"
                         className="rounded bg-rose-800/90 px-3 py-1.5 text-sm font-semibold text-white shadow hover:bg-rose-700 disabled:opacity-50"
-                        disabled={ocrAllBusy || sigBulkReuploadBusy}
+                        disabled={sigBulkReuploadBusy}
                         onClick={() => clearSigInventoryImagesOnly()}
                       >
                         시그 이미지만 지우기
@@ -7158,14 +7031,6 @@ export default function AdminPage() {
                             ) : null}
                             {!isOneShot && (
                               <>
-                                <button
-                                  type="button"
-                                  className="px-2 py-1 rounded bg-violet-800 hover:bg-violet-700 text-xs disabled:opacity-50"
-                                  disabled={Boolean(ocrBusyIds[item.id])}
-                                  onClick={() => void runOcrForSigItem(item.id, item.imageUrl || "", item.name)}
-                                >
-                                  {ocrBusyIds[item.id] ? "OCR..." : "OCR"}
-                                </button>
                                 <button type="button" className="px-2 py-1 rounded bg-red-900/70 hover:bg-red-800 text-xs" onClick={() => adjustSigSoldCount(item.id, -1)}>취소 -1</button>
                                 <button type="button" className="px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-xs" onClick={() => adjustSigSoldCount(item.id, 1)}>판매 +1</button>
                                 <button type="button" className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs" onClick={() => removeSigItem(item.id)}>삭제</button>

@@ -18,6 +18,9 @@ const ResultOverlay = dynamic(() => import("@/components/sig-sales/ResultOverlay
 const SigBoardRolling = dynamic(() => import("@/components/sig-sales/SigBoardRolling"), {
   ssr: false,
 });
+const OneShotSigCard = dynamic(() => import("@/components/sig-sales/OneShotSigCard"), {
+  ssr: false,
+});
 import { loadStateFromApi, loadState, storageKey, type AppState } from "@/lib/state";
 import {
   getOverlayMemberFilterIdFromSearchParams,
@@ -1115,12 +1118,6 @@ function SigSalesOverlayPageInner() {
     oneShotEligibleAfterReveal,
     oneShotRevealUnlocked,
   ]);
-  /** 개별 당첨 시그만 모두 공개됐는지(한방 카드는 제외) — 회전판은 여기까지만 기다렸다가 페이드 */
-  const individualSigsRevealDone = useMemo(() => {
-    if (machine.selectedSigs.length === 0) return true;
-    return revealedSigCount >= completedTargetCount;
-  }, [machine.selectedSigs.length, revealedSigCount, completedTargetCount]);
-
   const revealQueueKey = useMemo(() => {
     const fromMachine = machine.selectedSigs.slice(0, CONFIRMED_VISIBLE_SLOTS).map((s) => s.id).join(",");
     if (fromMachine.length > 0) return fromMachine;
@@ -1218,24 +1215,67 @@ function SigSalesOverlayPageInner() {
     sigResultStaggerMs,
   ]);
 
-  /** 개별 당첨 카드가 전부 공개되면 회전판 제거(한방 로딩·페이드와 무관) */
+  const spinShowcasePhase = useMemo(
+    () =>
+      machine.phase === "LANDED" ||
+      machine.phase === "CONFIRM_PENDING" ||
+      machine.phase === "CONFIRMED",
+    [machine.phase]
+  );
+  /** 순차 멀티 회전: 마지막 라운드 착지·결과 연출까지 끝났는지 */
+  const sequentialSpinFinished = useMemo(() => {
+    if (!useSequentialWheel || spinQueueSelected.length <= 1) return true;
+    return (
+      sequentialRoundIndex >= spinQueueSelected.length - 1 &&
+      (wheelPhase === "result" || spinShowcasePhase)
+    );
+  }, [
+    useSequentialWheel,
+    spinQueueSelected.length,
+    sequentialRoundIndex,
+    wheelPhase,
+    spinShowcasePhase,
+  ]);
+  /**
+   * 개별 당첨이 모두 보였는지. 서버 LANDED 복원·hold 시 카드는 먼저 다 보이는데
+   * revealedSigCount 만으로는 회전판이 남는 경우가 있어 display 길이도 함께 본다.
+   */
+  const allIndividualWinnersVisible = useMemo(() => {
+    if (completedTargetCount < 1) return false;
+    if (revealedSigCount >= completedTargetCount) return true;
+    return (
+      spinShowcasePhase &&
+      displaySelectedSigs.length >= completedTargetCount &&
+      wheelPhase !== "spinning" &&
+      wheelPhase !== "settling" &&
+      sequentialSpinFinished
+    );
+  }, [
+    completedTargetCount,
+    revealedSigCount,
+    spinShowcasePhase,
+    displaySelectedSigs.length,
+    wheelPhase,
+    sequentialSpinFinished,
+  ]);
+  /** 당첨 연출 완료 후 회전판 제거(한방은 휠 자리 또는 하단 카드) */
   const hideWheelAfterComplete = useMemo(() => {
     if (pendingLanding || demoSpin) return false;
     if (wheelPhase === "spinning" || wheelPhase === "settling") return false;
     if (completedTargetCount < 1) return false;
-    return (
-      revealedSigCount >= completedTargetCount &&
-      displaySelectedSigs.length >= completedTargetCount &&
-      individualSigsRevealDone
-    );
+    if (!sequentialSpinFinished) return false;
+    const showcaseReady = spinShowcasePhase || wheelPhase === "result";
+    if (!showcaseReady) return false;
+    return allIndividualWinnersVisible && displaySelectedSigs.length >= completedTargetCount;
   }, [
     pendingLanding,
     demoSpin,
     wheelPhase,
     completedTargetCount,
-    revealedSigCount,
+    sequentialSpinFinished,
+    spinShowcasePhase,
+    allIndividualWinnersVisible,
     displaySelectedSigs.length,
-    individualSigsRevealDone,
   ]);
   /**
    * 회차 단위로만 바뀌게 함. selectedSigs/resultId를 넣으면 landed() 직후 키가 바뀌어
@@ -1463,6 +1503,13 @@ function SigSalesOverlayPageInner() {
     manualDraftEffective?.oneShotName,
     machine.oneShot?.name,
   ]);
+  /** 회전판 제거 후 휠 자리에 한방 시그 카드 표시 */
+  const showCenterOneShot = hideWheelAfterComplete && Boolean(oneShotForResultOverlay);
+  useEffect(() => {
+    if (!hideWheelAfterComplete) return;
+    if (!oneShotEligibleAfterReveal) return;
+    setOneShotRevealUnlocked(true);
+  }, [hideWheelAfterComplete, oneShotEligibleAfterReveal]);
   const resultCardCount = useMemo(() => {
     let n = effectiveSelectedSigsForUi.length;
     if (oneShotForResultOverlay) n += 1;
@@ -2063,7 +2110,7 @@ function SigSalesOverlayPageInner() {
                     null;
                   landed(finalQueue, oneShot, finalResultId);
                   if (buildOneShotFromSelected(finalQueue)) {
-                    window.setTimeout(() => setOneShotRevealUnlocked(true), sigResultStaggerMs);
+                    setOneShotRevealUnlocked(true);
                   }
                   if (ROULETTE_WHEEL_SFX_ENABLED) {
                     if (oneShotSound && !hasOneShotSoundErrorRef.current) {
@@ -2102,6 +2149,32 @@ function SigSalesOverlayPageInner() {
                 }}
               />
             </motion.div>
+          ) : showCenterOneShot && oneShotForResultOverlay ? (
+            <div
+              className="flex w-full shrink-0 justify-center py-1"
+              style={wheelColumnBoostScaleStyle}
+            >
+              <OneShotSigCard
+                name={oneShotForResultOverlay.name}
+                price={oneShotForResultOverlay.price}
+                imageUrl={oneShotImageUrl || currentSignImageUrl}
+                sold={Boolean(
+                  resultSoldOverrideSet?.has(ONE_SHOT_SIG_ID) ||
+                    resultSoldOverrideSet?.has(canonicalSigIdFromWheelSliceId(ONE_SHOT_SIG_ID))
+                )}
+                soldOutStampUrl={soldOutStampUrl}
+                selectedSigCount={effectiveSelectedSigsForUi.length}
+                onToggleSold={() => {}}
+                showToggle={false}
+                compact
+                matchSigCardSize
+                cardScalePct={resultRowLayout.cardScalePct}
+                disableCardMotion
+                fillRowCell
+                gifDelayMultiplier={sigGifDelayMultiplier}
+                sigImageUserId={sigImageUserId}
+              />
+            </div>
           ) : null}
           </div>
           {manualOverlayMode && effectiveSelectedSigsForUi.length === 0 && !oneShotForResultOverlay ? (
@@ -2150,7 +2223,7 @@ function SigSalesOverlayPageInner() {
                         soldOverrideSet={resultSoldOverrideSet}
                         oneShot={oneShotForResultOverlay}
                         signImageUrl={oneShotImageUrl || currentSignImageUrl}
-                        showOneShotReveal={Boolean(oneShotForResultOverlay)}
+                        showOneShotReveal={Boolean(oneShotForResultOverlay) && !showCenterOneShot}
                         cardScalePct={resultRowLayout.cardScalePct}
                         className="w-full max-w-full"
                         gifDelayMultiplier={sigGifDelayMultiplier}
