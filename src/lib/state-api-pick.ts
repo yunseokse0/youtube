@@ -6,6 +6,7 @@ export const STATE_PICK_SIG_INVENTORY = "sigInventory";
 export const STATE_PICK_OVERLAY = "overlay";
 export const STATE_PICK_OVERLAY_DONORS = "overlay-donors";
 export const STATE_PICK_SIG_SALES = "sig-sales";
+const MANUAL_SIG_DRAFT_STATE_KEY = "sigSalesManualDraftV1";
 export const STATE_PICK_DONOR_RANKINGS = "donor-rankings";
 
 export type StateApiPick =
@@ -88,6 +89,11 @@ export function projectStateForGetPick(state: AppState, pick: StateApiPick): unk
   }
   const rs = stripRouletteForOverlay(state.rouletteState);
   if (pick === STATE_PICK_SIG_SALES) {
+    const os = state.overlaySettings;
+    const manualDraft =
+      os && typeof os === "object"
+        ? (os as Record<string, unknown>)[MANUAL_SIG_DRAFT_STATE_KEY]
+        : undefined;
     return {
       updatedAt: state.updatedAt,
       sigInventory: slimSigInventoryForWire(state.sigInventory),
@@ -95,6 +101,10 @@ export function projectStateForGetPick(state: AppState, pick: StateApiPick): unk
       sigSoldOutStampUrl: state.sigSoldOutStampUrl,
       sigRollingMeta: state.sigRollingMeta,
       rouletteState: rs,
+      /** OBS 수동 모드: 관리자 「판매완료」체크·한방 플래그(로컬스토리지 없음) */
+      ...(manualDraft && typeof manualDraft === "object"
+        ? { overlaySettings: { [MANUAL_SIG_DRAFT_STATE_KEY]: manualDraft } }
+        : {}),
     };
   }
   if (pick === STATE_PICK_OVERLAY) {

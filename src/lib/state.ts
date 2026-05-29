@@ -1372,9 +1372,18 @@ async function doLoadStateFromApi(
       data = { ...base, ...data } as AppState;
     } else if (isOverlayPickPartial(data)) {
       const base = defaultState();
+      const patchOs =
+        data.overlaySettings && typeof data.overlaySettings === "object"
+          ? data.overlaySettings
+          : {};
+      const baseOs =
+        base.overlaySettings && typeof base.overlaySettings === "object"
+          ? base.overlaySettings
+          : {};
       data = {
         ...base,
         ...data,
+        overlaySettings: { ...baseOs, ...patchOs },
         rouletteState: {
           ...base.rouletteState,
           ...(data.rouletteState && typeof data.rouletteState === "object" ? data.rouletteState : {}),

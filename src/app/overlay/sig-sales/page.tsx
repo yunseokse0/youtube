@@ -578,7 +578,8 @@ function SigSalesOverlayPageInner() {
     let sigSalesPollId: number | undefined;
     if (sigSalesPollMs > 0) {
       sigSalesPollId = window.setInterval(() => {
-        void loadRemoteRef.current();
+        /** 304·since 경합 시 재고 soldCount·수동 판매 플래그가 OBS에 안 올라오는 것 방지 */
+        void loadRemoteRef.current({ forceFull: true });
       }, sigSalesPollMs);
     }
     const sseFallbackMs = pollMs > 0 || sigSalesPollMs > 0 ? 0 : readOverlaySseFallbackPollMs();
@@ -603,7 +604,7 @@ function SigSalesOverlayPageInner() {
       if (storageDebounce) clearTimeout(storageDebounce);
       storageDebounce = setTimeout(() => {
         storageDebounce = null;
-        void loadRemote();
+        void loadRemoteRef.current({ forceFull: true });
       }, 400);
     };
     window.addEventListener("storage", onStorage);
@@ -1031,18 +1032,19 @@ function SigSalesOverlayPageInner() {
     return hydrated.filter((item) => !isDemoPlaceholderSig(item));
   }, [displaySelectedSigs, wheelInventory, sigImageUserId, manualOverlayMode]);
   const manualDraftFromState = useMemo(() => {
-    if (!manualOverlayMode) return null;
     const os = state?.overlaySettings;
     if (!os || typeof os !== "object") return null;
     const raw = (os as Record<string, unknown>)[MANUAL_SIG_DRAFT_STATE_KEY];
     if (!raw || typeof raw !== "object") return null;
     return raw as {
-      drafts?: Array<{ name?: string; priceInput?: string; imageUrl?: string }>;
+      drafts?: Array<{ sourceSigId?: string; name?: string; priceInput?: string; imageUrl?: string }>;
       oneShotName?: string;
       oneShotPriceInput?: string;
       oneShotImageUrl?: string;
+      sigSoldFlags?: boolean[];
+      oneShotMarkSold?: boolean;
     };
-  }, [manualOverlayMode, state?.overlaySettings]);
+  }, [state?.overlaySettings]);
   const manualDraftFromUrl = useMemo(() => {
     if (!manualOverlayMode) return null;
     const drafts = Array.from({ length: 5 }, (_, idx) => {
@@ -1412,11 +1414,62 @@ function SigSalesOverlayPageInner() {
     }
     return next;
   }, [machine.phase, machine.selectedSigs, state?.sigInventory]);
+  /** 관리자 「이 시그 판매완료」체크 — OBS는 localStorage 없음, 서버 overlaySettings 초안으로 동기화 */
+  const manualDraftSoldOverrideSet = useMemo(() => {
+    const next = new Set<string>();
+    const draft = manualDraftEffective;
+    if (!draft) return next;
+    const flags = Array.isArray(draft.sigSoldFlags) ? draft.sigSoldFlags : [];
+    const hasFlags = flags.some(Boolean) || Boolean(draft.oneShotMarkSold);
+    if (!hasFlags) return next;
+    const normalizeNameKey = (raw: string) =>
+      String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
+    const items =
+      effectiveSelectedSigsForUi.length >= MIN_ONE_SHOT_SIGS
+        ? effectiveSelectedSigsForUi
+        : manualDraftSelectedForUi;
+    flags.forEach((sold, idx) => {
+      if (!sold) return;
+      const item = items[idx];
+      if (item) {
+        next.add(item.id);
+        next.add(canonicalSigIdFromWheelSliceId(item.id));
+        const nk = normalizeNameKey(item.name);
+        const price = Math.floor(Number(item.price || 0));
+        for (const row of state?.sigInventory || []) {
+          if (!row || row.id === ONE_SHOT_SIG_ID) continue;
+          if (
+            normalizeNameKey(row.name) === nk &&
+            Math.floor(Number(row.price || 0)) === price
+          ) {
+            next.add(row.id);
+            next.add(canonicalSigIdFromWheelSliceId(row.id));
+          }
+        }
+      }
+      const sourceSid = String(draft.drafts?.[idx]?.sourceSigId || "").trim();
+      if (sourceSid) {
+        next.add(sourceSid);
+        next.add(canonicalSigIdFromWheelSliceId(sourceSid));
+      }
+    });
+    if (draft.oneShotMarkSold) {
+      next.add(ONE_SHOT_SIG_ID);
+      next.add(canonicalSigIdFromWheelSliceId(ONE_SHOT_SIG_ID));
+    }
+    return next;
+  }, [
+    manualDraftEffective,
+    effectiveSelectedSigsForUi,
+    manualDraftSelectedForUi,
+    state?.sigInventory,
+  ]);
   const resultSoldOverrideSet = useMemo(() => {
     const next = new Set<string>(inventorySoldOutIdSet);
     for (const id of confirmedRoundSoldIdSet) next.add(id);
+    for (const id of manualDraftSoldOverrideSet) next.add(id);
     return next;
-  }, [inventorySoldOutIdSet, confirmedRoundSoldIdSet]);
+  }, [inventorySoldOutIdSet, confirmedRoundSoldIdSet, manualDraftSoldOverrideSet]);
   const oneShotImageUrl = useMemo(() => {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     const fromOneShot = (oneShotItem?.imageUrl || "").trim();

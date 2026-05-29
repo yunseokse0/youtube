@@ -47,4 +47,19 @@ describe("state-api-pick", () => {
     expect(out.sigInventory).toBeDefined();
     expect(out.rouletteState).toBeDefined();
   });
+
+  it("sig-sales pick includes manual draft for OBS sold stamps", () => {
+    const base = {
+      ...defaultState(),
+      overlaySettings: {
+        sigSalesManualDraftV1: {
+          sigSoldFlags: [true, false, false, false, false],
+          oneShotMarkSold: true,
+        },
+      },
+    };
+    const out = projectStateForGetPick(base, STATE_PICK_SIG_SALES) as Record<string, unknown>;
+    const os = out.overlaySettings as Record<string, unknown>;
+    expect(os?.sigSalesManualDraftV1).toBeTruthy();
+  });
 });
