@@ -244,6 +244,33 @@ function resolveSigPreviewSrc(raw?: string, name?: string, userId?: string): str
   return resolveSigAdminPreviewSrc(raw, name, userId);
 }
 
+/** 신규 시그 폼 미리보기 — blob·업로드 URL만 사용(이름 기반 from-drive 폴백으로 기존 시그 썸네일과 혼동 방지) */
+function resolveNewSigDraftPreviewSrc(
+  draftBlob: string,
+  uploadedUrl: string,
+  userId?: string
+): string {
+  const blob = String(draftBlob || "").trim();
+  if (blob) return blob;
+  const raw = String(uploadedUrl || "").trim();
+  if (!raw || isBrokenSigImageUrl(raw)) return "";
+  const stored = normalizeSigImageUrlStored(repairDiskUploadSigImagePath(raw, userId));
+  if (!stored || isBrokenSigImageUrl(stored)) return "";
+  return stored;
+}
+
+/** 인벤토리 행 썸네일 — 해당 행 업로드 중 blob + 저장된 URL만(신규 폼 상태와 분리) */
+function resolveInventorySigThumbSrc(
+  imageUrl: string | undefined,
+  name: string | undefined,
+  rowUploadPreview: string | undefined,
+  userId?: string
+): string {
+  const draft = String(rowUploadPreview || "").trim();
+  if (draft) return draft;
+  return resolveSigPreviewSrc(imageUrl, name, userId);
+}
+
 function handleSigPreviewImgError(
   e: React.SyntheticEvent<HTMLImageElement>,
   raw?: string,
@@ -358,7 +385,8 @@ export default function AdminPage() {
   const [newSigImageUrl, setNewSigImageUrl] = useState("");
   const [newSigPreviewUrl, setNewSigPreviewUrl] = useState("");
   const [newSigImageUploading, setNewSigImageUploading] = useState(false);
-  const [sigPreviewMap, setSigPreviewMap] = useState<Record<string, string>>({});
+  /** 기존 시그 행에서 「이미지 업로드」 중일 때만 id별 blob 미리보기(신규 시그 폼과 분리) */
+  const [sigRowUploadPreviewMap, setSigRowUploadPreviewMap] = useState<Record<string, string>>({});
   const [sigImagePreviewModal, setSigImagePreviewModal] = useState<{ src: string; name: string; rawUrl: string } | null>(null);
   /** 시그 이미지: PC 파일 선택 → 업로드 API 후 URL 반영 */
   const [sigExcelResult, setSigExcelResult] = useState("");
@@ -896,14 +924,19 @@ export default function AdminPage() {
       };
       didPreserve = true;
     }
-    /** 저장 대기 중에만 로컬 시그 목록 우선(시간 창 + didPreserve→POST 루프 방지) */
-    if (pendingUnsyncedRef.current) {
+    /** 저장 대기·직후 편집 구간: 서버 GET이 신규 시그를 아직 안 담았을 때 목록이 사라지지 않게 */
+    const recentlyEditedSig =
+      Date.now() - lastLocalPersistAtRef.current < SIG_INVENTORY_LOCAL_PROTECT_MS;
+    if (pendingUnsyncedRef.current || recentlyEditedSig) {
       const localInv = local.sigInventory || [];
       const incomingInv = merged.sigInventory || [];
+      const incomingIdSet = new Set(incomingInv.map((x) => x.id));
+      const hasLocalOnlyRows = localInv.some((x) => !incomingIdSet.has(x.id));
       const localSigIds = localInv.map((x) => x.id).join(",");
       const incomingSigIds = incomingInv.map((x) => x.id).join(",");
-      if (localSigIds !== incomingSigIds) {
+      if (hasLocalOnlyRows || localSigIds !== incomingSigIds) {
         merged = { ...merged, sigInventory: localInv };
+        didPreserve = true;
       }
     }
     return { merged: { ...merged, donors: normalizeDonorsArray(merged.donors) }, didPreserve };
@@ -2461,59 +2494,68 @@ export default function AdminPage() {
     const price = Math.max(0, Math.floor(Number(newSigPrice || 0) || 0));
     const maxCount = Math.max(1, Math.floor(Number(newSigMaxCount || 1) || 1));
     const normalizedName = name.replace(/\s+/g, "").toLowerCase();
-    let createdId = "";
-    const previewSrcCandidate = (newSigPreviewUrl || resolveSigPreviewSrc(newSigImageUrl, newSigName, user?.id)).trim();
-    setState((prev: AppState) => {
-      const duplicateIdx = (prev.sigInventory || []).findIndex(
-        (x) => (x.name || "").replace(/\s+/g, "").toLowerCase() === normalizedName
+    const imageUrlStored = normalizeUploadedSigImageUrl(newSigImageUrl.trim());
+    const prev = stateRef.current;
+    const duplicateIdx = (prev.sigInventory || []).findIndex(
+      (x) =>
+        x.id !== ONE_SHOT_SIG_ID &&
+        (x.name || "").replace(/\s+/g, "").toLowerCase() === normalizedName
+    );
+    if (duplicateIdx >= 0) {
+      setSigExcelResult(
+        `이미 「${name}」 시그가 있습니다. 신규 추가는 다른 이름을 쓰거나, 아래 목록에서 해당 행의 「이미지 업로드」로 교체해 주세요.`
       );
-      const hasImageInput = newSigImageUrl.trim().length > 0;
-      let nextInventory = [...(prev.sigInventory || [])];
-      if (duplicateIdx >= 0) {
-        const target = nextInventory[duplicateIdx];
-        nextInventory[duplicateIdx] = {
-          ...target,
-          name,
-          price,
-          imageUrl: hasImageInput ? newSigImageUrl.trim() : target.imageUrl,
-          memberId: newSigMemberId || "",
-          maxCount,
-          isActive: true,
-        };
-        createdId = target.id;
-      } else {
-        createdId = `sig_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-        const nextItem = {
-          id: createdId,
-          name,
-          price,
-          imageUrl: newSigImageUrl.trim(),
-          memberId: newSigMemberId || "",
-          maxCount,
-          soldCount: 0,
-          isRolling: true,
-          isActive: true,
-        };
-        nextInventory = [...nextInventory, nextItem];
-      }
-      const draft: AppState = {
-        ...prev,
-        sigInventory: nextInventory,
-        updatedAt: Date.now(),
-      };
-      const next = { ...syncOneShotSigItem(draft), updatedAt: draft.updatedAt };
-      persistState(next);
-      return next;
-    });
-    if (createdId && previewSrcCandidate) {
-      setSigPreviewMap((prev) => ({ ...prev, [createdId]: previewSrcCandidate }));
+      return;
     }
+    const createdId = `sig_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const nextInventory = [
+      ...(prev.sigInventory || []),
+      {
+        id: createdId,
+        name,
+        price,
+        imageUrl: imageUrlStored,
+        memberId: newSigMemberId || "",
+        maxCount,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+    ];
+    const draft: AppState = {
+      ...prev,
+      sigInventory: nextInventory,
+      updatedAt: Date.now(),
+    };
+    const next = { ...syncOneShotSigItem(draft), updatedAt: draft.updatedAt };
+    setState(next);
     setNewSigName("");
     setNewSigPrice("77000");
     setNewSigMaxCount("1");
     setNewSigImageUrl("");
     setNewSigPreviewUrl("");
-    setSigExcelResult(`시그 저장 완료: ${name} (${price.toLocaleString("ko-KR")}원)`);
+    void (async () => {
+      lastLocalPersistAtRef.current = Date.now();
+      pendingUnsyncedRef.current = true;
+      const r = await saveStateAsync(next, user?.id);
+      if (r.ok) {
+        if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
+          stateUpdatedAtRef.current = r.serverUpdatedAt;
+          lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
+        }
+        pendingUnsyncedRef.current = false;
+        setSyncStatus("synced");
+        setSigExcelResult(`시그 저장 완료: ${name} (${price.toLocaleString("ko-KR")}원)`);
+      } else {
+        const offline = typeof navigator !== "undefined" && !navigator.onLine;
+        setSyncStatus(offline ? "local" : "error");
+        setSigExcelResult(
+          offline
+            ? `시그는 이 기기에만 반영됐습니다(오프라인). 연결 후 다시 「시그 추가」하거나 상단 동기화를 확인하세요.`
+            : `시그는 화면에 반영됐지만 서버 저장에 실패했습니다. EC2·로그인·Redis(UPSTASH) 설정을 확인한 뒤 다시 시도하세요.`
+        );
+      }
+    })();
   };
 
   const downloadSigExcelTemplate = () => {
@@ -3046,7 +3088,7 @@ export default function AdminPage() {
     ) {
       return;
     }
-    setSigPreviewMap({});
+    setSigRowUploadPreviewMap({});
     setNewSigPreviewUrl("");
     setNewSigImageUrl("");
     setSigImagePreviewModal(null);
@@ -3081,19 +3123,25 @@ export default function AdminPage() {
   );
 
   const uploadSigImage = (id: string, file: File | null) => {
-    if (!file) return;
+    if (!file || !id || id === ONE_SHOT_SIG_ID) return;
     void (async () => {
       let previewUrl = "";
       try {
         previewUrl = await createSafeFilePreviewUrl(file);
-        if (previewUrl) setSigPreviewMap((prev) => ({ ...prev, [id]: previewUrl }));
+        if (previewUrl) {
+          setSigRowUploadPreviewMap((prev) => ({ ...prev, [id]: previewUrl }));
+        }
         const { url } = await uploadSigImageFile(file);
         if (!url) return;
         const storedUrl = normalizeUploadedSigImageUrl(url);
         updateSigItem(id, { imageUrl: storedUrl, isActive: true, isRolling: true });
       } finally {
         revokeSafeFilePreviewUrl(previewUrl);
-        setSigPreviewMap((prev) => ({ ...prev, [id]: "" }));
+        setSigRowUploadPreviewMap((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
       }
     })();
   };
@@ -3107,7 +3155,7 @@ export default function AdminPage() {
         previewUrl = await createSafeFilePreviewUrl(file);
         if (previewUrl) setNewSigPreviewUrl(previewUrl);
         const { url } = await uploadSigImageFile(file);
-        if (url) setNewSigImageUrl(url);
+        if (url) setNewSigImageUrl(normalizeUploadedSigImageUrl(url));
       } finally {
         revokeSafeFilePreviewUrl(previewUrl);
         setNewSigPreviewUrl("");
@@ -6910,19 +6958,24 @@ export default function AdminPage() {
                       {newSigImageUploading ? "이미지 업로드 중..." : "시그 추가"}
                     </button>
                   </div>
-                  {(newSigPreviewUrl || newSigImageUrl) ? (
+                  {resolveNewSigDraftPreviewSrc(newSigPreviewUrl, newSigImageUrl, user?.id) ? (
                     <div className="rounded border border-white/10 bg-black/20 p-2">
-                      <div className="text-[11px] text-neutral-400 mb-2">신규 시그 이미지 미리보기</div>
+                      <div className="text-[11px] text-neutral-400 mb-2">
+                        신규 시그 이미지 미리보기 (아래 목록의 기존 시그에는 반영되지 않음)
+                      </div>
                       <div className="relative h-20 w-20 overflow-hidden rounded border border-white/10 bg-black/30">
                         {/* next/image는 비정상 URL 시 _next/static 조합 버그가 나올 수 있어 동적 시그는 native img 사용 */}
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={newSigPreviewUrl || resolveSigPreviewSrc(newSigImageUrl, newSigName, user?.id)}
+                          key={`new-sig-draft-${newSigPreviewUrl || newSigImageUrl}`}
+                          src={resolveNewSigDraftPreviewSrc(newSigPreviewUrl, newSigImageUrl, user?.id)}
                           alt="신규 시그 미리보기"
                           className="absolute inset-0 h-full w-full object-cover"
                           loading="lazy"
                           decoding="async"
-                          onError={(e) => handleSigPreviewImgError(e, newSigImageUrl, newSigName, user?.id)}
+                          onError={(e) => {
+                            e.currentTarget.onerror = null;
+                          }}
                         />
                       </div>
                     </div>
@@ -7187,7 +7240,12 @@ export default function AdminPage() {
                           </label>
                         </div>
                       </div>
-                      {(sigPreviewMap[item.id] || item.imageUrl) ? (
+                      {resolveInventorySigThumbSrc(
+                        item.imageUrl,
+                        item.name,
+                        sigRowUploadPreviewMap[item.id],
+                        user?.id
+                      ) ? (
                         <div className="mt-2 flex items-start gap-2">
                           <button
                             type="button"
@@ -7195,7 +7253,12 @@ export default function AdminPage() {
                             title="클릭해서 크게 보기"
                             onClick={() =>
                               setSigImagePreviewModal({
-                                src: sigPreviewMap[item.id] || resolveSigPreviewSrc(item.imageUrl, item.name, user?.id),
+                                src: resolveInventorySigThumbSrc(
+                                  item.imageUrl,
+                                  item.name,
+                                  sigRowUploadPreviewMap[item.id],
+                                  user?.id
+                                ),
                                 name: item.name,
                                 rawUrl: item.imageUrl || "",
                               })
@@ -7203,7 +7266,13 @@ export default function AdminPage() {
                           >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
-                              src={sigPreviewMap[item.id] || resolveSigPreviewSrc(item.imageUrl, item.name, user?.id)}
+                              key={`sig-thumb-${item.id}-${sigRowUploadPreviewMap[item.id] || item.imageUrl || ""}`}
+                              src={resolveInventorySigThumbSrc(
+                                item.imageUrl,
+                                item.name,
+                                sigRowUploadPreviewMap[item.id],
+                                user?.id
+                              )}
                               alt={`${item.name} 미리보기`}
                               className="absolute inset-0 h-full w-full object-cover"
                               loading="lazy"
