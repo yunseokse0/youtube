@@ -131,27 +131,31 @@ export default function ResultOverlay({
   }
 
   return (
-    <div className={`flex w-full max-w-full flex-col items-stretch ${className}`.trim()}>
-      <SelectedSigs
-        items={selectedSigs}
-        soldOutStampUrl={soldOutStampUrl}
-        manualSoldSet={EMPTY_SOLD_SET}
-        soldOverrideSet={soldOverrideSet}
-        onToggleSold={() => {}}
-        showToggle={false}
-        compact
-        matchOneShotCardSize
-        cardScalePct={cardScalePct}
-        disableCardMotion={disableCardMotion}
-        showConfirmedBadge={showConfirmedBadge}
-        trailingSlot={oneShotTrailing}
-        compactGridJustify="center"
-        className="w-full max-w-full"
-        gifDelayMultiplier={gifDelayMultiplier}
-        entranceOnlyLatest={entranceOnlyLatest}
-        forceSoldAll={soldAllAtOnceForOneShot}
-        sigImageUserId={sigImageUserId}
-      />
+    <div
+      className={`flex w-full max-w-full flex-nowrap items-stretch justify-between gap-2 ${className}`.trim()}
+    >
+      {selectedSigs.length > 0 ? (
+        <SelectedSigs
+          items={selectedSigs}
+          soldOutStampUrl={soldOutStampUrl}
+          manualSoldSet={EMPTY_SOLD_SET}
+          soldOverrideSet={soldOverrideSet}
+          onToggleSold={() => {}}
+          showToggle={false}
+          compact
+          matchOneShotCardSize
+          cardScalePct={cardScalePct}
+          disableCardMotion={disableCardMotion}
+          showConfirmedBadge={showConfirmedBadge}
+          compactGridJustify="start"
+          className="min-w-0 flex-1"
+          gifDelayMultiplier={gifDelayMultiplier}
+          entranceOnlyLatest={entranceOnlyLatest}
+          forceSoldAll={soldAllAtOnceForOneShot}
+          sigImageUserId={sigImageUserId}
+        />
+      ) : null}
+      {oneShotTrailing ? <div className="ml-auto shrink-0 self-stretch">{oneShotTrailing}</div> : null}
     </div>
   );
 }

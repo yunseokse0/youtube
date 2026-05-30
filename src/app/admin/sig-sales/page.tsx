@@ -787,17 +787,19 @@ export default function AdminSigSalesPage() {
     if (machine.selectedSigs?.length) return Math.max(1, Math.min(MAX_SELECTED_SIGS, machine.selectedSigs.length));
     return 1;
   }, [pendingLanding?.selected, machine.selectedSigs]);
-  /** 당첨 쇼케이스 중에만 휠 숨김(IDLE·SPINNING·회전 중에는 항상 표시) */
-  const showFinalShowcase =
-    machine.phase !== "IDLE" &&
-    machine.phase !== "SPINNING" &&
-    !demoSpin &&
-    !pendingLanding &&
-    !loadingSpin &&
+  /** 착지·확정 단계: 회전판만 숨기고 당첨·한방·판매 버튼은 유지(판매 관리) */
+  const hideWheelAfterSpin =
     (machine.phase === "LANDED" ||
       machine.phase === "CONFIRM_PENDING" ||
       machine.phase === "CONFIRMED") &&
-    displaySelectedSigs.length >= targetSelectionCount;
+    displaySelectedSigs.length > 0 &&
+    !demoSpin &&
+    !pendingLanding &&
+    !wheelSpinning &&
+    !loadingSpin;
+  /** 당첨 쇼케이스 레이아웃(접기·스크롤) — 휠 숨김과 동일 조건 + 전체 당첨 수 충족 */
+  const showFinalShowcase =
+    hideWheelAfterSpin && displaySelectedSigs.length >= targetSelectionCount;
   const oneShotImageUrl = useMemo(() => {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     const fromOneShot = (oneShotItem?.imageUrl || "").trim();
@@ -907,12 +909,20 @@ export default function AdminSigSalesPage() {
   }, [authReady, manualInventoryOptions.length, loadRemote]);
 
   useEffect(() => {
-    if (!showFinalShowcase || !displayOneShot) {
+    if (!displayOneShot) {
+      setOneShotReveal(false);
+      return;
+    }
+    if (hideWheelAfterSpin) {
+      setOneShotReveal(true);
+      return;
+    }
+    if (!showFinalShowcase) {
       setOneShotReveal(false);
       return;
     }
     setOneShotReveal(true);
-  }, [showFinalShowcase, displayOneShot]);
+  }, [hideWheelAfterSpin, showFinalShowcase, displayOneShot]);
 
   const landedShowcaseSigKeyRef = useRef("");
   useEffect(() => {
@@ -2544,7 +2554,7 @@ export default function AdminSigSalesPage() {
               {lastConfirmedText}
             </div>
           ) : null}
-          {!showFinalShowcase ? <RouletteWheel
+          {!hideWheelAfterSpin ? <RouletteWheel
             items={wheelItemsWithResult}
             isRolling={wheelSpinning}
             resultId={wheelSpinning ? wheelAnimationResultId : null}
@@ -2688,7 +2698,7 @@ export default function AdminSigSalesPage() {
                 }`}
               >
               <div
-                className="mx-auto flex w-full max-w-full justify-center overflow-visible px-1"
+                className="mx-auto flex w-full max-w-full flex-nowrap items-stretch justify-between gap-2 overflow-visible px-1"
                 style={resultRowLayout.bandStyle}
               >
                 <SelectedSigs
@@ -2703,30 +2713,30 @@ export default function AdminSigSalesPage() {
                   matchOneShotCardSize
                   cardScalePct={resultRowLayout.cardScalePct}
                   disableCardMotion={showFinalShowcase}
-                  compactGridJustify="center"
-                  className="w-full max-w-full"
-                  trailingSlot={
-                    displayOneShot && oneShotReveal ? (
-                      <OneShotSigCard
-                        name={displayOneShot?.name || "한방 시그"}
-                        price={displayOneShot?.price || 0}
-                        imageUrl={oneShotImageUrl}
-                        sigImageUserId={userId}
-                        sold={oneShotSold}
-                        soldOutStampUrl={soldOutStampUrl}
-                        selectedSigCount={displaySelectedSigsForUi.length}
-                        disabled={controlsDisabled}
-                        compact
-                        matchSigCardSize
-                        cardScalePct={resultRowLayout.cardScalePct}
-                        disableCardMotion={showFinalShowcase}
-                        showToggle
-                        onToggleSold={() => void markOneShotSoldImmediate(!oneShotSold)}
-                      />
-                    ) : null
-                  }
+                  compactGridJustify="start"
+                  className="min-w-0 flex-1"
                   onToggleSold={(id) => toggleDisplaySigSold(id)}
                 />
+                {displayOneShot && oneShotReveal ? (
+                  <div className="ml-auto shrink-0 self-stretch">
+                    <OneShotSigCard
+                      name={displayOneShot?.name || "한방 시그"}
+                      price={displayOneShot?.price || 0}
+                      imageUrl={oneShotImageUrl}
+                      sigImageUserId={userId}
+                      sold={oneShotSold}
+                      soldOutStampUrl={soldOutStampUrl}
+                      selectedSigCount={displaySelectedSigsForUi.length}
+                      disabled={controlsDisabled}
+                      compact
+                      matchSigCardSize
+                      cardScalePct={resultRowLayout.cardScalePct}
+                      disableCardMotion={showFinalShowcase}
+                      showToggle
+                      onToggleSold={() => void markOneShotSoldImmediate(!oneShotSold)}
+                    />
+                  </div>
+                ) : null}
               </div>
               <div className={`flex ${showFinalShowcase ? "justify-center" : "justify-end"}`}>
                 <button

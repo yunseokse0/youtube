@@ -1503,8 +1503,6 @@ function SigSalesOverlayPageInner() {
     manualDraftEffective?.oneShotName,
     machine.oneShot?.name,
   ]);
-  /** 회전판 제거 후 휠 자리에 한방 시그 카드 표시 */
-  const showCenterOneShot = hideWheelAfterComplete && Boolean(oneShotForResultOverlay);
   useEffect(() => {
     if (!hideWheelAfterComplete) return;
     if (!oneShotEligibleAfterReveal) return;
@@ -2149,32 +2147,6 @@ function SigSalesOverlayPageInner() {
                 }}
               />
             </motion.div>
-          ) : showCenterOneShot && oneShotForResultOverlay ? (
-            <div
-              className="flex w-full shrink-0 justify-center py-1"
-              style={wheelColumnBoostScaleStyle}
-            >
-              <OneShotSigCard
-                name={oneShotForResultOverlay.name}
-                price={oneShotForResultOverlay.price}
-                imageUrl={oneShotImageUrl || currentSignImageUrl}
-                sold={Boolean(
-                  resultSoldOverrideSet?.has(ONE_SHOT_SIG_ID) ||
-                    resultSoldOverrideSet?.has(canonicalSigIdFromWheelSliceId(ONE_SHOT_SIG_ID))
-                )}
-                soldOutStampUrl={soldOutStampUrl}
-                selectedSigCount={effectiveSelectedSigsForUi.length}
-                onToggleSold={() => {}}
-                showToggle={false}
-                compact
-                matchSigCardSize
-                cardScalePct={resultRowLayout.cardScalePct}
-                disableCardMotion
-                fillRowCell
-                gifDelayMultiplier={sigGifDelayMultiplier}
-                sigImageUserId={sigImageUserId}
-              />
-            </div>
           ) : null}
           </div>
           {manualOverlayMode && effectiveSelectedSigsForUi.length === 0 && !oneShotForResultOverlay ? (
@@ -2223,7 +2195,7 @@ function SigSalesOverlayPageInner() {
                         soldOverrideSet={resultSoldOverrideSet}
                         oneShot={oneShotForResultOverlay}
                         signImageUrl={oneShotImageUrl || currentSignImageUrl}
-                        showOneShotReveal={Boolean(oneShotForResultOverlay) && !showCenterOneShot}
+                        showOneShotReveal={Boolean(oneShotForResultOverlay) && oneShotRevealUnlocked}
                         cardScalePct={resultRowLayout.cardScalePct}
                         className="w-full max-w-full"
                         gifDelayMultiplier={sigGifDelayMultiplier}
