@@ -180,8 +180,7 @@ export function GoalBar({
           </span>
           <span style={{ color: effectiveTextColor, fontWeight: 700, lineHeight: 1, ...goalTextOutline }}>
             {compactLabel ? "후원 " : ""}
-            {formatAmount(current)} / {formatAmount(goal)}{" "}
-            <span style={{ color: pct <= 0 ? "#9d7489" : effectiveTextColor }}>({displayPct}%)</span>
+            {formatAmount(current)} / {formatAmount(goal)} ({displayPct}%)
           </span>
         </div>
       </div>
