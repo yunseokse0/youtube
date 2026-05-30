@@ -1106,18 +1106,6 @@ function SigSalesOverlayPageInner() {
     () => buildOneShotFromSelected(machine.selectedSigs.slice(0, CONFIRMED_VISIBLE_SLOTS)),
     [machine.selectedSigs],
   );
-  const staggerVisualComplete = useMemo(() => {
-    if (machine.selectedSigs.length === 0) return true;
-    if (revealedSigCount < completedTargetCount) return false;
-    if (oneShotEligibleAfterReveal && !oneShotRevealUnlocked) return false;
-    return true;
-  }, [
-    machine.selectedSigs.length,
-    revealedSigCount,
-    completedTargetCount,
-    oneShotEligibleAfterReveal,
-    oneShotRevealUnlocked,
-  ]);
   const revealQueueKey = useMemo(() => {
     const fromMachine = machine.selectedSigs.slice(0, CONFIRMED_VISIBLE_SLOTS).map((s) => s.id).join(",");
     if (fromMachine.length > 0) return fromMachine;
@@ -1236,46 +1224,30 @@ function SigSalesOverlayPageInner() {
     wheelPhase,
     spinShowcasePhase,
   ]);
-  /**
-   * 개별 당첨이 모두 보였는지. 서버 LANDED 복원·hold 시 카드는 먼저 다 보이는데
-   * revealedSigCount 만으로는 회전판이 남는 경우가 있어 display 길이도 함께 본다.
-   */
-  const allIndividualWinnersVisible = useMemo(() => {
-    if (completedTargetCount < 1) return false;
-    if (revealedSigCount >= completedTargetCount) return true;
-    return (
-      spinShowcasePhase &&
-      displaySelectedSigs.length >= completedTargetCount &&
-      wheelPhase !== "spinning" &&
-      wheelPhase !== "settling" &&
-      sequentialSpinFinished
-    );
-  }, [
-    completedTargetCount,
-    revealedSigCount,
-    spinShowcasePhase,
-    displaySelectedSigs.length,
-    wheelPhase,
-    sequentialSpinFinished,
-  ]);
-  /** 당첨 연출 완료 후 회전판 제거(한방은 휠 자리 또는 하단 카드) */
+  /** 당첨 연출 완료 후 회전판만 제거 — 당첨·한방 카드는 하단에 유지 */
   const hideWheelAfterComplete = useMemo(() => {
     if (pendingLanding || demoSpin) return false;
     if (wheelPhase === "spinning" || wheelPhase === "settling") return false;
-    if (completedTargetCount < 1) return false;
-    if (!sequentialSpinFinished) return false;
-    const showcaseReady = spinShowcasePhase || wheelPhase === "result";
-    if (!showcaseReady) return false;
-    return allIndividualWinnersVisible && displaySelectedSigs.length >= completedTargetCount;
+    const terminal =
+      machine.phase === "LANDED" ||
+      machine.phase === "CONFIRM_PENDING" ||
+      machine.phase === "CONFIRMED";
+    if (!terminal) return false;
+    if (displaySelectedSigs.length < 1) return false;
+    if (useSequentialWheel && spinQueueSelected.length > 1 && !sequentialSpinFinished) {
+      return false;
+    }
+    return displaySelectedSigs.length >= Math.min(completedTargetCount, 1);
   }, [
     pendingLanding,
     demoSpin,
     wheelPhase,
-    completedTargetCount,
-    sequentialSpinFinished,
-    spinShowcasePhase,
-    allIndividualWinnersVisible,
+    machine.phase,
     displaySelectedSigs.length,
+    useSequentialWheel,
+    spinQueueSelected.length,
+    sequentialSpinFinished,
+    completedTargetCount,
   ]);
   /**
    * 회차 단위로만 바뀌게 함. selectedSigs/resultId를 넣으면 landed() 직후 키가 바뀌어
@@ -1320,6 +1292,10 @@ function SigSalesOverlayPageInner() {
         wheelPhase === "result" ||
         Boolean(demoSpin) ||
         Boolean(pendingLanding))
+  );
+  /** 방송 OBS: 휠 제거 후 당첨 줄을 브라우저 소스 하단에 고정(중앙에 떠 보이는 현상 방지) */
+  const pinResultsToBroadcastBottom = Boolean(
+    hideWheelAfterComplete && resultOverlayVisible && !manualOverlayMode
   );
 
   const showSigBoardRollingSection = useMemo(() => {
@@ -1475,9 +1451,26 @@ function SigSalesOverlayPageInner() {
     for (const id of manualDraftSoldOverrideSet) next.add(id);
     return next;
   }, [inventorySoldOutIdSet, confirmedRoundSoldIdSet, manualDraftSoldOverrideSet]);
+  const oneShotRevealReady = useMemo(() => {
+    if (manualOverlayMode) return true;
+    if (oneShotRevealUnlocked) return true;
+    if (!spinShowcasePhase) return false;
+    if (effectiveSelectedSigsForUi.length < MIN_ONE_SHOT_SIGS) return false;
+    if (machine.oneShot || state?.rouletteState?.oneShotResult) return true;
+    return revealedSigCount >= completedTargetCount;
+  }, [
+    manualOverlayMode,
+    oneShotRevealUnlocked,
+    spinShowcasePhase,
+    effectiveSelectedSigsForUi.length,
+    machine.oneShot,
+    state?.rouletteState?.oneShotResult,
+    revealedSigCount,
+    completedTargetCount,
+  ]);
   /** 당첨 시그 판매 시 한방 금액 차감 — 서버 oneShotResult·수동 입력 모두 동일 규칙 */
   const oneShotForResultOverlay = useMemo(() => {
-    if (!manualOverlayMode && !oneShotRevealUnlocked) return null;
+    if (!oneShotRevealReady) return null;
     const selected = manualOverlayMode
       ? effectiveSelectedSigsForUi.length >= MIN_ONE_SHOT_SIGS
         ? effectiveSelectedSigsForUi
@@ -1494,8 +1487,8 @@ function SigSalesOverlayPageInner() {
         : machine.oneShot?.name,
     });
   }, [
+    oneShotRevealReady,
     manualOverlayMode,
-    oneShotRevealUnlocked,
     effectiveSelectedSigsForUi,
     manualDraftSelectedForUi,
     resultSoldOverrideSet,
@@ -2162,7 +2155,7 @@ function SigSalesOverlayPageInner() {
           {/* 휠 아래·왼쪽(방송 화면 기준 시그 결과 영역). 휠 제거 시 위 플레이스홀더로 세로 위치 유지. hanbangOnly 시 한방만 화면 하단 고정 */}
           <div
             className={
-              hanbangOnlyResultLayout && resultOverlayVisible
+              pinResultsToBroadcastBottom || (hanbangOnlyResultLayout && resultOverlayVisible)
                 ? "pointer-events-none fixed bottom-0 left-0 right-0 z-[80] flex w-full max-w-full justify-center overflow-visible px-3 pb-2 pt-1 md:px-6 md:pb-4"
                 : "pointer-events-none relative z-[70] mt-2 w-full max-w-[min(960px,min(94vw,99vw))] shrink-0 self-center overflow-visible px-2 pb-2 pt-1 md:max-w-[min(1100px,96vw)] md:px-4 md:pb-3 md:pt-3"
             }
@@ -2195,7 +2188,7 @@ function SigSalesOverlayPageInner() {
                         soldOverrideSet={resultSoldOverrideSet}
                         oneShot={oneShotForResultOverlay}
                         signImageUrl={oneShotImageUrl || currentSignImageUrl}
-                        showOneShotReveal={Boolean(oneShotForResultOverlay) && oneShotRevealUnlocked}
+                        showOneShotReveal={Boolean(oneShotForResultOverlay)}
                         cardScalePct={resultRowLayout.cardScalePct}
                         className="w-full max-w-full"
                         gifDelayMultiplier={sigGifDelayMultiplier}
