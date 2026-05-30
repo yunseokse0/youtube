@@ -3,8 +3,8 @@ import { NextRequest } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** DevTools EventStream·서버 로그 부담을 줄이기 위해 ping은 길게 유지 */
-const SSE_PING_MS = 60_000;
+/** Nginx·프록시 기본 read timeout(60s)보다 짧게 — ERR_INCOMPLETE_CHUNKED_ENCODING·끊김 완화 */
+const SSE_PING_MS = 20_000;
 
 /** Render 무료 인스턴스: SSE·OBS 소스가 많으면 연결 폭주 → 502 유발 가능 */
 const MAX_SSE_CLIENTS = 80;
@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
 
       const interval = setInterval(() => {
         try {
+          controller.enqueue(`: keep-alive ${Date.now()}\n\n`);
           controller.enqueue(`data: ping\n\n`);
         } catch {
           clearInterval(interval);
@@ -47,6 +48,11 @@ export async function GET(request: NextRequest) {
       request.signal.addEventListener("abort", () => {
         clearInterval(interval);
         clients = clients.filter((c) => c !== controller);
+        try {
+          controller.close();
+        } catch {
+          /* ignore */
+        }
       });
     },
   });

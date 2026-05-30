@@ -280,8 +280,20 @@ const ADMIN_STATE_FALLBACK_POLL_MS = 120_000;
 function adminSyncFingerprint(s: AppState): string {
   const rs = s.rouletteState;
   const inv = s.sigInventory || [];
+  const memberTotal = (s.members || []).reduce(
+    (sum, m) => sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)),
+    0
+  );
+  const overlayPresetsForFp = Array.isArray(s.overlayPresets)
+    ? (s.overlayPresets as { showGoal?: boolean; goal?: string }[])
+    : [];
+  const goalPreset = overlayPresetsForFp.find(
+    (p) => Boolean(p.showGoal) && Number(p.goal || 0) > 0
+  );
   return [
     s.updatedAt ?? 0,
+    memberTotal,
+    String(goalPreset?.goal ?? ""),
     inv.length,
     inv.map((x) => `${x.id}:${x.price}:${x.soldCount}:${x.isActive ? 1 : 0}`).join(","),
     (s.donors || []).length,
@@ -1006,9 +1018,11 @@ export default function AdminPage() {
       if (!running || inFlight) return;
       inFlight = true;
       try {
-        const remote = await loadStateFromApi(user?.id);
+        const since = Math.max(stateUpdatedAtRef.current, lastAppliedRemoteUpdatedAtRef.current);
+        const remote = await loadStateFromApi(user?.id, { ifUpdatedSince: since });
         if (!remote) {
           if (typeof navigator !== "undefined" && !navigator.onLine) setSyncStatus("local");
+          else if (since > 0) setSyncStatus("synced");
           else setSyncStatus("error");
           return;
         }
@@ -1221,7 +1235,6 @@ export default function AdminPage() {
     u.searchParams.set("renderHeight", isVertical ? "1920" : "1080");
     return u.toString();
   };
-  const PREVIEW_SNAP_PREFIX = "excel-preview-snap-";
   const buildStablePreviewUrl = (p: OverlayPreset): string => {
     if (typeof window === "undefined") return "";
     const isGoalOnlyPreset =
@@ -1269,46 +1282,7 @@ export default function AdminPage() {
     q.set("renderHeight", isVertical ? "1920" : "1080");
     const hasMembersWithGoal = state.members.some((m) => (m.goal || 0) > 0);
     if (hasMembersWithGoal) q.set("showPersonalGoal", "true");
-    const snapUpdatedAt = Number(state.updatedAt || 0) > 0 ? Number(state.updatedAt) : Date.now();
-    try {
-      const snapObj = {
-        members: state.members.map(m => ({ id: m.id, name: m.name, account: m.account, toon: m.toon, contribution: m.contribution || 0, goal: m.goal, operating: m.operating })),
-        memberPositions: state.memberPositions || {},
-        donors: state.donors || [],
-        missions: (state as any).missions || [],
-        forbiddenWords: state.forbiddenWords || [],
-        goal: (() => { const n = parseInt((p.goal || "0") as any, 10); return Number.isFinite(n) ? Math.max(0, n) : 0; })(),
-        goalCurrent: (() => {
-          const raw = (p.goalCurrent || "") as any;
-          const n = raw === "" || raw === null || raw === undefined ? null : parseInt(String(raw), 10);
-          return n === null || Number.isNaN(n) ? null : Math.max(0, n);
-        })(),
-        updatedAt: snapUpdatedAt,
-      };
-      const json = JSON.stringify(snapObj);
-      const b64 = btoa(encodeURIComponent(json));
-      q.set("snap", b64);
-      const urlWithSnap = `${base}?${q.toString()}`;
-      if (urlWithSnap.length <= 1900) {
-        return urlWithSnap;
-      }
-      q.delete("snap");
-      // Stable key per saved state version to prevent iframe reload loops.
-      const snapKey = PREVIEW_SNAP_PREFIX + snapUpdatedAt + "-" + p.id;
-      localStorage.setItem(snapKey, JSON.stringify(snapObj));
-      q.set("snapKey", snapKey);
-      try {
-        const keysToRemove: string[] = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (k?.startsWith(PREVIEW_SNAP_PREFIX)) {
-            const age = Date.now() - parseInt(k.replace(PREVIEW_SNAP_PREFIX, "").split("-")[0] || "0", 10);
-            if (age > 600000) keysToRemove.push(k);
-          }
-        }
-        keysToRemove.forEach((k) => localStorage.removeItem(k));
-      } catch {}
-    } catch {}
+    /** snap/snapKey 생략 — updatedAt마다 iframe src가 바뀌며 후원 목표가 깜빡임. embed는 storage·GET으로 실시간 반영 */
     return `${base}?${q.toString()}`;
   };
 
@@ -9156,7 +9130,7 @@ export default function AdminPage() {
                                       <div className="flex items-center gap-2">
                                         <input
                                           type="color"
-                                          value={toColorPickerValue(p.goalTextColor || "#fff7fb", "#fff7fb")}
+                                          value={toColorPickerValue(p.goalTextColor || "#6b2d4a", "#6b2d4a")}
                                           onChange={(e) => updatePreset(p.id, { goalTextColor: e.target.value })}
                                           className="h-9 w-12 rounded border border-white/20 bg-transparent p-0.5"
                                         />
@@ -9164,7 +9138,7 @@ export default function AdminPage() {
                                           className="flex-1 px-2 py-1 rounded bg-neutral-900/90 border border-white/15 text-xs font-mono"
                                           value={p.goalTextColor || ""}
                                           onChange={(e) => updatePreset(p.id, { goalTextColor: e.target.value })}
-                                          placeholder="#fff7fb"
+                                          placeholder="#6b2d4a"
                                         />
                                       </div>
                                     </div>
@@ -9309,7 +9283,7 @@ export default function AdminPage() {
                                         <div className="flex items-center gap-2">
                                           <input
                                             type="color"
-                                            value={toColorPickerValue(p.goalTextColor || "#fff7fb", "#fff7fb")}
+                                            value={toColorPickerValue(p.goalTextColor || "#6b2d4a", "#6b2d4a")}
                                             onChange={(e) => updatePreset(p.id, { goalTextColor: e.target.value })}
                                             className="h-8 w-10 rounded border border-white/20 bg-transparent p-0.5"
                                           />
@@ -9317,7 +9291,7 @@ export default function AdminPage() {
                                             className="flex-1 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm font-mono"
                                             value={p.goalTextColor || ""}
                                             onChange={(e) => updatePreset(p.id, { goalTextColor: e.target.value })}
-                                            placeholder="#fff7fb (비우면 기본)"
+                                            placeholder="#6b2d4a (비우면 기본)"
                                           />
                                         </div>
                                         <label className="text-xs text-neutral-400">글자 크기(px)</label>
@@ -10071,11 +10045,9 @@ export default function AdminPage() {
 }
 
 function ClientPreviewWrapper({ preset, buildUrl }: { preset: OverlayPreset; buildUrl: (p: OverlayPreset) => string }) {
-  const [url, setUrl] = useState("");
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const u = buildUrl(preset);
-    if (u) setUrl(u);
+  const url = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return buildUrl(preset) || "";
   }, [preset, buildUrl]);
   return <VerticalPreview url={url} />;
 }
@@ -10121,7 +10093,7 @@ function VerticalPreview({ url }: { url: string }) {
         loadTimeoutRef.current = null;
       }
     };
-  }, [previewUrl, iframeKey]);
+  }, [previewUrl]);
   const onLoad = useCallback((e: any) => {
     if (loadTimeoutRef.current) {
       clearTimeout(loadTimeoutRef.current);

@@ -14,6 +14,10 @@ function useCountUp(value: number, durationMs = 600) {
     const from = prevValueRef.current;
     const to = value;
     prevValueRef.current = to;
+    if (Math.abs(to - from) < 1) {
+      setDisplay(to);
+      return;
+    }
     startRef.current = performance.now();
     const loop = (t: number) => {
       const elapsed = t - startRef.current;
@@ -40,7 +44,7 @@ export function GoalBar({
   compactLabel = false,
   opacityPercent = 100,
   opacityAffectsText = false,
-  textColor = "#fff7fb",
+  textColor = "#6b2d4a",
   fontSizePx,
   textOutlineColor,
   textOutlineWidthPx,
@@ -89,8 +93,9 @@ export function GoalBar({
     ? Math.max(0, Math.min(100, opacityPercent)) / 100
     : 1;
   const fillWidthPct = pct <= 0 ? 0 : Math.min(100, Math.max(pct, 2));
-  const GOAL_TRACK_BG = "#2a1528";
-  const GOAL_TRACK_BORDER = "#ffc4dc";
+  /** 미달 구간 — 어두운 트랙 대신 표 헤더와 맞는 밝은 분홍(방송/OBS에서 검게 보이지 않게) */
+  const GOAL_TRACK_BG = "#fde8f2";
+  const GOAL_TRACK_BORDER = "#f5b8d4";
   const textFontPx = (() => {
     if (fontSizePx != null && Number.isFinite(fontSizePx) && fontSizePx > 0) {
       return Math.max(10, Math.min(48, Math.round(fontSizePx)));
@@ -104,6 +109,12 @@ export function GoalBar({
     outlineColor: textOutlineColor,
     outlineWidthPx: textOutlineWidthPx,
   });
+  /** 예전 어두운 트랙용 기본 밝은 글자색 — 밝은 배경에서는 진한 로즈로 자동 전환 */
+  const effectiveTextColor = (() => {
+    const c = String(textColor || "").trim().toLowerCase();
+    if (!c || c === "#fff7fb") return "#6b2d4a";
+    return textColor;
+  })();
 
   return (
     <div
@@ -113,7 +124,7 @@ export function GoalBar({
         borderRadius: 8,
         border: `1px solid ${GOAL_TRACK_BORDER}`,
         opacity: containerOpacity,
-        boxShadow: "0 2px 10px rgba(0,0,0,0.35)",
+        boxShadow: "0 2px 10px rgba(255, 140, 190, 0.22)",
       }}
     >
       <div
@@ -122,7 +133,7 @@ export function GoalBar({
           height: barH,
           borderRadius: 7,
           background: GOAL_TRACK_BG,
-          boxShadow: "inset 0 1px 3px rgba(0,0,0,0.45)",
+          boxShadow: "inset 0 1px 2px rgba(255, 160, 200, 0.28)",
         }}
       >
         <div
@@ -159,7 +170,7 @@ export function GoalBar({
           <span
             className="inline-flex items-center"
             style={{
-              color: textColor,
+              color: effectiveTextColor,
               fontWeight: 900,
               lineHeight: 1,
               ...goalTextOutline,
@@ -167,10 +178,10 @@ export function GoalBar({
           >
             {normalizedLabel}
           </span>
-          <span style={{ color: textColor, fontWeight: 700, lineHeight: 1, ...goalTextOutline }}>
+          <span style={{ color: effectiveTextColor, fontWeight: 700, lineHeight: 1, ...goalTextOutline }}>
             {compactLabel ? "후원 " : ""}
             {formatAmount(current)} / {formatAmount(goal)}{" "}
-            <span style={{ color: pct <= 0 ? "#e5e7eb" : textColor }}>({displayPct}%)</span>
+            <span style={{ color: pct <= 0 ? "#9d7489" : effectiveTextColor }}>({displayPct}%)</span>
           </span>
         </div>
       </div>

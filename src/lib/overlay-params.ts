@@ -333,7 +333,7 @@ export function resolveGoalTextColor(
     presetToParams(preset),
     opts
   );
-  return normalizeGoalHexColor(merged || "") || "#fff7fb";
+  return normalizeGoalHexColor(merged || "") || "#6b2d4a";
 }
 
 export function resolveGoalFontSizePx(

@@ -339,12 +339,35 @@ function formatTimerText(elapsed: string | null, remainingSeconds?: number | nul
 type ThemeId = "default" | "excel" | "excelBlue" | "excelSlate" | "excelAmber" | "excelRose" | "excelNavy" | "excelTeal" | "excelPurple" | "excelEmerald" | "excelOrange" | "excelIndigo" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel" | "rainbow" | "sunset" | "ocean" | "forest" | "aurora" | "violet" | "coral" | "mint" | "lava" | "ice";
 
 const TABLE_BG_RGB: Record<string, [number, number, number]> = {
-  excel: [255, 255, 255], excelBlue: [255, 255, 255], excelAmber: [255, 251, 235], excelRose: [255, 241, 242],
-  excelTeal: [240, 253, 250], excelPurple: [250, 245, 255], excelEmerald: [236, 253, 245], excelOrange: [255, 247, 237], excelIndigo: [238, 242, 255],
-  excelSlate: [30, 41, 59], excelNavy: [15, 23, 42],
+  default: [255, 250, 253],
+  excel: [255, 255, 255],
+  excelBlue: [255, 255, 255],
+  excelAmber: [255, 251, 235],
+  excelRose: [255, 241, 242],
+  excelTeal: [240, 253, 250],
+  excelPurple: [250, 245, 255],
+  excelEmerald: [236, 253, 245],
+  excelOrange: [255, 247, 237],
+  excelIndigo: [238, 242, 255],
+  excelSlate: [30, 41, 59],
+  excelNavy: [15, 23, 42],
   pastel: [253, 252, 240],
+  neonExcel: [255, 255, 255],
 };
-const defaultTableBgRgb: [number, number, number] = [23, 23, 23];
+const defaultTableBgRgb: [number, number, number] = [255, 255, 255];
+
+function resolveTableSheetRgb(theme: ThemeId): [number, number, number] {
+  return TABLE_BG_RGB[theme] ?? defaultTableBgRgb;
+}
+
+/** colgroup 열 채움 — 시트 틴트와 같은 계열(엑셀=밝은 흰색, 기본=연분홍) */
+function resolveTableColumnFill(theme: ThemeId): string {
+  if (theme === "default") return "rgba(255, 212, 231, 0.70)";
+  const rgb = resolveTableSheetRgb(theme);
+  const luminance = rgb[0] + rgb[1] + rgb[2];
+  const alpha = luminance < 200 ? 0.88 : 0.95;
+  return `rgba(${rgb.join(",")}, ${alpha})`;
+}
 
 const THEMES: Record<ThemeId, {
   label: string;
@@ -1361,7 +1384,15 @@ function OverlayInner() {
   const totalHeaderLabel = "합계";
   const resolveThemeId = (key: string): ThemeId => {
     const raw = (sp.get(key) || "auto").trim();
-    if (raw === "auto" || !raw) return "default";
+    if (raw === "auto" || !raw) {
+      if (key === "membersTheme" || key === "totalTheme" || key === "tickerBaseTheme" || key === "missionTheme") {
+        const presetTheme = String((effectivePreset as { theme?: string })?.theme || "").trim();
+        if (presetTheme && Object.prototype.hasOwnProperty.call(THEMES, presetTheme)) {
+          return presetTheme as ThemeId;
+        }
+      }
+      return "default";
+    }
     if (Object.prototype.hasOwnProperty.call(THEMES, raw)) {
       return raw as ThemeId;
     }
@@ -2538,24 +2569,10 @@ function OverlayInner() {
       : [`${rankColCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`];
     /** 숫자 자리 증가로 표 전체가 밀려 나가지 않도록 너비 상한 고정 */
     const excelTableWidthCalc = excelGridCols.join(" + ");
+    const tableColumnFill = resolveTableColumnFill(membersThemeId);
     const columnGradients = hasRoleColumn
-      ? [
-          "rgba(255, 212, 231, 0.70)", // rank
-          "rgba(255, 212, 231, 0.70)", // role
-          "rgba(255, 212, 231, 0.70)", // name
-          "rgba(255, 212, 231, 0.70)", // account
-          "rgba(255, 212, 231, 0.70)", // toon
-          "rgba(255, 212, 231, 0.70)", // total
-          "rgba(255, 212, 231, 0.70)", // contribution
-        ]
-      : [
-          "rgba(255, 212, 231, 0.70)", // rank
-          "rgba(255, 212, 231, 0.70)", // name
-          "rgba(255, 212, 231, 0.70)", // account
-          "rgba(255, 212, 231, 0.70)", // toon
-          "rgba(255, 212, 231, 0.70)", // total
-          "rgba(255, 212, 231, 0.70)", // contribution
-        ];
+      ? Array(7).fill(tableColumnFill)
+      : Array(6).fill(tableColumnFill);
     let effectiveScale = centerFixed || hasTableFreePos
       ? (scale * (zoomMode === "neutral" ? 1 : (zoomMode === "invert" ? (1 / centerZoomScale) : centerZoomScale)))
       : (externalHost ? scale : (viewportScale * scale));
@@ -2997,7 +3014,7 @@ function OverlayInner() {
                   )
                 ) : null}
                 <div className="relative z-[1]">
-                <div className="relative overflow-visible" style={{ borderRadius: 0, backgroundColor: `rgba(${(TABLE_BG_RGB[themeId] || defaultTableBgRgb).join(",")}, ${tableTintAlpha})` }}>
+                <div className="relative overflow-visible" style={{ borderRadius: 0, backgroundColor: `rgba(${resolveTableSheetRgb(membersThemeId).join(",")}, ${tableTintAlpha})` }}>
                     <table
                       ref={tableBoxRef as any}
                       className={`${effectiveTableCls} overlay-elegant-table${membersThemeId === "pastel" ? " pastel-member-table" : ""}`}

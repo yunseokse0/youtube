@@ -32,7 +32,8 @@ export function useSSEConnection(onMessage: (data: any) => void) {
 
     const scheduleReconnect = () => {
       if (reconnectTimerRef.current) return;
-      const delay = retryDelayRef.current;
+      const jitter = Math.floor(Math.random() * 400);
+      const delay = retryDelayRef.current + jitter;
       reconnectTimerRef.current = setTimeout(() => {
         reconnectTimerRef.current = null;
       if (document.visibilityState === "hidden" && !shouldConnectSseDespiteHiddenTab()) {
@@ -74,8 +75,12 @@ export function useSSEConnection(onMessage: (data: any) => void) {
 
       eventSource.onerror = () => {
         setConnected(false);
-        eventSourceRef.current?.close();
-        eventSourceRef.current = null;
+        if (eventSource.readyState !== EventSource.CLOSED) {
+          eventSource.close();
+        }
+        if (eventSourceRef.current === eventSource) {
+          eventSourceRef.current = null;
+        }
         const now = Date.now();
         if (now - lastWarnAtRef.current > 3000) {
           logger.warn(`SSE 연결 끊김, ${retryDelayRef.current}ms 후 재연결`);

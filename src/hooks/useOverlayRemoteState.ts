@@ -14,6 +14,7 @@ import {
 } from "@/lib/overlay-pull-policy";
 import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
 import { useSSEConnection } from "@/lib/sse-client";
+import { buildOverlaySyncSignature } from "@/lib/overlay-sync-signature";
 
 import type { StateApiPick } from "@/lib/state-api-pick";
 import { STATE_PICK_OVERLAY, STATE_PICK_OVERLAY_DONORS } from "@/lib/state-api-pick";
@@ -55,6 +56,7 @@ export function useOverlayRemoteState(
   const [state, setState] = useState<AppState | null>(frozen);
   const lastSyncedUpdatedAtRef = useRef(0);
   const lastSyncedDonorRevRef = useRef(0);
+  const lastVisualSigRef = useRef("");
   const syncingRef = useRef(false);
   const syncFromApiRef = useRef<() => Promise<void>>(async () => {});
   const scheduleSseSyncRef = useRef<(() => void) | null>(null);
@@ -74,6 +76,9 @@ export function useOverlayRemoteState(
         const dr = readDonorRankingsRevision(remote);
         if (dr > 0) lastSyncedDonorRevRef.current = Math.max(lastSyncedDonorRevRef.current, dr);
       }
+      const nextSig = buildOverlaySyncSignature(remote);
+      if (nextSig === lastVisualSigRef.current) return;
+      lastVisualSigRef.current = nextSig;
       setState(remote);
     } finally {
       syncingRef.current = false;
@@ -106,6 +111,7 @@ export function useOverlayRemoteState(
     const local = readLocalStateIfExists(userId);
     if (local) {
       setState(local);
+      lastVisualSigRef.current = buildOverlaySyncSignature(local);
       lastSyncedUpdatedAtRef.current = local.updatedAt || 0;
       if (statePick === STATE_PICK_OVERLAY_DONORS) {
         lastSyncedDonorRevRef.current = readDonorRankingsRevision(local);
@@ -113,6 +119,7 @@ export function useOverlayRemoteState(
     } else {
       const base = defaultState();
       setState(base);
+      lastVisualSigRef.current = buildOverlaySyncSignature(base);
       lastSyncedUpdatedAtRef.current =
         options.noLocalBaseline === "default" ? base.updatedAt || 0 : 0;
     }
@@ -159,7 +166,11 @@ export function useOverlayRemoteState(
           const u = localNow.updatedAt || 0;
           if (lastSyncedUpdatedAtRef.current <= 0 || u >= lastSyncedUpdatedAtRef.current) {
             lastSyncedUpdatedAtRef.current = u;
-            setState(localNow);
+            const nextSig = buildOverlaySyncSignature(localNow);
+            if (nextSig !== lastVisualSigRef.current) {
+              lastVisualSigRef.current = nextSig;
+              setState(localNow);
+            }
           }
         } catch {
           /* noop */
