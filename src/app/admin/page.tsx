@@ -2729,18 +2729,18 @@ export default function AdminPage() {
     }
     const fd = new FormData();
     fd.append("file", file);
+    const uidFromQuery =
+      typeof window !== "undefined"
+        ? String(
+            new URLSearchParams(window.location.search).get("u") ||
+              new URLSearchParams(window.location.search).get("user") ||
+              ""
+          ).trim()
+        : "";
+    const uid = String(user?.id || uidFromQuery || "finalent").trim();
     let res: Response;
     try {
       const q = new URLSearchParams();
-      const uidFromQuery =
-        typeof window !== "undefined"
-          ? String(
-              new URLSearchParams(window.location.search).get("u") ||
-                new URLSearchParams(window.location.search).get("user") ||
-                ""
-            ).trim()
-          : "";
-      const uid = String(user?.id || uidFromQuery || "finalent").trim();
       if (uid) {
         q.set("user", uid);
         q.set("u", uid);
@@ -2794,7 +2794,9 @@ export default function AdminPage() {
       notify("이미지 업로드 실패: 사용자 경로 파싱 오류가 발생했습니다. 다시 로그인 후 재시도해 주세요.");
       return { url: null, status: res.status };
     }
-    return { url: j.url, status: res.status };
+    /** IP가 바뀌어도 `/uploads/sigs/...` 상대 경로만 저장 (구 IP 절대 URL 방지) */
+    const storedUrl = normalizeSigImageUrlStored(repairDiskUploadSigImagePath(j.url, uid));
+    return { url: storedUrl, status: res.status };
   }, [user?.id]);
 
   const appendSigInventoryRows = useCallback(
