@@ -5,7 +5,12 @@ import {
   resolveSigImageUrl,
   toGithubRawSigAssetUrl,
 } from "@/lib/constants";
-import { matchSigInventoryItemByFileName, planSigBulkReupload } from "@/lib/sig-image-bulk";
+import {
+  isPersistedDiskSigUploadUrl,
+  isSigInventoryImageNeedsReupload,
+  matchSigInventoryItemByFileName,
+  planSigBulkReupload,
+} from "@/lib/sig-image-bulk";
 import type { SigItem } from "@/types";
 
 describe("normalizeSigImageUrlStored", () => {
@@ -72,17 +77,32 @@ describe("sig bulk reupload", () => {
     expect(matchSigInventoryItemByFileName(items, "애교.gif")?.id).toBe("a");
   });
 
-  it("plans name match and fallback for reupload-needed rows", () => {
+  it("only plans rows when file name matches sig name (no order fallback)", () => {
     const files = [
       new File([""], "애교.gif", { type: "image/gif" }),
       new File([""], "unknown.gif", { type: "image/gif" }),
     ];
     const plans = planSigBulkReupload(files, items);
-    expect(plans).toHaveLength(2);
+    expect(plans).toHaveLength(1);
     expect(plans[0].item.id).toBe("a");
     expect(plans[0].matchedBy).toBe("name");
-    expect(plans[1].item.id).toBe("b");
-    expect(plans[1].matchedBy).toBe("fallback");
+  });
+
+  it("does not mark persisted disk upload URLs as reupload-needed", () => {
+    expect(isPersistedDiskSigUploadUrl("/uploads/sigs/finalent/1730146972345_aa8b2c36.gif")).toBe(true);
+    const row: SigItem = {
+      id: "c",
+      name: "04클럽춤",
+      price: 0,
+      imageUrl: "/uploads/sigs/finalent/1730146972345_aa8b2c36.gif",
+      memberId: "",
+      maxCount: 1,
+      soldCount: 0,
+      isRolling: true,
+      isActive: true,
+    };
+    expect(isSigInventoryImageNeedsReupload(row)).toBe(false);
+    expect(isSigInventoryImageNeedsReupload(items[1])).toBe(true);
   });
 });
 

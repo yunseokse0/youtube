@@ -79,7 +79,7 @@ import {
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
 import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
-import { planSigBulkReupload } from "@/lib/sig-image-bulk";
+import { planSigBulkReupload, sigBulkFilesWithoutNameMatch } from "@/lib/sig-image-bulk";
 import { createSafeFilePreviewUrl, revokeSafeFilePreviewUrl } from "@/lib/safe-file-preview";
 import { formatSigImageUploadFailureMessage, SIG_UPLOAD_NGINX_413_HINT } from "@/lib/sig-upload-errors";
 import { applySigPriceExcelRows, sigInventoryToExcelRows } from "@/lib/sig-inventory-excel";
@@ -2990,17 +2990,23 @@ export default function AdminPage() {
       beginSigBulkUploadUi(list.length, `${list.length}개 파일 선택됨 — 처리 시작…`);
       const items = (state.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID);
       const plans = planSigBulkReupload(list, items);
+      const unmatchedFiles = sigBulkFilesWithoutNameMatch(list, plans);
       if (!plans.length) {
         await bulkAddSigInventoryFromFiles(list, { skipBusyGuard: true });
         return;
       }
-      const unmatched = list.length - plans.length;
       const ok = window.confirm(
         `시그 이미지 일괄 재업로드\n\n` +
           `선택 파일: ${list.length}개\n` +
-          `적용 예정: ${plans.length}개 (이름 매칭 + 재업로드 필요 행)\n` +
-          (unmatched > 0 ? `매칭 안 됨: ${unmatched}개 (파일명·시그 이름 확인)\n` : "") +
-          `\n서버에 다시 업로드한 뒤 URL을 갱신합니다. 계속할까요?`
+          `기존 시그에 반영(파일명=시그 이름 일치): ${plans.length}개\n` +
+          (unmatchedFiles.length > 0
+            ? `이름 불일치(기존 행 변경 없음): ${unmatchedFiles.length}개 — ${unmatchedFiles
+                .slice(0, 5)
+                .map((f) => f.name)
+                .join(", ")}${unmatchedFiles.length > 5 ? "…" : ""}\n`
+            : "") +
+          `\n※ 파일명이 「04클럽춤.gif」처럼 시그 이름과 같을 때만 해당 행 이미지가 바뀝니다.\n` +
+          `계속할까요?`
       );
       if (!ok) {
         setSigBulkReuploadBusy(false);
@@ -3014,15 +3020,13 @@ export default function AdminPage() {
       const inventoryPatches: Array<{ id: string; patch: Partial<AppState["sigInventory"][number]> }> = [];
       try {
         for (let i = 0; i < plans.length; i++) {
-          const { file, item, matchedBy } = plans[i]!;
+          const { file, item } = plans[i]!;
           setSigUploadProgress({
             current: i,
             total: plans.length,
-            label: `재업로드 (${i + 1}/${plans.length}): ${item.name} ← ${file.name}${matchedBy === "fallback" ? " (순서)" : ""}`,
+            label: `재업로드 (${i + 1}/${plans.length}): ${item.name} ← ${file.name}`,
           });
-          setSigOcrBanner(
-            `일괄 재업로드 ${i + 1}/${plans.length}: ${item.name} ← ${file.name}${matchedBy === "fallback" ? " (순서)" : ""}`
-          );
+          setSigOcrBanner(`일괄 재업로드 ${i + 1}/${plans.length}: ${item.name} ← ${file.name}`);
           const { url } = await uploadSigImageFile(file, { silent: true, skipMirror: true });
           if (!url) {
             failures.push(file.name);
@@ -3057,10 +3061,21 @@ export default function AdminPage() {
           total: plans.length,
           label: "재업로드 완료",
         });
-        const summary =
+        let summary =
           `일괄 재업로드 완료: 업로드 ${uploaded}/${plans.length}건` +
-          (failures.length ? ` · 실패: ${failures.slice(0, 4).join(", ")}${failures.length > 4 ? "…" : ""}` : "") +
-          (unmatched > 0 ? ` · 미매칭 파일 ${unmatched}개` : "");
+          (failures.length ? ` · 실패: ${failures.slice(0, 4).join(", ")}${failures.length > 4 ? "…" : ""}` : "");
+        if (unmatchedFiles.length > 0) {
+          const addUnmatched = window.confirm(
+            `이름이 맞지 않아 기존 시그는 바꾸지 않은 파일 ${unmatchedFiles.length}개가 있습니다.\n` +
+              `새 시그 행으로 추가할까요? (취소하면 무시)`
+          );
+          if (addUnmatched) {
+            await bulkAddSigInventoryFromFiles(unmatchedFiles, { skipBusyGuard: true });
+            summary += ` · 새 시그로 추가 ${unmatchedFiles.length}건`;
+          } else {
+            summary += ` · 이름 불일치 ${unmatchedFiles.length}건 무시`;
+          }
+        }
         setSigExcelResult(summary);
         setSigOcrBanner(summary);
       } finally {
@@ -6846,7 +6861,7 @@ export default function AdminPage() {
                     type="button"
                     className="px-3 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-sm disabled:opacity-50"
                     disabled={sigBulkReuploadBusy}
-                    title="PC에서 여러 GIF 선택 · 목록이 비어 있으면 새 시그로 추가, 있으면 이름 매칭 후 재업로드"
+                        title="PC에서 여러 GIF 선택 · 파일명이 시그 이름과 같을 때만 해당 행 이미지 교체(예: 04클럽춤.gif → 04클럽춤). 그 외는 새 시그 추가"
                     onClick={() => sigBulkReuploadInputRef.current?.click()}
                   >
                     {sigBulkReuploadBusy ? "업로드 중…" : "PC 시그 일괄 업로드"}
