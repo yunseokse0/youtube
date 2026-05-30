@@ -2,7 +2,7 @@ export const runtime = "edge";
 export const revalidate = 0;
 
 import type { AppState } from "@/lib/state";
-import { normalizeRouletteState } from "@/lib/state";
+import { buildRouletteIdlePreserveSettings } from "@/lib/state";
 import { getRouletteUserId, saveAppStateForRoulette } from "../edge-state-store";
 import { clearRouletteLock } from "../roulette-lock";
 import {
@@ -28,17 +28,9 @@ export async function POST(req: Request) {
 
     const s = await loadAppStateForRouletteRequest(req, userId);
 
-    const cur = normalizeRouletteState(s.rouletteState);
-    const idle = normalizeRouletteState(null);
-    const nextRs = {
-      ...idle,
-      menuCount: cur.menuCount,
-      sigResultScalePct: cur.sigResultScalePct,
-      menuFillFromAllActive: cur.menuFillFromAllActive,
-      overlayOpacity: cur.overlayOpacity,
-      historyLogs: cur.historyLogs,
-      sessionExcludedSigIds: clearWonPool ? [] : cur.sessionExcludedSigIds,
-    };
+    const nextRs = buildRouletteIdlePreserveSettings(s.rouletteState, {
+      clearSessionExcluded: clearWonPool,
+    });
 
     const next: AppState = {
       ...s,

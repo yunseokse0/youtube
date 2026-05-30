@@ -31,7 +31,14 @@ import {
   DEFAULT_SIG_SOLD_STAMP_URL,
   resolveSigAdminPreviewSrc,
 } from "@/lib/constants";
-import { loadState, loadStateFromApi, saveStateAsync, storageKey, type AppState } from "@/lib/state";
+import {
+  buildRouletteIdlePreserveSettings,
+  loadState,
+  loadStateFromApi,
+  saveStateAsync,
+  storageKey,
+  type AppState,
+} from "@/lib/state";
 import { useSSEConnection } from "@/lib/sse-client";
 import {
   createStateUpdatedScheduler,
@@ -279,13 +286,13 @@ export default function AdminSigSalesPage() {
   const lastAppliedRemoteUpdatedAtRef = useRef(0);
   const pendingLocalSaveRef = useRef(false);
   const lastRouletteSyncRef = useRef<SigSalesRouletteSyncCursor>({ sessionId: "", phase: "" });
-  const loadRemote = useCallback(async () => {
+  const loadRemote = useCallback(async (opts?: { force?: boolean }) => {
     if (!authReady) return;
-    if (pendingLocalSaveRef.current) return;
-    const remote = await loadStateFromApi(userId);
+    if (!opts?.force && pendingLocalSaveRef.current) return;
+    const remote = await loadStateFromApi(userId, opts?.force ? { forceFull: true } : undefined);
     if (!remote) return;
     const ts = remote.updatedAt || 0;
-    if (ts > 0 && ts <= lastAppliedRemoteUpdatedAtRef.current) return;
+    if (!opts?.force && ts > 0 && ts <= lastAppliedRemoteUpdatedAtRef.current) return;
     if (ts > 0) lastSyncedUpdatedAtRef.current = Math.max(lastSyncedUpdatedAtRef.current, ts);
     lastAppliedRemoteUpdatedAtRef.current = ts;
     lastRouletteSyncRef.current = sigSalesRouletteSyncCursorFromState(remote.rouletteState);
@@ -1034,6 +1041,8 @@ export default function AdminSigSalesPage() {
     setOneShotSold(false);
     setShowConfirmModal(false);
     setResultsPanelCollapsed(false);
+    setPinnedWheelLayout(null);
+    landedShowcaseSigKeyRef.current = "";
     cancelConfirm();
     resetToIdle();
   }, [resetToIdle, cancelConfirm]);
@@ -1051,8 +1060,18 @@ export default function AdminSigSalesPage() {
         throw new Error(j.error || String(res.status));
       }
       clearLocalSpinUi();
-      await loadRemote();
+      setState((prev) => {
+        if (!prev) return prev;
+        const idleRs = buildRouletteIdlePreserveSettings(prev.rouletteState, { clearSessionExcluded: clearWonPool });
+        return {
+          ...prev,
+          updatedAt: Date.now(),
+          rouletteState: idleRs,
+        };
+      });
+      await loadRemote({ force: true });
       await persistRouletteState((rs) => ({
+        ...buildRouletteIdlePreserveSettings(rs, { clearSessionExcluded: clearWonPool }),
         overlayReloadNonce: Number(rs.overlayReloadNonce || 0) + 1,
       }));
     },
@@ -1187,6 +1206,15 @@ export default function AdminSigSalesPage() {
         );
         return;
       }
+      const host = typeof window !== "undefined" ? window.location.hostname : "";
+      if (!wheelDemoMode && !isWheelDemoHostAllowed(host)) {
+        setToast(
+          code === "spin_failed" || !code
+            ? "회전판 시작에 실패했습니다. 「회전판 초기화」 후 멤버·활성 시그를 확인하세요."
+            : `회전판 시작 실패: ${code}`
+        );
+        return;
+      }
       const selected = pickWheelDemoWinners(
         Math.max(2, Math.min(MAX_SELECTED_SIGS, WHEEL_DEMO_WIN_COUNT))
       );
@@ -1207,7 +1235,7 @@ export default function AdminSigSalesPage() {
       setManualSoldSet(new Set());
       setOneShotSold(false);
       setShowConfirmModal(false);
-      setToast("서버 응답 실패로 데모 회차로 실행했습니다.");
+      setToast("서버 응답 실패로 로컬 데모 회차로 실행했습니다. (로컬·LAN 전용)");
     } finally {
       setLoadingSpin(false);
     }

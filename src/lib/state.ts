@@ -356,6 +356,27 @@ export function normalizeRouletteState(raw: unknown): RouletteState {
   };
 }
 
+/** 회전판 초기화·IDLE 복귀 — 메뉴·히스토리 등 설정만 유지, 당첨·세션·연출 필드는 비움 */
+export function buildRouletteIdlePreserveSettings(
+  cur: RouletteState | undefined,
+  opts?: { clearSessionExcluded?: boolean }
+): RouletteState {
+  const base = cur ?? normalizeRouletteState(null);
+  const idle = normalizeRouletteState(null);
+  return {
+    ...idle,
+    menuCount: base.menuCount ?? idle.menuCount,
+    sigResultScalePct: base.sigResultScalePct ?? idle.sigResultScalePct,
+    menuFillFromAllActive: base.menuFillFromAllActive ?? idle.menuFillFromAllActive,
+    overlayOpacity: base.overlayOpacity ?? idle.overlayOpacity,
+    overlayReloadNonce: base.overlayReloadNonce ?? 0,
+    historyLogs: base.historyLogs,
+    spinPriceFilters: base.spinPriceFilters,
+    spinPriceRanges: base.spinPriceRanges,
+    sessionExcludedSigIds: opts?.clearSessionExcluded ? [] : base.sessionExcludedSigIds,
+  };
+}
+
 const DEFAULT_DONOR_RANKINGS_THEME: DonorRankingsTheme = {
   top: 7,
   titleSize: 28,
