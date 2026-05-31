@@ -27,7 +27,12 @@ import {
   inferSigUploadUserIdFromInventory,
   shouldSuppressOverlaySseConnection,
 } from "@/lib/overlay-params";
-import { DEFAULT_SIG_SOLD_STAMP_URL, resolveSigImageUrl, setSigImagePlaceholderOnlyForOverlay } from "@/lib/constants";
+import {
+  DEFAULT_SIG_SOLD_STAMP_URL,
+  normalizeSigImageUrlStored,
+  resolveSigImageUrl,
+  setSigImagePlaceholderOnlyForOverlay,
+} from "@/lib/constants";
 import { buildOneShotFromSelected, resolveOneShotDisplayPrice } from "@/lib/sig-one-shot-price";
 import {
   ONE_SHOT_SIG_ID,
@@ -509,6 +514,8 @@ function SigSalesOverlayPageInner() {
       pick: "sig-sales",
     });
     if (!remote) {
+      /** 304 Not Modified — 기존 state 유지(오판으로 빈 화면·에러 배너 방지) */
+      if (lastSyncedUpdatedAtRef.current > 0) return;
       setStateLoadIssue((prev) => (prev === "auth" ? "auth" : "empty"));
       return;
     }
@@ -1131,7 +1138,7 @@ function SigSalesOverlayPageInner() {
           id: `manual_draft_${idx + 1}`,
           name,
           price,
-          imageUrl: String(row?.imageUrl || "").trim(),
+          imageUrl: normalizeSigImageUrlStored(String(row?.imageUrl || "").trim()),
           memberId: "",
           maxCount: 1,
           soldCount: 0,
@@ -1141,17 +1148,40 @@ function SigSalesOverlayPageInner() {
       })
       .filter((x): x is SigItem => Boolean(x));
   }, [manualDraftEffective]);
+  /** OBS: machine HYDRATE 전에도 API rouletteState 당첨을 바로 표시 */
+  const serverRouletteSelectedSigs = useMemo(() => {
+    const rs = state?.rouletteState;
+    const raw = (
+      Array.isArray(rs?.selectedSigs) && rs.selectedSigs.length > 0
+        ? rs.selectedSigs
+        : Array.isArray(rs?.results)
+          ? rs.results
+          : []
+    ) as SigItem[];
+    return stripBundledSigPlaceholderItems(
+      raw
+        .slice(0, CONFIRMED_VISIBLE_SLOTS)
+        .map((s) => hydrateSigItemFromInventory(s, wheelInventory, sigImageUserId))
+    );
+  }, [state?.rouletteState, wheelInventory, sigImageUserId]);
   const effectiveSelectedSigsForUi = useMemo(() => {
     if (!manualOverlayMode) return displaySelectedSigsForUi;
-    if (overlayIdleBeforeSpin) return displaySelectedSigsForUi;
-    return displaySelectedSigsForUi.length > 0
-      ? displaySelectedSigsForUi
-      : stripBundledSigPlaceholderItems(manualDraftSelectedForUi);
-  }, [manualOverlayMode, overlayIdleBeforeSpin, displaySelectedSigsForUi, manualDraftSelectedForUi]);
-  /** display·수동 초안이 비어도 서버 LANDED 당첨으로 카드 렌더(수동 URL + 회전판 결과 동시 사용) */
+    if (displaySelectedSigsForUi.length > 0) return displaySelectedSigsForUi;
+    return stripBundledSigPlaceholderItems(manualDraftSelectedForUi);
+  }, [manualOverlayMode, displaySelectedSigsForUi, manualDraftSelectedForUi]);
+  /** 수동 방송: 서버 초안 5개 또는 LANDED 당첨(회전판 없이 운영) */
+  const manualDraftBroadcastReady =
+    manualOverlayMode && manualDraftSelectedForUi.length >= 5;
+  /** display·수동 초안이 비어도 서버 LANDED 당첨으로 카드 렌더 */
   const resultSigsForUi = useMemo(() => {
     if (effectiveSelectedSigsForUi.length > 0) return effectiveSelectedSigsForUi;
-    if (overlayIdleBeforeSpin) return effectiveSelectedSigsForUi;
+    if (manualOverlayMode) {
+      if (serverRouletteSelectedSigs.length > 0) return serverRouletteSelectedSigs;
+      if (manualDraftSelectedForUi.length > 0) {
+        return stripBundledSigPlaceholderItems(manualDraftSelectedForUi);
+      }
+    }
+    if (!manualOverlayMode && overlayIdleBeforeSpin) return effectiveSelectedSigsForUi;
     const terminal =
       machine.phase === "LANDED" ||
       machine.phase === "CONFIRM_PENDING" ||
@@ -1164,6 +1194,9 @@ function SigSalesOverlayPageInner() {
     );
   }, [
     effectiveSelectedSigsForUi,
+    manualOverlayMode,
+    manualDraftSelectedForUi,
+    serverRouletteSelectedSigs,
     overlayIdleBeforeSpin,
     machine.phase,
     machine.selectedSigs,
@@ -1352,45 +1385,46 @@ function SigSalesOverlayPageInner() {
     showResultPanel;
   const manualModeHasResults =
     manualOverlayMode &&
-    !overlayIdleBeforeSpin &&
-    (resultSigsForUi.length > 0 ||
+    (manualDraftBroadcastReady ||
+      resultSigsForUi.length > 0 ||
+      serverRouletteSelectedSigs.length > 0 ||
       (machine.selectedSigs?.length ?? 0) > 0 ||
       Boolean(machine.oneShot) ||
+      Boolean(state?.rouletteState?.oneShotResult) ||
       Boolean(buildOneShotFromSelected(machine.selectedSigs.slice(0, CONFIRMED_VISIBLE_SLOTS))));
-  const resultOverlayVisible = Boolean(
-    !overlayIdleBeforeSpin &&
-      (manualModeHasResults || resultsPanelGateOpen) &&
-      (manualOverlayMode
-        ? resultSigsForUi.length > 0 ||
-          Boolean(machine.oneShot) ||
-          fullSelectedSigs.length > 0 ||
-          (machine.selectedSigs?.length ?? 0) > 0
-        : resultSigsForUi.length > 0 ||
-          displaySelectedSigs.length > 0 ||
-          oneShotRevealUnlocked ||
-          (fullSelectedSigs.length > 0 &&
-            (machine.phase === "LANDED" ||
-              machine.phase === "CONFIRM_PENDING" ||
-              machine.phase === "CONFIRMED"))) &&
-      ((showResultPanel && hideWheelAfterComplete) ||
-        machine.phase === "SPINNING" ||
-        machine.phase === "LANDED" ||
-        machine.phase === "CONFIRM_PENDING" ||
-        machine.phase === "CONFIRMED" ||
-        wheelPhase === "spinning" ||
-        wheelPhase === "settling" ||
-        wheelPhase === "result" ||
-        Boolean(demoSpin) ||
-        Boolean(pendingLanding))
-  );
+  const manualResultOverlayVisible =
+    manualOverlayMode &&
+    (resultSigsForUi.length > 0 ||
+      manualDraftBroadcastReady ||
+      Boolean(state?.rouletteState?.oneShotResult) ||
+      Boolean(machine.oneShot));
+  const resultOverlayVisible = manualResultOverlayVisible
+    ? true
+    : Boolean(
+        !overlayIdleBeforeSpin &&
+          (manualModeHasResults || resultsPanelGateOpen) &&
+          (resultSigsForUi.length > 0 ||
+            displaySelectedSigs.length > 0 ||
+            oneShotRevealUnlocked ||
+            (fullSelectedSigs.length > 0 &&
+              (machine.phase === "LANDED" ||
+                machine.phase === "CONFIRM_PENDING" ||
+                machine.phase === "CONFIRMED"))) &&
+          ((showResultPanel && hideWheelAfterComplete) ||
+            machine.phase === "SPINNING" ||
+            machine.phase === "LANDED" ||
+            machine.phase === "CONFIRM_PENDING" ||
+            machine.phase === "CONFIRMED" ||
+            wheelPhase === "spinning" ||
+            wheelPhase === "settling" ||
+            wheelPhase === "result" ||
+            Boolean(demoSpin) ||
+            Boolean(pendingLanding))
+      );
   /** 방송 OBS: 휠 제거 후 당첨 줄을 브라우저 소스 하단에 고정(중앙에 떠 보이는 현상 방지) */
   const pinResultsToBroadcastBottom = Boolean(
     resultOverlayVisible &&
-      (hideWheelAfterComplete ||
-        (manualOverlayMode &&
-          (machine.phase === "LANDED" ||
-            machine.phase === "CONFIRM_PENDING" ||
-            machine.phase === "CONFIRMED")))
+      (hideWheelAfterComplete || (manualOverlayMode && manualResultOverlayVisible))
   );
 
   const showSigBoardRollingSection = useMemo(() => {
@@ -1966,6 +2000,36 @@ function SigSalesOverlayPageInner() {
     }
   }, [machine.phase, machine.selectedSigs]);
 
+  /** 수동 OBS: 서버 LANDED·selectedSigs 만 도착해도 카드·한방 즉시 표시(machine HYDRATE 지연 완화) */
+  useEffect(() => {
+    if (!manualOverlayMode) return;
+    const rs = state?.rouletteState;
+    const rsPhase = rs?.phase;
+    const serverCount = Math.max(
+      serverRouletteSelectedSigs.length,
+      Array.isArray(rs?.selectedSigs) ? rs!.selectedSigs!.length : 0,
+      Array.isArray(rs?.results) ? rs!.results!.length : 0
+    );
+    if (
+      serverCount > 0 &&
+      (rsPhase === "LANDED" || rsPhase === "CONFIRM_PENDING" || rsPhase === "CONFIRMED")
+    ) {
+      setOverlayHoldResults(true);
+      setShowResultPanel(true);
+      setRevealedSigCount((c) => Math.max(c, Math.min(CONFIRMED_VISIBLE_SLOTS, serverCount)));
+      setOneShotRevealUnlocked(true);
+      return;
+    }
+    if (manualDraftBroadcastReady) {
+      setShowResultPanel(true);
+    }
+  }, [
+    manualOverlayMode,
+    state?.rouletteState,
+    serverRouletteSelectedSigs.length,
+    manualDraftBroadcastReady,
+  ]);
+
   useEffect(() => {
     if (machine.phase === "IDLE") {
       setShowResultPanel(false);
@@ -2049,7 +2113,7 @@ function SigSalesOverlayPageInner() {
           <p className="mt-1 text-xs leading-relaxed text-amber-200/90">
             URL의 <span className="font-mono">u={userId}</span> 확인 · EC2에서 최신 빌드 배포 후 새로고침.
             {manualOverlayMode
-              ? " 회전판 당첨 방송은 「회전판 모드 URL」(mode=manual 없음)을 사용하세요."
+              ? " 관리자에서 수동 5개 입력·「수동 결과 적용」 후 이 페이지를 새로고침하세요."
               : null}
           </p>
         </div>
@@ -2286,7 +2350,7 @@ function SigSalesOverlayPageInner() {
               <div className="rounded-xl border border-yellow-300/40 bg-black/65 px-5 py-3 text-center">
                 <p className="text-sm font-semibold text-yellow-100">수동 결과 데이터가 없습니다.</p>
                 <p className="mt-1 text-xs text-yellow-200/90">
-                  회전판 당첨 후에는 「회전판 모드 URL」을 쓰거나, 수동 5개를 적용해 주세요.
+                  관리자에서 시그 5개·한방 입력 후 「수동 결과 적용(LANDED)」을 눌러 주세요.
                 </p>
               </div>
             </div>

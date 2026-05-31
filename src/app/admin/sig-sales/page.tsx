@@ -241,7 +241,7 @@ export default function AdminSigSalesPage() {
   const [resultsPanelCollapsed, setResultsPanelCollapsed] = useState(false);
   const [overlayObsUrl, setOverlayObsUrl] = useState("");
   const [overlayObsUrlManual, setOverlayObsUrlManual] = useState("");
-  const [overlayObsMode, setOverlayObsMode] = useState<"wheel" | "manual">("wheel");
+  const [overlayObsMode, setOverlayObsMode] = useState<"wheel" | "manual">("manual");
   const [manualInputMode, setManualInputMode] = useState<ManualInputMode>("free");
   const [manualSigDrafts, setManualSigDrafts] = useState<ManualSigDraft[]>(
     Array.from({ length: 5 }, () => ({ name: "", priceInput: "", imageUrl: "" }))
@@ -1331,6 +1331,7 @@ export default function AdminSigSalesPage() {
           selectedSigs: selected,
           oneShotResult: oneShot,
           spinCount: selected.length,
+          overlayReloadNonce: Number(state.rouletteState?.overlayReloadNonce || 0) + 1,
         },
         updatedAt: now,
       };
@@ -2062,13 +2063,9 @@ export default function AdminSigSalesPage() {
                 <code className="break-all text-emerald-300/90">
                   {overlayObsMode === "manual" ? overlayObsUrlManual : overlayObsUrl}
                 </code>
-                {overlayObsMode === "manual" &&
-                (machine.phase === "LANDED" ||
-                  machine.phase === "CONFIRM_PENDING" ||
-                  machine.phase === "CONFIRMED") ? (
-                  <span className="mt-1 block text-amber-200/95">
-                    회전 추첨·착지 후 방송에는 위 드롭다운에서 「회전판 모드 URL」을 선택해 OBS에 넣는 것을 권장합니다.
-                    (수동 URL은 수동 5개·판매완료 체크 위주)
+                {overlayObsMode === "manual" ? (
+                  <span className="mt-1 block text-sky-200/95">
+                    회전판 없이 운영: 시그 5개·한방 입력 → 저장(자동) → 「수동 결과 적용(LANDED)」 → OBS는 이 수동 URL 고정.
                   </span>
                 ) : null}
                 {wheelDemoMode ? (
