@@ -1317,9 +1317,27 @@ export default function AdminSigSalesPage() {
 
     setManualBusy(true);
     try {
+      const prevOverlaySettings =
+        state.overlaySettings && typeof state.overlaySettings === "object"
+          ? (state.overlaySettings as Record<string, unknown>)
+          : {};
+      const manualDraftPayload = {
+        inputMode: manualInputMode,
+        drafts: manualSigDrafts,
+        oneShotName: manualOneShotName,
+        oneShotPriceInput: manualOneShotPriceInput,
+        oneShotImageUrl: manualOneShotImageUrl,
+        sigSoldFlags: manualSigSoldFlags,
+        oneShotMarkSold: manualOneShotMarkSold,
+        appliedSessionId: sessionId,
+      };
       const landedState: AppState = {
         ...state,
         sigInventory: inventoryWithOneShotImage,
+        overlaySettings: {
+          ...prevOverlaySettings,
+          [MANUAL_SIG_DRAFT_STATE_KEY]: manualDraftPayload,
+        },
         rouletteState: {
           ...state.rouletteState,
           phase: "LANDED",
@@ -1356,14 +1374,21 @@ export default function AdminSigSalesPage() {
       setOneShotSold(manualOneShotMarkSold);
       setShowConfirmModal(false);
       setResultsPanelCollapsed(false);
+      manualDraftLastSavedRef.current = JSON.stringify(manualDraftPayload);
       const landedSaved = await saveStateAsync(landedState, userId);
-      if (!landedSaved.ok) {
-        setToast("수동 결과는 먼저 표시했지만 서버 저장이 지연됩니다. 잠시 후 다시 확인해 주세요.");
-      }
 
       if (!confirmNow) {
-        setToast("수동 5개/한방 설정 적용 완료. 아래 Confirm Sale로 판매 완료 처리할 수 있습니다.");
+        if (!landedSaved.ok) {
+          setToast("수동 결과는 먼저 표시했지만 서버 저장이 지연됩니다. 잠시 후 OBS를 새로고침해 주세요.");
+        } else {
+          setToast(
+            "수동 5개/한방 적용 완료 · OBS에 반영되었습니다. 아래 Confirm Sale로 판매 완료 처리할 수 있습니다."
+          );
+        }
         return;
+      }
+      if (!landedSaved.ok) {
+        setToast("수동 결과는 먼저 표시했지만 서버 저장이 지연됩니다. 잠시 후 다시 확인해 주세요.");
       }
 
       const normalizeNameKey = (raw: string) => String(raw || "").trim().toLowerCase().replace(/\s+/g, "");

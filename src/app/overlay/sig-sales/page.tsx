@@ -1173,23 +1173,62 @@ function SigSalesOverlayPageInner() {
         .map((s) => hydrateSigItemFromInventory(s, wheelInventory, sigImageUserId))
     );
   }, [state?.rouletteState, wheelInventory, sigImageUserId]);
-  const effectiveSelectedSigsForUi = useMemo(() => {
-    if (!manualOverlayMode) return displaySelectedSigsForUi;
-    if (displaySelectedSigsForUi.length > 0) return displaySelectedSigsForUi;
-    return stripBundledSigPlaceholderItems(manualDraftSelectedForUi);
-  }, [manualOverlayMode, displaySelectedSigsForUi, manualDraftSelectedForUi]);
   /** 수동 방송: 서버 초안 5개 또는 LANDED 당첨(회전판 없이 운영) */
   const manualDraftBroadcastReady =
     manualOverlayMode && manualDraftSelectedForUi.length >= 5;
+  /**
+   * 수동 OBS 정본 — 회전판 displaySelectedSigs(이전 회차)를 쓰지 않음.
+   * 1) 수동 적용(sessionId manual_*) + LANDED → 서버 selectedSigs (관리자 하단 당첨과 동일)
+   * 2) 초안 5개 저장됨 → overlaySettings 초안 (적용 전·폼 입력)
+   * 3) 그 외 서버/머신 폴백
+   */
+  const manualOverlayResultSigs = useMemo(() => {
+    if (!manualOverlayMode) return [] as SigItem[];
+    const sid = String(state?.rouletteState?.sessionId || machine.sessionId || "").trim();
+    const rsPhase = state?.rouletteState?.phase;
+    const terminal =
+      rsPhase === "LANDED" ||
+      rsPhase === "CONFIRM_PENDING" ||
+      rsPhase === "CONFIRMED" ||
+      machine.phase === "LANDED" ||
+      machine.phase === "CONFIRM_PENDING" ||
+      machine.phase === "CONFIRMED";
+
+    if (sid.startsWith("manual_") && terminal && serverRouletteSelectedSigs.length > 0) {
+      return serverRouletteSelectedSigs;
+    }
+    if (manualDraftBroadcastReady) {
+      return stripBundledSigPlaceholderItems(manualDraftSelectedForUi);
+    }
+    if (manualDraftSelectedForUi.length > 0) {
+      return stripBundledSigPlaceholderItems(manualDraftSelectedForUi);
+    }
+    if (serverRouletteSelectedSigs.length > 0) return serverRouletteSelectedSigs;
+    const fromMachine = (machine.selectedSigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
+    if (!fromMachine.length) return [];
+    return stripBundledSigPlaceholderItems(
+      fromMachine.map((s) => hydrateSigItemFromInventory(s, wheelInventory, sigImageUserId))
+    );
+  }, [
+    manualOverlayMode,
+    state?.rouletteState?.sessionId,
+    state?.rouletteState?.phase,
+    machine.sessionId,
+    machine.phase,
+    machine.selectedSigs,
+    serverRouletteSelectedSigs,
+    manualDraftBroadcastReady,
+    manualDraftSelectedForUi,
+    wheelInventory,
+    sigImageUserId,
+  ]);
+  const effectiveSelectedSigsForUi = manualOverlayMode
+    ? manualOverlayResultSigs
+    : displaySelectedSigsForUi;
   /** display·수동 초안이 비어도 서버 LANDED 당첨으로 카드 렌더 */
   const resultSigsForUi = useMemo(() => {
+    if (manualOverlayMode) return manualOverlayResultSigs;
     if (effectiveSelectedSigsForUi.length > 0) return effectiveSelectedSigsForUi;
-    if (manualOverlayMode) {
-      if (serverRouletteSelectedSigs.length > 0) return serverRouletteSelectedSigs;
-      if (manualDraftSelectedForUi.length > 0) {
-        return stripBundledSigPlaceholderItems(manualDraftSelectedForUi);
-      }
-    }
     if (!manualOverlayMode && overlayIdleBeforeSpin) return effectiveSelectedSigsForUi;
     const terminal =
       machine.phase === "LANDED" ||
@@ -1202,10 +1241,9 @@ function SigSalesOverlayPageInner() {
       fromMachine.map((s) => hydrateSigItemFromInventory(s, wheelInventory, sigImageUserId))
     );
   }, [
-    effectiveSelectedSigsForUi,
     manualOverlayMode,
-    manualDraftSelectedForUi,
-    serverRouletteSelectedSigs,
+    manualOverlayResultSigs,
+    effectiveSelectedSigsForUi,
     overlayIdleBeforeSpin,
     machine.phase,
     machine.selectedSigs,
