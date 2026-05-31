@@ -108,7 +108,9 @@ export default function SelectedSigs({
           : "";
   const nowrapRow = overlaySingleRow ? "flex-nowrap overflow-visible" : "flex-wrap";
   const sectionClass = overlaySingleRow
-    ? `flex w-full min-w-0 max-w-full ${nowrapRow} ${matchOneShotCardSize && trailingActive ? "items-stretch" : "items-start"} justify-center gap-1 sm:gap-1 ${className}`.trim()
+    ? `flex min-w-0 max-w-full ${nowrapRow} ${
+        matchOneShotCardSize && trailingActive ? "items-end" : "items-start"
+      } ${sigRowJustify || "justify-center"} gap-1 sm:gap-1 ${className}`.trim()
     : broadcastMatch
       ? `flex w-full min-w-0 max-w-full flex-wrap justify-center gap-1 sm:gap-1 ${className}`.trim()
       : `grid w-full min-w-0 max-w-full gap-1 ${justifyCompact} ${gridAlign} ${className}`.trim();
@@ -270,7 +272,7 @@ export default function SelectedSigs({
         <div
           className={
             broadcastMatch && matchOneShotCardSize
-              ? "flex shrink-0 flex-col self-stretch"
+              ? "flex h-full min-h-0 shrink-0 flex-col self-stretch"
               : broadcastMatch || compact
                 ? "flex min-h-0 shrink-0 self-stretch"
                 : "min-h-[280px]"
