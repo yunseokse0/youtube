@@ -2,6 +2,12 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  BUNDLED_SIG_PLACEHOLDER_URL,
+  resolveSigAdminPreviewFallbackSrc,
+  toGithubRawSigAssetUrl,
+  toSigOverlayAbsoluteAssetUrl,
+} from "@/lib/constants";
 import { isLikelyGifUrl } from "@/lib/sigGif";
 import { repairDiskUploadSigImagePath } from "@/lib/sig-image-mode";
 import SigSlowGif from "./SigSlowGif";
@@ -48,7 +54,9 @@ export default function SigSaleMedia({
   onReadyRef.current = onReady;
 
   useEffect(() => {
-    setDisplaySrc(src);
+    const next =
+      typeof window !== "undefined" ? toSigOverlayAbsoluteAssetUrl(src) : src;
+    setDisplaySrc(next);
     setGifFail(false);
     retriedRepairRef.current = false;
     readyFiredRef.current = false;
@@ -69,17 +77,43 @@ export default function SigSaleMedia({
         );
         if (repaired && repaired !== displaySrc) {
           retriedRepairRef.current = true;
-          setDisplaySrc(repaired);
+          setDisplaySrc(
+            typeof window !== "undefined"
+              ? toSigOverlayAbsoluteAssetUrl(repaired)
+              : repaired
+          );
           return;
         }
       }
-      if (displaySrc !== FALLBACK_SRC) {
-        setDisplaySrc(FALLBACK_SRC);
+      if (!retriedRepairRef.current) {
+        const fromDrive = resolveSigAdminPreviewFallbackSrc(
+          storedImageUrl || src,
+          alt,
+          sigImageUserId
+        );
+        if (fromDrive) {
+          const abs =
+            typeof window !== "undefined"
+              ? toSigOverlayAbsoluteAssetUrl(fromDrive)
+              : fromDrive;
+          if (abs && abs !== displaySrc) {
+            retriedRepairRef.current = true;
+            setDisplaySrc(abs);
+            return;
+          }
+        }
+      }
+      const dummy =
+        toGithubRawSigAssetUrl(BUNDLED_SIG_PLACEHOLDER_URL) || BUNDLED_SIG_PLACEHOLDER_URL;
+      const dummyAbs =
+        typeof window !== "undefined" ? toSigOverlayAbsoluteAssetUrl(dummy) : dummy;
+      if (displaySrc !== dummyAbs) {
+        setDisplaySrc(dummyAbs);
         return;
       }
       onError?.(e);
     },
-    [displaySrc, onError, sigImageUserId, storedImageUrl, src]
+    [displaySrc, onError, sigImageUserId, storedImageUrl, src, alt]
   );
 
   const handleGifError = useCallback(() => {

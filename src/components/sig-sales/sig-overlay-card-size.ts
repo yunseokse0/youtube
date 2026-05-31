@@ -23,11 +23,12 @@ export const SIG_OVERLAY_CARD_MEDIA_BOX_BROADCAST_CLASS =
   "relative mb-1 w-full shrink-0 overflow-hidden";
 
 /** 방송 오버레이: 개별·한방 카드 하단 이름·금액 줄(동일 높이) */
-export const SIG_OVERLAY_CARD_FOOTER_CLASS = "space-y-0.5 px-1 pt-1";
+export const SIG_OVERLAY_CARD_FOOTER_CLASS =
+  "space-y-0.5 rounded-b-[10px] border-t border-white/20 bg-black/92 px-1.5 py-1.5";
 export const SIG_OVERLAY_CARD_NAME_CLASS =
-  "truncate font-bold text-white text-[11px] leading-tight sm:text-[12px]";
+  "truncate font-extrabold text-[13px] leading-tight text-white sm:text-[14px] [text-shadow:0_1px_0_rgba(0,0,0,1),0_0_10px_rgba(0,0,0,0.95)]";
 export const SIG_OVERLAY_CARD_PRICE_CLASS =
-  "text-xs font-black tabular-nums text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.88)] sm:text-[13px]";
+  "text-sm font-black tabular-nums text-yellow-200 sm:text-[15px] [text-shadow:0_1px_0_rgba(0,0,0,1),0_0_8px_rgba(0,0,0,0.9)]";
 
 /** 방송 오버레이 카드 셸(개별 시그) — 한방 카드도 동일 패딩·모서리 */
 export const SIG_OVERLAY_CARD_SHELL_CLASS =
@@ -96,7 +97,7 @@ export function sigOverlayBroadcastCardTotalHeightPx(
   withToggle = false
 ): number {
   const mediaH = sigOverlayBroadcastMediaHeightPx(scalePct);
-  const footerH = withToggle ? 72 : 44;
+  const footerH = withToggle ? 76 : 52;
   const shellPad = 16;
   return mediaH + footerH + shellPad;
 }
