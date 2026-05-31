@@ -1557,9 +1557,22 @@ function SigSalesOverlayPageInner() {
     if (oneShotForResultOverlay) n += 1;
     return Math.max(1, n);
   }, [effectiveSelectedSigsForUi.length, oneShotForResultOverlay]);
+  const [resultRowWidthPx, setResultRowWidthPx] = useState(1080);
+  useEffect(() => {
+    const sync = () => setResultRowWidthPx(Math.max(360, window.innerWidth || 1080));
+    sync();
+    window.addEventListener("resize", sync);
+    return () => window.removeEventListener("resize", sync);
+  }, []);
   const resultRowLayout = useMemo(
-    () => layoutSigOverlayResultRow({ cellCount: resultCardCount, userScalePct: sigResultScalePct }),
-    [resultCardCount, sigResultScalePct]
+    () =>
+      layoutSigOverlayResultRow({
+        cellCount: resultCardCount,
+        userScalePct: sigResultScalePct,
+        /** OBS 소스 폭이 좁아도 sigResultScalePct 이하로만 줄임(한방·당첨이 과소 축소되지 않게) */
+        maxRowWidthPx: Math.max(1080, resultRowWidthPx),
+      }),
+    [resultCardCount, sigResultScalePct, resultRowWidthPx]
   );
   const oneShotImageUrl = useMemo(() => {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);

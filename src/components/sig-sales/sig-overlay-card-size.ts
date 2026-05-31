@@ -115,6 +115,45 @@ export function sigOverlayBroadcastCardShellStyle(
   };
 }
 
+/** 한방 시그 — 개별 당첨 카드보다 방송에서 더 잘 보이도록 폭·높이만 확대(기본 120%) */
+export const ONE_SHOT_OVERLAY_SIZE_FACTOR = 1.2;
+
+export function oneShotOverlayCardScalePct(baseScalePct: number): number {
+  const base = clampSigOverlayResultScalePct(baseScalePct);
+  return Math.min(100, Math.round(base * ONE_SHOT_OVERLAY_SIZE_FACTOR));
+}
+
+export function sigOverlayBroadcastOneShotCardWidthPx(baseScalePct = 100): number {
+  return sigOverlayBroadcastCardWidthPx(oneShotOverlayCardScalePct(baseScalePct));
+}
+
+export function sigOverlayBroadcastOneShotMediaBoxStyle(baseScalePct = 100): CSSProperties {
+  return sigOverlayBroadcastMediaBoxStyle(oneShotOverlayCardScalePct(baseScalePct));
+}
+
+export function sigOverlayBroadcastOneShotCardShellStyle(
+  baseScalePct = 100,
+  opts?: { withToggle?: boolean }
+): CSSProperties {
+  const oneShotScale = oneShotOverlayCardScalePct(baseScalePct);
+  const max = sigOverlayBroadcastOneShotCardWidthPx(baseScalePct);
+  const totalH = sigOverlayBroadcastCardTotalHeightPx(oneShotScale, Boolean(opts?.withToggle));
+  return {
+    flexGrow: 0,
+    flexShrink: 0,
+    flexBasis: `${max}px`,
+    width: `${max}px`,
+    minWidth: max,
+    maxWidth: max,
+    height: totalH,
+    minHeight: totalH,
+    alignSelf: "flex-end",
+    boxSizing: "border-box",
+    display: "flex",
+    flexDirection: "column",
+  };
+}
+
 /** 당첨 N장+한방이 한 줄에 잘리지 않도록 카드 폭을 행 너비에 맞춘다(줌 래퍼 대신 카드 자체 축소) */
 export function layoutSigOverlayResultRow(opts: {
   cellCount: number;
@@ -125,7 +164,10 @@ export function layoutSigOverlayResultRow(opts: {
   const user = clampSigOverlayResultScalePct(opts.userScalePct ?? 78) / 100;
   const maxW = Math.max(360, Math.floor(opts.maxRowWidthPx ?? 1080));
   const gapPx = 4;
-  const natural = cells * SIG_OVERLAY_CARD_MAX_PX + Math.max(0, cells - 1) * gapPx;
+  /** 한방은 실제로 더 넓게 그리므로 fit 계산 시 가중(과도한 전체 축소 방지) */
+  const oneShotExtra =
+    cells > 1 ? SIG_OVERLAY_CARD_MAX_PX * (ONE_SHOT_OVERLAY_SIZE_FACTOR - 1) : 0;
+  const natural = cells * SIG_OVERLAY_CARD_MAX_PX + oneShotExtra + Math.max(0, cells - 1) * gapPx;
   const fit = natural > 0 ? Math.min(1, maxW / natural) : 1;
   const combined = Math.min(user, fit);
   const cardScalePct = Math.max(50, Math.min(100, Math.floor(combined * 100)));
