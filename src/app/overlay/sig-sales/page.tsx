@@ -456,22 +456,26 @@ function SigSalesOverlayPageInner() {
       osc.stop(at + sec);
     });
   }, []);
-  const [oneShotSound] = useState(() =>
-    SOUND_ASSETS_ENABLED
-      ? new Howl({
-          src: [SPIN_SOUND_PATHS.oneShot],
-          preload: true,
-          volume: 0.7,
-          mute: false,
-          onloaderror: () => {
-            hasOneShotSoundErrorRef.current = true;
-          },
-          onplayerror: () => {
-            hasOneShotSoundErrorRef.current = true;
-          },
-        })
-      : null
-  );
+  const [oneShotSound] = useState(() => {
+    if (!SOUND_ASSETS_ENABLED) return null;
+    try {
+      return new Howl({
+        src: [SPIN_SOUND_PATHS.oneShot],
+        preload: true,
+        volume: 0.7,
+        mute: false,
+        onloaderror: () => {
+          hasOneShotSoundErrorRef.current = true;
+        },
+        onplayerror: () => {
+          hasOneShotSoundErrorRef.current = true;
+        },
+      });
+    } catch {
+      hasOneShotSoundErrorRef.current = true;
+      return null;
+    }
+  });
   const { machine, landed, resetToIdle } = useSigSalesState(userId, state);
   const overlayReloadSeenRef = useRef<number | null>(null);
 
@@ -1015,10 +1019,21 @@ function SigSalesOverlayPageInner() {
           : revealedSigCount;
       return fullSelectedSigs.slice(0, Math.min(cap, fullSelectedSigs.length));
     }
-    /** LANDED인데 아직 wheelPhase가 result로 안 넘어온 타이밍은 빈 그리드 */
+    /**
+     * 서버 LANDED·OBS 새로고침: 로컬 휠이 idle이면 hold/showResultPanel 없이도 당첨 표시.
+     * (예전: hold 전까지 [] → resultOverlayVisible 도 false → OBS에 카드가 안 보임)
+     */
     if (machine.phase === "LANDED") {
-      if (overlayHoldResults || showResultPanel) {
-        return fullSelectedSigs.slice(0, fullSelectedSigs.length);
+      const demoSpinMasksQueue =
+        Boolean(demoSpin) && !(useSequentialWheel && sequentialRoundIndex > 0);
+      const wheelQuiet =
+        wheelPhase !== "spinning" && wheelPhase !== "settling" && !demoSpinMasksQueue;
+      if (wheelQuiet || overlayHoldResults || showResultPanel) {
+        const cap =
+          revealedSigCount > 0
+            ? Math.min(revealedSigCount, fullSelectedSigs.length)
+            : fullSelectedSigs.length;
+        return fullSelectedSigs.slice(0, cap);
       }
       return [];
     }
@@ -1031,6 +1046,8 @@ function SigSalesOverlayPageInner() {
     revealedSigCount,
     machine.phase,
     useSequentialWheel,
+    demoSpin,
+    sequentialRoundIndex,
   ]);
   /** 당첨 배열을 재고와 맞춰 휠 라벨·이미지와 동일 시그로 표시 */
   const displaySelectedSigsForUi = useMemo(() => {
@@ -1281,7 +1298,12 @@ function SigSalesOverlayPageInner() {
       (manualModeHasResults || resultsPanelGateOpen) &&
       (manualOverlayMode
         ? effectiveSelectedSigsForUi.length > 0 || Boolean(machine.oneShot)
-        : displaySelectedSigs.length > 0 || oneShotRevealUnlocked) &&
+        : displaySelectedSigs.length > 0 ||
+          oneShotRevealUnlocked ||
+          (fullSelectedSigs.length > 0 &&
+            (machine.phase === "LANDED" ||
+              machine.phase === "CONFIRM_PENDING" ||
+              machine.phase === "CONFIRMED"))) &&
       ((showResultPanel && hideWheelAfterComplete) ||
         machine.phase === "SPINNING" ||
         machine.phase === "LANDED" ||
@@ -1643,8 +1665,16 @@ function SigSalesOverlayPageInner() {
       CONFIRMED_VISIBLE_SLOTS
     );
     if (selectedFromServer.length === 0) return;
-    /** 서버에만 남은 지난 회차 당첨으로 IDLE 화면에 카드가 깔리는 것 방지 */
-    if (machine.phase === "IDLE" && serverPhase !== "SPINNING") return;
+    /** IDLE + 과거 회차 잔상만 차단 — 서버 LANDED/확정은 OBS·관리자 동기화를 위해 catch-up 허용 */
+    if (
+      machine.phase === "IDLE" &&
+      serverPhase !== "SPINNING" &&
+      serverPhase !== "LANDED" &&
+      serverPhase !== "CONFIRM_PENDING" &&
+      serverPhase !== "CONFIRMED"
+    ) {
+      return;
+    }
     const machineSpinKey = overlaySpinSessionKey(machine.startedAt, machine.sessionId || "");
     const catchUpKey = `${serverPhase}:${machine.phase}:${machineSpinKey}:${selectedFromServer.length}:${revealedSigCount}`;
     const queueLen = selectedFromServer.length;
@@ -1841,8 +1871,13 @@ function SigSalesOverlayPageInner() {
 
   useEffect(() => {
     if (machine.phase !== "LANDED" && machine.phase !== "CONFIRM_PENDING" && machine.phase !== "CONFIRMED") return;
-    if ((machine.selectedSigs || []).length === 0) return;
+    const selected = (machine.selectedSigs || []).slice(0, CONFIRMED_VISIBLE_SLOTS);
+    if (selected.length === 0) return;
     setOverlayHoldResults(true);
+    setRevealedSigCount((c) => Math.max(c, selected.length));
+    if (buildOneShotFromSelected(selected)) {
+      setOneShotRevealUnlocked(true);
+    }
   }, [machine.phase, machine.selectedSigs]);
 
   useEffect(() => {
@@ -1909,7 +1944,7 @@ function SigSalesOverlayPageInner() {
 
   const mainClassName = wheelDemoActive
     ? "relative min-h-[100dvh] max-h-[100dvh] overflow-hidden bg-neutral-950 px-3 py-3 text-white sm:px-5 sm:py-4"
-    : "relative max-h-[100dvh] min-h-0 overflow-hidden bg-transparent px-3 py-3 text-white sm:px-5 sm:py-4";
+    : "relative min-h-0 overflow-visible bg-transparent px-3 py-3 text-white sm:px-5 sm:py-4";
 
   if (!clientBoot.ready) {
     return <OverlayHydrationShell />;
