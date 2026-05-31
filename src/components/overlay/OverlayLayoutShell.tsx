@@ -40,10 +40,16 @@ const overlayRouteCss = `
   }
 `;
 
+function isSigSalesBroadcastOverlayPath(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return /^\/overlay\/sig-sales(?:\/|$)/.test(pathname);
+}
+
 export default function OverlayLayoutShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   /** SSR·첫 hydration: pathname 기준(데모 URL과 동일) */
   const [scrollable, setScrollable] = useState(() => isOverlayToolsHubPath(pathname));
+  const sigSalesBroadcast = isSigSalesBroadcastOverlayPath(pathname);
 
   useEffect(() => {
     setScrollable(shouldUseOverlayScrollableShell(pathname));
@@ -67,7 +73,7 @@ export default function OverlayLayoutShell({ children }: { children: React.React
         inset: 0,
         minHeight: "100vh",
         minWidth: "100vw",
-        overflow: "hidden",
+        overflow: sigSalesBroadcast ? "visible" : "hidden",
         background: "transparent",
       }}
     >

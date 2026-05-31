@@ -49,23 +49,14 @@ export function clampSigOverlayResultScalePct(raw: string | number | null | unde
 }
 
 /**
- * 확정 결과 카드 줄(개별+한방) 축소. `width: 100/scale%` 보정은 레이아웃 폭을 키워 가로 스크롤이 생김 → 사용 안 함.
- * Chromium OBS: `zoom` 우선, 미지원 시 `transform: scale` (부모 `overflow-x-hidden` 권장).
+ * 결과 카드 줄 래퍼. 축소는 `cardScalePct`·셸 px에만 반영(이중 zoom/transform 금지).
+ * OBS 구형 CEF는 `zoom`+`transform` 동시 적용 시 줄이 사라지거나 검게 보일 수 있음.
  */
-export function sigOverlayResultBandStyle(scalePct: number): CSSProperties {
-  const scale = clampSigOverlayResultScalePct(scalePct) / 100;
-  const base: CSSProperties = {
+export function sigOverlayResultBandStyle(_scalePct?: number): CSSProperties {
+  return {
     width: "max-content",
     maxWidth: "100%",
-  };
-  if (Math.abs(scale - 1) < 0.001) {
-    return { ...base, transformOrigin: "top center" };
-  }
-  return {
-    ...base,
-    zoom: scale,
-    transform: `scale(${scale})`,
-    transformOrigin: "top center",
+    transformOrigin: "bottom center",
   };
 }
 

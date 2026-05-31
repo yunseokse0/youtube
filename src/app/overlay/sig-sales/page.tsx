@@ -1987,7 +1987,11 @@ function SigSalesOverlayPageInner() {
         </p>
       ) : null}
       <div className="mx-auto max-w-[1280px] space-y-4">
-        <section className="relative flex w-full flex-col items-center gap-4 bg-transparent p-0">
+        <section
+          className={`relative flex w-full flex-col items-center gap-4 bg-transparent p-0 ${
+            pinResultsToBroadcastBottom ? "min-h-[100dvh]" : ""
+          }`}
+        >
           <div
             style={
               overlayUserScaleStyle
@@ -2220,7 +2224,7 @@ function SigSalesOverlayPageInner() {
           <div
             className={
               pinResultsToBroadcastBottom || (hanbangOnlyResultLayout && resultOverlayVisible)
-                ? "pointer-events-none fixed bottom-0 left-0 right-0 z-[80] flex w-full max-w-full justify-center overflow-visible px-3 pb-2 pt-1 md:px-6 md:pb-4"
+                ? "pointer-events-none absolute bottom-0 left-0 right-0 z-[80] flex w-full max-w-full justify-center overflow-visible px-3 pb-2 pt-1 md:px-6 md:pb-4"
                 : "pointer-events-none relative z-[70] mt-2 w-full max-w-[min(960px,min(94vw,99vw))] shrink-0 self-center overflow-visible px-2 pb-2 pt-1 md:max-w-[min(1100px,96vw)] md:px-4 md:pb-3 md:pt-3"
             }
             aria-live="polite"
