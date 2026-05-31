@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import type { SigItem } from "@/types";
 import SelectedSigs from "@/components/sig-sales/SelectedSigs";
 import OneShotSigCard from "@/components/sig-sales/OneShotSigCard";
-import { sigOverlayBroadcastCardShellStyle } from "@/components/sig-sales/sig-overlay-card-size";
 import { useImagePreload } from "@/hooks/useImagePreload";
 import { canonicalSigIdFromWheelSliceId, ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 
@@ -93,10 +92,7 @@ export default function ResultOverlay({
 
   const oneShotTrailing =
     oneShot && showOneShotReveal ? (
-      <div
-        className="relative flex shrink-0 flex-col self-stretch"
-        style={sigOverlayBroadcastCardShellStyle(cardScalePct, { withToggle: false })}
-      >
+      <div className="relative flex shrink-0 flex-col self-stretch">
         <OneShotSigCard
           name={oneShot.name}
           price={oneShot.price}
@@ -110,7 +106,6 @@ export default function ResultOverlay({
           matchSigCardSize
           cardScalePct={cardScalePct}
           disableCardMotion={disableCardMotion}
-          fillRowCell
           gifDelayMultiplier={gifDelayMultiplier}
           onMediaReady={() => setImageLoaded(true)}
         />
@@ -131,31 +126,27 @@ export default function ResultOverlay({
   }
 
   return (
-    <div
-      className={`flex w-full max-w-full flex-nowrap items-stretch justify-between gap-2 ${className}`.trim()}
-    >
-      {selectedSigs.length > 0 ? (
-        <SelectedSigs
-          items={selectedSigs}
-          soldOutStampUrl={soldOutStampUrl}
-          manualSoldSet={EMPTY_SOLD_SET}
-          soldOverrideSet={soldOverrideSet}
-          onToggleSold={() => {}}
-          showToggle={false}
-          compact
-          matchOneShotCardSize
-          cardScalePct={cardScalePct}
-          disableCardMotion={disableCardMotion}
-          showConfirmedBadge={showConfirmedBadge}
-          compactGridJustify="start"
-          className="min-w-0 flex-1"
-          gifDelayMultiplier={gifDelayMultiplier}
-          entranceOnlyLatest={entranceOnlyLatest}
-          forceSoldAll={soldAllAtOnceForOneShot}
-          sigImageUserId={sigImageUserId}
-        />
-      ) : null}
-      {oneShotTrailing ? <div className="ml-auto shrink-0 self-stretch">{oneShotTrailing}</div> : null}
+    <div className={`flex w-full max-w-full justify-center ${className}`.trim()}>
+      <SelectedSigs
+        items={selectedSigs}
+        soldOutStampUrl={soldOutStampUrl}
+        manualSoldSet={EMPTY_SOLD_SET}
+        soldOverrideSet={soldOverrideSet}
+        onToggleSold={() => {}}
+        showToggle={false}
+        compact
+        matchOneShotCardSize
+        cardScalePct={cardScalePct}
+        disableCardMotion={disableCardMotion}
+        showConfirmedBadge={showConfirmedBadge}
+        trailingSlot={oneShotTrailing}
+        compactGridJustify="start"
+        className="w-max max-w-full shrink-0"
+        gifDelayMultiplier={gifDelayMultiplier}
+        entranceOnlyLatest={entranceOnlyLatest}
+        forceSoldAll={soldAllAtOnceForOneShot}
+        sigImageUserId={sigImageUserId}
+      />
     </div>
   );
 }

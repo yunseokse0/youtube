@@ -2698,7 +2698,7 @@ export default function AdminSigSalesPage() {
                 }`}
               >
               <div
-                className="mx-auto flex w-full max-w-full flex-nowrap items-stretch justify-between gap-2 overflow-visible px-1"
+                className="mx-auto flex w-full max-w-full justify-center overflow-visible px-1"
                 style={resultRowLayout.bandStyle}
               >
                 <SelectedSigs
@@ -2714,29 +2714,29 @@ export default function AdminSigSalesPage() {
                   cardScalePct={resultRowLayout.cardScalePct}
                   disableCardMotion={showFinalShowcase}
                   compactGridJustify="start"
-                  className="min-w-0 flex-1"
+                  className="w-max max-w-full shrink-0"
+                  trailingSlot={
+                    displayOneShot && oneShotReveal ? (
+                      <OneShotSigCard
+                        name={displayOneShot?.name || "한방 시그"}
+                        price={displayOneShot?.price || 0}
+                        imageUrl={oneShotImageUrl}
+                        sigImageUserId={userId}
+                        sold={oneShotSold}
+                        soldOutStampUrl={soldOutStampUrl}
+                        selectedSigCount={displaySelectedSigsForUi.length}
+                        disabled={controlsDisabled}
+                        compact
+                        matchSigCardSize
+                        cardScalePct={resultRowLayout.cardScalePct}
+                        disableCardMotion={showFinalShowcase}
+                        showToggle
+                        onToggleSold={() => void markOneShotSoldImmediate(!oneShotSold)}
+                      />
+                    ) : null
+                  }
                   onToggleSold={(id) => toggleDisplaySigSold(id)}
                 />
-                {displayOneShot && oneShotReveal ? (
-                  <div className="ml-auto shrink-0 self-stretch">
-                    <OneShotSigCard
-                      name={displayOneShot?.name || "한방 시그"}
-                      price={displayOneShot?.price || 0}
-                      imageUrl={oneShotImageUrl}
-                      sigImageUserId={userId}
-                      sold={oneShotSold}
-                      soldOutStampUrl={soldOutStampUrl}
-                      selectedSigCount={displaySelectedSigsForUi.length}
-                      disabled={controlsDisabled}
-                      compact
-                      matchSigCardSize
-                      cardScalePct={resultRowLayout.cardScalePct}
-                      disableCardMotion={showFinalShowcase}
-                      showToggle
-                      onToggleSold={() => void markOneShotSoldImmediate(!oneShotSold)}
-                    />
-                  </div>
-                ) : null}
               </div>
               <div className={`flex ${showFinalShowcase ? "justify-center" : "justify-end"}`}>
                 <button

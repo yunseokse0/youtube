@@ -98,7 +98,9 @@ export default function SelectedSigs({
     compact && compactGridJustify === "start" ? "justify-start" : compact ? "justify-center" : "";
   const sigRowJustify =
     overlaySingleRow
-      ? "justify-center"
+      ? compactGridJustify === "start"
+        ? "justify-start"
+        : "justify-center"
       : compact && compactGridJustify === "start"
         ? "justify-start"
         : broadcastMatch || compact

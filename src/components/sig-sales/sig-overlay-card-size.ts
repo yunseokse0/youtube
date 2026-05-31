@@ -139,11 +139,6 @@ export function layoutSigOverlayResultRow(opts: {
   const cardScalePct = Math.max(50, Math.min(100, Math.floor(combined * 100)));
   return {
     cardScalePct,
-    bandStyle: {
-      width: "100%",
-      maxWidth: "100%",
-      marginLeft: "auto",
-      marginRight: "auto",
-    },
+    bandStyle: sigOverlayResultBandStyle(cardScalePct),
   };
 }
