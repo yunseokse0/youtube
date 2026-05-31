@@ -123,7 +123,8 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
   if (isPriorKnownDeadSigImagePath(s)) {
     return BUNDLED_SIG_PLACEHOLDER_URL;
   }
-  /** 상대 경로 `images/…` `uploads/…` → 절대 경로화 (레거시 URL) */
+  /** `./uploads/…` · `uploads/…` → 루트 기준 절대 경로(OBS·오버레이 URL에서 404 방지) */
+  if (s.startsWith("./")) s = `/${s.slice(2).replace(/^\/+/, "")}`;
   if (
     !s.startsWith("/") &&
     !s.startsWith("http://") &&
