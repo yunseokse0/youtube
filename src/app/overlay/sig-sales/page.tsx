@@ -383,8 +383,17 @@ function SigSalesOverlayPageInner() {
       ? undefined
       : ({
           transform: `scale(${overlayScale})`,
-          transformOrigin: "top center",
+          /** 수동 모드는 휠 없음 — 상단 기준 scale 시 당첨 줄이 위로 붙어 보임 */
+          transformOrigin: manualOverlayMode ? "bottom center" : "top center",
         } as React.CSSProperties);
+  /** OBS 브라우저 소스 하단 여백(px). `resultsBottomPx` URL */
+  const resultsBottomInsetPx = useMemo(() => {
+    const raw = sp.get("resultsBottomPx") || sp.get("sigResultsBottomPx") || "";
+    if (!raw.trim()) return manualOverlayMode ? 20 : 12;
+    const n = parseInt(String(raw).replace(/[^\d]/g, ""), 10);
+    if (!Number.isFinite(n)) return manualOverlayMode ? 20 : 12;
+    return Math.max(0, Math.min(120, n));
+  }, [sp, manualOverlayMode]);
   const wheelColumnBoostScaleStyle =
     Math.abs(wheelColumnBoost - 1) < 0.001
       ? undefined
@@ -1426,6 +1435,10 @@ function SigSalesOverlayPageInner() {
     resultOverlayVisible &&
       (hideWheelAfterComplete || (manualOverlayMode && manualResultOverlayVisible))
   );
+  /** `absolute`+짧은 섹션은 카드가 위에 붙음 → 뷰포트 `fixed` 하단 고정 */
+  const resultsViewportPinned = Boolean(
+    pinResultsToBroadcastBottom || (manualOverlayMode && manualResultOverlayVisible)
+  );
 
   const showSigBoardRollingSection = useMemo(() => {
     if (manualOverlayMode) return false;
@@ -2094,7 +2107,9 @@ function SigSalesOverlayPageInner() {
 
   const mainClassName = wheelDemoActive
     ? "relative min-h-[100dvh] max-h-[100dvh] overflow-hidden bg-neutral-950 px-3 py-3 text-white sm:px-5 sm:py-4"
-    : "relative min-h-0 overflow-visible bg-transparent px-3 py-3 text-white sm:px-5 sm:py-4";
+    : resultsViewportPinned
+      ? "relative min-h-0 overflow-visible bg-transparent p-0 text-white"
+      : "relative min-h-0 overflow-visible bg-transparent px-3 py-3 text-white sm:px-5 sm:py-4";
 
   if (!clientBoot.ready) {
     return <OverlayHydrationShell transparent={!wheelDemoActive} />;
@@ -2121,14 +2136,16 @@ function SigSalesOverlayPageInner() {
       <div className="mx-auto max-w-[1280px] space-y-4">
         <section
           className={`relative flex w-full flex-col items-center gap-4 bg-transparent p-0 ${
-            pinResultsToBroadcastBottom ? "min-h-[100dvh]" : ""
+            resultsViewportPinned ? "" : pinResultsToBroadcastBottom ? "min-h-[100dvh]" : ""
           }`}
         >
           <div
             style={
-              overlayUserScaleStyle
-                ? { ...overlayUserScaleStyle, backgroundColor: "transparent" }
-                : { backgroundColor: "transparent" }
+              manualOverlayMode
+                ? { backgroundColor: "transparent" }
+                : overlayUserScaleStyle
+                  ? { ...overlayUserScaleStyle, backgroundColor: "transparent" }
+                  : { backgroundColor: "transparent" }
             }
             className="relative mx-auto flex w-full max-w-[min(1400px,98vw)] flex-col items-center gap-0"
           >
@@ -2358,9 +2375,16 @@ function SigSalesOverlayPageInner() {
           {/* 휠 아래·왼쪽(방송 화면 기준 시그 결과 영역). 휠 제거 시 위 플레이스홀더로 세로 위치 유지. hanbangOnly 시 한방만 화면 하단 고정 */}
           <div
             className={
-              pinResultsToBroadcastBottom || (hanbangOnlyResultLayout && resultOverlayVisible)
-                ? "pointer-events-none absolute bottom-0 left-0 right-0 z-[80] flex w-full max-w-full justify-center overflow-visible px-3 pb-2 pt-1 md:px-6 md:pb-4"
-                : "pointer-events-none relative z-[70] mt-2 w-full max-w-[min(960px,min(94vw,99vw))] shrink-0 self-center overflow-visible px-2 pb-2 pt-1 md:max-w-[min(1100px,96vw)] md:px-4 md:pb-3 md:pt-3"
+              resultsViewportPinned || (hanbangOnlyResultLayout && resultOverlayVisible)
+                ? "pointer-events-none fixed bottom-0 left-0 right-0 z-[80] flex w-full max-w-full justify-center overflow-visible px-3 pt-1 md:px-6"
+                : pinResultsToBroadcastBottom
+                  ? "pointer-events-none absolute bottom-0 left-0 right-0 z-[80] flex w-full max-w-full justify-center overflow-visible px-3 pb-2 pt-1 md:px-6 md:pb-4"
+                  : "pointer-events-none relative z-[70] mt-2 w-full max-w-[min(960px,min(94vw,99vw))] shrink-0 self-center overflow-visible px-2 pb-2 pt-1 md:max-w-[min(1100px,96vw)] md:px-4 md:pb-3 md:pt-3"
+            }
+            style={
+              resultsViewportPinned || (hanbangOnlyResultLayout && resultOverlayVisible)
+                ? { paddingBottom: resultsBottomInsetPx }
+                : undefined
             }
             aria-live="polite"
           >
@@ -2382,7 +2406,10 @@ function SigSalesOverlayPageInner() {
                   >
                     <div
                       className="mx-auto flex w-full max-w-full justify-center overflow-visible px-1"
-                      style={resultRowLayout.bandStyle}
+                      style={{
+                        ...resultRowLayout.bandStyle,
+                        ...(manualOverlayMode && overlayUserScaleStyle ? overlayUserScaleStyle : null),
+                      }}
                     >
                       <ResultOverlay
                         visible
