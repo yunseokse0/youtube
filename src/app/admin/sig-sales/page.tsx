@@ -859,26 +859,61 @@ export default function AdminSigSalesPage() {
     () => Math.max(0, manualAutoOneShotPrice - manualSoldDeduction),
     [manualAutoOneShotPrice, manualSoldDeduction]
   );
+  /** 한방 금액·차감은 당첨 5개(수동 폼 또는 manual_ 적용본)와 동일 배열 기준 — displaySelectedSigs(이전 회차)와 분리 */
+  const sigsForOneShotCalc = useMemo(() => {
+    const sid = String(machine.sessionId || state?.rouletteState?.sessionId || "").trim();
+    if (sid.startsWith("manual_") && (machine.selectedSigs?.length ?? 0) >= MIN_ONE_SHOT_SIGS) {
+      return (machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS).map((s) => ({
+        id: s.id,
+        name: s.name,
+        price: Math.max(0, Math.floor(Number(s.price || 0))),
+      }));
+    }
+    if (
+      manualParsedRows.length === 5 &&
+      !manualParsedRows.some((row) => !row.name || row.price <= 0)
+    ) {
+      return manualParsedRows.map((row, idx) => ({
+        id:
+          String(manualSigDrafts[idx]?.sourceSigId || "").trim() ||
+          `manual_draft_${idx + 1}`,
+        name: row.name,
+        price: row.price,
+      }));
+    }
+    return displaySelectedSigs.map((s) => ({
+      id: s.id,
+      name: s.name,
+      price: Math.max(0, Math.floor(Number(s.price || 0))),
+    }));
+  }, [
+    machine.sessionId,
+    machine.selectedSigs,
+    state?.rouletteState?.sessionId,
+    manualParsedRows,
+    manualSigDrafts,
+    displaySelectedSigs,
+  ]);
   const manualParsedOneShotPrice = useMemo(() => {
-    if (displaySelectedSigs.length < MIN_ONE_SHOT_SIGS) return 0;
+    if (sigsForOneShotCalc.length < MIN_ONE_SHOT_SIGS) return 0;
     return (
       resolveOneShotDisplayPrice({
-        selected: displaySelectedSigs,
+        selected: sigsForOneShotCalc,
         soldIdSet: manualSoldSet,
         manualPriceInput: manualOneShotPriceInput,
         fallbackName: manualOneShotName,
       })?.price ?? 0
     );
-  }, [displaySelectedSigs, manualSoldSet, manualOneShotPriceInput, manualOneShotName]);
+  }, [sigsForOneShotCalc, manualSoldSet, manualOneShotPriceInput, manualOneShotName]);
   const displayOneShot = useMemo(() => {
-    if (displaySelectedSigs.length < MIN_ONE_SHOT_SIGS) return null;
+    if (sigsForOneShotCalc.length < MIN_ONE_SHOT_SIGS) return null;
     return resolveOneShotDisplayPrice({
-      selected: displaySelectedSigs,
+      selected: sigsForOneShotCalc,
       soldIdSet: manualSoldSet,
       manualPriceInput: manualOneShotPriceInput,
       fallbackName: manualOneShotName,
     });
-  }, [displaySelectedSigs, manualSoldSet, manualOneShotPriceInput, manualOneShotName]);
+  }, [sigsForOneShotCalc, manualSoldSet, manualOneShotPriceInput, manualOneShotName]);
   const resultCardCount = useMemo(() => {
     let n = displaySelectedSigsForUi.length;
     if (displayOneShot && oneShotReveal) n += 1;
@@ -1270,10 +1305,6 @@ export default function AdminSigSalesPage() {
       setToast("수동 설정은 서로 다른 시그 5개를 모두 선택해야 합니다.");
       return;
     }
-    if (manualParsedOneShotPrice <= 0) {
-      setToast("한방 시그 금액을 확인해 주세요. (자동 합산 또는 직접 입력)");
-      return;
-    }
     const tsId = Date.now();
     const normalizeManualKey = (raw: string) => String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
     const selected: SigItem[] = manualParsedRows.map((row, idx) => {
@@ -1303,11 +1334,23 @@ export default function AdminSigSalesPage() {
         .map((x) => `${x.name}:${Math.max(0, Math.floor(Number(x.price || 0))).toLocaleString("ko-KR")}`)
         .join(" / ")}`
     );
-    const oneShot = {
-      id: ONE_SHOT_SIG_ID,
-      name: String(manualOneShotName || "").trim() || "한방 시그",
-      price: manualParsedOneShotPrice,
-    };
+    const soldSetForApply = new Set<string>();
+    selected.forEach((row, idx) => {
+      if (!manualSigSoldFlags[idx]) return;
+      soldSetForApply.add(row.id);
+      soldSetForApply.add(canonicalSigIdFromWheelSliceId(row.id));
+    });
+    const oneShotResolved = resolveOneShotDisplayPrice({
+      selected,
+      soldIdSet: soldSetForApply,
+      manualPriceInput: manualOneShotPriceInput,
+      fallbackName: manualOneShotName,
+    });
+    if (!oneShotResolved || oneShotResolved.price <= 0) {
+      setToast("한방 시그 금액을 확인해 주세요. (자동 합산 또는 직접 입력)");
+      return;
+    }
+    const oneShot = oneShotResolved;
     const now = Date.now();
     const sessionId = `manual_${now}`;
     const oneShotImage = String(manualOneShotImageUrl || "").trim();
@@ -1469,7 +1512,7 @@ export default function AdminSigSalesPage() {
   }, [
     state,
     manualReady,
-    manualParsedOneShotPrice,
+    manualOneShotPriceInput,
     manualParsedRows,
     manualSigDrafts,
     manualOneShotName,
@@ -1856,8 +1899,8 @@ export default function AdminSigSalesPage() {
   const buildLiveOneShotSnapshot = useCallback(
     (soldSet: Set<string>) => {
       const selected: Array<{ id: string; name: string; price: number }> =
-        displaySelectedSigs.length >= MIN_ONE_SHOT_SIGS
-          ? displaySelectedSigs
+        sigsForOneShotCalc.length >= MIN_ONE_SHOT_SIGS
+          ? sigsForOneShotCalc
           : manualParsedRows.map((row, idx) => ({
               id:
                 String(manualSigDrafts[idx]?.sourceSigId || "").trim() ||
@@ -1873,7 +1916,7 @@ export default function AdminSigSalesPage() {
         fallbackName: manualOneShotName,
       });
     },
-    [displaySelectedSigs, manualParsedRows, manualSigDrafts, manualOneShotName, manualOneShotPriceInput]
+    [sigsForOneShotCalc, manualParsedRows, manualSigDrafts, manualOneShotName, manualOneShotPriceInput]
   );
 
   const pushLiveRoundToServer = useCallback(

@@ -1586,8 +1586,8 @@ function SigSalesOverlayPageInner() {
     const normalizeNameKey = (raw: string) =>
       String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
     const items =
-      effectiveSelectedSigsForUi.length >= MIN_ONE_SHOT_SIGS
-        ? effectiveSelectedSigsForUi
+      manualOverlayResultSigs.length >= MIN_ONE_SHOT_SIGS
+        ? manualOverlayResultSigs
         : manualDraftSelectedForUi;
     flags.forEach((sold, idx) => {
       if (!sold) return;
@@ -1621,10 +1621,15 @@ function SigSalesOverlayPageInner() {
     return next;
   }, [
     manualDraftEffective,
-    effectiveSelectedSigsForUi,
+    manualOverlayResultSigs,
     manualDraftSelectedForUi,
     state?.sigInventory,
   ]);
+  /** 수동 OBS: 한방 차감은 관리자 `manualSoldSet` 과 동일하게 초안 체크만(재고 완판 id 제외) */
+  const manualOneShotSoldIdSet = useMemo(() => {
+    if (!manualOverlayMode) return new Set<string>();
+    return new Set(manualDraftSoldOverrideSet);
+  }, [manualOverlayMode, manualDraftSoldOverrideSet]);
   const resultSoldOverrideSet = useMemo(() => {
     const next = new Set<string>(inventorySoldOutIdSet);
     for (const id of confirmedRoundSoldIdSet) next.add(id);
@@ -1651,30 +1656,36 @@ function SigSalesOverlayPageInner() {
   /** 당첨 시그 판매 시 한방 금액 차감 — 서버 oneShotResult·수동 입력 모두 동일 규칙 */
   const oneShotForResultOverlay = useMemo(() => {
     if (!oneShotRevealReady) return null;
-    const selected = manualOverlayMode
-      ? resultSigsForUi.length >= MIN_ONE_SHOT_SIGS
-        ? resultSigsForUi
-        : manualDraftSelectedForUi
-      : resultSigsForUi.slice(0, CONFIRMED_VISIBLE_SLOTS);
-    if (!manualOverlayMode && selected.length < MIN_ONE_SHOT_SIGS) return null;
-    if (manualOverlayMode && selected.length < MIN_ONE_SHOT_SIGS) return null;
+    if (manualOverlayMode) {
+      const selected = manualOverlayResultSigs;
+      if (selected.length < MIN_ONE_SHOT_SIGS) return null;
+      return resolveOneShotDisplayPrice({
+        selected,
+        soldIdSet: manualOneShotSoldIdSet,
+        manualPriceInput: manualDraftEffective?.oneShotPriceInput,
+        fallbackName:
+          manualDraftEffective?.oneShotName ?? machine.oneShot?.name ?? state?.rouletteState?.oneShotResult?.name,
+      });
+    }
+    const selected = resultSigsForUi.slice(0, CONFIRMED_VISIBLE_SLOTS);
+    if (selected.length < MIN_ONE_SHOT_SIGS) return null;
     return resolveOneShotDisplayPrice({
       selected,
       soldIdSet: resultSoldOverrideSet,
-      manualPriceInput: manualOverlayMode ? manualDraftEffective?.oneShotPriceInput : undefined,
-      fallbackName: manualOverlayMode
-        ? manualDraftEffective?.oneShotName
-        : machine.oneShot?.name,
+      manualPriceInput: undefined,
+      fallbackName: machine.oneShot?.name,
     });
   }, [
     oneShotRevealReady,
     manualOverlayMode,
+    manualOverlayResultSigs,
+    manualOneShotSoldIdSet,
     resultSigsForUi,
-    manualDraftSelectedForUi,
     resultSoldOverrideSet,
     manualDraftEffective?.oneShotPriceInput,
     manualDraftEffective?.oneShotName,
     machine.oneShot?.name,
+    state?.rouletteState?.oneShotResult?.name,
   ]);
   useEffect(() => {
     if (!hideWheelAfterComplete) return;
