@@ -1,7 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
 import { Howl } from "howler";
@@ -185,29 +184,50 @@ const wheelReducer = (state: WheelPhase, action: { type: string }): WheelPhase =
   }
 };
 
-/** SSR·Suspense fallback·클라이언트 첫 페인트가 동일한 `<main>` — 하이드레이션 불일치 방지 */
+/** OBS CEF: `useSearchParams` Suspense 가 풀리지 않아 검은 화면만 보일 수 있음 → location.search 사용 */
+function useClientSearchParams(): URLSearchParams {
+  const [params, setParams] = useState<URLSearchParams>(() => {
+    if (typeof window === "undefined") return new URLSearchParams();
+    return new URLSearchParams(window.location.search);
+  });
+  useEffect(() => {
+    const sync = () => setParams(new URLSearchParams(window.location.search));
+    sync();
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
+  }, []);
+  return params;
+}
+
+/** SSR·첫 페인트 — 방송용은 투명(검은 막 방지) */
 function OverlayHydrationShell({
   message = "오버레이 불러오는 중…",
+  transparent = true,
 }: {
   message?: string;
+  transparent?: boolean;
 }) {
   return (
-    <main className="relative min-h-[100dvh] max-h-[100dvh] overflow-hidden bg-neutral-950 px-3 py-3 text-white sm:px-5 sm:py-4">
-      <p className="flex min-h-[50dvh] items-center justify-center text-sm text-neutral-300">{message}</p>
+    <main
+      className={
+        transparent
+          ? "relative min-h-0 overflow-hidden bg-transparent px-3 py-3 text-white"
+          : "relative min-h-[100dvh] max-h-[100dvh] overflow-hidden bg-neutral-950 px-3 py-3 text-white sm:px-5 sm:py-4"
+      }
+    >
+      <p className={transparent ? "sr-only" : "flex min-h-[50dvh] items-center justify-center text-sm text-neutral-300"}>
+        {message}
+      </p>
     </main>
   );
 }
 
 export default function SigSalesOverlayPage() {
-  return (
-    <Suspense fallback={<OverlayHydrationShell />}>
-      <SigSalesOverlayPageInner />
-    </Suspense>
-  );
+  return <SigSalesOverlayPageInner />;
 }
 
 function SigSalesOverlayPageInner() {
-  const sp = useSearchParams();
+  const sp = useClientSearchParams();
   const manualModeParam =
     String(sp.get("mode") || "").toLowerCase() === "manual" ||
     String(sp.get("overlayMode") || "").toLowerCase() === "manual";
@@ -485,14 +505,15 @@ function SigSalesOverlayPageInner() {
     const remote = await loadStateFromApi(userId, {
       ifUpdatedSince: opts?.forceFull ? 0 : lastSyncedUpdatedAtRef.current,
       forceFull: opts?.forceFull,
-      pick: manualOverlayMode ? undefined : "sig-sales",
+      /** 수동 모드도 pick=sig-sales(rouletteState·수동 초안 포함) — full pick 은 OBS에서 느리고 동기화 누락 위험 */
+      pick: "sig-sales",
     });
     if (!remote) return;
     const ts = remote.updatedAt || 0;
     if (ts > 0) lastSyncedUpdatedAtRef.current = Math.max(lastSyncedUpdatedAtRef.current, ts);
     lastRouletteSyncRef.current = sigSalesRouletteSyncCursorFromState(remote.rouletteState);
     setState(remote);
-  }, [userId, manualOverlayMode]);
+  }, [userId]);
 
   const loadRemoteRef = useRef(loadRemote);
   loadRemoteRef.current = loadRemote;
@@ -1297,7 +1318,10 @@ function SigSalesOverlayPageInner() {
     !overlayIdleBeforeSpin &&
       (manualModeHasResults || resultsPanelGateOpen) &&
       (manualOverlayMode
-        ? effectiveSelectedSigsForUi.length > 0 || Boolean(machine.oneShot)
+        ? effectiveSelectedSigsForUi.length > 0 ||
+          Boolean(machine.oneShot) ||
+          fullSelectedSigs.length > 0 ||
+          (machine.selectedSigs?.length ?? 0) > 0
         : displaySelectedSigs.length > 0 ||
           oneShotRevealUnlocked ||
           (fullSelectedSigs.length > 0 &&
@@ -1317,7 +1341,12 @@ function SigSalesOverlayPageInner() {
   );
   /** 방송 OBS: 휠 제거 후 당첨 줄을 브라우저 소스 하단에 고정(중앙에 떠 보이는 현상 방지) */
   const pinResultsToBroadcastBottom = Boolean(
-    hideWheelAfterComplete && resultOverlayVisible && !manualOverlayMode
+    resultOverlayVisible &&
+      (hideWheelAfterComplete ||
+        (manualOverlayMode &&
+          (machine.phase === "LANDED" ||
+            machine.phase === "CONFIRM_PENDING" ||
+            machine.phase === "CONFIRMED")))
   );
 
   const showSigBoardRollingSection = useMemo(() => {
@@ -1947,7 +1976,7 @@ function SigSalesOverlayPageInner() {
     : "relative min-h-0 overflow-visible bg-transparent px-3 py-3 text-white sm:px-5 sm:py-4";
 
   if (!clientBoot.ready) {
-    return <OverlayHydrationShell />;
+    return <OverlayHydrationShell transparent={!wheelDemoActive} />;
   }
 
   return (

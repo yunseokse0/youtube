@@ -1540,6 +1540,7 @@ export default function AdminSigSalesPage() {
     }
     const rs = Number(state?.rouletteState?.sigResultScalePct);
     if (Number.isFinite(rs)) q.set("sigResultScalePct", String(Math.floor(rs)));
+    q.set("hideSigBoard", "1");
     setOverlayObsUrl(`${window.location.origin}/overlay/sig-sales?${q.toString()}`);
     const qManual = new URLSearchParams();
     qManual.set("u", userId);
@@ -2061,6 +2062,15 @@ export default function AdminSigSalesPage() {
                 <code className="break-all text-emerald-300/90">
                   {overlayObsMode === "manual" ? overlayObsUrlManual : overlayObsUrl}
                 </code>
+                {overlayObsMode === "manual" &&
+                (machine.phase === "LANDED" ||
+                  machine.phase === "CONFIRM_PENDING" ||
+                  machine.phase === "CONFIRMED") ? (
+                  <span className="mt-1 block text-amber-200/95">
+                    회전 추첨·착지 후 방송에는 위 드롭다운에서 「회전판 모드 URL」을 선택해 OBS에 넣는 것을 권장합니다.
+                    (수동 URL은 수동 5개·판매완료 체크 위주)
+                  </span>
+                ) : null}
                 {wheelDemoMode ? (
                   <span className="mt-1 block text-amber-200/90">
                     로컬 휠 데모 · 회전판 {WHEEL_DEMO_MENU_COUNT}칸 · 당첨 {WHEEL_DEMO_WIN_COUNT}개 + 한방 시그(서버 미저장)
