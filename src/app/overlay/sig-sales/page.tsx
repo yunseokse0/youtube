@@ -2108,7 +2108,7 @@ function SigSalesOverlayPageInner() {
   const mainClassName = wheelDemoActive
     ? "relative min-h-[100dvh] max-h-[100dvh] overflow-hidden bg-neutral-950 px-3 py-3 text-white sm:px-5 sm:py-4"
     : resultsViewportPinned
-      ? "relative min-h-0 overflow-visible bg-transparent p-0 text-white"
+      ? "pointer-events-none fixed inset-0 z-[1] flex flex-col justify-end items-center overflow-visible bg-transparent p-0 text-white"
       : "relative min-h-0 overflow-visible bg-transparent px-3 py-3 text-white sm:px-5 sm:py-4";
 
   if (!clientBoot.ready) {
@@ -2133,10 +2133,16 @@ function SigSalesOverlayPageInner() {
           </p>
         </div>
       ) : null}
-      <div className="mx-auto max-w-[1280px] space-y-4">
+      <div
+        className={
+          resultsViewportPinned
+            ? "flex w-full min-h-0 flex-1 flex-col justify-end"
+            : "mx-auto max-w-[1280px] space-y-4"
+        }
+      >
         <section
           className={`relative flex w-full flex-col items-center gap-4 bg-transparent p-0 ${
-            resultsViewportPinned ? "" : pinResultsToBroadcastBottom ? "min-h-[100dvh]" : ""
+            resultsViewportPinned ? "min-h-0 w-full justify-end" : pinResultsToBroadcastBottom ? "min-h-[100dvh]" : ""
           }`}
         >
           <div
@@ -2151,9 +2157,9 @@ function SigSalesOverlayPageInner() {
           >
           <div
             style={
-              wheelColumnBoostScaleStyle
-                ? { ...wheelColumnBoostScaleStyle, backgroundColor: "transparent" }
-                : { backgroundColor: "transparent" }
+              manualOverlayMode || !wheelColumnBoostScaleStyle
+                ? { backgroundColor: "transparent" }
+                : { ...wheelColumnBoostScaleStyle, backgroundColor: "transparent" }
             }
             className="flex w-full shrink-0 flex-col items-center"
           >
@@ -2376,7 +2382,7 @@ function SigSalesOverlayPageInner() {
           <div
             className={
               resultsViewportPinned || (hanbangOnlyResultLayout && resultOverlayVisible)
-                ? "pointer-events-none fixed bottom-0 left-0 right-0 z-[80] flex w-full max-w-full justify-center overflow-visible px-3 pt-1 md:px-6"
+                ? "pointer-events-none relative z-[80] flex w-full max-w-full shrink-0 justify-center overflow-visible px-3 pt-1 md:px-6"
                 : pinResultsToBroadcastBottom
                   ? "pointer-events-none absolute bottom-0 left-0 right-0 z-[80] flex w-full max-w-full justify-center overflow-visible px-3 pb-2 pt-1 md:px-6 md:pb-4"
                   : "pointer-events-none relative z-[70] mt-2 w-full max-w-[min(960px,min(94vw,99vw))] shrink-0 self-center overflow-visible px-2 pb-2 pt-1 md:max-w-[min(1100px,96vw)] md:px-4 md:pb-3 md:pt-3"
@@ -2394,11 +2400,13 @@ function SigSalesOverlayPageInner() {
                   <motion.div
                     key={`result-${spinCompletionKey}`}
                     layout={false}
-                    initial={hideWheelAfterComplete ? false : { opacity: 0, y: 12 }}
-                    animate={hideWheelAfterComplete ? undefined : { opacity: 1, y: 0 }}
-                    exit={hideWheelAfterComplete ? undefined : { opacity: 0.95, y: 6 }}
+                    initial={
+                      resultsViewportPinned || hideWheelAfterComplete ? false : { opacity: 0, y: 12 }
+                    }
+                    animate={resultsViewportPinned || hideWheelAfterComplete ? undefined : { opacity: 1, y: 0 }}
+                    exit={resultsViewportPinned || hideWheelAfterComplete ? undefined : { opacity: 0.95, y: 6 }}
                     transition={
-                      hideWheelAfterComplete
+                      resultsViewportPinned || hideWheelAfterComplete
                         ? undefined
                         : { duration: Math.min(0.35, revealMotionSec), ease: [0.22, 1, 0.36, 1] }
                     }
@@ -2406,10 +2414,7 @@ function SigSalesOverlayPageInner() {
                   >
                     <div
                       className="mx-auto flex w-full max-w-full justify-center overflow-visible px-1"
-                      style={{
-                        ...resultRowLayout.bandStyle,
-                        ...(manualOverlayMode && overlayUserScaleStyle ? overlayUserScaleStyle : null),
-                      }}
+                      style={resultRowLayout.bandStyle}
                     >
                       <ResultOverlay
                         visible
@@ -2422,8 +2427,8 @@ function SigSalesOverlayPageInner() {
                         cardScalePct={resultRowLayout.cardScalePct}
                         className="w-full max-w-full"
                         gifDelayMultiplier={sigGifDelayMultiplier}
-                        entranceOnlyLatest={!hideWheelAfterComplete}
-                        disableCardMotion={hideWheelAfterComplete}
+                        entranceOnlyLatest={!hideWheelAfterComplete && !resultsViewportPinned}
+                        disableCardMotion={hideWheelAfterComplete || resultsViewportPinned}
                         hanbangOnly={hanbangOnlyResultLayout}
                         showConfirmedBadge={machine.phase === "CONFIRMED"}
                         sigImageUserId={sigImageUserId}
