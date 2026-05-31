@@ -15,8 +15,6 @@ import {
   SIG_OVERLAY_CARD_ONESHOT_SHELL_CLASS,
   sigOverlayBroadcastCardShellStyle,
   sigOverlayBroadcastMediaBoxStyle,
-  sigOverlayBroadcastOneShotCardShellStyle,
-  sigOverlayBroadcastOneShotMediaBoxStyle,
 } from "@/components/sig-sales/sig-overlay-card-size";
 import SigSoldStampOverlay, {
   SIG_SOLD_STAMP_IMG_CLASS_BROADCAST,
@@ -71,11 +69,9 @@ export default function OneShotSigCard({
   const shellStyle = useBroadcastSizing
     ? fillRowCell
       ? { width: "100%", height: "100%", minHeight: "100%", boxSizing: "border-box" as const }
-      : sigOverlayBroadcastOneShotCardShellStyle(cardScalePct, { withToggle: showToggle })
+      : sigOverlayBroadcastCardShellStyle(cardScalePct, { withToggle: showToggle })
     : undefined;
-  const mediaBoxStyle = useBroadcastSizing
-    ? sigOverlayBroadcastOneShotMediaBoxStyle(cardScalePct)
-    : undefined;
+  const mediaBoxStyle = useBroadcastSizing ? sigOverlayBroadcastMediaBoxStyle(cardScalePct) : undefined;
   const sumLine =
     typeof selectedSigCount === "number" && selectedSigCount > 0
       ? `선정된 ${selectedSigCount}개 시그 합산 금액`
