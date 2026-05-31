@@ -1630,12 +1630,19 @@ function SigSalesOverlayPageInner() {
     if (!manualOverlayMode) return new Set<string>();
     return new Set(manualDraftSoldOverrideSet);
   }, [manualOverlayMode, manualDraftSoldOverrideSet]);
+  /** 수동 OBS: 초안 체크만 스탬프(재고 완판·LANDED 자동 스탬프 제외 → 해제·갱신 가능) */
   const resultSoldOverrideSet = useMemo(() => {
+    if (manualOverlayMode) return new Set(manualDraftSoldOverrideSet);
     const next = new Set<string>(inventorySoldOutIdSet);
     for (const id of confirmedRoundSoldIdSet) next.add(id);
     for (const id of manualDraftSoldOverrideSet) next.add(id);
     return next;
-  }, [inventorySoldOutIdSet, confirmedRoundSoldIdSet, manualDraftSoldOverrideSet]);
+  }, [
+    manualOverlayMode,
+    inventorySoldOutIdSet,
+    confirmedRoundSoldIdSet,
+    manualDraftSoldOverrideSet,
+  ]);
   const oneShotRevealReady = useMemo(() => {
     if (manualOverlayMode) return true;
     if (oneShotRevealUnlocked) return true;
