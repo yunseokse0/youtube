@@ -120,7 +120,8 @@ export function useOverlayRemoteState(
     [enabled, userId, statePick]
   );
 
-  const sseEnabled = enabled;
+  /** OBS 텍스트는 소스마다 EventSource → /api/events·GET 폭주·502 유발 → 폴링만 */
+  const sseEnabled = enabled && statePick !== STATE_PICK_OBS_TEXT;
 
   const { connected: sseConnected } = useSSEConnection(
     (d: unknown) => {
@@ -198,6 +199,18 @@ export function useOverlayRemoteState(
     let pollId: number | undefined;
     if (pollMs > 0) pollId = window.setInterval(() => void syncFromApi(), pollMs);
 
+    const onObsTextVisible =
+      statePick === STATE_PICK_OBS_TEXT
+        ? () => {
+            if (document.visibilityState === "visible") {
+              void syncFromApi({ forceFull: true });
+            }
+          }
+        : null;
+    if (onObsTextVisible) {
+      document.addEventListener("visibilitychange", onObsTextVisible);
+    }
+
     const sseFallbackMs =
       pollMs > 0 || !sseEnabled ? 0 : readOverlaySseFallbackPollMs();
     let sseFallbackId: number | undefined;
@@ -250,6 +263,7 @@ export function useOverlayRemoteState(
       if (sseFallbackId) window.clearInterval(sseFallbackId);
       if (storageDebounce) clearTimeout(storageDebounce);
       window.removeEventListener("storage", onStorage);
+      if (onObsTextVisible) document.removeEventListener("visibilitychange", onObsTextVisible);
     };
   }, [
     enabled,

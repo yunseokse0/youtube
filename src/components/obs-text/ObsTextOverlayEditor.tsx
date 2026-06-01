@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { ObsTextOverlayView } from "@/components/obs-text/ObsTextOverlayView";
 import {
   OBS_TEXT_EMOJI_PRESETS,
@@ -67,7 +66,6 @@ export default function ObsTextOverlayEditor({
   initialInstanceId?: string | null;
   createOnMount?: boolean;
 }) {
-  const router = useRouter();
   const [registry, setRegistry] = useState<ObsTextOverlayRegistry>(defaultObsTextRegistry);
   const [activeInstanceId, setActiveInstanceId] = useState(
     () => resolveObsTextInstanceId(defaultObsTextRegistry(), initialInstanceId)
@@ -140,10 +138,10 @@ export default function ObsTextOverlayEditor({
         u.searchParams.set("u", userId);
         u.searchParams.set("textId", id);
         u.searchParams.delete("new");
-        router.replace(`${u.pathname}${u.search}`, { scroll: false });
+        window.history.replaceState(window.history.state, "", `${u.pathname}${u.search}`);
       }
     },
-    [registry, userId, router]
+    [registry, userId]
   );
 
   const stampRegistryForSave = useCallback(

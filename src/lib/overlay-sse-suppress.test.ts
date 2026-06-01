@@ -16,7 +16,7 @@ describe("shouldSuppressOverlaySseConnection", () => {
     vi.unstubAllGlobals();
   });
 
-  it("allows OBS obs-text URL without hub flags", () => {
+  it("suppresses SSE on OBS obs-text browser source (poll-only)", () => {
     const w = {
       location: {
         pathname: "/overlay/obs-text",
@@ -26,7 +26,7 @@ describe("shouldSuppressOverlaySseConnection", () => {
     };
     w.parent = w as unknown as Window;
     vi.stubGlobal("window", w);
-    expect(shouldSuppressOverlaySseConnection()).toBe(false);
+    expect(shouldSuppressOverlaySseConnection()).toBe(true);
     vi.unstubAllGlobals();
   });
 

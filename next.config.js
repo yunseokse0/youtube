@@ -6,6 +6,8 @@ const nextConfig = {
       { source: "/ui-demo", destination: "/admin", permanent: false },
       /** OBS 예전 URL: 하이픈 대신 밑줄로 붙인 소스는 404 → 통합 오버레이로 유지(쿼리 유지) */
       { source: "/overlay/sig_select", destination: "/overlay/sig-sales", permanent: false },
+      /** OBS 예전·잘못된 URL (502·404) → 정식 오버레이 경로 */
+      { source: "/obs-text", destination: "/overlay/obs-text", permanent: false },
       { source: "/overlay/sig_match/demo", destination: "/overlay/sig-match/demo", permanent: false },
       { source: "/overlay/sig_match", destination: "/overlay/sig-match", permanent: false },
     ];
