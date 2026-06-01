@@ -1,27 +1,29 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
+
+const DEFAULT_TARGET = "/overlay/sig-sales?u=finalent&mode=manual&hideSigBoard=1";
+
+function targetFromWindowSearch(search: string): string {
+  const q = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  q.set("u", getOverlayUserIdFromSearchParams(q));
+  q.delete("id");
+  if (!q.get("mode")?.trim()) q.set("mode", "manual");
+  if (!q.has("hideSigBoard")) q.set("hideSigBoard", "1");
+  q.delete("overlay");
+  return `/overlay/sig-sales?${q.toString()}`;
+}
 
 /** OBS 레거시 URL `/admin/sig-sales/overlay` → 공개 수동 오버레이로 이동 */
 export default function AdminSigSalesOverlayRedirectPage() {
-  const sp = useSearchParams();
-
-  const target = useMemo(() => {
-    const q = new URLSearchParams(sp.toString());
-    q.set("u", getOverlayUserIdFromSearchParams(sp));
-    q.delete("id");
-    if (!q.get("mode")?.trim()) q.set("mode", "manual");
-    if (!q.has("hideSigBoard")) q.set("hideSigBoard", "1");
-    q.delete("overlay");
-    return `/overlay/sig-sales?${q.toString()}`;
-  }, [sp]);
+  const [target, setTarget] = useState(DEFAULT_TARGET);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.location.replace(target);
-  }, [target]);
+    const t = targetFromWindowSearch(window.location.search);
+    setTarget(t);
+    window.location.replace(t);
+  }, []);
 
   return (
     <main className="min-h-screen bg-transparent p-4 text-white">
