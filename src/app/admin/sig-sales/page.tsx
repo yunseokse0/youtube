@@ -2555,6 +2555,10 @@ export default function AdminSigSalesPage() {
             ) : null}
             {overlayObsUrl ? (
               <p className="mt-2 max-w-xl text-[11px] text-neutral-400">
+                <span className="block rounded border border-rose-400/40 bg-rose-950/40 px-2 py-1.5 text-rose-100">
+                  OBS URL은 반드시 <code className="text-rose-50">/overlay/sig-sales</code> 입니다.{" "}
+                  <code className="text-rose-50/90">/admin/sig-sales/overlay</code> 는 로그인 화면·빈 화면만 나옵니다.
+                </span>
                 OBS 소스 URL (u={userId}
                 {memberFilterId ? ` · memberId=${memberFilterId}` : ""}):{" "}
                 <code className="break-all text-emerald-300/90">

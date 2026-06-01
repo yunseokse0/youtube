@@ -28,6 +28,40 @@ function isValidUserId(value: string): boolean {
   return /^[a-zA-Z0-9_-]{1,64}$/.test(value);
 }
 
+/** OBS에 잘못 붙인 관리자 경로 → 공개 오버레이(인증 쿠키 없음) */
+function redirectLegacyAdminSigOverlayPath(req: NextRequest): NextResponse | null {
+  const { pathname } = req.nextUrl;
+  const isLegacyOverlay =
+    pathname === "/admin/sig-sales/overlay" ||
+    pathname.startsWith("/admin/sig-sales/overlay/");
+  const isLegacyBoard = pathname === "/admin/sig-board" || pathname.startsWith("/admin/sig-board/");
+  if (!isLegacyOverlay && !isLegacyBoard) return null;
+
+  const target = new URL("/overlay/sig-sales", req.url);
+  const q = new URLSearchParams(req.nextUrl.searchParams);
+  if (!q.get("u")?.trim() && !q.get("user")?.trim()) q.set("u", "finalent");
+  if (!q.get("mode")?.trim()) q.set("mode", "manual");
+  if (!q.has("hideSigBoard")) q.set("hideSigBoard", "1");
+  q.delete("overlay");
+  target.search = q.toString();
+  return NextResponse.redirect(target, 307);
+}
+
+function redirectLegacySigUploadPath(req: NextRequest): NextResponse | null {
+  const { pathname } = req.nextUrl;
+  const m = pathname.match(/^\/uploads\/(?:sig|images)\/([^/?#]+)$/i);
+  if (!m?.[1]) return null;
+  const uidRaw =
+    req.nextUrl.searchParams.get("u") ||
+    req.nextUrl.searchParams.get("user") ||
+    "finalent";
+  const uid = String(uidRaw || "").trim();
+  if (!isValidUserId(uid)) return null;
+  const nextUrl = req.nextUrl.clone();
+  nextUrl.pathname = `/uploads/sigs/${uid}/${m[1]}`;
+  return NextResponse.rewrite(nextUrl);
+}
+
 function extractUserIdFromBrokenSigSegment(seg: string): string | null {
   const raw = String(seg || "").trim();
   if (!raw) return null;
@@ -46,6 +80,12 @@ function extractUserIdFromBrokenSigSegment(seg: string): string | null {
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  const legacyOverlayRedirect = redirectLegacyAdminSigOverlayPath(req);
+  if (legacyOverlayRedirect) return legacyOverlayRedirect;
+
+  const legacyUploadRewrite = redirectLegacySigUploadPath(req);
+  if (legacyUploadRewrite) return legacyUploadRewrite;
 
   /** 시그 GIF/PNG — 디스크 업로드는 동일 오리진, 번들만 GitHub raw 307(Render 대역폭 절감) */
   if (pathname.startsWith("/uploads/sigs/")) {
@@ -105,5 +145,7 @@ export const config = {
     "/login",
     "/images/sigs/:path*",
     "/uploads/sigs/:path*",
+    "/uploads/sig/:path*",
+    "/uploads/images/:path*",
   ],
 };
