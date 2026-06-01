@@ -1,5 +1,6 @@
 import type { AppState, RouletteState } from "@/types";
 import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
+import { OBS_TEXT_OVERLAY_STATE_KEY } from "@/lib/obs-text-overlay";
 import { capDonorsForOverlayWire, slimSigInventoryForWire } from "@/lib/state-wire-slim";
 
 export const STATE_PICK_SIG_INVENTORY = "sigInventory";
@@ -8,13 +9,15 @@ export const STATE_PICK_OVERLAY_DONORS = "overlay-donors";
 export const STATE_PICK_SIG_SALES = "sig-sales";
 const MANUAL_SIG_DRAFT_STATE_KEY = "sigSalesManualDraftV1";
 export const STATE_PICK_DONOR_RANKINGS = "donor-rankings";
+export const STATE_PICK_OBS_TEXT = "obs-text";
 
 export type StateApiPick =
   | typeof STATE_PICK_SIG_INVENTORY
   | typeof STATE_PICK_OVERLAY
   | typeof STATE_PICK_OVERLAY_DONORS
   | typeof STATE_PICK_SIG_SALES
-  | typeof STATE_PICK_DONOR_RANKINGS;
+  | typeof STATE_PICK_DONOR_RANKINGS
+  | typeof STATE_PICK_OBS_TEXT;
 
 export function parseStateApiPick(raw: string): StateApiPick | null {
   const v = String(raw || "").trim();
@@ -23,7 +26,8 @@ export function parseStateApiPick(raw: string): StateApiPick | null {
     v === STATE_PICK_OVERLAY ||
     v === STATE_PICK_OVERLAY_DONORS ||
     v === STATE_PICK_SIG_SALES ||
-    v === STATE_PICK_DONOR_RANKINGS
+    v === STATE_PICK_DONOR_RANKINGS ||
+    v === STATE_PICK_OBS_TEXT
   ) {
     return v;
   }
@@ -120,6 +124,19 @@ export function projectStateForGetPick(state: AppState, pick: StateApiPick): unk
       donorRankingsPresets: state.donorRankingsPresets,
       donorRankingsPresetId: state.donorRankingsPresetId,
       donorRankingsOverlayConfig: state.donorRankingsOverlayConfig,
+    };
+  }
+  if (pick === STATE_PICK_OBS_TEXT) {
+    const os = state.overlaySettings;
+    const obsText =
+      os && typeof os === "object"
+        ? (os as Record<string, unknown>)[OBS_TEXT_OVERLAY_STATE_KEY]
+        : undefined;
+    return {
+      updatedAt: state.updatedAt,
+      ...(obsText && typeof obsText === "object"
+        ? { overlaySettings: { [OBS_TEXT_OVERLAY_STATE_KEY]: obsText } }
+        : {}),
     };
   }
   return overlayCoreFields(state, rs, true);

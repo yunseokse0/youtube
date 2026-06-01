@@ -149,6 +149,76 @@ function findInventoryForManualRow(
   });
 }
 
+function findInventoryForDisplaySig(
+  inventory: SigItem[],
+  sig: Pick<SigItem, "id" | "name" | "price">,
+  sourceSigId?: string
+): SigItem | undefined {
+  const sid = String(sourceSigId || sig.id || "").trim();
+  if (sid && sid !== ONE_SHOT_SIG_ID) {
+    const canon = canonicalSigIdFromWheelSliceId(sid);
+    const byId = inventory.find(
+      (x) => x.id === sid || canonicalSigIdFromWheelSliceId(x.id) === canon
+    );
+    if (byId) return byId;
+  }
+  return findInventoryForManualRow(
+    inventory,
+    { name: sig.name, price: sig.price },
+    sourceSigId || sig.id
+  );
+}
+
+/** 당첨 카드 id·이름·가격 → 수동 입력 행(0~4). 표시 순서와 폼 행 순서가 다를 수 있음 */
+function resolveManualRowIndexForDisplaySig(
+  sig: Pick<SigItem, "id" | "name" | "price">,
+  displaySelectedSigs: SigItem[],
+  manualParsedRows: { name: string; price: number }[],
+  manualSigDrafts: Array<{ sourceSigId?: string }>
+): number {
+  const canon = canonicalSigIdFromWheelSliceId(sig.id);
+  const nk = normalizeManualNameKey(sig.name);
+  const price = Math.floor(Number(sig.price || 0));
+  for (let i = 0; i < manualParsedRows.length; i++) {
+    const row = manualParsedRows[i];
+    if (!row?.name) continue;
+    const sourceId = String(manualSigDrafts[i]?.sourceSigId || "").trim();
+    if (sourceId && (sourceId === sig.id || canonicalSigIdFromWheelSliceId(sourceId) === canon)) {
+      return i;
+    }
+    if (normalizeManualNameKey(row.name) === nk && Math.floor(Number(row.price || 0)) === price) {
+      return i;
+    }
+  }
+  const displayIdx = displaySelectedSigs.findIndex(
+    (s) => s.id === sig.id || canonicalSigIdFromWheelSliceId(s.id) === canon
+  );
+  if (displayIdx >= 0 && displayIdx < 5) return displayIdx;
+  return -1;
+}
+
+function bumpInventorySigSold(
+  inventory: SigItem[],
+  inv: SigItem,
+  sold: boolean
+): SigItem[] {
+  return inventory.map((row) => {
+    if (row.id !== inv.id) return row;
+    const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
+    const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)));
+    if (sold) {
+      const nextSold = Math.min(maxCount, soldCount + 1);
+      return {
+        ...row,
+        soldCount: nextSold,
+        isActive: nextSold >= maxCount ? false : row.isActive,
+      };
+    }
+    const nextSold = Math.max(0, soldCount - 1);
+    return { ...row, soldCount: nextSold, isActive: true };
+  });
+}
+
 function collectSoldSigIdsForFinish(
   selected: SigItem[],
   soldIdSet: Set<string>
@@ -2052,75 +2122,137 @@ export default function AdminSigSalesPage() {
     ]
   );
 
-  const markManualSigSoldImmediate = useCallback(
-    async (idx: number, sold: boolean) => {
+  const markDisplaySigSoldByItem = useCallback(
+    async (sig: SigItem, sold: boolean, manualIdxHint?: number) => {
+      const canon = canonicalSigIdFromWheelSliceId(sig.id);
+      const manualIdx =
+        manualIdxHint ??
+        resolveManualRowIndexForDisplaySig(sig, displaySelectedSigs, manualParsedRows, manualSigDrafts);
+
       const nextFlags = [...manualSigSoldFlags];
       while (nextFlags.length < 5) nextFlags.push(false);
-      nextFlags[idx] = sold;
+      if (manualIdx >= 0 && manualIdx < 5) nextFlags[manualIdx] = sold;
       setManualSigSoldFlags(nextFlags);
 
       const nextSoldSet = buildSoldSetFromFlags(nextFlags);
+      if (sold) {
+        nextSoldSet.add(sig.id);
+        nextSoldSet.add(canon);
+      } else {
+        nextSoldSet.delete(sig.id);
+        nextSoldSet.delete(canon);
+      }
       setManualSoldSet(nextSoldSet);
 
       if (!state) return;
 
-      const parsed = manualParsedRows[idx];
-      let nextInventory = [...(state.sigInventory || [])];
-      const inv =
-        parsed?.name
-          ? findInventoryForManualRow(nextInventory, parsed, manualSigDrafts[idx]?.sourceSigId)
-          : null;
+      const parsed = manualIdx >= 0 ? manualParsedRows[manualIdx] : null;
+      const lookupRow =
+        parsed?.name && normalizeManualNameKey(parsed.name)
+          ? parsed
+          : { name: sig.name, price: sig.price };
+      const label = lookupRow.name || sig.name;
 
-      if (sold && parsed?.name) {
+      let nextInventory = [...(state.sigInventory || [])];
+      const inv = findInventoryForDisplaySig(
+        nextInventory,
+        sig,
+        manualIdx >= 0 ? manualSigDrafts[manualIdx]?.sourceSigId : sig.id
+      );
+
+      if (sold) {
         if (!inv) {
-          setToast(`${parsed.name}: 재고에서 찾지 못해 표시만 반영했습니다.`);
+          setToast(`${label}: 재고에서 찾지 못해 표시만 반영했습니다.`);
         } else if (inv.soldCount >= inv.maxCount) {
-          setToast(`${parsed.name}은(는) 이미 완판입니다.`);
+          setToast(`${label}은(는) 이미 완판입니다.`);
         } else {
-          nextInventory = nextInventory.map((row) => {
-            if (row.id !== inv.id) return row;
-            const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
-            const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)));
-            const nextSold = Math.min(maxCount, soldCount + 1);
-            return {
-              ...row,
-              soldCount: nextSold,
-              isActive: nextSold >= maxCount ? false : row.isActive,
-            };
-          });
+          nextInventory = bumpInventorySigSold(nextInventory, inv, true);
         }
         await pushLiveRoundToServer(nextInventory, nextSoldSet, {
           sigSoldFlags: nextFlags,
           oneShotMarkSold: manualOneShotMarkSold,
           bumpOverlay: true,
-          toastLabel: parsed.name,
+          toastLabel: label,
         });
         return;
       }
 
-      if (!sold && inv) {
-        nextInventory = nextInventory.map((row) => {
-          if (row.id !== inv.id) return row;
-          const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)) - 1);
-          return { ...row, soldCount, isActive: true };
-        });
-      }
+      if (inv) nextInventory = bumpInventorySigSold(nextInventory, inv, false);
       await pushLiveRoundToServer(nextInventory, nextSoldSet, {
         sigSoldFlags: nextFlags,
         oneShotMarkSold: manualOneShotMarkSold,
         bumpOverlay: true,
       });
-      setToast(
-        parsed?.name ? `${parsed.name} 판매완료 해제 · OBS 반영` : "판매완료 해제 · OBS 반영"
-      );
+      setToast(`${label} 판매완료 해제 · OBS 반영`);
     },
     [
       manualSigSoldFlags,
       manualOneShotMarkSold,
       buildSoldSetFromFlags,
       state,
+      displaySelectedSigs,
       manualParsedRows,
       manualSigDrafts,
+      pushLiveRoundToServer,
+    ]
+  );
+
+  const markManualSigSoldImmediate = useCallback(
+    async (idx: number, sold: boolean, displaySigHint?: SigItem) => {
+      const displayRow = displaySigHint ?? displaySelectedSigs[idx];
+      if (displayRow) {
+        const manualIdx = resolveManualRowIndexForDisplaySig(
+          displayRow,
+          displaySelectedSigs,
+          manualParsedRows,
+          manualSigDrafts
+        );
+        await markDisplaySigSoldByItem(displayRow, sold, manualIdx >= 0 ? manualIdx : idx);
+        return;
+      }
+      const parsed = manualParsedRows[idx];
+      if (!parsed?.name) {
+        const nextFlags = [...manualSigSoldFlags];
+        while (nextFlags.length < 5) nextFlags.push(false);
+        nextFlags[idx] = sold;
+        setManualSigSoldFlags(nextFlags);
+        const nextSoldSet = buildSoldSetFromFlags(nextFlags);
+        setManualSoldSet(nextSoldSet);
+        if (state) {
+          await pushLiveRoundToServer(state.sigInventory || [], nextSoldSet, {
+            sigSoldFlags: nextFlags,
+            oneShotMarkSold: manualOneShotMarkSold,
+            bumpOverlay: true,
+          });
+        }
+        return;
+      }
+      await markDisplaySigSoldByItem(
+        {
+          id:
+            String(manualSigDrafts[idx]?.sourceSigId || "").trim() ||
+            `manual_row_${idx}_${normalizeManualNameKey(parsed.name)}`,
+          name: parsed.name,
+          price: parsed.price,
+          imageUrl: "",
+          maxCount: 1,
+          soldCount: 0,
+          isRolling: false,
+          isActive: true,
+        },
+        sold,
+        idx
+      );
+    },
+    [
+      displaySelectedSigs,
+      manualParsedRows,
+      manualSigDrafts,
+      manualSigSoldFlags,
+      manualOneShotMarkSold,
+      buildSoldSetFromFlags,
+      state,
+      markDisplaySigSoldByItem,
       pushLiveRoundToServer,
     ]
   );
@@ -2128,28 +2260,39 @@ export default function AdminSigSalesPage() {
   const toggleDisplaySigSold = useCallback(
     (id: string) => {
       const canon = canonicalSigIdFromWheelSliceId(id);
-      const currently =
-        manualSoldSet.has(id) || manualSoldSet.has(canon);
-      const idx = displaySelectedSigs.findIndex(
+      const currently = manualSoldSet.has(id) || manualSoldSet.has(canon);
+      const displaySig = displaySelectedSigs.find(
         (s) => s.id === id || canonicalSigIdFromWheelSliceId(s.id) === canon
       );
-      if (idx >= 0) {
-        void markManualSigSoldImmediate(idx, !currently);
+      if (displaySig) {
+        void markDisplaySigSoldByItem(displaySig, !currently);
         return;
       }
-      setManualSoldSet((prev) => {
-        const next = new Set(prev);
-        if (next.has(id) || next.has(canon)) {
-          next.delete(id);
-          next.delete(canon);
-        } else {
-          next.add(id);
-          next.add(canon);
-        }
-        return next;
+      const nextSoldSet = new Set(manualSoldSet);
+      if (currently) {
+        nextSoldSet.delete(id);
+        nextSoldSet.delete(canon);
+      } else {
+        nextSoldSet.add(id);
+        nextSoldSet.add(canon);
+      }
+      setManualSoldSet(nextSoldSet);
+      if (!state) return;
+      void pushLiveRoundToServer(state.sigInventory || [], nextSoldSet, {
+        sigSoldFlags: manualSigSoldFlags,
+        oneShotMarkSold: manualOneShotMarkSold,
+        bumpOverlay: true,
       });
     },
-    [manualSoldSet, displaySelectedSigs, markManualSigSoldImmediate]
+    [
+      manualSoldSet,
+      displaySelectedSigs,
+      markDisplaySigSoldByItem,
+      state,
+      manualSigSoldFlags,
+      manualOneShotMarkSold,
+      pushLiveRoundToServer,
+    ]
   );
 
   const markOneShotSoldImmediate = useCallback(
@@ -2244,7 +2387,13 @@ export default function AdminSigSalesPage() {
               </p>
             ) : null}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href={`/admin/obs-text?u=${encodeURIComponent(userId)}`}
+              className="rounded-lg border border-violet-500/40 bg-violet-950/50 px-3 py-2 text-xs font-semibold text-violet-200 hover:bg-violet-900/60"
+            >
+              OBS 텍스트
+            </Link>
             <select
               value={memberFilterId}
               onChange={(e) => setMemberFilterId(e.target.value)}
