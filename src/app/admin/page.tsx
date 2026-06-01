@@ -92,6 +92,7 @@ import {
 } from "@/lib/meal-battle-donation";
 import { normalizeMealGaugeEffects } from "@/lib/meal-gauge-effects";
 import { getVisibleAdminNavItems, isAdminNavSectionVisible, type AdminNavKey } from "@/app/admin/admin-nav-config";
+import { buildObsTextOverlayUrl } from "@/lib/obs-text-overlay";
 import { stopToonationListener } from "@/lib/donation/toonation/listener";
 import { processDonationEvent, type ProcessDonationResult } from "@/lib/donation/processor";
 import type { DonationEvent, DonorAlias } from "@/lib/donation/types";
@@ -618,6 +619,7 @@ export default function AdminPage() {
   const [battleContentWidthPct, setBattleContentWidthPct] = useState("100");
   const [sigSalesMenuCount, setSigSalesMenuCount] = useState("10");
   const [donorRankingsPreviewIframeKey, setDonorRankingsPreviewIframeKey] = useState(0);
+  const [obsTextPreviewIframeKey, setObsTextPreviewIframeKey] = useState(0);
   const [donorRankingsZoomPct, setDonorRankingsZoomPct] = useState("100");
   const [timerUiNow, setTimerUiNow] = useState(Date.now());
   const [timerMinuteInputs, setTimerMinuteInputs] = useState<Record<"generalTimer", string>>({
@@ -8530,6 +8532,88 @@ export default function AdminPage() {
                     key={`donor-rankings-${donorRankingsPreviewIframeKey}-${user?.id || "finalent"}`}
                     src={appendAdminPreviewEmbedToOverlayUrl(`/overlay/donor-rankings?u=${user?.id || "finalent"}&zoomPct=${getDonorRankingsZoomPct()}`)}
                     title="후원 리스트 오버레이 미리보기"
+                    className="absolute inset-0 h-full w-full border-0"
+                    style={{ background: "transparent" }}
+                  />
+                </div>
+              </div>
+              <div className="mb-3 rounded border border-violet-500/30 bg-violet-950/25 p-3 space-y-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <h4 className="text-sm font-semibold text-violet-100">OBS 텍스트 오버레이</h4>
+                    <p className="mt-1 text-[11px] text-neutral-400 leading-snug">
+                      방송용 자막·이모지·구간/글자별 색상·줄마다 연출 효과. 편집 후 「OBS에 저장」하면 아래 미리보기·OBS 소스에 반영됩니다.
+                    </p>
+                  </div>
+                  <Link
+                    href={`/admin/obs-text?u=${encodeURIComponent(user?.id || "finalent")}`}
+                    className="shrink-0 rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-600"
+                  >
+                    텍스트 편집
+                  </Link>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
+                  <span>OBS URL:</span>
+                  <code className="break-all text-violet-200/90">
+                    /overlay/obs-text?u={user?.id || "finalent"}&host=obs
+                  </code>
+                  <button
+                    type="button"
+                    className={`shrink-0 rounded px-2 py-1 text-xs ${copiedId === "dash-obs-text" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                    onClick={() => {
+                      const u = buildObsTextOverlayUrl(
+                        window.location.origin,
+                        user?.id || "finalent"
+                      );
+                      void copyUrl(u, "dash-obs-text");
+                    }}
+                  >
+                    {copiedId === "dash-obs-text" ? "복사됨!" : "URL 복사"}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded bg-indigo-700 px-2 py-1 text-xs hover:bg-indigo-600"
+                    onClick={() => {
+                      const u = buildObsTextOverlayUrl(
+                        window.location.origin,
+                        user?.id || "finalent"
+                      );
+                      window.open(u, "_blank", "noopener,noreferrer");
+                    }}
+                  >
+                    오버레이 열기
+                  </button>
+                </div>
+              </div>
+              <div className="mb-3 rounded-lg border border-violet-500/20 bg-black/30 overflow-hidden">
+                <div className="flex items-center justify-between border-b border-white/5 px-2 py-1.5">
+                  <span className="text-xs font-medium text-violet-200/90">OBS 텍스트 미리보기</span>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      className="rounded border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-violet-400/60 hover:text-violet-200"
+                      onClick={() => setObsTextPreviewIframeKey((k) => k + 1)}
+                    >
+                      새로고침
+                    </button>
+                    <Link
+                      href={`/admin/obs-text?u=${encodeURIComponent(user?.id || "finalent")}`}
+                      className="rounded border border-violet-500/40 px-2 py-0.5 text-[11px] text-violet-200 hover:bg-violet-900/40"
+                    >
+                      편집
+                    </Link>
+                  </div>
+                </div>
+                <div
+                  className="relative w-full bg-gradient-to-b from-slate-800 to-slate-900"
+                  style={{ minHeight: "200px", aspectRatio: "16 / 9" }}
+                >
+                  <iframe
+                    key={`obs-text-${obsTextPreviewIframeKey}-${user?.id || "finalent"}`}
+                    src={appendAdminPreviewEmbedToOverlayUrl(
+                      `/overlay/obs-text?u=${user?.id || "finalent"}&host=obs`
+                    )}
+                    title="OBS 텍스트 오버레이 미리보기"
                     className="absolute inset-0 h-full w-full border-0"
                     style={{ background: "transparent" }}
                   />
