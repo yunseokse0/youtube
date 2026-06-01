@@ -83,6 +83,7 @@ export default function ObsTextOverlayEditor({
   const createOnMountDoneRef = useRef(false);
   const pendingRegistrySaveRef = useRef(false);
   const lastPersistedUpdatedAtRef = useRef(0);
+  const skipAutosaveUntilRef = useRef(0);
   const activeInstanceIdRef = useRef(activeInstanceId);
   activeInstanceIdRef.current = activeInstanceId;
 
@@ -244,6 +245,7 @@ export default function ObsTextOverlayEditor({
         setEditMode
       );
       loadedRef.current = true;
+      skipAutosaveUntilRef.current = Date.now() + 900;
     },
     [initialInstanceId, createOnMount, selectInstance, persistRegistry]
   );
@@ -252,15 +254,23 @@ export default function ObsTextOverlayEditor({
   applyRemoteRef.current = applyRemote;
 
   const syncFromServer = useCallback(async () => {
-    const remote = await loadStateFromApi(userId, { pick: STATE_PICK_OBS_TEXT });
+    const remote = await loadStateFromApi(userId, {
+      pick: STATE_PICK_OBS_TEXT,
+      forceFull: true,
+    });
     if (remote) applyRemoteRef.current(remote);
   }, [userId]);
 
   useEffect(() => {
-    const local = loadState(userId);
-    applyRemoteRef.current(local);
-    void syncFromServer();
-  }, [userId, syncFromServer]);
+    void (async () => {
+      const remote = await loadStateFromApi(userId, {
+        pick: STATE_PICK_OBS_TEXT,
+        forceFull: true,
+      });
+      if (remote) applyRemoteRef.current(remote);
+      else applyRemoteRef.current(loadState(userId));
+    })();
+  }, [userId]);
 
   const scheduleSyncRef = useRef<(() => void) | null>(null);
   useEffect(() => {
@@ -289,6 +299,24 @@ export default function ObsTextOverlayEditor({
   const persist = useCallback(async () => {
     await persistRegistry(registry, activeInstanceId, { activeConfig: config });
   }, [persistRegistry, registry, activeInstanceId, config]);
+
+  const autoSaveQuietRef = useRef(false);
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    if (pendingRegistrySaveRef.current) return;
+    if (Date.now() < skipAutosaveUntilRef.current) return;
+    const tid = window.setTimeout(() => {
+      autoSaveQuietRef.current = true;
+      void persistRegistry(registry, activeInstanceId, {
+        activeConfig: config,
+        quiet: true,
+        statusMsg: "자동 저장됨 · OBS 반영",
+      }).finally(() => {
+        autoSaveQuietRef.current = false;
+      });
+    }, 700);
+    return () => window.clearTimeout(tid);
+  }, [registry, activeInstanceId, config, persistRegistry]);
 
   const addInstance = () => {
     if (registry.instances.length >= 24) {
@@ -472,7 +500,7 @@ export default function ObsTextOverlayEditor({
         <div>
           <h1 className="text-2xl font-bold">OBS 텍스트 오버레이</h1>
           <p className="mt-1 text-sm text-neutral-400">
-            오버레이마다 독립 URL · 위치·문구·효과. OBS 브라우저 소스를 여러 개 추가할 수 있습니다.
+            오버레이마다 독립 URL · 위치·문구·효과. 입력 후 약 1초 뒤 자동 저장되며 OBS에 반영됩니다.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

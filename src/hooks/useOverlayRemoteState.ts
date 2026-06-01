@@ -15,9 +15,14 @@ import {
 import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
 import { useSSEConnection } from "@/lib/sse-client";
 import { buildOverlaySyncSignature } from "@/lib/overlay-sync-signature";
+import { readObsTextRegistryFromState } from "@/lib/obs-text-overlay";
 
 import type { StateApiPick } from "@/lib/state-api-pick";
-import { STATE_PICK_OVERLAY, STATE_PICK_OVERLAY_DONORS } from "@/lib/state-api-pick";
+import {
+  STATE_PICK_OBS_TEXT,
+  STATE_PICK_OVERLAY,
+  STATE_PICK_OVERLAY_DONORS,
+} from "@/lib/state-api-pick";
 
 export type UseOverlayRemoteStateOptions = {
   /** false면 동기화 비활성 */
@@ -30,7 +35,18 @@ export type UseOverlayRemoteStateOptions = {
   noLocalBaseline?: "zero" | "default";
   /** storage 이벤트 후 API 동기화 지연(ms). 0이면 즉시 */
   storageDebounceMs?: number;
+  /** true면 localStorage 스냅샷 없이 서버만 사용(OBS 텍스트 등) */
+  skipLocalSnapshot?: boolean;
+  /** 마운트 시 since 무시·전체 pick 본문 1회 수신 */
+  forceInitialFull?: boolean;
 };
+
+function overlaySyncSignatureForPick(state: AppState, pick: StateApiPick): string {
+  if (pick === STATE_PICK_OBS_TEXT) {
+    return JSON.stringify(readObsTextRegistryFromState(state));
+  }
+  return buildOverlaySyncSignature(state);
+}
 
 function readLocalStateIfExists(userId?: string): AppState | null {
   if (typeof window === "undefined") return null;
@@ -61,29 +77,33 @@ export function useOverlayRemoteState(
   const syncFromApiRef = useRef<() => Promise<void>>(async () => {});
   const scheduleSseSyncRef = useRef<(() => void) | null>(null);
 
-  const syncFromApi = useCallback(async () => {
-    if (!enabled || syncingRef.current) return;
-    syncingRef.current = true;
-    try {
-      const remote = await loadStateFromApi(userId, {
-        ifUpdatedSince: lastSyncedUpdatedAtRef.current,
-        pick: statePick,
-      });
-      if (!remote) return;
-      const ts = remote.updatedAt || 0;
-      if (ts > 0) lastSyncedUpdatedAtRef.current = Math.max(lastSyncedUpdatedAtRef.current, ts);
-      if (statePick === STATE_PICK_OVERLAY_DONORS) {
-        const dr = readDonorRankingsRevision(remote);
-        if (dr > 0) lastSyncedDonorRevRef.current = Math.max(lastSyncedDonorRevRef.current, dr);
+  const syncFromApi = useCallback(
+    async (opts?: { forceFull?: boolean }) => {
+      if (!enabled || syncingRef.current) return;
+      syncingRef.current = true;
+      try {
+        const remote = await loadStateFromApi(userId, {
+          ifUpdatedSince: opts?.forceFull ? 0 : lastSyncedUpdatedAtRef.current,
+          forceFull: opts?.forceFull,
+          pick: statePick,
+        });
+        if (!remote) return;
+        const ts = remote.updatedAt || 0;
+        if (ts > 0) lastSyncedUpdatedAtRef.current = Math.max(lastSyncedUpdatedAtRef.current, ts);
+        if (statePick === STATE_PICK_OVERLAY_DONORS) {
+          const dr = readDonorRankingsRevision(remote);
+          if (dr > 0) lastSyncedDonorRevRef.current = Math.max(lastSyncedDonorRevRef.current, dr);
+        }
+        const nextSig = overlaySyncSignatureForPick(remote, statePick);
+        if (nextSig === lastVisualSigRef.current) return;
+        lastVisualSigRef.current = nextSig;
+        setState(remote);
+      } finally {
+        syncingRef.current = false;
       }
-      const nextSig = buildOverlaySyncSignature(remote);
-      if (nextSig === lastVisualSigRef.current) return;
-      lastVisualSigRef.current = nextSig;
-      setState(remote);
-    } finally {
-      syncingRef.current = false;
-    }
-  }, [enabled, userId, statePick]);
+    },
+    [enabled, userId, statePick]
+  );
 
   const { connected: sseConnected } = useSSEConnection((d: unknown) => {
     if (!enabled) return;
@@ -108,18 +128,19 @@ export function useOverlayRemoteState(
     }
     if (!enabled) return;
 
-    const local = readLocalStateIfExists(userId);
+    const skipLocal = options.skipLocalSnapshot === true;
+    const local = skipLocal ? null : readLocalStateIfExists(userId);
     if (local) {
       setState(local);
-      lastVisualSigRef.current = buildOverlaySyncSignature(local);
+      lastVisualSigRef.current = overlaySyncSignatureForPick(local, statePick);
       lastSyncedUpdatedAtRef.current = local.updatedAt || 0;
       if (statePick === STATE_PICK_OVERLAY_DONORS) {
         lastSyncedDonorRevRef.current = readDonorRankingsRevision(local);
       }
-    } else {
+    } else if (!skipLocal) {
       const base = defaultState();
       setState(base);
-      lastVisualSigRef.current = buildOverlaySyncSignature(base);
+      lastVisualSigRef.current = overlaySyncSignatureForPick(base, statePick);
       lastSyncedUpdatedAtRef.current =
         options.noLocalBaseline === "default" ? base.updatedAt || 0 : 0;
     }
@@ -137,10 +158,11 @@ export function useOverlayRemoteState(
 
     const runInitialSync = () => {
       if (shouldSuppressOverlaySseConnection()) {
-        if (!local) void syncFromApi();
+        if (!local && !skipLocal) void syncFromApi();
+        else void syncFromApi({ forceFull: options.forceInitialFull || skipLocal });
         return;
       }
-      void syncFromApi();
+      void syncFromApi({ forceFull: options.forceInitialFull || skipLocal });
     };
     runInitialSync();
 
@@ -166,7 +188,7 @@ export function useOverlayRemoteState(
           const u = localNow.updatedAt || 0;
           if (lastSyncedUpdatedAtRef.current <= 0 || u >= lastSyncedUpdatedAtRef.current) {
             lastSyncedUpdatedAtRef.current = u;
-            const nextSig = buildOverlaySyncSignature(localNow);
+            const nextSig = overlaySyncSignatureForPick(localNow, statePick);
             if (nextSig !== lastVisualSigRef.current) {
               lastVisualSigRef.current = nextSig;
               setState(localNow);
@@ -208,6 +230,8 @@ export function useOverlayRemoteState(
     sseConnected,
     options.noLocalBaseline,
     options.storageDebounceMs,
+    options.skipLocalSnapshot,
+    options.forceInitialFull,
     statePick,
   ]);
 

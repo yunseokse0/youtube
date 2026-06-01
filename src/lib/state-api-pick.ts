@@ -1,6 +1,9 @@
 import type { AppState, RouletteState } from "@/types";
 import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
-import { OBS_TEXT_OVERLAY_STATE_KEY } from "@/lib/obs-text-overlay";
+import {
+  OBS_TEXT_OVERLAY_STATE_KEY,
+  readObsTextRegistryFromState,
+} from "@/lib/obs-text-overlay";
 import { capDonorsForOverlayWire, slimSigInventoryForWire } from "@/lib/state-wire-slim";
 
 export const STATE_PICK_SIG_INVENTORY = "sigInventory";
@@ -37,6 +40,14 @@ export function parseStateApiPick(raw: string): StateApiPick | null {
 /** pick별 304·since 비교에 쓸 revision */
 export function revisionForStatePick(state: AppState, pick: StateApiPick): number {
   if (pick === STATE_PICK_DONOR_RANKINGS) return readDonorRankingsRevision(state);
+  if (pick === STATE_PICK_OBS_TEXT) {
+    const reg = readObsTextRegistryFromState(state);
+    let rev = Number(state.updatedAt || 0);
+    for (const inst of reg.instances) {
+      rev = Math.max(rev, Number(inst.config.revision || 0));
+    }
+    return rev;
+  }
   return Number(state.updatedAt || 0);
 }
 
