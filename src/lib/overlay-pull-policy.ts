@@ -79,7 +79,7 @@ export function readOverlayPollIntervalMs(): number {
 }
 
 /** OBS 시그 판매 회전판 — CEF에서 SSE가 끊겨도 SPINNING을 잡기 위한 기본 주기(ms). `NEXT_PUBLIC_SIG_SALES_OVERLAY_POLL_MS=0` 으로 끔 */
-export const DEFAULT_SIG_SALES_OVERLAY_POLL_MS = 2000;
+export const DEFAULT_SIG_SALES_OVERLAY_POLL_MS = 1500;
 
 /** OBS 텍스트 전용 — SSE 대신 폴링(소스마다 EventSource → 502 완화) */
 export const DEFAULT_OBS_TEXT_OVERLAY_POLL_MS = 2500;

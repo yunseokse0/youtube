@@ -21,7 +21,10 @@ import {
 } from "@/lib/overlay-pull-policy";
 import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
 import { useSSEConnection } from "@/lib/sse-client";
-import { buildOverlaySyncSignature } from "@/lib/overlay-sync-signature";
+import {
+  buildOverlaySyncSignature,
+  buildSigSalesOverlaySyncSignature,
+} from "@/lib/overlay-sync-signature";
 import { readObsTextRegistryFromState } from "@/lib/obs-text-overlay";
 
 import type { StateApiPick } from "@/lib/state-api-pick";
@@ -29,6 +32,7 @@ import {
   STATE_PICK_OBS_TEXT,
   STATE_PICK_OVERLAY,
   STATE_PICK_OVERLAY_DONORS,
+  STATE_PICK_SIG_SALES,
 } from "@/lib/state-api-pick";
 
 export type UseOverlayRemoteStateOptions = {
@@ -51,6 +55,9 @@ export type UseOverlayRemoteStateOptions = {
 function overlaySyncSignatureForPick(state: AppState, pick: StateApiPick): string {
   if (pick === STATE_PICK_OBS_TEXT) {
     return JSON.stringify(readObsTextRegistryFromState(state));
+  }
+  if (pick === STATE_PICK_SIG_SALES) {
+    return buildSigSalesOverlaySyncSignature(state);
   }
   return buildOverlaySyncSignature(state);
 }

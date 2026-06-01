@@ -47,6 +47,7 @@ import {
   resolveSigSalesMenuCount,
   canonicalSigIdFromWheelSliceId,
   hydrateSigItemFromInventory,
+  normalizeSigPickNameKey,
   sigMatchesMemberFilter,
   rememberUsedWheelSliceId,
   resolveSpinQueueForSession,
@@ -1516,14 +1517,22 @@ function SigSalesOverlayPageInner() {
     demoSpin,
     pendingLanding,
   ]);
+  /** hydrate된 카드의 soldCount(재고 반영) — id 매칭 실패 시에도 스탬프 */
+  const hydratedSoldFromResultCards = useMemo(() => {
+    const next = new Set<string>();
+    for (const item of resultSigsForUi) {
+      if (Math.floor(Number(item.soldCount || 0)) <= 0) continue;
+      next.add(item.id);
+      next.add(canonicalSigIdFromWheelSliceId(item.id));
+    }
+    return next;
+  }, [resultSigsForUi]);
   /** 화면에 보이는 당첨 카드 ↔ 재고 soldCount>0 (확정·판매 처리만 된 경우 sigSoldFlags 없어도 스탬프) */
   const inventorySoldForResultCards = useMemo(() => {
     const next = new Set<string>();
-    const normalizeNameKey = (raw: string) =>
-      String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
     for (const item of resultSigsForUi) {
       const canon = canonicalSigIdFromWheelSliceId(item.id);
-      const nk = normalizeNameKey(item.name);
+      const nk = normalizeSigPickNameKey(item.name);
       const price = Math.floor(Number(item.price || 0));
       next.add(item.id);
       next.add(canon);
@@ -1532,7 +1541,7 @@ function SigSalesOverlayPageInner() {
         const rowCanon = canonicalSigIdFromWheelSliceId(row.id);
         const idMatch = row.id === item.id || rowCanon === canon;
         const nameMatch =
-          normalizeNameKey(row.name) === nk && Math.floor(Number(row.price || 0)) === price;
+          normalizeSigPickNameKey(row.name) === nk && Math.floor(Number(row.price || 0)) === price;
         if ((idMatch || nameMatch) && row.soldCount > 0) {
           next.add(row.id);
           next.add(rowCanon);
@@ -1678,6 +1687,7 @@ function SigSalesOverlayPageInner() {
       for (const id of manualDraftSoldOverrideSet) next.add(id);
     }
     for (const id of inventorySoldForResultCards) next.add(id);
+    for (const id of hydratedSoldFromResultCards) next.add(id);
     return next;
   }, [
     manualOverlayMode,
@@ -1685,6 +1695,7 @@ function SigSalesOverlayPageInner() {
     confirmedRoundSoldIdSet,
     manualDraftSoldOverrideSet,
     inventorySoldForResultCards,
+    hydratedSoldFromResultCards,
   ]);
   const oneShotRevealReady = useMemo(() => {
     if (manualOverlayMode) return true;

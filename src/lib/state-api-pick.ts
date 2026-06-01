@@ -48,6 +48,32 @@ export function revisionForStatePick(state: AppState, pick: StateApiPick): numbe
     }
     return rev;
   }
+  if (pick === STATE_PICK_SIG_SALES) {
+    let rev = Number(state.updatedAt || 0);
+    for (const row of state.sigInventory || []) {
+      const sc = Math.floor(Number(row.soldCount || 0));
+      if (sc > 0) rev = Math.max(rev, rev + sc);
+    }
+    const os = state.overlaySettings;
+    const draft =
+      os && typeof os === "object"
+        ? (os as Record<string, unknown>)[MANUAL_SIG_DRAFT_STATE_KEY]
+        : null;
+    if (draft && typeof draft === "object") {
+      const flags = Array.isArray((draft as { sigSoldFlags?: unknown }).sigSoldFlags)
+        ? (draft as { sigSoldFlags: boolean[] }).sigSoldFlags
+        : [];
+      flags.forEach((f, i) => {
+        if (f) rev = Math.max(rev, rev + (i + 1) * 17);
+      });
+      if ((draft as { oneShotMarkSold?: boolean }).oneShotMarkSold) {
+        rev = Math.max(rev, rev + 113);
+      }
+    }
+    const rs = state.rouletteState;
+    if (rs?.phase) rev = Math.max(rev, rev + 1);
+    return rev;
+  }
   return Number(state.updatedAt || 0);
 }
 
