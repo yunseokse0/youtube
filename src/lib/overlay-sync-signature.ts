@@ -1,4 +1,44 @@
 import type { AppState } from "@/types";
+import { canonicalSigIdFromWheelSliceId } from "@/lib/sig-roulette";
+
+const MANUAL_SIG_DRAFT_STATE_KEY = "sigSalesManualDraftV1";
+
+/** 시그 판매 OBS — 동일 스냅샷이면 setState·HYDRATE 생략(수동 결과 GIF 깜빡임 방지) */
+export function buildSigSalesOverlaySyncSignature(state: AppState | null): string {
+  if (!state) return "";
+  const os = state.overlaySettings;
+  const draft =
+    os && typeof os === "object"
+      ? (os as Record<string, unknown>)[MANUAL_SIG_DRAFT_STATE_KEY]
+      : null;
+  const flags =
+    draft && typeof draft === "object" && Array.isArray((draft as { sigSoldFlags?: unknown }).sigSoldFlags)
+      ? ((draft as { sigSoldFlags: boolean[] }).sigSoldFlags || [])
+      : [];
+  const inv = (state.sigInventory || [])
+    .map((r) => ({
+      id: canonicalSigIdFromWheelSliceId(r.id),
+      sc: Math.floor(Number(r.soldCount || 0)),
+      mc: Math.floor(Number(r.maxCount || 1)),
+      n: String(r.name || ""),
+      p: Math.floor(Number(r.price || 0)),
+      iu: String(r.imageUrl || ""),
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const rs = state.rouletteState;
+  return JSON.stringify({
+    u: state.updatedAt || 0,
+    inv,
+    flags,
+    oneShot: Boolean(
+      draft && typeof draft === "object" && (draft as { oneShotMarkSold?: boolean }).oneShotMarkSold
+    ),
+    phase: rs?.phase || "",
+    sid: rs?.sessionId || "",
+    sel: (rs?.selectedSigs || []).map((s) => canonicalSigIdFromWheelSliceId(s.id)),
+    stamp: state.sigSoldOutStampUrl || "",
+  });
+}
 
 /**
  * 오버레이 `useRemoteState`가 GET/SSE로 받은 스냅샷을 적용할지 판단하는 서명.

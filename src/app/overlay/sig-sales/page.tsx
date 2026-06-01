@@ -81,6 +81,8 @@ import {
   pickWheelDemoWinners,
 } from "@/lib/sig-wheel-demo-pool";
 import { stripBundledSigPlaceholderItems } from "@/lib/sig-placeholder";
+import { buildSigSalesOverlaySyncSignature } from "@/lib/overlay-sync-signature";
+import { revisionForStatePick, STATE_PICK_SIG_SALES } from "@/lib/state-api-pick";
 
 /**
  * [계약] 시그 판매 오버레이는 아래를 전제로 구현돼 있어야 한다(“될 수도”가 아님).
@@ -515,12 +517,13 @@ function SigSalesOverlayPageInner() {
   const overlayReloadSeenRef = useRef<number | null>(null);
 
   const lastSyncedUpdatedAtRef = useRef(0);
+  const lastVisualSigRef = useRef("");
   const lastRouletteSyncRef = useRef<SigSalesRouletteSyncCursor>({ sessionId: "", phase: "" });
   const loadRemote = useCallback(async (opts?: { forceFull?: boolean }) => {
     const remote = await loadStateFromApi(userId, {
       ifUpdatedSince: opts?.forceFull ? 0 : lastSyncedUpdatedAtRef.current,
       forceFull: opts?.forceFull,
-      pick: "sig-sales",
+      pick: STATE_PICK_SIG_SALES,
     });
     if (!remote) {
       /** 304 Not Modified — 기존 state 유지(오판으로 빈 화면·에러 배너 방지) */
@@ -529,9 +532,14 @@ function SigSalesOverlayPageInner() {
       return;
     }
     setStateLoadIssue("ok");
-    const ts = remote.updatedAt || 0;
-    if (ts > 0) lastSyncedUpdatedAtRef.current = Math.max(lastSyncedUpdatedAtRef.current, ts);
+    const syncRev = revisionForStatePick(remote, STATE_PICK_SIG_SALES);
+    if (syncRev > 0) {
+      lastSyncedUpdatedAtRef.current = Math.max(lastSyncedUpdatedAtRef.current, syncRev);
+    }
     lastRouletteSyncRef.current = sigSalesRouletteSyncCursorFromState(remote.rouletteState);
+    const nextSig = buildSigSalesOverlaySyncSignature(remote);
+    if (nextSig === lastVisualSigRef.current) return;
+    lastVisualSigRef.current = nextSig;
     setState(remote);
   }, [userId]);
 
@@ -570,18 +578,26 @@ function SigSalesOverlayPageInner() {
     if (!manualOverlayMode) return;
     if (typeof window === "undefined") return;
     const key = `${MANUAL_SIG_DRAFT_STORAGE_PREFIX}:${userId || "default"}`;
-    try {
-      const raw = window.localStorage.getItem(key);
-      if (!raw) {
+    const readDraft = () => {
+      try {
+        const raw = window.localStorage.getItem(key);
+        if (!raw) {
+          setManualDraftFromLocal(null);
+          return;
+        }
+        const parsed = JSON.parse(raw) as ManualSigDraftPersistOverlay;
+        setManualDraftFromLocal(parsed && typeof parsed === "object" ? parsed : null);
+      } catch {
         setManualDraftFromLocal(null);
-        return;
       }
-      const parsed = JSON.parse(raw) as ManualSigDraftPersistOverlay;
-      setManualDraftFromLocal(parsed && typeof parsed === "object" ? parsed : null);
-    } catch {
-      setManualDraftFromLocal(null);
-    }
-  }, [manualOverlayMode, userId, state?.updatedAt]);
+    };
+    readDraft();
+    const onDraftStorage = (e: StorageEvent) => {
+      if (e.key === key) readDraft();
+    };
+    window.addEventListener("storage", onDraftStorage);
+    return () => window.removeEventListener("storage", onDraftStorage);
+  }, [manualOverlayMode, userId]);
 
   useEffect(() => {
     const { schedule, cancel } = createStateUpdatedScheduler(() => {
@@ -592,8 +608,12 @@ function SigSalesOverlayPageInner() {
     if (shouldSuppressOverlaySseConnection()) {
       try {
         const local = loadState(userId ?? undefined);
-        if (local) setState(local);
-        else void loadRemote();
+        if (local) {
+          lastVisualSigRef.current = buildSigSalesOverlaySyncSignature(local);
+          const rev = revisionForStatePick(local, STATE_PICK_SIG_SALES);
+          if (rev > 0) lastSyncedUpdatedAtRef.current = rev;
+          setState(local);
+        } else void loadRemote();
       } catch {
         void loadRemote();
       }
@@ -601,14 +621,20 @@ function SigSalesOverlayPageInner() {
       void loadRemote({ forceFull: true });
     }
     const pollMs = readOverlayPollIntervalMs();
-    const sigSalesPollMs = pollMs > 0 ? 0 : readSigSalesOverlayPollMs();
+    const sigSalesPollMs =
+      pollMs > 0 ? 0 : manualOverlayMode ? 2200 : readSigSalesOverlayPollMs();
     let pollId: number | undefined;
     if (pollMs > 0) pollId = window.setInterval(() => void loadRemote(), pollMs);
     let sigSalesPollId: number | undefined;
     if (sigSalesPollMs > 0) {
       sigSalesPollId = window.setInterval(() => {
-        /** 304·since 경합 시 재고 soldCount·수동 판매 플래그가 OBS에 안 올라오는 것 방지 */
-        void loadRemoteRef.current({ forceFull: true });
+        const phase = lastRouletteSyncRef.current.phase || "";
+        const spinning = sigSalesPhaseRank(phase) >= sigSalesPhaseRank("SPINNING");
+        if (manualOverlayMode && !spinning) {
+          void loadRemoteRef.current();
+          return;
+        }
+        void loadRemoteRef.current(spinning ? { forceFull: true } : undefined);
       }, sigSalesPollMs);
     }
     const sseFallbackMs = pollMs > 0 || sigSalesPollMs > 0 ? 0 : readOverlaySseFallbackPollMs();
@@ -652,7 +678,7 @@ function SigSalesOverlayPageInner() {
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("pageshow", onPageShow);
     };
-  }, [loadRemote, userId, sseConnected]);
+  }, [loadRemote, userId, sseConnected, manualOverlayMode]);
   useEffect(() => {
     const nonce = Number(state?.rouletteState?.overlayReloadNonce || 0);
     if (!Number.isFinite(nonce)) return;
@@ -662,7 +688,9 @@ function SigSalesOverlayPageInner() {
     }
     if (nonce !== overlayReloadSeenRef.current) {
       overlayReloadSeenRef.current = nonce;
-      window.location.reload();
+      lastSyncedUpdatedAtRef.current = 0;
+      lastVisualSigRef.current = "";
+      void loadRemoteRef.current({ forceFull: true });
     }
   }, [state?.rouletteState?.overlayReloadNonce]);
 
@@ -1415,11 +1443,12 @@ function SigSalesOverlayPageInner() {
    * 결과 패널·휠 래퍼가 통째로 리마운트되며 카드가 한꺼번에 다시 그려지는 현상 발생.
    */
   const spinCompletionKey = useMemo(() => {
+    if (manualOverlayMode) return `manual:${userId || "default"}`;
     const sid = String(machine.sessionId || "").trim();
     /** startedAt 폴링 지연으로 키가 바뀌며 순차 회전이 끊기지 않게 sessionId 우선 */
     if (sid) return `spin:${sid}`;
     return `spin:t-${Number(machine.startedAt || 0)}`;
-  }, [machine.sessionId, machine.startedAt]);
+  }, [manualOverlayMode, userId, machine.sessionId, machine.startedAt]);
   const showWheelVisual = !hideWheelAfterComplete && !manualOverlayMode;
   /**
    * 스핀 중 showResultPanel=false 이어도 당첨 시그가 이미 확정되어 있으면 결과 그리드를 반드시 연다.
@@ -2458,10 +2487,20 @@ function SigSalesOverlayPageInner() {
                     key={`result-${spinCompletionKey}`}
                     layout={false}
                     initial={
-                      resultsViewportPinned || hideWheelAfterComplete ? false : { opacity: 0, y: 12 }
+                      resultsViewportPinned || hideWheelAfterComplete || manualOverlayMode
+                        ? false
+                        : { opacity: 0, y: 12 }
                     }
-                    animate={resultsViewportPinned || hideWheelAfterComplete ? undefined : { opacity: 1, y: 0 }}
-                    exit={resultsViewportPinned || hideWheelAfterComplete ? undefined : { opacity: 0.95, y: 6 }}
+                    animate={
+                      resultsViewportPinned || hideWheelAfterComplete || manualOverlayMode
+                        ? undefined
+                        : { opacity: 1, y: 0 }
+                    }
+                    exit={
+                      resultsViewportPinned || hideWheelAfterComplete || manualOverlayMode
+                        ? undefined
+                        : { opacity: 0.95, y: 6 }
+                    }
                     transition={
                       resultsViewportPinned || hideWheelAfterComplete
                         ? undefined

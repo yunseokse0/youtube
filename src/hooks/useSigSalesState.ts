@@ -138,6 +138,17 @@ function toMachine(rs: RouletteState | undefined): Partial<SigSalesMachine> {
   };
 }
 
+function machineHydrateSignature(m: Partial<SigSalesMachine>): string {
+  return JSON.stringify({
+    phase: m.phase,
+    sid: m.sessionId,
+    startedAt: m.startedAt,
+    sel: (m.selectedSigs || []).map((s) => s.id),
+    one: m.oneShot?.id || null,
+    rid: m.resultId,
+  });
+}
+
 export function useSigSalesState(userId: string, appState: AppState | null) {
   const [machine, dispatch] = useReducer(reducer, initialMachine);
   const prevUpdatedAtRef = useRef(0);
@@ -200,6 +211,14 @@ export function useSigSalesState(userId: string, appState: AppState | null) {
     ) {
       prevUpdatedAtRef.current = incomingTs;
       dispatch({ type: "HYDRATE", payload: incoming });
+      return;
+    }
+
+    if (
+      incomingTs > 0 &&
+      incomingTs === prevUpdatedAtRef.current &&
+      machineHydrateSignature(incoming) === machineHydrateSignature(cur)
+    ) {
       return;
     }
 
