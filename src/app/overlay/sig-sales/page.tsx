@@ -1172,8 +1172,11 @@ function SigSalesOverlayPageInner() {
         const digits = String(row?.priceInput || "").replace(/[^\d]/g, "");
         const price = digits ? Math.max(0, Math.floor(Number.parseInt(digits, 10) || 0)) : 0;
         if (!name || price <= 0) return null;
-        return {
-          id: `manual_draft_${idx + 1}`,
+        const sourceSigId = String(row?.sourceSigId || "").trim();
+        const safeName =
+          name.replace(/\s+/g, "_").replace(/[^\w가-힣-]/g, "").slice(0, 24) || `sig_${idx + 1}`;
+        const base: SigItem = {
+          id: sourceSigId || `manual_draft_${idx + 1}_${safeName}`,
           name,
           price,
           imageUrl: normalizeSigImageUrlStored(String(row?.imageUrl || "").trim()),
@@ -1182,10 +1185,11 @@ function SigSalesOverlayPageInner() {
           soldCount: 0,
           isRolling: true,
           isActive: true,
-        } as SigItem;
+        };
+        return hydrateSigItemFromInventory(base, wheelInventory, sigImageUserId);
       })
       .filter((x): x is SigItem => Boolean(x));
-  }, [manualDraftEffective]);
+  }, [manualDraftEffective, wheelInventory, sigImageUserId]);
   /** OBS: machine HYDRATE 전에도 API rouletteState 당첨을 바로 표시 */
   const serverRouletteSelectedSigs = useMemo(() => {
     const rs = state?.rouletteState;
@@ -1223,12 +1227,13 @@ function SigSalesOverlayPageInner() {
       machine.phase === "CONFIRM_PENDING" ||
       machine.phase === "CONFIRMED";
 
-    /** 저장된 초안(현재 탭) 우선 — LANDED 이전 회차 selectedSigs에 고정되지 않음 */
-    if (manualDraftBroadcastReady) {
-      return stripBundledSigPlaceholderItems(manualDraftSelectedForUi);
-    }
+    /** LANDED 이후 서버 당첨(이미지 포함) 우선 — 관리자 displaySelectedSigs 와 동일 */
     if (sid.startsWith("manual_") && terminal && serverRouletteSelectedSigs.length > 0) {
       return serverRouletteSelectedSigs;
+    }
+    /** 저장된 초안(현재 탭) — 인벤 imageUrl 보강 후 표시 */
+    if (manualDraftBroadcastReady) {
+      return stripBundledSigPlaceholderItems(manualDraftSelectedForUi);
     }
     if (manualDraftSelectedForUi.length > 0) {
       return stripBundledSigPlaceholderItems(manualDraftSelectedForUi);

@@ -22,6 +22,18 @@ function rankingsUiFingerprint(state: AppState): string {
   });
 }
 
+/** `/overlay/donation-lists` 멤버 계좌·투네·기여도 합계 반영용 */
+function membersFinancialFingerprint(members: AppState["members"]): string {
+  if (!Array.isArray(members) || members.length === 0) return "0";
+  let sum = members.length;
+  for (const m of members) {
+    sum += Math.floor(Number(m.account || 0));
+    sum += Math.floor(Number(m.toon || 0));
+    sum += Math.floor(Number(m.contribution || 0));
+  }
+  return String(sum);
+}
+
 /** 후원 순위 오버레이만 갱신이 필요할 때 올리는 revision(회전판·시그 저장과 분리) */
 export function computeDonorRankingsUpdatedAt(
   base: AppState,
@@ -44,6 +56,12 @@ export function computeDonorRankingsUpdatedAt(
     changed = true;
   }
   if (!changed && rankingsUiFingerprint(base) !== rankingsUiFingerprint(next)) {
+    changed = true;
+  }
+  if (!changed && membersFinancialFingerprint(base.members) !== membersFinancialFingerprint(next.members)) {
+    changed = true;
+  }
+  if (!changed && "members" in patch) {
     changed = true;
   }
   return changed ? Date.now() : prev;

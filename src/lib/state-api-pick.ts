@@ -14,6 +14,10 @@ const MANUAL_SIG_DRAFT_STATE_KEY = "sigSalesManualDraftV1";
 export const STATE_PICK_DONOR_RANKINGS = "donor-rankings";
 export const STATE_PICK_OBS_TEXT = "obs-text";
 
+function overlayPickRevision(state: AppState): number {
+  return Math.max(Number(state.updatedAt || 0), readDonorRankingsRevision(state));
+}
+
 export type StateApiPick =
   | typeof STATE_PICK_SIG_INVENTORY
   | typeof STATE_PICK_OVERLAY
@@ -47,6 +51,9 @@ export function revisionForStatePick(state: AppState, pick: StateApiPick): numbe
       rev = Math.max(rev, Number(inst.config.revision || 0));
     }
     return rev;
+  }
+  if (pick === STATE_PICK_OVERLAY || pick === STATE_PICK_OVERLAY_DONORS) {
+    return overlayPickRevision(state);
   }
   return Number(state.updatedAt || 0);
 }
@@ -123,7 +130,10 @@ export function projectStateForGetPick(state: AppState, pick: StateApiPick): unk
     };
   }
   if (pick === STATE_PICK_OVERLAY) {
-    return overlayCoreFields(state, rs, false);
+    return {
+      ...overlayCoreFields(state, rs, false),
+      donorRankingsUpdatedAt: overlayPickRevision(state),
+    };
   }
   if (pick === STATE_PICK_DONOR_RANKINGS) {
     return {
@@ -150,7 +160,10 @@ export function projectStateForGetPick(state: AppState, pick: StateApiPick): unk
         : {}),
     };
   }
-  return overlayCoreFields(state, rs, true);
+  return {
+    ...overlayCoreFields(state, rs, true),
+    donorRankingsUpdatedAt: overlayPickRevision(state),
+  };
 }
 
 /** pick=overlay*·donor-rankings 부분 JSON → 클라이언트 AppState 병합용 */

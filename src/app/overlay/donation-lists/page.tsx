@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { normalizeDonationListsOverlayConfig, type AppState } from "@/lib/state";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
+import { readDonationListsOverlayPollMs } from "@/lib/overlay-pull-policy";
 import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
 import { sortMembersForRanking } from "@/lib/utils";
 
@@ -73,7 +74,9 @@ function RankingTable({
 export default function DonationListsOverlayPage() {
   const sp = useSearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
-  const { state, ready } = useOverlayRemoteState(userId);
+  const { state, ready } = useOverlayRemoteState(userId, {
+    overlayPollMs: readDonationListsOverlayPollMs(),
+  });
 
   const overlayCfg = useMemo(
     () => normalizeDonationListsOverlayConfig(state?.donationListsOverlayConfig),

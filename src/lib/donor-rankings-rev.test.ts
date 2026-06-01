@@ -12,6 +12,21 @@ describe("donor-rankings-rev", () => {
     expect(rev).toBe(prev);
   });
 
+  it("bumps revision when member account/toon totals change", () => {
+    const base = {
+      ...defaultState(),
+      donorRankingsUpdatedAt: 1000,
+      members: [{ id: "m1", name: "a", account: 0, toon: 0, contribution: 0 }],
+    };
+    const next = {
+      ...base,
+      members: [{ id: "m1", name: "a", account: 5000, toon: 0, contribution: 5000 }],
+    };
+    const prev = base.donorRankingsUpdatedAt || 0;
+    const rev = computeDonorRankingsUpdatedAt(base, next, { members: next.members }, false);
+    expect(rev).toBeGreaterThan(prev);
+  });
+
   it("bumps revision when donors change", () => {
     const base = { ...defaultState(), donorRankingsUpdatedAt: 1000 };
     const next = {

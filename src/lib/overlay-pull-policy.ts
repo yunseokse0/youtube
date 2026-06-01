@@ -4,7 +4,8 @@
  * - `?since=` + 304: 서버 상태가 이미 최신이면 본문 생략
  * - SSE 끊김 시에만 `readOverlaySseFallbackPollMs()` (기본 90s, env로 조절)
  * - 시그 판매 OBS(`/overlay/sig-sales`): `readSigSalesOverlayPollMs()` 기본 2s (OBS CEF·SSE 불안정 대비)
- * - 주기 폴링 URL 쿼리 `overlayPollMs` 는 사용하지 않음(로드 시 제거·무시). 디버그만 env `NEXT_PUBLIC_OVERLAY_DEBUG_POLL_MS`
+ * - 후원·기여도(`/overlay/donation-lists`, `/overlay/donor-rankings`, 메인 `/overlay`): 기본 2.5s 폴링
+ * - 디버그 전역 폴링만 env `NEXT_PUBLIC_OVERLAY_DEBUG_POLL_MS`
  */
 
 /** SSE `state_updated` 연타 시 GET 합치기 — 기본 트레일링 지연(ms) */
@@ -80,6 +81,18 @@ export function readOverlayPollIntervalMs(): number {
 
 /** OBS 시그 판매 회전판 — CEF에서 SSE가 끊겨도 SPINNING을 잡기 위한 기본 주기(ms). `NEXT_PUBLIC_SIG_SALES_OVERLAY_POLL_MS=0` 으로 끔 */
 export const DEFAULT_SIG_SALES_OVERLAY_POLL_MS = 2000;
+/** 후원·기여도 목록(`/overlay/donation-lists`) — SSE 불안정 시 짧은 폴링. `=0` 으로 끔 */
+export const DEFAULT_DONATION_LISTS_OVERLAY_POLL_MS = 2500;
+
+export function readDonationListsOverlayPollMs(): number {
+  if (typeof window === "undefined") return DEFAULT_DONATION_LISTS_OVERLAY_POLL_MS;
+  const env = String(process.env.NEXT_PUBLIC_DONATION_LISTS_OVERLAY_POLL_MS ?? "").trim();
+  if (env === "0") return 0;
+  if (!env) return DEFAULT_DONATION_LISTS_OVERLAY_POLL_MS;
+  const n = parseInt(env.replace(/[^\d]/g, ""), 10);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_DONATION_LISTS_OVERLAY_POLL_MS;
+  return Math.max(800, Math.min(30_000, n));
+}
 
 export function readSigSalesOverlayPollMs(): number {
   if (typeof window === "undefined") return DEFAULT_SIG_SALES_OVERLAY_POLL_MS;

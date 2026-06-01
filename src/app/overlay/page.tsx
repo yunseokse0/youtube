@@ -25,9 +25,10 @@ import {
   createStateUpdatedScheduler,
   DONOR_STATE_UPDATED_DEBOUNCE_MS,
   DONOR_STATE_UPDATED_MAX_WAIT_MS,
-  readOverlayPollIntervalMs,
+  readDonationListsOverlayPollMs,
 } from "@/lib/overlay-pull-policy";
 import { buildOverlaySyncSignature } from "@/lib/overlay-sync-signature";
+import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
 
 function tryDecodeSnapshot(str: string | null): AppState | null {
   if (!str) return null;
@@ -67,12 +68,15 @@ function tryReadSnapshotFromStorage(snapKey: string | null): AppState | null {
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
   const [state, setState] = useState<AppState | null>(null);
   const lastUpdatedRef = useRef(0);
+  const lastDonorRevRef = useRef(0);
   const lastVisualSigRef = useRef("");
+  const overlaySinceRef = useRef(0);
+  overlaySinceRef.current = Math.max(lastUpdatedRef.current, lastDonorRevRef.current);
   const loadRef = useRef(() =>
-    loadStateFromApi(userId, { pick: "overlay-donors", ifUpdatedSince: lastUpdatedRef.current })
+    loadStateFromApi(userId, { pick: "overlay-donors", ifUpdatedSince: overlaySinceRef.current })
   );
   loadRef.current = () =>
-    loadStateFromApi(userId, { pick: "overlay-donors", ifUpdatedSince: lastUpdatedRef.current });
+    loadStateFromApi(userId, { pick: "overlay-donors", ifUpdatedSince: overlaySinceRef.current });
   const syncingRef = useRef(false);
   const syncOnceRef = useRef<() => Promise<void>>(async () => {});
   const scheduleStateUpdatedRef = useRef<(() => void) | null>(null);
@@ -149,12 +153,14 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       lastVisualSigRef.current = buildOverlaySyncSignature(local);
       setState(local);
       lastUpdatedRef.current = local.updatedAt || 0;
+      lastDonorRevRef.current = readDonorRankingsRevision(local);
       lastGoodRef.current = local;
       saveLastGood(local);
     } else if (lastGood && isViable(lastGood)) {
       lastVisualSigRef.current = buildOverlaySyncSignature(lastGood);
       setState(lastGood);
       lastUpdatedRef.current = lastGood.updatedAt || 0;
+      lastDonorRevRef.current = readDonorRankingsRevision(lastGood);
       lastGoodRef.current = lastGood;
     } else {
       // No persisted local snapshot: allow API state to win immediately.
@@ -187,9 +193,11 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
         const data = await loadRef.current();
         // Keep local state when API is stale (e.g. API save failed),
         // and only accept strictly newer snapshots from server.
-        if (data && data.updatedAt && data.updatedAt > lastUpdatedRef.current && !shouldDiscardEmpty(data)) {
+        const remoteRev = Math.max(data?.updatedAt || 0, readDonorRankingsRevision(data || ({} as AppState)));
+        if (data && remoteRev > overlaySinceRef.current && !shouldDiscardEmpty(data)) {
           const nextSig = buildOverlaySyncSignature(data);
-          lastUpdatedRef.current = data.updatedAt;
+          lastUpdatedRef.current = data.updatedAt || 0;
+          lastDonorRevRef.current = readDonorRankingsRevision(data);
           if (nextSig !== lastVisualSigRef.current) {
             lastVisualSigRef.current = nextSig;
             setState(data);
@@ -227,7 +235,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
         if (isViable(localNow)) { lastGoodRef.current = localNow; saveLastGood(localNow); }
       }
     };
-    const pollMs = readOverlayPollIntervalMs();
+    const pollMs = readDonationListsOverlayPollMs();
     let pollTimer: number | undefined;
     if (pollMs > 0) pollTimer = window.setInterval(() => void syncOnce(), pollMs);
     window.addEventListener("storage", onStorage);

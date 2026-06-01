@@ -29,6 +29,8 @@ export type UseOverlayRemoteStateOptions = {
   enabled?: boolean;
   /** 기본 `overlay`. 후원 목록 필요 시 `overlay-donors` */
   statePick?: StateApiPick;
+  /** 후원·기여도 반영용 짧은 폴링(ms). 미지정 시 env/0(기본 폴링 없음) */
+  overlayPollMs?: number;
   /** 고정 스냅샷(시그 대전 미리보기 등) — 설정 시 폴링·SSE 생략 */
   frozenState?: AppState | null;
   /** 로컬 스냅샷 없을 때 lastUpdated 초기값 — `default`면 defaultState().updatedAt */
@@ -82,18 +84,20 @@ export function useOverlayRemoteState(
       if (!enabled || syncingRef.current) return;
       syncingRef.current = true;
       try {
+        const sinceBaseline = Math.max(
+          lastSyncedUpdatedAtRef.current,
+          lastSyncedDonorRevRef.current
+        );
         const remote = await loadStateFromApi(userId, {
-          ifUpdatedSince: opts?.forceFull ? 0 : lastSyncedUpdatedAtRef.current,
+          ifUpdatedSince: opts?.forceFull ? 0 : sinceBaseline,
           forceFull: opts?.forceFull,
           pick: statePick,
         });
         if (!remote) return;
         const ts = remote.updatedAt || 0;
         if (ts > 0) lastSyncedUpdatedAtRef.current = Math.max(lastSyncedUpdatedAtRef.current, ts);
-        if (statePick === STATE_PICK_OVERLAY_DONORS) {
-          const dr = readDonorRankingsRevision(remote);
-          if (dr > 0) lastSyncedDonorRevRef.current = Math.max(lastSyncedDonorRevRef.current, dr);
-        }
+        const dr = readDonorRankingsRevision(remote);
+        if (dr > 0) lastSyncedDonorRevRef.current = Math.max(lastSyncedDonorRevRef.current, dr);
         const nextSig = overlaySyncSignatureForPick(remote, statePick);
         if (nextSig === lastVisualSigRef.current) return;
         lastVisualSigRef.current = nextSig;
@@ -110,10 +114,9 @@ export function useOverlayRemoteState(
     const o = d as { type?: string; updatedAt?: number; donorRankingsUpdatedAt?: number };
     if (o?.type !== "state_updated") return;
     const donorRev = Number(o.donorRankingsUpdatedAt);
-    const isDonorPick = statePick === STATE_PICK_OVERLAY_DONORS;
-    if (isDonorPick && Number.isFinite(donorRev) && donorRev > 0) {
+    if (Number.isFinite(donorRev) && donorRev > 0) {
       if (shouldSyncDonorRankingsFromStateUpdatedEvent(o, lastSyncedDonorRevRef.current)) {
-        void syncFromApiRef.current();
+        scheduleSseSyncRef.current?.();
         return;
       }
     }
@@ -134,9 +137,7 @@ export function useOverlayRemoteState(
       setState(local);
       lastVisualSigRef.current = overlaySyncSignatureForPick(local, statePick);
       lastSyncedUpdatedAtRef.current = local.updatedAt || 0;
-      if (statePick === STATE_PICK_OVERLAY_DONORS) {
-        lastSyncedDonorRevRef.current = readDonorRankingsRevision(local);
-      }
+      lastSyncedDonorRevRef.current = readDonorRankingsRevision(local);
     } else if (!skipLocal) {
       const base = defaultState();
       setState(base);
@@ -166,7 +167,10 @@ export function useOverlayRemoteState(
     };
     runInitialSync();
 
-    const pollMs = readOverlayPollIntervalMs();
+    const pollMs =
+      options.overlayPollMs != null && options.overlayPollMs >= 0
+        ? options.overlayPollMs
+        : readOverlayPollIntervalMs();
     let pollId: number | undefined;
     if (pollMs > 0) pollId = window.setInterval(() => void syncFromApi(), pollMs);
 
@@ -232,6 +236,7 @@ export function useOverlayRemoteState(
     options.storageDebounceMs,
     options.skipLocalSnapshot,
     options.forceInitialFull,
+    options.overlayPollMs,
     statePick,
   ]);
 

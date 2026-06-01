@@ -9,7 +9,7 @@ import {
   createStateUpdatedScheduler,
   DONOR_STATE_UPDATED_DEBOUNCE_MS,
   DONOR_STATE_UPDATED_MAX_WAIT_MS,
-  readOverlayPollIntervalMs,
+  readDonationListsOverlayPollMs,
   readOverlaySseFallbackPollMs,
   shouldSyncDonorRankingsFromStateUpdatedEvent,
 } from "@/lib/overlay-pull-policy";
@@ -88,7 +88,7 @@ export function useDonorRankingsRemoteState(
       void syncFromApi();
     }
 
-    const pollMs = readOverlayPollIntervalMs();
+    const pollMs = readDonationListsOverlayPollMs();
     let pollId: number | undefined;
     if (pollMs > 0) pollId = window.setInterval(() => void syncFromApi(), pollMs);
 

@@ -1661,6 +1661,28 @@ export function calculateSpinFinalAngle(
   return currentBase + minTurns * 360 + deltaToTarget;
 }
 
+function normalizeSigInventoryNameKey(raw: string): string {
+  return String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
+}
+
+/** 수동 초안 `manual_draft_*` id — 인벤에서 이름·가격으로 이미지 보강 */
+function findSigInventoryByNameAndPrice(
+  inventory: SigItem[],
+  name: string,
+  price: number
+): SigItem | undefined {
+  const nk = normalizeSigInventoryNameKey(name);
+  if (!nk) return undefined;
+  const p = Math.max(0, Math.floor(Number(price || 0)));
+  return inventory.find((x) => {
+    if (!x || x.id === ONE_SHOT_SIG_ID) return false;
+    return (
+      normalizeSigInventoryNameKey(x.name) === nk &&
+      Math.max(0, Math.floor(Number(x.price || 0))) === p
+    );
+  });
+}
+
 /**
  * 방송 오버레이·휠은 재고 `sigInventory` 기준 이름/이미지를 쓰고, 당첨 배열은 API 스냅샷이라 불일치할 수 있음.
  * 동일 시그 id로 인벤 행을 합쳐 표시를 맞춘다(당첨 금액은 요청 항목 우선).
@@ -1677,7 +1699,8 @@ export function hydrateSigItemFromInventory(
   }
   const fromInv =
     inventory.find((x) => x.id === canon) ||
-    inventory.find((x) => x.id === item.id);
+    inventory.find((x) => x.id === item.id) ||
+    findSigInventoryByNameAndPrice(inventory, item.name, item.price);
   if (!fromInv) {
     const imageUrl = repairDiskUploadSigImagePath(String(item.imageUrl || ""), userId);
     return { ...item, id: canon, imageUrl: imageUrl || item.imageUrl };

@@ -269,6 +269,13 @@ export function resolveSigOverlayCardImageUrl(name: string, imageUrl?: string, u
   const repaired = repairDiskUploadSigImagePath(String(imageUrl ?? "").trim(), userId);
   let raw = normalizeSigImageUrlStored(repaired || imageUrl);
   if (raw.startsWith("/uploads/sigs/")) {
+    if (shouldServeSigImagesFromDisk()) {
+      return raw;
+    }
+    /** 디스크 미사용·GitHub 번들만 있을 때 업로드 파일명 → raw.githubusercontent */
+    const bundled = coerceSigUrlToGithubBundledPath(raw);
+    const gh = toGithubRawSigAssetUrl(bundled);
+    if (gh) return gh;
     return raw;
   }
   if (raw.startsWith("/images/sigs/")) {
