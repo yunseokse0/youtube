@@ -3148,7 +3148,7 @@ export default function AdminPage() {
   );
 
   const uploadSigImage = (id: string, file: File | null) => {
-    if (!file || !id || id === ONE_SHOT_SIG_ID) return;
+    if (!file || !id) return;
     void (async () => {
       let previewUrl = "";
       try {
@@ -3159,7 +3159,14 @@ export default function AdminPage() {
         const { url } = await uploadSigImageFile(file);
         if (!url) return;
         const storedUrl = normalizeUploadedSigImageUrl(url);
-        updateSigItem(id, { imageUrl: storedUrl, isActive: true, isRolling: true });
+        const patch =
+          id === ONE_SHOT_SIG_ID
+            ? { imageUrl: storedUrl }
+            : { imageUrl: storedUrl, isActive: true, isRolling: true };
+        updateSigItem(id, patch);
+        if (id === ONE_SHOT_SIG_ID) {
+          setRouletteForcedOneShotImageUrl(storedUrl);
+        }
       } finally {
         revokeSafeFilePreviewUrl(previewUrl);
         setSigRowUploadPreviewMap((prev) => {
@@ -6045,9 +6052,20 @@ export default function AdminPage() {
                       <input
                         type="text"
                         className="mt-0.5 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
-                        placeholder="/uploads/one-shot.gif"
+                        placeholder="/uploads/sigs/finalent/....gif"
                         value={rouletteForcedOneShotImageUrl}
                         onChange={(e) => setRouletteForcedOneShotImageUrl(e.target.value)}
+                      />
+                      <input
+                        type="file"
+                        accept="image/gif,image/png,image/jpeg,image/webp,.gif,.png,.jpg,.jpeg,.webp"
+                        className="mt-1 text-[11px] text-neutral-300 file:mr-2 file:rounded file:border-0 file:bg-indigo-700 file:px-2 file:py-1 file:text-xs file:text-white hover:file:bg-indigo-600"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          if (!file) return;
+                          uploadSigImage(ONE_SHOT_SIG_ID, file);
+                          e.currentTarget.value = "";
+                        }}
                       />
                     </label>
                     <label className="flex flex-col text-[11px] text-neutral-400">
