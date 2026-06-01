@@ -31,6 +31,7 @@ import {
   DEFAULT_SIG_SOLD_STAMP_URL,
   normalizeSigImageUrlStored,
   resolveSigImageUrl,
+  resolveSigOverlayCardImageUrl,
   setSigImagePlaceholderOnlyForOverlay,
 } from "@/lib/constants";
 import { buildOneShotFromSelected, resolveOneShotDisplayPrice } from "@/lib/sig-one-shot-price";
@@ -1603,8 +1604,17 @@ function SigSalesOverlayPageInner() {
       next.add(row.id);
       next.add(canon);
     }
+    /** LANDED: `sig_one_shot` soldCount는 동기화 시 0으로 리셋될 수 있어 서버 수동 초안 플래그로 스탬프 */
+    if (
+      (machine.phase === "LANDED" || machine.phase === "CONFIRMED") &&
+      (machine.selectedSigs?.length ?? 0) >= MIN_ONE_SHOT_SIGS &&
+      Boolean(manualDraftEffective?.oneShotMarkSold)
+    ) {
+      next.add(ONE_SHOT_SIG_ID);
+      next.add(canonicalSigIdFromWheelSliceId(ONE_SHOT_SIG_ID));
+    }
     return next;
-  }, [machine.phase, machine.selectedSigs, state?.sigInventory]);
+  }, [machine.phase, machine.selectedSigs, state?.sigInventory, manualDraftEffective?.oneShotMarkSold]);
   /** 관리자 「이 시그 판매완료」체크 — OBS는 localStorage 없음, 서버 overlaySettings 초안으로 동기화 */
   const manualDraftSoldOverrideSet = useMemo(() => {
     const next = new Set<string>();
@@ -1751,18 +1761,26 @@ function SigSalesOverlayPageInner() {
       }),
     [resultCardCount, sigResultScalePct, resultRowWidthPx]
   );
-  const oneShotImageUrl = useMemo(() => {
+  /** 저장 경로(인벤·수동 초안) — 카드에서 `resolveSigOverlayCardImageUrl`로 OBS용 URL 생성 */
+  const oneShotStoredImageUrl = useMemo(() => {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     const fromOneShot = (oneShotItem?.imageUrl || "").trim();
-    if (fromOneShot) return resolveSigImageUrl(oneShotItem?.name || "한방 시그", fromOneShot, sigImageUserId);
+    if (fromOneShot) return fromOneShot;
     const draftOneShotImage = String(manualDraftEffective?.oneShotImageUrl || "").trim();
-    if (manualOverlayMode && draftOneShotImage) return resolveSigImageUrl("한방 시그", draftOneShotImage, sigImageUserId);
+    if (manualOverlayMode && draftOneShotImage) return draftOneShotImage;
     const pick = effectiveSelectedSigsForUi.find((x) => (x.imageUrl || "").trim());
-    if (pick) return resolveSigImageUrl(pick.name, pick.imageUrl, sigImageUserId);
+    if (pick) return String(pick.imageUrl || "").trim();
     const poolPick = activeNormalPool.find((x) => (x.imageUrl || "").trim());
-    if (poolPick) return resolveSigImageUrl(poolPick.name, poolPick.imageUrl, sigImageUserId);
-    return resolveSigImageUrl("", "", sigImageUserId);
-  }, [state?.sigInventory, effectiveSelectedSigsForUi, activeNormalPool, sigImageUserId, manualDraftEffective, manualOverlayMode]);
+    if (poolPick) return String(poolPick.imageUrl || "").trim();
+    return "";
+  }, [state?.sigInventory, effectiveSelectedSigsForUi, activeNormalPool, manualDraftEffective, manualOverlayMode]);
+  const oneShotImageUrl = useMemo(
+    () =>
+      oneShotStoredImageUrl
+        ? resolveSigOverlayCardImageUrl("한방 시그", oneShotStoredImageUrl, sigImageUserId)
+        : resolveSigOverlayCardImageUrl("한방 시그", "", sigImageUserId),
+    [oneShotStoredImageUrl, sigImageUserId]
+  );
   const getSignImageUrl = useCallback((id?: string | null) => {
     if (!id) return "";
     const canon = canonicalSigIdFromWheelSliceId(String(id));
@@ -2518,7 +2536,7 @@ function SigSalesOverlayPageInner() {
                         soldOutStampUrl={soldOutStampUrl}
                         soldOverrideSet={resultSoldOverrideSet}
                         oneShot={oneShotForResultOverlay}
-                        signImageUrl={oneShotImageUrl || currentSignImageUrl}
+                        signImageUrl={oneShotStoredImageUrl || currentSignImageUrl}
                         showOneShotReveal={Boolean(oneShotForResultOverlay)}
                         cardScalePct={resultRowLayout.cardScalePct}
                         className="w-full max-w-full"

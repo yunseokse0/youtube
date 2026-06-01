@@ -107,6 +107,7 @@ export default function ResultOverlay({
           cardScalePct={cardScalePct}
           disableCardMotion={disableCardMotion}
           gifDelayMultiplier={gifDelayMultiplier}
+          sigImageUserId={sigImageUserId}
           onMediaReady={() => setImageLoaded(true)}
         />
         {!skipHanbangSignLoadingOverlay && !imageLoaded ? (

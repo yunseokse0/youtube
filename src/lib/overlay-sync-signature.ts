@@ -15,6 +15,10 @@ export function buildSigSalesOverlaySyncSignature(state: AppState | null): strin
     draft && typeof draft === "object" && Array.isArray((draft as { sigSoldFlags?: unknown }).sigSoldFlags)
       ? ((draft as { sigSoldFlags: boolean[] }).sigSoldFlags || [])
       : [];
+  const draftRows =
+    draft && typeof draft === "object" && Array.isArray((draft as { drafts?: unknown }).drafts)
+      ? ((draft as { drafts?: Array<{ name?: string; priceInput?: string; imageUrl?: string }> }).drafts || [])
+      : [];
   const inv = (state.sigInventory || [])
     .map((r) => ({
       id: canonicalSigIdFromWheelSliceId(r.id),
@@ -33,6 +37,12 @@ export function buildSigSalesOverlaySyncSignature(state: AppState | null): strin
     oneShot: Boolean(
       draft && typeof draft === "object" && (draft as { oneShotMarkSold?: boolean }).oneShotMarkSold
     ),
+    /** 수동 한방·행 이미지 URL — 없으면 OBS가 이전 스냅샷을 유지해 한방 GIF가 안 바뀜 */
+    osi:
+      draft && typeof draft === "object"
+        ? String((draft as { oneShotImageUrl?: unknown }).oneShotImageUrl || "").trim()
+        : "",
+    draftImg: draftRows.map((r) => String(r?.imageUrl || "").trim()).join("\u001f"),
     phase: rs?.phase || "",
     sid: rs?.sessionId || "",
     sel: (rs?.selectedSigs || []).map((s) => canonicalSigIdFromWheelSliceId(s.id)),
