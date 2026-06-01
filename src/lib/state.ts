@@ -1151,6 +1151,8 @@ export type SaveStateAsyncResult = {
   ok: boolean;
   serverUpdatedAt?: number;
   donorRankingsUpdatedAt?: number;
+  /** 실패 시 HTTP 상태(502 등) — 관리자 저장 오류 표시용 */
+  httpStatus?: number;
 };
 
 type ServerSaveJob = {
@@ -1230,7 +1232,13 @@ async function runServerSaveQueue(): Promise<void> {
         /* ignore */
       }
     }
-    for (const fn of job.resolveAll) fn({ ok, serverUpdatedAt, donorRankingsUpdatedAt: serverDonorRankingsUpdatedAt });
+    for (const fn of job.resolveAll)
+      fn({
+        ok,
+        serverUpdatedAt,
+        donorRankingsUpdatedAt: serverDonorRankingsUpdatedAt,
+        httpStatus: ok ? undefined : res.status,
+      });
   } catch {
     for (const fn of job.resolveAll) fn({ ok: false });
   } finally {
@@ -1261,15 +1269,29 @@ function appStatePayloadForApi(next: AppState, userId?: string | null): Partial<
       : {}),
   };
   if (!rouletteState) return base;
+  const rs = rouletteState;
+  const slimRs: Record<string, unknown> = {
+    menuCount: rs.menuCount,
+    menuFillFromAllActive: rs.menuFillFromAllActive,
+    overlayOpacity: rs.overlayOpacity,
+    sigResultScalePct: rs.sigResultScalePct,
+    overlayReloadNonce: rs.overlayReloadNonce,
+  };
+  /** 수동·LANDED 당첨 — OBS pick=sig-sales 가 selectedSigs·phase 를 읽을 수 있게(스핀 결과 필드는 여전히 서버 전용 API) */
+  if (Array.isArray(rs.selectedSigs) && rs.selectedSigs.length > 0) {
+    slimRs.phase = rs.phase;
+    slimRs.isRolling = rs.isRolling;
+    slimRs.selectedSigs = rs.selectedSigs;
+    slimRs.results = rs.results;
+    slimRs.result = rs.result;
+    slimRs.oneShotResult = rs.oneShotResult;
+    slimRs.sessionId = rs.sessionId;
+    slimRs.startedAt = rs.startedAt;
+    slimRs.lastFinishedAt = rs.lastFinishedAt;
+  }
   return {
     ...base,
-    rouletteState: {
-      menuCount: rouletteState.menuCount,
-      menuFillFromAllActive: rouletteState.menuFillFromAllActive,
-      overlayOpacity: rouletteState.overlayOpacity,
-      sigResultScalePct: rouletteState.sigResultScalePct,
-      overlayReloadNonce: rouletteState.overlayReloadNonce,
-    },
+    rouletteState: slimRs as Partial<AppState>["rouletteState"],
   } as Partial<AppState>;
 }
 

@@ -1516,6 +1516,36 @@ function SigSalesOverlayPageInner() {
     demoSpin,
     pendingLanding,
   ]);
+  /** 화면에 보이는 당첨 카드 ↔ 재고 soldCount>0 (확정·판매 처리만 된 경우 sigSoldFlags 없어도 스탬프) */
+  const inventorySoldForResultCards = useMemo(() => {
+    const next = new Set<string>();
+    const normalizeNameKey = (raw: string) =>
+      String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
+    for (const item of resultSigsForUi) {
+      const canon = canonicalSigIdFromWheelSliceId(item.id);
+      const nk = normalizeNameKey(item.name);
+      const price = Math.floor(Number(item.price || 0));
+      next.add(item.id);
+      next.add(canon);
+      for (const row of state?.sigInventory || []) {
+        if (!row || row.id === ONE_SHOT_SIG_ID) continue;
+        const rowCanon = canonicalSigIdFromWheelSliceId(row.id);
+        const idMatch = row.id === item.id || rowCanon === canon;
+        const nameMatch =
+          normalizeNameKey(row.name) === nk && Math.floor(Number(row.price || 0)) === price;
+        if ((idMatch || nameMatch) && row.soldCount > 0) {
+          next.add(row.id);
+          next.add(rowCanon);
+        }
+      }
+    }
+    const oneShotRow = (state?.sigInventory || []).find((r) => r.id === ONE_SHOT_SIG_ID);
+    if (oneShotRow && oneShotRow.soldCount > 0) {
+      next.add(ONE_SHOT_SIG_ID);
+      next.add(canonicalSigIdFromWheelSliceId(ONE_SHOT_SIG_ID));
+    }
+    return next;
+  }, [resultSigsForUi, state?.sigInventory]);
   /** 관리자가 재고에서 완판 처리한 시그 → 방송 결과 카드에도 스탬프 표시 */
   const inventorySoldOutIdSet = useMemo(() => {
     const next = new Set<string>();
@@ -1542,16 +1572,17 @@ function SigSalesOverlayPageInner() {
     }
     const normalizeNameKey = (raw: string) =>
       String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
-    const selectedNamePriceSet = new Set(
-      (machine.selectedSigs || []).map(
-        (x) => `${normalizeNameKey(x.name)}::${Math.floor(Number(x.price || 0))}`
-      )
-    );
+    const selectedNamePriceSet = new Set<string>();
     const selectedIdSet = new Set<string>();
-    for (const s of machine.selectedSigs || []) {
+    const registerRoundSig = (s: SigItem) => {
       selectedIdSet.add(s.id);
       selectedIdSet.add(canonicalSigIdFromWheelSliceId(s.id));
-    }
+      selectedNamePriceSet.add(
+        `${normalizeNameKey(s.name)}::${Math.floor(Number(s.price || 0))}`
+      );
+    };
+    for (const s of machine.selectedSigs || []) registerRoundSig(s);
+    for (const s of resultSigsForUi) registerRoundSig(s);
     /** 확정 처리 중: 당첨 카드 전체에 스탬프 미리보기 */
     if (machine.phase === "CONFIRM_PENDING") {
       for (const id of selectedIdSet) next.add(id);
@@ -1575,7 +1606,7 @@ function SigSalesOverlayPageInner() {
       next.add(canon);
     }
     return next;
-  }, [machine.phase, machine.selectedSigs, state?.sigInventory]);
+  }, [machine.phase, machine.selectedSigs, resultSigsForUi, state?.sigInventory]);
   /** 관리자 「이 시그 판매완료」체크 — OBS는 localStorage 없음, 서버 overlaySettings 초안으로 동기화 */
   const manualDraftSoldOverrideSet = useMemo(() => {
     const next = new Set<string>();
@@ -1626,23 +1657,34 @@ function SigSalesOverlayPageInner() {
     manualDraftSelectedForUi,
     state?.sigInventory,
   ]);
-  /** 수동 OBS: 한방 차감은 관리자 `manualSoldSet` 과 동일하게 초안 체크만(재고 완판 id 제외) */
+  /** 수동 OBS: 한방 차감 — 초안 체크 + 재고 한방 soldCount */
   const manualOneShotSoldIdSet = useMemo(() => {
     if (!manualOverlayMode) return new Set<string>();
-    return new Set(manualDraftSoldOverrideSet);
-  }, [manualOverlayMode, manualDraftSoldOverrideSet]);
-  /** 수동 OBS: 초안 체크만 스탬프(재고 완판·LANDED 자동 스탬프 제외 → 해제·갱신 가능) */
+    const next = new Set(manualDraftSoldOverrideSet);
+    const oneShotCanon = canonicalSigIdFromWheelSliceId(ONE_SHOT_SIG_ID);
+    if (inventorySoldForResultCards.has(ONE_SHOT_SIG_ID) || inventorySoldForResultCards.has(oneShotCanon)) {
+      next.add(ONE_SHOT_SIG_ID);
+      next.add(oneShotCanon);
+    }
+    return next;
+  }, [manualOverlayMode, manualDraftSoldOverrideSet, inventorySoldForResultCards]);
+  /** OBS 판매완료 스탬프: 초안 체크 + 재고 soldCount(확정·판매 처리 반영) */
   const resultSoldOverrideSet = useMemo(() => {
-    if (manualOverlayMode) return new Set(manualDraftSoldOverrideSet);
-    const next = new Set<string>(inventorySoldOutIdSet);
-    for (const id of confirmedRoundSoldIdSet) next.add(id);
-    for (const id of manualDraftSoldOverrideSet) next.add(id);
+    const next = manualOverlayMode
+      ? new Set(manualDraftSoldOverrideSet)
+      : new Set<string>(inventorySoldOutIdSet);
+    if (!manualOverlayMode) {
+      for (const id of confirmedRoundSoldIdSet) next.add(id);
+      for (const id of manualDraftSoldOverrideSet) next.add(id);
+    }
+    for (const id of inventorySoldForResultCards) next.add(id);
     return next;
   }, [
     manualOverlayMode,
     inventorySoldOutIdSet,
     confirmedRoundSoldIdSet,
     manualDraftSoldOverrideSet,
+    inventorySoldForResultCards,
   ]);
   const oneShotRevealReady = useMemo(() => {
     if (manualOverlayMode) return true;

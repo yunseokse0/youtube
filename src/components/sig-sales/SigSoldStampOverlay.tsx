@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { DEFAULT_SIG_SOLD_STAMP_URL, resolveSigRollingStampUrl } from "@/lib/constants";
+import {
+  DEFAULT_SIG_SOLD_STAMP_URL,
+  resolveSigRollingStampUrl,
+  toSigOverlayAbsoluteAssetUrl,
+} from "@/lib/constants";
 
 const STAMP_FALLBACK_URL = "/images/sigs/stamp.png";
 
@@ -34,7 +38,7 @@ export default function SigSoldStampOverlay({
   soldOutStampUrl,
   stampMaxClass = SIG_SOLD_STAMP_IMG_CLASS,
 }: SigSoldStampOverlayProps) {
-  const primarySrc = resolveSigRollingStampUrl(soldOutStampUrl);
+  const primarySrc = toSigOverlayAbsoluteAssetUrl(resolveSigRollingStampUrl(soldOutStampUrl));
   const [stampSrc, setStampSrc] = useState(primarySrc);
   useEffect(() => {
     setStampSrc(primarySrc);
@@ -50,9 +54,12 @@ export default function SigSoldStampOverlay({
           alt="판매 완료"
           className={stampMaxClass}
           onError={() => {
-            const fallback = resolveSigRollingStampUrl(STAMP_FALLBACK_URL);
-            if (stampSrc !== fallback && primarySrc !== DEFAULT_SIG_SOLD_STAMP_URL) {
-              setStampSrc(resolveSigRollingStampUrl(DEFAULT_SIG_SOLD_STAMP_URL));
+            const fallback = toSigOverlayAbsoluteAssetUrl(resolveSigRollingStampUrl(STAMP_FALLBACK_URL));
+            const defaultStamp = toSigOverlayAbsoluteAssetUrl(
+              resolveSigRollingStampUrl(DEFAULT_SIG_SOLD_STAMP_URL)
+            );
+            if (stampSrc !== fallback && primarySrc !== defaultStamp) {
+              setStampSrc(defaultStamp);
               return;
             }
             if (stampSrc !== fallback) setStampSrc(fallback);

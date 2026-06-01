@@ -2059,9 +2059,42 @@ export default function AdminSigSalesPage() {
       return;
     }
     const finishedAt = Date.now();
+    const nextFlags = [...manualSigSoldFlags];
+    while (nextFlags.length < 5) nextFlags.push(false);
+    displaySelectedSigs.forEach((sig, idx) => {
+      if (idx >= 5) return;
+      const canon = canonicalSigIdFromWheelSliceId(sig.id);
+      const marked =
+        soldPreviewSet.has(sig.id) ||
+        soldPreviewSet.has(canon) ||
+        (!soldMarksActive && displaySelectedSigs.length > 0);
+      if (marked) nextFlags[idx] = true;
+    });
+    const nextOneShotMarkSold = Boolean(
+      oneShotSold || manualOneShotMarkSold || (!soldMarksActive && displaySelectedSigs.length >= MIN_ONE_SHOT_SIGS)
+    );
+    setManualSigSoldFlags(nextFlags);
+    setManualOneShotMarkSold(nextOneShotMarkSold);
+    const prevOverlaySettings =
+      state.overlaySettings && typeof state.overlaySettings === "object"
+        ? (state.overlaySettings as Record<string, unknown>)
+        : {};
+    const manualDraftPayload = {
+      inputMode: manualInputMode,
+      drafts: manualSigDrafts,
+      oneShotName: manualOneShotName,
+      oneShotPriceInput: manualOneShotPriceInput,
+      oneShotImageUrl: manualOneShotImageUrl,
+      sigSoldFlags: nextFlags,
+      oneShotMarkSold: nextOneShotMarkSold,
+    };
     const next: AppState = {
       ...state,
       sigInventory: nextInventory,
+      overlaySettings: {
+        ...prevOverlaySettings,
+        [MANUAL_SIG_DRAFT_STATE_KEY]: manualDraftPayload,
+      },
       rouletteState: {
         ...state.rouletteState,
         phase: "CONFIRMED",
@@ -2106,6 +2139,13 @@ export default function AdminSigSalesPage() {
     oneShotSold,
     displayOneShot,
     manualSoldSet,
+    manualSigSoldFlags,
+    manualOneShotMarkSold,
+    manualInputMode,
+    manualSigDrafts,
+    manualOneShotName,
+    manualOneShotPriceInput,
+    manualOneShotImageUrl,
     userId,
     finish,
     landed,

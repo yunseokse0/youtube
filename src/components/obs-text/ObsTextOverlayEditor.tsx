@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ObsTextOverlayView } from "@/components/obs-text/ObsTextOverlayView";
 import {
   OBS_TEXT_EMOJI_PRESETS,
@@ -10,6 +11,7 @@ import {
   defaultObsTextRegistry,
   getObsTextInstance,
   mergeSegmentsFromPlainText,
+  maxObsTextRegistryRevision,
   readObsTextRegistryFromState,
   resolveObsTextInstanceId,
   segmentsToPlainText,
@@ -30,8 +32,6 @@ import {
   type AppState,
 } from "@/lib/state";
 import { STATE_PICK_OBS_TEXT } from "@/lib/state-api-pick";
-import { useSSEConnection } from "@/lib/sse-client";
-import { createStateUpdatedScheduler } from "@/lib/overlay-pull-policy";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
 
 type EditMode = "segment" | "char";
@@ -67,6 +67,7 @@ export default function ObsTextOverlayEditor({
   initialInstanceId?: string | null;
   createOnMount?: boolean;
 }) {
+  const router = useRouter();
   const [registry, setRegistry] = useState<ObsTextOverlayRegistry>(defaultObsTextRegistry);
   const [activeInstanceId, setActiveInstanceId] = useState(
     () => resolveObsTextInstanceId(defaultObsTextRegistry(), initialInstanceId)
@@ -85,7 +86,9 @@ export default function ObsTextOverlayEditor({
   const lastPersistedUpdatedAtRef = useRef(0);
   const skipAutosaveUntilRef = useRef(0);
   const activeInstanceIdRef = useRef(activeInstanceId);
+  const registryRevRef = useRef(0);
   activeInstanceIdRef.current = activeInstanceId;
+  registryRevRef.current = maxObsTextRegistryRevision(registry);
 
   const config = useMemo(
     () => getObsTextInstance(registry, activeInstanceId).config,
@@ -137,10 +140,10 @@ export default function ObsTextOverlayEditor({
         u.searchParams.set("u", userId);
         u.searchParams.set("textId", id);
         u.searchParams.delete("new");
-        window.history.replaceState({}, "", `${u.pathname}${u.search}`);
+        router.replace(`${u.pathname}${u.search}`, { scroll: false });
       }
     },
-    [registry, userId]
+    [registry, userId, router]
   );
 
   const stampRegistryForSave = useCallback(
@@ -181,17 +184,28 @@ export default function ObsTextOverlayEditor({
             : {};
         os[OBS_TEXT_OVERLAY_STATE_KEY] = stamped;
         const now = Date.now();
-        const result = await saveStateAsync({
-          ...remote,
-          overlaySettings: os,
-          updatedAt: now,
-        });
+        const result = await saveStateAsync(
+          {
+            ...remote,
+            overlaySettings: os,
+            updatedAt: now,
+          },
+          userId
+        );
         if (!result.ok) {
-          setStatus("저장 실패 — 네트워크 또는 로그인 상태를 확인하세요");
+          const code = result.httpStatus ? ` (HTTP ${result.httpStatus})` : "";
+          setStatus(
+            `저장 실패${code} — 로그인·서버(pm2) 상태를 확인하세요. OBS 반영은 POST /api/state 성공 시에만 됩니다.`
+          );
           return false;
         }
-        lastPersistedUpdatedAtRef.current = now;
+        lastPersistedUpdatedAtRef.current =
+          typeof result.serverUpdatedAt === "number" && result.serverUpdatedAt > 0
+            ? result.serverUpdatedAt
+            : now;
+        registryRevRef.current = maxObsTextRegistryRevision(stamped);
         setRegistry(stamped);
+        skipAutosaveUntilRef.current = Date.now() + 2800;
         if (opts?.statusMsg) setStatus(opts.statusMsg);
         else if (!opts?.quiet) setStatus("저장됨 · OBS에 자동 반영");
         return true;
@@ -214,6 +228,15 @@ export default function ObsTextOverlayEditor({
       if (remoteTs > 0 && remoteTs < lastPersistedUpdatedAtRef.current) return;
 
       const reg = readObsTextRegistryFromState(state);
+      const remoteRev = maxObsTextRegistryRevision(reg);
+      if (
+        loadedRef.current &&
+        remoteRev > 0 &&
+        remoteRev < registryRevRef.current &&
+        remoteTs <= lastPersistedUpdatedAtRef.current
+      ) {
+        return;
+      }
 
       if (createOnMount && !createOnMountDoneRef.current) {
         createOnMountDoneRef.current = true;
@@ -253,14 +276,6 @@ export default function ObsTextOverlayEditor({
   const applyRemoteRef = useRef(applyRemote);
   applyRemoteRef.current = applyRemote;
 
-  const syncFromServer = useCallback(async () => {
-    const remote = await loadStateFromApi(userId, {
-      pick: STATE_PICK_OBS_TEXT,
-      forceFull: true,
-    });
-    if (remote) applyRemoteRef.current(remote);
-  }, [userId]);
-
   useEffect(() => {
     void (async () => {
       const remote = await loadStateFromApi(userId, {
@@ -271,23 +286,6 @@ export default function ObsTextOverlayEditor({
       else applyRemoteRef.current(loadState(userId));
     })();
   }, [userId]);
-
-  const scheduleSyncRef = useRef<(() => void) | null>(null);
-  useEffect(() => {
-    const { schedule, cancel } = createStateUpdatedScheduler(() => {
-      void syncFromServer();
-    });
-    scheduleSyncRef.current = schedule;
-    return () => {
-      cancel();
-      scheduleSyncRef.current = null;
-    };
-  }, [syncFromServer]);
-
-  useSSEConnection((msg) => {
-    if (!msg || msg.type !== "state_updated") return;
-    scheduleSyncRef.current?.();
-  });
 
   const updateBlock = useCallback((blockId: string, patch: Partial<ObsTextBlock>) => {
     setConfig((prev) => ({

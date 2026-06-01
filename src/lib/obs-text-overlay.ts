@@ -321,6 +321,15 @@ export function readObsTextRegistryFromState(
   return normalizeObsTextRegistry(raw);
 }
 
+/** 인스턴스 config.revision 최댓값 — 서버 동기화 시 로컬 편집 덮어쓰기 방지 */
+export function maxObsTextRegistryRevision(reg: ObsTextOverlayRegistry): number {
+  let m = 0;
+  for (const inst of reg.instances) {
+    m = Math.max(m, Number(inst.config.revision || 0));
+  }
+  return m;
+}
+
 export function resolveObsTextInstanceId(
   registry: ObsTextOverlayRegistry,
   textIdRaw?: string | null
