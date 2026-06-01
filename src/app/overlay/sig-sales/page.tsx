@@ -1194,11 +1194,12 @@ function SigSalesOverlayPageInner() {
       machine.phase === "CONFIRM_PENDING" ||
       machine.phase === "CONFIRMED";
 
-    if (sid.startsWith("manual_") && terminal && serverRouletteSelectedSigs.length > 0) {
-      return serverRouletteSelectedSigs;
-    }
+    /** 저장된 초안(현재 탭) 우선 — LANDED 이전 회차 selectedSigs에 고정되지 않음 */
     if (manualDraftBroadcastReady) {
       return stripBundledSigPlaceholderItems(manualDraftSelectedForUi);
+    }
+    if (sid.startsWith("manual_") && terminal && serverRouletteSelectedSigs.length > 0) {
+      return serverRouletteSelectedSigs;
     }
     if (manualDraftSelectedForUi.length > 0) {
       return stripBundledSigPlaceholderItems(manualDraftSelectedForUi);

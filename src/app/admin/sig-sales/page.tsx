@@ -90,6 +90,7 @@ import {
   computeNetOneShotPrice,
   resolveOneShotDisplayPrice,
 } from "@/lib/sig-one-shot-price";
+import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
 import {
   MANUAL_SIG_DRAFT_STATE_KEY,
   MANUAL_SIG_WORKBENCH_KEY,
@@ -652,9 +653,12 @@ export default function AdminSigSalesPage() {
         current.overlaySettings && typeof current.overlaySettings === "object"
           ? (current.overlaySettings as Record<string, unknown>)
           : {};
+      const activeSlot = wb.slots.find((s) => s.id === wb.activeSlotId) ?? wb.slots[0];
       const nextOverlaySettings: Record<string, unknown> = {
         ...prevOverlaySettings,
         [MANUAL_SIG_WORKBENCH_KEY]: wb,
+        /** OBS 수동 모드: 현재 탭 초안을 서버에 미러(적용 전에도 카드·OBS 동기화) */
+        ...(activeSlot ? { [MANUAL_SIG_DRAFT_STATE_KEY]: slotToDraftPersist(activeSlot) } : {}),
       };
       const next: AppState = {
         ...current,
@@ -894,7 +898,66 @@ export default function AdminSigSalesPage() {
   const wheelResultSliceId = wheelRoundBinding.sliceId;
   const wheelAnimationResultId = wheelRoundBinding.animationResultId;
   const wheelTargetSliceIndex = wheelRoundBinding.targetSliceIndex;
+
+  const manualParsedRowsEarly = useMemo(
+    () =>
+      manualSigDrafts.map((row) => {
+        const name = String(row.name || "").trim();
+        const digits = String(row.priceInput || "").replace(/[^\d]/g, "");
+        const price = digits ? Math.max(0, Math.floor(Number.parseInt(digits, 10) || 0)) : 0;
+        return {
+          name,
+          price,
+          imageUrl: String(row.imageUrl || "").trim(),
+        };
+      }),
+    [manualSigDrafts]
+  );
+  const manualReadyEarly = useMemo(() => {
+    if (manualParsedRowsEarly.length !== 5) return false;
+    if (manualParsedRowsEarly.some((row) => !row.name || row.price <= 0)) return false;
+    const uniq = new Set(
+      manualSigDrafts.map((row, idx) => {
+        const sourceKey = String(row?.sourceSigId || "").trim();
+        if (sourceKey) return `id:${sourceKey}`;
+        return `name:${String(manualParsedRowsEarly[idx]?.name || "").toLowerCase()}`;
+      })
+    );
+    return uniq.size === 5;
+  }, [manualParsedRowsEarly, manualSigDrafts]);
+  const manualPreviewFromDraft = useMemo((): SigItem[] => {
+    if (!manualReadyEarly) return [];
+    return manualParsedRowsEarly.map((row, idx) => {
+      const sourceSigId = String(manualSigDrafts[idx]?.sourceSigId || "").trim();
+      const safeName =
+        row.name.replace(/\s+/g, "_").replace(/[^\w가-힣-]/g, "").slice(0, 24) || `sig_${idx + 1}`;
+      return {
+        id: sourceSigId || `manual_preview_${idx + 1}_${safeName}`,
+        name: row.name,
+        price: row.price,
+        imageUrl: row.imageUrl,
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      };
+    });
+  }, [manualReadyEarly, manualParsedRowsEarly, manualSigDrafts]);
+  const preferManualDraftPreview = useMemo(
+    () =>
+      overlayObsMode === "manual" &&
+      manualPreviewFromDraft.length >= MIN_ONE_SHOT_SIGS &&
+      machine.phase !== "SPINNING" &&
+      !machine.isRolling,
+    [overlayObsMode, manualPreviewFromDraft.length, machine.phase, machine.isRolling]
+  );
+
   const displaySelectedSigs = useMemo(() => {
+    /** 수동 모드: 현재 탭 입력을 하단 당첨 미리보기로 즉시 반영(LANDED 이전 회차에 묶이지 않음) */
+    if (preferManualDraftPreview) {
+      return manualPreviewFromDraft.slice(0, MAX_SELECTED_SIGS);
+    }
     /** 회전 전(IDLE)에는 하단 당첨·수동 미리보기를 표시하지 않음 */
     if (machine.phase === "IDLE") return [];
     const fromServer = (machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS);
@@ -909,7 +972,14 @@ export default function AdminSigSalesPage() {
     if (fromStaged.length > 0) return fromStaged;
     if (fromManualPreview.length > 0) return fromManualPreview;
     return fromServer;
-  }, [machine.selectedSigs, stagedSelected, manualPreviewSelected, machine.phase]);
+  }, [
+    preferManualDraftPreview,
+    manualPreviewFromDraft,
+    machine.selectedSigs,
+    stagedSelected,
+    manualPreviewSelected,
+    machine.phase,
+  ]);
   const displaySelectedSigsForUi = useMemo(
     () =>
       stripBundledSigPlaceholderItems(
@@ -972,10 +1042,13 @@ export default function AdminSigSalesPage() {
   ]);
 
   const targetSelectionCount = useMemo(() => {
+    if (preferManualDraftPreview) {
+      return Math.max(1, Math.min(MAX_SELECTED_SIGS, manualPreviewFromDraft.length));
+    }
     if (pendingLanding?.selected?.length) return Math.max(1, Math.min(MAX_SELECTED_SIGS, pendingLanding.selected.length));
     if (machine.selectedSigs?.length) return Math.max(1, Math.min(MAX_SELECTED_SIGS, machine.selectedSigs.length));
     return 1;
-  }, [pendingLanding?.selected, machine.selectedSigs]);
+  }, [preferManualDraftPreview, manualPreviewFromDraft.length, pendingLanding?.selected, machine.selectedSigs]);
   /** 착지·확정 단계: 회전판만 숨기고 당첨·한방·판매 버튼은 유지(판매 관리) */
   const hideWheelAfterSpin =
     (machine.phase === "LANDED" ||
@@ -988,7 +1061,8 @@ export default function AdminSigSalesPage() {
     !loadingSpin;
   /** 당첨 쇼케이스 레이아웃(접기·스크롤) — 휠 숨김과 동일 조건 + 전체 당첨 수 충족 */
   const showFinalShowcase =
-    hideWheelAfterSpin && displaySelectedSigs.length >= targetSelectionCount;
+    (hideWheelAfterSpin && displaySelectedSigs.length >= targetSelectionCount) ||
+    (preferManualDraftPreview && displaySelectedSigs.length >= MIN_ONE_SHOT_SIGS);
   const oneShotImageUrl = useMemo(() => {
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     const fromOneShot = (oneShotItem?.imageUrl || "").trim();
@@ -997,20 +1071,7 @@ export default function AdminSigSalesPage() {
     if (pick) return resolveSigAdminPreviewSrc(pick.imageUrl, pick.name, userId);
     return BUNDLED_SIG_PLACEHOLDER_URL;
   }, [state?.sigInventory, displaySelectedSigsForUi, userId]);
-  const manualParsedRows = useMemo(
-    () =>
-      manualSigDrafts.map((row) => {
-        const name = String(row.name || "").trim();
-        const digits = String(row.priceInput || "").replace(/[^\d]/g, "");
-        const price = digits ? Math.max(0, Math.floor(Number.parseInt(digits, 10) || 0)) : 0;
-        return {
-          name,
-          price,
-          imageUrl: String(row.imageUrl || "").trim(),
-        };
-      }),
-    [manualSigDrafts]
-  );
+  const manualParsedRows = manualParsedRowsEarly;
   const manualInventoryOptions = useMemo(() => {
     const mergedSource: SigItem[] = [
       ...((state?.sigInventory || []) as SigItem[]),
@@ -1050,6 +1111,15 @@ export default function AdminSigSalesPage() {
   );
   /** 한방 금액·차감은 당첨 5개(수동 폼 또는 manual_ 적용본)와 동일 배열 기준 — displaySelectedSigs(이전 회차)와 분리 */
   const sigsForOneShotCalc = useMemo(() => {
+    if (preferManualDraftPreview) {
+      return manualParsedRows.map((row, idx) => ({
+        id:
+          String(manualSigDrafts[idx]?.sourceSigId || "").trim() ||
+          `manual_draft_${idx + 1}`,
+        name: row.name,
+        price: row.price,
+      }));
+    }
     const sid = String(machine.sessionId || state?.rouletteState?.sessionId || "").trim();
     if (sid.startsWith("manual_") && (machine.selectedSigs?.length ?? 0) >= MIN_ONE_SHOT_SIGS) {
       return (machine.selectedSigs || []).slice(0, MAX_SELECTED_SIGS).map((s) => ({
@@ -1076,6 +1146,7 @@ export default function AdminSigSalesPage() {
       price: Math.max(0, Math.floor(Number(s.price || 0))),
     }));
   }, [
+    preferManualDraftPreview,
     machine.sessionId,
     machine.selectedSigs,
     state?.rouletteState?.sessionId,
@@ -1112,19 +1183,24 @@ export default function AdminSigSalesPage() {
     () => layoutSigOverlayResultRow({ cellCount: resultCardCount, userScalePct: sigResultScalePct }),
     [resultCardCount, sigResultScalePct]
   );
-  const manualReady = useMemo(() => {
-    if (manualParsedRows.length !== 5) return false;
-    if (manualParsedRows.some((row) => !row.name || row.price <= 0)) return false;
-    const uniq = new Set(
-      manualSigDrafts.map((row, idx) => {
-        const sourceKey = String(row?.sourceSigId || "").trim();
-        if (sourceKey) return `id:${sourceKey}`;
-        return `name:${String(manualParsedRows[idx]?.name || "").toLowerCase()}`;
-      })
-    );
-    if (uniq.size !== 5) return false;
-    return true;
-  }, [manualParsedRows, manualSigDrafts]);
+  const manualReady = manualReadyEarly;
+
+  useEffect(() => {
+    if (!preferManualDraftPreview) return;
+    const next = new Set<string>();
+    manualPreviewFromDraft.forEach((sig, idx) => {
+      if (!manualSigSoldFlags[idx]) return;
+      next.add(sig.id);
+      next.add(canonicalSigIdFromWheelSliceId(sig.id));
+    });
+    setManualSoldSet(next);
+    setOneShotSold(manualOneShotMarkSold);
+  }, [
+    preferManualDraftPreview,
+    manualPreviewFromDraft,
+    manualSigSoldFlags,
+    manualOneShotMarkSold,
+  ]);
 
   useEffect(() => {
     if (!authReady) return;
@@ -1137,7 +1213,7 @@ export default function AdminSigSalesPage() {
       setOneShotReveal(false);
       return;
     }
-    if (hideWheelAfterSpin) {
+    if (hideWheelAfterSpin || preferManualDraftPreview) {
       setOneShotReveal(true);
       return;
     }
@@ -1146,7 +1222,7 @@ export default function AdminSigSalesPage() {
       return;
     }
     setOneShotReveal(true);
-  }, [hideWheelAfterSpin, showFinalShowcase, displayOneShot]);
+  }, [hideWheelAfterSpin, preferManualDraftPreview, showFinalShowcase, displayOneShot]);
 
   const landedShowcaseSigKeyRef = useRef("");
   useEffect(() => {
@@ -2643,8 +2719,12 @@ export default function AdminSigSalesPage() {
                 className="rounded border border-white/20 px-2 py-2 text-xs text-neutral-200 hover:bg-white/10"
                 onClick={() => {
                   const targetUrl = overlayObsMode === "manual" ? overlayObsUrlManual : overlayObsUrl;
-                  void navigator.clipboard.writeText(targetUrl);
-                  setToast("OBS URL을 복사했습니다.");
+                  void (async () => {
+                    const ok = await copyTextToClipboard(targetUrl);
+                    setToast(
+                      ok ? "OBS URL을 복사했습니다." : "복사 실패 — URL을 직접 선택해 복사하세요."
+                    );
+                  })();
                 }}
               >
                 OBS URL 복사
@@ -2656,8 +2736,14 @@ export default function AdminSigSalesPage() {
                   type="button"
                   className="rounded border border-sky-400/50 bg-sky-950/40 px-2 py-2 text-xs text-sky-100 hover:bg-sky-900/50"
                   onClick={() => {
-                    void navigator.clipboard.writeText(overlayObsUrlManual);
-                    setToast("수동 결과 URL을 복사했습니다.");
+                    void (async () => {
+                      const ok = await copyTextToClipboard(overlayObsUrlManual);
+                      setToast(
+                        ok
+                          ? "수동 결과 URL을 복사했습니다."
+                          : "복사 실패 — URL을 직접 선택해 복사하세요."
+                      );
+                    })();
                   }}
                 >
                   수동 URL 복사
@@ -3161,7 +3247,13 @@ export default function AdminSigSalesPage() {
             </div>
           ) : null}
 
-          {(machine.phase === "SPINNING" || machine.phase === "LANDED" || machine.phase === "CONFIRM_PENDING" || machine.phase === "CONFIRMED" || stagedSelected.length > 0 || manualPreviewSelected.length > 0) &&
+          {(preferManualDraftPreview ||
+            machine.phase === "SPINNING" ||
+            machine.phase === "LANDED" ||
+            machine.phase === "CONFIRM_PENDING" ||
+            machine.phase === "CONFIRMED" ||
+            stagedSelected.length > 0 ||
+            manualPreviewSelected.length > 0) &&
           displaySelectedSigs.length > 0 ? (
             <div
               className={
