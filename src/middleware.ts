@@ -39,7 +39,11 @@ function redirectLegacyAdminSigOverlayPath(req: NextRequest): NextResponse | nul
 
   const target = new URL("/overlay/sig-sales", req.url);
   const q = new URLSearchParams(req.nextUrl.searchParams);
-  if (!q.get("u")?.trim() && !q.get("user")?.trim()) q.set("u", "finalent");
+  const legacyId = String(q.get("id") || "").trim();
+  if (!q.get("u")?.trim() && !q.get("user")?.trim()) {
+    q.set("u", legacyId && isValidUserId(legacyId) ? legacyId : "finalent");
+  }
+  q.delete("id");
   if (!q.get("mode")?.trim()) q.set("mode", "manual");
   if (!q.has("hideSigBoard")) q.set("hideSigBoard", "1");
   q.delete("overlay");

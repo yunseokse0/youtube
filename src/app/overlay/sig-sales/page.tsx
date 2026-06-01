@@ -1478,6 +1478,7 @@ function SigSalesOverlayPageInner() {
   const manualResultOverlayVisible =
     manualOverlayMode &&
     (resultSigsForUi.length > 0 ||
+      manualDraftSelectedForUi.length > 0 ||
       manualDraftBroadcastReady ||
       Boolean(state?.rouletteState?.oneShotResult) ||
       Boolean(machine.oneShot));
