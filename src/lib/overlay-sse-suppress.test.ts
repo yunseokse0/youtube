@@ -16,11 +16,25 @@ describe("shouldSuppressOverlaySseConnection", () => {
     vi.unstubAllGlobals();
   });
 
-  it("suppresses SSE on OBS obs-text browser source (poll-only)", () => {
+  it("allows SSE on real OBS obs-text (host=obs)", () => {
     const w = {
       location: {
         pathname: "/overlay/obs-text",
         search: "?u=finalent&host=obs&textId=default",
+      },
+      parent: null as unknown as Window,
+    };
+    w.parent = w as unknown as Window;
+    vi.stubGlobal("window", w);
+    expect(shouldSuppressOverlaySseConnection()).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
+  it("suppresses SSE on admin obs-text preview iframe", () => {
+    const w = {
+      location: {
+        pathname: "/overlay/obs-text",
+        search: "?u=finalent&hubPreview=1&adminPreviewEmbed=1",
       },
       parent: null as unknown as Window,
     };

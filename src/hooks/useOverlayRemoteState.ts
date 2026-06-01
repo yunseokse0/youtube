@@ -120,8 +120,7 @@ export function useOverlayRemoteState(
     [enabled, userId, statePick]
   );
 
-  /** OBS 텍스트는 소스마다 EventSource → /api/events·GET 폭주·502 유발 → 폴링만 */
-  const sseEnabled = enabled && statePick !== STATE_PICK_OBS_TEXT;
+  const sseEnabled = enabled;
 
   const { connected: sseConnected } = useSSEConnection(
     (d: unknown) => {
@@ -162,7 +161,12 @@ export function useOverlayRemoteState(
       const base = defaultState();
       setState(base);
       lastVisualSigRef.current = overlaySyncSignatureForPick(base, statePick);
-      lastSyncedUpdatedAtRef.current = 0;
+      lastSyncedUpdatedAtRef.current =
+        options.forceInitialFull || statePick === STATE_PICK_OBS_TEXT
+          ? 0
+          : options.noLocalBaseline === "default"
+            ? base.updatedAt || 0
+            : 0;
     } else {
       const base = defaultState();
       setState(base);
@@ -174,9 +178,11 @@ export function useOverlayRemoteState(
     syncFromApiRef.current = syncFromApi;
 
     const debounceOpts =
-      statePick === STATE_PICK_OVERLAY_DONORS
-        ? { debounceMs: DONOR_STATE_UPDATED_DEBOUNCE_MS, maxWaitMs: DONOR_STATE_UPDATED_MAX_WAIT_MS }
-        : undefined;
+      statePick === STATE_PICK_OBS_TEXT
+        ? { debounceMs: 60, maxWaitMs: 320 }
+        : statePick === STATE_PICK_OVERLAY_DONORS
+          ? { debounceMs: DONOR_STATE_UPDATED_DEBOUNCE_MS, maxWaitMs: DONOR_STATE_UPDATED_MAX_WAIT_MS }
+          : undefined;
     const { schedule, cancel } = createStateUpdatedScheduler(() => {
       void syncFromApiRef.current();
     }, debounceOpts);

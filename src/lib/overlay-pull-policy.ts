@@ -82,7 +82,7 @@ export function readOverlayPollIntervalMs(): number {
 export const DEFAULT_SIG_SALES_OVERLAY_POLL_MS = 1500;
 
 /** OBS 텍스트 전용 — SSE 대신 폴링(소스마다 EventSource → 502 완화) */
-export const DEFAULT_OBS_TEXT_OVERLAY_POLL_MS = 1000;
+export const DEFAULT_OBS_TEXT_OVERLAY_POLL_MS = 700;
 
 export function readObsTextOverlayPollMs(): number {
   if (typeof window === "undefined") return DEFAULT_OBS_TEXT_OVERLAY_POLL_MS;

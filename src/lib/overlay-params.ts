@@ -542,8 +542,12 @@ export function shouldSuppressOverlaySseConnection(): boolean {
     if (sp.get("demo") === "true") return true;
     if (sp.has("snap") || sp.has("snapKey")) return true;
     if (sp.has("_verify")) return true;
-    /** OBS 텍스트 브라우저 소스 — SSE 생략(연결 수·502 완화). 동기화는 pick=obs-text 폴링 */
-    if (window.location.pathname.startsWith("/overlay/obs-text")) return true;
+    /** OBS 텍스트: 관리자 iframe만 SSE 끔. 실 방송 소스(`host=obs`)는 저장 직후 SSE 반영 */
+    if (window.location.pathname.startsWith("/overlay/obs-text")) {
+      if (sp.get("hubPreview") === "1" || sp.get("adminPreviewEmbed") === "1") return true;
+      if (sp.get("host") === "obs") return false;
+      return true;
+    }
   } catch {
     /* noop */
   }

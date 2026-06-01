@@ -32,6 +32,7 @@ import {
 } from "@/lib/state";
 import { STATE_PICK_OBS_TEXT } from "@/lib/state-api-pick";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
+import { broadcastStateUpdatedAt } from "@/lib/sse-post";
 
 type EditMode = "segment" | "char";
 
@@ -174,7 +175,10 @@ export default function ObsTextOverlayEditor({
       }
       pendingRegistrySaveRef.current = true;
       try {
-        const remote = (await loadStateFromApi(userId)) || loadState(userId) || defaultState();
+        const remote =
+          (await loadStateFromApi(userId, { pick: STATE_PICK_OBS_TEXT, forceFull: true })) ||
+          loadState(userId) ||
+          defaultState();
         const stamped = stampRegistryForSave(reg, activeId, opts?.activeConfig);
         const os =
           remote.overlaySettings && typeof remote.overlaySettings === "object"
@@ -197,13 +201,15 @@ export default function ObsTextOverlayEditor({
           );
           return false;
         }
-        lastPersistedUpdatedAtRef.current =
+        const savedAt =
           typeof result.serverUpdatedAt === "number" && result.serverUpdatedAt > 0
             ? result.serverUpdatedAt
             : now;
+        lastPersistedUpdatedAtRef.current = savedAt;
         registryRevRef.current = maxObsTextRegistryRevision(stamped);
         setRegistry(stamped);
-        skipAutosaveUntilRef.current = Date.now() + 2800;
+        skipAutosaveUntilRef.current = Date.now() + 1600;
+        void broadcastStateUpdatedAt(savedAt);
         if (opts?.statusMsg) setStatus(opts.statusMsg);
         else if (!opts?.quiet) setStatus("저장됨 · OBS에 자동 반영");
         return true;
@@ -310,7 +316,7 @@ export default function ObsTextOverlayEditor({
       }).finally(() => {
         autoSaveQuietRef.current = false;
       });
-    }, 1200);
+    }, 700);
     return () => window.clearTimeout(tid);
   }, [registry, activeInstanceId, config, persistRegistry]);
 

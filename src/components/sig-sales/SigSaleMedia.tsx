@@ -56,7 +56,12 @@ export default function SigSaleMedia({
   useEffect(() => {
     const next =
       typeof window !== "undefined" ? toSigOverlayAbsoluteAssetUrl(src) : src;
-    setDisplaySrc(next);
+    setDisplaySrc((prev) => {
+      const prevNorm =
+        typeof window !== "undefined" ? toSigOverlayAbsoluteAssetUrl(prev) : prev;
+      if (prev === next || prevNorm === next) return prev;
+      return next;
+    });
     setGifFail(false);
     retriedRepairRef.current = false;
     readyFiredRef.current = false;
@@ -124,7 +129,6 @@ export default function SigSaleMedia({
     if (gifDelayMultiplier <= 1) {
       return (
         <Image
-          key={displaySrc}
           src={displaySrc}
           alt={alt}
           fill={fill}
@@ -152,7 +156,6 @@ export default function SigSaleMedia({
 
   return (
     <Image
-      key={displaySrc}
       src={displaySrc}
       alt={alt}
       fill={fill}

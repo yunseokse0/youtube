@@ -22,6 +22,7 @@ export function buildSigSalesOverlaySyncSignature(state: AppState | null): strin
       mc: Math.floor(Number(r.maxCount || 1)),
       n: String(r.name || ""),
       p: Math.floor(Number(r.price || 0)),
+      iu: String(r.imageUrl || ""),
     }))
     .sort((a, b) => a.id.localeCompare(b.id));
   const rs = state.rouletteState;
