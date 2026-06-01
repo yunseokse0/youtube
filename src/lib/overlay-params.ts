@@ -542,6 +542,7 @@ export function shouldSuppressOverlaySseConnection(): boolean {
     if (sp.get("demo") === "true") return true;
     if (sp.has("snap") || sp.has("snapKey")) return true;
     if (sp.has("_verify")) return true;
+    if (window.location.pathname.startsWith("/overlay/obs-text")) return true;
   } catch {
     /* noop */
   }

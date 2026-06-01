@@ -81,6 +81,19 @@ export function readOverlayPollIntervalMs(): number {
 /** OBS 시그 판매 회전판 — CEF에서 SSE가 끊겨도 SPINNING을 잡기 위한 기본 주기(ms). `NEXT_PUBLIC_SIG_SALES_OVERLAY_POLL_MS=0` 으로 끔 */
 export const DEFAULT_SIG_SALES_OVERLAY_POLL_MS = 2000;
 
+/** OBS 텍스트 전용 — SSE 대신 폴링(소스마다 EventSource → 502 완화) */
+export const DEFAULT_OBS_TEXT_OVERLAY_POLL_MS = 2500;
+
+export function readObsTextOverlayPollMs(): number {
+  if (typeof window === "undefined") return DEFAULT_OBS_TEXT_OVERLAY_POLL_MS;
+  const env = String(process.env.NEXT_PUBLIC_OBS_TEXT_OVERLAY_POLL_MS ?? "").trim();
+  if (env === "0") return 0;
+  if (!env) return DEFAULT_OBS_TEXT_OVERLAY_POLL_MS;
+  const n = parseInt(env.replace(/[^\d]/g, ""), 10);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_OBS_TEXT_OVERLAY_POLL_MS;
+  return Math.max(800, Math.min(30_000, n));
+}
+
 export function readSigSalesOverlayPollMs(): number {
   if (typeof window === "undefined") return DEFAULT_SIG_SALES_OVERLAY_POLL_MS;
   const env = String(process.env.NEXT_PUBLIC_SIG_SALES_OVERLAY_POLL_MS ?? "").trim();

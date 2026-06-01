@@ -12,7 +12,7 @@ function shouldConnectSseDespiteHiddenTab(): boolean {
   return p.startsWith("/overlay");
 }
 
-export function useSSEConnection(onMessage: (data: any) => void) {
+export function useSSEConnection(onMessage: (data: any) => void, enabled = true) {
   const [connected, setConnected] = useState(false);
   /** 콜백이 매 렌더마다 바뀌어도 effect를 다시 돌리지 않음 → EventSource 무한 끊김·재연결 폭주 방지 */
   const onMessageRef = useRef(onMessage);
@@ -25,6 +25,7 @@ export function useSSEConnection(onMessage: (data: any) => void) {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (!enabled) return () => {};
     /** 관리자 미리보기 iframe 등: SSE가 메인 탭과 겹쳐 `/api/events`·연쇄 GET 폭주 */
     if (shouldSuppressOverlaySseConnection()) {
       return () => {};
@@ -117,7 +118,7 @@ export function useSSEConnection(onMessage: (data: any) => void) {
       eventSourceRef.current?.close();
       eventSourceRef.current = null;
     };
-  }, []);
+  }, [enabled]);
 
   return { connected };
 }

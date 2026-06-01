@@ -1,12 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { defaultState, loadState, loadStateFromApi, storageKey, type AppState } from "@/lib/state";
+import {
+  defaultState,
+  loadState,
+  loadStateFromApi,
+  storageKey,
+  type AppState,
+} from "@/lib/state";
 import { shouldSuppressOverlaySseConnection } from "@/lib/overlay-params";
 import {
   createStateUpdatedScheduler,
   DONOR_STATE_UPDATED_DEBOUNCE_MS,
   DONOR_STATE_UPDATED_MAX_WAIT_MS,
+  readObsTextOverlayPollMs,
   readOverlayPollIntervalMs,
   readOverlaySseFallbackPollMs,
   shouldSyncDonorRankingsFromStateUpdatedEvent,
@@ -105,21 +112,26 @@ export function useOverlayRemoteState(
     [enabled, userId, statePick]
   );
 
-  const { connected: sseConnected } = useSSEConnection((d: unknown) => {
-    if (!enabled) return;
-    const o = d as { type?: string; updatedAt?: number; donorRankingsUpdatedAt?: number };
-    if (o?.type !== "state_updated") return;
-    const donorRev = Number(o.donorRankingsUpdatedAt);
-    const isDonorPick = statePick === STATE_PICK_OVERLAY_DONORS;
-    if (isDonorPick && Number.isFinite(donorRev) && donorRev > 0) {
-      if (shouldSyncDonorRankingsFromStateUpdatedEvent(o, lastSyncedDonorRevRef.current)) {
-        void syncFromApiRef.current();
-        return;
+  const sseEnabled = enabled && statePick !== STATE_PICK_OBS_TEXT;
+
+  const { connected: sseConnected } = useSSEConnection(
+    (d: unknown) => {
+      if (!enabled) return;
+      const o = d as { type?: string; updatedAt?: number; donorRankingsUpdatedAt?: number };
+      if (o?.type !== "state_updated") return;
+      const donorRev = Number(o.donorRankingsUpdatedAt);
+      const isDonorPick = statePick === STATE_PICK_OVERLAY_DONORS;
+      if (isDonorPick && Number.isFinite(donorRev) && donorRev > 0) {
+        if (shouldSyncDonorRankingsFromStateUpdatedEvent(o, lastSyncedDonorRevRef.current)) {
+          void syncFromApiRef.current();
+          return;
+        }
       }
-    }
-    if (!shouldSyncOverlayFromStateUpdatedEvent(o.updatedAt, lastSyncedUpdatedAtRef.current)) return;
-    scheduleSseSyncRef.current?.();
-  });
+      if (!shouldSyncOverlayFromStateUpdatedEvent(o.updatedAt, lastSyncedUpdatedAtRef.current)) return;
+      scheduleSseSyncRef.current?.();
+    },
+    sseEnabled
+  );
 
   useEffect(() => {
     if (frozen) {
@@ -137,7 +149,12 @@ export function useOverlayRemoteState(
       if (statePick === STATE_PICK_OVERLAY_DONORS) {
         lastSyncedDonorRevRef.current = readDonorRankingsRevision(local);
       }
-    } else if (!skipLocal) {
+    } else if (skipLocal) {
+      const base = defaultState();
+      setState(base);
+      lastVisualSigRef.current = overlaySyncSignatureForPick(base, statePick);
+      lastSyncedUpdatedAtRef.current = 0;
+    } else {
       const base = defaultState();
       setState(base);
       lastVisualSigRef.current = overlaySyncSignatureForPick(base, statePick);
@@ -166,11 +183,15 @@ export function useOverlayRemoteState(
     };
     runInitialSync();
 
-    const pollMs = readOverlayPollIntervalMs();
+    const pollMs =
+      statePick === STATE_PICK_OBS_TEXT
+        ? readObsTextOverlayPollMs()
+        : readOverlayPollIntervalMs();
     let pollId: number | undefined;
     if (pollMs > 0) pollId = window.setInterval(() => void syncFromApi(), pollMs);
 
-    const sseFallbackMs = pollMs > 0 ? 0 : readOverlaySseFallbackPollMs();
+    const sseFallbackMs =
+      pollMs > 0 || !sseEnabled ? 0 : readOverlaySseFallbackPollMs();
     let sseFallbackId: number | undefined;
     if (sseFallbackMs > 0 && !sseConnected) {
       sseFallbackId = window.setInterval(() => void syncFromApi(), sseFallbackMs);
@@ -232,6 +253,7 @@ export function useOverlayRemoteState(
     options.storageDebounceMs,
     options.skipLocalSnapshot,
     options.forceInitialFull,
+    sseEnabled,
     statePick,
   ]);
 

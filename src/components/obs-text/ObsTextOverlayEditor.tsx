@@ -314,7 +314,7 @@ export default function ObsTextOverlayEditor({
       }).finally(() => {
         autoSaveQuietRef.current = false;
       });
-    }, 700);
+    }, 1200);
     return () => window.clearTimeout(tid);
   }, [registry, activeInstanceId, config, persistRegistry]);
 
