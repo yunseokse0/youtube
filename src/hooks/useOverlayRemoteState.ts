@@ -29,6 +29,7 @@ import { readObsTextRegistryFromState } from "@/lib/obs-text-overlay";
 
 import type { StateApiPick } from "@/lib/state-api-pick";
 import {
+  revisionForStatePick,
   STATE_PICK_OBS_TEXT,
   STATE_PICK_OVERLAY,
   STATE_PICK_OVERLAY_DONORS,
@@ -102,7 +103,7 @@ export function useOverlayRemoteState(
           pick: statePick,
         });
         if (!remote) return;
-        const ts = remote.updatedAt || 0;
+        const ts = revisionForStatePick(remote, statePick);
         if (ts > 0) lastSyncedUpdatedAtRef.current = Math.max(lastSyncedUpdatedAtRef.current, ts);
         if (statePick === STATE_PICK_OVERLAY_DONORS) {
           const dr = readDonorRankingsRevision(remote);
@@ -119,7 +120,7 @@ export function useOverlayRemoteState(
     [enabled, userId, statePick]
   );
 
-  const sseEnabled = enabled && statePick !== STATE_PICK_OBS_TEXT;
+  const sseEnabled = enabled;
 
   const { connected: sseConnected } = useSSEConnection(
     (d: unknown) => {

@@ -16,6 +16,20 @@ describe("shouldSuppressOverlaySseConnection", () => {
     vi.unstubAllGlobals();
   });
 
+  it("allows OBS obs-text URL without hub flags", () => {
+    const w = {
+      location: {
+        pathname: "/overlay/obs-text",
+        search: "?u=finalent&host=obs&textId=default",
+      },
+      parent: null as unknown as Window,
+    };
+    w.parent = w as unknown as Window;
+    vi.stubGlobal("window", w);
+    expect(shouldSuppressOverlaySseConnection()).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
   it("allows OBS sig-match URL without hub flags", () => {
     const w = {
       location: {
