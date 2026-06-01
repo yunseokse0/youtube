@@ -6,8 +6,24 @@ import {
 } from "@/lib/obs-text-effects";
 
 export const OBS_TEXT_OVERLAY_STATE_KEY = "obsTextOverlayV1";
+/** OBS 브라우저 소스 URL — 어떤 텍스트 오버레이 인스턴스인지 */
+export const OBS_TEXT_ID_QUERY = "textId";
+export const DEFAULT_OBS_TEXT_INSTANCE_ID = "default";
+const MAX_OBS_TEXT_INSTANCES = 24;
 
 export type { ObsTextEffectId } from "@/lib/obs-text-effects";
+
+/** 독립 OBS 브라우저 소스 1개 = 인스턴스 1개 (각자 URL·위치·문구) */
+export type ObsTextOverlayInstance = {
+  id: string;
+  name: string;
+  config: ObsTextOverlayConfig;
+};
+
+export type ObsTextOverlayRegistry = {
+  version: 2;
+  instances: ObsTextOverlayInstance[];
+};
 
 export type ObsTextSegment = {
   text: string;
@@ -243,11 +259,108 @@ export function normalizeObsTextOverlay(raw: unknown): ObsTextOverlayConfig {
   };
 }
 
-export function readObsTextOverlayFromState(state: AppState | null | undefined): ObsTextOverlayConfig {
+export function newObsTextInstanceId(): string {
+  return `text_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function defaultObsTextRegistry(): ObsTextOverlayRegistry {
+  return {
+    version: 2,
+    instances: [
+      {
+        id: DEFAULT_OBS_TEXT_INSTANCE_ID,
+        name: "텍스트 1",
+        config: defaultObsTextOverlayConfig(),
+      },
+    ],
+  };
+}
+
+function normalizeInstance(raw: unknown, idx: number): ObsTextOverlayInstance | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const config = normalizeObsTextOverlay(o.config ?? o);
+  const id = String(o.id || `text_${idx + 1}`).trim() || `text_${idx + 1}`;
+  const name = String(o.name || `텍스트 ${idx + 1}`).trim() || `텍스트 ${idx + 1}`;
+  return { id, name, config };
+}
+
+/** v2 레지스트리 · 구버전 단일 config(v1) 자동 이전 */
+export function normalizeObsTextRegistry(raw: unknown): ObsTextOverlayRegistry {
+  if (!raw || typeof raw !== "object") return defaultObsTextRegistry();
+  const o = raw as Record<string, unknown>;
+  if (Array.isArray(o.instances)) {
+    const instances = o.instances
+      .map((item, i) => normalizeInstance(item, i))
+      .filter((x): x is ObsTextOverlayInstance => !!x)
+      .slice(0, MAX_OBS_TEXT_INSTANCES);
+    if (instances.length > 0) return { version: 2, instances };
+    return defaultObsTextRegistry();
+  }
+  if (Array.isArray(o.blocks)) {
+    return {
+      version: 2,
+      instances: [
+        {
+          id: DEFAULT_OBS_TEXT_INSTANCE_ID,
+          name: "텍스트 1",
+          config: normalizeObsTextOverlay(raw),
+        },
+      ],
+    };
+  }
+  return defaultObsTextRegistry();
+}
+
+export function readObsTextRegistryFromState(
+  state: AppState | null | undefined
+): ObsTextOverlayRegistry {
   const os = state?.overlaySettings;
-  if (!os || typeof os !== "object") return defaultObsTextOverlayConfig();
+  if (!os || typeof os !== "object") return defaultObsTextRegistry();
   const raw = (os as Record<string, unknown>)[OBS_TEXT_OVERLAY_STATE_KEY];
-  return normalizeObsTextOverlay(raw);
+  return normalizeObsTextRegistry(raw);
+}
+
+export function resolveObsTextInstanceId(
+  registry: ObsTextOverlayRegistry,
+  textIdRaw?: string | null
+): string {
+  const want = String(textIdRaw ?? "").trim();
+  if (want) {
+    const hit = registry.instances.find((i) => i.id === want);
+    if (hit) return hit.id;
+  }
+  return registry.instances[0]?.id ?? DEFAULT_OBS_TEXT_INSTANCE_ID;
+}
+
+export function getObsTextInstance(
+  registry: ObsTextOverlayRegistry,
+  instanceId?: string | null
+): ObsTextOverlayInstance {
+  const id = resolveObsTextInstanceId(registry, instanceId);
+  return (
+    registry.instances.find((i) => i.id === id) ??
+    registry.instances[0] ?? {
+      id: DEFAULT_OBS_TEXT_INSTANCE_ID,
+      name: "텍스트 1",
+      config: defaultObsTextOverlayConfig(),
+    }
+  );
+}
+
+export function readObsTextOverlayFromState(
+  state: AppState | null | undefined,
+  instanceId?: string | null
+): ObsTextOverlayConfig {
+  return getObsTextInstance(readObsTextRegistryFromState(state), instanceId).config;
+}
+
+export function createObsTextInstance(name?: string): ObsTextOverlayInstance {
+  return {
+    id: newObsTextInstanceId(),
+    name: name?.trim() || "새 텍스트",
+    config: defaultObsTextOverlayConfig(),
+  };
 }
 
 export function segmentsToPlainText(segments: ObsTextSegment[]): string {
@@ -285,15 +398,23 @@ export function mergeSegmentsFromPlainText(
 export function buildObsTextOverlayUrl(
   origin: string,
   userId: string,
+  instanceId?: string,
   extra?: Record<string, string>
 ): string {
   const params = new URLSearchParams({ u: userId, host: "obs" });
+  const id = String(instanceId ?? "").trim();
+  if (id) params.set(OBS_TEXT_ID_QUERY, id);
   if (extra) {
     for (const [k, v] of Object.entries(extra)) {
       if (v) params.set(k, v);
     }
   }
   return `${origin.replace(/\/$/, "")}/overlay/obs-text?${params.toString()}`;
+}
+
+export function obsTextOverlayPath(userId: string, instanceId: string): string {
+  const q = new URLSearchParams({ u: userId, host: "obs", [OBS_TEXT_ID_QUERY]: instanceId });
+  return `/overlay/obs-text?${q.toString()}`;
 }
 
 export function positionToFlexStyle(

@@ -6,15 +6,19 @@ import {
   OBS_TEXT_EMOJI_PRESETS,
   OBS_TEXT_OVERLAY_STATE_KEY,
   buildObsTextOverlayUrl,
-  defaultObsTextOverlayConfig,
+  createObsTextInstance,
+  defaultObsTextRegistry,
+  getObsTextInstance,
   mergeSegmentsFromPlainText,
-  readObsTextOverlayFromState,
+  readObsTextRegistryFromState,
+  resolveObsTextInstanceId,
   segmentsToPlainText,
   splitTextToCharSegments,
   type ObsTextBlock,
   type ObsTextEffectId,
   type ObsTextOverlayConfig,
   type ObsTextOverlayPosition,
+  type ObsTextOverlayRegistry,
   type ObsTextSegment,
 } from "@/lib/obs-text-overlay";
 import { OBS_TEXT_EFFECT_OPTIONS } from "@/lib/obs-text-effects";
@@ -35,8 +39,37 @@ function newBlockId(): string {
   return `block-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export default function ObsTextOverlayEditor({ userId }: { userId: string }) {
-  const [config, setConfig] = useState<ObsTextOverlayConfig>(() => defaultObsTextOverlayConfig());
+function syncDraftFromConfig(
+  cfg: ObsTextOverlayConfig,
+  setActiveBlockId: (id: string) => void,
+  setPlainDraft: (t: string) => void,
+  setEditMode: (m: EditMode) => void
+) {
+  const first = cfg.blocks[0];
+  if (first) {
+    setActiveBlockId(first.id);
+    setPlainDraft(segmentsToPlainText(first.segments));
+    if (first.segments.length > 1 && first.segments.every((s) => Array.from(s.text).length <= 1)) {
+      setEditMode("char");
+    } else {
+      setEditMode("segment");
+    }
+  }
+}
+
+export default function ObsTextOverlayEditor({
+  userId,
+  initialInstanceId,
+  createOnMount = false,
+}: {
+  userId: string;
+  initialInstanceId?: string | null;
+  createOnMount?: boolean;
+}) {
+  const [registry, setRegistry] = useState<ObsTextOverlayRegistry>(defaultObsTextRegistry);
+  const [activeInstanceId, setActiveInstanceId] = useState(
+    () => resolveObsTextInstanceId(defaultObsTextRegistry(), initialInstanceId)
+  );
   const [activeBlockId, setActiveBlockId] = useState<string>("block-1");
   const [editMode, setEditMode] = useState<EditMode>("segment");
   const [plainDraft, setPlainDraft] = useState("방송 텍스트");
@@ -46,6 +79,34 @@ export default function ObsTextOverlayEditor({ userId }: { userId: string }) {
   const [copied, setCopied] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const loadedRef = useRef(false);
+  const createOnMountDoneRef = useRef(false);
+
+  const config = useMemo(
+    () => getObsTextInstance(registry, activeInstanceId).config,
+    [registry, activeInstanceId]
+  );
+
+  const activeInstance = useMemo(
+    () => getObsTextInstance(registry, activeInstanceId),
+    [registry, activeInstanceId]
+  );
+
+  const setConfig = useCallback(
+    (updater: ObsTextOverlayConfig | ((prev: ObsTextOverlayConfig) => ObsTextOverlayConfig)) => {
+      setRegistry((prev) => ({
+        ...prev,
+        instances: prev.instances.map((inst) => {
+          if (inst.id !== activeInstanceId) return inst;
+          const next =
+            typeof updater === "function"
+              ? (updater as (p: ObsTextOverlayConfig) => ObsTextOverlayConfig)(inst.config)
+              : updater;
+          return { ...inst, config: next };
+        }),
+      }));
+    },
+    [activeInstanceId]
+  );
 
   const activeBlock = useMemo(
     () => config.blocks.find((b) => b.id === activeBlockId) ?? config.blocks[0],
@@ -53,24 +114,60 @@ export default function ObsTextOverlayEditor({ userId }: { userId: string }) {
   );
 
   const overlayUrl = useMemo(() => {
-    if (typeof window === "undefined") return `/overlay/obs-text?u=${userId}&host=obs`;
-    return buildObsTextOverlayUrl(window.location.origin, userId);
-  }, [userId]);
-
-  const applyRemote = useCallback((state: AppState | null) => {
-    if (!state) return;
-    const next = readObsTextOverlayFromState(state);
-    setConfig(next);
-    const first = next.blocks[0];
-    if (first) {
-      setActiveBlockId(first.id);
-      setPlainDraft(segmentsToPlainText(first.segments));
-      if (first.segments.length > 1 && first.segments.every((s) => Array.from(s.text).length <= 1)) {
-        setEditMode("char");
-      }
+    if (typeof window === "undefined") {
+      return `/overlay/obs-text?u=${userId}&host=obs&textId=${activeInstanceId}`;
     }
-    loadedRef.current = true;
-  }, []);
+    return buildObsTextOverlayUrl(window.location.origin, userId, activeInstanceId);
+  }, [userId, activeInstanceId]);
+
+  const selectInstance = useCallback(
+    (id: string) => {
+      setActiveInstanceId(id);
+      const cfg = getObsTextInstance(registry, id).config;
+      syncDraftFromConfig(cfg, setActiveBlockId, setPlainDraft, setEditMode);
+      if (typeof window !== "undefined") {
+        const u = new URL(window.location.href);
+        u.searchParams.set("u", userId);
+        u.searchParams.set("textId", id);
+        window.history.replaceState({}, "", `${u.pathname}${u.search}`);
+      }
+    },
+    [registry, userId]
+  );
+
+  const applyRemote = useCallback(
+    (state: AppState | null) => {
+      if (!state) return;
+      const reg = readObsTextRegistryFromState(state);
+      setRegistry(reg);
+      const id = resolveObsTextInstanceId(reg, initialInstanceId ?? activeInstanceId);
+      setActiveInstanceId(id);
+      syncDraftFromConfig(
+        getObsTextInstance(reg, id).config,
+        setActiveBlockId,
+        setPlainDraft,
+        setEditMode
+      );
+      loadedRef.current = true;
+      if (createOnMount && !createOnMountDoneRef.current) {
+        createOnMountDoneRef.current = true;
+        const inst = createObsTextInstance(`텍스트 ${reg.instances.length + 1}`);
+        const merged: ObsTextOverlayRegistry = {
+          version: 2,
+          instances: [...reg.instances, inst],
+        };
+        setRegistry(merged);
+        setActiveInstanceId(inst.id);
+        syncDraftFromConfig(inst.config, setActiveBlockId, setPlainDraft, setEditMode);
+        if (typeof window !== "undefined") {
+          const u = new URL(window.location.href);
+          u.searchParams.set("textId", inst.id);
+          window.history.replaceState({}, "", `${u.pathname}${u.search}`);
+        }
+      }
+    },
+    [initialInstanceId, activeInstanceId, createOnMount]
+  );
 
   const syncFromServer = useCallback(async () => {
     const remote = await loadStateFromApi(userId, { pick: STATE_PICK_OBS_TEXT });
@@ -107,40 +204,72 @@ export default function ObsTextOverlayEditor({ userId }: { userId: string }) {
     }));
   }, []);
 
-  const persist = useCallback(
-    async (nextConfig: ObsTextOverlayConfig) => {
-      setSaving(true);
-      setStatus("");
-      try {
-        const remote = (await loadStateFromApi(userId)) || loadState(userId) || defaultState();
-        const stamped: ObsTextOverlayConfig = {
-          ...nextConfig,
-          revision: Date.now(),
-        };
-        const os =
-          remote.overlaySettings && typeof remote.overlaySettings === "object"
-            ? { ...(remote.overlaySettings as Record<string, unknown>) }
-            : {};
-        os[OBS_TEXT_OVERLAY_STATE_KEY] = stamped;
-        const result = await saveStateAsync({
-          ...remote,
-          overlaySettings: os,
-          updatedAt: Date.now(),
-        });
-        if (!result.ok) {
-          setStatus("저장 실패 — 네트워크 또는 로그인 상태를 확인하세요");
-          return;
-        }
-        setConfig(stamped);
-        setStatus("저장됨 · OBS에 자동 반영");
-      } catch (e) {
-        setStatus(e instanceof Error ? e.message : "저장 오류");
-      } finally {
-        setSaving(false);
+  const persist = useCallback(async () => {
+    setSaving(true);
+    setStatus("");
+    try {
+      const remote = (await loadStateFromApi(userId)) || loadState(userId) || defaultState();
+      const stamped: ObsTextOverlayRegistry = {
+        version: 2,
+        instances: registry.instances.map((inst) => ({
+          ...inst,
+          config:
+            inst.id === activeInstanceId
+              ? { ...config, revision: Date.now() }
+              : inst.config,
+        })),
+      };
+      const os =
+        remote.overlaySettings && typeof remote.overlaySettings === "object"
+          ? { ...(remote.overlaySettings as Record<string, unknown>) }
+          : {};
+      os[OBS_TEXT_OVERLAY_STATE_KEY] = stamped;
+      const result = await saveStateAsync({
+        ...remote,
+        overlaySettings: os,
+        updatedAt: Date.now(),
+      });
+      if (!result.ok) {
+        setStatus("저장 실패 — 네트워크 또는 로그인 상태를 확인하세요");
+        return;
       }
-    },
-    [userId]
-  );
+      setRegistry(stamped);
+      setStatus("저장됨 · OBS에 자동 반영");
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : "저장 오류");
+    } finally {
+      setSaving(false);
+    }
+  }, [userId, registry, activeInstanceId, config]);
+
+  const addInstance = () => {
+    if (registry.instances.length >= 24) {
+      setStatus("텍스트 오버레이는 최대 24개까지 추가할 수 있습니다.");
+      return;
+    }
+    const inst = createObsTextInstance(`텍스트 ${registry.instances.length + 1}`);
+    setRegistry((prev) => ({ ...prev, instances: [...prev.instances, inst] }));
+    selectInstance(inst.id);
+  };
+
+  const removeInstance = (id: string) => {
+    if (registry.instances.length <= 1) return;
+    setRegistry((prev) => {
+      const next = prev.instances.filter((i) => i.id !== id);
+      return { ...prev, instances: next };
+    });
+    if (activeInstanceId === id) {
+      const remain = registry.instances.filter((i) => i.id !== id);
+      if (remain[0]) selectInstance(remain[0].id);
+    }
+  };
+
+  const renameInstance = (id: string, name: string) => {
+    setRegistry((prev) => ({
+      ...prev,
+      instances: prev.instances.map((i) => (i.id === id ? { ...i, name } : i)),
+    }));
+  };
 
   const onPlainChange = (text: string) => {
     setPlainDraft(text);
@@ -284,7 +413,7 @@ export default function ObsTextOverlayEditor({ userId }: { userId: string }) {
         <div>
           <h1 className="text-2xl font-bold">OBS 텍스트 오버레이</h1>
           <p className="mt-1 text-sm text-neutral-400">
-            이모티콘·구간별/글자별 색상 지정 후 OBS 브라우저 소스로 띄웁니다.
+            오버레이마다 독립 URL · 위치·문구·효과. OBS 브라우저 소스를 여러 개 추가할 수 있습니다.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -292,7 +421,7 @@ export default function ObsTextOverlayEditor({ userId }: { userId: string }) {
             type="button"
             className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold hover:bg-indigo-500 disabled:opacity-50"
             disabled={saving}
-            onClick={() => void persist(config)}
+            onClick={() => void persist()}
           >
             {saving ? "저장 중…" : "OBS에 저장"}
           </button>
@@ -308,8 +437,65 @@ export default function ObsTextOverlayEditor({ userId }: { userId: string }) {
 
       {status ? <p className="text-sm text-emerald-400">{status}</p> : null}
 
+      <section className="rounded-xl border border-violet-500/25 bg-violet-950/20 p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-violet-100">텍스트 오버레이 목록</h2>
+          <button
+            type="button"
+            className="rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-semibold hover:bg-violet-600"
+            onClick={addInstance}
+          >
+            + 오버레이 추가
+          </button>
+        </div>
+        <div className="space-y-2">
+          {registry.instances.map((inst) => {
+            const selected = inst.id === activeInstanceId;
+            return (
+              <div
+                key={inst.id}
+                className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 ${
+                  selected
+                    ? "border-violet-400/50 bg-violet-900/40"
+                    : "border-white/10 bg-neutral-950/60"
+                }`}
+              >
+                <button
+                  type="button"
+                  className={`shrink-0 rounded px-2 py-1 text-xs ${
+                    selected ? "bg-violet-600 text-white" : "bg-neutral-800 text-neutral-300"
+                  }`}
+                  onClick={() => selectInstance(inst.id)}
+                >
+                  {selected ? "선택됨" : "편집"}
+                </button>
+                <input
+                  type="text"
+                  className="min-w-[120px] flex-1 rounded border border-white/10 bg-neutral-900 px-2 py-1 text-sm"
+                  value={inst.name}
+                  onChange={(e) => renameInstance(inst.id, e.target.value)}
+                  onFocus={() => selectInstance(inst.id)}
+                />
+                <code className="text-[10px] text-neutral-500">textId={inst.id}</code>
+                {registry.instances.length > 1 ? (
+                  <button
+                    type="button"
+                    className="text-xs text-rose-400 hover:underline"
+                    onClick={() => removeInstance(inst.id)}
+                  >
+                    삭제
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
       <section className="rounded-xl border border-white/10 bg-neutral-900/60 p-4">
-        <h2 className="mb-2 text-sm font-semibold text-neutral-300">OBS URL</h2>
+        <h2 className="mb-2 text-sm font-semibold text-neutral-300">
+          OBS URL — {activeInstance.name}
+        </h2>
         <div className="flex flex-wrap items-center gap-2">
           <code className="flex-1 break-all rounded bg-black/40 px-2 py-1 text-xs text-neutral-300">
             {overlayUrl}

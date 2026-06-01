@@ -90,13 +90,31 @@ import {
   computeNetOneShotPrice,
   resolveOneShotDisplayPrice,
 } from "@/lib/sig-one-shot-price";
+import {
+  MANUAL_SIG_DRAFT_STATE_KEY,
+  MANUAL_SIG_WORKBENCH_KEY,
+  MAX_MANUAL_SIG_SLOTS,
+  applyManualSlotToForm,
+  captureManualFormToSlot,
+  createEmptyManualSlot,
+  defaultManualSigWorkbench,
+  mergeActiveSlotIntoWorkbench,
+  normalizeManualSigWorkbench,
+  readManualSigWorkbenchFromOverlaySettings,
+  slotToDraftPersist,
+  type ManualInputMode,
+  type ManualSigDraft,
+  type ManualSigSlot,
+  type ManualSigWorkbench,
+} from "@/lib/manual-sig-workbench";
 
 const STEP_CONFIRM_PAUSE_MS = 3000;
 const MAX_SELECTED_SIGS = 20;
 const MIN_ONE_SHOT_SIGS = 2;
 const MAX_SIG_UPLOAD_BYTES = 30 * 1024 * 1024;
+const MANUAL_SIG_WORKBENCH_STORAGE_PREFIX = "admin-sig-sales-manual-workbench-v1";
+/** @deprecated 레거시 로컬 초안 — 워크벤치로 마이그레이션 */
 const MANUAL_SIG_DRAFT_STORAGE_PREFIX = "admin-sig-sales-manual-draft-v1";
-const MANUAL_SIG_DRAFT_STATE_KEY = "sigSalesManualDraftV1";
 type HistoryItem = {
   id: string;
   sessionId: string;
@@ -108,23 +126,6 @@ type HistoryItem = {
   adminId?: string | null;
   reason?: string | null;
 };
-type ManualSigDraft = {
-  sourceSigId?: string;
-  name: string;
-  priceInput: string;
-  imageUrl: string;
-};
-type ManualInputMode = "free" | "inventory";
-type ManualSigDraftPersist = {
-  inputMode?: ManualInputMode;
-  drafts: ManualSigDraft[];
-  oneShotName: string;
-  oneShotPriceInput: string;
-  oneShotImageUrl: string;
-  sigSoldFlags: boolean[];
-  oneShotMarkSold: boolean;
-};
-
 const normalizeManualNameKey = (raw: string) =>
   String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
 
@@ -321,6 +322,9 @@ export default function AdminSigSalesPage() {
   const [manualOneShotImageUrl, setManualOneShotImageUrl] = useState("");
   const [manualSigSoldFlags, setManualSigSoldFlags] = useState<boolean[]>([false, false, false, false, false]);
   const [manualOneShotMarkSold, setManualOneShotMarkSold] = useState(false);
+  const [manualWorkbench, setManualWorkbench] = useState<ManualSigWorkbench>(() =>
+    defaultManualSigWorkbench()
+  );
   const [manualBusy, setManualBusy] = useState(false);
   const [manualDebugInfo, setManualDebugInfo] = useState<string>("");
   const [manualRowUploadBusy, setManualRowUploadBusy] = useState<Record<number, boolean>>({});
@@ -330,6 +334,7 @@ export default function AdminSigSalesPage() {
   const manualDraftHydratedRef = useRef(false);
   const latestStateRef = useRef<AppState | null>(null);
   const manualDraftLastSavedRef = useRef<string>("");
+  const manualWorkbenchLastSavedRef = useRef<string>("");
   const [oneShotSound] = useState(() => new Howl({ src: [SPIN_SOUND_PATHS.oneShot], preload: true, volume: 0.7 }));
   const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || DEFAULT_SIG_SOLD_STAMP_URL;
   const { machine, spin, landed, markConfirmPending, cancelConfirm, resetToIdle, finish, setOpacity, setError } = useSigSalesState(userId, state);
@@ -433,113 +438,223 @@ export default function AdminSigSalesPage() {
     };
   }, [authReady, userId, loadRemote]);
 
+  const loadManualFormFromSlot = useCallback((slot: ManualSigSlot) => {
+    const form = applyManualSlotToForm(slot);
+    setManualInputMode(form.inputMode);
+    setManualSigDrafts(form.drafts);
+    setManualOneShotName(form.oneShotName);
+    setManualOneShotPriceInput(form.oneShotPriceInput);
+    setManualOneShotImageUrl(form.oneShotImageUrl);
+    setManualSigSoldFlags(form.sigSoldFlags);
+    setManualOneShotMarkSold(form.oneShotMarkSold);
+  }, []);
+
+  const buildWorkbenchForPersist = useCallback((): ManualSigWorkbench => {
+    const activeSlot = manualWorkbench.slots.find((s) => s.id === manualWorkbench.activeSlotId);
+    const captured = captureManualFormToSlot(
+      manualWorkbench.activeSlotId,
+      activeSlot?.name ?? "준비",
+      {
+        inputMode: manualInputMode,
+        drafts: manualSigDrafts,
+        oneShotName: manualOneShotName,
+        oneShotPriceInput: manualOneShotPriceInput,
+        oneShotImageUrl: manualOneShotImageUrl,
+        sigSoldFlags: manualSigSoldFlags,
+        oneShotMarkSold: manualOneShotMarkSold,
+      }
+    );
+    return mergeActiveSlotIntoWorkbench(manualWorkbench, captured);
+  }, [
+    manualWorkbench,
+    manualInputMode,
+    manualSigDrafts,
+    manualOneShotName,
+    manualOneShotPriceInput,
+    manualOneShotImageUrl,
+    manualSigSoldFlags,
+    manualOneShotMarkSold,
+  ]);
+
+  const switchManualSlot = useCallback(
+    (nextId: string) => {
+      if (nextId === manualWorkbench.activeSlotId) return;
+      let nextSlot: (typeof manualWorkbench.slots)[number] | undefined;
+      setManualWorkbench((prev) => {
+        const activeSlot = prev.slots.find((s) => s.id === prev.activeSlotId);
+        const captured = captureManualFormToSlot(prev.activeSlotId, activeSlot?.name ?? "준비", {
+          inputMode: manualInputMode,
+          drafts: manualSigDrafts,
+          oneShotName: manualOneShotName,
+          oneShotPriceInput: manualOneShotPriceInput,
+          oneShotImageUrl: manualOneShotImageUrl,
+          sigSoldFlags: manualSigSoldFlags,
+          oneShotMarkSold: manualOneShotMarkSold,
+        });
+        const merged = mergeActiveSlotIntoWorkbench(prev, captured);
+        nextSlot = merged.slots.find((s) => s.id === nextId) ?? merged.slots[0];
+        return { ...merged, activeSlotId: nextSlot.id };
+      });
+      if (nextSlot) loadManualFormFromSlot(nextSlot);
+    },
+    [
+      manualWorkbench.activeSlotId,
+      manualInputMode,
+      manualSigDrafts,
+      manualOneShotName,
+      manualOneShotPriceInput,
+      manualOneShotImageUrl,
+      manualSigSoldFlags,
+      manualOneShotMarkSold,
+      loadManualFormFromSlot,
+    ]
+  );
+
+  const addManualSlot = useCallback(() => {
+    let nextSlot: (typeof manualWorkbench.slots)[number] | undefined;
+    setManualWorkbench((prev) => {
+      if (prev.slots.length >= MAX_MANUAL_SIG_SLOTS) return prev;
+      const activeSlot = prev.slots.find((s) => s.id === prev.activeSlotId);
+      const captured = captureManualFormToSlot(prev.activeSlotId, activeSlot?.name ?? "준비", {
+        inputMode: manualInputMode,
+        drafts: manualSigDrafts,
+        oneShotName: manualOneShotName,
+        oneShotPriceInput: manualOneShotPriceInput,
+        oneShotImageUrl: manualOneShotImageUrl,
+        sigSoldFlags: manualSigSoldFlags,
+        oneShotMarkSold: manualOneShotMarkSold,
+      });
+      const merged = mergeActiveSlotIntoWorkbench(prev, captured);
+      const n = merged.slots.length + 1;
+      nextSlot = createEmptyManualSlot(`준비 ${n}`);
+      return {
+        ...merged,
+        slots: [...merged.slots, nextSlot],
+        activeSlotId: nextSlot.id,
+      };
+    });
+    if (nextSlot) loadManualFormFromSlot(nextSlot);
+  }, [
+    manualInputMode,
+    manualSigDrafts,
+    manualOneShotName,
+    manualOneShotPriceInput,
+    manualOneShotImageUrl,
+    manualSigSoldFlags,
+    manualOneShotMarkSold,
+    loadManualFormFromSlot,
+  ]);
+
+  const removeManualSlot = useCallback(
+    (slotId: string) => {
+      let nextSlot: (typeof manualWorkbench.slots)[number] | undefined;
+      setManualWorkbench((prev) => {
+        if (prev.slots.length <= 1) return prev;
+        const activeSlot = prev.slots.find((s) => s.id === prev.activeSlotId);
+        const captured = captureManualFormToSlot(prev.activeSlotId, activeSlot?.name ?? "준비", {
+          inputMode: manualInputMode,
+          drafts: manualSigDrafts,
+          oneShotName: manualOneShotName,
+          oneShotPriceInput: manualOneShotPriceInput,
+          oneShotImageUrl: manualOneShotImageUrl,
+          sigSoldFlags: manualSigSoldFlags,
+          oneShotMarkSold: manualOneShotMarkSold,
+        });
+        const merged = mergeActiveSlotIntoWorkbench(prev, captured);
+        const slots = merged.slots.filter((s) => s.id !== slotId);
+        if (slots.length === 0) return merged;
+        const removingActive = slotId === merged.activeSlotId;
+        nextSlot = removingActive ? slots[0] : slots.find((s) => s.id === merged.activeSlotId) ?? slots[0];
+        const broadcastSlotId =
+          merged.broadcastSlotId === slotId ? undefined : merged.broadcastSlotId;
+        return {
+          ...merged,
+          slots,
+          activeSlotId: nextSlot.id,
+          broadcastSlotId,
+        };
+      });
+      if (nextSlot) loadManualFormFromSlot(nextSlot);
+    },
+    [
+      manualInputMode,
+      manualSigDrafts,
+      manualOneShotName,
+      manualOneShotPriceInput,
+      manualOneShotImageUrl,
+      manualSigSoldFlags,
+      manualOneShotMarkSold,
+      loadManualFormFromSlot,
+    ]
+  );
+
   useEffect(() => {
     if (manualDraftHydratedRef.current) return;
-    const stateDraftRaw = (() => {
-      const os = state?.overlaySettings;
-      if (!os || typeof os !== "object") return null;
-      const raw = (os as Record<string, unknown>)[MANUAL_SIG_DRAFT_STATE_KEY];
-      return raw && typeof raw === "object" ? (raw as Partial<ManualSigDraftPersist>) : null;
-    })();
-    if (stateDraftRaw) {
-      if (Array.isArray(stateDraftRaw.drafts) && stateDraftRaw.drafts.length === 5) {
-        setManualSigDrafts(
-          stateDraftRaw.drafts.map((x) => ({
-            sourceSigId: String(x?.sourceSigId || "").trim() || undefined,
-            name: String(x?.name || ""),
-            priceInput: String(x?.priceInput || ""),
-            imageUrl: String(x?.imageUrl || ""),
-          }))
-        );
+    const os =
+      state?.overlaySettings && typeof state.overlaySettings === "object"
+        ? (state.overlaySettings as Record<string, unknown>)
+        : undefined;
+    const hasServerWorkbench = Boolean(os?.[MANUAL_SIG_WORKBENCH_KEY]);
+    const hasServerDraft = Boolean(os?.[MANUAL_SIG_DRAFT_STATE_KEY]);
+
+    let wb: ManualSigWorkbench | null = null;
+    if (hasServerWorkbench || hasServerDraft) {
+      wb = readManualSigWorkbenchFromOverlaySettings(os);
+    } else if (typeof window !== "undefined") {
+      const wbKey = `${MANUAL_SIG_WORKBENCH_STORAGE_PREFIX}:${userId || "default"}`;
+      const legacyKey = `${MANUAL_SIG_DRAFT_STORAGE_PREFIX}:${userId || "default"}`;
+      try {
+        const rawWb = window.localStorage.getItem(wbKey);
+        if (rawWb) {
+          wb = normalizeManualSigWorkbench(JSON.parse(rawWb));
+        } else {
+          const rawLegacy = window.localStorage.getItem(legacyKey);
+          wb = normalizeManualSigWorkbench(undefined, rawLegacy ? JSON.parse(rawLegacy) : undefined);
+        }
+      } catch {
+        wb = defaultManualSigWorkbench();
       }
-      if (stateDraftRaw.inputMode === "free" || stateDraftRaw.inputMode === "inventory") {
-        setManualInputMode(stateDraftRaw.inputMode);
-      }
-      if (typeof stateDraftRaw.oneShotName === "string") setManualOneShotName(stateDraftRaw.oneShotName);
-      if (typeof stateDraftRaw.oneShotPriceInput === "string") setManualOneShotPriceInput(stateDraftRaw.oneShotPriceInput);
-      if (typeof stateDraftRaw.oneShotImageUrl === "string") setManualOneShotImageUrl(stateDraftRaw.oneShotImageUrl);
-      if (Array.isArray(stateDraftRaw.sigSoldFlags) && stateDraftRaw.sigSoldFlags.length === 5) {
-        setManualSigSoldFlags(stateDraftRaw.sigSoldFlags.map((v) => Boolean(v)));
-      }
-      if (typeof stateDraftRaw.oneShotMarkSold === "boolean") setManualOneShotMarkSold(stateDraftRaw.oneShotMarkSold);
-      manualDraftHydratedRef.current = true;
+    } else {
       return;
     }
 
-    if (typeof window === "undefined") return;
-    const key = `${MANUAL_SIG_DRAFT_STORAGE_PREFIX}:${userId || "default"}`;
-    try {
-      const raw = window.localStorage.getItem(key);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as {
-        inputMode?: ManualInputMode;
-        drafts?: ManualSigDraft[];
-        oneShotName?: string;
-        oneShotPriceInput?: string;
-        oneShotImageUrl?: string;
-        sigSoldFlags?: boolean[];
-        oneShotMarkSold?: boolean;
-      };
-      if (Array.isArray(parsed?.drafts) && parsed.drafts.length === 5) {
-        setManualSigDrafts(
-          parsed.drafts.map((x) => ({
-            sourceSigId: String(x?.sourceSigId || "").trim() || undefined,
-            name: String(x?.name || ""),
-            priceInput: String(x?.priceInput || ""),
-            imageUrl: String(x?.imageUrl || ""),
-          }))
-        );
-      }
-      if (parsed?.inputMode === "free" || parsed?.inputMode === "inventory") {
-        setManualInputMode(parsed.inputMode);
-      }
-      if (typeof parsed?.oneShotName === "string") setManualOneShotName(parsed.oneShotName);
-      if (typeof parsed?.oneShotPriceInput === "string") setManualOneShotPriceInput(parsed.oneShotPriceInput);
-      if (typeof parsed?.oneShotImageUrl === "string") setManualOneShotImageUrl(parsed.oneShotImageUrl);
-      if (Array.isArray(parsed?.sigSoldFlags) && parsed.sigSoldFlags.length === 5) {
-        setManualSigSoldFlags(parsed.sigSoldFlags.map((v) => Boolean(v)));
-      }
-      if (typeof parsed?.oneShotMarkSold === "boolean") setManualOneShotMarkSold(parsed.oneShotMarkSold);
-    } catch {
-      /* ignore malformed local draft */
-    } finally {
-      /** 초안이 비어 있어도 이후 자동저장은 반드시 동작해야 함 */
-      manualDraftHydratedRef.current = true;
-    }
+    setManualWorkbench(wb);
+    const active = wb.slots.find((s) => s.id === wb.activeSlotId) ?? wb.slots[0];
+    const form = applyManualSlotToForm(active);
+    setManualInputMode(form.inputMode);
+    setManualSigDrafts(form.drafts);
+    setManualOneShotName(form.oneShotName);
+    setManualOneShotPriceInput(form.oneShotPriceInput);
+    setManualOneShotImageUrl(form.oneShotImageUrl);
+    setManualSigSoldFlags(form.sigSoldFlags);
+    setManualOneShotMarkSold(form.oneShotMarkSold);
+    manualDraftHydratedRef.current = true;
   }, [userId, state?.overlaySettings]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const key = `${MANUAL_SIG_DRAFT_STORAGE_PREFIX}:${userId || "default"}`;
-    const payload = {
-      inputMode: manualInputMode,
-      drafts: manualSigDrafts,
-      oneShotName: manualOneShotName,
-      oneShotPriceInput: manualOneShotPriceInput,
-      oneShotImageUrl: manualOneShotImageUrl,
-      sigSoldFlags: manualSigSoldFlags,
-      oneShotMarkSold: manualOneShotMarkSold,
-    };
+    if (!manualDraftHydratedRef.current) return;
+    const wb = buildWorkbenchForPersist();
+    const wbKey = `${MANUAL_SIG_WORKBENCH_STORAGE_PREFIX}:${userId || "default"}`;
     try {
-      window.localStorage.setItem(key, JSON.stringify(payload));
+      window.localStorage.setItem(wbKey, JSON.stringify(wb));
     } catch {
       /* ignore quota/storage errors */
     }
     if (!authReady) return;
-    if (!manualDraftHydratedRef.current) return;
     const tid = window.setTimeout(() => {
       const current = latestStateRef.current;
       if (!current) return;
-      const payloadText = JSON.stringify(payload);
-      if (manualDraftLastSavedRef.current === payloadText) return;
-      manualDraftLastSavedRef.current = payloadText;
+      const payloadText = JSON.stringify(wb);
+      if (manualWorkbenchLastSavedRef.current === payloadText) return;
+      manualWorkbenchLastSavedRef.current = payloadText;
       const prevOverlaySettings =
         current.overlaySettings && typeof current.overlaySettings === "object"
           ? (current.overlaySettings as Record<string, unknown>)
           : {};
       const nextOverlaySettings: Record<string, unknown> = {
         ...prevOverlaySettings,
-        [MANUAL_SIG_DRAFT_STATE_KEY]: payload,
+        [MANUAL_SIG_WORKBENCH_KEY]: wb,
       };
       const next: AppState = {
         ...current,
@@ -549,17 +664,7 @@ export default function AdminSigSalesPage() {
       void saveStateAsync(next, userId);
     }, 300);
     return () => window.clearTimeout(tid);
-  }, [
-    authReady,
-    userId,
-    manualInputMode,
-    manualSigDrafts,
-    manualOneShotName,
-    manualOneShotPriceInput,
-    manualOneShotImageUrl,
-    manualSigSoldFlags,
-    manualOneShotMarkSold,
-  ]);
+  }, [authReady, userId, buildWorkbenchForPersist]);
 
   const loadHistory = useCallback(async (limit = 8) => {
     if (!authReady) return;
@@ -1448,21 +1553,24 @@ export default function AdminSigSalesPage() {
         state.overlaySettings && typeof state.overlaySettings === "object"
           ? (state.overlaySettings as Record<string, unknown>)
           : {};
+      const wbApplied = buildWorkbenchForPersist();
+      const activeSlot =
+        wbApplied.slots.find((s) => s.id === wbApplied.activeSlotId) ?? wbApplied.slots[0];
       const manualDraftPayload = {
-        inputMode: manualInputMode,
-        drafts: manualSigDrafts,
-        oneShotName: manualOneShotName,
-        oneShotPriceInput: manualOneShotPriceInput,
-        oneShotImageUrl: manualOneShotImageUrl,
-        sigSoldFlags: manualSigSoldFlags,
-        oneShotMarkSold: manualOneShotMarkSold,
+        ...slotToDraftPersist(activeSlot),
         appliedSessionId: sessionId,
       };
+      const wbWithBroadcast: ManualSigWorkbench = {
+        ...wbApplied,
+        broadcastSlotId: wbApplied.activeSlotId,
+      };
+      setManualWorkbench(wbWithBroadcast);
       const landedState: AppState = {
         ...state,
         sigInventory: inventoryWithOneShotImage,
         overlaySettings: {
           ...prevOverlaySettings,
+          [MANUAL_SIG_WORKBENCH_KEY]: wbWithBroadcast,
           [MANUAL_SIG_DRAFT_STATE_KEY]: manualDraftPayload,
         },
         rouletteState: {
@@ -1502,6 +1610,7 @@ export default function AdminSigSalesPage() {
       setShowConfirmModal(false);
       setResultsPanelCollapsed(false);
       manualDraftLastSavedRef.current = JSON.stringify(manualDraftPayload);
+      manualWorkbenchLastSavedRef.current = JSON.stringify(wbWithBroadcast);
       const landedSaved = await saveStateAsync(landedState, userId);
 
       if (!confirmNow) {
@@ -1603,6 +1712,7 @@ export default function AdminSigSalesPage() {
     manualOneShotImageUrl,
     manualSigSoldFlags,
     manualOneShotMarkSold,
+    buildWorkbenchForPersist,
     userId,
     landed,
     finish,
@@ -2630,7 +2740,66 @@ export default function AdminSigSalesPage() {
         </section>
 
         <section ref={manualSectionRef} className="rounded-xl border border-sky-300/30 bg-sky-500/10 p-3">
-          <div className="mb-2 text-sm font-semibold text-sky-100">수동 설정(5개 + 한방)</div>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="text-sm font-semibold text-sky-100">수동 설정(5개 + 한방)</div>
+            {manualWorkbench.broadcastSlotId ? (
+              <span className="text-[11px] text-emerald-200/90">
+                OBS 방송:{" "}
+                {manualWorkbench.slots.find((s) => s.id === manualWorkbench.broadcastSlotId)?.name ??
+                  "적용됨"}
+              </span>
+            ) : null}
+          </div>
+          <div className="mb-2 flex flex-wrap items-end gap-1 border-b border-sky-300/25 pb-2">
+            {manualWorkbench.slots.map((slot) => {
+              const isActive = slot.id === manualWorkbench.activeSlotId;
+              const isBroadcast = slot.id === manualWorkbench.broadcastSlotId;
+              return (
+                <div key={slot.id} className="flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => switchManualSlot(slot.id)}
+                    className={`rounded-t px-2.5 py-1 text-xs font-semibold ${
+                      isActive
+                        ? "bg-sky-400/30 text-sky-50 ring-1 ring-sky-300/50"
+                        : "bg-black/25 text-sky-100/80 hover:bg-black/40"
+                    }`}
+                  >
+                    {slot.name}
+                    {isBroadcast ? (
+                      <span className="ml-1 rounded bg-emerald-600/50 px-1 text-[9px] font-bold text-emerald-100">
+                        OBS
+                      </span>
+                    ) : null}
+                  </button>
+                  {manualWorkbench.slots.length > 1 ? (
+                    <button
+                      type="button"
+                      title={`${slot.name} 탭 닫기`}
+                      onClick={() => removeManualSlot(slot.id)}
+                      className="rounded px-1 py-0.5 text-[10px] text-sky-200/60 hover:bg-red-500/20 hover:text-red-200"
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })}
+            {manualWorkbench.slots.length < MAX_MANUAL_SIG_SLOTS ? (
+              <button
+                type="button"
+                onClick={addManualSlot}
+                className="rounded px-2 py-1 text-xs text-sky-100/90 hover:bg-sky-400/15"
+              >
+                + 탭
+              </button>
+            ) : null}
+          </div>
+          <p className="mb-3 text-[11px] text-sky-100/85">
+            탭마다 5개+한방을 미리 채워 두고 전환할 수 있습니다. OBS 반영은 「수동 결과 적용」 시{" "}
+            <strong className="font-semibold text-sky-50">현재 탭</strong>만 적용됩니다. (프리셋이
+            아닌 브라우저 탭처럼 동시에 여러 세트 준비)
+          </p>
           <p className="mb-3 text-[11px] text-sky-100/85">
             2가지 방식 지원: 완전 수동 입력 / 기존 시그 선택.
           </p>

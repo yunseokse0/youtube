@@ -10,6 +10,8 @@ import ObsTextOverlayEditor from "@/components/obs-text/ObsTextOverlayEditor";
 function ObsTextAdminInner() {
   const sp = useSearchParams();
   const userId = (sp.get("u") || sp.get("user") || "finalent").trim() || "finalent";
+  const textId = sp.get("textId");
+  const createOnMount = sp.get("new") === "1";
 
   return (
     <div className="min-h-screen bg-neutral-950">
@@ -23,7 +25,11 @@ function ObsTextAdminInner() {
         </Link>
         <span className="ml-2 text-neutral-500">u={userId}</span>
       </nav>
-      <ObsTextOverlayEditor userId={userId} />
+      <ObsTextOverlayEditor
+        userId={userId}
+        initialInstanceId={textId}
+        createOnMount={createOnMount}
+      />
     </div>
   );
 }
