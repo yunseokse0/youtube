@@ -171,8 +171,8 @@ export const OBS_TEXT_EFFECT_STYLES_CSS = `
 .obs-text-fx-bounce { animation: obs-tx-bounce var(--obs-tx-dur) ease-in-out infinite; }
 .obs-text-fx-shake { animation: obs-tx-shake var(--obs-tx-dur) ease-in-out infinite; }
 .obs-text-fx-glow { animation: obs-tx-glow var(--obs-tx-dur) ease-in-out infinite; }
-.obs-text-fx-rainbow { animation: obs-tx-rainbow var(--obs-tx-dur) linear infinite; }
-.obs-text-fx-blink { animation: obs-tx-blink var(--obs-tx-dur) steps(2, end) infinite; }
+.obs-text-fx-rainbow { animation: obs-tx-rainbow var(--obs-tx-dur) ease-in-out infinite; }
+.obs-text-fx-blink { animation: obs-tx-blink var(--obs-tx-dur) ease-in-out infinite; }
 .obs-text-fx-float { animation: obs-tx-float var(--obs-tx-dur) ease-in-out infinite; }
 .obs-text-fx-neon { animation: obs-tx-neon var(--obs-tx-dur) ease-in-out infinite; }
 .obs-text-fx-heartbeat { animation: obs-tx-heartbeat var(--obs-tx-dur) ease-in-out infinite; }

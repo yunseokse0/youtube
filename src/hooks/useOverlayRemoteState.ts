@@ -15,7 +15,7 @@ import {
 import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
 import { useSSEConnection } from "@/lib/sse-client";
 import { buildOverlaySyncSignature } from "@/lib/overlay-sync-signature";
-import { readObsTextRegistryFromState } from "@/lib/obs-text-overlay";
+import { obsTextConfigSyncSignature, readObsTextRegistryFromState } from "@/lib/obs-text-overlay";
 
 import type { StateApiPick } from "@/lib/state-api-pick";
 import {
@@ -45,7 +45,14 @@ export type UseOverlayRemoteStateOptions = {
 
 function overlaySyncSignatureForPick(state: AppState, pick: StateApiPick): string {
   if (pick === STATE_PICK_OBS_TEXT) {
-    return JSON.stringify(readObsTextRegistryFromState(state));
+    const reg = readObsTextRegistryFromState(state);
+    return JSON.stringify(
+      reg.instances.map((inst) => ({
+        id: inst.id,
+        name: inst.name,
+        sig: obsTextConfigSyncSignature(inst.config),
+      }))
+    );
   }
   return buildOverlaySyncSignature(state);
 }

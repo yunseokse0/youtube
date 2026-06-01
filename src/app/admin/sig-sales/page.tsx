@@ -91,6 +91,7 @@ import {
   resolveOneShotDisplayPrice,
 } from "@/lib/sig-one-shot-price";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
+import { buildManualRoundResetPatch } from "@/lib/sig-sales-manual-round";
 import {
   MANUAL_SIG_DRAFT_STATE_KEY,
   MANUAL_SIG_WORKBENCH_KEY,
@@ -1414,6 +1415,35 @@ export default function AdminSigSalesPage() {
     })();
   }, [resetRouletteOnServer]);
 
+  /** 수동 판매만 리셋 — 회전판 API·당첨 제외 목록은 건드리지 않음 */
+  const onResetManualRoundForResale = useCallback(() => {
+    if (!state) return;
+    void (async () => {
+      setManualBusy(true);
+      try {
+        const patch = buildManualRoundResetPatch(state);
+        const next: AppState = { ...state, ...patch };
+        setState(next);
+        setManualSoldSet(new Set());
+        setOneShotSold(false);
+        setManualSigSoldFlags([false, false, false, false, false]);
+        setManualOneShotMarkSold(false);
+        setManualDebugInfo("");
+        setShowConfirmModal(false);
+        cancelConfirm();
+        resetToIdle();
+        await saveStateAsync(next, userId);
+        setToast(
+          "수동 판매 라운드를 리셋했습니다. 시그 5개·한방을 다시 입력한 뒤 「수동 결과 적용」으로 재판매하세요."
+        );
+      } catch (e) {
+        setToast(`수동 리셋 실패: ${String(e)}`);
+      } finally {
+        setManualBusy(false);
+      }
+    })();
+  }, [state, userId, cancelConfirm, resetToIdle]);
+
   const onStartRoulette = useCallback(async () => {
     if (!authReady) return;
     if (loadingSpin) return;
@@ -1886,10 +1916,9 @@ export default function AdminSigSalesPage() {
     if (memberFilterId) qManual.set("memberId", memberFilterId);
     qManual.set("menuCount", String(effectiveMenuCount));
     if (Number.isFinite(rs)) qManual.set("sigResultScalePct", String(Math.floor(rs)));
-    qManual.set("mode", "manual");
     qManual.set("hideSigBoard", "1");
-    /** 시그·한방·판매완료는 overlaySettings.sigSalesManualDraftV1 + rouletteState 로 실시간 동기화 — URL 재복사 불필요 */
-    setOverlayObsUrlManual(`${window.location.origin}/overlay/sig-sales?${qManual.toString()}`);
+    /** 수동 전용 OBS — 회전판 `/overlay/sig-sales` 와 분리 */
+    setOverlayObsUrlManual(`${window.location.origin}/overlay/sig-sales-manual?${qManual.toString()}`);
   }, [
     userId,
     memberFilterId,
@@ -2556,8 +2585,9 @@ export default function AdminSigSalesPage() {
             {overlayObsUrl ? (
               <p className="mt-2 max-w-xl text-[11px] text-neutral-400">
                 <span className="block rounded border border-rose-400/40 bg-rose-950/40 px-2 py-1.5 text-rose-100">
-                  OBS URL은 반드시 <code className="text-rose-50">/overlay/sig-sales</code> 입니다.{" "}
-                  <code className="text-rose-50/90">/admin/sig-sales/overlay</code> 는 로그인 화면·빈 화면만 나옵니다.
+                  회전판 OBS: <code className="text-rose-50">/overlay/sig-sales</code> · 수동 판매 OBS:{" "}
+                  <code className="text-rose-50">/overlay/sig-sales-manual</code> (별도 소스).{" "}
+                  <code className="text-rose-50/90">/admin/...</code> 경로는 사용하지 마세요.
                 </span>
                 OBS 소스 URL (u={userId}
                 {memberFilterId ? ` · memberId=${memberFilterId}` : ""}):{" "}
@@ -3104,6 +3134,14 @@ export default function AdminSigSalesPage() {
             <span className="rounded bg-black/30 px-2 py-1 text-neutral-300">
               적용금액(한방): {manualParsedOneShotPrice.toLocaleString("ko-KR")}원
             </span>
+            <button
+              type="button"
+              disabled={manualBusy}
+              className="rounded bg-amber-800/90 px-3 py-1.5 font-semibold text-amber-50 hover:bg-amber-700 disabled:opacity-50"
+              onClick={onResetManualRoundForResale}
+            >
+              라운드 리셋 → 재판매
+            </button>
             <button
               type="button"
               disabled={manualBusy || !manualReady}

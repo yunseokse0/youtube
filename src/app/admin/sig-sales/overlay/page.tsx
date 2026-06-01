@@ -3,16 +3,15 @@
 import { useEffect, useState } from "react";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 
-const DEFAULT_TARGET = "/overlay/sig-sales?u=finalent&mode=manual&hideSigBoard=1";
+const DEFAULT_TARGET = "/overlay/sig-sales-manual?u=finalent&hideSigBoard=1";
 
 function targetFromWindowSearch(search: string): string {
   const q = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
   q.set("u", getOverlayUserIdFromSearchParams(q));
   q.delete("id");
-  if (!q.get("mode")?.trim()) q.set("mode", "manual");
   if (!q.has("hideSigBoard")) q.set("hideSigBoard", "1");
   q.delete("overlay");
-  return `/overlay/sig-sales?${q.toString()}`;
+  return `/overlay/sig-sales-manual?${q.toString()}`;
 }
 
 /** OBS 레거시 URL `/admin/sig-sales/overlay` → 공개 수동 오버레이로 이동 */
@@ -30,7 +29,7 @@ export default function AdminSigSalesOverlayRedirectPage() {
       <div className="mx-auto max-w-[960px] rounded-xl border border-rose-400/40 bg-black/70 p-4 text-center text-sm">
         <p className="font-semibold text-rose-100">OBS URL이 예전 관리자 경로입니다.</p>
         <p className="mt-2 text-xs text-rose-200/90">
-          <code className="text-rose-50">/overlay/sig-sales</code> 로 이동 중…
+          <code className="text-rose-50">/overlay/sig-sales-manual</code> 로 이동 중…
         </p>
         <p className="mt-3 break-all font-mono text-[11px] text-yellow-100">{target}</p>
         <p className="mt-2 text-xs text-neutral-300">

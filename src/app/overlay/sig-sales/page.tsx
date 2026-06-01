@@ -230,10 +230,6 @@ function OverlayHydrationShell({
   );
 }
 
-export default function SigSalesOverlayPage() {
-  return <SigSalesOverlayPageInner />;
-}
-
 function SigSalesOverlayPageInner() {
   const sp = useClientSearchParams();
   const manualModeParam =
@@ -2604,4 +2600,8 @@ function SigSalesOverlayPageInner() {
       </div>
     </main>
   );
+}
+
+export default function SigSalesOverlayPage() {
+  return <SigSalesOverlayPageInner />;
 }

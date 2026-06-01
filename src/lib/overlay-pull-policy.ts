@@ -84,6 +84,19 @@ export const DEFAULT_SIG_SALES_OVERLAY_POLL_MS = 2000;
 /** 후원·기여도 목록(`/overlay/donation-lists`) — SSE 불안정 시 짧은 폴링. `=0` 으로 끔 */
 export const DEFAULT_DONATION_LISTS_OVERLAY_POLL_MS = 2500;
 
+/** OBS 텍스트 오버레이 — 실시간 반영(연출 remount 최소화). `=0` 으로 끔 */
+export const DEFAULT_OBS_TEXT_OVERLAY_POLL_MS = 1500;
+
+export function readObsTextOverlayPollMs(): number {
+  if (typeof window === "undefined") return DEFAULT_OBS_TEXT_OVERLAY_POLL_MS;
+  const env = String(process.env.NEXT_PUBLIC_OBS_TEXT_OVERLAY_POLL_MS ?? "").trim();
+  if (env === "0") return 0;
+  if (!env) return DEFAULT_OBS_TEXT_OVERLAY_POLL_MS;
+  const n = parseInt(env.replace(/[^\d]/g, ""), 10);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_OBS_TEXT_OVERLAY_POLL_MS;
+  return Math.max(800, Math.min(30_000, n));
+}
+
 export function readDonationListsOverlayPollMs(): number {
   if (typeof window === "undefined") return DEFAULT_DONATION_LISTS_OVERLAY_POLL_MS;
   const env = String(process.env.NEXT_PUBLIC_DONATION_LISTS_OVERLAY_POLL_MS ?? "").trim();

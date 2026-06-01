@@ -37,14 +37,14 @@ function redirectLegacyAdminSigOverlayPath(req: NextRequest): NextResponse | nul
   const isLegacyBoard = pathname === "/admin/sig-board" || pathname.startsWith("/admin/sig-board/");
   if (!isLegacyOverlay && !isLegacyBoard) return null;
 
-  const target = new URL("/overlay/sig-sales", req.url);
+  const target = new URL("/overlay/sig-sales-manual", req.url);
   const q = new URLSearchParams(req.nextUrl.searchParams);
   const legacyId = String(q.get("id") || "").trim();
   if (!q.get("u")?.trim() && !q.get("user")?.trim()) {
     q.set("u", legacyId && isValidUserId(legacyId) ? legacyId : "finalent");
   }
   q.delete("id");
-  if (!q.get("mode")?.trim()) q.set("mode", "manual");
+  q.delete("mode");
   if (!q.has("hideSigBoard")) q.set("hideSigBoard", "1");
   q.delete("overlay");
   target.search = q.toString();
@@ -82,8 +82,24 @@ function extractUserIdFromBrokenSigSegment(seg: string): string | null {
   return null;
 }
 
+/** 수동 판매 OBS 전용 URL — 회전판 오버레이와 동일 페이지, mode=manual 주입 */
+function rewriteSigSalesManualOverlay(req: NextRequest): NextResponse | null {
+  const { pathname } = req.nextUrl;
+  if (pathname !== "/overlay/sig-sales-manual" && !pathname.startsWith("/overlay/sig-sales-manual/")) {
+    return null;
+  }
+  const url = req.nextUrl.clone();
+  url.pathname = "/overlay/sig-sales";
+  if (!url.searchParams.get("mode")?.trim()) url.searchParams.set("mode", "manual");
+  if (!url.searchParams.has("hideSigBoard")) url.searchParams.set("hideSigBoard", "1");
+  return NextResponse.rewrite(url);
+}
+
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  const manualOverlayRewrite = rewriteSigSalesManualOverlay(req);
+  if (manualOverlayRewrite) return manualOverlayRewrite;
 
   const legacyOverlayRedirect = redirectLegacyAdminSigOverlayPath(req);
   if (legacyOverlayRedirect) return legacyOverlayRedirect;
@@ -147,6 +163,8 @@ export const config = {
     "/settlements",
     "/settlements/:path*",
     "/login",
+    "/overlay/sig-sales-manual",
+    "/overlay/sig-sales-manual/:path*",
     "/images/sigs/:path*",
     "/uploads/sigs/:path*",
     "/uploads/sig/:path*",

@@ -147,14 +147,18 @@ export default function ObsTextOverlayEditor({
     (
       reg: ObsTextOverlayRegistry,
       activeId: string,
-      activeConfig?: ObsTextOverlayConfig
+      activeConfig?: ObsTextOverlayConfig,
+      bumpRevision = true
     ): ObsTextOverlayRegistry => ({
       version: 2,
       instances: reg.instances.map((inst) => ({
         ...inst,
         config:
           inst.id === activeId
-            ? { ...(activeConfig ?? inst.config), revision: Date.now() }
+            ? {
+                ...(activeConfig ?? inst.config),
+                ...(bumpRevision ? { revision: Date.now() } : {}),
+              }
             : inst.config,
       })),
     }),
@@ -180,7 +184,7 @@ export default function ObsTextOverlayEditor({
           );
           return false;
         }
-        const stamped = stampRegistryForSave(reg, activeId, opts?.activeConfig);
+        const stamped = stampRegistryForSave(reg, activeId, opts?.activeConfig, opts?.quiet !== true);
         const os =
           remote.overlaySettings && typeof remote.overlaySettings === "object"
             ? { ...(remote.overlaySettings as Record<string, unknown>) }
@@ -453,6 +457,38 @@ export default function ObsTextOverlayEditor({
       el.focus();
       el.setSelectionRange(pos, pos);
     });
+  };
+
+  /** 붙여넣기·여러 줄 입력 → 블록 여러 개로 한 번에 반영 */
+  const applyMultilineAsBlocks = useCallback(
+    (raw: string) => {
+      const lines = raw
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+      if (lines.length === 0) return;
+      const blocks = lines.map((line) => ({
+        id: newBlockId(),
+        segments: [{ text: line, color: config.defaultColor }],
+        visible: true,
+        align: "center" as const,
+        effect: "none" as ObsTextEffectId,
+        effectSpeed: 1,
+      }));
+      setConfig((prev) => ({ ...prev, blocks }));
+      setActiveBlockId(blocks[0].id);
+      setPlainDraft(lines[0]);
+      setEditMode("segment");
+      setStatus(`${lines.length}줄 → 블록 ${lines.length}개로 반영됨`);
+    },
+    [config.defaultColor, setConfig]
+  );
+
+  const onPlainPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const pasted = e.clipboardData.getData("text/plain");
+    if (!pasted.includes("\n")) return;
+    e.preventDefault();
+    applyMultilineAsBlocks(pasted);
   };
 
   const addBlock = () => {
@@ -772,8 +808,16 @@ export default function ObsTextOverlayEditor({
               className="min-h-[100px] w-full rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-lg"
               value={plainDraft}
               onChange={(e) => onPlainChange(e.target.value)}
-              placeholder="방송에 띄울 문구"
+              onPaste={onPlainPaste}
+              placeholder="방송에 띄울 문구 (여러 줄 붙여넣기 → 블록 자동 분리)"
             />
+            <button
+              type="button"
+              className="rounded-lg bg-neutral-700 px-3 py-1.5 text-xs hover:bg-neutral-600"
+              onClick={() => applyMultilineAsBlocks(plainDraft)}
+            >
+              현재 입력을 줄마다 블록으로 나누기
+            </button>
             <div className="flex flex-wrap items-center gap-3">
               <label className="flex items-center gap-2 text-sm">
                 색상

@@ -314,12 +314,12 @@ function RankingColumn({
     return String(idx + 1);
   };
   const outerClass = unified
-    ? `relative z-[1] flex min-w-0 flex-1 flex-col overflow-hidden ${
+    ? `relative z-[1] flex min-w-0 flex-1 flex-col overflow-visible ${
         showColumnDivider
           ? "border-b border-solid border-r-0 md:border-b-0 md:border-r md:border-solid"
           : ""
       }`
-    : "relative z-[1] w-full overflow-hidden rounded-2xl border shadow-[0_12px_32px_rgba(236,72,153,0.14)] backdrop-blur-md";
+    : "relative z-[1] w-full overflow-visible rounded-2xl border shadow-[0_12px_32px_rgba(236,72,153,0.14)] backdrop-blur-md";
   const outerStyle: CSSProperties | undefined = unified
     ? { borderColor }
     : {
@@ -350,7 +350,7 @@ function RankingColumn({
           <span className="font-black text-center" style={{ color: rankColor, fontSize: `${rankSize}px`, ...outlined }}>
             {rankLabel(idx)}
           </span>
-          <span className="truncate font-bold" style={{ color: nameColor, ...outlined }}>
+          <span className="break-words font-bold leading-tight" style={{ color: nameColor, ...outlined }}>
             {item.name}
           </span>
           <span className="font-black tabular-nums text-right" style={{ color: amountColor, ...outlined }}>
@@ -412,7 +412,11 @@ export default function DonorRankingsOverlayPage() {
   const layoutDual = (sp.get("layout") || "").toLowerCase() === "dual";
   const savedTheme = state?.donorRankingsTheme || defaultState().donorRankingsTheme;
 
-  const topN = liveThemeNumber(ready, useTest, savedTheme.top, sp, "top", 1, 50);
+  const showAllDonors =
+    (sp.get("all") || "").trim() === "1" || (sp.get("top") || "").trim() === "0";
+  const topN = showAllDonors
+    ? 0
+    : liveThemeNumber(ready, useTest, savedTheme.top, sp, "top", 1, 50);
   const titleSize = liveThemeNumber(ready, useTest, savedTheme.titleSize, sp, "titleSize", 14, 80);
   const rowSize = liveThemeNumber(ready, useTest, savedTheme.rowSize, sp, "rowSize", 12, 64);
   const rankSize = liveThemeNumber(ready, useTest, savedTheme.rankSize, sp, "rankSize", 12, 72);
@@ -491,7 +495,7 @@ export default function DonorRankingsOverlayPage() {
 
   return (
     <main
-      className="relative min-h-screen w-full overflow-hidden bg-transparent p-5 md:[background:var(--ov-donor-bg)]"
+      className="relative min-h-screen w-full overflow-visible bg-transparent p-5 md:[background:var(--ov-donor-bg)]"
       style={{ ["--ov-donor-bg" as string]: bg } as CSSProperties}
     >
       {showBgLayer ? (
@@ -540,7 +544,7 @@ export default function DonorRankingsOverlayPage() {
         )}
         {layoutDual ? (
           <div
-            className="relative grid grid-cols-1 overflow-hidden rounded-2xl border shadow-[0_12px_32px_rgba(236,72,153,0.14)] backdrop-blur-md md:grid-cols-2 md:gap-0"
+            className="relative grid grid-cols-1 overflow-visible rounded-2xl border shadow-[0_12px_32px_rgba(236,72,153,0.14)] backdrop-blur-md md:grid-cols-2 md:gap-0"
             style={{
               borderColor,
               backgroundColor: "transparent",
@@ -589,7 +593,7 @@ export default function DonorRankingsOverlayPage() {
           </div>
         ) : (
           <div
-            className="relative mx-auto max-w-[760px] overflow-hidden rounded-2xl border shadow-[0_12px_32px_rgba(236,72,153,0.14)] backdrop-blur-md"
+            className="relative mx-auto max-w-[760px] overflow-visible rounded-2xl border shadow-[0_12px_32px_rgba(236,72,153,0.14)] backdrop-blur-md"
             style={{
               borderColor,
               backgroundColor: "transparent",

@@ -11,6 +11,7 @@ import {
 } from "@/lib/obs-text-overlay";
 import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
+import { readObsTextOverlayPollMs } from "@/lib/overlay-pull-policy";
 import { STATE_PICK_OBS_TEXT } from "@/lib/state-api-pick";
 
 function ObsTextOverlayInner() {
@@ -21,6 +22,7 @@ function ObsTextOverlayInner() {
     statePick: STATE_PICK_OBS_TEXT,
     skipLocalSnapshot: true,
     forceInitialFull: true,
+    overlayPollMs: readObsTextOverlayPollMs(),
   });
 
   const resolvedInstanceId = useMemo(
@@ -53,10 +55,7 @@ function ObsTextOverlayInner() {
           textId 없음 → 첫 번째 오버레이 표시 중. 관리자에서 「OBS에 저장」 후 URL을 확인하세요.
         </div>
       ) : null}
-      <ObsTextOverlayView
-        key={`${resolvedInstanceId}-${config.revision ?? 0}`}
-        config={config}
-      />
+      <ObsTextOverlayView key={resolvedInstanceId} config={config} />
     </>
   );
 }
