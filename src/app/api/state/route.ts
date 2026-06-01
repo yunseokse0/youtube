@@ -7,7 +7,9 @@ import {
   mergeOverlayPresetsPreservingEscalatedGoals,
   normalizeOverlayPresetDonationGoals,
 } from "@/lib/goal-preset-math";
+import { DEFAULT_SIG_INVENTORY } from "@/lib/constants";
 import { defaultState, mergeDonorsForMultiTabSave, normalizeRouletteState, normalizeSigRolling } from "@/lib/state";
+import type { SigItem } from "@/types";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
 import { createModuleLogger } from "@/lib/logger";
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
@@ -97,6 +99,15 @@ function applyDonationGoalPresetNormalization(state: AppState): AppState {
   return { ...state, overlayPresets: presets as AppState["overlayPresets"] };
 }
 
+/** 서버 장애·defaultState 저장 시 애교·댄스 등 8개 프리셋만으로 전체 목록이 지워지는 사고 방지 */
+function looksLikeAccidentalDefaultSigInventory(patch: SigItem[], baseLen: number): boolean {
+  if (baseLen < 20) return false;
+  if (!Array.isArray(patch) || patch.length === 0) return false;
+  if (patch.length > DEFAULT_SIG_INVENTORY.length + 3) return false;
+  const defaultIds = new Set(DEFAULT_SIG_INVENTORY.map((x) => x.id));
+  return patch.every((x) => defaultIds.has(String(x.id || "")));
+}
+
 function mergePartialState(base: AppState, patch: Partial<AppState>, userId: string): AppState {
   const next: AppState = {
     ...base,
@@ -124,7 +135,19 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
   if (!("donorsFormat" in patch)) next.donorsFormat = base.donorsFormat;
   if (!("forbiddenWords" in patch)) next.forbiddenWords = base.forbiddenWords;
   if (!("missions" in patch)) next.missions = base.missions;
-  if (!("sigInventory" in patch)) next.sigInventory = base.sigInventory;
+  if (!("sigInventory" in patch)) {
+    next.sigInventory = base.sigInventory;
+  } else if (
+    Array.isArray(patch.sigInventory) &&
+    looksLikeAccidentalDefaultSigInventory(patch.sigInventory, base.sigInventory?.length ?? 0)
+  ) {
+    next.sigInventory = base.sigInventory;
+    logger.warn("sigInventory 기본 프리셋 덮어쓰기 차단", {
+      userId,
+      baseLen: base.sigInventory?.length ?? 0,
+      patchLen: patch.sigInventory.length,
+    });
+  }
   if (!("sigSoldOutStampUrl" in patch)) next.sigSoldOutStampUrl = base.sigSoldOutStampUrl;
   if (!("sigSalesExcludedIds" in patch)) next.sigSalesExcludedIds = base.sigSalesExcludedIds;
   if (!("overlayPresets" in patch)) {

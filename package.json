@@ -21,6 +21,7 @@
     "sig:import": "node scripts/copy-sigs-from-folder.mjs",
     "sig:import:new": "node scripts/copy-sigs-from-folder.mjs --new-only",
     "sig:pull-inventory": "node scripts/pull-sig-inventory-snapshot.mjs",
+    "sig:restore-inventory": "node scripts/restore-sig-inventory-snapshot.mjs",
     "sig:restore-images": "node scripts/restore-sig-images-by-name.mjs",
     "sig:import-prices-excel": "node scripts/import-sig-prices-excel.mjs",
     "sig:export-catalog": "node scripts/export-local-sigs.json.mjs",

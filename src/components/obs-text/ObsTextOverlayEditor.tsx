@@ -173,7 +173,13 @@ export default function ObsTextOverlayEditor({
       }
       pendingRegistrySaveRef.current = true;
       try {
-        const remote = (await loadStateFromApi(userId)) || loadState(userId) || defaultState();
+        const remote = await loadStateFromApi(userId, { forceFull: true });
+        if (!remote) {
+          setStatus(
+            "저장 실패 — 서버 상태를 불러오지 못했습니다. 시그 목록이 기본값으로 덮이지 않도록 저장을 중단했습니다."
+          );
+          return false;
+        }
         const stamped = stampRegistryForSave(reg, activeId, opts?.activeConfig);
         const os =
           remote.overlaySettings && typeof remote.overlaySettings === "object"
