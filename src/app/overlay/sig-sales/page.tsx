@@ -25,6 +25,7 @@ import {
   getOverlayMemberFilterIdFromSearchParams,
   getOverlayUserIdFromSearchParams,
   inferSigUploadUserIdFromInventory,
+  isSigSalesManualOverlayPath,
   shouldSuppressOverlaySseConnection,
 } from "@/lib/overlay-params";
 import {
@@ -232,7 +233,10 @@ function OverlayHydrationShell({
 
 function SigSalesOverlayPageInner() {
   const sp = useClientSearchParams();
+  const onManualOverlayPath =
+    typeof window !== "undefined" && isSigSalesManualOverlayPath();
   const manualModeParam =
+    onManualOverlayPath ||
     String(sp.get("mode") || "").toLowerCase() === "manual" ||
     String(sp.get("overlayMode") || "").toLowerCase() === "manual";
   const userId = getOverlayUserIdFromSearchParams(sp);
@@ -274,6 +278,7 @@ function SigSalesOverlayPageInner() {
         : false;
   /** 기본: 시그 보드는 회전 완료·결과 패널과 함께만 표시. SPINNING 중에도 보이게 하려면 sigBoardDuringSpin=1 */
   const hideSigBoard =
+    onManualOverlayPath ||
     sp.get("hideSigBoard") === "1" ||
     String(sp.get("hideSigBoard") || "").toLowerCase() === "true" ||
     sp.get("sigBoard") === "0" ||

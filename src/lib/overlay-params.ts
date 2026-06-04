@@ -451,6 +451,13 @@ export function inferSigUploadUserIdFromInventory(
   return best || fallback;
 }
 
+/** OBS 수동 판매 전용 URL — middleware rewrite 후에도 브라우저 주소는 이 경로 */
+export function isSigSalesManualOverlayPath(): boolean {
+  if (typeof window === "undefined") return false;
+  const path = (window.location.pathname || "/").replace(/\/+$/, "") || "/";
+  return path === "/overlay/sig-sales-manual" || path.startsWith("/overlay/sig-sales-manual/");
+}
+
 export function getOverlayUserIdFromSearchParams(
   searchParams: SearchParamsLike,
   fallback = "finalent"
