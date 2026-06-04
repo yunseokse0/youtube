@@ -7,8 +7,8 @@ import { getUserIdFromRequest } from "../../_shared/user-id";
 import { getRedisEnv } from "../../_shared/upstash";
 import { upstashGetAppStateJson, upstashSetAppStateJson } from "../../_shared/upstash-app-state";
 import {
-  computeEscalatedDonationGoal,
-  DEFAULT_DONATION_GOAL,
+  applyDonationGoalEscalationToState,
+  computeLiveDonationTotalFromMembers,
   isDonationGoalAutoEscalateEnabled,
 } from "@/lib/goal-preset-math";
 
@@ -16,17 +16,6 @@ const STORAGE_KEY_BASE = "excel-broadcast-state-v1";
 
 function stateKey(userId: string): string {
   return `${STORAGE_KEY_BASE}:${userId}`;
-}
-
-function presetShowsDonationGoal(p: Record<string, unknown>): boolean {
-  return p.showGoal === true || p.showGoal === "true" || p.showGoal === 1 || p.showGoal === "1";
-}
-
-function parseGoalAmount(raw: unknown): number {
-  const v = String(raw ?? "").trim().replace(/,/g, "");
-  if (!v) return 0;
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
 }
 
 async function loadState(userId: string): Promise<AppState> {
@@ -63,53 +52,44 @@ export async function POST(req: Request) {
     } catch {
       return Response.json({ error: "invalid_body" }, { status: 400, headers: { "Content-Type": "application/json" } });
     }
-    const liveTotal = Math.max(0, Math.floor(Number(body.liveTotal || 0)));
     const presetId = String(body.presetId || "").trim();
+    const bodyLive = Math.max(0, Math.floor(Number(body.liveTotal || 0)));
 
     const state = await loadState(userId);
-    const presets = Array.isArray(state.overlayPresets) ? [...state.overlayPresets] : [];
-    if (!presets.length) {
-      return Response.json({ ok: true, skipped: true, reason: "no_presets" }, { status: 200, headers: { "Content-Type": "application/json" } });
-    }
+    const memberLive = computeLiveDonationTotalFromMembers(state.members);
+    const liveTotal = Math.max(bodyLive, memberLive);
+    const beforeRow = (state.overlayPresets || []).find((raw) => {
+      const p = raw as Record<string, unknown>;
+      if (presetId) return String(p.id || "") === presetId;
+      return p.showGoal === true || p.showGoal === "true" || p.showGoal === 1 || p.showGoal === "1";
+    }) as Record<string, unknown> | undefined;
+    const beforeGoal = String(beforeRow?.goal ?? "0");
 
-    let targetIndex = presetId ? presets.findIndex((raw) => String((raw as Record<string, unknown>)?.id || "") === presetId) : -1;
-    if (targetIndex < 0) {
-      targetIndex = presets.findIndex((raw) => presetShowsDonationGoal(raw as Record<string, unknown>));
-    }
-    if (targetIndex < 0) targetIndex = 0;
+    const next = applyDonationGoalEscalationToState(state);
+    const afterRow = (next.overlayPresets || []).find((raw) => {
+      const p = raw as Record<string, unknown>;
+      if (presetId) return String(p.id || "") === presetId;
+      return p.showGoal === true || p.showGoal === "true" || p.showGoal === 1 || p.showGoal === "1";
+    }) as Record<string, unknown> | undefined;
+    const afterGoal = String(afterRow?.goal ?? beforeGoal);
 
-    const row = presets[targetIndex] as Record<string, unknown>;
-    const currentGoal = Math.max(DEFAULT_DONATION_GOAL, parseGoalAmount(row?.goal));
-    if (liveTotal < currentGoal) {
+    if (afterGoal === beforeGoal) {
       return Response.json(
-        { ok: true, skipped: true, goal: currentGoal, liveTotal },
+        { ok: true, skipped: true, goal: Number(beforeGoal) || 0, liveTotal },
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    const nextGoal = computeEscalatedDonationGoal(currentGoal, liveTotal);
-    if (nextGoal <= currentGoal) {
-      return Response.json(
-        { ok: true, skipped: true, goal: currentGoal, liveTotal },
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    presets[targetIndex] = {
-      ...row,
-      goal: String(nextGoal),
-      goalBaseline: String(row?.goalBaseline ?? DEFAULT_DONATION_GOAL),
-    };
-
-    const next: AppState = {
-      ...state,
-      overlayPresets: presets as AppState["overlayPresets"],
-      updatedAt: Date.now(),
-    };
     await saveState(userId, next);
 
     return Response.json(
-      { ok: true, goal: nextGoal, previousGoal: currentGoal, liveTotal, presetId: String(row?.id || presetId || "") },
+      {
+        ok: true,
+        goal: Number(afterGoal) || 0,
+        previousGoal: Number(beforeGoal) || 0,
+        liveTotal,
+        presetId: String(afterRow?.id || presetId || ""),
+      },
       { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }
     );
   } catch (e) {

@@ -79,7 +79,10 @@ function ObsTextOverlayInner() {
           「현재 페이지 캐시 새로고침」도 해보세요.
         </div>
       ) : null}
-      <ObsTextOverlayView key={resolvedInstanceId} config={config} />
+      <ObsTextOverlayView
+        key={`${resolvedInstanceId}:${config.revision ?? 0}`}
+        config={config}
+      />
     </>
   );
 }

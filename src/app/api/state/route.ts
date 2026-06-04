@@ -3,6 +3,7 @@ export const revalidate = 0;
 import type { RouletteState } from "@/types";
 import type { AppState } from "@/lib/state";
 import {
+  applyDonationGoalEscalationToState,
   isDonationInitGoalResetPatch,
   mergeOverlayPresetsPreservingEscalatedGoals,
   normalizeOverlayPresetDonationGoals,
@@ -388,13 +389,15 @@ export async function POST(req: Request) {
       body,
       donorsInPatch
     );
-    const next: AppState = sanitizeAppStateWheelDemo(
-      applyDonationGoalPresetNormalization({
-        ...draft,
-        donorRankingsUpdatedAt,
-        updatedAt: Date.now(),
-      })
-    );
+    const normalized = applyDonationGoalPresetNormalization({
+      ...draft,
+      donorRankingsUpdatedAt,
+      updatedAt: Date.now(),
+    });
+    const escalated = isDonationInitGoalResetPatch(body)
+      ? normalized
+      : applyDonationGoalEscalationToState(normalized);
+    const next: AppState = sanitizeAppStateWheelDemo(escalated);
 
     if (!base || !token) {
       setServerMemoryAppState(next);

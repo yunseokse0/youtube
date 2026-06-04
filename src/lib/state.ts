@@ -36,6 +36,8 @@ import { normalizeOverlayPresetDonationGoals } from "@/lib/goal-preset-math";
 import {
   isDonorRankingsPickPartial,
   isOverlayPickPartial,
+  revisionForStatePick,
+  STATE_PICK_OBS_TEXT,
   type StateApiPick,
 } from "@/lib/state-api-pick";
 import { slimSigInventoryForWire } from "@/lib/state-wire-slim";
@@ -1254,12 +1256,17 @@ async function runServerSaveQueue(): Promise<void> {
             : typeof pl?.donorRankingsUpdatedAt === "number" && Number.isFinite(pl.donorRankingsUpdatedAt)
               ? pl.donorRankingsUpdatedAt
               : undefined;
+        const obsTextRevision =
+          pl && typeof pl === "object" && "overlaySettings" in (pl as object)
+            ? revisionForStatePick(pl as AppState, STATE_PICK_OBS_TEXT)
+            : 0;
         void sendSSEUpdate({
           type: "state_updated",
           updatedAt,
           ...(typeof donorRankingsUpdatedAt === "number" && donorRankingsUpdatedAt > 0
             ? { donorRankingsUpdatedAt }
             : {}),
+          ...(obsTextRevision > 0 ? { obsTextRevision } : {}),
         }).catch(() => {});
       } catch {
         /* ignore */

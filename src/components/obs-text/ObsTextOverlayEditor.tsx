@@ -243,7 +243,11 @@ export default function ObsTextOverlayEditor({
             ? { ...(remote.overlaySettings as Record<string, unknown>) }
             : {};
         os[OBS_TEXT_OVERLAY_STATE_KEY] = stamped;
-        const now = Date.now();
+        const activeRev = Math.max(
+          0,
+          ...stamped.instances.map((inst) => Number(inst.config.revision || 0))
+        );
+        const now = Math.max(Date.now(), activeRev);
         const result = await saveStateAsync({
           ...remote,
           overlaySettings: os,

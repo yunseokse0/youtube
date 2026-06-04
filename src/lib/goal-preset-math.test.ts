@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_DONATION_GOAL,
   GOAL_AUTO_INCREASE_STEP,
+  applyDonationGoalEscalationToState,
   computeEscalatedDonationGoal,
+  computeLiveDonationTotalFromMembers,
   isDonationGoalAutoEscalateEnabled,
   normalizeOverlayPresetDonationGoals,
   nextGoalTenPercentIncrease,
@@ -43,6 +45,22 @@ describe("computeEscalatedDonationGoal", () => {
     expect(computeEscalatedDonationGoal(2_000_000, 4_500_000)).toBe(6_000_000);
     expect(computeEscalatedDonationGoal(4_000_000, 5_500_000)).toBe(6_000_000);
     expect(computeEscalatedDonationGoal(2_000_000, 6_000_000)).toBe(8_000_000);
+    expect(computeEscalatedDonationGoal(2_000_000, 13_131_313)).toBe(14_000_000);
+  });
+});
+
+describe("applyDonationGoalEscalationToState", () => {
+  it("관리자 후원만 저장해도 목표 프리셋이 상향된다", () => {
+    const members = [{ id: "m1", name: "A", account: 13_131_313, toon: 0, contribution: 13_131_313, operating: true }];
+    expect(computeLiveDonationTotalFromMembers(members)).toBe(13_131_313);
+    const state = {
+      members,
+      overlayPresets: [{ id: "goal1", showGoal: true, goal: "2000000", goalBaseline: "2000000" }],
+      updatedAt: 1,
+    } as import("@/types").AppState;
+    const out = applyDonationGoalEscalationToState(state);
+    expect((out.overlayPresets?.[0] as { goal?: string })?.goal).toBe("14000000");
+    expect(out.updatedAt).toBeGreaterThan(1);
   });
 });
 

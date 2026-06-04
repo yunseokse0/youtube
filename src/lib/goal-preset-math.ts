@@ -1,3 +1,5 @@
+import type { AppState } from "@/types";
+
 /** 통합 오버레이 프리셋 목표 자동 상향·후원 초기화용 */
 
 /** 기본 후원 목표·초기화 기준선(원) */
@@ -47,6 +49,53 @@ export function normalizeOverlayPresetDonationGoals(presets: unknown[]): unknown
 /** 후원 합계 ≥ 목표 시 +200만 원 자동 상향 */
 export function isDonationGoalAutoEscalateEnabled(): boolean {
   return true;
+}
+
+/** 멤버 계좌·투네 합계(후원 목표 현재값과 동일) */
+export function computeLiveDonationTotalFromMembers(
+  members: Array<{ account?: number; toon?: number }> | undefined
+): number {
+  return (members || []).reduce(
+    (sum, m) =>
+      sum + Math.max(0, Math.floor(Number(m.account || 0))) + Math.max(0, Math.floor(Number(m.toon || 0))),
+    0
+  );
+}
+
+/**
+ * 저장 직전 상태에 목표 자동 상향 반영(관리자 후원 입력·OBS 폴링 공통).
+ * OBS 브라우저 소스가 꺼져 있어도 Redis 프리셋 goal 이 200만 원씩 올라간다.
+ */
+export function applyDonationGoalEscalationToState(state: AppState): AppState {
+  if (!isDonationGoalAutoEscalateEnabled()) return state;
+  const presets = Array.isArray(state.overlayPresets) ? [...state.overlayPresets] : [];
+  if (!presets.length) return state;
+
+  const liveTotal = computeLiveDonationTotalFromMembers(state.members);
+  const baselineStr = String(DEFAULT_DONATION_GOAL);
+  let changed = false;
+
+  const nextPresets = presets.map((raw) => {
+    if (!raw || typeof raw !== "object") return raw;
+    const p = raw as Record<string, unknown>;
+    if (!presetShowsDonationGoal(p)) return raw;
+    const currentGoal = Math.max(DEFAULT_DONATION_GOAL, normalizeGoalAmount(p.goal));
+    const nextGoal = computeEscalatedDonationGoal(currentGoal, liveTotal);
+    if (nextGoal <= currentGoal) return raw;
+    changed = true;
+    return {
+      ...p,
+      goal: String(nextGoal),
+      goalBaseline: String(p.goalBaseline ?? baselineStr).trim() || baselineStr,
+    };
+  });
+
+  if (!changed) return state;
+  return {
+    ...state,
+    overlayPresets: nextPresets as AppState["overlayPresets"],
+    updatedAt: Date.now(),
+  };
 }
 
 /**

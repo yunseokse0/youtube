@@ -26,6 +26,20 @@ describe("youtube-chat-emojis", () => {
 
   it("lineContainsYoutubeEmojiCode", () => {
     expect(lineContainsYoutubeEmojiCode(":face-red-heart-shape:")).toBe(true);
+    expect(lineContainsYoutubeEmojiCode(":face-red:")).toBe(true);
     expect(lineContainsYoutubeEmojiCode("hello")).toBe(false);
+  });
+
+  it("parseLineWithYoutubeEmojis resolves :face-red: alias to image", () => {
+    const segs = parseLineWithYoutubeEmojis("테스트 :face-red: 끝", "#fff");
+    const img = segs.find((s) => (s.imageUrl || "").includes("yt3.ggpht.com"));
+    expect(img).toBeDefined();
+    expect(img?.text).toBe(":face-red:");
+  });
+
+  it("parseLineWithYoutubeEmojis resolves arbitrary youtube codes", () => {
+    const segs = parseLineWithYoutubeEmojis(":buffering:", "#fff");
+    expect(segs).toHaveLength(1);
+    expect(segs[0]?.imageUrl).toContain("yt3.ggpht.com");
   });
 });

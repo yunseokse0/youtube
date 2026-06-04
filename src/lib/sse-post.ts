@@ -53,6 +53,8 @@ export type StateUpdatedSsePayload = {
   type: "state_updated";
   updatedAt: number;
   donorRankingsUpdatedAt?: number;
+  /** 텍스트 오버레이: max(config.revision) — pick=obs-text since·304 정합 */
+  obsTextRevision?: number;
   /** 시그 판매 OBS: 회전 시작 직후 동기화 힌트(sessionId가 바뀌면 GET 강제) */
   roulettePhase?: string;
   rouletteSessionId?: string;

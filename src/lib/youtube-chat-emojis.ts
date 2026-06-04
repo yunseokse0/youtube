@@ -1,6 +1,10 @@
 import type { ObsTextSegment } from "@/lib/obs-text-overlay";
+import {
+  YOUTUBE_CHAT_EMOJI_ALIASES,
+  YOUTUBE_CHAT_EMOJI_ENTRIES,
+} from "@/data/youtube-chat-emojis.generated";
 
-/** YouTube 라이브 채팅 공용 이모티콘 — yt3.ggpht.com (brainwo gist 기준, 2024) */
+/** YouTube 라이브 채팅 공용 이모티콘 — yt3.ggpht.com (brainwo gist 기준) */
 
 export type YoutubeChatEmojiPreset = {
   code: string;
@@ -8,20 +12,40 @@ export type YoutubeChatEmojiPreset = {
   url: string;
 };
 
-const FACE_RED_HEART_SHAPE =
-  "https://yt3.ggpht.com/I0Mem9dU_IZ4a9cQPzR0pUJ8bH-882Eg0sDQjBmPcHA6Oq0uXOZcsjPvPbtormx91Ha2eRA=w24-h24-c-k-nd";
+const URL_BY_CODE = new Map<string, string>();
+for (const [code, url] of YOUTUBE_CHAT_EMOJI_ENTRIES) {
+  URL_BY_CODE.set(code, url);
+}
+for (const [alias, canonical] of Object.entries(YOUTUBE_CHAT_EMOJI_ALIASES)) {
+  const url = URL_BY_CODE.get(canonical);
+  if (url) URL_BY_CODE.set(alias, url);
+}
 
-const HANDS_YELLOW_HEART_RED =
-  "https://yt3.ggpht.com/qWSu2zrgOKLKgt_E-XUP9e30aydT5aF3TnNjvfBL55cTu1clP8Eoh5exN3NDPEVPYmasmoA=w24-h24-c-k-nd";
+/** 긴 코드 우선 매칭 (부분 문자열 오인 방지) */
+const CODE_SORTED = [...URL_BY_CODE.keys()].sort((a, b) => b.length - a.length);
 
+function labelForYoutubeEmojiCode(code: string): string {
+  return code.replace(/^:|:$/g, "").replace(/-/g, " ");
+}
+
+/** 관리 화면 빠른 삽입용 (전체 100종은 코드 입력·붙여넣기) */
 export const OBS_TEXT_YOUTUBE_EMOJI_PRESETS: YoutubeChatEmojiPreset[] = [
-  { code: ":face-red-heart-shape:", label: "하트 얼굴", url: FACE_RED_HEART_SHAPE },
-  { code: ":hands-yellow-heart-red:", label: "손 하트", url: HANDS_YELLOW_HEART_RED },
-];
-
-const CODE_SORTED = OBS_TEXT_YOUTUBE_EMOJI_PRESETS.map((p) => p.code).sort(
-  (a, b) => b.length - a.length
-);
+  {
+    code: ":face-red-heart-shape:",
+    label: "하트 얼굴",
+    url: URL_BY_CODE.get(":face-red-heart-shape:") ?? "",
+  },
+  {
+    code: ":hands-yellow-heart-red:",
+    label: "손 하트",
+    url: URL_BY_CODE.get(":hands-yellow-heart-red:") ?? "",
+  },
+  {
+    code: ":face-red:",
+    label: "빨간 얼굴 (별칭)",
+    url: URL_BY_CODE.get(":face-red:") ?? "",
+  },
+].filter((p) => p.url.length > 0);
 
 export function buildYoutubeChatEmojiUrl(baseUrl: string, px = 48): string {
   const size = Math.max(16, Math.min(96, Math.floor(px)));
@@ -31,9 +55,16 @@ export function buildYoutubeChatEmojiUrl(baseUrl: string, px = 48): string {
   return baseUrl;
 }
 
+export function youtubeEmojiUrlForCode(code: string): string | null {
+  const key = String(code || "").trim();
+  return URL_BY_CODE.get(key) ?? null;
+}
+
 export function youtubeEmojiPresetForCode(code: string): YoutubeChatEmojiPreset | null {
   const key = String(code || "").trim();
-  return OBS_TEXT_YOUTUBE_EMOJI_PRESETS.find((p) => p.code === key) ?? null;
+  const url = youtubeEmojiUrlForCode(key);
+  if (!url) return null;
+  return { code: key, label: labelForYoutubeEmojiCode(key), url };
 }
 
 /** 한 줄 문자열에서 :face-red-heart-shape: 등 → 이미지 세그먼트 */
@@ -51,11 +82,11 @@ export function parseLineWithYoutubeEmojis(line: string, defaultColor: string): 
       }
     }
     if (matched) {
-      const preset = youtubeEmojiPresetForCode(matched)!;
+      const url = youtubeEmojiUrlForCode(matched)!;
       segments.push({
         text: matched,
         color: defaultColor,
-        imageUrl: buildYoutubeChatEmojiUrl(preset.url, 48),
+        imageUrl: buildYoutubeChatEmojiUrl(url, 48),
       });
       pos += matched.length;
       continue;

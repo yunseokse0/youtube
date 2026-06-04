@@ -57,6 +57,7 @@ import {
 import type { StateApiPick } from "@/lib/state-api-pick";
 
 import {
+  revisionForStatePick,
   STATE_PICK_OBS_TEXT,
   STATE_PICK_OVERLAY,
   STATE_PICK_OVERLAY_DONORS,
@@ -152,22 +153,24 @@ function applySyncedState(
 ): boolean {
   const nextSig = overlaySyncSignatureForPick(data, pick);
 
-  const ts = data.updatedAt || 0;
-
-  if (ts > 0) {
+  /** obs-text pick 304 비교는 max(updatedAt, config.revision) — updatedAt 만 쓰면 영구 304 */
+  const pickRev = revisionForStatePick(data, pick);
+  if (pickRev > 0) {
     refs.lastSyncedUpdatedAtRef.current = Math.max(
       refs.lastSyncedUpdatedAtRef.current,
-      ts
+      pickRev
     );
   }
 
-  const dr = readDonorRankingsRevision(data);
-
-  if (dr > 0)
-    refs.lastSyncedDonorRevRef.current = Math.max(
-      refs.lastSyncedDonorRevRef.current,
-      dr
-    );
+  if (pick !== STATE_PICK_OBS_TEXT) {
+    const dr = readDonorRankingsRevision(data);
+    if (dr > 0) {
+      refs.lastSyncedDonorRevRef.current = Math.max(
+        refs.lastSyncedDonorRevRef.current,
+        dr
+      );
+    }
+  }
 
   if (nextSig === refs.lastVisualSigRef.current) return false;
 
@@ -246,15 +249,15 @@ export function useOverlayRemoteState(
 
     lastSyncedUpdatedAtRef.current = Math.max(
       lastSyncedUpdatedAtRef.current,
-
-      cached.updatedAt || 0
+      revisionForStatePick(cached, statePick)
     );
 
-    lastSyncedDonorRevRef.current = Math.max(
-      lastSyncedDonorRevRef.current,
-
-      readDonorRankingsRevision(cached)
-    );
+    if (statePick !== STATE_PICK_OBS_TEXT) {
+      lastSyncedDonorRevRef.current = Math.max(
+        lastSyncedDonorRevRef.current,
+        readDonorRankingsRevision(cached)
+      );
+    }
 
     if (statePick === STATE_PICK_SIG_SALES) {
       lastRouletteSyncRef.current = sigSalesRouletteSyncCursorFromState(
@@ -288,11 +291,13 @@ export function useOverlayRemoteState(
       };
 
       try {
-        const sinceBaseline = Math.max(
-          lastSyncedUpdatedAtRef.current,
-
-          lastSyncedDonorRevRef.current
-        );
+        const sinceBaseline =
+          statePick === STATE_PICK_OBS_TEXT
+            ? lastSyncedUpdatedAtRef.current
+            : Math.max(
+                lastSyncedUpdatedAtRef.current,
+                lastSyncedDonorRevRef.current
+              );
 
         const remote = await loadStateFromApi(userId, {
           ifUpdatedSince: opts?.forceFull ? 0 : sinceBaseline,
@@ -349,6 +354,16 @@ export function useOverlayRemoteState(
     };
 
     if (o?.type !== "state_updated") return;
+
+    if (statePick === STATE_PICK_OBS_TEXT) {
+      const obsTextRev = Number(
+        (o as { obsTextRevision?: unknown }).obsTextRevision
+      );
+      if (Number.isFinite(obsTextRev) && obsTextRev > lastSyncedUpdatedAtRef.current) {
+        scheduleSseSyncRef.current?.();
+        return;
+      }
+    }
 
     if (sigSalesPick) {
       const rouletteHint = shouldSyncSigSalesFromRouletteSseHint(
@@ -416,9 +431,11 @@ export function useOverlayRemoteState(
 
       lastVisualSigRef.current = overlaySyncSignatureForPick(local, statePick);
 
-      lastSyncedUpdatedAtRef.current = local.updatedAt || 0;
+      lastSyncedUpdatedAtRef.current = revisionForStatePick(local, statePick);
 
-      lastSyncedDonorRevRef.current = readDonorRankingsRevision(local);
+      if (statePick !== STATE_PICK_OBS_TEXT) {
+        lastSyncedDonorRevRef.current = readDonorRankingsRevision(local);
+      }
 
       lastGoodRef.current = local;
 
@@ -431,9 +448,11 @@ export function useOverlayRemoteState(
         statePick
       );
 
-      lastSyncedUpdatedAtRef.current = lastGood.updatedAt || 0;
+      lastSyncedUpdatedAtRef.current = revisionForStatePick(lastGood, statePick);
 
-      lastSyncedDonorRevRef.current = readDonorRankingsRevision(lastGood);
+      if (statePick !== STATE_PICK_OBS_TEXT) {
+        lastSyncedDonorRevRef.current = readDonorRankingsRevision(lastGood);
+      }
 
       lastGoodRef.current = lastGood;
     } else {
@@ -462,7 +481,9 @@ export function useOverlayRemoteState(
 
     const { schedule, cancel } = createStateUpdatedScheduler(() => {
       void syncFromApiRef.current(
-        sigSalesPick ? { forceFull: true } : undefined
+        sigSalesPick || statePick === STATE_PICK_OBS_TEXT
+          ? { forceFull: true }
+          : undefined
       );
     }, debounceOpts);
 
