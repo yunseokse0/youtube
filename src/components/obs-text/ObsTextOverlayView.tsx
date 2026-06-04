@@ -270,6 +270,28 @@ function ObsTextFxWrap({
   );
 }
 
+function YoutubeChatEmojiImg({ seg }: { seg: ObsTextSegment }) {
+  const url = (seg.imageUrl || "").trim();
+  if (!url) return null;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt=""
+      draggable={false}
+      className="obs-text-yt-emoji"
+      style={{
+        display: "inline-block",
+        height: "1.35em",
+        width: "1.35em",
+        margin: "0 0.08em",
+        verticalAlign: "-0.12em",
+        objectFit: "contain",
+      }}
+    />
+  );
+}
+
 function ColoredSegment({
   seg,
   effect,
@@ -279,6 +301,9 @@ function ColoredSegment({
   effect: ObsTextEffectId;
   outlineShadow?: string;
 }) {
+  if ((seg.imageUrl || "").trim()) {
+    return <YoutubeChatEmojiImg seg={seg} />;
+  }
   if (effect === "gradient" || effect === "rainbow") {
     return <span>{seg.text}</span>;
   }
@@ -296,29 +321,30 @@ function WaveCharSegments({
   segments: ObsTextSegment[];
   effectSpeed: number;
 }) {
-  const plain = segments.map((s) => s.text).join("");
-  const chars = Array.from(plain);
-  const colorAt: string[] = [];
-  for (const seg of segments) {
-    for (let i = 0; i < Array.from(seg.text).length; i++) {
-      colorAt.push(seg.color);
-    }
-  }
-
+  let charIndex = 0;
   return (
     <>
-      {chars.map((ch, i) => (
-        <span
-          key={`${blockId}-w-${i}`}
-          className="obs-text-fx-wave-char"
-          style={{
-            color: colorAt[i] ?? segments[0]?.color ?? "#fff",
-            animationDelay: obsTextEffectWaveCharDelaySec(i, effectSpeed),
-          }}
-        >
-          {ch === " " ? "\u00a0" : ch}
-        </span>
-      ))}
+      {segments.map((seg, si) => {
+        if ((seg.imageUrl || "").trim()) {
+          return <YoutubeChatEmojiImg key={`${blockId}-w-img-${si}`} seg={seg} />;
+        }
+        const chars = Array.from(seg.text);
+        return chars.map((ch, ci) => {
+          const i = charIndex++;
+          return (
+            <span
+              key={`${blockId}-w-${si}-${ci}`}
+              className="obs-text-fx-wave-char"
+              style={{
+                color: seg.color,
+                animationDelay: obsTextEffectWaveCharDelaySec(i, effectSpeed),
+              }}
+            >
+              {ch === " " ? "\u00a0" : ch}
+            </span>
+          );
+        });
+      })}
     </>
   );
 }

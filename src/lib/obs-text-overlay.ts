@@ -4,6 +4,10 @@ import {
   normalizeObsTextEffectSpeed,
   type ObsTextEffectId,
 } from "@/lib/obs-text-effects";
+import {
+  lineContainsYoutubeEmojiCode,
+  parseLineWithYoutubeEmojis,
+} from "@/lib/youtube-chat-emojis";
 
 export const OBS_TEXT_OVERLAY_STATE_KEY = "obsTextOverlayV1";
 /** OBS 브라우저 소스 URL — 어떤 텍스트 오버레이 인스턴스인지 */
@@ -30,6 +34,8 @@ export type ObsTextOverlayRegistry = {
 export type ObsTextSegment = {
   text: string;
   color: string;
+  /** YouTube 라이브 채팅 이모티콘 이미지 (yt3.ggpht.com) */
+  imageUrl?: string;
   /** 구간별 연출(없으면 블록 effect 상속) */
   effect?: ObsTextEffectId;
   effectSpeed?: number;
@@ -310,11 +316,13 @@ function normalizeSegment(raw: unknown, defaultColor: string): ObsTextSegment | 
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
   const text = String(o.text ?? "");
-  if (!text) return null;
+  const imageUrl = String(o.imageUrl ?? "").trim();
+  if (!text && !imageUrl) return null;
   const effect = normalizeObsTextEffect(o.effect);
   return {
-    text,
+    text: text || " ",
     color: normalizeHexColor(o.color, defaultColor),
+    ...(imageUrl ? { imageUrl } : {}),
     ...(effect !== "none" ? { effect, effectSpeed: normalizeObsTextEffectSpeed(o.effectSpeed) } : {}),
   };
 }
@@ -631,6 +639,7 @@ function isCharColorBlock(block: ObsTextBlock): boolean {
 }
 
 function blockUsesRichSegments(block: ObsTextBlock): boolean {
+  if (block.segments.some((s) => (s.imageUrl || "").trim())) return true;
   if (isCharColorBlock(block)) return true;
   if (block.segments.length > 1) return true;
   return block.segments.some((s) => s.effect && s.effect !== "none");
@@ -639,10 +648,12 @@ function blockUsesRichSegments(block: ObsTextBlock): boolean {
 function coalesceObsTextSegments(segments: ObsTextSegment[]): ObsTextSegment[] {
   const out: ObsTextSegment[] = [];
   for (const seg of segments) {
-    if (!seg.text) continue;
+    if (!seg.text && !(seg.imageUrl || "").trim()) continue;
     const last = out[out.length - 1];
     if (
       last &&
+      !(last.imageUrl || "").trim() &&
+      !(seg.imageUrl || "").trim() &&
       last.color === seg.color &&
       (last.effect ?? "none") === (seg.effect ?? "none") &&
       (last.effectSpeed ?? 1) === (seg.effectSpeed ?? 1)
@@ -756,9 +767,12 @@ export function applyEffectRangeToBlocks(
 
 function createDefaultObsTextBlock(text: string, defaultColor: string): ObsTextBlock {
   const line = text.length === 0 ? " " : text;
+  const segments = lineContainsYoutubeEmojiCode(line)
+    ? parseLineWithYoutubeEmojis(line, defaultColor)
+    : [{ text: line, color: defaultColor }];
   return {
     id: createObsTextBlockId(),
-    segments: [{ text: line, color: defaultColor }],
+    segments,
     visible: true,
     align: "center",
     effect: "none",
@@ -781,6 +795,13 @@ export function blocksFromMultilineText(
     const normalized = line.length === 0 ? " " : line;
     if (!prev) {
       return createDefaultObsTextBlock(normalized, defaultColor);
+    }
+    if (lineContainsYoutubeEmojiCode(normalized)) {
+      const color = prev.segments[0]?.color ?? defaultColor;
+      return {
+        ...prev,
+        segments: parseLineWithYoutubeEmojis(normalized, color),
+      };
     }
     if (blockUsesRichSegments(prev)) {
       return {
@@ -830,6 +851,10 @@ export function mergeSegmentsFromPlainText(
   existing: ObsTextSegment[] | undefined,
   defaultColor: string
 ): ObsTextSegment[] {
+  if (lineContainsYoutubeEmojiCode(text)) {
+    const color = existing?.[0]?.color ?? defaultColor;
+    return parseLineWithYoutubeEmojis(text, color);
+  }
   const prev = existing && existing.length > 0 ? existing : undefined;
   if (!prev) return text ? [{ text, color: defaultColor }] : [{ text: " ", color: defaultColor }];
   const oldPlain = segmentsToPlainText(prev);
