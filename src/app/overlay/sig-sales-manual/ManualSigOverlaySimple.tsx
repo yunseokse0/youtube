@@ -27,6 +27,13 @@ const MANUAL_OVERLAY_TERMINAL_PHASES = new Set([
   "CONFIRMED",
 ]);
 
+/** OBS CEF: `absolute`는 부모 높이 0일 때 전체가 안 보임 → 방송 오버레이와 동일하게 `fixed` */
+function obsOverlayRootClass(hostObs: boolean): string {
+  return hostObs
+    ? "pointer-events-none fixed inset-0 z-[10] flex flex-col justify-end items-center overflow-visible bg-transparent p-0"
+    : "pointer-events-none fixed inset-0 z-[1] flex flex-col justify-end items-center bg-transparent p-0";
+}
+
 function ManualOverlayStatus({
   hostObs,
   children,
@@ -38,7 +45,7 @@ function ManualOverlayStatus({
     <main
       className={
         hostObs
-          ? "pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-transparent p-6"
+          ? "pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-transparent p-6"
           : "min-h-0 bg-transparent p-4 text-center"
       }
     >
@@ -102,6 +109,16 @@ export default function ManualSigOverlaySimple() {
     return () => window.clearTimeout(t);
   }, [spReady, hostObs, resync, userId]);
 
+  /** OBS 브라우저 소스: 탭 전환·소스 재표시 시 상태 재동기화 (obs-text와 동일) */
+  useEffect(() => {
+    if (!hostObs) return;
+    const onVis = () => {
+      if (document.visibilityState === "visible") void resync({ forceFull: true });
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [hostObs, resync]);
+
   const selected = useMemo(
     () => resolveManualOverlaySelectedSigs(state, userId),
     [state, userId]
@@ -148,9 +165,7 @@ export default function ManualSigOverlaySimple() {
   const visible = spReady && ready && hasResults;
   const soldOutStampUrl = String(state?.sigSoldOutStampUrl || "").trim() || DEFAULT_SIG_SOLD_STAMP_URL;
 
-  const rootClass = hostObs
-    ? "pointer-events-none absolute inset-0 z-[1] flex flex-col justify-end items-center bg-transparent p-0"
-    : "pointer-events-none fixed inset-0 z-[1] flex flex-col justify-end items-center bg-transparent p-0";
+  const rootClass = obsOverlayRootClass(hostObs);
 
   if (!spReady || !ready) {
     return (
@@ -204,6 +219,7 @@ export default function ManualSigOverlaySimple() {
             disableCardMotion
             soldOverrideSet={soldOverrideSet}
             sigImageUserId={userId}
+            skipHanbangSignLoadingOverlay={hostObs}
           />
         </div>
       </main>
