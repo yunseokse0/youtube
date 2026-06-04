@@ -95,6 +95,7 @@ import {
 } from "@/lib/sig-sales-overlay-urls";
 import {
   buildManualRoundResetPatch,
+  isManualOverlaySessionId,
   MANUAL_OVERLAY_SESSION_ID,
 } from "@/lib/sig-sales-manual-round";
 import { pickRandomManualSigDrafts } from "@/lib/manual-sig-random";
@@ -253,6 +254,41 @@ function isFullRoundMarkedSold(params: {
   if (displaySelectedSigs.length < MIN_ONE_SHOT_SIGS || !displayOneShot) return false;
   if (!oneShotMarkSold) return false;
   return displaySelectedSigs.every((sig) => isDisplaySigMarkedSold(sig, soldSet));
+}
+
+/** 한방 판매 완료 시 당첨 N칸도 함께 판매 완료 */
+function soldFlagsWithOneShotCascade(
+  flags: boolean[],
+  oneShotMarkSold: boolean,
+  slotCount = 5
+): boolean[] {
+  const next = [...flags];
+  while (next.length < slotCount) next.push(false);
+  if (oneShotMarkSold) return Array.from({ length: slotCount }, () => true);
+  return next.slice(0, slotCount);
+}
+
+function soldSetForFullManualRound(
+  selected: SigItem[],
+  flags: boolean[],
+  oneShotMarkSold: boolean
+): Set<string> {
+  const cascade = soldFlagsWithOneShotCascade(flags, oneShotMarkSold);
+  if (oneShotMarkSold && selected.length >= MIN_ONE_SHOT_SIGS) {
+    const all = new Set<string>();
+    selected.forEach((row) => {
+      all.add(row.id);
+      all.add(canonicalSigIdFromWheelSliceId(row.id));
+    });
+    return all;
+  }
+  const out = new Set<string>();
+  selected.forEach((row, idx) => {
+    if (!cascade[idx]) return;
+    out.add(row.id);
+    out.add(canonicalSigIdFromWheelSliceId(row.id));
+  });
+  return out;
 }
 
 function collectSoldSigIdsForFinish(
@@ -1782,9 +1818,8 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         }
         return;
       }
-      const soldPreviewSet = new Set(
-        selected.filter((_, idx) => Boolean(soldFlags[idx])).map((row) => row.id)
-      );
+      const cascadeFlags = soldFlagsWithOneShotCascade(soldFlags, oneShotSoldFlag);
+      const soldPreviewSet = soldSetForFullManualRound(selected, cascadeFlags, oneShotSoldFlag);
       const soldSigIdsForFinish = collectSoldSigIdsForFinish(selected, soldPreviewSet);
       const soldTargetIds = new Set(soldSigIdsForFinish);
       const confirmedInventory = inventoryWithOneShotImage.map((row) => {
@@ -1811,19 +1846,22 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
           isActive: nextSold >= maxCount ? false : row.isActive,
         };
       });
+      setManualSigSoldFlags(cascadeFlags);
       setManualSoldSet(soldPreviewSet);
       setOneShotSold(oneShotSoldFlag);
       const soldAt = Date.now();
+      const manualConfirmed = manualOnly || isManualOverlaySessionId(sessionId);
       const soldState: AppState = {
         ...landedState,
         sigInventory: confirmedInventory,
         rouletteState: {
           ...landedState.rouletteState,
-          phase: "LANDED",
+          phase: manualConfirmed ? "CONFIRMED" : "LANDED",
           isRolling: false,
           selectedSigs: selected,
           oneShotResult: oneShot,
           sessionId,
+          ...(manualConfirmed ? { lastFinishedAt: soldAt } : {}),
           overlayReloadNonce: Number(landedState.rouletteState?.overlayReloadNonce || 0) + 1,
         },
         updatedAt: soldAt,
@@ -1831,7 +1869,11 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       const soldSaved = await saveStateAsync(soldState, userId);
       if (soldSaved.ok) {
         setState(soldState);
-        setToast("판매 완료(재고만 반영). 수동 판매는 회차·이력에 저장하지 않습니다.");
+        setToast(
+          manualConfirmed
+            ? "판매 확정 완료! (수동 회차·재고 반영)"
+            : "판매 완료(재고만 반영). 수동 판매는 회차·이력에 저장하지 않습니다."
+        );
       } else {
         setToast("재고 반영 저장이 지연됩니다. OBS 새로고침 후 다시 확인해 주세요.");
         void loadRemote();
@@ -1855,6 +1897,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     userId,
     landed,
     loadRemote,
+    manualOnly,
   ]);
 
   const fillRandomManualDrafts = useCallback(() => {
@@ -2028,7 +2071,15 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
   }, [manualOnly]);
 
   const onConfirmSaleRef = useRef<() => Promise<void>>(async () => {});
+  const applyManualSelectionRef =
+    useRef<(confirmNow: boolean, override?: ManualLandApplyOverride) => Promise<void>>(
+      async () => {}
+    );
   const autoConfirmInFlightRef = useRef(false);
+
+  useEffect(() => {
+    applyManualSelectionRef.current = applyManualSelection;
+  }, [applyManualSelection]);
 
   const onConfirmSale = useCallback(async () => {
     if (!state || displaySelectedSigs.length === 0) return;
@@ -2086,30 +2137,33 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       });
     }
 
-    markConfirmPending();
-    let pendingResult = await postRoulettePending(userId, effectiveSessionId);
-    if (!pendingResult.ok && pendingResult.message.includes("세션 불일치")) {
-      await loadRemote();
-      const remoteSid = String(
-        (await loadStateFromApi(userId))?.rouletteState?.sessionId || effectiveSessionId
-      ).trim();
-      if (remoteSid) {
-        pendingResult = await postRoulettePending(userId, remoteSid);
+    const manualSession = isManualOverlaySessionId(effectiveSessionId);
+    if (!manualSession) {
+      markConfirmPending();
+      let pendingResult = await postRoulettePending(userId, effectiveSessionId);
+      if (!pendingResult.ok && pendingResult.message.includes("세션 불일치")) {
+        await loadRemote();
+        const remoteSid = String(
+          (await loadStateFromApi(userId))?.rouletteState?.sessionId || effectiveSessionId
+        ).trim();
+        if (remoteSid) {
+          pendingResult = await postRoulettePending(userId, remoteSid);
+        }
       }
-    }
-    if (!pendingResult.ok) {
-      setError("판매 확정 준비 실패");
-      cancelConfirm();
-      setToast(`판매 확정 준비 실패: ${pendingResult.message}`);
-      return;
-    }
-    if (pendingResult.alreadyConfirmed) {
-      const afterRemote = await loadStateFromApi(userId);
-      if (afterRemote?.rouletteState?.phase === "CONFIRMED") {
-        setToast("이미 판매 확정된 회차입니다.");
+      if (!pendingResult.ok) {
+        setError("판매 확정 준비 실패");
         cancelConfirm();
-        void loadRemote();
+        setToast(`판매 확정 준비 실패: ${pendingResult.message}`);
         return;
+      }
+      if (pendingResult.alreadyConfirmed) {
+        const afterRemote = await loadStateFromApi(userId);
+        if (afterRemote?.rouletteState?.phase === "CONFIRMED") {
+          setToast("이미 판매 확정된 회차입니다.");
+          cancelConfirm();
+          void loadRemote();
+          return;
+        }
       }
     }
     const allRegularMarked = displaySelectedSigs.every((sig) =>
@@ -2245,9 +2299,18 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
 
   const tryAutoConfirmFullRound = useCallback(
     (soldSet: Set<string>, oneShotMarkSold: boolean) => {
-      if (manualOnly || wheelDemoMode) return;
-      if (machine.phase !== "LANDED") return;
-      if (machine.isFinishLoading || autoConfirmInFlightRef.current) return;
+      if (wheelDemoMode) return;
+      if (machine.isFinishLoading || autoConfirmInFlightRef.current || manualBusy) return;
+      const phase = state?.rouletteState?.phase || machine.phase;
+      if (phase === "CONFIRMED" || phase === "CONFIRM_PENDING") return;
+      if (
+        phase !== "LANDED" &&
+        !(
+          isManualBroadcastRound && displaySelectedSigs.length >= MIN_ONE_SHOT_SIGS
+        )
+      ) {
+        return;
+      }
       if (
         !isFullRoundMarkedSold({
           displaySelectedSigs,
@@ -2260,17 +2323,34 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       }
       autoConfirmInFlightRef.current = true;
       setToast("당첨·한방 모두 판매 완료 — 전체 확정 처리 중…");
-      void onConfirmSaleRef.current().finally(() => {
+      const done = () => {
         autoConfirmInFlightRef.current = false;
-      });
+      };
+      if (manualOnly) {
+        const flags = soldFlagsWithOneShotCascade(manualSigSoldFlags, oneShotMarkSold);
+        void applyManualSelectionRef
+          .current(true, {
+            drafts: manualSigDrafts,
+            soldFlags: flags,
+            oneShotMarkSold: true,
+          })
+          .finally(done);
+        return;
+      }
+      void onConfirmSaleRef.current().finally(done);
     },
     [
-      manualOnly,
       wheelDemoMode,
       machine.phase,
       machine.isFinishLoading,
+      state?.rouletteState?.phase,
+      isManualBroadcastRound,
       displaySelectedSigs,
       displayOneShot,
+      manualBusy,
+      manualOnly,
+      manualSigSoldFlags,
+      manualSigDrafts,
     ]
   );
 
@@ -2387,14 +2467,12 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
           return { ...row, soldCount, isActive: true };
         });
       }
-      const sid = String(state.rouletteState?.sessionId || machine.sessionId || "").trim();
-      const manualSelected =
-        sid.startsWith("manual_") && (machine.selectedSigs?.length ?? 0) >= MIN_ONE_SHOT_SIGS
-          ? machine.selectedSigs
-          : null;
       const selectedForState =
-        manualSelected ??
-        (displaySelectedSigs.length >= MIN_ONE_SHOT_SIGS ? displaySelectedSigs : undefined);
+        displaySelectedSigs.length >= MIN_ONE_SHOT_SIGS
+          ? displaySelectedSigs
+          : (machine.selectedSigs?.length ?? 0) >= MIN_ONE_SHOT_SIGS
+            ? machine.selectedSigs
+            : undefined;
       const phase = state.rouletteState?.phase;
       const nextPhase =
         phase === "IDLE" || phase === "SPINNING" ? "LANDED" : phase || "LANDED";
@@ -2642,11 +2720,11 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
 
   const markOneShotSoldImmediate = useCallback(
     async (sold: boolean) => {
-      setManualOneShotMarkSold(sold);
-      setOneShotSold(sold);
-      const nextSoldSet = buildSoldSetFromFlags(manualSigSoldFlags);
       if (!state) return;
       if (!sold) {
+        setManualOneShotMarkSold(false);
+        setOneShotSold(false);
+        const nextSoldSet = buildSoldSetFromFlags(manualSigSoldFlags);
         await pushLiveRoundToServer(state.sigInventory || [], nextSoldSet, {
           sigSoldFlags: manualSigSoldFlags,
           oneShotMarkSold: false,
@@ -2656,19 +2734,50 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         setToast("한방 판매완료 해제 · OBS 반영");
         return;
       }
-      await pushLiveRoundToServer(state.sigInventory || [], nextSoldSet, {
-        sigSoldFlags: manualSigSoldFlags,
+      const cascadeFlags = soldFlagsWithOneShotCascade(manualSigSoldFlags, true);
+      setManualSigSoldFlags(cascadeFlags);
+      setManualOneShotMarkSold(true);
+      setOneShotSold(true);
+      const nextSoldSet = soldSetForFullManualRound(
+        displaySelectedSigs,
+        cascadeFlags,
+        true
+      );
+      setManualSoldSet(nextSoldSet);
+
+      let nextInventory = [...(state.sigInventory || [])];
+      for (const sig of displaySelectedSigs) {
+        const manualIdx = resolveManualRowIndexForDisplaySig(
+          sig,
+          displaySelectedSigs,
+          manualParsedRows,
+          manualSigDrafts
+        );
+        const inv = findInventoryForDisplaySig(
+          nextInventory,
+          sig,
+          manualIdx >= 0 ? manualSigDrafts[manualIdx]?.sourceSigId : sig.id
+        );
+        if (inv && inv.soldCount < inv.maxCount) {
+          nextInventory = bumpInventorySigSold(nextInventory, inv, true);
+        }
+      }
+
+      await pushLiveRoundToServer(nextInventory, nextSoldSet, {
+        sigSoldFlags: cascadeFlags,
         oneShotMarkSold: true,
         bumpOneShot: true,
         bumpOverlay: true,
-        toastLabel: "한방 시그",
+        toastLabel: "한방 시그(당첨 전체)",
       });
-      tryAutoConfirmFullRound(nextSoldSet, true);
+      queueMicrotask(() => tryAutoConfirmFullRound(nextSoldSet, true));
     },
     [
       manualSigSoldFlags,
-      buildSoldSetFromFlags,
       state,
+      displaySelectedSigs,
+      manualParsedRows,
+      manualSigDrafts,
       pushLiveRoundToServer,
       tryAutoConfirmFullRound,
     ]
@@ -3632,7 +3741,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
             </div>
           ) : null}
 
-          {machine.phase === "CONFIRMED" && !manualOnly ? (
+          {machine.phase === "CONFIRMED" || state?.rouletteState?.phase === "CONFIRMED" ? (
             <div className="mt-4 rounded-xl border border-emerald-300/60 bg-emerald-900/30 p-4 text-center">
               <p className="text-2xl font-black text-emerald-200">판매 확정 완료!</p>
               <p className="mt-1 text-sm text-emerald-100">
