@@ -914,16 +914,14 @@ export default function ObsTextOverlayEditor({
                   OBS에 표시
                 </label>
                 <label className="flex items-center gap-2">
-                  정렬 (전체 줄)
+                  정렬 (커서 줄)
                   <select
                     className="rounded bg-neutral-800 px-2 py-1"
-                    value={config.blocks[0]?.align ?? activeBlock.align ?? "center"}
+                    value={activeBlock.align ?? "center"}
                     onChange={(e) => {
                       const align = e.target.value as "left" | "center" | "right";
-                      setConfig((prev) => ({
-                        ...prev,
-                        blocks: prev.blocks.map((b) => ({ ...b, align })),
-                      }));
+                      markLocalDirty();
+                      updateBlock(activeBlock.id, { align });
                     }}
                   >
                     <option value="left">왼쪽</option>
