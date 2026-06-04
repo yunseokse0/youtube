@@ -6,6 +6,7 @@ import { normalizeRouletteState } from "@/lib/state";
 import { normalizeSigInventory } from "@/lib/constants";
 import type { SigItem } from "@/types";
 import { mergeSessionExcludedSigIds, saveRouletteLog } from "@/lib/sig-roulette";
+import { shouldPersistRouletteHistoryLog } from "@/lib/sig-sales-manual-round";
 import { getRouletteUserId, saveAppStateForRoulette } from "../edge-state-store";
 import {
   loadAppStateForRouletteRequest,
@@ -116,25 +117,27 @@ export async function POST(req: Request) {
     });
 
     const oneShotPrice = Math.max(0, Math.floor(Number(oneShotResult?.price || 0)));
-    try {
-      const logRes = await saveRouletteLog({
-        userId,
-        sessionId,
-        phase: "LANDED",
-        selectedSigs,
-        oneShotPrice,
-        adminId: userId,
-        reason: "overlay_land",
-      });
-      if (typeof console !== "undefined" && console.info) {
-        const names = selectedSigs.map((s) => s.name).join(", ");
-        console.info(
-          `[roulette/land] user=${userId} session=${sessionId} 시그=[${names}] 한방=${oneShotPrice.toLocaleString("ko-KR")}원 phase=LANDED log=${logRes.logId}`,
-        );
-      }
-    } catch (logErr) {
-      if (typeof console !== "undefined" && console.warn) {
-        console.warn("[roulette/land] saveRouletteLog failed", logErr);
+    if (shouldPersistRouletteHistoryLog(sessionId)) {
+      try {
+        const logRes = await saveRouletteLog({
+          userId,
+          sessionId,
+          phase: "LANDED",
+          selectedSigs,
+          oneShotPrice,
+          adminId: userId,
+          reason: "overlay_land",
+        });
+        if (typeof console !== "undefined" && console.info) {
+          const names = selectedSigs.map((s) => s.name).join(", ");
+          console.info(
+            `[roulette/land] user=${userId} session=${sessionId} 시그=[${names}] 한방=${oneShotPrice.toLocaleString("ko-KR")}원 phase=LANDED log=${logRes.logId}`,
+          );
+        }
+      } catch (logErr) {
+        if (typeof console !== "undefined" && console.warn) {
+          console.warn("[roulette/land] saveRouletteLog failed", logErr);
+        }
       }
     }
 

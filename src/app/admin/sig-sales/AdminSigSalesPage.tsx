@@ -93,7 +93,10 @@ import {
   buildSigSalesManualOverlayUrl,
   buildSigSalesWheelOverlayUrl,
 } from "@/lib/sig-sales-overlay-urls";
-import { buildManualRoundResetPatch } from "@/lib/sig-sales-manual-round";
+import {
+  buildManualRoundResetPatch,
+  MANUAL_OVERLAY_SESSION_ID,
+} from "@/lib/sig-sales-manual-round";
 import { pickRandomManualSigDrafts } from "@/lib/manual-sig-random";
 import {
   MANUAL_SIG_DRAFT_STATE_KEY,
@@ -645,6 +648,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
   }, [userId, state?.overlaySettings]);
 
   useEffect(() => {
+    if (manualOnly) return;
     if (typeof window === "undefined") return;
     if (!manualDraftHydratedRef.current) return;
     const wb = buildWorkbenchForPersist();
@@ -680,9 +684,10 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       void saveStateAsync(next, userId);
     }, 300);
     return () => window.clearTimeout(tid);
-  }, [authReady, userId, buildWorkbenchForPersist]);
+  }, [authReady, userId, buildWorkbenchForPersist, manualOnly]);
 
   const loadHistory = useCallback(async (limit = 8) => {
+    if (manualOnly) return;
     if (!authReady) return;
     const res = await fetch(`/api/roulette/history?user=${encodeURIComponent(userId)}&limit=${limit}`, {
       cache: "no-store",
@@ -691,18 +696,20 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     if (!res.ok) return;
     const data = (await res.json()) as { history?: HistoryItem[] };
     if (Array.isArray(data.history)) setHistory(data.history);
-  }, [authReady, userId]);
+  }, [authReady, userId, manualOnly]);
 
   useEffect(() => {
+    if (manualOnly) return;
     if (!authReady) return;
     void loadHistory(8);
-  }, [authReady, loadHistory]);
+  }, [authReady, loadHistory, manualOnly]);
 
   /** 방송 착지(LANDED) 직후 Redis 로그가 쌓이면 이력 패널 갱신 */
   useEffect(() => {
+    if (manualOnly) return;
     if (!authReady) return;
     if (machine.phase === "LANDED") void loadHistory(8);
-  }, [authReady, machine.phase, loadHistory]);
+  }, [authReady, machine.phase, loadHistory, manualOnly]);
 
   useEffect(() => {
     oneShotSound.volume(volume);
@@ -1655,7 +1662,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     }
     const oneShot = oneShotResolved;
     const now = Date.now();
-    const sessionId = `manual_${now}`;
+    const sessionId = MANUAL_OVERLAY_SESSION_ID;
     const oneShotImage = String(manualOneShotImageUrl || "").trim();
     const inventoryWithOneShotImage = (baseState.sigInventory || []).map((row) =>
       row.id === ONE_SHOT_SIG_ID && oneShotImage ? { ...row, imageUrl: oneShotImage } : row
@@ -1687,10 +1694,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       }
       const activeSlot =
         wbApplied.slots.find((s) => s.id === wbApplied.activeSlotId) ?? wbApplied.slots[0];
-      const manualDraftPayload = {
-        ...slotToDraftPersist(activeSlot),
-        appliedSessionId: sessionId,
-      };
+      const manualDraftPayload = slotToDraftPersist(activeSlot);
       const wbWithBroadcast: ManualSigWorkbench = {
         ...wbApplied,
         broadcastSlotId: wbApplied.activeSlotId,
@@ -1748,17 +1752,10 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         if (!landedSaved.ok) {
           setToast("수동 결과는 먼저 표시했지만 서버 저장이 지연됩니다. 잠시 후 OBS를 새로고침해 주세요.");
         } else {
-          setToast(
-            "수동 5개/한방 적용 완료 · OBS에 반영되었습니다. 아래 Confirm Sale로 판매 완료 처리할 수 있습니다."
-          );
+          setToast("수동 5개/한방 적용 완료 · OBS에 반영되었습니다. (회차 저장 없음)");
         }
         return;
       }
-      if (!landedSaved.ok) {
-        setToast("수동 결과는 먼저 표시했지만 서버 저장이 지연됩니다. 잠시 후 다시 확인해 주세요.");
-      }
-
-      const normalizeNameKey = (raw: string) => String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
       const soldPreviewSet = new Set(
         selected.filter((_, idx) => Boolean(soldFlags[idx])).map((row) => row.id)
       );
@@ -1790,41 +1787,27 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       });
       setManualSoldSet(soldPreviewSet);
       setOneShotSold(oneShotSoldFlag);
-      const pendingResult = await postRoulettePending(userId, sessionId);
-      if (!pendingResult.ok) {
-        throw new Error(pendingResult.message);
-      }
-      await finish({
-        sessionId,
-        selectedSigs: selected,
-        oneShotResult: oneShot,
-        soldSigIds: soldSigIdsForFinish.length > 0 ? soldSigIdsForFinish : undefined,
-        oneShotInventorySold: oneShotSoldFlag,
-        finalPhase: "CONFIRMED",
-      });
-      const confirmedAt = Date.now();
-      const confirmedState: AppState = {
+      const soldAt = Date.now();
+      const soldState: AppState = {
         ...landedState,
         sigInventory: confirmedInventory,
         rouletteState: {
           ...landedState.rouletteState,
-          phase: "CONFIRMED",
+          phase: "LANDED",
           isRolling: false,
-          lastFinishedAt: confirmedAt,
           selectedSigs: selected,
           oneShotResult: oneShot,
           sessionId,
+          overlayReloadNonce: Number(landedState.rouletteState?.overlayReloadNonce || 0) + 1,
         },
-        updatedAt: confirmedAt,
+        updatedAt: soldAt,
       };
-      const confirmedSaved = await saveStateAsync(confirmedState, userId);
-      if (confirmedSaved.ok) {
-        setManualSoldSet(soldPreviewSet);
-        setOneShotSold(oneShotSoldFlag);
-        setState(confirmedState);
-        setToast("수동 5개 판매 완료 처리까지 반영했습니다.");
+      const soldSaved = await saveStateAsync(soldState, userId);
+      if (soldSaved.ok) {
+        setState(soldState);
+        setToast("판매 완료(재고만 반영). 수동 판매는 회차·이력에 저장하지 않습니다.");
       } else {
-        setToast("판매 완료 API는 반영됐지만 최종 상태 저장이 지연됩니다. 새로고침 후 확인해 주세요.");
+        setToast("재고 반영 저장이 지연됩니다. OBS 새로고침 후 다시 확인해 주세요.");
         void loadRemote();
       }
     } catch (e) {
@@ -1845,7 +1828,6 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     manualWorkbench,
     userId,
     landed,
-    finish,
     loadRemote,
   ]);
 
@@ -3029,6 +3011,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
               </span>
             ) : null}
           </div>
+          {!manualOnly ? (
           <div className="mb-2 flex flex-wrap items-end gap-1 border-b border-sky-300/25 pb-2">
             {manualWorkbench.slots.map((slot) => {
               const isActive = slot.id === manualWorkbench.activeSlotId;
@@ -3074,11 +3057,18 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
               </button>
             ) : null}
           </div>
-          <p className="mb-3 text-[11px] text-sky-100/85">
-            탭마다 5개+한방을 미리 채워 두고 전환할 수 있습니다. OBS 반영은 「수동 결과 적용」 시{" "}
-            <strong className="font-semibold text-sky-50">현재 탭</strong>만 적용됩니다. (프리셋이
-            아닌 브라우저 탭처럼 동시에 여러 세트 준비)
-          </p>
+          ) : null}
+          {manualOnly ? (
+            <p className="mb-3 text-[11px] text-sky-100/85">
+              수동 판매는 <strong className="text-sky-50">회차·판매 이력에 저장하지 않습니다</strong>. 「리롤」·「수동
+              결과 적용」만 OBS에 반영됩니다.
+            </p>
+          ) : (
+            <p className="mb-3 text-[11px] text-sky-100/85">
+              탭마다 5개+한방을 미리 채워 두고 전환할 수 있습니다. OBS 반영은 「수동 결과 적용」 시{" "}
+              <strong className="font-semibold text-sky-50">현재 탭</strong>만 적용됩니다.
+            </p>
+          )}
           <p className="mb-3 text-[11px] text-sky-100/85">
             2가지 방식: 완전 수동 입력 / 기존 시그 선택. 재고 랜덤은 상단 「리롤」(OBS 반영) 또는 「리롤 (목록만)」(관리 화면만 채움). 회전판 랜덤은 「회전판 시작」.
             {manualRandomPool.length > 0 ? (
@@ -3323,6 +3313,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
             >
               {manualBusy ? "리롤 중…" : "리롤"}
             </button>
+            {!manualOnly ? (
             <button
               type="button"
               disabled={manualBusy}
@@ -3331,6 +3322,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
             >
               라운드 리셋 → 재판매
             </button>
+            ) : null}
             <button
               type="button"
               disabled={manualBusy || !manualReady}
@@ -3345,7 +3337,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
               className="rounded bg-emerald-700 px-3 py-1.5 font-semibold text-emerald-50 hover:bg-emerald-600 disabled:opacity-50"
               onClick={() => void applyManualSelection(true)}
             >
-              {manualBusy ? "처리 중..." : "수동 적용 + 판매 완료(CONFIRMED)"}
+              {manualBusy ? "처리 중..." : manualOnly ? "판매 완료(재고)" : "수동 적용 + 판매 완료(CONFIRMED)"}
             </button>
           </div>
           {manualDebugInfo ? (
@@ -3569,7 +3561,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
             </div>
           ) : null}
 
-          {machine.phase === "CONFIRMED" ? (
+          {machine.phase === "CONFIRMED" && !manualOnly ? (
             <div className="mt-4 rounded-xl border border-emerald-300/60 bg-emerald-900/30 p-4 text-center">
               <p className="text-2xl font-black text-emerald-200">판매 확정 완료!</p>
               <p className="mt-1 text-sm text-emerald-100">
@@ -3586,6 +3578,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
           ) : null}
         </section>
 
+        {!manualOnly ? (
         <section className="rounded-xl border border-white/10 bg-black/35 p-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-neutral-200">판매 이력</h2>
@@ -3638,6 +3631,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
             </div>
           ) : null}
         </section>
+        ) : null}
         <section className="rounded-xl border border-white/10 bg-black/35 p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-bold text-neutral-200">시그 관리 (멤버 지정)</h2>

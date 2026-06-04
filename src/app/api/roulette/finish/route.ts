@@ -18,6 +18,7 @@ import {
   ONE_SHOT_SIG_ID,
   slimRouletteHistoryLogsForState,
 } from "@/lib/sig-roulette";
+import { shouldPersistRouletteHistoryLog } from "@/lib/sig-sales-manual-round";
 
 function normalizeSigNameKey(raw: string): string {
   return String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
@@ -90,22 +91,32 @@ export async function POST(req: Request) {
     const oneShotPrice = Math.max(0, Math.floor(Number(body.oneShotResult?.price ?? rs.oneShotResult?.price ?? 0)));
     const finalPhase = body.finalPhase === "CANCELLED" ? "CANCELLED" : "CONFIRMED";
 
+    const persistHistory = shouldPersistRouletteHistoryLog(sessionId || rs.sessionId);
     let logResult: Awaited<ReturnType<typeof saveRouletteLog>>;
-    try {
-      logResult = await saveRouletteLog({
-        userId,
-        sessionId: sessionId || `session_${Date.now()}`,
-        phase: finalPhase,
-        selectedSigs,
-        oneShotPrice,
-        adminId: userId,
-        reason: body.reason,
-      });
-    } catch (logErr) {
-      return Response.json(
-        { ok: false, error: "log_save_failed", detail: String(logErr) },
-        { status: 500, headers: { "Content-Type": "application/json" } }
-      );
+    if (persistHistory) {
+      try {
+        logResult = await saveRouletteLog({
+          userId,
+          sessionId: sessionId || `session_${Date.now()}`,
+          phase: finalPhase,
+          selectedSigs,
+          oneShotPrice,
+          adminId: userId,
+          reason: body.reason,
+        });
+      } catch (logErr) {
+        return Response.json(
+          { ok: false, error: "log_save_failed", detail: String(logErr) },
+          { status: 500, headers: { "Content-Type": "application/json" } }
+        );
+      }
+    } else {
+      logResult = {
+        ok: true,
+        logId: "",
+        duplicate: false,
+        logs: rs.historyLogs || [],
+      };
     }
 
     const hasExplicitSoldList =
