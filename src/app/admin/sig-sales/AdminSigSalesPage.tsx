@@ -1436,7 +1436,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         resetToIdle();
         await saveStateAsync(next, userId);
         setToast(
-          "수동 판매 라운드를 리셋했습니다. 「랜덤 5개 뽑기」 또는 「다시 뽑기 → OBS」로 다음 라운드를 진행하세요."
+          "수동 판매 라운드를 리셋했습니다. 「리롤」 또는 「리롤 (목록만)」로 다음 라운드를 진행하세요."
         );
       } catch (e) {
         setToast(`수동 리셋 실패: ${String(e)}`);
@@ -1535,7 +1535,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     } catch (e) {
       const code = e instanceof Error ? e.message : "";
       if (code === "spin_blocked") {
-        setToast("이전 회전 상태가 남아 있습니다. 「다시 돌리기」 또는 「회전판 초기화」 후 시도하세요.");
+        setToast("이전 회전 상태가 남아 있습니다. 「회전 리셋」 또는 「회전판 초기화」 후 시도하세요.");
         return;
       }
       if (code === "not_enough_active_sigs") {
@@ -1863,7 +1863,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     setManualSigDrafts(picked);
     setManualSigSoldFlags([false, false, false, false, false]);
     setManualOneShotMarkSold(false);
-    setToast(`랜덤 5개: ${picked.map((p) => p.name).join(", ")}`);
+    setToast(`리롤 (목록만): ${picked.map((p) => p.name).join(", ")}`);
   }, [manualRandomPool, memberFilterId]);
 
   const onRandomManualRerollAndObs = useCallback(() => {
@@ -1872,8 +1872,8 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     if (!picked) {
       setToast(
         memberFilterId
-          ? `다시 뽑기 실패: 선택 멤버 판매 가능 시그 ${manualRandomPool.length}개 (5개 필요).`
-          : `다시 뽑기 실패: 판매 가능 시그 ${manualRandomPool.length}개. 멤버·재고를 확인하세요.`
+          ? `리롤 실패: 선택 멤버 판매 가능 시그 ${manualRandomPool.length}개 (5개 필요).`
+          : `리롤 실패: 판매 가능 시그 ${manualRandomPool.length}개. 멤버·재고를 확인하세요.`
       );
       return;
     }
@@ -1901,7 +1901,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
           stateSnapshot: next,
         });
       } catch (e) {
-        setToast(`다시 뽑기 실패: ${String(e)}`);
+        setToast(`리롤 실패: ${String(e)}`);
       } finally {
         setManualBusy(false);
       }
@@ -2828,9 +2828,10 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
               type="button"
               onClick={onRerollReset}
               disabled={loadingSpin || machine.isFinishLoading}
+              title="랜덤 추첨이 아닙니다. 확정·착지 상태만 IDLE로 되돌린 뒤 「회전판 시작」으로 다시 추첨하세요."
               className="rounded bg-slate-700 px-4 py-2 text-sm font-bold hover:bg-slate-600 disabled:opacity-50"
             >
-              다시 돌리기
+              회전 리셋
             </button>
             ) : null}
             {!manualOnly && wheelDemoMode ? (
@@ -2919,6 +2920,19 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
                   }}
                 >
                   수동 오버레이 열기
+                </button>
+                <button
+                  type="button"
+                  disabled={manualBusy || manualRandomPool.length < 5}
+                  title={
+                    manualRandomPool.length < 5
+                      ? "판매 가능 시그가 5개 미만입니다"
+                      : "재고에서 시그 5개 랜덤 → 수동 OBS에 바로 반영(LANDED)"
+                  }
+                  className="rounded bg-fuchsia-700 px-3 py-2 text-xs font-bold text-white hover:bg-fuchsia-600 disabled:opacity-50"
+                  onClick={() => void onRandomManualRerollAndObs()}
+                >
+                  {manualBusy ? "리롤 중…" : "리롤"}
                 </button>
               </>
             ) : null}
@@ -3066,7 +3080,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
             아닌 브라우저 탭처럼 동시에 여러 세트 준비)
           </p>
           <p className="mb-3 text-[11px] text-sky-100/85">
-            2가지 방식: 완전 수동 입력 / 기존 시그 선택. 재고에서 「랜덤 5개 뽑기」 또는 「다시 뽑기 → OBS」(리셋+랜덤+LANDED 한 번에).
+            2가지 방식: 완전 수동 입력 / 기존 시그 선택. 재고 랜덤은 상단 「리롤」(OBS 반영) 또는 「리롤 (목록만)」(관리 화면만 채움). 회전판 랜덤은 「회전판 시작」.
             {manualRandomPool.length > 0 ? (
               <span className="ml-1 text-sky-50/90">
                 (랜덤 풀: 활성 {manualRandomPool.length}개
@@ -3298,7 +3312,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
                   : "활성 재고에서 서로 다른 시그 5개를 랜덤 채움"
               }
             >
-              랜덤 5개 뽑기
+              리롤 (목록만)
             </button>
             <button
               type="button"
@@ -3307,7 +3321,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
               onClick={onRandomManualRerollAndObs}
               title="라운드 리셋 후 랜덤 5개를 OBS(수동 URL)에 바로 반영"
             >
-              다시 뽑기 → OBS
+              {manualBusy ? "리롤 중…" : "리롤"}
             </button>
             <button
               type="button"
