@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ObsTextEffectStyles } from "@/components/obs-text/ObsTextEffectStyles";
 import {
   buildTextOutlineShadow,
@@ -13,6 +13,8 @@ import {
   obsTextEffectClass,
   obsTextEffectDurationSec,
   obsTextEffectUsesCharSpans,
+  obsTextEffectWaveCharDelaySec,
+  type ObsTextEffectId,
 } from "@/lib/obs-text-effects";
 
 export function ObsTextOverlayView({
@@ -126,10 +128,14 @@ function ObsTextBlockLine({
       : undefined;
 
   const content = useWave ? (
-    <WaveCharSegments blockId={block.id} segments={block.segments} />
+    <WaveCharSegments
+      blockId={block.id}
+      segments={block.segments}
+      effectSpeed={effectSpeed}
+    />
   ) : (
     block.segments.map((seg, i) => (
-      <ColoredSegment key={`${block.id}-${i}-${seg.text}`} seg={seg} effect={effect} />
+      <ColoredSegment key={`${block.id}-seg-${i}`} seg={seg} effect={effect} />
     ))
   );
 
@@ -139,13 +145,51 @@ function ObsTextBlockLine({
 
   return (
     <p style={lineStyle}>
-      <span
+      <ObsTextFxWrap
+        effect={effect}
         className={`${fxClass}${useWave ? " obs-text-fx-wave" : ""}`.trim()}
         style={fxWrapStyle}
       >
         {content}
-      </span>
+      </ObsTextFxWrap>
     </p>
+  );
+}
+
+/** 효과 변경 시 짧은 페이드로 끊김 완화 */
+function ObsTextFxWrap({
+  effect,
+  className,
+  style,
+  children,
+}: {
+  effect: ObsTextEffectId;
+  className: string;
+  style?: CSSProperties;
+  children: ReactNode;
+}) {
+  const [opacity, setOpacity] = useState(1);
+  const prevEffect = useRef(effect);
+
+  useEffect(() => {
+    if (prevEffect.current === effect) return;
+    prevEffect.current = effect;
+    setOpacity(0);
+    const tid = window.setTimeout(() => setOpacity(1), 80);
+    return () => window.clearTimeout(tid);
+  }, [effect]);
+
+  return (
+    <span
+      className={className}
+      style={{
+        ...style,
+        opacity,
+        transition: "opacity 0.45s ease-in-out",
+      }}
+    >
+      {children}
+    </span>
   );
 }
 
@@ -165,9 +209,11 @@ function ColoredSegment({
 function WaveCharSegments({
   blockId,
   segments,
+  effectSpeed,
 }: {
   blockId: string;
   segments: ObsTextSegment[];
+  effectSpeed: number;
 }) {
   const plain = segments.map((s) => s.text).join("");
   const chars = Array.from(plain);
@@ -182,11 +228,11 @@ function WaveCharSegments({
     <>
       {chars.map((ch, i) => (
         <span
-          key={`${blockId}-w-${i}-${ch}`}
+          key={`${blockId}-w-${i}`}
           className="obs-text-fx-wave-char"
           style={{
             color: colorAt[i] ?? segments[0]?.color ?? "#fff",
-            animationDelay: `${(i * 0.07) % 1.2}s`,
+            animationDelay: obsTextEffectWaveCharDelaySec(i, effectSpeed),
           }}
         >
           {ch === " " ? "\u00a0" : ch}

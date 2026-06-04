@@ -135,10 +135,11 @@ function SigCatalogImage({
     [item, imageBaseUrl]
   );
   const [idx, setIdx] = useState(0);
+  const candidatesKey = candidates.join("\0");
 
   useEffect(() => {
     setIdx(0);
-  }, [item.id, candidates.join("\0")]);
+  }, [item.id, candidatesKey]);
 
   const src = candidates[idx] || "";
   const remote = isRemoteSigImageSrc(src);

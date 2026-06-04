@@ -7,7 +7,9 @@
   },
   "scripts": {
     "dev": "next dev -p 3000",
+    "dev:lan": "next dev -p 3000 -H 0.0.0.0",
     "dev:clean": "node scripts/dev-clean.mjs",
+    "dev:overlay": "node scripts/print-overlay-dev-hub.mjs",
     "verify:battle-ui": "node scripts/print-battle-verify-url.mjs",
     "verify:overlay": "node scripts/verify-overlay.mjs",
     "build": "next build",

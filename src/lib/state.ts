@@ -377,7 +377,7 @@ export function buildRouletteIdlePreserveSettings(
   };
 }
 
-const DEFAULT_DONOR_RANKINGS_THEME: DonorRankingsTheme = {
+export const DEFAULT_DONOR_RANKINGS_THEME: DonorRankingsTheme = {
   top: 7,
   titleSize: 28,
   rowSize: 21,
@@ -398,7 +398,31 @@ const DEFAULT_DONOR_RANKINGS_THEME: DonorRankingsTheme = {
   outlineColor: "rgba(0,0,0,0.92)",
 };
 
-function normalizeDonorRankingsTheme(input: unknown): DonorRankingsTheme {
+/** 전체 후원 순위(`/overlay/donor-rankings-full`) — 분홍 테마 기본값 */
+export const DEFAULT_DONOR_RANKINGS_FULL_THEME: DonorRankingsTheme = {
+  top: 0,
+  titleSize: 26,
+  rowSize: 17,
+  rankSize: 19,
+  overlayOpacity: 88,
+  bg: "transparent",
+  panelBg: "rgba(255, 236, 246, 0.96)",
+  borderColor: "rgba(244, 114, 182, 0.5)",
+  headerAccountBg: "linear-gradient(135deg, #fce7f3 0%, #fbcfe8 48%, #f9a8d4 100%)",
+  headerToonBg: "linear-gradient(135deg, #fdf2f8 0%, #f9a8d4 100%)",
+  rowEvenBg: "rgba(255, 228, 240, 0.35)",
+  rowOddBg: "transparent",
+  rankColor: "#be185d",
+  nameColor: "#831843",
+  amountColor: "#b45309",
+  titleColor: "#9d174d",
+  outlineColor: "rgba(255, 255, 255, 0.82)",
+};
+
+function normalizeDonorRankingsTheme(
+  input: unknown,
+  defaults: DonorRankingsTheme = DEFAULT_DONOR_RANKINGS_THEME
+): DonorRankingsTheme {
   const v = input && typeof input === "object" ? (input as Partial<DonorRankingsTheme>) : {};
   const n = (x: unknown, min: number, max: number, fallback: number) => {
     const parsed = Number(x);
@@ -409,25 +433,30 @@ function normalizeDonorRankingsTheme(input: unknown): DonorRankingsTheme {
     const raw = String(x ?? "").trim();
     return raw || fallback;
   };
+  const topMin = defaults === DEFAULT_DONOR_RANKINGS_FULL_THEME ? 0 : 1;
   return {
-    top: n(v.top, 1, 20, DEFAULT_DONOR_RANKINGS_THEME.top),
-    titleSize: n(v.titleSize, 14, 80, DEFAULT_DONOR_RANKINGS_THEME.titleSize),
-    rowSize: n(v.rowSize, 12, 64, DEFAULT_DONOR_RANKINGS_THEME.rowSize),
-    rankSize: n(v.rankSize, 12, 72, DEFAULT_DONOR_RANKINGS_THEME.rankSize),
-    overlayOpacity: n(v.overlayOpacity, 0, 100, DEFAULT_DONOR_RANKINGS_THEME.overlayOpacity),
-    bg: s(v.bg, DEFAULT_DONOR_RANKINGS_THEME.bg),
-    panelBg: s(v.panelBg, DEFAULT_DONOR_RANKINGS_THEME.panelBg),
-    borderColor: s(v.borderColor, DEFAULT_DONOR_RANKINGS_THEME.borderColor),
-    headerAccountBg: s(v.headerAccountBg, DEFAULT_DONOR_RANKINGS_THEME.headerAccountBg),
-    headerToonBg: s(v.headerToonBg, DEFAULT_DONOR_RANKINGS_THEME.headerToonBg),
-    rowEvenBg: s(v.rowEvenBg, DEFAULT_DONOR_RANKINGS_THEME.rowEvenBg),
-    rowOddBg: s(v.rowOddBg, DEFAULT_DONOR_RANKINGS_THEME.rowOddBg),
-    rankColor: s(v.rankColor, DEFAULT_DONOR_RANKINGS_THEME.rankColor),
-    nameColor: s(v.nameColor, DEFAULT_DONOR_RANKINGS_THEME.nameColor),
-    amountColor: s(v.amountColor, DEFAULT_DONOR_RANKINGS_THEME.amountColor),
-    titleColor: s(v.titleColor, DEFAULT_DONOR_RANKINGS_THEME.titleColor),
-    outlineColor: s(v.outlineColor, DEFAULT_DONOR_RANKINGS_THEME.outlineColor),
+    top: n(v.top, topMin, 20, defaults.top),
+    titleSize: n(v.titleSize, 14, 80, defaults.titleSize),
+    rowSize: n(v.rowSize, 12, 64, defaults.rowSize),
+    rankSize: n(v.rankSize, 12, 72, defaults.rankSize),
+    overlayOpacity: n(v.overlayOpacity, 0, 100, defaults.overlayOpacity),
+    bg: s(v.bg, defaults.bg),
+    panelBg: s(v.panelBg, defaults.panelBg),
+    borderColor: s(v.borderColor, defaults.borderColor),
+    headerAccountBg: s(v.headerAccountBg, defaults.headerAccountBg),
+    headerToonBg: s(v.headerToonBg, defaults.headerToonBg),
+    rowEvenBg: s(v.rowEvenBg, defaults.rowEvenBg),
+    rowOddBg: s(v.rowOddBg, defaults.rowOddBg),
+    rankColor: s(v.rankColor, defaults.rankColor),
+    nameColor: s(v.nameColor, defaults.nameColor),
+    amountColor: s(v.amountColor, defaults.amountColor),
+    titleColor: s(v.titleColor, defaults.titleColor),
+    outlineColor: s(v.outlineColor, defaults.outlineColor),
   };
+}
+
+export function normalizeDonorRankingsFullTheme(input: unknown): DonorRankingsTheme {
+  return normalizeDonorRankingsTheme(input, DEFAULT_DONOR_RANKINGS_FULL_THEME);
 }
 
 function normalizeDonorRankingsPresets(input: unknown): DonorRankingsPreset[] {
@@ -690,6 +719,7 @@ export function defaultState(): AppState {
     memberPositionMode: "fixed",
     rankPositionLabels: ["대표", "", "", "", "", "", "", "", "", "", "", ""],
     donorRankingsTheme: { ...DEFAULT_DONOR_RANKINGS_THEME },
+    donorRankingsFullTheme: { ...DEFAULT_DONOR_RANKINGS_FULL_THEME },
     donorRankingsPresets: [],
     donorRankingsPresetId: undefined,
     donors: [],
@@ -725,6 +755,7 @@ export function defaultState(): AppState {
       general: defaultTimerDisplayStyle(),
     },
     donorRankingsOverlayConfig: normalizeDonorRankingsOverlayConfig(null),
+    donorRankingsFullOverlayConfig: normalizeDonorRankingsOverlayConfig(null),
     donationListsOverlayConfig: normalizeDonationListsOverlayConfig(null),
     donationSyncMode: "mealBattle",
     sigRolling: normalizeSigRolling(null),
@@ -994,6 +1025,7 @@ export function loadState(userId?: string | null): AppState {
     data.memberPositionMode = normalizeMemberPositionMode((data as AppState).memberPositionMode);
     data.rankPositionLabels = normalizeRankPositionLabels((data as AppState).rankPositionLabels);
     data.donorRankingsTheme = normalizeDonorRankingsTheme((data as AppState).donorRankingsTheme);
+    data.donorRankingsFullTheme = normalizeDonorRankingsFullTheme((data as AppState).donorRankingsFullTheme);
     data.donorRankingsPresets = normalizeDonorRankingsPresets((data as AppState).donorRankingsPresets);
     data.donorRankingsPresetId = typeof (data as AppState).donorRankingsPresetId === "string" && (data as AppState).donorRankingsPresetId
       ? (data as AppState).donorRankingsPresetId
@@ -1083,6 +1115,9 @@ export function loadState(userId?: string | null): AppState {
     data.matchTimerEnabled = normalizeMatchTimerEnabled((data as AppState).matchTimerEnabled);
     data.timerDisplayStyles = normalizeTimerDisplayStyles((data as AppState).timerDisplayStyles);
     data.donorRankingsOverlayConfig = normalizeDonorRankingsOverlayConfig((data as AppState).donorRankingsOverlayConfig);
+    data.donorRankingsFullOverlayConfig = normalizeDonorRankingsOverlayConfig(
+      (data as AppState).donorRankingsFullOverlayConfig
+    );
     data.donationListsOverlayConfig = normalizeDonationListsOverlayConfig((data as AppState).donationListsOverlayConfig);
     data.sigRolling = normalizeSigRolling((data as AppState).sigRolling);
     data.sigRollingMeta = normalizeSigRollingMeta((data as AppState).sigRollingMeta);
@@ -1283,6 +1318,7 @@ function normalizeStateForPersistence(state: AppState): AppState {
     sigSoldOutStampUrl: normalizeSigImageUrlStored(stripped.sigSoldOutStampUrl),
     donationListsOverlayConfig: normalizeDonationListsOverlayConfig(stripped.donationListsOverlayConfig),
     donorRankingsOverlayConfig: normalizeDonorRankingsOverlayConfig(stripped.donorRankingsOverlayConfig),
+    donorRankingsFullOverlayConfig: normalizeDonorRankingsOverlayConfig(stripped.donorRankingsFullOverlayConfig),
     overlayPresets: normalizeOverlayPresetsMedia(stripped.overlayPresets),
   };
 }
@@ -1417,6 +1453,7 @@ async function doLoadStateFromApi(
       data.memberPositionMode = normalizeMemberPositionMode((data as AppState).memberPositionMode);
       data.rankPositionLabels = normalizeRankPositionLabels((data as AppState).rankPositionLabels);
       data.donorRankingsTheme = normalizeDonorRankingsTheme((data as AppState).donorRankingsTheme);
+      data.donorRankingsFullTheme = normalizeDonorRankingsFullTheme((data as AppState).donorRankingsFullTheme);
       data.donorRankingsPresets = normalizeDonorRankingsPresets((data as AppState).donorRankingsPresets);
       data.donorRankingsPresetId = typeof (data as AppState).donorRankingsPresetId === "string" && (data as AppState).donorRankingsPresetId
         ? (data as AppState).donorRankingsPresetId
@@ -1506,6 +1543,9 @@ async function doLoadStateFromApi(
       data.matchTimerEnabled = normalizeMatchTimerEnabled((data as AppState).matchTimerEnabled);
       data.timerDisplayStyles = normalizeTimerDisplayStyles((data as AppState).timerDisplayStyles);
       data.donorRankingsOverlayConfig = normalizeDonorRankingsOverlayConfig((data as AppState).donorRankingsOverlayConfig);
+    data.donorRankingsFullOverlayConfig = normalizeDonorRankingsOverlayConfig(
+      (data as AppState).donorRankingsFullOverlayConfig
+    );
       data.donationListsOverlayConfig = normalizeDonationListsOverlayConfig((data as AppState).donationListsOverlayConfig);
       data.sigRolling = normalizeSigRolling((data as AppState).sigRolling);
       data.sigRollingMeta = normalizeSigRollingMeta((data as AppState).sigRollingMeta);

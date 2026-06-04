@@ -5,12 +5,22 @@ import { ObsTextOverlayView } from "@/components/obs-text/ObsTextOverlayView";
 import {
   OBS_TEXT_EMOJI_PRESETS,
   OBS_TEXT_OVERLAY_STATE_KEY,
+  appendObsTextInstance,
+  blocksFromMultilineText,
   buildObsTextOverlayUrl,
-  createObsTextInstance,
+  duplicateObsTextInstance,
+  formatObsTextOverlayUrlList,
   defaultObsTextRegistry,
   getObsTextInstance,
+  lineCharRangeInMultiline,
+  lineIndexAtTextOffset,
+  MAX_OBS_TEXT_BLOCKS_PER_INSTANCE,
+  MAX_OBS_TEXT_INSTANCES,
   mergeSegmentsFromPlainText,
+  multilineTextFromBlocks,
   readObsTextRegistryFromState,
+  removeObsTextInstance,
+  renameObsTextInstance,
   resolveObsTextInstanceId,
   segmentsToPlainText,
   splitTextToCharSegments,
@@ -31,25 +41,25 @@ import {
 } from "@/lib/state";
 import { STATE_PICK_OBS_TEXT } from "@/lib/state-api-pick";
 import { useSSEConnection } from "@/lib/sse-client";
-import { createStateUpdatedScheduler } from "@/lib/overlay-pull-policy";
+import {
+  createStateUpdatedScheduler,
+  DONOR_STATE_UPDATED_DEBOUNCE_MS,
+  DONOR_STATE_UPDATED_MAX_WAIT_MS,
+} from "@/lib/overlay-pull-policy";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
 
 type EditMode = "segment" | "char";
 
-function newBlockId(): string {
-  return `block-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
 function syncDraftFromConfig(
   cfg: ObsTextOverlayConfig,
-  setActiveBlockId: (id: string) => void,
-  setPlainDraft: (t: string) => void,
+  setActiveLineIndex: (idx: number) => void,
+  setMultilineDraft: (t: string) => void,
   setEditMode: (m: EditMode) => void
 ) {
   const first = cfg.blocks[0];
+  setMultilineDraft(multilineTextFromBlocks(cfg.blocks));
+  setActiveLineIndex(0);
   if (first) {
-    setActiveBlockId(first.id);
-    setPlainDraft(segmentsToPlainText(first.segments));
     if (first.segments.length > 1 && first.segments.every((s) => Array.from(s.text).length <= 1)) {
       setEditMode("char");
     } else {
@@ -71,13 +81,15 @@ export default function ObsTextOverlayEditor({
   const [activeInstanceId, setActiveInstanceId] = useState(
     () => resolveObsTextInstanceId(defaultObsTextRegistry(), initialInstanceId)
   );
-  const [activeBlockId, setActiveBlockId] = useState<string>("block-1");
+  const [activeLineIndex, setActiveLineIndex] = useState(0);
   const [editMode, setEditMode] = useState<EditMode>("segment");
-  const [plainDraft, setPlainDraft] = useState("방송 텍스트");
+  const [multilineDraft, setMultilineDraft] = useState("방송 텍스트");
+  const skipMultilineResyncRef = useRef(false);
   const [pickColor, setPickColor] = useState("#ffffff");
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
   const [copied, setCopied] = useState(false);
+  const [copiedAllUrls, setCopiedAllUrls] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const loadedRef = useRef(false);
   const createOnMountDoneRef = useRef(false);
@@ -114,10 +126,17 @@ export default function ObsTextOverlayEditor({
     [activeInstanceId]
   );
 
-  const activeBlock = useMemo(
-    () => config.blocks.find((b) => b.id === activeBlockId) ?? config.blocks[0],
-    [config.blocks, activeBlockId]
-  );
+  const activeBlock = useMemo(() => {
+    const idx = Math.max(0, Math.min(activeLineIndex, config.blocks.length - 1));
+    return config.blocks[idx] ?? config.blocks[0];
+  }, [config.blocks, activeLineIndex]);
+
+  const syncActiveLineFromCaret = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const idx = lineIndexAtTextOffset(el.value, el.selectionStart ?? 0);
+    setActiveLineIndex(idx);
+  }, []);
 
   const overlayUrl = useMemo(() => {
     if (typeof window === "undefined") {
@@ -131,7 +150,7 @@ export default function ObsTextOverlayEditor({
       const source = reg ?? registry;
       setActiveInstanceId(id);
       const cfg = getObsTextInstance(source, id).config;
-      syncDraftFromConfig(cfg, setActiveBlockId, setPlainDraft, setEditMode);
+      syncDraftFromConfig(cfg, setActiveLineIndex, setMultilineDraft, setEditMode);
       if (typeof window !== "undefined") {
         const u = new URL(window.location.href);
         u.searchParams.set("u", userId);
@@ -147,8 +166,7 @@ export default function ObsTextOverlayEditor({
     (
       reg: ObsTextOverlayRegistry,
       activeId: string,
-      activeConfig?: ObsTextOverlayConfig,
-      bumpRevision = true
+      activeConfig?: ObsTextOverlayConfig
     ): ObsTextOverlayRegistry => ({
       version: 2,
       instances: reg.instances.map((inst) => ({
@@ -157,7 +175,7 @@ export default function ObsTextOverlayEditor({
           inst.id === activeId
             ? {
                 ...(activeConfig ?? inst.config),
-                ...(bumpRevision ? { revision: Date.now() } : {}),
+                revision: Date.now(),
               }
             : inst.config,
       })),
@@ -184,7 +202,7 @@ export default function ObsTextOverlayEditor({
           );
           return false;
         }
-        const stamped = stampRegistryForSave(reg, activeId, opts?.activeConfig, opts?.quiet !== true);
+        const stamped = stampRegistryForSave(reg, activeId, opts?.activeConfig);
         const os =
           remote.overlaySettings && typeof remote.overlaySettings === "object"
             ? { ...(remote.overlaySettings as Record<string, unknown>) }
@@ -227,11 +245,10 @@ export default function ObsTextOverlayEditor({
 
       if (createOnMount && !createOnMountDoneRef.current) {
         createOnMountDoneRef.current = true;
-        const inst = createObsTextInstance(`텍스트 ${reg.instances.length + 1}`);
-        const merged: ObsTextOverlayRegistry = {
-          version: 2,
-          instances: [...reg.instances, inst],
-        };
+        const added = appendObsTextInstance(reg, `텍스트 ${reg.instances.length + 1}`);
+        if (!added) return;
+        const merged = added.registry;
+        const inst = added.instance;
         setRegistry(merged);
         selectInstance(inst.id, merged);
         loadedRef.current = true;
@@ -250,8 +267,8 @@ export default function ObsTextOverlayEditor({
       setActiveInstanceId(id);
       syncDraftFromConfig(
         getObsTextInstance(reg, id).config,
-        setActiveBlockId,
-        setPlainDraft,
+        setActiveLineIndex,
+        setMultilineDraft,
         setEditMode
       );
       loadedRef.current = true;
@@ -286,6 +303,9 @@ export default function ObsTextOverlayEditor({
   useEffect(() => {
     const { schedule, cancel } = createStateUpdatedScheduler(() => {
       void syncFromServer();
+    }, {
+      debounceMs: DONOR_STATE_UPDATED_DEBOUNCE_MS,
+      maxWaitMs: DONOR_STATE_UPDATED_MAX_WAIT_MS,
     });
     scheduleSyncRef.current = schedule;
     return () => {
@@ -304,7 +324,7 @@ export default function ObsTextOverlayEditor({
       ...prev,
       blocks: prev.blocks.map((b) => (b.id === blockId ? { ...b, ...patch } : b)),
     }));
-  }, []);
+  }, [setConfig]);
 
   const persist = useCallback(async () => {
     await persistRegistry(registry, activeInstanceId, { activeConfig: config });
@@ -324,34 +344,41 @@ export default function ObsTextOverlayEditor({
       }).finally(() => {
         autoSaveQuietRef.current = false;
       });
-    }, 700);
+    }, 400);
     return () => window.clearTimeout(tid);
   }, [registry, activeInstanceId, config, persistRegistry]);
 
   const addInstance = () => {
-    if (registry.instances.length >= 24) {
-      setStatus("텍스트 오버레이는 최대 24개까지 추가할 수 있습니다.");
+    const added = appendObsTextInstance(registry);
+    if (!added) {
+      setStatus(`텍스트 오버레이는 최대 ${MAX_OBS_TEXT_INSTANCES}개까지 추가할 수 있습니다.`);
       return;
     }
-    const inst = createObsTextInstance(`텍스트 ${registry.instances.length + 1}`);
-    const nextReg: ObsTextOverlayRegistry = {
-      version: 2,
-      instances: [...registry.instances, inst],
-    };
-    setRegistry(nextReg);
-    selectInstance(inst.id, nextReg);
-    void persistRegistry(nextReg, inst.id, {
-      activeConfig: inst.config,
-      statusMsg: `「${inst.name}」 추가됨 · OBS에 저장됨`,
+    setRegistry(added.registry);
+    selectInstance(added.instance.id, added.registry);
+    void persistRegistry(added.registry, added.instance.id, {
+      activeConfig: added.instance.config,
+      statusMsg: `「${added.instance.name}」 추가됨 · OBS에 저장됨`,
+    });
+  };
+
+  const duplicateInstance = (sourceId: string) => {
+    const dup = duplicateObsTextInstance(registry, sourceId);
+    if (!dup) {
+      setStatus(`복제 실패 — 최대 ${MAX_OBS_TEXT_INSTANCES}개입니다.`);
+      return;
+    }
+    setRegistry(dup.registry);
+    selectInstance(dup.instance.id, dup.registry);
+    void persistRegistry(dup.registry, dup.instance.id, {
+      activeConfig: dup.instance.config,
+      statusMsg: `「${dup.instance.name}」 복제됨 · OBS에 저장됨`,
     });
   };
 
   const removeInstance = (id: string) => {
-    if (registry.instances.length <= 1) return;
-    const nextReg: ObsTextOverlayRegistry = {
-      version: 2,
-      instances: registry.instances.filter((i) => i.id !== id),
-    };
+    const nextReg = removeObsTextInstance(registry, id);
+    if (!nextReg) return;
     const nextActiveId =
       activeInstanceId === id ? nextReg.instances[0]?.id ?? activeInstanceId : activeInstanceId;
     setRegistry(nextReg);
@@ -362,81 +389,122 @@ export default function ObsTextOverlayEditor({
   };
 
   const renameInstance = (id: string, name: string) => {
-    setRegistry((prev) => ({
-      ...prev,
-      instances: prev.instances.map((i) => (i.id === id ? { ...i, name } : i)),
-    }));
+    setRegistry((prev) => renameObsTextInstance(prev, id, name));
   };
 
-  const onPlainChange = (text: string) => {
-    setPlainDraft(text);
-    if (!activeBlock) return;
-    if (editMode === "char") {
-      const segs = mergeSegmentsFromPlainText(text, activeBlock.segments, config.defaultColor);
-      updateBlock(activeBlock.id, { segments: segs });
-    } else {
-      updateBlock(activeBlock.id, {
-        segments: text ? [{ text, color: pickColor }] : [{ text: " ", color: pickColor }],
+  const instanceOverlayUrl = useCallback(
+    (instanceId: string) => {
+      if (typeof window === "undefined") {
+        return `/overlay/obs-text?u=${userId}&host=obs&textId=${instanceId}`;
+      }
+      return buildObsTextOverlayUrl(window.location.origin, userId, instanceId);
+    },
+    [userId]
+  );
+
+  const onMultilineChange = useCallback(
+    (text: string) => {
+      skipMultilineResyncRef.current = true;
+      setMultilineDraft(text);
+      setConfig((prev) => {
+        const blocks = blocksFromMultilineText(text, prev.blocks, prev.defaultColor);
+        return { ...prev, blocks };
       });
+      const el = textareaRef.current;
+      if (el) {
+        const idx = lineIndexAtTextOffset(text, el.selectionStart ?? text.length);
+        setActiveLineIndex(idx);
+      }
+    },
+    [setConfig]
+  );
+
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    if (skipMultilineResyncRef.current) {
+      skipMultilineResyncRef.current = false;
+      return;
     }
-  };
+    setMultilineDraft(multilineTextFromBlocks(config.blocks));
+  }, [config.blocks]);
+
+  useEffect(() => {
+    setActiveLineIndex((idx) =>
+      Math.max(0, Math.min(idx, Math.max(0, config.blocks.length - 1)))
+    );
+  }, [config.blocks.length]);
 
   const switchToCharMode = () => {
     if (!activeBlock) return;
-    const segs = splitTextToCharSegments(plainDraft || " ", pickColor);
+    const lineText =
+      multilineDraft.split(/\r?\n/)[Math.max(0, activeLineIndex)] ??
+      blockPlainFromSegments(activeBlock.segments);
+    const segs = splitTextToCharSegments(lineText || " ", pickColor);
     setEditMode("char");
     updateBlock(activeBlock.id, { segments: segs });
   };
 
   const switchToSegmentMode = () => {
-    if (!activeBlock) return;
-    const text = segmentsToPlainText(activeBlock.segments);
     setEditMode("segment");
-    setPlainDraft(text);
-    updateBlock(activeBlock.id, {
-      segments: text ? [{ text, color: pickColor }] : [{ text: " ", color: pickColor }],
-    });
   };
 
   const applyColorToSelection = () => {
     const el = textareaRef.current;
-    if (!el || !activeBlock) return;
+    if (!el) return;
     const start = el.selectionStart ?? 0;
     const end = el.selectionEnd ?? 0;
+    const lineIdx = lineIndexAtTextOffset(multilineDraft, start);
+    const targetBlock = config.blocks[lineIdx];
+    if (!targetBlock) return;
+
     if (start === end) {
       if (editMode === "char") {
-        updateBlock(activeBlock.id, {
-          segments: activeBlock.segments.map((s) => ({ ...s, color: pickColor })),
+        updateBlock(targetBlock.id, {
+          segments: targetBlock.segments.map((s) => ({ ...s, color: pickColor })),
         });
       } else {
-        updateBlock(activeBlock.id, {
-          segments: plainDraft ? [{ text: plainDraft, color: pickColor }] : activeBlock.segments,
+        const { line } = lineCharRangeInMultiline(multilineDraft, lineIdx);
+        updateBlock(targetBlock.id, {
+          segments: line.trim() ? [{ text: line, color: pickColor }] : targetBlock.segments,
         });
       }
       return;
     }
-    const before = plainDraft.slice(0, start);
-    const mid = plainDraft.slice(start, end);
-    const after = plainDraft.slice(end);
+
+    const lineRange = lineCharRangeInMultiline(multilineDraft, lineIdx);
+    const selStart = Math.max(start, lineRange.start) - lineRange.start;
+    const selEnd = Math.min(end, lineRange.end) - lineRange.start;
+    const lineText = lineRange.line;
+
     if (editMode === "char") {
-      const merged = mergeSegmentsFromPlainText(plainDraft, activeBlock.segments, config.defaultColor);
+      const merged = mergeSegmentsFromPlainText(
+        lineText,
+        targetBlock.segments,
+        config.defaultColor
+      );
       let pos = 0;
       const next = merged.map((seg) => {
         const len = Array.from(seg.text).length;
         const segStart = pos;
         const segEnd = pos + len;
         pos = segEnd;
-        const overlaps = segEnd > start && segStart < end;
+        const overlaps = segEnd > selStart && segStart < selEnd;
         return overlaps ? { ...seg, color: pickColor } : seg;
       });
-      updateBlock(activeBlock.id, { segments: next });
+      updateBlock(targetBlock.id, { segments: next });
       return;
     }
+
+    const before = lineText.slice(0, selStart);
+    const mid = lineText.slice(selStart, selEnd);
+    const after = lineText.slice(selEnd);
     const parts: ObsTextSegment[] = [];
     if (before) parts.push({ text: before, color: config.defaultColor });
     if (mid) parts.push({ text: mid, color: pickColor });
     if (after) parts.push({ text: after, color: config.defaultColor });
-    updateBlock(activeBlock.id, { segments: parts.length ? parts : [{ text: " ", color: pickColor }] });
+    updateBlock(targetBlock.id, {
+      segments: parts.length ? parts : [{ text: " ", color: pickColor }],
+    });
   };
 
   const updateCharSegmentColor = (index: number, color: string) => {
@@ -447,10 +515,10 @@ export default function ObsTextOverlayEditor({
 
   const insertEmoji = (emoji: string) => {
     const el = textareaRef.current;
-    const start = el?.selectionStart ?? plainDraft.length;
+    const start = el?.selectionStart ?? multilineDraft.length;
     const end = el?.selectionEnd ?? start;
-    const nextText = plainDraft.slice(0, start) + emoji + plainDraft.slice(end);
-    onPlainChange(nextText);
+    const nextText = multilineDraft.slice(0, start) + emoji + multilineDraft.slice(end);
+    onMultilineChange(nextText);
     requestAnimationFrame(() => {
       if (!el) return;
       const pos = start + emoji.length;
@@ -459,90 +527,28 @@ export default function ObsTextOverlayEditor({
     });
   };
 
-  /** 붙여넣기·여러 줄 입력 → 블록 여러 개로 한 번에 반영 */
-  const applyMultilineAsBlocks = useCallback(
-    (raw: string) => {
-      const lines = raw
-        .split(/\r?\n/)
-        .map((l) => l.trim())
-        .filter(Boolean);
-      if (lines.length === 0) return;
-      const blocks = lines.map((line) => ({
-        id: newBlockId(),
-        segments: [{ text: line, color: config.defaultColor }],
-        visible: true,
-        align: "center" as const,
-        effect: "none" as ObsTextEffectId,
-        effectSpeed: 1,
-      }));
-      setConfig((prev) => ({ ...prev, blocks }));
-      setActiveBlockId(blocks[0].id);
-      setPlainDraft(lines[0]);
-      setEditMode("segment");
-      setStatus(`${lines.length}줄 → 블록 ${lines.length}개로 반영됨`);
-    },
-    [config.defaultColor, setConfig]
-  );
-
-  const onPlainPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const pasted = e.clipboardData.getData("text/plain");
-    if (!pasted.includes("\n")) return;
-    e.preventDefault();
-    applyMultilineAsBlocks(pasted);
+  const removeActiveLine = () => {
+    if (config.blocks.length <= 1) return;
+    const lines = multilineDraft.split(/\r?\n/);
+    const idx = Math.max(0, Math.min(activeLineIndex, lines.length - 1));
+    lines.splice(idx, 1);
+    onMultilineChange(lines.length ? lines.join("\n") : " ");
+    setActiveLineIndex(Math.max(0, idx - 1));
   };
 
-  const addBlock = () => {
-    const id = newBlockId();
-    setConfig((prev) => ({
-      ...prev,
-      blocks: [
-        ...prev.blocks,
-        {
-          id,
-          segments: [{ text: "새 줄", color: config.defaultColor }],
-          visible: true,
-          align: "center",
-          effect: "none",
-          effectSpeed: 1,
-        },
-      ],
-    }));
-    setActiveBlockId(id);
-    setPlainDraft("새 줄");
-    setEditMode("segment");
-  };
-
-  const removeBlock = (id: string) => {
-    setConfig((prev) => {
-      if (prev.blocks.length <= 1) return prev;
-      const blocks = prev.blocks.filter((b) => b.id !== id);
-      return { ...prev, blocks };
-    });
-  };
-
-  useEffect(() => {
-    if (!activeBlock) return;
-    const plain = segmentsToPlainText(activeBlock.segments);
-    if (plain !== plainDraft && loadedRef.current) {
-      setPlainDraft(plain);
-    }
-  }, [activeBlock?.id, activeBlock?.segments]);
-
-  const onSelectBlock = (block: ObsTextBlock) => {
-    setActiveBlockId(block.id);
-    setPlainDraft(segmentsToPlainText(block.segments));
-    const isChar =
-      block.segments.length > 1 && block.segments.every((s) => Array.from(s.text).length <= 1);
-    setEditMode(isChar ? "char" : "segment");
-  };
+  function blockPlainFromSegments(segments: ObsTextSegment[]): string {
+    return segmentsToPlainText(segments).replace(/\u00a0/g, " ");
+  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-4 text-neutral-100">
       <header className="flex flex-col gap-3 border-b border-white/10 pb-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">OBS 텍스트 오버레이</h1>
-          <p className="mt-1 text-sm text-neutral-400">
-            오버레이마다 독립 URL · 위치·문구·효과. 입력 후 약 1초 뒤 자동 저장되며 OBS에 반영됩니다.
+          <p className="mt-1 text-sm text-neutral-400 leading-relaxed">
+            <strong className="text-neutral-300">Enter</strong>로 줄 추가 · 여러 줄 붙여넣기 즉시 반영 ·
+            자동 저장 후 OBS 실시간 갱신. 오버레이마다 브라우저 소스 1개(
+            <code className="text-violet-300">textId</code> 다름, 최대 {MAX_OBS_TEXT_INSTANCES}개).
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -568,54 +574,122 @@ export default function ObsTextOverlayEditor({
 
       <section className="rounded-xl border border-violet-500/25 bg-violet-950/20 p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-violet-100">텍스트 오버레이 목록</h2>
-          <button
-            type="button"
-            className="rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-semibold hover:bg-violet-600 disabled:opacity-50"
-            disabled={saving}
-            onClick={addInstance}
-          >
-            {saving ? "저장 중…" : "+ 오버레이 추가"}
-          </button>
+          <h2 className="text-sm font-semibold text-violet-100">
+            텍스트 오버레이 목록 ({registry.instances.length}/{MAX_OBS_TEXT_INSTANCES})
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="rounded-lg bg-neutral-700 px-3 py-1.5 text-xs font-semibold hover:bg-neutral-600 disabled:opacity-50"
+              disabled={saving || typeof window === "undefined"}
+              onClick={() => {
+                const text = formatObsTextOverlayUrlList(
+                  window.location.origin,
+                  userId,
+                  registry
+                );
+                void copyTextToClipboard(text).then((ok) => {
+                  if (ok) {
+                    setCopiedAllUrls(true);
+                    setTimeout(() => setCopiedAllUrls(false), 2000);
+                    setStatus("전체 OBS URL 목록을 복사했습니다.");
+                  }
+                });
+              }}
+            >
+              {copiedAllUrls ? "전체 URL 복사됨" : "전체 URL 복사"}
+            </button>
+            <button
+              type="button"
+              className="rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-semibold hover:bg-violet-600 disabled:opacity-50"
+              disabled={saving || registry.instances.length >= MAX_OBS_TEXT_INSTANCES}
+              onClick={addInstance}
+            >
+              {saving ? "저장 중…" : "+ 오버레이 추가"}
+            </button>
+          </div>
         </div>
-        <div className="space-y-2">
-          {registry.instances.map((inst) => {
+        <ol className="list-decimal space-y-1 pl-5 text-[11px] text-violet-100/85">
+          <li>입력창에서 <strong>Enter</strong>로 줄 추가·줄바꿈 → OBS에 줄마다 표시.</li>
+          <li>「+ 오버레이 추가」→ 각각 URL 복사 → OBS 브라우저 소스 추가.</li>
+          <li>커서가 있는 줄에 효과·정렬·색상이 적용됩니다.</li>
+        </ol>
+        <div className="space-y-3">
+          {registry.instances.map((inst, idx) => {
             const selected = inst.id === activeInstanceId;
+            const url = instanceOverlayUrl(inst.id);
             return (
               <div
                 key={inst.id}
-                className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 ${
+                className={`rounded-lg border px-3 py-3 space-y-2 ${
                   selected
                     ? "border-violet-400/50 bg-violet-900/40"
                     : "border-white/10 bg-neutral-950/60"
                 }`}
               >
-                <button
-                  type="button"
-                  className={`shrink-0 rounded px-2 py-1 text-xs ${
-                    selected ? "bg-violet-600 text-white" : "bg-neutral-800 text-neutral-300"
-                  }`}
-                  onClick={() => selectInstance(inst.id)}
-                >
-                  {selected ? "선택됨" : "편집"}
-                </button>
-                <input
-                  type="text"
-                  className="min-w-[120px] flex-1 rounded border border-white/10 bg-neutral-900 px-2 py-1 text-sm"
-                  value={inst.name}
-                  onChange={(e) => renameInstance(inst.id, e.target.value)}
-                  onFocus={() => selectInstance(inst.id)}
-                />
-                <code className="text-[10px] text-neutral-500">textId={inst.id}</code>
-                {registry.instances.length > 1 ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded bg-violet-800/60 px-1.5 py-0.5 text-[10px] font-bold text-violet-100">
+                    #{idx + 1}
+                  </span>
                   <button
                     type="button"
-                    className="text-xs text-rose-400 hover:underline"
-                    onClick={() => removeInstance(inst.id)}
+                    className={`shrink-0 rounded px-2 py-1 text-xs ${
+                      selected ? "bg-violet-600 text-white" : "bg-neutral-800 text-neutral-300"
+                    }`}
+                    onClick={() => selectInstance(inst.id)}
                   >
-                    삭제
+                    {selected ? "편집 중" : "편집"}
                   </button>
-                ) : null}
+                  <input
+                    type="text"
+                    className="min-w-[100px] flex-1 rounded border border-white/10 bg-neutral-900 px-2 py-1 text-sm"
+                    value={inst.name}
+                    onChange={(e) => renameInstance(inst.id, e.target.value)}
+                    onFocus={() => selectInstance(inst.id)}
+                  />
+                  <button
+                    type="button"
+                    className="text-xs text-sky-300 hover:underline"
+                    onClick={() => duplicateInstance(inst.id)}
+                  >
+                    복제
+                  </button>
+                  {registry.instances.length > 1 ? (
+                    <button
+                      type="button"
+                      className="text-xs text-rose-400 hover:underline"
+                      onClick={() => removeInstance(inst.id)}
+                    >
+                      삭제
+                    </button>
+                  ) : null}
+                </div>
+                <code className="block break-all rounded bg-black/35 px-2 py-1 text-[10px] text-neutral-400">
+                  textId={inst.id}
+                </code>
+                <code className="block break-all rounded bg-black/50 px-2 py-1 text-[11px] text-violet-200/90">
+                  {url}
+                </code>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="rounded bg-neutral-700 px-2 py-1 text-xs hover:bg-neutral-600"
+                    onClick={() => {
+                      void copyTextToClipboard(url).then((ok) => {
+                        if (ok) setStatus(`「${inst.name}」 URL 복사됨`);
+                      });
+                    }}
+                  >
+                    URL 복사
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded bg-indigo-800 px-2 py-1 text-xs hover:bg-indigo-700"
+                    onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
+                  >
+                    미리보기
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -649,43 +723,39 @@ export default function ObsTextOverlayEditor({
           </button>
         </div>
         <p className="mt-2 text-xs text-neutral-500">
-          브라우저 소스 크기 1920×1080 · 배경 투명 · 관리자에서 저장하면 OBS가 자동 갱신됩니다.
+          브라우저 소스 1920×1080 · 배경 투명 · 입력 후 약 0.4초 자동 저장 · SSE·폴링으로 OBS 즉시 반영
         </p>
       </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-4">
           <section className="rounded-xl border border-white/10 bg-neutral-900/60 p-4 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="font-semibold">텍스트 줄</h2>
-              <button
-                type="button"
-                className="rounded bg-sky-800 px-2 py-1 text-xs hover:bg-sky-700"
-                onClick={addBlock}
-              >
-                + 줄 추가
-              </button>
+            <div>
+              <h2 className="font-semibold">여러 줄 텍스트</h2>
+              <p className="text-[11px] text-neutral-500">
+                {config.blocks.length}줄 · Enter로 줄 추가 · 붙여넣기 즉시 반영 · 최대{" "}
+                {MAX_OBS_TEXT_BLOCKS_PER_INSTANCE}줄
+              </p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {config.blocks.map((b) => (
-                <button
-                  key={b.id}
-                  type="button"
-                  className={`rounded-lg px-3 py-1.5 text-sm ${
-                    b.id === activeBlockId
-                      ? "bg-amber-600 text-white"
-                      : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
-                  }`}
-                  onClick={() => onSelectBlock(b)}
-                >
-                  {segmentsToPlainText(b.segments).slice(0, 12) || "(빈 줄)"}
-                  {b.effect && b.effect !== "none"
-                    ? ` · ${OBS_TEXT_EFFECT_OPTIONS.find((o) => o.id === b.effect)?.label ?? b.effect}`
-                    : ""}
-                  {b.visible === false ? " (숨김)" : ""}
-                </button>
-              ))}
-            </div>
+            <textarea
+              ref={textareaRef}
+              className="min-h-[180px] w-full rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-lg leading-relaxed"
+              value={multilineDraft}
+              onChange={(e) => onMultilineChange(e.target.value)}
+              onClick={syncActiveLineFromCaret}
+              onKeyUp={syncActiveLineFromCaret}
+              onSelect={syncActiveLineFromCaret}
+              placeholder={"첫 번째 줄\n두 번째 줄 (Enter로 줄바꿈)"}
+            />
+            {activeBlock ? (
+              <p className="text-[11px] text-amber-200/90">
+                커서 줄: {Math.min(activeLineIndex, config.blocks.length - 1) + 1} /{" "}
+                {config.blocks.length}
+                {activeBlock.effect && activeBlock.effect !== "none"
+                  ? ` · ${OBS_TEXT_EFFECT_OPTIONS.find((o) => o.id === activeBlock.effect)?.label ?? activeBlock.effect}`
+                  : ""}
+              </p>
+            ) : null}
             {activeBlock ? (
               <div className="flex flex-wrap gap-3 text-sm">
                 <label className="flex items-center gap-2">
@@ -730,9 +800,9 @@ export default function ObsTextOverlayEditor({
                   <button
                     type="button"
                     className="text-rose-400 text-xs hover:underline"
-                    onClick={() => removeBlock(activeBlock.id)}
+                    onClick={removeActiveLine}
                   >
-                    이 줄 삭제
+                    커서 줄 삭제
                   </button>
                 ) : null}
               </div>
@@ -740,7 +810,9 @@ export default function ObsTextOverlayEditor({
             {activeBlock ? (
               <div className="space-y-2 border-t border-white/10 pt-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm font-semibold text-violet-200">텍스트 효과 (이 줄)</span>
+                  <span className="text-sm font-semibold text-violet-200">
+                    텍스트 효과 (커서 줄)
+                  </span>
                   <label className="flex items-center gap-2 text-xs text-neutral-400">
                     속도
                     <input
@@ -800,24 +872,9 @@ export default function ObsTextOverlayEditor({
                 className={`rounded-lg px-3 py-1.5 text-sm ${editMode === "char" ? "bg-violet-600" : "bg-neutral-800"}`}
                 onClick={switchToCharMode}
               >
-                글자별 색상
+                글자별 색상 (선택 줄)
               </button>
             </div>
-            <textarea
-              ref={textareaRef}
-              className="min-h-[100px] w-full rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-lg"
-              value={plainDraft}
-              onChange={(e) => onPlainChange(e.target.value)}
-              onPaste={onPlainPaste}
-              placeholder="방송에 띄울 문구 (여러 줄 붙여넣기 → 블록 자동 분리)"
-            />
-            <button
-              type="button"
-              className="rounded-lg bg-neutral-700 px-3 py-1.5 text-xs hover:bg-neutral-600"
-              onClick={() => applyMultilineAsBlocks(plainDraft)}
-            >
-              현재 입력을 줄마다 블록으로 나누기
-            </button>
             <div className="flex flex-wrap items-center gap-3">
               <label className="flex items-center gap-2 text-sm">
                 색상

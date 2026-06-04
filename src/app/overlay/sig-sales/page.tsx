@@ -785,10 +785,8 @@ function SigSalesOverlayPageInner() {
   }, [
     machine.selectedSigs,
     machine.sessionId,
-    machine.phase,
     pendingLanding?.selected,
     broadcastStickySigs,
-    demoSpin,
     wheelDemoAutoSpin,
     overlayIdleBeforeSpin,
   ]);
@@ -1023,6 +1021,7 @@ function SigSalesOverlayPageInner() {
     spinQueueSelected,
     machine.phase,
     machine.startedAt,
+    machine.selectedSigs,
     pendingLanding,
     demoSpin,
     wheelPhase,
@@ -2181,7 +2180,7 @@ function SigSalesOverlayPageInner() {
       return;
     }
     if (machine.selectedSigs.length > 0) setShowResultPanel(true);
-  }, [machine.phase, machine.selectedSigs, overlayHoldResults]);
+  }, [machine.phase, machine.selectedSigs, overlayHoldResults, demoSpin, pendingLanding]);
 
   // IDLE 동기화 시에도 방송 화면 결과를 유지한다.
   // 새로운 회차가 시작되면 SPINNING 전환 effect에서 초기화된다.

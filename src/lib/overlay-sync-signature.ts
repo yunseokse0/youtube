@@ -98,6 +98,8 @@ export function buildOverlaySyncSignature(state: AppState | null): string {
     overlayPresets: state.overlayPresets || [],
     missions: state.missions || [],
     donorRankingsOverlayConfig: state.donorRankingsOverlayConfig || {},
+    donorRankingsFullTheme: state.donorRankingsFullTheme || {},
+    donorRankingsFullOverlayConfig: state.donorRankingsFullOverlayConfig || {},
     donationListsOverlayConfig: state.donationListsOverlayConfig || {},
     mealBattle: state.mealBattle || {},
     sigMatchSettings: state.sigMatchSettings || {},

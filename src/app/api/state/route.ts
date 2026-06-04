@@ -130,6 +130,7 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
   if (!("memberPositionMode" in patch)) next.memberPositionMode = base.memberPositionMode;
   if (!("rankPositionLabels" in patch)) next.rankPositionLabels = base.rankPositionLabels;
   if (!("donorRankingsTheme" in patch)) next.donorRankingsTheme = base.donorRankingsTheme;
+  if (!("donorRankingsFullTheme" in patch)) next.donorRankingsFullTheme = base.donorRankingsFullTheme;
   if (!("donorRankingsPresets" in patch)) next.donorRankingsPresets = base.donorRankingsPresets;
   if (!("donorRankingsPresetId" in patch)) next.donorRankingsPresetId = base.donorRankingsPresetId;
   if (!("donorsFormat" in patch)) next.donorsFormat = base.donorsFormat;
@@ -168,6 +169,8 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
   if (!("mealMatchSettings" in patch)) next.mealMatchSettings = base.mealMatchSettings;
   if (!("generalTimer" in patch)) next.generalTimer = base.generalTimer;
   if (!("donorRankingsOverlayConfig" in patch)) next.donorRankingsOverlayConfig = base.donorRankingsOverlayConfig;
+  if (!("donorRankingsFullOverlayConfig" in patch))
+    next.donorRankingsFullOverlayConfig = base.donorRankingsFullOverlayConfig;
   if (!("donationListsOverlayConfig" in patch)) next.donationListsOverlayConfig = base.donationListsOverlayConfig;
   if (!("sigRolling" in patch)) next.sigRolling = base.sigRolling ?? normalizeSigRolling(null);
   if (!("sigRollingMeta" in patch)) next.sigRollingMeta = base.sigRollingMeta ?? {};

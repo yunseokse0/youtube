@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   defaultState,
   formatDonorsAmount,
@@ -282,6 +282,8 @@ function RankingColumn({
   unified,
   showColumnDivider,
   panelOpacityFrac,
+  rowEvenBg,
+  rowOddBg,
 }: {
   title: string;
   items: DonorRow[];
@@ -305,6 +307,8 @@ function RankingColumn({
   showColumnDivider?: boolean;
   /** unified: 헤더·목록 배경에 동일하게 `panelBg`/`headerBg`×투명도 */
   panelOpacityFrac?: number;
+  rowEvenBg?: string;
+  rowOddBg?: string;
 }) {
   const outlined = { textShadow: `-1px -1px 0 ${outlineColor},1px -1px 0 ${outlineColor},-1px 1px 0 ${outlineColor},1px 1px 0 ${outlineColor},0 2px 6px rgba(0,0,0,0.38)` } as const;
   const rankLabel = (idx: number): string => {
@@ -342,9 +346,10 @@ function RankingColumn({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -12 }}
           transition={{ type: "spring", stiffness: 420, damping: 34, mass: 0.8 }}
-          className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 px-1 py-1"
+          className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-1 py-1"
           style={{
             fontSize: `${rowSize}px`,
+            backgroundColor: idx % 2 === 0 ? rowEvenBg || "transparent" : rowOddBg || "transparent",
           }}
         >
           <span className="font-black text-center" style={{ color: rankColor, fontSize: `${rankSize}px`, ...outlined }}>
@@ -401,19 +406,28 @@ function RankingColumn({
 
 export default function DonorRankingsOverlayPage() {
   const sp = useSearchParams();
+  const pathname = usePathname();
+  const profileFull = (pathname || "").includes("donor-rankings-full");
   const userId = getOverlayUserIdFromSearchParams(sp);
   const { state, ready } = useDonorRankingsRemoteState(userId);
   const overlayCfg = useMemo(
-    () => normalizeDonorRankingsOverlayConfig(state?.donorRankingsOverlayConfig),
-    [state?.donorRankingsOverlayConfig]
+    () =>
+      normalizeDonorRankingsOverlayConfig(
+        profileFull ? state?.donorRankingsFullOverlayConfig : state?.donorRankingsOverlayConfig
+      ),
+    [state?.donorRankingsOverlayConfig, state?.donorRankingsFullOverlayConfig, profileFull]
   );
 
   const useTest = (sp.get("test") || "false").toLowerCase() === "true";
-  const layoutDual = (sp.get("layout") || "").toLowerCase() === "dual";
-  const savedTheme = state?.donorRankingsTheme || defaultState().donorRankingsTheme;
+  const layoutDual = !profileFull && (sp.get("layout") || "").toLowerCase() === "dual";
+  const savedTheme = profileFull
+    ? state?.donorRankingsFullTheme || defaultState().donorRankingsFullTheme
+    : state?.donorRankingsTheme || defaultState().donorRankingsTheme;
 
   const showAllDonors =
-    (sp.get("all") || "").trim() === "1" || (sp.get("top") || "").trim() === "0";
+    profileFull ||
+    (sp.get("all") || "").trim() === "1" ||
+    (sp.get("top") || "").trim() === "0";
   const topN = showAllDonors
     ? 0
     : liveThemeNumber(ready, useTest, savedTheme.top, sp, "top", 1, 50);
@@ -454,7 +468,10 @@ export default function DonorRankingsOverlayPage() {
     "linear-gradient(135deg, #fff4f9 0%, #ffc8e6 48%, #ffa3cf 100%)"
   );
   const headerUnifiedBg = readColor(sp, "headerBg", headerAccountBg) || headerAccountBg;
-  const rankingTitle = (sp.get("title") || "").trim() || "후원 순위";
+  const rankingTitle =
+    (sp.get("title") || "").trim() || (profileFull ? "👑 후원 순위 👑" : "후원 순위");
+  const rowEvenBg = liveThemeColor(ready, useTest, savedTheme.rowEvenBg, sp, "rowEvenBg", "transparent");
+  const rowOddBg = liveThemeColor(ready, useTest, savedTheme.rowOddBg, sp, "rowOddBg", "transparent");
   const rankColor = liveThemeColor(ready, useTest, savedTheme.rankColor, sp, "rankColor", "#fff5f9");
   const nameColor = liveThemeColor(ready, useTest, savedTheme.nameColor, sp, "nameColor", "#fff7fb");
   const amountColor = liveThemeColor(ready, useTest, savedTheme.amountColor, sp, "amountColor", "#fff7ed");
@@ -569,6 +586,8 @@ export default function DonorRankingsOverlayPage() {
               unified
               showColumnDivider
               panelOpacityFrac={overlayOpacityFrac}
+              rowEvenBg={rowEvenBg}
+              rowOddBg={rowOddBg}
             />
             <RankingColumn
               title="투네 후원 순위"
@@ -589,11 +608,15 @@ export default function DonorRankingsOverlayPage() {
               headerOpacity={overlayOpacity}
               unified
               panelOpacityFrac={overlayOpacityFrac}
+              rowEvenBg={rowEvenBg}
+              rowOddBg={rowOddBg}
             />
           </div>
         ) : (
           <div
-            className="relative mx-auto max-w-[760px] overflow-visible rounded-2xl border shadow-[0_12px_32px_rgba(236,72,153,0.14)] backdrop-blur-md"
+            className={`relative mx-auto overflow-visible rounded-2xl border shadow-[0_12px_32px_rgba(236,72,153,0.14)] backdrop-blur-md ${
+              profileFull ? "max-w-[920px]" : "max-w-[760px]"
+            }`}
             style={{
               borderColor,
               backgroundColor: "transparent",
@@ -617,6 +640,8 @@ export default function DonorRankingsOverlayPage() {
               headerOpacity={overlayOpacity}
               unified
               panelOpacityFrac={overlayOpacityFrac}
+              rowEvenBg={rowEvenBg}
+              rowOddBg={rowOddBg}
             />
           </div>
         )}

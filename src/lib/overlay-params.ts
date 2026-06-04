@@ -393,6 +393,24 @@ export function appendGoalBarStyleParams(target: URLSearchParams, preset: Overla
   }
 }
 
+/** 전체 후원 순위(분홍) OBS URL — 상위 N 제한 없음 */
+export function buildDonorRankingsFullOverlayUrl(
+  origin: string,
+  userId: string,
+  theme: DonorRankingsTheme,
+  zoomPct: number
+): string {
+  const q = donorRankingsThemeToSearchParams(theme);
+  q.delete("top");
+  q.set("u", userId);
+  q.set("zoomPct", String(zoomPct));
+  return `${origin.replace(/\/$/, "")}/overlay/donor-rankings-full?${q.toString()}`;
+}
+
+export function donorRankingsFullOverlayPath(userId: string, zoomPct: number): string {
+  return `/overlay/donor-rankings-full?u=${encodeURIComponent(userId)}&zoomPct=${zoomPct}`;
+}
+
 /** 후원순위 OBS URL에 테마·폰트 크기 반영(관리자 저장값과 동일하게) */
 export function donorRankingsThemeToSearchParams(theme: DonorRankingsTheme): URLSearchParams {
   const q = new URLSearchParams();
@@ -517,7 +535,53 @@ export function isEmbeddedInSameOriginAdminFrame(): boolean {
 
 export const OVERLAY_POLL_MS_QUERY = "overlayPollMs";
 
-/** 방송·OBS용 URL에서 주기 폴링 쿼리 제거(관리자 복사·북마크 정리) */
+/** OBS·Prism 방송용 URL에 넣으면 안 되는 미리보기·데모 쿼리 */
+const OVERLAY_PREVIEW_ONLY_PARAMS = [
+  "hubPreview",
+  "adminPreviewEmbed",
+  "demo",
+  "snap",
+  "snapKey",
+  "_verify",
+] as const;
+
+export function stripPreviewOnlyOverlaySearchParams(params: URLSearchParams): void {
+  for (const key of OVERLAY_PREVIEW_ONLY_PARAMS) {
+    params.delete(key);
+  }
+}
+
+/** iframe 미리보기 URL을 OBS에 붙였을 때 등 — 방송 설정 오류 안내 */
+export function getOverlayBroadcastConfigWarnings(search?: string): string[] {
+  if (typeof window === "undefined") return [];
+  const warnings: string[] = [];
+  try {
+    const sp = new URLSearchParams(search ?? window.location.search);
+    if (sp.get("hubPreview") === "1" || sp.get("adminPreviewEmbed") === "1") {
+      warnings.push(
+        "미리보기용 URL입니다(hubPreview/adminPreviewEmbed). 관리자 「URL 복사」로 받은 주소만 OBS에 넣으세요."
+      );
+    }
+    if (sp.get("demo") === "true") {
+      warnings.push("데모 URL(demo=true)은 OBS 방송용이 아닙니다.");
+    }
+    if (!sp.get("u")?.trim() && !sp.get("user")?.trim()) {
+      warnings.push(
+        `URL에 u=계정이 없어 기본값(${getOverlayUserIdFromSearchParams(sp)})으로 조회합니다. OBS 주소에 u=를 확인하세요.`
+      );
+    }
+    if (shouldSuppressOverlaySseConnection()) {
+      warnings.push(
+        "실시간 SSE가 꺼진 모드입니다. OBS에서는 hubPreview 없는 URL을 쓰면 폴링·SSE가 정상 동작합니다."
+      );
+    }
+  } catch {
+    /* noop */
+  }
+  return warnings;
+}
+
+/** 방송·OBS용 URL에서 주기 폴링·미리보기 쿼리 제거(관리자 복사·북마크 정리) */
 export function sanitizeBroadcastOverlayUrl(url: string): string {
   const raw = String(url || "").trim();
   if (!raw) return raw;
@@ -525,13 +589,18 @@ export function sanitizeBroadcastOverlayUrl(url: string): string {
     const base = typeof window !== "undefined" ? window.location.origin : "http://localhost";
     const parsed = raw.startsWith("http://") || raw.startsWith("https://") ? new URL(raw) : new URL(raw, base);
     parsed.searchParams.delete(OVERLAY_POLL_MS_QUERY);
+    stripPreviewOnlyOverlaySearchParams(parsed.searchParams);
     if (raw.startsWith("http://") || raw.startsWith("https://")) return parsed.toString();
     return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   } catch {
-    return raw
+    let out = raw
       .replace(/([?&])overlayPollMs=[^&]*&?/gi, "$1")
+      .replace(/([?&])hubPreview=[^&]*&?/gi, "$1")
+      .replace(/([?&])adminPreviewEmbed=[^&]*&?/gi, "$1")
+      .replace(/([?&])demo=[^&]*&?/gi, "$1")
       .replace(/[?&]$/, "")
       .replace(/\?&/, "?");
+    return out;
   }
 }
 

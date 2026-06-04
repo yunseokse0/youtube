@@ -16,9 +16,11 @@ function rankingsUiFingerprint(state: AppState): string {
   return JSON.stringify({
     donorsFormat: state.donorsFormat,
     theme: state.donorRankingsTheme,
+    fullTheme: state.donorRankingsFullTheme,
     presets: state.donorRankingsPresets,
     presetId: state.donorRankingsPresetId,
     cfg: state.donorRankingsOverlayConfig,
+    fullCfg: state.donorRankingsFullOverlayConfig,
   });
 }
 
@@ -46,9 +48,11 @@ export function computeDonorRankingsUpdatedAt(
   if (
     "donorsFormat" in patch ||
     "donorRankingsTheme" in patch ||
+    "donorRankingsFullTheme" in patch ||
     "donorRankingsPresets" in patch ||
     "donorRankingsPresetId" in patch ||
-    "donorRankingsOverlayConfig" in patch
+    "donorRankingsOverlayConfig" in patch ||
+    "donorRankingsFullOverlayConfig" in patch
   ) {
     changed = true;
   }

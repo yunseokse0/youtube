@@ -73,6 +73,7 @@ function overlayCoreFields(state: AppState, rs: RouletteState | undefined, inclu
     rankPositionLabels: state.rankPositionLabels,
     donorsFormat: state.donorsFormat,
     donorRankingsTheme: state.donorRankingsTheme,
+    donorRankingsFullTheme: state.donorRankingsFullTheme,
     donorRankingsPresets: state.donorRankingsPresets,
     donorRankingsPresetId: state.donorRankingsPresetId,
     ...(includeDonors ? { donors: capDonorsForOverlayWire(state.donors) } : {}),
@@ -91,6 +92,7 @@ function overlayCoreFields(state: AppState, rs: RouletteState | undefined, inclu
     matchTimerEnabled: state.matchTimerEnabled,
     timerDisplayStyles: state.timerDisplayStyles,
     donorRankingsOverlayConfig: state.donorRankingsOverlayConfig,
+    donorRankingsFullOverlayConfig: state.donorRankingsFullOverlayConfig,
     donationListsOverlayConfig: state.donationListsOverlayConfig,
     sigSalesExcludedIds: state.sigSalesExcludedIds,
     donationSyncMode: state.donationSyncMode,
@@ -142,9 +144,11 @@ export function projectStateForGetPick(state: AppState, pick: StateApiPick): unk
       donors: capDonorsForOverlayWire(state.donors),
       donorsFormat: state.donorsFormat,
       donorRankingsTheme: state.donorRankingsTheme,
+      donorRankingsFullTheme: state.donorRankingsFullTheme,
       donorRankingsPresets: state.donorRankingsPresets,
       donorRankingsPresetId: state.donorRankingsPresetId,
       donorRankingsOverlayConfig: state.donorRankingsOverlayConfig,
+      donorRankingsFullOverlayConfig: state.donorRankingsFullOverlayConfig,
     };
   }
   if (pick === STATE_PICK_OBS_TEXT) {

@@ -1,7 +1,7 @@
 /** OverlayLayoutShell 전용 — overlay-params 대용량 모듈·HMR 순환 참조 회피 */
 
 export const OVERLAY_TOOLS_HUB_PATH_RE =
-  /\/(?:demo|gauge-demo|battle-effects-demo|wheel-demo|playthrough|wheel-render-probe)(?:\/|$)/;
+  /\/(?:dev|demo|gauge-demo|battle-effects-demo|wheel-demo|playthrough|wheel-render-probe)(?:\/|$)/;
 
 /** SSR·hydration: pathname만으로 판별 (window 미사용) */
 export function isOverlayToolsHubPath(pathname: string | null): boolean {

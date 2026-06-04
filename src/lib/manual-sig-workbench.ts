@@ -53,6 +53,36 @@ export function emptyManualDrafts(): ManualSigDraft[] {
   return Array.from({ length: 5 }, () => ({ name: "", priceInput: "", imageUrl: "" }));
 }
 
+export type ManualSigParsedRow = { name: string; price: number; imageUrl: string };
+
+export function parseManualSigDraftRows(drafts: ManualSigDraft[]): ManualSigParsedRow[] {
+  return drafts.map((row) => {
+    const name = String(row.name || "").trim();
+    const digits = String(row.priceInput || "").replace(/[^\d]/g, "");
+    const price = digits ? Math.max(0, Math.floor(Number.parseInt(digits, 10) || 0)) : 0;
+    return {
+      name,
+      price,
+      imageUrl: String(row.imageUrl || "").trim(),
+    };
+  });
+}
+
+/** 수동 5칸 — 이름·금액·서로 다른 시그(또는 이름) */
+export function manualSigDraftsReady(drafts: ManualSigDraft[]): boolean {
+  const parsed = parseManualSigDraftRows(drafts);
+  if (parsed.length !== 5) return false;
+  if (parsed.some((row) => !row.name || row.price <= 0)) return false;
+  const uniq = new Set(
+    drafts.map((row, idx) => {
+      const sourceKey = String(row?.sourceSigId || "").trim();
+      if (sourceKey) return `id:${sourceKey}`;
+      return `name:${String(parsed[idx]?.name || "").toLowerCase()}`;
+    })
+  );
+  return uniq.size === 5;
+}
+
 export function createEmptyManualSlot(name: string, id?: string): ManualSigSlot {
   return {
     id: id || newManualSlotId(),

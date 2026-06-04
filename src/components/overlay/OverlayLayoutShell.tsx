@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import OverlayBroadcastConfigBanner from "@/components/overlay/OverlayBroadcastConfigBanner";
 import OverlayBroadcastHygiene from "@/components/overlay/OverlayBroadcastHygiene";
 import {
   isOverlayToolsHubPath,
@@ -59,6 +60,7 @@ export default function OverlayLayoutShell({ children }: { children: React.React
     return (
       <div className="min-h-[100dvh] w-full bg-neutral-950 text-white" suppressHydrationWarning>
         <OverlayBroadcastHygiene />
+        <OverlayBroadcastConfigBanner />
         {children}
       </div>
     );
@@ -79,6 +81,7 @@ export default function OverlayLayoutShell({ children }: { children: React.React
     >
       <style dangerouslySetInnerHTML={{ __html: overlayRouteCss }} />
       <OverlayBroadcastHygiene />
+      <OverlayBroadcastConfigBanner />
       {children}
     </div>
   );

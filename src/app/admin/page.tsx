@@ -75,6 +75,8 @@ import {
   appendGoalBarStyleParams,
   normalizeGoalHexColor,
   donorRankingsThemeToSearchParams,
+  buildDonorRankingsFullOverlayUrl,
+  donorRankingsFullOverlayPath,
   sanitizeBroadcastOverlayUrl,
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
@@ -93,9 +95,15 @@ import {
 import { normalizeMealGaugeEffects } from "@/lib/meal-gauge-effects";
 import { getVisibleAdminNavItems, isAdminNavSectionVisible, type AdminNavKey } from "@/app/admin/admin-nav-config";
 import {
+  appendObsTextInstance,
   buildObsTextOverlayUrl,
+  duplicateObsTextInstance,
+  formatObsTextOverlayUrlList,
+  MAX_OBS_TEXT_INSTANCES,
+  mergeObsTextRegistryIntoState,
   obsTextOverlayPath,
   readObsTextRegistryFromState,
+  removeObsTextInstance,
 } from "@/lib/obs-text-overlay";
 import { stopToonationListener } from "@/lib/donation/toonation/listener";
 import { processDonationEvent, type ProcessDonationResult } from "@/lib/donation/processor";
@@ -623,6 +631,7 @@ export default function AdminPage() {
   const [battleContentWidthPct, setBattleContentWidthPct] = useState("100");
   const [sigSalesMenuCount, setSigSalesMenuCount] = useState("10");
   const [donorRankingsPreviewIframeKey, setDonorRankingsPreviewIframeKey] = useState(0);
+  const [donorRankingsFullPreviewIframeKey, setDonorRankingsFullPreviewIframeKey] = useState(0);
   const [obsTextPreviewIframeKey, setObsTextPreviewIframeKey] = useState(0);
   const [obsTextPreviewInstanceId, setObsTextPreviewInstanceId] = useState<string | null>(null);
   const obsTextRegistry = useMemo(() => readObsTextRegistryFromState(state), [state]);
@@ -762,6 +771,46 @@ export default function AdminPage() {
       }
     });
   }, [user?.id]);
+
+  const persistObsTextRegistry = useCallback(
+    (registry: ReturnType<typeof readObsTextRegistryFromState>) => {
+      setState((prev) => {
+        const next = mergeObsTextRegistryIntoState(prev, registry);
+        persistState(next);
+        return next;
+      });
+    },
+    [persistState]
+  );
+  const addObsTextOverlayQuick = useCallback(() => {
+    const added = appendObsTextInstance(obsTextRegistry);
+    if (!added) return;
+    persistObsTextRegistry(added.registry);
+    setObsTextPreviewInstanceId(added.instance.id);
+    setObsTextPreviewIframeKey((k) => k + 1);
+  }, [obsTextRegistry, persistObsTextRegistry]);
+  const duplicateObsTextOverlayQuick = useCallback(
+    (sourceId: string) => {
+      const dup = duplicateObsTextInstance(obsTextRegistry, sourceId);
+      if (!dup) return;
+      persistObsTextRegistry(dup.registry);
+      setObsTextPreviewInstanceId(dup.instance.id);
+      setObsTextPreviewIframeKey((k) => k + 1);
+    },
+    [obsTextRegistry, persistObsTextRegistry]
+  );
+  const removeObsTextOverlayQuick = useCallback(
+    (id: string) => {
+      const next = removeObsTextInstance(obsTextRegistry, id);
+      if (!next) return;
+      persistObsTextRegistry(next);
+      if (obsTextPreviewInstanceId === id) {
+        setObsTextPreviewInstanceId(next.instances[0]?.id ?? null);
+        setObsTextPreviewIframeKey((k) => k + 1);
+      }
+    },
+    [obsTextRegistry, persistObsTextRegistry, obsTextPreviewInstanceId]
+  );
 
   useEffect(() => {
     if (!user?.id) return;
@@ -1473,6 +1522,20 @@ export default function AdminPage() {
     if (opts?.test) q.set("test", "true");
     return `${window.location.origin}/overlay/donor-rankings?${q.toString()}`;
   };
+  const buildDonorRankingsFullUrl = (opts?: { test?: boolean }): string => {
+    if (typeof window === "undefined") return "";
+    const theme = state.donorRankingsFullTheme || defaultState().donorRankingsFullTheme;
+    const url = buildDonorRankingsFullOverlayUrl(
+      window.location.origin,
+      user?.id || "finalent",
+      theme,
+      getDonorRankingsZoomPct()
+    );
+    if (!opts?.test) return url;
+    const u = new URL(url);
+    u.searchParams.set("test", "true");
+    return u.toString();
+  };
   const buildEmergencySnapshotUrl = (p: OverlayPreset): string => {
     if (typeof window === "undefined") return "";
     const base = `${window.location.origin}/overlay`;
@@ -1860,6 +1923,34 @@ export default function AdminPage() {
           ...(prev.donorRankingsTheme || defaultState().donorRankingsTheme),
           ...patch,
         },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const updateDonorRankingsFullTheme = (patch: Partial<AppState["donorRankingsFullTheme"]>) => {
+    setDonorRankingsFullPreviewIframeKey((k) => k + 1);
+    setState((prev: AppState) => {
+      const next: AppState = {
+        ...prev,
+        donorRankingsFullTheme: {
+          ...(prev.donorRankingsFullTheme || defaultState().donorRankingsFullTheme),
+          ...patch,
+        },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const updateDonorRankingsFullOverlayConfig = (patch: Partial<OverlayConfig>) => {
+    setDonorRankingsFullPreviewIframeKey((k) => k + 1);
+    setState((prev: AppState) => {
+      const base = normalizeDonorRankingsOverlayConfig(prev.donorRankingsFullOverlayConfig);
+      const next: AppState = {
+        ...prev,
+        donorRankingsFullOverlayConfig: { ...base, ...patch },
       };
       persistState(next);
       return next;
@@ -4154,6 +4245,8 @@ export default function AdminPage() {
       rouletteState: state.rouletteState,
       donationListsOverlayConfig: state.donationListsOverlayConfig,
       donorRankingsOverlayConfig: state.donorRankingsOverlayConfig,
+      donorRankingsFullTheme: state.donorRankingsFullTheme,
+      donorRankingsFullOverlayConfig: state.donorRankingsFullOverlayConfig,
       donorRankingsTheme: state.donorRankingsTheme,
       donorRankingsPresets: state.donorRankingsPresets,
       donorRankingsPresetId: state.donorRankingsPresetId,
@@ -5746,6 +5839,119 @@ export default function AdminPage() {
                     >
                       {copiedId === "dash-donor-rankings-test" ? "복사됨!" : "테스트 URL 복사"}
                     </button>
+                  </div>
+                  <div className="rounded border border-pink-500/35 bg-pink-950/25 p-3 space-y-2">
+                    <div>
+                      <h4 className="text-sm font-semibold text-pink-100">후원 순위 · 전체 목록 (분홍 테마)</h4>
+                      <p className="text-xs text-neutral-400 mt-1">
+                        상위 N명이 아닌 <strong className="text-pink-100">전체 후원자</strong>를 한 목록으로 표시합니다.
+                        위 「후원 순위」와 <strong className="text-pink-100">테마·URL이 완전히 분리</strong>되어 OBS에 브라우저 소스를 따로 추가하세요.
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
+                      <label className="text-[11px] text-neutral-400">
+                        제목 폰트
+                        <input
+                          type="range"
+                          min={14}
+                          max={80}
+                          value={state.donorRankingsFullTheme.titleSize}
+                          onChange={(e) => updateDonorRankingsFullTheme({ titleSize: Number(e.target.value) })}
+                          className="w-full"
+                        />
+                        <div className="text-xs text-neutral-300">{state.donorRankingsFullTheme.titleSize}px</div>
+                      </label>
+                      <label className="text-[11px] text-neutral-400">
+                        행 폰트
+                        <input
+                          type="range"
+                          min={12}
+                          max={64}
+                          value={state.donorRankingsFullTheme.rowSize}
+                          onChange={(e) => updateDonorRankingsFullTheme({ rowSize: Number(e.target.value) })}
+                          className="w-full"
+                        />
+                        <div className="text-xs text-neutral-300">{state.donorRankingsFullTheme.rowSize}px</div>
+                      </label>
+                      <label className="text-[11px] text-neutral-400">
+                        순위 폰트
+                        <input
+                          type="range"
+                          min={12}
+                          max={72}
+                          value={state.donorRankingsFullTheme.rankSize}
+                          onChange={(e) => updateDonorRankingsFullTheme({ rankSize: Number(e.target.value) })}
+                          className="w-full"
+                        />
+                        <div className="text-xs text-neutral-300">{state.donorRankingsFullTheme.rankSize}px</div>
+                      </label>
+                      <label className="text-[11px] text-neutral-400">
+                        배경 투명도
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={state.donorRankingsFullTheme.overlayOpacity}
+                          onChange={(e) => updateDonorRankingsFullTheme({ overlayOpacity: Number(e.target.value) })}
+                          className="w-full"
+                        />
+                        <div className="text-xs text-neutral-300">{state.donorRankingsFullTheme.overlayOpacity}%</div>
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+                      {(
+                        [
+                          ["headerAccountBg", "헤더"],
+                          ["titleColor", "제목"],
+                          ["rankColor", "순위"],
+                          ["nameColor", "닉네임"],
+                          ["amountColor", "금액"],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <label
+                          key={key}
+                          className="text-[11px] text-neutral-400 flex items-center justify-between gap-2 rounded border border-pink-500/20 bg-black/20 px-2 py-1"
+                        >
+                          <span>{label}</span>
+                          <input
+                            type="color"
+                            value={toColorPickerValue(
+                              String((state.donorRankingsFullTheme as unknown as Record<string, unknown>)[key] ?? ""),
+                              "#f9a8d4"
+                            )}
+                            onChange={(e) =>
+                              updateDonorRankingsFullTheme({
+                                [key]: e.target.value,
+                              } as Partial<AppState["donorRankingsFullTheme"]>)
+                            }
+                            className="h-7 w-9 rounded border border-white/20 bg-transparent p-0.5"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
+                      <span>OBS URL:</span>
+                      <code className="text-pink-100/90 break-all">
+                        {donorRankingsFullOverlayPath(user?.id || "finalent", getDonorRankingsZoomPct())}
+                      </code>
+                      <button
+                        type="button"
+                        className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-donor-rankings-full" ? "bg-emerald-600" : "bg-pink-800 hover:bg-pink-700"}`}
+                        onClick={() => {
+                          const u = buildDonorRankingsFullUrl();
+                          void copyUrl(u, "dash-donor-rankings-full");
+                        }}
+                      >
+                        {copiedId === "dash-donor-rankings-full" ? "복사됨!" : "URL 복사"}
+                      </button>
+                      <button
+                        type="button"
+                        className="px-2 py-1 rounded text-xs bg-pink-900/80 hover:bg-pink-800 text-pink-50"
+                        onClick={() => window.open(buildDonorRankingsFullUrl(), "_blank", "noopener,noreferrer")}
+                      >
+                        열기
+                      </button>
+                    </div>
                   </div>
                   <div className="rounded border border-white/10 bg-black/20 px-3 py-2">
                     <div className="text-xs text-neutral-300 mb-1">
@@ -8544,7 +8750,7 @@ export default function AdminPage() {
               </div>
               <div className="mb-3 rounded-lg border border-white/10 bg-black/30 overflow-hidden">
                 <div className="flex items-center justify-between border-b border-white/5 px-2 py-1.5">
-                  <span className="text-xs font-medium text-neutral-300">후원 리스트 오버레이 미리보기</span>
+                  <span className="text-xs font-medium text-neutral-300">후원 순위 (상위 N) 미리보기</span>
                   <button
                     type="button"
                     className="rounded border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-emerald-500/60 hover:text-emerald-200"
@@ -8557,10 +8763,132 @@ export default function AdminPage() {
                   <iframe
                     key={`donor-rankings-${donorRankingsPreviewIframeKey}-${user?.id || "finalent"}`}
                     src={appendAdminPreviewEmbedToOverlayUrl(`/overlay/donor-rankings?u=${user?.id || "finalent"}&zoomPct=${getDonorRankingsZoomPct()}`)}
-                    title="후원 리스트 오버레이 미리보기"
+                    title="후원 순위 오버레이 미리보기"
                     className="absolute inset-0 h-full w-full border-0"
                     style={{ background: "transparent" }}
                   />
+                </div>
+              </div>
+              <div className="mb-3 rounded-lg border border-pink-500/25 bg-pink-950/15 overflow-hidden">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-pink-500/15 px-2 py-1.5">
+                  <span className="text-xs font-medium text-pink-100">후원 순위 · 전체 (분홍) 미리보기</span>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      className={`px-2 py-0.5 rounded text-[11px] ${copiedId === "dash-donor-rankings-full-dash" ? "bg-emerald-600" : "bg-pink-800 hover:bg-pink-700 text-white"}`}
+                      onClick={() => void copyUrl(buildDonorRankingsFullUrl(), "dash-donor-rankings-full-dash")}
+                    >
+                      {copiedId === "dash-donor-rankings-full-dash" ? "복사됨" : "URL"}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded border border-pink-400/30 px-2 py-0.5 text-[11px] text-pink-100 hover:bg-pink-900/40"
+                      onClick={() => setDonorRankingsFullPreviewIframeKey((k) => k + 1)}
+                    >
+                      새로고침
+                    </button>
+                  </div>
+                </div>
+                <div className="relative w-full bg-black/40" style={{ minHeight: "260px", aspectRatio: "16 / 9" }}>
+                  <iframe
+                    key={`donor-rankings-full-${donorRankingsFullPreviewIframeKey}-${user?.id || "finalent"}`}
+                    src={appendAdminPreviewEmbedToOverlayUrl(
+                      donorRankingsFullOverlayPath(user?.id || "finalent", getDonorRankingsZoomPct())
+                    )}
+                    title="후원 순위 전체(분홍) 미리보기"
+                    className="absolute inset-0 h-full w-full border-0"
+                    style={{ background: "transparent" }}
+                  />
+                </div>
+              </div>
+              <div className="mb-3 rounded border border-pink-500/25 bg-pink-950/20 p-3 space-y-3">
+                <div>
+                  <h4 className="text-sm font-semibold text-pink-100">후원 순위 · 전체 (분홍) · 글자·색상</h4>
+                  <p className="mt-1 text-[11px] text-neutral-400 leading-snug">
+                    기존 후원 순위와 별도 저장됩니다. OBS에는{" "}
+                    <code className="text-pink-200/90">/overlay/donor-rankings-full</code> URL을 사용하세요.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                  <label className="text-[11px] text-neutral-400">
+                    제목(px)
+                    <input
+                      type="range"
+                      min={14}
+                      max={80}
+                      value={state.donorRankingsFullTheme.titleSize}
+                      onChange={(e) => updateDonorRankingsFullTheme({ titleSize: Number(e.target.value) })}
+                      className="w-full"
+                    />
+                    <span className="text-xs text-neutral-300">{state.donorRankingsFullTheme.titleSize}px</span>
+                  </label>
+                  <label className="text-[11px] text-neutral-400">
+                    행(px)
+                    <input
+                      type="range"
+                      min={12}
+                      max={64}
+                      value={state.donorRankingsFullTheme.rowSize}
+                      onChange={(e) => updateDonorRankingsFullTheme({ rowSize: Number(e.target.value) })}
+                      className="w-full"
+                    />
+                    <span className="text-xs text-neutral-300">{state.donorRankingsFullTheme.rowSize}px</span>
+                  </label>
+                  <label className="text-[11px] text-neutral-400">
+                    순위(px)
+                    <input
+                      type="range"
+                      min={12}
+                      max={72}
+                      value={state.donorRankingsFullTheme.rankSize}
+                      onChange={(e) => updateDonorRankingsFullTheme({ rankSize: Number(e.target.value) })}
+                      className="w-full"
+                    />
+                    <span className="text-xs text-neutral-300">{state.donorRankingsFullTheme.rankSize}px</span>
+                  </label>
+                  <label className="text-[11px] text-neutral-400">
+                    배경 투명도
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={state.donorRankingsFullTheme.overlayOpacity}
+                      onChange={(e) => updateDonorRankingsFullTheme({ overlayOpacity: Number(e.target.value) })}
+                      className="w-full"
+                    />
+                    <span className="text-xs text-neutral-300">{state.donorRankingsFullTheme.overlayOpacity}%</span>
+                  </label>
+                </div>
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+                  {(
+                    [
+                      ["titleColor", "제목"],
+                      ["rankColor", "순위"],
+                      ["nameColor", "닉네임"],
+                      ["amountColor", "금액"],
+                      ["headerAccountBg", "헤더"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <label
+                      key={key}
+                      className="flex items-center justify-between gap-2 rounded border border-pink-500/20 bg-black/25 px-2 py-1 text-[11px] text-neutral-400"
+                    >
+                      <span>{label}</span>
+                      <input
+                        type="color"
+                        value={toColorPickerValue(
+                          String((state.donorRankingsFullTheme as unknown as Record<string, unknown>)[key] ?? ""),
+                          "#f9a8d4"
+                        )}
+                        onChange={(e) =>
+                          updateDonorRankingsFullTheme({
+                            [key]: e.target.value,
+                          } as Partial<AppState["donorRankingsFullTheme"]>)
+                        }
+                        className="h-7 w-9 rounded border border-white/20 bg-transparent p-0.5"
+                      />
+                    </label>
+                  ))}
                 </div>
               </div>
               <div className="mb-3 rounded border border-violet-500/30 bg-violet-950/25 p-3 space-y-3">
@@ -8573,12 +8901,29 @@ export default function AdminPage() {
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Link
-                      href={`/admin/obs-text?u=${encodeURIComponent(user?.id || "finalent")}&new=1`}
-                      className="shrink-0 rounded-lg bg-violet-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700"
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-lg bg-violet-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+                      disabled={obsTextRegistry.instances.length >= MAX_OBS_TEXT_INSTANCES}
+                      onClick={addObsTextOverlayQuick}
                     >
-                      + OBS 텍스트 추가
-                    </Link>
+                      + OBS 텍스트 추가 ({obsTextRegistry.instances.length}/{MAX_OBS_TEXT_INSTANCES})
+                    </button>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-lg bg-neutral-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-600"
+                      onClick={() => {
+                        if (typeof window === "undefined") return;
+                        const text = formatObsTextOverlayUrlList(
+                          window.location.origin,
+                          user?.id || "finalent",
+                          obsTextRegistry
+                        );
+                        void copyUrl(text, "dash-obs-text-all");
+                      }}
+                    >
+                      {copiedId === "dash-obs-text-all" ? "전체 URL 복사됨" : "전체 URL 복사"}
+                    </button>
                     <Link
                       href={`/admin/obs-text?u=${encodeURIComponent(user?.id || "finalent")}`}
                       className="shrink-0 rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-600"
@@ -8627,12 +8972,28 @@ export default function AdminPage() {
                             >
                               오버레이 열기
                             </button>
+                            <button
+                              type="button"
+                              className="rounded border border-violet-500/40 px-2 py-1 text-xs text-violet-200 hover:bg-violet-900/40"
+                              onClick={() => duplicateObsTextOverlayQuick(inst.id)}
+                            >
+                              복제
+                            </button>
                             <Link
                               href={`/admin/obs-text?u=${encodeURIComponent(user?.id || "finalent")}&textId=${encodeURIComponent(inst.id)}`}
                               className="rounded border border-violet-500/40 px-2 py-1 text-xs text-violet-200 hover:bg-violet-900/40"
                             >
                               편집
                             </Link>
+                            {obsTextRegistry.instances.length > 1 ? (
+                              <button
+                                type="button"
+                                className="rounded px-2 py-1 text-xs text-rose-300 hover:bg-rose-950/40"
+                                onClick={() => removeObsTextOverlayQuick(inst.id)}
+                              >
+                                삭제
+                              </button>
+                            ) : null}
                             <button
                               type="button"
                               className={`rounded px-2 py-1 text-xs ${obsTextPreviewId === inst.id ? "bg-violet-600 text-white" : "bg-neutral-800 text-neutral-300"}`}

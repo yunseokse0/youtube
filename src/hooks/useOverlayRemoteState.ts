@@ -145,12 +145,15 @@ export function useOverlayRemoteState(
       lastVisualSigRef.current = overlaySyncSignatureForPick(local, statePick);
       lastSyncedUpdatedAtRef.current = local.updatedAt || 0;
       lastSyncedDonorRevRef.current = readDonorRankingsRevision(local);
-    } else if (!skipLocal) {
+    } else {
       const base = defaultState();
       setState(base);
       lastVisualSigRef.current = overlaySyncSignatureForPick(base, statePick);
-      lastSyncedUpdatedAtRef.current =
-        options.noLocalBaseline === "default" ? base.updatedAt || 0 : 0;
+      lastSyncedUpdatedAtRef.current = skipLocal
+        ? 0
+        : options.noLocalBaseline === "default"
+          ? base.updatedAt || 0
+          : 0;
     }
 
     syncFromApiRef.current = syncFromApi;

@@ -348,6 +348,8 @@ export type AppState = {
   rankPositionLabels: string[];
   /** 계좌/투네 후원 순위 오버레이 테마 */
   donorRankingsTheme: DonorRankingsTheme;
+  /** `/overlay/donor-rankings-full` — 전체 후원자 목록·분홍 테마(기존 순위와 분리) */
+  donorRankingsFullTheme: DonorRankingsTheme;
   /** 후원 순위 오버레이 테마 프리셋 목록 */
   donorRankingsPresets: DonorRankingsPreset[];
   /** 현재 선택된 후원 순위 프리셋 ID */
@@ -384,6 +386,8 @@ export type AppState = {
   timerDisplayStyles: Record<"general", TimerDisplayStyle>;
   /** `/overlay/donor-rankings` 배경 GIF·투명도 */
   donorRankingsOverlayConfig: OverlayConfig;
+  /** `/overlay/donor-rankings-full` 배경 GIF·투명도 */
+  donorRankingsFullOverlayConfig: OverlayConfig;
   /** `/overlay/donation-lists` 배경 GIF·투명도(상태 저장 시 Redis와 동기화) */
   donationListsOverlayConfig: OverlayConfig;
   /** 시그 판매/회전판에서 제외할 시그 ID 목록 */

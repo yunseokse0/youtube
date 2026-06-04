@@ -9,7 +9,9 @@ export const OBS_TEXT_OVERLAY_STATE_KEY = "obsTextOverlayV1";
 /** OBS 브라우저 소스 URL — 어떤 텍스트 오버레이 인스턴스인지 */
 export const OBS_TEXT_ID_QUERY = "textId";
 export const DEFAULT_OBS_TEXT_INSTANCE_ID = "default";
-const MAX_OBS_TEXT_INSTANCES = 24;
+export const MAX_OBS_TEXT_INSTANCES = 24;
+/** 인스턴스(OBS 소스 1개)당 최대 줄 수 */
+export const MAX_OBS_TEXT_BLOCKS_PER_INSTANCE = 32;
 
 export type { ObsTextEffectId } from "@/lib/obs-text-effects";
 
@@ -423,8 +425,187 @@ export function createObsTextInstance(name?: string): ObsTextOverlayInstance {
   };
 }
 
+function cloneObsTextConfig(config: ObsTextOverlayConfig): ObsTextOverlayConfig {
+  return normalizeObsTextOverlay(JSON.parse(JSON.stringify(config)) as unknown);
+}
+
+/** 레지스트리에 인스턴스 추가 (최대 24) */
+export function appendObsTextInstance(
+  registry: ObsTextOverlayRegistry,
+  name?: string
+): { registry: ObsTextOverlayRegistry; instance: ObsTextOverlayInstance } | null {
+  if (registry.instances.length >= MAX_OBS_TEXT_INSTANCES) return null;
+  const instance = createObsTextInstance(
+    name?.trim() || `텍스트 ${registry.instances.length + 1}`
+  );
+  return {
+    registry: { version: 2, instances: [...registry.instances, instance] },
+    instance,
+  };
+}
+
+/** 선택 인스턴스 설정 복제 */
+export function duplicateObsTextInstance(
+  registry: ObsTextOverlayRegistry,
+  sourceId: string
+): { registry: ObsTextOverlayRegistry; instance: ObsTextOverlayInstance } | null {
+  if (registry.instances.length >= MAX_OBS_TEXT_INSTANCES) return null;
+  const src = registry.instances.find((i) => i.id === sourceId);
+  if (!src) return null;
+  const instance: ObsTextOverlayInstance = {
+    id: newObsTextInstanceId(),
+    name: `${src.name} 복사`.slice(0, 40),
+    config: cloneObsTextConfig(src.config),
+  };
+  return {
+    registry: { version: 2, instances: [...registry.instances, instance] },
+    instance,
+  };
+}
+
+/** 인스턴스 삭제 (최소 1개 유지) */
+export function removeObsTextInstance(
+  registry: ObsTextOverlayRegistry,
+  id: string
+): ObsTextOverlayRegistry | null {
+  if (registry.instances.length <= 1) return null;
+  const instances = registry.instances.filter((i) => i.id !== id);
+  if (instances.length === registry.instances.length) return null;
+  return { version: 2, instances };
+}
+
+export function renameObsTextInstance(
+  registry: ObsTextOverlayRegistry,
+  id: string,
+  name: string
+): ObsTextOverlayRegistry {
+  return {
+    version: 2,
+    instances: registry.instances.map((i) =>
+      i.id === id ? { ...i, name: name.trim() || i.name } : i
+    ),
+  };
+}
+
+/** OBS 등록용 — 인스턴스별 URL 목록(한 줄에 하나) */
+export function formatObsTextOverlayUrlList(
+  origin: string,
+  userId: string,
+  registry: ObsTextOverlayRegistry
+): string {
+  return registry.instances
+    .map((inst) => `# ${inst.name} (${inst.id})\n${buildObsTextOverlayUrl(origin, userId, inst.id)}`)
+    .join("\n\n");
+}
+
+export function mergeObsTextRegistryIntoState(
+  state: AppState,
+  registry: ObsTextOverlayRegistry
+): AppState {
+  const os =
+    state.overlaySettings && typeof state.overlaySettings === "object"
+      ? { ...(state.overlaySettings as Record<string, unknown>) }
+      : {};
+  return {
+    ...state,
+    overlaySettings: { ...os, [OBS_TEXT_OVERLAY_STATE_KEY]: registry },
+    updatedAt: Date.now(),
+  };
+}
+
 export function segmentsToPlainText(segments: ObsTextSegment[]): string {
   return segments.map((s) => s.text).join("");
+}
+
+export function createObsTextBlockId(): string {
+  return `block-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** 블록 배열 → 편집용 여러 줄 문자열 */
+export function multilineTextFromBlocks(blocks: ObsTextBlock[]): string {
+  if (!blocks.length) return "";
+  return blocks
+    .map((b) => segmentsToPlainText(b.segments).replace(/\u00a0/g, " "))
+    .join("\n");
+}
+
+function blockPlainLine(block: ObsTextBlock): string {
+  return segmentsToPlainText(block.segments).replace(/\u00a0/g, " ");
+}
+
+function isCharColorBlock(block: ObsTextBlock): boolean {
+  return (
+    block.segments.length > 1 &&
+    block.segments.every((s) => Array.from(s.text).length <= 1)
+  );
+}
+
+function createDefaultObsTextBlock(text: string, defaultColor: string): ObsTextBlock {
+  const line = text.length === 0 ? " " : text;
+  return {
+    id: createObsTextBlockId(),
+    segments: [{ text: line, color: defaultColor }],
+    visible: true,
+    align: "center",
+    effect: "none",
+    effectSpeed: 1,
+  };
+}
+
+/** 여러 줄 입력 → 블록 동기화(기존 줄은 id·효과·정렬 유지) */
+export function blocksFromMultilineText(
+  raw: string,
+  prevBlocks: ObsTextBlock[],
+  defaultColor: string
+): ObsTextBlock[] {
+  const lines = raw.split(/\r?\n/).slice(0, MAX_OBS_TEXT_BLOCKS_PER_INSTANCE);
+  if (lines.length === 0) {
+    return [createDefaultObsTextBlock(" ", defaultColor)];
+  }
+  return lines.map((line, idx) => {
+    const prev = prevBlocks[idx];
+    const normalized = line.length === 0 ? " " : line;
+    if (!prev) {
+      return createDefaultObsTextBlock(normalized, defaultColor);
+    }
+    if (isCharColorBlock(prev)) {
+      return {
+        ...prev,
+        segments: mergeSegmentsFromPlainText(
+          normalized,
+          prev.segments,
+          defaultColor
+        ),
+      };
+    }
+    const color = prev.segments[0]?.color ?? defaultColor;
+    return {
+      ...prev,
+      segments: [{ text: normalized, color }],
+    };
+  });
+}
+
+/** 커서/선택 위치가 속한 줄 인덱스 */
+export function lineIndexAtTextOffset(text: string, offset: number): number {
+  const safe = Math.max(0, Math.min(offset, text.length));
+  if (safe === 0) return 0;
+  return text.slice(0, safe).split(/\r?\n/).length - 1;
+}
+
+/** 줄 인덱스 → 전체 문자열에서 해당 줄의 [start, end) */
+export function lineCharRangeInMultiline(
+  text: string,
+  lineIndex: number
+): { start: number; end: number; line: string } {
+  const lines = text.split(/\r?\n/);
+  const idx = Math.max(0, Math.min(lineIndex, lines.length - 1));
+  let start = 0;
+  for (let i = 0; i < idx; i++) {
+    start += lines[i].length + 1;
+  }
+  const line = lines[idx] ?? "";
+  return { start, end: start + line.length, line };
 }
 
 /** 유니코드 코드 포인트 단위 분할(이모지 1개 = 1칸) */
