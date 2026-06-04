@@ -127,18 +127,18 @@ export default function SigSaleMedia({
 
   if (isLikelyGifUrl(displaySrc) && !gifFail) {
     if (gifDelayMultiplier <= 1) {
+      const fillClass = fill
+        ? `${className ?? ""} absolute inset-0 h-full w-full object-contain`.trim()
+        : className;
       return (
-        <Image
+        // eslint-disable-next-line @next/next/no-img-element -- OBS CEF: next/image GIF가 검게 나오는 경우 방지
+        <img
           src={displaySrc}
           alt={alt}
-          fill={fill}
-          sizes={sizes}
-          priority={Boolean(fill)}
-          unoptimized={unoptimized ?? true}
-          className={className}
+          className={fillClass}
+          decoding="async"
           onError={handleImageError}
           onLoad={notifyReady}
-          onLoadingComplete={notifyReady}
         />
       );
     }

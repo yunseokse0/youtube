@@ -85,6 +85,7 @@ import {
 import { stripBundledSigPlaceholderItems } from "@/lib/sig-placeholder";
 import { buildSigSalesOverlaySyncSignature } from "@/lib/overlay-sync-signature";
 import { revisionForStatePick, STATE_PICK_SIG_SALES } from "@/lib/state-api-pick";
+import { useClientOnlySearchParams } from "@/hooks/useClientOnlySearchParams";
 
 /**
  * [계약] 시그 판매 오버레이는 아래를 전제로 구현돼 있어야 한다(“될 수도”가 아님).
@@ -193,21 +194,6 @@ const wheelReducer = (state: WheelPhase, action: { type: string }): WheelPhase =
   }
 };
 
-/** OBS CEF: `useSearchParams` Suspense 가 풀리지 않아 검은 화면만 보일 수 있음 → location.search 사용 */
-function useClientSearchParams(): URLSearchParams {
-  const [params, setParams] = useState<URLSearchParams>(() => {
-    if (typeof window === "undefined") return new URLSearchParams();
-    return new URLSearchParams(window.location.search);
-  });
-  useEffect(() => {
-    const sync = () => setParams(new URLSearchParams(window.location.search));
-    sync();
-    window.addEventListener("popstate", sync);
-    return () => window.removeEventListener("popstate", sync);
-  }, []);
-  return params;
-}
-
 /** SSR·첫 페인트 — 방송용은 투명(검은 막 방지) */
 function OverlayHydrationShell({
   message = "오버레이 불러오는 중…",
@@ -242,27 +228,30 @@ function OverlayHydrationShell({
 }
 
 function SigSalesOverlayPageInner() {
-  const sp = useClientSearchParams();
+  const { params: sp, ready: overlayReady } = useClientOnlySearchParams();
   const pathname = (usePathname() || "/").replace(/\/+$/, "") || "/";
   const onManualOverlayPath =
     pathname === "/overlay/sig-sales-manual" || pathname.startsWith("/overlay/sig-sales-manual/");
-  const manualModeParam =
-    onManualOverlayPath ||
-    String(sp.get("mode") || "").toLowerCase() === "manual" ||
-    String(sp.get("overlayMode") || "").toLowerCase() === "manual";
+  const manualModeParam = useMemo(() => {
+    if (!overlayReady) return onManualOverlayPath;
+    return (
+      onManualOverlayPath ||
+      String(sp.get("mode") || "").toLowerCase() === "manual" ||
+      String(sp.get("overlayMode") || "").toLowerCase() === "manual"
+    );
+  }, [overlayReady, onManualOverlayPath, sp]);
   const userId = getOverlayUserIdFromSearchParams(sp);
-  /** SSR·클라이언트 첫 렌더를 동일하게 — `typeof window` 분기는 React #418 하이드레이션 오류 유발 */
-  const [clientBoot, setClientBoot] = useState<{ ready: boolean; host: string | null }>({
-    ready: false,
-    host: null,
-  });
+  const [clientHost, setClientHost] = useState<string | null>(null);
   useEffect(() => {
-    setClientBoot({ ready: true, host: window.location.hostname });
-  }, []);
-  const clientHost = clientBoot.host;
+    if (!overlayReady) return;
+    setClientHost(window.location.hostname);
+  }, [overlayReady]);
   const wheelDemoActive = useMemo(
-    () => (manualModeParam ? false : clientHost != null ? isWheelDemoModeFromSearchParams(sp, clientHost) : false),
-    [sp, clientHost, manualModeParam]
+    () =>
+      overlayReady && !manualModeParam && clientHost != null
+        ? isWheelDemoModeFromSearchParams(sp, clientHost)
+        : false,
+    [overlayReady, sp, clientHost, manualModeParam]
   );
   const wheelDemoAutoSpin = useMemo(
     () => isWheelDemoAutoSpinFromSearchParams(sp, wheelDemoActive),
@@ -2256,16 +2245,16 @@ function SigSalesOverlayPageInner() {
       ? "pointer-events-none fixed inset-0 z-[1] flex flex-col justify-end items-center overflow-visible bg-transparent p-0 text-white"
       : "relative min-h-0 overflow-visible bg-transparent px-3 py-3 text-white sm:px-5 sm:py-4";
 
-  if (!clientBoot.ready) {
+  if (!overlayReady) {
     return (
       <OverlayHydrationShell
-        transparent={!wheelDemoActive}
+        transparent
         message={
-          manualOverlayMode
+          onManualOverlayPath
             ? "수동 시그 오버레이 불러오는 중…"
             : "오버레이 불러오는 중…"
         }
-        showMessage={manualOverlayMode}
+        showMessage={onManualOverlayPath}
       />
     );
   }

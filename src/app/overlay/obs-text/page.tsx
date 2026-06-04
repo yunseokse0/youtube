@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useEffect, useMemo } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo } from "react";
+import { useClientOnlySearchParams } from "@/hooks/useClientOnlySearchParams";
 import { ObsTextOverlayView } from "@/components/obs-text/ObsTextOverlayView";
 import {
   OBS_TEXT_ID_QUERY,
@@ -15,7 +15,7 @@ import { readObsTextOverlayPollMs } from "@/lib/overlay-pull-policy";
 import { STATE_PICK_OBS_TEXT } from "@/lib/state-api-pick";
 
 function ObsTextOverlayInner() {
-  const sp = useSearchParams();
+  const { params: sp, ready: spReady } = useClientOnlySearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
   const textId = sp.get(OBS_TEXT_ID_QUERY);
   const { state, ready, resync } = useOverlayRemoteState(userId, {
@@ -45,10 +45,12 @@ function ObsTextOverlayInner() {
 
   const textIdMiss =
     Boolean(textId?.trim()) &&
+    spReady &&
     ready &&
     !readObsTextRegistryFromState(state).instances.some((i) => i.id === textId?.trim());
 
   const hasVisibleText =
+    spReady &&
     ready &&
     config.blocks.some(
       (b) =>
@@ -56,7 +58,7 @@ function ObsTextOverlayInner() {
         b.segments.some((s) => String(s.text ?? "").trim().length > 0)
     );
 
-  if (!ready) {
+  if (!spReady || !ready) {
     return (
       <div className="fixed inset-0 flex items-center justify-center text-white/40 text-sm">
         …
@@ -83,9 +85,5 @@ function ObsTextOverlayInner() {
 }
 
 export default function ObsTextOverlayPage() {
-  return (
-    <Suspense fallback={null}>
-      <ObsTextOverlayInner />
-    </Suspense>
-  );
+  return <ObsTextOverlayInner />;
 }

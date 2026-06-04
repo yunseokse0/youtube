@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { useSearchParams } from "next/navigation";
+import { useClientOnlySearchParams } from "@/hooks/useClientOnlySearchParams";
 import type { SigItem } from "@/types";
 import ResultOverlay from "@/components/sig-sales/ResultOverlay";
 import { layoutSigOverlayResultRow } from "@/components/sig-sales/sig-overlay-card-size";
@@ -21,7 +21,7 @@ import { stripBundledSigPlaceholderItems } from "@/lib/sig-placeholder";
 import { STATE_PICK_SIG_SALES } from "@/lib/state-api-pick";
 
 export default function ManualSigOverlaySimple() {
-  const sp = useSearchParams();
+  const { params: sp, ready: spReady } = useClientOnlySearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
   const memberFilterId = getOverlayMemberFilterIdFromSearchParams(sp);
   const scaleRaw = sp.get("sigResultScalePct") || sp.get("resultScalePct") || "";
@@ -106,10 +106,10 @@ export default function ManualSigOverlaySimple() {
       }),
     [scalePct, selected.length, oneShot]
   );
-  const visible = ready && selected.length >= 2;
+  const visible = spReady && ready && selected.length >= 2;
   const soldOutStampUrl = DEFAULT_SIG_SOLD_STAMP_URL;
 
-  if (!ready) {
+  if (!spReady || !ready) {
     return (
       <main className="min-h-0 bg-transparent p-4 text-center text-xs text-neutral-400">
         수동 시그 오버레이 불러오는 중…
