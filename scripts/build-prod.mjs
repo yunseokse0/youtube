@@ -42,14 +42,22 @@ if (code !== 0) {
   console.error(
     "\n[build:prod] 실패 — 스왑 미설정이면: sudo bash deploy/ec2-setup-swap.sh\n" +
       "  또는 NODE_HEAP_MB=1536 PM2_APP=youtube npm run build:prod\n" +
-      "  또는 PC에서 npm run build 후 .next만 scp (deploy/EC2-저메모리-빌드.md)\n"
+      "  또는 PC에서 npm run build 후 .next만 scp (deploy/EC2-저메모리-빌드.md)\n" +
+      "  deploy/deploy-on-ec2.sh 는 실패 시 이전 .next 로 자동 복구합니다.\n"
   );
+  if (pm2App) {
+    console.warn(`[build:prod] pm2 restart ${pm2App} (이전 .next 가 남아 있을 때만 정상)`);
+    run("pm2", ["restart", pm2App], { stdio: "inherit" });
+  }
   process.exit(code);
 }
 
 if (pm2App) {
   console.log(`[build:prod] pm2 restart ${pm2App}`);
-  run("pm2", ["restart", pm2App], { stdio: "inherit" });
+  const restartCode = run("pm2", ["restart", pm2App], { stdio: "inherit" });
+  if (restartCode !== 0) {
+    console.warn(`[build:prod] pm2 restart 실패 — 서버에서 pm2 status / pm2 logs ${pm2App} 확인`);
+  }
 }
 
 console.log("[build:prod] 완료");

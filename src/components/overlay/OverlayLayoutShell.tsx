@@ -43,7 +43,7 @@ const overlayRouteCss = `
 
 function isSigSalesBroadcastOverlayPath(pathname: string | null): boolean {
   if (!pathname) return false;
-  return /^\/overlay\/sig-sales(?:\/|$)/.test(pathname);
+  return /^\/overlay\/sig-sales(?:-manual)?(?:\/|$)/.test(pathname);
 }
 
 export default function OverlayLayoutShell({ children }: { children: React.ReactNode }) {

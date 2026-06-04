@@ -22,12 +22,29 @@ fi
 echo "== 메모리 =="
 free -h
 
-echo "== clean .next =="
-rm -rf .next
+echo "== .next 백업 후 빌드 (실패 시 이전 빌드로 복구) =="
+rm -rf .next.prev
+if [ -d .next ]; then
+  mv .next .next.prev
+fi
 
 echo "== build:prod =="
 export PM2_APP NODE_HEAP_MB
+set +e
 npm run build:prod
+BUILD_CODE=$?
+set -e
+
+if [ "$BUILD_CODE" -ne 0 ]; then
+  echo "== 빌드 실패 — .next 복구 및 pm2 재기동 =="
+  rm -rf .next
+  if [ -d .next.prev ]; then
+    mv .next.prev .next
+  fi
+  pm2 restart "$PM2_APP" 2>/dev/null || pm2 start "$PM2_APP" 2>/dev/null || true
+  exit "$BUILD_CODE"
+fi
+rm -rf .next.prev
 
 echo "== health =="
 sleep 2
