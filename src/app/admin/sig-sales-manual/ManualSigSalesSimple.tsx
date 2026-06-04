@@ -95,17 +95,21 @@ export default function ManualSigSalesSimple() {
         priceInput: String(Math.floor(Number(s.price || 0))),
         imageUrl: String(s.imageUrl || "").trim(),
       }));
-      const next = buildManualSigBroadcastState(state, bundle.selected, bundle.oneShot, {
-        persistDrafts: normalizeManualSigDraftPersist({
-          inputMode: "inventory",
-          drafts,
-          oneShotName: bundle.oneShot.name,
-          oneShotPriceInput: String(bundle.oneShot.price),
-          oneShotImageUrl: "",
-          sigSoldFlags: [false, false, false, false, false],
-          oneShotMarkSold: false,
-        }),
+      const persistDrafts = normalizeManualSigDraftPersist({
+        inputMode: "inventory",
+        drafts,
+        oneShotName: bundle.oneShot.name,
+        oneShotPriceInput: String(bundle.oneShot.price),
+        oneShotImageUrl: "",
+        sigSoldFlags: [false, false, false, false, false],
+        oneShotMarkSold: false,
       });
+      const next = buildManualSigBroadcastState(
+        state,
+        bundle.selected,
+        bundle.oneShot,
+        persistDrafts ? { persistDrafts } : undefined
+      );
       setState(next);
       const saved = await saveStateAsync(next, userId);
       setToast(
