@@ -6,6 +6,7 @@ import {
   OBS_TEXT_EMOJI_PRESETS,
   OBS_TEXT_OVERLAY_STATE_KEY,
   appendObsTextInstance,
+  applyEffectRangeToBlocks,
   blocksFromMultilineText,
   buildObsTextOverlayUrl,
   duplicateObsTextInstance,
@@ -18,6 +19,7 @@ import {
   MAX_OBS_TEXT_INSTANCES,
   mergeSegmentsFromPlainText,
   multilineTextFromBlocks,
+  obsTextRegistrySyncSignature,
   readObsTextRegistryFromState,
   removeObsTextInstance,
   renameObsTextInstance,
@@ -45,6 +47,7 @@ import {
   createStateUpdatedScheduler,
   DONOR_STATE_UPDATED_DEBOUNCE_MS,
   DONOR_STATE_UPDATED_MAX_WAIT_MS,
+  shouldSyncOverlayFromStateUpdatedEvent,
 } from "@/lib/overlay-pull-policy";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
 
@@ -91,18 +94,33 @@ export default function ObsTextOverlayEditor({
   const [copied, setCopied] = useState(false);
   const [copiedAllUrls, setCopiedAllUrls] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editorPanelRef = useRef<HTMLDivElement>(null);
+  const composingRef = useRef(false);
   const loadedRef = useRef(false);
   const createOnMountDoneRef = useRef(false);
+  /** SSR·첫 hydration과 동일한 상대 URL → 마운트 후 origin 반영 */
+  const [pageOrigin, setPageOrigin] = useState("");
   const pendingRegistrySaveRef = useRef(false);
   const lastPersistedUpdatedAtRef = useRef(0);
+  const lastAppliedRemoteSigRef = useRef("");
+  const localDirtyRef = useRef(false);
   const skipAutosaveUntilRef = useRef(0);
   const activeInstanceIdRef = useRef(activeInstanceId);
-  activeInstanceIdRef.current = activeInstanceId;
+  const registryRef = useRef(registry);
+  const configRef = useRef<ObsTextOverlayConfig | null>(null);
+
+  const markLocalDirty = useCallback(() => {
+    localDirtyRef.current = true;
+  }, []);
 
   const config = useMemo(
     () => getObsTextInstance(registry, activeInstanceId).config,
     [registry, activeInstanceId]
   );
+
+  activeInstanceIdRef.current = activeInstanceId;
+  registryRef.current = registry;
+  configRef.current = config;
 
   const activeInstance = useMemo(
     () => getObsTextInstance(registry, activeInstanceId),
@@ -111,6 +129,7 @@ export default function ObsTextOverlayEditor({
 
   const setConfig = useCallback(
     (updater: ObsTextOverlayConfig | ((prev: ObsTextOverlayConfig) => ObsTextOverlayConfig)) => {
+      markLocalDirty();
       setRegistry((prev) => ({
         ...prev,
         instances: prev.instances.map((inst) => {
@@ -123,7 +142,7 @@ export default function ObsTextOverlayEditor({
         }),
       }));
     },
-    [activeInstanceId]
+    [activeInstanceId, markLocalDirty]
   );
 
   const activeBlock = useMemo(() => {
@@ -138,16 +157,19 @@ export default function ObsTextOverlayEditor({
     setActiveLineIndex(idx);
   }, []);
 
-  const overlayUrl = useMemo(() => {
-    if (typeof window === "undefined") {
-      return `/overlay/obs-text?u=${userId}&host=obs&textId=${activeInstanceId}`;
-    }
-    return buildObsTextOverlayUrl(window.location.origin, userId, activeInstanceId);
-  }, [userId, activeInstanceId]);
+  useEffect(() => {
+    setPageOrigin(window.location.origin);
+  }, []);
+
+  const overlayUrl = useMemo(
+    () => buildObsTextOverlayUrl(pageOrigin, userId, activeInstanceId),
+    [pageOrigin, userId, activeInstanceId]
+  );
 
   const selectInstance = useCallback(
     (id: string, reg?: ObsTextOverlayRegistry) => {
-      const source = reg ?? registry;
+      const source = reg ?? registryRef.current;
+      if (id === activeInstanceIdRef.current && !reg) return;
       setActiveInstanceId(id);
       const cfg = getObsTextInstance(source, id).config;
       syncDraftFromConfig(cfg, setActiveLineIndex, setMultilineDraft, setEditMode);
@@ -159,7 +181,7 @@ export default function ObsTextOverlayEditor({
         window.history.replaceState({}, "", `${u.pathname}${u.search}`);
       }
     },
-    [registry, userId]
+    [userId]
   );
 
   const stampRegistryForSave = useCallback(
@@ -218,7 +240,13 @@ export default function ObsTextOverlayEditor({
           setStatus("저장 실패 — 네트워크 또는 로그인 상태를 확인하세요");
           return false;
         }
-        lastPersistedUpdatedAtRef.current = now;
+        const serverTs =
+          typeof result.serverUpdatedAt === "number" && Number.isFinite(result.serverUpdatedAt)
+            ? result.serverUpdatedAt
+            : now;
+        lastPersistedUpdatedAtRef.current = serverTs;
+        lastAppliedRemoteSigRef.current = obsTextRegistrySyncSignature(stamped);
+        localDirtyRef.current = false;
         setRegistry(stamped);
         if (opts?.statusMsg) setStatus(opts.statusMsg);
         else if (!opts?.quiet) setStatus("저장됨 · OBS에 자동 반영");
@@ -238,10 +266,16 @@ export default function ObsTextOverlayEditor({
     (state: AppState | null) => {
       if (!state) return;
       if (pendingRegistrySaveRef.current) return;
+      if (localDirtyRef.current) return;
       const remoteTs = state.updatedAt || 0;
-      if (remoteTs > 0 && remoteTs < lastPersistedUpdatedAtRef.current) return;
+      if (remoteTs > 0 && remoteTs <= lastPersistedUpdatedAtRef.current) return;
 
       const reg = readObsTextRegistryFromState(state);
+      const remoteSig = obsTextRegistrySyncSignature(reg);
+      if (remoteSig === lastAppliedRemoteSigRef.current) {
+        loadedRef.current = true;
+        return;
+      }
 
       if (createOnMount && !createOnMountDoneRef.current) {
         createOnMountDoneRef.current = true;
@@ -259,6 +293,7 @@ export default function ObsTextOverlayEditor({
         return;
       }
 
+      lastAppliedRemoteSigRef.current = remoteSig;
       setRegistry(reg);
       const id = resolveObsTextInstanceId(
         reg,
@@ -272,7 +307,7 @@ export default function ObsTextOverlayEditor({
         setEditMode
       );
       loadedRef.current = true;
-      skipAutosaveUntilRef.current = Date.now() + 900;
+      skipAutosaveUntilRef.current = Date.now() + 400;
     },
     [initialInstanceId, createOnMount, selectInstance, persistRegistry]
   );
@@ -316,6 +351,15 @@ export default function ObsTextOverlayEditor({
 
   useSSEConnection((msg) => {
     if (!msg || msg.type !== "state_updated") return;
+    if (localDirtyRef.current) return;
+    if (
+      !shouldSyncOverlayFromStateUpdatedEvent(
+        (msg as { updatedAt?: unknown }).updatedAt,
+        lastPersistedUpdatedAtRef.current
+      )
+    ) {
+      return;
+    }
     scheduleSyncRef.current?.();
   });
 
@@ -330,9 +374,31 @@ export default function ObsTextOverlayEditor({
     await persistRegistry(registry, activeInstanceId, { activeConfig: config });
   }, [persistRegistry, registry, activeInstanceId, config]);
 
+  const flushPendingEdits = useCallback(async () => {
+    if (!localDirtyRef.current || pendingRegistrySaveRef.current) return;
+    await persistRegistry(registryRef.current, activeInstanceIdRef.current, {
+      activeConfig: configRef.current ?? undefined,
+      quiet: true,
+      statusMsg: "저장됨 · OBS 반영",
+    });
+  }, [persistRegistry]);
+
+  const selectInstanceWithFlush = useCallback(
+    (id: string) => {
+      if (id === activeInstanceIdRef.current) return;
+      if (localDirtyRef.current) {
+        void flushPendingEdits().then(() => selectInstance(id));
+        return;
+      }
+      selectInstance(id);
+    },
+    [selectInstance, flushPendingEdits]
+  );
+
   const autoSaveQuietRef = useRef(false);
   useEffect(() => {
     if (!loadedRef.current) return;
+    if (!localDirtyRef.current) return;
     if (pendingRegistrySaveRef.current) return;
     if (Date.now() < skipAutosaveUntilRef.current) return;
     const tid = window.setTimeout(() => {
@@ -389,34 +455,64 @@ export default function ObsTextOverlayEditor({
   };
 
   const renameInstance = (id: string, name: string) => {
+    markLocalDirty();
     setRegistry((prev) => renameObsTextInstance(prev, id, name));
   };
 
   const instanceOverlayUrl = useCallback(
-    (instanceId: string) => {
-      if (typeof window === "undefined") {
-        return `/overlay/obs-text?u=${userId}&host=obs&textId=${instanceId}`;
-      }
-      return buildObsTextOverlayUrl(window.location.origin, userId, instanceId);
-    },
-    [userId]
+    (instanceId: string) => buildObsTextOverlayUrl(pageOrigin, userId, instanceId),
+    [pageOrigin, userId]
   );
 
   const onMultilineChange = useCallback(
-    (text: string) => {
+    (text: string, opts?: { skipBlocks?: boolean }) => {
+      markLocalDirty();
       skipMultilineResyncRef.current = true;
       setMultilineDraft(text);
-      setConfig((prev) => {
-        const blocks = blocksFromMultilineText(text, prev.blocks, prev.defaultColor);
-        return { ...prev, blocks };
-      });
+      if (!opts?.skipBlocks) {
+        setConfig((prev) => {
+          const blocks = blocksFromMultilineText(text, prev.blocks, prev.defaultColor);
+          return { ...prev, blocks };
+        });
+      }
       const el = textareaRef.current;
       if (el) {
         const idx = lineIndexAtTextOffset(text, el.selectionStart ?? text.length);
         setActiveLineIndex(idx);
       }
     },
-    [setConfig]
+    [setConfig, markLocalDirty]
+  );
+
+  /** 효과·색상 버튼 클릭 시 textarea blur로 입력이 씹히는 것 방지 */
+  const keepTextareaFocus = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+  }, []);
+
+  const applyEffectToSelection = useCallback(
+    (effectId: ObsTextEffectId) => {
+      const el = textareaRef.current;
+      if (!el) return;
+      const start = el.selectionStart ?? 0;
+      const end = el.selectionEnd ?? 0;
+      const speed = activeBlock?.effectSpeed ?? 1;
+      markLocalDirty();
+      skipMultilineResyncRef.current = true;
+      setConfig((prev) => ({
+        ...prev,
+        blocks: applyEffectRangeToBlocks(
+          multilineDraft,
+          prev.blocks,
+          start,
+          end,
+          effectId,
+          speed,
+          prev.defaultColor
+        ),
+      }));
+      requestAnimationFrame(() => el.focus());
+    },
+    [multilineDraft, activeBlock?.effectSpeed, setConfig, markLocalDirty]
   );
 
   useEffect(() => {
@@ -451,6 +547,8 @@ export default function ObsTextOverlayEditor({
   const applyColorToSelection = () => {
     const el = textareaRef.current;
     if (!el) return;
+    markLocalDirty();
+    skipMultilineResyncRef.current = true;
     const start = el.selectionStart ?? 0;
     const end = el.selectionEnd ?? 0;
     const lineIdx = lineIndexAtTextOffset(multilineDraft, start);
@@ -505,6 +603,7 @@ export default function ObsTextOverlayEditor({
     updateBlock(targetBlock.id, {
       segments: parts.length ? parts : [{ text: " ", color: pickColor }],
     });
+    requestAnimationFrame(() => el.focus());
   };
 
   const updateCharSegmentColor = (index: number, color: string) => {
@@ -581,13 +680,10 @@ export default function ObsTextOverlayEditor({
             <button
               type="button"
               className="rounded-lg bg-neutral-700 px-3 py-1.5 text-xs font-semibold hover:bg-neutral-600 disabled:opacity-50"
-              disabled={saving || typeof window === "undefined"}
+              disabled={saving}
               onClick={() => {
-                const text = formatObsTextOverlayUrlList(
-                  window.location.origin,
-                  userId,
-                  registry
-                );
+                const origin = pageOrigin || window.location.origin;
+                const text = formatObsTextOverlayUrlList(origin, userId, registry);
                 void copyTextToClipboard(text).then((ok) => {
                   if (ok) {
                     setCopiedAllUrls(true);
@@ -636,7 +732,7 @@ export default function ObsTextOverlayEditor({
                     className={`shrink-0 rounded px-2 py-1 text-xs ${
                       selected ? "bg-violet-600 text-white" : "bg-neutral-800 text-neutral-300"
                     }`}
-                    onClick={() => selectInstance(inst.id)}
+                    onClick={() => selectInstanceWithFlush(inst.id)}
                   >
                     {selected ? "편집 중" : "편집"}
                   </button>
@@ -645,7 +741,7 @@ export default function ObsTextOverlayEditor({
                     className="min-w-[100px] flex-1 rounded border border-white/10 bg-neutral-900 px-2 py-1 text-sm"
                     value={inst.name}
                     onChange={(e) => renameInstance(inst.id, e.target.value)}
-                    onFocus={() => selectInstance(inst.id)}
+                    onFocus={() => selectInstanceWithFlush(inst.id)}
                   />
                   <button
                     type="button"
@@ -667,7 +763,10 @@ export default function ObsTextOverlayEditor({
                 <code className="block break-all rounded bg-black/35 px-2 py-1 text-[10px] text-neutral-400">
                   textId={inst.id}
                 </code>
-                <code className="block break-all rounded bg-black/50 px-2 py-1 text-[11px] text-violet-200/90">
+                <code
+                  className="block break-all rounded bg-black/50 px-2 py-1 text-[11px] text-violet-200/90"
+                  suppressHydrationWarning
+                >
                   {url}
                 </code>
                 <div className="flex flex-wrap gap-2">
@@ -701,7 +800,10 @@ export default function ObsTextOverlayEditor({
           OBS URL — {activeInstance.name}
         </h2>
         <div className="flex flex-wrap items-center gap-2">
-          <code className="flex-1 break-all rounded bg-black/40 px-2 py-1 text-xs text-neutral-300">
+          <code
+            className="flex-1 break-all rounded bg-black/40 px-2 py-1 text-xs text-neutral-300"
+            suppressHydrationWarning
+          >
             {overlayUrl}
           </code>
           <button
@@ -727,7 +829,7 @@ export default function ObsTextOverlayEditor({
         </p>
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div ref={editorPanelRef} className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-4">
           <section className="rounded-xl border border-white/10 bg-neutral-900/60 p-4 space-y-3">
             <div>
@@ -741,7 +843,32 @@ export default function ObsTextOverlayEditor({
               ref={textareaRef}
               className="min-h-[180px] w-full rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-lg leading-relaxed"
               value={multilineDraft}
-              onChange={(e) => onMultilineChange(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (composingRef.current) {
+                  onMultilineChange(v, { skipBlocks: true });
+                  return;
+                }
+                onMultilineChange(v);
+              }}
+              onCompositionStart={() => {
+                composingRef.current = true;
+              }}
+              onCompositionEnd={(e) => {
+                composingRef.current = false;
+                onMultilineChange(e.currentTarget.value);
+              }}
+              onBlur={(e) => {
+                const panel = editorPanelRef.current;
+                if (
+                  panel &&
+                  e.relatedTarget instanceof Node &&
+                  panel.contains(e.relatedTarget)
+                ) {
+                  return;
+                }
+                void flushPendingEdits();
+              }}
               onClick={syncActiveLineFromCaret}
               onKeyUp={syncActiveLineFromCaret}
               onSelect={syncActiveLineFromCaret}
@@ -811,7 +938,7 @@ export default function ObsTextOverlayEditor({
               <div className="space-y-2 border-t border-white/10 pt-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-sm font-semibold text-violet-200">
-                    텍스트 효과 (커서 줄)
+                    텍스트 효과 (드래그 선택 구간 · 미선택 시 전체)
                   </span>
                   <label className="flex items-center gap-2 text-xs text-neutral-400">
                     속도
@@ -844,9 +971,8 @@ export default function ObsTextOverlayEditor({
                             ? "border-violet-400 bg-violet-900/60 text-violet-100"
                             : "border-white/10 bg-neutral-950/80 text-neutral-300 hover:border-white/25"
                         }`}
-                        onClick={() =>
-                          updateBlock(activeBlock.id, { effect: opt.id as ObsTextEffectId })
-                        }
+                        onMouseDown={keepTextareaFocus}
+                        onClick={() => applyEffectToSelection(opt.id as ObsTextEffectId)}
                       >
                         <span className="block font-semibold">{opt.label}</span>
                         <span className="mt-0.5 block text-[10px] opacity-70">{opt.hint}</span>
@@ -894,6 +1020,7 @@ export default function ObsTextOverlayEditor({
               <button
                 type="button"
                 className="rounded-lg bg-pink-700 px-3 py-1.5 text-sm hover:bg-pink-600"
+                onMouseDown={keepTextareaFocus}
                 onClick={applyColorToSelection}
               >
                 {editMode === "char" ? "선택 글자에 색 적용" : "선택 구간에 색 적용"}
@@ -931,6 +1058,7 @@ export default function ObsTextOverlayEditor({
                   key={em}
                   type="button"
                   className="rounded-lg bg-neutral-800 px-2 py-1 text-xl hover:bg-neutral-700"
+                  onMouseDown={keepTextareaFocus}
                   onClick={() => insertEmoji(em)}
                   title="커서 위치에 삽입"
                 >

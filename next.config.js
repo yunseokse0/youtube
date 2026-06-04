@@ -50,6 +50,14 @@ const nextConfig = {
     }
     return config;
   },
+  /** EC2 1GB 등: deploy/build-prod.mjs 가 LOW_MEMORY_BUILD=1 설정 */
+  ...(process.env.LOW_MEMORY_BUILD === "1"
+    ? {
+        experimental: {
+          cpus: 1,
+        },
+      }
+    : {}),
 };
 
 module.exports = nextConfig;

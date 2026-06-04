@@ -13,6 +13,7 @@
     "verify:battle-ui": "node scripts/print-battle-verify-url.mjs",
     "verify:overlay": "node scripts/verify-overlay.mjs",
     "build": "next build",
+    "build:prod": "node scripts/build-prod.mjs",
     "start": "node scripts/start.cjs",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",

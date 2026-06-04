@@ -30,6 +30,9 @@ export type ObsTextOverlayRegistry = {
 export type ObsTextSegment = {
   text: string;
   color: string;
+  /** 구간별 연출(없으면 블록 effect 상속) */
+  effect?: ObsTextEffectId;
+  effectSpeed?: number;
 };
 
 export type ObsTextBlock = {
@@ -175,6 +178,17 @@ export function obsTextConfigSyncSignature(config: ObsTextOverlayConfig): string
   return JSON.stringify(rest);
 }
 
+/** 레지스트리 전체 동기화 비교(이름·인스턴스별 표시 내용) */
+export function obsTextRegistrySyncSignature(registry: ObsTextOverlayRegistry): string {
+  return JSON.stringify(
+    registry.instances.map((inst) => ({
+      id: inst.id,
+      name: inst.name,
+      sig: obsTextConfigSyncSignature(inst.config),
+    }))
+  );
+}
+
 const DEFAULT_COLOR = "#ffffff";
 const DEFAULT_OUTLINE = "#000000";
 
@@ -223,9 +237,11 @@ function normalizeSegment(raw: unknown, defaultColor: string): ObsTextSegment | 
   const o = raw as Record<string, unknown>;
   const text = String(o.text ?? "");
   if (!text) return null;
+  const effect = normalizeObsTextEffect(o.effect);
   return {
     text,
     color: normalizeHexColor(o.color, defaultColor),
+    ...(effect !== "none" ? { effect, effectSpeed: normalizeObsTextEffectSpeed(o.effectSpeed) } : {}),
   };
 }
 
@@ -540,6 +556,130 @@ function isCharColorBlock(block: ObsTextBlock): boolean {
   );
 }
 
+function blockUsesRichSegments(block: ObsTextBlock): boolean {
+  if (isCharColorBlock(block)) return true;
+  if (block.segments.length > 1) return true;
+  return block.segments.some((s) => s.effect && s.effect !== "none");
+}
+
+function coalesceObsTextSegments(segments: ObsTextSegment[]): ObsTextSegment[] {
+  const out: ObsTextSegment[] = [];
+  for (const seg of segments) {
+    if (!seg.text) continue;
+    const last = out[out.length - 1];
+    if (
+      last &&
+      last.color === seg.color &&
+      (last.effect ?? "none") === (seg.effect ?? "none") &&
+      (last.effectSpeed ?? 1) === (seg.effectSpeed ?? 1)
+    ) {
+      last.text += seg.text;
+    } else {
+      out.push({ ...seg });
+    }
+  }
+  return out.length ? out : [{ text: " ", color: "#ffffff" }];
+}
+
+/** 세그먼트 줄에서 [selStart, selEnd) 구간에만 effect 부여(분할·병합) */
+export function applyEffectToSegmentRange(
+  segments: ObsTextSegment[],
+  selStart: number,
+  selEnd: number,
+  effect: ObsTextEffectId,
+  effectSpeed: number
+): ObsTextSegment[] {
+  const safeStart = Math.max(0, selStart);
+  const safeEnd = Math.max(safeStart, selEnd);
+  if (safeStart >= safeEnd) {
+    return segments.map((s) => ({
+      ...s,
+      effect,
+      effectSpeed,
+    }));
+  }
+  const out: ObsTextSegment[] = [];
+  let pos = 0;
+  for (const seg of segments) {
+    const chars = Array.from(seg.text);
+    const len = chars.length;
+    const segStart = pos;
+    const segEnd = pos + len;
+    pos = segEnd;
+    if (segEnd <= safeStart || segStart >= safeEnd) {
+      out.push(seg);
+      continue;
+    }
+    const localStart = Math.max(0, safeStart - segStart);
+    const localEnd = Math.min(len, safeEnd - segStart);
+    if (localStart > 0) {
+      out.push({ ...seg, text: chars.slice(0, localStart).join("") });
+    }
+    const mid = chars.slice(localStart, localEnd).join("");
+    if (mid) {
+      out.push({
+        text: mid,
+        color: seg.color,
+        effect,
+        effectSpeed,
+      });
+    }
+    if (localEnd < len) {
+      out.push({ ...seg, text: chars.slice(localEnd).join("") });
+    }
+  }
+  return coalesceObsTextSegments(out);
+}
+
+/** textarea 선택 구간(여러 줄 가능)에 effect 적용 */
+export function applyEffectRangeToBlocks(
+  multilineText: string,
+  blocks: ObsTextBlock[],
+  selStart: number,
+  selEnd: number,
+  effect: ObsTextEffectId,
+  effectSpeed: number,
+  defaultColor: string
+): ObsTextBlock[] {
+  if (selStart === selEnd) {
+    return blocks.map((b) => ({
+      ...b,
+      effect,
+      effectSpeed,
+      segments: b.segments.map((s) => {
+        const { effect: _e, effectSpeed: _es, ...rest } = s;
+        return rest;
+      }),
+    }));
+  }
+
+  const startLine = lineIndexAtTextOffset(multilineText, selStart);
+  const endLine = lineIndexAtTextOffset(multilineText, Math.max(selStart, selEnd - 1));
+
+  return blocks.map((block, lineIdx) => {
+    if (lineIdx < startLine || lineIdx > endLine) return block;
+    const range = lineCharRangeInMultiline(multilineText, lineIdx);
+    const lineStartInSel =
+      lineIdx === startLine ? Math.max(selStart, range.start) - range.start : 0;
+    const lineEndInSel =
+      lineIdx === endLine ? Math.min(selEnd, range.end) - range.start : range.line.length;
+    const merged = mergeSegmentsFromPlainText(range.line, block.segments, defaultColor);
+    const nextSegments = applyEffectToSegmentRange(
+      merged,
+      lineStartInSel,
+      lineEndInSel,
+      effect,
+      effectSpeed
+    );
+    return {
+      ...block,
+      effect: "none",
+      effectSpeed: 1,
+      segments: nextSegments,
+    };
+  });
+}
+
 function createDefaultObsTextBlock(text: string, defaultColor: string): ObsTextBlock {
   const line = text.length === 0 ? " " : text;
   return {
@@ -568,14 +708,10 @@ export function blocksFromMultilineText(
     if (!prev) {
       return createDefaultObsTextBlock(normalized, defaultColor);
     }
-    if (isCharColorBlock(prev)) {
+    if (blockUsesRichSegments(prev)) {
       return {
         ...prev,
-        segments: mergeSegmentsFromPlainText(
-          normalized,
-          prev.segments,
-          defaultColor
-        ),
+        segments: mergeSegmentsFromPlainText(normalized, prev.segments, defaultColor),
       };
     }
     const color = prev.segments[0]?.color ?? defaultColor;
@@ -628,10 +764,44 @@ export function mergeSegmentsFromPlainText(
   const nextChars = Array.from(text);
   const oldChars = Array.from(oldPlain);
   if (nextChars.length === oldChars.length) {
-    return nextChars.map((ch, i) => ({
-      text: ch,
-      color: prev[i]?.color ?? defaultColor,
-    }));
+    const flat: ObsTextSegment[] = [];
+    for (const seg of prev) {
+      for (const ch of Array.from(seg.text)) {
+        flat.push(seg);
+      }
+    }
+    return coalesceObsTextSegments(
+      nextChars.map((ch, i) => ({
+        text: ch,
+        color: flat[i]?.color ?? defaultColor,
+        ...(flat[i]?.effect && flat[i].effect !== "none"
+          ? { effect: flat[i].effect, effectSpeed: flat[i].effectSpeed }
+          : {}),
+      }))
+    );
+  }
+  const oldColors: string[] = [];
+  const oldEffects: Array<{ effect?: ObsTextEffectId; effectSpeed?: number }> = [];
+  for (const seg of prev) {
+    for (const ch of Array.from(seg.text)) {
+      oldColors.push(seg.color);
+      oldEffects.push({ effect: seg.effect, effectSpeed: seg.effectSpeed });
+    }
+  }
+  if (nextChars.length > 0 && oldColors.length > 0) {
+    return coalesceObsTextSegments(
+      nextChars.map((ch, i) => {
+        const idx = Math.min(i, oldColors.length - 1);
+        const meta = oldEffects[idx];
+        return {
+          text: ch,
+          color: oldColors[idx] ?? defaultColor,
+          ...(meta?.effect && meta.effect !== "none"
+            ? { effect: meta.effect, effectSpeed: meta.effectSpeed }
+            : {}),
+        };
+      })
+    );
   }
   return [{ text, color: prev[0]?.color ?? defaultColor }];
 }

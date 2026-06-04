@@ -57,6 +57,10 @@ export function ObsTextOverlayView({
     display: "flex",
     flexDirection: "column",
     gap: config.lineGapPx,
+    width: "100%",
+    maxWidth: "min(96vw, 1400px)",
+    boxSizing: "border-box",
+    alignSelf: "stretch",
     transform: `${flex.transform} scale(${scale})`,
     transformOrigin:
       config.position.includes("bottom")
@@ -72,7 +76,6 @@ export function ObsTextOverlayView({
               ? "top right"
               : "top left"
           : "center center",
-    maxWidth: "min(96vw, 1400px)",
   };
 
   const visibleBlocks = config.blocks.filter((b) => b.visible !== false);
@@ -94,6 +97,38 @@ export function ObsTextOverlayView({
   );
 }
 
+function resolveSegmentEffect(
+  seg: ObsTextSegment,
+  block: ObsTextBlock
+): ObsTextEffectId {
+  return seg.effect ?? block.effect ?? "none";
+}
+
+function resolveSegmentEffectSpeed(seg: ObsTextSegment, block: ObsTextBlock): number {
+  return seg.effectSpeed ?? block.effectSpeed ?? 1;
+}
+
+type EffectGroup = {
+  effect: ObsTextEffectId;
+  effectSpeed: number;
+  segments: ObsTextSegment[];
+};
+
+function groupSegmentsByEffect(block: ObsTextBlock): EffectGroup[] {
+  const groups: EffectGroup[] = [];
+  for (const seg of block.segments) {
+    const effect = resolveSegmentEffect(seg, block);
+    const effectSpeed = resolveSegmentEffectSpeed(seg, block);
+    const last = groups[groups.length - 1];
+    if (last && last.effect === effect && last.effectSpeed === effectSpeed) {
+      last.segments.push(seg);
+    } else {
+      groups.push({ effect, effectSpeed, segments: [seg] });
+    }
+  }
+  return groups.length ? groups : [{ effect: "none", effectSpeed: 1, segments: [{ text: " ", color: "#fff" }] }];
+}
+
 function ObsTextBlockLine({
   block,
   config,
@@ -105,20 +140,51 @@ function ObsTextBlockLine({
 }) {
   const fontSize = block.fontSizePx ?? config.defaultFontSizePx;
   const align = block.align ?? "center";
-  const effect = block.effect ?? "none";
-  const effectSpeed = block.effectSpeed ?? 1;
-  const fxClass = obsTextEffectClass(effect);
-  const useWave = obsTextEffectUsesCharSpans(effect);
 
   const lineStyle: CSSProperties = {
     fontSize,
     lineHeight: 1.15,
     textAlign: align,
+    width: "100%",
+    display: "block",
+    boxSizing: "border-box",
     whiteSpace: "pre-wrap",
     wordBreak: "keep-all",
-    textShadow: effect === "neon" || effect === "gradient" ? undefined : outlineShadow,
     margin: 0,
   };
+
+  const groups = groupSegmentsByEffect(block);
+
+  return (
+    <p style={lineStyle}>
+      {groups.map((group, gi) => (
+        <EffectGroupSpan
+          key={`${block.id}-fxg-${gi}`}
+          blockId={block.id}
+          groupIndex={gi}
+          group={group}
+          outlineShadow={outlineShadow}
+        />
+      ))}
+    </p>
+  );
+}
+
+function EffectGroupSpan({
+  blockId,
+  groupIndex,
+  group,
+  outlineShadow,
+}: {
+  blockId: string;
+  groupIndex: number;
+  group: EffectGroup;
+  outlineShadow?: string;
+}) {
+  const { effect, effectSpeed, segments } = group;
+  const fxClass = obsTextEffectClass(effect);
+  const useWave = obsTextEffectUsesCharSpans(effect);
+  const hideOutline = effect === "neon" || effect === "gradient";
 
   const fxWrapStyle: CSSProperties | undefined =
     effect !== "none"
@@ -129,30 +195,33 @@ function ObsTextBlockLine({
 
   const content = useWave ? (
     <WaveCharSegments
-      blockId={block.id}
-      segments={block.segments}
+      blockId={`${blockId}-g${groupIndex}`}
+      segments={segments}
       effectSpeed={effectSpeed}
     />
   ) : (
-    block.segments.map((seg, i) => (
-      <ColoredSegment key={`${block.id}-seg-${i}`} seg={seg} effect={effect} />
+    segments.map((seg, i) => (
+      <ColoredSegment
+        key={`${blockId}-g${groupIndex}-s${i}`}
+        seg={seg}
+        effect={effect}
+        outlineShadow={hideOutline ? undefined : outlineShadow}
+      />
     ))
   );
 
   if (effect === "none") {
-    return <p style={lineStyle}>{content}</p>;
+    return <>{content}</>;
   }
 
   return (
-    <p style={lineStyle}>
-      <ObsTextFxWrap
-        effect={effect}
-        className={`${fxClass}${useWave ? " obs-text-fx-wave" : ""}`.trim()}
-        style={fxWrapStyle}
-      >
-        {content}
-      </ObsTextFxWrap>
-    </p>
+    <ObsTextFxWrap
+      effect={effect}
+      className={`${fxClass}${useWave ? " obs-text-fx-wave" : ""}`.trim()}
+      style={fxWrapStyle}
+    >
+      {content}
+    </ObsTextFxWrap>
   );
 }
 
@@ -196,14 +265,18 @@ function ObsTextFxWrap({
 function ColoredSegment({
   seg,
   effect,
+  outlineShadow,
 }: {
   seg: ObsTextSegment;
-  effect: ObsTextBlock["effect"];
+  effect: ObsTextEffectId;
+  outlineShadow?: string;
 }) {
   if (effect === "gradient" || effect === "rainbow") {
     return <span>{seg.text}</span>;
   }
-  return <span style={{ color: seg.color }}>{seg.text}</span>;
+  return (
+    <span style={{ color: seg.color, textShadow: outlineShadow }}>{seg.text}</span>
+  );
 }
 
 function WaveCharSegments({

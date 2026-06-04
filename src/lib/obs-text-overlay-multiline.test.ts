@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyEffectRangeToBlocks,
+  applyEffectToSegmentRange,
   blocksFromMultilineText,
   lineCharRangeInMultiline,
   lineIndexAtTextOffset,
@@ -49,5 +51,26 @@ describe("obs text multiline", () => {
     expect(r.line).toBe("world");
     expect(r.start).toBe(6);
     expect(r.end).toBe(11);
+  });
+
+  it("applyEffectToSegmentRange — partial selection", () => {
+    const segs = [{ text: "abcdef", color: "#fff" }];
+    const next = applyEffectToSegmentRange(segs, 1, 4, "pulse", 1);
+    expect(next.length).toBe(3);
+    expect(next[1]?.effect).toBe("pulse");
+    expect(next[1]?.text).toBe("bcd");
+  });
+
+  it("applyEffectRangeToBlocks — no selection applies to all lines", () => {
+    const blocks = blocksFromMultilineText("aa\nbb", prev, "#fff");
+    const next = applyEffectRangeToBlocks("aa\nbb", blocks, 0, 0, "glow", 1, "#fff");
+    expect(next.every((b) => b.effect === "glow")).toBe(true);
+  });
+
+  it("applyEffectRangeToBlocks — selection on one line", () => {
+    const blocks = blocksFromMultilineText("hello", [], "#fff");
+    const next = applyEffectRangeToBlocks("hello", blocks, 1, 4, "wave", 1.2, "#fff");
+    expect(next[0]?.effect).toBe("none");
+    expect(next[0]?.segments.some((s) => s.effect === "wave" && s.text === "ell")).toBe(true);
   });
 });

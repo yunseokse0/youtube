@@ -45,9 +45,18 @@ SIG_UPLOADS_DATA_DIR=/var/lib/finalent
 ## 배포 후 확인
 
 ```bash
-git pull && npm run build && pm2 restart youtube
-curl -I http://127.0.0.1:3000/api/health
-ls -la /var/lib/finalent/uploads/sigs/finalent/ | head
+# 저메모리 EC2 (1GB RAM) — 스왑 1회 설정 후
+sudo bash deploy/ec2-setup-swap.sh
+bash deploy/deploy-on-ec2.sh
 ```
+
+또는:
+
+```bash
+git pull && rm -rf .next && PM2_APP=youtube npm run build:prod
+curl -I http://127.0.0.1:3000/api/health
+```
+
+자세한 OOM 대응: **`deploy/EC2-저메모리-빌드.md`**
 
 Nginx SSE·업로드: `deploy/nginx-youtube.conf.example` 참고.
