@@ -29,8 +29,8 @@ describe("overlay-last-good", () => {
     s.rouletteState = {
       ...s.rouletteState!,
       selectedSigs: [
-        { id: "a", name: "A", price: 1 },
-        { id: "b", name: "B", price: 2 },
+        { id: "a", name: "A", price: 1, imageUrl: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: true },
+        { id: "b", name: "B", price: 2, imageUrl: "", maxCount: 1, soldCount: 0, isRolling: false, isActive: true },
       ],
     };
     expect(isOverlayStateViable(s, STATE_PICK_SIG_SALES)).toBe(true);

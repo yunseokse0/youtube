@@ -228,7 +228,9 @@ export function useOverlayRemoteState(
 
   const syncingRef = useRef(false);
 
-  const syncFromApiRef = useRef<() => Promise<void>>(async () => {});
+  const syncFromApiRef = useRef<
+    (opts?: { forceFull?: boolean }) => Promise<void>
+  >(async () => {});
 
   const scheduleSseSyncRef = useRef<(() => void) | null>(null);
 
