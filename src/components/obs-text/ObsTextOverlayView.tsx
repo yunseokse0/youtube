@@ -129,6 +129,12 @@ function groupSegmentsByEffect(block: ObsTextBlock): EffectGroup[] {
   return groups.length ? groups : [{ effect: "none", effectSpeed: 1, segments: [{ text: " ", color: "#fff" }] }];
 }
 
+function lineFlexJustify(align: "left" | "center" | "right"): CSSProperties["justifyContent"] {
+  if (align === "left") return "flex-start";
+  if (align === "right") return "flex-end";
+  return "center";
+}
+
 function ObsTextBlockLine({
   block,
   config,
@@ -141,22 +147,24 @@ function ObsTextBlockLine({
   const fontSize = block.fontSizePx ?? config.defaultFontSizePx;
   const align = block.align ?? "center";
 
+  /** OBS CEF: 효과 span(inline-block)만 있으면 text-align이 안 먹는 경우가 있어 flex로 정렬 */
   const lineStyle: CSSProperties = {
     fontSize,
     lineHeight: 1.15,
-    textAlign: align,
     width: "100%",
-    display: "block",
+    display: "flex",
+    flexWrap: "wrap",
+    justifyContent: lineFlexJustify(align),
+    alignItems: "baseline",
     boxSizing: "border-box",
-    whiteSpace: "pre-wrap",
-    wordBreak: "keep-all",
     margin: 0,
+    padding: 0,
   };
 
   const groups = groupSegmentsByEffect(block);
 
   return (
-    <p style={lineStyle}>
+    <div className="obs-text-line" style={lineStyle} role="paragraph">
       {groups.map((group, gi) => (
         <EffectGroupSpan
           key={`${block.id}-fxg-${gi}`}
@@ -166,7 +174,7 @@ function ObsTextBlockLine({
           outlineShadow={outlineShadow}
         />
       ))}
-    </p>
+    </div>
   );
 }
 

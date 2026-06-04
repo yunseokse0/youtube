@@ -105,6 +105,7 @@ import {
   readObsTextRegistryFromState,
   removeObsTextInstance,
 } from "@/lib/obs-text-overlay";
+import { buildSigSalesManualOverlayUrl } from "@/lib/sig-sales-overlay-urls";
 import { stopToonationListener } from "@/lib/donation/toonation/listener";
 import { processDonationEvent, type ProcessDonationResult } from "@/lib/donation/processor";
 import type { DonationEvent, DonorAlias } from "@/lib/donation/types";
@@ -6977,6 +6978,10 @@ export default function AdminPage() {
                   <Link href="/admin/sig-sales" target="_blank" rel="noopener noreferrer" className="font-semibold text-amber-200 underline">
                     시그 판매 회전판(/admin/sig-sales)
                   </Link>
+                  {" · "}
+                  <Link href="/admin/sig-sales-manual" target="_blank" rel="noopener noreferrer" className="font-semibold text-sky-300 underline">
+                    수동 시그 판매(/admin/sig-sales-manual)
+                  </Link>
                   페이지 상단의 <strong className="text-amber-50">「수동 설정(5개 + 한방)」</strong> 섹션입니다. 모달 우측 상단 「새 탭에서 열기」로도 이동할 수 있습니다.
                 </div>
                 <div className="rounded border border-white/10 bg-black/25 p-2 flex flex-wrap items-center gap-2">
@@ -8890,6 +8895,57 @@ export default function AdminPage() {
                     </label>
                   ))}
                 </div>
+              </div>
+              <div className="mb-3 rounded border border-sky-500/30 bg-sky-950/25 p-3 space-y-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <h4 className="text-sm font-semibold text-sky-100">수동 시그 판매 오버레이</h4>
+                    <p className="mt-1 text-[11px] text-neutral-400 leading-snug">
+                      회전판(<code className="text-neutral-300">/overlay/sig-sales</code>)과{" "}
+                      <strong className="text-neutral-300">별도 OBS 브라우저 소스</strong>입니다. 시그 5개·한방 입력 후
+                      「수동 결과 적용」으로 방송 화면에 반영합니다.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 shrink-0">
+                    <Link
+                      href="/admin/sig-sales-manual"
+                      className="rounded-lg bg-sky-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-700"
+                    >
+                      수동 시그 설정
+                    </Link>
+                    <button
+                      type="button"
+                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                        copiedId === "dash-sig-sales-manual" ? "bg-emerald-600 text-white" : "bg-neutral-700 hover:bg-neutral-600 text-neutral-100"
+                      }`}
+                      onClick={() => {
+                        const u =
+                          typeof window !== "undefined"
+                            ? buildSigSalesManualOverlayUrl(window.location.origin, user?.id || "finalent")
+                            : buildSigSalesManualOverlayUrl("http://localhost:3000", user?.id || "finalent");
+                        void copyUrl(u, "dash-sig-sales-manual");
+                      }}
+                    >
+                      {copiedId === "dash-sig-sales-manual" ? "복사됨!" : "OBS URL 복사"}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-sky-500/40 px-3 py-1.5 text-xs text-sky-200 hover:bg-sky-900/40"
+                      onClick={() => {
+                        const u = buildSigSalesManualOverlayUrl(
+                          typeof window !== "undefined" ? window.location.origin : "http://localhost:3000",
+                          user?.id || "finalent"
+                        );
+                        window.open(u, "_blank", "noopener,noreferrer");
+                      }}
+                    >
+                      오버레이 열기
+                    </button>
+                  </div>
+                </div>
+                <code className="block break-all text-[11px] text-sky-100/90">
+                  /overlay/sig-sales-manual?u={user?.id || "finalent"}&hideSigBoard=1
+                </code>
               </div>
               <div className="mb-3 rounded border border-violet-500/30 bg-violet-950/25 p-3 space-y-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">

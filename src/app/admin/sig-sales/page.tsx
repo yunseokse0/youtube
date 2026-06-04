@@ -91,6 +91,10 @@ import {
   resolveOneShotDisplayPrice,
 } from "@/lib/sig-one-shot-price";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
+import {
+  buildSigSalesManualOverlayUrl,
+  buildSigSalesWheelOverlayUrl,
+} from "@/lib/sig-sales-overlay-urls";
 import { buildManualRoundResetPatch } from "@/lib/sig-sales-manual-round";
 import { pickRandomManualSigDrafts } from "@/lib/manual-sig-random";
 import {
@@ -280,9 +284,8 @@ async function postRoulettePending(
   return { ok: false, message: j.error || `pending_${pr.status}` };
 }
 
-export default function AdminSigSalesPage() {
+export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean }) {
   const router = useRouter();
-  const [initialView, setInitialView] = useState<"manual" | "default">("default");
   const [user, setUser] = useState<{ id: string; companyName: string; name?: string; remainingDays?: number | null; unlimited?: boolean } | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const userId = user?.id || "finalent";
@@ -1987,28 +1990,23 @@ export default function AdminSigSalesPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const q = new URLSearchParams();
-    q.set("u", userId);
-    if (memberFilterId) q.set("memberId", memberFilterId);
-    q.set("menuCount", String(effectiveMenuCount));
-    if (wheelDemoMode) {
-      q.set("wheelDemo", "1");
-      q.set("menuCount", String(WHEEL_DEMO_MENU_COUNT));
-      q.set("wheelDemoWins", String(WHEEL_DEMO_WIN_COUNT));
-      q.set("wheelDemoAuto", "1");
-    }
+    const origin = window.location.origin;
     const rs = Number(state?.rouletteState?.sigResultScalePct);
-    if (Number.isFinite(rs)) q.set("sigResultScalePct", String(Math.floor(rs)));
-    q.set("hideSigBoard", "1");
-    setOverlayObsUrl(`${window.location.origin}/overlay/sig-sales?${q.toString()}`);
-    const qManual = new URLSearchParams();
-    qManual.set("u", userId);
-    if (memberFilterId) qManual.set("memberId", memberFilterId);
-    qManual.set("menuCount", String(effectiveMenuCount));
-    if (Number.isFinite(rs)) qManual.set("sigResultScalePct", String(Math.floor(rs)));
-    qManual.set("hideSigBoard", "1");
-    /** 수동 전용 OBS — 회전판 `/overlay/sig-sales` 와 분리 */
-    setOverlayObsUrlManual(`${window.location.origin}/overlay/sig-sales-manual?${qManual.toString()}`);
+    const scale = Number.isFinite(rs) ? Math.floor(rs) : undefined;
+    setOverlayObsUrl(
+      buildSigSalesWheelOverlayUrl(origin, userId, {
+        memberId: memberFilterId || undefined,
+        menuCount: wheelDemoMode ? WHEEL_DEMO_MENU_COUNT : effectiveMenuCount,
+        sigResultScalePct: scale,
+        wheelDemo: wheelDemoMode,
+      })
+    );
+    setOverlayObsUrlManual(
+      buildSigSalesManualOverlayUrl(origin, userId, {
+        memberId: memberFilterId || undefined,
+        sigResultScalePct: scale,
+      })
+    );
   }, [
     userId,
     memberFilterId,
@@ -2018,19 +2016,17 @@ export default function AdminSigSalesPage() {
   ]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const view = new URLSearchParams(window.location.search).get("view") === "manual" ? "manual" : "default";
-    setInitialView(view);
-  }, []);
+    if (manualOnly || typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("view") !== "manual") return;
+    const q = new URLSearchParams(window.location.search);
+    q.delete("view");
+    const qs = q.toString();
+    router.replace(qs ? `/admin/sig-sales-manual?${qs}` : "/admin/sig-sales-manual");
+  }, [manualOnly, router]);
 
   useEffect(() => {
-    if (initialView !== "manual") return;
-    setOverlayObsMode("manual");
-    const tid = window.setTimeout(() => {
-      manualSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 80);
-    return () => window.clearTimeout(tid);
-  }, [initialView]);
+    if (manualOnly) setOverlayObsMode("manual");
+  }, [manualOnly]);
 
   const onConfirmSale = useCallback(async () => {
     if (!state || displaySelectedSigs.length === 0) return;
@@ -2651,10 +2647,22 @@ export default function AdminSigSalesPage() {
       <div className="mx-auto max-w-[1280px] space-y-4">
         <header className="sticky top-0 z-[200] -mx-2 flex flex-wrap items-end justify-between gap-3 rounded-xl border border-white/10 bg-neutral-950/95 px-3 py-3 shadow-lg backdrop-blur-md">
           <div>
-            <h1 className="text-2xl font-black text-yellow-200">시그 판매 회전판</h1>
-            <p className="text-sm text-neutral-300">IDLE → SPINNING → LANDED → CONFIRM_PENDING → CONFIRMED 단일 플로우</p>
+            <h1 className="text-2xl font-black text-yellow-200">
+              {manualOnly ? "수동 시그 판매" : "시그 판매 회전판"}
+            </h1>
+            <p className="text-sm text-neutral-300">
+              {manualOnly
+                ? "회전판 없이 시그 5개·한방 입력 → OBS 수동 오버레이에 반영"
+                : "IDLE → SPINNING → LANDED → CONFIRM_PENDING → CONFIRMED 단일 플로우"}
+            </p>
             <p className="mt-1 text-xs text-yellow-200/90">
-              현재 상태: {machine.phase} · 회전판 {effectiveMenuCount}칸
+              현재 상태: {machine.phase}
+              {manualOnly ? null : (
+                <>
+                  {" "}
+                  · 회전판 {effectiveMenuCount}칸
+                </>
+              )}
               {activeNormalPool.length > 0 ? ` (활성 시그 ${activeNormalPool.length}개)` : ""}
               {effectiveMenuCount > menuCountSetting
                 ? ` · 설정 ${menuCountSetting} → 최소 ${menuCountMin}칸 적용`
@@ -2675,21 +2683,32 @@ export default function AdminSigSalesPage() {
             {overlayObsUrl ? (
               <p className="mt-2 max-w-xl text-[11px] text-neutral-400">
                 <span className="block rounded border border-rose-400/40 bg-rose-950/40 px-2 py-1.5 text-rose-100">
-                  회전판 OBS: <code className="text-rose-50">/overlay/sig-sales</code> · 수동 판매 OBS:{" "}
-                  <code className="text-rose-50">/overlay/sig-sales-manual</code> (별도 소스).{" "}
-                  <code className="text-rose-50/90">/admin/...</code> 경로는 사용하지 마세요.
+                  {manualOnly ? (
+                    <>
+                      수동 OBS: <code className="text-rose-50">/overlay/sig-sales-manual</code> (회전판 URL과 별도
+                      소스). <code className="text-rose-50/90">/admin/...</code> 경로는 사용하지 마세요.
+                    </>
+                  ) : (
+                    <>
+                      회전판 OBS: <code className="text-rose-50">/overlay/sig-sales</code> · 수동 판매는{" "}
+                      <Link href="/admin/sig-sales-manual" className="text-sky-300 underline">
+                        오버레이 관리 → 수동 시그 판매
+                      </Link>
+                      .
+                    </>
+                  )}
                 </span>
                 OBS 소스 URL (u={userId}
                 {memberFilterId ? ` · memberId=${memberFilterId}` : ""}):{" "}
                 <code className="break-all text-emerald-300/90">
-                  {overlayObsMode === "manual" ? overlayObsUrlManual : overlayObsUrl}
+                  {manualOnly || overlayObsMode === "manual" ? overlayObsUrlManual : overlayObsUrl}
                 </code>
-                {overlayObsMode === "manual" ? (
+                {manualOnly || overlayObsMode === "manual" ? (
                   <span className="mt-1 block text-sky-200/95">
-                    회전판 없이 운영: 시그 5개·한방 입력 → 저장(자동) → 「수동 결과 적용(LANDED)」 → OBS는 이 수동 URL 고정.
+                    시그 5개·한방 입력 → 「수동 결과 적용(LANDED)」 → OBS는 이 URL 고정(캐시 새로고침만).
                   </span>
                 ) : null}
-                {wheelDemoMode ? (
+                {!manualOnly && wheelDemoMode ? (
                   <span className="mt-1 block text-amber-200/90">
                     로컬 휠 데모 · 회전판 {WHEEL_DEMO_MENU_COUNT}칸 · 당첨 {WHEEL_DEMO_WIN_COUNT}개 + 한방 시그(서버 미저장)
                   </span>
@@ -2698,6 +2717,21 @@ export default function AdminSigSalesPage() {
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {manualOnly ? (
+              <Link
+                href="/admin#overlay-settings"
+                className="rounded-lg border border-sky-500/40 bg-sky-950/50 px-3 py-2 text-xs font-semibold text-sky-200 hover:bg-sky-900/60"
+              >
+                오버레이 관리
+              </Link>
+            ) : (
+              <Link
+                href="/admin/sig-sales-manual"
+                className="rounded-lg border border-sky-500/40 bg-sky-950/50 px-3 py-2 text-xs font-semibold text-sky-200 hover:bg-sky-900/60"
+              >
+                수동 시그 판매
+              </Link>
+            )}
             <Link
               href={`/admin/obs-text?u=${encodeURIComponent(userId)}`}
               className="rounded-lg border border-violet-500/40 bg-violet-950/50 px-3 py-2 text-xs font-semibold text-violet-200 hover:bg-violet-900/60"
@@ -2716,6 +2750,7 @@ export default function AdminSigSalesPage() {
                 </option>
               ))}
             </select>
+            {!manualOnly ? (
             <label className="flex flex-col gap-0.5 text-[11px] text-neutral-400">
               회전판 칸 수
               <input
@@ -2732,6 +2767,8 @@ export default function AdminSigSalesPage() {
                 className="w-16 rounded border border-white/15 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-100"
               />
             </label>
+            ) : null}
+            {!manualOnly ? (
             <label className="flex flex-col gap-0.5 text-[11px] text-neutral-400">
               당첨 시그 수
               <input
@@ -2747,12 +2784,23 @@ export default function AdminSigSalesPage() {
                 className="w-16 rounded border border-white/15 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-100"
               />
             </label>
+            ) : null}
+            {!manualOnly ? (
             <Link
               href="/admin?sigSales=wheel"
               className="rounded border border-white/20 bg-black/40 px-3 py-2 text-xs text-neutral-200 hover:bg-white/10"
             >
               대시보드 모달
             </Link>
+            ) : null}
+            {manualOnly ? (
+            <Link
+              href="/admin/sig-sales"
+              className="rounded border border-yellow-400/40 bg-yellow-950/40 px-3 py-2 text-xs font-bold text-yellow-100 hover:bg-yellow-900/50"
+            >
+              회전판 추첨
+            </Link>
+            ) : null}
             {(machine.phase === "CONFIRM_PENDING" || machine.isFinishLoading) && (
               <button
                 type="button"
@@ -2767,6 +2815,7 @@ export default function AdminSigSalesPage() {
                 확정 멈춤·복구
               </button>
             )}
+            {!manualOnly ? (
             <button
               type="button"
               onClick={onResetRouletteIdle}
@@ -2775,6 +2824,8 @@ export default function AdminSigSalesPage() {
             >
               회전판 초기화
             </button>
+            ) : null}
+            {!manualOnly ? (
             <button
               type="button"
               onClick={onRerollReset}
@@ -2783,7 +2834,8 @@ export default function AdminSigSalesPage() {
             >
               다시 돌리기
             </button>
-            {wheelDemoMode ? (
+            ) : null}
+            {!manualOnly && wheelDemoMode ? (
               <>
                 <button
                   type="button"
@@ -2826,23 +2878,12 @@ export default function AdminSigSalesPage() {
                 </button>
               </>
             ) : null}
-            {overlayObsUrl ? (
-              <select
-                value={overlayObsMode}
-                onChange={(e) => setOverlayObsMode(e.target.value === "manual" ? "manual" : "wheel")}
-                className="rounded border border-white/20 bg-neutral-900 px-2 py-2 text-xs text-neutral-200"
-                title="OBS 오버레이 표시 모드"
-              >
-                <option value="wheel">회전판 모드 URL</option>
-                <option value="manual">수동 결과 모드 URL</option>
-              </select>
-            ) : null}
-            {overlayObsUrl ? (
+            {overlayObsUrl && !manualOnly ? (
               <button
                 type="button"
                 className="rounded border border-white/20 px-2 py-2 text-xs text-neutral-200 hover:bg-white/10"
                 onClick={() => {
-                  const targetUrl = overlayObsMode === "manual" ? overlayObsUrlManual : overlayObsUrl;
+                  const targetUrl = overlayObsUrl;
                   void (async () => {
                     const ok = await copyTextToClipboard(targetUrl);
                     setToast(
@@ -2851,10 +2892,10 @@ export default function AdminSigSalesPage() {
                   })();
                 }}
               >
-                OBS URL 복사
+                회전판 URL 복사
               </button>
             ) : null}
-            {overlayObsUrlManual ? (
+            {overlayObsUrlManual && (manualOnly || overlayObsUrl) ? (
               <>
                 <button
                   type="button"
@@ -2883,6 +2924,7 @@ export default function AdminSigSalesPage() {
                 </button>
               </>
             ) : null}
+            {!manualOnly ? (
             <button
               type="button"
               onClick={() => {
@@ -2902,15 +2944,29 @@ export default function AdminSigSalesPage() {
             >
               {loadingSpin ? "추첨 준비중..." : "회전판 시작"}
             </button>
+            ) : null}
           </div>
         </header>
-        {overlayObsUrlManual ? (
+        {manualOnly && overlayObsUrlManual ? (
           <section className="rounded border border-sky-400/35 bg-sky-500/10 px-3 py-2">
             <div className="text-[11px] font-semibold text-sky-200">수동 모드 OBS URL (한 번만 등록)</div>
             <p className="mt-1 text-[10px] text-sky-100/75 leading-snug">
               시그 입력·판매 완료 체크 후에도 URL은 바뀌지 않습니다. OBS는 이 주소 그대로 두고 소스 새로고침만 하면 서버 상태가 반영됩니다.
             </p>
             <code className="mt-1 block break-all text-[11px] text-sky-100/95">{overlayObsUrlManual}</code>
+          </section>
+        ) : null}
+
+        {!manualOnly && overlayObsUrlManual ? (
+          <section className="rounded border border-sky-400/35 bg-sky-500/10 px-3 py-2">
+            <div className="text-[11px] font-semibold text-sky-200">수동 시그 판매</div>
+            <p className="mt-1 text-[10px] text-sky-100/75 leading-snug">
+              회전판 없이 운영할 때는{" "}
+              <Link href="/admin/sig-sales-manual" className="font-semibold text-sky-50 underline">
+                수동 시그 판매(오버레이 관리)
+              </Link>
+              에서 설정하세요. OBS URL은 <code className="text-sky-100/90">/overlay/sig-sales-manual</code> 입니다.
+            </p>
           </section>
         ) : null}
 
@@ -2949,6 +3005,7 @@ export default function AdminSigSalesPage() {
           </button>
         </section>
 
+        {manualOnly ? (
         <section ref={manualSectionRef} className="rounded-xl border border-sky-300/30 bg-sky-500/10 p-3">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <div className="text-sm font-semibold text-sky-100">수동 설정(5개 + 한방)</div>
@@ -3285,6 +3342,7 @@ export default function AdminSigSalesPage() {
             </div>
           ) : null}
         </section>
+        ) : null}
 
         <section style={{ backgroundColor: "transparent" }} className="relative rounded-2xl border border-yellow-200/20 p-4">
           {lastConfirmedText ? (
@@ -3295,7 +3353,7 @@ export default function AdminSigSalesPage() {
               {lastConfirmedText}
             </div>
           ) : null}
-          {!hideWheelAfterSpin ? <RouletteWheel
+          {!manualOnly && !hideWheelAfterSpin ? <RouletteWheel
             items={wheelItemsWithResult}
             isRolling={wheelSpinning}
             resultId={wheelSpinning ? wheelAnimationResultId : null}
@@ -3700,4 +3758,8 @@ export default function AdminSigSalesPage() {
       {toast ? <div className="fixed bottom-5 left-1/2 z-[120] -translate-x-1/2 rounded bg-black/80 px-4 py-2 text-sm text-white">{toast}</div> : null}
     </main>
   );
+}
+
+export default function AdminSigSalesWheelPage() {
+  return <AdminSigSalesPage manualOnly={false} />;
 }

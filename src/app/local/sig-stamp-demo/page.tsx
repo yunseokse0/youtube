@@ -65,7 +65,7 @@ export default function SigStampDemoPage() {
               /overlay/sig-sales
             </a>
             과{" "}
-            <a href="/admin/sig-sales?view=manual" className="text-sky-400 underline">
+            <a href="/admin/sig-sales-manual" className="text-sky-400 underline">
               /admin/sig-sales
             </a>
             에서 재고 <code>soldCount</code> 또는 수동 체크 시 같은 연출이 붙습니다.

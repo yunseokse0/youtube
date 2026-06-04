@@ -272,6 +272,9 @@ export function useOverlayRemoteState(
         });
 
         if (!remote) {
+          /** 304 등 변경 없음 — 이미 동기화된 표시를 last-good으로 덮지 않음(OBS 텍스트가 사라지는 현상 방지) */
+          if (lastSyncedUpdatedAtRef.current > 0) return;
+
           restoreFallback();
 
           return;
@@ -552,5 +555,10 @@ export function useOverlayRemoteState(
     statePick,
   ]);
 
-  return { state: frozen ?? state, ready: (frozen ?? state) !== null };
+  const resync = useCallback(
+    (opts?: { forceFull?: boolean }) => syncFromApi(opts),
+    [syncFromApi]
+  );
+
+  return { state: frozen ?? state, ready: (frozen ?? state) !== null, resync };
 }

@@ -26,7 +26,14 @@ function presetShowsDonationGoal(p: Record<string, unknown>): boolean {
 export function isOverlayStateViable(state: AppState | null, pick: StateApiPick): boolean {
   if (!state) return false;
   if (pick === STATE_PICK_OBS_TEXT) {
-    return readObsTextRegistryFromState(state).instances.length > 0;
+    const reg = readObsTextRegistryFromState(state);
+    return reg.instances.some((inst) =>
+      inst.config.blocks.some(
+        (b) =>
+          b.visible !== false &&
+          b.segments.some((s) => String(s.text ?? "").trim().length > 0)
+      )
+    );
   }
   if (pick === STATE_PICK_OVERLAY || pick === STATE_PICK_OVERLAY_DONORS) {
     if (Array.isArray(state.members) && state.members.length > 0) return true;
