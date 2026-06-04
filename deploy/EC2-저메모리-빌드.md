@@ -34,22 +34,28 @@ cd ~/youtube6   # 또는 ~/youtube — 실제 clone 경로
 bash deploy/deploy-on-ec2.sh
 ```
 
-또는 수동:
+**수동 배포는 `deploy/deploy-on-ec2.sh` 권장** (스테이징 빌드 → 짧게 `.next` 교체만, 배포 중 502 최소화).
+
+아래는 **비권장** (빌드 내내 502 — OBS 텍스트·시그 오버레이 전부 nginx 502):
+
+```bash
+# 하지 마세요: pm2 stop && rm -rf .next && npm run build
+```
+
+OOM으로 스테이징 빌드가 실패할 때만:
 
 ```bash
 cd ~/youtube6
 git pull
-rm -rf .next
-PM2_APP=youtube NODE_HEAP_MB=2048 npm run build:prod
-curl -I http://127.0.0.1:3000/api/health
+PM2_STOP_BEFORE_BUILD=1 NEXT_BUILD_DIR=.next-staging NODE_HEAP_MB=2048 npm run build:prod
+# 이후 deploy-on-ec2.sh 와 동일하게 .next 교체·pm2 start
 ```
 
-`build:prod` 는 다음을 합니다.
+`build:prod` 기본(스테이징):
 
-- 빌드 전 `pm2 stop youtube` (RAM 확보)
-- `NODE_OPTIONS=--max-old-space-size=2048`
-- `LOW_MEMORY_BUILD=1` → Next 워커 1개로 피크 메모리 완화
-- 빌드 후 `pm2 restart youtube`
+- `NEXT_BUILD_DIR=.next-staging` → **기존 `.next` 유지**한 채 빌드 (서비스 계속)
+- `deploy-on-ec2.sh` 가 성공 시에만 `pm2 stop` → `.next` 교체 → `pm2 start` (수 초)
+- `NODE_OPTIONS=--max-old-space-size=2048`, `LOW_MEMORY_BUILD=1`
 
 ### 3) 여전히 OOM 이면
 

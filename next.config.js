@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
+const stagingDir = String(process.env.NEXT_BUILD_DIR || "").trim();
 const nextConfig = {
+  ...(stagingDir ? { distDir: stagingDir } : {}),
   trailingSlash: false,
   async redirects() {
     return [
