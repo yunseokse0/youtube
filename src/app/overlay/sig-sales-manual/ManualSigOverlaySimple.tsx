@@ -12,6 +12,7 @@ import {
   getOverlayUserIdFromSearchParams,
 } from "@/lib/overlay-params";
 import { DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
+import { resolveManualOneShotOverlayImageUrl } from "@/lib/manual-sig-broadcast";
 import { hydrateSigItemFromInventory, sigMatchesMemberFilter } from "@/lib/sig-roulette";
 import { stripBundledSigPlaceholderItems } from "@/lib/sig-placeholder";
 
@@ -56,13 +57,19 @@ export default function ManualSigOverlaySimple() {
     );
     setSelected(hydrated.slice(0, 5));
     const os = rs.oneShotResult;
-    setOneShot(
+    const oneShotPayload =
       os && Number(os.price) > 0
         ? { name: String(os.name || "한방 시그"), price: Math.floor(Number(os.price)) }
-        : null
+        : null;
+    setOneShot(oneShotPayload);
+    setSignImageUrl(
+      resolveManualOneShotOverlayImageUrl({
+        state: remote,
+        selectedSigs: hydrated,
+        userId,
+        oneShotName: oneShotPayload?.name,
+      })
     );
-    const pick = hydrated.find((x) => (x.imageUrl || "").trim());
-    setSignImageUrl(pick?.imageUrl?.trim() || "");
     setReady(true);
   }, [userId, memberFilterId]);
 
