@@ -212,10 +212,14 @@ function useClientSearchParams(): URLSearchParams {
 function OverlayHydrationShell({
   message = "오버레이 불러오는 중…",
   transparent = true,
+  showMessage = false,
 }: {
   message?: string;
   transparent?: boolean;
+  /** true면 OBS 투명 배경에서도 안내 문구 표시(디버그·로딩 확인용) */
+  showMessage?: boolean;
 }) {
+  const showVisible = !transparent || showMessage;
   return (
     <main
       className={
@@ -224,7 +228,13 @@ function OverlayHydrationShell({
           : "relative min-h-[100dvh] max-h-[100dvh] overflow-hidden bg-neutral-950 px-3 py-3 text-white sm:px-5 sm:py-4"
       }
     >
-      <p className={transparent ? "sr-only" : "flex min-h-[50dvh] items-center justify-center text-sm text-neutral-300"}>
+      <p
+        className={
+          showVisible
+            ? "pointer-events-none fixed bottom-6 left-1/2 z-[500] -translate-x-1/2 rounded-lg border border-white/20 bg-black/75 px-3 py-2 text-xs text-neutral-200"
+            : "sr-only"
+        }
+      >
         {message}
       </p>
     </main>
@@ -241,8 +251,8 @@ function SigSalesOverlayPageInner() {
     String(sp.get("overlayMode") || "").toLowerCase() === "manual";
   const userId = getOverlayUserIdFromSearchParams(sp);
   const [clientBoot, setClientBoot] = useState<{ ready: boolean; host: string | null }>({
-    ready: false,
-    host: null,
+    ready: typeof window !== "undefined",
+    host: typeof window !== "undefined" ? window.location.hostname : null,
   });
   useEffect(() => {
     setClientBoot({ ready: true, host: window.location.hostname });
@@ -756,14 +766,35 @@ function SigSalesOverlayPageInner() {
    * 당첨 큐 단일 소스(휠·결과 카드·순차 인덱스). 서버 `selectedSigs` 우선.
    */
   /** 회전 시작 전 — 하단 당첨·수동 초안·이전 회차 sticky 를 모두 숨김 */
-  const overlayIdleBeforeSpin = useMemo(
-    () =>
+  const overlayIdleBeforeSpin = useMemo(() => {
+    if (manualOverlayMode) {
+      const rsPhase = state?.rouletteState?.phase;
+      if (
+        rsPhase === "LANDED" ||
+        rsPhase === "CONFIRM_PENDING" ||
+        rsPhase === "CONFIRMED"
+      ) {
+        return false;
+      }
+      const serverSel = state?.rouletteState?.selectedSigs ?? state?.rouletteState?.results;
+      if (Array.isArray(serverSel) && serverSel.length > 0) return false;
+    }
+    return (
       machine.phase === "IDLE" &&
       !pendingLanding &&
       !demoSpin &&
-      wheelPhase === "idle",
-    [machine.phase, pendingLanding, demoSpin, wheelPhase]
-  );
+      wheelPhase === "idle"
+    );
+  }, [
+    manualOverlayMode,
+    state?.rouletteState?.phase,
+    state?.rouletteState?.selectedSigs,
+    state?.rouletteState?.results,
+    machine.phase,
+    pendingLanding,
+    demoSpin,
+    wheelPhase,
+  ]);
 
   const spinQueueSelected = useMemo(() => {
     const idleBeforeSpin = overlayIdleBeforeSpin && !wheelDemoAutoSpin;
@@ -1211,13 +1242,12 @@ function SigSalesOverlayPageInner() {
     manualOverlayMode && manualDraftSelectedForUi.length >= 5;
   /**
    * 수동 OBS 정본 — 회전판 displaySelectedSigs(이전 회차)를 쓰지 않음.
-   * 1) 수동 적용(sessionId manual_*) + LANDED → 서버 selectedSigs (관리자 하단 당첨과 동일)
+   * 1) 서버 LANDED·확정 당첨(selectedSigs) — manual_/session_ 세션 모두
    * 2) 초안 5개 저장됨 → overlaySettings 초안 (적용 전·폼 입력)
    * 3) 그 외 서버/머신 폴백
    */
   const manualOverlayResultSigs = useMemo(() => {
     if (!manualOverlayMode) return [] as SigItem[];
-    const sid = String(state?.rouletteState?.sessionId || machine.sessionId || "").trim();
     const rsPhase = state?.rouletteState?.phase;
     const terminal =
       rsPhase === "LANDED" ||
@@ -1227,8 +1257,11 @@ function SigSalesOverlayPageInner() {
       machine.phase === "CONFIRM_PENDING" ||
       machine.phase === "CONFIRMED";
 
-    /** LANDED 이후 서버 당첨(이미지 포함) 우선 — 관리자 displaySelectedSigs 와 동일 */
-    if (sid.startsWith("manual_") && terminal && serverRouletteSelectedSigs.length > 0) {
+    /** LANDED·확정 후 서버 당첨 우선(session_·manual_ 모두) — 회전판 없이 수동·확정만 한 경우 포함 */
+    if (terminal && serverRouletteSelectedSigs.length > 0) {
+      return serverRouletteSelectedSigs;
+    }
+    if (serverRouletteSelectedSigs.length > 0 && manualDraftSelectedForUi.length < MIN_ONE_SHOT_SIGS) {
       return serverRouletteSelectedSigs;
     }
     /** 저장된 초안(현재 탭) — 인벤 imageUrl 보강 후 표시 */
@@ -2222,7 +2255,17 @@ function SigSalesOverlayPageInner() {
       : "relative min-h-0 overflow-visible bg-transparent px-3 py-3 text-white sm:px-5 sm:py-4";
 
   if (!clientBoot.ready) {
-    return <OverlayHydrationShell transparent={!wheelDemoActive} />;
+    return (
+      <OverlayHydrationShell
+        transparent={!wheelDemoActive}
+        message={
+          manualOverlayMode
+            ? "수동 시그 오버레이 불러오는 중…"
+            : "오버레이 불러오는 중…"
+        }
+        showMessage={manualOverlayMode}
+      />
+    );
   }
 
   return (
