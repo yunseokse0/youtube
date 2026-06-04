@@ -184,7 +184,11 @@ export function useOverlayRemoteState(
   userId?: string,
 
   options: UseOverlayRemoteStateOptions = {}
-): { state: AppState | null; ready: boolean } {
+): {
+  state: AppState | null;
+  ready: boolean;
+  resync: (opts?: { forceFull?: boolean }) => Promise<void>;
+} {
   const frozen = options.frozenState ?? null;
 
   const enabled = options.enabled !== false && frozen == null;
