@@ -1693,7 +1693,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         id: matchedInventoryItem?.id || `manual_sig_${tsId}_${idx + 1}_${safeName}`,
         name: row.name,
         price: row.price,
-        imageUrl: row.imageUrl,
+        imageUrl: String(row.imageUrl || matchedInventoryItem?.imageUrl || "").trim(),
         memberId: "",
         maxCount: 1,
         soldCount: 0,

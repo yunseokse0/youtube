@@ -2,28 +2,33 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { useClientOnlySearchParams } from "@/hooks/useClientOnlySearchParams";
-import type { SigItem } from "@/types";
 import ResultOverlay from "@/components/sig-sales/ResultOverlay";
 import { layoutSigOverlayResultRow } from "@/components/sig-sales/sig-overlay-card-size";
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
-import { DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
-import { resolveManualOneShotOverlayImageUrl } from "@/lib/manual-sig-broadcast";
 import {
-  getOverlayMemberFilterIdFromSearchParams,
+  buildManualOverlaySoldOverrideSet,
+  resolveManualOneShotOverlayImageUrl,
+  resolveManualOverlaySelectedSigs,
+} from "@/lib/manual-sig-broadcast";
+import {
   getOverlayUserIdFromSearchParams,
 } from "@/lib/overlay-params";
 import {
   readOverlayPollIntervalMs,
   readSigSalesOverlayPollMs,
 } from "@/lib/overlay-pull-policy";
-import { hydrateSigItemFromInventory, sigMatchesMemberFilter } from "@/lib/sig-roulette";
-import { stripBundledSigPlaceholderItems } from "@/lib/sig-placeholder";
 import { STATE_PICK_SIG_SALES } from "@/lib/state-api-pick";
+import { DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
+
+const MANUAL_OVERLAY_TERMINAL_PHASES = new Set([
+  "LANDED",
+  "CONFIRM_PENDING",
+  "CONFIRMED",
+]);
 
 export default function ManualSigOverlaySimple() {
   const { params: sp, ready: spReady } = useClientOnlySearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
-  const memberFilterId = getOverlayMemberFilterIdFromSearchParams(sp);
   const scaleRaw = sp.get("sigResultScalePct") || sp.get("resultScalePct") || "";
   const scalePct = (() => {
     const n = Number(scaleRaw);
@@ -58,45 +63,35 @@ export default function ManualSigOverlaySimple() {
     }
   }, [state?.rouletteState?.overlayReloadNonce, resync]);
 
-  const { selected, oneShot, signImageUrl } = useMemo(() => {
-    if (!state?.rouletteState) {
-      return {
-        selected: [] as SigItem[],
-        oneShot: null as { name: string; price: number } | null,
-        signImageUrl: "",
-      };
-    }
-    const rs = state.rouletteState;
-    const raw = (
-      Array.isArray(rs.selectedSigs) && rs.selectedSigs.length > 0
-        ? rs.selectedSigs
-        : Array.isArray(rs.results)
-          ? rs.results
-          : []
-    ) as SigItem[];
-    const inv = state.sigInventory || [];
-    const hydrated = stripBundledSigPlaceholderItems(
-      raw
-        .filter((s) => sigMatchesMemberFilter(s, memberFilterId))
-        .map((s) => hydrateSigItemFromInventory(s, inv, userId))
-    );
-    const selectedSigs = hydrated.slice(0, 5);
-    const os = rs.oneShotResult;
-    const oneShotPayload =
-      os && Number(os.price) > 0
-        ? { name: String(os.name || "한방 시그"), price: Math.floor(Number(os.price)) }
-        : null;
+  const selected = useMemo(
+    () => resolveManualOverlaySelectedSigs(state, userId),
+    [state, userId]
+  );
+
+  const soldOverrideSet = useMemo(
+    () => buildManualOverlaySoldOverrideSet(state, selected, userId),
+    [state, selected, userId]
+  );
+
+  const oneShot = useMemo(() => {
+    const os = state?.rouletteState?.oneShotResult;
+    if (!os || Number(os.price) <= 0) return null;
     return {
-      selected: selectedSigs,
-      oneShot: oneShotPayload,
-      signImageUrl: resolveManualOneShotOverlayImageUrl({
-        state,
-        selectedSigs,
-        userId,
-        oneShotName: oneShotPayload?.name,
-      }),
+      name: String(os.name || "한방 시그"),
+      price: Math.floor(Number(os.price)),
     };
-  }, [state, userId, memberFilterId]);
+  }, [state?.rouletteState?.oneShotResult]);
+
+  const signImageUrl = useMemo(
+    () =>
+      resolveManualOneShotOverlayImageUrl({
+        state,
+        selectedSigs: selected,
+        userId,
+        oneShotName: oneShot?.name,
+      }),
+    [state, selected, userId, oneShot?.name]
+  );
 
   const resultRowLayout = useMemo(
     () =>
@@ -106,8 +101,11 @@ export default function ManualSigOverlaySimple() {
       }),
     [scalePct, selected.length, oneShot]
   );
-  const visible = spReady && ready && selected.length >= 2;
-  const soldOutStampUrl = DEFAULT_SIG_SOLD_STAMP_URL;
+
+  const phase = String(state?.rouletteState?.phase || "");
+  const terminalPhase = MANUAL_OVERLAY_TERMINAL_PHASES.has(phase);
+  const visible = spReady && ready && terminalPhase && selected.length >= 2;
+  const soldOutStampUrl = String(state?.sigSoldOutStampUrl || "").trim() || DEFAULT_SIG_SOLD_STAMP_URL;
 
   if (!spReady || !ready) {
     return (
@@ -121,7 +119,9 @@ export default function ManualSigOverlaySimple() {
     return (
       <main className="pointer-events-none fixed inset-x-0 bottom-8 z-50 flex justify-center bg-transparent px-4">
         <p className="rounded-lg border border-yellow-400/35 bg-black/70 px-4 py-2 text-xs text-yellow-100">
-          당첨 없음 — 관리자에서 「리롤 → OBS」를 눌러 주세요.
+          {terminalPhase
+            ? "당첨 시그를 불러오지 못했습니다. 관리자에서 「리롤」 또는 「수동 결과 적용(LANDED)」 후 OBS 캐시 새로고침."
+            : "대기 중 — 관리자에서 「수동 결과 적용(LANDED)」 또는 「리롤」을 눌러 주세요."}
         </p>
       </main>
     );
@@ -144,6 +144,7 @@ export default function ManualSigOverlaySimple() {
           className="w-full max-w-full"
           showConfirmedBadge={false}
           disableCardMotion
+          soldOverrideSet={soldOverrideSet}
           sigImageUserId={userId}
         />
       </div>
