@@ -1888,9 +1888,6 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     void (async () => {
       setManualBusy(true);
       try {
-        const patch = buildManualRoundResetPatch(state);
-        const next: AppState = { ...state, ...patch };
-        setState(next);
         setManualInputMode("inventory");
         setManualSigDrafts(picked);
         setManualSigSoldFlags([false, false, false, false, false]);
@@ -1900,13 +1897,11 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         setManualDebugInfo("");
         setShowConfirmModal(false);
         cancelConfirm();
-        resetToIdle();
-        await saveStateAsync(next, userId);
+        /** IDLE·resetToIdle·중간 저장 없이 LANDED만 1회 저장 — OBS가 빈 상태·회전판을 보지 않게 */
         await applyManualSelection(false, {
           drafts: picked,
           soldFlags: [false, false, false, false, false],
           oneShotMarkSold: false,
-          stateSnapshot: next,
         });
       } catch (e) {
         setToast(`리롤 실패: ${String(e)}`);
@@ -1918,9 +1913,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     state,
     manualRandomPool,
     memberFilterId,
-    userId,
     cancelConfirm,
-    resetToIdle,
     applyManualSelection,
   ]);
 
@@ -3435,7 +3428,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
               {lastConfirmedText}
             </div>
           ) : null}
-          {!manualOnly && !hideWheelAfterSpin ? <RouletteWheel
+          {!manualOnly && overlayObsMode !== "manual" && !hideWheelAfterSpin ? <RouletteWheel
             items={wheelItemsWithResult}
             isRolling={wheelSpinning}
             resultId={wheelSpinning ? wheelAnimationResultId : null}

@@ -87,11 +87,24 @@ export function pickRandomManualSigBundle(
 export function buildManualSigBroadcastState(
   base: AppState,
   selected: SigItem[],
-  oneShot: { id: string; name: string; price: number }
+  oneShot: { id: string; name: string; price: number },
+  opts?: { persistDrafts?: ManualSigDraftPersist }
 ): AppState {
   const now = Date.now();
+  const prevOverlaySettings =
+    base.overlaySettings && typeof base.overlaySettings === "object"
+      ? (base.overlaySettings as Record<string, unknown>)
+      : {};
   return {
     ...base,
+    ...(opts?.persistDrafts
+      ? {
+          overlaySettings: {
+            ...prevOverlaySettings,
+            [MANUAL_SIG_DRAFT_STATE_KEY]: opts.persistDrafts,
+          },
+        }
+      : {}),
     rouletteState: {
       ...base.rouletteState,
       phase: "LANDED",

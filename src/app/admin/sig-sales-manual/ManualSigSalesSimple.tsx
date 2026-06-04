@@ -13,6 +13,7 @@ import {
   buildManualSigBroadcastState,
   pickRandomManualSigBundle,
 } from "@/lib/manual-sig-broadcast";
+import { normalizeManualSigDraftPersist } from "@/lib/manual-sig-workbench";
 
 export default function ManualSigSalesSimple() {
   const router = useRouter();
@@ -88,7 +89,23 @@ export default function ManualSigSalesSimple() {
         setToast("리롤 실패 — 판매 가능 시그를 확인하세요.");
         return;
       }
-      const next = buildManualSigBroadcastState(state, bundle.selected, bundle.oneShot);
+      const drafts = bundle.selected.map((s) => ({
+        sourceSigId: s.id,
+        name: s.name,
+        priceInput: String(Math.floor(Number(s.price || 0))),
+        imageUrl: String(s.imageUrl || "").trim(),
+      }));
+      const next = buildManualSigBroadcastState(state, bundle.selected, bundle.oneShot, {
+        persistDrafts: normalizeManualSigDraftPersist({
+          inputMode: "inventory",
+          drafts,
+          oneShotName: bundle.oneShot.name,
+          oneShotPriceInput: String(bundle.oneShot.price),
+          oneShotImageUrl: "",
+          sigSoldFlags: [false, false, false, false, false],
+          oneShotMarkSold: false,
+        }),
+      });
       setState(next);
       const saved = await saveStateAsync(next, userId);
       setToast(
