@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useClientOnlySearchParams } from "@/hooks/useClientOnlySearchParams";
 import ResultOverlay from "@/components/sig-sales/ResultOverlay";
 import { layoutSigOverlayResultRow } from "@/components/sig-sales/sig-overlay-card-size";
@@ -12,6 +12,7 @@ import {
 } from "@/lib/manual-sig-broadcast";
 import {
   getOverlayUserIdFromSearchParams,
+  isOverlayBroadcastHost,
 } from "@/lib/overlay-params";
 import {
   readOverlayPollIntervalMs,
@@ -26,9 +27,39 @@ const MANUAL_OVERLAY_TERMINAL_PHASES = new Set([
   "CONFIRMED",
 ]);
 
+function ManualOverlayStatus({
+  hostObs,
+  children,
+}: {
+  hostObs: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <main
+      className={
+        hostObs
+          ? "pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-transparent p-6"
+          : "min-h-0 bg-transparent p-4 text-center"
+      }
+    >
+      <p
+        className={
+          hostObs
+            ? "max-w-lg rounded-lg border border-yellow-400/40 bg-black/80 px-4 py-3 text-center text-sm font-medium text-yellow-50 shadow-lg"
+            : "text-xs text-neutral-400"
+        }
+      >
+        {children}
+      </p>
+    </main>
+  );
+}
+
 export default function ManualSigOverlaySimple() {
   const { params: sp, ready: spReady } = useClientOnlySearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
+  const hostObs = isOverlayBroadcastHost(sp);
+  const debugOverlay = sp.get("overlayDebug") === "1";
   const scaleRaw = sp.get("sigResultScalePct") || sp.get("resultScalePct") || "";
   const scalePct = (() => {
     const n = Number(scaleRaw);
@@ -62,6 +93,14 @@ export default function ManualSigOverlaySimple() {
       void resync({ forceFull: true });
     }
   }, [state?.rouletteState?.overlayReloadNonce, resync]);
+
+  /** OBS CEF: 첫 fetch 지연·304 레이스 대비 — 마운트 후 전체 상태 1회 더 당김 */
+  useEffect(() => {
+    if (!spReady) return;
+    const kick = () => void resync({ forceFull: true });
+    const t = window.setTimeout(kick, hostObs ? 350 : 800);
+    return () => window.clearTimeout(t);
+  }, [spReady, hostObs, resync, userId]);
 
   const selected = useMemo(
     () => resolveManualOverlaySelectedSigs(state, userId),
@@ -104,50 +143,70 @@ export default function ManualSigOverlaySimple() {
 
   const phase = String(state?.rouletteState?.phase || "");
   const terminalPhase = MANUAL_OVERLAY_TERMINAL_PHASES.has(phase);
-  const visible = spReady && ready && terminalPhase && selected.length >= 2;
+  const hasResults = selected.length >= 2;
+  /** 당첨 2개 이상이면 표시(OBS·웹 동일). phase는 안내 문구에만 사용 */
+  const visible = spReady && ready && hasResults;
   const soldOutStampUrl = String(state?.sigSoldOutStampUrl || "").trim() || DEFAULT_SIG_SOLD_STAMP_URL;
+
+  const rootClass = hostObs
+    ? "pointer-events-none absolute inset-0 z-[1] flex flex-col justify-end items-center bg-transparent p-0"
+    : "pointer-events-none fixed inset-0 z-[1] flex flex-col justify-end items-center bg-transparent p-0";
 
   if (!spReady || !ready) {
     return (
-      <main className="min-h-0 bg-transparent p-4 text-center text-xs text-neutral-400">
+      <ManualOverlayStatus hostObs={hostObs}>
         수동 시그 오버레이 불러오는 중…
-      </main>
+        {hostObs ? ` (계정: ${userId})` : ""}
+      </ManualOverlayStatus>
     );
   }
 
   if (!visible) {
     return (
-      <main className="pointer-events-none fixed inset-x-0 bottom-8 z-50 flex justify-center bg-transparent px-4">
-        <p className="rounded-lg border border-yellow-400/35 bg-black/70 px-4 py-2 text-xs text-yellow-100">
+      <>
+        {debugOverlay ? (
+          <div className="pointer-events-none absolute left-2 top-2 z-[99] rounded bg-black/85 px-2 py-1 font-mono text-[10px] text-lime-300">
+            phase={phase || "(없음)"} · sigs={selected.length} · terminal=
+            {terminalPhase ? "Y" : "N"} · u={userId}
+          </div>
+        ) : null}
+        <ManualOverlayStatus hostObs={hostObs}>
           {terminalPhase
-            ? "당첨 시그를 불러오지 못했습니다. 관리자에서 「리롤」 또는 「수동 결과 적용(LANDED)」 후 OBS 캐시 새로고침."
+            ? "당첨 시그를 불러오지 못했습니다. 관리자에서 「리롤」 또는 「수동 결과 적용(LANDED)」 후 OBS에서 이 소스 우클릭 → 「새로고침」."
             : "대기 중 — 관리자에서 「수동 결과 적용(LANDED)」 또는 「리롤」을 눌러 주세요."}
-        </p>
-      </main>
+        </ManualOverlayStatus>
+      </>
     );
   }
 
   return (
-    <main className="pointer-events-none fixed inset-0 z-[1] flex flex-col justify-end items-center bg-transparent p-0">
-      <div
-        className="pointer-events-none flex w-full max-w-full justify-center overflow-visible px-3 pb-4 md:px-6"
-        style={resultRowLayout.bandStyle}
-      >
-        <ResultOverlay
-          visible
-          selectedSigs={selected}
-          soldOutStampUrl={soldOutStampUrl}
-          oneShot={oneShot}
-          signImageUrl={signImageUrl}
-          showOneShotReveal={Boolean(oneShot)}
-          cardScalePct={resultRowLayout.cardScalePct}
-          className="w-full max-w-full"
-          showConfirmedBadge={false}
-          disableCardMotion
-          soldOverrideSet={soldOverrideSet}
-          sigImageUserId={userId}
-        />
-      </div>
-    </main>
+    <>
+      {debugOverlay ? (
+        <div className="pointer-events-none absolute left-2 top-2 z-[99] rounded bg-black/85 px-2 py-1 font-mono text-[10px] text-lime-300">
+          OK · phase={phase} · sigs={selected.length} · u={userId}
+        </div>
+      ) : null}
+      <main className={rootClass}>
+        <div
+          className="pointer-events-none flex w-full max-w-full justify-center overflow-visible px-3 pb-4 md:px-6"
+          style={resultRowLayout.bandStyle}
+        >
+          <ResultOverlay
+            visible
+            selectedSigs={selected}
+            soldOutStampUrl={soldOutStampUrl}
+            oneShot={oneShot}
+            signImageUrl={signImageUrl}
+            showOneShotReveal={Boolean(oneShot)}
+            cardScalePct={resultRowLayout.cardScalePct}
+            className="w-full max-w-full"
+            showConfirmedBadge={false}
+            disableCardMotion
+            soldOverrideSet={soldOverrideSet}
+            sigImageUserId={userId}
+          />
+        </div>
+      </main>
+    </>
   );
 }

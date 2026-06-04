@@ -476,6 +476,12 @@ export function isSigSalesManualOverlayPath(): boolean {
   return path === "/overlay/sig-sales-manual" || path.startsWith("/overlay/sig-sales-manual/");
 }
 
+/** OBS·프리즘 브라우저 소스 (`host=obs` 등) */
+export function isOverlayBroadcastHost(searchParams: SearchParamsLike): boolean {
+  const h = String(searchParams.get("host") || "").trim().toLowerCase();
+  return h === "obs" || h === "prism" || h === "external";
+}
+
 export function getOverlayUserIdFromSearchParams(
   searchParams: SearchParamsLike,
   fallback = "finalent"
