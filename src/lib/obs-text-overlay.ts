@@ -75,7 +75,20 @@ export type ObsTextOverlayConfig = {
   revision?: number;
 };
 
-export const OBS_TEXT_EMOJI_PRESETS: string[] = [
+function dedupeEmojiPresets(list: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const em of list) {
+    const key = em.trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+  }
+  return out;
+}
+
+/** 방송용 이모지 바로 삽입 — 아래 배열에 문자열 추가하면 버튼이 늘어남 (OBS 유니코드 텍스트만) */
+export const OBS_TEXT_EMOJI_PRESETS: string[] = dedupeEmojiPresets([
   "❤️",
   "🔥",
   "✨",
@@ -116,12 +129,24 @@ export const OBS_TEXT_EMOJI_PRESETS: string[] = [
   "🌈",
   "☀️",
   "🌙",
-  /* 유튜브·방송 채팅에서 흔한 이모지 (텍스트/이미지 URL 아님 — OBS 안전) */
   "ㅋㅋ",
   "ㅎㅎ",
+  "ㅋㅋㅋ",
+  "ㅎㅎㅎ",
   "ㄷㄷ",
   "ㄹㅇ",
   "ㅇㅇ",
+  "ㄱㅇㅇ",
+  "ㅁㅊ",
+  "ㅈㅅ",
+  "ㅎㅇ",
+  "ㄴㅇㅂ",
+  "ㅇㅈ",
+  "ㄷㄱ",
+  "ㄱㅅ",
+  "ㄳ",
+  "ㄴㄴ",
+  "ㅂㅂ",
   "ㅠㅠ",
   "ㅜㅜ",
   "🤔",
@@ -148,29 +173,78 @@ export const OBS_TEXT_EMOJI_PRESETS: string[] = [
   "🎊",
   "🎈",
   "🧡",
+  "💛",
   "💜",
   "💙",
   "💚",
+  "🤎",
   "🖤",
   "🤍",
   "🩷",
   "🩵",
+  "💝",
+  "💘",
+  "💋",
+  "👊",
+  "✊",
+  "🙌",
+  "👋",
+  "🤞",
+  "🖐️",
+  "🤌",
+  "🫰",
+  "🤙",
+  "😢",
+  "😡",
+  "🥵",
+  "🥶",
+  "😴",
+  "🤤",
+  "🙄",
+  "😏",
+  "🤭",
+  "🫢",
+  "🫨",
+  "💰",
+  "🪙",
+  "🚀",
+  "📌",
+  "🔴",
+  "🟢",
+  "🟡",
+  "🔵",
+  "♥",
+  "♡",
   "🐱",
   "🐶",
   "🦊",
   "🐻",
   "🍕",
   "🍔",
+  "🍗",
+  "🍜",
   "☕",
   "🍺",
+  "🍻",
+  "🥂",
+  "🎂",
   "🎤",
   "📺",
   "🎬",
+  "🎥",
+  "📸",
+  "🔊",
+  "🎧",
+  "💻",
+  "📱",
+  "⏰",
+  "🛐",
+  "⚠️",
   "🏅",
   "🥇",
   "🥈",
   "🥉",
-];
+]);
 
 /** OBS remount 방지 — revision 제외한 표시용 서명 */
 export function obsTextConfigSyncSignature(config: ObsTextOverlayConfig): string {

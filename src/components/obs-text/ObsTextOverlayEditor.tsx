@@ -874,6 +874,26 @@ export default function ObsTextOverlayEditor({
               onSelect={syncActiveLineFromCaret}
               placeholder={"첫 번째 줄\n두 번째 줄 (Enter로 줄바꿈)"}
             />
+            <div className="rounded-lg border border-white/10 bg-neutral-950/80 p-2">
+              <p className="mb-1.5 text-[11px] text-neutral-400">
+                이모티콘 · 클릭 시 커서 위치에 삽입 ({OBS_TEXT_EMOJI_PRESETS.length}개) · 없는 이모지는
+                Win+. 또는 붙여넣기
+              </p>
+              <div className="flex max-h-28 flex-wrap gap-1 overflow-y-auto">
+                {OBS_TEXT_EMOJI_PRESETS.map((em) => (
+                  <button
+                    key={em}
+                    type="button"
+                    className="rounded-md bg-neutral-800 px-2 py-1 text-xl leading-none hover:bg-neutral-600"
+                    onMouseDown={keepTextareaFocus}
+                    onClick={() => insertEmoji(em)}
+                    title={`${em} 삽입`}
+                  >
+                    {em}
+                  </button>
+                ))}
+              </div>
+            </div>
             {activeBlock ? (
               <p className="text-[11px] text-amber-200/90">
                 커서 줄: {Math.min(activeLineIndex, config.blocks.length - 1) + 1} /{" "}
@@ -1048,24 +1068,6 @@ export default function ObsTextOverlayEditor({
                 </div>
               </div>
             ) : null}
-          </section>
-
-          <section className="rounded-xl border border-white/10 bg-neutral-900/60 p-4">
-            <h2 className="mb-2 text-sm font-semibold text-neutral-300">이모티콘</h2>
-            <div className="flex max-h-32 flex-wrap gap-1 overflow-y-auto">
-              {OBS_TEXT_EMOJI_PRESETS.map((em) => (
-                <button
-                  key={em}
-                  type="button"
-                  className="rounded-lg bg-neutral-800 px-2 py-1 text-xl hover:bg-neutral-700"
-                  onMouseDown={keepTextareaFocus}
-                  onClick={() => insertEmoji(em)}
-                  title="커서 위치에 삽입"
-                >
-                  {em}
-                </button>
-              ))}
-            </div>
           </section>
         </div>
 
