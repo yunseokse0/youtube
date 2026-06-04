@@ -14,6 +14,7 @@ import {
 } from "@/lib/manual-sig-workbench";
 import {
   canonicalSigIdFromWheelSliceId,
+  findSigInventoryByNameAndPrice,
   hydrateSigItemFromInventory,
   ONE_SHOT_SIG_ID,
 } from "@/lib/sig-roulette";
@@ -47,6 +48,20 @@ export function resolveManualOneShotOverlayImageUrl(params: {
   return resolveSigOverlayCardImageUrl(label, pick?.imageUrl?.trim() || "", userId);
 }
 
+/** 업로드 경로·from-drive·인벤 URL 중 OBS에 가장 잘 먹는 경로 선택 */
+function pickBestManualSigStoredImageUrl(
+  urls: Array<string | undefined | null>
+): string {
+  const list = urls.map((u) => String(u || "").trim()).filter(Boolean);
+  const upload = list.find((u) => u.startsWith("/uploads/sigs/"));
+  if (upload) return upload;
+  const fromDrive = list.find((u) => u.includes("/from-drive/"));
+  if (fromDrive) return fromDrive;
+  const bundled = list.find((u) => u.startsWith("/images/sigs/"));
+  if (bundled) return bundled;
+  return list[0] || "";
+}
+
 /** OBS `memberId` 쿼리로 당첨 목록이 비지 않게 — 인벤 멤버 id는 덮어쓰지 않음 */
 export function hydrateManualOverlaySigItem(
   item: SigItem,
@@ -55,8 +70,21 @@ export function hydrateManualOverlaySigItem(
   draftRow?: Pick<ManualSigDraft, "imageUrl" | "sourceSigId">
 ): SigItem {
   const h = hydrateSigItemFromInventory(item, inventory, userId);
-  const draftUrl = String(draftRow?.imageUrl || item.imageUrl || "").trim();
-  const imageUrl = draftUrl || String(h.imageUrl || "").trim();
+  const sourceSigId = String(draftRow?.sourceSigId || "").trim();
+  const fromSource =
+    sourceSigId && inventory?.length
+      ? inventory.find((x) => String(x.id || "").trim() === sourceSigId)?.imageUrl
+      : "";
+  const fromNamePrice = inventory?.length
+    ? findSigInventoryByNameAndPrice(inventory, item.name, item.price)?.imageUrl
+    : "";
+  const imageUrl = pickBestManualSigStoredImageUrl([
+    fromSource,
+    draftRow?.imageUrl,
+    item.imageUrl,
+    fromNamePrice,
+    h.imageUrl,
+  ]);
   return { ...h, memberId: "", imageUrl };
 }
 

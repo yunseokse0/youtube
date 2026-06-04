@@ -270,17 +270,24 @@ export function resolveSigOverlayCardImageUrl(name: string, imageUrl?: string, u
   let raw = normalizeSigImageUrlStored(repaired || imageUrl);
   if (raw.startsWith("/uploads/sigs/")) {
     if (shouldServeSigImagesFromDisk()) {
-      return raw;
+      return typeof window !== "undefined" ? toSigOverlayAbsoluteAssetUrl(raw) : raw;
     }
     /** 디스크 미사용·GitHub 번들만 있을 때 업로드 파일명 → raw.githubusercontent */
     const bundled = coerceSigUrlToGithubBundledPath(raw);
     const gh = toGithubRawSigAssetUrl(bundled);
     if (gh) return gh;
-    return raw;
+    return typeof window !== "undefined" ? toSigOverlayAbsoluteAssetUrl(raw) : raw;
   }
   if (raw.startsWith("/images/sigs/")) {
     const fromDrive = sigBundledFromDriveFallbackPath(raw);
     if (fromDrive) raw = fromDrive;
+    /**
+     * OBS·수동 오버레이: GitHub raw 404 시 검은 칸만 보이므로 동일 오리진 `/images/sigs/…` 우선.
+     * (롤링 OBS는 별도 `rewriteSigPathForRollingGithubIfConfigured` 유지)
+     */
+    if (typeof window !== "undefined") {
+      return toSigOverlayAbsoluteAssetUrl(raw);
+    }
   }
   return resolveSigAdminPreviewSrc(raw || imageUrl, name, userId);
 }

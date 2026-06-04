@@ -1666,7 +1666,7 @@ function normalizeSigInventoryNameKey(raw: string): string {
 }
 
 /** 수동 초안 `manual_draft_*` id — 인벤에서 이름·가격으로 이미지 보강 */
-function findSigInventoryByNameAndPrice(
+export function findSigInventoryByNameAndPrice(
   inventory: SigItem[],
   name: string,
   price: number

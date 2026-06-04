@@ -125,8 +125,11 @@ export default function SigSaleMedia({
     setGifFail(true);
   }, []);
 
-  if (isLikelyGifUrl(displaySrc) && !gifFail) {
-    if (gifDelayMultiplier <= 1) {
+  /** OBS·당첨 오버레이: next/image·캔버스 GIF가 검은 칸으로만 보이는 CEF 대응 — 네이티브 img 우선 */
+  const preferNativeImg = Boolean(sigImageUserId);
+
+  if ((preferNativeImg || isLikelyGifUrl(displaySrc)) && !gifFail) {
+    if (gifDelayMultiplier <= 1 || preferNativeImg) {
       const fillClass = fill
         ? `${className ?? ""} absolute inset-0 h-full w-full object-contain`.trim()
         : className;
