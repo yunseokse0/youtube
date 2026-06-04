@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
 import { Howl } from "howler";
@@ -25,7 +26,6 @@ import {
   getOverlayMemberFilterIdFromSearchParams,
   getOverlayUserIdFromSearchParams,
   inferSigUploadUserIdFromInventory,
-  isSigSalesManualOverlayPath,
   shouldSuppressOverlaySseConnection,
 } from "@/lib/overlay-params";
 import {
@@ -243,16 +243,18 @@ function OverlayHydrationShell({
 
 function SigSalesOverlayPageInner() {
   const sp = useClientSearchParams();
+  const pathname = (usePathname() || "/").replace(/\/+$/, "") || "/";
   const onManualOverlayPath =
-    typeof window !== "undefined" && isSigSalesManualOverlayPath();
+    pathname === "/overlay/sig-sales-manual" || pathname.startsWith("/overlay/sig-sales-manual/");
   const manualModeParam =
     onManualOverlayPath ||
     String(sp.get("mode") || "").toLowerCase() === "manual" ||
     String(sp.get("overlayMode") || "").toLowerCase() === "manual";
   const userId = getOverlayUserIdFromSearchParams(sp);
+  /** SSR·클라이언트 첫 렌더를 동일하게 — `typeof window` 분기는 React #418 하이드레이션 오류 유발 */
   const [clientBoot, setClientBoot] = useState<{ ready: boolean; host: string | null }>({
-    ready: typeof window !== "undefined",
-    host: typeof window !== "undefined" ? window.location.hostname : null,
+    ready: false,
+    host: null,
   });
   useEffect(() => {
     setClientBoot({ ready: true, host: window.location.hostname });
@@ -2611,7 +2613,7 @@ function SigSalesOverlayPageInner() {
               </div>
             </div>
           ) : null}
-          {machine.phase === "CONFIRMED" ? (
+          {machine.phase === "CONFIRMED" && !manualOverlayMode ? (
             <div className="mt-4 rounded-xl border border-emerald-300/60 bg-emerald-900/30 p-4 text-center">
               <p className="text-2xl font-black text-emerald-200">판매 확정 완료!</p>
               <p className="mt-1 text-sm text-emerald-100">
