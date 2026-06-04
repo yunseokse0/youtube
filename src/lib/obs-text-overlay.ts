@@ -352,6 +352,36 @@ function normalizeBlock(raw: unknown, defaultColor: string, idx: number): ObsTex
   };
 }
 
+/** 저장·OBS 표시 직전 — :face-red-heart-shape: 등을 imageUrl 세그먼트로 변환 */
+export function hydrateYoutubeEmojisInBlock(
+  block: ObsTextBlock,
+  defaultColor: string
+): ObsTextBlock {
+  const plain = segmentsToPlainText(block.segments).replace(/\u00a0/g, " ");
+  if (!lineContainsYoutubeEmojiCode(plain)) return block;
+  const color = block.segments.find((s) => s.color)?.color ?? defaultColor;
+  return { ...block, segments: parseLineWithYoutubeEmojis(plain, color) };
+}
+
+/** textarea 초안과 blocks가 어긋날 때(IME 등) 저장·표시용 config 동기화 */
+export function mergeMultilineDraftIntoObsTextConfig(
+  config: ObsTextOverlayConfig,
+  multilineDraft: string
+): ObsTextOverlayConfig {
+  return {
+    ...config,
+    blocks: blocksFromMultilineText(multilineDraft, config.blocks, config.defaultColor).map(
+      (b) => hydrateYoutubeEmojisInBlock(b, config.defaultColor)
+    ),
+  };
+}
+
+export function resolveObsTextOverlayConfigForDisplay(
+  config: ObsTextOverlayConfig
+): ObsTextOverlayConfig {
+  return normalizeObsTextOverlay(config);
+}
+
 const POSITIONS: ObsTextOverlayPosition[] = [
   "top-left",
   "top-center",
@@ -375,9 +405,12 @@ export function normalizeObsTextOverlay(raw: unknown): ObsTextOverlayConfig {
   const position = POSITIONS.includes(positionRaw as ObsTextOverlayPosition)
     ? (positionRaw as ObsTextOverlayPosition)
     : base.position;
+  const resolvedBlocks = (blocks.length > 0 ? blocks : base.blocks).map((b) =>
+    hydrateYoutubeEmojisInBlock(b, defaultColor)
+  );
   return {
     version: 1,
-    blocks: blocks.length > 0 ? blocks : base.blocks,
+    blocks: resolvedBlocks,
     defaultFontSizePx:
       typeof o.defaultFontSizePx === "number" && Number.isFinite(o.defaultFontSizePx)
         ? Math.max(12, Math.min(200, o.defaultFontSizePx))

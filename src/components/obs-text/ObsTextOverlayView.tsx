@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ObsTextEffectStyles } from "@/components/obs-text/ObsTextEffectStyles";
 import {
   buildTextOutlineShadow,
   positionToFlexStyle,
+  resolveObsTextOverlayConfigForDisplay,
   type ObsTextBlock,
   type ObsTextOverlayConfig,
   type ObsTextSegment,
@@ -24,18 +25,22 @@ export function ObsTextOverlayView({
   config: ObsTextOverlayConfig;
   preview?: boolean;
 }) {
+  const displayConfig = useMemo(
+    () => resolveObsTextOverlayConfigForDisplay(config),
+    [config]
+  );
   const flex = positionToFlexStyle(
-    config.position,
-    config.paddingPx,
-    config.offsetX,
-    config.offsetY
+    displayConfig.position,
+    displayConfig.paddingPx,
+    displayConfig.offsetX,
+    displayConfig.offsetY
   );
   const outlineShadow = buildTextOutlineShadow(
-    config.outlineEnabled,
-    config.outlineColor,
-    config.outlineWidthPx
+    displayConfig.outlineEnabled,
+    displayConfig.outlineColor,
+    displayConfig.outlineWidthPx
   );
-  const scale = config.scalePct / 100;
+  const scale = displayConfig.scalePct / 100;
 
   const rootStyle: CSSProperties = {
     position: preview ? "relative" : "fixed",
@@ -48,37 +53,37 @@ export function ObsTextOverlayView({
     padding: flex.padding,
     pointerEvents: "none",
     background: "transparent",
-    fontFamily: config.fontFamily,
-    fontWeight: config.fontWeight,
+    fontFamily: displayConfig.fontFamily,
+    fontWeight: displayConfig.fontWeight,
     boxSizing: "border-box",
   };
 
   const stackStyle: CSSProperties = {
     display: "flex",
     flexDirection: "column",
-    gap: config.lineGapPx,
+    gap: displayConfig.lineGapPx,
     width: "100%",
     maxWidth: "min(96vw, 1400px)",
     boxSizing: "border-box",
     alignSelf: "stretch",
     transform: `${flex.transform} scale(${scale})`,
     transformOrigin:
-      config.position.includes("bottom")
-        ? config.position.includes("center")
+      displayConfig.position.includes("bottom")
+        ? displayConfig.position.includes("center")
           ? "bottom center"
-          : config.position.includes("right")
+          : displayConfig.position.includes("right")
             ? "bottom right"
             : "bottom left"
-        : config.position.includes("top")
-          ? config.position.includes("center")
+        : displayConfig.position.includes("top")
+          ? displayConfig.position.includes("center")
             ? "top center"
-            : config.position.includes("right")
+            : displayConfig.position.includes("right")
               ? "top right"
               : "top left"
           : "center center",
   };
 
-  const visibleBlocks = config.blocks.filter((b) => b.visible !== false);
+  const visibleBlocks = displayConfig.blocks.filter((b) => b.visible !== false);
 
   return (
     <div className="obs-text-overlay-root" style={rootStyle} aria-hidden={!preview}>
@@ -88,7 +93,7 @@ export function ObsTextOverlayView({
           <ObsTextBlockLine
             key={block.id}
             block={block}
-            config={config}
+            config={displayConfig}
             outlineShadow={outlineShadow}
           />
         ))}
@@ -278,6 +283,7 @@ function YoutubeChatEmojiImg({ seg }: { seg: ObsTextSegment }) {
     <img
       src={url}
       alt=""
+      referrerPolicy="no-referrer"
       draggable={false}
       className="obs-text-yt-emoji"
       style={{

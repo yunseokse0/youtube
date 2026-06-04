@@ -6,6 +6,7 @@ import {
   lineCharRangeInMultiline,
   lineIndexAtTextOffset,
   multilineTextFromBlocks,
+  normalizeObsTextOverlay,
   type ObsTextBlock,
 } from "@/lib/obs-text-overlay";
 
@@ -72,5 +73,26 @@ describe("obs text multiline", () => {
     const next = applyEffectRangeToBlocks("hello", blocks, 1, 4, "wave", 1.2, "#fff");
     expect(next[0]?.effect).toBe("none");
     expect(next[0]?.segments.some((s) => s.effect === "wave" && s.text === "ell")).toBe(true);
+  });
+
+  it("normalizeObsTextOverlay hydrates youtube shortcodes to imageUrl", () => {
+    const cfg = normalizeObsTextOverlay({
+      version: 1,
+      blocks: [
+        {
+          id: "b1",
+          segments: [
+            {
+              text: ":hands-yellow-heart-red:나혼(자)엑(셀):hands-yellow-heart-red:",
+              color: "#ff69b4",
+            },
+          ],
+        },
+      ],
+      defaultColor: "#ffffff",
+    });
+    const segs = cfg.blocks[0]?.segments ?? [];
+    expect(segs.filter((s) => (s.imageUrl || "").includes("yt3.ggpht.com"))).toHaveLength(2);
+    expect(segs.some((s) => s.text === "나혼(자)엑(셀)")).toBe(true);
   });
 });

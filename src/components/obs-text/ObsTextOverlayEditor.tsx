@@ -8,6 +8,7 @@ import {
   appendObsTextInstance,
   applyEffectRangeToBlocks,
   blocksFromMultilineText,
+  mergeMultilineDraftIntoObsTextConfig,
   buildObsTextOverlayUrl,
   duplicateObsTextInstance,
   formatObsTextOverlayUrlList,
@@ -109,6 +110,7 @@ export default function ObsTextOverlayEditor({
   const activeInstanceIdRef = useRef(activeInstanceId);
   const registryRef = useRef(registry);
   const configRef = useRef<ObsTextOverlayConfig | null>(null);
+  const multilineDraftRef = useRef(multilineDraft);
 
   const markLocalDirty = useCallback(() => {
     localDirtyRef.current = true;
@@ -122,6 +124,16 @@ export default function ObsTextOverlayEditor({
   activeInstanceIdRef.current = activeInstanceId;
   registryRef.current = registry;
   configRef.current = config;
+  multilineDraftRef.current = multilineDraft;
+
+  const configForSave = useCallback(
+    () =>
+      mergeMultilineDraftIntoObsTextConfig(
+        configRef.current ?? config,
+        multilineDraftRef.current
+      ),
+    [config]
+  );
 
   const activeInstance = useMemo(
     () => getObsTextInstance(registry, activeInstanceId),
@@ -372,17 +384,21 @@ export default function ObsTextOverlayEditor({
   }, [setConfig]);
 
   const persist = useCallback(async () => {
-    await persistRegistry(registry, activeInstanceId, { activeConfig: config });
-  }, [persistRegistry, registry, activeInstanceId, config]);
+    const synced = configForSave();
+    setConfig(() => synced);
+    await persistRegistry(registry, activeInstanceId, { activeConfig: synced });
+  }, [persistRegistry, registry, activeInstanceId, configForSave, setConfig]);
 
   const flushPendingEdits = useCallback(async () => {
     if (!localDirtyRef.current || pendingRegistrySaveRef.current) return;
+    const synced = configForSave();
+    setConfig(() => synced);
     await persistRegistry(registryRef.current, activeInstanceIdRef.current, {
-      activeConfig: configRef.current ?? undefined,
+      activeConfig: synced,
       quiet: true,
       statusMsg: "저장됨 · OBS 반영",
     });
-  }, [persistRegistry]);
+  }, [persistRegistry, configForSave, setConfig]);
 
   const selectInstanceWithFlush = useCallback(
     (id: string) => {
@@ -404,8 +420,10 @@ export default function ObsTextOverlayEditor({
     if (Date.now() < skipAutosaveUntilRef.current) return;
     const tid = window.setTimeout(() => {
       autoSaveQuietRef.current = true;
+      const synced = mergeMultilineDraftIntoObsTextConfig(config, multilineDraft);
+      setConfig(() => synced);
       void persistRegistry(registry, activeInstanceId, {
-        activeConfig: config,
+        activeConfig: synced,
         quiet: true,
         statusMsg: "자동 저장됨 · OBS 반영",
       }).finally(() => {
@@ -413,7 +431,7 @@ export default function ObsTextOverlayEditor({
       });
     }, 400);
     return () => window.clearTimeout(tid);
-  }, [registry, activeInstanceId, config, persistRegistry]);
+  }, [registry, activeInstanceId, config, multilineDraft, persistRegistry, setConfig]);
 
   const addInstance = () => {
     const added = appendObsTextInstance(registry);
