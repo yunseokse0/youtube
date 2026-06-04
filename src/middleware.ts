@@ -82,24 +82,8 @@ function extractUserIdFromBrokenSigSegment(seg: string): string | null {
   return null;
 }
 
-/** 수동 판매 OBS 전용 URL — 회전판 오버레이와 동일 페이지, mode=manual 주입 */
-function rewriteSigSalesManualOverlay(req: NextRequest): NextResponse | null {
-  const { pathname } = req.nextUrl;
-  if (pathname !== "/overlay/sig-sales-manual" && !pathname.startsWith("/overlay/sig-sales-manual/")) {
-    return null;
-  }
-  const url = req.nextUrl.clone();
-  url.pathname = "/overlay/sig-sales";
-  if (!url.searchParams.get("mode")?.trim()) url.searchParams.set("mode", "manual");
-  if (!url.searchParams.has("hideSigBoard")) url.searchParams.set("hideSigBoard", "1");
-  return NextResponse.rewrite(url);
-}
-
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-
-  const manualOverlayRewrite = rewriteSigSalesManualOverlay(req);
-  if (manualOverlayRewrite) return manualOverlayRewrite;
 
   const legacyOverlayRedirect = redirectLegacyAdminSigOverlayPath(req);
   if (legacyOverlayRedirect) return legacyOverlayRedirect;

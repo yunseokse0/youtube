@@ -1,8 +1,8 @@
 "use client";
 
-import { AdminSigSalesPage } from "@/app/admin/sig-sales/AdminSigSalesPage";
+import ManualSigSalesSimple from "./ManualSigSalesSimple";
 
-/** 수동 시그 판매(5개+한방) — 회전판과 분리 · 오버레이 관리에서 링크 */
+/** 수동 시그 판매 — 판매 중 5개 랜덤 + OBS (회전판·재고 UI 없음) */
 export default function AdminSigSalesManualRoutePage() {
-  return <AdminSigSalesPage manualOnly />;
+  return <ManualSigSalesSimple />;
 }

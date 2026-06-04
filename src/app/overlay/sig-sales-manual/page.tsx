@@ -1,30 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
-import SigSalesOverlayPage from "../sig-sales/page";
+import ManualSigOverlaySimple from "./ManualSigOverlaySimple";
 
-/** OBS CEF: 주소창 쿼리에 mode=manual 이 없어도 수동 모드가 되도록 동기화 */
-function ensureManualOverlayQueryInAddressBar(): void {
-  if (typeof window === "undefined") return;
-  const q = new URLSearchParams(window.location.search);
-  let changed = false;
-  if (String(q.get("mode") || "").toLowerCase() !== "manual") {
-    q.set("mode", "manual");
-    changed = true;
-  }
-  if (!q.has("hideSigBoard")) {
-    q.set("hideSigBoard", "1");
-    changed = true;
-  }
-  if (!changed) return;
-  const next = `${window.location.pathname}?${q.toString()}`;
-  window.history.replaceState({}, "", next);
-}
-
-/** 수동 판매 OBS 전용 라우트 — 회전판 오버레이와 URL·렌더 분리 */
+/** 수동 시그 OBS — 당첨 카드만 (회전판 오버레이와 분리) */
 export default function SigSalesManualOverlayPage() {
-  useEffect(() => {
-    ensureManualOverlayQueryInAddressBar();
-  }, []);
-  return <SigSalesOverlayPage />;
+  return <ManualSigOverlaySimple />;
 }
