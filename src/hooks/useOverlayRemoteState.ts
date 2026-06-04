@@ -28,13 +28,19 @@ import {
   readOverlaySseFallbackPollMs,
   shouldSyncDonorRankingsFromStateUpdatedEvent,
   shouldSyncOverlayFromStateUpdatedEvent,
+  shouldSyncSigSalesFromRouletteSseHint,
+  sigSalesRouletteSyncCursorFromState,
+  type SigSalesRouletteSyncCursor,
 } from "@/lib/overlay-pull-policy";
 
 import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
 
 import { useSSEConnection } from "@/lib/sse-client";
 
-import { buildOverlaySyncSignature } from "@/lib/overlay-sync-signature";
+import {
+  buildOverlaySyncSignature,
+  buildSigSalesOverlaySyncSignature,
+} from "@/lib/overlay-sync-signature";
 
 import {
   obsTextRegistrySyncSignature,
@@ -54,6 +60,7 @@ import {
   STATE_PICK_OBS_TEXT,
   STATE_PICK_OVERLAY,
   STATE_PICK_OVERLAY_DONORS,
+  STATE_PICK_SIG_SALES,
 } from "@/lib/state-api-pick";
 
 export type UseOverlayRemoteStateOptions = {
@@ -100,6 +107,9 @@ function overlaySyncSignatureForPick(
 ): string {
   if (pick === STATE_PICK_OBS_TEXT) {
     return obsTextRegistrySyncSignature(readObsTextRegistryFromState(state));
+  }
+  if (pick === STATE_PICK_SIG_SALES) {
+    return buildSigSalesOverlaySyncSignature(state);
   }
 
   return buildOverlaySyncSignature(state);
@@ -197,13 +207,22 @@ export function useOverlayRemoteState(
 
   const persistLastGood = options.persistLastGood !== false;
 
+  const sigSalesPick = statePick === STATE_PICK_SIG_SALES;
+
   const [state, setState] = useState<AppState | null>(frozen);
+
+  const [syncedOnce, setSyncedOnce] = useState(Boolean(frozen));
 
   const lastSyncedUpdatedAtRef = useRef(0);
 
   const lastSyncedDonorRevRef = useRef(0);
 
   const lastVisualSigRef = useRef("");
+
+  const lastRouletteSyncRef = useRef<SigSalesRouletteSyncCursor>({
+    sessionId: "",
+    phase: "",
+  });
 
   const lastGoodRef = useRef<AppState | null>(null);
 
@@ -234,6 +253,12 @@ export function useOverlayRemoteState(
 
       readDonorRankingsRevision(cached)
     );
+
+    if (statePick === STATE_PICK_SIG_SALES) {
+      lastRouletteSyncRef.current = sigSalesRouletteSyncCursorFromState(
+        cached.rouletteState
+      );
+    }
 
     setState(cached);
   }, [userId, statePick]);
@@ -292,15 +317,22 @@ export function useOverlayRemoteState(
           return;
         }
 
+        if (sigSalesPick) {
+          lastRouletteSyncRef.current = sigSalesRouletteSyncCursorFromState(
+            remote.rouletteState
+          );
+        }
+
         applySyncedState(remote, statePick, refs);
       } catch {
         restoreFallback();
       } finally {
         syncingRef.current = false;
+        setSyncedOnce(true);
       }
     },
 
-    [enabled, userId, statePick, persistLastGood, restoreFallback]
+    [enabled, userId, statePick, persistLastGood, restoreFallback, sigSalesPick]
   );
 
   const { connected: sseConnected } = useSSEConnection((d: unknown) => {
@@ -310,9 +342,29 @@ export function useOverlayRemoteState(
       type?: string;
       updatedAt?: number;
       donorRankingsUpdatedAt?: number;
+      roulettePhase?: string;
+      rouletteSessionId?: string;
     };
 
     if (o?.type !== "state_updated") return;
+
+    if (sigSalesPick) {
+      const rouletteHint = shouldSyncSigSalesFromRouletteSseHint(
+        o,
+        lastRouletteSyncRef.current
+      );
+      if (rouletteHint) {
+        const sid = String(
+          o.rouletteSessionId || lastRouletteSyncRef.current.sessionId || ""
+        ).trim();
+        const phase = String(
+          o.roulettePhase || lastRouletteSyncRef.current.phase || ""
+        ).trim();
+        if (sid) lastRouletteSyncRef.current = { sessionId: sid, phase };
+        scheduleSseSyncRef.current?.();
+        return;
+      }
+    }
 
     const donorRev = Number(o.donorRankingsUpdatedAt);
 
@@ -407,7 +459,9 @@ export function useOverlayRemoteState(
         : undefined;
 
     const { schedule, cancel } = createStateUpdatedScheduler(() => {
-      void syncFromApiRef.current();
+      void syncFromApiRef.current(
+        sigSalesPick ? { forceFull: true } : undefined
+      );
     }, debounceOpts);
 
     scheduleSseSyncRef.current = schedule;
@@ -520,6 +574,14 @@ export function useOverlayRemoteState(
 
     window.addEventListener("storage", onStorage);
 
+    const onPageShow = (ev: PageTransitionEvent) => {
+      if (!ev.persisted) return;
+      lastSyncedUpdatedAtRef.current = 0;
+      lastVisualSigRef.current = "";
+      void syncFromApiRef.current({ forceFull: true });
+    };
+    window.addEventListener("pageshow", onPageShow);
+
     return () => {
       cancel();
 
@@ -532,6 +594,7 @@ export function useOverlayRemoteState(
       if (storageDebounce) clearTimeout(storageDebounce);
 
       window.removeEventListener("storage", onStorage);
+      window.removeEventListener("pageshow", onPageShow);
     };
   }, [
     enabled,
@@ -557,6 +620,8 @@ export function useOverlayRemoteState(
     options.overlayPollMs,
 
     statePick,
+
+    sigSalesPick,
   ]);
 
   const resync = useCallback(
@@ -564,5 +629,9 @@ export function useOverlayRemoteState(
     [syncFromApi]
   );
 
-  return { state: frozen ?? state, ready: (frozen ?? state) !== null, resync };
+  return {
+    state: frozen ?? state,
+    ready: Boolean(frozen) || syncedOnce,
+    resync,
+  };
 }

@@ -3,6 +3,7 @@ import {
   STATE_PICK_OBS_TEXT,
   STATE_PICK_OVERLAY,
   STATE_PICK_OVERLAY_DONORS,
+  STATE_PICK_SIG_SALES,
   type StateApiPick,
 } from "@/lib/state-api-pick";
 import { readObsTextRegistryFromState } from "@/lib/obs-text-overlay";
@@ -45,6 +46,14 @@ export function isOverlayStateViable(state: AppState | null, pick: StateApiPick)
       });
     }
     return false;
+  }
+  if (pick === STATE_PICK_SIG_SALES) {
+    const rs = state.rouletteState;
+    const sigs =
+      (Array.isArray(rs?.selectedSigs) && rs.selectedSigs.length > 0
+        ? rs.selectedSigs
+        : rs?.results) || [];
+    return Array.isArray(sigs) && sigs.length >= 2;
   }
   return true;
 }

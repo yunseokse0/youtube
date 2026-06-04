@@ -4,7 +4,11 @@ import {
   shouldKeepLastGoodInsteadOf,
 } from "@/lib/overlay-last-good";
 import { defaultState } from "@/lib/state";
-import { STATE_PICK_OBS_TEXT, STATE_PICK_OVERLAY } from "@/lib/state-api-pick";
+import {
+  STATE_PICK_OBS_TEXT,
+  STATE_PICK_OVERLAY,
+  STATE_PICK_SIG_SALES,
+} from "@/lib/state-api-pick";
 import { OBS_TEXT_OVERLAY_STATE_KEY, defaultObsTextRegistry } from "@/lib/obs-text-overlay";
 
 describe("overlay-last-good", () => {
@@ -17,6 +21,19 @@ describe("overlay-last-good", () => {
   it("overlay viable with members", () => {
     const s = defaultState();
     expect(isOverlayStateViable(s, STATE_PICK_OVERLAY)).toBe(true);
+  });
+
+  it("sig-sales viable when at least two selected sigs", () => {
+    const s = defaultState();
+    expect(isOverlayStateViable(s, STATE_PICK_SIG_SALES)).toBe(false);
+    s.rouletteState = {
+      ...s.rouletteState!,
+      selectedSigs: [
+        { id: "a", name: "A", price: 1 },
+        { id: "b", name: "B", price: 2 },
+      ],
+    };
+    expect(isOverlayStateViable(s, STATE_PICK_SIG_SALES)).toBe(true);
   });
 
   it("keeps last good when incoming is null", () => {

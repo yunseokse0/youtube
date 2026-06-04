@@ -36,5 +36,6 @@ export function buildSigSalesManualOverlayUrl(
     q.set("sigResultScalePct", String(Math.floor(opts.sigResultScalePct)));
   }
   q.set("hideSigBoard", "1");
+  q.set("host", "obs");
   return `${origin.replace(/\/$/, "")}/overlay/sig-sales-manual?${q.toString()}`;
 }

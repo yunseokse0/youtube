@@ -1,22 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import dynamic from "next/dynamic";
 import type { SigItem } from "@/types";
+import ResultOverlay from "@/components/sig-sales/ResultOverlay";
 import { layoutSigOverlayResultRow } from "@/components/sig-sales/sig-overlay-card-size";
-import { loadStateFromApi } from "@/lib/state";
-import { STATE_PICK_SIG_SALES } from "@/lib/state-api-pick";
+import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
+import { DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
+import { resolveManualOneShotOverlayImageUrl } from "@/lib/manual-sig-broadcast";
 import {
   getOverlayMemberFilterIdFromSearchParams,
   getOverlayUserIdFromSearchParams,
 } from "@/lib/overlay-params";
-import { DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
-import { resolveManualOneShotOverlayImageUrl } from "@/lib/manual-sig-broadcast";
+import {
+  readOverlayPollIntervalMs,
+  readSigSalesOverlayPollMs,
+} from "@/lib/overlay-pull-policy";
 import { hydrateSigItemFromInventory, sigMatchesMemberFilter } from "@/lib/sig-roulette";
 import { stripBundledSigPlaceholderItems } from "@/lib/sig-placeholder";
-
-const ResultOverlay = dynamic(() => import("@/components/sig-sales/ResultOverlay"), { ssr: false });
+import { STATE_PICK_SIG_SALES } from "@/lib/state-api-pick";
 
 export default function ManualSigOverlaySimple() {
   const sp = useSearchParams();
@@ -28,20 +30,43 @@ export default function ManualSigOverlaySimple() {
     return Number.isFinite(n) ? Math.max(50, Math.min(100, Math.floor(n))) : 78;
   })();
 
-  const [ready, setReady] = useState(false);
-  const [selected, setSelected] = useState<SigItem[]>([]);
-  const [oneShot, setOneShot] = useState<{ name: string; price: number } | null>(null);
-  const [signImageUrl, setSignImageUrl] = useState("");
-  const soldOutStampUrl = DEFAULT_SIG_SOLD_STAMP_URL;
+  const pollMs = useMemo(() => {
+    const env = readOverlayPollIntervalMs();
+    return env > 0 ? env : readSigSalesOverlayPollMs() || 2200;
+  }, []);
 
-  const load = useCallback(async () => {
-    const remote = await loadStateFromApi(userId, { pick: STATE_PICK_SIG_SALES, forceFull: true });
-    if (!remote?.rouletteState) {
-      setReady(true);
+  const { state, ready, resync } = useOverlayRemoteState(userId, {
+    statePick: STATE_PICK_SIG_SALES,
+    skipLocalSnapshot: true,
+    forceInitialFull: true,
+    overlayPollMs: pollMs,
+    persistLastGood: true,
+  });
+
+  const overlayReloadSeenRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const nonce = Number(state?.rouletteState?.overlayReloadNonce || 0);
+    if (!Number.isFinite(nonce)) return;
+    if (overlayReloadSeenRef.current == null) {
+      overlayReloadSeenRef.current = nonce;
       return;
     }
-    const rs = remote.rouletteState;
-    const sid = String(rs.sessionId || "").trim();
+    if (nonce !== overlayReloadSeenRef.current) {
+      overlayReloadSeenRef.current = nonce;
+      void resync({ forceFull: true });
+    }
+  }, [state?.rouletteState?.overlayReloadNonce, resync]);
+
+  const { selected, oneShot, signImageUrl } = useMemo(() => {
+    if (!state?.rouletteState) {
+      return {
+        selected: [] as SigItem[],
+        oneShot: null as { name: string; price: number } | null,
+        signImageUrl: "",
+      };
+    }
+    const rs = state.rouletteState;
     const raw = (
       Array.isArray(rs.selectedSigs) && rs.selectedSigs.length > 0
         ? rs.selectedSigs
@@ -49,35 +74,29 @@ export default function ManualSigOverlaySimple() {
           ? rs.results
           : []
     ) as SigItem[];
-    const inv = remote.sigInventory || [];
+    const inv = state.sigInventory || [];
     const hydrated = stripBundledSigPlaceholderItems(
       raw
         .filter((s) => sigMatchesMemberFilter(s, memberFilterId))
         .map((s) => hydrateSigItemFromInventory(s, inv, userId))
     );
-    setSelected(hydrated.slice(0, 5));
+    const selectedSigs = hydrated.slice(0, 5);
     const os = rs.oneShotResult;
     const oneShotPayload =
       os && Number(os.price) > 0
         ? { name: String(os.name || "한방 시그"), price: Math.floor(Number(os.price)) }
         : null;
-    setOneShot(oneShotPayload);
-    setSignImageUrl(
-      resolveManualOneShotOverlayImageUrl({
-        state: remote,
-        selectedSigs: hydrated,
+    return {
+      selected: selectedSigs,
+      oneShot: oneShotPayload,
+      signImageUrl: resolveManualOneShotOverlayImageUrl({
+        state,
+        selectedSigs,
         userId,
         oneShotName: oneShotPayload?.name,
-      })
-    );
-    setReady(true);
-  }, [userId, memberFilterId]);
-
-  useEffect(() => {
-    void load();
-    const id = window.setInterval(() => void load(), 2200);
-    return () => window.clearInterval(id);
-  }, [load]);
+      }),
+    };
+  }, [state, userId, memberFilterId]);
 
   const resultRowLayout = useMemo(
     () =>
@@ -88,6 +107,7 @@ export default function ManualSigOverlaySimple() {
     [scalePct, selected.length, oneShot]
   );
   const visible = ready && selected.length >= 2;
+  const soldOutStampUrl = DEFAULT_SIG_SOLD_STAMP_URL;
 
   if (!ready) {
     return (
