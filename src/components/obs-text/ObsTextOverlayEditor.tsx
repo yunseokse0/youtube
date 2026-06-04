@@ -49,7 +49,7 @@ import {
   createStateUpdatedScheduler,
   DONOR_STATE_UPDATED_DEBOUNCE_MS,
   DONOR_STATE_UPDATED_MAX_WAIT_MS,
-  shouldSyncOverlayFromStateUpdatedEvent,
+  shouldSyncObsTextFromStateUpdatedEvent,
 } from "@/lib/overlay-pull-policy";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
 
@@ -261,7 +261,11 @@ export default function ObsTextOverlayEditor({
           typeof result.serverUpdatedAt === "number" && Number.isFinite(result.serverUpdatedAt)
             ? result.serverUpdatedAt
             : now;
-        lastPersistedUpdatedAtRef.current = serverTs;
+        const stampedRev = Math.max(
+          serverTs,
+          ...stamped.instances.map((inst) => Number(inst.config.revision || 0))
+        );
+        lastPersistedUpdatedAtRef.current = stampedRev;
         lastAppliedRemoteSigRef.current = obsTextRegistrySyncSignature(stamped);
         localDirtyRef.current = false;
         setRegistry(stamped);
@@ -370,8 +374,8 @@ export default function ObsTextOverlayEditor({
     if (!msg || msg.type !== "state_updated") return;
     if (localDirtyRef.current) return;
     if (
-      !shouldSyncOverlayFromStateUpdatedEvent(
-        (msg as { updatedAt?: unknown }).updatedAt,
+      !shouldSyncObsTextFromStateUpdatedEvent(
+        msg as { updatedAt?: unknown; obsTextRevision?: unknown },
         lastPersistedUpdatedAtRef.current
       )
     ) {

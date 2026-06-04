@@ -28,6 +28,26 @@ function isValidUserId(value: string): boolean {
   return /^[a-zA-Z0-9_-]{1,64}$/.test(value);
 }
 
+/** OBS에 잘못 붙인 텍스트 오버레이 경로 → `/overlay/obs-text` */
+function redirectLegacyObsTextOverlayPath(req: NextRequest): NextResponse | null {
+  const { pathname } = req.nextUrl;
+  const legacy =
+    pathname === "/overlay/text-overlay" ||
+    pathname.startsWith("/overlay/text-overlay/") ||
+    pathname === "/overlay/text" ||
+    pathname.startsWith("/overlay/text/");
+  if (!legacy) return null;
+
+  const target = new URL("/overlay/obs-text", req.url);
+  const q = new URLSearchParams(req.nextUrl.searchParams);
+  if (!q.get("u")?.trim() && !q.get("user")?.trim()) {
+    q.set("u", "finalent");
+  }
+  if (!q.get("host")?.trim()) q.set("host", "obs");
+  target.search = q.toString();
+  return NextResponse.redirect(target, 307);
+}
+
 /** OBS에 잘못 붙인 관리자 경로 → 공개 오버레이(인증 쿠키 없음) */
 function redirectLegacyAdminSigOverlayPath(req: NextRequest): NextResponse | null {
   const { pathname } = req.nextUrl;
@@ -84,6 +104,9 @@ function extractUserIdFromBrokenSigSegment(seg: string): string | null {
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  const legacyObsTextRedirect = redirectLegacyObsTextOverlayPath(req);
+  if (legacyObsTextRedirect) return legacyObsTextRedirect;
 
   const legacyOverlayRedirect = redirectLegacyAdminSigOverlayPath(req);
   if (legacyOverlayRedirect) return legacyOverlayRedirect;
@@ -149,6 +172,10 @@ export const config = {
     "/login",
     "/overlay/sig-sales-manual",
     "/overlay/sig-sales-manual/:path*",
+    "/overlay/text-overlay",
+    "/overlay/text-overlay/:path*",
+    "/overlay/text",
+    "/overlay/text/:path*",
     "/images/sigs/:path*",
     "/uploads/sigs/:path*",
     "/uploads/sig/:path*",

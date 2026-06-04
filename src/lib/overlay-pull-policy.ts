@@ -136,6 +136,28 @@ export function shouldSyncOverlayFromStateUpdatedEvent(
   return ts > lastSyncedUpdatedAt;
 }
 
+/** 텍스트 오버레이 SSE — config.revision(obsTextRevision) 반영 */
+export function obsTextStateUpdatedRevision(event: {
+  updatedAt?: unknown;
+  obsTextRevision?: unknown;
+}): number {
+  const u = Number(event.updatedAt);
+  const o = Number(event.obsTextRevision);
+  return Math.max(
+    Number.isFinite(u) && u > 0 ? u : 0,
+    Number.isFinite(o) && o > 0 ? o : 0
+  );
+}
+
+export function shouldSyncObsTextFromStateUpdatedEvent(
+  event: { updatedAt?: unknown; obsTextRevision?: unknown },
+  lastSyncedRevision: number
+): boolean {
+  const rev = obsTextStateUpdatedRevision(event);
+  if (rev <= 0) return true;
+  return rev > lastSyncedRevision;
+}
+
 const SIG_SALES_PHASE_RANK: Record<string, number> = {
   IDLE: 0,
   SPINNING: 1,

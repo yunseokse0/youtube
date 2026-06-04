@@ -27,6 +27,7 @@ import {
   readOverlayPollIntervalMs,
   readOverlaySseFallbackPollMs,
   shouldSyncDonorRankingsFromStateUpdatedEvent,
+  shouldSyncObsTextFromStateUpdatedEvent,
   shouldSyncOverlayFromStateUpdatedEvent,
   shouldSyncSigSalesFromRouletteSseHint,
   sigSalesRouletteSyncCursorFromState,
@@ -211,6 +212,7 @@ export function useOverlayRemoteState(
   const persistLastGood = options.persistLastGood !== false;
 
   const sigSalesPick = statePick === STATE_PICK_SIG_SALES;
+  const obsTextPick = statePick === STATE_PICK_OBS_TEXT;
 
   const [state, setState] = useState<AppState | null>(frozen);
 
@@ -299,11 +301,12 @@ export function useOverlayRemoteState(
                 lastSyncedDonorRevRef.current
               );
 
+        /** 텍스트 OBS: 304로 구문이 안 바뀌는 현상 방지 — pick 본문은 항상 전체 수신 */
+        const forceFull = Boolean(opts?.forceFull) || obsTextPick;
+
         const remote = await loadStateFromApi(userId, {
-          ifUpdatedSince: opts?.forceFull ? 0 : sinceBaseline,
-
-          forceFull: opts?.forceFull,
-
+          ifUpdatedSince: forceFull ? 0 : sinceBaseline,
+          forceFull,
           pick: statePick,
         });
 
@@ -355,11 +358,13 @@ export function useOverlayRemoteState(
 
     if (o?.type !== "state_updated") return;
 
-    if (statePick === STATE_PICK_OBS_TEXT) {
-      const obsTextRev = Number(
-        (o as { obsTextRevision?: unknown }).obsTextRevision
-      );
-      if (Number.isFinite(obsTextRev) && obsTextRev > lastSyncedUpdatedAtRef.current) {
+    if (obsTextPick) {
+      if (
+        shouldSyncObsTextFromStateUpdatedEvent(
+          o as { updatedAt?: unknown; obsTextRevision?: unknown },
+          lastSyncedUpdatedAtRef.current
+        )
+      ) {
         scheduleSseSyncRef.current?.();
         return;
       }

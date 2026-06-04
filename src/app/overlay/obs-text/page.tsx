@@ -9,7 +9,10 @@ import {
   readObsTextRegistryFromState,
   resolveObsTextInstanceId,
 } from "@/lib/obs-text-overlay";
-import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
+import {
+  getOverlayUserIdFromSearchParams,
+  isOverlayBroadcastHost,
+} from "@/lib/overlay-params";
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 import { readObsTextOverlayPollMs } from "@/lib/overlay-pull-policy";
 import { STATE_PICK_OBS_TEXT } from "@/lib/state-api-pick";
@@ -18,6 +21,7 @@ function ObsTextOverlayInner() {
   const { params: sp, ready: spReady } = useClientOnlySearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
   const textId = sp.get(OBS_TEXT_ID_QUERY);
+  const hostObs = isOverlayBroadcastHost(sp);
   const { state, ready, resync } = useOverlayRemoteState(userId, {
     statePick: STATE_PICK_OBS_TEXT,
     skipLocalSnapshot: true,
@@ -32,6 +36,15 @@ function ObsTextOverlayInner() {
     window.addEventListener("pageshow", onPageShow);
     return () => window.removeEventListener("pageshow", onPageShow);
   }, [resync]);
+
+  useEffect(() => {
+    if (!hostObs) return;
+    const onVis = () => {
+      if (document.visibilityState === "visible") void resync({ forceFull: true });
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [hostObs, resync]);
 
   const resolvedInstanceId = useMemo(
     () => resolveObsTextInstanceId(readObsTextRegistryFromState(state), textId),

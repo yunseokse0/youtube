@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SIG_SALES_OVERLAY_POLL_MS,
+  obsTextStateUpdatedRevision,
+  shouldSyncObsTextFromStateUpdatedEvent,
   shouldSyncOverlayFromStateUpdatedEvent,
   shouldSyncSigSalesFromRouletteSseHint,
 } from "./overlay-pull-policy";
@@ -59,6 +61,20 @@ describe("shouldSyncOverlayFromStateUpdatedEvent", () => {
   it("skips stale updatedAt", () => {
     expect(shouldSyncOverlayFromStateUpdatedEvent(100, 200)).toBe(false);
     expect(shouldSyncOverlayFromStateUpdatedEvent(300, 200)).toBe(true);
+  });
+});
+
+describe("shouldSyncObsTextFromStateUpdatedEvent", () => {
+  it("uses obsTextRevision when updatedAt is stale", () => {
+    expect(
+      obsTextStateUpdatedRevision({ updatedAt: 100, obsTextRevision: 500 })
+    ).toBe(500);
+    expect(
+      shouldSyncObsTextFromStateUpdatedEvent(
+        { updatedAt: 100, obsTextRevision: 500 },
+        200
+      )
+    ).toBe(true);
   });
 });
 
