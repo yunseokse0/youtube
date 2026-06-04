@@ -237,6 +237,24 @@ function bumpInventorySigSold(
   });
 }
 
+function isDisplaySigMarkedSold(sig: SigItem, soldSet: Set<string>): boolean {
+  const canon = canonicalSigIdFromWheelSliceId(sig.id);
+  return soldSet.has(sig.id) || soldSet.has(canon);
+}
+
+/** 당첨 N개 + 한방 모두 「판매 완료」 표시됐는지 */
+function isFullRoundMarkedSold(params: {
+  displaySelectedSigs: SigItem[];
+  soldSet: Set<string>;
+  oneShotMarkSold: boolean;
+  displayOneShot: { price: number } | null;
+}): boolean {
+  const { displaySelectedSigs, soldSet, oneShotMarkSold, displayOneShot } = params;
+  if (displaySelectedSigs.length < MIN_ONE_SHOT_SIGS || !displayOneShot) return false;
+  if (!oneShotMarkSold) return false;
+  return displaySelectedSigs.every((sig) => isDisplaySigMarkedSold(sig, soldSet));
+}
+
 function collectSoldSigIdsForFinish(
   selected: SigItem[],
   soldIdSet: Set<string>
@@ -1005,6 +1023,14 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     for (const id of manualSoldSet) {
       next.add(id);
       next.add(canonicalSigIdFromWheelSliceId(id));
+    }
+    if (
+      !isManualBroadcastRound &&
+      machine.phase === "LANDED" &&
+      (oneShotSold || manualOneShotMarkSold)
+    ) {
+      next.add(ONE_SHOT_SIG_ID);
+      next.add(canonicalSigIdFromWheelSliceId(ONE_SHOT_SIG_ID));
     }
     /** 수동 방송: 체크한 시그만 스탬프(재고 완판 전체를 붙이지 않음 → 해제 가능) */
     if (isManualBroadcastRound) {
@@ -2008,6 +2034,9 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     if (manualOnly) setOverlayObsMode("manual");
   }, [manualOnly]);
 
+  const onConfirmSaleRef = useRef<() => Promise<void>>(async () => {});
+  const autoConfirmInFlightRef = useRef(false);
+
   const onConfirmSale = useCallback(async () => {
     if (!state || displaySelectedSigs.length === 0) return;
     const effectiveSessionId = String(state.rouletteState?.sessionId || machine.sessionId || "").trim();
@@ -2090,6 +2119,12 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         return;
       }
     }
+    const allRegularMarked = displaySelectedSigs.every((sig) =>
+      isDisplaySigMarkedSold(sig, manualSoldSet)
+    );
+    const effectiveOneShotSold = Boolean(
+      oneShotSold || manualOneShotMarkSold || (allRegularMarked && displayOneShot)
+    );
     const soldSigIdsForFinish = collectSoldSigIdsForFinish(displaySelectedSigs, manualSoldSet);
     const soldMarksActive = soldSigIdsForFinish.length > 0;
     const soldCanonForFinish = new Set(soldSigIdsForFinish);
@@ -2108,7 +2143,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
             selectedNamePriceSet.has(
               `${normalizeNameKey(item.name)}::${Math.floor(Number(item.price || 0))}`
             )) ||
-        (item.id === ONE_SHOT_SIG_ID && Boolean(oneShotSold || manualOneShotMarkSold));
+        (item.id === ONE_SHOT_SIG_ID && effectiveOneShotSold);
       if (!markSold) return item;
       const maxCount = Math.max(1, Math.floor(Number(item.maxCount || 1)));
       const soldCount = Math.max(0, Math.floor(Number(item.soldCount || 0)));
@@ -2132,14 +2167,14 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         )
       : new Set(displaySelectedSigs.map((x) => x.id));
     setManualSoldSet(soldPreviewSet);
-    setOneShotSold(Boolean(oneShotSold || manualOneShotMarkSold));
+    setOneShotSold(effectiveOneShotSold);
     try {
       await finish({
         sessionId: effectiveSessionId,
         selectedSigs: displaySelectedSigs,
         oneShotResult: displayOneShot,
         soldSigIds: soldMarksActive ? soldSigIdsForFinish : undefined,
-        oneShotInventorySold: Boolean(oneShotSold || manualOneShotMarkSold),
+        oneShotInventorySold: effectiveOneShotSold,
         finalPhase: "CONFIRMED",
       });
     } catch (e) {
@@ -2210,7 +2245,41 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     loadRemote,
     loadHistory,
     wheelDemoMode,
+    displayOneShot,
   ]);
+
+  onConfirmSaleRef.current = onConfirmSale;
+
+  const tryAutoConfirmFullRound = useCallback(
+    (soldSet: Set<string>, oneShotMarkSold: boolean) => {
+      if (manualOnly || wheelDemoMode) return;
+      if (machine.phase !== "LANDED") return;
+      if (machine.isFinishLoading || autoConfirmInFlightRef.current) return;
+      if (
+        !isFullRoundMarkedSold({
+          displaySelectedSigs,
+          soldSet,
+          oneShotMarkSold,
+          displayOneShot,
+        })
+      ) {
+        return;
+      }
+      autoConfirmInFlightRef.current = true;
+      setToast("당첨·한방 모두 판매 완료 — 전체 확정 처리 중…");
+      void onConfirmSaleRef.current().finally(() => {
+        autoConfirmInFlightRef.current = false;
+      });
+    },
+    [
+      manualOnly,
+      wheelDemoMode,
+      machine.phase,
+      machine.isFinishLoading,
+      displaySelectedSigs,
+      displayOneShot,
+    ]
+  );
 
   const onCancelConfirmedSession = useCallback(async () => {
     if (!machine.sessionId || machine.selectedSigs.length === 0) return;
@@ -2455,6 +2524,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
           bumpOverlay: true,
           toastLabel: label,
         });
+        tryAutoConfirmFullRound(nextSoldSet, manualOneShotMarkSold);
         return;
       }
 
@@ -2475,6 +2545,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       manualParsedRows,
       manualSigDrafts,
       pushLiveRoundToServer,
+      tryAutoConfirmFullRound,
     ]
   );
 
@@ -2599,8 +2670,15 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         bumpOverlay: true,
         toastLabel: "한방 시그",
       });
+      tryAutoConfirmFullRound(nextSoldSet, true);
     },
-    [manualSigSoldFlags, buildSoldSetFromFlags, state, pushLiveRoundToServer]
+    [
+      manualSigSoldFlags,
+      buildSoldSetFromFlags,
+      state,
+      pushLiveRoundToServer,
+      tryAutoConfirmFullRound,
+    ]
   );
 
   const dedupeSigInventoryItems = useCallback(
