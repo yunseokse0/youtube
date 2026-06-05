@@ -29,11 +29,9 @@ rm -rf "$STAGING_DIR"
 
 export NODE_HEAP_MB
 export NEXT_BUILD_DIR="$STAGING_DIR"
-# build:prod 가 pm2 stop 하지 않도록 (OOM 시: PM2_STOP_BEFORE_BUILD=1 추가)
-unset PM2_APP
-
+# build:prod 가 pm2 stop 하지 않도록 — PM2_APP 은 빌드 자식 프로세스에서만 제거(set -u 와 충돌 방지)
 set +e
-npm run build:prod
+env -u PM2_APP npm run build:prod
 BUILD_CODE=$?
 set -e
 

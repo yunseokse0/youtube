@@ -1,11 +1,18 @@
 "use client";
 
 import { useMemo } from "react";
-import { getOverlayBroadcastConfigWarnings } from "@/lib/overlay-params";
+import {
+  getOverlayBroadcastConfigWarnings,
+  isEmbeddedInSameOriginAdminFrame,
+} from "@/lib/overlay-params";
 
-/** OBS에 잘못된 URL·미리보기 모드일 때 상단 경고(투명 배경 위에 보이도록) */
+/** 관리자 iframe 미리보기에서만 경고 — OBS·Prism 브라우저 소스에는 절대 표시하지 않음 */
 export default function OverlayBroadcastConfigBanner() {
-  const warnings = useMemo(() => getOverlayBroadcastConfigWarnings(), []);
+  const warnings = useMemo(() => {
+    if (typeof window === "undefined") return [];
+    if (!isEmbeddedInSameOriginAdminFrame()) return [];
+    return getOverlayBroadcastConfigWarnings();
+  }, []);
   if (warnings.length === 0) return null;
   return (
     <div

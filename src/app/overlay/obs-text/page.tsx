@@ -81,12 +81,12 @@ function ObsTextOverlayInner() {
 
   return (
     <>
-      {textIdMiss ? (
+      {!hostObs && textIdMiss ? (
         <div className="fixed left-2 top-2 z-50 rounded bg-amber-900/90 px-2 py-1 text-[10px] text-amber-100">
           textId 없음 → 첫 번째 오버레이 표시 중. 관리자에서 「OBS에 저장」 후 URL을 확인하세요.
         </div>
       ) : null}
-      {ready && !hasVisibleText ? (
+      {!hostObs && ready && !hasVisibleText ? (
         <div className="fixed left-2 top-2 z-50 max-w-[min(92vw,420px)] rounded bg-rose-950/90 px-2 py-1.5 text-[10px] leading-snug text-rose-100">
           표시할 문구가 없습니다. 관리자 → 텍스트 오버레이에서 내용 입력 후 「OBS에 저장」하세요. OBS 브라우저 소스에서
           「현재 페이지 캐시 새로고침」도 해보세요.

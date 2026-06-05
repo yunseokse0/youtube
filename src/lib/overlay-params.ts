@@ -558,12 +558,15 @@ export function stripPreviewOnlyOverlaySearchParams(params: URLSearchParams): vo
   }
 }
 
-/** iframe 미리보기 URL을 OBS에 붙였을 때 등 — 방송 설정 오류 안내 */
+/** iframe 미리보기 URL을 OBS에 붙였을 때 등 — 방송 설정 오류 안내 (관리자 iframe 내부만) */
 export function getOverlayBroadcastConfigWarnings(search?: string): string[] {
   if (typeof window === "undefined") return [];
+  /** OBS·Prism 브라우저 소스는 최상위 창 — 경고 띠를 띄우지 않음 */
+  if (window.parent === window) return [];
   const warnings: string[] = [];
   try {
     const sp = new URLSearchParams(search ?? window.location.search);
+    if (isOverlayBroadcastHost(sp)) return [];
     if (sp.get("hubPreview") === "1" || sp.get("adminPreviewEmbed") === "1") {
       warnings.push(
         "미리보기용 URL입니다(hubPreview/adminPreviewEmbed). 관리자 「URL 복사」로 받은 주소만 OBS에 넣으세요."
@@ -577,9 +580,12 @@ export function getOverlayBroadcastConfigWarnings(search?: string): string[] {
         `URL에 u=계정이 없어 기본값(${getOverlayUserIdFromSearchParams(sp)})으로 조회합니다. OBS 주소에 u=를 확인하세요.`
       );
     }
-    if (shouldSuppressOverlaySseConnection()) {
+    if (
+      shouldSuppressOverlaySseConnection() &&
+      !shouldSkipOverlaySseForObsBroadcast()
+    ) {
       warnings.push(
-        "실시간 SSE가 꺼진 모드입니다. OBS에서는 hubPreview 없는 URL을 쓰면 폴링·SSE가 정상 동작합니다."
+        "실시간 SSE가 제한 모드입니다. OBS에서는 hubPreview·adminPreviewEmbed 없는 URL을 쓰세요."
       );
     }
   } catch {
