@@ -12,11 +12,19 @@ import { DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE } from "@/lib/constants";
 import { listActiveManualSigPool } from "@/lib/manual-sig-active-pool";
 import {
   buildManualSigBroadcastState,
+  buildManualSigSalesConfirmState,
   buildManualSigSoldPersistState,
+  MANUAL_REROLL_MIN_POOL,
+  MANUAL_REROLL_MAX_PICK,
   pickRandomManualSigBundle,
   readManualSigDraftFromState,
+  resolveManualOverlaySelectedSigs,
+  soldFlagsWithOneShotCascade,
 } from "@/lib/manual-sig-broadcast";
-import { normalizeManualSigDraftPersist } from "@/lib/manual-sig-workbench";
+import {
+  normalizeManualSigDraftPersist,
+  parseManualSigDraftRows,
+} from "@/lib/manual-sig-workbench";
 
 const EMPTY_SOLD_FLAGS = [false, false, false, false, false] as const;
 
@@ -74,8 +82,11 @@ export default function ManualSigSalesSimple() {
   }, [userId, memberFilterId]);
 
   const current = state?.rouletteState;
-  const selected = current?.selectedSigs || [];
   const draft = useMemo(() => readManualSigDraftFromState(state), [state]);
+  const displaySigs = useMemo(
+    () => resolveManualOverlaySelectedSigs(state, userId),
+    [state, userId]
+  );
   const soldFlags = useMemo(() => {
     const raw = draft?.sigSoldFlags;
     if (!Array.isArray(raw)) return [...EMPTY_SOLD_FLAGS];
@@ -83,10 +94,32 @@ export default function ManualSigSalesSimple() {
   }, [draft?.sigSoldFlags]);
   const oneShotMarkSold = Boolean(draft?.oneShotMarkSold);
 
-  const currentNames = selected.map((s) => s.name).join(", ");
+  const saleRows = useMemo(() => {
+    const parsed = parseManualSigDraftRows(draft?.drafts || []);
+    const rows: Array<{ draftIdx: number; name: string; price: number }> = [];
+    for (let i = 0; i < 5; i++) {
+      const row = parsed[i];
+      if (row?.name && row.price > 0) {
+        rows.push({ draftIdx: i, name: row.name, price: row.price });
+      }
+    }
+    if (rows.length > 0) return rows;
+    return displaySigs.map((sig, idx) => ({
+      draftIdx: idx,
+      name: sig.name,
+      price: Number(sig.price || 0),
+    }));
+  }, [draft?.drafts, displaySigs]);
+
+  const currentNames = displaySigs.map((s) => s.name).join(", ");
   const oneShotLabel = current?.oneShotResult
     ? `${current.oneShotResult.name} ${Number(current.oneShotResult.price || 0).toLocaleString("ko-KR")}원`
     : null;
+  const rerollPickCount = Math.min(MANUAL_REROLL_MAX_PICK, pool.length);
+  const canReroll = pool.length >= MANUAL_REROLL_MIN_POOL;
+  const hasAnySoldMark =
+    soldFlags.some(Boolean) || oneShotMarkSold;
+  const phase = String(current?.phase || "");
 
   const persistState = useCallback(
     async (next: AppState, okMsg: string, failMsg: string) => {
@@ -100,8 +133,10 @@ export default function ManualSigSalesSimple() {
 
   const onReroll = useCallback(async () => {
     if (!state) return;
-    if (pool.length < 5) {
-      setToast(`판매 중 시그가 ${pool.length}개뿐입니다. (5개 필요, 한방 시그 제외)`);
+    if (!canReroll) {
+      setToast(
+        `판매 중 시그가 ${pool.length}개뿐입니다. (${MANUAL_REROLL_MIN_POOL}개 이상 필요, 한방 시그 제외)`
+      );
       return;
     }
     setBusy(true);
@@ -144,7 +179,46 @@ export default function ManualSigSalesSimple() {
     } finally {
       setBusy(false);
     }
-  }, [state, pool.length, userId, memberFilterId, persistState]);
+  }, [state, canReroll, pool.length, userId, memberFilterId, persistState]);
+
+  const onConfirmSales = useCallback(async () => {
+    if (!state) return;
+    if (displaySigs.length < MANUAL_REROLL_MIN_POOL) {
+      setToast("당첨 시그가 없습니다. 먼저 리롤을 실행하세요.");
+      return;
+    }
+    if (!hasAnySoldMark) {
+      setToast("판매완료할 시그를 체크한 뒤 「판매 확정」을 누르세요.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const cascade = soldFlagsWithOneShotCascade(soldFlags, oneShotMarkSold);
+      const next = buildManualSigSalesConfirmState(state, {
+        selected: displaySigs,
+        sigSoldFlags: cascade,
+        oneShotMarkSold,
+      });
+      const ok = await persistState(
+        next,
+        "판매 확정 완료 · 재고 반영 · OBS 반영",
+        "판매 확정은 적용됐지만 서버 저장이 지연됩니다. OBS 새로고침 후 확인하세요."
+      );
+      if (ok) void loadRemote();
+    } catch (e) {
+      setToast(`판매 확정 실패: ${String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [
+    state,
+    displaySigs,
+    hasAnySoldMark,
+    soldFlags,
+    oneShotMarkSold,
+    persistState,
+    loadRemote,
+  ]);
 
   const onToggleSigSold = useCallback(
     async (idx: number, sold: boolean) => {
@@ -157,7 +231,8 @@ export default function ManualSigSalesSimple() {
           sigSoldFlags: nextFlags,
           oneShotMarkSold,
         });
-        const label = selected[idx]?.name || `시그 ${idx + 1}`;
+        const row = saleRows.find((r) => r.draftIdx === idx);
+        const label = row?.name || `시그 ${idx + 1}`;
         await persistState(
           next,
           sold ? `${label} 판매완료 · OBS 반영` : `${label} 판매완료 해제 · OBS 반영`,
@@ -169,7 +244,7 @@ export default function ManualSigSalesSimple() {
         setBusy(false);
       }
     },
-    [state, soldFlags, oneShotMarkSold, selected, persistState]
+    [state, soldFlags, oneShotMarkSold, saleRows, persistState]
   );
 
   const onToggleOneShotSold = useCallback(
@@ -204,7 +279,7 @@ export default function ManualSigSalesSimple() {
         <header>
           <h1 className="text-2xl font-black text-sky-200">수동 시그 판매</h1>
           <p className="mt-1 text-sm text-neutral-400">
-            판매 중 시그 5개 랜덤(한방 제외) → OBS 반영 · 판매완료 체크 지원
+            판매 중 시그 랜덤(최대 5개·한방 제외) → OBS 반영 · 체크 후 판매 확정 시 재고 반영
           </p>
           <Link href="/admin/sig-sales" className="mt-2 inline-block text-xs text-yellow-300/90 underline">
             회전판·상세 수동 입력은 여기
@@ -229,6 +304,14 @@ export default function ManualSigSalesSimple() {
           </label>
           <p className="text-xs text-neutral-400">
             랜덤 풀: <span className="text-sky-200">{pool.length}개</span> (활성·재고 있음·한방 제외)
+            {canReroll ? (
+              <span className="text-neutral-500">
+                {" "}
+                · 리롤 시 <span className="text-sky-300">{rerollPickCount}개</span> 추첨
+              </span>
+            ) : (
+              <span className="text-amber-300/90"> · 리롤하려면 {MANUAL_REROLL_MIN_POOL}개 이상 필요</span>
+            )}
           </p>
         </section>
 
@@ -244,24 +327,33 @@ export default function ManualSigSalesSimple() {
           )}
         </section>
 
-        {selected.length > 0 ? (
-          <section className="rounded-xl border border-emerald-400/25 bg-emerald-950/20 p-4 space-y-2">
-            <p className="text-xs font-semibold text-emerald-100">판매완료 (OBS 스탬프)</p>
-            {selected.map((sig, idx) => (
+        {saleRows.length > 0 ? (
+          <section className="rounded-xl border border-emerald-400/25 bg-emerald-950/20 p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-emerald-100">판매 처리</p>
+              {phase === "CONFIRMED" ? (
+                <span className="rounded bg-emerald-800/80 px-2 py-0.5 text-[10px] font-bold text-emerald-100">
+                  확정됨
+                </span>
+              ) : (
+                <span className="text-[10px] text-neutral-500">체크 → OBS 스탬프 · 확정 시 재고 차감</span>
+              )}
+            </div>
+            {saleRows.map((row) => (
               <label
-                key={`${sig.id}_${idx}`}
+                key={`sale_${row.draftIdx}_${row.name}`}
                 className="flex items-center gap-2 rounded border border-white/10 bg-black/30 px-2 py-1.5 text-xs"
               >
                 <input
                   type="checkbox"
-                  checked={Boolean(soldFlags[idx])}
-                  disabled={busy}
-                  onChange={(e) => void onToggleSigSold(idx, e.target.checked)}
+                  checked={Boolean(soldFlags[row.draftIdx])}
+                  disabled={busy || phase === "CONFIRMED"}
+                  onChange={(e) => void onToggleSigSold(row.draftIdx, e.target.checked)}
                 />
                 <span className="truncate text-neutral-100">
-                  {sig.name}{" "}
+                  {row.name}{" "}
                   <span className="text-neutral-400">
-                    {Number(sig.price || 0).toLocaleString("ko-KR")}원
+                    {row.price.toLocaleString("ko-KR")}원
                   </span>
                 </span>
               </label>
@@ -271,23 +363,31 @@ export default function ManualSigSalesSimple() {
                 <input
                   type="checkbox"
                   checked={oneShotMarkSold}
-                  disabled={busy}
+                  disabled={busy || phase === "CONFIRMED"}
                   onChange={(e) => void onToggleOneShotSold(e.target.checked)}
                 />
                 <span className="text-yellow-100">한방 시그 판매완료 ({oneShotLabel})</span>
               </label>
             ) : null}
+            <button
+              type="button"
+              disabled={!authReady || busy || phase === "CONFIRMED" || !hasAnySoldMark}
+              onClick={() => void onConfirmSales()}
+              className="w-full rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-600 disabled:opacity-50"
+            >
+              {busy ? "처리 중…" : "판매 확정 (재고 반영)"}
+            </button>
           </section>
         ) : null}
 
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            disabled={!authReady || busy || pool.length < 5}
+            disabled={!authReady || !state || busy || !canReroll}
             onClick={() => void onReroll()}
             className="rounded-lg bg-fuchsia-700 px-5 py-3 text-sm font-bold hover:bg-fuchsia-600 disabled:opacity-50"
           >
-            {busy ? "처리 중…" : "리롤 → OBS"}
+            {busy ? "처리 중…" : canReroll ? `리롤 → OBS (${rerollPickCount}개)` : "리롤 불가"}
           </button>
           <button
             type="button"

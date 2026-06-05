@@ -383,6 +383,7 @@ function SigRollingOverlayInner() {
   }, [state, memberFilterId]);
 
   if (!ready) {
+    if (obsSafe) return <main className="overlay-root inline-block w-fit bg-transparent p-1" />;
     return (
       <main className="overlay-root inline-block w-fit p-1">
         <div
@@ -396,6 +397,7 @@ function SigRollingOverlayInner() {
   }
 
   if (n === 0) {
+    if (obsSafe) return <main className="overlay-root inline-block w-fit bg-transparent p-1" />;
     return (
       <main className="overlay-root inline-block w-fit p-1">
         <div

@@ -231,6 +231,119 @@ export function buildManualSigItemsFromDrafts(
 }
 
 const MIN_MANUAL_OVERLAY_SIGS = 2;
+/** 수동 리롤 — 풀에 2개 이상이면 최대 5개까지 랜덤 */
+export const MANUAL_REROLL_MIN_POOL = MIN_MANUAL_OVERLAY_SIGS;
+export const MANUAL_REROLL_MAX_PICK = 5;
+
+export function soldFlagsWithOneShotCascade(
+  flags: boolean[],
+  oneShotMarkSold: boolean,
+  slotCount = 5
+): boolean[] {
+  const next = [...flags];
+  while (next.length < slotCount) next.push(false);
+  if (oneShotMarkSold) return Array.from({ length: slotCount }, () => true);
+  return next.slice(0, slotCount);
+}
+
+export function soldSetForFullManualRound(
+  selected: SigItem[],
+  flags: boolean[],
+  oneShotMarkSold: boolean
+): Set<string> {
+  const cascade = soldFlagsWithOneShotCascade(flags, oneShotMarkSold);
+  if (oneShotMarkSold && selected.length >= MIN_MANUAL_OVERLAY_SIGS) {
+    const all = new Set<string>();
+    selected.forEach((row) => {
+      all.add(row.id);
+      all.add(canonicalSigIdFromWheelSliceId(row.id));
+    });
+    return all;
+  }
+  const out = new Set<string>();
+  selected.forEach((row, idx) => {
+    if (!cascade[idx]) return;
+    out.add(row.id);
+    out.add(canonicalSigIdFromWheelSliceId(row.id));
+  });
+  return out;
+}
+
+export function collectSoldSigIdsForFinish(
+  selected: SigItem[],
+  soldIdSet: Set<string>
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const sig of selected) {
+    const canon = canonicalSigIdFromWheelSliceId(String(sig.id || ""));
+    if (!soldIdSet.has(sig.id) && !soldIdSet.has(canon)) continue;
+    const key = canon || sig.id;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+  }
+  return out;
+}
+
+/** 체크된 시그·한방 → 재고 soldCount 반영 + CONFIRMED */
+export function buildManualSigSalesConfirmState(
+  base: AppState,
+  opts: {
+    selected: SigItem[];
+    sigSoldFlags: boolean[];
+    oneShotMarkSold: boolean;
+  }
+): AppState {
+  const cascadeFlags = soldFlagsWithOneShotCascade(opts.sigSoldFlags, opts.oneShotMarkSold);
+  const soldPreviewSet = soldSetForFullManualRound(
+    opts.selected,
+    cascadeFlags,
+    opts.oneShotMarkSold
+  );
+  const soldSigIdsForFinish = collectSoldSigIdsForFinish(opts.selected, soldPreviewSet);
+  const soldTargetIds = new Set(soldSigIdsForFinish);
+  const now = Date.now();
+  const confirmedInventory = (base.sigInventory || []).map((row) => {
+    if (row.id === ONE_SHOT_SIG_ID) {
+      if (!opts.oneShotMarkSold) return row;
+      const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
+      const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)));
+      const nextSold = Math.min(maxCount, soldCount + 1);
+      return {
+        ...row,
+        soldCount: nextSold,
+        isActive: nextSold >= maxCount ? false : row.isActive,
+      };
+    }
+    const key = canonicalSigIdFromWheelSliceId(String(row.id || ""));
+    const delta = soldTargetIds.has(key) ? 1 : 0;
+    if (!delta) return row;
+    const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
+    const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)));
+    const nextSold = Math.min(maxCount, soldCount + delta);
+    return {
+      ...row,
+      soldCount: nextSold,
+      isActive: nextSold >= maxCount ? false : row.isActive,
+    };
+  });
+  const draftPersist = buildManualSigSoldPersistState(base, {
+    sigSoldFlags: cascadeFlags,
+    oneShotMarkSold: opts.oneShotMarkSold,
+  });
+  return {
+    ...draftPersist,
+    sigInventory: confirmedInventory,
+    rouletteState: {
+      ...draftPersist.rouletteState,
+      phase: "CONFIRMED",
+      lastFinishedAt: now,
+      overlayReloadNonce: Number(draftPersist.rouletteState?.overlayReloadNonce || 0) + 1,
+    },
+    updatedAt: now,
+  };
+}
 
 /** 수동 OBS — 서버 LANDED 당첨 + 초안 폴백(리롤 직후 pick 지연 대비) */
 export function resolveManualOverlaySelectedSigs(
@@ -332,11 +445,13 @@ export function pickRandomManualSigBundle(
     memberFilterId: opts?.memberFilterId,
     sigSalesExcludedIds: base.sigSalesExcludedIds,
   });
-  const drafts = pickRandomManualSigDrafts(pool, 5);
+  const pickCount = Math.min(MANUAL_REROLL_MAX_PICK, pool.length);
+  if (pickCount < MANUAL_REROLL_MIN_POOL) return null;
+  const drafts = pickRandomManualSigDrafts(pool, pickCount);
   if (!drafts) return null;
   const selected = buildManualSigItemsFromDrafts(drafts, base.sigInventory, userId);
   const oneShot = buildOneShotFromSelected(selected);
-  if (!oneShot || selected.length < 5) return null;
+  if (!oneShot || selected.length < MANUAL_REROLL_MIN_POOL) return null;
   return { selected, oneShot };
 }
 

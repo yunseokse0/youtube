@@ -26,6 +26,7 @@ import {
   getOverlayMemberFilterIdFromSearchParams,
   getOverlayUserIdFromSearchParams,
   inferSigUploadUserIdFromInventory,
+  isOverlayBroadcastHost,
   shouldSuppressOverlaySseConnection,
 } from "@/lib/overlay-params";
 import {
@@ -247,6 +248,7 @@ function SigSalesOverlayPageInner() {
     );
   }, [overlayReady, onManualOverlayPath, sp]);
   const userId = getOverlayUserIdFromSearchParams(sp);
+  const hostObs = overlayReady && isOverlayBroadcastHost(sp);
   const [clientHost, setClientHost] = useState<string | null>(null);
   useEffect(() => {
     if (!overlayReady) return;
@@ -1229,7 +1231,12 @@ function SigSalesOverlayPageInner() {
           : []
     ) as SigItem[];
     const draftRows = Array.isArray(manualDraftEffective?.drafts)
-      ? manualDraftEffective!.drafts
+      ? manualDraftEffective!.drafts.map((row) => ({
+          sourceSigId: row.sourceSigId,
+          name: String(row.name ?? ""),
+          priceInput: String(row.priceInput ?? ""),
+          imageUrl: String(row.imageUrl ?? ""),
+        }))
       : [];
     return stripBundledSigPlaceholderItems(
       raw.slice(0, CONFIRMED_VISIBLE_SLOTS).map((s) => {
@@ -2267,19 +2274,19 @@ function SigSalesOverlayPageInner() {
             ? "수동 시그 오버레이 불러오는 중…"
             : "오버레이 불러오는 중…"
         }
-        showMessage={onManualOverlayPath}
+        showMessage={onManualOverlayPath && !hostObs}
       />
     );
   }
 
   return (
     <main className={mainClassName} suppressHydrationWarning>
-      {wheelDemoActive && !state ? (
+      {wheelDemoActive && !state && !hostObs ? (
         <p className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center text-sm text-neutral-300">
           휠 데모 불러오는 중…
         </p>
       ) : null}
-      {!wheelDemoActive && !state && stateLoadIssue !== "ok" ? (
+      {!hostObs && !wheelDemoActive && !state && stateLoadIssue !== "ok" ? (
         <div className="pointer-events-none fixed bottom-8 left-1/2 z-[300] w-[min(92vw,520px)] -translate-x-1/2 rounded-xl border border-amber-400/50 bg-black/80 px-4 py-3 text-center shadow-lg">
           <p className="text-sm font-semibold text-amber-100">시그 상태를 불러오지 못했습니다</p>
           <p className="mt-1 text-xs leading-relaxed text-amber-200/90">
@@ -2522,7 +2529,8 @@ function SigSalesOverlayPageInner() {
             </motion.div>
           ) : null}
           </div>
-          {manualOverlayMode &&
+          {!hostObs &&
+          manualOverlayMode &&
           resultSigsForUi.length === 0 &&
           (machine.selectedSigs?.length ?? 0) === 0 &&
           !oneShotForResultOverlay ? (

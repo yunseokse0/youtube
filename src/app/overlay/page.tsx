@@ -10,6 +10,7 @@ import {
   resolveGoalTextOutlineWidthPx,
   resolveLivePresetStyleParam,
   presetToParams,
+  isOverlayBroadcastHost,
   shouldSuppressOverlaySseConnection,
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
@@ -1209,6 +1210,7 @@ function Timer({
 function OverlayInner() {
   const rawSp = useSearchParams();
   const rawUserId = (rawSp.get("u") || "").trim();
+  const hostObs = isOverlayBroadcastHost(rawSp);
   const userId = rawUserId || "finalent";
   const snapKey = (rawSp.get("snapKey") || "").trim();
   const snap = tryReadSnapshotFromStorage(snapKey || null) || tryDecodeSnapshot(rawSp.get("snap"));
@@ -3231,7 +3233,11 @@ function OverlayInner() {
             </div>
           </div>
         )}
-        {!rawUserId && <div className="fixed top-2 left-2 z-[9999] px-2 py-0.5 rounded bg-amber-600/90 text-white text-[11px] font-semibold shadow">인증 누락: 기본 계정 사용 중</div>}
+        {!hostObs && !rawUserId ? (
+          <div className="fixed top-2 left-2 z-[9999] px-2 py-0.5 rounded bg-amber-600/90 text-white text-[11px] font-semibold shadow">
+            인증 누락: 기본 계정 사용 중
+          </div>
+        ) : null}
           </main>
         </div>
       </div>

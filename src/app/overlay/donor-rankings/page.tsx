@@ -622,13 +622,7 @@ export default function DonorRankingsOverlayPage() {
   }, [state?.donors, useTest, donorsOverride, topN]);
 
   if (!spReady || (!ready && !useTest)) {
-    return hostObs ? (
-      <div className="pointer-events-none fixed inset-0 z-50 flex items-start justify-center bg-transparent p-4 pt-6">
-        <p className="rounded-lg border border-pink-400/40 bg-black/75 px-3 py-2 text-xs text-pink-50">
-          후원 순위 불러오는 중… ({userId})
-        </p>
-      </div>
-    ) : null;
+    return null;
   }
 
   const mainClass = hostObs
@@ -679,11 +673,11 @@ export default function DonorRankingsOverlayPage() {
           width: `${100 / zoomScale}%`,
         }}
       >
-        {useTest && (
+        {useTest && !hostObs ? (
           <div className="mb-2 inline-block rounded bg-amber-600/85 px-2 py-1 text-xs font-bold text-black">
             TEST MODE
           </div>
-        )}
+        ) : null}
         {layoutDual ? (
           <div
             className="relative grid grid-cols-1 overflow-visible rounded-2xl border shadow-[0_12px_32px_rgba(236,72,153,0.14)] backdrop-blur-md md:grid-cols-2 md:gap-0"

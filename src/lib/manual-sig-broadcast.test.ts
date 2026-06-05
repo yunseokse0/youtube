@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildManualSigSalesConfirmState,
   findDisplaySigForManualDraftRow,
   hydrateManualOverlaySigItem,
+  pickRandomManualSigBundle,
   resolveManualDraftRowForSigItem,
   resolveManualOneShotOverlayImageUrl,
   resolveManualOverlaySelectedSigs,
@@ -238,5 +240,88 @@ describe("resolveManualDraftRowForSigItem", () => {
       display
     );
     expect(hit?.id).toBe("sig_b");
+  });
+});
+
+describe("pickRandomManualSigBundle", () => {
+  const mkSig = (id: string, name: string, price: number): SigItem => ({
+    id,
+    name,
+    price,
+    imageUrl: "",
+    memberId: "",
+    maxCount: 1,
+    soldCount: 0,
+    isRolling: true,
+    isActive: true,
+  });
+
+  it("picks up to 4 when pool has only 4 active sigs", () => {
+    const state = {
+      sigInventory: [
+        mkSig("s1", "A", 10000),
+        mkSig("s2", "B", 20000),
+        mkSig("s3", "C", 30000),
+        mkSig("s4", "D", 40000),
+      ],
+      rouletteState: { phase: "IDLE" },
+    } as AppState;
+    const bundle = pickRandomManualSigBundle(state, "finalent");
+    expect(bundle).not.toBeNull();
+    expect(bundle!.selected.length).toBe(4);
+    expect(bundle!.oneShot.price).toBeGreaterThan(0);
+  });
+});
+
+describe("buildManualSigSalesConfirmState", () => {
+  it("bumps soldCount for checked sigs", () => {
+    const state = {
+      sigInventory: [
+        {
+          id: "sig_a",
+          name: "A",
+          price: 10000,
+          imageUrl: "",
+          memberId: "",
+          maxCount: 1,
+          soldCount: 0,
+          isRolling: true,
+          isActive: true,
+        },
+      ],
+      rouletteState: { phase: "LANDED", selectedSigs: [] },
+    } as AppState;
+    const selected: SigItem[] = [
+      {
+        id: "sig_a",
+        name: "A",
+        price: 10000,
+        imageUrl: "",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+      {
+        id: "sig_b",
+        name: "B",
+        price: 20000,
+        imageUrl: "",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+    ];
+    const next = buildManualSigSalesConfirmState(state, {
+      selected,
+      sigSoldFlags: [true, false, false, false, false],
+      oneShotMarkSold: false,
+    });
+    const row = next.sigInventory?.find((x) => x.id === "sig_a");
+    expect(row?.soldCount).toBe(1);
+    expect(next.rouletteState?.phase).toBe("CONFIRMED");
   });
 });

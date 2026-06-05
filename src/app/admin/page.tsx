@@ -1519,6 +1519,7 @@ export default function AdminPage() {
     const theme = state.donorRankingsTheme || defaultState().donorRankingsTheme;
     const q = donorRankingsThemeToSearchParams(theme);
     q.set("u", user?.id || "finalent");
+    q.set("host", "obs");
     q.set("zoomPct", String(getDonorRankingsZoomPct()));
     if (opts?.test) q.set("test", "true");
     return `${window.location.origin}/overlay/donor-rankings?${q.toString()}`;

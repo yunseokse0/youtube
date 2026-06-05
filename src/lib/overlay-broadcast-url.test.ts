@@ -30,15 +30,14 @@ describe("getOverlayBroadcastConfigWarnings", () => {
     vi.unstubAllGlobals();
   });
 
-  it("warns on hubPreview only inside admin iframe", () => {
+  it("returns no warnings in admin iframe preview (banner UI removed)", () => {
     const parent = { location: { origin: "http://x", pathname: "/admin" } };
     const w = {
       location: { search: "?u=finalent&hubPreview=1&adminPreviewEmbed=1" },
       parent,
     };
     vi.stubGlobal("window", w);
-    const msgs = getOverlayBroadcastConfigWarnings();
-    expect(msgs.some((m) => m.includes("미리보기용 URL"))).toBe(true);
+    expect(getOverlayBroadcastConfigWarnings()).toEqual([]);
     vi.unstubAllGlobals();
   });
 });

@@ -41,6 +41,7 @@ function ManualOverlayStatus({
   hostObs: boolean;
   children: ReactNode;
 }) {
+  if (hostObs) return null;
   return (
     <main
       className={
