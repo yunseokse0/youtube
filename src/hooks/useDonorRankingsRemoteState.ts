@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { defaultState, loadState, loadStateFromApi, storageKey, type AppState } from "@/lib/state";
 import { STATE_PICK_DONOR_RANKINGS } from "@/lib/state-api-pick";
 import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
-import { shouldSuppressOverlaySseConnection } from "@/lib/overlay-params";
+import { startStaggeredOverlayPoll } from "@/lib/overlay-poll-stagger";
 import {
   createStateUpdatedScheduler,
   DONOR_STATE_UPDATED_DEBOUNCE_MS,
@@ -26,25 +26,33 @@ function readLocalStateIfExists(userId?: string): AppState | null {
   }
 }
 
+function donorRankingsPollSourceKey(userId?: string): string {
+  if (typeof window === "undefined") return `donor-rankings:${userId || "default"}`;
+  return `${window.location.pathname || "/overlay/donor-rankings"}:${userId || "default"}`;
+}
+
 /**
  * 후원 순위 오버레이: donors·순위 UI 가 바뀔 때만 GET (`pick=donor-rankings` + SSE `donorRankingsUpdatedAt`).
  */
 export function useDonorRankingsRemoteState(
   userId?: string
-): { state: AppState | null; ready: boolean } {
+): { state: AppState | null; ready: boolean; resync: (opts?: { forceFull?: boolean }) => Promise<void> } {
   const [state, setState] = useState<AppState | null>(null);
+  const [syncedOnce, setSyncedOnce] = useState(false);
   const lastSyncedRevRef = useRef(0);
   const syncingRef = useRef(false);
-  const syncFromApiRef = useRef<() => Promise<void>>(async () => {});
+  const syncFromApiRef = useRef<(opts?: { forceFull?: boolean }) => Promise<void>>(async () => {});
   const scheduleSseSyncRef = useRef<(() => void) | null>(null);
 
-  const syncFromApi = useCallback(async () => {
+  const syncFromApi = useCallback(async (opts?: { forceFull?: boolean }) => {
     if (syncingRef.current) return;
     syncingRef.current = true;
     try {
+      const forceFull = Boolean(opts?.forceFull);
       const remote = await loadStateFromApi(userId, {
         pick: STATE_PICK_DONOR_RANKINGS,
-        ifUpdatedSince: lastSyncedRevRef.current,
+        ifUpdatedSince: forceFull ? 0 : lastSyncedRevRef.current,
+        forceFull,
       });
       if (!remote) return;
       const rev = readDonorRankingsRevision(remote);
@@ -52,6 +60,7 @@ export function useDonorRankingsRemoteState(
       setState((prev) => ({ ...defaultState(), ...prev, ...remote }));
     } finally {
       syncingRef.current = false;
+      setSyncedOnce(true);
     }
   }, [userId]);
 
@@ -68,8 +77,7 @@ export function useDonorRankingsRemoteState(
       setState((prev) => ({ ...defaultState(), ...prev, ...local }));
       lastSyncedRevRef.current = readDonorRankingsRevision(local);
     } else {
-      const base = defaultState();
-      setState(base);
+      setState(defaultState());
       lastSyncedRevRef.current = 0;
     }
 
@@ -82,20 +90,22 @@ export function useDonorRankingsRemoteState(
     );
     scheduleSseSyncRef.current = schedule;
 
-    if (shouldSuppressOverlaySseConnection()) {
-      if (!local) void syncFromApi();
-    } else {
-      void syncFromApi();
-    }
+    void syncFromApi({ forceFull: true });
 
     const pollMs = readDonationListsOverlayPollMs();
-    let pollId: number | undefined;
-    if (pollMs > 0) pollId = window.setInterval(() => void syncFromApi(), pollMs);
+    let stopPoll: (() => void) | undefined;
+    if (pollMs > 0) {
+      stopPoll = startStaggeredOverlayPoll(
+        () => void syncFromApiRef.current({ forceFull: true }),
+        pollMs,
+        donorRankingsPollSourceKey(userId)
+      );
+    }
 
     const sseFallbackMs = pollMs > 0 ? 0 : readOverlaySseFallbackPollMs();
     let sseFallbackId: number | undefined;
     if (sseFallbackMs > 0) {
-      sseFallbackId = window.setInterval(() => void syncFromApi(), sseFallbackMs);
+      sseFallbackId = window.setInterval(() => void syncFromApiRef.current({ forceFull: true }), sseFallbackMs);
     }
 
     const onStorage = (e: StorageEvent) => {
@@ -116,11 +126,16 @@ export function useDonorRankingsRemoteState(
     return () => {
       cancel();
       scheduleSseSyncRef.current = null;
-      if (pollId) window.clearInterval(pollId);
+      stopPoll?.();
       if (sseFallbackId) window.clearInterval(sseFallbackId);
       window.removeEventListener("storage", onStorage);
     };
   }, [userId, syncFromApi]);
 
-  return { state, ready: state !== null };
+  const resync = useCallback(
+    (opts?: { forceFull?: boolean }) => syncFromApi(opts),
+    [syncFromApi]
+  );
+
+  return { state, ready: syncedOnce || state !== null, resync };
 }

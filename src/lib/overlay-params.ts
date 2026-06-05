@@ -403,12 +403,13 @@ export function buildDonorRankingsFullOverlayUrl(
   const q = donorRankingsThemeToSearchParams(theme);
   q.delete("top");
   q.set("u", userId);
+  q.set("host", "obs");
   q.set("zoomPct", String(zoomPct));
   return `${origin.replace(/\/$/, "")}/overlay/donor-rankings-full?${q.toString()}`;
 }
 
 export function donorRankingsFullOverlayPath(userId: string, zoomPct: number): string {
-  return `/overlay/donor-rankings-full?u=${encodeURIComponent(userId)}&zoomPct=${zoomPct}`;
+  return `/overlay/donor-rankings-full?u=${encodeURIComponent(userId)}&host=obs&zoomPct=${zoomPct}`;
 }
 
 /** 후원순위 OBS URL에 테마·폰트 크기 반영(관리자 저장값과 동일하게) */
@@ -617,12 +618,29 @@ export function stripOverlayPollMsFromBrowserLocation(): void {
   /* noop — 레이아웃 OverlayBroadcastHygiene 사용 */
 }
 
+/**
+ * OBS 방송 소스(`host=obs`)는 브라우저 소스마다 SSE를 열면 `/api/events`·GET이 겹쳐 3번째 소스부터
+ * 타임아웃·빈 화면이 나기 쉽다. 폴링만으로 동기화(각 오버레이 기본 1.5~2.5s).
+ * 디버그: `?overlayAllowSse=1`
+ */
+export function shouldSkipOverlaySseForObsBroadcast(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.get("overlayAllowSse") === "1") return false;
+    return sp.get("host") === "obs";
+  } catch {
+    return false;
+  }
+}
+
 /** 미리보기 iframe·데모 허브 등에서 SSE 생략. 디버그 시 `?overlayAllowSse=1`로 다시 켤 수 있음. */
 export function shouldSuppressOverlaySseConnection(): boolean {
   if (typeof window === "undefined") return false;
   try {
     const sp = new URLSearchParams(window.location.search);
     if (sp.get("overlayAllowSse") === "1") return false;
+    if (shouldSkipOverlaySseForObsBroadcast()) return true;
     if (isOverlayToolsHubPath(window.location.pathname)) return true;
     if (sp.get("hubPreview") === "1") return true;
     if (sp.get("demo") === "true") return true;

@@ -29,4 +29,18 @@ describe("shouldSuppressOverlaySseConnection", () => {
     expect(shouldSuppressOverlaySseConnection()).toBe(false);
     vi.unstubAllGlobals();
   });
+
+  it("suppresses SSE on host=obs broadcast URLs (poll-only sync)", () => {
+    const w = {
+      location: {
+        pathname: "/overlay/obs-text",
+        search: "?u=finalent&host=obs&textId=default",
+      },
+      parent: null as unknown as Window,
+    };
+    w.parent = w as unknown as Window;
+    vi.stubGlobal("window", w);
+    expect(shouldSuppressOverlaySseConnection()).toBe(true);
+    vi.unstubAllGlobals();
+  });
 });

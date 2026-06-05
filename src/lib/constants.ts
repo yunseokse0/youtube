@@ -269,14 +269,18 @@ export function resolveSigOverlayCardImageUrl(name: string, imageUrl?: string, u
   const repaired = repairDiskUploadSigImagePath(String(imageUrl ?? "").trim(), userId);
   let raw = normalizeSigImageUrlStored(repaired || imageUrl);
   if (raw.startsWith("/uploads/sigs/")) {
-    if (shouldServeSigImagesFromDisk()) {
-      return typeof window !== "undefined" ? toSigOverlayAbsoluteAssetUrl(raw) : raw;
+    /** OBS·브라우저: EC2/로컬 동일 오리진 우선 — GitHub raw 404 시 검은 칸만 보임 */
+    if (typeof window !== "undefined") {
+      return toSigOverlayAbsoluteAssetUrl(raw);
     }
-    /** 디스크 미사용·GitHub 번들만 있을 때 업로드 파일명 → raw.githubusercontent */
+    if (shouldServeSigImagesFromDisk()) {
+      return raw;
+    }
+    /** SSR·서버만: GitHub 번들 폴백 */
     const bundled = coerceSigUrlToGithubBundledPath(raw);
     const gh = toGithubRawSigAssetUrl(bundled);
     if (gh) return gh;
-    return typeof window !== "undefined" ? toSigOverlayAbsoluteAssetUrl(raw) : raw;
+    return raw;
   }
   if (raw.startsWith("/images/sigs/")) {
     const fromDrive = sigBundledFromDriveFallbackPath(raw);

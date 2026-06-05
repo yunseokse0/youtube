@@ -125,7 +125,7 @@ export default function OverlayDevHubClient() {
         id: "donor-rankings-full",
         title: "후원 순위 · 전체 (분홍)",
         desc: "전체 후원자 목록 + 분홍 테마. 기존 순위와 URL·설정 분리.",
-        obsPath: `/overlay/donor-rankings-full?u={u}&zoomPct=${zoomPct}`,
+        obsPath: `/overlay/donor-rankings-full?u={u}&host=obs&zoomPct=${zoomPct}`,
       },
       {
         id: "donation-lists",

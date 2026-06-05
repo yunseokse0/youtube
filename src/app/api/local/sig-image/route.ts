@@ -8,7 +8,11 @@ import { localSigFromDriveLookupNames } from "@/lib/local-sig-catalog";
 export const dynamic = "force-dynamic";
 
 const FROM_DRIVE = path.join(process.cwd(), "public", "images", "sigs", "from-drive");
-const DEFAULT_EC2 = (process.env.SIG_CATALOG_BASE_URL || "http://3.35.3.149").replace(/\/$/, "");
+const DEFAULT_EC2 = (
+  process.env.SIG_CATALOG_BASE_URL ||
+  process.env.SIG_OCR_BASE_URL ||
+  "http://54.180.93.90"
+).replace(/\/$/, "");
 
 function safeName(name: string): string {
   return path.basename(String(name || "").trim());
@@ -26,6 +30,16 @@ function findLocalGif(name: string): string | null {
   return null;
 }
 
+function findLocalUploadFile(remotePath: string): string | null {
+  const rel = String(remotePath || "").trim().replace(/^\//, "").replace(/\\/g, "/");
+  if (!rel.startsWith("uploads/sigs/")) return null;
+  const underPublic = path.join(process.cwd(), "public", rel);
+  if (fs.existsSync(underPublic)) return underPublic;
+  const flat = path.join(process.cwd(), "public", "images", "sigs", path.basename(rel));
+  if (fs.existsSync(flat)) return flat;
+  return null;
+}
+
 export async function GET(req: Request) {
   const host = headers().get("host") || headers().get("x-forwarded-host") || "";
   if (!isLocalSigManagerAllowed(host)) {
@@ -35,6 +49,17 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const name = url.searchParams.get("name") || "";
   const remotePath = url.searchParams.get("path") || "";
+
+  const uploadLocal = remotePath.startsWith("/") ? findLocalUploadFile(remotePath) : null;
+  if (uploadLocal) {
+    const buf = fs.readFileSync(uploadLocal);
+    const ext = path.extname(uploadLocal).toLowerCase();
+    const type =
+      ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/gif";
+    return new NextResponse(buf, {
+      headers: { "Content-Type": type, "Cache-Control": "private, max-age=3600" },
+    });
+  }
 
   const local = findLocalGif(name || remotePath);
   if (local) {

@@ -95,23 +95,33 @@ export function resolveLocalSigImageCandidates(
     pushUnique(urls, `/api/local/sig-image?${q.toString()}`);
   }
 
-  // 2) 로컬 from-drive 후보는 "로컬 파일형" 항목에서만 시도
+  // 2) 로컬 public/uploads·flat /images/sigs (EC2·프록시 실패 시)
+  if (uploadPath) {
+    pushUnique(urls, uploadPath);
+    const flat = uploadPath.match(/\/([^/]+\.(?:gif|png|webp|jpe?g))$/i)?.[1];
+    if (flat) {
+      pushUnique(urls, `/images/sigs/${encodeURIComponent(flat)}`);
+    }
+  }
+
   if (!looksLikeLiveUpload) {
     if (file.includes("/from-drive/")) {
       pushUnique(urls, file.startsWith("/") ? file : `/${file}`);
     } else if (file && !file.includes("/") && !isLikelyUploadHashFile(file)) {
       pushUnique(urls, `/images/sigs/from-drive/${encodeURIComponent(file)}`);
     }
-    if (!isLikelyUploadHashFile(file)) {
-      for (const driveName of localSigFromDriveLookupNames(name)) {
-        pushFromDriveNameCandidates(urls, driveName);
-      }
-    }
   }
 
   // 3) EC2 /uploads 직접
   pushUnique(urls, resolveLocalSigImageSrc(stored, imageBaseUrl));
   pushUnique(urls, resolveLocalSigImageSrc(rawImageUrl, imageBaseUrl));
+
+  // 4) 라이브 업로드도 시그 이름으로 from-drive 폴백 (모찌.gif 등 로컬만 있을 때)
+  if (name && !isLikelyUploadHashFile(file)) {
+    for (const driveName of localSigFromDriveLookupNames(name)) {
+      pushFromDriveNameCandidates(urls, driveName);
+    }
+  }
 
   return urls;
 }

@@ -82,6 +82,7 @@ function parseSigPriceInput(raw: string): number {
 }
 
 const DATA_URL = "/data/local-sigs.json";
+const SIG_PLACEHOLDER_SRC = "/images/sigs/dummy-sig.svg";
 const FROM_DRIVE_API = "/api/local/sig-from-drive";
 const LOGO_SRC = "/images/branding/final-castle-logo.png";
 const BG_SRC = "/images/branding/final-castle-bg.png";
@@ -143,11 +144,25 @@ function SigCatalogImage({
 
   const src = candidates[idx] || "";
   const remote = isRemoteSigImageSrc(src);
+  const exhausted = idx >= candidates.length && candidates.length > 0;
 
-  if (!src) {
+  if (!src && !exhausted) {
     return (
       <div className={`flex items-center justify-center bg-black/10 text-[10px] text-amber-900/50 ${className || ""}`}>
         NO IMAGE
+      </div>
+    );
+  }
+
+  if (exhausted) {
+    return (
+      <div
+        className={`flex flex-col items-center justify-center gap-1 bg-black/10 text-center text-[10px] font-semibold text-amber-900/60 ${className || ""}`}
+        title={`이미지 없음 — public/images/sigs/from-drive/${alt}.gif 또는 업로드 파일을 넣어 주세요`}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={SIG_PLACEHOLDER_SRC} alt="" className="h-10 w-10 opacity-40" />
+        <span>이미지 없음</span>
       </div>
     );
   }
@@ -162,7 +177,7 @@ function SigCatalogImage({
       decoding="async"
       crossOrigin={remote ? "anonymous" : undefined}
       onError={() => {
-        if (idx + 1 < candidates.length) setIdx((i) => i + 1);
+        setIdx((i) => (i + 1 < candidates.length ? i + 1 : candidates.length));
       }}
     />
   );
@@ -506,6 +521,7 @@ export default function SigManagerClient() {
   const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false);
   const [isSavingImage, setIsSavingImage] = useState(false);
   const [isSavingExcel, setIsSavingExcel] = useState(false);
+  const [isDeduping, setIsDeduping] = useState(false);
   const captureRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -536,19 +552,21 @@ export default function SigManagerClient() {
     window.localStorage.setItem(LS_ADDITIONS, JSON.stringify(localAdditions));
   }, [localAdditions]);
 
+  const reloadCatalog = useCallback(async () => {
+    const res = await fetch(DATA_URL, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = (await res.json()) as CatalogPayload;
+    setItems(Array.isArray(data.items) ? data.items : []);
+    setLiveMeta(data.live ?? null);
+    setImageBaseUrl(String(data.imageBaseUrl || "").trim());
+    setLoadError(null);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(DATA_URL, { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = (await res.json()) as CatalogPayload;
-        if (!cancelled) {
-          setItems(Array.isArray(data.items) ? data.items : []);
-          setLiveMeta(data.live ?? null);
-          setImageBaseUrl(String(data.imageBaseUrl || "").trim());
-          setLoadError(null);
-        }
+        await reloadCatalog();
       } catch (e) {
         if (!cancelled) {
           setLoadError(e instanceof Error ? e.message : "load failed");
@@ -561,7 +579,52 @@ export default function SigManagerClient() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadCatalog]);
+
+  const dedupeLiveInventory = useCallback(
+    async (strategy: "nameAndPrice" | "imageUrl") => {
+      if (isDeduping) return;
+      const label = strategy === "imageUrl" ? "URL·이름" : "이름+가격";
+      if (
+        !window.confirm(
+          `data/sig-inventory-live.json 에서 중복을 제거합니다 (${label}).\n목록 순서상 첫 행만 남깁니다. 계속할까요?`
+        )
+      ) {
+        return;
+      }
+      setIsDeduping(true);
+      try {
+        const res = await fetch("/api/local/sig-dedupe-inventory", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ strategy }),
+        });
+        const data = (await res.json()) as {
+          ok?: boolean;
+          error?: string;
+          removedCount?: number;
+          before?: number;
+          after?: number;
+        };
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        await reloadCatalog();
+        setShowDuplicatesOnly(false);
+        setPage(1);
+        alert(
+          data.removedCount
+            ? `중복 ${data.removedCount}건 제거 (${data.before} → ${data.after}개). 카탈로그를 새로 불러왔습니다.`
+            : "중복된 행이 없습니다."
+        );
+      } catch (e) {
+        alert(e instanceof Error ? e.message : "중복 제거에 실패했습니다.");
+      } finally {
+        setIsDeduping(false);
+      }
+    },
+    [isDeduping, reloadCatalog]
+  );
 
   const catalogItems = useMemo(
     () => [...items, ...localAdditions],
@@ -594,11 +657,21 @@ export default function SigManagerClient() {
   );
 
   const filtered = useMemo(() => {
-    let list = filterLocalSigCatalog(displayItems, { query, bucket });
+    let list = displayItems;
     if (showDuplicatesOnly) {
       list = list.filter((item) => duplicateIdSet.has(item.id));
+      const q = query.trim().toLowerCase();
+      if (q) {
+        list = list.filter(
+          (item) =>
+            item.name.toLowerCase().includes(q) ||
+            item.file.toLowerCase().includes(q) ||
+            item.id.toLowerCase().includes(q)
+        );
+      }
+      return list;
     }
-    return list;
+    return filterLocalSigCatalog(list, { query, bucket });
   }, [displayItems, query, bucket, showDuplicatesOnly, duplicateIdSet]);
 
   const sorted = useMemo(() => {
@@ -1009,14 +1082,37 @@ export default function SigManagerClient() {
           <div className="mb-5 rounded-lg border border-orange-700/30 bg-orange-50/80 p-4 text-sm text-amber-950">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <p className="font-bold">중복 검사 결과 ({duplicateGroups.length}그룹)</p>
-              <label className="flex items-center gap-1.5 text-xs">
-                <input
-                  type="checkbox"
-                  checked={showDuplicatesOnly}
-                  onChange={(e) => setShowDuplicatesOnly(e.target.checked)}
-                />
-                중복 항목만 보기
-              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={isDeduping || duplicateGroups.length === 0}
+                  onClick={() => dedupeLiveInventory("nameAndPrice")}
+                  className="rounded border border-orange-800/40 bg-orange-700/90 px-2 py-1 text-[11px] font-semibold text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {isDeduping ? "제거 중…" : "이름+가격 중복 제거"}
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeduping || duplicateGroups.length === 0}
+                  onClick={() => dedupeLiveInventory("imageUrl")}
+                  className="rounded border border-orange-800/30 bg-white/70 px-2 py-1 text-[11px] font-semibold text-orange-950 hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                  title="이미지 URL·이름이 겹치는 행 제거"
+                >
+                  URL·이름 중복 제거
+                </button>
+                <label className="flex items-center gap-1.5 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={showDuplicatesOnly}
+                    onChange={(e) => {
+                      setShowDuplicatesOnly(e.target.checked);
+                      if (e.target.checked) setBucket("all");
+                      setPage(1);
+                    }}
+                  />
+                  중복 항목만 보기
+                </label>
+              </div>
             </div>
             {duplicateGroups.length === 0 ? (
               <p className="text-xs text-amber-900/70">중복 없음</p>

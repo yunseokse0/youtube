@@ -30,7 +30,7 @@ const MANUAL_OVERLAY_TERMINAL_PHASES = new Set([
 /** OBS CEF: `absolute`는 부모 높이 0일 때 전체가 안 보임 → 방송 오버레이와 동일하게 `fixed` */
 function obsOverlayRootClass(hostObs: boolean): string {
   return hostObs
-    ? "pointer-events-none fixed inset-0 z-[10] flex flex-col justify-end items-center overflow-visible bg-transparent p-0"
+    ? "pointer-events-none fixed inset-0 z-[200] flex flex-col justify-end items-center overflow-visible bg-transparent p-0"
     : "pointer-events-none fixed inset-0 z-[1] flex flex-col justify-end items-center bg-transparent p-0";
 }
 
@@ -101,13 +101,19 @@ export default function ManualSigOverlaySimple() {
     }
   }, [state?.rouletteState?.overlayReloadNonce, resync]);
 
-  /** OBS CEF: 첫 fetch 지연·304 레이스 대비 — 마운트 후 전체 상태 1회 더 당김 */
+  /** OBS CEF: 첫 fetch 지연·304 레이스 대비 — 주기적 전체 상태 당김 */
   useEffect(() => {
     if (!spReady) return;
     const kick = () => void resync({ forceFull: true });
-    const t = window.setTimeout(kick, hostObs ? 350 : 800);
-    return () => window.clearTimeout(t);
-  }, [spReady, hostObs, resync, userId]);
+    kick();
+    if (!hostObs) {
+      const t = window.setTimeout(kick, 800);
+      return () => window.clearTimeout(t);
+    }
+    const intervalMs = Math.max(1500, pollMs);
+    const intervalId = window.setInterval(kick, intervalMs);
+    return () => window.clearInterval(intervalId);
+  }, [spReady, hostObs, resync, userId, pollMs]);
 
   /** OBS 브라우저 소스: 탭 전환·소스 재표시 시 상태 재동기화 (obs-text와 동일) */
   useEffect(() => {
@@ -116,7 +122,14 @@ export default function ManualSigOverlaySimple() {
       if (document.visibilityState === "visible") void resync({ forceFull: true });
     };
     document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) void resync({ forceFull: true });
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pageshow", onPageShow);
+    };
   }, [hostObs, resync]);
 
   const selected = useMemo(
@@ -161,17 +174,25 @@ export default function ManualSigOverlaySimple() {
   const phase = String(state?.rouletteState?.phase || "");
   const terminalPhase = MANUAL_OVERLAY_TERMINAL_PHASES.has(phase);
   const hasResults = selected.length >= 2;
-  /** 당첨 2개 이상이면 표시(OBS·웹 동일). phase는 안내 문구에만 사용 */
-  const visible = spReady && ready && hasResults;
+  /** 당첨 2개 이상이면 표시. OBS는 ready 전에도 당첨이 있으면 표시(CEF fetch 지연 대비) */
+  const visible = spReady && hasResults && (ready || hostObs);
   const soldOutStampUrl = String(state?.sigSoldOutStampUrl || "").trim() || DEFAULT_SIG_SOLD_STAMP_URL;
 
   const rootClass = obsOverlayRootClass(hostObs);
 
-  if (!spReady || !ready) {
+  if (!spReady || (!ready && !hostObs)) {
     return (
       <ManualOverlayStatus hostObs={hostObs}>
         수동 시그 오버레이 불러오는 중…
         {hostObs ? ` (계정: ${userId})` : ""}
+      </ManualOverlayStatus>
+    );
+  }
+
+  if (!ready && hostObs && !hasResults) {
+    return (
+      <ManualOverlayStatus hostObs={hostObs}>
+        상태 동기화 중… (계정: {userId})
       </ManualOverlayStatus>
     );
   }

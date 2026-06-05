@@ -19,6 +19,7 @@ import {
 } from "@/lib/state";
 
 import { shouldSuppressOverlaySseConnection } from "@/lib/overlay-params";
+import { startStaggeredOverlayPoll } from "@/lib/overlay-poll-stagger";
 
 import {
   createStateUpdatedScheduler,
@@ -515,10 +516,19 @@ export function useOverlayRemoteState(
         ? options.overlayPollMs
         : readOverlayPollIntervalMs();
 
-    let pollId: number | undefined;
+    let stopPoll: (() => void) | undefined;
 
-    if (pollMs > 0)
-      pollId = window.setInterval(() => void syncFromApi(), pollMs);
+    if (pollMs > 0) {
+      const pollSourceKey = `${statePick}:${userId || "default"}:${typeof window !== "undefined" ? window.location.pathname : ""}:${typeof window !== "undefined" ? window.location.search : ""}`;
+      stopPoll = startStaggeredOverlayPoll(
+        () =>
+          void syncFromApiRef.current(
+            sigSalesPick || obsTextPick ? { forceFull: true } : undefined
+          ),
+        pollMs,
+        pollSourceKey
+      );
+    }
 
     const sseFallbackMs = pollMs > 0 ? 0 : readOverlaySseFallbackPollMs();
 
@@ -615,7 +625,7 @@ export function useOverlayRemoteState(
 
       scheduleSseSyncRef.current = null;
 
-      if (pollId) window.clearInterval(pollId);
+      stopPoll?.();
 
       if (sseFallbackId) window.clearInterval(sseFallbackId);
 

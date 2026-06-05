@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
+import { useClientOnlySearchParams } from "@/hooks/useClientOnlySearchParams";
 import {
   defaultState,
   formatDonorsAmount,
@@ -12,7 +13,10 @@ import {
 } from "@/lib/state";
 import type { DonorsAmountFormat } from "@/types";
 import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
-import { getOverlayUserIdFromSearchParams } from "@/lib/overlay-params";
+import {
+  getOverlayUserIdFromSearchParams,
+  isOverlayBroadcastHost,
+} from "@/lib/overlay-params";
 import { useDonorRankingsRemoteState } from "@/hooks/useDonorRankingsRemoteState";
 import {
   buildDonorRankingsFromDonors,
@@ -262,6 +266,88 @@ function backgroundWithOpacityFrac(
   return { background: t, opacity: f };
 }
 
+function RankingRow({
+  item,
+  idx,
+  rowSize,
+  rankSize,
+  rankColor,
+  nameColor,
+  amountColor,
+  outlineColor,
+  rowEvenBg,
+  rowOddBg,
+  amountFormat,
+  suffix,
+  disableMotion,
+}: {
+  item: DonorRow;
+  idx: number;
+  rowSize: number;
+  rankSize: number;
+  rankColor: string;
+  nameColor: string;
+  amountColor: string;
+  outlineColor: string;
+  rowEvenBg?: string;
+  rowOddBg?: string;
+  amountFormat: DonorsAmountFormat;
+  suffix?: string;
+  disableMotion?: boolean;
+}) {
+  const outlined = {
+    textShadow: `-1px -1px 0 ${outlineColor},1px -1px 0 ${outlineColor},-1px 1px 0 ${outlineColor},1px 1px 0 ${outlineColor},0 2px 6px rgba(0,0,0,0.38)`,
+  } as const;
+  const rankLabel = (i: number): string => {
+    if (i === 0) return "🥇";
+    if (i === 1) return "🥈";
+    if (i === 2) return "🥉";
+    return String(i + 1);
+  };
+  const rowStyle: CSSProperties = {
+    fontSize: `${rowSize}px`,
+    backgroundColor: idx % 2 === 0 ? rowEvenBg || "transparent" : rowOddBg || "transparent",
+  };
+  const inner = (
+    <>
+      <span className="font-black text-center" style={{ color: rankColor, fontSize: `${rankSize}px`, ...outlined }}>
+        {rankLabel(idx)}
+      </span>
+      <span className="break-words font-bold leading-tight" style={{ color: nameColor, ...outlined }}>
+        {item.name}
+      </span>
+      <span className="font-black tabular-nums text-right" style={{ color: amountColor, ...outlined }}>
+        {amountFormat === "short"
+          ? `${formatDonorsAmount(item.amount, "short")}만`
+          : `${formatDonorsAmount(item.amount, "full")}${suffix ? ` ${suffix}` : " 원"}`}
+      </span>
+    </>
+  );
+  if (disableMotion) {
+    return (
+      <div
+        className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-1 py-1"
+        style={rowStyle}
+      >
+        {inner}
+      </div>
+    );
+  }
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -12 }}
+      transition={{ type: "spring", stiffness: 420, damping: 34, mass: 0.8 }}
+      className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-1 py-1"
+      style={rowStyle}
+    >
+      {inner}
+    </motion.div>
+  );
+}
+
 function RankingColumn({
   title,
   items,
@@ -284,6 +370,7 @@ function RankingColumn({
   panelOpacityFrac,
   rowEvenBg,
   rowOddBg,
+  disableMotion,
 }: {
   title: string;
   items: DonorRow[];
@@ -309,14 +396,12 @@ function RankingColumn({
   panelOpacityFrac?: number;
   rowEvenBg?: string;
   rowOddBg?: string;
+  /** OBS CEF: framer-motion initial opacity 0 이 고착되면 전체가 안 보임 */
+  disableMotion?: boolean;
 }) {
-  const outlined = { textShadow: `-1px -1px 0 ${outlineColor},1px -1px 0 ${outlineColor},-1px 1px 0 ${outlineColor},1px 1px 0 ${outlineColor},0 2px 6px rgba(0,0,0,0.38)` } as const;
-  const rankLabel = (idx: number): string => {
-    if (idx === 0) return "🥇";
-    if (idx === 1) return "🥈";
-    if (idx === 2) return "🥉";
-    return String(idx + 1);
-  };
+  const outlined = {
+    textShadow: `-1px -1px 0 ${outlineColor},1px -1px 0 ${outlineColor},-1px 1px 0 ${outlineColor},1px 1px 0 ${outlineColor},0 2px 6px rgba(0,0,0,0.38)`,
+  } as const;
   const outerClass = unified
     ? `relative z-[1] flex min-w-0 flex-1 flex-col overflow-visible ${
         showColumnDivider
@@ -336,34 +421,45 @@ function RankingColumn({
     : Math.max(0, Math.min(100, headerOpacity)) / 100;
   const headerBgResolved = backgroundWithOpacityFrac(headerBg, headerOpacityFrac);
 
-  const rowList = (
+  const rowList = disableMotion ? (
+    <div className="space-y-1">
+      {items.map((item, idx) => (
+        <RankingRow
+          key={item.name}
+          item={item}
+          idx={idx}
+          rowSize={rowSize}
+          rankSize={rankSize}
+          rankColor={rankColor}
+          nameColor={nameColor}
+          amountColor={amountColor}
+          outlineColor={outlineColor}
+          rowEvenBg={rowEvenBg}
+          rowOddBg={rowOddBg}
+          amountFormat={amountFormat}
+          suffix={suffix}
+          disableMotion
+        />
+      ))}
+    </div>
+  ) : (
     <AnimatePresence initial={false}>
       {items.map((item, idx) => (
-        <motion.div
+        <RankingRow
           key={item.name}
-          layout
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -12 }}
-          transition={{ type: "spring", stiffness: 420, damping: 34, mass: 0.8 }}
-          className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-1 py-1"
-          style={{
-            fontSize: `${rowSize}px`,
-            backgroundColor: idx % 2 === 0 ? rowEvenBg || "transparent" : rowOddBg || "transparent",
-          }}
-        >
-          <span className="font-black text-center" style={{ color: rankColor, fontSize: `${rankSize}px`, ...outlined }}>
-            {rankLabel(idx)}
-          </span>
-          <span className="break-words font-bold leading-tight" style={{ color: nameColor, ...outlined }}>
-            {item.name}
-          </span>
-          <span className="font-black tabular-nums text-right" style={{ color: amountColor, ...outlined }}>
-            {amountFormat === "short"
-              ? `${formatDonorsAmount(item.amount, "short")}만`
-              : `${formatDonorsAmount(item.amount, "full")}${suffix ? ` ${suffix}` : " 원"}`}
-          </span>
-        </motion.div>
+          item={item}
+          idx={idx}
+          rowSize={rowSize}
+          rankSize={rankSize}
+          rankColor={rankColor}
+          nameColor={nameColor}
+          amountColor={amountColor}
+          outlineColor={outlineColor}
+          rowEvenBg={rowEvenBg}
+          rowOddBg={rowOddBg}
+          amountFormat={amountFormat}
+          suffix={suffix}
+        />
       ))}
     </AnimatePresence>
   );
@@ -405,11 +501,28 @@ function RankingColumn({
 }
 
 export default function DonorRankingsOverlayPage() {
-  const sp = useSearchParams();
+  const { params: sp, ready: spReady } = useClientOnlySearchParams();
   const pathname = usePathname();
   const profileFull = (pathname || "").includes("donor-rankings-full");
   const userId = getOverlayUserIdFromSearchParams(sp);
-  const { state, ready } = useDonorRankingsRemoteState(userId);
+  const hostObs = isOverlayBroadcastHost(sp);
+  const { state, ready, resync } = useDonorRankingsRemoteState(userId);
+
+  useEffect(() => {
+    if (!hostObs) return;
+    const onVis = () => {
+      if (document.visibilityState === "visible") void resync({ forceFull: true });
+    };
+    document.addEventListener("visibilitychange", onVis);
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) void resync({ forceFull: true });
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, [hostObs, resync]);
   const overlayCfg = useMemo(
     () =>
       normalizeDonorRankingsOverlayConfig(
@@ -508,11 +621,23 @@ export default function DonorRankingsOverlayPage() {
     return buildDonorRankingsFromDonors(donors, topN);
   }, [state?.donors, useTest, donorsOverride, topN]);
 
-  if (!ready && !useTest) return null;
+  if (!spReady || (!ready && !useTest)) {
+    return hostObs ? (
+      <div className="pointer-events-none fixed inset-0 z-50 flex items-start justify-center bg-transparent p-4 pt-6">
+        <p className="rounded-lg border border-pink-400/40 bg-black/75 px-3 py-2 text-xs text-pink-50">
+          후원 순위 불러오는 중… ({userId})
+        </p>
+      </div>
+    ) : null;
+  }
+
+  const mainClass = hostObs
+    ? "pointer-events-none fixed inset-0 z-[120] w-full overflow-visible bg-transparent p-5 md:[background:var(--ov-donor-bg)]"
+    : "relative min-h-screen w-full overflow-visible bg-transparent p-5 md:[background:var(--ov-donor-bg)]";
 
   return (
     <main
-      className="relative min-h-screen w-full overflow-visible bg-transparent p-5 md:[background:var(--ov-donor-bg)]"
+      className={mainClass}
       style={{ ["--ov-donor-bg" as string]: bg } as CSSProperties}
     >
       {showBgLayer ? (
@@ -588,6 +713,7 @@ export default function DonorRankingsOverlayPage() {
               panelOpacityFrac={overlayOpacityFrac}
               rowEvenBg={rowEvenBg}
               rowOddBg={rowOddBg}
+              disableMotion={hostObs}
             />
             <RankingColumn
               title="투네 후원 순위"
@@ -610,6 +736,7 @@ export default function DonorRankingsOverlayPage() {
               panelOpacityFrac={overlayOpacityFrac}
               rowEvenBg={rowEvenBg}
               rowOddBg={rowOddBg}
+              disableMotion={hostObs}
             />
           </div>
         ) : (
@@ -642,6 +769,7 @@ export default function DonorRankingsOverlayPage() {
               panelOpacityFrac={overlayOpacityFrac}
               rowEvenBg={rowEvenBg}
               rowOddBg={rowOddBg}
+              disableMotion={hostObs}
             />
           </div>
         )}
