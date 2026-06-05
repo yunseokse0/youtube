@@ -1706,11 +1706,13 @@ export function hydrateSigItemFromInventory(
     return { ...item, id: canon, imageUrl: imageUrl || item.imageUrl };
   }
   const price = Math.max(0, Math.floor(Number(item.price ?? fromInv.price ?? 0)));
-  const rawImage = String(fromInv.imageUrl || item.imageUrl || "").trim();
+  const displayName = String(item.name || fromInv.name || "").trim() || fromInv.name;
+  const rawImage = String(item.imageUrl || fromInv.imageUrl || "").trim();
   const imageUrl = repairDiskUploadSigImagePath(rawImage, userId) || rawImage;
   return {
     ...fromInv,
     id: canon,
+    name: displayName,
     price,
     imageUrl,
   };

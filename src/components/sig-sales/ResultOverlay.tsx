@@ -104,6 +104,7 @@ export default function ResultOverlay({
           showToggle={false}
           compact
           matchSigCardSize
+          fillRowCell
           cardScalePct={cardScalePct}
           disableCardMotion={disableCardMotion}
           gifDelayMultiplier={gifDelayMultiplier}

@@ -18,6 +18,18 @@ export const DEFAULT_SIG_SOLD_STAMP_URL = "/images/sigs/stamp.png";
 /** Git·Render 배포본에 포함된 공통 시그 이미지(`public/images/sigs/dummy-sig.svg`) */
 export const BUNDLED_SIG_PLACEHOLDER_URL = "/images/sigs/dummy-sig.svg";
 
+/** 한방 시그 카드 기본 GIF — 당첨 시그 이미지로 대체하지 않음 */
+export const DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE = "/images/sigs/from-drive/한방시그.gif";
+
+/** 인벤·초안 URL이 한방 전용 이미지로 쓸 만한지(다른 시그 GIF 오염 방지) */
+export function isDedicatedOneShotSigImageUrl(url: string | undefined | null): boolean {
+  const s = String(url || "").trim();
+  if (!s || s === BUNDLED_SIG_PLACEHOLDER_URL) return false;
+  if (/한방/i.test(s)) return true;
+  if (s.startsWith("/uploads/sigs/")) return true;
+  return false;
+}
+
 /** 방송에서 자주 쓰는 시그 기본 목록(애교·댄스·식사권 외 프리셋) */
 export const BROADCAST_SIG_PRESET_NAMES = [
   "애교",

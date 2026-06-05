@@ -109,7 +109,7 @@ export default function SelectedSigs({
   const nowrapRow = overlaySingleRow ? "flex-nowrap overflow-visible" : "flex-wrap";
   const sectionClass = overlaySingleRow
     ? `flex min-w-0 max-w-full ${nowrapRow} ${
-        matchOneShotCardSize && trailingActive ? "items-end" : "items-start"
+        matchOneShotCardSize && trailingActive ? "items-stretch" : "items-start"
       } ${sigRowJustify || "justify-center"} gap-1 sm:gap-1 ${className}`.trim()
     : broadcastMatch
       ? `flex w-full min-w-0 max-w-full flex-wrap justify-center gap-1 sm:gap-1 ${className}`.trim()
@@ -270,6 +270,11 @@ export default function SelectedSigs({
       {sigCards}
       {trailingSlot ? (
         <div
+          style={
+            broadcastMatch && matchOneShotCardSize
+              ? sigOverlayBroadcastCardShellStyle(cardScalePct)
+              : undefined
+          }
           className={
             broadcastMatch && matchOneShotCardSize
               ? "flex h-full min-h-0 shrink-0 flex-col self-stretch"

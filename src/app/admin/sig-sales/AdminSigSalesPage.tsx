@@ -26,7 +26,9 @@ import ConfirmationModal from "@/components/sig-sales/ConfirmationModal";
 import RouletteHistoryModal from "@/components/sig-sales/RouletteHistoryModal";
 import {
   BUNDLED_SIG_PLACEHOLDER_URL,
+  DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE,
   DEFAULT_SIG_SOLD_STAMP_URL,
+  isDedicatedOneShotSigImageUrl,
   resolveSigAdminPreviewSrc,
 } from "@/lib/constants";
 import {
@@ -1134,13 +1136,20 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     (hideWheelAfterSpin && displaySelectedSigs.length >= targetSelectionCount) ||
     (preferManualDraftPreview && displaySelectedSigs.length >= MIN_ONE_SHOT_SIGS);
   const oneShotImageUrl = useMemo(() => {
+    if (manualOneShotImageUrl.trim()) {
+      return resolveSigAdminPreviewSrc(manualOneShotImageUrl, manualOneShotName || "한방 시그", userId);
+    }
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     const fromOneShot = (oneShotItem?.imageUrl || "").trim();
-    if (fromOneShot) return resolveSigAdminPreviewSrc(fromOneShot, oneShotItem?.name || "한방 시그", userId);
-    const pick = displaySelectedSigsForUi.find((x) => (x.imageUrl || "").trim());
-    if (pick) return resolveSigAdminPreviewSrc(pick.imageUrl, pick.name, userId);
-    return BUNDLED_SIG_PLACEHOLDER_URL;
-  }, [state?.sigInventory, displaySelectedSigsForUi, userId]);
+    if (isDedicatedOneShotSigImageUrl(fromOneShot)) {
+      return resolveSigAdminPreviewSrc(fromOneShot, oneShotItem?.name || "한방 시그", userId);
+    }
+    return resolveSigAdminPreviewSrc(
+      DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE,
+      manualOneShotName || "한방 시그",
+      userId
+    );
+  }, [state?.sigInventory, manualOneShotImageUrl, manualOneShotName, userId]);
   const manualParsedRows = manualParsedRowsEarly;
   const manualInventoryOptions = useMemo(() => {
     const mergedSource: SigItem[] = [

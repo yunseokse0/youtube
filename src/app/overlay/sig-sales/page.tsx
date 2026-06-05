@@ -29,7 +29,9 @@ import {
   shouldSuppressOverlaySseConnection,
 } from "@/lib/overlay-params";
 import {
+  DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE,
   DEFAULT_SIG_SOLD_STAMP_URL,
+  isDedicatedOneShotSigImageUrl,
   normalizeSigImageUrlStored,
   resolveSigImageUrl,
   resolveSigOverlayCardImageUrl,
@@ -82,6 +84,10 @@ import {
   mergeWheelDemoSigInventory,
   pickWheelDemoWinners,
 } from "@/lib/sig-wheel-demo-pool";
+import {
+  hydrateManualOverlaySigItem,
+  resolveManualDraftRowForSigItem,
+} from "@/lib/manual-sig-broadcast";
 import { stripBundledSigPlaceholderItems } from "@/lib/sig-placeholder";
 import { buildSigSalesOverlaySyncSignature } from "@/lib/overlay-sync-signature";
 import { revisionForStatePick, STATE_PICK_SIG_SALES } from "@/lib/state-api-pick";
@@ -1222,12 +1228,23 @@ function SigSalesOverlayPageInner() {
           ? rs.results
           : []
     ) as SigItem[];
+    const draftRows = Array.isArray(manualDraftEffective?.drafts)
+      ? manualDraftEffective!.drafts
+      : [];
     return stripBundledSigPlaceholderItems(
-      raw
-        .slice(0, CONFIRMED_VISIBLE_SLOTS)
-        .map((s) => hydrateSigItemFromInventory(s, wheelInventory, sigImageUserId))
+      raw.slice(0, CONFIRMED_VISIBLE_SLOTS).map((s) => {
+        if (manualOverlayMode && draftRows.length > 0) {
+          return hydrateManualOverlaySigItem(
+            s,
+            wheelInventory,
+            sigImageUserId,
+            resolveManualDraftRowForSigItem(s, draftRows)
+          );
+        }
+        return hydrateSigItemFromInventory(s, wheelInventory, sigImageUserId);
+      })
     );
-  }, [state?.rouletteState, wheelInventory, sigImageUserId]);
+  }, [state?.rouletteState, wheelInventory, sigImageUserId, manualOverlayMode, manualDraftEffective]);
   /** 수동 방송: 서버 초안 5개 또는 LANDED 당첨(회전판 없이 운영) */
   const manualDraftBroadcastReady =
     manualOverlayMode && manualDraftSelectedForUi.length >= 5;
@@ -1793,17 +1810,13 @@ function SigSalesOverlayPageInner() {
   );
   /** 저장 경로(인벤·수동 초안) — 카드에서 `resolveSigOverlayCardImageUrl`로 OBS용 URL 생성 */
   const oneShotStoredImageUrl = useMemo(() => {
+    const draftOneShotImage = String(manualDraftEffective?.oneShotImageUrl || "").trim();
+    if (draftOneShotImage) return draftOneShotImage;
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     const fromOneShot = (oneShotItem?.imageUrl || "").trim();
-    if (fromOneShot) return fromOneShot;
-    const draftOneShotImage = String(manualDraftEffective?.oneShotImageUrl || "").trim();
-    if (manualOverlayMode && draftOneShotImage) return draftOneShotImage;
-    const pick = effectiveSelectedSigsForUi.find((x) => (x.imageUrl || "").trim());
-    if (pick) return String(pick.imageUrl || "").trim();
-    const poolPick = activeNormalPool.find((x) => (x.imageUrl || "").trim());
-    if (poolPick) return String(poolPick.imageUrl || "").trim();
-    return "";
-  }, [state?.sigInventory, effectiveSelectedSigsForUi, activeNormalPool, manualDraftEffective, manualOverlayMode]);
+    if (isDedicatedOneShotSigImageUrl(fromOneShot)) return fromOneShot;
+    return DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE;
+  }, [state?.sigInventory, manualDraftEffective]);
   const oneShotImageUrl = useMemo(
     () =>
       oneShotStoredImageUrl

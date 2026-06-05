@@ -1,5 +1,9 @@
 import type { AppState, SigItem } from "@/types";
-import { resolveSigOverlayCardImageUrl } from "@/lib/constants";
+import {
+  DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE,
+  isDedicatedOneShotSigImageUrl,
+  resolveSigOverlayCardImageUrl,
+} from "@/lib/constants";
 import { buildOneShotFromSelected } from "@/lib/sig-one-shot-price";
 import { pickRandomManualSigDrafts } from "@/lib/manual-sig-random";
 import { listActiveManualSigPool } from "@/lib/manual-sig-active-pool";
@@ -29,23 +33,135 @@ export function readManualSigDraftFromState(
   return normalizeManualSigDraftPersist(raw);
 }
 
-/** 수동·한방 OBS 카드용 — 인벤 `sig_one_shot` → 수동 초안 `oneShotImageUrl` → 당첨 폴백 */
+/** 수동·한방 OBS 카드용 — 초안 `oneShotImageUrl` → 인벤 `sig_one_shot`(전용만) → 번들 `한방시그.gif` */
 export function resolveManualOneShotOverlayImageUrl(params: {
   state: AppState | null | undefined;
   selectedSigs: SigItem[];
   userId: string;
   oneShotName?: string;
 }): string {
-  const { state, selectedSigs, userId } = params;
+  const { state, userId } = params;
   const label = String(params.oneShotName || "한방 시그").trim() || "한방 시그";
+  const draftImage = String(readManualSigDraftFromState(state)?.oneShotImageUrl || "").trim();
+  if (draftImage) return resolveSigOverlayCardImageUrl(label, draftImage, userId);
   const inv = state?.sigInventory || [];
   const oneShotItem = inv.find((item) => item.id === ONE_SHOT_SIG_ID);
   const fromInv = String(oneShotItem?.imageUrl || "").trim();
-  if (fromInv) return resolveSigOverlayCardImageUrl(label, fromInv, userId);
-  const draftImage = String(readManualSigDraftFromState(state)?.oneShotImageUrl || "").trim();
-  if (draftImage) return resolveSigOverlayCardImageUrl(label, draftImage, userId);
-  const pick = selectedSigs.find((x) => (x.imageUrl || "").trim());
-  return resolveSigOverlayCardImageUrl(label, pick?.imageUrl?.trim() || "", userId);
+  if (isDedicatedOneShotSigImageUrl(fromInv)) {
+    return resolveSigOverlayCardImageUrl(label, fromInv, userId);
+  }
+  return resolveSigOverlayCardImageUrl(label, DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE, userId);
+}
+
+/** 리롤·LANDED 시 `sig_one_shot` 행 이미지를 한방 전용 GIF로 맞춤 */
+export function syncOneShotInventoryImage(
+  inventory: SigItem[] | undefined | null,
+  imageUrl: string = DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE
+): SigItem[] {
+  const url = String(imageUrl || DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE).trim() || DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE;
+  const list = Array.isArray(inventory) ? inventory : [];
+  const hasRow = list.some((row) => row?.id === ONE_SHOT_SIG_ID);
+  if (!hasRow) return list;
+  return list.map((row) => (row.id === ONE_SHOT_SIG_ID ? { ...row, imageUrl: url } : row));
+}
+
+/** 수동 판매완료 체크 → 서버·OBS 반영 */
+export function buildManualSigSoldPersistState(
+  base: AppState,
+  opts: {
+    sigSoldFlags: boolean[];
+    oneShotMarkSold: boolean;
+    persistDrafts?: ManualSigDraftPersist;
+  }
+): AppState {
+  const now = Date.now();
+  const prevOverlaySettings =
+    base.overlaySettings && typeof base.overlaySettings === "object"
+      ? (base.overlaySettings as Record<string, unknown>)
+      : {};
+  const existingDraft = readManualSigDraftFromState(base);
+  const draftPayload: ManualSigDraftPersist = opts.persistDrafts ?? {
+    inputMode: existingDraft?.inputMode ?? "inventory",
+    drafts: existingDraft?.drafts ?? [],
+    oneShotName: existingDraft?.oneShotName ?? "한방 시그",
+    oneShotPriceInput: existingDraft?.oneShotPriceInput ?? "",
+    oneShotImageUrl:
+      String(existingDraft?.oneShotImageUrl || "").trim() || DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE,
+    sigSoldFlags: opts.sigSoldFlags,
+    oneShotMarkSold: opts.oneShotMarkSold,
+  };
+  return {
+    ...base,
+    overlaySettings: {
+      ...prevOverlaySettings,
+      [MANUAL_SIG_DRAFT_STATE_KEY]: draftPayload,
+    },
+    rouletteState: {
+      ...base.rouletteState,
+      overlayReloadNonce: Number(base.rouletteState?.overlayReloadNonce || 0) + 1,
+    },
+    updatedAt: now,
+  };
+}
+
+function normalizeManualSigNameKey(raw: string): string {
+  return String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
+}
+
+/**
+ * 당첨 카드 ↔ 수동 초안 행 매칭 — 배열 인덱스가 다를 수 있음(리롤·LANDED 순서 불일치).
+ * `sourceSigId` 우선, 없으면 이름·가격.
+ */
+export function resolveManualDraftRowForSigItem(
+  item: Pick<SigItem, "id" | "name" | "price">,
+  drafts: ManualSigDraft[] | undefined | null
+): ManualSigDraft | undefined {
+  if (!Array.isArray(drafts) || drafts.length === 0) return undefined;
+  const parsed = parseManualSigDraftRows(drafts);
+  const canon = canonicalSigIdFromWheelSliceId(item.id);
+  const nk = normalizeManualSigNameKey(item.name);
+  const price = Math.floor(Number(item.price || 0));
+  for (let i = 0; i < drafts.length; i++) {
+    const draft = drafts[i];
+    const row = parsed[i];
+    if (!row?.name) continue;
+    const sourceId = String(draft?.sourceSigId || "").trim();
+    if (sourceId && (sourceId === item.id || canonicalSigIdFromWheelSliceId(sourceId) === canon)) {
+      return draft;
+    }
+    if (
+      normalizeManualSigNameKey(row.name) === nk &&
+      Math.floor(Number(row.price || 0)) === price
+    ) {
+      return draft;
+    }
+  }
+  return undefined;
+}
+
+/** 수동 초안 행(폼 idx) → OBS 당첨 카드 */
+export function findDisplaySigForManualDraftRow(
+  draftRow: ManualSigDraft | undefined,
+  parsedRow: { name: string; price: number } | undefined,
+  displayList: SigItem[]
+): SigItem | undefined {
+  if (!displayList.length) return undefined;
+  const sourceId = String(draftRow?.sourceSigId || "").trim();
+  if (sourceId) {
+    const canon = canonicalSigIdFromWheelSliceId(sourceId);
+    const hit = displayList.find(
+      (s) => s.id === sourceId || canonicalSigIdFromWheelSliceId(s.id) === canon
+    );
+    if (hit) return hit;
+  }
+  if (!parsedRow?.name) return undefined;
+  const nk = normalizeManualSigNameKey(parsedRow.name);
+  const price = Math.floor(Number(parsedRow.price || 0));
+  return displayList.find(
+    (s) =>
+      normalizeManualSigNameKey(s.name) === nk &&
+      Math.floor(Number(s.price || 0)) === price
+  );
 }
 
 /** 업로드 경로·from-drive·인벤 URL 중 OBS에 가장 잘 먹는 경로 선택 */
@@ -82,10 +198,10 @@ export function hydrateManualOverlaySigItem(
     fromSource,
     draftRow?.imageUrl,
     item.imageUrl,
-    fromNamePrice,
     h.imageUrl,
+    fromNamePrice,
   ]);
-  return { ...h, memberId: "", imageUrl };
+  return { ...h, name: String(item.name || h.name || "").trim() || h.name, memberId: "", imageUrl };
 }
 
 export function buildManualSigItemsFromDrafts(
@@ -134,7 +250,14 @@ export function resolveManualOverlaySelectedSigs(
   const draft = readManualSigDraftFromState(state);
   const draftRows = Array.isArray(draft?.drafts) ? draft!.drafts : [];
   let items = stripBundledSigPlaceholderItems(
-    raw.map((s, idx) => hydrateManualOverlaySigItem(s, inv, userId, draftRows[idx]))
+    raw.map((s) =>
+      hydrateManualOverlaySigItem(
+        s,
+        inv,
+        userId,
+        resolveManualDraftRowForSigItem(s, draftRows)
+      )
+    )
   );
   if (items.length < MIN_MANUAL_OVERLAY_SIGS && draft && manualSigDraftsReady(draft.drafts)) {
     items = stripBundledSigPlaceholderItems(
@@ -164,9 +287,12 @@ export function buildManualOverlaySoldOverrideSet(
       ? items
       : buildManualSigItemsFromDrafts(draft.drafts, state?.sigInventory, userId);
   const list = draftItems.length >= MIN_MANUAL_OVERLAY_SIGS ? draftItems : items;
-  flags.forEach((sold, idx) => {
+  const parsedRows = parseManualSigDraftRows(draft.drafts || []);
+  flags.forEach((sold, draftIdx) => {
     if (!sold) return;
-    const item = list[idx];
+    const draftRow = draft.drafts?.[draftIdx];
+    const parsed = parsedRows[draftIdx];
+    const item = findDisplaySigForManualDraftRow(draftRow, parsed, list);
     if (item) {
       next.add(item.id);
       next.add(canonicalSigIdFromWheelSliceId(item.id));
@@ -183,7 +309,7 @@ export function buildManualOverlaySoldOverrideSet(
         }
       }
     }
-    const sourceSid = String(draft.drafts?.[idx]?.sourceSigId || "").trim();
+    const sourceSid = String(draftRow?.sourceSigId || "").trim();
     if (sourceSid) {
       next.add(sourceSid);
       next.add(canonicalSigIdFromWheelSliceId(sourceSid));
@@ -225,13 +351,19 @@ export function buildManualSigBroadcastState(
     base.overlaySettings && typeof base.overlaySettings === "object"
       ? (base.overlaySettings as Record<string, unknown>)
       : {};
+  const oneShotImage =
+    String(opts?.persistDrafts?.oneShotImageUrl || "").trim() || DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE;
   return {
     ...base,
+    sigInventory: syncOneShotInventoryImage(base.sigInventory, oneShotImage),
     ...(opts?.persistDrafts
       ? {
           overlaySettings: {
             ...prevOverlaySettings,
-            [MANUAL_SIG_DRAFT_STATE_KEY]: opts.persistDrafts,
+            [MANUAL_SIG_DRAFT_STATE_KEY]: {
+              ...opts.persistDrafts,
+              oneShotImageUrl: oneShotImage,
+            },
           },
         }
       : {}),
