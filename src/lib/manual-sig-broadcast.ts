@@ -2,6 +2,7 @@ import type { AppState, SigItem } from "@/types";
 import {
   DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE,
   isDedicatedOneShotSigImageUrl,
+  normalizeSigImageUrlStored,
   resolveSigOverlayCardImageUrl,
 } from "@/lib/constants";
 import { buildOneShotFromSelected } from "@/lib/sig-one-shot-price";
@@ -33,24 +34,66 @@ export function readManualSigDraftFromState(
   return normalizeManualSigDraftPersist(raw);
 }
 
-/** 수동·한방 OBS 카드용 — 초안 `oneShotImageUrl` → 인벤 `sig_one_shot`(전용만) → 번들 `한방시그.gif` */
+function normalizeSigImageCompareKey(url: string): string {
+  return normalizeSigImageUrlStored(String(url || "").trim()).toLowerCase();
+}
+
+function collectSelectedSigImageKeys(selected: SigItem[]): Set<string> {
+  const keys = new Set<string>();
+  for (const item of selected) {
+    const raw = String(item.imageUrl || "").trim();
+    if (!raw) continue;
+    keys.add(normalizeSigImageCompareKey(raw));
+  }
+  return keys;
+}
+
+function isSameAsSelectedSigImage(url: string, selected: SigItem[]): boolean {
+  const key = normalizeSigImageCompareKey(url);
+  if (!key) return false;
+  return collectSelectedSigImageKeys(selected).has(key);
+}
+
+/** 저장 경로 — 초안·인벤 한방 전용만, 당첨 시그 GIF와 같으면 번들 `한방시그.gif` */
+export function resolveManualOneShotStoredImageUrl(params: {
+  state: AppState | null | undefined;
+  selectedSigs?: SigItem[];
+}): string {
+  const selected = params.selectedSigs || [];
+  const draftImage = String(readManualSigDraftFromState(params.state)?.oneShotImageUrl || "").trim();
+  if (
+    draftImage &&
+    isDedicatedOneShotSigImageUrl(draftImage) &&
+    !isSameAsSelectedSigImage(draftImage, selected)
+  ) {
+    return draftImage;
+  }
+  const inv = params.state?.sigInventory || [];
+  const oneShotItem = inv.find((item) => item.id === ONE_SHOT_SIG_ID);
+  const fromInv = String(oneShotItem?.imageUrl || "").trim();
+  if (
+    fromInv &&
+    isDedicatedOneShotSigImageUrl(fromInv) &&
+    !isSameAsSelectedSigImage(fromInv, selected)
+  ) {
+    return fromInv;
+  }
+  return DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE;
+}
+
+/** 수동·한방 OBS 카드용 — `resolveManualOneShotStoredImageUrl` → OBS 절대 URL */
 export function resolveManualOneShotOverlayImageUrl(params: {
   state: AppState | null | undefined;
   selectedSigs: SigItem[];
   userId: string;
   oneShotName?: string;
 }): string {
-  const { state, userId } = params;
   const label = String(params.oneShotName || "한방 시그").trim() || "한방 시그";
-  const draftImage = String(readManualSigDraftFromState(state)?.oneShotImageUrl || "").trim();
-  if (draftImage) return resolveSigOverlayCardImageUrl(label, draftImage, userId);
-  const inv = state?.sigInventory || [];
-  const oneShotItem = inv.find((item) => item.id === ONE_SHOT_SIG_ID);
-  const fromInv = String(oneShotItem?.imageUrl || "").trim();
-  if (isDedicatedOneShotSigImageUrl(fromInv)) {
-    return resolveSigOverlayCardImageUrl(label, fromInv, userId);
-  }
-  return resolveSigOverlayCardImageUrl(label, DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE, userId);
+  const stored = resolveManualOneShotStoredImageUrl({
+    state: params.state,
+    selectedSigs: params.selectedSigs,
+  });
+  return resolveSigOverlayCardImageUrl(label, stored, params.userId);
 }
 
 /** 리롤·LANDED 시 `sig_one_shot` 행 이미지를 한방 전용 GIF로 맞춤 */

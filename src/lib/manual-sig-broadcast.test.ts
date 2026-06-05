@@ -6,6 +6,7 @@ import {
   pickRandomManualSigBundle,
   resolveManualDraftRowForSigItem,
   resolveManualOneShotOverlayImageUrl,
+  resolveManualOneShotStoredImageUrl,
   resolveManualOverlaySelectedSigs,
 } from "@/lib/manual-sig-broadcast";
 import { DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE } from "@/lib/constants";
@@ -87,6 +88,27 @@ describe("resolveManualOneShotOverlayImageUrl", () => {
     expect(url).not.toContain("유튜버카누");
   });
 
+  it("ignores draft oneShotImageUrl when it matches a winner sig upload", () => {
+    const state = {
+      overlaySettings: {
+        sigSalesManualDraftV1: {
+          drafts: [],
+          oneShotName: "한방 시그",
+          oneShotPriceInput: "",
+          oneShotImageUrl: "/uploads/sigs/finalent/winner.gif",
+          sigSoldFlags: [],
+          oneShotMarkSold: false,
+        },
+      },
+    } as AppState;
+    const stored = resolveManualOneShotStoredImageUrl({
+      state,
+      selectedSigs: [winner],
+    });
+    expect(stored).toContain("한방시그.gif");
+    expect(stored).not.toContain("winner.gif");
+  });
+
   it("prefers draft oneShotImageUrl when set", () => {
     const state = {
       overlaySettings: {
@@ -94,7 +116,7 @@ describe("resolveManualOneShotOverlayImageUrl", () => {
           drafts: [],
           oneShotName: "한방 시그",
           oneShotPriceInput: "",
-          oneShotImageUrl: "/uploads/sigs/finalent/custom_hanbang.gif",
+          oneShotImageUrl: "/uploads/sigs/finalent/custom_한방.gif",
           sigSoldFlags: [],
           oneShotMarkSold: false,
         },
@@ -105,7 +127,7 @@ describe("resolveManualOneShotOverlayImageUrl", () => {
       selectedSigs: [winner],
       userId: "finalent",
     });
-    expect(url).toContain("custom_hanbang.gif");
+    expect(url).toContain("custom_한방.gif");
     expect(url).not.toContain(DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE.split("/").pop()!);
   });
 });

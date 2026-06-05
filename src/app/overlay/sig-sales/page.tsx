@@ -88,6 +88,7 @@ import {
 import {
   hydrateManualOverlaySigItem,
   resolveManualDraftRowForSigItem,
+  resolveManualOneShotStoredImageUrl,
 } from "@/lib/manual-sig-broadcast";
 import { stripBundledSigPlaceholderItems } from "@/lib/sig-placeholder";
 import { buildSigSalesOverlaySyncSignature } from "@/lib/overlay-sync-signature";
@@ -1817,13 +1818,24 @@ function SigSalesOverlayPageInner() {
   );
   /** 저장 경로(인벤·수동 초안) — 카드에서 `resolveSigOverlayCardImageUrl`로 OBS용 URL 생성 */
   const oneShotStoredImageUrl = useMemo(() => {
+    if (manualOverlayMode) {
+      return resolveManualOneShotStoredImageUrl({
+        state,
+        selectedSigs: manualOverlayResultSigs,
+      });
+    }
     const draftOneShotImage = String(manualDraftEffective?.oneShotImageUrl || "").trim();
-    if (draftOneShotImage) return draftOneShotImage;
+    if (
+      draftOneShotImage &&
+      isDedicatedOneShotSigImageUrl(draftOneShotImage)
+    ) {
+      return draftOneShotImage;
+    }
     const oneShotItem = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
     const fromOneShot = (oneShotItem?.imageUrl || "").trim();
     if (isDedicatedOneShotSigImageUrl(fromOneShot)) return fromOneShot;
     return DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE;
-  }, [state?.sigInventory, manualDraftEffective]);
+  }, [state, manualOverlayMode, manualOverlayResultSigs, manualDraftEffective]);
   const oneShotImageUrl = useMemo(
     () =>
       oneShotStoredImageUrl
@@ -2597,7 +2609,7 @@ function SigSalesOverlayPageInner() {
                         soldOutStampUrl={soldOutStampUrl}
                         soldOverrideSet={resultSoldOverrideSet}
                         oneShot={oneShotForResultOverlay}
-                        signImageUrl={oneShotStoredImageUrl || currentSignImageUrl}
+                        signImageUrl={oneShotStoredImageUrl}
                         showOneShotReveal={Boolean(oneShotForResultOverlay)}
                         cardScalePct={resultRowLayout.cardScalePct}
                         className="w-full max-w-full"

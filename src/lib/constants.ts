@@ -21,12 +21,15 @@ export const BUNDLED_SIG_PLACEHOLDER_URL = "/images/sigs/dummy-sig.svg";
 /** 한방 시그 카드 기본 GIF — 당첨 시그 이미지로 대체하지 않음 */
 export const DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE = "/images/sigs/from-drive/한방시그.gif";
 
-/** 인벤·초안 URL이 한방 전용 이미지로 쓸 만한지(다른 시그 GIF 오염 방지) */
+/** 인벤·초안 URL이 한방 전용 이미지로 쓸 만한지(당첨 시그 업로드 GIF 오염 방지) */
 export function isDedicatedOneShotSigImageUrl(url: string | undefined | null): boolean {
   const s = String(url || "").trim();
   if (!s || s === BUNDLED_SIG_PLACEHOLDER_URL) return false;
-  if (/한방/i.test(s)) return true;
-  if (s.startsWith("/uploads/sigs/")) return true;
+  if (s === DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE) return true;
+  if (/한방|hanbang|one[_-]?shot/i.test(s)) return true;
+  if (s.startsWith("/uploads/sigs/")) {
+    return /한방|hanbang|one[_-]?shot/i.test(s);
+  }
   return false;
 }
 
