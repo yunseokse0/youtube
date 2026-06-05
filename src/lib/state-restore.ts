@@ -10,10 +10,11 @@ import {
   normalizeSigMatchParticipantIds,
   normalizeSigMatchPools,
   normalizeSigRolling,
+  ensureMissionItems,
   type AppState,
   type DailyLogEntry,
 } from "@/lib/state";
-import type { Member, MissionItem } from "@/types";
+import type { Member } from "@/types";
 
 /** 관리자 「상태보내기(JSON)」 수준의 전체 백업인지 */
 export function isFullBroadcastStateBackup(patch: Record<string, unknown>): boolean {
@@ -52,6 +53,7 @@ export function buildAppStateFromRestoreJson(
   const base = opts?.fullReplace ? defaultState() : opts?.base || defaultState();
   const members =
     asArray<Member>(patch.members)?.length ? (asArray<Member>(patch.members) as Member[]) : base.members;
+  const validMemberIds = new Set(members.map((m) => m.id));
 
   const next: AppState = {
     ...base,
@@ -93,7 +95,9 @@ export function buildAppStateFromRestoreJson(
       ? { contributionLogs: patch.contributionLogs as AppState["contributionLogs"] }
       : {}),
     ...(asArray<string>(patch.forbiddenWords) ? { forbiddenWords: patch.forbiddenWords as string[] } : {}),
-    ...(asArray<MissionItem>(patch.missions) ? { missions: patch.missions } : {}),
+    ...(asArray(patch.missions)
+      ? { missions: ensureMissionItems(patch.missions as unknown[]) }
+      : {}),
     ...(typeof patch.sigSoldOutStampUrl === "string"
       ? { sigSoldOutStampUrl: patch.sigSoldOutStampUrl }
       : {}),
@@ -117,10 +121,12 @@ export function buildAppStateFromRestoreJson(
             ...base.sigMatchSettings,
             ...patch.sigMatchSettings,
             sigMatchPools: normalizeSigMatchPools(
-              (patch.sigMatchSettings as AppState["sigMatchSettings"]).sigMatchPools
+              (patch.sigMatchSettings as AppState["sigMatchSettings"]).sigMatchPools,
+              validMemberIds
             ),
             participantMemberIds: normalizeSigMatchParticipantIds(
-              (patch.sigMatchSettings as AppState["sigMatchSettings"]).participantMemberIds
+              (patch.sigMatchSettings as AppState["sigMatchSettings"]).participantMemberIds,
+              validMemberIds
             ),
           },
         }
@@ -138,7 +144,12 @@ export function buildAppStateFromRestoreJson(
       ? { generalTimer: patch.generalTimer as AppState["generalTimer"] }
       : {}),
     ...(patch.matchTimerEnabled && typeof patch.matchTimerEnabled === "object"
-      ? { matchTimerEnabled: { ...base.matchTimerEnabled, ...patch.matchTimerEnabled } }
+      ? {
+          matchTimerEnabled: {
+            ...base.matchTimerEnabled,
+            ...(patch.matchTimerEnabled as AppState["matchTimerEnabled"]),
+          },
+        }
       : {}),
     ...(patch.timerDisplayStyles && typeof patch.timerDisplayStyles === "object"
       ? { timerDisplayStyles: { ...base.timerDisplayStyles, ...patch.timerDisplayStyles } as AppState["timerDisplayStyles"] }
