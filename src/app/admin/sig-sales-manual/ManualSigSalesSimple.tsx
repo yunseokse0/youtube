@@ -4,8 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { AppState } from "@/lib/state";
-import { loadStateFromApi, saveStateAsync } from "@/lib/state";
-import { STATE_PICK_SIG_SALES } from "@/lib/state-api-pick";
+import { loadStateFromApi, saveSigSalesManualStateAsync } from "@/lib/state";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
 import { buildSigSalesManualOverlayUrl } from "@/lib/sig-sales-overlay-urls";
 import { DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE } from "@/lib/constants";
@@ -49,7 +48,7 @@ export default function ManualSigSalesSimple() {
   }, [router]);
 
   const loadRemote = useCallback(async () => {
-    const remote = await loadStateFromApi(userId, { pick: STATE_PICK_SIG_SALES, forceFull: true });
+    const remote = await loadStateFromApi(userId, { forceFull: true });
     if (remote) setState(remote);
   }, [userId]);
 
@@ -124,7 +123,7 @@ export default function ManualSigSalesSimple() {
   const persistState = useCallback(
     async (next: AppState, okMsg: string, failMsg: string) => {
       setState(next);
-      const saved = await saveStateAsync(next, userId);
+      const saved = await saveSigSalesManualStateAsync(next, userId);
       setToast(saved.ok ? okMsg : failMsg);
       return saved.ok;
     },

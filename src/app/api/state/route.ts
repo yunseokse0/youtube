@@ -19,6 +19,7 @@ import {
 } from "@/lib/state";
 import type { SigItem } from "@/types";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
+import { isManualOverlaySessionId } from "@/lib/sig-sales-manual-round";
 import { createModuleLogger } from "@/lib/logger";
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
@@ -202,7 +203,20 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
   }
 
   if ("rouletteState" in patch && patch.rouletteState != null && typeof patch.rouletteState === "object") {
-    next.rouletteState = mergeRouletteUiPrefsOntoCurrent(next.rouletteState, patch.rouletteState as Partial<RouletteState>);
+    const patchRs = patch.rouletteState as Partial<RouletteState>;
+    const isManualRoulettePatch =
+      isManualOverlaySessionId(patchRs.sessionId) &&
+      (patchRs.phase === "LANDED" ||
+        patchRs.phase === "CONFIRMED" ||
+        patchRs.phase === "CONFIRM_PENDING");
+    if (isManualRoulettePatch && canApplyPatchRouletteState) {
+      next.rouletteState = normalizeRouletteState({
+        ...(next.rouletteState || base.rouletteState),
+        ...patchRs,
+      });
+    } else {
+      next.rouletteState = mergeRouletteUiPrefsOntoCurrent(next.rouletteState, patchRs);
+    }
   }
 
   return next;

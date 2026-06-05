@@ -39,8 +39,10 @@ import {
   isOverlayPickPartial,
   revisionForStatePick,
   STATE_PICK_OBS_TEXT,
+  STATE_PICK_SIG_SALES,
   type StateApiPick,
 } from "@/lib/state-api-pick";
+import { MANUAL_SIG_DRAFT_STATE_KEY } from "@/lib/manual-sig-workbench";
 import { slimSigInventoryForWire } from "@/lib/state-wire-slim";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
 export type {
@@ -1355,6 +1357,78 @@ export async function saveStateAsync(state: AppState, userId?: string | null): P
   }
 }
 
+/** 수동 시그 리롤·판매 확정 — 시그·초안·회전판만 PATCH(멤버·후원·프리셋 덮어쓰기 방지) */
+export function buildSigSalesManualApiPatch(next: AppState, userId?: string | null): Partial<AppState> {
+  const normalizedSigInventory = slimSigInventoryForWire(
+    normalizeSigInventory(next.sigInventory),
+    userId ?? undefined
+  );
+  const os =
+    next.overlaySettings && typeof next.overlaySettings === "object"
+      ? (next.overlaySettings as Record<string, unknown>)
+      : {};
+  const manualDraft = os[MANUAL_SIG_DRAFT_STATE_KEY];
+  const patch: Partial<AppState> = {
+    updatedAt: next.updatedAt ?? Date.now(),
+    sigInventory: normalizedSigInventory,
+    sigSalesExcludedIds: next.sigSalesExcludedIds,
+    sigSoldOutStampUrl: next.sigSoldOutStampUrl,
+    sigRollingMeta: next.sigRollingMeta,
+  };
+  if (manualDraft && typeof manualDraft === "object") {
+    patch.overlaySettings = { [MANUAL_SIG_DRAFT_STATE_KEY]: manualDraft } as AppState["overlaySettings"];
+  }
+  if (next.rouletteState) {
+    patch.rouletteState = next.rouletteState;
+  }
+  return patch;
+}
+
+export function mergeSigSalesManualIntoLocalState(base: AppState, next: AppState): AppState {
+  const baseOs =
+    base.overlaySettings && typeof base.overlaySettings === "object"
+      ? (base.overlaySettings as Record<string, unknown>)
+      : {};
+  const nextOs =
+    next.overlaySettings && typeof next.overlaySettings === "object"
+      ? (next.overlaySettings as Record<string, unknown>)
+      : {};
+  return normalizeStateForPersistence(
+    syncBattleStateWithMembers({
+      ...base,
+      sigInventory: next.sigInventory,
+      sigSalesExcludedIds: next.sigSalesExcludedIds,
+      sigSoldOutStampUrl: next.sigSoldOutStampUrl,
+      sigRollingMeta: next.sigRollingMeta,
+      overlaySettings: { ...baseOs, ...nextOs } as AppState["overlaySettings"],
+      rouletteState: {
+        ...base.rouletteState,
+        ...next.rouletteState,
+      },
+      updatedAt: Date.now(),
+    })
+  );
+}
+
+export async function saveSigSalesManualStateAsync(
+  state: AppState,
+  userId?: string | null
+): Promise<SaveStateAsyncResult> {
+  if (typeof window === "undefined") return { ok: false };
+  const next = normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() }));
+  const baseLocal = loadState(userId);
+  const mergedLocal = mergeSigSalesManualIntoLocalState(baseLocal || next, next);
+  try {
+    window.localStorage.setItem(storageKey(userId), JSON.stringify(mergedLocal));
+  } catch {}
+  try {
+    const patch = buildSigSalesManualApiPatch(next, userId);
+    return await enqueueServerSave(JSON.stringify(patch), userId, mergedLocal);
+  } catch {
+    return { ok: false };
+  }
+}
+
 const loadStateInflight = new Map<string, Promise<AppState | null>>();
 
 let warnedMemoryStateBackend = false;
@@ -1436,7 +1510,13 @@ async function doLoadStateFromApi(
       const base = defaultState();
       data = { ...base, ...data } as AppState;
     } else if (isOverlayPickPartial(data)) {
-      const base = defaultState();
+      let base = defaultState();
+      if (typeof window !== "undefined" && options?.pick === STATE_PICK_SIG_SALES) {
+        const local = loadState(userId);
+        if (local && hasMeaningfulBroadcastData(local)) {
+          base = local;
+        }
+      }
       const patchOs =
         data.overlaySettings && typeof data.overlaySettings === "object"
           ? data.overlaySettings
