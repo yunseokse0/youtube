@@ -27,6 +27,7 @@
     "sig:restore-inventory": "node scripts/restore-sig-inventory-snapshot.mjs",
     "sig:restore-images": "node scripts/restore-sig-images-by-name.mjs",
     "sig:import-prices-excel": "node scripts/import-sig-prices-excel.mjs",
+    "sig:restore-prices-excel": "node scripts/restore-from-sig-prices-excel.mjs",
     "sig:export-catalog": "node scripts/export-local-sigs.json.mjs",
     "sig:dedupe-file": "node scripts/dedupe-sig-inventory-file.mjs && npm run sig:export-catalog",
     "sig:link-siggif-local": "node scripts/link-sig-images-from-siggif-local.mjs && npm run sig:export-catalog",

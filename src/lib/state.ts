@@ -1777,6 +1777,28 @@ export type DailyLogEntry = {
   donors: Donor[];
 };
 
+/** 일일 로그에서 가장 최근 스냅샷(후원·멤버 복구용) */
+export function pickLatestDailyLogEntry(
+  log: Record<string, DailyLogEntry[] | unknown[]> | null | undefined
+): DailyLogEntry | null {
+  if (!log || typeof log !== "object") return null;
+  let best: DailyLogEntry | null = null;
+  let bestTs = 0;
+  for (const entries of Object.values(log)) {
+    if (!Array.isArray(entries)) continue;
+    for (const raw of entries) {
+      if (!raw || typeof raw !== "object") continue;
+      const e = raw as DailyLogEntry;
+      const ts = Date.parse(String(e.at || ""));
+      if (!Number.isFinite(ts) || ts <= bestTs) continue;
+      if (!Array.isArray(e.donors) && !Array.isArray(e.members)) continue;
+      bestTs = ts;
+      best = e;
+    }
+  }
+  return best;
+}
+
 export function loadDailyLog(userId?: string | null): Record<string, DailyLogEntry[]> {
   if (typeof window === "undefined") return {};
   try {

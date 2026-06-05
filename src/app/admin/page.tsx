@@ -26,6 +26,7 @@ import {
   ensureMissionItems,
   appendDailyLog,
   loadDailyLogFromApi,
+  pickLatestDailyLogEntry,
   parseAmount,
   formatChatLine,
   storageKey,
@@ -86,7 +87,11 @@ import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
 import { planSigBulkReupload, sigBulkFilesWithoutNameMatch } from "@/lib/sig-image-bulk";
 import { createSafeFilePreviewUrl, revokeSafeFilePreviewUrl } from "@/lib/safe-file-preview";
 import { formatSigImageUploadFailureMessage, SIG_UPLOAD_NGINX_413_HINT } from "@/lib/sig-upload-errors";
-import { applySigPriceExcelRows, sigInventoryToExcelRows } from "@/lib/sig-inventory-excel";
+import {
+  applySigPriceExcelRows,
+  buildSigInventoryFromExcelRows,
+  sigInventoryToExcelRows,
+} from "@/lib/sig-inventory-excel";
 import { repairDiskUploadSigImagePath } from "@/lib/sig-image-mode";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 import { normalizeSigDedupKeyImageUrl } from "@/lib/sig-inventory-dedup";
@@ -424,6 +429,7 @@ export default function AdminPage() {
   const [sigSalesModalTab, setSigSalesModalTab] = useState<SigSalesHybridTab>("inventory");
   const sigBulkReuploadInputRef = useRef<HTMLInputElement | null>(null);
   const sigRestoreJsonInputRef = useRef<HTMLInputElement | null>(null);
+  const sigRestoreExcelInputRef = useRef<HTMLInputElement | null>(null);
   const openSigSalesModal = useCallback((tab: SigSalesHybridTab = "inventory") => {
     setSigSalesModalTab(tab);
     setSigSalesModalOpen(true);
@@ -2721,8 +2727,12 @@ export default function AdminPage() {
         result.notFound.length > 0
           ? ` · 미매칭 ${result.notFound.length}개: ${result.notFound.slice(0, 4).join(", ")}${result.notFound.length > 4 ? "…" : ""}`
           : "";
+      const restoreHint =
+        result.notFound.length >= 5 && result.updated < result.notFound.length
+          ? " · 목록이 비어 있으면 「엑셀에서 시그 목록 복구」를 사용하세요."
+          : "";
       setSigExcelResult(
-        `가격 엑셀 반영: ${result.updated}건 업데이트, ${result.skipped}건 건너뜀${failSuffix}`
+        `가격 엑셀 반영: ${result.updated}건 업데이트, ${result.skipped}건 건너뜀${failSuffix}${restoreHint}`
       );
       return next;
     });
@@ -2771,7 +2781,14 @@ export default function AdminPage() {
       if (!file) return;
       try {
         const text = await file.text();
-        const parsed = JSON.parse(text) as { sigInventory?: unknown; sigRolling?: unknown; sigRollingMeta?: unknown };
+        const parsed = JSON.parse(text) as {
+          sigInventory?: unknown;
+          sigRolling?: unknown;
+          sigRollingMeta?: unknown;
+          members?: unknown;
+          donors?: unknown;
+          memberPositions?: unknown;
+        };
         const inv = Array.isArray(parsed?.sigInventory)
           ? parsed.sigInventory
           : Array.isArray(parsed)
@@ -2781,9 +2798,14 @@ export default function AdminPage() {
           setSigExcelResult("JSON에 sigInventory 배열이 없습니다.");
           return;
         }
+        const donorCount = Array.isArray(parsed.donors) ? parsed.donors.length : 0;
+        const memberCount = Array.isArray(parsed.members) ? parsed.members.length : 0;
         if (
           !window.confirm(
-            `시그 목록 ${inv.length}개를 복구하고 서버에 저장합니다.\n(가격·판매량·이미지 URL 포함. 멤버·후원 데이터는 그대로 유지)\n계속할까요?`
+            `시그 목록 ${inv.length}개를 복구하고 서버에 저장합니다.` +
+              (memberCount > 0 ? `\n멤버 ${memberCount}명` : "") +
+              (donorCount > 0 ? ` · 후원 기록 ${donorCount}건` : "") +
+              `\n계속할까요?`
           )
         ) {
           return;
@@ -2792,6 +2814,20 @@ export default function AdminPage() {
           const draft: AppState = {
             ...prev,
             sigInventory: inv as AppState["sigInventory"],
+            ...(Array.isArray(parsed.members) && parsed.members.length > 0
+              ? { members: parsed.members as AppState["members"] }
+              : {}),
+            ...(Array.isArray(parsed.donors)
+              ? { donors: normalizeDonorsArray(parsed.donors as AppState["donors"]) }
+              : {}),
+            ...(parsed.memberPositions != null
+              ? {
+                  memberPositions: normalizeMemberPositions(
+                    parsed.memberPositions as AppState["memberPositions"],
+                    (Array.isArray(parsed.members) ? parsed.members : prev.members) as Member[]
+                  ),
+                }
+              : {}),
             ...(parsed.sigRolling != null ? { sigRolling: parsed.sigRolling as AppState["sigRolling"] } : {}),
             ...(parsed.sigRollingMeta != null
               ? { sigRollingMeta: parsed.sigRollingMeta as AppState["sigRollingMeta"] }
@@ -2802,7 +2838,11 @@ export default function AdminPage() {
           persistState(next);
           return next;
         });
-        setSigExcelResult(`JSON에서 시그 ${inv.length}개 복구·저장했습니다.`);
+        setSigExcelResult(
+          `JSON 복구·저장: 시그 ${inv.length}개` +
+            (memberCount > 0 ? ` · 멤버 ${memberCount}` : "") +
+            (donorCount > 0 ? ` · 후원 ${donorCount}건` : "")
+        );
       } catch {
         setSigExcelResult("JSON 파싱 실패 또는 형식 오류");
       } finally {
@@ -2811,6 +2851,99 @@ export default function AdminPage() {
     },
     [persistState, syncOneShotSigItem]
   );
+
+  const restoreSigInventoryFromExcelFile = useCallback(
+    async (file: File | null) => {
+      if (!file) return;
+      try {
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: "array" });
+        const first = wb.SheetNames[0];
+        if (!first) {
+          setSigExcelResult("엑셀 시트가 비어 있습니다.");
+          return;
+        }
+        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[first], { defval: "" });
+        if (!rows.length) {
+          setSigExcelResult("엑셀에 데이터 행이 없습니다.");
+          return;
+        }
+        const { inventory, skipped, duplicateNames } = buildSigInventoryFromExcelRows(
+          rows,
+          state.members || []
+        );
+        if (!inventory.length) {
+          setSigExcelResult("엑셀에서 복구할 시그 행을 찾지 못했습니다.");
+          return;
+        }
+        if (
+          !window.confirm(
+            `엑셀에서 시그 ${inventory.length}개로 목록을 교체합니다.\n` +
+              `(가격·이미지·판매수 포함. 스킵 ${skipped}건)\n` +
+              `※ 「가격 엑셀 업로드」와 달리 전체 목록을 새로 만듭니다.\n계속할까요?`
+          )
+        ) {
+          return;
+        }
+        setState((prev: AppState) => {
+          const draft: AppState = {
+            ...prev,
+            sigInventory: inventory,
+            updatedAt: Date.now(),
+          };
+          const next = syncOneShotSigItem(draft);
+          persistState(next);
+          return next;
+        });
+        const dupSuffix =
+          duplicateNames.length > 0
+            ? ` · 중복 이름 ${duplicateNames.length}건 제외`
+            : "";
+        setSigExcelResult(`엑셀에서 시그 ${inventory.length}개 복구·저장${dupSuffix}`);
+      } catch {
+        setSigExcelResult("엑셀 파싱 실패 또는 형식 오류");
+      } finally {
+        if (sigRestoreExcelInputRef.current) sigRestoreExcelInputRef.current.value = "";
+      }
+    },
+    [state.members, persistState, syncOneShotSigItem]
+  );
+
+  const restoreDonorsFromDailyLogSnapshot = useCallback(async () => {
+    const serverLog = await loadDailyLogFromApi(user?.id);
+    const localLog = loadDailyLog(user?.id);
+    const merged: Record<string, DailyLogEntry[]> = { ...localLog, ...serverLog };
+    const latest = pickLatestDailyLogEntry(merged);
+    if (!latest) {
+      window.alert("일일 로그에 복구할 후원 스냅샷이 없습니다.");
+      return;
+    }
+    const donorCount = Array.isArray(latest.donors) ? latest.donors.length : 0;
+    const memberCount = Array.isArray(latest.members) ? latest.members.length : 0;
+    if (donorCount === 0 && memberCount === 0) {
+      window.alert("최근 일일 로그에 후원·멤버 데이터가 없습니다.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `일일 로그 최근 스냅샷(${latest.at})에서 복구합니다.\n` +
+          `후원 ${donorCount}건 · 멤버 ${memberCount}명\n계속할까요?`
+      )
+    ) {
+      return;
+    }
+    setState((prev: AppState) => {
+      const draft: AppState = {
+        ...prev,
+        ...(memberCount > 0 ? { members: latest.members } : {}),
+        ...(donorCount > 0 ? { donors: normalizeDonorsArray(latest.donors) } : {}),
+        updatedAt: Date.now(),
+      };
+      persistState(draft);
+      return draft;
+    });
+    window.alert(`일일 로그 복구 완료: 후원 ${donorCount}건 · 멤버 ${memberCount}명`);
+  }, [user?.id, persistState]);
 
   const dedupeSigInventoryItems = useCallback(
     (strategy: "imageUrl" | "nameAndPrice") => {
@@ -7120,13 +7253,29 @@ export default function AdminPage() {
                       }}
                     />
                   </label>
+                  <label
+                    className="px-3 py-1 rounded bg-lime-900/85 hover:bg-lime-800 text-sm cursor-pointer"
+                    title="시그 가격 엑셀 다운로드 파일(sig-prices-*.xlsx)로 전체 목록 복구"
+                  >
+                    엑셀에서 시그 목록 복구
+                    <input
+                      className="hidden"
+                      type="file"
+                      accept=".xlsx,.xls"
+                      ref={sigRestoreExcelInputRef}
+                      onChange={(e) => {
+                        void restoreSigInventoryFromExcelFile(e.target.files?.[0] || null);
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
                   <button
                     type="button"
                     className="px-3 py-1 rounded bg-teal-900/80 hover:bg-teal-800 text-sm"
-                    title="상태보내기(JSON) 또는 data/sig-inventory-restore-backup.json 등 백업 파일로 시그·가격 복구"
+                    title="상태보내기(JSON) 백업 — 시그·멤버·후원 포함 가능"
                     onClick={() => sigRestoreJsonInputRef.current?.click()}
                   >
-                    JSON에서 시그 복구
+                    JSON에서 방송 상태 복구
                   </button>
                   <button
                     type="button"
@@ -7169,7 +7318,8 @@ export default function AdminPage() {
                   </button>
                   {sigExcelResult ? <span className="text-xs text-neutral-300">{sigExcelResult}</span> : null}
                   <span className="text-[11px] text-neutral-500 w-full">
-                    「가격 다운로드 → 엑셀에서 가격 수정 → 가격 업로드」로 일괄 반영. id 또는 이름으로 매칭합니다.
+                    「가격 업로드」는 <strong className="text-neutral-300">기존 목록의 가격만</strong> 수정합니다. 목록이 리셋됐으면
+                    「<strong className="text-lime-200/90">엑셀에서 시그 목록 복구</strong>」에 sig-prices 다운로드 파일을 넣으세요.
                   </span>
                 </div>
                 {sigUploadProgress ? (
@@ -8353,7 +8503,17 @@ export default function AdminPage() {
             </section>
 
             <section className={`${panelCardClass} p-4 md:p-6 ${simpleMode ? "hidden" : ""}`}>
-              <h2 className="text-lg font-semibold mb-3">후원자 리스트</h2>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-lg font-semibold">후원자 리스트</h2>
+                <button
+                  type="button"
+                  className="px-3 py-1.5 rounded bg-violet-800 hover:bg-violet-700 text-sm"
+                  title="3분 자동 저장된 일일 로그 최근 스냅샷에서 후원·멤버 금액 복구"
+                  onClick={() => void restoreDonorsFromDailyLogSnapshot()}
+                >
+                  일일 로그에서 후원 복구
+                </button>
+              </div>
               <div className="max-h-[260px] overflow-auto pr-1">
                 <table className="w-full text-sm">
                   <thead>

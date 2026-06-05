@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { applySigPriceExcelRows, sigInventoryToExcelRows } from "@/lib/sig-inventory-excel";
+import {
+  applySigPriceExcelRows,
+  buildSigInventoryFromExcelRows,
+  sigInventoryToExcelRows,
+} from "@/lib/sig-inventory-excel";
 import type { SigItem } from "@/types";
 
 const baseItems: SigItem[] = [
@@ -53,5 +57,34 @@ describe("applySigPriceExcelRows", () => {
     const { result } = applySigPriceExcelRows(baseItems, [{ 이름: "없는시그", 가격: 1 }], []);
     expect(result.updated).toBe(0);
     expect(result.notFound).toEqual(["없는시그"]);
+  });
+});
+
+describe("buildSigInventoryFromExcelRows", () => {
+  it("builds full inventory from sig-prices export columns", () => {
+    const { inventory, skipped } = buildSigInventoryFromExcelRows(
+      [
+        {
+          id: "sig_roll_1",
+          이름: "04클럽춤",
+          가격: 23000,
+          최대수량: 1,
+          판매수: 2,
+          판매활성: "Y",
+          롤링노출: "Y",
+          이미지URL: "/uploads/sigs/finalent/a.gif",
+        },
+      ],
+      []
+    );
+    expect(skipped).toBe(0);
+    expect(inventory).toHaveLength(1);
+    expect(inventory[0]).toMatchObject({
+      id: "sig_roll_1",
+      name: "04클럽춤",
+      price: 23000,
+      soldCount: 2,
+      imageUrl: "/uploads/sigs/finalent/a.gif",
+    });
   });
 });
