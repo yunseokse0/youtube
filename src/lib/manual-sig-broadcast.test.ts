@@ -346,4 +346,79 @@ describe("buildManualSigSalesConfirmState", () => {
     expect(row?.soldCount).toBe(1);
     expect(next.rouletteState?.phase).toBe("CONFIRMED");
   });
+
+  it("confirms sold sig when draft slot index differs from display order", () => {
+    const state = {
+      sigInventory: [
+        {
+          id: "sig_a",
+          name: "픽션",
+          price: 24900,
+          imageUrl: "",
+          memberId: "",
+          maxCount: 1,
+          soldCount: 0,
+          isRolling: true,
+          isActive: true,
+        },
+        {
+          id: "sig_b",
+          name: "옴브리뉴",
+          price: 25200,
+          imageUrl: "",
+          memberId: "",
+          maxCount: 1,
+          soldCount: 0,
+          isRolling: true,
+          isActive: true,
+        },
+      ],
+      overlaySettings: {
+        sigSalesManualDraftV1: {
+          drafts: [
+            { sourceSigId: "sig_b", name: "옴브리뉴", priceInput: "25200", imageUrl: "" },
+            { sourceSigId: "sig_a", name: "픽션", priceInput: "24900", imageUrl: "" },
+          ],
+          oneShotName: "한방 시그",
+          oneShotPriceInput: "",
+          oneShotImageUrl: "",
+          sigSoldFlags: [false, true, false, false, false],
+          oneShotMarkSold: false,
+        },
+      },
+      rouletteState: { phase: "LANDED", selectedSigs: [] },
+    } as AppState;
+    const selected: SigItem[] = [
+      {
+        id: "sig_a",
+        name: "픽션",
+        price: 24900,
+        imageUrl: "",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+      {
+        id: "sig_b",
+        name: "옴브리뉴",
+        price: 25200,
+        imageUrl: "",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+    ];
+    const next = buildManualSigSalesConfirmState(state, {
+      selected,
+      sigSoldFlags: [false, true, false, false, false],
+      oneShotMarkSold: false,
+      userId: "finalent",
+    });
+    expect(next.sigInventory?.find((x) => x.id === "sig_a")?.soldCount).toBe(1);
+    expect(next.sigInventory?.find((x) => x.id === "sig_b")?.soldCount).toBe(0);
+  });
 });

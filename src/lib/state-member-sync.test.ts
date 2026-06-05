@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   buildDefaultMembersCount,
   defaultState,
+  hasExpandedSigInventory,
   hasMeaningfulBroadcastData,
   isDefaultLikeState,
   isDefaultPlaceholderMemberList,
+  isShrunkToDefaultSigInventory,
   membersDifferByIds,
 } from "@/lib/state";
+import { DEFAULT_SIG_INVENTORY } from "@/lib/constants";
 import type { AppState, Member } from "@/types";
 
 describe("member sync helpers", () => {
@@ -37,5 +40,27 @@ describe("member sync helpers", () => {
     const one = buildDefaultMembersCount(1);
     expect(one).toHaveLength(1);
     expect(isDefaultPlaceholderMemberList(one as Member[])).toBe(true);
+  });
+
+  it("detects shrunk vs expanded sig inventory", () => {
+    const shrunk = DEFAULT_SIG_INVENTORY.map((x) => ({ ...x }));
+    expect(isShrunkToDefaultSigInventory(shrunk)).toBe(true);
+    expect(hasExpandedSigInventory(shrunk)).toBe(false);
+    const expanded = [
+      ...shrunk,
+      {
+        id: "sig_roll_test",
+        name: "04클럽춤",
+        price: 23000,
+        imageUrl: "/uploads/sigs/finalent/test.gif",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+    ];
+    expect(isShrunkToDefaultSigInventory(expanded)).toBe(false);
+    expect(hasExpandedSigInventory(expanded)).toBe(true);
   });
 });

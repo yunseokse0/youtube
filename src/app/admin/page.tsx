@@ -20,6 +20,8 @@ import {
   isDefaultPlaceholderMemberList,
   membersDifferByIds,
   hasMeaningfulBroadcastData,
+  hasExpandedSigInventory,
+  isShrunkToDefaultSigInventory,
   normalizeDonorsArray,
   ensureMissionItems,
   appendDailyLog,
@@ -421,6 +423,7 @@ export default function AdminPage() {
   const [sigSalesModalOpen, setSigSalesModalOpen] = useState(false);
   const [sigSalesModalTab, setSigSalesModalTab] = useState<SigSalesHybridTab>("inventory");
   const sigBulkReuploadInputRef = useRef<HTMLInputElement | null>(null);
+  const sigRestoreJsonInputRef = useRef<HTMLInputElement | null>(null);
   const openSigSalesModal = useCallback((tab: SigSalesHybridTab = "inventory") => {
     setSigSalesModalTab(tab);
     setSigSalesModalOpen(true);
@@ -987,9 +990,9 @@ export default function AdminPage() {
     /** 저장 대기·직후 편집 구간: 서버 GET이 신규 시그를 아직 안 담았을 때 목록이 사라지지 않게 */
     const recentlyEditedSig =
       Date.now() - lastLocalPersistAtRef.current < SIG_INVENTORY_LOCAL_PROTECT_MS;
+    const localInv = local.sigInventory || [];
+    const incomingInv = merged.sigInventory || [];
     if (pendingUnsyncedRef.current || recentlyEditedSig) {
-      const localInv = local.sigInventory || [];
-      const incomingInv = merged.sigInventory || [];
       const incomingIdSet = new Set(incomingInv.map((x) => x.id));
       const hasLocalOnlyRows = localInv.some((x) => !incomingIdSet.has(x.id));
       const localSigIds = localInv.map((x) => x.id).join(",");
@@ -998,6 +1001,10 @@ export default function AdminPage() {
         merged = { ...merged, sigInventory: localInv };
         didPreserve = true;
       }
+    } else if (hasExpandedSigInventory(localInv) && isShrunkToDefaultSigInventory(incomingInv)) {
+      /** 서버 재시작·기본 목록 초기화 후 GET이 프리셋 8개만 줄 때 로컬 백업 목록 유지 */
+      merged = { ...merged, sigInventory: localInv };
+      didPreserve = true;
     }
     return { merged: { ...merged, donors: normalizeDonorsArray(merged.donors) }, didPreserve };
   }, []);
@@ -2758,6 +2765,52 @@ export default function AdminPage() {
     });
     setSigExcelResult("시그 목록·관련 설정을 기본값으로 초기화했습니다.");
   };
+
+  const restoreSigInventoryFromJsonFile = useCallback(
+    async (file: File | null) => {
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const parsed = JSON.parse(text) as { sigInventory?: unknown; sigRolling?: unknown; sigRollingMeta?: unknown };
+        const inv = Array.isArray(parsed?.sigInventory)
+          ? parsed.sigInventory
+          : Array.isArray(parsed)
+            ? parsed
+            : null;
+        if (!inv?.length) {
+          setSigExcelResult("JSON에 sigInventory 배열이 없습니다.");
+          return;
+        }
+        if (
+          !window.confirm(
+            `시그 목록 ${inv.length}개를 복구하고 서버에 저장합니다.\n(가격·판매량·이미지 URL 포함. 멤버·후원 데이터는 그대로 유지)\n계속할까요?`
+          )
+        ) {
+          return;
+        }
+        setState((prev: AppState) => {
+          const draft: AppState = {
+            ...prev,
+            sigInventory: inv as AppState["sigInventory"],
+            ...(parsed.sigRolling != null ? { sigRolling: parsed.sigRolling as AppState["sigRolling"] } : {}),
+            ...(parsed.sigRollingMeta != null
+              ? { sigRollingMeta: parsed.sigRollingMeta as AppState["sigRollingMeta"] }
+              : {}),
+            updatedAt: Date.now(),
+          };
+          const next = syncOneShotSigItem(draft);
+          persistState(next);
+          return next;
+        });
+        setSigExcelResult(`JSON에서 시그 ${inv.length}개 복구·저장했습니다.`);
+      } catch {
+        setSigExcelResult("JSON 파싱 실패 또는 형식 오류");
+      } finally {
+        if (sigRestoreJsonInputRef.current) sigRestoreJsonInputRef.current.value = "";
+      }
+    },
+    [persistState, syncOneShotSigItem]
+  );
 
   const dedupeSigInventoryItems = useCallback(
     (strategy: "imageUrl" | "nameAndPrice") => {
@@ -7069,6 +7122,14 @@ export default function AdminPage() {
                   </label>
                   <button
                     type="button"
+                    className="px-3 py-1 rounded bg-teal-900/80 hover:bg-teal-800 text-sm"
+                    title="상태보내기(JSON) 또는 data/sig-inventory-restore-backup.json 등 백업 파일로 시그·가격 복구"
+                    onClick={() => sigRestoreJsonInputRef.current?.click()}
+                  >
+                    JSON에서 시그 복구
+                  </button>
+                  <button
+                    type="button"
                     className="px-3 py-1 rounded bg-orange-900/80 hover:bg-orange-800 text-sm"
                     title="앱 설치 직후와 동일한 시그 행·판매 제외·멤버 프리셋·회전판·롤링 설정"
                     onClick={resetSigInventoryToDefaults}
@@ -7572,6 +7633,15 @@ export default function AdminPage() {
               </div>
                 ) : null}
               </SigSalesHybridModal>
+              <input
+                ref={sigRestoreJsonInputRef}
+                type="file"
+                className="hidden"
+                accept=".json,application/json"
+                onChange={(e) => {
+                  void restoreSigInventoryFromJsonFile(e.target.files?.[0] || null);
+                }}
+              />
               <input
                 ref={sigBulkReuploadInputRef}
                 type="file"

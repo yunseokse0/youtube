@@ -71,7 +71,7 @@ export default function ManualSigOverlaySimple() {
   const scaleRaw = sp.get("sigResultScalePct") || sp.get("resultScalePct") || "";
   const scalePct = (() => {
     const n = Number(scaleRaw);
-    return Number.isFinite(n) ? Math.max(50, Math.min(100, Math.floor(n))) : 78;
+    return Number.isFinite(n) ? Math.max(62, Math.min(100, Math.floor(n))) : 92;
   })();
 
   const pollMs = useMemo(() => {
@@ -162,8 +162,9 @@ export default function ManualSigOverlaySimple() {
       layoutSigOverlayResultRow({
         cellCount: selected.length + (oneShot ? 1 : 0),
         userScalePct: scalePct,
+        allowOverflow: hostObs,
       }),
-    [scalePct, selected.length, oneShot]
+    [scalePct, selected.length, oneShot, hostObs]
   );
 
   const phase = String(state?.rouletteState?.phase || "");

@@ -9,7 +9,14 @@ import {
   normalizeOverlayPresetDonationGoals,
 } from "@/lib/goal-preset-math";
 import { DEFAULT_SIG_INVENTORY } from "@/lib/constants";
-import { defaultState, mergeDonorsForMultiTabSave, normalizeRouletteState, normalizeSigRolling } from "@/lib/state";
+import {
+  defaultState,
+  hasExpandedSigInventory,
+  isShrunkToDefaultSigInventory,
+  mergeDonorsForMultiTabSave,
+  normalizeRouletteState,
+  normalizeSigRolling,
+} from "@/lib/state";
 import type { SigItem } from "@/types";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
 import { createModuleLogger } from "@/lib/logger";
@@ -141,7 +148,9 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
     next.sigInventory = base.sigInventory;
   } else if (
     Array.isArray(patch.sigInventory) &&
-    looksLikeAccidentalDefaultSigInventory(patch.sigInventory, base.sigInventory?.length ?? 0)
+    (looksLikeAccidentalDefaultSigInventory(patch.sigInventory, base.sigInventory?.length ?? 0) ||
+      (isShrunkToDefaultSigInventory(patch.sigInventory) &&
+        hasExpandedSigInventory(base.sigInventory)))
   ) {
     next.sigInventory = base.sigInventory;
     logger.warn("sigInventory 기본 프리셋 덮어쓰기 차단", {

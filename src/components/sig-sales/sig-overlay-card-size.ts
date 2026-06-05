@@ -24,11 +24,11 @@ export const SIG_OVERLAY_CARD_MEDIA_BOX_BROADCAST_CLASS =
 
 /** 방송 오버레이: 개별·한방 카드 하단 이름·금액 줄(동일 높이) */
 export const SIG_OVERLAY_CARD_FOOTER_CLASS =
-  "space-y-0.5 rounded-b-[10px] border-t border-white/20 bg-black/92 px-1.5 py-1.5";
+  "space-y-0.5 rounded-b-[10px] border-t border-white/20 bg-black/92 px-2 py-2";
 export const SIG_OVERLAY_CARD_NAME_CLASS =
-  "truncate font-extrabold text-[13px] leading-tight text-white sm:text-[14px] [text-shadow:0_1px_0_rgba(0,0,0,1),0_0_10px_rgba(0,0,0,0.95)]";
+  "truncate font-extrabold text-[15px] leading-tight text-white sm:text-[17px] [text-shadow:0_1px_0_rgba(0,0,0,1),0_0_10px_rgba(0,0,0,0.95)]";
 export const SIG_OVERLAY_CARD_PRICE_CLASS =
-  "text-sm font-black tabular-nums text-yellow-200 sm:text-[15px] [text-shadow:0_1px_0_rgba(0,0,0,1),0_0_8px_rgba(0,0,0,0.9)]";
+  "text-base font-black tabular-nums text-yellow-200 sm:text-[18px] [text-shadow:0_1px_0_rgba(0,0,0,1),0_0_8px_rgba(0,0,0,0.9)]";
 
 /** 방송 오버레이 카드 셸(개별 시그) — 한방 카드도 동일 패딩·모서리 */
 export const SIG_OVERLAY_CARD_SHELL_CLASS =
@@ -88,7 +88,7 @@ export function sigOverlayBroadcastCardTotalHeightPx(
   withToggle = false
 ): number {
   const mediaH = sigOverlayBroadcastMediaHeightPx(scalePct);
-  const footerH = withToggle ? 76 : 52;
+  const footerH = withToggle ? 76 : 58;
   const shellPad = 16;
   return mediaH + footerH + shellPad;
 }
@@ -120,15 +120,18 @@ export function layoutSigOverlayResultRow(opts: {
   cellCount: number;
   userScalePct?: number;
   maxRowWidthPx?: number;
+  /** true: OBS에서 카드가 화면보다 넓어져도 뷰포트 맞춤 축소 생략 */
+  allowOverflow?: boolean;
 }): { cardScalePct: number; bandStyle: CSSProperties } {
   const cells = Math.max(1, Math.floor(opts.cellCount || 1));
-  const user = clampSigOverlayResultScalePct(opts.userScalePct ?? 78) / 100;
+  const user = clampSigOverlayResultScalePct(opts.userScalePct ?? 92) / 100;
   const maxW = Math.max(360, Math.floor(opts.maxRowWidthPx ?? 1080));
-  const gapPx = 4;
+  const gapPx = 6;
   const natural = cells * SIG_OVERLAY_CARD_MAX_PX + Math.max(0, cells - 1) * gapPx;
-  const fit = natural > 0 ? Math.min(1, maxW / natural) : 1;
+  const fit =
+    opts.allowOverflow || natural <= 0 ? 1 : Math.min(1, maxW / natural);
   const combined = Math.min(user, fit);
-  const cardScalePct = Math.max(50, Math.min(100, Math.floor(combined * 100)));
+  const cardScalePct = Math.max(62, Math.min(100, Math.floor(combined * 100)));
   return {
     cardScalePct,
     bandStyle: sigOverlayResultBandStyle(cardScalePct),

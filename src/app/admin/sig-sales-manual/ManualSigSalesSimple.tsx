@@ -77,7 +77,7 @@ export default function ManualSigSalesSimple() {
     if (typeof window === "undefined") return "";
     return buildSigSalesManualOverlayUrl(window.location.origin, userId, {
       memberId: memberFilterId || undefined,
-      sigResultScalePct: 78,
+      sigResultScalePct: 92,
     });
   }, [userId, memberFilterId]);
 
@@ -181,23 +181,35 @@ export default function ManualSigSalesSimple() {
     }
   }, [state, canReroll, pool.length, userId, memberFilterId, persistState]);
 
-  const onConfirmSales = useCallback(async () => {
+  const onConfirmSales = useCallback(
+    async (opts?: { onlyDraftIdx?: number }) => {
     if (!state) return;
     if (displaySigs.length < MANUAL_REROLL_MIN_POOL) {
       setToast("당첨 시그가 없습니다. 먼저 리롤을 실행하세요.");
       return;
     }
-    if (!hasAnySoldMark) {
+    const onlyIdx = opts?.onlyDraftIdx;
+    const flagsForConfirm =
+      onlyIdx != null && onlyIdx >= 0 && onlyIdx < 5
+        ? Array.from({ length: 5 }, (_, i) => i === onlyIdx)
+        : soldFlags;
+    const oneShotForConfirm = onlyIdx != null ? false : oneShotMarkSold;
+    const hasMark =
+      onlyIdx != null
+        ? true
+        : flagsForConfirm.some(Boolean) || oneShotForConfirm;
+    if (!hasMark) {
       setToast("판매완료할 시그를 체크한 뒤 「판매 확정」을 누르세요.");
       return;
     }
     setBusy(true);
     try {
-      const cascade = soldFlagsWithOneShotCascade(soldFlags, oneShotMarkSold);
+      const cascade = soldFlagsWithOneShotCascade(flagsForConfirm, oneShotForConfirm);
       const next = buildManualSigSalesConfirmState(state, {
         selected: displaySigs,
         sigSoldFlags: cascade,
-        oneShotMarkSold,
+        oneShotMarkSold: oneShotForConfirm,
+        userId,
       });
       const ok = await persistState(
         next,
@@ -210,15 +222,17 @@ export default function ManualSigSalesSimple() {
     } finally {
       setBusy(false);
     }
-  }, [
-    state,
-    displaySigs,
-    hasAnySoldMark,
-    soldFlags,
-    oneShotMarkSold,
-    persistState,
-    loadRemote,
-  ]);
+  },
+    [
+      state,
+      displaySigs,
+      soldFlags,
+      oneShotMarkSold,
+      userId,
+      persistState,
+      loadRemote,
+    ]
+  );
 
   const onToggleSigSold = useCallback(
     async (idx: number, sold: boolean) => {
@@ -275,7 +289,7 @@ export default function ManualSigSalesSimple() {
 
   return (
     <main className="min-h-screen bg-neutral-950 p-6 text-white">
-      <div className="mx-auto max-w-lg space-y-5">
+      <div className="mx-auto max-w-2xl space-y-5">
         <header>
           <h1 className="text-2xl font-black text-sky-200">수동 시그 판매</h1>
           <p className="mt-1 text-sm text-neutral-400">
@@ -340,42 +354,58 @@ export default function ManualSigSalesSimple() {
               )}
             </div>
             {saleRows.map((row) => (
-              <label
+              <div
                 key={`sale_${row.draftIdx}_${row.name}`}
-                className="flex items-center gap-2 rounded border border-white/10 bg-black/30 px-2 py-1.5 text-xs"
+                className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-black/30 px-3 py-2.5"
               >
-                <input
-                  type="checkbox"
-                  checked={Boolean(soldFlags[row.draftIdx])}
-                  disabled={busy || phase === "CONFIRMED"}
-                  onChange={(e) => void onToggleSigSold(row.draftIdx, e.target.checked)}
-                />
-                <span className="truncate text-neutral-100">
-                  {row.name}{" "}
-                  <span className="text-neutral-400">
-                    {row.price.toLocaleString("ko-KR")}원
+                <label className="flex min-w-0 flex-1 items-center gap-3 text-base">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 shrink-0"
+                    checked={Boolean(soldFlags[row.draftIdx])}
+                    disabled={busy || phase === "CONFIRMED"}
+                    onChange={(e) => void onToggleSigSold(row.draftIdx, e.target.checked)}
+                  />
+                  <span className="min-w-0 text-neutral-100">
+                    <span className="font-bold">{row.name}</span>{" "}
+                    <span className="font-semibold tabular-nums text-yellow-200">
+                      {row.price.toLocaleString("ko-KR")}원
+                    </span>
                   </span>
-                </span>
-              </label>
+                </label>
+                <button
+                  type="button"
+                  disabled={busy || phase === "CONFIRMED"}
+                  onClick={() => void onConfirmSales({ onlyDraftIdx: row.draftIdx })}
+                  className="shrink-0 rounded-md bg-emerald-800 px-3 py-1.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  이 시그만 확정
+                </button>
+              </div>
             ))}
             {oneShotLabel ? (
-              <label className="flex items-center gap-2 rounded border border-yellow-400/30 bg-yellow-950/20 px-2 py-1.5 text-xs">
-                <input
-                  type="checkbox"
-                  checked={oneShotMarkSold}
-                  disabled={busy || phase === "CONFIRMED"}
-                  onChange={(e) => void onToggleOneShotSold(e.target.checked)}
-                />
-                <span className="text-yellow-100">한방 시그 판매완료 ({oneShotLabel})</span>
-              </label>
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-yellow-400/30 bg-yellow-950/20 px-3 py-2.5">
+                <label className="flex min-w-0 flex-1 items-center gap-3 text-base">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 shrink-0"
+                    checked={oneShotMarkSold}
+                    disabled={busy || phase === "CONFIRMED"}
+                    onChange={(e) => void onToggleOneShotSold(e.target.checked)}
+                  />
+                  <span className="font-semibold text-yellow-100">
+                    한방 시그 판매완료 ({oneShotLabel})
+                  </span>
+                </label>
+              </div>
             ) : null}
             <button
               type="button"
               disabled={!authReady || busy || phase === "CONFIRMED" || !hasAnySoldMark}
               onClick={() => void onConfirmSales()}
-              className="w-full rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-600 disabled:opacity-50"
+              className="w-full rounded-lg bg-emerald-700 px-4 py-3 text-base font-bold text-white hover:bg-emerald-600 disabled:opacity-50"
             >
-              {busy ? "처리 중…" : "판매 확정 (재고 반영)"}
+              {busy ? "처리 중…" : "체크한 시그 일괄 확정 (재고 반영)"}
             </button>
           </section>
         ) : null}

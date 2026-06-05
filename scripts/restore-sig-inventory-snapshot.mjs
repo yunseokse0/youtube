@@ -14,7 +14,7 @@ const DEFAULT_FILE = path.join(ROOT, "data", "sig-inventory-live.json");
 const BASE_URL = (
   process.env.SIG_CATALOG_BASE_URL ||
   process.env.BASE_URL ||
-  "http://43.200.177.132"
+  "http://13.124.114.125"
 ).replace(/\/$/, "");
 const USER =
   process.env.SIG_CATALOG_USER ||

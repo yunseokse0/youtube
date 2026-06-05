@@ -28,6 +28,7 @@ import type {
 import { ONE_SHOT_SIG_ID, sigMatchesMemberFilter } from "@/lib/sig-roulette";
 import { sanitizeOverlayEmbedMediaUrl } from "@/lib/gif-url";
 import {
+  BROADCAST_SIG_PRESET_NAMES,
   DEFAULT_SIG_INVENTORY,
   normalizeSigImageUrlStored,
   normalizeSigInventory,
@@ -1615,6 +1616,25 @@ export function totalToon(state: AppState): number {
 
 export function totalCombined(state: AppState): number {
   return totalAccount(state) + totalToon(state);
+}
+
+/** 애교·댄스 등 기본 프리셋(+한방)만 남은 축소 목록인지 */
+export function isShrunkToDefaultSigInventory(inv: SigItem[] | null | undefined): boolean {
+  if (!Array.isArray(inv) || inv.length === 0) return false;
+  if (inv.length > DEFAULT_SIG_INVENTORY.length + 2) return false;
+  const defaultIds = new Set(DEFAULT_SIG_INVENTORY.map((x) => x.id));
+  return inv.every(
+    (x) => defaultIds.has(String(x.id || "")) || String(x.id || "") === ONE_SHOT_SIG_ID
+  );
+}
+
+/** PC 업로드·엑셀 등으로 늘어난 커스텀 시그 목록인지 */
+export function hasExpandedSigInventory(inv: SigItem[] | null | undefined): boolean {
+  if (!Array.isArray(inv) || inv.length === 0) return false;
+  const nonOneShot = inv.filter((x) => x.id !== ONE_SHOT_SIG_ID);
+  if (nonOneShot.length > DEFAULT_SIG_INVENTORY.length) return true;
+  const presetNames = new Set<string>(BROADCAST_SIG_PRESET_NAMES);
+  return nonOneShot.some((x) => !presetNames.has(String(x.name || "").trim()));
 }
 
 /** 서버/동기화 시 기본값으로 덮어쓰기 방지: remote가 기본 상태처럼 보이는지 확인 */

@@ -312,6 +312,104 @@ export function soldSetForFullManualRound(
   return out;
 }
 
+/**
+ * 초안 슬롯(draftIdx) 체크 → 인벤 재고 id 집합.
+ * `soldSetForFullManualRound`의 display 인덱스 매칭과 달리 draft·display 순서 불일치에도 동작.
+ */
+export function resolveManualSoldInventoryTargetIds(
+  state: AppState | null | undefined,
+  selected: SigItem[],
+  userId: string,
+  flags: boolean[],
+  oneShotMarkSold: boolean
+): Set<string> {
+  const out = new Set<string>();
+  const draft = readManualSigDraftFromState(state);
+  const cascade = soldFlagsWithOneShotCascade(flags, oneShotMarkSold);
+  const normalizeNameKey = (raw: string) =>
+    String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
+
+  if (oneShotMarkSold && selected.length >= MIN_MANUAL_OVERLAY_SIGS) {
+    for (const row of selected) {
+      const canon = canonicalSigIdFromWheelSliceId(String(row.id || ""));
+      if (canon) out.add(canon);
+      const nk = normalizeNameKey(row.name);
+      const price = Math.floor(Number(row.price || 0));
+      for (const inv of state?.sigInventory || []) {
+        if (!inv || inv.id === ONE_SHOT_SIG_ID) continue;
+        if (
+          inv.id === row.id ||
+          canonicalSigIdFromWheelSliceId(inv.id) === canon ||
+          (normalizeNameKey(inv.name) === nk && Math.floor(Number(inv.price || 0)) === price)
+        ) {
+          out.add(inv.id);
+          out.add(canonicalSigIdFromWheelSliceId(inv.id));
+        }
+      }
+    }
+    out.add(ONE_SHOT_SIG_ID);
+    out.add(canonicalSigIdFromWheelSliceId(ONE_SHOT_SIG_ID));
+    return out;
+  }
+
+  const items = selected.length >= MIN_MANUAL_OVERLAY_SIGS ? selected : [];
+  const draftItems =
+    items.length >= MIN_MANUAL_OVERLAY_SIGS
+      ? items
+      : draft
+        ? buildManualSigItemsFromDrafts(draft.drafts, state?.sigInventory, userId)
+        : [];
+  const list = draftItems.length >= MIN_MANUAL_OVERLAY_SIGS ? draftItems : items;
+  const parsedRows = parseManualSigDraftRows(draft?.drafts || []);
+
+  cascade.forEach((sold, draftIdx) => {
+    if (!sold) return;
+    const draftRow = draft?.drafts?.[draftIdx];
+    const parsed = parsedRows[draftIdx];
+    const item = findDisplaySigForManualDraftRow(draftRow, parsed, list);
+    if (item) {
+      const canon = canonicalSigIdFromWheelSliceId(item.id);
+      if (canon) out.add(canon);
+      const nk = normalizeNameKey(item.name);
+      const price = Math.floor(Number(item.price || 0));
+      for (const inv of state?.sigInventory || []) {
+        if (!inv || inv.id === ONE_SHOT_SIG_ID) continue;
+        if (
+          inv.id === item.id ||
+          canonicalSigIdFromWheelSliceId(inv.id) === canon ||
+          (normalizeNameKey(inv.name) === nk && Math.floor(Number(inv.price || 0)) === price)
+        ) {
+          out.add(inv.id);
+          out.add(canonicalSigIdFromWheelSliceId(inv.id));
+        }
+      }
+    }
+    const sourceSid = String(draftRow?.sourceSigId || "").trim();
+    if (sourceSid) {
+      out.add(sourceSid);
+      out.add(canonicalSigIdFromWheelSliceId(sourceSid));
+    }
+  });
+
+  /** 초안 없을 때(구 테스트·레거시): display 순서와 flags 인덱스 정렬 */
+  if (out.size === 0 && cascade.some(Boolean)) {
+    const preview = soldSetForFullManualRound(selected, flags, oneShotMarkSold);
+    for (const id of preview) {
+      out.add(id);
+      out.add(canonicalSigIdFromWheelSliceId(id));
+    }
+    for (const inv of state?.sigInventory || []) {
+      const key = canonicalSigIdFromWheelSliceId(String(inv.id || ""));
+      if (preview.has(inv.id) || preview.has(key)) {
+        out.add(inv.id);
+        out.add(key);
+      }
+    }
+  }
+
+  return out;
+}
+
 export function collectSoldSigIdsForFinish(
   selected: SigItem[],
   soldIdSet: Set<string>
@@ -336,16 +434,17 @@ export function buildManualSigSalesConfirmState(
     selected: SigItem[];
     sigSoldFlags: boolean[];
     oneShotMarkSold: boolean;
+    userId?: string;
   }
 ): AppState {
   const cascadeFlags = soldFlagsWithOneShotCascade(opts.sigSoldFlags, opts.oneShotMarkSold);
-  const soldPreviewSet = soldSetForFullManualRound(
+  const soldTargetIds = resolveManualSoldInventoryTargetIds(
+    base,
     opts.selected,
+    String(opts.userId || "").trim(),
     cascadeFlags,
     opts.oneShotMarkSold
   );
-  const soldSigIdsForFinish = collectSoldSigIdsForFinish(opts.selected, soldPreviewSet);
-  const soldTargetIds = new Set(soldSigIdsForFinish);
   const now = Date.now();
   const confirmedInventory = (base.sigInventory || []).map((row) => {
     if (row.id === ONE_SHOT_SIG_ID) {
