@@ -1385,9 +1385,11 @@ export function buildSigSalesManualApiPatch(next: AppState, userId?: string | nu
 }
 
 export function mergeSigSalesManualIntoLocalState(base: AppState, next: AppState): AppState {
+  /** in-memory next(서버 전체 로드) 우선 — 예전 버그로 localStorage만 리셋된 경우 방지 */
+  const core = hasMeaningfulBroadcastData(next) ? next : base;
   const baseOs =
-    base.overlaySettings && typeof base.overlaySettings === "object"
-      ? (base.overlaySettings as Record<string, unknown>)
+    core.overlaySettings && typeof core.overlaySettings === "object"
+      ? (core.overlaySettings as Record<string, unknown>)
       : {};
   const nextOs =
     next.overlaySettings && typeof next.overlaySettings === "object"
@@ -1395,14 +1397,14 @@ export function mergeSigSalesManualIntoLocalState(base: AppState, next: AppState
       : {};
   return normalizeStateForPersistence(
     syncBattleStateWithMembers({
-      ...base,
+      ...core,
       sigInventory: next.sigInventory,
       sigSalesExcludedIds: next.sigSalesExcludedIds,
       sigSoldOutStampUrl: next.sigSoldOutStampUrl,
       sigRollingMeta: next.sigRollingMeta,
       overlaySettings: { ...baseOs, ...nextOs } as AppState["overlaySettings"],
       rouletteState: {
-        ...base.rouletteState,
+        ...core.rouletteState,
         ...next.rouletteState,
       },
       updatedAt: Date.now(),
