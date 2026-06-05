@@ -26,7 +26,6 @@ import {
   ensureMissionItems,
   appendDailyLog,
   loadDailyLogFromApi,
-  pickLatestDailyLogEntry,
   parseAmount,
   formatChatLine,
   storageKey,
@@ -52,6 +51,12 @@ import {
   normalizeMemberPositions,
   type OverlayConfig,
 } from "@/lib/state";
+import {
+  buildAppStateFromRestoreJson,
+  isFullBroadcastStateBackup,
+  pickDailyLogEntryForRestore,
+  summarizeRestoreJson,
+} from "@/lib/state-restore";
 import { useSSEConnection } from "@/lib/sse-client";
 import { createStateUpdatedScheduler } from "@/lib/overlay-pull-policy";
 import {
@@ -2776,81 +2781,75 @@ export default function AdminPage() {
     setSigExcelResult("시그 목록·관련 설정을 기본값으로 초기화했습니다.");
   };
 
+  const restoreBroadcastStateFromJsonPatch = useCallback(
+    (parsed: Record<string, unknown>, sourceLabel: string) => {
+      const inv = Array.isArray(parsed?.sigInventory)
+        ? parsed.sigInventory
+        : Array.isArray(parsed)
+          ? parsed
+          : null;
+      const full = isFullBroadcastStateBackup(parsed);
+      if (!full && !inv?.length) {
+        setSigExcelResult("JSON에 복구할 시그 목록 또는 전체 방송 설정이 없습니다.");
+        return false;
+      }
+      const summary = summarizeRestoreJson(parsed);
+      if (
+        !window.confirm(
+          `${sourceLabel}에서 방송 상태를 복구합니다.\n` +
+            (summary.length ? `${summary.join(" · ")}\n` : "") +
+            (full
+              ? "※ 오버레이 프리셋·설정·멤버·후원 등 JSON에 있는 항목을 서버에 덮어씁니다.\n"
+              : "") +
+            "계속할까요?"
+        )
+      ) {
+        return false;
+      }
+      setState((prev: AppState) => {
+        const draft = buildAppStateFromRestoreJson(parsed, { base: prev, fullReplace: full });
+        const next = syncOneShotSigItem(draft);
+        persistState(next);
+        return next;
+      });
+      setSigExcelResult(`${sourceLabel} 복구·저장: ${summary.join(" · ") || "완료"}`);
+      return true;
+    },
+    [persistState, syncOneShotSigItem]
+  );
+
   const restoreSigInventoryFromJsonFile = useCallback(
     async (file: File | null) => {
       if (!file) return;
       try {
         const text = await file.text();
-        const parsed = JSON.parse(text) as {
-          sigInventory?: unknown;
-          sigRolling?: unknown;
-          sigRollingMeta?: unknown;
-          members?: unknown;
-          donors?: unknown;
-          memberPositions?: unknown;
-        };
-        const inv = Array.isArray(parsed?.sigInventory)
-          ? parsed.sigInventory
-          : Array.isArray(parsed)
-            ? parsed
-            : null;
-        if (!inv?.length) {
-          setSigExcelResult("JSON에 sigInventory 배열이 없습니다.");
-          return;
-        }
-        const donorCount = Array.isArray(parsed.donors) ? parsed.donors.length : 0;
-        const memberCount = Array.isArray(parsed.members) ? parsed.members.length : 0;
-        if (
-          !window.confirm(
-            `시그 목록 ${inv.length}개를 복구하고 서버에 저장합니다.` +
-              (memberCount > 0 ? `\n멤버 ${memberCount}명` : "") +
-              (donorCount > 0 ? ` · 후원 기록 ${donorCount}건` : "") +
-              `\n계속할까요?`
-          )
-        ) {
-          return;
-        }
-        setState((prev: AppState) => {
-          const draft: AppState = {
-            ...prev,
-            sigInventory: inv as AppState["sigInventory"],
-            ...(Array.isArray(parsed.members) && parsed.members.length > 0
-              ? { members: parsed.members as AppState["members"] }
-              : {}),
-            ...(Array.isArray(parsed.donors)
-              ? { donors: normalizeDonorsArray(parsed.donors as AppState["donors"]) }
-              : {}),
-            ...(parsed.memberPositions != null
-              ? {
-                  memberPositions: normalizeMemberPositions(
-                    parsed.memberPositions as AppState["memberPositions"],
-                    (Array.isArray(parsed.members) ? parsed.members : prev.members) as Member[]
-                  ),
-                }
-              : {}),
-            ...(parsed.sigRolling != null ? { sigRolling: parsed.sigRolling as AppState["sigRolling"] } : {}),
-            ...(parsed.sigRollingMeta != null
-              ? { sigRollingMeta: parsed.sigRollingMeta as AppState["sigRollingMeta"] }
-              : {}),
-            updatedAt: Date.now(),
-          };
-          const next = syncOneShotSigItem(draft);
-          persistState(next);
-          return next;
-        });
-        setSigExcelResult(
-          `JSON 복구·저장: 시그 ${inv.length}개` +
-            (memberCount > 0 ? ` · 멤버 ${memberCount}` : "") +
-            (donorCount > 0 ? ` · 후원 ${donorCount}건` : "")
-        );
+        const raw = JSON.parse(text) as unknown;
+        const patch: Record<string, unknown> = Array.isArray(raw) ? { sigInventory: raw } : (raw as Record<string, unknown>);
+        restoreBroadcastStateFromJsonPatch(patch, "JSON 파일");
       } catch {
         setSigExcelResult("JSON 파싱 실패 또는 형식 오류");
       } finally {
         if (sigRestoreJsonInputRef.current) sigRestoreJsonInputRef.current.value = "";
       }
     },
-    [persistState, syncOneShotSigItem]
+    [restoreBroadcastStateFromJsonPatch]
   );
+
+  const restoreFromBrowserLocalStorage = useCallback(() => {
+    try {
+      const raw = window.localStorage.getItem(storageKey(user?.id));
+      if (!raw) {
+        window.alert(
+          "이 브라우저에 저장된 방송 상태가 없습니다.\n오전에 관리자 페이지를 열어 두었다면 새로고침 전에 이 버튼을 눌러 보세요."
+        );
+        return;
+      }
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      restoreBroadcastStateFromJsonPatch(parsed, "브라우저 저장본");
+    } catch {
+      window.alert("브라우저 저장본을 읽지 못했습니다.");
+    }
+  }, [user?.id, restoreBroadcastStateFromJsonPatch]);
 
   const restoreSigInventoryFromExcelFile = useCallback(
     async (file: File | null) => {
@@ -2913,7 +2912,8 @@ export default function AdminPage() {
     const serverLog = await loadDailyLogFromApi(user?.id);
     const localLog = loadDailyLog(user?.id);
     const merged: Record<string, DailyLogEntry[]> = { ...localLog, ...serverLog };
-    const latest = pickLatestDailyLogEntry(merged);
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const latest = pickDailyLogEntryForRestore(merged, todayKey);
     if (!latest) {
       window.alert("일일 로그에 복구할 후원 스냅샷이 없습니다.");
       return;
@@ -2924,9 +2924,10 @@ export default function AdminPage() {
       window.alert("최근 일일 로그에 후원·멤버 데이터가 없습니다.");
       return;
     }
+    const fromToday = String(latest.at || "").slice(0, 10) === todayKey;
     if (
       !window.confirm(
-        `일일 로그 최근 스냅샷(${latest.at})에서 복구합니다.\n` +
+        `일일 로그 ${fromToday ? "오늘" : "최근"} 스냅샷(${latest.at})에서 복구합니다.\n` +
           `후원 ${donorCount}건 · 멤버 ${memberCount}명\n계속할까요?`
       )
     ) {
@@ -4713,6 +4714,13 @@ export default function AdminPage() {
               title="로컬이 리셋되었을 때 서버 최신 상태를 다시 가져옵니다"
             >
               서버에서 가져오기
+            </button>
+            <button
+              className="px-2 py-1 rounded bg-violet-800 hover:bg-violet-700 text-xs font-medium text-white"
+              onClick={restoreFromBrowserLocalStorage}
+              title="이 PC 브라우저 localStorage에 남아 있는 오전 방송 설정·후원·시그를 서버로 복구"
+            >
+              브라우저 저장본 복구
             </button>
             <button
               className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
@@ -7272,10 +7280,10 @@ export default function AdminPage() {
                   <button
                     type="button"
                     className="px-3 py-1 rounded bg-teal-900/80 hover:bg-teal-800 text-sm"
-                    title="상태보내기(JSON) 백업 — 시그·멤버·후원 포함 가능"
+                    title="상태보내기(JSON) — 시그·멤버·후원·오버레이 프리셋·설정 전체 복구"
                     onClick={() => sigRestoreJsonInputRef.current?.click()}
                   >
-                    JSON에서 방송 상태 복구
+                    JSON에서 전체 복구
                   </button>
                   <button
                     type="button"
@@ -8508,7 +8516,7 @@ export default function AdminPage() {
                 <button
                   type="button"
                   className="px-3 py-1.5 rounded bg-violet-800 hover:bg-violet-700 text-sm"
-                  title="3분 자동 저장된 일일 로그 최근 스냅샷에서 후원·멤버 금액 복구"
+                  title="3분 자동 저장된 일일 로그 — 오늘 스냅샷 우선, 없으면 최근"
                   onClick={() => void restoreDonorsFromDailyLogSnapshot()}
                 >
                   일일 로그에서 후원 복구
