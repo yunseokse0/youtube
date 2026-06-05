@@ -98,6 +98,8 @@ export default function ObsTextOverlayEditor({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const editorPanelRef = useRef<HTMLDivElement>(null);
   const composingRef = useRef(false);
+  /** textarea 포커스 중 — 서버·자동저장으로 draft를 덮어쓰면 커서가 맨 아래로 튐 */
+  const textareaEditingRef = useRef(false);
   const loadedRef = useRef(false);
   const createOnMountDoneRef = useRef(false);
   /** SSR·첫 hydration과 동일한 상대 URL → 마운트 후 origin 반영 */
@@ -429,6 +431,7 @@ export default function ObsTextOverlayEditor({
     const tid = window.setTimeout(() => {
       autoSaveQuietRef.current = true;
       const synced = mergeMultilineDraftIntoObsTextConfig(config, multilineDraft);
+      skipMultilineResyncRef.current = true;
       setConfig(() => synced);
       void persistRegistry(registry, activeInstanceId, {
         activeConfig: synced,
@@ -548,7 +551,28 @@ export default function ObsTextOverlayEditor({
       skipMultilineResyncRef.current = false;
       return;
     }
-    setMultilineDraft(multilineTextFromBlocks(config.blocks));
+    /** 편집·IME 중 blocks→draft 덮어쓰기 금지(OBS 자동저장·원격 반영은 registry·미리보기만 갱신) */
+    if (textareaEditingRef.current || composingRef.current) return;
+
+    const next = multilineTextFromBlocks(config.blocks);
+    if (next === multilineDraftRef.current) return;
+
+    const el = textareaRef.current;
+    const selStart = el?.selectionStart ?? null;
+    const selEnd = el?.selectionEnd ?? null;
+    const hadFocus = el != null && document.activeElement === el;
+
+    setMultilineDraft(next);
+
+    if (hadFocus && el && selStart != null && selEnd != null) {
+      requestAnimationFrame(() => {
+        const len = next.length;
+        const s = Math.min(selStart, len);
+        const e = Math.min(selEnd, len);
+        el.focus();
+        el.setSelectionRange(s, e);
+      });
+    }
   }, [config.blocks]);
 
   useEffect(() => {
@@ -885,6 +909,9 @@ export default function ObsTextOverlayEditor({
                 composingRef.current = false;
                 onMultilineChange(e.currentTarget.value);
               }}
+              onFocus={() => {
+                textareaEditingRef.current = true;
+              }}
               onBlur={(e) => {
                 const panel = editorPanelRef.current;
                 if (
@@ -894,6 +921,7 @@ export default function ObsTextOverlayEditor({
                 ) {
                   return;
                 }
+                textareaEditingRef.current = false;
                 void flushPendingEdits();
               }}
               onClick={syncActiveLineFromCaret}
