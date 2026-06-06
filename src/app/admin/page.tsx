@@ -119,7 +119,9 @@ import {
 } from "@/lib/obs-text-overlay";
 import { buildSigSalesManualOverlayUrl } from "@/lib/sig-sales-overlay-urls";
 import {
+  extractToonationLinkKey,
   fetchToonationListenerStatus,
+  normalizeToonationAlertboxUrl,
   stopToonationListener,
   syncToonationListenerFromBrowser,
   type ToonationListenerStatus,
@@ -395,6 +397,10 @@ export default function AdminPage() {
   const [toonationSocketEnabled, setToonationSocketEnabled] = useState(true);
   const [toonationListenerStatus, setToonationListenerStatus] = useState<ToonationListenerStatus | null>(null);
   const [toonationAlertboxUrl, setToonationAlertboxUrl] = useState("");
+  const toonationResolvedAlertboxUrl = useMemo(
+    () => normalizeToonationAlertboxUrl(toonationAlertboxUrl.trim()),
+    [toonationAlertboxUrl]
+  );
   const [toonationLogs, setToonationLogs] = useState<Array<{ id: string; at: number; message: string }>>([]);
   const [toonationQueue, setToonationQueue] = useState<DonationEvent[]>([]);
   const [unmatchedEvents, setUnmatchedEvents] = useState<DonationEvent[]>([]);
@@ -4189,12 +4195,14 @@ export default function AdminPage() {
       const socketRaw = window.localStorage.getItem("donationAutomation.toonation.socketEnabled");
       const urlRaw = window.localStorage.getItem("donationAutomation.toonation.alertboxUrl");
       const envUrl = (process.env.NEXT_PUBLIC_TOONATION_ALERTBOX_URL || "").trim();
+      const envKey = (process.env.NEXT_PUBLIC_TOONATION_LINK_KEY || "").trim();
       setToonationAutoProcessEnabled(autoProcessRaw === "true");
       setToonationSocketEnabled(socketRaw !== "false");
       setToonationAlertboxUrl(
         urlRaw ||
+          envKey ||
           envUrl ||
-          "https://toon.at/widget/alertbox/f28dc2204fbaf86fd9df74c12f435c73"
+          "f28dc2204fbaf86fd9df74c12f435c73"
       );
       window.localStorage.removeItem("donationAutomation.toonation.enabled");
       window.localStorage.removeItem("donationAutomation.toonation.socketDebug");
@@ -4216,14 +4224,14 @@ export default function AdminPage() {
 
   useEffect(() => {
     const uid = user?.id || "";
-    const url = toonationAlertboxUrl.trim();
-    if (!uid || !toonationSocketEnabled || !url) {
+    const normalized = toonationResolvedAlertboxUrl;
+    if (!uid || !toonationSocketEnabled || !normalized) {
       void stopToonationListener(uid || undefined);
       setToonationListenerStatus({ kind: "idle", message: "실시간 수집 꺼짐" });
       return;
     }
     let cancelled = false;
-    void syncToonationListenerFromBrowser(url, {
+    void syncToonationListenerFromBrowser(normalized, {
       userId: uid,
       enabled: true,
       onStatus: (s) => {
@@ -4240,7 +4248,7 @@ export default function AdminPage() {
     return () => {
       cancelled = true;
     };
-  }, [toonationAlertboxUrl, toonationSocketEnabled, user?.id]);
+  }, [toonationResolvedAlertboxUrl, toonationSocketEnabled, user?.id]);
 
   useEffect(() => {
     const uid = user?.id || "";
@@ -8243,19 +8251,12 @@ export default function AdminPage() {
               <div className="text-sm text-neutral-400 mt-2">입력값에 콤마/문자 포함되어도 숫자만 인식</div>
               <div className="mt-4 rounded border border-cyan-500/20 bg-cyan-500/5 p-3 space-y-3">
                 <div className="rounded border border-white/10 bg-black/25 px-3 py-2">
-                  <div className="text-xs font-semibold text-cyan-200">투네 Alertbox URL (연동키)</div>
+                  <div className="text-xs font-semibold text-cyan-200">투네 연동키 (자동 연동)</div>
                   <div className="text-[11px] text-neutral-400 mt-1">
-                    발급받은 Alertbox URL(예:{" "}
-                    <a
-                      className="text-cyan-300/90 underline"
-                      href="https://toon.at/widget/alertbox/f28dc2204fbaf86fd9df74c12f435c73"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      toon.at/widget/alertbox/…
-                    </a>
-                    )을 넣으면 서버가 WebSocket으로 후원을 수신해 아래 <strong className="text-neutral-300">대기 리스트</strong>에
-                    쌓습니다. 관리자 탭을 닫아도 EC2 서버에서 계속 수신합니다.
+                    투네이션 <strong className="text-neutral-300">계정설정 연동키</strong>만 붙여넣어도 됩니다. 전체 Alertbox URL도
+                    가능합니다. 저장 시 자동으로{" "}
+                    <span className="text-cyan-300/90">toon.at/widget/alertbox/연동키</span> 형태로 연결하고, WebSocket으로
+                    후원을 <strong className="text-neutral-300">대기 리스트</strong>에 쌓습니다.
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -8286,22 +8287,34 @@ export default function AdminPage() {
                   </span>
                 </div>
                 <input
-                  className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm"
-                  placeholder="투네 Alertbox URL (예: https://toon.at/widget/alertbox/KEY)"
+                  className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm font-mono"
+                  placeholder="연동키 (예: f28dc2204fbaf86fd9df74c12f435c73) 또는 Alertbox URL"
                   value={toonationAlertboxUrl}
-                  onChange={(e) => setToonationAlertboxUrl(e.target.value)}
+                  onChange={(e) => setToonationAlertboxUrl(e.target.value.trim())}
                 />
+                {toonationAlertboxUrl.trim() && !toonationResolvedAlertboxUrl ? (
+                  <div className="text-[11px] text-rose-300">
+                    연동키 형식이 올바르지 않습니다. (영문·숫자 6~64자, 또는 toon.at Alertbox URL)
+                  </div>
+                ) : toonationResolvedAlertboxUrl ? (
+                  <div className="text-[11px] text-neutral-500 break-all">
+                    연결 URL: {toonationResolvedAlertboxUrl}
+                    {extractToonationLinkKey(toonationAlertboxUrl) ? (
+                      <span className="text-neutral-600"> · 키 {extractToonationLinkKey(toonationAlertboxUrl)}</span>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
-                    onClick={() => setToonationAlertboxUrl("https://toon.at/widget/alertbox/f28dc2204fbaf86fd9df74c12f435c73")}
+                    onClick={() => setToonationAlertboxUrl("f28dc2204fbaf86fd9df74c12f435c73")}
                   >
-                    제공된 URL 채우기
+                    제공된 연동키 채우기
                   </button>
-                  {toonationAlertboxUrl.trim() ? (
+                  {toonationResolvedAlertboxUrl ? (
                     <a
-                      href={toonationAlertboxUrl}
+                      href={toonationResolvedAlertboxUrl}
                       target="_blank"
                       rel="noreferrer"
                       className="px-2 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-xs"

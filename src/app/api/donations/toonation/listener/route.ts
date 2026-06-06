@@ -6,6 +6,7 @@ import {
   getToonationListenerStatusForUser,
   syncToonationServerListener,
 } from "@/lib/donation/toonation/server-listener";
+import { normalizeToonationAlertboxUrl } from "@/lib/donation/toonation/link-key";
 
 export async function GET(req: Request) {
   const userId = getUserIdFromRequest(req);
@@ -33,9 +34,16 @@ export async function POST(req: Request) {
     alertboxUrl?: string;
     enabled?: boolean;
   } | null;
-  const alertboxUrl = String(body?.alertboxUrl || "").trim();
+  const alertboxUrlOrKey = String(body?.alertboxUrl || body?.linkKey || "").trim();
+  const alertboxUrl = normalizeToonationAlertboxUrl(alertboxUrlOrKey) || "";
   const enabled = body?.enabled !== false;
   try {
+    if (enabled && !alertboxUrl) {
+      return new Response(JSON.stringify({ error: "invalid_toonation_link_key" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     const status = await syncToonationServerListener(userId, alertboxUrl, enabled);
     return new Response(JSON.stringify({ ok: true, status }), {
       headers: { "Content-Type": "application/json" },

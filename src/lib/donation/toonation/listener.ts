@@ -1,5 +1,7 @@
 "use client";
 
+import { normalizeToonationAlertboxUrl } from "./link-key";
+
 export type ToonationListenerStatus = {
   kind: "connected" | "disconnected" | "reconnect_attempt" | "reconnect_error" | "reconnect_failed" | "connect_error" | "idle" | "syncing" | "error";
   message: string;
@@ -35,9 +37,9 @@ function statusFromServer(status: ToonationServerStatus): ToonationListenerStatu
   return { kind: "idle", message: "실시간 수집 꺼짐" };
 }
 
-/** 브라우저(관리자) → 서버 WebSocket 리스너 등록 */
+/** 브라우저(관리자) → 서버 WebSocket 리스너 등록 (연동키만 넣어도 됨) */
 export async function syncToonationListenerFromBrowser(
-  alertboxUrl: string,
+  alertboxUrlOrKey: string,
   options?: {
     userId?: string;
     enabled?: boolean;
@@ -45,7 +47,8 @@ export async function syncToonationListenerFromBrowser(
   }
 ): Promise<ToonationServerStatus> {
   const userId = options?.userId || "";
-  const enabled = options?.enabled !== false && Boolean(alertboxUrl.trim());
+  const normalized = normalizeToonationAlertboxUrl(alertboxUrlOrKey);
+  const enabled = options?.enabled !== false && Boolean(normalized);
   options?.onStatus?.({ kind: "syncing", message: "서버에 연동 요청 중…" });
 
   const q = userId ? `?u=${encodeURIComponent(userId)}` : "";
@@ -53,7 +56,7 @@ export async function syncToonationListenerFromBrowser(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
-    body: JSON.stringify({ alertboxUrl: alertboxUrl.trim(), enabled }),
+    body: JSON.stringify({ alertboxUrl: normalized || alertboxUrlOrKey.trim(), enabled }),
   });
   const data = (await res.json().catch(() => null)) as { status?: ToonationServerStatus; error?: string } | null;
   if (!res.ok) {
@@ -85,7 +88,4 @@ export async function fetchToonationListenerStatus(userId?: string): Promise<Too
   return data?.status ?? null;
 }
 
-/** @deprecated syncToonationListenerFromBrowser 사용 */
-export function startToonationListener(): null {
-  return null;
-}
+export { normalizeToonationAlertboxUrl, extractToonationLinkKey, isToonationLinkKey } from "./link-key";

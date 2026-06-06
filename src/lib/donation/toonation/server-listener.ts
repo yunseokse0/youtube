@@ -9,6 +9,7 @@ import {
   type ToonationListenerConfig,
 } from "./listener-config-store";
 import { parseToonationWebSocketMessage } from "./parse-event";
+import { normalizeToonationAlertboxUrl } from "./link-key";
 import { resolveToonationWsPayload } from "./resolve-payload";
 
 const log = createModuleLogger("Toonation/ServerListener");
@@ -181,9 +182,9 @@ function ensureActiveConnection(userId: string, alertboxUrl: string): ActiveConn
 
 export async function startToonationServerListener(
   userId: string,
-  alertboxUrl: string
+  alertboxUrlOrKey: string
 ): Promise<ToonationServerListenerStatus> {
-  const url = alertboxUrl.trim();
+  const url = normalizeToonationAlertboxUrl(alertboxUrlOrKey);
   if (!url) throw new Error("invalid_toonation_alertbox_url");
 
   const config: ToonationListenerConfig = {
