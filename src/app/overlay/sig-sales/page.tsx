@@ -86,6 +86,7 @@ import {
   pickWheelDemoWinners,
 } from "@/lib/sig-wheel-demo-pool";
 import {
+  buildManualOverlaySoldOverrideSet,
   hydrateManualOverlaySigItem,
   resolveManualDraftRowForSigItem,
   resolveManualOneShotStoredImageUrl,
@@ -1672,54 +1673,12 @@ function SigSalesOverlayPageInner() {
   }, [machine.phase, machine.selectedSigs, state?.sigInventory, manualDraftEffective?.oneShotMarkSold]);
   /** 관리자 「이 시그 판매완료」체크 — OBS는 localStorage 없음, 서버 overlaySettings 초안으로 동기화 */
   const manualDraftSoldOverrideSet = useMemo(() => {
-    const next = new Set<string>();
-    const draft = manualDraftEffective;
-    if (!draft) return next;
-    const flags = Array.isArray(draft.sigSoldFlags) ? draft.sigSoldFlags : [];
-    const hasFlags = flags.some(Boolean) || Boolean(draft.oneShotMarkSold);
-    if (!hasFlags) return next;
-    const normalizeNameKey = (raw: string) =>
-      String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
     const items =
       manualOverlayResultSigs.length >= MIN_ONE_SHOT_SIGS
         ? manualOverlayResultSigs
         : manualDraftSelectedForUi;
-    flags.forEach((sold, idx) => {
-      if (!sold) return;
-      const item = items[idx];
-      if (item) {
-        next.add(item.id);
-        next.add(canonicalSigIdFromWheelSliceId(item.id));
-        const nk = normalizeNameKey(item.name);
-        const price = Math.floor(Number(item.price || 0));
-        for (const row of state?.sigInventory || []) {
-          if (!row || row.id === ONE_SHOT_SIG_ID) continue;
-          if (
-            normalizeNameKey(row.name) === nk &&
-            Math.floor(Number(row.price || 0)) === price
-          ) {
-            next.add(row.id);
-            next.add(canonicalSigIdFromWheelSliceId(row.id));
-          }
-        }
-      }
-      const sourceSid = String(draft.drafts?.[idx]?.sourceSigId || "").trim();
-      if (sourceSid) {
-        next.add(sourceSid);
-        next.add(canonicalSigIdFromWheelSliceId(sourceSid));
-      }
-    });
-    if (draft.oneShotMarkSold) {
-      next.add(ONE_SHOT_SIG_ID);
-      next.add(canonicalSigIdFromWheelSliceId(ONE_SHOT_SIG_ID));
-    }
-    return next;
-  }, [
-    manualDraftEffective,
-    manualOverlayResultSigs,
-    manualDraftSelectedForUi,
-    state?.sigInventory,
-  ]);
+    return buildManualOverlaySoldOverrideSet(state, items, sigImageUserId);
+  }, [state, manualOverlayResultSigs, manualDraftSelectedForUi, sigImageUserId]);
   /** 수동 OBS: 한방 차감은 관리자 `manualSoldSet` 과 동일하게 초안 체크만(재고 완판 id 제외) */
   const manualOneShotSoldIdSet = useMemo(() => {
     if (!manualOverlayMode) return new Set<string>();

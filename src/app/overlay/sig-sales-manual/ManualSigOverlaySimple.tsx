@@ -7,6 +7,7 @@ import { layoutSigOverlayResultRow } from "@/components/sig-sales/sig-overlay-ca
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 import {
   buildManualOverlaySoldOverrideSet,
+  resolveManualOneShotDisplayFromState,
   resolveManualOneShotStoredImageUrl,
   resolveManualOverlaySelectedSigs,
 } from "@/lib/manual-sig-broadcast";
@@ -144,13 +145,17 @@ export default function ManualSigOverlaySimple() {
   );
 
   const oneShot = useMemo(() => {
+    const resolved = resolveManualOneShotDisplayFromState(state, selected, userId);
+    if (resolved) {
+      return { name: resolved.name, price: resolved.price };
+    }
     const os = state?.rouletteState?.oneShotResult;
-    if (!os || Number(os.price) <= 0) return null;
+    if (!os || Number(os.price) < 0) return null;
     return {
       name: String(os.name || "한방 시그"),
       price: Math.floor(Number(os.price)),
     };
-  }, [state?.rouletteState?.oneShotResult]);
+  }, [state, selected, userId]);
 
   const signImageUrl = useMemo(
     () => resolveManualOneShotStoredImageUrl({ state, selectedSigs: selected }),

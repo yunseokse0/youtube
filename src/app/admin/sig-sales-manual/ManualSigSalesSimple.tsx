@@ -17,6 +17,7 @@ import {
   MANUAL_REROLL_MAX_PICK,
   pickRandomManualSigBundle,
   readManualSigDraftFromState,
+  resolveManualOneShotDisplayFromState,
   resolveManualOverlaySelectedSigs,
 } from "@/lib/manual-sig-broadcast";
 import {
@@ -110,9 +111,15 @@ export default function ManualSigSalesSimple() {
   }, [draft?.drafts, displaySigs]);
 
   const currentNames = displaySigs.map((s) => s.name).join(", ");
-  const oneShotLabel = current?.oneShotResult
-    ? `${current.oneShotResult.name} ${Number(current.oneShotResult.price || 0).toLocaleString("ko-KR")}원`
-    : null;
+  const oneShotLabel = useMemo(() => {
+    const resolved = resolveManualOneShotDisplayFromState(state, displaySigs, userId);
+    if (resolved) {
+      return `${resolved.name} ${resolved.price.toLocaleString("ko-KR")}원`;
+    }
+    const os = current?.oneShotResult;
+    if (!os) return null;
+    return `${os.name} ${Number(os.price || 0).toLocaleString("ko-KR")}원`;
+  }, [state, displaySigs, userId, current?.oneShotResult]);
   const rerollPickCount = Math.min(MANUAL_REROLL_MAX_PICK, pool.length);
   const canReroll = pool.length >= MANUAL_REROLL_MIN_POOL;
   const hasAnySoldMark =
@@ -262,6 +269,7 @@ export default function ManualSigSalesSimple() {
         const next = buildManualSigSoldPersistState(state, {
           sigSoldFlags: nextFlags,
           oneShotMarkSold,
+          userId,
         });
         const row = saleRows.find((r) => r.draftIdx === idx);
         const label = row?.name || `시그 ${idx + 1}`;
@@ -288,6 +296,7 @@ export default function ManualSigSalesSimple() {
         const next = buildManualSigSoldPersistState(state, {
           sigSoldFlags: nextFlags,
           oneShotMarkSold: sold,
+          userId,
         });
         await persistState(
           next,

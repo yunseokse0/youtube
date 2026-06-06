@@ -19,6 +19,7 @@ import { useFlip } from "@/lib/flip";
 import MissionBoard from "@/components/MissionBoard";
 import MissionBoardSlot from "@/components/MissionBoardSlot";
 import { GoalBar } from "@/components/GoalBar";
+import { buildTextOutlineStyle } from "@/lib/text-outline-style";
 import { useSSEConnection } from "@/lib/sse-client";
 import { useGoalPresetAutoEscalate } from "@/hooks/useGoalPresetAutoEscalate";
 import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
@@ -408,6 +409,11 @@ const TABLE_NUMERIC_OUTLINE_LIGHT_ON_DARK =
   "-1px -1px 0 rgba(6, 12, 24, 0.92), 1px -1px 0 rgba(6, 12, 24, 0.92), -1px 1px 0 rgba(6, 12, 24, 0.92), 1px 1px 0 rgba(6, 12, 24, 0.92), 0 0 3px rgba(6, 12, 24, 0.55), 0 2px 6px rgba(0, 0, 0, 0.45)";
 const TABLE_NUMERIC_OUTLINE_DARK_ON_LIGHT =
   "0 1px 2px rgba(255,255,255,0.88), 0 0 1px rgba(15,23,42,0.38), 0 1px 3px rgba(0,0,0,0.14)";
+/** 후원 목표(GoalBar)와 동일 계열 — 밝은 방송 배경에서 표·글자 대비 */
+const TABLE_BROADCAST_PANEL_BORDER = "#f5b8d4";
+const TABLE_BROADCAST_PANEL_BG = "#fde8f2";
+const TABLE_BROADCAST_TEXT_ON_LIGHT = "#6b2d4a";
+const TABLE_BROADCAST_TEXT_ON_DARK = "#f8fafc";
 
 /** colgroup 열 채움 — 시트 틴트와 같은 계열(엑셀=밝은 흰색, 기본=연분홍) */
 function resolveTableColumnFill(theme: ThemeId): string {
@@ -1745,12 +1751,6 @@ function OverlayInner() {
       ? formatDonorsAmount(n, "full", currencyLocale)
       : formatManThousand(n);
   const fmtTotalCell = (n: number) => fmt(n);
-  /** OBS·Prism에서 CSS만으로는 숫자·직급 외곽선이 빠지는 경우가 있어 인라인으로도 적용 */
-  const overlayCellOutlineStyle: React.CSSProperties = {
-    textShadow:
-      "-1px -1px 0 rgba(6, 12, 24, 0.95), 1px -1px 0 rgba(6, 12, 24, 0.95), -1px 1px 0 rgba(6, 12, 24, 0.95), 1px 1px 0 rgba(6, 12, 24, 0.95), 0 2px 6px rgba(0, 0, 0, 0.45)",
-    WebkitTextStroke: 0,
-  };
   const stripBg = (cls: string) =>
     cls
       // Remove any solid bg-* utilities
@@ -1773,8 +1773,6 @@ function OverlayInner() {
   const tableTextIsLight = hasTableTextColorOverride
     ? isLightTextHex(tableTextColorRaw)
     : !isLightTableSheet;
-  const tableOutlineShadow = tableTextIsLight ? TABLE_TEXT_OUTLINE_LIGHT_ON_DARK : TABLE_TEXT_OUTLINE_DARK_ON_LIGHT;
-  const tableNumericOutlineShadow = tableTextIsLight ? TABLE_NUMERIC_OUTLINE_LIGHT_ON_DARK : TABLE_NUMERIC_OUTLINE_DARK_ON_LIGHT;
   const tableForcedTextColorCss = hasTableTextColorOverride
     ? `
         .overlay-root .overlay-elegant-table td,
@@ -1782,6 +1780,18 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td span,
         .overlay-root .overlay-elegant-table thead td strong {
           color: ${tableTextColorRaw} !important;
+        }`
+    : "";
+  /** 테마 자동: 후원 목표 막대와 같은 진한 로즈/밝은 글자 */
+  const tableAutoTextColorCss = !hasTableTextColorOverride
+    ? `
+        .overlay-root .overlay-elegant-table td,
+        .overlay-root .overlay-elegant-table thead td,
+        .overlay-root .overlay-elegant-table thead td span,
+        .overlay-root .overlay-elegant-table thead td strong,
+        .overlay-root .overlay-elegant-table tbody td span,
+        .overlay-root .overlay-elegant-table tbody td strong {
+          color: ${isLightTableSheet ? TABLE_BROADCAST_TEXT_ON_LIGHT : TABLE_BROADCAST_TEXT_ON_DARK} !important;
         }`
     : "";
   const tableBodyTextStroke = tableTextIsLight && !externalSafeMode
@@ -1799,6 +1809,11 @@ function OverlayInner() {
     const direct = tableBgOpacity / 100;
     return Math.max(0, Math.min(1, direct));
   })();
+  /** OBS: 밝은 실사 배경 위 표 시트 — 후원 목표 트랙처럼 거의 불투명 */
+  const effectiveTableTintAlpha =
+    externalHost && isLightTableSheet && !showTableBgGif
+      ? Math.max(tableTintAlpha, 0.94)
+      : tableTintAlpha;
   /** 미리보기와 동일하게 항상 시트 틴트+colgroup 경로 사용 → 테이블 클래스 배경은 제거 */
   const effectiveTableCls = stripBg(membersTheme.tableCls);
   // Strip row backgrounds for tinted/GIF sheet; keep header & total bar colors when shown.
@@ -2712,7 +2727,29 @@ function OverlayInner() {
       );
     const nameWrapCls = "truncate";
     const tfTable = memberTableFitFactor;
-    const memberFontPx = Math.max(8, Math.round(mSize * tfTable));
+    const memberFontPx = Math.max(externalHost ? 15 : 8, Math.round(mSize * tfTable));
+    const tableRowPadY = Math.round(memberFontPx * 0.34);
+    const tableRowPadX = Math.round(memberFontPx * 0.48);
+    const tableRowMinH = Math.round(memberFontPx * 1.62);
+    const tableBroadcastOutline = buildTextOutlineStyle({
+      fontSizePx: memberFontPx,
+      outlineColor: tableTextIsLight ? "rgba(6, 12, 24, 0.92)" : "rgba(255, 255, 255, 0.92)",
+      outlineWidthPx: 1.15,
+    });
+    const tableOutlineShadowCss = String(
+      tableBroadcastOutline.textShadow ||
+        (tableTextIsLight ? TABLE_TEXT_OUTLINE_LIGHT_ON_DARK : TABLE_TEXT_OUTLINE_DARK_ON_LIGHT)
+    );
+    const tableNumericOutlineShadowCss = tableOutlineShadowCss;
+    const tableStrokeCss = externalSafeMode
+      ? "0"
+      : String(tableBroadcastOutline.WebkitTextStroke || tableBodyTextStroke || "0");
+    /** OBS·Prism에서 CSS만으로는 숫자·직급 외곽선이 빠지는 경우가 있어 인라인으로도 적용 */
+    const overlayCellOutlineStyle: React.CSSProperties = {
+      textShadow: tableOutlineShadowCss,
+      WebkitTextStroke: externalSafeMode ? 0 : tableBroadcastOutline.WebkitTextStroke,
+      paintOrder: "stroke fill",
+    };
     const overlayTotalRowCls = `${effectiveRowCls} font-semibold`;
     const centerFixedStyle = centerFixed ? (
       <style dangerouslySetInnerHTML={{ __html: `
@@ -2730,9 +2767,8 @@ function OverlayInner() {
         toonColor && `.overlay-root .overlay-toon-cell { color: ${toonColor} !important; }`,
       ].filter(Boolean).join("\n") }} />
     ) : null;
-    const excelTextOutline = tableOutlineShadow;
     /** OBS/Prism: stroke 대신 다층 shadow만 씀(숫자 열에도 동일 적용) */
-    const overlayNumericOutlineShadow = tableNumericOutlineShadow;
+    const overlayNumericOutlineShadow = tableNumericOutlineShadowCss;
     const numericNoWrapStyle = (
       <style dangerouslySetInnerHTML={{ __html: `
         .overlay-root .overlay-elegant-table .overlay-num-cell-inner {
@@ -2761,50 +2797,60 @@ function OverlayInner() {
   const tableVisualStyle = (
       <style dangerouslySetInnerHTML={{ __html: `
         .overlay-root .overlay-elegant-table {
-          border-radius: 0 !important;
+          border-radius: 8px !important;
           overflow: visible;
           border: none !important;
-          box-shadow: 0 12px 24px rgba(118, 36, 79, 0.18);
+          box-shadow: none;
           backdrop-filter: none;
           -webkit-backdrop-filter: none;
           ${externalHost ? "contain: layout style;" : ""}
         }
-        /* 헤더 아래 가로줄 및 행 사이 구분선 모두 제거(헤더/행 위·아래 표시 일관). */
         .overlay-root .overlay-elegant-table thead td,
         .overlay-root .overlay-elegant-table tbody td {
           border: none !important;
           border-bottom: none !important;
           border-top: none !important;
+          padding: ${tableRowPadY}px ${tableRowPadX}px !important;
+          min-height: ${tableRowMinH}px !important;
+          line-height: 1.25 !important;
+          font-weight: 800 !important;
+          letter-spacing: -0.01em;
         }
         .overlay-root .overlay-elegant-table td {
           transition: ${externalHost || stableMode ? "none" : "filter 180ms ease, transform 180ms ease, background-size 220ms ease"};
           background: transparent !important;
-          text-shadow: ${tableOutlineShadow} !important;
-          -webkit-text-stroke: ${tableBodyTextStroke} !important;
+          text-shadow: ${tableOutlineShadowCss} !important;
+          -webkit-text-stroke: ${tableStrokeCss} !important;
           paint-order: stroke fill;
           -webkit-font-smoothing: antialiased;
           text-rendering: ${externalHost ? "auto" : "geometricPrecision"};
         }
         ${tableForcedTextColorCss}
+        ${tableAutoTextColorCss}
         .overlay-root .overlay-elegant-table thead td {
-          background: transparent !important;
-          font-weight: 800 !important;
-          text-shadow: ${tableOutlineShadow} !important;
-          -webkit-text-stroke: ${tableBodyTextStroke} !important;
+          background: rgba(253, 232, 242, 0.96) !important;
+          font-weight: 900 !important;
+          text-shadow: ${tableOutlineShadowCss} !important;
+          -webkit-text-stroke: ${tableStrokeCss} !important;
           paint-order: stroke fill;
           box-shadow: none !important;
           border: none !important;
+          border-bottom: 1px solid ${TABLE_BROADCAST_PANEL_BORDER} !important;
         }
         .overlay-root .overlay-elegant-table thead td span,
         .overlay-root .overlay-elegant-table thead td strong {
-          text-shadow: ${tableOutlineShadow} !important;
-          -webkit-text-stroke: ${tableBodyTextStroke} !important;
+          text-shadow: ${tableOutlineShadowCss} !important;
+          -webkit-text-stroke: ${tableStrokeCss} !important;
         }
         .overlay-root .overlay-elegant-table tbody td span,
         .overlay-root .overlay-elegant-table tbody td strong {
-          text-shadow: ${tableOutlineShadow} !important;
-          -webkit-text-stroke: ${tableBodyTextStroke} !important;
+          text-shadow: ${tableOutlineShadowCss} !important;
+          -webkit-text-stroke: ${tableStrokeCss} !important;
           paint-order: stroke fill;
+          font-weight: 800 !important;
+        }
+        .overlay-root .overlay-elegant-table tbody tr:nth-child(even) td {
+          background: rgba(255, 255, 255, 0.38) !important;
         }
         ${
           externalSafeMode
@@ -2831,7 +2877,7 @@ function OverlayInner() {
           line-height: 1.2 !important;
           -webkit-text-stroke: 0 !important;
           /* 스트로크 대신 다층 그림자로 외곽선(OBS CEF에서 stroke 생략) */
-          text-shadow: ${tableOutlineShadow} !important;
+          text-shadow: ${tableOutlineShadowCss} !important;
           text-rendering: auto !important;
         }
         .overlay-root .overlay-elegant-table tbody td span,
@@ -2839,7 +2885,7 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td span,
         .overlay-root .overlay-elegant-table thead td strong {
           -webkit-text-stroke: 0 !important;
-          text-shadow: ${tableOutlineShadow} !important;
+          text-shadow: ${tableOutlineShadowCss} !important;
         }
         .overlay-root .overlay-elegant-table .overlay-total-row td {
           font-size: ${memberFontPx}px !important;
@@ -2874,8 +2920,8 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution {
           ${externalSafeMode
-            ? `-webkit-text-stroke: 0 !important; text-shadow: ${tableNumericOutlineShadow} !important;`
-            : `-webkit-text-stroke: ${tableTextIsLight ? "0.55px rgba(6, 12, 24, 0.92)" : "0"} !important; text-shadow: ${tableNumericOutlineShadow} !important;`}
+            ? `-webkit-text-stroke: 0 !important; text-shadow: ${tableNumericOutlineShadowCss} !important;`
+            : `-webkit-text-stroke: ${tableTextIsLight ? "0.55px rgba(6, 12, 24, 0.92)" : "0"} !important; text-shadow: ${tableNumericOutlineShadowCss} !important;`}
         }
         .overlay-root .overlay-elegant-table td.overlay-col-contribution .overlay-num-cell-inner {
           transform: ${externalSafeMode ? "translateX(0)" : "translateX(0)"};
@@ -2888,7 +2934,7 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td.overlay-col-toon,
         .overlay-root .overlay-elegant-table thead td.overlay-col-total,
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution {
-          background: rgba(244, 170, 205, ${useTableOpacity ? 0.78 : 0.62}) !important;
+          background: rgba(253, 232, 242, 0.96) !important;
         }
         /* 순위·기여도 헤더: 고정 폭 칸에서 스트로크·굵은 글자가 칸 경계에서 잘리지 않도록 */
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
@@ -3066,7 +3112,16 @@ function OverlayInner() {
                   )
                 ) : null}
                 <div className="relative z-[1]">
-                <div className="relative overflow-visible" style={{ borderRadius: 0, backgroundColor: `rgba(${resolveTableSheetRgb(membersThemeId).join(",")}, ${tableTintAlpha})` }}>
+                <div
+                  className="relative overflow-visible"
+                  style={{
+                    borderRadius: 10,
+                    border: `1px solid ${TABLE_BROADCAST_PANEL_BORDER}`,
+                    boxShadow: "0 2px 10px rgba(255, 140, 190, 0.22)",
+                    padding: "0.14rem",
+                    backgroundColor: `rgba(${resolveTableSheetRgb(membersThemeId).join(",")}, ${effectiveTableTintAlpha})`,
+                  }}
+                >
                     <table
                       ref={tableBoxRef as any}
                       className={`${effectiveTableCls} overlay-elegant-table${membersThemeId === "pastel" ? " pastel-member-table" : ""}`}

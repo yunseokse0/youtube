@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   buildManualSigSalesConfirmState,
+  buildManualSigSoldPersistState,
   findDisplaySigForManualDraftRow,
   hydrateManualOverlaySigItem,
   pickRandomManualSigBundle,
   resolveManualDraftRowForSigItem,
+  resolveManualOneShotDisplayFromState,
   resolveManualOneShotOverlayImageUrl,
   resolveManualOneShotStoredImageUrl,
   resolveManualOverlaySelectedSigs,
@@ -504,5 +506,60 @@ describe("buildManualSigSalesConfirmState", () => {
     expect(second.rouletteState?.phase).toBe("LANDED");
     expect(second.sigInventory?.find((x) => x.id === "sig_a")?.soldCount).toBe(1);
     expect(second.sigInventory?.find((x) => x.id === "sig_b")?.soldCount).toBe(1);
+  });
+
+  it("syncs oneShotResult price when sold flags are toggled", () => {
+    const selected: SigItem[] = [
+      {
+        id: "sig_a",
+        name: "A",
+        price: 100_000,
+        imageUrl: "",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+      {
+        id: "sig_b",
+        name: "B",
+        price: 50_000,
+        imageUrl: "",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+    ];
+    const state = {
+      overlaySettings: {
+        sigSalesManualDraftV1: {
+          drafts: [
+            { sourceSigId: "sig_a", name: "A", priceInput: "100000", imageUrl: "" },
+            { sourceSigId: "sig_b", name: "B", priceInput: "50000", imageUrl: "" },
+          ],
+          oneShotName: "한방 시그",
+          oneShotPriceInput: "",
+          oneShotImageUrl: "",
+          sigSoldFlags: [false, false, false, false, false],
+          oneShotMarkSold: false,
+        },
+      },
+      rouletteState: {
+        phase: "LANDED",
+        selectedSigs: selected,
+        oneShotResult: { id: ONE_SHOT_SIG_ID, name: "한방 시그", price: 150_000 },
+      },
+    } as AppState;
+    const next = buildManualSigSoldPersistState(state, {
+      sigSoldFlags: [true, false, false, false, false],
+      oneShotMarkSold: false,
+      userId: "finalent",
+    });
+    expect(next.rouletteState?.oneShotResult?.price).toBe(50_000);
+    const display = resolveManualOneShotDisplayFromState(next, selected, "finalent");
+    expect(display?.price).toBe(50_000);
   });
 });

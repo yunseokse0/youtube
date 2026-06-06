@@ -5,7 +5,7 @@ import {
   normalizeSigImageUrlStored,
   resolveSigOverlayCardImageUrl,
 } from "@/lib/constants";
-import { buildOneShotFromSelected } from "@/lib/sig-one-shot-price";
+import { buildOneShotFromSelected, resolveOneShotDisplayPrice } from "@/lib/sig-one-shot-price";
 import { pickRandomManualSigDrafts } from "@/lib/manual-sig-random";
 import { listActiveManualSigPool } from "@/lib/manual-sig-active-pool";
 import { MANUAL_OVERLAY_SESSION_ID } from "@/lib/sig-sales-manual-round";
@@ -115,9 +115,11 @@ export function buildManualSigSoldPersistState(
     sigSoldFlags: boolean[];
     oneShotMarkSold: boolean;
     persistDrafts?: ManualSigDraftPersist;
+    userId?: string;
   }
 ): AppState {
   const now = Date.now();
+  const userId = String(opts.userId || "").trim() || "finalent";
   const prevOverlaySettings =
     base.overlaySettings && typeof base.overlaySettings === "object"
       ? (base.overlaySettings as Record<string, unknown>)
@@ -133,6 +135,17 @@ export function buildManualSigSoldPersistState(
     sigSoldFlags: opts.sigSoldFlags,
     oneShotMarkSold: opts.oneShotMarkSold,
   };
+  const tempState: AppState = {
+    ...base,
+    overlaySettings: {
+      ...prevOverlaySettings,
+      [MANUAL_SIG_DRAFT_STATE_KEY]: draftPayload,
+    },
+  };
+  const selected = resolveManualOverlaySelectedSigs(tempState, userId);
+  const oneShotDisplay = resolveManualOneShotDisplayFromState(tempState, selected, userId);
+  const prevOneShot = base.rouletteState?.oneShotResult;
+  const oneShotResult = oneShotDisplay ?? prevOneShot ?? null;
   return {
     ...base,
     overlaySettings: {
@@ -141,6 +154,7 @@ export function buildManualSigSoldPersistState(
     },
     rouletteState: {
       ...base.rouletteState,
+      ...(oneShotResult ? { oneShotResult } : {}),
       overlayReloadNonce: Number(base.rouletteState?.overlayReloadNonce || 0) + 1,
     },
     updatedAt: now,
@@ -484,6 +498,7 @@ export function buildManualSigSalesConfirmState(
   const draftPersist = buildManualSigSoldPersistState(base, {
     sigSoldFlags: cascadeFlags,
     oneShotMarkSold: opts.oneShotMarkSold,
+    userId: opts.userId,
   });
   const closeRound = opts.closeRound !== false;
   return {
@@ -532,6 +547,27 @@ export function resolveManualOverlaySelectedSigs(
     );
   }
   return items.slice(0, 5);
+}
+
+/** 판매 확정·체크에 따라 한방 표시 금액(당첨 합계 − 판매분) */
+export function resolveManualOneShotDisplayFromState(
+  state: AppState | null | undefined,
+  selected: SigItem[],
+  userId: string
+): { id: string; name: string; price: number } | null {
+  if (selected.length < MIN_MANUAL_OVERLAY_SIGS) return null;
+  const draft = readManualSigDraftFromState(state);
+  const soldIdSet = buildManualOverlaySoldOverrideSet(state, selected, userId);
+  const rs = state?.rouletteState?.oneShotResult;
+  return resolveOneShotDisplayPrice({
+    selected: selected.map((s) => ({
+      id: s.id,
+      price: Math.max(0, Math.floor(Number(s.price || 0))),
+    })),
+    soldIdSet,
+    manualPriceInput: draft?.oneShotPriceInput,
+    fallbackName: draft?.oneShotName ?? rs?.name,
+  });
 }
 
 /** 관리자 「판매완료」체크 → OBS 스탬프 (localStorage 없음) */
