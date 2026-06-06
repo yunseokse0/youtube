@@ -369,6 +369,46 @@ function resolveTableSheetRgb(theme: ThemeId): [number, number, number] {
   return TABLE_BG_RGB[theme] ?? defaultTableBgRgb;
 }
 
+function isLightTableSheetRgb(rgb: [number, number, number]): boolean {
+  return rgb[0] + rgb[1] + rgb[2] >= 200;
+}
+
+function parseHexRgb(hex: string): [number, number, number] | null {
+  const norm = hex.trim();
+  if (!/^#[0-9a-fA-F]{3,8}$/.test(norm)) return null;
+  if (norm.length === 4) {
+    return [
+      parseInt(norm[1] + norm[1], 16),
+      parseInt(norm[2] + norm[2], 16),
+      parseInt(norm[3] + norm[3], 16),
+    ];
+  }
+  if (norm.length >= 7) {
+    return [
+      parseInt(norm.slice(1, 3), 16),
+      parseInt(norm.slice(3, 5), 16),
+      parseInt(norm.slice(5, 7), 16),
+    ];
+  }
+  return null;
+}
+
+function isLightTextHex(hex: string): boolean {
+  const rgb = parseHexRgb(hex);
+  if (!rgb) return true;
+  return (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000 >= 140;
+}
+
+/** 밝은 배경(흰 시트) 위 진한 글자용 — 흰색 기본 강제 대신 테마/시트에 맞춤 */
+const TABLE_TEXT_OUTLINE_LIGHT_ON_DARK =
+  "-1px -1px 0 rgba(6, 12, 24, 0.95), 1px -1px 0 rgba(6, 12, 24, 0.95), -1px 1px 0 rgba(6, 12, 24, 0.95), 1px 1px 0 rgba(6, 12, 24, 0.95), 0 2px 6px rgba(0,0,0,0.42)";
+const TABLE_TEXT_OUTLINE_DARK_ON_LIGHT =
+  "0 1px 2px rgba(255,255,255,0.92), 0 0 1px rgba(15,23,42,0.42), 0 1px 3px rgba(0,0,0,0.16)";
+const TABLE_NUMERIC_OUTLINE_LIGHT_ON_DARK =
+  "-1px -1px 0 rgba(6, 12, 24, 0.92), 1px -1px 0 rgba(6, 12, 24, 0.92), -1px 1px 0 rgba(6, 12, 24, 0.92), 1px 1px 0 rgba(6, 12, 24, 0.92), 0 0 3px rgba(6, 12, 24, 0.55), 0 2px 6px rgba(0, 0, 0, 0.45)";
+const TABLE_NUMERIC_OUTLINE_DARK_ON_LIGHT =
+  "0 1px 2px rgba(255,255,255,0.88), 0 0 1px rgba(15,23,42,0.38), 0 1px 3px rgba(0,0,0,0.14)";
+
 /** colgroup 열 채움 — 시트 틴트와 같은 계열(엑셀=밝은 흰색, 기본=연분홍) */
 function resolveTableColumnFill(theme: ThemeId): string {
   if (theme === "default") return "rgba(255, 212, 231, 0.70)";
@@ -1617,7 +1657,6 @@ function OverlayInner() {
   const accountColor = sp.get("accountColor") || undefined;
   const toonColor = sp.get("toonColor") || undefined;
   const tableTextColorRaw = (sp.get("tableTextColor") || String((activePreset as { tableTextColor?: string })?.tableTextColor || "")).trim();
-  const tableTextColorCss = /^#[0-9a-fA-F]{3,8}$/.test(tableTextColorRaw) ? tableTextColorRaw : "#ffffff";
   const donorsBgOpacity = Math.max(0, Math.min(100, parseInt(sp.get("donorsBgOpacity") || "0", 10)));
   const showBottomDonors = false;
   const effectiveShowTicker = false;
@@ -1729,6 +1768,25 @@ function OverlayInner() {
       .replace(/\s+/g, " ")
       .trim();
   const hasTableTextColorOverride = /^#[0-9a-fA-F]{3,8}$/.test(tableTextColorRaw);
+  const isLightTableSheet = isLightTableSheetRgb(resolveTableSheetRgb(membersThemeId));
+  /** 미설정 시 테마 글자색 유지; 밝은 시트=진한 글자, 어두운 시트=밝은 글자 */
+  const tableTextIsLight = hasTableTextColorOverride
+    ? isLightTextHex(tableTextColorRaw)
+    : !isLightTableSheet;
+  const tableOutlineShadow = tableTextIsLight ? TABLE_TEXT_OUTLINE_LIGHT_ON_DARK : TABLE_TEXT_OUTLINE_DARK_ON_LIGHT;
+  const tableNumericOutlineShadow = tableTextIsLight ? TABLE_NUMERIC_OUTLINE_LIGHT_ON_DARK : TABLE_NUMERIC_OUTLINE_DARK_ON_LIGHT;
+  const tableForcedTextColorCss = hasTableTextColorOverride
+    ? `
+        .overlay-root .overlay-elegant-table td,
+        .overlay-root .overlay-elegant-table thead td,
+        .overlay-root .overlay-elegant-table thead td span,
+        .overlay-root .overlay-elegant-table thead td strong {
+          color: ${tableTextColorRaw} !important;
+        }`
+    : "";
+  const tableBodyTextStroke = tableTextIsLight && !externalSafeMode
+    ? "0.75px rgba(6, 12, 24, 0.95)"
+    : "0";
   const stripTextColor = (cls: string) =>
     hasTableTextColorOverride
       ? cls.replace(/\btext-[^\s]+/g, "").replace(/\s+/g, " ").trim()
@@ -2320,7 +2378,7 @@ function OverlayInner() {
           if (!Number.isFinite(measured) || measured <= 0) return;
           // 마지막 열 클리핑 방지를 위해 10px 안전 여유를 둔다.
           const raw = (avail - 10) / measured;
-          const next = Math.max(0.55, Math.min(1, Math.floor(raw * 100) / 100));
+          const next = Math.max(0.75, Math.min(1, Math.floor(raw * 100) / 100));
           if (Math.abs(next - memberTableFitPrevRef.current) < 0.005) return;
           memberTableFitPrevRef.current = next;
           setMemberTableFitFactor(next);
@@ -2672,11 +2730,9 @@ function OverlayInner() {
         toonColor && `.overlay-root .overlay-toon-cell { color: ${toonColor} !important; }`,
       ].filter(Boolean).join("\n") }} />
     ) : null;
-    const excelTextOutline =
-      "-1px -1px 0 rgba(6, 12, 24, 0.95), 1px -1px 0 rgba(6, 12, 24, 0.95), -1px 1px 0 rgba(6, 12, 24, 0.95), 1px 1px 0 rgba(6, 12, 24, 0.95), 0 2px 6px rgba(0,0,0,0.42)";
+    const excelTextOutline = tableOutlineShadow;
     /** OBS/Prism: stroke 대신 다층 shadow만 씀(숫자 열에도 동일 적용) */
-    const overlayNumericOutlineShadow =
-      "-1px -1px 0 rgba(6, 12, 24, 0.92), 1px -1px 0 rgba(6, 12, 24, 0.92), -1px 1px 0 rgba(6, 12, 24, 0.92), 1px 1px 0 rgba(6, 12, 24, 0.92), 0 0 3px rgba(6, 12, 24, 0.55), 0 2px 6px rgba(0, 0, 0, 0.45)";
+    const overlayNumericOutlineShadow = tableNumericOutlineShadow;
     const numericNoWrapStyle = (
       <style dangerouslySetInnerHTML={{ __html: `
         .overlay-root .overlay-elegant-table .overlay-num-cell-inner {
@@ -2721,35 +2777,33 @@ function OverlayInner() {
           border-top: none !important;
         }
         .overlay-root .overlay-elegant-table td {
-          color: ${tableTextColorCss} !important;
           transition: ${externalHost || stableMode ? "none" : "filter 180ms ease, transform 180ms ease, background-size 220ms ease"};
           background: transparent !important;
-          text-shadow: ${excelTextOutline} !important;
-          -webkit-text-stroke: 0.75px rgba(6, 12, 24, 0.95) !important;
+          text-shadow: ${tableOutlineShadow} !important;
+          -webkit-text-stroke: ${tableBodyTextStroke} !important;
           paint-order: stroke fill;
           -webkit-font-smoothing: antialiased;
           text-rendering: ${externalHost ? "auto" : "geometricPrecision"};
         }
+        ${tableForcedTextColorCss}
         .overlay-root .overlay-elegant-table thead td {
-          color: ${tableTextColorCss} !important;
           background: transparent !important;
           font-weight: 800 !important;
-          text-shadow: ${excelTextOutline} !important;
-          -webkit-text-stroke: 0.75px rgba(6, 12, 24, 0.95) !important;
+          text-shadow: ${tableOutlineShadow} !important;
+          -webkit-text-stroke: ${tableBodyTextStroke} !important;
           paint-order: stroke fill;
           box-shadow: none !important;
           border: none !important;
         }
         .overlay-root .overlay-elegant-table thead td span,
         .overlay-root .overlay-elegant-table thead td strong {
-          color: ${tableTextColorCss} !important;
-          text-shadow: ${excelTextOutline} !important;
-          -webkit-text-stroke: 0.75px rgba(6, 12, 24, 0.95) !important;
+          text-shadow: ${tableOutlineShadow} !important;
+          -webkit-text-stroke: ${tableBodyTextStroke} !important;
         }
         .overlay-root .overlay-elegant-table tbody td span,
         .overlay-root .overlay-elegant-table tbody td strong {
-          text-shadow: ${excelTextOutline} !important;
-          -webkit-text-stroke: 0.75px rgba(6, 12, 24, 0.95) !important;
+          text-shadow: ${tableOutlineShadow} !important;
+          -webkit-text-stroke: ${tableBodyTextStroke} !important;
           paint-order: stroke fill;
         }
         ${
@@ -2777,13 +2831,7 @@ function OverlayInner() {
           line-height: 1.2 !important;
           -webkit-text-stroke: 0 !important;
           /* 스트로크 대신 다층 그림자로 외곽선(OBS CEF에서 stroke 생략) */
-          text-shadow:
-            -1px -1px 0 rgba(6, 12, 24, 0.92),
-            1px -1px 0 rgba(6, 12, 24, 0.92),
-            -1px 1px 0 rgba(6, 12, 24, 0.92),
-            1px 1px 0 rgba(6, 12, 24, 0.92),
-            0 0 3px rgba(6, 12, 24, 0.55),
-            0 2px 6px rgba(0, 0, 0, 0.45) !important;
+          text-shadow: ${tableOutlineShadow} !important;
           text-rendering: auto !important;
         }
         .overlay-root .overlay-elegant-table tbody td span,
@@ -2791,13 +2839,7 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td span,
         .overlay-root .overlay-elegant-table thead td strong {
           -webkit-text-stroke: 0 !important;
-          text-shadow:
-            -1px -1px 0 rgba(6, 12, 24, 0.92),
-            1px -1px 0 rgba(6, 12, 24, 0.92),
-            -1px 1px 0 rgba(6, 12, 24, 0.92),
-            1px 1px 0 rgba(6, 12, 24, 0.92),
-            0 0 3px rgba(6, 12, 24, 0.55),
-            0 2px 6px rgba(0, 0, 0, 0.45) !important;
+          text-shadow: ${tableOutlineShadow} !important;
         }
         .overlay-root .overlay-elegant-table .overlay-total-row td {
           font-size: ${memberFontPx}px !important;
@@ -2832,8 +2874,8 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution {
           ${externalSafeMode
-            ? "-webkit-text-stroke: 0 !important; text-shadow: -1px -1px 0 rgba(6, 12, 24, 0.92), 1px -1px 0 rgba(6, 12, 24, 0.92), -1px 1px 0 rgba(6, 12, 24, 0.92), 1px 1px 0 rgba(6, 12, 24, 0.92), 0 0 3px rgba(6, 12, 24, 0.55), 0 2px 6px rgba(0,0,0,0.45) !important;"
-            : "-webkit-text-stroke: 0.55px rgba(6, 12, 24, 0.92) !important; text-shadow: -1px -1px 0 rgba(6, 12, 24, 0.92), 1px -1px 0 rgba(6, 12, 24, 0.92), -1px 1px 0 rgba(6, 12, 24, 0.92), 1px 1px 0 rgba(6, 12, 24, 0.92), 0 1px 4px rgba(0,0,0,0.36) !important;"}
+            ? `-webkit-text-stroke: 0 !important; text-shadow: ${tableNumericOutlineShadow} !important;`
+            : `-webkit-text-stroke: ${tableTextIsLight ? "0.55px rgba(6, 12, 24, 0.92)" : "0"} !important; text-shadow: ${tableNumericOutlineShadow} !important;`}
         }
         .overlay-root .overlay-elegant-table td.overlay-col-contribution .overlay-num-cell-inner {
           transform: ${externalSafeMode ? "translateX(0)" : "translateX(0)"};

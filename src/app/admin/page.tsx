@@ -9884,11 +9884,11 @@ export default function AdminPage() {
                                 <input
                                   type="color"
                                   className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
-                                  value={toColorPickerValue(p.tableTextColor, "#ffffff")}
+                                  value={toColorPickerValue(p.tableTextColor, "#111827")}
                                   onChange={(e) => updatePreset(p.id, { tableTextColor: e.target.value })}
                                 />
-                                <span className="text-xs text-neutral-400 font-mono">{p.tableTextColor || "#ffffff"}</span>
-                                <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableTextColor: "" })}>기본(흰색)</button>
+                                <span className="text-xs text-neutral-400 font-mono">{p.tableTextColor || "테마 자동"}</span>
+                                <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableTextColor: "" })}>테마 자동</button>
                               </div>
                               <label className="text-xs text-neutral-400">계좌 글자 색상</label>
                               <div className="flex items-center gap-2">
