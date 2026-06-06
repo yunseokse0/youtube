@@ -18,7 +18,6 @@ import {
   pickRandomManualSigBundle,
   readManualSigDraftFromState,
   resolveManualOverlaySelectedSigs,
-  soldFlagsWithOneShotCascade,
 } from "@/lib/manual-sig-broadcast";
 import {
   normalizeManualSigDraftPersist,
@@ -182,51 +181,71 @@ export default function ManualSigSalesSimple() {
 
   const onConfirmSales = useCallback(
     async (opts?: { onlyDraftIdx?: number }) => {
-    if (!state) return;
-    if (displaySigs.length < MANUAL_REROLL_MIN_POOL) {
-      setToast("당첨 시그가 없습니다. 먼저 리롤을 실행하세요.");
-      return;
-    }
-    const onlyIdx = opts?.onlyDraftIdx;
-    const flagsForConfirm =
-      onlyIdx != null && onlyIdx >= 0 && onlyIdx < 5
-        ? Array.from({ length: 5 }, (_, i) => i === onlyIdx)
-        : soldFlags;
-    const oneShotForConfirm = onlyIdx != null ? false : oneShotMarkSold;
-    const hasMark =
-      onlyIdx != null
-        ? true
-        : flagsForConfirm.some(Boolean) || oneShotForConfirm;
-    if (!hasMark) {
-      setToast("판매완료할 시그를 체크한 뒤 「판매 확정」을 누르세요.");
-      return;
-    }
-    setBusy(true);
-    try {
-      const cascade = soldFlagsWithOneShotCascade(flagsForConfirm, oneShotForConfirm);
-      const next = buildManualSigSalesConfirmState(state, {
-        selected: displaySigs,
-        sigSoldFlags: cascade,
-        oneShotMarkSold: oneShotForConfirm,
-        userId,
-      });
-      const ok = await persistState(
-        next,
-        "판매 확정 완료 · 재고 반영 · OBS 반영",
-        "판매 확정은 적용됐지만 서버 저장이 지연됩니다. OBS 새로고침 후 확인하세요."
-      );
-      if (ok) void loadRemote();
-    } catch (e) {
-      setToast(`판매 확정 실패: ${String(e)}`);
-    } finally {
-      setBusy(false);
-    }
-  },
+      if (!state) return;
+      if (displaySigs.length < MANUAL_REROLL_MIN_POOL) {
+        setToast("당첨 시그가 없습니다. 먼저 리롤을 실행하세요.");
+        return;
+      }
+      const onlyIdx = opts?.onlyDraftIdx;
+      if (onlyIdx != null && soldFlags[onlyIdx]) {
+        setToast("이미 확정된 시그입니다.");
+        return;
+      }
+      const flagsForConfirm =
+        onlyIdx != null && onlyIdx >= 0 && onlyIdx < 5
+          ? (() => {
+              const merged = [...soldFlags];
+              merged[onlyIdx] = true;
+              return merged;
+            })()
+          : soldFlags;
+      const oneShotForConfirm = onlyIdx != null ? oneShotMarkSold : oneShotMarkSold;
+      const hasMark =
+        onlyIdx != null ? true : flagsForConfirm.some(Boolean) || oneShotMarkSold;
+      if (!hasMark) {
+        setToast("판매완료할 시그를 체크한 뒤 「판매 확정」을 누르세요.");
+        return;
+      }
+      const rowIndices = saleRows.map((r) => r.draftIdx);
+      const allRowsConfirmed = rowIndices.every((i) => flagsForConfirm[i]);
+      const oneShotRequired = Boolean(oneShotLabel);
+      const oneShotDone = !oneShotRequired || oneShotForConfirm;
+      const closeRound = allRowsConfirmed && oneShotDone;
+      setBusy(true);
+      try {
+        const next = buildManualSigSalesConfirmState(state, {
+          selected: displaySigs,
+          sigSoldFlags: flagsForConfirm,
+          oneShotMarkSold: oneShotForConfirm,
+          userId,
+          previousSoldFlags: soldFlags,
+          previousOneShotMarkSold: oneShotMarkSold,
+          closeRound,
+        });
+        const row = onlyIdx != null ? saleRows.find((r) => r.draftIdx === onlyIdx) : null;
+        const ok = await persistState(
+          next,
+          row
+            ? `${row.name} 판매 확정 · 재고 반영`
+            : closeRound
+              ? "판매 확정 완료 · 재고 반영 · OBS 반영"
+              : "선택 시그 판매 확정 · 나머지 계속 가능",
+          "판매 확정은 적용됐지만 서버 저장이 지연됩니다. OBS 새로고침 후 확인하세요."
+        );
+        if (ok) void loadRemote();
+      } catch (e) {
+        setToast(`판매 확정 실패: ${String(e)}`);
+      } finally {
+        setBusy(false);
+      }
+    },
     [
       state,
       displaySigs,
       soldFlags,
       oneShotMarkSold,
+      oneShotLabel,
+      saleRows,
       userId,
       persistState,
       loadRemote,
@@ -346,13 +365,17 @@ export default function ManualSigSalesSimple() {
               <p className="text-xs font-semibold text-emerald-100">판매 처리</p>
               {phase === "CONFIRMED" ? (
                 <span className="rounded bg-emerald-800/80 px-2 py-0.5 text-[10px] font-bold text-emerald-100">
-                  확정됨
+                  전체 확정됨
                 </span>
+              ) : soldFlags.some(Boolean) ? (
+                <span className="text-[10px] text-emerald-300/90">일부 확정됨 · 나머지 개별 확정 가능</span>
               ) : (
                 <span className="text-[10px] text-neutral-500">체크 → OBS 스탬프 · 확정 시 재고 차감</span>
               )}
             </div>
-            {saleRows.map((row) => (
+            {saleRows.map((row) => {
+              const rowConfirmed = Boolean(soldFlags[row.draftIdx]);
+              return (
               <div
                 key={`sale_${row.draftIdx}_${row.name}`}
                 className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-black/30 px-3 py-2.5"
@@ -361,8 +384,8 @@ export default function ManualSigSalesSimple() {
                   <input
                     type="checkbox"
                     className="h-4 w-4 shrink-0"
-                    checked={Boolean(soldFlags[row.draftIdx])}
-                    disabled={busy || phase === "CONFIRMED"}
+                    checked={rowConfirmed}
+                    disabled={busy || rowConfirmed || phase === "CONFIRMED"}
                     onChange={(e) => void onToggleSigSold(row.draftIdx, e.target.checked)}
                   />
                   <span className="min-w-0 text-neutral-100">
@@ -370,18 +393,22 @@ export default function ManualSigSalesSimple() {
                     <span className="font-semibold tabular-nums text-yellow-200">
                       {row.price.toLocaleString("ko-KR")}원
                     </span>
+                    {rowConfirmed ? (
+                      <span className="ml-2 text-xs font-semibold text-emerald-300">확정됨</span>
+                    ) : null}
                   </span>
                 </label>
                 <button
                   type="button"
-                  disabled={busy || phase === "CONFIRMED"}
+                  disabled={busy || rowConfirmed || phase === "CONFIRMED"}
                   onClick={() => void onConfirmSales({ onlyDraftIdx: row.draftIdx })}
                   className="shrink-0 rounded-md bg-emerald-800 px-3 py-1.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
                 >
-                  이 시그만 확정
+                  {rowConfirmed ? "확정 완료" : "이 시그만 확정"}
                 </button>
               </div>
-            ))}
+            );
+            })}
             {oneShotLabel ? (
               <div className="flex flex-wrap items-center gap-2 rounded-lg border border-yellow-400/30 bg-yellow-950/20 px-3 py-2.5">
                 <label className="flex min-w-0 flex-1 items-center gap-3 text-base">

@@ -421,4 +421,88 @@ describe("buildManualSigSalesConfirmState", () => {
     expect(next.sigInventory?.find((x) => x.id === "sig_a")?.soldCount).toBe(1);
     expect(next.sigInventory?.find((x) => x.id === "sig_b")?.soldCount).toBe(0);
   });
+
+  it("partial confirm keeps LANDED and does not double-count inventory", () => {
+    const state = {
+      sigInventory: [
+        {
+          id: "sig_a",
+          name: "A",
+          price: 10000,
+          imageUrl: "",
+          memberId: "",
+          maxCount: 1,
+          soldCount: 0,
+          isRolling: true,
+          isActive: true,
+        },
+        {
+          id: "sig_b",
+          name: "B",
+          price: 20000,
+          imageUrl: "",
+          memberId: "",
+          maxCount: 1,
+          soldCount: 0,
+          isRolling: true,
+          isActive: true,
+        },
+      ],
+      overlaySettings: {
+        sigSalesManualDraftV1: {
+          drafts: [],
+          oneShotName: "한방",
+          oneShotPriceInput: "",
+          oneShotImageUrl: "",
+          sigSoldFlags: [true, false, false, false, false],
+          oneShotMarkSold: false,
+        },
+      },
+      rouletteState: { phase: "LANDED", selectedSigs: [] },
+    } as AppState;
+    const selected: SigItem[] = [
+      {
+        id: "sig_a",
+        name: "A",
+        price: 10000,
+        imageUrl: "",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 1,
+        isRolling: true,
+        isActive: false,
+      },
+      {
+        id: "sig_b",
+        name: "B",
+        price: 20000,
+        imageUrl: "",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+    ];
+    const first = buildManualSigSalesConfirmState(state, {
+      selected,
+      sigSoldFlags: [true, false, false, false, false],
+      oneShotMarkSold: false,
+      previousSoldFlags: [false, false, false, false, false],
+      closeRound: false,
+    });
+    expect(first.rouletteState?.phase).toBe("LANDED");
+    expect(first.sigInventory?.find((x) => x.id === "sig_a")?.soldCount).toBe(1);
+
+    const second = buildManualSigSalesConfirmState(first, {
+      selected,
+      sigSoldFlags: [true, true, false, false, false],
+      oneShotMarkSold: false,
+      previousSoldFlags: [true, false, false, false, false],
+      closeRound: false,
+    });
+    expect(second.rouletteState?.phase).toBe("LANDED");
+    expect(second.sigInventory?.find((x) => x.id === "sig_a")?.soldCount).toBe(1);
+    expect(second.sigInventory?.find((x) => x.id === "sig_b")?.soldCount).toBe(1);
+  });
 });

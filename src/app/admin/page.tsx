@@ -118,7 +118,12 @@ import {
   removeObsTextInstance,
 } from "@/lib/obs-text-overlay";
 import { buildSigSalesManualOverlayUrl } from "@/lib/sig-sales-overlay-urls";
-import { stopToonationListener } from "@/lib/donation/toonation/listener";
+import {
+  fetchToonationListenerStatus,
+  stopToonationListener,
+  syncToonationListenerFromBrowser,
+  type ToonationListenerStatus,
+} from "@/lib/donation/toonation/listener";
 import { processDonationEvent, type ProcessDonationResult } from "@/lib/donation/processor";
 import type { DonationEvent, DonorAlias } from "@/lib/donation/types";
 
@@ -372,6 +377,7 @@ export default function AdminPage() {
   const lastStorageMergePersistAtRef = useRef<number>(0);
   /** `createStateUpdatedScheduler` — 다른 기기·탭에서 저장 시에만 GET 묶음 */
   const adminStateSseScheduleRef = useRef<(() => void) | null>(null);
+  const fetchToonationQueueRef = useRef<(() => Promise<void>) | null>(null);
   /** 동일 updatedAt 원격을 SSE·폴링이 반복 적용하지 않도록 */
   const lastAppliedRemoteUpdatedAtRef = useRef<number>(0);
   const oneShotSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -386,6 +392,8 @@ export default function AdminPage() {
   const [donorMemberId, setDonorMemberId] = useState<string | null>(null);
   const [donorTarget, setDonorTarget] = useState<DonorTarget>("account");
   const [toonationAutoProcessEnabled, setToonationAutoProcessEnabled] = useState(false);
+  const [toonationSocketEnabled, setToonationSocketEnabled] = useState(true);
+  const [toonationListenerStatus, setToonationListenerStatus] = useState<ToonationListenerStatus | null>(null);
   const [toonationAlertboxUrl, setToonationAlertboxUrl] = useState("");
   const [toonationLogs, setToonationLogs] = useState<Array<{ id: string; at: number; message: string }>>([]);
   const [toonationQueue, setToonationQueue] = useState<DonationEvent[]>([]);
@@ -514,6 +522,10 @@ export default function AdminPage() {
 
   const { connected: adminSseConnected } = useSSEConnection((d: unknown) => {
     const o = d as { type?: string };
+    if (o?.type === "donation_queue_updated") {
+      void fetchToonationQueueRef.current?.();
+      return;
+    }
     if (o?.type !== "state_updated") return;
     adminStateSseScheduleRef.current?.();
   });
@@ -4054,6 +4066,10 @@ export default function AdminPage() {
     }
   }, [user?.id]);
 
+  useEffect(() => {
+    fetchToonationQueueRef.current = () => fetchToonationQueue();
+  }, [fetchToonationQueue]);
+
   const removeQueueEvent = useCallback(async (id: string) => {
     const uid = user?.id || "";
     if (!uid || !id) return;
@@ -4170,10 +4186,16 @@ export default function AdminPage() {
     if (typeof window === "undefined") return;
     try {
       const autoProcessRaw = window.localStorage.getItem("donationAutomation.toonation.autoProcess");
+      const socketRaw = window.localStorage.getItem("donationAutomation.toonation.socketEnabled");
       const urlRaw = window.localStorage.getItem("donationAutomation.toonation.alertboxUrl");
       const envUrl = (process.env.NEXT_PUBLIC_TOONATION_ALERTBOX_URL || "").trim();
       setToonationAutoProcessEnabled(autoProcessRaw === "true");
-      setToonationAlertboxUrl(urlRaw || envUrl || "");
+      setToonationSocketEnabled(socketRaw !== "false");
+      setToonationAlertboxUrl(
+        urlRaw ||
+          envUrl ||
+          "https://toon.at/widget/alertbox/f28dc2204fbaf86fd9df74c12f435c73"
+      );
       window.localStorage.removeItem("donationAutomation.toonation.enabled");
       window.localStorage.removeItem("donationAutomation.toonation.socketDebug");
     } catch {
@@ -4185,19 +4207,61 @@ export default function AdminPage() {
     if (typeof window === "undefined") return;
     try {
       window.localStorage.setItem("donationAutomation.toonation.autoProcess", String(toonationAutoProcessEnabled));
+      window.localStorage.setItem("donationAutomation.toonation.socketEnabled", String(toonationSocketEnabled));
       window.localStorage.setItem("donationAutomation.toonation.alertboxUrl", toonationAlertboxUrl);
     } catch {
       // noop
     }
-  }, [toonationAlertboxUrl, toonationAutoProcessEnabled]);
+  }, [toonationAlertboxUrl, toonationAutoProcessEnabled, toonationSocketEnabled]);
 
-  /** 투네 소켓 자동수집 제거: 열려 있던 연결을 끊고 이전 설정 키를 정리 */
   useEffect(() => {
-    stopToonationListener();
+    const uid = user?.id || "";
+    const url = toonationAlertboxUrl.trim();
+    if (!uid || !toonationSocketEnabled || !url) {
+      void stopToonationListener(uid || undefined);
+      setToonationListenerStatus({ kind: "idle", message: "실시간 수집 꺼짐" });
+      return;
+    }
+    let cancelled = false;
+    void syncToonationListenerFromBrowser(url, {
+      userId: uid,
+      enabled: true,
+      onStatus: (s) => {
+        if (!cancelled) setToonationListenerStatus(s);
+      },
+    }).catch((err) => {
+      if (!cancelled) {
+        setToonationListenerStatus({
+          kind: "error",
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    });
     return () => {
-      stopToonationListener();
+      cancelled = true;
     };
-  }, []);
+  }, [toonationAlertboxUrl, toonationSocketEnabled, user?.id]);
+
+  useEffect(() => {
+    const uid = user?.id || "";
+    if (!uid || !toonationSocketEnabled) return;
+    const poll = window.setInterval(() => {
+      void fetchToonationListenerStatus(uid).then((status) => {
+        if (!status) {
+          setToonationListenerStatus({ kind: "idle", message: "실시간 수집 꺼짐" });
+          return;
+        }
+        if (status.connected) {
+          setToonationListenerStatus({ kind: "connected", message: "투네이션 WebSocket 연결됨" });
+        } else if (status.lastError) {
+          setToonationListenerStatus({ kind: "error", message: status.lastError });
+        } else if (status.enabled) {
+          setToonationListenerStatus({ kind: "syncing", message: "연결 중…" });
+        }
+      });
+    }, 8000);
+    return () => window.clearInterval(poll);
+  }, [toonationSocketEnabled, user?.id]);
 
   useEffect(() => {
     void fetchUnmatchedEvents();
@@ -8179,12 +8243,29 @@ export default function AdminPage() {
               <div className="text-sm text-neutral-400 mt-2">입력값에 콤마/문자 포함되어도 숫자만 인식</div>
               <div className="mt-4 rounded border border-cyan-500/20 bg-cyan-500/5 p-3 space-y-3">
                 <div className="rounded border border-white/10 bg-black/25 px-3 py-2">
-                  <div className="text-xs font-semibold text-cyan-200">투네 Alertbox URL 설정</div>
+                  <div className="text-xs font-semibold text-cyan-200">투네 Alertbox URL (연동키)</div>
                   <div className="text-[11px] text-neutral-400 mt-1">
-                    투네이션 위젯 URL(예: https://toon.at/widget/alertbox/...)을 넣으면 대기 큐·테스트 주입 등에 사용합니다. 실시간 소켓 자동수집은 사용하지 않습니다.
+                    발급받은 Alertbox URL(예:{" "}
+                    <a
+                      className="text-cyan-300/90 underline"
+                      href="https://toon.at/widget/alertbox/f28dc2204fbaf86fd9df74c12f435c73"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      toon.at/widget/alertbox/…
+                    </a>
+                    )을 넣으면 서버가 WebSocket으로 후원을 수신해 아래 <strong className="text-neutral-300">대기 리스트</strong>에
+                    쌓습니다. 관리자 탭을 닫아도 EC2 서버에서 계속 수신합니다.
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className={`px-3 py-1.5 rounded text-xs font-semibold ${toonationSocketEnabled ? "bg-emerald-600 hover:bg-emerald-500" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                    onClick={() => setToonationSocketEnabled((v) => !v)}
+                  >
+                    실시간 수집 {toonationSocketEnabled ? "ON" : "OFF"}
+                  </button>
                   <button
                     type="button"
                     className={`px-3 py-1.5 rounded text-xs font-semibold ${toonationAutoProcessEnabled ? "bg-violet-600 hover:bg-violet-500" : "bg-neutral-700 hover:bg-neutral-600"}`}
@@ -8192,6 +8273,17 @@ export default function AdminPage() {
                   >
                     큐 자동반영 {toonationAutoProcessEnabled ? "ON" : "OFF"}
                   </button>
+                  <span
+                    className={`text-[11px] px-2 py-1 rounded border ${
+                      toonationListenerStatus?.kind === "connected"
+                        ? "border-emerald-500/40 text-emerald-300 bg-emerald-500/10"
+                        : toonationListenerStatus?.kind === "error"
+                          ? "border-rose-500/40 text-rose-300 bg-rose-500/10"
+                          : "border-white/10 text-neutral-400 bg-black/20"
+                    }`}
+                  >
+                    {toonationListenerStatus?.message || "상태 확인 중…"}
+                  </span>
                 </div>
                 <input
                   className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm"
@@ -8281,7 +8373,7 @@ export default function AdminPage() {
                             <span>
                               [{new Date(evt.at).toLocaleTimeString("ko-KR", { hour12: false })}] {evt.donorName} / {evt.amount.toLocaleString("ko-KR")}원
                             </span>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 shrink-0">
                               <button
                                 type="button"
                                 className="px-2 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-[11px]"
@@ -8301,6 +8393,11 @@ export default function AdminPage() {
                               </button>
                             </div>
                           </div>
+                          {evt.message ? (
+                            <div className="mt-0.5 text-[11px] text-neutral-400 truncate" title={evt.message}>
+                              {evt.message}
+                            </div>
+                          ) : null}
                           <div className="mt-1 text-[11px] text-neutral-400">
                             <div className="text-neutral-500 mb-0.5">대기 중 시그</div>
                             {(() => {

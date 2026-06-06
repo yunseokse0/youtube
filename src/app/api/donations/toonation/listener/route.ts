@@ -1,0 +1,64 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
+import {
+  getToonationListenerStatusForUser,
+  syncToonationServerListener,
+} from "@/lib/donation/toonation/server-listener";
+
+export async function GET(req: Request) {
+  const userId = getUserIdFromRequest(req);
+  if (!userId) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  const status = await getToonationListenerStatusForUser(userId);
+  return new Response(JSON.stringify({ status }), {
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+  });
+}
+
+export async function POST(req: Request) {
+  const userId = getUserIdFromRequest(req);
+  if (!userId) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  const body = (await req.json().catch(() => null)) as {
+    alertboxUrl?: string;
+    enabled?: boolean;
+  } | null;
+  const alertboxUrl = String(body?.alertboxUrl || "").trim();
+  const enabled = body?.enabled !== false;
+  try {
+    const status = await syncToonationServerListener(userId, alertboxUrl, enabled);
+    return new Response(JSON.stringify({ ok: true, status }), {
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return new Response(JSON.stringify({ error: message }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+}
+
+export async function DELETE(req: Request) {
+  const userId = getUserIdFromRequest(req);
+  if (!userId) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  await syncToonationServerListener(userId, "", false);
+  return new Response(JSON.stringify({ ok: true }), {
+    headers: { "Content-Type": "application/json" },
+  });
+}

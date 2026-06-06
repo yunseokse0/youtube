@@ -427,7 +427,7 @@ export function collectSoldSigIdsForFinish(
   return out;
 }
 
-/** 체크된 시그·한방 → 재고 soldCount 반영 + CONFIRMED */
+/** 체크된 시그·한방 → 재고 soldCount 반영 (+ 선택 시 라운드 LANDED 유지) */
 export function buildManualSigSalesConfirmState(
   base: AppState,
   opts: {
@@ -435,20 +435,31 @@ export function buildManualSigSalesConfirmState(
     sigSoldFlags: boolean[];
     oneShotMarkSold: boolean;
     userId?: string;
+    /** 재고 +1은 이번에 새로 true 된 슬롯만 (이중 차감 방지) */
+    previousSoldFlags?: boolean[];
+    previousOneShotMarkSold?: boolean;
+    /** false면 phase LANDED — 나머지 시그 개별 확정 가능 */
+    closeRound?: boolean;
   }
 ): AppState {
+  const prevFlags = Array.isArray(opts.previousSoldFlags)
+    ? opts.previousSoldFlags
+    : [false, false, false, false, false];
+  const prevOneShot = Boolean(opts.previousOneShotMarkSold);
   const cascadeFlags = soldFlagsWithOneShotCascade(opts.sigSoldFlags, opts.oneShotMarkSold);
+  const deltaFlags = cascadeFlags.map((f, i) => f && !Boolean(prevFlags[i]));
+  const deltaOneShot = opts.oneShotMarkSold && !prevOneShot;
   const soldTargetIds = resolveManualSoldInventoryTargetIds(
     base,
     opts.selected,
     String(opts.userId || "").trim(),
-    cascadeFlags,
-    opts.oneShotMarkSold
+    deltaFlags,
+    deltaOneShot
   );
   const now = Date.now();
   const confirmedInventory = (base.sigInventory || []).map((row) => {
     if (row.id === ONE_SHOT_SIG_ID) {
-      if (!opts.oneShotMarkSold) return row;
+      if (!deltaOneShot) return row;
       const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
       const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)));
       const nextSold = Math.min(maxCount, soldCount + 1);
@@ -474,13 +485,14 @@ export function buildManualSigSalesConfirmState(
     sigSoldFlags: cascadeFlags,
     oneShotMarkSold: opts.oneShotMarkSold,
   });
+  const closeRound = opts.closeRound !== false;
   return {
     ...draftPersist,
     sigInventory: confirmedInventory,
     rouletteState: {
       ...draftPersist.rouletteState,
-      phase: "CONFIRMED",
-      lastFinishedAt: now,
+      phase: closeRound ? "CONFIRMED" : "LANDED",
+      ...(closeRound ? { lastFinishedAt: now } : {}),
       overlayReloadNonce: Number(draftPersist.rouletteState?.overlayReloadNonce || 0) + 1,
     },
     updatedAt: now,

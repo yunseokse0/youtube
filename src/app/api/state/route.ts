@@ -172,7 +172,14 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
       patch.overlayPresets
     ) as AppState["overlayPresets"];
   }
-  if (!("overlaySettings" in patch)) next.overlaySettings = base.overlaySettings;
+  if ("overlaySettings" in patch && patch.overlaySettings != null && typeof patch.overlaySettings === "object") {
+    next.overlaySettings = deepMerge(
+      base.overlaySettings && typeof base.overlaySettings === "object" ? base.overlaySettings : {},
+      patch.overlaySettings
+    ) as AppState["overlaySettings"];
+  } else if (!("overlaySettings" in patch)) {
+    next.overlaySettings = base.overlaySettings;
+  }
   if (!("sigMatch" in patch)) next.sigMatch = base.sigMatch;
   if (!("sigMatchSettings" in patch)) next.sigMatchSettings = base.sigMatchSettings;
   if (!("mealBattle" in patch)) next.mealBattle = base.mealBattle;
