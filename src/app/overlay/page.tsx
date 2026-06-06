@@ -8,6 +8,9 @@ import {
   resolveGoalTextColor,
   resolveGoalTextOutlineColor,
   resolveGoalTextOutlineWidthPx,
+  resolveTableTextOutlineColor,
+  resolveTableTextOutlineWidthPx,
+  resolveTableFontWeight,
   resolveLivePresetStyleParam,
   presetToParams,
   isOverlayBroadcastHost,
@@ -1707,6 +1710,10 @@ function OverlayInner() {
   const goalFontSizePx = resolveGoalFontSizePx(rawSp, effectivePreset, { ready });
   const goalTextOutlineColor = resolveGoalTextOutlineColor(rawSp, effectivePreset, { ready });
   const goalTextOutlineWidthPx = resolveGoalTextOutlineWidthPx(rawSp, effectivePreset, { ready });
+  const tableTextOutlineColor = resolveTableTextOutlineColor(rawSp, effectivePreset, { ready });
+  const tableTextOutlineWidthPx = resolveTableTextOutlineWidthPx(rawSp, effectivePreset, { ready });
+  const tableFontWeight = resolveTableFontWeight(rawSp, effectivePreset, { ready });
+  const tableHeaderFontWeight = Math.min(900, tableFontWeight + 100);
   const donationListsCfg = normalizeDonationListsOverlayConfig(s?.donationListsOverlayConfig);
   const tableBgGifUrl = (
     (sp.get("tableBgGifUrl") || "").trim() ||
@@ -2733,13 +2740,18 @@ function OverlayInner() {
     const tableRowMinH = Math.round(memberFontPx * 1.62);
     const tableBroadcastOutline = buildTextOutlineStyle({
       fontSizePx: memberFontPx,
-      outlineColor: tableTextIsLight ? "rgba(6, 12, 24, 0.92)" : "rgba(255, 255, 255, 0.92)",
-      outlineWidthPx: 1.15,
+      outlineColor:
+        tableTextOutlineColor ||
+        (tableTextIsLight ? "rgba(6, 12, 24, 0.92)" : "rgba(255, 255, 255, 0.92)"),
+      outlineWidthPx: tableTextOutlineWidthPx,
     });
-    const tableOutlineShadowCss = String(
-      tableBroadcastOutline.textShadow ||
-        (tableTextIsLight ? TABLE_TEXT_OUTLINE_LIGHT_ON_DARK : TABLE_TEXT_OUTLINE_DARK_ON_LIGHT)
-    );
+    const tableOutlineShadowCss =
+      tableTextOutlineWidthPx === 0
+        ? "none"
+        : String(
+            tableBroadcastOutline.textShadow ||
+              (tableTextIsLight ? TABLE_TEXT_OUTLINE_LIGHT_ON_DARK : TABLE_TEXT_OUTLINE_DARK_ON_LIGHT)
+          );
     const tableNumericOutlineShadowCss = tableOutlineShadowCss;
     const tableStrokeCss = externalSafeMode
       ? "0"
@@ -2749,6 +2761,7 @@ function OverlayInner() {
       textShadow: tableOutlineShadowCss,
       WebkitTextStroke: externalSafeMode ? 0 : tableBroadcastOutline.WebkitTextStroke,
       paintOrder: "stroke fill",
+      fontWeight: tableFontWeight,
     };
     const overlayTotalRowCls = `${effectiveRowCls} font-semibold`;
     const centerFixedStyle = centerFixed ? (
@@ -2756,7 +2769,7 @@ function OverlayInner() {
         html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
         .overlay-center-fixed table.overlay-elegant-table .overlay-row td,
         .overlay-center-fixed table.overlay-elegant-table thead td { font-size: ${memberFontPx}px !important; min-height: ${Math.round(memberFontPx * 1.5)}px !important; line-height: 1.2 !important; padding: ${Math.round(memberFontPx * 0.25)}px ${Math.round(memberFontPx * 0.4)}px !important; }
-        .overlay-center-fixed table.overlay-elegant-table .overlay-total-row td { font-size: ${memberFontPx}px !important; min-height: ${Math.round(memberFontPx * 1.5)}px !important; padding: ${Math.round(memberFontPx * 0.25)}px ${Math.round(memberFontPx * 0.4)}px !important; font-weight: 700 !important; }
+        .overlay-center-fixed table.overlay-elegant-table .overlay-total-row td { font-size: ${memberFontPx}px !important; min-height: ${Math.round(memberFontPx * 1.5)}px !important; padding: ${Math.round(memberFontPx * 0.25)}px ${Math.round(memberFontPx * 0.4)}px !important; font-weight: ${tableFontWeight} !important; }
         .overlay-center-fixed table { background: ${showTableBgGif ? "transparent" : "rgba(0,0,0,0.5)"} !important; }
         .overlay-center-fixed table.overlay-elegant-table td { container-type: inline-size; white-space: nowrap !important; overflow: visible !important; }
       ` }} />
@@ -2813,7 +2826,7 @@ function OverlayInner() {
           padding: ${tableRowPadY}px ${tableRowPadX}px !important;
           min-height: ${tableRowMinH}px !important;
           line-height: 1.25 !important;
-          font-weight: 800 !important;
+          font-weight: ${tableFontWeight} !important;
           letter-spacing: -0.01em;
         }
         .overlay-root .overlay-elegant-table td {
@@ -2829,7 +2842,7 @@ function OverlayInner() {
         ${tableAutoTextColorCss}
         .overlay-root .overlay-elegant-table thead td {
           background: rgba(253, 232, 242, 0.96) !important;
-          font-weight: 900 !important;
+          font-weight: ${tableHeaderFontWeight} !important;
           text-shadow: ${tableOutlineShadowCss} !important;
           -webkit-text-stroke: ${tableStrokeCss} !important;
           paint-order: stroke fill;
@@ -2847,7 +2860,7 @@ function OverlayInner() {
           text-shadow: ${tableOutlineShadowCss} !important;
           -webkit-text-stroke: ${tableStrokeCss} !important;
           paint-order: stroke fill;
-          font-weight: 800 !important;
+          font-weight: ${tableFontWeight} !important;
         }
         .overlay-root .overlay-elegant-table tbody tr:nth-child(even) td {
           background: rgba(255, 255, 255, 0.38) !important;
@@ -2905,7 +2918,7 @@ function OverlayInner() {
           border-bottom: none !important;
           padding: ${Math.round(memberFontPx * 0.28)}px ${Math.round(memberFontPx * 0.4)}px !important;
           font-size: ${memberFontPx}px !important;
-          font-weight: 700 !important;
+          font-weight: ${tableFontWeight} !important;
           vertical-align: middle;
         }
         ${totalLineVisible ? "" : `
@@ -3006,7 +3019,7 @@ function OverlayInner() {
           width: 1.2em;
           height: 1em;
           line-height: 1;
-          font-weight: 700;
+          font-weight: ${tableFontWeight};
           font-feature-settings: "tnum" 1;
           letter-spacing: 0;
           vertical-align: middle;

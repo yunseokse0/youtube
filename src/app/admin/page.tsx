@@ -159,7 +159,7 @@ type OverlayPreset = {
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
-  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; host?: string;
+  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableFontWeight?: string; host?: string;
 };
 
 /** 미션 목록이 비었을 때 미션 전광판 UI 확인용 placeholder */
@@ -1249,6 +1249,22 @@ export default function AdminPage() {
       const w = parseFloat(String(patch.goalTextOutlineWidth || "").replace(/[^\d.]/g, "") || "0");
       mergedPatch.goalTextOutlineWidth = Number.isFinite(w)
         ? String(Math.max(0, Math.min(3, w)))
+        : "";
+    }
+    if (patch.tableTextOutlineColor !== undefined) {
+      const normalized = normalizeGoalHexColor(String(patch.tableTextOutlineColor || ""));
+      mergedPatch.tableTextOutlineColor = normalized || "";
+    }
+    if (patch.tableTextOutlineWidth !== undefined) {
+      const w = parseFloat(String(patch.tableTextOutlineWidth || "").replace(/[^\d.]/g, "") || "0");
+      mergedPatch.tableTextOutlineWidth = Number.isFinite(w)
+        ? String(Math.max(0, Math.min(3, w)))
+        : "";
+    }
+    if (patch.tableFontWeight !== undefined) {
+      const w = parseInt(String(patch.tableFontWeight || "").replace(/[^\d]/g, ""), 10);
+      mergedPatch.tableFontWeight = Number.isFinite(w)
+        ? String(Math.max(400, Math.min(900, w)))
         : "";
     }
     const nextPresets = presets.map((p) => (p.id === id ? { ...p, ...mergedPatch } : p));
@@ -9890,6 +9906,88 @@ export default function AdminPage() {
                                 <span className="text-xs text-neutral-400 font-mono">{p.tableTextColor || "테마 자동"}</span>
                                 <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableTextColor: "" })}>테마 자동</button>
                               </div>
+                              <label className="text-xs text-neutral-400">표 글자 외곽선 색</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                  value={toColorPickerValue(p.tableTextOutlineColor || "#060c18", "#060c18")}
+                                  onChange={(e) => updatePreset(p.id, { tableTextOutlineColor: e.target.value })}
+                                />
+                                <input
+                                  className="flex-1 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs font-mono"
+                                  value={p.tableTextOutlineColor || ""}
+                                  onChange={(e) => updatePreset(p.id, { tableTextOutlineColor: e.target.value })}
+                                  placeholder="기본(글자색에 맞춤)"
+                                />
+                                <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableTextOutlineColor: "" })}>기본</button>
+                              </div>
+                              <label className="text-xs text-neutral-400">표 글자 외곽선 두께</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="range"
+                                  min={0}
+                                  max={3}
+                                  step={0.1}
+                                  value={(() => {
+                                    const n = parseFloat(String(p.tableTextOutlineWidth ?? ""));
+                                    return Number.isFinite(n) ? Math.min(3, Math.max(0, n)) : 1.0;
+                                  })()}
+                                  onChange={(e) => updatePreset(p.id, { tableTextOutlineWidth: e.target.value })}
+                                  className="flex-1 accent-emerald-500"
+                                />
+                                <input
+                                  className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                                  type="number"
+                                  min={0}
+                                  max={3}
+                                  step={0.1}
+                                  value={p.tableTextOutlineWidth ?? ""}
+                                  onChange={(e) =>
+                                    updatePreset(p.id, {
+                                      tableTextOutlineWidth: e.target.value.replace(/[^\d.]/g, "").slice(0, 3),
+                                    })
+                                  }
+                                  placeholder="자동"
+                                />
+                              </div>
+                              <p className="text-[10px] text-neutral-500 col-span-full">0이면 외곽선 없음. 비우면 글자 크기에 맞춰 자동.</p>
+                              <label className="text-xs text-neutral-400">표 글자 굵기</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="range"
+                                  min={400}
+                                  max={900}
+                                  step={100}
+                                  value={(() => {
+                                    const n = parseInt(String(p.tableFontWeight ?? ""), 10);
+                                    return Number.isFinite(n) ? Math.min(900, Math.max(400, n)) : 800;
+                                  })()}
+                                  onChange={(e) => updatePreset(p.id, { tableFontWeight: e.target.value })}
+                                  className="flex-1 accent-emerald-500"
+                                />
+                                <select
+                                  className="w-28 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                  value={(() => {
+                                    const n = parseInt(String(p.tableFontWeight ?? ""), 10);
+                                    return Number.isFinite(n) ? String(Math.min(900, Math.max(400, n))) : "";
+                                  })()}
+                                  onChange={(e) =>
+                                    updatePreset(p.id, {
+                                      tableFontWeight: e.target.value ? e.target.value : "",
+                                    })
+                                  }
+                                >
+                                  <option value="">기본(800)</option>
+                                  <option value="400">400 보통</option>
+                                  <option value="500">500 중간</option>
+                                  <option value="600">600 세미볼드</option>
+                                  <option value="700">700 볼드</option>
+                                  <option value="800">800 엑스트라</option>
+                                  <option value="900">900 최대</option>
+                                </select>
+                              </div>
+                              <p className="text-[10px] text-neutral-500 col-span-full">헤더는 본문보다 한 단계 더 굵게(최대 900). 비우면 800.</p>
                               <label className="text-xs text-neutral-400">계좌 글자 색상</label>
                               <div className="flex items-center gap-2">
                                 <input

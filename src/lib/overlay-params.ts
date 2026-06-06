@@ -123,6 +123,9 @@ export type OverlayPresetLike = {
   accountColor?: string;
   toonColor?: string;
   tableTextColor?: string;
+  tableTextOutlineColor?: string;
+  tableTextOutlineWidth?: string;
+  tableFontWeight?: string;
 };
 
 export function presetToParams(preset: OverlayPresetLike | null): URLSearchParams {
@@ -259,6 +262,18 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.accountColor && preset.accountColor.trim()) q.set("accountColor", preset.accountColor.trim());
   if (preset.toonColor && preset.toonColor.trim()) q.set("toonColor", preset.toonColor.trim());
   if (preset.tableTextColor && preset.tableTextColor.trim()) q.set("tableTextColor", preset.tableTextColor.trim());
+  const tableOutlineColor = normalizeGoalHexColor((preset.tableTextOutlineColor || "").trim());
+  if (tableOutlineColor) q.set("tableTextOutlineColor", tableOutlineColor);
+  const tableOutlineW = (preset.tableTextOutlineWidth || "").trim();
+  if (tableOutlineW) {
+    const w = Math.max(0, Math.min(3, parseFloat(tableOutlineW) || 0));
+    q.set("tableTextOutlineWidth", String(w));
+  }
+  const tableWeightRaw = (preset.tableFontWeight || "").trim();
+  if (tableWeightRaw) {
+    const fw = parseInt(tableWeightRaw, 10);
+    if (Number.isFinite(fw)) q.set("tableFontWeight", String(Math.max(400, Math.min(900, fw))));
+  }
   if (preset.vertical) q.set("vertical", "true");
   if (preset.host && preset.host.trim()) q.set("host", preset.host.trim());
   return q;
@@ -281,6 +296,9 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "memberSize",
   "totalSize",
   "tableTextColor",
+  "tableTextOutlineColor",
+  "tableTextOutlineWidth",
+  "tableFontWeight",
   "accountColor",
   "toonColor",
   "tableBgOpacity",
@@ -373,6 +391,48 @@ export function resolveGoalTextOutlineWidthPx(
   const n = parseFloat(raw);
   if (!Number.isFinite(n)) return undefined;
   return Math.max(0, Math.min(3, n));
+}
+
+export function resolveTableTextOutlineColor(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string | undefined {
+  const merged = resolveLivePresetStyleParam(
+    "tableTextOutlineColor",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  const hex = normalizeGoalHexColor(merged || "");
+  return hex || undefined;
+}
+
+export function resolveTableTextOutlineWidthPx(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): number | undefined {
+  const raw =
+    resolveLivePresetStyleParam("tableTextOutlineWidth", rawSp, presetToParams(preset), opts) || "";
+  if (!raw.trim()) return undefined;
+  const n = parseFloat(raw);
+  if (!Number.isFinite(n)) return undefined;
+  return Math.max(0, Math.min(3, n));
+}
+
+/** 엑셀표 글자 굵기(400~900). 미설정 시 800 */
+export function resolveTableFontWeight(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): number {
+  const raw =
+    resolveLivePresetStyleParam("tableFontWeight", rawSp, presetToParams(preset), opts) || "";
+  if (!raw.trim()) return 800;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n)) return 800;
+  return Math.max(400, Math.min(900, n));
 }
 
 /** 후원 목표 막대 글자색·폰트(px) — OBS URL·프리셋 공통 */
