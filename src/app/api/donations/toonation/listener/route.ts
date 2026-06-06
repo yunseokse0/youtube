@@ -32,6 +32,7 @@ export async function POST(req: Request) {
   }
   const body = (await req.json().catch(() => null)) as {
     alertboxUrl?: string;
+    linkKey?: string;
     enabled?: boolean;
   } | null;
   const alertboxUrlOrKey = String(body?.alertboxUrl || body?.linkKey || "").trim();
