@@ -88,6 +88,54 @@ describe("manual sig reroll server simulation", () => {
     expect(merged.rouletteState?.phase).toBe("LANDED");
   });
 
+  it("PATCH-only reroll does not reset generalTimer on server merge", () => {
+    const server: AppState = {
+      ...defaultState(),
+      generalTimer: {
+        remainingTime: 540,
+        isActive: true,
+        lastUpdated: 1000,
+      },
+      sigInventory: [
+        { id: "s1", name: "A", price: 1000, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+        { id: "s2", name: "B", price: 2000, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+      ],
+    };
+    const pick = server.sigInventory.slice(0, 2);
+    const rerollNext: AppState = {
+      ...defaultState(),
+      sigInventory: server.sigInventory,
+      rouletteState: {
+        ...server.rouletteState,
+        phase: "LANDED",
+        sessionId: MANUAL_OVERLAY_SESSION_ID,
+        selectedSigs: pick,
+        startedAt: Date.now(),
+      },
+      overlaySettings: {
+        [MANUAL_SIG_DRAFT_STATE_KEY]: {
+          inputMode: "inventory",
+          drafts: pick.map((s) => ({
+            sourceSigId: s.id,
+            name: s.name,
+            priceInput: String(s.price),
+            imageUrl: "",
+          })),
+          oneShotName: "한방",
+          oneShotPriceInput: "3000",
+          oneShotImageUrl: "/images/sigs/한방시그.gif",
+          sigSoldFlags: [false, false, false, false, false],
+          oneShotMarkSold: false,
+        },
+      },
+    };
+    const patch = buildSigSalesManualApiPatch(rerollNext, "finalent");
+    expect(patch.generalTimer).toBeUndefined();
+    const merged = simulateServerMergePartialState(server, patch);
+    expect(merged.generalTimer?.remainingTime).toBe(540);
+    expect(merged.generalTimer?.isActive).toBe(true);
+  });
+
   it("PATCH manual draft preserves obs text overlay registry on server merge", () => {
     const textReg = defaultObsTextRegistry();
     textReg.instances[0]!.config.blocks[0]!.text = "방송 문구 유지";

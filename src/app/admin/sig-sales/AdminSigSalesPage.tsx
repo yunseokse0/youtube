@@ -35,7 +35,7 @@ import {
   buildRouletteIdlePreserveSettings,
   loadState,
   loadStateFromApi,
-  saveStateAsync,
+  saveSigSalesManualStateAsync,
   storageKey,
   type AppState,
 } from "@/lib/state";
@@ -737,7 +737,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         overlaySettings: nextOverlaySettings,
         updatedAt: Date.now(),
       };
-      void saveStateAsync(next, userId);
+      void saveSigSalesManualStateAsync(next, userId);
     }, 300);
     return () => window.clearTimeout(tid);
   }, [authReady, userId, buildWorkbenchForPersist, manualOnly]);
@@ -1389,7 +1389,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       if (!snapshot) return;
       pendingLocalSaveRef.current = true;
       try {
-        const saved = await saveStateAsync(snapshot, userId);
+        const saved = await saveSigSalesManualStateAsync(snapshot, userId);
         if (saved.ok && typeof saved.serverUpdatedAt === "number") {
           lastAppliedRemoteUpdatedAtRef.current = saved.serverUpdatedAt;
         }
@@ -1512,7 +1512,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         setShowConfirmModal(false);
         cancelConfirm();
         resetToIdle();
-        await saveStateAsync(next, userId);
+        await saveSigSalesManualStateAsync(next, userId);
         setToast(
           "수동 판매 라운드를 리셋했습니다. 「리롤」 또는 「리롤 (목록만)」로 다음 라운드를 진행하세요."
         );
@@ -1817,7 +1817,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       setResultsPanelCollapsed(false);
       manualDraftLastSavedRef.current = JSON.stringify(manualDraftPayload);
       manualWorkbenchLastSavedRef.current = JSON.stringify(wbWithBroadcast);
-      const landedSaved = await saveStateAsync(landedState, userId);
+      const landedSaved = await saveSigSalesManualStateAsync(landedState, userId);
 
       if (!confirmNow) {
         if (!landedSaved.ok) {
@@ -1875,7 +1875,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         },
         updatedAt: soldAt,
       };
-      const soldSaved = await saveStateAsync(soldState, userId);
+      const soldSaved = await saveSigSalesManualStateAsync(soldState, userId);
       if (soldSaved.ok) {
         setState(soldState);
         setToast(
@@ -2137,7 +2137,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       },
       updatedAt: Date.now(),
     };
-    const landedSaved = await saveStateAsync(landedSyncState, userId);
+    const landedSaved = await saveSigSalesManualStateAsync(landedSyncState, userId);
     if (landedSaved.ok) {
       setState(landedSyncState);
       landed(displaySelectedSigs, displayOneShot, displaySelectedSigs[displaySelectedSigs.length - 1]?.id || null, {
@@ -2259,10 +2259,10 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       },
       updatedAt: finishedAt,
     };
-    let saved = await saveStateAsync(next, userId);
+    let saved = await saveSigSalesManualStateAsync(next, userId);
     if (!saved.ok) {
       await new Promise((r) => setTimeout(r, 400));
-      saved = await saveStateAsync(next, userId);
+      saved = await saveSigSalesManualStateAsync(next, userId);
     }
     if (saved.ok) {
       setManualSoldSet(new Set(displaySelectedSigs.map((x) => x.id)));
@@ -2385,7 +2385,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     setState((prev) => {
       if (!prev) return prev;
       const next = updater(prev);
-      void saveStateAsync(next, userId);
+      void saveSigSalesManualStateAsync(next, userId);
       return next;
     });
   }, [userId]);
@@ -2528,7 +2528,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         updatedAt: Date.now(),
       };
       setState(nextState);
-      const saved = await saveStateAsync(nextState, userId);
+      const saved = await saveSigSalesManualStateAsync(nextState, userId);
       if (!saved.ok) {
         setToast("변경은 화면에 반영됐지만 서버 저장이 지연됩니다. 잠시 후 다시 시도하세요.");
       } else if (opts?.toastLabel) {
