@@ -207,7 +207,7 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
   const patchReloadNonce = Number(patchRsEarly?.overlayReloadNonce || 0);
   const baseReloadNonce = Number(base.rouletteState?.overlayReloadNonce || 0);
   const manualNonceAdvanced =
-    Boolean(patchRsEarly) &&
+    patchRsEarly != null &&
     isManualOverlaySessionId(patchRsEarly.sessionId) &&
     patchReloadNonce > baseReloadNonce;
   const canApplyPatchRouletteState =
