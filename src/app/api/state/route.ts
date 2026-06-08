@@ -283,7 +283,7 @@ export async function GET(req: Request) {
   }
   const bodyForPick = (state: AppState) => {
     const cleaned = sanitizeAppStateWheelDemo(state);
-    return pickMode ? projectStateForGetPick(cleaned, pickMode) : cleaned;
+    return pickMode ? projectStateForGetPick(cleaned, pickMode, userId) : cleaned;
   };
   const revisionAt = (state: AppState) =>
     pickMode ? revisionForStatePick(state, pickMode) : state.updatedAt || 0;

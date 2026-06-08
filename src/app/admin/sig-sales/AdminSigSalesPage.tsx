@@ -100,6 +100,7 @@ import {
   isManualOverlaySessionId,
   MANUAL_OVERLAY_SESSION_ID,
 } from "@/lib/sig-sales-manual-round";
+import { hydrateManualOverlaySigItem } from "@/lib/manual-sig-broadcast";
 import { pickRandomManualSigDrafts } from "@/lib/manual-sig-random";
 import {
   MANUAL_SIG_DRAFT_STATE_KEY,
@@ -1698,7 +1699,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         const priceMatched = Math.floor(Number(item.price || 0)) === Math.floor(Number(row.price || 0));
         return nameMatched && priceMatched;
       });
-      return {
+      const base: SigItem = {
         id: matchedInventoryItem?.id || `manual_sig_${tsId}_${idx + 1}_${safeName}`,
         name: row.name,
         price: row.price,
@@ -1709,6 +1710,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         isRolling: true,
         isActive: true,
       };
+      return hydrateManualOverlaySigItem(base, baseState.sigInventory, userId, drafts[idx]);
     });
     setManualDebugInfo(
       `selected=${selected.length} | ${selected

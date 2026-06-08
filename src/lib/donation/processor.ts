@@ -1,10 +1,8 @@
 import { loadStateFromApi, saveStateAsync } from "@/lib/state";
-import { isOperatingSettlementMember } from "@/lib/settlement-utils";
-import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
 import { createModuleLogger } from "@/lib/logger";
-import type { AppState, Donor as AppDonor } from "@/types";
-import { mapToMember } from "./mapper";
-import type { DonationEvent, Donor, DonorAlias } from "./types";
+import type { AppState } from "@/types";
+import { applyDonationToAppState } from "./apply-donation-state";
+import type { DonationEvent, DonorAlias } from "./types";
 
 const log = createModuleLogger("Donation/Processor");
 
@@ -12,22 +10,6 @@ const processedEventIds = new Set<string>();
 const unresolvedEventIds = new Set<string>();
 let aliasCache: DonorAlias[] = [];
 let aliasCacheAt = 0;
-
-function toEpochMs(input: string): number {
-  const ts = Date.parse(input);
-  return Number.isFinite(ts) ? ts : Date.now();
-}
-
-function toAppDonor(donor: Donor): AppDonor {
-  return {
-    id: donor.id,
-    name: donor.name,
-    amount: donor.amount,
-    memberId: donor.memberId,
-    at: toEpochMs(donor.at),
-    target: donor.target,
-  };
-}
 
 export type ProcessDonationResult = DonationEvent & { updatedState?: AppState };
 
@@ -58,82 +40,31 @@ export async function processDonationEvent(
       return { ...rawEvent, status: "failed" as const, error: "state_not_available" };
     }
     const currentState = mergeAdminHintForDonation(loaded, hintState);
-
     const aliases = await loadAliases(userId);
-    const processedEvent = mapToMember(rawEvent, currentState.members || [], aliases);
-    if (processedEvent.status === "unmatched" || !processedEvent.memberId) {
-      log.warn("unmatched donor", processedEvent.donorName);
+    const applied = applyDonationToAppState(currentState, rawEvent, aliases);
+
+    if (!applied.ok) {
+      if (applied.reason === "duplicate") {
+        processedEventIds.add(dedupeKey);
+        return { ...rawEvent, status: "processed" as const };
+      }
+      log.warn("unmatched donor", applied.event.donorName);
       if (!unresolvedEventIds.has(dedupeKey)) {
         unresolvedEventIds.add(dedupeKey);
-        await saveUnmatched(processedEvent, userId);
+        await saveUnmatched(applied.event, userId);
       }
-      return processedEvent;
+      return applied.event;
     }
 
-    if ((currentState.donors || []).some((d) => d.id === processedEvent.id)) {
-      processedEventIds.add(dedupeKey);
-      return { ...processedEvent, status: "processed" as const };
-    }
-
-    const newDonor: Donor = {
-      id: processedEvent.id,
-      name: processedEvent.donorName,
-      amount: Math.max(0, Math.round(Number(processedEvent.amount) || 0)),
-      memberId: processedEvent.memberId,
-      at: processedEvent.at,
-      target: processedEvent.target || "toon",
-    };
-    const appDonor = toAppDonor(newDonor);
-
-    const updatedMembers = currentState.members.map((member) => {
-      if (member.id !== newDonor.memberId) return member;
-      const field = newDonor.target === "toon" ? "toon" : "account";
-      const nextAccount = field === "account" ? (member.account || 0) + newDonor.amount : (member.account || 0);
-      const nextToon = field === "toon" ? (member.toon || 0) + newDonor.amount : (member.toon || 0);
-      const isOperating = isOperatingSettlementMember(
-        { id: member.id, name: member.name, operating: member.operating, realName: member.realName },
-        currentState.memberPositions || null
-      );
-      return {
-        ...member,
-        [field]: (member[field] || 0) + newDonor.amount,
-        /** 관리자 수동 후원과 동일하게 기여도 합계를 맞춤. 운영비 행은 기여도 책정 제외 */
-        contribution: isOperating ? Math.max(0, Number(member.contribution) || 0) : nextAccount + nextToon,
-      };
-    });
-
-    const syncMode = currentState.donationSyncMode || "mealBattle";
-    const mealParticipants =
-      syncMode === "mealBattle"
-        ? applyMealBattleDonationToParticipants(
-            currentState.mealBattle?.participants || [],
-            newDonor.memberId,
-            newDonor.amount,
-            1,
-            appDonor.at
-          )
-        : (currentState.mealBattle?.participants || []);
-
-    const updatedState: AppState = {
-      ...currentState,
-      members: updatedMembers,
-      donors: [...(currentState.donors || []), appDonor],
-      mealBattle: {
-        ...currentState.mealBattle,
-        participants: mealParticipants,
-      },
-      updatedAt: Date.now(),
-    };
-
-    const saved = await saveCurrentAppState(updatedState, userId);
+    const saved = await saveCurrentAppState(applied.state, userId);
     if (!saved.ok) {
       return { ...rawEvent, status: "failed" as const, error: "state_save_failed" };
     }
     processedEventIds.add(dedupeKey);
     unresolvedEventIds.delete(dedupeKey);
-    await resolveUnmatched(processedEvent.id, userId);
-    log.debug("processed", newDonor.name, newDonor.amount);
-    return { ...processedEvent, status: "processed" as const, updatedState };
+    await resolveUnmatched(applied.event.id, userId);
+    log.debug("processed", applied.event.donorName, applied.event.amount);
+    return { ...applied.event, status: "processed" as const, updatedState: applied.state };
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown_error";
     log.error("process failed", message);

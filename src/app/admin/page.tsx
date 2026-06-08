@@ -4107,8 +4107,14 @@ export default function AdminPage() {
   }, []);
 
   const approveQueueEvent = useCallback(async (evt: DonationEvent) => {
+    if (evt.alreadyApplied) {
+      await removeQueueEvent(evt.id);
+      await fetchToonationQueue();
+      pushToonationLog(`자동 반영 확인: ${evt.donorName} ${evt.amount.toLocaleString("ko-KR")}원`);
+      return;
+    }
     const result = await processDonationEvent(
-      { ...evt, status: "queued", target: "toon" },
+      { ...evt, status: "queued" },
       user?.id,
       stateRef.current
     );
@@ -4122,7 +4128,7 @@ export default function AdminPage() {
   const approveAllQueueEvents = useCallback(async () => {
     for (const evt of toonationQueue) {
       const result = await processDonationEvent(
-        { ...evt, status: "queued", target: "toon" },
+        { ...evt, status: "queued" },
         user?.id,
         stateRef.current
       );
@@ -8400,15 +8406,19 @@ export default function AdminPage() {
                         <div className="w-full">
                           <div className="flex items-center justify-between gap-2">
                             <span>
-                              [{new Date(evt.at).toLocaleTimeString("ko-KR", { hour12: false })}] {evt.donorName} / {evt.amount.toLocaleString("ko-KR")}원
+                              [{new Date(evt.at).toLocaleTimeString("ko-KR", { hour12: false })}] {evt.donorName}
+                              {evt.playerName ? ` → ${evt.playerName}` : evt.memberAutoAssigned ? " → (자동배치)" : ""}
+                              {" / "}
+                              {evt.amount.toLocaleString("ko-KR")}원
+                              {evt.target === "account" ? " · 계좌" : " · 투네"}
                             </span>
                             <div className="flex items-center gap-2 shrink-0">
                               <button
                                 type="button"
-                                className="px-2 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-[11px]"
+                                className={`px-2 py-0.5 rounded text-[11px] ${evt.alreadyApplied ? "bg-amber-700 hover:bg-amber-600" : "bg-emerald-700 hover:bg-emerald-600"}`}
                                 onClick={() => void approveQueueEvent(evt)}
                               >
-                                승인 반영
+                                {evt.alreadyApplied ? "확인" : "승인 반영"}
                               </button>
                               <button
                                 type="button"

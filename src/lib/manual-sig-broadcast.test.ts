@@ -4,6 +4,7 @@ import {
   buildManualSigSoldPersistState,
   findDisplaySigForManualDraftRow,
   hydrateManualOverlaySigItem,
+  patchManualOverlaySigImagesFromDraft,
   pickRandomManualSigBundle,
   resolveManualDraftRowForSigItem,
   resolveManualOneShotDisplayFromState,
@@ -14,6 +15,46 @@ import {
 import { DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE } from "@/lib/constants";
 import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 import type { AppState, SigItem } from "@/types";
+
+describe("patchManualOverlaySigImagesFromDraft", () => {
+  it("fills empty selectedSigs.imageUrl from draft + inventory (dc4b569 regression)", () => {
+    const inventory: SigItem[] = [
+      {
+        id: "sig_a",
+        name: "독주",
+        price: 21000,
+        imageUrl: "/uploads/sigs/finalent/1730000000_abc12345.gif",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+    ];
+    const drafts = [
+      { sourceSigId: "sig_a", name: "독주", priceInput: "21000", imageUrl: "" },
+      { sourceSigId: "", name: "B", priceInput: "22000", imageUrl: "" },
+      { sourceSigId: "", name: "C", priceInput: "23000", imageUrl: "" },
+      { sourceSigId: "", name: "D", priceInput: "24000", imageUrl: "" },
+      { sourceSigId: "", name: "E", priceInput: "25000", imageUrl: "" },
+    ];
+    const selected: SigItem[] = [
+      {
+        id: "manual_sig_1",
+        name: "독주",
+        price: 21000,
+        imageUrl: "",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+    ];
+    const out = patchManualOverlaySigImagesFromDraft(selected, drafts, inventory, "finalent");
+    expect(out[0]?.imageUrl).toBe("/uploads/sigs/finalent/1730000000_abc12345.gif");
+  });
+});
 
 describe("hydrateManualOverlaySigItem", () => {
   const inventory: SigItem[] = [

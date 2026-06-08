@@ -64,7 +64,12 @@ function stripRouletteForOverlay(rs: RouletteState | undefined): RouletteState |
   return rest as RouletteState;
 }
 
-function overlayCoreFields(state: AppState, rs: RouletteState | undefined, includeDonors: boolean) {
+function overlayCoreFields(
+  state: AppState,
+  rs: RouletteState | undefined,
+  includeDonors: boolean,
+  userId?: string
+) {
   return {
     updatedAt: state.updatedAt,
     members: state.members,
@@ -78,7 +83,7 @@ function overlayCoreFields(state: AppState, rs: RouletteState | undefined, inclu
     donorRankingsPresetId: state.donorRankingsPresetId,
     ...(includeDonors ? { donors: capDonorsForOverlayWire(state.donors) } : {}),
     missions: state.missions,
-    sigInventory: slimSigInventoryForWire(state.sigInventory),
+    sigInventory: slimSigInventoryForWire(state.sigInventory, userId),
     sigSoldOutStampUrl: state.sigSoldOutStampUrl,
     rouletteState: rs,
     overlayPresets: state.overlayPresets,
@@ -104,11 +109,15 @@ function overlayCoreFields(state: AppState, rs: RouletteState | undefined, inclu
 /**
  * GET /api/state?pick=… — 응답 본문 축소(관리자는 pick 없이 전체).
  */
-export function projectStateForGetPick(state: AppState, pick: StateApiPick): unknown {
+export function projectStateForGetPick(
+  state: AppState,
+  pick: StateApiPick,
+  userId?: string
+): unknown {
   if (pick === STATE_PICK_SIG_INVENTORY) {
     return {
       updatedAt: state.updatedAt,
-      sigInventory: slimSigInventoryForWire(state.sigInventory),
+      sigInventory: slimSigInventoryForWire(state.sigInventory, userId),
     };
   }
   const rs = stripRouletteForOverlay(state.rouletteState);
@@ -120,7 +129,7 @@ export function projectStateForGetPick(state: AppState, pick: StateApiPick): unk
         : undefined;
     return {
       updatedAt: state.updatedAt,
-      sigInventory: slimSigInventoryForWire(state.sigInventory),
+      sigInventory: slimSigInventoryForWire(state.sigInventory, userId),
       sigSalesExcludedIds: state.sigSalesExcludedIds,
       sigSoldOutStampUrl: state.sigSoldOutStampUrl,
       sigRollingMeta: state.sigRollingMeta,
@@ -133,7 +142,7 @@ export function projectStateForGetPick(state: AppState, pick: StateApiPick): unk
   }
   if (pick === STATE_PICK_OVERLAY) {
     return {
-      ...overlayCoreFields(state, rs, false),
+      ...overlayCoreFields(state, rs, false, userId),
       donorRankingsUpdatedAt: overlayPickRevision(state),
     };
   }
@@ -165,7 +174,7 @@ export function projectStateForGetPick(state: AppState, pick: StateApiPick): unk
     };
   }
   return {
-    ...overlayCoreFields(state, rs, true),
+    ...overlayCoreFields(state, rs, true, userId),
     donorRankingsUpdatedAt: overlayPickRevision(state),
   };
 }

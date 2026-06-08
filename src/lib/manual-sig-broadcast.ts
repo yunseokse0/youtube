@@ -221,6 +221,45 @@ export function findDisplaySigForManualDraftRow(
   );
 }
 
+function hasUsableManualSigImageUrl(url: string | undefined | null): boolean {
+  const s = String(url || "").trim();
+  return Boolean(s && !s.toLowerCase().includes("dummy-sig.svg"));
+}
+
+/**
+ * 서버 selectedSigs.imageUrl 이 비었을 때 초안(draft) 기반 URL로 보강 — dc4b569 이후 OBS 회귀 대응.
+ */
+export function patchManualOverlaySigImagesFromDraft(
+  items: SigItem[],
+  drafts: ManualSigDraft[] | undefined | null,
+  inventory: SigItem[] | undefined,
+  userId: string
+): SigItem[] {
+  if (!items.length) return items;
+  if (!Array.isArray(drafts) || !manualSigDraftsReady(drafts)) return items;
+  if (!items.some((i) => !hasUsableManualSigImageUrl(i.imageUrl))) return items;
+  const fromDraft = buildManualSigItemsFromDrafts(drafts, inventory, userId);
+  return items.map((item) => {
+    if (hasUsableManualSigImageUrl(item.imageUrl)) return item;
+    const canon = canonicalSigIdFromWheelSliceId(item.id);
+    const nk = normalizeManualSigNameKey(item.name);
+    const price = Math.floor(Number(item.price || 0));
+    const hit =
+      fromDraft.find(
+        (d) => d.id === item.id || canonicalSigIdFromWheelSliceId(d.id) === canon
+      ) ||
+      fromDraft.find(
+        (d) =>
+          normalizeManualSigNameKey(d.name) === nk &&
+          Math.floor(Number(d.price || 0)) === price
+      );
+    if (hit && hasUsableManualSigImageUrl(hit.imageUrl)) {
+      return { ...item, imageUrl: hit.imageUrl };
+    }
+    return item;
+  });
+}
+
 /** 업로드 경로·from-drive·인벤 URL 중 OBS에 가장 잘 먹는 경로 선택 */
 function pickBestManualSigStoredImageUrl(
   urls: Array<string | undefined | null>
@@ -545,6 +584,8 @@ export function resolveManualOverlaySelectedSigs(
     items = stripBundledSigPlaceholderItems(
       buildManualSigItemsFromDrafts(draft.drafts, inv, userId)
     );
+  } else if (draft?.drafts?.length) {
+    items = patchManualOverlaySigImagesFromDraft(items, draft.drafts, inv, userId);
   }
   return items.slice(0, 5);
 }

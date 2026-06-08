@@ -32,6 +32,8 @@ export type Donor = {
   at: number;
   /** 후원 채널(계좌/투네) */
   target?: DonorTarget;
+  /** 투네 자동 배치 멤버 — 관리자 수동 재지정 대상 */
+  memberAutoAssigned?: boolean;
 };
 
 export type ContributionLog = {

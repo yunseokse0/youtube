@@ -88,8 +88,8 @@ import {
 import {
   buildManualOverlaySoldOverrideSet,
   hydrateManualOverlaySigItem,
-  resolveManualDraftRowForSigItem,
   resolveManualOneShotStoredImageUrl,
+  resolveManualOverlaySelectedSigs,
 } from "@/lib/manual-sig-broadcast";
 import { stripBundledSigPlaceholderItems } from "@/lib/sig-placeholder";
 import { buildSigSalesOverlaySyncSignature } from "@/lib/overlay-sync-signature";
@@ -1218,12 +1218,18 @@ function SigSalesOverlayPageInner() {
           isRolling: true,
           isActive: true,
         };
-        return hydrateSigItemFromInventory(base, wheelInventory, sigImageUserId);
+        return hydrateManualOverlaySigItem(base, wheelInventory, sigImageUserId, {
+          sourceSigId: row?.sourceSigId,
+          imageUrl: String(row?.imageUrl || "").trim(),
+        });
       })
       .filter((x): x is SigItem => Boolean(x));
   }, [manualDraftEffective, wheelInventory, sigImageUserId]);
   /** OBS: machine HYDRATE 전에도 API rouletteState 당첨을 바로 표시 */
   const serverRouletteSelectedSigs = useMemo(() => {
+    if (manualOverlayMode && state) {
+      return resolveManualOverlaySelectedSigs(state, sigImageUserId).slice(0, CONFIRMED_VISIBLE_SLOTS);
+    }
     const rs = state?.rouletteState;
     const raw = (
       Array.isArray(rs?.selectedSigs) && rs.selectedSigs.length > 0
@@ -1232,28 +1238,12 @@ function SigSalesOverlayPageInner() {
           ? rs.results
           : []
     ) as SigItem[];
-    const draftRows = Array.isArray(manualDraftEffective?.drafts)
-      ? manualDraftEffective!.drafts.map((row) => ({
-          sourceSigId: row.sourceSigId,
-          name: String(row.name ?? ""),
-          priceInput: String(row.priceInput ?? ""),
-          imageUrl: String(row.imageUrl ?? ""),
-        }))
-      : [];
     return stripBundledSigPlaceholderItems(
-      raw.slice(0, CONFIRMED_VISIBLE_SLOTS).map((s) => {
-        if (manualOverlayMode && draftRows.length > 0) {
-          return hydrateManualOverlaySigItem(
-            s,
-            wheelInventory,
-            sigImageUserId,
-            resolveManualDraftRowForSigItem(s, draftRows)
-          );
-        }
-        return hydrateSigItemFromInventory(s, wheelInventory, sigImageUserId);
-      })
+      raw
+        .slice(0, CONFIRMED_VISIBLE_SLOTS)
+        .map((s) => hydrateSigItemFromInventory(s, wheelInventory, sigImageUserId))
     );
-  }, [state?.rouletteState, wheelInventory, sigImageUserId, manualOverlayMode, manualDraftEffective]);
+  }, [state, wheelInventory, sigImageUserId, manualOverlayMode]);
   /** 수동 방송: 서버 초안 5개 또는 LANDED 당첨(회전판 없이 운영) */
   const manualDraftBroadcastReady =
     manualOverlayMode && manualDraftSelectedForUi.length >= 5;

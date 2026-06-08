@@ -1,5 +1,6 @@
 import WebSocket from "ws";
 import { createModuleLogger } from "@/lib/logger";
+import { tryAutoApplyToonationDonationOnServer } from "../server-apply-donation";
 import { enqueueDonationEvent } from "./enqueue-donation";
 import {
   clearToonationListenerConfig,
@@ -86,9 +87,29 @@ async function onDonation(userId: string, raw: string): Promise<void> {
     conn.lastDonationAt = Date.now();
     conn.lastEventAt = conn.lastDonationAt;
   }
+  const outcome = await tryAutoApplyToonationDonationOnServer(userId, event);
+  if (outcome === "applied") {
+    log.info("후원 엑셀표 자동 반영", {
+      userId,
+      donor: event.donorName,
+      amount: event.amount,
+      target: event.target,
+      player: event.playerName,
+    });
+    return;
+  }
+  if (outcome === "applied_needs_review") {
+    log.info("후원 자동 반영(멤버 확인 필요)", {
+      userId,
+      donor: event.donorName,
+      amount: event.amount,
+      target: event.target,
+    });
+    return;
+  }
   const added = await enqueueDonationEvent(userId, event);
   if (added) {
-    log.info("후원 큐 등록", { userId, donor: event.donorName, amount: event.amount });
+    log.info("후원 큐 등록(멤버 미매칭)", { userId, donor: event.donorName, amount: event.amount });
   }
 }
 

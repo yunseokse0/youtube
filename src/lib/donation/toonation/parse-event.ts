@@ -34,6 +34,7 @@ export function extractToonationAmount(data: unknown): number {
   return 0;
 }
 
+/** 투네 알림 상단 후원자 닉 */
 export function extractToonationDonorName(data: unknown): string {
   const root = unwrapToonationPayload(data);
   const candidates = [
@@ -59,7 +60,48 @@ export function extractToonationMessage(data: unknown): string {
       safeRead(root, "text") ||
       safeRead(data, "comment") ||
       ""
-  );
+  ).trim();
+}
+
+function cleanDonorToken(raw: string): string {
+  return String(raw || "")
+    .trim()
+    .replace(/[,.:;!?~]+$/g, "")
+    .trim();
+}
+
+/**
+ * 투네 후원 메시지 포맷:
+ * - 계좌: `계좌 후원자이름 플레이어이름 …` (이후 문구 무시)
+ * - 투네: 후원자 = 알림 상단 닉(`alertDonorName`). 메시지 첫 토큰 = 플레이어(선택). 이후 무시.
+ */
+export function parseToonationMessageBody(
+  message: string,
+  alertDonorName = ""
+): {
+  donorName: string;
+  playerName: string;
+  target: "account" | "toon";
+} {
+  const tokens = String(message || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (tokens.length > 0 && tokens[0] === "계좌") {
+    return {
+      target: "account",
+      donorName: cleanDonorToken(tokens[1] || ""),
+      playerName: cleanDonorToken(tokens[2] || ""),
+    };
+  }
+
+  const playerName = cleanDonorToken(tokens[0] || "");
+  return {
+    target: "toon",
+    donorName: String(alertDonorName || "").trim(),
+    playerName,
+  };
 }
 
 export function extractToonationExternalId(data: unknown): string {
@@ -96,15 +138,26 @@ export function parseToonationDonationPayload(data: unknown): DonationEvent | nu
   if (amount <= 0) return null;
 
   const externalId = extractToonationExternalId(data) || `${Date.now()}-${amount}`;
+  const alertDonor = extractToonationDonorName(data);
+  const rawMessage = extractToonationMessage(data);
+  const parsed = parseToonationMessageBody(rawMessage, alertDonor);
+  const donorName =
+    parsed.target === "account"
+      ? parsed.donorName || alertDonor
+      : parsed.donorName || alertDonor;
+  const playerName = parsed.playerName || undefined;
+
   return {
     id: `toonation:${externalId}`,
     provider: "toonation",
     externalId,
-    donorName: extractToonationDonorName(data),
+    donorName,
+    playerName,
+    recipientName: playerName,
     amount,
-    message: extractToonationMessage(data),
+    message: rawMessage,
     at: new Date().toISOString(),
-    target: "toon",
+    target: parsed.target,
     status: "queued",
   };
 }

@@ -46,6 +46,8 @@ export function buildSigSalesOverlaySyncSignature(state: AppState | null): strin
     phase: rs?.phase || "",
     sid: rs?.sessionId || "",
     sel: (rs?.selectedSigs || []).map((s) => canonicalSigIdFromWheelSliceId(s.id)),
+    /** selectedSigs.imageUrl — 리롤 후 URL만 바뀌어도 OBS가 갱신되게 */
+    selImg: (rs?.selectedSigs || []).map((s) => String(s.imageUrl || "").trim()).join("\u001f"),
     stamp: state.sigSoldOutStampUrl || "",
   });
 }
