@@ -112,6 +112,7 @@ import {
   applyManualSlotToForm,
   captureManualFormToSlot,
   createEmptyManualSlot,
+  emptyManualDrafts,
   defaultManualSigWorkbench,
   manualSigDraftsReady,
   mergeActiveSlotIntoWorkbench,
@@ -1510,6 +1511,8 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         setState(next);
         setManualSoldSet(new Set());
         setOneShotSold(false);
+        setManualSigDrafts(emptyManualDrafts());
+        setManualOneShotPriceInput("");
         setManualSigSoldFlags([false, false, false, false, false]);
         setManualOneShotMarkSold(false);
         setManualDebugInfo("");

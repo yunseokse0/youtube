@@ -74,6 +74,22 @@ export function loadOverlayLastGood(
   }
 }
 
+export function clearOverlayLastGood(
+  userId?: string,
+  pick: StateApiPick = STATE_PICK_OVERLAY
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(overlayLastGoodStorageKey(userId, pick));
+  } catch {
+    /* private mode */
+  }
+}
+
+function overlayReloadNonceFrom(state: AppState | null | undefined): number {
+  return Number(state?.rouletteState?.overlayReloadNonce || 0);
+}
+
 export function saveOverlayLastGood(
   state: AppState,
   userId?: string,
@@ -113,6 +129,12 @@ export function shouldKeepLastGoodInsteadOf(
 ): boolean {
   if (!lastGood || !isOverlayStateViable(lastGood, pick)) return false;
   if (!incoming) return true;
+  /** 수동 시그: 리셋·리롤로 nonce가 올라가면 빈 IDLE도 새 상태로 수용(옛 당첨·한방 금액 유지 방지) */
+  if (pick === STATE_PICK_SIG_SALES) {
+    const inNonce = overlayReloadNonceFrom(incoming);
+    const goodNonce = overlayReloadNonceFrom(lastGood);
+    if (inNonce > goodNonce) return false;
+  }
   if (!isOverlayStateViable(incoming, pick)) return true;
   if (shouldDiscardEmptyMembersSnapshot(incoming, pick, lastGood)) return true;
   return false;

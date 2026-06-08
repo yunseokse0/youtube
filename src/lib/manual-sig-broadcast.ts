@@ -683,9 +683,17 @@ export function resolveManualOverlaySelectedSigs(
   const draftItems = draftReady
     ? stripBundledSigPlaceholderItems(buildManualSigItemsFromDrafts(draft!.drafts, inv, userId))
     : [];
+  const phase = String(rs.phase || "").trim();
+  const terminalPhase = new Set(["LANDED", "CONFIRM_PENDING", "CONFIRMED"]).has(phase);
+  const serverPickCount = raw.length;
+  /** IDLE 리셋 직후 옛 초안을 OBS에 띄우지 않음 — LANDED·서버 당첨 있을 때만 초안 우선 */
+  const allowDraftPrimary =
+    draftReady &&
+    draftItems.length >= MIN_MANUAL_OVERLAY_SIGS &&
+    (terminalPhase || serverPickCount >= MIN_MANUAL_OVERLAY_SIGS);
   /** 한방은 고정 from-drive, 개별 시그는 초안+인벤이 정본 — 이름이 같아도 서버 selectedSigs URL은 stale 할 수 있음 */
   let items: SigItem[];
-  if (draftReady && draftItems.length >= MIN_MANUAL_OVERLAY_SIGS) {
+  if (allowDraftPrimary) {
     items = draftItems;
   } else {
     items = stripBundledSigPlaceholderItems(

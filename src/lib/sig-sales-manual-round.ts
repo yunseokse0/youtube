@@ -1,6 +1,10 @@
 import type { AppState } from "@/types";
 import { buildRouletteIdlePreserveSettings } from "@/lib/state";
-import { MANUAL_SIG_DRAFT_STATE_KEY, type ManualSigDraftPersist } from "@/lib/manual-sig-workbench";
+import {
+  emptyManualDrafts,
+  MANUAL_SIG_DRAFT_STATE_KEY,
+  type ManualSigDraftPersist,
+} from "@/lib/manual-sig-workbench";
 
 /** 수동 OBS·관리자 — 회차 로그 없이 동일 세션으로만 방송 상태 유지 */
 export const MANUAL_OVERLAY_SESSION_ID = "manual_live";
@@ -34,6 +38,8 @@ export function buildManualRoundResetPatch(base: AppState): Partial<AppState> {
     };
     draft = {
       ...rest,
+      drafts: emptyManualDrafts(),
+      oneShotPriceInput: "",
       sigSoldFlags: [false, false, false, false, false],
       oneShotMarkSold: false,
     };
