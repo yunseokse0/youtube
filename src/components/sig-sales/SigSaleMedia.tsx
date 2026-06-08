@@ -4,13 +4,10 @@ import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BUNDLED_SIG_PLACEHOLDER_URL,
-  resolveSigAdminPreviewFallbackSrc,
-  resolveSigBundledFromDriveByName,
-  toGithubRawSigAssetUrl,
+  listSigOverlayImageFallbackUrls,
   toSigOverlayAbsoluteAssetUrl,
 } from "@/lib/constants";
 import { isLikelyGifUrl } from "@/lib/sigGif";
-import { repairDiskUploadSigImagePath } from "@/lib/sig-image-mode";
 import SigSlowGif from "./SigSlowGif";
 
 const FALLBACK_SRC = "/images/sigs/dummy-sig.svg";
@@ -50,13 +47,19 @@ export default function SigSaleMedia({
   const [displaySrc, setDisplaySrc] = useState(src);
   const [gifFail, setGifFail] = useState(false);
   const retryStageRef = useRef(0);
+  const fallbackUrlsRef = useRef<string[]>([]);
   const readyFiredRef = useRef(false);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
 
   useEffect(() => {
-    const next =
-      typeof window !== "undefined" ? toSigOverlayAbsoluteAssetUrl(src) : src;
+    const fallbacks = sigImageUserId
+      ? listSigOverlayImageFallbackUrls(alt, storedImageUrl || src, sigImageUserId).map((u) =>
+          typeof window !== "undefined" ? toSigOverlayAbsoluteAssetUrl(u) : u
+        )
+      : [];
+    fallbackUrlsRef.current = fallbacks.length > 0 ? fallbacks : [src];
+    const next = fallbackUrlsRef.current[0] || src;
     setDisplaySrc((prev) => {
       const prevNorm =
         typeof window !== "undefined" ? toSigOverlayAbsoluteAssetUrl(prev) : prev;
@@ -66,7 +69,7 @@ export default function SigSaleMedia({
     setGifFail(false);
     retryStageRef.current = 0;
     readyFiredRef.current = false;
-  }, [src]);
+  }, [src, alt, sigImageUserId, storedImageUrl]);
 
   const notifyReady = useCallback(() => {
     if (readyFiredRef.current) return;
@@ -76,67 +79,28 @@ export default function SigSaleMedia({
 
   const handleImageError = useCallback(
     (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
-      const stage = retryStageRef.current;
-      if (stage < 1 && sigImageUserId) {
-        const repaired = repairDiskUploadSigImagePath(
-          String(storedImageUrl || src || ""),
-          sigImageUserId
-        );
-        if (repaired && repaired !== displaySrc) {
-          retryStageRef.current = 1;
-          setDisplaySrc(
-            typeof window !== "undefined"
-              ? toSigOverlayAbsoluteAssetUrl(repaired)
-              : repaired
-          );
+      const fallbacks = fallbackUrlsRef.current;
+      let idx = retryStageRef.current + 1;
+      while (idx < fallbacks.length) {
+        const candidate = fallbacks[idx];
+        retryStageRef.current = idx;
+        if (candidate && candidate !== displaySrc) {
+          setDisplaySrc(candidate);
           return;
         }
+        idx += 1;
       }
-      if (stage < 2) {
-        const fromDrive = resolveSigAdminPreviewFallbackSrc(
-          storedImageUrl || src,
-          alt,
-          sigImageUserId
-        );
-        if (fromDrive && fromDrive !== displaySrc) {
-          retryStageRef.current = 2;
-          setDisplaySrc(fromDrive);
-          return;
-        }
-      }
-      if (stage < 3) {
-        const byName = resolveSigBundledFromDriveByName(alt);
-        if (byName) {
-          const gh = toGithubRawSigAssetUrl(byName);
-          const candidate = gh || byName;
-          const abs =
-            typeof window !== "undefined" ? toSigOverlayAbsoluteAssetUrl(candidate) : candidate;
-          if (abs && abs !== displaySrc) {
-            retryStageRef.current = 3;
-            setDisplaySrc(abs);
-            return;
-          }
-        }
-      }
-      if (stage < 4) {
-        const gh = toGithubRawSigAssetUrl(String(storedImageUrl || src || ""));
-        if (gh && gh !== displaySrc) {
-          retryStageRef.current = 4;
-          setDisplaySrc(gh);
-          return;
-        }
-      }
-      const dummy =
-        toGithubRawSigAssetUrl(BUNDLED_SIG_PLACEHOLDER_URL) || BUNDLED_SIG_PLACEHOLDER_URL;
       const dummyAbs =
-        typeof window !== "undefined" ? toSigOverlayAbsoluteAssetUrl(dummy) : dummy;
+        typeof window !== "undefined"
+          ? toSigOverlayAbsoluteAssetUrl(BUNDLED_SIG_PLACEHOLDER_URL)
+          : BUNDLED_SIG_PLACEHOLDER_URL;
       if (displaySrc !== dummyAbs) {
         setDisplaySrc(dummyAbs);
         return;
       }
       onError?.(e);
     },
-    [displaySrc, onError, sigImageUserId, storedImageUrl, src, alt]
+    [displaySrc, onError]
   );
 
   const handleGifError = useCallback(() => {

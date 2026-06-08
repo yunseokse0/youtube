@@ -1,6 +1,8 @@
 import type { AppState, SigItem } from "@/types";
 import {
+  BUNDLED_SIG_PLACEHOLDER_URL,
   DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE,
+  ensureSigOverlayDisplayStoredUrl,
   isDedicatedOneShotSigImageUrl,
   normalizeSigImageUrlStored,
   isLegacyRomanizedFlatSigPath,
@@ -227,6 +229,7 @@ export function findDisplaySigForManualDraftRow(
 function hasUsableManualSigImageUrl(url: string | undefined | null): boolean {
   const s = String(url || "").trim();
   if (!s || s.toLowerCase().includes("dummy-sig.svg")) return false;
+  if (/^\/images\/sig\//i.test(s)) return false;
   if (isLegacyRomanizedFlatSigPath(s)) return false;
   return true;
 }
@@ -261,7 +264,8 @@ export function patchManualOverlaySigImagesFromDraft(
     if (hit && hasUsableManualSigImageUrl(hit.imageUrl)) {
       return { ...item, imageUrl: hit.imageUrl };
     }
-    return item;
+    const forced = ensureSigOverlayDisplayStoredUrl(item.name, item.imageUrl, userId);
+    return forced ? { ...item, imageUrl: forced } : item;
   });
 }
 
@@ -272,7 +276,9 @@ function pickBestManualSigStoredImageUrl(
 ): string {
   const list = urls
     .map((u) => String(u || "").trim())
-    .filter((u) => Boolean(u) && !isLegacyRomanizedFlatSigPath(u));
+    .filter(
+      (u) => Boolean(u) && !isLegacyRomanizedFlatSigPath(u) && !/^\/images\/sig\//i.test(u)
+    );
   const upload = list.find((u) => u.startsWith("/uploads/sigs/"));
   if (upload) return upload;
   const fromDrive = list.find((u) => u.includes("/from-drive/"));
@@ -306,11 +312,15 @@ export function hydrateManualOverlaySigItem(
   const fromName = inventory?.length
     ? findSigInventoryByName(inventory, displayName)?.imageUrl
     : "";
-  const imageUrl = pickBestManualSigStoredImageUrl(
-    [fromSource, fromName, fromNamePrice, h.imageUrl, draftRow?.imageUrl, item.imageUrl],
-    displayName
+  const imageUrl = ensureSigOverlayDisplayStoredUrl(
+    displayName,
+    pickBestManualSigStoredImageUrl(
+      [fromSource, fromName, fromNamePrice, h.imageUrl, draftRow?.imageUrl, item.imageUrl],
+      displayName
+    ),
+    userId
   );
-  return { ...h, name: displayName, memberId: "", imageUrl };
+  return { ...h, name: displayName, memberId: "", imageUrl: imageUrl || BUNDLED_SIG_PLACEHOLDER_URL };
 }
 
 export function buildManualSigItemsFromDrafts(
@@ -616,7 +626,10 @@ export function resolveManualOverlaySelectedSigs(
   } else if (draft?.drafts?.length) {
     items = patchManualOverlaySigImagesFromDraft(items, draft.drafts, inv, userId);
   }
-  return items.slice(0, 5);
+  return items.slice(0, 5).map((item) => ({
+    ...item,
+    imageUrl: ensureSigOverlayDisplayStoredUrl(item.name, item.imageUrl, userId),
+  }));
 }
 
 /** 판매 확정·체크에 따라 한방 표시 금액(당첨 합계 − 판매분) */

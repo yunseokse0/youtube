@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  ensureSigOverlayDisplayStoredUrl,
   isLegacyRomanizedFlatSigPath,
+  listSigOverlayImageFallbackUrls,
   resolveSigAdminPreviewFallbackSrc,
   resolveSigAdminPreviewSrc,
   resolveSigBundledFromDriveByName,
@@ -71,6 +73,21 @@ describe("sig admin preview", () => {
     expect(url).toContain("/images/sigs/from-drive/");
     expect(url).toContain(encodeURIComponent("스키"));
     expect(url).not.toContain("bogdance");
+  });
+
+  it("ensureSigOverlayDisplayStoredUrl never returns legacy /images/sig path", () => {
+    const url = ensureSigOverlayDisplayStoredUrl("솜사탕", "/images/sig/panty.png", "finalent");
+    expect(url).toContain("/images/sigs/from-drive/");
+    expect(url).toContain(encodeURIComponent("솜사탕"));
+    expect(url).not.toContain("/images/sig/");
+  });
+
+  it("listSigOverlayImageFallbackUrls includes from-drive and placeholder", () => {
+    const urls = listSigOverlayImageFallbackUrls("멸치", "/images/sig/chuchu.png", "finalent");
+    expect(urls.length).toBeGreaterThan(1);
+    expect(urls[0]).not.toContain("/images/sig/");
+    expect(urls.some((u) => u.includes("/images/sigs/from-drive/"))).toBe(true);
+    expect(urls.some((u) => u.includes("dummy-sig"))).toBe(true);
   });
 
   it("offers from-drive fallback when stored path is flat in github-only mode", () => {
