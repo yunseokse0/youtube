@@ -9,7 +9,10 @@ import {
   writeToonationListenerConfig,
   type ToonationListenerConfig,
 } from "./listener-config-store";
-import { parseToonationWebSocketMessage } from "./parse-event";
+import {
+  isToonationYoutubeSuperChatWsMessage,
+  parseToonationWebSocketMessage,
+} from "./parse-event";
 import { normalizeToonationAlertboxUrl } from "./link-key";
 import { resolveToonationWsPayload } from "./resolve-payload";
 
@@ -80,6 +83,15 @@ function scheduleReconnect(conn: ActiveConnection) {
 }
 
 async function onDonation(userId: string, raw: string): Promise<void> {
+  try {
+    const envelope = JSON.parse(raw) as Record<string, unknown>;
+    if (envelope && isToonationYoutubeSuperChatWsMessage(envelope)) {
+      log.debug("유튜브 슈퍼챗 알림 무시(엑셀표 미반영)", { userId, code: envelope.code });
+      return;
+    }
+  } catch {
+    /* parseToonationWebSocketMessage 가 처리 */
+  }
   const event = parseToonationWebSocketMessage(raw);
   if (!event) return;
   const conn = active.get(userId);

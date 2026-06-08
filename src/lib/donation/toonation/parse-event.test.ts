@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  isToonationExcelDonationWsMessage,
+  isToonationYoutubeSuperChatWsMessage,
   parseToonationDonationPayload,
   parseToonationMessageBody,
   parseToonationWebSocketMessage,
+  TOONATION_ALERT_TYPE_YOUTUBE_SUPERCHAT,
+  TOONATION_WS_CODE_YOUTUBE_SUPERCHAT,
   unwrapToonationPayload,
 } from "./parse-event";
 
@@ -80,6 +84,26 @@ describe("toonation parse-event", () => {
 
   it("ignores non-donation ws codes", () => {
     const raw = JSON.stringify({ code: 107, content: { amount: 100 } });
+    expect(parseToonationWebSocketMessage(raw)).toBeNull();
+  });
+
+  it("ignores youtube superchat alert (code 109)", () => {
+    const raw = JSON.stringify({
+      code: TOONATION_WS_CODE_YOUTUBE_SUPERCHAT,
+      content: { nickname: "시청자", amount: 10000, comment: "슈퍼챗 메시지" },
+    });
+    expect(isToonationYoutubeSuperChatWsMessage(JSON.parse(raw))).toBe(true);
+    expect(isToonationExcelDonationWsMessage(JSON.parse(raw))).toBe(false);
+    expect(parseToonationWebSocketMessage(raw)).toBeNull();
+  });
+
+  it("ignores donation envelope with YoutubeSuperChat code_ex", () => {
+    const raw = JSON.stringify({
+      code: 101,
+      code_ex: TOONATION_ALERT_TYPE_YOUTUBE_SUPERCHAT,
+      content: { nickname: "시청자", amount: 5000, comment: "슈퍼챗" },
+    });
+    expect(isToonationYoutubeSuperChatWsMessage(JSON.parse(raw))).toBe(true);
     expect(parseToonationWebSocketMessage(raw)).toBeNull();
   });
 });

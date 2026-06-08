@@ -121,12 +121,33 @@ export function isDonationLikeSocketEventName(eventName: string): boolean {
   return n.includes("donation") || n.includes("donate") || n.includes("alert");
 }
 
-/** 투네 ws.toon.at JSON (code 101 = 후원) */
+/** 투네 WebPushCode.AlertDonation — 투네이션 직접 후원만 엑셀표 반영 */
+export const TOONATION_WS_CODE_DONATION = 101;
+/** 투네 WebPushCode.AlertYoutubeSuperChat — OBS 알림만, 엑셀표·큐 제외 */
+export const TOONATION_WS_CODE_YOUTUBE_SUPERCHAT = 109;
+/** AlertType.YoutubeSuperChat (일부 페이로드의 code_ex) */
+export const TOONATION_ALERT_TYPE_YOUTUBE_SUPERCHAT = 1120;
+
+/** 유튜브 슈퍼챗 알림 여부 — 투네이션 위젯 연동 알림(직접 후원 아님) */
+export function isToonationYoutubeSuperChatWsMessage(data: Record<string, unknown>): boolean {
+  const code = Number(data.code);
+  if (code === TOONATION_WS_CODE_YOUTUBE_SUPERCHAT) return true;
+  const codeEx = Number(data.code_ex);
+  if (codeEx === TOONATION_ALERT_TYPE_YOUTUBE_SUPERCHAT) return true;
+  return false;
+}
+
+/** 엑셀표·후원 큐에 넣을 투네 WS 메시지인지 (code 101 직접 후원만) */
+export function isToonationExcelDonationWsMessage(data: Record<string, unknown>): boolean {
+  if (isToonationYoutubeSuperChatWsMessage(data)) return false;
+  return Number(data.code) === TOONATION_WS_CODE_DONATION;
+}
+
+/** 투네 ws.toon.at JSON (code 101 = 후원, 109 슈퍼챗 등은 무시) */
 export function parseToonationWebSocketMessage(raw: string): DonationEvent | null {
   try {
     const data = JSON.parse(raw) as Record<string, unknown>;
-    const code = Number(data.code);
-    if (code !== 101) return null;
+    if (!isToonationExcelDonationWsMessage(data)) return null;
     return parseToonationDonationPayload(data.content ?? data);
   } catch {
     return null;

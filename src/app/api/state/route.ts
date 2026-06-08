@@ -274,6 +274,13 @@ function stateNotModifiedResponse(storage: string): Response {
 
 export async function GET(req: Request) {
   const since = parseSinceParam(req);
+  const userId = getUserId(req);
+  if (!userId) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   let pickMode: ReturnType<typeof parseStateApiPick> = null;
   try {
     pickMode = parseStateApiPick(new URL(req.url).searchParams.get("pick") || "");
@@ -289,13 +296,6 @@ export async function GET(req: Request) {
     pickMode ? revisionForStatePick(state, pickMode) : state.updatedAt || 0;
   const isNotModified = (state: AppState) => since > 0 && revisionAt(state) <= since;
   try {
-    const userId = getUserId(req);
-    if (!userId) {
-      return new Response(JSON.stringify({ error: "unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
     const { base, token } = getRedisEnv();
     if (!base || !token) {
       const state = applyDonationGoalPresetNormalization(getServerMemoryAppState() || defaultState());
