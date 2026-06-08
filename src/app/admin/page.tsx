@@ -4179,20 +4179,39 @@ export default function AdminPage() {
     if (!selectedMemberId) return;
     const member = state.members.find((m) => m.id === selectedMemberId);
     if (!member) return;
+    const displayDonorName = (aliasInputMap[event.id] || event.donorName || "").trim();
+    if (!displayDonorName) return;
 
     const result = await processDonationEvent(
       {
         ...event,
-        donorName: member.name,
-        target: "toon",
+        donorName: displayDonorName,
+        manualAssignMemberId: selectedMemberId,
+        target: event.target || "toon",
         status: "queued",
       },
       user?.id,
       stateRef.current
     );
     applyProcessDonationResult(result);
-    await removeUnmatchedEvent(event.id);
-  }, [applyProcessDonationResult, donorMemberId, removeUnmatchedEvent, state.members, unmatchedAssignMap, user?.id]);
+    if (result.status === "processed" || result.updatedState) {
+      pushToonationLog(
+        `미매칭 반영: ${displayDonorName} ${event.amount.toLocaleString("ko-KR")}원 → ${member.name}`
+      );
+      await removeUnmatchedEvent(event.id);
+    } else if (result.status === "failed") {
+      pushToonationLog(`미매칭 반영 실패: ${displayDonorName} (${result.error || "unknown"})`);
+    }
+  }, [
+    aliasInputMap,
+    applyProcessDonationResult,
+    donorMemberId,
+    pushToonationLog,
+    removeUnmatchedEvent,
+    state.members,
+    unmatchedAssignMap,
+    user?.id,
+  ]);
 
   const saveAliasForUnmatched = useCallback(async (event: DonationEvent) => {
     const uid = user?.id || "";
@@ -4206,9 +4225,21 @@ export default function AdminPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ alias, memberId: selectedMemberId }),
     }).catch(() => {});
+    const { invalidateDonationAliasCache } = await import("@/lib/donation/processor");
+    invalidateDonationAliasCache();
     await fetchDonationAliases();
     pushToonationLog(`별칭 저장: ${alias} -> ${state.members.find((m) => m.id === selectedMemberId)?.name || selectedMemberId}`);
-  }, [aliasInputMap, donorMemberId, fetchDonationAliases, pushToonationLog, state.members, unmatchedAssignMap, user?.id]);
+    await applyUnmatchedEvent(event);
+  }, [
+    aliasInputMap,
+    applyUnmatchedEvent,
+    donorMemberId,
+    fetchDonationAliases,
+    pushToonationLog,
+    state.members,
+    unmatchedAssignMap,
+    user?.id,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -8506,17 +8537,14 @@ export default function AdminPage() {
                             className="px-2 py-1 rounded bg-sky-700 hover:bg-sky-600 text-xs"
                             onClick={() => void saveAliasForUnmatched(evt)}
                           >
-                            별칭 저장
+                            저장 및 반영
                           </button>
                           <button
                             type="button"
                             className="px-2 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-xs"
-                            onClick={async () => {
-                              await saveAliasForUnmatched(evt);
-                              await applyUnmatchedEvent(evt);
-                            }}
+                            onClick={() => void applyUnmatchedEvent(evt)}
                           >
-                            별칭 저장 후 반영
+                            별칭 없이 반영
                           </button>
                           <button
                             type="button"

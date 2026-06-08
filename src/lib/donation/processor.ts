@@ -103,6 +103,11 @@ async function resolveUnmatched(id: string, userId?: string): Promise<void> {
   }).catch(() => {});
 }
 
+/** 별칭 저장 직후 수동 반영이 캐시된 목록을 쓰지 않게 */
+export function invalidateDonationAliasCache(): void {
+  aliasCacheAt = 0;
+}
+
 async function loadAliases(userId?: string): Promise<DonorAlias[]> {
   const now = Date.now();
   if (aliasCacheAt > 0 && now - aliasCacheAt < 15000) {

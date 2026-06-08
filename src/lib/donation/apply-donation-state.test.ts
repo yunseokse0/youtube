@@ -74,6 +74,35 @@ describe("applyDonationToAppState", () => {
     expect(result.state.donors?.[0]?.memberAutoAssigned).toBe(true);
   });
 
+  it("manualAssignMemberId credits selected member and keeps donor display name", () => {
+    const state = {
+      ...defaultState(),
+      members: [
+        { id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 },
+        { id: "m2", name: "콜라", account: 0, toon: 0, contribution: 0 },
+      ],
+      donors: [],
+    };
+    const event: DonationEvent = {
+      id: "toonation:manual:1",
+      provider: "toonation",
+      externalId: "manual-1",
+      donorName: "마이웨이",
+      amount: 5000,
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "toon",
+      manualAssignMemberId: "m2",
+    };
+    const result = applyDonationToAppState(state, event);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.members.find((m) => m.id === "m2")?.toon).toBe(5000);
+    expect(result.state.members.find((m) => m.id === "m1")?.toon).toBe(0);
+    expect(result.state.donors?.[0]?.name).toBe("마이웨이");
+    expect(result.state.donors?.[0]?.memberId).toBe("m2");
+  });
+
   it("credits account column for 계좌 format", () => {
     const state = {
       ...defaultState(),

@@ -23,10 +23,24 @@ export function applyDonationToAppState(
     return { ok: false, reason: "duplicate", event: rawEvent };
   }
 
-  const processedEvent = mapToMember(rawEvent, currentState.members || [], aliases, {
-    /** 당분간 멤버 1명 운영 — 계좌 포맷 오류·플레이어 없음도 즉시 반영 후 큐에서 멤버만 검토 */
-    autoAssignToonPlayer: true,
-  });
+  const manualMemberId = String(rawEvent.manualAssignMemberId || "").trim();
+  let processedEvent: DonationEvent;
+  if (manualMemberId) {
+    const exists = (currentState.members || []).some((m) => m.id === manualMemberId);
+    if (!exists) {
+      return {
+        ok: false,
+        reason: "unmatched",
+        event: { ...rawEvent, status: "unmatched" },
+      };
+    }
+    processedEvent = { ...rawEvent, memberId: manualMemberId, status: "processed" };
+  } else {
+    processedEvent = mapToMember(rawEvent, currentState.members || [], aliases, {
+      /** 당분간 멤버 1명 운영 — 계좌 포맷 오류·플레이어 없음도 즉시 반영 후 큐에서 멤버만 검토 */
+      autoAssignToonPlayer: true,
+    });
+  }
   if (!processedEvent.memberId) {
     return { ok: false, reason: "unmatched", event: { ...processedEvent, status: "unmatched" } };
   }
