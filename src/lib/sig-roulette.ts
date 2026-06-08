@@ -1683,6 +1683,41 @@ export function findSigInventoryByNameAndPrice(
   });
 }
 
+/** 판매가·당첨가가 달라도 이미지 보강 — 수동 시그 OBS용 */
+export function findSigInventoryByName(inventory: SigItem[], name: string): SigItem | undefined {
+  const nk = normalizeSigInventoryNameKey(name);
+  if (!nk) return undefined;
+  return inventory.find((x) => {
+    if (!x || x.id === ONE_SHOT_SIG_ID) return false;
+    return normalizeSigInventoryNameKey(x.name) === nk;
+  });
+}
+
+function isWeakSigStoredImageUrl(url: string): boolean {
+  const s = String(url || "").trim();
+  if (!s || s.toLowerCase().includes("dummy-sig.svg")) return true;
+  if (/^\/images\/sig\//i.test(s)) return true;
+  const m = s.match(/^\/images\/sigs\/([^/?#]+)$/i);
+  if (m?.[1]) {
+    let base = m[1];
+    try {
+      base = decodeURIComponent(base);
+    } catch {
+      /* keep */
+    }
+    if (!/[가-힣]/.test(base) && !/^(\d+_[a-z0-9]{8}\.)/i.test(base)) return true;
+  }
+  return false;
+}
+
+function preferSigItemStoredImageUrl(itemUrl: string, invUrl: string, userId?: string): string {
+  const item = repairDiskUploadSigImagePath(String(itemUrl || "").trim(), userId);
+  const inv = repairDiskUploadSigImagePath(String(invUrl || "").trim(), userId);
+  if (!isWeakSigStoredImageUrl(inv) && isWeakSigStoredImageUrl(item)) return inv || item;
+  if (!isWeakSigStoredImageUrl(item)) return item;
+  return inv || item;
+}
+
 /**
  * 방송 오버레이·휠은 재고 `sigInventory` 기준 이름/이미지를 쓰고, 당첨 배열은 API 스냅샷이라 불일치할 수 있음.
  * 동일 시그 id로 인벤 행을 합쳐 표시를 맞춘다(당첨 금액은 요청 항목 우선).
@@ -1707,8 +1742,12 @@ export function hydrateSigItemFromInventory(
   }
   const price = Math.max(0, Math.floor(Number(item.price ?? fromInv.price ?? 0)));
   const displayName = String(item.name || fromInv.name || "").trim() || fromInv.name;
-  const rawImage = String(item.imageUrl || fromInv.imageUrl || "").trim();
-  const imageUrl = repairDiskUploadSigImagePath(rawImage, userId) || rawImage;
+  const byName = findSigInventoryByName(inventory, displayName);
+  const imageUrl = preferSigItemStoredImageUrl(
+    String(item.imageUrl || ""),
+    String(fromInv.imageUrl || byName?.imageUrl || ""),
+    userId
+  );
   return {
     ...fromInv,
     id: canon,

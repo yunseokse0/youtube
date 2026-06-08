@@ -21,6 +21,7 @@ import {
 } from "@/lib/manual-sig-workbench";
 import {
   canonicalSigIdFromWheelSliceId,
+  findSigInventoryByName,
   findSigInventoryByNameAndPrice,
   hydrateSigItemFromInventory,
   ONE_SHOT_SIG_ID,
@@ -302,8 +303,11 @@ export function hydrateManualOverlaySigItem(
     ? findSigInventoryByNameAndPrice(inventory, item.name, item.price)?.imageUrl
     : "";
   const displayName = String(item.name || h.name || "").trim() || h.name;
+  const fromName = inventory?.length
+    ? findSigInventoryByName(inventory, displayName)?.imageUrl
+    : "";
   const imageUrl = pickBestManualSigStoredImageUrl(
-    [fromSource, fromNamePrice, h.imageUrl, draftRow?.imageUrl, item.imageUrl],
+    [fromSource, fromName, fromNamePrice, h.imageUrl, draftRow?.imageUrl, item.imageUrl],
     displayName
   );
   return { ...h, name: displayName, memberId: "", imageUrl };

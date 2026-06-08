@@ -49,7 +49,7 @@ export default function SigSaleMedia({
 }: SigSaleMediaProps) {
   const [displaySrc, setDisplaySrc] = useState(src);
   const [gifFail, setGifFail] = useState(false);
-  const retriedRepairRef = useRef(false);
+  const retryStageRef = useRef(0);
   const readyFiredRef = useRef(false);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
@@ -64,7 +64,7 @@ export default function SigSaleMedia({
       return next;
     });
     setGifFail(false);
-    retriedRepairRef.current = false;
+    retryStageRef.current = 0;
     readyFiredRef.current = false;
   }, [src]);
 
@@ -76,13 +76,14 @@ export default function SigSaleMedia({
 
   const handleImageError = useCallback(
     (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
-      if (!retriedRepairRef.current && sigImageUserId) {
+      const stage = retryStageRef.current;
+      if (stage < 1 && sigImageUserId) {
         const repaired = repairDiskUploadSigImagePath(
           String(storedImageUrl || src || ""),
           sigImageUserId
         );
         if (repaired && repaired !== displaySrc) {
-          retriedRepairRef.current = true;
+          retryStageRef.current = 1;
           setDisplaySrc(
             typeof window !== "undefined"
               ? toSigOverlayAbsoluteAssetUrl(repaired)
@@ -91,32 +92,38 @@ export default function SigSaleMedia({
           return;
         }
       }
-      if (!retriedRepairRef.current) {
+      if (stage < 2) {
         const fromDrive = resolveSigAdminPreviewFallbackSrc(
           storedImageUrl || src,
           alt,
           sigImageUserId
         );
-        if (fromDrive) {
+        if (fromDrive && fromDrive !== displaySrc) {
+          retryStageRef.current = 2;
+          setDisplaySrc(fromDrive);
+          return;
+        }
+      }
+      if (stage < 3) {
+        const byName = resolveSigBundledFromDriveByName(alt);
+        if (byName) {
+          const gh = toGithubRawSigAssetUrl(byName);
+          const candidate = gh || byName;
           const abs =
-            typeof window !== "undefined"
-              ? toSigOverlayAbsoluteAssetUrl(fromDrive)
-              : fromDrive;
+            typeof window !== "undefined" ? toSigOverlayAbsoluteAssetUrl(candidate) : candidate;
           if (abs && abs !== displaySrc) {
-            retriedRepairRef.current = true;
+            retryStageRef.current = 3;
             setDisplaySrc(abs);
             return;
           }
         }
-        const byName = resolveSigBundledFromDriveByName(alt);
-        if (byName) {
-          const abs =
-            typeof window !== "undefined" ? toSigOverlayAbsoluteAssetUrl(byName) : byName;
-          if (abs && abs !== displaySrc) {
-            retriedRepairRef.current = true;
-            setDisplaySrc(abs);
-            return;
-          }
+      }
+      if (stage < 4) {
+        const gh = toGithubRawSigAssetUrl(String(storedImageUrl || src || ""));
+        if (gh && gh !== displaySrc) {
+          retryStageRef.current = 4;
+          setDisplaySrc(gh);
+          return;
         }
       }
       const dummy =

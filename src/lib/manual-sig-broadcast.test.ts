@@ -71,6 +71,35 @@ describe("hydrateManualOverlaySigItem", () => {
     },
   ];
 
+  it("uses inventory upload URL when selected price differs from inventory", () => {
+    const inventory: SigItem[] = [
+      {
+        id: "sig_naruto",
+        name: "나루토",
+        price: 35000,
+        imageUrl: "/uploads/sigs/finalent/1730000000_abcd1234.gif",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+    ];
+    const item: SigItem = {
+      id: "sig_naruto",
+      name: "나루토",
+      price: 40100,
+      imageUrl: "/images/sig/naruto.png",
+      memberId: "",
+      maxCount: 1,
+      soldCount: 0,
+      isRolling: true,
+      isActive: true,
+    };
+    const out = hydrateManualOverlaySigItem(item, inventory, "finalent");
+    expect(out.imageUrl).toBe("/uploads/sigs/finalent/1730000000_abcd1234.gif");
+  });
+
   it("ignores legacy romanized imageUrl and uses from-drive by sig name", () => {
     const inventory: SigItem[] = [
       {

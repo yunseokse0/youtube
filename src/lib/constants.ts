@@ -297,16 +297,12 @@ export function resolveSigOverlayCardImageUrl(name: string, imageUrl?: string, u
     if (gh) return gh;
     return raw;
   }
-  if (raw.startsWith("/images/sigs/")) {
-    /**
-     * OBS·수동 오버레이: GitHub raw 404 시 검은 칸만 보이므로 동일 오리진 `/images/sigs/…` 우선.
-     * (롤링 OBS는 별도 `rewriteSigPathForRollingGithubIfConfigured` 유지)
-     */
-    if (typeof window !== "undefined") {
-      return toSigOverlayAbsoluteAssetUrl(raw);
-    }
+  /** 번들·from-drive — 관리자 미리보기와 동일 규칙(GitHub raw·from-drive 폴백) */
+  const adminResolved = resolveSigAdminPreviewSrc(raw || imageUrl, name, userId);
+  if (typeof window !== "undefined" && adminResolved.startsWith("/")) {
+    return toSigOverlayAbsoluteAssetUrl(adminResolved);
   }
-  return resolveSigAdminPreviewSrc(raw || imageUrl, name, userId);
+  return adminResolved;
 }
 
 /** 완판 도장 URL — 롤링 오버레이에서만 GitHub raw로 동일 규칙 적용 */
