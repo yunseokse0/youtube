@@ -2,15 +2,9 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  BUNDLED_SIG_PLACEHOLDER_URL,
-  listSigOverlayImageFallbackUrls,
-  toSigOverlayAbsoluteAssetUrl,
-} from "@/lib/constants";
+import { listSigOverlayImageFallbackUrls, toSigOverlayAbsoluteAssetUrl } from "@/lib/constants";
 import { isLikelyGifUrl } from "@/lib/sigGif";
 import SigSlowGif from "./SigSlowGif";
-
-const FALLBACK_SRC = "/images/sigs/dummy-sig.svg";
 
 type SigSaleMediaProps = {
   src: string;
@@ -89,14 +83,6 @@ export default function SigSaleMedia({
           return;
         }
         idx += 1;
-      }
-      const dummyAbs =
-        typeof window !== "undefined"
-          ? toSigOverlayAbsoluteAssetUrl(BUNDLED_SIG_PLACEHOLDER_URL)
-          : BUNDLED_SIG_PLACEHOLDER_URL;
-      if (displaySrc !== dummyAbs) {
-        setDisplaySrc(dummyAbs);
-        return;
       }
       onError?.(e);
     },

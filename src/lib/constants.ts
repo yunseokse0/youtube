@@ -206,12 +206,21 @@ export function normalizeSigImageUrlStored(raw: unknown): string {
  * 시그 롤링·보드: `/images/sigs/…` 를 GitHub `public/` raw URL로 바꿔 Render 아웃바운드 절감.
  * `NEXT_PUBLIC_SIG_ROLLING_GITHUB_BASE` 가 `0`/`off` 이면 치환 안 함. 미설정 시 본 저장소 `main` 기본값.
  */
-export function getSigRollingGithubRawRoot(): string {
-  if (!shouldOffloadSigImagesToGithubRaw()) return "";
+function readSigRollingGithubRawRootEnv(): string {
   const raw = typeof process !== "undefined" ? String(process.env.NEXT_PUBLIC_SIG_ROLLING_GITHUB_BASE ?? "").trim() : "";
   if (raw === "0" || raw.toLowerCase() === "off") return "";
   if (raw) return raw.replace(/\/$/, "");
   return "https://raw.githubusercontent.com/yunseokse0/youtube/main/public";
+}
+
+export function getSigRollingGithubRawRoot(): string {
+  if (!shouldOffloadSigImagesToGithubRaw()) return "";
+  return readSigRollingGithubRawRootEnv();
+}
+
+/** OBS 방송 — 디스크 모드여도 from-drive 번들 GitHub raw 재시도 */
+function getSigRollingGithubRawRootForced(): string {
+  return readSigRollingGithubRawRootEnv();
 }
 
 function encodeGithubRawPathSegment(seg: string): string {
@@ -232,9 +241,7 @@ export function rewriteSigPathForRollingGithubIfConfigured(resolvedUrl: string):
   return `${root}/${parts.join("/")}`;
 }
 
-/** `/images/sigs/…`·레거시 `/uploads/sigs/…` → GitHub raw(설정 시). 미들웨어 307·클라이언트 공통 */
-export function toGithubRawSigAssetUrl(pathOrUrl: string): string | null {
-  if (!shouldOffloadSigImagesToGithubRaw()) return null;
+function buildGithubRawSigAssetUrl(pathOrUrl: string, forceOverlay = false): string | null {
   let s = String(pathOrUrl || "").trim();
   if (!s) return null;
   if (/\/uploads\/sigs\//i.test(s)) return null;
@@ -254,9 +261,22 @@ export function toGithubRawSigAssetUrl(pathOrUrl: string): string | null {
   if (s.startsWith("uploads/") || s.startsWith("images/")) s = `/${s}`;
   if (/\/uploads\/sigs\//i.test(s)) s = coerceSigUrlToGithubBundledPath(s);
   if (!s.startsWith("/images/sigs/")) return null;
-  const root = getSigRollingGithubRawRoot();
+  const root = forceOverlay ? getSigRollingGithubRawRootForced() : getSigRollingGithubRawRoot();
   if (!root) return null;
-  return rewriteSigPathForRollingGithubIfConfigured(s);
+  const rel = s.startsWith("/") ? s.slice(1) : s;
+  const parts = rel.split("/").filter(Boolean).map(encodeGithubRawPathSegment);
+  return `${root}/${parts.join("/")}`;
+}
+
+/** `/images/sigs/…`·레거시 `/uploads/sigs/…` → GitHub raw(설정 시). 미들웨어 307·클라이언트 공통 */
+export function toGithubRawSigAssetUrl(pathOrUrl: string): string | null {
+  if (!shouldOffloadSigImagesToGithubRaw()) return null;
+  return buildGithubRawSigAssetUrl(pathOrUrl);
+}
+
+/** OBS 방송 — EC2 디스크 모드에서도 from-drive 번들 GitHub raw 재시도(더미 대신 실제 GIF) */
+export function toGithubRawSigAssetUrlForced(pathOrUrl: string): string | null {
+  return buildGithubRawSigAssetUrl(pathOrUrl, true);
 }
 
 /** 롤링·시그 보드 — 당첨 카드와 동일(업로드 동일 오리진, 번들은 from-drive·raw) */
@@ -301,20 +321,30 @@ export function resolveSigOverlayCardImageUrl(name: string, imageUrl?: string, u
   /** 번들·from-drive — 관리자 미리보기와 동일 규칙(GitHub raw·from-drive 폴백) */
   let adminResolved = resolveSigAdminPreviewSrc(raw || imageUrl, name, userId);
   if (isBrokenSigOverlayStoredPath(adminResolved)) {
+    const byName = resolveSigBundledFromDriveByName(name);
     adminResolved =
-      resolveSigBundledFromDriveByName(name) ||
-      resolveSigAdminPreviewSrc(resolveSigBundledFromDriveByName(name), name, userId) ||
-      BUNDLED_SIG_PLACEHOLDER_URL;
+      byName ||
+      resolveSigAdminPreviewSrc(byName, name, userId) ||
+      candidates.find((c) => !isBrokenSigOverlayStoredPath(c)) ||
+      raw;
   }
   if (typeof window !== "undefined") {
     if (adminResolved.startsWith("/")) return toSigOverlayAbsoluteAssetUrl(adminResolved);
-    if (!adminResolved) {
-      return toSigOverlayAbsoluteAssetUrl(
-        resolveSigBundledFromDriveByName(name) || BUNDLED_SIG_PLACEHOLDER_URL
-      );
+    if (adminResolved.startsWith("http://") || adminResolved.startsWith("https://")) {
+      return adminResolved;
     }
   }
-  return adminResolved || BUNDLED_SIG_PLACEHOLDER_URL;
+  if (!adminResolved || isBrokenSigOverlayStoredPath(adminResolved)) {
+    const byName = resolveSigBundledFromDriveByName(name);
+    if (byName) {
+      const gh = toGithubRawSigAssetUrlForced(byName);
+      if (typeof window !== "undefined") {
+        return toSigOverlayAbsoluteAssetUrl(byName);
+      }
+      return gh || byName;
+    }
+  }
+  return adminResolved || raw || resolveSigBundledFromDriveByName(name);
 }
 
 /** 완판 도장 URL — 롤링 오버레이에서만 GitHub raw로 동일 규칙 적용 */
@@ -393,6 +423,28 @@ export function resolveSigBundledFromDriveByName(name: string): string {
   return `/images/sigs/from-drive/${encodeURIComponent(fileBase)}.gif`;
 }
 
+/** from-drive·루트 번들 후보(방송 OBS 404 연쇄 재시도) */
+export function listSigBundledFromDriveCandidatesByName(name: string): string[] {
+  const n = String(name || "").trim();
+  if (!n) return [];
+  const fileBase = SIG_FROM_DRIVE_NAME_ALIASES[n] || n;
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (u: string) => {
+    const s = String(u || "").trim();
+    if (!s || seen.has(s)) return;
+    seen.add(s);
+    out.push(s);
+  };
+  add(`/images/sigs/from-drive/${encodeURIComponent(fileBase)}.gif`);
+  add(`/images/sigs/${encodeURIComponent(fileBase)}.gif`);
+  if (fileBase !== n) {
+    add(`/images/sigs/from-drive/${encodeURIComponent(n)}.gif`);
+    add(`/images/sigs/${encodeURIComponent(n)}.gif`);
+  }
+  return out;
+}
+
 /**
  * 레거시 OCR·로마자 경로(`/images/sig/bogdance.png` 등) — 실제 에셋은 from-drive/한글명.gif.
  * 업로드·from-drive·한글 파일명은 유효로 둠.
@@ -440,7 +492,7 @@ function resolveSigOverlayStoredPath(name: string, imageUrl?: string, userId?: s
   return raw;
 }
 
-/** OBS·수동 판매 — 저장 경로가 비거나 레거시면 from-drive·더미로 보강(검은 칸 방지) */
+/** OBS·수동 판매 — 저장 경로가 비거나 레거시면 인벤·from-drive 실경로만(더미 금지) */
 export function ensureSigOverlayDisplayStoredUrl(
   name: string,
   imageUrl?: string,
@@ -448,10 +500,10 @@ export function ensureSigOverlayDisplayStoredUrl(
 ): string {
   const stored = resolveSigOverlayStoredPath(name, imageUrl, userId);
   if (stored && !isBrokenSigOverlayStoredPath(stored)) return stored;
-  return resolveSigBundledFromDriveByName(name) || BUNDLED_SIG_PLACEHOLDER_URL;
+  return resolveSigBundledFromDriveByName(name) || stored || String(imageUrl || "").trim();
 }
 
-/** SigSaleMedia 404 시 순차 시도할 후보(동일 오리진 → from-drive → GitHub raw → 더미) */
+/** SigSaleMedia 404 시 순차 시도 — 업로드·from-drive·GitHub raw만(더미 제외) */
 export function listSigOverlayImageFallbackUrls(
   name: string,
   imageUrl?: string,
@@ -465,23 +517,21 @@ export function listSigOverlayImageFallbackUrls(
     seen.add(s);
     out.push(s);
   };
-  add(repairDiskUploadSigImagePath(String(imageUrl ?? "").trim(), userId));
+  const rawStored = String(imageUrl ?? "").trim();
+  add(repairDiskUploadSigImagePath(rawStored, userId));
   add(resolveSigOverlayStoredPath(name, imageUrl, userId));
-  add(sigBundledFromDriveFallbackPath(String(imageUrl ?? "").trim()));
-  add(resolveSigBundledFromDriveByName(name));
-  for (const base of [...out]) {
-    add(toGithubRawSigAssetUrl(base));
+  add(sigBundledFromDriveFallbackPath(rawStored));
+  if (isDiskUploadFlatSigImagePath(rawStored)) {
+    add(repairDiskUploadSigImagePath(rawStored, userId));
   }
-  if (!seen.has(BUNDLED_SIG_PLACEHOLDER_URL)) {
-    seen.add(BUNDLED_SIG_PLACEHOLDER_URL);
-    out.push(BUNDLED_SIG_PLACEHOLDER_URL);
+  for (const bundled of listSigBundledFromDriveCandidatesByName(name)) {
+    add(bundled);
   }
-  const ghDummy = toGithubRawSigAssetUrl(BUNDLED_SIG_PLACEHOLDER_URL);
-  if (ghDummy && !seen.has(ghDummy)) {
-    seen.add(ghDummy);
-    out.push(ghDummy);
+  const snapshot = [...out];
+  for (const base of snapshot) {
+    add(toGithubRawSigAssetUrlForced(base));
   }
-  return out.length > 0 ? out : [BUNDLED_SIG_PLACEHOLDER_URL];
+  return out;
 }
 
 /** 관리자 미리보기 — 디스크 업로드 시 동일 오리진, Render GitHub-only 시 raw 우선 */
@@ -562,6 +612,9 @@ export function resolveSigImageUrl(name: string, imageUrl?: string, userId?: str
   const safeName = String(name || "").trim();
   if (!safeName) return BUNDLED_SIG_PLACEHOLDER_URL;
   const byName = resolveSigBundledFromDriveByName(safeName);
-  if (byName) return offloadBundledSigPathIfConfigured(byName);
+  if (byName) {
+    const local = offloadBundledSigPathIfConfigured(byName);
+    return local || toGithubRawSigAssetUrlForced(byName) || local;
+  }
   return BUNDLED_SIG_PLACEHOLDER_URL;
 }

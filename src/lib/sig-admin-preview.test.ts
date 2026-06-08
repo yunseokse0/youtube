@@ -82,12 +82,17 @@ describe("sig admin preview", () => {
     expect(url).not.toContain("/images/sig/");
   });
 
-  it("listSigOverlayImageFallbackUrls includes from-drive and placeholder", () => {
+  it("listSigOverlayImageFallbackUrls uses real gif paths only (no dummy)", () => {
     const urls = listSigOverlayImageFallbackUrls("멸치", "/images/sig/chuchu.png", "finalent");
     expect(urls.length).toBeGreaterThan(1);
     expect(urls[0]).not.toContain("/images/sig/");
+    expect(urls.every((u) => !u.includes("dummy-sig"))).toBe(true);
     expect(urls.some((u) => u.includes("/images/sigs/from-drive/"))).toBe(true);
-    expect(urls.some((u) => u.includes("dummy-sig"))).toBe(true);
+  });
+
+  it("listSigOverlayImageFallbackUrls includes forced github raw for from-drive", () => {
+    const urls = listSigOverlayImageFallbackUrls("솜사탕", "", "finalent");
+    expect(urls.some((u) => u.includes("raw.githubusercontent.com"))).toBe(true);
   });
 
   it("offers from-drive fallback when stored path is flat in github-only mode", () => {

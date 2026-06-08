@@ -1,6 +1,5 @@
 import type { AppState, SigItem } from "@/types";
 import {
-  BUNDLED_SIG_PLACEHOLDER_URL,
   DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE,
   ensureSigOverlayDisplayStoredUrl,
   isDedicatedOneShotSigImageUrl,
@@ -320,7 +319,7 @@ export function hydrateManualOverlaySigItem(
     ),
     userId
   );
-  return { ...h, name: displayName, memberId: "", imageUrl: imageUrl || BUNDLED_SIG_PLACEHOLDER_URL };
+  return { ...h, name: displayName, memberId: "", imageUrl };
 }
 
 export function buildManualSigItemsFromDrafts(
