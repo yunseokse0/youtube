@@ -102,6 +102,12 @@ export type UseOverlayRemoteStateOptions = {
   /** 서버 끊김 시 localStorage last-good (기본 true) */
 
   persistLastGood?: boolean;
+
+  /**
+   * sig-sales pick 주기 폴링 시 `since`/304 사용(매 tick forceFull 생략).
+   * 수동 OBS·다중 브라우저 소스 시 EC2 GET 폭주·502 완화.
+   */
+  sigSalesIncrementalPoll?: boolean;
 };
 
 function overlaySyncSignatureForPick(
@@ -213,6 +219,7 @@ export function useOverlayRemoteState(
   const persistLastGood = options.persistLastGood !== false;
 
   const sigSalesPick = statePick === STATE_PICK_SIG_SALES;
+  const sigSalesIncrementalPoll = Boolean(options.sigSalesIncrementalPoll);
   const obsTextPick = statePick === STATE_PICK_OBS_TEXT;
 
   const [state, setState] = useState<AppState | null>(frozen);
@@ -521,10 +528,13 @@ export function useOverlayRemoteState(
     if (pollMs > 0) {
       const pollSourceKey = `${statePick}:${userId || "default"}:${typeof window !== "undefined" ? window.location.pathname : ""}:${typeof window !== "undefined" ? window.location.search : ""}`;
       stopPoll = startStaggeredOverlayPoll(
-        () =>
-          void syncFromApiRef.current(
-            sigSalesPick || obsTextPick ? { forceFull: true } : undefined
-          ),
+        () => {
+          const pollOpts =
+            obsTextPick || (sigSalesPick && !sigSalesIncrementalPoll)
+              ? { forceFull: true as const }
+              : undefined;
+          void syncFromApiRef.current(pollOpts);
+        },
         pollMs,
         pollSourceKey
       );

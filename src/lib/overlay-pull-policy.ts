@@ -81,6 +81,8 @@ export function readOverlayPollIntervalMs(): number {
 
 /** OBS 시그 판매 회전판 — CEF에서 SSE가 끊겨도 SPINNING을 잡기 위한 기본 주기(ms). `NEXT_PUBLIC_SIG_SALES_OVERLAY_POLL_MS=0` 으로 끔 */
 export const DEFAULT_SIG_SALES_OVERLAY_POLL_MS = 2000;
+/** 수동 시그 OBS — 회전판보다 변경이 적어 폴링·GET 부하를 낮춤 */
+export const DEFAULT_SIG_SALES_MANUAL_OVERLAY_POLL_MS = 4500;
 /** 후원·기여도 목록(`/overlay/donation-lists`) — SSE 불안정 시 짧은 폴링. `=0` 으로 끔 */
 export const DEFAULT_DONATION_LISTS_OVERLAY_POLL_MS = 2500;
 
@@ -115,6 +117,16 @@ export function readSigSalesOverlayPollMs(): number {
   const n = parseInt(env.replace(/[^\d]/g, ""), 10);
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_SIG_SALES_OVERLAY_POLL_MS;
   return Math.max(800, Math.min(30_000, n));
+}
+
+export function readSigSalesManualOverlayPollMs(): number {
+  if (typeof window === "undefined") return DEFAULT_SIG_SALES_MANUAL_OVERLAY_POLL_MS;
+  const env = String(process.env.NEXT_PUBLIC_SIG_SALES_MANUAL_OVERLAY_POLL_MS ?? "").trim();
+  if (env === "0") return 0;
+  if (!env) return DEFAULT_SIG_SALES_MANUAL_OVERLAY_POLL_MS;
+  const n = parseInt(env.replace(/[^\d]/g, ""), 10);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_SIG_SALES_MANUAL_OVERLAY_POLL_MS;
+  return Math.max(1500, Math.min(30_000, n));
 }
 
 /** SSE 연결 끊김 시에만 쓰는 느린 폴백(기본 90s). `NEXT_PUBLIC_OVERLAY_SSE_FALLBACK_MS=0` 으로 끔 */

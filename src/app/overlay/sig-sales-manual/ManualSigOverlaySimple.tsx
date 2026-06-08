@@ -17,7 +17,7 @@ import {
 } from "@/lib/overlay-params";
 import {
   readOverlayPollIntervalMs,
-  readSigSalesOverlayPollMs,
+  readSigSalesManualOverlayPollMs,
 } from "@/lib/overlay-pull-policy";
 import { STATE_PICK_SIG_SALES } from "@/lib/state-api-pick";
 import { DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
@@ -77,7 +77,8 @@ export default function ManualSigOverlaySimple() {
 
   const pollMs = useMemo(() => {
     const env = readOverlayPollIntervalMs();
-    return env > 0 ? env : readSigSalesOverlayPollMs() || 2200;
+    if (env > 0) return env;
+    return readSigSalesManualOverlayPollMs();
   }, []);
 
   const { state, ready, resync } = useOverlayRemoteState(userId, {
@@ -86,6 +87,7 @@ export default function ManualSigOverlaySimple() {
     forceInitialFull: true,
     overlayPollMs: pollMs,
     persistLastGood: true,
+    sigSalesIncrementalPoll: true,
   });
 
   const overlayReloadSeenRef = useRef<number | null>(null);
@@ -103,19 +105,12 @@ export default function ManualSigOverlaySimple() {
     }
   }, [state?.rouletteState?.overlayReloadNonce, resync]);
 
-  /** OBS CEF: 첫 fetch 지연·304 레이스 대비 — 주기적 전체 상태 당김 */
+  /** OBS CEF: 첫 paint 지연 대비 1회만 추가 당김(주기 폴링은 useOverlayRemoteState) */
   useEffect(() => {
-    if (!spReady) return;
-    const kick = () => void resync({ forceFull: true });
-    kick();
-    if (!hostObs) {
-      const t = window.setTimeout(kick, 800);
-      return () => window.clearTimeout(t);
-    }
-    const intervalMs = Math.max(1500, pollMs);
-    const intervalId = window.setInterval(kick, intervalMs);
-    return () => window.clearInterval(intervalId);
-  }, [spReady, hostObs, resync, userId, pollMs]);
+    if (!spReady || !hostObs) return;
+    const t = window.setTimeout(() => void resync({ forceFull: true }), 1400);
+    return () => window.clearTimeout(t);
+  }, [spReady, hostObs, resync, userId]);
 
   /** OBS 브라우저 소스: 탭 전환·소스 재표시 시 상태 재동기화 (obs-text와 동일) */
   useEffect(() => {
