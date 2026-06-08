@@ -100,7 +100,10 @@ import {
   isManualOverlaySessionId,
   MANUAL_OVERLAY_SESSION_ID,
 } from "@/lib/sig-sales-manual-round";
-import { hydrateManualOverlaySigItem } from "@/lib/manual-sig-broadcast";
+import {
+  enrichManualDraftsWithInventoryImageUrls,
+  hydrateManualOverlaySigItem,
+} from "@/lib/manual-sig-broadcast";
 import { pickRandomManualSigDrafts } from "@/lib/manual-sig-random";
 import {
   MANUAL_SIG_DRAFT_STATE_KEY,
@@ -1678,9 +1681,20 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
   const applyManualSelection = useCallback(async (confirmNow: boolean, override?: ManualLandApplyOverride) => {
     const baseState = override?.stateSnapshot ?? state;
     if (!baseState) return;
-    const drafts = override?.drafts ?? manualSigDrafts;
     const soldFlags = override?.soldFlags ?? manualSigSoldFlags;
     const oneShotSoldFlag = override?.oneShotMarkSold ?? manualOneShotMarkSold;
+    const drafts = enrichManualDraftsWithInventoryImageUrls(
+      {
+        drafts: override?.drafts ?? manualSigDrafts,
+        oneShotName: manualOneShotName,
+        oneShotPriceInput: manualOneShotPriceInput,
+        oneShotImageUrl: manualOneShotImageUrl,
+        sigSoldFlags: soldFlags,
+        oneShotMarkSold: oneShotSoldFlag,
+      },
+      baseState.sigInventory,
+      userId
+    ).drafts;
     const ready = manualSigDraftsReady(drafts);
     if (!ready) {
       setToast("수동 설정은 서로 다른 시그 5개를 모두 선택해야 합니다.");
@@ -1767,7 +1781,11 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       }
       const activeSlot =
         wbApplied.slots.find((s) => s.id === wbApplied.activeSlotId) ?? wbApplied.slots[0];
-      const manualDraftPayload = slotToDraftPersist(activeSlot);
+      const manualDraftPayload = enrichManualDraftsWithInventoryImageUrls(
+        slotToDraftPersist(activeSlot),
+        inventoryWithOneShotImage,
+        userId
+      );
       const wbWithBroadcast: ManualSigWorkbench = {
         ...wbApplied,
         broadcastSlotId: wbApplied.activeSlotId,

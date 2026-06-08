@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildManualSigSalesConfirmState,
   buildManualSigSoldPersistState,
+  enrichManualDraftsWithInventoryImageUrls,
   findDisplaySigForManualDraftRow,
   hydrateManualOverlaySigItem,
   patchManualOverlaySigImagesFromDraft,
@@ -302,6 +303,41 @@ describe("resolveManualDraftRowForSigItem", () => {
     } as AppState;
     const out = resolveManualOverlaySelectedSigs(state, "finalent");
     expect(out.map((s) => s.name)).toEqual(fresh.map((s) => s.name));
+  });
+
+  it("enrichManualDraftsWithInventoryImageUrls copies registered inventory imageUrl into draft rows", () => {
+    const uploadUrl = "/uploads/sigs/finalent/1730000000_abc12345.gif";
+    const out = enrichManualDraftsWithInventoryImageUrls(
+      {
+        drafts: [
+          { sourceSigId: "sig_a", name: "맛있쥬", priceInput: "18300", imageUrl: "" },
+          { sourceSigId: "", name: "B", priceInput: "10000", imageUrl: "" },
+          { sourceSigId: "", name: "C", priceInput: "11000", imageUrl: "" },
+          { sourceSigId: "", name: "D", priceInput: "12000", imageUrl: "" },
+          { sourceSigId: "", name: "E", priceInput: "13000", imageUrl: "" },
+        ],
+        oneShotName: "한방 시그",
+        oneShotPriceInput: "",
+        oneShotImageUrl: "",
+        sigSoldFlags: [],
+        oneShotMarkSold: false,
+      },
+      [
+        {
+          id: "sig_a",
+          name: "맛있쥬",
+          price: 18300,
+          imageUrl: uploadUrl,
+          memberId: "",
+          maxCount: 1,
+          soldCount: 0,
+          isRolling: true,
+          isActive: true,
+        },
+      ],
+      "finalent"
+    );
+    expect(out.drafts[0]?.imageUrl).toBe(uploadUrl);
   });
 
   it("resolveManualOverlaySelectedSigs uses inventory upload when names match but server imageUrl is stale", () => {

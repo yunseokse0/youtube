@@ -298,8 +298,8 @@ function resolveManualSigStoredImageUrl(params: {
     if (!hasUsableManualSigImageUrl(s)) return;
     candidates.push(s);
   };
-  add(params.draftImageUrl);
   const sid = String(params.sourceSigId || "").trim();
+  /** 인벤 등록 URL이 정본 — 초안·서버 selectedSigs보다 우선(한방은 고정 from-drive) */
   if (sid && params.inventory?.length) {
     add(params.inventory.find((x) => String(x.id || "").trim() === sid)?.imageUrl);
   }
@@ -307,9 +307,12 @@ function resolveManualSigStoredImageUrl(params: {
     add(findSigInventoryByName(params.inventory, displayName)?.imageUrl);
     add(findSigInventoryByNameAndPrice(params.inventory, displayName, params.price)?.imageUrl);
   }
+  add(params.draftImageUrl);
   add(params.itemImageUrl);
   const upload = candidates.find((u) => u.startsWith("/uploads/sigs/"));
   if (upload) return upload;
+  const external = candidates.find((u) => /^https?:\/\//i.test(u));
+  if (external) return external;
   const fromDrive = candidates.find((u) => u.includes("/from-drive/"));
   if (fromDrive) return fromDrive;
   const bundled = candidates.find(
@@ -319,6 +322,29 @@ function resolveManualSigStoredImageUrl(params: {
   const byName = displayName ? resolveSigBundledFromDriveByName(displayName) : "";
   if (byName) return byName;
   return candidates[0] || "";
+}
+
+/** LANDED·리롤 저장 시 초안 행에 인벤 imageUrl 동기화 — OBS pick이 인벤과 동일 URL 사용 */
+export function enrichManualDraftsWithInventoryImageUrls(
+  draft: ManualSigDraftPersist,
+  inventory: SigItem[] | undefined,
+  userId?: string
+): ManualSigDraftPersist {
+  const rows = Array.isArray(draft.drafts) ? draft.drafts : [];
+  if (!rows.length) return draft;
+  const parsed = parseManualSigDraftRows(rows);
+  const drafts = rows.map((row, idx) => {
+    const url = resolveManualSigStoredImageUrl({
+      name: parsed[idx]?.name || row.name,
+      price: parsed[idx]?.price || 0,
+      sourceSigId: row.sourceSigId,
+      draftImageUrl: row.imageUrl,
+      inventory,
+      userId,
+    });
+    return url ? { ...row, imageUrl: url } : row;
+  });
+  return { ...draft, drafts };
 }
 
 /** 업로드 경로·from-drive·인벤 URL 중 OBS에 가장 잘 먹는 경로 선택 */
@@ -647,7 +673,11 @@ export function resolveManualOverlaySelectedSigs(
         : []
   ) as SigItem[];
   const inv = state.sigInventory || [];
-  const draft = readManualSigDraftFromState(state);
+  const draftRaw = readManualSigDraftFromState(state);
+  const draft =
+    draftRaw && manualSigDraftsReady(draftRaw.drafts)
+      ? enrichManualDraftsWithInventoryImageUrls(draftRaw, inv, userId)
+      : draftRaw;
   const draftRows = Array.isArray(draft?.drafts) ? draft!.drafts : [];
   const draftReady = Boolean(draft && manualSigDraftsReady(draft.drafts));
   const draftItems = draftReady
