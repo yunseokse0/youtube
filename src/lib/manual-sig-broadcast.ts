@@ -1,13 +1,13 @@
 import type { AppState, SigItem } from "@/types";
 import {
   DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE,
-  ensureSigOverlayDisplayStoredUrl,
   isDedicatedOneShotSigImageUrl,
   normalizeSigImageUrlStored,
   isLegacyRomanizedFlatSigPath,
   resolveSigBundledFromDriveByName,
   resolveSigOverlayCardImageUrl,
 } from "@/lib/constants";
+import { repairDiskUploadSigImagePath } from "@/lib/sig-image-mode";
 import { buildOneShotFromSelected, resolveOneShotDisplayPrice } from "@/lib/sig-one-shot-price";
 import { pickRandomManualSigDrafts } from "@/lib/manual-sig-random";
 import { listActiveManualSigPool } from "@/lib/manual-sig-active-pool";
@@ -263,9 +263,62 @@ export function patchManualOverlaySigImagesFromDraft(
     if (hit && hasUsableManualSigImageUrl(hit.imageUrl)) {
       return { ...item, imageUrl: hit.imageUrl };
     }
-    const forced = ensureSigOverlayDisplayStoredUrl(item.name, item.imageUrl, userId);
+    const draftRow = resolveManualDraftRowForSigItem(item, drafts);
+    const forced = resolveManualSigStoredImageUrl({
+      name: item.name,
+      price: Math.max(0, Math.floor(Number(item.price || 0))),
+      itemImageUrl: item.imageUrl,
+      sourceSigId: draftRow?.sourceSigId,
+      draftImageUrl: draftRow?.imageUrl,
+      inventory,
+      userId,
+    });
     return forced ? { ...item, imageUrl: forced } : item;
   });
+}
+
+/**
+ * 개별 시그 카드 저장 URL — 한방시그와 달리 인벤·초안 업로드를 최우선(서버 selectedSigs 레거시 URL 무시).
+ */
+function resolveManualSigStoredImageUrl(params: {
+  name: string;
+  price: number;
+  itemImageUrl?: string;
+  sourceSigId?: string;
+  draftImageUrl?: string;
+  inventory?: SigItem[];
+  userId?: string;
+}): string {
+  const displayName = String(params.name || "").trim();
+  const candidates: string[] = [];
+  const add = (raw: string | undefined | null) => {
+    const repaired = repairDiskUploadSigImagePath(String(raw || "").trim(), params.userId);
+    const s = String(repaired || "").trim();
+    if (!s || candidates.includes(s)) return;
+    if (!hasUsableManualSigImageUrl(s)) return;
+    candidates.push(s);
+  };
+  add(params.draftImageUrl);
+  const sid = String(params.sourceSigId || "").trim();
+  if (sid && params.inventory?.length) {
+    add(params.inventory.find((x) => String(x.id || "").trim() === sid)?.imageUrl);
+  }
+  if (params.inventory?.length) {
+    add(findSigInventoryByName(params.inventory, displayName)?.imageUrl);
+    add(findSigInventoryByNameAndPrice(params.inventory, displayName, params.price)?.imageUrl);
+  }
+  add(params.itemImageUrl);
+  const upload = candidates.find((u) => u.startsWith("/uploads/sigs/"));
+  if (upload) return upload;
+  const fromDrive = candidates.find((u) => u.includes("/from-drive/"));
+  if (fromDrive) return fromDrive;
+  const bundled = candidates.find(
+    (u) => u.startsWith("/images/sigs/") && !isLegacyRomanizedFlatSigPath(u)
+  );
+  if (bundled) return bundled;
+  const byName = displayName ? resolveSigBundledFromDriveByName(displayName) : "";
+  if (byName) return byName;
+  return candidates[0] || "";
 }
 
 /** 업로드 경로·from-drive·인벤 URL 중 OBS에 가장 잘 먹는 경로 선택 */
@@ -311,14 +364,18 @@ export function hydrateManualOverlaySigItem(
   const fromName = inventory?.length
     ? findSigInventoryByName(inventory, displayName)?.imageUrl
     : "";
-  const imageUrl = ensureSigOverlayDisplayStoredUrl(
-    displayName,
-    pickBestManualSigStoredImageUrl(
+  const imageUrl = resolveManualSigStoredImageUrl({
+    name: displayName,
+    price: Math.max(0, Math.floor(Number(item.price ?? h.price ?? 0))),
+    itemImageUrl: pickBestManualSigStoredImageUrl(
       [fromSource, fromName, fromNamePrice, h.imageUrl, draftRow?.imageUrl, item.imageUrl],
       displayName
     ),
-    userId
-  );
+    sourceSigId,
+    draftImageUrl: draftRow?.imageUrl,
+    inventory,
+    userId,
+  });
   return { ...h, name: displayName, memberId: "", imageUrl };
 }
 
@@ -596,39 +653,30 @@ export function resolveManualOverlaySelectedSigs(
   const draftItems = draftReady
     ? stripBundledSigPlaceholderItems(buildManualSigItemsFromDrafts(draft!.drafts, inv, userId))
     : [];
-  const rawNames = raw.map((s) => normalizeManualSigNameKey(s.name)).join("|");
-  const draftNames = draftItems.map((s) => normalizeManualSigNameKey(s.name)).join("|");
-  const draftMatchesSelection =
-    draftItems.length >= MIN_MANUAL_OVERLAY_SIGS &&
-    raw.length >= MIN_MANUAL_OVERLAY_SIGS &&
-    rawNames === draftNames;
-
-  let items = stripBundledSigPlaceholderItems(
-    raw.map((s) =>
-      hydrateManualOverlaySigItem(
-        s,
-        inv,
-        userId,
-        resolveManualDraftRowForSigItem(s, draftRows)
-      )
-    )
-  );
-  if (
-    draftItems.length >= MIN_MANUAL_OVERLAY_SIGS &&
-    (items.length < MIN_MANUAL_OVERLAY_SIGS || !draftMatchesSelection)
-  ) {
+  /** 한방은 고정 from-drive, 개별 시그는 초안+인벤이 정본 — 이름이 같아도 서버 selectedSigs URL은 stale 할 수 있음 */
+  let items: SigItem[];
+  if (draftReady && draftItems.length >= MIN_MANUAL_OVERLAY_SIGS) {
     items = draftItems;
-  } else if (items.length < MIN_MANUAL_OVERLAY_SIGS && draftReady) {
+  } else {
     items = stripBundledSigPlaceholderItems(
-      buildManualSigItemsFromDrafts(draft.drafts, inv, userId)
+      raw.map((s) =>
+        hydrateManualOverlaySigItem(
+          s,
+          inv,
+          userId,
+          resolveManualDraftRowForSigItem(s, draftRows)
+        )
+      )
     );
-  } else if (draft?.drafts?.length) {
-    items = patchManualOverlaySigImagesFromDraft(items, draft.drafts, inv, userId);
+    if (items.length < MIN_MANUAL_OVERLAY_SIGS && draftReady) {
+      items = stripBundledSigPlaceholderItems(
+        buildManualSigItemsFromDrafts(draft.drafts, inv, userId)
+      );
+    } else if (draft?.drafts?.length) {
+      items = patchManualOverlaySigImagesFromDraft(items, draft.drafts, inv, userId);
+    }
   }
-  return items.slice(0, 5).map((item) => ({
-    ...item,
-    imageUrl: ensureSigOverlayDisplayStoredUrl(item.name, item.imageUrl, userId),
-  }));
+  return items.slice(0, 5);
 }
 
 /** 판매 확정·체크에 따라 한방 표시 금액(당첨 합계 − 판매분) */

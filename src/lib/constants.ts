@@ -498,9 +498,12 @@ export function ensureSigOverlayDisplayStoredUrl(
   imageUrl?: string,
   userId?: string
 ): string {
+  const repaired = repairDiskUploadSigImagePath(String(imageUrl ?? "").trim(), userId);
+  if (repaired.startsWith("/uploads/sigs/")) return repaired;
   const stored = resolveSigOverlayStoredPath(name, imageUrl, userId);
+  if (stored.startsWith("/uploads/sigs/")) return stored;
   if (stored && !isBrokenSigOverlayStoredPath(stored)) return stored;
-  return resolveSigBundledFromDriveByName(name) || stored || String(imageUrl || "").trim();
+  return resolveSigBundledFromDriveByName(name) || stored || repaired || String(imageUrl || "").trim();
 }
 
 /** SigSaleMedia 404 시 순차 시도 — 업로드·from-drive·GitHub raw만(더미 제외) */

@@ -304,6 +304,86 @@ describe("resolveManualDraftRowForSigItem", () => {
     expect(out.map((s) => s.name)).toEqual(fresh.map((s) => s.name));
   });
 
+  it("resolveManualOverlaySelectedSigs uses inventory upload when names match but server imageUrl is stale", () => {
+    const uploadUrl = "/uploads/sigs/finalent/1730000000_abc12345.gif";
+    const inventory: SigItem[] = [
+      {
+        id: "sig_a",
+        name: "맛있쥬",
+        price: 18300,
+        imageUrl: uploadUrl,
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+      {
+        id: "sig_b",
+        name: "솜사탕",
+        price: 26500,
+        imageUrl: "/images/sigs/from-drive/솜사탕.gif",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+    ];
+    const state = {
+      sigInventory: inventory,
+      overlaySettings: {
+        sigSalesManualDraftV1: {
+          inputMode: "inventory",
+          drafts: [
+            { sourceSigId: "sig_a", name: "맛있쥬", priceInput: "18300", imageUrl: "" },
+            { sourceSigId: "sig_b", name: "솜사탕", priceInput: "26500", imageUrl: "" },
+            { sourceSigId: "", name: "C", priceInput: "10000", imageUrl: "" },
+            { sourceSigId: "", name: "D", priceInput: "11000", imageUrl: "" },
+            { sourceSigId: "", name: "E", priceInput: "12000", imageUrl: "" },
+          ],
+          oneShotName: "한방 시그",
+          oneShotPriceInput: "50000",
+          oneShotImageUrl: "",
+          sigSoldFlags: [false, false, false, false, false],
+          oneShotMarkSold: false,
+        },
+      },
+      rouletteState: {
+        phase: "LANDED",
+        sessionId: "manual_live",
+        selectedSigs: [
+          {
+            id: "sig_a",
+            name: "맛있쥬",
+            price: 18300,
+            imageUrl: "/images/sig/bogdance.png",
+            memberId: "",
+            maxCount: 1,
+            soldCount: 0,
+            isRolling: true,
+            isActive: true,
+          },
+          {
+            id: "sig_b",
+            name: "솜사탕",
+            price: 26500,
+            imageUrl: "/images/sig/chuchu.png",
+            memberId: "",
+            maxCount: 1,
+            soldCount: 0,
+            isRolling: true,
+            isActive: true,
+          },
+        ],
+      },
+    } as AppState;
+    const out = resolveManualOverlaySelectedSigs(state, "finalent");
+    expect(out[0]?.imageUrl).toBe(uploadUrl);
+    expect(out[1]?.imageUrl).toContain("솜사탕");
+    expect(out[1]?.imageUrl).not.toContain("/images/sig/");
+  });
+
   it("resolveManualOverlaySelectedSigs does not swap images by draft index", () => {
     const inventory: SigItem[] = [
       {
