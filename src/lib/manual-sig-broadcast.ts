@@ -698,11 +698,11 @@ export function resolveManualOverlaySelectedSigs(
         )
       )
     );
-    if (items.length < MIN_MANUAL_OVERLAY_SIGS && draftReady) {
+    if (items.length < MIN_MANUAL_OVERLAY_SIGS && draftReady && draft) {
       items = stripBundledSigPlaceholderItems(
         buildManualSigItemsFromDrafts(draft.drafts, inv, userId)
       );
-    } else if (draft?.drafts?.length) {
+    } else if (draft && draft.drafts?.length) {
       items = patchManualOverlaySigImagesFromDraft(items, draft.drafts, inv, userId);
     }
   }
