@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BUNDLED_SIG_PLACEHOLDER_URL,
   resolveSigAdminPreviewFallbackSrc,
+  resolveSigBundledFromDriveByName,
   toGithubRawSigAssetUrl,
   toSigOverlayAbsoluteAssetUrl,
 } from "@/lib/constants";
@@ -101,6 +102,16 @@ export default function SigSaleMedia({
             typeof window !== "undefined"
               ? toSigOverlayAbsoluteAssetUrl(fromDrive)
               : fromDrive;
+          if (abs && abs !== displaySrc) {
+            retriedRepairRef.current = true;
+            setDisplaySrc(abs);
+            return;
+          }
+        }
+        const byName = resolveSigBundledFromDriveByName(alt);
+        if (byName) {
+          const abs =
+            typeof window !== "undefined" ? toSigOverlayAbsoluteAssetUrl(byName) : byName;
           if (abs && abs !== displaySrc) {
             retriedRepairRef.current = true;
             setDisplaySrc(abs);

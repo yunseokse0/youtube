@@ -3,6 +3,8 @@ import {
   DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE,
   isDedicatedOneShotSigImageUrl,
   normalizeSigImageUrlStored,
+  isLegacyRomanizedFlatSigPath,
+  resolveSigBundledFromDriveByName,
   resolveSigOverlayCardImageUrl,
 } from "@/lib/constants";
 import { buildOneShotFromSelected, resolveOneShotDisplayPrice } from "@/lib/sig-one-shot-price";
@@ -223,7 +225,9 @@ export function findDisplaySigForManualDraftRow(
 
 function hasUsableManualSigImageUrl(url: string | undefined | null): boolean {
   const s = String(url || "").trim();
-  return Boolean(s && !s.toLowerCase().includes("dummy-sig.svg"));
+  if (!s || s.toLowerCase().includes("dummy-sig.svg")) return false;
+  if (isLegacyRomanizedFlatSigPath(s)) return false;
+  return true;
 }
 
 /**
@@ -262,15 +266,22 @@ export function patchManualOverlaySigImagesFromDraft(
 
 /** 업로드 경로·from-drive·인벤 URL 중 OBS에 가장 잘 먹는 경로 선택 */
 function pickBestManualSigStoredImageUrl(
-  urls: Array<string | undefined | null>
+  urls: Array<string | undefined | null>,
+  sigName?: string
 ): string {
-  const list = urls.map((u) => String(u || "").trim()).filter(Boolean);
+  const list = urls
+    .map((u) => String(u || "").trim())
+    .filter((u) => Boolean(u) && !isLegacyRomanizedFlatSigPath(u));
   const upload = list.find((u) => u.startsWith("/uploads/sigs/"));
   if (upload) return upload;
   const fromDrive = list.find((u) => u.includes("/from-drive/"));
   if (fromDrive) return fromDrive;
-  const bundled = list.find((u) => u.startsWith("/images/sigs/"));
+  const bundled = list.find(
+    (u) => u.startsWith("/images/sigs/") && !isLegacyRomanizedFlatSigPath(u)
+  );
   if (bundled) return bundled;
+  const byName = sigName ? resolveSigBundledFromDriveByName(sigName) : "";
+  if (byName) return byName;
   return list[0] || "";
 }
 
@@ -290,14 +301,12 @@ export function hydrateManualOverlaySigItem(
   const fromNamePrice = inventory?.length
     ? findSigInventoryByNameAndPrice(inventory, item.name, item.price)?.imageUrl
     : "";
-  const imageUrl = pickBestManualSigStoredImageUrl([
-    fromSource,
-    draftRow?.imageUrl,
-    item.imageUrl,
-    h.imageUrl,
-    fromNamePrice,
-  ]);
-  return { ...h, name: String(item.name || h.name || "").trim() || h.name, memberId: "", imageUrl };
+  const displayName = String(item.name || h.name || "").trim() || h.name;
+  const imageUrl = pickBestManualSigStoredImageUrl(
+    [fromSource, fromNamePrice, h.imageUrl, draftRow?.imageUrl, item.imageUrl],
+    displayName
+  );
+  return { ...h, name: displayName, memberId: "", imageUrl };
 }
 
 export function buildManualSigItemsFromDrafts(

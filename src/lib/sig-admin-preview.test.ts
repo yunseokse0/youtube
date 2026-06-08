@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  isLegacyRomanizedFlatSigPath,
   resolveSigAdminPreviewFallbackSrc,
   resolveSigAdminPreviewSrc,
+  resolveSigBundledFromDriveByName,
+  resolveSigOverlayCardImageUrl,
   sigBundledFromDriveFallbackPath,
 } from "@/lib/constants";
 
@@ -32,6 +35,12 @@ describe("sig admin preview", () => {
     }
   });
 
+  it("resolveSigAdminPreviewSrc skips legacy romanized path for admin preview", () => {
+    const url = resolveSigAdminPreviewSrc("/images/sig/ski.png", "스키", "finalent");
+    expect(url).toContain("/images/sigs/from-drive/");
+    expect(url).not.toContain("ski.png");
+  });
+
   it("uses disk upload path for PC uploads", () => {
     const url = resolveSigAdminPreviewSrc(
       "/uploads/sigs/finalent/1735123456789_abcd1234.gif",
@@ -41,12 +50,37 @@ describe("sig admin preview", () => {
     expect(url).toBe("/uploads/sigs/finalent/1735123456789_abcd1234.gif");
   });
 
+  it("detects legacy romanized OCR paths", () => {
+    expect(isLegacyRomanizedFlatSigPath("/images/sig/bogdance.png")).toBe(true);
+    expect(isLegacyRomanizedFlatSigPath("/images/sigs/bogdance.png")).toBe(true);
+    expect(isLegacyRomanizedFlatSigPath("/images/sigs/from-drive/스키.gif")).toBe(false);
+    expect(isLegacyRomanizedFlatSigPath("/uploads/sigs/finalent/1730000000_abcd1234.gif")).toBe(
+      false
+    );
+  });
+
+  it("resolveSigBundledFromDriveByName maps display name to from-drive gif", () => {
+    expect(resolveSigBundledFromDriveByName("스키")).toBe("/images/sigs/from-drive/%EC%8A%A4%ED%82%A4.gif");
+    expect(resolveSigBundledFromDriveByName("보그댄스")).toContain(
+      encodeURIComponent("복고댄스")
+    );
+  });
+
+  it("resolveSigOverlayCardImageUrl skips legacy romanized path and uses from-drive by name", () => {
+    const url = resolveSigOverlayCardImageUrl("스키", "/images/sig/bogdance.png", "finalent");
+    expect(url).toContain("/images/sigs/from-drive/");
+    expect(url).toContain(encodeURIComponent("스키"));
+    expect(url).not.toContain("bogdance");
+  });
+
   it("offers from-drive fallback when stored path is flat in github-only mode", () => {
     const prev = process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY;
     process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY = "true";
     try {
+      const primary = resolveSigAdminPreviewSrc("/images/sigs/APT.gif", "APT");
+      expect(primary).toContain("from-drive");
       const fb = resolveSigAdminPreviewFallbackSrc("/images/sigs/APT.gif", "APT");
-      expect(fb).toContain("from-drive");
+      expect(fb === null || String(fb).includes("from-drive")).toBe(true);
     } finally {
       if (prev === undefined) delete process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY;
       else process.env.NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY = prev;

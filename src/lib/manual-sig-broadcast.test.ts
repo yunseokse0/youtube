@@ -71,6 +71,36 @@ describe("hydrateManualOverlaySigItem", () => {
     },
   ];
 
+  it("ignores legacy romanized imageUrl and uses from-drive by sig name", () => {
+    const inventory: SigItem[] = [
+      {
+        id: "sig_ski",
+        name: "스키",
+        price: 32500,
+        imageUrl: "/images/sigs/bogdance.png",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+    ];
+    const item: SigItem = {
+      id: "sig_ski",
+      name: "스키",
+      price: 32500,
+      imageUrl: "/images/sig/bogdance.png",
+      memberId: "",
+      maxCount: 1,
+      soldCount: 0,
+      isRolling: true,
+      isActive: true,
+    };
+    const out = hydrateManualOverlaySigItem(item, inventory, "finalent");
+    expect(out.imageUrl).toContain("/images/sigs/from-drive/");
+    expect(out.imageUrl).toContain(encodeURIComponent("스키"));
+  });
+
   it("prefers inventory upload path over coerced /images/sigs flat path", () => {
     const item: SigItem = {
       id: "manual_sig_1",

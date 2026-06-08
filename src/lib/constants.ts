@@ -3,6 +3,7 @@ import {
   coerceSigUrlToGithubBundledPath,
   isSigImagesGithubOnlyMode,
   isSigImagesPlaceholderOnlyEnv,
+  isDiskUploadFlatFileName,
   isDiskUploadFlatSigImagePath,
   isSigLocalAssetsOnlyMode,
   repairDiskUploadSigImagePath,
@@ -281,8 +282,7 @@ export function resolveSigOverlayCardImageUrl(name: string, imageUrl?: string, u
   if (sigImagePlaceholderOnlyForOverlay) {
     return BUNDLED_SIG_PLACEHOLDER_URL;
   }
-  const repaired = repairDiskUploadSigImagePath(String(imageUrl ?? "").trim(), userId);
-  let raw = normalizeSigImageUrlStored(repaired || imageUrl);
+  let raw = resolveSigOverlayStoredPath(name, imageUrl, userId);
   if (raw.startsWith("/uploads/sigs/")) {
     /** OBS·브라우저: EC2/로컬 동일 오리진 우선 — GitHub raw 404 시 검은 칸만 보임 */
     if (typeof window !== "undefined") {
@@ -298,8 +298,6 @@ export function resolveSigOverlayCardImageUrl(name: string, imageUrl?: string, u
     return raw;
   }
   if (raw.startsWith("/images/sigs/")) {
-    const fromDrive = sigBundledFromDriveFallbackPath(raw);
-    if (fromDrive) raw = fromDrive;
     /**
      * OBS·수동 오버레이: GitHub raw 404 시 검은 칸만 보이므로 동일 오리진 `/images/sigs/…` 우선.
      * (롤링 OBS는 별도 `rewriteSigPathForRollingGithubIfConfigured` 유지)
@@ -374,13 +372,68 @@ export function sigBundledFromDriveFallbackPath(storedPath: string): string | nu
   return s.replace(/^\/images\/sigs\//i, "/images/sigs/from-drive/");
 }
 
+/** 표시 이름 ↔ from-drive 파일명 불일치(오타·동음) */
+const SIG_FROM_DRIVE_NAME_ALIASES: Record<string, string> = {
+  보그댄스: "복고댄스",
+};
+
+/** 시그 이름으로 Git 번들 GIF 경로 (`public/images/sigs/from-drive/`) */
+export function resolveSigBundledFromDriveByName(name: string): string {
+  const n = String(name || "").trim();
+  if (!n) return "";
+  const fileBase = SIG_FROM_DRIVE_NAME_ALIASES[n] || n;
+  return `/images/sigs/from-drive/${encodeURIComponent(fileBase)}.gif`;
+}
+
+/**
+ * 레거시 OCR·로마자 경로(`/images/sig/bogdance.png` 등) — 실제 에셋은 from-drive/한글명.gif.
+ * 업로드·from-drive·한글 파일명은 유효로 둠.
+ */
+export function isLegacyRomanizedFlatSigPath(url: string): boolean {
+  const raw = String(url || "").trim();
+  if (/^\/images\/sig\//i.test(raw)) return true;
+  const s = normalizeSigImageUrlStored(raw);
+  if (!s.startsWith("/images/sigs/") || s.includes("/from-drive/")) return false;
+  if (BUNDLED_SIG_ROOT_ONLY_RE.test(s)) return false;
+  if (isDiskUploadFlatSigImagePath(s)) return false;
+  const m = s.match(/^\/images\/sigs\/([^/?#]+)$/i);
+  if (!m?.[1]) return false;
+  let base = m[1];
+  try {
+    base = decodeURIComponent(base);
+  } catch {
+    /* keep */
+  }
+  if (/[가-힣]/.test(base)) return false;
+  if (isDiskUploadFlatFileName(base)) return false;
+  return true;
+}
+
+function resolveSigOverlayStoredPath(name: string, imageUrl?: string, userId?: string): string {
+  const repaired = repairDiskUploadSigImagePath(String(imageUrl ?? "").trim(), userId);
+  let raw = normalizeSigImageUrlStored(repaired || imageUrl);
+  if (!raw || isLegacyRomanizedFlatSigPath(raw)) {
+    const byName = resolveSigBundledFromDriveByName(name);
+    if (byName) raw = byName;
+  } else if (raw.startsWith("/images/sigs/")) {
+    const fromDrive = sigBundledFromDriveFallbackPath(raw);
+    if (fromDrive) raw = fromDrive;
+  }
+  if (!raw || isLegacyRomanizedFlatSigPath(raw)) {
+    raw = resolveSigBundledFromDriveByName(name) || raw;
+  }
+  return raw;
+}
+
 /** 관리자 미리보기 — 디스크 업로드 시 동일 오리진, Render GitHub-only 시 raw 우선 */
 export function resolveSigAdminPreviewSrc(raw?: string, name?: string, userId?: string): string {
   const v = repairDiskUploadSigImagePath(String(raw ?? "").trim(), userId);
   if (/(?:_257b_2522id_2522|%257b%2522id%2522|%7b%22id%22)/i.test(v)) {
     return toGithubRawSigAssetUrl(BUNDLED_SIG_PLACEHOLDER_URL) || BUNDLED_SIG_PLACEHOLDER_URL;
   }
-  const resolved = resolveSigImageUrl(String(name ?? "").trim(), v);
+  const nameStr = String(name ?? "").trim();
+  const storedPath = resolveSigOverlayStoredPath(nameStr, v || raw, userId);
+  const resolved = resolveSigImageUrl(nameStr, storedPath || v);
   if (!shouldOffloadSigImagesToGithubRaw()) return resolved;
   return toGithubRawSigAssetUrl(resolved) || resolved;
 }
@@ -400,9 +453,13 @@ export function resolveSigAdminPreviewFallbackSrc(raw?: string, name?: string, u
     }
   }
   const alt = sigBundledFromDriveFallbackPath(path);
-  if (!alt) return null;
-  const url = toGithubRawSigAssetUrl(alt);
-  return url && url !== resolveSigAdminPreviewSrc(raw, name, userId) ? url : null;
+  const byName = name ? resolveSigBundledFromDriveByName(name) : "";
+  const candidates = [alt, byName].filter((u): u is string => Boolean(u));
+  for (const candidate of candidates) {
+    const url = toGithubRawSigAssetUrl(candidate) || candidate;
+    if (url && url !== resolveSigAdminPreviewSrc(raw, name, userId)) return url;
+  }
+  return null;
 }
 
 export function resolveSigImageUrl(name: string, imageUrl?: string, userId?: string): string {
