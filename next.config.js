@@ -10,6 +10,9 @@ const nextConfig = {
       { source: "/overlay/sig_select", destination: "/overlay/sig-sales", permanent: false },
       { source: "/overlay/sig_match/demo", destination: "/overlay/sig-match/demo", permanent: false },
       { source: "/overlay/sig_match", destination: "/overlay/sig-match", permanent: false },
+      /** OBS에 흔한 오타: `sig-sales/manual` → `sig-sales-manual` */
+      { source: "/overlay/sig-sales/manual", destination: "/overlay/sig-sales-manual", permanent: false },
+      { source: "/overlay/sig-sales/manual/:path*", destination: "/overlay/sig-sales-manual/:path*", permanent: false },
     ];
   },
   async rewrites() {

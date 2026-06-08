@@ -48,6 +48,25 @@ function redirectLegacyObsTextOverlayPath(req: NextRequest): NextResponse | null
   return NextResponse.redirect(target, 307);
 }
 
+/** OBS 오타 `/overlay/sig-sales/manual` → `/overlay/sig-sales-manual` */
+function redirectLegacySigSalesManualSlashPath(req: NextRequest): NextResponse | null {
+  const { pathname } = req.nextUrl;
+  if (pathname !== "/overlay/sig-sales/manual" && !pathname.startsWith("/overlay/sig-sales/manual/")) {
+    return null;
+  }
+  const target = new URL("/overlay/sig-sales-manual", req.url);
+  const q = new URLSearchParams(req.nextUrl.searchParams);
+  if (!q.get("u")?.trim() && !q.get("user")?.trim()) q.set("u", "finalent");
+  if (!q.get("hideSigBoard")) q.set("hideSigBoard", "1");
+  if (!q.get("host")?.trim()) q.set("host", "obs");
+  const suffix = pathname.slice("/overlay/sig-sales/manual".length);
+  if (suffix && suffix !== "/") {
+    target.pathname = `/overlay/sig-sales-manual${suffix}`;
+  }
+  target.search = q.toString();
+  return NextResponse.redirect(target, 307);
+}
+
 /** OBS에 잘못 붙인 관리자 경로 → 공개 오버레이(인증 쿠키 없음) */
 function redirectLegacyAdminSigOverlayPath(req: NextRequest): NextResponse | null {
   const { pathname } = req.nextUrl;
@@ -107,6 +126,9 @@ export function middleware(req: NextRequest) {
 
   const legacyObsTextRedirect = redirectLegacyObsTextOverlayPath(req);
   if (legacyObsTextRedirect) return legacyObsTextRedirect;
+
+  const legacyManualSlashRedirect = redirectLegacySigSalesManualSlashPath(req);
+  if (legacyManualSlashRedirect) return legacyManualSlashRedirect;
 
   const legacyOverlayRedirect = redirectLegacyAdminSigOverlayPath(req);
   if (legacyOverlayRedirect) return legacyOverlayRedirect;
@@ -172,6 +194,8 @@ export const config = {
     "/login",
     "/overlay/sig-sales-manual",
     "/overlay/sig-sales-manual/:path*",
+    "/overlay/sig-sales/manual",
+    "/overlay/sig-sales/manual/:path*",
     "/overlay/text-overlay",
     "/overlay/text-overlay/:path*",
     "/overlay/text",
