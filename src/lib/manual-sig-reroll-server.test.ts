@@ -1,9 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { defaultState, buildSigSalesManualApiPatch, mergeSigSalesManualIntoLocalState } from "@/lib/state";
+import {
+  defaultState,
+  buildSigSalesManualApiPatch,
+  mergeSigSalesManualIntoLocalState,
+  normalizeRouletteState,
+} from "@/lib/state";
 import { MANUAL_SIG_DRAFT_STATE_KEY } from "@/lib/manual-sig-workbench";
-import { MANUAL_OVERLAY_SESSION_ID } from "@/lib/sig-sales-manual-round";
+import {
+  MANUAL_OVERLAY_SESSION_ID,
+  buildManualRoundResetPatch,
+  isManualOverlaySessionId,
+} from "@/lib/sig-sales-manual-round";
 import { OBS_TEXT_OVERLAY_STATE_KEY, defaultObsTextRegistry } from "@/lib/obs-text-overlay";
-import type { AppState } from "@/types";
+import type { AppState, RouletteState } from "@/types";
 
 /** /api/state/route.ts mergePartialState 핵심 — PATCH 후 서버 동작 시뮬 */
 function simulateServerMergePartialState(base: AppState, patch: Partial<AppState>): AppState {
@@ -25,6 +34,49 @@ function simulateServerMergePartialState(base: AppState, patch: Partial<AppState
       ...(base.overlaySettings as Record<string, unknown>),
       ...(patch.overlaySettings as Record<string, unknown>),
     } as AppState["overlaySettings"];
+  }
+  return next;
+}
+
+/** route.ts mergePartialState — rouletteState 분기(수동 리셋·리롤 회귀) */
+function simulateServerRouletteMerge(base: AppState, patch: Partial<AppState>): AppState {
+  const next: AppState = { ...base, ...patch };
+  const patchRsEarly =
+    patch.rouletteState != null && typeof patch.rouletteState === "object"
+      ? (patch.rouletteState as Partial<RouletteState>)
+      : null;
+  const baseStartedAt = Number(base.rouletteState?.startedAt || 0);
+  const patchStartedAt = Number(patchRsEarly?.startedAt || 0);
+  const patchHasRollingFlag = typeof patchRsEarly?.isRolling === "boolean";
+  const patchReloadNonce = Number(patchRsEarly?.overlayReloadNonce || 0);
+  const baseReloadNonce = Number(base.rouletteState?.overlayReloadNonce || 0);
+  const manualNonceAdvanced =
+    Boolean(patchRsEarly) &&
+    isManualOverlaySessionId(patchRsEarly.sessionId) &&
+    patchReloadNonce > baseReloadNonce;
+  const canApplyPatchRouletteState =
+    "rouletteState" in patch &&
+    (manualNonceAdvanced ||
+      (Number.isFinite(patchStartedAt) &&
+        (patchStartedAt > baseStartedAt ||
+          (patchStartedAt === baseStartedAt && patchHasRollingFlag))));
+  if (!canApplyPatchRouletteState) {
+    next.rouletteState = base.rouletteState;
+  }
+  if ("rouletteState" in patch && patch.rouletteState != null && typeof patch.rouletteState === "object") {
+    const patchRs = patch.rouletteState as Partial<RouletteState>;
+    const isManualRoulettePatch =
+      isManualOverlaySessionId(patchRs.sessionId) &&
+      (patchRs.phase === "LANDED" ||
+        patchRs.phase === "CONFIRMED" ||
+        patchRs.phase === "CONFIRM_PENDING" ||
+        (patchRs.phase === "IDLE" && manualNonceAdvanced));
+    if (isManualRoulettePatch && canApplyPatchRouletteState) {
+      next.rouletteState = normalizeRouletteState({
+        ...(next.rouletteState || base.rouletteState),
+        ...patchRs,
+      });
+    }
   }
   return next;
 }
@@ -210,6 +262,78 @@ describe("manual sig reroll server simulation", () => {
     const buggyClient = defaultState();
     const merged = simulateServerMergePartialState(server, buggyClient);
     expect(merged.members[0]?.name).not.toBe("패자");
+  });
+
+  it("manual reset IDLE clears stale LANDED selectedSigs when overlayReloadNonce advances", () => {
+    const oldPick: AppState["sigInventory"] = [
+      { id: "s1", name: "맛있쥬", price: 18300, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+      { id: "s2", name: "팬티맛있엉", price: 45300, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+      { id: "s3", name: "멸치", price: 45300, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+      { id: "s4", name: "그루비", price: 88300, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+      { id: "s5", name: "솜사탕", price: 26500, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+    ];
+    const server: AppState = {
+      ...defaultState(),
+      sigInventory: oldPick,
+      rouletteState: {
+        ...defaultState().rouletteState,
+        phase: "LANDED",
+        sessionId: MANUAL_OVERLAY_SESSION_ID,
+        startedAt: 1_700_000_000_000,
+        overlayReloadNonce: 4,
+        selectedSigs: oldPick,
+        results: oldPick,
+      },
+    };
+    const resetPatch = buildManualRoundResetPatch(server);
+    const merged = simulateServerRouletteMerge(server, resetPatch);
+    expect(merged.rouletteState?.phase).toBe("IDLE");
+    expect(merged.rouletteState?.selectedSigs).toBeUndefined();
+    expect(merged.rouletteState?.overlayReloadNonce).toBe(5);
+  });
+
+  it("manual reroll LANDED replaces stale server selectedSigs after reset", () => {
+    const oldPick = [
+      { id: "s1", name: "맛있쥬", price: 18300, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+      { id: "s2", name: "팬티맛있엉", price: 45300, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+      { id: "s3", name: "멸치", price: 45300, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+      { id: "s4", name: "그루비", price: 88300, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+      { id: "s5", name: "솜사탕", price: 26500, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+    ];
+    const newPick = [
+      { id: "n1", name: "신규1", price: 11100, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+      { id: "n2", name: "신규2", price: 22200, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+      { id: "n3", name: "신규3", price: 33300, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+      { id: "n4", name: "신규4", price: 44400, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+      { id: "n5", name: "신규5", price: 55500, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+    ];
+    const server: AppState = {
+      ...defaultState(),
+      sigInventory: [...oldPick, ...newPick],
+      rouletteState: {
+        ...defaultState().rouletteState,
+        phase: "LANDED",
+        sessionId: MANUAL_OVERLAY_SESSION_ID,
+        startedAt: 1_700_000_000_000,
+        overlayReloadNonce: 4,
+        selectedSigs: oldPick,
+      },
+    };
+    const rerollNext: AppState = {
+      ...server,
+      rouletteState: {
+        ...server.rouletteState,
+        phase: "LANDED",
+        sessionId: MANUAL_OVERLAY_SESSION_ID,
+        startedAt: Date.now(),
+        selectedSigs: newPick,
+        results: newPick,
+        overlayReloadNonce: 5,
+      },
+    };
+    const patch = buildSigSalesManualApiPatch(rerollNext, "finalent");
+    const merged = simulateServerRouletteMerge(server, patch);
+    expect(merged.rouletteState?.selectedSigs?.map((s) => s.name)).toEqual(newPick.map((s) => s.name));
   });
 
   it("localStorage merge prefers server-loaded next over corrupted base", () => {

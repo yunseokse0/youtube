@@ -101,9 +101,13 @@ export default function ManualSigOverlaySimple() {
     }
     if (nonce !== overlayReloadSeenRef.current) {
       overlayReloadSeenRef.current = nonce;
+      /** 리롤·리셋 직후 구 last-good·304 레이스 방지 */
       void resync({ forceFull: true });
+      if (hostObs) {
+        window.setTimeout(() => void resync({ forceFull: true }), 600);
+      }
     }
-  }, [state?.rouletteState?.overlayReloadNonce, resync]);
+  }, [state?.rouletteState?.overlayReloadNonce, resync, hostObs]);
 
   /** OBS CEF: 첫 paint 지연 대비 1회만 추가 당김(주기 폴링은 useOverlayRemoteState) */
   useEffect(() => {

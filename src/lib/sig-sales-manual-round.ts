@@ -38,12 +38,18 @@ export function buildManualRoundResetPatch(base: AppState): Partial<AppState> {
       oneShotMarkSold: false,
     };
   }
+  const overlayReloadNonce = Number(base.rouletteState?.overlayReloadNonce || 0) + 1;
   return {
     updatedAt: now,
     rouletteState: {
       ...idleRs,
       sessionId: MANUAL_OVERLAY_SESSION_ID,
-      overlayReloadNonce: Number(base.rouletteState?.overlayReloadNonce || 0) + 1,
+      startedAt: now,
+      overlayReloadNonce,
+      selectedSigs: undefined,
+      results: undefined,
+      result: null,
+      oneShotResult: null,
     },
     overlaySettings: draft
       ? { ...os, [MANUAL_SIG_DRAFT_STATE_KEY]: draft }

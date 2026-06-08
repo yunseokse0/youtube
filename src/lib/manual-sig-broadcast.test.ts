@@ -258,6 +258,52 @@ describe("resolveManualDraftRowForSigItem", () => {
     expect(row?.name).toBe("픽션");
   });
 
+  it("resolveManualOverlaySelectedSigs prefers draft when server selectedSigs are stale after reroll", () => {
+    const mk = (id: string, name: string, price: number): SigItem => ({
+      id,
+      name,
+      price,
+      imageUrl: "",
+      memberId: "",
+      maxCount: 1,
+      soldCount: 0,
+      isRolling: true,
+      isActive: true,
+    });
+    const inventory = ["맛있쥬", "팬티맛있엉", "멸치", "그루비", "솜사탕", "신규1", "신규2", "신규3", "신규4", "신규5"].map(
+      (name, i) => mk(`sig_${i}`, name, 10000 + i * 100)
+    );
+    const stale = inventory.slice(0, 5);
+    const fresh = inventory.slice(5, 10);
+    const state = {
+      sigInventory: inventory,
+      overlaySettings: {
+        sigSalesManualDraftV1: {
+          inputMode: "inventory",
+          drafts: fresh.map((s) => ({
+            sourceSigId: s.id,
+            name: s.name,
+            priceInput: String(s.price),
+            imageUrl: "",
+          })),
+          oneShotName: "한방 시그",
+          oneShotPriceInput: "50000",
+          oneShotImageUrl: "",
+          sigSoldFlags: [false, false, false, false, false],
+          oneShotMarkSold: false,
+        },
+      },
+      rouletteState: {
+        phase: "LANDED",
+        sessionId: "manual_live",
+        selectedSigs: stale,
+        overlayReloadNonce: 3,
+      },
+    } as AppState;
+    const out = resolveManualOverlaySelectedSigs(state, "finalent");
+    expect(out.map((s) => s.name)).toEqual(fresh.map((s) => s.name));
+  });
+
   it("resolveManualOverlaySelectedSigs does not swap images by draft index", () => {
     const inventory: SigItem[] = [
       {

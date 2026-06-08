@@ -1459,15 +1459,19 @@ export async function loadStateFromApi(
   userId?: string,
   options?: LoadStateFromApiOptions
 ): Promise<AppState | null> {
-  const dedupeKey = `${userId ?? "__cookie__"}:${options?.forceFull ? "full" : options?.ifUpdatedSince ?? 0}:${options?.pick ?? "full"}`;
-  const existing = loadStateInflight.get(dedupeKey);
-  if (existing) return existing;
-  const created = doLoadStateFromApi(userId, options);
-  loadStateInflight.set(dedupeKey, created);
-  created.finally(() => {
-    if (loadStateInflight.get(dedupeKey) === created) loadStateInflight.delete(dedupeKey);
-  });
-  return created;
+  /** forceFull(리롤·OBS 새로고침)은 dedupe 제외 — 동시 요청이 구 스냅샷을 공유하는 회귀 방지 */
+  if (!options?.forceFull) {
+    const dedupeKey = `${userId ?? "__cookie__"}:${options?.ifUpdatedSince ?? 0}:${options?.pick ?? "full"}`;
+    const existing = loadStateInflight.get(dedupeKey);
+    if (existing) return existing;
+    const created = doLoadStateFromApi(userId, options);
+    loadStateInflight.set(dedupeKey, created);
+    created.finally(() => {
+      if (loadStateInflight.get(dedupeKey) === created) loadStateInflight.delete(dedupeKey);
+    });
+    return created;
+  }
+  return doLoadStateFromApi(userId, options);
 }
 
 async function doLoadStateFromApi(

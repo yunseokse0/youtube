@@ -583,6 +583,17 @@ export function resolveManualOverlaySelectedSigs(
   const inv = state.sigInventory || [];
   const draft = readManualSigDraftFromState(state);
   const draftRows = Array.isArray(draft?.drafts) ? draft!.drafts : [];
+  const draftReady = Boolean(draft && manualSigDraftsReady(draft.drafts));
+  const draftItems = draftReady
+    ? stripBundledSigPlaceholderItems(buildManualSigItemsFromDrafts(draft!.drafts, inv, userId))
+    : [];
+  const rawNames = raw.map((s) => normalizeManualSigNameKey(s.name)).join("|");
+  const draftNames = draftItems.map((s) => normalizeManualSigNameKey(s.name)).join("|");
+  const draftMatchesSelection =
+    draftItems.length >= MIN_MANUAL_OVERLAY_SIGS &&
+    raw.length >= MIN_MANUAL_OVERLAY_SIGS &&
+    rawNames === draftNames;
+
   let items = stripBundledSigPlaceholderItems(
     raw.map((s) =>
       hydrateManualOverlaySigItem(
@@ -593,7 +604,12 @@ export function resolveManualOverlaySelectedSigs(
       )
     )
   );
-  if (items.length < MIN_MANUAL_OVERLAY_SIGS && draft && manualSigDraftsReady(draft.drafts)) {
+  if (
+    draftItems.length >= MIN_MANUAL_OVERLAY_SIGS &&
+    (items.length < MIN_MANUAL_OVERLAY_SIGS || !draftMatchesSelection)
+  ) {
+    items = draftItems;
+  } else if (items.length < MIN_MANUAL_OVERLAY_SIGS && draftReady) {
     items = stripBundledSigPlaceholderItems(
       buildManualSigItemsFromDrafts(draft.drafts, inv, userId)
     );

@@ -197,14 +197,26 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
   // Edge 런타임에서는 인메모리 lock이 인스턴스 간 공유되지 않아 /api/state 저장과 경합할 수 있으므로
   // /api/state 경로에서 들어온 rouletteState는 "더 최신 startedAt"인 경우에만 제한적으로 반영한다.
   // 대부분의 일반 저장은 base를 유지해 스핀 상태 덮어쓰기를 방지한다.
+  const patchRsEarly =
+    patch.rouletteState != null && typeof patch.rouletteState === "object"
+      ? (patch.rouletteState as Partial<RouletteState>)
+      : null;
   const baseStartedAt = Number(base.rouletteState?.startedAt || 0);
-  const patchStartedAt = Number(patch.rouletteState?.startedAt || 0);
-  const patchHasRollingFlag = typeof patch.rouletteState?.isRolling === "boolean";
+  const patchStartedAt = Number(patchRsEarly?.startedAt || 0);
+  const patchHasRollingFlag = typeof patchRsEarly?.isRolling === "boolean";
+  const patchReloadNonce = Number(patchRsEarly?.overlayReloadNonce || 0);
+  const baseReloadNonce = Number(base.rouletteState?.overlayReloadNonce || 0);
+  const manualNonceAdvanced =
+    Boolean(patchRsEarly) &&
+    isManualOverlaySessionId(patchRsEarly.sessionId) &&
+    patchReloadNonce > baseReloadNonce;
   const canApplyPatchRouletteState =
     "rouletteState" in patch &&
     !isRouletteLocked(userId) &&
-    Number.isFinite(patchStartedAt) &&
-    (patchStartedAt > baseStartedAt || (patchStartedAt === baseStartedAt && patchHasRollingFlag));
+    (manualNonceAdvanced ||
+      (Number.isFinite(patchStartedAt) &&
+        (patchStartedAt > baseStartedAt ||
+          (patchStartedAt === baseStartedAt && patchHasRollingFlag))));
   if (!canApplyPatchRouletteState) {
     next.rouletteState = base.rouletteState;
   }
@@ -215,7 +227,8 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
       isManualOverlaySessionId(patchRs.sessionId) &&
       (patchRs.phase === "LANDED" ||
         patchRs.phase === "CONFIRMED" ||
-        patchRs.phase === "CONFIRM_PENDING");
+        patchRs.phase === "CONFIRM_PENDING" ||
+        (patchRs.phase === "IDLE" && manualNonceAdvanced));
     if (isManualRoulettePatch && canApplyPatchRouletteState) {
       next.rouletteState = normalizeRouletteState({
         ...(next.rouletteState || base.rouletteState),
