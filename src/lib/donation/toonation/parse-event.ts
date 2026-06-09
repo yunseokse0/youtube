@@ -1,4 +1,4 @@
-import type { DonationEvent } from "../types";
+import type { DonationEvent, QueueSigItem } from "../types";
 
 function safeRead(obj: unknown, key: string): unknown {
   if (!obj || typeof obj !== "object") return undefined;
@@ -187,4 +187,40 @@ export function extractAlertboxKeyFromUrl(alertboxUrl: string): string {
   const key = new URL(alertboxUrl).pathname.split("/").filter(Boolean).pop();
   if (!key) throw new Error("invalid_toonation_alertbox_url");
   return key;
+}
+
+/**
+ * 후원 금액과 메시지를 기반으로 시그 스냅샷에서 가장 적절한 시그를 매칭합니다.
+ * (할인 없음 전제 — 금액 일치가 1순위)
+ */
+export function matchSigByAmountAndMessage(
+  amount: number,
+  message: string,
+  sigListSnapshot: QueueSigItem[]
+): { sigName: string | undefined; isAutoMatched: boolean } {
+  if (!sigListSnapshot?.length) {
+    return { sigName: undefined, isAutoMatched: false };
+  }
+
+  const safeAmount = Math.max(0, Math.round(Number(amount) || 0));
+  const text = String(message || "");
+
+  const priceMatchedSigs = sigListSnapshot.filter(
+    (sig) => Math.round(Number(sig.price || 0)) === safeAmount
+  );
+
+  if (priceMatchedSigs.length === 0) {
+    return { sigName: undefined, isAutoMatched: false };
+  }
+
+  if (priceMatchedSigs.length === 1) {
+    return { sigName: priceMatchedSigs[0]!.name, isAutoMatched: true };
+  }
+
+  const textMatchedSig = priceMatchedSigs.find((sig) => sig.name && text.includes(sig.name));
+  if (textMatchedSig) {
+    return { sigName: textMatchedSig.name, isAutoMatched: true };
+  }
+
+  return { sigName: priceMatchedSigs[0]!.name, isAutoMatched: false };
 }

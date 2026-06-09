@@ -13,13 +13,82 @@ export type ApplyDonationResult =
   | { ok: true; state: AppState; event: DonationEvent }
   | { ok: false; reason: "unmatched" | "duplicate"; event: DonationEvent };
 
+/** 큐 검토용 `::review` 접미사 제거 */
+export function normalizeDonationEventId(id: string): string {
+  return String(id || "").replace(/::review$/i, "");
+}
+
+/** 후원 기록 삭제 시 투네 대기 큐에서 함께 제거할 id 후보 */
+export function donationQueueIdsForDonor(donor: { id?: string }): string[] {
+  const rawId = String(donor.id || "").trim();
+  if (!rawId) return [];
+  const baseId = normalizeDonationEventId(rawId);
+  const out = new Set<string>([rawId, baseId, `${baseId}::review`]);
+  const externalId = baseId.replace(/^toonation:/i, "");
+  if (externalId && externalId !== baseId) {
+    out.add(`toonation:${externalId}`);
+    out.add(`toonation:${externalId}::review`);
+  }
+  return Array.from(out);
+}
+
+/** 후원자 리스트(donors) 기준으로 멤버 계좌·투네 합계 재계산 — 순위·엑셀표 금액 불일치 방지 */
+export function syncMemberTotalsFromDonors(state: AppState): AppState {
+  const totals = new Map<string, { account: number; toon: number }>();
+  for (const member of state.members || []) {
+    totals.set(member.id, { account: 0, toon: 0 });
+  }
+  for (const donor of state.donors || []) {
+    const memberId = String(donor.memberId || "").trim();
+    if (!memberId || !totals.has(memberId)) continue;
+    const bucket = totals.get(memberId)!;
+    const amount = Math.max(0, Math.round(Number(donor.amount) || 0));
+    if ((donor.target || "account") === "toon") bucket.toon += amount;
+    else bucket.account += amount;
+  }
+  const members = (state.members || []).map((member) => {
+    const bucket = totals.get(member.id) || { account: 0, toon: 0 };
+    const isOperating = isOperatingSettlementMember(
+      { id: member.id, name: member.name, operating: member.operating, realName: member.realName },
+      state.memberPositions || null
+    );
+    return {
+      ...member,
+      account: bucket.account,
+      toon: bucket.toon,
+      contribution: isOperating ? Math.max(0, Number(member.contribution) || 0) : bucket.account + bucket.toon,
+    };
+  });
+  return { ...state, members };
+}
+
+/** 동일 투네 후원이 다른 id(검토 큐·타임스탬프 fallback)로 다시 들어오는 것 방지 */
+export function isDuplicateDonationEvent(state: AppState, rawEvent: DonationEvent): boolean {
+  const donors = state.donors || [];
+  const eventId = String(rawEvent.id || "").trim();
+  const baseId = normalizeDonationEventId(eventId);
+  const externalId = String(rawEvent.externalId || "").trim();
+  const externalDonorId = externalId && rawEvent.provider ? `${rawEvent.provider}:${externalId}` : "";
+
+  return donors.some((d) => {
+    const donorId = String(d.id || "").trim();
+    if (!donorId) return false;
+    if (donorId === eventId || donorId === baseId) return true;
+    if (baseId && normalizeDonationEventId(donorId) === baseId) return true;
+    if (externalDonorId && (donorId === externalDonorId || normalizeDonationEventId(donorId) === externalDonorId)) {
+      return true;
+    }
+    return false;
+  });
+}
+
 /** 후원 1건을 AppState(멤버·donors·식사대전)에 반영 — 클라이언트·서버 공통 */
 export function applyDonationToAppState(
   currentState: AppState,
   rawEvent: DonationEvent,
   aliases: DonorAlias[] = []
 ): ApplyDonationResult {
-  if ((currentState.donors || []).some((d) => d.id === rawEvent.id)) {
+  if (isDuplicateDonationEvent(currentState, rawEvent)) {
     return { ok: false, reason: "duplicate", event: rawEvent };
   }
 
@@ -84,7 +153,7 @@ export function applyDonationToAppState(
       : (currentState.mealBattle?.participants || []);
 
   const now = Date.now();
-  const updatedState: AppState = {
+  const updatedState = syncMemberTotalsFromDonors({
     ...currentState,
     members: updatedMembers,
     donors: [
@@ -105,11 +174,62 @@ export function applyDonationToAppState(
     },
     donorRankingsUpdatedAt: now,
     updatedAt: now,
-  };
+  });
 
   return {
     ok: true,
     state: updatedState,
     event: { ...processedEvent, memberId: processedEvent.memberId, status: "processed" },
   };
+}
+
+/** 후원 기록 삭제 시 멤버·식대전·후원 순위 revision 되돌림 */
+export function revertDonationFromAppState(currentState: AppState, donorId: string): AppState | null {
+  const donor = (currentState.donors || []).find((d) => d.id === donorId);
+  if (!donor) return null;
+
+  const field = (donor.target || "account") === "toon" ? "toon" : "account";
+  const amount = Math.max(0, Math.round(Number(donor.amount) || 0));
+  const atMs = Number.isFinite(Number(donor.at)) ? Math.max(0, Math.floor(Number(donor.at))) : Date.now();
+
+  const members = currentState.members.map((member) => {
+    if (member.id !== donor.memberId) return member;
+    const nextAccount =
+      field === "account" ? Math.max(0, (member.account || 0) - amount) : member.account || 0;
+    const nextToon = field === "toon" ? Math.max(0, (member.toon || 0) - amount) : member.toon || 0;
+    const isOperating = isOperatingSettlementMember(
+      { id: member.id, name: member.name, operating: member.operating, realName: member.realName },
+      currentState.memberPositions || null
+    );
+    return {
+      ...member,
+      [field]: Math.max(0, (member[field] || 0) - amount),
+      contribution: isOperating ? Math.max(0, Number(member.contribution) || 0) : nextAccount + nextToon,
+    };
+  });
+
+  const syncMode = currentState.donationSyncMode || "mealBattle";
+  const mealParticipants =
+    syncMode === "mealBattle"
+      ? applyMealBattleDonationToParticipants(
+          currentState.mealBattle?.participants || [],
+          donor.memberId,
+          amount,
+          -1,
+          atMs
+        )
+      : currentState.mealBattle?.participants || [];
+
+  const now = Date.now();
+  return syncMemberTotalsFromDonors({
+    ...currentState,
+    donors: (currentState.donors || []).filter((d) => d.id !== donorId),
+    members,
+    mealBattle: {
+      ...currentState.mealBattle,
+      participants: mealParticipants,
+    },
+    donorRankingsUpdatedAt: now,
+    updatedAt: now,
+  });
 }

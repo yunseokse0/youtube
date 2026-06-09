@@ -429,7 +429,10 @@ export async function POST(req: Request) {
     }
     const baseState = existing || defaultState();
     const mergedDonors = Array.isArray(body.donors)
-      ? mergeDonorsForMultiTabSave(body.donors || [], baseState.donors)
+      ? mergeDonorsForMultiTabSave(body.donors || [], baseState.donors, {
+          incomingUpdatedAt: Number(body.updatedAt || 0),
+          existingUpdatedAt: Number(baseState.updatedAt || 0),
+        })
       : baseState.donors;
     const donorsInPatch = Array.isArray(body.donors);
     const merged = mergePartialState(baseState, body, userId);

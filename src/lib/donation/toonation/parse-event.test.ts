@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isToonationExcelDonationWsMessage,
   isToonationYoutubeSuperChatWsMessage,
+  matchSigByAmountAndMessage,
   parseToonationDonationPayload,
   parseToonationMessageBody,
   parseToonationWebSocketMessage,
@@ -9,6 +10,7 @@ import {
   TOONATION_WS_CODE_YOUTUBE_SUPERCHAT,
   unwrapToonationPayload,
 } from "./parse-event";
+import type { QueueSigItem } from "../types";
 
 describe("toonation parse-event", () => {
   it("parses ws code 101 toon donation — donor from alert, optional player in message", () => {
@@ -105,5 +107,41 @@ describe("toonation parse-event", () => {
     });
     expect(isToonationYoutubeSuperChatWsMessage(JSON.parse(raw))).toBe(true);
     expect(parseToonationWebSocketMessage(raw)).toBeNull();
+  });
+});
+
+describe("matchSigByAmountAndMessage", () => {
+  const pool: QueueSigItem[] = [
+    { id: "a", name: "픽션", price: 24900, isActive: true },
+    { id: "b", name: "옴브리뉴", price: 25200, isActive: true },
+    { id: "c", name: "MOVE", price: 24900, isActive: true },
+  ];
+
+  it("auto-matches when only one sig has the amount", () => {
+    expect(matchSigByAmountAndMessage(25200, "옴브리뉴", pool)).toEqual({
+      sigName: "옴브리뉴",
+      isAutoMatched: true,
+    });
+  });
+
+  it("uses message text when multiple sigs share price", () => {
+    expect(matchSigByAmountAndMessage(24900, "픽션 부탁", pool)).toEqual({
+      sigName: "픽션",
+      isAutoMatched: true,
+    });
+  });
+
+  it("returns first price match without auto flag when text is ambiguous", () => {
+    expect(matchSigByAmountAndMessage(24900, "화이팅", pool)).toEqual({
+      sigName: "픽션",
+      isAutoMatched: false,
+    });
+  });
+
+  it("returns undefined when no price match", () => {
+    expect(matchSigByAmountAndMessage(1000, "픽션", pool)).toEqual({
+      sigName: undefined,
+      isAutoMatched: false,
+    });
   });
 });

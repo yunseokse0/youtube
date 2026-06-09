@@ -13,6 +13,12 @@ const nextConfig = {
       /** OBS에 흔한 오타: `sig-sales/manual` → `sig-sales-manual` */
       { source: "/overlay/sig-sales/manual", destination: "/overlay/sig-sales-manual", permanent: false },
       { source: "/overlay/sig-sales/manual/:path*", destination: "/overlay/sig-sales-manual/:path*", permanent: false },
+      /** 후원 팝업 오타 경로 */
+      { source: "/player_alert", destination: "/player-alert", permanent: false },
+      { source: "/player_alert/:path*", destination: "/player-alert/:path*", permanent: false },
+      /** OBS 예전 플레이어 오버레이 → 웹 팝업 */
+      { source: "/overlay/player", destination: "/player-alert", permanent: false },
+      { source: "/overlay/player/:path*", destination: "/player-alert/:path*", permanent: false },
     ];
   },
   async rewrites() {

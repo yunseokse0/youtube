@@ -44,5 +44,14 @@ export async function tryAutoApplyToonationDonationOnServer(
     );
     return "applied_needs_review";
   }
+  await enqueueDonationEvent(
+    userId,
+    {
+      ...result.event,
+      status: "queued",
+      alreadyApplied: true,
+    },
+    { notify: true }
+  );
   return "applied";
 }

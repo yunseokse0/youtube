@@ -26,6 +26,7 @@ function sanitizeEvent(raw: unknown): DonationEvent | null {
         isActive: Boolean(t.isActive),
         soldCount: Number.isFinite(Number(t.soldCount)) ? Math.max(0, Math.floor(Number(t.soldCount))) : undefined,
         maxCount: Number.isFinite(Number(t.maxCount)) ? Math.max(0, Math.floor(Number(t.maxCount))) : undefined,
+        imageUrl: typeof t.imageUrl === "string" ? t.imageUrl.trim() : undefined,
       };
     })
     .filter((s) => s.id);
@@ -47,6 +48,9 @@ function sanitizeEvent(raw: unknown): DonationEvent | null {
     alreadyApplied: x.alreadyApplied === true ? true : undefined,
     error: typeof x.error === "string" ? x.error : undefined,
     sigListSnapshot,
+    matchedSigName: typeof x.matchedSigName === "string" ? x.matchedSigName.trim() : undefined,
+    matchedSigImageUrl: typeof x.matchedSigImageUrl === "string" ? x.matchedSigImageUrl.trim() : undefined,
+    isAutoMatched: x.isAutoMatched === true ? true : undefined,
   };
 }
 

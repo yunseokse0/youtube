@@ -547,12 +547,13 @@ export function getOverlayUserIdFromSearchParams(
   searchParams: SearchParamsLike,
   fallback = "finalent"
 ): string {
-  /** `n=`·`id=` 레거시·오타 호환 (OBS에서 u 대신 붙인 경우 폴링 user 불일치 → 회전 상태 꼬임) */
+  /** `n=`·`id=`·`a=` 레거시·오타 호환 */
   const userId =
     searchParams.get("u") ||
     searchParams.get("user") ||
     searchParams.get("n") ||
-    searchParams.get("id");
+    searchParams.get("id") ||
+    searchParams.get("a");
   return (userId || "").trim() || fallback;
 }
 

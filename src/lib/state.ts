@@ -1681,18 +1681,42 @@ async function doLoadStateFromApi(
   }
 }
 
+export type MergeDonorsForMultiTabSaveOptions = {
+  incomingUpdatedAt?: number;
+  existingUpdatedAt?: number;
+};
+
 /**
  * 여러 브라우저/탭이 동시에 저장할 때 오래된 탭이 후원 목록을 덮어쓰는 것을 완화합니다.
  * - incoming에 서버에 없던 새 후원 id가 있으면 기존과 id 기준 병합(최신 at 우선).
  * - incoming이 기존 id의 부분집합이고 비율이 절반 이하이면, 누락분을 서버(existing)에서 채움(스테일 탭).
  * - 그 외(삭제·소량 삭제 등)는 incoming을 그대로 반영합니다.
+ * - `incomingUpdatedAt` 이 서버보다 오래되면 삭제된 후원을 되살리지 않습니다.
  */
-export function mergeDonorsForMultiTabSave(incoming: Donor[], existing: Donor[] | undefined): Donor[] {
+export function mergeDonorsForMultiTabSave(
+  incoming: Donor[],
+  existing: Donor[] | undefined,
+  opts?: MergeDonorsForMultiTabSaveOptions
+): Donor[] {
   if (!existing || existing.length === 0) return incoming;
   if (incoming.length === 0) return [];
+
+  const incomingAt = Number(opts?.incomingUpdatedAt || 0);
+  const existingAt = Number(opts?.existingUpdatedAt || 0);
+  const incomingStale = incomingAt > 0 && existingAt > 0 && incomingAt < existingAt;
+
   const existingIds = new Set(existing.map((d) => d.id));
+  const incomingIds = new Set(incoming.map((d) => d.id));
   const hasNewInIncoming = incoming.some((d) => !existingIds.has(d.id));
+  const hasRemovedInIncoming = existing.some((d) => !incomingIds.has(d.id));
+
+  if (hasNewInIncoming && hasRemovedInIncoming) {
+    if (incomingStale) return existing;
+    return [...incoming].sort((a, b) => b.at - a.at);
+  }
+
   if (hasNewInIncoming) {
+    if (incomingStale) return existing;
     const map = new Map<string, Donor>();
     for (const d of existing) map.set(d.id, d);
     for (const d of incoming) {
@@ -1701,6 +1725,7 @@ export function mergeDonorsForMultiTabSave(incoming: Donor[], existing: Donor[] 
     }
     return Array.from(map.values()).sort((a, b) => b.at - a.at);
   }
+
   const subset = incoming.every((d) => existingIds.has(d.id));
   if (!subset) return incoming;
   const ratio = incoming.length / existing.length;

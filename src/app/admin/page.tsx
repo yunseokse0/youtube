@@ -62,6 +62,7 @@ import { createStateUpdatedScheduler } from "@/lib/overlay-pull-policy";
 import {
   resolveSigAdminPreviewFallbackSrc,
   resolveSigAdminPreviewSrc,
+  resolveSigOverlayCardImageUrl,
   resolveSigImageUrl,
   toGithubRawSigAssetUrl,
   stripSigInventoryImagesKeepList,
@@ -126,8 +127,15 @@ import {
   syncToonationListenerFromBrowser,
   type ToonationListenerStatus,
 } from "@/lib/donation/toonation/listener";
+import {
+  donationQueueIdsForDonor,
+  normalizeDonationEventId,
+  revertDonationFromAppState,
+  syncMemberTotalsFromDonors,
+} from "@/lib/donation/apply-donation-state";
 import { processDonationEvent, type ProcessDonationResult } from "@/lib/donation/processor";
 import type { DonationEvent, DonorAlias } from "@/lib/donation/types";
+import { buildPlayerAlertPopupUrl, openPlayerAlertPopup } from "@/lib/donation/player-alert-url";
 
 /** 후원 계열 오버레이 배경 GIF 프리셋 — 외부 URL은 방송망에서 차단될 수 있음 */
 const DONATION_LISTS_BG_GIF_PRESETS: { label: string; url: string }[] = [
@@ -384,6 +392,7 @@ export default function AdminPage() {
   const lastAppliedRemoteUpdatedAtRef = useRef<number>(0);
   const oneShotSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const POLL_MERGE_PERSIST_MIN_MS = 6000;
+  const DONOR_LOCAL_PROTECT_MS = 8000;
   /** 시그 추가·삭제 직후 서버 GET이 로컬 변경을 덮어쓰지 않도록 보호(ms) */
   const SIG_INVENTORY_LOCAL_PROTECT_MS = 12_000;
   /** 금액/숫자 입력 중에는 원격 동기화 적용을 잠시 보류해 타이핑 값 초기화를 방지 */
@@ -969,6 +978,25 @@ export default function AdminPage() {
     syncStatusRef.current = syncStatus;
   }, [syncStatus]);
 
+  const reconcileDonationFinancials = useCallback(
+    (input: AppState, opts?: { persist?: boolean }): AppState => {
+      const next = syncMemberTotalsFromDonors(input);
+      const drifted = (input.members || []).some((member, index) => {
+        const synced = next.members[index];
+        if (!synced || synced.id !== member.id) return true;
+        return (
+          Math.floor(Number(member.account || 0)) !== Math.floor(Number(synced.account || 0)) ||
+          Math.floor(Number(member.toon || 0)) !== Math.floor(Number(synced.toon || 0))
+        );
+      });
+      if (drifted && opts?.persist !== false) {
+        persistState(next);
+      }
+      return next;
+    },
+    [persistState]
+  );
+
   const mergeIncomingStateSafely = useCallback((incoming: AppState, local: AppState): { merged: AppState; didPreserve: boolean } => {
     const incomingDefaultLike = isDefaultLikeState(incoming);
     const incomingPlaceholderMembers = isDefaultPlaceholderMemberList(incoming.members);
@@ -1035,6 +1063,17 @@ export default function AdminPage() {
       merged = { ...merged, sigInventory: localInv };
       didPreserve = true;
     }
+    const recentlyEditedDonors = Date.now() - lastLocalPersistAtRef.current < DONOR_LOCAL_PROTECT_MS;
+    const localDonorIds = (local.donors || []).map((d) => d.id).sort().join("\u001e");
+    const incomingDonorIds = (merged.donors || []).map((d) => d.id).sort().join("\u001e");
+    if ((pendingUnsyncedRef.current || recentlyEditedDonors) && localDonorIds !== incomingDonorIds) {
+      merged = {
+        ...merged,
+        donors: normalizeDonorsArray(local.donors),
+        members: local.members,
+      };
+      didPreserve = true;
+    }
     return { merged: { ...merged, donors: normalizeDonorsArray(merged.donors) }, didPreserve };
   }, []);
 
@@ -1091,8 +1130,9 @@ export default function AdminPage() {
       if (apiState) {
         stateUpdatedAtRef.current = apiState.updatedAt || 0;
         const { merged: toApply, didPreserve } = mergeIncomingStateSafely(apiState, local);
-        if (didPreserve) persistState(toApply);
-        setState(toApply);
+        const reconciled = reconcileDonationFinancials(toApply, { persist: didPreserve });
+        if (didPreserve) persistState(reconciled);
+        setState(reconciled);
         if (Array.isArray(toApply.overlayPresets) && toApply.overlayPresets.length > 0) {
           setPresets(toApply.overlayPresets as OverlayPreset[]);
         } else if (localPresets.length > 0) {
@@ -1180,11 +1220,12 @@ export default function AdminPage() {
           }
           stateUpdatedAtRef.current = remoteUpdatedAt;
           lastAppliedRemoteUpdatedAtRef.current = remoteUpdatedAt;
-          setState(toApply);
-          if (Array.isArray(toApply.overlayPresets)) {
-            setPresets(toApply.overlayPresets as OverlayPreset[]);
+          const reconciled = reconcileDonationFinancials(toApply);
+          setState(reconciled);
+          if (Array.isArray(reconciled.overlayPresets)) {
+            setPresets(reconciled.overlayPresets as OverlayPreset[]);
           }
-          try { window.localStorage.setItem(storageKey(user?.id), JSON.stringify(toApply)); } catch {}
+          try { window.localStorage.setItem(storageKey(user?.id), JSON.stringify(reconciled)); } catch {}
         }
       } finally {
         inFlight = false;
@@ -4102,6 +4143,32 @@ export default function AdminPage() {
     }).catch(() => {});
   }, [user?.id]);
 
+  const removeQueueEventsMatchingDonor = useCallback(
+    async (donor: Donor) => {
+      const uid = user?.id || "";
+      if (!uid) return;
+      const keys = new Set(donationQueueIdsForDonor(donor));
+      if (keys.size === 0) return;
+      try {
+        const res = await fetch(`/api/donations/queue?u=${encodeURIComponent(uid)}`, { cache: "no-store" });
+        if (!res.ok) return;
+        const data = (await res.json().catch(() => null)) as { items?: DonationEvent[] } | null;
+        const items = Array.isArray(data?.items) ? data.items : [];
+        for (const evt of items) {
+          const evtId = String(evt.id || "").trim();
+          const evtBase = normalizeDonationEventId(evtId);
+          if (keys.has(evtId) || keys.has(evtBase)) {
+            await removeQueueEvent(evtId);
+          }
+        }
+        await fetchToonationQueue();
+      } catch {
+        /* noop */
+      }
+    },
+    [fetchToonationQueue, removeQueueEvent, user?.id]
+  );
+
   const applyProcessDonationResult = useCallback((result: ProcessDonationResult) => {
     if (result.updatedState) setState(result.updatedState);
   }, []);
@@ -4126,7 +4193,14 @@ export default function AdminPage() {
   }, [applyProcessDonationResult, fetchToonationQueue, fetchUnmatchedEvents, pushToonationLog, removeQueueEvent, user?.id]);
 
   const approveAllQueueEvents = useCallback(async () => {
+    let applied = 0;
+    let confirmed = 0;
     for (const evt of toonationQueue) {
+      if (evt.alreadyApplied) {
+        await removeQueueEvent(evt.id);
+        confirmed += 1;
+        continue;
+      }
       const result = await processDonationEvent(
         { ...evt, status: "queued" },
         user?.id,
@@ -4134,11 +4208,15 @@ export default function AdminPage() {
       );
       applyProcessDonationResult(result);
       await removeQueueEvent(evt.id);
+      applied += 1;
     }
     await fetchToonationQueue();
     await fetchUnmatchedEvents();
-    if (toonationQueue.length > 0) {
-      pushToonationLog(`큐 일괄 승인 반영: ${toonationQueue.length}건`);
+    if (applied > 0) {
+      pushToonationLog(`큐 일괄 승인 반영: ${applied}건`);
+    }
+    if (confirmed > 0) {
+      pushToonationLog(`자동 반영 확인: ${confirmed}건`);
     }
   }, [applyProcessDonationResult, fetchToonationQueue, fetchUnmatchedEvents, pushToonationLog, removeQueueEvent, toonationQueue, user?.id]);
 
@@ -8398,7 +8476,27 @@ export default function AdminPage() {
                   >
                     대기 리스트 새로고침
                   </button>
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 rounded bg-sky-700 hover:bg-sky-600 text-xs font-semibold"
+                    onClick={() => openPlayerAlertPopup(user?.id || "finalent")}
+                  >
+                    후원 웹 팝업 열기
+                  </button>
                 </div>
+                <p className="text-[11px] text-neutral-500">
+                  후원 팝업:{" "}
+                  <code className="text-neutral-400">{buildPlayerAlertPopupUrl(user?.id || "finalent")}</code>
+                  {" · "}
+                  <a
+                    href={`/player-alert?u=${encodeURIComponent(user?.id || "finalent")}&preview=1`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sky-400 hover:text-sky-300"
+                  >
+                    실제 팝업 미리보기
+                  </a>
+                </p>
                 <div className="rounded border border-white/10 bg-black/20 p-2">
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <div className="text-xs text-neutral-300">투네이션 대기 리스트(모니터링) ({toonationQueue.length})</div>
@@ -8432,18 +8530,58 @@ export default function AdminPage() {
                     {toonationQueue.length === 0 && (
                       <div className="text-xs text-neutral-500">대기 이벤트가 없습니다.</div>
                     )}
-                    {toonationQueue.map((evt) => (
-                      <div key={evt.id} className="text-xs text-neutral-300 flex items-center justify-between gap-2 rounded border border-white/10 bg-neutral-900/50 px-2 py-1">
-                        <div className="w-full">
-                          <div className="flex items-center justify-between gap-2">
-                            <span>
-                              [{new Date(evt.at).toLocaleTimeString("ko-KR", { hour12: false })}] {evt.donorName}
-                              {evt.playerName ? ` → ${evt.playerName}` : evt.memberAutoAssigned ? " → (자동배치)" : ""}
-                              {" / "}
-                              {evt.amount.toLocaleString("ko-KR")}원
-                              {evt.target === "account" ? " · 계좌" : " · 투네"}
-                            </span>
-                            <div className="flex items-center gap-2 shrink-0">
+                    {toonationQueue.map((evt) => {
+                      const matchedThumb =
+                        evt.matchedSigName && user?.id
+                          ? resolveSigOverlayCardImageUrl(
+                              evt.matchedSigName,
+                              evt.matchedSigImageUrl,
+                              user.id
+                            )
+                          : "";
+                      return (
+                      <div key={evt.id} className="text-xs text-neutral-300 rounded border border-white/10 bg-neutral-900/50 px-2 py-2">
+                        <div className="flex gap-2">
+                          {matchedThumb ? (
+                            <div className="h-14 w-14 shrink-0 overflow-hidden rounded border border-amber-500/30 bg-black/40">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={matchedThumb}
+                                alt={evt.matchedSigName || "시그"}
+                                className="h-full w-full object-contain"
+                              />
+                            </div>
+                          ) : null}
+                          <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 space-y-0.5">
+                              <div className="text-[10px] text-neutral-500">
+                                [{new Date(evt.at).toLocaleTimeString("ko-KR", { hour12: false })}]
+                                {evt.target === "account" ? " · 계좌" : " · 투네"}
+                              </div>
+                              {evt.matchedSigName ? (
+                                <div className="text-sm font-bold text-amber-100">
+                                  {evt.matchedSigName}
+                                  {evt.isAutoMatched ? "" : " (추정)"}
+                                </div>
+                              ) : null}
+                              <div>
+                                <span className="text-cyan-300 font-semibold">{evt.donorName}</span>
+                                <span className="text-neutral-500"> · </span>
+                                <span className="text-yellow-200 tabular-nums">{evt.amount.toLocaleString("ko-KR")}원</span>
+                              </div>
+                              {evt.playerName || evt.memberAutoAssigned ? (
+                                <div className="text-emerald-300/90">
+                                  플레이어: {evt.playerName || "(자동배치)"}
+                                </div>
+                              ) : null}
+                              {evt.message ? (
+                                <div className="text-[11px] text-neutral-300 line-clamp-2" title={evt.message}>
+                                  메시지: {evt.message}
+                                </div>
+                              ) : null}
+                            </div>
+                            <div className="flex flex-col items-end gap-1 shrink-0">
                               <button
                                 type="button"
                                 className={`px-2 py-0.5 rounded text-[11px] ${evt.alreadyApplied ? "bg-amber-700 hover:bg-amber-600" : "bg-emerald-700 hover:bg-emerald-600"}`}
@@ -8463,11 +8601,6 @@ export default function AdminPage() {
                               </button>
                             </div>
                           </div>
-                          {evt.message ? (
-                            <div className="mt-0.5 text-[11px] text-neutral-400 truncate" title={evt.message}>
-                              {evt.message}
-                            </div>
-                          ) : null}
                           <div className="mt-1 text-[11px] text-neutral-400">
                             <div className="text-neutral-500 mb-0.5">대기 중 시그</div>
                             {(() => {
@@ -8491,9 +8624,11 @@ export default function AdminPage() {
                               );
                             })()}
                           </div>
+                          </div>
                         </div>
                       </div>
-                    ))}
+                    );
+                    })}
                   </div>
                 </div>
                 <div className="rounded border border-white/10 bg-black/20 p-2">
@@ -8718,29 +8853,10 @@ export default function AdminPage() {
                                 className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700"
                                 onClick={() => {
                                   requestConfirm("후원 기록 삭제", "해당 후원 기록을 삭제할까요?", () => {
+                                    void removeQueueEventsMatchingDonor(d);
                                     setState((prev: AppState) => {
-                                      const syncMode = prev.donationSyncMode || "mealBattle";
-                                      const donors = prev.donors.filter((x) => x.id !== d.id);
-                                      const field = (d.target || "account") === "toon" ? "toon" : "account";
-                                      const members = prev.members.map((mm: Member) =>
-                                        mm.id === d.memberId ? { ...mm, [field]: Math.max(0, (mm[field] || 0) - d.amount) } : mm
-                                      );
-                                      const mealParticipants =
-                                        syncMode === "mealBattle"
-                                          ? applyMealBattleDonationToParticipants(
-                                              prev.mealBattle?.participants || [],
-                                              d.memberId,
-                                              d.amount,
-                                              -1,
-                                              d.at
-                                            )
-                                          : (prev.mealBattle?.participants || []);
-                                      const next: AppState = {
-                                        ...prev,
-                                        donors,
-                                        members,
-                                        mealBattle: { ...prev.mealBattle, participants: mealParticipants },
-                                      };
+                                      const next = revertDonationFromAppState(prev, d.id);
+                                      if (!next) return prev;
                                       persistState(next);
                                       return next;
                                     });

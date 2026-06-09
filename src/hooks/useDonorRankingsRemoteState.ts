@@ -1,7 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { defaultState, loadState, loadStateFromApi, storageKey, type AppState } from "@/lib/state";
+import {
+  defaultState,
+  loadState,
+  loadStateFromApi,
+  normalizeDonorsArray,
+  storageKey,
+  type AppState,
+} from "@/lib/state";
 import { STATE_PICK_DONOR_RANKINGS } from "@/lib/state-api-pick";
 import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
 import { startStaggeredOverlayPoll } from "@/lib/overlay-poll-stagger";
@@ -31,6 +38,28 @@ function donorRankingsPollSourceKey(userId?: string): string {
   return `${window.location.pathname || "/overlay/donor-rankings"}:${userId || "default"}`;
 }
 
+function mergeDonorRankingsApiState(prev: AppState | null, remote: Partial<AppState>): AppState {
+  const next = { ...defaultState(), ...prev, ...remote } as AppState;
+  if (Array.isArray(remote.donors)) {
+    next.donors = normalizeDonorsArray(remote.donors);
+  }
+  return next;
+}
+
+function readDonorRankingsThemeFromLocal(userId?: string): Partial<AppState> | null {
+  const local = readLocalStateIfExists(userId);
+  if (!local) return null;
+  const {
+    donors: _donors,
+    members: _members,
+    mealBattle: _mealBattle,
+    sigInventory: _sigInventory,
+    rouletteState: _rouletteState,
+    ...themeAndMeta
+  } = local;
+  return themeAndMeta;
+}
+
 /**
  * 후원 순위 오버레이: donors·순위 UI 가 바뀔 때만 GET (`pick=donor-rankings` + SSE `donorRankingsUpdatedAt`).
  */
@@ -57,7 +86,7 @@ export function useDonorRankingsRemoteState(
       if (!remote) return;
       const rev = readDonorRankingsRevision(remote);
       if (rev > 0) lastSyncedRevRef.current = Math.max(lastSyncedRevRef.current, rev);
-      setState((prev) => ({ ...defaultState(), ...prev, ...remote }));
+      setState((prev) => mergeDonorRankingsApiState(prev, remote));
     } finally {
       syncingRef.current = false;
       setSyncedOnce(true);
@@ -72,10 +101,10 @@ export function useDonorRankingsRemoteState(
   });
 
   useEffect(() => {
-    const local = readLocalStateIfExists(userId);
-    if (local) {
-      setState((prev) => ({ ...defaultState(), ...prev, ...local }));
-      lastSyncedRevRef.current = readDonorRankingsRevision(local);
+    const localTheme = readDonorRankingsThemeFromLocal(userId);
+    if (localTheme) {
+      setState((prev) => mergeDonorRankingsApiState(prev, { ...localTheme, donors: [] }));
+      lastSyncedRevRef.current = readDonorRankingsRevision(localTheme as AppState);
     } else {
       setState(defaultState());
       lastSyncedRevRef.current = 0;
@@ -110,16 +139,7 @@ export function useDonorRankingsRemoteState(
 
     const onStorage = (e: StorageEvent) => {
       if (e.key !== storageKey(userId ?? undefined)) return;
-      try {
-        const localNow = readLocalStateIfExists(userId);
-        if (!localNow) return;
-        const rev = readDonorRankingsRevision(localNow);
-        if (rev <= lastSyncedRevRef.current) return;
-        lastSyncedRevRef.current = rev;
-        setState((prev) => ({ ...defaultState(), ...prev, ...localNow }));
-      } catch {
-        /* noop */
-      }
+      void syncFromApiRef.current({ forceFull: true });
     };
 
     window.addEventListener("storage", onStorage);

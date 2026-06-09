@@ -1,0 +1,55 @@
+import type { PlayerDonationQueueItem } from "@/lib/donation/player-alert-queue";
+
+/** 실제 팝업 미리보기용 샘플 스택 (서버 큐와 분리) */
+export const PLAYER_ALERT_PREVIEW_STACK: PlayerDonationQueueItem[] = [
+  {
+    id: "preview-1",
+    at: new Date().toISOString(),
+    donorName: "달빛후원자",
+    playerName: "루나",
+    amount: 10000,
+    message: "루나님 제트스키 부탁해요!",
+    matchedSigName: "제트스키",
+    isAutoMatched: true,
+  },
+  {
+    id: "preview-2",
+    at: new Date().toISOString(),
+    donorName: "별빛킹",
+    playerName: "솔라",
+    amount: 15000,
+    message: "카운팅스타 가즈아",
+    matchedSigName: "카운팅스타",
+    isAutoMatched: true,
+  },
+  {
+    id: "preview-3",
+    at: new Date().toISOString(),
+    donorName: "익명의천사",
+    playerName: "마티니",
+    amount: 12000,
+    message: "마티니 시그 하나만요",
+    matchedSigName: "마티니",
+    isAutoMatched: false,
+  },
+  {
+    id: "preview-4",
+    at: new Date().toISOString(),
+    donorName: "치즈냥이",
+    playerName: "루니",
+    amount: 8000,
+    message: "오렌지디스코 추천합니다",
+    matchedSigName: "오렌지디스코",
+    isAutoMatched: true,
+  },
+  {
+    id: "preview-5",
+    at: new Date().toISOString(),
+    donorName: "방송러버",
+    playerName: "제트",
+    amount: 20000,
+    message: "반야심경 풀버전 기대할게요",
+    matchedSigName: "반야심경",
+    isAutoMatched: true,
+  },
+];

@@ -67,6 +67,36 @@ function redirectLegacySigSalesManualSlashPath(req: NextRequest): NextResponse |
   return NextResponse.redirect(target, 307);
 }
 
+/** `/player_alert` 오타 → `/player-alert` */
+function redirectPlayerAlertTypoPath(req: NextRequest): NextResponse | null {
+  const { pathname } = req.nextUrl;
+  if (pathname !== "/player_alert" && !pathname.startsWith("/player_alert/")) return null;
+  const target = new URL("/player-alert", req.url);
+  const suffix = pathname.slice("/player_alert".length);
+  if (suffix && suffix !== "/") {
+    target.pathname = `/player-alert${suffix}`;
+  }
+  const q = new URLSearchParams(req.nextUrl.searchParams);
+  if (!q.get("u")?.trim() && !q.get("user")?.trim()) {
+    const fromA = String(q.get("a") || "").trim();
+    if (fromA) q.set("u", fromA);
+  }
+  q.delete("a");
+  target.search = q.toString();
+  return NextResponse.redirect(target, 307);
+}
+
+/** 플레이어 후원 알림 — OBS 오버레이 대신 웹 팝업 페이지 */
+function redirectPlayerOverlayToWebPopup(req: NextRequest): NextResponse | null {
+  const { pathname } = req.nextUrl;
+  if (pathname !== "/overlay/player" && !pathname.startsWith("/overlay/player/")) return null;
+  const target = new URL("/player-alert", req.url);
+  const q = new URLSearchParams(req.nextUrl.searchParams);
+  q.delete("host");
+  target.search = q.toString();
+  return NextResponse.redirect(target, 307);
+}
+
 /** OBS에 잘못 붙인 관리자 경로 → 공개 오버레이(인증 쿠키 없음) */
 function redirectLegacyAdminSigOverlayPath(req: NextRequest): NextResponse | null {
   const { pathname } = req.nextUrl;
@@ -123,6 +153,12 @@ function extractUserIdFromBrokenSigSegment(seg: string): string | null {
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  const playerAlertTypoRedirect = redirectPlayerAlertTypoPath(req);
+  if (playerAlertTypoRedirect) return playerAlertTypoRedirect;
+
+  const playerWebPopupRedirect = redirectPlayerOverlayToWebPopup(req);
+  if (playerWebPopupRedirect) return playerWebPopupRedirect;
 
   const legacyObsTextRedirect = redirectLegacyObsTextOverlayPath(req);
   if (legacyObsTextRedirect) return legacyObsTextRedirect;
@@ -187,6 +223,10 @@ export function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
+    "/player_alert",
+    "/player_alert/:path*",
+    "/overlay/player",
+    "/overlay/player/:path*",
     "/admin",
     "/admin/:path*",
     "/settlements",

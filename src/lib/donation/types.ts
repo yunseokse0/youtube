@@ -23,6 +23,12 @@ export interface DonationEvent {
   manualAssignMemberId?: string;
   error?: string;
   sigListSnapshot?: QueueSigItem[];
+  /** 금액·텍스트 매칭(또는 리롤판 백업)으로 추정한 시그명 — 플레이어 팝업용 */
+  matchedSigName?: string;
+  /** 매칭 시그 인벤 imageUrl (OBS에서 resolveSigOverlayCardImageUrl로 표시) */
+  matchedSigImageUrl?: string;
+  /** 금액·메시지로 단일 시그에 확정 매칭됨 */
+  isAutoMatched?: boolean;
 }
 
 export interface Donor {
@@ -46,4 +52,5 @@ export interface QueueSigItem {
   isActive: boolean;
   soldCount?: number;
   maxCount?: number;
+  imageUrl?: string;
 }
