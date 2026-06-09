@@ -611,6 +611,8 @@ export function buildManualSigSalesConfirmState(
     previousOneShotMarkSold?: boolean;
     /** false면 phase LANDED — 나머지 시그 개별 확정 가능 */
     closeRound?: boolean;
+    /** 수동 판매 — 재고 soldCount 미변경(OBS 체크만) */
+    skipInventoryUpdate?: boolean;
   }
 ): AppState {
   const prevFlags = Array.isArray(opts.previousSoldFlags)
@@ -666,7 +668,7 @@ export function buildManualSigSalesConfirmState(
   });
   return {
     ...draftPersist,
-    sigInventory: confirmedInventory,
+    sigInventory: opts.skipInventoryUpdate ? base.sigInventory || [] : confirmedInventory,
     overlaySettings: mergeManualSigBroadcastIntoOverlaySettings(draftPersist, nextBroadcast),
     updatedAt: now,
   };
@@ -826,6 +828,7 @@ export function pickRandomManualSigBundle(
   const pool = listActiveManualSigPool(base.sigInventory, {
     memberFilterId: opts?.memberFilterId,
     sigSalesExcludedIds: base.sigSalesExcludedIds,
+    ignoreStock: true,
   });
   const pickCount = Math.min(MANUAL_REROLL_MAX_PICK, pool.length);
   if (pickCount < MANUAL_REROLL_MIN_POOL) return null;

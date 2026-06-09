@@ -1358,8 +1358,17 @@ export async function saveStateAsync(state: AppState, userId?: string | null): P
   }
 }
 
+export type BuildSigSalesManualApiPatchOptions = {
+  /** 리롤 등 — sigInventory 서버 merge 생략(회전판 재고·다른 기능 보호) */
+  omitSigInventory?: boolean;
+};
+
 /** 수동 시그 리롤·판매 확정 — 재고·초안·수동 방송만 PATCH(회전판·멤버 덮어쓰기 방지) */
-export function buildSigSalesManualApiPatch(next: AppState, userId?: string | null): Partial<AppState> {
+export function buildSigSalesManualApiPatch(
+  next: AppState,
+  userId?: string | null,
+  options?: BuildSigSalesManualApiPatchOptions
+): Partial<AppState> {
   const normalizedSigInventory = slimSigInventoryForWire(
     normalizeSigInventory(next.sigInventory),
     userId ?? undefined
@@ -1372,7 +1381,7 @@ export function buildSigSalesManualApiPatch(next: AppState, userId?: string | nu
   const manualBroadcast = os[MANUAL_SIG_BROADCAST_STATE_KEY];
   const patch: Partial<AppState> = {
     updatedAt: next.updatedAt ?? Date.now(),
-    sigInventory: normalizedSigInventory,
+    ...(options?.omitSigInventory ? {} : { sigInventory: normalizedSigInventory }),
     sigSalesExcludedIds: next.sigSalesExcludedIds,
     sigSoldOutStampUrl: next.sigSoldOutStampUrl,
     sigRollingMeta: next.sigRollingMeta,
@@ -1418,7 +1427,8 @@ export function mergeSigSalesManualIntoLocalState(base: AppState, next: AppState
 
 export async function saveSigSalesManualStateAsync(
   state: AppState,
-  userId?: string | null
+  userId?: string | null,
+  options?: BuildSigSalesManualApiPatchOptions
 ): Promise<SaveStateAsyncResult> {
   if (typeof window === "undefined") return { ok: false };
   const next = normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() }));
@@ -1428,7 +1438,7 @@ export async function saveSigSalesManualStateAsync(
     window.localStorage.setItem(storageKey(userId), JSON.stringify(mergedLocal));
   } catch {}
   try {
-    const patch = buildSigSalesManualApiPatch(next, userId);
+    const patch = buildSigSalesManualApiPatch(next, userId, options);
     return await enqueueServerSave(JSON.stringify(patch), userId, mergedLocal);
   } catch {
     return { ok: false };

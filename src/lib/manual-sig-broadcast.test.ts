@@ -626,6 +626,54 @@ describe("buildManualSigSalesConfirmState", () => {
     expect(readManualSigBroadcastFromState(next)?.phase).toBe("CONFIRMED");
   });
 
+  it("skipInventoryUpdate leaves soldCount unchanged", () => {
+    const state = {
+      sigInventory: [
+        {
+          id: "sig_a",
+          name: "A",
+          price: 10000,
+          imageUrl: "",
+          memberId: "",
+          maxCount: 1,
+          soldCount: 0,
+          isRolling: true,
+          isActive: true,
+        },
+      ],
+      overlaySettings: {
+        [MANUAL_SIG_BROADCAST_STATE_KEY]: {
+          phase: "LANDED",
+          startedAt: 1,
+          selectedSigs: [],
+          oneShotResult: null,
+          overlayReloadNonce: 0,
+        },
+      },
+    } as AppState;
+    const selected: SigItem[] = [
+      {
+        id: "sig_a",
+        name: "A",
+        price: 10000,
+        imageUrl: "",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+    ];
+    const next = buildManualSigSalesConfirmState(state, {
+      selected,
+      sigSoldFlags: [true, false, false, false, false],
+      oneShotMarkSold: false,
+      skipInventoryUpdate: true,
+    });
+    expect(next.sigInventory?.find((x) => x.id === "sig_a")?.soldCount).toBe(0);
+    expect(readManualSigBroadcastFromState(next)?.phase).toBe("CONFIRMED");
+  });
+
   it("confirms sold sig when draft slot index differs from display order", () => {
     const state = {
       sigInventory: [

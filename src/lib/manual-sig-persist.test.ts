@@ -37,7 +37,22 @@ describe("buildSigSalesManualApiPatch", () => {
     expect(patch.donors).toBeUndefined();
     expect(patch.overlayPresets).toBeUndefined();
     expect(Array.isArray(patch.sigInventory)).toBe(true);
-    expect(patch.rouletteState).toBeTruthy();
+    expect(patch.rouletteState).toBeUndefined();
+  });
+
+  it("omitSigInventory skips inventory in patch", () => {
+    const base = defaultState();
+    const next: AppState = {
+      ...base,
+      sigInventory: [{ id: "s1", name: "A", price: 1, imageUrl: "", memberId: "", maxCount: 1, soldCount: 99, isRolling: true, isActive: false }],
+      updatedAt: 456,
+    };
+    const patch = buildSigSalesManualApiPatch(next, "finalent", { omitSigInventory: true }) as Record<
+      string,
+      unknown
+    >;
+    expect(patch.sigInventory).toBeUndefined();
+    expect(patch.updatedAt).toBe(456);
   });
 
   it("mergeSigSalesManualIntoLocalState keeps server members when localStorage was reset", () => {

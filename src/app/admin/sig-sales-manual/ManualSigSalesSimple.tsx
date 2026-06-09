@@ -69,6 +69,7 @@ export default function ManualSigSalesSimple() {
       listActiveManualSigPool(state?.sigInventory, {
         memberFilterId: memberFilterId || undefined,
         sigSalesExcludedIds: state?.sigSalesExcludedIds,
+        ignoreStock: true,
       }),
     [state?.sigInventory, state?.sigSalesExcludedIds, memberFilterId]
   );
@@ -133,9 +134,14 @@ export default function ManualSigSalesSimple() {
   const phase = String(currentPhase || "");
 
   const persistState = useCallback(
-    async (next: AppState, okMsg: string, failMsg: string) => {
+    async (
+      next: AppState,
+      okMsg: string,
+      failMsg: string,
+      saveOpts?: { omitSigInventory?: boolean }
+    ) => {
       setState(next);
-      const saved = await saveSigSalesManualStateAsync(next, userId);
+      const saved = await saveSigSalesManualStateAsync(next, userId, saveOpts);
       setToast(saved.ok ? okMsg : failMsg);
       return saved.ok;
     },
@@ -183,7 +189,8 @@ export default function ManualSigSalesSimple() {
       await persistState(
         next,
         `리롤 · OBS 반영: ${bundle.selected.map((s) => s.name).join(", ")}`,
-        "리롤은 적용됐지만 서버 저장이 지연됩니다. OBS 새로고침 후 확인하세요."
+        "리롤은 적용됐지만 서버 저장이 지연됩니다. OBS 새로고침 후 확인하세요.",
+        { omitSigInventory: true }
       );
     } catch (e) {
       setToast(`리롤 실패: ${String(e)}`);
@@ -234,16 +241,18 @@ export default function ManualSigSalesSimple() {
           previousSoldFlags: soldFlags,
           previousOneShotMarkSold: oneShotMarkSold,
           closeRound,
+          skipInventoryUpdate: true,
         });
         const row = onlyIdx != null ? saleRows.find((r) => r.draftIdx === onlyIdx) : null;
         const ok = await persistState(
           next,
           row
-            ? `${row.name} 판매 확정 · 재고 반영`
+            ? `${row.name} 판매 확정 · OBS 반영`
             : closeRound
-              ? "판매 확정 완료 · 재고 반영 · OBS 반영"
+              ? "판매 확정 완료 · OBS 반영"
               : "선택 시그 판매 확정 · 나머지 계속 가능",
-          "판매 확정은 적용됐지만 서버 저장이 지연됩니다. OBS 새로고침 후 확인하세요."
+          "판매 확정은 적용됐지만 서버 저장이 지연됩니다. OBS 새로고침 후 확인하세요.",
+          { omitSigInventory: true }
         );
         if (ok) void loadRemote();
       } catch (e) {

@@ -113,6 +113,7 @@ import {
   resolveManualOverlaySelectedSigs,
 } from "@/lib/manual-sig-broadcast";
 import { pickRandomManualSigDrafts } from "@/lib/manual-sig-random";
+import { listActiveManualSigPool } from "@/lib/manual-sig-active-pool";
 import {
   MANUAL_SIG_DRAFT_STATE_KEY,
   MANUAL_SIG_WORKBENCH_KEY,
@@ -997,13 +998,12 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
   const manualReadyEarly = useMemo(() => manualSigDraftsReady(manualSigDrafts), [manualSigDrafts]);
   const manualRandomPool = useMemo(
     () =>
-      activeNormalPool.map((x) => ({
-        id: String(x.id || ""),
-        name: String(x.name || "").trim(),
-        price: Math.max(0, Math.floor(Number(x.price || 0))),
-        imageUrl: String(x.imageUrl || "").trim(),
-      })),
-    [activeNormalPool]
+      listActiveManualSigPool(state?.sigInventory, {
+        memberFilterId: memberFilterId || undefined,
+        sigSalesExcludedIds: state?.sigSalesExcludedIds,
+        ignoreStock: true,
+      }),
+    [state?.sigInventory, state?.sigSalesExcludedIds, memberFilterId]
   );
   const manualPreviewFromDraft = useMemo((): SigItem[] => {
     if (!manualReadyEarly) return [];
@@ -1855,7 +1855,9 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       setResultsPanelCollapsed(false);
       manualDraftLastSavedRef.current = JSON.stringify(manualDraftPayload);
       manualWorkbenchLastSavedRef.current = JSON.stringify(wbWithBroadcast);
-      const landedSaved = await saveSigSalesManualStateAsync(landedState, userId);
+      const landedSaved = await saveSigSalesManualStateAsync(landedState, userId, {
+        omitSigInventory: true,
+      });
 
       if (!confirmNow) {
         if (!landedSaved.ok) {
@@ -1879,17 +1881,20 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         previousSoldFlags: soldFlags,
         previousOneShotMarkSold: oneShotSoldFlag,
         closeRound: manualConfirmed,
+        skipInventoryUpdate: manualConfirmed,
       });
-      const soldSaved = await saveSigSalesManualStateAsync(soldState, userId);
+      const soldSaved = await saveSigSalesManualStateAsync(soldState, userId, {
+        omitSigInventory: manualConfirmed,
+      });
       if (soldSaved.ok) {
         setState(soldState);
         setToast(
           manualConfirmed
-            ? "판매 확정 완료! (수동 회차·재고 반영)"
-            : "판매 완료(재고만 반영). 수동 판매는 회차·이력에 저장하지 않습니다."
+            ? "판매 확정 완료! (수동 회차·OBS 반영)"
+            : "판매 완료. 수동 판매는 회차·이력에 저장하지 않습니다."
         );
       } else {
-        setToast("재고 반영 저장이 지연됩니다. OBS 새로고침 후 다시 확인해 주세요.");
+        setToast("판매 확정 저장이 지연됩니다. OBS 새로고침 후 다시 확인해 주세요.");
         void loadRemote();
       }
     } catch (e) {
@@ -1919,8 +1924,8 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     if (!picked) {
       setToast(
         memberFilterId
-          ? `랜덤 실패: 선택 멤버 판매 가능 시그 ${manualRandomPool.length}개 (5개 필요).`
-          : `랜덤 실패: 판매 가능 시그 ${manualRandomPool.length}개. 상단에서 멤버를 선택하거나 재고를 확인하세요.`
+          ? `랜덤 실패: 선택 멤버 시그 ${manualRandomPool.length}개 (5개 필요).`
+          : `랜덤 실패: 시그 ${manualRandomPool.length}개. 상단에서 멤버를 선택하세요.`
       );
       return;
     }
@@ -1937,8 +1942,8 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     if (!picked) {
       setToast(
         memberFilterId
-          ? `리롤 실패: 선택 멤버 판매 가능 시그 ${manualRandomPool.length}개 (5개 필요).`
-          : `리롤 실패: 판매 가능 시그 ${manualRandomPool.length}개. 멤버·재고를 확인하세요.`
+          ? `리롤 실패: 선택 멤버 시그 ${manualRandomPool.length}개 (5개 필요).`
+          : `리롤 실패: 시그 ${manualRandomPool.length}개. 멤버를 확인하세요.`
       );
       return;
     }
@@ -2454,32 +2459,35 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       }
     ) => {
       if (!state) return;
+      const useManualBroadcast = manualOnly || overlayObsMode === "manual";
       const oneShot = buildLiveOneShotSnapshot(soldSet);
       let inventory = nextInventory.map((row) =>
         row.id === ONE_SHOT_SIG_ID && oneShot
           ? { ...row, name: oneShot.name, price: oneShot.price }
           : row
       );
-      if (opts?.bumpOneShot) {
-        inventory = inventory.map((row) => {
-          if (row.id !== ONE_SHOT_SIG_ID) return row;
-          const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
-          const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)));
-          const nextSold = Math.min(maxCount, soldCount + 1);
-          return {
-            ...row,
-            soldCount: nextSold,
-            isActive: nextSold >= maxCount ? false : row.isActive,
-          };
-        });
-      }
-      if (opts?.unbumpOneShot) {
-        inventory = inventory.map((row) => {
-          if (row.id !== ONE_SHOT_SIG_ID) return row;
-          const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
-          const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)) - 1);
-          return { ...row, soldCount, isActive: true };
-        });
+      if (!useManualBroadcast) {
+        if (opts?.bumpOneShot) {
+          inventory = inventory.map((row) => {
+            if (row.id !== ONE_SHOT_SIG_ID) return row;
+            const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
+            const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)));
+            const nextSold = Math.min(maxCount, soldCount + 1);
+            return {
+              ...row,
+              soldCount: nextSold,
+              isActive: nextSold >= maxCount ? false : row.isActive,
+            };
+          });
+        }
+        if (opts?.unbumpOneShot) {
+          inventory = inventory.map((row) => {
+            if (row.id !== ONE_SHOT_SIG_ID) return row;
+            const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
+            const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)) - 1);
+            return { ...row, soldCount, isActive: true };
+          });
+        }
       }
       const selectedForState =
         displaySelectedSigs.length >= MIN_ONE_SHOT_SIGS
@@ -2502,7 +2510,6 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         oneShotMarkSold: opts?.oneShotMarkSold ?? manualOneShotMarkSold,
       };
       manualDraftLastSavedRef.current = JSON.stringify(manualDraftPayload);
-      const useManualBroadcast = manualOnly || overlayObsMode === "manual";
       let nextState: AppState;
       if (useManualBroadcast) {
         const prevBroadcast = readManualSigBroadcastFromState(state) ?? defaultManualSigBroadcast();
@@ -2520,7 +2527,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         };
         nextState = {
           ...state,
-          sigInventory: inventory,
+          sigInventory: state.sigInventory,
           overlaySettings: {
             ...mergeManualSigBroadcastIntoOverlaySettings(state, nextBroadcast),
             [MANUAL_SIG_DRAFT_STATE_KEY]: manualDraftPayload,
@@ -2560,7 +2567,9 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         };
       }
       setState(nextState);
-      const saved = await saveSigSalesManualStateAsync(nextState, userId);
+      const saved = await saveSigSalesManualStateAsync(nextState, userId, {
+        omitSigInventory: useManualBroadcast,
+      });
       if (!saved.ok) {
         setToast("변경은 화면에 반영됐지만 서버 저장이 지연됩니다. 잠시 후 다시 시도하세요.");
       } else if (opts?.toastLabel) {
@@ -2574,6 +2583,8 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       buildLiveOneShotSnapshot,
       displaySelectedSigs,
       userId,
+      manualOnly,
+      overlayObsMode,
       manualInputMode,
       manualSigDrafts,
       manualOneShotName,
@@ -3298,7 +3309,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
                 {memberFilterId ? "" : " · 멤버 미선택 시 전체 활성"})
               </span>
             ) : (
-              <span className="ml-1 text-amber-200"> (랜덤 풀 없음 — 멤버·재고 확인)</span>
+              <span className="ml-1 text-amber-200"> (랜덤 풀 없음 — 멤버·시그 목록 확인)</span>
             )}
           </p>
           <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-sky-100">
