@@ -230,10 +230,18 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
         patchRs.phase === "CONFIRM_PENDING" ||
         (patchRs.phase === "IDLE" && manualNonceAdvanced));
     if (isManualRoulettePatch && canApplyPatchRouletteState) {
-      next.rouletteState = normalizeRouletteState({
+      const mergedRs = {
         ...(next.rouletteState || base.rouletteState),
         ...patchRs,
-      });
+      };
+      /** 수동 IDLE 리셋 — spread만으로는 selectedSigs가 남을 수 있어 명시 클리어 */
+      if (patchRs.phase === "IDLE" && manualNonceAdvanced) {
+        mergedRs.selectedSigs = undefined;
+        mergedRs.results = undefined;
+        mergedRs.result = null;
+        mergedRs.oneShotResult = null;
+      }
+      next.rouletteState = normalizeRouletteState(mergedRs);
     } else {
       next.rouletteState = mergeRouletteUiPrefsOntoCurrent(next.rouletteState, patchRs);
     }

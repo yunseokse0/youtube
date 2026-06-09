@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { useClientOnlySearchParams } from "@/hooks/useClientOnlySearchParams";
 import ResultOverlay from "@/components/sig-sales/ResultOverlay";
 import { layoutSigOverlayResultRow } from "@/components/sig-sales/sig-overlay-card-size";
@@ -65,10 +65,25 @@ function ManualOverlayStatus({
   );
 }
 
+function readBootOverlaySearchParams(): URLSearchParams {
+  if (typeof window === "undefined") return new URLSearchParams();
+  return new URLSearchParams(window.location.search);
+}
+
 export default function ManualSigOverlaySimple() {
+  const bootSp = useMemo(() => readBootOverlaySearchParams(), []);
+  const bootHostObs = isOverlayBroadcastHost(bootSp);
+  const bootUserId = getOverlayUserIdFromSearchParams(bootSp);
+
+  useLayoutEffect(() => {
+    if (!bootHostObs) return;
+    /** OBS 첫 마운트 — 구 last-good이 IDLE 리셋·리롤을 가리는 것 방지 */
+    clearOverlayLastGood(bootUserId, STATE_PICK_SIG_SALES);
+  }, [bootHostObs, bootUserId]);
+
   const { params: sp, ready: spReady } = useClientOnlySearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
-  const hostObs = isOverlayBroadcastHost(sp);
+  const hostObs = spReady ? isOverlayBroadcastHost(sp) : bootHostObs;
   const debugOverlay = sp.get("overlayDebug") === "1";
   const scaleRaw = sp.get("sigResultScalePct") || sp.get("resultScalePct") || "";
   const scalePct = (() => {
@@ -88,7 +103,8 @@ export default function ManualSigOverlaySimple() {
     forceInitialFull: true,
     overlayPollMs: pollMs,
     persistLastGood: true,
-    sigSalesIncrementalPoll: true,
+    /** 수동 OBS는 매 폴링 전체 수신 — 304로 리롤 LANDED를 놓치면 빈 화면 */
+    sigSalesIncrementalPoll: false,
   });
 
   const overlayReloadSeenRef = useRef<number | null>(null);
@@ -182,11 +198,18 @@ export default function ManualSigOverlaySimple() {
 
   const rootClass = obsOverlayRootClass(hostObs);
 
-  if (!spReady || (!ready && !hostObs)) {
+  if (!spReady && !bootHostObs) {
     return (
       <ManualOverlayStatus hostObs={hostObs}>
         수동 시그 오버레이 불러오는 중…
-        {hostObs ? ` (계정: ${userId})` : ""}
+      </ManualOverlayStatus>
+    );
+  }
+
+  if (!ready && !hostObs) {
+    return (
+      <ManualOverlayStatus hostObs={hostObs}>
+        수동 시그 오버레이 불러오는 중…
       </ManualOverlayStatus>
     );
   }

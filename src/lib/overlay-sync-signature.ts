@@ -44,6 +44,7 @@ export function buildSigSalesOverlaySyncSignature(state: AppState | null): strin
         : "",
     draftImg: draftRows.map((r) => String(r?.imageUrl || "").trim()).join("\u001f"),
     phase: rs?.phase || "",
+    nonce: Number(rs?.overlayReloadNonce || 0),
     sid: rs?.sessionId || "",
     sel: (rs?.selectedSigs || []).map((s) => canonicalSigIdFromWheelSliceId(s.id)),
     /** selectedSigs.imageUrl — 리롤 후 URL만 바뀌어도 OBS가 갱신되게 */

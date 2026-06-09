@@ -686,17 +686,14 @@ export function resolveManualOverlaySelectedSigs(
   const phase = String(rs.phase || "").trim();
   const terminalPhase = new Set(["LANDED", "CONFIRM_PENDING", "CONFIRMED"]).has(phase);
   const serverPickCount = raw.length;
-  /** IDLE 리셋 직후 옛 초안을 OBS에 띄우지 않음 — LANDED·서버 당첨 있을 때만 초안 우선 */
+  const serverPicksReady = terminalPhase && serverPickCount >= MIN_MANUAL_OVERLAY_SIGS;
+  /** IDLE 리셋 직후 옛 초안을 OBS에 띄우지 않음 */
   const allowDraftPrimary =
     draftReady &&
     draftItems.length >= MIN_MANUAL_OVERLAY_SIGS &&
     (terminalPhase || serverPickCount >= MIN_MANUAL_OVERLAY_SIGS);
-  /** 한방은 고정 from-drive, 개별 시그는 초안+인벤이 정본 — 이름이 같아도 서버 selectedSigs URL은 stale 할 수 있음 */
-  let items: SigItem[];
-  if (allowDraftPrimary) {
-    items = draftItems;
-  } else {
-    items = stripBundledSigPlaceholderItems(
+  const hydrateServerPicks = () =>
+    stripBundledSigPlaceholderItems(
       raw.map((s) =>
         hydrateManualOverlaySigItem(
           s,
@@ -706,11 +703,26 @@ export function resolveManualOverlaySelectedSigs(
         )
       )
     );
-    if (items.length < MIN_MANUAL_OVERLAY_SIGS && draftReady && draft) {
+  /** LANDED·서버 당첨이 있으면 pick 정본 우선(리롤 직후 OBS 동기화). 없으면 초안 폴백 */
+  let items: SigItem[];
+  if (serverPicksReady) {
+    items = hydrateServerPicks();
+    if (draft && draft.drafts?.length) {
+      items = patchManualOverlaySigImagesFromDraft(items, draft.drafts, inv, userId);
+    }
+  } else if (allowDraftPrimary) {
+    items = draftItems;
+  } else {
+    items = hydrateServerPicks();
+    if (
+      items.length < MIN_MANUAL_OVERLAY_SIGS &&
+      allowDraftPrimary &&
+      draft
+    ) {
       items = stripBundledSigPlaceholderItems(
         buildManualSigItemsFromDrafts(draft.drafts, inv, userId)
       );
-    } else if (draft && draft.drafts?.length) {
+    } else if (items.length >= MIN_MANUAL_OVERLAY_SIGS && draft && draft.drafts?.length) {
       items = patchManualOverlaySigImagesFromDraft(items, draft.drafts, inv, userId);
     }
   }

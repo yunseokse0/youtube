@@ -72,10 +72,17 @@ function simulateServerRouletteMerge(base: AppState, patch: Partial<AppState>): 
         patchRs.phase === "CONFIRM_PENDING" ||
         (patchRs.phase === "IDLE" && manualNonceAdvanced));
     if (isManualRoulettePatch && canApplyPatchRouletteState) {
-      next.rouletteState = normalizeRouletteState({
+      const mergedRs = {
         ...(next.rouletteState || base.rouletteState),
         ...patchRs,
-      });
+      };
+      if (patchRs.phase === "IDLE" && manualNonceAdvanced) {
+        mergedRs.selectedSigs = undefined;
+        mergedRs.results = undefined;
+        mergedRs.result = null;
+        mergedRs.oneShotResult = null;
+      }
+      next.rouletteState = normalizeRouletteState(mergedRs);
     }
   }
   return next;
