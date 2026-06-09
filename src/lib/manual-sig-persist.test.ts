@@ -74,4 +74,34 @@ describe("buildSigSalesManualApiPatch", () => {
     expect(merged.donors).toHaveLength(1);
     expect(merged.overlayPresets).toHaveLength(1);
   });
+
+  it("mergeSigSalesManualIntoLocalState keeps local generalTimer when reroll next is stale", () => {
+    const local: AppState = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "패자", account: 50000, toon: 0, contribution: 50000 }],
+      generalTimer: {
+        remainingTime: 540,
+        isActive: true,
+        lastUpdated: 1_000,
+      },
+    };
+    const staleRerollTab: AppState = {
+      ...defaultState(),
+      overlaySettings: {
+        [MANUAL_SIG_DRAFT_STATE_KEY]: {
+          inputMode: "inventory",
+          drafts: [],
+          oneShotName: "한방",
+          oneShotPriceInput: "100",
+          oneShotImageUrl: "",
+          sigSoldFlags: [false, false, false, false, false],
+          oneShotMarkSold: false,
+        },
+      },
+    };
+    const merged = mergeSigSalesManualIntoLocalState(local, staleRerollTab, { omitSigInventory: true });
+    expect(merged.generalTimer?.remainingTime).toBe(540);
+    expect(merged.generalTimer?.isActive).toBe(true);
+    expect(merged.members[0]?.name).toBe("패자");
+  });
 });

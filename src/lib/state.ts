@@ -1399,12 +1399,19 @@ export function buildSigSalesManualApiPatch(
   return patch;
 }
 
-export function mergeSigSalesManualIntoLocalState(base: AppState, next: AppState): AppState {
-  /** in-memory next(서버 전체 로드) 우선 — 예전 버그로 localStorage만 리셋된 경우 방지 */
-  const core = hasMeaningfulBroadcastData(next) ? next : base;
-  const baseOs =
-    core.overlaySettings && typeof core.overlaySettings === "object"
-      ? (core.overlaySettings as Record<string, unknown>)
+export function mergeSigSalesManualIntoLocalState(
+  base: AppState,
+  next: AppState,
+  options?: BuildSigSalesManualApiPatchOptions
+): AppState {
+  /**
+   * 로컬에 실데이터가 있으면 그 위에 수동 필드만 얹음.
+   * (수동 탭의 stale `next`가 generalTimer·멤버·후원을 덮어 관리자/OBS 타이머가 리셋되던 문제 방지)
+   */
+  const foundation = hasMeaningfulBroadcastData(base) ? base : next;
+  const foundationOs =
+    foundation.overlaySettings && typeof foundation.overlaySettings === "object"
+      ? (foundation.overlaySettings as Record<string, unknown>)
       : {};
   const nextOs =
     next.overlaySettings && typeof next.overlaySettings === "object"
@@ -1412,14 +1419,16 @@ export function mergeSigSalesManualIntoLocalState(base: AppState, next: AppState
       : {};
   return normalizeStateForPersistence(
     syncBattleStateWithMembers({
-      ...core,
-      sigInventory: next.sigInventory,
-      sigSalesExcludedIds: next.sigSalesExcludedIds,
-      sigSoldOutStampUrl: next.sigSoldOutStampUrl,
-      sigRollingMeta: next.sigRollingMeta,
-      overlaySettings: { ...baseOs, ...nextOs } as AppState["overlaySettings"],
+      ...foundation,
+      ...(options?.omitSigInventory
+        ? {}
+        : { sigInventory: next.sigInventory ?? foundation.sigInventory }),
+      sigSalesExcludedIds: next.sigSalesExcludedIds ?? foundation.sigSalesExcludedIds,
+      sigSoldOutStampUrl: next.sigSoldOutStampUrl ?? foundation.sigSoldOutStampUrl,
+      sigRollingMeta: next.sigRollingMeta ?? foundation.sigRollingMeta,
+      overlaySettings: { ...foundationOs, ...nextOs } as AppState["overlaySettings"],
       /** 수동 저장은 회전판 상태를 건드리지 않음 */
-      rouletteState: core.rouletteState,
+      rouletteState: foundation.rouletteState,
       updatedAt: Date.now(),
     })
   );
@@ -1433,7 +1442,7 @@ export async function saveSigSalesManualStateAsync(
   if (typeof window === "undefined") return { ok: false };
   const next = normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() }));
   const baseLocal = loadState(userId);
-  const mergedLocal = mergeSigSalesManualIntoLocalState(baseLocal || next, next);
+  const mergedLocal = mergeSigSalesManualIntoLocalState(baseLocal || next, next, options);
   try {
     window.localStorage.setItem(storageKey(userId), JSON.stringify(mergedLocal));
   } catch {}
