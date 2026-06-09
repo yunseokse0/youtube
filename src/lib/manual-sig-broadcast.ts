@@ -11,7 +11,13 @@ import { repairDiskUploadSigImagePath } from "@/lib/sig-image-mode";
 import { buildOneShotFromSelected, resolveOneShotDisplayPrice } from "@/lib/sig-one-shot-price";
 import { pickRandomManualSigDrafts } from "@/lib/manual-sig-random";
 import { listActiveManualSigPool } from "@/lib/manual-sig-active-pool";
-import { MANUAL_OVERLAY_SESSION_ID } from "@/lib/sig-sales-manual-round";
+import {
+  buildManualSigBroadcastLandPatch,
+  bumpManualSigBroadcastNonce,
+  defaultManualSigBroadcast,
+  mergeManualSigBroadcastIntoOverlaySettings,
+  readManualSigBroadcastFromState,
+} from "@/lib/manual-sig-broadcast-state";
 import {
   MANUAL_SIG_DRAFT_STATE_KEY,
   manualSigDraftsReady,
@@ -28,6 +34,8 @@ import {
   ONE_SHOT_SIG_ID,
 } from "@/lib/sig-roulette";
 import { stripBundledSigPlaceholderItems } from "@/lib/sig-placeholder";
+
+const MIN_MANUAL_OVERLAY_SIGS = 2;
 
 export function readManualSigDraftFromState(
   state: AppState | null | undefined
@@ -148,19 +156,25 @@ export function buildManualSigSoldPersistState(
   };
   const selected = resolveManualOverlaySelectedSigs(tempState, userId);
   const oneShotDisplay = resolveManualOneShotDisplayFromState(tempState, selected, userId);
-  const prevOneShot = base.rouletteState?.oneShotResult;
-  const oneShotResult = oneShotDisplay ?? prevOneShot ?? null;
+  const prevBroadcast = readManualSigBroadcastFromState(base) ?? defaultManualSigBroadcast();
+  const oneShotResult = oneShotDisplay ?? prevBroadcast.oneShotResult ?? null;
+  const nextBroadcast = bumpManualSigBroadcastNonce({
+    ...prevBroadcast,
+    ...(oneShotResult ? { oneShotResult } : {}),
+    ...(selected.length >= MIN_MANUAL_OVERLAY_SIGS ? { selectedSigs: selected, phase: "LANDED" as const } : {}),
+  });
   return {
     ...base,
-    overlaySettings: {
-      ...prevOverlaySettings,
-      [MANUAL_SIG_DRAFT_STATE_KEY]: draftPayload,
-    },
-    rouletteState: {
-      ...base.rouletteState,
-      ...(oneShotResult ? { oneShotResult } : {}),
-      overlayReloadNonce: Number(base.rouletteState?.overlayReloadNonce || 0) + 1,
-    },
+    overlaySettings: mergeManualSigBroadcastIntoOverlaySettings(
+      {
+        ...base,
+        overlaySettings: {
+          ...prevOverlaySettings,
+          [MANUAL_SIG_DRAFT_STATE_KEY]: draftPayload,
+        } as AppState["overlaySettings"],
+      },
+      nextBroadcast
+    ),
     updatedAt: now,
   };
 }
@@ -431,7 +445,6 @@ export function buildManualSigItemsFromDrafts(
   });
 }
 
-const MIN_MANUAL_OVERLAY_SIGS = 2;
 /** 수동 리롤 — 풀에 2개 이상이면 최대 5개까지 랜덤 */
 export const MANUAL_REROLL_MIN_POOL = MIN_MANUAL_OVERLAY_SIGS;
 export const MANUAL_REROLL_MAX_PICK = 5;
@@ -645,15 +658,16 @@ export function buildManualSigSalesConfirmState(
     userId: opts.userId,
   });
   const closeRound = opts.closeRound !== false;
+  const prevBroadcast = readManualSigBroadcastFromState(draftPersist) ?? defaultManualSigBroadcast();
+  const nextBroadcast = bumpManualSigBroadcastNonce({
+    ...prevBroadcast,
+    phase: closeRound ? "CONFIRMED" : "LANDED",
+    ...(closeRound ? { lastFinishedAt: now } : {}),
+  });
   return {
     ...draftPersist,
     sigInventory: confirmedInventory,
-    rouletteState: {
-      ...draftPersist.rouletteState,
-      phase: closeRound ? "CONFIRMED" : "LANDED",
-      ...(closeRound ? { lastFinishedAt: now } : {}),
-      overlayReloadNonce: Number(draftPersist.rouletteState?.overlayReloadNonce || 0) + 1,
-    },
+    overlaySettings: mergeManualSigBroadcastIntoOverlaySettings(draftPersist, nextBroadcast),
     updatedAt: now,
   };
 }
@@ -663,14 +677,12 @@ export function resolveManualOverlaySelectedSigs(
   state: AppState | null | undefined,
   userId: string
 ): SigItem[] {
-  if (!state?.rouletteState) return [];
-  const rs = state.rouletteState;
+  if (!state) return [];
+  const broadcast = readManualSigBroadcastFromState(state);
   const raw = (
-    Array.isArray(rs.selectedSigs) && rs.selectedSigs.length > 0
-      ? rs.selectedSigs
-      : Array.isArray(rs.results)
-        ? rs.results
-        : []
+    Array.isArray(broadcast?.selectedSigs) && broadcast!.selectedSigs.length > 0
+      ? broadcast!.selectedSigs
+      : []
   ) as SigItem[];
   const inv = state.sigInventory || [];
   const draftRaw = readManualSigDraftFromState(state);
@@ -683,8 +695,8 @@ export function resolveManualOverlaySelectedSigs(
   const draftItems = draftReady
     ? stripBundledSigPlaceholderItems(buildManualSigItemsFromDrafts(draft!.drafts, inv, userId))
     : [];
-  const phase = String(rs.phase || "").trim();
-  const terminalPhase = new Set(["LANDED", "CONFIRM_PENDING", "CONFIRMED"]).has(phase);
+  const phase = String(broadcast?.phase || "").trim();
+  const terminalPhase = phase === "LANDED" || phase === "CONFIRMED";
   const serverPickCount = raw.length;
   const serverPicksReady = terminalPhase && serverPickCount >= MIN_MANUAL_OVERLAY_SIGS;
   /** IDLE 리셋 직후 옛 초안을 OBS에 띄우지 않음 */
@@ -738,7 +750,7 @@ export function resolveManualOneShotDisplayFromState(
   if (selected.length < MIN_MANUAL_OVERLAY_SIGS) return null;
   const draft = readManualSigDraftFromState(state);
   const soldIdSet = buildManualOverlaySoldOverrideSet(state, selected, userId);
-  const rs = state?.rouletteState?.oneShotResult;
+  const storedOneShot = readManualSigBroadcastFromState(state)?.oneShotResult;
   return resolveOneShotDisplayPrice({
     selected: selected.map((s) => ({
       id: s.id,
@@ -746,7 +758,7 @@ export function resolveManualOneShotDisplayFromState(
     })),
     soldIdSet,
     manualPriceInput: draft?.oneShotPriceInput,
-    fallbackName: draft?.oneShotName ?? rs?.name,
+    fallbackName: draft?.oneShotName ?? storedOneShot?.name,
   });
 }
 
@@ -838,33 +850,18 @@ export function buildManualSigBroadcastState(
       : {};
   const oneShotImage =
     String(opts?.persistDrafts?.oneShotImageUrl || "").trim() || DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE;
+  const broadcast = buildManualSigBroadcastLandPatch(base, selected, oneShot);
+  const overlaySettings = mergeManualSigBroadcastIntoOverlaySettings(base, broadcast);
+  if (opts?.persistDrafts) {
+    (overlaySettings as Record<string, unknown>)[MANUAL_SIG_DRAFT_STATE_KEY] = {
+      ...opts.persistDrafts,
+      oneShotImageUrl: oneShotImage,
+    };
+  }
   return {
     ...base,
     sigInventory: syncOneShotInventoryImage(base.sigInventory, oneShotImage),
-    ...(opts?.persistDrafts
-      ? {
-          overlaySettings: {
-            ...prevOverlaySettings,
-            [MANUAL_SIG_DRAFT_STATE_KEY]: {
-              ...opts.persistDrafts,
-              oneShotImageUrl: oneShotImage,
-            },
-          },
-        }
-      : {}),
-    rouletteState: {
-      ...base.rouletteState,
-      phase: "LANDED",
-      isRolling: false,
-      sessionId: MANUAL_OVERLAY_SESSION_ID,
-      startedAt: now,
-      selectedSigs: selected,
-      results: selected,
-      result: selected[selected.length - 1] || null,
-      oneShotResult: oneShot,
-      spinCount: selected.length,
-      overlayReloadNonce: Number(base.rouletteState?.overlayReloadNonce || 0) + 1,
-    },
+    overlaySettings,
     updatedAt: now,
   };
 }

@@ -2,6 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import type { AppState, RouletteState, SigItem } from "@/types";
+import {
+  readManualSigBroadcastFromState,
+  type ManualSigBroadcastPersist,
+} from "@/lib/manual-sig-broadcast-state";
+import { MANUAL_OVERLAY_SESSION_ID } from "@/lib/sig-sales-manual-round";
 import { clampOverlayOpacity } from "@/lib/sig-roulette";
 
 type SalesPhase = NonNullable<RouletteState["phase"]>;
@@ -138,6 +143,28 @@ function toMachine(rs: RouletteState | undefined): Partial<SigSalesMachine> {
   };
 }
 
+function toMachineFromManualBroadcast(
+  broadcast: ManualSigBroadcastPersist
+): Partial<SigSalesMachine> {
+  const phase =
+    broadcast.phase === "CONFIRMED"
+      ? "CONFIRMED"
+      : broadcast.phase === "LANDED"
+        ? "LANDED"
+        : "IDLE";
+  const selectedSigs = broadcast.selectedSigs || [];
+  return {
+    phase,
+    isRolling: false,
+    selectedSigs,
+    oneShot: broadcast.oneShotResult,
+    resultId: selectedSigs[selectedSigs.length - 1]?.id || null,
+    startedAt: broadcast.startedAt || 0,
+    sessionId: MANUAL_OVERLAY_SESSION_ID,
+    lastFinishedAt: broadcast.lastFinishedAt || 0,
+  };
+}
+
 function machineHydrateSignature(m: Partial<SigSalesMachine>): string {
   return JSON.stringify({
     phase: m.phase,
@@ -149,18 +176,29 @@ function machineHydrateSignature(m: Partial<SigSalesMachine>): string {
   });
 }
 
-export function useSigSalesState(userId: string, appState: AppState | null) {
+export function useSigSalesState(
+  userId: string,
+  appState: AppState | null,
+  options?: { preferManualBroadcast?: boolean }
+) {
   const [machine, dispatch] = useReducer(reducer, initialMachine);
   const prevUpdatedAtRef = useRef(0);
   const machineRef = useRef(machine);
   machineRef.current = machine;
+  const preferManualBroadcast = options?.preferManualBroadcast === true;
 
   useEffect(() => {
     if (!appState) return;
     const incomingTs = appState.updatedAt || 0;
     if (incomingTs < prevUpdatedAtRef.current) return;
 
-    const incoming = toMachine(appState.rouletteState);
+    const broadcast = preferManualBroadcast ? readManualSigBroadcastFromState(appState) : null;
+    const incoming =
+      preferManualBroadcast && broadcast
+        ? toMachineFromManualBroadcast(broadcast)
+        : preferManualBroadcast
+          ? { phase: "IDLE" as const, selectedSigs: [], oneShot: null, sessionId: "", startedAt: 0 }
+          : toMachine(appState.rouletteState);
     const cur = machineRef.current;
     /** 같은 회차에서 서버 단계가 더 진행됐으면 항상 반영(관리자 LANDED·확정 → OBS) */
     if (
@@ -224,7 +262,7 @@ export function useSigSalesState(userId: string, appState: AppState | null) {
 
     prevUpdatedAtRef.current = incomingTs;
     dispatch({ type: "HYDRATE", payload: incoming });
-  }, [appState]);
+  }, [appState, preferManualBroadcast]);
 
   const spin = useCallback(async (options?: { memberId?: string | null; force?: boolean; spinCount?: number }) => {
     if (!options?.force && machine.isFinishLoading) {

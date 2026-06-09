@@ -1,4 +1,5 @@
 import type { AppState } from "@/types";
+import { readManualSigBroadcastFromState } from "@/lib/manual-sig-broadcast-state";
 import { canonicalSigIdFromWheelSliceId } from "@/lib/sig-roulette";
 
 const MANUAL_SIG_DRAFT_STATE_KEY = "sigSalesManualDraftV1";
@@ -29,7 +30,8 @@ export function buildSigSalesOverlaySyncSignature(state: AppState | null): strin
       iu: String(r.imageUrl || ""),
     }))
     .sort((a, b) => a.id.localeCompare(b.id));
-  const rs = state.rouletteState;
+  const broadcast = readManualSigBroadcastFromState(state);
+  const selected = broadcast?.selectedSigs || [];
   return JSON.stringify({
     u: state.updatedAt || 0,
     inv,
@@ -43,12 +45,11 @@ export function buildSigSalesOverlaySyncSignature(state: AppState | null): strin
         ? String((draft as { oneShotImageUrl?: unknown }).oneShotImageUrl || "").trim()
         : "",
     draftImg: draftRows.map((r) => String(r?.imageUrl || "").trim()).join("\u001f"),
-    phase: rs?.phase || "",
-    nonce: Number(rs?.overlayReloadNonce || 0),
-    sid: rs?.sessionId || "",
-    sel: (rs?.selectedSigs || []).map((s) => canonicalSigIdFromWheelSliceId(s.id)),
+    phase: broadcast?.phase || "",
+    nonce: Number(broadcast?.overlayReloadNonce || 0),
+    sel: selected.map((s) => canonicalSigIdFromWheelSliceId(s.id)),
     /** selectedSigs.imageUrl — 리롤 후 URL만 바뀌어도 OBS가 갱신되게 */
-    selImg: (rs?.selectedSigs || []).map((s) => String(s.imageUrl || "").trim()).join("\u001f"),
+    selImg: selected.map((s) => String(s.imageUrl || "").trim()).join("\u001f"),
     stamp: state.sigSoldOutStampUrl || "",
   });
 }

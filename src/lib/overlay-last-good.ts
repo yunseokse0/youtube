@@ -6,6 +6,7 @@ import {
   STATE_PICK_SIG_SALES,
   type StateApiPick,
 } from "@/lib/state-api-pick";
+import { readManualSigBroadcastFromState } from "@/lib/manual-sig-broadcast-state";
 import { readObsTextRegistryFromState } from "@/lib/obs-text-overlay";
 
 /** 서버가 잠깐 빈 스냅샷을 주어도 직전 표시를 유지(멤버·목표 초기화 방지) */
@@ -48,12 +49,15 @@ export function isOverlayStateViable(state: AppState | null, pick: StateApiPick)
     return false;
   }
   if (pick === STATE_PICK_SIG_SALES) {
+    const broadcast = readManualSigBroadcastFromState(state);
+    const sigs = broadcast?.selectedSigs || [];
+    if (Array.isArray(sigs) && sigs.length >= 2) return true;
     const rs = state.rouletteState;
-    const sigs =
+    const legacy =
       (Array.isArray(rs?.selectedSigs) && rs.selectedSigs.length > 0
         ? rs.selectedSigs
         : rs?.results) || [];
-    return Array.isArray(sigs) && sigs.length >= 2;
+    return Array.isArray(legacy) && legacy.length >= 2;
   }
   return true;
 }
@@ -87,6 +91,8 @@ export function clearOverlayLastGood(
 }
 
 function overlayReloadNonceFrom(state: AppState | null | undefined): number {
+  const fromManual = readManualSigBroadcastFromState(state)?.overlayReloadNonce;
+  if (Number.isFinite(fromManual) && Number(fromManual) > 0) return Number(fromManual);
   return Number(state?.rouletteState?.overlayReloadNonce || 0);
 }
 

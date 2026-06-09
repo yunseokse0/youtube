@@ -14,6 +14,10 @@ import {
   resolveManualOverlaySelectedSigs,
 } from "@/lib/manual-sig-broadcast";
 import { DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE } from "@/lib/constants";
+import {
+  MANUAL_SIG_BROADCAST_STATE_KEY,
+  readManualSigBroadcastFromState,
+} from "@/lib/manual-sig-broadcast-state";
 import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 import type { AppState, SigItem } from "@/types";
 
@@ -259,7 +263,7 @@ describe("resolveManualDraftRowForSigItem", () => {
     expect(row?.name).toBe("픽션");
   });
 
-  it("resolveManualOverlaySelectedSigs prefers draft when server selectedSigs are stale after reroll", () => {
+  it("resolveManualOverlaySelectedSigs uses broadcast picks when draft and broadcast differ", () => {
     const mk = (id: string, name: string, price: number): SigItem => ({
       id,
       name,
@@ -274,7 +278,6 @@ describe("resolveManualDraftRowForSigItem", () => {
     const inventory = ["맛있쥬", "팬티맛있엉", "멸치", "그루비", "솜사탕", "신규1", "신규2", "신규3", "신규4", "신규5"].map(
       (name, i) => mk(`sig_${i}`, name, 10000 + i * 100)
     );
-    const stale = inventory.slice(0, 5);
     const fresh = inventory.slice(5, 10);
     const state = {
       sigInventory: inventory,
@@ -293,12 +296,13 @@ describe("resolveManualDraftRowForSigItem", () => {
           sigSoldFlags: [false, false, false, false, false],
           oneShotMarkSold: false,
         },
-      },
-      rouletteState: {
-        phase: "LANDED",
-        sessionId: "manual_live",
-        selectedSigs: stale,
-        overlayReloadNonce: 3,
+        [MANUAL_SIG_BROADCAST_STATE_KEY]: {
+          phase: "LANDED",
+          startedAt: 1,
+          selectedSigs: fresh,
+          oneShotResult: { id: "sig_one_shot", name: "한방 시그", price: 50000 },
+          overlayReloadNonce: 3,
+        },
       },
     } as AppState;
     const out = resolveManualOverlaySelectedSigs(state, "finalent");
@@ -459,33 +463,36 @@ describe("resolveManualDraftRowForSigItem", () => {
           sigSoldFlags: [],
           oneShotMarkSold: false,
         },
-      },
-      rouletteState: {
-        phase: "LANDED",
-        selectedSigs: [
-          {
-            id: "sig_a",
-            name: "픽션",
-            price: 24900,
-            imageUrl: "",
-            memberId: "",
-            maxCount: 1,
-            soldCount: 0,
-            isRolling: true,
-            isActive: true,
-          },
-          {
-            id: "sig_b",
-            name: "옴브리뉴",
-            price: 25200,
-            imageUrl: "",
-            memberId: "",
-            maxCount: 1,
-            soldCount: 0,
-            isRolling: true,
-            isActive: true,
-          },
-        ],
+        [MANUAL_SIG_BROADCAST_STATE_KEY]: {
+          phase: "LANDED",
+          startedAt: 1,
+          selectedSigs: [
+            {
+              id: "sig_a",
+              name: "픽션",
+              price: 24900,
+              imageUrl: "",
+              memberId: "",
+              maxCount: 1,
+              soldCount: 0,
+              isRolling: true,
+              isActive: true,
+            },
+            {
+              id: "sig_b",
+              name: "옴브리뉴",
+              price: 25200,
+              imageUrl: "",
+              memberId: "",
+              maxCount: 1,
+              soldCount: 0,
+              isRolling: true,
+              isActive: true,
+            },
+          ],
+          oneShotResult: null,
+          overlayReloadNonce: 1,
+        },
       },
     } as AppState;
     const out = resolveManualOverlaySelectedSigs(state, "finalent");
@@ -575,7 +582,15 @@ describe("buildManualSigSalesConfirmState", () => {
           isActive: true,
         },
       ],
-      rouletteState: { phase: "LANDED", selectedSigs: [] },
+      overlaySettings: {
+        [MANUAL_SIG_BROADCAST_STATE_KEY]: {
+          phase: "LANDED",
+          startedAt: 1,
+          selectedSigs: [],
+          oneShotResult: null,
+          overlayReloadNonce: 0,
+        },
+      },
     } as AppState;
     const selected: SigItem[] = [
       {
@@ -608,7 +623,7 @@ describe("buildManualSigSalesConfirmState", () => {
     });
     const row = next.sigInventory?.find((x) => x.id === "sig_a");
     expect(row?.soldCount).toBe(1);
-    expect(next.rouletteState?.phase).toBe("CONFIRMED");
+    expect(readManualSigBroadcastFromState(next)?.phase).toBe("CONFIRMED");
   });
 
   it("confirms sold sig when draft slot index differs from display order", () => {
@@ -649,8 +664,14 @@ describe("buildManualSigSalesConfirmState", () => {
           sigSoldFlags: [false, true, false, false, false],
           oneShotMarkSold: false,
         },
+        [MANUAL_SIG_BROADCAST_STATE_KEY]: {
+          phase: "LANDED",
+          startedAt: 1,
+          selectedSigs: [],
+          oneShotResult: null,
+          overlayReloadNonce: 0,
+        },
       },
-      rouletteState: { phase: "LANDED", selectedSigs: [] },
     } as AppState;
     const selected: SigItem[] = [
       {
@@ -721,8 +742,14 @@ describe("buildManualSigSalesConfirmState", () => {
           sigSoldFlags: [true, false, false, false, false],
           oneShotMarkSold: false,
         },
+        [MANUAL_SIG_BROADCAST_STATE_KEY]: {
+          phase: "LANDED",
+          startedAt: 1,
+          selectedSigs: [],
+          oneShotResult: null,
+          overlayReloadNonce: 0,
+        },
       },
-      rouletteState: { phase: "LANDED", selectedSigs: [] },
     } as AppState;
     const selected: SigItem[] = [
       {
@@ -755,7 +782,7 @@ describe("buildManualSigSalesConfirmState", () => {
       previousSoldFlags: [false, false, false, false, false],
       closeRound: false,
     });
-    expect(first.rouletteState?.phase).toBe("LANDED");
+    expect(readManualSigBroadcastFromState(first)?.phase).toBe("LANDED");
     expect(first.sigInventory?.find((x) => x.id === "sig_a")?.soldCount).toBe(1);
 
     const second = buildManualSigSalesConfirmState(first, {
@@ -765,7 +792,7 @@ describe("buildManualSigSalesConfirmState", () => {
       previousSoldFlags: [true, false, false, false, false],
       closeRound: false,
     });
-    expect(second.rouletteState?.phase).toBe("LANDED");
+    expect(readManualSigBroadcastFromState(second)?.phase).toBe("LANDED");
     expect(second.sigInventory?.find((x) => x.id === "sig_a")?.soldCount).toBe(1);
     expect(second.sigInventory?.find((x) => x.id === "sig_b")?.soldCount).toBe(1);
   });
@@ -808,11 +835,13 @@ describe("buildManualSigSalesConfirmState", () => {
           sigSoldFlags: [false, false, false, false, false],
           oneShotMarkSold: false,
         },
-      },
-      rouletteState: {
-        phase: "LANDED",
-        selectedSigs: selected,
-        oneShotResult: { id: ONE_SHOT_SIG_ID, name: "한방 시그", price: 150_000 },
+        [MANUAL_SIG_BROADCAST_STATE_KEY]: {
+          phase: "LANDED",
+          startedAt: 1,
+          selectedSigs: selected,
+          oneShotResult: { id: ONE_SHOT_SIG_ID, name: "한방 시그", price: 150_000 },
+          overlayReloadNonce: 0,
+        },
       },
     } as AppState;
     const next = buildManualSigSoldPersistState(state, {
@@ -820,7 +849,11 @@ describe("buildManualSigSalesConfirmState", () => {
       oneShotMarkSold: false,
       userId: "finalent",
     });
-    expect(next.rouletteState?.oneShotResult?.price).toBe(50_000);
+    const os = next.overlaySettings as Record<string, unknown> | undefined;
+    const broadcast = os?.[MANUAL_SIG_BROADCAST_STATE_KEY] as
+      | { oneShotResult?: { price?: number } }
+      | undefined;
+    expect(broadcast?.oneShotResult?.price).toBe(50_000);
     const display = resolveManualOneShotDisplayFromState(next, selected, "finalent");
     expect(display?.price).toBe(50_000);
   });

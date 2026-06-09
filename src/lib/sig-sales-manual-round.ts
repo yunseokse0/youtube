@@ -1,12 +1,15 @@
 import type { AppState } from "@/types";
-import { buildRouletteIdlePreserveSettings } from "@/lib/state";
+import {
+  buildManualSigBroadcastIdleResetPatch,
+  mergeManualSigBroadcastIntoOverlaySettings,
+} from "@/lib/manual-sig-broadcast-state";
 import {
   emptyManualDrafts,
   MANUAL_SIG_DRAFT_STATE_KEY,
   type ManualSigDraftPersist,
 } from "@/lib/manual-sig-workbench";
 
-/** 수동 OBS·관리자 — 회차 로그 없이 동일 세션으로만 방송 상태 유지 */
+/** 수동 OBS·관리자 — 회차 로그 없이 동일 세션으로만 방송 상태 유지 (레거시 식별용) */
 export const MANUAL_OVERLAY_SESSION_ID = "manual_live";
 
 export function isManualOverlaySessionId(sessionId: string | null | undefined): boolean {
@@ -19,12 +22,9 @@ export function shouldPersistRouletteHistoryLog(sessionId: string | null | undef
   return !isManualOverlaySessionId(sessionId);
 }
 
-/** 수동 판매 라운드만 IDLE — 회전판 당첨 제외 목록은 유지 */
+/** 수동 판매 라운드만 IDLE — 회전판 `rouletteState`는 건드리지 않음 */
 export function buildManualRoundResetPatch(base: AppState): Partial<AppState> {
   const now = Date.now();
-  const idleRs = buildRouletteIdlePreserveSettings(base.rouletteState, {
-    clearSessionExcluded: false,
-  });
   const os =
     base.overlaySettings && typeof base.overlaySettings === "object"
       ? { ...(base.overlaySettings as Record<string, unknown>) }
@@ -44,21 +44,17 @@ export function buildManualRoundResetPatch(base: AppState): Partial<AppState> {
       oneShotMarkSold: false,
     };
   }
-  const overlayReloadNonce = Number(base.rouletteState?.overlayReloadNonce || 0) + 1;
+  const broadcast = buildManualSigBroadcastIdleResetPatch(base);
   return {
     updatedAt: now,
-    rouletteState: {
-      ...idleRs,
-      sessionId: MANUAL_OVERLAY_SESSION_ID,
-      startedAt: now,
-      overlayReloadNonce,
-      selectedSigs: undefined,
-      results: undefined,
-      result: null,
-      oneShotResult: null,
-    },
-    overlaySettings: draft
-      ? { ...os, [MANUAL_SIG_DRAFT_STATE_KEY]: draft }
-      : os,
+    overlaySettings: mergeManualSigBroadcastIntoOverlaySettings(
+      {
+        ...base,
+        overlaySettings: draft
+          ? ({ ...os, [MANUAL_SIG_DRAFT_STATE_KEY]: draft } as AppState["overlaySettings"])
+          : (os as AppState["overlaySettings"]),
+      },
+      broadcast
+    ),
   };
 }

@@ -9,6 +9,7 @@ import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
 import { buildSigSalesManualOverlayUrl } from "@/lib/sig-sales-overlay-urls";
 import { DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE } from "@/lib/constants";
 import { listActiveManualSigPool } from "@/lib/manual-sig-active-pool";
+import { readManualSigBroadcastFromState } from "@/lib/manual-sig-broadcast-state";
 import {
   buildManualSigBroadcastState,
   buildManualSigSalesConfirmState,
@@ -80,7 +81,12 @@ export default function ManualSigSalesSimple() {
     });
   }, [userId, memberFilterId]);
 
-  const current = state?.rouletteState;
+  const currentPhase = state
+    ? (() => {
+        const b = readManualSigBroadcastFromState(state);
+        return b?.phase ?? "IDLE";
+      })()
+    : "IDLE";
   const draft = useMemo(() => readManualSigDraftFromState(state), [state]);
   const displaySigs = useMemo(
     () => resolveManualOverlaySelectedSigs(state, userId),
@@ -116,15 +122,15 @@ export default function ManualSigSalesSimple() {
     if (resolved) {
       return `${resolved.name} ${resolved.price.toLocaleString("ko-KR")}원`;
     }
-    const os = current?.oneShotResult;
+    const os = readManualSigBroadcastFromState(state)?.oneShotResult;
     if (!os) return null;
     return `${os.name} ${Number(os.price || 0).toLocaleString("ko-KR")}원`;
-  }, [state, displaySigs, userId, current?.oneShotResult]);
+  }, [state, displaySigs, userId]);
   const rerollPickCount = Math.min(MANUAL_REROLL_MAX_PICK, pool.length);
   const canReroll = pool.length >= MANUAL_REROLL_MIN_POOL;
   const hasAnySoldMark =
     soldFlags.some(Boolean) || oneShotMarkSold;
-  const phase = String(current?.phase || "");
+  const phase = String(currentPhase || "");
 
   const persistState = useCallback(
     async (next: AppState, okMsg: string, failMsg: string) => {

@@ -19,6 +19,10 @@ import {
   readOverlayPollIntervalMs,
   readSigSalesManualOverlayPollMs,
 } from "@/lib/overlay-pull-policy";
+import {
+  manualSigBroadcastPhase,
+  manualSigBroadcastReloadNonce,
+} from "@/lib/manual-sig-broadcast-state";
 import { clearOverlayLastGood } from "@/lib/overlay-last-good";
 import { STATE_PICK_SIG_SALES } from "@/lib/state-api-pick";
 import { DEFAULT_SIG_SOLD_STAMP_URL } from "@/lib/constants";
@@ -110,7 +114,7 @@ export default function ManualSigOverlaySimple() {
   const overlayReloadSeenRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const nonce = Number(state?.rouletteState?.overlayReloadNonce || 0);
+    const nonce = manualSigBroadcastReloadNonce(state);
     if (!Number.isFinite(nonce)) return;
     if (overlayReloadSeenRef.current == null) {
       overlayReloadSeenRef.current = nonce;
@@ -125,7 +129,7 @@ export default function ManualSigOverlaySimple() {
         window.setTimeout(() => void resync({ forceFull: true }), 600);
       }
     }
-  }, [state?.rouletteState?.overlayReloadNonce, resync, hostObs, userId]);
+  }, [state, resync, hostObs, userId]);
 
   /** OBS CEF: 첫 paint 지연 대비 1회만 추가 당김(주기 폴링은 useOverlayRemoteState) */
   useEffect(() => {
@@ -166,12 +170,7 @@ export default function ManualSigOverlaySimple() {
     if (resolved) {
       return { name: resolved.name, price: resolved.price };
     }
-    const os = state?.rouletteState?.oneShotResult;
-    if (!os || Number(os.price) < 0) return null;
-    return {
-      name: String(os.name || "한방 시그"),
-      price: Math.floor(Number(os.price)),
-    };
+    return null;
   }, [state, selected, userId]);
 
   const signImageUrl = useMemo(
@@ -189,7 +188,7 @@ export default function ManualSigOverlaySimple() {
     [scalePct, selected.length, oneShot, hostObs]
   );
 
-  const phase = String(state?.rouletteState?.phase || "");
+  const phase = manualSigBroadcastPhase(state);
   const terminalPhase = MANUAL_OVERLAY_TERMINAL_PHASES.has(phase);
   const hasResults = selected.length >= 2;
   /** 당첨 2개 이상이면 표시. OBS는 ready 전에도 당첨이 있으면 표시(CEF fetch 지연 대비) */

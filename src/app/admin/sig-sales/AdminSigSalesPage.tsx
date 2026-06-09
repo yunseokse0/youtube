@@ -96,13 +96,21 @@ import {
   buildSigSalesWheelOverlayUrl,
 } from "@/lib/sig-sales-overlay-urls";
 import {
+  defaultManualSigBroadcast,
+  mergeManualSigBroadcastIntoOverlaySettings,
+  readManualSigBroadcastFromState,
+} from "@/lib/manual-sig-broadcast-state";
+import {
   buildManualRoundResetPatch,
   isManualOverlaySessionId,
   MANUAL_OVERLAY_SESSION_ID,
 } from "@/lib/sig-sales-manual-round";
 import {
+  buildManualSigBroadcastState,
+  buildManualSigSalesConfirmState,
   enrichManualDraftsWithInventoryImageUrls,
   hydrateManualOverlaySigItem,
+  resolveManualOverlaySelectedSigs,
 } from "@/lib/manual-sig-broadcast";
 import { pickRandomManualSigDrafts } from "@/lib/manual-sig-random";
 import {
@@ -414,7 +422,10 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
   const manualWorkbenchLastSavedRef = useRef<string>("");
   const [oneShotSound] = useState(() => new Howl({ src: [SPIN_SOUND_PATHS.oneShot], preload: true, volume: 0.7 }));
   const soldOutStampUrl = (state?.sigSoldOutStampUrl || "").trim() || DEFAULT_SIG_SOLD_STAMP_URL;
-  const { machine, spin, landed, markConfirmPending, cancelConfirm, resetToIdle, finish, setOpacity, setError } = useSigSalesState(userId, state);
+  const { machine, spin, landed, markConfirmPending, cancelConfirm, resetToIdle, finish, setOpacity, setError } =
+    useSigSalesState(userId, state, {
+      preferManualBroadcast: manualOnly || overlayObsMode === "manual",
+    });
   const controlsDisabled = !authReady || machine.phase === "CONFIRM_PENDING" || machine.isFinishLoading;
 
   useEffect(() => {
@@ -1023,6 +1034,18 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
   );
 
   const displaySelectedSigs = useMemo(() => {
+    /** 수동 판매 — 회전판과 별도 broadcast 상태 기준 */
+    if (manualOnly || overlayObsMode === "manual") {
+      const fromBroadcast = resolveManualOverlaySelectedSigs(state, userId);
+      if (fromBroadcast.length >= MIN_ONE_SHOT_SIGS) return fromBroadcast.slice(0, MAX_SELECTED_SIGS);
+      if (manualPreviewSelected.length >= MIN_ONE_SHOT_SIGS) {
+        return manualPreviewSelected.slice(0, MAX_SELECTED_SIGS);
+      }
+      if (preferManualDraftPreview) {
+        return manualPreviewFromDraft.slice(0, MAX_SELECTED_SIGS);
+      }
+      return [];
+    }
     /** 수동 모드: 현재 탭 입력을 하단 당첨 미리보기로 즉시 반영(LANDED 이전 회차에 묶이지 않음) */
     if (preferManualDraftPreview) {
       return manualPreviewFromDraft.slice(0, MAX_SELECTED_SIGS);
@@ -1042,6 +1065,10 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     if (fromManualPreview.length > 0) return fromManualPreview;
     return fromServer;
   }, [
+    manualOnly,
+    overlayObsMode,
+    state,
+    userId,
     preferManualDraftPreview,
     manualPreviewFromDraft,
     machine.selectedSigs,
@@ -1056,10 +1083,10 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       ),
     [displaySelectedSigs, state?.sigInventory, userId]
   );
-  const isManualBroadcastRound = useMemo(() => {
-    const sid = String(machine.sessionId || state?.rouletteState?.sessionId || "").trim();
-    return sid.startsWith("manual_") || overlayObsMode === "manual";
-  }, [machine.sessionId, state?.rouletteState?.sessionId, overlayObsMode]);
+  const isManualBroadcastRound = useMemo(
+    () => manualOnly || overlayObsMode === "manual",
+    [manualOnly, overlayObsMode]
+  );
   /** 확정·재고 완판 시 관리 화면·오버레이와 동일하게 판매 완료 스탬프 */
   const adminSoldOverrideSet = useMemo(() => {
     const next = new Set<string>();
@@ -1794,28 +1821,16 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         broadcastSlotId: wbApplied.activeSlotId,
       };
       setManualWorkbench(wbWithBroadcast);
+      const broadcastLanded = buildManualSigBroadcastState(baseState, selected, oneShot, {
+        persistDrafts: manualDraftPayload,
+      });
       const landedState: AppState = {
-        ...baseState,
+        ...broadcastLanded,
         sigInventory: inventoryWithOneShotImage,
         overlaySettings: {
-          ...prevOverlaySettings,
+          ...(broadcastLanded.overlaySettings as Record<string, unknown>),
           [MANUAL_SIG_WORKBENCH_KEY]: wbWithBroadcast,
-          [MANUAL_SIG_DRAFT_STATE_KEY]: manualDraftPayload,
-        },
-        rouletteState: {
-          ...baseState.rouletteState,
-          phase: "LANDED",
-          isRolling: false,
-          startedAt: now,
-          sessionId,
-          result: selected[selected.length - 1] || null,
-          results: selected,
-          selectedSigs: selected,
-          oneShotResult: oneShot,
-          spinCount: selected.length,
-          overlayReloadNonce: Number(baseState.rouletteState?.overlayReloadNonce || 0) + 1,
-        },
-        updatedAt: now,
+        } as AppState["overlaySettings"],
       };
       landed(selected, oneShot, selected[selected.length - 1]?.id || null, {
         sessionId,
@@ -1852,52 +1867,19 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       }
       const cascadeFlags = soldFlagsWithOneShotCascade(soldFlags, oneShotSoldFlag);
       const soldPreviewSet = soldSetForFullManualRound(selected, cascadeFlags, oneShotSoldFlag);
-      const soldSigIdsForFinish = collectSoldSigIdsForFinish(selected, soldPreviewSet);
-      const soldTargetIds = new Set(soldSigIdsForFinish);
-      const confirmedInventory = inventoryWithOneShotImage.map((row) => {
-        if (row.id === ONE_SHOT_SIG_ID) {
-          if (!oneShotSoldFlag) return row;
-          const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
-          const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)));
-          const nextSold = Math.min(maxCount, soldCount + 1);
-          return {
-            ...row,
-            soldCount: nextSold,
-            isActive: nextSold >= maxCount ? false : row.isActive,
-          };
-        }
-        const key = canonicalSigIdFromWheelSliceId(String(row.id || ""));
-        const delta = soldTargetIds.has(key) ? 1 : 0;
-        if (!delta) return row;
-        const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
-        const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)));
-        const nextSold = Math.min(maxCount, soldCount + delta);
-        return {
-          ...row,
-          soldCount: nextSold,
-          isActive: nextSold >= maxCount ? false : row.isActive,
-        };
-      });
       setManualSigSoldFlags(cascadeFlags);
       setManualSoldSet(soldPreviewSet);
       setOneShotSold(oneShotSoldFlag);
-      const soldAt = Date.now();
-      const manualConfirmed = manualOnly || isManualOverlaySessionId(sessionId);
-      const soldState: AppState = {
-        ...landedState,
-        sigInventory: confirmedInventory,
-        rouletteState: {
-          ...landedState.rouletteState,
-          phase: manualConfirmed ? "CONFIRMED" : "LANDED",
-          isRolling: false,
-          selectedSigs: selected,
-          oneShotResult: oneShot,
-          sessionId,
-          ...(manualConfirmed ? { lastFinishedAt: soldAt } : {}),
-          overlayReloadNonce: Number(landedState.rouletteState?.overlayReloadNonce || 0) + 1,
-        },
-        updatedAt: soldAt,
-      };
+      const manualConfirmed = manualOnly || overlayObsMode === "manual";
+      const soldState = buildManualSigSalesConfirmState(landedState, {
+        selected,
+        sigSoldFlags: cascadeFlags,
+        oneShotMarkSold: oneShotSoldFlag,
+        userId,
+        previousSoldFlags: soldFlags,
+        previousOneShotMarkSold: oneShotSoldFlag,
+        closeRound: manualConfirmed,
+      });
       const soldSaved = await saveSigSalesManualStateAsync(soldState, userId);
       if (soldSaved.ok) {
         setState(soldState);
@@ -2505,9 +2487,6 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
           : (machine.selectedSigs?.length ?? 0) >= MIN_ONE_SHOT_SIGS
             ? machine.selectedSigs
             : undefined;
-      const phase = state.rouletteState?.phase;
-      const nextPhase =
-        phase === "IDLE" || phase === "SPINNING" ? "LANDED" : phase || "LANDED";
       const flags = opts?.sigSoldFlags ?? manualSigSoldFlags;
       const prevOverlaySettings =
         state.overlaySettings && typeof state.overlaySettings === "object"
@@ -2523,33 +2502,63 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         oneShotMarkSold: opts?.oneShotMarkSold ?? manualOneShotMarkSold,
       };
       manualDraftLastSavedRef.current = JSON.stringify(manualDraftPayload);
-      const nextState: AppState = {
-        ...state,
-        sigInventory: inventory,
-        overlaySettings: {
-          ...prevOverlaySettings,
-          [MANUAL_SIG_DRAFT_STATE_KEY]: manualDraftPayload,
-        },
-        rouletteState: {
-          ...state.rouletteState,
-          phase: nextPhase,
-          isRolling: false,
-          ...(selectedForState
-            ? {
-                selectedSigs: selectedForState,
-                results: selectedForState,
-                result: selectedForState[selectedForState.length - 1] || null,
-              }
-            : {}),
+      const useManualBroadcast = manualOnly || overlayObsMode === "manual";
+      let nextState: AppState;
+      if (useManualBroadcast) {
+        const prevBroadcast = readManualSigBroadcastFromState(state) ?? defaultManualSigBroadcast();
+        const nextBroadcast = {
+          ...prevBroadcast,
+          phase:
+            prevBroadcast.phase === "IDLE" && selectedForState
+              ? ("LANDED" as const)
+              : prevBroadcast.phase,
+          ...(selectedForState ? { selectedSigs: selectedForState } : {}),
           oneShotResult: oneShot,
           ...(opts?.bumpOverlay
-            ? {
-                overlayReloadNonce: Number(state.rouletteState?.overlayReloadNonce || 0) + 1,
-              }
+            ? { overlayReloadNonce: Number(prevBroadcast.overlayReloadNonce || 0) + 1 }
             : {}),
-        },
-        updatedAt: Date.now(),
-      };
+        };
+        nextState = {
+          ...state,
+          sigInventory: inventory,
+          overlaySettings: {
+            ...mergeManualSigBroadcastIntoOverlaySettings(state, nextBroadcast),
+            [MANUAL_SIG_DRAFT_STATE_KEY]: manualDraftPayload,
+          } as AppState["overlaySettings"],
+          updatedAt: Date.now(),
+        };
+      } else {
+        const phase = state.rouletteState?.phase;
+        const nextPhase =
+          phase === "IDLE" || phase === "SPINNING" ? "LANDED" : phase || "LANDED";
+        nextState = {
+          ...state,
+          sigInventory: inventory,
+          overlaySettings: {
+            ...prevOverlaySettings,
+            [MANUAL_SIG_DRAFT_STATE_KEY]: manualDraftPayload,
+          },
+          rouletteState: {
+            ...state.rouletteState,
+            phase: nextPhase,
+            isRolling: false,
+            ...(selectedForState
+              ? {
+                  selectedSigs: selectedForState,
+                  results: selectedForState,
+                  result: selectedForState[selectedForState.length - 1] || null,
+                }
+              : {}),
+            oneShotResult: oneShot,
+            ...(opts?.bumpOverlay
+              ? {
+                  overlayReloadNonce: Number(state.rouletteState?.overlayReloadNonce || 0) + 1,
+                }
+              : {}),
+          },
+          updatedAt: Date.now(),
+        };
+      }
       setState(nextState);
       const saved = await saveSigSalesManualStateAsync(nextState, userId);
       if (!saved.ok) {

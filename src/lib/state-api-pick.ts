@@ -11,6 +11,7 @@ export const STATE_PICK_OVERLAY = "overlay";
 export const STATE_PICK_OVERLAY_DONORS = "overlay-donors";
 export const STATE_PICK_SIG_SALES = "sig-sales";
 const MANUAL_SIG_DRAFT_STATE_KEY = "sigSalesManualDraftV1";
+const MANUAL_SIG_BROADCAST_STATE_KEY = "sigSalesManualBroadcastV1";
 export const STATE_PICK_DONOR_RANKINGS = "donor-rankings";
 export const STATE_PICK_OBS_TEXT = "obs-text";
 
@@ -127,17 +128,27 @@ export function projectStateForGetPick(
       os && typeof os === "object"
         ? (os as Record<string, unknown>)[MANUAL_SIG_DRAFT_STATE_KEY]
         : undefined;
+    const manualBroadcast =
+      os && typeof os === "object"
+        ? (os as Record<string, unknown>)[MANUAL_SIG_BROADCAST_STATE_KEY]
+        : undefined;
+    const overlayManual: Record<string, unknown> = {};
+    if (manualDraft && typeof manualDraft === "object") {
+      overlayManual[MANUAL_SIG_DRAFT_STATE_KEY] = manualDraft;
+    }
+    if (manualBroadcast && typeof manualBroadcast === "object") {
+      overlayManual[MANUAL_SIG_BROADCAST_STATE_KEY] = manualBroadcast;
+    }
     return {
       updatedAt: state.updatedAt,
       sigInventory: slimSigInventoryForWire(state.sigInventory, userId),
       sigSalesExcludedIds: state.sigSalesExcludedIds,
       sigSoldOutStampUrl: state.sigSoldOutStampUrl,
       sigRollingMeta: state.sigRollingMeta,
+      /** 회전판 오버레이용 — 수동 방송과 분리 */
       rouletteState: rs,
-      /** OBS 수동 모드: 관리자 「판매완료」체크·한방 플래그(로컬스토리지 없음) */
-      ...(manualDraft && typeof manualDraft === "object"
-        ? { overlaySettings: { [MANUAL_SIG_DRAFT_STATE_KEY]: manualDraft } }
-        : {}),
+      /** 수동 OBS: 초안·방송 상태(당첨·phase·nonce) */
+      ...(Object.keys(overlayManual).length > 0 ? { overlaySettings: overlayManual } : {}),
     };
   }
   if (pick === STATE_PICK_OVERLAY) {

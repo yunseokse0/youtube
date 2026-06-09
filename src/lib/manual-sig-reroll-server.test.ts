@@ -5,6 +5,7 @@ import {
   mergeSigSalesManualIntoLocalState,
   normalizeRouletteState,
 } from "@/lib/state";
+import { MANUAL_SIG_BROADCAST_STATE_KEY } from "@/lib/manual-sig-broadcast-state";
 import { MANUAL_SIG_DRAFT_STATE_KEY } from "@/lib/manual-sig-workbench";
 import {
   MANUAL_OVERLAY_SESSION_ID,
@@ -123,13 +124,13 @@ describe("manual sig reroll server simulation", () => {
           sigSoldFlags: [false, false, false, false, false],
           oneShotMarkSold: false,
         },
-      },
-      rouletteState: {
-        ...server.rouletteState,
-        phase: "LANDED",
-        sessionId: MANUAL_OVERLAY_SESSION_ID,
-        selectedSigs: pick,
-        startedAt: Date.now(),
+        [MANUAL_SIG_BROADCAST_STATE_KEY]: {
+          phase: "LANDED",
+          startedAt: Date.now(),
+          selectedSigs: pick,
+          oneShotResult: { id: "sig_one_shot", name: "한방", price: 3000 },
+          overlayReloadNonce: 1,
+        },
       },
       updatedAt: Date.now(),
     };
@@ -138,13 +139,16 @@ describe("manual sig reroll server simulation", () => {
     expect(patch.members).toBeUndefined();
     expect(patch.donors).toBeUndefined();
     expect(patch.overlayPresets).toBeUndefined();
+    expect(patch.rouletteState).toBeUndefined();
 
     const merged = simulateServerMergePartialState(server, patch);
     expect(merged.members).toHaveLength(2);
     expect(merged.members[0]?.name).toBe("패자");
     expect(merged.donors).toHaveLength(1);
     expect(merged.overlayPresets).toHaveLength(2);
-    expect(merged.rouletteState?.phase).toBe("LANDED");
+    const os = merged.overlaySettings as Record<string, unknown> | undefined;
+    const broadcast = os?.[MANUAL_SIG_BROADCAST_STATE_KEY] as { phase?: string } | undefined;
+    expect(broadcast?.phase).toBe("LANDED");
   });
 
   it("PATCH-only reroll does not reset generalTimer on server merge", () => {
@@ -271,7 +275,7 @@ describe("manual sig reroll server simulation", () => {
     expect(merged.members[0]?.name).not.toBe("패자");
   });
 
-  it("manual reset IDLE clears stale LANDED selectedSigs when overlayReloadNonce advances", () => {
+  it("manual reset IDLE clears broadcast selectedSigs without touching rouletteState", () => {
     const oldPick: AppState["sigInventory"] = [
       { id: "s1", name: "맛있쥬", price: 18300, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
       { id: "s2", name: "팬티맛있엉", price: 45300, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
@@ -293,13 +297,19 @@ describe("manual sig reroll server simulation", () => {
       },
     };
     const resetPatch = buildManualRoundResetPatch(server);
-    const merged = simulateServerRouletteMerge(server, resetPatch);
-    expect(merged.rouletteState?.phase).toBe("IDLE");
-    expect(merged.rouletteState?.selectedSigs).toBeUndefined();
-    expect(merged.rouletteState?.overlayReloadNonce).toBe(5);
+    const merged = simulateServerMergePartialState(server, resetPatch);
+    const os = merged.overlaySettings as Record<string, unknown> | undefined;
+    const broadcast = os?.[MANUAL_SIG_BROADCAST_STATE_KEY] as
+      | { phase?: string; selectedSigs?: unknown[]; overlayReloadNonce?: number }
+      | undefined;
+    expect(broadcast?.phase).toBe("IDLE");
+    expect(broadcast?.selectedSigs).toEqual([]);
+    expect(broadcast?.overlayReloadNonce).toBe(5);
+    expect(merged.rouletteState?.phase).toBe("LANDED");
+    expect(merged.rouletteState?.selectedSigs?.length).toBe(5);
   });
 
-  it("manual reroll LANDED replaces stale server selectedSigs after reset", () => {
+  it("manual reroll PATCH updates broadcast without rouletteState", () => {
     const oldPick = [
       { id: "s1", name: "맛있쥬", price: 18300, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
       { id: "s2", name: "팬티맛있엉", price: 45300, imageUrl: "", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
@@ -328,19 +338,25 @@ describe("manual sig reroll server simulation", () => {
     };
     const rerollNext: AppState = {
       ...server,
-      rouletteState: {
-        ...server.rouletteState,
-        phase: "LANDED",
-        sessionId: MANUAL_OVERLAY_SESSION_ID,
-        startedAt: Date.now(),
-        selectedSigs: newPick,
-        results: newPick,
-        overlayReloadNonce: 5,
+      overlaySettings: {
+        [MANUAL_SIG_BROADCAST_STATE_KEY]: {
+          phase: "LANDED",
+          startedAt: Date.now(),
+          selectedSigs: newPick,
+          oneShotResult: { id: "sig_one_shot", name: "한방", price: 166500 },
+          overlayReloadNonce: 5,
+        },
       },
     };
     const patch = buildSigSalesManualApiPatch(rerollNext, "finalent");
-    const merged = simulateServerRouletteMerge(server, patch);
-    expect(merged.rouletteState?.selectedSigs?.map((s) => s.name)).toEqual(newPick.map((s) => s.name));
+    expect(patch.rouletteState).toBeUndefined();
+    const merged = simulateServerMergePartialState(server, patch);
+    const os = merged.overlaySettings as Record<string, unknown> | undefined;
+    const broadcast = os?.[MANUAL_SIG_BROADCAST_STATE_KEY] as
+      | { selectedSigs?: Array<{ name?: string }> }
+      | undefined;
+    expect(broadcast?.selectedSigs?.map((s) => s.name)).toEqual(newPick.map((s) => s.name));
+    expect(merged.rouletteState?.selectedSigs?.map((s) => s.name)).toEqual(oldPick.map((s) => s.name));
   });
 
   it("localStorage merge prefers server-loaded next over corrupted base", () => {

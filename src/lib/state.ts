@@ -42,6 +42,7 @@ import {
   STATE_PICK_SIG_SALES,
   type StateApiPick,
 } from "@/lib/state-api-pick";
+import { MANUAL_SIG_BROADCAST_STATE_KEY } from "@/lib/manual-sig-broadcast-state";
 import { MANUAL_SIG_DRAFT_STATE_KEY } from "@/lib/manual-sig-workbench";
 import { slimSigInventoryForWire } from "@/lib/state-wire-slim";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
@@ -1357,7 +1358,7 @@ export async function saveStateAsync(state: AppState, userId?: string | null): P
   }
 }
 
-/** 수동 시그 리롤·판매 확정 — 시그·초안·회전판만 PATCH(멤버·후원·프리셋 덮어쓰기 방지) */
+/** 수동 시그 리롤·판매 확정 — 재고·초안·수동 방송만 PATCH(회전판·멤버 덮어쓰기 방지) */
 export function buildSigSalesManualApiPatch(next: AppState, userId?: string | null): Partial<AppState> {
   const normalizedSigInventory = slimSigInventoryForWire(
     normalizeSigInventory(next.sigInventory),
@@ -1368,6 +1369,7 @@ export function buildSigSalesManualApiPatch(next: AppState, userId?: string | nu
       ? (next.overlaySettings as Record<string, unknown>)
       : {};
   const manualDraft = os[MANUAL_SIG_DRAFT_STATE_KEY];
+  const manualBroadcast = os[MANUAL_SIG_BROADCAST_STATE_KEY];
   const patch: Partial<AppState> = {
     updatedAt: next.updatedAt ?? Date.now(),
     sigInventory: normalizedSigInventory,
@@ -1375,11 +1377,15 @@ export function buildSigSalesManualApiPatch(next: AppState, userId?: string | nu
     sigSoldOutStampUrl: next.sigSoldOutStampUrl,
     sigRollingMeta: next.sigRollingMeta,
   };
+  const overlayPatch: Record<string, unknown> = {};
   if (manualDraft && typeof manualDraft === "object") {
-    patch.overlaySettings = { [MANUAL_SIG_DRAFT_STATE_KEY]: manualDraft } as AppState["overlaySettings"];
+    overlayPatch[MANUAL_SIG_DRAFT_STATE_KEY] = manualDraft;
   }
-  if (next.rouletteState) {
-    patch.rouletteState = next.rouletteState;
+  if (manualBroadcast && typeof manualBroadcast === "object") {
+    overlayPatch[MANUAL_SIG_BROADCAST_STATE_KEY] = manualBroadcast;
+  }
+  if (Object.keys(overlayPatch).length > 0) {
+    patch.overlaySettings = overlayPatch as AppState["overlaySettings"];
   }
   return patch;
 }
@@ -1403,10 +1409,8 @@ export function mergeSigSalesManualIntoLocalState(base: AppState, next: AppState
       sigSoldOutStampUrl: next.sigSoldOutStampUrl,
       sigRollingMeta: next.sigRollingMeta,
       overlaySettings: { ...baseOs, ...nextOs } as AppState["overlaySettings"],
-      rouletteState: {
-        ...core.rouletteState,
-        ...next.rouletteState,
-      },
+      /** 수동 저장은 회전판 상태를 건드리지 않음 */
+      rouletteState: core.rouletteState,
       updatedAt: Date.now(),
     })
   );
