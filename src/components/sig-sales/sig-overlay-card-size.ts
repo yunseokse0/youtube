@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { buildTextOutlineStyle } from "@/lib/text-outline-style";
 
 /**
  * 방송 결과 카드 셸 폭 상한(px). 원본 아트 비율은 202×300이나 OBS 세로 합성에서는 더 작게 두는 편이 안전함.
@@ -22,13 +23,41 @@ export const SIG_OVERLAY_CARD_MEDIA_BOX_CLASS =
 export const SIG_OVERLAY_CARD_MEDIA_BOX_BROADCAST_CLASS =
   "relative mb-1 w-full shrink-0 overflow-hidden";
 
-/** 방송 오버레이: 개별·한방 카드 하단 이름·금액 줄(동일 높이) */
+/** 방송 오버레이: 개별 시그 하단 이름·금액(배경 없음 — 외곽선으로 가독성) */
 export const SIG_OVERLAY_CARD_FOOTER_CLASS =
-  "space-y-0.5 rounded-b-[10px] border-t border-white/20 bg-black/92 px-2 py-2";
+  "space-y-0.5 rounded-b-[10px] border-t border-white/15 px-2 py-2";
+/** 한방 시그: 이름·금액 영역 반투명 검은 배경 */
+export const SIG_OVERLAY_CARD_ONESHOT_FOOTER_CLASS =
+  "space-y-0.5 rounded-b-[10px] border-t border-white/15 bg-black/72 px-2 py-2";
 export const SIG_OVERLAY_CARD_NAME_CLASS =
-  "truncate font-extrabold text-[15px] leading-tight text-white sm:text-[17px] [text-shadow:0_1px_0_rgba(0,0,0,1),0_0_10px_rgba(0,0,0,0.95)]";
+  "truncate font-extrabold text-[15px] leading-tight sm:text-[17px]";
 export const SIG_OVERLAY_CARD_PRICE_CLASS =
-  "text-base font-black tabular-nums text-yellow-200 sm:text-[18px] [text-shadow:0_1px_0_rgba(0,0,0,1),0_0_8px_rgba(0,0,0,0.9)]";
+  "text-base font-black tabular-nums sm:text-[18px]";
+
+const SIG_OVERLAY_TEXT_OUTLINE_COLOR = "rgba(6, 12, 24, 0.95)";
+
+/** 텍스트 오버레이와 동일 — OBS CEF에서 stroke + shadow 병행 */
+export function sigOverlayCardNameOutlineStyle(fontSizePx = 16): CSSProperties {
+  return {
+    color: "#ffffff",
+    ...buildTextOutlineStyle({
+      fontSizePx,
+      outlineColor: SIG_OVERLAY_TEXT_OUTLINE_COLOR,
+      outlineWidthPx: 1.25,
+    }),
+  };
+}
+
+export function sigOverlayCardPriceOutlineStyle(fontSizePx = 17): CSSProperties {
+  return {
+    color: "#fde68a",
+    ...buildTextOutlineStyle({
+      fontSizePx,
+      outlineColor: SIG_OVERLAY_TEXT_OUTLINE_COLOR,
+      outlineWidthPx: 1.25,
+    }),
+  };
+}
 
 /** 방송 오버레이 카드 셸(개별 시그) — 한방 카드도 동일 패딩·모서리 */
 export const SIG_OVERLAY_CARD_SHELL_CLASS =

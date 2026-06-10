@@ -131,7 +131,6 @@ import {
   donationQueueIdsForDonor,
   normalizeDonationEventId,
   revertDonationFromAppState,
-  syncMemberTotalsFromDonors,
 } from "@/lib/donation/apply-donation-state";
 import { processDonationEvent, type ProcessDonationResult } from "@/lib/donation/processor";
 import type { DonationEvent, DonorAlias } from "@/lib/donation/types";
@@ -388,6 +387,9 @@ export default function AdminPage() {
   /** `createStateUpdatedScheduler` — 다른 기기·탭에서 저장 시에만 GET 묶음 */
   const adminStateSseScheduleRef = useRef<(() => void) | null>(null);
   const fetchToonationQueueRef = useRef<(() => Promise<void>) | null>(null);
+  const autoProcessQueueRef = useRef<(() => Promise<void>) | null>(null);
+  /** 관리자 최초 큐 스냅샷 — 배포 직후·페이지 열 때 쌓인 백로그는 자동 반영하지 않음 */
+  const toonationQueueBaselineIdsRef = useRef<Set<string> | null>(null);
   /** 동일 updatedAt 원격을 SSE·폴링이 반복 적용하지 않도록 */
   const lastAppliedRemoteUpdatedAtRef = useRef<number>(0);
   const oneShotSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -402,7 +404,6 @@ export default function AdminPage() {
   const [donorAmount, setDonorAmount] = useState("");
   const [donorMemberId, setDonorMemberId] = useState<string | null>(null);
   const [donorTarget, setDonorTarget] = useState<DonorTarget>("account");
-  const [toonationAutoProcessEnabled, setToonationAutoProcessEnabled] = useState(false);
   const [toonationSocketEnabled, setToonationSocketEnabled] = useState(true);
   const [toonationListenerStatus, setToonationListenerStatus] = useState<ToonationListenerStatus | null>(null);
   const [toonationAlertboxUrl, setToonationAlertboxUrl] = useState("");
@@ -538,7 +539,7 @@ export default function AdminPage() {
   const { connected: adminSseConnected } = useSSEConnection((d: unknown) => {
     const o = d as { type?: string };
     if (o?.type === "donation_queue_updated") {
-      void fetchToonationQueueRef.current?.();
+      void fetchToonationQueueRef.current?.().then(() => autoProcessQueueRef.current?.());
       return;
     }
     if (o?.type !== "state_updated") return;
@@ -978,25 +979,6 @@ export default function AdminPage() {
     syncStatusRef.current = syncStatus;
   }, [syncStatus]);
 
-  const reconcileDonationFinancials = useCallback(
-    (input: AppState, opts?: { persist?: boolean }): AppState => {
-      const next = syncMemberTotalsFromDonors(input);
-      const drifted = (input.members || []).some((member, index) => {
-        const synced = next.members[index];
-        if (!synced || synced.id !== member.id) return true;
-        return (
-          Math.floor(Number(member.account || 0)) !== Math.floor(Number(synced.account || 0)) ||
-          Math.floor(Number(member.toon || 0)) !== Math.floor(Number(synced.toon || 0))
-        );
-      });
-      if (drifted && opts?.persist !== false) {
-        persistState(next);
-      }
-      return next;
-    },
-    [persistState]
-  );
-
   const mergeIncomingStateSafely = useCallback((incoming: AppState, local: AppState): { merged: AppState; didPreserve: boolean } => {
     const incomingDefaultLike = isDefaultLikeState(incoming);
     const incomingPlaceholderMembers = isDefaultPlaceholderMemberList(incoming.members);
@@ -1130,9 +1112,8 @@ export default function AdminPage() {
       if (apiState) {
         stateUpdatedAtRef.current = apiState.updatedAt || 0;
         const { merged: toApply, didPreserve } = mergeIncomingStateSafely(apiState, local);
-        const reconciled = reconcileDonationFinancials(toApply, { persist: didPreserve });
-        if (didPreserve) persistState(reconciled);
-        setState(reconciled);
+        if (didPreserve) persistState(toApply);
+        setState(toApply);
         if (Array.isArray(toApply.overlayPresets) && toApply.overlayPresets.length > 0) {
           setPresets(toApply.overlayPresets as OverlayPreset[]);
         } else if (localPresets.length > 0) {
@@ -1220,12 +1201,11 @@ export default function AdminPage() {
           }
           stateUpdatedAtRef.current = remoteUpdatedAt;
           lastAppliedRemoteUpdatedAtRef.current = remoteUpdatedAt;
-          const reconciled = reconcileDonationFinancials(toApply);
-          setState(reconciled);
-          if (Array.isArray(reconciled.overlayPresets)) {
-            setPresets(reconciled.overlayPresets as OverlayPreset[]);
+          setState(toApply);
+          if (Array.isArray(toApply.overlayPresets)) {
+            setPresets(toApply.overlayPresets as OverlayPreset[]);
           }
-          try { window.localStorage.setItem(storageKey(user?.id), JSON.stringify(reconciled)); } catch {}
+          try { window.localStorage.setItem(storageKey(user?.id), JSON.stringify(toApply)); } catch {}
         }
       } finally {
         inFlight = false;
@@ -4173,32 +4153,15 @@ export default function AdminPage() {
     if (result.updatedState) setState(result.updatedState);
   }, []);
 
-  const approveQueueEvent = useCallback(async (evt: DonationEvent) => {
-    if (evt.alreadyApplied) {
-      await removeQueueEvent(evt.id);
-      await fetchToonationQueue();
-      pushToonationLog(`자동 반영 확인: ${evt.donorName} ${evt.amount.toLocaleString("ko-KR")}원`);
-      return;
-    }
-    const result = await processDonationEvent(
-      { ...evt, status: "queued" },
-      user?.id,
-      stateRef.current
-    );
-    applyProcessDonationResult(result);
-    await removeQueueEvent(evt.id);
-    await fetchToonationQueue();
-    await fetchUnmatchedEvents();
-    pushToonationLog(`큐 승인 반영: ${evt.donorName} ${evt.amount.toLocaleString("ko-KR")}원`);
-  }, [applyProcessDonationResult, fetchToonationQueue, fetchUnmatchedEvents, pushToonationLog, removeQueueEvent, user?.id]);
-
-  const approveAllQueueEvents = useCallback(async () => {
+  const autoProcessAllQueueEvents = useCallback(async (events?: DonationEvent[]) => {
+    const batch = events ?? toonationQueue;
+    if (batch.length === 0) return;
     let applied = 0;
-    let confirmed = 0;
-    for (const evt of toonationQueue) {
+    let cleared = 0;
+    for (const evt of batch) {
       if (evt.alreadyApplied) {
         await removeQueueEvent(evt.id);
-        confirmed += 1;
+        cleared += 1;
         continue;
       }
       const result = await processDonationEvent(
@@ -4213,12 +4176,24 @@ export default function AdminPage() {
     await fetchToonationQueue();
     await fetchUnmatchedEvents();
     if (applied > 0) {
-      pushToonationLog(`큐 일괄 승인 반영: ${applied}건`);
+      pushToonationLog(`자동 반영: ${applied}건`);
     }
-    if (confirmed > 0) {
-      pushToonationLog(`자동 반영 확인: ${confirmed}건`);
+    if (cleared > 0) {
+      pushToonationLog(`이미 반영된 큐 ${cleared}건 정리`);
     }
-  }, [applyProcessDonationResult, fetchToonationQueue, fetchUnmatchedEvents, pushToonationLog, removeQueueEvent, toonationQueue, user?.id]);
+  }, [
+    applyProcessDonationResult,
+    fetchToonationQueue,
+    fetchUnmatchedEvents,
+    pushToonationLog,
+    removeQueueEvent,
+    toonationQueue,
+    user?.id,
+  ]);
+
+  useEffect(() => {
+    autoProcessQueueRef.current = () => autoProcessAllQueueEvents();
+  }, [autoProcessAllQueueEvents]);
 
   const removeUnmatchedEvent = useCallback(async (id: string) => {
     const uid = user?.id || "";
@@ -4322,12 +4297,10 @@ export default function AdminPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
-      const autoProcessRaw = window.localStorage.getItem("donationAutomation.toonation.autoProcess");
       const socketRaw = window.localStorage.getItem("donationAutomation.toonation.socketEnabled");
       const urlRaw = window.localStorage.getItem("donationAutomation.toonation.alertboxUrl");
       const envUrl = (process.env.NEXT_PUBLIC_TOONATION_ALERTBOX_URL || "").trim();
       const envKey = (process.env.NEXT_PUBLIC_TOONATION_LINK_KEY || "").trim();
-      setToonationAutoProcessEnabled(autoProcessRaw === "true");
       setToonationSocketEnabled(socketRaw !== "false");
       setToonationAlertboxUrl(
         urlRaw ||
@@ -4345,13 +4318,13 @@ export default function AdminPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
-      window.localStorage.setItem("donationAutomation.toonation.autoProcess", String(toonationAutoProcessEnabled));
       window.localStorage.setItem("donationAutomation.toonation.socketEnabled", String(toonationSocketEnabled));
       window.localStorage.setItem("donationAutomation.toonation.alertboxUrl", toonationAlertboxUrl);
+      window.localStorage.removeItem("donationAutomation.toonation.autoProcess");
     } catch {
       // noop
     }
-  }, [toonationAlertboxUrl, toonationAutoProcessEnabled, toonationSocketEnabled]);
+  }, [toonationAlertboxUrl, toonationSocketEnabled]);
 
   useEffect(() => {
     const uid = user?.id || "";
@@ -4409,13 +4382,20 @@ export default function AdminPage() {
   }, [fetchUnmatchedEvents, fetchDonationAliases, fetchToonationQueue]);
 
   useEffect(() => {
-    if (!toonationAutoProcessEnabled) return;
     if (toonationQueue.length === 0) return;
+    if (toonationQueueBaselineIdsRef.current === null) {
+      toonationQueueBaselineIdsRef.current = new Set(toonationQueue.map((e) => e.id));
+      return;
+    }
+    const baseline = toonationQueueBaselineIdsRef.current;
+    const fresh = toonationQueue.filter((e) => !baseline.has(e.id));
+    if (fresh.length === 0) return;
+    for (const evt of fresh) baseline.add(evt.id);
     const t = window.setTimeout(() => {
-      void approveQueueEvent(toonationQueue[0]);
-    }, 1200);
+      void autoProcessAllQueueEvents(fresh);
+    }, 400);
     return () => window.clearTimeout(t);
-  }, [approveQueueEvent, toonationAutoProcessEnabled, toonationQueue]);
+  }, [autoProcessAllQueueEvents, toonationQueue]);
 
   const addContribution = () => {
     const amount = parseAmount(contributionAmount);
@@ -8398,13 +8378,9 @@ export default function AdminPage() {
                   >
                     실시간 수집 {toonationSocketEnabled ? "ON" : "OFF"}
                   </button>
-                  <button
-                    type="button"
-                    className={`px-3 py-1.5 rounded text-xs font-semibold ${toonationAutoProcessEnabled ? "bg-violet-600 hover:bg-violet-500" : "bg-neutral-700 hover:bg-neutral-600"}`}
-                    onClick={() => setToonationAutoProcessEnabled((v) => !v)}
-                  >
-                    큐 자동반영 {toonationAutoProcessEnabled ? "ON" : "OFF"}
-                  </button>
+                  <span className="text-[11px] px-2 py-1 rounded border border-violet-500/40 text-violet-200 bg-violet-500/10">
+                    자동 반영 항상 ON
+                  </span>
                   <span
                     className={`text-[11px] px-2 py-1 rounded border ${
                       toonationListenerStatus?.kind === "connected"
@@ -8499,15 +8475,8 @@ export default function AdminPage() {
                 </p>
                 <div className="rounded border border-white/10 bg-black/20 p-2">
                   <div className="flex items-center justify-between gap-2 mb-2">
-                    <div className="text-xs text-neutral-300">투네이션 대기 리스트(모니터링) ({toonationQueue.length})</div>
+                    <div className="text-xs text-neutral-300">투네이션 미반영 대기 ({toonationQueue.length}) · 자동 처리</div>
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        className="px-2 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-[11px]"
-                        onClick={() => void approveAllQueueEvents()}
-                      >
-                        일괄 승인 반영
-                      </button>
                       <button
                         type="button"
                         className="px-2 py-0.5 rounded bg-neutral-700 hover:bg-neutral-600 text-[11px]"
@@ -8584,20 +8553,13 @@ export default function AdminPage() {
                             <div className="flex flex-col items-end gap-1 shrink-0">
                               <button
                                 type="button"
-                                className={`px-2 py-0.5 rounded text-[11px] ${evt.alreadyApplied ? "bg-amber-700 hover:bg-amber-600" : "bg-emerald-700 hover:bg-emerald-600"}`}
-                                onClick={() => void approveQueueEvent(evt)}
-                              >
-                                {evt.alreadyApplied ? "확인" : "승인 반영"}
-                              </button>
-                              <button
-                                type="button"
                                 className="px-2 py-0.5 rounded bg-neutral-700 hover:bg-neutral-600 text-[11px]"
                                 onClick={async () => {
                                   await removeQueueEvent(evt.id);
                                   await fetchToonationQueue();
                                 }}
                               >
-                                반려/제거
+                                제거
                               </button>
                             </div>
                           </div>

@@ -16,6 +16,8 @@ import {
   SIG_OVERLAY_CARD_SHELL_CLASS,
   sigOverlayBroadcastCardShellStyle,
   sigOverlayBroadcastMediaBoxStyle,
+  sigOverlayCardNameOutlineStyle,
+  sigOverlayCardPriceOutlineStyle,
 } from "@/components/sig-sales/sig-overlay-card-size";
 import SigSoldStampOverlay, {
   SIG_SOLD_STAMP_IMG_CLASS_BROADCAST,
@@ -233,7 +235,14 @@ export default function SelectedSigs({
                 className={
                   broadcastMatch
                     ? SIG_OVERLAY_CARD_NAME_CLASS
-                    : `truncate font-bold text-white ${compact ? "text-[10px]" : "text-sm"}`
+                    : `truncate font-bold ${compact ? "text-[10px]" : "text-sm"}`
+                }
+                style={
+                  broadcastMatch
+                    ? sigOverlayCardNameOutlineStyle(16)
+                    : compact
+                      ? sigOverlayCardNameOutlineStyle(10)
+                      : sigOverlayCardNameOutlineStyle(14)
                 }
               >
                 {item.name}
@@ -243,8 +252,15 @@ export default function SelectedSigs({
                   broadcastMatch
                     ? SIG_OVERLAY_CARD_PRICE_CLASS
                     : compact
-                      ? "text-[9px] font-semibold tabular-nums text-neutral-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]"
-                      : "text-xs font-semibold tabular-nums text-neutral-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]"
+                      ? "text-[9px] font-semibold tabular-nums"
+                      : "text-xs font-semibold tabular-nums"
+                }
+                style={
+                  broadcastMatch
+                    ? sigOverlayCardPriceOutlineStyle(17)
+                    : compact
+                      ? sigOverlayCardPriceOutlineStyle(9)
+                      : sigOverlayCardPriceOutlineStyle(12)
                 }
               >
                 {formatWon(item.price)}

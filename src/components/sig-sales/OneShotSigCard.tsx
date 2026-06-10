@@ -5,16 +5,18 @@ import { formatWon } from "@/lib/sig-roulette";
 import { resolveSigOverlayCardImageUrl, resolveSigRollingImageUrl } from "@/lib/constants";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 import {
-  SIG_OVERLAY_CARD_FOOTER_CLASS,
   SIG_OVERLAY_CARD_MEDIA_BOX_BROADCAST_CLASS,
   SIG_OVERLAY_CARD_MEDIA_BOX_CLASS,
   SIG_OVERLAY_CARD_MAX_PX,
   sigOverlayBroadcastCardTotalHeightPx,
   SIG_OVERLAY_CARD_NAME_CLASS,
+  SIG_OVERLAY_CARD_ONESHOT_FOOTER_CLASS,
   SIG_OVERLAY_CARD_PRICE_CLASS,
   SIG_OVERLAY_CARD_ONESHOT_SHELL_CLASS,
   sigOverlayBroadcastCardShellStyle,
   sigOverlayBroadcastMediaBoxStyle,
+  sigOverlayCardNameOutlineStyle,
+  sigOverlayCardPriceOutlineStyle,
 } from "@/components/sig-sales/sig-overlay-card-size";
 import SigSoldStampOverlay, {
   SIG_SOLD_STAMP_IMG_CLASS_BROADCAST,
@@ -149,18 +151,24 @@ export default function OneShotSigCard({
       <div
         className={
           useBroadcastSizing
-            ? SIG_OVERLAY_CARD_FOOTER_CLASS
+            ? SIG_OVERLAY_CARD_ONESHOT_FOOTER_CLASS
             : compact
-              ? "relative flex flex-col gap-0.5"
+              ? "relative flex flex-col gap-0.5 rounded-b-[10px] bg-black/72 px-2 py-1.5"
               : "relative flex flex-wrap items-center justify-between gap-3"
         }
       >
         {useBroadcastSizing ? (
           <>
-            <div className={SIG_OVERLAY_CARD_NAME_CLASS} title={sumLine}>
+            <div
+              className={SIG_OVERLAY_CARD_NAME_CLASS}
+              style={sigOverlayCardNameOutlineStyle(16)}
+              title={sumLine}
+            >
               {name}
             </div>
-            <div className={SIG_OVERLAY_CARD_PRICE_CLASS}>{formatWon(price)}</div>
+            <div className={SIG_OVERLAY_CARD_PRICE_CLASS} style={sigOverlayCardPriceOutlineStyle(17)}>
+              {formatWon(price)}
+            </div>
             {showToggle ? (
               <button
                 type="button"
@@ -176,7 +184,8 @@ export default function OneShotSigCard({
           <>
         <div>
           <h3
-            className={`font-black ${compact ? "text-[12px] text-neutral-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]" : "text-lg text-yellow-100"}`}
+            className={`font-black ${compact ? "text-[12px]" : "text-lg"}`}
+            style={sigOverlayCardNameOutlineStyle(compact ? 12 : 18)}
           >
             {name}
           </h3>
@@ -188,7 +197,8 @@ export default function OneShotSigCard({
         </div>
         <div className={compact ? "" : "text-right"}>
           <div
-            className={`${compact ? "text-base" : "text-2xl"} font-black tabular-nums text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.88)]`}
+            className={`${compact ? "text-base" : "text-2xl"} font-black tabular-nums`}
+            style={sigOverlayCardPriceOutlineStyle(compact ? 16 : 24)}
           >
             {formatWon(price)}
           </div>

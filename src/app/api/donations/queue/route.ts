@@ -62,8 +62,10 @@ export async function GET(req: Request) {
       headers: { "Content-Type": "application/json" },
     });
   }
-  const items = await readDonationQueue(userId);
-  return new Response(JSON.stringify({ items }), {
+  const list = await readDonationQueue(userId);
+  /** 응답만 필터 — 저장소는 건드리지 않음(배포·조회만으로 레거시 큐 항목 삭제 방지) */
+  const withoutLegacyApplied = list.filter((x) => !x.alreadyApplied);
+  return new Response(JSON.stringify({ items: withoutLegacyApplied }), {
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
 }

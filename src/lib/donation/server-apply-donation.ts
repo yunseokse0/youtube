@@ -1,6 +1,7 @@
 import { readDonationAliases } from "@/app/api/donations/_shared/alias-store";
 import { saveAppStateForRoulette } from "@/app/api/roulette/edge-state-store";
 import { loadAppStateForUserId } from "@/lib/app-state-server-load";
+import { broadcastPlayerDonationAlert, enrichDonationEventWithSigMatch } from "./player-donation-alert";
 import { applyDonationToAppState } from "./apply-donation-state";
 import { enqueueDonationEvent } from "./toonation/enqueue-donation";
 import type { DonationEvent } from "./types";
@@ -28,30 +29,21 @@ export async function tryAutoApplyToonationDonationOnServer(
   const state = await loadAppStateForUserId(userId);
   const aliases = await readDonationAliases(userId);
   const result = applyDonationToAppState(state, event, aliases);
-  if (!result.ok) return "not_applied";
+  if (!result.ok) {
+    if (result.reason === "duplicate") return "applied";
+    return "not_applied";
+  }
   await saveAppStateForRoulette(userId, result.state);
   await broadcastDonationStateUpdated(result.state.updatedAt, result.state.donorRankingsUpdatedAt);
-  if (result.event.memberAutoAssigned) {
-    await enqueueDonationEvent(
-      userId,
-      {
-        ...result.event,
-        id: `${result.event.id}::review`,
-        status: "queued",
-        alreadyApplied: true,
-      },
-      { notify: true }
-    );
-    return "applied_needs_review";
-  }
-  await enqueueDonationEvent(
-    userId,
-    {
-      ...result.event,
-      status: "queued",
-      alreadyApplied: true,
-    },
-    { notify: true }
-  );
-  return "applied";
+  const enriched = await enrichDonationEventWithSigMatch(userId, result.event);
+  await broadcastPlayerDonationAlert(userId, enriched);
+  return result.event.memberAutoAssigned ? "applied_needs_review" : "applied";
+}
+
+/** 멤버 미매칭 등 서버 자동 반영 실패 시 — 큐 등록 후 관리자/백업 자동 처리 */
+export async function enqueueUnmatchedToonationDonation(
+  userId: string,
+  event: DonationEvent
+): Promise<boolean> {
+  return enqueueDonationEvent(userId, event);
 }
