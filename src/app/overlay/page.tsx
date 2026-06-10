@@ -22,7 +22,11 @@ import { useFlip } from "@/lib/flip";
 import MissionBoard from "@/components/MissionBoard";
 import MissionBoardSlot from "@/components/MissionBoardSlot";
 import { GoalBar } from "@/components/GoalBar";
-import { buildTextOutlineStyle } from "@/lib/text-outline-style";
+import {
+  buildBroadcastTextOutlineShadowCss,
+  buildBroadcastTextOutlineStyle,
+  DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR,
+} from "@/lib/text-outline-style";
 import { useSSEConnection } from "@/lib/sse-client";
 import { useGoalPresetAutoEscalate } from "@/hooks/useGoalPresetAutoEscalate";
 import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
@@ -2738,31 +2742,37 @@ function OverlayInner() {
     const tableRowPadY = Math.round(memberFontPx * 0.34);
     const tableRowPadX = Math.round(memberFontPx * 0.48);
     const tableRowMinH = Math.round(memberFontPx * 1.62);
-    const tableBroadcastOutline = buildTextOutlineStyle({
+    const tableOutlineDisabled = tableTextOutlineWidthPx === 0;
+    const resolvedTableOutlineColor =
+      tableTextOutlineColor || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR;
+    const tableBroadcastOutline = buildBroadcastTextOutlineStyle({
       fontSizePx: memberFontPx,
-      outlineColor:
-        tableTextOutlineColor ||
-        (tableTextIsLight ? "rgba(6, 12, 24, 0.92)" : "rgba(255, 255, 255, 0.92)"),
+      outlineColor: resolvedTableOutlineColor,
       outlineWidthPx: tableTextOutlineWidthPx,
     });
-    const tableOutlineShadowCss =
-      tableTextOutlineWidthPx === 0
-        ? "none"
-        : String(
-            tableBroadcastOutline.textShadow ||
-              (tableTextIsLight ? TABLE_TEXT_OUTLINE_LIGHT_ON_DARK : TABLE_TEXT_OUTLINE_DARK_ON_LIGHT)
-          );
+    const tableOutlineShadowCss = tableOutlineDisabled
+      ? "none"
+      : buildBroadcastTextOutlineShadowCss({
+          outlineColor: resolvedTableOutlineColor,
+          outlineWidthPx: tableTextOutlineWidthPx,
+        }) ||
+        String(
+          tableBroadcastOutline.textShadow ||
+            (tableTextIsLight ? TABLE_TEXT_OUTLINE_LIGHT_ON_DARK : TABLE_TEXT_OUTLINE_DARK_ON_LIGHT)
+        );
     const tableNumericOutlineShadowCss = tableOutlineShadowCss;
     const tableStrokeCss = externalSafeMode
       ? "0"
       : String(tableBroadcastOutline.WebkitTextStroke || tableBodyTextStroke || "0");
-    /** OBS·Prism에서 CSS만으로는 숫자·직급 외곽선이 빠지는 경우가 있어 인라인으로도 적용 */
-    const overlayCellOutlineStyle: React.CSSProperties = {
-      textShadow: tableOutlineShadowCss,
-      WebkitTextStroke: externalSafeMode ? 0 : tableBroadcastOutline.WebkitTextStroke,
-      paintOrder: "stroke fill",
-      fontWeight: tableFontWeight,
-    };
+    /** OBS·Prism: stroke 생략 시에도 shadow 링 + 인라인으로 이름·숫자·직급에 동일 적용 */
+    const overlayCellOutlineStyle: React.CSSProperties = tableOutlineDisabled
+      ? { fontWeight: tableFontWeight }
+      : {
+          textShadow: tableOutlineShadowCss,
+          WebkitTextStroke: externalSafeMode ? 0 : tableBroadcastOutline.WebkitTextStroke,
+          paintOrder: "stroke fill",
+          fontWeight: tableFontWeight,
+        };
     const overlayTotalRowCls = `${effectiveRowCls} font-semibold`;
     const centerFixedStyle = centerFixed ? (
       <style dangerouslySetInnerHTML={{ __html: `
@@ -2784,7 +2794,8 @@ function OverlayInner() {
     const overlayNumericOutlineShadow = tableNumericOutlineShadowCss;
     const numericNoWrapStyle = (
       <style dangerouslySetInnerHTML={{ __html: `
-        .overlay-root .overlay-elegant-table .overlay-num-cell-inner {
+        .overlay-root .overlay-elegant-table .overlay-num-cell-inner,
+        .overlay-root .overlay-elegant-table .overlay-cell-text-inner {
           display: inline-block;
           min-width: max-content;
           max-width: 100%;
@@ -2793,9 +2804,13 @@ function OverlayInner() {
           font-variant-numeric: tabular-nums;
           vertical-align: middle;
           text-shadow: ${overlayNumericOutlineShadow} !important;
-          -webkit-text-stroke: 0 !important;
-          paint-order: normal !important;
+          -webkit-text-stroke: ${tableOutlineDisabled ? "0" : tableStrokeCss} !important;
+          paint-order: stroke fill !important;
           -webkit-font-smoothing: antialiased;
+        }
+        .overlay-root .overlay-elegant-table td.overlay-col-name .overlay-cell-text-inner {
+          white-space: nowrap;
+          max-width: 100%;
         }
         .overlay-root .overlay-account-cell,
         .overlay-root .overlay-toon-cell,
@@ -2999,8 +3014,8 @@ function OverlayInner() {
         }
         .overlay-root .overlay-elegant-table tbody td.overlay-col-role,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-role .overlay-role-label {
-          -webkit-text-stroke: 0 !important;
-          paint-order: normal !important;
+          -webkit-text-stroke: ${tableOutlineDisabled ? "0" : tableStrokeCss} !important;
+          paint-order: stroke fill !important;
           text-shadow: ${overlayNumericOutlineShadow} !important;
         }
         .overlay-root .overlay-elegant-table tbody td.overlay-col-role .overlay-role-label {
@@ -3183,7 +3198,15 @@ function OverlayInner() {
                         className={`overlay-row ${rowMotionEnabled ? "transition-transform will-change-transform" : ""} ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
                       >
                         <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
-                          {rank == null ? <span className="overlay-rank-mark">—</span> : `#${rank}`}
+                          {rank == null ? (
+                            <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                              —
+                            </span>
+                          ) : (
+                            <span className="overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                              #{rank}
+                            </span>
+                          )}
                         </td>
                         {hasRoleColumn && (
                           <td
@@ -3201,18 +3224,22 @@ function OverlayInner() {
                             )}
                           </td>
                         )}
-                        <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
+                        <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>
+                          <span className={`overlay-cell-text-inner ${nameWrapCls}`} style={overlayCellOutlineStyle}>
+                            {m.name}
+                          </span>
+                        </td>
                         <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`}>
-                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(m.account)}</span>
+                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(m.account)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-toon ${membersTheme.toonCls} overlay-toon-cell text-right`}>
-                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(m.toon)}</span>
+                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(m.toon)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>
-                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmtTotalCell(m.account + m.toon)}</span>
+                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmtTotalCell(m.account + m.toon)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
-                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(getContributionValueForMember(m))}</span>
+                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(getContributionValueForMember(m))}</span>
                         </td>
                       </tr>
                     ))}
@@ -3223,25 +3250,35 @@ function OverlayInner() {
                         className={`overlay-row ${rowMotionEnabled ? "transition-transform will-change-transform" : ""} ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
                       >
                         <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
-                          <span className="overlay-rank-mark">—</span>
+                          <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                            —
+                          </span>
                         </td>
                         {hasRoleColumn && (
                           <td className={`${effectiveRowCls} overlay-col-role`}>
-                            <span className="overlay-rank-mark">-</span>
+                            <span className="overlay-rank-mark overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                              -
+                            </span>
                           </td>
                         )}
-                        <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>{m.name}</td>
+                        <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>
+                          <span className={`overlay-cell-text-inner ${nameWrapCls}`} style={overlayCellOutlineStyle}>
+                            {m.name}
+                          </span>
+                        </td>
                         <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`}>
-                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(m.account)}</span>
+                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(m.account)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-toon ${membersTheme.toonCls} overlay-toon-cell text-right`}>
-                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(m.toon)}</span>
+                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(m.toon)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>
-                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmtTotalCell(m.account + m.toon)}</span>
+                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmtTotalCell(m.account + m.toon)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
-                          <span className="overlay-num-cell-inner overlay-rank-mark">—</span>
+                          <span className="overlay-num-cell-inner overlay-cell-text-inner overlay-rank-mark" style={overlayCellOutlineStyle}>
+                            —
+                          </span>
                         </td>
                       </tr>
                     ))}
@@ -3250,16 +3287,16 @@ function OverlayInner() {
                         <td className={`${overlayTotalRowCls} overlay-col-rank`} colSpan={hasRoleColumn ? 2 : 1}>총합</td>
                         <td className={`${overlayTotalRowCls} overlay-col-name`} />
                         <td className={`${overlayTotalRowCls} overlay-col-account overlay-account-cell text-right`}>
-                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(sumAccount)}</span>
+                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(sumAccount)}</span>
                         </td>
                         <td className={`${overlayTotalRowCls} overlay-col-toon overlay-toon-cell text-right`}>
-                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(sumToon)}</span>
+                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(sumToon)}</span>
                         </td>
                         <td className={`${overlayTotalRowCls} overlay-col-total text-right`}>
-                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(sumCombined)}</span>
+                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(sumCombined)}</span>
                         </td>
                         <td className={`${overlayTotalRowCls} overlay-col-contribution text-right`}>
-                          <span className="overlay-num-cell-inner" style={overlayCellOutlineStyle}>{fmt(sumContribution)}</span>
+                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(sumContribution)}</span>
                         </td>
                       </tr>
                     )}

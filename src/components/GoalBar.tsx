@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { formatDonorsAmount, formatManThousand } from "@/lib/state";
-import { buildTextOutlineStyle } from "@/lib/text-outline-style";
+import {
+  buildBroadcastTextOutlineShadowCss,
+  buildBroadcastTextOutlineStyle,
+} from "@/lib/text-outline-style";
 
 function useCountUp(value: number, durationMs = 600) {
   const [display, setDisplay] = useState(value);
@@ -104,11 +107,23 @@ export function GoalBar({
   })();
   const ambientPulse = "goalbar-ambient-pulse 4.8s ease-in-out infinite";
   const ambientSweep = "goalbar-ambient-sweep 5.2s linear infinite";
-  const goalTextOutline = buildTextOutlineStyle({
-    fontSizePx: textFontPx,
-    outlineColor: textOutlineColor,
-    outlineWidthPx: textOutlineWidthPx,
-  });
+  const goalTextOutline = {
+    ...buildBroadcastTextOutlineStyle({
+      fontSizePx: textFontPx,
+      outlineColor: textOutlineColor,
+      outlineWidthPx: textOutlineWidthPx,
+    }),
+    textShadow:
+      buildBroadcastTextOutlineShadowCss({
+        outlineColor: textOutlineColor,
+        outlineWidthPx: textOutlineWidthPx,
+      }) ||
+      buildBroadcastTextOutlineStyle({
+        fontSizePx: textFontPx,
+        outlineColor: textOutlineColor,
+        outlineWidthPx: textOutlineWidthPx,
+      }).textShadow,
+  };
   /** 예전 어두운 트랙용 기본 밝은 글자색 — 밝은 배경에서는 진한 로즈로 자동 전환 */
   const effectiveTextColor = (() => {
     const c = String(textColor || "").trim().toLowerCase();

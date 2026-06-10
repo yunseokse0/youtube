@@ -17,6 +17,7 @@ import {
   sigOverlayBroadcastMediaBoxStyle,
   sigOverlayCardNameOutlineStyle,
   sigOverlayCardPriceOutlineStyle,
+  sigOverlayOneShotFooterStyle,
 } from "@/components/sig-sales/sig-overlay-card-size";
 import SigSoldStampOverlay, {
   SIG_SOLD_STAMP_IMG_CLASS_BROADCAST,
@@ -153,9 +154,10 @@ export default function OneShotSigCard({
           useBroadcastSizing
             ? SIG_OVERLAY_CARD_ONESHOT_FOOTER_CLASS
             : compact
-              ? "relative flex flex-col gap-0.5 rounded-b-[10px] bg-black/72 px-2 py-1.5"
+              ? `${SIG_OVERLAY_CARD_ONESHOT_FOOTER_CLASS} flex flex-col gap-0.5 py-1.5`
               : "relative flex flex-wrap items-center justify-between gap-3"
         }
+        style={useBroadcastSizing || compact ? sigOverlayOneShotFooterStyle() : undefined}
       >
         {useBroadcastSizing ? (
           <>

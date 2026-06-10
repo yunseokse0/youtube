@@ -26,9 +26,20 @@ export const SIG_OVERLAY_CARD_MEDIA_BOX_BROADCAST_CLASS =
 /** 방송 오버레이: 개별 시그 하단 이름·금액(배경 없음 — 외곽선으로 가독성) */
 export const SIG_OVERLAY_CARD_FOOTER_CLASS =
   "space-y-0.5 rounded-b-[10px] border-t border-white/15 px-2 py-2";
-/** 한방 시그: 이름·금액 영역 반투명 검은 배경 */
+/** 한방 시그: 이름·금액 영역 반투명 검은 배경 — Tailwind opacity 클래스 대신 인라인 rgba(OBS CEF) */
+export const SIG_OVERLAY_CARD_ONESHOT_FOOTER_BG = "rgba(0, 0, 0, 0.72)";
 export const SIG_OVERLAY_CARD_ONESHOT_FOOTER_CLASS =
-  "space-y-0.5 rounded-b-[10px] border-t border-white/15 bg-black/72 px-2 py-2";
+  "relative z-[3] mt-auto w-full shrink-0 space-y-0.5 rounded-b-[10px] border-t border-white/15 px-2 py-2";
+
+export function sigOverlayOneShotFooterStyle(): CSSProperties {
+  return {
+    backgroundColor: SIG_OVERLAY_CARD_ONESHOT_FOOTER_BG,
+    width: "100%",
+    flexShrink: 0,
+    position: "relative",
+    zIndex: 3,
+  };
+}
 export const SIG_OVERLAY_CARD_NAME_CLASS =
   "truncate font-extrabold text-[15px] leading-tight sm:text-[17px]";
 export const SIG_OVERLAY_CARD_PRICE_CLASS =
