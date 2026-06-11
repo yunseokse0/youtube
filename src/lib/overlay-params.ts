@@ -393,6 +393,20 @@ export function resolveGoalTextOutlineWidthPx(
   return Math.max(0, Math.min(3, n));
 }
 
+export function resolveTableTextColor(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string {
+  const merged = resolveLivePresetStyleParam(
+    "tableTextColor",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  return normalizeGoalHexColor(merged || "") || "";
+}
+
 export function resolveTableTextOutlineColor(
   rawSp: SearchParamsLike,
   preset: OverlayPresetLike | null,

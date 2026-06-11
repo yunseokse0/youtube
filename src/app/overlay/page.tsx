@@ -8,6 +8,7 @@ import {
   resolveGoalTextColor,
   resolveGoalTextOutlineColor,
   resolveGoalTextOutlineWidthPx,
+  resolveTableTextColor,
   resolveTableTextOutlineColor,
   resolveTableTextOutlineWidthPx,
   resolveTableFontWeight,
@@ -421,15 +422,6 @@ const TABLE_BROADCAST_PANEL_BORDER = "#f5b8d4";
 const TABLE_BROADCAST_PANEL_BG = "#fde8f2";
 const TABLE_BROADCAST_TEXT_ON_LIGHT = "#6b2d4a";
 const TABLE_BROADCAST_TEXT_ON_DARK = "#f8fafc";
-
-/** colgroup 열 채움 — 시트 틴트와 같은 계열(엑셀=밝은 흰색, 기본=연분홍) */
-function resolveTableColumnFill(theme: ThemeId): string {
-  if (theme === "default") return "rgba(255, 212, 231, 0.70)";
-  const rgb = resolveTableSheetRgb(theme);
-  const luminance = rgb[0] + rgb[1] + rgb[2];
-  const alpha = luminance < 200 ? 0.88 : 0.95;
-  return `rgba(${rgb.join(",")}, ${alpha})`;
-}
 
 const THEMES: Record<ThemeId, {
   label: string;
@@ -1669,7 +1661,7 @@ function OverlayInner() {
   const donorsBgColor = sp.get("donorsBgColor") || undefined;
   const accountColor = sp.get("accountColor") || undefined;
   const toonColor = sp.get("toonColor") || undefined;
-  const tableTextColorRaw = (sp.get("tableTextColor") || String((activePreset as { tableTextColor?: string })?.tableTextColor || "")).trim();
+  const tableTextColorRaw = resolveTableTextColor(rawSp, effectivePreset, { ready });
   const donorsBgOpacity = Math.max(0, Math.min(100, parseInt(sp.get("donorsBgOpacity") || "0", 10)));
   const showBottomDonors = false;
   const effectiveShowTicker = false;
@@ -1784,13 +1776,26 @@ function OverlayInner() {
   const tableTextIsLight = hasTableTextColorOverride
     ? isLightTextHex(tableTextColorRaw)
     : !isLightTableSheet;
+  const tableThemeAutoTextColor = isLightTableSheet
+    ? TABLE_BROADCAST_TEXT_ON_LIGHT
+    : TABLE_BROADCAST_TEXT_ON_DARK;
+  /** 총합 행 제외 — 본문·헤더만 지정색( span·overlay-cell-text-inner 포함 ) */
   const tableForcedTextColorCss = hasTableTextColorOverride
     ? `
-        .overlay-root .overlay-elegant-table td,
         .overlay-root .overlay-elegant-table thead td,
+        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td,
         .overlay-root .overlay-elegant-table thead td span,
-        .overlay-root .overlay-elegant-table thead td strong {
+        .overlay-root .overlay-elegant-table thead td strong,
+        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td span,
+        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td strong,
+        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td .overlay-cell-text-inner,
+        .overlay-root .overlay-elegant-table thead td .overlay-cell-text-inner {
           color: ${tableTextColorRaw} !important;
+        }
+        .overlay-root .overlay-elegant-table .overlay-total-row td,
+        .overlay-root .overlay-elegant-table .overlay-total-row td span,
+        .overlay-root .overlay-elegant-table .overlay-total-row td .overlay-cell-text-inner {
+          color: ${tableThemeAutoTextColor} !important;
         }`
     : "";
   /** 테마 자동: 후원 목표 막대와 같은 진한 로즈/밝은 글자 */
@@ -1801,8 +1806,9 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td span,
         .overlay-root .overlay-elegant-table thead td strong,
         .overlay-root .overlay-elegant-table tbody td span,
-        .overlay-root .overlay-elegant-table tbody td strong {
-          color: ${isLightTableSheet ? TABLE_BROADCAST_TEXT_ON_LIGHT : TABLE_BROADCAST_TEXT_ON_DARK} !important;
+        .overlay-root .overlay-elegant-table tbody td strong,
+        .overlay-root .overlay-elegant-table tbody td .overlay-cell-text-inner {
+          color: ${tableThemeAutoTextColor} !important;
         }`
     : "";
   const tableBodyTextStroke = tableTextIsLight && !externalSafeMode
@@ -1830,6 +1836,9 @@ function OverlayInner() {
   // Strip row backgrounds for tinted/GIF sheet; keep header & total bar colors when shown.
   // 행 사이 가로 구분선은 헤더(테두리 없음)와 일관성을 위해 제거 → 순위 없음(—) 행 위·아래가 동일하게 보임.
   const effectiveRowCls = stripBorder(stripBg(stripTextColor(membersTheme.rowCls)));
+  const effectiveNameCls = stripTextColor(membersTheme.nameCls);
+  const effectiveAccountCls = stripTextColor(membersTheme.accountCls);
+  const effectiveToonCls = stripTextColor(membersTheme.toonCls);
   /** 멤버 표 thead: 테마별 색 띠·테두리 없이 텍스트만 (방송 오버레이용) */
   const effectiveHeaderCls = stripBorder(stripBg(stripTextColor(membersTheme.headerCls)));
   const lockWidth = (sp.get("lockWidth") || "false").toLowerCase() === "true";
@@ -2663,10 +2672,6 @@ function OverlayInner() {
       : [`${rankColCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`];
     /** 숫자 자리 증가로 표 전체가 밀려 나가지 않도록 너비 상한 고정 */
     const excelTableWidthCalc = excelGridCols.join(" + ");
-    const tableColumnFill = resolveTableColumnFill(membersThemeId);
-    const columnGradients = hasRoleColumn
-      ? Array(7).fill(tableColumnFill)
-      : Array(6).fill(tableColumnFill);
     let effectiveScale = centerFixed || hasTableFreePos
       ? (scale * (zoomMode === "neutral" ? 1 : (zoomMode === "invert" ? (1 / centerZoomScale) : centerZoomScale)))
       : (externalHost ? scale : (viewportScale * scale));
@@ -2784,12 +2789,21 @@ function OverlayInner() {
         .overlay-center-fixed table.overlay-elegant-table td { container-type: inline-size; white-space: nowrap !important; overflow: visible !important; }
       ` }} />
     ) : null;
-    const colorOverrideStyle = (accountColor || toonColor) ? (
-      <style dangerouslySetInnerHTML={{ __html: [
-        accountColor && `.overlay-root .overlay-account-cell { color: ${accountColor} !important; }`,
-        toonColor && `.overlay-root .overlay-toon-cell { color: ${toonColor} !important; }`,
-      ].filter(Boolean).join("\n") }} />
-    ) : null;
+    const colorOverrideStyle =
+      !hasTableTextColorOverride && (accountColor || toonColor) ? (
+        <style
+          dangerouslySetInnerHTML={{
+            __html: [
+              accountColor &&
+                `.overlay-root tr:not(.overlay-total-row) .overlay-account-cell { color: ${accountColor} !important; }`,
+              toonColor &&
+                `.overlay-root tr:not(.overlay-total-row) .overlay-toon-cell { color: ${toonColor} !important; }`,
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          }}
+        />
+      ) : null;
     /** OBS/Prism: stroke 대신 다층 shadow만 씀(숫자 열에도 동일 적용) */
     const overlayNumericOutlineShadow = tableNumericOutlineShadowCss;
     const numericNoWrapStyle = (
@@ -2877,8 +2891,12 @@ function OverlayInner() {
           paint-order: stroke fill;
           font-weight: ${tableFontWeight} !important;
         }
-        .overlay-root .overlay-elegant-table tbody tr:nth-child(even) td {
-          background: rgba(255, 255, 255, 0.38) !important;
+        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td {
+          background: transparent !important;
+        }
+        .overlay-root .overlay-elegant-table.pastel-member-table tbody tr.overlay-row:nth-child(odd) td,
+        .overlay-root .overlay-elegant-table.pastel-member-table tbody tr.overlay-row:nth-child(even) td {
+          background: transparent !important;
         }
         ${
           externalSafeMode
@@ -3162,19 +3180,7 @@ function OverlayInner() {
                     >
                   <colgroup>
                     {excelGridCols.map((w, idx) => (
-                      <col
-                        key={`excel-col-${idx}`}
-                        style={
-                          showTableBgGif
-                            ? { width: w }
-                            : {
-                                width: w,
-                                backgroundImage: columnGradients[idx],
-                                backgroundRepeat: "no-repeat",
-                                backgroundSize: "100% 100%",
-                              }
-                        }
-                      />
+                      <col key={`excel-col-${idx}`} style={{ width: w }} />
                     ))}
                   </colgroup>
                   <thead>
@@ -3224,15 +3230,15 @@ function OverlayInner() {
                             )}
                           </td>
                         )}
-                        <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>
+                        <td className={`${effectiveRowCls} overlay-col-name ${effectiveNameCls} ${nameWrapCls}`}>
                           <span className={`overlay-cell-text-inner ${nameWrapCls}`} style={overlayCellOutlineStyle}>
                             {m.name}
                           </span>
                         </td>
-                        <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`}>
+                        <td className={`${effectiveRowCls} overlay-col-account ${effectiveAccountCls} overlay-account-cell text-right`}>
                           <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(m.account)}</span>
                         </td>
-                        <td className={`${effectiveRowCls} overlay-col-toon ${membersTheme.toonCls} overlay-toon-cell text-right`}>
+                        <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-right`}>
                           <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(m.toon)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>
@@ -3261,15 +3267,15 @@ function OverlayInner() {
                             </span>
                           </td>
                         )}
-                        <td className={`${effectiveRowCls} overlay-col-name ${membersTheme.nameCls} ${nameWrapCls}`}>
+                        <td className={`${effectiveRowCls} overlay-col-name ${effectiveNameCls} ${nameWrapCls}`}>
                           <span className={`overlay-cell-text-inner ${nameWrapCls}`} style={overlayCellOutlineStyle}>
                             {m.name}
                           </span>
                         </td>
-                        <td className={`${effectiveRowCls} overlay-col-account ${membersTheme.accountCls} overlay-account-cell text-right`}>
+                        <td className={`${effectiveRowCls} overlay-col-account ${effectiveAccountCls} overlay-account-cell text-right`}>
                           <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(m.account)}</span>
                         </td>
-                        <td className={`${effectiveRowCls} overlay-col-toon ${membersTheme.toonCls} overlay-toon-cell text-right`}>
+                        <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-right`}>
                           <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(m.toon)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>
