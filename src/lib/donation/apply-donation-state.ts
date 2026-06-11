@@ -75,7 +75,7 @@ const NEAR_DUPLICATE_MS = 30_000;
 
 function isNearDuplicateDonation(
   event: { donorName?: string; amount?: number; at?: string },
-  donor: Donor
+  donor: { name?: string; amount?: number; at?: number | string }
 ): boolean {
   const eventName = String(event.donorName || "").trim();
   const donorName = String(donor.name || "").trim();
