@@ -44,6 +44,7 @@ import {
 } from "@/lib/state-api-pick";
 import { MANUAL_SIG_BROADCAST_STATE_KEY } from "@/lib/manual-sig-broadcast-state";
 import { MANUAL_SIG_DRAFT_STATE_KEY } from "@/lib/manual-sig-workbench";
+import { OBS_TEXT_OVERLAY_STATE_KEY, normalizeObsTextRegistry } from "@/lib/obs-text-overlay";
 import { slimSigInventoryForWire } from "@/lib/state-wire-slim";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
 export type {
@@ -1399,6 +1400,36 @@ export function buildSigSalesManualApiPatch(
   return patch;
 }
 
+function obsTextRegistryMaxRevision(raw: unknown): number {
+  if (!raw || typeof raw !== "object") return 0;
+  try {
+    const reg = normalizeObsTextRegistry(raw);
+    return Math.max(0, ...reg.instances.map((inst) => Number(inst.config.revision || 0)));
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * 수동 시그 리롤·판매 저장 — 탭에 남아 있던 stale 스냅샷이 타이틀 텍스트 오버레이를 되돌리지 않게 함.
+ * (로컬에 더 최신 revision 이 있으면 유지, next 가 더 새로우면 next 채택)
+ */
+export function mergeOverlaySettingsPreservingObsText(
+  foundationOs: Record<string, unknown>,
+  nextOs: Record<string, unknown>
+): AppState["overlaySettings"] {
+  const merged = { ...foundationOs, ...nextOs };
+  const foundationObs = foundationOs[OBS_TEXT_OVERLAY_STATE_KEY];
+  const nextObs = nextOs[OBS_TEXT_OVERLAY_STATE_KEY];
+  if (!foundationObs || typeof foundationObs !== "object") {
+    return merged as AppState["overlaySettings"];
+  }
+  const foundationRev = obsTextRegistryMaxRevision(foundationObs);
+  const nextRev = nextObs && typeof nextObs === "object" ? obsTextRegistryMaxRevision(nextObs) : 0;
+  merged[OBS_TEXT_OVERLAY_STATE_KEY] = nextRev > foundationRev ? nextObs : foundationObs;
+  return merged as AppState["overlaySettings"];
+}
+
 export function mergeSigSalesManualIntoLocalState(
   base: AppState,
   next: AppState,
@@ -1409,6 +1440,10 @@ export function mergeSigSalesManualIntoLocalState(
    * (수동 탭의 stale `next`가 generalTimer·멤버·후원을 덮어 관리자/OBS 타이머가 리셋되던 문제 방지)
    */
   const foundation = hasMeaningfulBroadcastData(base) ? base : next;
+  const baseOs =
+    base.overlaySettings && typeof base.overlaySettings === "object"
+      ? (base.overlaySettings as Record<string, unknown>)
+      : {};
   const foundationOs =
     foundation.overlaySettings && typeof foundation.overlaySettings === "object"
       ? (foundation.overlaySettings as Record<string, unknown>)
@@ -1417,6 +1452,7 @@ export function mergeSigSalesManualIntoLocalState(
     next.overlaySettings && typeof next.overlaySettings === "object"
       ? (next.overlaySettings as Record<string, unknown>)
       : {};
+  const manualOverlayOs = { ...foundationOs, ...nextOs };
   return normalizeStateForPersistence(
     syncBattleStateWithMembers({
       ...foundation,
@@ -1426,7 +1462,8 @@ export function mergeSigSalesManualIntoLocalState(
       sigSalesExcludedIds: next.sigSalesExcludedIds ?? foundation.sigSalesExcludedIds,
       sigSoldOutStampUrl: next.sigSoldOutStampUrl ?? foundation.sigSoldOutStampUrl,
       sigRollingMeta: next.sigRollingMeta ?? foundation.sigRollingMeta,
-      overlaySettings: { ...foundationOs, ...nextOs } as AppState["overlaySettings"],
+      /** obs 텍스트는 localStorage(base) 기준 — 수동 탭 stale 스냅샷이 덮어쓰지 않음 */
+      overlaySettings: mergeOverlaySettingsPreservingObsText(baseOs, manualOverlayOs),
       /** 수동 저장은 회전판 상태를 건드리지 않음 */
       rouletteState: foundation.rouletteState,
       updatedAt: Date.now(),

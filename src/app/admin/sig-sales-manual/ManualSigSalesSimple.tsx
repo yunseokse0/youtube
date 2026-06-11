@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { AppState } from "@/lib/state";
-import { loadStateFromApi, saveSigSalesManualStateAsync } from "@/lib/state";
+import { loadState, loadStateFromApi, saveSigSalesManualStateAsync } from "@/lib/state";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
 import { buildSigSalesManualOverlayUrl } from "@/lib/sig-sales-overlay-urls";
 import { DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE } from "@/lib/constants";
@@ -140,8 +140,13 @@ export default function ManualSigSalesSimple() {
       failMsg: string,
       saveOpts?: { omitSigInventory?: boolean }
     ) => {
-      setState(next);
       const saved = await saveSigSalesManualStateAsync(next, userId, saveOpts);
+      if (saved.ok) {
+        const merged = loadState(userId);
+        setState(merged);
+      } else {
+        setState(next);
+      }
       setToast(saved.ok ? okMsg : failMsg);
       return saved.ok;
     },
