@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { defaultState } from "@/lib/state";
 import {
   applyDonationToAppState,
+  dedupeDonorRows,
   revertDonationFromAppState,
   syncMemberTotalsFromDonors,
 } from "./apply-donation-state";
@@ -105,6 +106,53 @@ describe("applyDonationToAppState", () => {
     expect(result.state.members.find((m) => m.id === "m1")?.toon).toBe(0);
     expect(result.state.donors?.[0]?.name).toBe("마이웨이");
     expect(result.state.donors?.[0]?.memberId).toBe("m2");
+  });
+
+  it("rejects near-duplicate when weak fallback id differs but same donor·금액·시각", () => {
+    const at = new Date("2026-06-11T13:55:00.000Z").toISOString();
+    const state = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "피자", account: 0, toon: 1000, contribution: 1000 }],
+      donors: [
+        {
+          id: "toonation:1718100000000-1000",
+          name: "이니이니",
+          amount: 1000,
+          memberId: "m1",
+          at: Date.parse(at),
+          target: "toon" as const,
+        },
+      ],
+    };
+    const event: DonationEvent = {
+      id: "toonation:1718100000456-1000",
+      provider: "toonation",
+      externalId: "1718100000456-1000",
+      donorName: "이니이니",
+      amount: 1000,
+      at,
+      status: "queued",
+      target: "toon",
+    };
+    const result = applyDonationToAppState(state, event);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("duplicate");
+  });
+
+  it("syncMemberTotalsFromDonors ignores deduped duplicate rows", () => {
+    const at = 1_718_100_000_000;
+    const state = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "피자", account: 0, toon: 9999, contribution: 9999 }],
+      donors: [
+        { id: "toonation:1718100000000-1000", name: "이니이니", amount: 1000, memberId: "m1", at, target: "toon" as const },
+        { id: "toonation:1718100000123-1000", name: "이니이니", amount: 1000, memberId: "m1", at: at + 2000, target: "toon" as const },
+      ],
+    };
+    const synced = syncMemberTotalsFromDonors(state);
+    expect(synced.members[0]?.toon).toBe(1000);
+    expect(dedupeDonorRows(state.donors || [])).toHaveLength(1);
   });
 
   it("rejects duplicate when queue review id differs from stored donor id", () => {

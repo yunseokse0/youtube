@@ -1,32 +1,13 @@
-import { normalizeDonationEventId } from "@/lib/donation/apply-donation-state";
+import { dedupeDonorRows } from "@/lib/donation/apply-donation-state";
 
 export type DonorRankingRow = {
   name: string;
   amount: number;
 };
 
-/** 순위 집계 전 — 동일 투네 후원 id(검토 큐 `::review` 등) 중복 행 1건만 남김 */
+/** @deprecated dedupeDonorRows 사용 */
 export function dedupeDonorRowsForRanking(donors: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
-  const map = new Map<string, Record<string, unknown>>();
-  for (const d of donors) {
-    const rawId = String(d.id || "").trim();
-    const baseId = normalizeDonationEventId(rawId);
-    const toonationMatch = /^toonation:(.+)$/i.exec(baseId);
-    const key = toonationMatch?.[1]
-      ? `toonation:${toonationMatch[1].toLowerCase()}`
-      : baseId
-        ? `id:${baseId}`
-        : `fallback:${String(d.name || "").trim()}|${Number(d.at || 0)}|${Math.floor(Number(d.amount || 0))}`;
-    const prev = map.get(key);
-    if (!prev) {
-      map.set(key, d);
-      continue;
-    }
-    const prevAt = Number(prev.at || 0);
-    const nextAt = Number(d.at || 0);
-    if (nextAt >= prevAt) map.set(key, d);
-  }
-  return Array.from(map.values());
+  return dedupeDonorRows(donors) as Array<Record<string, unknown>>;
 }
 
 export function normalizeDonorTarget(donor: Record<string, unknown>): "account" | "toon" {
@@ -63,7 +44,7 @@ export function buildDonorRankingsFromDonors(
   const toonRows: DonorRankingRow[] = [];
   const allRows: DonorRankingRow[] = [];
 
-  for (const d of dedupeDonorRowsForRanking(donors)) {
+  for (const d of dedupeDonorRows(donors)) {
     const row = {
       name: String(d.name || "무명"),
       amount: Number(d.amount || 0),

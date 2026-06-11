@@ -128,6 +128,7 @@ import {
   type ToonationListenerStatus,
 } from "@/lib/donation/toonation/listener";
 import {
+  dedupeDonorRows,
   donationQueueIdsForDonor,
   normalizeDonationEventId,
   revertDonationFromAppState,
@@ -4513,7 +4514,7 @@ export default function AdminPage() {
   }, [dailyLog]);
   const donorTotalsByName = useMemo(() => {
     const map = new Map<string, { name: string; account: number; toon: number; total: number; count: number }>();
-    for (const d of state.donors) {
+    for (const d of dedupeDonorRows(state.donors)) {
       const key = (d.name || "무명").trim() || "무명";
       const prev = map.get(key) || { name: key, account: 0, toon: 0, total: 0, count: 0 };
       const isToon = (d.target || "account") === "toon";

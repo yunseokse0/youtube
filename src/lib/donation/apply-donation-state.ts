@@ -18,6 +18,77 @@ export function normalizeDonationEventId(id: string): string {
   return String(id || "").replace(/::review$/i, "");
 }
 
+/** parse-event fallback id (`${Date.now()}-${amount}`) — 동일 후원이 다른 id로 두 번 들어올 수 있음 */
+export function isWeakToonationDonorId(id: string): boolean {
+  const base = normalizeDonationEventId(String(id || "").trim()).replace(/^toonation:/i, "");
+  return /^\d{10,13}-\d+$/.test(base);
+}
+
+function donorAtEpochMs(donor: { at?: number | string }): number {
+  const raw = donor.at;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  const parsed = Date.parse(String(raw || ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** donors·순위·멤버 합계 공통 — 동일 투네 후원(또는 weak id 근접 중복) 1건만 */
+export function donorRowDedupeKey(donor: {
+  id?: string;
+  name?: string;
+  amount?: number;
+  at?: number | string;
+}): string {
+  const rawId = String(donor.id || "").trim();
+  const baseId = normalizeDonationEventId(rawId);
+  const toonationMatch = /^toonation:(.+)$/i.exec(baseId);
+  if (toonationMatch) {
+    const ext = toonationMatch[1].toLowerCase();
+    if (!isWeakToonationDonorId(rawId)) return `toonation:${ext}`;
+    const name = String(donor.name || "").trim();
+    const amount = Math.floor(Number(donor.amount || 0));
+    const atBucket = Math.floor(donorAtEpochMs(donor) / 30_000);
+    return `weak:${name}:${amount}:${atBucket}`;
+  }
+  if (baseId) return `id:${baseId}`;
+  const name = String(donor.name || "").trim();
+  const amount = Math.floor(Number(donor.amount || 0));
+  return `fallback:${name}|${donorAtEpochMs(donor)}|${amount}`;
+}
+
+export function dedupeDonorRows<T extends { id?: string; name?: string; amount?: number; at?: number | string }>(
+  donors: T[]
+): T[] {
+  const map = new Map<string, T>();
+  for (const d of donors) {
+    const key = donorRowDedupeKey(d);
+    const prev = map.get(key);
+    if (!prev) {
+      map.set(key, d);
+      continue;
+    }
+    if (donorAtEpochMs(d) >= donorAtEpochMs(prev)) map.set(key, d);
+  }
+  return Array.from(map.values());
+}
+
+const NEAR_DUPLICATE_MS = 30_000;
+
+function isNearDuplicateDonation(
+  event: { donorName?: string; amount?: number; at?: string },
+  donor: Donor
+): boolean {
+  const eventName = String(event.donorName || "").trim();
+  const donorName = String(donor.name || "").trim();
+  if (!eventName || eventName !== donorName) return false;
+  const eventAmount = Math.max(0, Math.round(Number(event.amount) || 0));
+  const donorAmount = Math.max(0, Math.round(Number(donor.amount) || 0));
+  if (eventAmount <= 0 || eventAmount !== donorAmount) return false;
+  const eventAt = toEpochMs(event.at || "");
+  const donorAt = donorAtEpochMs(donor);
+  if (!eventAt || !donorAt) return false;
+  return Math.abs(eventAt - donorAt) <= NEAR_DUPLICATE_MS;
+}
+
 /** 후원 기록 삭제 시 투네 대기 큐에서 함께 제거할 id 후보 */
 export function donationQueueIdsForDonor(donor: { id?: string }): string[] {
   const rawId = String(donor.id || "").trim();
@@ -38,7 +109,7 @@ export function syncMemberTotalsFromDonors(state: AppState): AppState {
   for (const member of state.members || []) {
     totals.set(member.id, { account: 0, toon: 0 });
   }
-  for (const donor of state.donors || []) {
+  for (const donor of dedupeDonorRows(state.donors || [])) {
     const memberId = String(donor.memberId || "").trim();
     if (!memberId || !totals.has(memberId)) continue;
     const bucket = totals.get(memberId)!;
@@ -77,6 +148,9 @@ export function isDuplicateDonationEvent(state: AppState, rawEvent: DonationEven
     if (baseId && normalizeDonationEventId(donorId) === baseId) return true;
     if (externalDonorId && (donorId === externalDonorId || normalizeDonationEventId(donorId) === externalDonorId)) {
       return true;
+    }
+    if (isWeakToonationDonorId(eventId) || isWeakToonationDonorId(donorId)) {
+      if (isNearDuplicateDonation(rawEvent, d)) return true;
     }
     return false;
   });

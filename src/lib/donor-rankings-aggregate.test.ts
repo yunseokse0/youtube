@@ -39,6 +39,23 @@ describe("donor-rankings-aggregate", () => {
     expect(unifiedTop[0].name).toBe("1");
   });
 
+  it("이니이니 1천원×4건이 각각 2행씩 쌓여도 순위는 4천원", () => {
+    const { unifiedTop } = buildDonorRankingsFromDonors(
+      [
+        { id: "toonation:1001", name: "이니이니", amount: 1000, target: "toon", at: 100 },
+        { id: "toonation:1001::review", name: "이니이니", amount: 1000, target: "toon", at: 101 },
+        { id: "toonation:1002", name: "이니이니", amount: 1000, target: "toon", at: 200 },
+        { id: "toonation:1002", name: "이니이니", amount: 1000, target: "toon", at: 202 },
+        { id: "toonation:1003", name: "이니이니", amount: 1000, target: "toon", at: 300 },
+        { id: "toonation:1003::review", name: "이니이니", amount: 1000, target: "toon", at: 301 },
+        { id: "toonation:1004", name: "이니이니", amount: 1000, target: "toon", at: 400 },
+        { id: "toonation:1004", name: "이니이니", amount: 1000, target: "toon", at: 403 },
+      ],
+      10
+    );
+    expect(unifiedTop).toEqual([{ name: "이니이니", amount: 4000 }]);
+  });
+
   it("동일 투네 후원 id 중복 행은 순위 집계에서 1건만 반영", () => {
     const { unifiedTop } = buildDonorRankingsFromDonors(
       [
