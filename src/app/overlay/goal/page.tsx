@@ -133,9 +133,6 @@ export default function GoalOverlayPage() {
         outlineColor: resolvedGoalOutlineColor,
         outlineWidthPx: goalTextOutlineWidthPx,
       }) || "none";
-  const externalSafe =
-    externalHost && (sp.get("externalSafe") || "true").toLowerCase() !== "false";
-
   return (
     <main className="overlay-root min-h-screen w-full bg-transparent p-4">
       <style
@@ -144,11 +141,9 @@ export default function GoalOverlayPage() {
         .overlay-root .overlay-goal-bar-widget .overlay-goal-bar-text {
           color: ${goalTextColor} !important;
           -webkit-text-fill-color: ${goalTextColor} !important;
-          ${
-            externalSafe
-              ? `-webkit-text-stroke: 0 !important; text-shadow: ${goalOutlineShadowCss} !important; paint-order: normal !important;`
-              : ""
-          }
+          -webkit-text-stroke: 0 !important;
+          paint-order: normal !important;
+          text-shadow: ${goalOutlineShadowCss} !important;
         }
       `,
         }}

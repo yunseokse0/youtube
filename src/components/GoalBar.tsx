@@ -2,10 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { formatDonorsAmount, formatManThousand } from "@/lib/state";
-import {
-  buildBroadcastTextOutlineShadowCss,
-  buildBroadcastTextOutlineStyle,
-} from "@/lib/text-outline-style";
+import { buildBroadcastTextOutlineShadowCss } from "@/lib/text-outline-style";
 
 function useCountUp(value: number, durationMs = 600) {
   const [display, setDisplay] = useState(value);
@@ -107,23 +104,18 @@ export function GoalBar({
   })();
   const ambientPulse = "goalbar-ambient-pulse 4.8s ease-in-out infinite";
   const ambientSweep = "goalbar-ambient-sweep 5.2s linear infinite";
-  const goalTextOutline = {
-    ...buildBroadcastTextOutlineStyle({
-      fontSizePx: textFontPx,
-      outlineColor: textOutlineColor,
-      outlineWidthPx: textOutlineWidthPx,
-    }),
-    textShadow:
-      buildBroadcastTextOutlineShadowCss({
-        outlineColor: textOutlineColor,
-        outlineWidthPx: textOutlineWidthPx,
-      }) ||
-      buildBroadcastTextOutlineStyle({
-        fontSizePx: textFontPx,
-        outlineColor: textOutlineColor,
-        outlineWidthPx: textOutlineWidthPx,
-      }).textShadow,
-  };
+  /** OBS CEF는 stroke+paint-order 시 fill이 흰색으로 보이는 경우가 많아 shadow만 사용 */
+  const goalTextOutline: CSSProperties =
+    textOutlineWidthPx === 0
+      ? { WebkitTextStroke: 0, paintOrder: "normal" }
+      : {
+          textShadow: buildBroadcastTextOutlineShadowCss({
+            outlineColor: textOutlineColor,
+            outlineWidthPx: textOutlineWidthPx,
+          }),
+          WebkitTextStroke: 0,
+          paintOrder: "normal",
+        };
   /** 밝은 트랙 기본 — 미설정·구버전 밝은 글자만 진한 로즈로 */
   const effectiveTextColor = (() => {
     const c = String(textColor || "").trim();
@@ -136,6 +128,15 @@ export function GoalBar({
     WebkitTextFillColor: effectiveTextColor,
   };
 
+  const goalTextColorCss = `
+    .overlay-goal-bar-widget .overlay-goal-bar-text {
+      color: var(--overlay-goal-text-color) !important;
+      -webkit-text-fill-color: var(--overlay-goal-text-color) !important;
+      -webkit-text-stroke: 0 !important;
+      paint-order: normal !important;
+    }
+  `;
+
   return (
     <div
       className="overlay-goal-bar-widget"
@@ -146,8 +147,10 @@ export function GoalBar({
         border: `1px solid ${GOAL_TRACK_BORDER}`,
         opacity: containerOpacity,
         boxShadow: "0 2px 10px rgba(255, 140, 190, 0.22)",
+        ["--overlay-goal-text-color" as string]: effectiveTextColor,
       }}
     >
+      <style dangerouslySetInnerHTML={{ __html: goalTextColorCss }} />
       <div
         className="relative overflow-hidden"
         style={{

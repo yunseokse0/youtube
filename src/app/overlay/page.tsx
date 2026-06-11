@@ -3107,11 +3107,9 @@ function OverlayInner() {
         .overlay-root .overlay-goal-bar-widget .overlay-goal-bar-text {
           color: ${goalTextColor} !important;
           -webkit-text-fill-color: ${goalTextColor} !important;
-          ${
-            externalSafeMode
-              ? `-webkit-text-stroke: 0 !important; text-shadow: ${goalOutlineShadowCss} !important; paint-order: normal !important;`
-              : ""
-          }
+          -webkit-text-stroke: 0 !important;
+          paint-order: normal !important;
+          text-shadow: ${goalOutlineShadowCss} !important;
         }
       `,
         }}

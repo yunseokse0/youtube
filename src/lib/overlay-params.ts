@@ -346,6 +346,10 @@ export function resolveGoalTextColor(
   preset: OverlayPresetLike | null,
   opts: { ready: boolean }
 ): string {
+  if (opts.ready && preset) {
+    const fromPreset = normalizeGoalHexColor(String(preset.goalTextColor || "").trim());
+    if (fromPreset) return fromPreset;
+  }
   const merged = resolveLivePresetStyleParam(
     "goalTextColor",
     rawSp,
