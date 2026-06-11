@@ -90,3 +90,28 @@ export function buildBroadcastTextOutlineShadowCss(opts: {
   parts.push(`0 ${Math.max(2, ringW)}px ${ringW * 2}px rgba(0,0,0,0.45)`);
   return parts.join(", ");
 }
+
+/** 엑셀표·후원순위 등 셀/행 텍스트 — stroke + OBS용 shadow 링 */
+export function buildOverlayCellOutlineStyle(opts: {
+  fontSizePx: number;
+  outlineColor?: string;
+  outlineWidthPx?: number;
+}): Pick<CSSProperties, "textShadow" | "WebkitTextStroke" | "paintOrder"> {
+  if (opts.outlineWidthPx === 0) return {};
+  const resolved = (opts.outlineColor || "").trim() || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR;
+  const broadcast = buildBroadcastTextOutlineStyle({
+    fontSizePx: opts.fontSizePx,
+    outlineColor: resolved,
+    outlineWidthPx: opts.outlineWidthPx,
+  });
+  const shadow =
+    buildBroadcastTextOutlineShadowCss({
+      outlineColor: resolved,
+      outlineWidthPx: opts.outlineWidthPx,
+    }) || broadcast.textShadow;
+  return {
+    textShadow: shadow,
+    WebkitTextStroke: broadcast.WebkitTextStroke,
+    paintOrder: broadcast.paintOrder,
+  };
+}

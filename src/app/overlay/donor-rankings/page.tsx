@@ -24,9 +24,27 @@ import {
 } from "@/lib/donor-rankings-aggregate";
 import {
   buildBroadcastTextOutlineShadowCss,
-  buildBroadcastTextOutlineStyle,
+  buildOverlayCellOutlineStyle,
   DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR,
 } from "@/lib/text-outline-style";
+
+function donorRankingsOutlineCssBlock(outlineColor: string): string {
+  const resolved = outlineColor.trim() || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR;
+  const shadow = buildBroadcastTextOutlineShadowCss({ outlineColor: resolved });
+  if (!shadow) return "";
+  return `
+    .donor-rankings-overlay-root .overlay-cell-text-inner {
+      display: inline-block;
+      overflow: visible;
+      white-space: inherit;
+      vertical-align: middle;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      paint-order: stroke fill !important;
+      text-shadow: ${shadow} !important;
+    }
+  `;
+}
 
 type DonorRow = DonorRankingRow;
 
@@ -301,24 +319,14 @@ function RankingRow({
   disableMotion?: boolean;
 }) {
   const resolvedOutlineColor = outlineColor.trim() || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR;
-  const rankOutline = {
-    ...buildBroadcastTextOutlineStyle({ fontSizePx: rankSize, outlineColor: resolvedOutlineColor }),
-    textShadow:
-      buildBroadcastTextOutlineShadowCss({ outlineColor: resolvedOutlineColor }) ||
-      buildBroadcastTextOutlineStyle({ fontSizePx: rankSize, outlineColor: resolvedOutlineColor }).textShadow,
-  };
-  const nameOutline = {
-    ...buildBroadcastTextOutlineStyle({ fontSizePx: rowSize, outlineColor: resolvedOutlineColor }),
-    textShadow:
-      buildBroadcastTextOutlineShadowCss({ outlineColor: resolvedOutlineColor }) ||
-      buildBroadcastTextOutlineStyle({ fontSizePx: rowSize, outlineColor: resolvedOutlineColor }).textShadow,
-  };
-  const amountOutline = {
-    ...buildBroadcastTextOutlineStyle({ fontSizePx: rowSize, outlineColor: resolvedOutlineColor }),
-    textShadow:
-      buildBroadcastTextOutlineShadowCss({ outlineColor: resolvedOutlineColor }) ||
-      buildBroadcastTextOutlineStyle({ fontSizePx: rowSize, outlineColor: resolvedOutlineColor }).textShadow,
-  };
+  const rankOutline = buildOverlayCellOutlineStyle({
+    fontSizePx: rankSize,
+    outlineColor: resolvedOutlineColor,
+  });
+  const rowOutline = buildOverlayCellOutlineStyle({
+    fontSizePx: rowSize,
+    outlineColor: resolvedOutlineColor,
+  });
   const rankLabel = (i: number): string => {
     if (i === 0) return "🥇";
     if (i === 1) return "🥈";
@@ -332,15 +340,21 @@ function RankingRow({
   const inner = (
     <>
       <span
-        className="font-black text-center"
+        className="overlay-cell-text-inner font-black text-center"
         style={{ color: rankColor, fontSize: `${rankSize}px`, ...rankOutline }}
       >
         {rankLabel(idx)}
       </span>
-      <span className="break-words font-bold leading-tight" style={{ color: nameColor, ...nameOutline }}>
+      <span
+        className="overlay-cell-text-inner break-words font-bold leading-tight"
+        style={{ color: nameColor, ...rowOutline }}
+      >
         {item.name}
       </span>
-      <span className="font-black tabular-nums text-right" style={{ color: amountColor, ...amountOutline }}>
+      <span
+        className="overlay-cell-text-inner font-black tabular-nums text-right"
+        style={{ color: amountColor, ...rowOutline }}
+      >
         {amountFormat === "short"
           ? `${formatDonorsAmount(item.amount, "short")}만`
           : `${formatDonorsAmount(item.amount, "full")}${suffix ? ` ${suffix}` : " 원"}`}
@@ -423,13 +437,10 @@ function RankingColumn({
   /** OBS CEF: framer-motion initial opacity 0 이 고착되면 전체가 안 보임 */
   disableMotion?: boolean;
 }) {
-  const resolvedOutlineColor = outlineColor.trim() || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR;
-  const titleOutline = {
-    ...buildBroadcastTextOutlineStyle({ fontSizePx: titleSize, outlineColor: resolvedOutlineColor }),
-    textShadow:
-      buildBroadcastTextOutlineShadowCss({ outlineColor: resolvedOutlineColor }) ||
-      buildBroadcastTextOutlineStyle({ fontSizePx: titleSize, outlineColor: resolvedOutlineColor }).textShadow,
-  };
+  const titleOutline = buildOverlayCellOutlineStyle({
+    fontSizePx: titleSize,
+    outlineColor: outlineColor.trim() || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR,
+  });
   const outerClass = unified
     ? `relative z-[1] flex min-w-0 flex-1 flex-col overflow-visible ${
         showColumnDivider
@@ -510,7 +521,7 @@ function RankingColumn({
             ...(headerBgResolved.opacity !== undefined ? { opacity: headerBgResolved.opacity } : {}),
           }}
         />
-        <span className="relative z-10">{title}</span>
+        <span className="overlay-cell-text-inner relative z-10">{title}</span>
       </div>
       {unified ? (
         <div className="relative min-h-0 flex-1">
@@ -654,14 +665,16 @@ export default function DonorRankingsOverlayPage() {
   }
 
   const mainClass = hostObs
-    ? "pointer-events-none fixed inset-0 z-[120] w-full overflow-visible bg-transparent p-5 md:[background:var(--ov-donor-bg)]"
-    : "relative min-h-screen w-full overflow-visible bg-transparent p-5 md:[background:var(--ov-donor-bg)]";
+    ? "donor-rankings-overlay-root pointer-events-none fixed inset-0 z-[120] w-full overflow-visible bg-transparent p-5 md:[background:var(--ov-donor-bg)]"
+    : "donor-rankings-overlay-root relative min-h-screen w-full overflow-visible bg-transparent p-5 md:[background:var(--ov-donor-bg)]";
+  const outlineCss = donorRankingsOutlineCssBlock(outlineColor);
 
   return (
     <main
       className={mainClass}
       style={{ ["--ov-donor-bg" as string]: bg } as CSSProperties}
     >
+      {outlineCss ? <style dangerouslySetInnerHTML={{ __html: outlineCss }} /> : null}
       {showBgLayer ? (
         <div className="pointer-events-none fixed inset-0 z-0" aria-hidden>
           {bgAnimated.kind === "video" ? (
