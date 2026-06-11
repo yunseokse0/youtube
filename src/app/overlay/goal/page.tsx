@@ -14,6 +14,10 @@ import {
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
 import { GoalBar } from "@/components/GoalBar";
+import {
+  buildBroadcastTextOutlineShadowCss,
+  DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR,
+} from "@/lib/text-outline-style";
 import { useGoalPresetAutoEscalate } from "@/hooks/useGoalPresetAutoEscalate";
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 
@@ -120,8 +124,35 @@ export default function GoalOverlayPage() {
 
   if (!ready) return null;
 
+  const goalOutlineDisabled = goalTextOutlineWidthPx === 0;
+  const resolvedGoalOutlineColor =
+    goalTextOutlineColor || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR;
+  const goalOutlineShadowCss = goalOutlineDisabled
+    ? "none"
+    : buildBroadcastTextOutlineShadowCss({
+        outlineColor: resolvedGoalOutlineColor,
+        outlineWidthPx: goalTextOutlineWidthPx,
+      }) || "none";
+  const externalSafe =
+    externalHost && (sp.get("externalSafe") || "true").toLowerCase() !== "false";
+
   return (
-    <main className="min-h-screen w-full bg-transparent p-4">
+    <main className="overlay-root min-h-screen w-full bg-transparent p-4">
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+        .overlay-root .overlay-goal-bar-widget .overlay-goal-bar-text {
+          color: ${goalTextColor} !important;
+          -webkit-text-fill-color: ${goalTextColor} !important;
+          ${
+            externalSafe
+              ? `-webkit-text-stroke: 0 !important; text-shadow: ${goalOutlineShadowCss} !important; paint-order: normal !important;`
+              : ""
+          }
+        }
+      `,
+        }}
+      />
       <div className="mx-auto flex min-h-[120px] items-center justify-center" style={{ width }}>
         {goal > 0 ? (
           <section className="w-full p-0">

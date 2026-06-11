@@ -3091,6 +3091,32 @@ function OverlayInner() {
         }
       ` }} />
     );
+    const goalOutlineDisabled = goalTextOutlineWidthPx === 0;
+    const resolvedGoalOutlineColor =
+      goalTextOutlineColor || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR;
+    const goalOutlineShadowCss = goalOutlineDisabled
+      ? "none"
+      : buildBroadcastTextOutlineShadowCss({
+          outlineColor: resolvedGoalOutlineColor,
+          outlineWidthPx: goalTextOutlineWidthPx,
+        }) || "none";
+    const goalTextColorStyle = (
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+        .overlay-root .overlay-goal-bar-widget .overlay-goal-bar-text {
+          color: ${goalTextColor} !important;
+          -webkit-text-fill-color: ${goalTextColor} !important;
+          ${
+            externalSafeMode
+              ? `-webkit-text-stroke: 0 !important; text-shadow: ${goalOutlineShadowCss} !important; paint-order: normal !important;`
+              : ""
+          }
+        }
+      `,
+        }}
+      />
+    );
     // Preset id가 있어도 원격 상태 준비 전까지만 잠시 대기한다.
     // 준비 이후에도 preset을 못 찾으면(삭제/누락) 기본 렌더로 폴백해야 화면이 비지 않는다.
     const waitForPreset = Boolean(presetId) && !activePreset && !ready;
@@ -3105,6 +3131,7 @@ function OverlayInner() {
         {colorOverrideStyle}
         {numericNoWrapStyle}
         {tableVisualStyle}
+        {goalTextColorStyle}
         {showGuide && (
           <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 9998 }}>
             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: "rgba(0,255,200,0.4)" }} />

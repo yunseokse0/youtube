@@ -295,6 +295,8 @@ export type DonorRankingsTheme = {
   /** 칼럼 제목(헤더) 글자색 */
   titleColor: string;
   outlineColor: string;
+  /** 텍스트 외곽선 두께(px). 0이면 없음 */
+  outlineWidth: number;
 };
 
 export type DonorRankingsPreset = {

@@ -183,7 +183,6 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
     if (preset.goalCurrent && preset.goalCurrent.trim()) q.set("goalCurrent", preset.goalCurrent.trim());
     if (preset.goalOpacity && preset.goalOpacity.trim()) q.set("goalOpacity", preset.goalOpacity.trim());
     if (preset.goalOpacityText) q.set("goalOpacityText", "true");
-    appendGoalBarStyleParams(q, preset);
   }
   if (preset.showPersonalGoal) q.set("showPersonalGoal", "true");
   if (preset.personalGoalTheme && preset.personalGoalTheme.trim()) q.set("personalGoalTheme", preset.personalGoalTheme.trim());
@@ -276,6 +275,8 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   }
   if (preset.vertical) q.set("vertical", "true");
   if (preset.host && preset.host.trim()) q.set("host", preset.host.trim());
+  /** showGoal 여부와 무관 — live 프리셋·URL에 목표 글자색 항상 포함 */
+  appendGoalBarStyleParams(q, preset);
   return q;
 }
 
@@ -504,6 +505,9 @@ export function donorRankingsThemeToSearchParams(theme: DonorRankingsTheme): URL
   if (theme.amountColor.trim()) q.set("amountColor", theme.amountColor.trim());
   if (theme.titleColor.trim()) q.set("titleColor", theme.titleColor.trim());
   if (theme.outlineColor.trim()) q.set("outline", theme.outlineColor.trim());
+  if (theme.outlineWidth != null && Number.isFinite(theme.outlineWidth)) {
+    q.set("outlineWidth", String(Math.max(0, Math.min(3, theme.outlineWidth))));
+  }
   return q;
 }
 

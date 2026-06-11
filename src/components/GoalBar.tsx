@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { formatDonorsAmount, formatManThousand } from "@/lib/state";
 import {
   buildBroadcastTextOutlineShadowCss,
@@ -124,15 +124,21 @@ export function GoalBar({
         outlineWidthPx: textOutlineWidthPx,
       }).textShadow,
   };
-  /** 예전 어두운 트랙용 기본 밝은 글자색 — 밝은 배경에서는 진한 로즈로 자동 전환 */
+  /** 밝은 트랙 기본 — 미설정·구버전 밝은 글자만 진한 로즈로 */
   const effectiveTextColor = (() => {
-    const c = String(textColor || "").trim().toLowerCase();
-    if (!c || c === "#fff7fb") return "#6b2d4a";
-    return textColor;
+    const c = String(textColor || "").trim();
+    if (!c) return "#6b2d4a";
+    if (c.toLowerCase() === "#fff7fb") return "#6b2d4a";
+    return c;
   })();
+  const goalTextPaint: CSSProperties = {
+    color: effectiveTextColor,
+    WebkitTextFillColor: effectiveTextColor,
+  };
 
   return (
     <div
+      className="overlay-goal-bar-widget"
       style={{
         width,
         padding: "0.12rem",
@@ -183,9 +189,9 @@ export function GoalBar({
           style={{ fontSize: textFontPx, letterSpacing: "-0.01em" }}
         >
           <span
-            className="inline-flex items-center"
+            className="overlay-goal-bar-text inline-flex items-center"
             style={{
-              color: effectiveTextColor,
+              ...goalTextPaint,
               fontWeight: 900,
               lineHeight: 1,
               ...goalTextOutline,
@@ -193,7 +199,10 @@ export function GoalBar({
           >
             {normalizedLabel}
           </span>
-          <span style={{ color: effectiveTextColor, fontWeight: 700, lineHeight: 1, ...goalTextOutline }}>
+          <span
+            className="overlay-goal-bar-text"
+            style={{ ...goalTextPaint, fontWeight: 700, lineHeight: 1, ...goalTextOutline }}
+          >
             {compactLabel ? "후원 " : ""}
             {formatAmount(current)} / {formatAmount(goal)} ({displayPct}%)
           </span>

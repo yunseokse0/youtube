@@ -28,9 +28,30 @@ import {
   DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR,
 } from "@/lib/text-outline-style";
 
-function donorRankingsOutlineCssBlock(outlineColor: string): string {
+function readOutlineWidth(sp: URLSearchParams, key: string, fallback: number): number {
+  const raw = sp.get(key);
+  if (!raw) return fallback;
+  const n = parseFloat(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(3, n));
+}
+
+function liveThemeOutlineWidth(
+  ready: boolean,
+  useTest: boolean,
+  saved: number,
+  sp: URLSearchParams
+): number {
+  if (ready && !useTest) return Math.max(0, Math.min(3, saved));
+  return readOutlineWidth(sp, "outlineWidth", saved);
+}
+
+function donorRankingsOutlineCssBlock(outlineColor: string, outlineWidthPx?: number): string {
   const resolved = outlineColor.trim() || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR;
-  const shadow = buildBroadcastTextOutlineShadowCss({ outlineColor: resolved });
+  const shadow = buildBroadcastTextOutlineShadowCss({
+    outlineColor: resolved,
+    outlineWidthPx,
+  });
   if (!shadow) return "";
   return `
     .donor-rankings-overlay-root .overlay-cell-text-inner {
@@ -298,6 +319,7 @@ function RankingRow({
   nameColor,
   amountColor,
   outlineColor,
+  outlineWidthPx,
   rowEvenBg,
   rowOddBg,
   amountFormat,
@@ -312,6 +334,7 @@ function RankingRow({
   nameColor: string;
   amountColor: string;
   outlineColor: string;
+  outlineWidthPx?: number;
   rowEvenBg?: string;
   rowOddBg?: string;
   amountFormat: DonorsAmountFormat;
@@ -322,10 +345,12 @@ function RankingRow({
   const rankOutline = buildOverlayCellOutlineStyle({
     fontSizePx: rankSize,
     outlineColor: resolvedOutlineColor,
+    outlineWidthPx,
   });
   const rowOutline = buildOverlayCellOutlineStyle({
     fontSizePx: rowSize,
     outlineColor: resolvedOutlineColor,
+    outlineWidthPx,
   });
   const rankLabel = (i: number): string => {
     if (i === 0) return "🥇";
@@ -402,6 +427,7 @@ function RankingColumn({
   amountColor,
   titleColor,
   outlineColor,
+  outlineWidthPx,
   headerOpacity,
   unified,
   showColumnDivider,
@@ -425,6 +451,7 @@ function RankingColumn({
   amountColor: string;
   titleColor: string;
   outlineColor: string;
+  outlineWidthPx?: number;
   headerOpacity: number;
   /** true: 단일 외곽 패널 안의 칼럼(관리자 미리보기와 동일한 한 덩어리 레이아웃) */
   unified?: boolean;
@@ -440,6 +467,7 @@ function RankingColumn({
   const titleOutline = buildOverlayCellOutlineStyle({
     fontSizePx: titleSize,
     outlineColor: outlineColor.trim() || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR,
+    outlineWidthPx,
   });
   const outerClass = unified
     ? `relative z-[1] flex min-w-0 flex-1 flex-col overflow-visible ${
@@ -473,6 +501,7 @@ function RankingColumn({
           nameColor={nameColor}
           amountColor={amountColor}
           outlineColor={outlineColor}
+          outlineWidthPx={outlineWidthPx}
           rowEvenBg={rowEvenBg}
           rowOddBg={rowOddBg}
           amountFormat={amountFormat}
@@ -494,6 +523,7 @@ function RankingColumn({
           nameColor={nameColor}
           amountColor={amountColor}
           outlineColor={outlineColor}
+          outlineWidthPx={outlineWidthPx}
           rowEvenBg={rowEvenBg}
           rowOddBg={rowOddBg}
           amountFormat={amountFormat}
@@ -636,6 +666,7 @@ export default function DonorRankingsOverlayPage() {
     "outline",
     "rgba(58, 6, 28, 0.85)"
   );
+  const outlineWidthPx = liveThemeOutlineWidth(ready, useTest, savedTheme.outlineWidth, sp);
   const showBgLayer = overlayCfg.isBgEnabled && Boolean(overlayCfg.bgGifUrl.trim());
   const bgAnimated = useMemo(() => resolveAnimatedSourceForEmbed(overlayCfg.bgGifUrl), [overlayCfg.bgGifUrl]);
   const bgOpacityPct = Math.max(0, Math.min(100, overlayCfg.bgOpacity)) / 100;
@@ -667,7 +698,7 @@ export default function DonorRankingsOverlayPage() {
   const mainClass = hostObs
     ? "donor-rankings-overlay-root pointer-events-none fixed inset-0 z-[120] w-full overflow-visible bg-transparent p-5 md:[background:var(--ov-donor-bg)]"
     : "donor-rankings-overlay-root relative min-h-screen w-full overflow-visible bg-transparent p-5 md:[background:var(--ov-donor-bg)]";
-  const outlineCss = donorRankingsOutlineCssBlock(outlineColor);
+  const outlineCss = donorRankingsOutlineCssBlock(outlineColor, outlineWidthPx);
 
   return (
     <main
@@ -742,6 +773,7 @@ export default function DonorRankingsOverlayPage() {
               amountColor={amountColor}
               titleColor={titleColor}
               outlineColor={outlineColor}
+              outlineWidthPx={outlineWidthPx}
               headerOpacity={overlayOpacity}
               unified
               showColumnDivider
@@ -766,6 +798,7 @@ export default function DonorRankingsOverlayPage() {
               amountColor={amountColor}
               titleColor={titleColor}
               outlineColor={outlineColor}
+              outlineWidthPx={outlineWidthPx}
               headerOpacity={overlayOpacity}
               unified
               panelOpacityFrac={overlayOpacityFrac}
@@ -799,6 +832,7 @@ export default function DonorRankingsOverlayPage() {
               amountColor={amountColor}
               titleColor={titleColor}
               outlineColor={outlineColor}
+              outlineWidthPx={outlineWidthPx}
               headerOpacity={overlayOpacity}
               unified
               panelOpacityFrac={overlayOpacityFrac}

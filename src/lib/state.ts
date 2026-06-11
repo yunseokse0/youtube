@@ -403,6 +403,7 @@ export const DEFAULT_DONOR_RANKINGS_THEME: DonorRankingsTheme = {
   amountColor: "#fff59d",
   titleColor: "#fff7fb",
   outlineColor: "rgba(0,0,0,0.92)",
+  outlineWidth: 1.25,
 };
 
 /** 전체 후원 순위(`/overlay/donor-rankings-full`) — 분홍 테마 기본값 */
@@ -424,6 +425,7 @@ export const DEFAULT_DONOR_RANKINGS_FULL_THEME: DonorRankingsTheme = {
   amountColor: "#b45309",
   titleColor: "#9d174d",
   outlineColor: "rgba(255, 255, 255, 0.82)",
+  outlineWidth: 1.25,
 };
 
 function normalizeDonorRankingsTheme(
@@ -459,6 +461,13 @@ function normalizeDonorRankingsTheme(
     amountColor: s(v.amountColor, defaults.amountColor),
     titleColor: s(v.titleColor, defaults.titleColor),
     outlineColor: s(v.outlineColor, defaults.outlineColor),
+    outlineWidth: (() => {
+      const raw = v.outlineWidth;
+      if (raw === undefined || raw === null) return defaults.outlineWidth;
+      const n = typeof raw === "number" ? raw : parseFloat(String(raw));
+      if (!Number.isFinite(n)) return defaults.outlineWidth;
+      return Math.max(0, Math.min(3, Math.round(n * 100) / 100));
+    })(),
   };
 }
 

@@ -6145,6 +6145,34 @@ export default function AdminPage() {
                         </label>
                       ))}
                     </div>
+                    <label className="text-[11px] text-neutral-400 flex flex-col gap-1 rounded border border-white/10 bg-black/20 px-2 py-2">
+                      <span>텍스트 외곽선 두께(px)</span>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min={0}
+                          max={3}
+                          step={0.25}
+                          value={state.donorRankingsTheme.outlineWidth}
+                          onChange={(e) => updateDonorRankingsTheme({ outlineWidth: Number(e.target.value) })}
+                          className="flex-1"
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          max={3}
+                          step={0.25}
+                          value={state.donorRankingsTheme.outlineWidth}
+                          onChange={(e) =>
+                            updateDonorRankingsTheme({
+                              outlineWidth: Math.max(0, Math.min(3, parseFloat(e.target.value || "0") || 0)),
+                            })
+                          }
+                          className="w-16 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs text-right"
+                        />
+                      </div>
+                      <span className="text-[10px] text-neutral-500">0 = 없음 · 기본 1.25</span>
+                    </label>
                     <div className="text-[11px] text-neutral-500">
                       반투명/rgba 값이 필요하면 아래 URL 파라미터로 덮어쓸 수 있습니다. 기본은 관리자 저장값이 사용됩니다.
                     </div>
@@ -6309,6 +6337,45 @@ export default function AdminPage() {
                         </label>
                       ))}
                     </div>
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                      <label className="text-[11px] text-neutral-400 flex items-center gap-2 rounded border border-pink-500/20 bg-black/20 px-2 py-1">
+                        <span className="w-24 shrink-0">텍스트 외곽선</span>
+                        <input
+                          type="text"
+                          value={state.donorRankingsFullTheme.outlineColor || ""}
+                          onChange={(e) => updateDonorRankingsFullTheme({ outlineColor: e.target.value })}
+                          className="h-7 w-full rounded border border-white/10 bg-neutral-900/80 px-2 text-xs"
+                          placeholder="rgba(...) / #fff"
+                        />
+                      </label>
+                      <label className="text-[11px] text-neutral-400 flex flex-col gap-1 rounded border border-pink-500/20 bg-black/20 px-2 py-2">
+                        <span>텍스트 외곽선 두께(px)</span>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="range"
+                            min={0}
+                            max={3}
+                            step={0.25}
+                            value={state.donorRankingsFullTheme.outlineWidth}
+                            onChange={(e) => updateDonorRankingsFullTheme({ outlineWidth: Number(e.target.value) })}
+                            className="flex-1"
+                          />
+                          <input
+                            type="number"
+                            min={0}
+                            max={3}
+                            step={0.25}
+                            value={state.donorRankingsFullTheme.outlineWidth}
+                            onChange={(e) =>
+                              updateDonorRankingsFullTheme({
+                                outlineWidth: Math.max(0, Math.min(3, parseFloat(e.target.value || "0") || 0)),
+                              })
+                            }
+                            className="w-16 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs text-right"
+                          />
+                        </div>
+                      </label>
+                    </div>
                     <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
                       <span>OBS URL:</span>
                       <code className="text-pink-100/90 break-all">
@@ -6359,7 +6426,7 @@ export default function AdminPage() {
                     <span className="text-neutral-500">30~300 (기본 100)</span>
                   </div>
                   <div className="text-[11px] text-neutral-500">
-                    필요 시 URL 파라미터로 임시 오버라이드 가능: <code>top</code>, <code>test</code>, <code>zoomPct</code>, <code>overlayOpacity</code>, <code>titleSize</code>, <code>rowSize</code>, <code>rankSize</code>, <code>headerAccountBg</code>, <code>headerToonBg</code>, <code>rowEvenBg</code>, <code>rowOddBg</code>, <code>nameColor</code>, <code>amountColor</code>, <code>rankColor</code>, <code>panelBg</code>, <code>border</code>, <code>outline</code>, <code>bg</code>
+                    필요 시 URL 파라미터로 임시 오버라이드 가능: <code>top</code>, <code>test</code>, <code>zoomPct</code>, <code>overlayOpacity</code>, <code>titleSize</code>, <code>rowSize</code>, <code>rankSize</code>, <code>headerAccountBg</code>, <code>headerToonBg</code>, <code>rowEvenBg</code>, <code>rowOddBg</code>, <code>nameColor</code>, <code>amountColor</code>, <code>rankColor</code>, <code>panelBg</code>, <code>border</code>, <code>outline</code>, <code>outlineWidth</code>, <code>bg</code>
                   </div>
                 </div>
               </div>
@@ -9234,6 +9301,45 @@ export default function AdminPage() {
                     </label>
                   ))}
                 </div>
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  <label className="flex items-center gap-2 rounded border border-white/10 bg-black/25 px-2 py-1 text-[11px] text-neutral-400">
+                    <span className="w-24 shrink-0">텍스트 외곽선</span>
+                    <input
+                      type="text"
+                      value={state.donorRankingsTheme.outlineColor || ""}
+                      onChange={(e) => updateDonorRankingsTheme({ outlineColor: e.target.value })}
+                      className="h-7 w-full rounded border border-white/10 bg-neutral-900/80 px-2 text-xs"
+                      placeholder="rgba(...) / #000"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 rounded border border-white/10 bg-black/25 px-2 py-2 text-[11px] text-neutral-400">
+                    <span>텍스트 외곽선 두께(px)</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min={0}
+                        max={3}
+                        step={0.25}
+                        value={state.donorRankingsTheme.outlineWidth}
+                        onChange={(e) => updateDonorRankingsTheme({ outlineWidth: Number(e.target.value) })}
+                        className="flex-1"
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        max={3}
+                        step={0.25}
+                        value={state.donorRankingsTheme.outlineWidth}
+                        onChange={(e) =>
+                          updateDonorRankingsTheme({
+                            outlineWidth: Math.max(0, Math.min(3, parseFloat(e.target.value || "0") || 0)),
+                          })
+                        }
+                        className="w-16 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs text-right"
+                      />
+                    </div>
+                  </label>
+                </div>
               </div>
               <div className="mb-3 rounded-lg border border-white/10 bg-black/30 overflow-hidden">
                 <div className="flex items-center justify-between border-b border-white/5 px-2 py-1.5">
@@ -9376,6 +9482,45 @@ export default function AdminPage() {
                       />
                     </label>
                   ))}
+                </div>
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  <label className="flex items-center gap-2 rounded border border-pink-500/20 bg-black/25 px-2 py-1 text-[11px] text-neutral-400">
+                    <span className="w-24 shrink-0">텍스트 외곽선</span>
+                    <input
+                      type="text"
+                      value={state.donorRankingsFullTheme.outlineColor || ""}
+                      onChange={(e) => updateDonorRankingsFullTheme({ outlineColor: e.target.value })}
+                      className="h-7 w-full rounded border border-white/10 bg-neutral-900/80 px-2 text-xs"
+                      placeholder="rgba(...) / #fff"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 rounded border border-pink-500/20 bg-black/25 px-2 py-2 text-[11px] text-neutral-400">
+                    <span>텍스트 외곽선 두께(px)</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min={0}
+                        max={3}
+                        step={0.25}
+                        value={state.donorRankingsFullTheme.outlineWidth}
+                        onChange={(e) => updateDonorRankingsFullTheme({ outlineWidth: Number(e.target.value) })}
+                        className="flex-1"
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        max={3}
+                        step={0.25}
+                        value={state.donorRankingsFullTheme.outlineWidth}
+                        onChange={(e) =>
+                          updateDonorRankingsFullTheme({
+                            outlineWidth: Math.max(0, Math.min(3, parseFloat(e.target.value || "0") || 0)),
+                          })
+                        }
+                        className="w-16 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs text-right"
+                      />
+                    </div>
+                  </label>
                 </div>
               </div>
               <div className="mb-3 rounded border border-sky-500/30 bg-sky-950/25 p-3 space-y-3">
