@@ -6037,7 +6037,9 @@ export default function AdminPage() {
                   <div>
                     <h4 className="text-sm font-semibold">후원 순위 오버레이</h4>
                     <p className="text-xs text-neutral-400 mt-1">
-                      계좌·투네 후원을 합쳐 「후원 순위」 한 목록으로 표시합니다. 예전처럼 두 칸으로 나누려면 URL에{" "}
+                      계좌·투네 후원을 합쳐 「후원 순위」 한 목록으로 표시합니다. 화면 밖 순위는 OBS 브라우저 소스 크기·위치로 맞추면 됩니다. 전원 표시는 URL에{" "}
+                      <code className="text-neutral-300">all=1</code> 또는{" "}
+                      <code className="text-neutral-300">top=0</code>. 예전처럼 두 칸으로 나누려면{" "}
                       <code className="text-neutral-300">layout=dual</code> 을 붙이세요.
                     </p>
                   </div>
@@ -6048,7 +6050,7 @@ export default function AdminPage() {
                         <input
                           type="range"
                           min={1}
-                          max={20}
+                          max={50}
                           value={state.donorRankingsTheme.top}
                           onChange={(e) => updateDonorRankingsTheme({ top: Number(e.target.value) })}
                           className="w-full"

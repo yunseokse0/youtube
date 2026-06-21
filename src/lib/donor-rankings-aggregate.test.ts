@@ -71,6 +71,18 @@ describe("donor-rankings-aggregate", () => {
     ])).toHaveLength(1);
   });
 
+  it("weak fallback id 연속 후원도 순위·합산에 각각 반영", () => {
+    const at = 1_718_100_000_000;
+    const { unifiedTop } = buildDonorRankingsFromDonors(
+      [
+        { id: "toonation:1718100000000-1000", name: "이니이니", amount: 1000, target: "toon", at },
+        { id: "toonation:1718100000123-1000", name: "이니이니", amount: 1000, target: "toon", at: at + 2000 },
+      ],
+      10
+    );
+    expect(unifiedTop).toEqual([{ name: "이니이니", amount: 2000 }]);
+  });
+
   it("aggregateDonorRankingRows는 동명 합산", () => {
     expect(
       aggregateDonorRankingRows([

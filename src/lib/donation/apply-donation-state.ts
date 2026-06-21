@@ -31,7 +31,7 @@ function donorAtEpochMs(donor: { at?: number | string }): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-/** donors·순위·멤버 합계 공통 — 동일 투네 후원(또는 weak id 근접 중복) 1건만 */
+/** donors·순위·멤버 합계 공통 — 동일 투네 externalId(또는 review 접미사) 1건만 */
 export function donorRowDedupeKey(donor: {
   id?: string;
   name?: string;
@@ -43,11 +43,9 @@ export function donorRowDedupeKey(donor: {
   const toonationMatch = /^toonation:(.+)$/i.exec(baseId);
   if (toonationMatch) {
     const ext = toonationMatch[1].toLowerCase();
+    /** weak fallback id(`{ts}-{amount}`)도 건별 고유 — 짧은 시간 동일 금액 연속 후원 누락 방지 */
     if (!isWeakToonationDonorId(rawId)) return `toonation:${ext}`;
-    const name = String(donor.name || "").trim();
-    const amount = Math.floor(Number(donor.amount || 0));
-    const atBucket = Math.floor(donorAtEpochMs(donor) / 30_000);
-    return `weak:${name}:${amount}:${atBucket}`;
+    return `id:${baseId}`;
   }
   if (baseId) return `id:${baseId}`;
   const name = String(donor.name || "").trim();
@@ -69,24 +67,6 @@ export function dedupeDonorRows<T extends { id?: string; name?: string; amount?:
     if (donorAtEpochMs(d) >= donorAtEpochMs(prev)) map.set(key, d);
   }
   return Array.from(map.values());
-}
-
-const NEAR_DUPLICATE_MS = 30_000;
-
-function isNearDuplicateDonation(
-  event: { donorName?: string; amount?: number; at?: string },
-  donor: { name?: string; amount?: number; at?: number | string }
-): boolean {
-  const eventName = String(event.donorName || "").trim();
-  const donorName = String(donor.name || "").trim();
-  if (!eventName || eventName !== donorName) return false;
-  const eventAmount = Math.max(0, Math.round(Number(event.amount) || 0));
-  const donorAmount = Math.max(0, Math.round(Number(donor.amount) || 0));
-  if (eventAmount <= 0 || eventAmount !== donorAmount) return false;
-  const eventAt = toEpochMs(event.at || "");
-  const donorAt = donorAtEpochMs(donor);
-  if (!eventAt || !donorAt) return false;
-  return Math.abs(eventAt - donorAt) <= NEAR_DUPLICATE_MS;
 }
 
 /** 후원 기록 삭제 시 투네 대기 큐에서 함께 제거할 id 후보 */
@@ -148,9 +128,6 @@ export function isDuplicateDonationEvent(state: AppState, rawEvent: DonationEven
     if (baseId && normalizeDonationEventId(donorId) === baseId) return true;
     if (externalDonorId && (donorId === externalDonorId || normalizeDonationEventId(donorId) === externalDonorId)) {
       return true;
-    }
-    if (isWeakToonationDonorId(eventId) || isWeakToonationDonorId(donorId)) {
-      if (isNearDuplicateDonation(rawEvent, d)) return true;
     }
     return false;
   });

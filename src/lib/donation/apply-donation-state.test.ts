@@ -108,7 +108,7 @@ describe("applyDonationToAppState", () => {
     expect(result.state.donors?.[0]?.memberId).toBe("m2");
   });
 
-  it("rejects near-duplicate when weak fallback id differs but same donor·금액·시각", () => {
+  it("allows separate weak-id donations with same donor·금액 within 30s", () => {
     const at = new Date("2026-06-11T13:55:00.000Z").toISOString();
     const state = {
       ...defaultState(),
@@ -135,12 +135,13 @@ describe("applyDonationToAppState", () => {
       target: "toon",
     };
     const result = applyDonationToAppState(state, event);
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.reason).toBe("duplicate");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.members[0]?.toon).toBe(2000);
+    expect(result.state.donors).toHaveLength(2);
   });
 
-  it("syncMemberTotalsFromDonors ignores deduped duplicate rows", () => {
+  it("syncMemberTotalsFromDonors sums each weak-id donor row", () => {
     const at = 1_718_100_000_000;
     const state = {
       ...defaultState(),
@@ -151,8 +152,8 @@ describe("applyDonationToAppState", () => {
       ],
     };
     const synced = syncMemberTotalsFromDonors(state);
-    expect(synced.members[0]?.toon).toBe(1000);
-    expect(dedupeDonorRows(state.donors || [])).toHaveLength(1);
+    expect(synced.members[0]?.toon).toBe(2000);
+    expect(dedupeDonorRows(state.donors || [])).toHaveLength(2);
   });
 
   it("rejects duplicate when queue review id differs from stored donor id", () => {

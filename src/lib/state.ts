@@ -385,7 +385,7 @@ export function buildRouletteIdlePreserveSettings(
 }
 
 export const DEFAULT_DONOR_RANKINGS_THEME: DonorRankingsTheme = {
-  top: 7,
+  top: 20,
   titleSize: 28,
   rowSize: 21,
   rankSize: 24,
@@ -443,8 +443,12 @@ function normalizeDonorRankingsTheme(
     return raw || fallback;
   };
   const topMin = defaults === DEFAULT_DONOR_RANKINGS_FULL_THEME ? 0 : 1;
+  const topParsed = n(v.top, topMin, 50, defaults.top);
+  /** 구버전 기본 7명 → 20명 (OBS에서 잘라 쓰면 됨) */
+  const top =
+    defaults === DEFAULT_DONOR_RANKINGS_THEME && topParsed === 7 ? defaults.top : topParsed;
   return {
-    top: n(v.top, topMin, 20, defaults.top),
+    top,
     titleSize: n(v.titleSize, 14, 80, defaults.titleSize),
     rowSize: n(v.rowSize, 12, 64, defaults.rowSize),
     rankSize: n(v.rankSize, 12, 72, defaults.rankSize),
