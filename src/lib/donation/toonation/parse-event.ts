@@ -116,6 +116,42 @@ export function extractToonationExternalId(data: unknown): string {
   return id;
 }
 
+let toonationFallbackIdSeq = 0;
+
+/** id 없음·0·테스트 재사용 id 등 — 건별 고유 fallback */
+export function createUniqueToonationFallbackId(amount: number): string {
+  toonationFallbackIdSeq = (toonationFallbackIdSeq + 1) % 1_000_000;
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `${Date.now()}-${amount}-${toonationFallbackIdSeq}-${rand}`;
+}
+
+/** 실제 후원 id — WS 재전송 시 동일 값으로 중복 제거 가능 */
+export function isReliableToonationExternalId(id: string): boolean {
+  const s = String(id || "").trim();
+  if (!s) return false;
+  if (s === "0") return false;
+  if (/^test$/i.test(s)) return false;
+  return true;
+}
+
+/** 투네 관리자 후원 테스트 — 동일 id를 반복 보내는 경우가 많음 */
+export function isToonationTestDonationPayload(data: unknown): boolean {
+  const root = unwrapToonationPayload(data);
+  const alertDonor = extractToonationDonorName(data);
+  if (/테스트|test/i.test(alertDonor)) return true;
+  const flag = safeRead(root, "isTest") ?? safeRead(root, "test") ?? safeRead(data, "isTest");
+  if (flag === true || flag === 1 || flag === "1") return true;
+  return false;
+}
+
+export function allocateToonationExternalId(data: unknown, amount: number): string {
+  const extracted = extractToonationExternalId(data);
+  if (!isToonationTestDonationPayload(data) && isReliableToonationExternalId(extracted)) {
+    return extracted;
+  }
+  return createUniqueToonationFallbackId(amount);
+}
+
 export function isDonationLikeSocketEventName(eventName: string): boolean {
   const n = eventName.toLowerCase();
   return n.includes("donation") || n.includes("donate") || n.includes("alert");
@@ -158,7 +194,7 @@ export function parseToonationDonationPayload(data: unknown): DonationEvent | nu
   const amount = extractToonationAmount(data);
   if (amount <= 0) return null;
 
-  const externalId = extractToonationExternalId(data) || `${Date.now()}-${amount}`;
+  const externalId = allocateToonationExternalId(data, amount);
   const alertDonor = extractToonationDonorName(data);
   const rawMessage = extractToonationMessage(data);
   const parsed = parseToonationMessageBody(rawMessage, alertDonor);

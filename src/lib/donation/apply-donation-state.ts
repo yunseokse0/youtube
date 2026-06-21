@@ -18,10 +18,10 @@ export function normalizeDonationEventId(id: string): string {
   return String(id || "").replace(/::review$/i, "");
 }
 
-/** parse-event fallback id (`${Date.now()}-${amount}`) — 동일 후원이 다른 id로 두 번 들어올 수 있음 */
+/** parse-event fallback id — 동일 후원이 다른 id로 두 번 들어올 수 있음 */
 export function isWeakToonationDonorId(id: string): boolean {
   const base = normalizeDonationEventId(String(id || "").trim()).replace(/^toonation:/i, "");
-  return /^\d{10,13}-\d+$/.test(base);
+  return /^\d{10,13}-\d+(-\d+-[a-z0-9]+)?$/i.test(base);
 }
 
 function donorAtEpochMs(donor: { at?: number | string }): number {

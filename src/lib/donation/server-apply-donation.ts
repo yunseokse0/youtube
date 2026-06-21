@@ -11,8 +11,10 @@ export type ToonationAutoApplyOutcome = "applied" | "applied_needs_review" | "no
 const inFlightApplyKeys = new Set<string>();
 
 function donationApplyLockKey(userId: string, event: DonationEvent): string {
+  const eventId = String(event.id || "").trim();
+  if (eventId) return `${userId}:${eventId}`;
   const ext = String(event.externalId || "").trim();
-  const base = normalizeDonationEventId(String(event.id || "").trim());
+  const base = normalizeDonationEventId(ext);
   return `${userId}:${event.provider || "toonation"}:${ext || base}`;
 }
 

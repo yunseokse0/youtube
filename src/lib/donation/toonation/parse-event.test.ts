@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  allocateToonationExternalId,
+  createUniqueToonationFallbackId,
   isToonationExcelDonationWsMessage,
+  isToonationTestDonationPayload,
   isToonationYoutubeSuperChatWsMessage,
   matchSigByAmountAndMessage,
   parseToonationDonationPayload,
@@ -107,6 +110,48 @@ describe("toonation parse-event", () => {
     });
     expect(isToonationYoutubeSuperChatWsMessage(JSON.parse(raw))).toBe(true);
     expect(parseToonationWebSocketMessage(raw)).toBeNull();
+  });
+
+  it("assigns unique fallback ids when payload has no donation id", () => {
+    const ids = new Set<string>();
+    for (let i = 0; i < 5; i++) {
+      const evt = parseToonationDonationPayload({ nickname: "배지은", amount: 20000, comment: "" });
+      expect(evt?.externalId).toBeTruthy();
+      ids.add(String(evt?.externalId));
+    }
+    expect(ids.size).toBe(5);
+  });
+
+  it("reuses reliable external id for real donations", () => {
+    const evt = parseToonationDonationPayload({
+      id: "donation-abc-99",
+      nickname: "배지은",
+      amount: 5000,
+      comment: "피자",
+    });
+    expect(evt?.externalId).toBe("donation-abc-99");
+    expect(evt?.id).toBe("toonation:donation-abc-99");
+  });
+
+  it("forces unique id for toonation admin test donations (reused id)", () => {
+    const base = {
+      id: "same-test-id",
+      nickname: "테스트 계정",
+      amount: 20000,
+      comment: "계좌 익명",
+    };
+    expect(isToonationTestDonationPayload(base)).toBe(true);
+    const a = parseToonationDonationPayload(base);
+    const b = parseToonationDonationPayload(base);
+    expect(a?.donorName).toBe("익명");
+    expect(a?.target).toBe("account");
+    expect(a?.externalId).not.toBe(b?.externalId);
+    expect(a?.id).not.toBe(b?.id);
+  });
+
+  it("createUniqueToonationFallbackId never collides in a tight loop", () => {
+    const ids = new Set(Array.from({ length: 20 }, () => createUniqueToonationFallbackId(20000)));
+    expect(ids.size).toBe(20);
   });
 });
 
