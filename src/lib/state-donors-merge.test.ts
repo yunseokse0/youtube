@@ -17,6 +17,15 @@ describe("mergeDonorsForMultiTabSave", () => {
     expect(merged.map((d) => d.id).sort()).toEqual(["toonation:1", "toonation:2"]);
   });
 
+  it("keeps existing donors when incoming save is empty (stale tab after deploy)", () => {
+    const existing = [donor("toonation:1", 51000), donor("toonation:2", 10000)];
+    const merged = mergeDonorsForMultiTabSave([], existing, {
+      incomingUpdatedAt: 9000,
+      existingUpdatedAt: 5000,
+    });
+    expect(merged.map((d) => d.id).sort()).toEqual(["toonation:1", "toonation:2"]);
+  });
+
   it("applies a newer snapshot that deletes and adds donors", () => {
     const existing = [donor("toonation:1", 51000), donor("toonation:2", 10000)];
     const incoming = [donor("toonation:2", 10000), donor("toonation:4", 3000, 2000)];

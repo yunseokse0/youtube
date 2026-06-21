@@ -1749,7 +1749,7 @@ export function mergeDonorsForMultiTabSave(
   opts?: MergeDonorsForMultiTabSaveOptions
 ): Donor[] {
   if (!existing || existing.length === 0) return incoming;
-  if (incoming.length === 0) return [];
+  if (incoming.length === 0) return existing;
 
   const incomingAt = Number(opts?.incomingUpdatedAt || 0);
   const existingAt = Number(opts?.existingUpdatedAt || 0);

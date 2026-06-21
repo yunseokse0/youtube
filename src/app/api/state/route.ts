@@ -135,6 +135,15 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
 
   // patch에 없는 필드가 undefined로 덮이지 않도록 보정
   if (!("members" in patch)) next.members = base.members;
+  else if (
+    Array.isArray(patch.members) &&
+    !isDonationInitGoalResetPatch(patch) &&
+    (base.members || []).some((m) => (m.account || 0) + (m.toon || 0) > 0) &&
+    patch.members.every((m) => (m.account || 0) + (m.toon || 0) === 0)
+  ) {
+    next.members = base.members;
+    logger.warn("members zero wipe blocked (stale client save)", { userId });
+  }
   if (!("memberPositions" in patch)) next.memberPositions = base.memberPositions;
   if (!("memberPositionMode" in patch)) next.memberPositionMode = base.memberPositionMode;
   if (!("rankPositionLabels" in patch)) next.rankPositionLabels = base.rankPositionLabels;
@@ -428,13 +437,16 @@ export async function POST(req: Request) {
       existing = getServerMemoryAppState();
     }
     const baseState = existing || defaultState();
-    const mergedDonors = Array.isArray(body.donors)
-      ? mergeDonorsForMultiTabSave(body.donors || [], baseState.donors, {
-          incomingUpdatedAt: Number(body.updatedAt || 0),
-          existingUpdatedAt: Number(baseState.updatedAt || 0),
-        })
-      : baseState.donors;
     const donorsInPatch = Array.isArray(body.donors);
+    const donationInitReset = isDonationInitGoalResetPatch(body);
+    const mergedDonors = donorsInPatch
+      ? donationInitReset
+        ? []
+        : mergeDonorsForMultiTabSave(body.donors || [], baseState.donors, {
+            incomingUpdatedAt: Number(body.updatedAt || 0),
+            existingUpdatedAt: Number(baseState.updatedAt || 0),
+          })
+      : baseState.donors;
     const merged = mergePartialState(baseState, body, userId);
     const draft: AppState = { ...merged, donors: mergedDonors };
     const donorRankingsUpdatedAt = computeDonorRankingsUpdatedAt(

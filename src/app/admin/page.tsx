@@ -1057,6 +1057,23 @@ export default function AdminPage() {
       };
       didPreserve = true;
     }
+    const localDonorsNorm = normalizeDonorsArray(local.donors);
+    const mergedDonorsNorm = normalizeDonorsArray(merged.donors);
+    if (
+      localDonorsNorm.length > 0 &&
+      mergedDonorsNorm.length === 0 &&
+      totalCombined(local) > 0
+    ) {
+      merged = { ...merged, donors: localDonorsNorm, members: local.members };
+      didPreserve = true;
+    } else if (
+      totalCombined(local) > 0 &&
+      totalCombined(merged) === 0 &&
+      localDonorsNorm.length > 0
+    ) {
+      merged = { ...merged, donors: localDonorsNorm, members: local.members };
+      didPreserve = true;
+    }
     return { merged: { ...merged, donors: normalizeDonorsArray(merged.donors) }, didPreserve };
   }, []);
 
@@ -1189,17 +1206,22 @@ export default function AdminPage() {
           const recentlyEditedSig =
             Date.now() - lastLocalPersistAtRef.current < SIG_INVENTORY_LOCAL_PROTECT_MS;
           let toApply: AppState;
+          let didPreserve = false;
           if (recentlyEditedSig) {
-            const { merged } = mergeIncomingStateSafely(remote, prev);
-            toApply = { ...merged, sigInventory: prev.sigInventory || [] };
+            const mergedResult = mergeIncomingStateSafely(remote, prev);
+            toApply = { ...mergedResult.merged, sigInventory: prev.sigInventory || [] };
+            didPreserve = mergedResult.didPreserve;
           } else {
-            toApply = mergeIncomingStateSafely(remote, prev).merged;
+            const mergedResult = mergeIncomingStateSafely(remote, prev);
+            toApply = mergedResult.merged;
+            didPreserve = mergedResult.didPreserve;
           }
           if (adminSyncFingerprint(prev) === adminSyncFingerprint(toApply)) {
             lastAppliedRemoteUpdatedAtRef.current = remoteUpdatedAt;
             stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, remoteUpdatedAt);
             return;
           }
+          if (didPreserve) persistState(toApply);
           stateUpdatedAtRef.current = remoteUpdatedAt;
           lastAppliedRemoteUpdatedAtRef.current = remoteUpdatedAt;
           setState(toApply);

@@ -78,10 +78,17 @@ export async function POST(req: Request) {
     }
     const body = await req.json();
     const payload = Array.isArray(body) ? body : [];
-    let ok = await upstashSet(recordsKey(userId), payload);
+    let toSave = payload;
+    if (payload.length === 0) {
+      const existing = await upstashGet<unknown[]>(recordsKey(userId));
+      if (Array.isArray(existing) && existing.length > 0) {
+        toSave = existing;
+      }
+    }
+    let ok = await upstashSet(recordsKey(userId), toSave);
     if (!ok) {
       // Fallback to memory store when Upstash is unavailable
-      memoryRecords[userId] = payload;
+      memoryRecords[userId] = toSave;
       ok = true;
     }
     return new Response(JSON.stringify({ ok }), {

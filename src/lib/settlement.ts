@@ -109,20 +109,22 @@ function normalizeDeleteLogs(logs: SettlementDeleteLog[]): SettlementDeleteLog[]
     .sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
 }
 
-/** 서버를 source of truth로 병합. remote에 없는 로컬 기록은 다른 디바이스에서 삭제된 것으로 간주하고 제외. 단, 최근 30초 이내 생성된 로컬 전용 기록은 저장 중일 수 있으므로 보존. */
+/** 서버를 source of truth로 병합. remote가 비었으면 로컬 유지(배포·Redis 초기화). remote에 없는 로컬은 30초 이내만 보존. */
 function mergeSettlementRecords(local: SettlementRecord[], remote: SettlementRecord[]): SettlementRecord[] {
-  const remoteIds = new Set((remote || []).map((r) => r.id));
+  const localNorm = local || [];
+  const remoteNorm = remote || [];
+  if (remoteNorm.length === 0 && localNorm.length > 0) return normalizeSettlementRecords(localNorm);
+  const remoteIds = new Set(remoteNorm.map((r) => r.id));
   const byId = new Map<string, SettlementRecord>();
-  for (const r of remote || []) byId.set(r.id, r);
+  for (const r of remoteNorm) byId.set(r.id, r);
   const now = Date.now();
   const pendingThreshold = 30_000;
-  for (const r of local || []) {
+  for (const r of localNorm) {
     if (remoteIds.has(r.id)) continue;
     if ((r.createdAt || 0) > now - pendingThreshold) byId.set(r.id, r);
   }
   return normalizeSettlementRecords(Array.from(byId.values()));
 }
-
 
 export function loadSettlementRecords(userId?: string | null): SettlementRecord[] {
   if (typeof window === "undefined") return [];
