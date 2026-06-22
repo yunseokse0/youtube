@@ -55,11 +55,8 @@ import {
   clampOverlayOpacity,
   cancelRouletteSession,
   buildSigSalesWheelDisplayPool,
-  buildWheelMenuSlices,
+  buildWheelSlicesOnePerSig,
   resolveWheelSlicesForSpinVisual,
-  clampSigSalesMenuCount,
-  minSigSalesMenuCountForActive,
-  resolveSigSalesMenuCount,
   canonicalSigIdFromWheelSliceId,
   hydrateSigItemFromInventory,
   rememberUsedWheelSliceId,
@@ -73,7 +70,6 @@ import { useSigSalesState } from "@/hooks/useSigSalesState";
 import { dedupeSigInventory } from "@/lib/sig-inventory-dedup";
 import { formatSigImageUploadFailureMessage } from "@/lib/sig-upload-errors";
 import {
-  WHEEL_DEMO_MENU_COUNT,
   WHEEL_DEMO_WIN_COUNT,
   getWheelDemoOverlayPath,
   getWheelDemoPlaythroughAutoPath,
@@ -116,18 +112,27 @@ import { pickRandomManualSigDrafts } from "@/lib/manual-sig-random";
 import { listActiveManualSigPool } from "@/lib/manual-sig-active-pool";
 import {
   MANUAL_SIG_DRAFT_STATE_KEY,
+  MANUAL_SIG_PICK_COUNT_KEY,
   MANUAL_SIG_WORKBENCH_KEY,
   MAX_MANUAL_SIG_SLOTS,
+  MIN_MANUAL_SIG_PICK_COUNT,
+  MAX_MANUAL_SIG_PICK_COUNT,
+  DEFAULT_MANUAL_SIG_PICK_COUNT,
   applyManualSlotToForm,
   captureManualFormToSlot,
+  clampManualSigPickCount,
   createEmptyManualSlot,
   emptyManualDrafts,
+  emptyManualSoldFlags,
   defaultManualSigWorkbench,
   manualSigDraftsReady,
   mergeActiveSlotIntoWorkbench,
   normalizeManualSigWorkbench,
   parseManualSigDraftRows,
+  readManualSigPickCountFromOverlaySettings,
   readManualSigWorkbenchFromOverlaySettings,
+  resizeManualDrafts,
+  resizeManualSoldFlags,
   slotToDraftPersist,
   type ManualInputMode,
   type ManualSigDraft,
@@ -228,30 +233,8 @@ function resolveManualRowIndexForDisplaySig(
   const displayIdx = displaySelectedSigs.findIndex(
     (s) => s.id === sig.id || canonicalSigIdFromWheelSliceId(s.id) === canon
   );
-  if (displayIdx >= 0 && displayIdx < 5) return displayIdx;
+  if (displayIdx >= 0 && displayIdx < manualParsedRows.length) return displayIdx;
   return -1;
-}
-
-function bumpInventorySigSold(
-  inventory: SigItem[],
-  inv: SigItem,
-  sold: boolean
-): SigItem[] {
-  return inventory.map((row) => {
-    if (row.id !== inv.id) return row;
-    const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
-    const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)));
-    if (sold) {
-      const nextSold = Math.min(maxCount, soldCount + 1);
-      return {
-        ...row,
-        soldCount: nextSold,
-        isActive: nextSold >= maxCount ? false : row.isActive,
-      };
-    }
-    const nextSold = Math.max(0, soldCount - 1);
-    return { ...row, soldCount: nextSold, isActive: true };
-  });
 }
 
 function isDisplaySigMarkedSold(sig: SigItem, soldSet: Set<string>): boolean {
@@ -400,13 +383,12 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
   const [overlayObsUrlManual, setOverlayObsUrlManual] = useState("");
   const [overlayObsMode, setOverlayObsMode] = useState<"wheel" | "manual">("manual");
   const [manualInputMode, setManualInputMode] = useState<ManualInputMode>("free");
-  const [manualSigDrafts, setManualSigDrafts] = useState<ManualSigDraft[]>(
-    Array.from({ length: 5 }, () => ({ name: "", priceInput: "", imageUrl: "" }))
-  );
+  const [manualSigPickCount, setManualSigPickCount] = useState(DEFAULT_MANUAL_SIG_PICK_COUNT);
+  const [manualSigDrafts, setManualSigDrafts] = useState<ManualSigDraft[]>(() => emptyManualDrafts());
   const [manualOneShotName, setManualOneShotName] = useState("한방 시그");
   const [manualOneShotPriceInput, setManualOneShotPriceInput] = useState("");
   const [manualOneShotImageUrl, setManualOneShotImageUrl] = useState("");
-  const [manualSigSoldFlags, setManualSigSoldFlags] = useState<boolean[]>([false, false, false, false, false]);
+  const [manualSigSoldFlags, setManualSigSoldFlags] = useState<boolean[]>(() => emptyManualSoldFlags());
   const [manualOneShotMarkSold, setManualOneShotMarkSold] = useState(false);
   const [manualWorkbench, setManualWorkbench] = useState<ManualSigWorkbench>(() =>
     defaultManualSigWorkbench()
@@ -527,16 +509,56 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     };
   }, [authReady, userId, loadRemote]);
 
-  const loadManualFormFromSlot = useCallback((slot: ManualSigSlot) => {
-    const form = applyManualSlotToForm(slot);
-    setManualInputMode(form.inputMode);
-    setManualSigDrafts(form.drafts);
-    setManualOneShotName(form.oneShotName);
-    setManualOneShotPriceInput(form.oneShotPriceInput);
-    setManualOneShotImageUrl(form.oneShotImageUrl);
-    setManualSigSoldFlags(form.sigSoldFlags);
-    setManualOneShotMarkSold(form.oneShotMarkSold);
-  }, []);
+  const loadManualFormFromSlot = useCallback(
+    (slot: ManualSigSlot) => {
+      const form = applyManualSlotToForm(slot, manualSigPickCount);
+      setManualInputMode(form.inputMode);
+      setManualSigDrafts(form.drafts);
+      setManualOneShotName(form.oneShotName);
+      setManualOneShotPriceInput(form.oneShotPriceInput);
+      setManualOneShotImageUrl(form.oneShotImageUrl);
+      setManualSigSoldFlags(form.sigSoldFlags);
+      setManualOneShotMarkSold(form.oneShotMarkSold);
+    },
+    [manualSigPickCount]
+  );
+
+  const applyManualPickCount = useCallback(
+    (raw: number) => {
+      const n = clampManualSigPickCount(raw);
+      setManualSigPickCount(n);
+      setManualSigDrafts((prev) => resizeManualDrafts(prev, n));
+      setManualSigSoldFlags((prev) => resizeManualSoldFlags(prev, n));
+      setManualWorkbench((prev) => ({
+        ...prev,
+        pickCount: n,
+        slots: prev.slots.map((slot) => ({
+          ...slot,
+          drafts: resizeManualDrafts(slot.drafts, n),
+          sigSoldFlags: resizeManualSoldFlags(slot.sigSoldFlags, n),
+        })),
+      }));
+      if (manualOnly && latestStateRef.current) {
+        const current = latestStateRef.current;
+        const prevOs =
+          current.overlaySettings && typeof current.overlaySettings === "object"
+            ? (current.overlaySettings as Record<string, unknown>)
+            : {};
+        const next: AppState = {
+          ...current,
+          updatedAt: Date.now(),
+          overlaySettings: {
+            ...prevOs,
+            [MANUAL_SIG_PICK_COUNT_KEY]: n,
+          } as AppState["overlaySettings"],
+        };
+        void saveSigSalesManualStateAsync(next, userId, { omitSigInventory: true }).then((saved) => {
+          if (saved.ok) setState(next);
+        });
+      }
+    },
+    [manualOnly, userId]
+  );
 
   const buildWorkbenchForPersist = useCallback((): ManualSigWorkbench => {
     const activeSlot = manualWorkbench.slots.find((s) => s.id === manualWorkbench.activeSlotId);
@@ -551,9 +573,10 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         oneShotImageUrl: manualOneShotImageUrl,
         sigSoldFlags: manualSigSoldFlags,
         oneShotMarkSold: manualOneShotMarkSold,
-      }
+      },
+      manualSigPickCount
     );
-    return mergeActiveSlotIntoWorkbench(manualWorkbench, captured);
+    return { ...mergeActiveSlotIntoWorkbench(manualWorkbench, captured), pickCount: manualSigPickCount };
   }, [
     manualWorkbench,
     manualInputMode,
@@ -563,6 +586,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     manualOneShotImageUrl,
     manualSigSoldFlags,
     manualOneShotMarkSold,
+    manualSigPickCount,
   ]);
 
   const switchManualSlot = useCallback(
@@ -579,7 +603,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
           oneShotImageUrl: manualOneShotImageUrl,
           sigSoldFlags: manualSigSoldFlags,
           oneShotMarkSold: manualOneShotMarkSold,
-        });
+        }, manualSigPickCount);
         const merged = mergeActiveSlotIntoWorkbench(prev, captured);
         nextSlot = merged.slots.find((s) => s.id === nextId) ?? merged.slots[0];
         return { ...merged, activeSlotId: nextSlot.id };
@@ -596,6 +620,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       manualSigSoldFlags,
       manualOneShotMarkSold,
       loadManualFormFromSlot,
+      manualSigPickCount,
     ]
   );
 
@@ -615,7 +640,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       });
       const merged = mergeActiveSlotIntoWorkbench(prev, captured);
       const n = merged.slots.length + 1;
-      nextSlot = createEmptyManualSlot(`준비 ${n}`);
+      nextSlot = createEmptyManualSlot(`준비 ${n}`, undefined, manualSigPickCount);
       return {
         ...merged,
         slots: [...merged.slots, nextSlot],
@@ -632,6 +657,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     manualSigSoldFlags,
     manualOneShotMarkSold,
     loadManualFormFromSlot,
+    manualSigPickCount,
   ]);
 
   const removeManualSlot = useCallback(
@@ -648,7 +674,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
           oneShotImageUrl: manualOneShotImageUrl,
           sigSoldFlags: manualSigSoldFlags,
           oneShotMarkSold: manualOneShotMarkSold,
-        });
+        }, manualSigPickCount);
         const merged = mergeActiveSlotIntoWorkbench(prev, captured);
         const slots = merged.slots.filter((s) => s.id !== slotId);
         if (slots.length === 0) return merged;
@@ -708,8 +734,12 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     }
 
     setManualWorkbench(wb);
+    const pickCount = clampManualSigPickCount(
+      wb.pickCount ?? readManualSigPickCountFromOverlaySettings(os)
+    );
+    setManualSigPickCount(pickCount);
     const active = wb.slots.find((s) => s.id === wb.activeSlotId) ?? wb.slots[0];
-    const form = applyManualSlotToForm(active);
+    const form = applyManualSlotToForm(active, pickCount);
     setManualInputMode(form.inputMode);
     setManualSigDrafts(form.drafts);
     setManualOneShotName(form.oneShotName);
@@ -746,6 +776,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       const nextOverlaySettings: Record<string, unknown> = {
         ...prevOverlaySettings,
         [MANUAL_SIG_WORKBENCH_KEY]: wb,
+        [MANUAL_SIG_PICK_COUNT_KEY]: manualSigPickCount,
         /** OBS 수동 모드: 현재 탭 초안을 서버에 미러(적용 전에도 카드·OBS 동기화) */
         ...(activeSlot ? { [MANUAL_SIG_DRAFT_STATE_KEY]: slotToDraftPersist(activeSlot) } : {}),
       };
@@ -757,7 +788,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       void saveSigSalesManualStateAsync(next, userId);
     }, 300);
     return () => window.clearTimeout(tid);
-  }, [authReady, userId, buildWorkbenchForPersist, manualOnly]);
+  }, [authReady, userId, buildWorkbenchForPersist, manualOnly, manualSigPickCount]);
 
   const loadHistory = useCallback(async (limit = 8) => {
     if (manualOnly) return;
@@ -863,28 +894,9 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         x.isActive &&
         x.id !== ONE_SHOT_SIG_ID &&
         !excluded.has(x.id) &&
-        x.soldCount < x.maxCount &&
         (wheelDemoMode || sigMatchesMemberFilter(x, memberFilterId))
     );
   }, [state, memberFilterId, wheelInventory, wheelDemoMode]);
-  const menuCountSetting = useMemo(
-    () => clampSigSalesMenuCount(state?.rouletteState?.menuCount),
-    [state?.rouletteState?.menuCount]
-  );
-  const menuCountMin = useMemo(
-    () => minSigSalesMenuCountForActive(activeNormalPool.length),
-    [activeNormalPool.length]
-  );
-  const effectiveMenuCount = useMemo(() => {
-    const setting = wheelDemoMode ? WHEEL_DEMO_MENU_COUNT : menuCountSetting;
-    return resolveSigSalesMenuCount(setting, activeNormalPool.length);
-  }, [menuCountSetting, activeNormalPool.length, wheelDemoMode]);
-  const sigResultScalePct = useMemo(() => {
-    const n = Number(state?.rouletteState?.sigResultScalePct);
-    if (Number.isFinite(n)) return Math.max(50, Math.min(100, Math.floor(n)));
-    return 78;
-  }, [state?.rouletteState?.sigResultScalePct]);
-  const menuFillFromAllActive = state?.rouletteState?.menuFillFromAllActive === true;
   const wheelDisplayPool = useMemo(() => {
     if (!state) return [];
     return buildSigSalesWheelDisplayPool({
@@ -892,19 +904,21 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       sigSalesExcludedIds: state.sigSalesExcludedIds,
       sessionExcludedSigIds: state.rouletteState?.sessionExcludedSigIds,
       memberFilterId,
-      menuCount: effectiveMenuCount,
-      menuFillFromAllActive,
       ensureItems: [...(pendingLanding?.selected || []), ...(machine.selectedSigs || [])],
     });
   }, [
     state,
     wheelInventory,
     memberFilterId,
-    effectiveMenuCount,
-    menuFillFromAllActive,
     pendingLanding?.selected,
     machine.selectedSigs,
   ]);
+  const sigResultScalePct = useMemo(() => {
+    const n = Number(state?.rouletteState?.sigResultScalePct);
+    if (Number.isFinite(n)) return Math.max(50, Math.min(100, Math.floor(n)));
+    return 78;
+  }, [state?.rouletteState?.sigResultScalePct]);
+  const sellableWheelSliceCount = wheelDisplayPool.length;
   const spinQueueSelected = useMemo(() => {
     const resolved = resolveSpinQueueForSession(
       spinQueuePinRef.current,
@@ -917,10 +931,10 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     return resolved.queue;
   }, [machine.selectedSigs, machine.sessionId, pendingLanding?.selected]);
   const useSequentialWheel = spinQueueSelected.length > 1;
-  /** 회전·대기 화면 모두 메뉴 칸 수(5~20) 풀 — 당첨 큐만으로 1~N칸 휠을 만들지 않음(시청자 랜덤감) */
+  /** 회전판 = 판매 가능 시그 수(1시그 1칸) */
   const wheelMenuSlices = useMemo(
-    () => buildWheelMenuSlices(wheelDisplayPool, effectiveMenuCount),
-    [wheelDisplayPool, effectiveMenuCount]
+    () => buildWheelSlicesOnePerSig(wheelDisplayPool),
+    [wheelDisplayPool]
   );
 
   useEffect(() => {
@@ -961,18 +975,12 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     () =>
       resolveWheelSlicesForSpinVisual({
         menuPool: wheelDisplayPool,
-        menuCount: effectiveMenuCount,
         pinnedSlices:
           pinnedWheelLayout?.sessionId === machine.sessionId
             ? pinnedWheelLayout.slices
             : null,
       }),
-    [
-      wheelDisplayPool,
-      effectiveMenuCount,
-      pinnedWheelLayout,
-      machine.sessionId,
-    ]
+    [wheelDisplayPool, pinnedWheelLayout, machine.sessionId]
   );
 
   const wheelRoundBinding = useMemo(
@@ -995,7 +1003,10 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     () => parseManualSigDraftRows(manualSigDrafts),
     [manualSigDrafts]
   );
-  const manualReadyEarly = useMemo(() => manualSigDraftsReady(manualSigDrafts), [manualSigDrafts]);
+  const manualReadyEarly = useMemo(
+    () => manualSigDraftsReady(manualSigDrafts, manualSigPickCount),
+    [manualSigDrafts, manualSigPickCount]
+  );
   const manualRandomPool = useMemo(
     () =>
       listActiveManualSigPool(state?.sigInventory, {
@@ -1087,7 +1098,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     () => manualOnly || overlayObsMode === "manual",
     [manualOnly, overlayObsMode]
   );
-  /** 확정·재고 완판 시 관리 화면·오버레이와 동일하게 판매 완료 스탬프 */
+  /** 확정·체크 시 관리 화면·오버레이와 동일하게 판매 완료 스탬프 */
   const adminSoldOverrideSet = useMemo(() => {
     const next = new Set<string>();
     for (const id of manualSoldSet) {
@@ -1102,7 +1113,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       next.add(ONE_SHOT_SIG_ID);
       next.add(canonicalSigIdFromWheelSliceId(ONE_SHOT_SIG_ID));
     }
-    /** 수동 방송: 체크한 시그만 스탬프(재고 완판 전체를 붙이지 않음 → 해제 가능) */
+    /** 수동 방송: 체크한 시그만 스탬프(전체 자동 스탬프 없음 → 해제 가능) */
     if (isManualBroadcastRound) {
       if (manualOneShotMarkSold || oneShotSold) {
         next.add(ONE_SHOT_SIG_ID);
@@ -1128,12 +1139,6 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         next.add(canonicalSigIdFromWheelSliceId(ONE_SHOT_SIG_ID));
       }
     }
-    for (const row of state?.sigInventory || []) {
-      if (row.soldCount >= row.maxCount) {
-        next.add(row.id);
-        next.add(canonicalSigIdFromWheelSliceId(row.id));
-      }
-    }
     return next;
   }, [
     manualSoldSet,
@@ -1142,7 +1147,6 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     oneShotSold,
     manualOneShotMarkSold,
     isManualBroadcastRound,
-    state?.sigInventory,
   ]);
 
   const targetSelectionCount = useMemo(() => {
@@ -1153,12 +1157,18 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     if (machine.selectedSigs?.length) return Math.max(1, Math.min(MAX_SELECTED_SIGS, machine.selectedSigs.length));
     return 1;
   }, [preferManualDraftPreview, manualPreviewFromDraft.length, pendingLanding?.selected, machine.selectedSigs]);
+  /** 멀티 당첨 순차 연출: 마지막 라운드 착지 전까지 회전판 유지 */
+  const sequentialWheelInProgress =
+    useSequentialWheel &&
+    machine.phase === "SPINNING" &&
+    stagedSelected.length < spinQueueSelected.length;
   /** 착지·확정 단계: 회전판만 숨기고 당첨·한방·판매 버튼은 유지(판매 관리) */
   const hideWheelAfterSpin =
+    !sequentialWheelInProgress &&
     (machine.phase === "LANDED" ||
       machine.phase === "CONFIRM_PENDING" ||
       machine.phase === "CONFIRMED") &&
-    displaySelectedSigs.length > 0 &&
+    displaySelectedSigs.length >= targetSelectionCount &&
     !demoSpin &&
     !pendingLanding &&
     !wheelSpinning &&
@@ -1239,10 +1249,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         price: Math.max(0, Math.floor(Number(s.price || 0))),
       }));
     }
-    if (
-      manualParsedRows.length === 5 &&
-      !manualParsedRows.some((row) => !row.name || row.price <= 0)
-    ) {
+    if (manualSigDraftsReady(manualSigDrafts, manualSigPickCount)) {
       return manualParsedRows.map((row, idx) => ({
         id:
           String(manualSigDrafts[idx]?.sourceSigId || "").trim() ||
@@ -1263,6 +1270,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     state?.rouletteState?.sessionId,
     manualParsedRows,
     manualSigDrafts,
+    manualSigPickCount,
     displaySelectedSigs,
   ]);
   const manualParsedOneShotPrice = useMemo(() => {
@@ -1725,9 +1733,9 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       baseState.sigInventory,
       userId
     ).drafts;
-    const ready = manualSigDraftsReady(drafts);
+    const ready = manualSigDraftsReady(drafts, manualSigPickCount);
     if (!ready) {
-      setToast("수동 설정은 서로 다른 시그 5개를 모두 선택해야 합니다.");
+      setToast(`수동 설정은 서로 다른 시그 ${manualSigPickCount}개를 모두 선택해야 합니다.`);
       return;
     }
     const parsedRows = parseManualSigDraftRows(drafts);
@@ -1805,7 +1813,8 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
             oneShotImageUrl: manualOneShotImageUrl,
             sigSoldFlags: soldFlags,
             oneShotMarkSold: oneShotSoldFlag,
-          }
+          },
+          manualSigPickCount
         );
         wbApplied = mergeActiveSlotIntoWorkbench(manualWorkbench, captured);
       }
@@ -1881,7 +1890,6 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         previousSoldFlags: soldFlags,
         previousOneShotMarkSold: oneShotSoldFlag,
         closeRound: manualConfirmed,
-        skipInventoryUpdate: manualConfirmed,
       });
       const soldSaved = await saveSigSalesManualStateAsync(soldState, userId, {
         omitSigInventory: manualConfirmed,
@@ -1920,29 +1928,29 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
   ]);
 
   const fillRandomManualDrafts = useCallback(() => {
-    const picked = pickRandomManualSigDrafts(manualRandomPool, 5);
+    const picked = pickRandomManualSigDrafts(manualRandomPool, manualSigPickCount);
     if (!picked) {
       setToast(
         memberFilterId
-          ? `랜덤 실패: 선택 멤버 시그 ${manualRandomPool.length}개 (5개 필요).`
+          ? `랜덤 실패: 선택 멤버 시그 ${manualRandomPool.length}개 (${manualSigPickCount}개 필요).`
           : `랜덤 실패: 시그 ${manualRandomPool.length}개. 상단에서 멤버를 선택하세요.`
       );
       return;
     }
     setManualInputMode("inventory");
     setManualSigDrafts(picked);
-    setManualSigSoldFlags([false, false, false, false, false]);
+    setManualSigSoldFlags(emptyManualSoldFlags(manualSigPickCount));
     setManualOneShotMarkSold(false);
     setToast(`리롤 (목록만): ${picked.map((p) => p.name).join(", ")}`);
-  }, [manualRandomPool, memberFilterId]);
+  }, [manualRandomPool, memberFilterId, manualSigPickCount]);
 
   const onRandomManualRerollAndObs = useCallback(() => {
     if (!state) return;
-    const picked = pickRandomManualSigDrafts(manualRandomPool, 5);
+    const picked = pickRandomManualSigDrafts(manualRandomPool, manualSigPickCount);
     if (!picked) {
       setToast(
         memberFilterId
-          ? `리롤 실패: 선택 멤버 시그 ${manualRandomPool.length}개 (5개 필요).`
+          ? `리롤 실패: 선택 멤버 시그 ${manualRandomPool.length}개 (${manualSigPickCount}개 필요).`
           : `리롤 실패: 시그 ${manualRandomPool.length}개. 멤버를 확인하세요.`
       );
       return;
@@ -1952,7 +1960,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       try {
         setManualInputMode("inventory");
         setManualSigDrafts(picked);
-        setManualSigSoldFlags([false, false, false, false, false]);
+        setManualSigSoldFlags(emptyManualSoldFlags(manualSigPickCount));
         setManualOneShotMarkSold(false);
         setManualSoldSet(new Set());
         setOneShotSold(false);
@@ -2057,7 +2065,6 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     setOverlayObsUrl(
       buildSigSalesWheelOverlayUrl(origin, userId, {
         memberId: memberFilterId || undefined,
-        menuCount: wheelDemoMode ? WHEEL_DEMO_MENU_COUNT : effectiveMenuCount,
         sigResultScalePct: scale,
         wheelDemo: wheelDemoMode,
       })
@@ -2071,7 +2078,6 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
   }, [
     userId,
     memberFilterId,
-    effectiveMenuCount,
     wheelDemoMode,
     state?.rouletteState?.sigResultScalePct,
   ]);
@@ -2193,35 +2199,19 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     );
     const soldSigIdsForFinish = collectSoldSigIdsForFinish(displaySelectedSigs, manualSoldSet);
     const soldMarksActive = soldSigIdsForFinish.length > 0;
-    const soldCanonForFinish = new Set(soldSigIdsForFinish);
-    const selectedCanon = new Set(displaySelectedSigs.map((x) => canonicalSigIdFromWheelSliceId(x.id)));
-    const normalizeNameKey = (raw: string) => String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
-    const selectedNamePriceSet = new Set(
-      displaySelectedSigs.map((x) => `${normalizeNameKey(x.name)}::${Math.floor(Number(x.price || 0))}`)
-    );
     const soldAppliedNames: string[] = [];
-    const nextInventory = state.sigInventory.map((item) => {
-      const itemCanon = canonicalSigIdFromWheelSliceId(item.id);
-      const markSold =
-        (soldMarksActive
-          ? soldCanonForFinish.has(itemCanon)
-          : selectedCanon.has(itemCanon) ||
-            selectedNamePriceSet.has(
-              `${normalizeNameKey(item.name)}::${Math.floor(Number(item.price || 0))}`
-            )) ||
-        (item.id === ONE_SHOT_SIG_ID && effectiveOneShotSold);
-      if (!markSold) return item;
-      const maxCount = Math.max(1, Math.floor(Number(item.maxCount || 1)));
-      const soldCount = Math.max(0, Math.floor(Number(item.soldCount || 0)));
-      if (soldCount >= maxCount) return item;
-      const nextSold = Math.min(maxCount, soldCount + 1);
-      soldAppliedNames.push(String(item.name || item.id || "").trim() || item.id);
-      return {
-        ...item,
-        soldCount: nextSold,
-        isActive: nextSold >= maxCount ? false : item.isActive,
-      };
-    });
+    if (soldMarksActive) {
+      for (const sig of displaySelectedSigs) {
+        const canon = canonicalSigIdFromWheelSliceId(sig.id);
+        if (!manualSoldSet.has(sig.id) && !manualSoldSet.has(canon)) continue;
+        soldAppliedNames.push(String(sig.name || sig.id || "").trim() || sig.id);
+      }
+    } else {
+      for (const sig of displaySelectedSigs) {
+        soldAppliedNames.push(String(sig.name || sig.id || "").trim() || sig.id);
+      }
+    }
+    if (effectiveOneShotSold) soldAppliedNames.push("한방 시그");
   const soldPreviewSet = soldMarksActive
       ? new Set(
           displaySelectedSigs
@@ -2257,7 +2247,6 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
     const finishedAt = Date.now();
     const next: AppState = {
       ...state,
-      sigInventory: nextInventory,
       rouletteState: {
         ...state.rouletteState,
         phase: "CONFIRMED",
@@ -2288,7 +2277,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       setShowConfirmModal(false);
     } else {
       setToast(
-        "서버에 회차는 반영되었으나 재고 저장에 실패했습니다. 새로고침 후 재고를 확인하세요.",
+        "서버에 회차는 반영되었으나 상태 저장에 실패했습니다. 새로고침 후 확인하세요.",
       );
       void loadRemote();
       setShowConfirmModal(false);
@@ -2466,29 +2455,6 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
           ? { ...row, name: oneShot.name, price: oneShot.price }
           : row
       );
-      if (!useManualBroadcast) {
-        if (opts?.bumpOneShot) {
-          inventory = inventory.map((row) => {
-            if (row.id !== ONE_SHOT_SIG_ID) return row;
-            const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
-            const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)));
-            const nextSold = Math.min(maxCount, soldCount + 1);
-            return {
-              ...row,
-              soldCount: nextSold,
-              isActive: nextSold >= maxCount ? false : row.isActive,
-            };
-          });
-        }
-        if (opts?.unbumpOneShot) {
-          inventory = inventory.map((row) => {
-            if (row.id !== ONE_SHOT_SIG_ID) return row;
-            const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
-            const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)) - 1);
-            return { ...row, soldCount, isActive: true };
-          });
-        }
-      }
       const selectedForState =
         displaySelectedSigs.length >= MIN_ONE_SHOT_SIGS
           ? displaySelectedSigs
@@ -2603,8 +2569,8 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         resolveManualRowIndexForDisplaySig(sig, displaySelectedSigs, manualParsedRows, manualSigDrafts);
 
       const nextFlags = [...manualSigSoldFlags];
-      while (nextFlags.length < 5) nextFlags.push(false);
-      if (manualIdx >= 0 && manualIdx < 5) nextFlags[manualIdx] = sold;
+      while (nextFlags.length < manualSigPickCount) nextFlags.push(false);
+      if (manualIdx >= 0 && manualIdx < manualSigPickCount) nextFlags[manualIdx] = sold;
       setManualSigSoldFlags(nextFlags);
 
       const nextSoldSet = buildSoldSetFromFlags(nextFlags);
@@ -2626,22 +2592,8 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
           : { name: sig.name, price: sig.price };
       const label = lookupRow.name || sig.name;
 
-      let nextInventory = [...(state.sigInventory || [])];
-      const inv = findInventoryForDisplaySig(
-        nextInventory,
-        sig,
-        manualIdx >= 0 ? manualSigDrafts[manualIdx]?.sourceSigId : sig.id
-      );
-
       if (sold) {
-        if (!inv) {
-          setToast(`${label}: 재고에서 찾지 못해 표시만 반영했습니다.`);
-        } else if (inv.soldCount >= inv.maxCount) {
-          setToast(`${label}은(는) 이미 완판입니다.`);
-        } else {
-          nextInventory = bumpInventorySigSold(nextInventory, inv, true);
-        }
-        await pushLiveRoundToServer(nextInventory, nextSoldSet, {
+        await pushLiveRoundToServer(state.sigInventory || [], nextSoldSet, {
           sigSoldFlags: nextFlags,
           oneShotMarkSold: manualOneShotMarkSold,
           bumpOverlay: true,
@@ -2651,8 +2603,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         return;
       }
 
-      if (inv) nextInventory = bumpInventorySigSold(nextInventory, inv, false);
-      await pushLiveRoundToServer(nextInventory, nextSoldSet, {
+      await pushLiveRoundToServer(state.sigInventory || [], nextSoldSet, {
         sigSoldFlags: nextFlags,
         oneShotMarkSold: manualOneShotMarkSold,
         bumpOverlay: true,
@@ -2688,7 +2639,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       const parsed = manualParsedRows[idx];
       if (!parsed?.name) {
         const nextFlags = [...manualSigSoldFlags];
-        while (nextFlags.length < 5) nextFlags.push(false);
+        while (nextFlags.length < manualSigPickCount) nextFlags.push(false);
         nextFlags[idx] = sold;
         setManualSigSoldFlags(nextFlags);
         const nextSoldSet = buildSoldSetFromFlags(nextFlags);
@@ -2797,25 +2748,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       );
       setManualSoldSet(nextSoldSet);
 
-      let nextInventory = [...(state.sigInventory || [])];
-      for (const sig of displaySelectedSigs) {
-        const manualIdx = resolveManualRowIndexForDisplaySig(
-          sig,
-          displaySelectedSigs,
-          manualParsedRows,
-          manualSigDrafts
-        );
-        const inv = findInventoryForDisplaySig(
-          nextInventory,
-          sig,
-          manualIdx >= 0 ? manualSigDrafts[manualIdx]?.sourceSigId : sig.id
-        );
-        if (inv && inv.soldCount < inv.maxCount) {
-          nextInventory = bumpInventorySigSold(nextInventory, inv, true);
-        }
-      }
-
-      await pushLiveRoundToServer(nextInventory, nextSoldSet, {
+      await pushLiveRoundToServer(state.sigInventory || [], nextSoldSet, {
         sigSoldFlags: cascadeFlags,
         oneShotMarkSold: true,
         bumpOneShot: true,
@@ -2872,14 +2805,10 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
               {manualOnly ? null : (
                 <>
                   {" "}
-                  · 회전판 {effectiveMenuCount}칸
+                  · 회전판 {sellableWheelSliceCount}칸
                 </>
               )}
-              {activeNormalPool.length > 0 ? ` (활성 시그 ${activeNormalPool.length}개)` : ""}
-              {effectiveMenuCount > menuCountSetting
-                ? ` · 설정 ${menuCountSetting} → 최소 ${menuCountMin}칸 적용`
-                : ""}
-              {menuFillFromAllActive ? " · 전체 활성으로 풀 보충" : ""}
+              {activeNormalPool.length > 0 ? ` (판매 가능 ${activeNormalPool.length}개)` : ""}
             </p>
             {authReady && !memberFilterId && !wheelDemoMode ? (
               <p className="mt-1 text-xs font-semibold text-amber-300">
@@ -2922,7 +2851,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
                 ) : null}
                 {!manualOnly && wheelDemoMode ? (
                   <span className="mt-1 block text-amber-200/90">
-                    로컬 휠 데모 · 회전판 {WHEEL_DEMO_MENU_COUNT}칸 · 당첨 {WHEEL_DEMO_WIN_COUNT}개 + 한방 시그(서버 미저장)
+                    로컬 휠 데모 · 회전판 {sellableWheelSliceCount}칸 · 당첨 {WHEEL_DEMO_WIN_COUNT}개 + 한방 시그(서버 미저장)
                   </span>
                 ) : null}
               </p>
@@ -2964,24 +2893,6 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
             </select>
             {!manualOnly ? (
             <label className="flex flex-col gap-0.5 text-[11px] text-neutral-400">
-              회전판 칸 수
-              <input
-                type="number"
-                min={menuCountMin}
-                max={20}
-                value={menuCountSetting}
-                disabled={controlsDisabled}
-                title={`활성 시그보다 많은 칸(최소 ${menuCountMin}). 표시는 ${effectiveMenuCount}칸`}
-                onChange={(e) => {
-                  const n = clampSigSalesMenuCount(e.target.value);
-                  void persistRouletteState({ menuCount: n });
-                }}
-                className="w-16 rounded border border-white/15 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-100"
-              />
-            </label>
-            ) : null}
-            {!manualOnly ? (
-            <label className="flex flex-col gap-0.5 text-[11px] text-neutral-400">
               당첨 시그 수
               <input
                 type="number"
@@ -2993,6 +2904,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
                   if (!Number.isFinite(raw)) return;
                   setCinematicSpinCount(Math.max(1, Math.min(MAX_SELECTED_SIGS, raw)));
                 }}
+                title={`1~${MAX_SELECTED_SIGS}개 · 판매 가능 시그 수 이하로 자동 조정`}
                 className="w-16 rounded border border-white/15 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-100"
               />
             </label>
@@ -3137,11 +3049,11 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
                 </button>
                 <button
                   type="button"
-                  disabled={manualBusy || manualRandomPool.length < 5}
+                  disabled={manualBusy || manualRandomPool.length < manualSigPickCount}
                   title={
-                    manualRandomPool.length < 5
-                      ? "판매 가능 시그가 5개 미만입니다"
-                      : "재고에서 시그 5개 랜덤 → 수동 OBS에 바로 반영(LANDED)"
+                    manualRandomPool.length < manualSigPickCount
+                      ? `판매 가능 시그가 ${manualSigPickCount}개 미만입니다`
+                      : `판매 중 시그 ${manualSigPickCount}개 랜덤 → 수동 OBS에 바로 반영(LANDED)`
                   }
                   className="rounded bg-fuchsia-700 px-3 py-2 text-xs font-bold text-white hover:bg-fuchsia-600 disabled:opacity-50"
                   onClick={() => void onRandomManualRerollAndObs()}
@@ -3234,7 +3146,9 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
         {manualOnly ? (
         <section ref={manualSectionRef} className="rounded-xl border border-sky-300/30 bg-sky-500/10 p-3">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <div className="text-sm font-semibold text-sky-100">수동 설정(5개 + 한방)</div>
+            <div className="text-sm font-semibold text-sky-100">
+              수동 설정({manualSigPickCount}개 + 한방)
+            </div>
             {manualWorkbench.broadcastSlotId ? (
               <span className="text-[11px] text-emerald-200/90">
                 OBS 방송:{" "}
@@ -3302,7 +3216,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
             </p>
           )}
           <p className="mb-3 text-[11px] text-sky-100/85">
-            2가지 방식: 완전 수동 입력 / 기존 시그 선택. 재고 랜덤은 상단 「리롤」(OBS 반영) 또는 「리롤 (목록만)」(관리 화면만 채움). 회전판 랜덤은 「회전판 시작」.
+            2가지 방식: 완전 수동 입력 / 기존 시그 선택. 랜덤은 상단 「리롤」(OBS 반영) 또는 「리롤 (목록만)」(관리 화면만 채움). 회전판 랜덤은 「회전판 시작」.
             {manualRandomPool.length > 0 ? (
               <span className="ml-1 text-sky-50/90">
                 (랜덤 풀: 활성 {manualRandomPool.length}개
@@ -3312,6 +3226,22 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
               <span className="ml-1 text-amber-200"> (랜덤 풀 없음 — 멤버·시그 목록 확인)</span>
             )}
           </p>
+          <div className="mb-3 flex flex-wrap items-end gap-3 text-xs text-sky-100">
+            <label className="flex flex-col gap-0.5 text-[11px] text-neutral-300">
+              당첨 시그 개수 ({MIN_MANUAL_SIG_PICK_COUNT}~{MAX_MANUAL_SIG_PICK_COUNT})
+              <input
+                type="number"
+                min={MIN_MANUAL_SIG_PICK_COUNT}
+                max={MAX_MANUAL_SIG_PICK_COUNT}
+                value={manualSigPickCount}
+                onChange={(e) => applyManualPickCount(Number(e.target.value))}
+                className="mt-1 w-20 rounded border border-white/15 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-100"
+              />
+            </label>
+            <p className="pb-1 text-[11px] text-sky-100/80">
+              랜덤·OBS 당첨 카드·한방 합산에 모두 적용됩니다. 기본 {DEFAULT_MANUAL_SIG_PICK_COUNT}개.
+            </p>
+          </div>
           <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-sky-100">
             <label className="inline-flex items-center gap-1">
               <input
@@ -3338,7 +3268,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
                 기존 시그 목록을 불러오는 중입니다. 잠시 후 다시 확인하거나 페이지 새로고침을 해주세요.
               </div>
             ) : null}
-            {Array.from({ length: 5 }, (_, idx) => (
+            {Array.from({ length: manualSigPickCount }, (_, idx) => (
               <div key={`manual-row-${idx}`} className="grid gap-2 rounded border border-white/10 bg-black/20 p-2 sm:grid-cols-3">
                 <label className="flex flex-col text-[11px] text-neutral-300 sm:col-span-3">
                   {idx + 1}번째 기존 시그 선택(선택 시 자동 채움)
@@ -3525,23 +3455,23 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
             </span>
             <button
               type="button"
-              disabled={manualBusy || manualRandomPool.length < 5}
+              disabled={manualBusy || manualRandomPool.length < manualSigPickCount}
               className="rounded bg-violet-800/90 px-3 py-1.5 font-semibold text-violet-50 hover:bg-violet-700 disabled:opacity-50"
               onClick={fillRandomManualDrafts}
               title={
-                manualRandomPool.length < 5
-                  ? "판매 가능 시그가 5개 미만입니다"
-                  : "활성 재고에서 서로 다른 시그 5개를 랜덤 채움"
+                manualRandomPool.length < manualSigPickCount
+                  ? `판매 가능 시그가 ${manualSigPickCount}개 미만입니다`
+                  : `판매 중 시그 ${manualSigPickCount}개를 랜덤 채움`
               }
             >
               리롤 (목록만)
             </button>
             <button
               type="button"
-              disabled={manualBusy || manualRandomPool.length < 5}
+              disabled={manualBusy || manualRandomPool.length < manualSigPickCount}
               className="rounded bg-fuchsia-800/90 px-3 py-1.5 font-semibold text-fuchsia-50 hover:bg-fuchsia-700 disabled:opacity-50"
               onClick={onRandomManualRerollAndObs}
-              title="라운드 리셋 후 랜덤 5개를 OBS(수동 URL)에 바로 반영"
+              title={`라운드 리셋 후 랜덤 ${manualSigPickCount}개를 OBS(수동 URL)에 바로 반영`}
             >
               {manualBusy ? "리롤 중…" : "리롤"}
             </button>
@@ -3569,7 +3499,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
               className="rounded bg-emerald-700 px-3 py-1.5 font-semibold text-emerald-50 hover:bg-emerald-600 disabled:opacity-50"
               onClick={() => void applyManualSelection(true)}
             >
-              {manualBusy ? "처리 중..." : manualOnly ? "판매 완료(재고)" : "수동 적용 + 판매 완료(CONFIRMED)"}
+              {manualBusy ? "처리 중..." : manualOnly ? "판매 완료" : "수동 적용 + 판매 완료(CONFIRMED)"}
             </button>
           </div>
           {manualDebugInfo ? (
@@ -3591,6 +3521,7 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
           ) : null}
           {!manualOnly && overlayObsMode !== "manual" && !hideWheelAfterSpin ? <RouletteWheel
             items={wheelItemsWithResult}
+            hideSliceLabels
             isRolling={wheelSpinning}
             resultId={wheelSpinning ? wheelAnimationResultId : null}
             targetSliceIndex={wheelSpinning ? wheelTargetSliceIndex : null}

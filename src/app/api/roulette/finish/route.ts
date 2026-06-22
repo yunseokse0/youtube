@@ -19,6 +19,7 @@ import {
   slimRouletteHistoryLogsForState,
 } from "@/lib/sig-roulette";
 import { shouldPersistRouletteHistoryLog } from "@/lib/sig-sales-manual-round";
+import { SIG_SALES_TRACK_INVENTORY_STOCK } from "@/lib/sig-sales-stock";
 
 function normalizeSigNameKey(raw: string): string {
   return String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
@@ -149,7 +150,7 @@ export async function POST(req: Request) {
       )
     );
     const nextInventory =
-      finalPhase === "CONFIRMED"
+      finalPhase === "CONFIRMED" && SIG_SALES_TRACK_INVENTORY_STOCK
         ? (s.sigInventory || []).map((row) => {
             const key = canonicalSigIdFromWheelSliceId(String(row.id || ""));
             let delta = soldDeltaById[key] || 0;

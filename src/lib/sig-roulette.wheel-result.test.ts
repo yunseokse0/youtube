@@ -12,6 +12,7 @@ import {
   buildSigSalesWheelDisplayPool,
   buildWheelMenuSlices,
   buildWheelMenuSlicesFromWinnerQueue,
+  buildWheelSlicesOnePerSig,
   buildWheelSlicesForCurrentRoundWinner,
   calculateSpinFinalAngle,
   canonicalSigIdFromWheelSliceId,
@@ -663,6 +664,16 @@ describe("calculateSpinFinalAngle", () => {
   });
 });
 
+describe("buildWheelSlicesOnePerSig", () => {
+  it("creates one slice per pool item without padding", () => {
+    const pool = ["a", "b", "c"].map((id) => item(id));
+    const slices = buildWheelSlicesOnePerSig(pool);
+    expect(slices).toHaveLength(3);
+    expect(slices[0]?.id).toBe("a__wslot_0");
+    expect(slices[2]?.id).toBe("c__wslot_2");
+  });
+});
+
 describe("resolveSigSalesMenuCount", () => {
   it("활성 시그보다 많은 칸을 보장한다", () => {
     expect(resolveSigSalesMenuCount(8, 10)).toBe(11);
@@ -762,29 +773,53 @@ describe("layoutSigOverlayResultRow", () => {
       userScalePct: 100,
       maxRowWidthPx: 1080,
     });
-    const natural = 6 * SIG_OVERLAY_CARD_MAX_PX + 5 * 4;
+    const natural = 6 * SIG_OVERLAY_CARD_MAX_PX + 5 * 6;
     const expected = Math.floor((1080 / natural) * 100);
     expect(cardScalePct).toBeLessThanOrEqual(expected);
-    expect(cardScalePct).toBeGreaterThanOrEqual(50);
+    expect(cardScalePct).toBeGreaterThanOrEqual(24);
+  });
+
+  it("10+한방(11칸)이 1080px 행에 들어간다", () => {
+    const { cardScalePct } = layoutSigOverlayResultRow({
+      cellCount: 11,
+      userScalePct: 78,
+      maxRowWidthPx: 1080,
+    });
+    const rowW =
+      11 * sigOverlayBroadcastCardWidthPx(cardScalePct) + 10 * 6;
+    expect(rowW).toBeLessThanOrEqual(1080);
+    expect(cardScalePct).toBeLessThan(62);
+  });
+
+  it("20+한방(21칸)이 1080px 행에 들어간다", () => {
+    const { cardScalePct } = layoutSigOverlayResultRow({
+      cellCount: 21,
+      userScalePct: 78,
+      maxRowWidthPx: 1080,
+    });
+    const rowW =
+      21 * sigOverlayBroadcastCardWidthPx(cardScalePct) + 20 * 6;
+    expect(rowW).toBeLessThanOrEqual(1080);
+    expect(cardScalePct).toBeGreaterThanOrEqual(24);
   });
 });
 
 describe("resolveWheelSlicesForSpinVisual", () => {
-  it("기본은 메뉴 풀 칸 수만큼 여러 칸을 만든다", () => {
+  it("기본은 판매 풀 길이만큼 칸을 만든다", () => {
     const pool = ["a", "b", "c", "d", "e", "f"].map((id) => item(id));
-    const slices = resolveWheelSlicesForSpinVisual({ menuPool: pool, menuCount: 8 });
-    expect(slices.length).toBe(8);
+    const slices = resolveWheelSlicesForSpinVisual({ menuPool: pool });
+    expect(slices.length).toBe(6);
   });
 
-  it("winnersOnly면 당첨 큐 길이만큼 칸을 만든다", () => {
+  it("winnersOnly 옵션도 판매 풀 전체 칸을 유지한다", () => {
+    const pool = ["a", "b", "c", "d", "e", "f"].map((id) => item(id));
     const winners = [item("a"), item("b"), item("c")];
     const slices = resolveWheelSlicesForSpinVisual({
-      menuPool: [],
-      menuCount: 20,
+      menuPool: pool,
       winnersOnly: true,
       winnerQueue: winners,
     });
-    expect(slices).toHaveLength(3);
+    expect(slices).toHaveLength(6);
   });
 });
 
@@ -798,8 +833,8 @@ describe("sequential menu wheel per round", () => {
       { ...item("sig_e"), name: "E" },
       { ...item("sig_f"), name: "F" },
     ];
-    const menuSlices = resolveWheelSlicesForSpinVisual({ menuPool: pool, menuCount: 10 });
-    expect(menuSlices.length).toBeGreaterThan(1);
+    const menuSlices = resolveWheelSlicesForSpinVisual({ menuPool: pool });
+    expect(menuSlices.length).toBe(6);
     const winners = pickDistinctSigsByIdAndName(pool, 5);
     const used = new Set<string>();
     const last = winners[winners.length - 1]!;
@@ -938,11 +973,11 @@ describe("buildSessionSpinExclusion", () => {
     expect(sigEligibleForSessionSpinPool(other, exclusion)).toBe(true);
   });
 
-  it("완판(soldCount>=maxCount) 시그는 이름·id 모두 제외한다", () => {
+  it("soldCount는 풀 제외에 쓰지 않는다(세션 당첨 제외만 적용)", () => {
     const sold: SigItem = { ...item("sig_sold"), name: "완판됨", soldCount: 1, maxCount: 1 };
     const fresh: SigItem = { ...item("sig_fresh"), name: "신규" };
     const exclusion = buildSessionSpinExclusion([sold, fresh], []);
-    expect(sigEligibleForSessionSpinPool(sold, exclusion)).toBe(false);
+    expect(sigEligibleForSessionSpinPool(sold, exclusion)).toBe(true);
     expect(sigEligibleForSessionSpinPool(fresh, exclusion)).toBe(true);
   });
 
@@ -953,7 +988,6 @@ describe("buildSessionSpinExclusion", () => {
     const pool = buildSigSalesWheelDisplayPool({
       inventory: [sakuraA, sakuraB, other],
       sessionExcludedSigIds: ["sig_sakura_a"],
-      menuCount: 20,
     });
     const names = pool.map((x) => x.name);
     expect(names.filter((n) => n === "사쿠란보")).toHaveLength(0);

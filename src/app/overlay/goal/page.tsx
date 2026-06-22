@@ -14,10 +14,6 @@ import {
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
 import { GoalBar } from "@/components/GoalBar";
-import {
-  buildBroadcastTextOutlineShadowCss,
-  DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR,
-} from "@/lib/text-outline-style";
 import { useGoalPresetAutoEscalate } from "@/hooks/useGoalPresetAutoEscalate";
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 
@@ -124,15 +120,6 @@ export default function GoalOverlayPage() {
 
   if (!ready) return null;
 
-  const goalOutlineDisabled = goalTextOutlineWidthPx === 0;
-  const resolvedGoalOutlineColor =
-    goalTextOutlineColor || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR;
-  const goalOutlineShadowCss = goalOutlineDisabled
-    ? "none"
-    : buildBroadcastTextOutlineShadowCss({
-        outlineColor: resolvedGoalOutlineColor,
-        outlineWidthPx: goalTextOutlineWidthPx,
-      }) || "none";
   return (
     <main className="overlay-root min-h-screen w-full bg-transparent p-4">
       <style
@@ -141,9 +128,8 @@ export default function GoalOverlayPage() {
         .overlay-root .overlay-goal-bar-widget .overlay-goal-bar-text {
           color: ${goalTextColor} !important;
           -webkit-text-fill-color: ${goalTextColor} !important;
-          -webkit-text-stroke: 0 !important;
-          paint-order: normal !important;
-          text-shadow: ${goalOutlineShadowCss} !important;
+          -webkit-font-smoothing: antialiased;
+          text-rendering: optimizeLegibility;
         }
       `,
         }}

@@ -26,7 +26,7 @@ export default function SigSalesResultPreviewPage() {
   const sp = useSearchParams();
   const count = useMemo(() => {
     const n = parseInt(String(sp.get("count") || "5").replace(/[^\d]/g, ""), 10);
-    return Math.max(1, Math.min(12, Number.isFinite(n) ? n : 5));
+    return Math.max(1, Math.min(20, Number.isFinite(n) ? n : 5));
   }, [sp]);
   const sold =
     sp.get("sold") === "1" ||

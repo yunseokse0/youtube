@@ -185,16 +185,13 @@ export async function POST(req: Request) {
         inv.filter(
           (x) =>
             x.isActive &&
-            x.soldCount < x.maxCount &&
             sigMatchesMemberFilter(x, memberIdFilter)
         )
       );
-      // 라이브 운영 중 필터/활성 상태 때문에 후보가 5개 미만이어도
-      // 회전판이 멈추지 않도록 단계적으로 풀을 확장한다.
       const broadActivePool = allowPool(
-        inv.filter((x) => x.isActive && x.soldCount < x.maxCount)
+        inv.filter((x) => x.isActive)
       );
-      const broadAnyPool = allowPool(inv.filter((x) => x.soldCount < x.maxCount));
+      const broadAnyPool = allowPool(inv);
       const uniqueById = new Map<string, SigItem>();
       for (const item of pool) uniqueById.set(item.id, item);
       if (uniqueById.size < 5) {
@@ -302,7 +299,7 @@ export async function POST(req: Request) {
       );
     }
     const runtimePool = allowPool(
-      inv.filter((x) => x.isActive && x.soldCount < x.maxCount)
+      inv.filter((x) => x.isActive)
     );
     if (runtimePool.length === 0) {
       return Response.json(

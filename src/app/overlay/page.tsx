@@ -3091,15 +3091,6 @@ function OverlayInner() {
         }
       ` }} />
     );
-    const goalOutlineDisabled = goalTextOutlineWidthPx === 0;
-    const resolvedGoalOutlineColor =
-      goalTextOutlineColor || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR;
-    const goalOutlineShadowCss = goalOutlineDisabled
-      ? "none"
-      : buildBroadcastTextOutlineShadowCss({
-          outlineColor: resolvedGoalOutlineColor,
-          outlineWidthPx: goalTextOutlineWidthPx,
-        }) || "none";
     const goalTextColorStyle = (
       <style
         dangerouslySetInnerHTML={{
@@ -3107,9 +3098,8 @@ function OverlayInner() {
         .overlay-root .overlay-goal-bar-widget .overlay-goal-bar-text {
           color: ${goalTextColor} !important;
           -webkit-text-fill-color: ${goalTextColor} !important;
-          -webkit-text-stroke: 0 !important;
-          paint-order: normal !important;
-          text-shadow: ${goalOutlineShadowCss} !important;
+          -webkit-font-smoothing: antialiased;
+          text-rendering: optimizeLegibility;
         }
       `,
         }}

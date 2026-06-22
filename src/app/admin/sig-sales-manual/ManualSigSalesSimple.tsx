@@ -15,18 +15,25 @@ import {
   buildManualSigSalesConfirmState,
   buildManualSigSoldPersistState,
   MANUAL_REROLL_MIN_POOL,
-  MANUAL_REROLL_MAX_PICK,
   pickRandomManualSigBundle,
   readManualSigDraftFromState,
+  readManualSigPickCount,
   resolveManualOneShotDisplayFromState,
   resolveManualOverlaySelectedSigs,
 } from "@/lib/manual-sig-broadcast";
 import {
+  MANUAL_SIG_DRAFT_STATE_KEY,
+  clampManualSigPickCount,
+  DEFAULT_MANUAL_SIG_PICK_COUNT,
+  emptyManualSoldFlags,
+  MANUAL_SIG_PICK_COUNT_KEY,
+  MAX_MANUAL_SIG_PICK_COUNT,
+  MIN_MANUAL_SIG_PICK_COUNT,
   normalizeManualSigDraftPersist,
   parseManualSigDraftRows,
+  resizeManualDrafts,
+  resizeManualSoldFlags,
 } from "@/lib/manual-sig-workbench";
-
-const EMPTY_SOLD_FLAGS = [false, false, false, false, false] as const;
 
 export default function ManualSigSalesSimple() {
   const router = useRouter();
@@ -88,6 +95,7 @@ export default function ManualSigSalesSimple() {
         return b?.phase ?? "IDLE";
       })()
     : "IDLE";
+  const pickCount = useMemo(() => readManualSigPickCount(state), [state]);
   const draft = useMemo(() => readManualSigDraftFromState(state), [state]);
   const displaySigs = useMemo(
     () => resolveManualOverlaySelectedSigs(state, userId),
@@ -95,15 +103,15 @@ export default function ManualSigSalesSimple() {
   );
   const soldFlags = useMemo(() => {
     const raw = draft?.sigSoldFlags;
-    if (!Array.isArray(raw)) return [...EMPTY_SOLD_FLAGS];
-    return Array.from({ length: 5 }, (_, i) => Boolean(raw[i]));
-  }, [draft?.sigSoldFlags]);
+    if (!Array.isArray(raw)) return emptyManualSoldFlags(pickCount);
+    return resizeManualSoldFlags(raw, pickCount);
+  }, [draft?.sigSoldFlags, pickCount]);
   const oneShotMarkSold = Boolean(draft?.oneShotMarkSold);
 
   const saleRows = useMemo(() => {
     const parsed = parseManualSigDraftRows(draft?.drafts || []);
     const rows: Array<{ draftIdx: number; name: string; price: number }> = [];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < pickCount; i++) {
       const row = parsed[i];
       if (row?.name && row.price > 0) {
         rows.push({ draftIdx: i, name: row.name, price: row.price });
@@ -115,7 +123,7 @@ export default function ManualSigSalesSimple() {
       name: sig.name,
       price: Number(sig.price || 0),
     }));
-  }, [draft?.drafts, displaySigs]);
+  }, [draft?.drafts, displaySigs, pickCount]);
 
   const currentNames = displaySigs.map((s) => s.name).join(", ");
   const oneShotLabel = useMemo(() => {
@@ -127,8 +135,8 @@ export default function ManualSigSalesSimple() {
     if (!os) return null;
     return `${os.name} ${Number(os.price || 0).toLocaleString("ko-KR")}원`;
   }, [state, displaySigs, userId]);
-  const rerollPickCount = Math.min(MANUAL_REROLL_MAX_PICK, pool.length);
-  const canReroll = pool.length >= MANUAL_REROLL_MIN_POOL;
+  const rerollPickCount = Math.min(pickCount, pool.length);
+  const canReroll = pool.length >= pickCount;
   const hasAnySoldMark =
     soldFlags.some(Boolean) || oneShotMarkSold;
   const phase = String(currentPhase || "");
@@ -176,15 +184,18 @@ export default function ManualSigSalesSimple() {
         priceInput: String(Math.floor(Number(s.price || 0))),
         imageUrl: String(s.imageUrl || "").trim(),
       }));
-      const persistDrafts = normalizeManualSigDraftPersist({
-        inputMode: "inventory",
-        drafts,
-        oneShotName: bundle.oneShot.name,
-        oneShotPriceInput: String(bundle.oneShot.price),
-        oneShotImageUrl: DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE,
-        sigSoldFlags: [false, false, false, false, false],
-        oneShotMarkSold: false,
-      });
+      const persistDrafts = normalizeManualSigDraftPersist(
+        {
+          inputMode: "inventory",
+          drafts,
+          oneShotName: bundle.oneShot.name,
+          oneShotPriceInput: String(bundle.oneShot.price),
+          oneShotImageUrl: DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE,
+          sigSoldFlags: emptyManualSoldFlags(pickCount),
+          oneShotMarkSold: false,
+        },
+        pickCount
+      );
       const next = buildManualSigBroadcastState(
         state,
         bundle.selected,
@@ -202,7 +213,37 @@ export default function ManualSigSalesSimple() {
     } finally {
       setBusy(false);
     }
-  }, [state, canReroll, pool.length, userId, memberFilterId, persistState]);
+  }, [state, canReroll, pool.length, userId, memberFilterId, persistState, pickCount]);
+
+  const onPickCountChange = useCallback(
+    async (raw: number) => {
+      if (!state) return;
+      const n = clampManualSigPickCount(raw);
+      const prevOs =
+        state.overlaySettings && typeof state.overlaySettings === "object"
+          ? (state.overlaySettings as Record<string, unknown>)
+          : {};
+      const prevDraft = readManualSigDraftFromState(state);
+      const nextDraft = prevDraft
+        ? {
+            ...prevDraft,
+            drafts: resizeManualDrafts(prevDraft.drafts || [], n),
+            sigSoldFlags: resizeManualSoldFlags(prevDraft.sigSoldFlags || [], n),
+          }
+        : undefined;
+      const next: AppState = {
+        ...state,
+        updatedAt: Date.now(),
+        overlaySettings: {
+          ...prevOs,
+          [MANUAL_SIG_PICK_COUNT_KEY]: n,
+          ...(nextDraft ? { [MANUAL_SIG_DRAFT_STATE_KEY]: nextDraft } : {}),
+        } as AppState["overlaySettings"],
+      };
+      await persistState(next, `당첨 시그 개수 ${n}개로 변경`, "개수 설정 저장이 지연됩니다.");
+    },
+    [state, persistState]
+  );
 
   const onConfirmSales = useCallback(
     async (opts?: { onlyDraftIdx?: number }) => {
@@ -217,7 +258,7 @@ export default function ManualSigSalesSimple() {
         return;
       }
       const flagsForConfirm =
-        onlyIdx != null && onlyIdx >= 0 && onlyIdx < 5
+        onlyIdx != null && onlyIdx >= 0 && onlyIdx < pickCount
           ? (() => {
               const merged = [...soldFlags];
               merged[onlyIdx] = true;
@@ -246,7 +287,6 @@ export default function ManualSigSalesSimple() {
           previousSoldFlags: soldFlags,
           previousOneShotMarkSold: oneShotMarkSold,
           closeRound,
-          skipInventoryUpdate: true,
         });
         const row = onlyIdx != null ? saleRows.find((r) => r.draftIdx === onlyIdx) : null;
         const ok = await persistState(
@@ -281,7 +321,7 @@ export default function ManualSigSalesSimple() {
 
   const onToggleSigSold = useCallback(
     async (idx: number, sold: boolean) => {
-      if (!state || idx < 0 || idx >= 5) return;
+      if (!state || idx < 0 || idx >= pickCount) return;
       const nextFlags = [...soldFlags];
       nextFlags[idx] = sold;
       setBusy(true);
@@ -304,7 +344,7 @@ export default function ManualSigSalesSimple() {
         setBusy(false);
       }
     },
-    [state, soldFlags, oneShotMarkSold, saleRows, persistState]
+    [state, soldFlags, oneShotMarkSold, saleRows, persistState, pickCount]
   );
 
   const onToggleOneShotSold = useCallback(
@@ -340,7 +380,7 @@ export default function ManualSigSalesSimple() {
         <header>
           <h1 className="text-2xl font-black text-sky-200">수동 시그 판매</h1>
           <p className="mt-1 text-sm text-neutral-400">
-            판매 중 시그 랜덤(최대 5개·한방 제외) → OBS 반영 · 체크 후 판매 확정 시 재고 반영
+            판매 중 시그 랜덤(최대 {MAX_MANUAL_SIG_PICK_COUNT}개·한방 제외) → OBS 반영 · 체크 후 판매 확정
           </p>
           <Link href="/admin/sig-sales" className="mt-2 inline-block text-xs text-yellow-300/90 underline">
             회전판·상세 수동 입력은 여기
@@ -348,6 +388,18 @@ export default function ManualSigSalesSimple() {
         </header>
 
         <section className="rounded-xl border border-white/10 bg-black/40 p-4 space-y-3">
+          <label className="block text-xs text-neutral-300">
+            당첨 시그 개수 ({MIN_MANUAL_SIG_PICK_COUNT}~{MAX_MANUAL_SIG_PICK_COUNT}, 기본 {DEFAULT_MANUAL_SIG_PICK_COUNT})
+            <input
+              type="number"
+              min={MIN_MANUAL_SIG_PICK_COUNT}
+              max={MAX_MANUAL_SIG_PICK_COUNT}
+              value={pickCount}
+              disabled={busy}
+              onChange={(e) => void onPickCountChange(Number(e.target.value))}
+              className="mt-1 w-full rounded bg-neutral-800 px-2 py-2 text-sm"
+            />
+          </label>
           <label className="block text-xs text-neutral-300">
             멤버 (선택)
             <select
@@ -364,7 +416,7 @@ export default function ManualSigSalesSimple() {
             </select>
           </label>
           <p className="text-xs text-neutral-400">
-            랜덤 풀: <span className="text-sky-200">{pool.length}개</span> (활성·재고 있음·한방 제외)
+            랜덤 풀: <span className="text-sky-200">{pool.length}개</span> (판매 중·한방 제외)
             {canReroll ? (
               <span className="text-neutral-500">
                 {" "}
@@ -399,7 +451,7 @@ export default function ManualSigSalesSimple() {
               ) : soldFlags.some(Boolean) ? (
                 <span className="text-[10px] text-emerald-300/90">일부 확정됨 · 나머지 개별 확정 가능</span>
               ) : (
-                <span className="text-[10px] text-neutral-500">체크 → OBS 스탬프 · 확정 시 재고 차감</span>
+                <span className="text-[10px] text-neutral-500">체크 → OBS 스탬프 · 확정 시 회차 종료</span>
               )}
             </div>
             {saleRows.map((row) => {
@@ -460,7 +512,7 @@ export default function ManualSigSalesSimple() {
               onClick={() => void onConfirmSales()}
               className="w-full rounded-lg bg-emerald-700 px-4 py-3 text-base font-bold text-white hover:bg-emerald-600 disabled:opacity-50"
             >
-              {busy ? "처리 중…" : "체크한 시그 일괄 확정 (재고 반영)"}
+              {busy ? "처리 중…" : "체크한 시그 일괄 확정"}
             </button>
           </section>
         ) : null}

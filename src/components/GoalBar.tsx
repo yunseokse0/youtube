@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { formatDonorsAmount, formatManThousand } from "@/lib/state";
-import { buildBroadcastTextOutlineShadowCss } from "@/lib/text-outline-style";
+import { buildOverlayCellOutlineStyle } from "@/lib/text-outline-style";
 
 function useCountUp(value: number, durationMs = 600) {
   const [display, setDisplay] = useState(value);
@@ -104,18 +104,20 @@ export function GoalBar({
   })();
   const ambientPulse = "goalbar-ambient-pulse 4.8s ease-in-out infinite";
   const ambientSweep = "goalbar-ambient-sweep 5.2s linear infinite";
-  /** OBS CEF는 stroke+paint-order 시 fill이 흰색으로 보이는 경우가 많아 shadow만 사용 */
+  /** 후원순위·엑셀표와 동일 — stroke + shadow 링 (fill 색은 goalTextPaint로 고정) */
   const goalTextOutline: CSSProperties =
     textOutlineWidthPx === 0
-      ? { WebkitTextStroke: 0, paintOrder: "normal" }
-      : {
-          textShadow: buildBroadcastTextOutlineShadowCss({
-            outlineColor: textOutlineColor,
-            outlineWidthPx: textOutlineWidthPx,
-          }),
-          WebkitTextStroke: 0,
-          paintOrder: "normal",
-        };
+      ? {}
+      : buildOverlayCellOutlineStyle({
+          fontSizePx: textFontPx,
+          outlineColor: textOutlineColor,
+          outlineWidthPx: textOutlineWidthPx,
+        });
+  const goalTextRender: CSSProperties = {
+    display: "inline-block",
+    WebkitFontSmoothing: "antialiased",
+    textRendering: "optimizeLegibility",
+  };
   /** 밝은 트랙 기본 — 미설정·구버전 밝은 글자만 진한 로즈로 */
   const effectiveTextColor = (() => {
     const c = String(textColor || "").trim();
@@ -127,15 +129,6 @@ export function GoalBar({
     color: effectiveTextColor,
     WebkitTextFillColor: effectiveTextColor,
   };
-
-  const goalTextColorCss = `
-    .overlay-goal-bar-widget .overlay-goal-bar-text {
-      color: var(--overlay-goal-text-color) !important;
-      -webkit-text-fill-color: var(--overlay-goal-text-color) !important;
-      -webkit-text-stroke: 0 !important;
-      paint-order: normal !important;
-    }
-  `;
 
   return (
     <div
@@ -150,7 +143,6 @@ export function GoalBar({
         ["--overlay-goal-text-color" as string]: effectiveTextColor,
       }}
     >
-      <style dangerouslySetInnerHTML={{ __html: goalTextColorCss }} />
       <div
         className="relative overflow-hidden"
         style={{
@@ -189,12 +181,17 @@ export function GoalBar({
         />
         <div
           className="absolute inset-0 z-[3] flex items-center justify-between px-2"
-          style={{ fontSize: textFontPx, letterSpacing: "-0.01em" }}
+          style={{
+            fontSize: textFontPx,
+            letterSpacing: "-0.01em",
+            transform: "translateZ(0)",
+          }}
         >
           <span
             className="overlay-goal-bar-text inline-flex items-center"
             style={{
               ...goalTextPaint,
+              ...goalTextRender,
               fontWeight: 900,
               lineHeight: 1,
               ...goalTextOutline,
@@ -204,7 +201,13 @@ export function GoalBar({
           </span>
           <span
             className="overlay-goal-bar-text"
-            style={{ ...goalTextPaint, fontWeight: 700, lineHeight: 1, ...goalTextOutline }}
+            style={{
+              ...goalTextPaint,
+              ...goalTextRender,
+              fontWeight: 700,
+              lineHeight: 1,
+              ...goalTextOutline,
+            }}
           >
             {compactLabel ? "후원 " : ""}
             {formatAmount(current)} / {formatAmount(goal)} ({displayPct}%)

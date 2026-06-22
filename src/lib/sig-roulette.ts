@@ -107,21 +107,21 @@ export type BuildSigSalesWheelDisplayPoolOptions = {
   sigSalesExcludedIds?: string[];
   sessionExcludedSigIds?: string[];
   memberFilterId?: string;
-  menuCount: number;
+  /** @deprecated 칸 수는 풀 길이(판매 가능 시그 수)로 자동 결정 */
+  menuCount?: number;
+  /** @deprecated 미사용 */
   menuFillFromAllActive?: boolean;
   /** 스핀 당첨·pending — 휠 후보에 반드시 포함 */
   ensureItems?: SigItem[];
 };
 
-/** 관리자·OBS 동일 후보 풀(칸 수는 `buildWheelMenuSlices`에서 적용) */
+/** 관리자·OBS 동일 후보 풀 — 판매 가능 시그 1개당 휠 칸 1개 */
 export function buildSigSalesWheelDisplayPool(opts: BuildSigSalesWheelDisplayPoolOptions): SigItem[] {
   const {
     inventory,
     sigSalesExcludedIds = [],
     sessionExcludedSigIds = [],
     memberFilterId = "",
-    menuCount,
-    menuFillFromAllActive = false,
     ensureItems = [],
   } = opts;
   const excluded = new Set(sigSalesExcludedIds.map((x) => String(x)));
@@ -133,10 +133,8 @@ export function buildSigSalesWheelDisplayPool(opts: BuildSigSalesWheelDisplayPoo
       !excluded.has(x.id) &&
       !isBundledSigPlaceholderItem(x) &&
       sigEligibleForSessionSpinPool(x, sessionExclusion) &&
-      x.soldCount < x.maxCount &&
       sigMatchesMemberFilter(x, memberFilterId)
   );
-  const targetCount = Math.max(20, clampSigSalesMenuCount(menuCount));
   const unique = new Map<string, SigItem>();
   for (const raw of ensureItems) {
     if (!raw?.id) continue;
@@ -145,20 +143,6 @@ export function buildSigSalesWheelDisplayPool(opts: BuildSigSalesWheelDisplayPoo
     unique.set(canon, fromInv ? { ...fromInv } : { ...raw, id: canon });
   }
   for (const item of activeNormalPool) unique.set(item.id, item);
-  if (menuFillFromAllActive && unique.size < targetCount) {
-    const broadActivePool = inventory.filter(
-      (x) =>
-        x.isActive &&
-        x.id !== ONE_SHOT_SIG_ID &&
-        !excluded.has(x.id) &&
-        !isBundledSigPlaceholderItem(x) &&
-        x.soldCount < x.maxCount
-    );
-    for (const item of broadActivePool) {
-      unique.set(item.id, item);
-      if (unique.size >= targetCount) break;
-    }
-  }
   return Array.from(unique.values());
 }
 
@@ -178,7 +162,16 @@ export function buildWheelMenuSlicesFromWinnerQueue(winners: SigItem[]): SigItem
   });
 }
 
-/** 휠 메뉴 칸(5~20) — 동일 시그는 `__wslot_i` 로 칸마다 구분. `menuCount`는 보통 `resolveSigSalesMenuCount` 결과 */
+/** 판매 가능 시그 1개당 휠 칸 1개(중복 패딩 없음) */
+export function buildWheelSlicesOnePerSig(pool: SigItem[]): SigItem[] {
+  if (!pool.length) return [];
+  return pool.map((canonical, i) => {
+    const canon = canonicalSigIdFromWheelSliceId(canonical.id);
+    return { ...canonical, id: `${canon}__wslot_${i}` };
+  });
+}
+
+/** 휠 메뉴 칸(레거시·데모) — 동일 시그는 `__wslot_i` 로 칸마다 구분 */
 export function buildWheelMenuSlices(pool: SigItem[], menuCount: number): SigItem[] {
   const n = Math.max(1, Math.min(20, Math.floor(menuCount || 1)));
   if (!pool.length) return [];
@@ -212,10 +205,6 @@ export function buildSessionSpinExclusion(
   for (const row of inventory) {
     const canon = canonicalSigIdFromWheelSliceId(row.id);
     const nk = normalizeSigPickNameKey(row.name);
-    if (row.soldCount >= row.maxCount) {
-      excludedIds.add(canon);
-      if (nk) excludedNameKeys.add(nk);
-    }
     if (!excludedIds.has(canon)) continue;
     if (nk) excludedNameKeys.add(nk);
   }
@@ -385,25 +374,23 @@ export function buildWheelSlicesForCurrentRoundWinner(winner: SigItem | null): S
 
 export type ResolveWheelSlicesForSpinVisualOptions = {
   menuPool: SigItem[];
-  menuCount: number;
-  /** `winnersOnly` 오버레이: 당첨 큐만 칸으로 표시 */
+  /** @deprecated 미사용 — 항상 menuPool(판매 가능 전체) 기준 */
+  menuCount?: number;
+  /** @deprecated 미사용 — 당첨 수와 무관하게 전체 풀 칸 */
   winnersOnly?: boolean;
+  /** @deprecated 미사용 */
   winnerQueue?: SigItem[];
   /** 세션 동안 고정된 칸 배치(폴링으로 `__wslot_n` 매핑이 바뀌지 않게) */
   pinnedSlices?: SigItem[] | null;
 };
 
-/** 회전 연출용 휠 — 여러 칸(메뉴 풀)을 보여 주고 착지는 `resolveWheelSpinTarget`으로 맞춘다 */
+/** 회전 연출용 휠 — 판매 가능 시그 전체 수만큼 칸(당첨 개수와 무관) */
 export function resolveWheelSlicesForSpinVisual(
   opts: ResolveWheelSlicesForSpinVisualOptions
 ): SigItem[] {
   const pinned = opts.pinnedSlices;
   if (pinned?.length) return pinned;
-  const queue = opts.winnerQueue || [];
-  if (opts.winnersOnly && queue.length > 0) {
-    return buildWheelMenuSlicesFromWinnerQueue(queue);
-  }
-  return buildWheelMenuSlices(opts.menuPool, opts.menuCount);
+  return buildWheelSlicesOnePerSig(opts.menuPool);
 }
 
 export type PickWheelAnimationResultIdOptions = {

@@ -60,6 +60,8 @@ type RouletteWheelProps = {
   onRenderSyncReport?: (report: WheelRenderSyncReport) => void;
   /** 미지정 시 `item.name`. 관리자 시그 롤링 짧은 라벨 등 */
   getLabel?: (item: SigItem) => string;
+  /** 시그 판매 회전판 — 칸 텍스트 숨김(색 조각만 표시) */
+  hideSliceLabels?: boolean;
 };
 
 const COLORS = [
@@ -149,6 +151,7 @@ export default function RouletteWheel({
   onTransitionEnd,
   onLanded,
   getLabel,
+  hideSliceLabels = false,
   probeSliceIndex = null,
   probeNonce = 0,
   onRenderSyncReport,
@@ -734,8 +737,10 @@ export default function RouletteWheel({
                   className="relative z-10"
                   style={{
                     transform: `translate(-50%, -50%) rotate(${labelRotateDeg}deg)`,
+                    display: hideSliceLabels ? "none" : undefined,
                   }}
                 >
+                  {!hideSliceLabels ? (
                   <WheelSegmentLabel
                     isWin={isWin}
                     className={`leading-tight ${isSoldOut && !isWin ? "opacity-80" : ""}`}
@@ -753,6 +758,7 @@ export default function RouletteWheel({
                   >
                     {displayLabel}
                   </WheelSegmentLabel>
+                  ) : null}
                 </div>
               </div>
             );

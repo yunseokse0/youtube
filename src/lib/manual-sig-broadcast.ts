@@ -23,6 +23,10 @@ import {
   manualSigDraftsReady,
   normalizeManualSigDraftPersist,
   parseManualSigDraftRows,
+  readManualSigPickCountFromOverlaySettings,
+  MAX_MANUAL_SIG_PICK_COUNT,
+  DEFAULT_MANUAL_SIG_PICK_COUNT,
+  clampManualSigPickCount,
   type ManualSigDraft,
   type ManualSigDraftPersist,
 } from "@/lib/manual-sig-workbench";
@@ -257,7 +261,7 @@ export function patchManualOverlaySigImagesFromDraft(
   userId: string
 ): SigItem[] {
   if (!items.length) return items;
-  if (!Array.isArray(drafts) || !manualSigDraftsReady(drafts)) return items;
+  if (!Array.isArray(drafts) || !manualSigDraftsReady(drafts, drafts.length)) return items;
   if (!items.some((i) => !hasUsableManualSigImageUrl(i.imageUrl))) return items;
   const fromDraft = buildManualSigItemsFromDrafts(drafts, inventory, userId);
   return items.map((item) => {
@@ -447,12 +451,21 @@ export function buildManualSigItemsFromDrafts(
 
 /** 수동 리롤 — 풀에 2개 이상이면 최대 5개까지 랜덤 */
 export const MANUAL_REROLL_MIN_POOL = MIN_MANUAL_OVERLAY_SIGS;
-export const MANUAL_REROLL_MAX_PICK = 5;
+export function readManualSigPickCount(state: AppState | null | undefined): number {
+  const os =
+    state?.overlaySettings && typeof state.overlaySettings === "object"
+      ? (state.overlaySettings as Record<string, unknown>)
+      : undefined;
+  return readManualSigPickCountFromOverlaySettings(os);
+}
+
+/** @deprecated use MAX_MANUAL_SIG_PICK_COUNT */
+export const MANUAL_REROLL_MAX_PICK = MAX_MANUAL_SIG_PICK_COUNT;
 
 export function soldFlagsWithOneShotCascade(
   flags: boolean[],
   oneShotMarkSold: boolean,
-  slotCount = 5
+  slotCount = DEFAULT_MANUAL_SIG_PICK_COUNT
 ): boolean[] {
   const next = [...flags];
   while (next.length < slotCount) next.push(false);
@@ -598,7 +611,7 @@ export function collectSoldSigIdsForFinish(
   return out;
 }
 
-/** 체크된 시그·한방 → 재고 soldCount 반영 (+ 선택 시 라운드 LANDED 유지) */
+/** 체크된 시그·한방 → OBS 판매 플래그 반영 (+ 선택 시 라운드 LANDED 유지) */
 export function buildManualSigSalesConfirmState(
   base: AppState,
   opts: {
@@ -611,49 +624,10 @@ export function buildManualSigSalesConfirmState(
     previousOneShotMarkSold?: boolean;
     /** false면 phase LANDED — 나머지 시그 개별 확정 가능 */
     closeRound?: boolean;
-    /** 수동 판매 — 재고 soldCount 미변경(OBS 체크만) */
-    skipInventoryUpdate?: boolean;
   }
 ): AppState {
-  const prevFlags = Array.isArray(opts.previousSoldFlags)
-    ? opts.previousSoldFlags
-    : [false, false, false, false, false];
-  const prevOneShot = Boolean(opts.previousOneShotMarkSold);
   const cascadeFlags = soldFlagsWithOneShotCascade(opts.sigSoldFlags, opts.oneShotMarkSold);
-  const deltaFlags = cascadeFlags.map((f, i) => f && !Boolean(prevFlags[i]));
-  const deltaOneShot = opts.oneShotMarkSold && !prevOneShot;
-  const soldTargetIds = resolveManualSoldInventoryTargetIds(
-    base,
-    opts.selected,
-    String(opts.userId || "").trim(),
-    deltaFlags,
-    deltaOneShot
-  );
   const now = Date.now();
-  const confirmedInventory = (base.sigInventory || []).map((row) => {
-    if (row.id === ONE_SHOT_SIG_ID) {
-      if (!deltaOneShot) return row;
-      const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
-      const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)));
-      const nextSold = Math.min(maxCount, soldCount + 1);
-      return {
-        ...row,
-        soldCount: nextSold,
-        isActive: nextSold >= maxCount ? false : row.isActive,
-      };
-    }
-    const key = canonicalSigIdFromWheelSliceId(String(row.id || ""));
-    const delta = soldTargetIds.has(key) ? 1 : 0;
-    if (!delta) return row;
-    const maxCount = Math.max(1, Math.floor(Number(row.maxCount || 1)));
-    const soldCount = Math.max(0, Math.floor(Number(row.soldCount || 0)));
-    const nextSold = Math.min(maxCount, soldCount + delta);
-    return {
-      ...row,
-      soldCount: nextSold,
-      isActive: nextSold >= maxCount ? false : row.isActive,
-    };
-  });
   const draftPersist = buildManualSigSoldPersistState(base, {
     sigSoldFlags: cascadeFlags,
     oneShotMarkSold: opts.oneShotMarkSold,
@@ -668,7 +642,7 @@ export function buildManualSigSalesConfirmState(
   });
   return {
     ...draftPersist,
-    sigInventory: opts.skipInventoryUpdate ? base.sigInventory || [] : confirmedInventory,
+    sigInventory: base.sigInventory || [],
     overlaySettings: mergeManualSigBroadcastIntoOverlaySettings(draftPersist, nextBroadcast),
     updatedAt: now,
   };
@@ -687,13 +661,14 @@ export function resolveManualOverlaySelectedSigs(
       : []
   ) as SigItem[];
   const inv = state.sigInventory || [];
+  const pickCount = readManualSigPickCount(state);
   const draftRaw = readManualSigDraftFromState(state);
   const draft =
-    draftRaw && manualSigDraftsReady(draftRaw.drafts)
+    draftRaw && manualSigDraftsReady(draftRaw.drafts, pickCount)
       ? enrichManualDraftsWithInventoryImageUrls(draftRaw, inv, userId)
       : draftRaw;
   const draftRows = Array.isArray(draft?.drafts) ? draft!.drafts : [];
-  const draftReady = Boolean(draft && manualSigDraftsReady(draft.drafts));
+  const draftReady = Boolean(draft && manualSigDraftsReady(draft.drafts, pickCount));
   const draftItems = draftReady
     ? stripBundledSigPlaceholderItems(buildManualSigItemsFromDrafts(draft!.drafts, inv, userId))
     : [];
@@ -823,16 +798,17 @@ export function buildManualOverlaySoldOverrideSet(
 export function pickRandomManualSigBundle(
   base: AppState,
   userId: string,
-  opts?: { memberFilterId?: string }
+  opts?: { memberFilterId?: string; pickCount?: number }
 ): { selected: SigItem[]; oneShot: { id: string; name: string; price: number } } | null {
   const pool = listActiveManualSigPool(base.sigInventory, {
     memberFilterId: opts?.memberFilterId,
     sigSalesExcludedIds: base.sigSalesExcludedIds,
     ignoreStock: true,
   });
-  const pickCount = Math.min(MANUAL_REROLL_MAX_PICK, pool.length);
-  if (pickCount < MANUAL_REROLL_MIN_POOL) return null;
-  const drafts = pickRandomManualSigDrafts(pool, pickCount);
+  const pickCount = clampManualSigPickCount(opts?.pickCount ?? readManualSigPickCount(base));
+  const actualPick = Math.min(pickCount, pool.length);
+  if (actualPick < MANUAL_REROLL_MIN_POOL) return null;
+  const drafts = pickRandomManualSigDrafts(pool, actualPick);
   if (!drafts) return null;
   const selected = buildManualSigItemsFromDrafts(drafts, base.sigInventory, userId);
   const oneShot = buildOneShotFromSelected(selected);

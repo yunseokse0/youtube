@@ -5,7 +5,9 @@ import {
 } from "@/lib/manual-sig-broadcast-state";
 import {
   emptyManualDrafts,
+  emptyManualSoldFlags,
   MANUAL_SIG_DRAFT_STATE_KEY,
+  readManualSigPickCountFromOverlaySettings,
   type ManualSigDraftPersist,
 } from "@/lib/manual-sig-workbench";
 
@@ -29,6 +31,7 @@ export function buildManualRoundResetPatch(base: AppState): Partial<AppState> {
     base.overlaySettings && typeof base.overlaySettings === "object"
       ? { ...(base.overlaySettings as Record<string, unknown>) }
       : {};
+  const pickCount = readManualSigPickCountFromOverlaySettings(os);
   const raw = os[MANUAL_SIG_DRAFT_STATE_KEY];
   let draft: ManualSigDraftPersist | undefined;
   if (raw && typeof raw === "object") {
@@ -38,9 +41,9 @@ export function buildManualRoundResetPatch(base: AppState): Partial<AppState> {
     };
     draft = {
       ...rest,
-      drafts: emptyManualDrafts(),
+      drafts: emptyManualDrafts(pickCount),
       oneShotPriceInput: "",
-      sigSoldFlags: [false, false, false, false, false],
+      sigSoldFlags: emptyManualSoldFlags(pickCount),
       oneShotMarkSold: false,
     };
   }

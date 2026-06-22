@@ -100,9 +100,11 @@ export function sigOverlayResultBandStyle(_scalePct?: number): CSSProperties {
   };
 }
 
-/** `cardScalePct` 반영 폭(px) — 미디어·셸 높이 계산 공통 */
+/** `cardScalePct` 반영 폭(px) — 미디어·셸 높이 계산 공통 (24~100%, 레이아웃 축소 허용) */
 export function sigOverlayBroadcastCardWidthPx(scalePct = 100): number {
-  return Math.round((SIG_OVERLAY_CARD_MAX_PX * clampSigOverlayResultScalePct(scalePct)) / 100);
+  const n = Math.floor(Number(scalePct) || 100);
+  const clamped = Math.max(24, Math.min(100, n));
+  return Math.round((SIG_OVERLAY_CARD_MAX_PX * clamped) / 100);
 }
 
 /** 개별·한방 동일 202×300 미디어 영역 높이(px) */
@@ -171,7 +173,11 @@ export function layoutSigOverlayResultRow(opts: {
   const fit =
     opts.allowOverflow || natural <= 0 ? 1 : Math.min(1, maxW / natural);
   const combined = Math.min(user, fit);
-  const cardScalePct = Math.max(62, Math.min(100, Math.floor(combined * 100)));
+  /** 정수 폭 반올림까지 고려해 행이 maxW를 넘지 않게 */
+  const maxCardW = Math.floor((maxW - Math.max(0, cells - 1) * gapPx) / cells);
+  const fromFit = Math.floor((maxCardW / SIG_OVERLAY_CARD_MAX_PX) * 100);
+  const fromUser = Math.floor(combined * 100);
+  const cardScalePct = Math.min(100, Math.max(24, Math.min(fromUser, fromFit)));
   return {
     cardScalePct,
     bandStyle: sigOverlayResultBandStyle(cardScalePct),

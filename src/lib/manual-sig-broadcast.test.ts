@@ -567,7 +567,7 @@ describe("pickRandomManualSigBundle", () => {
 });
 
 describe("buildManualSigSalesConfirmState", () => {
-  it("bumps soldCount for checked sigs", () => {
+  it("confirms checked sigs without changing inventory soldCount", () => {
     const state = {
       sigInventory: [
         {
@@ -622,11 +622,11 @@ describe("buildManualSigSalesConfirmState", () => {
       oneShotMarkSold: false,
     });
     const row = next.sigInventory?.find((x) => x.id === "sig_a");
-    expect(row?.soldCount).toBe(1);
+    expect(row?.soldCount).toBe(0);
     expect(readManualSigBroadcastFromState(next)?.phase).toBe("CONFIRMED");
   });
 
-  it("skipInventoryUpdate leaves soldCount unchanged", () => {
+  it("always leaves soldCount unchanged on confirm", () => {
     const state = {
       sigInventory: [
         {
@@ -668,7 +668,6 @@ describe("buildManualSigSalesConfirmState", () => {
       selected,
       sigSoldFlags: [true, false, false, false, false],
       oneShotMarkSold: false,
-      skipInventoryUpdate: true,
     });
     expect(next.sigInventory?.find((x) => x.id === "sig_a")?.soldCount).toBe(0);
     expect(readManualSigBroadcastFromState(next)?.phase).toBe("CONFIRMED");
@@ -751,11 +750,11 @@ describe("buildManualSigSalesConfirmState", () => {
       oneShotMarkSold: false,
       userId: "finalent",
     });
-    expect(next.sigInventory?.find((x) => x.id === "sig_a")?.soldCount).toBe(1);
+    expect(next.sigInventory?.find((x) => x.id === "sig_a")?.soldCount).toBe(0);
     expect(next.sigInventory?.find((x) => x.id === "sig_b")?.soldCount).toBe(0);
   });
 
-  it("partial confirm keeps LANDED and does not double-count inventory", () => {
+  it("partial confirm keeps LANDED without mutating inventory", () => {
     const state = {
       sigInventory: [
         {
@@ -831,7 +830,7 @@ describe("buildManualSigSalesConfirmState", () => {
       closeRound: false,
     });
     expect(readManualSigBroadcastFromState(first)?.phase).toBe("LANDED");
-    expect(first.sigInventory?.find((x) => x.id === "sig_a")?.soldCount).toBe(1);
+    expect(first.sigInventory?.find((x) => x.id === "sig_a")?.soldCount).toBe(0);
 
     const second = buildManualSigSalesConfirmState(first, {
       selected,
@@ -841,8 +840,8 @@ describe("buildManualSigSalesConfirmState", () => {
       closeRound: false,
     });
     expect(readManualSigBroadcastFromState(second)?.phase).toBe("LANDED");
-    expect(second.sigInventory?.find((x) => x.id === "sig_a")?.soldCount).toBe(1);
-    expect(second.sigInventory?.find((x) => x.id === "sig_b")?.soldCount).toBe(1);
+    expect(second.sigInventory?.find((x) => x.id === "sig_a")?.soldCount).toBe(0);
+    expect(second.sigInventory?.find((x) => x.id === "sig_b")?.soldCount).toBe(0);
   });
 
   it("syncs oneShotResult price when sold flags are toggled", () => {
