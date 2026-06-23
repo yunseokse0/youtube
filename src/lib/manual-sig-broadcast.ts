@@ -47,7 +47,13 @@ export function readManualSigDraftFromState(
   const os = state?.overlaySettings;
   if (!os || typeof os !== "object") return null;
   const raw = (os as Record<string, unknown>)[MANUAL_SIG_DRAFT_STATE_KEY];
-  return normalizeManualSigDraftPersist(raw);
+  const configuredPick = readManualSigPickCount(state);
+  const rawDraftLen =
+    raw && typeof raw === "object" && Array.isArray((raw as Record<string, unknown>).drafts)
+      ? ((raw as Record<string, unknown>).drafts as unknown[]).length
+      : 0;
+  const pickSlots = clampManualSigPickCount(Math.max(configuredPick, rawDraftLen));
+  return normalizeManualSigDraftPersist(raw, pickSlots);
 }
 
 function normalizeSigImageCompareKey(url: string): string {
@@ -449,7 +455,7 @@ export function buildManualSigItemsFromDrafts(
   });
 }
 
-/** 수동 리롤 — 풀에 2개 이상이면 최대 5개까지 랜덤 */
+/** 수동 리롤 — 풀에 2개 이상이면 설정 당첨 수(최대 20)까지 랜덤 */
 export const MANUAL_REROLL_MIN_POOL = MIN_MANUAL_OVERLAY_SIGS;
 export function readManualSigPickCount(state: AppState | null | undefined): number {
   const os =
@@ -715,7 +721,7 @@ export function resolveManualOverlaySelectedSigs(
       items = patchManualOverlaySigImagesFromDraft(items, draft.drafts, inv, userId);
     }
   }
-  return items.slice(0, 5);
+  return items.slice(0, pickCount);
 }
 
 /** 판매 확정·체크에 따라 한방 표시 금액(당첨 합계 − 판매분) */

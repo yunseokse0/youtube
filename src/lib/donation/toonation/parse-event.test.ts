@@ -112,14 +112,21 @@ describe("toonation parse-event", () => {
     expect(parseToonationWebSocketMessage(raw)).toBeNull();
   });
 
-  it("assigns unique fallback ids when payload has no donation id", () => {
+  it("stable fallback id for identical payload without donation id", () => {
+    const payload = { nickname: "배지은", amount: 20000, comment: "" };
     const ids = new Set<string>();
     for (let i = 0; i < 5; i++) {
-      const evt = parseToonationDonationPayload({ nickname: "배지은", amount: 20000, comment: "" });
+      const evt = parseToonationDonationPayload(payload);
       expect(evt?.externalId).toBeTruthy();
       ids.add(String(evt?.externalId));
     }
-    expect(ids.size).toBe(5);
+    expect(ids.size).toBe(1);
+  });
+
+  it("different payloads without id get different fallback ids", () => {
+    const a = parseToonationDonationPayload({ nickname: "배지은", amount: 20000, comment: "" });
+    const b = parseToonationDonationPayload({ nickname: "배지은", amount: 20001, comment: "" });
+    expect(a?.externalId).not.toBe(b?.externalId);
   });
 
   it("reuses reliable external id for real donations", () => {
@@ -133,7 +140,7 @@ describe("toonation parse-event", () => {
     expect(evt?.id).toBe("toonation:donation-abc-99");
   });
 
-  it("forces unique id for toonation admin test donations (reused id)", () => {
+  it("stable id for toonation admin test donations (reused id / WS retry)", () => {
     const base = {
       id: "same-test-id",
       nickname: "테스트 계정",
@@ -145,8 +152,9 @@ describe("toonation parse-event", () => {
     const b = parseToonationDonationPayload(base);
     expect(a?.donorName).toBe("익명");
     expect(a?.target).toBe("account");
-    expect(a?.externalId).not.toBe(b?.externalId);
-    expect(a?.id).not.toBe(b?.id);
+    expect(a?.externalId).toBe(b?.externalId);
+    expect(a?.id).toBe(b?.id);
+    expect(a?.externalId).toMatch(/^test-/);
   });
 
   it("createUniqueToonationFallbackId never collides in a tight loop", () => {

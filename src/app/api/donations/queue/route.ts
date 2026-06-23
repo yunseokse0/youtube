@@ -2,6 +2,8 @@ export const runtime = "edge";
 export const revalidate = 0;
 
 import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
+import { isDuplicateDonationEvent } from "@/lib/donation/apply-donation-state";
+import { loadAppStateForUserId } from "@/lib/app-state-server-load";
 import type { DonationEvent, QueueSigItem } from "@/lib/donation/types";
 import { readDonationQueue, writeDonationQueue } from "../_shared/queue-store";
 
@@ -63,8 +65,11 @@ export async function GET(req: Request) {
     });
   }
   const list = await readDonationQueue(userId);
+  const state = await loadAppStateForUserId(userId);
   /** 응답만 필터 — 저장소는 건드리지 않음(배포·조회만으로 레거시 큐 항목 삭제 방지) */
-  const withoutLegacyApplied = list.filter((x) => !x.alreadyApplied);
+  const withoutLegacyApplied = list.filter(
+    (x) => !x.alreadyApplied && !isDuplicateDonationEvent(state, x)
+  );
   return new Response(JSON.stringify({ items: withoutLegacyApplied }), {
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
   });

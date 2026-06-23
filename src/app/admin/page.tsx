@@ -130,6 +130,7 @@ import {
 import {
   dedupeDonorRows,
   donationQueueIdsForDonor,
+  isDuplicateDonationEvent,
   normalizeDonationEventId,
   revertDonationFromAppState,
 } from "@/lib/donation/apply-donation-state";
@@ -795,13 +796,13 @@ export default function AdminPage() {
     };
     return map[id] || map.default;
   };
-  const persistState = useCallback((s: AppState) => {
+  const persistState = useCallback((s: AppState, opts?: { donorsAuthoritative?: boolean }) => {
     const now = Date.now();
     lastLocalPersistAtRef.current = now;
     stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, s.updatedAt || now, now);
     pendingUnsyncedRef.current = true;
     /** 배지를 매 저장마다 `loading`으로 두면 느린 서버에서 GET/POST가 쌓일 때 "동기화 중"이 계속 보임. 네트워크와 분리해 이전 상태를 유지한 뒤 결과만 반영 */
-    saveStateAsync(s, user?.id).then((r) => {
+    saveStateAsync(s, user?.id, opts).then((r) => {
       if (r.ok) {
         if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
           stateUpdatedAtRef.current = r.serverUpdatedAt;
@@ -4187,6 +4188,11 @@ export default function AdminPage() {
         cleared += 1;
         continue;
       }
+      if (isDuplicateDonationEvent(stateRef.current, evt)) {
+        await removeQueueEvent(evt.id);
+        cleared += 1;
+        continue;
+      }
       const result = await processDonationEvent(
         { ...evt, status: "queued" },
         user?.id,
@@ -4194,7 +4200,11 @@ export default function AdminPage() {
       );
       applyProcessDonationResult(result);
       await removeQueueEvent(evt.id);
-      applied += 1;
+      if (result.updatedState) {
+        applied += 1;
+      } else if (result.status === "processed") {
+        cleared += 1;
+      }
     }
     await fetchToonationQueue();
     await fetchUnmatchedEvents();
@@ -8911,7 +8921,7 @@ export default function AdminPage() {
                                     setState((prev: AppState) => {
                                       const next = revertDonationFromAppState(prev, d.id);
                                       if (!next) return prev;
-                                      persistState(next);
+                                      persistState(next, { donorsAuthoritative: true });
                                       return next;
                                     });
                                   }, { confirmText: "삭제", danger: true });

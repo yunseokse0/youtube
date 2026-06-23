@@ -3,6 +3,7 @@ import {
   broadcastPlayerDonationAlert,
   enrichDonationEventWithSigMatch,
 } from "@/lib/donation/player-donation-alert";
+import { isDuplicateDonationEvent, normalizeDonationEventId } from "@/lib/donation/apply-donation-state";
 import { loadAppStateForUserId } from "@/lib/app-state-server-load";
 import type { DonationEvent, QueueSigItem } from "../types";
 
@@ -48,6 +49,9 @@ export async function enqueueDonationEvent(
     status: "queued",
     sigListSnapshot: withMatch.sigListSnapshot ?? snapshot,
   };
+  const state = await loadAppStateForUserId(userId);
+  if (isDuplicateDonationEvent(state, enriched)) return false;
+
   const list = await readDonationQueue(userId);
   const externalKey =
     enriched.provider && enriched.externalId
@@ -72,4 +76,27 @@ export async function enqueueDonationEvent(
     await broadcastDonationQueueUpdated();
   }
   return true;
+}
+
+/** 서버 자동 반영 후 큐에 남은 동일·유사 건 제거(클라이언트 2차 반영 방지) */
+export async function purgeDonationQueueForEvent(userId: string, event: DonationEvent): Promise<void> {
+  const state = await loadAppStateForUserId(userId);
+  const list = await readDonationQueue(userId);
+  const next = list.filter((evt) => {
+    if (isDuplicateDonationEvent(state, evt)) return false;
+    const eventId = String(event.id || "").trim();
+    const baseId = normalizeDonationEventId(eventId);
+    const externalKey =
+      event.provider && event.externalId
+        ? `${event.provider}:${String(event.externalId).trim()}`
+        : "";
+    const evtId = String(evt.id || "").trim();
+    const evtBase = normalizeDonationEventId(evtId);
+    if (eventId && (evtId === eventId || evtBase === baseId)) return false;
+    const evtExt =
+      evt.provider && evt.externalId ? `${evt.provider}:${String(evt.externalId).trim()}` : "";
+    if (externalKey && evtExt === externalKey) return false;
+    return true;
+  });
+  if (next.length !== list.length) await writeDonationQueue(userId, next);
 }

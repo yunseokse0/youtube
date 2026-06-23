@@ -14,6 +14,7 @@ import {
   hasExpandedSigInventory,
   isShrunkToDefaultSigInventory,
   mergeDonorsForMultiTabSave,
+  normalizeDonorsArray,
   normalizeRouletteState,
   normalizeSigRolling,
 } from "@/lib/state";
@@ -428,7 +429,8 @@ export async function POST(req: Request) {
         headers: { "Content-Type": "application/json" },
       });
     }
-    const body = (await req.json()) as Partial<AppState>;
+    const body = (await req.json()) as Partial<AppState> & { donorsAuthoritative?: boolean };
+    const donorsAuthoritative = body.donorsAuthoritative === true;
     const { base, token } = getRedisEnv();
     let existing: AppState | null = null;
     if (base && token) {
@@ -442,9 +444,12 @@ export async function POST(req: Request) {
     const mergedDonors = donorsInPatch
       ? donationInitReset
         ? []
-        : mergeDonorsForMultiTabSave(body.donors || [], baseState.donors, {
+        : donorsAuthoritative
+          ? normalizeDonorsArray(body.donors)
+          : mergeDonorsForMultiTabSave(body.donors || [], baseState.donors, {
             incomingUpdatedAt: Number(body.updatedAt || 0),
             existingUpdatedAt: Number(baseState.updatedAt || 0),
+            donorsAuthoritative,
           })
       : baseState.donors;
     const merged = mergePartialState(baseState, body, userId);

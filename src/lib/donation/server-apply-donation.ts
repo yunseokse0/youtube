@@ -2,8 +2,13 @@ import { readDonationAliases } from "@/app/api/donations/_shared/alias-store";
 import { saveAppStateForRoulette } from "@/app/api/roulette/edge-state-store";
 import { loadAppStateForUserId } from "@/lib/app-state-server-load";
 import { broadcastPlayerDonationAlert, enrichDonationEventWithSigMatch } from "./player-donation-alert";
-import { applyDonationToAppState, normalizeDonationEventId } from "./apply-donation-state";
-import { enqueueDonationEvent } from "./toonation/enqueue-donation";
+import {
+  applyDonationToAppState,
+  isDuplicateDonationEvent,
+  normalizeDonationEventId,
+} from "./apply-donation-state";
+import { isReliableToonationExternalId } from "./toonation/parse-event";
+import { enqueueDonationEvent, purgeDonationQueueForEvent } from "./toonation/enqueue-donation";
 import type { DonationEvent } from "./types";
 
 export type ToonationAutoApplyOutcome = "applied" | "applied_needs_review" | "not_applied";
@@ -16,6 +21,24 @@ function donationApplyLockKey(userId: string, event: DonationEvent): string {
   const ext = String(event.externalId || "").trim();
   const base = normalizeDonationEventId(ext);
   return `${userId}:${event.provider || "toonation"}:${ext || base}`;
+}
+
+/** 동일 후원이 다른 fallback id로 병렬 진입하는 것 방지 */
+function donationContentLockKey(userId: string, event: DonationEvent): string {
+  const ext = String(event.externalId || "").trim();
+  if (event.provider === "toonation" && isReliableToonationExternalId(ext)) {
+    return `${userId}:ext:toonation:${ext.toLowerCase()}`;
+  }
+  const name = String(event.donorName || "").trim().toLowerCase();
+  const amount = Math.max(0, Math.round(Number(event.amount) || 0));
+  const target = event.target === "account" ? "account" : "toon";
+  const msg = String(event.message || "").trim();
+  return `${userId}:fp:${event.provider || "toonation"}:${name}|${amount}|${target}|${msg}|${ext}`;
+}
+
+function donationApplyLockKeys(userId: string, event: DonationEvent): string[] {
+  const keys = new Set<string>([donationApplyLockKey(userId, event), donationContentLockKey(userId, event)]);
+  return Array.from(keys);
 }
 
 async function broadcastDonationStateUpdated(updatedAt: number, donorRankingsUpdatedAt?: number): Promise<void> {
@@ -36,11 +59,12 @@ export async function tryAutoApplyToonationDonationOnServer(
   userId: string,
   event: DonationEvent
 ): Promise<ToonationAutoApplyOutcome> {
-  const lockKey = donationApplyLockKey(userId, event);
-  if (inFlightApplyKeys.has(lockKey)) return "applied";
-  inFlightApplyKeys.add(lockKey);
+  const lockKeys = donationApplyLockKeys(userId, event);
+  if (lockKeys.some((key) => inFlightApplyKeys.has(key))) return "applied";
+  for (const key of lockKeys) inFlightApplyKeys.add(key);
   try {
     const state = await loadAppStateForUserId(userId);
+    if (isDuplicateDonationEvent(state, event)) return "applied";
     const aliases = await readDonationAliases(userId);
     const result = applyDonationToAppState(state, event, aliases);
     if (!result.ok) {
@@ -48,12 +72,13 @@ export async function tryAutoApplyToonationDonationOnServer(
       return "not_applied";
     }
     await saveAppStateForRoulette(userId, result.state);
+    await purgeDonationQueueForEvent(userId, event);
     await broadcastDonationStateUpdated(result.state.updatedAt, result.state.donorRankingsUpdatedAt);
     const enriched = await enrichDonationEventWithSigMatch(userId, result.event);
     await broadcastPlayerDonationAlert(userId, enriched);
     return result.event.memberAutoAssigned ? "applied_needs_review" : "applied";
   } finally {
-    inFlightApplyKeys.delete(lockKey);
+    for (const key of lockKeys) inFlightApplyKeys.delete(key);
   }
 }
 

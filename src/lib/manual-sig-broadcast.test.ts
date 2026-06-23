@@ -309,6 +309,37 @@ describe("resolveManualDraftRowForSigItem", () => {
     expect(out.map((s) => s.name)).toEqual(fresh.map((s) => s.name));
   });
 
+  it("resolveManualOverlaySelectedSigs respects pickCount up to 20 (not hardcoded 5)", () => {
+    const mk = (id: string, name: string, price: number): SigItem => ({
+      id,
+      name,
+      price,
+      imageUrl: "",
+      memberId: "",
+      maxCount: 1,
+      soldCount: 0,
+      isRolling: true,
+      isActive: true,
+    });
+    const selected = Array.from({ length: 10 }, (_, i) => mk(`sig_${i}`, `시그${i + 1}`, 10000 + i));
+    const state = {
+      sigInventory: selected,
+      overlaySettings: {
+        sigSalesManualPickCount: 10,
+        [MANUAL_SIG_BROADCAST_STATE_KEY]: {
+          phase: "LANDED",
+          startedAt: 1,
+          selectedSigs: selected,
+          oneShotResult: { id: "sig_one_shot", name: "한방 시그", price: 100000 },
+          overlayReloadNonce: 1,
+        },
+      },
+    } as AppState;
+    const out = resolveManualOverlaySelectedSigs(state, "finalent");
+    expect(out).toHaveLength(10);
+    expect(out.map((s) => s.name)).toEqual(selected.map((s) => s.name));
+  });
+
   it("enrichManualDraftsWithInventoryImageUrls copies registered inventory imageUrl into draft rows", () => {
     const uploadUrl = "/uploads/sigs/finalent/1730000000_abc12345.gif";
     const out = enrichManualDraftsWithInventoryImageUrls(

@@ -1202,6 +1202,11 @@ async function postAppStateWithAuthRecovery(json: string, userId?: string | null
  * `/api/state` 저장은 한 번에 하나만 진행하고, 진행 중 추가 요청은 최신 페이로드로 합친다.
  * SSE(`/api/events`)는 POST 성공 후 비동기로 **경량** 페이로드만 전송한다(`state_updated` + updatedAt).
  */
+export type SaveStateAsyncOptions = {
+  /** 후원 삭제·전체 비우기 — mergeDonorsForMultiTabSave 되살림 방지 */
+  donorsAuthoritative?: boolean;
+};
+
 export type SaveStateAsyncResult = {
   ok: boolean;
   serverUpdatedAt?: number;
@@ -1300,7 +1305,11 @@ async function runServerSaveQueue(): Promise<void> {
 }
 
 /** 관리자 /api/state 저장 시 — 스핀 결과·historyLogs는 서버 전용(POST 생략으로 대역폭 절감) */
-function appStatePayloadForApi(next: AppState, userId?: string | null): Partial<AppState> {
+function appStatePayloadForApi(
+  next: AppState,
+  userId?: string | null,
+  options?: SaveStateAsyncOptions
+): Partial<AppState> & { donorsAuthoritative?: boolean } {
   const normalizedSigInventory = slimSigInventoryForWire(
     normalizeSigInventory(next.sigInventory),
     userId ?? undefined
@@ -1320,9 +1329,12 @@ function appStatePayloadForApi(next: AppState, userId?: string | null): Partial<
       ? { donorRankingsUpdatedAt }
       : {}),
   };
-  if (!rouletteState) return base;
+  if (!rouletteState) {
+    return options?.donorsAuthoritative ? { ...base, donorsAuthoritative: true } : base;
+  }
   return {
     ...base,
+    ...(options?.donorsAuthoritative ? { donorsAuthoritative: true } : {}),
     rouletteState: {
       menuCount: rouletteState.menuCount,
       menuFillFromAllActive: rouletteState.menuFillFromAllActive,
@@ -1360,13 +1372,21 @@ export function saveState(state: AppState, userId?: string | null) {
   }
 }
 
-export async function saveStateAsync(state: AppState, userId?: string | null): Promise<SaveStateAsyncResult> {
+export async function saveStateAsync(
+  state: AppState,
+  userId?: string | null,
+  options?: SaveStateAsyncOptions
+): Promise<SaveStateAsyncResult> {
   if (typeof window === "undefined") return { ok: false };
   const next = normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() }));
   const json = JSON.stringify(next);
   try { window.localStorage.setItem(storageKey(userId), json); } catch {}
   try {
-    return await enqueueServerSave(JSON.stringify(appStatePayloadForApi(next, userId)), userId, next);
+    return await enqueueServerSave(
+      JSON.stringify(appStatePayloadForApi(next, userId, options)),
+      userId,
+      next
+    );
   } catch {
     return { ok: false };
   }
@@ -1734,6 +1754,8 @@ async function doLoadStateFromApi(
 export type MergeDonorsForMultiTabSaveOptions = {
   incomingUpdatedAt?: number;
   existingUpdatedAt?: number;
+  /** 관리자 후원 삭제 등 — 서버 병합으로 삭제분을 되살리지 않음 */
+  donorsAuthoritative?: boolean;
 };
 
 /**
@@ -1748,12 +1770,15 @@ export function mergeDonorsForMultiTabSave(
   existing: Donor[] | undefined,
   opts?: MergeDonorsForMultiTabSaveOptions
 ): Donor[] {
-  if (!existing || existing.length === 0) return incoming;
-  if (incoming.length === 0) return existing;
-
   const incomingAt = Number(opts?.incomingUpdatedAt || 0);
   const existingAt = Number(opts?.existingUpdatedAt || 0);
   const incomingStale = incomingAt > 0 && existingAt > 0 && incomingAt < existingAt;
+
+  if (!existing || existing.length === 0) return incoming;
+  if (incoming.length === 0) {
+    if (opts?.donorsAuthoritative && !incomingStale) return incoming;
+    return existing;
+  }
 
   const existingIds = new Set(existing.map((d) => d.id));
   const incomingIds = new Set(incoming.map((d) => d.id));
@@ -1774,6 +1799,13 @@ export function mergeDonorsForMultiTabSave(
       if (!prev || d.at >= prev.at) map.set(d.id, d);
     }
     return Array.from(map.values()).sort((a, b) => b.at - a.at);
+  }
+
+  if (hasRemovedInIncoming && !hasNewInIncoming) {
+    if (incomingStale) return existing;
+    if (opts?.donorsAuthoritative) return incoming;
+    const ratio = existing.length > 0 ? incoming.length / existing.length : 1;
+    if (ratio > 0.5) return incoming;
   }
 
   const subset = incoming.every((d) => existingIds.has(d.id));

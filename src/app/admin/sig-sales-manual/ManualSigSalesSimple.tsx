@@ -115,15 +115,21 @@ export default function ManualSigSalesSimple() {
       const row = parsed[i];
       if (row?.name && row.price > 0) {
         rows.push({ draftIdx: i, name: row.name, price: row.price });
+        continue;
+      }
+      const sig = displaySigs[i];
+      if (sig?.name) {
+        rows.push({
+          draftIdx: i,
+          name: sig.name,
+          price: Number(sig.price || 0),
+        });
       }
     }
-    if (rows.length > 0) return rows;
-    return displaySigs.map((sig, idx) => ({
-      draftIdx: idx,
-      name: sig.name,
-      price: Number(sig.price || 0),
-    }));
+    return rows;
   }, [draft?.drafts, displaySigs, pickCount]);
+  const needsRerollForPickCount =
+    displaySigs.length > 0 && displaySigs.length < pickCount;
 
   const currentNames = displaySigs.map((s) => s.name).join(", ");
   const oneShotLabel = useMemo(() => {
@@ -240,7 +246,11 @@ export default function ManualSigSalesSimple() {
           ...(nextDraft ? { [MANUAL_SIG_DRAFT_STATE_KEY]: nextDraft } : {}),
         } as AppState["overlaySettings"],
       };
-      await persistState(next, `당첨 시그 개수 ${n}개로 변경`, "개수 설정 저장이 지연됩니다.");
+      await persistState(
+        next,
+        `당첨 시그 개수 ${n}개로 변경 · 「리롤」하면 OBS에 ${n}개 반영`,
+        "개수 설정 저장이 지연됩니다."
+      );
     },
     [state, persistState]
   );
@@ -432,8 +442,18 @@ export default function ManualSigSalesSimple() {
           <p className="text-xs font-semibold text-sky-100">지금 OBS 당첨</p>
           {currentNames ? (
             <>
-              <p className="mt-2 text-sm text-white">{currentNames}</p>
+              <p className="mt-2 text-sm text-white">
+                {currentNames}
+                <span className="ml-2 text-xs text-sky-300/90">
+                  ({displaySigs.length}/{pickCount}개)
+                </span>
+              </p>
               {oneShotLabel ? <p className="mt-1 text-sm text-yellow-200">+ {oneShotLabel}</p> : null}
+              {needsRerollForPickCount ? (
+                <p className="mt-2 text-xs font-semibold text-amber-200/95">
+                  당첨 개수가 {pickCount}개입니다. 「리롤 → OBS」를 눌러 {pickCount}개를 새로 뽑아 주세요.
+                </p>
+              ) : null}
             </>
           ) : (
             <p className="mt-2 text-sm text-neutral-500">아직 없음 — 리롤을 누르세요.</p>

@@ -35,4 +35,25 @@ describe("mergeDonorsForMultiTabSave", () => {
     });
     expect(merged.map((d) => d.id).sort()).toEqual(["toonation:2", "toonation:4"]);
   });
+
+  it("applies intentional delete when incoming is newer (1 of 2)", () => {
+    const existing = [donor("toonation:1", 51000), donor("toonation:2", 10000)];
+    const incoming = [donor("toonation:2", 10000)];
+    const merged = mergeDonorsForMultiTabSave(incoming, existing, {
+      incomingUpdatedAt: 9000,
+      existingUpdatedAt: 5000,
+      donorsAuthoritative: true,
+    });
+    expect(merged.map((d) => d.id)).toEqual(["toonation:2"]);
+  });
+
+  it("applies authoritative empty donors (delete all)", () => {
+    const existing = [donor("toonation:1", 51000)];
+    const merged = mergeDonorsForMultiTabSave([], existing, {
+      incomingUpdatedAt: 9000,
+      existingUpdatedAt: 5000,
+      donorsAuthoritative: true,
+    });
+    expect(merged).toEqual([]);
+  });
 });

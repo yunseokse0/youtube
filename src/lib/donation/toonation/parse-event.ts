@@ -118,11 +118,68 @@ export function extractToonationExternalId(data: unknown): string {
 
 let toonationFallbackIdSeq = 0;
 
-/** id 없음·0·테스트 재사용 id 등 — 건별 고유 fallback */
+/** id 없음·0·테스트 재사용 id 등 — 레거시·테스트용(동일 페이로드는 createStableToonationFallbackId 사용) */
 export function createUniqueToonationFallbackId(amount: number): string {
   toonationFallbackIdSeq = (toonationFallbackIdSeq + 1) % 1_000_000;
   const rand = Math.random().toString(36).slice(2, 8);
   return `${Date.now()}-${amount}-${toonationFallbackIdSeq}-${rand}`;
+}
+
+function hashDonationFingerprint(parts: string[]): string {
+  const key = parts.join("\0");
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+}
+
+export function extractToonationTimestamp(data: unknown): string {
+  const root = unwrapToonationPayload(data);
+  const candidates = [
+    safeRead(root, "createdAt"),
+    safeRead(root, "donatedAt"),
+    safeRead(root, "timestamp"),
+    safeRead(root, "regDate"),
+    safeRead(root, "date"),
+    safeRead(root, "time"),
+    safeRead(data, "createdAt"),
+  ];
+  for (const c of candidates) {
+    const s = String(c ?? "").trim();
+    if (s) return s;
+  }
+  return "";
+}
+
+/** WS 재전송·서버+큐 이중 반영 방지 — 동일 페이로드면 항상 같은 fallback id */
+export function buildToonationDonationFingerprint(data: unknown, amount: number): string {
+  const alertDonor = extractToonationDonorName(data);
+  const msg = extractToonationMessage(data);
+  const parsed = parseToonationMessageBody(msg, alertDonor);
+  const donorName =
+    parsed.target === "account" ? parsed.donorName || alertDonor : parsed.donorName || alertDonor;
+  return hashDonationFingerprint([
+    donorName,
+    String(amount),
+    msg,
+    parsed.target,
+    parsed.playerName || "",
+    extractToonationExternalId(data),
+    extractToonationTimestamp(data),
+  ]);
+}
+
+export function createStableToonationFallbackId(data: unknown, amount: number): string {
+  const extracted = extractToonationExternalId(data);
+  const fp = buildToonationDonationFingerprint(data, amount);
+  if (isToonationTestDonationPayload(data)) {
+    if (isReliableToonationExternalId(extracted)) return `test-${extracted}`;
+    return `test-${fp}`;
+  }
+  const ts = extractToonationTimestamp(data);
+  return ts ? `fp-${ts}-${amount}-${fp}` : `fp-${amount}-${fp}`;
 }
 
 /** 실제 후원 id — WS 재전송 시 동일 값으로 중복 제거 가능 */
@@ -149,7 +206,7 @@ export function allocateToonationExternalId(data: unknown, amount: number): stri
   if (!isToonationTestDonationPayload(data) && isReliableToonationExternalId(extracted)) {
     return extracted;
   }
-  return createUniqueToonationFallbackId(amount);
+  return createStableToonationFallbackId(data, amount);
 }
 
 export function isDonationLikeSocketEventName(eventName: string): boolean {
