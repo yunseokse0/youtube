@@ -203,10 +203,14 @@ export function isToonationTestDonationPayload(data: unknown): boolean {
 
 export function allocateToonationExternalId(data: unknown, amount: number): string {
   const extracted = extractToonationExternalId(data);
-  if (!isToonationTestDonationPayload(data) && isReliableToonationExternalId(extracted)) {
+  if (isToonationTestDonationPayload(data)) {
+    if (isReliableToonationExternalId(extracted)) return `test-${extracted}`;
+    return `test-${buildToonationDonationFingerprint(data, amount)}`;
+  }
+  if (isReliableToonationExternalId(extracted)) {
     return extracted;
   }
-  return createStableToonationFallbackId(data, amount);
+  return createUniqueToonationFallbackId(amount);
 }
 
 export function isDonationLikeSocketEventName(eventName: string): boolean {

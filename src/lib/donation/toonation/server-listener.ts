@@ -48,6 +48,38 @@ type ActiveConnection = {
 
 const active = new Map<string, ActiveConnection>();
 
+const RAW_WS_DEDUPE_MS = 4_000;
+const recentRawWsByUser = new Map<string, Map<string, number>>();
+
+function hashRawWsMessage(raw: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < raw.length; i++) {
+    h ^= raw.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+}
+
+/** 동일 WS 원문 재전송만 짧게 무시 — 연속 동일 후원(다른 id·원문)은 통과 */
+function shouldSkipDuplicateRawWs(userId: string, raw: string): boolean {
+  const hash = hashRawWsMessage(raw);
+  const now = Date.now();
+  let map = recentRawWsByUser.get(userId);
+  if (!map) {
+    map = new Map();
+    recentRawWsByUser.set(userId, map);
+  }
+  const prev = map.get(hash);
+  if (typeof prev === "number" && now - prev < RAW_WS_DEDUPE_MS) return true;
+  map.set(hash, now);
+  if (map.size > 200) {
+    for (const [key, at] of map) {
+      if (now - at > RAW_WS_DEDUPE_MS) map.delete(key);
+    }
+  }
+  return false;
+}
+
 function statusFromConn(conn: ActiveConnection): ToonationServerListenerStatus {
   return {
     userId: conn.userId,
@@ -82,6 +114,10 @@ function scheduleReconnect(conn: ActiveConnection) {
 }
 
 async function onDonation(userId: string, raw: string): Promise<void> {
+  if (shouldSkipDuplicateRawWs(userId, raw)) {
+    log.debug("동일 WS 원문 재전송 무시", { userId });
+    return;
+  }
   try {
     const envelope = JSON.parse(raw) as Record<string, unknown>;
     if (envelope && isToonationYoutubeSuperChatWsMessage(envelope)) {

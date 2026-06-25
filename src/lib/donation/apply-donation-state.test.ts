@@ -188,6 +188,39 @@ describe("applyDonationToAppState", () => {
     expect(result.reason).toBe("duplicate");
   });
 
+  it("allows consecutive identical toonation donations with different external ids", () => {
+    const at = Date.now();
+    const state = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "피자", account: 0, toon: 1000, contribution: 1000 }],
+      donors: [
+        {
+          id: "toonation:donation-1",
+          name: "익명",
+          amount: 1000,
+          memberId: "m1",
+          at,
+          target: "toon" as const,
+        },
+      ],
+    };
+    const event: DonationEvent = {
+      id: "toonation:donation-2",
+      provider: "toonation",
+      externalId: "donation-2",
+      donorName: "익명",
+      amount: 1000,
+      at: new Date(at + 500).toISOString(),
+      status: "queued",
+      target: "toon",
+    };
+    const result = applyDonationToAppState(state, event);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.members[0]?.toon).toBe(2000);
+    expect(result.state.donors).toHaveLength(2);
+  });
+
   it("rejects near-duplicate toonation with same reliable external within 5s", () => {
     const at = Date.now();
     const state = {

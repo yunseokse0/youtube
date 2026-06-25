@@ -78,24 +78,27 @@ export async function enqueueDonationEvent(
   return true;
 }
 
-/** 서버 자동 반영 후 큐에 남은 동일·유사 건 제거(클라이언트 2차 반영 방지) */
+/** 서버 자동 반영 후 큐에 남은 동일 id 건 제거(클라이언트 2차 반영 방지) */
 export async function purgeDonationQueueForEvent(userId: string, event: DonationEvent): Promise<void> {
-  const state = await loadAppStateForUserId(userId);
+  const eventId = String(event.id || "").trim();
+  const baseId = normalizeDonationEventId(eventId);
+  const externalKey =
+    event.provider && event.externalId
+      ? `${event.provider}:${String(event.externalId).trim()}`
+      : "";
+  const keys = new Set<string>();
+  if (eventId) keys.add(eventId);
+  if (baseId) keys.add(baseId);
+  if (externalKey) keys.add(externalKey);
+  if (baseId) keys.add(`toonation:${baseId.replace(/^toonation:/i, "")}`);
   const list = await readDonationQueue(userId);
   const next = list.filter((evt) => {
-    if (isDuplicateDonationEvent(state, evt)) return false;
-    const eventId = String(event.id || "").trim();
-    const baseId = normalizeDonationEventId(eventId);
-    const externalKey =
-      event.provider && event.externalId
-        ? `${event.provider}:${String(event.externalId).trim()}`
-        : "";
     const evtId = String(evt.id || "").trim();
     const evtBase = normalizeDonationEventId(evtId);
-    if (eventId && (evtId === eventId || evtBase === baseId)) return false;
+    if (keys.has(evtId) || keys.has(evtBase)) return false;
     const evtExt =
       evt.provider && evt.externalId ? `${evt.provider}:${String(evt.externalId).trim()}` : "";
-    if (externalKey && evtExt === externalKey) return false;
+    if (evtExt && keys.has(evtExt)) return false;
     return true;
   });
   if (next.length !== list.length) await writeDonationQueue(userId, next);

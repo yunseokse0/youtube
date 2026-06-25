@@ -113,17 +113,13 @@ export function syncMemberTotalsFromDonors(state: AppState): AppState {
   return { ...state, members };
 }
 
-/** 동일 투네·계좌 후원이 다른 id(검토 큐·타임스탬프 fallback)로 다시 들어오는 것 방지 */
+/** 동일 투네·계좌 후원 id가 이미 donors에 있으면 중복(연속 동일 금액·닉은 별도 건으로 허용) */
 export function isDuplicateDonationEvent(state: AppState, rawEvent: DonationEvent): boolean {
   const donors = state.donors || [];
   const eventId = String(rawEvent.id || "").trim();
   const baseId = normalizeDonationEventId(eventId);
   const externalId = String(rawEvent.externalId || "").trim();
   const externalDonorId = externalId && rawEvent.provider ? `${rawEvent.provider}:${externalId}` : "";
-  const amount = Math.max(0, Math.round(Number(rawEvent.amount) || 0));
-  const target = rawEvent.target === "account" ? "account" : "toon";
-  const donorNameKey = String(rawEvent.donorName || "").trim().toLowerCase();
-  const eventAt = toEpochMs(rawEvent.at);
 
   return donors.some((d) => {
     const donorId = String(d.id || "").trim();
@@ -131,29 +127,6 @@ export function isDuplicateDonationEvent(state: AppState, rawEvent: DonationEven
     if (donorId === eventId || donorId === baseId) return true;
     if (baseId && normalizeDonationEventId(donorId) === baseId) return true;
     if (externalDonorId && (donorId === externalDonorId || normalizeDonationEventId(donorId) === externalDonorId)) {
-      return true;
-    }
-    const reliableExternal =
-      Boolean(externalId) &&
-      rawEvent.provider === "toonation" &&
-      !isWeakToonationDonorId(`toonation:${externalId}`);
-    const nearTime = Math.abs(donorAtEpochMs(d) - eventAt) <= 5000;
-    if (
-      nearTime &&
-      reliableExternal &&
-      String(d.name || "").trim().toLowerCase() === donorNameKey &&
-      Math.floor(Number(d.amount || 0)) === amount &&
-      (d.target || "toon") === target
-    ) {
-      return true;
-    }
-    if (
-      nearTime &&
-      target === "account" &&
-      (d.target || "toon") === "account" &&
-      String(d.name || "").trim().toLowerCase() === donorNameKey &&
-      Math.floor(Number(d.amount || 0)) === amount
-    ) {
       return true;
     }
     return false;

@@ -7,7 +7,6 @@ import {
   isDuplicateDonationEvent,
   normalizeDonationEventId,
 } from "./apply-donation-state";
-import { isReliableToonationExternalId } from "./toonation/parse-event";
 import { enqueueDonationEvent, purgeDonationQueueForEvent } from "./toonation/enqueue-donation";
 import type { DonationEvent } from "./types";
 
@@ -23,22 +22,8 @@ function donationApplyLockKey(userId: string, event: DonationEvent): string {
   return `${userId}:${event.provider || "toonation"}:${ext || base}`;
 }
 
-/** 동일 후원이 다른 fallback id로 병렬 진입하는 것 방지 */
-function donationContentLockKey(userId: string, event: DonationEvent): string {
-  const ext = String(event.externalId || "").trim();
-  if (event.provider === "toonation" && isReliableToonationExternalId(ext)) {
-    return `${userId}:ext:toonation:${ext.toLowerCase()}`;
-  }
-  const name = String(event.donorName || "").trim().toLowerCase();
-  const amount = Math.max(0, Math.round(Number(event.amount) || 0));
-  const target = event.target === "account" ? "account" : "toon";
-  const msg = String(event.message || "").trim();
-  return `${userId}:fp:${event.provider || "toonation"}:${name}|${amount}|${target}|${msg}|${ext}`;
-}
-
 function donationApplyLockKeys(userId: string, event: DonationEvent): string[] {
-  const keys = new Set<string>([donationApplyLockKey(userId, event), donationContentLockKey(userId, event)]);
-  return Array.from(keys);
+  return [donationApplyLockKey(userId, event)];
 }
 
 async function broadcastDonationStateUpdated(updatedAt: number, donorRankingsUpdatedAt?: number): Promise<void> {
