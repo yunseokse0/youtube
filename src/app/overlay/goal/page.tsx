@@ -16,6 +16,8 @@ import {
 import { GoalBar } from "@/components/GoalBar";
 import { useGoalPresetAutoEscalate } from "@/hooks/useGoalPresetAutoEscalate";
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
+import { clampWidthToViewport } from "@/lib/overlay-mobile-fit";
+import { useOverlayViewportSize } from "@/hooks/useOverlayViewportSize";
 
 export default function GoalOverlayPage() {
   const sp = useSearchParams();
@@ -68,6 +70,11 @@ export default function GoalOverlayPage() {
     if (Number.isFinite(fromPreset) && fromPreset > 0) return Math.max(260, Math.min(1200, Math.floor(fromPreset)));
     return 560;
   }, [sp, activePreset?.goalWidth]);
+  const viewportSize = useOverlayViewportSize();
+  const responsiveWidth = useMemo(
+    () => clampWidthToViewport(width, viewportSize.w),
+    [width, viewportSize.w]
+  );
   const presetParams = useMemo(() => presetToParams(activePreset), [activePreset]);
   const goalOpacity = useMemo(() => {
     const raw = resolveLivePresetStyleParam("goalOpacity", sp, presetParams, { ready }) || "";
@@ -134,14 +141,14 @@ export default function GoalOverlayPage() {
       `,
         }}
       />
-      <div className="mx-auto flex min-h-[120px] items-center justify-center" style={{ width }}>
+      <div className="mx-auto flex min-h-[120px] w-full max-w-[100vw] items-center justify-center px-2" style={{ width: responsiveWidth }}>
         {goal > 0 ? (
           <section className="w-full p-0">
             <GoalBar
               current={current}
               goal={goal}
               label={goalLabel}
-              width={width}
+              width={responsiveWidth}
               opacityPercent={goalOpacity}
               opacityAffectsText={goalOpacityAffectsText}
               textColor={goalTextColor}

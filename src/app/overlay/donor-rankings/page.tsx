@@ -27,6 +27,8 @@ import {
   buildOverlayCellOutlineStyle,
   DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR,
 } from "@/lib/text-outline-style";
+import { resolveBroadcastZoomScale } from "@/lib/overlay-mobile-fit";
+import { useOverlayViewportSize } from "@/hooks/useOverlayViewportSize";
 
 function readOutlineWidth(sp: URLSearchParams, key: string, fallback: number): number {
   const raw = sp.get(key);
@@ -618,7 +620,11 @@ export default function DonorRankingsOverlayPage() {
   const rankSize = liveThemeNumber(ready, useTest, savedTheme.rankSize, sp, "rankSize", 12, 72);
   const overlayOpacity = liveThemeNumber(ready, useTest, savedTheme.overlayOpacity, sp, "overlayOpacity", 0, 100);
   const zoomPct = Math.floor(readNumber(sp, "zoomPct", 100, 30, 300));
-  const zoomScale = zoomPct / 100;
+  const viewportSize = useOverlayViewportSize();
+  const zoomScale = useMemo(
+    () => resolveBroadcastZoomScale(zoomPct, viewportSize.w, profileFull ? 1200 : 1500),
+    [zoomPct, viewportSize.w, profileFull]
+  );
   const bg =
     ready && !useTest
       ? (savedTheme.bg || "").trim() || "transparent"
@@ -696,8 +702,8 @@ export default function DonorRankingsOverlayPage() {
   }
 
   const mainClass = hostObs
-    ? "donor-rankings-overlay-root pointer-events-none fixed inset-0 z-[120] w-full overflow-visible bg-transparent p-5 md:[background:var(--ov-donor-bg)]"
-    : "donor-rankings-overlay-root relative min-h-screen w-full overflow-visible bg-transparent p-5 md:[background:var(--ov-donor-bg)]";
+    ? "donor-rankings-overlay-root pointer-events-none fixed inset-0 z-[120] w-full max-w-[100vw] overflow-visible bg-transparent p-2 sm:p-5 md:[background:var(--ov-donor-bg)]"
+    : "donor-rankings-overlay-root relative min-h-screen w-full max-w-[100vw] overflow-visible bg-transparent p-2 sm:p-5 md:[background:var(--ov-donor-bg)]";
   const outlineCss = donorRankingsOutlineCssBlock(outlineColor, outlineWidthPx);
 
   return (

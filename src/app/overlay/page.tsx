@@ -39,6 +39,9 @@ import {
 } from "@/lib/overlay-pull-policy";
 import { buildOverlaySyncSignature } from "@/lib/overlay-sync-signature";
 import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
+import { buildOverlayRankedMembers } from "@/lib/utils";
+import { clampWidthToViewport, computeContainFitScale, isNarrowBroadcastViewport } from "@/lib/overlay-mobile-fit";
+import { useOverlayViewportSize } from "@/hooks/useOverlayViewportSize";
 
 function tryDecodeSnapshot(str: string | null): AppState | null {
   if (!str) return null;
@@ -1846,6 +1849,17 @@ function OverlayInner() {
   const scaledMainStyle: React.CSSProperties = {};
   const BASE_W = isVertical ? 1080 : 1920;
   const BASE_H = isVertical ? 1920 : 1080;
+  const viewportSize = useOverlayViewportSize();
+  const mobileBroadcast = isNarrowBroadcastViewport(viewportSize.w, viewportSize.h);
+  const mobileCanvasFitScale = useMemo(
+    () =>
+      mobileBroadcast ? computeContainFitScale(BASE_W, BASE_H, viewportSize.w, viewportSize.h) : 1,
+    [mobileBroadcast, BASE_W, BASE_H, viewportSize.w, viewportSize.h]
+  );
+  const responsiveGoalWidth = useMemo(
+    () => clampWidthToViewport(goalWidth, viewportSize.w),
+    [goalWidth, viewportSize.w]
+  );
   const renderW = sp.get("renderWidth") ? parseInt(sp.get("renderWidth")!, 10) : null;
   const renderH = sp.get("renderHeight") ? parseInt(sp.get("renderHeight")!, 10) : null;
   const isPreviewGuide = sp.get("previewGuide") === "true";
@@ -2307,24 +2321,10 @@ function OverlayInner() {
     () => members.some((m) => getMemberRole(m).trim().length > 0),
     [members, getMemberRole]
   );
-  const ranked = useMemo(() => {
-    const arr = [...unpinned].sort((a, b) => {
-      const ta = (a.account || 0) + (a.toon || 0);
-      const tb = (b.account || 0) + (b.toon || 0);
-      if (tb !== ta) return tb - ta;
-      const byName = String(a.name || "").localeCompare(String(b.name || ""), "ko");
-      if (byName !== 0) return byName;
-      return String(a.id || "").localeCompare(String(b.id || ""));
-    });
-    let nextRank = 1;
-    return arr.map((m) => {
-      const role = getMemberRole(m).trim();
-      if (role.includes("대표")) return { m, rank: null as number | null };
-      const rank = nextRank;
-      nextRank += 1;
-      return { m, rank };
-    });
-  }, [unpinned, getMemberRole]);
+  const ranked = useMemo(
+    () => buildOverlayRankedMembers(unpinned, memberPositionsMap, getMemberRole),
+    [unpinned, memberPositionsMap, getMemberRole]
+  );
 
   const memberTableFitSig = useMemo(() => {
     /** 직급 열 너비(`roleColEm`)와 동일 — CJK는 `ch`보다 `em`이 안전 */
@@ -2413,7 +2413,8 @@ function OverlayInner() {
           if (!Number.isFinite(measured) || measured <= 0) return;
           // 마지막 열 클리핑 방지를 위해 10px 안전 여유를 둔다.
           const raw = (avail - 10) / measured;
-          const next = Math.max(0.75, Math.min(1, Math.floor(raw * 100) / 100));
+          const safeFitMin = mobileBroadcast ? 0.4 : 0.75;
+          const next = Math.max(safeFitMin, Math.min(1, Math.floor(raw * 100) / 100));
           if (Math.abs(next - memberTableFitPrevRef.current) < 0.005) return;
           memberTableFitPrevRef.current = next;
           setMemberTableFitFactor(next);
@@ -2499,7 +2500,7 @@ function OverlayInner() {
         /* noop */
       }
     };
-  }, [showMembers, mSize, memberTableFitSig, externalSafeMode, lockMemberTableFontSize]);
+  }, [showMembers, mSize, memberTableFitSig, externalSafeMode, lockMemberTableFontSize, mobileBroadcast]);
 
   const allOrderKeys = [...ranked.map(({ m }) => m.id), ...visiblePinned.map((m) => `${m.id}-p`)];
   const setRowRef = useFlip(allOrderKeys, 500, rowMotionEnabled);
@@ -2675,6 +2676,9 @@ function OverlayInner() {
     let effectiveScale = centerFixed || hasTableFreePos
       ? (scale * (zoomMode === "neutral" ? 1 : (zoomMode === "invert" ? (1 / centerZoomScale) : centerZoomScale)))
       : (externalHost ? scale : (viewportScale * scale));
+    if (mobileCanvasFitScale < 0.999) {
+      effectiveScale *= mobileCanvasFitScale;
+    }
     if (noCrop && !hasExplicitScale) {
       effectiveScale = Math.min(effectiveScale, containLimitScale);
     }
@@ -2720,10 +2724,11 @@ function OverlayInner() {
       fitPin === "cr" ? "right center" :
       "center center";
     const freezeScaleInExternalHost =
-      externalSafeMode ||
-      (externalHost &&
-        !hasExplicitScale &&
-        Math.abs(effectiveScale - 1) < 0.02);
+      mobileCanvasFitScale >= 0.999 &&
+      (externalSafeMode ||
+        (externalHost &&
+          !hasExplicitScale &&
+          Math.abs(effectiveScale - 1) < 0.02));
     const scaleCss = Number.isFinite(effectiveScale) ? Number(effectiveScale.toFixed(4)) : 1;
     const scaleTransform = externalHost
       ? `translate3d(0, 0, 0) scale(${scaleCss})`
@@ -3335,7 +3340,7 @@ function OverlayInner() {
               current={liveGoalCurrent}
               goal={goal}
               label={goalLabel}
-              width={goalWidth}
+              width={responsiveGoalWidth}
               opacityPercent={goalOpacity}
               opacityAffectsText={goalOpacityAffectsText}
               textColor={goalTextColor}

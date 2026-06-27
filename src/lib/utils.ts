@@ -28,6 +28,47 @@ function normalizePosition(member: Member, memberPositions?: Record<string, stri
   return raw;
 }
 
+function isOperatingMember(member: Member, memberPositions?: Record<string, string>): boolean {
+  if (Boolean(member.operating)) return true;
+  if (/운영비/i.test(String(member.name || ""))) return true;
+  if (/운영비/i.test(String(member.realName || ""))) return true;
+  if (/운영비/i.test(normalizePosition(member, memberPositions))) return true;
+  return false;
+}
+
+function isRepresentativeMember(member: Member, memberPositions?: Record<string, string>): boolean {
+  return normalizePosition(member, memberPositions) === "대표";
+}
+
+function compareMembersByTotalDesc(a: Member, b: Member): number {
+  const ta = safeAmount(a.account) + safeAmount(a.toon);
+  const tb = safeAmount(b.account) + safeAmount(b.toon);
+  if (tb !== ta) return tb - ta;
+  const byName = String(a.name || "").localeCompare(String(b.name || ""), "ko");
+  if (byName !== 0) return byName;
+  return String(a.id || "").localeCompare(String(b.id || ""));
+}
+
+export type OverlayRankedMember = { m: Member; rank: number | null };
+
+/** 엑셀표 오버레이: 대표 최상단 고정 → 운영비 제외 멤버 순위 → 운영비(핀)는 호출측에서 하단 */
+export function buildOverlayRankedMembers(
+  unpinnedMembers: Member[],
+  memberPositions?: Record<string, string>,
+  getMemberRole?: (m: Member) => string
+): OverlayRankedMember[] {
+  const roleOf = getMemberRole ?? ((m: Member) => normalizePosition(m, memberPositions));
+  const isRep = (m: Member) =>
+    isRepresentativeMember(m, memberPositions) || roleOf(m).trim().includes("대표");
+  const representative = unpinnedMembers.find(isRep) || null;
+  const rankable = unpinnedMembers.filter((m) => !isRep(m));
+  const sorted = [...rankable].sort(compareMembersByTotalDesc);
+  let nextRank = 1;
+  const others = sorted.map((m) => ({ m, rank: nextRank++ }));
+  if (representative) return [{ m: representative, rank: null }, ...others];
+  return others;
+}
+
 /** 대표는 항상 맨 위 고정, 나머지는 총합 내림차순 */
 export function sortMembersForRanking(
   members: Member[],
@@ -55,22 +96,32 @@ export function sortMembersForRanking(
 
   if (mode === "rankLinked") {
     const representative = rows.find((x) => x.isRepresentative) || null;
+    const operating = rows.filter((row) => {
+      const member = (members || []).find((m) => m.id === row.id);
+      return member ? isOperatingMember(member, memberPositions) : false;
+    });
+    const operatingIds = new Set(operating.map((x) => x.id));
     const others = rows
-      .filter((x) => !representative || x.id !== representative.id)
+      .filter((x) => (!representative || x.id !== representative.id) && !operatingIds.has(x.id))
       .sort((a, b) => b.totalAmount - a.totalAmount);
-    const merged = representative ? [representative, ...others] : others;
-    return merged
-      .map((row, idx) => ({
-        ...row,
-        position: row.isRepresentative ? "대표" : (rankLabels[idx] || (idx === 0 ? "대표" : "")),
-        isRepresentative: row.isRepresentative || idx === 0,
-      }));
+    const merged = [...(representative ? [representative] : []), ...others, ...operating];
+    return merged.map((row, idx) => ({
+      ...row,
+      position: row.isRepresentative ? "대표" : rankLabels[idx] || (idx === 0 ? "대표" : ""),
+      isRepresentative: row.isRepresentative || idx === 0,
+    }));
   }
 
   const representative = rows.find((x) => x.isRepresentative) || null;
+  const operating = rows.filter((row) => {
+    const member = (members || []).find((m) => m.id === row.id);
+    return member ? isOperatingMember(member, memberPositions) : false;
+  });
+  const operatingIds = new Set(operating.map((x) => x.id));
   const others = rows
-    .filter((x) => !representative || x.id !== representative.id)
+    .filter((x) => (!representative || x.id !== representative.id) && !operatingIds.has(x.id))
     .sort((a, b) => b.totalAmount - a.totalAmount);
 
-  return representative ? [representative, ...others] : others;
+  const ordered = [...(representative ? [representative] : []), ...others, ...operating];
+  return ordered;
 }

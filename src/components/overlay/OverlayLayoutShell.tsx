@@ -14,6 +14,8 @@ const overlayRouteCss = `
   @media (max-width: 767px) {
     html, body, #__next { background: transparent !important; background-color: transparent !important; }
     body { background-image: none !important; }
+    .donor-rankings-overlay-root { padding-left: 8px !important; padding-right: 8px !important; }
+    .overlay-root { max-width: 100vw; overflow-x: hidden; }
   }
   .overlay-root { font-size: 100%; -webkit-font-smoothing: antialiased; }
   table:not(.overlay-elegant-table) .overlay-row td { padding: 0.18em 0.25em !important; min-height: 1.5em; line-height: 1.2; vertical-align: middle; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
