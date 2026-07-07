@@ -40,7 +40,7 @@ import {
 import { buildOverlaySyncSignature } from "@/lib/overlay-sync-signature";
 import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
 import { buildOverlayRankedMembers } from "@/lib/utils";
-import { clampWidthToViewport, computeContainFitScale, isNarrowBroadcastViewport } from "@/lib/overlay-mobile-fit";
+import { clampWidthToViewport, computeReadableCanvasScale, ensureCanvasFontPx, isNarrowBroadcastViewport } from "@/lib/overlay-mobile-fit";
 import { useOverlayViewportSize } from "@/hooks/useOverlayViewportSize";
 
 function tryDecodeSnapshot(str: string | null): AppState | null {
@@ -1853,8 +1853,10 @@ function OverlayInner() {
   const mobileBroadcast = isNarrowBroadcastViewport(viewportSize.w, viewportSize.h);
   const mobileCanvasFitScale = useMemo(
     () =>
-      mobileBroadcast ? computeContainFitScale(BASE_W, BASE_H, viewportSize.w, viewportSize.h) : 1,
-    [mobileBroadcast, BASE_W, BASE_H, viewportSize.w, viewportSize.h]
+      mobileBroadcast
+        ? computeReadableCanvasScale(BASE_W, BASE_H, viewportSize.w, viewportSize.h, memberSize)
+        : 1,
+    [mobileBroadcast, BASE_W, BASE_H, viewportSize.w, viewportSize.h, memberSize]
   );
   const responsiveGoalWidth = useMemo(
     () => clampWidthToViewport(goalWidth, viewportSize.w),
@@ -2413,7 +2415,7 @@ function OverlayInner() {
           if (!Number.isFinite(measured) || measured <= 0) return;
           // 마지막 열 클리핑 방지를 위해 10px 안전 여유를 둔다.
           const raw = (avail - 10) / measured;
-          const safeFitMin = mobileBroadcast ? 0.4 : 0.75;
+          const safeFitMin = mobileBroadcast ? 0.58 : 0.75;
           const next = Math.max(safeFitMin, Math.min(1, Math.floor(raw * 100) / 100));
           if (Math.abs(next - memberTableFitPrevRef.current) < 0.005) return;
           memberTableFitPrevRef.current = next;
@@ -2576,6 +2578,13 @@ function OverlayInner() {
     else document.body.classList.remove("overlay-vertical");
     return () => document.body.classList.remove("overlay-vertical");
   }, [isVertical]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (mobileBroadcast) document.body.classList.add("overlay-mobile-broadcast");
+    else document.body.classList.remove("overlay-mobile-broadcast");
+    return () => document.body.classList.remove("overlay-mobile-broadcast");
+  }, [mobileBroadcast]);
 
   const confettiLastMilestoneRef = useRef<number>(0);
   useEffect(() => {
@@ -2748,7 +2757,12 @@ function OverlayInner() {
       );
     const nameWrapCls = "truncate";
     const tfTable = memberTableFitFactor;
-    const memberFontPx = Math.max(externalHost ? 15 : 8, Math.round(mSize * tfTable));
+    const mobileMinFontPx = mobileBroadcast ? 17 : externalHost ? 15 : 8;
+    let memberFontPx = Math.max(mobileMinFontPx, Math.round(mSize * tfTable));
+    if (mobileBroadcast && mobileCanvasFitScale < 0.999) {
+      memberFontPx = ensureCanvasFontPx(memberFontPx, mobileCanvasFitScale, mobileMinFontPx);
+    }
+    const mobileReadableOutline = mobileBroadcast;
     const tableRowPadY = Math.round(memberFontPx * 0.34);
     const tableRowPadX = Math.round(memberFontPx * 0.48);
     const tableRowMinH = Math.round(memberFontPx * 1.62);
@@ -2779,7 +2793,8 @@ function OverlayInner() {
       ? { fontWeight: tableFontWeight }
       : {
           textShadow: tableOutlineShadowCss,
-          WebkitTextStroke: externalSafeMode ? 0 : tableBroadcastOutline.WebkitTextStroke,
+          WebkitTextStroke:
+            externalSafeMode && !mobileReadableOutline ? 0 : tableBroadcastOutline.WebkitTextStroke,
           paintOrder: "stroke fill",
           fontWeight: tableFontWeight,
         };
@@ -2913,6 +2928,10 @@ function OverlayInner() {
           animation: none !important;
           transition: none !important;
         }
+        ${
+          mobileBroadcast
+            ? ""
+            : `
         .overlay-root .overlay-scale-target,
         .overlay-root .overlay-elegant-table,
         .overlay-root .overlay-elegant-table tr,
@@ -2920,6 +2939,7 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table td .overlay-num-cell-inner {
           transform: none !important;
           -webkit-transform: none !important;
+        }`
         }
         .overlay-root .overlay-elegant-table td,
         .overlay-root .overlay-elegant-table thead td {

@@ -122,6 +122,19 @@ describe("toonation parse-event", () => {
     expect(ids.size).toBe(5);
   });
 
+  it("stable id when payload includes timestamp but no reliable id", () => {
+    const payload = {
+      nickname: "배지은",
+      amount: 5000,
+      comment: "피자",
+      createdAt: "2026-06-04T10:00:00.000Z",
+    };
+    const a = parseToonationDonationPayload(payload);
+    const b = parseToonationDonationPayload(payload);
+    expect(a?.externalId).toBe(b?.externalId);
+    expect(a?.id).toBe(b?.id);
+  });
+
   it("different payloads without id get different fallback ids", () => {
     const a = parseToonationDonationPayload({ nickname: "배지은", amount: 20000, comment: "" });
     const b = parseToonationDonationPayload({ nickname: "배지은", amount: 20001, comment: "" });

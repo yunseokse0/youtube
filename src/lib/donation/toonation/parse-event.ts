@@ -210,6 +210,9 @@ export function allocateToonationExternalId(data: unknown, amount: number): stri
   if (isReliableToonationExternalId(extracted)) {
     return extracted;
   }
+  if (extractToonationTimestamp(data)) {
+    return createStableToonationFallbackId(data, amount);
+  }
   return createUniqueToonationFallbackId(amount);
 }
 

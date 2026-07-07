@@ -1,11 +1,14 @@
 import { readDonationAliases } from "@/app/api/donations/_shared/alias-store";
+import {
+  releaseDonationApplyClaim,
+  tryClaimDonationApply,
+} from "@/app/api/donations/_shared/applied-store";
 import { saveAppStateForRoulette } from "@/app/api/roulette/edge-state-store";
 import { loadAppStateForUserId } from "@/lib/app-state-server-load";
 import { broadcastPlayerDonationAlert, enrichDonationEventWithSigMatch } from "./player-donation-alert";
 import {
   applyDonationToAppState,
   isDuplicateDonationEvent,
-  normalizeDonationEventId,
 } from "./apply-donation-state";
 import { enqueueDonationEvent, purgeDonationQueueForEvent } from "./toonation/enqueue-donation";
 import type { DonationEvent } from "./types";
@@ -14,16 +17,10 @@ export type ToonationAutoApplyOutcome = "applied" | "applied_needs_review" | "no
 
 const inFlightApplyKeys = new Set<string>();
 
-function donationApplyLockKey(userId: string, event: DonationEvent): string {
+function inFlightKey(userId: string, event: DonationEvent): string {
   const eventId = String(event.id || "").trim();
-  if (eventId) return `${userId}:${eventId}`;
   const ext = String(event.externalId || "").trim();
-  const base = normalizeDonationEventId(ext);
-  return `${userId}:${event.provider || "toonation"}:${ext || base}`;
-}
-
-function donationApplyLockKeys(userId: string, event: DonationEvent): string[] {
-  return [donationApplyLockKey(userId, event)];
+  return `${userId}:${eventId || ext}`;
 }
 
 async function broadcastDonationStateUpdated(updatedAt: number, donorRankingsUpdatedAt?: number): Promise<void> {
@@ -44,16 +41,22 @@ export async function tryAutoApplyToonationDonationOnServer(
   userId: string,
   event: DonationEvent
 ): Promise<ToonationAutoApplyOutcome> {
-  const lockKeys = donationApplyLockKeys(userId, event);
-  if (lockKeys.some((key) => inFlightApplyKeys.has(key))) return "applied";
-  for (const key of lockKeys) inFlightApplyKeys.add(key);
+  const lockKey = inFlightKey(userId, event);
+  if (inFlightApplyKeys.has(lockKey)) return "applied";
+  inFlightApplyKeys.add(lockKey);
   try {
     const state = await loadAppStateForUserId(userId);
     if (isDuplicateDonationEvent(state, event)) return "applied";
+    if (!(await tryClaimDonationApply(userId, event))) return "applied";
+
+    const freshState = await loadAppStateForUserId(userId);
+    if (isDuplicateDonationEvent(freshState, event)) return "applied";
+
     const aliases = await readDonationAliases(userId);
-    const result = applyDonationToAppState(state, event, aliases);
+    const result = applyDonationToAppState(freshState, event, aliases);
     if (!result.ok) {
       if (result.reason === "duplicate") return "applied";
+      await releaseDonationApplyClaim(userId, event);
       return "not_applied";
     }
     await saveAppStateForRoulette(userId, result.state);
@@ -63,7 +66,7 @@ export async function tryAutoApplyToonationDonationOnServer(
     await broadcastPlayerDonationAlert(userId, enriched);
     return result.event.memberAutoAssigned ? "applied_needs_review" : "applied";
   } finally {
-    for (const key of lockKeys) inFlightApplyKeys.delete(key);
+    inFlightApplyKeys.delete(lockKey);
   }
 }
 

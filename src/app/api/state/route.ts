@@ -20,6 +20,7 @@ import {
 } from "@/lib/state";
 import type { SigItem } from "@/types";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
+import { dedupeDonorRows, syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
 import { isManualOverlaySessionId } from "@/lib/sig-sales-manual-round";
 import { createModuleLogger } from "@/lib/logger";
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
@@ -453,7 +454,8 @@ export async function POST(req: Request) {
           })
       : baseState.donors;
     const merged = mergePartialState(baseState, body, userId);
-    const draft: AppState = { ...merged, donors: mergedDonors };
+    const dedupedDonors = donorsInPatch ? dedupeDonorRows(mergedDonors) : mergedDonors;
+    const draft: AppState = syncMemberTotalsFromDonors({ ...merged, donors: dedupedDonors });
     const donorRankingsUpdatedAt = computeDonorRankingsUpdatedAt(
       baseState,
       draft,

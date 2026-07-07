@@ -17,6 +17,15 @@ const overlayRouteCss = `
     .donor-rankings-overlay-root { padding-left: 8px !important; padding-right: 8px !important; }
     .overlay-root { max-width: 100vw; overflow-x: hidden; }
   }
+  body.overlay-mobile-broadcast .overlay-root table.overlay-elegant-table .overlay-row td {
+    line-height: 1.28 !important;
+  }
+  body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table tbody tr.overlay-row:nth-child(odd) td {
+    background-color: rgba(0, 0, 0, 0.22) !important;
+  }
+  body.overlay-mobile-broadcast .overlay-root .overlay-elegant-table tbody tr.overlay-row:nth-child(even) td {
+    background-color: rgba(0, 0, 0, 0.14) !important;
+  }
   .overlay-root { font-size: 100%; -webkit-font-smoothing: antialiased; }
   table:not(.overlay-elegant-table) .overlay-row td { padding: 0.18em 0.25em !important; min-height: 1.5em; line-height: 1.2; vertical-align: middle; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
   table.overlay-elegant-table .overlay-row td { padding: 0.18em 0.25em !important; min-height: 1.5em; line-height: 1.2; vertical-align: middle; }

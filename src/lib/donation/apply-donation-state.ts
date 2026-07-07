@@ -120,10 +120,18 @@ export function isDuplicateDonationEvent(state: AppState, rawEvent: DonationEven
   const baseId = normalizeDonationEventId(eventId);
   const externalId = String(rawEvent.externalId || "").trim();
   const externalDonorId = externalId && rawEvent.provider ? `${rawEvent.provider}:${externalId}` : "";
+  const probeDonor = {
+    id: eventId || externalDonorId,
+    name: rawEvent.donorName,
+    amount: rawEvent.amount,
+    at: rawEvent.at,
+  };
+  const probeKey = donorRowDedupeKey(probeDonor);
 
   return donors.some((d) => {
     const donorId = String(d.id || "").trim();
     if (!donorId) return false;
+    if (donorRowDedupeKey(d) === probeKey) return true;
     if (donorId === eventId || donorId === baseId) return true;
     if (baseId && normalizeDonationEventId(donorId) === baseId) return true;
     if (externalDonorId && (donorId === externalDonorId || normalizeDonationEventId(donorId) === externalDonorId)) {

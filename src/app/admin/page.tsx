@@ -4188,7 +4188,8 @@ export default function AdminPage() {
         cleared += 1;
         continue;
       }
-      if (isDuplicateDonationEvent(stateRef.current, evt)) {
+      const freshState = await loadStateFromApi(user?.id, { forceFull: true });
+      if (freshState && isDuplicateDonationEvent(freshState, evt)) {
         await removeQueueEvent(evt.id);
         cleared += 1;
         continue;
@@ -4196,7 +4197,7 @@ export default function AdminPage() {
       const result = await processDonationEvent(
         { ...evt, status: "queued" },
         user?.id,
-        stateRef.current
+        freshState ?? stateRef.current
       );
       applyProcessDonationResult(result);
       await removeQueueEvent(evt.id);

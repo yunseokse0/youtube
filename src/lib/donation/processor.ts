@@ -1,7 +1,8 @@
 import { loadStateFromApi, saveStateAsync } from "@/lib/state";
 import { createModuleLogger } from "@/lib/logger";
 import type { AppState } from "@/types";
-import { applyDonationToAppState } from "./apply-donation-state";
+import { applyDonationToAppState, isDuplicateDonationEvent } from "./apply-donation-state";
+import { donationApplyPrimaryKey } from "./donation-dedupe-keys";
 import type { DonationEvent, DonorAlias } from "./types";
 
 const log = createModuleLogger("Donation/Processor");
@@ -30,7 +31,7 @@ export async function processDonationEvent(
 ): Promise<ProcessDonationResult> {
   log.debug("processing", rawEvent.donorName, rawEvent.amount);
   try {
-    const dedupeKey = `${rawEvent.provider}:${rawEvent.externalId || rawEvent.id}`;
+    const dedupeKey = donationApplyPrimaryKey(userId || "__default__", rawEvent);
     if (processedEventIds.has(dedupeKey)) {
       return { ...rawEvent, status: "processed" as const };
     }
@@ -41,7 +42,7 @@ export async function processDonationEvent(
     }
     const currentState = mergeAdminHintForDonation(loaded, hintState);
     const aliases = await loadAliases(userId);
-    const applied = applyDonationToAppState(currentState, rawEvent, aliases);
+    let applied = applyDonationToAppState(currentState, rawEvent, aliases);
 
     if (!applied.ok) {
       if (applied.reason === "duplicate") {
@@ -54,6 +55,12 @@ export async function processDonationEvent(
         await saveUnmatched(applied.event, userId);
       }
       return applied.event;
+    }
+
+    const beforeSave = await getCurrentAppState(userId);
+    if (beforeSave && isDuplicateDonationEvent(beforeSave, rawEvent)) {
+      processedEventIds.add(dedupeKey);
+      return { ...rawEvent, status: "processed" as const, updatedState: beforeSave };
     }
 
     const saved = await saveCurrentAppState(applied.state, userId);

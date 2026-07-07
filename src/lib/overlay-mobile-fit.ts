@@ -29,6 +29,35 @@ export function computeContainFitScale(
   return Math.max(0.22, Math.min(2, Math.min(sx, sy)));
 }
 
+/** 모바일 방송 — contain 맞춤 + 최소 시인 글자 크기 하한 */
+export function computeReadableCanvasScale(
+  baseW: number,
+  baseH: number,
+  viewportW: number,
+  viewportH: number,
+  baseMemberFontPx: number,
+  minEffectiveFontPx = 17,
+  padding = 8
+): number {
+  const contain = computeContainFitScale(baseW, baseH, viewportW, viewportH, padding);
+  const target = Math.max(12, Math.round(baseMemberFontPx));
+  const minScaleForFont = minEffectiveFontPx / target;
+  return Math.max(contain, Math.min(1, minScaleForFont * 0.98));
+}
+
+/** transform scale 적용 후에도 화면 px 기준 최소 글자 크기 보장 */
+export function ensureCanvasFontPx(
+  fontPx: number,
+  canvasScale: number,
+  minEffectivePx = 17
+): number {
+  const base = Math.max(1, Math.round(fontPx));
+  const scale = Math.max(0.1, canvasScale);
+  const effective = base * scale;
+  if (effective >= minEffectivePx) return base;
+  return Math.min(80, Math.ceil(minEffectivePx / scale));
+}
+
 export function clampWidthToViewport(widthPx: number, viewportW: number, margin = 24): number {
   const maxW = Math.max(160, viewportW - margin);
   return Math.max(160, Math.min(widthPx, maxW));

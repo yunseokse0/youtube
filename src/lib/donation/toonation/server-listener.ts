@@ -1,6 +1,7 @@
 import WebSocket from "ws";
 import { createModuleLogger } from "@/lib/logger";
 import { tryAutoApplyToonationDonationOnServer, enqueueUnmatchedToonationDonation } from "../server-apply-donation";
+import type { DonationEvent } from "../types";
 import {
   clearToonationListenerConfig,
   readAllEnabledToonationListenerConfigs,
@@ -48,8 +49,36 @@ type ActiveConnection = {
 
 const active = new Map<string, ActiveConnection>();
 
-const RAW_WS_DEDUPE_MS = 4_000;
+const RAW_WS_DEDUPE_MS = 15_000;
 const recentRawWsByUser = new Map<string, Map<string, number>>();
+const recentEventByUser = new Map<string, Map<string, number>>();
+const EVENT_DEDUPE_MS = 60_000;
+
+function donationEventDedupeKey(event: DonationEvent): string {
+  const ext = String(event.externalId || "").trim();
+  if (ext) return `${event.provider || "toonation"}:${ext}`;
+  return String(event.id || "").trim();
+}
+
+function shouldSkipDuplicateEvent(userId: string, event: DonationEvent): boolean {
+  const key = donationEventDedupeKey(event);
+  if (!key) return false;
+  const now = Date.now();
+  let map = recentEventByUser.get(userId);
+  if (!map) {
+    map = new Map();
+    recentEventByUser.set(userId, map);
+  }
+  const prev = map.get(key);
+  if (typeof prev === "number" && now - prev < EVENT_DEDUPE_MS) return true;
+  map.set(key, now);
+  if (map.size > 200) {
+    for (const [k, at] of map) {
+      if (now - at > EVENT_DEDUPE_MS) map.delete(k);
+    }
+  }
+  return false;
+}
 
 function hashRawWsMessage(raw: string): string {
   let h = 2166136261;
@@ -129,6 +158,10 @@ async function onDonation(userId: string, raw: string): Promise<void> {
   }
   const event = parseToonationWebSocketMessage(raw);
   if (!event) return;
+  if (shouldSkipDuplicateEvent(userId, event)) {
+    log.debug("동일 후원 이벤트 재전송 무시", { userId, id: event.id });
+    return;
+  }
   const conn = active.get(userId);
   if (conn) {
     conn.lastDonationAt = Date.now();
