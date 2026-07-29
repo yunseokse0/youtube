@@ -77,6 +77,17 @@ function isAmountLikeToken(raw: string): boolean {
   return /^\d+(\.\d+)?$/.test(t) || /^\d+원$/.test(t);
 }
 
+/** `[계좌]`, `계좌:`, `계좌후원` 등 계좌 포맷 키워드 */
+export function isAccountFormatToken(raw: string): boolean {
+  const t = String(raw || "")
+    .trim()
+    .replace(/^[\[\(\{【「『<#]+/, "")
+    .replace(/[\]\)\}】」』>#]+$/, "")
+    .replace(/[,.:;!?~]+$/g, "")
+    .trim();
+  return t === "계좌" || t === "계좌후원";
+}
+
 /**
  * 투네 후원 메시지 포맷:
  * - 계좌: `계좌 후원자이름 플레이어이름 …` (이후 문구 무시)
@@ -95,7 +106,7 @@ export function parseToonationMessageBody(
     .split(/\s+/)
     .filter(Boolean);
 
-  if (tokens.length > 0 && tokens[0] === "계좌") {
+  if (tokens.length > 0 && isAccountFormatToken(tokens[0])) {
     return {
       target: "account",
       donorName: cleanDonorToken(tokens[1] || ""),
@@ -161,7 +172,10 @@ export function extractToonationTimestamp(data: unknown): string {
   return "";
 }
 
-/** WS 재전송·서버+큐 이중 반영 방지 — 동일 페이로드면 항상 같은 fallback id */
+/**
+ * WS 재전송·서버+큐 이중 반영 방지 — 동일 페이로드면 항상 같은 fallback id.
+ * 계좌 포맷은 메시지 후원자명만으로는 충돌하기 쉬워 알림 상단 닉도 포함한다.
+ */
 export function buildToonationDonationFingerprint(data: unknown, amount: number): string {
   const alertDonor = extractToonationDonorName(data);
   const msg = extractToonationMessage(data);
@@ -169,6 +183,7 @@ export function buildToonationDonationFingerprint(data: unknown, amount: number)
   const donorName =
     parsed.target === "account" ? parsed.donorName || alertDonor : parsed.donorName || alertDonor;
   return hashDonationFingerprint([
+    alertDonor,
     donorName,
     String(amount),
     msg,
@@ -179,6 +194,9 @@ export function buildToonationDonationFingerprint(data: unknown, amount: number)
   ]);
 }
 
+/** id/timestamp 없을 때: 수 초 이내 재전송은 같은 버킷, 이후 동일 금액·문구 재후원은 별도 ID */
+const FALLBACK_ID_TIME_BUCKET_MS = 5_000;
+
 export function createStableToonationFallbackId(data: unknown, amount: number): string {
   const extracted = extractToonationExternalId(data);
   const fp = buildToonationDonationFingerprint(data, amount);
@@ -187,15 +205,19 @@ export function createStableToonationFallbackId(data: unknown, amount: number): 
     return `test-${fp}`;
   }
   const ts = extractToonationTimestamp(data);
-  return ts ? `fp-${ts}-${amount}-${fp}` : `fp-${amount}-${fp}`;
+  if (ts) return `fp-${ts}-${amount}-${fp}`;
+  const bucket = Math.floor(Date.now() / FALLBACK_ID_TIME_BUCKET_MS);
+  return `fp-${amount}-${fp}-t${bucket}`;
 }
 
-/** 실제 후원 id — WS 재전송 시 동일 값으로 중복 제거 가능 */
+/** 투네가 부여한 실제 후원 id — 우리쪽 fp-/test-/타임스탬프 fallback은 제외 */
 export function isReliableToonationExternalId(id: string): boolean {
   const s = String(id || "").trim();
   if (!s) return false;
   if (s === "0") return false;
   if (/^test$/i.test(s)) return false;
+  if (/^(fp-|test-)/i.test(s)) return false;
+  if (/^\d{10,13}-\d+(-\d+-[a-z0-9]+)?$/i.test(s)) return false;
   return true;
 }
 

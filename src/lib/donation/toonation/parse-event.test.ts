@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   allocateToonationExternalId,
   createUniqueToonationFallbackId,
+  isReliableToonationExternalId,
   isToonationExcelDonationWsMessage,
   isToonationTestDonationPayload,
   isToonationYoutubeSuperChatWsMessage,
@@ -61,6 +62,20 @@ describe("toonation parse-event", () => {
       playerName: "피자",
       target: "account",
     });
+  });
+
+  it("accepts account keyword variants", () => {
+    expect(parseToonationMessageBody("[계좌] 햇님 피자", "x")).toEqual({
+      donorName: "햇님",
+      playerName: "피자",
+      target: "account",
+    });
+    expect(parseToonationMessageBody("계좌후원 햇님 피자", "x")).toEqual({
+      donorName: "햇님",
+      playerName: "피자",
+      target: "account",
+    });
+    expect(parseToonationMessageBody("계좌: 햇님 피자", "x").target).toBe("account");
   });
 
   it("parseToonationMessageBody toon uses alert donor", () => {
@@ -174,6 +189,26 @@ describe("toonation parse-event", () => {
     });
     expect(evt?.externalId).toBe("donation-abc-99");
     expect(evt?.id).toBe("toonation:donation-abc-99");
+  });
+
+  it("treats fp-/test- fallback ids as non-reliable", () => {
+    expect(isReliableToonationExternalId("donation-abc-99")).toBe(true);
+    expect(isReliableToonationExternalId("fp-10000-abc")).toBe(false);
+    expect(isReliableToonationExternalId("fp-10000-abc-t12")).toBe(false);
+    expect(isReliableToonationExternalId("test-same")).toBe(false);
+    expect(isReliableToonationExternalId("1718100000000-1000-1-abc")).toBe(false);
+  });
+
+  it("same account message from different alert nicknames get different fallback ids", () => {
+    const a = allocateToonationExternalId(
+      { nickname: "결제자A", amount: 10000, comment: "계좌 익명 BT태호" },
+      10000
+    );
+    const b = allocateToonationExternalId(
+      { nickname: "결제자B", amount: 10000, comment: "계좌 익명 BT태호" },
+      10000
+    );
+    expect(a).not.toBe(b);
   });
 
   it("stable id for toonation admin test donations (reused id / WS retry)", () => {

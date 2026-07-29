@@ -30,4 +30,18 @@ describe("donationApplyPrimaryKey", () => {
     };
     expect(donationApplyPrimaryKey("u1", event)).toContain("u1:evt:");
   });
+
+  it("does not treat fp- fallback as reliable external id", () => {
+    const event: DonationEvent = {
+      id: "toonation:fp-10000-abc-t12",
+      provider: "toonation",
+      externalId: "fp-10000-abc-t12",
+      donorName: "익명",
+      amount: 10000,
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "account",
+    };
+    expect(donationApplyPrimaryKey("u1", event)).toBe("u1:evt:toonation:fp-10000-abc-t12");
+  });
 });

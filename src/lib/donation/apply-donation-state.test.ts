@@ -327,4 +327,36 @@ describe("applyDonationToAppState", () => {
     expect(result.state.members[0]?.account).toBe(3000);
     expect(result.state.donors?.[0]?.target).toBe("account");
   });
+
+  it("allows consecutive account donations with distinct fp- fallback ids", () => {
+    const state = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 }],
+      donors: [],
+    };
+    const first: DonationEvent = {
+      id: "toonation:fp-10000-aaa-t1",
+      provider: "toonation",
+      externalId: "fp-10000-aaa-t1",
+      donorName: "익명",
+      playerName: "피자",
+      amount: 10000,
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "account",
+    };
+    const second: DonationEvent = {
+      ...first,
+      id: "toonation:fp-10000-aaa-t2",
+      externalId: "fp-10000-aaa-t2",
+    };
+    const r1 = applyDonationToAppState(state, first);
+    expect(r1.ok).toBe(true);
+    if (!r1.ok) return;
+    const r2 = applyDonationToAppState(r1.state, second);
+    expect(r2.ok).toBe(true);
+    if (!r2.ok) return;
+    expect(r2.state.members[0]?.account).toBe(20000);
+    expect(r2.state.donors).toHaveLength(2);
+  });
 });

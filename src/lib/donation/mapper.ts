@@ -1,5 +1,6 @@
 import type { Member } from "@/types";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
+import { isAccountFormatToken } from "./toonation/parse-event";
 import {
   findBestFuzzyNameMatch,
   normalizeComparableName,
@@ -46,7 +47,7 @@ export function resolveMemberLookupCandidates(event: DonationEvent): string[] {
   const msg = String(event.message || "").trim();
   if (!msg) return out;
   for (const tok of msg.split(/\s+/).filter(Boolean)) {
-    if (tok === "계좌") continue;
+    if (isAccountFormatToken(tok)) continue;
     push(tok);
   }
   return out;

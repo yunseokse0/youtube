@@ -21,6 +21,8 @@ export function normalizeDonationEventId(id: string): string {
 /** parse-event fallback id — 동일 후원이 다른 id로 두 번 들어올 수 있음 */
 export function isWeakToonationDonorId(id: string): boolean {
   const base = normalizeDonationEventId(String(id || "").trim()).replace(/^toonation:/i, "");
+  if (!base) return false;
+  if (/^(fp-|test-)/i.test(base)) return true;
   return /^\d{10,13}-\d+(-\d+-[a-z0-9]+)?$/i.test(base);
 }
 

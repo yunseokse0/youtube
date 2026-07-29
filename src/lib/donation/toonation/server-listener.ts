@@ -11,6 +11,7 @@ import {
   type ToonationListenerConfig,
 } from "./listener-config-store";
 import {
+  isAccountFormatToken,
   isToonationYoutubeSuperChatWsMessage,
   parseToonationWebSocketMessage,
 } from "./parse-event";
@@ -209,8 +210,11 @@ async function onDonation(userId: string, raw: string, ownerName?: string): Prom
       .map((t) => t.trim().replace(/[,.:;!?~]+$/g, "").trim())
       .filter(Boolean);
     if (tokens.length === 0) return { ...source, target: "account" };
-    const donorFromMsg = tokens[0] || source.donorName;
-    const memberFromMsg = tokens[1] || source.playerName || source.recipientName || "";
+    /** `계좌`/`계좌후원` 접두가 있으면 건너뛰고 실제 후원자·멤버 토큰 사용 */
+    let idx = 0;
+    if (isAccountFormatToken(tokens[0])) idx = 1;
+    const donorFromMsg = tokens[idx] || source.donorName;
+    const memberFromMsg = tokens[idx + 1] || source.playerName || source.recipientName || "";
     return {
       ...source,
       target: "account",
