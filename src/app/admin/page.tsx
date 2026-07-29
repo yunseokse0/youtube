@@ -647,7 +647,7 @@ export default function AdminPage() {
   }, [state.missions]);
   const PRESET_TEMPLATES: { name: string; preset: Partial<OverlayPreset> }[] = [
     { name: "엑셀표만", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true } },
-    { name: "방송 엑셀(캐시·투네)", preset: { theme: "excelLive", membersTheme: "excelLive", totalTheme: "excelLive", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: false, showContributionColumn: false, accountHeaderLabel: "캐쉬후원", toonHeaderLabel: "투네이션", tableBgOpacity: "85", donorsFormat: "full", tableFree: true, tableX: "3", tableY: "88", anchor: "bl" } },
+    { name: "방송 엑셀(계좌·투네)", preset: { theme: "excelLive", membersTheme: "excelLive", totalTheme: "excelLive", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: false, showContributionColumn: false, accountHeaderLabel: "계좌", toonHeaderLabel: "투네이션", tableBgOpacity: "85", donorsFormat: "full", tableFree: true, tableX: "3", tableY: "88", anchor: "bl" } },
     { name: "전체 통합", preset: { showMembers: true, showTotal: true } },
     { name: "표만 (엑셀)", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true } },
     { name: "멤버 목록만", preset: { showMembers: true, showTotal: false, showBottomDonors: false, tickerInMembers: false } },
@@ -1361,14 +1361,24 @@ export default function AdminPage() {
     };
   }, [user, persistState, mergeIncomingStateSafely]);
 
+  const normalizeOverlayPresetLabels = (list: OverlayPreset[]): OverlayPreset[] =>
+    list.map((p) => {
+      const label = String(p.accountHeaderLabel || "").trim();
+      if (label === "캐쉬후원" || label === "캐시후원") {
+        return { ...p, accountHeaderLabel: "계좌" };
+      }
+      return p;
+    });
+
   const savePresets = (next: OverlayPreset[]) => {
-    setPresets(next);
+    const normalized = normalizeOverlayPresetLabels(next);
+    setPresets(normalized);
     try {
-      window.localStorage.setItem(presetStorageKey, JSON.stringify(next));
+      window.localStorage.setItem(presetStorageKey, JSON.stringify(normalized));
       notifyOverlayPresetsLocalUpdated();
     } catch {}
     setState((prev) => {
-      const merged: AppState = { ...prev, overlayPresets: next };
+      const merged: AppState = { ...prev, overlayPresets: normalized };
       persistState(merged);
       return merged;
     });
@@ -1386,6 +1396,10 @@ export default function AdminPage() {
       const nextTheme = String(patch.theme || "default");
       if (patch.membersTheme === undefined) mergedPatch.membersTheme = nextTheme;
       if (patch.totalTheme === undefined) mergedPatch.totalTheme = nextTheme;
+    }
+    if (mergedPatch.accountHeaderLabel !== undefined) {
+      const label = String(mergedPatch.accountHeaderLabel || "").trim();
+      if (label === "캐쉬후원" || label === "캐시후원") mergedPatch.accountHeaderLabel = "계좌";
     }
     if (patch.goal !== undefined) {
       mergedPatch.goalBaseline = String(patch.goal);

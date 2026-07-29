@@ -1566,9 +1566,10 @@ function OverlayInner() {
   };
   const resolvePresetLabel = (key: "accountHeaderLabel" | "toonHeaderLabel", fallback: string): string => {
     const fromPreset = ready ? String((effectivePreset as Record<string, unknown> | null)?.[key] || "").trim() : "";
-    if (fromPreset) return fromPreset;
-    const merged = (rawSp.get(key) ?? presetParams.get(key) ?? fallback).trim();
-    return merged || fallback;
+    const merged = (fromPreset || rawSp.get(key) || presetParams.get(key) || fallback).trim() || fallback;
+    /** 구 프리셋「캐쉬후원」→「계좌」 */
+    if (key === "accountHeaderLabel" && (merged === "캐쉬후원" || merged === "캐시후원")) return "계좌";
+    return merged;
   };
   const resolveThemeId = (key: string): ThemeId => {
     const raw = (sp.get(key) || "auto").trim();
