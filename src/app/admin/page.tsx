@@ -10073,6 +10073,27 @@ export default function AdminPage() {
                                   value={p.totalSize}
                                   onChange={(e) => updatePreset(p.id, { totalSize: e.target.value.replace(/[^\d]/g, "").slice(0, 3) })}
                                 />
+                                <div className="sm:col-span-4 flex flex-wrap items-center gap-2 pt-1">
+                                  <span className="text-xs text-neutral-400">표 하단 총합 행</span>
+                                  <button
+                                    type="button"
+                                    className={`px-2.5 py-1 rounded border text-xs font-medium ${
+                                      (p.showTableSumRow ?? p.showTotal) !== false
+                                        ? "border-emerald-400 bg-emerald-800/60 text-emerald-100"
+                                        : "border-rose-400/60 bg-rose-950/40 text-rose-100"
+                                    }`}
+                                    onClick={() =>
+                                      updatePreset(p.id, {
+                                        showTableSumRow: (p.showTableSumRow ?? p.showTotal) === false,
+                                      })
+                                    }
+                                  >
+                                    {(p.showTableSumRow ?? p.showTotal) !== false ? "총합 행 ON" : "총합 행 OFF"}
+                                  </button>
+                                  <span className="text-[10px] text-neutral-500">
+                                    OFF면 엑셀표 맨 아래 「총합」줄이 사라집니다
+                                  </span>
+                                </div>
                                 <p className="sm:col-span-4 text-[10px] text-neutral-500 leading-snug">
                                   「자동 글자 크기」ON이면 화면에 맞춰 줄어듭니다. Prism/OBS는 저장값이 실시간 반영됩니다.
                                 </p>
@@ -10113,6 +10134,25 @@ export default function AdminPage() {
                                     <input type="range" min="0" max="100" value={p.tableBgOpacity || "100"} onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value })} className="flex-1 accent-emerald-500" />
                                     <input className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right" value={p.tableBgOpacity || "100"} onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value.replace(/[^\\d]/g, "") })} />
                                     <span className="text-xs text-neutral-500">%</span>
+                                  </div>
+                                  <label className="text-xs text-neutral-400">총합 행</label>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <button
+                                      type="button"
+                                      className={`px-2.5 py-1 rounded border text-xs font-medium ${
+                                        (p.showTableSumRow ?? p.showTotal) !== false
+                                          ? "border-emerald-400 bg-emerald-800/50 text-emerald-100"
+                                          : "border-rose-400/60 bg-rose-950/40 text-rose-100"
+                                      }`}
+                                      onClick={() =>
+                                        updatePreset(p.id, {
+                                          showTableSumRow: (p.showTableSumRow ?? p.showTotal) === false,
+                                        })
+                                      }
+                                    >
+                                      {(p.showTableSumRow ?? p.showTotal) !== false ? "표시 ON" : "삭제(숨김)"}
+                                    </button>
+                                    <span className="text-[10px] text-neutral-500">표 맨 아래 총합 줄</span>
                                   </div>
                                   <label className="text-xs text-neutral-400">엑셀표 배경 GIF URL</label>
                                   <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">

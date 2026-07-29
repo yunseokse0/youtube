@@ -1432,6 +1432,10 @@ export function saveState(state: AppState, userId?: string | null) {
   try {
     const next = normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() }));
     const json = JSON.stringify(next);
+    /** 오버레이 iframe이 서버 응답 전에 읽도록 로컬은 즉시 기록 */
+    try {
+      window.localStorage.setItem(storageKey(userId), json);
+    } catch {}
     notifyBroadcastStateLocalUpdated(userId, next.updatedAt);
     void enqueueServerSave(JSON.stringify(appStatePayloadForApi(next, userId)), userId, next)
       .then((result) => {
@@ -1455,6 +1459,10 @@ export async function saveStateAsync(
   if (typeof window === "undefined") return { ok: false };
   const next = normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() }));
   const json = JSON.stringify(next);
+  /** 테마 변경 직후 미리보기가 멤버를 잃지 않게 서버 대기 전에 LS 반영 */
+  try {
+    window.localStorage.setItem(storageKey(userId), json);
+  } catch {}
   notifyBroadcastStateLocalUpdated(userId, next.updatedAt);
   try {
     const result = await enqueueServerSave(

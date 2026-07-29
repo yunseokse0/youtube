@@ -2265,17 +2265,9 @@ function OverlayInner() {
         { id: "demo-3", name: "멤버3", account: 170000, toon: 70000, contribution: 15000, goal: 500000, operating: false },
       ] as Member[];
     }
-    const base = membersRemote;
-    if (base.length > 0) return base;
-    // 실제 방송(외부호스트)에서는 기본 멤버 폴백을 쓰지 않는다.
-    if ((!ready) && isPreviewGuide) {
-      return defaultState().members;
-    }
-    if (isPreviewGuide && base.length === 0) {
-      return defaultState().members;
-    }
-    return base;
-  }, [demoMode, membersRemote, ready, isPreviewGuide]);
+    /** 미리보기 로딩 중 default 멤버1·2·3 폴백 금지 — 테마 변경 시 가짜 목록에 고착되던 원인 */
+    return membersRemote;
+  }, [demoMode, membersRemote]);
   /** 총합 행: 화면에 그리는 `members` 기준(데모·스냅샷·API 불일치 시 0 방지) */
   const sumAccount = useMemo(
     () => members.reduce((sum, m) => sum + Math.max(0, Number(m.account || 0)), 0),
