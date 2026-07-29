@@ -27,6 +27,7 @@ import {
   isShrunkToDefaultSigInventory,
   shouldPreferLocalSigInventoryOverIncoming,
   normalizeDonorsArray,
+  mergeDonorsForMultiTabSave,
   ensureMissionItems,
   appendDailyLog,
   loadDailyLogFromApi,
@@ -363,6 +364,8 @@ function ClientTime({ ts }: { ts: number | string }) {
 
 /** 평시 동기화는 SSE `state_updated` + 디바운스. 주기 폴링은 연결 끊김 대비용만 */
 const ADMIN_STATE_FALLBACK_POLL_MS = 120_000;
+/** 후원자 리스트 실시간 반영 — SSE 누락 대비 가시 탭에서 짧게 폴링 */
+const ADMIN_DONOR_LIVE_POLL_MS = 4_000;
 
 /** SSE·폴링 시 불필요한 setState 연쇄(버튼·effect 재실행) 방지용 */
 function adminSyncFingerprint(s: AppState): string {
@@ -378,13 +381,17 @@ function adminSyncFingerprint(s: AppState): string {
   const goalPreset = overlayPresetsForFp.find(
     (p) => Boolean(p.showGoal) && Number(p.goal || 0) > 0
   );
+  const donorSig = (s.donors || [])
+    .map((d) => `${d.id}:${d.amount}:${d.target || ""}`)
+    .sort()
+    .join(",");
   return [
     s.updatedAt ?? 0,
     memberTotal,
     String(goalPreset?.goal ?? ""),
     inv.length,
     inv.map((x) => `${x.id}:${x.price}:${x.soldCount}:${x.isActive ? 1 : 0}`).join(","),
-    (s.donors || []).length,
+    donorSig,
     String(rs?.phase ?? ""),
     String(rs?.sessionId ?? ""),
     Math.floor(Number(rs?.startedAt ?? 0)),
@@ -407,6 +414,8 @@ export default function AdminPage() {
   const lastStorageMergePersistAtRef = useRef<number>(0);
   /** `createStateUpdatedScheduler` — 다른 기기·탭에서 저장 시에만 GET 묶음 */
   const adminStateSseScheduleRef = useRef<(() => void) | null>(null);
+  /** 후원 SSE·라이브 폴링용 강제 동기화 */
+  const adminDonorForceSyncRef = useRef<(() => void) | null>(null);
   const fetchToonationQueueRef = useRef<(() => Promise<void>) | null>(null);
   const autoProcessQueueRef = useRef<(() => Promise<void>) | null>(null);
   /** 관리자 최초 큐 스냅샷 — 배포 직후·페이지 열 때 쌓인 백로그는 자동 반영하지 않음 */
@@ -559,12 +568,17 @@ export default function AdminPage() {
   const [rouletteActionMessage, setRouletteActionMessage] = useState("");
 
   const { connected: adminSseConnected } = useSSEConnection((d: unknown) => {
-    const o = d as { type?: string };
+    const o = d as { type?: string; donorRankingsUpdatedAt?: number; updatedAt?: number };
     if (o?.type === "donation_queue_updated") {
       void fetchToonationQueueRef.current?.().then(() => autoProcessQueueRef.current?.());
       return;
     }
     if (o?.type !== "state_updated") return;
+    const donorRev = Number(o.donorRankingsUpdatedAt);
+    if (Number.isFinite(donorRev) && donorRev > 0) {
+      /** 후원 반영 SSE — 즉시 풀 동기화(디바운스 스케줄과 병행) */
+      adminDonorForceSyncRef.current?.();
+    }
     adminStateSseScheduleRef.current?.();
   });
   const adminSseConnectedRef = useRef(adminSseConnected);
@@ -1130,17 +1144,45 @@ export default function AdminPage() {
       didPreserve = true;
     }
     const recentlyEditedDonors = Date.now() - lastLocalPersistAtRef.current < DONOR_LOCAL_PROTECT_MS;
-    const localDonorIds = (local.donors || []).map((d) => d.id).sort().join("\u001e");
-    const incomingDonorIds = (merged.donors || []).map((d) => d.id).sort().join("\u001e");
-    if ((pendingUnsyncedRef.current || recentlyEditedDonors) && localDonorIds !== incomingDonorIds) {
-      merged = {
-        ...merged,
-        donors: normalizeDonorsArray(local.donors),
-        members: local.members,
-      };
-      didPreserve = true;
-    }
     const localDonorsNorm = normalizeDonorsArray(local.donors);
+    const incomingDonorsNorm = normalizeDonorsArray(merged.donors);
+    const localIdSet = new Set(localDonorsNorm.map((d) => d.id));
+    const incomingIdSet = new Set(incomingDonorsNorm.map((d) => d.id));
+    const remoteOnlyCount = incomingDonorsNorm.filter((d) => !localIdSet.has(d.id)).length;
+    const localOnlyCount = localDonorsNorm.filter((d) => !incomingIdSet.has(d.id)).length;
+    if (
+      (pendingUnsyncedRef.current || recentlyEditedDonors) &&
+      (remoteOnlyCount > 0 || localOnlyCount > 0)
+    ) {
+      if (remoteOnlyCount > 0 && localOnlyCount === 0) {
+        /** 투네 서버 자동반영 등 — 원격에만 있는 신규 후원은 반드시 수용 */
+        merged = {
+          ...merged,
+          donors: incomingDonorsNorm,
+          members: merged.members,
+        };
+      } else if (localOnlyCount > 0 && remoteOnlyCount === 0) {
+        /** 로컬에서만 추가/삭제 중인 경우 유지 */
+        merged = {
+          ...merged,
+          donors: localDonorsNorm,
+          members: local.members,
+        };
+        didPreserve = true;
+      } else if (remoteOnlyCount > 0 && localOnlyCount > 0) {
+        /** 양쪽 변경 — id 기준 병합(신규 원격 후원 누락 방지) */
+        const union = mergeDonorsForMultiTabSave(incomingDonorsNorm, localDonorsNorm, {
+          incomingUpdatedAt: incoming.updatedAt,
+          existingUpdatedAt: local.updatedAt,
+        });
+        merged = {
+          ...merged,
+          donors: union,
+          members: remoteOnlyCount >= localOnlyCount ? merged.members : local.members,
+        };
+        didPreserve = true;
+      }
+    }
     const mergedDonorsNorm = normalizeDonorsArray(merged.donors);
     if (
       localDonorsNorm.length > 0 &&
@@ -1282,12 +1324,69 @@ export default function AdminPage() {
     if (!user) return;
     let running = true;
     let inFlight = false;
-    const syncFromApi = async () => {
+    const applyRemoteState = (remote: AppState, opts?: { forceDonorMerge?: boolean }) => {
+      const remoteUpdatedAt = remote.updatedAt || 0;
+      const shouldApplyRemote =
+        remoteUpdatedAt > stateUpdatedAtRef.current || Boolean(opts?.forceDonorMerge);
+      if (!shouldApplyRemote) return false;
+      if (amountInputEditingRef.current) return false;
+      /** 저장 대기 중이어도 원격 신규 후원은 mergeIncoming에서 수용 */
+      if (pendingUnsyncedRef.current && !opts?.forceDonorMerge) {
+        const localIds = new Set((stateRef.current.donors || []).map((d) => d.id));
+        const hasRemoteOnly = (remote.donors || []).some((d) => !localIds.has(d.id));
+        if (!hasRemoteOnly) return false;
+      }
+      if (remoteUpdatedAt <= lastAppliedRemoteUpdatedAtRef.current && !opts?.forceDonorMerge) {
+        return false;
+      }
+      const prev = stateRef.current;
+      const recentlyEditedSig =
+        Date.now() - lastLocalPersistAtRef.current < SIG_INVENTORY_LOCAL_PROTECT_MS;
+      let toApply: AppState;
+      let didPreserve = false;
+      if (recentlyEditedSig) {
+        const mergedResult = mergeIncomingStateSafely(remote, prev);
+        toApply = { ...mergedResult.merged, sigInventory: prev.sigInventory || [] };
+        didPreserve = mergedResult.didPreserve;
+      } else {
+        const mergedResult = mergeIncomingStateSafely(remote, prev);
+        toApply = mergedResult.merged;
+        didPreserve = mergedResult.didPreserve;
+      }
+      if (adminSyncFingerprint(prev) === adminSyncFingerprint(toApply)) {
+        lastAppliedRemoteUpdatedAtRef.current = Math.max(
+          lastAppliedRemoteUpdatedAtRef.current,
+          remoteUpdatedAt
+        );
+        stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, remoteUpdatedAt);
+        return false;
+      }
+      if (didPreserve) persistState(toApply);
+      stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, remoteUpdatedAt);
+      lastAppliedRemoteUpdatedAtRef.current = Math.max(
+        lastAppliedRemoteUpdatedAtRef.current,
+        remoteUpdatedAt
+      );
+      setState(toApply);
+      if (Array.isArray(toApply.overlayPresets)) {
+        setPresets(toApply.overlayPresets as OverlayPreset[]);
+      }
+      try {
+        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(toApply));
+      } catch {}
+      return true;
+    };
+    const syncFromApi = async (opts?: { forceFull?: boolean; forceDonorMerge?: boolean }) => {
       if (!running || inFlight) return;
       inFlight = true;
       try {
-        const since = Math.max(stateUpdatedAtRef.current, lastAppliedRemoteUpdatedAtRef.current);
-        const remote = await loadStateFromApi(user?.id, { ifUpdatedSince: since });
+        const since = opts?.forceFull
+          ? 0
+          : Math.max(stateUpdatedAtRef.current, lastAppliedRemoteUpdatedAtRef.current);
+        const remote = await loadStateFromApi(user?.id, {
+          ifUpdatedSince: since,
+          forceFull: Boolean(opts?.forceFull),
+        });
         if (!remote) {
           if (typeof navigator !== "undefined" && !navigator.onLine) setSyncStatus("local");
           else if (since > 0) setSyncStatus("synced");
@@ -1295,41 +1394,7 @@ export default function AdminPage() {
           return;
         }
         setSyncStatus("synced");
-        const remoteUpdatedAt = remote.updatedAt || 0;
-        // 구버전 원격 데이터로 최신 로컬 덮어쓰기 방지: 원격이 더 최신일 때만 적용
-        const shouldApplyRemote = remoteUpdatedAt > stateUpdatedAtRef.current;
-        if (shouldApplyRemote) {
-          if (pendingUnsyncedRef.current) return;
-          if (amountInputEditingRef.current) return;
-          if (remoteUpdatedAt <= lastAppliedRemoteUpdatedAtRef.current) return;
-          const prev = stateRef.current;
-          const recentlyEditedSig =
-            Date.now() - lastLocalPersistAtRef.current < SIG_INVENTORY_LOCAL_PROTECT_MS;
-          let toApply: AppState;
-          let didPreserve = false;
-          if (recentlyEditedSig) {
-            const mergedResult = mergeIncomingStateSafely(remote, prev);
-            toApply = { ...mergedResult.merged, sigInventory: prev.sigInventory || [] };
-            didPreserve = mergedResult.didPreserve;
-          } else {
-            const mergedResult = mergeIncomingStateSafely(remote, prev);
-            toApply = mergedResult.merged;
-            didPreserve = mergedResult.didPreserve;
-          }
-          if (adminSyncFingerprint(prev) === adminSyncFingerprint(toApply)) {
-            lastAppliedRemoteUpdatedAtRef.current = remoteUpdatedAt;
-            stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, remoteUpdatedAt);
-            return;
-          }
-          if (didPreserve) persistState(toApply);
-          stateUpdatedAtRef.current = remoteUpdatedAt;
-          lastAppliedRemoteUpdatedAtRef.current = remoteUpdatedAt;
-          setState(toApply);
-          if (Array.isArray(toApply.overlayPresets)) {
-            setPresets(toApply.overlayPresets as OverlayPreset[]);
-          }
-          try { window.localStorage.setItem(storageKey(user?.id), JSON.stringify(toApply)); } catch {}
-        }
+        applyRemoteState(remote, { forceDonorMerge: opts?.forceDonorMerge });
       } finally {
         inFlight = false;
       }
@@ -1338,24 +1403,33 @@ export default function AdminPage() {
       void syncFromApi();
     });
     adminStateSseScheduleRef.current = schedule;
+    adminDonorForceSyncRef.current = () => {
+      void syncFromApi({ forceFull: true, forceDonorMerge: true });
+    };
     const onOnline = () => {
-      void syncFromApi();
+      void syncFromApi({ forceFull: true });
     };
     const onOffline = () => {
       setSyncStatus("local");
     };
-    const timer = window.setInterval(() => {
+    const fallbackTimer = window.setInterval(() => {
       if (adminSseConnectedRef.current) return;
       void syncFromApi();
     }, ADMIN_STATE_FALLBACK_POLL_MS);
+    const donorLiveTimer = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      void syncFromApi({ forceFull: true, forceDonorMerge: true });
+    }, ADMIN_DONOR_LIVE_POLL_MS);
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
-    void syncFromApi();
+    void syncFromApi({ forceFull: true });
     return () => {
       running = false;
       cancel();
       adminStateSseScheduleRef.current = null;
-      window.clearInterval(timer);
+      adminDonorForceSyncRef.current = null;
+      window.clearInterval(fallbackTimer);
+      window.clearInterval(donorLiveTimer);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
     };
@@ -1434,7 +1508,9 @@ export default function AdminPage() {
         ? String(Math.max(400, Math.min(900, w)))
         : "";
     }
-    const nextPresets = presets.map((p) => (p.id === id ? { ...p, ...mergedPatch } : p));
+    const nextPresets = normalizeOverlayPresetLabels(
+      presets.map((p) => (p.id === id ? { ...p, ...mergedPatch } : p))
+    );
     setPresets(nextPresets);
     try {
       window.localStorage.setItem(presetStorageKey, JSON.stringify(nextPresets));
@@ -10635,7 +10711,11 @@ export default function AdminPage() {
                                   <input
                                     className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
                                     placeholder="계좌 (기본)"
-                                    value={p.accountHeaderLabel || ""}
+                                    value={
+                                      p.accountHeaderLabel === "캐쉬후원" || p.accountHeaderLabel === "캐시후원"
+                                        ? "계좌"
+                                        : p.accountHeaderLabel || ""
+                                    }
                                     onChange={(e) => updatePreset(p.id, { accountHeaderLabel: e.target.value })}
                                   />
                                   <label className="text-xs text-neutral-400">투네 헤더</label>
