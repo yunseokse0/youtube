@@ -201,11 +201,29 @@ async function onDonation(userId: string, raw: string, ownerName?: string): Prom
   const parsed = parseToonationWebSocketMessage(raw);
   if (!parsed) return;
   let event = parsed;
+  const remapOwnerSelfDonationAsAccount = (source: DonationEvent): DonationEvent => {
+    const msg = String(source.message || "").trim();
+    if (!msg) return { ...source, target: "account" };
+    const tokens = msg
+      .split(/\s+/)
+      .map((t) => t.trim().replace(/[,.:;!?~]+$/g, "").trim())
+      .filter(Boolean);
+    if (tokens.length === 0) return { ...source, target: "account" };
+    const donorFromMsg = tokens[0] || source.donorName;
+    const memberFromMsg = tokens[1] || source.playerName || source.recipientName || "";
+    return {
+      ...source,
+      target: "account",
+      donorName: donorFromMsg,
+      playerName: memberFromMsg || source.playerName,
+      recipientName: memberFromMsg || source.recipientName,
+    };
+  };
   try {
     const ownerNames = await getOwnerNameCandidates(userId, ownerName);
     const donorNormalized = normalizeOwnerNameForCompare(event.donorName || "");
     if (donorNormalized && ownerNames.has(donorNormalized) && event.target !== "account") {
-      event = { ...event, target: "account" };
+      event = remapOwnerSelfDonationAsAccount(event);
       log.debug("채널 주인 자기후원 감지 — 계좌로 강제 처리", {
         userId,
         donor: event.donorName,
