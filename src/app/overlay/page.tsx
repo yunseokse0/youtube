@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig } from "@/lib/state";
+import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey } from "@/lib/state";
 import { maxOverlayAmountDisplayLength } from "@/lib/overlay-amount-display";
 import {
   resolveGoalFontSizePx,
@@ -1311,10 +1311,12 @@ function OverlayInner() {
   const s = snap || remoteState;
   const ready = !!snap || remoteReady;
   const [localPresets, setLocalPresets] = useState<OverlayPresetLike[]>([]);
-  const readLocalPresets = () => {
+  const readLocalPresets = useCallback(() => {
     if (typeof window === "undefined") return;
     try {
-      const raw = window.localStorage.getItem("excel-broadcast-overlay-presets");
+      const perUserKey = overlayPresetsStorageKey(userId);
+      const raw = window.localStorage.getItem(perUserKey)
+        || window.localStorage.getItem("excel-broadcast-overlay-presets");
       if (!raw) {
         setLocalPresets([]);
         return;
@@ -1324,12 +1326,13 @@ function OverlayInner() {
     } catch {
       setLocalPresets([]);
     }
-  };
+  }, [userId]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     readLocalPresets();
+    const perUserKey = overlayPresetsStorageKey(userId);
     const onStorage = (e: StorageEvent) => {
-      if (e.key === "excel-broadcast-overlay-presets") readLocalPresets();
+      if (e.key === perUserKey || e.key === "excel-broadcast-overlay-presets") readLocalPresets();
     };
     window.addEventListener("storage", onStorage);
     const unsubscribePresets = subscribeOverlayPresetsLocalUpdated(() => readLocalPresets());
@@ -1337,7 +1340,7 @@ function OverlayInner() {
       window.removeEventListener("storage", onStorage);
       unsubscribePresets();
     };
-  }, []);
+  }, [userId, readLocalPresets]);
   const membersRemote = useMemo(() => ensureMembers(ready && s ? s.members : []), [ready, s]);
   const donorsRemote = useMemo(() => (ready && s ? s.donors : []), [ready, s]);
   const missions = useMemo(() => {

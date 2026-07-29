@@ -18,10 +18,8 @@ import { MealGaugeFillMotion } from "@/components/meal-match/MealGaugeFillMotion
 import { resolveMealGaugeAnimStyle } from "@/lib/meal-gauge-motion";
 import { MEAL_MATCH_OVERLAY_UI_REV } from "@/lib/overlay-ui-revision";
 import { showOverlayDevHud, useOverlayHubCompactLayout } from "@/lib/overlay-dev-hud";
-import BattleDonationRankingTable from "@/components/battle/BattleDonationRankingTable";
 import BattleRulesBox from "@/components/battle/BattleRulesBox";
 import BattleTeamScoreHeader from "@/components/battle/BattleTeamScoreHeader";
-import { buildBattleDonationRows } from "@/lib/battle-donation-ranking";
 
 function outlineStyle(): React.CSSProperties {
   return { textShadow: "0 1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 -1px 0 #000, 0 0 8px rgba(0,0,0,.55)" };
@@ -433,10 +431,6 @@ export default function MealMatchOverlayInner() {
 
   const useTeamSplitGauge = teamBattleEnabled && !fillGaugeMode && hasTeamRoster;
 
-  const donationRows = useMemo(
-    () => buildBattleDonationRows(state?.members || [], state?.memberPositions),
-    [state?.members, state?.memberPositions]
-  );
   const overlayRulesText = String(mb?.overlayRulesText || "").trim();
 
   const segments = useMemo(() => {
@@ -967,15 +961,6 @@ export default function MealMatchOverlayInner() {
             </div>
           </div>
         </div>
-
-        {donationRows.length > 0 ? (
-          <BattleDonationRankingTable
-            rows={donationRows}
-            compact={compact}
-            className="mt-3 px-1"
-            tableOptions={mb?.donationTableOptions}
-          />
-        ) : null}
 
       </div>
     </main>
