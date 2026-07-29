@@ -99,6 +99,7 @@ describe("toonation parse-event", () => {
     expect(parsed.playerName).toBe("");
   });
 
+  it("accepts youtube superchat alert (code 109) for excel apply", () => {
     const raw = JSON.stringify({
       code: TOONATION_WS_CODE_YOUTUBE_SUPERCHAT,
       content: { nickname: "시청자", amount: 60000, comment: "계좌 시청자 BT태호" },
