@@ -92,6 +92,17 @@ describe("toonation parse-event", () => {
     expect(parseToonationWebSocketMessage(raw)).toBeNull();
   });
 
+  it("accepts other codes when donation hints exist", () => {
+    const raw = JSON.stringify({
+      code: 107,
+      content: { amount: 10000, nickname: "후원자X", comment: "피자 감사합니다" },
+    });
+    const evt = parseToonationWebSocketMessage(raw);
+    expect(evt).not.toBeNull();
+    expect(evt?.amount).toBe(10000);
+    expect(evt?.donorName).toBe("후원자X");
+  });
+
   it("ignores amount-only message token as player name", () => {
     const parsed = parseToonationMessageBody("60,000", "시청자");
     expect(parsed.target).toBe("toon");

@@ -263,8 +263,34 @@ export function isToonationExcelDonationWsMessage(data: Record<string, unknown>)
 export function parseToonationWebSocketMessage(raw: string): DonationEvent | null {
   try {
     const data = JSON.parse(raw) as Record<string, unknown>;
-    if (!isToonationExcelDonationWsMessage(data)) return null;
-    return parseToonationDonationPayload(data.content ?? data);
+    const payload = (data as any).content ?? data;
+    const evt = parseToonationDonationPayload(payload);
+    if (!evt) return null;
+
+    /** 기존엔 code=101(후원) / 109(유튜브 슈퍼챗)만 후원으로 인정했는데,
+     * 실제로는 코드가 약간 다른 변형이 들어와 누락될 수 있었다.
+     * 따라서 code로 1차 판별하되, amount가 있고 donor/message 힌트가 있으면 code가 달라도 허용한다.
+     * (단, amount만 있는 비후원 이벤트는 그대로 버림)
+     */
+    if (isToonationExcelDonationWsMessage(data)) return evt;
+
+    const root = unwrapToonationPayload(payload);
+    const donorHint = [
+      safeRead(root, "nickname"),
+      safeRead(root, "nickName"),
+      safeRead(root, "sender"),
+      safeRead(root, "userName"),
+      safeRead(root, "name"),
+    ].some((x) => String(x ?? "").trim().length > 0);
+
+    const messageHint = [
+      safeRead(root, "message"),
+      safeRead(root, "comment"),
+      safeRead(root, "text"),
+    ].some((x) => String(x ?? "").trim().length > 0);
+
+    if (!donorHint && !messageHint) return null;
+    return evt;
   } catch {
     return null;
   }
