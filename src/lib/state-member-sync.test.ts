@@ -4,6 +4,7 @@ import {
   defaultState,
   hasExpandedSigInventory,
   hasMeaningfulBroadcastData,
+  hasMeaningfulMemberRoster,
   hasSigSalesMemberPresets,
   isDefaultLikeState,
   isDefaultPlaceholderMemberList,
@@ -34,8 +35,29 @@ describe("member sync helpers", () => {
     };
     expect(isDefaultLikeState(one)).toBe(false);
     expect(hasMeaningfulBroadcastData(one)).toBe(true);
+    expect(hasMeaningfulMemberRoster(one)).toBe(true);
     expect(isDefaultLikeState(defaultState())).toBe(true);
+    expect(hasMeaningfulMemberRoster(defaultState())).toBe(false);
     expect(membersDifferByIds(one.members, defaultState().members)).toBe(true);
+  });
+
+  it("placeholder members with zero amounts are not a meaningful roster", () => {
+    const placeholders: AppState = {
+      ...defaultState(),
+      updatedAt: Date.now(),
+      members: buildDefaultMembersCount(3),
+    };
+    expect(hasMeaningfulMemberRoster(placeholders)).toBe(false);
+    expect(hasMeaningfulBroadcastData(placeholders)).toBe(false);
+  });
+
+  it("placeholder names with donation totals count as meaningful roster", () => {
+    const withMoney: AppState = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "멤버1", account: 0, toon: 50000, contribution: 0 }],
+    };
+    expect(isDefaultPlaceholderMemberList(withMoney.members)).toBe(true);
+    expect(hasMeaningfulMemberRoster(withMoney)).toBe(true);
   });
 
   it("buildDefaultMembersCount(1) is not default-like for 3-slot default", () => {

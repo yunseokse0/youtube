@@ -87,7 +87,7 @@ function sigVsBarHeightClass(hubPreview: boolean): string {
     : "h-14 w-full overflow-hidden rounded-full bg-black/40 shadow-[inset_0_2px_10px_rgba(0,0,0,0.45)] sm:h-16";
 }
 
-/** VS — 게이지 정중앙 + 선두 차이 */
+/** 게이지 정중앙 — 선두 차이만 표시 (VS 문구 없음) */
 function SigVsBarCenterLabel({
   compact,
   gapLabel,
@@ -95,37 +95,21 @@ function SigVsBarCenterLabel({
   compact?: boolean;
   gapLabel?: string | null;
 }) {
+  if (!gapLabel) return null;
   return (
     <div className="flex flex-col items-center justify-center gap-0.5" data-sig-vs-center="true">
-      <motion.span
-        className={`font-black leading-none tracking-[0.3em] text-amber-300 ${
-          compact ? "text-2xl sm:text-3xl" : "text-3xl sm:text-4xl"
+      <span
+        className={`font-black tabular-nums text-amber-100 ${
+          compact ? "text-[10px] sm:text-xs" : "text-xs sm:text-sm"
         }`}
         style={{
-          color: "#fcd34d",
           textShadow:
-            "0 0 12px rgba(251,191,36,0.85), 0 0 4px rgba(0,0,0,0.95), 0 2px 6px rgba(0,0,0,0.9), -1px 0 0 rgba(0,0,0,0.85), 1px 0 0 rgba(0,0,0,0.85)",
+            "0 0 10px rgba(251,191,36,0.75), 0 1px 4px rgba(0,0,0,0.95), -1px 0 0 #000, 1px 0 0 #000",
         }}
-        animate={{ scale: [1, 1.06, 1] }}
-        transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
-        aria-hidden
+        data-sig-vs-gap="true"
       >
-        VS
-      </motion.span>
-      {gapLabel ? (
-        <span
-          className={`font-black tabular-nums text-amber-100 ${
-            compact ? "text-[10px] sm:text-xs" : "text-xs sm:text-sm"
-          }`}
-          style={{
-            textShadow:
-              "0 0 10px rgba(251,191,36,0.75), 0 1px 4px rgba(0,0,0,0.95), -1px 0 0 #000, 1px 0 0 #000",
-          }}
-          data-sig-vs-gap="true"
-        >
-          +{gapLabel}
-        </span>
-      ) : null}
+        +{gapLabel}
+      </span>
     </div>
   );
 }

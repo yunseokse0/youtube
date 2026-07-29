@@ -100,8 +100,8 @@ export const BATTLE_EFFECTS_VERIFY_CASES: BattleEffectsVerifyCase[] = [
       },
       {
         id: "sig-vs-center",
-        label: "VS 글자가 핑크·블루 막대 정중앙에 크게 보이고(골드색), 원형 배지·배경 박스가 없다",
-        hint: "VS가 막대 위·아래에 떠 있거나 LIVE/집계 pill이 보이면 구 UI",
+        label: "핑크·블루 막대 정중앙에 VS 글자가 없고, 원형 배지·배경 박스가 없다 (점수 차이 +N만 있을 수 있음)",
+        hint: "큰 골드 VS가 보이거나 LIVE/집계 pill이 보이면 구 UI",
       },
       {
         id: "sig-rev",

@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulBroadcastData } from "@/lib/state";
+import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster } from "@/lib/state";
 import { maxOverlayAmountDisplayLength } from "@/lib/overlay-amount-display";
 import {
   resolveGoalFontSizePx,
@@ -92,11 +92,6 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   const lastVisualSigRef = useRef("");
   const overlaySinceRef = useRef(0);
   overlaySinceRef.current = Math.max(lastUpdatedRef.current, lastDonorRevRef.current);
-  const loadRef = useRef(() =>
-    loadStateFromApi(userId, { pick: "overlay-donors", ifUpdatedSince: overlaySinceRef.current })
-  );
-  loadRef.current = () =>
-    loadStateFromApi(userId, { pick: "overlay-donors", ifUpdatedSince: overlaySinceRef.current });
   const syncingRef = useRef(false);
   const syncOnceRef = useRef<() => Promise<void>>(async () => {});
   const scheduleStateUpdatedRef = useRef<(() => void) | null>(null);
@@ -116,6 +111,8 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   }, [LAST_GOOD_KEY]);
   const saveLastGood = useCallback((s: AppState) => {
     if (typeof window === "undefined") return;
+    /** placeholder 멤버를 last-good 로 굳히면 OBS가 서버 실멤버를 영구히 못 받음 */
+    if (!hasMeaningfulMemberRoster(s)) return;
     try { window.localStorage.setItem(LAST_GOOD_KEY, JSON.stringify(s)); } catch {}
   }, [LAST_GOOD_KEY]);
   const shouldDiscardEmpty = (incoming: AppState | null) => {
@@ -152,7 +149,10 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
     lastVisualSigRef.current = nextSig;
     lastUpdatedRef.current = ts;
     setState(next);
-    if (isViable(next)) { lastGoodRef.current = next; saveLastGood(next); }
+    if (isViable(next) && hasMeaningfulMemberRoster(next)) {
+      lastGoodRef.current = next;
+      saveLastGood(next);
+    }
   }, [saveLastGood]);
   const _sse = useSSEConnection(onSSE);
   const readLocalStateIfExists = useCallback((): AppState | null => {
@@ -169,62 +169,93 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   useEffect(() => {
     const local = readLocalStateIfExists();
     const lastGood = loadLastGood();
-    if (local && isViable(local)) {
-      lastVisualSigRef.current = buildOverlaySyncSignature(local);
-      setState(local);
-      lastUpdatedRef.current = local.updatedAt || 0;
-      lastDonorRevRef.current = readDonorRankingsRevision(local);
-      lastGoodRef.current = local;
-      saveLastGood(local);
-    } else if (lastGood && isViable(lastGood)) {
-      lastVisualSigRef.current = buildOverlaySyncSignature(lastGood);
-      setState(lastGood);
-      lastUpdatedRef.current = lastGood.updatedAt || 0;
-      lastDonorRevRef.current = readDonorRankingsRevision(lastGood);
-      lastGoodRef.current = lastGood;
+    const hasStrongRosterRef = { current: false };
+    const preferLocal =
+      local && isViable(local) && hasMeaningfulMemberRoster(local)
+        ? local
+        : lastGood && isViable(lastGood) && hasMeaningfulMemberRoster(lastGood)
+          ? lastGood
+          : local && isViable(local)
+            ? local
+            : lastGood && isViable(lastGood)
+              ? lastGood
+              : null;
+    if (preferLocal) {
+      lastVisualSigRef.current = buildOverlaySyncSignature(preferLocal);
+      setState(preferLocal);
+      /** placeholder 로컬의 updatedAt 이 API since/비교를 막지 않게 함 */
+      if (hasMeaningfulMemberRoster(preferLocal)) {
+        hasStrongRosterRef.current = true;
+        lastUpdatedRef.current = preferLocal.updatedAt || 0;
+        lastDonorRevRef.current = readDonorRankingsRevision(preferLocal);
+        lastGoodRef.current = preferLocal;
+        saveLastGood(preferLocal);
+      } else {
+        lastUpdatedRef.current = 0;
+        lastDonorRevRef.current = 0;
+      }
     } else {
-      // No persisted local snapshot: allow API state to win immediately.
       lastUpdatedRef.current = 0;
     }
     const syncOnce = async () => {
       if (syncingRef.current) return;
       syncingRef.current = true;
-      // Same-tab preview/overlay should react to local changes immediately
-      // even when API sync is delayed or failing.
       try {
         const localNow = readLocalStateIfExists();
-        if (localNow && localNow.updatedAt && localNow.updatedAt > lastUpdatedRef.current && !shouldDiscardEmpty(localNow)) {
+        const localStrong = hasMeaningfulMemberRoster(localNow);
+        if (
+          localNow &&
+          localStrong &&
+          localNow.updatedAt &&
+          localNow.updatedAt > lastUpdatedRef.current &&
+          !shouldDiscardEmpty(localNow)
+        ) {
           const nextSig = buildOverlaySyncSignature(localNow);
           lastUpdatedRef.current = localNow.updatedAt;
+          hasStrongRosterRef.current = true;
           if (nextSig !== lastVisualSigRef.current) {
             lastVisualSigRef.current = nextSig;
             setState(localNow);
           }
-          if (isViable(localNow)) { lastGoodRef.current = localNow; saveLastGood(localNow); }
+          if (isViable(localNow)) {
+            lastGoodRef.current = localNow;
+            saveLastGood(localNow);
+          }
         }
-        /** 관리자 미리보기 iframe: 로컬 스냅샷이 있으면 동일 탭 저장마다 GET /api/state 반복 생략 */
+        /** 관리자 미리보기: 실멤버 로컬이 있을 때만 GET 생략 */
         if (shouldSuppressOverlaySseConnection()) {
           const peek = readLocalStateIfExists();
-          if (peek && (peek.updatedAt || 0) > 0 && hasMeaningfulBroadcastData(peek)) {
+          if (peek && (peek.updatedAt || 0) > 0 && hasMeaningfulMemberRoster(peek)) {
             syncingRef.current = false;
             return;
           }
         }
-        const data = await loadRef.current();
-        // Keep local state when API is stale (e.g. API save failed),
-        // and only accept strictly newer snapshots from server.
+        const needRosterHydration = !hasStrongRosterRef.current;
+        const data = await loadStateFromApi(userId, {
+          pick: "overlay-donors",
+          ifUpdatedSince: needRosterHydration ? 0 : overlaySinceRef.current,
+          forceFull: needRosterHydration,
+        });
         const remoteRev = Math.max(data?.updatedAt || 0, readDonorRankingsRevision(data || ({} as AppState)));
-        if (data && remoteRev > overlaySinceRef.current && !shouldDiscardEmpty(data)) {
+        const remoteStrong = hasMeaningfulMemberRoster(data);
+        const shouldApplyRemote =
+          !!data &&
+          !shouldDiscardEmpty(data) &&
+          (remoteRev > overlaySinceRef.current || (needRosterHydration && remoteStrong));
+        if (shouldApplyRemote && data) {
           const nextSig = buildOverlaySyncSignature(data);
           lastUpdatedRef.current = data.updatedAt || 0;
           lastDonorRevRef.current = readDonorRankingsRevision(data);
+          if (remoteStrong) hasStrongRosterRef.current = true;
           if (nextSig !== lastVisualSigRef.current) {
             lastVisualSigRef.current = nextSig;
             setState(data);
           }
-          if (isViable(data)) { lastGoodRef.current = data; saveLastGood(data); }
+          if (isViable(data) && remoteStrong) {
+            lastGoodRef.current = data;
+            saveLastGood(data);
+          }
         } else if (!localNow && !data) {
-          // API 실패 + localStorage 비어있음 → 기본 상태로라도 프리뷰 표시
           const fallback = lastGoodRef.current || loadLastGood() || defaultState();
           setState(fallback);
         }
@@ -245,14 +276,25 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
     const onStorage = (e: StorageEvent) => {
       if (e.key !== storageKey(userId ?? undefined)) return;
       const localNow = readLocalStateIfExists();
-      if (localNow && localNow.updatedAt && localNow.updatedAt > lastUpdatedRef.current && !shouldDiscardEmpty(localNow)) {
+      if (
+        localNow &&
+        hasMeaningfulMemberRoster(localNow) &&
+        localNow.updatedAt &&
+        localNow.updatedAt > lastUpdatedRef.current &&
+        !shouldDiscardEmpty(localNow)
+      ) {
         const nextSig = buildOverlaySyncSignature(localNow);
         lastUpdatedRef.current = localNow.updatedAt;
         if (nextSig !== lastVisualSigRef.current) {
           lastVisualSigRef.current = nextSig;
           setState(localNow);
         }
-        if (isViable(localNow)) { lastGoodRef.current = localNow; saveLastGood(localNow); }
+        if (isViable(localNow)) {
+          lastGoodRef.current = localNow;
+          saveLastGood(localNow);
+        }
+      } else {
+        void syncOnceRef.current();
       }
     };
     const pollMs = shouldSuppressOverlaySseConnection()
@@ -265,6 +307,10 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       if (!overlayUserIdsMatch(userId, detail.userId)) return;
       const localNow = readLocalBroadcastState(userId);
       if (!localNow || shouldDiscardEmpty(localNow)) return;
+      if (!hasMeaningfulMemberRoster(localNow)) {
+        void syncOnceRef.current();
+        return;
+      }
       const nextSig = buildOverlaySyncSignature(localNow);
       lastUpdatedRef.current = Math.max(lastUpdatedRef.current, localNow.updatedAt || 0);
       lastDonorRevRef.current = Math.max(lastDonorRevRef.current, readDonorRankingsRevision(localNow));

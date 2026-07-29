@@ -2025,11 +2025,23 @@ export function membersDifferByIds(a: Member[], b: Member[]): boolean {
   return sig(a) !== sig(b);
 }
 
-/** 로컬에 실제 방송 데이터(커스텀 멤버·금액·후원·시그 목록)가 있는지 */
-export function hasMeaningfulBroadcastData(state: AppState): boolean {
-  if (!isDefaultLikeState(state)) return true;
+/**
+ * 엑셀 표에 쓸 멤버 로스터가 실데이터인지.
+ * `멤버1·2·3` 초기 슬롯 + 금액 0 이면 false (시그 재고만 있어도 표 기준으로는 무의미).
+ * OBS/프리뷰가 stale placeholder localStorage 로 API를 막지 않게 할 때 사용.
+ */
+export function hasMeaningfulMemberRoster(state: AppState | null | undefined): boolean {
+  if (!state) return false;
+  const members = state.members || [];
+  if (members.length === 0) return false;
   if (totalCombined(state) > 0) return true;
   if (normalizeDonorsArray(state.donors).length > 0) return true;
+  return !isDefaultPlaceholderMemberList(members);
+}
+
+/** 로컬에 실제 방송 데이터(커스텀 멤버·금액·후원·시그 목록)가 있는지 */
+export function hasMeaningfulBroadcastData(state: AppState): boolean {
+  if (hasMeaningfulMemberRoster(state)) return true;
   if (hasExpandedSigInventory(state.sigInventory)) return true;
   return false;
 }
