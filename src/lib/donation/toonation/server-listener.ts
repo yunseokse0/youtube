@@ -150,8 +150,9 @@ async function onDonation(userId: string, raw: string): Promise<void> {
   try {
     const envelope = JSON.parse(raw) as Record<string, unknown>;
     if (envelope && isToonationYoutubeSuperChatWsMessage(envelope)) {
-      log.debug("유튜브 슈퍼챗 알림 무시(엑셀표 미반영)", { userId, code: envelope.code });
-      return;
+      // 투네이션 경유 유튜브 슈퍼챗도 후원 이벤트로 처리한다.
+      // (기존엔 알림만 뜨고 엑셀표 반영이 누락될 수 있었다.)
+      log.debug("유튜브 슈퍼챗 감지(엑셀표 반영 시도)", { userId, code: envelope.code });
     }
   } catch {
     /* parseToonationWebSocketMessage 가 처리 */
