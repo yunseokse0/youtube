@@ -92,24 +92,37 @@ describe("toonation parse-event", () => {
     expect(parseToonationWebSocketMessage(raw)).toBeNull();
   });
 
-  it("ignores youtube superchat alert (code 109)", () => {
-    const raw = JSON.stringify({
-      code: TOONATION_WS_CODE_YOUTUBE_SUPERCHAT,
-      content: { nickname: "시청자", amount: 10000, comment: "슈퍼챗 메시지" },
-    });
-    expect(isToonationYoutubeSuperChatWsMessage(JSON.parse(raw))).toBe(true);
-    expect(isToonationExcelDonationWsMessage(JSON.parse(raw))).toBe(false);
-    expect(parseToonationWebSocketMessage(raw)).toBeNull();
+  it("ignores amount-only message token as player name", () => {
+    const parsed = parseToonationMessageBody("60,000", "시청자");
+    expect(parsed.target).toBe("toon");
+    expect(parsed.donorName).toBe("시청자");
+    expect(parsed.playerName).toBe("");
   });
 
-  it("ignores donation envelope with YoutubeSuperChat code_ex", () => {
+    const raw = JSON.stringify({
+      code: TOONATION_WS_CODE_YOUTUBE_SUPERCHAT,
+      content: { nickname: "시청자", amount: 60000, comment: "계좌 시청자 BT태호" },
+    });
+    expect(isToonationYoutubeSuperChatWsMessage(JSON.parse(raw))).toBe(true);
+    expect(isToonationExcelDonationWsMessage(JSON.parse(raw))).toBe(true);
+    const evt = parseToonationWebSocketMessage(raw);
+    expect(evt?.amount).toBe(60000);
+    expect(evt?.target).toBe("account");
+    expect(evt?.donorName).toBe("시청자");
+    expect(evt?.playerName).toBe("BT태호");
+  });
+
+  it("accepts donation envelope with YoutubeSuperChat code_ex", () => {
     const raw = JSON.stringify({
       code: 101,
       code_ex: TOONATION_ALERT_TYPE_YOUTUBE_SUPERCHAT,
-      content: { nickname: "시청자", amount: 5000, comment: "슈퍼챗" },
+      content: { nickname: "시청자", amount: 5000, comment: "피자" },
     });
     expect(isToonationYoutubeSuperChatWsMessage(JSON.parse(raw))).toBe(true);
-    expect(parseToonationWebSocketMessage(raw)).toBeNull();
+    expect(isToonationExcelDonationWsMessage(JSON.parse(raw))).toBe(true);
+    const evt = parseToonationWebSocketMessage(raw);
+    expect(evt?.amount).toBe(5000);
+    expect(evt?.target).toBe("toon");
   });
 
   it("stable fallback id when payload has no donation id", () => {
