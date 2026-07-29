@@ -2,6 +2,7 @@ import WebSocket from "ws";
 import { createModuleLogger } from "@/lib/logger";
 import { tryAutoApplyToonationDonationOnServer, enqueueUnmatchedToonationDonation } from "../server-apply-donation";
 import type { DonationEvent } from "../types";
+import { loadAccounts } from "@/lib/accounts-storage";
 import {
   clearToonationListenerConfig,
   readAllEnabledToonationListenerConfigs,
@@ -25,6 +26,7 @@ export type ToonationServerListenerStatus = {
   userId: string;
   enabled: boolean;
   alertboxUrl: string;
+  ownerName?: string;
   connected: boolean;
   wsPayload?: string;
   lastEventAt?: number;
@@ -36,6 +38,7 @@ export type ToonationServerListenerStatus = {
 type ActiveConnection = {
   userId: string;
   alertboxUrl: string;
+  ownerName?: string;
   ws: WebSocket | null;
   wsPayload: string;
   pingTimer: ReturnType<typeof setInterval> | null;
@@ -53,6 +56,43 @@ const RAW_WS_DEDUPE_MS = 15_000;
 const recentRawWsByUser = new Map<string, Map<string, number>>();
 const recentEventByUser = new Map<string, Map<string, number>>();
 const EVENT_DEDUPE_MS = 60_000;
+const OWNER_NAME_CACHE_TTL_MS = 60_000;
+const ownerNameCache = new Map<string, { names: Set<string>; expiresAt: number }>();
+
+function normalizeOwnerNameForCompare(raw: string): string {
+  return String(raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[.,:;!?~'"`()\[\]{}<>_-]+/g, "");
+}
+
+async function getOwnerNameCandidates(userId: string, ownerName?: string): Promise<Set<string>> {
+  const now = Date.now();
+  const cacheKey = `${userId}:${normalizeOwnerNameForCompare(ownerName || "")}`;
+  const cached = ownerNameCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) return cached.names;
+
+  const names = new Set<string>();
+  const push = (v?: string) => {
+    const n = normalizeOwnerNameForCompare(String(v || ""));
+    if (n) names.add(n);
+  };
+  push(userId);
+  push(ownerName);
+  try {
+    const accounts = await loadAccounts();
+    const account = accounts.find((a) => String(a.id || "").trim() === userId);
+    if (account) {
+      push(account.name);
+      push(account.companyName);
+    }
+  } catch {
+    /* noop */
+  }
+  ownerNameCache.set(cacheKey, { names, expiresAt: now + OWNER_NAME_CACHE_TTL_MS });
+  return names;
+}
 
 function donationEventDedupeKey(event: DonationEvent): string {
   const ext = String(event.externalId || "").trim();
@@ -114,6 +154,7 @@ function statusFromConn(conn: ActiveConnection): ToonationServerListenerStatus {
     userId: conn.userId,
     enabled: !conn.stopped,
     alertboxUrl: conn.alertboxUrl,
+    ownerName: conn.ownerName || "",
     connected: conn.connected,
     wsPayload: conn.wsPayload,
     lastEventAt: conn.lastEventAt,
@@ -142,7 +183,7 @@ function scheduleReconnect(conn: ActiveConnection) {
   }, RECONNECT_MS);
 }
 
-async function onDonation(userId: string, raw: string): Promise<void> {
+async function onDonation(userId: string, raw: string, ownerName?: string): Promise<void> {
   if (shouldSkipDuplicateRawWs(userId, raw)) {
     log.debug("동일 WS 원문 재전송 무시", { userId });
     return;
@@ -157,8 +198,22 @@ async function onDonation(userId: string, raw: string): Promise<void> {
   } catch {
     /* parseToonationWebSocketMessage 가 처리 */
   }
-  const event = parseToonationWebSocketMessage(raw);
-  if (!event) return;
+  const parsed = parseToonationWebSocketMessage(raw);
+  if (!parsed) return;
+  let event = parsed;
+  try {
+    const ownerNames = await getOwnerNameCandidates(userId, ownerName);
+    const donorNormalized = normalizeOwnerNameForCompare(event.donorName || "");
+    if (donorNormalized && ownerNames.has(donorNormalized) && event.target !== "account") {
+      event = { ...event, target: "account" };
+      log.debug("채널 주인 자기후원 감지 — 계좌로 강제 처리", {
+        userId,
+        donor: event.donorName,
+      });
+    }
+  } catch {
+    /* noop */
+  }
   if (shouldSkipDuplicateEvent(userId, event)) {
     log.debug("동일 후원 이벤트 재전송 무시", { userId, id: event.id });
     return;
@@ -240,7 +295,7 @@ async function connectWs(conn: ActiveConnection): Promise<void> {
   ws.on("message", (data) => {
     conn.lastEventAt = Date.now();
     const raw = typeof data === "string" ? data : data.toString("utf8");
-    void onDonation(conn.userId, raw);
+    void onDonation(conn.userId, raw, conn.ownerName);
   });
 
   ws.on("close", () => {
@@ -259,9 +314,14 @@ async function connectWs(conn: ActiveConnection): Promise<void> {
   });
 }
 
-function ensureActiveConnection(userId: string, alertboxUrl: string): ActiveConnection {
+function ensureActiveConnection(userId: string, alertboxUrl: string, ownerName?: string): ActiveConnection {
   const existing = active.get(userId);
-  if (existing && existing.alertboxUrl === alertboxUrl && !existing.stopped) {
+  if (
+    existing &&
+    existing.alertboxUrl === alertboxUrl &&
+    String(existing.ownerName || "").trim() === String(ownerName || "").trim() &&
+    !existing.stopped
+  ) {
     return existing;
   }
   if (existing) {
@@ -270,6 +330,7 @@ function ensureActiveConnection(userId: string, alertboxUrl: string): ActiveConn
   const conn: ActiveConnection = {
     userId,
     alertboxUrl,
+    ownerName: String(ownerName || "").trim(),
     ws: null,
     wsPayload: "",
     pingTimer: null,
@@ -284,7 +345,8 @@ function ensureActiveConnection(userId: string, alertboxUrl: string): ActiveConn
 
 export async function startToonationServerListener(
   userId: string,
-  alertboxUrlOrKey: string
+  alertboxUrlOrKey: string,
+  ownerName?: string
 ): Promise<ToonationServerListenerStatus> {
   const url = normalizeToonationAlertboxUrl(alertboxUrlOrKey);
   if (!url) throw new Error("invalid_toonation_alertbox_url");
@@ -292,11 +354,12 @@ export async function startToonationServerListener(
   const config: ToonationListenerConfig = {
     userId,
     alertboxUrl: url,
+    ownerName: String(ownerName || "").trim(),
     enabled: true,
     updatedAt: Date.now(),
   };
   await writeToonationListenerConfig(config);
-  const conn = ensureActiveConnection(userId, url);
+  const conn = ensureActiveConnection(userId, url, ownerName);
   return statusFromConn(conn);
 }
 
@@ -334,20 +397,21 @@ export async function restoreToonationListenersFromStore(): Promise<void> {
   for (const cfg of configs) {
     if (!cfg.userId || !cfg.alertboxUrl) continue;
     log.info("저장된 투네 리스너 복구", { userId: cfg.userId });
-    ensureActiveConnection(cfg.userId, cfg.alertboxUrl);
+    ensureActiveConnection(cfg.userId, cfg.alertboxUrl, cfg.ownerName);
   }
 }
 
 export async function syncToonationServerListener(
   userId: string,
   alertboxUrl: string,
-  enabled: boolean
+  enabled: boolean,
+  ownerName?: string
 ): Promise<ToonationServerListenerStatus | null> {
   if (!enabled || !alertboxUrl.trim()) {
     await disableToonationServerListener(userId);
     return null;
   }
-  return startToonationServerListener(userId, alertboxUrl);
+  return startToonationServerListener(userId, alertboxUrl, ownerName);
 }
 
 export async function getToonationListenerStatusForUser(userId: string): Promise<ToonationServerListenerStatus | null> {
@@ -359,6 +423,7 @@ export async function getToonationListenerStatusForUser(userId: string): Promise
     userId: saved.userId,
     enabled: saved.enabled,
     alertboxUrl: saved.alertboxUrl,
+    ownerName: saved.ownerName || "",
     connected: false,
     updatedAt: saved.updatedAt,
   };

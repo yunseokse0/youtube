@@ -63,6 +63,31 @@ function memberNameCandidates(member: Member): string[] {
   return Array.from(out);
 }
 
+function matchMemberByMessageContains(message: string, members: Member[]): Member | undefined {
+  const raw = String(message || "").trim();
+  if (!raw) return undefined;
+  const normalizedMessage = normalizeName(raw);
+  let best: { member: Member; score: number } | null = null;
+  for (const member of members) {
+    for (const label of memberNameCandidates(member)) {
+      const trimmed = String(label || "").trim();
+      if (trimmed.length < 2) continue;
+      const normalizedLabel = normalizeName(trimmed);
+      if (!normalizedLabel) continue;
+      const matched =
+        raw.includes(trimmed) ||
+        normalizedMessage.includes(normalizedLabel) ||
+        raw.includes(stripHonorificSuffix(trimmed));
+      if (!matched) continue;
+      const score = normalizedLabel.length;
+      if (!best || score > best.score) {
+        best = { member, score };
+      }
+    }
+  }
+  return best?.member;
+}
+
 function matchMemberByName(
   lookupName: string,
   members: Member[],
@@ -109,6 +134,15 @@ export function mapToMember(
   aliases: DonorAlias[] = [],
   opts?: MapToMemberOptions
 ): DonationEvent {
+  const messageMatched = matchMemberByMessageContains(event.message || "", members);
+  if (messageMatched) {
+    return {
+      ...event,
+      memberId: messageMatched.id,
+      status: "processed",
+    };
+  }
+
   const candidates = resolveMemberLookupCandidates(event);
   for (const lookupName of candidates) {
     const matched = matchMemberByName(lookupName, members, aliases);

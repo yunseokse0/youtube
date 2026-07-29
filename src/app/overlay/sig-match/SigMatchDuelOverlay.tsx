@@ -18,10 +18,8 @@ import {
   getSigMatchRankings,
   type SigMatchRankingItem,
 } from "@/lib/settlement-utils";
-import BattleDonationRankingTable from "@/components/battle/BattleDonationRankingTable";
 import BattleRulesBox from "@/components/battle/BattleRulesBox";
 import BattleTeamScoreHeader from "@/components/battle/BattleTeamScoreHeader";
-import { buildBattleDonationRows } from "@/lib/battle-donation-ranking";
 
 type SigMatchSide = { ids: string[]; label: string; score: number; teamLabel?: string };
 
@@ -843,21 +841,6 @@ export default function SigMatchDuelOverlay({
     [duelData, ranking, memberMap, sigScores]
   );
 
-  const donationRows = useMemo(
-    () =>
-      buildBattleDonationRows(
-        overlayState?.members || [],
-        overlayState?.memberPositions,
-        {
-          memberIds:
-            sigSettings.participantMemberIds?.length > 0
-              ? sigSettings.participantMemberIds
-              : undefined,
-        }
-      ),
-    [overlayState?.members, overlayState?.memberPositions, sigSettings.participantMemberIds]
-  );
-
   const rulesText = String(sigSettings.rulesText || "").trim();
 
   if (!clientReady || !ready || !overlayState) {
@@ -1190,18 +1173,6 @@ export default function SigMatchDuelOverlay({
 
           </div>
 
-        {donationRows.length === 0 ? (
-          <div className="mt-3 rounded-xl border border-white/10 bg-transparent px-3 py-4 text-center text-xs text-white/70 md:bg-black/25">
-            표시할 멤버 데이터가 없습니다.
-          </div>
-        ) : (
-          <BattleDonationRankingTable
-            rows={donationRows}
-            compact={compact}
-            className="mt-3"
-            tableOptions={sigSettings.donationTableOptions}
-          />
-        )}
       </div>
     </main>
   );

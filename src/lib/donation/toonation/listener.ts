@@ -13,6 +13,7 @@ export type ToonationServerStatus = {
   userId: string;
   enabled: boolean;
   alertboxUrl: string;
+  ownerName?: string;
   connected: boolean;
   wsPayload?: string;
   lastEventAt?: number;
@@ -42,6 +43,7 @@ export async function syncToonationListenerFromBrowser(
   alertboxUrlOrKey: string,
   options?: {
     userId?: string;
+    ownerName?: string;
     enabled?: boolean;
     onStatus?: (status: ToonationListenerStatus) => void;
   }
@@ -56,7 +58,11 @@ export async function syncToonationListenerFromBrowser(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
-    body: JSON.stringify({ alertboxUrl: normalized || alertboxUrlOrKey.trim(), enabled }),
+    body: JSON.stringify({
+      alertboxUrl: normalized || alertboxUrlOrKey.trim(),
+      ownerName: String(options?.ownerName || "").trim(),
+      enabled,
+    }),
   });
   const data = (await res.json().catch(() => null)) as { status?: ToonationServerStatus; error?: string } | null;
   if (!res.ok) {

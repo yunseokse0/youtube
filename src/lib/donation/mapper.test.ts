@@ -129,6 +129,27 @@ describe("mapToMember", () => {
     expect(mapped.memberId).toBe("m2");
   });
 
+  it("matches member when message contains attached name pattern", () => {
+    const event: DonationEvent = {
+      id: "t7b",
+      provider: "toonation",
+      externalId: "e7b",
+      donorName: "배지은",
+      playerName: "",
+      message: "오늘은BT태호(응원)갑니다",
+      amount: 7100,
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "toon",
+    };
+    const team: Member[] = [
+      { id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 },
+      { id: "m2", name: "BT태호", account: 0, toon: 0, contribution: 0 },
+    ];
+    const mapped = mapToMember(event, team);
+    expect(mapped.memberId).toBe("m2");
+  });
+
   it("matches realName when display name differs", () => {
     const withReal: Member[] = [
       ...members,

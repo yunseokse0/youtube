@@ -112,14 +112,13 @@ describe("toonation parse-event", () => {
     expect(parseToonationWebSocketMessage(raw)).toBeNull();
   });
 
-  it("assigns unique fallback ids when payload has no donation id", () => {
-    const ids = new Set<string>();
-    for (let i = 0; i < 5; i++) {
-      const evt = parseToonationDonationPayload({ nickname: "배지은", amount: 20000, comment: "" });
-      expect(evt?.externalId).toBeTruthy();
-      ids.add(String(evt?.externalId));
-    }
-    expect(ids.size).toBe(5);
+  it("stable fallback id when payload has no donation id", () => {
+    const payload = { nickname: "배지은", amount: 20000, comment: "" };
+    const a = parseToonationDonationPayload(payload);
+    const b = parseToonationDonationPayload(payload);
+    expect(a?.externalId).toBeTruthy();
+    expect(a?.externalId).toBe(b?.externalId);
+    expect(a?.id).toBe(b?.id);
   });
 
   it("stable id when payload includes timestamp but no reliable id", () => {

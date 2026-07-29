@@ -33,10 +33,12 @@ export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as {
     alertboxUrl?: string;
     linkKey?: string;
+    ownerName?: string;
     enabled?: boolean;
   } | null;
   const alertboxUrlOrKey = String(body?.alertboxUrl || body?.linkKey || "").trim();
   const alertboxUrl = normalizeToonationAlertboxUrl(alertboxUrlOrKey) || "";
+  const ownerName = String(body?.ownerName || "").trim();
   const enabled = body?.enabled !== false;
   try {
     if (enabled && !alertboxUrl) {
@@ -45,7 +47,7 @@ export async function POST(req: Request) {
         headers: { "Content-Type": "application/json" },
       });
     }
-    const status = await syncToonationServerListener(userId, alertboxUrl, enabled);
+    const status = await syncToonationServerListener(userId, alertboxUrl, enabled, ownerName);
     return new Response(JSON.stringify({ ok: true, status }), {
       headers: { "Content-Type": "application/json" },
     });

@@ -210,10 +210,11 @@ export function allocateToonationExternalId(data: unknown, amount: number): stri
   if (isReliableToonationExternalId(extracted)) {
     return extracted;
   }
-  if (extractToonationTimestamp(data)) {
-    return createStableToonationFallbackId(data, amount);
-  }
-  return createUniqueToonationFallbackId(amount);
+  /**
+   * id/timestamp가 없는 구형·변형 payload도 인스턴스 간 동일 이벤트를 같은 ID로 처리해야
+   * 멀티 인스턴스/WS 재연결에서 중복 반영을 막을 수 있다.
+   */
+  return createStableToonationFallbackId(data, amount);
 }
 
 export function isDonationLikeSocketEventName(eventName: string): boolean {

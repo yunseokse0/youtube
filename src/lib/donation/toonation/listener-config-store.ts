@@ -3,6 +3,7 @@ import { getRedisEnv, upstashGetJson, upstashSetJsonWithPipeline } from "@/app/a
 export type ToonationListenerConfig = {
   userId: string;
   alertboxUrl: string;
+  ownerName?: string;
   enabled: boolean;
   updatedAt: number;
 };

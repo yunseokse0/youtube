@@ -427,6 +427,7 @@ export default function AdminPage() {
   const [toonationSocketEnabled, setToonationSocketEnabled] = useState(true);
   const [toonationListenerStatus, setToonationListenerStatus] = useState<ToonationListenerStatus | null>(null);
   const [toonationAlertboxUrl, setToonationAlertboxUrl] = useState("");
+  const [toonationOwnerName, setToonationOwnerName] = useState("");
   const toonationResolvedAlertboxUrl = useMemo(
     () => normalizeToonationAlertboxUrl(toonationAlertboxUrl.trim()),
     [toonationAlertboxUrl]
@@ -4462,6 +4463,7 @@ export default function AdminPage() {
     try {
       const socketRaw = window.localStorage.getItem("donationAutomation.toonation.socketEnabled");
       const urlRaw = window.localStorage.getItem("donationAutomation.toonation.alertboxUrl");
+      const ownerRaw = window.localStorage.getItem("donationAutomation.toonation.ownerName");
       const envUrl = (process.env.NEXT_PUBLIC_TOONATION_ALERTBOX_URL || "").trim();
       const envKey = (process.env.NEXT_PUBLIC_TOONATION_LINK_KEY || "").trim();
       setToonationSocketEnabled(socketRaw !== "false");
@@ -4471,6 +4473,7 @@ export default function AdminPage() {
           envUrl ||
           "f28dc2204fbaf86fd9df74c12f435c73"
       );
+      setToonationOwnerName(ownerRaw || "");
       window.localStorage.removeItem("donationAutomation.toonation.enabled");
       window.localStorage.removeItem("donationAutomation.toonation.socketDebug");
     } catch {
@@ -4483,11 +4486,12 @@ export default function AdminPage() {
     try {
       window.localStorage.setItem("donationAutomation.toonation.socketEnabled", String(toonationSocketEnabled));
       window.localStorage.setItem("donationAutomation.toonation.alertboxUrl", toonationAlertboxUrl);
+      window.localStorage.setItem("donationAutomation.toonation.ownerName", toonationOwnerName);
       window.localStorage.removeItem("donationAutomation.toonation.autoProcess");
     } catch {
       // noop
     }
-  }, [toonationAlertboxUrl, toonationSocketEnabled]);
+  }, [toonationAlertboxUrl, toonationOwnerName, toonationSocketEnabled]);
 
   useEffect(() => {
     const uid = user?.id || "";
@@ -4500,6 +4504,7 @@ export default function AdminPage() {
     let cancelled = false;
     void syncToonationListenerFromBrowser(normalized, {
       userId: uid,
+      ownerName: toonationOwnerName,
       enabled: true,
       onStatus: (s) => {
         if (!cancelled) setToonationListenerStatus(s);
@@ -4515,7 +4520,7 @@ export default function AdminPage() {
     return () => {
       cancelled = true;
     };
-  }, [toonationResolvedAlertboxUrl, toonationSocketEnabled, user?.id]);
+  }, [toonationOwnerName, toonationResolvedAlertboxUrl, toonationSocketEnabled, user?.id]);
 
   useEffect(() => {
     const uid = user?.id || "";
@@ -8696,6 +8701,15 @@ export default function AdminPage() {
                   value={toonationAlertboxUrl}
                   onChange={(e) => setToonationAlertboxUrl(e.target.value.trim())}
                 />
+                <input
+                  className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                  placeholder="채널 주인명 (후원자명이 이 값과 같으면 계좌 처리)"
+                  value={toonationOwnerName}
+                  onChange={(e) => setToonationOwnerName(e.target.value)}
+                />
+                <div className="text-[11px] text-neutral-500">
+                  예: <span className="text-neutral-300">BT태호</span> / 공백·기호 차이는 자동 무시합니다.
+                </div>
                 {toonationAlertboxUrl.trim() && !toonationResolvedAlertboxUrl ? (
                   <div className="text-[11px] text-rose-300">
                     연동키 형식이 올바르지 않습니다. (영문·숫자 6~64자, 또는 toon.at Alertbox URL)
