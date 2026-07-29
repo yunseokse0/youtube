@@ -62,6 +62,19 @@ export function notifyOverlayPresetsLocalUpdated(): void {
   } catch {
     /* noop */
   }
+  /** 같은 탭 iframe은 CustomEvent를 못 받으므로 postMessage로도 전달 */
+  try {
+    const origin = window.location.origin;
+    document.querySelectorAll("iframe").forEach((frame) => {
+      try {
+        frame.contentWindow?.postMessage({ type: OVERLAY_PRESETS_LOCAL_UPDATED }, origin);
+      } catch {
+        /* noop */
+      }
+    });
+  } catch {
+    /* noop */
+  }
 }
 
 export function readLocalBroadcastState(userId?: string): AppState | null {
@@ -104,11 +117,18 @@ export function subscribeOverlayPresetsLocalUpdated(handler: () => void): () => 
     const data = ev.data as { type?: string } | null;
     if (data?.type === OVERLAY_PRESETS_LOCAL_UPDATED) handler();
   };
+  const onFrameMessage = (ev: MessageEvent) => {
+    if (ev.origin !== window.location.origin) return;
+    const data = ev.data as { type?: string } | null;
+    if (data?.type === OVERLAY_PRESETS_LOCAL_UPDATED) handler();
+  };
   window.addEventListener(OVERLAY_PRESETS_LOCAL_UPDATED, onWindow);
+  window.addEventListener("message", onFrameMessage);
   const channel = getBroadcastChannel();
   channel?.addEventListener("message", onChannel);
   return () => {
     window.removeEventListener(OVERLAY_PRESETS_LOCAL_UPDATED, onWindow);
+    window.removeEventListener("message", onFrameMessage);
     channel?.removeEventListener("message", onChannel);
   };
 }

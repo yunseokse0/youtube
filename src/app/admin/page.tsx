@@ -1381,6 +1381,12 @@ export default function AdminPage() {
   };
   const updatePreset = (id: string, patch: Partial<OverlayPreset>) => {
     const mergedPatch = { ...patch };
+    /** 상단「테마」변경 시 표에 쓰는 멤버·총합 테마도 같이 맞춤(표만 theme만 바뀌고 엑셀 테마가 남는 문제 방지) */
+    if (Object.prototype.hasOwnProperty.call(patch, "theme") && patch.theme !== undefined) {
+      const nextTheme = String(patch.theme || "default");
+      if (patch.membersTheme === undefined) mergedPatch.membersTheme = nextTheme;
+      if (patch.totalTheme === undefined) mergedPatch.totalTheme = nextTheme;
+    }
     if (patch.goal !== undefined) {
       mergedPatch.goalBaseline = String(patch.goal);
     }

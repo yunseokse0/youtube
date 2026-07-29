@@ -1357,7 +1357,20 @@ function OverlayInner() {
   const { state: remoteState, ready: remoteReady } = useRemoteState(userId);
   const s = snap || remoteState;
   const ready = !!snap || remoteReady;
-  const [localPresets, setLocalPresets] = useState<OverlayPresetLike[]>([]);
+  const [localPresets, setLocalPresets] = useState<OverlayPresetLike[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const perUserKey = overlayPresetsStorageKey(userId);
+      const raw =
+        window.localStorage.getItem(perUserKey) ||
+        window.localStorage.getItem("excel-broadcast-overlay-presets");
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed as OverlayPresetLike[]) : [];
+    } catch {
+      return [];
+    }
+  });
   const readLocalPresets = useCallback(() => {
     if (typeof window === "undefined") return;
     try {

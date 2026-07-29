@@ -42,4 +42,20 @@ describe("admin preview hot-reload params", () => {
     expect(merged[0]?.theme).toBe("excelBlue");
     expect(merged[0]?.membersTheme).toBe("excelBlue");
   });
+
+  it("keeps structural params needed for member table when stripping hot-reload keys", () => {
+    const preset: OverlayPresetLike = {
+      id: "ov_1",
+      theme: "retro",
+      membersTheme: "retro",
+      showMembers: true,
+      showTotal: true,
+      tableOnly: true,
+      showTableSumRow: false,
+    };
+    const stripped = stripAdminPreviewHotReloadParams(presetToParams(preset));
+    expect(stripped.get("theme")).toBeNull();
+    expect(stripped.get("showMembers")).toBe("true");
+    expect(stripped.get("tableOnly")).toBe("true");
+  });
 });

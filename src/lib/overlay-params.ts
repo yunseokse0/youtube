@@ -407,6 +407,10 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "tableBgOpacity",
   "tableBgGifOpacity",
   "tableBgGifBrightness",
+  /** 테마도 프리셋 우선 — URL 스테일/미리보기 핫리로드와 맞춤 */
+  "theme",
+  "membersTheme",
+  "totalTheme",
 ]);
 
 const GOAL_HEX_COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
