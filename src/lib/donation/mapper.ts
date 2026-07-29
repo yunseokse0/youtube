@@ -1,12 +1,14 @@
 import type { Member } from "@/types";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
+import {
+  findBestFuzzyNameMatch,
+  normalizeComparableName,
+  stripHonorificSuffix,
+} from "./name-similarity";
 import type { DonationEvent, DonorAlias } from "./types";
 
 export function normalizeName(name: string): string {
-  return String(name || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^가-힣a-z0-9]/g, "");
+  return normalizeComparableName(name);
 }
 
 /** 투네 후원 — 메시지에 플레이어 없을 때 기본 배치(첫 일반 멤버) */
@@ -28,6 +30,39 @@ export function resolveMemberLookupName(event: DonationEvent): string {
   return "";
 }
 
+/** 메시지·플레이어 필드에서 멤버 매칭 후보(앞쪽 우선) */
+export function resolveMemberLookupCandidates(event: DonationEvent): string[] {
+  const out: string[] = [];
+  const push = (raw?: string) => {
+    const t = String(raw || "")
+      .trim()
+      .replace(/[,.:;!?~]+$/g, "")
+      .trim();
+    if (!t || out.includes(t)) return;
+    out.push(t);
+  };
+  push(event.playerName);
+  push(event.recipientName);
+  const msg = String(event.message || "").trim();
+  if (!msg) return out;
+  for (const tok of msg.split(/\s+/).filter(Boolean)) {
+    if (tok === "계좌") continue;
+    push(tok);
+  }
+  return out;
+}
+
+function memberNameCandidates(member: Member): string[] {
+  const out = new Set<string>();
+  const push = (v?: string) => {
+    const s = String(v || "").trim();
+    if (s) out.add(s);
+  };
+  push(member.name);
+  push(member.realName);
+  return Array.from(out);
+}
+
 function matchMemberByName(
   lookupName: string,
   members: Member[],
@@ -35,16 +70,32 @@ function matchMemberByName(
 ): Member | undefined {
   if (!lookupName) return undefined;
   const normalized = normalizeName(lookupName);
+  const stripped = stripHonorificSuffix(lookupName);
 
-  const aliasMatch = aliases.find((a) => normalizeName(a.alias) === normalized);
+  const aliasMatch = aliases.find(
+    (a) =>
+      normalizeName(a.alias) === normalized ||
+      stripHonorificSuffix(a.alias) === stripped
+  );
   if (aliasMatch) {
     return members.find((m) => m.id === aliasMatch.memberId);
   }
 
-  const exact = members.find((m) => m.name === lookupName);
+  const exact = members.find((m) => m.name === lookupName || m.realName === lookupName);
   if (exact) return exact;
 
-  return members.find((m) => normalizeName(m.name) === normalized);
+  const normalizedMatch = members.find((m) =>
+    memberNameCandidates(m).some(
+      (label) => normalizeName(label) === normalized || stripHonorificSuffix(label) === stripped
+    )
+  );
+  if (normalizedMatch) return normalizedMatch;
+
+  const fuzzyCandidates = members.flatMap((m) =>
+    memberNameCandidates(m).map((label) => ({ label, value: m }))
+  );
+  const fuzzy = findBestFuzzyNameMatch(lookupName, fuzzyCandidates);
+  return fuzzy?.item.value;
 }
 
 export type MapToMemberOptions = {
@@ -58,10 +109,17 @@ export function mapToMember(
   aliases: DonorAlias[] = [],
   opts?: MapToMemberOptions
 ): DonationEvent {
-  const lookupName = resolveMemberLookupName(event);
-  const matched = matchMemberByName(lookupName, members, aliases);
-  if (matched) {
-    return { ...event, memberId: matched.id, status: "processed" };
+  const candidates = resolveMemberLookupCandidates(event);
+  for (const lookupName of candidates) {
+    const matched = matchMemberByName(lookupName, members, aliases);
+    if (matched) {
+      return {
+        ...event,
+        memberId: matched.id,
+        playerName: event.playerName || lookupName,
+        status: "processed",
+      };
+    }
   }
 
   if (opts?.autoAssignToonPlayer) {

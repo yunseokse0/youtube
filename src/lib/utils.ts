@@ -40,13 +40,40 @@ function isRepresentativeMember(member: Member, memberPositions?: Record<string,
   return normalizePosition(member, memberPositions) === "대표";
 }
 
-function compareMembersByTotalDesc(a: Member, b: Member): number {
+/** `state.members` 배열 순서 = 멤버 생성순 */
+export function buildMemberCreationOrderIndex(members: Member[]): Map<string, number> {
+  const map = new Map<string, number>();
+  (members || []).forEach((m, idx) => map.set(m.id, idx));
+  return map;
+}
+
+/** 후원 총액 내림차순 → 동점(후원 없음 포함) 시 멤버 생성순 */
+export function compareMembersByDonationTotal(
+  a: Member,
+  b: Member,
+  orderIndex?: Map<string, number>
+): number {
   const ta = safeAmount(a.account) + safeAmount(a.toon);
   const tb = safeAmount(b.account) + safeAmount(b.toon);
   if (tb !== ta) return tb - ta;
-  const byName = String(a.name || "").localeCompare(String(b.name || ""), "ko");
-  if (byName !== 0) return byName;
+  if (orderIndex) {
+    const ia = orderIndex.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+    const ib = orderIndex.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+    if (ia !== ib) return ia - ib;
+  }
   return String(a.id || "").localeCompare(String(b.id || ""));
+}
+
+function compareRankingRowsByTotalDesc(
+  a: MemberRankingRow,
+  b: MemberRankingRow,
+  orderIndex: Map<string, number>
+): number {
+  if (b.totalAmount !== a.totalAmount) return b.totalAmount - a.totalAmount;
+  const ia = orderIndex.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+  const ib = orderIndex.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+  if (ia !== ib) return ia - ib;
+  return String(a.id).localeCompare(String(b.id));
 }
 
 export type OverlayRankedMember = { m: Member; rank: number | null };
@@ -55,14 +82,16 @@ export type OverlayRankedMember = { m: Member; rank: number | null };
 export function buildOverlayRankedMembers(
   unpinnedMembers: Member[],
   memberPositions?: Record<string, string>,
-  getMemberRole?: (m: Member) => string
+  getMemberRole?: (m: Member) => string,
+  allMembersForOrder?: Member[]
 ): OverlayRankedMember[] {
+  const orderIndex = buildMemberCreationOrderIndex(allMembersForOrder ?? unpinnedMembers);
   const roleOf = getMemberRole ?? ((m: Member) => normalizePosition(m, memberPositions));
   const isRep = (m: Member) =>
     isRepresentativeMember(m, memberPositions) || roleOf(m).trim().includes("대표");
   const representative = unpinnedMembers.find(isRep) || null;
   const rankable = unpinnedMembers.filter((m) => !isRep(m));
-  const sorted = [...rankable].sort(compareMembersByTotalDesc);
+  const sorted = [...rankable].sort((a, b) => compareMembersByDonationTotal(a, b, orderIndex));
   let nextRank = 1;
   const others = sorted.map((m) => ({ m, rank: nextRank++ }));
   if (representative) return [{ m: representative, rank: null }, ...others];
@@ -76,6 +105,7 @@ export function sortMembersForRanking(
   options?: { mode?: MemberPositionMode; rankPositionLabels?: string[] }
 ): MemberRankingRow[] {
   const mode = options?.mode || "fixed";
+  const orderIndex = buildMemberCreationOrderIndex(members || []);
   const rankLabels = Array.from({ length: 12 }).map((_, idx) => String(options?.rankPositionLabels?.[idx] || "").trim());
   const rows: MemberRankingRow[] = (members || []).map((m) => {
     // 엑셀표(멤버 랭킹 표)는 100원 단위 버림 기준으로 집계한다.
@@ -103,7 +133,7 @@ export function sortMembersForRanking(
     const operatingIds = new Set(operating.map((x) => x.id));
     const others = rows
       .filter((x) => (!representative || x.id !== representative.id) && !operatingIds.has(x.id))
-      .sort((a, b) => b.totalAmount - a.totalAmount);
+      .sort((a, b) => compareRankingRowsByTotalDesc(a, b, orderIndex));
     const merged = [...(representative ? [representative] : []), ...others, ...operating];
     return merged.map((row, idx) => ({
       ...row,
@@ -120,7 +150,7 @@ export function sortMembersForRanking(
   const operatingIds = new Set(operating.map((x) => x.id));
   const others = rows
     .filter((x) => (!representative || x.id !== representative.id) && !operatingIds.has(x.id))
-    .sort((a, b) => b.totalAmount - a.totalAmount);
+    .sort((a, b) => compareRankingRowsByTotalDesc(a, b, orderIndex));
 
   const ordered = [...(representative ? [representative] : []), ...others, ...operating];
   return ordered;

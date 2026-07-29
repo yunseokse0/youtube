@@ -201,7 +201,7 @@ describe("manual sig reroll server simulation", () => {
 
   it("PATCH manual draft preserves obs text overlay registry on server merge", () => {
     const textReg = defaultObsTextRegistry();
-    textReg.instances[0]!.config.blocks[0]!.text = "방송 문구 유지";
+    textReg.instances[0]!.config.blocks[0]!.segments = [{ text: "방송 문구 유지", color: "#ffffff" }];
     const server: AppState = {
       ...defaultState(),
       overlaySettings: {
@@ -244,7 +244,7 @@ describe("manual sig reroll server simulation", () => {
     const merged = simulateServerMergePartialState(server, patch);
     const os = merged.overlaySettings as Record<string, unknown> | undefined;
     const savedText = os?.[OBS_TEXT_OVERLAY_STATE_KEY] as ReturnType<typeof defaultObsTextRegistry> | undefined;
-    expect(savedText?.instances[0]?.config.blocks[0]?.text).toBe("방송 문구 유지");
+    expect(savedText?.instances[0]?.config.blocks[0]?.segments[0]?.text).toBe("방송 문구 유지");
     expect(os?.[MANUAL_SIG_DRAFT_STATE_KEY]).toBeTruthy();
   });
 

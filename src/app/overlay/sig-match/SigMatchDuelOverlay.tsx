@@ -18,6 +18,10 @@ import {
   getSigMatchRankings,
   type SigMatchRankingItem,
 } from "@/lib/settlement-utils";
+import BattleDonationRankingTable from "@/components/battle/BattleDonationRankingTable";
+import BattleRulesBox from "@/components/battle/BattleRulesBox";
+import BattleTeamScoreHeader from "@/components/battle/BattleTeamScoreHeader";
+import { buildBattleDonationRows } from "@/lib/battle-donation-ranking";
 
 type SigMatchSide = { ids: string[]; label: string; score: number; teamLabel?: string };
 
@@ -402,6 +406,7 @@ function useSigMatchState(userId: string | undefined, lockedSnapshot: AppState |
     statePick: "overlay-donors",
     frozenState: lockedSnapshot ?? undefined,
     enabled: !lockedSnapshot,
+    storageDebounceMs: 0,
   });
 }
 
@@ -513,8 +518,11 @@ export default function SigMatchDuelOverlay({
   const scoringMode: "count" | "amount" = sigSettings.scoringMode === "amount" ? "amount" : "count";
   const donationSyncMode = (overlayState?.donationSyncMode || "mealBattle") as "none" | "mealBattle" | "sigMatch" | "sigSales";
   const sigMatchDonors = useMemo(
-    () => (donationSyncMode === "sigMatch" ? (overlayState?.donors || []) : []),
-    [donationSyncMode, overlayState?.donors]
+    () =>
+      donationSyncMode === "sigMatch" || sigSettings.isActive
+        ? overlayState?.donors || []
+        : [],
+    [donationSyncMode, overlayState?.donors, sigSettings.isActive]
   );
 
   const ranking = useMemo(
@@ -835,6 +843,23 @@ export default function SigMatchDuelOverlay({
     [duelData, ranking, memberMap, sigScores]
   );
 
+  const donationRows = useMemo(
+    () =>
+      buildBattleDonationRows(
+        overlayState?.members || [],
+        overlayState?.memberPositions,
+        {
+          memberIds:
+            sigSettings.participantMemberIds?.length > 0
+              ? sigSettings.participantMemberIds
+              : undefined,
+        }
+      ),
+    [overlayState?.members, overlayState?.memberPositions, sigSettings.participantMemberIds]
+  );
+
+  const rulesText = String(sigSettings.rulesText || "").trim();
+
   if (!clientReady || !ready || !overlayState) {
     return (
       <main className="min-h-[8rem] w-full bg-transparent p-4 text-white/50">
@@ -856,6 +881,11 @@ export default function SigMatchDuelOverlay({
         style={overlayContainerStyle}
       >
         <div className={compact ? "relative w-full" : "relative mb-4 p-2"}>
+          <BattleRulesBox
+            text={rulesText}
+            compact={compact}
+            className="right-0 top-0 max-sm:left-0 max-sm:right-0 max-sm:mx-auto sm:right-1"
+          />
           {devHud && sigPreview ? (
             <div className="pointer-events-none absolute right-2 top-2 z-10 rounded-full border border-amber-300/60 bg-amber-950/90 px-2 py-0.5 text-[10px] font-bold text-amber-100">
               DEMO · 자동 연출 · {SIG_MATCH_OVERLAY_UI_REV}
@@ -965,6 +995,16 @@ export default function SigMatchDuelOverlay({
                   teamTint="sky"
                 />
               </div>
+              {dualBar && !isSoloDualLayout ? (
+                <BattleTeamScoreHeader
+                  leftName={duelData.left.label}
+                  leftScore={duelData.left.score}
+                  rightName={duelData.right.label}
+                  rightScore={duelData.right.score}
+                  compact={compact}
+                  formatScore={(n) => formatSigMatchScoreLabel(n, scoringMode)}
+                />
+              ) : null}
               <motion.div
                 className="relative shrink-0"
                 data-sig-vs-bar="true"
@@ -1150,11 +1190,18 @@ export default function SigMatchDuelOverlay({
 
           </div>
 
-        {ranking.length === 0 ? (
+        {donationRows.length === 0 ? (
           <div className="mt-3 rounded-xl border border-white/10 bg-transparent px-3 py-4 text-center text-xs text-white/70 md:bg-black/25">
             표시할 멤버 데이터가 없습니다.
           </div>
-        ) : null}
+        ) : (
+          <BattleDonationRankingTable
+            rows={donationRows}
+            compact={compact}
+            className="mt-3"
+            tableOptions={sigSettings.donationTableOptions}
+          />
+        )}
       </div>
     </main>
   );

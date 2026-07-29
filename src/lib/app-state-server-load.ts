@@ -17,5 +17,5 @@ export async function loadAppStateForUserId(userId: string): Promise<AppState> {
       return saved;
     }
   }
-  return getServerMemoryAppState() || defaultState();
+  return getServerMemoryAppState(userId) || defaultState();
 }

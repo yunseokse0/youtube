@@ -43,6 +43,12 @@ export default function CreateAccountsPage() {
         setAccounts([]);
         return false;
       }
+      if (r.status === 503) {
+        const data = await r.json().catch(() => ({}));
+        setError((data as { error?: string }).error || "서버(Redis) 설정이 필요합니다.");
+        setAccounts([]);
+        return false;
+      }
       const data = await r.json();
       setAccounts(Array.isArray(data) ? data : []);
       setError("");
@@ -70,6 +76,12 @@ export default function CreateAccountsPage() {
       const r = await fetch(apiUrl("/api/accounts", k), { cache: "no-store" });
       if (r.status === 401) {
         setError("접근 키가 올바르지 않습니다.");
+        setKey("");
+        return;
+      }
+      if (r.status === 503) {
+        const errBody = await r.json().catch(() => ({}));
+        setError((errBody as { error?: string }).error || "서버(Redis) 설정이 필요합니다.");
         setKey("");
         return;
       }

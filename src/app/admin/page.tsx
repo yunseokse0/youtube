@@ -2,6 +2,8 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { createPortal, flushSync } from "react-dom";
 import MemberRow from "@/components/MemberRow";
+import DonationTableOptionCheckboxes from "@/components/admin/DonationTableOptionCheckboxes";
+import { notifyOverlayPresetsLocalUpdated } from "@/lib/broadcast-state-local-sync";
 import Toast from "@/components/Toast";
 import {
   AppState,
@@ -21,7 +23,9 @@ import {
   membersDifferByIds,
   hasMeaningfulBroadcastData,
   hasExpandedSigInventory,
+  hasSigSalesMemberPresets,
   isShrunkToDefaultSigInventory,
+  shouldPreferLocalSigInventoryOverIncoming,
   normalizeDonorsArray,
   ensureMissionItems,
   appendDailyLog,
@@ -31,6 +35,9 @@ import {
   storageKey,
   dailyLogStorageKey,
   DAILY_LOG_KEY,
+  overlayPresetsStorageKey,
+  settlementOptionsStorageKey,
+  migrateLegacyLocalStorageKey,
   loadDailyLog,
   DailyLogEntry,
   formatManThousand,
@@ -104,7 +111,12 @@ import { normalizeSigDedupKeyImageUrl } from "@/lib/sig-inventory-dedup";
 import {
   applyMealBattleDonationToParticipants,
   ensureMealBattleParticipantRow,
+  mealBattleUsesRawDonationScore,
 } from "@/lib/meal-battle-donation";
+import {
+  enableMealBattleDonationSync,
+  recalculateMealParticipantScoresFromDonors,
+} from "@/lib/battle-donation-sync";
 import { normalizeMealGaugeEffects } from "@/lib/meal-gauge-effects";
 import { getVisibleAdminNavItems, isAdminNavSectionVisible, type AdminNavKey } from "@/app/admin/admin-nav-config";
 import {
@@ -158,7 +170,13 @@ type OverlayPreset = {
   membersTheme?: string; totalTheme?: string; goalTheme?: string; tickerBaseTheme?: string; timerTheme?: string; missionTheme?: string;
   missionWidth?: string; missionDuration?: string; missionBgOpacity?: string; missionBgColor?: string; missionItemColor?: string; missionTitleColor?: string; missionTitleText?: string; missionTitleEffect?: string; missionFontSize?: string; missionEffect?: string; missionEffectHotOnly?: string; missionDisplayMode?: string; missionVisibleCount?: string; missionSpeed?: string; missionGapSize?: string;
   showMembers: boolean; showTotal: boolean;
-  totalMode?: "total";
+  totalMode?: "total" | "contribution";
+  showCombinedColumn?: boolean;
+  showContributionColumn?: boolean;
+  showContributionSum?: boolean;
+  showTableSumRow?: boolean;
+  accountHeaderLabel?: string;
+  toonHeaderLabel?: string;
   showGoal: boolean; goal: string;
   /** 후원 초기화 시 복원할 목표(수동 저장·첫 자동 상향 직전 스냅샷). 없으면 초기화 시 goal 숫자 유지 */
   goalBaseline?: string;
@@ -398,7 +416,7 @@ export default function AdminPage() {
   const POLL_MERGE_PERSIST_MIN_MS = 6000;
   const DONOR_LOCAL_PROTECT_MS = 8000;
   /** 시그 추가·삭제 직후 서버 GET이 로컬 변경을 덮어쓰지 않도록 보호(ms) */
-  const SIG_INVENTORY_LOCAL_PROTECT_MS = 12_000;
+  const SIG_INVENTORY_LOCAL_PROTECT_MS = 30_000;
   /** 금액/숫자 입력 중에는 원격 동기화 적용을 잠시 보류해 타이핑 값 초기화를 방지 */
   const amountInputEditingRef = useRef<boolean>(false);
   const [dailyLog, setDailyLog] = useState<Record<string, DailyLogEntry[]>>({});
@@ -616,16 +634,18 @@ export default function AdminPage() {
   const [accountRatioInput, setAccountRatioInput] = useState("70");
   const [toonRatioInput, setToonRatioInput] = useState("60");
   const [taxRateInput, setTaxRateInput] = useState("3.3");
+  const [vatIncluded, setVatIncluded] = useState(false);
   const [useMemberRatioOverrides, setUseMemberRatioOverrides] = useState(false);
   const [memberRatioInputs, setMemberRatioInputs] = useState<Record<string, { account: string; toon: string }>>({});
-  const PRESET_STORAGE_KEY = "excel-broadcast-overlay-presets";
-  const SETTLEMENT_OPTIONS_KEY = "excel-broadcast-settlement-options-v1";
+  const presetStorageKey = useMemo(() => overlayPresetsStorageKey(user?.id), [user?.id]);
+  const settlementOptionsKey = useMemo(() => settlementOptionsStorageKey(user?.id), [user?.id]);
   const displayMissions = useMemo(() => {
     const v = ensureMissionItems(state.missions);
     return v.length > 0 ? v : PLACEHOLDER_MISSIONS;
   }, [state.missions]);
   const PRESET_TEMPLATES: { name: string; preset: Partial<OverlayPreset> }[] = [
     { name: "엑셀표만", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true } },
+    { name: "방송 엑셀(캐시·투네)", preset: { theme: "excelLive", membersTheme: "excelLive", totalTheme: "excelLive", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: false, showContributionColumn: false, accountHeaderLabel: "캐쉬후원", toonHeaderLabel: "투네이션", tableBgOpacity: "85", donorsFormat: "full", tableFree: true, tableX: "3", tableY: "88", anchor: "bl" } },
     { name: "전체 통합", preset: { showMembers: true, showTotal: true } },
     { name: "표만 (엑셀)", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true } },
     { name: "멤버 목록만", preset: { showMembers: true, showTotal: false, showBottomDonors: false, tickerInMembers: false } },
@@ -648,6 +668,11 @@ export default function AdminPage() {
     missionWidth: "800", missionDuration: "25",
     membersTheme: "auto", totalTheme: "auto", goalTheme: "auto", tickerBaseTheme: "auto", timerTheme: "auto", missionTheme: "auto",
     showBottomDonors: false, donorsSize: "", donorsGap: "16", donorsSpeed: "60", donorsLimit: "8", donorsFormat: "short", donorsUnit: "", donorsColor: "", donorsBgColor: "", donorsBgOpacity: "0", tickerTheme: "auto", tickerGlow: "45", tickerShadow: "35", currencyLocale: "ko-KR",
+    showCombinedColumn: true,
+    showContributionColumn: true,
+    showContributionSum: true,
+    accountHeaderLabel: "",
+    toonHeaderLabel: "",
     confettiMilestone: "",
     tableBgOpacity: "",
     totalLineVisible: false,
@@ -760,8 +785,43 @@ export default function AdminPage() {
     if (keys.length === 0) return;
     setActiveNav((prev) => (keys.includes(prev) ? prev : keys[0]!));
   }, [navItems]);
-  const baseThemeChoices = ["default","excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","neon","neonExcel","retro","minimal","rpg","pastel","rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"];
-  const memberThemeChoices = ["auto","default","excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","minimal","pastel","retro","rpg"];
+  const baseThemeChoices = ["default","excel","excelLive","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","neon","neonExcel","retro","minimal","rpg","pastel","rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"];
+  const memberThemeChoices = ["auto","default","excel","excelLive","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","minimal","pastel","retro","rpg"];
+  const overlayThemeLabel = (id: string): string => {
+    const map: Record<string, string> = {
+      auto: "자동(프리셋 테마)",
+      default: "기본(핑크 그라데이션)",
+      excel: "엑셀(녹색)",
+      excelLive: "방송 엑셀(청록·줄무늬)",
+      excelBlue: "엑셀(파랑)",
+      excelSlate: "엑셀(슬레이트)",
+      excelAmber: "엑셀(앰버)",
+      excelRose: "엑셀(로즈)",
+      excelNavy: "엑셀(네이비)",
+      excelTeal: "엑셀(틸)",
+      excelPurple: "엑셀(퍼플)",
+      excelEmerald: "엑셀(에메랄드)",
+      excelOrange: "엑셀(오렌지)",
+      excelIndigo: "엑셀(인디고)",
+      neon: "네온",
+      neonExcel: "네온 엑셀",
+      retro: "레트로",
+      minimal: "미니멀",
+      rpg: "RPG",
+      pastel: "파스텔",
+      rainbow: "레인보우",
+      sunset: "선셋",
+      ocean: "오션",
+      forest: "포레스트",
+      aurora: "오로라",
+      violet: "바이올렛",
+      coral: "코랄",
+      mint: "민트",
+      lava: "라바",
+      ice: "아이스",
+    };
+    return map[id] || id;
+  };
   const missionThemeChoices = ["auto","default","excel","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","neon","neonExcel","rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice","minimal","pastel","retro","rpg"];
   const themeStyle = (id: string): React.CSSProperties => {
     const map: Record<string, React.CSSProperties> = {
@@ -771,6 +831,7 @@ export default function AdminPage() {
       rpg: { background: "linear-gradient(135deg,#1b1b1b,#3f3f46)" },
       pastel: { background: "linear-gradient(135deg,#f5d0fe,#bfdbfe)" },
       excel: { background: "linear-gradient(135deg,#065f46,#34d399)" },
+      excelLive: { background: "linear-gradient(135deg,#0c4a6e,#7eb8d4,#ffffff)" },
       excelBlue: { background: "linear-gradient(135deg,#1e3a8a,#60a5fa)" },
       excelSlate: { background: "linear-gradient(135deg,#0f172a,#334155)" },
       excelAmber: { background: "linear-gradient(135deg,#92400e,#f59e0b)" },
@@ -809,7 +870,14 @@ export default function AdminPage() {
           lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
         }
         pendingUnsyncedRef.current = false;
-        setSyncStatus("synced");
+        if (r.storageFallback) {
+          setSyncStatus("error");
+          setSigExcelResult(
+            "서버 Redis 저장에 실패해 이 PC에만 반영됐습니다. 다른 PC·브라우저에서는 시그 목록이 보이지 않을 수 있습니다. UPSTASH 설정·Render 인스턴스 수를 확인하세요."
+          );
+        } else {
+          setSyncStatus("synced");
+        }
       } else {
         const offline = typeof navigator !== "undefined" && !navigator.onLine;
         setSyncStatus(offline ? "local" : "error");
@@ -1042,9 +1110,21 @@ export default function AdminPage() {
         merged = { ...merged, sigInventory: localInv };
         didPreserve = true;
       }
-    } else if (hasExpandedSigInventory(localInv) && isShrunkToDefaultSigInventory(incomingInv)) {
-      /** 서버 재시작·기본 목록 초기화 후 GET이 프리셋 8개만 줄 때 로컬 백업 목록 유지 */
+    } else if (
+      shouldPreferLocalSigInventoryOverIncoming(localInv, incomingInv, {
+        localUpdatedAt: local.updatedAt,
+        incomingUpdatedAt: merged.updatedAt ?? incoming.updatedAt,
+      })
+    ) {
+      /** 서버 재시작·기본 목록·구버전 탭 저장 후 GET이 줄어든 목록을 줄 때 로컬 백업 유지 */
       merged = { ...merged, sigInventory: localInv };
+      didPreserve = true;
+    }
+    if (
+      hasSigSalesMemberPresets(local.sigSalesMemberPresets) &&
+      !hasSigSalesMemberPresets(merged.sigSalesMemberPresets)
+    ) {
+      merged = { ...merged, sigSalesMemberPresets: local.sigSalesMemberPresets };
       didPreserve = true;
     }
     const recentlyEditedDonors = Date.now() - lastLocalPersistAtRef.current < DONOR_LOCAL_PROTECT_MS;
@@ -1080,18 +1160,24 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!user) return;
-    // localStorage에서 즉시 복원 (서버 재시작/동기화 시 기본값 덮어쓰기 전에 로컬 데이터 확보)
-    const hydrated = loadState(user.id);
-    setState(hydrated);
+    setSyncStatus("loading");
+    const offline = typeof navigator !== "undefined" && !navigator.onLine;
+    const localFallback = loadState(user.id);
     let localPresets: OverlayPreset[] = [];
     try {
-      const raw = window.localStorage.getItem(PRESET_STORAGE_KEY);
+      const raw =
+        migrateLegacyLocalStorageKey("excel-broadcast-overlay-presets", presetStorageKey) ||
+        window.localStorage.getItem(presetStorageKey);
       if (raw) localPresets = JSON.parse(raw) as OverlayPreset[];
     } catch {}
-    if (Array.isArray(hydrated.overlayPresets) && hydrated.overlayPresets.length > 0) {
-      setPresets(hydrated.overlayPresets as OverlayPreset[]);
-    } else if (localPresets.length > 0) {
-      setPresets(localPresets);
+    if (offline) {
+      setState(localFallback);
+      if (Array.isArray(localFallback.overlayPresets) && localFallback.overlayPresets.length > 0) {
+        setPresets(localFallback.overlayPresets as OverlayPreset[]);
+      } else if (localPresets.length > 0) {
+        setPresets(localPresets);
+      }
+      setSyncStatus("local");
     }
     // 우선 서버의 일일 로그를 소스로 사용(장치 간 일관성)
     loadDailyLogFromApi(user?.id).then((serverLog) => {
@@ -1101,18 +1187,22 @@ export default function AdminPage() {
       setDailyLog(loadDailyLog(user?.id));
     });
     try {
-      const raw = window.localStorage.getItem(SETTLEMENT_OPTIONS_KEY);
+      const raw =
+        migrateLegacyLocalStorageKey("excel-broadcast-settlement-options-v1", settlementOptionsKey) ||
+        window.localStorage.getItem(settlementOptionsKey);
       if (raw) {
         const parsed = JSON.parse(raw) as {
           accountRatioInput?: string;
           toonRatioInput?: string;
           taxRateInput?: string;
+          vatIncluded?: boolean;
           useMemberRatioOverrides?: boolean;
           memberRatioInputs?: Record<string, { account?: string; toon?: string }>;
         };
         if (typeof parsed.accountRatioInput === "string") setAccountRatioInput(parsed.accountRatioInput);
         if (typeof parsed.toonRatioInput === "string") setToonRatioInput(parsed.toonRatioInput);
         if (typeof parsed.taxRateInput === "string") setTaxRateInput(parsed.taxRateInput);
+        if (typeof parsed.vatIncluded === "boolean") setVatIncluded(parsed.vatIncluded);
         if (typeof parsed.useMemberRatioOverrides === "boolean") setUseMemberRatioOverrides(parsed.useMemberRatioOverrides);
         if (parsed.memberRatioInputs && typeof parsed.memberRatioInputs === "object") {
           const normalized: Record<string, { account: string; toon: string }> = {};
@@ -1126,12 +1216,22 @@ export default function AdminPage() {
         }
       }
     } catch {}
-    loadStateFromApi(user?.id).then((apiState) => {
-      const local = loadState(user?.id);
+    loadStateFromApi(user?.id, { forceFull: true }).then((apiState) => {
+      const local = offline ? localFallback : loadState(user?.id);
       if (apiState) {
         stateUpdatedAtRef.current = apiState.updatedAt || 0;
         const { merged: toApply, didPreserve } = mergeIncomingStateSafely(apiState, local);
         if (didPreserve) persistState(toApply);
+        const serverInv = toApply.sigInventory || [];
+        if (
+          !didPreserve &&
+          !hasExpandedSigInventory(local.sigInventory) &&
+          isShrunkToDefaultSigInventory(serverInv)
+        ) {
+          setSigExcelResult(
+            "서버에 커스텀 시그 목록이 없습니다(기본 8개만). 기존 PC에서 관리자를 열어 동기화하거나, JSON·엑셀 백업으로 복구하세요."
+          );
+        }
         setState(toApply);
         if (Array.isArray(toApply.overlayPresets) && toApply.overlayPresets.length > 0) {
           setPresets(toApply.overlayPresets as OverlayPreset[]);
@@ -1145,11 +1245,10 @@ export default function AdminPage() {
           setPresets([first]);
           setState(merged);
           persistState(merged);
-          try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify([first])); } catch {}
+          try { window.localStorage.setItem(presetStorageKey, JSON.stringify([first])); } catch {}
         }
         setSyncStatus("synced");
-        try { window.localStorage.setItem(storageKey(user?.id), JSON.stringify(toApply)); } catch {}
-      } else {
+      } else if (!offline) {
         if (Array.isArray(local.overlayPresets) && local.overlayPresets.length > 0) {
           setPresets(local.overlayPresets as OverlayPreset[]);
         } else if (localPresets.length > 0) {
@@ -1159,19 +1258,17 @@ export default function AdminPage() {
           const first = defaultPreset("전체 통합", { showMembers: true, showTotal: true });
           local.overlayPresets = [first];
           setPresets([first]);
-          try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify([first])); } catch {}
+          try { window.localStorage.setItem(presetStorageKey, JSON.stringify([first])); } catch {}
         }
         setState(local);
-        const offline = typeof navigator !== "undefined" && !navigator.onLine;
-        setSyncStatus(offline ? "local" : "error");
-        // 의미 있는 데이터가 있을 때만 서버에 업로드 (초기 기본값 덮어쓰기 방지)
-        const hasMeaningfulData = totalCombined(local) > 0 || (local.donors && local.donors.length > 0);
-        if (!offline && hasMeaningfulData) {
+        setSyncStatus("error");
+        const hasMeaningfulData = hasMeaningfulBroadcastData(local);
+        if (hasMeaningfulData) {
           saveStateAsync(local, user?.id).then((r) => { if (r.ok) setSyncStatus("synced"); });
         }
       }
     });
-  }, [user, persistState, mergeIncomingStateSafely]);
+  }, [user, persistState, mergeIncomingStateSafely, presetStorageKey, settlementOptionsKey]);
 
   useEffect(() => {
     const id = window.setInterval(() => setTimerUiNow(Date.now()), 1000);
@@ -1264,7 +1361,10 @@ export default function AdminPage() {
 
   const savePresets = (next: OverlayPreset[]) => {
     setPresets(next);
-    try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(next)); } catch {}
+    try {
+      window.localStorage.setItem(presetStorageKey, JSON.stringify(next));
+      notifyOverlayPresetsLocalUpdated();
+    } catch {}
     setState((prev) => {
       const merged: AppState = { ...prev, overlayPresets: next };
       persistState(merged);
@@ -1314,7 +1414,10 @@ export default function AdminPage() {
     }
     const nextPresets = presets.map((p) => (p.id === id ? { ...p, ...mergedPatch } : p));
     setPresets(nextPresets);
-    try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(nextPresets)); } catch {}
+    try {
+      window.localStorage.setItem(presetStorageKey, JSON.stringify(nextPresets));
+      notifyOverlayPresetsLocalUpdated();
+    } catch {}
     setState((prev: AppState) => {
       const merged: AppState = {
         ...prev,
@@ -1782,17 +1885,18 @@ export default function AdminPage() {
     if (typeof window === "undefined") return;
     try {
       window.localStorage.setItem(
-        SETTLEMENT_OPTIONS_KEY,
+        settlementOptionsKey,
         JSON.stringify({
           accountRatioInput,
           toonRatioInput,
           taxRateInput,
+          vatIncluded,
           useMemberRatioOverrides,
           memberRatioInputs,
         })
       );
     } catch {}
-  }, [SETTLEMENT_OPTIONS_KEY, accountRatioInput, toonRatioInput, taxRateInput, useMemberRatioOverrides, memberRatioInputs]);
+  }, [settlementOptionsKey, accountRatioInput, toonRatioInput, taxRateInput, vatIncluded, useMemberRatioOverrides, memberRatioInputs]);
 
   const updateMember = (m: Member) => {
     setState((prev: AppState) => {
@@ -1958,8 +2062,11 @@ export default function AdminPage() {
         sigMatchPools: prev.sigMatchSettings.sigMatchPools ?? [],
         ...patch,
       };
+      let donationSyncMode = prev.donationSyncMode || "mealBattle";
+      if (patch.isActive === true) donationSyncMode = "sigMatch";
       const next: AppState = {
         ...prev,
+        donationSyncMode,
         sigMatchSettings: {
           ...merged,
           sigMatchPools: normalizeSigMatchPools(merged.sigMatchPools, valid),
@@ -2001,13 +2108,16 @@ export default function AdminPage() {
 
   const updateMealMatchSettings = (patch: Partial<AppState["mealMatchSettings"]>) => {
     setState((prev: AppState) => {
-      const next: AppState = {
+      let next: AppState = {
         ...prev,
         mealMatchSettings: {
           ...prev.mealMatchSettings,
           ...patch,
         },
       };
+      if (patch.isActive === true) {
+        next = enableMealBattleDonationSync(next, { recalculateFromDonors: true });
+      }
       persistState(next);
       return next;
     });
@@ -2151,6 +2261,7 @@ export default function AdminPage() {
       const exists = existing.some((p) => p.memberId === memberId);
       let participants = existing;
       if (checked && !exists) {
+        const linkStartedAt = Date.now();
         participants = [
           ...existing,
           {
@@ -2161,8 +2272,8 @@ export default function AdminPage() {
             color:
               prev.mealBattle?.memberGaugeColors?.[memberId] ||
               MEAL_PARTICIPANT_COLORS[existing.length % MEAL_PARTICIPANT_COLORS.length],
-            donationLinkActive: false,
-            donationLinkStartedAt: undefined,
+            donationLinkActive: true,
+            donationLinkStartedAt: linkStartedAt,
           },
         ];
       } else if (!checked && exists) {
@@ -2170,9 +2281,18 @@ export default function AdminPage() {
       }
       const next: AppState = {
         ...prev,
+        donationSyncMode:
+          (prev.donationSyncMode === "none" || !prev.donationSyncMode) && checked
+            ? "mealBattle"
+            : prev.donationSyncMode || "mealBattle",
         mealBattle: {
           ...prev.mealBattle,
-          participants,
+          participants: checked
+            ? recalculateMealParticipantScoresFromDonors(
+                { ...prev.mealBattle, participants },
+                prev.donors
+              )
+            : participants,
         },
       };
       persistState(next);
@@ -2215,16 +2335,24 @@ export default function AdminPage() {
           donationLinkStartedAt: nextActive ? Date.now() : undefined,
         };
       });
-      const donationSyncMode =
-        enabling && (!prev.donationSyncMode || prev.donationSyncMode === "none")
-          ? "mealBattle"
-          : prev.donationSyncMode;
-      const next: AppState = {
+      let next: AppState = {
         ...prev,
-        donationSyncMode,
+        donationSyncMode:
+          enabling && (!prev.donationSyncMode || prev.donationSyncMode === "none")
+            ? "mealBattle"
+            : prev.donationSyncMode,
         mealBattle: { ...prev.mealBattle, participants },
         updatedAt: Date.now(),
       };
+      if (enabling) {
+        next = {
+          ...next,
+          mealBattle: {
+            ...next.mealBattle,
+            participants: recalculateMealParticipantScoresFromDonors(next.mealBattle, next.donors),
+          },
+        };
+      }
       persistState(next);
       return next;
     });
@@ -4067,7 +4195,8 @@ export default function AdminPage() {
               donorMemberId,
               amount,
               1,
-              donor.at
+              donor.at,
+              mealBattleUsesRawDonationScore(prev.mealBattle)
             )
           : (prev.mealBattle?.participants || []);
       const now = Date.now();
@@ -4418,8 +4547,12 @@ export default function AdminPage() {
   useEffect(() => {
     if (toonationQueue.length === 0) return;
     if (toonationQueueBaselineIdsRef.current === null) {
-      toonationQueueBaselineIdsRef.current = new Set(toonationQueue.map((e) => e.id));
-      return;
+      const initialIds = toonationQueue.map((e) => e.id);
+      toonationQueueBaselineIdsRef.current = new Set(initialIds);
+      const t = window.setTimeout(() => {
+        void autoProcessAllQueueEvents(toonationQueue);
+      }, 600);
+      return () => window.clearTimeout(t);
     }
     const baseline = toonationQueueBaselineIdsRef.current;
     const fresh = toonationQueue.filter((e) => !baseline.has(e.id));
@@ -4498,8 +4631,11 @@ export default function AdminPage() {
   );
   const donationSyncMode = (state.donationSyncMode || "mealBattle") as "none" | "mealBattle" | "sigMatch" | "sigSales";
   const sigMatchDonors = useMemo(
-    () => (donationSyncMode === "sigMatch" ? (state.donors || []) : []),
-    [donationSyncMode, state.donors]
+    () =>
+      donationSyncMode === "sigMatch" || state.sigMatchSettings?.isActive
+        ? state.donors || []
+        : [],
+    [donationSyncMode, state.donors, state.sigMatchSettings?.isActive]
   );
   const sigMatchRanking = useMemo(
     () => getSigMatchRankings(
@@ -4615,7 +4751,7 @@ export default function AdminPage() {
       updatedAt: Date.now(),
     };
     setPresets(resetPresets);
-    try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(resetPresets)); } catch {}
+    try { window.localStorage.setItem(presetStorageKey, JSON.stringify(resetPresets)); } catch {}
     setState(next);
     persistState(next);
     resetInProgressRef.current = false;
@@ -4684,7 +4820,7 @@ export default function AdminPage() {
       updatedAt: Date.now(),
     };
     setPresets(resetPresets);
-    try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(resetPresets)); } catch {}
+    try { window.localStorage.setItem(presetStorageKey, JSON.stringify(resetPresets)); } catch {}
     setState(next);
     persistState(next);
     resetInProgressRef.current = false;
@@ -4748,7 +4884,7 @@ export default function AdminPage() {
     }
     if (Array.isArray(toApply.overlayPresets)) {
       setPresets(toApply.overlayPresets as OverlayPreset[]);
-      try { window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(toApply.overlayPresets)); } catch {}
+      try { window.localStorage.setItem(presetStorageKey, JSON.stringify(toApply.overlayPresets)); } catch {}
     }
     try { window.localStorage.setItem(storageKey(user?.id), JSON.stringify(toApply)); } catch {}
     setSyncStatus("synced");
@@ -4839,7 +4975,8 @@ export default function AdminPage() {
       memberRatioOverrides,
       state.donors,
       user?.id,
-      state.memberPositions || null
+      state.memberPositions || null,
+      { vatIncluded }
     );
     router.push(`/settlements/${rec.id}`);
   };
@@ -5104,7 +5241,7 @@ export default function AdminPage() {
                 <div className="rounded-lg border border-amber-300/30 bg-amber-500/10 p-3 space-y-2">
                   <div className="text-sm font-semibold text-amber-200">후원 동기화 일괄 관리 (중복 방지)</div>
                   <p className="text-xs text-neutral-300">
-                    후원 입력은 아래에서 선택한 대상에만 동기화됩니다. 동시에 여러 시스템에 중복 반영되지 않습니다.
+                    후원 입력은 아래에서 선택한 대상에만 동기화됩니다. 시그/식사 대전을 켜면 모드가 자동 전환되고, 참가자 후원 연동도 자동 설정됩니다.
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {([
@@ -5196,6 +5333,39 @@ export default function AdminPage() {
                     <option value="count">점수 방식: 건수</option>
                     <option value="amount">점수 방식: 금액</option>
                   </select>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-neutral-200 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="rounded border-white/20 bg-neutral-900"
+                    checked={state.sigMatchSettings?.countAllDonations !== false}
+                    onChange={(e) => updateSigMatchSettings({ countAllDonations: e.target.checked })}
+                  />
+                  모든 후원 금액 집계 (시그 키워드 없이 · 벌칙/금액 대전)
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-xs text-neutral-400">오버레이 규칙 박스 (우상단, 비우면 숨김)</span>
+                  <textarea
+                    className="w-full min-h-[4rem] px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                    placeholder="예: 벌칙대전 — 핵불닭 소스 한 숟가락. 10만원 이상 차이로 승리해야 면제."
+                    value={state.sigMatchSettings?.rulesText || ""}
+                    onChange={(e) => updateSigMatchSettings({ rulesText: e.target.value })}
+                  />
+                </label>
+                <div className="rounded-lg border border-white/10 bg-black/20 p-3 space-y-2">
+                  <span className="text-xs font-medium text-neutral-300">하단 후원 표 옵션</span>
+                  <DonationTableOptionCheckboxes
+                    compact
+                    value={state.sigMatchSettings?.donationTableOptions}
+                    onChange={(patch) =>
+                      updateSigMatchSettings({
+                        donationTableOptions: {
+                          ...state.sigMatchSettings?.donationTableOptions,
+                          ...patch,
+                        },
+                      })
+                    }
+                  />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-[1fr_220px] gap-2">
                   <input
@@ -5625,6 +5795,30 @@ export default function AdminPage() {
                       onChange={(e) => updateMealBattle({ currentMission: e.target.value })}
                     />
                   </label>
+                </div>
+                <label className="block space-y-1">
+                  <span className="text-xs text-neutral-400">오버레이 규칙 박스 (우상단, 비우면 숨김)</span>
+                  <textarea
+                    className="w-full min-h-[4rem] px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                    placeholder="예: 벌칙대전 규칙 — 10만원 이상 차이로 승리해야 면제"
+                    value={state.mealBattle?.overlayRulesText || ""}
+                    onChange={(e) => updateMealBattle({ overlayRulesText: e.target.value })}
+                  />
+                </label>
+                <div className="rounded-lg border border-white/10 bg-black/20 p-3 space-y-2">
+                  <span className="text-xs font-medium text-neutral-300">하단 후원 표 옵션</span>
+                  <DonationTableOptionCheckboxes
+                    compact
+                    value={state.mealBattle?.donationTableOptions}
+                    onChange={(patch) =>
+                      updateMealBattle({
+                        donationTableOptions: {
+                          ...state.mealBattle?.donationTableOptions,
+                          ...patch,
+                        },
+                      })
+                    }
+                  />
                 </div>
                 <label className="block space-y-1 max-w-xl">
                   <span className="text-xs text-neutral-400">식사 매치 모드 → 오버레이 게이지 형태</span>
@@ -9876,8 +10070,11 @@ export default function AdminPage() {
                             <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
                               <label className="text-xs text-neutral-400">테마</label>
                               <select className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.theme} onChange={(e) => updatePreset(p.id, { theme: e.target.value })}>
-                                <option value="default">기본(핑크 그라데이션)</option>
+                                {baseThemeChoices.map((tid) => (
+                                  <option key={tid} value={tid}>{overlayThemeLabel(tid)}</option>
+                                ))}
                               </select>
+                              <ThemeThumbs value={p.theme} options={baseThemeChoices} onChange={(v) => updatePreset(p.id, { theme: v })} />
                               {/* Palette view removed per user preference; compact select retained */}
                               {(p.showMembers || p.showTotal) && (
                                 <>
@@ -9887,8 +10084,15 @@ export default function AdminPage() {
                                     value={p.membersTheme || "auto"}
                                     onChange={(e) => updatePreset(p.id, { membersTheme: e.target.value, totalTheme: e.target.value })}
                                   >
-                                    <option value="default">기본(핑크 그라데이션)</option>
+                                    {memberThemeChoices.map((tid) => (
+                                      <option key={tid} value={tid}>{overlayThemeLabel(tid)}</option>
+                                    ))}
                                   </select>
+                                  <ThemeThumbs
+                                    value={p.membersTheme || "auto"}
+                                    options={memberThemeChoices}
+                                    onChange={(v) => updatePreset(p.id, { membersTheme: v, totalTheme: v })}
+                                  />
                                   {/* Palette view removed; keep compact select */}
                                   <label className="text-xs text-neutral-400">표 배경 불투명도</label>
                                   <div className="flex items-center gap-2">
@@ -10335,6 +10539,36 @@ export default function AdminPage() {
                                     {p.totalLineVisible ? "선 ON" : "선 OFF(기본)"}
                                   </button>
                                   <span className="text-[10px] text-neutral-500">기본은 OFF(합계 컬럼/합계행 선 제거)</span>
+                                </div>
+                                <div className="space-y-2">
+                                  <span className="text-xs text-neutral-400">표 열 · 총합</span>
+                                  <DonationTableOptionCheckboxes
+                                    compact
+                                    sumRowFallback={Boolean(p.showTableSumRow ?? p.showTotal)}
+                                    value={{
+                                      showCombinedColumn: p.showCombinedColumn,
+                                      showContributionColumn: p.showContributionColumn,
+                                      showTableSumRow: p.showTableSumRow,
+                                      showContributionSum: p.showContributionSum,
+                                    }}
+                                    onChange={(patch) => updatePreset(p.id, patch)}
+                                  />
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
+                                  <label className="text-xs text-neutral-400">계좌 헤더</label>
+                                  <input
+                                    className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                    placeholder="계좌 (기본)"
+                                    value={p.accountHeaderLabel || ""}
+                                    onChange={(e) => updatePreset(p.id, { accountHeaderLabel: e.target.value })}
+                                  />
+                                  <label className="text-xs text-neutral-400">투네 헤더</label>
+                                  <input
+                                    className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                    placeholder="투네 (기본)"
+                                    value={p.toonHeaderLabel || ""}
+                                    onChange={(e) => updatePreset(p.id, { toonHeaderLabel: e.target.value })}
+                                  />
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2">
                                   <label className="text-xs text-neutral-400">금액 표시</label>
@@ -11174,6 +11408,13 @@ export default function AdminPage() {
                   onChange={(e) => setTaxRateInput(e.target.value.replace(/[^\d.]/g, ""))}
                 />
                 <button
+                  type="button"
+                  className={`px-3 py-2 rounded border text-sm whitespace-nowrap ${vatIncluded ? "border-emerald-500 bg-emerald-950/40 text-emerald-300" : "border-white/10 bg-neutral-900/80 text-neutral-400"}`}
+                  onClick={() => setVatIncluded((v) => !v)}
+                >
+                  부가세 포함 {vatIncluded ? "ON" : "OFF"}
+                </button>
+                <button
                   className="px-4 py-2 rounded bg-[#22c55e] hover:bg-[#16a34a] font-semibold text-white whitespace-nowrap flex-none"
                   onClick={onFinishBroadcastAndSettle}
                 >
@@ -11250,6 +11491,11 @@ export default function AdminPage() {
               </div>
               <div className="text-xs text-neutral-400 mt-2">
                 계산식: (계좌×계좌비율 + 투네×투네비율) - 세금비율% / 비율은 % 단위로 입력
+                {vatIncluded ? (
+                  <span className="block mt-1 text-amber-200/90">
+                    부가세 포함 ON: 원금을 공급가(÷1.1)로 환산한 뒤 수익배분·세금을 계산합니다.
+                  </span>
+                ) : null}
               </div>
             </section>
             )}

@@ -1,4 +1,4 @@
-import { applyMealBattleDonationToParticipants } from "@/lib/meal-battle-donation";
+import { applyMealBattleDonationToParticipants, mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 import type { AppState } from "@/types";
 import { mapToMember } from "./mapper";
@@ -200,6 +200,7 @@ export function applyDonationToAppState(
   });
 
   const syncMode = currentState.donationSyncMode || "mealBattle";
+  const mealRaw = mealBattleUsesRawDonationScore(currentState.mealBattle);
   const mealParticipants =
     syncMode === "mealBattle"
       ? applyMealBattleDonationToParticipants(
@@ -207,7 +208,8 @@ export function applyDonationToAppState(
           newDonor.memberId,
           newDonor.amount,
           1,
-          atMs
+          atMs,
+          mealRaw
         )
       : (currentState.mealBattle?.participants || []);
 
@@ -268,6 +270,7 @@ export function revertDonationFromAppState(currentState: AppState, donorId: stri
   });
 
   const syncMode = currentState.donationSyncMode || "mealBattle";
+  const mealRaw = mealBattleUsesRawDonationScore(currentState.mealBattle);
   const mealParticipants =
     syncMode === "mealBattle"
       ? applyMealBattleDonationToParticipants(
@@ -275,7 +278,8 @@ export function revertDonationFromAppState(currentState: AppState, donorId: stri
           donor.memberId,
           amount,
           -1,
-          atMs
+          atMs,
+          mealRaw
         )
       : currentState.mealBattle?.participants || [];
 

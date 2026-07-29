@@ -2,16 +2,20 @@
  * 오버레이 기본: GET /api/state **주기 폴링 없음**.
  * - 관리자 「현재 설정 저장」·회전판 spin/finish 등 → SSE `state_updated`(updatedAt만) → 디바운스 후 GET 1회
  * - `?since=` + 304: 서버 상태가 이미 최신이면 본문 생략
- * - SSE 끊김 시에만 `readOverlaySseFallbackPollMs()` (기본 90s, env로 조절)
+ * - SSE 끊김·OBS `host=obs`·관리자 iframe → `readOverlayLiveSyncPollMs()` (기본 1s)
  * - 시그 판매 OBS(`/overlay/sig-sales`): `readSigSalesOverlayPollMs()` 기본 2s (OBS CEF·SSE 불안정 대비)
  * - 후원·기여도(`/overlay/donation-lists`, `/overlay/donor-rankings`, 메인 `/overlay`): 기본 2.5s 폴링
  * - 디버그 전역 폴링만 env `NEXT_PUBLIC_OVERLAY_DEBUG_POLL_MS`
  */
 
+import { shouldSuppressOverlaySseConnection } from "@/lib/overlay-params";
+
 /** SSE `state_updated` 연타 시 GET 합치기 — 기본 트레일링 지연(ms) */
-export const DEFAULT_STATE_UPDATED_DEBOUNCE_MS = 320;
+export const DEFAULT_STATE_UPDATED_DEBOUNCE_MS = 100;
 /** 연속 이벤트가 끊이지 않아도 이 간격(ms)마다 최소 1회는 동기화 */
-export const DEFAULT_STATE_UPDATED_MAX_WAIT_MS = 2400;
+export const DEFAULT_STATE_UPDATED_MAX_WAIT_MS = 900;
+/** SSE 없음(OBS host=obs·관리자 iframe 등) — 설정·대전 UI 즉시 반영 폴링 */
+export const DEFAULT_OVERLAY_LIVE_SYNC_POLL_MS = 1000;
 /** 후원·순위 반영 — 짧은 디바운스(느리게 느껴지지 않게) */
 export const DONOR_STATE_UPDATED_DEBOUNCE_MS = 60;
 export const DONOR_STATE_UPDATED_MAX_WAIT_MS = 350;
@@ -107,6 +111,28 @@ export function readDonationListsOverlayPollMs(): number {
   const n = parseInt(env.replace(/[^\d]/g, ""), 10);
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_DONATION_LISTS_OVERLAY_POLL_MS;
   return Math.max(800, Math.min(30_000, n));
+}
+
+/** SSE 생략 환경에서 설정·표 옵션·대전 UI 반영 주기. `NEXT_PUBLIC_OVERLAY_LIVE_SYNC_POLL_MS=0` 으로 끔 */
+export function readOverlayLiveSyncPollMs(): number {
+  if (typeof window === "undefined") return DEFAULT_OVERLAY_LIVE_SYNC_POLL_MS;
+  const env = String(process.env.NEXT_PUBLIC_OVERLAY_LIVE_SYNC_POLL_MS ?? "").trim();
+  if (env === "0") return 0;
+  if (!env) return DEFAULT_OVERLAY_LIVE_SYNC_POLL_MS;
+  const n = parseInt(env.replace(/[^\d]/g, ""), 10);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_OVERLAY_LIVE_SYNC_POLL_MS;
+  return Math.max(400, Math.min(15_000, n));
+}
+
+/**
+ * overlayPollMs 미지정 시: 디버그 env → SSE 생략 환경이면 live sync 폴링 → 아니면 0(SSE만).
+ */
+export function resolveOverlayRemotePollMs(explicit?: number): number {
+  if (explicit != null && explicit >= 0) return explicit;
+  const debug = readOverlayPollIntervalMs();
+  if (debug > 0) return debug;
+  if (shouldSuppressOverlaySseConnection()) return readOverlayLiveSyncPollMs();
+  return 0;
 }
 
 export function readSigSalesOverlayPollMs(): number {

@@ -163,6 +163,10 @@ export type MealBattleState = {
   overlayTitle: string;
   /** 보라 말풍선(미션/서브 문구) */
   currentMission: string;
+  /** 오버레이 우상단 규칙 박스(비우면 숨김). 말풍선과 별도 */
+  overlayRulesText?: string;
+  /** 하단 후원 표 열·총합 표시 옵션 */
+  donationTableOptions?: DonationTableColumnsOptions;
   /** 신규 참가 시 기본 개인 목표·구버전 단일 목표 호환 */
   totalGoal: number;
   timerTheme: "default" | "neon" | "minimal" | "danger";
@@ -188,6 +192,8 @@ export type MealBattleState = {
   showGaugeTrackBorder: boolean;
   /** 팀대전: 막대를 팀 A/B 합산으로 표시(팀에 배정된 참가자만 합산). 식사 매치「팀」모드에서는 2분할 막대, 「개인」모드에서는 채움 막대 안을 팀 비율로 색 분할 */
   teamBattleEnabled: boolean;
+  /** true(기본: 팀대전 ON): 후원 금액을 원 단위 그대로 점수에 반영. false: 만 원 단위 환산 */
+  scoreUsesRawDonationAmount?: boolean;
   teamAName: string;
   teamBName: string;
   /** 팀 목표(0이면 참가자 개인 목표 합 자동 사용) */
@@ -232,6 +238,17 @@ export type SigMatchPool = {
   memberIds: string[];
 };
 
+export type DonationTableColumnsOptions = {
+  /** 후원합계 열 표시 */
+  showCombinedColumn?: boolean;
+  /** 기여도 열 표시 */
+  showContributionColumn?: boolean;
+  /** 하단 총합 행 표시 */
+  showTableSumRow?: boolean;
+  /** 총합 행 기여도 칸 표시(기여도 열 ON일 때) */
+  showContributionSum?: boolean;
+};
+
 export type SigMatchSettings = {
   /** 시그 대전 활성화 여부 */
   isActive: boolean;
@@ -245,6 +262,11 @@ export type SigMatchSettings = {
   signatureAmounts: number[];
   /** 점수 집계 방식 */
   scoringMode: "count" | "amount";
+  /**
+   * 금액 모드·벌칙대전: true(기본)면 멤버 후원 전부 집계.
+   * false면 시그 키워드/시그니처 금액 후원만 집계.
+   */
+  countAllDonations?: boolean;
   /** count 모드에서 포인트→정산 환산 단가 */
   incentivePerPoint: number;
   /**
@@ -262,6 +284,10 @@ export type SigMatchSettings = {
   overlayTimerDurationSec?: number;
   /** 시그 대전 오버레이 타이머 종료 시각(epoch ms). null/0이면 정지 */
   overlayTimerEndAt?: number | null;
+  /** 오버레이 우상단 규칙 박스 문구(비우면 숨김) */
+  rulesText?: string;
+  /** 하단 후원 표 열·총합 표시 옵션 */
+  donationTableOptions?: DonationTableColumnsOptions;
 };
 
 export type MealMatchSettings = {
@@ -427,6 +453,9 @@ export type SettlementMemberResult = {
   accountHolder?: string;
   account: number;
   toon: number;
+  /** 부가세 포함 원금(공급가 환산 전). 정산 기록·가독 텍스트용 */
+  accountSource?: number;
+  toonSource?: number;
   accountRatio: number;
   toonRatio: number;
   accountApplied: number;
@@ -444,6 +473,10 @@ export type SettlementRecord = {
   toonRatio: number;
   /** 기존 필드명 유지(실제 의미는 taxRate) */
   feeRate: number;
+  /** true면 원금을 부가세 포함 금액으로 보고 공급가(÷(1+vatRate))로 환산 후 수익배분 */
+  vatIncluded?: boolean;
+  /** 부가세율(기본 10%). vatIncluded일 때만 사용 */
+  vatRate?: number;
   members: SettlementMemberResult[];
   totalGross: number;
   totalFee: number;

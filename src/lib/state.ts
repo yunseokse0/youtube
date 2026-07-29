@@ -1,4 +1,6 @@
 import { DEFAULT_MEAL_GAUGE_EFFECTS, normalizeMealGaugeEffects } from "@/lib/meal-gauge-effects";
+import { normalizeDonationTableColumnsOptions } from "@/lib/donation-table-options";
+import { notifyBroadcastStateLocalUpdated } from "@/lib/broadcast-state-local-sync";
 import type {
   AppState,
   Donor,
@@ -535,6 +537,36 @@ export function missionsBackupKey(userId?: string | null): string {
   return userId ? `${MISSIONS_BACKUP_KEY}:${userId}` : MISSIONS_BACKUP_KEY;
 }
 
+/** 계정별 오버레이 프리SET localStorage 캐시 키 (서버 AppState.overlayPresets 가 정본) */
+export function overlayPresetsStorageKey(userId?: string | null): string {
+  const uid = String(userId || "finalent").trim() || "finalent";
+  return `excel-broadcast-overlay-presets:${uid}`;
+}
+
+/** 계정별 정산 UI 옵션 localStorage 캐시 키 */
+export function settlementOptionsStorageKey(userId?: string | null): string {
+  const uid = String(userId || "finalent").trim() || "finalent";
+  return `excel-broadcast-settlement-options-v1:${uid}`;
+}
+
+/** 구버전(계정 미분리) 키 → 계정별 키로 1회 이전 */
+export function migrateLegacyLocalStorageKey(
+  legacyKey: string,
+  scopedKey: string
+): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const scoped = window.localStorage.getItem(scopedKey);
+    if (scoped) return scoped;
+    const legacy = window.localStorage.getItem(legacyKey);
+    if (legacy) {
+      window.localStorage.setItem(scopedKey, legacy);
+      return legacy;
+    }
+  } catch {}
+  return null;
+}
+
 export function saveMissionsBackup(missions: MissionItem[], userId?: string | null): void {
   if (typeof window === "undefined") return;
   try {
@@ -698,6 +730,8 @@ export function defaultState(): AppState {
     memberGaugeColors: {},
     overlayTitle: "식사 대전",
     currentMission: "",
+    overlayRulesText: "",
+    donationTableOptions: normalizeDonationTableColumnsOptions(null),
     totalGoal: 100,
     timerTheme: "default",
     timerSize: 36,
@@ -762,11 +796,14 @@ export function defaultState(): AppState {
       keyword: "시그",
       signatureAmounts: [77, 100, 333],
       scoringMode: "amount",
+      countAllDonations: true,
       incentivePerPoint: 1000,
       sigMatchPools: [],
       participantMemberIds: [],
       overlayTimerDurationSec: 180,
       overlayTimerEndAt: null,
+      rulesText: "",
+      donationTableOptions: normalizeDonationTableColumnsOptions(null),
     },
     mealMatchSettings: defaultMealSettings,
     generalTimer: { ...defaultTimer },
@@ -798,6 +835,10 @@ function normalizeMealBattle(input: unknown): MealBattleState {
       : {};
   const otRaw = typeof v.overlayTitle === "string" ? v.overlayTitle.trim() : "";
   const cmRaw = typeof v.currentMission === "string" ? v.currentMission.trim() : "";
+  const orRaw =
+    typeof (v as Record<string, unknown>).overlayRulesText === "string"
+      ? String((v as Record<string, unknown>).overlayRulesText).trim()
+      : "";
   const totalGoal = Number.isFinite(v.totalGoal) ? Math.max(1, Math.floor(v.totalGoal as number)) : 100;
   const participantsWithGoals = Array.isArray(v.participants)
     ? v.participants
@@ -826,6 +867,7 @@ function normalizeMealBattle(input: unknown): MealBattleState {
     memberGaugeColors,
     overlayTitle: otRaw || "식사 대전",
     currentMission: cmRaw,
+    overlayRulesText: orRaw,
     totalGoal,
     timerTheme: v.timerTheme === "neon" || v.timerTheme === "minimal" || v.timerTheme === "danger" ? v.timerTheme : "default",
     timerSize: Number.isFinite(v.timerSize) ? Math.max(16, Math.min(120, Math.floor(v.timerSize as number))) : 36,
@@ -843,6 +885,10 @@ function normalizeMealBattle(input: unknown): MealBattleState {
       ? Boolean((v as Record<string, unknown>).showGaugeTrackBorder)
       : false,
     teamBattleEnabled: Boolean((v as Record<string, unknown>).teamBattleEnabled),
+    scoreUsesRawDonationAmount:
+      typeof (v as Record<string, unknown>).scoreUsesRawDonationAmount === "boolean"
+        ? Boolean((v as Record<string, unknown>).scoreUsesRawDonationAmount)
+        : Boolean((v as Record<string, unknown>).teamBattleEnabled),
     teamAName: typeof (v as Record<string, unknown>).teamAName === "string" && String((v as Record<string, unknown>).teamAName).trim()
       ? String((v as Record<string, unknown>).teamAName).trim()
       : "A팀",
@@ -864,6 +910,11 @@ function normalizeMealBattle(input: unknown): MealBattleState {
     teamAColor: String((v as Record<string, unknown>).teamAColor || "#2563eb"),
     teamBColor: String((v as Record<string, unknown>).teamBColor || "#dc2626"),
     gaugeEffects: normalizeMealGaugeEffects((v as Record<string, unknown>).gaugeEffects),
+    donationTableOptions: normalizeDonationTableColumnsOptions(
+      (v as Record<string, unknown>).donationTableOptions as Parameters<
+        typeof normalizeDonationTableColumnsOptions
+      >[0]
+    ),
   };
 }
 
@@ -1114,6 +1165,11 @@ export function loadState(userId?: string | null): AppState {
             .filter((x: number) => Number.isFinite(x) && x > 0)
         : [77, 100, 333],
       scoringMode: data.sigMatchSettings?.scoringMode === "amount" ? "amount" : "count",
+      countAllDonations: (() => {
+        const raw = (data as AppState).sigMatchSettings?.countAllDonations;
+        if (typeof raw === "boolean") return raw;
+        return data.sigMatchSettings?.scoringMode === "amount";
+      })(),
       incentivePerPoint: Number.isFinite(data.sigMatchSettings?.incentivePerPoint)
         ? Math.max(0, Math.floor(data.sigMatchSettings!.incentivePerPoint))
         : 1000,
@@ -1128,6 +1184,13 @@ export function loadState(userId?: string | null): AppState {
       overlayTimerEndAt: Number.isFinite((data as AppState).sigMatchSettings?.overlayTimerEndAt)
         ? Math.max(0, Math.floor(Number((data as AppState).sigMatchSettings!.overlayTimerEndAt)))
         : null,
+      rulesText:
+        typeof (data as AppState).sigMatchSettings?.rulesText === "string"
+          ? String((data as AppState).sigMatchSettings!.rulesText).trim()
+          : "",
+      donationTableOptions: normalizeDonationTableColumnsOptions(
+        (data as AppState).sigMatchSettings?.donationTableOptions
+      ),
     };
     data.rouletteState = normalizeRouletteState((data as AppState).rouletteState);
     data.mealMatchSettings = normalizeMealMatchSettings((data as AppState).mealMatchSettings);
@@ -1211,6 +1274,8 @@ export type SaveStateAsyncResult = {
   ok: boolean;
   serverUpdatedAt?: number;
   donorRankingsUpdatedAt?: number;
+  /** Redis 저장 실패 후 서버 메모리만 기록된 경우 — 다른 PC·인스턴스에서는 보이지 않음 */
+  storageFallback?: boolean;
 };
 
 type ServerSaveJob = {
@@ -1251,16 +1316,18 @@ async function runServerSaveQueue(): Promise<void> {
     const ok = res.ok;
     let serverUpdatedAt: number | undefined;
     let serverDonorRankingsUpdatedAt: number | undefined;
+    let storageFallback = false;
     if (ok) {
       try {
         const raw = await res.text();
         const parsed = raw.trim()
-          ? (JSON.parse(raw) as { updatedAt?: unknown; donorRankingsUpdatedAt?: unknown })
+          ? (JSON.parse(raw) as { updatedAt?: unknown; donorRankingsUpdatedAt?: unknown; fallback?: unknown })
           : null;
         const u = parsed?.updatedAt;
         if (typeof u === "number" && Number.isFinite(u)) serverUpdatedAt = u;
         const dr = parsed?.donorRankingsUpdatedAt;
         if (typeof dr === "number" && Number.isFinite(dr)) serverDonorRankingsUpdatedAt = dr;
+        if (parsed?.fallback === "memory") storageFallback = true;
       } catch {
         /* ignore malformed body */
       }
@@ -1295,7 +1362,7 @@ async function runServerSaveQueue(): Promise<void> {
         /* ignore */
       }
     }
-    for (const fn of job.resolveAll) fn({ ok, serverUpdatedAt, donorRankingsUpdatedAt: serverDonorRankingsUpdatedAt });
+    for (const fn of job.resolveAll) fn({ ok, serverUpdatedAt, donorRankingsUpdatedAt: serverDonorRankingsUpdatedAt, storageFallback });
   } catch {
     for (const fn of job.resolveAll) fn({ ok: false });
   } finally {
@@ -1365,8 +1432,16 @@ export function saveState(state: AppState, userId?: string | null) {
   try {
     const next = normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() }));
     const json = JSON.stringify(next);
-    window.localStorage.setItem(storageKey(userId), json);
-    void enqueueServerSave(JSON.stringify(appStatePayloadForApi(next, userId)), userId, next).catch(() => {});
+    notifyBroadcastStateLocalUpdated(userId, next.updatedAt);
+    void enqueueServerSave(JSON.stringify(appStatePayloadForApi(next, userId)), userId, next)
+      .then((result) => {
+        if (result.ok) {
+          try {
+            window.localStorage.setItem(storageKey(userId), json);
+          } catch {}
+        }
+      })
+      .catch(() => {});
   } catch {
     // ignore
   }
@@ -1380,13 +1455,19 @@ export async function saveStateAsync(
   if (typeof window === "undefined") return { ok: false };
   const next = normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() }));
   const json = JSON.stringify(next);
-  try { window.localStorage.setItem(storageKey(userId), json); } catch {}
+  notifyBroadcastStateLocalUpdated(userId, next.updatedAt);
   try {
-    return await enqueueServerSave(
+    const result = await enqueueServerSave(
       JSON.stringify(appStatePayloadForApi(next, userId, options)),
       userId,
       next
     );
+    if (result.ok) {
+      try {
+        window.localStorage.setItem(storageKey(userId), json);
+      } catch {}
+    }
+    return result;
   } catch {
     return { ok: false };
   }
@@ -1709,6 +1790,11 @@ async function doLoadStateFromApi(
               .filter((x: number) => Number.isFinite(x) && x > 0)
           : [77, 100, 333],
         scoringMode: data.sigMatchSettings?.scoringMode === "amount" ? "amount" : "count",
+        countAllDonations: (() => {
+          const raw = (data as AppState).sigMatchSettings?.countAllDonations;
+          if (typeof raw === "boolean") return raw;
+          return data.sigMatchSettings?.scoringMode === "amount";
+        })(),
         incentivePerPoint: Number.isFinite(data.sigMatchSettings?.incentivePerPoint)
           ? Math.max(0, Math.floor(data.sigMatchSettings!.incentivePerPoint))
           : 1000,
@@ -1723,6 +1809,13 @@ async function doLoadStateFromApi(
         overlayTimerEndAt: Number.isFinite((data as AppState).sigMatchSettings?.overlayTimerEndAt)
           ? Math.max(0, Math.floor(Number((data as AppState).sigMatchSettings!.overlayTimerEndAt)))
           : null,
+        rulesText:
+          typeof (data as AppState).sigMatchSettings?.rulesText === "string"
+            ? String((data as AppState).sigMatchSettings!.rulesText).trim()
+            : "",
+        donationTableOptions: normalizeDonationTableColumnsOptions(
+          (data as AppState).sigMatchSettings?.donationTableOptions
+        ),
       };
       data.rouletteState = normalizeRouletteState((data as AppState).rouletteState);
       data.mealMatchSettings = normalizeMealMatchSettings((data as AppState).mealMatchSettings);
@@ -1743,7 +1836,13 @@ async function doLoadStateFromApi(
             ? data.overlaySettings?.presets
             : []
       );
-      return syncBattleStateWithMembers(data as AppState);
+      const synced = syncBattleStateWithMembers(data as AppState);
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.setItem(storageKey(userId), JSON.stringify(synced));
+        } catch {}
+      }
+      return synced;
     }
     return null;
   } catch {
@@ -1853,6 +1952,48 @@ export function hasExpandedSigInventory(inv: SigItem[] | null | undefined): bool
   return nonOneShot.some((x) => !presetNames.has(String(x.name || "").trim()));
 }
 
+/** 멤버별 시그 판매 프리셋이 하나라도 저장돼 있는지 */
+export function hasSigSalesMemberPresets(
+  presets: AppState["sigSalesMemberPresets"] | null | undefined
+): boolean {
+  if (!presets || typeof presets !== "object") return false;
+  return Object.values(presets).some((ids) => Array.isArray(ids) && ids.length > 0);
+}
+
+/**
+ * 원격 GET·다른 탭 storage merge 시 로컬 시그 목록을 유지할지.
+ * 서버 재시작·기본 프리셋 복귀·구버전 탭 저장으로 목록이 줄어드는 회귀를 막는다.
+ */
+export function shouldPreferLocalSigInventoryOverIncoming(
+  localInv: SigItem[] | null | undefined,
+  incomingInv: SigItem[] | null | undefined,
+  opts?: { localUpdatedAt?: number; incomingUpdatedAt?: number }
+): boolean {
+  const local = localInv || [];
+  const incoming = incomingInv || [];
+  if (local.length === 0) return false;
+  if (hasExpandedSigInventory(local) && isShrunkToDefaultSigInventory(incoming)) {
+    return true;
+  }
+  if (!hasExpandedSigInventory(local) || incoming.length >= local.length) {
+    return false;
+  }
+  const localIds = new Set(local.map((x) => String(x.id)));
+  if (!incoming.every((x) => localIds.has(String(x.id)))) {
+    return false;
+  }
+  const lost = local.length - incoming.length;
+  if (lost < 3 && lost / local.length < 0.15) {
+    return false;
+  }
+  const localAt = Number(opts?.localUpdatedAt || 0);
+  const incomingAt = Number(opts?.incomingUpdatedAt || 0);
+  if (incomingAt > localAt + 1000) {
+    return false;
+  }
+  return true;
+}
+
 /** 서버/동기화 시 기본값으로 덮어쓰기 방지: remote가 기본 상태처럼 보이는지 확인 */
 export function isDefaultLikeState(state: AppState): boolean {
   const def = defaultMembers();
@@ -1884,11 +2025,12 @@ export function membersDifferByIds(a: Member[], b: Member[]): boolean {
   return sig(a) !== sig(b);
 }
 
-/** 로컬에 실제 방송 데이터(커스텀 멤버·금액·후원)가 있는지 */
+/** 로컬에 실제 방송 데이터(커스텀 멤버·금액·후원·시그 목록)가 있는지 */
 export function hasMeaningfulBroadcastData(state: AppState): boolean {
   if (!isDefaultLikeState(state)) return true;
   if (totalCombined(state) > 0) return true;
   if (normalizeDonorsArray(state.donors).length > 0) return true;
+  if (hasExpandedSigInventory(state.sigInventory)) return true;
   return false;
 }
 

@@ -7,6 +7,7 @@ import type {
   SettlementMemberResult,
   SettlementRecord,
 } from "@/types";
+import { buildMemberCreationOrderIndex } from "@/lib/utils";
 
 function toSafeRate(n: number, fallback: number): number {
   if (!Number.isFinite(n)) return fallback;
@@ -15,6 +16,20 @@ function toSafeRate(n: number, fallback: number): number {
 
 function floorToHundreds(value: number): number {
   return Math.floor(Math.max(0, value) / 100) * 100;
+}
+
+export const DEFAULT_VAT_RATE = 0.1;
+
+/** 부가세 포함 금액이면 공급가(÷(1+세율))로 환산 후 100원 단위 내림 */
+export function toSettlementBaseAmount(
+  raw: number,
+  vatIncluded: boolean,
+  vatRate = DEFAULT_VAT_RATE
+): number {
+  const floored = floorToHundreds(Math.max(0, raw));
+  if (!vatIncluded) return floored;
+  const rate = Math.max(0, vatRate || DEFAULT_VAT_RATE);
+  return floorToHundreds(Math.round(floored / (1 + rate)));
 }
 
 /** 오버레이·후원 처리와 동일: 체크박스, 닉네임, 실명, 직급 텍스트 중 하나라도 운영비면 운영비 행 */
@@ -37,16 +52,20 @@ export function computeSettlement(
   toonRatioRaw: number,
   feeRateRaw = 0.033,
   memberRatioOverrides?: SettlementMemberRatioOverrides,
-  memberPositions?: Record<string, string> | null
+  memberPositions?: Record<string, string> | null,
+  options?: { vatIncluded?: boolean; vatRate?: number }
 ): Omit<SettlementRecord, "id" | "title" | "createdAt"> {
   const accountRatio = toSafeRate(accountRatioRaw, 0.7);
   const toonRatio = toSafeRate(toonRatioRaw, 0.6);
   const feeRate = Math.max(0, feeRateRaw || 0);
+  const vatIncluded = Boolean(options?.vatIncluded);
+  const vatRate = Math.max(0, options?.vatRate ?? DEFAULT_VAT_RATE);
 
   const rows: SettlementMemberResult[] = (members || []).map((m) => {
-    // 정산(엑셀/CVS/TXT 포함)은 원금 기준을 100원 단위 버림으로 통일.
-    const account = floorToHundreds(Math.max(0, m.account || 0));
-    const toon = floorToHundreds(Math.max(0, m.toon || 0));
+    const accountSource = floorToHundreds(Math.max(0, m.account || 0));
+    const toonSource = floorToHundreds(Math.max(0, m.toon || 0));
+    const account = toSettlementBaseAmount(m.account || 0, vatIncluded, vatRate);
+    const toon = toSettlementBaseAmount(m.toon || 0, vatIncluded, vatRate);
     const isOperating = isOperatingSettlementMember(
       { id: m.id, name: m.name, operating: m.operating, realName: m.realName },
       memberPositions
@@ -83,6 +102,8 @@ export function computeSettlement(
       accountHolder: "",
       account,
       toon,
+      ...(vatIncluded && accountSource !== account ? { accountSource } : {}),
+      ...(vatIncluded && toonSource !== toon ? { toonSource } : {}),
       accountRatio: effectiveAccountRatio,
       toonRatio: effectiveToonRatio,
       accountApplied,
@@ -101,6 +122,8 @@ export function computeSettlement(
     accountRatio,
     toonRatio,
     feeRate,
+    vatIncluded,
+    ...(vatIncluded ? { vatRate } : {}),
     members: rows,
     totalGross,
     totalFee,
@@ -191,6 +214,15 @@ export function getSigMatchRankings(
     const memberId = d.memberId;
     if (!byMember.has(memberId)) continue;
     const amount = Math.max(0, Number(d.amount || 0));
+    const countAll =
+      settings.countAllDonations !== false &&
+      (settings.scoringMode === "amount" || settings.countAllDonations === true);
+    if (countAll) {
+      const b = byMember.get(memberId)!;
+      b.count += 1;
+      b.amount += amount;
+      continue;
+    }
     const text = `${(d as unknown as Record<string, unknown>).message || ""} ${(d as unknown as Record<string, unknown>).memo || ""} ${d.name || ""}`.toLowerCase();
     const keywordMatched = keyword.length > 0 && text.includes(keyword);
     const signatureMatched = signatureSet.has(amount);
@@ -216,6 +248,7 @@ export function getSigMatchRankings(
     }
   }
 
+  const orderIndex = buildMemberCreationOrderIndex(rankingMembers);
   return rankingMembers
     .map((m) => {
       const stat = byMember.get(m.id) || { count: 0, amount: 0 };
@@ -231,6 +264,9 @@ export function getSigMatchRankings(
         score,
       };
     })
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return (orderIndex.get(a.memberId) ?? 0) - (orderIndex.get(b.memberId) ?? 0);
+    });
 }
 

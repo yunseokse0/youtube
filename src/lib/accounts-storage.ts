@@ -1,7 +1,15 @@
 /**
- * 계정 저장소 (Redis)
- * - 로그인/me API에서 동적 계정 검증에 사용
+ * 서비스 계정 목록 — Upstash Redis 단일 소스 (브라우저·PC 무관)
+ * 로그인/me·/api/accounts 공통
  */
+
+import {
+  getRedisEnv,
+  upstashGetJson,
+  upstashSetJsonWithSetPath,
+} from "@/app/api/_shared/upstash";
+
+export const ACCOUNTS_REDIS_KEY = "excel-broadcast-accounts-v1";
 
 export type StoredAccount = {
   id: string;
@@ -13,36 +21,29 @@ export type StoredAccount = {
   createdAt: number;
 };
 
-const ACCOUNTS_KEY = "excel-broadcast-accounts-v1";
-
-function getEnv() {
-  const base = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL || "";
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || "";
-  return { base, token };
-}
-
-async function upstashGet(key: string): Promise<StoredAccount[] | null> {
-  const { base, token } = getEnv();
-  if (!base || !token) return null;
-  const url = `${base.replace(/\/$/, "")}/get/${encodeURIComponent(key)}`;
-  const r = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-  if (!r.ok) return null;
-  const data = (await r.json()) as { result?: string | null };
-  if (!data || data.result == null) return null;
-  try {
-    const parsed = JSON.parse(data.result as string);
-    return Array.isArray(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
+export function isAccountsRedisConfigured(): boolean {
+  const { base, token } = getRedisEnv();
+  return Boolean(base && token);
 }
 
 export async function loadAccounts(): Promise<StoredAccount[]> {
-  const list = await upstashGet(ACCOUNTS_KEY);
+  if (!isAccountsRedisConfigured()) return [];
+  const list = await upstashGetJson<StoredAccount[]>(ACCOUNTS_REDIS_KEY);
   return Array.isArray(list) ? list : [];
+}
+
+export async function saveAccounts(
+  accounts: StoredAccount[]
+): Promise<{ ok: boolean; error?: string }> {
+  if (!isAccountsRedisConfigured()) {
+    return {
+      ok: false,
+      error: "Redis(UPSTASH_REDIS_REST_URL/TOKEN) 미설정 — 계정을 서버에 저장할 수 없습니다.",
+    };
+  }
+  const ok = await upstashSetJsonWithSetPath(ACCOUNTS_REDIS_KEY, accounts);
+  if (!ok) return { ok: false, error: "Redis 저장 실패" };
+  return { ok: true };
 }
 
 export function getRemainingDays(account: StoredAccount): number | null {

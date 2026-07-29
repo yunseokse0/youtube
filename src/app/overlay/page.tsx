@@ -36,10 +36,17 @@ import {
   DONOR_STATE_UPDATED_DEBOUNCE_MS,
   DONOR_STATE_UPDATED_MAX_WAIT_MS,
   readDonationListsOverlayPollMs,
+  readOverlayLiveSyncPollMs,
 } from "@/lib/overlay-pull-policy";
 import { buildOverlaySyncSignature } from "@/lib/overlay-sync-signature";
 import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
-import { buildOverlayRankedMembers } from "@/lib/utils";
+import {
+  overlayUserIdsMatch,
+  readLocalBroadcastState,
+  subscribeBroadcastStateLocalUpdated,
+  subscribeOverlayPresetsLocalUpdated,
+} from "@/lib/broadcast-state-local-sync";
+import { buildOverlayRankedMembers, buildMemberCreationOrderIndex, compareMembersByDonationTotal } from "@/lib/utils";
 import { clampWidthToViewport, computeReadableCanvasScale, ensureCanvasFontPx, isNarrowBroadcastViewport } from "@/lib/overlay-mobile-fit";
 import { useOverlayViewportSize } from "@/hooks/useOverlayViewportSize";
 
@@ -248,16 +255,35 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
         if (isViable(localNow)) { lastGoodRef.current = localNow; saveLastGood(localNow); }
       }
     };
-    const pollMs = readDonationListsOverlayPollMs();
+    const pollMs = shouldSuppressOverlaySseConnection()
+      ? readOverlayLiveSyncPollMs()
+      : readDonationListsOverlayPollMs();
     let pollTimer: number | undefined;
     if (pollMs > 0) pollTimer = window.setInterval(() => void syncOnce(), pollMs);
     window.addEventListener("storage", onStorage);
+    const unsubscribeLocal = subscribeBroadcastStateLocalUpdated((detail) => {
+      if (!overlayUserIdsMatch(userId, detail.userId)) return;
+      const localNow = readLocalBroadcastState(userId);
+      if (!localNow || shouldDiscardEmpty(localNow)) return;
+      const nextSig = buildOverlaySyncSignature(localNow);
+      lastUpdatedRef.current = Math.max(lastUpdatedRef.current, localNow.updatedAt || 0);
+      lastDonorRevRef.current = Math.max(lastDonorRevRef.current, readDonorRankingsRevision(localNow));
+      if (nextSig !== lastVisualSigRef.current) {
+        lastVisualSigRef.current = nextSig;
+        setState(localNow);
+      }
+      if (isViable(localNow)) {
+        lastGoodRef.current = localNow;
+        saveLastGood(localNow);
+      }
+    });
     void syncOnce();
     return () => {
       cancelStateUpdatedSchedule();
       scheduleStateUpdatedRef.current = null;
       if (pollTimer) window.clearInterval(pollTimer);
       window.removeEventListener("storage", onStorage);
+      unsubscribeLocal();
     };
   }, [userId, loadLastGood, readLocalStateIfExists, saveLastGood]);
 
@@ -357,11 +383,12 @@ function formatTimerText(elapsed: string | null, remainingSeconds?: number | nul
   return `${String(totalMin).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
-type ThemeId = "default" | "excel" | "excelBlue" | "excelSlate" | "excelAmber" | "excelRose" | "excelNavy" | "excelTeal" | "excelPurple" | "excelEmerald" | "excelOrange" | "excelIndigo" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel" | "rainbow" | "sunset" | "ocean" | "forest" | "aurora" | "violet" | "coral" | "mint" | "lava" | "ice";
+type ThemeId = "default" | "excel" | "excelLive" | "excelBlue" | "excelSlate" | "excelAmber" | "excelRose" | "excelNavy" | "excelTeal" | "excelPurple" | "excelEmerald" | "excelOrange" | "excelIndigo" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel" | "rainbow" | "sunset" | "ocean" | "forest" | "aurora" | "violet" | "coral" | "mint" | "lava" | "ice";
 
 const TABLE_BG_RGB: Record<string, [number, number, number]> = {
   default: [255, 250, 253],
   excel: [255, 255, 255],
+  excelLive: [240, 248, 255],
   excelBlue: [255, 255, 255],
   excelAmber: [255, 251, 235],
   excelRose: [255, 241, 242],
@@ -479,6 +506,24 @@ const THEMES: Record<ThemeId, {
     goalWrap: "border border-[#d4d4d4] bg-white p-1",
     tickerCls: "text-[#217346] font-mono font-bold",
     timerCls: "font-mono text-black/60 bg-white/80 px-2",
+  },
+  excelLive: {
+    label: "방송 엑셀(청록·줄무늬)",
+    memberCls: "font-mono font-semibold",
+    nameCls: "text-[#1e3a5f] font-semibold",
+    accountCls: "text-[#1e40af] font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    toonCls: "text-[#475569] whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    totalCls: "font-bold text-white",
+    totalWrapCls: "bg-[#1a5276] px-2 py-1",
+    rowCls: "border border-[#cbd5e1]/60 px-2 py-1 align-middle",
+    tableCls: "border-collapse shadow-md",
+    headerCls: "bg-[#1a5276] text-white font-bold px-2 py-1 text-sm",
+    goalBarBg: "bg-[#dbeafe]",
+    goalBarFill: "bg-[#1a5276]",
+    goalText: "text-white font-mono font-bold",
+    goalWrap: "border border-[#7eb8d4] bg-white/80 p-1",
+    tickerCls: "text-[#1a5276] font-mono font-bold",
+    timerCls: "font-mono text-[#1e3a5f] bg-white/80 px-2",
   },
   excelBlue: {
     label: "엑셀(파랑)",
@@ -1287,7 +1332,11 @@ function OverlayInner() {
       if (e.key === "excel-broadcast-overlay-presets") readLocalPresets();
     };
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    const unsubscribePresets = subscribeOverlayPresetsLocalUpdated(() => readLocalPresets());
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      unsubscribePresets();
+    };
   }, []);
   const membersRemote = useMemo(() => ensureMembers(ready && s ? s.members : []), [ready, s]);
   const donorsRemote = useMemo(() => (ready && s ? s.donors : []), [ready, s]);
@@ -1440,6 +1489,24 @@ function OverlayInner() {
   const themeId: ThemeId = "default";
   const baseTheme = THEMES.default;
   const totalHeaderLabel = "합계";
+  const resolvePresetBool = (key: string, defaultVal: boolean): boolean => {
+    if (ready && effectivePreset && typeof (effectivePreset as Record<string, unknown>)[key] === "boolean") {
+      return (effectivePreset as Record<string, boolean>)[key]!;
+    }
+    const fromUrl = rawSp.get(key);
+    if (fromUrl === "true") return true;
+    if (fromUrl === "false") return false;
+    const fromPreset = presetParams.get(key);
+    if (fromPreset === "true") return true;
+    if (fromPreset === "false") return false;
+    return defaultVal;
+  };
+  const resolvePresetLabel = (key: "accountHeaderLabel" | "toonHeaderLabel", fallback: string): string => {
+    const fromPreset = ready ? String((effectivePreset as Record<string, unknown> | null)?.[key] || "").trim() : "";
+    if (fromPreset) return fromPreset;
+    const merged = (rawSp.get(key) ?? presetParams.get(key) ?? fallback).trim();
+    return merged || fallback;
+  };
   const resolveThemeId = (key: string): ThemeId => {
     const raw = (sp.get(key) || "auto").trim();
     if (raw === "auto" || !raw) {
@@ -1465,7 +1532,7 @@ function OverlayInner() {
   const tickerBaseTheme = THEMES[tickerBaseThemeId];
   const missionTheme = THEMES[missionThemeId];
   const missionThemeVariant = (() => {
-    const excelThemes = ["excel", "excelBlue", "excelSlate", "excelAmber", "excelRose", "excelNavy", "excelTeal", "excelPurple", "excelEmerald", "excelOrange", "excelIndigo"];
+    const excelThemes = ["excel", "excelLive", "excelBlue", "excelSlate", "excelAmber", "excelRose", "excelNavy", "excelTeal", "excelPurple", "excelEmerald", "excelOrange", "excelIndigo"];
     return excelThemes.includes(missionThemeId) ? "excel" : (["rainbow", "sunset", "ocean", "forest", "aurora", "violet", "coral", "mint", "lava", "ice"].includes(missionThemeId) ? "neon" : missionThemeId);
   })() as "default" | "excel" | "neon" | "retro" | "minimal" | "rpg" | "pastel" | "neonExcel";
 
@@ -1494,6 +1561,20 @@ function OverlayInner() {
   const effectiveTableOnly = tableOnly && !showGoalRequested;
   const showMembers = effectiveTableOnly ? true : (timerOnlyMode ? false : (sp.get("showMembers") !== "false"));
   const showTotal = effectiveTableOnly ? true : (timerOnlyMode ? false : (sp.get("showTotal") !== "false"));
+  const showCombinedColumn = resolvePresetBool("showCombinedColumn", true);
+  const showContributionColumn = resolvePresetBool("showContributionColumn", true);
+  const showContributionSum = showContributionColumn && resolvePresetBool("showContributionSum", true);
+  const showTableSumRow = (() => {
+    if (ready && effectivePreset && typeof effectivePreset.showTableSumRow === "boolean") {
+      return effectivePreset.showTableSumRow;
+    }
+    const v = rawSp.get("showTableSumRow") ?? presetParams.get("showTableSumRow");
+    if (v === "true") return true;
+    if (v === "false") return false;
+    return showTotal;
+  })();
+  const accountHeaderLabel = resolvePresetLabel("accountHeaderLabel", "계좌");
+  const toonHeaderLabel = resolvePresetLabel("toonHeaderLabel", "투네");
   const showGoal = (() => {
     if (effectiveTableOnly) return false;
     const raw = sp.get("showGoal");
@@ -2202,16 +2283,10 @@ function OverlayInner() {
     if (memberPositionMode !== "rankLinked") return memberPositionsMap;
     const roleMap: Record<string, string> = {};
     const representative = members.find((m) => (memberPositionsMap[m.id] || "").trim() === "대표") || null;
+    const orderIndex = buildMemberCreationOrderIndex(members);
     const others = members
       .filter((m) => !representative || m.id !== representative.id)
-      .sort((a, b) => {
-        const ta = (a.account || 0) + (a.toon || 0);
-        const tb = (b.account || 0) + (b.toon || 0);
-        if (tb !== ta) return tb - ta;
-        const byName = String(a.name || "").localeCompare(String(b.name || ""), "ko");
-        if (byName !== 0) return byName;
-        return String(a.id || "").localeCompare(String(b.id || ""));
-      });
+      .sort((a, b) => compareMembersByDonationTotal(a, b, orderIndex));
     if (representative) roleMap[representative.id] = "대표";
     const startIdx = representative ? 1 : 0;
     others.forEach((m, idx) => {
@@ -2324,8 +2399,8 @@ function OverlayInner() {
     [members, getMemberRole]
   );
   const ranked = useMemo(
-    () => buildOverlayRankedMembers(unpinned, memberPositionsMap, getMemberRole),
-    [unpinned, memberPositionsMap, getMemberRole]
+    () => buildOverlayRankedMembers(unpinned, memberPositionsMap, getMemberRole, members),
+    [unpinned, memberPositionsMap, getMemberRole, members]
   );
 
   const memberTableFitSig = useMemo(() => {
@@ -2677,11 +2752,21 @@ function OverlayInner() {
         }, 5)
       )
     );
-    const excelGridCols = hasRoleColumn
-      ? [`${rankColCh}ch`, `${roleColEm}em`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`]
-      : [`${rankColCh}ch`, `${nameCh}ch`, `${bankCh}ch`, `${toonCh}ch`, `${totalCh}ch`, `${contributionCh}ch`];
+    const excelGridCols = [
+      `${rankColCh}ch`,
+      ...(hasRoleColumn ? [`${roleColEm}em`] : []),
+      `${nameCh}ch`,
+      `${bankCh}ch`,
+      `${toonCh}ch`,
+      ...(showCombinedColumn ? [`${totalCh}ch`] : []),
+      ...(showContributionColumn ? [`${contributionCh}ch`] : []),
+    ];
     /** 숫자 자리 증가로 표 전체가 밀려 나가지 않도록 너비 상한 고정 */
     const excelTableWidthCalc = excelGridCols.join(" + ");
+    const isExcelLiveTheme = membersThemeId === "excelLive";
+    const tablePanelBorder = isExcelLiveTheme ? "#7eb8d4" : TABLE_BROADCAST_PANEL_BORDER;
+    const tablePanelShadow = isExcelLiveTheme ? "0 2px 10px rgba(30, 80, 120, 0.25)" : "0 2px 10px rgba(255, 140, 190, 0.22)";
+    const excelLiveTableClass = isExcelLiveTheme ? " excel-live-table" : "";
     let effectiveScale = centerFixed || hasTableFreePos
       ? (scale * (zoomMode === "neutral" ? 1 : (zoomMode === "invert" ? (1 / centerZoomScale) : centerZoomScale)))
       : (externalHost ? scale : (viewportScale * scale));
@@ -2917,6 +3002,30 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table.pastel-member-table tbody tr.overlay-row:nth-child(odd) td,
         .overlay-root .overlay-elegant-table.pastel-member-table tbody tr.overlay-row:nth-child(even) td {
           background: transparent !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-live-table thead td {
+          background: rgba(26, 82, 118, 0.96) !important;
+          color: #ffffff !important;
+          border-bottom: 1px solid #0f3d56 !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-rank,
+        .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-role,
+        .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-name,
+        .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-account,
+        .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-toon,
+        .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-total,
+        .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-contribution {
+          background: rgba(26, 82, 118, 0.96) !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-live-table tbody tr.overlay-row:nth-child(odd) td {
+          background: rgba(255, 255, 255, 0.88) !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-live-table tbody tr.overlay-row:nth-child(even) td {
+          background: rgba(219, 234, 254, 0.82) !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-live-table .overlay-total-row td {
+          border-top: 2px solid rgba(26, 82, 118, 0.45) !important;
+          background: rgba(255, 255, 255, 0.78) !important;
         }
         ${
           externalSafeMode
@@ -3202,15 +3311,15 @@ function OverlayInner() {
                   className="relative overflow-visible"
                   style={{
                     borderRadius: 10,
-                    border: `1px solid ${TABLE_BROADCAST_PANEL_BORDER}`,
-                    boxShadow: "0 2px 10px rgba(255, 140, 190, 0.22)",
+                    border: `1px solid ${tablePanelBorder}`,
+                    boxShadow: tablePanelShadow,
                     padding: "0.14rem",
                     backgroundColor: `rgba(${resolveTableSheetRgb(membersThemeId).join(",")}, ${effectiveTableTintAlpha})`,
                   }}
                 >
                     <table
                       ref={tableBoxRef as any}
-                      className={`${effectiveTableCls} overlay-elegant-table${membersThemeId === "pastel" ? " pastel-member-table" : ""}`}
+                      className={`${effectiveTableCls} overlay-elegant-table${membersThemeId === "pastel" ? " pastel-member-table" : ""}${excelLiveTableClass}`}
                       style={{
                         fontSize: memberFontPx,
                         borderSpacing: 0,
@@ -3228,12 +3337,16 @@ function OverlayInner() {
                       <td className={`${effectiveHeaderCls} overlay-col-rank overlay-rank-cell text-center`}>순위</td>
                       {hasRoleColumn && <td className={`${effectiveHeaderCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>직급</td>}
                       <td className={`${effectiveHeaderCls} overlay-col-name`}>이름</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-account text-right`}>계좌</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-toon text-right`}>투네</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-total text-right`}>{totalHeaderLabel}</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-contribution text-right`} title="관리자「기여도 기록부」값. 후원만 반영된 경우 계좌+투네 합으로 표시. 운영비 행은 기여도 미표시(—), 총합은 운영비 제외 합산.">
-                        기여도
-                      </td>
+                      <td className={`${effectiveHeaderCls} overlay-col-account text-right`}>{accountHeaderLabel}</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-toon text-right`}>{toonHeaderLabel}</td>
+                      {showCombinedColumn && (
+                        <td className={`${effectiveHeaderCls} overlay-col-total text-right`}>{totalHeaderLabel}</td>
+                      )}
+                      {showContributionColumn && (
+                        <td className={`${effectiveHeaderCls} overlay-col-contribution text-right`} title="관리자「기여도 기록부」값. 후원만 반영된 경우 계좌+투네 합으로 표시. 운영비 행은 기여도 미표시(—), 총합은 운영비 제외 합산.">
+                          기여도
+                        </td>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
@@ -3281,12 +3394,16 @@ function OverlayInner() {
                         <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-right`}>
                           <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(m.toon)}</span>
                         </td>
-                        <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>
-                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmtTotalCell(m.account + m.toon)}</span>
-                        </td>
-                        <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
-                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(getContributionValueForMember(m))}</span>
-                        </td>
+                        {showCombinedColumn && (
+                          <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>
+                            <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmtTotalCell(m.account + m.toon)}</span>
+                          </td>
+                        )}
+                        {showContributionColumn && (
+                          <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
+                            <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(getContributionValueForMember(m))}</span>
+                          </td>
+                        )}
                       </tr>
                     ))}
                     {visiblePinned.map((m) => (
@@ -3318,17 +3435,21 @@ function OverlayInner() {
                         <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-right`}>
                           <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(m.toon)}</span>
                         </td>
-                        <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>
-                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmtTotalCell(m.account + m.toon)}</span>
-                        </td>
-                        <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
-                          <span className="overlay-num-cell-inner overlay-cell-text-inner overlay-rank-mark" style={overlayCellOutlineStyle}>
-                            —
-                          </span>
-                        </td>
+                        {showCombinedColumn && (
+                          <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>
+                            <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmtTotalCell(m.account + m.toon)}</span>
+                          </td>
+                        )}
+                        {showContributionColumn && (
+                          <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
+                            <span className="overlay-num-cell-inner overlay-cell-text-inner overlay-rank-mark" style={overlayCellOutlineStyle}>
+                              —
+                            </span>
+                          </td>
+                        )}
                       </tr>
                     ))}
-                    {showTotal && ready && (
+                    {showTableSumRow && ready && (
                       <tr className="overlay-total-row">
                         <td className={`${overlayTotalRowCls} overlay-col-rank`} colSpan={hasRoleColumn ? 2 : 1}>총합</td>
                         <td className={`${overlayTotalRowCls} overlay-col-name`} />
@@ -3338,12 +3459,19 @@ function OverlayInner() {
                         <td className={`${overlayTotalRowCls} overlay-col-toon overlay-toon-cell text-right`}>
                           <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(sumToon)}</span>
                         </td>
-                        <td className={`${overlayTotalRowCls} overlay-col-total text-right`}>
-                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(sumCombined)}</span>
-                        </td>
-                        <td className={`${overlayTotalRowCls} overlay-col-contribution text-right`}>
-                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(sumContribution)}</span>
-                        </td>
+                        {showCombinedColumn && (
+                          <td className={`${overlayTotalRowCls} overlay-col-total text-right`}>
+                            <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(sumCombined)}</span>
+                          </td>
+                        )}
+                        {showContributionColumn && showContributionSum && (
+                          <td className={`${overlayTotalRowCls} overlay-col-contribution text-right`}>
+                            <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(sumContribution)}</span>
+                          </td>
+                        )}
+                        {showContributionColumn && !showContributionSum && (
+                          <td className={`${overlayTotalRowCls} overlay-col-contribution text-right`} />
+                        )}
                       </tr>
                     )}
                   </tbody>

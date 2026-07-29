@@ -83,10 +83,10 @@ describe("buildSigSalesManualApiPatch", () => {
 
   it("mergeSigSalesManualIntoLocalState keeps newer obs text when reroll snapshot is stale", () => {
     const textReg = defaultObsTextRegistry();
-    textReg.instances[0]!.config.blocks[0]!.text = "수정된 타이틀";
+    textReg.instances[0]!.config.blocks[0]!.segments = [{ text: "수정된 타이틀", color: "#ffffff" }];
     textReg.instances[0]!.config.revision = 9_000;
     const staleText = defaultObsTextRegistry();
-    staleText.instances[0]!.config.blocks[0]!.text = "기본 타이틀";
+    staleText.instances[0]!.config.blocks[0]!.segments = [{ text: "기본 타이틀", color: "#ffffff" }];
     staleText.instances[0]!.config.revision = 100;
     const local: AppState = {
       ...defaultState(),
@@ -111,15 +111,14 @@ describe("buildSigSalesManualApiPatch", () => {
     const saved = (merged.overlaySettings as Record<string, unknown>)[OBS_TEXT_OVERLAY_STATE_KEY] as ReturnType<
       typeof defaultObsTextRegistry
     >;
-    expect(saved?.instances[0]?.config.blocks[0]?.text).toBe("수정된 타이틀");
-    expect(
-      mergeOverlaySettingsPreservingObsText(
-        local.overlaySettings as Record<string, unknown>,
-        {
-          ...(staleRerollTab.overlaySettings as Record<string, unknown>),
-        }
-      )[OBS_TEXT_OVERLAY_STATE_KEY]
-    ).toEqual(saved);
+    expect(saved?.instances[0]?.config.blocks[0]?.segments[0]?.text).toBe("수정된 타이틀");
+    const preservedObs = mergeOverlaySettingsPreservingObsText(
+      local.overlaySettings as Record<string, unknown>,
+      {
+        ...(staleRerollTab.overlaySettings as Record<string, unknown>),
+      }
+    ) as Record<string, unknown> | undefined;
+    expect(preservedObs?.[OBS_TEXT_OVERLAY_STATE_KEY]).toEqual(saved);
   });
 
   it("mergeSigSalesManualIntoLocalState keeps local generalTimer when reroll next is stale", () => {

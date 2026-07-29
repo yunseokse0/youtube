@@ -24,14 +24,14 @@ async function loadState(userId: string): Promise<AppState> {
     const remote = await upstashGetAppStateJson<AppState>(stateKey(userId));
     if (remote && Array.isArray(remote.members)) return remote;
   }
-  const mem = getServerMemoryAppState();
+  const mem = getServerMemoryAppState(userId);
   if (mem && Array.isArray(mem.members)) return mem;
   return defaultState();
 }
 
 async function saveState(userId: string, next: AppState): Promise<void> {
   const { base, token } = getRedisEnv();
-  setServerMemoryAppState(next);
+  setServerMemoryAppState(userId, next);
   if (base && token) {
     await upstashSetAppStateJson(stateKey(userId), next);
   }

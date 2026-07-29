@@ -5,7 +5,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useParams } from "next/navigation";
 import { SettlementMemberResult, SettlementRecord, deleteSettlementRecordAndSync, getMembersForExport, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToReadableTxt, recordToTxt, saveSettlementRecords, saveSettlementRecordsToApi, toSettlementFormulaLine } from "@/lib/settlement";
+import { aggregateMemberDonors, recordToMemberDonorsCsv, recordToMemberDonorsXlsxBlob, resolveSettlementDonors, type DailyLogEntry } from "@/lib/settlement-donor-export";
 import { downloadTextFile, downloadBlobFile } from "@/lib/download";
+import { loadDailyLog, loadDailyLogFromApi } from "@/lib/state";
 
 function updateMemberBankInfo(
   records: SettlementRecord[],
@@ -28,6 +30,7 @@ export default function SettlementDetailPage() {
   const id = params?.id || "";
   const [user, setUser] = useState<{ id: string } | null>(null);
   const [records, setRecords] = useState<SettlementRecord[] | null>(null);
+  const [dailyLog, setDailyLog] = useState<Record<string, DailyLogEntry[]>>({});
   const [copiedMemberId, setCopiedMemberId] = useState<string | null>(null);
   const [copiedKakao, setCopiedKakao] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
@@ -45,6 +48,10 @@ export default function SettlementDetailPage() {
         const local = loadSettlementRecords(u.id);
         setRecords(local);
         loadSettlementRecordsPreferApi(u.id).then(setRecords);
+        setDailyLog(loadDailyLog(u.id) as Record<string, DailyLogEntry[]>);
+        loadDailyLogFromApi(u.id).then((serverLog) => {
+          if (serverLog) setDailyLog(serverLog as Record<string, DailyLogEntry[]>);
+        });
       });
   }, [router]);
 
@@ -62,6 +69,38 @@ export default function SettlementDetailPage() {
   }, [user]);
 
   const record = useMemo(() => (records || []).find((x) => x.id === id) || null, [records, id]);
+  const settlementDonors = useMemo(
+    () => (record ? resolveSettlementDonors(record, dailyLog) : []),
+    [record, dailyLog]
+  );
+  const memberDonorSummary = useMemo(
+    () => (record ? aggregateMemberDonors(record, settlementDonors) : []),
+    [record, settlementDonors]
+  );
+  const memberDonorSummaryByMember = useMemo(() => {
+    const map = new Map<string, typeof memberDonorSummary>();
+    for (const row of memberDonorSummary) {
+      const list = map.get(row.memberId) || [];
+      list.push(row);
+      map.set(row.memberId, list);
+    }
+    return map;
+  }, [memberDonorSummary]);
+
+  const onDownloadMemberDonorsXlsx = async () => {
+    if (!record) return;
+    const blob = recordToMemberDonorsXlsxBlob(record, settlementDonors);
+    await downloadBlobFile(`${record.title}-멤버별후원자.xlsx`, blob);
+  };
+
+  const onDownloadMemberDonorsCsv = async () => {
+    if (!record) return;
+    await downloadTextFile(
+      `${record.title}-멤버별후원자.csv`,
+      recordToMemberDonorsCsv(record, settlementDonors),
+      "text/csv;charset=utf-8"
+    );
+  };
 
   const saveBankInfo = (memberId: string, patch: { bankName?: string; bankAccount?: string; accountHolder?: string }) => {
     if (!records || !user) return;
@@ -204,6 +243,21 @@ export default function SettlementDetailPage() {
               엑셀(CSV)
             </button>
             <button
+              className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700 whitespace-nowrap disabled:opacity-50"
+              onClick={onDownloadMemberDonorsXlsx}
+              disabled={settlementDonors.length === 0}
+              title={settlementDonors.length === 0 ? "이 정산에 연결된 후원 스냅샷이 없습니다" : undefined}
+            >
+              멤버별 후원자(엑셀)
+            </button>
+            <button
+              className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700 whitespace-nowrap disabled:opacity-50"
+              onClick={onDownloadMemberDonorsCsv}
+              disabled={settlementDonors.length === 0}
+            >
+              멤버별 후원자(CSV)
+            </button>
+            <button
               className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700 whitespace-nowrap"
               onClick={() => downloadTextFile(`${record.title}.txt`, recordToTxt(record), "text/plain;charset=utf-8")}
             >
@@ -241,6 +295,7 @@ export default function SettlementDetailPage() {
 
         <div className="text-sm text-neutral-300 whitespace-nowrap overflow-x-auto">
           계좌 비율 {(record.accountRatio * 100).toFixed(1)}% · 투네 비율 {(record.toonRatio * 100).toFixed(1)}% · 세금 {(record.feeRate * 100).toFixed(1)}%
+          {record.vatIncluded ? ` · 부가세 포함(공급가 ÷${(1 + (record.vatRate ?? 0.1)).toFixed(1)})` : ""}
         </div>
 
         <div className="rounded border border-white/10 bg-neutral-900/50 overflow-auto">
@@ -318,6 +373,86 @@ export default function SettlementDetailPage() {
               </tr>
             </tfoot>
           </table>
+        </div>
+
+        <div className="rounded border border-white/10 bg-neutral-900/50 p-3 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-sm font-semibold">멤버별 후원자 내역</div>
+              <div className="text-xs text-neutral-400 mt-1">
+                정산 시점 후원 스냅샷 기준 · {settlementDonors.length}건
+                {settlementDonors.length === 0 ? " (일일 로그·정산 스냅샷 없음)" : ""}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="px-3 py-1.5 rounded bg-emerald-800 hover:bg-emerald-700 text-sm disabled:opacity-50"
+                onClick={onDownloadMemberDonorsXlsx}
+                disabled={settlementDonors.length === 0}
+              >
+                엑셀 다운로드
+              </button>
+              <button
+                type="button"
+                className="px-3 py-1.5 rounded bg-neutral-800 hover:bg-neutral-700 text-sm disabled:opacity-50"
+                onClick={onDownloadMemberDonorsCsv}
+                disabled={settlementDonors.length === 0}
+              >
+                CSV 다운로드
+              </button>
+            </div>
+          </div>
+
+          {settlementDonors.length === 0 ? (
+            <p className="text-sm text-neutral-400">
+              이 정산에 저장된 후원 목록이 없습니다. 이후 생성되는 정산은 방송 종료 시 후원 스냅샷이 함께 저장됩니다.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {getMembersForExport(record).map((m) => {
+                const rows = memberDonorSummaryByMember.get(m.memberId) || [];
+                if (rows.length === 0) return null;
+                const memberTotal = rows.reduce((s, r) => s + r.totalAmount, 0);
+                return (
+                  <details key={`donors-${m.memberId}`} className="rounded border border-white/10 bg-black/20" open>
+                    <summary className="cursor-pointer select-none px-3 py-2 text-sm flex flex-wrap items-center justify-between gap-2">
+                      <span>
+                        <span className="font-medium text-neutral-100">{m.name}</span>
+                        {m.realName ? <span className="text-neutral-500"> ({m.realName})</span> : null}
+                        <span className="text-neutral-400 ml-2">후원자 {rows.length}명</span>
+                      </span>
+                      <span className="font-semibold text-cyan-300 tabular-nums">{memberTotal.toLocaleString()}원</span>
+                    </summary>
+                    <div className="overflow-auto border-t border-white/10">
+                      <table className="w-full text-sm whitespace-nowrap">
+                        <thead>
+                          <tr className="text-neutral-400 border-b border-white/10">
+                            <th className="p-2 text-left">후원자</th>
+                            <th className="p-2 text-right">합계</th>
+                            <th className="p-2 text-right">횟수</th>
+                            <th className="p-2 text-right">계좌</th>
+                            <th className="p-2 text-right">투네</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((row) => (
+                            <tr key={`${row.memberId}-${row.donorName}`} className="border-b border-white/5">
+                              <td className="p-2">{row.donorName}</td>
+                              <td className="p-2 text-right font-medium tabular-nums">{row.totalAmount.toLocaleString()}</td>
+                              <td className="p-2 text-right tabular-nums">{row.count}</td>
+                              <td className="p-2 text-right tabular-nums text-neutral-300">{row.accountAmount.toLocaleString()}</td>
+                              <td className="p-2 text-right tabular-nums text-neutral-300">{row.toonAmount.toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </main>

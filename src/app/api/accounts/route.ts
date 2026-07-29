@@ -1,37 +1,37 @@
 export const runtime = "edge";
 export const revalidate = 0;
 
-import { upstashGetJson, upstashSetJsonWithSetPath } from "../_shared/upstash";
+import { defaultState } from "@/lib/state";
+import {
+  isAccountsRedisConfigured,
+  loadAccounts,
+  saveAccounts,
+  type StoredAccount,
+} from "@/lib/accounts-storage";
+import { upstashSetAppStateJson } from "../_shared/upstash-app-state";
 
-const ACCOUNTS_KEY = "excel-broadcast-accounts-v1";
+const STATE_KEY_BASE = "excel-broadcast-state-v1";
 
-export type Account = {
-  id: string;
-  name: string;
-  companyName: string;
-  password: string;
-  startDate: number | null;
-  endDate: number | null;
-  createdAt: number;
-};
+export type Account = StoredAccount;
 
 function getAdminKey(req: Request): string | null {
   const url = new URL(req.url);
   return url.searchParams.get("key") || req.headers.get("x-admin-key");
 }
 
-function checkAdminKey(key: string | null): boolean {
+function checkAdminKey(key: string | null): { ok: boolean; status: 401 | 503; error: string } {
   const expected = process.env.ADMIN_ACCOUNTS_KEY || "";
-  if (!expected) return false;
-  return key === expected;
-}
-
-async function upstashGet(key: string) {
-  return upstashGetJson(key);
-}
-
-async function upstashSet(key: string, value: unknown) {
-  return upstashSetJsonWithSetPath(key, value);
+  if (!expected) {
+    return {
+      ok: false,
+      status: 503,
+      error: "ADMIN_ACCOUNTS_KEY 환경변수가 설정되지 않았습니다.",
+    };
+  }
+  if (key !== expected) {
+    return { ok: false, status: 401, error: "Unauthorized" };
+  }
+  return { ok: true, status: 401, error: "" };
 }
 
 function toId(str: string): string {
@@ -42,16 +42,32 @@ function toId(str: string): string {
     .replace(/[^a-z0-9_-]/g, "");
 }
 
+async function initAccountAppState(userId: string): Promise<void> {
+  if (!isAccountsRedisConfigured()) return;
+  const key = `${STATE_KEY_BASE}:${userId}`;
+  const seed = { ...defaultState(), updatedAt: Date.now() };
+  await upstashSetAppStateJson(key, seed);
+}
+
 export async function GET(req: Request) {
-  const key = getAdminKey(req);
-  if (!checkAdminKey(key)) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+  const auth = checkAdminKey(getAdminKey(req));
+  if (!auth.ok) {
+    return new Response(JSON.stringify({ error: auth.error }), {
+      status: auth.status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  if (!isAccountsRedisConfigured()) {
+    return new Response(
+      JSON.stringify({
+        error: "Redis(UPSTASH_REDIS_REST_URL/TOKEN) 미설정 — 계정 목록을 불러올 수 없습니다.",
+      }),
+      { status: 503, headers: { "Content-Type": "application/json" } }
+    );
   }
   try {
-    const accounts = (await upstashGet(ACCOUNTS_KEY)) as Account[] | null;
-    const list = Array.isArray(accounts)
-      ? accounts.map(({ password: _, ...a }) => a)
-      : [];
+    const accounts = await loadAccounts();
+    const list = accounts.map(({ password: _, ...a }) => a);
     return new Response(JSON.stringify(list), {
       headers: {
         "Content-Type": "application/json",
@@ -59,17 +75,20 @@ export async function GET(req: Request) {
       },
     });
   } catch {
-    return new Response(JSON.stringify([]), {
+    return new Response(JSON.stringify({ error: "계정 목록 조회 실패" }), {
+      status: 500,
       headers: { "Content-Type": "application/json" },
-      status: 200,
     });
   }
 }
 
 export async function POST(req: Request) {
-  const adminKey = getAdminKey(req);
-  if (!checkAdminKey(adminKey)) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+  const auth = checkAdminKey(getAdminKey(req));
+  if (!auth.ok) {
+    return new Response(JSON.stringify({ error: auth.error }), {
+      status: auth.status,
+      headers: { "Content-Type": "application/json" },
+    });
   }
   try {
     const body = (await req.json()) as {
@@ -90,8 +109,7 @@ export async function POST(req: Request) {
       );
     }
     const baseId = toId(name) || toId(companyName) || "user";
-    const accounts = (await upstashGet(ACCOUNTS_KEY)) as Account[] | null;
-    const list: Account[] = Array.isArray(accounts) ? accounts : [];
+    const list = await loadAccounts();
     let id = baseId;
     let suffix = 0;
     while (list.some((a) => a.id === id)) {
@@ -99,8 +117,8 @@ export async function POST(req: Request) {
       id = `${baseId}_${suffix}`;
     }
     const unlimited = body.unlimited === true;
-    const startDate = unlimited ? null : (body.startDate ? new Date(body.startDate).getTime() : null);
-    const endDate = unlimited ? null : (body.endDate ? new Date(body.endDate).getTime() : null);
+    const startDate = unlimited ? null : body.startDate ? new Date(body.startDate).getTime() : null;
+    const endDate = unlimited ? null : body.endDate ? new Date(body.endDate).getTime() : null;
     const account: Account = {
       id,
       name,
@@ -111,15 +129,23 @@ export async function POST(req: Request) {
       createdAt: Date.now(),
     };
     list.push(account);
-    const ok = await upstashSet(ACCOUNTS_KEY, list);
-    if (!ok) {
-      return new Response(JSON.stringify({ error: "저장 실패" }), { status: 500, headers: { "Content-Type": "application/json" } });
+    const saved = await saveAccounts(list);
+    if (!saved.ok) {
+      return new Response(JSON.stringify({ error: saved.error || "저장 실패" }), {
+        status: saved.error?.includes("미설정") ? 503 : 500,
+        headers: { "Content-Type": "application/json" },
+      });
     }
-    return new Response(JSON.stringify({ ok: true, account }), {
+    await initAccountAppState(id);
+    const { password: _, ...publicAccount } = account;
+    return new Response(JSON.stringify({ ok: true, account: publicAccount }), {
       headers: { "Content-Type": "application/json" },
       status: 201,
     });
-  } catch (e) {
-    return new Response(JSON.stringify({ error: "처리 중 오류" }), { status: 500, headers: { "Content-Type": "application/json" } });
+  } catch {
+    return new Response(JSON.stringify({ error: "처리 중 오류" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }

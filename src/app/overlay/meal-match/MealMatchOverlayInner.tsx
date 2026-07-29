@@ -18,6 +18,10 @@ import { MealGaugeFillMotion } from "@/components/meal-match/MealGaugeFillMotion
 import { resolveMealGaugeAnimStyle } from "@/lib/meal-gauge-motion";
 import { MEAL_MATCH_OVERLAY_UI_REV } from "@/lib/overlay-ui-revision";
 import { showOverlayDevHud, useOverlayHubCompactLayout } from "@/lib/overlay-dev-hud";
+import BattleDonationRankingTable from "@/components/battle/BattleDonationRankingTable";
+import BattleRulesBox from "@/components/battle/BattleRulesBox";
+import BattleTeamScoreHeader from "@/components/battle/BattleTeamScoreHeader";
+import { buildBattleDonationRows } from "@/lib/battle-donation-ranking";
 
 function outlineStyle(): React.CSSProperties {
   return { textShadow: "0 1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 -1px 0 #000, 0 0 8px rgba(0,0,0,.55)" };
@@ -169,6 +173,7 @@ export default function MealMatchOverlayInner() {
   const { state, ready } = useOverlayRemoteState(userId, {
     frozenState: demoFrozenState,
     enabled: !demoEnabled,
+    storageDebounceMs: 0,
   });
   const effectsReady = (ready || demoEnabled) && clientReady;
   const [floatingScores, setFloatingScores] = useState<FloatingScoreBurst[]>([]);
@@ -428,6 +433,12 @@ export default function MealMatchOverlayInner() {
 
   const useTeamSplitGauge = teamBattleEnabled && !fillGaugeMode && hasTeamRoster;
 
+  const donationRows = useMemo(
+    () => buildBattleDonationRows(state?.members || [], state?.memberPositions),
+    [state?.members, state?.memberPositions]
+  );
+  const overlayRulesText = String(mb?.overlayRulesText || "").trim();
+
   const segments = useMemo(() => {
     if (!participants.length || fillGaugeMode) return [];
     if (useTeamSplitGauge) {
@@ -574,7 +585,12 @@ export default function MealMatchOverlayInner() {
       }`}
     >
       <div className="mx-auto w-full" style={overlayContainerStyle}>
-        <div className={`text-center ${compact ? "mb-0" : "mb-0"}`}>
+        <div className={`relative text-center ${compact ? "mb-0" : "mb-0"}`}>
+          <BattleRulesBox
+            text={overlayRulesText}
+            compact={compact}
+            className="right-0 top-0 max-sm:left-0 max-sm:right-0 max-sm:mx-auto sm:right-1"
+          />
           <div className="pastel-text-outline text-4xl font-black tracking-wide text-pink-100" style={outlineStyle()}>
             {overlayTitle}
           </div>
@@ -657,6 +673,17 @@ export default function MealMatchOverlayInner() {
                 style={{ ...outlineStyle(), backgroundColor: missionBubbleBg, color: missionBubbleTextColor }}
               >
                 {missionBubble}
+              </div>
+            ) : null}
+            {useTeamSplitGauge ? (
+              <div className="mb-2 px-1">
+                <BattleTeamScoreHeader
+                  leftName={teamAName}
+                  leftScore={teamAgg.aScore}
+                  rightName={teamBName}
+                  rightScore={teamAgg.bScore}
+                  compact={compact}
+                />
               </div>
             ) : null}
             {devHud ? (
@@ -940,6 +967,15 @@ export default function MealMatchOverlayInner() {
             </div>
           </div>
         </div>
+
+        {donationRows.length > 0 ? (
+          <BattleDonationRankingTable
+            rows={donationRows}
+            compact={compact}
+            className="mt-3 px-1"
+            tableOptions={mb?.donationTableOptions}
+          />
+        ) : null}
 
       </div>
     </main>

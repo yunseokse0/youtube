@@ -25,6 +25,17 @@ describe("buildOverlayRankedMembers", () => {
     expect(ranked[1]?.rank).toBe(1);
     expect(ranked[2]?.rank).toBe(2);
   });
+
+  it("uses member creation order when all donations are zero", () => {
+    const zeroMembers: Member[] = [
+      { id: "z3", name: "Charlie", account: 0, toon: 0, contribution: 0 },
+      { id: "z1", name: "Alpha", account: 0, toon: 0, contribution: 0 },
+      { id: "z2", name: "Beta", account: 0, toon: 0, contribution: 0 },
+    ];
+    const ranked = buildOverlayRankedMembers(zeroMembers, {});
+    expect(ranked.map((r) => r.m.id)).toEqual(["z3", "z1", "z2"]);
+    expect(ranked.map((r) => r.rank)).toEqual([1, 2, 3]);
+  });
 });
 
 describe("sortMembersForRanking", () => {

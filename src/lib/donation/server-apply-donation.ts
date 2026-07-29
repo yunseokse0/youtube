@@ -23,6 +23,20 @@ function inFlightKey(userId: string, event: DonationEvent): string {
   return `${userId}:${eventId || ext}`;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** 동시 WS·큐 처리 중 선점 실패 시 실제 반영 여부 확인 후 큐로 넘김(누락 방지) */
+async function resolveAlreadyAppliedOrDefer(
+  userId: string,
+  event: DonationEvent
+): Promise<ToonationAutoApplyOutcome | "retry"> {
+  const state = await loadAppStateForUserId(userId);
+  if (isDuplicateDonationEvent(state, event)) return "applied";
+  return "retry";
+}
+
 async function broadcastDonationStateUpdated(updatedAt: number, donorRankingsUpdatedAt?: number): Promise<void> {
   const origin = process.env.INTERNAL_ORIGIN || `http://127.0.0.1:${process.env.PORT || 3000}`;
   await fetch(`${origin}/api/events`, {
@@ -42,12 +56,29 @@ export async function tryAutoApplyToonationDonationOnServer(
   event: DonationEvent
 ): Promise<ToonationAutoApplyOutcome> {
   const lockKey = inFlightKey(userId, event);
-  if (inFlightApplyKeys.has(lockKey)) return "applied";
+  if (inFlightApplyKeys.has(lockKey)) {
+    for (let i = 0; i < 24; i += 1) {
+      await sleep(50);
+      if (!inFlightApplyKeys.has(lockKey)) break;
+    }
+    const deferred = await resolveAlreadyAppliedOrDefer(userId, event);
+    if (deferred !== "retry") return deferred;
+    return "not_applied";
+  }
   inFlightApplyKeys.add(lockKey);
   try {
     const state = await loadAppStateForUserId(userId);
     if (isDuplicateDonationEvent(state, event)) return "applied";
-    if (!(await tryClaimDonationApply(userId, event))) return "applied";
+    if (!(await tryClaimDonationApply(userId, event))) {
+      const deferred = await resolveAlreadyAppliedOrDefer(userId, event);
+      if (deferred !== "retry") return deferred;
+      await sleep(80);
+      if (!(await tryClaimDonationApply(userId, event))) {
+        const again = await resolveAlreadyAppliedOrDefer(userId, event);
+        if (again !== "retry") return again;
+        return "not_applied";
+      }
+    }
 
     const freshState = await loadAppStateForUserId(userId);
     if (isDuplicateDonationEvent(freshState, event)) return "applied";

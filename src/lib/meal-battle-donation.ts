@@ -1,9 +1,18 @@
 import type { MealBattleParticipant, MealBattleState, Member } from "@/types";
 
 /** 후원 금액(원)을 식대전 점수 증분으로 환산: 만 원 단위 올림, 최소 1 */
-export function mealBattleDonationScoreDelta(amount: number): number {
+export function mealBattleDonationScoreDelta(amount: number, useRawAmount = false): number {
   if (amount <= 0) return 0;
+  if (useRawAmount) return Math.max(0, Math.round(amount));
   return Math.max(1, Math.round(amount / 10_000));
+}
+
+export function mealBattleUsesRawDonationScore(mealBattle: MealBattleState | undefined): boolean {
+  if (!mealBattle) return false;
+  if (typeof mealBattle.scoreUsesRawDonationAmount === "boolean") {
+    return mealBattle.scoreUsesRawDonationAmount;
+  }
+  return Boolean(mealBattle.teamBattleEnabled);
 }
 
 /** 후원 연동 ON 시 참가자 행이 없으면 추가(게이지·점수 반영 대상) */
@@ -38,9 +47,10 @@ export function applyMealBattleDonationToParticipants(
   memberId: string,
   amount: number,
   direction: 1 | -1,
-  donorAt?: number
+  donorAt?: number,
+  useRawAmount = false
 ): MealBattleParticipant[] {
-  const delta = mealBattleDonationScoreDelta(amount) * direction;
+  const delta = mealBattleDonationScoreDelta(amount, useRawAmount) * direction;
   if (delta === 0) return participants;
   const eventAt = Number.isFinite(Number(donorAt)) ? Math.max(0, Math.floor(Number(donorAt))) : Date.now();
   return participants.map((p) =>

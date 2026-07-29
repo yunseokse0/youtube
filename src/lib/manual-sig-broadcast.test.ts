@@ -184,7 +184,7 @@ describe("resolveManualOneShotOverlayImageUrl", () => {
           isActive: true,
         },
       ],
-    } as AppState;
+    } as unknown as AppState;
     const url = resolveManualOneShotOverlayImageUrl({
       state,
       selectedSigs: [winner],
@@ -207,7 +207,7 @@ describe("resolveManualOneShotOverlayImageUrl", () => {
           oneShotMarkSold: false,
         },
       },
-    } as AppState;
+    } as unknown as AppState;
     const stored = resolveManualOneShotStoredImageUrl({
       state,
       selectedSigs: [winner],
@@ -228,7 +228,7 @@ describe("resolveManualOneShotOverlayImageUrl", () => {
           oneShotMarkSold: false,
         },
       },
-    } as AppState;
+    } as unknown as AppState;
     const url = resolveManualOneShotOverlayImageUrl({
       state,
       selectedSigs: [winner],
@@ -246,17 +246,7 @@ describe("resolveManualDraftRowForSigItem", () => {
       { sourceSigId: "sig_a", name: "픽션", priceInput: "24900", imageUrl: "/uploads/a.gif" },
     ];
     const row = resolveManualDraftRowForSigItem(
-      {
-        id: "sig_a",
-        name: "픽션",
-        price: 24900,
-        imageUrl: "",
-        memberId: "",
-        maxCount: 1,
-        soldCount: 0,
-        isRolling: true,
-        isActive: true,
-      },
+      { id: "sig_a", name: "픽션", price: 24900 },
       drafts
     );
     expect(row?.sourceSigId).toBe("sig_a");
@@ -304,7 +294,7 @@ describe("resolveManualDraftRowForSigItem", () => {
           overlayReloadNonce: 3,
         },
       },
-    } as AppState;
+    } as unknown as AppState;
     const out = resolveManualOverlaySelectedSigs(state, "finalent");
     expect(out.map((s) => s.name)).toEqual(fresh.map((s) => s.name));
   });
@@ -334,7 +324,7 @@ describe("resolveManualDraftRowForSigItem", () => {
           overlayReloadNonce: 1,
         },
       },
-    } as AppState;
+    } as unknown as AppState;
     const out = resolveManualOverlaySelectedSigs(state, "finalent");
     expect(out).toHaveLength(10);
     expect(out.map((s) => s.name)).toEqual(selected.map((s) => s.name));
@@ -448,7 +438,7 @@ describe("resolveManualDraftRowForSigItem", () => {
           },
         ],
       },
-    } as AppState;
+    } as unknown as AppState;
     const out = resolveManualOverlaySelectedSigs(state, "finalent");
     expect(out[0]?.imageUrl).toBe(uploadUrl);
     expect(out[1]?.imageUrl).toContain("솜사탕");
@@ -525,7 +515,7 @@ describe("resolveManualDraftRowForSigItem", () => {
           overlayReloadNonce: 1,
         },
       },
-    } as AppState;
+    } as unknown as AppState;
     const out = resolveManualOverlaySelectedSigs(state, "finalent");
     expect(out[0]?.name).toBe("픽션");
     expect(out[0]?.imageUrl).toBe("/uploads/sigs/finalent/a.gif");
@@ -560,7 +550,7 @@ describe("resolveManualDraftRowForSigItem", () => {
     ];
     const hit = findDisplaySigForManualDraftRow(
       { sourceSigId: "sig_b", name: "옴브리뉴", priceInput: "25200", imageUrl: "" },
-      { name: "옴브리뉴", price: 25200, imageUrl: "" },
+      { name: "옴브리뉴", price: 25200 },
       display
     );
     expect(hit?.id).toBe("sig_b");
@@ -589,7 +579,7 @@ describe("pickRandomManualSigBundle", () => {
         mkSig("s4", "D", 40000),
       ],
       rouletteState: { phase: "IDLE" },
-    } as AppState;
+    } as unknown as AppState;
     const bundle = pickRandomManualSigBundle(state, "finalent");
     expect(bundle).not.toBeNull();
     expect(bundle!.selected.length).toBe(4);
@@ -622,7 +612,7 @@ describe("buildManualSigSalesConfirmState", () => {
           overlayReloadNonce: 0,
         },
       },
-    } as AppState;
+    } as unknown as AppState;
     const selected: SigItem[] = [
       {
         id: "sig_a",
@@ -681,7 +671,7 @@ describe("buildManualSigSalesConfirmState", () => {
           overlayReloadNonce: 0,
         },
       },
-    } as AppState;
+    } as unknown as AppState;
     const selected: SigItem[] = [
       {
         id: "sig_a",
@@ -750,7 +740,7 @@ describe("buildManualSigSalesConfirmState", () => {
           overlayReloadNonce: 0,
         },
       },
-    } as AppState;
+    } as unknown as AppState;
     const selected: SigItem[] = [
       {
         id: "sig_a",
@@ -828,7 +818,7 @@ describe("buildManualSigSalesConfirmState", () => {
           overlayReloadNonce: 0,
         },
       },
-    } as AppState;
+    } as unknown as AppState;
     const selected: SigItem[] = [
       {
         id: "sig_a",
@@ -921,7 +911,7 @@ describe("buildManualSigSalesConfirmState", () => {
           overlayReloadNonce: 0,
         },
       },
-    } as AppState;
+    } as unknown as AppState;
     const next = buildManualSigSoldPersistState(state, {
       sigSoldFlags: [true, false, false, false, false],
       oneShotMarkSold: false,

@@ -126,6 +126,12 @@ export type OverlayPresetLike = {
   tableTextOutlineColor?: string;
   tableTextOutlineWidth?: string;
   tableFontWeight?: string;
+  showCombinedColumn?: boolean;
+  showContributionColumn?: boolean;
+  showContributionSum?: boolean;
+  showTableSumRow?: boolean;
+  accountHeaderLabel?: string;
+  toonHeaderLabel?: string;
 };
 
 export function presetToParams(preset: OverlayPresetLike | null): URLSearchParams {
@@ -273,6 +279,12 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
     const fw = parseInt(tableWeightRaw, 10);
     if (Number.isFinite(fw)) q.set("tableFontWeight", String(Math.max(400, Math.min(900, fw))));
   }
+  if (preset.showCombinedColumn === false) q.set("showCombinedColumn", "false");
+  if (preset.showContributionColumn === false) q.set("showContributionColumn", "false");
+  if (preset.showContributionSum === false) q.set("showContributionSum", "false");
+  if (preset.showTableSumRow === false) q.set("showTableSumRow", "false");
+  if (preset.accountHeaderLabel && preset.accountHeaderLabel.trim()) q.set("accountHeaderLabel", preset.accountHeaderLabel.trim());
+  if (preset.toonHeaderLabel && preset.toonHeaderLabel.trim()) q.set("toonHeaderLabel", preset.toonHeaderLabel.trim());
   if (preset.vertical) q.set("vertical", "true");
   if (preset.host && preset.host.trim()) q.set("host", preset.host.trim());
   /** showGoal 여부와 무관 — live 프리셋·URL에 목표 글자색 항상 포함 */

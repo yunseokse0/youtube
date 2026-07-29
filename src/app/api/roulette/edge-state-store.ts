@@ -33,18 +33,18 @@ export async function loadAppStateForRoulette(userId: string): Promise<AppState>
     const raw = await upstashGet(stateKey(userId));
     const s = raw as AppState | null;
     if (s && Array.isArray(s.members)) {
-      setServerMemoryAppState(s);
+      setServerMemoryAppState(userId, s);
       return s;
     }
   }
-  const mem = getServerMemoryAppState();
+  const mem = getServerMemoryAppState(userId);
   if (mem && Array.isArray(mem.members)) return mem;
   return defaultState();
 }
 
 export async function saveAppStateForRoulette(userId: string, next: AppState): Promise<void> {
   const { base, token } = getRedisEnv();
-  setServerMemoryAppState(next);
+  setServerMemoryAppState(userId, next);
   if (base && token) {
     await upstashSet(stateKey(userId), next);
   }

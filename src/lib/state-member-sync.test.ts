@@ -4,10 +4,12 @@ import {
   defaultState,
   hasExpandedSigInventory,
   hasMeaningfulBroadcastData,
+  hasSigSalesMemberPresets,
   isDefaultLikeState,
   isDefaultPlaceholderMemberList,
   isShrunkToDefaultSigInventory,
   membersDifferByIds,
+  shouldPreferLocalSigInventoryOverIncoming,
 } from "@/lib/state";
 import { DEFAULT_SIG_INVENTORY } from "@/lib/constants";
 import type { AppState, Member } from "@/types";
@@ -62,5 +64,60 @@ describe("member sync helpers", () => {
     ];
     expect(isShrunkToDefaultSigInventory(expanded)).toBe(false);
     expect(hasExpandedSigInventory(expanded)).toBe(true);
+  });
+
+  it("prefers local sig inventory when remote reverts to default preset", () => {
+    const local = [
+      ...DEFAULT_SIG_INVENTORY.map((x) => ({ ...x })),
+      {
+        id: "sig_custom",
+        name: "04클럽춤",
+        price: 23000,
+        imageUrl: "/uploads/sigs/finalent/test.gif",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isRolling: true,
+        isActive: true,
+      },
+    ];
+    const remoteDefault = DEFAULT_SIG_INVENTORY.map((x) => ({ ...x }));
+    expect(
+      shouldPreferLocalSigInventoryOverIncoming(local, remoteDefault, {
+        localUpdatedAt: 2000,
+        incomingUpdatedAt: 1000,
+      })
+    ).toBe(true);
+  });
+
+  it("does not prefer local when remote is newer after intentional bulk delete", () => {
+    const makeSig = (id: string) => ({
+      id,
+      name: id,
+      price: 1000,
+      imageUrl: "",
+      memberId: "",
+      maxCount: 1,
+      soldCount: 0,
+      isRolling: true,
+      isActive: true,
+    });
+    const local = [
+      ...DEFAULT_SIG_INVENTORY.map((x) => ({ ...x })),
+      ...Array.from({ length: 12 }, (_, i) => makeSig(`sig_extra_${i}`)),
+    ];
+    const remote = local.slice(0, 10);
+    expect(
+      shouldPreferLocalSigInventoryOverIncoming(local, remote, {
+        localUpdatedAt: 1000,
+        incomingUpdatedAt: 5000,
+      })
+    ).toBe(false);
+  });
+
+  it("detects saved member sig presets", () => {
+    expect(hasSigSalesMemberPresets({})).toBe(false);
+    expect(hasSigSalesMemberPresets({ m1: [] })).toBe(false);
+    expect(hasSigSalesMemberPresets({ m1: ["sig_a"] })).toBe(true);
   });
 });

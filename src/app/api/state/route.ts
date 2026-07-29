@@ -32,6 +32,10 @@ import {
   upstashGetAppStateJson,
   upstashSetAppStateJson,
 } from "../_shared/upstash-app-state";
+import {
+  enrichAppStateWithSigInventoryBackup,
+  saveSigInventoryBackup,
+} from "@/lib/sig-inventory-backup";
 
 const logger = createModuleLogger('API/State');
 
@@ -111,8 +115,11 @@ function applyDonationGoalPresetNormalization(state: AppState): AppState {
 }
 
 /** 서버 장애·defaultState 저장 시 애교·댄스 등 8개 프리셋만으로 전체 목록이 지워지는 사고 방지 */
-function looksLikeAccidentalDefaultSigInventory(patch: SigItem[], baseLen: number): boolean {
-  if (baseLen < 20) return false;
+function looksLikeAccidentalDefaultSigInventory(
+  patch: SigItem[],
+  base: SigItem[] | null | undefined
+): boolean {
+  if (!hasExpandedSigInventory(base)) return false;
   if (!Array.isArray(patch) || patch.length === 0) return false;
   if (patch.length > DEFAULT_SIG_INVENTORY.length + 3) return false;
   const defaultIds = new Set(DEFAULT_SIG_INVENTORY.map((x) => x.id));
@@ -160,7 +167,7 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
     next.sigInventory = base.sigInventory;
   } else if (
     Array.isArray(patch.sigInventory) &&
-    (looksLikeAccidentalDefaultSigInventory(patch.sigInventory, base.sigInventory?.length ?? 0) ||
+    (looksLikeAccidentalDefaultSigInventory(patch.sigInventory, base.sigInventory) ||
       (isShrunkToDefaultSigInventory(patch.sigInventory) &&
         hasExpandedSigInventory(base.sigInventory)))
   ) {
@@ -330,8 +337,10 @@ export async function GET(req: Request) {
   try {
     const { base, token } = getRedisEnv();
     if (!base || !token) {
-      const state = applyDonationGoalPresetNormalization(getServerMemoryAppState() || defaultState());
-      if (!getServerMemoryAppState()) {
+      const state = applyDonationGoalPresetNormalization(
+        getServerMemoryAppState(userId) || defaultState()
+      );
+      if (!getServerMemoryAppState(userId)) {
         logger.warn('Redis 미설정 - 메모리만 사용 (서버 재시작 시 데이터 초기화됨. UPSTASH_REDIS_* 환경변수 설정 권장)');
       }
       logger.debug('메모리 상태 반환', { membersCount: state.members.length, donorsCount: state.donors.length });
@@ -360,8 +369,8 @@ export async function GET(req: Request) {
       }
     }
     // Redis에서 상태를 못 가져오더라도 방송 지속성을 위해 메모리/기본 상태 반환
-    const effective = state || getServerMemoryAppState() || defaultState();
-    if (!state && !getServerMemoryAppState()) {
+    const effective = state || getServerMemoryAppState(userId) || defaultState();
+    if (!state && !getServerMemoryAppState(userId)) {
       logger.warn('Redis/메모리 모두 비어있음 - 기본값 반환 (서버 재시작 시 발생. Redis 설정 권장)', { userId });
     }
     let mergedForResponse = applyDonationGoalPresetNormalization(effective as AppState);
@@ -398,11 +407,25 @@ export async function GET(req: Request) {
 
     mergedForResponse = applyDonationGoalPresetNormalization(mergedForResponse);
 
+    try {
+      const sigEnriched = await enrichAppStateWithSigInventoryBackup(userId, mergedForResponse);
+      if (sigEnriched.restoredFromBackup) {
+        mergedForResponse = { ...mergedForResponse, sigInventory: sigEnriched.sigInventory };
+        logger.warn("sigInventory Redis 백업에서 복구", {
+          userId,
+          count: sigEnriched.sigInventory.length,
+        });
+        void upstashSetAppStateJson(stateKey(userId), mergedForResponse);
+      }
+    } catch (err) {
+      logger.error("sigInventory 백업 복구 실패", err);
+    }
+
     if (isNotModified(mergedForResponse)) {
       return stateNotModifiedResponse("redis");
     }
 
-    logger.debug('Redis 상태 반환', { hasState: !!state, usedMemory: !!getServerMemoryAppState(), userId });
+    logger.debug('Redis 상태 반환', { hasState: !!state, usedMemory: !!getServerMemoryAppState(userId), userId });
     return new Response(JSON.stringify(bodyForPick(mergedForResponse)), {
       headers: {
         "Content-Type": "application/json",
@@ -413,7 +436,9 @@ export async function GET(req: Request) {
     });
   } catch (error) {
     logger.error('상태 조회 실패', error);
-    const fallback = applyDonationGoalPresetNormalization(getServerMemoryAppState() || defaultState());
+    const fallback = applyDonationGoalPresetNormalization(
+      getServerMemoryAppState(userId) || defaultState()
+    );
     return new Response(JSON.stringify(bodyForPick(fallback)), {
       headers: { "Content-Type": "application/json", [HDR_STATE_STORAGE]: "memory" },
       status: 200,
@@ -422,8 +447,9 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  let userId: string | null = null;
   try {
-    const userId = getUserId(req);
+    userId = getUserId(req);
     if (!userId) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
         status: 401,
@@ -437,7 +463,7 @@ export async function POST(req: Request) {
     if (base && token) {
       existing = await upstashGet<AppState>(stateKey(userId));
     } else {
-      existing = getServerMemoryAppState();
+      existing = getServerMemoryAppState(userId);
     }
     const baseState = existing || defaultState();
     const donorsInPatch = Array.isArray(body.donors);
@@ -472,8 +498,12 @@ export async function POST(req: Request) {
       : applyDonationGoalEscalationToState(normalized);
     const next: AppState = sanitizeAppStateWheelDemo(escalated);
 
+    if (hasExpandedSigInventory(next.sigInventory)) {
+      void saveSigInventoryBackup(userId, next.sigInventory);
+    }
+
     if (!base || !token) {
-      setServerMemoryAppState(next);
+      setServerMemoryAppState(userId, next);
       logger.info('메모리 상태 업데이트', { updatedAt: next.updatedAt });
       return new Response(
         JSON.stringify({
@@ -495,10 +525,10 @@ export async function POST(req: Request) {
     logger.info('Redis 상태 업데이트', { updatedAt: next.updatedAt, success: ok, userId });
     // Redis 오류 시에도 방송 중단 방지를 위해 메모리에 저장 후 200 반환
     if (!ok) {
-      setServerMemoryAppState(next);
+      setServerMemoryAppState(userId, next);
       logger.warn('Redis 업데이트 실패로 메모리에 기록', { updatedAt: next.updatedAt, userId });
     } else {
-      setServerMemoryAppState(next);
+      setServerMemoryAppState(userId, next);
     }
     return new Response(
       JSON.stringify({
@@ -524,8 +554,8 @@ export async function POST(req: Request) {
       const body = (await req.json()) as AppState;
       const memNext = { ...body, updatedAt: Date.now() };
       memUpdatedAt = memNext.updatedAt;
-      setServerMemoryAppState(memNext);
-      logger.warn('예외 발생으로 메모리에 기록', { updatedAt: memNext.updatedAt });
+      setServerMemoryAppState(userId, memNext);
+      logger.warn('예외 발생으로 메모리에 기록', { updatedAt: memNext.updatedAt, userId });
     } catch {}
     return new Response(
       JSON.stringify({

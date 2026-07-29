@@ -213,9 +213,18 @@ export function appendSettlementRecord(
   memberRatioOverrides?: SettlementMemberRatioOverrides,
   donors?: Donor[],
   userId?: string | null,
-  memberPositions?: Record<string, string> | null
+  memberPositions?: Record<string, string> | null,
+  settlementOptions?: { vatIncluded?: boolean; vatRate?: number }
 ): SettlementRecord {
-  const body = computeSettlement(members, accountRatio, toonRatio, feeRate, memberRatioOverrides, memberPositions);
+  const body = computeSettlement(
+    members,
+    accountRatio,
+    toonRatio,
+    feeRate,
+    memberRatioOverrides,
+    memberPositions,
+    settlementOptions
+  );
   const rec: SettlementRecord = {
     id: `st_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     title: title.trim() || "정산",
@@ -341,7 +350,8 @@ export async function appendSettlementRecordAndSync(
   memberRatioOverrides?: SettlementMemberRatioOverrides,
   donors?: Donor[],
   userId?: string | null,
-  memberPositions?: Record<string, string> | null
+  memberPositions?: Record<string, string> | null,
+  settlementOptions?: { vatIncluded?: boolean; vatRate?: number }
 ): Promise<SettlementRecord> {
   const rec = appendSettlementRecord(
     title,
@@ -352,7 +362,8 @@ export async function appendSettlementRecordAndSync(
     memberRatioOverrides,
     donors,
     userId,
-    memberPositions
+    memberPositions,
+    settlementOptions
   );
   const local = loadSettlementRecords(userId);
   await saveSettlementRecordsToApi(local, userId);
@@ -424,12 +435,21 @@ export async function deleteSettlementRecordAndSync(recordId: string, reason = "
 export function toSettlementFormulaLine(record: SettlementRecord, m: SettlementMemberResult): string {
   const accSrc = formatManThousand(m.account);
   const toonSrc = formatManThousand(m.toon);
+  const vatNote = record.vatIncluded ? " (부가세제외)" : "";
   if (settlementRowIsOperating(m, record.memberPositionsAtSettlement)) {
     return `${m.name} 운영비 예외: 계좌${accSrc} + 투네${toonSrc} = ${m.gross.toLocaleString()} (비율/세금 미적용)`;
   }
   const accRatio = Number((m.accountRatio ?? record.accountRatio).toFixed(3));
   const toonRatio = Number((m.toonRatio ?? record.toonRatio).toFixed(3));
-  return `${m.name} 계좌${accSrc}x${accRatio}=${m.accountApplied.toLocaleString()} 투네${toonSrc}x${toonRatio}=${m.toonApplied.toLocaleString()} /=${m.gross.toLocaleString()}-${m.fee.toLocaleString()}=${m.net.toLocaleString()}`;
+  const accDisplay =
+    record.vatIncluded && typeof m.accountSource === "number" && m.accountSource !== m.account
+      ? `${formatManThousand(m.accountSource)}→${accSrc}`
+      : accSrc;
+  const toonDisplay =
+    record.vatIncluded && typeof m.toonSource === "number" && m.toonSource !== m.toon
+      ? `${formatManThousand(m.toonSource)}→${toonSrc}`
+      : toonSrc;
+  return `${m.name} 계좌${accDisplay}${vatNote}x${accRatio}=${m.accountApplied.toLocaleString()} 투네${toonDisplay}${vatNote}x${toonRatio}=${m.toonApplied.toLocaleString()} /=${m.gross.toLocaleString()}-${m.fee.toLocaleString()}=${m.net.toLocaleString()}`;
 }
 
 /** 정산 export/표시용 멤버 순서: 정산금액(net) 내림차순, 운영비는 맨 아래 */
@@ -499,6 +519,8 @@ export type ReadableSettlementSource = {
   label: string;
   rawAmount: number;
   shareRate: number;
+  /** 부가세 포함 원금 → 공급가 환산 후 배분 기준액 */
+  baseAmount?: number;
 };
 
 export type ReadableSettlementMember = {
@@ -513,6 +535,8 @@ export type ReadableSettlementMember = {
 export type ReadableSettlementInput = {
   title: string;
   defaultTaxRate?: number;
+  vatIncluded?: boolean;
+  vatRate?: number;
   members: ReadableSettlementMember[];
 };
 
@@ -532,6 +556,8 @@ function fmtPct(r: number): string {
 export function recordToReadableInput(record: SettlementRecord): ReadableSettlementInput {
   const taxRate = record.feeRate ?? 0.033;
   const pos = record.memberPositionsAtSettlement;
+  const vatIncluded = Boolean(record.vatIncluded);
+  const vatRate = record.vatRate ?? 0.1;
   const members: ReadableSettlementMember[] = getMembersForExport(record).map((m) => {
     if (settlementRowIsOperating(m, pos)) {
       return {
@@ -543,16 +569,28 @@ export function recordToReadableInput(record: SettlementRecord): ReadableSettlem
         taxRate: 0,
       };
     }
+    const accountRaw = typeof m.accountSource === "number" ? m.accountSource : m.account;
+    const toonRaw = typeof m.toonSource === "number" ? m.toonSource : m.toon;
     return {
       name: `${m.name}${m.realName ? ` (${m.realName})` : ""}`,
       sources: [
-        { label: "계좌", rawAmount: m.account, shareRate: m.accountRatio },
-        { label: "투네", rawAmount: m.toon, shareRate: m.toonRatio },
+        {
+          label: vatIncluded && accountRaw !== m.account ? "계좌(부가세포함→공급가)" : "계좌",
+          rawAmount: vatIncluded && accountRaw !== m.account ? accountRaw : m.account,
+          shareRate: m.accountRatio,
+          ...(vatIncluded && accountRaw !== m.account ? { baseAmount: m.account } : {}),
+        },
+        {
+          label: vatIncluded && toonRaw !== m.toon ? "투네(부가세포함→공급가)" : "투네",
+          rawAmount: vatIncluded && toonRaw !== m.toon ? toonRaw : m.toon,
+          shareRate: m.toonRatio,
+          ...(vatIncluded && toonRaw !== m.toon ? { baseAmount: m.toon } : {}),
+        },
       ],
       taxRate,
     };
   });
-  return { title: record.title, defaultTaxRate: taxRate, members };
+  return { title: record.title, defaultTaxRate: taxRate, vatIncluded, vatRate, members };
 }
 
 /**
@@ -585,9 +623,16 @@ export function generateReadableSettlement(data: ReadableSettlementInput): strin
     for (const s of sources) {
       const raw = Math.max(0, s.rawAmount || 0);
       const rate = Math.max(0, Math.min(1, s.shareRate || 0));
-      const ap = Math.round(raw * rate);
+      const base = typeof s.baseAmount === "number" ? Math.max(0, s.baseAmount) : raw;
+      const ap = Math.round(base * rate);
       applied += ap;
-      lines.push(`${s.label}: ${fmtWon(raw)} × ${fmtPct(rate)}(수익배분) ➔ ${fmtWon(ap)}`);
+      if (typeof s.baseAmount === "number" && s.baseAmount !== raw) {
+        lines.push(
+          `${s.label}: ${fmtWon(raw)} → 공급가 ${fmtWon(base)} × ${fmtPct(rate)}(수익배분) ➔ ${fmtWon(ap)}`
+        );
+      } else {
+        lines.push(`${s.label}: ${fmtWon(raw)} × ${fmtPct(rate)}(수익배분) ➔ ${fmtWon(ap)}`);
+      }
     }
 
     const tax = Math.round(applied * Math.max(0, taxRate || 0));
@@ -603,7 +648,9 @@ export function generateReadableSettlement(data: ReadableSettlementInput): strin
 
   const out = [
     `[정산] ${title}`,
-    "",
+    ...(data.vatIncluded
+      ? [`※ 원금은 부가세 포함 금액 → 공급가(÷${1 + (data.vatRate ?? 0.1)}) 기준으로 수익배분`, ""]
+      : []),
     "━━━ 1. 전체 요약 ━━━",
     ...summary.map((s) => `  • ${s.name}: ${fmtWon(s.net)}`),
     "",

@@ -25,8 +25,8 @@ import {
   createStateUpdatedScheduler,
   DONOR_STATE_UPDATED_DEBOUNCE_MS,
   DONOR_STATE_UPDATED_MAX_WAIT_MS,
-  readOverlayPollIntervalMs,
   readOverlaySseFallbackPollMs,
+  resolveOverlayRemotePollMs,
   shouldSyncDonorRankingsFromStateUpdatedEvent,
   shouldSyncObsTextFromStateUpdatedEvent,
   shouldSyncOverlayFromStateUpdatedEvent,
@@ -56,7 +56,11 @@ import {
   shouldKeepLastGoodInsteadOf,
 } from "@/lib/overlay-last-good";
 
-import type { StateApiPick } from "@/lib/state-api-pick";
+import {
+  overlayUserIdsMatch,
+  readLocalBroadcastState,
+  subscribeBroadcastStateLocalUpdated,
+} from "@/lib/broadcast-state-local-sync";
 
 import {
   revisionForStatePick,
@@ -64,6 +68,7 @@ import {
   STATE_PICK_OVERLAY,
   STATE_PICK_OVERLAY_DONORS,
   STATE_PICK_SIG_SALES,
+  type StateApiPick,
 } from "@/lib/state-api-pick";
 
 export type UseOverlayRemoteStateOptions = {
@@ -518,10 +523,7 @@ export function useOverlayRemoteState(
 
     runInitialSync();
 
-    const pollMs =
-      options.overlayPollMs != null && options.overlayPollMs >= 0
-        ? options.overlayPollMs
-        : readOverlayPollIntervalMs();
+    const pollMs = resolveOverlayRemotePollMs(options.overlayPollMs);
 
     let stopPoll: (() => void) | undefined;
 
@@ -551,49 +553,39 @@ export function useOverlayRemoteState(
       );
     }
 
-    const storageDebounceMs = options.storageDebounceMs ?? 400;
+    const storageDebounceMs = options.storageDebounceMs ?? 0;
 
     let storageDebounce: ReturnType<typeof setTimeout> | null = null;
+
+    const applyLocalBroadcastState = () => {
+      const localNow = readLocalBroadcastState(userId);
+      if (!localNow) return;
+      const pickRev = revisionForStatePick(localNow, statePick);
+      if (
+        lastSyncedUpdatedAtRef.current > 0 &&
+        pickRev > 0 &&
+        pickRev < lastSyncedUpdatedAtRef.current
+      ) {
+        return;
+      }
+      if (shouldKeepLastGoodInsteadOf(localNow, statePick, lastGoodRef.current)) return;
+      applySyncedState(localNow, statePick, {
+        lastVisualSigRef,
+        lastSyncedUpdatedAtRef,
+        lastSyncedDonorRevRef,
+        lastGoodRef,
+        persistLastGood,
+        userId,
+        setState,
+      });
+    };
 
     const onStorage = (e: StorageEvent) => {
       if (e.key !== storageKey(userId ?? undefined)) return;
 
       if (shouldSuppressOverlaySseConnection()) {
         try {
-          const localNow = readLocalStateIfExists(userId);
-
-          if (!localNow) return;
-
-          const u = localNow.updatedAt || 0;
-
-          if (
-            lastSyncedUpdatedAtRef.current <= 0 ||
-            u >= lastSyncedUpdatedAtRef.current
-          ) {
-            if (
-              !shouldKeepLastGoodInsteadOf(
-                localNow,
-                statePick,
-                lastGoodRef.current
-              )
-            ) {
-              applySyncedState(localNow, statePick, {
-                lastVisualSigRef,
-
-                lastSyncedUpdatedAtRef,
-
-                lastSyncedDonorRevRef,
-
-                lastGoodRef,
-
-                persistLastGood,
-
-                userId,
-
-                setState,
-              });
-            }
-          }
+          applyLocalBroadcastState();
         } catch {
           /* noop */
         }
@@ -622,6 +614,11 @@ export function useOverlayRemoteState(
 
     window.addEventListener("storage", onStorage);
 
+    const unsubscribeLocal = subscribeBroadcastStateLocalUpdated((detail) => {
+      if (!overlayUserIdsMatch(userId, detail.userId)) return;
+      applyLocalBroadcastState();
+    });
+
     const onPageShow = (ev: PageTransitionEvent) => {
       if (!ev.persisted) return;
       lastSyncedUpdatedAtRef.current = 0;
@@ -642,6 +639,7 @@ export function useOverlayRemoteState(
       if (storageDebounce) clearTimeout(storageDebounce);
 
       window.removeEventListener("storage", onStorage);
+      unsubscribeLocal();
       window.removeEventListener("pageshow", onPageShow);
     };
   }, [

@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import type { CSSProperties, SyntheticEvent } from "react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
@@ -25,22 +25,22 @@ import {
 import { getSigRollingHoldMs } from "@/lib/sig-rolling-duration";
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 import {
-  SIG_ROLLING_MEDIA_HEIGHT_PX,
-  SIG_ROLLING_MEDIA_WIDTH_PX,
-} from "@/components/sig-sales/sig-overlay-card-size";
+  classifySigRollingOrientation,
+  sigRollingPairLayoutPx,
+  sigRollingShellOuterPx,
+  type SigRollingMediaOrientation,
+} from "@/lib/sig-rolling-orientation";
 
-/** 202×300 프레임 안에 맞춤 — 원본 GIF/PNG 해상도와 무관, 잘림 없음(object-contain + flex/grid 최소크기 이슈 방지) */
+/** 202×300(세로) / 300×202(가로) 프레임 — object-contain, 잘림 없음 */
 const IMG_IN_FRAME =
   "pointer-events-none select-none block h-full w-full max-h-full max-w-full min-h-0 min-w-0 object-contain object-center";
 
-const mediaFrameStyle: CSSProperties = {
-  width: SIG_ROLLING_MEDIA_WIDTH_PX,
-  height: SIG_ROLLING_MEDIA_HEIGHT_PX,
-};
 const SHELL_PAD_PX = 6;
-const SHELL_OUTER_WIDTH_PX = SIG_ROLLING_MEDIA_WIDTH_PX + SHELL_PAD_PX * 2;
-const SHELL_OUTER_HEIGHT_PX = SIG_ROLLING_MEDIA_HEIGHT_PX + SHELL_PAD_PX * 2;
-const TWO_CARD_BASE_WIDTH_PX = SHELL_OUTER_WIDTH_PX * 2;
+/** 뷰포트 스케일 기본값(세로 2장) — 실제는 카드별 방향에 따라 동적 계산 */
+const TWO_CARD_BASE_WIDTH_PX =
+  sigRollingPairLayoutPx("portrait", "portrait", SHELL_PAD_PX).totalOuterWidth;
+const DEFAULT_PAIR_HEIGHT_PX =
+  sigRollingPairLayoutPx("portrait", "portrait", SHELL_PAD_PX).maxOuterHeight;
 
 /** 폴링으로 `state` 객체만 바뀌고 내용은 같을 때도 참조가 매번 바뀌지 않도록 문자열 키로 구분 (타이머 effect 무한 리셋 방지) */
 function sigRollingScheduleKey(state: AppState | null, memberFilterId: string): string {
@@ -58,6 +58,7 @@ function RollingCardColumn({
   enableCrossfade,
   pairSide,
   overlayUserId,
+  onOrientationChange,
 }: {
   current: SigRollingItem | null;
   nextItem: SigRollingItem | null;
@@ -68,6 +69,7 @@ function RollingCardColumn({
   /** 한 줄에 두 장일 때 맞닿는 쪽 패딩·모서리만 줄여 간격 최소화 */
   pairSide?: "left" | "right";
   overlayUserId?: string;
+  onOrientationChange?: (orientation: SigRollingMediaOrientation) => void;
 }) {
   const under = current ? nextItem || current : null;
   const srcCurrentRaw = current
@@ -80,11 +82,50 @@ function RollingCardColumn({
   const srcUnder = toSigOverlayAbsoluteAssetUrl(srcUnderRaw);
   const [errOverSrc, setErrOverSrc] = useState<string | null>(null);
   const [errUnderSrc, setErrUnderSrc] = useState<string | null>(null);
+  const [orientation, setOrientation] = useState<SigRollingMediaOrientation>("portrait");
+  const onOrientationRef = useRef(onOrientationChange);
+  onOrientationRef.current = onOrientationChange;
+
+  const shell = sigRollingShellOuterPx(orientation, SHELL_PAD_PX);
+  const mediaFrameStyle: CSSProperties = {
+    width: shell.mediaWidth,
+    height: shell.mediaHeight,
+  };
 
   useEffect(() => {
     setErrOverSrc(null);
     setErrUnderSrc(null);
   }, [srcCurrent, srcUnder]);
+
+  useEffect(() => {
+    setOrientation("portrait");
+    onOrientationRef.current?.("portrait");
+  }, [srcCurrent]);
+
+  const applyOrientationFromImg = useCallback((img: HTMLImageElement) => {
+    if (img.naturalWidth <= 0 && img.naturalHeight <= 0) return;
+    const next = classifySigRollingOrientation(img.naturalWidth, img.naturalHeight);
+    setOrientation(next);
+    onOrientationRef.current?.(next);
+  }, []);
+
+  const onImgLoad = useCallback(
+    (e: SyntheticEvent<HTMLImageElement>) => {
+      applyOrientationFromImg(e.currentTarget);
+    },
+    [applyOrientationFromImg]
+  );
+
+  const bindRollingImgRef = useCallback(
+    (img: HTMLImageElement | null) => {
+      if (img?.complete) applyOrientationFromImg(img);
+    },
+    [applyOrientationFromImg]
+  );
+
+  const shellTransitionStyle: CSSProperties = {
+    transition: "width 220ms ease, height 220ms ease",
+  };
 
   const overDisplay = errOverSrc ?? srcCurrent;
   const underDisplay = errUnderSrc ?? srcUnder;
@@ -114,27 +155,32 @@ function RollingCardColumn({
 
   if (!enableCrossfade) {
     return (
-      <div className="shrink-0" style={{ width: SHELL_OUTER_WIDTH_PX, height: SHELL_OUTER_HEIGHT_PX }}>
-        <div className={shellClass} style={{ width: SHELL_OUTER_WIDTH_PX, height: SHELL_OUTER_HEIGHT_PX }}>
+      <div className="shrink-0" style={{ width: shell.outerWidth, height: shell.outerHeight, ...shellTransitionStyle }}>
+        <div
+          className={shellClass}
+          style={{ width: shell.outerWidth, height: shell.outerHeight, ...shellTransitionStyle }}
+        >
           <div
             className="flex items-center justify-center overflow-hidden rounded-2xl bg-white/15"
             style={{
               ...mediaFrameStyle,
-              minWidth: SIG_ROLLING_MEDIA_WIDTH_PX,
-              maxWidth: SIG_ROLLING_MEDIA_WIDTH_PX,
-              minHeight: SIG_ROLLING_MEDIA_HEIGHT_PX,
-              maxHeight: SIG_ROLLING_MEDIA_HEIGHT_PX,
+              minWidth: shell.mediaWidth,
+              maxWidth: shell.mediaWidth,
+              minHeight: shell.mediaHeight,
+              maxHeight: shell.mediaHeight,
             }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               key={replayKey}
+              ref={bindRollingImgRef}
               src={overDisplay}
               alt=""
               className={IMG_IN_FRAME}
               draggable={false}
               decoding="async"
               referrerPolicy="no-referrer"
+              onLoad={onImgLoad}
               onError={() => onImgError("over")}
             />
           </div>
@@ -144,16 +190,16 @@ function RollingCardColumn({
   }
 
   return (
-    <div className="shrink-0" style={{ width: SHELL_OUTER_WIDTH_PX, height: SHELL_OUTER_HEIGHT_PX }}>
-      <div className={shellClass} style={{ width: SHELL_OUTER_WIDTH_PX, height: SHELL_OUTER_HEIGHT_PX }}>
+    <div className="shrink-0" style={{ width: shell.outerWidth, height: shell.outerHeight, ...shellTransitionStyle }}>
+      <div className={shellClass} style={{ width: shell.outerWidth, height: shell.outerHeight, ...shellTransitionStyle }}>
         <div
           className="relative grid place-items-center overflow-hidden rounded-2xl bg-white/15 [&>img]:col-start-1 [&>img]:row-start-1"
           style={{
             ...mediaFrameStyle,
-            minWidth: SIG_ROLLING_MEDIA_WIDTH_PX,
-            maxWidth: SIG_ROLLING_MEDIA_WIDTH_PX,
-            minHeight: SIG_ROLLING_MEDIA_HEIGHT_PX,
-            maxHeight: SIG_ROLLING_MEDIA_HEIGHT_PX,
+            minWidth: shell.mediaWidth,
+            maxWidth: shell.mediaWidth,
+            minHeight: shell.mediaHeight,
+            maxHeight: shell.mediaHeight,
             gridTemplateColumns: "1fr",
             gridTemplateRows: "1fr",
             contain: "layout style paint",
@@ -180,6 +226,7 @@ function RollingCardColumn({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             key={`over-${current.id}`}
+            ref={bindRollingImgRef}
             src={overDisplay}
             alt=""
             className={IMG_IN_FRAME}
@@ -191,6 +238,7 @@ function RollingCardColumn({
             }}
             draggable={false}
             decoding="sync"
+            onLoad={onImgLoad}
             onError={() => onImgError("over")}
           />
         </div>
@@ -232,6 +280,8 @@ function SigRollingOverlayInner() {
   const [fading, setFading] = useState(false);
   const [replayKey, setReplayKey] = useState(0);
   const [viewportW, setViewportW] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 0));
+  const [leftOrientation, setLeftOrientation] = useState<SigRollingMediaOrientation>("portrait");
+  const [rightOrientation, setRightOrientation] = useState<SigRollingMediaOrientation>("portrait");
 
   const n = items.length;
   const leftCurrent = n ? items[pairStart % n] : null;
@@ -240,6 +290,11 @@ function SigRollingOverlayInner() {
   const rightNext = n ? items[(pairStart + 3) % n] : null;
 
   const scheduleKey = sigRollingScheduleKey(state, memberFilterId);
+
+  const pairLayout = useMemo(
+    () => sigRollingPairLayoutPx(leftOrientation, rightOrientation, SHELL_PAD_PX),
+    [leftOrientation, rightOrientation]
+  );
   const rollingRef = useRef(rollingUnified);
   rollingRef.current = rollingUnified;
 
@@ -262,10 +317,18 @@ function SigRollingOverlayInner() {
   const twoCardScale = useMemo(() => {
     if (!Number.isFinite(viewportW) || viewportW <= 0) return 1;
     const safeW = Math.max(260, viewportW - 8);
-    const ratio = safeW / TWO_CARD_BASE_WIDTH_PX;
+    const baseW = Math.max(pairLayout.totalOuterWidth, TWO_CARD_BASE_WIDTH_PX);
+    const ratio = safeW / baseW;
     if (!Number.isFinite(ratio)) return 1;
     return Math.max(0.6, Math.min(1, ratio));
-  }, [viewportW]);
+  }, [viewportW, pairLayout.totalOuterWidth]);
+
+  const onLeftOrientation = useCallback((orientation: SigRollingMediaOrientation) => {
+    setLeftOrientation(orientation);
+  }, []);
+  const onRightOrientation = useCallback((orientation: SigRollingMediaOrientation) => {
+    setRightOrientation(orientation);
+  }, []);
 
   useEffect(() => {
     const update = () => setViewportW(window.innerWidth || 0);
@@ -278,6 +341,8 @@ function SigRollingOverlayInner() {
     setPairStart(0);
     setReplayKey(0);
     setFading(false);
+    setLeftOrientation("portrait");
+    setRightOrientation("portrait");
   }, [scheduleKey]);
 
   /** 크로스페이드 종료: CSS transitionEnd는 누락될 수 있어 fadeMs 타이머로만 진행 */
@@ -424,11 +489,14 @@ function SigRollingOverlayInner() {
   return (
     <main
       className="overlay-root inline-block w-fit bg-transparent p-1 text-pastel-ink"
-      style={{ minWidth: TWO_CARD_BASE_WIDTH_PX + 8, minHeight: SHELL_OUTER_HEIGHT_PX + 16 }}
+      style={{
+        minWidth: pairLayout.totalOuterWidth + 8,
+        minHeight: Math.max(pairLayout.maxOuterHeight, DEFAULT_PAIR_HEIGHT_PX) + 16,
+      }}
     >
       <div
         style={{
-          width: TWO_CARD_BASE_WIDTH_PX,
+          width: pairLayout.totalOuterWidth,
           transform: `scale(${twoCardScale})`,
           transformOrigin: "top left",
         }}
@@ -443,6 +511,7 @@ function SigRollingOverlayInner() {
             enableCrossfade={enableCrossfade}
             pairSide="left"
             overlayUserId={overlayUserId}
+            onOrientationChange={onLeftOrientation}
           />
           <RollingCardColumn
             current={rightCurrent}
@@ -453,6 +522,7 @@ function SigRollingOverlayInner() {
             enableCrossfade={enableCrossfade}
             pairSide="right"
             overlayUserId={overlayUserId}
+            onOrientationChange={onRightOrientation}
           />
         </div>
       </div>
