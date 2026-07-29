@@ -299,6 +299,96 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set(["goal", "goalCurrent"]);
  * 오버레이가 `/api/state` 프리셋을 읽은 뒤에는 URL에 박힌 예전 스타일보다 프리셋을 우선한다.
  * (관리자에서 색·크기 변경 시 URL 재복사·OBS 소스 재등록 없이 실시간 반영)
  */
+/**
+ * 관리자 미리보기 iframe: 테마·글자크기 등 시각 옵션은 localStorage 프리셋으로 핫리로드.
+ * URL에 넣으면 src가 바뀌며 iframe이 리마운트되어 멤버/금액 동기화가 끊긴다.
+ */
+export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
+  "theme",
+  "membersTheme",
+  "totalTheme",
+  "goalTheme",
+  "tickerBaseTheme",
+  "timerTheme",
+  "missionTheme",
+  "scale",
+  "memberSize",
+  "totalSize",
+  "donorsSize",
+  "tableBgOpacity",
+  "tableBgGifUrl",
+  "tableBgGifOpacity",
+  "tableBgGifBrightness",
+  "donorsFormat",
+  "currencyLocale",
+  "accountHeaderLabel",
+  "toonHeaderLabel",
+  "accountColor",
+  "toonColor",
+  "tableTextColor",
+  "tableTextOutlineColor",
+  "tableTextOutlineWidth",
+  "tableFontWeight",
+  "showCombinedColumn",
+  "showContributionColumn",
+  "showContributionSum",
+  "showTableSumRow",
+  "goalTextColor",
+  "goalFontSize",
+  "goalTextOutlineColor",
+  "goalTextOutlineWidth",
+  "goalOpacity",
+  "goalOpacityText",
+  "tickerGlow",
+  "tickerShadow",
+  "tickerTheme",
+] as const;
+
+/** 관리자 미리보기 URL에서 핫리로드 시각 파라미터를 제거해 iframe 리마운트를 막는다. */
+export function stripAdminPreviewHotReloadParams(q: URLSearchParams): URLSearchParams {
+  const next = new URLSearchParams(q.toString());
+  for (const key of ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS) {
+    next.delete(key);
+  }
+  return next;
+}
+
+/**
+ * 동일 id 프리셋은 local(방금 저장)을 우선 — 관리자 테마 변경이 remote 스냅샷보다 먼저 보이게.
+ */
+export function mergeOverlayPresetsPreferLocal(
+  remote: OverlayPresetLike[],
+  local: OverlayPresetLike[]
+): OverlayPresetLike[] {
+  if (!local.length) return remote.slice();
+  if (!remote.length) return local.slice();
+  const localById = new Map(
+    local
+      .filter((p) => p && typeof p.id === "string" && p.id)
+      .map((p) => [String(p.id), p] as const)
+  );
+  const seen = new Set<string>();
+  const merged: OverlayPresetLike[] = [];
+  for (const p of remote) {
+    const id = p && typeof p.id === "string" ? p.id : "";
+    if (id && localById.has(id)) {
+      merged.push(localById.get(id)!);
+      seen.add(id);
+    } else {
+      merged.push(p);
+      if (id) seen.add(id);
+    }
+  }
+  for (const p of local) {
+    const id = p && typeof p.id === "string" ? p.id : "";
+    if (id && !seen.has(id)) {
+      merged.push(p);
+      seen.add(id);
+    }
+  }
+  return merged;
+}
+
 export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "goalTextColor",
   "goalFontSize",

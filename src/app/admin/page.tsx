@@ -87,6 +87,7 @@ import { getEffectiveRemainingTime, pauseTimer, resumeTimer } from "@/lib/timer-
 import {
   appendAdminPreviewEmbedToOverlayUrl,
   presetToParams,
+  stripAdminPreviewHotReloadParams,
   mergePresetBroadcastVisualParams,
   appendGoalBarStyleParams,
   normalizeGoalHexColor,
@@ -1567,7 +1568,8 @@ export default function AdminPage() {
       return goalOnly.toString();
     }
     const base = `${window.location.origin}/overlay`;
-    const q = new URLSearchParams(presetToParams(p));
+    /** 테마·글자 등 시각 파라미터는 URL에서 제외 → iframe 리마운트 없이 localPresets로 반영 */
+    const q = stripAdminPreviewHotReloadParams(new URLSearchParams(presetToParams(p)));
     q.set("p", p.id);
     q.set("u", user?.id || "finalent");
     q.set("previewGuide", "true");

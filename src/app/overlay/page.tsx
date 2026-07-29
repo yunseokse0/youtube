@@ -16,6 +16,7 @@ import {
   presetToParams,
   isOverlayBroadcastHost,
   shouldSuppressOverlaySseConnection,
+  mergeOverlayPresetsPreferLocal,
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
 import { getEffectiveRemainingTime } from "@/lib/timer-utils";
@@ -1421,7 +1422,7 @@ function OverlayInner() {
   }, [ready, s]);
   const overlayPresets = useMemo(() => {
     const remote = ready && s && Array.isArray(s.overlayPresets) ? (s.overlayPresets as OverlayPresetLike[]) : [];
-    return remote.length > 0 ? remote : localPresets;
+    return mergeOverlayPresetsPreferLocal(remote, localPresets);
   }, [ready, s, localPresets]);
   const memberPositionsMap = useMemo<Record<string, string>>(
     () => ((ready && s && typeof (s as AppState).memberPositions === "object") ? ((s as AppState).memberPositions || {}) : {}),
