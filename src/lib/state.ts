@@ -1699,9 +1699,15 @@ async function doLoadStateFromApi(
       data = { ...base, ...data } as AppState;
     } else if (isOverlayPickPartial(data)) {
       let base = defaultState();
-      if (typeof window !== "undefined" && options?.pick === STATE_PICK_SIG_SALES) {
+      if (typeof window !== "undefined") {
         const local = loadState(userId);
-        if (local && hasMeaningfulBroadcastData(local)) {
+        if (local && hasMeaningfulMemberRoster(local)) {
+          base = local;
+        } else if (
+          options?.pick === STATE_PICK_SIG_SALES &&
+          local &&
+          hasMeaningfulBroadcastData(local)
+        ) {
           base = local;
         }
       }
@@ -1722,6 +1728,18 @@ async function doLoadStateFromApi(
           ...(data.rouletteState && typeof data.rouletteState === "object" ? data.rouletteState : {}),
         },
       } as AppState;
+      /** pick 응답에 멤버가 비었거나 placeholder 면 로컬 실멤버를 유지 */
+      if (
+        hasMeaningfulMemberRoster(base) &&
+        (!Array.isArray(data.members) ||
+          data.members.length === 0 ||
+          isDefaultPlaceholderMemberList(data.members))
+      ) {
+        data.members = base.members;
+        data.memberPositions = base.memberPositions;
+        data.memberPositionMode = base.memberPositionMode;
+        data.rankPositionLabels = base.rankPositionLabels;
+      }
     }
     if (data && data.members) {
       data.members = (() => { const v = ensureMembers(data.members); return v.length > 0 ? v : defaultMembers().map(normalizeMember); })();
@@ -2035,16 +2053,15 @@ export function membersDifferByIds(a: Member[], b: Member[]): boolean {
 
 /**
  * 엑셀 표에 쓸 멤버 로스터가 실데이터인지.
- * `멤버1·2·3` 초기 슬롯 + 금액 0 이면 false (시그 재고만 있어도 표 기준으로는 무의미).
- * OBS/프리뷰가 stale placeholder localStorage 로 API를 막지 않게 할 때 사용.
+ * `멤버1·2·3` 초기 슬롯이면 금액·후원이 있어도 false —
+ * 테마 변경 직후 placeholder 가 last-good/미리보기 억제로 굳는 것을 막는다.
  */
 export function hasMeaningfulMemberRoster(state: AppState | null | undefined): boolean {
   if (!state) return false;
   const members = state.members || [];
   if (members.length === 0) return false;
-  if (totalCombined(state) > 0) return true;
-  if (normalizeDonorsArray(state.donors).length > 0) return true;
-  return !isDefaultPlaceholderMemberList(members);
+  if (isDefaultPlaceholderMemberList(members)) return false;
+  return true;
 }
 
 /** 로컬에 실제 방송 데이터(커스텀 멤버·금액·후원·시그 목록)가 있는지 */

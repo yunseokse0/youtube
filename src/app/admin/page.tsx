@@ -22,6 +22,7 @@ import {
   isDefaultPlaceholderMemberList,
   membersDifferByIds,
   hasMeaningfulBroadcastData,
+  hasMeaningfulMemberRoster,
   hasExpandedSigInventory,
   hasSigSalesMemberPresets,
   isShrunkToDefaultSigInventory,
@@ -90,6 +91,7 @@ import {
   presetToParams,
   stripAdminPreviewHotReloadParams,
   mergePresetBroadcastVisualParams,
+  buildCompactBroadcastOverlayParams,
   appendGoalBarStyleParams,
   normalizeGoalHexColor,
   donorRankingsThemeToSearchParams,
@@ -1453,7 +1455,10 @@ export default function AdminPage() {
     } catch {}
     setState((prev) => {
       const merged: AppState = { ...prev, overlayPresets: normalized };
-      persistState(merged);
+      /** 테마만 바꿀 때 멤버1·2·3 placeholder 를 Redis/LS에 쓰지 않음 */
+      if (hasMeaningfulMemberRoster(prev)) {
+        persistState(merged);
+      }
       return merged;
     });
   };
@@ -1522,7 +1527,10 @@ export default function AdminPage() {
         overlayPresets: nextPresets,
         overlaySettings: { ...(prev.overlaySettings || {}), currentPresetId: id },
       };
-      persistState(merged);
+      /** placeholder 멤버로 전체 상태를 저장하면 미리보기·OBS가 멤버1·2·3으로 고착됨 */
+      if (hasMeaningfulMemberRoster(prev)) {
+        persistState(merged);
+      }
       return merged;
     });
     setPresetRev((r) => r + 1);
@@ -1536,10 +1544,10 @@ export default function AdminPage() {
   const buildOverlayUrl = (p: OverlayPreset): string => {
     if (typeof window === "undefined") return "";
     const base = `${window.location.origin}/overlay`;
-    const q = new URLSearchParams();
-    q.set("p", p.id);
-    q.set("u", user?.id || "finalent");
-    mergePresetBroadcastVisualParams(q, p);
+    const q = buildCompactBroadcastOverlayParams({
+      presetId: p.id,
+      userId: user?.id || "finalent",
+    });
     return `${base}?${q.toString()}`;
   };
   /** 방송/OBS용: snap 없음 → 오버레이는 항상 `/api/state` 기준 실시간 반영 (스냅샷은 아래 프리뷰 iframe 전용) */
@@ -1557,57 +1565,15 @@ export default function AdminPage() {
       goalOnly.searchParams.set("p", p.id);
       goalOnly.searchParams.set("u", user?.id || "finalent");
       goalOnly.searchParams.set("host", "prism");
-      /** goal·goalCurrent 미포함: `/api/state` 프리셋과 동기·목표 자동 상향(useGoalPresetAutoEscalate)에 맞춤 */
-      goalOnly.searchParams.set("goalLabel", (p.goalLabel || "후원").trim());
-      goalOnly.searchParams.set("goalWidth", String(Math.max(260, Math.min(1200, parseInt((p.goalWidth || "560") as any, 10) || 560))));
-      goalOnly.searchParams.set(
-        "donorsFormat",
-        normalizeDonorsFormat(p.donorsFormat || state.donorsFormat, "short") === "full" ? "full" : "short"
-      );
-      if (String(p.currencyLocale || "").trim()) {
-        goalOnly.searchParams.set("currencyLocale", String(p.currencyLocale).trim());
-      }
-      if (String(p.goalOpacity || "").trim()) {
-        goalOnly.searchParams.set("goalOpacity", String(Math.max(0, Math.min(100, parseInt(String(p.goalOpacity), 10) || 100))));
-      }
-      if (p.goalOpacityText) {
-        goalOnly.searchParams.set("goalOpacityText", "true");
-      }
-      appendGoalBarStyleParams(goalOnly.searchParams, p);
       return goalOnly.toString();
     }
     const base = `${window.location.origin}/overlay`;
-    /** 목표 금액은 URL에 넣지 않음 → `/api/state` 프리셋·자동 목표 상향과 일치 */
-    const q = new URLSearchParams();
-    q.set("p", p.id);
-    q.set("u", user?.id || "finalent");
-    q.set("vertical", vertical ? "true" : "false");
-    q.set("host", "prism");
-    q.set(
-      "tableBgOpacity",
-      p.tableBgOpacity && String(p.tableBgOpacity).trim() ? String(p.tableBgOpacity).trim() : "100"
-    );
-    q.set(
-      "donorsFormat",
-      normalizeDonorsFormat(p.donorsFormat || state.donorsFormat, "short") === "full" ? "full" : "short"
-    );
-    if (String(p.currencyLocale || "").trim()) {
-      q.set("currencyLocale", String(p.currencyLocale).trim());
-    }
-    q.set("showGoal", p.showGoal ? "true" : "false");
-    if (p.showGoal) {
-      /** goal·goalCurrent 미포함 → 저장 프리셋·자동 목표 상향이 OBS와 일치 */
-      q.set("goalLabel", (p.goalLabel || "후원").trim());
-      q.set("goalWidth", String(Math.max(200, Math.min(800, parseInt((p.goalWidth || "400") as any, 10) || 400))));
-      if (String(p.goalOpacity || "").trim()) {
-        q.set("goalOpacity", String(Math.max(0, Math.min(100, parseInt(String(p.goalOpacity), 10) || 100))));
-      }
-      if (p.goalOpacityText) {
-        q.set("goalOpacityText", "true");
-      }
-      appendGoalBarStyleParams(q, p);
-    }
-    mergePresetBroadcastVisualParams(q, p);
+    const q = buildCompactBroadcastOverlayParams({
+      presetId: p.id,
+      userId: user?.id || "finalent",
+      host: "prism",
+      vertical: !!vertical,
+    });
     return `${base}?${q.toString()}`;
   };
   const buildPrismDemoOverlayUrl = (p: OverlayPreset, vertical: boolean): string => {
@@ -11846,10 +11812,12 @@ export default function AdminPage() {
 }
 
 function ClientPreviewWrapper({ preset, buildUrl }: { preset: OverlayPreset; buildUrl: (p: OverlayPreset) => string }) {
-  const url = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    return buildUrl(preset) || "";
-  }, [preset, buildUrl]);
+  const computed =
+    typeof window !== "undefined" ? buildUrl(preset) || "" : "";
+  const [url, setUrl] = useState(computed);
+  useEffect(() => {
+    if (computed !== url) setUrl(computed);
+  }, [computed, url]);
   return <VerticalPreview url={url} />;
 }
 

@@ -293,7 +293,105 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
 }
 
 /** OBS·Prism URL에 넣을 프리셋 시각 파라미터(goal·goalCurrent 제외 — 목표는 /api/state 동기) */
-const PRESET_BROADCAST_SKIP_KEYS = new Set(["goal", "goalCurrent"]);
+/** OBS/Prism URL에 넣지 않음 — 시각 옵션은 `p=` 프리셋(`/api/state`)에서 로드 */
+const PRESET_BROADCAST_SKIP_KEYS = new Set([
+  "goal",
+  "goalCurrent",
+  "theme",
+  "membersTheme",
+  "totalTheme",
+  "goalTheme",
+  "tickerBaseTheme",
+  "timerTheme",
+  "missionTheme",
+  "scale",
+  "memberSize",
+  "totalSize",
+  "donorsSize",
+  "tableBgOpacity",
+  "tableBgGifUrl",
+  "tableBgGifOpacity",
+  "tableBgGifBrightness",
+  "donorsFormat",
+  "currencyLocale",
+  "accountHeaderLabel",
+  "toonHeaderLabel",
+  "accountColor",
+  "toonColor",
+  "tableTextColor",
+  "tableTextOutlineColor",
+  "tableTextOutlineWidth",
+  "tableFontWeight",
+  "showCombinedColumn",
+  "showContributionColumn",
+  "showContributionSum",
+  "showTableSumRow",
+  "goalTextColor",
+  "goalFontSize",
+  "goalTextOutlineColor",
+  "goalTextOutlineWidth",
+  "goalOpacity",
+  "goalOpacityText",
+  "tickerGlow",
+  "tickerShadow",
+  "tickerTheme",
+  "layout",
+  "dense",
+  "tableFree",
+  "tableX",
+  "tableY",
+  "anchor",
+  "sumAnchor",
+  "autoFont",
+  "compact",
+  "tight",
+  "nameGrow",
+  "personalGoalTheme",
+  "personalGoalAnchor",
+  "personalGoalLimit",
+  "personalGoalFree",
+  "personalGoalX",
+  "personalGoalY",
+  "donorsGap",
+  "donorsSpeed",
+  "donorsLimit",
+  "donorsBgOpacity",
+  "donorsColor",
+  "donorsBgColor",
+  "donorsUnit",
+  "showMembers",
+  "showTotal",
+  "showGoal",
+  "showTicker",
+  "showTimer",
+  "showMission",
+  "showPersonalGoal",
+  "showBottomDonors",
+  "tableOnly",
+  "goalLabel",
+  "goalWidth",
+  "goalAnchor",
+]);
+
+/**
+ * OBS/Prism용 짧은 쿼리 — 프리셋·스타일은 `p`+`u`로 `/api/state`에서 로드.
+ * (구버전 긴 URL도 계속 동작; 신규 복사는 이 형태)
+ */
+export function buildCompactBroadcastOverlayParams(opts: {
+  presetId: string;
+  userId: string;
+  host?: string;
+  vertical?: boolean;
+  demo?: boolean;
+}): URLSearchParams {
+  const q = new URLSearchParams();
+  q.set("p", opts.presetId);
+  q.set("u", opts.userId);
+  if (opts.host) q.set("host", opts.host);
+  if (opts.vertical) q.set("vertical", "true");
+  if (opts.demo) q.set("demo", "true");
+  return q;
+}
 
 /**
  * 오버레이가 `/api/state` 프리셋을 읽은 뒤에는 URL에 박힌 예전 스타일보다 프리셋을 우선한다.

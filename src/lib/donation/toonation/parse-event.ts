@@ -194,20 +194,20 @@ export function buildToonationDonationFingerprint(data: unknown, amount: number)
   ]);
 }
 
-/** id/timestamp 없을 때: 수 초 이내 재전송은 같은 버킷, 이후 동일 금액·문구 재후원은 별도 ID */
-const FALLBACK_ID_TIME_BUCKET_MS = 5_000;
-
+/** id/timestamp 없을 때: 건별 고유 ID — 동일 금액·문구 연속 후원 허용. WS 재전송은 RAW_WS_DEDUPE */
 export function createStableToonationFallbackId(data: unknown, amount: number): string {
   const extracted = extractToonationExternalId(data);
   const fp = buildToonationDonationFingerprint(data, amount);
+  const unique = createUniqueToonationFallbackId(amount);
   if (isToonationTestDonationPayload(data)) {
-    if (isReliableToonationExternalId(extracted)) return `test-${extracted}`;
-    return `test-${fp}`;
+    if (isReliableToonationExternalId(extracted)) {
+      /** 테스트가 같은 id를 재사용해도 연속 반영되도록 unique 접미사 */
+      return `test-${extracted}-${unique}`;
+    }
+    return `test-${fp}-${unique}`;
   }
   const ts = extractToonationTimestamp(data);
-  if (ts) return `fp-${ts}-${amount}-${fp}`;
-  const bucket = Math.floor(Date.now() / FALLBACK_ID_TIME_BUCKET_MS);
-  return `fp-${amount}-${fp}-t${bucket}`;
+  return ts ? `fp-${ts}-${amount}-${fp}-${unique}` : `fp-${amount}-${fp}-${unique}`;
 }
 
 /** 투네가 부여한 실제 후원 id — 우리쪽 fp-/test-/타임스탬프 fallback은 제외 */
@@ -233,16 +233,27 @@ export function isToonationTestDonationPayload(data: unknown): boolean {
 
 export function allocateToonationExternalId(data: unknown, amount: number): string {
   const extracted = extractToonationExternalId(data);
+  const alertDonor = extractToonationDonorName(data);
+  const msg = extractToonationMessage(data);
+  const parsed = parseToonationMessageBody(msg, alertDonor);
+
+  /**
+   * 계좌 포맷(`계좌 …`)은 위젯/알림이 동일 id·동일 원문을 반복 보내는 경우가 많음.
+   * 투네 실 id를 그대로 쓰면 Redis 24h 클레임에 막혀 2건째부터 전부 누락된다.
+   */
+  if (parsed.target === "account") {
+    return createStableToonationFallbackId(data, amount);
+  }
+
   if (isToonationTestDonationPayload(data)) {
-    if (isReliableToonationExternalId(extracted)) return `test-${extracted}`;
-    return `test-${buildToonationDonationFingerprint(data, amount)}`;
+    return createStableToonationFallbackId(data, amount);
   }
   if (isReliableToonationExternalId(extracted)) {
     return extracted;
   }
   /**
-   * id/timestamp가 없는 구형·변형 payload도 인스턴스 간 동일 이벤트를 같은 ID로 처리해야
-   * 멀티 인스턴스/WS 재연결에서 중복 반영을 막을 수 있다.
+   * id 없는 payload는 건별 고유 ID로 연속 동일 금액 후원을 살리고,
+   * 동일 WS 원문 재전송은 server-listener RAW_WS_DEDUPE 가 막는다.
    */
   return createStableToonationFallbackId(data, amount);
 }

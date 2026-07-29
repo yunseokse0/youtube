@@ -1771,9 +1771,8 @@ function OverlayInner() {
   const timerBaseText = serverTimer.text || elapsed || (timerOnlyMode ? "00:00:00" : null);
   const timerText = formatTimerText(timerBaseText, serverTimer.remainingSeconds, timerShowHours);
 
-  // 숫자 컬럼 가독성 우선: 이름 기본 폭을 줄이고 계좌·투네 기본 폭을 넓혀 숫자 겹침을 줄인다(URL nameCh·bankCh·toonCh 로 조정 가능).
-  // 가로 엑셀: 이름 기본을 짧게 해 오른쪽「기여도」열이 잘리지 않게 함(nameCh URL로 확대 가능).
-  const nameCh = Math.max(4, Math.min(40, parseInt(sp.get("nameCh") || (compact ? "6" : (isVertical ? "11" : "4")), 10)));
+  // 숫자 컬럼 가독성 우선: 이름 기본 폭을 확보하고 계좌·투네 열을 넓혀 백만원대 겹침을 줄인다(URL nameCh·bankCh·toonCh 로 조정 가능).
+  const nameCh = Math.max(4, Math.min(40, parseInt(sp.get("nameCh") || (compact ? "7" : (isVertical ? "11" : "7")), 10)));
   const nameGrow = (sp.get("nameGrow") || "true").toLowerCase() === "true";
   const currencyFull = (sp.get("currencyFull") || "false").toLowerCase() === "true";
   const nameMaxCh = Math.max(nameCh, Math.min(80, parseInt(sp.get("nameMaxCh") || String(nameCh + 8), 10)));
@@ -1787,16 +1786,16 @@ function OverlayInner() {
     return "short";
   }, [rawSp, ready, s?.donorsFormat, activePreset]);
   const fullAmountMode = donorsFormat === "full" || currencyFull;
-  // 기본 열 폭이 너무 작으면 4자리 이상 숫자에서 스트로크 텍스트가 인접 열과 겹치므로 기본/상한을 확장한다.
-  const defBankCh = (sp.get("bankCh") && parseInt(sp.get("bankCh")!, 10)) || (fullAmountMode ? (compact ? 11 : 13) : (compact ? 10 : 11));
-  const defToonCh = (sp.get("toonCh") && parseInt(sp.get("toonCh")!, 10)) || (fullAmountMode ? (compact ? 11 : 13) : (compact ? 10 : 11));
-  const defTotalCh = (sp.get("totalCh") && parseInt(sp.get("totalCh")!, 10)) || (fullAmountMode ? (compact ? 10 : 12) : (compact ? 6 : 7));
+  // 기본 열 폭: 백만원(2,000,000=9자) + 아웃라인 여유. URL bankCh·toonCh 로 조정 가능.
+  const defBankCh = (sp.get("bankCh") && parseInt(sp.get("bankCh")!, 10)) || (fullAmountMode ? (compact ? 12 : 14) : (compact ? 10 : 11));
+  const defToonCh = (sp.get("toonCh") && parseInt(sp.get("toonCh")!, 10)) || (fullAmountMode ? (compact ? 12 : 14) : (compact ? 10 : 11));
+  const defTotalCh = (sp.get("totalCh") && parseInt(sp.get("totalCh")!, 10)) || (fullAmountMode ? (compact ? 11 : 13) : (compact ? 6 : 7));
   const contributionChParam = externalHost ? rawSp.get("contributionCh") : sp.get("contributionCh");
   const defContributionCh =
     (contributionChParam && parseInt(contributionChParam, 10)) || (fullAmountMode ? (compact ? 10 : 11) : (compact ? 10 : 11));
-  const bankChBase = Math.max(8, Math.min(20, defBankCh));
-  const toonChBase = Math.max(8, Math.min(20, defToonCh));
-  const totalChBase = Math.max(6, Math.min(18, defTotalCh));
+  const bankChBase = Math.max(8, Math.min(24, defBankCh));
+  const toonChBase = Math.max(8, Math.min(24, defToonCh));
+  const totalChBase = Math.max(6, Math.min(22, defTotalCh));
   /** 순위 열: 헤더「순위」·「#12」 등이 잘리지 않도록 `ch` 하한 확보(URL `rankCh`) */
   const rankColCh = Math.max(6, Math.min(12, parseInt(sp.get("rankCh") || "6", 10)));
   /** 기여도 열: 우측 이격은 줄이되, 방송 합성 환경에서 마지막 열 잘림이 나지 않게 최소폭을 보장 */
@@ -2394,7 +2393,10 @@ function OverlayInner() {
       amounts.push(sumAccount, sumToon, rounded, sumContribution);
     }
     const maxLen = maxOverlayAmountDisplayLength(amounts, donorsFormat, currencyLocale);
-    return maxLen > 0 ? maxLen + 1 : 0;
+    /** 아웃라인·백만원대에서 이름 열과 붙지 않게 ch 여유 */
+    const outlinePad = tableTextOutlineWidthPx > 1 ? 2 : 1;
+    const millionPad = amounts.some((a) => a >= 1_000_000) ? 2 : 0;
+    return maxLen > 0 ? maxLen + 1 + outlinePad + millionPad : 0;
   }, [
     showMembers,
     members,
@@ -2406,11 +2408,12 @@ function OverlayInner() {
     rounded,
     sumContribution,
     getContributionValueForMember,
+    tableTextOutlineWidthPx,
   ]);
-  const bankCh = Math.max(8, Math.min(20, Math.max(bankChBase, amountDisplayMinCh)));
-  const toonCh = Math.max(8, Math.min(20, Math.max(toonChBase, amountDisplayMinCh)));
-  const totalCh = Math.max(6, Math.min(18, Math.max(totalChBase, amountDisplayMinCh)));
-  const contributionCh = Math.max(11, Math.min(20, Math.max(contributionChBase, amountDisplayMinCh)));
+  const bankCh = Math.max(8, Math.min(24, Math.max(bankChBase, amountDisplayMinCh)));
+  const toonCh = Math.max(8, Math.min(24, Math.max(toonChBase, amountDisplayMinCh)));
+  const totalCh = Math.max(6, Math.min(22, Math.max(totalChBase, amountDisplayMinCh)));
+  const contributionCh = Math.max(11, Math.min(24, Math.max(contributionChBase, amountDisplayMinCh)));
   useEffect(() => {
     const el = tableBoxRef.current;
     if (!el) return;
@@ -2992,7 +2995,17 @@ function OverlayInner() {
         .overlay-root td.overlay-col-total,
         .overlay-root td.overlay-col-contribution {
           white-space: nowrap !important;
-          overflow: visible !important;
+          overflow: hidden !important;
+          vertical-align: middle;
+        }
+        .overlay-root .overlay-account-cell .overlay-num-cell-inner,
+        .overlay-root .overlay-toon-cell .overlay-num-cell-inner,
+        .overlay-root td.overlay-col-total .overlay-num-cell-inner,
+        .overlay-root td.overlay-col-contribution .overlay-num-cell-inner {
+          display: inline-block;
+          max-width: 100%;
+          overflow: hidden;
+          text-overflow: clip;
           vertical-align: middle;
         }
       ` }} />
@@ -3201,6 +3214,17 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td.overlay-col-name,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-name {
           padding-left: 0.95em !important;
+          padding-right: 1.2em !important;
+        }
+        /* 이름 ↔ 계좌/투네: 백만원대·두꺼운 아웃라인에서도 붙지 않게 금액 열 좌측 여백 */
+        .overlay-root .overlay-elegant-table thead td.overlay-col-account,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-account,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-toon,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-toon,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-total,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-total {
+          padding-left: 0.95em !important;
+          padding-right: 0.55em !important;
         }
         /* 마지막 열(기여도): 너무 오른쪽으로 밀려 보이지 않게 투네/합계 열과 유사한 간격으로 조정 */
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution,

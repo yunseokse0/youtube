@@ -152,16 +152,17 @@ describe("toonation parse-event", () => {
     expect(evt?.target).toBe("toon");
   });
 
-  it("stable fallback id when payload has no donation id", () => {
+  it("unique fallback id for same payload without donation id (연속 동일 금액 허용)", () => {
     const payload = { nickname: "배지은", amount: 20000, comment: "" };
     const a = parseToonationDonationPayload(payload);
     const b = parseToonationDonationPayload(payload);
     expect(a?.externalId).toBeTruthy();
-    expect(a?.externalId).toBe(b?.externalId);
-    expect(a?.id).toBe(b?.id);
+    expect(b?.externalId).toBeTruthy();
+    expect(a?.externalId).not.toBe(b?.externalId);
+    expect(a?.id).not.toBe(b?.id);
   });
 
-  it("stable id when payload includes timestamp but no reliable id", () => {
+  it("unique id even when payload includes timestamp but no reliable id", () => {
     const payload = {
       nickname: "배지은",
       amount: 5000,
@@ -170,8 +171,8 @@ describe("toonation parse-event", () => {
     };
     const a = parseToonationDonationPayload(payload);
     const b = parseToonationDonationPayload(payload);
-    expect(a?.externalId).toBe(b?.externalId);
-    expect(a?.id).toBe(b?.id);
+    expect(a?.externalId).not.toBe(b?.externalId);
+    expect(a?.id).not.toBe(b?.id);
   });
 
   it("different payloads without id get different fallback ids", () => {
@@ -211,7 +212,7 @@ describe("toonation parse-event", () => {
     expect(a).not.toBe(b);
   });
 
-  it("stable id for toonation admin test donations (reused id / WS retry)", () => {
+  it("test donations with reused id still get unique external ids per parse", () => {
     const base = {
       id: "same-test-id",
       nickname: "테스트 계정",
@@ -223,9 +224,51 @@ describe("toonation parse-event", () => {
     const b = parseToonationDonationPayload(base);
     expect(a?.donorName).toBe("익명");
     expect(a?.target).toBe("account");
-    expect(a?.externalId).toBe(b?.externalId);
-    expect(a?.id).toBe(b?.id);
     expect(a?.externalId).toMatch(/^test-/);
+    expect(b?.externalId).toMatch(/^test-/);
+    expect(a?.externalId).not.toBe(b?.externalId);
+  });
+
+  it("identical amount+message parses to distinct events for consecutive apply", () => {
+    const payload = { nickname: "후원자", amount: 10000, comment: "계좌 익명 BT태호" };
+    const a = parseToonationDonationPayload(payload);
+    const b = parseToonationDonationPayload(payload);
+    expect(a?.amount).toBe(10000);
+    expect(b?.amount).toBe(10000);
+    expect(a?.id).not.toBe(b?.id);
+  });
+
+  it("account format with reused toonation id still gets unique ids (20연속 동일메시지)", () => {
+    const ids = new Set<string>();
+    for (let i = 0; i < 20; i += 1) {
+      const evt = parseToonationDonationPayload({
+        id: "reused-widget-id",
+        nickname: "결제자",
+        amount: 10000,
+        comment: "계좌 익명 BT태호",
+      });
+      expect(evt?.target).toBe("account");
+      expect(evt?.externalId).toBeTruthy();
+      ids.add(String(evt?.externalId));
+    }
+    expect(ids.size).toBe(20);
+  });
+
+  it("non-account with reliable id keeps stable external id", () => {
+    const a = parseToonationDonationPayload({
+      id: "donation-real-1",
+      nickname: "배지은",
+      amount: 5000,
+      comment: "피자",
+    });
+    const b = parseToonationDonationPayload({
+      id: "donation-real-1",
+      nickname: "배지은",
+      amount: 5000,
+      comment: "피자",
+    });
+    expect(a?.externalId).toBe("donation-real-1");
+    expect(b?.externalId).toBe("donation-real-1");
   });
 
   it("createUniqueToonationFallbackId never collides in a tight loop", () => {

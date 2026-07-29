@@ -41,7 +41,7 @@ describe("member sync helpers", () => {
     expect(membersDifferByIds(one.members, defaultState().members)).toBe(true);
   });
 
-  it("placeholder members with zero amounts are not a meaningful roster", () => {
+  it("placeholder members are never a meaningful roster (even with money/donors)", () => {
     const placeholders: AppState = {
       ...defaultState(),
       updatedAt: Date.now(),
@@ -49,15 +49,14 @@ describe("member sync helpers", () => {
     };
     expect(hasMeaningfulMemberRoster(placeholders)).toBe(false);
     expect(hasMeaningfulBroadcastData(placeholders)).toBe(false);
-  });
 
-  it("placeholder names with donation totals count as meaningful roster", () => {
     const withMoney: AppState = {
       ...defaultState(),
       members: [{ id: "m1", name: "멤버1", account: 0, toon: 50000, contribution: 0 }],
+      donors: [{ id: "d1", name: "x", amount: 1000, memberId: "m1", at: Date.now(), target: "toon" }],
     };
     expect(isDefaultPlaceholderMemberList(withMoney.members)).toBe(true);
-    expect(hasMeaningfulMemberRoster(withMoney)).toBe(true);
+    expect(hasMeaningfulMemberRoster(withMoney)).toBe(false);
   });
 
   it("buildDefaultMembersCount(1) is not default-like for 3-slot default", () => {

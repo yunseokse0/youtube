@@ -12,9 +12,11 @@ import {
 } from "./listener-config-store";
 import {
   isAccountFormatToken,
+  isReliableToonationExternalId,
   isToonationYoutubeSuperChatWsMessage,
   parseToonationWebSocketMessage,
 } from "./parse-event";
+import { isWeakToonationDonorId } from "../apply-donation-state";
 import { normalizeToonationAlertboxUrl } from "./link-key";
 import { resolveToonationWsPayload } from "./resolve-payload";
 
@@ -54,6 +56,8 @@ type ActiveConnection = {
 const active = new Map<string, ActiveConnection>();
 
 const RAW_WS_DEDUPE_MS = 15_000;
+/** 계좌 포맷은 동일 메시지 연속 후원이 많아, 진짜 WS 재전송(수백 ms)만 막도록 짧게 */
+const RAW_WS_ACCOUNT_DEDUPE_MS = 1_200;
 const recentRawWsByUser = new Map<string, Map<string, number>>();
 const recentEventByUser = new Map<string, Map<string, number>>();
 const EVENT_DEDUPE_MS = 60_000;
@@ -102,6 +106,20 @@ function donationEventDedupeKey(event: DonationEvent): string {
 }
 
 function shouldSkipDuplicateEvent(userId: string, event: DonationEvent): boolean {
+  const ext = String(event.externalId || "").trim();
+  const eventId = String(event.id || "").trim();
+  /**
+   * fp-/test- 등 fallback id 는 건마다 달라지거나 동일 금액 연속일 수 있음.
+   * 재전송 차단은 RAW_WS_DEDUPE 에 맡기고, 여기선 투네 실 id 만 60초 무시.
+   */
+  if (
+    !ext ||
+    !isReliableToonationExternalId(ext) ||
+    isWeakToonationDonorId(eventId) ||
+    isWeakToonationDonorId(`toonation:${ext}`)
+  ) {
+    return false;
+  }
   const key = donationEventDedupeKey(event);
   if (!key) return false;
   const now = Date.now();
@@ -131,7 +149,7 @@ function hashRawWsMessage(raw: string): string {
 }
 
 /** 동일 WS 원문 재전송만 짧게 무시 — 연속 동일 후원(다른 id·원문)은 통과 */
-function shouldSkipDuplicateRawWs(userId: string, raw: string): boolean {
+function shouldSkipDuplicateRawWs(userId: string, raw: string, windowMs = RAW_WS_DEDUPE_MS): boolean {
   const hash = hashRawWsMessage(raw);
   const now = Date.now();
   let map = recentRawWsByUser.get(userId);
@@ -140,11 +158,12 @@ function shouldSkipDuplicateRawWs(userId: string, raw: string): boolean {
     recentRawWsByUser.set(userId, map);
   }
   const prev = map.get(hash);
-  if (typeof prev === "number" && now - prev < RAW_WS_DEDUPE_MS) return true;
+  if (typeof prev === "number" && now - prev < windowMs) return true;
   map.set(hash, now);
+  const pruneAfter = Math.max(windowMs, RAW_WS_DEDUPE_MS);
   if (map.size > 200) {
     for (const [key, at] of map) {
-      if (now - at > RAW_WS_DEDUPE_MS) map.delete(key);
+      if (now - at > pruneAfter) map.delete(key);
     }
   }
   return false;
@@ -185,8 +204,29 @@ function scheduleReconnect(conn: ActiveConnection) {
 }
 
 async function onDonation(userId: string, raw: string, ownerName?: string): Promise<void> {
-  if (shouldSkipDuplicateRawWs(userId, raw)) {
-    log.debug("동일 WS 원문 재전송 무시", { userId });
+  let accountFormatHint = false;
+  try {
+    const envelope = JSON.parse(raw) as Record<string, unknown>;
+    const payload = (envelope as { content?: unknown }).content ?? envelope;
+    const msg = String(
+      (payload as { message?: unknown; comment?: unknown; text?: unknown })?.message ||
+        (payload as { comment?: unknown })?.comment ||
+        (payload as { text?: unknown })?.text ||
+        ""
+    );
+    const firstTok = msg.trim().split(/\s+/).filter(Boolean)[0] || "";
+    accountFormatHint = isAccountFormatToken(firstTok);
+  } catch {
+    /* parseToonationWebSocketMessage 가 처리 */
+  }
+  if (
+    shouldSkipDuplicateRawWs(
+      userId,
+      raw,
+      accountFormatHint ? RAW_WS_ACCOUNT_DEDUPE_MS : RAW_WS_DEDUPE_MS
+    )
+  ) {
+    log.debug("동일 WS 원문 재전송 무시", { userId, accountFormat: accountFormatHint });
     return;
   }
   try {

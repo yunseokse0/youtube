@@ -125,7 +125,7 @@ function sigTeamBoxLeadingClasses(tint: "pink" | "sky" | "amber", leading: boole
   return "border-amber-300/85 bg-amber-950/85 shadow-[0_0_20px_rgba(251,191,36,0.5)] ring-2 ring-amber-400/50";
 }
 
-/** 타이틀·타이머 — 멤버 행 가운데(inline) 또는 단독 스택 */
+/** 타이틀·타이머 — 멤버 행 위(stack) 또는 2팀 사이(inline) */
 function SigMatchTitleTimerBlock({
   title,
   timerVisible,
@@ -171,15 +171,37 @@ function SigMatchTitleTimerBlock({
       </h1>
       {timerVisible ? (
         <div
-          className={`flex w-fit max-w-full flex-col items-center gap-0.5 rounded-lg px-2 py-0.5 sm:px-3 ${
-            timerPaused ? "bg-neutral-700/90" : "bg-red-600/90 shadow-[0_0_16px_rgba(220,38,38,0.55)]"
+          className={`flex w-fit max-w-full flex-col items-center rounded-xl ${
+            inline
+              ? compact
+                ? "gap-0.5 px-2.5 py-1"
+                : "gap-1 px-3 py-1.5 sm:px-4"
+              : compact
+                ? "gap-0.5 px-3 py-1.5"
+                : "gap-1 px-4 py-2 sm:px-5 sm:py-2.5"
+          } ${
+            timerPaused
+              ? "bg-neutral-700/90"
+              : "bg-red-600/90 shadow-[0_0_22px_rgba(220,38,38,0.65)]"
           }`}
         >
-          <span className="text-[8px] font-bold uppercase tracking-[0.18em] text-red-100/90">
+          <span
+            className={`font-bold uppercase tracking-[0.18em] text-red-100/90 ${
+              compact ? "text-[9px]" : "text-[10px] sm:text-xs"
+            }`}
+          >
             시그 대전 타이머
           </span>
           <span
-            className={`font-black leading-none tabular-nums text-white ${compact ? "text-lg sm:text-xl" : "text-xl sm:text-2xl"}`}
+            className={`font-black leading-none tabular-nums text-white ${
+              inline
+                ? compact
+                  ? "text-3xl sm:text-4xl"
+                  : "text-4xl sm:text-5xl"
+                : compact
+                  ? "text-4xl sm:text-5xl"
+                  : "text-5xl sm:text-6xl"
+            }`}
             style={timerTextStyle}
             suppressHydrationWarning
           >
@@ -1063,20 +1085,18 @@ export default function SigMatchDuelOverlay({
           ) : null}
           {tripleBar && duelData.mode === "triple" ? (
             <div className={`flex flex-col ${compact ? "gap-2 pt-0" : "gap-3 pt-1"}`}>
-              <div className="relative w-full">
-                <div className="pointer-events-none absolute bottom-0 left-1/2 z-10 -translate-x-1/2">
-                  <SigMatchTitleTimerBlock
-                    title={title}
-                    timerVisible={timerVisible}
-                    timerPaused={timerPaused}
-                    timerText={timerText}
-                    compact={compact}
-                    titleStyle={sigMatchTitleStyle}
-                    timerTextStyle={timerTextOutlineStyle}
-                    layout="inline"
-                  />
-                </div>
-                <div className="flex w-full items-end">
+              {/** 타이머를 멤버 행 위에 두어 가운데 멤버(멤버2)를 가리지 않음 */}
+              <SigMatchTitleTimerBlock
+                title={title}
+                timerVisible={timerVisible}
+                timerPaused={timerPaused}
+                timerText={timerText}
+                compact={compact}
+                titleStyle={sigMatchTitleStyle}
+                timerTextStyle={timerTextOutlineStyle}
+                layout="stack"
+              />
+              <div className="flex w-full items-end">
                 {duelData.sides.map((side, i) => (
                   <div
                     key={`sig-triple-members-${i}-${side.ids.join("-") || "x"}`}
@@ -1105,7 +1125,6 @@ export default function SigMatchDuelOverlay({
                     />
                   </div>
                 ))}
-                </div>
               </div>
               <motion.div
                 className="relative shrink-0"

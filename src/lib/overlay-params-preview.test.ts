@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildCompactBroadcastOverlayParams,
   mergeOverlayPresetsPreferLocal,
+  mergePresetBroadcastVisualParams,
   presetToParams,
   stripAdminPreviewHotReloadParams,
   type OverlayPresetLike,
@@ -57,5 +59,35 @@ describe("admin preview hot-reload params", () => {
     expect(stripped.get("theme")).toBeNull();
     expect(stripped.get("showMembers")).toBe("true");
     expect(stripped.get("tableOnly")).toBe("true");
+  });
+
+  it("buildCompactBroadcastOverlayParams keeps only p/u/host/vertical", () => {
+    const q = buildCompactBroadcastOverlayParams({
+      presetId: "ov_1785324281876_3jj4",
+      userId: "bttaeho",
+      host: "prism",
+      vertical: false,
+    });
+    expect(q.toString()).toBe("p=ov_1785324281876_3jj4&u=bttaeho&host=prism");
+    expect([...q.keys()].sort()).toEqual(["host", "p", "u"]);
+  });
+
+  it("mergePresetBroadcastVisualParams skips style keys now loaded from preset", () => {
+    const preset: OverlayPresetLike = {
+      id: "ov_1",
+      theme: "excelRose",
+      membersTheme: "excelLive",
+      scale: "1.1",
+      memberSize: "24",
+      showMembers: true,
+      tableOnly: true,
+      accountHeaderLabel: "계좌",
+    };
+    const q = new URLSearchParams();
+    mergePresetBroadcastVisualParams(q, preset);
+    expect(q.get("theme")).toBeNull();
+    expect(q.get("scale")).toBeNull();
+    expect(q.get("memberSize")).toBeNull();
+    expect(q.get("accountHeaderLabel")).toBeNull();
   });
 });
