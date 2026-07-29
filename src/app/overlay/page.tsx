@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey } from "@/lib/state";
+import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulBroadcastData } from "@/lib/state";
 import { maxOverlayAmountDisplayLength } from "@/lib/overlay-amount-display";
 import {
   resolveGoalFontSizePx,
@@ -205,7 +205,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
         /** 관리자 미리보기 iframe: 로컬 스냅샷이 있으면 동일 탭 저장마다 GET /api/state 반복 생략 */
         if (shouldSuppressOverlaySseConnection()) {
           const peek = readLocalStateIfExists();
-          if (peek && (peek.updatedAt || 0) > 0) {
+          if (peek && (peek.updatedAt || 0) > 0 && hasMeaningfulBroadcastData(peek)) {
             syncingRef.current = false;
             return;
           }

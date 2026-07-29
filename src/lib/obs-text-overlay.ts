@@ -280,7 +280,7 @@ export function defaultObsTextOverlayConfig(): ObsTextOverlayConfig {
         id: "block-1",
         segments: [{ text: "방송 텍스트", color: DEFAULT_COLOR }],
         visible: true,
-        align: "center",
+        align: "left",
       },
     ],
     defaultFontSizePx: 48,
@@ -335,9 +335,9 @@ function normalizeBlock(raw: unknown, defaultColor: string, idx: number): ObsTex
     .map((s) => normalizeSegment(s, defaultColor))
     .filter((s): s is ObsTextSegment => !!s);
   if (segments.length === 0) return null;
-  const alignRaw = String(o.align ?? "center");
+  const alignRaw = String(o.align ?? "left");
   const align =
-    alignRaw === "left" || alignRaw === "right" || alignRaw === "center" ? alignRaw : "center";
+    alignRaw === "left" || alignRaw === "right" || alignRaw === "center" ? alignRaw : "left";
   return {
     id: String(o.id || `block-${idx + 1}`),
     segments,
@@ -807,7 +807,7 @@ function createDefaultObsTextBlock(text: string, defaultColor: string): ObsTextB
     id: createObsTextBlockId(),
     segments,
     visible: true,
-    align: "center",
+    align: "left",
     effect: "none",
     effectSpeed: 1,
   };

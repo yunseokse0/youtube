@@ -996,7 +996,7 @@ export default function ObsTextOverlayEditor({
                   정렬 (커서 줄)
                   <select
                     className="rounded bg-neutral-800 px-2 py-1"
-                    value={activeBlock.align ?? "center"}
+                    value={activeBlock.align ?? "left"}
                     onChange={(e) => {
                       const align = e.target.value as "left" | "center" | "right";
                       markLocalDirty();
