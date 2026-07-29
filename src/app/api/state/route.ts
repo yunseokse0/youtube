@@ -12,6 +12,8 @@ import { DEFAULT_SIG_INVENTORY } from "@/lib/constants";
 import {
   defaultState,
   hasExpandedSigInventory,
+  hasMeaningfulMemberRoster,
+  isDefaultPlaceholderMemberList,
   isShrunkToDefaultSigInventory,
   mergeDonorsForMultiTabSave,
   normalizeDonorsArray,
@@ -152,6 +154,14 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
   ) {
     next.members = base.members;
     logger.warn("members zero wipe blocked (stale client save)", { userId });
+  } else if (
+    Array.isArray(patch.members) &&
+    isDefaultPlaceholderMemberList(patch.members) &&
+    hasMeaningfulMemberRoster(base)
+  ) {
+    next.members = base.members;
+    next.memberPositions = base.memberPositions;
+    logger.warn("members placeholder wipe blocked (theme/preset save)", { userId });
   }
   if (!("memberPositions" in patch)) next.memberPositions = base.memberPositions;
   if (!("memberPositionMode" in patch)) next.memberPositionMode = base.memberPositionMode;

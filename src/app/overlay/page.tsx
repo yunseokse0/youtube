@@ -125,6 +125,23 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
     const age = Date.now() - ts;
     return age <= KEEP_EMPTY_GRACE_MS;
   };
+  const mergeKeepingStrongRoster = useCallback((incoming: AppState): AppState => {
+    const good = lastGoodRef.current;
+    if (
+      good &&
+      hasMeaningfulMemberRoster(good) &&
+      !hasMeaningfulMemberRoster(incoming)
+    ) {
+      return {
+        ...incoming,
+        members: good.members,
+        memberPositions: good.memberPositions,
+        memberPositionMode: good.memberPositionMode,
+        rankPositionLabels: good.rankPositionLabels,
+      };
+    }
+    return incoming;
+  }, []);
   const onSSE = useCallback((incoming: any) => {
     if (!incoming) return;
     if (incoming.type === "state_updated") {
@@ -141,7 +158,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
     if (shouldDiscardEmpty(incoming as AppState)) return;
     if (!Array.isArray((incoming as AppState).members)) return;
     const ts = (incoming as any).updatedAt || Date.now();
-    const next = incoming as AppState;
+    const next = mergeKeepingStrongRoster(incoming as AppState);
     const nextSig = buildOverlaySyncSignature(next);
     if (nextSig === lastVisualSigRef.current) {
       lastUpdatedRef.current = Math.max(lastUpdatedRef.current, ts);
@@ -154,7 +171,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       lastGoodRef.current = next;
       saveLastGood(next);
     }
-  }, [saveLastGood]);
+  }, [saveLastGood, mergeKeepingStrongRoster]);
   const _sse = useSSEConnection(onSSE);
   const readLocalStateIfExists = useCallback((): AppState | null => {
     if (typeof window === "undefined") return null;
@@ -244,17 +261,19 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
           !shouldDiscardEmpty(data) &&
           (remoteRev > overlaySinceRef.current || (needRosterHydration && remoteStrong));
         if (shouldApplyRemote && data) {
-          const nextSig = buildOverlaySyncSignature(data);
-          lastUpdatedRef.current = data.updatedAt || 0;
-          lastDonorRevRef.current = readDonorRankingsRevision(data);
-          if (remoteStrong) hasStrongRosterRef.current = true;
+          const toApply = mergeKeepingStrongRoster(data);
+          const appliedStrong = hasMeaningfulMemberRoster(toApply);
+          const nextSig = buildOverlaySyncSignature(toApply);
+          lastUpdatedRef.current = toApply.updatedAt || 0;
+          lastDonorRevRef.current = readDonorRankingsRevision(toApply);
+          if (appliedStrong) hasStrongRosterRef.current = true;
           if (nextSig !== lastVisualSigRef.current) {
             lastVisualSigRef.current = nextSig;
-            setState(data);
+            setState(toApply);
           }
-          if (isViable(data) && remoteStrong) {
-            lastGoodRef.current = data;
-            saveLastGood(data);
+          if (isViable(toApply) && appliedStrong) {
+            lastGoodRef.current = toApply;
+            saveLastGood(toApply);
           }
         } else if (!localNow && !data) {
           const fallback = lastGoodRef.current || loadLastGood() || defaultState();
@@ -332,7 +351,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       window.removeEventListener("storage", onStorage);
       unsubscribeLocal();
     };
-  }, [userId, loadLastGood, readLocalStateIfExists, saveLastGood]);
+  }, [userId, loadLastGood, readLocalStateIfExists, saveLastGood, mergeKeepingStrongRoster]);
 
   return { state, ready: state !== null };
 }
@@ -2394,7 +2413,7 @@ function OverlayInner() {
     }
     const maxLen = maxOverlayAmountDisplayLength(amounts, donorsFormat, currencyLocale);
     /** 아웃라인·백만원대에서 이름 열과 붙지 않게 ch 여유 */
-    const outlinePad = tableTextOutlineWidthPx > 1 ? 2 : 1;
+    const outlinePad = (tableTextOutlineWidthPx ?? 0) > 1 ? 2 : 1;
     const millionPad = amounts.some((a) => a >= 1_000_000) ? 2 : 0;
     return maxLen > 0 ? maxLen + 1 + outlinePad + millionPad : 0;
   }, [

@@ -1371,6 +1371,23 @@ async function runServerSaveQueue(): Promise<void> {
   }
 }
 
+/** placeholder 멤버를 API에 실어내면 Redis 실멤버를 덮을 수 있어 필드 자체를 생략한다. */
+function omitPlaceholderMembersFromApiPayload(
+  payload: Partial<AppState> & { donorsAuthoritative?: boolean }
+): Partial<AppState> & { donorsAuthoritative?: boolean } {
+  if (!isDefaultPlaceholderMemberList(payload.members as Member[] | undefined)) {
+    return payload;
+  }
+  const {
+    members: _m,
+    memberPositions: _mp,
+    memberPositionMode: _mpm,
+    rankPositionLabels: _rpl,
+    ...rest
+  } = payload;
+  return rest;
+}
+
 /** 관리자 /api/state 저장 시 — 스핀 결과·historyLogs는 서버 전용(POST 생략으로 대역폭 절감) */
 function appStatePayloadForApi(
   next: AppState,
@@ -1389,7 +1406,7 @@ function appStatePayloadForApi(
   };
   const donors = Array.isArray(next.donors) ? next.donors : rest.donors;
   const donorRankingsUpdatedAt = next.donorRankingsUpdatedAt;
-  const base: Partial<AppState> = {
+  const base: Partial<AppState> & { donorsAuthoritative?: boolean } = {
     ...rest,
     donors,
     ...(typeof donorRankingsUpdatedAt === "number" && Number.isFinite(donorRankingsUpdatedAt)
@@ -1397,9 +1414,11 @@ function appStatePayloadForApi(
       : {}),
   };
   if (!rouletteState) {
-    return options?.donorsAuthoritative ? { ...base, donorsAuthoritative: true } : base;
+    return omitPlaceholderMembersFromApiPayload(
+      options?.donorsAuthoritative ? { ...base, donorsAuthoritative: true } : base
+    );
   }
-  return {
+  return omitPlaceholderMembersFromApiPayload({
     ...base,
     ...(options?.donorsAuthoritative ? { donorsAuthoritative: true } : {}),
     rouletteState: {
@@ -1409,7 +1428,22 @@ function appStatePayloadForApi(
       sigResultScalePct: rouletteState.sigResultScalePct,
       overlayReloadNonce: rouletteState.overlayReloadNonce,
     },
-  } as Partial<AppState>;
+  } as Partial<AppState>);
+}
+
+/** LS에 실멤버가 있을 때 placeholder 로 덮지 않음 */
+function preserveLocalMeaningfulRoster(next: AppState, userId?: string | null): AppState {
+  if (typeof window === "undefined") return next;
+  if (hasMeaningfulMemberRoster(next)) return next;
+  const existing = loadState(userId);
+  if (!existing || !hasMeaningfulMemberRoster(existing)) return next;
+  return {
+    ...next,
+    members: existing.members,
+    memberPositions: existing.memberPositions,
+    memberPositionMode: existing.memberPositionMode,
+    rankPositionLabels: existing.rankPositionLabels,
+  };
 }
 
 function normalizeStateForPersistence(state: AppState): AppState {
@@ -1430,7 +1464,10 @@ function normalizeStateForPersistence(state: AppState): AppState {
 export function saveState(state: AppState, userId?: string | null) {
   if (typeof window === "undefined") return;
   try {
-    const next = normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() }));
+    const next = preserveLocalMeaningfulRoster(
+      normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() })),
+      userId
+    );
     const json = JSON.stringify(next);
     /** 오버레이 iframe이 서버 응답 전에 읽도록 로컬은 즉시 기록 */
     try {
@@ -1457,7 +1494,10 @@ export async function saveStateAsync(
   options?: SaveStateAsyncOptions
 ): Promise<SaveStateAsyncResult> {
   if (typeof window === "undefined") return { ok: false };
-  const next = normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() }));
+  const next = preserveLocalMeaningfulRoster(
+    normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() })),
+    userId
+  );
   const json = JSON.stringify(next);
   /** 테마 변경 직후 미리보기가 멤버를 잃지 않게 서버 대기 전에 LS 반영 */
   try {
@@ -1476,6 +1516,64 @@ export async function saveStateAsync(
       } catch {}
     }
     return result;
+  } catch {
+    return { ok: false };
+  }
+}
+
+export type SaveOverlayPresetsPatchOptions = {
+  overlaySettingsPatch?: Record<string, unknown>;
+  /** React 등 최신 상태 — LS보다 실멤버면 우선 */
+  foundation?: AppState | null;
+};
+
+/**
+ * 테마·시각 프리셋만 저장 — members/donors 를 보내지 않아 테마 변경 시 멤버 유실을 막는다.
+ */
+export async function saveOverlayPresetsPatchAsync(
+  overlayPresets: unknown[],
+  userId?: string | null,
+  options?: SaveOverlayPresetsPatchOptions | Record<string, unknown>
+): Promise<SaveStateAsyncResult> {
+  if (typeof window === "undefined") return { ok: false };
+  const opts: SaveOverlayPresetsPatchOptions =
+    options && typeof options === "object" && ("foundation" in options || "overlaySettingsPatch" in options)
+      ? (options as SaveOverlayPresetsPatchOptions)
+      : { overlaySettingsPatch: options as Record<string, unknown> | undefined };
+  const now = Date.now();
+  const local = loadState(userId) || defaultState();
+  const foundation = opts.foundation;
+  const base =
+    foundation && hasMeaningfulMemberRoster(foundation)
+      ? foundation
+      : local && hasMeaningfulMemberRoster(local)
+        ? local
+        : foundation || local;
+  const nextSettings = {
+    ...((base.overlaySettings && typeof base.overlaySettings === "object"
+      ? base.overlaySettings
+      : {}) as Record<string, unknown>),
+    ...(opts.overlaySettingsPatch || {}),
+  };
+  const mergedLocal: AppState = normalizeStateForPersistence(
+    syncBattleStateWithMembers({
+      ...base,
+      overlayPresets: overlayPresets as AppState["overlayPresets"],
+      overlaySettings: nextSettings as AppState["overlaySettings"],
+      updatedAt: now,
+    })
+  );
+  try {
+    window.localStorage.setItem(storageKey(userId), JSON.stringify(mergedLocal));
+  } catch {}
+  notifyBroadcastStateLocalUpdated(userId, mergedLocal.updatedAt);
+  const patch = {
+    updatedAt: now,
+    overlayPresets: normalizeOverlayPresetsMedia(mergedLocal.overlayPresets),
+    overlaySettings: mergedLocal.overlaySettings,
+  };
+  try {
+    return await enqueueServerSave(JSON.stringify(patch), userId, mergedLocal);
   } catch {
     return { ok: false };
   }

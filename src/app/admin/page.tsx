@@ -15,6 +15,7 @@ import {
   loadState,
   saveState,
   saveStateAsync,
+  saveOverlayPresetsPatchAsync,
   loadStateFromApi,
   saveMissionsBackup,
   loadMissionsBackup,
@@ -1446,6 +1447,32 @@ export default function AdminPage() {
       return p;
     });
 
+  const persistOverlayPresetsOnly = useCallback(
+    (nextPresets: OverlayPreset[], foundation: AppState, settingsPatch?: Record<string, unknown>) => {
+      const now = Date.now();
+      lastLocalPersistAtRef.current = now;
+      stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, foundation.updatedAt || now, now);
+      pendingUnsyncedRef.current = true;
+      saveOverlayPresetsPatchAsync(nextPresets, user?.id, {
+        foundation,
+        overlaySettingsPatch: settingsPatch,
+      }).then((r) => {
+        if (r.ok) {
+          if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
+            stateUpdatedAtRef.current = r.serverUpdatedAt;
+            lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
+          }
+          pendingUnsyncedRef.current = false;
+          setSyncStatus(r.storageFallback ? "error" : "synced");
+        } else {
+          const offline = typeof navigator !== "undefined" && !navigator.onLine;
+          setSyncStatus(offline ? "local" : "error");
+        }
+      });
+    },
+    [user?.id]
+  );
+
   const savePresets = (next: OverlayPreset[]) => {
     const normalized = normalizeOverlayPresetLabels(next);
     setPresets(normalized);
@@ -1454,11 +1481,9 @@ export default function AdminPage() {
       notifyOverlayPresetsLocalUpdated();
     } catch {}
     setState((prev) => {
-      const merged: AppState = { ...prev, overlayPresets: normalized };
-      /** 테마만 바꿀 때 멤버1·2·3 placeholder 를 Redis/LS에 쓰지 않음 */
-      if (hasMeaningfulMemberRoster(prev)) {
-        persistState(merged);
-      }
+      const merged: AppState = { ...prev, overlayPresets: normalized, updatedAt: Date.now() };
+      /** 테마·프리셋만 PATCH — members 미포함으로 멤버 유실 방지 */
+      persistOverlayPresetsOnly(normalized, merged);
       return merged;
     });
   };
@@ -1522,15 +1547,15 @@ export default function AdminPage() {
       notifyOverlayPresetsLocalUpdated();
     } catch {}
     setState((prev: AppState) => {
+      const settingsPatch = { currentPresetId: id };
       const merged: AppState = {
         ...prev,
         overlayPresets: nextPresets,
-        overlaySettings: { ...(prev.overlaySettings || {}), currentPresetId: id },
+        overlaySettings: { ...(prev.overlaySettings || {}), ...settingsPatch },
+        updatedAt: Date.now(),
       };
-      /** placeholder 멤버로 전체 상태를 저장하면 미리보기·OBS가 멤버1·2·3으로 고착됨 */
-      if (hasMeaningfulMemberRoster(prev)) {
-        persistState(merged);
-      }
+      /** 테마 변경은 프리셋만 저장 — 전체 persist 시 placeholder 멤버로 Redis/LS가 덮일 수 있음 */
+      persistOverlayPresetsOnly(nextPresets, merged, settingsPatch);
       return merged;
     });
     setPresetRev((r) => r + 1);
