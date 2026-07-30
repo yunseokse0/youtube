@@ -14,6 +14,7 @@ import {
   resolveTableTextOutlineColor,
   resolveTableTextOutlineWidthPx,
   resolveTableFontWeight,
+  resolveTableFontFamilyId,
   resolveLivePresetStyleParam,
   presetToParams,
   isOverlayBroadcastHost,
@@ -21,6 +22,7 @@ import {
   mergeOverlayPresetsPreferLocal,
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
+import { resolveTableFontFamilyCss } from "@/lib/table-font-style";
 import { getEffectiveRemainingTime } from "@/lib/timer-utils";
 import { useFlip } from "@/lib/flip";
 import MissionBoard from "@/components/MissionBoard";
@@ -1946,6 +1948,8 @@ function OverlayInner() {
   const tableTextOutlineWidthPx = resolveTableTextOutlineWidthPx(rawSp, effectivePreset, { ready });
   const tableFontWeight = resolveTableFontWeight(rawSp, effectivePreset, { ready });
   const tableHeaderFontWeight = Math.min(900, tableFontWeight + 100);
+  const tableFontFamilyId = resolveTableFontFamilyId(rawSp, effectivePreset, { ready });
+  const tableFontFamilyCss = resolveTableFontFamilyCss(tableFontFamilyId);
   const donationListsCfg = normalizeDonationListsOverlayConfig(s?.donationListsOverlayConfig);
   const tableBgGifUrl = (
     (sp.get("tableBgGifUrl") || "").trim() ||
@@ -3188,6 +3192,20 @@ function OverlayInner() {
           backdrop-filter: none;
           -webkit-backdrop-filter: none;
           ${externalHost ? "contain: layout style;" : ""}
+        }
+        ${
+          tableFontFamilyCss
+            ? `
+        .overlay-root .overlay-elegant-table,
+        .overlay-root .overlay-elegant-table thead td,
+        .overlay-root .overlay-elegant-table tbody td,
+        .overlay-root .overlay-elegant-table td span,
+        .overlay-root .overlay-elegant-table td strong,
+        .overlay-root .overlay-elegant-table td .overlay-cell-text-inner,
+        .overlay-root .overlay-elegant-table td .overlay-num-cell-inner {
+          font-family: ${tableFontFamilyCss} !important;
+        }`
+            : ""
         }
         .overlay-root .overlay-elegant-table thead td,
         .overlay-root .overlay-elegant-table tbody td {

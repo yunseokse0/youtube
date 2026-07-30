@@ -1,5 +1,6 @@
 import type { DonorRankingsTheme, SigItem } from "@/types";
 import { appendExcelRankTop3Params } from "@/lib/excel-rank-top3-style";
+import { normalizeTableFontFamily, type TableFontFamilyId } from "@/lib/table-font-style";
 
 /** 프리셋 → URL 쿼리 변환. OBS 등 별도 컨텍스트에서 API 없이 동작하도록 URL에 설정 포함 */
 export type OverlayPresetLike = {
@@ -131,6 +132,8 @@ export type OverlayPresetLike = {
   tableTextOutlineColor?: string;
   tableTextOutlineWidth?: string;
   tableFontWeight?: string;
+  /** 엑셀표 글꼴: auto | mono | sans | pretendard | gothic | serif */
+  tableFontFamily?: string;
   showCombinedColumn?: boolean;
   showContributionColumn?: boolean;
   showContributionSum?: boolean;
@@ -299,6 +302,8 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
     const fw = parseInt(tableWeightRaw, 10);
     if (Number.isFinite(fw)) q.set("tableFontWeight", String(Math.max(400, Math.min(900, fw))));
   }
+  const tableFontFamily = normalizeTableFontFamily((preset.tableFontFamily || "").trim());
+  if (tableFontFamily !== "auto") q.set("tableFontFamily", tableFontFamily);
   if (preset.showCombinedColumn === false) q.set("showCombinedColumn", "false");
   if (preset.showContributionColumn === false) q.set("showContributionColumn", "false");
   if (preset.showContributionSum === false) q.set("showContributionSum", "false");
@@ -345,6 +350,7 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "tableTextOutlineColor",
   "tableTextOutlineWidth",
   "tableFontWeight",
+  "tableFontFamily",
   "showCombinedColumn",
   "showContributionColumn",
   "showContributionSum",
@@ -461,6 +467,7 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "tableTextOutlineColor",
   "tableTextOutlineWidth",
   "tableFontWeight",
+  "tableFontFamily",
   "showCombinedColumn",
   "showContributionColumn",
   "showContributionSum",
@@ -615,6 +622,7 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "tableTextOutlineColor",
   "tableTextOutlineWidth",
   "tableFontWeight",
+  "tableFontFamily",
   "accountColor",
   "toonColor",
   "tableBgOpacity",
@@ -803,6 +811,21 @@ export function resolveTableFontWeight(
   const n = parseInt(raw, 10);
   if (!Number.isFinite(n)) return 800;
   return Math.max(400, Math.min(900, n));
+}
+
+/** 엑셀표 글꼴 패밀리 */
+export function resolveTableFontFamilyId(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): TableFontFamilyId {
+  const merged = resolveLivePresetStyleParam(
+    "tableFontFamily",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  return normalizeTableFontFamily(merged);
 }
 
 /** 후원 목표 막대 글자색·폰트(px) — OBS URL·프리셋 공통 */

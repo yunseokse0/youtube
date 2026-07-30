@@ -101,6 +101,7 @@ import {
   sanitizeBroadcastOverlayUrl,
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
+import { TABLE_FONT_FAMILY_OPTIONS, clampTableMemberSizePx, normalizeTableFontFamily } from "@/lib/table-font-style";
 import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
 import { planSigBulkReupload, sigBulkFilesWithoutNameMatch } from "@/lib/sig-image-bulk";
 import { createSafeFilePreviewUrl, revokeSafeFilePreviewUrl } from "@/lib/safe-file-preview";
@@ -191,7 +192,7 @@ type OverlayPreset = {
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
-  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableBgColor?: string; tableLineColor?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableFontWeight?: string; host?: string;
+  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableBgColor?: string; tableLineColor?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
   rankTop3Mode?: string; rankTop3Effect?: string; rankLabelFormat?: string; rank1Bg?: string; rank2Bg?: string; rank3Bg?: string; rank1Mark?: string; rank2Mark?: string; rank3Mark?: string;
 };
 
@@ -701,6 +702,7 @@ export default function AdminPage() {
     tableBgGifBrightness: "100",
     tableBgColor: "",
     tableLineColor: "",
+    tableFontFamily: "",
     accountColor: "",
     toonColor: "",
     rankTop3Mode: "off",
@@ -1604,6 +1606,13 @@ export default function AdminPage() {
       mergedPatch.tableFontWeight = Number.isFinite(w)
         ? String(Math.max(400, Math.min(900, w)))
         : "";
+    }
+    if (patch.tableFontFamily !== undefined) {
+      const normalized = normalizeTableFontFamily(patch.tableFontFamily);
+      mergedPatch.tableFontFamily = normalized === "auto" ? "" : normalized;
+    }
+    if (patch.memberSize !== undefined) {
+      mergedPatch.memberSize = String(clampTableMemberSizePx(patch.memberSize, 24));
     }
     const nextPresets = normalizeOverlayPresetLabels(
       presets.map((p) => (p.id === id ? { ...p, ...mergedPatch } : p))
@@ -10392,6 +10401,18 @@ export default function AdminPage() {
                             </div>
                             {(p.showMembers || p.showTotal) && (
                               <div className="grid grid-cols-1 gap-2 border-t border-emerald-500/20 pt-2 sm:grid-cols-[120px_1fr_120px_1fr] sm:items-center">
+                                <label className="text-xs text-neutral-400">표 글꼴</label>
+                                <select
+                                  className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                  value={p.tableFontFamily || "auto"}
+                                  onChange={(e) => updatePreset(p.id, { tableFontFamily: e.target.value })}
+                                >
+                                  {TABLE_FONT_FAMILY_OPTIONS.map((opt) => (
+                                    <option key={opt.id} value={opt.id}>
+                                      {opt.label}
+                                    </option>
+                                  ))}
+                                </select>
                                 <label className="text-xs text-neutral-400">멤버 표 글자(px)</label>
                                 <input
                                   className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
@@ -10737,11 +10758,44 @@ export default function AdminPage() {
                                 />
                                 <span className="text-xs text-neutral-500">%</span>
                               </div>
-                              <label className="text-xs text-neutral-400">멤버 글자(px)</label>
-                              <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.memberSize} onChange={(e) => updatePreset(p.id, { memberSize: e.target.value })} />
+                              <label className="text-xs text-neutral-400">표 글꼴</label>
+                              <select
+                                className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                value={p.tableFontFamily || "auto"}
+                                onChange={(e) => updatePreset(p.id, { tableFontFamily: e.target.value })}
+                              >
+                                {TABLE_FONT_FAMILY_OPTIONS.map((opt) => (
+                                  <option key={opt.id} value={opt.id}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <label className="text-xs text-neutral-400">표 글자 크기(px)</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="range"
+                                  min={10}
+                                  max={80}
+                                  value={clampTableMemberSizePx(p.memberSize, 24)}
+                                  onChange={(e) =>
+                                    updatePreset(p.id, { memberSize: String(Number(e.target.value)) })
+                                  }
+                                  className="flex-1 accent-emerald-500"
+                                />
+                                <input
+                                  className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                                  inputMode="numeric"
+                                  value={p.memberSize}
+                                  onChange={(e) =>
+                                    updatePreset(p.id, {
+                                      memberSize: e.target.value.replace(/[^\d]/g, "").slice(0, 2),
+                                    })
+                                  }
+                                />
+                                <span className="text-xs text-neutral-500">px</span>
+                              </div>
                               <p className="text-[10px] text-neutral-500 col-span-full leading-snug">
-                                글꼴 종류는 고정(엑셀=모노) · 크기만 조절됩니다. OBS는 <strong className="text-neutral-400">URL 다시 복사</strong> 후 소스 새로고침.
-                                「자동 글자 크기」ON이면 px가 화면에 맞춰 줄어듭니다.
+                                글꼴·크기는 프리SET·OBS URL에 반영됩니다. 「자동 글자 크기」ON이면 화면에 맞춰 px가 줄어듭니다.
                               </p>
                               <label className="text-xs text-neutral-400">총합 글자(px)</label>
                               <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" value={p.totalSize} onChange={(e) => updatePreset(p.id, { totalSize: e.target.value })} />
