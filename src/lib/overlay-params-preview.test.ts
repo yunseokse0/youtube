@@ -27,9 +27,9 @@ describe("admin preview hot-reload params", () => {
     expect(stripped.get("membersTheme")).toBeNull();
     expect(stripped.get("scale")).toBeNull();
     expect(stripped.get("memberSize")).toBeNull();
-    expect(stripped.get("showMembers")).toBe("true");
+    expect(stripped.get("showMembers")).toBeNull();
+    expect(stripped.get("layout")).toBeNull();
     expect(stripped.get("tableOnly")).toBe("true");
-    expect(stripped.get("layout")).toBe("center-fixed");
   });
 
   it("prefers local preset theme over stale remote snapshot", () => {
@@ -57,7 +57,7 @@ describe("admin preview hot-reload params", () => {
     };
     const stripped = stripAdminPreviewHotReloadParams(presetToParams(preset));
     expect(stripped.get("theme")).toBeNull();
-    expect(stripped.get("showMembers")).toBe("true");
+    expect(stripped.get("showMembers")).toBeNull();
     expect(stripped.get("tableOnly")).toBe("true");
   });
 

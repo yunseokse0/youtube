@@ -9,6 +9,7 @@ import {
   resolveGoalTextOutlineColor,
   resolveGoalTextOutlineWidthPx,
   resolveTableTextColor,
+  resolveTableBgColor,
   resolveTableTextOutlineColor,
   resolveTableTextOutlineWidthPx,
   resolveTableFontWeight,
@@ -87,8 +88,31 @@ function tryReadSnapshotFromStorage(snapKey: string | null): AppState | null {
 }
 
 function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
-  const [state, setState] = useState<AppState | null>(null);
-  const lastUpdatedRef = useRef(0);
+  const LAST_GOOD_KEY =
+    typeof window !== "undefined" ? `overlay-last-good-${userId || "default"}` : "overlay-last-good";
+  const [state, setState] = useState<AppState | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const local = loadState(userId);
+      if (local && Array.isArray(local.members) && local.members.length > 0 && hasMeaningfulMemberRoster(local)) {
+        return local;
+      }
+      const raw = window.localStorage.getItem(
+        typeof window !== "undefined" ? `overlay-last-good-${userId || "default"}` : "overlay-last-good"
+      );
+      if (raw) {
+        const obj = JSON.parse(raw);
+        if (obj && typeof obj === "object" && Array.isArray(obj.members) && obj.members.length > 0) {
+          return obj as AppState;
+        }
+      }
+      if (local && Array.isArray(local.members) && local.members.length > 0) return local;
+    } catch {}
+    return null;
+  });
+  const lastUpdatedRef = useRef(
+    state && hasMeaningfulMemberRoster(state) ? state.updatedAt || 0 : 0
+  );
   const lastDonorRevRef = useRef(0);
   const lastVisualSigRef = useRef("");
   const overlaySinceRef = useRef(0);
@@ -96,8 +120,9 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   const syncingRef = useRef(false);
   const syncOnceRef = useRef<() => Promise<void>>(async () => {});
   const scheduleStateUpdatedRef = useRef<(() => void) | null>(null);
-  const lastGoodRef = useRef<AppState | null>(null);
-  const LAST_GOOD_KEY = typeof window !== "undefined" ? `overlay-last-good-${userId || "default"}` : "overlay-last-good";
+  const lastGoodRef = useRef<AppState | null>(
+    state && hasMeaningfulMemberRoster(state) ? state : null
+  );
   const KEEP_EMPTY_GRACE_MS = 60000;
   const isViable = (s: AppState | null) => !!(s && Array.isArray(s.members) && s.members.length > 0);
   const loadLastGood = useCallback((): AppState | null => {
@@ -470,7 +495,14 @@ const TABLE_BG_RGB: Record<string, [number, number, number]> = {
 };
 const defaultTableBgRgb: [number, number, number] = [255, 255, 255];
 
-function resolveTableSheetRgb(theme: ThemeId): [number, number, number] {
+function resolveTableSheetRgb(
+  theme: ThemeId,
+  overrideHex?: string
+): [number, number, number] {
+  if (overrideHex) {
+    const parsed = parseHexRgb(overrideHex);
+    if (parsed) return parsed;
+  }
   return TABLE_BG_RGB[theme] ?? defaultTableBgRgb;
 }
 
@@ -865,7 +897,7 @@ const THEMES: Record<ThemeId, {
     label: "네온 엑셀",
     memberCls: "font-mono font-bold",
     nameCls: "text-white",
-    accountCls: "text-right text-slate-400 font-mono whitespace-nowrap",
+    accountCls: "text-center text-slate-400 font-mono whitespace-nowrap",
     toonCls: "text-right text-slate-400 font-mono whitespace-nowrap",
     totalCls: "font-mono font-black text-cyan-300 tabular-nums whitespace-nowrap",
     totalWrapCls: "bg-cyan-900/30 px-1 py-1 border-t-2 border-cyan-500/50",
@@ -1828,6 +1860,8 @@ function OverlayInner() {
   const accountColor = sp.get("accountColor") || undefined;
   const toonColor = sp.get("toonColor") || undefined;
   const tableTextColorRaw = resolveTableTextColor(rawSp, effectivePreset, { ready });
+  const tableBgColorRaw = resolveTableBgColor(rawSp, effectivePreset, { ready });
+  const tableSheetRgb = resolveTableSheetRgb(membersThemeId, tableBgColorRaw || undefined);
   const donorsBgOpacity = Math.max(0, Math.min(100, parseInt(sp.get("donorsBgOpacity") || "0", 10)));
   const showBottomDonors = false;
   const effectiveShowTicker = false;
@@ -1937,7 +1971,7 @@ function OverlayInner() {
       .replace(/\s+/g, " ")
       .trim();
   const hasTableTextColorOverride = /^#[0-9a-fA-F]{3,8}$/.test(tableTextColorRaw);
-  const isLightTableSheet = isLightTableSheetRgb(resolveTableSheetRgb(membersThemeId));
+  const isLightTableSheet = isLightTableSheetRgb(tableSheetRgb);
   /** 미설정 시 테마 글자색 유지; 밝은 시트=진한 글자, 어두운 시트=밝은 글자 */
   const tableTextIsLight = hasTableTextColorOverride
     ? isLightTextHex(tableTextColorRaw)
@@ -3116,6 +3150,21 @@ function OverlayInner() {
           background: rgba(255, 255, 255, 0.78) !important;
         }
         ${
+          tableBgColorRaw
+            ? `
+        .overlay-root .overlay-elegant-table.excel-live-table tbody tr.overlay-row:nth-child(odd) td {
+          background: rgba(${tableSheetRgb.join(",")}, ${Math.min(0.96, Math.max(0.35, effectiveTableTintAlpha))}) !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-live-table tbody tr.overlay-row:nth-child(even) td {
+          background: rgba(${tableSheetRgb.map((c) => Math.max(0, Math.min(255, Math.round(c * 0.9)))).join(",")}, ${Math.min(0.92, Math.max(0.32, effectiveTableTintAlpha * 0.95))}) !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-live-table .overlay-total-row td {
+          background: rgba(${tableSheetRgb.map((c) => Math.max(0, Math.min(255, Math.round(c * 0.97)))).join(",")}, ${Math.min(0.94, Math.max(0.4, effectiveTableTintAlpha))}) !important;
+        }
+        `
+            : ""
+        }
+        ${
           externalSafeMode
             ? `
         /* 외부호스트 하드 고정 모드(OBS/Prism): 변환/애니메이션/컨테이너쿼리/스트로크를 강제 차단 */
@@ -3237,7 +3286,11 @@ function OverlayInner() {
         }
         /* 이름 ↔ 계좌/투네: 백만원대·두꺼운 아웃라인에서도 붙지 않게 금액 열 좌측 여백 */
         .overlay-root .overlay-elegant-table thead td.overlay-col-account,
-        .overlay-root .overlay-elegant-table tbody td.overlay-col-account,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-account {
+          padding-left: 0.75em !important;
+          padding-right: 0.75em !important;
+          text-align: center !important;
+        }
         .overlay-root .overlay-elegant-table thead td.overlay-col-toon,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-toon,
         .overlay-root .overlay-elegant-table thead td.overlay-col-total,
@@ -3413,7 +3466,7 @@ function OverlayInner() {
                     border: `1px solid ${tablePanelBorder}`,
                     boxShadow: tablePanelShadow,
                     padding: "0.14rem",
-                    backgroundColor: `rgba(${resolveTableSheetRgb(membersThemeId).join(",")}, ${effectiveTableTintAlpha})`,
+                    backgroundColor: `rgba(${tableSheetRgb.join(",")}, ${effectiveTableTintAlpha})`,
                   }}
                 >
                     <table
@@ -3436,7 +3489,7 @@ function OverlayInner() {
                       <td className={`${effectiveHeaderCls} overlay-col-rank overlay-rank-cell text-center`}>순위</td>
                       {hasRoleColumn && <td className={`${effectiveHeaderCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>직급</td>}
                       <td className={`${effectiveHeaderCls} overlay-col-name`}>이름</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-account text-right`}>{accountHeaderLabel}</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-account text-center`}>{accountHeaderLabel}</td>
                       <td className={`${effectiveHeaderCls} overlay-col-toon text-right`}>{toonHeaderLabel}</td>
                       {showCombinedColumn && (
                         <td className={`${effectiveHeaderCls} overlay-col-total text-right`}>{totalHeaderLabel}</td>
@@ -3487,7 +3540,7 @@ function OverlayInner() {
                             {m.name}
                           </span>
                         </td>
-                        <td className={`${effectiveRowCls} overlay-col-account ${effectiveAccountCls} overlay-account-cell text-right`}>
+                        <td className={`${effectiveRowCls} overlay-col-account ${effectiveAccountCls} overlay-account-cell text-center`}>
                           <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(m.account)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-right`}>
@@ -3528,7 +3581,7 @@ function OverlayInner() {
                             {m.name}
                           </span>
                         </td>
-                        <td className={`${effectiveRowCls} overlay-col-account ${effectiveAccountCls} overlay-account-cell text-right`}>
+                        <td className={`${effectiveRowCls} overlay-col-account ${effectiveAccountCls} overlay-account-cell text-center`}>
                           <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(m.account)}</span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-right`}>
@@ -3552,7 +3605,7 @@ function OverlayInner() {
                       <tr className="overlay-total-row">
                         <td className={`${overlayTotalRowCls} overlay-col-rank`} colSpan={hasRoleColumn ? 2 : 1}>총합</td>
                         <td className={`${overlayTotalRowCls} overlay-col-name`} />
-                        <td className={`${overlayTotalRowCls} overlay-col-account overlay-account-cell text-right`}>
+                        <td className={`${overlayTotalRowCls} overlay-col-account overlay-account-cell text-center`}>
                           <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(sumAccount)}</span>
                         </td>
                         <td className={`${overlayTotalRowCls} overlay-col-toon overlay-toon-cell text-right`}>

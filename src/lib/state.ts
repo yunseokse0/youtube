@@ -481,6 +481,36 @@ export function normalizeDonorRankingsFullTheme(input: unknown): DonorRankingsTh
   return normalizeDonorRankingsTheme(input, DEFAULT_DONOR_RANKINGS_FULL_THEME);
 }
 
+/** 후원순위 테마가 기본값과 동일한지(원격 기본값으로 로컬 커스텀을 덮지 않기 위함) */
+export function isDefaultLikeDonorRankingsTheme(
+  theme: DonorRankingsTheme | null | undefined,
+  defaults: DonorRankingsTheme = DEFAULT_DONOR_RANKINGS_THEME
+): boolean {
+  if (!theme || typeof theme !== "object") return true;
+  const n = normalizeDonorRankingsTheme(theme, defaults);
+  const d = defaults;
+  return (
+    n.top === d.top &&
+    n.titleSize === d.titleSize &&
+    n.rowSize === d.rowSize &&
+    n.rankSize === d.rankSize &&
+    n.overlayOpacity === d.overlayOpacity &&
+    n.bg === d.bg &&
+    n.panelBg === d.panelBg &&
+    n.borderColor === d.borderColor &&
+    n.headerAccountBg === d.headerAccountBg &&
+    n.headerToonBg === d.headerToonBg &&
+    n.rowEvenBg === d.rowEvenBg &&
+    n.rowOddBg === d.rowOddBg &&
+    n.rankColor === d.rankColor &&
+    n.nameColor === d.nameColor &&
+    n.amountColor === d.amountColor &&
+    n.titleColor === d.titleColor &&
+    n.outlineColor === d.outlineColor &&
+    n.outlineWidth === d.outlineWidth
+  );
+}
+
 function normalizeDonorRankingsPresets(input: unknown): DonorRankingsPreset[] {
   if (!Array.isArray(input)) return [];
   return input
@@ -1288,6 +1318,31 @@ type ServerSaveJob = {
 let serverSaveInFlight = false;
 let serverSavePending: ServerSaveJob | null = null;
 
+/** 대기 중 POST 본문을 최신 요청과 병합 — 프리셋-only PATCH가 전체 저장(후원순위 테마 등)을 덮어쓰지 않게 함 */
+function mergeServerSaveApiBodies(prevJson: string, nextJson: string): string {
+  try {
+    const prev = JSON.parse(prevJson) as Record<string, unknown>;
+    const next = JSON.parse(nextJson) as Record<string, unknown>;
+    if (!prev || typeof prev !== "object" || !next || typeof next !== "object") return nextJson;
+    const merged: Record<string, unknown> = { ...prev, ...next };
+    /** overlaySettings 는 얕은 병합으로 키가 날아가지 않게 */
+    if (
+      prev.overlaySettings &&
+      typeof prev.overlaySettings === "object" &&
+      next.overlaySettings &&
+      typeof next.overlaySettings === "object"
+    ) {
+      merged.overlaySettings = {
+        ...(prev.overlaySettings as Record<string, unknown>),
+        ...(next.overlaySettings as Record<string, unknown>),
+      };
+    }
+    return JSON.stringify(merged);
+  } catch {
+    return nextJson;
+  }
+}
+
 function enqueueServerSave(
   apiBodyJson: string,
   userId: string | null | undefined,
@@ -1297,9 +1352,25 @@ function enqueueServerSave(
     if (!serverSavePending) {
       serverSavePending = { apiBodyJson, userId, ssePayload, resolveAll: [resolve] };
     } else {
-      serverSavePending.apiBodyJson = apiBodyJson;
+      serverSavePending.apiBodyJson = mergeServerSaveApiBodies(
+        serverSavePending.apiBodyJson,
+        apiBodyJson
+      );
       serverSavePending.userId = userId;
-      serverSavePending.ssePayload = ssePayload;
+      /** ssePayload 도 병합해 미리보기/로컬 힌트가 최신 필드를 유지 */
+      if (
+        serverSavePending.ssePayload &&
+        typeof serverSavePending.ssePayload === "object" &&
+        ssePayload &&
+        typeof ssePayload === "object"
+      ) {
+        serverSavePending.ssePayload = {
+          ...(serverSavePending.ssePayload as Record<string, unknown>),
+          ...(ssePayload as Record<string, unknown>),
+        };
+      } else {
+        serverSavePending.ssePayload = ssePayload;
+      }
       serverSavePending.resolveAll.push(resolve);
     }
     void runServerSaveQueue();

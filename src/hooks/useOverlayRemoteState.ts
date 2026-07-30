@@ -227,9 +227,21 @@ export function useOverlayRemoteState(
   const sigSalesIncrementalPoll = Boolean(options.sigSalesIncrementalPoll);
   const obsTextPick = statePick === STATE_PICK_OBS_TEXT;
 
-  const [state, setState] = useState<AppState | null>(frozen);
+  const [state, setState] = useState<AppState | null>(() => {
+    if (frozen != null) return frozen;
+    if (typeof window === "undefined") return null;
+    if (options.skipLocalSnapshot === true) return null;
+    const pick = options.statePick ?? STATE_PICK_OVERLAY;
+    const local = readLocalStateIfExists(userId);
+    if (local && isOverlayStateViable(local, pick)) return local;
+    if (options.persistLastGood !== false) {
+      const lastGood = loadOverlayLastGood(userId, pick);
+      if (lastGood && isOverlayStateViable(lastGood, pick)) return lastGood;
+    }
+    return null;
+  });
 
-  const [syncedOnce, setSyncedOnce] = useState(Boolean(frozen));
+  const [syncedOnce, setSyncedOnce] = useState(() => Boolean(frozen) || state != null);
 
   const lastSyncedUpdatedAtRef = useRef(0);
 

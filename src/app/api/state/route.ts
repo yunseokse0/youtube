@@ -11,8 +11,10 @@ import {
 import { DEFAULT_SIG_INVENTORY } from "@/lib/constants";
 import {
   defaultState,
+  DEFAULT_DONOR_RANKINGS_FULL_THEME,
   hasExpandedSigInventory,
   hasMeaningfulMemberRoster,
+  isDefaultLikeDonorRankingsTheme,
   isDefaultPlaceholderMemberList,
   isShrunkToDefaultSigInventory,
   mergeDonorsForMultiTabSave,
@@ -167,7 +169,26 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
   if (!("memberPositionMode" in patch)) next.memberPositionMode = base.memberPositionMode;
   if (!("rankPositionLabels" in patch)) next.rankPositionLabels = base.rankPositionLabels;
   if (!("donorRankingsTheme" in patch)) next.donorRankingsTheme = base.donorRankingsTheme;
+  else if (
+    patch.donorRankingsTheme &&
+    isDefaultLikeDonorRankingsTheme(patch.donorRankingsTheme as AppState["donorRankingsTheme"]) &&
+    !isDefaultLikeDonorRankingsTheme(base.donorRankingsTheme)
+  ) {
+    next.donorRankingsTheme = base.donorRankingsTheme;
+    logger.warn("donorRankingsTheme default wipe blocked", { userId });
+  }
   if (!("donorRankingsFullTheme" in patch)) next.donorRankingsFullTheme = base.donorRankingsFullTheme;
+  else if (
+    patch.donorRankingsFullTheme &&
+    isDefaultLikeDonorRankingsTheme(
+      patch.donorRankingsFullTheme as AppState["donorRankingsFullTheme"],
+      DEFAULT_DONOR_RANKINGS_FULL_THEME
+    ) &&
+    !isDefaultLikeDonorRankingsTheme(base.donorRankingsFullTheme, DEFAULT_DONOR_RANKINGS_FULL_THEME)
+  ) {
+    next.donorRankingsFullTheme = base.donorRankingsFullTheme;
+    logger.warn("donorRankingsFullTheme default wipe blocked", { userId });
+  }
   if (!("donorRankingsPresets" in patch)) next.donorRankingsPresets = base.donorRankingsPresets;
   if (!("donorRankingsPresetId" in patch)) next.donorRankingsPresetId = base.donorRankingsPresetId;
   if (!("donorsFormat" in patch)) next.donorsFormat = base.donorsFormat;

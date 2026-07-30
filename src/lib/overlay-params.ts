@@ -118,6 +118,8 @@ export type OverlayPresetLike = {
   tableBgGifUrl?: string;
   tableBgGifOpacity?: string;
   tableBgGifBrightness?: string;
+  /** 엑셀표 시트 배경색(#rrggbb). 비우면 테마 기본 */
+  tableBgColor?: string;
   totalLineVisible?: boolean;
   vertical?: boolean;
   accountColor?: string;
@@ -263,6 +265,8 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.tableBgGifUrl && preset.tableBgGifUrl.trim()) q.set("tableBgGifUrl", preset.tableBgGifUrl.trim());
   if (preset.tableBgGifOpacity && preset.tableBgGifOpacity.trim()) q.set("tableBgGifOpacity", preset.tableBgGifOpacity.trim());
   if (preset.tableBgGifBrightness && preset.tableBgGifBrightness.trim()) q.set("tableBgGifBrightness", preset.tableBgGifBrightness.trim());
+  const tableBgColor = normalizeGoalHexColor((preset.tableBgColor || "").trim());
+  if (tableBgColor) q.set("tableBgColor", tableBgColor);
   if (preset.totalLineVisible) q.set("totalLineVisible", "true");
   if (preset.accountColor && preset.accountColor.trim()) q.set("accountColor", preset.accountColor.trim());
   if (preset.toonColor && preset.toonColor.trim()) q.set("toonColor", preset.toonColor.trim());
@@ -312,6 +316,7 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "tableBgGifUrl",
   "tableBgGifOpacity",
   "tableBgGifBrightness",
+  "tableBgColor",
   "donorsFormat",
   "currencyLocale",
   "accountHeaderLabel",
@@ -417,6 +422,7 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "tableBgGifUrl",
   "tableBgGifOpacity",
   "tableBgGifBrightness",
+  "tableBgColor",
   "donorsFormat",
   "currencyLocale",
   "accountHeaderLabel",
@@ -440,6 +446,78 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "tickerGlow",
   "tickerShadow",
   "tickerTheme",
+  /** 레이아웃·표시 옵션도 URL에 넣으면 iframe 리마운트 → 초기 화면 깜빡임 */
+  "compact",
+  "tight",
+  "dense",
+  "autoFont",
+  "lockWidth",
+  "nameGrow",
+  "nameCh",
+  "layout",
+  "zoomMode",
+  "anchor",
+  "tableFree",
+  "tableX",
+  "tableY",
+  "tableMarginTop",
+  "tableMarginRight",
+  "tableMarginBottom",
+  "tableMarginLeft",
+  "box",
+  "noCrop",
+  "autoFit",
+  "fitPin",
+  "showMembers",
+  "showTotal",
+  "showGoal",
+  "showTicker",
+  "showTimer",
+  "showMission",
+  "showPersonalGoal",
+  "totalMode",
+  "totalLineVisible",
+  "goal",
+  "goalLabel",
+  "goalWidth",
+  "goalAnchor",
+  "goalCurrent",
+  "donorsGap",
+  "donorsSpeed",
+  "donorsLimit",
+  "donorsUnit",
+  "donorsColor",
+  "donorsBgColor",
+  "donorsBgOpacity",
+  "confettiMilestone",
+  "personalGoalTheme",
+  "personalGoalAnchor",
+  "personalGoalLimit",
+  "personalGoalFree",
+  "personalGoalX",
+  "personalGoalY",
+  "sumAnchor",
+  "sumFree",
+  "sumX",
+  "sumY",
+  "tickerAnchor",
+  "tickerWidth",
+  "tickerFree",
+  "tickerX",
+  "tickerY",
+  "tickerInMembers",
+  "tickerInGoal",
+  "tickerInPersonalGoal",
+  "timerAnchor",
+  "timerShowHours",
+  "timerFontColor",
+  "timerBgColor",
+  "timerBorderColor",
+  "timerBgOpacity",
+  "timerScale",
+  "missionAnchor",
+  "missionWidth",
+  "missionDuration",
 ] as const;
 
 /** 관리자 미리보기 URL에서 핫리로드 시각 파라미터를 제거해 iframe 리마운트를 막는다. */
@@ -505,6 +583,7 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "tableBgOpacity",
   "tableBgGifOpacity",
   "tableBgGifBrightness",
+  "tableBgColor",
   /** 테마도 프리셋 우선 — URL 스테일/미리보기 핫리로드와 맞춤 */
   "theme",
   "membersTheme",
@@ -609,6 +688,21 @@ export function resolveTableTextColor(
 ): string {
   const merged = resolveLivePresetStyleParam(
     "tableTextColor",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  return normalizeGoalHexColor(merged || "") || "";
+}
+
+/** 엑셀표 시트 배경색. 비우면 테마 기본 RGB 사용 */
+export function resolveTableBgColor(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string {
+  const merged = resolveLivePresetStyleParam(
+    "tableBgColor",
     rawSp,
     presetToParams(preset),
     opts

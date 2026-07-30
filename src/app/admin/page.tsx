@@ -27,6 +27,8 @@ import {
   hasExpandedSigInventory,
   hasSigSalesMemberPresets,
   isShrunkToDefaultSigInventory,
+  isDefaultLikeDonorRankingsTheme,
+  DEFAULT_DONOR_RANKINGS_FULL_THEME,
   shouldPreferLocalSigInventoryOverIncoming,
   normalizeDonorsArray,
   mergeDonorsForMultiTabSave,
@@ -89,8 +91,6 @@ import { formatSigMatchStat, getSigMatchRankings } from "@/lib/settlement-utils"
 import { getEffectiveRemainingTime, pauseTimer, resumeTimer } from "@/lib/timer-utils";
 import {
   appendAdminPreviewEmbedToOverlayUrl,
-  presetToParams,
-  stripAdminPreviewHotReloadParams,
   mergePresetBroadcastVisualParams,
   buildCompactBroadcastOverlayParams,
   appendGoalBarStyleParams,
@@ -191,7 +191,7 @@ type OverlayPreset = {
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
-  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableFontWeight?: string; host?: string;
+  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableBgColor?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableFontWeight?: string; host?: string;
 };
 
 /** 미션 목록이 비었을 때 미션 전광판 UI 확인용 placeholder */
@@ -698,6 +698,7 @@ export default function AdminPage() {
     tableBgGifUrl: "",
     tableBgGifOpacity: "45",
     tableBgGifBrightness: "100",
+    tableBgColor: "",
     accountColor: "",
     toonColor: "",
     ...overrides,
@@ -1146,6 +1147,49 @@ export default function AdminPage() {
       merged = { ...merged, sigSalesMemberPresets: local.sigSalesMemberPresets };
       didPreserve = true;
     }
+    /** 후원순위 테마: 원격이 기본값인데 로컬이 커스텀이면 유지(테마 PATCH 경합·미저장 GET으로 리셋 방지) */
+    if (
+      !isDefaultLikeDonorRankingsTheme(local.donorRankingsTheme) &&
+      isDefaultLikeDonorRankingsTheme(merged.donorRankingsTheme)
+    ) {
+      merged = { ...merged, donorRankingsTheme: local.donorRankingsTheme };
+      didPreserve = true;
+    }
+    if (
+      !isDefaultLikeDonorRankingsTheme(local.donorRankingsFullTheme, DEFAULT_DONOR_RANKINGS_FULL_THEME) &&
+      isDefaultLikeDonorRankingsTheme(merged.donorRankingsFullTheme, DEFAULT_DONOR_RANKINGS_FULL_THEME)
+    ) {
+      merged = { ...merged, donorRankingsFullTheme: local.donorRankingsFullTheme };
+      didPreserve = true;
+    }
+    if (
+      (pendingUnsyncedRef.current || Date.now() - lastLocalPersistAtRef.current < 8000) &&
+      local.donorRankingsTheme &&
+      !isDefaultLikeDonorRankingsTheme(local.donorRankingsTheme)
+    ) {
+      merged = { ...merged, donorRankingsTheme: local.donorRankingsTheme };
+      didPreserve = true;
+    }
+    if (
+      (pendingUnsyncedRef.current || Date.now() - lastLocalPersistAtRef.current < 8000) &&
+      local.donorRankingsFullTheme &&
+      !isDefaultLikeDonorRankingsTheme(local.donorRankingsFullTheme, DEFAULT_DONOR_RANKINGS_FULL_THEME)
+    ) {
+      merged = { ...merged, donorRankingsFullTheme: local.donorRankingsFullTheme };
+      didPreserve = true;
+    }
+    if (
+      Array.isArray(local.donorRankingsPresets) &&
+      local.donorRankingsPresets.length > 0 &&
+      (!Array.isArray(merged.donorRankingsPresets) || merged.donorRankingsPresets.length === 0)
+    ) {
+      merged = {
+        ...merged,
+        donorRankingsPresets: local.donorRankingsPresets,
+        donorRankingsPresetId: local.donorRankingsPresetId ?? merged.donorRankingsPresetId,
+      };
+      didPreserve = true;
+    }
     const recentlyEditedDonors = Date.now() - lastLocalPersistAtRef.current < DONOR_LOCAL_PROTECT_MS;
     const localDonorsNorm = normalizeDonorsArray(local.donors);
     const incomingDonorsNorm = normalizeDonorsArray(merged.donors);
@@ -1526,6 +1570,14 @@ export default function AdminPage() {
       const normalized = normalizeGoalHexColor(String(patch.tableTextOutlineColor || ""));
       mergedPatch.tableTextOutlineColor = normalized || "";
     }
+    if (patch.tableBgColor !== undefined) {
+      const normalized = normalizeGoalHexColor(String(patch.tableBgColor || ""));
+      mergedPatch.tableBgColor = normalized || "";
+    }
+    if (patch.tableTextColor !== undefined) {
+      const normalized = normalizeGoalHexColor(String(patch.tableTextColor || ""));
+      mergedPatch.tableTextColor = normalized || "";
+    }
     if (patch.tableTextOutlineWidth !== undefined) {
       const w = parseFloat(String(patch.tableTextOutlineWidth || "").replace(/[^\d.]/g, "") || "0");
       mergedPatch.tableTextOutlineWidth = Number.isFinite(w)
@@ -1655,17 +1707,20 @@ export default function AdminPage() {
       return goalOnly.toString();
     }
     const base = `${window.location.origin}/overlay`;
-    /** 테마·글자 등 시각 파라미터는 URL에서 제외 → iframe 리마운트 없이 localPresets로 반영 */
-    const q = stripAdminPreviewHotReloadParams(new URLSearchParams(presetToParams(p)));
+    /**
+     * 미리보기 iframe src 는 구조 키만 유지한다.
+     * 시각·레이아웃 옵션을 URL에 넣으면 옵션 변경마다 리마운트되어 멤버1·2·3 초기 화면이 깜빡인다.
+     * 스타일은 localStorage 프리셋(`/api/state`) 핫리로드로 반영.
+     */
+    const q = new URLSearchParams();
     q.set("p", p.id);
     q.set("u", user?.id || "finalent");
     q.set("previewGuide", "true");
+    if (p.tableOnly) q.set("tableOnly", "true");
     const isVertical = !!p.vertical;
+    if (isVertical) q.set("vertical", "true");
     q.set("renderWidth", isVertical ? "1080" : "1920");
     q.set("renderHeight", isVertical ? "1920" : "1080");
-    const hasMembersWithGoal = state.members.some((m) => (m.goal || 0) > 0);
-    if (hasMembersWithGoal) q.set("showPersonalGoal", "true");
-    /** snap/snapKey 생략 — updatedAt마다 iframe src가 바뀌며 후원 목표가 깜빡임. embed는 storage·GET으로 실시간 반영 */
     return `${base}?${q.toString()}`;
   };
 
@@ -2214,7 +2269,6 @@ export default function AdminPage() {
   };
 
   const updateDonorRankingsTheme = (patch: Partial<AppState["donorRankingsTheme"]>) => {
-    setDonorRankingsPreviewIframeKey((k) => k + 1);
     setState((prev: AppState) => {
       const next: AppState = {
         ...prev,
@@ -2222,6 +2276,7 @@ export default function AdminPage() {
           ...(prev.donorRankingsTheme || defaultState().donorRankingsTheme),
           ...patch,
         },
+        updatedAt: Date.now(),
       };
       persistState(next);
       return next;
@@ -2229,7 +2284,6 @@ export default function AdminPage() {
   };
 
   const updateDonorRankingsFullTheme = (patch: Partial<AppState["donorRankingsFullTheme"]>) => {
-    setDonorRankingsFullPreviewIframeKey((k) => k + 1);
     setState((prev: AppState) => {
       const next: AppState = {
         ...prev,
@@ -2237,6 +2291,7 @@ export default function AdminPage() {
           ...(prev.donorRankingsFullTheme || defaultState().donorRankingsFullTheme),
           ...patch,
         },
+        updatedAt: Date.now(),
       };
       persistState(next);
       return next;
@@ -2244,12 +2299,12 @@ export default function AdminPage() {
   };
 
   const updateDonorRankingsFullOverlayConfig = (patch: Partial<OverlayConfig>) => {
-    setDonorRankingsFullPreviewIframeKey((k) => k + 1);
     setState((prev: AppState) => {
       const base = normalizeDonorRankingsOverlayConfig(prev.donorRankingsFullOverlayConfig);
       const next: AppState = {
         ...prev,
         donorRankingsFullOverlayConfig: { ...base, ...patch },
+        updatedAt: Date.now(),
       };
       persistState(next);
       return next;
@@ -2275,6 +2330,7 @@ export default function AdminPage() {
       const next: AppState = {
         ...prev,
         donorRankingsOverlayConfig: { ...base, ...patch },
+        updatedAt: Date.now(),
       };
       persistState(next);
       return next;
@@ -10223,6 +10279,17 @@ export default function AdminPage() {
                                     <input type="range" min="0" max="100" value={p.tableBgOpacity || "100"} onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value })} className="flex-1 accent-emerald-500" />
                                     <input className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right" value={p.tableBgOpacity || "100"} onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value.replace(/[^\\d]/g, "") })} />
                                     <span className="text-xs text-neutral-500">%</span>
+                                  </div>
+                                  <label className="text-xs text-neutral-400">표 배경색</label>
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="color"
+                                      className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                      value={toColorPickerValue(p.tableBgColor, "#ffffff")}
+                                      onChange={(e) => updatePreset(p.id, { tableBgColor: e.target.value })}
+                                    />
+                                    <span className="text-xs text-neutral-400 font-mono">{p.tableBgColor || "테마 자동"}</span>
+                                    <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableBgColor: "" })}>테마 자동</button>
                                   </div>
                                   <label className="text-xs text-neutral-400">총합 행</label>
                                   <div className="flex flex-wrap items-center gap-2">
