@@ -49,6 +49,11 @@ import {
   subscribeOverlayPresetsLocalUpdated,
 } from "@/lib/broadcast-state-local-sync";
 import { buildOverlayRankedMembers, buildMemberCreationOrderIndex, compareMembersByDonationTotal } from "@/lib/utils";
+import {
+  isExcelMemberTableTheme,
+  resolveExcelMemberTableAccent,
+} from "@/lib/excel-member-table-theme";
+import { resolveExcelRankTop3RowStyle, resolveExcelRankTop3Style } from "@/lib/excel-rank-top3-style";
 import { clampWidthToViewport, computeReadableCanvasScale, ensureCanvasFontPx, isNarrowBroadcastViewport } from "@/lib/overlay-mobile-fit";
 import { useOverlayViewportSize } from "@/hooks/useOverlayViewportSize";
 
@@ -1639,6 +1644,8 @@ function OverlayInner() {
     return "default";
   };
   const membersThemeId = resolveThemeId("membersTheme");
+  const excelMemberAccent = resolveExcelMemberTableAccent(membersThemeId);
+  const useBroadcastTableChrome = !isExcelMemberTableTheme(membersThemeId);
   const totalThemeId = resolveThemeId("totalTheme");
   const tickerBaseThemeId = resolveThemeId("tickerBaseTheme");
   const missionThemeId = resolveThemeId("missionTheme");
@@ -1861,6 +1868,10 @@ function OverlayInner() {
   const toonColor = sp.get("toonColor") || undefined;
   const tableTextColorRaw = resolveTableTextColor(rawSp, effectivePreset, { ready });
   const tableBgColorRaw = resolveTableBgColor(rawSp, effectivePreset, { ready });
+  const excelRankTop3Style = useMemo(
+    () => resolveExcelRankTop3Style(rawSp, effectivePreset, { ready }),
+    [rawSp, effectivePreset, ready]
+  );
   const tableSheetRgb = resolveTableSheetRgb(membersThemeId, tableBgColorRaw || undefined);
   const donorsBgOpacity = Math.max(0, Math.min(100, parseInt(sp.get("donorsBgOpacity") || "0", 10)));
   const showBottomDonors = false;
@@ -1998,9 +2009,10 @@ function OverlayInner() {
           color: ${tableThemeAutoTextColor} !important;
         }`
     : "";
-  /** 테마 자동: 후원 목표 막대와 같은 진한 로즈/밝은 글자 */
-  const tableAutoTextColorCss = !hasTableTextColorOverride
-    ? `
+  /** 테마 자동: 방송 기본(핑크)만 — 엑셀 테마는 THEMES 글자색 유지 */
+  const tableAutoTextColorCss =
+    useBroadcastTableChrome && !hasTableTextColorOverride
+      ? `
         .overlay-root .overlay-elegant-table td,
         .overlay-root .overlay-elegant-table thead td,
         .overlay-root .overlay-elegant-table thead td span,
@@ -2010,7 +2022,7 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table tbody td .overlay-cell-text-inner {
           color: ${tableThemeAutoTextColor} !important;
         }`
-    : "";
+      : "";
   const tableBodyTextStroke = tableTextIsLight && !externalSafeMode
     ? "0.75px rgba(6, 12, 24, 0.95)"
     : "0";
@@ -2876,9 +2888,19 @@ function OverlayInner() {
     /** 숫자 자리 증가로 표 전체가 밀려 나가지 않도록 너비 상한 고정 */
     const excelTableWidthCalc = excelGridCols.join(" + ");
     const isExcelLiveTheme = membersThemeId === "excelLive";
-    const tablePanelBorder = isExcelLiveTheme ? "#7eb8d4" : TABLE_BROADCAST_PANEL_BORDER;
-    const tablePanelShadow = isExcelLiveTheme ? "0 2px 10px rgba(30, 80, 120, 0.25)" : "0 2px 10px rgba(255, 140, 190, 0.22)";
-    const excelLiveTableClass = isExcelLiveTheme ? " excel-live-table" : "";
+    const tablePanelBorder = excelMemberAccent?.panelBorder ?? TABLE_BROADCAST_PANEL_BORDER;
+    const tablePanelShadow = excelMemberAccent?.panelShadow ?? "0 2px 10px rgba(255, 140, 190, 0.22)";
+    const excelMemberTableClass = excelMemberAccent
+      ? `${isExcelLiveTheme ? " excel-live-table" : " excel-member-table"}`
+      : "";
+    const excelMemberTableStyle: React.CSSProperties | undefined = excelMemberAccent
+      ? {
+          ["--excel-header-bg" as string]: excelMemberAccent.headerBg,
+          ["--excel-header-text" as string]: excelMemberAccent.headerText,
+          ["--excel-header-border" as string]: excelMemberAccent.headerBorder,
+          ["--excel-total-border" as string]: excelMemberAccent.totalRowBorder,
+        }
+      : undefined;
     let effectiveScale = centerFixed || hasTableFreePos
       ? (scale * (zoomMode === "neutral" ? 1 : (zoomMode === "invert" ? (1 / centerZoomScale) : centerZoomScale)))
       : (externalHost ? scale : (viewportScale * scale));
@@ -2985,6 +3007,54 @@ function OverlayInner() {
     const tableStrokeCss = externalSafeMode
       ? "0"
       : String(tableBroadcastOutline.WebkitTextStroke || tableBodyTextStroke || "0");
+    const broadcastTheadCss = useBroadcastTableChrome
+      ? `
+        .overlay-root .overlay-elegant-table thead td {
+          background: rgba(253, 232, 242, 0.96) !important;
+          font-weight: ${tableHeaderFontWeight} !important;
+          text-shadow: ${tableOutlineShadowCss} !important;
+          -webkit-text-stroke: ${tableStrokeCss} !important;
+          paint-order: stroke fill;
+          box-shadow: none !important;
+          border: none !important;
+          border-bottom: 1px solid ${TABLE_BROADCAST_PANEL_BORDER} !important;
+        }
+        .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-role,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-name,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-account,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-toon,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-total,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-contribution {
+          background: rgba(253, 232, 242, 0.96) !important;
+        }
+        .overlay-root .overlay-elegant-table .overlay-total-row td {
+          border-top: 2px solid rgba(244, 170, 205, 0.45) !important;
+        }`
+      : `
+        .overlay-root .overlay-elegant-table.excel-member-table thead td,
+        .overlay-root .overlay-elegant-table.excel-live-table thead td {
+          background: var(--excel-header-bg) !important;
+          color: var(--excel-header-text) !important;
+          font-weight: ${tableHeaderFontWeight} !important;
+          text-shadow: none !important;
+          -webkit-text-stroke: 0 !important;
+          box-shadow: none !important;
+          border: none !important;
+          border-bottom: 1px solid var(--excel-header-border) !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-member-table thead td span,
+        .overlay-root .overlay-elegant-table.excel-member-table thead td strong,
+        .overlay-root .overlay-elegant-table.excel-live-table thead td span,
+        .overlay-root .overlay-elegant-table.excel-live-table thead td strong {
+          color: var(--excel-header-text) !important;
+          text-shadow: none !important;
+          -webkit-text-stroke: 0 !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-member-table .overlay-total-row td,
+        .overlay-root .overlay-elegant-table.excel-live-table .overlay-total-row td {
+          border-top: 2px solid var(--excel-total-border) !important;
+        }`;
     /** OBS·Prism: stroke 생략 시에도 shadow 링 + 인라인으로 이름·숫자·직급에 동일 적용 */
     const overlayCellOutlineStyle: React.CSSProperties = tableOutlineDisabled
       ? { fontWeight: tableFontWeight }
@@ -3096,20 +3166,16 @@ function OverlayInner() {
         }
         ${tableForcedTextColorCss}
         ${tableAutoTextColorCss}
-        .overlay-root .overlay-elegant-table thead td {
-          background: rgba(253, 232, 242, 0.96) !important;
-          font-weight: ${tableHeaderFontWeight} !important;
-          text-shadow: ${tableOutlineShadowCss} !important;
-          -webkit-text-stroke: ${tableStrokeCss} !important;
-          paint-order: stroke fill;
-          box-shadow: none !important;
-          border: none !important;
-          border-bottom: 1px solid ${TABLE_BROADCAST_PANEL_BORDER} !important;
-        }
+        ${broadcastTheadCss}
+        ${
+          useBroadcastTableChrome
+            ? `
         .overlay-root .overlay-elegant-table thead td span,
         .overlay-root .overlay-elegant-table thead td strong {
           text-shadow: ${tableOutlineShadowCss} !important;
           -webkit-text-stroke: ${tableStrokeCss} !important;
+        }`
+            : ""
         }
         .overlay-root .overlay-elegant-table tbody td span,
         .overlay-root .overlay-elegant-table tbody td strong {
@@ -3126,9 +3192,8 @@ function OverlayInner() {
           background: transparent !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table thead td {
-          background: rgba(26, 82, 118, 0.96) !important;
-          color: #ffffff !important;
-          border-bottom: 1px solid #0f3d56 !important;
+          color: var(--excel-header-text) !important;
+          border-bottom: 1px solid var(--excel-header-border) !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-rank,
         .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-role,
@@ -3137,7 +3202,7 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-toon,
         .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-total,
         .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-contribution {
-          background: rgba(26, 82, 118, 0.96) !important;
+          background: var(--excel-header-bg) !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table tbody tr.overlay-row:nth-child(odd) td {
           background: rgba(255, 255, 255, 0.88) !important;
@@ -3218,7 +3283,6 @@ function OverlayInner() {
           box-shadow: none !important;
           backdrop-filter: none !important;
           -webkit-backdrop-filter: none !important;
-          border-top: 2px solid rgba(244, 170, 205, 0.45) !important;
           border-bottom: none !important;
           padding: ${Math.round(memberFontPx * 0.28)}px ${Math.round(memberFontPx * 0.4)}px !important;
           font-size: ${memberFontPx}px !important;
@@ -3242,16 +3306,6 @@ function OverlayInner() {
         }
         .overlay-root .overlay-elegant-table td.overlay-col-contribution .overlay-num-cell-inner {
           transform: ${externalSafeMode ? "translateX(0)" : "translateX(0)"};
-        }
-        /* 반투명 테이블 모드에서도 헤더 분홍 띠 유지(예전엔 transparent 로 헤더만 사라짐) */
-        .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
-        .overlay-root .overlay-elegant-table thead td.overlay-col-role,
-        .overlay-root .overlay-elegant-table thead td.overlay-col-name,
-        .overlay-root .overlay-elegant-table thead td.overlay-col-account,
-        .overlay-root .overlay-elegant-table thead td.overlay-col-toon,
-        .overlay-root .overlay-elegant-table thead td.overlay-col-total,
-        .overlay-root .overlay-elegant-table thead td.overlay-col-contribution {
-          background: rgba(253, 232, 242, 0.96) !important;
         }
         /* 순위·기여도 헤더: 고정 폭 칸에서 스트로크·굵은 글자가 칸 경계에서 잘리지 않도록 */
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
@@ -3345,6 +3399,19 @@ function OverlayInner() {
         }
         .overlay-root .overlay-elegant-table tbody td.overlay-col-rank {
           text-align: center !important;
+        }
+        ${
+          excelRankTop3Style.effect === "pulse"
+            ? `
+        @keyframes overlay-rank-top-pulse {
+          0%, 100% { filter: brightness(1); }
+          50% { filter: brightness(1.1) saturate(1.05); }
+        }
+        .overlay-root .overlay-elegant-table tbody tr.overlay-rank-top-pulse td {
+          animation: overlay-rank-top-pulse 2.4s ease-in-out infinite;
+        }
+        `
+            : ""
         }
         ${
           stableMode || externalHost
@@ -3471,12 +3538,13 @@ function OverlayInner() {
                 >
                     <table
                       ref={tableBoxRef as any}
-                      className={`${effectiveTableCls} overlay-elegant-table${membersThemeId === "pastel" ? " pastel-member-table" : ""}${excelLiveTableClass}`}
+                      className={`${effectiveTableCls} overlay-elegant-table${membersThemeId === "pastel" ? " pastel-member-table" : ""}${excelMemberTableClass}`}
                       style={{
                         fontSize: memberFontPx,
                         borderSpacing: 0,
                         tableLayout: "fixed",
                         width: `calc(${excelTableWidthCalc})`,
+                        ...excelMemberTableStyle,
                       }}
                     >
                   <colgroup>
@@ -3502,11 +3570,14 @@ function OverlayInner() {
                     </tr>
                   </thead>
                   <tbody>
-                    {ranked.map(({m, rank}) => (
+                    {ranked.map(({m, rank}) => {
+                      const top3Row = resolveExcelRankTop3RowStyle(rank, excelRankTop3Style);
+                      return (
                       <tr
                         key={m.id}
                         ref={rowMotionEnabled ? setRowRef(m.id) : undefined}
-                        className={`overlay-row ${rowMotionEnabled ? "transition-transform will-change-transform" : ""} ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
+                        className={`overlay-row ${top3Row.rowClass || ""} ${rowMotionEnabled ? "transition-transform will-change-transform" : ""} ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
+                        style={top3Row.rowBg ? { backgroundColor: top3Row.rowBg } : undefined}
                       >
                         <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
                           {rank == null ? (
@@ -3515,7 +3586,7 @@ function OverlayInner() {
                             </span>
                           ) : (
                             <span className="overlay-cell-text-inner" style={overlayCellOutlineStyle}>
-                              #{rank}
+                              {top3Row.rankLabel}
                             </span>
                           )}
                         </td>
@@ -3557,7 +3628,8 @@ function OverlayInner() {
                           </td>
                         )}
                       </tr>
-                    ))}
+                      );
+                    })}
                     {visiblePinned.map((m) => (
                       <tr
                         key={m.id + "-p"}

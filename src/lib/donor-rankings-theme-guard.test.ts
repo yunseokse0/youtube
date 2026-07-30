@@ -14,6 +14,7 @@ describe("isDefaultLikeDonorRankingsTheme", () => {
     expect(
       isDefaultLikeDonorRankingsTheme({
         ...DEFAULT_DONOR_RANKINGS_THEME,
+        titleText: "TOP 후원자",
         titleSize: 47,
         nameColor: "#1e3a5f",
       })

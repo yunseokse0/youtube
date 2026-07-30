@@ -388,6 +388,7 @@ export function buildRouletteIdlePreserveSettings(
 
 export const DEFAULT_DONOR_RANKINGS_THEME: DonorRankingsTheme = {
   top: 20,
+  titleText: "후원 순위",
   titleSize: 28,
   rowSize: 21,
   rankSize: 24,
@@ -411,6 +412,7 @@ export const DEFAULT_DONOR_RANKINGS_THEME: DonorRankingsTheme = {
 /** 전체 후원 순위(`/overlay/donor-rankings-full`) — 분홍 테마 기본값 */
 export const DEFAULT_DONOR_RANKINGS_FULL_THEME: DonorRankingsTheme = {
   top: 0,
+  titleText: "👑 후원 순위 👑",
   titleSize: 26,
   rowSize: 17,
   rankSize: 19,
@@ -444,6 +446,11 @@ function normalizeDonorRankingsTheme(
     const raw = String(x ?? "").trim();
     return raw || fallback;
   };
+  const titleText = (() => {
+    const raw = String(v.titleText ?? "").trim();
+    if (!raw) return defaults.titleText;
+    return raw.slice(0, 60);
+  })();
   const topMin = defaults === DEFAULT_DONOR_RANKINGS_FULL_THEME ? 0 : 1;
   const topParsed = n(v.top, topMin, 50, defaults.top);
   /** 구버전 기본 7명 → 20명 (OBS에서 잘라 쓰면 됨) */
@@ -451,6 +458,7 @@ function normalizeDonorRankingsTheme(
     defaults === DEFAULT_DONOR_RANKINGS_THEME && topParsed === 7 ? defaults.top : topParsed;
   return {
     top,
+    titleText,
     titleSize: n(v.titleSize, 14, 80, defaults.titleSize),
     rowSize: n(v.rowSize, 12, 64, defaults.rowSize),
     rankSize: n(v.rankSize, 12, 72, defaults.rankSize),
@@ -491,6 +499,7 @@ export function isDefaultLikeDonorRankingsTheme(
   const d = defaults;
   return (
     n.top === d.top &&
+    n.titleText === d.titleText &&
     n.titleSize === d.titleSize &&
     n.rowSize === d.rowSize &&
     n.rankSize === d.rankSize &&

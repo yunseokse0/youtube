@@ -303,6 +303,8 @@ export type MealMatchSettings = {
 
 export type DonorRankingsTheme = {
   top: number;
+  /** 헤더에 표시할 제목 문구 */
+  titleText: string;
   titleSize: number;
   rowSize: number;
   rankSize: number;

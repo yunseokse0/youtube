@@ -1,4 +1,5 @@
 import type { DonorRankingsTheme, SigItem } from "@/types";
+import { appendExcelRankTop3Params } from "@/lib/excel-rank-top3-style";
 
 /** 프리셋 → URL 쿼리 변환. OBS 등 별도 컨텍스트에서 API 없이 동작하도록 URL에 설정 포함 */
 export type OverlayPresetLike = {
@@ -134,6 +135,17 @@ export type OverlayPresetLike = {
   showTableSumRow?: boolean;
   accountHeaderLabel?: string;
   toonHeaderLabel?: string;
+  /** 엑셀표 1~3위 강조: off | emoji | bg | both */
+  rankTop3Mode?: string;
+  rankTop3Effect?: string;
+  /** 순위 숫자 표기: hash(#1) | plain(1) | suffix(1위) */
+  rankLabelFormat?: string;
+  rank1Bg?: string;
+  rank2Bg?: string;
+  rank3Bg?: string;
+  rank1Mark?: string;
+  rank2Mark?: string;
+  rank3Mark?: string;
 };
 
 export function presetToParams(preset: OverlayPresetLike | null): URLSearchParams {
@@ -289,6 +301,7 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.showTableSumRow === false) q.set("showTableSumRow", "false");
   if (preset.accountHeaderLabel && preset.accountHeaderLabel.trim()) q.set("accountHeaderLabel", preset.accountHeaderLabel.trim());
   if (preset.toonHeaderLabel && preset.toonHeaderLabel.trim()) q.set("toonHeaderLabel", preset.toonHeaderLabel.trim());
+  appendExcelRankTop3Params(q, preset);
   if (preset.vertical) q.set("vertical", "true");
   if (preset.host && preset.host.trim()) q.set("host", preset.host.trim());
   /** showGoal 여부와 무관 — live 프리셋·URL에 목표 글자색 항상 포함 */
@@ -331,6 +344,15 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "showContributionColumn",
   "showContributionSum",
   "showTableSumRow",
+  "rankTop3Mode",
+  "rankTop3Effect",
+  "rankLabelFormat",
+  "rank1Bg",
+  "rank2Bg",
+  "rank3Bg",
+  "rank1Mark",
+  "rank2Mark",
+  "rank3Mark",
   "goalTextColor",
   "goalFontSize",
   "goalTextOutlineColor",
@@ -437,6 +459,15 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "showContributionColumn",
   "showContributionSum",
   "showTableSumRow",
+  "rankTop3Mode",
+  "rankTop3Effect",
+  "rankLabelFormat",
+  "rank1Bg",
+  "rank2Bg",
+  "rank3Bg",
+  "rank1Mark",
+  "rank2Mark",
+  "rank3Mark",
   "goalTextColor",
   "goalFontSize",
   "goalTextOutlineColor",
@@ -793,6 +824,7 @@ export function donorRankingsFullOverlayPath(userId: string, zoomPct: number): s
 export function donorRankingsThemeToSearchParams(theme: DonorRankingsTheme): URLSearchParams {
   const q = new URLSearchParams();
   q.set("top", String(theme.top));
+  if (theme.titleText.trim()) q.set("title", theme.titleText.trim());
   q.set("titleSize", String(theme.titleSize));
   q.set("rowSize", String(theme.rowSize));
   q.set("rankSize", String(theme.rankSize));

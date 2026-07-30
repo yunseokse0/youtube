@@ -135,6 +135,20 @@ function liveThemeColor(
   return readColor(sp, key, mergedFallback);
 }
 
+function liveThemeTitle(
+  ready: boolean,
+  useTest: boolean,
+  saved: string,
+  sp: URLSearchParams,
+  fallback: string
+): string {
+  if (ready && !useTest) {
+    const s = (saved || "").trim();
+    return s || fallback;
+  }
+  return (sp.get("title") || "").trim() || (saved || "").trim() || fallback;
+}
+
 /** URL 쿼리 `donorsB64` 최대 길이(과도한 쿼리 방지) */
 const DONORS_B64_MAX_LEN = 24_000;
 
@@ -656,8 +670,13 @@ export default function DonorRankingsOverlayPage() {
     "linear-gradient(135deg, #fff4f9 0%, #ffc8e6 48%, #ffa3cf 100%)"
   );
   const headerUnifiedBg = readColor(sp, "headerBg", headerAccountBg) || headerAccountBg;
-  const rankingTitle =
-    (sp.get("title") || "").trim() || (profileFull ? "👑 후원 순위 👑" : "후원 순위");
+  const rankingTitle = liveThemeTitle(
+    ready,
+    useTest,
+    savedTheme.titleText,
+    sp,
+    profileFull ? "👑 후원 순위 👑" : "후원 순위"
+  );
   const rowEvenBg = liveThemeColor(ready, useTest, savedTheme.rowEvenBg, sp, "rowEvenBg", "transparent");
   const rowOddBg = liveThemeColor(ready, useTest, savedTheme.rowOddBg, sp, "rowOddBg", "transparent");
   const rankColor = liveThemeColor(ready, useTest, savedTheme.rankColor, sp, "rankColor", "#fff5f9");

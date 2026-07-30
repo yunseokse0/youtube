@@ -192,6 +192,7 @@ type OverlayPreset = {
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
   confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableBgColor?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableFontWeight?: string; host?: string;
+  rankTop3Mode?: string; rankTop3Effect?: string; rankLabelFormat?: string; rank1Bg?: string; rank2Bg?: string; rank3Bg?: string; rank1Mark?: string; rank2Mark?: string; rank3Mark?: string;
 };
 
 /** 미션 목록이 비었을 때 미션 전광판 UI 확인용 placeholder */
@@ -701,6 +702,15 @@ export default function AdminPage() {
     tableBgColor: "",
     accountColor: "",
     toonColor: "",
+    rankTop3Mode: "off",
+    rankTop3Effect: "none",
+    rankLabelFormat: "hash",
+    rank1Bg: "",
+    rank2Bg: "",
+    rank3Bg: "",
+    rank1Mark: "",
+    rank2Mark: "",
+    rank3Mark: "",
     ...overrides,
     goalBaseline:
       overrides.goalBaseline !== undefined && String(overrides.goalBaseline).trim() !== ""
@@ -6420,6 +6430,17 @@ export default function AdminPage() {
                       <code className="text-neutral-300">layout=dual</code> 을 붙이세요.
                     </p>
                   </div>
+                  <label className="text-[11px] text-neutral-400 flex flex-col gap-1 rounded border border-white/10 bg-black/20 px-2 py-2">
+                    <span>제목 문구</span>
+                    <input
+                      type="text"
+                      value={state.donorRankingsTheme.titleText || ""}
+                      onChange={(e) => updateDonorRankingsTheme({ titleText: e.target.value })}
+                      className="h-8 w-full rounded border border-white/10 bg-neutral-900/80 px-2 text-sm"
+                      placeholder="후원 순위"
+                      maxLength={60}
+                    />
+                  </label>
                   <div className="rounded border border-white/10 bg-neutral-900/40 p-2 space-y-2">
                     <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
                       <label className="text-[11px] text-neutral-400">
@@ -6504,21 +6525,34 @@ export default function AdminPage() {
                       ))}
                     </div>
                     <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                      {[
-                        ["bg", "배경"],
-                        ["panelBg", "패널 배경"],
-                        ["borderColor", "테두리"],
-                        ["rowEvenBg", "짝수 행"],
-                        ["rowOddBg", "홀수 행"],
-                        ["outlineColor", "텍스트 외곽선"],
-                      ].map(([key, label]) => (
+                      {(
+                        [
+                          ["bg", "전체 배경", "#ffffff"],
+                          ["panelBg", "패널 배경", "#fff8fc"],
+                          ["borderColor", "테두리", "#ffd2e8"],
+                          ["rowEvenBg", "짝수 행", "#ffffff"],
+                          ["rowOddBg", "홀수 행", "#ffffff"],
+                          ["outlineColor", "텍스트 외곽선", "#000000"],
+                        ] as const
+                      ).map(([key, label, fallback]) => (
                         <label key={key} className="text-[11px] text-neutral-400 flex items-center gap-2 rounded border border-white/10 bg-black/20 px-2 py-1">
                           <span className="w-24 shrink-0">{label}</span>
+                          <input
+                            type="color"
+                            value={toColorPickerValue(
+                              String((state.donorRankingsTheme as unknown as Record<string, unknown>)[key] ?? ""),
+                              fallback
+                            )}
+                            onChange={(e) =>
+                              updateDonorRankingsTheme({ [key]: e.target.value } as Partial<AppState["donorRankingsTheme"]>)
+                            }
+                            className="h-7 w-9 shrink-0 rounded border border-white/20 bg-transparent p-0.5"
+                          />
                           <input
                             type="text"
                             value={String((state.donorRankingsTheme as unknown as Record<string, unknown>)[key] || "")}
                             onChange={(e) => updateDonorRankingsTheme({ [key]: e.target.value } as Partial<AppState["donorRankingsTheme"]>)}
-                            className="h-7 w-full rounded border border-white/10 bg-neutral-900/80 px-2 text-xs"
+                            className="h-7 min-w-0 flex-1 rounded border border-white/10 bg-neutral-900/80 px-2 text-xs"
                             placeholder="transparent / #fff / rgba(...)"
                           />
                         </label>
@@ -6635,6 +6669,17 @@ export default function AdminPage() {
                         위 「후원 순위」와 <strong className="text-pink-100">테마·URL이 완전히 분리</strong>되어 OBS에 브라우저 소스를 따로 추가하세요.
                       </p>
                     </div>
+                    <label className="text-[11px] text-neutral-400 flex flex-col gap-1 rounded border border-pink-500/20 bg-black/20 px-2 py-2">
+                      <span>제목 문구</span>
+                      <input
+                        type="text"
+                        value={state.donorRankingsFullTheme.titleText || ""}
+                        onChange={(e) => updateDonorRankingsFullTheme({ titleText: e.target.value })}
+                        className="h-8 w-full rounded border border-white/10 bg-neutral-900/80 px-2 text-sm"
+                        placeholder="👑 후원 순위 👑"
+                        maxLength={60}
+                      />
+                    </label>
                     <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
                       <label className="text-[11px] text-neutral-400">
                         제목 폰트
@@ -6712,6 +6757,48 @@ export default function AdminPage() {
                               } as Partial<AppState["donorRankingsFullTheme"]>)
                             }
                             className="h-7 w-9 rounded border border-white/20 bg-transparent p-0.5"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                      {(
+                        [
+                          ["bg", "전체 배경", "#ffffff"],
+                          ["panelBg", "패널 배경", "#ffeef6"],
+                          ["borderColor", "테두리", "#f472b6"],
+                          ["rowEvenBg", "짝수 행", "#ffe4f0"],
+                          ["rowOddBg", "홀수 행", "#ffffff"],
+                        ] as const
+                      ).map(([key, label, fallback]) => (
+                        <label
+                          key={key}
+                          className="text-[11px] text-neutral-400 flex items-center gap-2 rounded border border-pink-500/20 bg-black/20 px-2 py-1"
+                        >
+                          <span className="w-24 shrink-0">{label}</span>
+                          <input
+                            type="color"
+                            value={toColorPickerValue(
+                              String((state.donorRankingsFullTheme as unknown as Record<string, unknown>)[key] ?? ""),
+                              fallback
+                            )}
+                            onChange={(e) =>
+                              updateDonorRankingsFullTheme({
+                                [key]: e.target.value,
+                              } as Partial<AppState["donorRankingsFullTheme"]>)
+                            }
+                            className="h-7 w-9 shrink-0 rounded border border-white/20 bg-transparent p-0.5"
+                          />
+                          <input
+                            type="text"
+                            value={String((state.donorRankingsFullTheme as unknown as Record<string, unknown>)[key] || "")}
+                            onChange={(e) =>
+                              updateDonorRankingsFullTheme({
+                                [key]: e.target.value,
+                              } as Partial<AppState["donorRankingsFullTheme"]>)
+                            }
+                            className="h-7 min-w-0 flex-1 rounded border border-white/10 bg-neutral-900/80 px-2 text-xs"
+                            placeholder="transparent / #fff / rgba(...)"
                           />
                         </label>
                       ))}
@@ -9610,6 +9697,17 @@ export default function AdminPage() {
                     상세·프리셋은 <button type="button" className="text-sky-400 underline" onClick={() => document.getElementById("donor-management")?.scrollIntoView({ behavior: "smooth" })}>후원자</button> 탭에도 있습니다.
                   </p>
                 </div>
+                <label className="text-[11px] text-neutral-400 flex flex-col gap-1 rounded border border-fuchsia-500/25 bg-black/25 px-2 py-2">
+                  <span>제목 문구</span>
+                  <input
+                    type="text"
+                    value={state.donorRankingsTheme.titleText || ""}
+                    onChange={(e) => updateDonorRankingsTheme({ titleText: e.target.value })}
+                    className="h-8 w-full rounded border border-white/10 bg-neutral-900/80 px-2 text-sm"
+                    placeholder="후원 순위"
+                    maxLength={60}
+                  />
+                </label>
                 <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
                   <label className="text-[11px] text-neutral-400">
                     제목(px)
@@ -9685,6 +9783,41 @@ export default function AdminPage() {
                           updateDonorRankingsTheme({ [key]: e.target.value } as Partial<AppState["donorRankingsTheme"]>)
                         }
                         className="h-7 w-9 rounded border border-white/20 bg-transparent p-0.5"
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  {(
+                    [
+                      ["bg", "전체 배경", "#ffffff"],
+                      ["panelBg", "패널 배경", "#fff8fc"],
+                    ] as const
+                  ).map(([key, label, fallback]) => (
+                    <label
+                      key={key}
+                      className="flex items-center gap-2 rounded border border-fuchsia-500/25 bg-black/25 px-2 py-1 text-[11px] text-neutral-400"
+                    >
+                      <span className="w-24 shrink-0">{label}</span>
+                      <input
+                        type="color"
+                        value={toColorPickerValue(
+                          String((state.donorRankingsTheme as unknown as Record<string, unknown>)[key] ?? ""),
+                          fallback
+                        )}
+                        onChange={(e) =>
+                          updateDonorRankingsTheme({ [key]: e.target.value } as Partial<AppState["donorRankingsTheme"]>)
+                        }
+                        className="h-7 w-9 shrink-0 rounded border border-white/20 bg-transparent p-0.5"
+                      />
+                      <input
+                        type="text"
+                        value={String((state.donorRankingsTheme as unknown as Record<string, unknown>)[key] || "")}
+                        onChange={(e) =>
+                          updateDonorRankingsTheme({ [key]: e.target.value } as Partial<AppState["donorRankingsTheme"]>)
+                        }
+                        className="h-7 min-w-0 flex-1 rounded border border-white/10 bg-neutral-900/80 px-2 text-xs"
+                        placeholder="transparent / rgba(...)"
                       />
                     </label>
                   ))}
@@ -9790,6 +9923,17 @@ export default function AdminPage() {
                     <code className="text-pink-200/90">/overlay/donor-rankings-full</code> URL을 사용하세요.
                   </p>
                 </div>
+                <label className="text-[11px] text-neutral-400 flex flex-col gap-1 rounded border border-pink-500/20 bg-black/25 px-2 py-2">
+                  <span>제목 문구</span>
+                  <input
+                    type="text"
+                    value={state.donorRankingsFullTheme.titleText || ""}
+                    onChange={(e) => updateDonorRankingsFullTheme({ titleText: e.target.value })}
+                    className="h-8 w-full rounded border border-white/10 bg-neutral-900/80 px-2 text-sm"
+                    placeholder="👑 후원 순위 👑"
+                    maxLength={60}
+                  />
+                </label>
                 <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
                   <label className="text-[11px] text-neutral-400">
                     제목(px)
@@ -9867,6 +10011,45 @@ export default function AdminPage() {
                           } as Partial<AppState["donorRankingsFullTheme"]>)
                         }
                         className="h-7 w-9 rounded border border-white/20 bg-transparent p-0.5"
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  {(
+                    [
+                      ["bg", "전체 배경", "#ffffff"],
+                      ["panelBg", "패널 배경", "#ffeef6"],
+                    ] as const
+                  ).map(([key, label, fallback]) => (
+                    <label
+                      key={key}
+                      className="flex items-center gap-2 rounded border border-pink-500/20 bg-black/25 px-2 py-1 text-[11px] text-neutral-400"
+                    >
+                      <span className="w-24 shrink-0">{label}</span>
+                      <input
+                        type="color"
+                        value={toColorPickerValue(
+                          String((state.donorRankingsFullTheme as unknown as Record<string, unknown>)[key] ?? ""),
+                          fallback
+                        )}
+                        onChange={(e) =>
+                          updateDonorRankingsFullTheme({
+                            [key]: e.target.value,
+                          } as Partial<AppState["donorRankingsFullTheme"]>)
+                        }
+                        className="h-7 w-9 shrink-0 rounded border border-white/20 bg-transparent p-0.5"
+                      />
+                      <input
+                        type="text"
+                        value={String((state.donorRankingsFullTheme as unknown as Record<string, unknown>)[key] || "")}
+                        onChange={(e) =>
+                          updateDonorRankingsFullTheme({
+                            [key]: e.target.value,
+                          } as Partial<AppState["donorRankingsFullTheme"]>)
+                        }
+                        className="h-7 min-w-0 flex-1 rounded border border-white/10 bg-neutral-900/80 px-2 text-xs"
+                        placeholder="transparent / rgba(...)"
                       />
                     </label>
                   ))}
@@ -10663,6 +10846,87 @@ export default function AdminPage() {
                                 />
                               </div>
                               <p className="text-[10px] text-neutral-500 col-span-full">0이면 외곽선 없음. 비우면 글자 크기에 맞춰 자동.</p>
+                              <div className="col-span-full rounded border border-amber-500/25 bg-amber-950/20 p-3 space-y-2">
+                                <div className="text-xs font-semibold text-amber-100">1~3위 강조 (엑셀표)</div>
+                                <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                                  <label className="text-xs text-neutral-400">
+                                    순위 표시 형식
+                                    <select
+                                      className="mt-1 w-full rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
+                                      value={p.rankLabelFormat || "hash"}
+                                      onChange={(e) => updatePreset(p.id, { rankLabelFormat: e.target.value })}
+                                    >
+                                      <option value="hash">#1, #2 …</option>
+                                      <option value="plain">1, 2 …</option>
+                                      <option value="suffix">1위, 2위 …</option>
+                                    </select>
+                                  </label>
+                                  <label className="text-xs text-neutral-400">
+                                    1~3위 강조
+                                    <select
+                                      className="mt-1 w-full rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
+                                      value={p.rankTop3Mode || "off"}
+                                      onChange={(e) => updatePreset(p.id, { rankTop3Mode: e.target.value })}
+                                    >
+                                      <option value="off">OFF (순위 형식만)</option>
+                                      <option value="emoji">메달/문구만</option>
+                                      <option value="bg">행 배경만</option>
+                                      <option value="both">메달 + 행 배경</option>
+                                    </select>
+                                  </label>
+                                  <label className="text-xs text-neutral-400">
+                                    추가 효과
+                                    <select
+                                      className="mt-1 w-full rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
+                                      value={p.rankTop3Effect || "none"}
+                                      onChange={(e) => updatePreset(p.id, { rankTop3Effect: e.target.value })}
+                                    >
+                                      <option value="none">없음</option>
+                                      <option value="pulse">은은한 펄스</option>
+                                    </select>
+                                  </label>
+                                </div>
+                                {(p.rankTop3Mode || "off") !== "off" ? (
+                                  <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                                    {(
+                                      [
+                                        ["rank1Mark", "rank1Bg", "1위", "🥇", "#fef08a"],
+                                        ["rank2Mark", "rank2Bg", "2위", "🥈", "#fed7aa"],
+                                        ["rank3Mark", "rank3Bg", "3위", "🥉", "#bbf7d0"],
+                                      ] as const
+                                    ).map(([markKey, bgKey, label, markPh, bgFallback]) => (
+                                      <div key={markKey} className="rounded border border-white/10 bg-black/20 p-2 space-y-1">
+                                        <div className="text-[11px] text-neutral-300 font-medium">{label}</div>
+                                        <input
+                                          className="w-full rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
+                                          value={String((p as unknown as Record<string, string | undefined>)[markKey] || "")}
+                                          onChange={(e) => updatePreset(p.id, { [markKey]: e.target.value } as Partial<OverlayPreset>)}
+                                          placeholder={markPh}
+                                          maxLength={8}
+                                        />
+                                        <div className="flex items-center gap-2">
+                                          <input
+                                            type="color"
+                                            className="h-8 w-12 rounded border border-white/10 bg-neutral-900/80 p-0.5"
+                                            value={toColorPickerValue(String((p as unknown as Record<string, string | undefined>)[bgKey] || ""), bgFallback)}
+                                            onChange={(e) => updatePreset(p.id, { [bgKey]: e.target.value } as Partial<OverlayPreset>)}
+                                          />
+                                          <input
+                                            className="min-w-0 flex-1 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs"
+                                            value={String((p as unknown as Record<string, string | undefined>)[bgKey] || "")}
+                                            onChange={(e) => updatePreset(p.id, { [bgKey]: e.target.value } as Partial<OverlayPreset>)}
+                                            placeholder="rgba(...) / #hex"
+                                          />
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-[10px] text-neutral-500">
+                                    「순위 표시 형식」은 4위 이하·배경만 모드에 적용됩니다. 1~3위 문구는 아래 칸에서 개별 지정할 수 있습니다.
+                                  </p>
+                                )}
+                              </div>
                               <label className="text-xs text-neutral-400">표 글자 굵기</label>
                               <div className="flex items-center gap-2">
                                 <input
