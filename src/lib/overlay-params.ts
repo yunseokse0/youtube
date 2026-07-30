@@ -121,6 +121,8 @@ export type OverlayPresetLike = {
   tableBgGifBrightness?: string;
   /** 엑셀표 시트 배경색(#rrggbb). 비우면 테마 기본 */
   tableBgColor?: string;
+  /** 엑셀표 외곽·헤더·총합 구분선 색(#rrggbb). 비우면 테마 기본 */
+  tableLineColor?: string;
   totalLineVisible?: boolean;
   vertical?: boolean;
   accountColor?: string;
@@ -279,6 +281,8 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.tableBgGifBrightness && preset.tableBgGifBrightness.trim()) q.set("tableBgGifBrightness", preset.tableBgGifBrightness.trim());
   const tableBgColor = normalizeGoalHexColor((preset.tableBgColor || "").trim());
   if (tableBgColor) q.set("tableBgColor", tableBgColor);
+  const tableLineColor = normalizeGoalHexColor((preset.tableLineColor || "").trim());
+  if (tableLineColor) q.set("tableLineColor", tableLineColor);
   if (preset.totalLineVisible) q.set("totalLineVisible", "true");
   if (preset.accountColor && preset.accountColor.trim()) q.set("accountColor", preset.accountColor.trim());
   if (preset.toonColor && preset.toonColor.trim()) q.set("toonColor", preset.toonColor.trim());
@@ -330,6 +334,7 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "tableBgGifOpacity",
   "tableBgGifBrightness",
   "tableBgColor",
+  "tableLineColor",
   "donorsFormat",
   "currencyLocale",
   "accountHeaderLabel",
@@ -445,6 +450,7 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "tableBgGifOpacity",
   "tableBgGifBrightness",
   "tableBgColor",
+  "tableLineColor",
   "donorsFormat",
   "currencyLocale",
   "accountHeaderLabel",
@@ -615,6 +621,7 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "tableBgGifOpacity",
   "tableBgGifBrightness",
   "tableBgColor",
+  "tableLineColor",
   /** 테마도 프리셋 우선 — URL 스테일/미리보기 핫리로드와 맞춤 */
   "theme",
   "membersTheme",
@@ -734,6 +741,21 @@ export function resolveTableBgColor(
 ): string {
   const merged = resolveLivePresetStyleParam(
     "tableBgColor",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  return normalizeGoalHexColor(merged || "") || "";
+}
+
+/** 엑셀표 외곽·헤더·총합 구분선 색. 비우면 테마 accent / 방송 기본 */
+export function resolveTableLineColor(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string {
+  const merged = resolveLivePresetStyleParam(
+    "tableLineColor",
     rawSp,
     presetToParams(preset),
     opts

@@ -191,7 +191,7 @@ type OverlayPreset = {
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
-  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableBgColor?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableFontWeight?: string; host?: string;
+  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableBgColor?: string; tableLineColor?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableFontWeight?: string; host?: string;
   rankTop3Mode?: string; rankTop3Effect?: string; rankLabelFormat?: string; rank1Bg?: string; rank2Bg?: string; rank3Bg?: string; rank1Mark?: string; rank2Mark?: string; rank3Mark?: string;
 };
 
@@ -700,6 +700,7 @@ export default function AdminPage() {
     tableBgGifOpacity: "45",
     tableBgGifBrightness: "100",
     tableBgColor: "",
+    tableLineColor: "",
     accountColor: "",
     toonColor: "",
     rankTop3Mode: "off",
@@ -1583,6 +1584,10 @@ export default function AdminPage() {
     if (patch.tableBgColor !== undefined) {
       const normalized = normalizeGoalHexColor(String(patch.tableBgColor || ""));
       mergedPatch.tableBgColor = normalized || "";
+    }
+    if (patch.tableLineColor !== undefined) {
+      const normalized = normalizeGoalHexColor(String(patch.tableLineColor || ""));
+      mergedPatch.tableLineColor = normalized || "";
     }
     if (patch.tableTextColor !== undefined) {
       const normalized = normalizeGoalHexColor(String(patch.tableTextColor || ""));
@@ -10473,6 +10478,17 @@ export default function AdminPage() {
                                     />
                                     <span className="text-xs text-neutral-400 font-mono">{p.tableBgColor || "테마 자동"}</span>
                                     <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableBgColor: "" })}>테마 자동</button>
+                                  </div>
+                                  <label className="text-xs text-neutral-400">표 선 색</label>
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="color"
+                                      className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                      value={toColorPickerValue(p.tableLineColor, "#f5b8d4")}
+                                      onChange={(e) => updatePreset(p.id, { tableLineColor: e.target.value })}
+                                    />
+                                    <span className="text-xs text-neutral-400 font-mono">{p.tableLineColor || "테마 자동"}</span>
+                                    <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableLineColor: "" })}>테마 자동</button>
                                   </div>
                                   <label className="text-xs text-neutral-400">총합 행</label>
                                   <div className="flex flex-wrap items-center gap-2">

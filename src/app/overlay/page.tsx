@@ -10,6 +10,7 @@ import {
   resolveGoalTextOutlineWidthPx,
   resolveTableTextColor,
   resolveTableBgColor,
+  resolveTableLineColor,
   resolveTableTextOutlineColor,
   resolveTableTextOutlineWidthPx,
   resolveTableFontWeight,
@@ -535,6 +536,28 @@ function parseHexRgb(hex: string): [number, number, number] | null {
   return null;
 }
 
+function clampCssAlpha(alpha: number): number {
+  return Math.max(0, Math.min(1, alpha));
+}
+
+/** rgba/rgb/hex → rgba(..., alpha). 표 불투명도와 행·헤더 배경을 일치시킬 때 사용 */
+function applyAlphaToCssColor(input: string, alpha: number): string {
+  const a = clampCssAlpha(alpha);
+  const trimmed = String(input || "").trim();
+  const rgbaMatch = trimmed.match(
+    /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*[\d.]+)?\s*\)$/i
+  );
+  if (rgbaMatch) {
+    return `rgba(${rgbaMatch[1]}, ${rgbaMatch[2]}, ${rgbaMatch[3]}, ${a})`;
+  }
+  const hex = trimmed.startsWith("#") ? trimmed : trimmed ? `#${trimmed}` : "";
+  const hexRgb = hex ? parseHexRgb(hex) : null;
+  if (hexRgb) {
+    return `rgba(${hexRgb.join(", ")}, ${a})`;
+  }
+  return trimmed;
+}
+
 function isLightTextHex(hex: string): boolean {
   const rgb = parseHexRgb(hex);
   if (!rgb) return true;
@@ -552,6 +575,7 @@ const TABLE_NUMERIC_OUTLINE_DARK_ON_LIGHT =
   "0 1px 2px rgba(255,255,255,0.88), 0 0 1px rgba(15,23,42,0.38), 0 1px 3px rgba(0,0,0,0.14)";
 /** 후원 목표(GoalBar)와 동일 계열 — 밝은 방송 배경에서 표·글자 대비 */
 const TABLE_BROADCAST_PANEL_BORDER = "#f5b8d4";
+const TABLE_BROADCAST_TOTAL_BORDER = "rgba(244, 170, 205, 0.45)";
 const TABLE_BROADCAST_PANEL_BG = "#fde8f2";
 const TABLE_BROADCAST_TEXT_ON_LIGHT = "#6b2d4a";
 const TABLE_BROADCAST_TEXT_ON_DARK = "#f8fafc";
@@ -1868,6 +1892,7 @@ function OverlayInner() {
   const toonColor = sp.get("toonColor") || undefined;
   const tableTextColorRaw = resolveTableTextColor(rawSp, effectivePreset, { ready });
   const tableBgColorRaw = resolveTableBgColor(rawSp, effectivePreset, { ready });
+  const tableLineColorRaw = resolveTableLineColor(rawSp, effectivePreset, { ready });
   const excelRankTop3Style = useMemo(
     () => resolveExcelRankTop3Style(rawSp, effectivePreset, { ready }),
     [rawSp, effectivePreset, ready]
@@ -2038,9 +2063,11 @@ function OverlayInner() {
     const direct = tableBgOpacity / 100;
     return Math.max(0, Math.min(1, direct));
   })();
-  /** OBS: 밝은 실사 배경 위 표 시트 — 후원 목표 트랙처럼 거의 불투명 */
-  const effectiveTableTintAlpha =
-    externalHost && isLightTableSheet && !showTableBgGif
+  /** 100% + GIF 없음 → 완전 불투명(행·헤더 이중 알파·OBS 0.94 바닥값 방지) */
+  const tableSheetFullyOpaque = tableBgOpacity >= 100 && !showTableBgGif;
+  const effectiveTableTintAlpha = tableSheetFullyOpaque
+    ? 1
+    : externalHost && isLightTableSheet && !showTableBgGif
       ? Math.max(tableTintAlpha, 0.94)
       : tableTintAlpha;
   /** 미리보기와 동일하게 항상 시트 틴트+colgroup 경로 사용 → 테이블 클래스 배경은 제거 */
@@ -2888,19 +2915,37 @@ function OverlayInner() {
     /** 숫자 자리 증가로 표 전체가 밀려 나가지 않도록 너비 상한 고정 */
     const excelTableWidthCalc = excelGridCols.join(" + ");
     const isExcelLiveTheme = membersThemeId === "excelLive";
-    const tablePanelBorder = excelMemberAccent?.panelBorder ?? TABLE_BROADCAST_PANEL_BORDER;
+    const tableHeaderLineColor =
+      tableLineColorRaw ||
+      excelMemberAccent?.headerBorder ||
+      TABLE_BROADCAST_PANEL_BORDER;
+    const tableTotalLineColor =
+      tableLineColorRaw ||
+      excelMemberAccent?.totalRowBorder ||
+      TABLE_BROADCAST_TOTAL_BORDER;
+    const tablePanelBorder =
+      tableLineColorRaw ||
+      excelMemberAccent?.panelBorder ||
+      TABLE_BROADCAST_PANEL_BORDER;
     const tablePanelShadow = excelMemberAccent?.panelShadow ?? "0 2px 10px rgba(255, 140, 190, 0.22)";
     const excelMemberTableClass = excelMemberAccent
       ? `${isExcelLiveTheme ? " excel-live-table" : " excel-member-table"}`
       : "";
     const excelMemberTableStyle: React.CSSProperties | undefined = excelMemberAccent
       ? {
-          ["--excel-header-bg" as string]: excelMemberAccent.headerBg,
+          ["--excel-header-bg" as string]: applyAlphaToCssColor(
+            excelMemberAccent.headerBg,
+            effectiveTableTintAlpha
+          ),
           ["--excel-header-text" as string]: excelMemberAccent.headerText,
-          ["--excel-header-border" as string]: excelMemberAccent.headerBorder,
-          ["--excel-total-border" as string]: excelMemberAccent.totalRowBorder,
+          ["--excel-header-border" as string]: tableHeaderLineColor,
+          ["--excel-total-border" as string]: tableTotalLineColor,
         }
       : undefined;
+    const excelLiveRowOddBg = applyAlphaToCssColor("rgb(255, 255, 255)", effectiveTableTintAlpha);
+    const excelLiveRowEvenBg = applyAlphaToCssColor("rgb(219, 234, 254)", effectiveTableTintAlpha);
+    const excelLiveTotalRowBg = applyAlphaToCssColor("rgb(255, 255, 255)", effectiveTableTintAlpha);
+    const broadcastTheadBg = applyAlphaToCssColor("rgb(253, 232, 242)", effectiveTableTintAlpha);
     let effectiveScale = centerFixed || hasTableFreePos
       ? (scale * (zoomMode === "neutral" ? 1 : (zoomMode === "invert" ? (1 / centerZoomScale) : centerZoomScale)))
       : (externalHost ? scale : (viewportScale * scale));
@@ -3010,14 +3055,14 @@ function OverlayInner() {
     const broadcastTheadCss = useBroadcastTableChrome
       ? `
         .overlay-root .overlay-elegant-table thead td {
-          background: rgba(253, 232, 242, 0.96) !important;
+          background: ${broadcastTheadBg} !important;
           font-weight: ${tableHeaderFontWeight} !important;
           text-shadow: ${tableOutlineShadowCss} !important;
           -webkit-text-stroke: ${tableStrokeCss} !important;
           paint-order: stroke fill;
           box-shadow: none !important;
           border: none !important;
-          border-bottom: 1px solid ${TABLE_BROADCAST_PANEL_BORDER} !important;
+          border-bottom: 1px solid ${tableHeaderLineColor} !important;
         }
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
         .overlay-root .overlay-elegant-table thead td.overlay-col-role,
@@ -3026,10 +3071,10 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td.overlay-col-toon,
         .overlay-root .overlay-elegant-table thead td.overlay-col-total,
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution {
-          background: rgba(253, 232, 242, 0.96) !important;
+          background: ${broadcastTheadBg} !important;
         }
         .overlay-root .overlay-elegant-table .overlay-total-row td {
-          border-top: 2px solid rgba(244, 170, 205, 0.45) !important;
+          border-top: 2px solid ${tableTotalLineColor} !important;
         }`
       : `
         .overlay-root .overlay-elegant-table.excel-member-table thead td,
@@ -3205,26 +3250,38 @@ function OverlayInner() {
           background: var(--excel-header-bg) !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table tbody tr.overlay-row:nth-child(odd) td {
-          background: rgba(255, 255, 255, 0.88) !important;
+          background: ${excelLiveRowOddBg} !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table tbody tr.overlay-row:nth-child(even) td {
-          background: rgba(219, 234, 254, 0.82) !important;
+          background: ${excelLiveRowEvenBg} !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table .overlay-total-row td {
           border-top: 2px solid rgba(26, 82, 118, 0.45) !important;
-          background: rgba(255, 255, 255, 0.78) !important;
+          background: ${excelLiveTotalRowBg} !important;
+        }
+        ${
+          tableLineColorRaw
+            ? `
+        .overlay-root .overlay-elegant-table.excel-live-table thead td {
+          border-bottom: 1px solid ${tableLineColorRaw} !important;
+        }
+        .overlay-root .overlay-elegant-table.excel-live-table .overlay-total-row td {
+          border-top: 2px solid ${tableLineColorRaw} !important;
+        }
+        `
+            : ""
         }
         ${
           tableBgColorRaw
             ? `
         .overlay-root .overlay-elegant-table.excel-live-table tbody tr.overlay-row:nth-child(odd) td {
-          background: rgba(${tableSheetRgb.join(",")}, ${Math.min(0.96, Math.max(0.35, effectiveTableTintAlpha))}) !important;
+          background: rgba(${tableSheetRgb.join(",")}, ${effectiveTableTintAlpha}) !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table tbody tr.overlay-row:nth-child(even) td {
-          background: rgba(${tableSheetRgb.map((c) => Math.max(0, Math.min(255, Math.round(c * 0.9)))).join(",")}, ${Math.min(0.92, Math.max(0.32, effectiveTableTintAlpha * 0.95))}) !important;
+          background: rgba(${tableSheetRgb.map((c) => Math.max(0, Math.min(255, Math.round(c * 0.9)))).join(",")}, ${effectiveTableTintAlpha}) !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table .overlay-total-row td {
-          background: rgba(${tableSheetRgb.map((c) => Math.max(0, Math.min(255, Math.round(c * 0.97)))).join(",")}, ${Math.min(0.94, Math.max(0.4, effectiveTableTintAlpha))}) !important;
+          background: rgba(${tableSheetRgb.map((c) => Math.max(0, Math.min(255, Math.round(c * 0.97)))).join(",")}, ${effectiveTableTintAlpha}) !important;
         }
         `
             : ""
