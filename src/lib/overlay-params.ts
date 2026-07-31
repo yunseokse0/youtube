@@ -152,6 +152,9 @@ export type OverlayPresetLike = {
   tableTextColor?: string;
   tableTextOutlineColor?: string;
   tableTextOutlineWidth?: string;
+  /** 헤더 글자 외곽선 — 비우면 본문(tableTextOutline*)과 동일 */
+  tableHeaderTextOutlineColor?: string;
+  tableHeaderTextOutlineWidth?: string;
   tableFontWeight?: string;
   /** 엑셀표 글꼴: auto | mono | sans | pretendard | gothic | serif */
   tableFontFamily?: string;
@@ -322,6 +325,13 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
     const w = Math.max(0, Math.min(3, parseFloat(tableOutlineW) || 0));
     q.set("tableTextOutlineWidth", String(w));
   }
+  const tableHeaderOutlineColor = normalizeGoalHexColor((preset.tableHeaderTextOutlineColor || "").trim());
+  if (tableHeaderOutlineColor) q.set("tableHeaderTextOutlineColor", tableHeaderOutlineColor);
+  const tableHeaderOutlineW = (preset.tableHeaderTextOutlineWidth || "").trim();
+  if (tableHeaderOutlineW) {
+    const w = Math.max(0, Math.min(3, parseFloat(tableHeaderOutlineW) || 0));
+    q.set("tableHeaderTextOutlineWidth", String(w));
+  }
   const tableWeightRaw = (preset.tableFontWeight || "").trim();
   if (tableWeightRaw) {
     const fw = parseInt(tableWeightRaw, 10);
@@ -376,6 +386,8 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "tableTextColor",
   "tableTextOutlineColor",
   "tableTextOutlineWidth",
+  "tableHeaderTextOutlineColor",
+  "tableHeaderTextOutlineWidth",
   "tableFontWeight",
   "tableFontFamily",
   "showCombinedColumn",
@@ -499,6 +511,8 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "tableTextColor",
   "tableTextOutlineColor",
   "tableTextOutlineWidth",
+  "tableHeaderTextOutlineColor",
+  "tableHeaderTextOutlineWidth",
   "tableFontWeight",
   "tableFontFamily",
   "showCombinedColumn",
@@ -667,6 +681,8 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "tableTextColor",
   "tableTextOutlineColor",
   "tableTextOutlineWidth",
+  "tableHeaderTextOutlineColor",
+  "tableHeaderTextOutlineWidth",
   "tableFontWeight",
   "tableFontFamily",
   "accountColor",
@@ -946,6 +962,40 @@ export function resolveTableTextOutlineWidthPx(
   const n = parseFloat(raw);
   if (!Number.isFinite(n)) return undefined;
   return Math.max(0, Math.min(3, n));
+}
+
+export function resolveTableHeaderTextOutlineColor(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string | undefined {
+  const merged = resolveLivePresetStyleParam(
+    "tableHeaderTextOutlineColor",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  const headerHex = normalizeGoalHexColor(merged || "");
+  if (headerHex) return headerHex;
+  return resolveTableTextOutlineColor(rawSp, preset, opts);
+}
+
+export function resolveTableHeaderTextOutlineWidthPx(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): number | undefined {
+  const raw = resolveLivePresetStyleParam(
+    "tableHeaderTextOutlineWidth",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  if (raw !== null && raw.trim() !== "") {
+    const n = parseFloat(raw);
+    if (Number.isFinite(n)) return Math.max(0, Math.min(3, n));
+  }
+  return resolveTableTextOutlineWidthPx(rawSp, preset, opts);
 }
 
 /** 엑셀표 글자 굵기(400~900). 미설정 시 800 */

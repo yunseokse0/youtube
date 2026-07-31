@@ -19,6 +19,8 @@ import {
   resolveTableLineColor,
   resolveTableTextOutlineColor,
   resolveTableTextOutlineWidthPx,
+  resolveTableHeaderTextOutlineColor,
+  resolveTableHeaderTextOutlineWidthPx,
   resolveTableFontWeight,
   resolveTableFontFamilyId,
   resolveLivePresetStyleParam,
@@ -1972,6 +1974,8 @@ function OverlayInner() {
   const goalBarAnimationMode = resolveGoalBarAnimationMode(rawSp, effectivePreset, { ready });
   const tableTextOutlineColor = resolveTableTextOutlineColor(rawSp, effectivePreset, { ready });
   const tableTextOutlineWidthPx = resolveTableTextOutlineWidthPx(rawSp, effectivePreset, { ready });
+  const tableHeaderTextOutlineColor = resolveTableHeaderTextOutlineColor(rawSp, effectivePreset, { ready });
+  const tableHeaderTextOutlineWidthPx = resolveTableHeaderTextOutlineWidthPx(rawSp, effectivePreset, { ready });
   const tableFontWeight = resolveTableFontWeight(rawSp, effectivePreset, { ready });
   const tableHeaderFontWeight = Math.min(900, tableFontWeight + 100);
   const tableFontFamilyId = resolveTableFontFamilyId(rawSp, effectivePreset, { ready });
@@ -3120,6 +3124,29 @@ function OverlayInner() {
           tableBroadcastOutline.textShadow ||
             (tableTextIsLight ? TABLE_TEXT_OUTLINE_LIGHT_ON_DARK : TABLE_TEXT_OUTLINE_DARK_ON_LIGHT)
         );
+    const tableHeaderOutlineDisabled = tableHeaderTextOutlineWidthPx === 0;
+    const resolvedTableHeaderOutlineColor =
+      tableHeaderTextOutlineColor || resolvedTableOutlineColor;
+    const tableHeaderBroadcastOutline = buildBroadcastTextOutlineStyle({
+      fontSizePx: memberFontPx,
+      outlineColor: resolvedTableHeaderOutlineColor,
+      outlineWidthPx: tableHeaderTextOutlineWidthPx,
+    });
+    const tableHeaderOutlineShadowCss = tableHeaderOutlineDisabled
+      ? "none"
+      : buildBroadcastTextOutlineShadowCss({
+          outlineColor: resolvedTableHeaderOutlineColor,
+          outlineWidthPx: tableHeaderTextOutlineWidthPx,
+        }) ||
+        String(
+          tableHeaderBroadcastOutline.textShadow ||
+            (tableTextIsLight ? TABLE_TEXT_OUTLINE_LIGHT_ON_DARK : TABLE_TEXT_OUTLINE_DARK_ON_LIGHT)
+        );
+    const tableHeaderStrokeCss = externalSafeMode
+      ? "0"
+      : String(tableHeaderBroadcastOutline.WebkitTextStroke || "0");
+    const excelTheadTextShadow = tableHeaderOutlineShadowCss;
+    const excelTheadStroke = tableHeaderOutlineDisabled ? "0" : tableHeaderStrokeCss;
     const tableNumericOutlineShadowCss = tableOutlineShadowCss;
     const tableStrokeCss = externalSafeMode
       ? "0"
@@ -3160,8 +3187,9 @@ function OverlayInner() {
           background: var(--excel-header-bg) !important;
           color: var(--excel-header-text) !important;
           font-weight: ${tableHeaderFontWeight} !important;
-          text-shadow: none !important;
-          -webkit-text-stroke: 0 !important;
+          text-shadow: ${excelTheadTextShadow} !important;
+          -webkit-text-stroke: ${excelTheadStroke} !important;
+          paint-order: stroke fill;
           box-shadow: none !important;
           border: none !important;
           border-bottom: 1px solid var(--excel-header-border) !important;
@@ -3171,8 +3199,9 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table.excel-live-table thead td span,
         .overlay-root .overlay-elegant-table.excel-live-table thead td strong {
           color: var(--excel-header-text) !important;
-          text-shadow: none !important;
-          -webkit-text-stroke: 0 !important;
+          text-shadow: ${excelTheadTextShadow} !important;
+          -webkit-text-stroke: ${excelTheadStroke} !important;
+          paint-order: stroke fill;
         }
         .overlay-root .overlay-elegant-table.excel-member-table .overlay-total-row td,
         .overlay-root .overlay-elegant-table.excel-live-table .overlay-total-row td {

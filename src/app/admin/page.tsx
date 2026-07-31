@@ -194,7 +194,7 @@ type OverlayPreset = {
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
-  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
+  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
   rankTop3Mode?: string; rankTop3Effect?: string; rankLabelFormat?: string; rank1Bg?: string; rank2Bg?: string; rank3Bg?: string; rank1Mark?: string; rank2Mark?: string; rank3Mark?: string;
 };
 
@@ -1631,6 +1631,16 @@ export default function AdminPage() {
     if (patch.tableTextOutlineWidth !== undefined) {
       const w = parseFloat(String(patch.tableTextOutlineWidth || "").replace(/[^\d.]/g, "") || "0");
       mergedPatch.tableTextOutlineWidth = Number.isFinite(w)
+        ? String(Math.max(0, Math.min(3, w)))
+        : "";
+    }
+    if (patch.tableHeaderTextOutlineColor !== undefined) {
+      const normalized = normalizeGoalHexColor(String(patch.tableHeaderTextOutlineColor || ""));
+      mergedPatch.tableHeaderTextOutlineColor = normalized || "";
+    }
+    if (patch.tableHeaderTextOutlineWidth !== undefined) {
+      const w = parseFloat(String(patch.tableHeaderTextOutlineWidth || "").replace(/[^\d.]/g, "") || "0");
+      mergedPatch.tableHeaderTextOutlineWidth = Number.isFinite(w)
         ? String(Math.max(0, Math.min(3, w)))
         : "";
     }
@@ -10542,6 +10552,56 @@ export default function AdminPage() {
                                         <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">{p.tableHeaderTextColor || "테마 자동"}</span>
                                         <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableHeaderTextColor: "" })}>테마 자동</button>
                                       </div>
+                                      <label className="text-xs text-neutral-400">헤더 외곽선 색</label>
+                                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                        <input
+                                          type="color"
+                                          className="h-9 w-14 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                          value={toColorPickerValue(p.tableHeaderTextOutlineColor || p.tableTextOutlineColor || "#060c18", "#060c18")}
+                                          onChange={(e) => updatePreset(p.id, { tableHeaderTextOutlineColor: e.target.value })}
+                                        />
+                                        <input
+                                          className="flex-1 min-w-0 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-xs font-mono"
+                                          value={p.tableHeaderTextOutlineColor || ""}
+                                          onChange={(e) => updatePreset(p.id, { tableHeaderTextOutlineColor: e.target.value })}
+                                          placeholder="비우면 본문 외곽선과 동일"
+                                        />
+                                        <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableHeaderTextOutlineColor: "" })}>본문과 동일</button>
+                                      </div>
+                                      <label className="text-xs text-neutral-400">헤더 외곽선 두께</label>
+                                      <div className="flex min-w-0 items-center gap-2">
+                                        <input
+                                          type="range"
+                                          min={0}
+                                          max={3}
+                                          step={0.1}
+                                          value={(() => {
+                                            const raw =
+                                              p.tableHeaderTextOutlineWidth !== undefined && p.tableHeaderTextOutlineWidth !== ""
+                                                ? p.tableHeaderTextOutlineWidth
+                                                : p.tableTextOutlineWidth;
+                                            const n = parseFloat(String(raw ?? ""));
+                                            return Number.isFinite(n) ? Math.min(3, Math.max(0, n)) : 1.0;
+                                          })()}
+                                          onChange={(e) => updatePreset(p.id, { tableHeaderTextOutlineWidth: e.target.value })}
+                                          className="flex-1 accent-emerald-500"
+                                        />
+                                        <input
+                                          className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                                          type="number"
+                                          min={0}
+                                          max={3}
+                                          step={0.1}
+                                          value={p.tableHeaderTextOutlineWidth ?? ""}
+                                          onChange={(e) =>
+                                            updatePreset(p.id, {
+                                              tableHeaderTextOutlineWidth: e.target.value.replace(/[^\d.]/g, "").slice(0, 3),
+                                            })
+                                          }
+                                          placeholder="동일"
+                                        />
+                                        <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableHeaderTextOutlineWidth: "" })}>본문과 동일</button>
+                                      </div>
                                     </div>
                                     <div className="text-xs font-semibold text-sky-300/90 pt-0.5">본문(멤버 행)</div>
                                     <div className="grid grid-cols-1 sm:grid-cols-[7.5rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5">
@@ -10932,7 +10992,7 @@ export default function AdminPage() {
                               <label className="text-xs text-neutral-400">이름 너비(ch)</label>
                               <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="(기본 자동)" value={p.nameCh || ""} onChange={(e) => updatePreset(p.id, { nameCh: e.target.value.replace(/[^\d]/g, "") })} />
                               <p className="col-span-full text-[10px] text-neutral-500">
-                                헤더·본문 배경/글자색은 위 「멤버·총합 테마」 영역에서 설정합니다.
+                                헤더·본문 배경/글자색은 위 「멤버·총합 테마」 영역에서 설정합니다. 헤더 외곽선은 비우면 아래 본문 외곽선과 동일하게 적용됩니다.
                               </p>
                               <label className="text-xs text-neutral-400">표 글자 외곽선 색</label>
                               <div className="flex items-center gap-2">
