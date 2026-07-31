@@ -552,12 +552,14 @@ function applyAlphaToCssColor(input: string, alpha: number): string {
     /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*[\d.]+)?\s*\)$/i
   );
   if (rgbaMatch) {
-    return `rgba(${rgbaMatch[1]}, ${rgbaMatch[2]}, ${rgbaMatch[3]}, ${a})`;
+    return a >= 1
+      ? `rgb(${rgbaMatch[1]}, ${rgbaMatch[2]}, ${rgbaMatch[3]})`
+      : `rgba(${rgbaMatch[1]}, ${rgbaMatch[2]}, ${rgbaMatch[3]}, ${a})`;
   }
   const hex = trimmed.startsWith("#") ? trimmed : trimmed ? `#${trimmed}` : "";
   const hexRgb = hex ? parseHexRgb(hex) : null;
   if (hexRgb) {
-    return `rgba(${hexRgb.join(", ")}, ${a})`;
+    return a >= 1 ? `rgb(${hexRgb.join(", ")})` : `rgba(${hexRgb.join(", ")}, ${a})`;
   }
   return trimmed;
 }
@@ -2095,6 +2097,10 @@ function OverlayInner() {
     : externalHost && isLightTableSheet && !showTableBgGif
       ? Math.max(tableTintAlpha, 0.94)
       : tableTintAlpha;
+  /** 본문 시트 배경 — 100%일 때 rgb()로 OBS/Prism 합성 투명 이슈 완화 */
+  const tableBodySheetBgCss = tableSheetFullyOpaque
+    ? `rgb(${tableSheetRgb.join(", ")})`
+    : `rgba(${tableSheetRgb.join(", ")}, ${effectiveTableTintAlpha})`;
   /** 미리보기와 동일하게 항상 시트 틴트+colgroup 경로 사용 → 테이블 클래스 배경은 제거 */
   const effectiveTableCls = stripBg(membersTheme.tableCls);
   // Strip row backgrounds for tinted/GIF sheet; keep header & total bar colors when shown.
@@ -3302,6 +3308,9 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table.pastel-member-table tbody tr.overlay-row:nth-child(even) td {
           background: transparent !important;
         }
+        .overlay-root .overlay-elegant-table:not(.excel-live-table):not(.pastel-member-table) tbody tr:not(.overlay-rank-top-1):not(.overlay-rank-top-2):not(.overlay-rank-top-3) td {
+          background: ${tableBodySheetBgCss} !important;
+        }
         .overlay-root .overlay-elegant-table.excel-live-table thead td {
           color: var(--excel-header-text) !important;
           border-bottom: 1px solid var(--excel-header-border) !important;
@@ -3384,7 +3393,7 @@ function OverlayInner() {
         `
             : ""
         }
-        /* 총합 행: 셀마다 그라데이션 박스 제거 → 본문과 동일한 투명 시트 */
+        /* 총합 행: 셀마다 그라데이션 박스 제거 → 본문과 동일한 시트색(excelLive는 위에서 별도 지정) */
         .overlay-root .overlay-elegant-table .overlay-total-row td {
           background: transparent !important;
           background-image: none !important;
@@ -3396,6 +3405,9 @@ function OverlayInner() {
           font-size: ${memberFontPx}px !important;
           font-weight: ${tableFontWeight} !important;
           vertical-align: middle;
+        }
+        .overlay-root .overlay-elegant-table:not(.excel-live-table):not(.pastel-member-table) tbody tr.overlay-total-row td {
+          background: ${tableBodySheetBgCss} !important;
         }
         ${totalLineVisible ? "" : `
         .overlay-root .overlay-elegant-table tbody td.overlay-col-total,
@@ -3641,7 +3653,7 @@ function OverlayInner() {
                     border: `1px solid ${tablePanelBorder}`,
                     boxShadow: tablePanelShadow,
                     padding: "0.14rem",
-                    backgroundColor: `rgba(${tableSheetRgb.join(",")}, ${effectiveTableTintAlpha})`,
+                    backgroundColor: tableBodySheetBgCss,
                   }}
                 >
                     <table
