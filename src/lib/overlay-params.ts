@@ -122,6 +122,10 @@ export type OverlayPresetLike = {
   tableBgGifBrightness?: string;
   /** 엑셀표 시트 배경색(#rrggbb). 비우면 테마 기본 */
   tableBgColor?: string;
+  /** 엑셀표 헤더(상단) 배경색. 비우면 테마 기본 */
+  tableHeaderBgColor?: string;
+  /** 엑셀표 헤더(상단) 글자색. 비우면 테마 기본 */
+  tableHeaderTextColor?: string;
   /** 엑셀표 외곽·헤더·총합 구분선 색(#rrggbb). 비우면 테마 기본 */
   tableLineColor?: string;
   totalLineVisible?: boolean;
@@ -284,6 +288,10 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.tableBgGifBrightness && preset.tableBgGifBrightness.trim()) q.set("tableBgGifBrightness", preset.tableBgGifBrightness.trim());
   const tableBgColor = normalizeGoalHexColor((preset.tableBgColor || "").trim());
   if (tableBgColor) q.set("tableBgColor", tableBgColor);
+  const tableHeaderBgColor = normalizeGoalHexColor((preset.tableHeaderBgColor || "").trim());
+  if (tableHeaderBgColor) q.set("tableHeaderBgColor", tableHeaderBgColor);
+  const tableHeaderTextColor = normalizeGoalHexColor((preset.tableHeaderTextColor || "").trim());
+  if (tableHeaderTextColor) q.set("tableHeaderTextColor", tableHeaderTextColor);
   const tableLineColor = normalizeGoalHexColor((preset.tableLineColor || "").trim());
   if (tableLineColor) q.set("tableLineColor", tableLineColor);
   if (preset.totalLineVisible) q.set("totalLineVisible", "true");
@@ -339,6 +347,8 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "tableBgGifOpacity",
   "tableBgGifBrightness",
   "tableBgColor",
+  "tableHeaderBgColor",
+  "tableHeaderTextColor",
   "tableLineColor",
   "donorsFormat",
   "currencyLocale",
@@ -456,6 +466,8 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "tableBgGifOpacity",
   "tableBgGifBrightness",
   "tableBgColor",
+  "tableHeaderBgColor",
+  "tableHeaderTextColor",
   "tableLineColor",
   "donorsFormat",
   "currencyLocale",
@@ -629,6 +641,8 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "tableBgGifOpacity",
   "tableBgGifBrightness",
   "tableBgColor",
+  "tableHeaderBgColor",
+  "tableHeaderTextColor",
   "tableLineColor",
   /** 테마도 프리셋 우선 — URL 스테일/미리보기 핫리로드와 맞춤 */
   "theme",
@@ -749,6 +763,36 @@ export function resolveTableBgColor(
 ): string {
   const merged = resolveLivePresetStyleParam(
     "tableBgColor",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  return normalizeGoalHexColor(merged || "") || "";
+}
+
+/** 엑셀표 헤더(상단) 배경색. 비우면 테마 accent / 방송 기본 */
+export function resolveTableHeaderBgColor(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string {
+  const merged = resolveLivePresetStyleParam(
+    "tableHeaderBgColor",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  return normalizeGoalHexColor(merged || "") || "";
+}
+
+/** 엑셀표 헤더(상단) 글자색. 비우면 테마 accent / 방송 기본 */
+export function resolveTableHeaderTextColor(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string {
+  const merged = resolveLivePresetStyleParam(
+    "tableHeaderTextColor",
     rawSp,
     presetToParams(preset),
     opts
