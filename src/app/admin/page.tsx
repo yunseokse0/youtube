@@ -10499,63 +10499,71 @@ export default function AdminPage() {
                                     <input className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right" value={p.tableBgOpacity || "100"} onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value.replace(/[^\\d]/g, "") })} />
                                     <span className="text-xs text-neutral-500">%</span>
                                   </div>
-                                  <label className="text-xs text-neutral-400 sm:col-span-4 pt-1 font-medium text-emerald-300/90">헤더(상단)</label>
-                                  <label className="text-xs text-neutral-400">헤더 배경색</label>
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      type="color"
-                                      className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
-                                      value={toColorPickerValue(p.tableHeaderBgColor, "#217346")}
-                                      onChange={(e) => updatePreset(p.id, { tableHeaderBgColor: e.target.value })}
-                                    />
-                                    <span className="text-xs text-neutral-400 font-mono">{p.tableHeaderBgColor || "테마 자동"}</span>
-                                    <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableHeaderBgColor: "" })}>테마 자동</button>
-                                  </div>
-                                  <label className="text-xs text-neutral-400">헤더 글자색</label>
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      type="color"
-                                      className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
-                                      value={toColorPickerValue(p.tableHeaderTextColor, "#ffffff")}
-                                      onChange={(e) => updatePreset(p.id, { tableHeaderTextColor: e.target.value })}
-                                    />
-                                    <span className="text-xs text-neutral-400 font-mono">{p.tableHeaderTextColor || "테마 자동"}</span>
-                                    <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableHeaderTextColor: "" })}>테마 자동</button>
-                                  </div>
-                                  <label className="text-xs text-neutral-400 sm:col-span-4 pt-1 font-medium text-sky-300/90">본문(멤버 행)</label>
-                                  <label className="text-xs text-neutral-400">본문 배경색</label>
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      type="color"
-                                      className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
-                                      value={toColorPickerValue(p.tableBgColor, "#ffffff")}
-                                      onChange={(e) => updatePreset(p.id, { tableBgColor: e.target.value })}
-                                    />
-                                    <span className="text-xs text-neutral-400 font-mono">{p.tableBgColor || "테마 자동"}</span>
-                                    <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableBgColor: "" })}>테마 자동</button>
-                                  </div>
-                                  <label className="text-xs text-neutral-400">본문 글자색</label>
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      type="color"
-                                      className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
-                                      value={toColorPickerValue(p.tableTextColor, "#111827")}
-                                      onChange={(e) => updatePreset(p.id, { tableTextColor: e.target.value })}
-                                    />
-                                    <span className="text-xs text-neutral-400 font-mono">{p.tableTextColor || "테마 자동"}</span>
-                                    <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableTextColor: "" })}>테마 자동</button>
-                                  </div>
-                                  <label className="text-xs text-neutral-400 sm:col-span-4 pt-1">공통</label>
-                                  <label className="text-xs text-neutral-400">표 선 색</label>
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      type="color"
-                                      className="h-9 w-14 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
-                                      value={toColorPickerValue(p.tableLineColor, "#f5b8d4")}
-                                      onChange={(e) => updatePreset(p.id, { tableLineColor: e.target.value })}
-                                    />
-                                    <span className="text-xs text-neutral-400 font-mono">{p.tableLineColor || "테마 자동"}</span>
-                                    <button type="button" className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableLineColor: "" })}>테마 자동</button>
+                                  <div className="col-span-full space-y-2.5 rounded-lg border border-white/10 bg-neutral-950/50 p-2.5">
+                                    <div className="text-xs font-semibold text-emerald-300/90">헤더(상단)</div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-[7.5rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5">
+                                      <label className="text-xs text-neutral-400">헤더 배경색</label>
+                                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                        <input
+                                          type="color"
+                                          className="h-9 w-14 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                          value={toColorPickerValue(p.tableHeaderBgColor, "#217346")}
+                                          onChange={(e) => updatePreset(p.id, { tableHeaderBgColor: e.target.value })}
+                                        />
+                                        <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">{p.tableHeaderBgColor || "테마 자동"}</span>
+                                        <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableHeaderBgColor: "" })}>테마 자동</button>
+                                      </div>
+                                      <label className="text-xs text-neutral-400">헤더 글자색</label>
+                                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                        <input
+                                          type="color"
+                                          className="h-9 w-14 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                          value={toColorPickerValue(p.tableHeaderTextColor, "#ffffff")}
+                                          onChange={(e) => updatePreset(p.id, { tableHeaderTextColor: e.target.value })}
+                                        />
+                                        <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">{p.tableHeaderTextColor || "테마 자동"}</span>
+                                        <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableHeaderTextColor: "" })}>테마 자동</button>
+                                      </div>
+                                    </div>
+                                    <div className="text-xs font-semibold text-sky-300/90 pt-0.5">본문(멤버 행)</div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-[7.5rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5">
+                                      <label className="text-xs text-neutral-400">본문 배경색</label>
+                                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                        <input
+                                          type="color"
+                                          className="h-9 w-14 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                          value={toColorPickerValue(p.tableBgColor, "#ffffff")}
+                                          onChange={(e) => updatePreset(p.id, { tableBgColor: e.target.value })}
+                                        />
+                                        <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">{p.tableBgColor || "테마 자동"}</span>
+                                        <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableBgColor: "" })}>테마 자동</button>
+                                      </div>
+                                      <label className="text-xs text-neutral-400">본문 글자색</label>
+                                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                        <input
+                                          type="color"
+                                          className="h-9 w-14 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                          value={toColorPickerValue(p.tableTextColor, "#111827")}
+                                          onChange={(e) => updatePreset(p.id, { tableTextColor: e.target.value })}
+                                        />
+                                        <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">{p.tableTextColor || "테마 자동"}</span>
+                                        <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableTextColor: "" })}>테마 자동</button>
+                                      </div>
+                                    </div>
+                                    <div className="text-xs font-semibold text-neutral-300 pt-0.5">공통</div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-[7.5rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5">
+                                      <label className="text-xs text-neutral-400">표 선 색</label>
+                                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                        <input
+                                          type="color"
+                                          className="h-9 w-14 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                          value={toColorPickerValue(p.tableLineColor, "#f5b8d4")}
+                                          onChange={(e) => updatePreset(p.id, { tableLineColor: e.target.value })}
+                                        />
+                                        <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">{p.tableLineColor || "테마 자동"}</span>
+                                        <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableLineColor: "" })}>테마 자동</button>
+                                      </div>
+                                    </div>
                                   </div>
                                   <label className="text-xs text-neutral-400">총합 행</label>
                                   <div className="flex flex-wrap items-center gap-2">
@@ -10905,7 +10913,7 @@ export default function AdminPage() {
                               </button>
                               <label className="text-xs text-neutral-400">이름 너비(ch)</label>
                               <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="(기본 자동)" value={p.nameCh || ""} onChange={(e) => updatePreset(p.id, { nameCh: e.target.value.replace(/[^\d]/g, "") })} />
-                              <p className="text-[10px] text-neutral-500 sm:col-span-4">
+                              <p className="col-span-full text-[10px] text-neutral-500">
                                 헤더·본문 배경/글자색은 위 「멤버·총합 테마」 영역에서 설정합니다.
                               </p>
                               <label className="text-xs text-neutral-400">표 글자 외곽선 색</label>
