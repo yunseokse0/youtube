@@ -188,7 +188,7 @@ type OverlayPreset = {
   goalBaseline?: string;
   /** 목표 100% 달성 시 자동 상향 증가폭(원). 비우면 200만 원 */
   goalIncreaseStep?: string;
-  goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string; goalOpacity?: string; goalOpacityText?: boolean; goalTextColor?: string; goalFontSize?: string; goalTextOutlineColor?: string; goalTextOutlineWidth?: string;
+  goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string; goalOpacity?: string; goalOpacityText?: boolean; goalTextColor?: string; goalFontSize?: string; goalTextOutlineColor?: string; goalTextOutlineWidth?: string; goalBarBgColor?: string; goalBarFillColor?: string; goalFontFamily?: string; goalBarAnimation?: string;
   showPersonalGoal?: boolean; personalGoalTheme?: string; personalGoalAnchor?: string; personalGoalLimit?: string; personalGoalFree?: boolean; personalGoalX?: string; personalGoalY?: string;
   tickerInMembers?: boolean; tickerInGoal?: boolean; tickerInPersonalGoal?: boolean;
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
@@ -1587,6 +1587,22 @@ export default function AdminPage() {
       mergedPatch.goalTextOutlineWidth = Number.isFinite(w)
         ? String(Math.max(0, Math.min(3, w)))
         : "";
+    }
+    if (patch.goalBarBgColor !== undefined) {
+      const normalized = normalizeGoalHexColor(String(patch.goalBarBgColor || ""));
+      mergedPatch.goalBarBgColor = normalized || "";
+    }
+    if (patch.goalBarFillColor !== undefined) {
+      const normalized = normalizeGoalHexColor(String(patch.goalBarFillColor || ""));
+      mergedPatch.goalBarFillColor = normalized || "";
+    }
+    if (patch.goalFontFamily !== undefined) {
+      mergedPatch.goalFontFamily = normalizeTableFontFamily(patch.goalFontFamily);
+    }
+    if (patch.goalBarAnimation !== undefined) {
+      const anim = String(patch.goalBarAnimation || "").trim().toLowerCase();
+      mergedPatch.goalBarAnimation =
+        anim === "off" || anim === "pulse" || anim === "sweep" || anim === "both" ? anim : "both";
     }
     if (patch.tableTextOutlineColor !== undefined) {
       const normalized = normalizeGoalHexColor(String(patch.tableTextOutlineColor || ""));
@@ -11489,9 +11505,84 @@ export default function AdminPage() {
                                       </div>
                                       <p className="text-[10px] text-neutral-500">0이면 외곽선 없음. 비우면 글자 크기에 맞춰 자동.</p>
                                     </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] text-neutral-400">막대 배경색</label>
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="color"
+                                          value={toColorPickerValue(p.goalBarBgColor || "#fde8f2", "#fde8f2")}
+                                          onChange={(e) => updatePreset(p.id, { goalBarBgColor: e.target.value })}
+                                          className="h-9 w-12 rounded border border-white/20 bg-transparent p-0.5"
+                                        />
+                                        <input
+                                          className="flex-1 px-2 py-1 rounded bg-neutral-900/90 border border-white/15 text-xs font-mono"
+                                          value={p.goalBarBgColor || ""}
+                                          onChange={(e) => updatePreset(p.id, { goalBarBgColor: e.target.value })}
+                                          placeholder="#fde8f2"
+                                        />
+                                        <button
+                                          type="button"
+                                          className="shrink-0 rounded bg-neutral-800 px-2 py-1 text-[10px] hover:bg-neutral-700"
+                                          onClick={() => updatePreset(p.id, { goalBarBgColor: "" })}
+                                        >
+                                          기본
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] text-neutral-400">게이지(채움) 색</label>
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="color"
+                                          value={toColorPickerValue(p.goalBarFillColor || "#ff6eb5", "#ff6eb5")}
+                                          onChange={(e) => updatePreset(p.id, { goalBarFillColor: e.target.value })}
+                                          className="h-9 w-12 rounded border border-white/20 bg-transparent p-0.5"
+                                        />
+                                        <input
+                                          className="flex-1 px-2 py-1 rounded bg-neutral-900/90 border border-white/15 text-xs font-mono"
+                                          value={p.goalBarFillColor || ""}
+                                          onChange={(e) => updatePreset(p.id, { goalBarFillColor: e.target.value })}
+                                          placeholder="#ff6eb5"
+                                        />
+                                        <button
+                                          type="button"
+                                          className="shrink-0 rounded bg-neutral-800 px-2 py-1 text-[10px] hover:bg-neutral-700"
+                                          onClick={() => updatePreset(p.id, { goalBarFillColor: "" })}
+                                        >
+                                          기본
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] text-neutral-400">목표 글꼴</label>
+                                      <select
+                                        className="w-full px-2 py-1 rounded bg-neutral-900/90 border border-white/15 text-xs"
+                                        value={normalizeTableFontFamily(p.goalFontFamily || "auto")}
+                                        onChange={(e) => updatePreset(p.id, { goalFontFamily: e.target.value })}
+                                      >
+                                        {TABLE_FONT_FAMILY_OPTIONS.map((opt) => (
+                                          <option key={opt.id} value={opt.id}>
+                                            {opt.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] text-neutral-400">게이지 애니메이션</label>
+                                      <select
+                                        className="w-full px-2 py-1 rounded bg-neutral-900/90 border border-white/15 text-xs"
+                                        value={p.goalBarAnimation || "both"}
+                                        onChange={(e) => updatePreset(p.id, { goalBarAnimation: e.target.value })}
+                                      >
+                                        <option value="both">펄스 + 스윕 (기본)</option>
+                                        <option value="pulse">펄스만</option>
+                                        <option value="sweep">스윕만</option>
+                                        <option value="off">끄기</option>
+                                      </select>
+                                    </div>
                                   </div>
                                   <p className="mt-1 text-[10px] text-emerald-400/90 leading-snug">
-                                    Prism/OBS(`host=prism`)는 저장 후 브라우저 소스만 새로고침하면 색·크기·외곽선이 바로 반영됩니다.
+                                    Prism/OBS(`host=prism`)는 저장 후 브라우저 소스만 새로고침하면 색·크기·외곽선·막대 스타일이 바로 반영됩니다.
                                   </p>
                                 </div>
                                 <details className="rounded border border-white/10 bg-neutral-900/40">

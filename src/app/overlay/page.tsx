@@ -8,6 +8,10 @@ import {
   resolveGoalTextColor,
   resolveGoalTextOutlineColor,
   resolveGoalTextOutlineWidthPx,
+  resolveGoalBarBgColor,
+  resolveGoalBarFillColorParam,
+  resolveGoalFontFamilyCss,
+  resolveGoalBarAnimationMode,
   resolveTableTextColor,
   resolveTableBgColor,
   resolveTableHeaderBgColor,
@@ -1962,6 +1966,10 @@ function OverlayInner() {
   const goalFontSizePx = resolveGoalFontSizePx(rawSp, effectivePreset, { ready });
   const goalTextOutlineColor = resolveGoalTextOutlineColor(rawSp, effectivePreset, { ready });
   const goalTextOutlineWidthPx = resolveGoalTextOutlineWidthPx(rawSp, effectivePreset, { ready });
+  const goalBarBgColor = resolveGoalBarBgColor(rawSp, effectivePreset, { ready });
+  const goalBarFillColor = resolveGoalBarFillColorParam(rawSp, effectivePreset, { ready });
+  const goalFontFamilyCss = resolveGoalFontFamilyCss(rawSp, effectivePreset, { ready });
+  const goalBarAnimationMode = resolveGoalBarAnimationMode(rawSp, effectivePreset, { ready });
   const tableTextOutlineColor = resolveTableTextOutlineColor(rawSp, effectivePreset, { ready });
   const tableTextOutlineWidthPx = resolveTableTextOutlineWidthPx(rawSp, effectivePreset, { ready });
   const tableFontWeight = resolveTableFontWeight(rawSp, effectivePreset, { ready });
@@ -3585,6 +3593,7 @@ function OverlayInner() {
           -webkit-text-fill-color: ${goalTextColor} !important;
           -webkit-font-smoothing: antialiased;
           text-rendering: optimizeLegibility;
+          ${goalFontFamilyCss ? `font-family: ${goalFontFamilyCss} !important;` : ""}
         }
       `,
         }}
@@ -3851,6 +3860,10 @@ function OverlayInner() {
               fontSizePx={goalFontSizePx}
               textOutlineColor={goalTextOutlineColor}
               textOutlineWidthPx={goalTextOutlineWidthPx}
+              barBgColor={goalBarBgColor}
+              barFillColor={goalBarFillColor}
+              fontFamilyCss={goalFontFamilyCss}
+              animationMode={goalBarAnimationMode}
               amountFormat={donorsFormat}
               locale={currencyLocale}
             />

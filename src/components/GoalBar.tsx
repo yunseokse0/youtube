@@ -3,6 +3,14 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { formatDonorsAmount, formatManThousand } from "@/lib/state";
 import { buildOverlayCellOutlineStyle } from "@/lib/text-outline-style";
+import {
+  GOAL_BAR_DEFAULT_TRACK_BG,
+  GOAL_BAR_DEFAULT_TRACK_BORDER,
+  buildGoalBarFillBackground,
+  darkenHexColor,
+  goalBarFillGlowRgba,
+  type GoalBarAnimationMode,
+} from "@/lib/goal-bar-style";
 
 function useCountUp(value: number, durationMs = 600) {
   const [display, setDisplay] = useState(value);
@@ -48,6 +56,10 @@ export function GoalBar({
   fontSizePx,
   textOutlineColor,
   textOutlineWidthPx,
+  barBgColor = GOAL_BAR_DEFAULT_TRACK_BG,
+  barFillColor,
+  fontFamilyCss,
+  animationMode = "both",
   amountFormat = "short",
   locale = "ko-KR",
 }: {
@@ -65,6 +77,14 @@ export function GoalBar({
   textOutlineColor?: string;
   /** 0이면 외곽선 없음. 미지정 시 글자 크기에 비례 */
   textOutlineWidthPx?: number;
+  /** 막대 트랙(배경)색 */
+  barBgColor?: string;
+  /** 게이지(채움) 기준색 — 그라데이션 자동 생성 */
+  barFillColor?: string;
+  /** CSS font-family (null/undefined면 기본) */
+  fontFamilyCss?: string | null;
+  /** 게이지 애니메이션 */
+  animationMode?: GoalBarAnimationMode;
   /** `short` = 만원 축약, `full` = 입력한 원 그대로(쉼표만) */
   amountFormat?: "full" | "short";
   locale?: string;
@@ -93,17 +113,25 @@ export function GoalBar({
     ? Math.max(0, Math.min(100, opacityPercent)) / 100
     : 1;
   const fillWidthPct = pct <= 0 ? 0 : Math.min(100, Math.max(pct, 2));
-  /** 미달 구간 — 어두운 트랙 대신 표 헤더와 맞는 밝은 분홍(방송/OBS에서 검게 보이지 않게) */
-  const GOAL_TRACK_BG = "#fde8f2";
-  const GOAL_TRACK_BORDER = "#f5b8d4";
+  const trackBg = barBgColor || GOAL_BAR_DEFAULT_TRACK_BG;
+  const trackBorder =
+    trackBg === GOAL_BAR_DEFAULT_TRACK_BG ? GOAL_BAR_DEFAULT_TRACK_BORDER : darkenHexColor(trackBg, 0.14);
+  const fillBackground = buildGoalBarFillBackground(barFillColor || "");
+  const fillGlowWeak = goalBarFillGlowRgba(barFillColor || "", 0.08);
+  const fillGlowStrong = goalBarFillGlowRgba(barFillColor || "", 0.22);
+  const fillShadowGlow = goalBarFillGlowRgba(barFillColor || "", 0.55);
+  const ambientPulse = "goalbar-ambient-pulse 4.8s ease-in-out infinite";
+  const ambientSweep = "goalbar-ambient-sweep 5.2s linear infinite";
+  const fillAnimation =
+    animationMode === "pulse" || animationMode === "both" ? ambientPulse : undefined;
+  const sweepAnimation =
+    animationMode === "sweep" || animationMode === "both" ? ambientSweep : undefined;
   const textFontPx = (() => {
     if (fontSizePx != null && Number.isFinite(fontSizePx) && fontSizePx > 0) {
       return Math.max(10, Math.min(48, Math.round(fontSizePx)));
     }
     return Math.max(12, Math.round(width * 0.028));
   })();
-  const ambientPulse = "goalbar-ambient-pulse 4.8s ease-in-out infinite";
-  const ambientSweep = "goalbar-ambient-sweep 5.2s linear infinite";
   /** 후원순위·엑셀표와 동일 — stroke + shadow 링 (fill 색은 goalTextPaint로 고정) */
   const goalTextOutline: CSSProperties =
     textOutlineWidthPx === 0
@@ -137,10 +165,11 @@ export function GoalBar({
         width,
         padding: "0.12rem",
         borderRadius: 8,
-        border: `1px solid ${GOAL_TRACK_BORDER}`,
+        border: `1px solid ${trackBorder}`,
         opacity: containerOpacity,
         boxShadow: "0 2px 10px rgba(255, 140, 190, 0.22)",
         ["--overlay-goal-text-color" as string]: effectiveTextColor,
+        fontFamily: fontFamilyCss || undefined,
       }}
     >
       <div
@@ -148,7 +177,7 @@ export function GoalBar({
         style={{
           height: barH,
           borderRadius: 7,
-          background: GOAL_TRACK_BG,
+          background: trackBg,
           boxShadow: "inset 0 1px 2px rgba(255, 160, 200, 0.28)",
         }}
       >
@@ -158,11 +187,11 @@ export function GoalBar({
             width: `${fillWidthPct}%`,
             borderRadius: 7,
             zIndex: 1,
-            background:
-              "linear-gradient(90deg, #ff9ec8 0%, #ff6eb5 42%, #ffc4e3 100%)",
-            boxShadow:
-              "inset 0 1px 0 rgba(255,255,255,0.45), 0 0 12px rgba(255, 110, 180, 0.55)",
-            animation: ambientPulse,
+            background: fillBackground,
+            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.45), 0 0 12px ${fillShadowGlow}`,
+            animation: fillAnimation,
+            ["--goalbar-fill-glow-weak" as string]: fillGlowWeak,
+            ["--goalbar-fill-glow-strong" as string]: fillGlowStrong,
           }}
         />
         <div
@@ -171,12 +200,12 @@ export function GoalBar({
           style={{
             width: `${Math.min(100, fillWidthPct + 8)}%`,
             maxWidth: "100%",
-            opacity: 0.28,
+            opacity: sweepAnimation ? 0.28 : 0,
             zIndex: 2,
             background:
               "linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.5) 50%, rgba(255,255,255,0) 100%)",
             filter: "blur(1px)",
-            animation: ambientSweep,
+            animation: sweepAnimation,
           }}
         />
         <div
@@ -218,10 +247,10 @@ export function GoalBar({
         @keyframes goalbar-ambient-pulse {
           0%,
           100% {
-            filter: drop-shadow(0 0 0 rgba(255, 192, 222, 0.08));
+            filter: drop-shadow(0 0 0 var(--goalbar-fill-glow-weak, rgba(255, 192, 222, 0.08)));
           }
           50% {
-            filter: drop-shadow(0 0 7px rgba(255, 192, 222, 0.22));
+            filter: drop-shadow(0 0 7px var(--goalbar-fill-glow-strong, rgba(255, 192, 222, 0.22)));
           }
         }
         @keyframes goalbar-ambient-sweep {

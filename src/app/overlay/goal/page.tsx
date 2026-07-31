@@ -11,6 +11,10 @@ import {
   resolveGoalTextColor,
   resolveGoalTextOutlineColor,
   resolveGoalTextOutlineWidthPx,
+  resolveGoalBarBgColor,
+  resolveGoalBarFillColorParam,
+  resolveGoalFontFamilyCss,
+  resolveGoalBarAnimationMode,
   resolveLivePresetStyleParam,
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
@@ -171,6 +175,22 @@ export default function GoalOverlayPage() {
     () => resolveGoalTextOutlineWidthPx(sp, activePreset, { ready }),
     [sp, activePreset, ready]
   );
+  const goalBarBgColor = useMemo(
+    () => resolveGoalBarBgColor(sp, activePreset, { ready }),
+    [sp, activePreset, ready]
+  );
+  const goalBarFillColor = useMemo(
+    () => resolveGoalBarFillColorParam(sp, activePreset, { ready }),
+    [sp, activePreset, ready]
+  );
+  const goalFontFamilyCss = useMemo(
+    () => resolveGoalFontFamilyCss(sp, activePreset, { ready }),
+    [sp, activePreset, ready]
+  );
+  const goalBarAnimationMode = useMemo(
+    () => resolveGoalBarAnimationMode(sp, activePreset, { ready }),
+    [sp, activePreset, ready]
+  );
 
   const totalCombined = useMemo(
     () => (state?.members || []).reduce((sum, m) => sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)), 0),
@@ -202,6 +222,7 @@ export default function GoalOverlayPage() {
           -webkit-text-fill-color: ${goalTextColor} !important;
           -webkit-font-smoothing: antialiased;
           text-rendering: optimizeLegibility;
+          ${goalFontFamilyCss ? `font-family: ${goalFontFamilyCss} !important;` : ""}
         }
       `,
         }}
@@ -220,6 +241,10 @@ export default function GoalOverlayPage() {
               fontSizePx={goalFontSizePx}
               textOutlineColor={goalTextOutlineColor}
               textOutlineWidthPx={goalTextOutlineWidthPx}
+              barBgColor={goalBarBgColor}
+              barFillColor={goalBarFillColor}
+              fontFamilyCss={goalFontFamilyCss}
+              animationMode={goalBarAnimationMode}
               amountFormat={amountFormat}
               locale={currencyLocale}
             />

@@ -1,6 +1,13 @@
 import type { DonorRankingsTheme, SigItem } from "@/types";
 import { appendExcelRankTop3Params } from "@/lib/excel-rank-top3-style";
 import { normalizeTableFontFamily, type TableFontFamilyId } from "@/lib/table-font-style";
+import {
+  normalizeGoalBarAnimation,
+  resolveGoalBarFillColor,
+  resolveGoalBarFontFamilyCss,
+  resolveGoalBarTrackBg,
+  type GoalBarAnimationMode,
+} from "@/lib/goal-bar-style";
 
 /** 프리셋 → URL 쿼리 변환. OBS 등 별도 컨텍스트에서 API 없이 동작하도록 URL에 설정 포함 */
 export type OverlayPresetLike = {
@@ -59,6 +66,14 @@ export type OverlayPresetLike = {
   goalFontSize?: string;
   goalTextOutlineColor?: string;
   goalTextOutlineWidth?: string;
+  /** 목표 막대 트랙(배경)색 */
+  goalBarBgColor?: string;
+  /** 목표 게이지(채움)색 — 그라데이션 기준색 */
+  goalBarFillColor?: string;
+  /** 목표 글꼴 — tableFontFamily 와 동일 id */
+  goalFontFamily?: string;
+  /** 게이지 애니메이션: off | pulse | sweep | both */
+  goalBarAnimation?: string;
   showPersonalGoal?: boolean;
   personalGoalTheme?: string;
   personalGoalAnchor?: string;
@@ -380,6 +395,10 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "goalFontSize",
   "goalTextOutlineColor",
   "goalTextOutlineWidth",
+  "goalBarBgColor",
+  "goalBarFillColor",
+  "goalFontFamily",
+  "goalBarAnimation",
   "goalOpacity",
   "goalOpacityText",
   "tickerGlow",
@@ -499,6 +518,10 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "goalFontSize",
   "goalTextOutlineColor",
   "goalTextOutlineWidth",
+  "goalBarBgColor",
+  "goalBarFillColor",
+  "goalFontFamily",
+  "goalBarAnimation",
   "goalOpacity",
   "goalOpacityText",
   "tickerGlow",
@@ -628,6 +651,10 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "goalFontSize",
   "goalTextOutlineColor",
   "goalTextOutlineWidth",
+  "goalBarBgColor",
+  "goalBarFillColor",
+  "goalFontFamily",
+  "goalBarAnimation",
   "goalOpacity",
   "goalOpacityText",
   "goalLabel",
@@ -746,6 +773,77 @@ export function resolveGoalTextOutlineWidthPx(
   const n = parseFloat(raw);
   if (!Number.isFinite(n)) return undefined;
   return Math.max(0, Math.min(3, n));
+}
+
+export function resolveGoalBarBgColor(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string {
+  if (opts.ready && preset) {
+    const fromPreset = normalizeGoalHexColor(String(preset.goalBarBgColor || "").trim());
+    if (fromPreset) return fromPreset;
+  }
+  const merged = resolveLivePresetStyleParam(
+    "goalBarBgColor",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  return resolveGoalBarTrackBg(merged || "");
+}
+
+export function resolveGoalBarFillColorParam(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string {
+  if (opts.ready && preset) {
+    const fromPreset = normalizeGoalHexColor(String(preset.goalBarFillColor || "").trim());
+    if (fromPreset) return fromPreset;
+  }
+  const merged = resolveLivePresetStyleParam(
+    "goalBarFillColor",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  return resolveGoalBarFillColor(merged || "");
+}
+
+export function resolveGoalFontFamilyCss(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string | null {
+  if (opts.ready && preset?.goalFontFamily) {
+    const fromPreset = resolveGoalBarFontFamilyCss(preset.goalFontFamily);
+    if (fromPreset) return fromPreset;
+  }
+  const merged = resolveLivePresetStyleParam(
+    "goalFontFamily",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  return resolveGoalBarFontFamilyCss(merged);
+}
+
+export function resolveGoalBarAnimationMode(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): GoalBarAnimationMode {
+  if (opts.ready && preset?.goalBarAnimation) {
+    return normalizeGoalBarAnimation(preset.goalBarAnimation);
+  }
+  const merged = resolveLivePresetStyleParam(
+    "goalBarAnimation",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  return normalizeGoalBarAnimation(merged || "both");
 }
 
 export function resolveTableTextColor(
@@ -895,6 +993,14 @@ export function appendGoalBarStyleParams(target: URLSearchParams, preset: Overla
     const w = Math.max(0, Math.min(3, parseFloat(outlineW) || 0));
     target.set("goalTextOutlineWidth", String(w));
   }
+  const goalBarBg = normalizeGoalHexColor((preset.goalBarBgColor || "").trim());
+  if (goalBarBg) target.set("goalBarBgColor", goalBarBg);
+  const goalBarFill = normalizeGoalHexColor((preset.goalBarFillColor || "").trim());
+  if (goalBarFill) target.set("goalBarFillColor", goalBarFill);
+  const goalFontFamily = normalizeTableFontFamily((preset.goalFontFamily || "").trim());
+  if (goalFontFamily !== "auto") target.set("goalFontFamily", goalFontFamily);
+  const goalBarAnim = normalizeGoalBarAnimation(preset.goalBarAnimation || "");
+  if (goalBarAnim !== "both") target.set("goalBarAnimation", goalBarAnim);
 }
 
 /** 전체 후원 순위(분홍) OBS URL — 상위 N 제한 없음 */
