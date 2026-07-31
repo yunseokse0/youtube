@@ -37,13 +37,12 @@ import {
 import { OBS_TEXT_EFFECT_OPTIONS } from "@/lib/obs-text-effects";
 import { OBS_TEXT_YOUTUBE_EMOJI_PRESETS } from "@/lib/youtube-chat-emojis";
 import {
-  defaultState,
   loadState,
   loadStateFromApi,
-  saveStateAsync,
+  saveObsTextRegistryAsync,
   type AppState,
 } from "@/lib/state";
-import { STATE_PICK_OBS_TEXT } from "@/lib/state-api-pick";
+import { revisionForStatePick, STATE_PICK_OBS_TEXT } from "@/lib/state-api-pick";
 import { useSSEConnection } from "@/lib/sse-client";
 import {
   createStateUpdatedScheduler,
@@ -232,29 +231,8 @@ export default function ObsTextOverlayEditor({
       }
       pendingRegistrySaveRef.current = true;
       try {
-        const remote = await loadStateFromApi(userId, { forceFull: true });
-        if (!remote) {
-          setStatus(
-            "저장 실패 — 서버 상태를 불러오지 못했습니다. 시그 목록이 기본값으로 덮이지 않도록 저장을 중단했습니다."
-          );
-          return false;
-        }
         const stamped = stampRegistryForSave(reg, activeId, opts?.activeConfig);
-        const os =
-          remote.overlaySettings && typeof remote.overlaySettings === "object"
-            ? { ...(remote.overlaySettings as Record<string, unknown>) }
-            : {};
-        os[OBS_TEXT_OVERLAY_STATE_KEY] = stamped;
-        const activeRev = Math.max(
-          0,
-          ...stamped.instances.map((inst) => Number(inst.config.revision || 0))
-        );
-        const now = Math.max(Date.now(), activeRev);
-        const result = await saveStateAsync({
-          ...remote,
-          overlaySettings: os,
-          updatedAt: now,
-        });
+        const result = await saveObsTextRegistryAsync(stamped, userId);
         if (!result.ok) {
           setStatus("저장 실패 — 네트워크 또는 로그인 상태를 확인하세요");
           return false;
@@ -262,7 +240,7 @@ export default function ObsTextOverlayEditor({
         const serverTs =
           typeof result.serverUpdatedAt === "number" && Number.isFinite(result.serverUpdatedAt)
             ? result.serverUpdatedAt
-            : now;
+            : Date.now();
         const stampedRev = Math.max(
           serverTs,
           ...stamped.instances.map((inst) => Number(inst.config.revision || 0))
@@ -290,8 +268,8 @@ export default function ObsTextOverlayEditor({
       if (!state) return;
       if (pendingRegistrySaveRef.current) return;
       if (localDirtyRef.current) return;
-      const remoteTs = state.updatedAt || 0;
-      if (remoteTs > 0 && remoteTs <= lastPersistedUpdatedAtRef.current) return;
+      const remoteRev = revisionForStatePick(state, STATE_PICK_OBS_TEXT);
+      if (remoteRev > 0 && remoteRev <= lastPersistedUpdatedAtRef.current) return;
 
       const reg = readObsTextRegistryFromState(state);
       const remoteSig = obsTextRegistrySyncSignature(reg);
@@ -347,13 +325,16 @@ export default function ObsTextOverlayEditor({
   }, [userId]);
 
   useEffect(() => {
+    loadedRef.current = false;
+    lastAppliedRemoteSigRef.current = "";
+    lastPersistedUpdatedAtRef.current = 0;
+    localDirtyRef.current = false;
     void (async () => {
       const remote = await loadStateFromApi(userId, {
         pick: STATE_PICK_OBS_TEXT,
         forceFull: true,
       });
       if (remote) applyRemoteRef.current(remote);
-      else applyRemoteRef.current(loadState(userId));
     })();
   }, [userId]);
 

@@ -182,6 +182,9 @@ export function applyDonationToAppState(
     memberId: processedEvent.memberId,
     at: processedEvent.at,
     target: processedEvent.target || "toon",
+    ...(String(processedEvent.message || "").trim()
+      ? { message: String(processedEvent.message).trim() }
+      : {}),
   };
   const atMs = toEpochMs(newDonor.at);
 
@@ -228,6 +231,7 @@ export function applyDonationToAppState(
         memberId: newDonor.memberId,
         at: atMs,
         target: newDonor.target,
+        ...(newDonor.message ? { message: newDonor.message } : {}),
         ...(processedEvent.memberAutoAssigned ? { memberAutoAssigned: true } : {}),
       },
     ],

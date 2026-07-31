@@ -186,6 +186,8 @@ type OverlayPreset = {
   showGoal: boolean; goal: string;
   /** 후원 초기화 시 복원할 목표(수동 저장·첫 자동 상향 직전 스냅샷). 없으면 초기화 시 goal 숫자 유지 */
   goalBaseline?: string;
+  /** 목표 100% 달성 시 자동 상향 증가폭(원). 비우면 200만 원 */
+  goalIncreaseStep?: string;
   goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string; goalOpacity?: string; goalOpacityText?: boolean; goalTextColor?: string; goalFontSize?: string; goalTextOutlineColor?: string; goalTextOutlineWidth?: string;
   showPersonalGoal?: boolean; personalGoalTheme?: string; personalGoalAnchor?: string; personalGoalLimit?: string; personalGoalFree?: boolean; personalGoalX?: string; personalGoalY?: string;
   tickerInMembers?: boolean; tickerInGoal?: boolean; tickerInPersonalGoal?: boolean;
@@ -671,7 +673,7 @@ export default function AdminPage() {
     { name: "표만 (엑셀)", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true } },
     { name: "멤버 목록만", preset: { showMembers: true, showTotal: false, showBottomDonors: false, tickerInMembers: false } },
     { name: "총합만", preset: { showMembers: false, showTotal: true, totalSize: "60" } },
-    { name: "목표 프로그레스바", preset: { showMembers: false, showTotal: false, showGoal: true, goal: "2000000", goalLabel: "후원", goalWidth: "500" } },
+    { name: "목표 프로그레스바", preset: { showMembers: false, showTotal: false, showGoal: true, goal: "2000000", goalBaseline: "2000000", goalIncreaseStep: "2000000", goalLabel: "후원", goalWidth: "500" } },
     { name: "개인 골", preset: { showMembers: false, showTotal: false, showPersonalGoal: true, personalGoalAnchor: "tl" } },
     { name: "미션 전광판", preset: { showMembers: false, showTotal: false, showMission: true, missionAnchor: "bc" } },
   ];
@@ -723,6 +725,8 @@ export default function AdminPage() {
         : overrides.goal !== undefined
           ? String(overrides.goal)
           : "0",
+    goalIncreaseStep:
+      overrides.goalIncreaseStep !== undefined ? String(overrides.goalIncreaseStep) : "",
   });
   const [presets, setPresets] = useState<OverlayPreset[]>([]);
   const [presetRev, setPresetRev] = useState(0);
@@ -1564,8 +1568,11 @@ export default function AdminPage() {
       const label = String(mergedPatch.accountHeaderLabel || "").trim();
       if (label === "캐쉬후원" || label === "캐시후원") mergedPatch.accountHeaderLabel = "계좌";
     }
-    if (patch.goal !== undefined) {
-      mergedPatch.goalBaseline = String(patch.goal);
+    if (patch.goalBaseline !== undefined) {
+      mergedPatch.goalBaseline = String(patch.goalBaseline).replace(/[^\d]/g, "");
+    }
+    if (patch.goalIncreaseStep !== undefined) {
+      mergedPatch.goalIncreaseStep = String(patch.goalIncreaseStep).replace(/[^\d]/g, "");
     }
     if (patch.goalTextColor !== undefined) {
       const normalized = normalizeGoalHexColor(String(patch.goalTextColor || ""));
@@ -1717,26 +1724,6 @@ export default function AdminPage() {
       goalOnly.searchParams.set("u", user?.id || "finalent");
       goalOnly.searchParams.set("host", "prism");
       if (p.id) goalOnly.searchParams.set("p", p.id);
-      goalOnly.searchParams.set("goal", String(Math.max(0, parseInt((p.goal || "0") as any, 10) || 0)));
-      goalOnly.searchParams.set("goalLabel", (p.goalLabel || "후원").trim());
-      goalOnly.searchParams.set("goalWidth", String(Math.max(260, Math.min(1200, parseInt((p.goalWidth || "560") as any, 10) || 560))));
-      goalOnly.searchParams.set(
-        "donorsFormat",
-        normalizeDonorsFormat(p.donorsFormat || state.donorsFormat, "short") === "full" ? "full" : "short"
-      );
-      if (String(p.currencyLocale || "").trim()) {
-        goalOnly.searchParams.set("currencyLocale", String(p.currencyLocale).trim());
-      }
-      if (String(p.goalOpacity || "").trim()) {
-        goalOnly.searchParams.set("goalOpacity", String(Math.max(0, Math.min(100, parseInt(String(p.goalOpacity), 10) || 100))));
-      }
-      if (p.goalOpacityText) {
-        goalOnly.searchParams.set("goalOpacityText", "true");
-      }
-      appendGoalBarStyleParams(goalOnly.searchParams, p);
-      if (String(p.goalCurrent || "").trim()) {
-        goalOnly.searchParams.set("goalCurrent", String(Math.max(0, parseInt(String(p.goalCurrent), 10) || 0)));
-      }
       goalOnly.searchParams.set("previewGuide", "true");
       return goalOnly.toString();
     }
@@ -9171,6 +9158,11 @@ export default function AdminPage() {
                         <div className="text-xs text-neutral-300">
                           {evt.donorName} / {evt.amount.toLocaleString("ko-KR")}원
                         </div>
+                        {evt.message ? (
+                          <div className="mt-1 text-[11px] text-neutral-400 line-clamp-2" title={evt.message}>
+                            {evt.message}
+                          </div>
+                        ) : null}
                         <div className="mt-2 flex flex-wrap items-center gap-2">
                           <select
                             className="px-2 py-1 rounded bg-neutral-900 border border-white/10 text-xs"
@@ -9358,6 +9350,7 @@ export default function AdminPage() {
                       <th className="text-left font-medium p-1">후원자</th>
                       <th className="text-left font-medium p-1">멤버</th>
                       <th className="text-left font-medium p-1">대상</th>
+                      <th className="text-left font-medium p-1 min-w-[120px]">메시지</th>
                       <th className="text-right font-medium p-1">금액</th>
                       <th className="text-right font-medium p-1 w-16">삭제</th>
                     </tr>
@@ -9374,6 +9367,13 @@ export default function AdminPage() {
                             <td className="p-1">{d.name}</td>
                             <td className="p-1 text-neutral-300">{m?.name || d.memberId}</td>
                             <td className="p-1">{(d.target || "account") === "toon" ? <span className="text-amber-300">투네</span> : <span className="text-emerald-300">계좌</span>}</td>
+                            <td className="p-1 text-neutral-400 max-w-[220px]">
+                              {d.message ? (
+                                <span className="line-clamp-2" title={d.message}>{d.message}</span>
+                              ) : (
+                                <span className="text-neutral-600">—</span>
+                              )}
+                            </td>
                             <td className="p-1 text-right whitespace-nowrap" title={`저장값 ${d.amount.toLocaleString("ko-KR")}원`}>
                               {formatDonorAmountDisplay(d.amount)}
                             </td>
@@ -9399,13 +9399,15 @@ export default function AdminPage() {
                         );
                       })}
                     {state.donors.length === 0 && (
-                      <tr><td className="p-2 text-neutral-400" colSpan={6}>기록이 없습니다.</td></tr>
+                      <tr><td className="p-2 text-neutral-400" colSpan={7}>기록이 없습니다.</td></tr>
                     )}
                   </tbody>
                 </table>
               </div>
               <div className="text-xs text-neutral-400 mt-2">
                 후원자 리스트는 건별 기록입니다. (동일 후원자여도 건별로 별도 행 표시)
+                {" "}
+                투네이션 후원 메시지(comment)는 <strong className="text-neutral-300">메시지</strong> 열에 자동 표기됩니다.
               </div>
             </section>
 
@@ -11330,13 +11332,34 @@ export default function AdminPage() {
                                   <div className="mb-1.5 text-[11px] font-semibold text-fuchsia-100/95">후원 목표 금액 (엑셀표 아래 막대)</div>
                                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                                     <div className="space-y-1">
-                                      <label className="text-[11px] text-neutral-400">목표(원)</label>
+                                      <label className="text-[11px] text-neutral-400">현재 목표(원)</label>
                                       <input
                                         className="w-full px-2 py-1.5 rounded bg-neutral-900/90 border border-white/15 text-sm"
                                         type="number"
                                         min={0}
                                         value={p.goal}
-                                        onChange={(e) => updatePreset(p.id, { goal: e.target.value })}
+                                        onChange={(e) => updatePreset(p.id, { goal: e.target.value.replace(/[^\d]/g, "") })}
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] text-neutral-400">초기 목표(원)</label>
+                                      <input
+                                        className="w-full px-2 py-1.5 rounded bg-neutral-900/90 border border-white/15 text-sm"
+                                        type="number"
+                                        min={0}
+                                        value={p.goalBaseline || p.goal || ""}
+                                        onChange={(e) => updatePreset(p.id, { goalBaseline: e.target.value.replace(/[^\d]/g, "") })}
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] text-neutral-400">달성 시 증가폭(원)</label>
+                                      <input
+                                        className="w-full px-2 py-1.5 rounded bg-neutral-900/90 border border-white/15 text-sm"
+                                        type="number"
+                                        min={0}
+                                        placeholder="2000000"
+                                        value={p.goalIncreaseStep || ""}
+                                        onChange={(e) => updatePreset(p.id, { goalIncreaseStep: e.target.value.replace(/[^\d]/g, "") })}
                                       />
                                     </div>
                                     <div className="space-y-1">
@@ -11348,8 +11371,20 @@ export default function AdminPage() {
                                       />
                                     </div>
                                   </div>
+                                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                                    <button
+                                      type="button"
+                                      className="rounded border border-fuchsia-400/50 bg-fuchsia-950/40 px-2 py-1 text-[10px] text-fuchsia-100 hover:bg-fuchsia-900/50"
+                                      onClick={() => {
+                                        const baseline = String(p.goalBaseline || p.goal || "").trim();
+                                        if (baseline) updatePreset(p.id, { goal: baseline });
+                                      }}
+                                    >
+                                      현재 목표 → 초기값으로
+                                    </button>
+                                  </div>
                                   <p className="mt-1.5 text-[10px] text-neutral-500 leading-snug">
-                                    합계가 목표 이상이면 자동으로 200만 원씩 상향됩니다(OBS URL에 goal= 이 있어도 동일).
+                                    후원 합계 ≥ 현재 목표이면 「달성 시 증가폭」만큼 자동 상향(기본 200만 원). 후원 초기화 시 「초기 목표」로 복원됩니다.
                                   </p>
                                   <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 border-t border-fuchsia-500/20 pt-2">
                                     <div className="space-y-1">
@@ -11463,7 +11498,7 @@ export default function AdminPage() {
                                   <summary className="cursor-pointer select-none px-3 py-2 text-xs text-neutral-300">후원 목표 — 추가 설정</summary>
                                   <div className="p-3 grid grid-cols-1 sm:grid-cols-[100px_minmax(0,1fr)] items-center gap-1">
                                   <p className="col-span-1 sm:col-span-2 text-[11px] text-neutral-500 leading-snug">
-                                    통합·목표 오버레이: 후원 합계가 목표 이상이면 이 금액이 자동으로 200만 원씩 증가합니다. 초기화 시 기준선(goalBaseline) 200만 원으로 복구됩니다.
+                                    통합·목표 오버레이: 후원 합계가 현재 목표 이상이면 「달성 시 증가폭」(기본 200만 원)만큼 자동 상향. 초기화 시 「초기 목표」(goalBaseline)로 복원됩니다.
                                   </p>
                                   <label className="text-xs text-neutral-400">총 금액(현재 후원액, 원)</label>
                                   <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="미지정 시 자동" value={p.goalCurrent || ""} onChange={(e) => updatePreset(p.id, { goalCurrent: e.target.value })} />
@@ -12145,12 +12180,13 @@ export default function AdminPage() {
                 <button
                   className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700"
                   onClick={() => {
-                    const header = "at,name,member,amount\r\n";
+                    const header = "at,name,member,amount,message\r\n";
                     const rows = state.donors
                       .map((d) => {
                         const m = state.members.find((x)=>x.id===d.memberId)?.name || d.memberId;
                         const ts = new Date(d.at).toISOString();
-                        return `${ts},${d.name},${m},${d.amount}`;
+                        const msg = String(d.message || "").replace(/"/g, '""');
+                        return `${ts},${d.name},${m},${d.amount},"${msg}"`;
                       })
                       .join("\r\n");
                     const blob = new Blob([header+rows], { type: "text/csv;charset=utf-8" });
@@ -12225,7 +12261,7 @@ export default function AdminPage() {
                 <span className="text-[11px] text-neutral-500">명 (기본 슬롯·이름은 멤버1… 순)</span>
               </div>
               <p className="mt-1.5 text-[10px] text-neutral-500 leading-snug">
-                후원 초기화 시 목표는 저장된 기준선(goalBaseline)이 있으면 그 금액으로 되돌립니다. 기준선이 없으면 목표 숫자는 바꾸지 않습니다. 달성 시 자동 상향은 항상 고정 200만 원입니다.
+                후원 초기화 시 목표는 저장된 「초기 목표」(goalBaseline)로 되돌립니다. 달성 시 자동 상향 폭은 프리셋의 「달성 시 증가폭」(goalIncreaseStep, 기본 200만 원)을 따릅니다.
               </p>
             </div>
             <div className="space-y-2 mt-4">

@@ -18,8 +18,10 @@ describe("overlay-last-good", () => {
     expect(isOverlayStateViable(s, STATE_PICK_OBS_TEXT)).toBe(true);
   });
 
-  it("overlay viable with members", () => {
+  it("overlay viable with meaningful members only", () => {
     const s = defaultState();
+    expect(isOverlayStateViable(s, STATE_PICK_OVERLAY)).toBe(false);
+    s.members = [{ id: "real1", name: "실멤버", account: 1000, toon: 0 }];
     expect(isOverlayStateViable(s, STATE_PICK_OVERLAY)).toBe(true);
   });
 
@@ -38,6 +40,7 @@ describe("overlay-last-good", () => {
 
   it("keeps last good when incoming is null", () => {
     const last = defaultState();
+    last.members = [{ id: "real1", name: "실멤버", account: 1000, toon: 0 }];
     expect(shouldKeepLastGoodInsteadOf(null, STATE_PICK_OVERLAY, last)).toBe(true);
   });
 });

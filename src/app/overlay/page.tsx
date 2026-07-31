@@ -61,6 +61,12 @@ import {
 import { resolveExcelRankTop3RowStyle, resolveExcelRankTop3Style } from "@/lib/excel-rank-top3-style";
 import { clampWidthToViewport, computeReadableCanvasScale, ensureCanvasFontPx, isNarrowBroadcastViewport } from "@/lib/overlay-mobile-fit";
 import { useOverlayViewportSize } from "@/hooks/useOverlayViewportSize";
+import {
+  loadOverlayLastGood,
+  saveOverlayLastGood,
+  shouldKeepLastGoodInsteadOf,
+} from "@/lib/overlay-last-good";
+import { STATE_PICK_OVERLAY_DONORS } from "@/lib/state-api-pick";
 
 function tryDecodeSnapshot(str: string | null): AppState | null {
   if (!str) return null;
@@ -97,26 +103,40 @@ function tryReadSnapshotFromStorage(snapKey: string | null): AppState | null {
   return null;
 }
 
-function useRemoteState(userId?: string): { state: AppState | null; ready: boolean } {
-  const LAST_GOOD_KEY =
-    typeof window !== "undefined" ? `overlay-last-good-${userId || "default"}` : "overlay-last-good";
+function migrateLegacyOverlayLastGood(userId?: string): AppState | null {
+  if (typeof window === "undefined") return null;
+  const legacyKey = `overlay-last-good-${userId || "default"}`;
+  try {
+    const raw = window.localStorage.getItem(legacyKey);
+    if (!raw) return null;
+    const obj = JSON.parse(raw) as AppState;
+    if (obj && hasMeaningfulMemberRoster(obj)) {
+      saveOverlayLastGood(obj, userId, STATE_PICK_OVERLAY_DONORS);
+      window.localStorage.removeItem(legacyKey);
+      return obj;
+    }
+  } catch {}
+  return null;
+}
+
+function useRemoteState(userId?: string, enabled = true): { state: AppState | null; ready: boolean } {
+  const readInitialLastGood = (): AppState | null => {
+    return (
+      loadOverlayLastGood(userId, STATE_PICK_OVERLAY_DONORS) ||
+      migrateLegacyOverlayLastGood(userId)
+    );
+  };
   const [state, setState] = useState<AppState | null>(() => {
     if (typeof window === "undefined") return null;
     try {
       const local = loadState(userId);
-      if (local && Array.isArray(local.members) && local.members.length > 0 && hasMeaningfulMemberRoster(local)) {
+      if (local && hasMeaningfulMemberRoster(local)) {
         return local;
       }
-      const raw = window.localStorage.getItem(
-        typeof window !== "undefined" ? `overlay-last-good-${userId || "default"}` : "overlay-last-good"
-      );
-      if (raw) {
-        const obj = JSON.parse(raw);
-        if (obj && typeof obj === "object" && Array.isArray(obj.members) && obj.members.length > 0) {
-          return obj as AppState;
-        }
+      const lastGood = readInitialLastGood();
+      if (lastGood && hasMeaningfulMemberRoster(lastGood)) {
+        return lastGood;
       }
-      if (local && Array.isArray(local.members) && local.members.length > 0) return local;
     } catch {}
     return null;
   });
@@ -131,35 +151,28 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
   const syncOnceRef = useRef<() => Promise<void>>(async () => {});
   const scheduleStateUpdatedRef = useRef<(() => void) | null>(null);
   const lastGoodRef = useRef<AppState | null>(
-    state && hasMeaningfulMemberRoster(state) ? state : null
+    state && hasMeaningfulMemberRoster(state) ? state : readInitialLastGood()
   );
-  const KEEP_EMPTY_GRACE_MS = 60000;
-  const isViable = (s: AppState | null) => !!(s && Array.isArray(s.members) && s.members.length > 0);
+  const isViable = (s: AppState | null) => !!(s && hasMeaningfulMemberRoster(s));
   const loadLastGood = useCallback((): AppState | null => {
-    if (typeof window === "undefined") return null;
-    try {
-      const raw = window.localStorage.getItem(LAST_GOOD_KEY);
-      if (!raw) return null;
-      const obj = JSON.parse(raw);
-      if (obj && typeof obj === "object" && Array.isArray(obj.members)) return obj as AppState;
-    } catch {}
-    return null;
-  }, [LAST_GOOD_KEY]);
+    const cached = loadOverlayLastGood(userId, STATE_PICK_OVERLAY_DONORS);
+    if (cached && hasMeaningfulMemberRoster(cached)) return cached;
+    return migrateLegacyOverlayLastGood(userId);
+  }, [userId]);
   const saveLastGood = useCallback((s: AppState) => {
-    if (typeof window === "undefined") return;
-    /** placeholder 멤버를 last-good 로 굳히면 OBS가 서버 실멤버를 영구히 못 받음 */
     if (!hasMeaningfulMemberRoster(s)) return;
-    try { window.localStorage.setItem(LAST_GOOD_KEY, JSON.stringify(s)); } catch {}
-  }, [LAST_GOOD_KEY]);
-  const shouldDiscardEmpty = (incoming: AppState | null) => {
-    if (!incoming) return false;
-    const emptyMembers = !Array.isArray(incoming.members) || incoming.members.length === 0;
-    if (!emptyMembers) return false;
-    if (!lastGoodRef.current) return false;
-    const ts = incoming.updatedAt || Date.now();
-    const age = Date.now() - ts;
-    return age <= KEEP_EMPTY_GRACE_MS;
-  };
+    saveOverlayLastGood(s, userId, STATE_PICK_OVERLAY_DONORS);
+  }, [userId]);
+  const restoreLastGood = useCallback(() => {
+    const cached = lastGoodRef.current || loadLastGood();
+    if (!cached || !hasMeaningfulMemberRoster(cached)) return;
+    const nextSig = buildOverlaySyncSignature(cached);
+    if (nextSig !== lastVisualSigRef.current) {
+      lastVisualSigRef.current = nextSig;
+      setState(cached);
+    }
+    lastGoodRef.current = cached;
+  }, [loadLastGood]);
   const mergeKeepingStrongRoster = useCallback((incoming: AppState): AppState => {
     const good = lastGoodRef.current;
     if (
@@ -190,7 +203,10 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       }
       return;
     }
-    if (shouldDiscardEmpty(incoming as AppState)) return;
+    if (shouldKeepLastGoodInsteadOf(incoming as AppState, STATE_PICK_OVERLAY_DONORS, lastGoodRef.current)) {
+      restoreLastGood();
+      return;
+    }
     if (!Array.isArray((incoming as AppState).members)) return;
     const ts = (incoming as any).updatedAt || Date.now();
     const next = mergeKeepingStrongRoster(incoming as AppState);
@@ -206,7 +222,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       lastGoodRef.current = next;
       saveLastGood(next);
     }
-  }, [saveLastGood, mergeKeepingStrongRoster]);
+  }, [saveLastGood, mergeKeepingStrongRoster, restoreLastGood]);
   const _sse = useSSEConnection(onSSE);
   const readLocalStateIfExists = useCallback((): AppState | null => {
     if (typeof window === "undefined") return null;
@@ -220,19 +236,16 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
     }
   }, [userId]);
   useEffect(() => {
+    if (!enabled) return;
     const local = readLocalStateIfExists();
     const lastGood = loadLastGood();
     const hasStrongRosterRef = { current: false };
     const preferLocal =
-      local && isViable(local) && hasMeaningfulMemberRoster(local)
+      local && isViable(local)
         ? local
-        : lastGood && isViable(lastGood) && hasMeaningfulMemberRoster(lastGood)
+        : lastGood && isViable(lastGood)
           ? lastGood
-          : local && isViable(local)
-            ? local
-            : lastGood && isViable(lastGood)
-              ? lastGood
-              : null;
+          : null;
     if (preferLocal) {
       lastVisualSigRef.current = buildOverlaySyncSignature(preferLocal);
       setState(preferLocal);
@@ -261,7 +274,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
           localStrong &&
           localNow.updatedAt &&
           localNow.updatedAt > lastUpdatedRef.current &&
-          !shouldDiscardEmpty(localNow)
+          !shouldKeepLastGoodInsteadOf(localNow, STATE_PICK_OVERLAY_DONORS, lastGoodRef.current)
         ) {
           const nextSig = buildOverlaySyncSignature(localNow);
           lastUpdatedRef.current = localNow.updatedAt;
@@ -293,7 +306,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
         const remoteStrong = hasMeaningfulMemberRoster(data);
         const shouldApplyRemote =
           !!data &&
-          !shouldDiscardEmpty(data) &&
+          !shouldKeepLastGoodInsteadOf(data, STATE_PICK_OVERLAY_DONORS, lastGoodRef.current) &&
           (remoteRev > overlaySinceRef.current || (needRosterHydration && remoteStrong));
         if (shouldApplyRemote && data) {
           const toApply = mergeKeepingStrongRoster(data);
@@ -311,12 +324,13 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
             saveLastGood(toApply);
           }
         } else if (!localNow && !data) {
-          const fallback = lastGoodRef.current || loadLastGood() || defaultState();
-          setState(fallback);
+          restoreLastGood();
         }
       } catch {
         const localNow = readLocalStateIfExists();
-        if (!localNow) setState(lastGoodRef.current || loadLastGood() || defaultState());
+        if (!localNow || !hasMeaningfulMemberRoster(localNow)) {
+          restoreLastGood();
+        }
       }
       syncingRef.current = false;
     };
@@ -336,7 +350,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
         hasMeaningfulMemberRoster(localNow) &&
         localNow.updatedAt &&
         localNow.updatedAt > lastUpdatedRef.current &&
-        !shouldDiscardEmpty(localNow)
+        !shouldKeepLastGoodInsteadOf(localNow, STATE_PICK_OVERLAY_DONORS, lastGoodRef.current)
       ) {
         const nextSig = buildOverlaySyncSignature(localNow);
         lastUpdatedRef.current = localNow.updatedAt;
@@ -361,7 +375,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
     const unsubscribeLocal = subscribeBroadcastStateLocalUpdated((detail) => {
       if (!overlayUserIdsMatch(userId, detail.userId)) return;
       const localNow = readLocalBroadcastState(userId);
-      if (!localNow || shouldDiscardEmpty(localNow)) return;
+      if (!localNow || shouldKeepLastGoodInsteadOf(localNow, STATE_PICK_OVERLAY_DONORS, lastGoodRef.current)) return;
       if (!hasMeaningfulMemberRoster(localNow)) {
         void syncOnceRef.current();
         return;
@@ -386,7 +400,7 @@ function useRemoteState(userId?: string): { state: AppState | null; ready: boole
       window.removeEventListener("storage", onStorage);
       unsubscribeLocal();
     };
-  }, [userId, loadLastGood, readLocalStateIfExists, saveLastGood, mergeKeepingStrongRoster]);
+  }, [enabled, userId, loadLastGood, readLocalStateIfExists, saveLastGood, mergeKeepingStrongRoster, restoreLastGood]);
 
   return { state, ready: state !== null };
 }
@@ -1440,7 +1454,7 @@ function OverlayInner() {
   const userId = rawUserId || "finalent";
   const snapKey = (rawSp.get("snapKey") || "").trim();
   const snap = tryReadSnapshotFromStorage(snapKey || null) || tryDecodeSnapshot(rawSp.get("snap"));
-  const { state: remoteState, ready: remoteReady } = useRemoteState(userId);
+  const { state: remoteState, ready: remoteReady } = useRemoteState(userId, !snap);
   const s = snap || remoteState;
   const ready = !!snap || remoteReady;
   const [localPresets, setLocalPresets] = useState<OverlayPresetLike[]>(() => {
@@ -1609,12 +1623,11 @@ function OverlayInner() {
   const fitBase = Math.max(240, Math.min(1600, parseInt(sp.get("fitBase") || (isVertical ? "400" : "480"), 10)));
   const fitMinMember = Math.max(8, Math.min(40, parseInt(sp.get("fitMinMember") || (isVertical ? "22" : "10"), 10)));
   const fitMaxMember = Math.max(fitMinMember, Math.min(80, parseInt(sp.get("fitMaxMember") || (isVertical ? "44" : "24"), 10)));
-  // 외부 호스트는 프리셋 scale 복원으로 리프레시 때 떨림이 재발할 수 있어 raw URL에 명시된 경우만 scale을 반영한다.
-  const scaleParam = externalHost ? rawSp.get("scale") : sp.get("scale");
-  // 기본 비정수 스케일(1.1)은 OBS/브라우저에서 텍스트 가장자리를 흐리게 만들 수 있어 기본을 1로 유지한다.
-  const parsedScale = Math.max(0.5, Math.min(4, parseFloat(scaleParam || (isVertical ? "1" : (compact ? "0.9" : "1")))));
+  // OBS/Prism도 프리셋 scale 핫리로드(`OVERLAY_LIVE_PRESET_STYLE_KEYS`) — 컴팩트 URL에 scale 없음
+  const scaleRaw = sp.get("scale");
+  const parsedScale = Math.max(0.5, Math.min(4, parseFloat(scaleRaw || (isVertical ? "1" : (compact ? "0.9" : "1")))));
   const scale = stableMode ? 1 : parsedScale;
-  const hasExplicitScale = scaleParam !== null;
+  const hasExplicitScale = scaleRaw !== "";
   const memberSize = Math.max(10, Math.min(80, parseInt(sp.get("memberSize") || (compact ? "16" : (isVertical ? "40" : "24")), 10)));
   const totalSize = Math.max(14, Math.min(160, parseInt(sp.get("totalSize") || (isVertical ? "48" : "30"), 10)));
   const dense = (sp.get("dense") || "false").toLowerCase() === "true";
@@ -1865,14 +1878,13 @@ function OverlayInner() {
   const currencyFull = (sp.get("currencyFull") || "false").toLowerCase() === "true";
   const nameMaxCh = Math.max(nameCh, Math.min(80, parseInt(sp.get("nameMaxCh") || String(nameCh + 8), 10)));
   const donorsFormat = useMemo(() => {
+    const fromPresetStyle = sp.get("donorsFormat");
+    if (fromPresetStyle === "full" || fromPresetStyle === "short") return fromPresetStyle;
     if (ready && s?.donorsFormat) return s.donorsFormat === "full" ? "full" : "short";
     const urlFmt = (rawSp.get("donorsFormat") || "").trim();
     if (urlFmt === "full" || urlFmt === "short") return urlFmt;
-    const presetFmt = String((activePreset as any)?.donorsFormat || "").trim();
-    if (presetFmt === "full") return "full";
-    if (presetFmt === "short") return "short";
     return "short";
-  }, [rawSp, ready, s?.donorsFormat, activePreset]);
+  }, [sp, rawSp, ready, s?.donorsFormat]);
   const fullAmountMode = donorsFormat === "full" || currencyFull;
   // 기본 열 폭: 백만원(2,000,000=9자) + 아웃라인 여유. URL bankCh·toonCh 로 조정 가능.
   const defBankCh = (sp.get("bankCh") && parseInt(sp.get("bankCh")!, 10)) || (fullAmountMode ? (compact ? 12 : 14) : (compact ? 10 : 11));

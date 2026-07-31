@@ -3,8 +3,8 @@
 import { useEffect, useRef } from "react";
 import {
   computeEscalatedDonationGoal,
-  DEFAULT_DONATION_GOAL,
   isDonationGoalAutoEscalateEnabled,
+  resolvePresetDonationGoalSettings,
 } from "@/lib/goal-preset-math";
 
 const PATCH_COOLDOWN_MS = 1400;
@@ -25,7 +25,7 @@ type Args = {
 
 /**
  * 후원 합계가 목표 이상이면 서버 `/api/overlay/goal-escalate`로 프리셋 goal을 원자적으로 상향한다.
- * 상향량: 고정 **+200만 원**(`GOAL_AUTO_INCREASE_STEP`). URL에 `goal=` 이 있어도 상향은 계속 동작한다.
+ * 상향량: 프리셋 `goalIncreaseStep`(기본 200만 원). URL에 `goal=` 이 있어도 상향은 계속 동작한다.
  */
 export function useGoalPresetAutoEscalate(args: Args): void {
   const inFlight = useRef(false);
@@ -39,8 +39,27 @@ export function useGoalPresetAutoEscalate(args: Args): void {
     const presets = args.overlayPresets;
     if (!Array.isArray(presets) || presets.length === 0) return;
 
-    const storedGoal = Math.max(DEFAULT_DONATION_GOAL, Math.floor(goal));
-    const nextGoal = computeEscalatedDonationGoal(storedGoal, args.liveTotal);
+    const presetRow = (() => {
+      const pid = String(args.presetId || "").trim();
+      if (pid) {
+        const hit = presets.find((raw) => raw && typeof raw === "object" && String((raw as Record<string, unknown>).id || "") === pid);
+        if (hit) return hit as Record<string, unknown>;
+      }
+      if (args.activePreset && typeof args.activePreset === "object") {
+        return args.activePreset as Record<string, unknown>;
+      }
+      return presets.find(
+        (raw) =>
+          raw &&
+          typeof raw === "object" &&
+          ((raw as Record<string, unknown>).showGoal === true ||
+            (raw as Record<string, unknown>).showGoal === "true")
+      ) as Record<string, unknown> | undefined;
+    })();
+    const { baseline, step } = resolvePresetDonationGoalSettings(presetRow || {});
+
+    const storedGoal = Math.max(baseline, Math.floor(goal));
+    const nextGoal = computeEscalatedDonationGoal(storedGoal, args.liveTotal, baseline, step);
     if (nextGoal <= storedGoal) return;
 
     const now = Date.now();

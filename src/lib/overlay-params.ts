@@ -47,6 +47,8 @@ export type OverlayPresetLike = {
   goal?: string;
   /** 후원 초기화 시 복원할 목표(백오피스·자동 상향 스냅샷) */
   goalBaseline?: string;
+  /** 목표 100% 달성 시 자동 상향 증가폭(원). 비우면 200만 원 */
+  goalIncreaseStep?: string;
   goalLabel?: string;
   goalWidth?: string;
   goalAnchor?: string;
@@ -628,8 +630,13 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "goalTextOutlineWidth",
   "goalOpacity",
   "goalOpacityText",
+  "goalLabel",
+  "goalWidth",
+  "scale",
   "memberSize",
   "totalSize",
+  "donorsFormat",
+  "currencyLocale",
   "tableTextColor",
   "tableTextOutlineColor",
   "tableTextOutlineWidth",

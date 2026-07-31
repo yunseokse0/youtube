@@ -1,4 +1,5 @@
 import type { AppState } from "@/types";
+import { hasMeaningfulMemberRoster } from "@/lib/state";
 import {
   STATE_PICK_OBS_TEXT,
   STATE_PICK_OVERLAY,
@@ -16,7 +17,8 @@ export function overlayLastGoodStorageKey(
   userId?: string,
   pick: StateApiPick = STATE_PICK_OVERLAY
 ): string {
-  return `overlay-last-good:${userId || "default"}:${pick}`;
+  const uid = (userId || "").trim() || "finalent";
+  return `overlay-last-good:${uid}:${pick}`;
 }
 
 function presetShowsDonationGoal(p: Record<string, unknown>): boolean {
@@ -38,7 +40,7 @@ export function isOverlayStateViable(state: AppState | null, pick: StateApiPick)
     );
   }
   if (pick === STATE_PICK_OVERLAY || pick === STATE_PICK_OVERLAY_DONORS) {
-    if (Array.isArray(state.members) && state.members.length > 0) return true;
+    if (hasMeaningfulMemberRoster(state)) return true;
     const presets = state.overlayPresets;
     if (Array.isArray(presets)) {
       return presets.some((raw) => {
@@ -123,8 +125,8 @@ export function shouldDiscardEmptyMembersSnapshot(
   if (!lastGood || !isOverlayStateViable(lastGood, pick)) return false;
   const emptyMembers = !Array.isArray(incoming.members) || incoming.members.length === 0;
   if (!emptyMembers) return false;
-  const ts = incoming.updatedAt || Date.now();
-  return Date.now() - ts <= OVERLAY_EMPTY_SNAPSHOT_GRACE_MS;
+  /** last-good 이 있으면 grace 와 무관하게 빈 스냅샷 거부(멤버·목표 초기화 방지) */
+  return true;
 }
 
 /** 서버/네트워크가 빈·무효 스냅샷을 주면 직전 last-good 유지 */

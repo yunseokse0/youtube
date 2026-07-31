@@ -22,27 +22,63 @@ function parseGoalAmount(raw: unknown): number | null {
   return Number.isFinite(n) ? Math.floor(n) : null;
 }
 
-function normalizeGoalAmount(raw: unknown): number {
+function normalizeGoalAmount(raw: unknown, fallback = DEFAULT_DONATION_GOAL): number {
   const n = parseGoalAmount(raw);
-  if (n == null || n <= 0) return DEFAULT_DONATION_GOAL;
+  if (n == null || n <= 0) return fallback;
   if (n === LEGACY_DONATION_GOAL_30M) return DEFAULT_DONATION_GOAL;
   return n;
 }
 
+/** 프리셋 초기 목표(후원 초기화 복원·최소 목표) */
+export function parsePresetGoalBaseline(raw: unknown, fallbackGoal?: unknown): number {
+  const fromBaseline = parseGoalAmount(raw);
+  if (fromBaseline != null && fromBaseline > 0) {
+    if (fromBaseline === LEGACY_DONATION_GOAL_30M) return DEFAULT_DONATION_GOAL;
+    return fromBaseline;
+  }
+  const fromGoal = parseGoalAmount(fallbackGoal);
+  if (fromGoal != null && fromGoal > 0) {
+    if (fromGoal === LEGACY_DONATION_GOAL_30M) return DEFAULT_DONATION_GOAL;
+    return fromGoal;
+  }
+  return DEFAULT_DONATION_GOAL;
+}
+
+/** 프리셋 달성 시 자동 상향 증가폭(원) */
+export function parsePresetGoalIncreaseStep(raw: unknown): number {
+  const n = parseGoalAmount(raw);
+  if (n == null || n <= 0) return GOAL_AUTO_INCREASE_STEP;
+  return n;
+}
+
+export function resolvePresetDonationGoalSettings(p: Record<string, unknown>): {
+  baseline: number;
+  step: number;
+} {
+  const baseline = parsePresetGoalBaseline(p.goalBaseline, p.goal);
+  const step = parsePresetGoalIncreaseStep(p.goalIncreaseStep);
+  return { baseline, step };
+}
+
 /**
- * 목표바 ON 프리셋: 기준선(goalBaseline)은 200만 원, 현재 goal 은 상향 이력 유지(4M·6M…).
- * 비어 있거나 3천만 원이면 200만 원으로 맞춤.
+ * 목표바 ON 프리셋: goalBaseline·goalIncreaseStep 정규화, 상향 이력(goal) 유지.
+ * 비어 있거나 3천만 원이면 기본 200만 원으로 맞춤.
  */
 export function normalizeOverlayPresetDonationGoals(presets: unknown[]): unknown[] {
   if (!Array.isArray(presets)) return [];
-  const baselineStr = String(DEFAULT_DONATION_GOAL);
   return presets.map((raw) => {
     if (!raw || typeof raw !== "object") return raw;
     const p = raw as Record<string, unknown>;
     if (!presetShowsDonationGoal(p)) return { ...p };
-    let goal = normalizeGoalAmount(p.goal);
-    if (goal < DEFAULT_DONATION_GOAL) goal = DEFAULT_DONATION_GOAL;
-    return { ...p, goal: String(goal), goalBaseline: baselineStr };
+    const { baseline, step } = resolvePresetDonationGoalSettings(p);
+    let goal = normalizeGoalAmount(p.goal, baseline);
+    if (goal < baseline) goal = baseline;
+    return {
+      ...p,
+      goal: String(goal),
+      goalBaseline: String(baseline),
+      goalIncreaseStep: String(step),
+    };
   });
 }
 
@@ -72,21 +108,22 @@ export function applyDonationGoalEscalationToState(state: AppState): AppState {
   if (!presets.length) return state;
 
   const liveTotal = computeLiveDonationTotalFromMembers(state.members);
-  const baselineStr = String(DEFAULT_DONATION_GOAL);
   let changed = false;
 
   const nextPresets = presets.map((raw) => {
     if (!raw || typeof raw !== "object") return raw;
     const p = raw as Record<string, unknown>;
     if (!presetShowsDonationGoal(p)) return raw;
-    const currentGoal = Math.max(DEFAULT_DONATION_GOAL, normalizeGoalAmount(p.goal));
-    const nextGoal = computeEscalatedDonationGoal(currentGoal, liveTotal);
+    const { baseline, step } = resolvePresetDonationGoalSettings(p);
+    const currentGoal = Math.max(baseline, normalizeGoalAmount(p.goal, baseline));
+    const nextGoal = computeEscalatedDonationGoal(currentGoal, liveTotal, baseline, step);
     if (nextGoal <= currentGoal) return raw;
     changed = true;
     return {
       ...p,
       goal: String(nextGoal),
-      goalBaseline: String(p.goalBaseline ?? baselineStr).trim() || baselineStr,
+      goalBaseline: String(baseline),
+      goalIncreaseStep: String(step),
     };
   });
 
@@ -102,9 +139,10 @@ export function applyDonationGoalEscalationToState(state: AppState): AppState {
  * 현재 목표 금액에 고정 200만 원을 더한 다음 목표(원).
  * (함수명 `nextGoalTenPercentIncrease`는 호환용)
  */
-export function nextGoalTenPercentIncrease(goal: number): number {
+export function nextGoalTenPercentIncrease(goal: number, step: number = GOAL_AUTO_INCREASE_STEP): number {
   const g = Math.max(1, Math.floor(Number(goal) || 0));
-  return g + GOAL_AUTO_INCREASE_STEP;
+  const s = Math.max(1, Math.floor(Number(step) || GOAL_AUTO_INCREASE_STEP));
+  return g + s;
 }
 
 /**
@@ -132,11 +170,16 @@ export function computeEscalatedDonationGoal(
  * 자동 상향이 항상 고정 200만 원이므로, 역으로는 동일 스텝을 최대 `maxSteps`번 뺀 값.
  * (수동으로 목표를 바꾼 뒤에는 실제 이력과 다를 수 있음)
  */
-export function unwindGoalForDonationReset(currentGoal: number, maxSteps = 8): number {
+export function unwindGoalForDonationReset(
+  currentGoal: number,
+  maxSteps = 8,
+  step: number = GOAL_AUTO_INCREASE_STEP
+): number {
   let cur = Math.max(0, Math.floor(Number(currentGoal) || 0));
   if (cur <= 1) return cur;
+  const s = Math.max(1, Math.floor(Number(step) || GOAL_AUTO_INCREASE_STEP));
   for (let i = 0; i < maxSteps; i++) {
-    const pred = cur - GOAL_AUTO_INCREASE_STEP;
+    const pred = cur - s;
     if (pred < 1) break;
     cur = pred;
   }
@@ -197,24 +240,33 @@ export function mergeOverlayPresetsPreservingEscalatedGoals(
     if (id) baseById.set(id, p);
   }
   const baselineStr = String(DEFAULT_DONATION_GOAL);
+  const stepStr = String(GOAL_AUTO_INCREASE_STEP);
   return patchPresets.map((raw) => {
     if (!raw || typeof raw !== "object") return raw;
     const p = { ...(raw as Record<string, unknown>) };
     if (!presetShowsDonationGoal(p)) return p;
     const id = String(p.id || "").trim();
     const prev = id ? baseById.get(id) : undefined;
-    const patchGoal = normalizeGoalAmount(p.goal);
-    const prevGoal = prev ? normalizeGoalAmount(prev.goal) : DEFAULT_DONATION_GOAL;
+    const { baseline: patchBaseline, step: patchStep } = resolvePresetDonationGoalSettings(p);
+    const prevSettings = prev ? resolvePresetDonationGoalSettings(prev) : { baseline: DEFAULT_DONATION_GOAL, step: GOAL_AUTO_INCREASE_STEP };
+    const patchGoal = normalizeGoalAmount(p.goal, patchBaseline);
+    const prevGoal = prev ? normalizeGoalAmount(prev.goal, prevSettings.baseline) : patchBaseline;
     const maxGoal = Math.max(prevGoal, patchGoal);
+    const baseline = patchBaseline || prevSettings.baseline;
+    const step = patchStep || prevSettings.step;
     if (maxGoal > patchGoal) {
       return {
         ...p,
         goal: String(maxGoal),
-        goalBaseline: String(p.goalBaseline ?? prev?.goalBaseline ?? baselineStr),
+        goalBaseline: String(p.goalBaseline ?? prev?.goalBaseline ?? baseline),
+        goalIncreaseStep: String(p.goalIncreaseStep ?? prev?.goalIncreaseStep ?? step),
       };
     }
     if (!String(p.goalBaseline ?? "").trim()) {
-      p.goalBaseline = String(prev?.goalBaseline ?? baselineStr);
+      p.goalBaseline = String(prev?.goalBaseline ?? baseline);
+    }
+    if (!String(p.goalIncreaseStep ?? "").trim()) {
+      p.goalIncreaseStep = String(prev?.goalIncreaseStep ?? stepStr);
     }
     return p;
   });

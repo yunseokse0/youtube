@@ -11,7 +11,6 @@ import {
 } from "react";
 
 import {
-  defaultState,
   loadState,
   loadStateFromApi,
   storageKey,
@@ -448,6 +447,13 @@ export function useOverlayRemoteState(
 
     if (!enabled) return;
 
+    lastGoodRef.current = null;
+    lastVisualSigRef.current = "";
+    lastSyncedUpdatedAtRef.current = 0;
+    lastSyncedDonorRevRef.current = 0;
+    setState(null);
+    setSyncedOnce(false);
+
     const skipLocal = options.skipLocalSnapshot === true;
 
     const local = skipLocal ? null : readLocalStateIfExists(userId);
@@ -486,17 +492,8 @@ export function useOverlayRemoteState(
 
       lastGoodRef.current = lastGood;
     } else {
-      const base = defaultState();
-
-      setState(base);
-
-      lastVisualSigRef.current = overlaySyncSignatureForPick(base, statePick);
-
-      lastSyncedUpdatedAtRef.current = skipLocal
-        ? 0
-        : options.noLocalBaseline === "default"
-        ? base.updatedAt || 0
-        : 0;
+      /** placeholder(defaultState) 즉시 표시 금지 — API·last-good 수신까지 직전 화면 유지 */
+      lastSyncedUpdatedAtRef.current = 0;
     }
 
     syncFromApiRef.current = syncFromApi;
@@ -555,15 +552,6 @@ export function useOverlayRemoteState(
     }
 
     const sseFallbackMs = pollMs > 0 ? 0 : readOverlaySseFallbackPollMs();
-
-    let sseFallbackId: number | undefined;
-
-    if (sseFallbackMs > 0 && !sseConnected) {
-      sseFallbackId = window.setInterval(
-        () => void syncFromApi(),
-        sseFallbackMs
-      );
-    }
 
     const storageDebounceMs = options.storageDebounceMs ?? 0;
 
@@ -646,8 +634,6 @@ export function useOverlayRemoteState(
 
       stopPoll?.();
 
-      if (sseFallbackId) window.clearInterval(sseFallbackId);
-
       if (storageDebounce) clearTimeout(storageDebounce);
 
       window.removeEventListener("storage", onStorage);
@@ -662,8 +648,6 @@ export function useOverlayRemoteState(
     userId,
 
     syncFromApi,
-
-    sseConnected,
 
     persistLastGood,
 
@@ -681,6 +665,16 @@ export function useOverlayRemoteState(
 
     sigSalesPick,
   ]);
+
+  /** SSE 끊김 시 폴링 — 메인 effect deps 와 분리(SSE 재연결마다 전체 재초기화 방지) */
+  useEffect(() => {
+    if (!enabled || frozen) return;
+    const pollMs = resolveOverlayRemotePollMs(options.overlayPollMs);
+    const sseFallbackMs = pollMs > 0 ? 0 : readOverlaySseFallbackPollMs();
+    if (sseFallbackMs <= 0 || sseConnected) return;
+    const id = window.setInterval(() => void syncFromApiRef.current(), sseFallbackMs);
+    return () => window.clearInterval(id);
+  }, [enabled, frozen, sseConnected, options.overlayPollMs]);
 
   const resync = useCallback(
     (opts?: { forceFull?: boolean }) => syncFromApi(opts),

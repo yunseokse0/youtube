@@ -38,6 +38,7 @@ export interface Donor {
   memberId: string;
   at: string;
   target?: "account" | "toon";
+  message?: string;
 }
 
 export interface DonorAlias {

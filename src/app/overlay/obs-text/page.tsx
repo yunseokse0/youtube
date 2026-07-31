@@ -17,9 +17,8 @@ import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 import { readObsTextOverlayPollMs } from "@/lib/overlay-pull-policy";
 import { STATE_PICK_OBS_TEXT } from "@/lib/state-api-pick";
 
-function ObsTextOverlayInner() {
+function ObsTextOverlayInner({ userId }: { userId: string }) {
   const { params: sp, ready: spReady } = useClientOnlySearchParams();
-  const userId = getOverlayUserIdFromSearchParams(sp);
   const textId = sp.get(OBS_TEXT_ID_QUERY);
   const hostObs = isOverlayBroadcastHost(sp);
   const { state, ready, resync } = useOverlayRemoteState(userId, {
@@ -65,15 +64,16 @@ function ObsTextOverlayInner() {
   }
 
   return (
-    <>
-      <ObsTextOverlayView
-        key={`${resolvedInstanceId}:${config.revision ?? 0}`}
-        config={config}
-      />
-    </>
+    <ObsTextOverlayView
+      key={`${userId}:${resolvedInstanceId}:${config.revision ?? 0}`}
+      config={config}
+    />
   );
 }
 
 export default function ObsTextOverlayPage() {
-  return <ObsTextOverlayInner />;
+  const { params: sp, ready: spReady } = useClientOnlySearchParams();
+  const userId = getOverlayUserIdFromSearchParams(sp);
+  if (!spReady) return null;
+  return <ObsTextOverlayInner key={userId} userId={userId} />;
 }

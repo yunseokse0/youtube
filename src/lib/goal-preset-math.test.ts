@@ -23,8 +23,30 @@ describe("normalizeOverlayPresetDonationGoals", () => {
         { id: "b", showGoal: true, goal: "4000000", goalBaseline: "2000000" },
       ])
     ).toEqual([
-      { id: "a", showGoal: true, goal: "2000000", goalBaseline: "2000000" },
-      { id: "b", showGoal: true, goal: "4000000", goalBaseline: "2000000" },
+      { id: "a", showGoal: true, goal: "2000000", goalBaseline: "2000000", goalIncreaseStep: "2000000" },
+      { id: "b", showGoal: true, goal: "4000000", goalBaseline: "2000000", goalIncreaseStep: "2000000" },
+    ]);
+  });
+
+  it("커스텀 초기 목표·증가폭 유지", () => {
+    expect(
+      normalizeOverlayPresetDonationGoals([
+        {
+          id: "c",
+          showGoal: true,
+          goal: "5000000",
+          goalBaseline: "3000000",
+          goalIncreaseStep: "1000000",
+        },
+      ])
+    ).toEqual([
+      {
+        id: "c",
+        showGoal: true,
+        goal: "5000000",
+        goalBaseline: "3000000",
+        goalIncreaseStep: "1000000",
+      },
     ]);
   });
 });
@@ -47,6 +69,12 @@ describe("computeEscalatedDonationGoal", () => {
     expect(computeEscalatedDonationGoal(2_000_000, 6_000_000)).toBe(8_000_000);
     expect(computeEscalatedDonationGoal(2_000_000, 13_131_313)).toBe(14_000_000);
   });
+
+  it("커스텀 기준선·증가폭", () => {
+    expect(computeEscalatedDonationGoal(3_000_000, 2_900_000, 3_000_000, 500_000)).toBe(3_000_000);
+    expect(computeEscalatedDonationGoal(3_000_000, 3_000_000, 3_000_000, 500_000)).toBe(3_500_000);
+    expect(computeEscalatedDonationGoal(3_000_000, 4_200_000, 3_000_000, 500_000)).toBe(4_500_000);
+  });
 });
 
 describe("applyDonationGoalEscalationToState", () => {
@@ -55,12 +83,25 @@ describe("applyDonationGoalEscalationToState", () => {
     expect(computeLiveDonationTotalFromMembers(members)).toBe(13_131_313);
     const state = {
       members,
-      overlayPresets: [{ id: "goal1", showGoal: true, goal: "2000000", goalBaseline: "2000000" }],
+      overlayPresets: [{ id: "goal1", showGoal: true, goal: "2000000", goalBaseline: "2000000", goalIncreaseStep: "2000000" }],
       updatedAt: 1,
     } as import("@/types").AppState;
     const out = applyDonationGoalEscalationToState(state);
     expect((out.overlayPresets?.[0] as { goal?: string })?.goal).toBe("14000000");
     expect(out.updatedAt).toBeGreaterThan(1);
+  });
+
+  it("커스텀 증가폭으로 상향", () => {
+    const members = [{ id: "m1", name: "A", account: 3_100_000, toon: 0, contribution: 3_100_000, operating: true }];
+    const state = {
+      members,
+      overlayPresets: [
+        { id: "goal1", showGoal: true, goal: "3000000", goalBaseline: "3000000", goalIncreaseStep: "500000" },
+      ],
+      updatedAt: 1,
+    } as import("@/types").AppState;
+    const out = applyDonationGoalEscalationToState(state);
+    expect((out.overlayPresets?.[0] as { goal?: string })?.goal).toBe("3500000");
   });
 });
 

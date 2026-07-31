@@ -46,7 +46,7 @@ import {
 } from "@/lib/state-api-pick";
 import { MANUAL_SIG_BROADCAST_STATE_KEY } from "@/lib/manual-sig-broadcast-state";
 import { MANUAL_SIG_DRAFT_STATE_KEY } from "@/lib/manual-sig-workbench";
-import { OBS_TEXT_OVERLAY_STATE_KEY, normalizeObsTextRegistry } from "@/lib/obs-text-overlay";
+import { OBS_TEXT_OVERLAY_STATE_KEY, normalizeObsTextRegistry, type ObsTextOverlayRegistry } from "@/lib/obs-text-overlay";
 import { slimSigInventoryForWire } from "@/lib/state-wire-slim";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
 export type {
@@ -1086,6 +1086,8 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
         at: Number.isFinite(Number(x.at)) ? Math.floor(Number(x.at)) : Date.now(),
       };
       if (target) row.target = target;
+      const message = typeof x.message === "string" ? x.message.trim() : "";
+      if (message) row.message = message;
       return row;
     });
 }
@@ -1621,7 +1623,7 @@ export async function saveOverlayPresetsPatchAsync(
       ? (options as SaveOverlayPresetsPatchOptions)
       : { overlaySettingsPatch: options as Record<string, unknown> | undefined };
   const now = Date.now();
-  const local = loadState(userId) || defaultState();
+  const local = loadState(userId);
   const foundation = opts.foundation;
   const base =
     foundation && hasMeaningfulMemberRoster(foundation)
@@ -1635,16 +1637,34 @@ export async function saveOverlayPresetsPatchAsync(
       : {}) as Record<string, unknown>),
     ...(opts.overlaySettingsPatch || {}),
   };
+  const existingMeaningful = local && hasMeaningfulMemberRoster(local);
   const mergedLocal: AppState = normalizeStateForPersistence(
-    syncBattleStateWithMembers({
-      ...base,
-      overlayPresets: overlayPresets as AppState["overlayPresets"],
-      overlaySettings: nextSettings as AppState["overlaySettings"],
-      updatedAt: now,
-    })
+    syncBattleStateWithMembers(
+      existingMeaningful
+        ? {
+            ...local!,
+            overlayPresets: overlayPresets as AppState["overlayPresets"],
+            overlaySettings: {
+              ...((local!.overlaySettings && typeof local!.overlaySettings === "object"
+                ? local!.overlaySettings
+                : {}) as Record<string, unknown>),
+              ...nextSettings,
+            } as AppState["overlaySettings"],
+            updatedAt: now,
+          }
+        : {
+            ...base,
+            overlayPresets: overlayPresets as AppState["overlayPresets"],
+            overlaySettings: nextSettings as AppState["overlaySettings"],
+            updatedAt: now,
+          }
+    )
   );
   try {
-    window.localStorage.setItem(storageKey(userId), JSON.stringify(mergedLocal));
+    /** placeholder 멤버로 LS를 덮어 OBS·관리자 탭 동기화를 망가뜨리지 않음 */
+    if (hasMeaningfulMemberRoster(mergedLocal) || !existingMeaningful) {
+      window.localStorage.setItem(storageKey(userId), JSON.stringify(mergedLocal));
+    }
   } catch {}
   notifyBroadcastStateLocalUpdated(userId, mergedLocal.updatedAt);
   const patch = {
@@ -1654,6 +1674,55 @@ export async function saveOverlayPresetsPatchAsync(
   };
   try {
     return await enqueueServerSave(JSON.stringify(patch), userId, mergedLocal);
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
+ * OBS 텍스트 오버레이만 PATCH — members·sigInventory·overlayPresets 를 건드리지 않음.
+ * `userId` 필수(OBS URL `u=` 와 동일 계정).
+ */
+export async function saveObsTextRegistryAsync(
+  registry: ObsTextOverlayRegistry,
+  userId?: string | null
+): Promise<SaveStateAsyncResult> {
+  if (typeof window === "undefined") return { ok: false };
+  const now = Date.now();
+  const normalized = normalizeObsTextRegistry(registry);
+  const local = loadState(userId);
+  const existingOs =
+    local?.overlaySettings && typeof local.overlaySettings === "object"
+      ? (local.overlaySettings as Record<string, unknown>)
+      : {};
+  const nextOs = {
+    ...existingOs,
+    [OBS_TEXT_OVERLAY_STATE_KEY]: normalized,
+  };
+  const sseHint: AppState = {
+    ...(local ?? defaultState()),
+    overlaySettings: nextOs as AppState["overlaySettings"],
+    updatedAt: now,
+  };
+  if (local) {
+    const mergedLocal = normalizeStateForPersistence(
+      syncBattleStateWithMembers({
+        ...local,
+        overlaySettings: nextOs as AppState["overlaySettings"],
+        updatedAt: now,
+      })
+    );
+    try {
+      window.localStorage.setItem(storageKey(userId), JSON.stringify(mergedLocal));
+    } catch {}
+  }
+  notifyBroadcastStateLocalUpdated(userId, now);
+  const patch = {
+    updatedAt: now,
+    overlaySettings: { [OBS_TEXT_OVERLAY_STATE_KEY]: normalized },
+  };
+  try {
+    return await enqueueServerSave(JSON.stringify(patch), userId, sseHint);
   } catch {
     return { ok: false };
   }
@@ -2041,12 +2110,18 @@ async function doLoadStateFromApi(
             : []
       );
       const synced = syncBattleStateWithMembers(data as AppState);
+      const toPersist = preserveLocalMeaningfulRoster(synced, userId);
       if (typeof window !== "undefined") {
         try {
-          window.localStorage.setItem(storageKey(userId), JSON.stringify(synced));
+          const existing = loadState(userId);
+          const wouldPoison =
+            hasMeaningfulMemberRoster(existing) && !hasMeaningfulMemberRoster(toPersist);
+          if (!wouldPoison) {
+            window.localStorage.setItem(storageKey(userId), JSON.stringify(toPersist));
+          }
         } catch {}
       }
-      return synced;
+      return toPersist;
     }
     return null;
   } catch {
