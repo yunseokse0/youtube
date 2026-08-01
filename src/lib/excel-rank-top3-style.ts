@@ -1,7 +1,7 @@
 import type { OverlayPresetLike } from "@/lib/overlay-params";
 
-export type ExcelRankTop3Mode = "off" | "emoji" | "bg" | "both";
-/** none=없음 pulse=행 밝기 colorShift=지정색 gradient 흐름 rainbow=등수별 무지개 흐름 glow=글로우 sparkle=반짝 */
+export type ExcelRankTop3Mode = "off" | "text" | "emoji" | "bg" | "both";
+/** none=없음 colorShift=지정색 gradient 흐름 rainbow=등수별 무지개 흐름 glow=글로우 sparkle=반짝 pulse=레거시(무시) */
 export type ExcelRankTop3RowEffect = "none" | "pulse" | "colorShift" | "rainbow" | "glow" | "sparkle";
 /** @deprecated 전역 기본값 — rankNEffect 미설정 시 사용 */
 export type ExcelRankTop3Effect = ExcelRankTop3RowEffect;
@@ -89,8 +89,13 @@ function normalizeMode(raw: unknown): ExcelRankTop3Mode {
   const v = String(raw || "")
     .trim()
     .toLowerCase();
-  if (v === "emoji" || v === "bg" || v === "both") return v;
+  if (v === "off") return "off";
+  if (v === "text" || v === "emoji" || v === "bg" || v === "both") return "text";
   return "off";
+}
+
+export function isExcelRankTop3TextMode(mode: ExcelRankTop3Mode): boolean {
+  return mode === "text";
 }
 
 export function normalizeExcelRankTop3RowEffect(raw: unknown): ExcelRankTop3RowEffect {
@@ -270,10 +275,11 @@ export function isExcelRankGradientTextEffect(effect: ExcelRankTop3RowEffect): b
 }
 
 function resolveRankEffect(style: ExcelRankTop3Style, rank: 1 | 2 | 3): ExcelRankTop3RowEffect {
+  if (!isExcelRankTop3TextMode(style.mode)) return "none";
   const perRank = [style.rank1Effect, style.rank2Effect, style.rank3Effect][rank - 1];
   if (perRank) return perRank;
   if (style.effect !== "none") return style.effect;
-  return "none";
+  return "colorShift";
 }
 
 function resolveRankTextColors(style: ExcelRankTop3Style, rank: 1 | 2 | 3): { main: string; alt: string } {
@@ -287,40 +293,23 @@ function resolveRankTextColors(style: ExcelRankTop3Style, rank: 1 | 2 | 3): { ma
   };
 }
 
+function buildRankTextCellClass(effect: ExcelRankTop3RowEffect, rank: number): string | undefined {
+  if (effect === "none" || effect === "pulse") return undefined;
+  if (effect === "rainbow") return `overlay-rank-fx-rainbow overlay-rank-tone-${rank}`;
+  if (effect === "colorShift") return "overlay-rank-fx-colorShift";
+  if (effect === "glow" || effect === "sparkle") return `overlay-rank-fx-${effect}`;
+  return undefined;
+}
+
 function buildRankEffectClasses(effect: ExcelRankTop3RowEffect, rank: number): {
-  rowClass?: string;
   rankCellClass?: string;
   nameCellClass?: string;
 } {
-  const baseRankClass = `overlay-rank-top-${rank}`;
-  if (effect === "none") {
-    return { rowClass: baseRankClass };
-  }
-  if (effect === "pulse") {
-    return {
-      rowClass: `${baseRankClass} overlay-rank-top-pulse`,
-    };
-  }
-  if (effect === "rainbow") {
-    return {
-      rowClass: baseRankClass,
-      nameCellClass: `overlay-rank-fx-rainbow overlay-rank-tone-${rank}`,
-    };
-  }
-  if (effect === "colorShift") {
-    return {
-      rowClass: baseRankClass,
-      nameCellClass: "overlay-rank-fx-colorShift",
-    };
-  }
-  if (effect === "glow" || effect === "sparkle") {
-    return {
-      rowClass: baseRankClass,
-      nameCellClass: `overlay-rank-fx-${effect}`,
-    };
-  }
+  const textClass = buildRankTextCellClass(effect, rank);
+  if (!textClass) return {};
   return {
-    rowClass: baseRankClass,
+    rankCellClass: textClass,
+    nameCellClass: textClass,
   };
 }
 
@@ -336,7 +325,7 @@ export function resolveExcelRankTop3RowStyle(
   const numericLabel = formatExcelRankLabel(rank, style.rankLabelFormat);
   const plainRankLabel = String(rank);
 
-  if (style.mode === "off" || rank > 3) {
+  if (!isExcelRankTop3TextMode(style.mode) || rank > 3) {
     return { rankLabel: numericLabel };
   }
 
@@ -345,37 +334,27 @@ export function resolveExcelRankTop3RowStyle(
     return { rankLabel: plainRankLabel };
   }
 
-  const idx = rank - 1;
-  const bgs = [style.rank1Bg, style.rank2Bg, style.rank3Bg];
-  const showBg = style.mode === "bg" || style.mode === "both";
-  const rowBg = showBg ? (bgs[idx] || "").trim() || DEFAULT_EXCEL_RANK_TOP3_BGS[idx] : undefined;
-
   const effect = resolveRankEffect(style, rank as 1 | 2 | 3);
   const textColors = resolveRankTextColors(style, rank as 1 | 2 | 3);
   const fx = buildRankEffectClasses(effect, rank);
-  const hasVisual = showBg || effect !== "none";
 
-  const rowClass =
-    fx.rowClass ||
-    (hasVisual ? `overlay-rank-top-${rank}` : undefined);
-
-  const nameCellStyle: Record<string, string> = {
+  const textCellStyle: Record<string, string> = {
     "--excel-rank-c1": textColors.main,
     "--excel-rank-c2": textColors.alt,
   };
 
   if (effect === "colorShift") {
-    nameCellStyle["--excel-rank-gradient"] = buildRankFlowGradient(
+    textCellStyle["--excel-rank-gradient"] = buildRankFlowGradient(
       textColors.main,
       textColors.alt,
       rank as 1 | 2 | 3
     );
   } else if (effect === "glow" || effect === "sparkle") {
-    nameCellStyle.color = textColors.main;
+    textCellStyle.color = textColors.main;
   }
 
   const gradientText = isExcelRankGradientTextEffect(effect);
-  const nameHasTextFx =
+  const hasTextFx =
     effect === "colorShift" ||
     effect === "rainbow" ||
     effect === "glow" ||
@@ -383,10 +362,10 @@ export function resolveExcelRankTop3RowStyle(
 
   return {
     rankLabel: plainRankLabel,
-    rowBg,
-    rowClass: hasVisual ? rowClass : undefined,
+    rankCellClass: fx.rankCellClass,
+    rankCellStyle: hasTextFx ? textCellStyle : undefined,
     nameCellClass: fx.nameCellClass,
-    nameCellStyle: nameHasTextFx ? nameCellStyle : undefined,
+    nameCellStyle: hasTextFx ? textCellStyle : undefined,
     gradientText,
   };
 }
@@ -483,7 +462,7 @@ export const EXCEL_RANK_TOP3_EFFECTS_CSS = `
 
 export function appendExcelRankTop3Params(target: URLSearchParams, preset: OverlayPresetLike): void {
   const style = excelRankTop3StyleFromPreset(preset);
-  if (style.mode !== "off") target.set("rankTop3Mode", style.mode);
+  if (isExcelRankTop3TextMode(style.mode)) target.set("rankTop3Mode", "text");
   if (style.rankLabelFormat !== "hash") target.set("rankLabelFormat", style.rankLabelFormat);
   if (style.rank1Bg.trim()) target.set("rank1Bg", style.rank1Bg.trim());
   if (style.rank2Bg.trim()) target.set("rank2Bg", style.rank2Bg.trim());

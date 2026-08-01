@@ -7256,7 +7256,7 @@ export default function AdminPage() {
                   const samplePreview = previewGroupSplitDonation(state, 1000000, splitCfg);
                   return (
                     <p className="mt-4 text-[11px] text-violet-200/80">
-                      단체짠 — 후원자명·메시지에 「단체」 포함 시{" "}
+                      단체짠 — 후원자명·메시지에 「단체」·「단짠」 포함 시{" "}
                       {splitCfg.autoSplitOnKeyword !== false ? "자동 균등 분배" : "자동 분배 OFF"} · 제외 멤버는{" "}
                       <button
                         type="button"
@@ -9628,7 +9628,7 @@ export default function AdminPage() {
                 {" "}
                 투네이션 후원 메시지(comment)는 <strong className="text-neutral-300">메시지</strong> 열에 자동 표기됩니다.
                 {" "}
-                <strong className="text-violet-300">단체짠</strong>은 「단체」 포함 후원 자동 분배 또는 리스트{" "}
+                <strong className="text-violet-300">단체짠</strong>은 「단체」·「단짠」 포함 후원 자동 분배 또는 리스트{" "}
                 <strong className="text-violet-300">나누기</strong>로 처리합니다. 원본 행은{" "}
                 <strong className="text-neutral-300">후원 제외</strong>로 남고(삭제 불가), 멤버별 분배 행만 합산에 반영됩니다.
               </div>
@@ -11254,10 +11254,13 @@ export default function AdminPage() {
                                 </span>
                               </label>
                               <div className="col-span-full rounded border border-amber-500/25 bg-amber-950/20 p-3 space-y-2">
-                                <div className="text-xs font-semibold text-amber-100">1~3위 강조 (엑셀표)</div>
+                                <div className="text-xs font-semibold text-amber-100">1~3위 텍스트 효과 (엑셀표)</div>
+                                <p className="text-[10px] leading-snug text-neutral-500">
+                                  행 배경은 바꾸지 않습니다. 순위·이름 글자에만 gradient/글로우 등이 적용되며, 후원 합계 0원이면 효과가 숨겨집니다.
+                                </p>
                                 <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
                                   <label className="text-xs text-neutral-400">
-                                    순위 표시 형식
+                                    순위 표시 형식 (4위 이하)
                                     <select
                                       className="mt-1 w-full rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
                                       value={p.rankLabelFormat || "hash"}
@@ -11269,44 +11272,49 @@ export default function AdminPage() {
                                     </select>
                                   </label>
                                   <label className="text-xs text-neutral-400">
-                                    1~3위 강조
+                                    1~3위 텍스트 효과
                                     <select
                                       className="mt-1 w-full rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
-                                      value={p.rankTop3Mode || "off"}
-                                      onChange={(e) => updatePreset(p.id, { rankTop3Mode: e.target.value })}
+                                      value={
+                                        ["text", "emoji", "bg", "both"].includes(String(p.rankTop3Mode || "off"))
+                                          ? "text"
+                                          : "off"
+                                      }
+                                      onChange={(e) =>
+                                        updatePreset(p.id, {
+                                          rankTop3Mode: e.target.value === "text" ? "text" : "off",
+                                        })
+                                      }
                                     >
-                                      <option value="off">OFF (순위 형식만)</option>
-                                      <option value="emoji">메달/문구만</option>
-                                      <option value="bg">행 배경만</option>
-                                      <option value="both">메달 + 행 배경</option>
+                                      <option value="off">OFF</option>
+                                      <option value="text">ON (순위·이름 gradient)</option>
                                     </select>
                                   </label>
                                   <label className="text-xs text-neutral-400">
-                                    추가 효과 (공통)
+                                    공통 효과 (등수별 미설정 시)
                                     <select
                                       className="mt-1 w-full rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
                                       value={p.rankTop3Effect || "none"}
                                       onChange={(e) => updatePreset(p.id, { rankTop3Effect: e.target.value })}
                                     >
-                                      <option value="none">없음 (1~3위 개별 설정 사용)</option>
+                                      <option value="none">gradient 흐름 (기본·추천)</option>
                                       <option value="colorShift">gradient 흐름 (지정색)</option>
                                       <option value="rainbow">무지개 흐름 (등수 톤)</option>
-                                      <option value="pulse">행 펄스</option>
                                       <option value="glow">글로우</option>
                                       <option value="sparkle">반짝</option>
                                     </select>
                                   </label>
                                 </div>
-                                {(p.rankTop3Mode || "off") !== "off" ? (
+                                {(["text", "emoji", "bg", "both"].includes(String(p.rankTop3Mode || "off"))) ? (
                                   <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
                                     {(
                                       [
-                                        ["rank1Mark", "rank1Bg", "rank1Effect", "rank1TextColor", "rank1TextColorAlt", "1위", "🥇", "#fef08a", "#ca8a04", "#fef08a", "rainbow"],
-                                        ["rank2Mark", "rank2Bg", "rank2Effect", "rank2TextColor", "rank2TextColorAlt", "2위", "🥈", "#fed7aa", "#64748b", "#e2e8f0", "rainbow"],
-                                        ["rank3Mark", "rank3Bg", "rank3Effect", "rank3TextColor", "rank3TextColorAlt", "3위", "🥉", "#bbf7d0", "#b45309", "#fde68a", "rainbow"],
+                                        ["rank1Effect", "rank1TextColor", "rank1TextColorAlt", "1위", "#ca8a04", "#fef08a", "colorShift"],
+                                        ["rank2Effect", "rank2TextColor", "rank2TextColorAlt", "2위", "#64748b", "#e2e8f0", "colorShift"],
+                                        ["rank3Effect", "rank3TextColor", "rank3TextColorAlt", "3위", "#b45309", "#fde68a", "colorShift"],
                                       ] as const
-                                    ).map(([markKey, bgKey, effectKey, colorKey, colorAltKey, label, markPh, bgFallback, colorFallback, colorAltFallback, effectDefault]) => (
-                                      <div key={markKey} className="rounded border border-white/10 bg-black/20 p-2 space-y-1">
+                                    ).map(([effectKey, colorKey, colorAltKey, label, colorFallback, colorAltFallback, effectDefault]) => (
+                                      <div key={effectKey} className="rounded border border-white/10 bg-black/20 p-2 space-y-1">
                                         <div className="text-[11px] text-neutral-300 font-medium">{label}</div>
                                         <label className="block text-[10px] text-neutral-500">
                                           텍스트 효과
@@ -11315,35 +11323,13 @@ export default function AdminPage() {
                                             value={String((p as unknown as Record<string, string | undefined>)[effectKey] || "")}
                                             onChange={(e) => updatePreset(p.id, { [effectKey]: e.target.value } as Partial<OverlayPreset>)}
                                           >
-                                            <option value="">공통/없음</option>
+                                            <option value="">공통/기본</option>
                                             <option value="colorShift">gradient 흐름 (지정색)</option>
                                             <option value="rainbow">무지개 흐름</option>
-                                            <option value="pulse">행 펄스</option>
                                             <option value="glow">글로우</option>
                                             <option value="sparkle">반짝</option>
                                           </select>
                                         </label>
-                                        <input
-                                          className="w-full rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
-                                          value={String((p as unknown as Record<string, string | undefined>)[markKey] || "")}
-                                          onChange={(e) => updatePreset(p.id, { [markKey]: e.target.value } as Partial<OverlayPreset>)}
-                                          placeholder={markPh}
-                                          maxLength={8}
-                                        />
-                                        <div className="flex items-center gap-2">
-                                          <input
-                                            type="color"
-                                            className="h-8 w-12 rounded border border-white/10 bg-neutral-900/80 p-0.5"
-                                            value={toColorPickerValue(String((p as unknown as Record<string, string | undefined>)[bgKey] || ""), bgFallback)}
-                                            onChange={(e) => updatePreset(p.id, { [bgKey]: e.target.value } as Partial<OverlayPreset>)}
-                                          />
-                                          <input
-                                            className="min-w-0 flex-1 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs"
-                                            value={String((p as unknown as Record<string, string | undefined>)[bgKey] || "")}
-                                            onChange={(e) => updatePreset(p.id, { [bgKey]: e.target.value } as Partial<OverlayPreset>)}
-                                            placeholder="행 배경 rgba"
-                                          />
-                                        </div>
                                         <div className="grid grid-cols-2 gap-1">
                                           <label className="text-[10px] text-neutral-500">
                                             흐름색 A
@@ -11364,13 +11350,21 @@ export default function AdminPage() {
                                             />
                                           </label>
                                         </div>
-                                        <p className="text-[10px] text-neutral-600">추천: {effectDefault} · 후원 0원이면 효과 숨김</p>
+                                        <p className="text-[10px] text-neutral-600">추천: {effectDefault} · 순위·이름 동일 적용</p>
                                       </div>
                                     ))}
                                   </div>
                                 ) : (
                                   <p className="text-[10px] text-neutral-500">
-                                    「순위 표시 형식」은 4위 이하·배경만 모드에 적용됩니다. 1~3위는 개별 효과·글자색·배경을 지정할 수 있습니다. 후원 합계가 0원이면 강조·애니메이션이 표시되지 않습니다.
+                                    ON으로 켜면 1~3위 순위 숫자와 이름에 금·은·동 gradient가 흐릅니다. 미리보기:{" "}
+                                    <a
+                                      href="/rank-top3-effect-preview.html"
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-amber-300 underline"
+                                    >
+                                      효과 샘플
+                                    </a>
                                   </p>
                                 )}
                               </div>

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>엑셀표 1~3위 효과 미리보기</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #0a0a0f;
+      color: #e5e5e5;
+      font-family: "Pretendard", "Malgun Gothic", sans-serif;
+      padding: 24px;
+    }
+    h1 { font-size: 18px; margin: 0 0 8px; color: #fef08a; }
+    p { font-size: 12px; color: #a3a3a3; margin: 0 0 20px; line-height: 1.5; }
+    .grid { display: grid; gap: 20px; max-width: 1100px; }
+    section {
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px;
+      padding: 16px;
+      background: rgba(255,255,255,0.03);
+    }
+    section h2 {
+      font-size: 14px;
+      margin: 0 0 12px;
+      color: #c4b5fd;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 22px;
+      font-weight: 700;
+    }
+    th, td {
+      border: 1px solid rgba(255,255,255,0.15);
+      padding: 10px 14px;
+      text-align: center;
+    }
+    th { background: rgba(30,30,40,0.9); font-size: 13px; font-weight: 600; color: #d4d4d4; }
+    td.name { text-align: left; min-width: 120px; }
+    tr.rank-1 td, tr.rank-2 td, tr.rank-3 td { background: transparent; }
+
+    @keyframes overlay-rank-gradient-flow {
+      0% { background-position: 0% 50%; }
+      100% { background-position: 300% 50%; }
+    }
+    @keyframes overlay-rank-top-pulse {
+      0%, 100% { filter: brightness(1); }
+      50% { filter: brightness(1.15) saturate(1.08); }
+    }
+    @keyframes overlay-rank-glow {
+      0%, 100% { filter: drop-shadow(0 0 2px var(--c1)); }
+      50% { filter: drop-shadow(0 0 10px var(--c2)) drop-shadow(0 0 14px var(--c1)); }
+    }
+    @keyframes overlay-rank-sparkle {
+      0%, 100% { filter: brightness(1); }
+      50% { filter: brightness(1.4); }
+    }
+
+    .fx-colorShift, .fx-rainbow {
+      display: inline-block;
+      background-size: 300% 100%;
+      background-repeat: repeat;
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent !important;
+      -webkit-text-fill-color: transparent !important;
+      animation: overlay-rank-gradient-flow 4.8s linear infinite;
+    }
+    .fx-colorShift.r1 {
+      background-image: linear-gradient(90deg, #ca8a04 0%, #fef08a 14%, #fffbeb 28%, #fde047 42%, #fef08a 57%, #fbbf24 71%, #ca8a04 85%, #fef08a 100%);
+    }
+    .fx-colorShift.r2 {
+      background-image: linear-gradient(90deg, #64748b 0%, #e2e8f0 14%, #f8fafc 28%, #cbd5e1 42%, #e2e8f0 57%, #94a3b8 71%, #64748b 85%, #e2e8f0 100%);
+    }
+    .fx-colorShift.r3 {
+      background-image: linear-gradient(90deg, #b45309 0%, #fde68a 14%, #fef3c7 28%, #fb923c 42%, #fde68a 57%, #f59e0b 71%, #b45309 85%, #fde68a 100%);
+    }
+    .fx-rainbow.r1 {
+      background-image: linear-gradient(90deg, #fef08a 0%, #fbbf24 14%, #f59e0b 28%, #fffbeb 42%, #fde047 57%, #fbbf24 71%, #ca8a04 85%, #fef08a 100%);
+    }
+    .fx-rainbow.r2 {
+      background-image: linear-gradient(90deg, #e2e8f0 0%, #94a3b8 14%, #64748b 28%, #f8fafc 42%, #cbd5e1 57%, #94a3b8 71%, #475569 85%, #e2e8f0 100%);
+    }
+    .fx-rainbow.r3 {
+      background-image: linear-gradient(90deg, #fde68a 0%, #f59e0b 14%, #d97706 28%, #fef3c7 42%, #fb923c 57%, #fbbf24 71%, #b45309 85%, #fde68a 100%);
+    }
+    .fx-glow { animation: overlay-rank-glow 2s ease-in-out infinite; --c1: #ca8a04; --c2: #fef08a; color: #fef08a; }
+    .fx-glow.r2 { --c1: #64748b; --c2: #e2e8f0; color: #e2e8f0; }
+    .fx-glow.r3 { --c1: #b45309; --c2: #fde68a; color: #fde68a; }
+    .fx-sparkle { animation: overlay-rank-sparkle 1.6s ease-in-out infinite; color: #fef08a; }
+    .fx-sparkle.r2 { color: #e2e8f0; }
+    .fx-sparkle.r3 { color: #fde68a; }
+    tr.pulse-row td { animation: overlay-rank-top-pulse 2.4s ease-in-out infinite; }
+    .badge { font-size: 11px; color: #737373; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>엑셀표 1~3위 텍스트 효과 미리보기</h1>
+  <p>실제 오버레이와 동일한 CSS 애니메이션입니다. gradient / 무지개는 색이 좌→우로 흐르며, 펄스는 행 전체 밝기, 글로우·반짝은 순위·이름 글자에 적용됩니다.</p>
+
+  <div class="grid">
+    <section>
+      <h2>무지개 흐름 (rainbow) — 등수별 프리셋 · 추천</h2>
+      <table>
+        <thead><tr><th>순위</th><th>이름</th><th>투네</th></tr></thead>
+        <tbody>
+          <tr class="rank-1">
+            <td><span class="fx-rainbow r1">🥇</span></td>
+            <td class="name"><span class="fx-rainbow r1">멤버A</span></td>
+            <td>150,000</td>
+          </tr>
+          <tr class="rank-2">
+            <td><span class="fx-rainbow r2">🥈</span></td>
+            <td class="name"><span class="fx-rainbow r2">멤버B</span></td>
+            <td>98,000</td>
+          </tr>
+          <tr class="rank-3">
+            <td><span class="fx-rainbow r3">🥉</span></td>
+            <td class="name"><span class="fx-rainbow r3">멤버C</span></td>
+            <td>72,000</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="badge">1위 금 · 2위 은 · 3위 동 톤 무지개 gradient</div>
+    </section>
+
+    <section>
+      <h2>gradient 흐름 (colorShift) — A·B 지정색 블렌딩</h2>
+      <table>
+        <thead><tr><th>순위</th><th>이름</th><th>투네</th></tr></thead>
+        <tbody>
+          <tr class="rank-1">
+            <td><span class="fx-colorShift r1">#1</span></td>
+            <td class="name"><span class="fx-colorShift r1">멤버A</span></td>
+            <td>150,000</td>
+          </tr>
+          <tr class="rank-2">
+            <td><span class="fx-colorShift r2">#2</span></td>
+            <td class="name"><span class="fx-colorShift r2">멤버B</span></td>
+            <td>98,000</td>
+          </tr>
+          <tr class="rank-3">
+            <td><span class="fx-colorShift r3">#3</span></td>
+            <td class="name"><span class="fx-colorShift r3">멤버C</span></td>
+            <td>72,000</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="badge">관리자에서 설정한 흐름색 A·B + 등수 톤 multi-stop</div>
+    </section>
+
+    <section>
+      <h2>기타 효과 — 펄스(행) · 글로우 · 반짝 (글자)</h2>
+      <table>
+        <thead><tr><th>순위</th><th>이름</th><th>효과</th></tr></thead>
+        <tbody>
+          <tr class="rank-1 pulse-row">
+            <td>🥇</td>
+            <td class="name">멤버A</td>
+            <td>행 펄스</td>
+          </tr>
+          <tr class="rank-2">
+            <td><span class="fx-glow r2">🥈</span></td>
+            <td class="name"><span class="fx-glow r2">멤버B</span></td>
+            <td>글로우</td>
+          </tr>
+          <tr class="rank-3">
+            <td><span class="fx-sparkle r3">🥉</span></td>
+            <td class="name"><span class="fx-sparkle r3">멤버C</span></td>
+            <td>반짝</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+</body>
+</html>

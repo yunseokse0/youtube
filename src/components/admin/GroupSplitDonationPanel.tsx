@@ -53,7 +53,7 @@ export function GroupSplitDonationPanel({
             disabled={!onAutoSplitChange}
           />
           <span>
-            <strong className="text-violet-50">「단체」·「단체짠」 자동 나누기</strong> — 투네·계좌 후원자명 또는
+            <strong className="text-violet-50">「단체」·「단체짠」·「단짠」 자동 나누기</strong> — 투네·계좌 후원자명 또는
             메시지에 포함 시 즉시 균등 분배. 불가 시{" "}
             <strong className="text-violet-50">대표(지정) 또는 1위</strong> 멤버에 1인 적립
           </span>

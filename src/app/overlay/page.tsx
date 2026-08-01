@@ -3771,8 +3771,7 @@ function OverlayInner() {
                       <tr
                         key={m.id}
                         ref={rowMotionEnabled ? setRowRef(m.id) : undefined}
-                        className={`overlay-row ${top3Row.rowClass || ""} ${rowMotionEnabled ? "transition-transform will-change-transform" : ""} ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
-                        style={top3Row.rowBg ? { backgroundColor: top3Row.rowBg } : undefined}
+                        className={`overlay-row ${rowMotionEnabled ? "transition-transform will-change-transform" : ""} ${rowMotionEnabled && changedIds.has(m.id) ? "animate-row-flash" : ""}`}
                       >
                         <td className={`${effectiveRowCls} overlay-col-rank text-center overlay-rank-cell`}>
                           {rank == null ? (
@@ -3784,7 +3783,7 @@ function OverlayInner() {
                               className={`overlay-cell-text-inner ${top3Row.rankCellClass || ""}`}
                               style={mergeRankTop3TextStyle(
                                 overlayCellOutlineStyle,
-                                false,
+                                top3Row.gradientText,
                                 top3Row.rankCellStyle
                               )}
                             >

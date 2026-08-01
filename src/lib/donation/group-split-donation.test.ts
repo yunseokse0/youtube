@@ -173,10 +173,12 @@ describe("group split donation", () => {
     expect(isGroupSplitSourceDonor(applied.state, sourceDonor)).toBe(true);
   });
 
-  it("detects 단체 keyword in donor name or message", () => {
+  it("detects 단체·단짠 keyword in donor name or message", () => {
     expect(isGroupSplitDonationKeyword({ donorName: "단체후원", message: "" })).toBe(true);
     expect(isGroupSplitDonationKeyword({ donorName: "홍길동", message: "단체짠!" })).toBe(true);
     expect(isGroupSplitDonationKeyword({ donorName: "홍길동", message: "단체 응원" })).toBe(true);
+    expect(isGroupSplitDonationKeyword({ donorName: "단짠", message: "" })).toBe(true);
+    expect(isGroupSplitDonationKeyword({ donorName: "홍길동", message: "단짠 ㅋㅋ" })).toBe(true);
     expect(isGroupSplitDonationKeyword({ donorName: "홍길동", message: "응원" })).toBe(false);
   });
 

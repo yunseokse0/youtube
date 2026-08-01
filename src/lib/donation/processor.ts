@@ -20,7 +20,7 @@ let aliasCacheAt = 0;
 
 export type ProcessDonationResult = DonationEvent & {
   updatedState?: AppState;
-  /** 「단체」 키워드로 자동 균등 분배됨 */
+  /** 「단체」·「단짠」 키워드로 자동 균등 분배됨 */
   autoGroupSplit?: boolean;
   /** 자동 스플릿 실패 → 대표·1위에 1인 적립 */
   autoGroupSplitFallback?: boolean;

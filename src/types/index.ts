@@ -355,7 +355,7 @@ export type OverlayConfig = {
 export type GroupSplitDonationSettings = {
   /** 분배 대상에서 제외할 멤버 id — 운영비 멤버는 목록과 무관하게 항상 제외 */
   excludedMemberIds: string[];
-  /** 후원자명·메시지에 「단체」 포함 시 자동 균등 분배 (기본 ON) */
+  /** 후원자명·메시지에 「단체」·「단짠」 등 포함 시 자동 균등 분배 (기본 ON) */
   autoSplitOnKeyword?: boolean;
 };
 

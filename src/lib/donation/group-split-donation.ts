@@ -25,12 +25,15 @@ export function normalizeGroupSplitDonationSettings(input: unknown): GroupSplitD
   };
 }
 
-/** 후원자명·메시지에 「단체」·「단체짠」 포함 여부 */
+/** 후원자명·메시지 자동 분배 키워드 — 「단체」는 단체짠 등도 포함 */
+export const GROUP_SPLIT_AUTO_KEYWORDS = ["단체", "단짠"] as const;
+
+/** 후원자명·메시지에 단체짠 키워드 포함 여부 */
 export function isGroupSplitDonationKeyword(
   event: Pick<DonationEvent, "donorName" | "message">
 ): boolean {
   const text = `${String(event.donorName || "")} ${String(event.message || "")}`;
-  return text.includes("단체");
+  return GROUP_SPLIT_AUTO_KEYWORDS.some((keyword) => text.includes(keyword));
 }
 
 /** 자동 스플릿 실패 시 — 대표(지정) → 없으면 후원 순위 1위 */
