@@ -68,6 +68,7 @@ import {
 } from "@/lib/excel-member-table-theme";
 import {
   EXCEL_RANK_TOP3_EFFECTS_CSS,
+  isExcelRankTop3TextMode,
   resolveExcelRankTop3RowStyle,
   resolveExcelRankTop3Style,
 } from "@/lib/excel-rank-top3-style";
@@ -3374,7 +3375,7 @@ function OverlayInner() {
         }`
             : ""
         }
-        .overlay-root .overlay-elegant-table tbody td span,
+        .overlay-root .overlay-elegant-table tbody td span:not(.overlay-rank-fx-colorShift):not(.overlay-rank-fx-rainbow):not(.overlay-rank-fx-glow):not(.overlay-rank-fx-sparkle),
         .overlay-root .overlay-elegant-table tbody td strong {
           text-shadow: ${tableOutlineShadowCss} !important;
           -webkit-text-stroke: ${tableStrokeCss} !important;
@@ -3388,7 +3389,7 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table.pastel-member-table tbody tr.overlay-row:nth-child(even) td {
           background: transparent !important;
         }
-        .overlay-root .overlay-elegant-table:not(.excel-live-table):not(.pastel-member-table) tbody tr:not(.overlay-rank-top-1):not(.overlay-rank-top-2):not(.overlay-rank-top-3) td {
+        .overlay-root .overlay-elegant-table:not(.excel-live-table):not(.pastel-member-table) tbody tr.overlay-row td {
           background: ${tableBodySheetBgCss} !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table thead td {
@@ -3459,7 +3460,7 @@ function OverlayInner() {
           text-shadow: ${tableOutlineShadowCss} !important;
           text-rendering: ${overlayTextSharpRender ? "geometricPrecision" : "auto"} !important;
         }
-        .overlay-root .overlay-elegant-table tbody td span,
+        .overlay-root .overlay-elegant-table tbody td span:not(.overlay-rank-fx-colorShift):not(.overlay-rank-fx-rainbow):not(.overlay-rank-fx-glow):not(.overlay-rank-fx-sparkle),
         .overlay-root .overlay-elegant-table tbody td strong,
         .overlay-root .overlay-elegant-table thead td span,
         .overlay-root .overlay-elegant-table thead td strong {
@@ -3601,7 +3602,7 @@ function OverlayInner() {
           text-align: center !important;
         }
         ${
-          excelRankTop3Style.mode !== "off"
+          isExcelRankTop3TextMode(excelRankTop3Style.mode)
             ? EXCEL_RANK_TOP3_EFFECTS_CSS
             : ""
         }

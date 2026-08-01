@@ -372,10 +372,6 @@ export function resolveExcelRankTop3RowStyle(
 
 /** 1~3위 효과 CSS — overlay page style 태그에 삽입 */
 export const EXCEL_RANK_TOP3_EFFECTS_CSS = `
-@keyframes overlay-rank-top-pulse {
-  0%, 100% { filter: brightness(1); }
-  50% { filter: brightness(1.1) saturate(1.05); }
-}
 @keyframes overlay-rank-gradient-flow {
   0% { background-position: 0% 50%; }
   100% { background-position: 300% 50%; }
@@ -392,8 +388,13 @@ export const EXCEL_RANK_TOP3_EFFECTS_CSS = `
   0%, 100% { filter: brightness(1); opacity: 1; }
   50% { filter: brightness(1.35); opacity: 0.92; }
 }
-.overlay-root .overlay-elegant-table tbody tr.overlay-rank-top-pulse td {
-  animation: overlay-rank-top-pulse 2.4s ease-in-out infinite;
+.overlay-root .overlay-elegant-table tbody td .overlay-rank-fx-colorShift,
+.overlay-root .overlay-elegant-table tbody td .overlay-rank-fx-rainbow,
+.overlay-root .overlay-elegant-table tbody td .overlay-rank-fx-glow,
+.overlay-root .overlay-elegant-table tbody td .overlay-rank-fx-sparkle {
+  -webkit-text-stroke: 0 !important;
+  text-shadow: none !important;
+  paint-order: normal !important;
 }
 .overlay-root .overlay-rank-fx-colorShift,
 .overlay-root .overlay-rank-fx-rainbow {
@@ -404,8 +405,9 @@ export const EXCEL_RANK_TOP3_EFFECTS_CSS = `
   background-clip: text;
   color: transparent !important;
   -webkit-text-fill-color: transparent !important;
-  animation: overlay-rank-gradient-flow 4.8s linear infinite;
+  animation: overlay-rank-gradient-flow 4.8s linear infinite !important;
   backface-visibility: hidden;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.55));
 }
 .overlay-root .overlay-rank-fx-colorShift {
   background-image: var(
@@ -453,10 +455,10 @@ export const EXCEL_RANK_TOP3_EFFECTS_CSS = `
   );
 }
 .overlay-root .overlay-rank-fx-glow {
-  animation: overlay-rank-glow 2s ease-in-out infinite;
+  animation: overlay-rank-glow 2s ease-in-out infinite !important;
 }
 .overlay-root .overlay-rank-fx-sparkle {
-  animation: overlay-rank-sparkle 1.6s ease-in-out infinite;
+  animation: overlay-rank-sparkle 1.6s ease-in-out infinite !important;
 }
 `;
 
