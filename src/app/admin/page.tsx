@@ -188,7 +188,7 @@ type OverlayPreset = {
   goalBaseline?: string;
   /** 목표 100% 달성 시 자동 상향 증가폭(원). 비우면 200만 원 */
   goalIncreaseStep?: string;
-  goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string; goalOpacity?: string; goalOpacityText?: boolean; goalTextColor?: string; goalFontSize?: string; goalTextOutlineColor?: string; goalTextOutlineWidth?: string; goalBarBgColor?: string; goalBarFillColor?: string; goalFontFamily?: string; goalBarAnimation?: string;
+  goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string; goalOpacity?: string; goalOpacityText?: boolean; goalTextColor?: string; goalFontSize?: string; goalFontWeight?: string; goalTextOutlineColor?: string; goalTextOutlineWidth?: string; goalBarBgColor?: string; goalBarFillColor?: string; goalFontFamily?: string; goalBarAnimation?: string; overlayTextSharpRender?: boolean;
   showPersonalGoal?: boolean; personalGoalTheme?: string; personalGoalAnchor?: string; personalGoalLimit?: string; personalGoalFree?: boolean; personalGoalX?: string; personalGoalY?: string;
   tickerInMembers?: boolean; tickerInGoal?: boolean; tickerInPersonalGoal?: boolean;
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
@@ -1603,6 +1603,15 @@ export default function AdminPage() {
       const anim = String(patch.goalBarAnimation || "").trim().toLowerCase();
       mergedPatch.goalBarAnimation =
         anim === "off" || anim === "pulse" || anim === "sweep" || anim === "both" ? anim : "both";
+    }
+    if (patch.goalFontWeight !== undefined) {
+      const w = parseInt(String(patch.goalFontWeight || "").replace(/[^\d]/g, ""), 10);
+      mergedPatch.goalFontWeight = Number.isFinite(w)
+        ? String(Math.max(400, Math.min(900, w)))
+        : "";
+    }
+    if (patch.overlayTextSharpRender !== undefined) {
+      mergedPatch.overlayTextSharpRender = Boolean(patch.overlayTextSharpRender);
     }
     if (patch.tableTextOutlineColor !== undefined) {
       const normalized = normalizeGoalHexColor(String(patch.tableTextOutlineColor || ""));
@@ -11040,6 +11049,22 @@ export default function AdminPage() {
                                 />
                               </div>
                               <p className="text-[10px] text-neutral-500 col-span-full">0이면 외곽선 없음. 비우면 글자 크기에 맞춰 자동.</p>
+                              <label className="col-span-full flex cursor-pointer items-start gap-2 rounded border border-sky-500/25 bg-sky-950/20 px-3 py-2 text-xs text-neutral-200">
+                                <input
+                                  type="checkbox"
+                                  className="mt-0.5 accent-sky-400"
+                                  checked={Boolean(p.overlayTextSharpRender)}
+                                  onChange={(e) =>
+                                    updatePreset(p.id, { overlayTextSharpRender: e.target.checked })
+                                  }
+                                />
+                                <span>
+                                  <span className="font-medium text-sky-100">선명 렌더링</span>
+                                  <span className="mt-0.5 block text-[10px] leading-snug text-neutral-400">
+                                    OBS·Prism에서 stroke 유지, 외곽선 blur·soft shadow 제거, geometricPrecision 적용
+                                  </span>
+                                </span>
+                              </label>
                               <div className="col-span-full rounded border border-amber-500/25 bg-amber-950/20 p-3 space-y-2">
                                 <div className="text-xs font-semibold text-amber-100">1~3위 강조 (엑셀표)</div>
                                 <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
@@ -11505,6 +11530,43 @@ export default function AdminPage() {
                                           }
                                           placeholder="자동"
                                         />
+                                      </div>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] text-neutral-400">목표 글자 굵기</label>
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="range"
+                                          min={400}
+                                          max={900}
+                                          step={100}
+                                          value={(() => {
+                                            const n = parseInt(String(p.goalFontWeight ?? ""), 10);
+                                            return Number.isFinite(n) ? Math.min(900, Math.max(400, n)) : 900;
+                                          })()}
+                                          onChange={(e) => updatePreset(p.id, { goalFontWeight: e.target.value })}
+                                          className="flex-1 accent-fuchsia-500"
+                                        />
+                                        <select
+                                          className="w-28 px-2 py-1 rounded bg-neutral-900/90 border border-white/15 text-xs"
+                                          value={(() => {
+                                            const n = parseInt(String(p.goalFontWeight ?? ""), 10);
+                                            return Number.isFinite(n) ? String(Math.min(900, Math.max(400, n))) : "";
+                                          })()}
+                                          onChange={(e) =>
+                                            updatePreset(p.id, {
+                                              goalFontWeight: e.target.value ? e.target.value : "",
+                                            })
+                                          }
+                                        >
+                                          <option value="">기본(900)</option>
+                                          <option value="400">400</option>
+                                          <option value="500">500</option>
+                                          <option value="600">600</option>
+                                          <option value="700">700</option>
+                                          <option value="800">800</option>
+                                          <option value="900">900</option>
+                                        </select>
                                       </div>
                                     </div>
                                     <div className="space-y-1 sm:col-span-2">

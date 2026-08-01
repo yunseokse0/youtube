@@ -20,24 +20,29 @@ export function buildTextOutlineStyle(opts: {
   fontSizePx: number;
   outlineColor?: string;
   outlineWidthPx?: number;
+  /** true면 glow·soft drop shadow 없이 0-offset 링만 */
+  sharp?: boolean;
 }): Pick<CSSProperties, "textShadow" | "WebkitTextStroke" | "paintOrder"> {
   const w = resolveTextOutlineWidthPx(opts.fontSizePx, opts.outlineWidthPx);
   if (w <= 0) return {};
   const color = (opts.outlineColor || "").trim() || DEFAULT_OUTLINE_COLOR;
+  const sharp = Boolean(opts.sharp);
   const blur = Math.max(1, Math.round(w));
+  const ringParts = [
+    `0 1px 0 ${color}`,
+    `0 -1px 0 ${color}`,
+    `1px 0 0 ${color}`,
+    `-1px 0 0 ${color}`,
+    `-1px -1px 0 ${color}`,
+    `1px -1px 0 ${color}`,
+    `-1px 1px 0 ${color}`,
+    `1px 1px 0 ${color}`,
+  ];
+  const shadowParts = sharp
+    ? ringParts
+    : [`0 0 ${blur}px ${color}`, ...ringParts, `0 2px ${Math.max(2, Math.round(w * 4))}px rgba(0,0,0,0.45)`];
   return {
-    textShadow: [
-      `0 0 ${blur}px ${color}`,
-      `0 1px 0 ${color}`,
-      `0 -1px 0 ${color}`,
-      `1px 0 0 ${color}`,
-      `-1px 0 0 ${color}`,
-      `-1px -1px 0 ${color}`,
-      `1px -1px 0 ${color}`,
-      `-1px 1px 0 ${color}`,
-      `1px 1px 0 ${color}`,
-      `0 2px ${Math.max(2, Math.round(w * 4))}px rgba(0,0,0,0.45)`,
-    ].join(", "),
+    textShadow: shadowParts.join(", "),
     WebkitTextStroke: `${w}px ${color}`,
     paintOrder: "stroke fill",
   };
@@ -51,6 +56,7 @@ export function buildBroadcastTextOutlineStyle(opts: {
   fontSizePx: number;
   outlineColor?: string;
   outlineWidthPx?: number;
+  sharp?: boolean;
 }): Pick<CSSProperties, "textShadow" | "WebkitTextStroke" | "paintOrder"> {
   if (opts.outlineWidthPx === 0) return {};
   const width =
@@ -61,6 +67,7 @@ export function buildBroadcastTextOutlineStyle(opts: {
     fontSizePx: opts.fontSizePx,
     outlineColor: (opts.outlineColor || "").trim() || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR,
     outlineWidthPx: width,
+    sharp: opts.sharp,
   });
 }
 
@@ -71,6 +78,7 @@ export function buildBroadcastTextOutlineStyle(opts: {
 export function buildBroadcastTextOutlineShadowCss(opts: {
   outlineColor?: string;
   outlineWidthPx?: number;
+  sharp?: boolean;
 }): string | undefined {
   if (opts.outlineWidthPx === 0) return undefined;
   const color = (opts.outlineColor || "").trim() || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR;
@@ -87,7 +95,9 @@ export function buildBroadcastTextOutlineShadowCss(opts: {
       parts.push(`${dx}px ${dy}px 0 ${color}`);
     }
   }
-  parts.push(`0 ${Math.max(2, ringW)}px ${ringW * 2}px rgba(0,0,0,0.45)`);
+  if (!opts.sharp) {
+    parts.push(`0 ${Math.max(2, ringW)}px ${ringW * 2}px rgba(0,0,0,0.45)`);
+  }
   return parts.join(", ");
 }
 
@@ -96,6 +106,7 @@ export function buildOverlayCellOutlineStyle(opts: {
   fontSizePx: number;
   outlineColor?: string;
   outlineWidthPx?: number;
+  sharp?: boolean;
 }): Pick<CSSProperties, "textShadow" | "WebkitTextStroke" | "paintOrder"> {
   if (opts.outlineWidthPx === 0) return {};
   const resolved = (opts.outlineColor || "").trim() || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR;
@@ -103,11 +114,13 @@ export function buildOverlayCellOutlineStyle(opts: {
     fontSizePx: opts.fontSizePx,
     outlineColor: resolved,
     outlineWidthPx: opts.outlineWidthPx,
+    sharp: opts.sharp,
   });
   const shadow =
     buildBroadcastTextOutlineShadowCss({
       outlineColor: resolved,
       outlineWidthPx: opts.outlineWidthPx,
+      sharp: opts.sharp,
     }) || broadcast.textShadow;
   return {
     textShadow: shadow,

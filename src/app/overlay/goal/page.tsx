@@ -15,6 +15,8 @@ import {
   resolveGoalBarFillColorParam,
   resolveGoalFontFamilyCss,
   resolveGoalBarAnimationMode,
+  resolveOverlayTextSharpRender,
+  resolveGoalFontWeight,
   resolveLivePresetStyleParam,
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
@@ -191,6 +193,14 @@ export default function GoalOverlayPage() {
     () => resolveGoalBarAnimationMode(sp, activePreset, { ready }),
     [sp, activePreset, ready]
   );
+  const overlayTextSharpRender = useMemo(
+    () => resolveOverlayTextSharpRender(sp, activePreset, { ready }),
+    [sp, activePreset, ready]
+  );
+  const goalFontWeight = useMemo(
+    () => resolveGoalFontWeight(sp, activePreset, { ready }),
+    [sp, activePreset, ready]
+  );
 
   const totalCombined = useMemo(
     () => (state?.members || []).reduce((sum, m) => sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)), 0),
@@ -221,7 +231,7 @@ export default function GoalOverlayPage() {
           color: ${goalTextColor} !important;
           -webkit-text-fill-color: ${goalTextColor} !important;
           -webkit-font-smoothing: antialiased;
-          text-rendering: optimizeLegibility;
+          text-rendering: ${overlayTextSharpRender ? "geometricPrecision" : "optimizeLegibility"};
           ${goalFontFamilyCss ? `font-family: ${goalFontFamilyCss} !important;` : ""}
         }
       `,
@@ -245,6 +255,8 @@ export default function GoalOverlayPage() {
               barFillColor={goalBarFillColor}
               fontFamilyCss={goalFontFamilyCss}
               animationMode={goalBarAnimationMode}
+              fontWeight={goalFontWeight}
+              sharpRender={overlayTextSharpRender}
               amountFormat={amountFormat}
               locale={currencyLocale}
             />

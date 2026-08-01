@@ -60,6 +60,8 @@ export function GoalBar({
   barFillColor,
   fontFamilyCss,
   animationMode = "both",
+  fontWeight,
+  sharpRender = false,
   amountFormat = "short",
   locale = "ko-KR",
 }: {
@@ -85,6 +87,10 @@ export function GoalBar({
   fontFamilyCss?: string | null;
   /** 게이지 애니메이션 */
   animationMode?: GoalBarAnimationMode;
+  /** 400~900. 미지정 시 라벨 900·금액 700 */
+  fontWeight?: number;
+  /** 선명 렌더링 — blur 없는 외곽선 + geometricPrecision */
+  sharpRender?: boolean;
   /** `short` = 만원 축약, `full` = 입력한 원 그대로(쉼표만) */
   amountFormat?: "full" | "short";
   locale?: string;
@@ -140,11 +146,18 @@ export function GoalBar({
           fontSizePx: textFontPx,
           outlineColor: textOutlineColor,
           outlineWidthPx: textOutlineWidthPx,
+          sharp: sharpRender,
         });
+  const resolvedFontWeight =
+    fontWeight != null && Number.isFinite(fontWeight)
+      ? Math.max(400, Math.min(900, Math.round(fontWeight)))
+      : undefined;
+  const labelFontWeight = resolvedFontWeight ?? 900;
+  const amountFontWeight = resolvedFontWeight ?? 700;
   const goalTextRender: CSSProperties = {
     display: "inline-block",
     WebkitFontSmoothing: "antialiased",
-    textRendering: "optimizeLegibility",
+    textRendering: sharpRender ? "geometricPrecision" : "optimizeLegibility",
   };
   /** 밝은 트랙 기본 — 미설정·구버전 밝은 글자만 진한 로즈로 */
   const effectiveTextColor = (() => {
@@ -221,7 +234,7 @@ export function GoalBar({
             style={{
               ...goalTextPaint,
               ...goalTextRender,
-              fontWeight: 900,
+              fontWeight: labelFontWeight,
               lineHeight: 1,
               ...goalTextOutline,
             }}
@@ -233,7 +246,7 @@ export function GoalBar({
             style={{
               ...goalTextPaint,
               ...goalTextRender,
-              fontWeight: 700,
+              fontWeight: amountFontWeight,
               lineHeight: 1,
               ...goalTextOutline,
             }}

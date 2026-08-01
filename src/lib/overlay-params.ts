@@ -72,8 +72,12 @@ export type OverlayPresetLike = {
   goalBarFillColor?: string;
   /** 목표 글꼴 — tableFontFamily 와 동일 id */
   goalFontFamily?: string;
+  /** 목표 글자 굵기(400~900). 비우면 900 */
+  goalFontWeight?: string;
   /** 게이지 애니메이션: off | pulse | sweep | both */
   goalBarAnimation?: string;
+  /** OBS 선명 렌더링 — geometricPrecision + stroke 유지 + 외곽 blur 축소 */
+  overlayTextSharpRender?: boolean;
   showPersonalGoal?: boolean;
   personalGoalTheme?: string;
   personalGoalAnchor?: string;
@@ -350,6 +354,7 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.host && preset.host.trim()) q.set("host", preset.host.trim());
   /** showGoal 여부와 무관 — live 프리셋·URL에 목표 글자색 항상 포함 */
   appendGoalBarStyleParams(q, preset);
+  if (preset.overlayTextSharpRender) q.set("textSharp", "1");
   return q;
 }
 
@@ -410,7 +415,9 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "goalBarBgColor",
   "goalBarFillColor",
   "goalFontFamily",
+  "goalFontWeight",
   "goalBarAnimation",
+  "textSharp",
   "goalOpacity",
   "goalOpacityText",
   "tickerGlow",
@@ -535,7 +542,9 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "goalBarBgColor",
   "goalBarFillColor",
   "goalFontFamily",
+  "goalFontWeight",
   "goalBarAnimation",
+  "textSharp",
   "goalOpacity",
   "goalOpacityText",
   "tickerGlow",
@@ -668,7 +677,9 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "goalBarBgColor",
   "goalBarFillColor",
   "goalFontFamily",
+  "goalFontWeight",
   "goalBarAnimation",
+  "textSharp",
   "goalOpacity",
   "goalOpacityText",
   "goalLabel",
@@ -862,6 +873,39 @@ export function resolveGoalBarAnimationMode(
   return normalizeGoalBarAnimation(merged || "both");
 }
 
+export function resolveOverlayTextSharpRender(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): boolean {
+  if (opts.ready && preset?.overlayTextSharpRender) return true;
+  const merged = resolveLivePresetStyleParam(
+    "textSharp",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  const v = String(merged || "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+export function resolveGoalFontWeight(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): number | undefined {
+  const raw = resolveLivePresetStyleParam("goalFontWeight", rawSp, presetToParams(preset), opts) || "";
+  if (!raw.trim()) {
+    if (opts.ready && preset?.goalFontWeight) {
+      const fromPreset = parseInt(String(preset.goalFontWeight), 10);
+      if (Number.isFinite(fromPreset)) return Math.max(400, Math.min(900, fromPreset));
+    }
+    return undefined;
+  }
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? Math.max(400, Math.min(900, n)) : undefined;
+}
+
 export function resolveTableTextColor(
   rawSp: SearchParamsLike,
   preset: OverlayPresetLike | null,
@@ -1051,6 +1095,11 @@ export function appendGoalBarStyleParams(target: URLSearchParams, preset: Overla
   if (goalFontFamily !== "auto") target.set("goalFontFamily", goalFontFamily);
   const goalBarAnim = normalizeGoalBarAnimation(preset.goalBarAnimation || "");
   if (goalBarAnim !== "both") target.set("goalBarAnimation", goalBarAnim);
+  const goalFwRaw = (preset.goalFontWeight || "").trim();
+  if (goalFwRaw) {
+    const fw = parseInt(goalFwRaw, 10);
+    if (Number.isFinite(fw)) target.set("goalFontWeight", String(Math.max(400, Math.min(900, fw))));
+  }
 }
 
 /** 전체 후원 순위(분홍) OBS URL — 상위 N 제한 없음 */

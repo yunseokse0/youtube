@@ -12,6 +12,8 @@ import {
   resolveGoalBarFillColorParam,
   resolveGoalFontFamilyCss,
   resolveGoalBarAnimationMode,
+  resolveOverlayTextSharpRender,
+  resolveGoalFontWeight,
   resolveTableTextColor,
   resolveTableBgColor,
   resolveTableHeaderBgColor,
@@ -1972,6 +1974,8 @@ function OverlayInner() {
   const goalBarFillColor = resolveGoalBarFillColorParam(rawSp, effectivePreset, { ready });
   const goalFontFamilyCss = resolveGoalFontFamilyCss(rawSp, effectivePreset, { ready });
   const goalBarAnimationMode = resolveGoalBarAnimationMode(rawSp, effectivePreset, { ready });
+  const overlayTextSharpRender = resolveOverlayTextSharpRender(rawSp, effectivePreset, { ready });
+  const goalFontWeight = resolveGoalFontWeight(rawSp, effectivePreset, { ready });
   const tableTextOutlineColor = resolveTableTextOutlineColor(rawSp, effectivePreset, { ready });
   const tableTextOutlineWidthPx = resolveTableTextOutlineWidthPx(rawSp, effectivePreset, { ready });
   const tableHeaderTextOutlineColor = resolveTableHeaderTextOutlineColor(rawSp, effectivePreset, { ready });
@@ -3109,16 +3113,20 @@ function OverlayInner() {
     const tableOutlineDisabled = tableTextOutlineWidthPx === 0;
     const resolvedTableOutlineColor =
       tableTextOutlineColor || DEFAULT_OVERLAY_TEXT_OUTLINE_COLOR;
+    const outlineSharp = overlayTextSharpRender;
+    const obsStrokeDisabled = externalSafeMode && !overlayTextSharpRender;
     const tableBroadcastOutline = buildBroadcastTextOutlineStyle({
       fontSizePx: memberFontPx,
       outlineColor: resolvedTableOutlineColor,
       outlineWidthPx: tableTextOutlineWidthPx,
+      sharp: outlineSharp,
     });
     const tableOutlineShadowCss = tableOutlineDisabled
       ? "none"
       : buildBroadcastTextOutlineShadowCss({
           outlineColor: resolvedTableOutlineColor,
           outlineWidthPx: tableTextOutlineWidthPx,
+          sharp: outlineSharp,
         }) ||
         String(
           tableBroadcastOutline.textShadow ||
@@ -3131,26 +3139,29 @@ function OverlayInner() {
       fontSizePx: memberFontPx,
       outlineColor: resolvedTableHeaderOutlineColor,
       outlineWidthPx: tableHeaderTextOutlineWidthPx,
+      sharp: outlineSharp,
     });
     const tableHeaderOutlineShadowCss = tableHeaderOutlineDisabled
       ? "none"
       : buildBroadcastTextOutlineShadowCss({
           outlineColor: resolvedTableHeaderOutlineColor,
           outlineWidthPx: tableHeaderTextOutlineWidthPx,
+          sharp: outlineSharp,
         }) ||
         String(
           tableHeaderBroadcastOutline.textShadow ||
             (tableTextIsLight ? TABLE_TEXT_OUTLINE_LIGHT_ON_DARK : TABLE_TEXT_OUTLINE_DARK_ON_LIGHT)
         );
-    const tableHeaderStrokeCss = externalSafeMode
+    const tableHeaderStrokeCss = obsStrokeDisabled
       ? "0"
       : String(tableHeaderBroadcastOutline.WebkitTextStroke || "0");
     const excelTheadTextShadow = tableHeaderOutlineShadowCss;
     const excelTheadStroke = tableHeaderOutlineDisabled ? "0" : tableHeaderStrokeCss;
     const tableNumericOutlineShadowCss = tableOutlineShadowCss;
-    const tableStrokeCss = externalSafeMode
+    const tableStrokeCss = obsStrokeDisabled
       ? "0"
       : String(tableBroadcastOutline.WebkitTextStroke || tableBodyTextStroke || "0");
+    const tableTextRenderingCss = overlayTextSharpRender || !externalHost ? "geometricPrecision" : "auto";
     const broadcastTheadCss = useBroadcastTableChrome
       ? `
         .overlay-root .overlay-elegant-table thead td {
@@ -3213,7 +3224,7 @@ function OverlayInner() {
       : {
           textShadow: tableOutlineShadowCss,
           WebkitTextStroke:
-            externalSafeMode && !mobileReadableOutline ? 0 : tableBroadcastOutline.WebkitTextStroke,
+            obsStrokeDisabled && !mobileReadableOutline ? 0 : tableBroadcastOutline.WebkitTextStroke,
           paintOrder: "stroke fill",
           fontWeight: tableFontWeight,
         };
@@ -3328,7 +3339,7 @@ function OverlayInner() {
           -webkit-text-stroke: ${tableStrokeCss} !important;
           paint-order: stroke fill;
           -webkit-font-smoothing: antialiased;
-          text-rendering: ${externalHost ? "auto" : "geometricPrecision"};
+          text-rendering: ${tableTextRenderingCss};
         }
         ${tableForcedTextColorCss}
         ${tableAutoTextColorCss}
@@ -3423,16 +3434,16 @@ function OverlayInner() {
           container-type: normal !important;
           font-size: ${memberFontPx}px !important;
           line-height: 1.2 !important;
-          -webkit-text-stroke: 0 !important;
-          /* 스트로크 대신 다층 그림자로 외곽선(OBS CEF에서 stroke 생략) */
+          -webkit-text-stroke: ${overlayTextSharpRender ? tableStrokeCss : "0"} !important;
+          /* 스트로크 대신 다층 그림자로 외곽선(OBS CEF에서 stroke 생략) — 선명 렌더링 시 stroke 유지 */
           text-shadow: ${tableOutlineShadowCss} !important;
-          text-rendering: auto !important;
+          text-rendering: ${overlayTextSharpRender ? "geometricPrecision" : "auto"} !important;
         }
         .overlay-root .overlay-elegant-table tbody td span,
         .overlay-root .overlay-elegant-table tbody td strong,
         .overlay-root .overlay-elegant-table thead td span,
         .overlay-root .overlay-elegant-table thead td strong {
-          -webkit-text-stroke: 0 !important;
+          -webkit-text-stroke: ${overlayTextSharpRender ? tableStrokeCss : "0"} !important;
           text-shadow: ${tableOutlineShadowCss} !important;
         }
         .overlay-root .overlay-elegant-table .overlay-total-row td {
@@ -3622,6 +3633,7 @@ function OverlayInner() {
           -webkit-text-fill-color: ${goalTextColor} !important;
           -webkit-font-smoothing: antialiased;
           text-rendering: optimizeLegibility;
+          ${overlayTextSharpRender ? `text-rendering: geometricPrecision !important;` : ""}
           ${goalFontFamilyCss ? `font-family: ${goalFontFamilyCss} !important;` : ""}
         }
       `,
@@ -3893,6 +3905,8 @@ function OverlayInner() {
               barFillColor={goalBarFillColor}
               fontFamilyCss={goalFontFamilyCss}
               animationMode={goalBarAnimationMode}
+              fontWeight={goalFontWeight}
+              sharpRender={overlayTextSharpRender}
               amountFormat={donorsFormat}
               locale={currencyLocale}
             />
