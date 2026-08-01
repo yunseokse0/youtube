@@ -66,7 +66,11 @@ import {
   isExcelMemberTableTheme,
   resolveExcelMemberTableAccent,
 } from "@/lib/excel-member-table-theme";
-import { resolveExcelRankTop3RowStyle, resolveExcelRankTop3Style } from "@/lib/excel-rank-top3-style";
+import {
+  EXCEL_RANK_TOP3_EFFECTS_CSS,
+  resolveExcelRankTop3RowStyle,
+  resolveExcelRankTop3Style,
+} from "@/lib/excel-rank-top3-style";
 import { clampWidthToViewport, computeReadableCanvasScale, ensureCanvasFontPx, isNarrowBroadcastViewport } from "@/lib/overlay-mobile-fit";
 import { useOverlayViewportSize } from "@/hooks/useOverlayViewportSize";
 import {
@@ -3228,6 +3232,22 @@ function OverlayInner() {
           paintOrder: "stroke fill",
           fontWeight: tableFontWeight,
         };
+    const mergeRankTop3TextStyle = (
+      base: React.CSSProperties,
+      gradientText: boolean | undefined,
+      cellStyle?: Record<string, string>
+    ): React.CSSProperties => {
+      if (gradientText) {
+        return {
+          fontWeight: base.fontWeight,
+          ...(cellStyle as React.CSSProperties),
+        };
+      }
+      return {
+        ...base,
+        ...(cellStyle as React.CSSProperties),
+      };
+    };
     const overlayTotalRowCls = `${effectiveRowCls} font-semibold`;
     const centerFixedStyle = centerFixed ? (
       <style dangerouslySetInnerHTML={{ __html: `
@@ -3581,16 +3601,8 @@ function OverlayInner() {
           text-align: center !important;
         }
         ${
-          excelRankTop3Style.effect === "pulse"
-            ? `
-        @keyframes overlay-rank-top-pulse {
-          0%, 100% { filter: brightness(1); }
-          50% { filter: brightness(1.1) saturate(1.05); }
-        }
-        .overlay-root .overlay-elegant-table tbody tr.overlay-rank-top-pulse td {
-          animation: overlay-rank-top-pulse 2.4s ease-in-out infinite;
-        }
-        `
+          excelRankTop3Style.mode !== "off"
+            ? EXCEL_RANK_TOP3_EFFECTS_CSS
             : ""
         }
         ${
@@ -3753,7 +3765,8 @@ function OverlayInner() {
                   </thead>
                   <tbody>
                     {ranked.map(({m, rank}) => {
-                      const top3Row = resolveExcelRankTop3RowStyle(rank, excelRankTop3Style);
+                      const donationTotal = Math.max(0, Math.round(Number(m.account) || 0) + Math.round(Number(m.toon) || 0));
+                      const top3Row = resolveExcelRankTop3RowStyle(rank, excelRankTop3Style, { donationTotal });
                       return (
                       <tr
                         key={m.id}
@@ -3767,7 +3780,14 @@ function OverlayInner() {
                               —
                             </span>
                           ) : (
-                            <span className="overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                            <span
+                              className={`overlay-cell-text-inner ${top3Row.rankCellClass || ""}`}
+                              style={mergeRankTop3TextStyle(
+                                overlayCellOutlineStyle,
+                                false,
+                                top3Row.rankCellStyle
+                              )}
+                            >
                               {top3Row.rankLabel}
                             </span>
                           )}
@@ -3789,7 +3809,14 @@ function OverlayInner() {
                           </td>
                         )}
                         <td className={`${effectiveRowCls} overlay-col-name ${effectiveNameCls} ${nameWrapCls}`}>
-                          <span className={`overlay-cell-text-inner ${nameWrapCls}`} style={overlayCellOutlineStyle}>
+                          <span
+                            className={`overlay-cell-text-inner ${nameWrapCls} ${top3Row.nameCellClass || ""}`}
+                            style={mergeRankTop3TextStyle(
+                              overlayCellOutlineStyle,
+                              top3Row.gradientText,
+                              top3Row.nameCellStyle
+                            )}
+                          >
                             {m.name}
                           </span>
                         </td>

@@ -1,5 +1,6 @@
 import { applyMealBattleDonationToParticipants, mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
+import { buildMemberCreationOrderIndex, compareMembersByDonationTotal } from "@/lib/utils";
 import type { AppState, Donor, GroupSplitDonationSettings, Member } from "@/types";
 import { normalizeDonationEventId, syncMemberTotalsFromDonors } from "./apply-donation-state";
 import type { DonationEvent } from "./types";
@@ -18,7 +19,49 @@ export function normalizeGroupSplitDonationSettings(input: unknown): GroupSplitD
   const ids = Array.isArray(v.excludedMemberIds)
     ? v.excludedMemberIds.map((id) => String(id || "").trim()).filter(Boolean)
     : [];
-  return { excludedMemberIds: Array.from(new Set(ids)) };
+  return {
+    excludedMemberIds: Array.from(new Set(ids)),
+    autoSplitOnKeyword: v.autoSplitOnKeyword !== false,
+  };
+}
+
+/** 후원자명·메시지에 「단체」·「단체짠」 포함 여부 */
+export function isGroupSplitDonationKeyword(
+  event: Pick<DonationEvent, "donorName" | "message">
+): boolean {
+  const text = `${String(event.donorName || "")} ${String(event.message || "")}`;
+  return text.includes("단체");
+}
+
+/** 자동 스플릿 실패 시 — 대표(지정) → 없으면 후원 순위 1위 */
+export function resolveGroupSplitFallbackMemberId(state: AppState): string | null {
+  const members = state.members || [];
+  const positions = state.memberPositions || {};
+  const representative = members.find(
+    (m) => m?.id && String(positions[m.id] || "").trim() === "대표"
+  );
+  if (representative?.id) return representative.id;
+
+  const orderIndex = buildMemberCreationOrderIndex(members);
+  const rankable = members.filter((member) => {
+    if (!member?.id) return false;
+    return !isOperatingSettlementMember(
+      { id: member.id, name: member.name, operating: member.operating, realName: member.realName },
+      positions
+    );
+  });
+  if (rankable.length === 0) return null;
+  const sorted = [...rankable].sort((a, b) => compareMembersByDonationTotal(a, b, orderIndex));
+  return sorted[0]?.id || null;
+}
+
+export function shouldAutoGroupSplitDonation(
+  event: Pick<DonationEvent, "donorName" | "message">,
+  settings?: GroupSplitDonationSettings | null
+): boolean {
+  const cfg = normalizeGroupSplitDonationSettings(settings);
+  if (!cfg.autoSplitOnKeyword) return false;
+  return isGroupSplitDonationKeyword(event);
 }
 
 export function resolveGroupSplitEligibleMembers(
@@ -270,6 +313,19 @@ export function applyGroupSplitDonationToAppState(
   })();
   const message = String(rawEvent.message || "").trim();
   const donorName = String(rawEvent.donorName || "").trim() || "후원";
+  const totalAmount = Math.max(0, Math.round(Number(rawEvent.amount) || 0));
+
+  const sourceDonor: Donor = {
+    id: rawEvent.id,
+    name: donorName,
+    amount: totalAmount,
+    memberId: preview.eligibleMembers[0]!.id,
+    at: atMs,
+    target: rawEvent.target || "toon",
+    donationExcluded: true,
+    groupSplitSource: true,
+    ...(message ? { message } : {}),
+  };
 
   const splitDonors = buildGroupSplitDonorRows(
     rawEvent.id,
@@ -301,7 +357,7 @@ export function applyGroupSplitDonationToAppState(
   const now = Date.now();
   const updatedState = syncMemberTotalsFromDonors({
     ...currentState,
-    donors: [...(currentState.donors || []), ...splitDonors],
+    donors: [...(currentState.donors || []), sourceDonor, ...splitDonors],
     mealBattle,
     donorRankingsUpdatedAt: now,
     updatedAt: now,

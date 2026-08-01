@@ -8,10 +8,12 @@ import type { AppState } from "@/types";
 export function GroupSplitDonationPanel({
   state,
   onExcludeChange,
+  onAutoSplitChange,
   compact = false,
 }: {
   state: AppState;
   onExcludeChange: (memberId: string, exclude: boolean) => void;
+  onAutoSplitChange?: (enabled: boolean) => void;
   compact?: boolean;
 }) {
   const splitCfg = normalizeGroupSplitDonationSettings(state.groupSplitDonationSettings);
@@ -42,6 +44,20 @@ export function GroupSplitDonationPanel({
           예시 100만 원 · 현재 {samplePreview.eligibleMembers.length}명 → 1인당{" "}
           {samplePreview.sharePerMember.toLocaleString("ko-KR")}원
         </p>
+        <label className="mt-2 flex cursor-pointer items-start gap-2 text-[11px] text-violet-100/80">
+          <input
+            type="checkbox"
+            className="mt-0.5 accent-violet-400"
+            checked={splitCfg.autoSplitOnKeyword !== false}
+            onChange={(e) => onAutoSplitChange?.(e.target.checked)}
+            disabled={!onAutoSplitChange}
+          />
+          <span>
+            <strong className="text-violet-50">「단체」·「단체짠」 자동 나누기</strong> — 투네·계좌 후원자명 또는
+            메시지에 포함 시 즉시 균등 분배. 불가 시{" "}
+            <strong className="text-violet-50">대표(지정) 또는 1위</strong> 멤버에 1인 적립
+          </span>
+        </label>
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {state.members.map((member) => {

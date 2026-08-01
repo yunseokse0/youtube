@@ -179,6 +179,15 @@ export type OverlayPresetLike = {
   rank1Mark?: string;
   rank2Mark?: string;
   rank3Mark?: string;
+  rank1Effect?: string;
+  rank2Effect?: string;
+  rank3Effect?: string;
+  rank1TextColor?: string;
+  rank2TextColor?: string;
+  rank3TextColor?: string;
+  rank1TextColorAlt?: string;
+  rank2TextColorAlt?: string;
+  rank3TextColorAlt?: string;
 };
 
 export function presetToParams(preset: OverlayPresetLike | null): URLSearchParams {

@@ -5,9 +5,12 @@ import {
   applyGroupSplitDonationToAppState,
   computeGroupSplitAmounts,
   countGroupSplitParts,
+  isGroupSplitDonationKeyword,
   isGroupSplitSourceDonor,
   previewGroupSplitDonation,
   resolveGroupSplitEligibleMembers,
+  resolveGroupSplitFallbackMemberId,
+  shouldAutoGroupSplitDonation,
   splitExistingDonorInAppState,
 } from "./group-split-donation";
 
@@ -68,6 +71,8 @@ describe("group split donation", () => {
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
     expect(applied.donors).toHaveLength(2);
+    expect(applied.state.donors).toHaveLength(3);
+    expect(applied.state.donors.some((d) => d.groupSplitSource)).toBe(true);
     const sum = applied.donors.reduce((s, d) => s + d.amount, 0);
     expect(sum).toBe(100001);
     expect(applied.donors[0]!.amount).toBe(50001);
@@ -166,5 +171,46 @@ describe("group split donation", () => {
     expect(countGroupSplitParts(applied.state, "toonation:orig-1")).toBe(3);
     const sourceDonor = applied.state.donors.find((d) => d.id === "toonation:orig-1")!;
     expect(isGroupSplitSourceDonor(applied.state, sourceDonor)).toBe(true);
+  });
+
+  it("detects 단체 keyword in donor name or message", () => {
+    expect(isGroupSplitDonationKeyword({ donorName: "단체후원", message: "" })).toBe(true);
+    expect(isGroupSplitDonationKeyword({ donorName: "홍길동", message: "단체짠!" })).toBe(true);
+    expect(isGroupSplitDonationKeyword({ donorName: "홍길동", message: "단체 응원" })).toBe(true);
+    expect(isGroupSplitDonationKeyword({ donorName: "홍길동", message: "응원" })).toBe(false);
+  });
+
+  it("resolveGroupSplitFallbackMemberId prefers representative then rank 1", () => {
+    const state: AppState = {
+      ...defaultState(),
+      members: [
+        { id: "m1", name: "A", account: 5000, toon: 0, contribution: 5000 },
+        { id: "m2", name: "B", account: 9000, toon: 0, contribution: 9000 },
+        { id: "m3", name: "C", account: 1000, toon: 0, contribution: 1000 },
+      ],
+      memberPositions: { m3: "대표" },
+    };
+    expect(resolveGroupSplitFallbackMemberId(state)).toBe("m3");
+
+    const noRep: AppState = {
+      ...state,
+      memberPositions: {},
+    };
+    expect(resolveGroupSplitFallbackMemberId(noRep)).toBe("m2");
+  });
+
+  it("shouldAutoGroupSplitDonation respects autoSplitOnKeyword setting", () => {
+    expect(
+      shouldAutoGroupSplitDonation(
+        { donorName: "단체", message: "" },
+        { excludedMemberIds: [], autoSplitOnKeyword: true }
+      )
+    ).toBe(true);
+    expect(
+      shouldAutoGroupSplitDonation(
+        { donorName: "단체", message: "" },
+        { excludedMemberIds: [], autoSplitOnKeyword: false }
+      )
+    ).toBe(false);
   });
 });

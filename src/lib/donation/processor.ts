@@ -2,7 +2,12 @@ import { loadStateFromApi, saveStateAsync } from "@/lib/state";
 import { createModuleLogger } from "@/lib/logger";
 import type { AppState } from "@/types";
 import { applyDonationToAppState, isDuplicateDonationEvent } from "./apply-donation-state";
-import { applyGroupSplitDonationToAppState, normalizeGroupSplitDonationSettings } from "./group-split-donation";
+import {
+  applyGroupSplitDonationToAppState,
+  normalizeGroupSplitDonationSettings,
+  resolveGroupSplitFallbackMemberId,
+  shouldAutoGroupSplitDonation,
+} from "./group-split-donation";
 import { donationApplyPrimaryKey } from "./donation-dedupe-keys";
 import type { DonationEvent, DonorAlias } from "./types";
 
@@ -13,7 +18,13 @@ const unresolvedEventIds = new Set<string>();
 let aliasCache: DonorAlias[] = [];
 let aliasCacheAt = 0;
 
-export type ProcessDonationResult = DonationEvent & { updatedState?: AppState };
+export type ProcessDonationResult = DonationEvent & {
+  updatedState?: AppState;
+  /** 「단체」 키워드로 자동 균등 분배됨 */
+  autoGroupSplit?: boolean;
+  /** 자동 스플릿 실패 → 대표·1위에 1인 적립 */
+  autoGroupSplitFallback?: boolean;
+};
 
 /** 관리자 화면의 식대전·동기화 모드는 서버보다 최신일 수 있음 — 후원 반영 시 우선 */
 function mergeAdminHintForDonation(server: AppState, hint?: AppState | null): AppState {
@@ -43,6 +54,84 @@ export async function processDonationEvent(
     }
     const currentState = mergeAdminHintForDonation(loaded, hintState);
     const aliases = await loadAliases(userId);
+
+    if (shouldAutoGroupSplitDonation(rawEvent, currentState.groupSplitDonationSettings)) {
+      const settings = normalizeGroupSplitDonationSettings(currentState.groupSplitDonationSettings);
+      const splitApplied = applyGroupSplitDonationToAppState(currentState, rawEvent, settings);
+      if (splitApplied.ok) {
+        const beforeSave = await getCurrentAppState(userId);
+        if (beforeSave && isDuplicateDonationEvent(beforeSave, rawEvent)) {
+          processedEventIds.add(dedupeKey);
+          return { ...rawEvent, status: "processed" as const, updatedState: beforeSave };
+        }
+        const saved = await saveCurrentAppState(splitApplied.state, userId);
+        if (!saved.ok) {
+          return { ...rawEvent, status: "failed" as const, error: "state_save_failed" };
+        }
+        processedEventIds.add(dedupeKey);
+        unresolvedEventIds.delete(dedupeKey);
+        await resolveUnmatched(rawEvent.id, userId);
+        log.debug(
+          "auto group split processed",
+          splitApplied.event.donorName,
+          splitApplied.preview.sharePerMember,
+          splitApplied.preview.eligibleMembers.length
+        );
+        return {
+          ...splitApplied.event,
+          status: "processed" as const,
+          updatedState: splitApplied.state,
+          autoGroupSplit: true,
+        };
+      }
+      if (splitApplied.reason === "duplicate") {
+        processedEventIds.add(dedupeKey);
+        return { ...rawEvent, status: "processed" as const };
+      }
+      const fallbackMemberId = resolveGroupSplitFallbackMemberId(currentState);
+      if (
+        fallbackMemberId &&
+        (splitApplied.reason === "no_eligible" || splitApplied.reason === "amount_too_small")
+      ) {
+        const fallbackApplied = applyDonationToAppState(
+          currentState,
+          { ...rawEvent, manualAssignMemberId: fallbackMemberId },
+          aliases
+        );
+        if (fallbackApplied.ok) {
+          const beforeSave = await getCurrentAppState(userId);
+          if (beforeSave && isDuplicateDonationEvent(beforeSave, rawEvent)) {
+            processedEventIds.add(dedupeKey);
+            return { ...rawEvent, status: "processed" as const, updatedState: beforeSave };
+          }
+          const saved = await saveCurrentAppState(fallbackApplied.state, userId);
+          if (!saved.ok) {
+            return { ...rawEvent, status: "failed" as const, error: "state_save_failed" };
+          }
+          processedEventIds.add(dedupeKey);
+          unresolvedEventIds.delete(dedupeKey);
+          await resolveUnmatched(fallbackApplied.event.id, userId);
+          log.debug(
+            "auto group split fallback to member",
+            fallbackApplied.event.donorName,
+            fallbackMemberId,
+            splitApplied.reason
+          );
+          return {
+            ...fallbackApplied.event,
+            status: "processed" as const,
+            updatedState: fallbackApplied.state,
+            autoGroupSplitFallback: true,
+          };
+        }
+      }
+      if (splitApplied.reason !== "no_eligible" && splitApplied.reason !== "amount_too_small") {
+        log.warn("auto group split failed", splitApplied.reason);
+      } else {
+        log.debug("auto group split fallback to default matching", splitApplied.reason);
+      }
+    }
+
     let applied = applyDonationToAppState(currentState, rawEvent, aliases);
 
     if (!applied.ok) {

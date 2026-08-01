@@ -205,7 +205,7 @@ type OverlayPreset = {
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
   confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
-  rankTop3Mode?: string; rankTop3Effect?: string; rankLabelFormat?: string; rank1Bg?: string; rank2Bg?: string; rank3Bg?: string; rank1Mark?: string; rank2Mark?: string; rank3Mark?: string;
+  rankTop3Mode?: string; rankTop3Effect?: string; rankLabelFormat?: string; rank1Bg?: string; rank2Bg?: string; rank3Bg?: string; rank1Mark?: string; rank2Mark?: string; rank3Mark?: string; rank1Effect?: string; rank2Effect?: string; rank3Effect?: string; rank1TextColor?: string; rank2TextColor?: string; rank3TextColor?: string; rank1TextColorAlt?: string; rank2TextColorAlt?: string; rank3TextColorAlt?: string;
 };
 
 /** 미션 목록이 비었을 때 미션 전광판 UI 확인용 placeholder */
@@ -2409,7 +2409,23 @@ export default function AdminPage() {
       const next: AppState = {
         ...prev,
         groupSplitDonationSettings: {
+          ...base,
           excludedMemberIds: Array.from(nextExcluded),
+        },
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const setGroupSplitAutoSplitOnKeyword = (enabled: boolean) => {
+    setState((prev: AppState) => {
+      const base = normalizeGroupSplitDonationSettings(prev.groupSplitDonationSettings);
+      const next: AppState = {
+        ...prev,
+        groupSplitDonationSettings: {
+          ...base,
+          autoSplitOnKeyword: enabled,
         },
       };
       persistState(next);
@@ -4543,7 +4559,14 @@ export default function AdminPage() {
 
   const applyProcessDonationResult = useCallback((result: ProcessDonationResult) => {
     if (result.updatedState) setState(result.updatedState);
-  }, []);
+    if (result.autoGroupSplit && result.status === "processed") {
+      pushToonationLog(`단체짠 자동: ${result.donorName} ${result.amount.toLocaleString("ko-KR")}원 균등 분배`);
+    } else if (result.autoGroupSplitFallback && result.status === "processed") {
+      pushToonationLog(
+        `단체짠 폴백: ${result.donorName} ${result.amount.toLocaleString("ko-KR")}원 → 대표·1위 멤버 적립 (스플릿 불가)`
+      );
+    }
+  }, [pushToonationLog]);
 
   const autoProcessAllQueueEvents = useCallback(async (events?: DonationEvent[]) => {
     const batch = events ?? toonationQueue;
@@ -7233,7 +7256,8 @@ export default function AdminPage() {
                   const samplePreview = previewGroupSplitDonation(state, 1000000, splitCfg);
                   return (
                     <p className="mt-4 text-[11px] text-violet-200/80">
-                      단체짠 나누기(제외 멤버)는{" "}
+                      단체짠 — 후원자명·메시지에 「단체」 포함 시{" "}
+                      {splitCfg.autoSplitOnKeyword !== false ? "자동 균등 분배" : "자동 분배 OFF"} · 제외 멤버는{" "}
                       <button
                         type="button"
                         className="text-violet-300 underline hover:text-violet-200"
@@ -8998,6 +9022,7 @@ export default function AdminPage() {
               <GroupSplitDonationPanel
                 state={state}
                 onExcludeChange={setGroupSplitMemberExcluded}
+                onAutoSplitChange={setGroupSplitAutoSplitOnKeyword}
               />
               <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_auto_auto_auto] gap-3 mt-4">
                 <input
@@ -9603,8 +9628,9 @@ export default function AdminPage() {
                 {" "}
                 투네이션 후원 메시지(comment)는 <strong className="text-neutral-300">메시지</strong> 열에 자동 표기됩니다.
                 {" "}
-                <strong className="text-violet-300">단체짠</strong>은 리스트 <strong className="text-violet-300">나누기</strong>로만
-                처리합니다. 원본 행은 <strong className="text-neutral-300">후원 제외</strong>로 남고(삭제 불가), 멤버별 분배 행만 합산에 반영됩니다.
+                <strong className="text-violet-300">단체짠</strong>은 「단체」 포함 후원 자동 분배 또는 리스트{" "}
+                <strong className="text-violet-300">나누기</strong>로 처리합니다. 원본 행은{" "}
+                <strong className="text-neutral-300">후원 제외</strong>로 남고(삭제 불가), 멤버별 분배 행만 합산에 반영됩니다.
               </div>
             </section>
 
@@ -11256,14 +11282,18 @@ export default function AdminPage() {
                                     </select>
                                   </label>
                                   <label className="text-xs text-neutral-400">
-                                    추가 효과
+                                    추가 효과 (공통)
                                     <select
                                       className="mt-1 w-full rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
                                       value={p.rankTop3Effect || "none"}
                                       onChange={(e) => updatePreset(p.id, { rankTop3Effect: e.target.value })}
                                     >
-                                      <option value="none">없음</option>
-                                      <option value="pulse">은은한 펄스</option>
+                                      <option value="none">없음 (1~3위 개별 설정 사용)</option>
+                                      <option value="colorShift">gradient 흐름 (지정색)</option>
+                                      <option value="rainbow">무지개 흐름 (등수 톤)</option>
+                                      <option value="pulse">행 펄스</option>
+                                      <option value="glow">글로우</option>
+                                      <option value="sparkle">반짝</option>
                                     </select>
                                   </label>
                                 </div>
@@ -11271,13 +11301,28 @@ export default function AdminPage() {
                                   <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
                                     {(
                                       [
-                                        ["rank1Mark", "rank1Bg", "1위", "🥇", "#fef08a"],
-                                        ["rank2Mark", "rank2Bg", "2위", "🥈", "#fed7aa"],
-                                        ["rank3Mark", "rank3Bg", "3위", "🥉", "#bbf7d0"],
+                                        ["rank1Mark", "rank1Bg", "rank1Effect", "rank1TextColor", "rank1TextColorAlt", "1위", "🥇", "#fef08a", "#ca8a04", "#fef08a", "rainbow"],
+                                        ["rank2Mark", "rank2Bg", "rank2Effect", "rank2TextColor", "rank2TextColorAlt", "2위", "🥈", "#fed7aa", "#64748b", "#e2e8f0", "rainbow"],
+                                        ["rank3Mark", "rank3Bg", "rank3Effect", "rank3TextColor", "rank3TextColorAlt", "3위", "🥉", "#bbf7d0", "#b45309", "#fde68a", "rainbow"],
                                       ] as const
-                                    ).map(([markKey, bgKey, label, markPh, bgFallback]) => (
+                                    ).map(([markKey, bgKey, effectKey, colorKey, colorAltKey, label, markPh, bgFallback, colorFallback, colorAltFallback, effectDefault]) => (
                                       <div key={markKey} className="rounded border border-white/10 bg-black/20 p-2 space-y-1">
                                         <div className="text-[11px] text-neutral-300 font-medium">{label}</div>
+                                        <label className="block text-[10px] text-neutral-500">
+                                          텍스트 효과
+                                          <select
+                                            className="mt-0.5 w-full rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs"
+                                            value={String((p as unknown as Record<string, string | undefined>)[effectKey] || "")}
+                                            onChange={(e) => updatePreset(p.id, { [effectKey]: e.target.value } as Partial<OverlayPreset>)}
+                                          >
+                                            <option value="">공통/없음</option>
+                                            <option value="colorShift">gradient 흐름 (지정색)</option>
+                                            <option value="rainbow">무지개 흐름</option>
+                                            <option value="pulse">행 펄스</option>
+                                            <option value="glow">글로우</option>
+                                            <option value="sparkle">반짝</option>
+                                          </select>
+                                        </label>
                                         <input
                                           className="w-full rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-sm"
                                           value={String((p as unknown as Record<string, string | undefined>)[markKey] || "")}
@@ -11296,15 +11341,36 @@ export default function AdminPage() {
                                             className="min-w-0 flex-1 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs"
                                             value={String((p as unknown as Record<string, string | undefined>)[bgKey] || "")}
                                             onChange={(e) => updatePreset(p.id, { [bgKey]: e.target.value } as Partial<OverlayPreset>)}
-                                            placeholder="rgba(...) / #hex"
+                                            placeholder="행 배경 rgba"
                                           />
                                         </div>
+                                        <div className="grid grid-cols-2 gap-1">
+                                          <label className="text-[10px] text-neutral-500">
+                                            흐름색 A
+                                            <input
+                                              type="color"
+                                              className="mt-0.5 h-7 w-full rounded border border-white/10 bg-neutral-900/80 p-0.5"
+                                              value={toColorPickerValue(String((p as unknown as Record<string, string | undefined>)[colorKey] || ""), colorFallback)}
+                                              onChange={(e) => updatePreset(p.id, { [colorKey]: e.target.value } as Partial<OverlayPreset>)}
+                                            />
+                                          </label>
+                                          <label className="text-[10px] text-neutral-500">
+                                            흐름색 B
+                                            <input
+                                              type="color"
+                                              className="mt-0.5 h-7 w-full rounded border border-white/10 bg-neutral-900/80 p-0.5"
+                                              value={toColorPickerValue(String((p as unknown as Record<string, string | undefined>)[colorAltKey] || ""), colorAltFallback)}
+                                              onChange={(e) => updatePreset(p.id, { [colorAltKey]: e.target.value } as Partial<OverlayPreset>)}
+                                            />
+                                          </label>
+                                        </div>
+                                        <p className="text-[10px] text-neutral-600">추천: {effectDefault} · 후원 0원이면 효과 숨김</p>
                                       </div>
                                     ))}
                                   </div>
                                 ) : (
                                   <p className="text-[10px] text-neutral-500">
-                                    「순위 표시 형식」은 4위 이하·배경만 모드에 적용됩니다. 1~3위 문구는 아래 칸에서 개별 지정할 수 있습니다.
+                                    「순위 표시 형식」은 4위 이하·배경만 모드에 적용됩니다. 1~3위는 개별 효과·글자색·배경을 지정할 수 있습니다. 후원 합계가 0원이면 강조·애니메이션이 표시되지 않습니다.
                                   </p>
                                 )}
                               </div>
