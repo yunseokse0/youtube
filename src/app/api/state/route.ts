@@ -19,6 +19,7 @@ import {
   isDefaultPlaceholderMemberList,
   isShrunkToDefaultSigInventory,
   mergeDonorsForMultiTabSave,
+  mergeOverlaySettingsPreservingObsText,
   normalizeDonorsArray,
   normalizeRouletteState,
   normalizeSigRolling,
@@ -223,10 +224,12 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
     ) as AppState["overlayPresets"];
   }
   if ("overlaySettings" in patch && patch.overlaySettings != null && typeof patch.overlaySettings === "object") {
-    next.overlaySettings = deepMerge(
-      base.overlaySettings && typeof base.overlaySettings === "object" ? base.overlaySettings : {},
-      patch.overlaySettings
-    ) as AppState["overlaySettings"];
+    const baseOs =
+      base.overlaySettings && typeof base.overlaySettings === "object"
+        ? (base.overlaySettings as Record<string, unknown>)
+        : {};
+    const patchOs = patch.overlaySettings as Record<string, unknown>;
+    next.overlaySettings = mergeOverlaySettingsPreservingObsText(baseOs, patchOs);
   } else if (!("overlaySettings" in patch)) {
     next.overlaySettings = base.overlaySettings;
   }

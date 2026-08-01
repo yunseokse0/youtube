@@ -43,4 +43,38 @@ describe("overlay-last-good", () => {
     last.members = [{ id: "real1", name: "실멤버", account: 1000, toon: 0 }];
     expect(shouldKeepLastGoodInsteadOf(null, STATE_PICK_OVERLAY, last)).toBe(true);
   });
+
+  it("keeps last good when obs-text incoming revision is older", () => {
+    const newer = defaultState();
+    const regNew = defaultObsTextRegistry();
+    regNew.instances[0]!.config = {
+      ...regNew.instances[0]!.config,
+      revision: 5000,
+      blocks: [
+        {
+          ...regNew.instances[0]!.config.blocks[0]!,
+          segments: [{ text: "최신 텍스트", color: "#fff" }],
+        },
+      ],
+    };
+    newer.overlaySettings = { [OBS_TEXT_OVERLAY_STATE_KEY]: regNew };
+    newer.updatedAt = 5000;
+
+    const older = defaultState();
+    const regOld = defaultObsTextRegistry();
+    regOld.instances[0]!.config = {
+      ...regOld.instances[0]!.config,
+      revision: 1000,
+      blocks: [
+        {
+          ...regOld.instances[0]!.config.blocks[0]!,
+          segments: [{ text: "구 텍스트", color: "#fff" }],
+        },
+      ],
+    };
+    older.overlaySettings = { [OBS_TEXT_OVERLAY_STATE_KEY]: regOld };
+    older.updatedAt = 1000;
+
+    expect(shouldKeepLastGoodInsteadOf(older, STATE_PICK_OBS_TEXT, newer)).toBe(true);
+  });
 });

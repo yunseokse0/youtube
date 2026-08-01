@@ -5,6 +5,7 @@ import {
   STATE_PICK_OVERLAY,
   STATE_PICK_OVERLAY_DONORS,
   STATE_PICK_SIG_SALES,
+  revisionForStatePick,
   type StateApiPick,
 } from "@/lib/state-api-pick";
 import { readManualSigBroadcastFromState } from "@/lib/manual-sig-broadcast-state";
@@ -144,6 +145,11 @@ export function shouldKeepLastGoodInsteadOf(
     if (inNonce > goodNonce) return false;
   }
   if (!isOverlayStateViable(incoming, pick)) return true;
+  if (pick === STATE_PICK_OBS_TEXT) {
+    const inRev = revisionForStatePick(incoming, pick);
+    const goodRev = revisionForStatePick(lastGood, pick);
+    if (inRev > 0 && goodRev > 0 && inRev < goodRev) return true;
+  }
   if (shouldDiscardEmptyMembersSnapshot(incoming, pick, lastGood)) return true;
   return false;
 }

@@ -16,6 +16,7 @@ import {
   saveState,
   saveStateAsync,
   saveOverlayPresetsPatchAsync,
+  saveObsTextRegistryAsync,
   loadStateFromApi,
   saveMissionsBackup,
   loadMissionsBackup,
@@ -936,13 +937,10 @@ export default function AdminPage() {
 
   const persistObsTextRegistry = useCallback(
     (registry: ReturnType<typeof readObsTextRegistryFromState>) => {
-      setState((prev) => {
-        const next = mergeObsTextRegistryIntoState(prev, registry);
-        persistState(next);
-        return next;
-      });
+      setState((prev) => mergeObsTextRegistryIntoState(prev, registry));
+      void saveObsTextRegistryAsync(registry, user?.id);
     },
-    [persistState]
+    [user?.id]
   );
   const addObsTextOverlayQuick = useCallback(() => {
     const added = appendObsTextInstance(obsTextRegistry);

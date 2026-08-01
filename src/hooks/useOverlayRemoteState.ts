@@ -167,11 +167,14 @@ function applySyncedState(
 
   /** obs-text pick 304 비교는 max(updatedAt, config.revision) — updatedAt 만 쓰면 영구 304 */
   const pickRev = revisionForStatePick(data, pick);
-  if (pickRev > 0) {
-    refs.lastSyncedUpdatedAtRef.current = Math.max(
-      refs.lastSyncedUpdatedAtRef.current,
-      pickRev
-    );
+
+  if (
+    pick === STATE_PICK_OBS_TEXT &&
+    pickRev > 0 &&
+    refs.lastSyncedUpdatedAtRef.current > 0 &&
+    pickRev < refs.lastSyncedUpdatedAtRef.current
+  ) {
+    return false;
   }
 
   if (pick !== STATE_PICK_OBS_TEXT) {
@@ -184,9 +187,24 @@ function applySyncedState(
     }
   }
 
-  if (nextSig === refs.lastVisualSigRef.current) return false;
+  if (nextSig === refs.lastVisualSigRef.current) {
+    if (pickRev > 0) {
+      refs.lastSyncedUpdatedAtRef.current = Math.max(
+        refs.lastSyncedUpdatedAtRef.current,
+        pickRev
+      );
+    }
+    return false;
+  }
 
   refs.lastVisualSigRef.current = nextSig;
+
+  if (pickRev > 0) {
+    refs.lastSyncedUpdatedAtRef.current = Math.max(
+      refs.lastSyncedUpdatedAtRef.current,
+      pickRev
+    );
+  }
 
   refs.setState(data);
 

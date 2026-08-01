@@ -1682,7 +1682,7 @@ export async function saveOverlayPresetsPatchAsync(
   const patch = {
     updatedAt: now,
     overlayPresets: normalizeOverlayPresetsMedia(mergedLocal.overlayPresets),
-    overlaySettings: mergedLocal.overlaySettings,
+    overlaySettings: overlaySettingsPatchWithoutObsText(mergedLocal.overlaySettings),
   };
   try {
     return await enqueueServerSave(JSON.stringify(patch), userId, mergedLocal);
@@ -1789,6 +1789,15 @@ function obsTextRegistryMaxRevision(raw: unknown): number {
   } catch {
     return 0;
   }
+}
+
+export function overlaySettingsPatchWithoutObsText(
+  overlaySettings: AppState["overlaySettings"] | undefined | null
+): Record<string, unknown> {
+  if (!overlaySettings || typeof overlaySettings !== "object") return {};
+  const os = { ...(overlaySettings as Record<string, unknown>) };
+  delete os[OBS_TEXT_OVERLAY_STATE_KEY];
+  return os;
 }
 
 /**
@@ -1956,6 +1965,15 @@ async function doLoadStateFromApi(
     if (isDonorRankingsPickPartial(data)) {
       const base = defaultState();
       data = { ...base, ...data } as AppState;
+    } else if (options?.pick === STATE_PICK_OBS_TEXT) {
+      data = {
+        ...defaultState(),
+        updatedAt: Number(data.updatedAt || 0),
+        overlaySettings:
+          data.overlaySettings && typeof data.overlaySettings === "object"
+            ? data.overlaySettings
+            : {},
+      } as AppState;
     } else if (isOverlayPickPartial(data)) {
       let base = defaultState();
       if (typeof window !== "undefined") {
@@ -2126,6 +2144,9 @@ async function doLoadStateFromApi(
       );
       const synced = syncBattleStateWithMembers(data as AppState);
       const toPersist = preserveLocalMeaningfulRoster(synced, userId);
+      if (options?.pick === STATE_PICK_OBS_TEXT) {
+        return toPersist;
+      }
       if (typeof window !== "undefined") {
         try {
           const existing = loadState(userId);
