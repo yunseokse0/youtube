@@ -345,6 +345,12 @@ export type OverlayConfig = {
   isBgEnabled: boolean;
 };
 
+/** 단체짠 후원 — 운영비·지정 멤버 제외 후 균등 분배 (기본 전원 분배, excludedMemberIds만 제외) */
+export type GroupSplitDonationSettings = {
+  /** 분배 대상에서 제외할 멤버 id — 운영비 멤버는 목록과 무관하게 항상 제외 */
+  excludedMemberIds: string[];
+};
+
 /** `/overlay/sig-rolling` — 이미지/GIF 순환(크로스페이드) 한 장 항목 */
 export type SigRollingItem = {
   id: string;
@@ -424,6 +430,8 @@ export type AppState = {
   donorRankingsFullOverlayConfig: OverlayConfig;
   /** `/overlay/donation-lists` 배경 GIF·투명도(상태 저장 시 Redis와 동기화) */
   donationListsOverlayConfig: OverlayConfig;
+  /** 단체짠 후원 분배 — 제외 멤버 등 */
+  groupSplitDonationSettings?: GroupSplitDonationSettings;
   /** 시그 판매/회전판에서 제외할 시그 ID 목록 */
   sigSalesExcludedIds: string[];
   /** 후원 동기화 라우팅(중복 반영 방지): none | mealBattle | sigMatch | sigSales */

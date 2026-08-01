@@ -57,6 +57,7 @@ import {
   normalizeSigMatchPools,
   normalizeSigMatchParticipantIds,
   normalizeDonationListsOverlayConfig,
+  normalizeGroupSplitDonationSettings,
   getUnifiedSigRollingItems,
   normalizeSigRolling,
   normalizeRouletteState,
@@ -87,7 +88,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import { appendSettlementRecordAndSync, appendSigMatchIncentiveSettlementAndSync, SettlementMemberRatioOverrides } from "@/lib/settlement";
-import { formatSigMatchStat, getSigMatchRankings } from "@/lib/settlement-utils";
+import { formatSigMatchStat, getSigMatchRankings, isOperatingSettlementMember } from "@/lib/settlement-utils";
 import { getEffectiveRemainingTime, pauseTimer, resumeTimer } from "@/lib/timer-utils";
 import {
   appendAdminPreviewEmbedToOverlayUrl,
@@ -152,7 +153,8 @@ import {
   normalizeDonationEventId,
   revertDonationFromAppState,
 } from "@/lib/donation/apply-donation-state";
-import { processDonationEvent, type ProcessDonationResult } from "@/lib/donation/processor";
+import { processDonationEvent, processGroupSplitDonationEvent, type ProcessDonationResult } from "@/lib/donation/processor";
+import { previewGroupSplitDonation } from "@/lib/donation/group-split-donation";
 import type { DonationEvent, DonorAlias } from "@/lib/donation/types";
 import { buildPlayerAlertPopupUrl, openPlayerAlertPopup } from "@/lib/donation/player-alert-url";
 
@@ -2374,6 +2376,33 @@ export default function AdminPage() {
       const next: AppState = {
         ...prev,
         donationListsOverlayConfig: merged,
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const setGroupSplitMemberExcluded = (memberId: string, exclude: boolean) => {
+    setState((prev: AppState) => {
+      const member = (prev.members || []).find((m) => m.id === memberId);
+      if (
+        !member ||
+        isOperatingSettlementMember(
+          { id: member.id, name: member.name, operating: member.operating, realName: member.realName },
+          prev.memberPositions || null
+        )
+      ) {
+        return prev;
+      }
+      const base = normalizeGroupSplitDonationSettings(prev.groupSplitDonationSettings);
+      const nextExcluded = new Set(base.excludedMemberIds);
+      if (exclude) nextExcluded.add(memberId);
+      else nextExcluded.delete(memberId);
+      const next: AppState = {
+        ...prev,
+        groupSplitDonationSettings: {
+          excludedMemberIds: Array.from(nextExcluded),
+        },
       };
       persistState(next);
       return next;
@@ -4630,6 +4659,57 @@ export default function AdminPage() {
     unmatchedAssignMap,
     user?.id,
   ]);
+
+  const applyGroupSplitDonationEvent = useCallback(
+    async (event: DonationEvent, source: "queue" | "unmatched") => {
+      const freshState = await loadStateFromApi(user?.id, { forceFull: true });
+      const hint = freshState ?? stateRef.current;
+      const previewBefore = previewGroupSplitDonation(
+        hint || state,
+        event.amount,
+        hint?.groupSplitDonationSettings ?? state.groupSplitDonationSettings
+      );
+      const result = await processGroupSplitDonationEvent(
+        { ...event, status: "queued" },
+        user?.id,
+        hint
+      );
+      applyProcessDonationResult(result);
+      if (result.updatedState) {
+        pushToonationLog(
+          `단체짠 분배: ${event.donorName} ${event.amount.toLocaleString("ko-KR")}원 → ${previewBefore.sharePerMember.toLocaleString("ko-KR")}원×${previewBefore.eligibleMembers.length}명` +
+            (previewBefore.remainderDropped > 0
+              ? ` (나머지 ${previewBefore.remainderDropped.toLocaleString("ko-KR")}원 버림)`
+              : "")
+        );
+        if (source === "queue") {
+          await removeQueueEvent(event.id);
+          await fetchToonationQueue();
+        } else {
+          await removeUnmatchedEvent(event.id);
+        }
+      } else if (result.status === "failed") {
+        const err =
+          result.error === "no_eligible_members"
+            ? "분배 대상 멤버 없음(운영비·제외 목록 확인)"
+            : result.error === "amount_too_small"
+              ? "금액이 너무 작아 1인당 0원"
+              : result.error || "unknown";
+        pushToonationLog(`단체짠 분배 실패: ${event.donorName} — ${err}`);
+      }
+      await fetchUnmatchedEvents();
+    },
+    [
+      applyProcessDonationResult,
+      fetchToonationQueue,
+      fetchUnmatchedEvents,
+      pushToonationLog,
+      removeQueueEvent,
+      removeUnmatchedEvent,
+      state,
+      user?.id,
+    ]
+  );
 
   const saveAliasForUnmatched = useCallback(async (event: DonationEvent) => {
     const uid = user?.id || "";
@@ -7150,6 +7230,71 @@ export default function AdminPage() {
                     </div>
                   );
                 })()}
+                {(() => {
+                  const splitCfg = normalizeGroupSplitDonationSettings(state.groupSplitDonationSettings);
+                  const excluded = new Set(splitCfg.excludedMemberIds);
+                  const samplePreview = previewGroupSplitDonation(state, 1000000, splitCfg);
+                  return (
+                    <div className="mt-4 rounded-xl border border-violet-400/30 bg-violet-950/20 p-4 space-y-3">
+                      <div>
+                        <div className="text-sm font-semibold text-violet-100">단체짠 후원 분배</div>
+                        <p className="mt-1 text-[11px] leading-snug text-violet-100/70">
+                          기본은 <strong className="font-semibold text-violet-50">운영비를 제외한 전원</strong>에게 균등
+                          분배입니다. 빼고 싶은 멤버만 아래에서 「제외」를 체크하세요. (멤버를 추가로 넣는 설정은 없습니다)
+                        </p>
+                        <p className="mt-1 text-[11px] leading-snug text-violet-100/70">
+                          투네·계좌 큐·미매칭에서 「단체짠 분배」 버튼으로 반영 · 총액÷인원(내림, 나머지 버림)
+                        </p>
+                        <p className="mt-1 text-[10px] text-violet-200/60">
+                          예시 100만 원 · 현재 {samplePreview.eligibleMembers.length}명 → 1인당{" "}
+                          {samplePreview.sharePerMember.toLocaleString("ko-KR")}원
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {state.members.map((member) => {
+                          const operating = isOperatingSettlementMember(
+                            {
+                              id: member.id,
+                              name: member.name,
+                              operating: member.operating,
+                              realName: member.realName,
+                            },
+                            state.memberPositions || null
+                          );
+                          const isExcluded = excluded.has(member.id);
+                          if (operating) {
+                            return (
+                              <div
+                                key={member.id}
+                                className="flex items-center gap-2 rounded-lg border border-neutral-600/40 bg-neutral-900/40 px-3 py-2 text-xs text-neutral-500"
+                              >
+                                <span className="shrink-0 rounded bg-neutral-800 px-1.5 py-0.5 text-[10px]">운영비</span>
+                                <span>{member.name} · 자동 제외</span>
+                              </div>
+                            );
+                          }
+                          return (
+                            <label
+                              key={member.id}
+                              className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-neutral-200"
+                            >
+                              <input
+                                type="checkbox"
+                                className="accent-violet-400"
+                                checked={isExcluded}
+                                onChange={(e) => setGroupSplitMemberExcluded(member.id, e.target.checked)}
+                              />
+                              <span>
+                                {member.name}
+                                {isExcluded ? " · 분배 제외" : " · 분배 대상(기본)"}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
               {!sigSalesModalOpen ? (
                 <SigSalesCompactCard
@@ -9140,6 +9285,24 @@ export default function AdminPage() {
                               ) : null}
                             </div>
                             <div className="flex flex-col items-end gap-1 shrink-0">
+                              {(() => {
+                                const splitPreview = previewGroupSplitDonation(
+                                  state,
+                                  evt.amount,
+                                  state.groupSplitDonationSettings
+                                );
+                                return (
+                                  <button
+                                    type="button"
+                                    className="px-2 py-0.5 rounded bg-violet-700 hover:bg-violet-600 text-[11px] whitespace-nowrap"
+                                    title={`${splitPreview.sharePerMember.toLocaleString("ko-KR")}원 × ${splitPreview.eligibleMembers.length}명`}
+                                    onClick={() => void applyGroupSplitDonationEvent(evt, "queue")}
+                                  >
+                                    단체짠 ({splitPreview.sharePerMember.toLocaleString("ko-KR")}×
+                                    {splitPreview.eligibleMembers.length})
+                                  </button>
+                                );
+                              })()}
                               <button
                                 type="button"
                                 className="px-2 py-0.5 rounded bg-neutral-700 hover:bg-neutral-600 text-[11px]"
@@ -9217,6 +9380,24 @@ export default function AdminPage() {
                           >
                             선택 멤버로 반영
                           </button>
+                          {(() => {
+                            const splitPreview = previewGroupSplitDonation(
+                              state,
+                              evt.amount,
+                              state.groupSplitDonationSettings
+                            );
+                            return (
+                              <button
+                                type="button"
+                                className="px-2 py-1 rounded bg-violet-700 hover:bg-violet-600 text-xs"
+                                title={`${splitPreview.sharePerMember.toLocaleString("ko-KR")}원 × ${splitPreview.eligibleMembers.length}명`}
+                                onClick={() => void applyGroupSplitDonationEvent(evt, "unmatched")}
+                              >
+                                단체짠 ({splitPreview.sharePerMember.toLocaleString("ko-KR")}×
+                                {splitPreview.eligibleMembers.length})
+                              </button>
+                            );
+                          })()}
                           <input
                             className="px-2 py-1 rounded bg-neutral-900 border border-white/10 text-xs min-w-[140px]"
                             placeholder="별칭 (기본: 후원자명)"

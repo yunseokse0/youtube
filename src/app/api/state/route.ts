@@ -9,6 +9,7 @@ import {
   normalizeOverlayPresetDonationGoals,
 } from "@/lib/goal-preset-math";
 import { DEFAULT_SIG_INVENTORY } from "@/lib/constants";
+import { normalizeGroupSplitDonationSettings } from "@/lib/donation/group-split-donation";
 import {
   defaultState,
   DEFAULT_DONOR_RANKINGS_FULL_THEME,
@@ -239,6 +240,11 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
   if (!("donorRankingsFullOverlayConfig" in patch))
     next.donorRankingsFullOverlayConfig = base.donorRankingsFullOverlayConfig;
   if (!("donationListsOverlayConfig" in patch)) next.donationListsOverlayConfig = base.donationListsOverlayConfig;
+  if (!("groupSplitDonationSettings" in patch)) {
+    next.groupSplitDonationSettings = base.groupSplitDonationSettings;
+  } else if (patch.groupSplitDonationSettings != null) {
+    next.groupSplitDonationSettings = normalizeGroupSplitDonationSettings(patch.groupSplitDonationSettings);
+  }
   if (!("sigRolling" in patch)) next.sigRolling = base.sigRolling ?? normalizeSigRolling(null);
   if (!("sigRollingMeta" in patch)) next.sigRollingMeta = base.sigRollingMeta ?? {};
 

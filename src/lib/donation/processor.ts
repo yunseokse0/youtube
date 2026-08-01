@@ -2,6 +2,7 @@ import { loadStateFromApi, saveStateAsync } from "@/lib/state";
 import { createModuleLogger } from "@/lib/logger";
 import type { AppState } from "@/types";
 import { applyDonationToAppState, isDuplicateDonationEvent } from "./apply-donation-state";
+import { applyGroupSplitDonationToAppState, normalizeGroupSplitDonationSettings } from "./group-split-donation";
 import { donationApplyPrimaryKey } from "./donation-dedupe-keys";
 import type { DonationEvent, DonorAlias } from "./types";
 
@@ -75,6 +76,62 @@ export async function processDonationEvent(
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown_error";
     log.error("process failed", message);
+    return { ...rawEvent, status: "failed" as const, error: message };
+  }
+}
+
+/** 단체짠 — 운영비·제외 멤버 제외 후 균등 분배 */
+export async function processGroupSplitDonationEvent(
+  rawEvent: DonationEvent,
+  userId?: string,
+  hintState?: AppState | null
+): Promise<ProcessDonationResult & { splitError?: string }> {
+  log.debug("group split processing", rawEvent.donorName, rawEvent.amount);
+  try {
+    const dedupeKey = `${donationApplyPrimaryKey(userId || "__default__", rawEvent)}:groupsplit`;
+    if (processedEventIds.has(dedupeKey)) {
+      return { ...rawEvent, status: "processed" as const };
+    }
+
+    const loaded = await getCurrentAppState(userId);
+    if (!loaded) {
+      return { ...rawEvent, status: "failed" as const, error: "state_not_available" };
+    }
+    const currentState = mergeAdminHintForDonation(loaded, hintState);
+    const settings = normalizeGroupSplitDonationSettings(currentState.groupSplitDonationSettings);
+    const applied = applyGroupSplitDonationToAppState(currentState, rawEvent, settings);
+
+    if (!applied.ok) {
+      if (applied.reason === "duplicate") {
+        processedEventIds.add(dedupeKey);
+        return { ...rawEvent, status: "processed" as const };
+      }
+      const splitError =
+        applied.reason === "no_eligible"
+          ? "no_eligible_members"
+          : applied.reason === "amount_too_small"
+            ? "amount_too_small"
+            : applied.reason;
+      return { ...rawEvent, status: "failed" as const, error: splitError, splitError };
+    }
+
+    const saved = await saveCurrentAppState(applied.state, userId);
+    if (!saved.ok) {
+      return { ...rawEvent, status: "failed" as const, error: "state_save_failed" };
+    }
+    processedEventIds.add(dedupeKey);
+    unresolvedEventIds.delete(donationApplyPrimaryKey(userId || "__default__", rawEvent));
+    await resolveUnmatched(applied.event.id, userId);
+    log.debug(
+      "group split processed",
+      applied.event.donorName,
+      applied.preview.sharePerMember,
+      applied.preview.eligibleMembers.length
+    );
+    return { ...applied.event, status: "processed" as const, updatedState: applied.state };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown_error";
+    log.error("group split process failed", message);
     return { ...rawEvent, status: "failed" as const, error: message };
   }
 }

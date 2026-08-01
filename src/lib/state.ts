@@ -1,5 +1,6 @@
 import { DEFAULT_MEAL_GAUGE_EFFECTS, normalizeMealGaugeEffects } from "@/lib/meal-gauge-effects";
 import { normalizeDonationTableColumnsOptions } from "@/lib/donation-table-options";
+import { normalizeGroupSplitDonationSettings } from "@/lib/donation/group-split-donation";
 import { notifyBroadcastStateLocalUpdated } from "@/lib/broadcast-state-local-sync";
 import type {
   AppState,
@@ -734,6 +735,8 @@ export function normalizeDonorRankingsOverlayConfig(input: unknown): OverlayConf
   return normalizeDonationListsOverlayConfig(input);
 }
 
+export { normalizeGroupSplitDonationSettings };
+
 /** 오버레이 프리셋에 남은 ImageKit 등 외부 GIF URL 제거(로드·저장 공통) */
 function normalizeOverlayPresetsMedia(input: unknown): unknown[] {
   if (!Array.isArray(input)) return [];
@@ -853,6 +856,7 @@ export function defaultState(): AppState {
     donorRankingsOverlayConfig: normalizeDonorRankingsOverlayConfig(null),
     donorRankingsFullOverlayConfig: normalizeDonorRankingsOverlayConfig(null),
     donationListsOverlayConfig: normalizeDonationListsOverlayConfig(null),
+    groupSplitDonationSettings: { excludedMemberIds: [] },
     donationSyncMode: "mealBattle",
     sigRolling: normalizeSigRolling(null),
     sigRollingMeta: {},
@@ -1243,6 +1247,9 @@ export function loadState(userId?: string | null): AppState {
       (data as AppState).donorRankingsFullOverlayConfig
     );
     data.donationListsOverlayConfig = normalizeDonationListsOverlayConfig((data as AppState).donationListsOverlayConfig);
+    data.groupSplitDonationSettings = normalizeGroupSplitDonationSettings(
+      (data as AppState).groupSplitDonationSettings
+    );
     data.sigRolling = normalizeSigRolling((data as AppState).sigRolling);
     data.sigRollingMeta = normalizeSigRollingMeta((data as AppState).sigRollingMeta);
     data.overlayPresets = normalizeOverlayPresetsMedia(
@@ -1537,6 +1544,7 @@ function normalizeStateForPersistence(state: AppState): AppState {
     sigRolling: normalizeSigRolling(stripped.sigRolling),
     sigSoldOutStampUrl: normalizeSigImageUrlStored(stripped.sigSoldOutStampUrl),
     donationListsOverlayConfig: normalizeDonationListsOverlayConfig(stripped.donationListsOverlayConfig),
+    groupSplitDonationSettings: normalizeGroupSplitDonationSettings(stripped.groupSplitDonationSettings),
     donorRankingsOverlayConfig: normalizeDonorRankingsOverlayConfig(stripped.donorRankingsOverlayConfig),
     donorRankingsFullOverlayConfig: normalizeDonorRankingsOverlayConfig(stripped.donorRankingsFullOverlayConfig),
     overlayPresets: normalizeOverlayPresetsMedia(stripped.overlayPresets),
@@ -2100,6 +2108,9 @@ async function doLoadStateFromApi(
       (data as AppState).donorRankingsFullOverlayConfig
     );
       data.donationListsOverlayConfig = normalizeDonationListsOverlayConfig((data as AppState).donationListsOverlayConfig);
+    data.groupSplitDonationSettings = normalizeGroupSplitDonationSettings(
+      (data as AppState).groupSplitDonationSettings
+    );
       data.sigRolling = normalizeSigRolling((data as AppState).sigRolling);
       data.sigRollingMeta = normalizeSigRollingMeta((data as AppState).sigRollingMeta);
       data.overlayPresets = normalizeOverlayPresetsMedia(
