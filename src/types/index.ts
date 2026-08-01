@@ -36,6 +36,12 @@ export type Donor = {
   message?: string;
   /** 투네 자동 배치 멤버 — 관리자 수동 재지정 대상 */
   memberAutoAssigned?: boolean;
+  /** 단체짠 분배로 생성된 멤버별 행 */
+  groupSplit?: boolean;
+  /** 단체짠 나누기 원본 행 — 리스트 유지·합산 제외·삭제 불가 */
+  groupSplitSource?: boolean;
+  /** 단체짠 원본 등 — 리스트에는 표시하되 멤버·순위 합산에서 제외 */
+  donationExcluded?: boolean;
 };
 
 export type ContributionLog = {

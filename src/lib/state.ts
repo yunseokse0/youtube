@@ -1092,6 +1092,10 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
       if (target) row.target = target;
       const message = typeof x.message === "string" ? x.message.trim() : "";
       if (message) row.message = message;
+      if (x.memberAutoAssigned === true) row.memberAutoAssigned = true;
+      if (x.groupSplit === true) row.groupSplit = true;
+      if (x.groupSplitSource === true) row.groupSplitSource = true;
+      if (x.donationExcluded === true) row.donationExcluded = true;
       return row;
     });
 }
@@ -2368,6 +2372,7 @@ export function formatChatLine(state: AppState): string {
     .join(",");
   const accAgg = new Map<string, number>();
   for (const d of normalizeDonorsArray(state.donors)) {
+    if (d.donationExcluded) continue;
     if ((d.target || "account") === "toon") continue;
     accAgg.set(d.name, (accAgg.get(d.name) || 0) + d.amount);
   }

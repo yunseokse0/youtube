@@ -383,4 +383,52 @@ describe("applyDonationToAppState", () => {
     expect(r2.state.members[0]?.account).toBe(20000);
     expect(r2.state.donors).toHaveLength(2);
   });
+
+  it("revertDonationFromAppState rejects donationExcluded source rows", () => {
+    const state = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 }],
+      donors: [
+        {
+          id: "toonation:orig",
+          name: "후원자",
+          amount: 9000,
+          memberId: "m1",
+          at: Date.now(),
+          target: "toon" as const,
+          donationExcluded: true,
+        },
+      ],
+    };
+    expect(revertDonationFromAppState(state, "toonation:orig")).toBeNull();
+  });
+
+  it("syncMemberTotalsFromDonors skips donationExcluded rows", () => {
+    const state = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "피자", account: 0, toon: 99999, contribution: 99999 }],
+      donors: [
+        {
+          id: "toonation:orig",
+          name: "후원자",
+          amount: 9000,
+          memberId: "m1",
+          at: Date.now(),
+          target: "toon" as const,
+          donationExcluded: true,
+        },
+        {
+          id: "toonation:orig:split:m1",
+          name: "후원자",
+          amount: 3000,
+          memberId: "m1",
+          at: Date.now(),
+          target: "toon" as const,
+          groupSplit: true,
+        },
+      ],
+    };
+    const next = syncMemberTotalsFromDonors(state);
+    expect(next.members[0]?.toon).toBe(3000);
+  });
 });

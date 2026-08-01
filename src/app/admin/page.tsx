@@ -149,12 +149,20 @@ import {
 import {
   dedupeDonorRows,
   donationQueueIdsForDonor,
+  isDonorExcludedFromDonationTotals,
   isDuplicateDonationEvent,
   normalizeDonationEventId,
   revertDonationFromAppState,
 } from "@/lib/donation/apply-donation-state";
 import { processDonationEvent, processGroupSplitDonationEvent, type ProcessDonationResult } from "@/lib/donation/processor";
-import { previewGroupSplitDonation } from "@/lib/donation/group-split-donation";
+import {
+  countGroupSplitParts,
+  isGroupSplitPartDonor,
+  isGroupSplitSourceDonor,
+  previewGroupSplitDonation,
+  splitExistingDonorInAppState,
+} from "@/lib/donation/group-split-donation";
+import { GroupSplitDonationPanel } from "@/components/admin/GroupSplitDonationPanel";
 import type { DonationEvent, DonorAlias } from "@/lib/donation/types";
 import { buildPlayerAlertPopupUrl, openPlayerAlertPopup } from "@/lib/donation/player-alert-url";
 
@@ -4660,55 +4668,44 @@ export default function AdminPage() {
     user?.id,
   ]);
 
-  const applyGroupSplitDonationEvent = useCallback(
-    async (event: DonationEvent, source: "queue" | "unmatched") => {
-      const freshState = await loadStateFromApi(user?.id, { forceFull: true });
-      const hint = freshState ?? stateRef.current;
-      const previewBefore = previewGroupSplitDonation(
-        hint || state,
-        event.amount,
-        hint?.groupSplitDonationSettings ?? state.groupSplitDonationSettings
-      );
-      const result = await processGroupSplitDonationEvent(
-        { ...event, status: "queued" },
-        user?.id,
-        hint
-      );
-      applyProcessDonationResult(result);
-      if (result.updatedState) {
-        pushToonationLog(
-          `단체짠 분배: ${event.donorName} ${event.amount.toLocaleString("ko-KR")}원 → ${previewBefore.sharePerMember.toLocaleString("ko-KR")}원×${previewBefore.eligibleMembers.length}명` +
-            (previewBefore.remainderDropped > 0
-              ? ` (나머지 ${previewBefore.remainderDropped.toLocaleString("ko-KR")}원 버림)`
-              : "")
-        );
-        if (source === "queue") {
-          await removeQueueEvent(event.id);
-          await fetchToonationQueue();
-        } else {
-          await removeUnmatchedEvent(event.id);
-        }
-      } else if (result.status === "failed") {
-        const err =
-          result.error === "no_eligible_members"
-            ? "분배 대상 멤버 없음(운영비·제외 목록 확인)"
-            : result.error === "amount_too_small"
-              ? "금액이 너무 작아 1인당 0원"
-              : result.error || "unknown";
-        pushToonationLog(`단체짠 분배 실패: ${event.donorName} — ${err}`);
+  const applyGroupSplitFromDonor = useCallback(
+    async (donor: Donor) => {
+      if (String(donor.id || "").includes(":split:") || donor.groupSplit) {
+        pushToonationLog("이미 분배된 하위 행입니다.");
+        return;
       }
-      await fetchUnmatchedEvents();
+      const freshState = await loadStateFromApi(user?.id, { forceFull: true });
+      const base = freshState ?? stateRef.current;
+      if (!base) return;
+
+      const settings = normalizeGroupSplitDonationSettings(base.groupSplitDonationSettings);
+      const applied = splitExistingDonorInAppState(base, donor.id, settings);
+      if (!applied.ok) {
+        const err =
+          applied.reason === "duplicate"
+            ? "이미 단체짠 분배됨"
+            : applied.reason === "no_eligible"
+              ? "분배 대상 멤버 없음"
+              : applied.reason === "amount_too_small"
+                ? "금액이 너무 작음"
+                : applied.reason === "not_found"
+                  ? "후원 행을 찾지 못함"
+                  : "분배할 수 없는 행";
+        pushToonationLog(`단체짠 분배 실패: ${donor.name} — ${err}`);
+        return;
+      }
+
+      const saved = await saveStateAsync(applied.state, user?.id, { donorsAuthoritative: true });
+      if (!saved.ok) {
+        pushToonationLog("단체짠 분배: 저장 실패");
+        return;
+      }
+      setState(applied.state);
+      pushToonationLog(
+        `단체짠: ${donor.name} ${donor.amount.toLocaleString("ko-KR")}원 → ${applied.donors.length}행 생성 (${applied.preview.sharePerMember.toLocaleString("ko-KR")}원×${applied.preview.eligibleMembers.length}명, 합계 ${donor.amount.toLocaleString("ko-KR")}원 유지)`
+      );
     },
-    [
-      applyProcessDonationResult,
-      fetchToonationQueue,
-      fetchUnmatchedEvents,
-      pushToonationLog,
-      removeQueueEvent,
-      removeUnmatchedEvent,
-      state,
-      user?.id,
-    ]
+    [pushToonationLog, user?.id]
   );
 
   const saveAliasForUnmatched = useCallback(async (event: DonationEvent) => {
@@ -4970,6 +4967,7 @@ export default function AdminPage() {
   const donorTotalsByName = useMemo(() => {
     const map = new Map<string, { name: string; account: number; toon: number; total: number; count: number }>();
     for (const d of dedupeDonorRows(state.donors)) {
+      if (isDonorExcludedFromDonationTotals(d)) continue;
       const key = (d.name || "무명").trim() || "무명";
       const prev = map.get(key) || { name: key, account: 0, toon: 0, total: 0, count: 0 };
       const isToon = (d.target || "account") === "toon";
@@ -7232,67 +7230,20 @@ export default function AdminPage() {
                 })()}
                 {(() => {
                   const splitCfg = normalizeGroupSplitDonationSettings(state.groupSplitDonationSettings);
-                  const excluded = new Set(splitCfg.excludedMemberIds);
                   const samplePreview = previewGroupSplitDonation(state, 1000000, splitCfg);
                   return (
-                    <div className="mt-4 rounded-xl border border-violet-400/30 bg-violet-950/20 p-4 space-y-3">
-                      <div>
-                        <div className="text-sm font-semibold text-violet-100">단체짠 후원 분배</div>
-                        <p className="mt-1 text-[11px] leading-snug text-violet-100/70">
-                          기본은 <strong className="font-semibold text-violet-50">운영비를 제외한 전원</strong>에게 균등
-                          분배입니다. 빼고 싶은 멤버만 아래에서 「제외」를 체크하세요. (멤버를 추가로 넣는 설정은 없습니다)
-                        </p>
-                        <p className="mt-1 text-[11px] leading-snug text-violet-100/70">
-                          투네·계좌 큐·미매칭에서 「단체짠 분배」 버튼으로 반영 · 총액÷인원(내림, 나머지 버림)
-                        </p>
-                        <p className="mt-1 text-[10px] text-violet-200/60">
-                          예시 100만 원 · 현재 {samplePreview.eligibleMembers.length}명 → 1인당{" "}
-                          {samplePreview.sharePerMember.toLocaleString("ko-KR")}원
-                        </p>
-                      </div>
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        {state.members.map((member) => {
-                          const operating = isOperatingSettlementMember(
-                            {
-                              id: member.id,
-                              name: member.name,
-                              operating: member.operating,
-                              realName: member.realName,
-                            },
-                            state.memberPositions || null
-                          );
-                          const isExcluded = excluded.has(member.id);
-                          if (operating) {
-                            return (
-                              <div
-                                key={member.id}
-                                className="flex items-center gap-2 rounded-lg border border-neutral-600/40 bg-neutral-900/40 px-3 py-2 text-xs text-neutral-500"
-                              >
-                                <span className="shrink-0 rounded bg-neutral-800 px-1.5 py-0.5 text-[10px]">운영비</span>
-                                <span>{member.name} · 자동 제외</span>
-                              </div>
-                            );
-                          }
-                          return (
-                            <label
-                              key={member.id}
-                              className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-neutral-200"
-                            >
-                              <input
-                                type="checkbox"
-                                className="accent-violet-400"
-                                checked={isExcluded}
-                                onChange={(e) => setGroupSplitMemberExcluded(member.id, e.target.checked)}
-                              />
-                              <span>
-                                {member.name}
-                                {isExcluded ? " · 분배 제외" : " · 분배 대상(기본)"}
-                              </span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    <p className="mt-4 text-[11px] text-violet-200/80">
+                      단체짠 나누기(제외 멤버)는{" "}
+                      <button
+                        type="button"
+                        className="text-violet-300 underline hover:text-violet-200"
+                        onClick={() => moveToSection("donor", "group-split-donation-settings")}
+                      >
+                        후원자 탭
+                      </button>
+                      에서 설정 · 현재 {samplePreview.eligibleMembers.length}명 분배 / 100만 원 기준 1인당{" "}
+                      {samplePreview.sharePerMember.toLocaleString("ko-KR")}원
+                    </p>
                   );
                 })()}
               </div>
@@ -9041,10 +8992,14 @@ export default function AdminPage() {
                   만원 (100만)
                 </button>
                 <span className="text-[11px] text-neutral-500">
-                  풀=입력한 원 그대로 · 만원=축약 표기 · 오버레이·목표 막대에도 동일(막대 총액만 천원 반올림)
+                  풀=입력한 원 그대로 ·                   만원=축약 표기 · 오버레이·목표 막대에도 동일(막대 총액만 천원 반올림)
                 </span>
               </div>
-              <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_auto_auto_auto] gap-3">
+              <GroupSplitDonationPanel
+                state={state}
+                onExcludeChange={setGroupSplitMemberExcluded}
+              />
+              <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_auto_auto_auto] gap-3 mt-4">
                 <input
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
                   placeholder="후원자 이름"
@@ -9285,24 +9240,6 @@ export default function AdminPage() {
                               ) : null}
                             </div>
                             <div className="flex flex-col items-end gap-1 shrink-0">
-                              {(() => {
-                                const splitPreview = previewGroupSplitDonation(
-                                  state,
-                                  evt.amount,
-                                  state.groupSplitDonationSettings
-                                );
-                                return (
-                                  <button
-                                    type="button"
-                                    className="px-2 py-0.5 rounded bg-violet-700 hover:bg-violet-600 text-[11px] whitespace-nowrap"
-                                    title={`${splitPreview.sharePerMember.toLocaleString("ko-KR")}원 × ${splitPreview.eligibleMembers.length}명`}
-                                    onClick={() => void applyGroupSplitDonationEvent(evt, "queue")}
-                                  >
-                                    단체짠 ({splitPreview.sharePerMember.toLocaleString("ko-KR")}×
-                                    {splitPreview.eligibleMembers.length})
-                                  </button>
-                                );
-                              })()}
                               <button
                                 type="button"
                                 className="px-2 py-0.5 rounded bg-neutral-700 hover:bg-neutral-600 text-[11px]"
@@ -9380,24 +9317,6 @@ export default function AdminPage() {
                           >
                             선택 멤버로 반영
                           </button>
-                          {(() => {
-                            const splitPreview = previewGroupSplitDonation(
-                              state,
-                              evt.amount,
-                              state.groupSplitDonationSettings
-                            );
-                            return (
-                              <button
-                                type="button"
-                                className="px-2 py-1 rounded bg-violet-700 hover:bg-violet-600 text-xs"
-                                title={`${splitPreview.sharePerMember.toLocaleString("ko-KR")}원 × ${splitPreview.eligibleMembers.length}명`}
-                                onClick={() => void applyGroupSplitDonationEvent(evt, "unmatched")}
-                              >
-                                단체짠 ({splitPreview.sharePerMember.toLocaleString("ko-KR")}×
-                                {splitPreview.eligibleMembers.length})
-                              </button>
-                            );
-                          })()}
                           <input
                             className="px-2 py-1 rounded bg-neutral-900 border border-white/10 text-xs min-w-[140px]"
                             placeholder="별칭 (기본: 후원자명)"
@@ -9568,6 +9487,7 @@ export default function AdminPage() {
                       <th className="text-left font-medium p-1">대상</th>
                       <th className="text-left font-medium p-1 min-w-[120px]">메시지</th>
                       <th className="text-right font-medium p-1">금액</th>
+                      <th className="text-right font-medium p-1 w-28">단체짠</th>
                       <th className="text-right font-medium p-1 w-16">삭제</th>
                     </tr>
                   </thead>
@@ -9577,10 +9497,32 @@ export default function AdminPage() {
                       .sort((a,b)=>b.at-a.at)
                       .map((d) => {
                         const m = state.members.find((x) => x.id === d.memberId);
+                        const isSplitPart = isGroupSplitPartDonor(d);
+                        const isSplitSource = isGroupSplitSourceDonor(state, d);
+                        const splitPartCount = isSplitSource ? countGroupSplitParts(state, d.id) : 0;
+                        const splitPreview = !isSplitPart && !isSplitSource
+                          ? previewGroupSplitDonation(state, d.amount, state.groupSplitDonationSettings)
+                          : null;
                         return (
-                          <tr key={d.id} className="border-t border-white/10">
+                          <tr key={d.id} className={`border-t border-white/10 ${isSplitPart ? "bg-violet-950/15" : isSplitSource ? "bg-violet-950/10" : ""}`}>
                             <td className="p-1 text-neutral-400"><ClientTime ts={d.at} /></td>
-                            <td className="p-1">{d.name}</td>
+                            <td className="p-1">
+                              {d.name}
+                              {isSplitPart ? (
+                                <span className="ml-1 rounded bg-violet-800/60 px-1 py-0.5 text-[10px] text-violet-200">
+                                  스플릿
+                                </span>
+                              ) : isSplitSource ? (
+                                <>
+                                  <span className="ml-1 rounded bg-violet-800/60 px-1 py-0.5 text-[10px] text-violet-200">
+                                    스플릿됨
+                                  </span>
+                                  <span className="ml-1 rounded bg-neutral-700/80 px-1 py-0.5 text-[10px] text-neutral-300">
+                                    후원 제외
+                                  </span>
+                                </>
+                              ) : null}
+                            </td>
                             <td className="p-1 text-neutral-300">{m?.name || d.memberId}</td>
                             <td className="p-1">{(d.target || "account") === "toon" ? <span className="text-amber-300">투네</span> : <span className="text-emerald-300">계좌</span>}</td>
                             <td className="p-1 text-neutral-400 max-w-[220px]">
@@ -9590,32 +9532,68 @@ export default function AdminPage() {
                                 <span className="text-neutral-600">—</span>
                               )}
                             </td>
-                            <td className="p-1 text-right whitespace-nowrap" title={`저장값 ${d.amount.toLocaleString("ko-KR")}원`}>
-                              {formatDonorAmountDisplay(d.amount)}
+                            <td className="p-1 text-right whitespace-nowrap" title={`저장값 ${d.amount.toLocaleString("ko-KR")}원${isSplitSource ? " (합산 제외)" : ""}`}>
+                              <span className={isSplitSource ? "text-neutral-500 line-through decoration-neutral-600" : ""}>
+                                {formatDonorAmountDisplay(d.amount)}
+                              </span>
                             </td>
                             <td className="p-1 text-right">
-                              <button
-                                className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700"
-                                onClick={() => {
-                                  requestConfirm("후원 기록 삭제", "해당 후원 기록을 삭제할까요?", () => {
-                                    void removeQueueEventsMatchingDonor(d);
-                                    setState((prev: AppState) => {
-                                      const next = revertDonationFromAppState(prev, d.id);
-                                      if (!next) return prev;
-                                      persistState(next, { donorsAuthoritative: true });
-                                      return next;
-                                    });
-                                  }, { confirmText: "삭제", danger: true });
-                                }}
-                              >
-                                삭제
-                              </button>
+                              {isSplitPart ? (
+                                <span className="text-[10px] text-violet-300/90 whitespace-nowrap">↳ 스플릿</span>
+                              ) : isSplitSource ? (
+                                <span
+                                  className="text-[10px] text-violet-300/90 whitespace-nowrap"
+                                  title={`${splitPartCount}명에게 분배됨`}
+                                >
+                                  스플릿됨 · {splitPartCount}명
+                                </span>
+                              ) : splitPreview && splitPreview.eligibleMembers.length > 0 && splitPreview.sharePerMember > 0 ? (
+                                <button
+                                  type="button"
+                                  className="px-2 py-0.5 rounded bg-violet-800 hover:bg-violet-700 text-[10px] whitespace-nowrap"
+                                  title={`${splitPreview.sharePerMember.toLocaleString("ko-KR")}원 × ${splitPreview.eligibleMembers.length}명`}
+                                  onClick={() => {
+                                    requestConfirm(
+                                      "단체짠 나누기",
+                                      `${d.name} ${d.amount.toLocaleString("ko-KR")}원(총액 유지)을 ${splitPreview.eligibleMembers.length}명에게 나눕니다. 1인 ${splitPreview.sharePerMember.toLocaleString("ko-KR")}원${splitPreview.remainderToFirst > 0 ? `(+${splitPreview.remainderToFirst.toLocaleString("ko-KR")}원은 첫 멤버)` : ""}. 기존 1인 적립은 취소됩니다.`,
+                                      () => void applyGroupSplitFromDonor(d),
+                                      { confirmText: "나누기", danger: false }
+                                    );
+                                  }}
+                                >
+                                  나누기
+                                </button>
+                              ) : (
+                                <span className="text-neutral-600">—</span>
+                              )}
+                            </td>
+                            <td className="p-1 text-right">
+                              {isSplitSource ? (
+                                <span className="text-[10px] text-neutral-500">삭제 불가</span>
+                              ) : (
+                                <button
+                                  className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700"
+                                  onClick={() => {
+                                    requestConfirm("후원 기록 삭제", "해당 후원 기록을 삭제할까요?", () => {
+                                      void removeQueueEventsMatchingDonor(d);
+                                      setState((prev: AppState) => {
+                                        const next = revertDonationFromAppState(prev, d.id);
+                                        if (!next) return prev;
+                                        persistState(next, { donorsAuthoritative: true });
+                                        return next;
+                                      });
+                                    }, { confirmText: "삭제", danger: true });
+                                  }}
+                                >
+                                  삭제
+                                </button>
+                              )}
                             </td>
                           </tr>
                         );
                       })}
                     {state.donors.length === 0 && (
-                      <tr><td className="p-2 text-neutral-400" colSpan={7}>기록이 없습니다.</td></tr>
+                      <tr><td className="p-2 text-neutral-400" colSpan={8}>기록이 없습니다.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -9624,6 +9602,9 @@ export default function AdminPage() {
                 후원자 리스트는 건별 기록입니다. (동일 후원자여도 건별로 별도 행 표시)
                 {" "}
                 투네이션 후원 메시지(comment)는 <strong className="text-neutral-300">메시지</strong> 열에 자동 표기됩니다.
+                {" "}
+                <strong className="text-violet-300">단체짠</strong>은 리스트 <strong className="text-violet-300">나누기</strong>로만
+                처리합니다. 원본 행은 <strong className="text-neutral-300">후원 제외</strong>로 남고(삭제 불가), 멤버별 분배 행만 합산에 반영됩니다.
               </div>
             </section>
 

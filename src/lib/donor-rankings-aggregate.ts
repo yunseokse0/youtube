@@ -45,6 +45,7 @@ export function buildDonorRankingsFromDonors(
   const allRows: DonorRankingRow[] = [];
 
   for (const d of dedupeDonorRows(donors)) {
+    if (d && typeof d === "object" && (d as { donationExcluded?: boolean }).donationExcluded) continue;
     const row = {
       name: String(d.name || "무명"),
       amount: Number(d.amount || 0),

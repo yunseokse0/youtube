@@ -55,6 +55,13 @@ export function donorRowDedupeKey(donor: {
   return `fallback:${name}|${donorAtEpochMs(donor)}|${amount}`;
 }
 
+/** 후원 합산(멤버·순위·식대전)에서 제외할 행 */
+export function isDonorExcludedFromDonationTotals(donor: {
+  donationExcluded?: boolean;
+}): boolean {
+  return donor.donationExcluded === true;
+}
+
 export function dedupeDonorRows<T extends { id?: string; name?: string; amount?: number; at?: number | string }>(
   donors: T[]
 ): T[] {
@@ -92,6 +99,7 @@ export function syncMemberTotalsFromDonors(state: AppState): AppState {
     totals.set(member.id, { account: 0, toon: 0 });
   }
   for (const donor of dedupeDonorRows(state.donors || [])) {
+    if (isDonorExcludedFromDonationTotals(donor)) continue;
     const memberId = String(donor.memberId || "").trim();
     if (!memberId || !totals.has(memberId)) continue;
     const bucket = totals.get(memberId)!;
@@ -254,6 +262,7 @@ export function applyDonationToAppState(
 export function revertDonationFromAppState(currentState: AppState, donorId: string): AppState | null {
   const donor = (currentState.donors || []).find((d) => d.id === donorId);
   if (!donor) return null;
+  if (isDonorExcludedFromDonationTotals(donor)) return null;
 
   const field = (donor.target || "account") === "toon" ? "toon" : "account";
   const amount = Math.max(0, Math.round(Number(donor.amount) || 0));

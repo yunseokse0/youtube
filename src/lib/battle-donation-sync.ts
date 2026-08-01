@@ -1,5 +1,5 @@
 import type { AppState, MealBattleParticipant, MealBattleState } from "@/types";
-import { dedupeDonorRows } from "@/lib/donation/apply-donation-state";
+import { dedupeDonorRows, isDonorExcludedFromDonationTotals } from "@/lib/donation/apply-donation-state";
 import {
   applyMealBattleDonationToParticipants,
   mealBattleDonationScoreDelta,
@@ -26,6 +26,7 @@ export function recalculateMealParticipantScoresFromDonors(
     const since = p.donationLinkStartedAt ?? 0;
     let score = 0;
     for (const d of rows) {
+      if (isDonorExcludedFromDonationTotals(d)) continue;
       if (String(d.memberId || "") !== p.memberId) continue;
       if (since > 0 && donorAtMs(d) < since) continue;
       const amount = Math.max(0, Math.round(Number(d.amount) || 0));
