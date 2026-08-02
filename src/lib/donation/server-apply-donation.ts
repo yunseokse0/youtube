@@ -39,13 +39,25 @@ async function resolveAlreadyAppliedOrDefer(
   return "retry";
 }
 
-async function broadcastDonationStateUpdated(updatedAt: number, donorRankingsUpdatedAt?: number): Promise<void> {
+type DonationAppliedSseHint = {
+  donorName: string;
+  amount: number;
+  target: "account" | "toon";
+  memberName?: string;
+};
+
+async function broadcastDonationStateUpdated(
+  updatedAt: number,
+  donorRankingsUpdatedAt?: number,
+  donationApplied?: DonationAppliedSseHint
+): Promise<void> {
   const payload = {
     type: "state_updated" as const,
     updatedAt,
     ...(typeof donorRankingsUpdatedAt === "number" && donorRankingsUpdatedAt > 0
       ? { donorRankingsUpdatedAt }
       : {}),
+    ...(donationApplied ? { donationApplied } : {}),
   };
   broadcastSseEvent(payload);
   const origin = process.env.INTERNAL_ORIGIN || `http://127.0.0.1:${process.env.PORT || 3000}`;
@@ -111,8 +123,19 @@ export async function tryAutoApplyToonationDonationOnServer(
       return "not_applied";
     }
     await saveAppStateForRoulette(userId, result.state);
+    const verify = await loadAppStateForUserId(userId);
+    if (!isDuplicateDonationEvent(verify, event)) {
+      await releaseDonationApplyClaim(userId, event);
+      return "not_applied";
+    }
     await purgeDonationQueueForEvent(userId, event);
-    await broadcastDonationStateUpdated(result.state.updatedAt, result.state.donorRankingsUpdatedAt);
+    const member = (result.state.members || []).find((m) => m.id === result.event.memberId);
+    await broadcastDonationStateUpdated(result.state.updatedAt, result.state.donorRankingsUpdatedAt, {
+      donorName: result.event.donorName,
+      amount: result.event.amount,
+      target: result.event.target === "account" ? "account" : "toon",
+      memberName: member?.name || undefined,
+    });
     const enriched = await enrichDonationEventWithSigMatch(userId, result.event);
     await broadcastPlayerDonationAlert(userId, enriched);
     return result.event.memberAutoAssigned ? "applied_needs_review" : "applied";

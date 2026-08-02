@@ -67,6 +67,11 @@ import {
 } from "@/lib/broadcast-state-local-sync";
 import { buildOverlayRankedMembers, buildMemberCreationOrderIndex, compareMembersByDonationTotal } from "@/lib/utils";
 import {
+  isDonationTableBoolKey,
+  mergeDonationTablePresetFields,
+  resolveDonationTableColumnsOptions,
+} from "@/lib/donation-table-options";
+import {
   isExcelMemberTableTheme,
   resolveExcelMemberTableAccent,
 } from "@/lib/excel-member-table-theme";
@@ -1604,9 +1609,13 @@ function OverlayInner() {
   }, [presetId, overlayPresets, ready, s]);
   const lastStablePresetRef = useRef<OverlayPresetLike | null>(null);
   const lastStableTimerStyleRef = useRef<ResolvedTimerOverlayStyle | null>(null);
-  useEffect(() => {
-    if (activePreset) lastStablePresetRef.current = activePreset;
-  }, [activePreset]);
+  /** OBS: URL로 끄기 전까지 화장실 열 유지(프리셋·SSE 동기화 깜빡임 방지) */
+  const restroomColumnLatchRef = useRef<boolean | null>(hostObs ? true : null);
+  if (activePreset) {
+    lastStablePresetRef.current = lastStablePresetRef.current
+      ? mergeDonationTablePresetFields(activePreset, lastStablePresetRef.current)
+      : activePreset;
+  }
   const effectivePreset = activePreset || lastStablePresetRef.current;
   const presetParams = useMemo(() => presetToParams(effectivePreset), [effectivePreset]);
   const hostParam = (rawSp.get("host") || "").toLowerCase();
@@ -1696,12 +1705,16 @@ function OverlayInner() {
   const baseTheme = THEMES.default;
   const totalHeaderLabel = "합계";
   const resolvePresetBool = (key: string, defaultVal: boolean): boolean => {
-    if (ready && effectivePreset && typeof (effectivePreset as Record<string, unknown>)[key] === "boolean") {
-      return (effectivePreset as Record<string, boolean>)[key]!;
-    }
     const fromUrl = rawSp.get(key);
     if (fromUrl === "true") return true;
     if (fromUrl === "false") return false;
+    if (effectivePreset && isDonationTableBoolKey(key)) {
+      const resolved = resolveDonationTableColumnsOptions(effectivePreset);
+      return resolved[key as keyof typeof resolved] as boolean;
+    }
+    if (effectivePreset && typeof (effectivePreset as Record<string, unknown>)[key] === "boolean") {
+      return (effectivePreset as Record<string, boolean>)[key]!;
+    }
     const fromPreset = presetParams.get(key);
     if (fromPreset === "true") return true;
     if (fromPreset === "false") return false;
@@ -1775,7 +1788,32 @@ function OverlayInner() {
   const showTotal = effectiveTableOnly ? true : (timerOnlyMode ? false : (sp.get("showTotal") !== "false"));
   const showCombinedColumn = resolvePresetBool("showCombinedColumn", true);
   const showContributionColumn = resolvePresetBool("showContributionColumn", true);
-  const showRestroomColumn = resolvePresetBool("showRestroomColumn", true);
+  const showRestroomColumn = (() => {
+    const url = rawSp.get("showRestroomColumn");
+    if (url === "false") {
+      restroomColumnLatchRef.current = false;
+      return false;
+    }
+    if (url === "true") {
+      restroomColumnLatchRef.current = true;
+      return true;
+    }
+    if (restroomColumnLatchRef.current === true) return true;
+    if (restroomColumnLatchRef.current === false) return false;
+    const resolved = effectivePreset
+      ? resolveDonationTableColumnsOptions(effectivePreset).showRestroomColumn
+      : true;
+    if (resolved) {
+      restroomColumnLatchRef.current = true;
+      return true;
+    }
+    if (hostObs) {
+      restroomColumnLatchRef.current = true;
+      return true;
+    }
+    restroomColumnLatchRef.current = false;
+    return false;
+  })();
   const showContributionSum = showContributionColumn && resolvePresetBool("showContributionSum", true);
   const showTableSumRow = (() => {
     if (ready && effectivePreset && typeof effectivePreset.showTableSumRow === "boolean") {

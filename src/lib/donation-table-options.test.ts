@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  mergeDonationTablePresetFields,
   normalizeDonationTableColumnsOptions,
   resolveDonationTableColumnsOptions,
 } from "./donation-table-options";
@@ -45,5 +46,20 @@ describe("donation-table-options", () => {
     expect(resolveDonationTableColumnsOptions({ showRestroomColumn: false })).toMatchObject({
       showRestroomColumn: false,
     });
+  });
+
+  it("mergeDonationTablePresetFields keeps local restroom when remote omits it", () => {
+    expect(
+      mergeDonationTablePresetFields(
+        { id: "p1", showRestroomColumn: undefined },
+        { id: "p1", showRestroomColumn: true }
+      )
+    ).toMatchObject({ showRestroomColumn: true });
+    expect(
+      mergeDonationTablePresetFields(
+        { id: "p1", showRestroomColumn: false },
+        { id: "p1", showRestroomColumn: true }
+      )
+    ).toMatchObject({ showRestroomColumn: false });
   });
 });

@@ -42,3 +42,31 @@ export function normalizeDonationTableColumnsOptions(
     showContributionSum: src.showContributionSum !== false,
   };
 }
+
+/** remote 프리셋에 열 옵션이 빠져 있을 때 local 값을 보존(새로고침 깜빡임 방지) */
+export function mergeDonationTablePresetFields<
+  T extends DonationTableColumnsOptions | null | undefined,
+>(primary: T, fallback: T): T {
+  const p = (primary && typeof primary === "object" ? primary : {}) as DonationTableColumnsOptions;
+  const f = (fallback && typeof fallback === "object" ? fallback : {}) as DonationTableColumnsOptions;
+  return {
+    ...(primary && typeof primary === "object" ? primary : {}),
+    showCombinedColumn: p.showCombinedColumn ?? f.showCombinedColumn,
+    showContributionColumn: p.showContributionColumn ?? f.showContributionColumn,
+    showRestroomColumn: p.showRestroomColumn ?? f.showRestroomColumn,
+    showTableSumRow: p.showTableSumRow ?? f.showTableSumRow,
+    showContributionSum: p.showContributionSum ?? f.showContributionSum,
+  } as T;
+}
+
+const DONATION_TABLE_BOOL_KEYS = new Set([
+  "showCombinedColumn",
+  "showContributionColumn",
+  "showRestroomColumn",
+  "showTableSumRow",
+  "showContributionSum",
+]);
+
+export function isDonationTableBoolKey(key: string): boolean {
+  return DONATION_TABLE_BOOL_KEYS.has(key);
+}

@@ -12,7 +12,6 @@ import {
 } from "./listener-config-store";
 import {
   isAccountFormatToken,
-  isToonationTestDonationPayload,
   isReliableToonationExternalId,
   isToonationYoutubeSuperChatWsMessage,
   parseToonationWebSocketMessage,
@@ -241,7 +240,10 @@ async function onDonation(userId: string, raw: string, ownerName?: string): Prom
     /* parseToonationWebSocketMessage 가 처리 */
   }
   const parsed = parseToonationWebSocketMessage(raw);
-  if (!parsed) return;
+  if (!parsed) {
+    log.debug("후원 WS 파싱 불가 — 무시", { userId, rawPreview: raw.slice(0, 240) });
+    return;
+  }
   let event = parsed;
   const remapOwnerSelfDonationAsAccount = (source: DonationEvent): DonationEvent => {
     const msg = String(source.message || "").trim();
@@ -266,12 +268,9 @@ async function onDonation(userId: string, raw: string, ownerName?: string): Prom
   };
   try {
     const envelope = JSON.parse(raw) as Record<string, unknown>;
-    const payloadForTest = (envelope as { content?: unknown }).content ?? envelope;
-    const skipOwnerRemap = isToonationTestDonationPayload(payloadForTest);
     const ownerNames = await getOwnerNameCandidates(userId, ownerName);
     const donorNormalized = normalizeOwnerNameForCompare(event.donorName || "");
     if (
-      !skipOwnerRemap &&
       donorNormalized &&
       ownerNames.has(donorNormalized) &&
       event.target !== "account"
@@ -317,6 +316,14 @@ async function onDonation(userId: string, raw: string, ownerName?: string): Prom
   const added = await enqueueUnmatchedToonationDonation(userId, event);
   if (added) {
     log.info("후원 큐 등록(멤버 미매칭)", { userId, donor: event.donorName, amount: event.amount });
+  } else {
+    log.warn("후원 자동 반영 실패·큐 등록도 스kip", {
+      userId,
+      donor: event.donorName,
+      amount: event.amount,
+      target: event.target,
+      id: event.id,
+    });
   }
 }
 

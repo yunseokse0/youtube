@@ -3,6 +3,7 @@ import {
   broadcastPlayerDonationAlert,
   enrichDonationEventWithSigMatch,
 } from "@/lib/donation/player-donation-alert";
+import { broadcastSseEvent } from "@/lib/sse-clients-hub";
 import { isDuplicateDonationEvent, normalizeDonationEventId } from "@/lib/donation/apply-donation-state";
 import { loadAppStateForUserId } from "@/lib/app-state-server-load";
 import type { DonationEvent, QueueSigItem } from "../types";
@@ -29,11 +30,13 @@ function sigListSnapshotFromState(userId: string): Promise<QueueSigItem[]> {
 }
 
 async function broadcastDonationQueueUpdated(): Promise<void> {
+  const payload = { type: "donation_queue_updated" as const, at: Date.now() };
+  broadcastSseEvent(payload);
   const origin = process.env.INTERNAL_ORIGIN || `http://127.0.0.1:${process.env.PORT || 3000}`;
   await fetch(`${origin}/api/events`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ type: "donation_queue_updated", at: Date.now() }),
+    body: JSON.stringify(payload),
   }).catch(() => {});
 }
 

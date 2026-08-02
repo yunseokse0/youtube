@@ -438,6 +438,7 @@ export default function AdminPage() {
   const adminDonorForceSyncRef = useRef<(() => void) | null>(null);
   const fetchToonationQueueRef = useRef<(() => Promise<void>) | null>(null);
   const autoProcessQueueRef = useRef<(() => Promise<void>) | null>(null);
+  const pushToonationLogRef = useRef<(message: string) => void>(() => {});
   /** 관리자 최초 큐 스냅샷 — 배포 직후·페이지 열 때 쌓인 백로그는 자동 반영하지 않음 */
   const toonationQueueBaselineIdsRef = useRef<Set<string> | null>(null);
   /** 동일 updatedAt 원격을 SSE·폴링이 반복 적용하지 않도록 */
@@ -456,6 +457,10 @@ export default function AdminPage() {
   const [donorTarget, setDonorTarget] = useState<DonorTarget>("account");
   const [toonationSocketEnabled, setToonationSocketEnabled] = useState(true);
   const [toonationListenerStatus, setToonationListenerStatus] = useState<ToonationListenerStatus | null>(null);
+  const [toonationListenerMeta, setToonationListenerMeta] = useState<{
+    lastDonationAt?: number;
+    lastEventAt?: number;
+  }>({});
   const [toonationAlertboxUrl, setToonationAlertboxUrl] = useState("");
   const [toonationOwnerName, setToonationOwnerName] = useState("");
   const toonationResolvedAlertboxUrl = useMemo(
@@ -592,12 +597,25 @@ export default function AdminPage() {
   const [rouletteActionMessage, setRouletteActionMessage] = useState("");
 
   const { connected: adminSseConnected } = useSSEConnection((d: unknown) => {
-    const o = d as { type?: string; donorRankingsUpdatedAt?: number; updatedAt?: number };
+    const o = d as {
+      type?: string;
+      donorRankingsUpdatedAt?: number;
+      updatedAt?: number;
+      donationApplied?: { donorName?: string; amount?: number; target?: string; memberName?: string };
+    };
     if (o?.type === "donation_queue_updated") {
       void fetchToonationQueueRef.current?.().then(() => autoProcessQueueRef.current?.());
       return;
     }
     if (o?.type !== "state_updated") return;
+    const applied = o.donationApplied;
+    if (applied?.donorName && Number(applied.amount) > 0) {
+      const targetLabel = applied.target === "account" ? "계좌" : "투네";
+      const memberSuffix = applied.memberName ? ` → ${applied.memberName}` : "";
+      pushToonationLogRef.current(
+        `서버 자동 반영: ${applied.donorName} ${Number(applied.amount).toLocaleString("ko-KR")}원 (${targetLabel})${memberSuffix}`
+      );
+    }
     const donorRev = Number(o.donorRankingsUpdatedAt);
     if (Number.isFinite(donorRev) && donorRev > 0) {
       /** 후원 반영 SSE — 즉시 풀 동기화(디바운스 스케줄과 병행) */
@@ -4564,6 +4582,10 @@ export default function AdminPage() {
     setToonationLogs((prev) => [{ id: `tl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, at: Date.now(), message }, ...prev].slice(0, 80));
   }, []);
 
+  useEffect(() => {
+    pushToonationLogRef.current = pushToonationLog;
+  }, [pushToonationLog]);
+
   const fetchDonationAliases = useCallback(async () => {
     const uid = user?.id || "";
     if (!uid) return;
@@ -4903,8 +4925,13 @@ export default function AdminPage() {
       void fetchToonationListenerStatus(uid).then((status) => {
         if (!status) {
           setToonationListenerStatus({ kind: "idle", message: "실시간 수집 꺼짐" });
+          setToonationListenerMeta({});
           return;
         }
+        setToonationListenerMeta({
+          lastDonationAt: status.lastDonationAt,
+          lastEventAt: status.lastEventAt,
+        });
         if (status.connected) {
           setToonationListenerStatus({ kind: "connected", message: "투네이션 WebSocket 연결됨" });
         } else if (status.lastError) {
@@ -9230,9 +9257,15 @@ export default function AdminPage() {
                   <div className="text-xs font-semibold text-cyan-200">투네 연동키 (자동 연동)</div>
                   <div className="text-[11px] text-neutral-400 mt-1">
                     투네이션 <strong className="text-neutral-300">계정설정 연동키</strong>만 붙여넣어도 됩니다. 전체 Alertbox URL도
-                    가능합니다. 저장 시 자동으로{" "}
-                    <span className="text-cyan-300/90">toon.at/widget/alertbox/연동키</span> 형태로 연결하고, WebSocket으로
-                    후원을 <strong className="text-neutral-300">대기 리스트</strong>에 쌓습니다.
+                    가능합니다. WebSocket 수신 시 서버에서 <strong className="text-neutral-300">즉시 엑셀표 반영</strong>합니다.
+                    미매칭·저장 실패 시에만 대기 리스트에 쌓입니다.
+                  </div>
+                  <div className="text-[11px] text-amber-200/80 mt-1 leading-snug">
+                    · 메시지가 <span className="text-amber-100">「계좌 후원자 멤버」</span> 형식 → <strong>계좌</strong> 열
+                    <br />
+                    · 텍스트·캐시 후원(메시지에 「계좌」 없음) → <strong>투네</strong> 열
+                    <br />
+                    · 채널 주인명과 후원자 닉이 같으면 자동으로 계좌 처리
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -9257,6 +9290,14 @@ export default function AdminPage() {
                   >
                     {toonationListenerStatus?.message || "상태 확인 중…"}
                   </span>
+                  {toonationListenerMeta.lastDonationAt ? (
+                    <span className="text-[11px] text-neutral-500">
+                      마지막 후원 수신:{" "}
+                      {new Date(toonationListenerMeta.lastDonationAt).toLocaleTimeString("ko-KR")}
+                    </span>
+                  ) : toonationSocketEnabled && toonationListenerStatus?.kind === "connected" ? (
+                    <span className="text-[11px] text-neutral-500">아직 후원 수신 없음</span>
+                  ) : null}
                 </div>
                 <input
                   className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm font-mono"

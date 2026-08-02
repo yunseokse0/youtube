@@ -1,5 +1,6 @@
 import type { DonorRankingsTheme, SigItem } from "@/types";
 import { appendExcelRankTop3Params } from "@/lib/excel-rank-top3-style";
+import { mergeDonationTablePresetFields } from "@/lib/donation-table-options";
 import { normalizeTableFontFamily, type TableFontFamilyId } from "@/lib/table-font-style";
 import {
   normalizeGoalBarAnimation,
@@ -357,6 +358,7 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.showCombinedColumn === false) q.set("showCombinedColumn", "false");
   if (preset.showContributionColumn === false) q.set("showContributionColumn", "false");
   if (preset.showRestroomColumn === false) q.set("showRestroomColumn", "false");
+  else q.set("showRestroomColumn", "true");
   if (preset.showContributionSum === false) q.set("showContributionSum", "false");
   if (preset.showTableSumRow === false) q.set("showTableSumRow", "false");
   if (preset.accountHeaderLabel && preset.accountHeaderLabel.trim()) q.set("accountHeaderLabel", preset.accountHeaderLabel.trim());
@@ -723,7 +725,8 @@ export function mergeOverlayPresetsPreferRemote(
   for (const p of local) {
     const id = p && typeof p.id === "string" ? p.id : "";
     if (id && remoteById.has(id)) {
-      merged.push(remoteById.get(id)!);
+      const remotePreset = remoteById.get(id)!;
+      merged.push(mergeDonationTablePresetFields(remotePreset, p));
       seen.add(id);
     } else {
       merged.push(p);

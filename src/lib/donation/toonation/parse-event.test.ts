@@ -238,6 +238,25 @@ describe("toonation parse-event", () => {
     expect(a?.id).not.toBe(b?.id);
   });
 
+  it("text donation test — empty message, nickname only → toon", () => {
+    const raw = JSON.stringify({
+      code: 101,
+      content: {
+        nickname: "익명 홍쓰",
+        amount: 10000,
+        cash: "10,000",
+        comment: "",
+        isTest: true,
+      },
+    });
+    const evt = parseToonationWebSocketMessage(raw);
+    expect(evt?.amount).toBe(10000);
+    expect(evt?.target).toBe("toon");
+    expect(evt?.donorName).toBe("익명 홍쓰");
+    expect(evt?.playerName).toBeUndefined();
+    expect(isToonationTestDonationPayload(JSON.parse(raw).content)).toBe(true);
+  });
+
   it("parses comma-separated cash amount strings", () => {
     const evt = parseToonationDonationPayload({
       nickname: "후원자",
