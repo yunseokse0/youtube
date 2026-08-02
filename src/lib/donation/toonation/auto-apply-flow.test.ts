@@ -174,4 +174,48 @@ describe("toonation auto-apply flow (parse → apply)", () => {
     expect(result.state.members.find((m) => m.id === "m1")?.toon).toBe(5000);
     expect(result.event.memberAutoAssigned).toBeFalsy();
   });
+
+  it("투네 메시지 태호만 → BT태호 유사 일치", () => {
+    const raw = JSON.stringify({
+      code: 101,
+      content: {
+        nickname: "시청자",
+        amount: 8000,
+        comment: "태호 화이팅",
+      },
+    });
+    const event = parseToonationWebSocketMessage(raw);
+    const result = applyDonationToAppState(
+      baseState([
+        { id: "m1", name: "BT태호" },
+        { id: "m2", name: "홍쓰" },
+      ]),
+      event!,
+      []
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.members.find((m) => m.id === "m1")?.toon).toBe(8000);
+    expect(result.event.memberAutoAssigned).toBeFalsy();
+  });
+
+  it("잘못된 멤버명 힌트 → 미반영(unmatched)", () => {
+    const raw = JSON.stringify({
+      code: 101,
+      content: {
+        nickname: "시청자",
+        amount: 3000,
+        comment: "없는멤버 화이팅",
+      },
+    });
+    const event = parseToonationWebSocketMessage(raw);
+    const result = applyDonationToAppState(
+      baseState([{ id: "m1", name: "BT태호" }]),
+      event!,
+      []
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("unmatched");
+  });
 });

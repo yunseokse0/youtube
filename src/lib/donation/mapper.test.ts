@@ -58,7 +58,7 @@ describe("mapToMember", () => {
     expect(mapped.memberAutoAssigned).toBe(true);
   });
 
-  it("auto-assigns first member when account player is unknown", () => {
+  it("returns unmatched when account player hint does not match any member", () => {
     const event: DonationEvent = {
       id: "t4",
       provider: "toonation",
@@ -71,8 +71,25 @@ describe("mapToMember", () => {
       target: "account",
     };
     const mapped = mapToMember(event, members, [], { autoAssignToonPlayer: true });
-    expect(mapped.memberId).toBe("m1");
-    expect(mapped.memberAutoAssigned).toBe(true);
+    expect(mapped.status).toBe("unmatched");
+    expect(mapped.memberId).toBeUndefined();
+  });
+
+  it("returns unmatched when toon player hint does not match any member", () => {
+    const event: DonationEvent = {
+      id: "t4b",
+      provider: "toonation",
+      externalId: "e4b",
+      donorName: "후원자",
+      playerName: "없는이름",
+      amount: 4000,
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "toon",
+    };
+    const mapped = mapToMember(event, members, [], { autoAssignToonPlayer: true });
+    expect(mapped.status).toBe("unmatched");
+    expect(mapped.memberId).toBeUndefined();
   });
 
   it("fuzzy-matches honorific playerName (피자님 → 피자)", () => {

@@ -9388,6 +9388,10 @@ export default function AdminPage() {
                 />
                 <div className="text-[11px] text-neutral-500">
                   예: <span className="text-neutral-300">BT태호</span> / 공백·기호 차이는 자동 무시합니다.
+                  <br />
+                  자동 반영 시 멤버명은 <span className="text-neutral-300">유사 일치</span>(
+                  <span className="text-neutral-300">태호</span>→BT태호, 오타·호칭 포함)로 엑셀표에 배치합니다. 멤버
+                  힌트가 없을 때만 첫 멤버에 자동 배치됩니다.
                 </div>
                 {toonationResolvedAlertboxUrl && user?.id ? (
                   <div className="text-[11px] text-cyan-200/90 mt-1 leading-snug">

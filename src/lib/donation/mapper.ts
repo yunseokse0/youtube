@@ -117,21 +117,37 @@ function matchMemberByName(
   );
   if (normalizedMatch) return normalizedMatch;
 
-  /** `태호` → `BT태호` — 접두어(BT 등)만 다른 짧은 멤버명 */
+  /** `태호` → `BT태호`, `BT태호` ⊃ `태호` — 접두·접미·포함 유사 일치 */
   if (normalized.length >= 2) {
-    let suffixBest: { member: Member; score: number } | null = null;
+    let partialBest: { member: Member; score: number } | null = null;
     for (const member of members) {
       for (const label of memberNameCandidates(member)) {
         const memberNorm = normalizeName(label);
-        if (memberNorm.length <= normalized.length) continue;
-        if (!memberNorm.endsWith(normalized)) continue;
-        const score = normalized.length / memberNorm.length;
-        if (!suffixBest || score > suffixBest.score) {
-          suffixBest = { member, score: score };
+        if (!memberNorm) continue;
+        const memberCore = memberNorm.replace(/^bt(?=[가-힣])/, "") || memberNorm;
+        const lookupCore = normalized.replace(/^bt(?=[가-힣])/, "") || normalized;
+
+        let score = 0;
+        if (memberNorm.endsWith(normalized) || memberNorm.endsWith(lookupCore)) {
+          score = Math.max(normalized.length, lookupCore.length) / memberNorm.length;
+        } else if (normalized.endsWith(memberNorm) || lookupCore.endsWith(memberCore)) {
+          score = memberNorm.length / Math.max(normalized.length, lookupCore.length);
+        } else if (
+          memberNorm.includes(normalized) ||
+          normalized.includes(memberNorm) ||
+          memberCore.includes(lookupCore) ||
+          lookupCore.includes(memberCore)
+        ) {
+          score =
+            (Math.min(normalized.length, memberNorm.length) / Math.max(normalized.length, memberNorm.length)) *
+            0.92;
+        }
+        if (score >= 0.35 && (!partialBest || score > partialBest.score)) {
+          partialBest = { member, score };
         }
       }
     }
-    if (suffixBest && suffixBest.score >= 0.35) return suffixBest.member;
+    if (partialBest) return partialBest.member;
   }
 
   const fuzzyCandidates = members.flatMap((m) =>
@@ -174,7 +190,9 @@ export function mapToMember(
     }
   }
 
-  if (opts?.autoAssignToonPlayer) {
+  /** 멤버 힌트(메시지·playerName)가 없을 때만 1인 방송 기본 멤버에 배치 */
+  const hadPlayerHint = candidates.length > 0;
+  if (opts?.autoAssignToonPlayer && !hadPlayerHint) {
     const fallback = pickDefaultToonationMember(members);
     if (fallback) {
       return {

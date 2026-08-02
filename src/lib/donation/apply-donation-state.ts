@@ -175,7 +175,7 @@ export function applyDonationToAppState(
     processedEvent = { ...rawEvent, memberId: manualMemberId, status: "processed" };
   } else {
     processedEvent = mapToMember(rawEvent, currentState.members || [], aliases, {
-      /** 당분간 멤버 1명 운영 — 계좌 포맷 오류·플레이어 없음도 즉시 반영 후 큐에서 멤버만 검토 */
+      /** 멤버 힌트 없을 때만 1인 방송 기본 멤버 배치 — 힌트 있으면 유사 일치만 허용 */
       autoAssignToonPlayer: true,
     });
   }
