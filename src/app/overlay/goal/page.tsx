@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { normalizeDonorsFormat, overlayPresetsStorageKey, type AppState } from "@/lib/state";
 import {
   getOverlayUserIdFromSearchParams,
-  mergeOverlayPresetsPreferLocal,
+  mergeOverlayPresetsForOverlayView,
   presetToParams,
   resolveGoalFontSizePx,
   resolveGoalTextColor,
@@ -67,17 +67,25 @@ export default function GoalOverlayPage() {
   }, [userId]);
   useEffect(() => {
     readLocalPresets();
+    const perUserKey = overlayPresetsStorageKey(userId);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === perUserKey || e.key === "excel-broadcast-overlay-presets") readLocalPresets();
+    };
+    window.addEventListener("storage", onStorage);
     const unsubscribe = subscribeOverlayPresetsLocalUpdated(() => readLocalPresets());
-    return unsubscribe;
-  }, [readLocalPresets]);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      unsubscribe();
+    };
+  }, [readLocalPresets, userId]);
 
   const overlayPresets = useMemo(() => {
     const remote =
       ready && state && Array.isArray(state.overlayPresets)
         ? (state.overlayPresets as OverlayPresetLike[])
         : [];
-    return mergeOverlayPresetsPreferLocal(remote, localPresets);
-  }, [ready, state, localPresets]);
+    return mergeOverlayPresetsForOverlayView(remote, localPresets, sp);
+  }, [ready, state, localPresets, sp]);
 
   const activePreset = useMemo(() => {
     const presets = overlayPresets;

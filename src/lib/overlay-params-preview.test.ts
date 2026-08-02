@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildCompactBroadcastOverlayParams,
   mergeOverlayPresetsPreferLocal,
+  mergeOverlayPresetsPreferRemote,
   mergePresetBroadcastVisualParams,
   presetToParams,
+  resolveTimerOverlayStyle,
   stripAdminPreviewHotReloadParams,
   type OverlayPresetLike,
 } from "./overlay-params";
@@ -43,6 +45,61 @@ describe("admin preview hot-reload params", () => {
     expect(merged).toHaveLength(1);
     expect(merged[0]?.theme).toBe("excelBlue");
     expect(merged[0]?.membersTheme).toBe("excelBlue");
+  });
+
+  it("prefers remote goal colors over stale local on OBS broadcast host", () => {
+    const remote: OverlayPresetLike[] = [
+      {
+        id: "ov_goal",
+        showGoal: true,
+        goalBarBgColor: "#112233",
+        goalBarFillColor: "#aabbcc",
+        goalTextColor: "#ddeeff",
+      },
+    ];
+    const local: OverlayPresetLike[] = [
+      {
+        id: "ov_goal",
+        showGoal: true,
+        goalBarBgColor: "#fde8f2",
+        goalBarFillColor: "#ff6eb5",
+        goalTextColor: "#6b2d4a",
+      },
+    ];
+    const merged = mergeOverlayPresetsPreferRemote(remote, local);
+    expect(merged[0]?.goalBarBgColor).toBe("#112233");
+    expect(merged[0]?.goalBarFillColor).toBe("#aabbcc");
+    expect(merged[0]?.goalTextColor).toBe("#ddeeff");
+  });
+
+  it("prefers preset timer colors over stale URL when ready", () => {
+    const preset: OverlayPresetLike = {
+      id: "ov_timer",
+      showTimer: true,
+      timerFontColor: "#ff3366",
+      timerBgColor: "#112233",
+    };
+    const url = new URLSearchParams("timerFontColor=%23ffffff&timerBgColor=%23ffffff");
+    const style = resolveTimerOverlayStyle(url, preset, null, { ready: true });
+    expect(style.fontColor).toBe("#ff3366");
+    expect(style.bgColor).toBe("#112233");
+  });
+
+  it("falls back to timerDisplayStyles when preset timer colors are empty", () => {
+    const style = resolveTimerOverlayStyle(new URLSearchParams(), null, {
+      fontColor: "#aabbcc",
+      bgColor: "transparent",
+      borderColor: "",
+      outlineColor: "",
+      outlineWidth: 0.8,
+      bgOpacity: 0,
+      scalePercent: 120,
+      showHours: true,
+    }, { ready: true });
+    expect(style.fontColor).toBe("#aabbcc");
+    expect(style.bgOpacity).toBe(0);
+    expect(style.scalePercent).toBe(120);
+    expect(style.showHours).toBe(true);
   });
 
   it("keeps structural params needed for member table when stripping hot-reload keys", () => {

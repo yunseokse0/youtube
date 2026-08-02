@@ -29,8 +29,11 @@ import {
   presetToParams,
   isOverlayBroadcastHost,
   shouldSuppressOverlaySseConnection,
-  mergeOverlayPresetsPreferLocal,
+  mergeOverlayPresetsForOverlayView,
+  resolveTimerOverlayStyle,
+  timerOverlayStyleHasCustomColors,
   type OverlayPresetLike,
+  type ResolvedTimerOverlayStyle,
 } from "@/lib/overlay-params";
 import { resolveTableFontFamilyCss } from "@/lib/table-font-style";
 import { getEffectiveRemainingTime } from "@/lib/timer-utils";
@@ -428,6 +431,10 @@ function useCountUp(value: number, durationMs = 600) {
     const from = prevValueRef.current;
     const to = value;
     prevValueRef.current = to;
+    if (durationMs <= 0 || Math.abs(to - from) < 1) {
+      setDisplay(to);
+      return;
+    }
     startRef.current = performance.now();
     const loop = (t: number) => {
       const elapsed = t - startRef.current;
@@ -442,6 +449,28 @@ function useCountUp(value: number, durationMs = 600) {
   }, [value, durationMs]);
 
   return display;
+}
+
+function OverlayTableNumCell({
+  value,
+  format,
+  animate,
+  className,
+  style,
+}: {
+  value: number;
+  format: (n: number) => string;
+  animate: boolean;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  const safe = Math.max(0, Math.round(Number(value) || 0));
+  const display = useCountUp(safe, animate ? 600 : 0);
+  return (
+    <span className={className} style={style}>
+      {format(animate ? display : safe)}
+    </span>
+  );
 }
 
 function useElapsed(startTs: number | null) {
@@ -1548,8 +1577,8 @@ function OverlayInner() {
   }, [ready, s]);
   const overlayPresets = useMemo(() => {
     const remote = ready && s && Array.isArray(s.overlayPresets) ? (s.overlayPresets as OverlayPresetLike[]) : [];
-    return mergeOverlayPresetsPreferLocal(remote, localPresets);
-  }, [ready, s, localPresets]);
+    return mergeOverlayPresetsForOverlayView(remote, localPresets, rawSp);
+  }, [ready, s, localPresets, rawSp]);
   const memberPositionsMap = useMemo<Record<string, string>>(
     () => ((ready && s && typeof (s as AppState).memberPositions === "object") ? ((s as AppState).memberPositions || {}) : {}),
     [ready, s]
@@ -1573,6 +1602,7 @@ function OverlayInner() {
     return overlayPresets.length ? overlayPresets[0] : null;
   }, [presetId, overlayPresets, ready, s]);
   const lastStablePresetRef = useRef<OverlayPresetLike | null>(null);
+  const lastStableTimerStyleRef = useRef<ResolvedTimerOverlayStyle | null>(null);
   useEffect(() => {
     if (activePreset) lastStablePresetRef.current = activePreset;
   }, [activePreset]);
@@ -1847,32 +1877,44 @@ function OverlayInner() {
     if (!s || !resolvedTimerType) return null;
     return s.timerDisplayStyles?.[resolvedTimerType] || null;
   }, [resolvedTimerType, s]);
-  const timerShowHoursRaw = (sp.get("timerShowHours") || "").toLowerCase();
-  const timerShowHours = timerShowHoursRaw
-    ? timerShowHoursRaw === "true"
-    : (timerStyleFromState?.showHours ?? !timerOnlyMode);
-  const timerFontColor = (sp.get("timerFontColor") || "").trim() || timerStyleFromState?.fontColor || undefined;
-  const timerBgColor = (sp.get("timerBgColor") || "").trim() || timerStyleFromState?.bgColor || undefined;
-  const timerBorderColor = (sp.get("timerBorderColor") || "").trim() || timerStyleFromState?.borderColor || undefined;
-  const timerOutlineColor = (sp.get("timerOutlineColor") || "").trim() || timerStyleFromState?.outlineColor || undefined;
-  const timerOutlineWidth = (() => {
-    const raw = (sp.get("timerOutlineWidth") || "").trim();
-    if (!raw) return timerStyleFromState?.outlineWidth ?? 0.8;
-    const n = parseFloat(raw);
-    return Number.isFinite(n) ? Math.max(0, Math.min(3, n)) : (timerStyleFromState?.outlineWidth ?? 0.8);
-  })();
-  const timerBgOpacity = (() => {
-    const raw = (sp.get("timerBgOpacity") || "").trim();
-    if (!raw) return timerStyleFromState?.bgOpacity ?? 40;
-    const n = parseInt(raw, 10);
-    return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : (timerStyleFromState?.bgOpacity ?? 40);
-  })();
-  const timerScalePercent = (() => {
-    const raw = (sp.get("timerScale") || "").trim();
-    if (!raw) return timerStyleFromState?.scalePercent ?? 100;
-    const n = parseInt(raw, 10);
-    return Number.isFinite(n) ? Math.max(50, Math.min(250, n)) : (timerStyleFromState?.scalePercent ?? 100);
-  })();
+  const timerStyleResolved = useMemo(() => {
+    const next = resolveTimerOverlayStyle(rawSp, effectivePreset, timerStyleFromState, {
+      ready,
+      timerOnlyDefaultShowHours: timerOnlyMode,
+    });
+    if (timerOverlayStyleHasCustomColors(next)) {
+      lastStableTimerStyleRef.current = next;
+      return next;
+    }
+    const presetHasTimerStyle = Boolean(
+      String(effectivePreset?.timerFontColor || "").trim() ||
+        String(effectivePreset?.timerBgColor || "").trim() ||
+        String(effectivePreset?.timerBorderColor || "").trim()
+    );
+    const stateHasTimerStyle = Boolean(
+      String(timerStyleFromState?.fontColor || "").trim() ||
+        String(timerStyleFromState?.bgColor || "").trim() ||
+        String(timerStyleFromState?.borderColor || "").trim() ||
+        String(timerStyleFromState?.outlineColor || "").trim()
+    );
+    const explicitlyDefault = ready && !presetHasTimerStyle && !stateHasTimerStyle;
+    if (explicitlyDefault) {
+      lastStableTimerStyleRef.current = null;
+      return next;
+    }
+    if (lastStableTimerStyleRef.current) {
+      return lastStableTimerStyleRef.current;
+    }
+    return next;
+  }, [rawSp, effectivePreset, timerStyleFromState, ready, timerOnlyMode]);
+  const timerShowHours = timerStyleResolved.showHours;
+  const timerFontColor = timerStyleResolved.fontColor;
+  const timerBgColor = timerStyleResolved.bgColor;
+  const timerBorderColor = timerStyleResolved.borderColor;
+  const timerOutlineColor = timerStyleResolved.outlineColor;
+  const timerOutlineWidth = timerStyleResolved.outlineWidth;
+  const timerBgOpacity = timerStyleResolved.bgOpacity;
+  const timerScalePercent = timerStyleResolved.scalePercent;
   const timerBaseFontSize = timerOnlyMode ? 56 : Math.max(28, Math.round(memberSize * 1.45));
   const timerFontSize = Math.max(14, Math.round(timerBaseFontSize * (timerScalePercent / 100)));
   const matchTimerAllowed = useMemo(() => {
@@ -2652,19 +2694,19 @@ function OverlayInner() {
   ]);
 
   /**
-   * OBS·Prism 외부 임베드:
-   * - 기본 OFF
-   * - URL raw query(rowMotion)로 명시했을 때만 ON/OFF 허용
-   *   (프리셋 값으로는 외부 호스트의 기본 안전값을 덮지 않음)
+   * 순위·숫자 피드백(row FLIP, 행 플래시, 카운트업):
+   * - 기본 ON (2인 이상 unpinned)
+   * - OBS에서도 externalSafeMode와 별개 — URL `rowMotion=false`로만 끔
    */
   const rowMotionParamRaw = rawSp.get("rowMotion");
   const rowMotionParam = externalHost ? rowMotionParamRaw : sp.get("rowMotion");
+  const rowMotionExplicit =
+    rowMotionParam !== null && String(rowMotionParam).trim() !== "";
   const rowMotionRequested =
     !stableMode &&
-    !externalSafeMode &&
-    (rowMotionParam !== null && String(rowMotionParam).trim() !== ""
+    (rowMotionExplicit
       ? String(rowMotionParam).toLowerCase() === "true"
-      : !externalHost);
+      : true);
   const rowMotionEnabled = rowMotionRequested && unpinned.length > 1;
 
   /** URL에 memberSize가 있거나 tableFit=off → 관리자가 지정한 px를 OBS에서도 그대로 쓰기 */
@@ -3422,12 +3464,13 @@ function OverlayInner() {
         ${
           externalSafeMode
             ? `
-        /* 외부호스트 하드 고정 모드(OBS/Prism): 변환/애니메이션/컨테이너쿼리/스트로크를 강제 차단 */
-        .overlay-root *,
-        .overlay-root *::before,
-        .overlay-root *::after {
-          animation: none !important;
+        /* OBS 안정 모드: 텍스트 셀 transition·장식 애니만 차단 — 순위 행 FLIP·플래시는 유지 */
+        .overlay-root .overlay-elegant-table td,
+        .overlay-root .overlay-elegant-table thead td {
           transition: none !important;
+        }
+        .overlay-root .animate-neonPulse {
+          animation: none !important;
         }
         ${
           mobileBroadcast
@@ -3435,11 +3478,17 @@ function OverlayInner() {
             : `
         .overlay-root .overlay-scale-target,
         .overlay-root .overlay-elegant-table,
-        .overlay-root .overlay-elegant-table tr,
+        .overlay-root .overlay-elegant-table tr:not(.overlay-row),
         .overlay-root .overlay-elegant-table td,
         .overlay-root .overlay-elegant-table td .overlay-num-cell-inner {
           transform: none !important;
           -webkit-transform: none !important;
+        }
+        .overlay-root .overlay-elegant-table tbody tr.overlay-row {
+          transition: transform 500ms cubic-bezier(0.2, 0.7, 0.2, 1) !important;
+        }
+        .overlay-root .overlay-elegant-table tbody tr.overlay-row.animate-row-flash {
+          animation: rowFlash 0.8s ease-out forwards !important;
         }`
         }
         .overlay-root .overlay-elegant-table td,
@@ -3813,19 +3862,43 @@ function OverlayInner() {
                           </span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-account ${effectiveAccountCls} overlay-account-cell text-center`}>
-                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(m.account)}</span>
+                          <OverlayTableNumCell
+                            value={m.account}
+                            format={fmt}
+                            animate={rowMotionEnabled}
+                            className="overlay-num-cell-inner overlay-cell-text-inner"
+                            style={overlayCellOutlineStyle}
+                          />
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-center`}>
-                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(m.toon)}</span>
+                          <OverlayTableNumCell
+                            value={m.toon}
+                            format={fmt}
+                            animate={rowMotionEnabled}
+                            className="overlay-num-cell-inner overlay-cell-text-inner"
+                            style={overlayCellOutlineStyle}
+                          />
                         </td>
                         {showCombinedColumn && (
                           <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>
-                            <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmtTotalCell(m.account + m.toon)}</span>
+                            <OverlayTableNumCell
+                              value={m.account + m.toon}
+                              format={fmtTotalCell}
+                              animate={rowMotionEnabled}
+                              className="overlay-num-cell-inner overlay-cell-text-inner"
+                              style={overlayCellOutlineStyle}
+                            />
                           </td>
                         )}
                         {showContributionColumn && (
                           <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
-                            <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(getContributionValueForMember(m))}</span>
+                            <OverlayTableNumCell
+                              value={getContributionValueForMember(m)}
+                              format={fmt}
+                              animate={rowMotionEnabled}
+                              className="overlay-num-cell-inner overlay-cell-text-inner"
+                              style={overlayCellOutlineStyle}
+                            />
                           </td>
                         )}
                       </tr>
@@ -3855,14 +3928,32 @@ function OverlayInner() {
                           </span>
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-account ${effectiveAccountCls} overlay-account-cell text-center`}>
-                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(m.account)}</span>
+                          <OverlayTableNumCell
+                            value={m.account}
+                            format={fmt}
+                            animate={rowMotionEnabled}
+                            className="overlay-num-cell-inner overlay-cell-text-inner"
+                            style={overlayCellOutlineStyle}
+                          />
                         </td>
                         <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-center`}>
-                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(m.toon)}</span>
+                          <OverlayTableNumCell
+                            value={m.toon}
+                            format={fmt}
+                            animate={rowMotionEnabled}
+                            className="overlay-num-cell-inner overlay-cell-text-inner"
+                            style={overlayCellOutlineStyle}
+                          />
                         </td>
                         {showCombinedColumn && (
                           <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>
-                            <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmtTotalCell(m.account + m.toon)}</span>
+                            <OverlayTableNumCell
+                              value={m.account + m.toon}
+                              format={fmtTotalCell}
+                              animate={rowMotionEnabled}
+                              className="overlay-num-cell-inner overlay-cell-text-inner"
+                              style={overlayCellOutlineStyle}
+                            />
                           </td>
                         )}
                         {showContributionColumn && (
@@ -3879,19 +3970,43 @@ function OverlayInner() {
                         <td className={`${overlayTotalRowCls} overlay-col-rank`} colSpan={hasRoleColumn ? 2 : 1}>총합</td>
                         <td className={`${overlayTotalRowCls} overlay-col-name`} />
                         <td className={`${overlayTotalRowCls} overlay-col-account overlay-account-cell text-center`}>
-                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(sumAccount)}</span>
+                          <OverlayTableNumCell
+                            value={sumAccount}
+                            format={fmt}
+                            animate={rowMotionEnabled}
+                            className="overlay-num-cell-inner overlay-cell-text-inner"
+                            style={overlayCellOutlineStyle}
+                          />
                         </td>
                         <td className={`${overlayTotalRowCls} overlay-col-toon overlay-toon-cell text-center`}>
-                          <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(sumToon)}</span>
+                          <OverlayTableNumCell
+                            value={sumToon}
+                            format={fmt}
+                            animate={rowMotionEnabled}
+                            className="overlay-num-cell-inner overlay-cell-text-inner"
+                            style={overlayCellOutlineStyle}
+                          />
                         </td>
                         {showCombinedColumn && (
                           <td className={`${overlayTotalRowCls} overlay-col-total text-right`}>
-                            <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(sumCombined)}</span>
+                            <OverlayTableNumCell
+                              value={sumCombined}
+                              format={fmt}
+                              animate={rowMotionEnabled}
+                              className="overlay-num-cell-inner overlay-cell-text-inner"
+                              style={overlayCellOutlineStyle}
+                            />
                           </td>
                         )}
                         {showContributionColumn && showContributionSum && (
                           <td className={`${overlayTotalRowCls} overlay-col-contribution text-right`}>
-                            <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(sumContribution)}</span>
+                            <OverlayTableNumCell
+                              value={sumContribution}
+                              format={fmt}
+                              animate={rowMotionEnabled}
+                              className="overlay-num-cell-inner overlay-cell-text-inner"
+                              style={overlayCellOutlineStyle}
+                            />
                           </td>
                         )}
                         {showContributionColumn && !showContributionSum && (

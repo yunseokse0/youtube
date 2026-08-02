@@ -696,6 +696,61 @@ export function mergeOverlayPresetsPreferLocal(
   return merged;
 }
 
+/**
+ * OBS·Prism 방송 — 서버(`/api/state`) 프리셋 우선. 브라우저 LS에 남은 예전 색·테마가 덮지 않게.
+ */
+export function mergeOverlayPresetsPreferRemote(
+  remote: OverlayPresetLike[],
+  local: OverlayPresetLike[]
+): OverlayPresetLike[] {
+  if (!remote.length) return local.slice();
+  if (!local.length) return remote.slice();
+  const remoteById = new Map(
+    remote
+      .filter((p) => p && typeof p.id === "string" && p.id)
+      .map((p) => [String(p.id), p] as const)
+  );
+  const seen = new Set<string>();
+  const merged: OverlayPresetLike[] = [];
+  for (const p of local) {
+    const id = p && typeof p.id === "string" ? p.id : "";
+    if (id && remoteById.has(id)) {
+      merged.push(remoteById.get(id)!);
+      seen.add(id);
+    } else {
+      merged.push(p);
+      if (id) seen.add(id);
+    }
+  }
+  for (const p of remote) {
+    const id = p && typeof p.id === "string" ? p.id : "";
+    if (id && !seen.has(id)) {
+      merged.push(p);
+      seen.add(id);
+    }
+  }
+  return merged;
+}
+
+/** 관리자 iframe 미리보기는 LS 핫리로드, OBS 방송 URL은 서버 프리셋 우선 */
+export function shouldPreferLocalOverlayPresets(searchParams?: SearchParamsLike): boolean {
+  if (isAdminDashboardPreviewEmbed()) return true;
+  if (isEmbeddedInSameOriginAdminFrame()) return true;
+  if (searchParams && isOverlayBroadcastHost(searchParams)) return false;
+  return true;
+}
+
+export function mergeOverlayPresetsForOverlayView(
+  remote: OverlayPresetLike[],
+  local: OverlayPresetLike[],
+  searchParams?: SearchParamsLike
+): OverlayPresetLike[] {
+  if (shouldPreferLocalOverlayPresets(searchParams)) {
+    return mergeOverlayPresetsPreferLocal(remote, local);
+  }
+  return mergeOverlayPresetsPreferRemote(remote, local);
+}
+
 export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "goalTextColor",
   "goalFontSize",
@@ -732,6 +787,13 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "tableHeaderBgColor",
   "tableHeaderTextColor",
   "tableLineColor",
+  /** 타이머 색·스타일 — OBS URL 스테일 방지 */
+  "timerFontColor",
+  "timerBgColor",
+  "timerBorderColor",
+  "timerBgOpacity",
+  "timerScale",
+  "timerShowHours",
   /** 테마도 프리셋 우선 — URL 스테일/미리보기 핫리로드와 맞춤 */
   "theme",
   "membersTheme",
@@ -770,6 +832,122 @@ export function resolveLivePresetStyleParam(
   const direct = rawSp.get(key);
   if (direct !== null && direct !== "") return direct;
   return fromPreset;
+}
+
+export type ResolvedTimerOverlayStyle = {
+  fontColor?: string;
+  bgColor?: string;
+  borderColor?: string;
+  outlineColor?: string;
+  outlineWidth: number;
+  bgOpacity: number;
+  scalePercent: number;
+  showHours: boolean;
+};
+
+type TimerStyleFromStateLike = {
+  showHours?: boolean;
+  fontColor?: string;
+  bgColor?: string;
+  borderColor?: string;
+  outlineColor?: string;
+  outlineWidth?: number;
+  bgOpacity?: number;
+  scalePercent?: number;
+};
+
+function pickTimerPresetOrParam(
+  paramKey: string,
+  presetKey: keyof OverlayPresetLike,
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string {
+  if (opts.ready && preset) {
+    const fromPreset = String(preset[presetKey] ?? "").trim();
+    if (fromPreset) return fromPreset;
+  }
+  const merged = resolveLivePresetStyleParam(
+    paramKey,
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  return (merged || "").trim();
+}
+
+/** 타이머 오버레이 색·스타일 — 프리셋 → URL → `timerDisplayStyles` 순 */
+export function resolveTimerOverlayStyle(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  stateStyle: TimerStyleFromStateLike | null | undefined,
+  opts: { ready: boolean; timerOnlyDefaultShowHours?: boolean }
+): ResolvedTimerOverlayStyle {
+  const fontColor =
+    pickTimerPresetOrParam("timerFontColor", "timerFontColor", rawSp, preset, opts) ||
+    (stateStyle?.fontColor || "").trim() ||
+    undefined;
+  const bgColor =
+    pickTimerPresetOrParam("timerBgColor", "timerBgColor", rawSp, preset, opts) ||
+    (stateStyle?.bgColor || "").trim() ||
+    undefined;
+  const borderColor =
+    pickTimerPresetOrParam("timerBorderColor", "timerBorderColor", rawSp, preset, opts) ||
+    (stateStyle?.borderColor || "").trim() ||
+    undefined;
+  const outlineColor =
+    (rawSp.get("timerOutlineColor") || "").trim() ||
+    (stateStyle?.outlineColor || "").trim() ||
+    undefined;
+
+  const outlineWidthRaw = (rawSp.get("timerOutlineWidth") || "").trim();
+  const outlineWidth = outlineWidthRaw
+    ? (() => {
+        const n = parseFloat(outlineWidthRaw);
+        return Number.isFinite(n) ? Math.max(0, Math.min(3, n)) : (stateStyle?.outlineWidth ?? 0.8);
+      })()
+    : (stateStyle?.outlineWidth ?? 0.8);
+
+  const bgOpacityRaw = pickTimerPresetOrParam("timerBgOpacity", "timerBgOpacity", rawSp, preset, opts);
+  const bgOpacity = bgOpacityRaw
+    ? (() => {
+        const n = parseInt(bgOpacityRaw, 10);
+        return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : (stateStyle?.bgOpacity ?? 40);
+      })()
+    : (stateStyle?.bgOpacity ?? 40);
+
+  const scaleRaw = pickTimerPresetOrParam("timerScale", "timerScale", rawSp, preset, opts);
+  const scalePercent = scaleRaw
+    ? (() => {
+        const n = parseInt(scaleRaw, 10);
+        return Number.isFinite(n) ? Math.max(50, Math.min(250, n)) : (stateStyle?.scalePercent ?? 100);
+      })()
+    : (stateStyle?.scalePercent ?? 100);
+
+  const showHoursRaw = pickTimerPresetOrParam("timerShowHours", "timerShowHours", rawSp, preset, opts);
+  const showHours = showHoursRaw
+    ? showHoursRaw.toLowerCase() === "true"
+    : (stateStyle?.showHours ?? !opts.timerOnlyDefaultShowHours);
+
+  return {
+    fontColor,
+    bgColor,
+    borderColor,
+    outlineColor,
+    outlineWidth,
+    bgOpacity,
+    scalePercent,
+    showHours,
+  };
+}
+
+export function timerOverlayStyleHasCustomColors(style: ResolvedTimerOverlayStyle): boolean {
+  return Boolean(
+    style.fontColor ||
+      style.bgColor ||
+      style.borderColor ||
+      (style.outlineColor && style.outlineColor.trim())
+  );
 }
 
 export function resolveGoalTextColor(
