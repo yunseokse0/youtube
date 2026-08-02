@@ -95,4 +95,18 @@ describe("obs text multiline", () => {
     expect(segs.filter((s) => (s.imageUrl || "").includes("yt3.ggpht.com"))).toHaveLength(2);
     expect(segs.some((s) => s.text === "나혼(자)엑(셀)")).toBe(true);
   });
+
+  it("blocksFromMultilineText returns empty blocks for cleared textarea", () => {
+    expect(blocksFromMultilineText("", prev, "#ffffff")).toEqual([]);
+    expect(blocksFromMultilineText("   \n  ", prev, "#ffffff")).toEqual([]);
+  });
+
+  it("normalizeObsTextOverlay keeps explicit empty blocks", () => {
+    const cfg = normalizeObsTextOverlay({
+      version: 1,
+      blocks: [],
+      defaultColor: "#ffffff",
+    });
+    expect(cfg.blocks).toEqual([]);
+  });
 });

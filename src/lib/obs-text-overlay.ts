@@ -397,17 +397,18 @@ export function normalizeObsTextOverlay(raw: unknown): ObsTextOverlayConfig {
   if (!raw || typeof raw !== "object") return base;
   const o = raw as Record<string, unknown>;
   const defaultColor = normalizeHexColor(o.defaultColor, base.defaultColor);
-  const blocksRaw = Array.isArray(o.blocks) ? o.blocks : [];
-  const blocks = blocksRaw
+  const blocksRaw = Array.isArray(o.blocks) ? o.blocks : null;
+  const blocks = (blocksRaw ?? [])
     .map((b, i) => normalizeBlock(b, defaultColor, i))
     .filter((b): b is ObsTextBlock => !!b);
   const positionRaw = String(o.position ?? base.position);
   const position = POSITIONS.includes(positionRaw as ObsTextOverlayPosition)
     ? (positionRaw as ObsTextOverlayPosition)
     : base.position;
-  const resolvedBlocks = (blocks.length > 0 ? blocks : base.blocks).map((b) =>
-    hydrateYoutubeEmojisInBlock(b, defaultColor)
-  );
+  /** blocks: [] 는 의도적 비움 — 기본「방송 텍스트」로 되돌리지 않음 */
+  const resolvedBlocks = (
+    blocksRaw !== null ? blocks : blocks.length > 0 ? blocks : base.blocks
+  ).map((b) => hydrateYoutubeEmojisInBlock(b, defaultColor));
   return {
     version: 1,
     blocks: resolvedBlocks,
@@ -503,6 +504,13 @@ export function normalizeObsTextRegistry(raw: unknown): ObsTextOverlayRegistry {
     };
   }
   return defaultObsTextRegistry();
+}
+
+/** 저장된 obs-text 레지스트리 키 존재 여부(기본값 주입과 구분) */
+export function hasObsTextRegistryInState(state: AppState | null | undefined): boolean {
+  const os = state?.overlaySettings;
+  if (!os || typeof os !== "object") return false;
+  return OBS_TEXT_OVERLAY_STATE_KEY in (os as Record<string, unknown>);
 }
 
 export function readObsTextRegistryFromState(
@@ -820,8 +828,8 @@ export function blocksFromMultilineText(
   defaultColor: string
 ): ObsTextBlock[] {
   const lines = raw.split(/\r?\n/).slice(0, MAX_OBS_TEXT_BLOCKS_PER_INSTANCE);
-  if (lines.length === 0) {
-    return [createDefaultObsTextBlock(" ", defaultColor)];
+  if (lines.length === 0 || lines.every((line) => line.trim().length === 0)) {
+    return [];
   }
   return lines.map((line, idx) => {
     const prev = prevBlocks[idx];

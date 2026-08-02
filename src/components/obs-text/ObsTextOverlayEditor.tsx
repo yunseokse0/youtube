@@ -159,10 +159,16 @@ export default function ObsTextOverlayEditor({
     [activeInstanceId, markLocalDirty]
   );
 
+  const previewConfig = useMemo(
+    () => mergeMultilineDraftIntoObsTextConfig(config, multilineDraft),
+    [config, multilineDraft]
+  );
+
   const activeBlock = useMemo(() => {
-    const idx = Math.max(0, Math.min(activeLineIndex, config.blocks.length - 1));
-    return config.blocks[idx] ?? config.blocks[0];
-  }, [config.blocks, activeLineIndex]);
+    const blocks = previewConfig.blocks;
+    const idx = Math.max(0, Math.min(activeLineIndex, Math.max(0, blocks.length - 1)));
+    return blocks[idx] ?? blocks[0];
+  }, [previewConfig.blocks, activeLineIndex]);
 
   const syncActiveLineFromCaret = useCallback(() => {
     const el = textareaRef.current;
@@ -1241,7 +1247,7 @@ export default function ObsTextOverlayEditor({
           <section className="overflow-hidden rounded-xl border border-white/10 bg-neutral-950">
             <p className="border-b border-white/10 px-3 py-2 text-xs text-neutral-500">미리보기</p>
             <div className="relative min-h-[280px] bg-gradient-to-b from-slate-800 to-slate-900">
-              <ObsTextOverlayView config={config} preview />
+              <ObsTextOverlayView config={previewConfig} preview />
             </div>
           </section>
         </div>

@@ -9,7 +9,10 @@ import {
   type StateApiPick,
 } from "@/lib/state-api-pick";
 import { readManualSigBroadcastFromState } from "@/lib/manual-sig-broadcast-state";
-import { readObsTextRegistryFromState } from "@/lib/obs-text-overlay";
+import {
+  hasObsTextRegistryInState,
+  readObsTextRegistryFromState,
+} from "@/lib/obs-text-overlay";
 
 /** 서버가 잠깐 빈 스냅샷을 주어도 직전 표시를 유지(멤버·목표 초기화 방지) */
 export const OVERLAY_EMPTY_SNAPSHOT_GRACE_MS = 60_000;
@@ -31,12 +34,17 @@ function presetShowsDonationGoal(p: Record<string, unknown>): boolean {
 export function isOverlayStateViable(state: AppState | null, pick: StateApiPick): boolean {
   if (!state) return false;
   if (pick === STATE_PICK_OBS_TEXT) {
+    if (hasObsTextRegistryInState(state)) return true;
     const reg = readObsTextRegistryFromState(state);
     return reg.instances.some((inst) =>
       inst.config.blocks.some(
         (b) =>
           b.visible !== false &&
-          b.segments.some((s) => String(s.text ?? "").trim().length > 0)
+          b.segments.some(
+            (s) =>
+              String(s.text ?? "").trim().length > 0 ||
+              Boolean(String(s.imageUrl ?? "").trim())
+          )
       )
     );
   }
@@ -144,12 +152,15 @@ export function shouldKeepLastGoodInsteadOf(
     const goodNonce = overlayReloadNonceFrom(lastGood);
     if (inNonce > goodNonce) return false;
   }
-  if (!isOverlayStateViable(incoming, pick)) return true;
   if (pick === STATE_PICK_OBS_TEXT) {
     const inRev = revisionForStatePick(incoming, pick);
     const goodRev = revisionForStatePick(lastGood, pick);
-    if (inRev > 0 && goodRev > 0 && inRev < goodRev) return true;
+    if (inRev > 0 && goodRev > 0) {
+      if (inRev >= goodRev) return false;
+      return true;
+    }
   }
+  if (!isOverlayStateViable(incoming, pick)) return true;
   if (shouldDiscardEmptyMembersSnapshot(incoming, pick, lastGood)) return true;
   return false;
 }

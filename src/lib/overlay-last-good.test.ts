@@ -77,4 +77,34 @@ describe("overlay-last-good", () => {
 
     expect(shouldKeepLastGoodInsteadOf(older, STATE_PICK_OBS_TEXT, newer)).toBe(true);
   });
+
+  it("accepts cleared obs-text when incoming revision is newer", () => {
+    const last = defaultState();
+    const regGood = defaultObsTextRegistry();
+    regGood.instances[0]!.config = {
+      ...regGood.instances[0]!.config,
+      revision: 1000,
+      blocks: [
+        {
+          ...regGood.instances[0]!.config.blocks[0]!,
+          segments: [{ text: "방송 텍스트", color: "#fff" }],
+        },
+      ],
+    };
+    last.overlaySettings = { [OBS_TEXT_OVERLAY_STATE_KEY]: regGood };
+    last.updatedAt = 1000;
+
+    const incoming = defaultState();
+    const regCleared = defaultObsTextRegistry();
+    regCleared.instances[0]!.config = {
+      ...regCleared.instances[0]!.config,
+      revision: 2000,
+      blocks: [],
+    };
+    incoming.overlaySettings = { [OBS_TEXT_OVERLAY_STATE_KEY]: regCleared };
+    incoming.updatedAt = 2000;
+
+    expect(isOverlayStateViable(incoming, STATE_PICK_OBS_TEXT)).toBe(true);
+    expect(shouldKeepLastGoodInsteadOf(incoming, STATE_PICK_OBS_TEXT, last)).toBe(false);
+  });
 });
