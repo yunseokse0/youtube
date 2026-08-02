@@ -117,6 +117,23 @@ function matchMemberByName(
   );
   if (normalizedMatch) return normalizedMatch;
 
+  /** `태호` → `BT태호` — 접두어(BT 등)만 다른 짧은 멤버명 */
+  if (normalized.length >= 2) {
+    let suffixBest: { member: Member; score: number } | null = null;
+    for (const member of members) {
+      for (const label of memberNameCandidates(member)) {
+        const memberNorm = normalizeName(label);
+        if (memberNorm.length <= normalized.length) continue;
+        if (!memberNorm.endsWith(normalized)) continue;
+        const score = normalized.length / memberNorm.length;
+        if (!suffixBest || score > suffixBest.score) {
+          suffixBest = { member, score: score };
+        }
+      }
+    }
+    if (suffixBest && suffixBest.score >= 0.35) return suffixBest.member;
+  }
+
   const fuzzyCandidates = members.flatMap((m) =>
     memberNameCandidates(m).map((label) => ({ label, value: m }))
   );

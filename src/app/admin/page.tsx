@@ -9329,6 +9329,17 @@ export default function AdminPage() {
                 <div className="text-[11px] text-neutral-500">
                   예: <span className="text-neutral-300">BT태호</span> / 공백·기호 차이는 자동 무시합니다.
                 </div>
+                {toonationResolvedAlertboxUrl && user?.id ? (
+                  <div className="text-[11px] text-cyan-200/90 mt-1 leading-snug">
+                    OBS 방송 중 알림만 뜨고 표가 안 바뀌면{" "}
+                    <strong className="text-cyan-100">투네 릴레이</strong> 브라우저 소스(1×1) 추가:{" "}
+                    <span className="text-neutral-400 break-all">
+                      {typeof window !== "undefined"
+                        ? `${window.location.origin}/overlay/toonation-relay?u=${encodeURIComponent(user.id)}&key=${encodeURIComponent(extractToonationLinkKey(toonationAlertboxUrl) || toonationAlertboxUrl)}&owner=${encodeURIComponent(toonationOwnerName || user.name || "")}`
+                        : `/overlay/toonation-relay?u=${user.id}&key=…&owner=…`}
+                    </span>
+                  </div>
+                ) : null}
                 {toonationAlertboxUrl.trim() && !toonationResolvedAlertboxUrl ? (
                   <div className="text-[11px] text-rose-300">
                     연동키 형식이 올바르지 않습니다. (영문·숫자 6~64자, 또는 toon.at Alertbox URL)

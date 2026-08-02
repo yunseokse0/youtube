@@ -166,7 +166,16 @@ function scheduleReconnect(conn: ActiveConnection) {
   }, RECONNECT_MS);
 }
 
-async function onDonation(userId: string, raw: string, ownerName?: string): Promise<void> {
+export type ToonationIngestOutcome =
+  | { ok: true; outcome: "applied" | "applied_needs_review" | "ignored" | "duplicate" }
+  | { ok: false; reason: "parse_failed" | "queue_failed" | "not_applied" };
+
+/** WS·OBS 릴레이 공통 — 후원 1건 처리 */
+export async function ingestToonationWebSocketMessage(
+  userId: string,
+  raw: string,
+  ownerName?: string
+): Promise<ToonationIngestOutcome> {
   let accountFormatHint = false;
   try {
     const envelope = JSON.parse(raw) as Record<string, unknown>;
@@ -180,7 +189,7 @@ async function onDonation(userId: string, raw: string, ownerName?: string): Prom
     const firstTok = msg.trim().split(/\s+/).filter(Boolean)[0] || "";
     accountFormatHint = isAccountFormatToken(firstTok);
   } catch {
-    /* parseToonationWebSocketMessage 가 처리 */
+    /* noop */
   }
   if (
     shouldSkipDuplicateRawWs(
@@ -189,78 +198,67 @@ async function onDonation(userId: string, raw: string, ownerName?: string): Prom
       accountFormatHint ? RAW_WS_ACCOUNT_DEDUPE_MS : RAW_WS_DEDUPE_MS
     )
   ) {
-    log.debug("동일 WS 원문 재전송 무시", { userId, accountFormat: accountFormatHint });
-    return;
+    return { ok: true, outcome: "duplicate" };
   }
-  try {
-    const envelope = JSON.parse(raw) as Record<string, unknown>;
-    if (envelope && isToonationYoutubeSuperChatWsMessage(envelope)) {
-      // 투네이션 경유 유튜브 슈퍼챗도 후원 이벤트로 처리한다.
-      // (기존엔 알림만 뜨고 엑셀표 반영이 누락될 수 있었다.)
-      log.debug("유튜브 슈퍼챗 감지(엑셀표 반영 시도)", { userId, code: envelope.code });
-    }
-  } catch {
-    /* parseToonationWebSocketMessage 가 처리 */
-  }
+
   const parsed = parseToonationWebSocketMessage(raw);
-  if (!parsed) {
-    log.debug("후원 WS 파싱 불가 — 무시", { userId, rawPreview: raw.slice(0, 240) });
-    return;
-  }
+  if (!parsed) return { ok: true, outcome: "ignored" };
+
   let event = parsed;
   try {
     const ownerNames = await getOwnerNameCandidates(userId, ownerName);
     event = applyOwnerDonationRemapIfNeeded(event, ownerNames);
-    if (event.target === "account" && parsed.target !== "account") {
-      log.debug("채널 주인 자기후원 감지 — 계좌로 강제 처리", {
-        userId,
-        donor: event.donorName,
-      });
+  } catch {
+    /* noop */
+  }
+
+  if (shouldSkipDuplicateEvent(userId, event)) {
+    return { ok: true, outcome: "duplicate" };
+  }
+
+  const conn = active.get(userId);
+  if (conn) {
+    conn.lastEventAt = Date.now();
+    conn.lastDonationAt = Date.now();
+  }
+
+  const outcome = await tryAutoApplyToonationDonationOnServer(userId, event);
+  if (outcome === "applied" || outcome === "applied_needs_review") {
+    return { ok: true, outcome };
+  }
+
+  const added = await enqueueUnmatchedToonationDonation(userId, event);
+  if (added) return { ok: true, outcome: "applied_needs_review" };
+  return { ok: false, reason: "not_applied" };
+}
+
+async function onDonation(userId: string, raw: string, ownerName?: string): Promise<void> {
+  try {
+    const envelope = JSON.parse(raw) as Record<string, unknown>;
+    if (envelope && isToonationYoutubeSuperChatWsMessage(envelope)) {
+      log.debug("유튜브 슈퍼챗 감지(엑셀표 반영 시도)", { userId, code: envelope.code });
     }
   } catch {
     /* noop */
   }
-  if (shouldSkipDuplicateEvent(userId, event)) {
-    log.debug("동일 후원 이벤트 재전송 무시", { userId, id: event.id });
+
+  const result = await ingestToonationWebSocketMessage(userId, raw, ownerName);
+  if (result.ok && result.outcome === "ignored") {
+    log.debug("후원 WS 파싱 불가 — 무시", { userId, rawPreview: raw.slice(0, 240) });
     return;
   }
-  const conn = active.get(userId);
-  if (conn) {
-    conn.lastDonationAt = Date.now();
-    conn.lastEventAt = conn.lastDonationAt;
+  if (result.ok && result.outcome === "duplicate") {
+    log.debug("동일 후원 이벤트 재전송 무시", { userId });
+    return;
   }
-  const outcome = await tryAutoApplyToonationDonationOnServer(userId, event);
-  if (outcome === "applied") {
-    log.info("후원 엑셀표 자동 반영", {
+  if (result.ok && (result.outcome === "applied" || result.outcome === "applied_needs_review")) {
+    log.info(result.outcome === "applied" ? "후원 엑셀표 자동 반영" : "후원 자동 반영(멤버 확인 필요)", {
       userId,
-      donor: event.donorName,
-      amount: event.amount,
-      target: event.target,
-      player: event.playerName,
+      outcome: result.outcome,
     });
     return;
   }
-  if (outcome === "applied_needs_review") {
-    log.info("후원 자동 반영(멤버 확인 필요)", {
-      userId,
-      donor: event.donorName,
-      amount: event.amount,
-      target: event.target,
-    });
-    return;
-  }
-  const added = await enqueueUnmatchedToonationDonation(userId, event);
-  if (added) {
-    log.info("후원 큐 등록(멤버 미매칭)", { userId, donor: event.donorName, amount: event.amount });
-  } else {
-    log.warn("후원 자동 반영 실패·큐 등록도 스kip", {
-      userId,
-      donor: event.donorName,
-      amount: event.amount,
-      target: event.target,
-      id: event.id,
-    });
-  }
+  log.warn("후원 자동 반영 실패", { userId, reason: result.ok ? result.outcome : result.reason });
 }
 
 async function connectWs(conn: ActiveConnection): Promise<void> {

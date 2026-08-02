@@ -64,7 +64,38 @@ describe("toonation auto-apply flow (parse → apply)", () => {
     expect(result.state.members[0]?.toon).toBe(0);
   });
 
-  it("채널 주인 닉=후원자 → 메시지 익명 멤버 (계좌)", () => {
+  it("채널 주인 닉=후원자 → 메시지 익명 태호 (계좌)", () => {
+    const raw = JSON.stringify({
+      code: 101,
+      content: {
+        nickname: "BT태호",
+        amount: 10000,
+        comment: "익명 태호",
+      },
+    });
+    const parsed = parseToonationWebSocketMessage(raw)!;
+    const remapped = applyOwnerDonationRemapIfNeeded(
+      parsed,
+      new Set([normalizeOwnerNameForCompare("BT태호")])
+    );
+    expect(remapped.target).toBe("account");
+    expect(remapped.donorName).toBe("익명");
+    expect(remapped.playerName).toBe("태호");
+
+    const result = applyDonationToAppState(
+      baseState([
+        { id: "m1", name: "BT태호" },
+        { id: "m2", name: "홍쓰" },
+      ]),
+      remapped,
+      []
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.members.find((m) => m.id === "m1")?.account).toBe(10000);
+  });
+
+  it("채널 주인 닉=후원자 → 메시지 익명 홍쓰 (계좌)", () => {
     const raw = JSON.stringify({
       code: 101,
       content: {

@@ -92,6 +92,26 @@ describe("mapToMember", () => {
     expect(mapped.memberAutoAssigned).toBeUndefined();
   });
 
+  it("matches short suffix playerName (태호 → BT태호)", () => {
+    const team: Member[] = [
+      { id: "m1", name: "BT태호", account: 0, toon: 0, contribution: 0 },
+      { id: "m2", name: "홍쓰", account: 0, toon: 0, contribution: 0 },
+    ];
+    const event: DonationEvent = {
+      id: "t9",
+      provider: "toonation",
+      externalId: "e9",
+      donorName: "익명",
+      playerName: "태호",
+      amount: 10000,
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "account",
+    };
+    const mapped = mapToMember(event, team);
+    expect(mapped.memberId).toBe("m1");
+  });
+
   it("fuzzy-matches near playerName", () => {
     const team: Member[] = [
       { id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 },
