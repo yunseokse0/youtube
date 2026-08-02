@@ -1081,9 +1081,8 @@ export function resolveGoalBarAnimationMode(
 export function resolveOverlayTextSharpRender(
   rawSp: SearchParamsLike,
   preset: OverlayPresetLike | null,
-  opts: { ready: boolean }
+  opts: { ready: boolean; defaultSharpOnBroadcast?: boolean }
 ): boolean {
-  if (opts.ready && preset?.overlayTextSharpRender) return true;
   const merged = resolveLivePresetStyleParam(
     "textSharp",
     rawSp,
@@ -1091,7 +1090,19 @@ export function resolveOverlayTextSharpRender(
     opts
   );
   const v = String(merged || "").trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes";
+  if (v === "0" || v === "false" || v === "no") return false;
+  if (v === "1" || v === "true" || v === "yes") return true;
+  if (opts.ready && preset?.overlayTextSharpRender) return true;
+  return Boolean(opts.defaultSharpOnBroadcast);
+}
+
+/** OBS·Prism 방송 URL — 관리자 iframe 미리보기는 제외 */
+export function shouldDefaultSharpRenderOnBroadcastHost(
+  searchParams?: SearchParamsLike
+): boolean {
+  if (isAdminDashboardPreviewEmbed()) return false;
+  if (isEmbeddedInSameOriginAdminFrame()) return false;
+  return Boolean(searchParams && isOverlayBroadcastHost(searchParams));
 }
 
 export function resolveGoalFontWeight(

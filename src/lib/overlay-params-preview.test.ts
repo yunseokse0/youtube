@@ -5,6 +5,7 @@ import {
   mergeOverlayPresetsPreferRemote,
   mergePresetBroadcastVisualParams,
   presetToParams,
+  resolveOverlayTextSharpRender,
   resolveTimerOverlayStyle,
   stripAdminPreviewHotReloadParams,
   type OverlayPresetLike,
@@ -146,5 +147,41 @@ describe("admin preview hot-reload params", () => {
     expect(q.get("scale")).toBeNull();
     expect(q.get("memberSize")).toBeNull();
     expect(q.get("accountHeaderLabel")).toBeNull();
+  });
+
+  it("defaults sharp text render on broadcast host when no explicit override", () => {
+    const sp = new URLSearchParams("host=obs");
+    expect(
+      resolveOverlayTextSharpRender(sp, null, {
+        ready: true,
+        defaultSharpOnBroadcast: true,
+      })
+    ).toBe(true);
+    expect(
+      resolveOverlayTextSharpRender(sp, null, {
+        ready: true,
+        defaultSharpOnBroadcast: false,
+      })
+    ).toBe(false);
+  });
+
+  it("textSharp=0 disables default broadcast sharp render", () => {
+    const sp = new URLSearchParams("host=obs&textSharp=0");
+    expect(
+      resolveOverlayTextSharpRender(sp, null, {
+        ready: true,
+        defaultSharpOnBroadcast: true,
+      })
+    ).toBe(false);
+  });
+
+  it("preset overlayTextSharpRender enables sharp render when ready", () => {
+    const preset: OverlayPresetLike = {
+      id: "ov_sharp",
+      overlayTextSharpRender: true,
+    };
+    expect(
+      resolveOverlayTextSharpRender(new URLSearchParams(), preset, { ready: true })
+    ).toBe(true);
   });
 });

@@ -18,6 +18,7 @@ import {
   resolveOverlayTextSharpRender,
   resolveGoalFontWeight,
   resolveLivePresetStyleParam,
+  shouldDefaultSharpRenderOnBroadcastHost,
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
 import { subscribeOverlayPresetsLocalUpdated } from "@/lib/broadcast-state-local-sync";
@@ -202,7 +203,11 @@ export default function GoalOverlayPage() {
     [sp, activePreset, ready]
   );
   const overlayTextSharpRender = useMemo(
-    () => resolveOverlayTextSharpRender(sp, activePreset, { ready }),
+    () =>
+      resolveOverlayTextSharpRender(sp, activePreset, {
+        ready,
+        defaultSharpOnBroadcast: shouldDefaultSharpRenderOnBroadcastHost(sp),
+      }),
     [sp, activePreset, ready]
   );
   const goalFontWeight = useMemo(
@@ -239,8 +244,16 @@ export default function GoalOverlayPage() {
           color: ${goalTextColor} !important;
           -webkit-text-fill-color: ${goalTextColor} !important;
           -webkit-font-smoothing: antialiased;
-          text-rendering: ${overlayTextSharpRender ? "geometricPrecision" : "optimizeLegibility"};
+          -moz-osx-font-smoothing: grayscale;
+          text-rendering: ${overlayTextSharpRender ? "geometricPrecision" : "optimizeLegibility"} !important;
+          -webkit-backface-visibility: hidden;
+          backface-visibility: hidden;
           ${goalFontFamilyCss ? `font-family: ${goalFontFamilyCss} !important;` : ""}
+        }
+        .overlay-root .overlay-goal-bar-widget {
+          -webkit-backface-visibility: hidden;
+          backface-visibility: hidden;
+          transform: translateZ(0);
         }
       `,
         }}

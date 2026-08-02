@@ -13,6 +13,7 @@ import {
   resolveGoalFontFamilyCss,
   resolveGoalBarAnimationMode,
   resolveOverlayTextSharpRender,
+  shouldDefaultSharpRenderOnBroadcastHost,
   resolveGoalFontWeight,
   resolveTableTextColor,
   resolveTableBgColor,
@@ -2021,7 +2022,10 @@ function OverlayInner() {
   const goalBarFillColor = resolveGoalBarFillColorParam(rawSp, effectivePreset, { ready });
   const goalFontFamilyCss = resolveGoalFontFamilyCss(rawSp, effectivePreset, { ready });
   const goalBarAnimationMode = resolveGoalBarAnimationMode(rawSp, effectivePreset, { ready });
-  const overlayTextSharpRender = resolveOverlayTextSharpRender(rawSp, effectivePreset, { ready });
+  const overlayTextSharpRender = resolveOverlayTextSharpRender(rawSp, effectivePreset, {
+    ready,
+    defaultSharpOnBroadcast: shouldDefaultSharpRenderOnBroadcastHost(rawSp),
+  });
   const goalFontWeight = resolveGoalFontWeight(rawSp, effectivePreset, { ready });
   const tableTextOutlineColor = resolveTableTextOutlineColor(rawSp, effectivePreset, { ready });
   const tableTextOutlineWidthPx = resolveTableTextOutlineWidthPx(rawSp, effectivePreset, { ready });
