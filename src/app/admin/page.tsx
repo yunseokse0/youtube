@@ -455,14 +455,38 @@ export default function AdminPage() {
   const [donorAmount, setDonorAmount] = useState("");
   const [donorMemberId, setDonorMemberId] = useState<string | null>(null);
   const [donorTarget, setDonorTarget] = useState<DonorTarget>("account");
-  const [toonationSocketEnabled, setToonationSocketEnabled] = useState(true);
+  const [toonationSocketEnabled, setToonationSocketEnabled] = useState(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      return window.localStorage.getItem("donationAutomation.toonation.socketEnabled") !== "false";
+    } catch {
+      return true;
+    }
+  });
   const [toonationListenerStatus, setToonationListenerStatus] = useState<ToonationListenerStatus | null>(null);
   const [toonationListenerMeta, setToonationListenerMeta] = useState<{
     lastDonationAt?: number;
     lastEventAt?: number;
   }>({});
-  const [toonationAlertboxUrl, setToonationAlertboxUrl] = useState("");
-  const [toonationOwnerName, setToonationOwnerName] = useState("");
+  const [toonationAlertboxUrl, setToonationAlertboxUrl] = useState(() => {
+    if (typeof window === "undefined") return "";
+    try {
+      const urlRaw = window.localStorage.getItem("donationAutomation.toonation.alertboxUrl");
+      const envUrl = (process.env.NEXT_PUBLIC_TOONATION_ALERTBOX_URL || "").trim();
+      const envKey = (process.env.NEXT_PUBLIC_TOONATION_LINK_KEY || "").trim();
+      return urlRaw || envKey || envUrl || "f28dc2204fbaf86fd9df74c12f435c73";
+    } catch {
+      return "f28dc2204fbaf86fd9df74c12f435c73";
+    }
+  });
+  const [toonationOwnerName, setToonationOwnerName] = useState(() => {
+    if (typeof window === "undefined") return "";
+    try {
+      return window.localStorage.getItem("donationAutomation.toonation.ownerName") || "";
+    } catch {
+      return "";
+    }
+  });
   const toonationResolvedAlertboxUrl = useMemo(
     () => normalizeToonationAlertboxUrl(toonationAlertboxUrl.trim()),
     [toonationAlertboxUrl]
@@ -4905,9 +4929,15 @@ export default function AdminPage() {
   useEffect(() => {
     const uid = user?.id || "";
     const normalized = toonationResolvedAlertboxUrl;
-    if (!uid || !toonationSocketEnabled || !normalized) {
-      void stopToonationListener(uid || undefined);
+    /** 로그인 전·설정 로드 전에는 서버 리스너를 끄지 않음(기존 방송 중 자동 반영 유지) */
+    if (!uid) return;
+    if (!toonationSocketEnabled) {
+      void stopToonationListener(uid);
       setToonationListenerStatus({ kind: "idle", message: "실시간 수집 꺼짐" });
+      return;
+    }
+    if (!normalized) {
+      setToonationListenerStatus({ kind: "idle", message: "연동키를 입력하세요" });
       return;
     }
     let cancelled = false;
