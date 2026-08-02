@@ -142,6 +142,12 @@ function migrateLegacyOverlayLastGood(userId?: string): AppState | null {
   return null;
 }
 
+function isExternalOverlayBroadcastHostFromWindow(): boolean {
+  if (typeof window === "undefined") return false;
+  const h = new URLSearchParams(window.location.search).get("host")?.trim().toLowerCase();
+  return h === "prism" || h === "obs" || h === "external";
+}
+
 function useRemoteState(userId?: string, enabled = true): { state: AppState | null; ready: boolean } {
   const readInitialLastGood = (): AppState | null => {
     return (
@@ -222,6 +228,10 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
   const onSSE = useCallback((incoming: any) => {
     if (!incoming) return;
     if (incoming.type === "state_updated") {
+      if (incoming.donationApplied) {
+        void syncOnceRef.current();
+        return;
+      }
       const dr = Number(incoming.donorRankingsUpdatedAt);
       if (Number.isFinite(dr) && dr > 0) {
         void syncOnceRef.current();
@@ -396,9 +406,10 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         void syncOnceRef.current();
       }
     };
-    const pollMs = shouldSuppressOverlaySseConnection()
-      ? readOverlayLiveSyncPollMs()
-      : readDonationListsOverlayPollMs();
+    const pollMs =
+      shouldSuppressOverlaySseConnection() || isExternalOverlayBroadcastHostFromWindow()
+        ? readOverlayLiveSyncPollMs()
+        : readDonationListsOverlayPollMs();
     let pollTimer: number | undefined;
     if (pollMs > 0) pollTimer = window.setInterval(() => void syncOnce(), pollMs);
     window.addEventListener("storage", onStorage);

@@ -9457,6 +9457,9 @@ export default function AdminPage() {
                     <code className="text-neutral-400">/overlay?u={user.id}</code>)만 켜져 있어도 투네 WS가 자동
                     릴레이됩니다. 연동키는 관리자에서 한 번 저장하면 Redis에 유지됩니다.
                     <br />
+                    <strong className="text-amber-200">OBS에 투네 Alertbox(알림) 소스가 따로 있으면 후원이 엑셀표로 안 들어옵니다.</strong>{" "}
+                    알림은 엑셀표 소스만 쓰거나 Alertbox 소스를 끄세요.
+                    <br />
                     알림만 뜨고 표가 안 바뀌면: 엑셀표 소스 새로고침·연동키 확인. (선택) 별도 릴레이 페이지{" "}
                     <code className="text-neutral-500">/overlay/toonation-relay</code> 또는 URL에{" "}
                     <code className="text-neutral-500">key=연동키</code> 추가.

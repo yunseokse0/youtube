@@ -15,7 +15,6 @@ export default function OverlayToonationRelayHost() {
       userId={userId}
       linkKey={linkKey || undefined}
       ownerName={ownerName || undefined}
-      pauseServerListener
     />
   );
 }
