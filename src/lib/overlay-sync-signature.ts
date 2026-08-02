@@ -68,6 +68,7 @@ export function buildOverlaySyncSignature(state: AppState | null): string {
       account: m.account || 0,
       toon: m.toon || 0,
       contribution: m.contribution || 0,
+      restroom: m.restroom || 0,
       operating: Boolean(m.operating),
     }))
     .sort((a, b) => String(a.id || "").localeCompare(String(b.id || "")));

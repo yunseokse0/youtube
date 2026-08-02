@@ -11,6 +11,8 @@ export type Member = {
   toon: number;
   /** 수동 관리 기여도 금액(계좌/투네와 별도 집계) */
   contribution?: number;
+  /** 화장실 횟수(수동 기록·차감만, 후원 자동 반영 없음) */
+  restroom?: number;
   /** 개인 목표 금액 */
   goal?: number;
   /** 운영비 멤버 여부(세금/비율 예외 처리) */
@@ -53,6 +55,9 @@ export type ContributionLog = {
   note?: string;
   at: number;
 };
+
+/** 화장실 수동 기록(구조는 기여도와 동일, amount=횟수) */
+export type RestroomLog = ContributionLog;
 
 export type MissionItem = {
   id: string;
@@ -251,6 +256,8 @@ export type DonationTableColumnsOptions = {
   showCombinedColumn?: boolean;
   /** 기여도 열 표시 */
   showContributionColumn?: boolean;
+  /** 화장실 열 표시 */
+  showRestroomColumn?: boolean;
   /** 하단 총합 행 표시 */
   showTableSumRow?: boolean;
   /** 총합 행 기여도 칸 표시(기여도 열 ON일 때) */
@@ -408,6 +415,8 @@ export type AppState = {
   donorsFormat?: DonorsAmountFormat;
   /** 기여도 수동 조정 로그 */
   contributionLogs: ContributionLog[];
+  /** 화장실 수동 기록 로그 */
+  restroomLogs: RestroomLog[];
   forbiddenWords: string[];
   missions?: MissionItem[];
   sigInventory: SigItem[];

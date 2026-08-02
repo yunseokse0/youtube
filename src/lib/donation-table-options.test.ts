@@ -9,6 +9,7 @@ describe("donation-table-options", () => {
     expect(resolveDonationTableColumnsOptions(null)).toEqual({
       showCombinedColumn: true,
       showContributionColumn: true,
+      showRestroomColumn: false,
       showTableSumRow: true,
       showContributionSum: true,
     });
@@ -31,8 +32,18 @@ describe("donation-table-options", () => {
     expect(normalizeDonationTableColumnsOptions({ showContributionSum: false })).toEqual({
       showCombinedColumn: true,
       showContributionColumn: true,
+      showRestroomColumn: false,
       showTableSumRow: true,
       showContributionSum: false,
+    });
+  });
+
+  it("showRestroomColumn is opt-in only", () => {
+    expect(normalizeDonationTableColumnsOptions({ showRestroomColumn: true })).toMatchObject({
+      showRestroomColumn: true,
+    });
+    expect(resolveDonationTableColumnsOptions({ showRestroomColumn: true })).toMatchObject({
+      showRestroomColumn: true,
     });
   });
 });

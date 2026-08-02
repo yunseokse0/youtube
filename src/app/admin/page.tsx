@@ -190,10 +190,12 @@ type OverlayPreset = {
   totalMode?: "total" | "contribution";
   showCombinedColumn?: boolean;
   showContributionColumn?: boolean;
+  showRestroomColumn?: boolean;
   showContributionSum?: boolean;
   showTableSumRow?: boolean;
   accountHeaderLabel?: string;
   toonHeaderLabel?: string;
+  restroomHeaderLabel?: string;
   showGoal: boolean; goal: string;
   /** 후원 초기화 시 복원할 목표(수동 저장·첫 자동 상향 직전 스냅샷). 없으면 초기화 시 goal 숫자 유지 */
   goalBaseline?: string;
@@ -470,6 +472,10 @@ export default function AdminPage() {
   const [contributionMemberId, setContributionMemberId] = useState<string | null>(null);
   const [contributionDelta, setContributionDelta] = useState<1 | -1>(1);
   const [contributionNote, setContributionNote] = useState("");
+  const [restroomAmount, setRestroomAmount] = useState("");
+  const [restroomMemberId, setRestroomMemberId] = useState<string | null>(null);
+  const [restroomDelta, setRestroomDelta] = useState<1 | -1>(-1);
+  const [restroomNote, setRestroomNote] = useState("");
   const [copied, setCopied] = useState(false);
   const [newMemberName, setNewMemberName] = useState("");
   const [chatDraft, setChatDraft] = useState("");
@@ -2195,7 +2201,7 @@ export default function AdminPage() {
     setState((prev: AppState) => {
       const next: AppState = {
         ...prev,
-        members: prev.members.map((x: Member) => (x.id === id ? { ...x, account: 0, toon: 0, contribution: 0 } : x)),
+        members: prev.members.map((x: Member) => (x.id === id ? { ...x, account: 0, toon: 0, contribution: 0, restroom: 0 } : x)),
       };
       persistState(next);
       return next;
@@ -2203,11 +2209,11 @@ export default function AdminPage() {
   };
 
   const resetAllMembersAmounts = () => {
-    requestConfirm("모든 멤버 금액 리셋", "모든 멤버의 계좌/투네/기여도를 0으로 리셋할까요?", () => {
+    requestConfirm("모든 멤버 금액 리셋", "모든 멤버의 계좌/투네/기여도/화장실을 0으로 리셋할까요?", () => {
       setState((prev: AppState) => {
         const next: AppState = {
           ...prev,
-          members: prev.members.map((x: Member) => ({ ...x, account: 0, toon: 0, contribution: 0 })),
+          members: prev.members.map((x: Member) => ({ ...x, account: 0, toon: 0, contribution: 0, restroom: 0 })),
         };
         persistState(next);
         return next;
@@ -2272,7 +2278,7 @@ export default function AdminPage() {
     setState((prev: AppState) => {
       const next: AppState = {
         ...prev,
-        members: [...prev.members, { id, name: base, account: 0, toon: 0, contribution: 0 }],
+        members: [...prev.members, { id, name: base, account: 0, toon: 0, contribution: 0, restroom: 0 }],
         memberPositions: { ...(prev.memberPositions || {}) },
         sigMatch: { ...(prev.sigMatch || {}), [id]: 0 },
         mealMatch: { ...(prev.mealMatch || {}), [id]: 0 },
@@ -4970,6 +4976,39 @@ export default function AdminPage() {
     setContributionNote("");
   };
 
+  const addRestroomRecord = () => {
+    const amount = parseAmount(restroomAmount);
+    if (!restroomMemberId) return;
+    if (amount <= 0) return;
+    setState((prev: AppState) => {
+      const now = Date.now();
+      const log = {
+        id: `rl_${now}_${Math.random().toString(36).slice(2, 6)}`,
+        memberId: restroomMemberId,
+        amount,
+        delta: restroomDelta,
+        note: restroomNote.trim(),
+        at: now,
+      };
+      const members = prev.members.map((m: Member) => {
+        if (m.id !== restroomMemberId) return m;
+        const curr = Math.max(0, m.restroom || 0);
+        const nextRestroom =
+          restroomDelta > 0 ? curr + amount : Math.max(0, curr - amount);
+        return { ...m, restroom: nextRestroom };
+      });
+      const next: AppState = {
+        ...prev,
+        members,
+        restroomLogs: [...(prev.restroomLogs || []), log],
+      };
+      persistState(next);
+      return next;
+    });
+    setRestroomAmount("");
+    setRestroomNote("");
+  };
+
   useEffect(() => {
     if (!state.members.length) return;
     if (!donorMemberId) setDonorMemberId(state.members[0].id);
@@ -4980,9 +5019,18 @@ export default function AdminPage() {
   }, [state.members, contributionMemberId]);
   useEffect(() => {
     if (!state.members.length) return;
+    if (!restroomMemberId) setRestroomMemberId(state.members[0].id);
+  }, [state.members, restroomMemberId]);
+  useEffect(() => {
+    if (!state.members.length) return;
     const exists = state.members.some((m) => m.id === contributionMemberId);
     if (!exists) setContributionMemberId(state.members[0].id);
   }, [state.members, contributionMemberId]);
+  useEffect(() => {
+    if (!state.members.length) return;
+    const exists = state.members.some((m) => m.id === restroomMemberId);
+    if (!exists) setRestroomMemberId(state.members[0].id);
+  }, [state.members, restroomMemberId]);
   useEffect(() => {
     if (!state.members.length) return;
     const exists = state.members.some((m) => m.id === sigPresetMemberId);
@@ -5159,7 +5207,7 @@ export default function AdminPage() {
     const resetPresets = resetOverlayPresetsGoalForDonationInit(state.overlayPresets) as OverlayPreset[];
     const next: AppState = {
       ...state,
-      members: state.members.map((m) => ({ ...m, account: 0, toon: 0, contribution: 0 })),
+      members: state.members.map((m) => ({ ...m, account: 0, toon: 0, contribution: 0, restroom: 0 })),
       donors: [],
       mealBattle: {
         ...state.mealBattle,
@@ -9563,6 +9611,131 @@ export default function AdminPage() {
               <div className="text-sm text-neutral-400 mt-2">후원 입력과 동일하게 건별 로그를 남기며, 로그에서 되돌리기/삭제할 수 있습니다.</div>
             </section>
 
+            <section id="restroom-management" className={`${panelCardClass} p-4 md:p-6`}>
+              <h2 className="text-lg font-semibold mb-3">화장실 기록부</h2>
+              <p className="text-sm text-neutral-400 mb-3">엑셀표「화장실」열에만 반영됩니다. 후원·투네 자동 연동 없음 — 수동 차감/추가만 가능합니다.</p>
+              <div className="grid grid-cols-1 lg:grid-cols-[auto_1fr_auto_auto_auto] gap-3">
+                <select
+                  className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  value={restroomDelta > 0 ? "plus" : "minus"}
+                  onChange={(e) => setRestroomDelta(e.target.value === "minus" ? -1 : 1)}
+                >
+                  <option value="minus">차감(-)</option>
+                  <option value="plus">추가(+)</option>
+                </select>
+                <input
+                  className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  placeholder="횟수 (예: 1)"
+                  inputMode="numeric"
+                  value={restroomAmount}
+                  onChange={(e) => setRestroomAmount(e.target.value)}
+                />
+                <select
+                  className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  value={restroomMemberId || ""}
+                  onChange={(e) => setRestroomMemberId(e.target.value)}
+                >
+                  {state.members.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+                <input
+                  className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  placeholder="메모(선택)"
+                  value={restroomNote}
+                  onChange={(e) => setRestroomNote(e.target.value)}
+                />
+                <button
+                  className={`px-4 py-2 rounded font-semibold ${restroomDelta > 0 ? "bg-cyan-600 hover:bg-cyan-500" : "bg-rose-600 hover:bg-rose-500"}`}
+                  onClick={addRestroomRecord}
+                >
+                  화장실 반영
+                </button>
+              </div>
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-neutral-400">
+                      <th className="text-left font-medium p-1">시각</th>
+                      <th className="text-left font-medium p-1">멤버</th>
+                      <th className="text-left font-medium p-1">구분</th>
+                      <th className="text-right font-medium p-1">횟수</th>
+                      <th className="text-left font-medium p-1">메모</th>
+                      <th className="text-right font-medium p-1 w-28">작업</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(state.restroomLogs || [])
+                      .slice()
+                      .sort((a, b) => b.at - a.at)
+                      .map((log) => {
+                        const member = state.members.find((m) => m.id === log.memberId);
+                        return (
+                          <tr key={log.id} className="border-t border-white/10">
+                            <td className="p-1 text-neutral-400"><ClientTime ts={log.at} /></td>
+                            <td className="p-1 text-neutral-300">{member?.name || log.memberId}</td>
+                            <td className="p-1">{log.delta > 0 ? <span className="text-cyan-300">추가</span> : <span className="text-rose-300">차감</span>}</td>
+                            <td className="p-1 text-right whitespace-nowrap">{log.amount.toLocaleString("ko-KR")}</td>
+                            <td className="p-1 text-neutral-400">{log.note || "-"}</td>
+                            <td className="p-1 text-right">
+                              <div className="flex justify-end gap-1">
+                                <button
+                                  className="px-2 py-1 rounded bg-amber-700 hover:bg-amber-600 text-xs"
+                                  onClick={() => {
+                                    requestConfirm("화장실 로그 되돌리기", "이 기록을 되돌리고 로그에서 제거할까요?", () => {
+                                      setState((prev: AppState) => {
+                                        const members = prev.members.map((m: Member) => {
+                                          if (m.id !== log.memberId) return m;
+                                          const curr = Math.max(0, m.restroom || 0);
+                                          const nextRestroom =
+                                            log.delta > 0
+                                              ? Math.max(0, curr - log.amount)
+                                              : curr + log.amount;
+                                          return { ...m, restroom: nextRestroom };
+                                        });
+                                        const next: AppState = {
+                                          ...prev,
+                                          members,
+                                          restroomLogs: (prev.restroomLogs || []).filter((x) => x.id !== log.id),
+                                        };
+                                        persistState(next);
+                                        return next;
+                                      });
+                                    });
+                                  }}
+                                >
+                                  되돌리기
+                                </button>
+                                <button
+                                  className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
+                                  onClick={() => {
+                                    requestConfirm("화장실 로그 삭제", "로그만 삭제할까요? (멤버 값은 유지)", () => {
+                                      setState((prev: AppState) => {
+                                        const next: AppState = {
+                                          ...prev,
+                                          restroomLogs: (prev.restroomLogs || []).filter((x) => x.id !== log.id),
+                                        };
+                                        persistState(next);
+                                        return next;
+                                      });
+                                    });
+                                  }}
+                                >
+                                  삭제
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    {(state.restroomLogs || []).length === 0 && (
+                      <tr><td colSpan={6} className="p-3 text-neutral-500 text-center">기록 없음</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
             <section className={`${panelCardClass} p-4 md:p-6 ${simpleMode ? "hidden" : ""}`}>
               <h2 className="text-lg font-semibold mb-3">채팅용 복사 & 보안</h2>
               <textarea
@@ -11564,6 +11737,7 @@ export default function AdminPage() {
                                     value={{
                                       showCombinedColumn: p.showCombinedColumn,
                                       showContributionColumn: p.showContributionColumn,
+                                      showRestroomColumn: p.showRestroomColumn,
                                       showTableSumRow: p.showTableSumRow,
                                       showContributionSum: p.showContributionSum,
                                     }}
@@ -11588,6 +11762,13 @@ export default function AdminPage() {
                                     placeholder="투네 (기본)"
                                     value={p.toonHeaderLabel || ""}
                                     onChange={(e) => updatePreset(p.id, { toonHeaderLabel: e.target.value })}
+                                  />
+                                  <label className="text-xs text-neutral-400">화장실 헤더</label>
+                                  <input
+                                    className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                    placeholder="화장실 (기본)"
+                                    value={p.restroomHeaderLabel || ""}
+                                    onChange={(e) => updatePreset(p.id, { restroomHeaderLabel: e.target.value })}
                                   />
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2">

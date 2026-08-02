@@ -4,7 +4,9 @@ import {
   tryClaimDonationApply,
 } from "@/app/api/donations/_shared/applied-store";
 import { saveAppStateForRoulette } from "@/app/api/roulette/edge-state-store";
+import { readDonationQueue } from "@/app/api/donations/_shared/queue-store";
 import { loadAppStateForUserId } from "@/lib/app-state-server-load";
+import { broadcastSseEvent } from "@/lib/sse-clients-hub";
 import { broadcastPlayerDonationAlert, enrichDonationEventWithSigMatch } from "./player-donation-alert";
 import {
   applyDonationToAppState,
@@ -38,16 +40,34 @@ async function resolveAlreadyAppliedOrDefer(
 }
 
 async function broadcastDonationStateUpdated(updatedAt: number, donorRankingsUpdatedAt?: number): Promise<void> {
+  const payload = {
+    type: "state_updated" as const,
+    updatedAt,
+    ...(typeof donorRankingsUpdatedAt === "number" && donorRankingsUpdatedAt > 0
+      ? { donorRankingsUpdatedAt }
+      : {}),
+  };
+  broadcastSseEvent(payload);
   const origin = process.env.INTERNAL_ORIGIN || `http://127.0.0.1:${process.env.PORT || 3000}`;
   await fetch(`${origin}/api/events`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      type: "state_updated",
-      updatedAt,
-      ...(typeof donorRankingsUpdatedAt === "number" ? { donorRankingsUpdatedAt } : {}),
-    }),
+    body: JSON.stringify(payload),
   }).catch(() => {});
+}
+
+/** 큐에 쌓인 후원을 서버에서 즉시 재시도(관리자 탭 없이 엑셀 반영) */
+export async function drainDonationQueueOnServer(userId: string): Promise<number> {
+  const list = await readDonationQueue(userId);
+  if (list.length === 0) return 0;
+  let applied = 0;
+  for (const evt of list) {
+    const outcome = await tryAutoApplyToonationDonationOnServer(userId, evt);
+    if (outcome === "applied" || outcome === "applied_needs_review") {
+      applied += 1;
+    }
+  }
+  return applied;
 }
 
 /** 투네 WS 수신 시 서버에서 즉시 엑셀표 반영. 실패 시 큐 등록용 */
@@ -101,10 +121,12 @@ export async function tryAutoApplyToonationDonationOnServer(
   }
 }
 
-/** 멤버 미매칭 등 서버 자동 반영 실패 시 — 큐 등록 후 관리자/백업 자동 처리 */
+/** 멤버 미매칭 등 서버 자동 반영 실패 시 — 큐 등록 후 서버에서 즉시 재시도 */
 export async function enqueueUnmatchedToonationDonation(
   userId: string,
   event: DonationEvent
 ): Promise<boolean> {
-  return enqueueDonationEvent(userId, event);
+  const added = await enqueueDonationEvent(userId, event);
+  await drainDonationQueueOnServer(userId);
+  return added;
 }

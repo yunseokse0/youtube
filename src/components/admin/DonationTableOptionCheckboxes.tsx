@@ -58,6 +58,15 @@ export default function DonationTableOptionCheckboxes({
         <input
           type="checkbox"
           className="rounded border-white/20 bg-neutral-900"
+          checked={resolved.showRestroomColumn}
+          onChange={(e) => onChange({ showRestroomColumn: e.target.checked })}
+        />
+        화장실 열
+      </label>
+      <label className={labelClass}>
+        <input
+          type="checkbox"
+          className="rounded border-white/20 bg-neutral-900"
           checked={resolved.showTableSumRow}
           onChange={(e) => onChange({ showTableSumRow: e.target.checked })}
         />

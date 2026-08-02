@@ -7,6 +7,7 @@ import type {
   Donor,
   DonorTarget,
   ContributionLog,
+  RestroomLog,
   MatchTimerEnabled,
   DonorRankingsTheme,
   DonorRankingsPreset,
@@ -53,6 +54,7 @@ import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
 export type {
   AppState,
   ContributionLog,
+  RestroomLog,
   Donor,
   DonorTarget,
   LegacyOverlaySettings,
@@ -643,6 +645,7 @@ export function buildDefaultMembersCount(count: number): Member[] {
       account: 0,
       toon: 0,
       contribution: 0,
+      restroom: 0,
       operating: false,
     };
   });
@@ -667,6 +670,7 @@ function normalizeMember(m: Member): Member {
   const goalParsed = parseOptionalNonNegativeMoney(rec.goal);
   const goal = goalParsed !== undefined ? goalParsed : undefined;
   const contribution = parseOptionalNonNegativeMoney(rec.contribution) ?? 0;
+  const restroom = parseOptionalNonNegativeMoney(rec.restroom) ?? 0;
   const account = parseOptionalNonNegativeMoney(rec.account) ?? 0;
   const toon = parseOptionalNonNegativeMoney(rec.toon) ?? 0;
   return {
@@ -675,6 +679,7 @@ function normalizeMember(m: Member): Member {
     account,
     toon,
     contribution,
+    restroom,
     goal,
     operating:
       Boolean(m.operating) ||
@@ -821,6 +826,7 @@ export function defaultState(): AppState {
     donors: [],
     donorsFormat: "full",
     contributionLogs: [],
+    restroomLogs: [],
     forbiddenWords: ["금칙어", "욕설", "비속어"],
     sigInventory: DEFAULT_SIG_INVENTORY.map((x) => ({ ...x })),
     sigSoldOutStampUrl: "",
@@ -1162,6 +1168,18 @@ export function loadState(userId?: string | null): AppState {
             delta: (x as ContributionLog).delta === -1 ? -1 : 1,
             note: typeof (x as ContributionLog).note === "string" ? (x as ContributionLog).note : "",
             at: Number.isFinite(Number((x as ContributionLog).at)) ? Math.floor(Number((x as ContributionLog).at)) : Date.now(),
+          }))
+      : [];
+    data.restroomLogs = Array.isArray((data as AppState).restroomLogs)
+      ? ((data as AppState).restroomLogs as RestroomLog[])
+          .filter((x) => x && typeof x === "object")
+          .map((x) => ({
+            id: String((x as RestroomLog).id || `rl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`),
+            memberId: String((x as RestroomLog).memberId || ""),
+            amount: Math.max(0, Math.floor(Number((x as RestroomLog).amount || 0))),
+            delta: (x as RestroomLog).delta === -1 ? -1 : 1,
+            note: typeof (x as RestroomLog).note === "string" ? (x as RestroomLog).note : "",
+            at: Number.isFinite(Number((x as RestroomLog).at)) ? Math.floor(Number((x as RestroomLog).at)) : Date.now(),
           }))
       : [];
     data.forbiddenWords = data.forbiddenWords || [];
@@ -2054,6 +2072,18 @@ async function doLoadStateFromApi(
               delta: (x as ContributionLog).delta === -1 ? -1 : 1,
               note: typeof (x as ContributionLog).note === "string" ? (x as ContributionLog).note : "",
               at: Number.isFinite(Number((x as ContributionLog).at)) ? Math.floor(Number((x as ContributionLog).at)) : Date.now(),
+            }))
+        : [];
+      data.restroomLogs = Array.isArray((data as AppState).restroomLogs)
+        ? ((data as AppState).restroomLogs as RestroomLog[])
+            .filter((x) => x && typeof x === "object")
+            .map((x) => ({
+              id: String((x as RestroomLog).id || `rl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`),
+              memberId: String((x as RestroomLog).memberId || ""),
+              amount: Math.max(0, Math.floor(Number((x as RestroomLog).amount || 0))),
+              delta: (x as RestroomLog).delta === -1 ? -1 : 1,
+              note: typeof (x as RestroomLog).note === "string" ? (x as RestroomLog).note : "",
+              at: Number.isFinite(Number((x as RestroomLog).at)) ? Math.floor(Number((x as RestroomLog).at)) : Date.now(),
             }))
         : [];
       data.forbiddenWords = data.forbiddenWords || [];

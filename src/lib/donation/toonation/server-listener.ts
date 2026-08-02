@@ -12,6 +12,7 @@ import {
 } from "./listener-config-store";
 import {
   isAccountFormatToken,
+  isToonationTestDonationPayload,
   isReliableToonationExternalId,
   isToonationYoutubeSuperChatWsMessage,
   parseToonationWebSocketMessage,
@@ -264,9 +265,17 @@ async function onDonation(userId: string, raw: string, ownerName?: string): Prom
     };
   };
   try {
+    const envelope = JSON.parse(raw) as Record<string, unknown>;
+    const payloadForTest = (envelope as { content?: unknown }).content ?? envelope;
+    const skipOwnerRemap = isToonationTestDonationPayload(payloadForTest);
     const ownerNames = await getOwnerNameCandidates(userId, ownerName);
     const donorNormalized = normalizeOwnerNameForCompare(event.donorName || "");
-    if (donorNormalized && ownerNames.has(donorNormalized) && event.target !== "account") {
+    if (
+      !skipOwnerRemap &&
+      donorNormalized &&
+      ownerNames.has(donorNormalized) &&
+      event.target !== "account"
+    ) {
       event = remapOwnerSelfDonationAsAccount(event);
       log.debug("채널 주인 자기후원 감지 — 계좌로 강제 처리", {
         userId,

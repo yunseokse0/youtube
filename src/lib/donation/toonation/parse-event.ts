@@ -18,18 +18,31 @@ export function unwrapToonationPayload(raw: unknown, depth = 0): unknown {
   return raw;
 }
 
+function parseNumericAmount(raw: unknown): number {
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) return Math.round(raw);
+  if (typeof raw === "string") {
+    const n = Number(raw.replace(/,/g, "").trim());
+    if (Number.isFinite(n) && n > 0) return Math.round(n);
+  }
+  return 0;
+}
+
 export function extractToonationAmount(data: unknown): number {
   const root = unwrapToonationPayload(data);
   const candidates = [
     safeRead(root, "amount"),
     safeRead(root, "price"),
     safeRead(root, "donationAmount"),
+    safeRead(root, "donationCash"),
+    safeRead(root, "cash"),
+    safeRead(root, "money"),
     safeRead(root, "value"),
     safeRead(data, "amount"),
+    safeRead(data, "cash"),
   ];
   for (const c of candidates) {
-    const n = Number(c);
-    if (Number.isFinite(n) && n > 0) return Math.round(n);
+    const n = parseNumericAmount(c);
+    if (n > 0) return n;
   }
   return 0;
 }
@@ -37,17 +50,30 @@ export function extractToonationAmount(data: unknown): number {
 /** 투네 알림 상단 후원자 닉 */
 export function extractToonationDonorName(data: unknown): string {
   const root = unwrapToonationPayload(data);
+  const anonymous =
+    safeRead(root, "isAnonymous") === true ||
+    safeRead(root, "anonymous") === true ||
+    safeRead(root, "is_anonymous") === 1 ||
+    safeRead(root, "is_anonymous") === "1";
   const candidates = [
     safeRead(root, "nickname"),
     safeRead(root, "nickName"),
     safeRead(root, "sender"),
     safeRead(root, "userName"),
+    safeRead(root, "donorName"),
+    safeRead(root, "donor"),
     safeRead(root, "name"),
     safeRead(data, "nickname"),
   ];
   for (const c of candidates) {
     const s = String(c || "").trim();
     if (s) return s;
+  }
+  if (anonymous) {
+    const msg = extractToonationMessage(data).trim();
+    const first = msg.split(/\s+/).filter(Boolean)[0] || "";
+    if (first) return first;
+    return "익명";
   }
   return "Unknown";
 }

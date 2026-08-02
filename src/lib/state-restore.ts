@@ -95,6 +95,9 @@ export function buildAppStateFromRestoreJson(
     ...(asArray(patch.contributionLogs)
       ? { contributionLogs: patch.contributionLogs as AppState["contributionLogs"] }
       : {}),
+    ...(asArray(patch.restroomLogs)
+      ? { restroomLogs: patch.restroomLogs as AppState["restroomLogs"] }
+      : {}),
     ...(asArray<string>(patch.forbiddenWords) ? { forbiddenWords: patch.forbiddenWords as string[] } : {}),
     ...(asArray(patch.missions)
       ? { missions: ensureMissionItems(patch.missions as unknown[]) }

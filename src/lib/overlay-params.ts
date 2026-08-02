@@ -164,10 +164,12 @@ export type OverlayPresetLike = {
   tableFontFamily?: string;
   showCombinedColumn?: boolean;
   showContributionColumn?: boolean;
+  showRestroomColumn?: boolean;
   showContributionSum?: boolean;
   showTableSumRow?: boolean;
   accountHeaderLabel?: string;
   toonHeaderLabel?: string;
+  restroomHeaderLabel?: string;
   /** 엑셀표 1~3위 강조: off | emoji | bg | both */
   rankTop3Mode?: string;
   rankTop3Effect?: string;
@@ -354,10 +356,12 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (tableFontFamily !== "auto") q.set("tableFontFamily", tableFontFamily);
   if (preset.showCombinedColumn === false) q.set("showCombinedColumn", "false");
   if (preset.showContributionColumn === false) q.set("showContributionColumn", "false");
+  if (preset.showRestroomColumn === true) q.set("showRestroomColumn", "true");
   if (preset.showContributionSum === false) q.set("showContributionSum", "false");
   if (preset.showTableSumRow === false) q.set("showTableSumRow", "false");
   if (preset.accountHeaderLabel && preset.accountHeaderLabel.trim()) q.set("accountHeaderLabel", preset.accountHeaderLabel.trim());
   if (preset.toonHeaderLabel && preset.toonHeaderLabel.trim()) q.set("toonHeaderLabel", preset.toonHeaderLabel.trim());
+  if (preset.restroomHeaderLabel && preset.restroomHeaderLabel.trim()) q.set("restroomHeaderLabel", preset.restroomHeaderLabel.trim());
   appendExcelRankTop3Params(q, preset);
   if (preset.vertical) q.set("vertical", "true");
   if (preset.host && preset.host.trim()) q.set("host", preset.host.trim());
@@ -395,6 +399,7 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "currencyLocale",
   "accountHeaderLabel",
   "toonHeaderLabel",
+  "restroomHeaderLabel",
   "accountColor",
   "toonColor",
   "tableTextColor",
@@ -406,6 +411,7 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "tableFontFamily",
   "showCombinedColumn",
   "showContributionColumn",
+  "showRestroomColumn",
   "showContributionSum",
   "showTableSumRow",
   "rankTop3Mode",
@@ -531,6 +537,7 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "currencyLocale",
   "accountHeaderLabel",
   "toonHeaderLabel",
+  "restroomHeaderLabel",
   "accountColor",
   "toonColor",
   "tableTextColor",
@@ -542,6 +549,7 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "tableFontFamily",
   "showCombinedColumn",
   "showContributionColumn",
+  "showRestroomColumn",
   "showContributionSum",
   "showTableSumRow",
   "rankTop3Mode",

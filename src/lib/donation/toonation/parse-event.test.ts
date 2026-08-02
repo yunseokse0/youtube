@@ -238,6 +238,25 @@ describe("toonation parse-event", () => {
     expect(a?.id).not.toBe(b?.id);
   });
 
+  it("parses comma-separated cash amount strings", () => {
+    const evt = parseToonationDonationPayload({
+      nickname: "후원자",
+      cash: "10,000",
+      comment: "피자",
+    });
+    expect(evt?.amount).toBe(10000);
+  });
+
+  it("uses message token for anonymous donations without nickname", () => {
+    const evt = parseToonationDonationPayload({
+      isAnonymous: true,
+      amount: 10000,
+      comment: "익명 홍쓰",
+    });
+    expect(evt?.donorName).toBe("익명");
+    expect(evt?.playerName).toBe("익명");
+  });
+
   it("account format with reused toonation id still gets unique ids (20연속 동일메시지)", () => {
     const ids = new Set<string>();
     for (let i = 0; i < 20; i += 1) {

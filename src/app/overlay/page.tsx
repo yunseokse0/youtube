@@ -1707,7 +1707,10 @@ function OverlayInner() {
     if (fromPreset === "false") return false;
     return defaultVal;
   };
-  const resolvePresetLabel = (key: "accountHeaderLabel" | "toonHeaderLabel", fallback: string): string => {
+  const resolvePresetLabel = (
+    key: "accountHeaderLabel" | "toonHeaderLabel" | "restroomHeaderLabel",
+    fallback: string
+  ): string => {
     const fromPreset = ready ? String((effectivePreset as Record<string, unknown> | null)?.[key] || "").trim() : "";
     const merged = (fromPreset || rawSp.get(key) || presetParams.get(key) || fallback).trim() || fallback;
     /** 구 프리셋「캐쉬후원」→「계좌」 */
@@ -1772,6 +1775,7 @@ function OverlayInner() {
   const showTotal = effectiveTableOnly ? true : (timerOnlyMode ? false : (sp.get("showTotal") !== "false"));
   const showCombinedColumn = resolvePresetBool("showCombinedColumn", true);
   const showContributionColumn = resolvePresetBool("showContributionColumn", true);
+  const showRestroomColumn = resolvePresetBool("showRestroomColumn", false);
   const showContributionSum = showContributionColumn && resolvePresetBool("showContributionSum", true);
   const showTableSumRow = (() => {
     if (ready && effectivePreset && typeof effectivePreset.showTableSumRow === "boolean") {
@@ -1784,6 +1788,7 @@ function OverlayInner() {
   })();
   const accountHeaderLabel = resolvePresetLabel("accountHeaderLabel", "계좌");
   const toonHeaderLabel = resolvePresetLabel("toonHeaderLabel", "투네");
+  const restroomHeaderLabel = resolvePresetLabel("restroomHeaderLabel", "화장실");
   const showGoal = (() => {
     if (effectiveTableOnly) return false;
     const raw = sp.get("showGoal");
@@ -1956,6 +1961,10 @@ function OverlayInner() {
   const rankColCh = Math.max(6, Math.min(12, parseInt(sp.get("rankCh") || "6", 10)));
   /** 기여도 열: 우측 이격은 줄이되, 방송 합성 환경에서 마지막 열 잘림이 나지 않게 최소폭을 보장 */
   const contributionChBase = Math.max(10, Math.min(18, defContributionCh));
+  const restroomChParam = externalHost ? rawSp.get("restroomCh") : sp.get("restroomCh");
+  const defRestroomCh =
+    (restroomChParam && parseInt(restroomChParam, 10)) || (compact ? 6 : 7);
+  const restroomChBase = Math.max(5, Math.min(12, defRestroomCh));
   const showSideDonors = false;
   const donorsSide = (sp.get("donorsSide") || "right").toLowerCase();
   const donorsWidth = Math.max(120, Math.min(600, parseInt(sp.get("donorsWidth") || "220", 10)));
@@ -2571,6 +2580,13 @@ function OverlayInner() {
     if (c === 0 && total > 0) return total;
     return c;
   }, []);
+  const getRestroomValueForMember = useCallback((m: Member) => {
+    const raw = (m as Member & { restroom?: unknown }).restroom;
+    const parsed = typeof raw === "number" ? raw : Number(typeof raw === "string" ? String(raw).replace(/,/g, "").trim() : raw);
+    if (!Number.isFinite(parsed)) return 0;
+    return Math.max(0, Math.floor(parsed));
+  }, []);
+  const fmtRestroom = useCallback((n: number) => String(Math.max(0, Math.floor(n))), []);
   /** 운영비(핀) 제외 멤버 기여도 합 — 총합 행과 정산 분배 기준에 맞춤 */
   const sumContribution = useMemo(
     () =>
@@ -2590,6 +2606,9 @@ function OverlayInner() {
         Number(m.account || 0) + Number(m.toon || 0),
         getContributionValueForMember(m)
       );
+      if (showRestroomColumn) {
+        amounts.push(getRestroomValueForMember(m));
+      }
     }
     if (ready) {
       amounts.push(sumAccount, sumToon, rounded, sumContribution);
@@ -2610,12 +2629,15 @@ function OverlayInner() {
     rounded,
     sumContribution,
     getContributionValueForMember,
+    getRestroomValueForMember,
+    showRestroomColumn,
     tableTextOutlineWidthPx,
   ]);
   const bankCh = Math.max(8, Math.min(24, Math.max(bankChBase, amountDisplayMinCh)));
   const toonCh = Math.max(8, Math.min(24, Math.max(toonChBase, amountDisplayMinCh)));
   const totalCh = Math.max(6, Math.min(22, Math.max(totalChBase, amountDisplayMinCh)));
   const contributionCh = Math.max(11, Math.min(24, Math.max(contributionChBase, amountDisplayMinCh)));
+  const restroomCh = Math.max(5, Math.min(12, Math.max(restroomChBase, showRestroomColumn ? 3 : 0)));
   useEffect(() => {
     const el = tableBoxRef.current;
     if (!el) return;
@@ -2677,9 +2699,13 @@ function OverlayInner() {
       )
     );
     const cols = hasRoleColumn
-      ? `${rankColCh}|${roleColFit}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`
-      : `${rankColCh}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}`;
-    const rows = ranked.map(({ m }) => `${m.account}|${m.toon}|${getContributionValueForMember(m)}`).join(";");
+      ? `${rankColCh}|${roleColFit}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}${showRestroomColumn ? `|${restroomCh}` : ""}`
+      : `${rankColCh}|${nameCh}|${bankCh}|${toonCh}|${totalCh}|${contributionCh}${showRestroomColumn ? `|${restroomCh}` : ""}`;
+    const rows = ranked
+      .map(({ m }) =>
+        `${m.account}|${m.toon}|${getContributionValueForMember(m)}${showRestroomColumn ? `|${getRestroomValueForMember(m)}` : ""}`
+      )
+      .join(";");
     const pinRows = visiblePinned.map((m) => `${m.account}|${m.toon}|0`).join(";");
     return `${cols}#${rows}~${pinRows}`;
   }, [
@@ -2691,6 +2717,9 @@ function OverlayInner() {
     toonCh,
     totalCh,
     contributionCh,
+    restroomCh,
+    showRestroomColumn,
+    getRestroomValueForMember,
     rankColCh,
     members,
     getMemberRole,
@@ -3021,6 +3050,7 @@ function OverlayInner() {
       `${toonCh}ch`,
       ...(showCombinedColumn ? [`${totalCh}ch`] : []),
       ...(showContributionColumn ? [`${contributionCh}ch`] : []),
+      ...(showRestroomColumn ? [`${restroomCh}ch`] : []),
     ];
     /** 숫자 자리 증가로 표 전체가 밀려 나가지 않도록 너비 상한 고정 */
     const excelTableWidthCalc = excelGridCols.join(" + ");
@@ -3223,7 +3253,8 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table thead td.overlay-col-account,
         .overlay-root .overlay-elegant-table thead td.overlay-col-toon,
         .overlay-root .overlay-elegant-table thead td.overlay-col-total,
-        .overlay-root .overlay-elegant-table thead td.overlay-col-contribution {
+        .overlay-root .overlay-elegant-table thead td.overlay-col-contribution,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-restroom {
           background: ${broadcastTheadBg} !important;
           color: ${broadcastTheadTextCss} !important;
         }
@@ -3337,7 +3368,8 @@ function OverlayInner() {
         .overlay-root .overlay-account-cell,
         .overlay-root .overlay-toon-cell,
         .overlay-root td.overlay-col-total,
-        .overlay-root td.overlay-col-contribution {
+        .overlay-root td.overlay-col-contribution,
+        .overlay-root td.overlay-col-restroom {
           white-space: nowrap !important;
           overflow: hidden !important;
           vertical-align: middle;
@@ -3345,7 +3377,8 @@ function OverlayInner() {
         .overlay-root .overlay-account-cell .overlay-num-cell-inner,
         .overlay-root .overlay-toon-cell .overlay-num-cell-inner,
         .overlay-root td.overlay-col-total .overlay-num-cell-inner,
-        .overlay-root td.overlay-col-contribution .overlay-num-cell-inner {
+        .overlay-root td.overlay-col-contribution .overlay-num-cell-inner,
+        .overlay-root td.overlay-col-restroom .overlay-num-cell-inner {
           display: inline-block;
           max-width: 100%;
           overflow: hidden;
@@ -3439,7 +3472,8 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-account,
         .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-toon,
         .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-total,
-        .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-contribution {
+        .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-contribution,
+        .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-restroom {
           background: var(--excel-header-bg) !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table tbody tr.overlay-row:nth-child(odd) td,
@@ -3543,19 +3577,23 @@ function OverlayInner() {
           outline: none !important;
         }
         `}
-        /* 마지막 열(기여도): 합성 환경에서 stroke로 인한 우측 1~2px 잘림 방지 */
+        /* 마지막 열(기여도·화장실): 합성 환경에서 stroke로 인한 우측 1~2px 잘림 방지 */
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution,
-        .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution {
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-restroom,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-restroom {
           ${externalSafeMode
             ? `-webkit-text-stroke: 0 !important; text-shadow: ${tableNumericOutlineShadowCss} !important;`
             : `-webkit-text-stroke: ${tableTextIsLight ? "0.55px rgba(6, 12, 24, 0.92)" : "0"} !important; text-shadow: ${tableNumericOutlineShadowCss} !important;`}
         }
-        .overlay-root .overlay-elegant-table td.overlay-col-contribution .overlay-num-cell-inner {
+        .overlay-root .overlay-elegant-table td.overlay-col-contribution .overlay-num-cell-inner,
+        .overlay-root .overlay-elegant-table td.overlay-col-restroom .overlay-num-cell-inner {
           transform: ${externalSafeMode ? "translateX(0)" : "translateX(0)"};
         }
-        /* 순위·기여도 헤더: 고정 폭 칸에서 스트로크·굵은 글자가 칸 경계에서 잘리지 않도록 */
+        /* 순위·기여도·화장실 헤더: 고정 폭 칸에서 스트로크·굵은 글자가 칸 경계에서 잘리지 않도록 */
         .overlay-root .overlay-elegant-table thead td.overlay-col-rank,
-        .overlay-root .overlay-elegant-table thead td.overlay-col-contribution {
+        .overlay-root .overlay-elegant-table thead td.overlay-col-contribution,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-restroom {
           overflow: visible !important;
         }
         /* 순위 헤더는 바디 셀과 좌우 위치가 일치해야 한다(텍스트가 칸 안에서 동일 위치). */
@@ -3598,12 +3636,18 @@ function OverlayInner() {
           padding-left: 0.95em !important;
           padding-right: 0.55em !important;
         }
-        /* 마지막 열(기여도): 너무 오른쪽으로 밀려 보이지 않게 투네/합계 열과 유사한 간격으로 조정 */
+        /* 마지막 열(기여도·화장실): 너무 오른쪽으로 밀려 보이지 않게 투네/합계 열과 유사한 간격으로 조정 */
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution,
-        .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution {
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-restroom,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-restroom {
           padding-left: 0.42em !important;
           padding-right: 0.62em !important;
           overflow: visible !important;
+        }
+        .overlay-root .overlay-elegant-table thead td.overlay-col-restroom,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-restroom {
+          text-align: center !important;
         }
         /* 헤더 세로선 제거: 스트림 오버레이에서 칸 분리선 없이 한 덩어리로 보이게 한다. */
         .overlay-root .overlay-elegant-table thead td {
@@ -3807,6 +3851,11 @@ function OverlayInner() {
                           기여도
                         </td>
                       )}
+                      {showRestroomColumn && (
+                        <td className={`${effectiveHeaderCls} overlay-col-restroom text-center`} title="관리자「화장실 기록부」수동 기록. 후원 자동 반영 없음.">
+                          {restroomHeaderLabel}
+                        </td>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
@@ -3905,6 +3954,17 @@ function OverlayInner() {
                             />
                           </td>
                         )}
+                        {showRestroomColumn && (
+                          <td className={`${effectiveRowCls} overlay-col-restroom text-center font-semibold`}>
+                            <OverlayTableNumCell
+                              value={getRestroomValueForMember(m)}
+                              format={fmtRestroom}
+                              animate={rowMotionEnabled}
+                              className="overlay-num-cell-inner overlay-cell-text-inner"
+                              style={overlayCellOutlineStyle}
+                            />
+                          </td>
+                        )}
                       </tr>
                       );
                     })}
@@ -3967,6 +4027,13 @@ function OverlayInner() {
                             </span>
                           </td>
                         )}
+                        {showRestroomColumn && (
+                          <td className={`${effectiveRowCls} overlay-col-restroom text-center font-semibold`}>
+                            <span className="overlay-num-cell-inner overlay-cell-text-inner overlay-rank-mark" style={overlayCellOutlineStyle}>
+                              —
+                            </span>
+                          </td>
+                        )}
                       </tr>
                     ))}
                     {showTableSumRow && ready && (
@@ -4015,6 +4082,9 @@ function OverlayInner() {
                         )}
                         {showContributionColumn && !showContributionSum && (
                           <td className={`${overlayTotalRowCls} overlay-col-contribution text-right`} />
+                        )}
+                        {showRestroomColumn && (
+                          <td className={`${overlayTotalRowCls} overlay-col-restroom text-center`} />
                         )}
                       </tr>
                     )}
