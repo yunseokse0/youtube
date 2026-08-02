@@ -9370,7 +9370,7 @@ export default function AdminPage() {
                     </span>
                   ) : toonationSocketEnabled && toonationListenerStatus?.kind === "connected" ? (
                     <span className="text-[11px] text-neutral-500">
-                      아직 후원 수신 없음 — 이 페이지를 켜 두면 브라우저 릴레이가 보조 수집합니다
+                      아직 후원 수신 없음 — 엑셀표 overlay(/overlay?u=…)가 켜져 있으면 자동 릴레이됩니다
                     </span>
                   ) : null}
                 </div>
@@ -9391,14 +9391,13 @@ export default function AdminPage() {
                 </div>
                 {toonationResolvedAlertboxUrl && user?.id ? (
                   <div className="text-[11px] text-cyan-200/90 mt-1 leading-snug">
-                    엑셀표 OBS 소스(<code className="text-neutral-400">/overlay?u=…</code>)가 켜져 있으면 투네 WS가
-                    자동 릴레이됩니다. 알림만 뜨고 표가 안 바뀌면 별도{" "}
-                    <strong className="text-cyan-100">투네 릴레이</strong> 소스(1×1) 추가:{" "}
-                    <span className="text-neutral-400 break-all">
-                      {typeof window !== "undefined"
-                        ? `${window.location.origin}/overlay/toonation-relay?u=${encodeURIComponent(user.id)}&key=${encodeURIComponent(extractToonationLinkKey(toonationAlertboxUrl) || toonationAlertboxUrl)}&owner=${encodeURIComponent(toonationOwnerName || user.name || "")}`
-                        : `/overlay/toonation-relay?u=${user.id}&key=…&owner=…`}
-                    </span>
+                    <strong className="text-cyan-100">엑셀표 OBS</strong>(
+                    <code className="text-neutral-400">/overlay?u={user.id}</code>)만 켜져 있어도 투네 WS가 자동
+                    릴레이됩니다. 연동키는 관리자에서 한 번 저장하면 Redis에 유지됩니다.
+                    <br />
+                    알림만 뜨고 표가 안 바뀌면: 엑셀표 소스 새로고침·연동키 확인. (선택) 별도 릴레이 페이지{" "}
+                    <code className="text-neutral-500">/overlay/toonation-relay</code> 또는 URL에{" "}
+                    <code className="text-neutral-500">key=연동키</code> 추가.
                   </div>
                 ) : null}
                 {toonationAlertboxUrl.trim() && !toonationResolvedAlertboxUrl ? (

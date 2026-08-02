@@ -2,10 +2,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
-import { extractToonationLinkKey } from "@/lib/donation/toonation/link-key";
-import { readToonationListenerConfig } from "@/lib/donation/toonation/listener-config-store";
+import { resolveToonationRelayConfigForUser } from "@/lib/donation/toonation/resolve-relay-config";
 
-/** OBS 오버레이·릴레이 — 로그인 없이 `?u=` 로 투네 연동 설정 조회 */
+/** OBS 엑셀표 overlay — 로그인 없이 `?u=` 로 투네 릴레이 설정 조회 (서버 WS enabled 와 무관) */
 export async function GET(req: Request) {
   const userId = getUserIdFromRequest(req);
   if (!userId) {
@@ -14,20 +13,8 @@ export async function GET(req: Request) {
       headers: { "Content-Type": "application/json" },
     });
   }
-  const cfg = await readToonationListenerConfig(userId);
-  if (!cfg?.enabled || !cfg.alertboxUrl) {
-    return new Response(JSON.stringify({ enabled: false, userId }), {
-      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-    });
-  }
-  const linkKey = extractToonationLinkKey(cfg.alertboxUrl) || cfg.alertboxUrl;
-  return new Response(
-    JSON.stringify({
-      enabled: true,
-      userId,
-      linkKey,
-      ownerName: String(cfg.ownerName || "").trim(),
-    }),
-    { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }
-  );
+  const cfg = await resolveToonationRelayConfigForUser(userId);
+  return new Response(JSON.stringify(cfg), {
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+  });
 }

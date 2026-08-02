@@ -79,7 +79,7 @@ export default function ToonationBrowserRelay({
       }
     };
     void load();
-    const timer = window.setInterval(load, 60_000);
+    const timer = window.setInterval(load, 30_000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
