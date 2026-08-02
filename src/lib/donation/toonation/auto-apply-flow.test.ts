@@ -62,6 +62,27 @@ describe("toonation auto-apply flow (parse → apply)", () => {
     if (!result.ok) return;
     expect(result.state.members[0]?.account).toBe(20000);
     expect(result.state.members[0]?.toon).toBe(0);
+    expect(result.state.donors?.[0]?.target).toBe("account");
+  });
+
+  it("계좌 키워드가 메시지 중간에 있어도 계좌 열 반영", () => {
+    const raw = JSON.stringify({
+      code: 101,
+      content: {
+        nickname: "시청자",
+        amount: 15000,
+        comment: "후원 계좌 익명 BT태호",
+      },
+    });
+    const event = parseToonationWebSocketMessage(raw);
+    expect(event?.target).toBe("account");
+    expect(event?.donorName).toBe("익명");
+    expect(event?.playerName).toBe("BT태호");
+
+    const result = applyDonationToAppState(baseState([{ id: "m1", name: "BT태호" }]), event!, []);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.members[0]?.account).toBe(15000);
   });
 
   it("채널 주인 닉=후원자 → 메시지 익명 태호 (계좌)", () => {
@@ -93,6 +114,7 @@ describe("toonation auto-apply flow (parse → apply)", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.state.members.find((m) => m.id === "m1")?.account).toBe(10000);
+    expect(result.state.members.find((m) => m.id === "m1")?.toon).toBe(0);
   });
 
   it("채널 주인 닉=후원자 → 메시지 익명 홍쓰 (계좌)", () => {

@@ -68,7 +68,7 @@ export async function DELETE(req: Request) {
       headers: { "Content-Type": "application/json" },
     });
   }
-  await syncToonationServerListener(userId, "", false);
+  await syncToonationServerListener(userId, "", false, "");
   return new Response(JSON.stringify({ ok: true }), {
     headers: { "Content-Type": "application/json" },
   });

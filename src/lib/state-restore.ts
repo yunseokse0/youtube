@@ -1,5 +1,6 @@
 import { normalizeSigInventory } from "@/lib/constants";
 import { normalizeGroupSplitDonationSettings } from "@/lib/donation/group-split-donation";
+import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 import {
   defaultState,
   normalizeDonationListsOverlayConfig,
@@ -145,7 +146,12 @@ export function buildAppStateFromRestoreJson(
       ? { mealMatchSettings: patch.mealMatchSettings as AppState["mealMatchSettings"] }
       : {}),
     ...(patch.generalTimer && typeof patch.generalTimer === "object"
-      ? { generalTimer: patch.generalTimer as AppState["generalTimer"] }
+      ? {
+          generalTimer: mergeGeneralTimerPreferEffective(
+            base.generalTimer,
+            patch.generalTimer as AppState["generalTimer"]
+          ),
+        }
       : {}),
     ...(patch.matchTimerEnabled && typeof patch.matchTimerEnabled === "object"
       ? {

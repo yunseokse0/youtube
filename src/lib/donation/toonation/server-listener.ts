@@ -14,6 +14,8 @@ import {
   isReliableToonationExternalId,
   isToonationYoutubeSuperChatWsMessage,
   parseToonationWebSocketMessage,
+  TOONATION_WS_CODE_DONATION,
+  TOONATION_WS_CODE_YOUTUBE_SUPERCHAT,
 } from "./parse-event";
 import { applyOwnerDonationRemapIfNeeded, getOwnerNameCandidates } from "./owner-donation-remap";
 import { isWeakToonationDonorId } from "../apply-donation-state";
@@ -54,6 +56,20 @@ type ActiveConnection = {
 };
 
 const active = new Map<string, ActiveConnection>();
+const ingestMetaByUser = new Map<string, { lastEventAt?: number; lastDonationAt?: number }>();
+
+function touchIngestMeta(userId: string, patch: { lastEventAt?: number; lastDonationAt?: number }) {
+  const prev = ingestMetaByUser.get(userId) || {};
+  ingestMetaByUser.set(userId, { ...prev, ...patch });
+}
+
+function syncConnFromIngest(userId: string, patch: { lastEventAt?: number; lastDonationAt?: number }) {
+  touchIngestMeta(userId, patch);
+  const conn = active.get(userId);
+  if (!conn) return;
+  if (typeof patch.lastEventAt === "number") conn.lastEventAt = patch.lastEventAt;
+  if (typeof patch.lastDonationAt === "number") conn.lastDonationAt = patch.lastDonationAt;
+}
 
 const RAW_WS_DEDUPE_MS = 15_000;
 /** 계좌 포맷은 동일 메시지 연속 후원이 많아, 진짜 WS 재전송(수백 ms)만 막도록 짧게 */
@@ -201,6 +217,17 @@ export async function ingestToonationWebSocketMessage(
     return { ok: true, outcome: "duplicate" };
   }
 
+  /** 설정·핑 등 비후원 WS도 수신 여부 확인용 */
+  try {
+    const envelope = JSON.parse(raw) as Record<string, unknown>;
+    const code = Number(envelope.code);
+    if (code === TOONATION_WS_CODE_DONATION || code === TOONATION_WS_CODE_YOUTUBE_SUPERCHAT) {
+      syncConnFromIngest(userId, { lastEventAt: Date.now() });
+    }
+  } catch {
+    /* noop */
+  }
+
   const parsed = parseToonationWebSocketMessage(raw);
   if (!parsed) return { ok: true, outcome: "ignored" };
 
@@ -217,12 +244,12 @@ export async function ingestToonationWebSocketMessage(
   }
 
   const conn = active.get(userId);
-  if (conn) {
-    conn.lastEventAt = Date.now();
-    conn.lastDonationAt = Date.now();
-  }
+  syncConnFromIngest(userId, { lastEventAt: Date.now() });
 
   const outcome = await tryAutoApplyToonationDonationOnServer(userId, event);
+  if (outcome === "applied" || outcome === "applied_needs_review") {
+    syncConnFromIngest(userId, { lastDonationAt: Date.now() });
+  }
   if (outcome === "applied" || outcome === "applied_needs_review") {
     return { ok: true, outcome };
   }
@@ -393,6 +420,19 @@ export function stopToonationServerListener(userId: string): void {
   active.delete(userId);
 }
 
+/** 실시간 수집 OFF — WS만 끊고 연동키·주인명은 Redis에 유지(재시작·오버레이 릴레이용) */
+export async function pauseToonationServerListener(userId: string): Promise<void> {
+  stopToonationServerListener(userId);
+  const saved = await readToonationListenerConfig(userId);
+  if (saved?.alertboxUrl) {
+    await writeToonationListenerConfig({
+      ...saved,
+      enabled: false,
+      updatedAt: Date.now(),
+    });
+  }
+}
+
 export async function disableToonationServerListener(userId: string): Promise<void> {
   stopToonationServerListener(userId);
   await clearToonationListenerConfig(userId);
@@ -420,7 +460,7 @@ export async function syncToonationServerListener(
   ownerName?: string
 ): Promise<ToonationServerListenerStatus | null> {
   if (!enabled || !alertboxUrl.trim()) {
-    await disableToonationServerListener(userId);
+    await pauseToonationServerListener(userId);
     return null;
   }
   return startToonationServerListener(userId, alertboxUrl, ownerName);
@@ -428,15 +468,36 @@ export async function syncToonationServerListener(
 
 export async function getToonationListenerStatusForUser(userId: string): Promise<ToonationServerListenerStatus | null> {
   const live = getToonationServerListenerStatus(userId);
-  if (live) return live;
+  const ingestMeta = ingestMetaByUser.get(userId);
+  if (live) {
+    return {
+      ...live,
+      lastEventAt: Math.max(live.lastEventAt || 0, ingestMeta?.lastEventAt || 0) || live.lastEventAt,
+      lastDonationAt: Math.max(live.lastDonationAt || 0, ingestMeta?.lastDonationAt || 0) || live.lastDonationAt,
+    };
+  }
   const saved = await readToonationListenerConfig(userId);
-  if (!saved) return null;
+  if (!saved && !ingestMeta) return null;
+  if (!saved) {
+    return {
+      userId,
+      enabled: false,
+      alertboxUrl: "",
+      ownerName: "",
+      connected: false,
+      lastEventAt: ingestMeta?.lastEventAt,
+      lastDonationAt: ingestMeta?.lastDonationAt,
+      updatedAt: Date.now(),
+    };
+  }
   return {
     userId: saved.userId,
     enabled: saved.enabled,
     alertboxUrl: saved.alertboxUrl,
     ownerName: saved.ownerName || "",
     connected: false,
+    lastEventAt: ingestMeta?.lastEventAt,
+    lastDonationAt: ingestMeta?.lastDonationAt,
     updatedAt: saved.updatedAt,
   };
 }

@@ -37,10 +37,11 @@ import {
   type ResolvedTimerOverlayStyle,
 } from "@/lib/overlay-params";
 import { resolveTableFontFamilyCss } from "@/lib/table-font-style";
-import { getEffectiveRemainingTime } from "@/lib/timer-utils";
+import { getEffectiveRemainingTime, mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 import { useFlip } from "@/lib/flip";
 import MissionBoard from "@/components/MissionBoard";
 import MissionBoardSlot from "@/components/MissionBoardSlot";
+import OverlayToonationRelay from "@/components/OverlayToonationRelay";
 import { GoalBar } from "@/components/GoalBar";
 import {
   buildBroadcastTextOutlineShadowCss,
@@ -197,12 +198,13 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
   }, [loadLastGood]);
   const mergeKeepingStrongRoster = useCallback((incoming: AppState): AppState => {
     const good = lastGoodRef.current;
+    let merged = incoming;
     if (
       good &&
       hasMeaningfulMemberRoster(good) &&
       !hasMeaningfulMemberRoster(incoming)
     ) {
-      return {
+      merged = {
         ...incoming,
         members: good.members,
         memberPositions: good.memberPositions,
@@ -210,7 +212,12 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         rankPositionLabels: good.rankPositionLabels,
       };
     }
-    return incoming;
+    const prevTimer = lastGoodRef.current?.generalTimer ?? merged.generalTimer;
+    merged = {
+      ...merged,
+      generalTimer: mergeGeneralTimerPreferEffective(prevTimer, merged.generalTimer),
+    };
+    return merged;
   }, []);
   const onSSE = useCallback((incoming: any) => {
     if (!incoming) return;
@@ -298,16 +305,17 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
           localNow.updatedAt > lastUpdatedRef.current &&
           !shouldKeepLastGoodInsteadOf(localNow, STATE_PICK_OVERLAY_DONORS, lastGoodRef.current)
         ) {
-          const nextSig = buildOverlaySyncSignature(localNow);
-          lastUpdatedRef.current = localNow.updatedAt;
+          const mergedLocal = mergeKeepingStrongRoster(localNow);
+          const nextSig = buildOverlaySyncSignature(mergedLocal);
+          lastUpdatedRef.current = mergedLocal.updatedAt || localNow.updatedAt;
           hasStrongRosterRef.current = true;
           if (nextSig !== lastVisualSigRef.current) {
             lastVisualSigRef.current = nextSig;
-            setState(localNow);
+            setState(mergedLocal);
           }
-          if (isViable(localNow)) {
-            lastGoodRef.current = localNow;
-            saveLastGood(localNow);
+          if (isViable(mergedLocal)) {
+            lastGoodRef.current = mergedLocal;
+            saveLastGood(mergedLocal);
           }
         }
         /** 관리자 미리보기: 실멤버 로컬이 있을 때만 GET 생략 */
@@ -495,20 +503,55 @@ function useElapsed(startTs: number | null) {
 }
 
 function useServerTimer(timer: AppState["generalTimer"] | null): { text: string | null; paused: boolean; remainingSeconds: number | null } {
-  const [remaining, setRemaining] = useState<number>(timer ? getEffectiveRemainingTime(timer) : 0);
-  useEffect(() => {
-    if (!timer) {
-      setRemaining(0);
-      return;
+  const timerRef = useRef(timer);
+  timerRef.current = timer;
+  const lastStableRef = useRef<{ remaining: number; paused: boolean } | null>(null);
+  const [remaining, setRemaining] = useState<number>(() => {
+    const initial = timer ? getEffectiveRemainingTime(timer) : 0;
+    if (timer && (initial > 0 || !timer.isActive)) {
+      lastStableRef.current = { remaining: initial, paused: !timer.isActive };
     }
-    setRemaining(getEffectiveRemainingTime(timer));
+    return initial;
+  });
+  const timerKey = timer
+    ? `${timer.remainingTime}:${timer.isActive}:${timer.lastUpdated}`
+    : "none";
+
+  useEffect(() => {
+    if (!timer) return;
+    const tick = () => {
+      const current = timerRef.current;
+      if (!current) return;
+      const eff = getEffectiveRemainingTime(current);
+      if (eff > 0 || !current.isActive) {
+        lastStableRef.current = { remaining: eff, paused: !current.isActive };
+        setRemaining(eff);
+      } else if (lastStableRef.current && lastStableRef.current.remaining > 0 && current.isActive) {
+        /** 동기화 직후 일시적 0 — 직전 표시 유지 */
+        setRemaining(lastStableRef.current.remaining);
+      } else {
+        setRemaining(eff);
+      }
+    };
+    tick();
     if (!timer.isActive) return;
-    const id = window.setInterval(() => {
-      setRemaining(getEffectiveRemainingTime(timer));
-    }, 1000);
+    const id = window.setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [timer]);
-  if (!timer) return { text: null, paused: false, remainingSeconds: null };
+  }, [timerKey]);
+
+  if (!timer) {
+    const held = lastStableRef.current;
+    if (!held) return { text: null, paused: false, remainingSeconds: null };
+    const safe = Math.max(0, held.remaining);
+    const h = Math.floor(safe / 3600);
+    const m = Math.floor((safe % 3600) / 60);
+    const sec = safe % 60;
+    return {
+      text: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`,
+      paused: held.paused,
+      remainingSeconds: safe,
+    };
+  }
   const safe = Math.max(0, remaining);
   const h = Math.floor(safe / 3600);
   const m = Math.floor((safe % 3600) / 60);
@@ -1500,6 +1543,7 @@ function OverlayInner() {
   const rawUserId = (rawSp.get("u") || "").trim();
   const hostObs = isOverlayBroadcastHost(rawSp);
   const userId = rawUserId || "finalent";
+  const toonationRelayOff = (rawSp.get("relay") || "").trim() === "0";
   const snapKey = (rawSp.get("snapKey") || "").trim();
   const snap = tryReadSnapshotFromStorage(snapKey || null) || tryDecodeSnapshot(rawSp.get("snap"));
   const { state: remoteState, ready: remoteReady } = useRemoteState(userId, !snap);
@@ -4216,6 +4260,7 @@ function OverlayInner() {
             인증 누락: 기본 계정 사용 중
           </div>
         ) : null}
+        <OverlayToonationRelay userId={userId} disabled={toonationRelayOff} />
           </main>
         </div>
       </div>

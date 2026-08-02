@@ -33,6 +33,7 @@ import { createModuleLogger } from "@/lib/logger";
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { isRouletteLocked } from "../roulette/roulette-lock";
+import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 import { getUserIdFromRequest } from "../_shared/user-id";
 import { getRedisEnv } from "../_shared/upstash";
 import {
@@ -257,7 +258,11 @@ function mergePartialState(
   if (!("mealBattle" in patch)) next.mealBattle = base.mealBattle;
   if (!("mealMatch" in patch)) next.mealMatch = base.mealMatch;
   if (!("mealMatchSettings" in patch)) next.mealMatchSettings = base.mealMatchSettings;
-  if (!("generalTimer" in patch)) next.generalTimer = base.generalTimer;
+  if ("generalTimer" in patch && patch.generalTimer != null) {
+    next.generalTimer = mergeGeneralTimerPreferEffective(base.generalTimer, patch.generalTimer as AppState["generalTimer"]);
+  } else if (!("generalTimer" in patch)) {
+    next.generalTimer = base.generalTimer;
+  }
   if (!("donorRankingsOverlayConfig" in patch)) next.donorRankingsOverlayConfig = base.donorRankingsOverlayConfig;
   if (!("donorRankingsFullOverlayConfig" in patch))
     next.donorRankingsFullOverlayConfig = base.donorRankingsFullOverlayConfig;

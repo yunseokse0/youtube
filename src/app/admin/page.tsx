@@ -90,7 +90,7 @@ import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import { appendSettlementRecordAndSync, appendSigMatchIncentiveSettlementAndSync, SettlementMemberRatioOverrides } from "@/lib/settlement";
 import { formatSigMatchStat, getSigMatchRankings, isOperatingSettlementMember } from "@/lib/settlement-utils";
-import { getEffectiveRemainingTime, pauseTimer, resumeTimer } from "@/lib/timer-utils";
+import { getEffectiveRemainingTime, mergeGeneralTimerPreferEffective, pauseTimer, resumeTimer } from "@/lib/timer-utils";
 import {
   appendAdminPreviewEmbedToOverlayUrl,
   mergePresetBroadcastVisualParams,
@@ -164,6 +164,8 @@ import {
   splitExistingDonorInAppState,
 } from "@/lib/donation/group-split-donation";
 import { GroupSplitDonationPanel } from "@/components/admin/GroupSplitDonationPanel";
+import ToonationBrowserRelay from "@/components/ToonationBrowserRelay";
+import type { ToonationRelayForwarded } from "@/components/ToonationBrowserRelay";
 import type { DonationEvent, DonorAlias } from "@/lib/donation/types";
 import { buildPlayerAlertPopupUrl, openPlayerAlertPopup } from "@/lib/donation/player-alert-url";
 
@@ -1368,6 +1370,10 @@ export default function AdminPage() {
         didPreserve = true;
       }
     }
+    merged = {
+      ...merged,
+      generalTimer: mergeGeneralTimerPreferEffective(local.generalTimer, merged.generalTimer),
+    };
     return { merged: { ...merged, donors: normalizeDonorsArray(merged.donors) }, didPreserve };
   }, []);
 
@@ -4605,6 +4611,21 @@ export default function AdminPage() {
   const pushToonationLog = useCallback((message: string) => {
     setToonationLogs((prev) => [{ id: `tl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, at: Date.now(), message }, ...prev].slice(0, 80));
   }, []);
+
+  const onBrowserRelayForwarded = useCallback(
+    (info: ToonationRelayForwarded) => {
+      if (!info.ok || !info.outcome) return;
+      if (info.outcome === "duplicate" || info.outcome === "ignored") return;
+      const label =
+        info.outcome === "applied"
+          ? "엑셀표 반영"
+          : info.outcome === "applied_needs_review"
+            ? "반영(멤버 확인)"
+            : info.outcome;
+      pushToonationLog(`브라우저 릴레이 · ${label}`);
+    },
+    [pushToonationLog]
+  );
 
   useEffect(() => {
     pushToonationLogRef.current = pushToonationLog;
@@ -9342,8 +9363,15 @@ export default function AdminPage() {
                       마지막 후원 수신:{" "}
                       {new Date(toonationListenerMeta.lastDonationAt).toLocaleTimeString("ko-KR")}
                     </span>
+                  ) : toonationListenerMeta.lastEventAt ? (
+                    <span className="text-[11px] text-amber-400/90">
+                      WS 이벤트 수신됨 · 후원 파싱 대기 (
+                      {new Date(toonationListenerMeta.lastEventAt).toLocaleTimeString("ko-KR")})
+                    </span>
                   ) : toonationSocketEnabled && toonationListenerStatus?.kind === "connected" ? (
-                    <span className="text-[11px] text-neutral-500">아직 후원 수신 없음</span>
+                    <span className="text-[11px] text-neutral-500">
+                      아직 후원 수신 없음 — 이 페이지를 켜 두면 브라우저 릴레이가 보조 수집합니다
+                    </span>
                   ) : null}
                 </div>
                 <input
@@ -9363,8 +9391,9 @@ export default function AdminPage() {
                 </div>
                 {toonationResolvedAlertboxUrl && user?.id ? (
                   <div className="text-[11px] text-cyan-200/90 mt-1 leading-snug">
-                    OBS 방송 중 알림만 뜨고 표가 안 바뀌면{" "}
-                    <strong className="text-cyan-100">투네 릴레이</strong> 브라우저 소스(1×1) 추가:{" "}
+                    엑셀표 OBS 소스(<code className="text-neutral-400">/overlay?u=…</code>)가 켜져 있으면 투네 WS가
+                    자동 릴레이됩니다. 알림만 뜨고 표가 안 바뀌면 별도{" "}
+                    <strong className="text-cyan-100">투네 릴레이</strong> 소스(1×1) 추가:{" "}
                     <span className="text-neutral-400 break-all">
                       {typeof window !== "undefined"
                         ? `${window.location.origin}/overlay/toonation-relay?u=${encodeURIComponent(user.id)}&key=${encodeURIComponent(extractToonationLinkKey(toonationAlertboxUrl) || toonationAlertboxUrl)}&owner=${encodeURIComponent(toonationOwnerName || user.name || "")}`
@@ -9675,6 +9704,16 @@ export default function AdminPage() {
                     ))}
                   </div>
                 </div>
+                {toonationSocketEnabled && user?.id && toonationResolvedAlertboxUrl ? (
+                  <ToonationBrowserRelay
+                    userId={user.id}
+                    linkKey={extractToonationLinkKey(toonationAlertboxUrl) || toonationAlertboxUrl}
+                    ownerName={toonationOwnerName}
+                    enabled
+                    hidden
+                    onForwarded={onBrowserRelayForwarded}
+                  />
+                ) : null}
               </div>
             </section>
 

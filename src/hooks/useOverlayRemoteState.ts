@@ -70,6 +70,7 @@ import {
   STATE_PICK_SIG_SALES,
   type StateApiPick,
 } from "@/lib/state-api-pick";
+import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 
 export type UseOverlayRemoteStateOptions = {
   /** false면 동기화 비활성 */
@@ -242,12 +243,18 @@ function applySyncedState(
     );
   }
 
-  refs.setState(data);
+  const mergedTimer = mergeGeneralTimerPreferEffective(
+    refs.lastGoodRef.current?.generalTimer,
+    data.generalTimer
+  );
+  const next = { ...data, generalTimer: mergedTimer };
 
-  if (refs.persistLastGood && isOverlayStateViable(data, pick)) {
-    refs.lastGoodRef.current = data;
+  refs.setState(next);
 
-    saveOverlayLastGood(data, refs.userId, pick);
+  if (refs.persistLastGood && isOverlayStateViable(next, pick)) {
+    refs.lastGoodRef.current = next;
+
+    saveOverlayLastGood(next, refs.userId, pick);
   }
 
   return true;

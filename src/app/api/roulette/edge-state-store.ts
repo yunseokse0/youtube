@@ -1,5 +1,6 @@
 import type { AppState } from "@/lib/state";
 import { defaultState } from "@/lib/state";
+import { snapshotTimerForPersist } from "@/lib/timer-utils";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { getUserIdFromRequest } from "../_shared/user-id";
 import { getRedisEnv } from "../_shared/upstash";
@@ -44,8 +45,12 @@ export async function loadAppStateForRoulette(userId: string): Promise<AppState>
 
 export async function saveAppStateForRoulette(userId: string, next: AppState): Promise<void> {
   const { base, token } = getRedisEnv();
-  setServerMemoryAppState(userId, next);
+  const persisted: AppState = {
+    ...next,
+    generalTimer: snapshotTimerForPersist(next.generalTimer),
+  };
+  setServerMemoryAppState(userId, persisted);
   if (base && token) {
-    await upstashSet(stateKey(userId), next);
+    await upstashSet(stateKey(userId), persisted);
   }
 }

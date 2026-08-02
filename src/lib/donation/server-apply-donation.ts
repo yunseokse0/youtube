@@ -6,6 +6,7 @@ import {
 import { saveAppStateForRoulette } from "@/app/api/roulette/edge-state-store";
 import { readDonationQueue } from "@/app/api/donations/_shared/queue-store";
 import { loadAppStateForUserId } from "@/lib/app-state-server-load";
+import { getServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { broadcastSseEvent } from "@/lib/sse-clients-hub";
 import { broadcastPlayerDonationAlert, enrichDonationEventWithSigMatch } from "./player-donation-alert";
 import {
@@ -131,8 +132,12 @@ export async function tryAutoApplyToonationDonationOnServer(
       return "not_applied";
     }
     await saveAppStateForRoulette(userId, result.state);
+    const memSaved = getServerMemoryAppState(userId);
     const verify = await loadAppStateForUserId(userId);
-    if (!isDuplicateDonationEvent(verify, event)) {
+    const persisted =
+      isDuplicateDonationEvent(verify, event) ||
+      (memSaved ? isDuplicateDonationEvent(memSaved, event) : false);
+    if (!persisted) {
       await releaseDonationApplyClaim(userId, event);
       return "not_applied";
     }

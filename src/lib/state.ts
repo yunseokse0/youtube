@@ -30,6 +30,7 @@ import type {
   DonorsAmountFormat,
 } from "@/types";
 import { ONE_SHOT_SIG_ID, sigMatchesMemberFilter } from "@/lib/sig-roulette";
+import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 import { sanitizeOverlayEmbedMediaUrl } from "@/lib/gif-url";
 import {
   BROADCAST_SIG_PRESET_NAMES,
@@ -2031,6 +2032,7 @@ async function doLoadStateFromApi(
         ...base,
         ...data,
         overlaySettings: { ...baseOs, ...patchOs },
+        generalTimer: mergeGeneralTimerPreferEffective(base.generalTimer, (data as AppState).generalTimer),
         rouletteState: {
           ...base.rouletteState,
           ...(data.rouletteState && typeof data.rouletteState === "object" ? data.rouletteState : {}),
