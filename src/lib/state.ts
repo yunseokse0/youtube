@@ -1320,6 +1320,8 @@ async function postAppStateWithAuthRecovery(json: string, userId?: string | null
 export type SaveStateAsyncOptions = {
   /** 후원 삭제·전체 비우기 — mergeDonorsForMultiTabSave 되살림 방지 */
   donorsAuthoritative?: boolean;
+  /** 정산 리셋 — placeholder member LS 복원·후원 merge 되살림 방지 */
+  settlementReset?: boolean;
 };
 
 export type SaveStateAsyncResult = {
@@ -1346,6 +1348,7 @@ function mergeServerSaveApiBodies(prevJson: string, nextJson: string): string {
     const prev = JSON.parse(prevJson) as Record<string, unknown>;
     const next = JSON.parse(nextJson) as Record<string, unknown>;
     if (!prev || typeof prev !== "object" || !next || typeof next !== "object") return nextJson;
+    if (next.settlementReset === true) return nextJson;
     const merged: Record<string, unknown> = { ...prev, ...next };
     /** overlaySettings 는 얕은 병합으로 키가 날아가지 않게 */
     if (
@@ -1446,6 +1449,9 @@ async function runServerSaveQueue(): Promise<void> {
         void sendSSEUpdate({
           type: "state_updated",
           updatedAt,
+          ...(typeof (pl as { settlementResetAt?: number } | null)?.settlementResetAt === "number"
+            ? { settlementResetAt: (pl as { settlementResetAt?: number }).settlementResetAt }
+            : {}),
           ...(typeof donorRankingsUpdatedAt === "number" && donorRankingsUpdatedAt > 0
             ? { donorRankingsUpdatedAt }
             : {}),
@@ -1466,8 +1472,8 @@ async function runServerSaveQueue(): Promise<void> {
 
 /** placeholder 멤버를 API에 실어내면 Redis 실멤버를 덮을 수 있어 필드 자체를 생략한다. */
 function omitPlaceholderMembersFromApiPayload(
-  payload: Partial<AppState> & { donorsAuthoritative?: boolean }
-): Partial<AppState> & { donorsAuthoritative?: boolean } {
+  payload: Partial<AppState> & { donorsAuthoritative?: boolean; settlementReset?: boolean }
+): Partial<AppState> & { donorsAuthoritative?: boolean; settlementReset?: boolean } {
   if (!isDefaultPlaceholderMemberList(payload.members as Member[] | undefined)) {
     return payload;
   }
@@ -1486,7 +1492,7 @@ function appStatePayloadForApi(
   next: AppState,
   userId?: string | null,
   options?: SaveStateAsyncOptions
-): Partial<AppState> & { donorsAuthoritative?: boolean } {
+): Partial<AppState> & { donorsAuthoritative?: boolean; settlementReset?: boolean } {
   const normalizedSigInventory = slimSigInventoryForWire(
     normalizeSigInventory(next.sigInventory),
     userId ?? undefined
@@ -1499,21 +1505,23 @@ function appStatePayloadForApi(
   };
   const donors = Array.isArray(next.donors) ? next.donors : rest.donors;
   const donorRankingsUpdatedAt = next.donorRankingsUpdatedAt;
-  const base: Partial<AppState> & { donorsAuthoritative?: boolean } = {
+  const base: Partial<AppState> & { donorsAuthoritative?: boolean; settlementReset?: boolean } = {
     ...rest,
     donors,
     ...(typeof donorRankingsUpdatedAt === "number" && Number.isFinite(donorRankingsUpdatedAt)
       ? { donorRankingsUpdatedAt }
       : {}),
   };
+  const flags = {
+    ...(options?.donorsAuthoritative ? { donorsAuthoritative: true as const } : {}),
+    ...(options?.settlementReset ? { settlementReset: true as const } : {}),
+  };
   if (!rouletteState) {
-    return omitPlaceholderMembersFromApiPayload(
-      options?.donorsAuthoritative ? { ...base, donorsAuthoritative: true } : base
-    );
+    return omitPlaceholderMembersFromApiPayload({ ...base, ...flags });
   }
   return omitPlaceholderMembersFromApiPayload({
     ...base,
-    ...(options?.donorsAuthoritative ? { donorsAuthoritative: true } : {}),
+    ...flags,
     rouletteState: {
       menuCount: rouletteState.menuCount,
       menuFillFromAllActive: rouletteState.menuFillFromAllActive,
@@ -1588,10 +1596,15 @@ export async function saveStateAsync(
   options?: SaveStateAsyncOptions
 ): Promise<SaveStateAsyncResult> {
   if (typeof window === "undefined") return { ok: false };
-  const next = preserveLocalMeaningfulRoster(
-    normalizeStateForPersistence(syncBattleStateWithMembers({ ...state, updatedAt: Date.now() })),
-    userId
+  const normalized = normalizeStateForPersistence(
+    syncBattleStateWithMembers({ ...state, updatedAt: Date.now() })
   );
+  const next = options?.settlementReset
+    ? normalized
+    : preserveLocalMeaningfulRoster(normalized, userId);
+  const saveOpts: SaveStateAsyncOptions | undefined = options?.settlementReset
+    ? { ...options, donorsAuthoritative: true, settlementReset: true }
+    : options;
   const json = JSON.stringify(next);
   /** 테마 변경 직후 미리보기가 멤버를 잃지 않게 서버 대기 전에 LS 반영 */
   try {
@@ -1600,7 +1613,7 @@ export async function saveStateAsync(
   notifyBroadcastStateLocalUpdated(userId, next.updatedAt);
   try {
     const result = await enqueueServerSave(
-      JSON.stringify(appStatePayloadForApi(next, userId, options)),
+      JSON.stringify(appStatePayloadForApi(next, userId, saveOpts)),
       userId,
       next
     );
@@ -2234,6 +2247,17 @@ export function mergeDonorsForMultiTabSave(
     return Array.from(map.values()).sort((a, b) => b.at - a.at);
   }
   return incoming;
+}
+
+/** 정산 리셋 이후 구 탭·다른 PC가 실어낸 후원(at < reset) 제거 */
+export function filterDonorsAfterSettlementReset(
+  donors: Donor[] | undefined,
+  settlementResetAt: number
+): Donor[] {
+  const resetAt = Number(settlementResetAt || 0);
+  if (!resetAt) return normalizeDonorsArray(donors);
+  const graceMs = 3000;
+  return normalizeDonorsArray(donors).filter((d) => (d.at || 0) >= resetAt - graceMs);
 }
 
 export function totalAccount(state: AppState): number {

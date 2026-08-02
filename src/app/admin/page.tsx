@@ -767,6 +767,8 @@ export default function AdminPage() {
   const touchStartYRef = useRef<number | null>(null);
   const actionConfirmRef = useRef<null | (() => void)>(null);
   const resetInProgressRef = useRef(false);
+  /** 정산 리셋 직후 GET/SSE가 구 후원·금액을 되살리지 않게 */
+  const settlementResetUntilRef = useRef(0);
   const [actionSheet, setActionSheet] = useState<{ open: boolean; title: string; desc: string; confirmText: string; danger: boolean }>({
     open: false,
     title: "",
@@ -907,7 +909,7 @@ export default function AdminPage() {
     };
     return map[id] || map.default;
   };
-  const persistState = useCallback((s: AppState, opts?: { donorsAuthoritative?: boolean }) => {
+  const persistState = useCallback((s: AppState, opts?: { donorsAuthoritative?: boolean; settlementReset?: boolean }) => {
     const now = Date.now();
     lastLocalPersistAtRef.current = now;
     stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, s.updatedAt || now, now);
@@ -1097,6 +1099,45 @@ export default function AdminPage() {
   }, [syncStatus]);
 
   const mergeIncomingStateSafely = useCallback((incoming: AppState, local: AppState): { merged: AppState; didPreserve: boolean } => {
+    const remoteResetAt = Number(incoming.settlementResetAt || 0);
+    const localResetAt = Number(local.settlementResetAt || 0);
+    if (remoteResetAt > localResetAt) {
+      return {
+        merged: {
+          ...incoming,
+          donors: normalizeDonorsArray(incoming.donors),
+        },
+        didPreserve: false,
+      };
+    }
+    if (Date.now() < settlementResetUntilRef.current) {
+      const localDonorsNorm = normalizeDonorsArray(local.donors);
+      const incomingDonorsNorm = normalizeDonorsArray(incoming.donors);
+      const localCleared =
+        localDonorsNorm.length === 0 &&
+        (totalCombined(local) === 0 ||
+          local.members.every(
+            (m) =>
+              Math.max(0, Math.floor(Number(m.account || 0))) === 0 &&
+              Math.max(0, Math.floor(Number(m.toon || 0))) === 0
+          ));
+      if (localCleared && (incomingDonorsNorm.length > 0 || totalCombined(incoming) > 0)) {
+        return {
+          merged: {
+            ...incoming,
+            ...local,
+            members: local.members,
+            memberPositions: normalizeMemberPositions(local.memberPositions, local.members),
+            donors: [],
+            mealBattle: local.mealBattle ?? incoming.mealBattle,
+            overlayPresets: local.overlayPresets ?? incoming.overlayPresets,
+            missions: local.missions ?? incoming.missions,
+            updatedAt: Math.max(incoming.updatedAt || 0, local.updatedAt || 0) || Date.now(),
+          },
+          didPreserve: true,
+        };
+      }
+    }
     const incomingDefaultLike = isDefaultLikeState(incoming);
     const incomingPlaceholderMembers = isDefaultPlaceholderMemberList(incoming.members);
     const localHasData = hasMeaningfulBroadcastData(local);
@@ -1217,7 +1258,10 @@ export default function AdminPage() {
       };
       didPreserve = true;
     }
-    const recentlyEditedDonors = Date.now() - lastLocalPersistAtRef.current < DONOR_LOCAL_PROTECT_MS;
+    const recentlyEditedDonors =
+      Date.now() < settlementResetUntilRef.current
+        ? false
+        : Date.now() - lastLocalPersistAtRef.current < DONOR_LOCAL_PROTECT_MS;
     const localDonorsNorm = normalizeDonorsArray(local.donors);
     const incomingDonorsNorm = normalizeDonorsArray(merged.donors);
     const localIdSet = new Set(localDonorsNorm.map((d) => d.id));
@@ -1258,20 +1302,22 @@ export default function AdminPage() {
       }
     }
     const mergedDonorsNorm = normalizeDonorsArray(merged.donors);
-    if (
-      localDonorsNorm.length > 0 &&
-      mergedDonorsNorm.length === 0 &&
-      totalCombined(local) > 0
-    ) {
-      merged = { ...merged, donors: localDonorsNorm, members: local.members };
-      didPreserve = true;
-    } else if (
-      totalCombined(local) > 0 &&
-      totalCombined(merged) === 0 &&
-      localDonorsNorm.length > 0
-    ) {
-      merged = { ...merged, donors: localDonorsNorm, members: local.members };
-      didPreserve = true;
+    if (Date.now() >= settlementResetUntilRef.current) {
+      if (
+        localDonorsNorm.length > 0 &&
+        mergedDonorsNorm.length === 0 &&
+        totalCombined(local) > 0
+      ) {
+        merged = { ...merged, donors: localDonorsNorm, members: local.members };
+        didPreserve = true;
+      } else if (
+        totalCombined(local) > 0 &&
+        totalCombined(merged) === 0 &&
+        localDonorsNorm.length > 0
+      ) {
+        merged = { ...merged, donors: localDonorsNorm, members: local.members };
+        didPreserve = true;
+      }
     }
     return { merged: { ...merged, donors: normalizeDonorsArray(merged.donors) }, didPreserve };
   }, []);
@@ -1404,6 +1450,23 @@ export default function AdminPage() {
         remoteUpdatedAt > stateUpdatedAtRef.current || Boolean(opts?.forceDonorMerge);
       if (!shouldApplyRemote) return false;
       if (amountInputEditingRef.current) return false;
+      const remoteResetAt = Number(remote.settlementResetAt || 0);
+      const localResetAt = Number(stateRef.current.settlementResetAt || 0);
+      if (remoteResetAt > localResetAt) {
+        settlementResetUntilRef.current = Date.now() + 15_000;
+        pendingUnsyncedRef.current = false;
+      }
+      if (Date.now() < settlementResetUntilRef.current) {
+        const localDonors = normalizeDonorsArray(stateRef.current.donors);
+        const remoteDonors = normalizeDonorsArray(remote.donors);
+        if (
+          localDonors.length === 0 &&
+          (remoteDonors.length > 0 || totalCombined(remote) > 0) &&
+          !opts?.forceDonorMerge
+        ) {
+          return false;
+        }
+      }
       /** 저장 대기 중이어도 원격 신규 후원은 mergeIncoming에서 수용 */
       if (pendingUnsyncedRef.current && !opts?.forceDonorMerge) {
         const localIds = new Set((stateRef.current.donors || []).map((d) => d.id));
@@ -1435,7 +1498,12 @@ export default function AdminPage() {
         stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, remoteUpdatedAt);
         return false;
       }
-      if (didPreserve) persistState(toApply);
+      if (
+        didPreserve &&
+        Number(toApply.settlementResetAt || 0) <= Number(prev.settlementResetAt || 0)
+      ) {
+        persistState(toApply);
+      }
       stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, remoteUpdatedAt);
       lastAppliedRemoteUpdatedAtRef.current = Math.max(
         lastAppliedRemoteUpdatedAtRef.current,
@@ -5032,16 +5100,62 @@ export default function AdminPage() {
     }
   };
 
+  const commitSettlementReset = useCallback(
+    async (next: AppState, resetPresets: OverlayPreset[]) => {
+      if (resetInProgressRef.current) return;
+      resetInProgressRef.current = true;
+      settlementResetUntilRef.current = Date.now() + 15_000;
+      const resetAt = Date.now();
+      setResetSheetOpen(false);
+      appendDailyLog(state, user?.id);
+      loadDailyLogFromApi(user?.id)
+        .then((serverLog) => {
+          setDailyLog(serverLog);
+          try {
+            window.localStorage.setItem(dailyLogStorageKey(user?.id), JSON.stringify(serverLog));
+          } catch {}
+        })
+        .catch(() => setDailyLog(loadDailyLog(user?.id)));
+      const nextWithReset: AppState = {
+        ...next,
+        settlementResetAt: resetAt,
+        updatedAt: resetAt,
+      };
+      setPresets(resetPresets);
+      setState(nextWithReset);
+      stateRef.current = nextWithReset;
+      stateUpdatedAtRef.current = resetAt;
+      lastLocalPersistAtRef.current = resetAt;
+      pendingUnsyncedRef.current = true;
+      try {
+        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(nextWithReset));
+        window.localStorage.setItem(presetStorageKey, JSON.stringify(resetPresets));
+      } catch {}
+      const r = await saveStateAsync(nextWithReset, user?.id, { settlementReset: true });
+      pendingUnsyncedRef.current = false;
+      if (r.ok) {
+        if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
+          stateUpdatedAtRef.current = r.serverUpdatedAt;
+          lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
+        }
+        if (r.storageFallback) {
+          setSyncStatus("error");
+          setSigExcelResult(
+            "정산 리셋이 이 PC에만 반영됐습니다. Redis·서버 설정을 확인한 뒤 다시 시도하세요."
+          );
+        } else {
+          setSyncStatus("synced");
+        }
+      } else {
+        const offline = typeof navigator !== "undefined" && !navigator.onLine;
+        setSyncStatus(offline ? "local" : "error");
+      }
+      resetInProgressRef.current = false;
+    },
+    [presetStorageKey, state, user?.id]
+  );
+
   const onResetKeepMembers = () => {
-    if (resetInProgressRef.current) return;
-    /** 후원 합·후원자가 없어도 실행 허용: 목표 기준선 복구·금액 필드 재동기 등이 필요할 수 있음 */
-    resetInProgressRef.current = true;
-    setResetSheetOpen(false);
-    appendDailyLog(state, user?.id);
-    loadDailyLogFromApi(user?.id).then((serverLog) => {
-      setDailyLog(serverLog);
-      try { window.localStorage.setItem(dailyLogStorageKey(user?.id), JSON.stringify(serverLog)); } catch {}
-    }).catch(() => setDailyLog(loadDailyLog(user?.id)));
     const resetPresets = resetOverlayPresetsGoalForDonationInit(state.overlayPresets) as OverlayPreset[];
     const next: AppState = {
       ...state,
@@ -5055,22 +5169,9 @@ export default function AdminPage() {
       missions: state.missions || [],
       updatedAt: Date.now(),
     };
-    setPresets(resetPresets);
-    try { window.localStorage.setItem(presetStorageKey, JSON.stringify(resetPresets)); } catch {}
-    setState(next);
-    persistState(next);
-    resetInProgressRef.current = false;
+    void commitSettlementReset(next, resetPresets);
   };
   const onResetInitMembers = () => {
-    if (resetInProgressRef.current) return;
-    /** 후원액이 이미 0이어도 멤버 슬롯만 새로 잡는 경우가 많음 — 금액 조건으로 막지 않음 */
-    resetInProgressRef.current = true;
-    setResetSheetOpen(false);
-    appendDailyLog(state, user?.id);
-    loadDailyLogFromApi(user?.id).then((serverLog) => {
-      setDailyLog(serverLog);
-      try { window.localStorage.setItem(dailyLogStorageKey(user?.id), JSON.stringify(serverLog)); } catch {}
-    }).catch(() => setDailyLog(loadDailyLog(user?.id)));
     const resetPresets = resetOverlayPresetsGoalForDonationInit(state.overlayPresets) as OverlayPreset[];
     const slotN = Math.max(1, Math.min(30, Math.floor(Number(resetMemberSlotCount) || 3)));
     const ds = defaultState();
@@ -5108,10 +5209,16 @@ export default function AdminPage() {
         ...state.mealBattle,
         participants: filteredMealParticipants,
         memberGaugeColors: Object.fromEntries(
-          Object.entries(state.mealBattle?.memberGaugeColors || {}).filter(([memberId]) => nextMemberIds.has(memberId))
+          Object.entries(state.mealBattle?.memberGaugeColors || {}).filter(([memberId]) =>
+            nextMemberIds.has(memberId)
+          )
         ),
-        teamAMemberIds: (state.mealBattle?.teamAMemberIds || []).filter((memberId) => nextMemberIds.has(memberId)),
-        teamBMemberIds: (state.mealBattle?.teamBMemberIds || []).filter((memberId) => nextMemberIds.has(memberId)),
+        teamAMemberIds: (state.mealBattle?.teamAMemberIds || []).filter((memberId) =>
+          nextMemberIds.has(memberId)
+        ),
+        teamBMemberIds: (state.mealBattle?.teamBMemberIds || []).filter((memberId) =>
+          nextMemberIds.has(memberId)
+        ),
       },
       mealMatch: Object.fromEntries(
         Object.entries(state.mealMatch || {}).filter(([memberId]) => nextMemberIds.has(memberId))
@@ -5124,11 +5231,7 @@ export default function AdminPage() {
       donationSyncMode: state.donationSyncMode,
       updatedAt: Date.now(),
     };
-    setPresets(resetPresets);
-    try { window.localStorage.setItem(presetStorageKey, JSON.stringify(resetPresets)); } catch {}
-    setState(next);
-    persistState(next);
-    resetInProgressRef.current = false;
+    void commitSettlementReset(next, resetPresets);
   };
 
   const onSnapshotNow = () => {

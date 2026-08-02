@@ -452,6 +452,8 @@ export type AppState = {
   updatedAt: number;
   /** 후원 순위 오버레이 전용 revision — donors·순위 테마 변경 시만 증가(회전판만 바뀌면 증가 안 함) */
   donorRankingsUpdatedAt?: number;
+  /** 정산 리셋 시각(epoch ms) — 이후 구 탭·다른 PC 저장으로 후원·금액 되살림 방지 */
+  settlementResetAt?: number;
 };
 
 export type SettlementMemberRatioOverrides = Record<

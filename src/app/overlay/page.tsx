@@ -3012,15 +3012,6 @@ function OverlayInner() {
           ["--excel-total-border" as string]: tableTotalLineColor,
         }
       : undefined;
-    const excelLiveRowOddBg = tableBgColorRaw
-      ? applyAlphaToCssColor(`rgb(${tableSheetRgb.join(", ")})`, effectiveTableTintAlpha)
-      : applyAlphaToCssColor("rgb(255, 255, 255)", effectiveTableTintAlpha);
-    const excelLiveRowEvenBg = tableBgColorRaw
-      ? applyAlphaToCssColor(
-          `rgb(${tableSheetRgb.map((c) => Math.max(0, Math.min(255, Math.round(c * 0.9)))).join(", ")})`,
-          effectiveTableTintAlpha
-        )
-      : applyAlphaToCssColor("rgb(219, 234, 254)", effectiveTableTintAlpha);
     const excelLiveTotalRowBg = tableBgColorRaw
       ? applyAlphaToCssColor(
           `rgb(${tableSheetRgb.map((c) => Math.max(0, Math.min(255, Math.round(c * 0.97)))).join(", ")})`,
@@ -3405,11 +3396,12 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table.excel-live-table thead td.overlay-col-contribution {
           background: var(--excel-header-bg) !important;
         }
-        .overlay-root .overlay-elegant-table.excel-live-table tbody tr.overlay-row:nth-child(odd) td {
-          background: ${excelLiveRowOddBg} !important;
-        }
-        .overlay-root .overlay-elegant-table.excel-live-table tbody tr.overlay-row:nth-child(even) td {
-          background: ${excelLiveRowEvenBg} !important;
+        .overlay-root .overlay-elegant-table.excel-live-table tbody tr.overlay-row:nth-child(odd) td,
+        .overlay-root .overlay-elegant-table.excel-live-table tbody tr.overlay-row:nth-child(even) td,
+        .overlay-root .overlay-elegant-table.excel-member-table tbody tr.overlay-row td {
+          background: transparent !important;
+          border: none !important;
+          box-shadow: none !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table .overlay-total-row td {
           border-top: 2px solid rgba(26, 82, 118, 0.45) !important;
@@ -3541,13 +3533,13 @@ function OverlayInner() {
         }
         /* 이름 ↔ 계좌/투네: 백만원대·두꺼운 아웃라인에서도 붙지 않게 금액 열 좌측 여백 */
         .overlay-root .overlay-elegant-table thead td.overlay-col-account,
-        .overlay-root .overlay-elegant-table tbody td.overlay-col-account {
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-account,
+        .overlay-root .overlay-elegant-table thead td.overlay-col-toon,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-toon {
           padding-left: 0.75em !important;
           padding-right: 0.75em !important;
           text-align: center !important;
         }
-        .overlay-root .overlay-elegant-table thead td.overlay-col-toon,
-        .overlay-root .overlay-elegant-table tbody td.overlay-col-toon,
         .overlay-root .overlay-elegant-table thead td.overlay-col-total,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-total {
           padding-left: 0.95em !important;
@@ -3753,7 +3745,7 @@ function OverlayInner() {
                       {hasRoleColumn && <td className={`${effectiveHeaderCls} overlay-col-role`} style={{ whiteSpace: "nowrap" }}>직급</td>}
                       <td className={`${effectiveHeaderCls} overlay-col-name`}>이름</td>
                       <td className={`${effectiveHeaderCls} overlay-col-account text-center`}>{accountHeaderLabel}</td>
-                      <td className={`${effectiveHeaderCls} overlay-col-toon text-right`}>{toonHeaderLabel}</td>
+                      <td className={`${effectiveHeaderCls} overlay-col-toon text-center`}>{toonHeaderLabel}</td>
                       {showCombinedColumn && (
                         <td className={`${effectiveHeaderCls} overlay-col-total text-right`}>{totalHeaderLabel}</td>
                       )}
@@ -3823,7 +3815,7 @@ function OverlayInner() {
                         <td className={`${effectiveRowCls} overlay-col-account ${effectiveAccountCls} overlay-account-cell text-center`}>
                           <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(m.account)}</span>
                         </td>
-                        <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-right`}>
+                        <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-center`}>
                           <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(m.toon)}</span>
                         </td>
                         {showCombinedColumn && (
@@ -3865,7 +3857,7 @@ function OverlayInner() {
                         <td className={`${effectiveRowCls} overlay-col-account ${effectiveAccountCls} overlay-account-cell text-center`}>
                           <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(m.account)}</span>
                         </td>
-                        <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-right`}>
+                        <td className={`${effectiveRowCls} overlay-col-toon ${effectiveToonCls} overlay-toon-cell text-center`}>
                           <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(m.toon)}</span>
                         </td>
                         {showCombinedColumn && (
@@ -3889,7 +3881,7 @@ function OverlayInner() {
                         <td className={`${overlayTotalRowCls} overlay-col-account overlay-account-cell text-center`}>
                           <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(sumAccount)}</span>
                         </td>
-                        <td className={`${overlayTotalRowCls} overlay-col-toon overlay-toon-cell text-right`}>
+                        <td className={`${overlayTotalRowCls} overlay-col-toon overlay-toon-cell text-center`}>
                           <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>{fmt(sumToon)}</span>
                         </td>
                         {showCombinedColumn && (

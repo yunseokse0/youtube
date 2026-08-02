@@ -1,6 +1,6 @@
 export const revalidate = 0;
 
-import type { RouletteState } from "@/types";
+import type { RouletteState, Member } from "@/types";
 import type { AppState } from "@/lib/state";
 import {
   applyDonationGoalEscalationToState,
@@ -13,6 +13,7 @@ import { normalizeGroupSplitDonationSettings } from "@/lib/donation/group-split-
 import {
   defaultState,
   DEFAULT_DONOR_RANKINGS_FULL_THEME,
+  filterDonorsAfterSettlementReset,
   hasExpandedSigInventory,
   hasMeaningfulMemberRoster,
   isDefaultLikeDonorRankingsTheme,
@@ -132,7 +133,15 @@ function looksLikeAccidentalDefaultSigInventory(
   return patch.every((x) => defaultIds.has(String(x.id || "")));
 }
 
-function mergePartialState(base: AppState, patch: Partial<AppState>, userId: string): AppState {
+function memberCombinedTotal(members: Member[] | undefined): number {
+  return (members || []).reduce((sum, m) => sum + (m.account || 0) + (m.toon || 0), 0);
+}
+
+function mergePartialState(
+  base: AppState,
+  patch: Partial<AppState> & { settlementReset?: boolean },
+  userId: string
+): AppState {
   const next: AppState = {
     ...base,
     ...patch,
@@ -149,8 +158,18 @@ function mergePartialState(base: AppState, patch: Partial<AppState>, userId: str
   };
 
   // patch에 없는 필드가 undefined로 덮이지 않도록 보정
+  const patchSettlementReset = patch.settlementReset === true;
   if (!("members" in patch)) next.members = base.members;
-  else if (
+  else if (patchSettlementReset || isDonationInitGoalResetPatch(patch)) {
+    next.members = patch.members as Member[];
+  } else if (
+    base.settlementResetAt &&
+    memberCombinedTotal(base.members) === 0 &&
+    memberCombinedTotal(patch.members) > 0
+  ) {
+    next.members = base.members;
+    logger.warn("members amount restore blocked after settlement reset", { userId });
+  } else if (
     Array.isArray(patch.members) &&
     !isDonationInitGoalResetPatch(patch) &&
     (base.members || []).some((m) => (m.account || 0) + (m.toon || 0) > 0) &&
@@ -496,8 +515,12 @@ export async function POST(req: Request) {
         headers: { "Content-Type": "application/json" },
       });
     }
-    const body = (await req.json()) as Partial<AppState> & { donorsAuthoritative?: boolean };
+    const body = (await req.json()) as Partial<AppState> & {
+      donorsAuthoritative?: boolean;
+      settlementReset?: boolean;
+    };
     const donorsAuthoritative = body.donorsAuthoritative === true;
+    const settlementReset = body.settlementReset === true;
     const { base, token } = getRedisEnv();
     let existing: AppState | null = null;
     if (base && token) {
@@ -507,13 +530,31 @@ export async function POST(req: Request) {
     }
     const baseState = existing || defaultState();
     const donorsInPatch = Array.isArray(body.donors);
-    const donationInitReset = isDonationInitGoalResetPatch(body);
+    const donationInitReset = isDonationInitGoalResetPatch(body) || settlementReset;
+    const resetAt = Number(baseState.settlementResetAt || 0);
+    const incomingDonorsRaw = donorsInPatch ? normalizeDonorsArray(body.donors) : [];
+    const incomingDonorsFiltered =
+      resetAt > 0 && !settlementReset && !donorsAuthoritative && donorsInPatch
+        ? filterDonorsAfterSettlementReset(incomingDonorsRaw, resetAt)
+        : incomingDonorsRaw;
+    if (
+      resetAt > 0 &&
+      !settlementReset &&
+      !donorsAuthoritative &&
+      donorsInPatch &&
+      incomingDonorsRaw.length > incomingDonorsFiltered.length
+    ) {
+      logger.warn("pre-reset donors dropped from stale save", {
+        userId,
+        dropped: incomingDonorsRaw.length - incomingDonorsFiltered.length,
+      });
+    }
     const mergedDonors = donorsInPatch
       ? donationInitReset
         ? []
         : donorsAuthoritative
-          ? normalizeDonorsArray(body.donors)
-          : mergeDonorsForMultiTabSave(body.donors || [], baseState.donors, {
+          ? incomingDonorsFiltered
+          : mergeDonorsForMultiTabSave(incomingDonorsFiltered, baseState.donors, {
             incomingUpdatedAt: Number(body.updatedAt || 0),
             existingUpdatedAt: Number(baseState.updatedAt || 0),
             donorsAuthoritative,
@@ -533,10 +574,14 @@ export async function POST(req: Request) {
       donorRankingsUpdatedAt,
       updatedAt: Date.now(),
     });
-    const escalated = isDonationInitGoalResetPatch(body)
+    const escalated = donationInitReset
       ? normalized
       : applyDonationGoalEscalationToState(normalized);
-    const next: AppState = sanitizeAppStateWheelDemo(escalated);
+    const resetStamp = Date.now();
+    const next: AppState = sanitizeAppStateWheelDemo({
+      ...escalated,
+      ...(settlementReset ? { settlementResetAt: resetStamp } : {}),
+    });
 
     if (hasExpandedSigInventory(next.sigInventory)) {
       void saveSigInventoryBackup(userId, next.sigInventory);
