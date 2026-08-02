@@ -149,6 +149,7 @@ import {
   normalizeToonationAlertboxUrl,
   stopToonationListener,
   syncToonationListenerFromBrowser,
+  toonationListenerStatusFromServer,
   type ToonationListenerStatus,
 } from "@/lib/donation/toonation/listener";
 import {
@@ -4618,6 +4619,33 @@ export default function AdminPage() {
 
   const onBrowserRelayForwarded = useCallback(
     (info: ToonationRelayForwarded) => {
+      const at = info.at || Date.now();
+      if (info.ok) {
+        setToonationListenerMeta((prev) => ({
+          ...prev,
+          lastEventAt: at,
+          ...(info.outcome === "applied" || info.outcome === "applied_needs_review"
+            ? { lastDonationAt: at }
+            : {}),
+        }));
+        if (
+          info.outcome === "applied" ||
+          info.outcome === "applied_needs_review" ||
+          info.outcome === "duplicate"
+        ) {
+          setToonationListenerStatus(
+            info.outcome === "duplicate"
+              ? { kind: "connected", message: "투네 이벤트 수신 중(브라우저 릴레이)" }
+              : {
+                  kind: "connected",
+                  message:
+                    info.outcome === "applied"
+                      ? "투네 후원 수신 중(브라우저 릴레이)"
+                      : "투네 반영 중(브라우저 릴레이)",
+                }
+          );
+        }
+      }
       if (!info.ok || !info.outcome) return;
       if (info.outcome === "duplicate" || info.outcome === "ignored") return;
       const label =
@@ -4957,7 +4985,15 @@ export default function AdminPage() {
     /** 로그인 전·설정 로드 전에는 서버 리스너를 끄지 않음(기존 방송 중 자동 반영 유지) */
     if (!uid) return;
     if (!toonationSocketEnabled) {
-      void stopToonationListener(uid);
+      if (normalized) {
+        void syncToonationListenerFromBrowser(normalized, {
+          userId: uid,
+          ownerName: toonationOwnerName,
+          enabled: false,
+        }).catch(() => {});
+      } else {
+        void stopToonationListener(uid);
+      }
       setToonationListenerStatus({ kind: "idle", message: "실시간 수집 꺼짐" });
       return;
     }
@@ -4991,22 +5027,13 @@ export default function AdminPage() {
     if (!uid || !toonationSocketEnabled) return;
     const poll = window.setInterval(() => {
       void fetchToonationListenerStatus(uid).then((status) => {
-        if (!status) {
-          setToonationListenerStatus({ kind: "idle", message: "실시간 수집 꺼짐" });
-          setToonationListenerMeta({});
-          return;
-        }
         setToonationListenerMeta({
-          lastDonationAt: status.lastDonationAt,
-          lastEventAt: status.lastEventAt,
+          lastDonationAt: status?.lastDonationAt,
+          lastEventAt: status?.lastEventAt,
         });
-        if (status.connected) {
-          setToonationListenerStatus({ kind: "connected", message: "투네이션 WebSocket 연결됨" });
-        } else if (status.lastError) {
-          setToonationListenerStatus({ kind: "error", message: status.lastError });
-        } else if (status.enabled) {
-          setToonationListenerStatus({ kind: "syncing", message: "연결 중…" });
-        }
+        setToonationListenerStatus(
+          toonationListenerStatusFromServer(status, { socketEnabled: true })
+        );
       });
     }, 8000);
     return () => window.clearInterval(poll);
@@ -9738,7 +9765,7 @@ export default function AdminPage() {
                     ))}
                   </div>
                 </div>
-                {toonationSocketEnabled && user?.id && toonationResolvedAlertboxUrl ? (
+                {user?.id && toonationResolvedAlertboxUrl ? (
                   <ToonationBrowserRelay
                     userId={user.id}
                     linkKey={extractToonationLinkKey(toonationAlertboxUrl) || toonationAlertboxUrl}

@@ -421,16 +421,24 @@ export function stopToonationServerListener(userId: string): void {
 }
 
 /** 실시간 수집 OFF — WS만 끊고 연동키·주인명은 Redis에 유지(재시작·오버레이 릴레이용) */
-export async function pauseToonationServerListener(userId: string): Promise<void> {
+export async function pauseToonationServerListener(
+  userId: string,
+  preserve?: { alertboxUrl: string; ownerName?: string }
+): Promise<void> {
   stopToonationServerListener(userId);
   const saved = await readToonationListenerConfig(userId);
-  if (saved?.alertboxUrl) {
-    await writeToonationListenerConfig({
-      ...saved,
-      enabled: false,
-      updatedAt: Date.now(),
-    });
-  }
+  const alertboxUrl =
+    normalizeToonationAlertboxUrl(String(preserve?.alertboxUrl || "").trim()) ||
+    saved?.alertboxUrl ||
+    "";
+  if (!alertboxUrl) return;
+  await writeToonationListenerConfig({
+    userId,
+    alertboxUrl,
+    ownerName: String(preserve?.ownerName ?? saved?.ownerName ?? "").trim(),
+    enabled: false,
+    updatedAt: Date.now(),
+  });
 }
 
 export async function disableToonationServerListener(userId: string): Promise<void> {
@@ -459,11 +467,27 @@ export async function syncToonationServerListener(
   enabled: boolean,
   ownerName?: string
 ): Promise<ToonationServerListenerStatus | null> {
-  if (!enabled || !alertboxUrl.trim()) {
+  const url = normalizeToonationAlertboxUrl(alertboxUrl.trim()) || alertboxUrl.trim();
+  if (!enabled) {
+    await pauseToonationServerListener(
+      userId,
+      url ? { alertboxUrl: url, ownerName } : undefined
+    );
+    if (!url) return null;
+    return {
+      userId,
+      enabled: false,
+      alertboxUrl: url,
+      ownerName: String(ownerName || "").trim(),
+      connected: false,
+      updatedAt: Date.now(),
+    };
+  }
+  if (!url) {
     await pauseToonationServerListener(userId);
     return null;
   }
-  return startToonationServerListener(userId, alertboxUrl, ownerName);
+  return startToonationServerListener(userId, url, ownerName);
 }
 
 export async function getToonationListenerStatusForUser(userId: string): Promise<ToonationServerListenerStatus | null> {

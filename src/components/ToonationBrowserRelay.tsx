@@ -65,11 +65,12 @@ export default function ToonationBrowserRelay({
           cache: "no-store",
         });
         const data = (await res.json().catch(() => null)) as RelayConfig | null;
-        if (!cancelled && data?.enabled && data.linkKey) {
+        const linkKey = String(data?.linkKey || "").trim();
+        if (!cancelled && linkKey) {
           setConfig({
             enabled: true,
-            linkKey: data.linkKey,
-            ownerName: String(data.ownerName || ownerNameProp || "").trim(),
+            linkKey,
+            ownerName: String(data?.ownerName || ownerNameProp || "").trim(),
           });
         } else if (!cancelled) {
           setConfig(null);
@@ -79,7 +80,7 @@ export default function ToonationBrowserRelay({
       }
     };
     void load();
-    const timer = window.setInterval(load, 30_000);
+    const timer = window.setInterval(load, 5_000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);

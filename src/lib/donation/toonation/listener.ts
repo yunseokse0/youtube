@@ -22,15 +22,31 @@ export type ToonationServerStatus = {
   updatedAt: number;
 } | null;
 
-function statusFromServer(status: ToonationServerStatus): ToonationListenerStatus {
+const RECENT_INGEST_MS = 120_000;
+
+export function toonationListenerStatusFromServer(
+  status: ToonationServerStatus,
+  options?: { socketEnabled?: boolean }
+): ToonationListenerStatus {
   if (!status) {
+    if (options?.socketEnabled) {
+      return { kind: "syncing", message: "서버 연동 확인 중…" };
+    }
     return { kind: "idle", message: "실시간 수집 꺼짐" };
   }
-  if (status.lastError && !status.connected) {
+  const recentIngest =
+    typeof status.lastEventAt === "number" && Date.now() - status.lastEventAt < RECENT_INGEST_MS;
+  if (status.lastError && !status.connected && !recentIngest) {
     return { kind: "error", message: status.lastError };
   }
   if (status.connected) {
     return { kind: "connected", message: "투네이션 WebSocket 연결됨" };
+  }
+  if (recentIngest) {
+    return {
+      kind: "connected",
+      message: status.lastDonationAt ? "투네 후원 수신 중(릴레이)" : "투네 이벤트 수신 중(릴레이)",
+    };
   }
   if (status.enabled) {
     return { kind: "syncing", message: "연결 중…" };
@@ -71,7 +87,7 @@ export async function syncToonationListenerFromBrowser(
     throw new Error(msg);
   }
   const status = data?.status ?? null;
-  options?.onStatus?.(statusFromServer(status));
+  options?.onStatus?.(toonationListenerStatusFromServer(status, { socketEnabled: enabled }));
   return status;
 }
 

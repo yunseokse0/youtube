@@ -41,7 +41,7 @@ import { getEffectiveRemainingTime, mergeGeneralTimerPreferEffective } from "@/l
 import { useFlip } from "@/lib/flip";
 import MissionBoard from "@/components/MissionBoard";
 import MissionBoardSlot from "@/components/MissionBoardSlot";
-import OverlayToonationRelay from "@/components/OverlayToonationRelay";
+import OverlayToonationRelayHost from "@/components/OverlayToonationRelayHost";
 import { GoalBar } from "@/components/GoalBar";
 import {
   buildBroadcastTextOutlineShadowCss,
@@ -1546,14 +1546,6 @@ function OverlayInner() {
   const rawUserId = (rawSp.get("u") || "").trim();
   const hostObs = isOverlayBroadcastHost(rawSp);
   const userId = rawUserId || "finalent";
-  const toonationRelayOff = (rawSp.get("relay") || "").trim() === "0";
-  const toonationRelayKey = (
-    rawSp.get("key") ||
-    rawSp.get("linkKey") ||
-    rawSp.get("toonKey") ||
-    ""
-  ).trim();
-  const toonationRelayOwner = (rawSp.get("owner") || rawSp.get("ownerName") || "").trim();
   const snapKey = (rawSp.get("snapKey") || "").trim();
   const snap = tryReadSnapshotFromStorage(snapKey || null) || tryDecodeSnapshot(rawSp.get("snap"));
   const { state: remoteState, ready: remoteReady } = useRemoteState(userId, !snap);
@@ -4274,12 +4266,6 @@ function OverlayInner() {
             인증 누락: 기본 계정 사용 중
           </div>
         ) : null}
-        <OverlayToonationRelay
-          userId={userId}
-          disabled={toonationRelayOff}
-          linkKey={toonationRelayKey || undefined}
-          ownerName={toonationRelayOwner || undefined}
-        />
           </main>
         </div>
       </div>
@@ -4289,6 +4275,7 @@ function OverlayInner() {
 export default function OverlayPage() {
   return (
     <Suspense>
+      <OverlayToonationRelayHost />
       <OverlayInner />
     </Suspense>
   );
