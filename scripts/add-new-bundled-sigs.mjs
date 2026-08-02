@@ -2,13 +2,13 @@
  * Git에 push된 /images/sigs/from-drive 파일 중 서버 sigInventory에 없는 항목만 롤링에 추가.
  *
  *   node scripts/add-new-bundled-sigs.mjs
- *   BASE_URL=http://3.35.3.126 USER=finalent node scripts/add-new-bundled-sigs.mjs
+ *   BASE_URL=http://13.209.47.158 USER=finalent node scripts/add-new-bundled-sigs.mjs
  */
 import fs from "fs/promises";
 import path from "path";
 import { bundledFromDriveImageUrl } from "./lib/local-sig-ocr.mjs";
 
-const BASE_URL = (process.env.BASE_URL || "http://3.35.3.126").replace(/\/$/, "");
+const BASE_URL = (process.env.BASE_URL || "http://13.209.47.158").replace(/\/$/, "");
 const USER = process.env.USER_ID || process.env.USER || "finalent";
 const FROM_DRIVE = path.join(process.cwd(), "public", "images", "sigs", "from-drive");
 const ALLOWED = /\.(gif|png|webp|jpe?g)$/i;

@@ -5,10 +5,10 @@
  *
  * 사용:
  *   node scripts/dedupe-sig-inventory.mjs
- *   BASE_URL=http://3.35.3.126 USER_ID=finalent node scripts/dedupe-sig-inventory.mjs
+ *   BASE_URL=http://13.209.47.158 USER_ID=finalent node scripts/dedupe-sig-inventory.mjs
  */
 
-const BASE_URL = (process.env.BASE_URL || "http://3.35.3.126").replace(/\/$/, "");
+const BASE_URL = (process.env.BASE_URL || "http://13.209.47.158").replace(/\/$/, "");
 const USER = process.env.USER_ID || process.env.USER || "finalent";
 const ONE_SHOT_SIG_ID = "sig_one_shot";
 

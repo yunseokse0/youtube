@@ -2,7 +2,7 @@
 /**
  * sig-prices-*.xlsx (가격 다운로드 형식) → 서버 POST /api/state sigInventory 전체 복구
  *
- *   BASE_URL=http://13.124.114.125 USER=finalent node scripts/restore-from-sig-prices-excel.mjs "C:\Users\...\sig-prices.xlsx"
+ *   BASE_URL=http://13.209.47.158 USER=finalent node scripts/restore-from-sig-prices-excel.mjs "C:\Users\...\sig-prices.xlsx"
  *   node scripts/restore-from-sig-prices-excel.mjs --dry-run data/sig-prices.xlsx
  */
 import fs from "fs/promises";
@@ -13,7 +13,7 @@ const ROOT = process.cwd();
 const BASE_URL = (
   process.env.SIG_CATALOG_BASE_URL ||
   process.env.BASE_URL ||
-  "http://13.124.114.125"
+  "http://13.209.47.158"
 ).replace(/\/$/, "");
 const USER =
   process.env.SIG_CATALOG_USER ||

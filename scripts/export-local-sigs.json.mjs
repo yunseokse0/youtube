@@ -21,7 +21,7 @@ const BASE_URL = (
   process.env.SIG_CATALOG_BASE_URL ||
   process.env.SIG_OCR_BASE_URL ||
   process.env.BASE_URL ||
-  "http://3.35.3.126"
+  "http://13.209.47.158"
 ).replace(/\/$/, "");
 const USER =
   process.env.SIG_CATALOG_USER ||

@@ -3,7 +3,7 @@
  * 라이브 /api/state 의 sigInventory 만 data/sig-inventory-live.json 에 저장.
  * 이후 npm run sig:export-catalog 가 이름·가격에 이 파일을 우선 사용.
  *
- *   BASE_URL=http://3.35.3.126 USER=finalent node scripts/pull-sig-inventory-snapshot.mjs
+ *   BASE_URL=http://13.209.47.158 USER=finalent node scripts/pull-sig-inventory-snapshot.mjs
  *   BASE_URL=http://localhost:3000 USER=finalent node scripts/pull-sig-inventory-snapshot.mjs
  */
 import fs from "fs/promises";
@@ -14,7 +14,7 @@ const OUT = path.join(ROOT, "data", "sig-inventory-live.json");
 const BASE_URL = (
   process.env.SIG_CATALOG_BASE_URL ||
   process.env.BASE_URL ||
-  "http://3.35.3.126"
+  "http://13.209.47.158"
 ).replace(/\/$/, "");
 const USER =
   process.env.SIG_CATALOG_USER ||

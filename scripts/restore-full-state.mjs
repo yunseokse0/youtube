@@ -2,7 +2,7 @@
 /**
  * 관리자 「상태보내기(JSON)」 파일 → 서버 전체 방송 상태 복구
  *
- *   BASE_URL=http://13.124.114.125 USER=finalent node scripts/restore-full-state.mjs state-backup.json
+ *   BASE_URL=http://13.209.47.158 USER=finalent node scripts/restore-full-state.mjs state-backup.json
  *   node scripts/restore-full-state.mjs --dry-run .tmp-full-state.json
  */
 import fs from "fs/promises";
@@ -11,7 +11,7 @@ import path from "path";
 const BASE_URL = (
   process.env.SIG_CATALOG_BASE_URL ||
   process.env.BASE_URL ||
-  "http://13.124.114.125"
+  "http://13.209.47.158"
 ).replace(/\/$/, "");
 const USER =
   process.env.SIG_CATALOG_USER ||

@@ -6,7 +6,7 @@
  *   cd ~/youtube && git pull && node scripts/test-manual-sig-reroll-real.mjs
  *
  * 원격(방화벽·80 허용 시):
- *   BASE_URL=http://13.124.114.125 USER=finalent node scripts/test-manual-sig-reroll-real.mjs
+ *   BASE_URL=http://13.209.47.158 USER=finalent node scripts/test-manual-sig-reroll-real.mjs
  *
  * --dry-run  GET만 (POST 생략)
  */

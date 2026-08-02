@@ -83,7 +83,7 @@ npm run build
 ### 서버로 `.next` 전송 (SSH 키·IP는 본인 환경에 맞게)
 
 ```powershell
-scp -r .next ubuntu@43.200.177.132:~/youtube/
+scp -r .next ubuntu@13.209.47.158:~/youtube/
 ```
 
 ### 서버

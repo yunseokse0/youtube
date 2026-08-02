@@ -2,7 +2,7 @@
 /**
  * data/sig-inventory-live.json (또는 지정 JSON) → 서버 POST /api/state sigInventory 복구.
  *
- *   BASE_URL=http://43.200.177.132 USER=finalent node scripts/restore-sig-inventory-snapshot.mjs
+ *   BASE_URL=http://13.209.47.158 USER=finalent node scripts/restore-sig-inventory-snapshot.mjs
  *   node scripts/restore-sig-inventory-snapshot.mjs --dry-run
  *   node scripts/restore-sig-inventory-snapshot.mjs --file data/sig-inventory-live.json
  */
@@ -14,7 +14,7 @@ const DEFAULT_FILE = path.join(ROOT, "data", "sig-inventory-live.json");
 const BASE_URL = (
   process.env.SIG_CATALOG_BASE_URL ||
   process.env.BASE_URL ||
-  "http://13.124.114.125"
+  "http://13.209.47.158"
 ).replace(/\/$/, "");
 const USER =
   process.env.SIG_CATALOG_USER ||

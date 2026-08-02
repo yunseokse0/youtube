@@ -3,10 +3,10 @@
  *
  * 사용:
  *   node scripts/fix-encoded-sig-names.mjs
- *   BASE_URL=http://3.35.3.126 USER_ID=finalent node scripts/fix-encoded-sig-names.mjs
+ *   BASE_URL=http://13.209.47.158 USER_ID=finalent node scripts/fix-encoded-sig-names.mjs
  */
 
-const BASE_URL = (process.env.BASE_URL || "http://3.35.3.126").replace(/\/$/, "");
+const BASE_URL = (process.env.BASE_URL || "http://13.209.47.158").replace(/\/$/, "");
 const USER = process.env.USER_ID || process.env.USER || "finalent";
 
 function safeDecodeURIComponent(s) {

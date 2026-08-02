@@ -4,7 +4,7 @@
  * 일괄 업로드 순서 매칭 버그로 잘못 붙은 /uploads/sigs/… URL 을 교체합니다.
  *
  *   node scripts/restore-sig-images-by-name.mjs
- *   BASE_URL=http://3.37.61.130 USER=finalent node scripts/restore-sig-images-by-name.mjs
+ *   BASE_URL=http://13.209.47.158 USER=finalent node scripts/restore-sig-images-by-name.mjs
  *   node scripts/restore-sig-images-by-name.mjs --dry-run
  *   node scripts/restore-sig-images-by-name.mjs --all   # 잘못된 배치만이 아니라 이름 매칭 전부
  */
@@ -22,7 +22,7 @@ const restoreAll = argv.includes("--all");
 const BASE_URL = (
   process.env.SIG_RESTORE_BASE_URL ||
   process.env.BASE_URL ||
-  "http://3.37.61.130"
+  "http://13.209.47.158"
 ).replace(/\/$/, "");
 const USER =
   process.env.SIG_RESTORE_USER || process.env.USER_ID || process.env.USER || "finalent";

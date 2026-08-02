@@ -4,7 +4,7 @@
  * 이후: npm run sig:export-catalog
  *
  *   node scripts/import-sig-prices-excel.mjs "C:\Users\...\sig-prices.xlsx"
- *   SIG_EXCEL_BASE_URL=http://3.35.3.149 node scripts/import-sig-prices-excel.mjs ./prices.xlsx
+ *   SIG_EXCEL_BASE_URL=http://13.209.47.158 node scripts/import-sig-prices-excel.mjs ./prices.xlsx
  */
 import fs from "fs/promises";
 import path from "path";
@@ -12,7 +12,7 @@ import XLSX from "xlsx";
 
 const ROOT = process.cwd();
 const OUT = path.join(ROOT, "data", "sig-inventory-live.json");
-const BASE_URL = (process.env.SIG_EXCEL_BASE_URL || "http://3.35.3.149").replace(/\/$/, "");
+const BASE_URL = (process.env.SIG_EXCEL_BASE_URL || "http://13.209.47.158").replace(/\/$/, "");
 
 function yn(raw) {
   const s = String(raw ?? "").trim().toLowerCase();
