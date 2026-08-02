@@ -9377,9 +9377,9 @@ export default function AdminPage() {
                 <div className="rounded border border-white/10 bg-black/25 px-3 py-2">
                   <div className="text-xs font-semibold text-cyan-200">투네 연동키 (자동 연동)</div>
                   <div className="text-[11px] text-neutral-400 mt-1">
-                    투네이션 <strong className="text-neutral-300">계정설정 연동키</strong>만 붙여넣어도 됩니다. 전체 Alertbox URL도
-                    가능합니다. WebSocket 수신 시 서버에서 <strong className="text-neutral-300">즉시 엑셀표 반영</strong>합니다.
-                    미매칭·저장 실패 시에만 대기 리스트에 쌓입니다.
+                    투네이션 <strong className="text-neutral-300">계정설정 연동키</strong>만 붙여넣어도 됩니다.{" "}
+                    <strong className="text-neutral-300">실시간 수집 ON</strong>이면 서버 WebSocket이 후원을 받아
+                    엑셀표에 즉시 반영합니다(7/29 방식). 서버가 끊기면 브라우저 릴레이가 자동 fallback 합니다.
                   </div>
                   <div className="text-[11px] text-amber-200/80 mt-1 leading-snug">
                     · 메시지가 <span className="text-amber-100">「계좌 후원자 멤버」</span> 형식 → <strong>계좌</strong> 열
@@ -9427,7 +9427,7 @@ export default function AdminPage() {
                     </span>
                   ) : toonationSocketEnabled && toonationListenerStatus?.kind === "connected" ? (
                     <span className="text-[11px] text-neutral-500">
-                      아직 후원 수신 없음 — 엑셀표 overlay(/overlay?u=…)가 켜져 있으면 자동 릴레이됩니다
+                      서버 WS 연결됨 — 7/29 방식으로 서버가 수집합니다(브라우저 릴레이는 fallback)
                     </span>
                   ) : null}
                 </div>
@@ -9774,6 +9774,7 @@ export default function AdminPage() {
                     linkKey={extractToonationLinkKey(toonationAlertboxUrl) || toonationAlertboxUrl}
                     ownerName={toonationOwnerName}
                     enabled
+                    deferToServerListener
                     hidden
                     onForwarded={onBrowserRelayForwarded}
                   />

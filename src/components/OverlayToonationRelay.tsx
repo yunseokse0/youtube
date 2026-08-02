@@ -17,6 +17,7 @@ export default function OverlayToonationRelay({ userId, linkKey, ownerName }: Pr
       linkKey={linkKey}
       ownerName={ownerName}
       enabled
+      deferToServerListener
       hidden
     />
   );

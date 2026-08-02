@@ -1,6 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import {
+  shouldPauseServerForBrowserRelayFallback,
+  shouldRunBrowserToonationRelay,
+} from "@/lib/donation/toonation/browser-relay-policy";
+import {
+  fetchToonationListenerSnapshot,
+  pauseToonationServerListenerFromBrowser,
+  resumeToonationServerListenerFromBrowser,
+} from "@/lib/donation/toonation/fetch-listener-status";
 
 type RelayConfig = {
   enabled: boolean;
@@ -20,26 +29,31 @@ type Props = {
   linkKey?: string;
   ownerName?: string;
   enabled?: boolean;
+  /** true(기본): 서버 WS 정상 시 브라우저 WS 생략 — 7/29 서버 수집 우선 */
+  deferToServerListener?: boolean;
   hidden?: boolean;
   onForwarded?: (info: ToonationRelayForwarded) => void;
 };
 
 /**
  * 브라우저에서 투네 WS 수신 → /api/donations/toonation/ingest 릴레이.
- * OBS 알림 소스만 켜져 있을 때 서버 WS가 후원을 못 받는 경우를 보완한다.
+ * 서버 Node WS가 끊기거나 후원만 안 올 때 fallback.
  */
 export default function ToonationBrowserRelay({
   userId,
   linkKey: linkKeyProp,
   ownerName: ownerNameProp = "",
   enabled = true,
+  deferToServerListener = true,
   hidden = true,
   onForwarded,
 }: Props) {
   const wsRef = useRef<WebSocket | null>(null);
   const onForwardedRef = useRef(onForwarded);
   onForwardedRef.current = onForwarded;
+  const pausedServerForFallbackRef = useRef(false);
   const [config, setConfig] = useState<RelayConfig | null>(null);
+  const [relayActive, setRelayActive] = useState(false);
   const [status, setStatus] = useState<"idle" | "connecting" | "connected" | "error">("idle");
   const [lastAt, setLastAt] = useState<number | null>(null);
   const [lastOutcome, setLastOutcome] = useState("");
@@ -88,8 +102,65 @@ export default function ToonationBrowserRelay({
   }, [enabled, linkKeyProp, ownerNameProp, userId]);
 
   useEffect(() => {
-    if (!config?.enabled || !config.linkKey || !userId) {
+    if (!enabled) {
+      setRelayActive(false);
+      return;
+    }
+    if (!deferToServerListener) {
+      setRelayActive(true);
+      return;
+    }
+    if (!userId) {
+      setRelayActive(false);
+      return;
+    }
+    let cancelled = false;
+    const check = async () => {
+      const snapshot = await fetchToonationListenerSnapshot(userId);
+      if (cancelled) return;
+      setRelayActive(shouldRunBrowserToonationRelay(snapshot));
+    };
+    void check();
+    const timer = window.setInterval(() => void check(), 8_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [deferToServerListener, enabled, userId]);
+
+  useEffect(() => {
+    if (!deferToServerListener || !relayActive || !config?.linkKey || !userId) return;
+
+    let cancelled = false;
+    const run = async () => {
+      const snapshot = await fetchToonationListenerSnapshot(userId);
+      if (cancelled || !shouldPauseServerForBrowserRelayFallback(snapshot)) return;
+      await pauseToonationServerListenerFromBrowser(userId, config.linkKey!, config.ownerName);
+      if (!cancelled) pausedServerForFallbackRef.current = true;
+    };
+    void run();
+
+    return () => {
+      cancelled = true;
+      if (!pausedServerForFallbackRef.current || !config?.linkKey) return;
+      pausedServerForFallbackRef.current = false;
+      void resumeToonationServerListenerFromBrowser(userId, config.linkKey, config.ownerName);
+    };
+  }, [config?.linkKey, config?.ownerName, deferToServerListener, relayActive, userId]);
+
+  const wsEnabled = enabled && relayActive;
+
+  useEffect(() => {
+    if (!wsEnabled || !config?.enabled || !config.linkKey || !userId) {
       setStatus("idle");
+      if (wsRef.current) {
+        try {
+          wsRef.current.close();
+        } catch {
+          /* noop */
+        }
+        wsRef.current = null;
+      }
       return;
     }
 
@@ -176,7 +247,7 @@ export default function ToonationBrowserRelay({
         wsRef.current = null;
       }
     };
-  }, [config?.enabled, config?.linkKey, config?.ownerName, userId]);
+  }, [config?.enabled, config?.linkKey, config?.ownerName, userId, wsEnabled]);
 
   if (hidden) return null;
 
@@ -191,7 +262,10 @@ export default function ToonationBrowserRelay({
         lineHeight: 1.4,
       }}
     >
-      <div>투네 브라우저 릴레이 · {status}</div>
+      <div>
+        투네 브라우저 릴레이 · {status}
+        {deferToServerListener && !relayActive ? " (서버 WS 사용 중)" : ""}
+      </div>
       <div>계정: {userId}</div>
       {config?.ownerName ? <div>주인: {config.ownerName}</div> : null}
       {lastAt ? <div>마지막 전달: {new Date(lastAt).toLocaleTimeString()}</div> : null}
