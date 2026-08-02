@@ -459,7 +459,10 @@ function useCountUp(value: number, durationMs = 600) {
     };
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(loop);
-    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      setDisplay(to);
+    };
   }, [value, durationMs]);
 
   return display;
@@ -4117,9 +4120,13 @@ function OverlayInner() {
                         )}
                         {showRestroomColumn && (
                           <td className={`${effectiveRowCls} overlay-col-restroom text-center font-semibold`}>
-                            <span className="overlay-num-cell-inner overlay-cell-text-inner overlay-rank-mark" style={overlayCellOutlineStyle}>
-                              —
-                            </span>
+                            <OverlayTableNumCell
+                              value={getRestroomValueForMember(m)}
+                              format={fmtRestroom}
+                              animate={rowMotionEnabled}
+                              className="overlay-num-cell-inner overlay-cell-text-inner"
+                              style={overlayCellOutlineStyle}
+                            />
                           </td>
                         )}
                       </tr>

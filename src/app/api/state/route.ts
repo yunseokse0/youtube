@@ -10,6 +10,7 @@ import {
 } from "@/lib/goal-preset-math";
 import { DEFAULT_SIG_INVENTORY } from "@/lib/constants";
 import { normalizeGroupSplitDonationSettings } from "@/lib/donation/group-split-donation";
+import { normalizeRestroomCount } from "@/lib/restroom-utils";
 import {
   defaultState,
   DEFAULT_DONOR_RANKINGS_FULL_THEME,
@@ -138,6 +139,23 @@ function memberCombinedTotal(members: Member[] | undefined): number {
   return (members || []).reduce((sum, m) => sum + (m.account || 0) + (m.toon || 0), 0);
 }
 
+/** 계좌·투네 0 리셋 차단 시에도 화장실·수동 기여도는 patch 반영 */
+function mergeManualMemberFieldsFromPatch(baseMembers: Member[], patchMembers: Member[]): Member[] {
+  const patchById = new Map(patchMembers.map((m) => [m.id, m]));
+  return (baseMembers || []).map((baseM) => {
+    const patchM = patchById.get(baseM.id);
+    if (!patchM) return baseM;
+    return {
+      ...baseM,
+      restroom: normalizeRestroomCount(patchM.restroom),
+      contribution:
+        typeof patchM.contribution === "number" && Number.isFinite(patchM.contribution)
+          ? Math.max(0, Math.floor(patchM.contribution))
+          : baseM.contribution,
+    };
+  });
+}
+
 function mergePartialState(
   base: AppState,
   patch: Partial<AppState> & { settlementReset?: boolean },
@@ -176,8 +194,8 @@ function mergePartialState(
     (base.members || []).some((m) => (m.account || 0) + (m.toon || 0) > 0) &&
     patch.members.every((m) => (m.account || 0) + (m.toon || 0) === 0)
   ) {
-    next.members = base.members;
-    logger.warn("members zero wipe blocked (stale client save)", { userId });
+    next.members = mergeManualMemberFieldsFromPatch(base.members || [], patch.members as Member[]);
+    logger.warn("members zero wipe blocked — restroom/contribution merged from patch", { userId });
   } else if (
     Array.isArray(patch.members) &&
     isDefaultPlaceholderMemberList(patch.members) &&

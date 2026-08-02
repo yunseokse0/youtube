@@ -9,6 +9,7 @@ type Props = {
   onReset?: (id: string) => void;
   onDelete?: (id: string) => void;
   onRestroomAdjust?: (id: string, delta: 1 | -1, amount?: number) => void;
+  onRestroomSet?: (id: string, value: number) => void;
   donationLinkActive?: boolean | null;
   onToggleDonationLink?: () => void;
 };
@@ -20,6 +21,7 @@ export default function MemberRow({
   onReset,
   onDelete,
   onRestroomAdjust,
+  onRestroomSet,
   donationLinkActive = null,
   onToggleDonationLink,
 }: Props) {
@@ -88,10 +90,15 @@ export default function MemberRow({
   };
   const commitRestroom = (val: string) => {
     const cleaned = (val || "").replace(/[^\d]/g, "");
-    const parsed = parseInt(cleaned || "0", 10);
+    const parsed = parseInt(cleaned === "" ? "0" : cleaned, 10);
     const nextRestroom = isNaN(parsed) ? 0 : Math.max(0, parsed);
     const curr = Math.max(0, member.restroom || 0);
+    setLocalRestroom(String(nextRestroom));
     if (nextRestroom === curr) return;
+    if (onRestroomSet) {
+      onRestroomSet(member.id, nextRestroom);
+      return;
+    }
     if (onRestroomAdjust) {
       if (nextRestroom > curr) onRestroomAdjust(member.id, 1, nextRestroom - curr);
       else onRestroomAdjust(member.id, -1, curr - nextRestroom);

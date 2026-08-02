@@ -71,6 +71,10 @@ import {
   pickDailyLogEntryForRestore,
   summarizeRestoreJson,
 } from "@/lib/state-restore";
+import {
+  applyRestroomCountDelta,
+  buildRestroomMemberUpdate,
+} from "@/lib/restroom-utils";
 import { useSSEConnection } from "@/lib/sse-client";
 import { createStateUpdatedScheduler } from "@/lib/overlay-pull-policy";
 import {
@@ -5076,22 +5080,16 @@ export default function AdminPage() {
   ) => {
     if (amount <= 0) return;
     setState((prev: AppState) => {
-      const now = Date.now();
-      const log = {
-        id: `rl_${now}_${Math.random().toString(36).slice(2, 6)}`,
+      const target = prev.members.find((m) => m.id === memberId);
+      if (!target) return prev;
+      const nextValue = applyRestroomCountDelta(target.restroom, delta, amount);
+      const { members, log, changed } = buildRestroomMemberUpdate(
+        prev.members,
         memberId,
-        amount,
-        delta,
-        note: note.trim(),
-        at: now,
-      };
-      const members = prev.members.map((m: Member) => {
-        if (m.id !== memberId) return m;
-        const curr = Math.max(0, m.restroom || 0);
-        const nextRestroom =
-          delta > 0 ? curr + amount : Math.max(0, curr - amount);
-        return { ...m, restroom: nextRestroom };
-      });
+        nextValue,
+        note
+      );
+      if (!changed || !log) return prev;
       const next: AppState = {
         ...prev,
         members,
@@ -5100,11 +5098,42 @@ export default function AdminPage() {
       persistState(next);
       return next;
     });
-  }, []);
+  }, [persistState]);
+
+  const setMemberRestroomValue = useCallback((
+    memberId: string,
+    nextValue: number,
+    note = "",
+  ) => {
+    setState((prev: AppState) => {
+      const { members, log, changed } = buildRestroomMemberUpdate(
+        prev.members,
+        memberId,
+        nextValue,
+        note
+      );
+      if (!changed) return prev;
+      const next: AppState = {
+        ...prev,
+        members,
+        restroomLogs: log ? [...(prev.restroomLogs || []), log] : prev.restroomLogs || [],
+      };
+      persistState(next);
+      return next;
+    });
+  }, [persistState]);
 
   const addRestroomRecord = () => {
-    const amount = parseAmount(restroomAmount);
     if (!restroomMemberId) return;
+    const rawAmount = restroomAmount.trim();
+    if (restroomDelta < 0 && (rawAmount === "" || rawAmount === "0")) {
+      setMemberRestroomValue(restroomMemberId, 0, restroomNote || "0으로 초기화");
+      setRestroomAmount("");
+      setRestroomNote("");
+      return;
+    }
+    const amount = parseAmount(restroomAmount);
+    if (amount <= 0) return;
     applyRestroomChange(restroomMemberId, restroomDelta, amount, restroomNote);
     setRestroomAmount("");
     setRestroomNote("");
@@ -5709,6 +5738,7 @@ export default function AdminPage() {
                     onReset={resetMemberAmounts}
                     onDelete={deleteMember}
                     onRestroomAdjust={(id, delta, amount = 1) => applyRestroomChange(id, delta, amount, "멤버 보드")}
+                    onRestroomSet={(id, value) => setMemberRestroomValue(id, value, "멤버 보드")}
                     donationLinkActive={
                       mealParticipants.find((p) => p.memberId === m.id)?.donationLinkActive ?? null
                     }
@@ -9766,7 +9796,10 @@ export default function AdminPage() {
 
             <section id="restroom-management" className={`${panelCardClass} p-4 md:p-6`}>
               <h2 className="text-lg font-semibold mb-3">화장실 기록부</h2>
-              <p className="text-sm text-neutral-400 mb-3">엑셀표「화장실」열에만 반영됩니다. 후원·투네 자동 연동 없음 — 수동 차감/추가만 가능합니다.</p>
+              <p className="text-sm text-neutral-400 mb-3">
+                엑셀표「화장실」열에만 반영됩니다. 후원·투네 자동 연동 없음 — 수동 차감/추가만 가능합니다. 차감 모드에서
+                횟수를 비우거나 0이면 해당 멤버 화장실을 0으로 초기화합니다.
+              </p>
               <div className="grid grid-cols-1 lg:grid-cols-[auto_1fr_auto_auto_auto] gap-3">
                 <select
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
