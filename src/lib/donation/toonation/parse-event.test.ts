@@ -64,6 +64,30 @@ describe("toonation parse-event", () => {
     });
   });
 
+  it("account keyword anywhere in message", () => {
+    expect(parseToonationMessageBody("후원 계좌 익명 BT태호", "x")).toEqual({
+      donorName: "익명",
+      playerName: "BT태호",
+      target: "account",
+    });
+  });
+
+  it("account format in nickname when message empty", () => {
+    expect(parseToonationMessageBody("", "계좌 익명 BT태호")).toEqual({
+      donorName: "익명",
+      playerName: "BT태호",
+      target: "account",
+    });
+  });
+
+  it("rejects message that is only 계좌 keyword", () => {
+    expect(parseToonationMessageBody("계좌", "시청자")).toEqual({
+      donorName: "시청자",
+      playerName: "",
+      target: "toon",
+    });
+  });
+
   it("accepts account keyword variants", () => {
     expect(parseToonationMessageBody("[계좌] 햇님 피자", "x")).toEqual({
       donorName: "햇님",

@@ -9276,6 +9276,8 @@ export default function AdminPage() {
                   <div className="text-[11px] text-amber-200/80 mt-1 leading-snug">
                     · 메시지가 <span className="text-amber-100">「계좌 후원자 멤버」</span> 형식 → <strong>계좌</strong> 열
                     <br />
+                    · <span className="text-amber-100">계좌</span>는 메시지 <strong>앞·중간</strong> 어디든 가능. 닉 필드에만 넣은 경우도 인식
+                    <br />
                     · 일반 투네: 알림 <strong className="text-amber-100">후원자 닉(금액 앞)</strong> = 후원자, 메시지 첫 토큰 = 멤버(선택) →{" "}
                     <strong>투네</strong> 열
                     <br />

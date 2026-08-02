@@ -1798,20 +1798,19 @@ function OverlayInner() {
       restroomColumnLatchRef.current = true;
       return true;
     }
+    /** 한 번 켜지면 URL로 끄기 전까지 유지(SSE·프리셋 전환 깜빡임 방지) */
     if (restroomColumnLatchRef.current === true) return true;
     if (restroomColumnLatchRef.current === false) return false;
-    const resolved = effectivePreset
-      ? resolveDonationTableColumnsOptions(effectivePreset).showRestroomColumn
+    const mergedPreset = effectivePreset
+      ? mergeDonationTablePresetFields(effectivePreset, lastStablePresetRef.current)
+      : lastStablePresetRef.current;
+    const resolved = mergedPreset
+      ? resolveDonationTableColumnsOptions(mergedPreset).showRestroomColumn
       : true;
-    if (resolved) {
+    if (resolved || hostObs) {
       restroomColumnLatchRef.current = true;
       return true;
     }
-    if (hostObs) {
-      restroomColumnLatchRef.current = true;
-      return true;
-    }
-    restroomColumnLatchRef.current = false;
     return false;
   })();
   const showContributionSum = showContributionColumn && resolvePresetBool("showContributionSum", true);

@@ -128,21 +128,33 @@ export function parseToonationMessageBody(
   playerName: string;
   target: "account" | "toon";
 } {
-  const tokens = String(message || "")
+  const parseAccountTokens = (tokens: string[]) => {
+    const idx = tokens.findIndex((t) => isAccountFormatToken(t));
+    if (idx < 0) return null;
+    const donorName = cleanDonorToken(tokens[idx + 1] || "");
+    const playerName = cleanDonorToken(tokens[idx + 2] || "");
+    if (!donorName && !playerName) return null;
+    return { donorName, playerName, target: "account" as const };
+  };
+
+  const msgTokens = String(message || "")
     .trim()
     .split(/\s+/)
     .filter(Boolean);
+  const fromMsg = parseAccountTokens(msgTokens);
+  if (fromMsg) return fromMsg;
 
-  if (tokens.length > 0 && isAccountFormatToken(tokens[0])) {
-    return {
-      target: "account",
-      donorName: cleanDonorToken(tokens[1] || ""),
-      playerName: cleanDonorToken(tokens[2] || ""),
-    };
-  }
+  /** 일부 테스트 UI는 메시지 대신 닉 필드에 `계좌 후원자 멤버`를 넣음 */
+  const alertTokens = String(alertDonorName || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const fromAlert = parseAccountTokens(alertTokens);
+  if (fromAlert && !String(message || "").trim()) return fromAlert;
 
-  const rawPlayer = cleanDonorToken(tokens[0] || "");
-  const playerName = rawPlayer && !isAmountLikeToken(rawPlayer) ? rawPlayer : "";
+  const rawPlayer = cleanDonorToken(msgTokens[0] || "");
+  const playerName =
+    rawPlayer && !isAmountLikeToken(rawPlayer) && !isAccountFormatToken(rawPlayer) ? rawPlayer : "";
   return {
     target: "toon",
     donorName: String(alertDonorName || "").trim(),

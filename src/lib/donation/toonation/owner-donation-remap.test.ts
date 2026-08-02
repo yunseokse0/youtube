@@ -27,6 +27,14 @@ describe("owner-donation-remap", () => {
     expect(normalizeOwnerNameForCompare("BT태호님")).toBe(normalizeOwnerNameForCompare("BT태호"));
   });
 
+  it("parseOwnerAccountMessageBody: 계좌 접두 중간 이후", () => {
+    expect(parseOwnerAccountMessageBody("후원 계좌 익명 태호")).toEqual({
+      donorName: "익명",
+      playerName: "태호",
+      restMessage: "",
+    });
+  });
+
   it("parseOwnerAccountMessageBody: 익명 홍쓰", () => {
     expect(parseOwnerAccountMessageBody("익명 홍쓰")).toEqual({
       donorName: "익명",

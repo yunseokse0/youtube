@@ -72,8 +72,8 @@ export function parseOwnerAccountMessageBody(message: string): {
     .split(/\s+/)
     .map(cleanMessageToken)
     .filter(Boolean);
-  let idx = 0;
-  if (tokens.length > 0 && isAccountFormatToken(tokens[0])) idx = 1;
+  const accountIdx = tokens.findIndex((t) => isAccountFormatToken(t));
+  let idx = accountIdx >= 0 ? accountIdx + 1 : 0;
   const donorName = tokens[idx] || "";
   const playerName = tokens[idx + 1] || "";
   const restMessage = tokens.slice(idx + 2).join(" ").trim();
