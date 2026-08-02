@@ -12,17 +12,47 @@ export function normalizeName(name: string): string {
   return normalizeComparableName(name);
 }
 
-/** 투네 후원 — 메시지에 플레이어 없을 때 기본 배치(첫 일반 멤버) */
-export function pickDefaultToonationMember(members: Member[]): Member | undefined {
-  if (!Array.isArray(members) || members.length === 0) return undefined;
-  const regular = members.find(
-    (m) =>
-      !isOperatingSettlementMember(
-        { id: m.id, name: m.name, operating: m.operating, realName: m.realName },
-        null
-      )
+/** 투네 후원 — 메시지에 플레이어 없을 때 기본 배치: 운영비 → 대표 → 국고 */
+export type PickDefaultToonationMemberOptions = {
+  memberPositions?: Record<string, string> | null;
+};
+
+function isNationalTreasuryMember(
+  m: Pick<Member, "id" | "name" | "realName">,
+  memberPositions?: Record<string, string> | null
+): boolean {
+  const pos = String(memberPositions?.[m.id] || "").trim();
+  return (
+    /국고/i.test(String(m.name || "")) ||
+    /국고/i.test(String(m.realName || "")) ||
+    /국고/i.test(pos)
   );
-  return regular ?? members[0];
+}
+
+export function pickDefaultToonationMember(
+  members: Member[],
+  opts?: PickDefaultToonationMemberOptions
+): Member | undefined {
+  if (!Array.isArray(members) || members.length === 0) return undefined;
+  const positions = opts?.memberPositions || null;
+
+  const operating = members.find((m) =>
+    isOperatingSettlementMember(
+      { id: m.id, name: m.name, operating: m.operating, realName: m.realName },
+      positions
+    )
+  );
+  if (operating) return operating;
+
+  const representative = members.find(
+    (m) => m?.id && String(positions?.[m.id] || "").trim() === "대표"
+  );
+  if (representative) return representative;
+
+  const treasury = members.find((m) => isNationalTreasuryMember(m, positions));
+  if (treasury) return treasury;
+
+  return undefined;
 }
 
 export function resolveMemberLookupName(event: DonationEvent): string {
@@ -158,8 +188,9 @@ function matchMemberByName(
 }
 
 export type MapToMemberOptions = {
-  /** 플레이어 미지정·멤버 미매칭 시 첫 일반 멤버에 자동 배치(투네·계좌 공통) */
+  /** 플레이어 미지정·멤버 미매칭 시 운영비→대표→국고 순 자동 배치 */
   autoAssignToonPlayer?: boolean;
+  memberPositions?: Record<string, string> | null;
 };
 
 export function mapToMember(
@@ -190,10 +221,12 @@ export function mapToMember(
     }
   }
 
-  /** 멤버 힌트(메시지·playerName)가 없을 때만 1인 방송 기본 멤버에 배치 */
+  /** 멤버 힌트(메시지·playerName)가 없을 때만 운영비→대표→국고 순 자동 배치 */
   const hadPlayerHint = candidates.length > 0;
   if (opts?.autoAssignToonPlayer && !hadPlayerHint) {
-    const fallback = pickDefaultToonationMember(members);
+    const fallback = pickDefaultToonationMember(members, {
+      memberPositions: opts.memberPositions,
+    });
     if (fallback) {
       return {
         ...event,

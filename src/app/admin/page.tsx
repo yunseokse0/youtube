@@ -9391,7 +9391,8 @@ export default function AdminPage() {
                   <br />
                   자동 반영 시 멤버명은 <span className="text-neutral-300">유사 일치</span>(
                   <span className="text-neutral-300">태호</span>→BT태호, 오타·호칭 포함)로 엑셀표에 배치합니다. 멤버
-                  힌트가 없을 때만 첫 멤버에 자동 배치됩니다.
+                  힌트가 없을 때는 <span className="text-neutral-300">운영비 → 대표 → 국고</span> 순으로 자동
+                  배치됩니다.
                 </div>
                 {toonationResolvedAlertboxUrl && user?.id ? (
                   <div className="text-[11px] text-cyan-200/90 mt-1 leading-snug">

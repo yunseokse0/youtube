@@ -57,10 +57,13 @@ describe("applyDonationToAppState", () => {
     expect(result.state.donors?.[0]?.name).toBe("배지은");
   });
 
-  it("auto-assigns member when toon has no player", () => {
+  it("auto-assigns operating member when toon has no player", () => {
     const state = {
       ...defaultState(),
-      members: [{ id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 }],
+      members: [
+        { id: "op", name: "운영비", account: 0, toon: 0, contribution: 0, operating: true },
+        { id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 },
+      ],
       donors: [],
     };
     const event: DonationEvent = {
@@ -76,14 +79,17 @@ describe("applyDonationToAppState", () => {
     const result = applyDonationToAppState(state, event);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.members[0]?.toon).toBe(3000);
+    expect(result.state.members.find((m) => m.id === "op")?.toon).toBe(3000);
     expect(result.state.donors?.[0]?.memberAutoAssigned).toBe(true);
   });
 
-  it("auto-assigns account donation when player is missing", () => {
+  it("auto-assigns operating member when account donation has no player", () => {
     const state = {
       ...defaultState(),
-      members: [{ id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 }],
+      members: [
+        { id: "op", name: "운영비", account: 0, toon: 0, contribution: 0, operating: true },
+        { id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 },
+      ],
       donors: [],
     };
     const event: DonationEvent = {
@@ -99,7 +105,7 @@ describe("applyDonationToAppState", () => {
     const result = applyDonationToAppState(state, event);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.members[0]?.account).toBe(2000);
+    expect(result.state.members.find((m) => m.id === "op")?.account).toBe(2000);
     expect(result.state.donors?.[0]?.memberAutoAssigned).toBe(true);
   });
 
@@ -153,6 +159,7 @@ describe("applyDonationToAppState", () => {
       provider: "toonation",
       externalId: "1718100000456-1000",
       donorName: "이니이니",
+      playerName: "피자",
       amount: 1000,
       at,
       status: "queued",
@@ -233,6 +240,7 @@ describe("applyDonationToAppState", () => {
       provider: "toonation",
       externalId: "donation-2",
       donorName: "익명",
+      playerName: "피자",
       amount: 1000,
       at: new Date(at + 500).toISOString(),
       status: "queued",

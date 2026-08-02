@@ -175,8 +175,9 @@ export function applyDonationToAppState(
     processedEvent = { ...rawEvent, memberId: manualMemberId, status: "processed" };
   } else {
     processedEvent = mapToMember(rawEvent, currentState.members || [], aliases, {
-      /** 멤버 힌트 없을 때만 1인 방송 기본 멤버 배치 — 힌트 있으면 유사 일치만 허용 */
+      /** 멤버 힌트 없을 때 운영비→대표→국고 — 힌트 있으면 유사 일치만 허용 */
       autoAssignToonPlayer: true,
+      memberPositions: currentState.memberPositions,
     });
   }
   if (!processedEvent.memberId) {

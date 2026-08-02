@@ -8,6 +8,15 @@ const members: Member[] = [
   { id: "m2", name: "문형배", account: 0, toon: 0, contribution: 0 },
 ];
 
+const operatingMember: Member = {
+  id: "op",
+  name: "운영비",
+  account: 0,
+  toon: 0,
+  contribution: 0,
+  operating: true,
+};
+
 describe("mapToMember", () => {
   it("matches member by playerName from message", () => {
     const event: DonationEvent = {
@@ -26,7 +35,7 @@ describe("mapToMember", () => {
     expect(mapped.donorName).toBe("배지은");
   });
 
-  it("auto-assigns first member when toon has no player", () => {
+  it("auto-assigns operating member when toon has no player", () => {
     const event: DonationEvent = {
       id: "t2",
       provider: "toonation",
@@ -37,12 +46,17 @@ describe("mapToMember", () => {
       status: "queued",
       target: "toon",
     };
-    const mapped = mapToMember(event, members, [], { autoAssignToonPlayer: true });
-    expect(mapped.memberId).toBe("m1");
+    const mapped = mapToMember(
+      event,
+      [operatingMember, ...members],
+      [],
+      { autoAssignToonPlayer: true }
+    );
+    expect(mapped.memberId).toBe("op");
     expect(mapped.memberAutoAssigned).toBe(true);
   });
 
-  it("auto-assigns first member when account has no player", () => {
+  it("auto-assigns operating member when account has no player", () => {
     const event: DonationEvent = {
       id: "t3",
       provider: "toonation",
@@ -53,8 +67,13 @@ describe("mapToMember", () => {
       status: "queued",
       target: "account",
     };
-    const mapped = mapToMember(event, members, [], { autoAssignToonPlayer: true });
-    expect(mapped.memberId).toBe("m1");
+    const mapped = mapToMember(
+      event,
+      [operatingMember, ...members],
+      [],
+      { autoAssignToonPlayer: true }
+    );
+    expect(mapped.memberId).toBe("op");
     expect(mapped.memberAutoAssigned).toBe(true);
   });
 
@@ -209,7 +228,30 @@ describe("mapToMember", () => {
 });
 
 describe("pickDefaultToonationMember", () => {
-  it("returns first member", () => {
-    expect(pickDefaultToonationMember(members)?.id).toBe("m1");
+  it("prefers operating member", () => {
+    const picked = pickDefaultToonationMember([
+      { id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 },
+      operatingMember,
+    ]);
+    expect(picked?.id).toBe("op");
+  });
+
+  it("falls back to representative when no operating member", () => {
+    const picked = pickDefaultToonationMember(members, {
+      memberPositions: { m2: "대표" },
+    });
+    expect(picked?.id).toBe("m2");
+  });
+
+  it("falls back to national treasury when no operating or representative", () => {
+    const picked = pickDefaultToonationMember([
+      { id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 },
+      { id: "treasury", name: "국고", account: 0, toon: 0, contribution: 0 },
+    ]);
+    expect(picked?.id).toBe("treasury");
+  });
+
+  it("returns undefined when no operating, representative, or treasury", () => {
+    expect(pickDefaultToonationMember(members)).toBeUndefined();
   });
 });

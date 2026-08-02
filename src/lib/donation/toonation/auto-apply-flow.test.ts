@@ -7,7 +7,10 @@ import {
 } from "./owner-donation-remap";
 import type { AppState } from "@/types";
 
-function baseState(members: Array<{ id: string; name: string }>): AppState {
+function baseState(
+  members: Array<{ id: string; name: string; operating?: boolean }>,
+  memberPositions?: Record<string, string>
+): AppState {
   return {
     members: members.map((m) => ({
       id: m.id,
@@ -15,9 +18,11 @@ function baseState(members: Array<{ id: string; name: string }>): AppState {
       account: 0,
       toon: 0,
       contribution: 0,
+      ...(m.operating ? { operating: true } : {}),
     })),
     donors: [],
     updatedAt: 1,
+    ...(memberPositions ? { memberPositions } : {}),
   } as AppState;
 }
 
@@ -36,10 +41,17 @@ describe("toonation auto-apply flow (parse → apply)", () => {
     expect(event).not.toBeNull();
     expect(event?.target).toBe("toon");
 
-    const result = applyDonationToAppState(baseState([{ id: "m1", name: "BT태호" }]), event!, []);
+    const result = applyDonationToAppState(
+      baseState([
+        { id: "op", name: "운영비", operating: true },
+        { id: "m1", name: "BT태호" },
+      ]),
+      event!,
+      []
+    );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.members[0]?.toon).toBe(10000);
+    expect(result.state.members.find((m) => m.id === "op")?.toon).toBe(10000);
     expect(result.state.members[0]?.account).toBe(0);
     expect(result.state.donors?.[0]?.target).toBe("toon");
     expect(result.event.memberAutoAssigned).toBe(true);
