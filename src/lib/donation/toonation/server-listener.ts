@@ -2,7 +2,6 @@ import WebSocket from "ws";
 import { createModuleLogger } from "@/lib/logger";
 import { tryAutoApplyToonationDonationOnServer, enqueueUnmatchedToonationDonation } from "../server-apply-donation";
 import type { DonationEvent } from "../types";
-import { loadAccounts } from "@/lib/accounts-storage";
 import {
   clearToonationListenerConfig,
   readAllEnabledToonationListenerConfigs,
@@ -16,6 +15,7 @@ import {
   isToonationYoutubeSuperChatWsMessage,
   parseToonationWebSocketMessage,
 } from "./parse-event";
+import { applyOwnerDonationRemapIfNeeded, getOwnerNameCandidates } from "./owner-donation-remap";
 import { isWeakToonationDonorId } from "../apply-donation-state";
 import { normalizeToonationAlertboxUrl } from "./link-key";
 import { resolveToonationWsPayload } from "./resolve-payload";
@@ -61,43 +61,6 @@ const RAW_WS_ACCOUNT_DEDUPE_MS = 1_200;
 const recentRawWsByUser = new Map<string, Map<string, number>>();
 const recentEventByUser = new Map<string, Map<string, number>>();
 const EVENT_DEDUPE_MS = 60_000;
-const OWNER_NAME_CACHE_TTL_MS = 60_000;
-const ownerNameCache = new Map<string, { names: Set<string>; expiresAt: number }>();
-
-function normalizeOwnerNameForCompare(raw: string): string {
-  return String(raw || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "")
-    .replace(/[.,:;!?~'"`()\[\]{}<>_-]+/g, "");
-}
-
-async function getOwnerNameCandidates(userId: string, ownerName?: string): Promise<Set<string>> {
-  const now = Date.now();
-  const cacheKey = `${userId}:${normalizeOwnerNameForCompare(ownerName || "")}`;
-  const cached = ownerNameCache.get(cacheKey);
-  if (cached && cached.expiresAt > now) return cached.names;
-
-  const names = new Set<string>();
-  const push = (v?: string) => {
-    const n = normalizeOwnerNameForCompare(String(v || ""));
-    if (n) names.add(n);
-  };
-  push(userId);
-  push(ownerName);
-  try {
-    const accounts = await loadAccounts();
-    const account = accounts.find((a) => String(a.id || "").trim() === userId);
-    if (account) {
-      push(account.name);
-      push(account.companyName);
-    }
-  } catch {
-    /* noop */
-  }
-  ownerNameCache.set(cacheKey, { names, expiresAt: now + OWNER_NAME_CACHE_TTL_MS });
-  return names;
-}
 
 function donationEventDedupeKey(event: DonationEvent): string {
   const ext = String(event.externalId || "").trim();
@@ -245,37 +208,10 @@ async function onDonation(userId: string, raw: string, ownerName?: string): Prom
     return;
   }
   let event = parsed;
-  const remapOwnerSelfDonationAsAccount = (source: DonationEvent): DonationEvent => {
-    const msg = String(source.message || "").trim();
-    if (!msg) return { ...source, target: "account" };
-    const tokens = msg
-      .split(/\s+/)
-      .map((t) => t.trim().replace(/[,.:;!?~]+$/g, "").trim())
-      .filter(Boolean);
-    if (tokens.length === 0) return { ...source, target: "account" };
-    /** `계좌`/`계좌후원` 접두가 있으면 건너뛰고 실제 후원자·멤버 토큰 사용 */
-    let idx = 0;
-    if (isAccountFormatToken(tokens[0])) idx = 1;
-    const donorFromMsg = tokens[idx] || source.donorName;
-    const memberFromMsg = tokens[idx + 1] || source.playerName || source.recipientName || "";
-    return {
-      ...source,
-      target: "account",
-      donorName: donorFromMsg,
-      playerName: memberFromMsg || source.playerName,
-      recipientName: memberFromMsg || source.recipientName,
-    };
-  };
   try {
-    const envelope = JSON.parse(raw) as Record<string, unknown>;
     const ownerNames = await getOwnerNameCandidates(userId, ownerName);
-    const donorNormalized = normalizeOwnerNameForCompare(event.donorName || "");
-    if (
-      donorNormalized &&
-      ownerNames.has(donorNormalized) &&
-      event.target !== "account"
-    ) {
-      event = remapOwnerSelfDonationAsAccount(event);
+    event = applyOwnerDonationRemapIfNeeded(event, ownerNames);
+    if (event.target === "account" && parsed.target !== "account") {
       log.debug("채널 주인 자기후원 감지 — 계좌로 강제 처리", {
         userId,
         donor: event.donorName,

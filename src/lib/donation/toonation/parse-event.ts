@@ -116,8 +116,9 @@ export function isAccountFormatToken(raw: string): boolean {
 
 /**
  * 투네 후원 메시지 포맷:
- * - 계좌: `계좌 후원자이름 플레이어이름 …` (이후 문구 무시)
- * - 투네: 후원자 = 알림 상단 닉(`alertDonorName`). 메시지 첫 토큰 = 플레이어(선택). 이후 무시.
+ * - 계좌(명시): `계좌 후원자이름 플레이어이름 …` (이후 문구 무시)
+ * - 계좌(주인 후원): 알림 닉=채널 주인 → 메시지 `후원자 멤버 (메시지…)` (owner-donation-remap)
+ * - 투네: 알림 닉=후원자(금액 앞 표시). 메시지 첫 토큰=플레이어(선택). 이후 무시.
  */
 export function parseToonationMessageBody(
   message: string,

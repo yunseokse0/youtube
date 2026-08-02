@@ -13,6 +13,8 @@ import {
   isDuplicateDonationEvent,
 } from "./apply-donation-state";
 import { enqueueDonationEvent, purgeDonationQueueForEvent } from "./toonation/enqueue-donation";
+import { readToonationListenerConfig } from "./toonation/listener-config-store";
+import { resolveToonationDonationWithOwnerRemap } from "./toonation/owner-donation-remap";
 import type { DonationEvent } from "./types";
 
 export type ToonationAutoApplyOutcome = "applied" | "applied_needs_review" | "not_applied";
@@ -85,20 +87,26 @@ export async function drainDonationQueueOnServer(userId: string): Promise<number
 /** 투네 WS 수신 시 서버에서 즉시 엑셀표 반영. 실패 시 큐 등록용 */
 export async function tryAutoApplyToonationDonationOnServer(
   userId: string,
-  event: DonationEvent
+  rawEvent: DonationEvent
 ): Promise<ToonationAutoApplyOutcome> {
-  const lockKey = inFlightKey(userId, event);
+  const lockKey = inFlightKey(userId, rawEvent);
   if (inFlightApplyKeys.has(lockKey)) {
     for (let i = 0; i < 24; i += 1) {
       await sleep(50);
       if (!inFlightApplyKeys.has(lockKey)) break;
     }
-    const deferred = await resolveAlreadyAppliedOrDefer(userId, event);
+    const deferred = await resolveAlreadyAppliedOrDefer(userId, rawEvent);
     if (deferred !== "retry") return deferred;
     return "not_applied";
   }
   inFlightApplyKeys.add(lockKey);
   try {
+    const listenerCfg = await readToonationListenerConfig(userId);
+    const event = await resolveToonationDonationWithOwnerRemap(
+      userId,
+      rawEvent,
+      listenerCfg?.ownerName
+    );
     const state = await loadAppStateForUserId(userId);
     if (isDuplicateDonationEvent(state, event)) return "applied";
     if (!(await tryClaimDonationApply(userId, event))) {

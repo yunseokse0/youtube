@@ -4683,7 +4683,8 @@ export default function AdminPage() {
       const result = await processDonationEvent(
         { ...evt, status: "queued" },
         user?.id,
-        freshState ?? stateRef.current
+        freshState ?? stateRef.current,
+        { ownerName: toonationOwnerName }
       );
       applyProcessDonationResult(result);
       await removeQueueEvent(evt.id);
@@ -4709,6 +4710,7 @@ export default function AdminPage() {
     removeQueueEvent,
     toonationQueue,
     user?.id,
+    toonationOwnerName,
   ]);
 
   useEffect(() => {
@@ -4741,11 +4743,13 @@ export default function AdminPage() {
       target: "toon",
       status: "queued",
     };
-    const result = await processDonationEvent(event, user?.id, stateRef.current);
+    const result = await processDonationEvent(event, user?.id, stateRef.current, {
+      ownerName: toonationOwnerName,
+    });
     applyProcessDonationResult(result);
     await fetchUnmatchedEvents();
     setDonorAmount("");
-  }, [applyProcessDonationResult, donorAmount, donorName, fetchUnmatchedEvents, user?.id]);
+  }, [applyProcessDonationResult, donorAmount, donorName, fetchUnmatchedEvents, toonationOwnerName, user?.id]);
 
   const applyUnmatchedEvent = useCallback(async (event: DonationEvent) => {
     const selectedMemberId = unmatchedAssignMap[event.id] || donorMemberId || state.members[0]?.id || "";
@@ -4764,7 +4768,8 @@ export default function AdminPage() {
         status: "queued",
       },
       user?.id,
-      stateRef.current
+      stateRef.current,
+      { ownerName: toonationOwnerName }
     );
     applyProcessDonationResult(result);
     if (result.status === "processed" || result.updatedState) {
@@ -4782,6 +4787,7 @@ export default function AdminPage() {
     pushToonationLog,
     removeUnmatchedEvent,
     state.members,
+    toonationOwnerName,
     unmatchedAssignMap,
     user?.id,
   ]);
@@ -4876,6 +4882,13 @@ export default function AdminPage() {
       // noop
     }
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const fallback = String(user.name || user.companyName || "").trim();
+    if (!fallback) return;
+    setToonationOwnerName((prev) => (prev.trim() ? prev : fallback));
+  }, [user?.companyName, user?.id, user?.name]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -9263,9 +9276,11 @@ export default function AdminPage() {
                   <div className="text-[11px] text-amber-200/80 mt-1 leading-snug">
                     · 메시지가 <span className="text-amber-100">「계좌 후원자 멤버」</span> 형식 → <strong>계좌</strong> 열
                     <br />
-                    · 텍스트·캐시 후원(메시지에 「계좌」 없음) → <strong>투네</strong> 열
+                    · 일반 투네: 알림 <strong className="text-amber-100">후원자 닉(금액 앞)</strong> = 후원자, 메시지 첫 토큰 = 멤버(선택) →{" "}
+                    <strong>투네</strong> 열
                     <br />
-                    · 채널 주인명과 후원자 닉이 같으면 자동으로 계좌 처리
+                    · 알림 닉 = <strong className="text-amber-100">채널 주인명</strong> → <strong>계좌</strong> 열. 메시지{" "}
+                    <span className="text-amber-100">「후원자 멤버 (메시지…)」</span> 순으로 파싱 (님·호칭 무시)
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">

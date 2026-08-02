@@ -9,6 +9,7 @@ import {
   shouldAutoGroupSplitDonation,
 } from "./group-split-donation";
 import { donationApplyPrimaryKey } from "./donation-dedupe-keys";
+import { resolveToonationDonationWithOwnerRemap } from "./toonation/owner-donation-remap";
 import type { DonationEvent, DonorAlias } from "./types";
 
 const log = createModuleLogger("Donation/Processor");
@@ -36,41 +37,52 @@ function mergeAdminHintForDonation(server: AppState, hint?: AppState | null): Ap
   };
 }
 
+export type ProcessDonationOptions = {
+  /** 관리자 「채널 주인명」 — 후원자 닉과 같으면 계좌 처리 */
+  ownerName?: string;
+};
+
 export async function processDonationEvent(
   rawEvent: DonationEvent,
   userId?: string,
-  hintState?: AppState | null
+  hintState?: AppState | null,
+  options?: ProcessDonationOptions
 ): Promise<ProcessDonationResult> {
-  log.debug("processing", rawEvent.donorName, rawEvent.amount);
+  const uid = userId || "__default__";
+  let event =
+    rawEvent.provider === "toonation" && userId
+      ? await resolveToonationDonationWithOwnerRemap(uid, rawEvent, options?.ownerName)
+      : rawEvent;
+  log.debug("processing", event.donorName, event.amount);
   try {
-    const dedupeKey = donationApplyPrimaryKey(userId || "__default__", rawEvent);
+    const dedupeKey = donationApplyPrimaryKey(uid, event);
     if (processedEventIds.has(dedupeKey)) {
-      return { ...rawEvent, status: "processed" as const };
+      return { ...event, status: "processed" as const };
     }
 
     const loaded = await getCurrentAppState(userId);
     if (!loaded) {
-      return { ...rawEvent, status: "failed" as const, error: "state_not_available" };
+      return { ...event, status: "failed" as const, error: "state_not_available" };
     }
     const currentState = mergeAdminHintForDonation(loaded, hintState);
     const aliases = await loadAliases(userId);
 
-    if (shouldAutoGroupSplitDonation(rawEvent, currentState.groupSplitDonationSettings)) {
+    if (shouldAutoGroupSplitDonation(event, currentState.groupSplitDonationSettings)) {
       const settings = normalizeGroupSplitDonationSettings(currentState.groupSplitDonationSettings);
-      const splitApplied = applyGroupSplitDonationToAppState(currentState, rawEvent, settings);
+      const splitApplied = applyGroupSplitDonationToAppState(currentState, event, settings);
       if (splitApplied.ok) {
         const beforeSave = await getCurrentAppState(userId);
-        if (beforeSave && isDuplicateDonationEvent(beforeSave, rawEvent)) {
+        if (beforeSave && isDuplicateDonationEvent(beforeSave, event)) {
           processedEventIds.add(dedupeKey);
-          return { ...rawEvent, status: "processed" as const, updatedState: beforeSave };
+          return { ...event, status: "processed" as const, updatedState: beforeSave };
         }
         const saved = await saveCurrentAppState(splitApplied.state, userId);
         if (!saved.ok) {
-          return { ...rawEvent, status: "failed" as const, error: "state_save_failed" };
+          return { ...event, status: "failed" as const, error: "state_save_failed" };
         }
         processedEventIds.add(dedupeKey);
         unresolvedEventIds.delete(dedupeKey);
-        await resolveUnmatched(rawEvent.id, userId);
+        await resolveUnmatched(event.id, userId);
         log.debug(
           "auto group split processed",
           splitApplied.event.donorName,
@@ -86,7 +98,7 @@ export async function processDonationEvent(
       }
       if (splitApplied.reason === "duplicate") {
         processedEventIds.add(dedupeKey);
-        return { ...rawEvent, status: "processed" as const };
+        return { ...event, status: "processed" as const };
       }
       const fallbackMemberId = resolveGroupSplitFallbackMemberId(currentState);
       if (
@@ -95,18 +107,18 @@ export async function processDonationEvent(
       ) {
         const fallbackApplied = applyDonationToAppState(
           currentState,
-          { ...rawEvent, manualAssignMemberId: fallbackMemberId },
+          { ...event, manualAssignMemberId: fallbackMemberId },
           aliases
         );
         if (fallbackApplied.ok) {
           const beforeSave = await getCurrentAppState(userId);
-          if (beforeSave && isDuplicateDonationEvent(beforeSave, rawEvent)) {
+          if (beforeSave && isDuplicateDonationEvent(beforeSave, event)) {
             processedEventIds.add(dedupeKey);
-            return { ...rawEvent, status: "processed" as const, updatedState: beforeSave };
+            return { ...event, status: "processed" as const, updatedState: beforeSave };
           }
           const saved = await saveCurrentAppState(fallbackApplied.state, userId);
           if (!saved.ok) {
-            return { ...rawEvent, status: "failed" as const, error: "state_save_failed" };
+            return { ...event, status: "failed" as const, error: "state_save_failed" };
           }
           processedEventIds.add(dedupeKey);
           unresolvedEventIds.delete(dedupeKey);
@@ -132,12 +144,12 @@ export async function processDonationEvent(
       }
     }
 
-    let applied = applyDonationToAppState(currentState, rawEvent, aliases);
+    let applied = applyDonationToAppState(currentState, event, aliases);
 
     if (!applied.ok) {
       if (applied.reason === "duplicate") {
         processedEventIds.add(dedupeKey);
-        return { ...rawEvent, status: "processed" as const };
+        return { ...event, status: "processed" as const };
       }
       log.warn("unmatched donor", applied.event.donorName);
       if (!unresolvedEventIds.has(dedupeKey)) {
@@ -148,14 +160,14 @@ export async function processDonationEvent(
     }
 
     const beforeSave = await getCurrentAppState(userId);
-    if (beforeSave && isDuplicateDonationEvent(beforeSave, rawEvent)) {
+    if (beforeSave && isDuplicateDonationEvent(beforeSave, event)) {
       processedEventIds.add(dedupeKey);
-      return { ...rawEvent, status: "processed" as const, updatedState: beforeSave };
+      return { ...event, status: "processed" as const, updatedState: beforeSave };
     }
 
     const saved = await saveCurrentAppState(applied.state, userId);
     if (!saved.ok) {
-      return { ...rawEvent, status: "failed" as const, error: "state_save_failed" };
+      return { ...event, status: "failed" as const, error: "state_save_failed" };
     }
     processedEventIds.add(dedupeKey);
     unresolvedEventIds.delete(dedupeKey);
@@ -165,7 +177,7 @@ export async function processDonationEvent(
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown_error";
     log.error("process failed", message);
-    return { ...rawEvent, status: "failed" as const, error: message };
+    return { ...event, status: "failed" as const, error: message };
   }
 }
 
