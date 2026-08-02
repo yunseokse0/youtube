@@ -684,10 +684,10 @@ export default function AdminPage() {
     return v.length > 0 ? v : PLACEHOLDER_MISSIONS;
   }, [state.missions]);
   const PRESET_TEMPLATES: { name: string; preset: Partial<OverlayPreset> }[] = [
-    { name: "엑셀표만", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true } },
-    { name: "방송 엑셀(계좌·투네)", preset: { theme: "excelLive", membersTheme: "excelLive", totalTheme: "excelLive", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: false, showContributionColumn: false, accountHeaderLabel: "계좌", toonHeaderLabel: "투네이션", tableBgOpacity: "85", donorsFormat: "full", tableFree: true, tableX: "3", tableY: "88", anchor: "bl" } },
+    { name: "엑셀표만", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true, showRestroomColumn: true } },
+    { name: "방송 엑셀(계좌·투네)", preset: { theme: "excelLive", membersTheme: "excelLive", totalTheme: "excelLive", showMembers: true, showTotal: true, tableOnly: true, showCombinedColumn: false, showContributionColumn: false, showRestroomColumn: true, accountHeaderLabel: "계좌", toonHeaderLabel: "투네이션", restroomHeaderLabel: "화장실", tableBgOpacity: "85", donorsFormat: "full", tableFree: true, tableX: "3", tableY: "88", anchor: "bl" } },
     { name: "전체 통합", preset: { showMembers: true, showTotal: true } },
-    { name: "표만 (엑셀)", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true } },
+    { name: "표만 (엑셀)", preset: { theme: "excel", showMembers: true, showTotal: true, tableOnly: true, showRestroomColumn: true } },
     { name: "멤버 목록만", preset: { showMembers: true, showTotal: false, showBottomDonors: false, tickerInMembers: false } },
     { name: "총합만", preset: { showMembers: false, showTotal: true, totalSize: "60" } },
     { name: "목표 프로그레스바", preset: { showMembers: false, showTotal: false, showGoal: true, goal: "2000000", goalBaseline: "2000000", goalIncreaseStep: "2000000", goalLabel: "후원", goalWidth: "500" } },
@@ -710,6 +710,7 @@ export default function AdminPage() {
     showBottomDonors: false, donorsSize: "", donorsGap: "16", donorsSpeed: "60", donorsLimit: "8", donorsFormat: "short", donorsUnit: "", donorsColor: "", donorsBgColor: "", donorsBgOpacity: "0", tickerTheme: "auto", tickerGlow: "45", tickerShadow: "35", currencyLocale: "ko-KR",
     showCombinedColumn: true,
     showContributionColumn: true,
+    showRestroomColumn: true,
     showContributionSum: true,
     accountHeaderLabel: "",
     toonHeaderLabel: "",
@@ -4976,25 +4977,28 @@ export default function AdminPage() {
     setContributionNote("");
   };
 
-  const addRestroomRecord = () => {
-    const amount = parseAmount(restroomAmount);
-    if (!restroomMemberId) return;
+  const applyRestroomChange = useCallback((
+    memberId: string,
+    delta: 1 | -1,
+    amount: number,
+    note = "",
+  ) => {
     if (amount <= 0) return;
     setState((prev: AppState) => {
       const now = Date.now();
       const log = {
         id: `rl_${now}_${Math.random().toString(36).slice(2, 6)}`,
-        memberId: restroomMemberId,
+        memberId,
         amount,
-        delta: restroomDelta,
-        note: restroomNote.trim(),
+        delta,
+        note: note.trim(),
         at: now,
       };
       const members = prev.members.map((m: Member) => {
-        if (m.id !== restroomMemberId) return m;
+        if (m.id !== memberId) return m;
         const curr = Math.max(0, m.restroom || 0);
         const nextRestroom =
-          restroomDelta > 0 ? curr + amount : Math.max(0, curr - amount);
+          delta > 0 ? curr + amount : Math.max(0, curr - amount);
         return { ...m, restroom: nextRestroom };
       });
       const next: AppState = {
@@ -5005,6 +5009,12 @@ export default function AdminPage() {
       persistState(next);
       return next;
     });
+  }, []);
+
+  const addRestroomRecord = () => {
+    const amount = parseAmount(restroomAmount);
+    if (!restroomMemberId) return;
+    applyRestroomChange(restroomMemberId, restroomDelta, amount, restroomNote);
     setRestroomAmount("");
     setRestroomNote("");
   };
@@ -5607,6 +5617,7 @@ export default function AdminPage() {
                     onRename={renameMember}
                     onReset={resetMemberAmounts}
                     onDelete={deleteMember}
+                    onRestroomAdjust={(id, delta, amount = 1) => applyRestroomChange(id, delta, amount, "멤버 보드")}
                     donationLinkActive={
                       mealParticipants.find((p) => p.memberId === m.id)?.donationLinkActive ?? null
                     }

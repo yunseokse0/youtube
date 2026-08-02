@@ -5,6 +5,7 @@ import { useClientOnlySearchParams } from "@/hooks/useClientOnlySearchParams";
 import { ObsTextOverlayView } from "@/components/obs-text/ObsTextOverlayView";
 import {
   OBS_TEXT_ID_QUERY,
+  hasObsTextRegistryInState,
   readObsTextOverlayFromState,
   readObsTextRegistryFromState,
   resolveObsTextInstanceId,
@@ -21,7 +22,7 @@ function ObsTextOverlayInner({ userId }: { userId: string }) {
   const { params: sp, ready: spReady } = useClientOnlySearchParams();
   const textId = sp.get(OBS_TEXT_ID_QUERY);
   const hostObs = isOverlayBroadcastHost(sp);
-  const { state, ready, resync } = useOverlayRemoteState(userId, {
+  const { state, resync } = useOverlayRemoteState(userId, {
     statePick: STATE_PICK_OBS_TEXT,
     skipLocalSnapshot: true,
     forceInitialFull: true,
@@ -38,11 +39,17 @@ function ObsTextOverlayInner({ userId }: { userId: string }) {
 
   useEffect(() => {
     if (!hostObs) return;
+    let debounce: ReturnType<typeof setTimeout> | null = null;
     const onVis = () => {
-      if (document.visibilityState === "visible") void resync({ forceFull: true });
+      if (document.visibilityState !== "visible") return;
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(() => void resync({ forceFull: true }), 400);
     };
     document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
+    return () => {
+      if (debounce) clearTimeout(debounce);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, [hostObs, resync]);
 
   const resolvedInstanceId = useMemo(
@@ -55,7 +62,9 @@ function ObsTextOverlayInner({ userId }: { userId: string }) {
     [state, textId]
   );
 
-  if (!spReady || !ready) {
+  const canDisplay = state != null && hasObsTextRegistryInState(state);
+
+  if (!spReady || !canDisplay) {
     return hostObs ? null : (
       <div className="fixed inset-0 flex items-center justify-center text-white/40 text-sm">
         …
@@ -65,7 +74,7 @@ function ObsTextOverlayInner({ userId }: { userId: string }) {
 
   return (
     <ObsTextOverlayView
-      key={`${userId}:${resolvedInstanceId}:${config.revision ?? 0}`}
+      key={`${userId}:${resolvedInstanceId}`}
       config={config}
     />
   );

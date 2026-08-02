@@ -1775,7 +1775,7 @@ function OverlayInner() {
   const showTotal = effectiveTableOnly ? true : (timerOnlyMode ? false : (sp.get("showTotal") !== "false"));
   const showCombinedColumn = resolvePresetBool("showCombinedColumn", true);
   const showContributionColumn = resolvePresetBool("showContributionColumn", true);
-  const showRestroomColumn = resolvePresetBool("showRestroomColumn", false);
+  const showRestroomColumn = resolvePresetBool("showRestroomColumn", true);
   const showContributionSum = showContributionColumn && resolvePresetBool("showContributionSum", true);
   const showTableSumRow = (() => {
     if (ready && effectivePreset && typeof effectivePreset.showTableSumRow === "boolean") {

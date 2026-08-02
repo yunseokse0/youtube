@@ -9,7 +9,7 @@ describe("donation-table-options", () => {
     expect(resolveDonationTableColumnsOptions(null)).toEqual({
       showCombinedColumn: true,
       showContributionColumn: true,
-      showRestroomColumn: false,
+      showRestroomColumn: true,
       showTableSumRow: true,
       showContributionSum: true,
     });
@@ -32,18 +32,18 @@ describe("donation-table-options", () => {
     expect(normalizeDonationTableColumnsOptions({ showContributionSum: false })).toEqual({
       showCombinedColumn: true,
       showContributionColumn: true,
-      showRestroomColumn: false,
+      showRestroomColumn: true,
       showTableSumRow: true,
       showContributionSum: false,
     });
   });
 
-  it("showRestroomColumn is opt-in only", () => {
-    expect(normalizeDonationTableColumnsOptions({ showRestroomColumn: true })).toMatchObject({
-      showRestroomColumn: true,
+  it("showRestroomColumn can be turned off", () => {
+    expect(normalizeDonationTableColumnsOptions({ showRestroomColumn: false })).toMatchObject({
+      showRestroomColumn: false,
     });
-    expect(resolveDonationTableColumnsOptions({ showRestroomColumn: true })).toMatchObject({
-      showRestroomColumn: true,
+    expect(resolveDonationTableColumnsOptions({ showRestroomColumn: false })).toMatchObject({
+      showRestroomColumn: false,
     });
   });
 });

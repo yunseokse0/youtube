@@ -8,6 +8,7 @@ type Props = {
   onRename?: (id: string, name: string) => void;
   onReset?: (id: string) => void;
   onDelete?: (id: string) => void;
+  onRestroomAdjust?: (id: string, delta: 1 | -1, amount?: number) => void;
   donationLinkActive?: boolean | null;
   onToggleDonationLink?: () => void;
 };
@@ -18,11 +19,13 @@ export default function MemberRow({
   onRename,
   onReset,
   onDelete,
+  onRestroomAdjust,
   donationLinkActive = null,
   onToggleDonationLink,
 }: Props) {
   const [localAccount, setLocalAccount] = useState(formatManThousand(member.account));
   const [localToon, setLocalToon] = useState(formatManThousand(member.toon));
+  const [localRestroom, setLocalRestroom] = useState(String(Math.max(0, member.restroom || 0)));
   const [localGoal, setLocalGoal] = useState(member.goal ? String(member.goal) : "");
   const [localName, setLocalName] = useState(member.name);
   const prevAccount = useRef(member.account);
@@ -31,9 +34,10 @@ export default function MemberRow({
   useEffect(() => {
     setLocalAccount(formatManThousand(member.account));
     setLocalToon(formatManThousand(member.toon));
+    setLocalRestroom(String(Math.max(0, member.restroom || 0)));
     setLocalGoal(member.goal ? String(member.goal) : "");
     setLocalName(member.name);
-  }, [member.account, member.toon, member.goal, member.name]);
+  }, [member.account, member.toon, member.restroom, member.goal, member.name]);
 
   useEffect(() => {
     if (member.account > prevAccount.current) {
@@ -72,6 +76,28 @@ export default function MemberRow({
     const nextAccount = field === "account" ? nextVal : (member.account || 0);
     const nextToon = field === "toon" ? nextVal : (member.toon || 0);
     onChange({ ...member, [field]: nextVal, contribution: nextAccount + nextToon } as Member);
+  };
+  const adjustRestroom = (delta: 1 | -1, amount = 1) => {
+    if (onRestroomAdjust) {
+      onRestroomAdjust(member.id, delta, amount);
+      return;
+    }
+    const curr = Math.max(0, member.restroom || 0);
+    const nextRestroom = delta > 0 ? curr + amount : Math.max(0, curr - amount);
+    onChange({ ...member, restroom: nextRestroom });
+  };
+  const commitRestroom = (val: string) => {
+    const cleaned = (val || "").replace(/[^\d]/g, "");
+    const parsed = parseInt(cleaned || "0", 10);
+    const nextRestroom = isNaN(parsed) ? 0 : Math.max(0, parsed);
+    const curr = Math.max(0, member.restroom || 0);
+    if (nextRestroom === curr) return;
+    if (onRestroomAdjust) {
+      if (nextRestroom > curr) onRestroomAdjust(member.id, 1, nextRestroom - curr);
+      else onRestroomAdjust(member.id, -1, curr - nextRestroom);
+      return;
+    }
+    onChange({ ...member, restroom: nextRestroom });
   };
 
   return (
@@ -174,15 +200,38 @@ export default function MemberRow({
         </div>
       </div>
 
+      <div className="rounded-lg border border-white/10 bg-black/20 p-2">
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs text-neutral-400">화장실</label>
+          <input
+            className="w-32 px-2 py-1 rounded bg-neutral-800/80 border border-white/10 text-right focus:outline-none"
+            inputMode="numeric"
+            value={localRestroom}
+            onChange={(e) => setLocalRestroom(e.target.value.replace(/[^\d]/g, ""))}
+            onBlur={() => commitRestroom(localRestroom)}
+            placeholder="0"
+            title="엑셀표 화장실 열 횟수 (수동 기록)"
+          />
+        </div>
+        <div className="grid grid-cols-4 gap-1">
+          <button onClick={() => adjustRestroom(1, 1)} className="px-2 py-1 rounded-full bg-cyan-900/80 hover:bg-cyan-800 text-xs">+1</button>
+          <button onClick={() => adjustRestroom(-1, 1)} className="px-2 py-1 rounded-full bg-rose-900/80 hover:bg-rose-800 text-xs">-1</button>
+          <button onClick={() => adjustRestroom(1, 5)} className="px-2 py-1 rounded-full bg-cyan-900/80 hover:bg-cyan-800 text-xs">+5</button>
+          <button onClick={() => adjustRestroom(-1, 5)} className="px-2 py-1 rounded-full bg-rose-900/80 hover:bg-rose-800 text-xs">-5</button>
+        </div>
+      </div>
+
       <div className="mt-auto pt-1 flex items-center justify-between">
         <div className="text-xs text-neutral-400">
           표시:
           <span className="ml-1 font-mono text-neutral-200">
             {formatManThousand(member.account)}(<span className="text-neutral-300">{formatManThousand(member.toon)}</span>) / 기여도 {formatManThousand((member.account || 0) + (member.toon || 0))}
+            <span className="text-neutral-500 mx-1">·</span>
+            화장실 {Math.max(0, member.restroom || 0)}
           </span>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => onReset?.(member.id)} className="px-3 py-1.5 bg-neutral-800 rounded-lg hover:bg-neutral-700 text-xs" title="계좌/투네/기여도 0으로 리셋">
+          <button onClick={() => onReset?.(member.id)} className="px-3 py-1.5 bg-neutral-800 rounded-lg hover:bg-neutral-700 text-xs" title="계좌/투네/기여도/화장실 0으로 리셋">
             리셋
           </button>
           <button onClick={() => onDelete?.(member.id)} className="px-3 py-1.5 bg-red-700 rounded-lg hover:bg-red-600 text-xs" title="멤버 삭제">

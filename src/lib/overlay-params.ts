@@ -356,7 +356,7 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (tableFontFamily !== "auto") q.set("tableFontFamily", tableFontFamily);
   if (preset.showCombinedColumn === false) q.set("showCombinedColumn", "false");
   if (preset.showContributionColumn === false) q.set("showContributionColumn", "false");
-  if (preset.showRestroomColumn === true) q.set("showRestroomColumn", "true");
+  if (preset.showRestroomColumn === false) q.set("showRestroomColumn", "false");
   if (preset.showContributionSum === false) q.set("showContributionSum", "false");
   if (preset.showTableSumRow === false) q.set("showTableSumRow", "false");
   if (preset.accountHeaderLabel && preset.accountHeaderLabel.trim()) q.set("accountHeaderLabel", preset.accountHeaderLabel.trim());

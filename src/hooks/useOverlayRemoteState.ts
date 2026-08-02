@@ -44,6 +44,7 @@ import {
 } from "@/lib/overlay-sync-signature";
 
 import {
+  hasObsTextRegistryInState,
   obsTextRegistrySyncSignature,
   readObsTextRegistryFromState,
 } from "@/lib/obs-text-overlay";
@@ -139,6 +140,41 @@ function readLocalStateIfExists(userId?: string): AppState | null {
     return loadState(userId ?? undefined);
   } catch {
     return null;
+  }
+}
+
+function bootstrapOverlayCache(
+  userId: string | undefined,
+  statePick: StateApiPick,
+  skipLocalSnapshot: boolean,
+  persistLastGood: boolean
+): AppState | null {
+  if (!skipLocalSnapshot) {
+    const local = readLocalStateIfExists(userId);
+    if (local && isOverlayStateViable(local, statePick)) return local;
+  }
+  if (persistLastGood) {
+    const lastGood = loadOverlayLastGood(userId, statePick);
+    if (lastGood && isOverlayStateViable(lastGood, statePick)) return lastGood;
+  }
+  return null;
+}
+
+function seedOverlaySyncRefs(
+  data: AppState,
+  statePick: StateApiPick,
+  refs: {
+    lastGoodRef: MutableRefObject<AppState | null>;
+    lastVisualSigRef: MutableRefObject<string>;
+    lastSyncedUpdatedAtRef: MutableRefObject<number>;
+    lastSyncedDonorRevRef: MutableRefObject<number>;
+  }
+): void {
+  refs.lastGoodRef.current = data;
+  refs.lastVisualSigRef.current = overlaySyncSignatureForPick(data, statePick);
+  refs.lastSyncedUpdatedAtRef.current = revisionForStatePick(data, statePick);
+  if (statePick !== STATE_PICK_OBS_TEXT) {
+    refs.lastSyncedDonorRevRef.current = readDonorRankingsRevision(data);
   }
 }
 
@@ -247,15 +283,13 @@ export function useOverlayRemoteState(
   const [state, setState] = useState<AppState | null>(() => {
     if (frozen != null) return frozen;
     if (typeof window === "undefined") return null;
-    if (options.skipLocalSnapshot === true) return null;
     const pick = options.statePick ?? STATE_PICK_OVERLAY;
-    const local = readLocalStateIfExists(userId);
-    if (local && isOverlayStateViable(local, pick)) return local;
-    if (options.persistLastGood !== false) {
-      const lastGood = loadOverlayLastGood(userId, pick);
-      if (lastGood && isOverlayStateViable(lastGood, pick)) return lastGood;
-    }
-    return null;
+    return bootstrapOverlayCache(
+      userId,
+      pick,
+      options.skipLocalSnapshot === true,
+      options.persistLastGood !== false
+    );
   });
 
   const [syncedOnce, setSyncedOnce] = useState(() => Boolean(frozen) || state != null);
@@ -465,53 +499,48 @@ export function useOverlayRemoteState(
 
     if (!enabled) return;
 
-    lastGoodRef.current = null;
-    lastVisualSigRef.current = "";
-    lastSyncedUpdatedAtRef.current = 0;
-    lastSyncedDonorRevRef.current = 0;
-    setState(null);
-    setSyncedOnce(false);
-
     const skipLocal = options.skipLocalSnapshot === true;
+    const bootstrap = bootstrapOverlayCache(
+      userId,
+      statePick,
+      skipLocal,
+      persistLastGood
+    );
 
-    const local = skipLocal ? null : readLocalStateIfExists(userId);
+    lastSyncedDonorRevRef.current = 0;
 
-    const lastGood = persistLastGood
-      ? loadOverlayLastGood(userId, statePick)
-      : null;
+    const syncRefs = {
+      lastGoodRef,
+      lastVisualSigRef,
+      lastSyncedUpdatedAtRef,
+      lastSyncedDonorRevRef,
+    };
 
-    if (local && isOverlayStateViable(local, statePick)) {
-      setState(local);
-
-      lastVisualSigRef.current = overlaySyncSignatureForPick(local, statePick);
-
-      lastSyncedUpdatedAtRef.current = revisionForStatePick(local, statePick);
-
-      if (statePick !== STATE_PICK_OBS_TEXT) {
-        lastSyncedDonorRevRef.current = readDonorRankingsRevision(local);
-      }
-
-      lastGoodRef.current = local;
-
-      if (persistLastGood) saveOverlayLastGood(local, userId, statePick);
-    } else if (lastGood && isOverlayStateViable(lastGood, statePick)) {
-      setState(lastGood);
-
-      lastVisualSigRef.current = overlaySyncSignatureForPick(
-        lastGood,
-        statePick
-      );
-
-      lastSyncedUpdatedAtRef.current = revisionForStatePick(lastGood, statePick);
-
-      if (statePick !== STATE_PICK_OBS_TEXT) {
-        lastSyncedDonorRevRef.current = readDonorRankingsRevision(lastGood);
-      }
-
-      lastGoodRef.current = lastGood;
+    if (bootstrap) {
+      seedOverlaySyncRefs(bootstrap, statePick, syncRefs);
+      setState(bootstrap);
+      setSyncedOnce(true);
+    } else if (obsTextPick) {
+      /** OBS 텍스트: effect 재실행 시 null로 지우지 않음(깜빡임 방지) */
+      let keepReady = false;
+      setState((prev) => {
+        if (prev && hasObsTextRegistryInState(prev)) {
+          seedOverlaySyncRefs(prev, statePick, syncRefs);
+          keepReady = true;
+          return prev;
+        }
+        lastGoodRef.current = null;
+        lastVisualSigRef.current = "";
+        lastSyncedUpdatedAtRef.current = 0;
+        return null;
+      });
+      setSyncedOnce(keepReady);
     } else {
-      /** placeholder(defaultState) 즉시 표시 금지 — API·last-good 수신까지 직전 화면 유지 */
+      lastGoodRef.current = null;
+      lastVisualSigRef.current = "";
       lastSyncedUpdatedAtRef.current = 0;
+      setState(null);
+      setSyncedOnce(false);
     }
 
     syncFromApiRef.current = syncFromApi;
@@ -536,7 +565,7 @@ export function useOverlayRemoteState(
 
     const runInitialSync = () => {
       if (shouldSuppressOverlaySseConnection()) {
-        if (!local && !skipLocal) void syncFromApi();
+        if (!bootstrap && !skipLocal) void syncFromApi();
         else
           void syncFromApi({
             forceFull: options.forceInitialFull || skipLocal,
@@ -639,8 +668,6 @@ export function useOverlayRemoteState(
 
     const onPageShow = (ev: PageTransitionEvent) => {
       if (!ev.persisted) return;
-      lastSyncedUpdatedAtRef.current = 0;
-      lastVisualSigRef.current = "";
       void syncFromApiRef.current({ forceFull: true });
     };
     window.addEventListener("pageshow", onPageShow);
