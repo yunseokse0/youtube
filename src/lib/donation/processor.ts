@@ -4,6 +4,7 @@ import type { AppState } from "@/types";
 import { applyDonationToAppState, isDuplicateDonationEvent } from "./apply-donation-state";
 import {
   applyGroupSplitDonationToAppState,
+  applyGroupSplitFromEventOnState,
   normalizeGroupSplitDonationSettings,
   resolveGroupSplitFallbackMemberId,
   shouldAutoGroupSplitDonation,
@@ -93,7 +94,7 @@ export async function processDonationEvent(
 
     if (shouldAutoGroupSplitDonation(event, currentState.groupSplitDonationSettings)) {
       const settings = normalizeGroupSplitDonationSettings(currentState.groupSplitDonationSettings);
-      const splitApplied = applyGroupSplitDonationToAppState(currentState, event, settings);
+      const splitApplied = applyGroupSplitFromEventOnState(currentState, event, settings);
       if (splitApplied.ok) {
         const beforeSave = await getCurrentAppState(userId);
         if (beforeSave && isDuplicateDonationEvent(beforeSave, event)) {
@@ -224,7 +225,7 @@ export async function processGroupSplitDonationEvent(
     }
     const currentState = mergeAdminHintForGroupSplit(loaded, hintState);
     const settings = normalizeGroupSplitDonationSettings(currentState.groupSplitDonationSettings);
-    const applied = applyGroupSplitDonationToAppState(currentState, rawEvent, settings);
+    const applied = applyGroupSplitFromEventOnState(currentState, rawEvent, settings);
 
     if (!applied.ok) {
       if (applied.reason === "duplicate") {

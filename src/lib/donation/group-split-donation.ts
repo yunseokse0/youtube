@@ -131,6 +131,91 @@ export function isGroupSplitPartDonor(donor: Donor): boolean {
   return Boolean(donor.groupSplit) || String(donor.id || "").includes(":split:");
 }
 
+function donorAtMs(donor: { at?: number | string }): number {
+  const raw = donor.at;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  const parsed = Date.parse(String(raw || ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function eventAtMs(event: Pick<DonationEvent, "at">): number {
+  const parsed = Date.parse(String(event.at || ""));
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+/** 동일 후원(다른 id)이 이미 단체짠 됐는지 — 큐 자동반영 + 미매칭 수동 중복 방지 */
+export function hasGroupSplitSignatureForDonation(
+  state: AppState,
+  event: Pick<DonationEvent, "id" | "donorName" | "amount" | "at">
+): boolean {
+  if (isGroupSplitDonationApplied(state, event.id)) return true;
+  const name = String(event.donorName || "").trim();
+  const amount = Math.max(0, Math.round(Number(event.amount) || 0));
+  if (!name || amount <= 0) return false;
+  const atMs = eventAtMs(event);
+  for (const d of state.donors || []) {
+    if (!isGroupSplitSourceDonor(state, d)) continue;
+    if (String(d.name || "").trim() !== name) continue;
+    if (Math.round(Number(d.amount) || 0) !== amount) continue;
+    if (Math.abs(donorAtMs(d) - atMs) <= 120_000) return true;
+  }
+  const splitParts = (state.donors || []).filter(
+    (d) => isGroupSplitPartDonor(d) && String(d.name || "").trim() === name
+  );
+  if (splitParts.length >= 2) {
+    const sum = splitParts.reduce((s, d) => s + Math.round(Number(d.amount) || 0), 0);
+    if (sum === amount && splitParts.some((d) => Math.abs(donorAtMs(d) - atMs) <= 120_000)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** 미매칭 단체짠 — 다른 id로 이미 1행 반영된 후원 찾기 */
+export function findDonorRowForGroupSplitEvent(
+  state: AppState,
+  event: Pick<DonationEvent, "id" | "donorName" | "amount" | "at">
+): Donor | null {
+  const eventId = normalizeDonationEventId(String(event.id || "").trim());
+  if (eventId) {
+    const direct = (state.donors || []).find(
+      (d) => normalizeDonationEventId(String(d.id || "")) === eventId
+    );
+    if (direct && !isGroupSplitPartDonor(direct)) return direct;
+  }
+  const name = String(event.donorName || "").trim();
+  const amount = Math.max(0, Math.round(Number(event.amount) || 0));
+  if (!name || amount <= 0) return null;
+  const atMs = eventAtMs(event);
+  for (const d of state.donors || []) {
+    if (isGroupSplitPartDonor(d)) continue;
+    if (isGroupSplitSourceDonor(state, d)) continue;
+    if (Math.round(Number(d.amount) || 0) !== amount) continue;
+    if (String(d.name || "").trim() !== name) continue;
+    if (Math.abs(donorAtMs(d) - atMs) <= 120_000) return d;
+  }
+  return null;
+}
+
+/** 단체짠 — 신규 행 추가 vs 기존 1행 나누기 자동 선택 */
+export function applyGroupSplitFromEventOnState(
+  state: AppState,
+  event: DonationEvent,
+  settings?: GroupSplitDonationSettings | null
+): ApplyGroupSplitDonationResult {
+  if (hasGroupSplitSignatureForDonation(state, event)) {
+    return { ok: false, reason: "duplicate", event };
+  }
+  const existing = findDonorRowForGroupSplitEvent(state, event);
+  if (existing) {
+    if (isGroupSplitDonationApplied(state, existing.id)) {
+      return { ok: false, reason: "duplicate", event };
+    }
+    return splitExistingDonorInAppState(state, existing.id, settings);
+  }
+  return applyGroupSplitDonationToAppState(state, event, settings);
+}
+
 export function isGroupSplitSourceDonor(state: AppState, donor: Donor): boolean {
   if (isGroupSplitPartDonor(donor)) return false;
   if (donor.groupSplitSource === true || donor.donationExcluded === true) return true;

@@ -3,8 +3,10 @@ import { defaultState } from "@/lib/state";
 import type { AppState, Member } from "@/types";
 import {
   applyGroupSplitDonationToAppState,
+  applyGroupSplitFromEventOnState,
   computeGroupSplitAmounts,
   countGroupSplitParts,
+  hasGroupSplitSignatureForDonation,
   isGroupSplitDonationKeyword,
   isGroupSplitSourceDonor,
   previewGroupSplitDonation,
@@ -214,5 +216,70 @@ describe("group split donation", () => {
         { excludedMemberIds: [], autoSplitOnKeyword: false }
       )
     ).toBe(false);
+  });
+
+  it("hasGroupSplitSignatureForDonation detects cross-id duplicate after auto split", () => {
+    const state: AppState = {
+      ...defaultState(),
+      members: members(["A", "B"]),
+    };
+    const eventA = {
+      id: "toonation:queue-1",
+      provider: "toonation" as const,
+      externalId: "queue-1",
+      donorName: "엔젤",
+      amount: 60000,
+      at: new Date("2026-08-03T12:00:00.000Z").toISOString(),
+      target: "toon" as const,
+      status: "queued" as const,
+    };
+    const first = applyGroupSplitDonationToAppState(state, eventA);
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const eventB = {
+      ...eventA,
+      id: "toon-1785761532559-60000-abc",
+      externalId: "1785761532559-60000-abc",
+    };
+    expect(hasGroupSplitSignatureForDonation(first.state, eventB)).toBe(true);
+    const second = applyGroupSplitFromEventOnState(first.state, eventB);
+    expect(second.ok).toBe(false);
+    if (second.ok) return;
+    expect(second.reason).toBe("duplicate");
+  });
+
+  it("applyGroupSplitFromEventOnState splits existing single row instead of adding duplicate", () => {
+    const at = Date.now();
+    const state: AppState = {
+      ...defaultState(),
+      members: members(["A", "B", "C"]),
+      donors: [
+        {
+          id: "toonation:already-1",
+          name: "엔젤",
+          amount: 60000,
+          memberId: "m1",
+          at,
+          target: "toon",
+        },
+      ],
+    };
+    const unmatchedEvent = {
+      id: "toon-different-id",
+      provider: "toonation" as const,
+      externalId: "different-id",
+      donorName: "엔젤",
+      amount: 60000,
+      at: new Date(at).toISOString(),
+      target: "toon" as const,
+      status: "queued" as const,
+    };
+    const applied = applyGroupSplitFromEventOnState(state, unmatchedEvent);
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(applied.donors).toHaveLength(3);
+    expect(applied.state.donors.find((d) => d.id === "toonation:already-1")?.donationExcluded).toBe(true);
+    const memberSum = applied.state.members.reduce((s, m) => s + (m.toon || 0), 0);
+    expect(memberSum).toBe(60000);
   });
 });

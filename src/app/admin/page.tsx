@@ -162,7 +162,7 @@ import {
 } from "@/lib/donation/apply-donation-state";
 import { processDonationEvent, type ProcessDonationResult } from "@/lib/donation/processor";
 import {
-  applyGroupSplitDonationToAppState,
+  applyGroupSplitFromEventOnState,
   countGroupSplitParts,
   isGroupSplitPartDonor,
   isGroupSplitSourceDonor,
@@ -4908,16 +4908,27 @@ export default function AdminPage() {
       }
 
       const settings = normalizeGroupSplitDonationSettings(base.groupSplitDonationSettings);
-      const applied = applyGroupSplitDonationToAppState(base, payload, settings);
+      const applied = applyGroupSplitFromEventOnState(base, payload, settings);
       if (!applied.ok) {
+        if (applied.reason === "duplicate") {
+          const q = user?.id ? `?u=${encodeURIComponent(user.id)}` : "";
+          await fetch(`/api/donations/unmatched/resolve${q}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: event.id }),
+          }).catch(() => {});
+          pushToonationLog(
+            `미매칭 단체짠: ${displayDonorName} — 이미 반영된 후원(중복 방지). 목록에서 제거했습니다.`
+          );
+          await fetchUnmatchedEvents();
+          return;
+        }
         const err =
-          applied.reason === "duplicate"
-            ? "이미 단체짠 분배됨"
-            : applied.reason === "no_eligible"
-              ? "분배 대상 멤버 없음"
-              : applied.reason === "amount_too_small"
-                ? "금액이 너무 작음"
-                : applied.reason;
+          applied.reason === "no_eligible"
+            ? "분배 대상 멤버 없음"
+            : applied.reason === "amount_too_small"
+              ? "금액이 너무 작음"
+              : applied.reason;
         pushToonationLog(`미매칭 단체짠 실패: ${displayDonorName} (${err})`);
         return;
       }
