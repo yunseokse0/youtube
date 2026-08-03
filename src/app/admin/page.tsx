@@ -84,7 +84,7 @@ import {
   buildRestroomMemberUpdate,
 } from "@/lib/restroom-utils";
 import { useSSEConnection } from "@/lib/sse-client";
-import { createStateUpdatedScheduler } from "@/lib/overlay-pull-policy";
+import { createStateUpdatedScheduler, DONOR_STATE_UPDATED_DEBOUNCE_MS, DONOR_STATE_UPDATED_MAX_WAIT_MS } from "@/lib/overlay-pull-policy";
 import {
   resolveSigAdminPreviewFallbackSrc,
   resolveSigAdminPreviewSrc,
@@ -402,7 +402,7 @@ function ClientTime({ ts }: { ts: number | string }) {
 /** 평시 동기화는 SSE `state_updated` + 디바운스. 주기 폴링은 연결 끊김 대비용만 */
 const ADMIN_STATE_FALLBACK_POLL_MS = 120_000;
 /** 후원자 리스트 실시간 반영 — SSE 누락 대비 가시 탭에서 짧게 폴링 */
-const ADMIN_DONOR_LIVE_POLL_MS = 4_000;
+const ADMIN_DONOR_LIVE_POLL_MS = 2_000;
 
 /** SSE·폴링 시 불필요한 setState 연쇄(버튼·effect 재실행) 방지용 */
 function adminSyncFingerprint(s: AppState): string {
@@ -460,11 +460,8 @@ export default function AdminPage() {
   const fetchToonationQueueRef = useRef<(() => Promise<DonationEvent[]>) | null>(null);
   const autoProcessQueueRef = useRef<((events?: DonationEvent[]) => Promise<void>) | null>(null);
   const pushToonationLogRef = useRef<(message: string) => void>(() => {});
-  const adminPageMountAtRef = useRef(Date.now());
   const toonationQueueBaselineIdsRef = useRef<Set<string>>(new Set());
   const toonationQueueBaselineReadyRef = useRef(false);
-  const toonationQueueProcessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const toonationQueuePendingIdsRef = useRef<Set<string>>(new Set());
   const toonationQueueRef = useRef<DonationEvent[]>([]);
   const toonationQueueHydratedRef = useRef(false);
   /** 동일 updatedAt 원격을 SSE·폴링이 반복 적용하지 않도록 */
@@ -654,11 +651,26 @@ export default function AdminPage() {
       donationApplied?: { donorName?: string; amount?: number; target?: string; memberName?: string };
     };
     if (o?.type === "donation_queue_updated") {
-      void fetchToonationQueueRef.current?.().then((items) => {
-        if (items && items.length > 0) {
-          void autoProcessQueueRef.current?.(items);
+      void (async () => {
+        let items: DonationEvent[] = [];
+        for (let attempt = 0; attempt < 6; attempt += 1) {
+          items = (await fetchToonationQueueRef.current?.()) ?? [];
+          if (items.length > 0) break;
+          await new Promise((resolve) => setTimeout(resolve, 30 + attempt * 25));
         }
-      });
+        if (items.length === 0) return;
+        toonationQueueBaselineReadyRef.current = true;
+        const baseline = toonationQueueBaselineIdsRef.current;
+        const pending = items.filter((evt) => {
+          if (!baseline.has(evt.id)) baseline.add(evt.id);
+          if (evt.alreadyApplied) return false;
+          return !isDuplicateDonationEvent(stateRef.current, evt);
+        });
+        if (pending.length > 0) {
+          void autoProcessQueueRef.current?.(pending);
+        }
+        adminDonorForceSyncRef.current?.();
+      })();
       return;
     }
     if (o?.type !== "state_updated") return;
@@ -1681,7 +1693,7 @@ export default function AdminPage() {
     };
     const { schedule, cancel } = createStateUpdatedScheduler(() => {
       void syncFromApi();
-    });
+    }, { debounceMs: DONOR_STATE_UPDATED_DEBOUNCE_MS, maxWaitMs: DONOR_STATE_UPDATED_MAX_WAIT_MS });
     adminStateSseScheduleRef.current = schedule;
     adminDonorForceSyncRef.current = () => {
       void syncFromApi({ forceFull: true, forceDonorMerge: true });
@@ -5198,11 +5210,9 @@ export default function AdminPage() {
   }, [toonationSocketEnabled, user?.id]);
 
   useEffect(() => {
-    adminPageMountAtRef.current = Date.now();
     toonationQueueHydratedRef.current = false;
     toonationQueueBaselineReadyRef.current = false;
     toonationQueueBaselineIdsRef.current = new Set();
-    toonationQueuePendingIdsRef.current = new Set();
   }, [user?.id]);
 
   useEffect(() => {
@@ -5217,46 +5227,19 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!toonationQueueHydratedRef.current) return;
-    const schedulePendingQueueProcess = () => {
-      if (toonationQueueProcessTimerRef.current) {
-        clearTimeout(toonationQueueProcessTimerRef.current);
-      }
-      toonationQueueProcessTimerRef.current = setTimeout(() => {
-        toonationQueueProcessTimerRef.current = null;
-        const pendingIds = toonationQueuePendingIdsRef.current;
-        toonationQueuePendingIdsRef.current = new Set();
-        const batch = toonationQueueRef.current.filter((e) => pendingIds.has(e.id));
-        if (batch.length > 0) {
-          void autoProcessAllQueueEvents(batch);
-        }
-      }, 200);
-    };
     if (!toonationQueueBaselineReadyRef.current) {
       toonationQueueBaselineReadyRef.current = true;
-      const baseline = toonationQueueBaselineIdsRef.current;
-      const mountCutoff = adminPageMountAtRef.current - 8000;
-      for (const evt of toonationQueue) {
-        baseline.add(evt.id);
-        const atMs = Date.parse(String(evt.at || ""));
-        const isLive = !Number.isFinite(atMs) || atMs >= mountCutoff;
-        const alreadyApplied = isDuplicateDonationEvent(stateRef.current, evt);
-        if (isLive && !alreadyApplied) {
-          toonationQueuePendingIdsRef.current.add(evt.id);
-        }
-      }
-      if (toonationQueuePendingIdsRef.current.size > 0) {
-        schedulePendingQueueProcess();
-      }
-      return;
     }
     const baseline = toonationQueueBaselineIdsRef.current;
-    const fresh = toonationQueue.filter((e) => !baseline.has(e.id));
-    if (fresh.length === 0) return;
-    for (const evt of fresh) {
-      baseline.add(evt.id);
-      toonationQueuePendingIdsRef.current.add(evt.id);
+    const pending: DonationEvent[] = [];
+    for (const evt of toonationQueue) {
+      if (!baseline.has(evt.id)) baseline.add(evt.id);
+      if (evt.alreadyApplied) continue;
+      if (isDuplicateDonationEvent(stateRef.current, evt)) continue;
+      pending.push(evt);
     }
-    schedulePendingQueueProcess();
+    if (pending.length === 0) return;
+    void autoProcessAllQueueEvents(pending);
   }, [autoProcessAllQueueEvents, toonationQueue]);
 
   const addContribution = () => {
