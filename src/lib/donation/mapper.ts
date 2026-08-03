@@ -239,3 +239,24 @@ export function mapToMember(
 
   return { ...event, status: "unmatched" };
 }
+
+/** 미매칭 UI — 멤버 드롭다운 기본값 제안(자동 반영 아님) */
+export function suggestMemberForDonationEvent(
+  event: DonationEvent,
+  members: Member[],
+  aliases: DonorAlias[] = []
+): Member | undefined {
+  if (!Array.isArray(members) || members.length === 0) return undefined;
+  const msgMatch = matchMemberByMessageContains(event.message || "", members);
+  if (msgMatch) return msgMatch;
+  for (const lookupName of resolveMemberLookupCandidates(event)) {
+    const exact = matchMemberByName(lookupName, members, aliases);
+    if (exact) return exact;
+    const fuzzyCandidates = members.flatMap((m) =>
+      memberNameCandidates(m).map((label) => ({ label, value: m }))
+    );
+    const fuzzy = findBestFuzzyNameMatch(lookupName, fuzzyCandidates, 0.62);
+    if (fuzzy) return fuzzy.item.value;
+  }
+  return undefined;
+}

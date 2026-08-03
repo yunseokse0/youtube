@@ -170,6 +170,7 @@ import {
   revertDonationFromAppState,
 } from "@/lib/donation/apply-donation-state";
 import { mergeDonationApplyBase } from "@/lib/donation/merge-donation-apply-base";
+import { suggestMemberForDonationEvent } from "@/lib/donation/mapper";
 import { processDonationEvent, type ProcessDonationResult } from "@/lib/donation/processor";
 import {
   applyGroupSplitFromEventOnState,
@@ -4742,7 +4743,19 @@ export default function AdminPage() {
       const res = await fetch(`/api/donations/unmatched?u=${encodeURIComponent(uid)}`, { cache: "no-store" });
       if (!res.ok) return;
       const data = (await res.json().catch(() => null)) as { items?: DonationEvent[] } | null;
-      setUnmatchedEvents(Array.isArray(data?.items) ? data.items : []);
+      const items = Array.isArray(data?.items) ? data.items : [];
+      setUnmatchedEvents(items);
+      if (items.length > 0) {
+        setUnmatchedAssignMap((prev) => {
+          const next = { ...prev };
+          for (const evt of items) {
+            if (next[evt.id]) continue;
+            const suggested = suggestMemberForDonationEvent(evt, stateRef.current.members || [], []);
+            if (suggested?.id) next[evt.id] = suggested.id;
+          }
+          return next;
+        });
+      }
     } catch {
       // noop
     }
@@ -4901,11 +4914,32 @@ export default function AdminPage() {
         { ownerName: toonationOwnerName }
       );
       applyProcessDonationResult(result);
-      await removeQueueEvent(evt.id);
+
       if (result.updatedState) {
+        await removeQueueEvent(evt.id);
         applied += 1;
       } else if (result.status === "processed") {
-        cleared += 1;
+        const verify = await loadStateFromApi(user?.id, { forceFull: true });
+        if (verify && isDuplicateDonationEvent(verify, evt)) {
+          await removeQueueEvent(evt.id);
+          cleared += 1;
+        } else {
+          pushToonationLog(
+            `큐 유지: ${evt.donorName} ${evt.amount.toLocaleString("ko-KR")}원 — processed 표시였으나 상태에 없음`
+          );
+        }
+      } else if (result.status === "unmatched") {
+        await removeQueueEvent(evt.id);
+        const hint = String(evt.message || evt.playerName || "").trim();
+        pushToonationLog(
+          `미매칭: ${evt.donorName} ${evt.amount.toLocaleString("ko-KR")}원` +
+            (hint ? ` — 「${hint}」` : "") +
+            " → 아래 미매칭 목록에서 멤버 선택 후 「선택 멤버로 반영」"
+        );
+      } else if (result.status === "failed") {
+        pushToonationLog(
+          `반영 실패(큐 유지): ${evt.donorName} ${evt.amount.toLocaleString("ko-KR")}원 (${result.error || "unknown"})`
+        );
       }
     }
     await fetchToonationQueue();

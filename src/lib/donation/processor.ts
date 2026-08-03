@@ -123,7 +123,9 @@ export async function processDonationEvent(
             processedEventIds.add(dedupeKey);
             return { ...event, status: "processed" as const, updatedState: beforeSave };
           }
-          const saved = await saveCurrentAppState(fallbackApplied.state, userId);
+          const saved = await saveCurrentAppState(fallbackApplied.state, userId, {
+            donorsAuthoritative: true,
+          });
           if (!saved.ok) {
             return { ...event, status: "failed" as const, error: "state_save_failed" };
           }
@@ -172,7 +174,7 @@ export async function processDonationEvent(
       return { ...event, status: "processed" as const, updatedState: beforeSave };
     }
 
-    const saved = await saveCurrentAppState(applied.state, userId);
+    const saved = await saveCurrentAppState(applied.state, userId, { donorsAuthoritative: true });
     if (!saved.ok) {
       return { ...event, status: "failed" as const, error: "state_save_failed" };
     }
