@@ -29,6 +29,9 @@ import {
   resolveLivePresetStyleParam,
   presetToParams,
   isOverlayBroadcastHost,
+  isAdminDashboardPreviewEmbed,
+  isEmbeddedInSameOriginAdminFrame,
+  isExternalOverlayBroadcastHost,
   shouldSuppressOverlaySseConnection,
   mergeOverlayPresetsForOverlayView,
   resolveTimerOverlayStyle,
@@ -142,12 +145,6 @@ function migrateLegacyOverlayLastGood(userId?: string): AppState | null {
   return null;
 }
 
-function isExternalOverlayBroadcastHostFromWindow(): boolean {
-  if (typeof window === "undefined") return false;
-  const h = new URLSearchParams(window.location.search).get("host")?.trim().toLowerCase();
-  return h === "prism" || h === "obs" || h === "external";
-}
-
 function useRemoteState(userId?: string, enabled = true): { state: AppState | null; ready: boolean } {
   const readInitialLastGood = (): AppState | null => {
     return (
@@ -177,7 +174,8 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
   const overlaySinceRef = useRef(0);
   overlaySinceRef.current = Math.max(lastUpdatedRef.current, lastDonorRevRef.current);
   const syncingRef = useRef(false);
-  const syncOnceRef = useRef<() => Promise<void>>(async () => {});
+  const pendingForceSyncRef = useRef(false);
+  const syncOnceRef = useRef<(opts?: { forceFull?: boolean }) => Promise<void>>(async () => {});
   const scheduleStateUpdatedRef = useRef<(() => void) | null>(null);
   const lastGoodRef = useRef<AppState | null>(
     state && hasMeaningfulMemberRoster(state) ? state : readInitialLastGood()
@@ -229,12 +227,12 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
     if (!incoming) return;
     if (incoming.type === "state_updated") {
       if (incoming.donationApplied) {
-        void syncOnceRef.current();
+        void syncOnceRef.current({ forceFull: true });
         return;
       }
       const dr = Number(incoming.donorRankingsUpdatedAt);
       if (Number.isFinite(dr) && dr > 0) {
-        void syncOnceRef.current();
+        void syncOnceRef.current({ forceFull: true });
         return;
       }
       if (typeof incoming.updatedAt === "number") {
@@ -302,8 +300,11 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
     } else {
       lastUpdatedRef.current = 0;
     }
-    const syncOnce = async () => {
-      if (syncingRef.current) return;
+    const syncOnce = async (opts?: { forceFull?: boolean }) => {
+      if (syncingRef.current) {
+        if (opts?.forceFull) pendingForceSyncRef.current = true;
+        return;
+      }
       syncingRef.current = true;
       try {
         const localNow = readLocalStateIfExists();
@@ -328,19 +329,19 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
             saveLastGood(mergedLocal);
           }
         }
-        /** 관리자 미리보기: 실멤버 로컬이 있을 때만 GET 생략 */
-        if (shouldSuppressOverlaySseConnection()) {
+        /** 관리자 iframe 미리보기만 GET 생략 — OBS/prism은 stale localStorage 무시하고 서버에서 당김 */
+        if (isAdminDashboardPreviewEmbed() || isEmbeddedInSameOriginAdminFrame()) {
           const peek = readLocalStateIfExists();
           if (peek && (peek.updatedAt || 0) > 0 && hasMeaningfulMemberRoster(peek)) {
-            syncingRef.current = false;
             return;
           }
         }
         const needRosterHydration = !hasStrongRosterRef.current;
+        const forceFull = Boolean(opts?.forceFull) || needRosterHydration;
         const data = await loadStateFromApi(userId, {
           pick: "overlay-donors",
-          ifUpdatedSince: needRosterHydration ? 0 : overlaySinceRef.current,
-          forceFull: needRosterHydration,
+          ifUpdatedSince: forceFull ? 0 : overlaySinceRef.current,
+          forceFull,
         });
         const remoteRev = Math.max(data?.updatedAt || 0, readDonorRankingsRevision(data || ({} as AppState)));
         const remoteStrong = hasMeaningfulMemberRoster(data);
@@ -371,8 +372,13 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         if (!localNow || !hasMeaningfulMemberRoster(localNow)) {
           restoreLastGood();
         }
+      } finally {
+        syncingRef.current = false;
+        if (pendingForceSyncRef.current) {
+          pendingForceSyncRef.current = false;
+          void syncOnce({ forceFull: true });
+        }
       }
-      syncingRef.current = false;
     };
     const { schedule, cancel: cancelStateUpdatedSchedule } = createStateUpdatedScheduler(
       () => {
@@ -407,7 +413,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
       }
     };
     const pollMs =
-      shouldSuppressOverlaySseConnection() || isExternalOverlayBroadcastHostFromWindow()
+      shouldSuppressOverlaySseConnection() || isExternalOverlayBroadcastHost()
         ? readOverlayLiveSyncPollMs()
         : readDonationListsOverlayPollMs();
     let pollTimer: number | undefined;
@@ -2283,8 +2289,8 @@ function OverlayInner() {
   const tableBodySheetBgCss = tableSheetFullyOpaque
     ? `rgb(${tableSheetRgb.join(", ")})`
     : `rgba(${tableSheetRgb.join(", ")}, ${effectiveTableTintAlpha})`;
-  /** 미리보기와 동일하게 항상 시트 틴트+colgroup 경로 사용 → 테이블 클래스 배경은 제거 */
-  const effectiveTableCls = stripBg(membersTheme.tableCls);
+  /** 미리보기와 동일하게 항상 시트 틴트+colgroup 경로 사용 → 테이블 클래스 배경·테두리는 제거 */
+  const effectiveTableCls = stripBorder(stripBg(membersTheme.tableCls));
   // Strip row backgrounds for tinted/GIF sheet; keep header & total bar colors when shown.
   // 행 사이 가로 구분선은 헤더(테두리 없음)와 일관성을 위해 제거 → 순위 없음(—) 행 위·아래가 동일하게 보임.
   const effectiveRowCls = stripBorder(stripBg(stripTextColor(membersTheme.rowCls)));
@@ -3511,18 +3517,29 @@ function OverlayInner() {
           border: none !important;
           border-bottom: none !important;
           border-top: none !important;
+          outline: none !important;
           padding: ${tableRowPadY}px ${tableRowPadX}px !important;
           min-height: ${tableRowMinH}px !important;
           line-height: 1.25 !important;
           font-weight: ${tableFontWeight} !important;
           letter-spacing: -0.01em;
         }
-        .overlay-root .overlay-elegant-table td {
-          transition: ${externalHost || stableMode ? "none" : "filter 180ms ease, transform 180ms ease, background-size 220ms ease"};
-          background: transparent !important;
+        .overlay-root .overlay-elegant-table thead td,
+        .overlay-root .overlay-elegant-table .overlay-total-row td {
           text-shadow: ${tableOutlineShadowCss} !important;
           -webkit-text-stroke: ${tableStrokeCss} !important;
           paint-order: stroke fill;
+        }
+        .overlay-root .overlay-elegant-table tbody tr.overlay-row td {
+          background: transparent !important;
+          background-image: none !important;
+          box-shadow: none !important;
+          text-shadow: none !important;
+          -webkit-text-stroke: 0 !important;
+        }
+        .overlay-root .overlay-elegant-table td {
+          transition: ${externalHost || stableMode ? "none" : "filter 180ms ease, transform 180ms ease, background-size 220ms ease"};
+          background: transparent !important;
           -webkit-font-smoothing: antialiased;
           text-rendering: ${tableTextRenderingCss};
         }
@@ -3554,7 +3571,7 @@ function OverlayInner() {
           background: transparent !important;
         }
         .overlay-root .overlay-elegant-table:not(.excel-live-table):not(.pastel-member-table) tbody tr.overlay-row td {
-          background: ${tableBodySheetBgCss} !important;
+          background: transparent !important;
         }
         .overlay-root .overlay-elegant-table.excel-live-table thead td {
           color: var(--excel-header-text) !important;
@@ -3623,14 +3640,22 @@ function OverlayInner() {
           animation: rowFlash 0.8s ease-out forwards !important;
         }`
         }
-        .overlay-root .overlay-elegant-table td,
-        .overlay-root .overlay-elegant-table thead td {
+        .overlay-root .overlay-elegant-table thead td,
+        .overlay-root .overlay-elegant-table .overlay-total-row td {
           container-type: normal !important;
           font-size: ${memberFontPx}px !important;
           line-height: 1.2 !important;
           -webkit-text-stroke: ${overlayTextSharpRender ? tableStrokeCss : "0"} !important;
           /* 스트로크 대신 다층 그림자로 외곽선(OBS CEF에서 stroke 생략) — 선명 렌더링 시 stroke 유지 */
           text-shadow: ${tableOutlineShadowCss} !important;
+          text-rendering: ${overlayTextSharpRender ? "geometricPrecision" : "auto"} !important;
+        }
+        .overlay-root .overlay-elegant-table tbody tr.overlay-row td {
+          container-type: normal !important;
+          font-size: ${memberFontPx}px !important;
+          line-height: 1.2 !important;
+          -webkit-text-stroke: 0 !important;
+          text-shadow: none !important;
           text-rendering: ${overlayTextSharpRender ? "geometricPrecision" : "auto"} !important;
         }
         .overlay-root .overlay-elegant-table tbody td span:not(.overlay-rank-fx-colorShift):not(.overlay-rank-fx-rainbow):not(.overlay-rank-fx-glow):not(.overlay-rank-fx-sparkle),
@@ -3920,6 +3945,7 @@ function OverlayInner() {
                       style={{
                         fontSize: memberFontPx,
                         borderSpacing: 0,
+                        borderCollapse: "collapse",
                         tableLayout: "fixed",
                         width: `calc(${excelTableWidthCalc})`,
                         ...excelMemberTableStyle,

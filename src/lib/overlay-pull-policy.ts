@@ -8,7 +8,7 @@
  * - 디버그 전역 폴링만 env `NEXT_PUBLIC_OVERLAY_DEBUG_POLL_MS`
  */
 
-import { shouldSuppressOverlaySseConnection } from "@/lib/overlay-params";
+import { shouldSuppressOverlaySseConnection, isExternalOverlayBroadcastHost } from "@/lib/overlay-params";
 
 /** SSE `state_updated` 연타 시 GET 합치기 — 기본 트레일링 지연(ms) */
 export const DEFAULT_STATE_UPDATED_DEBOUNCE_MS = 100;
@@ -125,13 +125,14 @@ export function readOverlayLiveSyncPollMs(): number {
 }
 
 /**
- * overlayPollMs 미지정 시: 디버그 env → SSE 생략 환경이면 live sync 폴링 → 아니면 0(SSE만).
+ * overlayPollMs 미지정 시: 디버그 env → SSE 생략·방송 호스트(obs/prism) → live sync 폴링 → 아니면 0(SSE만).
  */
 export function resolveOverlayRemotePollMs(explicit?: number): number {
   if (explicit != null && explicit >= 0) return explicit;
   const debug = readOverlayPollIntervalMs();
   if (debug > 0) return debug;
   if (shouldSuppressOverlaySseConnection()) return readOverlayLiveSyncPollMs();
+  if (isExternalOverlayBroadcastHost()) return readOverlayLiveSyncPollMs();
   return 0;
 }
 

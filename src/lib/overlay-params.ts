@@ -1535,6 +1535,20 @@ export function stripOverlayPollMsFromBrowserLocation(): void {
 }
 
 /**
+ * OBS·Prism·외부 방송 호스트 — SSE 정책과 별개로 주기 폴링·즉시 동기화 대상.
+ * `host=obs|prism|external`
+ */
+export function isExternalOverlayBroadcastHost(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const h = new URLSearchParams(window.location.search).get("host")?.trim().toLowerCase();
+    return h === "prism" || h === "obs" || h === "external";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * OBS 방송 소스(`host=obs`)는 브라우저 소스마다 SSE를 열면 `/api/events`·GET이 겹쳐 3번째 소스부터
  * 타임아웃·빈 화면이 나기 쉽다. 폴링만으로 동기화(각 오버레이 기본 1.5~2.5s).
  * 디버그: `?overlayAllowSse=1`

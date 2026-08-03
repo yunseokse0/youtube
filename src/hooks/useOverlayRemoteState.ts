@@ -437,9 +437,15 @@ export function useOverlayRemoteState(
       donorRankingsUpdatedAt?: number;
       roulettePhase?: string;
       rouletteSessionId?: string;
+      donationApplied?: unknown;
     };
 
     if (o?.type !== "state_updated") return;
+
+    if (o.donationApplied) {
+      void syncFromApiRef.current({ forceFull: true });
+      return;
+    }
 
     if (obsTextPick) {
       if (
@@ -480,6 +486,10 @@ export function useOverlayRemoteState(
           lastSyncedDonorRevRef.current
         )
       ) {
+        if (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) {
+          void syncFromApiRef.current({ forceFull: true });
+          return;
+        }
         scheduleSseSyncRef.current?.();
 
         return;
