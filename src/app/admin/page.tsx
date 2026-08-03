@@ -160,6 +160,7 @@ import {
   normalizeDonationEventId,
   revertDonationFromAppState,
 } from "@/lib/donation/apply-donation-state";
+import { mergeDonationApplyBase } from "@/lib/donation/merge-donation-apply-base";
 import { processDonationEvent, type ProcessDonationResult } from "@/lib/donation/processor";
 import {
   applyGroupSplitFromEventOnState,
@@ -436,6 +437,8 @@ export default function AdminPage() {
   const lastLocalPersistAtRef = useRef<number>(0);
   const syncStatusRef = useRef<"loading" | "synced" | "local" | "error">("loading");
   const pendingUnsyncedRef = useRef<boolean>(false);
+  /** donorsAuthoritative 저장 직후 SSE·폴링이 빈 서버 스냅샷으로 덮어쓰지 않게 */
+  const donationAuthoritativeSaveUntilRef = useRef<number>(0);
   /** 주기 폴링에서 didPreserve로 서버에 다시 올릴 때 최소 간격 — 연속 POST·SSE 대기 완화 */
   const lastPollMergePersistAtRef = useRef<number>(0);
   /** 다른 탭·창 `storage` 반영 시 즉시 POST하면 탭 간 ping-pong으로 /api/state·/api/events 폭주 가능 */
@@ -1374,6 +1377,20 @@ export default function AdminPage() {
       ) {
         merged = { ...merged, donors: localDonorsNorm, members: local.members };
         didPreserve = true;
+      } else if (
+        localDonorsNorm.length > mergedDonorsNorm.length &&
+        totalCombined(local) > totalCombined(merged)
+      ) {
+        const union = mergeDonorsForMultiTabSave(mergedDonorsNorm, localDonorsNorm, {
+          incomingUpdatedAt: incoming.updatedAt,
+          existingUpdatedAt: local.updatedAt,
+        });
+        merged = {
+          ...merged,
+          donors: union,
+          members: totalCombined(merged) >= totalCombined(local) ? merged.members : local.members,
+        };
+        didPreserve = true;
       }
     }
     merged = {
@@ -1524,6 +1541,16 @@ export default function AdminPage() {
           localDonors.length === 0 &&
           (remoteDonors.length > 0 || totalCombined(remote) > 0) &&
           !opts?.forceDonorMerge
+        ) {
+          return false;
+        }
+      }
+      if (Date.now() < donationAuthoritativeSaveUntilRef.current && !opts?.forceDonorMerge) {
+        const localDonors = normalizeDonorsArray(stateRef.current.donors);
+        const remoteDonors = normalizeDonorsArray(remote.donors);
+        if (
+          remoteDonors.length < localDonors.length ||
+          totalCombined(remote) < totalCombined(stateRef.current)
         ) {
           return false;
         }
@@ -4870,6 +4897,19 @@ export default function AdminPage() {
     user?.id,
   ]);
 
+  const markAuthoritativeDonationSave = useCallback((saved: { serverUpdatedAt?: number }, next: AppState) => {
+    const ts = saved.serverUpdatedAt ?? next.updatedAt ?? Date.now();
+    donationAuthoritativeSaveUntilRef.current = Date.now() + 10_000;
+    stateUpdatedAtRef.current = ts;
+    lastAppliedRemoteUpdatedAtRef.current = ts;
+    lastLocalPersistAtRef.current = Date.now();
+    pendingUnsyncedRef.current = false;
+    stateRef.current = next;
+    try {
+      window.localStorage.setItem(storageKey(user?.id), JSON.stringify(next));
+    } catch {}
+  }, [user?.id]);
+
   const applyGroupSplitFromUnmatched = useCallback(
     async (event: DonationEvent) => {
       const displayDonorName = (aliasInputMap[event.id] || event.donorName || "").trim();
@@ -4882,30 +4922,8 @@ export default function AdminPage() {
 
       const freshState = await loadStateFromApi(user?.id, { forceFull: true });
       const hint = stateRef.current;
-      let base = freshState ?? hint;
+      const base = mergeDonationApplyBase(freshState, hint);
       if (!base) return;
-
-      if (hint) {
-        const hintDonors = hint.donors || [];
-        const baseDonors = base.donors || [];
-        if (hintDonors.length > baseDonors.length) {
-          base = { ...base, donors: hintDonors };
-        }
-        if (hasMeaningfulMemberRoster(hint) && !hasMeaningfulMemberRoster(base)) {
-          base = {
-            ...base,
-            members: hint.members,
-            memberPositions: hint.memberPositions,
-            memberPositionMode: hint.memberPositionMode,
-            rankPositionLabels: hint.rankPositionLabels,
-          };
-        }
-        base = {
-          ...base,
-          mealBattle: hint.mealBattle ?? base.mealBattle,
-          donationSyncMode: hint.donationSyncMode ?? base.donationSyncMode,
-        };
-      }
 
       const settings = normalizeGroupSplitDonationSettings(base.groupSplitDonationSettings);
       const applied = applyGroupSplitFromEventOnState(base, payload, settings);
@@ -4946,13 +4964,14 @@ export default function AdminPage() {
         body: JSON.stringify({ id: event.id }),
       }).catch(() => {});
 
+      markAuthoritativeDonationSave(saved, applied.state);
       setState(applied.state);
       pushToonationLog(
         `미매칭 단체짠: ${displayDonorName} ${event.amount.toLocaleString("ko-KR")}원 → ${applied.donors.length}행 생성 (${applied.preview.sharePerMember.toLocaleString("ko-KR")}원×${applied.preview.eligibleMembers.length}명)`
       );
       await fetchUnmatchedEvents();
     },
-    [aliasInputMap, fetchUnmatchedEvents, pushToonationLog, user?.id]
+    [aliasInputMap, fetchUnmatchedEvents, markAuthoritativeDonationSave, pushToonationLog, user?.id]
   );
 
   const applyGroupSplitFromDonor = useCallback(
@@ -4962,7 +4981,7 @@ export default function AdminPage() {
         return;
       }
       const freshState = await loadStateFromApi(user?.id, { forceFull: true });
-      const base = freshState ?? stateRef.current;
+      const base = mergeDonationApplyBase(freshState, stateRef.current);
       if (!base) return;
 
       const settings = normalizeGroupSplitDonationSettings(base.groupSplitDonationSettings);
@@ -4987,12 +5006,13 @@ export default function AdminPage() {
         pushToonationLog("단체짠 분배: 저장 실패");
         return;
       }
+      markAuthoritativeDonationSave(saved, applied.state);
       setState(applied.state);
       pushToonationLog(
         `단체짠: ${donor.name} ${donor.amount.toLocaleString("ko-KR")}원 → ${applied.donors.length}행 생성 (${applied.preview.sharePerMember.toLocaleString("ko-KR")}원×${applied.preview.eligibleMembers.length}명, 합계 ${donor.amount.toLocaleString("ko-KR")}원 유지)`
       );
     },
-    [pushToonationLog, user?.id]
+    [markAuthoritativeDonationSave, pushToonationLog, user?.id]
   );
 
   const saveAliasForUnmatched = useCallback(async (event: DonationEvent) => {

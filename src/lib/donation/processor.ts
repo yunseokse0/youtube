@@ -1,4 +1,5 @@
-import { hasMeaningfulMemberRoster, loadStateFromApi, saveStateAsync } from "@/lib/state";
+import { loadStateFromApi, saveStateAsync } from "@/lib/state";
+import { mergeDonationApplyBase } from "./merge-donation-apply-base";
 import { createModuleLogger } from "@/lib/logger";
 import type { AppState } from "@/types";
 import { applyDonationToAppState, isDuplicateDonationEvent } from "./apply-donation-state";
@@ -40,26 +41,7 @@ function mergeAdminHintForDonation(server: AppState, hint?: AppState | null): Ap
 
 /** 단체짠 — GET이 빈 donors·placeholder 멤버일 때 관리자 stateRef 기준으로 보정 */
 function mergeAdminHintForGroupSplit(server: AppState, hint?: AppState | null): AppState {
-  let merged = mergeAdminHintForDonation(server, hint);
-  if (!hint) return merged;
-
-  const hintDonors = Array.isArray(hint.donors) ? hint.donors : [];
-  const baseDonors = Array.isArray(merged.donors) ? merged.donors : [];
-  if (hintDonors.length > baseDonors.length) {
-    merged = { ...merged, donors: hintDonors };
-  }
-
-  if (hasMeaningfulMemberRoster(hint) && !hasMeaningfulMemberRoster(merged)) {
-    merged = {
-      ...merged,
-      members: hint.members,
-      memberPositions: hint.memberPositions ?? merged.memberPositions,
-      memberPositionMode: hint.memberPositionMode ?? merged.memberPositionMode,
-      rankPositionLabels: hint.rankPositionLabels ?? merged.rankPositionLabels,
-    };
-  }
-
-  return merged;
+  return mergeDonationApplyBase(server, hint) ?? server;
 }
 
 export type ProcessDonationOptions = {

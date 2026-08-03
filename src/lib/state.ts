@@ -48,6 +48,7 @@ import {
   type StateApiPick,
 } from "@/lib/state-api-pick";
 import { MANUAL_SIG_BROADCAST_STATE_KEY } from "@/lib/manual-sig-broadcast-state";
+import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
 import { MANUAL_SIG_DRAFT_STATE_KEY } from "@/lib/manual-sig-workbench";
 import { OBS_TEXT_OVERLAY_STATE_KEY, normalizeObsTextRegistry, type ObsTextOverlayRegistry } from "@/lib/obs-text-overlay";
 import { slimSigInventoryForWire } from "@/lib/state-wire-slim";
@@ -1369,6 +1370,19 @@ function mergeServerSaveApiBodies(prevJson: string, nextJson: string): string {
     if (!prev || typeof prev !== "object" || !next || typeof next !== "object") return nextJson;
     if (next.settlementReset === true) return nextJson;
     const merged: Record<string, unknown> = { ...prev, ...next };
+    const prevDonors = Array.isArray(prev.donors) ? (prev.donors as Donor[]) : null;
+    const nextDonors = Array.isArray(next.donors) ? (next.donors as Donor[]) : null;
+    const nextAuthoritative = next.donorsAuthoritative === true;
+    if (prevDonors && nextDonors && !nextAuthoritative && next.settlementReset !== true) {
+      if (nextDonors.length === 0 && prevDonors.length > 0) {
+        merged.donors = prevDonors;
+      } else if (nextDonors.length < prevDonors.length) {
+        merged.donors = mergeDonorsForMultiTabSave(nextDonors, prevDonors, {
+          incomingUpdatedAt: Number(next.updatedAt || 0),
+          existingUpdatedAt: Number(prev.updatedAt || 0),
+        });
+      }
+    }
     /** overlaySettings 는 얕은 병합으로 키가 날아가지 않게 */
     if (
       prev.overlaySettings &&
@@ -1624,17 +1638,31 @@ export async function saveStateAsync(
   const saveOpts: SaveStateAsyncOptions | undefined = options?.settlementReset
     ? { ...options, donorsAuthoritative: true, settlementReset: true }
     : options;
-  const json = JSON.stringify(next);
+  let guarded = next;
+  if (!saveOpts?.settlementReset && !saveOpts?.donorsAuthoritative) {
+    const local = loadState(userId);
+    const localDonors = normalizeDonorsArray(local?.donors);
+    if (localDonors.length > 0) {
+      const mergedDonors = mergeDonorsForMultiTabSave(normalizeDonorsArray(guarded.donors), localDonors, {
+        incomingUpdatedAt: guarded.updatedAt,
+        existingUpdatedAt: local?.updatedAt,
+      });
+      if (mergedDonors.length !== normalizeDonorsArray(guarded.donors).length) {
+        guarded = syncMemberTotalsFromDonors({ ...guarded, donors: mergedDonors });
+      }
+    }
+  }
+  const json = JSON.stringify(guarded);
   /** 테마 변경 직후 미리보기가 멤버를 잃지 않게 서버 대기 전에 LS 반영 */
   try {
     window.localStorage.setItem(storageKey(userId), json);
   } catch {}
-  notifyBroadcastStateLocalUpdated(userId, next.updatedAt);
+  notifyBroadcastStateLocalUpdated(userId, guarded.updatedAt);
   try {
     const result = await enqueueServerSave(
-      JSON.stringify(appStatePayloadForApi(next, userId, saveOpts)),
+      JSON.stringify(appStatePayloadForApi(guarded, userId, saveOpts)),
       userId,
-      next
+      guarded
     );
     if (result.ok) {
       try {
@@ -2217,12 +2245,21 @@ export type MergeDonorsForMultiTabSaveOptions = {
   donorsAuthoritative?: boolean;
 };
 
+function unionDonorsById(existing: Donor[], incoming: Donor[]): Donor[] {
+  const map = new Map<string, Donor>();
+  for (const d of existing) map.set(d.id, d);
+  for (const d of incoming) {
+    const prev = map.get(d.id);
+    if (!prev || d.at >= prev.at) map.set(d.id, d);
+  }
+  return Array.from(map.values()).sort((a, b) => b.at - a.at);
+}
+
 /**
  * 여러 브라우저/탭이 동시에 저장할 때 오래된 탭이 후원 목록을 덮어쓰는 것을 완화합니다.
- * - incoming에 서버에 없던 새 후원 id가 있으면 기존과 id 기준 병합(최신 at 우선).
- * - incoming이 기존 id의 부분집합이고 비율이 절반 이하이면, 누락분을 서버(existing)에서 채움(스테일 탭).
- * - 그 외(삭제·소량 삭제 등)는 incoming을 그대로 반영합니다.
- * - `incomingUpdatedAt` 이 서버보다 오래되면 삭제된 후원을 되살리지 않습니다.
+ * - 라이브 방송: 명시적 삭제(`donorsAuthoritative`)·정산 리셋 외에는 id union — 후원 누락·자동 초기화 방지.
+ * - incoming에 새 id가 있으면 기존과 병합(최신 at 우선).
+ * - `incomingUpdatedAt` 이 서버보다 오래되면 삭제·추가 모두 무시(existing 유지).
  */
 export function mergeDonorsForMultiTabSave(
   incoming: Donor[],
@@ -2239,46 +2276,13 @@ export function mergeDonorsForMultiTabSave(
     return existing;
   }
 
-  const existingIds = new Set(existing.map((d) => d.id));
-  const incomingIds = new Set(incoming.map((d) => d.id));
-  const hasNewInIncoming = incoming.some((d) => !existingIds.has(d.id));
-  const hasRemovedInIncoming = existing.some((d) => !incomingIds.has(d.id));
+  if (incomingStale) return existing;
 
-  if (hasNewInIncoming && hasRemovedInIncoming) {
-    if (incomingStale) return existing;
+  if (opts?.donorsAuthoritative) {
     return [...incoming].sort((a, b) => b.at - a.at);
   }
 
-  if (hasNewInIncoming) {
-    if (incomingStale) return existing;
-    const map = new Map<string, Donor>();
-    for (const d of existing) map.set(d.id, d);
-    for (const d of incoming) {
-      const prev = map.get(d.id);
-      if (!prev || d.at >= prev.at) map.set(d.id, d);
-    }
-    return Array.from(map.values()).sort((a, b) => b.at - a.at);
-  }
-
-  if (hasRemovedInIncoming && !hasNewInIncoming) {
-    if (incomingStale) return existing;
-    if (opts?.donorsAuthoritative) return incoming;
-    const ratio = existing.length > 0 ? incoming.length / existing.length : 1;
-    if (ratio > 0.5) return incoming;
-  }
-
-  const subset = incoming.every((d) => existingIds.has(d.id));
-  if (!subset) return incoming;
-  const ratio = incoming.length / existing.length;
-  if (incoming.length < existing.length && ratio <= 0.5) {
-    const map = new Map<string, Donor>();
-    for (const d of incoming) map.set(d.id, d);
-    for (const d of existing) {
-      if (!map.has(d.id)) map.set(d.id, d);
-    }
-    return Array.from(map.values()).sort((a, b) => b.at - a.at);
-  }
-  return incoming;
+  return unionDonorsById(existing, incoming);
 }
 
 /** 정산 리셋 이후 구 탭·다른 PC가 실어낸 후원(at < reset) 제거 */

@@ -583,8 +583,35 @@ export async function POST(req: Request) {
             donorsAuthoritative,
           })
       : baseState.donors;
+    let safeMergedDonors = mergedDonors;
+    if (
+      donorsInPatch &&
+      !donorsAuthoritative &&
+      !settlementReset &&
+      !donationInitReset &&
+      Array.isArray(baseState.donors) &&
+      baseState.donors.length > 0
+    ) {
+      const baseCount = baseState.donors.length;
+      const mergedCount = safeMergedDonors.length;
+      if (mergedCount === 0 || mergedCount < baseCount) {
+        const recovered = mergeDonorsForMultiTabSave(incomingDonorsFiltered, baseState.donors, {
+          incomingUpdatedAt: Number(body.updatedAt || 0),
+          existingUpdatedAt: Number(baseState.updatedAt || 0),
+        });
+        if (recovered.length > mergedCount) {
+          logger.warn("blocked accidental donor loss on save", {
+            userId,
+            baseCount,
+            mergedCount,
+            recovered: recovered.length,
+          });
+          safeMergedDonors = recovered;
+        }
+      }
+    }
     const merged = mergePartialState(baseState, body, userId);
-    const dedupedDonors = donorsInPatch ? dedupeDonorRows(mergedDonors) : mergedDonors;
+    const dedupedDonors = donorsInPatch ? dedupeDonorRows(safeMergedDonors) : safeMergedDonors;
     const draft: AppState = syncMemberTotalsFromDonors({ ...merged, donors: dedupedDonors });
     const donorRankingsUpdatedAt = computeDonorRankingsUpdatedAt(
       baseState,

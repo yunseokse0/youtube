@@ -26,14 +26,29 @@ describe("mergeDonorsForMultiTabSave", () => {
     expect(merged.map((d) => d.id).sort()).toEqual(["toonation:1", "toonation:2"]);
   });
 
-  it("applies a newer snapshot that deletes and adds donors", () => {
+  it("unions donors when newer snapshot adds and removes without authoritative flag", () => {
     const existing = [donor("toonation:1", 51000), donor("toonation:2", 10000)];
     const incoming = [donor("toonation:2", 10000), donor("toonation:4", 3000, 2000)];
     const merged = mergeDonorsForMultiTabSave(incoming, existing, {
       incomingUpdatedAt: 9000,
       existingUpdatedAt: 5000,
     });
-    expect(merged.map((d) => d.id).sort()).toEqual(["toonation:2", "toonation:4"]);
+    expect(merged.map((d) => d.id).sort()).toEqual(["toonation:1", "toonation:2", "toonation:4"]);
+  });
+
+  it("does not drop donors on partial subset without authoritative flag", () => {
+    const existing = [
+      donor("toonation:1", 10000),
+      donor("toonation:2", 10000),
+      donor("toonation:3", 10000),
+      donor("toonation:4", 10000),
+    ];
+    const incoming = [donor("toonation:1", 10000), donor("toonation:2", 10000), donor("toonation:3", 10000)];
+    const merged = mergeDonorsForMultiTabSave(incoming, existing, {
+      incomingUpdatedAt: 9000,
+      existingUpdatedAt: 5000,
+    });
+    expect(merged.map((d) => d.id).sort()).toEqual(["toonation:1", "toonation:2", "toonation:3", "toonation:4"]);
   });
 
   it("applies intentional delete when incoming is newer (1 of 2)", () => {
