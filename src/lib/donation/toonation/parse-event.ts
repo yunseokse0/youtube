@@ -245,6 +245,16 @@ export function createStableToonationFallbackId(data: unknown, amount: number): 
     }
     return `test-${fp}-${unique}`;
   }
+  const alertDonor = extractToonationDonorName(data);
+  const msg = extractToonationMessage(data);
+  const parsed = parseToonationMessageBody(msg, alertDonor);
+  /**
+   * 투네 직접 후원(toon)도 위젯/테스트에서 동일 id·원문을 반복 보내는 경우가 많다.
+   * 실 id를 그대로 쓰면 EVENT/Redis dedupe에 막혀 2건째부터 누락된다.
+   */
+  if (parsed.target !== "account" && isReliableToonationExternalId(extracted)) {
+    return `toon-${extracted}-${unique}`;
+  }
   const ts = extractToonationTimestamp(data);
   return ts ? `fp-${ts}-${amount}-${fp}-${unique}` : `fp-${amount}-${fp}-${unique}`;
 }
@@ -255,9 +265,19 @@ export function isReliableToonationExternalId(id: string): boolean {
   if (!s) return false;
   if (s === "0") return false;
   if (/^test$/i.test(s)) return false;
-  if (/^(fp-|test-)/i.test(s)) return false;
+  if (/^(fp-|test-|toon-)/i.test(s)) return false;
   if (/^\d{10,13}-\d+(-\d+-[a-z0-9]+)?$/i.test(s)) return false;
   return true;
+}
+
+/** WS 원문(JSON)에서 후원 content 페이로드만 추출 */
+export function peekToonationWsPayload(raw: string): unknown | null {
+  try {
+    const envelope = JSON.parse(raw) as Record<string, unknown>;
+    return (envelope as { content?: unknown }).content ?? envelope;
+  } catch {
+    return null;
+  }
 }
 
 /** 투네 관리자 후원 테스트 — 동일 id를 반복 보내는 경우가 많음 */
@@ -271,28 +291,9 @@ export function isToonationTestDonationPayload(data: unknown): boolean {
 }
 
 export function allocateToonationExternalId(data: unknown, amount: number): string {
-  const extracted = extractToonationExternalId(data);
-  const alertDonor = extractToonationDonorName(data);
-  const msg = extractToonationMessage(data);
-  const parsed = parseToonationMessageBody(msg, alertDonor);
-
   /**
-   * 계좌 포맷(`계좌 …`)은 위젯/알림이 동일 id·동일 원문을 반복 보내는 경우가 많음.
-   * 투네 실 id를 그대로 쓰면 Redis 24h 클레임에 막혀 2건째부터 전부 누락된다.
-   */
-  if (parsed.target === "account") {
-    return createStableToonationFallbackId(data, amount);
-  }
-
-  if (isToonationTestDonationPayload(data)) {
-    return createStableToonationFallbackId(data, amount);
-  }
-  if (isReliableToonationExternalId(extracted)) {
-    return extracted;
-  }
-  /**
-   * id 없는 payload는 건별 고유 ID로 연속 동일 금액 후원을 살리고,
-   * 동일 WS 원문 재전송은 server-listener RAW_WS_DEDUPE 가 막는다.
+   * 계좌·투네·테스트 공통: 건별 unique externalId.
+   * 동일 id/WS 원문 연속 후원 허용, WS 재전송은 server-listener RAW dedupe(500ms).
    */
   return createStableToonationFallbackId(data, amount);
 }

@@ -20,3 +20,6 @@
 - 운영 데이터 성격의 API는 필요 시 `daily-log` 누적/복원 흐름과 함께 설계한다.
 - 최소한 API 추가 PR에는 Daily Log 반영 필요 여부를 명시한다.
 
+6) 투네 실시간 자동 수집은 **핵심 기능 — 현재 상태 프리즈** (2026-08-03).
+- 사용자 명시 요청 없이 `src/lib/donation/toonation/**`, 릴레이 컴포넌트, ingest API 동작을 변경하지 않는다.
+- 상세 invariant·테스트: `.cursor/rules/toonation-auto-collect-freeze.mdc` 참고.

@@ -10,6 +10,7 @@ import {
   parseToonationDonationPayload,
   parseToonationMessageBody,
   parseToonationWebSocketMessage,
+  peekToonationWsPayload,
   TOONATION_ALERT_TYPE_YOUTUBE_SUPERCHAT,
   TOONATION_WS_CODE_YOUTUBE_SUPERCHAT,
   unwrapToonationPayload,
@@ -205,15 +206,15 @@ describe("toonation parse-event", () => {
     expect(a?.externalId).not.toBe(b?.externalId);
   });
 
-  it("reuses reliable external id for real donations", () => {
+  it("wraps reliable toonation id with unique suffix for consecutive donations", () => {
     const evt = parseToonationDonationPayload({
       id: "donation-abc-99",
       nickname: "배지은",
       amount: 5000,
       comment: "피자",
     });
-    expect(evt?.externalId).toBe("donation-abc-99");
-    expect(evt?.id).toBe("toonation:donation-abc-99");
+    expect(evt?.externalId).toMatch(/^toon-donation-abc-99-/);
+    expect(evt?.id).toBe(`toonation:${evt?.externalId}`);
   });
 
   it("treats fp-/test- fallback ids as non-reliable", () => {
@@ -221,6 +222,7 @@ describe("toonation parse-event", () => {
     expect(isReliableToonationExternalId("fp-10000-abc")).toBe(false);
     expect(isReliableToonationExternalId("fp-10000-abc-t12")).toBe(false);
     expect(isReliableToonationExternalId("test-same")).toBe(false);
+    expect(isReliableToonationExternalId("toon-donation-abc-99-x")).toBe(false);
     expect(isReliableToonationExternalId("1718100000000-1000-1-abc")).toBe(false);
   });
 
@@ -281,6 +283,11 @@ describe("toonation parse-event", () => {
     expect(isToonationTestDonationPayload(JSON.parse(raw).content)).toBe(true);
   });
 
+  it("peekToonationWsPayload extracts content envelope", () => {
+    const raw = JSON.stringify({ code: 101, content: { nickname: "a", amount: 1, isTest: true } });
+    expect(peekToonationWsPayload(raw)).toEqual({ nickname: "a", amount: 1, isTest: true });
+  });
+
   it("parses comma-separated cash amount strings", () => {
     const evt = parseToonationDonationPayload({
       nickname: "후원자",
@@ -316,21 +323,20 @@ describe("toonation parse-event", () => {
     expect(ids.size).toBe(20);
   });
 
-  it("non-account with reliable id keeps stable external id", () => {
-    const a = parseToonationDonationPayload({
-      id: "donation-real-1",
-      nickname: "배지은",
-      amount: 5000,
-      comment: "피자",
-    });
-    const b = parseToonationDonationPayload({
-      id: "donation-real-1",
-      nickname: "배지은",
-      amount: 5000,
-      comment: "피자",
-    });
-    expect(a?.externalId).toBe("donation-real-1");
-    expect(b?.externalId).toBe("donation-real-1");
+  it("non-account with reused toonation id gets unique ids (연속 동일 투네 후원)", () => {
+    const ids = new Set<string>();
+    for (let i = 0; i < 20; i += 1) {
+      const evt = parseToonationDonationPayload({
+        id: "donation-real-1",
+        nickname: "배지은",
+        amount: 5000,
+        comment: "피자",
+      });
+      expect(evt?.target).toBe("toon");
+      expect(evt?.externalId).toMatch(/^toon-donation-real-1-/);
+      ids.add(String(evt?.externalId));
+    }
+    expect(ids.size).toBe(20);
   });
 
   it("createUniqueToonationFallbackId never collides in a tight loop", () => {

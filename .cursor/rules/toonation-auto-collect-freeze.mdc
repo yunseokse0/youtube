@@ -1,0 +1,47 @@
+---
+description: 투네 실시간 자동 수집 — 핵심 기능 프리즈 (2026-08-03 기준)
+globs: src/lib/donation/**/*,src/components/ToonationBrowserRelay.tsx,src/components/OverlayToonationRelay*.tsx,src/app/api/donations/toonation/**/*
+alwaysApply: false
+---
+
+# 투네 실시간 자동 수집 — FROZEN (핵심 기능)
+
+**사용자가 명시적으로 요청하기 전까지 이 영역의 동작·아키텍처를 변경하지 않는다.**
+
+## 수집 경로 (고정)
+
+1. **1순위**: EC2 서버 Node WS (`server-listener.ts`) — 투네 `ws.toon.at` 단독 연결
+2. **fallback**: 서버 WS **끊김(`!connected`)일 때만** 브라우저 릴레이 (`ToonationBrowserRelay`, `deferToServerListener=true`)
+3. 공통 ingest: `ingestToonationWebSocketMessage` → `tryAutoApplyToonationDonationOnServer`
+
+## 변경 금지 invariant
+
+- 서버 WS 연결 중 overlay/admin 브라우저가 **별도 WS를 열어 경합하지 않음**
+- `pause`/OFF 시에도 Redis **연동키·alertboxUrl 보존**
+- **통합알림창·Alertbox** 탭이 같은 연동키 WS를 잡으면 수집 0건 — UI 경고 유지
+- overlay URL 교체 불필요 — 기존 `/overlay?p=...` 유지
+
+## dedupe (연속 동일 후원 허용 — 2026-08-03)
+
+- **RAW WS dedupe**: 500ms (동일 원문 재전송만 차단)
+- **`isTest: true`**: RAW dedupe skip
+- **externalId**: 건별 unique — `toon-`, `fp-`, `test-` 접미사 (`parse-event.ts` `allocateToonationExternalId`)
+- EVENT dedupe(60s): **투네 실 id(reliable)만**; weak id는 통과
+- 정산·donors 반영: `apply-donation-state.ts` / `computeSettlement()` 경유
+
+## 핵심 파일 (수정 시 사용자 승인 필수)
+
+- `src/lib/donation/toonation/server-listener.ts`
+- `src/lib/donation/toonation/parse-event.ts`
+- `src/lib/donation/toonation/browser-relay-policy.ts`
+- `src/lib/donation/server-apply-donation.ts`
+- `src/lib/donation/apply-donation-state.ts`
+- `src/components/ToonationBrowserRelay.tsx`
+- `src/components/OverlayToonationRelayHost.tsx`
+- `src/app/api/donations/toonation/**`
+
+## 회귀 테스트 (변경 시 필수)
+
+`npm test -- src/lib/donation/toonation`
+
+특히 `server-listener-ingest.test.ts`, `parse-event.test.ts` — 연속 동일 후원·WS 재전송 dedupe.

@@ -22,7 +22,7 @@ export function normalizeDonationEventId(id: string): string {
 export function isWeakToonationDonorId(id: string): boolean {
   const base = normalizeDonationEventId(String(id || "").trim()).replace(/^toonation:/i, "");
   if (!base) return false;
-  if (/^(fp-|test-)/i.test(base)) return true;
+  if (/^(fp-|test-|toon-)/i.test(base)) return true;
   return /^\d{10,13}-\d+(-\d+-[a-z0-9]+)?$/i.test(base);
 }
 

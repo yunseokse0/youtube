@@ -10,10 +10,11 @@ import {
   type ToonationListenerConfig,
 } from "./listener-config-store";
 import {
-  isAccountFormatToken,
   isReliableToonationExternalId,
+  isToonationTestDonationPayload,
   isToonationYoutubeSuperChatWsMessage,
   parseToonationWebSocketMessage,
+  peekToonationWsPayload,
   TOONATION_WS_CODE_DONATION,
   TOONATION_WS_CODE_YOUTUBE_SUPERCHAT,
 } from "./parse-event";
@@ -23,6 +24,12 @@ import { normalizeToonationAlertboxUrl } from "./link-key";
 import { resolveToonationWsPayload } from "./resolve-payload";
 
 const log = createModuleLogger("Toonation/ServerListener");
+
+/**
+ * CORE / FROZEN (2026-08-03): 투네 실시간 자동 수집.
+ * 아키텍처·dedupe 변경은 사용자 명시 요청 + server-listener-ingest.test 통과 필수.
+ * @see .cursor/rules/toonation-auto-collect-freeze.mdc
+ */
 
 const PING_MS = 12_000;
 const RECONNECT_MS = 10_000;
@@ -71,9 +78,8 @@ function syncConnFromIngest(userId: string, patch: { lastEventAt?: number; lastD
   if (typeof patch.lastDonationAt === "number") conn.lastDonationAt = patch.lastDonationAt;
 }
 
-const RAW_WS_DEDUPE_MS = 15_000;
-/** 계좌 포맷은 동일 메시지 연속 후원이 많아, 진짜 WS 재전송(수백 ms)만 막도록 짧게 */
-const RAW_WS_ACCOUNT_DEDUPE_MS = 1_200;
+/** 동일 WS 원문 재전송(수백 ms)만 무시 — 연속 동일 후원은 통과 */
+const RAW_WS_DEDUPE_MS = 500;
 const recentRawWsByUser = new Map<string, Map<string, number>>();
 const recentEventByUser = new Map<string, Map<string, number>>();
 const EVENT_DEDUPE_MS = 60_000;
@@ -192,28 +198,13 @@ export async function ingestToonationWebSocketMessage(
   raw: string,
   ownerName?: string
 ): Promise<ToonationIngestOutcome> {
-  let accountFormatHint = false;
-  try {
-    const envelope = JSON.parse(raw) as Record<string, unknown>;
-    const payload = (envelope as { content?: unknown }).content ?? envelope;
-    const msg = String(
-      (payload as { message?: unknown; comment?: unknown; text?: unknown })?.message ||
-        (payload as { comment?: unknown })?.comment ||
-        (payload as { text?: unknown })?.text ||
-        ""
-    );
-    const firstTok = msg.trim().split(/\s+/).filter(Boolean)[0] || "";
-    accountFormatHint = isAccountFormatToken(firstTok);
-  } catch {
-    /* noop */
-  }
-  if (
-    shouldSkipDuplicateRawWs(
-      userId,
-      raw,
-      accountFormatHint ? RAW_WS_ACCOUNT_DEDUPE_MS : RAW_WS_DEDUPE_MS
-    )
-  ) {
+  const payload = peekToonationWsPayload(raw);
+  const isTestDonation = payload != null && isToonationTestDonationPayload(payload);
+  /**
+   * 투네 후원 테스트는 클릭마다 WS 원문이 거의 동일하다.
+   * 테스트는 건별 unique externalId 로 반영하고, WS 재전송 중복은 드물어 dedupe 를 건너뛴다.
+   */
+  if (!isTestDonation && shouldSkipDuplicateRawWs(userId, raw, RAW_WS_DEDUPE_MS)) {
     return { ok: true, outcome: "duplicate" };
   }
 
