@@ -9422,7 +9422,8 @@ export default function AdminPage() {
                     </span>
                   ) : toonationListenerMeta.lastEventAt ? (
                     <span className="text-[11px] text-amber-400/90">
-                      WS 이벤트 수신됨 · 후원 파싱 대기 (
+                      WS 연결됐으나 후원 0건 — <strong className="text-amber-200">통합알림창·Alertbox</strong>을
+                      닫고 실시간 수집을 다시 켜세요 (
                       {new Date(toonationListenerMeta.lastEventAt).toLocaleTimeString("ko-KR")})
                     </span>
                   ) : toonationSocketEnabled && toonationListenerStatus?.kind === "connected" ? (
@@ -9457,8 +9458,8 @@ export default function AdminPage() {
                     <code className="text-neutral-400">/overlay?u={user.id}</code>)만 켜져 있어도 투네 WS가 자동
                     릴레이됩니다. 연동키는 관리자에서 한 번 저장하면 Redis에 유지됩니다.
                     <br />
-                    <strong className="text-amber-200">OBS에 투네 Alertbox(알림) 소스가 따로 있으면 후원이 엑셀표로 안 들어옵니다.</strong>{" "}
-                    알림은 엑셀표 소스만 쓰거나 Alertbox 소스를 끄세요.
+                    <strong className="text-amber-200">통합알림창·투네 Alertbox를 Chrome/OBS에 따로 켜 두면 후원 JSON이 서버로 오지 않습니다.</strong>{" "}
+                    반드시 닫고, 엑셀표 overlay + 실시간 수집 ON만 사용하세요.
                     <br />
                     알림만 뜨고 표가 안 바뀌면: 엑셀표 소스 새로고침·연동키 확인. (선택) 별도 릴레이 페이지{" "}
                     <code className="text-neutral-500">/overlay/toonation-relay</code> 또는 URL에{" "}

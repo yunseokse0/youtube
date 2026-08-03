@@ -2,13 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  shouldPauseServerForBrowserRelayFallback,
   shouldRunBrowserToonationRelay,
 } from "@/lib/donation/toonation/browser-relay-policy";
 import {
   fetchToonationListenerSnapshot,
-  pauseToonationServerListenerFromBrowser,
-  resumeToonationServerListenerFromBrowser,
 } from "@/lib/donation/toonation/fetch-listener-status";
 
 type RelayConfig = {
@@ -51,7 +48,6 @@ export default function ToonationBrowserRelay({
   const wsRef = useRef<WebSocket | null>(null);
   const onForwardedRef = useRef(onForwarded);
   onForwardedRef.current = onForwarded;
-  const pausedServerForFallbackRef = useRef(false);
   const [config, setConfig] = useState<RelayConfig | null>(null);
   const [relayActive, setRelayActive] = useState(false);
   const [status, setStatus] = useState<"idle" | "connecting" | "connected" | "error">("idle");
@@ -127,26 +123,6 @@ export default function ToonationBrowserRelay({
       window.clearInterval(timer);
     };
   }, [deferToServerListener, enabled, userId]);
-
-  useEffect(() => {
-    if (!deferToServerListener || !relayActive || !config?.linkKey || !userId) return;
-
-    let cancelled = false;
-    const run = async () => {
-      const snapshot = await fetchToonationListenerSnapshot(userId);
-      if (cancelled || !shouldPauseServerForBrowserRelayFallback(snapshot)) return;
-      await pauseToonationServerListenerFromBrowser(userId, config.linkKey!, config.ownerName);
-      if (!cancelled) pausedServerForFallbackRef.current = true;
-    };
-    void run();
-
-    return () => {
-      cancelled = true;
-      if (!pausedServerForFallbackRef.current || !config?.linkKey) return;
-      pausedServerForFallbackRef.current = false;
-      void resumeToonationServerListenerFromBrowser(userId, config.linkKey, config.ownerName);
-    };
-  }, [config?.linkKey, config?.ownerName, deferToServerListener, relayActive, userId]);
 
   const wsEnabled = enabled && relayActive;
 

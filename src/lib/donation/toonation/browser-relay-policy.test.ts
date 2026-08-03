@@ -1,58 +1,40 @@
 import { describe, expect, it } from "vitest";
-import {
-  shouldPauseServerForBrowserRelayFallback,
-  shouldRunBrowserToonationRelay,
-} from "./browser-relay-policy";
+import { shouldRunBrowserToonationRelay } from "./browser-relay-policy";
 
 describe("shouldRunBrowserToonationRelay", () => {
-  const now = 1_000_000_000_000;
-
   it("runs fallback when server status missing", () => {
-    expect(shouldRunBrowserToonationRelay(null, now)).toBe(true);
+    expect(shouldRunBrowserToonationRelay(null)).toBe(true);
   });
 
   it("runs fallback when server ws disconnected", () => {
     expect(
-      shouldRunBrowserToonationRelay(
-        { enabled: true, connected: false, alertboxUrl: "https://toon.at/x" },
-        now
-      )
+      shouldRunBrowserToonationRelay({
+        enabled: true,
+        connected: false,
+        alertboxUrl: "https://toon.at/x",
+      })
     ).toBe(true);
   });
 
-  it("skips browser relay when server connected and receiving donations (Jul 29)", () => {
+  it("skips browser relay when server connected (Jul 29)", () => {
     expect(
-      shouldRunBrowserToonationRelay(
-        {
-          enabled: true,
-          connected: true,
-          lastEventAt: now - 5_000,
-          lastDonationAt: now - 4_000,
-        },
-        now
-      )
+      shouldRunBrowserToonationRelay({
+        enabled: true,
+        connected: true,
+        lastEventAt: Date.now() - 10_000,
+        lastDonationAt: undefined,
+      })
     ).toBe(false);
   });
 
-  it("runs fallback when connected but events without donations (alertbox steal)", () => {
+  it("skips browser relay when server connected and receiving donations", () => {
     expect(
-      shouldRunBrowserToonationRelay(
-        {
-          enabled: true,
-          connected: true,
-          lastEventAt: now - 10_000,
-          lastDonationAt: undefined,
-        },
-        now
-      )
-    ).toBe(true);
-    expect(shouldPauseServerForBrowserRelayFallback(
-      {
+      shouldRunBrowserToonationRelay({
         enabled: true,
         connected: true,
-        lastEventAt: now - 10_000,
-      },
-      now
-    )).toBe(true);
+        lastEventAt: Date.now() - 5_000,
+        lastDonationAt: Date.now() - 4_000,
+      })
+    ).toBe(false);
   });
 });
