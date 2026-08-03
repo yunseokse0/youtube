@@ -1,4 +1,10 @@
-import { hasMeaningfulMemberRoster, normalizeDonorsArray } from "@/lib/state";
+import {
+  DEFAULT_DONOR_RANKINGS_FULL_THEME,
+  hasMeaningfulMemberRoster,
+  isDefaultLikeDonorRankingsTheme,
+  normalizeDonorsArray,
+  pickOverlayPresetsPreferCustom,
+} from "@/lib/state";
 import type { AppState } from "@/types";
 import { dedupeDonorRows } from "./apply-donation-state";
 
@@ -24,6 +30,17 @@ export function mergeDonationApplyBase(
   const useHintMembers = hasMeaningfulMemberRoster(hint);
   const members = useHintMembers ? hint.members : fresh.members;
 
+  const donorRankingsTheme =
+    !isDefaultLikeDonorRankingsTheme(hint.donorRankingsTheme) &&
+    isDefaultLikeDonorRankingsTheme(fresh.donorRankingsTheme)
+      ? hint.donorRankingsTheme
+      : (hint.donorRankingsTheme ?? fresh.donorRankingsTheme);
+  const donorRankingsFullTheme =
+    !isDefaultLikeDonorRankingsTheme(hint.donorRankingsFullTheme, DEFAULT_DONOR_RANKINGS_FULL_THEME) &&
+    isDefaultLikeDonorRankingsTheme(fresh.donorRankingsFullTheme, DEFAULT_DONOR_RANKINGS_FULL_THEME)
+      ? hint.donorRankingsFullTheme
+      : (hint.donorRankingsFullTheme ?? fresh.donorRankingsFullTheme);
+
   return {
     ...fresh,
     ...hint,
@@ -34,10 +51,21 @@ export function mergeDonationApplyBase(
     donors: mergedDonors,
     mealBattle: hint.mealBattle ?? fresh.mealBattle,
     donationSyncMode: hint.donationSyncMode ?? fresh.donationSyncMode,
-    overlayPresets:
-      (hint.overlayPresets?.length || 0) >= (fresh.overlayPresets?.length || 0)
-        ? hint.overlayPresets
-        : fresh.overlayPresets,
+    overlayPresets: pickOverlayPresetsPreferCustom(fresh.overlayPresets, hint.overlayPresets),
+    donorRankingsTheme,
+    donorRankingsFullTheme,
+    donorRankingsPresets: hint.donorRankingsPresets?.length
+      ? hint.donorRankingsPresets
+      : fresh.donorRankingsPresets,
+    donorRankingsPresetId: hint.donorRankingsPresetId ?? fresh.donorRankingsPresetId,
+    overlaySettings: {
+      ...((fresh.overlaySettings && typeof fresh.overlaySettings === "object"
+        ? fresh.overlaySettings
+        : {}) as Record<string, unknown>),
+      ...((hint.overlaySettings && typeof hint.overlaySettings === "object"
+        ? hint.overlaySettings
+        : {}) as Record<string, unknown>),
+    } as AppState["overlaySettings"],
     updatedAt: Math.max(Number(hint.updatedAt || 0), Number(fresh.updatedAt || 0)) || Date.now(),
   };
 }

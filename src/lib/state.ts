@@ -495,6 +495,38 @@ export function normalizeDonorRankingsFullTheme(input: unknown): DonorRankingsTh
 }
 
 /** 후원순위 테마가 기본값과 동일한지(원격 기본값으로 로컬 커스텀을 덮지 않기 위함) */
+/** 오버레이 프리셋이 기본(핑크 그라데이션)인지 — 커스텀 테마·색상 덮어쓰기 방지용 */
+export function isDefaultLikeOverlayPresets(presets: unknown): boolean {
+  if (!Array.isArray(presets) || presets.length === 0) return true;
+  const p = presets[0] as Record<string, unknown>;
+  if (!p || typeof p !== "object") return true;
+  if (String(p.theme || "default") !== "default") return false;
+  if (String(p.membersTheme || "auto") !== "auto") return false;
+  if (String(p.totalTheme || "auto") !== "auto") return false;
+  const colorKeys = [
+    "tableBgColor",
+    "tableHeaderBgColor",
+    "tableHeaderTextColor",
+    "tableLineColor",
+    "accountColor",
+    "toonColor",
+    "tableBgGifUrl",
+  ];
+  return !colorKeys.some((k) => typeof p[k] === "string" && String(p[k]).trim());
+}
+
+export function pickOverlayPresetsPreferCustom(
+  fresh: AppState["overlayPresets"] | undefined,
+  hint: AppState["overlayPresets"] | undefined
+): AppState["overlayPresets"] {
+  const freshDefault = isDefaultLikeOverlayPresets(fresh);
+  const hintDefault = isDefaultLikeOverlayPresets(hint);
+  if (!hintDefault && freshDefault) return hint ?? fresh ?? [];
+  if (!freshDefault && hintDefault) return fresh ?? [];
+  if ((hint?.length || 0) >= (fresh?.length || 0)) return hint ?? fresh ?? [];
+  return fresh ?? hint ?? [];
+}
+
 export function isDefaultLikeDonorRankingsTheme(
   theme: DonorRankingsTheme | null | undefined,
   defaults: DonorRankingsTheme = DEFAULT_DONOR_RANKINGS_THEME
@@ -1395,6 +1427,39 @@ function mergeServerSaveApiBodies(prevJson: string, nextJson: string): string {
         ...(next.overlaySettings as Record<string, unknown>),
       };
     }
+    const prevTheme = prev.donorRankingsTheme;
+    const nextTheme = next.donorRankingsTheme;
+    if (
+      prevTheme &&
+      typeof prevTheme === "object" &&
+      nextTheme &&
+      typeof nextTheme === "object" &&
+      isDefaultLikeDonorRankingsTheme(nextTheme as DonorRankingsTheme) &&
+      !isDefaultLikeDonorRankingsTheme(prevTheme as DonorRankingsTheme)
+    ) {
+      merged.donorRankingsTheme = prevTheme;
+    }
+    const prevFullTheme = prev.donorRankingsFullTheme;
+    const nextFullTheme = next.donorRankingsFullTheme;
+    if (
+      prevFullTheme &&
+      typeof prevFullTheme === "object" &&
+      nextFullTheme &&
+      typeof nextFullTheme === "object" &&
+      isDefaultLikeDonorRankingsTheme(nextFullTheme as DonorRankingsTheme, DEFAULT_DONOR_RANKINGS_FULL_THEME) &&
+      !isDefaultLikeDonorRankingsTheme(prevFullTheme as DonorRankingsTheme, DEFAULT_DONOR_RANKINGS_FULL_THEME)
+    ) {
+      merged.donorRankingsFullTheme = prevFullTheme;
+    }
+    if (
+      Array.isArray(prev.overlayPresets) &&
+      prev.overlayPresets.length > 0 &&
+      Array.isArray(next.overlayPresets) &&
+      isDefaultLikeOverlayPresets(next.overlayPresets) &&
+      !isDefaultLikeOverlayPresets(prev.overlayPresets)
+    ) {
+      merged.overlayPresets = prev.overlayPresets;
+    }
     return JSON.stringify(merged);
   } catch {
     return nextJson;
@@ -1639,8 +1704,8 @@ export async function saveStateAsync(
     ? { ...options, donorsAuthoritative: true, settlementReset: true }
     : options;
   let guarded = next;
+  const local = loadState(userId);
   if (!saveOpts?.settlementReset && !saveOpts?.donorsAuthoritative) {
-    const local = loadState(userId);
     const localDonors = normalizeDonorsArray(local?.donors);
     if (localDonors.length > 0) {
       const mergedDonors = mergeDonorsForMultiTabSave(normalizeDonorsArray(guarded.donors), localDonors, {
@@ -1650,6 +1715,26 @@ export async function saveStateAsync(
       if (mergedDonors.length !== normalizeDonorsArray(guarded.donors).length) {
         guarded = syncMemberTotalsFromDonors({ ...guarded, donors: mergedDonors });
       }
+    }
+  }
+  if (local && !saveOpts?.settlementReset) {
+    if (
+      isDefaultLikeOverlayPresets(guarded.overlayPresets) &&
+      !isDefaultLikeOverlayPresets(local.overlayPresets)
+    ) {
+      guarded = { ...guarded, overlayPresets: local.overlayPresets };
+    }
+    if (
+      isDefaultLikeDonorRankingsTheme(guarded.donorRankingsTheme) &&
+      !isDefaultLikeDonorRankingsTheme(local.donorRankingsTheme)
+    ) {
+      guarded = { ...guarded, donorRankingsTheme: local.donorRankingsTheme };
+    }
+    if (
+      isDefaultLikeDonorRankingsTheme(guarded.donorRankingsFullTheme, DEFAULT_DONOR_RANKINGS_FULL_THEME) &&
+      !isDefaultLikeDonorRankingsTheme(local.donorRankingsFullTheme, DEFAULT_DONOR_RANKINGS_FULL_THEME)
+    ) {
+      guarded = { ...guarded, donorRankingsFullTheme: local.donorRankingsFullTheme };
     }
   }
   const json = JSON.stringify(guarded);

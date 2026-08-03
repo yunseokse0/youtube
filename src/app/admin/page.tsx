@@ -29,6 +29,7 @@ import {
   hasSigSalesMemberPresets,
   isShrunkToDefaultSigInventory,
   isDefaultLikeDonorRankingsTheme,
+  isDefaultLikeOverlayPresets,
   DEFAULT_DONOR_RANKINGS_FULL_THEME,
   shouldPreferLocalSigInventoryOverIncoming,
   normalizeDonorsArray,
@@ -71,6 +72,14 @@ import {
   pickDailyLogEntryForRestore,
   summarizeRestoreJson,
 } from "@/lib/state-restore";
+import {
+  applyThemeRestorePatch,
+  collectThemeRestoreCandidates,
+  pickBestThemeRestoreCandidate,
+  shouldOfferThemeRestore,
+  summarizeThemeRestoreCandidate,
+  type ThemeRestoreCandidate,
+} from "@/lib/theme-restore";
 import {
   applyRestroomCountDelta,
   buildRestroomMemberUpdate,
@@ -439,6 +448,8 @@ export default function AdminPage() {
   const pendingUnsyncedRef = useRef<boolean>(false);
   /** donorsAuthoritative 저장 직후 SSE·폴링이 빈 서버 스냅샷으로 덮어쓰지 않게 */
   const donationAuthoritativeSaveUntilRef = useRef<number>(0);
+  /** 테마 자동 복구 안내는 세션당 1회 */
+  const themeRestorePromptedRef = useRef(false);
   /** 주기 폴링에서 didPreserve로 서버에 다시 올릴 때 최소 간격 — 연속 POST·SSE 대기 완화 */
   const lastPollMergePersistAtRef = useRef<number>(0);
   /** 다른 탭·창 `storage` 반영 시 즉시 POST하면 탭 간 ping-pong으로 /api/state·/api/events 폭주 가능 */
@@ -1307,6 +1318,13 @@ export default function AdminPage() {
       didPreserve = true;
     }
     if (
+      isDefaultLikeOverlayPresets(merged.overlayPresets) &&
+      !isDefaultLikeOverlayPresets(local.overlayPresets)
+    ) {
+      merged = { ...merged, overlayPresets: local.overlayPresets };
+      didPreserve = true;
+    }
+    if (
       Array.isArray(local.donorRankingsPresets) &&
       local.donorRankingsPresets.length > 0 &&
       (!Array.isArray(merged.donorRankingsPresets) || merged.donorRankingsPresets.length === 0)
@@ -1476,7 +1494,22 @@ export default function AdminPage() {
         }
         setState(toApply);
         if (Array.isArray(toApply.overlayPresets) && toApply.overlayPresets.length > 0) {
-          setPresets(toApply.overlayPresets as OverlayPreset[]);
+          if (
+            isDefaultLikeOverlayPresets(toApply.overlayPresets) &&
+            localPresets.length > 0 &&
+            !isDefaultLikeOverlayPresets(localPresets)
+          ) {
+            const next = { ...toApply, overlayPresets: localPresets, updatedAt: Date.now() };
+            setState(next);
+            setPresets(localPresets);
+            stateRef.current = next;
+            saveOverlayPresetsPatchAsync(localPresets, user?.id, { foundation: next }).then((r) => {
+              if (r.ok) setSyncStatus(r.storageFallback ? "error" : "synced");
+            });
+            setSigExcelResult("오버레이 프리셋 캐시에서 테마를 자동 복구했습니다.");
+          } else {
+            setPresets(toApply.overlayPresets as OverlayPreset[]);
+          }
         } else if (localPresets.length > 0) {
           const next = { ...toApply, overlayPresets: localPresets };
           setState(next);
@@ -1699,6 +1732,80 @@ export default function AdminPage() {
     },
     [user?.id]
   );
+
+  const applyThemeRestoreFromCandidate = useCallback(
+    (candidate: ThemeRestoreCandidate, opts?: { silent?: boolean }) => {
+      const summary = summarizeThemeRestoreCandidate(candidate);
+      if (
+        !opts?.silent &&
+        !window.confirm(
+          `${candidate.source}에서 테마를 복구합니다.\n` +
+            (summary.length ? `${summary.join("\n")}\n` : "") +
+            "※ 멤버·후원 금액은 그대로 두고 테마만 되돌립니다.\n계속할까요?"
+        )
+      ) {
+        return false;
+      }
+      const next = applyThemeRestorePatch(stateRef.current, candidate);
+      if (Array.isArray(next.overlayPresets) && next.overlayPresets.length > 0) {
+        setPresets(next.overlayPresets as OverlayPreset[]);
+        try {
+          window.localStorage.setItem(presetStorageKey, JSON.stringify(next.overlayPresets));
+          notifyOverlayPresetsLocalUpdated();
+        } catch {}
+        persistOverlayPresetsOnly(next.overlayPresets as OverlayPreset[], next);
+      }
+      setState(next);
+      stateRef.current = next;
+      try {
+        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(next));
+      } catch {}
+      setPresetRev((r) => r + 1);
+      setSigExcelResult(`테마 복구 완료 (${candidate.source}): ${summary.join(" · ") || "완료"}`);
+      return true;
+    },
+    [persistOverlayPresetsOnly, presetStorageKey, user?.id]
+  );
+
+  const restoreThemeFromLocalBackup = useCallback(() => {
+    const best = pickBestThemeRestoreCandidate(collectThemeRestoreCandidates(user?.id));
+    if (!best) {
+      window.alert(
+        "복구할 커스텀 테마를 이 브라우저 저장본에서 찾지 못했습니다.\n" +
+          "「브라우저 저장본 복구」 또는 「JSON에서 전체 복구」를 시도해 보세요."
+      );
+      return;
+    }
+    applyThemeRestoreFromCandidate(best);
+  }, [applyThemeRestoreFromCandidate, user?.id]);
+
+  const maybePromptThemeRestore = useCallback(
+    (current: AppState) => {
+      if (themeRestorePromptedRef.current) return;
+      const best = pickBestThemeRestoreCandidate(collectThemeRestoreCandidates(user?.id));
+      if (!shouldOfferThemeRestore(current, best) || !best) return;
+      themeRestorePromptedRef.current = true;
+      window.setTimeout(() => {
+        const summary = summarizeThemeRestoreCandidate(best);
+        if (
+          window.confirm(
+            "테마가 기본(핑크 그라데이션)으로 초기화된 것으로 보입니다.\n" +
+              `${best.source}에서 이전 테마를 복구할까요?\n` +
+              (summary.length ? `${summary.join("\n")}\n` : "") +
+              "※ 멤버·후원 금액은 유지됩니다."
+          )
+        ) {
+          applyThemeRestoreFromCandidate(best, { silent: true });
+        }
+      }, 900);
+    },
+    [applyThemeRestoreFromCandidate, user?.id]
+  );
+
+  useEffect(() => {
+    if (!user || syncStatus !== "synced") return;
+    maybePromptThemeRestore(stateRef.current);
+  }, [user, syncStatus, maybePromptThemeRestore]);
 
   const savePresets = (next: OverlayPreset[]) => {
     const normalized = normalizeOverlayPresetLabels(next);
@@ -4758,7 +4865,9 @@ export default function AdminPage() {
   );
 
   const applyProcessDonationResult = useCallback((result: ProcessDonationResult) => {
-    if (result.updatedState) setState(result.updatedState);
+    if (result.updatedState) {
+      setState((prev) => mergeDonationApplyBase(result.updatedState!, prev) ?? result.updatedState!);
+    }
     if (result.autoGroupSplit && result.status === "processed") {
       pushToonationLog(`단체짠 자동: ${result.donorName} ${result.amount.toLocaleString("ko-KR")}원 균등 분배`);
     } else if (result.autoGroupSplitFallback && result.status === "processed") {
@@ -4788,7 +4897,7 @@ export default function AdminPage() {
       const result = await processDonationEvent(
         { ...evt, status: "queued" },
         user?.id,
-        freshState ?? stateRef.current,
+        stateRef.current,
         { ownerName: toonationOwnerName }
       );
       applyProcessDonationResult(result);
@@ -4898,16 +5007,18 @@ export default function AdminPage() {
   ]);
 
   const markAuthoritativeDonationSave = useCallback((saved: { serverUpdatedAt?: number }, next: AppState) => {
-    const ts = saved.serverUpdatedAt ?? next.updatedAt ?? Date.now();
+    const preserved = mergeDonationApplyBase(next, stateRef.current) ?? next;
+    const ts = saved.serverUpdatedAt ?? preserved.updatedAt ?? Date.now();
     donationAuthoritativeSaveUntilRef.current = Date.now() + 10_000;
     stateUpdatedAtRef.current = ts;
     lastAppliedRemoteUpdatedAtRef.current = ts;
     lastLocalPersistAtRef.current = Date.now();
     pendingUnsyncedRef.current = false;
-    stateRef.current = next;
+    stateRef.current = preserved;
     try {
-      window.localStorage.setItem(storageKey(user?.id), JSON.stringify(next));
+      window.localStorage.setItem(storageKey(user?.id), JSON.stringify(preserved));
     } catch {}
+    return preserved;
   }, [user?.id]);
 
   const applyGroupSplitFromUnmatched = useCallback(
@@ -4965,7 +5076,7 @@ export default function AdminPage() {
       }).catch(() => {});
 
       markAuthoritativeDonationSave(saved, applied.state);
-      setState(applied.state);
+      setState((prev) => mergeDonationApplyBase(applied.state, prev) ?? applied.state);
       pushToonationLog(
         `미매칭 단체짠: ${displayDonorName} ${event.amount.toLocaleString("ko-KR")}원 → ${applied.donors.length}행 생성 (${applied.preview.sharePerMember.toLocaleString("ko-KR")}원×${applied.preview.eligibleMembers.length}명)`
       );
@@ -5007,7 +5118,7 @@ export default function AdminPage() {
         return;
       }
       markAuthoritativeDonationSave(saved, applied.state);
-      setState(applied.state);
+      setState((prev) => mergeDonationApplyBase(applied.state, prev) ?? applied.state);
       pushToonationLog(
         `단체짠: ${donor.name} ${donor.amount.toLocaleString("ko-KR")}원 → ${applied.donors.length}행 생성 (${applied.preview.sharePerMember.toLocaleString("ko-KR")}원×${applied.preview.eligibleMembers.length}명, 합계 ${donor.amount.toLocaleString("ko-KR")}원 유지)`
       );
@@ -5787,6 +5898,13 @@ export default function AdminPage() {
               title="로컬이 리셋되었을 때 서버 최신 상태를 다시 가져옵니다"
             >
               서버에서 가져오기
+            </button>
+            <button
+              className="px-2 py-1 rounded bg-fuchsia-800 hover:bg-fuchsia-700 text-xs font-medium text-white"
+              onClick={restoreThemeFromLocalBackup}
+              title="브라우저·프리셋 캐시에서 커스텀 오버레이 테마만 복구 (멤버·후원 유지)"
+            >
+              테마 복구
             </button>
             <button
               className="px-2 py-1 rounded bg-violet-800 hover:bg-violet-700 text-xs font-medium text-white"

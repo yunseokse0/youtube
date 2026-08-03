@@ -73,4 +73,28 @@ describe("mergeDonationApplyBase", () => {
     const merged = mergeDonationApplyBase(fresh, hint);
     expect(merged?.donors.map((d) => d.id).sort()).toEqual(["d1", "d2"]);
   });
+
+  it("keeps hint overlay theme when server snapshot is default", () => {
+    const hint: AppState = {
+      ...defaultState(),
+      members: members(["A"]),
+      overlayPresets: [
+        {
+          id: "ov1",
+          name: "방송",
+          theme: "excelLive",
+          membersTheme: "excelLive",
+          totalTheme: "excelLive",
+        } as AppState["overlayPresets"][number],
+      ],
+    };
+    const fresh: AppState = {
+      ...defaultState(),
+      members: members(["A"]),
+      overlayPresets: [{ id: "ov0", name: "기본", theme: "default" } as AppState["overlayPresets"][number]],
+      updatedAt: Date.now() + 5000,
+    };
+    const merged = mergeDonationApplyBase(fresh, hint);
+    expect(merged?.overlayPresets?.[0]?.theme).toBe("excelLive");
+  });
 });
