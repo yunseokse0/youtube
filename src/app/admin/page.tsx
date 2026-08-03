@@ -4869,6 +4869,31 @@ export default function AdminPage() {
     user?.id,
   ]);
 
+  const applyGroupSplitFromUnmatched = useCallback(
+    async (event: DonationEvent) => {
+      const displayDonorName = (aliasInputMap[event.id] || event.donorName || "").trim();
+      if (!displayDonorName) return;
+      const payload: DonationEvent = {
+        ...event,
+        donorName: displayDonorName,
+        status: "queued",
+      };
+      const result = await processGroupSplitDonationEvent(payload, user?.id, stateRef.current);
+      if (result.updatedState) setState(result.updatedState);
+      if (result.status === "processed") {
+        pushToonationLog(
+          `미매칭 단체짠: ${displayDonorName} ${event.amount.toLocaleString("ko-KR")}원 → 멤버 균등 분배`
+        );
+        await fetchUnmatchedEvents();
+        return;
+      }
+      pushToonationLog(
+        `미매칭 단체짠 실패: ${displayDonorName} (${result.error || result.splitError || "unknown"})`
+      );
+    },
+    [aliasInputMap, fetchUnmatchedEvents, pushToonationLog, user?.id]
+  );
+
   const applyGroupSplitFromDonor = useCallback(
     async (donor: Donor) => {
       if (String(donor.id || "").includes(":split:") || donor.groupSplit) {
@@ -9666,7 +9691,15 @@ export default function AdminPage() {
                     {unmatchedEvents.length === 0 && (
                       <div className="text-xs text-neutral-500">현재 미매칭 후원이 없습니다.</div>
                     )}
-                    {unmatchedEvents.map((evt) => (
+                    {unmatchedEvents.map((evt) => {
+                      const splitPreview = previewGroupSplitDonation(
+                        state,
+                        evt.amount,
+                        state.groupSplitDonationSettings
+                      );
+                      const canGroupSplit =
+                        splitPreview.eligibleMembers.length > 0 && splitPreview.sharePerMember > 0;
+                      return (
                       <div key={evt.id} className="rounded border border-white/10 bg-neutral-900/60 p-2">
                         <div className="text-xs text-neutral-300">
                           {evt.donorName} / {evt.amount.toLocaleString("ko-KR")}원
@@ -9676,7 +9709,37 @@ export default function AdminPage() {
                             {evt.message}
                           </div>
                         ) : null}
+                        {canGroupSplit ? (
+                          <div className="mt-1 text-[11px] text-violet-300/90">
+                            단체짠: {splitPreview.eligibleMembers.length}명 ×{" "}
+                            {splitPreview.sharePerMember.toLocaleString("ko-KR")}원
+                            {splitPreview.remainderToFirst > 0
+                              ? ` (+${splitPreview.remainderToFirst.toLocaleString("ko-KR")}원은 첫 멤버)`
+                              : ""}
+                          </div>
+                        ) : (
+                          <div className="mt-1 text-[11px] text-neutral-500">
+                            단체짠 불가 — 분배 대상 멤버 없음 또는 금액 부족
+                          </div>
+                        )}
                         <div className="mt-2 flex flex-wrap items-center gap-2">
+                          {canGroupSplit ? (
+                            <button
+                              type="button"
+                              className="px-2 py-1 rounded bg-violet-800 hover:bg-violet-700 text-xs"
+                              title={`${splitPreview.sharePerMember.toLocaleString("ko-KR")}원 × ${splitPreview.eligibleMembers.length}명`}
+                              onClick={() => {
+                                requestConfirm(
+                                  "미매칭 단체짠 나누기",
+                                  `${evt.donorName} ${evt.amount.toLocaleString("ko-KR")}원을 ${splitPreview.eligibleMembers.length}명에게 균등 분배합니다. 1인 ${splitPreview.sharePerMember.toLocaleString("ko-KR")}원${splitPreview.remainderToFirst > 0 ? `(+${splitPreview.remainderToFirst.toLocaleString("ko-KR")}원은 첫 멤버)` : ""}.`,
+                                  () => void applyGroupSplitFromUnmatched(evt),
+                                  { confirmText: "단체짠 나누기", danger: false }
+                                );
+                              }}
+                            >
+                              단체짠 나누기
+                            </button>
+                          ) : null}
                           <select
                             className="px-2 py-1 rounded bg-neutral-900 border border-white/10 text-xs"
                             value={unmatchedAssignMap[evt.id] || donorMemberId || state.members[0]?.id || ""}
@@ -9724,7 +9787,8 @@ export default function AdminPage() {
                           </button>
                         </div>
                       </div>
-                    ))}
+                    );
+                    })}
                   </div>
                 </div>
                 <div className="rounded border border-white/10 bg-black/20 p-2">
