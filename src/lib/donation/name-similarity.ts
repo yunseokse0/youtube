@@ -57,6 +57,9 @@ export function nameSimilarityScore(a: string, b: string): number {
 
 export const MEMBER_NAME_FUZZY_THRESHOLD = 0.72;
 
+/** 자동 반영(엑셀표) — 미매칭 UI 제안과 동일한 완화 임계값 */
+export const MEMBER_NAME_FUZZY_AUTO_APPLY_THRESHOLD = 0.62;
+
 function effectiveFuzzyThreshold(lookupName: string, override?: number): number {
   if (typeof override === "number") return override;
   const len = stripHonorificSuffix(lookupName).length;

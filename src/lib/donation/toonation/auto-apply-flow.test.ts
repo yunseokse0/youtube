@@ -51,7 +51,8 @@ describe("toonation auto-apply flow (parse → apply)", () => {
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.members.find((m) => m.id === "op")?.toon).toBe(10000);
+    expect(result.state.members.find((m) => m.id === "m1")?.toon).toBe(10000);
+    expect(result.state.members.find((m) => m.id === "op")?.toon).toBe(0);
     expect(result.state.members[0]?.account).toBe(0);
     expect(result.state.donors?.[0]?.target).toBe("toon");
     expect(result.event.memberAutoAssigned).toBe(true);

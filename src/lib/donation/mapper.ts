@@ -1,8 +1,10 @@
 import type { Member } from "@/types";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
+import { buildMemberCreationOrderIndex, compareMembersByDonationTotal } from "@/lib/utils";
 import { isAccountFormatToken } from "./toonation/parse-event";
 import {
   findBestFuzzyNameMatch,
+  MEMBER_NAME_FUZZY_AUTO_APPLY_THRESHOLD,
   normalizeComparableName,
   stripHonorificSuffix,
 } from "./name-similarity";
@@ -55,10 +57,78 @@ export function pickDefaultToonationMember(
   return undefined;
 }
 
+function isRepresentativeMember(
+  member: Pick<Member, "id">,
+  memberPositions?: Record<string, string> | null
+): boolean {
+  return String(memberPositions?.[member.id] || "").trim() === "대표";
+}
+
+/** 후원자명만 있을 때 — 엑셀표 1등(대표·운영비 제외, 후원 총액 1위) */
+export function pickTopRankedDonationMember(
+  members: Member[],
+  memberPositions?: Record<string, string> | null
+): Member | undefined {
+  if (!Array.isArray(members) || members.length === 0) return undefined;
+  const positions = memberPositions || null;
+  const orderIndex = buildMemberCreationOrderIndex(members);
+
+  const isOperating = (m: Member) =>
+    isOperatingSettlementMember(
+      { id: m.id, name: m.name, operating: m.operating, realName: m.realName },
+      positions
+    );
+
+  const rankable = members.filter(
+    (m) => m?.id && !isRepresentativeMember(m, positions) && !isOperating(m)
+  );
+  if (rankable.length > 0) {
+    return [...rankable].sort((a, b) => compareMembersByDonationTotal(a, b, orderIndex))[0];
+  }
+
+  const nonOperating = members.filter((m) => m?.id && !isOperating(m));
+  if (nonOperating.length > 0) return nonOperating[0];
+
+  return members.find((m) => m?.id);
+}
+
 export function resolveMemberLookupName(event: DonationEvent): string {
   const player = String(event.playerName || event.recipientName || "").trim();
   if (player) return player;
   return "";
+}
+
+const GENERIC_DONOR_LOOKUP_NAMES = new Set([
+  normalizeComparableName("익명"),
+  normalizeComparableName("anonymous"),
+  normalizeComparableName("후원자"),
+  normalizeComparableName("시청자"),
+  normalizeComparableName("unknown"),
+]);
+
+function isUsefulDonorLookupName(name: string): boolean {
+  const stripped = stripHonorificSuffix(name);
+  return stripped.length >= 2 && !GENERIC_DONOR_LOOKUP_NAMES.has(stripped);
+}
+
+function memberFuzzyCandidates(members: Member[]): { label: string; value: Member }[] {
+  return members.flatMap((m) => memberNameCandidates(m).map((label) => ({ label, value: m })));
+}
+
+function matchMemberByAliasFuzzy(
+  lookupName: string,
+  members: Member[],
+  aliases: DonorAlias[],
+  threshold?: number
+): Member | undefined {
+  if (!lookupName || aliases.length === 0) return undefined;
+  const aliasFuzzy = findBestFuzzyNameMatch(
+    lookupName,
+    aliases.map((a) => ({ label: a.alias, value: a })),
+    threshold
+  );
+  if (!aliasFuzzy) return undefined;
+  return members.find((m) => m.id === aliasFuzzy.item.value.memberId);
 }
 
 /** 메시지·플레이어 필드에서 멤버 매칭 후보(앞쪽 우선) */
@@ -75,11 +145,25 @@ export function resolveMemberLookupCandidates(event: DonationEvent): string[] {
   push(event.playerName);
   push(event.recipientName);
   const msg = String(event.message || "").trim();
-  if (!msg) return out;
-  for (const tok of msg.split(/\s+/).filter(Boolean)) {
-    if (isAccountFormatToken(tok)) continue;
-    push(tok);
+  if (msg) {
+    for (const tok of msg.split(/\s+/).filter(Boolean)) {
+      if (isAccountFormatToken(tok)) continue;
+      push(tok);
+    }
   }
+  return out;
+}
+
+/** 후원자명 — 플레이어·메시지 매칭 실패 시 유사 일치 후보 */
+export function resolveDonorLookupCandidate(event: DonationEvent): string | undefined {
+  const donor = String(event.donorName || "").trim();
+  return isUsefulDonorLookupName(donor) ? donor : undefined;
+}
+
+function resolveAllMemberLookupCandidates(event: DonationEvent): string[] {
+  const out = resolveMemberLookupCandidates(event);
+  const donor = resolveDonorLookupCandidate(event);
+  if (donor && !out.includes(donor)) out.push(donor);
   return out;
 }
 
@@ -137,6 +221,9 @@ function matchMemberByName(
     return members.find((m) => m.id === aliasMatch.memberId);
   }
 
+  const aliasFuzzy = matchMemberByAliasFuzzy(lookupName, members, aliases, undefined);
+  if (aliasFuzzy) return aliasFuzzy;
+
   const exact = members.find((m) => m.name === lookupName || m.realName === lookupName);
   if (exact) return exact;
 
@@ -187,8 +274,24 @@ function matchMemberByName(
   return fuzzy?.item.value;
 }
 
+/** 완화 fuzzy·별칭 유사 일치 — 자동 반영·미매칭 제안 공통 */
+function matchMemberByRelaxedFuzzy(
+  lookupName: string,
+  members: Member[],
+  aliases: DonorAlias[],
+  threshold = MEMBER_NAME_FUZZY_AUTO_APPLY_THRESHOLD
+): Member | undefined {
+  if (!lookupName) return undefined;
+
+  const aliasMatch = matchMemberByAliasFuzzy(lookupName, members, aliases, threshold);
+  if (aliasMatch) return aliasMatch;
+
+  const fuzzy = findBestFuzzyNameMatch(lookupName, memberFuzzyCandidates(members), threshold);
+  return fuzzy?.item.value;
+}
+
 export type MapToMemberOptions = {
-  /** 플레이어 미지정·멤버 미매칭 시 운영비→대표→국고 순 자동 배치 */
+  /** 플레이어·메시지 힌트 없을 때 1등(후원 순위 1위) 자동 배치 */
   autoAssignToonPlayer?: boolean;
   memberPositions?: Record<string, string> | null;
 };
@@ -208,7 +311,8 @@ export function mapToMember(
     };
   }
 
-  const candidates = resolveMemberLookupCandidates(event);
+  const candidates = resolveAllMemberLookupCandidates(event);
+  const hadPlayerHint = resolveMemberLookupCandidates(event).length > 0;
   for (const lookupName of candidates) {
     const matched = matchMemberByName(lookupName, members, aliases);
     if (matched) {
@@ -221,12 +325,23 @@ export function mapToMember(
     }
   }
 
-  /** 멤버 힌트(메시지·playerName)가 없을 때만 운영비→대표→국고 순 자동 배치 */
-  const hadPlayerHint = candidates.length > 0;
+  /** 엄격 매칭 실패 시 — 미매칭 UI 제안과 동일한 완화 유사 일치로 자동 반영 */
+  for (const lookupName of candidates) {
+    const relaxed = matchMemberByRelaxedFuzzy(lookupName, members, aliases);
+    if (relaxed) {
+      return {
+        ...event,
+        memberId: relaxed.id,
+        playerName: event.playerName || lookupName,
+        memberFuzzyMatched: true,
+        status: "processed",
+      };
+    }
+  }
+
+  /** 후원자명만(플레이어·메시지 힌트 없음) — 1등 자동 배치 */
   if (opts?.autoAssignToonPlayer && !hadPlayerHint) {
-    const fallback = pickDefaultToonationMember(members, {
-      memberPositions: opts.memberPositions,
-    });
+    const fallback = pickTopRankedDonationMember(members, opts.memberPositions);
     if (fallback) {
       return {
         ...event,
@@ -249,14 +364,11 @@ export function suggestMemberForDonationEvent(
   if (!Array.isArray(members) || members.length === 0) return undefined;
   const msgMatch = matchMemberByMessageContains(event.message || "", members);
   if (msgMatch) return msgMatch;
-  for (const lookupName of resolveMemberLookupCandidates(event)) {
+  for (const lookupName of resolveAllMemberLookupCandidates(event)) {
     const exact = matchMemberByName(lookupName, members, aliases);
     if (exact) return exact;
-    const fuzzyCandidates = members.flatMap((m) =>
-      memberNameCandidates(m).map((label) => ({ label, value: m }))
-    );
-    const fuzzy = findBestFuzzyNameMatch(lookupName, fuzzyCandidates, 0.62);
-    if (fuzzy) return fuzzy.item.value;
+    const relaxed = matchMemberByRelaxedFuzzy(lookupName, members, aliases);
+    if (relaxed) return relaxed;
   }
   return undefined;
 }

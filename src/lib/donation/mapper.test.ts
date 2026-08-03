@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapToMember, pickDefaultToonationMember } from "./mapper";
+import { mapToMember, pickDefaultToonationMember, pickTopRankedDonationMember } from "./mapper";
 import type { DonationEvent } from "./types";
 import type { Member } from "@/types";
 
@@ -35,7 +35,7 @@ describe("mapToMember", () => {
     expect(mapped.donorName).toBe("배지은");
   });
 
-  it("auto-assigns operating member when toon has no player", () => {
+  it("auto-assigns top-ranked member when toon has no player hint", () => {
     const event: DonationEvent = {
       id: "t2",
       provider: "toonation",
@@ -52,11 +52,11 @@ describe("mapToMember", () => {
       [],
       { autoAssignToonPlayer: true }
     );
-    expect(mapped.memberId).toBe("op");
+    expect(mapped.memberId).toBe("m1");
     expect(mapped.memberAutoAssigned).toBe(true);
   });
 
-  it("auto-assigns operating member when account has no player", () => {
+  it("auto-assigns top-ranked member when account has no player hint", () => {
     const event: DonationEvent = {
       id: "t3",
       provider: "toonation",
@@ -73,8 +73,30 @@ describe("mapToMember", () => {
       [],
       { autoAssignToonPlayer: true }
     );
-    expect(mapped.memberId).toBe("op");
+    expect(mapped.memberId).toBe("m1");
     expect(mapped.memberAutoAssigned).toBe(true);
+  });
+
+  it("auto-assigns current 1st place by donation total when donor-only", () => {
+    const team: Member[] = [
+      operatingMember,
+      { id: "m1", name: "피자", account: 1000, toon: 0, contribution: 1000 },
+      { id: "m2", name: "문형배", account: 5000, toon: 0, contribution: 5000 },
+    ];
+    const event: DonationEvent = {
+      id: "t13",
+      provider: "toonation",
+      externalId: "e13",
+      donorName: "익명",
+      amount: 4000,
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "toon",
+    };
+    const mapped = mapToMember(event, team, [], { autoAssignToonPlayer: true });
+    expect(mapped.memberId).toBe("m2");
+    expect(mapped.memberAutoAssigned).toBe(true);
+    expect(mapped.status).toBe("processed");
   });
 
   it("returns unmatched when account player hint does not match any member", () => {
@@ -224,6 +246,75 @@ describe("mapToMember", () => {
     };
     const mapped = mapToMember(event, withReal);
     expect(mapped.memberId).toBe("m3");
+  });
+
+  it("matches member by donorName when player and message are empty", () => {
+    const event: DonationEvent = {
+      id: "t10",
+      provider: "toonation",
+      externalId: "e10",
+      donorName: "피자님",
+      amount: 10000,
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "toon",
+    };
+    const mapped = mapToMember(event, members);
+    expect(mapped.memberId).toBe("m1");
+    expect(mapped.status).toBe("processed");
+  });
+
+  it("auto-applies relaxed fuzzy match when strict match fails", () => {
+    const team: Member[] = [
+      { id: "m-long", name: "abcdfg", account: 0, toon: 0, contribution: 0 },
+    ];
+    const event: DonationEvent = {
+      id: "t11",
+      provider: "toonation",
+      externalId: "e11",
+      donorName: "익명",
+      playerName: "abcdef",
+      amount: 11000,
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "toon",
+    };
+    const mapped = mapToMember(event, team);
+    expect(mapped.memberId).toBe("m-long");
+    expect(mapped.memberFuzzyMatched).toBe(true);
+    expect(mapped.status).toBe("processed");
+  });
+
+  it("fuzzy-matches donor alias on relaxed auto-apply", () => {
+    const event: DonationEvent = {
+      id: "t12",
+      provider: "toonation",
+      externalId: "e12",
+      donorName: "익명",
+      playerName: "abcdef",
+      amount: 12000,
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "toon",
+    };
+    const mapped = mapToMember(event, members, [{ alias: "abcdfg", memberId: "m1" }]);
+    expect(mapped.memberId).toBe("m1");
+    expect(mapped.memberFuzzyMatched).toBe(true);
+  });
+});
+
+describe("pickTopRankedDonationMember", () => {
+  it("picks highest donation member excluding operating and representative", () => {
+    const picked = pickTopRankedDonationMember(
+      [
+        operatingMember,
+        { id: "rep", name: "대표님", account: 0, toon: 0, contribution: 0 },
+        { id: "m1", name: "피자", account: 1000, toon: 0, contribution: 1000 },
+        { id: "m2", name: "문형배", account: 9000, toon: 0, contribution: 9000 },
+      ],
+      { rep: "대표" }
+    );
+    expect(picked?.id).toBe("m2");
   });
 });
 

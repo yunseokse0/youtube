@@ -17,6 +17,8 @@ export interface DonationEvent {
   memberId?: string;
   /** 투네 후원: 플레이어 미지정으로 기본 멤버에 배치됨 — 관리자 확인용 */
   memberAutoAssigned?: boolean;
+  /** 유사 일치(완화 fuzzy)로 멤버 자동 매칭됨 */
+  memberFuzzyMatched?: boolean;
   /** 서버 자동 반영 완료 후 큐 모니터링용(재승인 시 중복 방지) */
   alreadyApplied?: boolean;
   /** 관리자 미매칭 수동 배치 — 드롭다운에서 고른 멤버에 강제 적립 */

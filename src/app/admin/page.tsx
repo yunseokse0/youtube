@@ -5219,9 +5219,9 @@ export default function AdminPage() {
     if (!toonationQueueHydratedRef.current) return;
     const schedulePendingQueueProcess = () => {
       if (toonationQueueProcessTimerRef.current) {
-        window.clearTimeout(toonationQueueProcessTimerRef.current);
+        clearTimeout(toonationQueueProcessTimerRef.current);
       }
-      toonationQueueProcessTimerRef.current = window.setTimeout(() => {
+      toonationQueueProcessTimerRef.current = setTimeout(() => {
         toonationQueueProcessTimerRef.current = null;
         const pendingIds = toonationQueuePendingIdsRef.current;
         toonationQueuePendingIdsRef.current = new Set();
