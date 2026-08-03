@@ -131,7 +131,7 @@ function matchMemberByAliasFuzzy(
   return members.find((m) => m.id === aliasFuzzy.item.value.memberId);
 }
 
-/** 메시지·플레이어 필드에서 멤버 매칭 후보(앞쪽 우선) */
+/** 메시지·플레이어 필드에서 멤버 매칭 후보(앞쪽 우선) — `익명` 등 일반 토큰 제외 */
 export function resolveMemberLookupCandidates(event: DonationEvent): string[] {
   const out: string[] = [];
   const push = (raw?: string) => {
@@ -140,6 +140,7 @@ export function resolveMemberLookupCandidates(event: DonationEvent): string[] {
       .replace(/[,.:;!?~]+$/g, "")
       .trim();
     if (!t || out.includes(t)) return;
+    if (!isUsefulDonorLookupName(t)) return;
     out.push(t);
   };
   push(event.playerName);

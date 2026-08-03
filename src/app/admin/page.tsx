@@ -4982,6 +4982,21 @@ export default function AdminPage() {
     setDonorAmount("");
   }, [applyProcessDonationResult, donorAmount, donorName, fetchUnmatchedEvents, toonationOwnerName, user?.id]);
 
+  const markAuthoritativeDonationSave = useCallback((saved: { serverUpdatedAt?: number }, next: AppState) => {
+    const preserved = mergeDonationApplyBase(next, stateRef.current) ?? next;
+    const ts = saved.serverUpdatedAt ?? preserved.updatedAt ?? Date.now();
+    donationAuthoritativeSaveUntilRef.current = Date.now() + 10_000;
+    stateUpdatedAtRef.current = ts;
+    lastAppliedRemoteUpdatedAtRef.current = ts;
+    lastLocalPersistAtRef.current = Date.now();
+    pendingUnsyncedRef.current = false;
+    stateRef.current = preserved;
+    try {
+      window.localStorage.setItem(storageKey(user?.id), JSON.stringify(preserved));
+    } catch {}
+    return preserved;
+  }, [user?.id]);
+
   const applyUnmatchedEvent = useCallback(async (event: DonationEvent) => {
     const selectedMemberId = unmatchedAssignMap[event.id] || donorMemberId || state.members[0]?.id || "";
     if (!selectedMemberId) return;
@@ -5002,19 +5017,28 @@ export default function AdminPage() {
       stateRef.current,
       { ownerName: toonationOwnerName }
     );
-    applyProcessDonationResult(result);
-    if (result.status === "processed" || result.updatedState) {
+    if (result.updatedState) {
+      const preserved = markAuthoritativeDonationSave(
+        { serverUpdatedAt: result.updatedState.updatedAt },
+        result.updatedState
+      );
+      setState((prev) => mergeDonationApplyBase(preserved, prev) ?? preserved);
       pushToonationLog(
         `미매칭 반영: ${displayDonorName} ${event.amount.toLocaleString("ko-KR")}원 → ${member.name}`
       );
       await removeUnmatchedEvent(event.id);
+      adminDonorForceSyncRef.current?.();
     } else if (result.status === "failed") {
       pushToonationLog(`미매칭 반영 실패: ${displayDonorName} (${result.error || "unknown"})`);
+    } else {
+      pushToonationLog(
+        `미매칭 반영 실패: ${displayDonorName} — 상태가 갱신되지 않음 (${result.status || "unknown"})`
+      );
     }
   }, [
     aliasInputMap,
-    applyProcessDonationResult,
     donorMemberId,
+    markAuthoritativeDonationSave,
     pushToonationLog,
     removeUnmatchedEvent,
     state.members,
@@ -5022,21 +5046,6 @@ export default function AdminPage() {
     unmatchedAssignMap,
     user?.id,
   ]);
-
-  const markAuthoritativeDonationSave = useCallback((saved: { serverUpdatedAt?: number }, next: AppState) => {
-    const preserved = mergeDonationApplyBase(next, stateRef.current) ?? next;
-    const ts = saved.serverUpdatedAt ?? preserved.updatedAt ?? Date.now();
-    donationAuthoritativeSaveUntilRef.current = Date.now() + 10_000;
-    stateUpdatedAtRef.current = ts;
-    lastAppliedRemoteUpdatedAtRef.current = ts;
-    lastLocalPersistAtRef.current = Date.now();
-    pendingUnsyncedRef.current = false;
-    stateRef.current = preserved;
-    try {
-      window.localStorage.setItem(storageKey(user?.id), JSON.stringify(preserved));
-    } catch {}
-    return preserved;
-  }, [user?.id]);
 
   const applyGroupSplitFromDonor = useCallback(
     async (donor: Donor) => {

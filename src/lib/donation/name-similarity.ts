@@ -40,6 +40,51 @@ function levenshtein(a: string, b: string): number {
   return row[b.length]!;
 }
 
+/** 한글 음절 → [초성, 중성, 종성] (비한글이면 null) */
+function decomposeHangulSyllable(ch: string): [number, number, number] | null {
+  const code = ch.charCodeAt(0);
+  if (code < 0xac00 || code > 0xd7a3) return null;
+  const s = code - 0xac00;
+  return [Math.floor(s / 588), Math.floor((s % 588) / 28), s % 28];
+}
+
+/** 한 글자 유사도 — 초성 일치에 가중 (지↔자, 히↔하) */
+function hangulCharSimilarity(a: string, b: string): number {
+  if (a === b) return 1;
+  const da = decomposeHangulSyllable(a);
+  const db = decomposeHangulSyllable(b);
+  if (!da || !db) return 0;
+  let score = 0;
+  if (da[0] === db[0]) score += 0.55;
+  if (da[1] === db[1]) score += 0.3;
+  if (da[2] === db[2]) score += 0.15;
+  return score;
+}
+
+/** 동일 길이 한글 이름 — 초성 골격이 같으면 높은 점수 (`지히`↔`자하`) */
+function hangulNameSimilarity(a: string, b: string): number {
+  if (a.length !== b.length || a.length < 2) return 0;
+  let sum = 0;
+  let allHangul = true;
+  let sameCho = true;
+  for (let i = 0; i < a.length; i += 1) {
+    const ca = a[i]!;
+    const cb = b[i]!;
+    const da = decomposeHangulSyllable(ca);
+    const db = decomposeHangulSyllable(cb);
+    if (!da || !db) {
+      allHangul = false;
+      break;
+    }
+    if (da[0] !== db[0]) sameCho = false;
+    sum += hangulCharSimilarity(ca, cb);
+  }
+  if (!allHangul) return 0;
+  const avg = sum / a.length;
+  if (sameCho) return Math.max(avg, 0.72);
+  return avg;
+}
+
 /** 0~1 — 1에 가까울수록 동일·유사 */
 export function nameSimilarityScore(a: string, b: string): number {
   const na = stripHonorificSuffix(a);
@@ -51,8 +96,10 @@ export function nameSimilarityScore(a: string, b: string): number {
   if (minLen >= 2 && (na.includes(nb) || nb.includes(na))) {
     return 0.85 + (minLen / maxLen) * 0.15;
   }
+  const hangul = hangulNameSimilarity(na, nb);
   const dist = levenshtein(na, nb);
-  return Math.max(0, 1 - dist / maxLen);
+  const edit = Math.max(0, 1 - dist / maxLen);
+  return Math.max(hangul, edit);
 }
 
 export const MEMBER_NAME_FUZZY_THRESHOLD = 0.72;

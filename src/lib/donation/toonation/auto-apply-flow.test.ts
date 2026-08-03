@@ -188,6 +188,31 @@ describe("toonation auto-apply flow (parse → apply)", () => {
     expect(result.event.memberAutoAssigned).toBeFalsy();
   });
 
+  it("메시지 익명 지히 → 자하 초성 유사 일치", () => {
+    const raw = JSON.stringify({
+      code: 101,
+      content: {
+        nickname: "Y 철수",
+        amount: 10000,
+        comment: "익명 지히",
+        isTest: true,
+      },
+    });
+    const event = parseToonationWebSocketMessage(raw);
+    expect(event?.playerName).toBe("지히");
+    const result = applyDonationToAppState(
+      baseState([
+        { id: "m1", name: "자하" },
+        { id: "m2", name: "피자" },
+      ]),
+      event!,
+      []
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.members.find((m) => m.id === "m1")?.toon).toBe(10000);
+  });
+
   it("투네 메시지 태호만 → BT태호 유사 일치", () => {
     const raw = JSON.stringify({
       code: 101,

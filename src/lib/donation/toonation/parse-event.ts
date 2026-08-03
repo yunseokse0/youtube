@@ -114,11 +114,18 @@ export function isAccountFormatToken(raw: string): boolean {
   return t === "계좌" || t === "계좌후원";
 }
 
+/** `익명 지히` — 첫 토큰이 익명 표기면 다음 토큰이 플레이어 */
+export function isAnonymousMarkerToken(raw: string): boolean {
+  const t = cleanDonorToken(raw).toLowerCase();
+  return t === "익명" || t === "anonymous" || t === "anon";
+}
+
 /**
  * 투네 후원 메시지 포맷:
  * - 계좌(명시): `계좌 후원자이름 플레이어이름 …` (이후 문구 무시)
  * - 계좌(주인 후원): 알림 닉=채널 주인 → 메시지 `후원자 멤버 (메시지…)` (owner-donation-remap)
- * - 투네: 알림 닉=후원자(금액 앞 표시). 메시지 첫 토큰=플레이어(선택). 이후 무시.
+ * - 투네: 알림 닉=후원자(금액 앞 표시). 메시지 첫 토큰=플레이어(선택).
+ *   `익명 지히`처럼 익명 마커가 앞에 오면 다음 토큰을 플레이어로 사용.
  */
 export function parseToonationMessageBody(
   message: string,
@@ -152,9 +159,18 @@ export function parseToonationMessageBody(
   const fromAlert = parseAccountTokens(alertTokens);
   if (fromAlert && !String(message || "").trim()) return fromAlert;
 
-  const rawPlayer = cleanDonorToken(msgTokens[0] || "");
+  let playerIdx = 0;
+  if (msgTokens.length >= 2 && isAnonymousMarkerToken(msgTokens[0] || "")) {
+    playerIdx = 1;
+  }
+  const rawPlayer = cleanDonorToken(msgTokens[playerIdx] || "");
   const playerName =
-    rawPlayer && !isAmountLikeToken(rawPlayer) && !isAccountFormatToken(rawPlayer) ? rawPlayer : "";
+    rawPlayer &&
+    !isAmountLikeToken(rawPlayer) &&
+    !isAccountFormatToken(rawPlayer) &&
+    !isAnonymousMarkerToken(rawPlayer)
+      ? rawPlayer
+      : "";
   return {
     target: "toon",
     donorName: String(alertDonorName || "").trim(),

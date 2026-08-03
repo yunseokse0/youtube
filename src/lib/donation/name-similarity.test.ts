@@ -19,4 +19,8 @@ describe("nameSimilarityScore", () => {
   it("scores typos above threshold", () => {
     expect(nameSimilarityScore("문형배", "문현배")).toBeGreaterThan(0.65);
   });
+
+  it("scores hangul consonant-skeleton names (지히 ↔ 자하)", () => {
+    expect(nameSimilarityScore("지히", "자하")).toBeGreaterThanOrEqual(0.72);
+  });
 });

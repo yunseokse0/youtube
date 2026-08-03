@@ -52,7 +52,11 @@ export async function processDonationEvent(
   log.debug("processing", event.donorName, event.amount);
   try {
     const dedupeKey = donationApplyPrimaryKey(uid, event);
-    if (processedEventIds.has(dedupeKey)) {
+    /** 미매칭 수동 배치는 이전 자동시도 캐시를 무시하고 반드시 재반영 */
+    if (event.manualAssignMemberId) {
+      processedEventIds.delete(dedupeKey);
+      unresolvedEventIds.delete(dedupeKey);
+    } else if (processedEventIds.has(dedupeKey)) {
       return { ...event, status: "processed" as const };
     }
 

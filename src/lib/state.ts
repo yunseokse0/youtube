@@ -1480,10 +1480,20 @@ function enqueueServerSave(
         ssePayload &&
         typeof ssePayload === "object"
       ) {
-        serverSavePending.ssePayload = {
-          ...(serverSavePending.ssePayload as Record<string, unknown>),
-          ...(ssePayload as Record<string, unknown>),
-        };
+        const prevPl = serverSavePending.ssePayload as Record<string, unknown>;
+        const nextPl = ssePayload as Record<string, unknown>;
+        const mergedPl: Record<string, unknown> = { ...prevPl, ...nextPl };
+        const prevDonors = Array.isArray(prevPl.donors) ? (prevPl.donors as Donor[]) : null;
+        const nextDonors = Array.isArray(nextPl.donors) ? (nextPl.donors as Donor[]) : null;
+        if (prevDonors && prevDonors.length > 0 && (!nextDonors || nextDonors.length === 0)) {
+          mergedPl.donors = prevDonors;
+        } else if (prevDonors && nextDonors && nextDonors.length < prevDonors.length) {
+          mergedPl.donors = mergeDonorsForMultiTabSave(nextDonors, prevDonors, {
+            incomingUpdatedAt: Number(nextPl.updatedAt || 0),
+            existingUpdatedAt: Number(prevPl.updatedAt || 0),
+          });
+        }
+        serverSavePending.ssePayload = mergedPl;
       } else {
         serverSavePending.ssePayload = ssePayload;
       }
@@ -1787,11 +1797,31 @@ export async function saveOverlayPresetsPatchAsync(
     ...(opts.overlaySettingsPatch || {}),
   };
   const existingMeaningful = local && hasMeaningfulMemberRoster(local);
+  /** LS가 빈 donors여도 React foundation 후원을 덮어쓰지 않음 (1·2·3위 이펙트 저장 시 초기화 방지) */
+  const foundationDonors = normalizeDonorsArray(foundation?.donors);
+  const localDonors = normalizeDonorsArray(local?.donors);
+  const preservedDonors =
+    foundationDonors.length === 0
+      ? localDonors
+      : localDonors.length === 0
+        ? foundationDonors
+        : mergeDonorsForMultiTabSave(foundationDonors, localDonors, {
+            incomingUpdatedAt: Number(foundation?.updatedAt || 0),
+            existingUpdatedAt: Number(local?.updatedAt || 0),
+          });
+  const preservedMembers =
+    foundation && hasMeaningfulMemberRoster(foundation)
+      ? foundation.members
+      : local && hasMeaningfulMemberRoster(local)
+        ? local.members
+        : base.members;
   const mergedLocal: AppState = normalizeStateForPersistence(
     syncBattleStateWithMembers(
       existingMeaningful
         ? {
             ...local!,
+            members: preservedMembers,
+            donors: preservedDonors,
             overlayPresets: overlayPresets as AppState["overlayPresets"],
             overlaySettings: {
               ...((local!.overlaySettings && typeof local!.overlaySettings === "object"
@@ -1803,6 +1833,8 @@ export async function saveOverlayPresetsPatchAsync(
           }
         : {
             ...base,
+            members: preservedMembers,
+            donors: preservedDonors,
             overlayPresets: overlayPresets as AppState["overlayPresets"],
             overlaySettings: nextSettings as AppState["overlaySettings"],
             updatedAt: now,

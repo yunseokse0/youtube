@@ -304,7 +304,15 @@ describe("toonation parse-event", () => {
       comment: "익명 홍쓰",
     });
     expect(evt?.donorName).toBe("익명");
-    expect(evt?.playerName).toBe("익명");
+    expect(evt?.playerName).toBe("홍쓰");
+  });
+
+  it("parses 익명 지히 message as player 지히", () => {
+    expect(parseToonationMessageBody("익명 지히", "Y 철수")).toEqual({
+      donorName: "Y 철수",
+      playerName: "지히",
+      target: "toon",
+    });
   });
 
   it("account format with reused toonation id still gets unique ids (20연속 동일메시지)", () => {

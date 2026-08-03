@@ -264,6 +264,28 @@ describe("mapToMember", () => {
     expect(mapped.status).toBe("processed");
   });
 
+  it("fuzzy-matches hangul similar playerName (지히 → 자하)", () => {
+    const team: Member[] = [
+      { id: "m-jaha", name: "자하", account: 0, toon: 0, contribution: 0 },
+      { id: "m2", name: "피자", account: 0, toon: 0, contribution: 0 },
+    ];
+    const event: DonationEvent = {
+      id: "t-jahi",
+      provider: "toonation",
+      externalId: "e-jahi",
+      donorName: "Y 철수",
+      playerName: "지히",
+      message: "익명 지히",
+      amount: 10000,
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "toon",
+    };
+    const mapped = mapToMember(event, team);
+    expect(mapped.memberId).toBe("m-jaha");
+    expect(mapped.status).toBe("processed");
+  });
+
   it("auto-applies relaxed fuzzy match when strict match fails", () => {
     const team: Member[] = [
       { id: "m-long", name: "abcdfg", account: 0, toon: 0, contribution: 0 },
