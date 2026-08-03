@@ -160,8 +160,9 @@ import {
   normalizeDonationEventId,
   revertDonationFromAppState,
 } from "@/lib/donation/apply-donation-state";
-import { processDonationEvent, processGroupSplitDonationEvent, type ProcessDonationResult } from "@/lib/donation/processor";
+import { processDonationEvent, type ProcessDonationResult } from "@/lib/donation/processor";
 import {
+  applyGroupSplitDonationToAppState,
   countGroupSplitParts,
   isGroupSplitPartDonor,
   isGroupSplitSourceDonor,
@@ -4878,18 +4879,67 @@ export default function AdminPage() {
         donorName: displayDonorName,
         status: "queued",
       };
-      const result = await processGroupSplitDonationEvent(payload, user?.id, stateRef.current);
-      if (result.updatedState) setState(result.updatedState);
-      if (result.status === "processed") {
-        pushToonationLog(
-          `미매칭 단체짠: ${displayDonorName} ${event.amount.toLocaleString("ko-KR")}원 → 멤버 균등 분배`
-        );
-        await fetchUnmatchedEvents();
+
+      const freshState = await loadStateFromApi(user?.id, { forceFull: true });
+      const hint = stateRef.current;
+      let base = freshState ?? hint;
+      if (!base) return;
+
+      if (hint) {
+        const hintDonors = hint.donors || [];
+        const baseDonors = base.donors || [];
+        if (hintDonors.length > baseDonors.length) {
+          base = { ...base, donors: hintDonors };
+        }
+        if (hasMeaningfulMemberRoster(hint) && !hasMeaningfulMemberRoster(base)) {
+          base = {
+            ...base,
+            members: hint.members,
+            memberPositions: hint.memberPositions,
+            memberPositionMode: hint.memberPositionMode,
+            rankPositionLabels: hint.rankPositionLabels,
+          };
+        }
+        base = {
+          ...base,
+          mealBattle: hint.mealBattle ?? base.mealBattle,
+          donationSyncMode: hint.donationSyncMode ?? base.donationSyncMode,
+        };
+      }
+
+      const settings = normalizeGroupSplitDonationSettings(base.groupSplitDonationSettings);
+      const applied = applyGroupSplitDonationToAppState(base, payload, settings);
+      if (!applied.ok) {
+        const err =
+          applied.reason === "duplicate"
+            ? "이미 단체짠 분배됨"
+            : applied.reason === "no_eligible"
+              ? "분배 대상 멤버 없음"
+              : applied.reason === "amount_too_small"
+                ? "금액이 너무 작음"
+                : applied.reason;
+        pushToonationLog(`미매칭 단체짠 실패: ${displayDonorName} (${err})`);
         return;
       }
+
+      const saved = await saveStateAsync(applied.state, user?.id, { donorsAuthoritative: true });
+      if (!saved.ok) {
+        pushToonationLog(`미매칭 단체짠 실패: ${displayDonorName} (저장 실패)`);
+        return;
+      }
+
+      const q = user?.id ? `?u=${encodeURIComponent(user.id)}` : "";
+      await fetch(`/api/donations/unmatched/resolve${q}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: event.id }),
+      }).catch(() => {});
+
+      setState(applied.state);
       pushToonationLog(
-        `미매칭 단체짠 실패: ${displayDonorName} (${result.error || result.splitError || "unknown"})`
+        `미매칭 단체짠: ${displayDonorName} ${event.amount.toLocaleString("ko-KR")}원 → ${applied.donors.length}행 생성 (${applied.preview.sharePerMember.toLocaleString("ko-KR")}원×${applied.preview.eligibleMembers.length}명)`
       );
+      await fetchUnmatchedEvents();
     },
     [aliasInputMap, fetchUnmatchedEvents, pushToonationLog, user?.id]
   );

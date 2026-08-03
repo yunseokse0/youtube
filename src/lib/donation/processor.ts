@@ -1,4 +1,4 @@
-import { loadStateFromApi, saveStateAsync } from "@/lib/state";
+import { hasMeaningfulMemberRoster, loadStateFromApi, saveStateAsync } from "@/lib/state";
 import { createModuleLogger } from "@/lib/logger";
 import type { AppState } from "@/types";
 import { applyDonationToAppState, isDuplicateDonationEvent } from "./apply-donation-state";
@@ -37,6 +37,30 @@ function mergeAdminHintForDonation(server: AppState, hint?: AppState | null): Ap
   };
 }
 
+/** 단체짠 — GET이 빈 donors·placeholder 멤버일 때 관리자 stateRef 기준으로 보정 */
+function mergeAdminHintForGroupSplit(server: AppState, hint?: AppState | null): AppState {
+  let merged = mergeAdminHintForDonation(server, hint);
+  if (!hint) return merged;
+
+  const hintDonors = Array.isArray(hint.donors) ? hint.donors : [];
+  const baseDonors = Array.isArray(merged.donors) ? merged.donors : [];
+  if (hintDonors.length > baseDonors.length) {
+    merged = { ...merged, donors: hintDonors };
+  }
+
+  if (hasMeaningfulMemberRoster(hint) && !hasMeaningfulMemberRoster(merged)) {
+    merged = {
+      ...merged,
+      members: hint.members,
+      memberPositions: hint.memberPositions ?? merged.memberPositions,
+      memberPositionMode: hint.memberPositionMode ?? merged.memberPositionMode,
+      rankPositionLabels: hint.rankPositionLabels ?? merged.rankPositionLabels,
+    };
+  }
+
+  return merged;
+}
+
 export type ProcessDonationOptions = {
   /** 관리자 「채널 주인명」 — 후원자 닉과 같으면 계좌 처리 */
   ownerName?: string;
@@ -60,11 +84,11 @@ export async function processDonationEvent(
       return { ...event, status: "processed" as const };
     }
 
-    const loaded = await getCurrentAppState(userId);
+    const loaded = await loadStateFromApi(userId, { forceFull: true });
     if (!loaded) {
       return { ...event, status: "failed" as const, error: "state_not_available" };
     }
-    const currentState = mergeAdminHintForDonation(loaded, hintState);
+    const currentState = mergeAdminHintForGroupSplit(loaded, hintState);
     const aliases = await loadAliases(userId);
 
     if (shouldAutoGroupSplitDonation(event, currentState.groupSplitDonationSettings)) {
@@ -76,7 +100,7 @@ export async function processDonationEvent(
           processedEventIds.add(dedupeKey);
           return { ...event, status: "processed" as const, updatedState: beforeSave };
         }
-        const saved = await saveCurrentAppState(splitApplied.state, userId);
+        const saved = await saveCurrentAppState(splitApplied.state, userId, { donorsAuthoritative: true });
         if (!saved.ok) {
           return { ...event, status: "failed" as const, error: "state_save_failed" };
         }
@@ -194,11 +218,11 @@ export async function processGroupSplitDonationEvent(
       return { ...rawEvent, status: "processed" as const };
     }
 
-    const loaded = await getCurrentAppState(userId);
+    const loaded = await loadStateFromApi(userId, { forceFull: true });
     if (!loaded) {
       return { ...rawEvent, status: "failed" as const, error: "state_not_available" };
     }
-    const currentState = mergeAdminHintForDonation(loaded, hintState);
+    const currentState = mergeAdminHintForGroupSplit(loaded, hintState);
     const settings = normalizeGroupSplitDonationSettings(currentState.groupSplitDonationSettings);
     const applied = applyGroupSplitDonationToAppState(currentState, rawEvent, settings);
 
@@ -216,7 +240,7 @@ export async function processGroupSplitDonationEvent(
       return { ...rawEvent, status: "failed" as const, error: splitError, splitError };
     }
 
-    const saved = await saveCurrentAppState(applied.state, userId);
+    const saved = await saveCurrentAppState(applied.state, userId, { donorsAuthoritative: true });
     if (!saved.ok) {
       return { ...rawEvent, status: "failed" as const, error: "state_save_failed" };
     }
@@ -243,10 +267,11 @@ async function getCurrentAppState(userId?: string): Promise<AppState | null> {
 
 async function saveCurrentAppState(
   state: AppState,
-  userId?: string
+  userId?: string,
+  options?: { donorsAuthoritative?: boolean }
 ): Promise<{ ok: boolean }> {
   if (typeof window === "undefined") return { ok: false };
-  const result = await saveStateAsync(state, userId);
+  const result = await saveStateAsync(state, userId, options);
   return { ok: Boolean(result.ok) };
 }
 
