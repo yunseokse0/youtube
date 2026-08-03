@@ -59,7 +59,6 @@ import {
   normalizeSigMatchPools,
   normalizeSigMatchParticipantIds,
   normalizeDonationListsOverlayConfig,
-  normalizeGroupSplitDonationSettings,
   getUnifiedSigRollingItems,
   normalizeSigRolling,
   normalizeRouletteState,
@@ -173,14 +172,13 @@ import { mergeDonationApplyBase } from "@/lib/donation/merge-donation-apply-base
 import { suggestMemberForDonationEvent } from "@/lib/donation/mapper";
 import { processDonationEvent, type ProcessDonationResult } from "@/lib/donation/processor";
 import {
-  applyGroupSplitFromEventOnState,
   countGroupSplitParts,
   isGroupSplitPartDonor,
   isGroupSplitSourceDonor,
+  normalizeGroupSplitDonationSettings,
   previewGroupSplitDonation,
   splitExistingDonorInAppState,
 } from "@/lib/donation/group-split-donation";
-import { GroupSplitDonationPanel } from "@/components/admin/GroupSplitDonationPanel";
 import ToonationBrowserRelay from "@/components/ToonationBrowserRelay";
 import type { ToonationRelayForwarded } from "@/components/ToonationBrowserRelay";
 import type { DonationEvent, DonorAlias } from "@/lib/donation/types";
@@ -459,11 +457,16 @@ export default function AdminPage() {
   const adminStateSseScheduleRef = useRef<(() => void) | null>(null);
   /** 후원 SSE·라이브 폴링용 강제 동기화 */
   const adminDonorForceSyncRef = useRef<(() => void) | null>(null);
-  const fetchToonationQueueRef = useRef<(() => Promise<void>) | null>(null);
-  const autoProcessQueueRef = useRef<(() => Promise<void>) | null>(null);
+  const fetchToonationQueueRef = useRef<(() => Promise<DonationEvent[]>) | null>(null);
+  const autoProcessQueueRef = useRef<((events?: DonationEvent[]) => Promise<void>) | null>(null);
   const pushToonationLogRef = useRef<(message: string) => void>(() => {});
-  /** 관리자 최초 큐 스냅샷 — 배포 직후·페이지 열 때 쌓인 백로그는 자동 반영하지 않음 */
-  const toonationQueueBaselineIdsRef = useRef<Set<string> | null>(null);
+  const adminPageMountAtRef = useRef(Date.now());
+  const toonationQueueBaselineIdsRef = useRef<Set<string>>(new Set());
+  const toonationQueueBaselineReadyRef = useRef(false);
+  const toonationQueueProcessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toonationQueuePendingIdsRef = useRef<Set<string>>(new Set());
+  const toonationQueueRef = useRef<DonationEvent[]>([]);
+  const toonationQueueHydratedRef = useRef(false);
   /** 동일 updatedAt 원격을 SSE·폴링이 반복 적용하지 않도록 */
   const lastAppliedRemoteUpdatedAtRef = useRef<number>(0);
   const oneShotSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -651,7 +654,11 @@ export default function AdminPage() {
       donationApplied?: { donorName?: string; amount?: number; target?: string; memberName?: string };
     };
     if (o?.type === "donation_queue_updated") {
-      void fetchToonationQueueRef.current?.().then(() => autoProcessQueueRef.current?.());
+      void fetchToonationQueueRef.current?.().then((items) => {
+        if (items && items.length > 0) {
+          void autoProcessQueueRef.current?.(items);
+        }
+      });
       return;
     }
     if (o?.type !== "state_updated") return;
@@ -1556,6 +1563,7 @@ export default function AdminPage() {
     if (!user) return;
     let running = true;
     let inFlight = false;
+    let pendingForceDonorSync = false;
     const applyRemoteState = (remote: AppState, opts?: { forceDonorMerge?: boolean }) => {
       const remoteUpdatedAt = remote.updatedAt || 0;
       const shouldApplyRemote =
@@ -1641,7 +1649,11 @@ export default function AdminPage() {
       return true;
     };
     const syncFromApi = async (opts?: { forceFull?: boolean; forceDonorMerge?: boolean }) => {
-      if (!running || inFlight) return;
+      if (!running) return;
+      if (inFlight) {
+        if (opts?.forceDonorMerge) pendingForceDonorSync = true;
+        return;
+      }
       inFlight = true;
       try {
         const since = opts?.forceFull
@@ -1661,6 +1673,10 @@ export default function AdminPage() {
         applyRemoteState(remote, { forceDonorMerge: opts?.forceDonorMerge });
       } finally {
         inFlight = false;
+        if (pendingForceDonorSync) {
+          pendingForceDonorSync = false;
+          void syncFromApi({ forceFull: true, forceDonorMerge: true });
+        }
       }
     };
     const { schedule, cancel } = createStateUpdatedScheduler(() => {
@@ -2646,49 +2662,6 @@ export default function AdminPage() {
       const next: AppState = {
         ...prev,
         donationListsOverlayConfig: merged,
-      };
-      persistState(next);
-      return next;
-    });
-  };
-
-  const setGroupSplitMemberExcluded = (memberId: string, exclude: boolean) => {
-    setState((prev: AppState) => {
-      const member = (prev.members || []).find((m) => m.id === memberId);
-      if (
-        !member ||
-        isOperatingSettlementMember(
-          { id: member.id, name: member.name, operating: member.operating, realName: member.realName },
-          prev.memberPositions || null
-        )
-      ) {
-        return prev;
-      }
-      const base = normalizeGroupSplitDonationSettings(prev.groupSplitDonationSettings);
-      const nextExcluded = new Set(base.excludedMemberIds);
-      if (exclude) nextExcluded.add(memberId);
-      else nextExcluded.delete(memberId);
-      const next: AppState = {
-        ...prev,
-        groupSplitDonationSettings: {
-          ...base,
-          excludedMemberIds: Array.from(nextExcluded),
-        },
-      };
-      persistState(next);
-      return next;
-    });
-  };
-
-  const setGroupSplitAutoSplitOnKeyword = (enabled: boolean) => {
-    setState((prev: AppState) => {
-      const base = normalizeGroupSplitDonationSettings(prev.groupSplitDonationSettings);
-      const next: AppState = {
-        ...prev,
-        groupSplitDonationSettings: {
-          ...base,
-          autoSplitOnKeyword: enabled,
-        },
       };
       persistState(next);
       return next;
@@ -4824,16 +4797,19 @@ export default function AdminPage() {
     }
   }, [user?.id]);
 
-  const fetchToonationQueue = useCallback(async () => {
+  const fetchToonationQueue = useCallback(async (): Promise<DonationEvent[]> => {
     const uid = user?.id || "";
-    if (!uid) return;
+    if (!uid) return [];
     try {
       const res = await fetch(`/api/donations/queue?u=${encodeURIComponent(uid)}`, { cache: "no-store" });
-      if (!res.ok) return;
+      if (!res.ok) return [];
       const data = (await res.json().catch(() => null)) as { items?: DonationEvent[] } | null;
-      setToonationQueue(Array.isArray(data?.items) ? data.items : []);
+      const items = Array.isArray(data?.items) ? data.items : [];
+      setToonationQueue(items);
+      toonationQueueHydratedRef.current = true;
+      return items;
     } catch {
-      // noop
+      return [];
     }
   }, [user?.id]);
 
@@ -4881,17 +4857,13 @@ export default function AdminPage() {
     if (result.updatedState) {
       setState((prev) => mergeDonationApplyBase(result.updatedState!, prev) ?? result.updatedState!);
     }
-    if (result.autoGroupSplit && result.status === "processed") {
-      pushToonationLog(`단체짠 자동: ${result.donorName} ${result.amount.toLocaleString("ko-KR")}원 균등 분배`);
-    } else if (result.autoGroupSplitFallback && result.status === "processed") {
-      pushToonationLog(
-        `단체짠 폴백: ${result.donorName} ${result.amount.toLocaleString("ko-KR")}원 → 대표·1위 멤버 적립 (스플릿 불가)`
-      );
-    }
-  }, [pushToonationLog]);
+  }, []);
 
   const autoProcessAllQueueEvents = useCallback(async (events?: DonationEvent[]) => {
-    const batch = events ?? toonationQueue;
+    let batch = events;
+    if (!batch || batch.length === 0) {
+      batch = await fetchToonationQueue();
+    }
     if (batch.length === 0) return;
     let applied = 0;
     let cleared = 0;
@@ -4956,13 +4928,12 @@ export default function AdminPage() {
     fetchUnmatchedEvents,
     pushToonationLog,
     removeQueueEvent,
-    toonationQueue,
     user?.id,
     toonationOwnerName,
   ]);
 
   useEffect(() => {
-    autoProcessQueueRef.current = () => autoProcessAllQueueEvents();
+    autoProcessQueueRef.current = (events?: DonationEvent[]) => autoProcessAllQueueEvents(events);
   }, [autoProcessAllQueueEvents]);
 
   const removeUnmatchedEvent = useCallback(async (id: string) => {
@@ -5054,70 +5025,6 @@ export default function AdminPage() {
     } catch {}
     return preserved;
   }, [user?.id]);
-
-  const applyGroupSplitFromUnmatched = useCallback(
-    async (event: DonationEvent) => {
-      const displayDonorName = (aliasInputMap[event.id] || event.donorName || "").trim();
-      if (!displayDonorName) return;
-      const payload: DonationEvent = {
-        ...event,
-        donorName: displayDonorName,
-        status: "queued",
-      };
-
-      const freshState = await loadStateFromApi(user?.id, { forceFull: true });
-      const hint = stateRef.current;
-      const base = mergeDonationApplyBase(freshState, hint);
-      if (!base) return;
-
-      const settings = normalizeGroupSplitDonationSettings(base.groupSplitDonationSettings);
-      const applied = applyGroupSplitFromEventOnState(base, payload, settings);
-      if (!applied.ok) {
-        if (applied.reason === "duplicate") {
-          const q = user?.id ? `?u=${encodeURIComponent(user.id)}` : "";
-          await fetch(`/api/donations/unmatched/resolve${q}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: event.id }),
-          }).catch(() => {});
-          pushToonationLog(
-            `미매칭 단체짠: ${displayDonorName} — 이미 반영된 후원(중복 방지). 목록에서 제거했습니다.`
-          );
-          await fetchUnmatchedEvents();
-          return;
-        }
-        const err =
-          applied.reason === "no_eligible"
-            ? "분배 대상 멤버 없음"
-            : applied.reason === "amount_too_small"
-              ? "금액이 너무 작음"
-              : applied.reason;
-        pushToonationLog(`미매칭 단체짠 실패: ${displayDonorName} (${err})`);
-        return;
-      }
-
-      const saved = await saveStateAsync(applied.state, user?.id, { donorsAuthoritative: true });
-      if (!saved.ok) {
-        pushToonationLog(`미매칭 단체짠 실패: ${displayDonorName} (저장 실패)`);
-        return;
-      }
-
-      const q = user?.id ? `?u=${encodeURIComponent(user.id)}` : "";
-      await fetch(`/api/donations/unmatched/resolve${q}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: event.id }),
-      }).catch(() => {});
-
-      markAuthoritativeDonationSave(saved, applied.state);
-      setState((prev) => mergeDonationApplyBase(applied.state, prev) ?? applied.state);
-      pushToonationLog(
-        `미매칭 단체짠: ${displayDonorName} ${event.amount.toLocaleString("ko-KR")}원 → ${applied.donors.length}행 생성 (${applied.preview.sharePerMember.toLocaleString("ko-KR")}원×${applied.preview.eligibleMembers.length}명)`
-      );
-      await fetchUnmatchedEvents();
-    },
-    [aliasInputMap, fetchUnmatchedEvents, markAuthoritativeDonationSave, pushToonationLog, user?.id]
-  );
 
   const applyGroupSplitFromDonor = useCallback(
     async (donor: Donor) => {
@@ -5291,29 +5198,65 @@ export default function AdminPage() {
   }, [toonationSocketEnabled, user?.id]);
 
   useEffect(() => {
+    adminPageMountAtRef.current = Date.now();
+    toonationQueueHydratedRef.current = false;
+    toonationQueueBaselineReadyRef.current = false;
+    toonationQueueBaselineIdsRef.current = new Set();
+    toonationQueuePendingIdsRef.current = new Set();
+  }, [user?.id]);
+
+  useEffect(() => {
     void fetchUnmatchedEvents();
     void fetchDonationAliases();
     void fetchToonationQueue();
   }, [fetchUnmatchedEvents, fetchDonationAliases, fetchToonationQueue]);
 
   useEffect(() => {
-    if (toonationQueue.length === 0) return;
-    if (toonationQueueBaselineIdsRef.current === null) {
-      const initialIds = toonationQueue.map((e) => e.id);
-      toonationQueueBaselineIdsRef.current = new Set(initialIds);
-      const t = window.setTimeout(() => {
-        void autoProcessAllQueueEvents(toonationQueue);
-      }, 600);
-      return () => window.clearTimeout(t);
+    toonationQueueRef.current = toonationQueue;
+  }, [toonationQueue]);
+
+  useEffect(() => {
+    if (!toonationQueueHydratedRef.current) return;
+    const schedulePendingQueueProcess = () => {
+      if (toonationQueueProcessTimerRef.current) {
+        window.clearTimeout(toonationQueueProcessTimerRef.current);
+      }
+      toonationQueueProcessTimerRef.current = window.setTimeout(() => {
+        toonationQueueProcessTimerRef.current = null;
+        const pendingIds = toonationQueuePendingIdsRef.current;
+        toonationQueuePendingIdsRef.current = new Set();
+        const batch = toonationQueueRef.current.filter((e) => pendingIds.has(e.id));
+        if (batch.length > 0) {
+          void autoProcessAllQueueEvents(batch);
+        }
+      }, 200);
+    };
+    if (!toonationQueueBaselineReadyRef.current) {
+      toonationQueueBaselineReadyRef.current = true;
+      const baseline = toonationQueueBaselineIdsRef.current;
+      const mountCutoff = adminPageMountAtRef.current - 8000;
+      for (const evt of toonationQueue) {
+        baseline.add(evt.id);
+        const atMs = Date.parse(String(evt.at || ""));
+        const isLive = !Number.isFinite(atMs) || atMs >= mountCutoff;
+        const alreadyApplied = isDuplicateDonationEvent(stateRef.current, evt);
+        if (isLive && !alreadyApplied) {
+          toonationQueuePendingIdsRef.current.add(evt.id);
+        }
+      }
+      if (toonationQueuePendingIdsRef.current.size > 0) {
+        schedulePendingQueueProcess();
+      }
+      return;
     }
     const baseline = toonationQueueBaselineIdsRef.current;
     const fresh = toonationQueue.filter((e) => !baseline.has(e.id));
     if (fresh.length === 0) return;
-    for (const evt of fresh) baseline.add(evt.id);
-    const t = window.setTimeout(() => {
-      void autoProcessAllQueueEvents(fresh);
-    }, 400);
-    return () => window.clearTimeout(t);
+    for (const evt of fresh) {
+      baseline.add(evt.id);
+      toonationQueuePendingIdsRef.current.add(evt.id);
+    }
+    schedulePendingQueueProcess();
   }, [autoProcessAllQueueEvents, toonationQueue]);
 
   const addContribution = () => {
@@ -7817,25 +7760,6 @@ export default function AdminPage() {
                     </div>
                   );
                 })()}
-                {(() => {
-                  const splitCfg = normalizeGroupSplitDonationSettings(state.groupSplitDonationSettings);
-                  const samplePreview = previewGroupSplitDonation(state, 1000000, splitCfg);
-                  return (
-                    <p className="mt-4 text-[11px] text-violet-200/80">
-                      단체짠 — 후원자명·메시지에 「단체」·「단짠」 포함 시{" "}
-                      {splitCfg.autoSplitOnKeyword !== false ? "자동 균등 분배" : "자동 분배 OFF"} · 제외 멤버는{" "}
-                      <button
-                        type="button"
-                        className="text-violet-300 underline hover:text-violet-200"
-                        onClick={() => moveToSection("donor", "group-split-donation-settings")}
-                      >
-                        후원자 탭
-                      </button>
-                      에서 설정 · 현재 {samplePreview.eligibleMembers.length}명 분배 / 100만 원 기준 1인당{" "}
-                      {samplePreview.sharePerMember.toLocaleString("ko-KR")}원
-                    </p>
-                  );
-                })()}
               </div>
               {!sigSalesModalOpen ? (
                 <SigSalesCompactCard
@@ -9585,11 +9509,6 @@ export default function AdminPage() {
                   풀=입력한 원 그대로 ·                   만원=축약 표기 · 오버레이·목표 막대에도 동일(막대 총액만 천원 반올림)
                 </span>
               </div>
-              <GroupSplitDonationPanel
-                state={state}
-                onExcludeChange={setGroupSplitMemberExcluded}
-                onAutoSplitChange={setGroupSplitAutoSplitOnKeyword}
-              />
               <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_auto_auto_auto] gap-3 mt-4">
                 <input
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
@@ -9924,15 +9843,7 @@ export default function AdminPage() {
                     {unmatchedEvents.length === 0 && (
                       <div className="text-xs text-neutral-500">현재 미매칭 후원이 없습니다.</div>
                     )}
-                    {unmatchedEvents.map((evt) => {
-                      const splitPreview = previewGroupSplitDonation(
-                        state,
-                        evt.amount,
-                        state.groupSplitDonationSettings
-                      );
-                      const canGroupSplit =
-                        splitPreview.eligibleMembers.length > 0 && splitPreview.sharePerMember > 0;
-                      return (
+                    {unmatchedEvents.map((evt) => (
                       <div key={evt.id} className="rounded border border-white/10 bg-neutral-900/60 p-2">
                         <div className="text-xs text-neutral-300">
                           {evt.donorName} / {evt.amount.toLocaleString("ko-KR")}원
@@ -9942,37 +9853,7 @@ export default function AdminPage() {
                             {evt.message}
                           </div>
                         ) : null}
-                        {canGroupSplit ? (
-                          <div className="mt-1 text-[11px] text-violet-300/90">
-                            단체짠: {splitPreview.eligibleMembers.length}명 ×{" "}
-                            {splitPreview.sharePerMember.toLocaleString("ko-KR")}원
-                            {splitPreview.remainderToFirst > 0
-                              ? ` (+${splitPreview.remainderToFirst.toLocaleString("ko-KR")}원은 첫 멤버)`
-                              : ""}
-                          </div>
-                        ) : (
-                          <div className="mt-1 text-[11px] text-neutral-500">
-                            단체짠 불가 — 분배 대상 멤버 없음 또는 금액 부족
-                          </div>
-                        )}
                         <div className="mt-2 flex flex-wrap items-center gap-2">
-                          {canGroupSplit ? (
-                            <button
-                              type="button"
-                              className="px-2 py-1 rounded bg-violet-800 hover:bg-violet-700 text-xs"
-                              title={`${splitPreview.sharePerMember.toLocaleString("ko-KR")}원 × ${splitPreview.eligibleMembers.length}명`}
-                              onClick={() => {
-                                requestConfirm(
-                                  "미매칭 단체짠 나누기",
-                                  `${evt.donorName} ${evt.amount.toLocaleString("ko-KR")}원을 ${splitPreview.eligibleMembers.length}명에게 균등 분배합니다. 1인 ${splitPreview.sharePerMember.toLocaleString("ko-KR")}원${splitPreview.remainderToFirst > 0 ? `(+${splitPreview.remainderToFirst.toLocaleString("ko-KR")}원은 첫 멤버)` : ""}.`,
-                                  () => void applyGroupSplitFromUnmatched(evt),
-                                  { confirmText: "단체짠 나누기", danger: false }
-                                );
-                              }}
-                            >
-                              단체짠 나누기
-                            </button>
-                          ) : null}
                           <select
                             className="px-2 py-1 rounded bg-neutral-900 border border-white/10 text-xs"
                             value={unmatchedAssignMap[evt.id] || donorMemberId || state.members[0]?.id || ""}
@@ -10020,8 +9901,7 @@ export default function AdminPage() {
                           </button>
                         </div>
                       </div>
-                    );
-                    })}
+                    ))}
                   </div>
                 </div>
                 <div className="rounded border border-white/10 bg-black/20 p-2">
@@ -10301,7 +10181,7 @@ export default function AdminPage() {
                       <th className="text-left font-medium p-1">대상</th>
                       <th className="text-left font-medium p-1 min-w-[120px]">메시지</th>
                       <th className="text-right font-medium p-1">금액</th>
-                      <th className="text-right font-medium p-1 w-28">단체짠</th>
+                      <th className="text-right font-medium p-1 w-28">나누기</th>
                       <th className="text-right font-medium p-1 w-16">삭제</th>
                     </tr>
                   </thead>
@@ -10417,9 +10297,7 @@ export default function AdminPage() {
                 {" "}
                 투네이션 후원 메시지(comment)는 <strong className="text-neutral-300">메시지</strong> 열에 자동 표기됩니다.
                 {" "}
-                <strong className="text-violet-300">단체짠</strong>은 「단체」·「단짠」 포함 후원 자동 분배 또는 리스트{" "}
-                <strong className="text-violet-300">나누기</strong>로 처리합니다. 원본 행은{" "}
-                <strong className="text-neutral-300">후원 제외</strong>로 남고(삭제 불가), 멤버별 분배 행만 합산에 반영됩니다.
+                단체 후원은 리스트 <strong className="text-violet-300">나누기</strong>로 균등 분배하거나, 멤버·금액을 나눠 <strong className="text-neutral-300">합산 추가</strong>로 수동 입력하세요.
               </div>
             </section>
 

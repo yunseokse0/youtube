@@ -308,6 +308,26 @@ describe("applyDonationToAppState", () => {
     expect(Number(next?.donorRankingsUpdatedAt || 0)).toBeGreaterThan(at - 1000);
   });
 
+  it("revertDonationFromAppState removes only one row when duplicate ids exist", () => {
+    const at = Date.now();
+    const row = {
+      id: "toonation:dup",
+      name: "중복",
+      amount: 3000,
+      memberId: "m1",
+      at,
+      target: "toon" as const,
+    };
+    const state = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "피자", account: 0, toon: 6000, contribution: 6000 }],
+      donors: [row, { ...row }],
+    };
+    const next = revertDonationFromAppState(state, "toonation:dup");
+    expect(next?.donors).toHaveLength(1);
+    expect(next?.members[0]?.toon).toBe(3000);
+  });
+
   it("syncMemberTotalsFromDonors aligns member columns with donor rows", () => {
     const state = {
       ...defaultState(),

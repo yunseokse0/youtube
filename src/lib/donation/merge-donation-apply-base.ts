@@ -6,10 +6,9 @@ import {
   pickOverlayPresetsPreferCustom,
 } from "@/lib/state";
 import type { AppState } from "@/types";
-import { dedupeDonorRows } from "./apply-donation-state";
 
 /**
- * 후원 반영·단체짠 — 서버 GET(빈 donors·placeholder)이 관리자 화면 stateRef 를 덮지 않게 병합.
+ * 후원 반영 — 서버 GET(빈 donors·placeholder)이 관리자 화면 stateRef 를 덮지 않게 병합.
  * id 기준 union, 동일 id는 hint(화면) 우선.
  */
 export function mergeDonationApplyBase(
@@ -20,8 +19,8 @@ export function mergeDonationApplyBase(
   if (!fresh) return hint ?? null;
   if (!hint) return fresh;
 
-  const freshDonors = dedupeDonorRows(normalizeDonorsArray(fresh.donors));
-  const hintDonors = dedupeDonorRows(normalizeDonorsArray(hint.donors));
+  const freshDonors = normalizeDonorsArray(fresh.donors);
+  const hintDonors = normalizeDonorsArray(hint.donors);
   const donorMap = new Map<string, (typeof freshDonors)[number]>();
   for (const d of freshDonors) donorMap.set(d.id, d);
   for (const d of hintDonors) donorMap.set(d.id, d);

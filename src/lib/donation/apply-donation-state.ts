@@ -228,11 +228,15 @@ export function applyDonationToAppState(
       : (currentState.mealBattle?.participants || []);
 
   const now = Date.now();
+  const existingDonors = currentState.donors || [];
+  if (existingDonors.some((d) => String(d.id || "").trim() === String(newDonor.id || "").trim())) {
+    return { ok: false, reason: "duplicate", event: rawEvent };
+  }
   const updatedState = syncMemberTotalsFromDonors({
     ...currentState,
     members: updatedMembers,
     donors: [
-      ...(currentState.donors || []),
+      ...existingDonors,
       {
         id: newDonor.id,
         name: newDonor.name,
@@ -300,9 +304,17 @@ export function revertDonationFromAppState(currentState: AppState, donorId: stri
       : currentState.mealBattle?.participants || [];
 
   const now = Date.now();
+  let removed = false;
+  const nextDonors = (currentState.donors || []).filter((d) => {
+    if (!removed && d.id === donorId) {
+      removed = true;
+      return false;
+    }
+    return true;
+  });
   return syncMemberTotalsFromDonors({
     ...currentState,
-    donors: (currentState.donors || []).filter((d) => d.id !== donorId),
+    donors: nextDonors,
     members,
     mealBattle: {
       ...currentState.mealBattle,

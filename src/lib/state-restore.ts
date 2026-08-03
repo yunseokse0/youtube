@@ -1,5 +1,4 @@
 import { normalizeSigInventory } from "@/lib/constants";
-import { normalizeGroupSplitDonationSettings } from "@/lib/donation/group-split-donation";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 import {
   defaultState,
@@ -182,13 +181,6 @@ export function buildAppStateFromRestoreJson(
       ? {
           donationListsOverlayConfig: normalizeDonationListsOverlayConfig(
             patch.donationListsOverlayConfig as AppState["donationListsOverlayConfig"]
-          ),
-        }
-      : {}),
-    ...(patch.groupSplitDonationSettings
-      ? {
-          groupSplitDonationSettings: normalizeGroupSplitDonationSettings(
-            patch.groupSplitDonationSettings as AppState["groupSplitDonationSettings"]
           ),
         }
       : {}),
