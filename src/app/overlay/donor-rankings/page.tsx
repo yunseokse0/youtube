@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { usePathname } from "next/navigation";
 import { useClientOnlySearchParams } from "@/hooks/useClientOnlySearchParams";
@@ -427,6 +427,41 @@ function RankingRow({
   );
 }
 
+function DonorRankingsBodyImage({ url, opacityPct }: { url: string; opacityPct: number }) {
+  const animated = useMemo(() => resolveAnimatedSourceForEmbed(url), [url]);
+  const opacity = Math.max(0, Math.min(100, opacityPct)) / 100;
+  const src = animated.src.trim();
+  if (!src) return null;
+  return (
+    <div className="relative z-[1] flex w-full items-center justify-center px-3 py-2" aria-hidden>
+      {animated.kind === "video" ? (
+        <video
+          src={src}
+          className="max-h-[220px] w-auto max-w-full object-contain"
+          style={{ opacity }}
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="auto"
+        />
+      ) : (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={src}
+            alt=""
+            className="max-h-[220px] w-auto max-w-full object-contain"
+            style={{ opacity }}
+            loading="eager"
+            decoding="async"
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
 function RankingColumn({
   title,
   items,
@@ -451,6 +486,8 @@ function RankingColumn({
   rowEvenBg,
   rowOddBg,
   disableMotion,
+  bodyImageBelowTitle,
+  bodyImageBelowList,
 }: {
   title: string;
   items: DonorRow[];
@@ -479,6 +516,8 @@ function RankingColumn({
   rowOddBg?: string;
   /** OBS CEF: framer-motion initial opacity 0 이 고착되면 전체가 안 보임 */
   disableMotion?: boolean;
+  bodyImageBelowTitle?: ReactNode;
+  bodyImageBelowList?: ReactNode;
 }) {
   const titleOutline = buildOverlayCellOutlineStyle({
     fontSizePx: titleSize,
@@ -569,6 +608,7 @@ function RankingColumn({
         />
         <span className="overlay-cell-text-inner relative z-10">{title}</span>
       </div>
+      {bodyImageBelowTitle}
       {unified ? (
         <div className="relative min-h-0 flex-1">
           <div
@@ -581,6 +621,7 @@ function RankingColumn({
       ) : (
         <div className="space-y-1 p-2.5">{rowList}</div>
       )}
+      {bodyImageBelowList}
     </section>
   );
 }
@@ -697,6 +738,12 @@ export default function DonorRankingsOverlayPage() {
   const bgOpacityPct = Math.max(0, Math.min(100, overlayCfg.bgOpacity)) / 100;
   const overlayOpacityFrac = Math.max(0, Math.min(100, overlayOpacity)) / 100;
   const amountFormat = normalizeDonorsFormat(state?.donorsFormat, "full");
+  const showBodyImage =
+    overlayCfg.isBodyImageEnabled && Boolean(String(overlayCfg.bodyImageUrl || "").trim());
+  const bodyImageEl = showBodyImage ? (
+    <DonorRankingsBodyImage url={overlayCfg.bodyImageUrl} opacityPct={overlayCfg.bodyImageOpacity} />
+  ) : null;
+  const bodyPos = overlayCfg.bodyImagePosition;
 
   const donorsOverride = useDonorsOverrideFromUrl(sp);
 
@@ -775,63 +822,68 @@ export default function DonorRankingsOverlayPage() {
             TEST MODE
           </div>
         ) : null}
+        {bodyImageEl && bodyPos === "abovePanel" ? bodyImageEl : null}
         {layoutDual ? (
-          <div
-            className="relative grid grid-cols-1 overflow-visible rounded-2xl border shadow-[0_12px_32px_rgba(236,72,153,0.14)] backdrop-blur-md md:grid-cols-2 md:gap-0"
-            style={{
-              borderColor,
-              backgroundColor: "transparent",
-            }}
-          >
-            <RankingColumn
-              title="계좌 후원 순위"
-              items={accountTop}
-              amountFormat={amountFormat}
-              headerBg={headerAccountBg}
-              panelBg={panelBg}
-              borderColor={borderColor}
-              titleSize={titleSize}
-              rowSize={rowSize}
-              rankSize={rankSize}
-              rankColor={rankColor}
-              nameColor={nameColor}
-              amountColor={amountColor}
-              titleColor={titleColor}
-              outlineColor={outlineColor}
-              outlineWidthPx={outlineWidthPx}
-              headerOpacity={overlayOpacity}
-              unified
-              showColumnDivider
-              panelOpacityFrac={overlayOpacityFrac}
-              rowEvenBg={rowEvenBg}
-              rowOddBg={rowOddBg}
-              disableMotion={hostObs}
-            />
-            <RankingColumn
-              title="투네 후원 순위"
-              items={toonTop}
-              suffix="캐시"
-              amountFormat={amountFormat}
-              headerBg={headerToonBg}
-              panelBg={panelBg}
-              borderColor={borderColor}
-              titleSize={titleSize}
-              rowSize={rowSize}
-              rankSize={rankSize}
-              rankColor={rankColor}
-              nameColor={nameColor}
-              amountColor={amountColor}
-              titleColor={titleColor}
-              outlineColor={outlineColor}
-              outlineWidthPx={outlineWidthPx}
-              headerOpacity={overlayOpacity}
-              unified
-              panelOpacityFrac={overlayOpacityFrac}
-              rowEvenBg={rowEvenBg}
-              rowOddBg={rowOddBg}
-              disableMotion={hostObs}
-            />
-          </div>
+          <>
+            {bodyImageEl && bodyPos === "belowTitle" ? bodyImageEl : null}
+            <div
+              className="relative grid grid-cols-1 overflow-visible rounded-2xl border shadow-[0_12px_32px_rgba(236,72,153,0.14)] backdrop-blur-md md:grid-cols-2 md:gap-0"
+              style={{
+                borderColor,
+                backgroundColor: "transparent",
+              }}
+            >
+              <RankingColumn
+                title="계좌 후원 순위"
+                items={accountTop}
+                amountFormat={amountFormat}
+                headerBg={headerAccountBg}
+                panelBg={panelBg}
+                borderColor={borderColor}
+                titleSize={titleSize}
+                rowSize={rowSize}
+                rankSize={rankSize}
+                rankColor={rankColor}
+                nameColor={nameColor}
+                amountColor={amountColor}
+                titleColor={titleColor}
+                outlineColor={outlineColor}
+                outlineWidthPx={outlineWidthPx}
+                headerOpacity={overlayOpacity}
+                unified
+                showColumnDivider
+                panelOpacityFrac={overlayOpacityFrac}
+                rowEvenBg={rowEvenBg}
+                rowOddBg={rowOddBg}
+                disableMotion={hostObs}
+              />
+              <RankingColumn
+                title="투네 후원 순위"
+                items={toonTop}
+                suffix="캐시"
+                amountFormat={amountFormat}
+                headerBg={headerToonBg}
+                panelBg={panelBg}
+                borderColor={borderColor}
+                titleSize={titleSize}
+                rowSize={rowSize}
+                rankSize={rankSize}
+                rankColor={rankColor}
+                nameColor={nameColor}
+                amountColor={amountColor}
+                titleColor={titleColor}
+                outlineColor={outlineColor}
+                outlineWidthPx={outlineWidthPx}
+                headerOpacity={overlayOpacity}
+                unified
+                panelOpacityFrac={overlayOpacityFrac}
+                rowEvenBg={rowEvenBg}
+                rowOddBg={rowOddBg}
+                disableMotion={hostObs}
+              />
+            </div>
+            {bodyImageEl && bodyPos === "belowList" ? bodyImageEl : null}
+          </>
         ) : (
           <div
             className={`relative mx-auto overflow-visible rounded-2xl border shadow-[0_12px_32px_rgba(236,72,153,0.14)] backdrop-blur-md ${
@@ -864,6 +916,8 @@ export default function DonorRankingsOverlayPage() {
               rowEvenBg={rowEvenBg}
               rowOddBg={rowOddBg}
               disableMotion={hostObs}
+              bodyImageBelowTitle={bodyPos === "belowTitle" ? bodyImageEl : null}
+              bodyImageBelowList={bodyPos === "belowList" ? bodyImageEl : null}
             />
           </div>
         )}

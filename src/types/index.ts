@@ -348,6 +348,9 @@ export type DonorRankingsPreset = {
   theme: DonorRankingsTheme;
 };
 
+/** 후원순위 패널 본문 이미지/GIF 위치 */
+export type OverlayBodyImagePosition = "abovePanel" | "belowTitle" | "belowList";
+
 /** 후원 랭킹 엑셀표 등 오버레이 전용 배경(GIF) 설정 */
 export type OverlayConfig = {
   /** 배경 GIF 이미지 URL 또는 경로(예: /images/bg/foo.gif) */
@@ -356,6 +359,14 @@ export type OverlayConfig = {
   bgOpacity: number;
   /** 배경 레이어 사용 여부 */
   isBgEnabled: boolean;
+  /** 패널 본문에 표시할 이미지·GIF URL */
+  bodyImageUrl: string;
+  /** 본문 이미지 투명도 0~100 */
+  bodyImageOpacity: number;
+  /** 본문 이미지 사용 여부 */
+  isBodyImageEnabled: boolean;
+  /** 본문 이미지 배치 위치 */
+  bodyImagePosition: OverlayBodyImagePosition;
 };
 
 /** 단체짠 후원 — 운영비·지정 멤버 제외 후 균등 분배 (기본 전원 분배, excludedMemberIds만 제외) */

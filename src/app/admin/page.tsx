@@ -167,6 +167,7 @@ import {
   isDuplicateDonationEvent,
   normalizeDonationEventId,
   revertDonationFromAppState,
+  syncMemberTotalsFromDonors,
 } from "@/lib/donation/apply-donation-state";
 import { mergeDonationApplyBase } from "@/lib/donation/merge-donation-apply-base";
 import { suggestMemberForDonationEvent } from "@/lib/donation/mapper";
@@ -929,7 +930,6 @@ export default function AdminPage() {
     setActiveNav((prev) => (keys.includes(prev) ? prev : keys[0]!));
   }, [navItems]);
   const baseThemeChoices = ["default","excel","excelLive","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","neon","neonExcel","retro","minimal","rpg","pastel","rainbow","sunset","ocean","forest","aurora","violet","coral","mint","lava","ice"];
-  const memberThemeChoices = ["auto","default","excel","excelLive","excelBlue","excelSlate","excelAmber","excelRose","excelNavy","excelTeal","excelPurple","excelEmerald","excelOrange","excelIndigo","minimal","pastel","retro","rpg"];
   const overlayThemeLabel = (id: string): string => {
     const map: Record<string, string> = {
       auto: "자동(프리셋 테마)",
@@ -1435,7 +1435,12 @@ export default function AdminPage() {
       ...merged,
       generalTimer: mergeGeneralTimerPreferEffective(local.generalTimer, merged.generalTimer),
     };
-    return { merged: { ...merged, donors: normalizeDonorsArray(merged.donors) }, didPreserve };
+    const donorsNorm = normalizeDonorsArray(merged.donors);
+    /** 원격 후원 수용 후 엑셀 금액이 로컬 멤버 합계에 묶이지 않게 donors 기준 재계산 */
+    return {
+      merged: syncMemberTotalsFromDonors({ ...merged, donors: donorsNorm }),
+      didPreserve,
+    };
   }, []);
 
   useEffect(() => {
@@ -2686,6 +2691,22 @@ export default function AdminPage() {
       const next: AppState = {
         ...prev,
         donorRankingsOverlayConfig: { ...base, ...patch },
+        updatedAt: Date.now(),
+      };
+      persistState(next);
+      return next;
+    });
+  };
+
+  /** 일반·전체 후원순위 오버레이 본문 이미지를 함께 갱신 */
+  const updateDonorRankingsBodyImageConfig = (patch: Partial<OverlayConfig>) => {
+    setState((prev: AppState) => {
+      const base = normalizeDonorRankingsOverlayConfig(prev.donorRankingsOverlayConfig);
+      const baseFull = normalizeDonorRankingsOverlayConfig(prev.donorRankingsFullOverlayConfig);
+      const next: AppState = {
+        ...prev,
+        donorRankingsOverlayConfig: normalizeDonorRankingsOverlayConfig({ ...base, ...patch }),
+        donorRankingsFullOverlayConfig: normalizeDonorRankingsOverlayConfig({ ...baseFull, ...patch }),
         updatedAt: Date.now(),
       };
       persistState(next);
@@ -4462,6 +4483,18 @@ export default function AdminPage() {
     })();
   };
 
+  const uploadDonorRankingsBodyImage = (file: File | null) => {
+    if (!file) return;
+    void (async () => {
+      const { url } = await uploadSigImageFile(file);
+      if (!url) return;
+      updateDonorRankingsBodyImageConfig({
+        bodyImageUrl: url,
+        isBodyImageEnabled: true,
+      });
+    })();
+  };
+
   const toggleSigSalesExcluded = (id: string, excluded: boolean) => {
     setState((prev: AppState) => {
       const base = new Set((prev.sigSalesExcludedIds || []).map(String));
@@ -4867,9 +4900,17 @@ export default function AdminPage() {
 
   const applyProcessDonationResult = useCallback((result: ProcessDonationResult) => {
     if (result.updatedState) {
-      setState((prev) => mergeDonationApplyBase(result.updatedState!, prev) ?? result.updatedState!);
+      setState((prev) => {
+        const merged = mergeDonationApplyBase(result.updatedState!, prev) ?? result.updatedState!;
+        stateRef.current = merged;
+        try {
+          window.localStorage.setItem(storageKey(user?.id), JSON.stringify(merged));
+        } catch {}
+        return merged;
+      });
+      adminDonorForceSyncRef.current?.();
     }
-  }, []);
+  }, [user?.id]);
 
   const autoProcessAllQueueEvents = useCallback(async (events?: DonationEvent[]) => {
     let batch = events;
@@ -7641,6 +7682,113 @@ export default function AdminPage() {
                             className="h-4 w-4 rounded border-white/30 bg-black/40 text-fuchsia-500 focus:ring-fuchsia-400"
                             checked={drCfg.isBgEnabled}
                             onChange={(e) => updateDonorRankingsOverlayConfig({ isBgEnabled: e.target.checked })}
+                          />
+                          ON / OFF
+                        </span>
+                      </label>
+                    </div>
+                  );
+                })()}
+              </div>
+              <div className="mt-3 rounded-2xl border border-fuchsia-400/35 bg-gradient-to-br from-fuchsia-950/55 via-rose-950/45 to-pink-950/40 p-4 shadow-[0_10px_36px_rgba(236,72,153,0.22)] backdrop-blur-md">
+                <div className="min-w-0">
+                  <h4 className="text-sm font-semibold text-pink-100">후원 랭킹 · 본문 이미지 / GIF</h4>
+                  <p className="mt-1 max-w-xl text-xs text-pink-100/75">
+                    순위 패널 본문(제목 아래·목록 아래 등)에 표시할 이미지·GIF입니다. 파일 업로드 또는 URL을 사용할 수 있으며, 일반·전체 후원순위 오버레이에 함께 적용됩니다.
+                  </p>
+                </div>
+                {(() => {
+                  const drCfg = normalizeDonorRankingsOverlayConfig(state.donorRankingsOverlayConfig);
+                  return (
+                    <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
+                        파일 업로드 (gif / png / jpg / webp)
+                        <input
+                          type="file"
+                          accept="image/gif,image/png,image/jpeg,image/webp,.gif,.png,.jpg,.jpeg,.webp"
+                          className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 file:mr-3 file:rounded file:border-0 file:bg-fuchsia-600 file:px-2 file:py-1 file:text-xs file:font-semibold file:text-white"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0] || null;
+                            uploadDonorRankingsBodyImage(file);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
+                        이미지 URL (https… 또는 /uploads 경로)
+                        <input
+                          className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 placeholder:text-pink-200/40 outline-none focus:border-fuchsia-400/70"
+                          placeholder="예: /uploads/sigs/.../banner.gif"
+                          value={drCfg.bodyImageUrl}
+                          onChange={(e) =>
+                            updateDonorRankingsBodyImageConfig({
+                              bodyImageUrl: e.target.value,
+                              isBodyImageEnabled: Boolean(String(e.target.value || "").trim()),
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
+                        배치 위치
+                        <select
+                          className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 shadow-inner outline-none focus:border-fuchsia-400/70"
+                          value={drCfg.bodyImagePosition}
+                          onChange={(e) =>
+                            updateDonorRankingsBodyImageConfig({
+                              bodyImagePosition: e.target.value as OverlayConfig["bodyImagePosition"],
+                            })
+                          }
+                        >
+                          <option value="abovePanel">패널 위</option>
+                          <option value="belowTitle">제목 아래 (기본)</option>
+                          <option value="belowList">순위 목록 아래</option>
+                        </select>
+                      </label>
+                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
+                        본문 이미지 투명도 ({drCfg.bodyImageOpacity}%)
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={drCfg.bodyImageOpacity}
+                          onChange={(e) =>
+                            updateDonorRankingsBodyImageConfig({ bodyImageOpacity: Number(e.target.value) })
+                          }
+                          className="w-full accent-fuchsia-400"
+                        />
+                      </label>
+                      {drCfg.bodyImageUrl.trim() ? (
+                        <div className="md:col-span-2 flex flex-wrap items-center gap-3 rounded-xl border border-white/15 bg-black/20 px-3 py-2.5">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={drCfg.bodyImageUrl.trim()}
+                            alt=""
+                            className="max-h-20 max-w-[200px] rounded object-contain"
+                          />
+                          <button
+                            type="button"
+                            className="rounded bg-white/15 px-2 py-1 text-xs text-pink-50 hover:bg-white/25"
+                            onClick={() =>
+                              updateDonorRankingsBodyImageConfig({
+                                bodyImageUrl: "",
+                                isBodyImageEnabled: false,
+                              })
+                            }
+                          >
+                            이미지 지우기
+                          </button>
+                        </div>
+                      ) : null}
+                      <label className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/15 bg-black/20 px-3 py-2.5 md:col-span-2 cursor-pointer">
+                        <span className="text-xs font-semibold text-pink-50">본문 이미지 사용</span>
+                        <span className="flex items-center gap-2 text-[11px] text-pink-100/80">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-white/30 bg-black/40 text-fuchsia-500 focus:ring-fuchsia-400"
+                            checked={drCfg.isBodyImageEnabled}
+                            onChange={(e) =>
+                              updateDonorRankingsBodyImageConfig({ isBodyImageEnabled: e.target.checked })
+                            }
                           />
                           ON / OFF
                         </span>
@@ -11359,24 +11507,9 @@ export default function AdminPage() {
                               </select>
                               <ThemeThumbs value={p.theme} options={baseThemeChoices} onChange={(v) => updatePreset(p.id, { theme: v })} />
                               {/* Palette view removed per user preference; compact select retained */}
+                              {/* 「멤버·총합 테마」UI 제거 — 상단「테마」가 membersTheme/totalTheme도 함께 맞춤. 저장값·현재 표 설정은 변경하지 않음 */}
                               {(p.showMembers || p.showTotal) && (
                                 <>
-                                  <label className="text-xs text-neutral-400">멤버·총합 테마</label>
-                                  <select
-                                    className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
-                                    value={p.membersTheme || "auto"}
-                                    onChange={(e) => updatePreset(p.id, { membersTheme: e.target.value, totalTheme: e.target.value })}
-                                  >
-                                    {memberThemeChoices.map((tid) => (
-                                      <option key={tid} value={tid}>{overlayThemeLabel(tid)}</option>
-                                    ))}
-                                  </select>
-                                  <ThemeThumbs
-                                    value={p.membersTheme || "auto"}
-                                    options={memberThemeChoices}
-                                    onChange={(v) => updatePreset(p.id, { membersTheme: v, totalTheme: v })}
-                                  />
-                                  {/* Palette view removed; keep compact select */}
                                   <label className="text-xs text-neutral-400">표 배경 불투명도</label>
                                   <div className="flex items-center gap-2">
                                     <input type="range" min="0" max="100" value={p.tableBgOpacity || "100"} onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value })} className="flex-1 accent-emerald-500" />
@@ -11848,7 +11981,7 @@ export default function AdminPage() {
                               <label className="text-xs text-neutral-400">이름 너비(ch)</label>
                               <input className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm" placeholder="(기본 자동)" value={p.nameCh || ""} onChange={(e) => updatePreset(p.id, { nameCh: e.target.value.replace(/[^\d]/g, "") })} />
                               <p className="col-span-full text-[10px] text-neutral-500">
-                                헤더·본문 배경/글자색은 위 「멤버·총합 테마」 영역에서 설정합니다. 헤더 외곽선은 비우면 아래 본문 외곽선과 동일하게 적용됩니다.
+                                헤더·본문 배경/글자색은 위 「테마」 영역에서 설정합니다. 헤더 외곽선은 비우면 아래 본문 외곽선과 동일하게 적용됩니다.
                               </p>
                               <label className="text-xs text-neutral-400">표 글자 외곽선 색</label>
                               <div className="flex items-center gap-2">

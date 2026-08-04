@@ -755,6 +755,12 @@ function normalizeRankPositionLabels(input: unknown): string[] {
   return Array.from({ length: 12 }).map((_, idx) => String(input[idx] || "").trim());
 }
 
+function normalizeOverlayBodyImagePosition(input: unknown): OverlayConfig["bodyImagePosition"] {
+  const raw = String(input || "").trim();
+  if (raw === "abovePanel" || raw === "belowList") return raw;
+  return "belowTitle";
+}
+
 export function normalizeDonationListsOverlayConfig(input: unknown): OverlayConfig {
   const v = input && typeof input === "object" ? (input as Partial<OverlayConfig>) : {};
   const urlRaw = typeof v.bgGifUrl === "string" ? v.bgGifUrl.trim() : "";
@@ -762,10 +768,19 @@ export function normalizeDonationListsOverlayConfig(input: unknown): OverlayConf
   if (!Number.isFinite(op)) op = 40;
   op = Math.max(0, Math.min(100, Math.round(op)));
   const bgGifUrl = sanitizeOverlayEmbedMediaUrl(urlRaw);
+  const bodyUrlRaw = typeof v.bodyImageUrl === "string" ? v.bodyImageUrl.trim() : "";
+  const bodyImageUrl = sanitizeOverlayEmbedMediaUrl(bodyUrlRaw);
+  let bodyOp = Number(v.bodyImageOpacity);
+  if (!Number.isFinite(bodyOp)) bodyOp = 100;
+  bodyOp = Math.max(0, Math.min(100, Math.round(bodyOp)));
   return {
     bgGifUrl,
     bgOpacity: op,
     isBgEnabled: Boolean(bgGifUrl && v.isBgEnabled),
+    bodyImageUrl,
+    bodyImageOpacity: bodyOp,
+    isBodyImageEnabled: Boolean(bodyImageUrl && v.isBodyImageEnabled),
+    bodyImagePosition: normalizeOverlayBodyImagePosition(v.bodyImagePosition),
   };
 }
 
