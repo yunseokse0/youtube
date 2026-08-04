@@ -8578,7 +8578,8 @@ export default function AdminPage() {
                   <div>
                     <h3 className="text-base font-semibold">시그 롤링</h3>
                     <p className="text-xs text-neutral-400">
-                      GIF는 1회 재생 길이 후 크로스페이드, PNG 등은 표시 시간 후 전환합니다. OBS 브라우저 소스로 추가하세요.
+                      GIF는 1회 재생 길이 후 부드럽게 전환되고, PNG 등은 표시 시간 후 디졸브됩니다. OBS(
+                      <code className="text-neutral-500">host=obs</code>)는 깜빡임 없는 soft fade를 씁니다.
                       한 화면에서 <strong className="text-amber-200/90">좌=고액(30만 원 이상)</strong> /{" "}
                       <strong className="text-sky-200/90">우=저액(30만 원 미만)</strong>으로 나눠 각각 롤링합니다.
                     </p>
@@ -8690,16 +8691,16 @@ export default function AdminPage() {
                 ) : null}
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="block text-xs text-neutral-300">
-                    크로스페이드 (ms)
+                    전환 연출 (ms)
                     <input
                       type="number"
-                      min={120}
+                      min={180}
                       max={5000}
                       step={20}
                       className="mt-1 w-full rounded border border-white/10 bg-neutral-950/80 px-2 py-1"
                       value={normalizeSigRolling(state.sigRolling).fadeMs}
                       onChange={(e) => {
-                        const v = Math.max(120, Math.min(5000, parseInt(e.target.value, 10) || 800));
+                        const v = Math.max(180, Math.min(5000, parseInt(e.target.value, 10) || 1000));
                         setState((prev) => {
                           const sr = normalizeSigRolling(prev.sigRolling);
                           const next = { ...prev, sigRolling: { ...sr, fadeMs: v } };
@@ -8708,6 +8709,9 @@ export default function AdminPage() {
                         });
                       }}
                     />
+                    <span className="mt-1 block text-[10px] text-neutral-500">
+                      권장 800~1200. OBS는 fade out→in, 그 외는 크로스페이드+스케일.
+                    </span>
                   </label>
                   <label className="block text-xs text-neutral-300">
                     정지 이미지 표시 (ms)

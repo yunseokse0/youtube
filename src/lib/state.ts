@@ -107,7 +107,7 @@ export function normalizeSigRolling(input: unknown): SigRollingSettings {
       label: decodeText(x.label),
     }))
     .filter((x) => x.url);
-  const fadeMs = Number.isFinite(v.fadeMs) ? Math.max(120, Math.min(5000, Math.floor(Number(v.fadeMs)))) : 800;
+  const fadeMs = Number.isFinite(v.fadeMs) ? Math.max(180, Math.min(5000, Math.floor(Number(v.fadeMs)))) : 1000;
   const staticHoldMs = Number.isFinite(v.staticHoldMs)
     ? Math.max(400, Math.min(120_000, Math.floor(Number(v.staticHoldMs))))
     : 5000;
