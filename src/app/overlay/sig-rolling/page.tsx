@@ -46,10 +46,15 @@ const TWO_CARD_LAYOUT = sigRollingFixedPairLayoutPx(SHELL_PAD_PX, 2);
 const ONE_CARD_LAYOUT = sigRollingFixedPairLayoutPx(SHELL_PAD_PX, 1);
 
 function bandScheduleToken(items: SigRollingItemWithPrice[]): string {
-  return items.map((x) => `${x.id}\u001f${x.url}`).join("\u001e");
+  /** id 집합만 — URL/정렬 흔들림으로 인덱스가 0에 고정되지 않게 */
+  return items
+    .map((x) => x.id)
+    .slice()
+    .sort()
+    .join("\u001f");
 }
 
-/** 목록 id+url 만 — 가격 변동으로 타이머/인덱스가 리셋되지 않게 */
+/** 목록 구성(id 집합)만 — 가격·URL·정렬 변동으로 타이머/인덱스가 리셋되지 않게 */
 function sigRollingCatalogKey(state: AppState | null, memberFilterId: string, highMin: number): string {
   const items = getUnifiedSigRollingItems(state, memberFilterId);
   const { high, low } = splitSigRollingByPriceBand(items, highMin);
@@ -64,7 +69,8 @@ function resolveItemSrc(item: SigRollingItem | null, overlayUserId?: string): st
 }
 
 /**
- * 고정 셸 + 더블버퍼: 다음 장이 로드된 뒤에만 교체해 OBS 빈 프레임·크기 점프를 막음.
+ * 고정 셸 + DOM 프리로드: OBS CEF에서 `new Image().onload`가 안 뜨면 교체가 멈추므로
+ * 숨은 img onLoad + 타임아웃 강제 교체로 보장한다.
  */
 function RollingCardColumn({
   current,
@@ -75,52 +81,54 @@ function RollingCardColumn({
   pairSide?: "left" | "right";
   overlayUserId?: string;
 }) {
+  const targetId = current?.id || "";
   const targetSrc = resolveItemSrc(current, overlayUserId);
   const [shownSrc, setShownSrc] = useState(targetSrc);
-  const [errSrc, setErrSrc] = useState<string | null>(null);
   const shownSrcRef = useRef(shownSrc);
   shownSrcRef.current = shownSrc;
-  const pendingIdRef = useRef<string | null>(null);
+  const fallbackSrc = toSigOverlayAbsoluteAssetUrl(BUNDLED_SIG_PLACEHOLDER_URL);
 
   useEffect(() => {
-    if (!current || !targetSrc) return;
+    if (!targetSrc) return;
     if (targetSrc === shownSrcRef.current) return;
 
-    const itemId = current.id;
-    pendingIdRef.current = itemId;
     let cancelled = false;
-    const fallback = toSigOverlayAbsoluteAssetUrl(BUNDLED_SIG_PLACEHOLDER_URL);
+    let settled = false;
 
-    const commit = (src: string, asError: boolean) => {
-      if (cancelled || pendingIdRef.current !== itemId) return;
-      setErrSrc(asError ? src : null);
+    const commit = (src: string) => {
+      if (cancelled || settled) return;
+      settled = true;
       setShownSrc(src);
     };
 
-    const img = new window.Image();
-    img.decoding = "async";
-    img.onload = () => commit(targetSrc, false);
-    img.onerror = () => commit(fallback, true);
-    img.src = targetSrc;
-    if (img.complete && img.naturalWidth > 0) {
-      commit(targetSrc, false);
-    }
+    /** OBS 브라우저 소스가 onLoad를 누락해도 교체되도록 */
+    const forceId = window.setTimeout(() => commit(targetSrc), 900);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(forceId);
     };
-  }, [current, targetSrc]);
+  }, [targetId, targetSrc]);
 
-  const onImgError = useCallback((e: SyntheticEvent<HTMLImageElement>) => {
-    const fallback = toSigOverlayAbsoluteAssetUrl(BUNDLED_SIG_PLACEHOLDER_URL);
-    if (e.currentTarget.src.includes("dummy-sig")) return;
-    setErrSrc(fallback);
-    setShownSrc(fallback);
-  }, []);
+  const onHiddenLoad = useCallback(() => {
+    if (targetSrc) setShownSrc(targetSrc);
+  }, [targetSrc]);
+
+  const onHiddenError = useCallback(() => {
+    setShownSrc(fallbackSrc);
+  }, [fallbackSrc]);
+
+  const onImgError = useCallback(
+    (e: SyntheticEvent<HTMLImageElement>) => {
+      if (e.currentTarget.src.includes("dummy-sig")) return;
+      setShownSrc(fallbackSrc);
+    },
+    [fallbackSrc]
+  );
 
   if (!current && !shownSrc) return null;
 
-  const displaySrc = errSrc || shownSrc || targetSrc;
+  const displaySrc = shownSrc || targetSrc;
   if (!displaySrc) return null;
 
   const shellBase =
@@ -140,6 +148,8 @@ function RollingCardColumn({
     minHeight: FIXED_SHELL.mediaHeight,
     maxHeight: FIXED_SHELL.mediaHeight,
   };
+
+  const needsPreload = Boolean(targetSrc && targetSrc !== displaySrc);
 
   return (
     <div
@@ -165,6 +175,20 @@ function RollingCardColumn({
             decoding="async"
             onError={onImgError}
           />
+          {needsPreload ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={targetSrc}
+              alt=""
+              aria-hidden
+              referrerPolicy="no-referrer"
+              decoding="async"
+              className="pointer-events-none absolute opacity-0"
+              style={{ width: 1, height: 1, left: 0, top: 0 }}
+              onLoad={onHiddenLoad}
+              onError={onHiddenError}
+            />
+          ) : null}
         </div>
       </div>
     </div>
@@ -215,6 +239,10 @@ function SigRollingOverlayInner() {
   const [leftIdx, setLeftIdx] = useState(0);
   const [rightIdx, setRightIdx] = useState(0);
   const [viewportW, setViewportW] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 0));
+  const leftIdxRef = useRef(0);
+  const rightIdxRef = useRef(0);
+  leftIdxRef.current = leftIdx;
+  rightIdxRef.current = rightIdx;
 
   /** 마지막 유효 목록 — 폴링 중 빈 스냅샷이 나와도 OBS가 투명으로 깜빡이지 않게 */
   const lastItemsRef = useRef({ high: highItems, low: lowItems, total: totalCount });
@@ -283,24 +311,33 @@ function SigRollingOverlayInner() {
     if (stableLow.length > 0 && rightIdx >= stableLow.length) setRightIdx(0);
   }, [stableHigh.length, stableLow.length, leftIdx, rightIdx]);
 
+  /** leftIdx에 묶지 않는 interval — 인덱스 리셋/재구독으로 교체가 멈추지 않게 */
   useEffect(() => {
     if (!ready || stableTotal === 0 || !canAdvance) return;
 
-    const snap = bandsRef.current;
-    const waitMs = resolveSigRollingHoldMs(snap.staticHoldMs);
-    preloadRollingImage(stableHigh.length > 1 ? pickSigRollingAt(snap.high, leftIdx + 1) : null);
-    preloadRollingImage(stableLow.length > 1 ? pickSigRollingAt(snap.low, rightIdx + 1) : null);
+    const waitMs = resolveSigRollingHoldMs(holdMs);
 
-    const timerId = window.setTimeout(() => {
+    const tick = () => {
+      const snap = bandsRef.current;
+      const li = leftIdxRef.current;
+      const ri = rightIdxRef.current;
+      preloadRollingImage(snap.high.length > 1 ? pickSigRollingAt(snap.high, li + 1) : null);
+      preloadRollingImage(snap.low.length > 1 ? pickSigRollingAt(snap.low, ri + 1) : null);
       advanceBands();
-    }, waitMs);
+    };
 
-    return () => window.clearTimeout(timerId);
+    preloadRollingImage(
+      stableHigh.length > 1 ? pickSigRollingAt(bandsRef.current.high, leftIdxRef.current + 1) : null
+    );
+    preloadRollingImage(
+      stableLow.length > 1 ? pickSigRollingAt(bandsRef.current.low, rightIdxRef.current + 1) : null
+    );
+
+    const timerId = window.setInterval(tick, waitMs);
+    return () => window.clearInterval(timerId);
   }, [
     ready,
     stableTotal,
-    leftIdx,
-    rightIdx,
     catalogKey,
     holdMs,
     canAdvance,
