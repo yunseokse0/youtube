@@ -22,6 +22,15 @@ describe("buildOverlaySyncSignature", () => {
     };
     expect(buildOverlaySyncSignature(a)).not.toBe(buildOverlaySyncSignature(b));
   });
+
+  it("changes when sig rolling hold time changes", () => {
+    const a = defaultState();
+    const b = {
+      ...a,
+      sigRolling: { ...a.sigRolling, staticHoldMs: 40000 },
+    };
+    expect(buildOverlaySyncSignature(a)).not.toBe(buildOverlaySyncSignature(b));
+  });
 });
 
 describe("buildSigSalesOverlaySyncSignature", () => {

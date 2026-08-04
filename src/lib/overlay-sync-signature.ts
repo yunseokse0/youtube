@@ -91,6 +91,34 @@ export function buildOverlaySyncSignature(state: AppState | null): string {
       }
     : null;
 
+  const sigRolling = state.sigRolling
+    ? {
+        hold: Math.floor(Number(state.sigRolling.staticHoldMs) || 0),
+        fade: Math.floor(Number(state.sigRolling.fadeMs) || 0),
+        items: (state.sigRolling.items || [])
+          .map((x) => `${x.id}\u001f${x.url}`)
+          .join("\u001e"),
+      }
+    : null;
+
+  const rollingInv = (state.sigInventory || [])
+    .map((r) => ({
+      id: canonicalSigIdFromWheelSliceId(r.id),
+      roll: Boolean(r.isRolling),
+      active: Boolean(r.isActive),
+      p: Math.floor(Number(r.price) || 0),
+      iu: String(r.imageUrl || ""),
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+
+  const rollingMeta = Object.keys(state.sigRollingMeta || {})
+    .sort()
+    .map((id) => {
+      const m = state.sigRollingMeta?.[id];
+      return `${id}\u001f${m?.label || ""}\u001f${Math.floor(Number(m?.order) || 0)}`;
+    })
+    .join("\u001e");
+
   return JSON.stringify({
     members,
     donors,
@@ -109,5 +137,10 @@ export function buildOverlaySyncSignature(state: AppState | null): string {
     mealBattle: state.mealBattle || {},
     sigMatchSettings: state.sigMatchSettings || {},
     sigMatch: state.sigMatch || {},
+    /** 시그 롤링 표시 시간·목록 — 서명에 없으면 OBS가 설정 변경을 무시함 */
+    sigRolling,
+    rollingInv,
+    rollingMeta,
+    sigSalesExcludedIds: state.sigSalesExcludedIds || [],
   });
 }

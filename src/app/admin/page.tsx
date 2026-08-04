@@ -4582,6 +4582,18 @@ export default function AdminPage() {
     });
   };
 
+  const setSigRollingStaticHoldSeconds = (seconds: number) => {
+    const sec = Math.max(1, Math.min(120, Math.round(Number(seconds) || 5)));
+    const ms = sec * 1000;
+    setState((prev) => {
+      const sr = normalizeSigRolling(prev.sigRolling);
+      if (sr.staticHoldMs === ms) return prev;
+      const next = { ...prev, sigRolling: { ...sr, staticHoldMs: ms } };
+      persistVisualSettings(next, { sigRolling: next.sigRolling });
+      return next;
+    });
+  };
+
   const renameSigRollingItem = (id: string, value: string) => {
     const nextName = String(value || "");
     setState((prev) => {
@@ -8839,7 +8851,7 @@ export default function AdminPage() {
                   <div>
                     <h3 className="text-base font-semibold">시그 롤링</h3>
                     <p className="text-xs text-neutral-400">
-                      GIF는 1회 재생 길이 후, PNG 등은 표시 시간 후{" "}
+                      GIF는 1회 재생과 무관하게 표시 시간 후{" "}
                       <strong className="text-sky-200/90">다음 이미지로 즉시 교체</strong>됩니다. OBS(
                       <code className="text-neutral-500">host=obs</code>)도 동일합니다. 한 화면에서{" "}
                       <strong className="text-amber-200/90">좌=고액(30만 원 이상)</strong> /{" "}
@@ -8951,30 +8963,77 @@ export default function AdminPage() {
                     {sigRollingUploadMessage}
                   </p>
                 ) : null}
-                <div className="max-w-sm">
-                  <label className="block text-xs text-neutral-300">
-                    정지 이미지 표시 (ms)
-                    <input
-                      type="number"
-                      min={400}
-                      max={120000}
-                      step={100}
-                      className="mt-1 w-full rounded border border-white/10 bg-neutral-950/80 px-2 py-1"
-                      value={normalizeSigRolling(state.sigRolling).staticHoldMs}
-                      onChange={(e) => {
-                        const v = Math.max(400, Math.min(120000, parseInt(e.target.value, 10) || 5000));
-                        setState((prev) => {
-                          const sr = normalizeSigRolling(prev.sigRolling);
-                          const next = { ...prev, sigRolling: { ...sr, staticHoldMs: v } };
-                          persistVisualSettings(next, { sigRolling: next.sigRolling });
-                          return next;
-                        });
-                      }}
-                    />
-                    <span className="mt-1 block text-[10px] text-neutral-500">
-                      PNG·JPEG 등 정지 이미지 표시 시간. GIF는 1루프 길이를 따릅니다. 전환 연출 없이 즉시 교체됩니다.
-                    </span>
-                  </label>
+                <div className="max-w-xl space-y-2 rounded border border-white/10 bg-black/20 p-3">
+                  <div className="flex flex-wrap items-end gap-3">
+                    <label className="block text-xs text-neutral-300">
+                      이미지 표시 시간
+                      <div className="mt-1 flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          className="h-8 w-8 rounded bg-neutral-700 text-sm hover:bg-neutral-600"
+                          title="1초 줄이기"
+                          onClick={() =>
+                            setSigRollingStaticHoldSeconds(
+                              Math.round(normalizeSigRolling(state.sigRolling).staticHoldMs / 1000) - 1
+                            )
+                          }
+                        >
+                          −
+                        </button>
+                        <input
+                          type="number"
+                          min={1}
+                          max={120}
+                          step={1}
+                          className="w-20 rounded border border-white/10 bg-neutral-950/80 px-2 py-1.5 text-center text-sm"
+                          value={Math.max(
+                            1,
+                            Math.round(normalizeSigRolling(state.sigRolling).staticHoldMs / 1000)
+                          )}
+                          onChange={(e) => setSigRollingStaticHoldSeconds(parseInt(e.target.value, 10) || 5)}
+                        />
+                        <span className="text-sm text-neutral-300">초</span>
+                        <button
+                          type="button"
+                          className="h-8 w-8 rounded bg-neutral-700 text-sm hover:bg-neutral-600"
+                          title="1초 늘리기"
+                          onClick={() =>
+                            setSigRollingStaticHoldSeconds(
+                              Math.round(normalizeSigRolling(state.sigRolling).staticHoldMs / 1000) + 1
+                            )
+                          }
+                        >
+                          +
+                        </button>
+                      </div>
+                    </label>
+                    <div className="flex flex-wrap gap-1.5 pb-0.5">
+                      {[2, 3, 5, 8, 10, 15, 30].map((sec) => {
+                        const currentSec = Math.max(
+                          1,
+                          Math.round(normalizeSigRolling(state.sigRolling).staticHoldMs / 1000)
+                        );
+                        const active = currentSec === sec;
+                        return (
+                          <button
+                            key={sec}
+                            type="button"
+                            className={`rounded px-2.5 py-1.5 text-xs ${
+                              active
+                                ? "bg-sky-600 text-white"
+                                : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
+                            }`}
+                            onClick={() => setSigRollingStaticHoldSeconds(sec)}
+                          >
+                            {sec}초
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-neutral-500">
+                    설정한 시간만큼 보여 준 뒤 다음 이미지로 바뀝니다. GIF도 동일합니다(재생 길이와 무관).
+                  </p>
                 </div>
                 <details open className="rounded border border-white/15 bg-black/25">
                   <summary className="cursor-pointer list-none px-2 py-2 text-xs font-medium text-neutral-300 hover:bg-white/5 [&::-webkit-details-marker]:hidden">

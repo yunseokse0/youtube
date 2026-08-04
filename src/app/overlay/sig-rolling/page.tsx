@@ -22,7 +22,7 @@ import {
   getOverlayUserIdFromSearchParams,
   inferSigUploadUserIdFromInventory,
 } from "@/lib/overlay-params";
-import { getSigRollingHoldMs } from "@/lib/sig-rolling-duration";
+import { resolveSigRollingHoldMs } from "@/lib/sig-rolling-duration";
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 import {
   classifySigRollingOrientation,
@@ -54,11 +54,10 @@ function bandScheduleToken(items: SigRollingItemWithPrice[]): string {
 }
 
 /** 폴링으로 `state` 객체만 바뀌고 내용은 같을 때도 참조가 매번 바뀌지 않도록 문자열 키로 구분 */
-function sigRollingScheduleKey(state: AppState | null, memberFilterId: string, highMin: number): string {
-  const r = normalizeSigRolling(state?.sigRolling);
+function sigRollingCatalogKey(state: AppState | null, memberFilterId: string, highMin: number): string {
   const items = getUnifiedSigRollingItems(state, memberFilterId);
   const { high, low } = splitSigRollingByPriceBand(items, highMin);
-  return `${r.staticHoldMs}|${highMin}|H:${bandScheduleToken(high)}|L:${bandScheduleToken(low)}`;
+  return `${highMin}|H:${bandScheduleToken(high)}|L:${bandScheduleToken(low)}`;
 }
 
 function RollingCardColumn({
@@ -160,7 +159,6 @@ function RollingCardColumn({
         <div className={frameClass} style={frameStyle}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            key={current.id}
             ref={bindRollingImgRef}
             src={overDisplay}
             alt=""
@@ -210,6 +208,7 @@ function SigRollingOverlayInner() {
   );
 
   const rolling = useMemo(() => normalizeSigRolling(state?.sigRolling), [state?.sigRolling]);
+  const holdMs = resolveSigRollingHoldMs(rolling.staticHoldMs);
   const items = useMemo(() => getUnifiedSigRollingItems(state, memberFilterId), [state, memberFilterId]);
   const { high: highItems, low: lowItems } = useMemo(
     () => splitSigRollingByPriceBand(items, highMin),
@@ -228,7 +227,8 @@ function SigRollingOverlayInner() {
   const leftCurrent = pickSigRollingAt(highItems, leftIdx);
   const rightCurrent = pickSigRollingAt(lowItems, rightIdx);
 
-  const scheduleKey = sigRollingScheduleKey(state, memberFilterId, highMin);
+  /** 목록 구성만 — 표시 시간 변경 시 인덱스를 0으로 되돌리지 않음 */
+  const catalogKey = sigRollingCatalogKey(state, memberFilterId, highMin);
 
   const pairLayout = useMemo(() => {
     if (showPair) return sigRollingPairLayoutPx(leftOrientation, rightOrientation, SHELL_PAD_PX);
@@ -240,8 +240,8 @@ function SigRollingOverlayInner() {
     return { totalOuterWidth: s.outerWidth, maxOuterHeight: s.outerHeight };
   }, [showPair, highItems.length, leftOrientation, rightOrientation]);
 
-  const bandsRef = useRef({ high: highItems, low: lowItems, staticHoldMs: rolling.staticHoldMs });
-  bandsRef.current = { high: highItems, low: lowItems, staticHoldMs: rolling.staticHoldMs };
+  const bandsRef = useRef({ high: highItems, low: lowItems, staticHoldMs: holdMs });
+  bandsRef.current = { high: highItems, low: lowItems, staticHoldMs: holdMs };
 
   const canAdvance = highItems.length >= 2 || lowItems.length >= 2;
 
@@ -293,53 +293,29 @@ function SigRollingOverlayInner() {
     setRightIdx(0);
     setLeftOrientation("landscape");
     setRightOrientation("landscape");
-  }, [scheduleKey]);
+  }, [catalogKey]);
 
-  /** 표시 시간 후 즉시 다음 장으로 교체(전환 연출 없음) */
+  /** 관리자 표시 시간만큼 대기 후 즉시 다음 장 (GIF 파싱·비동기 대기 없음) */
   useEffect(() => {
     if (!ready || totalCount === 0 || !canAdvance) return;
 
-    let cancelled = false;
-    let timerId: number | undefined;
+    const snap = bandsRef.current;
+    const waitMs = resolveSigRollingHoldMs(snap.staticHoldMs);
+    preloadRollingImage(highItems.length > 1 ? pickSigRollingAt(snap.high, leftIdx + 1) : null);
+    preloadRollingImage(lowItems.length > 1 ? pickSigRollingAt(snap.low, rightIdx + 1) : null);
 
-    void (async () => {
-      const snap = bandsRef.current;
-      const holdMs = snap.staticHoldMs;
-      const visible: SigRollingItemWithPrice[] = [];
-      const left = pickSigRollingAt(snap.high, leftIdx);
-      const right = pickSigRollingAt(snap.low, rightIdx);
-      if (left) visible.push(left);
-      if (right) visible.push(right);
-      if (!visible.length) return;
+    const timerId = window.setTimeout(() => {
+      advanceBands();
+    }, waitMs);
 
-      let hold = holdMs;
-      const holds = await Promise.all(
-        visible.map((it) =>
-          getSigRollingHoldMs(resolveSigRollingImageUrl(it.label || "", it.url, overlayUserId), holdMs)
-        )
-      );
-      hold = Math.max(holdMs, ...holds);
-      if (cancelled) return;
-
-      timerId = window.setTimeout(() => {
-        if (cancelled) return;
-        preloadRollingImage(highItems.length > 1 ? pickSigRollingAt(snap.high, leftIdx + 1) : null);
-        preloadRollingImage(lowItems.length > 1 ? pickSigRollingAt(snap.low, rightIdx + 1) : null);
-        advanceBands();
-      }, hold);
-    })();
-
-    return () => {
-      cancelled = true;
-      if (timerId !== undefined) window.clearTimeout(timerId);
-    };
+    return () => window.clearTimeout(timerId);
   }, [
     ready,
     totalCount,
     leftIdx,
     rightIdx,
-    scheduleKey,
-    overlayUserId,
+    catalogKey,
+    holdMs,
     canAdvance,
     highItems.length,
     lowItems.length,
