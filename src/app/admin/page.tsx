@@ -8840,8 +8840,7 @@ export default function AdminPage() {
                     <h3 className="text-base font-semibold">시그 롤링</h3>
                     <p className="text-xs text-neutral-400">
                       GIF는 1회 재생 길이 후, PNG 등은 표시 시간 후{" "}
-                      <strong className="text-sky-200/90">기존·다음 이미지가 겹쳐 블렌딩(디졸브)</strong>되며
-                      전환됩니다. OBS(
+                      <strong className="text-sky-200/90">다음 이미지로 즉시 교체</strong>됩니다. OBS(
                       <code className="text-neutral-500">host=obs</code>)도 동일합니다. 한 화면에서{" "}
                       <strong className="text-amber-200/90">좌=고액(30만 원 이상)</strong> /{" "}
                       <strong className="text-sky-200/90">우=저액(30만 원 미만)</strong>으로 나눠 각각 롤링합니다.
@@ -8952,30 +8951,7 @@ export default function AdminPage() {
                     {sigRollingUploadMessage}
                   </p>
                 ) : null}
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="block text-xs text-neutral-300">
-                    전환 연출 (ms)
-                    <input
-                      type="number"
-                      min={180}
-                      max={5000}
-                      step={20}
-                      className="mt-1 w-full rounded border border-white/10 bg-neutral-950/80 px-2 py-1"
-                      value={normalizeSigRolling(state.sigRolling).fadeMs}
-                      onChange={(e) => {
-                        const v = Math.max(180, Math.min(5000, parseInt(e.target.value, 10) || 1000));
-                        setState((prev) => {
-                          const sr = normalizeSigRolling(prev.sigRolling);
-                          const next = { ...prev, sigRolling: { ...sr, fadeMs: v } };
-                          persistVisualSettings(next, { sigRolling: next.sigRolling });
-                          return next;
-                        });
-                      }}
-                    />
-                    <span className="mt-1 block text-[10px] text-neutral-500">
-                      권장 800~1500. 기존·다음 이미지가 동시에 겹치며 블렌딩됩니다.
-                    </span>
-                  </label>
+                <div className="max-w-sm">
                   <label className="block text-xs text-neutral-300">
                     정지 이미지 표시 (ms)
                     <input
@@ -8995,6 +8971,9 @@ export default function AdminPage() {
                         });
                       }}
                     />
+                    <span className="mt-1 block text-[10px] text-neutral-500">
+                      PNG·JPEG 등 정지 이미지 표시 시간. GIF는 1루프 길이를 따릅니다. 전환 연출 없이 즉시 교체됩니다.
+                    </span>
                   </label>
                 </div>
                 <details open className="rounded border border-white/15 bg-black/25">

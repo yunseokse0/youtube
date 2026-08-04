@@ -377,7 +377,7 @@ export type GroupSplitDonationSettings = {
   autoSplitOnKeyword?: boolean;
 };
 
-/** `/overlay/sig-rolling` — 이미지/GIF 순환(크로스페이드) 한 장 항목 */
+/** `/overlay/sig-rolling` — 이미지/GIF 순환 한 장 항목 */
 export type SigRollingItem = {
   id: string;
   /** `/uploads/...` 등 공개 URL */
@@ -390,7 +390,7 @@ export type SigRollingItem = {
 
 export type SigRollingSettings = {
   items: SigRollingItem[];
-  /** 다음 장으로 넘어갈 때 크로스페이드 길이(ms) */
+  /** @deprecated 전환 연출 제거됨. 하위 호환용으로만 유지(무시됨) */
   fadeMs: number;
   /** GIF가 아닌 정지 이미지·파싱 실패 시 한 장당 표시 시간(ms) */
   staticHoldMs: number;
