@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   classifySigRollingOrientation,
+  sigRollingFixedPairLayoutPx,
+  sigRollingFixedShellOuterPx,
   sigRollingMediaFramePx,
   sigRollingPairLayoutPx,
   sigRollingShellOuterPx,
@@ -27,5 +29,16 @@ describe("sig-rolling-orientation", () => {
     const right = sigRollingShellOuterPx("landscape", 6);
     expect(layout.totalOuterWidth).toBe(left.outerWidth + right.outerWidth);
     expect(layout.maxOuterHeight).toBe(Math.max(left.outerHeight, right.outerHeight));
+  });
+
+  it("keeps fixed square shell so landscape/portrait do not resize the card", () => {
+    const shell = sigRollingFixedShellOuterPx(6);
+    expect(shell.mediaWidth).toBe(300);
+    expect(shell.mediaHeight).toBe(300);
+    expect(shell.outerWidth).toBe(312);
+    expect(shell.outerHeight).toBe(312);
+    const pair = sigRollingFixedPairLayoutPx(6, 2);
+    expect(pair.totalOuterWidth).toBe(312 * 2);
+    expect(pair.maxOuterHeight).toBe(312);
   });
 });

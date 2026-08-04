@@ -50,6 +50,26 @@ export function sigRollingShellOuterPx(
   };
 }
 
+/**
+ * 가로(300×180)·세로(180×300)를 모두 담는 고정 셸.
+ * 방향이 바뀔 때마다 프레임 크기가 바뀌면 OBS에서 깜빡임처럼 보인다.
+ */
+export function sigRollingFixedShellOuterPx(shellPadPx = 6): {
+  outerWidth: number;
+  outerHeight: number;
+  mediaWidth: number;
+  mediaHeight: number;
+} {
+  const mediaWidth = Math.max(SIG_ROLLING_LANDSCAPE_MEDIA_WIDTH_PX, SIG_ROLLING_LANDSCAPE_MEDIA_HEIGHT_PX);
+  const mediaHeight = mediaWidth;
+  return {
+    mediaWidth,
+    mediaHeight,
+    outerWidth: mediaWidth + shellPadPx * 2,
+    outerHeight: mediaHeight + shellPadPx * 2,
+  };
+}
+
 export function sigRollingPairLayoutPx(
   left: SigRollingMediaOrientation,
   right: SigRollingMediaOrientation,
@@ -60,5 +80,18 @@ export function sigRollingPairLayoutPx(
   return {
     totalOuterWidth: l.outerWidth + r.outerWidth,
     maxOuterHeight: Math.max(l.outerHeight, r.outerHeight),
+  };
+}
+
+/** 좌·우 모두 고정 셸일 때 페어 레이아웃 */
+export function sigRollingFixedPairLayoutPx(shellPadPx = 6, cards = 2): {
+  totalOuterWidth: number;
+  maxOuterHeight: number;
+} {
+  const s = sigRollingFixedShellOuterPx(shellPadPx);
+  const n = Math.max(1, Math.min(2, Math.floor(cards) || 1));
+  return {
+    totalOuterWidth: s.outerWidth * n,
+    maxOuterHeight: s.outerHeight,
   };
 }
