@@ -1,16 +1,44 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { defaultState } from "@/lib/state";
 import type { AppState } from "@/types";
 import {
   applyThemeRestorePatch,
   describeOverlayThemeLabel,
+  healDonationFieldsFromLocalSnapshot,
+  isThemeRestoreDismissedForCandidate,
+  markThemeRestoreDismissed,
   pickBestThemeRestoreCandidate,
   scoreThemeRestoreFields,
   shouldOfferThemeRestore,
+  themeRestoreCandidateFingerprint,
   type ThemeRestoreCandidate,
 } from "@/lib/theme-restore";
 
 describe("theme-restore", () => {
+  const mem = new Map<string, string>();
+
+  beforeEach(() => {
+    mem.clear();
+    const ls = {
+      getItem: (k: string) => mem.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        mem.set(k, String(v));
+      },
+      removeItem: (k: string) => {
+        mem.delete(k);
+      },
+      clear: () => mem.clear(),
+      key: () => null,
+      length: 0,
+    };
+    vi.stubGlobal("localStorage", ls);
+    vi.stubGlobal("window", { localStorage: ls });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("scores custom overlay presets higher than default", () => {
     const custom = scoreThemeRestoreFields({
       overlayPresets: [{ id: "ov1", name: "방송", theme: "excelLive" } as AppState["overlayPresets"][number]],
@@ -30,6 +58,44 @@ describe("theme-restore", () => {
       overlayPresets: [{ id: "ov1", name: "방송", theme: "excelLive" } as AppState["overlayPresets"][number]],
     };
     expect(shouldOfferThemeRestore(current, candidate)).toBe(true);
+  });
+
+  it("remembers dismiss so the same candidate is not offered again", () => {
+    const candidate: ThemeRestoreCandidate = {
+      source: "브라우저 방송 상태",
+      score: 140,
+      updatedAt: 99,
+      overlayPresets: [{ id: "ov1", name: "방송", theme: "excelLive" } as AppState["overlayPresets"][number]],
+    };
+    expect(isThemeRestoreDismissedForCandidate("finalent", candidate)).toBe(false);
+    markThemeRestoreDismissed("finalent", candidate);
+    expect(isThemeRestoreDismissedForCandidate("finalent", candidate)).toBe(true);
+    expect(
+      isThemeRestoreDismissedForCandidate("finalent", {
+        ...candidate,
+        updatedAt: 100,
+        score: 150,
+      })
+    ).toBe(false);
+    expect(themeRestoreCandidateFingerprint(candidate)).toContain("방송");
+  });
+
+  it("heals empty live donations from richer local snapshot", () => {
+    const live: AppState = {
+      ...defaultState(),
+      donors: [],
+      members: defaultState().members.map((m) => ({ ...m, account: 0, toon: 0 })),
+    };
+    const local: AppState = {
+      ...defaultState(),
+      donors: [{ id: "d1", name: "a", amount: 5000, memberId: "m1", at: 1, target: "toon" }],
+      members: defaultState().members.map((m, i) =>
+        i === 0 ? { ...m, id: "m1", toon: 5000 } : { ...m, account: 0, toon: 0 }
+      ),
+    };
+    const healed = healDonationFieldsFromLocalSnapshot(live, local);
+    expect(healed?.donors).toHaveLength(1);
+    expect(healed?.donors[0]?.amount).toBe(5000);
   });
 
   it("applies theme patch without touching donors", () => {

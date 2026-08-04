@@ -79,6 +79,9 @@ import {
 import {
   applyThemeRestorePatch,
   collectThemeRestoreCandidates,
+  healDonationFieldsFromLocalSnapshot,
+  isThemeRestoreDismissedForCandidate,
+  markThemeRestoreDismissed,
   pickBestThemeRestoreCandidate,
   shouldOfferThemeRestore,
   summarizeThemeRestoreCandidate,
@@ -1864,6 +1867,7 @@ export default function AdminPage() {
             "※ 멤버·후원 금액은 그대로 두고 테마만 되돌립니다.\n계속할까요?"
         )
       ) {
+        markThemeRestoreDismissed(user?.id, candidate);
         return false;
       }
       const live = stateRef.current;
@@ -1899,6 +1903,7 @@ export default function AdminPage() {
       } catch {}
       setPresetRev((r) => r + 1);
       setSigExcelResult(`테마 복구 완료 (${candidate.source}): ${summary.join(" · ") || "완료"}`);
+      markThemeRestoreDismissed(user?.id, candidate);
       return true;
     },
     [persistOverlayPresetsOnly, presetStorageKey, user?.id]
@@ -1916,27 +1921,57 @@ export default function AdminPage() {
     applyThemeRestoreFromCandidate(best);
   }, [applyThemeRestoreFromCandidate, user?.id]);
 
+  const healLiveDonationsFromLocal = useCallback(() => {
+    const live = stateRef.current;
+    const lsSnap = loadState(user?.id);
+    const healed = healDonationFieldsFromLocalSnapshot(live, lsSnap);
+    if (!healed) return false;
+    setState(healed);
+    stateRef.current = healed;
+    try {
+      window.localStorage.setItem(storageKey(user?.id), JSON.stringify(healed));
+    } catch {}
+    /** 후원만 되살림 — 서버엔 테마 없는 PATCH로 전체 wipe 하지 않음 */
+    persistState(healed);
+    return true;
+  }, [persistState, user?.id]);
+
   const maybePromptThemeRestore = useCallback(
     (current: AppState) => {
       if (themeRestorePromptedRef.current) return;
       const best = pickBestThemeRestoreCandidate(collectThemeRestoreCandidates(user?.id));
-      if (!shouldOfferThemeRestore(current, best) || !best) return;
+      if (!best) return;
+      if (isThemeRestoreDismissedForCandidate(user?.id, best)) {
+        themeRestorePromptedRef.current = true;
+        return;
+      }
+      if (!shouldOfferThemeRestore(current, best)) return;
       themeRestorePromptedRef.current = true;
       window.setTimeout(() => {
+        /** 지연 중 상태가 바뀌었을 수 있음 — 최신 기준으로 재확인 */
+        const liveNow = stateRef.current;
+        if (!shouldOfferThemeRestore(liveNow, best)) {
+          markThemeRestoreDismissed(user?.id, best);
+          return;
+        }
+        if (isThemeRestoreDismissedForCandidate(user?.id, best)) return;
         const summary = summarizeThemeRestoreCandidate(best);
-        if (
-          window.confirm(
-            "테마가 기본(핑크 그라데이션)으로 초기화된 것으로 보입니다.\n" +
-              `${best.source}에서 이전 테마를 복구할까요?\n` +
-              (summary.length ? `${summary.join("\n")}\n` : "") +
-              "※ 멤버·후원 금액은 유지됩니다."
-          )
-        ) {
+        const ok = window.confirm(
+          "테마가 기본(핑크 그라데이션)으로 초기화된 것으로 보입니다.\n" +
+            `${best.source}에서 이전 테마를 복구할까요?\n` +
+            (summary.length ? `${summary.join("\n")}\n` : "") +
+            "※ 멤버·후원 금액은 유지됩니다.\n" +
+            "취소를 눌러도 후원 금액은 지우지 않습니다."
+        );
+        if (ok) {
           applyThemeRestoreFromCandidate(best, { silent: true });
+        } else {
+          markThemeRestoreDismissed(user?.id, best);
+          healLiveDonationsFromLocal();
         }
       }, 900);
     },
-    [applyThemeRestoreFromCandidate, user?.id]
+    [applyThemeRestoreFromCandidate, healLiveDonationsFromLocal, user?.id]
   );
 
   useEffect(() => {

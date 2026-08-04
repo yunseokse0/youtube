@@ -3,8 +3,10 @@ import {
   isDefaultLikeDonorRankingsTheme,
   isDefaultLikeOverlayPresets,
   migrateLegacyLocalStorageKey,
+  normalizeDonorsArray,
   overlayPresetsStorageKey,
   storageKey,
+  totalCombined,
   type AppState,
 } from "@/lib/state";
 
@@ -200,6 +202,99 @@ export function shouldOfferThemeRestore(
     Boolean(candidate.donorRankingsTheme) &&
     !isDefaultLikeDonorRankingsTheme(candidate.donorRankingsTheme);
   return overlayReset || donorThemeReset;
+}
+
+/** 테마 복구 안내 무시(탭·재접속 공통) — 동일 후보를 반복 묻지 않음 */
+export function themeRestoreDismissStorageKey(userId?: string | null): string {
+  const uid = String(userId || "").trim() || "anon";
+  return `excel-broadcast-theme-restore-dismissed:${uid}`;
+}
+
+export function themeRestoreCandidateFingerprint(candidate: ThemeRestoreCandidate): string {
+  const theme = candidate.overlayPresets?.length
+    ? describeOverlayThemeLabel(candidate.overlayPresets)
+    : "";
+  return [
+    candidate.source,
+    String(candidate.score),
+    String(candidate.updatedAt || 0),
+    theme,
+  ].join("|");
+}
+
+export type ThemeRestoreDismissRecord = {
+  fingerprint: string;
+  at: number;
+};
+
+export function readThemeRestoreDismiss(userId?: string | null): ThemeRestoreDismissRecord | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(themeRestoreDismissStorageKey(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as ThemeRestoreDismissRecord;
+    if (!parsed || typeof parsed.fingerprint !== "string") return null;
+    return {
+      fingerprint: parsed.fingerprint,
+      at: Number(parsed.at) || 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function markThemeRestoreDismissed(
+  userId: string | null | undefined,
+  candidate: ThemeRestoreCandidate
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    const record: ThemeRestoreDismissRecord = {
+      fingerprint: themeRestoreCandidateFingerprint(candidate),
+      at: Date.now(),
+    };
+    window.localStorage.setItem(themeRestoreDismissStorageKey(userId), JSON.stringify(record));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** 사용자가 이미 「취소」한 동일 후보면 다시 묻지 않음. 후보가 바뀌면(다른 테마·갱신) 다시 제안 */
+export function isThemeRestoreDismissedForCandidate(
+  userId: string | null | undefined,
+  candidate: ThemeRestoreCandidate
+): boolean {
+  const dismissed = readThemeRestoreDismiss(userId);
+  if (!dismissed?.fingerprint) return false;
+  return dismissed.fingerprint === themeRestoreCandidateFingerprint(candidate);
+}
+
+/**
+ * 라이브 상태가 비어 보이는데 LS에 후원이 있으면 후원·멤버만 되살린다(테마는 유지).
+ * 테마 복구 「취소」후 빈 스냅샷에 남는 경우를 막는다.
+ */
+export function healDonationFieldsFromLocalSnapshot(
+  live: AppState,
+  local: AppState
+): AppState | null {
+  const liveDonors = normalizeDonorsArray(live.donors).length;
+  const localDonors = normalizeDonorsArray(local.donors).length;
+  const liveTotal = totalCombined(live);
+  const localTotal = totalCombined(local);
+  const localRicher =
+    localDonors > liveDonors ||
+    localTotal > liveTotal ||
+    (localTotal > 0 && liveTotal === 0) ||
+    (localDonors > 0 && liveDonors === 0);
+  if (!localRicher) return null;
+  return {
+    ...live,
+    members: local.members?.length ? local.members : live.members,
+    donors: normalizeDonorsArray(local.donors),
+    memberPositions: local.memberPositions ?? live.memberPositions,
+    settlementResetAt: local.settlementResetAt ?? live.settlementResetAt,
+    updatedAt: Math.max(Number(live.updatedAt) || 0, Number(local.updatedAt) || 0, Date.now()),
+  };
 }
 
 /** 멤버·후원은 유지하고 테마 필드만 복구 */
