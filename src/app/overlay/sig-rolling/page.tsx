@@ -101,8 +101,9 @@ function RollingCardColumn({
   const [errOverSrc, setErrOverSrc] = useState<string | null>(null);
   const [errUnderSrc, setErrUnderSrc] = useState<string | null>(null);
   const [orientation, setOrientation] = useState<SigRollingMediaOrientation>("landscape");
-  /** cross 진입 직후 1프레임은 현재=1·다음=0 유지 → 그다음 프레임에 디졸브 시작(OBS absolute 빈칸 회피) */
+  /** cross 진입: 다음 장 로드 후 1프레임 대기 → 디졸브 (언마운트 깜빡임·빈칸 방지) */
   const [crossPaintReady, setCrossPaintReady] = useState(false);
+  const [underLoaded, setUnderLoaded] = useState(false);
   const onOrientationRef = useRef(onOrientationChange);
   onOrientationRef.current = onOrientationChange;
 
@@ -115,16 +116,27 @@ function RollingCardColumn({
 
   useEffect(() => {
     setErrOverSrc(null);
+  }, [srcCurrent]);
+
+  useEffect(() => {
     setErrUnderSrc(null);
-  }, [srcCurrent, srcUnder]);
+    setUnderLoaded(false);
+  }, [srcUnder]);
 
   useEffect(() => {
     setOrientation("landscape");
     onOrientationRef.current?.("landscape");
   }, [srcCurrent]);
 
+  const canBlend = Boolean(current && nextItem && nextItem.id !== current.id);
+  const blending = Boolean(canBlend && fadePhase === "cross");
+
   useEffect(() => {
-    if (fadePhase !== "cross") {
+    if (!blending) {
+      setCrossPaintReady(false);
+      return;
+    }
+    if (!underLoaded) {
       setCrossPaintReady(false);
       return;
     }
@@ -137,11 +149,10 @@ function RollingCardColumn({
       window.cancelAnimationFrame(raf1);
       window.cancelAnimationFrame(raf2);
     };
-  }, [fadePhase, current?.id, nextItem?.id]);
+  }, [blending, underLoaded, current?.id, nextItem?.id]);
 
-  const applyOrientationFromImg = useCallback((img: HTMLImageElement, srcHint?: string) => {
-    const src = String(srcHint || img.currentSrc || img.src || "").toLowerCase();
-    /** 더미 SVG는 정사각이라 세로 프레임으로 잡히지 않게 가로 유지 */
+  const applyOrientationFromImg = useCallback((img: HTMLImageElement) => {
+    const src = String(img.currentSrc || img.src || "").toLowerCase();
     if (src.includes("dummy-sig.svg")) {
       setOrientation("landscape");
       onOrientationRef.current?.("landscape");
@@ -162,7 +173,7 @@ function RollingCardColumn({
 
   const bindRollingImgRef = useCallback(
     (img: HTMLImageElement | null) => {
-      if (img?.complete) applyOrientationFromImg(img);
+      if (img?.complete && img.naturalWidth > 0) applyOrientationFromImg(img);
     },
     [applyOrientationFromImg]
   );
@@ -175,24 +186,20 @@ function RollingCardColumn({
   const underDisplay = errUnderSrc ?? srcUnder;
 
   const onImgError = useCallback((which: "over" | "under") => {
-    /** 로드 실패 시 더미로 바꿔도 가로 프레임 유지(세로 NO IMAGE 카드 방지) */
     setOrientation("landscape");
     onOrientationRef.current?.("landscape");
     const fallback = toSigOverlayAbsoluteAssetUrl(BUNDLED_SIG_PLACEHOLDER_URL);
     if (which === "over") setErrOverSrc(fallback);
-    else setErrUnderSrc(fallback);
+    else {
+      setErrUnderSrc(fallback);
+      setUnderLoaded(true);
+    }
   }, []);
 
   if (!current) return null;
 
-  const canBlend = Boolean(nextItem && nextItem.id !== current.id);
-  const blending = canBlend && fadePhase === "cross";
   const dissolveActive = blending && crossPaintReady;
 
-  /**
-   * 모바일(WebView/Safari)에서는 backdrop-filter 계열이 투명 캔버스와 겹칠 때
-   * 카드 외곽이 검은 타일처럼 보이는 경우가 있어, sig-rolling은 블러 없이 고정 셸 사용.
-   */
   const shellBase =
     "overflow-hidden shadow-lg border border-white/20 bg-white/35 [transform:translateZ(0)] [backface-visibility:hidden]";
   const shellClass =
@@ -215,65 +222,54 @@ function RollingCardColumn({
   };
 
   /**
-   * idle: 현재 장만 표시(OBS에서 absolute 이중 GIF 빈칸 방지).
-   * cross: 그리드 스택으로 기존·다음 opacity 디졸브.
+   * 현재 장(img)은 항상 같은 슬롯에 유지 — idle↔cross 때 통째 언마운트하면
+   * OBS/브라우저에서 깜빡인 뒤 안 보이는 문제가 남는다.
+   * 전환 시에만 다음 장을 아래에 올려 opacity 디졸브.
    */
   return (
     <div className="shrink-0" style={{ width: shell.outerWidth, height: shell.outerHeight, ...shellTransitionStyle }}>
       <div className={shellClass} style={{ width: shell.outerWidth, height: shell.outerHeight, ...shellTransitionStyle }}>
         <div className={frameClass} style={frameStyle}>
           {blending && under ? (
-            <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                key={`under-${under.id}`}
-                src={underDisplay}
-                alt=""
-                className={IMG_IN_FRAME}
-                referrerPolicy="no-referrer"
-                style={{
-                  opacity: dissolveActive ? 1 : 0,
-                  transition: transitionCss,
-                  zIndex: 1,
-                }}
-                draggable={false}
-                decoding="async"
-                onError={() => onImgError("under")}
-              />
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                key={`over-${current.id}`}
-                ref={bindRollingImgRef}
-                src={overDisplay}
-                alt=""
-                className={IMG_IN_FRAME}
-                referrerPolicy="no-referrer"
-                style={{
-                  opacity: dissolveActive ? 0 : 1,
-                  transition: transitionCss,
-                  zIndex: 2,
-                }}
-                draggable={false}
-                decoding="async"
-                onLoad={onImgLoad}
-                onError={() => onImgError("over")}
-              />
-            </>
-          ) : (
-            /* eslint-disable-next-line @next/next/no-img-element */
+            // eslint-disable-next-line @next/next/no-img-element
             <img
-              key={current.id}
-              ref={bindRollingImgRef}
-              src={overDisplay}
+              key={`under-${under.id}`}
+              ref={(img) => {
+                if (img?.complete && img.naturalWidth > 0) setUnderLoaded(true);
+              }}
+              src={underDisplay}
               alt=""
               className={IMG_IN_FRAME}
+              referrerPolicy="no-referrer"
+              style={{
+                opacity: dissolveActive ? 1 : 0,
+                transition: dissolveActive || crossPaintReady ? transitionCss : "none",
+                zIndex: 1,
+              }}
               draggable={false}
               decoding="async"
-              referrerPolicy="no-referrer"
-              onLoad={onImgLoad}
-              onError={() => onImgError("over")}
+              onLoad={() => setUnderLoaded(true)}
+              onError={() => onImgError("under")}
             />
-          )}
+          ) : null}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            key={`over-${current.id}`}
+            ref={bindRollingImgRef}
+            src={overDisplay}
+            alt=""
+            className={IMG_IN_FRAME}
+            referrerPolicy="no-referrer"
+            style={{
+              opacity: dissolveActive ? 0 : 1,
+              transition: blending ? transitionCss : "none",
+              zIndex: 2,
+            }}
+            draggable={false}
+            decoding="async"
+            onLoad={onImgLoad}
+            onError={() => onImgError("over")}
+          />
         </div>
       </div>
     </div>
@@ -404,10 +400,10 @@ function SigRollingOverlayInner() {
     setRightOrientation("landscape");
   }, [scheduleKey]);
 
-  /** 전환 페이즈: cross = 기존·다음 동시 블렌딩 후 idle */
+  /** 전환 페이즈: cross = 디졸브 후 idle (다음 장 로드 대기 여유 포함) */
   useEffect(() => {
     if (!canAdvance || fadePhase === "idle") return;
-    const ms = Math.max(180, fadeMs);
+    const ms = Math.max(180, fadeMs) + 320;
     const id = window.setTimeout(() => {
       if (fadePhase === "cross") {
         advanceBands();
