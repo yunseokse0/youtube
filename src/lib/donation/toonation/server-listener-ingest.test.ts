@@ -22,7 +22,11 @@ vi.mock("./owner-donation-remap", () => ({
 }));
 
 import { tryAutoApplyToonationDonationOnServer } from "../server-apply-donation";
-import { ingestToonationWebSocketMessage } from "./server-listener";
+import {
+  __testOnlyClearListener,
+  __testOnlySetListenerConnected,
+  ingestToonationWebSocketMessage,
+} from "./server-listener";
 
 const TEST_RAW = JSON.stringify({
   code: 101,
@@ -111,5 +115,47 @@ describe("ingestToonationWebSocketMessage consecutive identical raw", () => {
     expect(first).toEqual({ ok: true, outcome: "applied" });
     expect(second).toEqual({ ok: true, outcome: "applied" });
     expect(tryAutoApplyToonationDonationOnServer).toHaveBeenCalledTimes(2);
+  });
+
+  it("ignores browser-relay ingest while server WS is connected (재시작 직후 이중 반영 방지)", async () => {
+    const userId = `test-relay-guard-${Date.now()}`;
+    __testOnlySetListenerConnected(userId, true);
+    try {
+      const fromBrowser = await ingestToonationWebSocketMessage(
+        userId,
+        TEST_RAW,
+        undefined,
+        "browser-relay"
+      );
+      const fromServer = await ingestToonationWebSocketMessage(
+        userId,
+        TEST_RAW,
+        undefined,
+        "server-ws"
+      );
+
+      expect(fromBrowser).toEqual({ ok: true, outcome: "duplicate" });
+      expect(fromServer).toEqual({ ok: true, outcome: "applied" });
+      expect(tryAutoApplyToonationDonationOnServer).toHaveBeenCalledTimes(1);
+    } finally {
+      __testOnlyClearListener(userId);
+    }
+  });
+
+  it("allows browser-relay ingest when server WS is disconnected", async () => {
+    const userId = `test-relay-fallback-${Date.now()}`;
+    __testOnlySetListenerConnected(userId, false);
+    try {
+      const fromBrowser = await ingestToonationWebSocketMessage(
+        userId,
+        TEST_RAW,
+        undefined,
+        "browser-relay"
+      );
+      expect(fromBrowser).toEqual({ ok: true, outcome: "applied" });
+      expect(tryAutoApplyToonationDonationOnServer).toHaveBeenCalledTimes(1);
+    } finally {
+      __testOnlyClearListener(userId);
+    }
   });
 });

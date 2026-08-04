@@ -117,7 +117,8 @@ export default function ToonationBrowserRelay({
       setRelayActive(shouldRunBrowserToonationRelay(snapshot));
     };
     void check();
-    const timer = window.setInterval(() => void check(), 8_000);
+    /** 서버 연결 직후 이중 WS 창을 줄이기 위해 짧게 폴링(ingest 서버측 가드와 병행) */
+    const timer = window.setInterval(() => void check(), 2_000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);

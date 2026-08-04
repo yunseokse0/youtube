@@ -29,7 +29,12 @@ export async function POST(req: Request) {
   const cfg = await readToonationListenerConfig(userId);
   const ownerName = String(body?.ownerName || cfg?.ownerName || "").trim();
 
-  const result = await ingestToonationWebSocketMessage(userId, raw, ownerName || undefined);
+  const result = await ingestToonationWebSocketMessage(
+    userId,
+    raw,
+    ownerName || undefined,
+    "browser-relay"
+  );
   return new Response(JSON.stringify({ ok: true, result }), {
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
   });

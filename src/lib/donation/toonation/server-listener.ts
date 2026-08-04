@@ -29,6 +29,9 @@ const log = createModuleLogger("Toonation/ServerListener");
  * CORE / FROZEN (2026-08-03): 투네 실시간 자동 수집.
  * 아키텍처·dedupe 변경은 사용자 명시 요청 + server-listener-ingest.test 통과 필수.
  * @see .cursor/rules/toonation-auto-collect-freeze.mdc
+ *
+ * 재시작 직후: 서버 WS connected 이면 브라우저 릴레이 ingest 는 duplicate 로 무시
+ * (`source=browser-relay`) — 이중 경로로 첫 후원이 2번 쌓이는 문제 방지.
  */
 
 const PING_MS = 12_000;
@@ -192,12 +195,26 @@ export type ToonationIngestOutcome =
   | { ok: true; outcome: "applied" | "applied_needs_review" | "ignored" | "duplicate" }
   | { ok: false; reason: "parse_failed" | "queue_failed" | "not_applied" };
 
+export type ToonationIngestSource = "server-ws" | "browser-relay";
+
+/** 서버 Node WS가 실제 연결 중이면 브라우저 릴레이 ingest는 반영하지 않음(재시작 직후 이중 경로 방지) */
+export function shouldIgnoreBrowserRelayIngestWhileServerConnected(userId: string): boolean {
+  const conn = active.get(userId);
+  return Boolean(conn && !conn.stopped && conn.connected);
+}
+
 /** WS·OBS 릴레이 공통 — 후원 1건 처리 */
 export async function ingestToonationWebSocketMessage(
   userId: string,
   raw: string,
-  ownerName?: string
+  ownerName?: string,
+  source: ToonationIngestSource = "server-ws"
 ): Promise<ToonationIngestOutcome> {
+  if (source === "browser-relay" && shouldIgnoreBrowserRelayIngestWhileServerConnected(userId)) {
+    log.debug("서버 WS 연결 중 — 브라우저 릴레이 ingest 무시", { userId });
+    return { ok: true, outcome: "duplicate" };
+  }
+
   const payload = peekToonationWsPayload(raw);
   const isTestDonation = payload != null && isToonationTestDonationPayload(payload);
   /**
@@ -260,7 +277,7 @@ async function onDonation(userId: string, raw: string, ownerName?: string): Prom
     /* noop */
   }
 
-  const result = await ingestToonationWebSocketMessage(userId, raw, ownerName);
+  const result = await ingestToonationWebSocketMessage(userId, raw, ownerName, "server-ws");
   if (result.ok && result.outcome === "ignored") {
     log.debug("후원 WS 파싱 불가 — 무시", { userId, rawPreview: raw.slice(0, 240) });
     return;
@@ -441,6 +458,33 @@ export function getToonationServerListenerStatus(userId: string): ToonationServe
   const conn = active.get(userId);
   if (conn) return statusFromConn(conn);
   return null;
+}
+
+/** vitest 전용 — 서버 WS connected 가드 검증 */
+export function __testOnlySetListenerConnected(userId: string, connected: boolean): void {
+  const existing = active.get(userId);
+  if (existing) {
+    existing.connected = connected;
+    existing.stopped = false;
+    return;
+  }
+  active.set(userId, {
+    userId,
+    alertboxUrl: "https://toon.at/test-alertbox",
+    ws: null,
+    wsPayload: "",
+    pingTimer: null,
+    reconnectTimer: null,
+    stopped: false,
+    connected,
+  });
+}
+
+/** vitest 전용 */
+export function __testOnlyClearListener(userId: string): void {
+  const conn = active.get(userId);
+  if (conn) clearTimers(conn);
+  active.delete(userId);
 }
 
 export async function restoreToonationListenersFromStore(): Promise<void> {
