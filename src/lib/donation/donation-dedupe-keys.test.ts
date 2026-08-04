@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { donationApplyPrimaryKey } from "./donation-dedupe-keys";
+import {
+  donationApplyContentKey,
+  donationApplyPrimaryKey,
+  donationContentDedupeFingerprint,
+} from "./donation-dedupe-keys";
 import type { DonationEvent } from "./types";
 
 describe("donationApplyPrimaryKey", () => {
@@ -43,5 +47,23 @@ describe("donationApplyPrimaryKey", () => {
       target: "account",
     };
     expect(donationApplyPrimaryKey("u1", event)).toBe("u1:evt:toonation:fp-10000-abc-t12");
+  });
+
+  it("builds short-lived content key for weak ids", () => {
+    const event: DonationEvent = {
+      id: "toonation:fp-1",
+      provider: "toonation",
+      externalId: "fp-1",
+      donorName: "익명5",
+      amount: 60000,
+      message: "계좌 익명5 피자",
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "account",
+    };
+    expect(donationApplyContentKey("u1", event)).toBe(
+      "u1:content:익명5|60000|account|계좌 익명5 피자"
+    );
+    expect(donationContentDedupeFingerprint(event)).toBe("익명5|60000|account|계좌 익명5 피자");
   });
 });

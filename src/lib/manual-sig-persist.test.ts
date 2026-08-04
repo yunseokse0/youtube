@@ -150,4 +150,21 @@ describe("buildSigSalesManualApiPatch", () => {
     expect(merged.generalTimer?.isActive).toBe(true);
     expect(merged.members[0]?.name).toBe("패자");
   });
+
+  it("omitSigInventory still keeps expanded inventory from next when local was shrunk", () => {
+    const shrunkLocal = defaultState();
+    const richNext: AppState = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "패자", account: 1000, toon: 0, contribution: 1000 }],
+      sigInventory: [
+        { id: "s1", name: "버터플라이", price: 1000000, imageUrl: "/a.gif", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+        { id: "s2", name: "하트", price: 5000, imageUrl: "/b.gif", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+        { id: "s3", name: "댄스", price: 3000, imageUrl: "/c.gif", memberId: "", maxCount: 1, soldCount: 0, isRolling: true, isActive: true },
+      ],
+      updatedAt: Date.now(),
+    };
+    const merged = mergeSigSalesManualIntoLocalState(shrunkLocal, richNext, { omitSigInventory: true });
+    expect(merged.sigInventory?.some((x) => x.id === "s1")).toBe(true);
+    expect((merged.sigInventory || []).length).toBeGreaterThanOrEqual(3);
+  });
 });

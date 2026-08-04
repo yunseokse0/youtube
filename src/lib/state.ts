@@ -1793,13 +1793,21 @@ export async function saveStateAsync(
         guarded = syncMemberTotalsFromDonors(guarded);
       }
     }
-    /** 시그/테마 전용 저장 — LS에도 후원 필드는 기존 유지 */
+    /** 시그/테마 전용 저장 — LS에도 후원 필드는 기존·더 풍부한 쪽 유지 */
     if (saveOpts?.omitDonationFields && local) {
+      const nextDonors = normalizeDonorsArray(guarded.donors);
+      const localDonors = normalizeDonorsArray(local.donors);
+      const preferLocalDonations =
+        wouldShrinkDonationData(local, guarded) ||
+        localDonors.length > nextDonors.length ||
+        totalCombined(local) > totalCombined(guarded);
       guarded = {
         ...guarded,
-        members: local.members,
-        donors: normalizeDonorsArray(local.donors),
-        memberPositions: local.memberPositions ?? guarded.memberPositions,
+        members: preferLocalDonations ? local.members : guarded.members,
+        donors: preferLocalDonations ? localDonors : nextDonors,
+        memberPositions: preferLocalDonations
+          ? local.memberPositions ?? guarded.memberPositions
+          : guarded.memberPositions ?? local.memberPositions,
         settlementResetAt: local.settlementResetAt ?? guarded.settlementResetAt,
       };
     }
@@ -1968,6 +1976,99 @@ export async function saveOverlayPresetsPatchAsync(
   };
   try {
     return await enqueueServerSave(JSON.stringify(patch), userId, mergedLocal);
+  } catch {
+    return { ok: false };
+  }
+}
+
+/** 오버레이 시각 옵션만 — members/donors 를 API에 실지 않음(금액색 등 저장 시 후원 초기화 방지) */
+export type VisualSettingsPatch = Partial<
+  Pick<
+    AppState,
+    | "donorRankingsTheme"
+    | "donorRankingsFullTheme"
+    | "donorRankingsOverlayConfig"
+    | "donorRankingsFullOverlayConfig"
+    | "donationListsOverlayConfig"
+    | "donorRankingsPresets"
+    | "donorRankingsPresetId"
+    | "timerDisplayStyles"
+    | "sigRolling"
+    | "sigRollingMeta"
+    | "sigMatchSettings"
+  >
+>;
+
+/**
+ * 후원순위·리스트 등 시각 설정만 PATCH.
+ * 전체 saveStateAsync 가 React 빈 후원 스냅샷을 올리면 누적 금액이 초기화되던 회귀 방지.
+ */
+export async function saveVisualSettingsPatchAsync(
+  patch: VisualSettingsPatch,
+  userId?: string | null,
+  foundation?: AppState | null
+): Promise<SaveStateAsyncResult> {
+  if (typeof window === "undefined") return { ok: false };
+  const now = Date.now();
+  const local = loadState(userId);
+  const base =
+    foundation && hasMeaningfulMemberRoster(foundation)
+      ? foundation
+      : local && hasMeaningfulMemberRoster(local)
+        ? local
+        : foundation || local || defaultState();
+  const localDonors = normalizeDonorsArray(local?.donors);
+  const foundationDonors = normalizeDonorsArray(foundation?.donors);
+  const preservedDonors =
+    localDonors.length === 0
+      ? foundationDonors
+      : foundationDonors.length === 0
+        ? localDonors
+        : wouldShrinkDonationData(local, foundation)
+          ? localDonors
+          : foundationDonors.length >= localDonors.length
+            ? foundationDonors
+            : localDonors;
+  let preservedMembers =
+    foundation && totalCombined(foundation) > 0
+      ? foundation.members
+      : local && totalCombined(local) > 0
+        ? local.members
+        : base.members;
+  if (local && totalCombined(local) > 0 && totalCombined({ ...base, members: preservedMembers }) === 0) {
+    preservedMembers = local.members;
+  }
+  /** 시각 PATCH가 React 빈/기본 시그 목록으로 LS 실재고를 덮지 않게 */
+  const preservedSigInventory = shouldPreferLocalSigInventoryOverIncoming(
+    local?.sigInventory,
+    base.sigInventory,
+    {
+      localUpdatedAt: Number(local?.updatedAt || 0),
+      incomingUpdatedAt: Number(base.updatedAt || 0),
+    }
+  )
+    ? local!.sigInventory
+    : base.sigInventory;
+  const mergedLocal: AppState = normalizeStateForPersistence({
+    ...base,
+    ...patch,
+    members: preservedMembers,
+    donors: preservedDonors,
+    sigInventory: preservedSigInventory,
+    memberPositions: foundation?.memberPositions ?? local?.memberPositions ?? base.memberPositions,
+    settlementResetAt: foundation?.settlementResetAt ?? local?.settlementResetAt ?? base.settlementResetAt,
+    updatedAt: now,
+  });
+  try {
+    window.localStorage.setItem(storageKey(userId), JSON.stringify(mergedLocal));
+  } catch {}
+  notifyBroadcastStateLocalUpdated(userId, now);
+  const apiPatch: Record<string, unknown> = { updatedAt: now };
+  for (const key of Object.keys(patch) as (keyof VisualSettingsPatch)[]) {
+    if (patch[key] !== undefined) apiPatch[key] = patch[key];
+  }
+  try {
+    return await enqueueServerSave(JSON.stringify(apiPatch), userId, mergedLocal);
   } catch {
     return { ok: false };
   }
@@ -2166,12 +2267,33 @@ export function mergeSigSalesManualIntoLocalState(
       ? (next.overlaySettings as Record<string, unknown>)
       : {};
   const manualOverlayOs = { ...foundationOs, ...nextOs };
+  const nextInv = next.sigInventory ?? foundation.sigInventory;
+  const baseInv = base.sigInventory;
+  let sigInventory = options?.omitSigInventory
+    ? foundation.sigInventory
+    : nextInv;
+  /** omit 시에도 LS·next 중 더 풍부한 재고를 유지(시각 저장으로 LS가 비면 리롤 후 풀이 사라지던 문제) */
+  if (options?.omitSigInventory) {
+    if (
+      shouldPreferLocalSigInventoryOverIncoming(next.sigInventory, sigInventory, {
+        localUpdatedAt: Number(next.updatedAt || 0),
+        incomingUpdatedAt: Number(foundation.updatedAt || 0),
+      })
+    ) {
+      sigInventory = next.sigInventory;
+    } else if (
+      shouldPreferLocalSigInventoryOverIncoming(baseInv, sigInventory, {
+        localUpdatedAt: Number(base.updatedAt || 0),
+        incomingUpdatedAt: Number(foundation.updatedAt || 0),
+      })
+    ) {
+      sigInventory = baseInv;
+    }
+  }
   return normalizeStateForPersistence(
     syncBattleStateWithMembers({
       ...foundation,
-      ...(options?.omitSigInventory
-        ? {}
-        : { sigInventory: next.sigInventory ?? foundation.sigInventory }),
+      sigInventory,
       sigSalesExcludedIds: next.sigSalesExcludedIds ?? foundation.sigSalesExcludedIds,
       sigSoldOutStampUrl: next.sigSoldOutStampUrl ?? foundation.sigSoldOutStampUrl,
       sigRollingMeta: next.sigRollingMeta ?? foundation.sigRollingMeta,

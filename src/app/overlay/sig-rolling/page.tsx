@@ -42,8 +42,8 @@ import {
 const IMG_IN_FRAME =
   "pointer-events-none select-none block h-full w-full max-h-full max-w-full min-h-0 min-w-0 object-contain object-center";
 
-/** 부드러운 디졸브용 커브 — ease-in-out 보다 끝단이 부드럽게 감속 */
-const SIG_ROLLING_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
+/** 부드러운 디졸브용 커브 — 중간 구간에서 두 장이 겹쳐 보이도록 */
+const SIG_ROLLING_EASE = "cubic-bezier(0.4, 0.0, 0.2, 1)";
 
 const SHELL_PAD_PX = 6;
 /** 뷰포트 스케일 기본값 — 실제는 카드별 방향에 따라 동적 계산 */
@@ -52,7 +52,8 @@ const TWO_CARD_BASE_WIDTH_PX =
 const DEFAULT_PAIR_HEIGHT_PX =
   sigRollingPairLayoutPx("landscape", "landscape", SHELL_PAD_PX).maxOuterHeight;
 
-type SigRollingFadePhase = "idle" | "out" | "in" | "cross";
+/** idle=표시 / cross=기존↔다음 동시 블렌딩(디졸브) */
+type SigRollingFadePhase = "idle" | "cross";
 
 function bandScheduleToken(items: SigRollingItemWithPrice[]): string {
   return items.map((x) => `${x.id}\u001f${x.url}\u001f${x.price}`).join("\u001e");
@@ -66,7 +67,7 @@ function sigRollingScheduleKey(state: AppState | null, memberFilterId: string, h
   return `${r.fadeMs}|${r.staticHoldMs}|${highMin}|H:${bandScheduleToken(high)}|L:${bandScheduleToken(low)}`;
 }
 
-function buildSigRollingTransition(fadeMs: number, props = "opacity, transform"): string {
+function buildSigRollingTransition(fadeMs: number, props = "opacity"): string {
   const ms = Math.max(180, Math.min(5000, Math.floor(fadeMs) || 1000));
   return `${props} ${ms}ms ${SIG_ROLLING_EASE}`;
 }
@@ -79,8 +80,6 @@ function RollingCardColumn({
   pairSide,
   overlayUserId,
   onOrientationChange,
-  /** OBS: 단일 레이어 soft fade / 그 외: 이중 레이어 크로스페이드 */
-  mode,
 }: {
   current: SigRollingItem | null;
   nextItem: SigRollingItem | null;
@@ -89,9 +88,8 @@ function RollingCardColumn({
   pairSide?: "left" | "right";
   overlayUserId?: string;
   onOrientationChange?: (orientation: SigRollingMediaOrientation) => void;
-  mode: "crossfade" | "softSwap";
 }) {
-  const under = current ? nextItem || current : null;
+  const under = nextItem || current;
   const srcCurrentRaw = current
     ? resolveSigRollingImageUrl(current.label || "", current.url, overlayUserId)
     : "";
@@ -103,8 +101,6 @@ function RollingCardColumn({
   const [errOverSrc, setErrOverSrc] = useState<string | null>(null);
   const [errUnderSrc, setErrUnderSrc] = useState<string | null>(null);
   const [orientation, setOrientation] = useState<SigRollingMediaOrientation>("landscape");
-  /** softSwap fade-in: 마운트 직후 0 → 다음 프레임에 1 */
-  const [softEnterReady, setSoftEnterReady] = useState(true);
   const onOrientationRef = useRef(onOrientationChange);
   onOrientationRef.current = onOrientationChange;
 
@@ -124,22 +120,6 @@ function RollingCardColumn({
     setOrientation("landscape");
     onOrientationRef.current?.("landscape");
   }, [srcCurrent]);
-
-  useEffect(() => {
-    if (fadePhase !== "in") {
-      setSoftEnterReady(true);
-      return;
-    }
-    setSoftEnterReady(false);
-    let raf2 = 0;
-    const raf1 = window.requestAnimationFrame(() => {
-      raf2 = window.requestAnimationFrame(() => setSoftEnterReady(true));
-    });
-    return () => {
-      window.cancelAnimationFrame(raf1);
-      window.cancelAnimationFrame(raf2);
-    };
-  }, [fadePhase, current?.id]);
 
   const applyOrientationFromImg = useCallback((img: HTMLImageElement) => {
     if (img.naturalWidth <= 0 && img.naturalHeight <= 0) return;
@@ -177,11 +157,8 @@ function RollingCardColumn({
 
   if (!current) return null;
 
-  const cardUnder = nextItem || current;
-  const useCrossfade = mode === "crossfade" && Boolean(nextItem);
-  const softOut = fadePhase === "out";
-  const softIn = fadePhase === "in";
-  const crossActive = fadePhase === "cross";
+  const canBlend = Boolean(nextItem && nextItem.id !== current.id);
+  const blending = canBlend && fadePhase === "cross";
 
   /**
    * 모바일(WebView/Safari)에서는 backdrop-filter 계열이 투명 캔버스와 겹칠 때
@@ -196,10 +173,8 @@ function RollingCardColumn({
         ? `${shellBase} rounded-r-3xl rounded-l-none p-1.5`
         : `${shellBase} rounded-3xl p-1.5`;
 
-  /** OBS 안전: 한 장만 그리며 opacity soft fade → swap → fade in (이중 GIF 깜빡임 없음) */
-  if (!useCrossfade) {
-    const softOpacity = softOut ? 0 : softIn ? (softEnterReady ? 1 : 0) : 1;
-    const softScale = softOut ? 1.03 : softIn ? (softEnterReady ? 1 : 0.97) : 1;
+  /** 단일 장(다음 없음): 블렌딩 없이 표시 */
+  if (!canBlend) {
     return (
       <div className="shrink-0" style={{ width: shell.outerWidth, height: shell.outerHeight, ...shellTransitionStyle }}>
         <div
@@ -228,12 +203,6 @@ function RollingCardColumn({
               referrerPolicy="no-referrer"
               onLoad={onImgLoad}
               onError={() => onImgError("over")}
-              style={{
-                opacity: softOpacity,
-                transform: `scale(${softScale})`,
-                transition: transitionCss,
-                willChange: "opacity, transform",
-              }}
             />
           </div>
         </div>
@@ -241,36 +210,36 @@ function RollingCardColumn({
     );
   }
 
-  /** 일반: 다음 장을 미리 깔아 두고 크로스페이드 + 약한 스케일 */
+  /**
+   * 블렌딩 디졸브: 다음 장을 아래 레이어에 미리 두고,
+   * 전환 시 현재(위) opacity 1→0 + 다음(아래) 0→1 을 동시에 적용해 중간에서 겹쳐 보이게 함.
+   */
   return (
     <div className="shrink-0" style={{ width: shell.outerWidth, height: shell.outerHeight, ...shellTransitionStyle }}>
       <div className={shellClass} style={{ width: shell.outerWidth, height: shell.outerHeight, ...shellTransitionStyle }}>
         <div
-          className="relative grid place-items-center overflow-hidden rounded-2xl bg-white/15 [&>img]:col-start-1 [&>img]:row-start-1"
+          className="relative overflow-hidden rounded-2xl bg-white/15 [isolation:isolate]"
           style={{
             ...mediaFrameStyle,
             minWidth: shell.mediaWidth,
             maxWidth: shell.mediaWidth,
             minHeight: shell.mediaHeight,
             maxHeight: shell.mediaHeight,
-            gridTemplateColumns: "1fr",
-            gridTemplateRows: "1fr",
             contain: "layout style paint",
           }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            key={`under-${cardUnder.id}`}
+            key={`under-${under!.id}`}
             src={underDisplay}
             alt=""
-            className={IMG_IN_FRAME}
+            className={`${IMG_IN_FRAME} absolute inset-0`}
             referrerPolicy="no-referrer"
             style={{
-              opacity: crossActive ? 1 : 0,
-              transform: crossActive ? "scale(1)" : "scale(0.97)",
+              opacity: blending ? 1 : 0,
               transition: transitionCss,
               zIndex: 1,
-              willChange: "opacity, transform",
+              willChange: "opacity",
             }}
             draggable={false}
             decoding="async"
@@ -282,14 +251,13 @@ function RollingCardColumn({
             ref={bindRollingImgRef}
             src={overDisplay}
             alt=""
-            className={IMG_IN_FRAME}
+            className={`${IMG_IN_FRAME} absolute inset-0`}
             referrerPolicy="no-referrer"
             style={{
-              opacity: crossActive ? 0 : 1,
-              transform: crossActive ? "scale(1.04)" : "scale(1)",
+              opacity: blending ? 0 : 1,
               transition: transitionCss,
               zIndex: 2,
-              willChange: "opacity, transform",
+              willChange: "opacity",
             }}
             draggable={false}
             decoding="async"
@@ -373,8 +341,6 @@ function SigRollingOverlayInner() {
 
   /** 어느 한 밴드라도 2장 이상이면 전환 연출 */
   const canAdvance = highItems.length >= 2 || lowItems.length >= 2;
-  /** OBS CEF: 이중 GIF 깜빡임 회피용 softSwap / 그 외 크로스페이드 */
-  const transitionMode: "crossfade" | "softSwap" = obsSafe ? "softSwap" : "crossfade";
   const transitioning = fadePhase !== "idle";
 
   const preloadRollingImage = useCallback(
@@ -428,22 +394,13 @@ function SigRollingOverlayInner() {
     setRightOrientation("landscape");
   }, [scheduleKey]);
 
-  /** 전환 페이즈 진행: cross = 한 번 디졸브 후 idle / softSwap = out → swap → in → idle */
+  /** 전환 페이즈: cross = 기존·다음 동시 블렌딩 후 idle */
   useEffect(() => {
     if (!canAdvance || fadePhase === "idle") return;
     const ms = Math.max(180, fadeMs);
     const id = window.setTimeout(() => {
       if (fadePhase === "cross") {
         advanceBands();
-        setFadePhase("idle");
-        return;
-      }
-      if (fadePhase === "out") {
-        advanceBands();
-        setFadePhase("in");
-        return;
-      }
-      if (fadePhase === "in") {
         setFadePhase("idle");
       }
     }, ms);
@@ -479,7 +436,7 @@ function SigRollingOverlayInner() {
         if (!canAdvance) return;
         preloadRollingImage(highItems.length > 1 ? pickSigRollingAt(snap.high, leftIdx + 1) : null);
         preloadRollingImage(lowItems.length > 1 ? pickSigRollingAt(snap.low, rightIdx + 1) : null);
-        setFadePhase(transitionMode === "softSwap" ? "out" : "cross");
+        setFadePhase("cross");
       }, hold);
     })();
 
@@ -499,7 +456,6 @@ function SigRollingOverlayInner() {
     highItems.length,
     lowItems.length,
     preloadRollingImage,
-    transitionMode,
   ]);
 
   const emptyDetail = useMemo(() => {
@@ -556,11 +512,6 @@ function SigRollingOverlayInner() {
     );
   }
 
-  const leftMode =
-    transitionMode === "crossfade" && highItems.length >= 2 ? "crossfade" : "softSwap";
-  const rightMode =
-    transitionMode === "crossfade" && lowItems.length >= 2 ? "crossfade" : "softSwap";
-
   return (
     <main
       className="overlay-root inline-block w-fit bg-transparent p-1 text-pastel-ink"
@@ -583,7 +534,6 @@ function SigRollingOverlayInner() {
               nextItem={highItems.length >= 2 ? leftNext : null}
               fadePhase={highItems.length >= 2 ? fadePhase : "idle"}
               fadeMs={fadeMs}
-              mode={leftMode}
               pairSide={showPair ? "left" : undefined}
               overlayUserId={overlayUserId}
               onOrientationChange={onLeftOrientation}
@@ -595,7 +545,6 @@ function SigRollingOverlayInner() {
               nextItem={lowItems.length >= 2 ? rightNext : null}
               fadePhase={lowItems.length >= 2 ? fadePhase : "idle"}
               fadeMs={fadeMs}
-              mode={rightMode}
               pairSide={showPair ? "right" : undefined}
               overlayUserId={overlayUserId}
               onOrientationChange={onRightOrientation}

@@ -18,6 +18,7 @@ import {
   saveOverlayPresetsPatchAsync,
   saveObsTextRegistryAsync,
   saveGeneralTimerPatchAsync,
+  saveVisualSettingsPatchAsync,
   loadStateFromApi,
   saveMissionsBackup,
   loadMissionsBackup,
@@ -1691,14 +1692,8 @@ export default function AdminPage() {
         }
       }
       if (Date.now() < donationAuthoritativeSaveUntilRef.current && !opts?.forceDonorMerge) {
-        const localDonors = normalizeDonorsArray(stateRef.current.donors);
-        const remoteDonors = normalizeDonorsArray(remote.donors);
-        if (
-          remoteDonors.length < localDonors.length ||
-          totalCombined(remote) < totalCombined(stateRef.current)
-        ) {
-          return false;
-        }
+        /** 후원 삭제·정정 직후 — 원격이 삭제분을 되살리거나 빈 스냅샷으로 덮지 않게 */
+        return false;
       }
       /** 저장 대기 중이어도 원격 신규 후원은 mergeIncoming에서 수용 */
       if (pendingUnsyncedRef.current && !opts?.forceDonorMerge) {
@@ -1840,6 +1835,31 @@ export default function AdminPage() {
         foundation,
         overlaySettingsPatch: settingsPatch,
       }).then((r) => {
+        if (r.ok) {
+          if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
+            stateUpdatedAtRef.current = r.serverUpdatedAt;
+            lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
+          }
+          pendingUnsyncedRef.current = false;
+          setSyncStatus(r.storageFallback ? "error" : "synced");
+        } else {
+          const offline = typeof navigator !== "undefined" && !navigator.onLine;
+          setSyncStatus(offline ? "local" : "error");
+        }
+      });
+    },
+    [user?.id]
+  );
+
+  /** 후원순위·리스트 등 시각 옵션만 저장 — 후원 금액 필드 미포함 */
+  const persistVisualSettings = useCallback(
+    (foundation: AppState, patch: Parameters<typeof saveVisualSettingsPatchAsync>[0]) => {
+      const now = Date.now();
+      lastLocalPersistAtRef.current = now;
+      stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, foundation.updatedAt || now, now);
+      pendingUnsyncedRef.current = true;
+      stateRef.current = foundation;
+      saveVisualSettingsPatchAsync(patch, user?.id, foundation).then((r) => {
         if (r.ok) {
           if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
             stateUpdatedAtRef.current = r.serverUpdatedAt;
@@ -2716,8 +2736,10 @@ export default function AdminPage() {
           sigMatchPools: normalizeSigMatchPools(merged.sigMatchPools, valid),
           participantMemberIds: normalizeSigMatchParticipantIds(merged.participantMemberIds, valid),
         },
+        updatedAt: Date.now(),
       };
-      persistState(next);
+      /** 시그매치 설정만 — 후원 금액은 API에서 제외 */
+      persistState(next, { omitDonationFields: true });
       return next;
     });
   };
@@ -2777,7 +2799,7 @@ export default function AdminPage() {
         },
         updatedAt: Date.now(),
       };
-      persistState(next);
+      persistVisualSettings(next, { donorRankingsTheme: next.donorRankingsTheme });
       return next;
     });
   };
@@ -2792,7 +2814,7 @@ export default function AdminPage() {
         },
         updatedAt: Date.now(),
       };
-      persistState(next);
+      persistVisualSettings(next, { donorRankingsFullTheme: next.donorRankingsFullTheme });
       return next;
     });
   };
@@ -2805,7 +2827,7 @@ export default function AdminPage() {
         donorRankingsFullOverlayConfig: { ...base, ...patch },
         updatedAt: Date.now(),
       };
-      persistState(next);
+      persistVisualSettings(next, { donorRankingsFullOverlayConfig: next.donorRankingsFullOverlayConfig });
       return next;
     });
   };
@@ -2817,8 +2839,9 @@ export default function AdminPage() {
       const next: AppState = {
         ...prev,
         donationListsOverlayConfig: merged,
+        updatedAt: Date.now(),
       };
-      persistState(next);
+      persistVisualSettings(next, { donationListsOverlayConfig: next.donationListsOverlayConfig });
       return next;
     });
   };
@@ -2831,7 +2854,7 @@ export default function AdminPage() {
         donorRankingsOverlayConfig: { ...base, ...patch },
         updatedAt: Date.now(),
       };
-      persistState(next);
+      persistVisualSettings(next, { donorRankingsOverlayConfig: next.donorRankingsOverlayConfig });
       return next;
     });
   };
@@ -2847,7 +2870,10 @@ export default function AdminPage() {
         donorRankingsFullOverlayConfig: normalizeDonorRankingsOverlayConfig({ ...baseFull, ...patch }),
         updatedAt: Date.now(),
       };
-      persistState(next);
+      persistVisualSettings(next, {
+        donorRankingsOverlayConfig: next.donorRankingsOverlayConfig,
+        donorRankingsFullOverlayConfig: next.donorRankingsFullOverlayConfig,
+      });
       return next;
     });
   };
@@ -2860,8 +2886,12 @@ export default function AdminPage() {
         ...prev,
         donorRankingsPresetId: id,
         donorRankingsTheme: { ...preset.theme },
+        updatedAt: Date.now(),
       };
-      persistState(next);
+      persistVisualSettings(next, {
+        donorRankingsPresetId: next.donorRankingsPresetId,
+        donorRankingsTheme: next.donorRankingsTheme,
+      });
       return next;
     });
   };
@@ -2878,8 +2908,12 @@ export default function AdminPage() {
         ...prev,
         donorRankingsPresets: [...(prev.donorRankingsPresets || []), preset],
         donorRankingsPresetId: preset.id,
+        updatedAt: Date.now(),
       };
-      persistState(next);
+      persistVisualSettings(next, {
+        donorRankingsPresets: next.donorRankingsPresets,
+        donorRankingsPresetId: next.donorRankingsPresetId,
+      });
       return next;
     });
     setDonorRankingPresetName("");
@@ -2892,8 +2926,12 @@ export default function AdminPage() {
         ...prev,
         donorRankingsPresets: presets,
         donorRankingsPresetId: prev.donorRankingsPresetId === id ? presets[0]?.id : prev.donorRankingsPresetId,
+        updatedAt: Date.now(),
       };
-      persistState(next);
+      persistVisualSettings(next, {
+        donorRankingsPresets: next.donorRankingsPresets,
+        donorRankingsPresetId: next.donorRankingsPresetId,
+      });
       return next;
     });
   };
@@ -8613,9 +8651,11 @@ export default function AdminPage() {
                   <div>
                     <h3 className="text-base font-semibold">시그 롤링</h3>
                     <p className="text-xs text-neutral-400">
-                      GIF는 1회 재생 길이 후 부드럽게 전환되고, PNG 등은 표시 시간 후 디졸브됩니다. OBS(
-                      <code className="text-neutral-500">host=obs</code>)는 깜빡임 없는 soft fade를 씁니다.
-                      한 화면에서 <strong className="text-amber-200/90">좌=고액(30만 원 이상)</strong> /{" "}
+                      GIF는 1회 재생 길이 후, PNG 등은 표시 시간 후{" "}
+                      <strong className="text-sky-200/90">기존·다음 이미지가 겹쳐 블렌딩(디졸브)</strong>되며
+                      전환됩니다. OBS(
+                      <code className="text-neutral-500">host=obs</code>)도 동일합니다. 한 화면에서{" "}
+                      <strong className="text-amber-200/90">좌=고액(30만 원 이상)</strong> /{" "}
                       <strong className="text-sky-200/90">우=저액(30만 원 미만)</strong>으로 나눠 각각 롤링합니다.
                     </p>
                   </div>
@@ -8745,7 +8785,7 @@ export default function AdminPage() {
                       }}
                     />
                     <span className="mt-1 block text-[10px] text-neutral-500">
-                      권장 800~1200. OBS는 fade out→in, 그 외는 크로스페이드+스케일.
+                      권장 800~1500. 기존·다음 이미지가 동시에 겹치며 블렌딩됩니다.
                     </span>
                   </label>
                   <label className="block text-xs text-neutral-300">
@@ -10598,12 +10638,16 @@ export default function AdminPage() {
                                   onClick={() => {
                                     requestConfirm("후원 기록 삭제", "해당 후원 기록을 삭제할까요?", () => {
                                       void removeQueueEventsMatchingDonor(d);
-                                      setState((prev: AppState) => {
-                                        const next = revertDonationFromAppState(prev, d.id);
-                                        if (!next) return prev;
-                                        persistState(next, { donorsAuthoritative: true });
-                                        return next;
-                                      });
+                                      const prev = stateRef.current;
+                                      const next = revertDonationFromAppState(prev, d.id);
+                                      if (!next) return;
+                                      donationAuthoritativeSaveUntilRef.current = Date.now() + 10_000;
+                                      stateRef.current = next;
+                                      setState(next);
+                                      try {
+                                        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(next));
+                                      } catch {}
+                                      persistState(next, { donorsAuthoritative: true });
                                     }, { confirmText: "삭제", danger: true });
                                   }}
                                 >

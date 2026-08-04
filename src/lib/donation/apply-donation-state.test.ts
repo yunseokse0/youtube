@@ -138,8 +138,9 @@ describe("applyDonationToAppState", () => {
     expect(result.state.donors?.[0]?.memberId).toBe("m2");
   });
 
-  it("allows separate weak-id donations with same donor·금액 within 30s", () => {
-    const at = new Date("2026-06-11T13:55:00.000Z").toISOString();
+  it("allows separate weak-id donations with same donor·금액 after near-dup window", () => {
+    const firstAt = Date.parse("2026-06-11T13:55:00.000Z");
+    const secondAt = new Date(firstAt + 5_000).toISOString();
     const state = {
       ...defaultState(),
       members: [{ id: "m1", name: "피자", account: 0, toon: 1000, contribution: 1000 }],
@@ -149,7 +150,7 @@ describe("applyDonationToAppState", () => {
           name: "이니이니",
           amount: 1000,
           memberId: "m1",
-          at: Date.parse(at),
+          at: firstAt,
           target: "toon" as const,
         },
       ],
@@ -161,7 +162,7 @@ describe("applyDonationToAppState", () => {
       donorName: "이니이니",
       playerName: "피자",
       amount: 1000,
-      at,
+      at: secondAt,
       status: "queued",
       target: "toon",
     };
@@ -220,7 +221,7 @@ describe("applyDonationToAppState", () => {
   });
 
   it("allows consecutive identical toonation donations with different external ids", () => {
-    const at = Date.now();
+    const at = Date.now() - 5_000;
     const state = {
       ...defaultState(),
       members: [{ id: "m1", name: "피자", account: 0, toon: 1000, contribution: 1000 }],
@@ -242,7 +243,7 @@ describe("applyDonationToAppState", () => {
       donorName: "익명",
       playerName: "피자",
       amount: 1000,
-      at: new Date(at + 500).toISOString(),
+      at: new Date().toISOString(),
       status: "queued",
       target: "toon",
     };
@@ -283,6 +284,75 @@ describe("applyDonationToAppState", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toBe("duplicate");
+  });
+
+  it("rejects near-duplicate weak fp- ids with same content within 3s (이중 경로)", () => {
+    const at = Date.now();
+    const state = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "피자", account: 60000, toon: 0, contribution: 60000 }],
+      donors: [
+        {
+          id: "toonation:fp-1-60000-a",
+          name: "익명5",
+          amount: 60000,
+          memberId: "m1",
+          at,
+          target: "account" as const,
+          message: "계좌 익명5 피자",
+        },
+      ],
+    };
+    const event: DonationEvent = {
+      id: "toonation:fp-2-60000-b",
+      provider: "toonation",
+      externalId: "fp-2-60000-b",
+      donorName: "익명5",
+      amount: 60000,
+      message: "계좌 익명5 피자",
+      at: new Date(at + 1000).toISOString(),
+      status: "queued",
+      target: "account",
+    };
+    const result = applyDonationToAppState(state, event);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("duplicate");
+  });
+
+  it("allows consecutive identical content after near-dup window", () => {
+    const at = Date.now() - 5_000;
+    const state = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "피자", account: 60000, toon: 0, contribution: 60000 }],
+      donors: [
+        {
+          id: "toonation:fp-1-60000-a",
+          name: "익명5",
+          amount: 60000,
+          memberId: "m1",
+          at,
+          target: "account" as const,
+          message: "계좌 익명5 피자",
+        },
+      ],
+    };
+    const event: DonationEvent = {
+      id: "toonation:fp-2-60000-b",
+      provider: "toonation",
+      externalId: "fp-2-60000-b",
+      donorName: "익명5",
+      amount: 60000,
+      message: "계좌 익명5 피자",
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "account",
+    };
+    const result = applyDonationToAppState(state, event);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.donors).toHaveLength(2);
+    expect(result.state.members[0]?.account).toBe(120000);
   });
 
   it("revertDonationFromAppState removes donor and updates rankings revision", () => {
@@ -386,6 +456,7 @@ describe("applyDonationToAppState", () => {
       members: [{ id: "m1", name: "피자", account: 0, toon: 0, contribution: 0 }],
       donors: [],
     };
+    const firstAt = Date.now() - 5_000;
     const first: DonationEvent = {
       id: "toonation:fp-10000-aaa-t1",
       provider: "toonation",
@@ -393,7 +464,7 @@ describe("applyDonationToAppState", () => {
       donorName: "익명",
       playerName: "피자",
       amount: 10000,
-      at: new Date().toISOString(),
+      at: new Date(firstAt).toISOString(),
       status: "queued",
       target: "account",
     };
@@ -401,11 +472,19 @@ describe("applyDonationToAppState", () => {
       ...first,
       id: "toonation:fp-10000-aaa-t2",
       externalId: "fp-10000-aaa-t2",
+      at: new Date().toISOString(),
     };
     const r1 = applyDonationToAppState(state, first);
     expect(r1.ok).toBe(true);
     if (!r1.ok) return;
-    const r2 = applyDonationToAppState(r1.state, second);
+    /** 첫 건 at 을 5초 전으로 맞춰 근중복 창을 벗어나게 함 */
+    const afterFirst = {
+      ...r1.state,
+      donors: (r1.state.donors || []).map((d) =>
+        d.id === first.id ? { ...d, at: firstAt } : d
+      ),
+    };
+    const r2 = applyDonationToAppState(afterFirst, second);
     expect(r2.ok).toBe(true);
     if (!r2.ok) return;
     expect(r2.state.members[0]?.account).toBe(20000);

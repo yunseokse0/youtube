@@ -4,7 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { AppState } from "@/lib/state";
-import { loadState, loadStateFromApi, saveSigSalesManualStateAsync } from "@/lib/state";
+import {
+  loadState,
+  loadStateFromApi,
+  saveSigSalesManualStateAsync,
+  shouldPreferLocalSigInventoryOverIncoming,
+} from "@/lib/state";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
 import { buildSigSalesManualOverlayUrl } from "@/lib/sig-sales-overlay-urls";
 import { DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE } from "@/lib/constants";
@@ -21,6 +26,7 @@ import {
   resolveManualOneShotDisplayFromState,
   resolveManualOverlaySelectedSigs,
 } from "@/lib/manual-sig-broadcast";
+import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 import {
   MANUAL_SIG_DRAFT_STATE_KEY,
   clampManualSigPickCount,
@@ -57,7 +63,23 @@ export default function ManualSigSalesSimple() {
 
   const loadRemote = useCallback(async () => {
     const remote = await loadStateFromApi(userId, { forceFull: true });
-    if (remote) setState(remote);
+    if (remote) {
+      const local = loadState(userId);
+      if (
+        local &&
+        shouldPreferLocalSigInventoryOverIncoming(local.sigInventory, remote.sigInventory, {
+          localUpdatedAt: Number(local.updatedAt || 0),
+          incomingUpdatedAt: Number(remote.updatedAt || 0),
+        })
+      ) {
+        setState({ ...remote, sigInventory: local.sigInventory });
+        return;
+      }
+      setState(remote);
+      return;
+    }
+    const local = loadState(userId);
+    if (local) setState(local);
   }, [userId]);
 
   useEffect(() => {
@@ -71,6 +93,11 @@ export default function ManualSigSalesSimple() {
     return () => window.clearTimeout(id);
   }, [toast]);
 
+  const inventoryCount = useMemo(
+    () => (state?.sigInventory || []).filter((x) => x.id !== ONE_SHOT_SIG_ID).length,
+    [state?.sigInventory]
+  );
+
   const pool = useMemo(
     () =>
       listActiveManualSigPool(state?.sigInventory, {
@@ -80,6 +107,16 @@ export default function ManualSigSalesSimple() {
       }),
     [state?.sigInventory, state?.sigSalesExcludedIds, memberFilterId]
   );
+
+  const priceExcludedCount = useMemo(() => {
+    const inv = state?.sigInventory || [];
+    let n = 0;
+    for (const row of inv) {
+      if (row.id === ONE_SHOT_SIG_ID) continue;
+      if (String(row.name || "").trim() && Math.floor(Number(row.price || 0)) <= 0) n += 1;
+    }
+    return n;
+  }, [state?.sigInventory]);
 
   const overlayUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
@@ -156,8 +193,20 @@ export default function ManualSigSalesSimple() {
     ) => {
       const saved = await saveSigSalesManualStateAsync(next, userId, saveOpts);
       if (saved.ok) {
-        const merged = loadState(userId);
-        setState(merged);
+        /** LS가 시그 재고를 잃어버린 경우에도 서버·next 기준으로 복구 */
+        const remote = await loadStateFromApi(userId, { forceFull: true });
+        if (remote) {
+          const preferNextInv =
+            shouldPreferLocalSigInventoryOverIncoming(next.sigInventory, remote.sigInventory, {
+              localUpdatedAt: Number(next.updatedAt || 0),
+              incomingUpdatedAt: Number(remote.updatedAt || 0),
+            });
+          setState(
+            preferNextInv ? { ...remote, sigInventory: next.sigInventory } : remote
+          );
+        } else {
+          setState(next);
+        }
       } else {
         setState(next);
       }
@@ -426,7 +475,15 @@ export default function ManualSigSalesSimple() {
             </select>
           </label>
           <p className="text-xs text-neutral-400">
-            랜덤 풀: <span className="text-sky-200">{pool.length}개</span> (판매 중·한방 제외)
+            등록 시그: <span className="text-neutral-200">{inventoryCount}개</span>
+            {" · "}
+            랜덤 풀: <span className="text-sky-200">{pool.length}개</span> (가격 있는 시그·한방·제외 필터)
+            {priceExcludedCount > 0 ? (
+              <span className="text-amber-300/90">
+                {" "}
+                · 가격 0원 {priceExcludedCount}개는 풀에서 제외(관리자에서 금액 설정)
+              </span>
+            ) : null}
             {canReroll ? (
               <span className="text-neutral-500">
                 {" "}
