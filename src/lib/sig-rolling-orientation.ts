@@ -14,9 +14,10 @@ export function classifySigRollingOrientation(
   naturalWidth: number,
   naturalHeight: number
 ): SigRollingMediaOrientation {
-  if (!Number.isFinite(naturalWidth) || !Number.isFinite(naturalHeight)) return "portrait";
-  if (naturalWidth <= 0 || naturalHeight <= 0) return "portrait";
-  return naturalWidth > naturalHeight ? "landscape" : "portrait";
+  if (!Number.isFinite(naturalWidth) || !Number.isFinite(naturalHeight)) return "landscape";
+  if (naturalWidth <= 0 || naturalHeight <= 0) return "landscape";
+  /** 정사각·가로는 landscape — dummy-sig.svg(320×320)가 세로 프레임으로 잡히지 않게 */
+  return naturalWidth >= naturalHeight ? "landscape" : "portrait";
 }
 
 export function sigRollingMediaFramePx(orientation: SigRollingMediaOrientation): {

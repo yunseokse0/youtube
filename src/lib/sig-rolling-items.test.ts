@@ -107,6 +107,35 @@ describe("getUnifiedSigRollingItems", () => {
     expect(items.some((x) => x.id === ONE_SHOT_SIG_ID)).toBe(false);
     expect(items).toHaveLength(1);
   });
+
+  it("excludes bundled dummy placeholder inventory from rolling", () => {
+    const state = miniState([
+      {
+        id: "sig_aegyo",
+        name: "애교",
+        price: 77000,
+        imageUrl: "/images/sigs/dummy-sig.svg",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isActive: true,
+        isRolling: true,
+      },
+      {
+        id: "custom_real",
+        name: "버터플라이",
+        price: 1000000,
+        imageUrl: "/uploads/sigs/u/butter.gif",
+        memberId: "",
+        maxCount: 1,
+        soldCount: 0,
+        isActive: true,
+        isRolling: true,
+      },
+    ]);
+    const items = getUnifiedSigRollingItems(state);
+    expect(items.map((x) => x.id)).toEqual(["custom_real"]);
+  });
 });
 
 describe("normalizeSigInventory", () => {

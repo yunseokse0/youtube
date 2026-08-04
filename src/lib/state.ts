@@ -29,6 +29,7 @@ import type {
   DonorsAmountFormat,
 } from "@/types";
 import { ONE_SHOT_SIG_ID, sigMatchesMemberFilter } from "@/lib/sig-roulette";
+import { isBundledSigPlaceholderItem } from "@/lib/sig-placeholder";
 import { mergeGeneralTimerPreferEffective, snapshotTimerForPersist } from "@/lib/timer-utils";
 import { sanitizeOverlayEmbedMediaUrl } from "@/lib/gif-url";
 import {
@@ -179,6 +180,8 @@ export function getUnifiedSigRollingItems(
   const meta = normalizeSigRollingMeta(state.sigRollingMeta);
   const invRows = filterSigInventoryForSalesDisplay(state, memberFilterId)
     .filter((x) => Boolean(x.isRolling))
+    /** 기본 더미(NO IMAGE) 시그는 롤링에 올리지 않음 — 세로 더미 카드 노출 방지 */
+    .filter((x) => !isBundledSigPlaceholderItem(x))
     .map((x, idx) => {
       const m = meta[x.id] || {};
       return {
@@ -189,12 +192,14 @@ export function getUnifiedSigRollingItems(
         price: Math.max(0, Math.floor(Number(x.price) || 0)),
       };
     })
-    .filter((x) => x.url);
+    .filter((x) => x.url && !String(x.url).toLowerCase().includes("dummy-sig.svg"));
   const invById = new Map((state.sigInventory || []).map((x) => [x.id, x]));
   const legacy = normalizeSigRolling(state.sigRolling).items.filter((x) => {
     if (x.id === ONE_SHOT_SIG_ID) return false;
+    if (String(x.url || "").toLowerCase().includes("dummy-sig.svg")) return false;
+    if (isBundledSigPlaceholderItem({ id: x.id, imageUrl: x.url })) return false;
     const inv = invById.get(x.id);
-    if (inv) return Boolean(inv.isRolling);
+    if (inv) return Boolean(inv.isRolling) && !isBundledSigPlaceholderItem(inv);
     return true;
   });
   if (invRows.length === 0) {
@@ -1447,15 +1452,30 @@ function mergeServerSaveApiBodies(prevJson: string, nextJson: string): string {
     const prevDonors = Array.isArray(prev.donors) ? (prev.donors as Donor[]) : null;
     const nextDonors = Array.isArray(next.donors) ? (next.donors as Donor[]) : null;
     const nextAuthoritative = next.donorsAuthoritative === true;
-    if (prevDonors && nextDonors && !nextAuthoritative && next.settlementReset !== true) {
-      if (nextDonors.length === 0 && prevDonors.length > 0) {
+    /**
+     * 시각-only PATCH(후원 키 없음) 뒤에 빈 donors 전체 저장이 붙으면
+     * 서버가 후원을 지울 수 있어, 비권한 빈/축소 donors 는 병합본에서 제거한다.
+     */
+    if (!nextAuthoritative && next.settlementReset !== true && nextDonors) {
+      if (!prevDonors && nextDonors.length === 0) {
+        delete merged.donors;
+      } else if (prevDonors && nextDonors.length === 0 && prevDonors.length > 0) {
         merged.donors = prevDonors;
-      } else if (nextDonors.length < prevDonors.length) {
+      } else if (prevDonors && nextDonors.length < prevDonors.length) {
         merged.donors = mergeDonorsForMultiTabSave(nextDonors, prevDonors, {
           incomingUpdatedAt: Number(next.updatedAt || 0),
           existingUpdatedAt: Number(prev.updatedAt || 0),
         });
       }
+    }
+    if (
+      !nextAuthoritative &&
+      next.settlementReset !== true &&
+      Array.isArray(next.members) &&
+      !("members" in prev) &&
+      (next.members as Member[]).every((m) => (m.account || 0) + (m.toon || 0) === 0)
+    ) {
+      delete merged.members;
     }
     /** overlaySettings 는 얕은 병합으로 키가 날아가지 않게 */
     if (

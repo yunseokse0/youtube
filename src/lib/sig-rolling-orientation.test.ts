@@ -7,14 +7,12 @@ import {
 } from "./sig-rolling-orientation";
 
 describe("sig-rolling-orientation", () => {
-  it("classifies landscape when width exceeds height", () => {
+  it("classifies landscape for square and wide images", () => {
+    expect(classifySigRollingOrientation(300, 300)).toBe("landscape");
     expect(classifySigRollingOrientation(640, 360)).toBe("landscape");
-    expect(classifySigRollingOrientation(300, 180)).toBe("landscape");
-    expect(classifySigRollingOrientation(301, 300)).toBe("landscape");
   });
 
-  it("classifies portrait for square and tall images", () => {
-    expect(classifySigRollingOrientation(300, 300)).toBe("portrait");
+  it("classifies portrait for tall images only", () => {
     expect(classifySigRollingOrientation(180, 300)).toBe("portrait");
   });
 

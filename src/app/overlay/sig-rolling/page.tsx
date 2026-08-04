@@ -101,6 +101,8 @@ function RollingCardColumn({
   const [errOverSrc, setErrOverSrc] = useState<string | null>(null);
   const [errUnderSrc, setErrUnderSrc] = useState<string | null>(null);
   const [orientation, setOrientation] = useState<SigRollingMediaOrientation>("landscape");
+  /** cross 진입 직후 1프레임은 현재=1·다음=0 유지 → 그다음 프레임에 디졸브 시작(OBS absolute 빈칸 회피) */
+  const [crossPaintReady, setCrossPaintReady] = useState(false);
   const onOrientationRef = useRef(onOrientationChange);
   onOrientationRef.current = onOrientationChange;
 
@@ -121,7 +123,30 @@ function RollingCardColumn({
     onOrientationRef.current?.("landscape");
   }, [srcCurrent]);
 
-  const applyOrientationFromImg = useCallback((img: HTMLImageElement) => {
+  useEffect(() => {
+    if (fadePhase !== "cross") {
+      setCrossPaintReady(false);
+      return;
+    }
+    setCrossPaintReady(false);
+    let raf2 = 0;
+    const raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => setCrossPaintReady(true));
+    });
+    return () => {
+      window.cancelAnimationFrame(raf1);
+      window.cancelAnimationFrame(raf2);
+    };
+  }, [fadePhase, current?.id, nextItem?.id]);
+
+  const applyOrientationFromImg = useCallback((img: HTMLImageElement, srcHint?: string) => {
+    const src = String(srcHint || img.currentSrc || img.src || "").toLowerCase();
+    /** 더미 SVG는 정사각이라 세로 프레임으로 잡히지 않게 가로 유지 */
+    if (src.includes("dummy-sig.svg")) {
+      setOrientation("landscape");
+      onOrientationRef.current?.("landscape");
+      return;
+    }
     if (img.naturalWidth <= 0 && img.naturalHeight <= 0) return;
     const next = classifySigRollingOrientation(img.naturalWidth, img.naturalHeight);
     setOrientation(next);
@@ -150,6 +175,9 @@ function RollingCardColumn({
   const underDisplay = errUnderSrc ?? srcUnder;
 
   const onImgError = useCallback((which: "over" | "under") => {
+    /** 로드 실패 시 더미로 바꿔도 가로 프레임 유지(세로 NO IMAGE 카드 방지) */
+    setOrientation("landscape");
+    onOrientationRef.current?.("landscape");
     const fallback = toSigOverlayAbsoluteAssetUrl(BUNDLED_SIG_PLACEHOLDER_URL);
     if (which === "over") setErrOverSrc(fallback);
     else setErrUnderSrc(fallback);
@@ -159,6 +187,7 @@ function RollingCardColumn({
 
   const canBlend = Boolean(nextItem && nextItem.id !== current.id);
   const blending = canBlend && fadePhase === "cross";
+  const dissolveActive = blending && crossPaintReady;
 
   /**
    * 모바일(WebView/Safari)에서는 backdrop-filter 계열이 투명 캔버스와 겹칠 때
@@ -173,25 +202,65 @@ function RollingCardColumn({
         ? `${shellBase} rounded-r-3xl rounded-l-none p-1.5`
         : `${shellBase} rounded-3xl p-1.5`;
 
-  /** 단일 장(다음 없음): 블렌딩 없이 표시 */
-  if (!canBlend) {
-    return (
-      <div className="shrink-0" style={{ width: shell.outerWidth, height: shell.outerHeight, ...shellTransitionStyle }}>
-        <div
-          className={shellClass}
-          style={{ width: shell.outerWidth, height: shell.outerHeight, ...shellTransitionStyle }}
-        >
-          <div
-            className="flex items-center justify-center overflow-hidden rounded-2xl bg-white/15"
-            style={{
-              ...mediaFrameStyle,
-              minWidth: shell.mediaWidth,
-              maxWidth: shell.mediaWidth,
-              minHeight: shell.mediaHeight,
-              maxHeight: shell.mediaHeight,
-            }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+  const frameClass =
+    "relative grid place-items-center overflow-hidden rounded-2xl bg-white/15 [&>img]:col-start-1 [&>img]:row-start-1";
+  const frameStyle: CSSProperties = {
+    ...mediaFrameStyle,
+    minWidth: shell.mediaWidth,
+    maxWidth: shell.mediaWidth,
+    minHeight: shell.mediaHeight,
+    maxHeight: shell.mediaHeight,
+    gridTemplateColumns: "1fr",
+    gridTemplateRows: "1fr",
+  };
+
+  /**
+   * idle: 현재 장만 표시(OBS에서 absolute 이중 GIF 빈칸 방지).
+   * cross: 그리드 스택으로 기존·다음 opacity 디졸브.
+   */
+  return (
+    <div className="shrink-0" style={{ width: shell.outerWidth, height: shell.outerHeight, ...shellTransitionStyle }}>
+      <div className={shellClass} style={{ width: shell.outerWidth, height: shell.outerHeight, ...shellTransitionStyle }}>
+        <div className={frameClass} style={frameStyle}>
+          {blending && under ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                key={`under-${under.id}`}
+                src={underDisplay}
+                alt=""
+                className={IMG_IN_FRAME}
+                referrerPolicy="no-referrer"
+                style={{
+                  opacity: dissolveActive ? 1 : 0,
+                  transition: transitionCss,
+                  zIndex: 1,
+                }}
+                draggable={false}
+                decoding="async"
+                onError={() => onImgError("under")}
+              />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                key={`over-${current.id}`}
+                ref={bindRollingImgRef}
+                src={overDisplay}
+                alt=""
+                className={IMG_IN_FRAME}
+                referrerPolicy="no-referrer"
+                style={{
+                  opacity: dissolveActive ? 0 : 1,
+                  transition: transitionCss,
+                  zIndex: 2,
+                }}
+                draggable={false}
+                decoding="async"
+                onLoad={onImgLoad}
+                onError={() => onImgError("over")}
+              />
+            </>
+          ) : (
+            /* eslint-disable-next-line @next/next/no-img-element */
             <img
               key={current.id}
               ref={bindRollingImgRef}
@@ -204,66 +273,7 @@ function RollingCardColumn({
               onLoad={onImgLoad}
               onError={() => onImgError("over")}
             />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  /**
-   * 블렌딩 디졸브: 다음 장을 아래 레이어에 미리 두고,
-   * 전환 시 현재(위) opacity 1→0 + 다음(아래) 0→1 을 동시에 적용해 중간에서 겹쳐 보이게 함.
-   */
-  return (
-    <div className="shrink-0" style={{ width: shell.outerWidth, height: shell.outerHeight, ...shellTransitionStyle }}>
-      <div className={shellClass} style={{ width: shell.outerWidth, height: shell.outerHeight, ...shellTransitionStyle }}>
-        <div
-          className="relative overflow-hidden rounded-2xl bg-white/15 [isolation:isolate]"
-          style={{
-            ...mediaFrameStyle,
-            minWidth: shell.mediaWidth,
-            maxWidth: shell.mediaWidth,
-            minHeight: shell.mediaHeight,
-            maxHeight: shell.mediaHeight,
-            contain: "layout style paint",
-          }}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            key={`under-${under!.id}`}
-            src={underDisplay}
-            alt=""
-            className={`${IMG_IN_FRAME} absolute inset-0`}
-            referrerPolicy="no-referrer"
-            style={{
-              opacity: blending ? 1 : 0,
-              transition: transitionCss,
-              zIndex: 1,
-              willChange: "opacity",
-            }}
-            draggable={false}
-            decoding="async"
-            onError={() => onImgError("under")}
-          />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            key={`over-${current.id}`}
-            ref={bindRollingImgRef}
-            src={overDisplay}
-            alt=""
-            className={`${IMG_IN_FRAME} absolute inset-0`}
-            referrerPolicy="no-referrer"
-            style={{
-              opacity: blending ? 0 : 1,
-              transition: transitionCss,
-              zIndex: 2,
-              willChange: "opacity",
-            }}
-            draggable={false}
-            decoding="async"
-            onLoad={onImgLoad}
-            onError={() => onImgError("over")}
-          />
+          )}
         </div>
       </div>
     </div>

@@ -650,7 +650,15 @@ export async function POST(req: Request) {
         : body;
     const merged = mergePartialState(baseState, bodyForMerge, userId);
     const dedupedDonors = donorsInPatch ? dedupeDonorRows(safeMergedDonors) : normalizeDonorsArray(baseState.donors);
-    const draft: AppState = syncMemberTotalsFromDonors({ ...merged, donors: dedupedDonors });
+    /**
+     * 글자색·테마 등 시각 PATCH(members/donors 미포함)에서는
+     * syncMemberTotalsFromDonors 를 돌리지 않는다.
+     * 서버 donors 가 비어 있을 때 members 금액을 0으로 재계산해 버리는 회귀를 막는다.
+     */
+    const draft: AppState =
+      donorsInPatch || "members" in bodyForMerge
+        ? syncMemberTotalsFromDonors({ ...merged, donors: dedupedDonors })
+        : { ...merged, donors: dedupedDonors };
     const donorRankingsUpdatedAt = computeDonorRankingsUpdatedAt(
       baseState,
       draft,

@@ -693,9 +693,12 @@ export default function AdminPage() {
         `서버 자동 반영: ${applied.donorName} ${Number(applied.amount).toLocaleString("ko-KR")}원 (${targetLabel})${memberSuffix}`
       );
     }
-    const donorRev = Number(o.donorRankingsUpdatedAt);
-    if (Number.isFinite(donorRev) && donorRev > 0) {
-      /** 후원 반영 SSE — 즉시 풀 동기화(디바운스 스케줄과 병행) */
+    /**
+     * donorRankingsUpdatedAt 은 글자색·테마 변경에도 올라가므로
+     * 그 자체로 후원 force sync 하면 시각 옵션 저장 직후 빈/축소 원격이 덮어쓸 수 있다.
+     * 실제 후원 반영(donationApplied)일 때만 즉시 풀 동기화.
+     */
+    if (applied?.donorName && Number(applied.amount) > 0) {
       adminDonorForceSyncRef.current?.();
     }
     adminStateSseScheduleRef.current?.();
@@ -1565,10 +1568,12 @@ export default function AdminPage() {
         stateUpdatedAtRef.current = apiState.updatedAt || 0;
         const { merged: toApply, didPreserve } = mergeIncomingStateSafely(apiState, local);
         if (didPreserve) {
-          /** 로컬 후원 복구 push는 허용, 축소 스냅샷이면 후원 필드 제외 */
+          /** 테마·시그만 보존한 경우 후원 필드 제외. 로컬이 더 풍부할 때만 후원 push */
+          const shouldPushDonations =
+            !wouldShrinkDonationData(local, toApply) && wouldShrinkDonationData(apiState, toApply);
           persistState(
             toApply,
-            wouldShrinkDonationData(local, toApply) ? { omitDonationFields: true } : undefined
+            shouldPushDonations ? undefined : { omitDonationFields: true }
           );
         }
         const serverInv = toApply.sigInventory || [];
@@ -1730,9 +1735,12 @@ export default function AdminPage() {
         didPreserve &&
         Number(toApply.settlementResetAt || 0) <= Number(prev.settlementResetAt || 0)
       ) {
+        /** 글자색 등 시각 보존 후 전체 저장이 후원을 다시 올리지 않게 — 실제 후원 복구일 때만 포함 */
+        const shouldPushDonations =
+          !wouldShrinkDonationData(prev, toApply) && wouldShrinkDonationData(remote, toApply);
         persistState(
           toApply,
-          wouldShrinkDonationData(prev, toApply) ? { omitDonationFields: true } : undefined
+          shouldPushDonations ? undefined : { omitDonationFields: true }
         );
       }
       stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, remoteUpdatedAt);
