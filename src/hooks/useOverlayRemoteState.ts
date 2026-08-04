@@ -315,6 +315,8 @@ export function useOverlayRemoteState(
   const lastGoodRef = useRef<AppState | null>(null);
 
   const syncingRef = useRef(false);
+  /** donationApplied SSE가 in-flight GET과 겹치면 완료 후 강제 재동기화 */
+  const pendingForceSyncRef = useRef(false);
 
   const syncFromApiRef = useRef<
     (opts?: { forceFull?: boolean }) => Promise<void>
@@ -355,7 +357,11 @@ export function useOverlayRemoteState(
 
   const syncFromApi = useCallback(
     async (opts?: { forceFull?: boolean }) => {
-      if (!enabled || syncingRef.current) return;
+      if (!enabled) return;
+      if (syncingRef.current) {
+        if (opts?.forceFull) pendingForceSyncRef.current = true;
+        return;
+      }
 
       syncingRef.current = true;
 
@@ -422,6 +428,10 @@ export function useOverlayRemoteState(
       } finally {
         syncingRef.current = false;
         setSyncedOnce(true);
+        if (pendingForceSyncRef.current) {
+          pendingForceSyncRef.current = false;
+          void syncFromApi({ forceFull: true });
+        }
       }
     },
 

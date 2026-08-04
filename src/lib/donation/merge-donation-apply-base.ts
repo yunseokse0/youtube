@@ -6,10 +6,12 @@ import {
   pickOverlayPresetsPreferCustom,
 } from "@/lib/state";
 import type { AppState } from "@/types";
+import { syncMemberTotalsFromDonors } from "./apply-donation-state";
 
 /**
  * 후원 반영 — 서버 GET(빈 donors·placeholder)이 관리자 화면 stateRef 를 덮지 않게 병합.
  * id 기준 union, 동일 id는 hint(화면) 우선.
+ * 멤버 금액은 병합된 donors 기준으로 재계산(힌트 멤버가 최신 후원을 덮어쓰지 않게).
  */
 export function mergeDonationApplyBase(
   fresh: AppState | null | undefined,
@@ -26,8 +28,8 @@ export function mergeDonationApplyBase(
   for (const d of hintDonors) donorMap.set(d.id, d);
   const mergedDonors = Array.from(donorMap.values()).sort((a, b) => b.at - a.at);
 
-  const useHintMembers = hasMeaningfulMemberRoster(hint);
-  const members = useHintMembers ? hint.members : fresh.members;
+  const useHintRoster = hasMeaningfulMemberRoster(hint);
+  const rosterBase = useHintRoster ? hint : fresh;
 
   const donorRankingsTheme =
     !isDefaultLikeDonorRankingsTheme(hint.donorRankingsTheme) &&
@@ -40,11 +42,11 @@ export function mergeDonationApplyBase(
       ? hint.donorRankingsFullTheme
       : (hint.donorRankingsFullTheme ?? fresh.donorRankingsFullTheme);
 
-  return {
+  const merged: AppState = {
     ...fresh,
     ...hint,
-    members,
-    memberPositions: useHintMembers ? hint.memberPositions : fresh.memberPositions,
+    members: rosterBase.members,
+    memberPositions: useHintRoster ? hint.memberPositions : fresh.memberPositions,
     memberPositionMode: hint.memberPositionMode ?? fresh.memberPositionMode,
     rankPositionLabels: hint.rankPositionLabels ?? fresh.rankPositionLabels,
     donors: mergedDonors,
@@ -67,4 +69,5 @@ export function mergeDonationApplyBase(
     } as AppState["overlaySettings"],
     updatedAt: Math.max(Number(hint.updatedAt || 0), Number(fresh.updatedAt || 0)) || Date.now(),
   };
+  return syncMemberTotalsFromDonors(merged);
 }

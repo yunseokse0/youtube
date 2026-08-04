@@ -31,6 +31,7 @@ import { dedupeDonorRows, syncMemberTotalsFromDonors } from "@/lib/donation/appl
 import { isManualOverlaySessionId } from "@/lib/sig-sales-manual-round";
 import { createModuleLogger } from "@/lib/logger";
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
+import { pickFresherAppState } from "@/lib/app-state-freshness";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { isRouletteLocked } from "../roulette/roulette-lock";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
@@ -444,9 +445,11 @@ export async function GET(req: Request) {
         }
       }
     }
-    // Redis에서 상태를 못 가져오더라도 방송 지속성을 위해 메모리/기본 상태 반환
-    const effective = state || getServerMemoryAppState(userId) || defaultState();
-    if (!state && !getServerMemoryAppState(userId)) {
+    const memState = getServerMemoryAppState(userId);
+    /** 투네 후원 직후 메모리가 Redis보다 앞서면 메모리 우선 — 첫 후원 엑셀 지연 방지 */
+    const effective =
+      pickFresherAppState(state, memState) || state || memState || defaultState();
+    if (!state && !memState) {
       logger.warn('Redis/메모리 모두 비어있음 - 기본값 반환 (서버 재시작 시 발생. Redis 설정 권장)', { userId });
     }
     let mergedForResponse = applyDonationGoalPresetNormalization(effective as AppState);

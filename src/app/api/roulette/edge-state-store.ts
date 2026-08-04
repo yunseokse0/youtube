@@ -1,5 +1,6 @@
 import type { AppState } from "@/lib/state";
 import { defaultState } from "@/lib/state";
+import { pickFresherAppState } from "@/lib/app-state-freshness";
 import { snapshotTimerForPersist } from "@/lib/timer-utils";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { getUserIdFromRequest } from "../_shared/user-id";
@@ -29,16 +30,18 @@ async function upstashSet(key: string, value: unknown): Promise<boolean> {
 }
 
 export async function loadAppStateForRoulette(userId: string): Promise<AppState> {
+  const mem = getServerMemoryAppState(userId);
   const { base, token } = getRedisEnv();
   if (base && token) {
     const raw = await upstashGet(stateKey(userId));
-    const s = raw as AppState | null;
-    if (s && Array.isArray(s.members)) {
-      setServerMemoryAppState(userId, s);
-      return s;
+    const redis = raw as AppState | null;
+    const picked = pickFresherAppState(redis, mem);
+    if (picked) {
+      /** 오래된 Redis로 최신 메모리(방금 반영된 후원)를 덮어쓰지 않음 */
+      if (mem !== picked) setServerMemoryAppState(userId, picked);
+      return picked;
     }
   }
-  const mem = getServerMemoryAppState(userId);
   if (mem && Array.isArray(mem.members)) return mem;
   return defaultState();
 }

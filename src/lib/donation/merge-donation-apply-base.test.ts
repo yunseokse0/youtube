@@ -72,6 +72,8 @@ describe("mergeDonationApplyBase", () => {
     };
     const merged = mergeDonationApplyBase(fresh, hint);
     expect(merged?.donors.map((d) => d.id).sort()).toEqual(["d1", "d2"]);
+    /** 힌트 멤버 금액이 0이어도 병합 donors 합계로 엑셀 금액 반영 */
+    expect(merged?.members.find((m) => m.id === "m1")?.toon).toBe(3000);
   });
 
   it("keeps hint overlay theme when server snapshot is default", () => {
