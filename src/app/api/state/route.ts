@@ -166,7 +166,7 @@ function mergeManualMemberFieldsFromPatch(baseMembers: Member[], patchMembers: M
 
 function mergePartialState(
   base: AppState,
-  patch: Partial<AppState> & { settlementReset?: boolean },
+  patch: Partial<AppState> & { settlementReset?: boolean; clearSigSoldOutStamp?: boolean },
   userId: string
 ): AppState {
   const next: AppState = {
@@ -267,7 +267,18 @@ function mergePartialState(
       patchLen: patch.sigInventory.length,
     });
   }
-  if (!("sigSoldOutStampUrl" in patch)) next.sigSoldOutStampUrl = base.sigSoldOutStampUrl;
+  if (!("sigSoldOutStampUrl" in patch)) {
+    next.sigSoldOutStampUrl = base.sigSoldOutStampUrl;
+  } else if (
+    String(base.sigSoldOutStampUrl || "").trim() &&
+    !String((patch as AppState).sigSoldOutStampUrl || "").trim() &&
+    patch.clearSigSoldOutStamp !== true &&
+    patch.settlementReset !== true
+  ) {
+    /** 다른 PC·시각 저장의 빈 값이 커스텀 판매완료 도장을 지우지 않음 */
+    next.sigSoldOutStampUrl = base.sigSoldOutStampUrl;
+    logger.warn("sigSoldOutStampUrl empty wipe blocked", { userId });
+  }
   if (!("sigSalesExcludedIds" in patch)) next.sigSalesExcludedIds = base.sigSalesExcludedIds;
   if (!("overlayPresets" in patch)) {
     next.overlayPresets = base.overlayPresets;

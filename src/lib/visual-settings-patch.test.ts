@@ -148,4 +148,28 @@ describe("saveVisualSettingsPatchAsync", () => {
     expect(saved.timerDisplayStyles.general.bgColor).toBe("#112233");
     expect(saved.donorRankingsTheme.nameColor).toBe("#abcdef");
   });
+
+  it("keeps donors when patching sigRolling fade timing", async () => {
+    const userId = "visual-patch-sig-rolling";
+    const rich = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "피자", account: 90000, toon: 0, contribution: 90000 }],
+      donors: [{ id: "d1", name: "a", amount: 90000, memberId: "m1", at: 1, target: "account" as const }],
+      sigRolling: { ...defaultState().sigRolling, fadeMs: 1000, staticHoldMs: 5000 },
+      updatedAt: Date.now(),
+    };
+    window.localStorage.setItem(storageKey(userId), JSON.stringify(rich));
+
+    const foundation = {
+      ...rich,
+      sigRolling: { ...rich.sigRolling, fadeMs: 1200 },
+    };
+
+    await saveVisualSettingsPatchAsync({ sigRolling: foundation.sigRolling }, userId, foundation);
+
+    const saved = loadState(userId);
+    expect(saved.donors).toHaveLength(1);
+    expect(saved.members[0]?.account).toBe(90000);
+    expect(saved.sigRolling?.fadeMs).toBe(1200);
+  });
 });

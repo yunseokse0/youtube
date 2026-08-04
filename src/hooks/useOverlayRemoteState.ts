@@ -11,6 +11,8 @@ import {
 } from "react";
 
 import {
+  hasCustomTimerDisplayStyles,
+  isDefaultLikeTimerDisplayStyle,
   loadState,
   loadStateFromApi,
   storageKey,
@@ -247,15 +249,25 @@ function applySyncedState(
     refs.lastGoodRef.current?.generalTimer,
     data.generalTimer
   );
-  /** pick 에 timerDisplayStyles 키가 없을 때만 last-good 로 보정 */
+  /** pick 에 timerDisplayStyles 키가 없을 때만 last-good 로 보정.
+   * 키가 있어도 기본(빈 색)이면 last-good 커스텀을 유지 — 첫 페인트 기본색→재설정 회귀 방지 */
   const lastTimerStyles = refs.lastGoodRef.current?.timerDisplayStyles;
-  const next = Object.prototype.hasOwnProperty.call(data, "timerDisplayStyles")
-    ? { ...data, generalTimer: mergedTimer }
-    : {
-        ...data,
-        generalTimer: mergedTimer,
-        ...(lastTimerStyles ? { timerDisplayStyles: lastTimerStyles } : {}),
-      };
+  const incomingTimerStyles = data.timerDisplayStyles;
+  const hasIncomingTimerKey = Object.prototype.hasOwnProperty.call(data, "timerDisplayStyles");
+  const preferLastTimer =
+    hasCustomTimerDisplayStyles(lastTimerStyles) &&
+    (!hasIncomingTimerKey || isDefaultLikeTimerDisplayStyle(incomingTimerStyles?.general));
+  const next = {
+    ...data,
+    generalTimer: mergedTimer,
+    ...(preferLastTimer && lastTimerStyles
+      ? { timerDisplayStyles: lastTimerStyles }
+      : hasIncomingTimerKey
+        ? {}
+        : lastTimerStyles
+          ? { timerDisplayStyles: lastTimerStyles }
+          : {}),
+  };
 
   refs.setState(next);
 

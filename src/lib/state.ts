@@ -1418,10 +1418,12 @@ export type SaveStateAsyncOptions = {
   /** 정산 리셋 — placeholder member LS 복원·후원 merge 되살림 방지 */
   settlementReset?: boolean;
   /**
-   * 시그/테마/자동보정 등 — API 본문에서 members/donors 를 빼 서버 후원을 건드리지 않음.
-   * (후원금은 정산·후원 삭제 등 명시 플래그 없이는 절대 초기화되면 안 됨)
+   * 시그/테마/오버레이 등 — API 본문에서 members/donors 를 빼 서버 후원을 건드리지 않음.
+   * 관리자 persistState 는 기본적으로 이 플래그를 켠다(includeDonationFields 미지정 시).
    */
   omitDonationFields?: boolean;
+  /** 판매완료 도장을 빈 값(기본 도장)으로 되돌릴 때만 true — 빈 URL 우연 덮어쓰기 방지 */
+  clearSigSoldOutStamp?: boolean;
 };
 
 export type SaveStateAsyncResult = {
@@ -1713,6 +1715,22 @@ function appStatePayloadForApi(
       ...restSafe
     } = payload;
     payload = restSafe;
+  }
+  /** 빈 판매완료 도장 URL은 실수로 커스텀을 지우지 않게 생략(「기본 도장」만 clear 플래그) */
+  if (
+    !options?.clearSigSoldOutStamp &&
+    !options?.settlementReset &&
+    !String(payload.sigSoldOutStampUrl || "").trim()
+  ) {
+    const { sigSoldOutStampUrl: _stamp, ...restWithoutStamp } = payload;
+    payload = restWithoutStamp;
+  }
+  if (options?.clearSigSoldOutStamp) {
+    payload = {
+      ...payload,
+      sigSoldOutStampUrl: "",
+      clearSigSoldOutStamp: true,
+    } as typeof payload & { clearSigSoldOutStamp: boolean };
   }
   if (!rouletteState) {
     return payload;

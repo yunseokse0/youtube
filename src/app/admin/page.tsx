@@ -1024,9 +1024,29 @@ export default function AdminPage() {
     };
     return map[id] || map.default;
   };
-  const persistState = useCallback((s: AppState, opts?: { donorsAuthoritative?: boolean; settlementReset?: boolean; omitDonationFields?: boolean }) => {
-    /** 사용자 명시 리셋이 아니면 실데이터→0원/빈·축소 후원 전체 저장을 막는다 */
-    if (!opts?.settlementReset && !opts?.donorsAuthoritative && !opts?.omitDonationFields) {
+  const persistState = useCallback((
+    s: AppState,
+    opts?: {
+      donorsAuthoritative?: boolean;
+      settlementReset?: boolean;
+      omitDonationFields?: boolean;
+      /** 후원·멤버 로스터/금액을 API에 포함할 때만 true. 미지정 시 오버레이·시그 등 비후원 저장으로 처리 */
+      includeDonationFields?: boolean;
+      /** 판매완료 도장을 기본(빈 URL)으로 되돌릴 때만 */
+      clearSigSoldOutStamp?: boolean;
+    }
+  ) => {
+    const includeDonations =
+      Boolean(opts?.includeDonationFields) ||
+      Boolean(opts?.donorsAuthoritative) ||
+      Boolean(opts?.settlementReset);
+    const omitDonationFields = Boolean(opts?.omitDonationFields) || !includeDonations;
+    const resolvedOpts = {
+      ...opts,
+      ...(omitDonationFields ? { omitDonationFields: true as const } : {}),
+    };
+    /** 후원 포함 저장에서만 축소 스냅샷 차단 (비후원 저장은 어차피 donors 미전송) */
+    if (!resolvedOpts.settlementReset && !resolvedOpts.donorsAuthoritative && !omitDonationFields) {
       try {
         const existing = loadState(user?.id);
         if (
@@ -1051,7 +1071,7 @@ export default function AdminPage() {
     lastLocalPersistAtRef.current = now;
     stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, s.updatedAt || now, now);
     pendingUnsyncedRef.current = true;
-    saveStateAsync(s, user?.id, opts).then((r) => {
+    saveStateAsync(s, user?.id, resolvedOpts).then((r) => {
       if (r.ok) {
         if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
           stateUpdatedAtRef.current = r.serverUpdatedAt;
@@ -1404,6 +1424,14 @@ export default function AdminPage() {
       merged = { ...merged, timerDisplayStyles: local.timerDisplayStyles };
       didPreserve = true;
     }
+    /** 판매완료 도장: 빈 원격이 커스텀 URL을 지우지 않음 */
+    if (
+      String(local.sigSoldOutStampUrl || "").trim() &&
+      !String(merged.sigSoldOutStampUrl || "").trim()
+    ) {
+      merged = { ...merged, sigSoldOutStampUrl: local.sigSoldOutStampUrl };
+      didPreserve = true;
+    }
     if (
       Array.isArray(local.donorRankingsPresets) &&
       local.donorRankingsPresets.length > 0 &&
@@ -1542,7 +1570,7 @@ export default function AdminPage() {
         stateUpdatedAtRef.current = apiState.updatedAt || 0;
         lastAppliedRemoteUpdatedAtRef.current = apiState.updatedAt || 0;
         const { merged, didPreserve } = mergeIncomingStateSafely(apiState, local);
-        const toApply = syncMemberTotalsFromDonors({
+        const toApplyBase = syncMemberTotalsFromDonors({
           ...merged,
           donors: apiState.donors,
           members: apiState.members,
@@ -1550,7 +1578,47 @@ export default function AdminPage() {
           contributionLogs: apiState.contributionLogs,
           restroomLogs: apiState.restroomLogs,
           settlementResetAt: apiState.settlementResetAt,
+          sigSoldOutStampUrl:
+            String(apiState.sigSoldOutStampUrl || "").trim() ||
+            String(merged.sigSoldOutStampUrl || "").trim() ||
+            "",
         });
+        /** 타이머 제어 UI가 비어 보이면 프리셋에 저장된 색으로 채움 */
+        let toApply = toApplyBase;
+        if (!hasCustomTimerDisplayStyles(toApply.timerDisplayStyles)) {
+          const presetWithTimer = (
+            Array.isArray(toApply.overlayPresets) ? (toApply.overlayPresets as OverlayPreset[]) : []
+          ).find(
+            (p) =>
+              p?.showTimer &&
+              (String(p.timerFontColor || "").trim() ||
+                String(p.timerBgColor || "").trim() ||
+                String(p.timerBorderColor || "").trim())
+          );
+          if (presetWithTimer) {
+            toApply = {
+              ...toApply,
+              timerDisplayStyles: {
+                general: {
+                  showHours: Boolean(presetWithTimer.timerShowHours),
+                  fontColor: String(presetWithTimer.timerFontColor || ""),
+                  bgColor: String(presetWithTimer.timerBgColor || ""),
+                  borderColor: String(presetWithTimer.timerBorderColor || ""),
+                  outlineColor: "",
+                  outlineWidth: 0.8,
+                  bgOpacity: Math.max(
+                    0,
+                    Math.min(100, parseInt(String(presetWithTimer.timerBgOpacity || "40"), 10) || 40)
+                  ),
+                  scalePercent: Math.max(
+                    50,
+                    Math.min(250, parseInt(String(presetWithTimer.timerScale || "100"), 10) || 100)
+                  ),
+                },
+              },
+            };
+          }
+        }
         if (didPreserve) {
           /** 테마·시그 등만 보존 — 후원 필드는 서버 값 유지(LS로 서버에 밀어 올리지 않음) */
           persistState(toApply, { omitDonationFields: true });
@@ -1945,7 +2013,7 @@ export default function AdminPage() {
       window.localStorage.setItem(storageKey(user?.id), JSON.stringify(healed));
     } catch {}
     /** 후원만 되살림 — 서버엔 테마 없는 PATCH로 전체 wipe 하지 않음 */
-    persistState(healed);
+    persistState(healed, { includeDonationFields: true });
     return true;
   }, [persistState, user?.id]);
 
@@ -2132,14 +2200,58 @@ export default function AdminPage() {
     } catch {}
     setState((prev: AppState) => {
       const settingsPatch = { currentPresetId: id };
+      const timerColorTouched =
+        mergedPatch.timerFontColor !== undefined ||
+        mergedPatch.timerBgColor !== undefined ||
+        mergedPatch.timerBorderColor !== undefined ||
+        mergedPatch.timerBgOpacity !== undefined ||
+        mergedPatch.timerScale !== undefined ||
+        mergedPatch.timerShowHours !== undefined;
+      const prevTimer = prev.timerDisplayStyles?.general;
+      const timerDisplayStyles = timerColorTouched
+        ? {
+            general: {
+              showHours:
+                mergedPatch.timerShowHours !== undefined
+                  ? Boolean(mergedPatch.timerShowHours)
+                  : Boolean(prevTimer?.showHours),
+              fontColor:
+                mergedPatch.timerFontColor !== undefined
+                  ? String(mergedPatch.timerFontColor || "")
+                  : String(prevTimer?.fontColor || ""),
+              bgColor:
+                mergedPatch.timerBgColor !== undefined
+                  ? String(mergedPatch.timerBgColor || "")
+                  : String(prevTimer?.bgColor || ""),
+              borderColor:
+                mergedPatch.timerBorderColor !== undefined
+                  ? String(mergedPatch.timerBorderColor || "")
+                  : String(prevTimer?.borderColor || ""),
+              outlineColor: String(prevTimer?.outlineColor || ""),
+              outlineWidth: Number(prevTimer?.outlineWidth ?? 0.8),
+              bgOpacity:
+                mergedPatch.timerBgOpacity !== undefined
+                  ? Math.max(0, Math.min(100, parseInt(String(mergedPatch.timerBgOpacity || "40"), 10) || 40))
+                  : Number(prevTimer?.bgOpacity ?? 40),
+              scalePercent:
+                mergedPatch.timerScale !== undefined
+                  ? Math.max(50, Math.min(250, parseInt(String(mergedPatch.timerScale || "100"), 10) || 100))
+                  : Number(prevTimer?.scalePercent ?? 100),
+            },
+          }
+        : prev.timerDisplayStyles;
       const merged: AppState = {
         ...prev,
         overlayPresets: nextPresets,
         overlaySettings: { ...(prev.overlaySettings || {}), ...settingsPatch },
+        ...(timerColorTouched ? { timerDisplayStyles } : {}),
         updatedAt: Date.now(),
       };
       /** 테마 변경은 프리셋만 저장 — 전체 persist 시 placeholder 멤버로 Redis/LS가 덮일 수 있음 */
       persistOverlayPresetsOnly(nextPresets, merged, settingsPatch);
+      if (timerColorTouched && timerDisplayStyles) {
+        void saveGeneralTimerPatchAsync(prev.generalTimer, user?.id, { timerDisplayStyles });
+      }
       return merged;
     });
     setPresetRev((r) => r + 1);
@@ -2558,7 +2670,7 @@ export default function AdminPage() {
   const updateMember = (m: Member) => {
     setState((prev: AppState) => {
       const next: AppState = { ...prev, members: prev.members.map((x: Member) => (x.id === m.id ? m : x)) };
-      persistState(next);
+      persistState(next, { includeDonationFields: true });
       return next;
     });
   };
@@ -2566,7 +2678,7 @@ export default function AdminPage() {
   const renameMember = (id: string, name: string) => {
     setState((prev: AppState) => {
       const next: AppState = { ...prev, members: prev.members.map((x: Member) => (x.id === id ? { ...x, name } : x)) };
-      persistState(next);
+      persistState(next, { includeDonationFields: true });
       return next;
     });
   };
@@ -2577,7 +2689,7 @@ export default function AdminPage() {
         ...prev,
         members: prev.members.map((x: Member) => (x.id === id ? { ...x, account: 0, toon: 0, contribution: 0, restroom: 0 } : x)),
       };
-      persistState(next);
+      persistState(next, { includeDonationFields: true });
       return next;
     });
   };
@@ -2589,7 +2701,7 @@ export default function AdminPage() {
           ...prev,
           members: prev.members.map((x: Member) => ({ ...x, account: 0, toon: 0, contribution: 0, restroom: 0 })),
         };
-        persistState(next);
+        persistState(next, { includeDonationFields: true });
         return next;
       });
     }, { confirmText: "리셋", danger: true });
@@ -2636,7 +2748,7 @@ export default function AdminPage() {
             teamBMemberIds: (prev.mealMatchSettings?.teamBMemberIds || []).filter((x) => x !== id),
           },
         };
-        persistState(next);
+        persistState(next, { includeDonationFields: true });
         return next;
       });
       if (donorMemberId === id) {
@@ -2661,7 +2773,7 @@ export default function AdminPage() {
           participants: [...(prev.mealBattle?.participants || [])],
         },
       };
-      persistState(next);
+      persistState(next, { includeDonationFields: true });
       return next;
     });
     setNewMemberName("");
@@ -2674,7 +2786,7 @@ export default function AdminPage() {
       if (cleaned) nextMap[memberId] = cleaned;
       else delete nextMap[memberId];
       const next: AppState = { ...prev, memberPositions: nextMap };
-      persistState(next);
+      persistState(next, { includeDonationFields: true });
       return next;
     });
   };
@@ -2682,7 +2794,7 @@ export default function AdminPage() {
   const updateMemberPositionMode = (mode: AppState["memberPositionMode"]) => {
     setState((prev: AppState) => {
       const next: AppState = { ...prev, memberPositionMode: mode };
-      persistState(next);
+      persistState(next, { includeDonationFields: true });
       return next;
     });
   };
@@ -2695,7 +2807,7 @@ export default function AdminPage() {
       }
       if (memberId) nextMap[memberId] = "대표";
       const next: AppState = { ...prev, memberPositions: nextMap };
-      persistState(next);
+      persistState(next, { includeDonationFields: true });
       return next;
     });
   };
@@ -2706,7 +2818,7 @@ export default function AdminPage() {
       while (labels.length <= index) labels.push("");
       labels[index] = value;
       const next: AppState = { ...prev, rankPositionLabels: labels };
-      persistState(next);
+      persistState(next, { includeDonationFields: true });
       return next;
     });
   };
@@ -3148,7 +3260,7 @@ export default function AdminPage() {
         sigInventory: (prev.sigInventory || []).map((x) => (x.id === id ? { ...x, isRolling: checked } : x)),
       };
       const next = syncOneShotSigItem(draft);
-      persistState(next);
+      persistState(next, { omitDonationFields: true });
       return next;
     });
   };
@@ -3161,7 +3273,7 @@ export default function AdminPage() {
         sigInventory: (prev.sigInventory || []).map((x) => (x.id === id ? { ...x, isActive: checked } : x)),
       };
       const next = syncOneShotSigItem(draft);
-      persistState(next);
+      persistState(next, { omitDonationFields: true });
       return next;
     });
   };
@@ -3708,7 +3820,7 @@ export default function AdminPage() {
       setState((prev: AppState) => {
         const draft = buildAppStateFromRestoreJson(parsed, { base: prev, fullReplace: full });
         const next = syncOneShotSigItem(draft);
-        persistState(next);
+        persistState(next, { includeDonationFields: true });
         return next;
       });
       setSigExcelResult(`${sourceLabel} 복구·저장: ${summary.join(" · ") || "완료"}`);
@@ -4408,7 +4520,12 @@ export default function AdminPage() {
         ...prev,
         sigSoldOutStampUrl: url,
       };
-      persistState(next);
+      persistState(
+        next,
+        url.trim()
+          ? { omitDonationFields: true }
+          : { omitDonationFields: true, clearSigSoldOutStamp: true }
+      );
       return next;
     });
   };
@@ -4460,7 +4577,7 @@ export default function AdminPage() {
         sigInventory: (prev.sigInventory || []).map((x) => (x.id === id ? { ...x, isRolling: false } : x)),
         sigRollingMeta: meta,
       };
-      persistState(next);
+      persistState(next, { omitDonationFields: true });
       return next;
     });
   };
@@ -4478,7 +4595,7 @@ export default function AdminPage() {
           sigInventory: (prev.sigInventory || []).map((x) => (x.id === id ? { ...x, name: nextName } : x)),
           sigRollingMeta: meta,
         };
-        persistState(next);
+        persistState(next, { omitDonationFields: true });
         return next;
       }
       const sr = normalizeSigRolling(prev.sigRolling);
@@ -4489,7 +4606,7 @@ export default function AdminPage() {
           items: sr.items.map((x) => (x.id === id ? { ...x, label: nextName } : x)),
         },
       };
-      persistState(next);
+      persistVisualSettings(next, { sigRolling: next.sigRolling });
       return next;
     });
   };
@@ -4508,7 +4625,7 @@ export default function AdminPage() {
               x.id === id ? { ...x, imageUrl: url, isRolling: true, isActive: true } : x
             ),
           };
-          persistState(next);
+          persistState(next, { omitDonationFields: true });
           return next;
         }
         const sr = normalizeSigRolling(prev.sigRolling);
@@ -4519,7 +4636,7 @@ export default function AdminPage() {
             items: sr.items.map((x) => (x.id === id ? { ...x, url } : x)),
           },
         };
-        persistState(next);
+        persistVisualSettings(next, { sigRolling: next.sigRolling });
         return next;
       });
       setSigRollingUploadMessage(`이미지 교체 완료: ${id}`);
@@ -4556,7 +4673,7 @@ export default function AdminPage() {
         sigRolling: { ...sr, items: sr.items.filter((x) => x.id !== id) },
         sigRollingMeta: meta,
       };
-      persistState(next);
+      persistState(next, { omitDonationFields: true });
       return next;
     });
   };
@@ -4601,7 +4718,7 @@ export default function AdminPage() {
         sigRolling: { ...sr, items: sr.items.filter((x) => !convertedIds.has(x.id)) },
         sigRollingMeta: meta,
       };
-      persistState(next);
+      persistState(next, { omitDonationFields: true });
       setSigRollingUploadMessage(`레거시 롤링 ${appended}개를 판매 시그로 전체 치환했습니다.`);
       return next;
     });
@@ -4623,7 +4740,7 @@ export default function AdminPage() {
         meta[it.id] = { ...cur, order: idx };
       });
       const next = { ...prev, sigRollingMeta: meta };
-      persistState(next);
+      persistVisualSettings(next, { sigRollingMeta: meta });
       return next;
     });
   };
@@ -4660,7 +4777,7 @@ export default function AdminPage() {
         sigRolling: { ...sr, items: sr.items.filter((x) => !duplicateIds.has(x.id)) },
         sigRollingMeta: meta,
       };
-      persistState(next);
+      persistState(next, { omitDonationFields: true });
       return next;
     });
     setSigRollingUploadMessage(
@@ -4882,19 +4999,42 @@ export default function AdminPage() {
       const baseStyles = prev.timerDisplayStyles || {
         general: { showHours: false, fontColor: "", bgColor: "", borderColor: "", outlineColor: "", outlineWidth: 0.8, bgOpacity: 40, scalePercent: 100 },
       };
+      const nextGeneral = {
+        ...baseStyles[key],
+        ...patch,
+      };
       const timerDisplayStyles = {
         ...baseStyles,
-        [key]: {
-          ...baseStyles[key],
-          ...patch,
-        },
+        [key]: nextGeneral,
       };
+      /** 타이머 제어 색을 오버레이 프리셋에도 반영 — 둘 중 하나만 바뀌어 기본색처럼 보이는 회귀 방지 */
+      const nextPresets = normalizeOverlayPresetLabels(
+        (Array.isArray(prev.overlayPresets) ? (prev.overlayPresets as OverlayPreset[]) : presets).map((p) => {
+          if (!p.showTimer) return p;
+          return {
+            ...p,
+            ...(patch.fontColor !== undefined ? { timerFontColor: String(patch.fontColor || "") } : {}),
+            ...(patch.bgColor !== undefined ? { timerBgColor: String(patch.bgColor || "") } : {}),
+            ...(patch.borderColor !== undefined ? { timerBorderColor: String(patch.borderColor || "") } : {}),
+            ...(patch.bgOpacity !== undefined ? { timerBgOpacity: String(patch.bgOpacity) } : {}),
+            ...(patch.scalePercent !== undefined ? { timerScale: String(patch.scalePercent) } : {}),
+            ...(patch.showHours !== undefined ? { timerShowHours: Boolean(patch.showHours) } : {}),
+          };
+        })
+      );
       const next: AppState = {
         ...prev,
         timerDisplayStyles,
+        overlayPresets: nextPresets,
         updatedAt: Date.now(),
       };
+      setPresets(nextPresets);
+      try {
+        window.localStorage.setItem(presetStorageKey, JSON.stringify(nextPresets));
+        notifyOverlayPresetsLocalUpdated();
+      } catch {}
       void saveGeneralTimerPatchAsync(prev.generalTimer, user?.id, { timerDisplayStyles });
+      persistOverlayPresetsOnly(nextPresets, next);
       return next;
     });
   };
@@ -4951,7 +5091,7 @@ export default function AdminPage() {
           participants: mealParticipants,
         },
       };
-      persistState(next);
+      persistState(next, { includeDonationFields: true });
       return next;
     });
     setDonorName("");
@@ -5577,7 +5717,7 @@ export default function AdminPage() {
         members,
         contributionLogs: [...(prev.contributionLogs || []), log],
       };
-      persistState(next);
+      persistState(next, { includeDonationFields: true });
       return next;
     });
     setContributionAmount("");
@@ -5607,7 +5747,7 @@ export default function AdminPage() {
         members,
         restroomLogs: [...(prev.restroomLogs || []), log],
       };
-      persistState(next);
+      persistState(next, { includeDonationFields: true });
       return next;
     });
   }, [persistState]);
@@ -5630,7 +5770,7 @@ export default function AdminPage() {
         members,
         restroomLogs: log ? [...(prev.restroomLogs || []), log] : prev.restroomLogs || [],
       };
-      persistState(next);
+      persistState(next, { includeDonationFields: true });
       return next;
     });
   }, [persistState]);
@@ -5982,7 +6122,7 @@ export default function AdminPage() {
     pendingUnsyncedRef.current = false;
     setState(toApply);
     if (didPreserve) {
-      persistState(toApply);
+      persistState(toApply, { includeDonationFields: true });
       if (typeof window !== "undefined") {
         window.alert(
           "서버 데이터가 비어 있거나 초기 멤버 슬롯(멤버1·2·3)만 있어, 현재 로컬 멤버 구성을 유지했습니다.\n" +
@@ -8827,7 +8967,7 @@ export default function AdminPage() {
                         setState((prev) => {
                           const sr = normalizeSigRolling(prev.sigRolling);
                           const next = { ...prev, sigRolling: { ...sr, fadeMs: v } };
-                          persistState(next);
+                          persistVisualSettings(next, { sigRolling: next.sigRolling });
                           return next;
                         });
                       }}
@@ -8850,7 +8990,7 @@ export default function AdminPage() {
                         setState((prev) => {
                           const sr = normalizeSigRolling(prev.sigRolling);
                           const next = { ...prev, sigRolling: { ...sr, staticHoldMs: v } };
-                          persistState(next);
+                          persistVisualSettings(next, { sigRolling: next.sigRolling });
                           return next;
                         });
                       }}
@@ -9411,7 +9551,7 @@ export default function AdminPage() {
                                 const cur = meta[item.id] || {};
                                 meta[item.id] = { ...cur, order };
                                 const next = { ...prev, sigRollingMeta: meta };
-                                persistState(next);
+                                persistVisualSettings(next, { sigRollingMeta: meta });
                                 return next;
                               });
                             }}
@@ -9427,7 +9567,7 @@ export default function AdminPage() {
                                 const cur = meta[item.id] || {};
                                 meta[item.id] = { ...cur, label };
                                 const next = { ...prev, sigRollingMeta: meta };
-                                persistState(next);
+                                persistVisualSettings(next, { sigRollingMeta: meta });
                                 return next;
                               });
                             }}
@@ -10532,7 +10672,7 @@ export default function AdminPage() {
                                           members,
                                           restroomLogs: (prev.restroomLogs || []).filter((x) => x.id !== log.id),
                                         };
-                                        persistState(next);
+                                        persistState(next, { includeDonationFields: true });
                                         return next;
                                       });
                                     });
@@ -10549,7 +10689,7 @@ export default function AdminPage() {
                                           ...prev,
                                           restroomLogs: (prev.restroomLogs || []).filter((x) => x.id !== log.id),
                                         };
-                                        persistState(next);
+                                        persistState(next, { includeDonationFields: true });
                                         return next;
                                       });
                                     });
@@ -10793,7 +10933,7 @@ export default function AdminPage() {
                                           members,
                                           contributionLogs: (prev.contributionLogs || []).filter((x) => x.id !== log.id),
                                         };
-                                        persistState(next);
+                                        persistState(next, { includeDonationFields: true });
                                         return next;
                                       });
                                     }, { confirmText: "되돌리기", danger: true });
@@ -10810,7 +10950,7 @@ export default function AdminPage() {
                                           ...prev,
                                           contributionLogs: (prev.contributionLogs || []).filter((x) => x.id !== log.id),
                                         };
-                                        persistState(next);
+                                        persistState(next, { includeDonationFields: true });
                                         return next;
                                       });
                                     }, { confirmText: "삭제", danger: true });

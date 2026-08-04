@@ -825,6 +825,16 @@ export function normalizeGoalHexColor(raw: string): string | null {
 /**
  * `/api/state` 프리셋이 준비되면 URL에 박힌 예전 스타일보다 프리셋 우선(OBS `host` 유무와 무관).
  */
+/** 타이머 색·스케일 — ready 후 빈 프리셋이면 URL 스테일을 쓰지 않음 */
+const TIMER_OVERLAY_LIVE_STYLE_KEYS = new Set([
+  "timerFontColor",
+  "timerBgColor",
+  "timerBorderColor",
+  "timerBgOpacity",
+  "timerScale",
+  "timerShowHours",
+]);
+
 export function resolveLivePresetStyleParam(
   key: string,
   rawSp: SearchParamsLike,
@@ -839,6 +849,10 @@ export function resolveLivePresetStyleParam(
     fromPreset !== ""
   ) {
     return fromPreset;
+  }
+  /** 타이머 색만: 프리셋이 비어 있으면 OBS URL에 남은 #ffffff 등을 무시 → timerDisplayStyles 사용 */
+  if (opts.ready && TIMER_OVERLAY_LIVE_STYLE_KEYS.has(key)) {
+    return null;
   }
   const direct = rawSp.get(key);
   if (direct !== null && direct !== "") return direct;
@@ -877,6 +891,8 @@ function pickTimerPresetOrParam(
   if (opts.ready && preset) {
     const fromPreset = String(preset[presetKey] ?? "").trim();
     if (fromPreset) return fromPreset;
+    /** ready 이후 프리셋이 비면 URL 스테일(#ffffff 등)을 쓰지 않고 timerDisplayStyles 로 넘김 */
+    return "";
   }
   const merged = resolveLivePresetStyleParam(
     paramKey,
@@ -887,7 +903,7 @@ function pickTimerPresetOrParam(
   return (merged || "").trim();
 }
 
-/** 타이머 오버레이 색·스타일 — 프리셋 → URL → `timerDisplayStyles` 순 */
+/** 타이머 오버레이 색·스타일 — 프리셋 → (ready 전 URL) → `timerDisplayStyles` 순 */
 export function resolveTimerOverlayStyle(
   rawSp: SearchParamsLike,
   preset: OverlayPresetLike | null,

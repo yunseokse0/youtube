@@ -86,6 +86,33 @@ describe("admin preview hot-reload params", () => {
     expect(style.bgColor).toBe("#112233");
   });
 
+  it("ignores stale URL timer colors when ready and preset is empty — uses timerDisplayStyles", () => {
+    const preset: OverlayPresetLike = {
+      id: "ov_timer_empty",
+      showTimer: true,
+      timerFontColor: "",
+      timerBgColor: "",
+    };
+    const url = new URLSearchParams("timerFontColor=%23ffffff&timerBgColor=%23ffffff");
+    const style = resolveTimerOverlayStyle(
+      url,
+      preset,
+      {
+        fontColor: "#00ff99",
+        bgColor: "#101010",
+        borderColor: "",
+        outlineColor: "",
+        outlineWidth: 0.8,
+        bgOpacity: 40,
+        scalePercent: 100,
+        showHours: false,
+      },
+      { ready: true }
+    );
+    expect(style.fontColor).toBe("#00ff99");
+    expect(style.bgColor).toBe("#101010");
+  });
+
   it("falls back to timerDisplayStyles when preset timer colors are empty", () => {
     const style = resolveTimerOverlayStyle(new URLSearchParams(), null, {
       fontColor: "#aabbcc",
