@@ -30,23 +30,35 @@ import {
   sigRollingShellOuterPx,
   type SigRollingMediaOrientation,
 } from "@/lib/sig-rolling-orientation";
+import {
+  SIG_ROLLING_HIGH_PRICE_MIN,
+  nextSigRollingIndex,
+  pickSigRollingAt,
+  splitSigRollingByPriceBand,
+  type SigRollingItemWithPrice,
+} from "@/lib/sig-rolling-price-bands";
 
-/** 202×300(세로) / 300×202(가로) 프레임 — object-contain, 잘림 없음 */
+/** 300×180(가로) / 180×300(세로) 프레임 — object-contain, 잘림 없음 */
 const IMG_IN_FRAME =
   "pointer-events-none select-none block h-full w-full max-h-full max-w-full min-h-0 min-w-0 object-contain object-center";
 
 const SHELL_PAD_PX = 6;
-/** 뷰포트 스케일 기본값(세로 2장) — 실제는 카드별 방향에 따라 동적 계산 */
+/** 뷰포트 스케일 기본값 — 실제는 카드별 방향에 따라 동적 계산 */
 const TWO_CARD_BASE_WIDTH_PX =
-  sigRollingPairLayoutPx("portrait", "portrait", SHELL_PAD_PX).totalOuterWidth;
+  sigRollingPairLayoutPx("landscape", "landscape", SHELL_PAD_PX).totalOuterWidth;
 const DEFAULT_PAIR_HEIGHT_PX =
-  sigRollingPairLayoutPx("portrait", "portrait", SHELL_PAD_PX).maxOuterHeight;
+  sigRollingPairLayoutPx("landscape", "landscape", SHELL_PAD_PX).maxOuterHeight;
 
-/** 폴링으로 `state` 객체만 바뀌고 내용은 같을 때도 참조가 매번 바뀌지 않도록 문자열 키로 구분 (타이머 effect 무한 리셋 방지) */
-function sigRollingScheduleKey(state: AppState | null, memberFilterId: string): string {
+function bandScheduleToken(items: SigRollingItemWithPrice[]): string {
+  return items.map((x) => `${x.id}\u001f${x.url}\u001f${x.price}`).join("\u001e");
+}
+
+/** 폴링으로 `state` 객체만 바뀌고 내용은 같을 때도 참조가 매번 바뀌지 않도록 문자열 키로 구분 */
+function sigRollingScheduleKey(state: AppState | null, memberFilterId: string, highMin: number): string {
   const r = normalizeSigRolling(state?.sigRolling);
   const items = getUnifiedSigRollingItems(state, memberFilterId);
-  return `${r.fadeMs}|${r.staticHoldMs}|${items.map((x) => `${x.id}\u001f${x.url}`).join("\u001e")}`;
+  const { high, low } = splitSigRollingByPriceBand(items, highMin);
+  return `${r.fadeMs}|${r.staticHoldMs}|${highMin}|H:${bandScheduleToken(high)}|L:${bandScheduleToken(low)}`;
 }
 
 function RollingCardColumn({
@@ -82,7 +94,7 @@ function RollingCardColumn({
   const srcUnder = toSigOverlayAbsoluteAssetUrl(srcUnderRaw);
   const [errOverSrc, setErrOverSrc] = useState<string | null>(null);
   const [errUnderSrc, setErrUnderSrc] = useState<string | null>(null);
-  const [orientation, setOrientation] = useState<SigRollingMediaOrientation>("portrait");
+  const [orientation, setOrientation] = useState<SigRollingMediaOrientation>("landscape");
   const onOrientationRef = useRef(onOrientationChange);
   onOrientationRef.current = onOrientationChange;
 
@@ -98,8 +110,8 @@ function RollingCardColumn({
   }, [srcCurrent, srcUnder]);
 
   useEffect(() => {
-    setOrientation("portrait");
-    onOrientationRef.current?.("portrait");
+    setOrientation("landscape");
+    onOrientationRef.current?.("landscape");
   }, [srcCurrent]);
 
   const applyOrientationFromImg = useCallback((img: HTMLImageElement) => {
@@ -254,10 +266,18 @@ const overlayNoticeBoxStyle: CSSProperties = {
   boxShadow: "0 4px 14px rgba(0,0,0,0.35)",
 };
 
+function parseHighMinFromSearchParams(sp: URLSearchParams): number {
+  const raw = sp.get("highMin") || sp.get("priceHighMin") || "";
+  const n = Math.floor(Number(String(raw).replace(/[^\d]/g, "")));
+  if (Number.isFinite(n) && n > 0) return n;
+  return SIG_ROLLING_HIGH_PRICE_MIN;
+}
+
 function SigRollingOverlayInner() {
   const sp = useSearchParams();
   const userId = getOverlayUserIdFromSearchParams(sp);
   const memberFilterId = getOverlayMemberFilterIdFromSearchParams(sp);
+  const highMin = useMemo(() => parseHighMinFromSearchParams(sp), [sp]);
   const hostParam = (sp.get("host") || "").toLowerCase();
   const obsSafe =
     hostParam === "obs" ||
@@ -272,34 +292,46 @@ function SigRollingOverlayInner() {
 
   const rolling = useMemo(() => normalizeSigRolling(state?.sigRolling), [state?.sigRolling]);
   const items = useMemo(() => getUnifiedSigRollingItems(state, memberFilterId), [state, memberFilterId]);
-  const rollingUnified = useMemo(() => ({ ...rolling, items }), [rolling, items]);
+  const { high: highItems, low: lowItems } = useMemo(
+    () => splitSigRollingByPriceBand(items, highMin),
+    [items, highMin]
+  );
   const fadeMs = rolling.fadeMs;
+  const totalCount = highItems.length + lowItems.length;
+  const showPair = highItems.length > 0 && lowItems.length > 0;
 
-  /** 한 줄에 왼쪽·오른쪽 카드가 함께 넘어가도록 페어 시작 인덱스(짝 단위 +2) */
-  const [pairStart, setPairStart] = useState(0);
+  /** 좌=고액 / 우=저액 — 밴드별 독립 인덱스 */
+  const [leftIdx, setLeftIdx] = useState(0);
+  const [rightIdx, setRightIdx] = useState(0);
   const [fading, setFading] = useState(false);
   const [replayKey, setReplayKey] = useState(0);
   const [viewportW, setViewportW] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 0));
-  const [leftOrientation, setLeftOrientation] = useState<SigRollingMediaOrientation>("portrait");
-  const [rightOrientation, setRightOrientation] = useState<SigRollingMediaOrientation>("portrait");
+  const [leftOrientation, setLeftOrientation] = useState<SigRollingMediaOrientation>("landscape");
+  const [rightOrientation, setRightOrientation] = useState<SigRollingMediaOrientation>("landscape");
 
-  const n = items.length;
-  const leftCurrent = n ? items[pairStart % n] : null;
-  const rightCurrent = n ? items[(pairStart + 1) % n] : null;
-  const leftNext = n ? items[(pairStart + 2) % n] : null;
-  const rightNext = n ? items[(pairStart + 3) % n] : null;
+  const leftCurrent = pickSigRollingAt(highItems, leftIdx);
+  const leftNext = highItems.length > 1 ? pickSigRollingAt(highItems, leftIdx + 1) : null;
+  const rightCurrent = pickSigRollingAt(lowItems, rightIdx);
+  const rightNext = lowItems.length > 1 ? pickSigRollingAt(lowItems, rightIdx + 1) : null;
 
-  const scheduleKey = sigRollingScheduleKey(state, memberFilterId);
+  const scheduleKey = sigRollingScheduleKey(state, memberFilterId, highMin);
 
-  const pairLayout = useMemo(
-    () => sigRollingPairLayoutPx(leftOrientation, rightOrientation, SHELL_PAD_PX),
-    [leftOrientation, rightOrientation]
-  );
-  const rollingRef = useRef(rollingUnified);
-  rollingRef.current = rollingUnified;
+  const pairLayout = useMemo(() => {
+    if (showPair) return sigRollingPairLayoutPx(leftOrientation, rightOrientation, SHELL_PAD_PX);
+    if (highItems.length > 0) {
+      const s = sigRollingShellOuterPx(leftOrientation, SHELL_PAD_PX);
+      return { totalOuterWidth: s.outerWidth, maxOuterHeight: s.outerHeight };
+    }
+    const s = sigRollingShellOuterPx(rightOrientation, SHELL_PAD_PX);
+    return { totalOuterWidth: s.outerWidth, maxOuterHeight: s.outerHeight };
+  }, [showPair, highItems.length, leftOrientation, rightOrientation]);
 
-  /** 페어 크로스페이드 — OBS는 이중 GIF 레이어에서 깜빡임이 나기 쉬워 host=obs 시 즉시 전환 */
-  const enableCrossfade = n >= 3 && !obsSafe;
+  const bandsRef = useRef({ high: highItems, low: lowItems, fadeMs, staticHoldMs: rolling.staticHoldMs });
+  bandsRef.current = { high: highItems, low: lowItems, fadeMs, staticHoldMs: rolling.staticHoldMs };
+
+  /** 어느 한 밴드라도 2장 이상이면 크로스페이드(OBS는 즉시 전환) */
+  const canAdvance = highItems.length >= 2 || lowItems.length >= 2;
+  const enableCrossfade = canAdvance && !obsSafe;
 
   const preloadRollingImage = useCallback(
     (item: SigRollingItem | null | undefined) => {
@@ -314,14 +346,21 @@ function SigRollingOverlayInner() {
     },
     [overlayUserId]
   );
+
+  const advanceBands = useCallback(() => {
+    const { high, low } = bandsRef.current;
+    if (high.length >= 2) setLeftIdx((i) => nextSigRollingIndex(i, high.length));
+    if (low.length >= 2) setRightIdx((i) => nextSigRollingIndex(i, low.length));
+  }, []);
+
   const twoCardScale = useMemo(() => {
     if (!Number.isFinite(viewportW) || viewportW <= 0) return 1;
     const safeW = Math.max(260, viewportW - 8);
-    const baseW = Math.max(pairLayout.totalOuterWidth, TWO_CARD_BASE_WIDTH_PX);
+    const baseW = Math.max(pairLayout.totalOuterWidth, showPair ? TWO_CARD_BASE_WIDTH_PX : pairLayout.totalOuterWidth);
     const ratio = safeW / baseW;
     if (!Number.isFinite(ratio)) return 1;
     return Math.max(0.6, Math.min(1, ratio));
-  }, [viewportW, pairLayout.totalOuterWidth]);
+  }, [viewportW, pairLayout.totalOuterWidth, showPair]);
 
   const onLeftOrientation = useCallback((orientation: SigRollingMediaOrientation) => {
     setLeftOrientation(orientation);
@@ -338,88 +377,62 @@ function SigRollingOverlayInner() {
   }, []);
 
   useEffect(() => {
-    setPairStart(0);
+    setLeftIdx(0);
+    setRightIdx(0);
     setReplayKey(0);
     setFading(false);
-    setLeftOrientation("portrait");
-    setRightOrientation("portrait");
+    setLeftOrientation("landscape");
+    setRightOrientation("landscape");
   }, [scheduleKey]);
 
-  /** 크로스페이드 종료: CSS transitionEnd는 누락될 수 있어 fadeMs 타이머로만 진행 */
+  /** 크로스페이드 종료: fadeMs 타이머로 인덱스 진행 */
   useEffect(() => {
-    if (!fading || n < 3) return;
+    if (!fading || !canAdvance) return;
     const ms = Math.max(120, fadeMs);
     const id = window.setTimeout(() => {
-      setPairStart((p) => {
-        const len = rollingRef.current.items.length;
-        return len < 3 ? p : (p + 2) % len;
-      });
+      advanceBands();
       setFading(false);
     }, ms);
     return () => window.clearTimeout(id);
-  }, [fading, n, fadeMs]);
+  }, [fading, canAdvance, fadeMs, advanceBands]);
 
   useEffect(() => {
-    if (!ready || n === 0 || fading) return;
+    if (!ready || totalCount === 0 || fading) return;
 
     let cancelled = false;
     let timerId: number | undefined;
 
     void (async () => {
-      const r = rollingRef.current;
-      const list = r.items;
-      const nn = list.length;
-      const holdMs = r.staticHoldMs;
-      if (nn === 0) return;
+      const snap = bandsRef.current;
+      const holdMs = snap.staticHoldMs;
+      const visible: SigRollingItemWithPrice[] = [];
+      const left = pickSigRollingAt(snap.high, leftIdx);
+      const right = pickSigRollingAt(snap.low, rightIdx);
+      if (left) visible.push(left);
+      if (right) visible.push(right);
+      if (!visible.length) return;
 
       let hold = holdMs;
-      if (nn === 1) {
-        const it = list[0];
-        if (!it?.url) return;
-        hold = await getSigRollingHoldMs(
-          resolveSigRollingImageUrl(it.label || "", it.url, overlayUserId),
-          holdMs
-        );
-      } else if (nn === 2) {
-        const h0 = await getSigRollingHoldMs(
-          resolveSigRollingImageUrl(list[0].label || "", list[0].url, overlayUserId),
-          holdMs
-        );
-        const h1 = await getSigRollingHoldMs(
-          resolveSigRollingImageUrl(list[1].label || "", list[1].url, overlayUserId),
-          holdMs
-        );
-        hold = Math.max(h0, h1);
-      } else {
-        const uL = list[pairStart % nn];
-        const uR = list[(pairStart + 1) % nn];
-        if (!uL?.url || !uR?.url) return;
-        hold = Math.max(
-          await getSigRollingHoldMs(
-            resolveSigRollingImageUrl(uL.label || "", uL.url, overlayUserId),
-            holdMs
-          ),
-          await getSigRollingHoldMs(
-            resolveSigRollingImageUrl(uR.label || "", uR.url, overlayUserId),
-            holdMs
-          )
-        );
-      }
+      const holds = await Promise.all(
+        visible.map((it) =>
+          getSigRollingHoldMs(resolveSigRollingImageUrl(it.label || "", it.url, overlayUserId), holdMs)
+        )
+      );
+      hold = Math.max(holdMs, ...holds);
       if (cancelled) return;
+
       timerId = window.setTimeout(() => {
-        if (nn <= 2) {
+        if (!canAdvance) {
           setReplayKey((k) => k + 1);
           return;
         }
+        preloadRollingImage(highItems.length > 1 ? pickSigRollingAt(snap.high, leftIdx + 1) : null);
+        preloadRollingImage(lowItems.length > 1 ? pickSigRollingAt(snap.low, rightIdx + 1) : null);
         if (obsSafe) {
-          preloadRollingImage(list[(pairStart + 2) % nn]);
-          preloadRollingImage(list[(pairStart + 3) % nn]);
-          setPairStart((p) => (p + 2) % nn);
+          advanceBands();
           setReplayKey((k) => k + 1);
           return;
         }
-        preloadRollingImage(list[(pairStart + 2) % nn]);
-        preloadRollingImage(list[(pairStart + 3) % nn]);
         setFading(true);
       }, hold);
     })();
@@ -428,7 +441,22 @@ function SigRollingOverlayInner() {
       cancelled = true;
       if (timerId !== undefined) window.clearTimeout(timerId);
     };
-  }, [ready, n, pairStart, fading, scheduleKey, replayKey, overlayUserId, obsSafe, preloadRollingImage]);
+  }, [
+    ready,
+    totalCount,
+    leftIdx,
+    rightIdx,
+    fading,
+    scheduleKey,
+    replayKey,
+    overlayUserId,
+    obsSafe,
+    canAdvance,
+    highItems.length,
+    lowItems.length,
+    preloadRollingImage,
+    advanceBands,
+  ]);
 
   const emptyDetail = useMemo(() => {
     if (!state) return "";
@@ -461,7 +489,7 @@ function SigRollingOverlayInner() {
     );
   }
 
-  if (n === 0) {
+  if (totalCount === 0) {
     if (obsSafe) return <main className="overlay-root inline-block w-fit bg-transparent p-1" />;
     return (
       <main className="overlay-root inline-block w-fit p-1">
@@ -476,8 +504,8 @@ function SigRollingOverlayInner() {
           <p className="text-white/85" style={{ color: "rgba(248,250,252,0.88)" }}>
             <code className="rounded bg-white/15 px-1">/overlay/sig-rolling</code> 는{" "}
             <strong className="text-white">후원 랭킹 오버레이와 별도의 브라우저 소스</strong>로 추가해야 합니다. URL에{" "}
-            <code className="rounded bg-white/15 px-1">?u=본인아이디</code>(예: finalent)가 맞는지 확인하세요. 관리자에서 저장한 뒤 서버(
-            Redis)에 반영되어야 OBS에서도 보입니다.
+            <code className="rounded bg-white/15 px-1">?u=본인아이디</code>(예: finalent)가 맞는지 확인하세요. 좌측은{" "}
+            {highMin.toLocaleString("ko-KR")}원 이상(고액), 우측은 미만(저액)으로 나뉘어 롤링됩니다.
           </p>
         </div>
       </main>
@@ -485,6 +513,8 @@ function SigRollingOverlayInner() {
   }
 
   const transitionActive = `opacity ${fadeMs}ms ease-in-out`;
+  const leftCrossfade = enableCrossfade && highItems.length >= 2;
+  const rightCrossfade = enableCrossfade && lowItems.length >= 2;
 
   return (
     <main
@@ -502,28 +532,32 @@ function SigRollingOverlayInner() {
         }}
       >
         <div className="flex flex-row flex-nowrap items-start gap-0 [isolation:isolate]">
-          <RollingCardColumn
-            current={leftCurrent}
-            nextItem={enableCrossfade ? leftNext : null}
-            fading={fading}
-            transitionActive={transitionActive}
-            replayKey={replayKey}
-            enableCrossfade={enableCrossfade}
-            pairSide="left"
-            overlayUserId={overlayUserId}
-            onOrientationChange={onLeftOrientation}
-          />
-          <RollingCardColumn
-            current={rightCurrent}
-            nextItem={enableCrossfade ? rightNext : null}
-            fading={fading}
-            transitionActive={transitionActive}
-            replayKey={replayKey}
-            enableCrossfade={enableCrossfade}
-            pairSide="right"
-            overlayUserId={overlayUserId}
-            onOrientationChange={onRightOrientation}
-          />
+          {leftCurrent ? (
+            <RollingCardColumn
+              current={leftCurrent}
+              nextItem={leftCrossfade ? leftNext : null}
+              fading={leftCrossfade ? fading : false}
+              transitionActive={transitionActive}
+              replayKey={replayKey}
+              enableCrossfade={leftCrossfade}
+              pairSide={showPair ? "left" : undefined}
+              overlayUserId={overlayUserId}
+              onOrientationChange={onLeftOrientation}
+            />
+          ) : null}
+          {rightCurrent ? (
+            <RollingCardColumn
+              current={rightCurrent}
+              nextItem={rightCrossfade ? rightNext : null}
+              fading={rightCrossfade ? fading : false}
+              transitionActive={transitionActive}
+              replayKey={replayKey}
+              enableCrossfade={rightCrossfade}
+              pairSide={showPair ? "right" : undefined}
+              overlayUserId={overlayUserId}
+              onOrientationChange={onRightOrientation}
+            />
+          ) : null}
         </div>
       </div>
     </main>

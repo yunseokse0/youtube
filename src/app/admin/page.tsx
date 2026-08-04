@@ -17,6 +17,7 @@ import {
   saveStateAsync,
   saveOverlayPresetsPatchAsync,
   saveObsTextRegistryAsync,
+  saveGeneralTimerPatchAsync,
   loadStateFromApi,
   saveMissionsBackup,
   loadMissionsBackup,
@@ -33,6 +34,7 @@ import {
   DEFAULT_DONOR_RANKINGS_FULL_THEME,
   shouldPreferLocalSigInventoryOverIncoming,
   shouldAvoidOverwritingLocalStateWithRemote,
+  wouldShrinkDonationData,
   hasCustomTimerDisplayStyles,
   isDefaultLikeTimerDisplayStyle,
   normalizeDonorsArray,
@@ -121,6 +123,7 @@ import {
 import { TABLE_FONT_FAMILY_OPTIONS, clampTableMemberSizePx, normalizeTableFontFamily } from "@/lib/table-font-style";
 import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
 import { planSigBulkReupload, sigBulkFilesWithoutNameMatch } from "@/lib/sig-image-bulk";
+import { parseSigMetaFromFileName } from "@/lib/sig-filename-meta";
 import { createSafeFilePreviewUrl, revokeSafeFilePreviewUrl } from "@/lib/safe-file-preview";
 import { formatSigImageUploadFailureMessage, SIG_UPLOAD_NGINX_413_HINT } from "@/lib/sig-upload-errors";
 import {
@@ -1003,20 +1006,25 @@ export default function AdminPage() {
     };
     return map[id] || map.default;
   };
-  const persistState = useCallback((s: AppState, opts?: { donorsAuthoritative?: boolean; settlementReset?: boolean }) => {
-    /** 사용자 명시 리셋이 아니면 실데이터→0원/빈 후원 전체 저장을 막는다 */
-    if (!opts?.settlementReset && !opts?.donorsAuthoritative) {
+  const persistState = useCallback((s: AppState, opts?: { donorsAuthoritative?: boolean; settlementReset?: boolean; omitDonationFields?: boolean }) => {
+    /** 사용자 명시 리셋이 아니면 실데이터→0원/빈·축소 후원 전체 저장을 막는다 */
+    if (!opts?.settlementReset && !opts?.donorsAuthoritative && !opts?.omitDonationFields) {
       try {
         const existing = loadState(user?.id);
         if (
           existing &&
-          shouldAvoidOverwritingLocalStateWithRemote(existing, s) &&
-          (totalCombined(existing) > totalCombined(s) ||
-            normalizeDonorsArray(existing.donors).length > normalizeDonorsArray(s.donors).length)
+          wouldShrinkDonationData(existing, s)
         ) {
           setSigExcelResult(
-            "후원·금액이 비어 있는 저장은 차단했습니다. 정산/후원 초기화는 메뉴에서 직접 실행해 주세요."
+            "후원·금액이 줄어든 저장은 차단했습니다. 정산/후원 초기화는 메뉴에서 직접 실행해 주세요."
           );
+          /** 후원 제외하고 나머지 설정만 저장 시도 */
+          saveStateAsync(s, user?.id, { omitDonationFields: true }).then((r) => {
+            if (r.ok) {
+              pendingUnsyncedRef.current = false;
+              setSyncStatus(r.storageFallback ? "error" : "synced");
+            }
+          });
           return;
         }
       } catch {}
@@ -1025,7 +1033,6 @@ export default function AdminPage() {
     lastLocalPersistAtRef.current = now;
     stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, s.updatedAt || now, now);
     pendingUnsyncedRef.current = true;
-    /** 배지를 매 저장마다 `loading`으로 두면 느린 서버에서 GET/POST가 쌓일 때 "동기화 중"이 계속 보임. 네트워크와 분리해 이전 상태를 유지한 뒤 결과만 반영 */
     saveStateAsync(s, user?.id, opts).then((r) => {
       if (r.ok) {
         if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
@@ -1097,7 +1104,7 @@ export default function AdminPage() {
       });
       if (!changed) return prev;
       const next: AppState = { ...prev, sigInventory, updatedAt: Date.now() };
-      persistState(next);
+      persistState(next, { omitDonationFields: true });
       return next;
     });
   }, [user?.id, persistState]);
@@ -1128,7 +1135,7 @@ export default function AdminPage() {
           overlayPresets: nextPresets,
           updatedAt: Date.now(),
         };
-        persistState(next);
+        persistState(next, { omitDonationFields: true });
         return next;
       });
     },
@@ -1553,7 +1560,13 @@ export default function AdminPage() {
       if (apiState) {
         stateUpdatedAtRef.current = apiState.updatedAt || 0;
         const { merged: toApply, didPreserve } = mergeIncomingStateSafely(apiState, local);
-        if (didPreserve) persistState(toApply);
+        if (didPreserve) {
+          /** 로컬 후원 복구 push는 허용, 축소 스냅샷이면 후원 필드 제외 */
+          persistState(
+            toApply,
+            wouldShrinkDonationData(local, toApply) ? { omitDonationFields: true } : undefined
+          );
+        }
         const serverInv = toApply.sigInventory || [];
         if (
           !didPreserve &&
@@ -1602,8 +1615,14 @@ export default function AdminPage() {
         setState(local);
         setSyncStatus("error");
         const hasMeaningfulData = hasMeaningfulBroadcastData(local);
-        if (hasMeaningfulData) {
+        const hasDonationData =
+          normalizeDonorsArray(local.donors).length > 0 || totalCombined(local) > 0;
+        if (hasDonationData) {
           saveStateAsync(local, user?.id).then((r) => { if (r.ok) setSyncStatus("synced"); });
+        } else if (hasMeaningfulData) {
+          saveStateAsync(local, user?.id, { omitDonationFields: true }).then((r) => {
+            if (r.ok) setSyncStatus("synced");
+          });
         }
       }
     });
@@ -1614,7 +1633,7 @@ export default function AdminPage() {
     return () => window.clearInterval(id);
   }, []);
 
-  /** 만료된 활성 타이머는 한 번 정지 스냅샷으로 고정 (00:00+일시정지 버튼 잔류·오버레이 1초 홀드 방지) */
+  /** 만료된 활성 타이머는 한 번 정지 — 타이머만 PATCH (전체 저장으로 후원 금액 초기화 금지) */
   useEffect(() => {
     const t = state.generalTimer;
     if (!t?.isActive) return;
@@ -1622,12 +1641,13 @@ export default function AdminPage() {
     setState((prev) => {
       if (!prev.generalTimer?.isActive) return prev;
       if (getEffectiveRemainingTime(prev.generalTimer) > 0) return prev;
+      const paused = pauseTimer(prev.generalTimer);
       const next: AppState = {
         ...prev,
-        generalTimer: pauseTimer(prev.generalTimer),
+        generalTimer: paused,
         updatedAt: Date.now(),
       };
-      persistState(next);
+      void saveGeneralTimerPatchAsync(paused, user?.id);
       return next;
     });
   }, [
@@ -1635,7 +1655,7 @@ export default function AdminPage() {
     state.generalTimer?.isActive,
     state.generalTimer?.remainingTime,
     state.generalTimer?.lastUpdated,
-    persistState,
+    user?.id,
   ]);
 
   // 다른 기기·OBS 저장 반영: SSE `state_updated` → 디바운스 GET, 저주기 폴링은 폴백만.
@@ -1712,7 +1732,10 @@ export default function AdminPage() {
         didPreserve &&
         Number(toApply.settlementResetAt || 0) <= Number(prev.settlementResetAt || 0)
       ) {
-        persistState(toApply);
+        persistState(
+          toApply,
+          wouldShrinkDonationData(prev, toApply) ? { omitDonationFields: true } : undefined
+        );
       }
       stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, remoteUpdatedAt);
       lastAppliedRemoteUpdatedAtRef.current = Math.max(
@@ -2403,19 +2426,8 @@ export default function AdminPage() {
         };
         const next = { ...syncOneShotSigItem(draft), updatedAt: draft.updatedAt };
         if (next === prev || adminSyncFingerprint(next) === adminSyncFingerprint(prev)) return prev;
-        /** 로딩 직후 default/0원 상태에서 시그 보정 POST로 후원을 날리지 않음 */
-        try {
-          const existing = loadState(user?.id);
-          if (
-            existing &&
-            shouldAvoidOverwritingLocalStateWithRemote(existing, next) &&
-            (totalCombined(existing) > totalCombined(next) ||
-              normalizeDonorsArray(existing.donors).length > normalizeDonorsArray(next.donors).length)
-          ) {
-            return prev;
-          }
-        } catch {}
-        persistState(next);
+        /** 시그 보정만 — 후원 필드는 API에서 제외 */
+        persistState(next, { omitDonationFields: true });
         return next;
       });
     }, 500);
@@ -2428,26 +2440,13 @@ export default function AdminPage() {
   }, [state.sigInventory, persistState, syncOneShotSigItem, user?.id]);
 
   useEffect(() => {
-    /** 저장 실패 시에만 재시도 — pendingUnsynced마다 5초 POST하면 SSE·폴링 루프가 난다 */
+    /** 저장 실패 재시도 — 후원 필드 제외(금액 초기화 방지) */
     const id = setInterval(() => {
       if (syncStatusRef.current !== "error") return;
-      const cur = stateRef.current;
-      try {
-        const existing = loadState(user?.id);
-        if (
-          existing &&
-          shouldAvoidOverwritingLocalStateWithRemote(existing, cur) &&
-          (totalCombined(existing) > totalCombined(cur) ||
-            normalizeDonorsArray(existing.donors).length > normalizeDonorsArray(cur.donors).length)
-        ) {
-          return;
-        }
-        if (isDefaultLikeState(cur) && hasMeaningfulBroadcastData(existing)) return;
-      } catch {}
-      persistState(cur);
+      persistState(stateRef.current, { omitDonationFields: true });
     }, 5000);
     return () => clearInterval(id);
-  }, [persistState, user?.id]);
+  }, [persistState]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !user?.id) return;
@@ -4052,13 +4051,17 @@ export default function AdminPage() {
             continue;
           }
           consecutive413 = 0;
-          const label = f.name.replace(/\.[^.]+$/, "");
-          pendingRows.push({ url, label, price: 0 });
+          const meta = parseSigMetaFromFileName(f.name);
+          pendingRows.push({
+            url,
+            label: meta.name || f.name.replace(/\.[^.]+$/, ""),
+            price: meta.priceFromFileName ? meta.price : 0,
+          });
           uploaded += 1;
           setSigUploadProgress({
             current: i + 1,
             total: files.length,
-            label: `완료 (${i + 1}/${files.length}): ${label}`,
+            label: `완료 (${i + 1}/${files.length}): ${meta.name}${meta.priceFromFileName ? ` · ${meta.price.toLocaleString("ko-KR")}원` : ""}`,
           });
           await new Promise((r) => setTimeout(r, 8));
         }
@@ -4129,7 +4132,8 @@ export default function AdminPage() {
                 .map((f) => f.name)
                 .join(", ")}${unmatchedFiles.length > 5 ? "…" : ""}\n`
             : "") +
-          `\n※ 파일명이 「04클럽춤.gif」처럼 시그 이름과 같을 때만 해당 행 이미지가 바뀝니다.\n` +
+          `\n※ 파일명이 「04클럽춤.gif」또는 「1,000,000_버터플라이.gif」(금액_이름)처럼 시그 이름과 같을 때만 해당 행이 바뀝니다.\n` +
+          `금액_이름 형식이면 가격도 자동 반영됩니다.\n` +
           `계속할까요?`
       );
       if (!ok) {
@@ -4157,14 +4161,20 @@ export default function AdminPage() {
             continue;
           }
           uploaded += 1;
+          const meta = parseSigMetaFromFileName(file.name);
           inventoryPatches.push({
             id: item.id,
-            patch: { imageUrl: url, isActive: true, isRolling: true },
+            patch: {
+              imageUrl: url,
+              isActive: true,
+              isRolling: true,
+              ...(meta.priceFromFileName ? { price: meta.price } : {}),
+            },
           });
           setSigUploadProgress({
             current: i + 1,
             total: plans.length,
-            label: `완료 (${i + 1}/${plans.length}): ${item.name}`,
+            label: `완료 (${i + 1}/${plans.length}): ${item.name}${meta.priceFromFileName ? ` · ${meta.price.toLocaleString("ko-KR")}원` : ""}`,
           });
         }
         if (inventoryPatches.length > 0) {
@@ -4273,11 +4283,20 @@ export default function AdminPage() {
         const { url } = await uploadSigImageFile(file);
         if (!url) return;
         const storedUrl = normalizeUploadedSigImageUrl(url);
+        const meta = parseSigMetaFromFileName(file.name);
         const patch =
           id === ONE_SHOT_SIG_ID
             ? { imageUrl: storedUrl }
-            : { imageUrl: storedUrl, isActive: true, isRolling: true };
+            : {
+                imageUrl: storedUrl,
+                isActive: true,
+                isRolling: true,
+                ...(meta.priceFromFileName ? { price: meta.price } : {}),
+              };
         updateSigItem(id, patch);
+        if (meta.priceFromFileName && id !== ONE_SHOT_SIG_ID) {
+          setSigPriceDraftMap((prev) => ({ ...prev, [id]: String(meta.price) }));
+        }
         if (id === ONE_SHOT_SIG_ID) {
           setRouletteForcedOneShotImageUrl(storedUrl);
         }
@@ -4300,6 +4319,13 @@ export default function AdminPage() {
       try {
         previewUrl = await createSafeFilePreviewUrl(file);
         if (previewUrl) setNewSigPreviewUrl(previewUrl);
+        const meta = parseSigMetaFromFileName(file.name);
+        if (meta.name) {
+          setNewSigName((prev) => (prev.trim() ? prev : meta.name));
+        }
+        if (meta.priceFromFileName) {
+          setNewSigPrice(String(meta.price));
+        }
         const { url } = await uploadSigImageFile(file);
         if (url) setNewSigImageUrl(normalizeUploadedSigImageUrl(url));
       } finally {
@@ -4693,8 +4719,9 @@ export default function AdminPage() {
     setState((prev: AppState) => {
       const current = prev[key];
       const nextTimer = updater(current);
-      const next: AppState = { ...prev, [key]: nextTimer };
-      persistState(next);
+      const next: AppState = { ...prev, [key]: nextTimer, updatedAt: Date.now() };
+      /** 타이머만 PATCH — 일시정지/분 설정이 전체 상태로 후원을 덮지 않게 함 */
+      void saveGeneralTimerPatchAsync(nextTimer, user?.id);
       return next;
     });
   };
@@ -4723,11 +4750,13 @@ export default function AdminPage() {
   const updateMatchTimerEnabled = (patch: Partial<AppState["matchTimerEnabled"]>) => {
     setState((prev: AppState) => {
       const base = prev.matchTimerEnabled || { general: true };
+      const matchTimerEnabled = { ...base, ...patch };
       const next: AppState = {
         ...prev,
-        matchTimerEnabled: { ...base, ...patch },
+        matchTimerEnabled,
+        updatedAt: Date.now(),
       };
-      persistState(next);
+      void saveGeneralTimerPatchAsync(prev.generalTimer, user?.id, { matchTimerEnabled });
       return next;
     });
   };
@@ -4737,16 +4766,18 @@ export default function AdminPage() {
     setState((prev: AppState) => {
       const valid = new Set(prev.members.map((mm) => mm.id));
       const mergedSettings = { ...prev.sigMatchSettings, overlayTimerEndAt: null as number | null };
+      const paused = pauseTimer(prev.generalTimer);
       const next: AppState = {
         ...prev,
-        generalTimer: pauseTimer(prev.generalTimer),
+        generalTimer: paused,
         sigMatchSettings: {
           ...mergedSettings,
           sigMatchPools: normalizeSigMatchPools(mergedSettings.sigMatchPools || [], valid),
           participantMemberIds: normalizeSigMatchParticipantIds(mergedSettings.participantMemberIds || [], valid),
         },
+        updatedAt: Date.now(),
       };
-      persistState(next);
+      void saveGeneralTimerPatchAsync(paused, user?.id);
       return next;
     });
   };
@@ -4760,20 +4791,22 @@ export default function AdminPage() {
     setState((prev: AppState) => {
       const valid = new Set(prev.members.map((mm) => mm.id));
       const mergedSettings = { ...prev.sigMatchSettings, overlayTimerEndAt: null as number | null };
+      const started = {
+        remainingTime: sec,
+        isActive: true,
+        lastUpdated: Date.now(),
+      };
       const next: AppState = {
         ...prev,
-        generalTimer: {
-          remainingTime: sec,
-          isActive: true,
-          lastUpdated: Date.now(),
-        },
+        generalTimer: started,
         sigMatchSettings: {
           ...mergedSettings,
           sigMatchPools: normalizeSigMatchPools(mergedSettings.sigMatchPools || [], valid),
           participantMemberIds: normalizeSigMatchParticipantIds(mergedSettings.participantMemberIds || [], valid),
         },
+        updatedAt: Date.now(),
       };
-      persistState(next);
+      void saveGeneralTimerPatchAsync(started, user?.id);
       return next;
     });
   };
@@ -4783,17 +4816,19 @@ export default function AdminPage() {
       const baseStyles = prev.timerDisplayStyles || {
         general: { showHours: false, fontColor: "", bgColor: "", borderColor: "", outlineColor: "", outlineWidth: 0.8, bgOpacity: 40, scalePercent: 100 },
       };
-      const next: AppState = {
-        ...prev,
-        timerDisplayStyles: {
-          ...baseStyles,
-          [key]: {
-            ...baseStyles[key],
-            ...patch,
-          },
+      const timerDisplayStyles = {
+        ...baseStyles,
+        [key]: {
+          ...baseStyles[key],
+          ...patch,
         },
       };
-      persistState(next);
+      const next: AppState = {
+        ...prev,
+        timerDisplayStyles,
+        updatedAt: Date.now(),
+      };
+      void saveGeneralTimerPatchAsync(prev.generalTimer, user?.id, { timerDisplayStyles });
       return next;
     });
   };
@@ -4884,7 +4919,15 @@ export default function AdminPage() {
   }, [user?.id]);
 
   const pushToonationLog = useCallback((message: string) => {
-    setToonationLogs((prev) => [{ id: `tl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, at: Date.now(), message }, ...prev].slice(0, 80));
+    setToonationLogs((prev) => {
+      const now = Date.now();
+      /** SSE 이중 브로드캐스트 등으로 같은 초·같은 문구가 연속으로 오면 1건만 남김 */
+      const head = prev[0];
+      if (head && head.message === message && Math.abs(now - head.at) < 2000) {
+        return prev;
+      }
+      return [{ id: `tl_${now}_${Math.random().toString(36).slice(2, 6)}`, at: now, message }, ...prev].slice(0, 80);
+    });
   }, []);
 
   const onBrowserRelayForwarded = useCallback(
@@ -8536,6 +8579,8 @@ export default function AdminPage() {
                     <h3 className="text-base font-semibold">시그 롤링</h3>
                     <p className="text-xs text-neutral-400">
                       GIF는 1회 재생 길이 후 크로스페이드, PNG 등은 표시 시간 후 전환합니다. OBS 브라우저 소스로 추가하세요.
+                      한 화면에서 <strong className="text-amber-200/90">좌=고액(30만 원 이상)</strong> /{" "}
+                      <strong className="text-sky-200/90">우=저액(30만 원 미만)</strong>으로 나눠 각각 롤링합니다.
                     </p>
                   </div>
                   <div className="flex flex-col items-stretch gap-2 sm:items-end">
@@ -8936,7 +8981,7 @@ export default function AdminPage() {
                     type="button"
                     className="px-3 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-sm disabled:opacity-50"
                     disabled={sigBulkReuploadBusy}
-                        title="PC에서 여러 GIF 선택 · 파일명이 시그 이름과 같을 때만 해당 행 이미지 교체(예: 04클럽춤.gif → 04클럽춤). 그 외는 새 시그 추가"
+                        title="PC에서 여러 GIF 선택 · 파일명이 시그 이름과 같거나 「금액_이름.gif」(예: 1,000,000_버터플라이.gif)이면 해당 행 이미지·가격 반영. 그 외는 새 시그 추가"
                     onClick={() => sigBulkReuploadInputRef.current?.click()}
                   >
                     {sigBulkReuploadBusy ? "업로드 중…" : "PC 시그 일괄 업로드"}
@@ -9054,14 +9099,14 @@ export default function AdminPage() {
                       <div className="text-[11px] text-neutral-400 mb-2">
                         신규 시그 이미지 미리보기 (아래 목록의 기존 시그에는 반영되지 않음)
                       </div>
-                      <div className="relative h-20 w-20 overflow-hidden rounded border border-white/10 bg-black/30">
+                      <div className="relative h-[48px] w-20 overflow-hidden rounded border border-white/10 bg-black/30">
                         {/* next/image는 비정상 URL 시 _next/static 조합 버그가 나올 수 있어 동적 시그는 native img 사용 */}
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           key={`new-sig-draft-${newSigPreviewUrl || newSigImageUrl}`}
                           src={resolveNewSigDraftPreviewSrc(newSigPreviewUrl, newSigImageUrl, user?.id)}
                           alt="신규 시그 미리보기"
-                          className="absolute inset-0 h-full w-full object-cover"
+                          className="absolute inset-0 h-full w-full object-contain"
                           loading="lazy"
                           decoding="async"
                           onError={(e) => {
@@ -9340,7 +9385,7 @@ export default function AdminPage() {
                         <div className="mt-2 flex items-start gap-2">
                           <button
                             type="button"
-                            className="relative h-16 w-16 overflow-hidden rounded border border-white/10 bg-black/30 transition hover:border-violet-300/70"
+                            className="relative h-[38px] w-[64px] overflow-hidden rounded border border-white/10 bg-black/30 transition hover:border-violet-300/70"
                             title="클릭해서 크게 보기"
                             onClick={() =>
                               setSigImagePreviewModal({
@@ -9365,7 +9410,7 @@ export default function AdminPage() {
                                 user?.id
                               )}
                               alt={`${item.name} 미리보기`}
-                              className="absolute inset-0 h-full w-full object-cover"
+                              className="absolute inset-0 h-full w-full object-contain"
                               loading="lazy"
                               decoding="async"
                               onError={(e) =>

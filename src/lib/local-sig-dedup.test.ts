@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildLocalSigEntryFromFileName,
   collectDuplicateItemIds,
   findLocalSigDuplicateGroups,
   listFromDriveFilesNotInCatalog,
@@ -30,5 +31,12 @@ describe("local-sig-dedup", () => {
     const catalog = [base({ file: "a.gif", name: "a" })];
     const out = listFromDriveFilesNotInCatalog(["a.gif", "b.gif"], catalog);
     expect(out).toEqual(["b.gif"]);
+  });
+
+  it("parses price prefix from filename when building entry", () => {
+    const entry = buildLocalSigEntryFromFileName("1,000,000_버터플라이.gif");
+    expect(entry.name).toBe("버터플라이");
+    expect(entry.price).toBe(1_000_000);
+    expect(entry.priceSource).toBe("filename");
   });
 });

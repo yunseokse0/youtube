@@ -1,4 +1,5 @@
 import type { LocalSigCatalogEntry } from "@/lib/local-sig-catalog";
+import { parseSigMetaFromFileName } from "@/lib/sig-filename-meta";
 
 export type LocalSigDuplicateReason = "name" | "file" | "imageUrl" | "namePrice";
 
@@ -134,15 +135,15 @@ export function listFromDriveFilesNotInCatalog(
 
 export function buildLocalSigEntryFromFileName(fileName: string, id?: string): LocalSigCatalogEntry {
   const file = fileName.trim();
-  const base = file.replace(/\.[^.]+$/i, "");
+  const meta = parseSigMetaFromFileName(file);
   const imageUrl = `/images/sigs/from-drive/${encodeURIComponent(file)}`;
   return {
     id: id || `local_add_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    name: base || file,
-    price: 0,
+    name: meta.name || meta.baseName || file,
+    price: meta.priceFromFileName ? meta.price : 0,
     category: "",
     file,
     imageUrl,
-    priceSource: "local",
+    priceSource: meta.priceFromFileName ? "filename" : "local",
   };
 }

@@ -8,7 +8,6 @@ import {
   SIG_OVERLAY_CARD_MEDIA_BOX_BROADCAST_CLASS,
   SIG_OVERLAY_CARD_MEDIA_BOX_CLASS,
   SIG_OVERLAY_CARD_MAX_PX,
-  sigOverlayBroadcastCardTotalHeightPx,
   SIG_OVERLAY_CARD_NAME_CLASS,
   SIG_OVERLAY_CARD_ONESHOT_FOOTER_CLASS,
   SIG_OVERLAY_CARD_PRICE_CLASS,
@@ -72,9 +71,11 @@ export default function OneShotSigCard({
   const shellStyle = useBroadcastSizing
     ? fillRowCell
       ? { width: "100%", height: "100%", minHeight: "100%", boxSizing: "border-box" as const }
-      : sigOverlayBroadcastCardShellStyle(cardScalePct, { withToggle: showToggle })
+      : sigOverlayBroadcastCardShellStyle(cardScalePct, { withToggle: showToggle, orientation: "landscape" })
     : undefined;
-  const mediaBoxStyle = useBroadcastSizing ? sigOverlayBroadcastMediaBoxStyle(cardScalePct) : undefined;
+  const mediaBoxStyle = useBroadcastSizing
+    ? sigOverlayBroadcastMediaBoxStyle(cardScalePct, "landscape")
+    : undefined;
   const sumLine =
     typeof selectedSigCount === "number" && selectedSigCount > 0
       ? `선정된 ${selectedSigCount}개 시그 합산 금액`
@@ -112,7 +113,7 @@ export default function OneShotSigCard({
             ? SIG_OVERLAY_CARD_MEDIA_BOX_BROADCAST_CLASS
             : compact
               ? `relative ${SIG_OVERLAY_CARD_MEDIA_BOX_CLASS}`
-              : "relative mb-2 h-40"
+              : "relative mb-2 aspect-[300/180] w-full"
         }`}
       >
         {sold ? (
@@ -131,8 +132,9 @@ export default function OneShotSigCard({
           sigImageUserId={sigImageUserId}
           alt={name}
           fill
+          objectFit="cover"
           sizes={useBroadcastSizing || compact ? `${SIG_OVERLAY_CARD_MAX_PX}px` : "160px"}
-          className={`relative z-[2] object-contain object-center ${
+          className={`relative z-[2] object-cover object-center ${
             compact
               ? sold
                 ? "brightness-[1.08] contrast-[1.05] saturate-[1.08]"

@@ -7,7 +7,7 @@ import { saveAppStateForRoulette } from "@/app/api/roulette/edge-state-store";
 import { readDonationQueue } from "@/app/api/donations/_shared/queue-store";
 import { loadAppStateForUserId } from "@/lib/app-state-server-load";
 import { getServerMemoryAppState } from "@/lib/server-memory-app-state";
-import { broadcastSseEvent } from "@/lib/sse-clients-hub";
+import { publishSseEvent } from "@/lib/sse-clients-hub";
 import { broadcastPlayerDonationAlert, enrichDonationEventWithSigMatch } from "./player-donation-alert";
 import {
   applyDonationToAppState,
@@ -62,13 +62,7 @@ async function broadcastDonationStateUpdated(
       : {}),
     ...(donationApplied ? { donationApplied } : {}),
   };
-  broadcastSseEvent(payload);
-  const origin = process.env.INTERNAL_ORIGIN || `http://127.0.0.1:${process.env.PORT || 3000}`;
-  await fetch(`${origin}/api/events`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  }).catch(() => {});
+  await publishSseEvent(payload);
 }
 
 /** 큐에 쌓인 후원을 서버에서 즉시 재시도(관리자 탭 없이 엑셀 반영) */

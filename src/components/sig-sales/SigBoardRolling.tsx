@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import Image from "next/image";
 import type { SigItem } from "@/types";
 import { resolveSigOverlayCardImageUrl } from "@/lib/constants";
+import { classifySigRollingOrientation } from "@/lib/sig-rolling-orientation";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 import SigSoldStampOverlay, { SIG_SOLD_STAMP_IMG_CLASS } from "@/components/sig-sales/SigSoldStampOverlay";
+import {
+  sigOverlayCardMediaBoxClass,
+  type SigOverlayMediaOrientation,
+} from "@/components/sig-sales/sig-overlay-card-size";
 import { canonicalSigIdFromWheelSliceId, ONE_SHOT_SIG_ID, sigMatchesMemberFilter } from "@/lib/sig-roulette";
 
 type SigBoardRollingProps = {
@@ -25,6 +29,79 @@ type SigBoardRollingProps = {
   /** false면 2.6초마다 페이지가 넘어가지 않음(방송 오버레이에서 GIF+롤링 이중 움직임 방지) */
   autoAdvancePages?: boolean;
 };
+
+function SigBoardCell({
+  item,
+  soldOut,
+  stampBurstKey,
+  soldOutStampUrl,
+  overlayUserId,
+  gifDelayMultiplier,
+}: {
+  item: SigItem;
+  soldOut: boolean;
+  stampBurstKey: number;
+  soldOutStampUrl: string;
+  overlayUserId: string;
+  gifDelayMultiplier: number;
+}) {
+  const [orientation, setOrientation] = useState<SigOverlayMediaOrientation>("landscape");
+  const onNaturalSize = useCallback((w: number, h: number) => {
+    setOrientation(classifySigRollingOrientation(w, h));
+  }, []);
+  const pct = Math.min(100, (item.soldCount / Math.max(1, item.maxCount)) * 100);
+  const isSingleSale = item.maxCount <= 1;
+
+  return (
+    <div className="glass-pastel-card relative overflow-hidden rounded-3xl">
+      <div className={`relative w-full overflow-hidden ${sigOverlayCardMediaBoxClass(orientation)}`}>
+        <SigSaleMedia
+          src={resolveSigOverlayCardImageUrl(item.name, item.imageUrl, overlayUserId || undefined)}
+          storedImageUrl={item.imageUrl}
+          sigImageUserId={overlayUserId || undefined}
+          alt={item.name}
+          fill
+          objectFit="contain"
+          className={`object-contain object-center ${soldOut ? "relative z-[2]" : "relative z-0"}`}
+          gifDelayMultiplier={gifDelayMultiplier}
+          onNaturalSize={onNaturalSize}
+        />
+        <AnimatePresence>
+          {soldOut && (
+            <motion.div
+              key={`stamp-${item.id}-${stampBurstKey}`}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.35, ease: "easeOut" }}
+              className="absolute inset-0 z-20"
+            >
+              <SigSoldStampOverlay
+                soldOutStampUrl={soldOutStampUrl}
+                stampMaxClass={`${SIG_SOLD_STAMP_IMG_CLASS} max-h-[min(8.5rem,70%)] max-w-[min(8.5rem,70%)]`}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+      <div className="p-2">
+        <div className="truncate text-sm font-bold pastel-text-outline">{item.name}</div>
+        <div className="text-xs text-pastel-ink/80 pastel-text-outline">
+          {isSingleSale ? (soldOut ? "완판" : "판매대기") : `${item.soldCount}/${item.maxCount}`} ·{" "}
+          {item.price.toLocaleString("ko-KR")}원
+        </div>
+        {!isSingleSale ? (
+          <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-pastel-blue/50">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-pastel-red via-pastel-orange to-pastel-blue"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 /** 회전판 오버레이에 포함 가능한 시그 보드(보드 노출 롤링 그리드) */
 export default function SigBoardRolling({
@@ -99,62 +176,23 @@ export default function SigBoardRolling({
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -40 }}
             transition={{ duration: 0.35, ease: "easeOut" }}
-            className="grid grid-cols-2 md:grid-cols-4 gap-1"
+            className="grid grid-cols-2 items-start gap-1 md:grid-cols-4"
           >
             {visible.map((item) => {
               const canonId = canonicalSigIdFromWheelSliceId(item.id);
               const soldOut =
                 item.soldCount >= item.maxCount ||
                 Boolean(soldOverrideSet?.has(item.id) || soldOverrideSet?.has(canonId));
-              const stampBurstKey = stampBurstIds[item.id] || 0;
-              const pct = Math.min(100, (item.soldCount / Math.max(1, item.maxCount)) * 100);
-              const isSingleSale = item.maxCount <= 1;
               return (
-                <div key={item.id} className="glass-pastel-card relative overflow-hidden rounded-3xl">
-                  <div className="relative aspect-[4/5] w-full overflow-hidden">
-                    <SigSaleMedia
-                      src={resolveSigOverlayCardImageUrl(item.name, item.imageUrl, overlayUserId || undefined)}
-                      storedImageUrl={item.imageUrl}
-                      sigImageUserId={overlayUserId || undefined}
-                      alt={item.name}
-                      fill
-                      className={`object-contain object-center ${soldOut ? "relative z-[2]" : "relative z-0"}`}
-                      gifDelayMultiplier={gifDelayMultiplier}
-                    />
-                    <AnimatePresence>
-                      {soldOut && (
-                        <motion.div
-                          key={`stamp-${item.id}-${stampBurstKey}`}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: 0.35, ease: "easeOut" }}
-                          className="absolute inset-0 z-20"
-                        >
-                          <SigSoldStampOverlay
-                            soldOutStampUrl={soldOutStampUrl}
-                            stampMaxClass={`${SIG_SOLD_STAMP_IMG_CLASS} max-h-[min(8.5rem,70%)] max-w-[min(8.5rem,70%)]`}
-                          />
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                  <div className="p-2">
-                    <div className="truncate text-sm font-bold pastel-text-outline">{item.name}</div>
-                    <div className="text-xs text-pastel-ink/80 pastel-text-outline">
-                      {isSingleSale ? (soldOut ? "완판" : "판매대기") : `${item.soldCount}/${item.maxCount}`} ·{" "}
-                      {item.price.toLocaleString("ko-KR")}원
-                    </div>
-                    {!isSingleSale ? (
-                      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-pastel-blue/50">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-pastel-red via-pastel-orange to-pastel-blue"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
+                <SigBoardCell
+                  key={item.id}
+                  item={item}
+                  soldOut={soldOut}
+                  stampBurstKey={stampBurstIds[item.id] || 0}
+                  soldOutStampUrl={soldOutStampUrl}
+                  overlayUserId={overlayUserId}
+                  gifDelayMultiplier={gifDelayMultiplier}
+                />
               );
             })}
           </motion.div>

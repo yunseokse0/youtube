@@ -1,4 +1,5 @@
 import { BUNDLED_SIG_PLACEHOLDER_URL } from "@/lib/constants";
+import { parseSigMetaFromFileName } from "@/lib/sig-filename-meta";
 import { isDiskUploadFlatFileName } from "@/lib/sig-image-mode";
 import { ONE_SHOT_SIG_ID } from "@/lib/sig-roulette";
 import type { SigItem } from "@/types";
@@ -27,11 +28,22 @@ export function isPersistedDiskSigUploadUrl(raw: string): boolean {
   return isDiskUploadFlatFileName(m[1]);
 }
 
-/** 파일명(확장자 제외)과 시그 이름 **완전 일치**만 허용(부분 일치·순서 매칭으로 덮어쓰지 않음) */
+/**
+ * 파일명 → 시그 행 매칭.
+ * - `1,000,000_버터플라이.gif` → 이름 `버터플라이`와 일치
+ * - `버터플라이.gif` / 전체 베이스명과도 일치(하위 호환)
+ */
 export function matchSigInventoryItemByFileName(items: SigItem[], fileName: string): SigItem | undefined {
-  const base = normalizeSigMatchKey(sigImageFileBaseName(fileName));
-  if (!base) return undefined;
-  return items.find((m) => normalizeSigMatchKey(m.name) === base);
+  const meta = parseSigMetaFromFileName(fileName);
+  const candidates = [meta.name, meta.baseName]
+    .map((s) => normalizeSigMatchKey(s))
+    .filter(Boolean);
+  if (!candidates.length) return undefined;
+  const unique = [...new Set(candidates)];
+  return items.find((m) => {
+    const key = normalizeSigMatchKey(m.name);
+    return key && unique.includes(key);
+  });
 }
 
 export function isSigInventoryImageNeedsReupload(item: SigItem): boolean {

@@ -9,17 +9,18 @@ import {
 describe("sig-rolling-orientation", () => {
   it("classifies landscape when width exceeds height", () => {
     expect(classifySigRollingOrientation(640, 360)).toBe("landscape");
+    expect(classifySigRollingOrientation(300, 180)).toBe("landscape");
     expect(classifySigRollingOrientation(301, 300)).toBe("landscape");
   });
 
   it("classifies portrait for square and tall images", () => {
     expect(classifySigRollingOrientation(300, 300)).toBe("portrait");
-    expect(classifySigRollingOrientation(202, 300)).toBe("portrait");
+    expect(classifySigRollingOrientation(180, 300)).toBe("portrait");
   });
 
-  it("uses swapped dimensions for landscape frame", () => {
-    expect(sigRollingMediaFramePx("portrait")).toEqual({ width: 202, height: 300 });
-    expect(sigRollingMediaFramePx("landscape")).toEqual({ width: 300, height: 202 });
+  it("uses 300×180 for landscape and swapped for portrait", () => {
+    expect(sigRollingMediaFramePx("landscape")).toEqual({ width: 300, height: 180 });
+    expect(sigRollingMediaFramePx("portrait")).toEqual({ width: 180, height: 300 });
   });
 
   it("sums pair outer width for mixed orientations", () => {

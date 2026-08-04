@@ -1,23 +1,37 @@
 import type { CSSProperties } from "react";
 import { buildTextOutlineStyle } from "@/lib/text-outline-style";
 
+/** 시그 판매/롤링 미디어 방향 — 원본 natural 비율로 판별 */
+export type SigOverlayMediaOrientation = "portrait" | "landscape";
+
 /**
- * 방송 결과 카드 셸 폭 상한(px). 원본 아트 비율은 202×300이나 OBS 세로 합성에서는 더 작게 두는 편이 안전함.
+ * 방송 결과 카드 셸 폭 상한(px). 가로 원본 아트는 **300×180**(5:3).
  * 추가 축소는 `/overlay/sig-sales` 의 `sigResultScalePct`(50~100%)로 조절.
  */
-/** 개별·한방 결과 카드 공통 폭(SelectedSigs compact `max-w-[188px]` 와 동일) */
+/** 가로형 결과 카드 공통 폭(SelectedSigs compact `max-w-[188px]` 와 동일) */
 export const SIG_OVERLAY_CARD_MAX_PX = 188;
 
-/** 시그 롤링 오버레이 등: 원본 해상도와 무관하게 표시할 고정 프레임(px) — 첨부 아트와 동일 */
-export const SIG_ROLLING_MEDIA_WIDTH_PX = 202;
-export const SIG_ROLLING_MEDIA_HEIGHT_PX = 300;
+/** 시그 롤링·카드 미디어 고정 프레임(px) — 가로 원본 300×180 / 세로는 교환 */
+export const SIG_ROLLING_MEDIA_WIDTH_PX = 300;
+export const SIG_ROLLING_MEDIA_HEIGHT_PX = 180;
 
 /**
- * 방송용 미디어 박스: **202×300** 세로형(약 2:3) — 개별 시그·한방 카드 동일 비율.
- * 고정 px 높이(`sigOverlayBroadcastMediaBoxStyle`)와 함께 쓸 때는 aspect 클래스를 쓰지 않는다(충돌 시 한방 카드만 납작해짐).
+ * 방송용 미디어 박스 aspect — 가로 300×180 / 세로 180×300.
+ * 고정 px 높이(`sigOverlayBroadcastMediaBoxStyle`)와 함께 쓸 때는 aspect 클래스를 쓰지 않는다.
  */
 export const SIG_OVERLAY_CARD_MEDIA_BOX_CLASS =
-  "mb-1 aspect-[202/300] w-full";
+  "mb-1 aspect-[300/180] w-full";
+export const SIG_OVERLAY_CARD_MEDIA_BOX_LANDSCAPE_CLASS = SIG_OVERLAY_CARD_MEDIA_BOX_CLASS;
+export const SIG_OVERLAY_CARD_MEDIA_BOX_PORTRAIT_CLASS =
+  "mb-1 aspect-[180/300] w-full";
+
+export function sigOverlayCardMediaBoxClass(
+  orientation: SigOverlayMediaOrientation = "landscape"
+): string {
+  return orientation === "portrait"
+    ? SIG_OVERLAY_CARD_MEDIA_BOX_PORTRAIT_CLASS
+    : SIG_OVERLAY_CARD_MEDIA_BOX_LANDSCAPE_CLASS;
+}
 
 /** 방송 결과 줄: 미디어 영역 고정 높이(px) — aspect 없음 */
 export const SIG_OVERLAY_CARD_MEDIA_BOX_BROADCAST_CLASS =
@@ -100,21 +114,48 @@ export function sigOverlayResultBandStyle(_scalePct?: number): CSSProperties {
   };
 }
 
-/** `cardScalePct` 반영 폭(px) — 미디어·셸 높이 계산 공통 (24~100%, 레이아웃 축소 허용) */
+/** `cardScalePct` 반영 가로형 기준 폭(px) */
 export function sigOverlayBroadcastCardWidthPx(scalePct = 100): number {
   const n = Math.floor(Number(scalePct) || 100);
   const clamped = Math.max(24, Math.min(100, n));
   return Math.round((SIG_OVERLAY_CARD_MAX_PX * clamped) / 100);
 }
 
-/** 개별·한방 동일 202×300 미디어 영역 높이(px) */
-export function sigOverlayBroadcastMediaHeightPx(scalePct = 100): number {
-  const w = sigOverlayBroadcastCardWidthPx(scalePct);
-  return Math.round(w * (SIG_ROLLING_MEDIA_HEIGHT_PX / SIG_ROLLING_MEDIA_WIDTH_PX));
+/**
+ * 방송 미디어 박스 크기(px).
+ * - landscape: 가로형 300×180 비율 (폭=기준폭)
+ * - portrait: 세로형 180×300 비율 (폭=기준폭×180/300, 높이=기준폭)
+ */
+export function sigOverlayBroadcastMediaSizePx(
+  scalePct = 100,
+  orientation: SigOverlayMediaOrientation = "landscape"
+): { width: number; height: number } {
+  const baseW = sigOverlayBroadcastCardWidthPx(scalePct);
+  if (orientation === "portrait") {
+    return {
+      width: Math.max(1, Math.round((baseW * SIG_ROLLING_MEDIA_HEIGHT_PX) / SIG_ROLLING_MEDIA_WIDTH_PX)),
+      height: baseW,
+    };
+  }
+  return {
+    width: baseW,
+    height: Math.max(1, Math.round((baseW * SIG_ROLLING_MEDIA_HEIGHT_PX) / SIG_ROLLING_MEDIA_WIDTH_PX)),
+  };
 }
 
-export function sigOverlayBroadcastMediaBoxStyle(scalePct = 100): CSSProperties {
-  const h = sigOverlayBroadcastMediaHeightPx(scalePct);
+/** 가로/세로 미디어 높이 — `sigOverlayBroadcastMediaSizePx` 래퍼 */
+export function sigOverlayBroadcastMediaHeightPx(
+  scalePct = 100,
+  orientation: SigOverlayMediaOrientation = "landscape"
+): number {
+  return sigOverlayBroadcastMediaSizePx(scalePct, orientation).height;
+}
+
+export function sigOverlayBroadcastMediaBoxStyle(
+  scalePct = 100,
+  orientation: SigOverlayMediaOrientation = "landscape"
+): CSSProperties {
+  const { height: h } = sigOverlayBroadcastMediaSizePx(scalePct, orientation);
   return {
     width: "100%",
     height: `${h}px`,
@@ -124,12 +165,13 @@ export function sigOverlayBroadcastMediaBoxStyle(scalePct = 100): CSSProperties 
   };
 }
 
-/** 개별·한방 결과 카드 셸 전체 높이(px) — 동일 값으로 맞춤 */
+/** 개별·한방 결과 카드 셸 전체 높이(px) */
 export function sigOverlayBroadcastCardTotalHeightPx(
   scalePct = 100,
-  withToggle = false
+  withToggle = false,
+  orientation: SigOverlayMediaOrientation = "landscape"
 ): number {
-  const mediaH = sigOverlayBroadcastMediaHeightPx(scalePct);
+  const mediaH = sigOverlayBroadcastMediaSizePx(scalePct, orientation).height;
   const footerH = withToggle ? 76 : 58;
   const shellPad = 16;
   return mediaH + footerH + shellPad;
@@ -137,20 +179,25 @@ export function sigOverlayBroadcastCardTotalHeightPx(
 
 export function sigOverlayBroadcastCardShellStyle(
   scalePct = 100,
-  opts?: { withToggle?: boolean }
+  opts?: { withToggle?: boolean; orientation?: SigOverlayMediaOrientation }
 ): CSSProperties {
-  const max = sigOverlayBroadcastCardWidthPx(scalePct);
-  const totalH = sigOverlayBroadcastCardTotalHeightPx(scalePct, Boolean(opts?.withToggle));
+  const orientation = opts?.orientation ?? "landscape";
+  const media = sigOverlayBroadcastMediaSizePx(scalePct, orientation);
+  const totalH = sigOverlayBroadcastCardTotalHeightPx(
+    scalePct,
+    Boolean(opts?.withToggle),
+    orientation
+  );
   return {
     flexGrow: 0,
     flexShrink: 0,
-    flexBasis: `${max}px`,
-    width: `${max}px`,
-    minWidth: max,
-    maxWidth: max,
+    flexBasis: `${media.width}px`,
+    width: `${media.width}px`,
+    minWidth: media.width,
+    maxWidth: media.width,
     height: totalH,
     minHeight: totalH,
-    alignSelf: "stretch",
+    alignSelf: "flex-start",
     boxSizing: "border-box",
     display: "flex",
     flexDirection: "column",

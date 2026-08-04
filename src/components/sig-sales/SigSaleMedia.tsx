@@ -6,6 +6,8 @@ import { listSigOverlayImageFallbackUrls, toSigOverlayAbsoluteAssetUrl } from "@
 import { isLikelyGifUrl } from "@/lib/sigGif";
 import SigSlowGif from "./SigSlowGif";
 
+export type SigSaleMediaObjectFit = "contain" | "cover";
+
 type SigSaleMediaProps = {
   src: string;
   alt: string;
@@ -15,11 +17,35 @@ type SigSaleMediaProps = {
   unoptimized?: boolean;
   onError?: (e: React.SyntheticEvent<HTMLImageElement, Event>) => void;
   onReady?: () => void;
+  /** 로드된 naturalWidth/Height — 가로/세로 UI 분기용 */
+  onNaturalSize?: (width: number, height: number) => void;
+  /**
+   * fill 네이티브 img에 적용할 object-fit.
+   * 미지정 시 className의 object-cover/contain을 존중하고, 없으면 contain.
+   */
+  objectFit?: SigSaleMediaObjectFit;
   gifDelayMultiplier?: number;
   /** 1차 404 시 저장 경로를 `/uploads/sigs/<user>/…` 로 재시도 */
   sigImageUserId?: string;
   storedImageUrl?: string;
 };
+
+function resolveObjectFit(
+  objectFit: SigSaleMediaObjectFit | undefined,
+  className: string | undefined
+): SigSaleMediaObjectFit {
+  if (objectFit === "cover" || objectFit === "contain") return objectFit;
+  if (/\bobject-cover\b/.test(className || "")) return "cover";
+  return "contain";
+}
+
+function buildFillClassName(className: string | undefined, fit: SigSaleMediaObjectFit): string {
+  const cleaned = String(className || "")
+    .replace(/\bobject-(?:contain|cover|fill|none|scale-down)\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return `${cleaned} absolute inset-0 h-full w-full object-${fit}`.trim();
+}
 
 /**
  * GIF: 배수 `<= 1`이면 브라우저 네이티브 재생(부드러움). `> 1`이면 캔버스로 의도적으로 느리게.
@@ -34,6 +60,8 @@ export default function SigSaleMedia({
   unoptimized,
   onError,
   onReady,
+  onNaturalSize,
+  objectFit,
   gifDelayMultiplier = 1,
   sigImageUserId,
   storedImageUrl,
@@ -45,6 +73,9 @@ export default function SigSaleMedia({
   const readyFiredRef = useRef(false);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
+  const onNaturalSizeRef = useRef(onNaturalSize);
+  onNaturalSizeRef.current = onNaturalSize;
+  const fit = resolveObjectFit(objectFit, className);
 
   useEffect(() => {
     const fallbacks = sigImageUserId
@@ -70,6 +101,21 @@ export default function SigSaleMedia({
     readyFiredRef.current = true;
     onReadyRef.current?.();
   }, []);
+
+  const reportNaturalSize = useCallback((img: HTMLImageElement | null) => {
+    if (!img) return;
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    if (w > 0 && h > 0) onNaturalSizeRef.current?.(w, h);
+  }, []);
+
+  const handleImageLoad = useCallback(
+    (e: React.SyntheticEvent<HTMLImageElement>) => {
+      reportNaturalSize(e.currentTarget);
+      notifyReady();
+    },
+    [notifyReady, reportNaturalSize]
+  );
 
   const handleImageError = useCallback(
     (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
@@ -98,9 +144,7 @@ export default function SigSaleMedia({
 
   if ((preferNativeImg || isLikelyGifUrl(displaySrc)) && !gifFail) {
     if (gifDelayMultiplier <= 1 || preferNativeImg) {
-      const fillClass = fill
-        ? `${className ?? ""} absolute inset-0 h-full w-full object-contain`.trim()
-        : className;
+      const fillClass = fill ? buildFillClassName(className, fit) : className;
       return (
         // eslint-disable-next-line @next/next/no-img-element -- OBS CEF: next/image GIF가 검게 나오는 경우 방지
         <img
@@ -109,7 +153,10 @@ export default function SigSaleMedia({
           className={fillClass}
           decoding="async"
           onError={handleImageError}
-          onLoad={notifyReady}
+          onLoad={handleImageLoad}
+          ref={(el) => {
+            if (el?.complete) reportNaturalSize(el);
+          }}
         />
       );
     }
@@ -133,10 +180,13 @@ export default function SigSaleMedia({
       sizes={sizes}
       priority={Boolean(fill)}
       unoptimized={unoptimized ?? true}
-      className={className}
+      className={fill ? buildFillClassName(className, fit) : className}
       onError={handleImageError}
-      onLoad={notifyReady}
-      onLoadingComplete={notifyReady}
+      onLoad={handleImageLoad}
+      onLoadingComplete={(img) => {
+        reportNaturalSize(img);
+        notifyReady();
+      }}
     />
   );
 }

@@ -751,11 +751,20 @@ describe("resolveSpinQueueForSession", () => {
 });
 
 describe("sigOverlayBroadcast card metrics", () => {
-  it("한방·개별 카드가 동일 폭·미디어 높이(px)를 쓴다", () => {
+  it("한방·개별 가로형 카드가 동일 폭·미디어 높이(px)를 쓴다", () => {
     const w = sigOverlayBroadcastCardWidthPx(78);
-    const mediaH = sigOverlayBroadcastMediaHeightPx(78);
+    const mediaH = sigOverlayBroadcastMediaHeightPx(78, "landscape");
     expect(w).toBe(Math.round(188 * 0.78));
-    expect(mediaH).toBe(Math.round(w * (300 / 202)));
+    expect(mediaH).toBe(Math.round(w * (180 / 300)));
+  });
+
+  it("세로형 카드는 폭이 줄고 높이가 기준폭이 된다", () => {
+    const baseW = sigOverlayBroadcastCardWidthPx(100);
+    const mediaH = sigOverlayBroadcastMediaHeightPx(100, "portrait");
+    expect(mediaH).toBe(baseW);
+    expect(sigOverlayBroadcastMediaHeightPx(100, "portrait")).toBeGreaterThan(
+      sigOverlayBroadcastMediaHeightPx(100, "landscape")
+    );
   });
 
   it("한방·개별 셸 전체 높이가 동일(px)", () => {

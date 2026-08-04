@@ -12,6 +12,7 @@ import {
   membersDifferByIds,
   shouldAvoidOverwritingLocalStateWithRemote,
   shouldPreferLocalSigInventoryOverIncoming,
+  wouldShrinkDonationData,
 } from "@/lib/state";
 import { DEFAULT_SIG_INVENTORY } from "@/lib/constants";
 import type { AppState, Member } from "@/types";
@@ -89,6 +90,27 @@ describe("member sync helpers", () => {
       settlementResetAt: 200,
     };
     expect(shouldAvoidOverwritingLocalStateWithRemote(local, remoteReset)).toBe(false);
+  });
+
+  it("detects donation shrinkage not only empty wipe", () => {
+    const local: AppState = {
+      ...defaultState(),
+      members: [
+        { id: "m1", name: "BT태호", account: 260000, toon: 0, contribution: 260000 },
+        { id: "m2", name: "대니현", account: 100000, toon: 0, contribution: 100000 },
+      ],
+      donors: [
+        { id: "d1", name: "a", amount: 260000, memberId: "m1", at: 1, target: "account" },
+        { id: "d2", name: "b", amount: 100000, memberId: "m2", at: 2, target: "account" },
+      ],
+    };
+    const shrunk: AppState = {
+      ...local,
+      members: [{ id: "m1", name: "BT태호", account: 260000, toon: 0, contribution: 260000 }],
+      donors: [{ id: "d1", name: "a", amount: 260000, memberId: "m1", at: 1, target: "account" }],
+    };
+    expect(wouldShrinkDonationData(local, shrunk)).toBe(true);
+    expect(wouldShrinkDonationData(local, local)).toBe(false);
   });
 
   it("buildDefaultMembersCount(1) is not default-like for 3-slot default", () => {

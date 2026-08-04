@@ -29,7 +29,7 @@ import type {
   DonorsAmountFormat,
 } from "@/types";
 import { ONE_SHOT_SIG_ID, sigMatchesMemberFilter } from "@/lib/sig-roulette";
-import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
+import { mergeGeneralTimerPreferEffective, snapshotTimerForPersist } from "@/lib/timer-utils";
 import { sanitizeOverlayEmbedMediaUrl } from "@/lib/gif-url";
 import {
   BROADCAST_SIG_PRESET_NAMES,
@@ -186,6 +186,7 @@ export function getUnifiedSigRollingItems(
         url: normalizeSigImageUrlStored(x.imageUrl).trim(),
         label: (m.label && String(m.label).trim()) || String(x.name || "").trim(),
         order: m.order ?? idx,
+        price: Math.max(0, Math.floor(Number(x.price) || 0)),
       };
     })
     .filter((x) => x.url);
@@ -196,10 +197,18 @@ export function getUnifiedSigRollingItems(
     if (inv) return Boolean(inv.isRolling);
     return true;
   });
-  if (invRows.length === 0) return legacy;
+  if (invRows.length === 0) {
+    return legacy.map((x) => {
+      const inv = invById.get(x.id);
+      return {
+        ...x,
+        price: Math.max(0, Math.floor(Number(inv?.price ?? x.price) || 0)),
+      };
+    });
+  }
   return invRows
     .sort((a, b) => a.order - b.order)
-    .map(({ id, url, label }) => ({ id, url, label }));
+    .map(({ id, url, label, price }) => ({ id, url, label, price }));
 }
 
 /** 시그 풀: 멤버는 최대 한 풀에만, 풀은 1인 이상(1인 팀·1:2·삼자 구분용) */
@@ -1402,6 +1411,11 @@ export type SaveStateAsyncOptions = {
   donorsAuthoritative?: boolean;
   /** 정산 리셋 — placeholder member LS 복원·후원 merge 되살림 방지 */
   settlementReset?: boolean;
+  /**
+   * 시그/테마/자동보정 등 — API 본문에서 members/donors 를 빼 서버 후원을 건드리지 않음.
+   * (후원금은 정산·후원 삭제 등 명시 플래그 없이는 절대 초기화되면 안 됨)
+   */
+  omitDonationFields?: boolean;
 };
 
 export type SaveStateAsyncResult = {
@@ -1652,12 +1666,25 @@ function appStatePayloadForApi(
     ...(options?.donorsAuthoritative ? { donorsAuthoritative: true as const } : {}),
     ...(options?.settlementReset ? { settlementReset: true as const } : {}),
   };
-  if (!rouletteState) {
-    return omitPlaceholderMembersFromApiPayload({ ...base, ...flags });
+  let payload = omitPlaceholderMembersFromApiPayload({ ...base, ...flags });
+  /** 시그/테마/자동 저장 — 후원 필드를 API에서 제거해 서버 금액을 절대 건드리지 않음 */
+  if (options?.omitDonationFields && !options?.settlementReset && !options?.donorsAuthoritative) {
+    const {
+      donors: _d,
+      members: _m,
+      memberPositions: _mp,
+      memberPositionMode: _mpm,
+      rankPositionLabels: _rpl,
+      settlementResetAt: _sra,
+      ...restSafe
+    } = payload;
+    payload = restSafe;
   }
-  return omitPlaceholderMembersFromApiPayload({
-    ...base,
-    ...flags,
+  if (!rouletteState) {
+    return payload;
+  }
+  return {
+    ...payload,
     rouletteState: {
       menuCount: rouletteState.menuCount,
       menuFillFromAllActive: rouletteState.menuFillFromAllActive,
@@ -1665,7 +1692,7 @@ function appStatePayloadForApi(
       sigResultScalePct: rouletteState.sigResultScalePct,
       overlayReloadNonce: rouletteState.overlayReloadNonce,
     },
-  } as Partial<AppState>);
+  } as Partial<AppState> & { donorsAuthoritative?: boolean; settlementReset?: boolean };
 }
 
 /** LS에 실멤버가 있을 때 placeholder 로 덮지 않음 */
@@ -1753,8 +1780,8 @@ export async function saveStateAsync(
         guarded = syncMemberTotalsFromDonors({ ...guarded, donors: mergedDonors });
       }
     }
-    /** 테마 복구·부트스트랩 등에서 0원/빈 후원 전체 저장이 실데이터를 덮지 않게 한다 */
-    if (local && shouldAvoidOverwritingLocalStateWithRemote(local, guarded)) {
+    /** 테마·자동저장·stale React 가 실후원을 덮지 않게 LS 금액을 유지 */
+    if (local && (shouldAvoidOverwritingLocalStateWithRemote(local, guarded) || wouldShrinkDonationData(local, guarded))) {
       guarded = {
         ...guarded,
         members: local.members,
@@ -1765,6 +1792,16 @@ export async function saveStateAsync(
       if (normalizeDonorsArray(guarded.donors).length > 0) {
         guarded = syncMemberTotalsFromDonors(guarded);
       }
+    }
+    /** 시그/테마 전용 저장 — LS에도 후원 필드는 기존 유지 */
+    if (saveOpts?.omitDonationFields && local) {
+      guarded = {
+        ...guarded,
+        members: local.members,
+        donors: normalizeDonorsArray(local.donors),
+        memberPositions: local.memberPositions ?? guarded.memberPositions,
+        settlementResetAt: local.settlementResetAt ?? guarded.settlementResetAt,
+      };
     }
   }
   if (local && !saveOpts?.settlementReset) {
@@ -1793,6 +1830,17 @@ export async function saveStateAsync(
       guarded = { ...guarded, timerDisplayStyles: local.timerDisplayStyles };
     }
   }
+  /** 후원이 여전히 비거나 줄어든 채 전체 POST 되면 API에서 후원 필드 제외 (서버 기존값 유지) */
+  const omitDonations =
+    Boolean(saveOpts?.omitDonationFields) ||
+    (!saveOpts?.settlementReset &&
+      !saveOpts?.donorsAuthoritative &&
+      local != null &&
+      wouldShrinkDonationData(local, guarded));
+  const apiOpts: SaveStateAsyncOptions = {
+    ...saveOpts,
+    ...(omitDonations ? { omitDonationFields: true } : {}),
+  };
   const json = JSON.stringify(guarded);
   /** 테마 변경 직후 미리보기가 멤버를 잃지 않게 서버 대기 전에 LS 반영 */
   try {
@@ -1801,7 +1849,7 @@ export async function saveStateAsync(
   notifyBroadcastStateLocalUpdated(userId, guarded.updatedAt);
   try {
     const result = await enqueueServerSave(
-      JSON.stringify(appStatePayloadForApi(guarded, userId, saveOpts)),
+      JSON.stringify(appStatePayloadForApi(guarded, userId, apiOpts)),
       userId,
       guarded
     );
@@ -1918,6 +1966,47 @@ export async function saveOverlayPresetsPatchAsync(
     overlayPresets: normalizeOverlayPresetsMedia(mergedLocal.overlayPresets),
     overlaySettings: overlaySettingsPatchWithoutObsText(mergedLocal.overlaySettings),
   };
+  try {
+    return await enqueueServerSave(JSON.stringify(patch), userId, mergedLocal);
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
+ * 일반 타이머만 PATCH — members/donors 를 실지 않음.
+ * 타이머 만료·일시정지 시 전체 saveStateAsync 가 빈 후원 스냅샷을 올리면 누적 금액이 초기화되던 회귀 방지.
+ */
+export async function saveGeneralTimerPatchAsync(
+  generalTimer: TimerState,
+  userId?: string | null,
+  extras?: {
+    matchTimerEnabled?: AppState["matchTimerEnabled"];
+    timerDisplayStyles?: AppState["timerDisplayStyles"];
+  }
+): Promise<SaveStateAsyncResult> {
+  if (typeof window === "undefined") return { ok: false };
+  const now = Date.now();
+  const timer = snapshotTimerForPersist(generalTimer, now);
+  const local = loadState(userId);
+  const foundation = local ?? defaultState();
+  const mergedLocal: AppState = normalizeStateForPersistence({
+    ...foundation,
+    generalTimer: timer,
+    ...(extras?.matchTimerEnabled ? { matchTimerEnabled: extras.matchTimerEnabled } : {}),
+    ...(extras?.timerDisplayStyles ? { timerDisplayStyles: extras.timerDisplayStyles } : {}),
+    updatedAt: now,
+  });
+  try {
+    window.localStorage.setItem(storageKey(userId), JSON.stringify(mergedLocal));
+  } catch {}
+  notifyBroadcastStateLocalUpdated(userId, now);
+  const patch: Record<string, unknown> = {
+    updatedAt: now,
+    generalTimer: timer,
+  };
+  if (extras?.matchTimerEnabled) patch.matchTimerEnabled = extras.matchTimerEnabled;
+  if (extras?.timerDisplayStyles) patch.timerDisplayStyles = extras.timerDisplayStyles;
   try {
     return await enqueueServerSave(JSON.stringify(patch), userId, mergedLocal);
   } catch {
@@ -2591,7 +2680,7 @@ export function hasMeaningfulBroadcastData(state: AppState): boolean {
 
 /**
  * 원격 GET 스냅샷으로 localStorage를 덮으면 안 되는지.
- * 서버(메모리/빈 Redis) 0원·빈 후원이 로컬 실데이터를 지우는 재로그인 초기화를 막는다.
+ * 서버(메모리/빈 Redis) 0원·빈 후원·후원 축소가 로컬 실데이터를 지우는 것을 막는다.
  * 의도적 정산 리셋(`settlementResetAt` 원격이 더 최신)은 덮어쓰기를 허용한다.
  */
 export function shouldAvoidOverwritingLocalStateWithRemote(
@@ -2606,13 +2695,24 @@ export function shouldAvoidOverwritingLocalStateWithRemote(
   const incomingReset = Number(incoming.settlementResetAt || 0);
   if (incomingReset > existingReset) return false;
 
+  return wouldShrinkDonationData(existing, incoming);
+}
+
+/** 후원 건수·합계가 줄어드는지 (명시적 리셋 없이 덮어쓰면 안 되는 경우) */
+export function wouldShrinkDonationData(
+  existing: AppState | null | undefined,
+  incoming: AppState | null | undefined
+): boolean {
+  if (!existing || !incoming) return false;
   const existingDonors = normalizeDonorsArray(existing.donors);
   const incomingDonors = normalizeDonorsArray(incoming.donors);
   const existingTotal = totalCombined(existing);
   const incomingTotal = totalCombined(incoming);
 
   if (existingDonors.length > 0 && incomingDonors.length === 0) return true;
-  if (existingTotal > 0 && incomingTotal === 0 && existingDonors.length >= incomingDonors.length) {
+  if (existingDonors.length > 0 && incomingDonors.length < existingDonors.length) return true;
+  if (existingTotal > 0 && incomingTotal === 0) return true;
+  if (existingTotal > 0 && incomingTotal < existingTotal * 0.5 && incomingDonors.length <= existingDonors.length) {
     return true;
   }
   return false;

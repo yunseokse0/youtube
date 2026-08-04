@@ -1,23 +1,25 @@
 "use client";
 
 import { motion } from "framer-motion";
-import type { ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import type { SigItem } from "@/types";
 import { canonicalSigIdFromWheelSliceId, formatWon } from "@/lib/sig-roulette";
 import { resolveSigOverlayCardImageUrl, resolveSigRollingImageUrl } from "@/lib/constants";
+import { classifySigRollingOrientation } from "@/lib/sig-rolling-orientation";
 import SigSaleMedia from "@/components/sig-sales/SigSaleMedia";
 import {
   SIG_OVERLAY_CARD_FOOTER_CLASS,
   SIG_OVERLAY_CARD_MEDIA_BOX_BROADCAST_CLASS,
-  SIG_OVERLAY_CARD_MEDIA_BOX_CLASS,
   SIG_OVERLAY_CARD_MAX_PX,
   SIG_OVERLAY_CARD_NAME_CLASS,
   SIG_OVERLAY_CARD_PRICE_CLASS,
   SIG_OVERLAY_CARD_SHELL_CLASS,
   sigOverlayBroadcastCardShellStyle,
   sigOverlayBroadcastMediaBoxStyle,
+  sigOverlayCardMediaBoxClass,
   sigOverlayCardNameOutlineStyle,
   sigOverlayCardPriceOutlineStyle,
+  type SigOverlayMediaOrientation,
 } from "@/components/sig-sales/sig-overlay-card-size";
 import SigSoldStampOverlay, {
   SIG_SOLD_STAMP_IMG_CLASS_BROADCAST,
@@ -57,6 +59,204 @@ type SelectedSigsProps = {
   forceSoldAll?: boolean;
 };
 
+function SelectedSigCard({
+  item,
+  idx,
+  latestIdx,
+  sold,
+  isLatestConfirmed,
+  entranceOnlyLatest,
+  disableCardMotion,
+  broadcastMatch,
+  compact,
+  showConfirmedBadge,
+  showToggle,
+  disabled,
+  soldOutStampUrl,
+  cardScalePct,
+  gifDelayMultiplier,
+  sigImageUserId,
+  onToggleSold,
+}: {
+  item: SigItem;
+  idx: number;
+  latestIdx: number;
+  sold: boolean;
+  isLatestConfirmed: boolean;
+  entranceOnlyLatest: boolean;
+  disableCardMotion: boolean;
+  broadcastMatch: boolean;
+  compact: boolean;
+  showConfirmedBadge: boolean;
+  showToggle: boolean;
+  disabled: boolean;
+  soldOutStampUrl: string;
+  cardScalePct: number;
+  gifDelayMultiplier: number;
+  sigImageUserId?: string;
+  onToggleSold: (id: string) => void;
+}) {
+  const canonId = canonicalSigIdFromWheelSliceId(item.id);
+  const [orientation, setOrientation] = useState<SigOverlayMediaOrientation>("landscape");
+  const isNewest = idx === latestIdx;
+
+  const onNaturalSize = useCallback((w: number, h: number) => {
+    setOrientation(classifySigRollingOrientation(w, h));
+  }, []);
+
+  const entrance = disableCardMotion
+    ? { initial: false as const, animate: undefined, transition: undefined }
+    : entranceOnlyLatest && !isNewest
+      ? { initial: false as const, animate: undefined, transition: undefined }
+      : {
+          initial: {
+            opacity: 0,
+            y: entranceOnlyLatest ? 14 : 28,
+            scale: entranceOnlyLatest ? 0.97 : 0.92,
+          } as const,
+          animate: { opacity: 1, y: 0, scale: 1 } as const,
+          transition: {
+            delay: entranceOnlyLatest ? 0 : idx * 0.08,
+            duration: entranceOnlyLatest ? 0.28 : 0.35,
+          },
+        };
+
+  return (
+    <motion.article
+      key={`${canonId}__slot_${idx}`}
+      initial={entrance.initial}
+      animate={entrance.animate}
+      transition={entrance.transition}
+      style={
+        broadcastMatch
+          ? sigOverlayBroadcastCardShellStyle(cardScalePct, {
+              withToggle: showToggle,
+              orientation,
+            })
+          : undefined
+      }
+      className={`relative overflow-hidden rounded-xl border bg-neutral-900/70 ${
+        broadcastMatch ? "flex w-full max-w-full flex-col" : "min-w-0"
+      } ${
+        broadcastMatch
+          ? SIG_OVERLAY_CARD_SHELL_CLASS
+          : compact
+            ? orientation === "portrait"
+              ? "w-full max-w-[113px] justify-self-start"
+              : "w-full max-w-[188px] justify-self-start"
+            : ""
+      } ${isLatestConfirmed ? "border-yellow-300 shadow-[0_0_24px_rgba(250,204,21,0.45)]" : broadcastMatch ? "" : "border-white/20"}`}
+    >
+      <div className={broadcastMatch ? "relative z-[2] flex flex-1 flex-col" : "relative z-[2]"}>
+        {showConfirmedBadge ? (
+          <div className="absolute left-2 top-2 z-20 rounded bg-emerald-600/90 px-2 py-0.5 text-[10px] font-black text-white">
+            확정
+          </div>
+        ) : null}
+        {isLatestConfirmed ? (
+          <motion.div
+            className="pointer-events-none absolute inset-0 z-10 border-2 border-yellow-300/85"
+            initial={{ opacity: 0.1 }}
+            animate={{ opacity: [0.15, 0.9, 0.2] }}
+            transition={{ duration: 0.9, repeat: 1 }}
+          />
+        ) : null}
+        <div
+          style={broadcastMatch ? sigOverlayBroadcastMediaBoxStyle(cardScalePct, orientation) : undefined}
+          className={`overflow-hidden rounded-lg border border-white/20 bg-black/40 ${
+            broadcastMatch
+              ? SIG_OVERLAY_CARD_MEDIA_BOX_BROADCAST_CLASS
+              : `relative ${sigOverlayCardMediaBoxClass(orientation)}`
+          }`}
+        >
+          <SigSaleMedia
+            src={
+              sigImageUserId
+                ? resolveSigOverlayCardImageUrl(item.name, item.imageUrl, sigImageUserId)
+                : resolveSigRollingImageUrl(item.name, item.imageUrl, sigImageUserId)
+            }
+            storedImageUrl={item.imageUrl}
+            sigImageUserId={sigImageUserId}
+            alt={item.name}
+            fill
+            objectFit="contain"
+            sizes={
+              broadcastMatch
+                ? `${SIG_OVERLAY_CARD_MAX_PX}px`
+                : compact
+                  ? "(max-width:768px) 45vw, 188px"
+                  : "240px"
+            }
+            className="relative z-[2] object-contain object-center"
+            gifDelayMultiplier={gifDelayMultiplier}
+            onNaturalSize={onNaturalSize}
+          />
+          {sold ? (
+            <SigSoldStampOverlay
+              soldOutStampUrl={soldOutStampUrl}
+              stampMaxClass={broadcastMatch ? SIG_SOLD_STAMP_IMG_CLASS_BROADCAST : undefined}
+            />
+          ) : null}
+        </div>
+        <div
+          className={
+            broadcastMatch
+              ? SIG_OVERLAY_CARD_FOOTER_CLASS
+              : compact
+                ? "space-y-0 p-1"
+                : "space-y-1 p-2"
+          }
+        >
+          <div
+            className={
+              broadcastMatch
+                ? SIG_OVERLAY_CARD_NAME_CLASS
+                : `truncate font-bold ${compact ? "text-[10px]" : "text-sm"}`
+            }
+            style={
+              broadcastMatch
+                ? sigOverlayCardNameOutlineStyle(16)
+                : compact
+                  ? sigOverlayCardNameOutlineStyle(10)
+                  : sigOverlayCardNameOutlineStyle(14)
+            }
+          >
+            {item.name}
+          </div>
+          <div
+            className={
+              broadcastMatch
+                ? SIG_OVERLAY_CARD_PRICE_CLASS
+                : compact
+                  ? "text-[9px] font-semibold tabular-nums"
+                  : "text-xs font-semibold tabular-nums"
+            }
+            style={
+              broadcastMatch
+                ? sigOverlayCardPriceOutlineStyle(17)
+                : compact
+                  ? sigOverlayCardPriceOutlineStyle(9)
+                  : sigOverlayCardPriceOutlineStyle(12)
+            }
+          >
+            {formatWon(item.price)}
+          </div>
+          {showToggle ? (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onToggleSold(item.id)}
+              className={`w-full rounded px-2 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${sold ? "bg-rose-700/85 text-white" : "bg-emerald-700/85 text-white"}`}
+            >
+              {sold ? "판매 취소" : "판매 완료"}
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </motion.article>
+  );
+}
+
 export default function SelectedSigs({
   items,
   soldOutStampUrl,
@@ -95,7 +295,7 @@ export default function SelectedSigs({
     ? `repeat(${columnCount}, auto)`
     : `repeat(${columnCount}, minmax(0, 1fr))`;
   const gridAlign =
-    compact && trailingActive && matchOneShotCardSize ? "items-stretch" : compact && trailingActive ? "items-start" : "";
+    compact && trailingActive && matchOneShotCardSize ? "items-start" : compact && trailingActive ? "items-start" : "";
   const justifyCompact =
     compact && compactGridJustify === "start" ? "justify-start" : compact ? "justify-center" : "";
   const sigRowJustify =
@@ -110,176 +310,42 @@ export default function SelectedSigs({
           : "";
   const nowrapRow = overlaySingleRow ? "flex-nowrap overflow-visible" : "flex-wrap";
   const sectionClass = overlaySingleRow
-    ? `flex min-w-0 max-w-full ${nowrapRow} ${
-        matchOneShotCardSize && trailingActive ? "items-stretch" : "items-start"
-      } ${sigRowJustify || "justify-center"} gap-1 sm:gap-1 ${className}`.trim()
+    ? `flex min-w-0 max-w-full ${nowrapRow} items-start ${sigRowJustify || "justify-center"} gap-1 sm:gap-1 ${className}`.trim()
     : broadcastMatch
-      ? `flex w-full min-w-0 max-w-full flex-wrap justify-center gap-1 sm:gap-1 ${className}`.trim()
+      ? `flex w-full min-w-0 max-w-full flex-wrap items-start justify-center gap-1 sm:gap-1 ${className}`.trim()
       : `grid w-full min-w-0 max-w-full gap-1 ${justifyCompact} ${gridAlign} ${className}`.trim();
 
+  const latestIdx = items.length - 1;
   const sigCards = items.map((item, idx) => {
-        const canonId = canonicalSigIdFromWheelSliceId(item.id);
-        const sold =
-          forceSoldAll ||
-          manualSoldSet.has(item.id) ||
-          manualSoldSet.has(canonId) ||
-          Boolean(
-            soldOverrideSet?.has(item.id) || soldOverrideSet?.has(canonId)
-          );
-        const isLatestConfirmed = highlightId === item.id;
-        const latestIdx = items.length - 1;
-        const isNewest = idx === latestIdx;
-        const entrance = disableCardMotion
-          ? { initial: false as const, animate: undefined, transition: undefined }
-          : entranceOnlyLatest && !isNewest
-            ? { initial: false as const, animate: undefined, transition: undefined }
-            : {
-                /** 순차 공개: 첫 장이 화면을 과하게 채우지 않도록 등장 폭·이동 완화 */
-                initial: {
-                  opacity: 0,
-                  y: entranceOnlyLatest ? 14 : 28,
-                  scale: entranceOnlyLatest ? 0.97 : 0.92,
-                } as const,
-                animate: { opacity: 1, y: 0, scale: 1 } as const,
-                transition: {
-                  delay: entranceOnlyLatest ? 0 : idx * 0.08,
-                  duration: entranceOnlyLatest ? 0.28 : 0.35,
-                },
-              };
-        return (
-          <motion.article
-            key={`${canonId}__slot_${idx}`}
-            initial={entrance.initial}
-            animate={entrance.animate}
-            transition={entrance.transition}
-            style={
-              broadcastMatch
-                ? sigOverlayBroadcastCardShellStyle(cardScalePct, { withToggle: showToggle })
-                : undefined
-            }
-            className={`relative overflow-hidden rounded-xl border bg-neutral-900/70 ${
-              broadcastMatch ? "flex w-full max-w-full flex-col" : "min-w-0"
-            } ${
-              broadcastMatch
-                ? SIG_OVERLAY_CARD_SHELL_CLASS
-                : compact
-                  ? "w-full max-w-[188px] justify-self-start"
-                  : ""
-            } ${isLatestConfirmed ? "border-yellow-300 shadow-[0_0_24px_rgba(250,204,21,0.45)]" : broadcastMatch ? "" : "border-white/20"}`}
-          >
-            <div
-              className={
-                broadcastMatch ? "relative z-[2] flex flex-1 flex-col" : "relative z-[2]"
-              }
-            >
-            {showConfirmedBadge ? (
-              <div className="absolute left-2 top-2 z-20 rounded bg-emerald-600/90 px-2 py-0.5 text-[10px] font-black text-white">
-                확정
-              </div>
-            ) : null}
-            {isLatestConfirmed ? (
-              <motion.div
-                className="pointer-events-none absolute inset-0 z-10 border-2 border-yellow-300/85"
-                initial={{ opacity: 0.1 }}
-                animate={{ opacity: [0.15, 0.9, 0.2] }}
-                transition={{ duration: 0.9, repeat: 1 }}
-              />
-            ) : null}
-            <div
-              style={broadcastMatch ? sigOverlayBroadcastMediaBoxStyle(cardScalePct) : undefined}
-              className={`overflow-hidden rounded-lg border border-white/20 bg-black/40 ${
-                broadcastMatch
-                  ? SIG_OVERLAY_CARD_MEDIA_BOX_BROADCAST_CLASS
-                  : compact
-                    ? "relative aspect-[3/4]"
-                    : "relative aspect-[4/5]"
-              }`}
-            >
-              <SigSaleMedia
-                src={
-                  sigImageUserId
-                    ? resolveSigOverlayCardImageUrl(item.name, item.imageUrl, sigImageUserId)
-                    : resolveSigRollingImageUrl(item.name, item.imageUrl, sigImageUserId)
-                }
-                storedImageUrl={item.imageUrl}
-                sigImageUserId={sigImageUserId}
-                alt={item.name}
-                fill
-                sizes={
-                  broadcastMatch
-                    ? `${SIG_OVERLAY_CARD_MAX_PX}px`
-                    : compact
-                      ? "(max-width:768px) 45vw, 188px"
-                      : "240px"
-                }
-                className="relative z-[2] object-contain object-center"
-                gifDelayMultiplier={gifDelayMultiplier}
-              />
-              {sold ? (
-                <SigSoldStampOverlay
-                  soldOutStampUrl={soldOutStampUrl}
-                  stampMaxClass={broadcastMatch ? SIG_SOLD_STAMP_IMG_CLASS_BROADCAST : undefined}
-                />
-              ) : null}
-            </div>
-            <div
-              className={
-                broadcastMatch
-                  ? SIG_OVERLAY_CARD_FOOTER_CLASS
-                  : compact
-                    ? "space-y-0 p-1"
-                    : "space-y-1 p-2"
-              }
-            >
-              <div
-                className={
-                  broadcastMatch
-                    ? SIG_OVERLAY_CARD_NAME_CLASS
-                    : `truncate font-bold ${compact ? "text-[10px]" : "text-sm"}`
-                }
-                style={
-                  broadcastMatch
-                    ? sigOverlayCardNameOutlineStyle(16)
-                    : compact
-                      ? sigOverlayCardNameOutlineStyle(10)
-                      : sigOverlayCardNameOutlineStyle(14)
-                }
-              >
-                {item.name}
-              </div>
-              <div
-                className={
-                  broadcastMatch
-                    ? SIG_OVERLAY_CARD_PRICE_CLASS
-                    : compact
-                      ? "text-[9px] font-semibold tabular-nums"
-                      : "text-xs font-semibold tabular-nums"
-                }
-                style={
-                  broadcastMatch
-                    ? sigOverlayCardPriceOutlineStyle(17)
-                    : compact
-                      ? sigOverlayCardPriceOutlineStyle(9)
-                      : sigOverlayCardPriceOutlineStyle(12)
-                }
-              >
-                {formatWon(item.price)}
-              </div>
-              {showToggle ? (
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => onToggleSold(item.id)}
-                  className={`w-full rounded px-2 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${sold ? "bg-rose-700/85 text-white" : "bg-emerald-700/85 text-white"}`}
-                >
-                  {sold ? "판매 취소" : "판매 완료"}
-                </button>
-              ) : null}
-            </div>
-            </div>
-          </motion.article>
-        );
-      });
+    const canonId = canonicalSigIdFromWheelSliceId(item.id);
+    const sold =
+      forceSoldAll ||
+      manualSoldSet.has(item.id) ||
+      manualSoldSet.has(canonId) ||
+      Boolean(soldOverrideSet?.has(item.id) || soldOverrideSet?.has(canonId));
+    return (
+      <SelectedSigCard
+        key={`${canonId}__slot_${idx}`}
+        item={item}
+        idx={idx}
+        latestIdx={latestIdx}
+        sold={sold}
+        isLatestConfirmed={highlightId === item.id}
+        entranceOnlyLatest={entranceOnlyLatest}
+        disableCardMotion={disableCardMotion}
+        broadcastMatch={broadcastMatch}
+        compact={compact}
+        showConfirmedBadge={showConfirmedBadge}
+        showToggle={showToggle}
+        disabled={disabled}
+        soldOutStampUrl={soldOutStampUrl}
+        cardScalePct={cardScalePct}
+        gifDelayMultiplier={gifDelayMultiplier}
+        sigImageUserId={sigImageUserId}
+        onToggleSold={onToggleSold}
+      />
+    );
+  });
 
   return (
     <section className={sectionClass} style={overlaySingleRow || broadcastMatch ? undefined : { gridTemplateColumns }}>
@@ -288,14 +354,14 @@ export default function SelectedSigs({
         <div
           style={
             broadcastMatch && matchOneShotCardSize
-              ? sigOverlayBroadcastCardShellStyle(cardScalePct)
+              ? sigOverlayBroadcastCardShellStyle(cardScalePct, { orientation: "landscape" })
               : undefined
           }
           className={
             broadcastMatch && matchOneShotCardSize
-              ? "flex h-full min-h-0 shrink-0 flex-col self-stretch"
+              ? "flex h-full min-h-0 shrink-0 flex-col self-start"
               : broadcastMatch || compact
-                ? "flex min-h-0 shrink-0 self-stretch"
+                ? "flex min-h-0 shrink-0 self-start"
                 : "min-h-[280px]"
           }
         >

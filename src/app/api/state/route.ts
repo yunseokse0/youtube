@@ -561,7 +561,7 @@ export async function POST(req: Request) {
       existing = getServerMemoryAppState(userId);
     }
     const baseState = existing || defaultState();
-    const donorsInPatch = Array.isArray(body.donors);
+    let donorsInPatch = Array.isArray(body.donors);
     const donationInitReset = settlementReset || isDonationInitGoalResetPatch(body);
     const resetAt = Number(baseState.settlementResetAt || 0);
     const incomingDonorsRaw = donorsInPatch ? normalizeDonorsArray(body.donors) : [];
@@ -580,6 +580,27 @@ export async function POST(req: Request) {
         userId,
         dropped: incomingDonorsRaw.length - incomingDonorsFiltered.length,
       });
+    }
+    /**
+     * HARD GUARD: 명시적 settlementReset/donorsAuthoritative 없이는
+     * 서버에 있는 후원을 빈 배열·축소본으로 덮지 않는다.
+     */
+    const baseDonorsNorm = normalizeDonorsArray(baseState.donors);
+    if (
+      donorsInPatch &&
+      !donorsAuthoritative &&
+      !settlementReset &&
+      !donationInitReset &&
+      baseDonorsNorm.length > 0 &&
+      (incomingDonorsFiltered.length === 0 ||
+        incomingDonorsFiltered.length < baseDonorsNorm.length)
+    ) {
+      logger.warn("refused accidental donor wipe — keeping base donors", {
+        userId,
+        baseCount: baseDonorsNorm.length,
+        incomingCount: incomingDonorsFiltered.length,
+      });
+      donorsInPatch = false;
     }
     const mergedDonors = donorsInPatch
       ? donationInitReset
@@ -619,8 +640,16 @@ export async function POST(req: Request) {
         }
       }
     }
-    const merged = mergePartialState(baseState, body, userId);
-    const dedupedDonors = donorsInPatch ? dedupeDonorRows(safeMergedDonors) : safeMergedDonors;
+    /** donors 필드를 무시하기로 했으면 body에서도 제거해 mergePartialState 가 건드리지 않게 함 */
+    const bodyForMerge =
+      !donorsInPatch && Array.isArray(body.donors)
+        ? (() => {
+            const { donors: _drop, ...rest } = body;
+            return rest;
+          })()
+        : body;
+    const merged = mergePartialState(baseState, bodyForMerge, userId);
+    const dedupedDonors = donorsInPatch ? dedupeDonorRows(safeMergedDonors) : normalizeDonorsArray(baseState.donors);
     const draft: AppState = syncMemberTotalsFromDonors({ ...merged, donors: dedupedDonors });
     const donorRankingsUpdatedAt = computeDonorRankingsUpdatedAt(
       baseState,

@@ -384,6 +384,8 @@ export type SigRollingItem = {
   url: string;
   /** 카드 하단 표시 텍스트 */
   label: string;
+  /** 인벤 가격(원). 고액/저액 밴드 분류용(없으면 0) */
+  price?: number;
 };
 
 export type SigRollingSettings = {

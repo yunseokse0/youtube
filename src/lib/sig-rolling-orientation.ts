@@ -1,13 +1,14 @@
 import {
   SIG_ROLLING_MEDIA_HEIGHT_PX,
   SIG_ROLLING_MEDIA_WIDTH_PX,
+  type SigOverlayMediaOrientation,
 } from "@/components/sig-sales/sig-overlay-card-size";
 
-/** 세로형(기본) 202×300 — 가로형은 가로·세로를 교환(300×202) */
-export const SIG_ROLLING_LANDSCAPE_MEDIA_WIDTH_PX = SIG_ROLLING_MEDIA_HEIGHT_PX;
-export const SIG_ROLLING_LANDSCAPE_MEDIA_HEIGHT_PX = SIG_ROLLING_MEDIA_WIDTH_PX;
+/** 가로형(원본 아트) 300×180 — 세로형은 가로·세로를 교환(180×300) */
+export const SIG_ROLLING_LANDSCAPE_MEDIA_WIDTH_PX = SIG_ROLLING_MEDIA_WIDTH_PX;
+export const SIG_ROLLING_LANDSCAPE_MEDIA_HEIGHT_PX = SIG_ROLLING_MEDIA_HEIGHT_PX;
 
-export type SigRollingMediaOrientation = "portrait" | "landscape";
+export type SigRollingMediaOrientation = SigOverlayMediaOrientation;
 
 export function classifySigRollingOrientation(
   naturalWidth: number,
@@ -28,9 +29,10 @@ export function sigRollingMediaFramePx(orientation: SigRollingMediaOrientation):
       height: SIG_ROLLING_LANDSCAPE_MEDIA_HEIGHT_PX,
     };
   }
+  /** 세로형: 300×180을 뒤집은 180×300 */
   return {
-    width: SIG_ROLLING_MEDIA_WIDTH_PX,
-    height: SIG_ROLLING_MEDIA_HEIGHT_PX,
+    width: SIG_ROLLING_MEDIA_HEIGHT_PX,
+    height: SIG_ROLLING_MEDIA_WIDTH_PX,
   };
 }
 
