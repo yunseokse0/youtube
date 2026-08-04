@@ -26,6 +26,7 @@ import {
   normalizeDonorsArray,
   normalizeRouletteState,
   normalizeSigRolling,
+  totalCombined,
 } from "@/lib/state";
 import type { SigItem } from "@/types";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
@@ -47,6 +48,11 @@ import {
   enrichAppStateWithSigInventoryBackup,
   saveSigInventoryBackup,
 } from "@/lib/sig-inventory-backup";
+import {
+  clearDonationRosterBackup,
+  enrichAppStateWithDonationRosterBackup,
+  saveDonationRosterBackup,
+} from "@/lib/donation-roster-backup";
 
 const logger = createModuleLogger('API/State');
 
@@ -426,11 +432,25 @@ export async function GET(req: Request) {
   try {
     const { base, token } = getRedisEnv();
     if (!base || !token) {
-      const state = applyDonationGoalPresetNormalization(
+      let state = applyDonationGoalPresetNormalization(
         getServerMemoryAppState(userId) || defaultState()
       );
       if (!getServerMemoryAppState(userId)) {
         logger.warn('Redis 미설정 - 메모리만 사용 (서버 재시작 시 데이터 초기화됨. UPSTASH_REDIS_* 환경변수 설정 권장)');
+      }
+      try {
+        const donationEnriched = await enrichAppStateWithDonationRosterBackup(userId, state);
+        if (donationEnriched.restoredFromBackup) {
+          state = applyDonationGoalPresetNormalization(donationEnriched.state);
+          setServerMemoryAppState(userId, state);
+          logger.warn("후원 금액 디스크/백업에서 복구 (메모리 모드)", {
+            userId,
+            donors: normalizeDonorsArray(state.donors).length,
+            total: totalCombined(state),
+          });
+        }
+      } catch (err) {
+        logger.error("후원 백업 복구 실패 (메모리 모드)", err);
       }
       logger.debug('메모리 상태 반환', { membersCount: state.members.length, donorsCount: state.donors.length });
       if (isNotModified(state)) {
@@ -510,6 +530,25 @@ export async function GET(req: Request) {
       }
     } catch (err) {
       logger.error("sigInventory 백업 복구 실패", err);
+    }
+
+    try {
+      const donationEnriched = await enrichAppStateWithDonationRosterBackup(
+        userId,
+        mergedForResponse
+      );
+      if (donationEnriched.restoredFromBackup) {
+        mergedForResponse = applyDonationGoalPresetNormalization(donationEnriched.state);
+        setServerMemoryAppState(userId, mergedForResponse);
+        logger.warn("후원 금액 백업에서 복구", {
+          userId,
+          donors: normalizeDonorsArray(mergedForResponse.donors).length,
+          total: totalCombined(mergedForResponse),
+        });
+        void upstashSetAppStateJson(stateKey(userId), mergedForResponse);
+      }
+    } catch (err) {
+      logger.error("후원 백업 복구 실패", err);
     }
 
     if (isNotModified(mergedForResponse)) {
@@ -681,6 +720,13 @@ export async function POST(req: Request) {
 
     if (hasExpandedSigInventory(next.sigInventory)) {
       void saveSigInventoryBackup(userId, next.sigInventory);
+    }
+
+    /** 후원 금액 — 재시작·메인 상태 유실 대비 별도 백업. 정산/전체삭제 시 빈 백업으로 교체 */
+    if (settlementReset || (donorsAuthoritative && normalizeDonorsArray(next.donors).length === 0)) {
+      void clearDonationRosterBackup(userId, next.settlementResetAt);
+    } else if (normalizeDonorsArray(next.donors).length > 0 || totalCombined(next) > 0) {
+      void saveDonationRosterBackup(userId, next);
     }
 
     if (!base || !token) {
