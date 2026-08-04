@@ -30,6 +30,7 @@ import type {
 } from "@/types";
 import { ONE_SHOT_SIG_ID, sigMatchesMemberFilter } from "@/lib/sig-roulette";
 import { isBundledSigPlaceholderItem } from "@/lib/sig-placeholder";
+import { normalizeRestroomCount } from "@/lib/restroom-utils";
 import { mergeGeneralTimerPreferEffective, snapshotTimerForPersist } from "@/lib/timer-utils";
 import { sanitizeOverlayEmbedMediaUrl } from "@/lib/gif-url";
 import {
@@ -717,7 +718,7 @@ function normalizeMember(m: Member): Member {
   const goalParsed = parseOptionalNonNegativeMoney(rec.goal);
   const goal = goalParsed !== undefined ? goalParsed : undefined;
   const contribution = parseOptionalNonNegativeMoney(rec.contribution) ?? 0;
-  const restroom = parseOptionalNonNegativeMoney(rec.restroom) ?? 0;
+  const restroom = normalizeRestroomCount(rec.restroom);
   const account = parseOptionalNonNegativeMoney(rec.account) ?? 0;
   const toon = parseOptionalNonNegativeMoney(rec.toon) ?? 0;
   return {
@@ -1522,6 +1523,19 @@ function mergeServerSaveApiBodies(prevJson: string, nextJson: string): string {
     ) {
       merged.overlayPresets = prev.overlayPresets;
     }
+    const prevTimerStyles = prev.timerDisplayStyles as AppState["timerDisplayStyles"] | undefined;
+    const nextTimerStyles = next.timerDisplayStyles as AppState["timerDisplayStyles"] | undefined;
+    if (
+      hasCustomTimerDisplayStyles(prevTimerStyles) &&
+      (!nextTimerStyles || isDefaultLikeTimerDisplayStyle(nextTimerStyles.general))
+    ) {
+      merged.timerDisplayStyles = prevTimerStyles;
+    } else if (
+      !("timerDisplayStyles" in next) &&
+      hasCustomTimerDisplayStyles(prevTimerStyles)
+    ) {
+      merged.timerDisplayStyles = prevTimerStyles;
+    }
     return JSON.stringify(merged);
   } catch {
     return nextJson;
@@ -1970,6 +1984,10 @@ export async function saveOverlayPresetsPatchAsync(
                 : {}) as Record<string, unknown>),
               ...nextSettings,
             } as AppState["overlaySettings"],
+            timerDisplayStyles:
+              hasCustomTimerDisplayStyles(local!.timerDisplayStyles)
+                ? local!.timerDisplayStyles
+                : base.timerDisplayStyles,
             updatedAt: now,
           }
         : {
@@ -1978,6 +1996,11 @@ export async function saveOverlayPresetsPatchAsync(
             donors: preservedDonors,
             overlayPresets: overlayPresets as AppState["overlayPresets"],
             overlaySettings: nextSettings as AppState["overlaySettings"],
+            timerDisplayStyles:
+              hasCustomTimerDisplayStyles(local?.timerDisplayStyles) &&
+              isDefaultLikeTimerDisplayStyle(base.timerDisplayStyles?.general)
+                ? local!.timerDisplayStyles
+                : base.timerDisplayStyles,
             updatedAt: now,
           }
     )
@@ -2075,6 +2098,15 @@ export async function saveVisualSettingsPatchAsync(
     members: preservedMembers,
     donors: preservedDonors,
     sigInventory: preservedSigInventory,
+    /** 다른 시각 옵션 저장 시 타이머 커스텀 색이 기본값으로 LS에 덮이지 않게 */
+    timerDisplayStyles:
+      patch.timerDisplayStyles ??
+      (hasCustomTimerDisplayStyles(local?.timerDisplayStyles) &&
+      isDefaultLikeTimerDisplayStyle(base.timerDisplayStyles?.general)
+        ? local!.timerDisplayStyles
+        : hasCustomTimerDisplayStyles(base.timerDisplayStyles)
+          ? base.timerDisplayStyles
+          : local?.timerDisplayStyles ?? base.timerDisplayStyles),
     memberPositions: foundation?.memberPositions ?? local?.memberPositions ?? base.memberPositions,
     settlementResetAt: foundation?.settlementResetAt ?? local?.settlementResetAt ?? base.settlementResetAt,
     updatedAt: now,

@@ -247,7 +247,15 @@ function applySyncedState(
     refs.lastGoodRef.current?.generalTimer,
     data.generalTimer
   );
-  const next = { ...data, generalTimer: mergedTimer };
+  /** pick 에 timerDisplayStyles 키가 없을 때만 last-good 로 보정 */
+  const lastTimerStyles = refs.lastGoodRef.current?.timerDisplayStyles;
+  const next = Object.prototype.hasOwnProperty.call(data, "timerDisplayStyles")
+    ? { ...data, generalTimer: mergedTimer }
+    : {
+        ...data,
+        generalTimer: mergedTimer,
+        ...(lastTimerStyles ? { timerDisplayStyles: lastTimerStyles } : {}),
+      };
 
   refs.setState(next);
 

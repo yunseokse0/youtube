@@ -113,6 +113,26 @@ describe("member sync helpers", () => {
     expect(wouldShrinkDonationData(local, local)).toBe(false);
   });
 
+  it("treats empty remote donors as shrink even when member totals are already 0", () => {
+    const local: AppState = {
+      ...defaultState(),
+      members: [
+        { id: "m1", name: "BT태호", account: 0, toon: 0, contribution: 0 },
+        { id: "m2", name: "대니현", account: 0, toon: 0, contribution: 0 },
+      ],
+      donors: [
+        { id: "d1", name: "a", amount: 260000, memberId: "m1", at: 1, target: "account" },
+        { id: "d2", name: "b", amount: 100000, memberId: "m2", at: 2, target: "account" },
+      ],
+    };
+    const remoteEmpty: AppState = {
+      ...local,
+      donors: [],
+    };
+    expect(wouldShrinkDonationData(local, remoteEmpty)).toBe(true);
+    expect(shouldAvoidOverwritingLocalStateWithRemote(local, remoteEmpty)).toBe(true);
+  });
+
   it("buildDefaultMembersCount(1) is not default-like for 3-slot default", () => {
     const one = buildDefaultMembersCount(1);
     expect(one).toHaveLength(1);

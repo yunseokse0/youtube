@@ -91,6 +91,11 @@ import {
 import {
   applyRestroomCountDelta,
   buildRestroomMemberUpdate,
+  formatRestroomDisplay,
+  isRestroomUnlimitedLog,
+  RESTROOM_UNLIMITED,
+  RESTROOM_UNLIMITED_SYMBOL,
+  restroomValueAfterUndoLog,
 } from "@/lib/restroom-utils";
 import { useSSEConnection } from "@/lib/sse-client";
 import { createStateUpdatedScheduler, DONOR_STATE_UPDATED_DEBOUNCE_MS, DONOR_STATE_UPDATED_MAX_WAIT_MS } from "@/lib/overlay-pull-policy";
@@ -164,6 +169,7 @@ import { buildSigSalesManualOverlayUrl } from "@/lib/sig-sales-overlay-urls";
 import {
   extractToonationLinkKey,
   fetchToonationListenerStatus,
+  isExampleToonationLinkKey,
   normalizeToonationAlertboxUrl,
   stopToonationListener,
   syncToonationListenerFromBrowser,
@@ -505,12 +511,14 @@ export default function AdminPage() {
   const [toonationAlertboxUrl, setToonationAlertboxUrl] = useState(() => {
     if (typeof window === "undefined") return "";
     try {
-      const urlRaw = window.localStorage.getItem("donationAutomation.toonation.alertboxUrl");
+      const urlRaw = window.localStorage.getItem("donationAutomation.toonation.alertboxUrl") || "";
       const envUrl = (process.env.NEXT_PUBLIC_TOONATION_ALERTBOX_URL || "").trim();
       const envKey = (process.env.NEXT_PUBLIC_TOONATION_LINK_KEY || "").trim();
-      return urlRaw || envKey || envUrl || "f28dc2204fbaf86fd9df74c12f435c73";
+      const candidate = urlRaw || envKey || envUrl || "";
+      /** 구버전 기본 예시키는 빈 값으로 — 타 PC가 서버 연동키를 덮지 않게 */
+      return isExampleToonationLinkKey(candidate) && !envKey && !envUrl ? "" : candidate;
     } catch {
-      return "f28dc2204fbaf86fd9df74c12f435c73";
+      return "";
     }
   });
   const [toonationOwnerName, setToonationOwnerName] = useState(() => {
@@ -521,6 +529,8 @@ export default function AdminPage() {
       return "";
     }
   });
+  /** 서버 리스너 설정을 읽기 전에는 POST로 덮지 않음 */
+  const [toonationSettingsHydrated, setToonationSettingsHydrated] = useState(false);
   const toonationResolvedAlertboxUrl = useMemo(
     () => normalizeToonationAlertboxUrl(toonationAlertboxUrl.trim()),
     [toonationAlertboxUrl]
@@ -537,7 +547,8 @@ export default function AdminPage() {
   const [contributionNote, setContributionNote] = useState("");
   const [restroomAmount, setRestroomAmount] = useState("");
   const [restroomMemberId, setRestroomMemberId] = useState<string | null>(null);
-  const [restroomDelta, setRestroomDelta] = useState<1 | -1>(-1);
+  /** plus | minus | unlimited */
+  const [restroomMode, setRestroomMode] = useState<"plus" | "minus" | "unlimited">("minus");
   const [restroomNote, setRestroomNote] = useState("");
   const [copied, setCopied] = useState(false);
   const [newMemberName, setNewMemberName] = useState("");
@@ -1415,19 +1426,21 @@ export default function AdminPage() {
     const incomingIdSet = new Set(incomingDonorsNorm.map((d) => d.id));
     const remoteOnlyCount = incomingDonorsNorm.filter((d) => !localIdSet.has(d.id)).length;
     const localOnlyCount = localDonorsNorm.filter((d) => !incomingIdSet.has(d.id)).length;
+    /**
+     * 후원·금액은 계정 서버가 정본. LS/캐시로 빈 서버를 “복구”하거나 축소본을 막지 않는다.
+     * 예외: 같은 세션에서 저장 직후·편집 중일 때만 id 병합(원격 신규 후원 누락 방지).
+     */
     if (
       (pendingUnsyncedRef.current || recentlyEditedDonors) &&
       (remoteOnlyCount > 0 || localOnlyCount > 0)
     ) {
       if (remoteOnlyCount > 0 && localOnlyCount === 0) {
-        /** 투네 서버 자동반영 등 — 원격에만 있는 신규 후원은 반드시 수용 */
         merged = {
           ...merged,
           donors: incomingDonorsNorm,
           members: merged.members,
         };
       } else if (localOnlyCount > 0 && remoteOnlyCount === 0) {
-        /** 로컬에서만 추가/삭제 중인 경우 유지 */
         merged = {
           ...merged,
           donors: localDonorsNorm,
@@ -1435,7 +1448,6 @@ export default function AdminPage() {
         };
         didPreserve = true;
       } else if (remoteOnlyCount > 0 && localOnlyCount > 0) {
-        /** 양쪽 변경 — id 기준 병합(신규 원격 후원 누락 방지) */
         const union = mergeDonorsForMultiTabSave(incomingDonorsNorm, localDonorsNorm, {
           incomingUpdatedAt: incoming.updatedAt,
           existingUpdatedAt: local.updatedAt,
@@ -1444,44 +1456,6 @@ export default function AdminPage() {
           ...merged,
           donors: union,
           members: remoteOnlyCount >= localOnlyCount ? merged.members : local.members,
-        };
-        didPreserve = true;
-      }
-    }
-    const mergedDonorsNorm = normalizeDonorsArray(merged.donors);
-    if (Date.now() >= settlementResetUntilRef.current) {
-      if (
-        localDonorsNorm.length > 0 &&
-        mergedDonorsNorm.length === 0 &&
-        totalCombined(local) > 0
-      ) {
-        merged = { ...merged, donors: localDonorsNorm, members: local.members };
-        didPreserve = true;
-      } else if (
-        totalCombined(local) > 0 &&
-        totalCombined(merged) === 0 &&
-        localDonorsNorm.length >= mergedDonorsNorm.length
-      ) {
-        // 실명 멤버 + 0원 원격(재로그인·메모리 서버)이 로컬 금액/후원을 지우지 않게 한다.
-        merged = {
-          ...merged,
-          donors: localDonorsNorm.length > 0 ? localDonorsNorm : mergedDonorsNorm,
-          members: local.members,
-          memberPositions: normalizeMemberPositions(local.memberPositions, local.members),
-        };
-        didPreserve = true;
-      } else if (
-        localDonorsNorm.length > mergedDonorsNorm.length &&
-        totalCombined(local) > totalCombined(merged)
-      ) {
-        const union = mergeDonorsForMultiTabSave(mergedDonorsNorm, localDonorsNorm, {
-          incomingUpdatedAt: incoming.updatedAt,
-          existingUpdatedAt: local.updatedAt,
-        });
-        merged = {
-          ...merged,
-          donors: union,
-          members: totalCombined(merged) >= totalCombined(local) ? merged.members : local.members,
         };
         didPreserve = true;
       }
@@ -1562,19 +1536,24 @@ export default function AdminPage() {
       }
     } catch {}
     loadStateFromApi(user?.id, { forceFull: true }).then((apiState) => {
-      // loadStateFromApi가 LS를 만진 뒤라도, 로드 시작 시점 스냅샷으로 0원 원격 덮어쓰기를 막는다.
+      /** 후원·금액은 계정 서버 정본. LS는 테마·시그 등 보조 캐시만. */
       const local = localFallback;
       if (apiState) {
         stateUpdatedAtRef.current = apiState.updatedAt || 0;
-        const { merged: toApply, didPreserve } = mergeIncomingStateSafely(apiState, local);
+        lastAppliedRemoteUpdatedAtRef.current = apiState.updatedAt || 0;
+        const { merged, didPreserve } = mergeIncomingStateSafely(apiState, local);
+        const toApply = syncMemberTotalsFromDonors({
+          ...merged,
+          donors: apiState.donors,
+          members: apiState.members,
+          memberPositions: apiState.memberPositions,
+          contributionLogs: apiState.contributionLogs,
+          restroomLogs: apiState.restroomLogs,
+          settlementResetAt: apiState.settlementResetAt,
+        });
         if (didPreserve) {
-          /** 테마·시그만 보존한 경우 후원 필드 제외. 로컬이 더 풍부할 때만 후원 push */
-          const shouldPushDonations =
-            !wouldShrinkDonationData(local, toApply) && wouldShrinkDonationData(apiState, toApply);
-          persistState(
-            toApply,
-            shouldPushDonations ? undefined : { omitDonationFields: true }
-          );
+          /** 테마·시그 등만 보존 — 후원 필드는 서버 값 유지(LS로 서버에 밀어 올리지 않음) */
+          persistState(toApply, { omitDonationFields: true });
         }
         const serverInv = toApply.sigInventory || [];
         if (
@@ -1587,6 +1566,9 @@ export default function AdminPage() {
           );
         }
         setState(toApply);
+        try {
+          window.localStorage.setItem(storageKey(user?.id), JSON.stringify(toApply));
+        } catch {}
         if (Array.isArray(toApply.overlayPresets) && toApply.overlayPresets.length > 0) {
           setPresets(toApply.overlayPresets as OverlayPreset[]);
           /** 커스텀 테마 캐시가 있어도 자동 적용하지 않음 — maybePromptThemeRestore가 사용자 확인 후 복구 */
@@ -1601,10 +1583,10 @@ export default function AdminPage() {
           });
         } else {
           const first = defaultPreset("전체 통합", { showMembers: true, showTotal: true });
-          const merged = { ...toApply, overlayPresets: [first] };
+          const mergedPresets = { ...toApply, overlayPresets: [first] };
           setPresets([first]);
-          setState(merged);
-          stateRef.current = merged;
+          setState(mergedPresets);
+          stateRef.current = mergedPresets;
           /** 기본 프리셋은 UI·캐시에만 두고, 사용자 요청 없이 서버 전체 저장하지 않음 */
           try { window.localStorage.setItem(presetStorageKey, JSON.stringify([first])); } catch {}
         }
@@ -1623,12 +1605,11 @@ export default function AdminPage() {
         }
         setState(local);
         setSyncStatus("error");
+        /** 서버 로드 실패 시 LS 후원을 계정에 밀어 올리지 않음 */
         const hasMeaningfulData = hasMeaningfulBroadcastData(local);
         const hasDonationData =
           normalizeDonorsArray(local.donors).length > 0 || totalCombined(local) > 0;
-        if (hasDonationData) {
-          saveStateAsync(local, user?.id).then((r) => { if (r.ok) setSyncStatus("synced"); });
-        } else if (hasMeaningfulData) {
+        if (hasMeaningfulData && !hasDonationData) {
           saveStateAsync(local, user?.id, { omitDonationFields: true }).then((r) => {
             if (r.ok) setSyncStatus("synced");
           });
@@ -1723,6 +1704,7 @@ export default function AdminPage() {
         toApply = mergedResult.merged;
         didPreserve = mergedResult.didPreserve;
       }
+      /** 후원은 서버(계정) 정본 — 세션 캐시로 원격 축소본을 막지 않음 */
       if (adminSyncFingerprint(prev) === adminSyncFingerprint(toApply)) {
         lastAppliedRemoteUpdatedAtRef.current = Math.max(
           lastAppliedRemoteUpdatedAtRef.current,
@@ -1735,13 +1717,8 @@ export default function AdminPage() {
         didPreserve &&
         Number(toApply.settlementResetAt || 0) <= Number(prev.settlementResetAt || 0)
       ) {
-        /** 글자색 등 시각 보존 후 전체 저장이 후원을 다시 올리지 않게 — 실제 후원 복구일 때만 포함 */
-        const shouldPushDonations =
-          !wouldShrinkDonationData(prev, toApply) && wouldShrinkDonationData(remote, toApply);
-        persistState(
-          toApply,
-          shouldPushDonations ? undefined : { omitDonationFields: true }
-        );
+        /** 시각·시그 보존만 서버에 올리고 후원 필드는 건드리지 않음 */
+        persistState(toApply, { omitDonationFields: true });
       }
       stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, remoteUpdatedAt);
       lastAppliedRemoteUpdatedAtRef.current = Math.max(
@@ -1807,10 +1784,17 @@ export default function AdminPage() {
     }, ADMIN_STATE_FALLBACK_POLL_MS);
     const donorLiveTimer = window.setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-      void syncFromApi({ forceFull: true, forceDonorMerge: true });
+      /** forceDonorMerge 매 2초는 빈 원격·삭제 직후 레이스를 키움 — full GET + 안전 병합만 */
+      void syncFromApi({ forceFull: true });
     }, ADMIN_DONOR_LIVE_POLL_MS);
+    const onVisibility = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        void syncFromApi({ forceFull: true, forceDonorMerge: true });
+      }
+    };
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
+    document.addEventListener("visibilitychange", onVisibility);
     void syncFromApi({ forceFull: true });
     return () => {
       running = false;
@@ -1821,6 +1805,7 @@ export default function AdminPage() {
       window.clearInterval(donorLiveTimer);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [user, persistState, mergeIncomingStateSafely]);
 
@@ -5386,21 +5371,53 @@ export default function AdminPage() {
   ]);
 
   useEffect(() => {
+    if (!user?.id) {
+      setToonationSettingsHydrated(false);
+      return;
+    }
+    let cancelled = false;
+    setToonationSettingsHydrated(false);
+    void (async () => {
+      try {
+        const status = await fetchToonationListenerStatus(user.id);
+        if (cancelled) return;
+        const serverUrl = String(status?.alertboxUrl || "").trim();
+        const serverKey = extractToonationLinkKey(serverUrl) || serverUrl;
+        if (serverKey && !isExampleToonationLinkKey(serverKey)) {
+          setToonationAlertboxUrl(serverKey);
+          setToonationSocketEnabled(status?.enabled !== false);
+          const serverOwner = String(status?.ownerName || "").trim();
+          if (serverOwner) setToonationOwnerName(serverOwner);
+          try {
+            window.localStorage.setItem("donationAutomation.toonation.alertboxUrl", serverKey);
+            window.localStorage.setItem(
+              "donationAutomation.toonation.socketEnabled",
+              String(status?.enabled !== false)
+            );
+            if (serverOwner) {
+              window.localStorage.setItem("donationAutomation.toonation.ownerName", serverOwner);
+            }
+          } catch {
+            // noop
+          }
+        } else {
+          /** 서버에 없으면 LS·env 유지. 예시키만 있으면 비움 */
+          setToonationAlertboxUrl((prev) => (isExampleToonationLinkKey(prev) ? "" : prev));
+        }
+      } catch {
+        // 네트워크 실패 시 LS 값 유지
+      } finally {
+        if (!cancelled) setToonationSettingsHydrated(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     try {
-      const socketRaw = window.localStorage.getItem("donationAutomation.toonation.socketEnabled");
-      const urlRaw = window.localStorage.getItem("donationAutomation.toonation.alertboxUrl");
-      const ownerRaw = window.localStorage.getItem("donationAutomation.toonation.ownerName");
-      const envUrl = (process.env.NEXT_PUBLIC_TOONATION_ALERTBOX_URL || "").trim();
-      const envKey = (process.env.NEXT_PUBLIC_TOONATION_LINK_KEY || "").trim();
-      setToonationSocketEnabled(socketRaw !== "false");
-      setToonationAlertboxUrl(
-        urlRaw ||
-          envKey ||
-          envUrl ||
-          "f28dc2204fbaf86fd9df74c12f435c73"
-      );
-      setToonationOwnerName(ownerRaw || "");
       window.localStorage.removeItem("donationAutomation.toonation.enabled");
       window.localStorage.removeItem("donationAutomation.toonation.socketDebug");
     } catch {
@@ -5417,21 +5434,28 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!toonationSettingsHydrated) return;
     try {
       window.localStorage.setItem("donationAutomation.toonation.socketEnabled", String(toonationSocketEnabled));
-      window.localStorage.setItem("donationAutomation.toonation.alertboxUrl", toonationAlertboxUrl);
+      if (!isExampleToonationLinkKey(toonationAlertboxUrl)) {
+        window.localStorage.setItem("donationAutomation.toonation.alertboxUrl", toonationAlertboxUrl);
+      }
       window.localStorage.setItem("donationAutomation.toonation.ownerName", toonationOwnerName);
       window.localStorage.removeItem("donationAutomation.toonation.autoProcess");
     } catch {
       // noop
     }
-  }, [toonationAlertboxUrl, toonationOwnerName, toonationSocketEnabled]);
+  }, [toonationAlertboxUrl, toonationOwnerName, toonationSettingsHydrated, toonationSocketEnabled]);
 
   useEffect(() => {
     const uid = user?.id || "";
     const normalized = toonationResolvedAlertboxUrl;
-    /** 로그인 전·설정 로드 전에는 서버 리스너를 끄지 않음(기존 방송 중 자동 반영 유지) */
-    if (!uid) return;
+    /** 로그인 전·서버 설정 로드 전에는 서버 리스너를 덮지 않음 */
+    if (!uid || !toonationSettingsHydrated) return;
+    if (normalized && isExampleToonationLinkKey(normalized)) {
+      setToonationListenerStatus({ kind: "idle", message: "연동키를 입력하세요" });
+      return;
+    }
     if (!toonationSocketEnabled) {
       if (normalized) {
         void syncToonationListenerFromBrowser(normalized, {
@@ -5468,11 +5492,17 @@ export default function AdminPage() {
     return () => {
       cancelled = true;
     };
-  }, [toonationOwnerName, toonationResolvedAlertboxUrl, toonationSocketEnabled, user?.id]);
+  }, [
+    toonationOwnerName,
+    toonationResolvedAlertboxUrl,
+    toonationSettingsHydrated,
+    toonationSocketEnabled,
+    user?.id,
+  ]);
 
   useEffect(() => {
     const uid = user?.id || "";
-    if (!uid || !toonationSocketEnabled) return;
+    if (!uid || !toonationSocketEnabled || !toonationSettingsHydrated) return;
     const poll = window.setInterval(() => {
       void fetchToonationListenerStatus(uid).then((status) => {
         setToonationListenerMeta({
@@ -5485,7 +5515,7 @@ export default function AdminPage() {
       });
     }, 8000);
     return () => window.clearInterval(poll);
-  }, [toonationSocketEnabled, user?.id]);
+  }, [toonationSettingsHydrated, toonationSocketEnabled, user?.id]);
 
   useEffect(() => {
     toonationQueueHydratedRef.current = false;
@@ -5607,8 +5637,18 @@ export default function AdminPage() {
 
   const addRestroomRecord = () => {
     if (!restroomMemberId) return;
+    if (restroomMode === "unlimited") {
+      setMemberRestroomValue(
+        restroomMemberId,
+        RESTROOM_UNLIMITED,
+        restroomNote.trim() ? `무제한 · ${restroomNote.trim()}` : "무제한"
+      );
+      setRestroomAmount("");
+      setRestroomNote("");
+      return;
+    }
     const rawAmount = restroomAmount.trim();
-    if (restroomDelta < 0 && (rawAmount === "" || rawAmount === "0")) {
+    if (restroomMode === "minus" && (rawAmount === "" || rawAmount === "0")) {
       setMemberRestroomValue(restroomMemberId, 0, restroomNote || "0으로 초기화");
       setRestroomAmount("");
       setRestroomNote("");
@@ -5616,7 +5656,7 @@ export default function AdminPage() {
     }
     const amount = parseAmount(restroomAmount);
     if (amount <= 0) return;
-    applyRestroomChange(restroomMemberId, restroomDelta, amount, restroomNote);
+    applyRestroomChange(restroomMemberId, restroomMode === "plus" ? 1 : -1, amount, restroomNote);
     setRestroomAmount("");
     setRestroomNote("");
   };
@@ -10322,7 +10362,10 @@ export default function AdminPage() {
                     ))}
                   </div>
                 </div>
-                {user?.id && toonationResolvedAlertboxUrl ? (
+                {user?.id &&
+                toonationSettingsHydrated &&
+                toonationResolvedAlertboxUrl &&
+                !isExampleToonationLinkKey(toonationResolvedAlertboxUrl) ? (
                   <ToonationBrowserRelay
                     userId={user.id}
                     linkKey={extractToonationLinkKey(toonationAlertboxUrl) || toonationAlertboxUrl}
@@ -10382,23 +10425,29 @@ export default function AdminPage() {
             <section id="restroom-management" className={`${panelCardClass} p-4 md:p-6`}>
               <h2 className="text-lg font-semibold mb-3">화장실 기록부</h2>
               <p className="text-sm text-neutral-400 mb-3">
-                엑셀표「화장실」열에만 반영됩니다. 후원·투네 자동 연동 없음 — 수동 차감/추가만 가능합니다. 차감 모드에서
-                횟수를 비우거나 0이면 해당 멤버 화장실을 0으로 초기화합니다.
+                엑셀표「화장실」열에만 반영됩니다. 후원·투네 자동 연동 없음 — 수동 차감/추가/무제한만 가능합니다.
+                차감 모드에서 횟수를 비우거나 0이면 해당 멤버 화장실을 0으로 초기화합니다. 무제한은 표에{" "}
+                <span className="text-cyan-200">{RESTROOM_UNLIMITED_SYMBOL}</span> 로 표시됩니다.
               </p>
               <div className="grid grid-cols-1 lg:grid-cols-[auto_1fr_auto_auto_auto] gap-3">
                 <select
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
-                  value={restroomDelta > 0 ? "plus" : "minus"}
-                  onChange={(e) => setRestroomDelta(e.target.value === "minus" ? -1 : 1)}
+                  value={restroomMode}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setRestroomMode(v === "plus" ? "plus" : v === "unlimited" ? "unlimited" : "minus");
+                  }}
                 >
                   <option value="minus">차감(-)</option>
                   <option value="plus">추가(+)</option>
+                  <option value="unlimited">무제한({RESTROOM_UNLIMITED_SYMBOL})</option>
                 </select>
                 <input
-                  className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
-                  placeholder="횟수 (예: 1)"
+                  className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10 disabled:opacity-50"
+                  placeholder={restroomMode === "unlimited" ? "무제한 설정 (횟수 불필요)" : "횟수 (예: 1)"}
                   inputMode="numeric"
                   value={restroomAmount}
+                  disabled={restroomMode === "unlimited"}
                   onChange={(e) => setRestroomAmount(e.target.value)}
                 />
                 <select
@@ -10407,7 +10456,9 @@ export default function AdminPage() {
                   onChange={(e) => setRestroomMemberId(e.target.value)}
                 >
                   {state.members.map((m) => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
+                    <option key={m.id} value={m.id}>
+                      {m.name} ({formatRestroomDisplay(m.restroom)})
+                    </option>
                   ))}
                 </select>
                 <input
@@ -10417,10 +10468,16 @@ export default function AdminPage() {
                   onChange={(e) => setRestroomNote(e.target.value)}
                 />
                 <button
-                  className={`px-4 py-2 rounded font-semibold ${restroomDelta > 0 ? "bg-cyan-600 hover:bg-cyan-500" : "bg-rose-600 hover:bg-rose-500"}`}
+                  className={`px-4 py-2 rounded font-semibold ${
+                    restroomMode === "unlimited"
+                      ? "bg-violet-600 hover:bg-violet-500"
+                      : restroomMode === "plus"
+                        ? "bg-cyan-600 hover:bg-cyan-500"
+                        : "bg-rose-600 hover:bg-rose-500"
+                  }`}
                   onClick={addRestroomRecord}
                 >
-                  화장실 반영
+                  {restroomMode === "unlimited" ? "무제한 설정" : "화장실 반영"}
                 </button>
               </div>
               <div className="mt-4 overflow-x-auto">
@@ -10441,12 +10498,23 @@ export default function AdminPage() {
                       .sort((a, b) => b.at - a.at)
                       .map((log) => {
                         const member = state.members.find((m) => m.id === log.memberId);
+                        const unlimitedLog = isRestroomUnlimitedLog(log);
                         return (
                           <tr key={log.id} className="border-t border-white/10">
                             <td className="p-1 text-neutral-400"><ClientTime ts={log.at} /></td>
                             <td className="p-1 text-neutral-300">{member?.name || log.memberId}</td>
-                            <td className="p-1">{log.delta > 0 ? <span className="text-cyan-300">추가</span> : <span className="text-rose-300">차감</span>}</td>
-                            <td className="p-1 text-right whitespace-nowrap">{log.amount.toLocaleString("ko-KR")}</td>
+                            <td className="p-1">
+                              {unlimitedLog ? (
+                                <span className="text-violet-300">무제한</span>
+                              ) : log.delta > 0 ? (
+                                <span className="text-cyan-300">추가</span>
+                              ) : (
+                                <span className="text-rose-300">차감</span>
+                              )}
+                            </td>
+                            <td className="p-1 text-right whitespace-nowrap">
+                              {unlimitedLog ? RESTROOM_UNLIMITED_SYMBOL : log.amount.toLocaleString("ko-KR")}
+                            </td>
                             <td className="p-1 text-neutral-400">{log.note || "-"}</td>
                             <td className="p-1 text-right">
                               <div className="flex justify-end gap-1">
@@ -10457,12 +10525,7 @@ export default function AdminPage() {
                                       setState((prev: AppState) => {
                                         const members = prev.members.map((m: Member) => {
                                           if (m.id !== log.memberId) return m;
-                                          const curr = Math.max(0, m.restroom || 0);
-                                          const nextRestroom =
-                                            log.delta > 0
-                                              ? Math.max(0, curr - log.amount)
-                                              : curr + log.amount;
-                                          return { ...m, restroom: nextRestroom };
+                                          return { ...m, restroom: restroomValueAfterUndoLog(m.restroom, log) };
                                         });
                                         const next: AppState = {
                                           ...prev,

@@ -41,3 +41,11 @@ export function extractToonationLinkKey(input: string): string | null {
   if (!url) return null;
   return url.split("/").filter(Boolean).pop() || null;
 }
+
+/** UI placeholder·구버전 기본값 — 타 PC에서 이 키로 서버 설정을 덮지 않음 */
+export const EXAMPLE_TOONATION_LINK_KEY = "f28dc2204fbaf86fd9df74c12f435c73";
+
+export function isExampleToonationLinkKey(input: string): boolean {
+  const key = extractToonationLinkKey(input) || String(input || "").trim();
+  return key === EXAMPLE_TOONATION_LINK_KEY;
+}

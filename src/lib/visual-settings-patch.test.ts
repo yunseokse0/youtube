@@ -110,4 +110,42 @@ describe("saveVisualSettingsPatchAsync", () => {
     expect(saved.sigInventory?.some((x) => x.id === "s1")).toBe(true);
     expect((saved.sigInventory || []).length).toBeGreaterThanOrEqual(3);
   });
+
+  it("keeps custom timer font color when saving other visual options", async () => {
+    const userId = "visual-patch-timer-color";
+    const rich = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "피자", account: 1000, toon: 0, contribution: 1000 }],
+      timerDisplayStyles: {
+        general: {
+          ...defaultState().timerDisplayStyles.general,
+          fontColor: "#ff66aa",
+          bgColor: "#112233",
+        },
+      },
+      updatedAt: Date.now(),
+    };
+    window.localStorage.setItem(storageKey(userId), JSON.stringify(rich));
+
+    const foundationWithoutTimerColors = {
+      ...defaultState(),
+      members: rich.members,
+      donorRankingsTheme: {
+        ...defaultState().donorRankingsTheme,
+        nameColor: "#abcdef",
+      },
+      updatedAt: Date.now(),
+    };
+
+    await saveVisualSettingsPatchAsync(
+      { donorRankingsTheme: foundationWithoutTimerColors.donorRankingsTheme },
+      userId,
+      foundationWithoutTimerColors
+    );
+
+    const saved = loadState(userId);
+    expect(saved.timerDisplayStyles.general.fontColor).toBe("#ff66aa");
+    expect(saved.timerDisplayStyles.general.bgColor).toBe("#112233");
+    expect(saved.donorRankingsTheme.nameColor).toBe("#abcdef");
+  });
 });

@@ -4,6 +4,12 @@ import { useSearchParams } from "next/navigation";
 import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster } from "@/lib/state";
 import { maxOverlayAmountDisplayLength } from "@/lib/overlay-amount-display";
 import {
+  formatRestroomDisplay,
+  isRestroomUnlimited,
+  normalizeRestroomCount,
+  RESTROOM_UNLIMITED,
+} from "@/lib/restroom-utils";
+import {
   resolveGoalFontSizePx,
   resolveGoalTextColor,
   resolveGoalTextOutlineColor,
@@ -1681,6 +1687,7 @@ function OverlayInner() {
   }, [presetId, overlayPresets, ready, s]);
   const lastStablePresetRef = useRef<OverlayPresetLike | null>(null);
   const lastStableTimerStyleRef = useRef<ResolvedTimerOverlayStyle | null>(null);
+  const timerStyleEmptySinceRef = useRef<number | null>(null);
   /** OBS: URL로 끄기 전까지 화장실 열 유지(프리셋·SSE 동기화 깜빡임 방지) */
   const restroomColumnLatchRef = useRef<boolean | null>(hostObs ? true : null);
   if (activePreset) {
@@ -1999,26 +2006,18 @@ function OverlayInner() {
     });
     if (timerOverlayStyleHasCustomColors(next)) {
       lastStableTimerStyleRef.current = next;
+      timerStyleEmptySinceRef.current = null;
       return next;
     }
-    const presetHasTimerStyle = Boolean(
-      String(effectivePreset?.timerFontColor || "").trim() ||
-        String(effectivePreset?.timerBgColor || "").trim() ||
-        String(effectivePreset?.timerBorderColor || "").trim()
-    );
-    const stateHasTimerStyle = Boolean(
-      String(timerStyleFromState?.fontColor || "").trim() ||
-        String(timerStyleFromState?.bgColor || "").trim() ||
-        String(timerStyleFromState?.borderColor || "").trim() ||
-        String(timerStyleFromState?.outlineColor || "").trim()
-    );
-    const explicitlyDefault = ready && !presetHasTimerStyle && !stateHasTimerStyle;
-    if (explicitlyDefault) {
-      lastStableTimerStyleRef.current = null;
-      return next;
-    }
+    /** 다른 옵션 저장·동기화로 잠깐 기본색이 오면 즉시 지우지 않고 유지(왔다갔다 방지) */
     if (lastStableTimerStyleRef.current) {
-      return lastStableTimerStyleRef.current;
+      const now = Date.now();
+      if (timerStyleEmptySinceRef.current == null) timerStyleEmptySinceRef.current = now;
+      if (now - timerStyleEmptySinceRef.current < 2800) {
+        return lastStableTimerStyleRef.current;
+      }
+      lastStableTimerStyleRef.current = null;
+      timerStyleEmptySinceRef.current = null;
     }
     return next;
   }, [rawSp, effectivePreset, timerStyleFromState, ready, timerOnlyMode]);
@@ -2690,12 +2689,9 @@ function OverlayInner() {
     return c;
   }, []);
   const getRestroomValueForMember = useCallback((m: Member) => {
-    const raw = (m as Member & { restroom?: unknown }).restroom;
-    const parsed = typeof raw === "number" ? raw : Number(typeof raw === "string" ? String(raw).replace(/,/g, "").trim() : raw);
-    if (!Number.isFinite(parsed)) return 0;
-    return Math.max(0, Math.floor(parsed));
+    return normalizeRestroomCount((m as Member & { restroom?: unknown }).restroom);
   }, []);
-  const fmtRestroom = useCallback((n: number) => String(Math.max(0, Math.floor(n))), []);
+  const fmtRestroom = useCallback((n: number) => formatRestroomDisplay(n), []);
   /** 운영비(핀) 제외 멤버 기여도 합 — 총합 행과 정산 분배 기준에 맞춤 */
   const sumContribution = useMemo(
     () =>
@@ -2716,7 +2712,8 @@ function OverlayInner() {
         getContributionValueForMember(m)
       );
       if (showRestroomColumn) {
-        amounts.push(getRestroomValueForMember(m));
+        const rv = getRestroomValueForMember(m);
+        amounts.push(isRestroomUnlimited(rv) ? 1 : rv);
       }
     }
     if (ready) {
@@ -4085,13 +4082,19 @@ function OverlayInner() {
                         )}
                         {showRestroomColumn && (
                           <td className={`${effectiveRowCls} overlay-col-restroom text-center font-semibold`}>
-                            <OverlayTableNumCell
-                              value={getRestroomValueForMember(m)}
-                              format={fmtRestroom}
-                              animate={rowMotionEnabled}
-                              className="overlay-num-cell-inner overlay-cell-text-inner"
-                              style={overlayCellOutlineStyle}
-                            />
+                            {isRestroomUnlimited(getRestroomValueForMember(m)) ? (
+                              <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                                {fmtRestroom(RESTROOM_UNLIMITED)}
+                              </span>
+                            ) : (
+                              <OverlayTableNumCell
+                                value={getRestroomValueForMember(m)}
+                                format={fmtRestroom}
+                                animate={rowMotionEnabled}
+                                className="overlay-num-cell-inner overlay-cell-text-inner"
+                                style={overlayCellOutlineStyle}
+                              />
+                            )}
                           </td>
                         )}
                       </tr>
@@ -4158,13 +4161,19 @@ function OverlayInner() {
                         )}
                         {showRestroomColumn && (
                           <td className={`${effectiveRowCls} overlay-col-restroom text-center font-semibold`}>
-                            <OverlayTableNumCell
-                              value={getRestroomValueForMember(m)}
-                              format={fmtRestroom}
-                              animate={rowMotionEnabled}
-                              className="overlay-num-cell-inner overlay-cell-text-inner"
-                              style={overlayCellOutlineStyle}
-                            />
+                            {isRestroomUnlimited(getRestroomValueForMember(m)) ? (
+                              <span className="overlay-num-cell-inner overlay-cell-text-inner" style={overlayCellOutlineStyle}>
+                                {fmtRestroom(RESTROOM_UNLIMITED)}
+                              </span>
+                            ) : (
+                              <OverlayTableNumCell
+                                value={getRestroomValueForMember(m)}
+                                format={fmtRestroom}
+                                animate={rowMotionEnabled}
+                                className="overlay-num-cell-inner overlay-cell-text-inner"
+                                style={overlayCellOutlineStyle}
+                              />
+                            )}
                           </td>
                         )}
                       </tr>

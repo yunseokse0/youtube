@@ -11,7 +11,7 @@ export type Member = {
   toon: number;
   /** 수동 관리 기여도 금액(계좌/투네와 별도 집계) */
   contribution?: number;
-  /** 화장실 횟수(수동 기록·차감만, 후원 자동 반영 없음) */
+  /** 화장실 횟수(수동 기록·차감만, 후원 자동 반영 없음). -1 = 무제한(∞) */
   restroom?: number;
   /** 개인 목표 금액 */
   goal?: number;

@@ -110,4 +110,10 @@ export async function fetchToonationListenerStatus(userId?: string): Promise<Too
   return data?.status ?? null;
 }
 
-export { normalizeToonationAlertboxUrl, extractToonationLinkKey, isToonationLinkKey } from "./link-key";
+export {
+  EXAMPLE_TOONATION_LINK_KEY,
+  extractToonationLinkKey,
+  isExampleToonationLinkKey,
+  isToonationLinkKey,
+  normalizeToonationAlertboxUrl,
+} from "./link-key";
