@@ -36,7 +36,7 @@ import {
   type SigRollingItemWithPrice,
 } from "@/lib/sig-rolling-price-bands";
 
-/** 고정 프레임 안 object-contain — 방향 바뀌어도 셸 크기 불변 */
+/** 고정 가로 프레임(300×180) 안 object-contain — 셸 크기 불변 */
 const IMG_IN_FRAME =
   "pointer-events-none select-none block h-full w-full max-h-full max-w-full min-h-0 min-w-0 object-contain object-center";
 
@@ -151,7 +151,7 @@ function RollingCardColumn({
         style={{ width: FIXED_SHELL.outerWidth, height: FIXED_SHELL.outerHeight }}
       >
         <div
-          className="relative grid place-items-center overflow-hidden rounded-2xl bg-white/15"
+          className="relative grid place-items-center overflow-hidden rounded-2xl bg-transparent"
           style={frameStyle}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -366,20 +366,24 @@ function SigRollingOverlayInner() {
 
   return (
     <main
-      className="overlay-root inline-block w-fit bg-transparent p-1 text-pastel-ink"
+      className="overlay-root inline-block bg-transparent text-pastel-ink"
       style={{
-        minWidth: pairLayout.totalOuterWidth + 8,
-        minHeight: pairLayout.maxOuterHeight + 16,
+        width: Math.ceil(pairLayout.totalOuterWidth * twoCardScale) + 8,
+        height: Math.ceil(pairLayout.maxOuterHeight * twoCardScale) + 8,
+        overflow: "hidden",
+        padding: 4,
+        boxSizing: "border-box",
       }}
     >
       <div
         style={{
           width: pairLayout.totalOuterWidth,
+          height: pairLayout.maxOuterHeight,
           transform: `scale(${twoCardScale})`,
           transformOrigin: "top left",
         }}
       >
-        <div className="flex flex-row flex-nowrap items-start gap-0 [isolation:isolate]">
+        <div className="flex flex-row flex-nowrap items-stretch gap-0 [isolation:isolate]">
           {leftCurrent || stableHigh.length > 0 ? (
             <RollingCardColumn
               current={leftCurrent}

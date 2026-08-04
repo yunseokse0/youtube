@@ -31,14 +31,14 @@ describe("sig-rolling-orientation", () => {
     expect(layout.maxOuterHeight).toBe(Math.max(left.outerHeight, right.outerHeight));
   });
 
-  it("keeps fixed square shell so landscape/portrait do not resize the card", () => {
+  it("keeps fixed landscape shell (300×180) so cards do not jump or leave tall empty gaps", () => {
     const shell = sigRollingFixedShellOuterPx(6);
     expect(shell.mediaWidth).toBe(300);
-    expect(shell.mediaHeight).toBe(300);
+    expect(shell.mediaHeight).toBe(180);
     expect(shell.outerWidth).toBe(312);
-    expect(shell.outerHeight).toBe(312);
+    expect(shell.outerHeight).toBe(192);
     const pair = sigRollingFixedPairLayoutPx(6, 2);
     expect(pair.totalOuterWidth).toBe(312 * 2);
-    expect(pair.maxOuterHeight).toBe(312);
+    expect(pair.maxOuterHeight).toBe(192);
   });
 });

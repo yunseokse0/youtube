@@ -51,8 +51,8 @@ export function sigRollingShellOuterPx(
 }
 
 /**
- * 가로(300×180)·세로(180×300)를 모두 담는 고정 셸.
- * 방향이 바뀔 때마다 프레임 크기가 바뀌면 OBS에서 깜빡임처럼 보인다.
+ * 롤링 카드 고정 셸 — 항상 가로 프레임(300×180).
+ * 세로 이미지로 셸을 키우면 OBS에서 여백·어긋남이 생기므로 크기는 고정하고 object-contain 만 사용.
  */
 export function sigRollingFixedShellOuterPx(shellPadPx = 6): {
   outerWidth: number;
@@ -60,14 +60,7 @@ export function sigRollingFixedShellOuterPx(shellPadPx = 6): {
   mediaWidth: number;
   mediaHeight: number;
 } {
-  const mediaWidth = Math.max(SIG_ROLLING_LANDSCAPE_MEDIA_WIDTH_PX, SIG_ROLLING_LANDSCAPE_MEDIA_HEIGHT_PX);
-  const mediaHeight = mediaWidth;
-  return {
-    mediaWidth,
-    mediaHeight,
-    outerWidth: mediaWidth + shellPadPx * 2,
-    outerHeight: mediaHeight + shellPadPx * 2,
-  };
+  return sigRollingShellOuterPx("landscape", shellPadPx);
 }
 
 export function sigRollingPairLayoutPx(
