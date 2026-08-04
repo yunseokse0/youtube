@@ -817,7 +817,7 @@ function normalizeSigSalesExcludedIds(input: unknown): string[] {
 }
 
 export function defaultState(): AppState {
-  const defaultTimer: TimerState = { remainingTime: 0, isActive: false, lastUpdated: Date.now() };
+  const defaultTimer: TimerState = { remainingTime: 0, isActive: false, lastUpdated: 0 };
   const defaultMealBattle: MealBattleState = {
     participants: [],
     memberGaugeColors: {},
@@ -1067,7 +1067,8 @@ function normalizeTimerState(input: unknown): TimerState {
   return {
     remainingTime: Number.isFinite(t.remainingTime) ? Math.max(0, Math.floor(t.remainingTime as number)) : 0,
     isActive: Boolean(t.isActive),
-    lastUpdated: Number.isFinite(t.lastUpdated) ? Math.max(0, Math.floor(t.lastUpdated as number)) : Date.now(),
+    /** missing → 0 (Date.now()면 stale {0,false}가 '최신 정지'로 오인되어 진행 타이머를 덮음) */
+    lastUpdated: Number.isFinite(t.lastUpdated) ? Math.max(0, Math.floor(t.lastUpdated as number)) : 0,
   };
 }
 
@@ -1089,6 +1090,25 @@ function defaultTimerDisplayStyle(): TimerDisplayStyle {
     bgOpacity: 40,
     scalePercent: 100,
   };
+}
+
+/** 타이머 표시 색이 전부 비어 기본값인지 */
+export function isDefaultLikeTimerDisplayStyle(
+  style: TimerDisplayStyle | null | undefined
+): boolean {
+  if (!style) return true;
+  return (
+    !String(style.fontColor || "").trim() &&
+    !String(style.bgColor || "").trim() &&
+    !String(style.borderColor || "").trim() &&
+    !String(style.outlineColor || "").trim()
+  );
+}
+
+export function hasCustomTimerDisplayStyles(
+  styles: AppState["timerDisplayStyles"] | null | undefined
+): boolean {
+  return !isDefaultLikeTimerDisplayStyle(styles?.general);
 }
 
 function normalizeTimerDisplayStyle(input: unknown): TimerDisplayStyle {
@@ -1733,6 +1753,19 @@ export async function saveStateAsync(
         guarded = syncMemberTotalsFromDonors({ ...guarded, donors: mergedDonors });
       }
     }
+    /** 테마 복구·부트스트랩 등에서 0원/빈 후원 전체 저장이 실데이터를 덮지 않게 한다 */
+    if (local && shouldAvoidOverwritingLocalStateWithRemote(local, guarded)) {
+      guarded = {
+        ...guarded,
+        members: local.members,
+        donors: normalizeDonorsArray(local.donors),
+        memberPositions: local.memberPositions ?? guarded.memberPositions,
+        settlementResetAt: local.settlementResetAt ?? guarded.settlementResetAt,
+      };
+      if (normalizeDonorsArray(guarded.donors).length > 0) {
+        guarded = syncMemberTotalsFromDonors(guarded);
+      }
+    }
   }
   if (local && !saveOpts?.settlementReset) {
     if (
@@ -1752,6 +1785,12 @@ export async function saveStateAsync(
       !isDefaultLikeDonorRankingsTheme(local.donorRankingsFullTheme, DEFAULT_DONOR_RANKINGS_FULL_THEME)
     ) {
       guarded = { ...guarded, donorRankingsFullTheme: local.donorRankingsFullTheme };
+    }
+    if (
+      hasCustomTimerDisplayStyles(local.timerDisplayStyles) &&
+      isDefaultLikeTimerDisplayStyle(guarded.timerDisplayStyles?.general)
+    ) {
+      guarded = { ...guarded, timerDisplayStyles: local.timerDisplayStyles };
     }
   }
   const json = JSON.stringify(guarded);
@@ -1824,12 +1863,23 @@ export async function saveOverlayPresetsPatchAsync(
             incomingUpdatedAt: Number(foundation?.updatedAt || 0),
             existingUpdatedAt: Number(local?.updatedAt || 0),
           });
-  const preservedMembers =
+  let preservedMembers =
     foundation && hasMeaningfulMemberRoster(foundation)
       ? foundation.members
       : local && hasMeaningfulMemberRoster(local)
         ? local.members
         : base.members;
+  /** 테마 PATCH용 foundation이 0원이면 LS 실금액을 유지 */
+  if (local && totalCombined(local) > 0) {
+    const foundationTotal = foundation ? totalCombined(foundation) : 0;
+    if (foundationTotal === 0 || shouldAvoidOverwritingLocalStateWithRemote(local, {
+      ...local,
+      members: preservedMembers,
+      donors: preservedDonors,
+    })) {
+      preservedMembers = local.members;
+    }
+  }
   const mergedLocal: AppState = normalizeStateForPersistence(
     syncBattleStateWithMembers(
       existingMeaningful
@@ -2344,9 +2394,7 @@ async function doLoadStateFromApi(
       if (typeof window !== "undefined") {
         try {
           const existing = loadState(userId);
-          const wouldPoison =
-            hasMeaningfulMemberRoster(existing) && !hasMeaningfulMemberRoster(toPersist);
-          if (!wouldPoison) {
+          if (!shouldAvoidOverwritingLocalStateWithRemote(existing, toPersist)) {
             window.localStorage.setItem(storageKey(userId), JSON.stringify(toPersist));
           }
         } catch {}
@@ -2538,6 +2586,35 @@ export function hasMeaningfulMemberRoster(state: AppState | null | undefined): b
 export function hasMeaningfulBroadcastData(state: AppState): boolean {
   if (hasMeaningfulMemberRoster(state)) return true;
   if (hasExpandedSigInventory(state.sigInventory)) return true;
+  return false;
+}
+
+/**
+ * 원격 GET 스냅샷으로 localStorage를 덮으면 안 되는지.
+ * 서버(메모리/빈 Redis) 0원·빈 후원이 로컬 실데이터를 지우는 재로그인 초기화를 막는다.
+ * 의도적 정산 리셋(`settlementResetAt` 원격이 더 최신)은 덮어쓰기를 허용한다.
+ */
+export function shouldAvoidOverwritingLocalStateWithRemote(
+  existing: AppState | null | undefined,
+  incoming: AppState | null | undefined
+): boolean {
+  if (!existing || !incoming) return false;
+  if (hasMeaningfulMemberRoster(existing) && !hasMeaningfulMemberRoster(incoming)) {
+    return true;
+  }
+  const existingReset = Number(existing.settlementResetAt || 0);
+  const incomingReset = Number(incoming.settlementResetAt || 0);
+  if (incomingReset > existingReset) return false;
+
+  const existingDonors = normalizeDonorsArray(existing.donors);
+  const incomingDonors = normalizeDonorsArray(incoming.donors);
+  const existingTotal = totalCombined(existing);
+  const incomingTotal = totalCombined(incoming);
+
+  if (existingDonors.length > 0 && incomingDonors.length === 0) return true;
+  if (existingTotal > 0 && incomingTotal === 0 && existingDonors.length >= incomingDonors.length) {
+    return true;
+  }
   return false;
 }
 

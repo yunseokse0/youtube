@@ -32,6 +32,9 @@ import {
   isDefaultLikeOverlayPresets,
   DEFAULT_DONOR_RANKINGS_FULL_THEME,
   shouldPreferLocalSigInventoryOverIncoming,
+  shouldAvoidOverwritingLocalStateWithRemote,
+  hasCustomTimerDisplayStyles,
+  isDefaultLikeTimerDisplayStyle,
   normalizeDonorsArray,
   mergeDonorsForMultiTabSave,
   ensureMissionItems,
@@ -1001,6 +1004,23 @@ export default function AdminPage() {
     return map[id] || map.default;
   };
   const persistState = useCallback((s: AppState, opts?: { donorsAuthoritative?: boolean; settlementReset?: boolean }) => {
+    /** 사용자 명시 리셋이 아니면 실데이터→0원/빈 후원 전체 저장을 막는다 */
+    if (!opts?.settlementReset && !opts?.donorsAuthoritative) {
+      try {
+        const existing = loadState(user?.id);
+        if (
+          existing &&
+          shouldAvoidOverwritingLocalStateWithRemote(existing, s) &&
+          (totalCombined(existing) > totalCombined(s) ||
+            normalizeDonorsArray(existing.donors).length > normalizeDonorsArray(s.donors).length)
+        ) {
+          setSigExcelResult(
+            "후원·금액이 비어 있는 저장은 차단했습니다. 정산/후원 초기화는 메뉴에서 직접 실행해 주세요."
+          );
+          return;
+        }
+      } catch {}
+    }
     const now = Date.now();
     lastLocalPersistAtRef.current = now;
     stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, s.updatedAt || now, now);
@@ -1344,6 +1364,21 @@ export default function AdminPage() {
       merged = { ...merged, overlayPresets: local.overlayPresets };
       didPreserve = true;
     }
+    /** 타이머 표시 색: 원격이 기본(빈 색)인데 로컬이 커스텀이면 유지 */
+    if (
+      hasCustomTimerDisplayStyles(local.timerDisplayStyles) &&
+      isDefaultLikeTimerDisplayStyle(merged.timerDisplayStyles?.general)
+    ) {
+      merged = { ...merged, timerDisplayStyles: local.timerDisplayStyles };
+      didPreserve = true;
+    }
+    if (
+      (pendingUnsyncedRef.current || Date.now() - lastLocalPersistAtRef.current < 8000) &&
+      hasCustomTimerDisplayStyles(local.timerDisplayStyles)
+    ) {
+      merged = { ...merged, timerDisplayStyles: local.timerDisplayStyles };
+      didPreserve = true;
+    }
     if (
       Array.isArray(local.donorRankingsPresets) &&
       local.donorRankingsPresets.length > 0 &&
@@ -1411,9 +1446,15 @@ export default function AdminPage() {
       } else if (
         totalCombined(local) > 0 &&
         totalCombined(merged) === 0 &&
-        localDonorsNorm.length > 0
+        localDonorsNorm.length >= mergedDonorsNorm.length
       ) {
-        merged = { ...merged, donors: localDonorsNorm, members: local.members };
+        // 실명 멤버 + 0원 원격(재로그인·메모리 서버)이 로컬 금액/후원을 지우지 않게 한다.
+        merged = {
+          ...merged,
+          donors: localDonorsNorm.length > 0 ? localDonorsNorm : mergedDonorsNorm,
+          members: local.members,
+          memberPositions: normalizeMemberPositions(local.memberPositions, local.members),
+        };
         didPreserve = true;
       } else if (
         localDonorsNorm.length > mergedDonorsNorm.length &&
@@ -1436,9 +1477,14 @@ export default function AdminPage() {
       generalTimer: mergeGeneralTimerPreferEffective(local.generalTimer, merged.generalTimer),
     };
     const donorsNorm = normalizeDonorsArray(merged.donors);
-    /** 원격 후원 수용 후 엑셀 금액이 로컬 멤버 합계에 묶이지 않게 donors 기준 재계산 */
+    /** 원격 후원 수용 후 엑셀 금액이 로컬 멤버 합계에 묶이지 않게 donors 기준 재계산.
+     * 단, 후원 없이 멤버 금액만 보존한 경우에는 sync가 0으로 되돌리지 않게 한다. */
+    const preservedTotalsWithoutDonors =
+      didPreserve && donorsNorm.length === 0 && totalCombined(merged) > 0;
     return {
-      merged: syncMemberTotalsFromDonors({ ...merged, donors: donorsNorm }),
+      merged: preservedTotalsWithoutDonors
+        ? { ...merged, donors: donorsNorm }
+        : syncMemberTotalsFromDonors({ ...merged, donors: donorsNorm }),
       didPreserve,
     };
   }, []);
@@ -1502,7 +1548,8 @@ export default function AdminPage() {
       }
     } catch {}
     loadStateFromApi(user?.id, { forceFull: true }).then((apiState) => {
-      const local = offline ? localFallback : loadState(user?.id);
+      // loadStateFromApi가 LS를 만진 뒤라도, 로드 시작 시점 스냅샷으로 0원 원격 덮어쓰기를 막는다.
+      const local = localFallback;
       if (apiState) {
         stateUpdatedAtRef.current = apiState.updatedAt || 0;
         const { merged: toApply, didPreserve } = mergeIncomingStateSafely(apiState, local);
@@ -1519,32 +1566,24 @@ export default function AdminPage() {
         }
         setState(toApply);
         if (Array.isArray(toApply.overlayPresets) && toApply.overlayPresets.length > 0) {
-          if (
-            isDefaultLikeOverlayPresets(toApply.overlayPresets) &&
-            localPresets.length > 0 &&
-            !isDefaultLikeOverlayPresets(localPresets)
-          ) {
-            const next = { ...toApply, overlayPresets: localPresets, updatedAt: Date.now() };
-            setState(next);
-            setPresets(localPresets);
-            stateRef.current = next;
-            saveOverlayPresetsPatchAsync(localPresets, user?.id, { foundation: next }).then((r) => {
-              if (r.ok) setSyncStatus(r.storageFallback ? "error" : "synced");
-            });
-            setSigExcelResult("오버레이 프리셋 캐시에서 테마를 자동 복구했습니다.");
-          } else {
-            setPresets(toApply.overlayPresets as OverlayPreset[]);
-          }
+          setPresets(toApply.overlayPresets as OverlayPreset[]);
+          /** 커스텀 테마 캐시가 있어도 자동 적용하지 않음 — maybePromptThemeRestore가 사용자 확인 후 복구 */
         } else if (localPresets.length > 0) {
-          const next = { ...toApply, overlayPresets: localPresets };
+          const next = { ...toApply, overlayPresets: localPresets, updatedAt: Date.now() };
           setState(next);
-          persistState(next);
+          setPresets(localPresets);
+          stateRef.current = next;
+          /** 전체 persist 금지 — 테마/프리셋만 PATCH (후원·금액 유지) */
+          saveOverlayPresetsPatchAsync(localPresets, user?.id, { foundation: next }).then((r) => {
+            if (r.ok) setSyncStatus(r.storageFallback ? "error" : "synced");
+          });
         } else {
           const first = defaultPreset("전체 통합", { showMembers: true, showTotal: true });
           const merged = { ...toApply, overlayPresets: [first] };
           setPresets([first]);
           setState(merged);
-          persistState(merged);
+          stateRef.current = merged;
+          /** 기본 프리셋은 UI·캐시에만 두고, 사용자 요청 없이 서버 전체 저장하지 않음 */
           try { window.localStorage.setItem(presetStorageKey, JSON.stringify([first])); } catch {}
         }
         setSyncStatus("synced");
@@ -1574,6 +1613,30 @@ export default function AdminPage() {
     const id = window.setInterval(() => setTimerUiNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, []);
+
+  /** 만료된 활성 타이머는 한 번 정지 스냅샷으로 고정 (00:00+일시정지 버튼 잔류·오버레이 1초 홀드 방지) */
+  useEffect(() => {
+    const t = state.generalTimer;
+    if (!t?.isActive) return;
+    if (getEffectiveRemainingTime(t, timerUiNow) > 0) return;
+    setState((prev) => {
+      if (!prev.generalTimer?.isActive) return prev;
+      if (getEffectiveRemainingTime(prev.generalTimer) > 0) return prev;
+      const next: AppState = {
+        ...prev,
+        generalTimer: pauseTimer(prev.generalTimer),
+        updatedAt: Date.now(),
+      };
+      persistState(next);
+      return next;
+    });
+  }, [
+    timerUiNow,
+    state.generalTimer?.isActive,
+    state.generalTimer?.remainingTime,
+    state.generalTimer?.lastUpdated,
+    persistState,
+  ]);
 
   // 다른 기기·OBS 저장 반영: SSE `state_updated` → 디바운스 GET, 저주기 폴링은 폴백만.
   useEffect(() => {
@@ -1780,7 +1843,22 @@ export default function AdminPage() {
       ) {
         return false;
       }
-      const next = applyThemeRestorePatch(stateRef.current, candidate);
+      const live = stateRef.current;
+      const lsSnap = loadState(user?.id);
+      /** React state가 아직 default/0원이면 LS의 실데이터를 베이스로 쓴다 */
+      const liveDonors = normalizeDonorsArray(live.donors).length;
+      const lsDonors = normalizeDonorsArray(lsSnap.donors).length;
+      const base =
+        lsDonors > liveDonors || totalCombined(lsSnap) > totalCombined(live)
+          ? {
+              ...live,
+              members: lsSnap.members,
+              donors: lsSnap.donors,
+              memberPositions: lsSnap.memberPositions ?? live.memberPositions,
+              settlementResetAt: lsSnap.settlementResetAt ?? live.settlementResetAt,
+            }
+          : live;
+      const next = applyThemeRestorePatch(base, candidate);
       if (Array.isArray(next.overlayPresets) && next.overlayPresets.length > 0) {
         setPresets(next.overlayPresets as OverlayPreset[]);
         try {
@@ -1791,8 +1869,10 @@ export default function AdminPage() {
       }
       setState(next);
       stateRef.current = next;
+      /** LS에는 테마만 얹은 실데이터 스냅샷을 기록 — 0원 전체 덮어쓰기 금지 */
       try {
-        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(next));
+        const lsSafe = applyThemeRestorePatch(lsSnap, candidate);
+        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(lsSafe));
       } catch {}
       setPresetRev((r) => r + 1);
       setSigExcelResult(`테마 복구 완료 (${candidate.source}): ${summary.join(" · ") || "완료"}`);
@@ -2323,6 +2403,18 @@ export default function AdminPage() {
         };
         const next = { ...syncOneShotSigItem(draft), updatedAt: draft.updatedAt };
         if (next === prev || adminSyncFingerprint(next) === adminSyncFingerprint(prev)) return prev;
+        /** 로딩 직후 default/0원 상태에서 시그 보정 POST로 후원을 날리지 않음 */
+        try {
+          const existing = loadState(user?.id);
+          if (
+            existing &&
+            shouldAvoidOverwritingLocalStateWithRemote(existing, next) &&
+            (totalCombined(existing) > totalCombined(next) ||
+              normalizeDonorsArray(existing.donors).length > normalizeDonorsArray(next.donors).length)
+          ) {
+            return prev;
+          }
+        } catch {}
         persistState(next);
         return next;
       });
@@ -2333,17 +2425,29 @@ export default function AdminPage() {
         oneShotSyncTimerRef.current = null;
       }
     };
-  }, [state.sigInventory, persistState, syncOneShotSigItem]);
+  }, [state.sigInventory, persistState, syncOneShotSigItem, user?.id]);
 
   useEffect(() => {
     /** 저장 실패 시에만 재시도 — pendingUnsynced마다 5초 POST하면 SSE·폴링 루프가 난다 */
     const id = setInterval(() => {
-      if (syncStatusRef.current === "error") {
-        persistState(stateRef.current);
-      }
+      if (syncStatusRef.current !== "error") return;
+      const cur = stateRef.current;
+      try {
+        const existing = loadState(user?.id);
+        if (
+          existing &&
+          shouldAvoidOverwritingLocalStateWithRemote(existing, cur) &&
+          (totalCombined(existing) > totalCombined(cur) ||
+            normalizeDonorsArray(existing.donors).length > normalizeDonorsArray(cur.donors).length)
+        ) {
+          return;
+        }
+        if (isDefaultLikeState(cur) && hasMeaningfulBroadcastData(existing)) return;
+      } catch {}
+      persistState(cur);
     }, 5000);
     return () => clearInterval(id);
-  }, [persistState]);
+  }, [persistState, user?.id]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !user?.id) return;

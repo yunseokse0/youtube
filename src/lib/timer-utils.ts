@@ -43,12 +43,8 @@ export function getEffectiveRemainingTime(timer: TimerState, now = Date.now()): 
  * 원격 동기화·PATCH 시 generalTimer가 0으로 덮이는 회귀 방지.
  * - 진행 중인 타이머(effective>0)가 stale {0,false} 로 덮일 때 유지
  * - 더 많이 남은 쪽 우선(클라이언트·서버 시계 drift 1초 허용)
+ * - **lastUpdated를 now로 재앵커하지 않음** — 폴링마다 재앵커하면 1초에 멈춤
  */
-function snapshotActiveTimer(timer: TimerState, eff: number, now: number): TimerState {
-  if (!timer.isActive || eff <= 0) return timer;
-  return { remainingTime: eff, isActive: true, lastUpdated: now };
-}
-
 export function mergeGeneralTimerPreferEffective(
   base: TimerState | undefined | null,
   incoming: TimerState | undefined | null,
@@ -59,30 +55,40 @@ export function mergeGeneralTimerPreferEffective(
   const effA = getEffectiveRemainingTime(a, now);
   const effB = getEffectiveRemainingTime(b, now);
 
-  /** 관리자 정지 — incoming 정지가 base 스냅샷보다 엄격히 최신이고, 방금(15s) 이내 */
-  if (effB <= 0 && !b.isActive && (b.lastUpdated || 0) > (a.lastUpdated || 0)) {
+  /** 관리자 정지 — lastUpdated가 실값이고 base보다 엄격히 최신이며, 방금(15s) 이내 */
+  if (
+    effB <= 0 &&
+    !b.isActive &&
+    (b.lastUpdated || 0) > 0 &&
+    (b.lastUpdated || 0) > (a.lastUpdated || 0)
+  ) {
     const stopAgeMs = now - (b.lastUpdated || 0);
     if (!(effA > 0 && a.isActive) || stopAgeMs <= 15_000) {
       return b;
     }
   }
 
-  /** 진행 중인 타이머는 stale 원격 {0,false}·낮은 remaining 으로 덮지 않음 */
+  /** 진행 중인 타이머는 stale 원격 {0,false}·낮은 remaining 으로 덮지 않음 (원본 앵커 유지) */
   if (effB <= 0 && effA > 0) {
-    return snapshotActiveTimer(a, effA, now);
+    return a;
   }
 
   if (effA > effB + 1) {
-    return snapshotActiveTimer(a, effA, now);
+    return a;
   }
 
   if (b.isActive && effB > 0) {
-    return { remainingTime: effB, isActive: true, lastUpdated: now };
+    return b;
+  }
+
+  if (a.isActive && effA > 0 && (a.lastUpdated || 0) >= (b.lastUpdated || 0)) {
+    return a;
   }
 
   return b;
 }
 
+/** persist/스냅샷용 — 유효 남은 시간을 remainingTime에 고정하고 앵커를 지금으로 맞춤 */
 export function snapshotTimerForPersist(timer: TimerState, now = Date.now()): TimerState {
   const normalized = normalizeTimerState(timer, now);
   const remaining = getEffectiveRemainingTime(normalized, now);

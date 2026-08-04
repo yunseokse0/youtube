@@ -526,6 +526,7 @@ function useServerTimer(timer: AppState["generalTimer"] | null): { text: string 
   const timerRef = useRef(timer);
   timerRef.current = timer;
   const lastStableRef = useRef<{ remaining: number; paused: boolean } | null>(null);
+  const holdUntilRef = useRef(0);
   const [remaining, setRemaining] = useState<number>(() => {
     const initial = timer ? getEffectiveRemainingTime(timer) : 0;
     if (timer && (initial > 0 || !timer.isActive)) {
@@ -539,23 +540,31 @@ function useServerTimer(timer: AppState["generalTimer"] | null): { text: string 
 
   useEffect(() => {
     if (!timer) return;
+    holdUntilRef.current = 0;
     const tick = () => {
       const current = timerRef.current;
       if (!current) return;
       const eff = getEffectiveRemainingTime(current);
       if (eff > 0 || !current.isActive) {
         lastStableRef.current = { remaining: eff, paused: !current.isActive };
+        holdUntilRef.current = 0;
         setRemaining(eff);
       } else if (lastStableRef.current && lastStableRef.current.remaining > 0 && current.isActive) {
-        /** 동기화 직후 일시적 0 — 직전 표시 유지 */
-        setRemaining(lastStableRef.current.remaining);
+        /** 동기화 직후 일시적 0 — 최대 1.5초만 직전 표시 유지 (1초 영구 고정 방지) */
+        if (!holdUntilRef.current) holdUntilRef.current = Date.now() + 1500;
+        if (Date.now() < holdUntilRef.current) {
+          setRemaining(lastStableRef.current.remaining);
+        } else {
+          lastStableRef.current = { remaining: 0, paused: false };
+          setRemaining(0);
+        }
       } else {
         setRemaining(eff);
       }
     };
     tick();
     if (!timer.isActive) return;
-    const id = window.setInterval(tick, 1000);
+    const id = window.setInterval(tick, 250);
     return () => clearInterval(id);
   }, [timerKey]);
 

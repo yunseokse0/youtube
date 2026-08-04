@@ -73,6 +73,38 @@ describe("mergeGeneralTimerPreferEffective", () => {
     const merged = mergeGeneralTimerPreferEffective(local, remote, now);
     expect(getEffectiveRemainingTime(merged, now)).toBeGreaterThan(400);
   });
+
+  it("does not re-anchor lastUpdated so frequent merges keep counting down", () => {
+    const start = 5_000_000;
+    let timer: TimerState = {
+      remainingTime: 5,
+      isActive: true,
+      lastUpdated: start,
+    };
+    for (let ms = 100; ms <= 5000; ms += 100) {
+      const now = start + ms;
+      timer = mergeGeneralTimerPreferEffective(timer, { ...timer }, now);
+    }
+    expect(getEffectiveRemainingTime(timer, start + 5000)).toBe(0);
+    expect(timer.lastUpdated).toBe(start);
+  });
+
+  it("rejects fake fresh stop with lastUpdated=0 even if Date.now-like defaults appear", () => {
+    const now = 6_000_000;
+    const running: TimerState = {
+      remainingTime: 120,
+      isActive: true,
+      lastUpdated: now - 10_000,
+    };
+    const fakeStop: TimerState = {
+      remainingTime: 0,
+      isActive: false,
+      lastUpdated: 0,
+    };
+    const merged = mergeGeneralTimerPreferEffective(running, fakeStop, now);
+    expect(merged.isActive).toBe(true);
+    expect(getEffectiveRemainingTime(merged, now)).toBe(110);
+  });
 });
 
 describe("resumeTimer", () => {

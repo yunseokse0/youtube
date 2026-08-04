@@ -16,7 +16,9 @@ import {
   filterDonorsAfterSettlementReset,
   hasExpandedSigInventory,
   hasMeaningfulMemberRoster,
+  hasCustomTimerDisplayStyles,
   isDefaultLikeDonorRankingsTheme,
+  isDefaultLikeTimerDisplayStyle,
   isDefaultPlaceholderMemberList,
   isShrunkToDefaultSigInventory,
   mergeDonorsForMultiTabSave,
@@ -228,6 +230,16 @@ function mergePartialState(
   ) {
     next.donorRankingsFullTheme = base.donorRankingsFullTheme;
     logger.warn("donorRankingsFullTheme default wipe blocked", { userId });
+  }
+  if (
+    "timerDisplayStyles" in patch &&
+    hasCustomTimerDisplayStyles(base.timerDisplayStyles) &&
+    isDefaultLikeTimerDisplayStyle(
+      (patch.timerDisplayStyles as AppState["timerDisplayStyles"] | undefined)?.general
+    )
+  ) {
+    next.timerDisplayStyles = base.timerDisplayStyles;
+    logger.warn("timerDisplayStyles default wipe blocked", { userId });
   }
   if (!("donorRankingsPresets" in patch)) next.donorRankingsPresets = base.donorRankingsPresets;
   if (!("donorRankingsPresetId" in patch)) next.donorRankingsPresetId = base.donorRankingsPresetId;
@@ -550,7 +562,7 @@ export async function POST(req: Request) {
     }
     const baseState = existing || defaultState();
     const donorsInPatch = Array.isArray(body.donors);
-    const donationInitReset = isDonationInitGoalResetPatch(body) || settlementReset;
+    const donationInitReset = settlementReset || isDonationInitGoalResetPatch(body);
     const resetAt = Number(baseState.settlementResetAt || 0);
     const incomingDonorsRaw = donorsInPatch ? normalizeDonorsArray(body.donors) : [];
     const incomingDonorsFiltered =

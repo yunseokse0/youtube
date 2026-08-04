@@ -201,12 +201,18 @@ export function resetOverlayPresetsGoalForDonationInit(presets: unknown[] | unde
   });
 }
 
-/** 후원·멤버 초기화 패치 — 이때만 서버가 goal 을 기준선(200만)으로 되돌릴 수 있음 */
+/** 후원·멤버 초기화 패치 — 이때만 서버가 goal 을 기준선(200만)으로 되돌릴 수 있음.
+ * 명시적 `settlementReset`/`donationInit` 없이는 절대 초기화로 취급하지 않는다.
+ * (테마 복구·전체 저장이 donors:[]·0원 멤버를 포함해도 오탐으로 후원을 지우지 않게 함)
+ */
 export function isDonationInitGoalResetPatch(patch: {
   donors?: unknown;
   members?: Array<{ account?: number; toon?: number }>;
   overlayPresets?: unknown;
+  settlementReset?: boolean;
+  donationInit?: boolean;
 }): boolean {
+  if (patch.settlementReset !== true && patch.donationInit !== true) return false;
   if (!Array.isArray(patch.donors) || patch.donors.length > 0) return false;
   if (!Array.isArray(patch.members)) return false;
   const membersZeroed = patch.members.every(

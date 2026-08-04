@@ -6,12 +6,52 @@ import {
   computeEscalatedDonationGoal,
   computeLiveDonationTotalFromMembers,
   isDonationGoalAutoEscalateEnabled,
+  isDonationInitGoalResetPatch,
   normalizeOverlayPresetDonationGoals,
   nextGoalTenPercentIncrease,
   mergeOverlayPresetsPreservingEscalatedGoals,
   resetOverlayPresetsGoalForDonationInit,
   unwindGoalForDonationReset,
 } from "./goal-preset-math";
+
+describe("isDonationInitGoalResetPatch", () => {
+  const zeroMembers = [
+    { account: 0, toon: 0 },
+    { account: 0, toon: 0 },
+  ];
+  const goalPresets = [
+    { id: "g", showGoal: true, goal: "2000000", goalBaseline: "2000000" },
+  ];
+
+  it("명시적 플래그 없이는 후원 초기화로 취급하지 않음", () => {
+    expect(
+      isDonationInitGoalResetPatch({
+        donors: [],
+        members: zeroMembers,
+        overlayPresets: goalPresets,
+      })
+    ).toBe(false);
+  });
+
+  it("settlementReset 또는 donationInit 이 있을 때만 초기화로 인식", () => {
+    expect(
+      isDonationInitGoalResetPatch({
+        donors: [],
+        members: zeroMembers,
+        overlayPresets: goalPresets,
+        settlementReset: true,
+      })
+    ).toBe(true);
+    expect(
+      isDonationInitGoalResetPatch({
+        donors: [],
+        members: zeroMembers,
+        overlayPresets: goalPresets,
+        donationInit: true,
+      })
+    ).toBe(true);
+  });
+});
 
 describe("normalizeOverlayPresetDonationGoals", () => {
   it("기준선 200만 원, 3천만 원은 200만으로, 상향된 goal 은 유지", () => {
