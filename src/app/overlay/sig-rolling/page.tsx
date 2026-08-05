@@ -39,7 +39,7 @@ import {
 
 /** 고정 가로 프레임(300×180) 안 object-contain — 셸 크기 불변 */
 const IMG_IN_FRAME =
-  "pointer-events-none select-none block h-full w-full max-h-full max-w-full min-h-0 min-w-0 object-contain object-center";
+  "pointer-events-none select-none block h-full w-full max-h-full max-w-full object-contain object-center";
 
 const SHELL_PAD_PX = 6;
 const FIXED_SHELL = sigRollingFixedShellOuterPx(SHELL_PAD_PX);
@@ -47,7 +47,6 @@ const TWO_CARD_LAYOUT = sigRollingFixedPairLayoutPx(SHELL_PAD_PX, 2);
 const ONE_CARD_LAYOUT = sigRollingFixedPairLayoutPx(SHELL_PAD_PX, 1);
 
 function bandScheduleToken(items: SigRollingItemWithPrice[]): string {
-  /** id 집합만 — URL/정렬 흔들림으로 인덱스가 0에 고정되지 않게 */
   return items
     .map((x) => x.id)
     .slice()
@@ -55,7 +54,6 @@ function bandScheduleToken(items: SigRollingItemWithPrice[]): string {
     .join("\u001f");
 }
 
-/** 목록 구성(id 집합)만 — 가격·URL·정렬 변동으로 타이머/인덱스가 리셋되지 않게 */
 function sigRollingCatalogKey(state: AppState | null, memberFilterId: string, highMin: number): string {
   const items = getUnifiedSigRollingItems(state, memberFilterId);
   const { high, low } = splitSigRollingByPriceBand(items, highMin);
@@ -70,8 +68,8 @@ function resolveItemSrc(item: SigRollingItem | null, overlayUserId?: string): st
 }
 
 /**
- * 고정 셸 + DOM 프리로드: OBS CEF에서 `new Image().onload`가 안 뜨면 교체가 멈추므로
- * 숨은 img onLoad + 타임아웃 강제 교체로 보장한다.
+ * 더블버퍼: 앞면 src는 로드된 값만 유지. 다음 장은 뒷면에서 로드 후 한 번에 교체.
+ * visible img의 src를 미로드 URL로 바꾸면 OBS에서 빈 프레임이 깜빡인다.
  */
 function RollingCardColumn({
   current,
@@ -82,55 +80,56 @@ function RollingCardColumn({
   pairSide?: "left" | "right";
   overlayUserId?: string;
 }) {
-  const targetId = current?.id || "";
   const targetSrc = resolveItemSrc(current, overlayUserId);
-  const [shownSrc, setShownSrc] = useState(targetSrc);
-  const shownSrcRef = useRef(shownSrc);
-  shownSrcRef.current = shownSrc;
   const fallbackSrc = toSigOverlayAbsoluteAssetUrl(BUNDLED_SIG_PLACEHOLDER_URL);
+
+  const [visibleSrc, setVisibleSrc] = useState(() => targetSrc || "");
+  const visibleSrcRef = useRef(visibleSrc);
+  visibleSrcRef.current = visibleSrc;
+  const pendingSrcRef = useRef<string | null>(null);
+  const genRef = useRef(0);
 
   useEffect(() => {
     if (!targetSrc) return;
-    if (targetSrc === shownSrcRef.current) return;
+    if (targetSrc === visibleSrcRef.current) return;
+    if (pendingSrcRef.current === targetSrc) return;
 
-    let cancelled = false;
-    let settled = false;
+    const gen = ++genRef.current;
+    pendingSrcRef.current = targetSrc;
 
     const commit = (src: string) => {
-      if (cancelled || settled) return;
-      settled = true;
-      setShownSrc(src);
+      if (genRef.current !== gen) return;
+      pendingSrcRef.current = null;
+      visibleSrcRef.current = src;
+      setVisibleSrc(src);
     };
 
-    /** OBS CEF에서 onLoad 누락 시에도 빠르게 교체 */
-    const forceId = window.setTimeout(() => commit(targetSrc), 200);
+    const img = new window.Image();
+    img.decoding = "async";
+    img.onload = () => commit(targetSrc);
+    img.onerror = () => commit(fallbackSrc);
+    img.src = targetSrc;
+    if (img.complete && img.naturalWidth > 0) {
+      commit(targetSrc);
+      return;
+    }
 
+    const forceId = window.setTimeout(() => commit(targetSrc), 1500);
     return () => {
-      cancelled = true;
       window.clearTimeout(forceId);
     };
-  }, [targetId, targetSrc]);
+  }, [targetSrc, fallbackSrc]);
 
-  const onHiddenLoad = useCallback(() => {
-    if (targetSrc) setShownSrc(targetSrc);
-  }, [targetSrc]);
-
-  const onHiddenError = useCallback(() => {
-    setShownSrc(fallbackSrc);
-  }, [fallbackSrc]);
-
-  const onImgError = useCallback(
+  const onVisibleError = useCallback(
     (e: SyntheticEvent<HTMLImageElement>) => {
       if (e.currentTarget.src.includes("dummy-sig")) return;
-      setShownSrc(fallbackSrc);
+      visibleSrcRef.current = fallbackSrc;
+      setVisibleSrc(fallbackSrc);
     },
     [fallbackSrc]
   );
 
-  if (!current && !shownSrc) return null;
-
-  const displaySrc = shownSrc || targetSrc;
-  if (!displaySrc) return null;
+  if (!visibleSrc && !targetSrc) return null;
 
   const shellBase =
     "overflow-hidden shadow-lg border border-white/20 bg-white/35 [transform:translateZ(0)] [backface-visibility:hidden]";
@@ -150,8 +149,6 @@ function RollingCardColumn({
     maxHeight: FIXED_SHELL.mediaHeight,
   };
 
-  const needsPreload = Boolean(targetSrc && targetSrc !== displaySrc);
-
   return (
     <div
       className="shrink-0"
@@ -161,33 +158,18 @@ function RollingCardColumn({
         className={shellClass}
         style={{ width: FIXED_SHELL.outerWidth, height: FIXED_SHELL.outerHeight }}
       >
-        <div
-          className="relative grid place-items-center overflow-hidden rounded-2xl bg-transparent"
-          style={frameStyle}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={displaySrc}
-            alt=""
-            className={IMG_IN_FRAME}
-            referrerPolicy="no-referrer"
-            style={{ opacity: 1 }}
-            draggable={false}
-            decoding="async"
-            onError={onImgError}
-          />
-          {needsPreload ? (
+        <div className="relative overflow-hidden rounded-2xl bg-transparent" style={frameStyle}>
+          {visibleSrc ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={targetSrc}
+              src={visibleSrc}
               alt=""
-              aria-hidden
+              className={IMG_IN_FRAME}
               referrerPolicy="no-referrer"
+              style={{ opacity: 1 }}
+              draggable={false}
               decoding="async"
-              className="pointer-events-none absolute opacity-0"
-              style={{ width: 1, height: 1, left: 0, top: 0 }}
-              onLoad={onHiddenLoad}
-              onError={onHiddenError}
+              onError={onVisibleError}
             />
           ) : null}
         </div>
@@ -222,7 +204,7 @@ function SigRollingOverlayInner() {
     (sp.get("obsSafe") || "").toLowerCase() === "true" ||
     (sp.get("obsSafe") || "").toLowerCase() === "1";
   const { state, ready } = useOverlayRemoteState(userId, {
-    /** 새로고침 시 LS·last-good 이전 이미지가 먼저 보이지 않게 */
+    /** 첫 페인트에 LS 캐시 금지 — 서버 수신 전엔 빈 화면 */
     skipLocalSnapshot: true,
     forceInitialFull: true,
     persistLastGood: false,
@@ -249,23 +231,42 @@ function SigRollingOverlayInner() {
   leftIdxRef.current = leftIdx;
   rightIdxRef.current = rightIdx;
 
-  /** API 수신 전·빈 스냅샷에는 이전 목록을 재사용하지 않음(새로고침 플래시 방지) */
-  const stableHigh = highItems;
-  const stableLow = lowItems;
-  const stableTotal = totalCount;
+  /**
+   * 세션 안에서만 마지막 목록 유지(새로고침 시 ref 초기화 → 이전 캐시 플래시 없음).
+   * 폴링 중 빈 스냅샷이 와도 카드가 통째로 사라지지 않게 함.
+   */
+  const sessionHydratedRef = useRef(false);
+  const lastItemsRef = useRef<{
+    high: SigRollingItemWithPrice[];
+    low: SigRollingItemWithPrice[];
+  }>({ high: [], low: [] });
+  if (ready && totalCount > 0) {
+    sessionHydratedRef.current = true;
+    lastItemsRef.current = { high: highItems, low: lowItems };
+  }
+  const stableHigh =
+    totalCount > 0 ? highItems : sessionHydratedRef.current ? lastItemsRef.current.high : [];
+  const stableLow =
+    totalCount > 0 ? lowItems : sessionHydratedRef.current ? lastItemsRef.current.low : [];
+  const stableTotal = stableHigh.length + stableLow.length;
   const stableShowPair = stableHigh.length > 0 && stableLow.length > 0;
 
   const leftCurrent = pickSigRollingAt(stableHigh, leftIdx);
   const rightCurrent = pickSigRollingAt(stableLow, rightIdx);
 
-  const catalogKey = sigRollingCatalogKey(state, memberFilterId, highMin);
-
+  const catalogKey = useMemo(
+    () => sigRollingCatalogKey(state, memberFilterId, highMin),
+    [state, memberFilterId, highMin]
+  );
+  const catalogKeyRef = useRef(catalogKey);
   const pairLayout = stableShowPair ? TWO_CARD_LAYOUT : ONE_CARD_LAYOUT;
 
   const bandsRef = useRef({ high: stableHigh, low: stableLow, staticHoldMs: holdMs });
   bandsRef.current = { high: stableHigh, low: stableLow, staticHoldMs: holdMs };
 
   const canAdvance = stableHigh.length >= 2 || stableLow.length >= 2;
+  const holdMsRef = useRef(holdMs);
+  holdMsRef.current = holdMs;
 
   const preloadRollingImage = useCallback(
     (item: SigRollingItem | null | undefined) => {
@@ -288,7 +289,10 @@ function SigRollingOverlayInner() {
   const twoCardScale = useMemo(() => {
     if (!Number.isFinite(viewportW) || viewportW <= 0) return 1;
     const safeW = Math.max(260, viewportW - 8);
-    const baseW = Math.max(pairLayout.totalOuterWidth, stableShowPair ? TWO_CARD_LAYOUT.totalOuterWidth : pairLayout.totalOuterWidth);
+    const baseW = Math.max(
+      pairLayout.totalOuterWidth,
+      stableShowPair ? TWO_CARD_LAYOUT.totalOuterWidth : pairLayout.totalOuterWidth
+    );
     const ratio = safeW / baseW;
     if (!Number.isFinite(ratio)) return 1;
     return Math.max(0.6, Math.min(1, ratio));
@@ -301,22 +305,26 @@ function SigRollingOverlayInner() {
     return () => window.removeEventListener("resize", update);
   }, []);
 
+  /** id 집합이 실제로 바뀔 때만 인덱스 리셋 — 빈 키로 리셋하지 않음 */
   useEffect(() => {
+    if (!catalogKey.includes("|H:") || catalogKey.endsWith("|H:|L:")) return;
+    if (catalogKeyRef.current === catalogKey) return;
+    const prev = catalogKeyRef.current;
+    catalogKeyRef.current = catalogKey;
+    if (!prev || prev.endsWith("|H:|L:")) return;
     setLeftIdx(0);
     setRightIdx(0);
   }, [catalogKey]);
 
-  /** 인덱스가 목록 길이를 넘지 않게 보정 */
   useEffect(() => {
     if (stableHigh.length > 0 && leftIdx >= stableHigh.length) setLeftIdx(0);
     if (stableLow.length > 0 && rightIdx >= stableLow.length) setRightIdx(0);
   }, [stableHigh.length, stableLow.length, leftIdx, rightIdx]);
 
-  /** OBS-safe worker interval — 메인 스레드 setInterval 스로틀로 진행이 멈추지 않게 */
+  /** holdMs·목록 길이만으로 타이머 유지 — 매 폴링마다 재생성하지 않음 */
   useEffect(() => {
-    if (!ready || stableTotal === 0 || !canAdvance) return;
-
-    const waitMs = resolveSigRollingHoldMs(holdMs);
+    if (!ready || !canAdvance) return;
+    if (stableHigh.length + stableLow.length === 0) return;
 
     const tick = () => {
       const snap = bandsRef.current;
@@ -327,25 +335,9 @@ function SigRollingOverlayInner() {
       advanceBands();
     };
 
-    preloadRollingImage(
-      stableHigh.length > 1 ? pickSigRollingAt(bandsRef.current.high, leftIdxRef.current + 1) : null
-    );
-    preloadRollingImage(
-      stableLow.length > 1 ? pickSigRollingAt(bandsRef.current.low, rightIdxRef.current + 1) : null
-    );
-
+    const waitMs = resolveSigRollingHoldMs(holdMsRef.current);
     return createObsSafeInterval(tick, waitMs);
-  }, [
-    ready,
-    stableTotal,
-    catalogKey,
-    holdMs,
-    canAdvance,
-    stableHigh.length,
-    stableLow.length,
-    preloadRollingImage,
-    advanceBands,
-  ]);
+  }, [ready, canAdvance, holdMs, catalogKey, advanceBands, preloadRollingImage, stableHigh.length, stableLow.length]);
 
   const emptyDetail = useMemo(() => {
     if (!state) return "";
@@ -389,7 +381,11 @@ function SigRollingOverlayInner() {
           <p className="font-semibold text-amber-100" style={{ color: "#fde68a" }}>
             시그 롤링 · 표시할 이미지가 없습니다
           </p>
-          {emptyDetail ? <p className="text-white/95" style={{ color: "rgba(248,250,252,0.96)" }}>{emptyDetail}</p> : null}
+          {emptyDetail ? (
+            <p className="text-white/95" style={{ color: "rgba(248,250,252,0.96)" }}>
+              {emptyDetail}
+            </p>
+          ) : null}
           <p className="text-white/85" style={{ color: "rgba(248,250,252,0.88)" }}>
             <code className="rounded bg-white/15 px-1">/overlay/sig-rolling</code> 는{" "}
             <strong className="text-white">후원 랭킹 오버레이와 별도의 브라우저 소스</strong>로 추가해야 합니다. URL에{" "}
@@ -421,14 +417,14 @@ function SigRollingOverlayInner() {
         }}
       >
         <div className="flex flex-row flex-nowrap items-stretch gap-0 [isolation:isolate]">
-          {leftCurrent || stableHigh.length > 0 ? (
+          {leftCurrent ? (
             <RollingCardColumn
               current={leftCurrent}
               pairSide={stableShowPair ? "left" : undefined}
               overlayUserId={overlayUserId}
             />
           ) : null}
-          {rightCurrent || (stableShowPair && stableLow.length > 0) ? (
+          {rightCurrent ? (
             <RollingCardColumn
               current={rightCurrent}
               pairSide={stableShowPair ? "right" : undefined}
@@ -444,10 +440,7 @@ function SigRollingOverlayInner() {
 function SigRollingSuspenseFallback() {
   return (
     <main className="overlay-root inline-block w-fit p-1">
-      <div
-        className="rounded-lg px-3 py-2 text-[11px] leading-snug"
-        style={overlayNoticeBoxStyle}
-      >
+      <div className="rounded-lg px-3 py-2 text-[11px] leading-snug" style={overlayNoticeBoxStyle}>
         시그 롤링 · 준비 중…
       </div>
     </main>
