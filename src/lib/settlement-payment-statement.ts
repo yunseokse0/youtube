@@ -638,6 +638,12 @@ export function buildMemberPaymentStatementHtml(
    * 후원금 | 수수료 | 부가세 | 순매출 | 정산금
    * html2canvas 호환: flex 대신 table + line-height/vertical-align 으로 셀 정중앙
    */
+  /** html2canvas: border-box+line-height=height는 테두리만큼 글자가 치우침 → flex .cell 사용 */
+  const cell = (html: string, className: string, attrs = "") =>
+    `<td class="${className}"${attrs ? ` ${attrs}` : ""}><div class="cell">${html}</div></td>`;
+  const thCell = (html: string, className: string, attrs = "") =>
+    `<th class="${className}"${attrs ? ` ${attrs}` : ""}><div class="cell">${html}</div></th>`;
+
   const channelBlock = (
     sectionTitle: string,
     grossLabel: string,
@@ -659,27 +665,27 @@ export function buildMemberPaymentStatementHtml(
       </colgroup>
       <thead>
         <tr>
-          <th class="h">${escapeHtml(grossLabel)}</th>
+          ${thCell(escapeHtml(grossLabel), "h")}
           <th colspan="2" class="deduct">
             <table class="deduct-inner">
-              <tr><td class="d-top" colspan="2">기본 공제</td></tr>
+              <tr>${cell("기본 공제", "d-top", 'colspan="2"')}</tr>
               <tr>
-                <td class="d-bot">플랫폼 수수료</td>
-                <td class="d-bot">부가세</td>
+                ${cell("플랫폼 수수료", "d-bot")}
+                ${cell("부가세", "d-bot")}
               </tr>
             </table>
           </th>
-          <th class="h">순매출</th>
-          <th class="h">${escapeHtml(shareLabel)}</th>
+          ${thCell("순매출", "h")}
+          ${thCell(escapeHtml(shareLabel), "h")}
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td class="n">${moneyCell(gross)}</td>
-          <td class="n">${moneyCell(fee)}</td>
-          <td class="n">${moneyCell(vat)}</td>
-          <td class="n">${moneyCell(net)}</td>
-          <td class="n">${moneyCell(share)}</td>
+          ${cell(moneyCell(gross), "n")}
+          ${cell(moneyCell(fee), "n")}
+          ${cell(moneyCell(vat), "n")}
+          ${cell(moneyCell(net), "n")}
+          ${cell(moneyCell(share), "n")}
         </tr>
       </tbody>
     </table>`;
@@ -706,12 +712,17 @@ export function buildMemberPaymentStatementHtml(
   }
   .title {
     text-align: center;
+    margin: 4px 0 14px;
+  }
+  /* text-underline-offset은 html2canvas에서 무시되어 밑줄 위치가 어긋남 */
+  .title-text {
+    display: inline-block;
     font-size: 28px;
     font-weight: 800;
     letter-spacing: 0.12em;
-    margin: 4px 0 14px;
-    text-decoration: underline;
-    text-underline-offset: 6px;
+    line-height: 1.2;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #111;
   }
   .header-row {
     display: flex;
@@ -741,24 +752,36 @@ export function buildMemberPaymentStatementHtml(
     width: 96px;
     height: 96px;
   }
+  .cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    line-height: 1.25;
+    box-sizing: border-box;
+  }
   .meta table { border-collapse: collapse; font-size: 13px; }
   .meta td {
     border: 1px solid #333;
     height: 30px;
-    line-height: 30px;
-    padding: 0 10px;
+    padding: 0;
     text-align: center;
     vertical-align: middle;
   }
+  .meta td .cell { padding: 0 10px; height: 30px; }
   .meta td.k { background: #efefef; font-weight: 700; width: 88px; }
   .meta td.v { min-width: 140px; }
   .section-bar {
     margin: 18px 0 0;
     padding: 0 10px;
     height: 34px;
-    line-height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
     font-size: 14px;
     font-weight: 800;
+    line-height: 1.25;
     text-align: left;
     background: #e8e8e8;
     border: 1px solid #333;
@@ -786,18 +809,17 @@ export function buildMemberPaymentStatementHtml(
     text-align: center;
     vertical-align: middle;
     word-break: keep-all;
-    padding: 0 4px;
+    padding: 0;
+    line-height: normal;
   }
   table.pay-table thead th.h {
     background: #f3f3f3;
     font-weight: 700;
     font-size: 11px;
     height: 56px;
-    line-height: 56px;
-    padding: 0 4px;
-    vertical-align: middle;
     white-space: nowrap;
   }
+  table.pay-table thead th.h .cell { height: 56px; padding: 0 4px; }
   table.pay-table thead th.deduct {
     background: #f3f3f3;
     padding: 0;
@@ -813,65 +835,54 @@ export function buildMemberPaymentStatementHtml(
     border-bottom: 1px solid #333;
     vertical-align: middle;
     text-align: center;
-    padding: 0 2px;
+    padding: 0;
   }
-  table.deduct-inner td.d-top {
-    height: 28px;
-    line-height: 28px;
-  }
+  table.deduct-inner td.d-top { height: 28px; }
+  table.deduct-inner td.d-top .cell { height: 28px; padding: 0 2px; }
   table.deduct-inner td.d-bot {
     height: 28px;
-    line-height: 28px;
     border-bottom: none;
     border-right: 1px solid #333;
     width: 50%;
   }
+  table.deduct-inner td.d-bot .cell { height: 28px; padding: 0 2px; }
   table.deduct-inner tr:last-child td.d-bot:last-child {
     border-right: none;
   }
-  /* html2canvas는 vertical-align보다 line-height=height가 세로 중앙에 안정적 */
   table.pay-table tbody td.n {
     font-variant-numeric: tabular-nums;
     font-weight: 700;
     font-size: 13px;
     background: #fff;
     height: 42px;
-    line-height: 42px;
-    padding: 0 4px;
-    vertical-align: middle;
   }
+  table.pay-table tbody td.n .cell { height: 42px; padding: 0 4px; }
   table.total-table {
     margin-top: 28px;
   }
   table.total-table td.left {
     width: 60%;
     height: 72px;
-    line-height: 72px;
     font-size: 18px;
     font-weight: 800;
     background: #efefef;
-    vertical-align: middle;
-    padding: 0 4px;
   }
+  table.total-table td.left .cell { height: 72px; padding: 0 4px; }
   table.total-table td.cap {
     width: 40%;
     height: 28px;
-    line-height: 28px;
     font-size: 12px;
     font-weight: 700;
     background: #f7f7f7;
-    vertical-align: middle;
-    padding: 0 4px;
   }
+  table.total-table td.cap .cell { height: 28px; padding: 0 4px; }
   table.total-table td.amt {
     height: 44px;
-    line-height: 44px;
     font-size: 22px;
     font-weight: 800;
     font-variant-numeric: tabular-nums;
-    vertical-align: middle;
-    padding: 0 4px;
   }
+  table.total-table td.amt .cell { height: 44px; padding: 0 4px; }
   .thanks {
     margin-top: 40px;
     text-align: center;
@@ -889,18 +900,18 @@ export function buildMemberPaymentStatementHtml(
 </head>
 <body>
   <div class="sheet">
-    <div class="title">지급 정산서</div>
+    <div class="title"><span class="title-text">지급 정산서</span></div>
     <div class="header-row">
       <div class="logo-wrap">${logoHtml}</div>
       <div class="meta">
         <table>
           <tr>
-            <td class="k">방송일</td>
-            <td class="v">${escapeHtml(s.broadcastDateLabel)}</td>
+            ${cell("방송일", "k")}
+            ${cell(escapeHtml(s.broadcastDateLabel), "v")}
           </tr>
           <tr>
-            <td class="k">스트리머명</td>
-            <td class="v">${escapeHtml(s.streamerName)}</td>
+            ${cell("스트리머명", "k")}
+            ${cell(escapeHtml(s.streamerName), "v")}
           </tr>
         </table>
       </div>
@@ -930,11 +941,11 @@ export function buildMemberPaymentStatementHtml(
 
     <table class="total-table">
       <tr>
-        <td class="left" rowspan="2">총 정산 금액</td>
-        <td class="cap">(A+B)-(원천세 ${escapeHtml(withholdPct)}%)</td>
+        ${cell("총 정산 금액", "left", 'rowspan="2"')}
+        ${cell(`(A+B)-(원천세 ${escapeHtml(withholdPct)}%)`, "cap")}
       </tr>
       <tr>
-        <td class="amt">${moneyCell(s.payout)}</td>
+        ${cell(moneyCell(s.payout), "amt")}
       </tr>
     </table>
 
