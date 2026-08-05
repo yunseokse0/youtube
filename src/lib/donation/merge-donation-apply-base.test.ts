@@ -159,4 +159,46 @@ describe("enrichStateBeforeAuthoritativeDonationSave", () => {
     expect(enriched.members.find((m) => m.id === "m1")?.toon).toBe(121000);
     expect(enriched.members.find((m) => m.id === "m2")?.account).toBe(100000);
   });
+
+  it("keeps applied roster when server members share names but different ids", () => {
+    const applied: AppState = {
+      ...defaultState(),
+      members: [
+        { id: "admin-bt", name: "BT태호", account: 0, toon: 100000, contribution: 100000 },
+        { id: "admin-yb", name: "연비서", account: 100000, toon: 0, contribution: 100000 },
+      ],
+      donors: [
+        {
+          id: "d-toon",
+          name: "철수",
+          amount: 100000,
+          memberId: "admin-bt",
+          at: 10,
+          target: "toon",
+        },
+        {
+          id: "d-acc",
+          name: "익명",
+          amount: 100000,
+          memberId: "admin-yb",
+          at: 9,
+          target: "account",
+        },
+      ],
+    };
+    /** 서버 GET — 이름은 같으나 id 가 m1/m2 (엑셀 0 버그의 원인) */
+    const serverRoster: AppState = {
+      ...defaultState(),
+      members: [
+        { id: "m1", name: "BT태호", account: 0, toon: 0, contribution: 0 },
+        { id: "m2", name: "연비서", account: 0, toon: 0, contribution: 0 },
+      ],
+      donors: [],
+      updatedAt: Date.now() + 99999,
+    };
+    const enriched = enrichStateBeforeAuthoritativeDonationSave(applied, [serverRoster]);
+    expect(enriched.members.find((m) => m.id === "admin-bt")?.toon).toBe(100000);
+    expect(enriched.members.find((m) => m.id === "admin-yb")?.account).toBe(100000);
+    expect(enriched.members.some((m) => m.id === "m1")).toBe(false);
+  });
 });

@@ -32,6 +32,7 @@ import {
 import type { SigItem } from "@/types";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
 import { dedupeDonorRows, syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
+import { rosterDonorMatchScore } from "@/lib/donation/merge-donation-apply-base";
 import { isManualOverlaySessionId } from "@/lib/sig-sales-manual-round";
 import { createModuleLogger } from "@/lib/logger";
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
@@ -730,10 +731,35 @@ export async function POST(req: Request) {
      * syncMemberTotalsFromDonors 를 돌리지 않는다.
      * 서버 donors 가 비어 있을 때 members 금액을 0으로 재계산해 버리는 회귀를 막는다.
      */
-    const draft: AppState =
+    let draft: AppState =
       donorsInPatch || "members" in bodyForMerge
         ? syncMemberTotalsFromDonors({ ...merged, donors: dedupedDonors })
         : { ...merged, donors: dedupedDonors };
+    /**
+     * donorsAuthoritative + donors 있음인데 멤버 합계 0 → memberId/로스터 불일치.
+     * body 멤버가 donors 와 더 잘 맞으면 그 로스터로 재동기화(미매칭 반영 시 엑셀 0 방지).
+     */
+    if (
+      donorsAuthoritative &&
+      !settlementReset &&
+      !donationInitReset &&
+      normalizeDonorsArray(dedupedDonors).length > 0 &&
+      totalCombined(draft) === 0
+    ) {
+      const bodyMembers = Array.isArray(body.members) ? (body.members as AppState["members"]) : null;
+      const bodyAsState = bodyMembers ? ({ members: bodyMembers } as AppState) : null;
+      if (
+        bodyAsState &&
+        hasMeaningfulMemberRoster(bodyAsState) &&
+        rosterDonorMatchScore(bodyMembers, dedupedDonors) >
+          rosterDonorMatchScore(draft.members, dedupedDonors)
+      ) {
+        draft = syncMemberTotalsFromDonors({
+          ...draft,
+          members: bodyMembers!,
+        });
+      }
+    }
     const donorRankingsUpdatedAt = computeDonorRankingsUpdatedAt(
       baseState,
       draft,

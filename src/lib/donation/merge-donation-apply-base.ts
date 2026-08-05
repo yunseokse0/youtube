@@ -5,13 +5,30 @@ import {
   normalizeDonorsArray,
   pickOverlayPresetsPreferCustom,
 } from "@/lib/state";
-import type { AppState } from "@/types";
+import type { AppState, Donor, Member } from "@/types";
 import { syncMemberTotalsFromDonors } from "./apply-donation-state";
+
+/** 후원 memberId 가 로스터에 얼마나 매칭되는지(금액 합) — 로스터 선택용 */
+export function rosterDonorMatchScore(
+  members: Member[] | null | undefined,
+  donors: Donor[] | null | undefined
+): number {
+  const ids = new Set((members || []).map((m) => String(m.id || "").trim()).filter(Boolean));
+  if (ids.size === 0) return 0;
+  let score = 0;
+  for (const d of donors || []) {
+    const mid = String(d.memberId || "").trim();
+    if (!mid || !ids.has(mid)) continue;
+    score += Math.max(0, Math.round(Number(d.amount) || 0));
+  }
+  return score;
+}
 
 /**
  * 후원 반영 — 서버 GET(빈 donors·placeholder)이 관리자 화면 stateRef 를 덮지 않게 병합.
  * id 기준 union, 동일 id는 hint(화면) 우선.
  * 멤버 금액은 병합된 donors 기준으로 재계산(힌트 멤버가 최신 후원을 덮어쓰지 않게).
+ * 로스터는 donors.memberId 매칭 점수가 높은 쪽을 씀(서버·화면 id 불일치 시 엑셀 0 방지).
  */
 export function mergeDonationApplyBase(
   fresh: AppState | null | undefined,
@@ -28,7 +45,17 @@ export function mergeDonationApplyBase(
   for (const d of hintDonors) donorMap.set(d.id, d);
   const mergedDonors = Array.from(donorMap.values()).sort((a, b) => b.at - a.at);
 
-  const useHintRoster = hasMeaningfulMemberRoster(hint);
+  const hintStrong = hasMeaningfulMemberRoster(hint);
+  const freshStrong = hasMeaningfulMemberRoster(fresh);
+  const hintScore = rosterDonorMatchScore(hint.members, mergedDonors);
+  const freshScore = rosterDonorMatchScore(fresh.members, mergedDonors);
+  let useHintRoster = false;
+  if (hintStrong && !freshStrong) useHintRoster = true;
+  else if (!hintStrong && freshStrong) useHintRoster = false;
+  else if (hintStrong && freshStrong) {
+    /** 매칭 점수가 같으면 hint(화면) 우선 — 관리자 실멤버 유지 */
+    useHintRoster = hintScore >= freshScore;
+  }
   const rosterBase = useHintRoster ? hint : fresh;
 
   const donorRankingsTheme =
@@ -75,6 +102,10 @@ export function mergeDonationApplyBase(
 /**
  * donorsAuthoritative 저장 직전 — 빈 GET·지연 스냅샷만으로 엑셀표가 초기화되지 않게
  * 화면 hint·LS·서버 스냅샷 donors 를 union 한다.
+ *
+ * 중요: `applied`(방금 반영한 상태)를 hint 로 유지하고 sources 는 fresh 로만 쓴다.
+ * 예전처럼 merge(applied, emptyApi) 하면 서버 로스터가 hint 가 되어
+ * memberId 불일치 시 엑셀 금액이 전부 0 이 된다.
  */
 export function enrichStateBeforeAuthoritativeDonationSave(
   applied: AppState,
@@ -83,7 +114,7 @@ export function enrichStateBeforeAuthoritativeDonationSave(
   let next = applied;
   for (const src of sources) {
     if (!src) continue;
-    next = mergeDonationApplyBase(next, src) ?? next;
+    next = mergeDonationApplyBase(src, next) ?? next;
   }
   return next;
 }
