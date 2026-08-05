@@ -410,8 +410,10 @@ export function useOverlayRemoteState(
                 lastSyncedDonorRevRef.current
               );
 
-        /** 텍스트 OBS: 304로 구문이 안 바뀌는 현상 방지 — pick 본문은 항상 전체 수신 */
-        const forceFull = Boolean(opts?.forceFull) || obsTextPick;
+        /** 텍스트 OBS: 최초·명시 forceFull 만 전체. 이후는 since(config.revision)로 304 허용 */
+        const forceFull =
+          Boolean(opts?.forceFull) ||
+          (obsTextPick && lastSyncedUpdatedAtRef.current <= 0);
 
         const remote = await loadStateFromApi(userId, {
           ifUpdatedSince: forceFull ? 0 : sinceBaseline,
@@ -564,8 +566,15 @@ export function useOverlayRemoteState(
     };
 
     if (bootstrap) {
+      const nextSig = overlaySyncSignatureForPick(bootstrap, statePick);
+      const sameAsCurrent =
+        obsTextPick &&
+        nextSig === lastVisualSigRef.current &&
+        lastVisualSigRef.current !== "";
       seedOverlaySyncRefs(bootstrap, statePick, syncRefs);
-      setState(bootstrap);
+      if (!sameAsCurrent) {
+        setState(bootstrap);
+      }
       setSyncedOnce(true);
     } else if (obsTextPick) {
       /** OBS 텍스트: effect 재실행 시 null로 지우지 않음(깜빡임 방지) */
@@ -602,9 +611,7 @@ export function useOverlayRemoteState(
 
     const { schedule, cancel } = createStateUpdatedScheduler(() => {
       void syncFromApiRef.current(
-        sigSalesPick || statePick === STATE_PICK_OBS_TEXT
-          ? { forceFull: true }
-          : undefined
+        sigSalesPick && !sigSalesIncrementalPoll ? { forceFull: true } : undefined
       );
     }, debounceOpts);
 
@@ -635,7 +642,7 @@ export function useOverlayRemoteState(
       stopPoll = startStaggeredOverlayPoll(
         () => {
           const pollOpts =
-            obsTextPick || (sigSalesPick && !sigSalesIncrementalPoll)
+            sigSalesPick && !sigSalesIncrementalPoll
               ? { forceFull: true as const }
               : undefined;
           void syncFromApiRef.current(pollOpts);

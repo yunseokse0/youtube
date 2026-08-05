@@ -65,7 +65,7 @@ describe("shouldSyncOverlayFromStateUpdatedEvent", () => {
 });
 
 describe("shouldSyncObsTextFromStateUpdatedEvent", () => {
-  it("uses obsTextRevision when updatedAt is stale", () => {
+  it("uses obsTextRevision and ignores bare updatedAt", () => {
     expect(
       obsTextStateUpdatedRevision({ updatedAt: 100, obsTextRevision: 500 })
     ).toBe(500);
@@ -75,6 +75,15 @@ describe("shouldSyncObsTextFromStateUpdatedEvent", () => {
         200
       )
     ).toBe(true);
+    expect(
+      shouldSyncObsTextFromStateUpdatedEvent({ updatedAt: 900 }, 200)
+    ).toBe(false);
+    expect(
+      shouldSyncObsTextFromStateUpdatedEvent(
+        { updatedAt: 900, obsTextRevision: 150 },
+        200
+      )
+    ).toBe(false);
   });
 });
 

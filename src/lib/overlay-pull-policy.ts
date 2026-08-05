@@ -175,17 +175,13 @@ export function shouldSyncOverlayFromStateUpdatedEvent(
   return ts > lastSyncedUpdatedAt;
 }
 
-/** 텍스트 오버레이 SSE — config.revision(obsTextRevision) 반영 */
+/** 텍스트 오버레이 SSE — config.revision(obsTextRevision) 만 사용(updatedAt 제외) */
 export function obsTextStateUpdatedRevision(event: {
   updatedAt?: unknown;
   obsTextRevision?: unknown;
 }): number {
-  const u = Number(event.updatedAt);
   const o = Number(event.obsTextRevision);
-  return Math.max(
-    Number.isFinite(u) && u > 0 ? u : 0,
-    Number.isFinite(o) && o > 0 ? o : 0
-  );
+  return Number.isFinite(o) && o > 0 ? o : 0;
 }
 
 export function shouldSyncObsTextFromStateUpdatedEvent(
@@ -193,7 +189,8 @@ export function shouldSyncObsTextFromStateUpdatedEvent(
   lastSyncedRevision: number
 ): boolean {
   const rev = obsTextStateUpdatedRevision(event);
-  if (rev <= 0) return true;
+  /** obsTextRevision 없으면 다른 저장(후원·타이머)으로 보고 GET 생략 — OBS 깜빡임 방지 */
+  if (rev <= 0) return false;
   return rev > lastSyncedRevision;
 }
 

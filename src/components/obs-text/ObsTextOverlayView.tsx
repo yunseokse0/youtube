@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ObsTextEffectStyles } from "@/components/obs-text/ObsTextEffectStyles";
 import {
   buildTextOutlineShadow,
+  obsTextConfigSyncSignature,
   positionToFlexStyle,
   resolveObsTextOverlayConfigForDisplay,
   type ObsTextBlock,
@@ -18,7 +19,7 @@ import {
   type ObsTextEffectId,
 } from "@/lib/obs-text-effects";
 
-export function ObsTextOverlayView({
+function ObsTextOverlayViewImpl({
   config,
   preview = false,
 }: {
@@ -101,6 +102,14 @@ export function ObsTextOverlayView({
     </div>
   );
 }
+
+/** 표시 내용 서명이 같으면 remount/재페인트 생략 — OBS CEF 깜빡임 완화 */
+export const ObsTextOverlayView = memo(
+  ObsTextOverlayViewImpl,
+  (prev, next) =>
+    prev.preview === next.preview &&
+    obsTextConfigSyncSignature(prev.config) === obsTextConfigSyncSignature(next.config)
+);
 
 function resolveSegmentEffect(
   seg: ObsTextSegment,

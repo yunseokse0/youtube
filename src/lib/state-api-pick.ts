@@ -46,8 +46,9 @@ export function parseStateApiPick(raw: string): StateApiPick | null {
 export function revisionForStatePick(state: AppState, pick: StateApiPick): number {
   if (pick === STATE_PICK_DONOR_RANKINGS) return readDonorRankingsRevision(state);
   if (pick === STATE_PICK_OBS_TEXT) {
+    /** 텍스트 내용 revision 만 — updatedAt 을 섞으면 후원·타이머 저장마다 OBS가 다시 받아 깜빡임 */
     const reg = readObsTextRegistryFromState(state);
-    let rev = Number(state.updatedAt || 0);
+    let rev = 0;
     for (const inst of reg.instances) {
       rev = Math.max(rev, Number(inst.config.revision || 0));
     }
