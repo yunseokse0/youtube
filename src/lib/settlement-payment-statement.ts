@@ -432,21 +432,55 @@ export function buildFullSettlementHtml(record: SettlementRecord): string {
 </body></html>`;
 }
 
-async function htmlToPdfBlob(html: string, orientation: "p" | "l" = "p"): Promise<Blob> {
-  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-    import("html2canvas"),
-    import("jspdf"),
-  ]);
-  const host = document.createElement("div");
-  host.style.position = "fixed";
-  host.style.left = "-10000px";
-  host.style.top = "0";
-  host.style.width = orientation === "l" ? "1123px" : "794px";
-  host.style.background = "#fff";
-  host.innerHTML = html;
-  document.body.appendChild(host);
+/**
+ * 데모 HTML과 동일하게 전체 문서를 iframe에 로드한 뒤 캡처.
+ * div.innerHTML에 전체 문서를 넣으면 style/레이아웃이 브라우저 미리보기와 달라짐.
+ */
+async function renderHtmlSheetToCanvas(
+  html: string,
+  widthPx: number
+): Promise<HTMLCanvasElement> {
+  const { default: html2canvas } = await import("html2canvas");
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.style.cssText = [
+    "position:fixed",
+    "left:-10000px",
+    "top:0",
+    `width:${widthPx}px`,
+    "height:1400px",
+    "border:0",
+    "opacity:0",
+    "pointer-events:none",
+  ].join(";");
+  document.body.appendChild(iframe);
+
   try {
-    const target = (host.querySelector(".sheet") as HTMLElement) || host;
+    const doc = iframe.contentDocument;
+    if (!doc) throw new Error("pdf_iframe_unavailable");
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    await new Promise<void>((resolve) => {
+      const done = () => resolve();
+      if (doc.readyState === "complete") {
+        done();
+        return;
+      }
+      iframe.addEventListener("load", () => done(), { once: true });
+      window.setTimeout(done, 120);
+    });
+
+    if (doc.fonts?.ready) {
+      try {
+        await doc.fonts.ready;
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const target = (doc.querySelector(".sheet") as HTMLElement) || doc.body;
     const imgs = Array.from(target.querySelectorAll("img"));
     await Promise.all(
       imgs.map(
@@ -459,29 +493,43 @@ async function htmlToPdfBlob(html: string, orientation: "p" | "l" = "p"): Promis
               })
       )
     );
-    const canvas = await html2canvas(target, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
-    const pdf = new jsPDF({ orientation, unit: "mm", format: "a4" });
-    const pageW = pdf.internal.pageSize.getWidth();
-    const pageH = pdf.internal.pageSize.getHeight();
-    const margin = 6;
-    const imgW = pageW - margin * 2;
-    const imgH = (canvas.height * imgW) / canvas.width;
-    const y = Math.max(margin, (pageH - Math.min(imgH, pageH - margin * 2)) / 2);
-    pdf.addImage(
-      canvas.toDataURL("image/png"),
-      "PNG",
-      margin,
-      y,
-      imgW,
-      Math.min(imgH, pageH - margin * 2),
-      undefined,
-      "FAST"
-    );
-    const out = pdf.output("blob");
-    return out instanceof Blob ? out : new Blob([out], { type: "application/pdf" });
+
+    return html2canvas(target, {
+      scale: 2,
+      backgroundColor: "#ffffff",
+      useCORS: true,
+      windowWidth: widthPx,
+      scrollX: 0,
+      scrollY: 0,
+    });
   } finally {
-    document.body.removeChild(host);
+    document.body.removeChild(iframe);
   }
+}
+
+async function htmlToPdfBlob(html: string, orientation: "p" | "l" = "p"): Promise<Blob> {
+  const { jsPDF } = await import("jspdf");
+  const widthPx = orientation === "l" ? 1123 : 794;
+  const canvas = await renderHtmlSheetToCanvas(html, widthPx);
+  const pdf = new jsPDF({ orientation, unit: "mm", format: "a4" });
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const margin = 6;
+  const imgW = pageW - margin * 2;
+  const imgH = (canvas.height * imgW) / canvas.width;
+  const y = Math.max(margin, (pageH - Math.min(imgH, pageH - margin * 2)) / 2);
+  pdf.addImage(
+    canvas.toDataURL("image/png"),
+    "PNG",
+    margin,
+    y,
+    imgW,
+    Math.min(imgH, pageH - margin * 2),
+    undefined,
+    "FAST"
+  );
+  const out = pdf.output("blob");
+  return out instanceof Blob ? out : new Blob([out], { type: "application/pdf" });
 }
 
 /** 전체 정산서 PDF (가로 A4) */
@@ -511,52 +559,28 @@ export async function recordToPaymentStatementPdfBlob(
 ): Promise<Blob> {
   const members = listPayableMembers(record);
   if (members.length === 0) throw new Error("지급 대상 멤버가 없습니다.");
-  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-    import("html2canvas"),
-    import("jspdf"),
-  ]);
+  const { jsPDF } = await import("jspdf");
   const pdf = new jsPDF({ orientation: "p", unit: "mm", format: "a4" });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
+  const margin = 6;
   for (let i = 0; i < members.length; i += 1) {
     const html = buildMemberPaymentStatementHtml(record, members[i]!, options);
-    const host = document.createElement("div");
-    host.style.position = "fixed";
-    host.style.left = "-10000px";
-    host.style.top = "0";
-    host.style.width = "794px";
-    host.style.background = "#fff";
-    host.innerHTML = html;
-    document.body.appendChild(host);
-    try {
-      const target = host.querySelector(".sheet") as HTMLElement;
-      const imgs = Array.from(target.querySelectorAll("img"));
-      await Promise.all(
-        imgs.map(
-          (img) =>
-            img.complete
-              ? Promise.resolve()
-              : new Promise<void>((resolve) => {
-                  img.onload = () => resolve();
-                  img.onerror = () => resolve();
-                })
-        )
-      );
-      const canvas = await html2canvas(target, {
-        scale: 2,
-        backgroundColor: "#ffffff",
-        useCORS: true,
-      });
-      const img = canvas.toDataURL("image/png");
-      const margin = 8;
-      const imgW = pageW - margin * 2;
-      const imgH = (canvas.height * imgW) / canvas.width;
-      if (i > 0) pdf.addPage();
-      const y = Math.max(margin, (pageH - Math.min(imgH, pageH - margin * 2)) / 2);
-      pdf.addImage(img, "PNG", margin, y, imgW, Math.min(imgH, pageH - margin * 2), undefined, "FAST");
-    } finally {
-      document.body.removeChild(host);
-    }
+    const canvas = await renderHtmlSheetToCanvas(html, 794);
+    const imgW = pageW - margin * 2;
+    const imgH = (canvas.height * imgW) / canvas.width;
+    if (i > 0) pdf.addPage();
+    const y = Math.max(margin, (pageH - Math.min(imgH, pageH - margin * 2)) / 2);
+    pdf.addImage(
+      canvas.toDataURL("image/png"),
+      "PNG",
+      margin,
+      y,
+      imgW,
+      Math.min(imgH, pageH - margin * 2),
+      undefined,
+      "FAST"
+    );
   }
   const out = pdf.output("blob");
   return out instanceof Blob ? out : new Blob([out], { type: "application/pdf" });
@@ -642,11 +666,12 @@ export function buildMemberPaymentStatementHtml(
     color: #111;
     background: #fff;
   }
+  /* px 고정 — 데모(브라우저)와 PDF(iframe+html2canvas) 레이아웃을 동일하게 */
   .sheet {
-    width: 180mm;
-    min-height: 250mm;
+    width: 680px;
+    min-height: 900px;
     margin: 0 auto;
-    padding: 6mm 4mm;
+    padding: 24px 16px;
   }
   .title {
     text-align: center;
@@ -737,8 +762,10 @@ export function buildMemberPaymentStatementHtml(
     font-weight: 700;
     font-size: 11px;
     height: 56px;
-    line-height: 1.3;
+    line-height: 56px;
+    padding: 0 4px;
     vertical-align: middle;
+    white-space: nowrap;
   }
   table.pay-table thead th.deduct {
     background: #f3f3f3;
@@ -753,6 +780,9 @@ export function buildMemberPaymentStatementHtml(
     font-size: 11px;
     border: none;
     border-bottom: 1px solid #333;
+    vertical-align: middle;
+    text-align: center;
+    padding: 0 2px;
   }
   table.deduct-inner td.d-top {
     height: 28px;
@@ -768,13 +798,15 @@ export function buildMemberPaymentStatementHtml(
   table.deduct-inner tr:last-child td.d-bot:last-child {
     border-right: none;
   }
+  /* html2canvas는 vertical-align보다 line-height=height가 세로 중앙에 안정적 */
   table.pay-table tbody td.n {
     font-variant-numeric: tabular-nums;
     font-weight: 700;
     font-size: 13px;
     background: #fff;
     height: 42px;
-    line-height: normal;
+    line-height: 42px;
+    padding: 0 4px;
     vertical-align: middle;
   }
   table.total-table {
@@ -783,28 +815,31 @@ export function buildMemberPaymentStatementHtml(
   table.total-table td.left {
     width: 60%;
     height: 72px;
-    line-height: normal;
+    line-height: 72px;
     font-size: 18px;
     font-weight: 800;
     background: #efefef;
     vertical-align: middle;
+    padding: 0 4px;
   }
   table.total-table td.cap {
     width: 40%;
     height: 28px;
-    line-height: normal;
+    line-height: 28px;
     font-size: 12px;
     font-weight: 700;
     background: #f7f7f7;
     vertical-align: middle;
+    padding: 0 4px;
   }
   table.total-table td.amt {
     height: 44px;
-    line-height: normal;
+    line-height: 44px;
     font-size: 22px;
     font-weight: 800;
     font-variant-numeric: tabular-nums;
     vertical-align: middle;
+    padding: 0 4px;
   }
   .thanks {
     margin-top: 40px;
