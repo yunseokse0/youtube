@@ -6,6 +6,10 @@ import { useRouter } from "next/navigation";
 import { useParams } from "next/navigation";
 import { SettlementMemberResult, SettlementRecord, deleteSettlementRecordAndSync, getMembersForExport, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToReadableTxt, recordToTxt, saveSettlementRecords, saveSettlementRecordsToApi, toSettlementFormulaLine } from "@/lib/settlement";
 import { aggregateMemberDonors, recordToMemberDonorsCsv, recordToMemberDonorsXlsxBlob, resolveSettlementDonors, type DailyLogEntry } from "@/lib/settlement-donor-export";
+import {
+  memberToPaymentStatementPdfBlob,
+  recordToFullSettlementPdfBlob,
+} from "@/lib/settlement-payment-statement";
 import { downloadTextFile, downloadBlobFile } from "@/lib/download";
 import { loadDailyLog, loadDailyLogFromApi } from "@/lib/state";
 
@@ -34,6 +38,8 @@ export default function SettlementDetailPage() {
   const [copiedMemberId, setCopiedMemberId] = useState<string | null>(null);
   const [copiedKakao, setCopiedKakao] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [fullPdfGenerating, setFullPdfGenerating] = useState(false);
+  const [memberPdfId, setMemberPdfId] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -207,6 +213,35 @@ export default function SettlementDetailPage() {
     }
   };
 
+  const onDownloadFullSettlementPdf = async () => {
+    if (!record || fullPdfGenerating) return;
+    setFullPdfGenerating(true);
+    try {
+      const blob = await recordToFullSettlementPdfBlob(record);
+      await downloadBlobFile(`${record.title}-전체정산서.pdf`, blob);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "전체 정산서 PDF 생성에 실패했습니다.";
+      window.alert(msg);
+    } finally {
+      setFullPdfGenerating(false);
+    }
+  };
+
+  const onDownloadMemberPaymentPdf = async (m: SettlementMemberResult) => {
+    if (!record || memberPdfId) return;
+    setMemberPdfId(m.memberId);
+    try {
+      const blob = await memberToPaymentStatementPdfBlob(record, m);
+      const safeName = (m.realName || m.name || m.memberId).replace(/[\\/:*?"<>|]/g, "_");
+      await downloadBlobFile(`${record.title}-지급정산서-${safeName}.pdf`, blob);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "지급 정산서 PDF 생성에 실패했습니다.";
+      window.alert(msg);
+    } finally {
+      setMemberPdfId(null);
+    }
+  };
+
   if (records === null) {
     return (
       <main className="min-h-screen p-6">
@@ -270,7 +305,15 @@ export default function SettlementDetailPage() {
               {copiedKakao ? "카카오톡 복사됨" : "카카오톡 복사"}
             </button>
             <button className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700 disabled:opacity-60 whitespace-nowrap" onClick={onDownloadPdf} disabled={pdfGenerating}>
-              {pdfGenerating ? "PDF 생성 중..." : "PDF"}
+              {pdfGenerating ? "PDF 생성 중..." : "화면 PDF"}
+            </button>
+            <button
+              className="px-3 py-2 rounded bg-cyan-800 hover:bg-cyan-700 disabled:opacity-60 whitespace-nowrap"
+              onClick={onDownloadFullSettlementPdf}
+              disabled={fullPdfGenerating}
+              title="엑셀「전체 정산서」양식"
+            >
+              {fullPdfGenerating ? "전체정산서 생성 중..." : "전체 정산서 PDF"}
             </button>
             <button className="px-3 py-2 rounded bg-red-800 hover:bg-red-700 whitespace-nowrap" onClick={onDeleteRecord}>
               삭제
@@ -308,6 +351,7 @@ export default function SettlementDetailPage() {
                 <th className="p-2 text-left">계좌번호</th>
                 <th className="p-2 text-left">예금주</th>
                 <th className="p-2 text-center">복사</th>
+                <th className="p-2 text-center">지급정산서</th>
                 <th className="p-2 text-right">계좌 반영</th>
                 <th className="p-2 text-right">투네 반영</th>
                 <th className="p-2 text-right">중간합</th>
@@ -354,6 +398,17 @@ export default function SettlementDetailPage() {
                       {copiedMemberId === m.memberId ? "복사됨" : "복사"}
                     </button>
                   </td>
+                  <td className="p-2 text-center">
+                    <button
+                      type="button"
+                      className="px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 border border-emerald-500/30 text-xs disabled:opacity-50"
+                      disabled={memberPdfId !== null}
+                      title="이 멤버 지급 정산서 PDF"
+                      onClick={() => void onDownloadMemberPaymentPdf(m)}
+                    >
+                      {memberPdfId === m.memberId ? "생성 중…" : "PDF"}
+                    </button>
+                  </td>
                   <td className="p-2 text-right">{m.accountApplied.toLocaleString()}</td>
                   <td className="p-2 text-right">{m.toonApplied.toLocaleString()}</td>
                   <td className="p-2 text-right">{m.gross.toLocaleString()}</td>
@@ -365,7 +420,7 @@ export default function SettlementDetailPage() {
             </tbody>
             <tfoot>
               <tr className="font-semibold">
-                <td className="p-2" colSpan={8}>합계</td>
+                <td className="p-2" colSpan={9}>합계</td>
                 <td className="p-2 text-right">{record.totalGross.toLocaleString()}</td>
                 <td className="p-2 text-right">{record.totalFee.toLocaleString()}</td>
                 <td className="p-2 text-right">{record.totalNet.toLocaleString()}</td>
