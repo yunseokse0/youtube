@@ -52,6 +52,20 @@ export function notifyBroadcastStateLocalUpdated(
   } catch {
     /* noop */
   }
+  /** 같은 탭 미리보기 iframe은 CustomEvent·BroadcastChannel을 못 받는 경우가 있어 postMessage로도 전달 */
+  try {
+    const origin = window.location.origin;
+    const payload = { type: BROADCAST_STATE_LOCAL_UPDATED, ...detail };
+    document.querySelectorAll("iframe").forEach((frame) => {
+      try {
+        frame.contentWindow?.postMessage(payload, origin);
+      } catch {
+        /* noop */
+      }
+    });
+  } catch {
+    /* noop */
+  }
 }
 
 export function notifyOverlayPresetsLocalUpdated(): void {
@@ -101,11 +115,19 @@ export function subscribeBroadcastStateLocalUpdated(
     if (!data || data.type !== BROADCAST_STATE_LOCAL_UPDATED) return;
     handler({ userId: data.userId ?? null, updatedAt: data.updatedAt });
   };
+  const onFrameMessage = (ev: MessageEvent) => {
+    if (ev.origin !== window.location.origin) return;
+    const data = ev.data as { type?: string; userId?: string | null; updatedAt?: number } | null;
+    if (!data || data.type !== BROADCAST_STATE_LOCAL_UPDATED) return;
+    handler({ userId: data.userId ?? null, updatedAt: data.updatedAt });
+  };
   window.addEventListener(BROADCAST_STATE_LOCAL_UPDATED, onWindow);
+  window.addEventListener("message", onFrameMessage);
   const channel = getBroadcastChannel();
   channel?.addEventListener("message", onChannel);
   return () => {
     window.removeEventListener(BROADCAST_STATE_LOCAL_UPDATED, onWindow);
+    window.removeEventListener("message", onFrameMessage);
     channel?.removeEventListener("message", onChannel);
   };
 }

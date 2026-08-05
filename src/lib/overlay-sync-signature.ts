@@ -144,3 +144,33 @@ export function buildOverlaySyncSignature(state: AppState | null): string {
     sigSalesExcludedIds: state.sigSalesExcludedIds || [],
   });
 }
+
+/** 원격/로컬 스냅샷이 현재 표시보다 후원 금액·건수가 많으면 갱신 후보 */
+export function isRicherDonationSnapshot(
+  candidate: AppState | null | undefined,
+  baseline: AppState | null | undefined
+): boolean {
+  if (!candidate) return false;
+  const cAccount = (candidate.members || []).reduce(
+    (sum, m) => sum + Math.max(0, Math.floor(Number(m.account || 0))),
+    0
+  );
+  const cToon = (candidate.members || []).reduce(
+    (sum, m) => sum + Math.max(0, Math.floor(Number(m.toon || 0))),
+    0
+  );
+  const cDonors = Array.isArray(candidate.donors) ? candidate.donors.length : 0;
+  if (!baseline) return cAccount + cToon > 0 || cDonors > 0;
+  const bAccount = (baseline.members || []).reduce(
+    (sum, m) => sum + Math.max(0, Math.floor(Number(m.account || 0))),
+    0
+  );
+  const bToon = (baseline.members || []).reduce(
+    (sum, m) => sum + Math.max(0, Math.floor(Number(m.toon || 0))),
+    0
+  );
+  const bDonors = Array.isArray(baseline.donors) ? baseline.donors.length : 0;
+  if (cToon !== bToon) return cToon > bToon;
+  if (cAccount !== bAccount) return cAccount > bAccount;
+  return cDonors > bDonors;
+}

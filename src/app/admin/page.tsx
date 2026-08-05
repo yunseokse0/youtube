@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { createPortal, flushSync } from "react-dom";
 import MemberRow from "@/components/MemberRow";
 import DonationTableOptionCheckboxes from "@/components/admin/DonationTableOptionCheckboxes";
-import { notifyOverlayPresetsLocalUpdated } from "@/lib/broadcast-state-local-sync";
+import { notifyBroadcastStateLocalUpdated, notifyOverlayPresetsLocalUpdated } from "@/lib/broadcast-state-local-sync";
 import Toast from "@/components/Toast";
 import {
   AppState,
@@ -1774,10 +1774,15 @@ export default function AdminPage() {
         Date.now() < donationAuthoritativeSaveUntilRef.current
       ) {
         /**
-         * 후원 반영·삭제 직후 — forceDonorMerge 여도 빈/구 스냅샷으로 덮지 않음.
-         * (첫 후원 직후 force sync 가 엑셀·리스트를 되돌리던 회귀 방지)
+         * 후원 반영·삭제 직후 — 빈/구 스냅샷으로 덮지 않음.
+         * 단 서버 투네 자동 반영 등 더 많은 후원·금액은 수용(엑셀표 투네 열 지연 방지).
          */
-        return false;
+        const remoteDonors = normalizeDonorsArray(remote.donors);
+        const localDonors = normalizeDonorsArray(stateRef.current.donors);
+        const remoteRicher =
+          totalCombined(remote) > totalCombined(stateRef.current) ||
+          remoteDonors.length > localDonors.length;
+        if (!remoteRicher) return false;
       }
       /** 저장 대기 중이어도 원격 신규 후원은 mergeIncoming에서 수용.
        * 다른 브라우저 정산 리셋(remoteSettlementWins)은 빈 후원이어도 반드시 적용. */
@@ -1847,6 +1852,8 @@ export default function AdminPage() {
       try {
         window.localStorage.setItem(storageKey(user?.id), JSON.stringify(toApply));
       } catch {}
+      /** 계좌 saveStateAsync 와 동일 — 미리보기 iframe·같은 탭 엑셀표가 즉시 멤버 투네/계좌 반영 */
+      notifyBroadcastStateLocalUpdated(user?.id, toApply.updatedAt);
       return true;
     };
     const syncFromApi = async (opts?: { forceFull?: boolean; forceDonorMerge?: boolean }) => {
@@ -5341,6 +5348,7 @@ export default function AdminPage() {
     try {
       window.localStorage.setItem(storageKey(user?.id), JSON.stringify(preserved));
     } catch {}
+    notifyBroadcastStateLocalUpdated(user?.id, preserved.updatedAt);
     return preserved;
   }, [user?.id]);
 

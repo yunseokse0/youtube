@@ -67,7 +67,7 @@ import {
   readDonationListsOverlayPollMs,
   readOverlayLiveSyncPollMs,
 } from "@/lib/overlay-pull-policy";
-import { buildOverlaySyncSignature } from "@/lib/overlay-sync-signature";
+import { buildOverlaySyncSignature, isRicherDonationSnapshot } from "@/lib/overlay-sync-signature";
 import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
 import {
   overlayUserIdsMatch,
@@ -315,12 +315,14 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
       try {
         const localNow = readLocalStateIfExists();
         const localStrong = hasMeaningfulMemberRoster(localNow);
+        const shownForCompare = lastGoodRef.current;
         if (
           localNow &&
           localStrong &&
           localNow.updatedAt &&
           localNow.updatedAt > lastUpdatedRef.current &&
-          !shouldKeepLastGoodInsteadOf(localNow, STATE_PICK_OVERLAY_DONORS, lastGoodRef.current)
+          !shouldKeepLastGoodInsteadOf(localNow, STATE_PICK_OVERLAY_DONORS, lastGoodRef.current) &&
+          !(shownForCompare && isRicherDonationSnapshot(shownForCompare, localNow))
         ) {
           const mergedLocal = mergeKeepingStrongRoster(localNow);
           const nextSig = buildOverlaySyncSignature(mergedLocal);
@@ -335,8 +337,11 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
             saveLastGood(mergedLocal);
           }
         }
-        /** 관리자 iframe 미리보기만 GET 생략 — OBS/prism은 stale localStorage 무시하고 서버에서 당김 */
-        if (isAdminDashboardPreviewEmbed() || isEmbeddedInSameOriginAdminFrame()) {
+        /** 관리자 iframe 미리보기만 GET 생략 — forceFull(후원 반영)일 때는 서버에서 다시 당김 */
+        if (
+          !opts?.forceFull &&
+          (isAdminDashboardPreviewEmbed() || isEmbeddedInSameOriginAdminFrame())
+        ) {
           const peek = readLocalStateIfExists();
           if (peek && (peek.updatedAt || 0) > 0 && hasMeaningfulMemberRoster(peek)) {
             return;
@@ -351,10 +356,16 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         });
         const remoteRev = Math.max(data?.updatedAt || 0, readDonorRankingsRevision(data || ({} as AppState)));
         const remoteStrong = hasMeaningfulMemberRoster(data);
+        const remoteRicher = Boolean(
+          data && isRicherDonationSnapshot(data, lastGoodRef.current)
+        );
         const shouldApplyRemote =
           !!data &&
           !shouldKeepLastGoodInsteadOf(data, STATE_PICK_OVERLAY_DONORS, lastGoodRef.current) &&
-          (remoteRev > overlaySinceRef.current || (needRosterHydration && remoteStrong));
+          (Boolean(opts?.forceFull) ||
+            remoteRev > overlaySinceRef.current ||
+            remoteRicher ||
+            (needRosterHydration && remoteStrong));
         if (shouldApplyRemote && data) {
           const toApply = mergeKeepingStrongRoster(data);
           const appliedStrong = hasMeaningfulMemberRoster(toApply);
@@ -431,6 +442,11 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
       if (!localNow || shouldKeepLastGoodInsteadOf(localNow, STATE_PICK_OVERLAY_DONORS, lastGoodRef.current)) return;
       if (!hasMeaningfulMemberRoster(localNow)) {
         void syncOnceRef.current();
+        return;
+      }
+      /** 구 LS가 이미 맞은 투네·계좌를 덮지 않음 — 서버 force sync로 보정 */
+      if (lastGoodRef.current && isRicherDonationSnapshot(lastGoodRef.current, localNow)) {
+        void syncOnceRef.current({ forceFull: true });
         return;
       }
       const nextSig = buildOverlaySyncSignature(localNow);
