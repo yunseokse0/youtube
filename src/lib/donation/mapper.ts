@@ -292,7 +292,7 @@ function matchMemberByRelaxedFuzzy(
 }
 
 export type MapToMemberOptions = {
-  /** 플레이어·메시지 힌트 없을 때 1등(후원 순위 1위) 자동 배치 */
+  /** 유사 일치 실패 시 운영비→대표→국고 자동 배치 */
   autoAssignToonPlayer?: boolean;
   memberPositions?: Record<string, string> | null;
 };
@@ -313,7 +313,6 @@ export function mapToMember(
   }
 
   const candidates = resolveAllMemberLookupCandidates(event);
-  const hadPlayerHint = resolveMemberLookupCandidates(event).length > 0;
   for (const lookupName of candidates) {
     const matched = matchMemberByName(lookupName, members, aliases);
     if (matched) {
@@ -326,7 +325,7 @@ export function mapToMember(
     }
   }
 
-  /** 엄격 매칭 실패 시 — 미매칭 UI 제안과 동일한 완화 유사 일치로 자동 반영 */
+  /** 엄격 매칭 실패 시 — 완화 유사 일치로 자동 반영 */
   for (const lookupName of candidates) {
     const relaxed = matchMemberByRelaxedFuzzy(lookupName, members, aliases);
     if (relaxed) {
@@ -340,9 +339,14 @@ export function mapToMember(
     }
   }
 
-  /** 후원자명만(플레이어·메시지 힌트 없음) — 1등 자동 배치 */
-  if (opts?.autoAssignToonPlayer && !hadPlayerHint) {
-    const fallback = pickTopRankedDonationMember(members, opts.memberPositions);
+  /**
+   * 유사 일치로도 못 찾으면 운영비 → 대표 → 국고 순으로 반영.
+   * (자동 반영 옵션이 켜진 서버/관리자 경로)
+   */
+  if (opts?.autoAssignToonPlayer) {
+    const fallback = pickDefaultToonationMember(members, {
+      memberPositions: opts.memberPositions,
+    });
     if (fallback) {
       return {
         ...event,
@@ -360,7 +364,8 @@ export function mapToMember(
 export function suggestMemberForDonationEvent(
   event: DonationEvent,
   members: Member[],
-  aliases: DonorAlias[] = []
+  aliases: DonorAlias[] = [],
+  memberPositions?: Record<string, string> | null
 ): Member | undefined {
   if (!Array.isArray(members) || members.length === 0) return undefined;
   const msgMatch = matchMemberByMessageContains(event.message || "", members);
@@ -371,5 +376,5 @@ export function suggestMemberForDonationEvent(
     const relaxed = matchMemberByRelaxedFuzzy(lookupName, members, aliases);
     if (relaxed) return relaxed;
   }
-  return undefined;
+  return pickDefaultToonationMember(members, { memberPositions });
 }

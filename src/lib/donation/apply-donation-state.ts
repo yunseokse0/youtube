@@ -251,7 +251,7 @@ export function applyDonationToAppState(
     processedEvent = { ...rawEvent, memberId: manualMemberId, status: "processed" };
   } else {
     processedEvent = mapToMember(rawEvent, currentState.members || [], aliases, {
-      /** 후원자명만 있을 때 1등 자동 배치 — 플레이어 힌트 있으면 유사 일치만 허용 */
+      /** 유사 일치 실패 시 운영비→대표→국고 자동 배치 */
       autoAssignToonPlayer: true,
       memberPositions: currentState.memberPositions,
     });

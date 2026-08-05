@@ -57,7 +57,7 @@ describe("applyDonationToAppState", () => {
     expect(result.state.donors?.[0]?.name).toBe("배지은");
   });
 
-  it("auto-assigns top-ranked member when toon has no player hint", () => {
+  it("auto-assigns operating member when toon has no player hint", () => {
     const state = {
       ...defaultState(),
       members: [
@@ -79,11 +79,12 @@ describe("applyDonationToAppState", () => {
     const result = applyDonationToAppState(state, event);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.members.find((m) => m.id === "m1")?.toon).toBe(3000);
+    expect(result.state.members.find((m) => m.id === "op")?.toon).toBe(3000);
+    expect(result.state.members.find((m) => m.id === "m1")?.toon).toBe(0);
     expect(result.event.memberAutoAssigned).toBe(true);
   });
 
-  it("auto-assigns top-ranked member when account donation has no player hint", () => {
+  it("auto-assigns operating member when account donation has no player hint", () => {
     const state = {
       ...defaultState(),
       members: [
@@ -105,7 +106,8 @@ describe("applyDonationToAppState", () => {
     const result = applyDonationToAppState(state, event);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.members.find((m) => m.id === "m1")?.account).toBe(2000);
+    expect(result.state.members.find((m) => m.id === "op")?.account).toBe(2000);
+    expect(result.state.members.find((m) => m.id === "m1")?.account).toBe(0);
     expect(result.event.memberAutoAssigned).toBe(true);
   });
 

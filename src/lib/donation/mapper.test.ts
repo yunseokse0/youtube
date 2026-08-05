@@ -35,7 +35,7 @@ describe("mapToMember", () => {
     expect(mapped.donorName).toBe("배지은");
   });
 
-  it("auto-assigns top-ranked member when toon has no player hint", () => {
+  it("auto-assigns operating member when toon has no player hint", () => {
     const event: DonationEvent = {
       id: "t2",
       provider: "toonation",
@@ -52,11 +52,11 @@ describe("mapToMember", () => {
       [],
       { autoAssignToonPlayer: true }
     );
-    expect(mapped.memberId).toBe("m1");
+    expect(mapped.memberId).toBe("op");
     expect(mapped.memberAutoAssigned).toBe(true);
   });
 
-  it("auto-assigns top-ranked member when account has no player hint", () => {
+  it("auto-assigns operating member when account has no player hint", () => {
     const event: DonationEvent = {
       id: "t3",
       provider: "toonation",
@@ -73,13 +73,20 @@ describe("mapToMember", () => {
       [],
       { autoAssignToonPlayer: true }
     );
-    expect(mapped.memberId).toBe("m1");
+    expect(mapped.memberId).toBe("op");
     expect(mapped.memberAutoAssigned).toBe(true);
   });
 
-  it("auto-assigns current 1st place by donation total when donor-only", () => {
+  it("falls back to treasury when no operating member and donor-only", () => {
+    const treasury: Member = {
+      id: "tr",
+      name: "국고",
+      account: 0,
+      toon: 0,
+      contribution: 0,
+    };
     const team: Member[] = [
-      operatingMember,
+      treasury,
       { id: "m1", name: "피자", account: 1000, toon: 0, contribution: 1000 },
       { id: "m2", name: "문형배", account: 5000, toon: 0, contribution: 5000 },
     ];
@@ -94,12 +101,12 @@ describe("mapToMember", () => {
       target: "toon",
     };
     const mapped = mapToMember(event, team, [], { autoAssignToonPlayer: true });
-    expect(mapped.memberId).toBe("m2");
+    expect(mapped.memberId).toBe("tr");
     expect(mapped.memberAutoAssigned).toBe(true);
     expect(mapped.status).toBe("processed");
   });
 
-  it("returns unmatched when account player hint does not match any member", () => {
+  it("falls back to operating when player hint does not match any member", () => {
     const event: DonationEvent = {
       id: "t4",
       provider: "toonation",
@@ -111,12 +118,18 @@ describe("mapToMember", () => {
       status: "queued",
       target: "account",
     };
-    const mapped = mapToMember(event, members, [], { autoAssignToonPlayer: true });
-    expect(mapped.status).toBe("unmatched");
-    expect(mapped.memberId).toBeUndefined();
+    const mapped = mapToMember(
+      event,
+      [operatingMember, ...members],
+      [],
+      { autoAssignToonPlayer: true }
+    );
+    expect(mapped.status).toBe("processed");
+    expect(mapped.memberId).toBe("op");
+    expect(mapped.memberAutoAssigned).toBe(true);
   });
 
-  it("returns unmatched when toon player hint does not match any member", () => {
+  it("falls back to operating when toon player hint does not match any member", () => {
     const event: DonationEvent = {
       id: "t4b",
       provider: "toonation",
@@ -127,6 +140,29 @@ describe("mapToMember", () => {
       at: new Date().toISOString(),
       status: "queued",
       target: "toon",
+    };
+    const mapped = mapToMember(
+      event,
+      [operatingMember, ...members],
+      [],
+      { autoAssignToonPlayer: true }
+    );
+    expect(mapped.status).toBe("processed");
+    expect(mapped.memberId).toBe("op");
+    expect(mapped.memberAutoAssigned).toBe(true);
+  });
+
+  it("returns unmatched when no operating/treasury and player hint misses", () => {
+    const event: DonationEvent = {
+      id: "t4c",
+      provider: "toonation",
+      externalId: "e4c",
+      donorName: "햇님",
+      playerName: "없는이름",
+      amount: 4000,
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "account",
     };
     const mapped = mapToMember(event, members, [], { autoAssignToonPlayer: true });
     expect(mapped.status).toBe("unmatched");

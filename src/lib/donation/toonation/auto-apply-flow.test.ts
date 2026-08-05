@@ -27,7 +27,7 @@ function baseState(
 }
 
 describe("toonation auto-apply flow (parse → apply)", () => {
-  it("text 후원 테스트 → 투네 열·첫 멤버 자동 배치", () => {
+  it("text 후원 테스트 → 투네 열·운영비 자동 배치", () => {
     const raw = JSON.stringify({
       code: 101,
       content: {
@@ -51,8 +51,8 @@ describe("toonation auto-apply flow (parse → apply)", () => {
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.members.find((m) => m.id === "m1")?.toon).toBe(10000);
-    expect(result.state.members.find((m) => m.id === "op")?.toon).toBe(0);
+    expect(result.state.members.find((m) => m.id === "op")?.toon).toBe(10000);
+    expect(result.state.members.find((m) => m.id === "m1")?.toon).toBe(0);
     expect(result.state.members[0]?.account).toBe(0);
     expect(result.state.donors?.[0]?.target).toBe("toon");
     expect(result.event.memberAutoAssigned).toBe(true);
@@ -266,7 +266,7 @@ describe("toonation auto-apply flow (parse → apply)", () => {
     expect(result.event.memberAutoAssigned).toBeFalsy();
   });
 
-  it("잘못된 멤버명 힌트 → 미반영(unmatched)", () => {
+  it("잘못된 멤버명 힌트 → 운영비로 자동 반영", () => {
     const raw = JSON.stringify({
       code: 101,
       content: {
@@ -277,12 +277,42 @@ describe("toonation auto-apply flow (parse → apply)", () => {
     });
     const event = parseToonationWebSocketMessage(raw);
     const result = applyDonationToAppState(
-      baseState([{ id: "m1", name: "BT태호" }]),
+      baseState([
+        { id: "m1", name: "BT태호" },
+        { id: "op", name: "운영비", operating: true },
+      ]),
       event!,
       []
     );
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.reason).toBe("unmatched");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.event.memberId).toBe("op");
+    expect(result.event.memberAutoAssigned).toBe(true);
+    expect(result.state.members.find((m) => m.id === "op")?.toon).toBe(3000);
+  });
+
+  it("잘못된 멤버명 힌트·운영비 없음 → 국고로 자동 반영", () => {
+    const raw = JSON.stringify({
+      code: 101,
+      content: {
+        nickname: "시청자",
+        amount: 2500,
+        comment: "없는멤버 화이팅",
+      },
+    });
+    const event = parseToonationWebSocketMessage(raw);
+    const result = applyDonationToAppState(
+      baseState([
+        { id: "m1", name: "BT태호" },
+        { id: "tr", name: "국고" },
+      ]),
+      event!,
+      []
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.event.memberId).toBe("tr");
+    expect(result.event.memberAutoAssigned).toBe(true);
+    expect(result.state.members.find((m) => m.id === "tr")?.toon).toBe(2500);
   });
 });

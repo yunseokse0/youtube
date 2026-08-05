@@ -5188,7 +5188,12 @@ export default function AdminPage() {
           const next = { ...prev };
           for (const evt of items) {
             if (next[evt.id]) continue;
-            const suggested = suggestMemberForDonationEvent(evt, stateRef.current.members || [], []);
+            const suggested = suggestMemberForDonationEvent(
+              evt,
+              stateRef.current.members || [],
+              [],
+              stateRef.current.memberPositions
+            );
             if (suggested?.id) next[evt.id] = suggested.id;
           }
           return next;
