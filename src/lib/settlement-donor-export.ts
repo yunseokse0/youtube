@@ -32,6 +32,19 @@ function csvEscape(v: string | number): string {
   return `"${String(v).replace(/"/g, '""')}"`;
 }
 
+/** 엑셀/CSV용 시각 — 로컬 시각, Z(UTC 표시) 없음 */
+export function formatExportDateTime(at: number | string | Date): string {
+  const d = at instanceof Date ? at : new Date(at);
+  if (!Number.isFinite(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  return `${y}-${m}-${day} ${hh}:${mm}:${ss}`;
+}
+
 function memberMaps(record: SettlementRecord) {
   const nameById = new Map<string, string>();
   const realById = new Map<string, string>();
@@ -98,7 +111,7 @@ export function aggregateMemberDonors(
 
 export function recordToMemberDonorsCsv(record: SettlementRecord, donors: Donor[]): string {
   const { nameById, realById } = memberMaps(record);
-  const createdAt = new Date(record.createdAt).toISOString();
+  const createdAt = formatExportDateTime(record.createdAt);
   const detailHeader = ["정산제목", "정산시각", "멤버", "멤버실명", "후원자", "금액", "채널", "후원시각", "메시지"].join(",");
   const detailRows = [...donors]
     .sort((a, b) => {
@@ -116,7 +129,7 @@ export function recordToMemberDonorsCsv(record: SettlementRecord, donors: Donor[
         (d.name || "무명").trim() || "무명",
         String(Math.max(0, Number(d.amount) || 0)),
         donorTargetLabel(d.target),
-        new Date(d.at).toISOString(),
+        formatExportDateTime(d.at),
         String(d.message || "").trim(),
       ]
         .map(csvEscape)
@@ -165,7 +178,7 @@ function sanitizeSheetName(raw: string, used: Set<string>): string {
 export function recordToMemberDonorsXlsxBlob(record: SettlementRecord, donors: Donor[]): Blob {
   const { nameById, realById } = memberMaps(record);
   const wb = XLSX.utils.book_new();
-  const createdAt = new Date(record.createdAt).toISOString();
+  const createdAt = formatExportDateTime(record.createdAt);
 
   const detailAoA: (string | number)[][] = [
     ["정산제목", "정산시각", "멤버", "멤버실명", "후원자", "금액", "채널", "후원시각", "메시지"],
@@ -184,7 +197,7 @@ export function recordToMemberDonorsXlsxBlob(record: SettlementRecord, donors: D
         (d.name || "무명").trim() || "무명",
         Math.max(0, Number(d.amount) || 0),
         donorTargetLabel(d.target),
-        new Date(d.at).toISOString(),
+        formatExportDateTime(d.at),
         String(d.message || "").trim(),
       ]),
   ];
@@ -226,7 +239,7 @@ export function recordToMemberDonorsXlsxBlob(record: SettlementRecord, donors: D
           (d.name || "무명").trim() || "무명",
           Math.max(0, Number(d.amount) || 0),
           donorTargetLabel(d.target),
-          new Date(d.at).toISOString(),
+          formatExportDateTime(d.at),
           String(d.message || "").trim(),
         ]),
     ];

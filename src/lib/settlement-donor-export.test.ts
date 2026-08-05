@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Donor, SettlementRecord } from "@/types";
 import {
   aggregateMemberDonors,
+  formatExportDateTime,
   recordToMemberDonorsCsv,
   resolveSettlementDonors,
 } from "@/lib/settlement-donor-export";
@@ -91,6 +92,15 @@ describe("aggregateMemberDonors", () => {
   });
 });
 
+describe("formatExportDateTime", () => {
+  it("formats local time without trailing Z", () => {
+    const s = formatExportDateTime(Date.parse("2026-08-05T11:21:41.433Z"));
+    expect(s).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+    expect(s).not.toContain("Z");
+    expect(s).not.toContain("T");
+  });
+});
+
 describe("recordToMemberDonorsCsv", () => {
   it("includes donation message in detail rows", () => {
     const donors: Donor[] = [
@@ -107,5 +117,6 @@ describe("recordToMemberDonorsCsv", () => {
     const csv = recordToMemberDonorsCsv(baseRecord, donors);
     expect(csv).toContain("메시지");
     expect(csv).toContain("계좌 응원합니다");
+    expect(csv).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.*Z/);
   });
 });

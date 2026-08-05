@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useParams } from "next/navigation";
-import { SettlementMemberResult, SettlementRecord, deleteSettlementRecordAndSync, getMembersForExport, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToReadableTxt, recordToTxt, saveSettlementRecords, saveSettlementRecordsToApi, toSettlementFormulaLine } from "@/lib/settlement";
+import { SettlementMemberResult, SettlementRecord, deleteSettlementRecordAndSync, getMembersForExport, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToReadableTxt, recordToTxt, saveSettlementRecords, saveSettlementRecordsToApi, toPaymentAlignedSettlement, toSettlementFormulaLine } from "@/lib/settlement";
 import { aggregateMemberDonors, recordToMemberDonorsCsv, recordToMemberDonorsXlsxBlob, resolveSettlementDonors, type DailyLogEntry } from "@/lib/settlement-donor-export";
 import {
   memberToPaymentStatementPdfBlob,
@@ -75,6 +75,7 @@ export default function SettlementDetailPage() {
   }, [user]);
 
   const record = useMemo(() => (records || []).find((x) => x.id === id) || null, [records, id]);
+  const viewRecord = useMemo(() => (record ? toPaymentAlignedSettlement(record) : null), [record]);
   const settlementDonors = useMemo(
     () => (record ? resolveSettlementDonors(record, dailyLog) : []),
     [record, dailyLog]
@@ -324,7 +325,7 @@ export default function SettlementDetailPage() {
         <div className="rounded border border-white/10 bg-neutral-900/60 p-3">
           <div className="text-sm font-semibold mb-2">최종 정산 요약</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-            {getMembersForExport(record).map((m) => (
+            {getMembersForExport(viewRecord!).map((m) => (
               <div key={`sum-${m.memberId}`} className="rounded bg-black/30 border border-white/10 px-3 py-2 flex items-baseline justify-between">
                 <div className="text-sm text-neutral-300 mr-3 truncate">
                   <span className="font-medium">{m.name}</span>
@@ -337,8 +338,9 @@ export default function SettlementDetailPage() {
         </div>
 
         <div className="text-sm text-neutral-300 whitespace-nowrap overflow-x-auto">
-          계좌 비율 {(record.accountRatio * 100).toFixed(1)}% · 투네 비율 {(record.toonRatio * 100).toFixed(1)}% · 세금 {(record.feeRate * 100).toFixed(1)}%
-          {record.vatIncluded ? ` · 부가세 포함(공급가 ÷${(1 + (record.vatRate ?? 0.1)).toFixed(1)})` : ""}
+          계좌 비율 {(viewRecord!.accountRatio * 100).toFixed(1)}% · 투네 비율 {(viewRecord!.toonRatio * 100).toFixed(1)}% · 세금 {(viewRecord!.feeRate * 100).toFixed(1)}%
+          {viewRecord!.vatIncluded ? ` · 부가세 포함(공급가 ÷${(1 + (viewRecord!.vatRate ?? 0.1)).toFixed(1)})` : ""}
+          <span className="text-neutral-500"> · 금액은 지급정산서(수수료·부가세 공제 후) 기준</span>
         </div>
 
         <div className="rounded border border-white/10 bg-neutral-900/50 overflow-auto">
@@ -361,7 +363,7 @@ export default function SettlementDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {getMembersForExport(record).map((m) => (
+              {getMembersForExport(viewRecord!).map((m) => (
                 <tr key={m.memberId} className="border-b border-white/10">
                   <td className="p-2">{m.name}</td>
                   <td className="p-2">{m.realName || "-"}</td>
@@ -414,16 +416,16 @@ export default function SettlementDetailPage() {
                   <td className="p-2 text-right">{m.gross.toLocaleString()}</td>
                   <td className="p-2 text-right">{m.fee.toLocaleString()}</td>
                   <td className="p-2 text-right font-semibold">{m.net.toLocaleString()}</td>
-                  <td className="p-2 text-xs text-neutral-300 whitespace-nowrap">{toSettlementFormulaLine(record, m)}</td>
+                  <td className="p-2 text-xs text-neutral-300 whitespace-nowrap">{toSettlementFormulaLine(viewRecord!, m)}</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr className="font-semibold">
                 <td className="p-2" colSpan={9}>합계</td>
-                <td className="p-2 text-right">{record.totalGross.toLocaleString()}</td>
-                <td className="p-2 text-right">{record.totalFee.toLocaleString()}</td>
-                <td className="p-2 text-right">{record.totalNet.toLocaleString()}</td>
+                <td className="p-2 text-right">{viewRecord!.totalGross.toLocaleString()}</td>
+                <td className="p-2 text-right">{viewRecord!.totalFee.toLocaleString()}</td>
+                <td className="p-2 text-right">{viewRecord!.totalNet.toLocaleString()}</td>
                 <td className="p-2" />
               </tr>
             </tfoot>

@@ -1,5 +1,6 @@
 import { formatManThousand } from "@/lib/state";
 import { computeSettlement, isOperatingSettlementMember, type SigMatchRankingItem } from "@/lib/settlement-utils";
+import { computeMemberPaymentStatement } from "@/lib/settlement-payment-statement";
 import type {
   Donor,
   Member,
@@ -433,33 +434,53 @@ export async function deleteSettlementRecordAndSync(recordId: string, reason = "
 }
 
 export function toSettlementFormulaLine(record: SettlementRecord, m: SettlementMemberResult): string {
-  const accSrc = formatManThousand(m.account);
-  const toonSrc = formatManThousand(m.toon);
-  const vatNote = record.vatIncluded ? " (부가세제외)" : "";
+  const stmt = computeMemberPaymentStatement(record, m);
+  const accSrc = formatManThousand(stmt.accountGross);
+  const toonSrc = formatManThousand(stmt.toonGross);
   if (settlementRowIsOperating(m, record.memberPositionsAtSettlement)) {
-    return `${m.name} 운영비 예외: 계좌${accSrc} + 투네${toonSrc} = ${m.gross.toLocaleString()} (비율/세금 미적용)`;
+    return `${m.name} 운영비 예외: 계좌${accSrc} + 투네${toonSrc} = ${stmt.pretaxTotal.toLocaleString()} (원천세 미적용)`;
   }
-  const accRatio = Number((m.accountRatio ?? record.accountRatio).toFixed(3));
-  const toonRatio = Number((m.toonRatio ?? record.toonRatio).toFixed(3));
-  const accDisplay =
-    record.vatIncluded && typeof m.accountSource === "number" && m.accountSource !== m.account
-      ? `${formatManThousand(m.accountSource)}→${accSrc}`
-      : accSrc;
-  const toonDisplay =
-    record.vatIncluded && typeof m.toonSource === "number" && m.toonSource !== m.toon
-      ? `${formatManThousand(m.toonSource)}→${toonSrc}`
-      : toonSrc;
-  return `${m.name} 계좌${accDisplay}${vatNote}x${accRatio}=${m.accountApplied.toLocaleString()} 투네${toonDisplay}${vatNote}x${toonRatio}=${m.toonApplied.toLocaleString()} /=${m.gross.toLocaleString()}-${m.fee.toLocaleString()}=${m.net.toLocaleString()}`;
+  const accRatio = Number(stmt.accountRatio.toFixed(3));
+  const toonRatio = Number(stmt.toonRatio.toFixed(3));
+  return `${m.name} 계좌${accSrc}-공제→${stmt.accountNet.toLocaleString()}x${accRatio}=${stmt.accountStreamerShare.toLocaleString()} 투네${toonSrc}-공제→${stmt.toonNet.toLocaleString()}x${toonRatio}=${stmt.toonStreamerShare.toLocaleString()} A+B=${stmt.pretaxTotal.toLocaleString()}-원천세${stmt.withholding.toLocaleString()}=${stmt.payout.toLocaleString()}`;
 }
 
-/** 정산 export/표시용 멤버 순서: 정산금액(net) 내림차순, 운영비는 맨 아래 */
+/** 지급정산서 공식으로 반영·세금·최종액을 맞춘 멤버 행 */
+export function applyPaymentStatementAmounts(
+  record: SettlementRecord,
+  m: SettlementMemberResult
+): SettlementMemberResult {
+  const stmt = computeMemberPaymentStatement(record, m);
+  return {
+    ...m,
+    accountApplied: stmt.accountStreamerShare,
+    toonApplied: stmt.toonStreamerShare,
+    gross: stmt.pretaxTotal,
+    fee: stmt.withholding,
+    net: stmt.payout,
+  };
+}
+
+/** 정산 export/표시용 멤버 순서: 정산금액(net) 내림차순, 운영비는 맨 아래 — 금액은 지급정산서와 동일 */
 export function getMembersForExport(record: SettlementRecord): SettlementMemberResult[] {
-  const members = record.members || [];
+  const members = (record.members || []).map((m) => applyPaymentStatementAmounts(record, m));
   const pos = record.memberPositionsAtSettlement;
   const operating = members.filter((m) => settlementRowIsOperating(m, pos));
   const nonOperating = members.filter((m) => !settlementRowIsOperating(m, pos));
   const sortByNet = (a: SettlementMemberResult, b: SettlementMemberResult) => (b.net || 0) - (a.net || 0);
   return [...nonOperating.sort(sortByNet), ...operating.sort(sortByNet)];
+}
+
+/** 화면·합계용: 멤버 금액을 지급정산서 기준으로 맞춘 레코드 뷰 */
+export function toPaymentAlignedSettlement(record: SettlementRecord): SettlementRecord {
+  const members = getMembersForExport(record);
+  return {
+    ...record,
+    members,
+    totalGross: members.reduce((s, m) => s + m.gross, 0),
+    totalFee: members.reduce((s, m) => s + m.fee, 0),
+    totalNet: members.reduce((s, m) => s + m.net, 0),
+  };
 }
 
 export function recordToCsv(record: SettlementRecord): string {

@@ -1,22 +1,23 @@
 import type { SettlementMemberResult, SettlementRecord } from "@/types";
-import { getMembersForExport } from "@/lib/settlement";
+import { isOperatingSettlementMember } from "@/lib/settlement-utils";
+import {
+  computeExcelWithholding,
+  computePaymentChannelBreakdown,
+  PAYMENT_FEE_DEFAULTS,
+  roundWon,
+  type PaymentFeeRates,
+} from "@/lib/settlement-payment-math";
+
+export { computeExcelWithholding } from "@/lib/settlement-payment-math";
 
 /** 정산서.xlsx「지급 정산서」와 동일한 공제율 */
 export const PAYMENT_STATEMENT_DEFAULTS = {
-  accountPlatformFeeRate: 0,
-  accountVatRate: 0.1,
-  toonPlatformFeeRate: 0.1,
-  toonVatRate: 0.1,
+  ...PAYMENT_FEE_DEFAULTS,
   thankYouMessage: "파이팅 넘치는 스트리머의 노고에 감사드립니다",
   issuerLine: "BT STUDIO 대장 BT태호 이동환",
 } as const;
 
-export type PaymentStatementRates = {
-  accountPlatformFeeRate: number;
-  accountVatRate: number;
-  toonPlatformFeeRate: number;
-  toonVatRate: number;
-};
+export type PaymentStatementRates = PaymentFeeRates;
 
 export type MemberPaymentStatement = {
   memberId: string;
@@ -39,10 +40,6 @@ export type MemberPaymentStatement = {
   accountRatio: number;
   toonRatio: number;
 };
-
-function roundWon(n: number): number {
-  return Math.max(0, Math.round(Number(n) || 0));
-}
 
 function rate01(n: number, fallback: number): number {
   if (!Number.isFinite(n)) return fallback;
@@ -71,45 +68,39 @@ export function computeMemberPaymentStatement(
   member: SettlementMemberResult,
   rates: Partial<PaymentStatementRates> = {}
 ): MemberPaymentStatement {
-  const cfg = { ...PAYMENT_STATEMENT_DEFAULTS, ...rates };
   const accountGross = settlementGrossAmount(member, "account");
   const toonGross = settlementGrossAmount(member, "toon");
   const accountRatio = rate01(member.accountRatio, record.accountRatio);
   const toonRatio = rate01(member.toonRatio, record.toonRatio);
   const withholdingRate = Math.max(0, Number(record.feeRate) || 0);
-
-  const accountPlatformFee = roundWon(accountGross * cfg.accountPlatformFeeRate);
-  const accountVat = roundWon(accountGross * cfg.accountVatRate);
-  const accountNet = Math.max(0, accountGross - accountPlatformFee - accountVat);
-  const accountStreamerShare = roundWon(accountNet * accountRatio);
-
-  const toonPlatformFee = roundWon(toonGross * cfg.toonPlatformFeeRate);
-  const toonVat = roundWon(toonGross * cfg.toonVatRate);
-  const toonNet = Math.max(0, toonGross - toonPlatformFee - toonVat);
-  const toonStreamerShare = roundWon(toonNet * toonRatio);
-
-  const pretaxTotal = accountStreamerShare + toonStreamerShare;
-  const withholding = member.operating ? 0 : roundWon(pretaxTotal * withholdingRate);
-  const payout = Math.max(0, pretaxTotal - withholding);
+  const b = computePaymentChannelBreakdown({
+    accountGross,
+    toonGross,
+    accountRatio,
+    toonRatio,
+    feeRate: withholdingRate,
+    skipWithholding: Boolean(member.operating),
+    rates,
+  });
 
   return {
     memberId: member.memberId,
     streamerName: (member.realName || member.name || "").trim() || member.name,
     broadcastDateLabel: formatBroadcastDateLabel(record.createdAt),
-    accountGross,
-    accountPlatformFee,
-    accountVat,
-    accountNet,
-    accountStreamerShare,
-    toonGross,
-    toonPlatformFee,
-    toonVat,
-    toonNet,
-    toonStreamerShare,
-    pretaxTotal,
+    accountGross: b.accountGross,
+    accountPlatformFee: b.accountPlatformFee,
+    accountVat: b.accountVat,
+    accountNet: b.accountNet,
+    accountStreamerShare: b.accountStreamerShare,
+    toonGross: b.toonGross,
+    toonPlatformFee: b.toonPlatformFee,
+    toonVat: b.toonVat,
+    toonNet: b.toonNet,
+    toonStreamerShare: b.toonStreamerShare,
+    pretaxTotal: b.pretaxTotal,
     withholdingRate,
-    withholding,
-    payout,
+    withholding: b.withholding,
+    payout: b.payout,
     accountRatio,
     toonRatio,
   };
@@ -130,8 +121,27 @@ export function formatWonOrDash(n: number): string {
   return Math.round(n).toLocaleString("ko-KR");
 }
 
+export function formatWonAmount(n: number): string {
+  if (!Number.isFinite(n)) return "-";
+  return Math.round(n).toLocaleString("ko-KR");
+}
+
+function sortMembersForStatement(record: SettlementRecord): SettlementMemberResult[] {
+  const members = record.members || [];
+  const pos = record.memberPositionsAtSettlement;
+  const isOp = (m: SettlementMemberResult) =>
+    isOperatingSettlementMember(
+      { id: m.memberId, name: m.name, operating: m.operating, realName: m.realName },
+      pos
+    );
+  const operating = members.filter(isOp);
+  const nonOperating = members.filter((m) => !isOp(m));
+  const byNet = (a: SettlementMemberResult, b: SettlementMemberResult) => (b.net || 0) - (a.net || 0);
+  return [...nonOperating.sort(byNet), ...operating.sort(byNet)];
+}
+
 export function listPayableMembers(record: SettlementRecord): SettlementMemberResult[] {
-  return getMembersForExport(record).filter((m) => {
+  return sortMembersForStatement(record).filter((m) => {
     const stmt = computeMemberPaymentStatement(record, m);
     return stmt.accountGross > 0 || stmt.toonGross > 0 || stmt.payout > 0;
   });
@@ -157,20 +167,30 @@ export type FullSettlementSummary = {
   sumVatTotal: number;
   sumWithholding: number;
   sumPayout: number;
+  /** 엑셀 N21 — 정산금의 30% 합계(= 매출) */
   sumStudioShare: number;
   totalGrossDonation: number;
   taxGrandTotal: number;
+  /** 엑셀 N23 제작진 = 매출×50% */
   productionShare: number;
+  /** 엑셀 N24 국고 50% (양식상 수동/비움, 기본 0) */
+  treasuryShare: number;
+  /** 엑셀 N25 합계 = 제작진 + 국고 */
+  remittanceSubtotal: number;
+  /** 엑셀 N26 부가세 10% */
   productionVat: number;
+  /** 엑셀 N27 총 송금금액 */
   productionTransfer: number;
 };
 
 /**
- * 전체 정산서 집계.
- * - 정산금 총액 = 계좌정산금 + 투네정산금
- * - 70% = 정산금×배분(멤버별 비율 적용된 pretax), 30% = 정산금총액 − 70% 분
- * - 소득세 10%·지방소득세 1%(소득세의 10%)는 30% 매출 기준
- * - 제작진 = 30%의 50%(국고 50%), +부가세 10% = 총 송금
+ * 전체 정산서 집계 — 정산서.xlsx「전체 정산서」수식과 동일.
+ * - 정산금 총액 J = 계좌정산금 + 투네정산금
+ * - 정산금의 70% K = 멤버 배분 합(A+B) (비율 70%면 J×70%와 동일)
+ * - 정산금의 30% N = K×30%
+ * - 소득세 O = ROUNDDOWN(K×3%, -1), 지방소득세 P = ROUNDDOWN(O×10%, -1)
+ * - 원천세 L = O+P, 입금액 M = K−L
+ * - 제작진 = N합×50%, 국고 50%는 양식상 비움, 부가세 10%·총 송금은 합계 기준
  */
 export function computeFullSettlementSummary(
   record: SettlementRecord,
@@ -181,9 +201,11 @@ export function computeFullSettlementSummary(
     const s = computeMemberPaymentStatement(record, m, rates);
     const settlementTotal = s.accountNet + s.toonNet;
     const streamerShare70 = s.pretaxTotal;
-    const studioShare30 = Math.max(0, settlementTotal - streamerShare70);
-    const incomeTax = roundWon(studioShare30 * 0.1);
-    const localIncomeTax = roundWon(incomeTax * 0.1);
+    const studioShare30 = roundWon(streamerShare70 * 0.3);
+    const { incomeTax, localIncomeTax, withholding } = m.operating
+      ? { incomeTax: 0, localIncomeTax: 0, withholding: 0 }
+      : computeExcelWithholding(streamerShare70);
+    const payout = Math.max(0, streamerShare70 - withholding);
     return {
       ...s,
       name: m.name,
@@ -192,6 +214,8 @@ export function computeFullSettlementSummary(
       studioShare30,
       incomeTax,
       localIncomeTax,
+      withholding,
+      payout,
     };
   });
 
@@ -205,8 +229,10 @@ export function computeFullSettlementSummary(
   const totalGrossDonation = rows.reduce((a, r) => a + r.accountGross + r.toonGross, 0);
   const taxGrandTotal = sumVatTotal + sumWithholding;
   const productionShare = roundWon(sumStudioShare * 0.5);
-  const productionVat = roundWon(productionShare * 0.1);
-  const productionTransfer = productionShare + productionVat;
+  const treasuryShare = 0;
+  const remittanceSubtotal = productionShare + treasuryShare;
+  const productionVat = roundWon(remittanceSubtotal * 0.1);
+  const productionTransfer = remittanceSubtotal + productionVat;
 
   const d = new Date(record.createdAt);
   const dateLabel = Number.isFinite(d.getTime())
@@ -227,13 +253,15 @@ export function computeFullSettlementSummary(
     totalGrossDonation,
     taxGrandTotal,
     productionShare,
+    treasuryShare,
+    remittanceSubtotal,
     productionVat,
     productionTransfer,
   };
 }
 
 function moneyCell(n: number): string {
-  return formatWonOrDash(n);
+  return formatWonAmount(n);
 }
 
 function escapeHtml(raw: string): string {
@@ -283,8 +311,11 @@ export function buildFullSettlementHtml(record: SettlementRecord): string {
   table.main { width:100%; border-collapse:collapse; font-size:9px; table-layout:fixed; }
   table.main th, table.main td { border:1px solid #444; padding:4px 2px; text-align:center; vertical-align:middle; }
   table.main th { background:#f3f3f3; font-weight:700; }
+  table.main tfoot td { font-size:8px; }
+  table.main tfoot .lab { background:#f7f7f7; font-weight:700; }
+  table.main tfoot .num { font-weight:700; font-variant-numeric: tabular-nums; }
   .num { font-variant-numeric: tabular-nums; }
-  .foot { margin-top: 14px; display:grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 12px; font-size:11px; }
+  .foot { margin-top: 14px; display:grid; grid-template-columns: 1fr 1fr 1.1fr; gap: 16px; font-size:11px; align-items:start; }
   .foot table { width:100%; border-collapse:collapse; }
   .foot td { border:1px solid #555; padding:5px 6px; }
   .foot td.k { background:#f7f7f7; font-weight:700; width:48%; }
@@ -303,23 +334,46 @@ export function buildFullSettlementHtml(record: SettlementRecord): string {
       </tr>
     </thead>
     <tbody>${bodyRows}</tbody>
+    <tfoot>
+      <tr>
+        <td colspan="4"></td>
+        <td class="lab">계좌 부가세 합계</td>
+        <td></td>
+        <td class="lab">투네수수료 합계</td>
+        <td class="lab">투네 부가세 합계</td>
+        <td colspan="2"></td>
+        <td class="lab">부가세 총 합계</td>
+        <td class="lab">원천세 총 합계</td>
+        <td class="lab">총 지급액</td>
+        <td class="lab">매출</td>
+        <td colspan="2"></td>
+      </tr>
+      <tr>
+        <td colspan="4"></td>
+        <td class="num">${moneyCell(s.sumAccountVat)}</td>
+        <td></td>
+        <td class="num">${moneyCell(s.sumToonFee)}</td>
+        <td class="num">${moneyCell(s.sumToonVat)}</td>
+        <td colspan="2"></td>
+        <td class="num">${moneyCell(s.sumVatTotal)}</td>
+        <td class="num">${moneyCell(s.sumWithholding)}</td>
+        <td class="num">${moneyCell(s.sumPayout)}</td>
+        <td class="num">${moneyCell(s.sumStudioShare)}</td>
+        <td colspan="2"></td>
+      </tr>
+    </tfoot>
   </table>
   <div class="foot">
     <table>
-      <tr><td class="k">계좌 부가세 합계</td><td class="v">${moneyCell(s.sumAccountVat)}</td></tr>
-      <tr><td class="k">투네수수료 합계</td><td class="v">${moneyCell(s.sumToonFee)}</td></tr>
-      <tr><td class="k">투네 부가세 합계</td><td class="v">${moneyCell(s.sumToonVat)}</td></tr>
-      <tr><td class="k">부가세 총 합계</td><td class="v">${moneyCell(s.sumVatTotal)}</td></tr>
-      <tr><td class="k">원천세 총 합계</td><td class="v">${moneyCell(s.sumWithholding)}</td></tr>
-      <tr><td class="k">총 지급액</td><td class="v">${moneyCell(s.sumPayout)}</td></tr>
-      <tr><td class="k">매출(30%)</td><td class="v">${moneyCell(s.sumStudioShare)}</td></tr>
+      <tr><td class="k">총매출</td><td class="v">${moneyCell(s.totalGrossDonation)}</td></tr>
     </table>
     <table>
-      <tr><td class="k">총매출</td><td class="v">${moneyCell(s.totalGrossDonation)}</td></tr>
       <tr><td class="k">세금합계</td><td class="v">${moneyCell(s.taxGrandTotal)}</td></tr>
     </table>
     <table>
-      <tr><td class="k">제작진 (국고 50%)</td><td class="v">${moneyCell(s.productionShare)}</td></tr>
+      <tr><td class="k">제작진</td><td class="v">${moneyCell(s.productionShare)}</td></tr>
+      <tr><td class="k">국고 50%</td><td class="v">${s.treasuryShare ? moneyCell(s.treasuryShare) : ""}</td></tr>
+      <tr><td class="k">합계</td><td class="v">${moneyCell(s.remittanceSubtotal)}</td></tr>
       <tr><td class="k">부가세 10%</td><td class="v">${moneyCell(s.productionVat)}</td></tr>
       <tr><td class="k">총 송금금액</td><td class="v">${moneyCell(s.productionTransfer)}</td></tr>
     </table>
@@ -487,6 +541,11 @@ export function buildMemberPaymentStatementHtml(
     table-layout: fixed;
     font-size: 12px;
   }
+  .grid col.c-gross { width: 20%; }
+  .grid col.c-fee { width: 15%; }
+  .grid col.c-vat { width: 15%; }
+  .grid col.c-net { width: 20%; }
+  .grid col.c-share { width: 30%; }
   .grid th, .grid td {
     border: 1px solid #444;
     padding: 8px 6px;
@@ -557,19 +616,19 @@ export function buildMemberPaymentStatementHtml(
 
     <div class="section">계좌 후원 내역</div>
     <table class="grid">
+      <colgroup>
+        <col class="c-gross" /><col class="c-fee" /><col class="c-vat" /><col class="c-net" /><col class="c-share" />
+      </colgroup>
       <thead>
         <tr>
-          <th>계좌 후원금</th>
+          <th rowspan="2">계좌 후원금</th>
           <th colspan="2">기본 공제</th>
-          <th>순매출</th>
-          <th>A. 스트리머 정산금</th>
+          <th rowspan="2">순매출</th>
+          <th rowspan="2">A. 스트리머 정산금</th>
         </tr>
         <tr>
-          <th></th>
           <th>플랫폼 수수료</th>
           <th>부가세</th>
-          <th></th>
-          <th></th>
         </tr>
       </thead>
       <tbody>
@@ -585,19 +644,19 @@ export function buildMemberPaymentStatementHtml(
 
     <div class="section">투네이션 후원 내역</div>
     <table class="grid">
+      <colgroup>
+        <col class="c-gross" /><col class="c-fee" /><col class="c-vat" /><col class="c-net" /><col class="c-share" />
+      </colgroup>
       <thead>
         <tr>
-          <th>투네이션 후원금</th>
+          <th rowspan="2">투네이션 후원금</th>
           <th colspan="2">기본 공제</th>
-          <th>순매출</th>
-          <th>B. 스트리머 정산금</th>
+          <th rowspan="2">순매출</th>
+          <th rowspan="2">B. 스트리머 정산금</th>
         </tr>
         <tr>
-          <th></th>
           <th>플랫폼 수수료</th>
           <th>부가세</th>
-          <th></th>
-          <th></th>
         </tr>
       </thead>
       <tbody>

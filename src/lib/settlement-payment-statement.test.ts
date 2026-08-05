@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { SettlementMemberResult, SettlementRecord } from "@/types";
 import {
+  computeExcelWithholding,
+  computeFullSettlementSummary,
   computeMemberPaymentStatement,
   formatBroadcastDateLabel,
   listPayableMembers,
@@ -95,5 +97,45 @@ describe("computeMemberPaymentStatement (정산서.xlsx)", () => {
       ],
     });
     expect(listPayableMembers(rec).map((m) => m.memberId)).toEqual(["m1"]);
+  });
+});
+
+describe("computeFullSettlementSummary (정산서.xlsx 전체 정산서)", () => {
+  it("matches Excel sample row and remittance footer", () => {
+    const summary = computeFullSettlementSummary(record());
+    expect(summary.rows).toHaveLength(1);
+    const row = summary.rows[0]!;
+    expect(row.accountVat).toBe(100_000);
+    expect(row.accountNet).toBe(900_000);
+    expect(row.toonPlatformFee).toBe(100_000);
+    expect(row.toonVat).toBe(100_000);
+    expect(row.toonNet).toBe(800_000);
+    expect(row.settlementTotal).toBe(1_700_000);
+    expect(row.streamerShare70).toBe(1_190_000);
+    expect(row.studioShare30).toBe(357_000);
+    expect(row.incomeTax).toBe(35_700);
+    expect(row.localIncomeTax).toBe(3_570);
+    expect(row.withholding).toBe(39_270);
+    expect(row.payout).toBe(1_150_730);
+
+    expect(summary.sumVatTotal).toBe(200_000);
+    expect(summary.sumWithholding).toBe(39_270);
+    expect(summary.sumPayout).toBe(1_150_730);
+    expect(summary.sumStudioShare).toBe(357_000);
+    expect(summary.totalGrossDonation).toBe(2_000_000);
+    expect(summary.taxGrandTotal).toBe(239_270);
+    expect(summary.productionShare).toBe(178_500);
+    expect(summary.treasuryShare).toBe(0);
+    expect(summary.remittanceSubtotal).toBe(178_500);
+    expect(summary.productionVat).toBe(17_850);
+    expect(summary.productionTransfer).toBe(196_350);
+  });
+
+  it("computeExcelWithholding uses ROUNDDOWN to tens", () => {
+    expect(computeExcelWithholding(1_190_000)).toEqual({
+      incomeTax: 35_700,
+      localIncomeTax: 3_570,
+      withholding: 39_270,
+    });
   });
 });

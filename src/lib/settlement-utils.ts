@@ -8,6 +8,7 @@ import type {
   SettlementRecord,
 } from "@/types";
 import { buildMemberCreationOrderIndex } from "@/lib/utils";
+import { computePaymentChannelBreakdown } from "@/lib/settlement-payment-math";
 
 function toSafeRate(n: number, fallback: number): number {
   if (!Number.isFinite(n)) return fallback;
@@ -46,6 +47,10 @@ export function isOperatingSettlementMember(
   );
 }
 
+/**
+ * 정산 집계 — 지급정산서(정산서.xlsx)와 동일:
+ * 후원금에서 수수료·부가세 공제 후 배분율 적용, 원천세 차감 = 최종정산
+ */
 export function computeSettlement(
   members: Member[],
   accountRatioRaw: number,
@@ -64,8 +69,13 @@ export function computeSettlement(
   const rows: SettlementMemberResult[] = (members || []).map((m) => {
     const accountSource = floorToHundreds(Math.max(0, m.account || 0));
     const toonSource = floorToHundreds(Math.max(0, m.toon || 0));
-    const account = toSettlementBaseAmount(m.account || 0, vatIncluded, vatRate);
-    const toon = toSettlementBaseAmount(m.toon || 0, vatIncluded, vatRate);
+    // 지급정산서는 원금(부가세 포함 스냅샷) 기준. vatIncluded여도 원금으로 공제표를 맞춤.
+    const accountGross = accountSource;
+    const toonGross = toonSource;
+    const account = vatIncluded
+      ? toSettlementBaseAmount(m.account || 0, true, vatRate)
+      : accountGross;
+    const toon = vatIncluded ? toSettlementBaseAmount(m.toon || 0, true, vatRate) : toonGross;
     const isOperating = isOperatingSettlementMember(
       { id: m.id, name: m.name, operating: m.operating, realName: m.realName },
       memberPositions
@@ -87,11 +97,14 @@ export function computeSettlement(
           : toonRatio,
       toonRatio
     );
-    const accountApplied = Math.round(account * effectiveAccountRatio);
-    const toonApplied = Math.round(toon * effectiveToonRatio);
-    const gross = accountApplied + toonApplied;
-    const fee = isOperating ? 0 : Math.round(gross * feeRate);
-    const net = Math.max(0, gross - fee);
+    const pay = computePaymentChannelBreakdown({
+      accountGross,
+      toonGross,
+      accountRatio: effectiveAccountRatio,
+      toonRatio: effectiveToonRatio,
+      feeRate,
+      skipWithholding: isOperating,
+    });
     return {
       memberId: m.id,
       name: m.name,
@@ -102,15 +115,15 @@ export function computeSettlement(
       accountHolder: "",
       account,
       toon,
-      ...(vatIncluded && accountSource !== account ? { accountSource } : {}),
-      ...(vatIncluded && toonSource !== toon ? { toonSource } : {}),
+      ...(accountSource !== account ? { accountSource } : {}),
+      ...(toonSource !== toon ? { toonSource } : {}),
       accountRatio: effectiveAccountRatio,
       toonRatio: effectiveToonRatio,
-      accountApplied,
-      toonApplied,
-      gross,
-      fee,
-      net,
+      accountApplied: pay.accountStreamerShare,
+      toonApplied: pay.toonStreamerShare,
+      gross: pay.pretaxTotal,
+      fee: pay.withholding,
+      net: pay.payout,
     };
   });
 
