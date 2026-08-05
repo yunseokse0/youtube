@@ -581,7 +581,7 @@ export function buildMemberPaymentStatementHtml(
   /**
    * 엑셀 5열(각 20%) 비율:
    * 후원금 | 수수료 | 부가세 | 순매출 | 정산금
-   * 셀 테두리 + 셀 중앙(가로·세로) 정렬
+   * html2canvas 호환: flex 대신 table + line-height/vertical-align 으로 셀 정중앙
    */
   const channelBlock = (
     sectionTitle: string,
@@ -604,23 +604,27 @@ export function buildMemberPaymentStatementHtml(
       </colgroup>
       <thead>
         <tr>
-          <th rowspan="2">${escapeHtml(grossLabel)}</th>
-          <th colspan="2">기본 공제</th>
-          <th rowspan="2">순매출</th>
-          <th rowspan="2">${escapeHtml(shareLabel)}</th>
-        </tr>
-        <tr>
-          <th>플랫폼 수수료</th>
-          <th>부가세</th>
+          <th class="h">${escapeHtml(grossLabel)}</th>
+          <th colspan="2" class="deduct">
+            <table class="deduct-inner">
+              <tr><td class="d-top" colspan="2">기본 공제</td></tr>
+              <tr>
+                <td class="d-bot">플랫폼 수수료</td>
+                <td class="d-bot">부가세</td>
+              </tr>
+            </table>
+          </th>
+          <th class="h">순매출</th>
+          <th class="h">${escapeHtml(shareLabel)}</th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td>${moneyCell(gross)}</td>
-          <td>${moneyCell(fee)}</td>
-          <td>${moneyCell(vat)}</td>
-          <td>${moneyCell(net)}</td>
-          <td>${moneyCell(share)}</td>
+          <td class="n">${moneyCell(gross)}</td>
+          <td class="n">${moneyCell(fee)}</td>
+          <td class="n">${moneyCell(vat)}</td>
+          <td class="n">${moneyCell(net)}</td>
+          <td class="n">${moneyCell(share)}</td>
         </tr>
       </tbody>
     </table>`;
@@ -683,10 +687,10 @@ export function buildMemberPaymentStatementHtml(
   }
   .meta table { border-collapse: collapse; font-size: 13px; }
   .meta td {
-    padding: 0 10px;
     border: 1px solid #333;
     height: 30px;
     line-height: 30px;
+    padding: 0 10px;
     text-align: center;
     vertical-align: middle;
   }
@@ -704,83 +708,103 @@ export function buildMemberPaymentStatementHtml(
     border: 1px solid #333;
     border-bottom: none;
   }
-  table.pay-table {
+  table.pay-table,
+  table.total-table,
+  table.deduct-inner {
     width: 100%;
     border-collapse: collapse;
     border-spacing: 0;
     table-layout: fixed;
-    border: 1px solid #333;
     background: #fff;
     margin: 0;
   }
+  table.pay-table,
+  table.total-table {
+    border: 1px solid #333;
+  }
   table.pay-table th,
-  table.pay-table td {
+  table.pay-table td,
+  table.total-table td,
+  table.deduct-inner td {
     border: 1px solid #333;
     text-align: center;
     vertical-align: middle;
     word-break: keep-all;
-    padding: 8px 4px;
+    padding: 0 4px;
   }
-  table.pay-table thead th {
+  table.pay-table thead th.h {
     background: #f3f3f3;
     font-weight: 700;
     font-size: 11px;
+    height: 56px;
     line-height: 1.3;
-    height: 28px;
+    vertical-align: middle;
   }
-  table.pay-table tbody td {
+  table.pay-table thead th.deduct {
+    background: #f3f3f3;
+    padding: 0;
+    height: 56px;
+    border: 1px solid #333;
+  }
+  table.deduct-inner { height: 56px; border: none; }
+  table.deduct-inner td {
+    background: #f3f3f3;
+    font-weight: 700;
+    font-size: 11px;
+    border: none;
+    border-bottom: 1px solid #333;
+  }
+  table.deduct-inner td.d-top {
+    height: 28px;
+    line-height: 28px;
+  }
+  table.deduct-inner td.d-bot {
+    height: 28px;
+    line-height: 28px;
+    border-bottom: none;
+    border-right: 1px solid #333;
+    width: 50%;
+  }
+  table.deduct-inner tr:last-child td.d-bot:last-child {
+    border-right: none;
+  }
+  table.pay-table tbody td.n {
     font-variant-numeric: tabular-nums;
     font-weight: 700;
     font-size: 13px;
-    line-height: 1.2;
     background: #fff;
-    height: 40px;
-    padding: 10px 4px;
+    height: 42px;
+    line-height: normal;
+    vertical-align: middle;
   }
-  .total-box {
+  table.total-table {
     margin-top: 28px;
-    position: relative;
-    width: 100%;
-    height: 74px;
-    border: 1px solid #333;
   }
-  .total-box .left {
-    position: absolute;
-    left: 0;
-    top: 0;
+  table.total-table td.left {
     width: 60%;
     height: 72px;
-    line-height: 72px;
-    text-align: center;
+    line-height: normal;
     font-size: 18px;
     font-weight: 800;
     background: #efefef;
-    border-right: 1px solid #333;
+    vertical-align: middle;
   }
-  .total-box .cap {
-    position: absolute;
-    left: 60%;
-    top: 0;
+  table.total-table td.cap {
     width: 40%;
     height: 28px;
-    line-height: 28px;
-    text-align: center;
+    line-height: normal;
     font-size: 12px;
     font-weight: 700;
     background: #f7f7f7;
-    border-bottom: 1px solid #333;
+    vertical-align: middle;
   }
-  .total-box .amt {
-    position: absolute;
-    left: 60%;
-    top: 28px;
-    width: 40%;
+  table.total-table td.amt {
     height: 44px;
-    line-height: 44px;
-    text-align: center;
+    line-height: normal;
     font-size: 22px;
     font-weight: 800;
     font-variant-numeric: tabular-nums;
+    vertical-align: middle;
   }
   .thanks {
     margin-top: 40px;
@@ -804,8 +828,14 @@ export function buildMemberPaymentStatementHtml(
       <div class="logo-wrap">${logoHtml}</div>
       <div class="meta">
         <table>
-          <tr><td class="k">방송일</td><td class="v">${escapeHtml(s.broadcastDateLabel)}</td></tr>
-          <tr><td class="k">스트리머명</td><td class="v">${escapeHtml(s.streamerName)}</td></tr>
+          <tr>
+            <td class="k">방송일</td>
+            <td class="v">${escapeHtml(s.broadcastDateLabel)}</td>
+          </tr>
+          <tr>
+            <td class="k">스트리머명</td>
+            <td class="v">${escapeHtml(s.streamerName)}</td>
+          </tr>
         </table>
       </div>
     </div>
@@ -832,11 +862,15 @@ export function buildMemberPaymentStatementHtml(
       s.toonStreamerShare
     )}
 
-    <div class="total-box">
-      <div class="left">총 정산 금액</div>
-      <div class="cap">(A+B)-(원천세 ${escapeHtml(withholdPct)}%)</div>
-      <div class="amt">${moneyCell(s.payout)}</div>
-    </div>
+    <table class="total-table">
+      <tr>
+        <td class="left" rowspan="2">총 정산 금액</td>
+        <td class="cap">(A+B)-(원천세 ${escapeHtml(withholdPct)}%)</td>
+      </tr>
+      <tr>
+        <td class="amt">${moneyCell(s.payout)}</td>
+      </tr>
+    </table>
 
     <div class="thanks">${escapeHtml(thanks)}</div>
     <div class="issuer">${escapeHtml(issuer)}</div>

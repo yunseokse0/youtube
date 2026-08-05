@@ -146,16 +146,18 @@ describe("buildMemberPaymentStatementHtml layout", () => {
   it("uses bordered centered pay-table with Excel column ratios", () => {
     const html = buildMemberPaymentStatementHtml(record(), member());
     expect(html).toContain('class="pay-table"');
+    expect(html).toContain('class="total-table"');
+    expect(html).toContain('class="deduct-inner"');
     expect(html).not.toContain('class="pay-block"');
+    expect(html).not.toContain('class="vmid');
     expect(html).toContain('style="width:20%"');
     expect(html).toContain("기본 공제");
     expect(html).toContain("플랫폼 수수료");
-    expect(html).toContain('rowspan="2"');
     expect(html).toContain('colspan="2"');
-    expect(html).toMatch(/table\.pay-table\s*\{[^}]*border:\s*1px solid #333/s);
-    expect(html).toMatch(/table\.pay-table th,\s*table\.pay-table td\s*\{[^}]*border:\s*1px solid #333/s);
-    expect(html).toMatch(/table\.pay-table th,\s*table\.pay-table td\s*\{[^}]*text-align:\s*center/s);
-    expect(html).toMatch(/table\.pay-table th,\s*table\.pay-table td\s*\{[^}]*vertical-align:\s*middle/s);
+    expect(html).toMatch(/table\.pay-table tbody td\.n\s*\{[^}]*vertical-align:\s*middle/s);
+    expect(html).toMatch(/table\.pay-table thead th\.h\s*\{[^}]*vertical-align:\s*middle/s);
+    expect(html).toMatch(/table\.pay-table th,\s*table\.pay-table td[\s\S]*?vertical-align:\s*middle/s);
+    expect(html).toMatch(/text-align:\s*left/);
     expect(html).toContain("1,150,730");
   });
 
