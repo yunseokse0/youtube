@@ -277,10 +277,21 @@ export function healDonationFieldsFromLocalSnapshot(
   live: AppState,
   local: AppState
 ): AppState | null {
+  const liveReset = Number(live.settlementResetAt || 0);
+  const localReset = Number(local.settlementResetAt || 0);
+  /** 서버(라이브) 정산 리셋이 더 최신이면 LS 구 후원을 되살리지 않음 */
+  if (liveReset > localReset) return null;
   const liveDonors = normalizeDonorsArray(live.donors).length;
-  const localDonors = normalizeDonorsArray(local.donors).length;
+  const localDonorsRaw = normalizeDonorsArray(local.donors);
+  const localDonorsFiltered =
+    liveReset > 0
+      ? localDonorsRaw.filter((d) => (d.at || 0) >= liveReset - 3000)
+      : localDonorsRaw;
+  const localDonors = localDonorsFiltered.length;
   const liveTotal = totalCombined(live);
-  const localTotal = totalCombined(local);
+  const localTotal = localDonorsFiltered.length
+    ? localDonorsFiltered.reduce((s, d) => s + Math.max(0, Math.round(Number(d.amount) || 0)), 0)
+    : totalCombined(local);
   const localRicher =
     localDonors > liveDonors ||
     localTotal > liveTotal ||
@@ -290,9 +301,9 @@ export function healDonationFieldsFromLocalSnapshot(
   return {
     ...live,
     members: local.members?.length ? local.members : live.members,
-    donors: normalizeDonorsArray(local.donors),
+    donors: localDonorsFiltered,
     memberPositions: local.memberPositions ?? live.memberPositions,
-    settlementResetAt: local.settlementResetAt ?? live.settlementResetAt,
+    settlementResetAt: Math.max(liveReset, localReset) || live.settlementResetAt || local.settlementResetAt,
     updatedAt: Math.max(Number(live.updatedAt) || 0, Number(local.updatedAt) || 0, Date.now()),
   };
 }

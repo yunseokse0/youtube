@@ -73,6 +73,7 @@ function overlayCoreFields(
 ) {
   return {
     updatedAt: state.updatedAt,
+    settlementResetAt: state.settlementResetAt,
     members: state.members,
     memberPositions: state.memberPositions,
     memberPositionMode: state.memberPositionMode,

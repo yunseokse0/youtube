@@ -44,6 +44,20 @@ describe("overlay-last-good", () => {
     expect(shouldKeepLastGoodInsteadOf(null, STATE_PICK_OVERLAY, last)).toBe(true);
   });
 
+  it("does not keep last good after newer settlement reset", () => {
+    const last = defaultState();
+    last.settlementResetAt = 1000;
+    last.members = [{ id: "real1", name: "실멤버", account: 1_000_000, toon: 0 }];
+    last.donors = [
+      { id: "d1", name: "익명7", amount: 1_000_000, memberId: "real1", at: 500, target: "account" },
+    ];
+    const incoming = defaultState();
+    incoming.settlementResetAt = 2000;
+    incoming.members = [{ id: "real1", name: "실멤버", account: 0, toon: 0 }];
+    incoming.donors = [];
+    expect(shouldKeepLastGoodInsteadOf(incoming, STATE_PICK_OVERLAY, last)).toBe(false);
+  });
+
   it("keeps last good when obs-text incoming revision is older", () => {
     const newer = defaultState();
     const regNew = defaultObsTextRegistry();

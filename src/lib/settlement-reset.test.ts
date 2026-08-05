@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { filterDonorsAfterSettlementReset, mergeDonorsForMultiTabSave } from "@/lib/state";
-import type { Donor } from "@/types";
+import {
+  coalesceSettlementResetAt,
+  defaultState,
+  filterDonorsAfterSettlementReset,
+  mergeDonorsForMultiTabSave,
+  shouldAvoidOverwritingLocalStateWithRemote,
+  wouldShrinkDonationData,
+} from "@/lib/state";
+import type { AppState, Donor } from "@/types";
 
 function donor(id: string, amount: number, at = 1000): Donor {
   return { id, name: "tester", amount, memberId: "m1", at, target: "toon" };
@@ -35,5 +42,49 @@ describe("settlement reset guards", () => {
       existingUpdatedAt: 10_000,
     });
     expect(merged).toEqual([]);
+  });
+
+  it("drops pre-reset donors even when filtering authoritative payloads", () => {
+    const resetAt = 10_000;
+    const mixed = [donor("old", 1000, 5000), donor("new", 2000, 12_000)];
+    const filtered = filterDonorsAfterSettlementReset(mixed, resetAt);
+    expect(filtered.map((d) => d.id)).toEqual(["new"]);
+  });
+
+  it("keeps newer settlementResetAt when stale browser posts older value", () => {
+    expect(
+      coalesceSettlementResetAt({
+        baseResetAt: 20_000,
+        patchResetAt: 5_000,
+      })
+    ).toBe(20_000);
+  });
+
+  it("allows settlementReset to advance stamp", () => {
+    expect(
+      coalesceSettlementResetAt({
+        baseResetAt: 20_000,
+        patchResetAt: 5_000,
+        settlementReset: true,
+        resetStamp: 30_000,
+      })
+    ).toBe(30_000);
+  });
+
+  it("allows remote reset to overwrite richer local donations", () => {
+    const local: AppState = {
+      ...defaultState(),
+      settlementResetAt: 1_000,
+      donors: [donor("old", 1_000_000, 500)],
+      members: [{ id: "m1", name: "A", account: 1_000_000, toon: 0 }],
+    };
+    const remote: AppState = {
+      ...defaultState(),
+      settlementResetAt: 20_000,
+      donors: [],
+      members: [{ id: "m1", name: "A", account: 0, toon: 0 }],
+    };
+    expect(shouldAvoidOverwritingLocalStateWithRemote(local, remote)).toBe(false);
+    expect(wouldShrinkDonationData(local, remote)).toBe(true);
   });
 });

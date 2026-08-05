@@ -1747,39 +1747,53 @@ export default function AdminPage() {
       const shouldApplyRemote =
         remoteUpdatedAt > stateUpdatedAtRef.current || Boolean(opts?.forceDonorMerge);
       if (!shouldApplyRemote) return false;
-      if (amountInputEditingRef.current) return false;
       const remoteResetAt = Number(remote.settlementResetAt || 0);
       const localResetAt = Number(stateRef.current.settlementResetAt || 0);
-      if (remoteResetAt > localResetAt) {
-        settlementResetUntilRef.current = Date.now() + 15_000;
+      /** 다른 브라우저에서 정산 리셋됨 — 로컬 미저장·편집 보호보다 리셋을 우선 적용 */
+      const remoteSettlementWins = remoteResetAt > localResetAt;
+      if (remoteSettlementWins) {
+        settlementResetUntilRef.current = Date.now() + 30_000;
         pendingUnsyncedRef.current = false;
+        donationAuthoritativeSaveUntilRef.current = 0;
       }
+      if (amountInputEditingRef.current && !remoteSettlementWins) return false;
       if (Date.now() < settlementResetUntilRef.current) {
         const localDonors = normalizeDonorsArray(stateRef.current.donors);
         const remoteDonors = normalizeDonorsArray(remote.donors);
         if (
           localDonors.length === 0 &&
           (remoteDonors.length > 0 || totalCombined(remote) > 0) &&
-          !opts?.forceDonorMerge
+          !opts?.forceDonorMerge &&
+          !remoteSettlementWins
         ) {
           return false;
         }
       }
-      if (Date.now() < donationAuthoritativeSaveUntilRef.current && !opts?.forceDonorMerge) {
+      if (
+        !remoteSettlementWins &&
+        Date.now() < donationAuthoritativeSaveUntilRef.current &&
+        !opts?.forceDonorMerge
+      ) {
         /** 후원 삭제·정정 직후 — 원격이 삭제분을 되살리거나 빈 스냅샷으로 덮지 않게 */
         return false;
       }
-      /** 저장 대기 중이어도 원격 신규 후원은 mergeIncoming에서 수용 */
-      if (pendingUnsyncedRef.current && !opts?.forceDonorMerge) {
+      /** 저장 대기 중이어도 원격 신규 후원은 mergeIncoming에서 수용.
+       * 다른 브라우저 정산 리셋(remoteSettlementWins)은 빈 후원이어도 반드시 적용. */
+      if (!remoteSettlementWins && pendingUnsyncedRef.current && !opts?.forceDonorMerge) {
         const localIds = new Set((stateRef.current.donors || []).map((d) => d.id));
         const hasRemoteOnly = (remote.donors || []).some((d) => !localIds.has(d.id));
         if (!hasRemoteOnly) return false;
       }
-      if (remoteUpdatedAt <= lastAppliedRemoteUpdatedAtRef.current && !opts?.forceDonorMerge) {
+      if (
+        !remoteSettlementWins &&
+        remoteUpdatedAt <= lastAppliedRemoteUpdatedAtRef.current &&
+        !opts?.forceDonorMerge
+      ) {
         return false;
       }
       const prev = stateRef.current;
       const recentlyEditedSig =
+        !remoteSettlementWins &&
         Date.now() - lastLocalPersistAtRef.current < SIG_INVENTORY_LOCAL_PROTECT_MS;
       let toApply: AppState;
       let didPreserve = false;
@@ -1791,6 +1805,17 @@ export default function AdminPage() {
         const mergedResult = mergeIncomingStateSafely(remote, prev);
         toApply = mergedResult.merged;
         didPreserve = mergedResult.didPreserve;
+      }
+      if (remoteSettlementWins) {
+        toApply = {
+          ...toApply,
+          settlementResetAt: remoteResetAt,
+          donors: normalizeDonorsArray(remote.donors),
+          members: remote.members,
+          memberPositions: remote.memberPositions ?? toApply.memberPositions,
+        };
+        toApply = syncMemberTotalsFromDonors(toApply);
+        didPreserve = false;
       }
       /** 후원은 서버(계정) 정본 — 세션 캐시로 원격 축소본을 막지 않음 */
       if (adminSyncFingerprint(prev) === adminSyncFingerprint(toApply)) {
@@ -1974,16 +1999,25 @@ export default function AdminPage() {
       const live = stateRef.current;
       const lsSnap = loadState(user?.id);
       /** React state가 아직 default/0원이면 LS의 실데이터를 베이스로 쓴다 */
+      const liveResetAt = Number(live.settlementResetAt || 0);
+      const lsResetAt = Number(lsSnap.settlementResetAt || 0);
       const liveDonors = normalizeDonorsArray(live.donors).length;
-      const lsDonors = normalizeDonorsArray(lsSnap.donors).length;
+      const lsDonorsFiltered =
+        liveResetAt > 0
+          ? normalizeDonorsArray(lsSnap.donors).filter((d) => (d.at || 0) >= liveResetAt - 3000)
+          : normalizeDonorsArray(lsSnap.donors);
+      const lsDonors = lsDonorsFiltered.length;
+      const preferLsDonations =
+        liveResetAt <= lsResetAt &&
+        (lsDonors > liveDonors || totalCombined(lsSnap) > totalCombined(live));
       const base =
-        lsDonors > liveDonors || totalCombined(lsSnap) > totalCombined(live)
+        preferLsDonations
           ? {
               ...live,
               members: lsSnap.members,
-              donors: lsSnap.donors,
+              donors: lsDonorsFiltered,
               memberPositions: lsSnap.memberPositions ?? live.memberPositions,
-              settlementResetAt: lsSnap.settlementResetAt ?? live.settlementResetAt,
+              settlementResetAt: Math.max(liveResetAt, lsResetAt) || live.settlementResetAt || lsSnap.settlementResetAt,
             }
           : live;
       const next = applyThemeRestorePatch(base, candidate);

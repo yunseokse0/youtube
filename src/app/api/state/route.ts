@@ -14,6 +14,7 @@ import {
   defaultState,
   DEFAULT_DONOR_RANKINGS_FULL_THEME,
   filterDonorsAfterSettlementReset,
+  coalesceSettlementResetAt,
   hasExpandedSigInventory,
   hasMeaningfulMemberRoster,
   hasCustomTimerDisplayStyles,
@@ -371,6 +372,29 @@ function mergePartialState(
     }
   }
 
+  /**
+   * 다른 브라우저·구 탭이 낮은 settlementResetAt 으로 덮어쓰면
+   * 리셋 가드가 풀려 구 후원이 되살아남. 리셋 플래그 없는 PATCH는 단조 증가만 허용.
+   */
+  if (!patchSettlementReset) {
+    const baseReset = Number(base.settlementResetAt || 0);
+    const patchReset = Number(next.settlementResetAt || 0);
+    const coalesced = coalesceSettlementResetAt({
+      baseResetAt: baseReset,
+      patchResetAt: patchReset,
+    });
+    if (coalesced > 0 && coalesced > patchReset) {
+      next.settlementResetAt = coalesced;
+      logger.warn("stale settlementResetAt overwrite blocked", {
+        userId,
+        baseReset,
+        patchReset,
+      });
+    } else if (coalesced > 0) {
+      next.settlementResetAt = coalesced;
+    }
+  }
+
   return next;
 }
 
@@ -615,20 +639,21 @@ export async function POST(req: Request) {
     const donationInitReset = settlementReset || isDonationInitGoalResetPatch(body);
     const resetAt = Number(baseState.settlementResetAt || 0);
     const incomingDonorsRaw = donorsInPatch ? normalizeDonorsArray(body.donors) : [];
+    /** donorsAuthoritative(투네 프로세서 등)도 리셋 이전 at 후원은 버린다 — 구 스냅샷 되살림 방지 */
     const incomingDonorsFiltered =
-      resetAt > 0 && !settlementReset && !donorsAuthoritative && donorsInPatch
+      resetAt > 0 && !settlementReset && donorsInPatch
         ? filterDonorsAfterSettlementReset(incomingDonorsRaw, resetAt)
         : incomingDonorsRaw;
     if (
       resetAt > 0 &&
       !settlementReset &&
-      !donorsAuthoritative &&
       donorsInPatch &&
       incomingDonorsRaw.length > incomingDonorsFiltered.length
     ) {
       logger.warn("pre-reset donors dropped from stale save", {
         userId,
         dropped: incomingDonorsRaw.length - incomingDonorsFiltered.length,
+        donorsAuthoritative,
       });
     }
     /**
@@ -724,10 +749,38 @@ export async function POST(req: Request) {
       ? normalized
       : applyDonationGoalEscalationToState(normalized);
     const resetStamp = Date.now();
-    const next: AppState = sanitizeAppStateWheelDemo({
+    let next: AppState = sanitizeAppStateWheelDemo({
       ...escalated,
-      ...(settlementReset ? { settlementResetAt: resetStamp } : {}),
+      ...(settlementReset
+        ? {
+            settlementResetAt: coalesceSettlementResetAt({
+              settlementReset: true,
+              resetStamp,
+            }),
+          }
+        : {}),
     });
+    /** 최종 저장 직전 — 서버에 남은 리셋 시각·후원 필터를 강제 (다른 브라우저 구 스냅샷 대비) */
+    const effectiveResetAt = coalesceSettlementResetAt({
+      baseResetAt: Number(baseState.settlementResetAt || 0),
+      patchResetAt: Number(next.settlementResetAt || 0),
+      settlementReset,
+      resetStamp,
+    });
+    if (effectiveResetAt > 0 && Number(next.settlementResetAt || 0) !== effectiveResetAt) {
+      next = { ...next, settlementResetAt: effectiveResetAt };
+    }
+    if (!settlementReset && effectiveResetAt > 0) {
+      const before = normalizeDonorsArray(next.donors);
+      const after = filterDonorsAfterSettlementReset(before, effectiveResetAt);
+      if (after.length !== before.length) {
+        next = syncMemberTotalsFromDonors({ ...next, donors: after });
+        logger.warn("pre-reset donors stripped before persist", {
+          userId,
+          dropped: before.length - after.length,
+        });
+      }
+    }
 
     if (hasExpandedSigInventory(next.sigInventory)) {
       void saveSigInventoryBackup(userId, next.sigInventory);
@@ -735,7 +788,7 @@ export async function POST(req: Request) {
 
     /** 후원 금액 — 재시작·메인 상태 유실 대비 별도 백업. 정산/전체삭제 시 빈 백업으로 교체 */
     if (settlementReset || (donorsAuthoritative && normalizeDonorsArray(next.donors).length === 0)) {
-      void clearDonationRosterBackup(userId, next.settlementResetAt);
+      await clearDonationRosterBackup(userId, next.settlementResetAt);
     } else if (normalizeDonorsArray(next.donors).length > 0 || totalCombined(next) > 0) {
       void saveDonationRosterBackup(userId, next);
     }

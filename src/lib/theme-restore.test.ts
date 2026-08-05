@@ -98,6 +98,24 @@ describe("theme-restore", () => {
     expect(healed?.donors[0]?.amount).toBe(5000);
   });
 
+  it("does not heal local donations older than live settlement reset", () => {
+    const live: AppState = {
+      ...defaultState(),
+      settlementResetAt: 10_000,
+      donors: [],
+      members: defaultState().members.map((m) => ({ ...m, account: 0, toon: 0 })),
+    };
+    const local: AppState = {
+      ...defaultState(),
+      settlementResetAt: 1_000,
+      donors: [{ id: "d1", name: "a", amount: 5000, memberId: "m1", at: 5_000, target: "toon" }],
+      members: defaultState().members.map((m, i) =>
+        i === 0 ? { ...m, id: "m1", toon: 5000 } : { ...m, account: 0, toon: 0 }
+      ),
+    };
+    expect(healDonationFieldsFromLocalSnapshot(live, local)).toBeNull();
+  });
+
   it("applies theme patch without touching donors", () => {
     const base: AppState = {
       ...defaultState(),

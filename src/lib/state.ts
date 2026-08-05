@@ -1451,6 +1451,31 @@ function mergeServerSaveApiBodies(prevJson: string, nextJson: string): string {
     const next = JSON.parse(nextJson) as Record<string, unknown>;
     if (!prev || typeof prev !== "object" || !next || typeof next !== "object") return nextJson;
     if (next.settlementReset === true) return nextJson;
+    /**
+     * 정산 리셋 POST가 큐에 있는 동안 이어진 저장이 settlementReset 플래그·빈 후원을
+     * 덮어 구 후원을 되살리지 않게 함. 리셋 이후 신규 후원만 남긴다.
+     */
+    if (prev.settlementReset === true && next.settlementReset !== true) {
+      const resetAt = Math.max(
+        Number(prev.settlementResetAt || 0),
+        Number(next.settlementResetAt || 0)
+      );
+      const mergedReset: Record<string, unknown> = { ...prev, ...next };
+      delete mergedReset.settlementReset;
+      if (resetAt > 0) mergedReset.settlementResetAt = resetAt;
+      if (Array.isArray(next.donors)) {
+        mergedReset.donors =
+          resetAt > 0
+            ? filterDonorsAfterSettlementReset(next.donors as Donor[], resetAt)
+            : next.donors;
+      } else if (Array.isArray(prev.donors)) {
+        mergedReset.donors = prev.donors;
+      }
+      if (!Array.isArray(next.members) && Array.isArray(prev.members)) {
+        mergedReset.members = prev.members;
+      }
+      return JSON.stringify(mergedReset);
+    }
     const merged: Record<string, unknown> = { ...prev, ...next };
     const prevDonors = Array.isArray(prev.donors) ? (prev.donors as Donor[]) : null;
     const nextDonors = Array.isArray(next.donors) ? (next.donors as Donor[]) : null;
@@ -1832,8 +1857,17 @@ export async function saveStateAsync(
         guarded = syncMemberTotalsFromDonors({ ...guarded, donors: mergedDonors });
       }
     }
-    /** 테마·자동저장·stale React 가 실후원을 덮지 않게 LS 금액을 유지 */
-    if (local && (shouldAvoidOverwritingLocalStateWithRemote(local, guarded) || wouldShrinkDonationData(local, guarded))) {
+    /**
+     * 테마·자동저장·stale React 가 실후원을 덮지 않게 LS 금액을 유지.
+     * 단, 저장본(settlementResetAt)이 LS보다 최신 리셋이면 구 LS 후원을 되살리지 않음(다른 브라우저 리셋).
+     */
+    const guardedResetAt = Number(guarded.settlementResetAt || 0);
+    const localResetAt = Number(local?.settlementResetAt || 0);
+    if (
+      local &&
+      guardedResetAt <= localResetAt &&
+      (shouldAvoidOverwritingLocalStateWithRemote(local, guarded) || wouldShrinkDonationData(local, guarded))
+    ) {
       guarded = {
         ...guarded,
         members: local.members,
@@ -1848,20 +1882,42 @@ export async function saveStateAsync(
     /** 시그/테마 전용 저장 — LS에도 후원 필드는 기존·더 풍부한 쪽 유지 */
     if (saveOpts?.omitDonationFields && local) {
       const nextDonors = normalizeDonorsArray(guarded.donors);
-      const localDonors = normalizeDonorsArray(local.donors);
+      const localDonorsForOmit = normalizeDonorsArray(local.donors);
       const preferLocalDonations =
-        wouldShrinkDonationData(local, guarded) ||
-        localDonors.length > nextDonors.length ||
-        totalCombined(local) > totalCombined(guarded);
+        guardedResetAt <= localResetAt &&
+        (wouldShrinkDonationData(local, guarded) ||
+          localDonorsForOmit.length > nextDonors.length ||
+          totalCombined(local) > totalCombined(guarded));
       guarded = {
         ...guarded,
         members: preferLocalDonations ? local.members : guarded.members,
-        donors: preferLocalDonations ? localDonors : nextDonors,
+        donors: preferLocalDonations ? localDonorsForOmit : nextDonors,
         memberPositions: preferLocalDonations
           ? local.memberPositions ?? guarded.memberPositions
           : guarded.memberPositions ?? local.memberPositions,
-        settlementResetAt: local.settlementResetAt ?? guarded.settlementResetAt,
+        settlementResetAt:
+          Math.max(guardedResetAt, localResetAt) ||
+          local.settlementResetAt ||
+          guarded.settlementResetAt,
       };
+    }
+  }
+  /** 정산 리셋 이후 구 후원 at 은 클라이언트에서도 제거 후 POST */
+  {
+    const resetAt = Math.max(
+      Number(guarded.settlementResetAt || 0),
+      Number(local?.settlementResetAt || 0)
+    );
+    if (resetAt > 0 && !saveOpts?.settlementReset) {
+      const before = normalizeDonorsArray(guarded.donors);
+      const after = filterDonorsAfterSettlementReset(before, resetAt);
+      if (after.length !== before.length || Number(guarded.settlementResetAt || 0) < resetAt) {
+        guarded = syncMemberTotalsFromDonors({
+          ...guarded,
+          donors: after,
+          settlementResetAt: resetAt,
+        });
+      }
     }
   }
   if (local && !saveOpts?.settlementReset) {
@@ -2744,6 +2800,23 @@ export function filterDonorsAfterSettlementReset(
   if (!resetAt) return normalizeDonorsArray(donors);
   const graceMs = 3000;
   return normalizeDonorsArray(donors).filter((d) => (d.at || 0) >= resetAt - graceMs);
+}
+
+/**
+ * 다른 브라우저 구 저장이 settlementResetAt 을 낮춰 리셋 가드를 풀지 못하게 함.
+ * 명시적 settlementReset 저장만 새 stamp 를 쓴다.
+ */
+export function coalesceSettlementResetAt(opts: {
+  baseResetAt?: number;
+  patchResetAt?: number;
+  settlementReset?: boolean;
+  resetStamp?: number;
+}): number {
+  if (opts.settlementReset) {
+    const stamp = Number(opts.resetStamp || 0);
+    return stamp > 0 ? stamp : Date.now();
+  }
+  return Math.max(Number(opts.baseResetAt || 0), Number(opts.patchResetAt || 0));
 }
 
 export function totalAccount(state: AppState): number {

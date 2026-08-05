@@ -62,8 +62,11 @@ export function shouldRestoreDonationRosterFromBackup(
   const curTotal = current ? totalCombined(current as AppState) : 0;
   const curReset = Number(current?.settlementResetAt || 0);
   const backupReset = Number(backup.settlementResetAt || 0);
-  /** 정산 리셋 이후의 빈 상태는 되살리지 않음 */
-  if (curReset > backupReset && curDonors.length === 0 && curTotal === 0) {
+  /**
+   * 정산 리셋 이후에는 백업이 더 풍부해 보여도 되살리지 않음.
+   * (리셋 직후 소액 후원만 있을 때 구 백업이 donorsCount/total 로 이기는 회귀 방지)
+   */
+  if (curReset > backupReset) {
     return false;
   }
   if (curDonors.length === 0 && backup.donorsCount > 0) return true;
@@ -77,10 +80,16 @@ export function applyDonationRosterBackupToState(
   state: AppState,
   backup: DonationRosterBackupPayload
 ): AppState {
+  const resetAt = Number(state.settlementResetAt || backup.settlementResetAt || 0);
+  const rawDonors = normalizeDonorsArray(backup.donors);
+  const donors =
+    resetAt > 0
+      ? rawDonors.filter((d) => (d.at || 0) >= resetAt - 3000)
+      : rawDonors;
   const merged: AppState = {
     ...state,
     members: backup.members.length > 0 ? backup.members : state.members,
-    donors: normalizeDonorsArray(backup.donors),
+    donors,
     memberPositions: backup.memberPositions ?? state.memberPositions,
     settlementResetAt: state.settlementResetAt ?? backup.settlementResetAt,
   };
@@ -141,6 +150,15 @@ export async function loadDonationRosterBackup(
   const fromDisk = await loadDonationRosterFromDisk(userId);
   if (!redisOk) return fromDisk;
   if (!fromDisk) return redisOk;
+  const redisReset = Number(redisOk.settlementResetAt || 0);
+  const diskReset = Number(fromDisk.settlementResetAt || 0);
+  /** 정산 리셋으로 비운 백업이 있으면 구(풍부) 백업보다 우선 */
+  if (redisReset > diskReset && redisOk.donorsCount === 0 && redisOk.total <= 0) {
+    return redisOk;
+  }
+  if (diskReset > redisReset && fromDisk.donorsCount === 0 && fromDisk.total <= 0) {
+    return fromDisk;
+  }
   /** 더 풍부·최신 백업 우선 */
   if (fromDisk.donorsCount > redisOk.donorsCount || fromDisk.total > redisOk.total) {
     return fromDisk.savedAt >= redisOk.savedAt - 5_000 ? fromDisk : redisOk;
