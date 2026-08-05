@@ -2799,7 +2799,18 @@ export function filterDonorsAfterSettlementReset(
   const resetAt = Number(settlementResetAt || 0);
   if (!resetAt) return normalizeDonorsArray(donors);
   const graceMs = 3000;
-  return normalizeDonorsArray(donors).filter((d) => (d.at || 0) >= resetAt - graceMs);
+  const threshold = resetAt - graceMs;
+  return normalizeDonorsArray(donors).filter((d) => {
+    const raw = d.at;
+    const at =
+      typeof raw === "number" && Number.isFinite(raw)
+        ? raw
+        : Number.isFinite(Number(raw))
+          ? Math.floor(Number(raw))
+          : Date.parse(String(raw || ""));
+    if (!Number.isFinite(at) || at <= 0) return true;
+    return at >= threshold;
+  });
 }
 
 /**

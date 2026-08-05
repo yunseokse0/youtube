@@ -1771,10 +1771,12 @@ export default function AdminPage() {
       }
       if (
         !remoteSettlementWins &&
-        Date.now() < donationAuthoritativeSaveUntilRef.current &&
-        !opts?.forceDonorMerge
+        Date.now() < donationAuthoritativeSaveUntilRef.current
       ) {
-        /** 후원 삭제·정정 직후 — 원격이 삭제분을 되살리거나 빈 스냅샷으로 덮지 않게 */
+        /**
+         * 후원 반영·삭제 직후 — forceDonorMerge 여도 빈/구 스냅샷으로 덮지 않음.
+         * (첫 후원 직후 force sync 가 엑셀·리스트를 되돌리던 회귀 방지)
+         */
         return false;
       }
       /** 저장 대기 중이어도 원격 신규 후원은 mergeIncoming에서 수용.
@@ -5317,19 +5319,40 @@ export default function AdminPage() {
     [fetchToonationQueue, removeQueueEvent, user?.id]
   );
 
-  const applyProcessDonationResult = useCallback((result: ProcessDonationResult) => {
-    if (result.updatedState) {
-      setState((prev) => {
-        const merged = mergeDonationApplyBase(result.updatedState!, prev) ?? result.updatedState!;
-        stateRef.current = merged;
-        try {
-          window.localStorage.setItem(storageKey(user?.id), JSON.stringify(merged));
-        } catch {}
-        return merged;
-      });
-      adminDonorForceSyncRef.current?.();
-    }
+  const markAuthoritativeDonationSave = useCallback((
+    saved: { serverUpdatedAt?: number },
+    next: AppState,
+    opts?: { replaceDonors?: boolean }
+  ) => {
+    /**
+     * replaceDonors: 삭제·정본 스냅샷은 그대로 유지.
+     * merge(기본): 후원 추가 시 화면 멤버 구성과 union.
+     */
+    const preserved = opts?.replaceDonors
+      ? next
+      : mergeDonationApplyBase(next, stateRef.current) ?? next;
+    const ts = saved.serverUpdatedAt ?? preserved.updatedAt ?? Date.now();
+    donationAuthoritativeSaveUntilRef.current = Date.now() + 12_000;
+    stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, ts);
+    lastAppliedRemoteUpdatedAtRef.current = Math.max(lastAppliedRemoteUpdatedAtRef.current, ts);
+    lastLocalPersistAtRef.current = Date.now();
+    pendingUnsyncedRef.current = false;
+    stateRef.current = preserved;
+    try {
+      window.localStorage.setItem(storageKey(user?.id), JSON.stringify(preserved));
+    } catch {}
+    return preserved;
   }, [user?.id]);
+
+  const applyProcessDonationResult = useCallback((result: ProcessDonationResult) => {
+    if (!result.updatedState) return;
+    const preserved = markAuthoritativeDonationSave(
+      { serverUpdatedAt: result.updatedState.updatedAt },
+      result.updatedState
+    );
+    setState(preserved);
+    /** 즉시 forceDonorMerge GET 금지 — 저장 직후 빈/지연 스냅샷이 첫 후원을 지움 */
+  }, [markAuthoritativeDonationSave]);
 
   const autoProcessAllQueueEvents = useCallback(async (events?: DonationEvent[]) => {
     let batch = events;
@@ -5442,21 +5465,6 @@ export default function AdminPage() {
     setDonorAmount("");
   }, [applyProcessDonationResult, donorAmount, donorName, fetchUnmatchedEvents, toonationOwnerName, user?.id]);
 
-  const markAuthoritativeDonationSave = useCallback((saved: { serverUpdatedAt?: number }, next: AppState) => {
-    const preserved = mergeDonationApplyBase(next, stateRef.current) ?? next;
-    const ts = saved.serverUpdatedAt ?? preserved.updatedAt ?? Date.now();
-    donationAuthoritativeSaveUntilRef.current = Date.now() + 10_000;
-    stateUpdatedAtRef.current = ts;
-    lastAppliedRemoteUpdatedAtRef.current = ts;
-    lastLocalPersistAtRef.current = Date.now();
-    pendingUnsyncedRef.current = false;
-    stateRef.current = preserved;
-    try {
-      window.localStorage.setItem(storageKey(user?.id), JSON.stringify(preserved));
-    } catch {}
-    return preserved;
-  }, [user?.id]);
-
   const applyUnmatchedEvent = useCallback(async (event: DonationEvent) => {
     const selectedMemberId = unmatchedAssignMap[event.id] || donorMemberId || state.members[0]?.id || "";
     if (!selectedMemberId) return;
@@ -5482,12 +5490,11 @@ export default function AdminPage() {
         { serverUpdatedAt: result.updatedState.updatedAt },
         result.updatedState
       );
-      setState((prev) => mergeDonationApplyBase(preserved, prev) ?? preserved);
+      setState(preserved);
       pushToonationLog(
         `미매칭 반영: ${displayDonorName} ${event.amount.toLocaleString("ko-KR")}원 → ${member.name}`
       );
       await removeUnmatchedEvent(event.id);
-      adminDonorForceSyncRef.current?.();
     } else if (result.status === "failed") {
       pushToonationLog(`미매칭 반영 실패: ${displayDonorName} (${result.error || "unknown"})`);
     } else {
@@ -10940,17 +10947,37 @@ export default function AdminPage() {
                                   className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700"
                                   onClick={() => {
                                     requestConfirm("후원 기록 삭제", "해당 후원 기록을 삭제할까요?", () => {
-                                      void removeQueueEventsMatchingDonor(d);
-                                      const prev = stateRef.current;
-                                      const next = revertDonationFromAppState(prev, d.id);
-                                      if (!next) return;
-                                      donationAuthoritativeSaveUntilRef.current = Date.now() + 10_000;
-                                      stateRef.current = next;
-                                      setState(next);
-                                      try {
-                                        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(next));
-                                      } catch {}
-                                      persistState(next, { donorsAuthoritative: true });
+                                      void (async () => {
+                                        void removeQueueEventsMatchingDonor(d);
+                                        const prev = stateRef.current;
+                                        const next = revertDonationFromAppState(prev, d.id);
+                                        if (!next) return;
+                                        const preserved = markAuthoritativeDonationSave(
+                                          { serverUpdatedAt: next.updatedAt },
+                                          next,
+                                          { replaceDonors: true }
+                                        );
+                                        setState(preserved);
+                                        const saved = await saveStateAsync(preserved, user?.id, {
+                                          donorsAuthoritative: true,
+                                        });
+                                        if (saved.ok) {
+                                          markAuthoritativeDonationSave(saved, preserved, {
+                                            replaceDonors: true,
+                                          });
+                                          if (typeof saved.serverUpdatedAt === "number") {
+                                            stateUpdatedAtRef.current = saved.serverUpdatedAt;
+                                            lastAppliedRemoteUpdatedAtRef.current = saved.serverUpdatedAt;
+                                          }
+                                          setSyncStatus(saved.storageFallback ? "error" : "synced");
+                                        } else {
+                                          setSyncStatus(
+                                            typeof navigator !== "undefined" && !navigator.onLine
+                                              ? "local"
+                                              : "error"
+                                          );
+                                        }
+                                      })();
                                     }, { confirmText: "삭제", danger: true });
                                   }}
                                 >
