@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { SettlementMemberResult, SettlementRecord } from "@/types";
 import {
+  buildFullSettlementHtml,
+  buildMemberPaymentStatementHtml,
   computeExcelWithholding,
   computeFullSettlementSummary,
   computeMemberPaymentStatement,
@@ -137,5 +139,27 @@ describe("computeFullSettlementSummary (정산서.xlsx 전체 정산서)", () =>
       localIncomeTax: 3_570,
       withholding: 39_270,
     });
+  });
+});
+
+describe("buildMemberPaymentStatementHtml layout", () => {
+  it("uses fixed pay-block cells aligned to Excel column ratios", () => {
+    const html = buildMemberPaymentStatementHtml(record(), member());
+    expect(html).toContain('class="pay-block"');
+    expect(html).toContain("left:0%;width:20%");
+    expect(html).toContain("left:80%;width:20%");
+    expect(html).not.toContain("rowspan");
+    expect(html).toContain("1,150,730");
+  });
+});
+
+describe("buildFullSettlementHtml", () => {
+  it("omits income/local tax columns and centers cells", () => {
+    const html = buildFullSettlementHtml(record());
+    expect(html).toContain("원천세");
+    expect(html).toContain("정산금의 30%");
+    expect(html).not.toContain(">소득세<");
+    expect(html).not.toContain(">지방소득세<");
+    expect(html).toContain("vertical-align:middle");
   });
 });

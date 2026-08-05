@@ -293,12 +293,10 @@ export function buildFullSettlementHtml(record: SettlementRecord): string {
       <td class="num">${moneyCell(r.withholding)}</td>
       <td class="num">${moneyCell(r.payout)}</td>
       <td class="num">${moneyCell(r.studioShare30)}</td>
-      <td class="num">${moneyCell(r.incomeTax)}</td>
-      <td class="num">${moneyCell(r.localIncomeTax)}</td>
     </tr>`
           )
           .join("")
-      : `<tr><td colspan="16">지급 대상 없음</td></tr>`;
+      : `<tr><td colspan="14">지급 대상 없음</td></tr>`;
 
   return `<!DOCTYPE html>
 <html lang="ko"><head><meta charset="utf-8" />
@@ -309,17 +307,37 @@ export function buildFullSettlementHtml(record: SettlementRecord): string {
   .title { text-align:center; font-size:22px; font-weight:800; margin: 4px 0 10px; }
   .date { text-align:center; font-size:13px; margin-bottom: 12px; }
   table.main { width:100%; border-collapse:collapse; font-size:9px; table-layout:fixed; }
-  table.main th, table.main td { border:1px solid #444; padding:4px 2px; text-align:center; vertical-align:middle; }
-  table.main th { background:#f3f3f3; font-weight:700; }
-  table.main tfoot td { font-size:8px; }
+  table.main th, table.main td {
+    border:1px solid #444;
+    padding:0 2px;
+    text-align:center;
+    vertical-align:middle;
+    height: 32px;
+    line-height: 1.2;
+  }
+  table.main th {
+    background:#f3f3f3;
+    font-weight:700;
+    height: 40px;
+  }
+  table.main tfoot td {
+    font-size:8px;
+    height: 26px;
+    vertical-align:middle;
+  }
   table.main tfoot .lab { background:#f7f7f7; font-weight:700; }
   table.main tfoot .num { font-weight:700; font-variant-numeric: tabular-nums; }
   .num { font-variant-numeric: tabular-nums; }
   .foot { margin-top: 14px; display:grid; grid-template-columns: 1fr 1fr 1.1fr; gap: 16px; font-size:11px; align-items:start; }
   .foot table { width:100%; border-collapse:collapse; }
-  .foot td { border:1px solid #555; padding:5px 6px; }
-  .foot td.k { background:#f7f7f7; font-weight:700; width:48%; }
-  .foot td.v { text-align:right; font-variant-numeric: tabular-nums; font-weight:700; }
+  .foot td {
+    border:1px solid #555;
+    padding:0 6px;
+    height: 28px;
+    vertical-align:middle;
+  }
+  .foot td.k { background:#f7f7f7; font-weight:700; width:48%; text-align:center; }
+  .foot td.v { text-align:center; font-variant-numeric: tabular-nums; font-weight:700; }
 </style></head><body>
 <div class="sheet">
   <div class="title">${escapeHtml(s.title)}</div>
@@ -330,7 +348,7 @@ export function buildFullSettlementHtml(record: SettlementRecord): string {
         <th>#</th><th>이름</th><th>계좌후원</th><th>투네이션</th>
         <th>계좌 부가세</th><th>계좌정산금</th><th>투네수수료</th><th>투네부가세</th><th>투네정산금</th>
         <th>정산금 총액</th><th>정산금의 70%</th><th>원천세</th><th>입금액</th>
-        <th>정산금의 30%</th><th>소득세</th><th>지방소득세</th>
+        <th>정산금의 30%</th>
       </tr>
     </thead>
     <tbody>${bodyRows}</tbody>
@@ -346,7 +364,6 @@ export function buildFullSettlementHtml(record: SettlementRecord): string {
         <td class="lab">원천세 총 합계</td>
         <td class="lab">총 지급액</td>
         <td class="lab">매출</td>
-        <td colspan="2"></td>
       </tr>
       <tr>
         <td colspan="4"></td>
@@ -359,7 +376,6 @@ export function buildFullSettlementHtml(record: SettlementRecord): string {
         <td class="num">${moneyCell(s.sumWithholding)}</td>
         <td class="num">${moneyCell(s.sumPayout)}</td>
         <td class="num">${moneyCell(s.sumStudioShare)}</td>
-        <td colspan="2"></td>
       </tr>
     </tfoot>
   </table>
@@ -493,12 +509,42 @@ export function buildMemberPaymentStatementHtml(
   const thanks = options?.thankYouMessage ?? PAYMENT_STATEMENT_DEFAULTS.thankYouMessage;
   const withholdPct = (s.withholdingRate * 100).toFixed(1).replace(/\.0$/, "");
 
+  /**
+   * 엑셀 10칸(각 10%) 비율:
+   * 후원금 0–20 | 수수료 20–40 | 부가세 40–60 | 순매출 60–80 | 정산금 80–100
+   * html2canvas는 table rowspan/grid를 자주 깨뜨려 absolute 배치 사용
+   */
+  const channelBlock = (
+    sectionTitle: string,
+    grossLabel: string,
+    shareLabel: string,
+    gross: number,
+    fee: number,
+    vat: number,
+    net: number,
+    share: number
+  ) => `
+    <div class="section-bar">${escapeHtml(sectionTitle)}</div>
+    <div class="pay-block">
+      <div class="cell head" style="left:0%;width:20%;top:0;height:56px">${escapeHtml(grossLabel)}</div>
+      <div class="cell head" style="left:20%;width:40%;top:0;height:28px">기본 공제</div>
+      <div class="cell head" style="left:20%;width:20%;top:28px;height:28px">플랫폼 수수료</div>
+      <div class="cell head" style="left:40%;width:20%;top:28px;height:28px">부가세</div>
+      <div class="cell head" style="left:60%;width:20%;top:0;height:56px">순매출</div>
+      <div class="cell head" style="left:80%;width:20%;top:0;height:56px">${escapeHtml(shareLabel)}</div>
+      <div class="cell num" style="left:0%;width:20%;top:56px;height:40px">${moneyCell(gross)}</div>
+      <div class="cell num" style="left:20%;width:20%;top:56px;height:40px">${moneyCell(fee)}</div>
+      <div class="cell num" style="left:40%;width:20%;top:56px;height:40px">${moneyCell(vat)}</div>
+      <div class="cell num" style="left:60%;width:20%;top:56px;height:40px">${moneyCell(net)}</div>
+      <div class="cell num" style="left:80%;width:20%;top:56px;height:40px">${moneyCell(share)}</div>
+    </div>`;
+
   return `<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="utf-8" />
 <style>
-  @page { size: A4; margin: 14mm; }
+  @page { size: A4; margin: 12mm; }
   * { box-sizing: border-box; }
   body {
     margin: 0;
@@ -510,93 +556,122 @@ export function buildMemberPaymentStatementHtml(
     width: 180mm;
     min-height: 250mm;
     margin: 0 auto;
-    padding: 8mm 6mm;
+    padding: 6mm 4mm;
   }
   .title {
     text-align: center;
     font-size: 28px;
     font-weight: 800;
     letter-spacing: 0.12em;
-    margin: 8px 0 28px;
+    margin: 4px 0 18px;
+    text-decoration: underline;
+    text-underline-offset: 6px;
   }
   .meta {
     display: flex;
     justify-content: flex-end;
-    margin-bottom: 28px;
+    margin-bottom: 22px;
   }
   .meta table { border-collapse: collapse; font-size: 13px; }
-  .meta td { padding: 4px 8px; border: 1px solid #333; }
-  .meta td.k { background: #f3f3f3; font-weight: 700; width: 88px; }
-  .meta td.v { min-width: 120px; text-align: center; }
-  .section {
-    font-size: 15px;
+  .meta td { padding: 5px 10px; border: 1px solid #333; }
+  .meta td.k { background: #efefef; font-weight: 700; width: 88px; text-align: center; }
+  .meta td.v { min-width: 140px; text-align: center; }
+  .section-bar {
+    margin: 18px 0 0;
+    padding: 8px 10px;
+    font-size: 14px;
     font-weight: 800;
-    margin: 22px 0 10px;
-    padding-bottom: 4px;
-    border-bottom: 2px solid #222;
+    background: #e8e8e8;
+    border: 1px solid #333;
+    border-bottom: none;
   }
-  .grid {
+  .pay-block {
+    position: relative;
     width: 100%;
-    border-collapse: collapse;
-    table-layout: fixed;
-    font-size: 12px;
+    height: 96px;
+    border: 1px solid #333;
+    border-top: none;
+    background: #fff;
   }
-  .grid col.c-gross { width: 20%; }
-  .grid col.c-fee { width: 15%; }
-  .grid col.c-vat { width: 15%; }
-  .grid col.c-net { width: 20%; }
-  .grid col.c-share { width: 30%; }
-  .grid th, .grid td {
-    border: 1px solid #444;
-    padding: 8px 6px;
+  .pay-block .cell {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     text-align: center;
-    vertical-align: middle;
+    padding: 2px 4px;
+    border-right: 1px solid #333;
+    border-bottom: 1px solid #333;
+    word-break: keep-all;
+    overflow: hidden;
   }
-  .grid th { background: #f7f7f7; font-weight: 700; }
-  .grid .num { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .pay-block .cell.head {
+    background: #f3f3f3;
+    font-weight: 700;
+    font-size: 11px;
+    line-height: 1.2;
+  }
+  .pay-block .cell.num {
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    font-size: 13px;
+  }
   .total-box {
     margin-top: 28px;
-    display: grid;
-    grid-template-columns: 1fr 1.2fr;
-    gap: 0;
+    position: relative;
+    width: 100%;
+    height: 72px;
     border: 1px solid #333;
   }
   .total-box .left {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 60%;
+    height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 18px;
     font-weight: 800;
-    background: #fafafa;
+    background: #efefef;
     border-right: 1px solid #333;
-    min-height: 64px;
   }
-  .total-box .right { display: flex; flex-direction: column; }
-  .total-box .right .cap {
+  .total-box .cap {
+    position: absolute;
+    left: 60%;
+    top: 0;
+    width: 40%;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-size: 12px;
-    padding: 6px 10px;
+    font-weight: 700;
+    background: #f7f7f7;
     border-bottom: 1px solid #333;
-    background: #f3f3f3;
-    text-align: center;
   }
-  .total-box .right .amt {
-    flex: 1;
+  .total-box .amt {
+    position: absolute;
+    left: 60%;
+    top: 28px;
+    width: 40%;
+    height: 44px;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 22px;
     font-weight: 800;
     font-variant-numeric: tabular-nums;
-    padding: 10px;
   }
   .thanks {
-    margin-top: 36px;
+    margin-top: 40px;
     text-align: center;
     font-size: 15px;
     font-weight: 700;
   }
   .issuer {
-    margin-top: 28px;
+    margin-top: 24px;
     text-align: center;
     font-size: 14px;
     font-weight: 700;
@@ -614,68 +689,32 @@ export function buildMemberPaymentStatementHtml(
       </table>
     </div>
 
-    <div class="section">계좌 후원 내역</div>
-    <table class="grid">
-      <colgroup>
-        <col class="c-gross" /><col class="c-fee" /><col class="c-vat" /><col class="c-net" /><col class="c-share" />
-      </colgroup>
-      <thead>
-        <tr>
-          <th rowspan="2">계좌 후원금</th>
-          <th colspan="2">기본 공제</th>
-          <th rowspan="2">순매출</th>
-          <th rowspan="2">A. 스트리머 정산금</th>
-        </tr>
-        <tr>
-          <th>플랫폼 수수료</th>
-          <th>부가세</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td class="num">${moneyCell(s.accountGross)}</td>
-          <td class="num">${moneyCell(s.accountPlatformFee)}</td>
-          <td class="num">${moneyCell(s.accountVat)}</td>
-          <td class="num">${moneyCell(s.accountNet)}</td>
-          <td class="num">${moneyCell(s.accountStreamerShare)}</td>
-        </tr>
-      </tbody>
-    </table>
+    ${channelBlock(
+      "계좌 후원 내역",
+      "계좌 후원금",
+      "A. 스트리머 정산금",
+      s.accountGross,
+      s.accountPlatformFee,
+      s.accountVat,
+      s.accountNet,
+      s.accountStreamerShare
+    )}
 
-    <div class="section">투네이션 후원 내역</div>
-    <table class="grid">
-      <colgroup>
-        <col class="c-gross" /><col class="c-fee" /><col class="c-vat" /><col class="c-net" /><col class="c-share" />
-      </colgroup>
-      <thead>
-        <tr>
-          <th rowspan="2">투네이션 후원금</th>
-          <th colspan="2">기본 공제</th>
-          <th rowspan="2">순매출</th>
-          <th rowspan="2">B. 스트리머 정산금</th>
-        </tr>
-        <tr>
-          <th>플랫폼 수수료</th>
-          <th>부가세</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td class="num">${moneyCell(s.toonGross)}</td>
-          <td class="num">${moneyCell(s.toonPlatformFee)}</td>
-          <td class="num">${moneyCell(s.toonVat)}</td>
-          <td class="num">${moneyCell(s.toonNet)}</td>
-          <td class="num">${moneyCell(s.toonStreamerShare)}</td>
-        </tr>
-      </tbody>
-    </table>
+    ${channelBlock(
+      "투네이션 후원 내역",
+      "투네이션 후원금",
+      "B. 스트리머 정산금",
+      s.toonGross,
+      s.toonPlatformFee,
+      s.toonVat,
+      s.toonNet,
+      s.toonStreamerShare
+    )}
 
     <div class="total-box">
       <div class="left">총 정산 금액</div>
-      <div class="right">
-        <div class="cap">(A+B)-(원천세 ${escapeHtml(withholdPct)}%)</div>
-        <div class="amt">${moneyCell(s.payout)}</div>
-      </div>
+      <div class="cap">(A+B)-(원천세 ${escapeHtml(withholdPct)}%)</div>
+      <div class="amt">${moneyCell(s.payout)}</div>
     </div>
 
     <div class="thanks">${escapeHtml(thanks)}</div>
