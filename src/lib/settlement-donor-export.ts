@@ -99,7 +99,7 @@ export function aggregateMemberDonors(
 export function recordToMemberDonorsCsv(record: SettlementRecord, donors: Donor[]): string {
   const { nameById, realById } = memberMaps(record);
   const createdAt = new Date(record.createdAt).toISOString();
-  const detailHeader = ["정산제목", "정산시각", "멤버", "멤버실명", "후원자", "금액", "채널", "후원시각"].join(",");
+  const detailHeader = ["정산제목", "정산시각", "멤버", "멤버실명", "후원자", "금액", "채널", "후원시각", "메시지"].join(",");
   const detailRows = [...donors]
     .sort((a, b) => {
       const ma = nameById.get(a.memberId) || a.memberId;
@@ -117,6 +117,7 @@ export function recordToMemberDonorsCsv(record: SettlementRecord, donors: Donor[
         String(Math.max(0, Number(d.amount) || 0)),
         donorTargetLabel(d.target),
         new Date(d.at).toISOString(),
+        String(d.message || "").trim(),
       ]
         .map(csvEscape)
         .join(",")
@@ -167,7 +168,7 @@ export function recordToMemberDonorsXlsxBlob(record: SettlementRecord, donors: D
   const createdAt = new Date(record.createdAt).toISOString();
 
   const detailAoA: (string | number)[][] = [
-    ["정산제목", "정산시각", "멤버", "멤버실명", "후원자", "금액", "채널", "후원시각"],
+    ["정산제목", "정산시각", "멤버", "멤버실명", "후원자", "금액", "채널", "후원시각", "메시지"],
     ...[...donors]
       .sort((a, b) => {
         const ma = nameById.get(a.memberId) || a.memberId;
@@ -184,6 +185,7 @@ export function recordToMemberDonorsXlsxBlob(record: SettlementRecord, donors: D
         Math.max(0, Number(d.amount) || 0),
         donorTargetLabel(d.target),
         new Date(d.at).toISOString(),
+        String(d.message || "").trim(),
       ]),
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detailAoA), "건별내역");
@@ -217,7 +219,7 @@ export function recordToMemberDonorsXlsxBlob(record: SettlementRecord, donors: D
         row.toonAmount,
       ]),
       [],
-      ["후원자", "금액", "채널", "후원시각"],
+      ["후원자", "금액", "채널", "후원시각", "메시지"],
       ...memberDonors
         .sort((a, b) => b.at - a.at)
         .map((d) => [
@@ -225,6 +227,7 @@ export function recordToMemberDonorsXlsxBlob(record: SettlementRecord, donors: D
           Math.max(0, Number(d.amount) || 0),
           donorTargetLabel(d.target),
           new Date(d.at).toISOString(),
+          String(d.message || "").trim(),
         ]),
     ];
     const sheetName = sanitizeSheetName(m.name || m.memberId, usedSheetNames);

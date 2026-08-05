@@ -31,7 +31,12 @@ function pushOwnerCandidate(names: Set<string>, raw?: string): void {
   }
 }
 
-/** 로그인 계정명·관리자 입력 채널 주인명 등 */
+/**
+ * 계좌 자동반영에 쓸 채널 주인명 후보.
+ * - 관리자 「채널 주인명」이 1순위
+ * - 계정 표시명·회사명은 별칭으로만 추가
+ * - 로그인 userId 는 넣지 않음(아이디=닉 오탐으로 일반 투네가 계좌로 가는 것 방지)
+ */
 export async function getOwnerNameCandidates(userId: string, ownerName?: string): Promise<Set<string>> {
   const now = Date.now();
   const cacheKey = `${userId}:${normalizeOwnerNameForCompare(ownerName || "")}`;
@@ -39,7 +44,6 @@ export async function getOwnerNameCandidates(userId: string, ownerName?: string)
   if (cached && cached.expiresAt > now) return cached.names;
 
   const names = new Set<string>();
-  pushOwnerCandidate(names, userId);
   pushOwnerCandidate(names, ownerName);
   try {
     const accounts = await loadAccounts();
@@ -94,17 +98,27 @@ export function remapOwnerSelfDonationAsAccount(source: DonationEvent): Donation
     ...(parsed.playerName
       ? { playerName: parsed.playerName, recipientName: parsed.playerName }
       : {}),
-    message: parsed.restMessage,
+    /**
+     * 계좌도 투네 comment로 들어오므로 원문을 그대로 남긴다.
+     * (후원자·멤버 토큰만 남기고 rest만 쓰면 `익명 현세서`처럼 메시지가 비게 됨)
+     */
+    message: msg,
   };
 }
 
-/** 투네 후원 — 후원자 닉이 채널 주인과 같으면 계좌 열로 처리 */
+/**
+ * 투네 자동 반영 규칙:
+ * - 알림 후원자 닉 ≠ 채널 주인 → 투네. 후원자명=알림 닉 그대로 엑셀 저장
+ * - 알림 후원자 닉 = 채널 주인 → 계좌. 메시지「실제후원자 멤버 …」파싱
+ * (메시지에 명시적「계좌」포맷이면 parse 단계에서 이미 account)
+ */
 export function applyOwnerDonationRemapIfNeeded(
   event: DonationEvent,
   ownerNames: Set<string>
 ): DonationEvent {
   if (event.target === "account") return event;
   if (event.provider !== "toonation") return event;
+  if (!ownerNames.size) return event;
   const donorNormalized = normalizeOwnerNameForCompare(event.donorName || "");
   if (!donorNormalized || !ownerNames.has(donorNormalized)) return event;
   return remapOwnerSelfDonationAsAccount(event);

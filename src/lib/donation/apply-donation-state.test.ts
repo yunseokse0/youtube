@@ -286,6 +286,40 @@ describe("applyDonationToAppState", () => {
     expect(result.reason).toBe("duplicate");
   });
 
+  it("rejects owner-remap split pair (익명 계좌 + 원닉 투네) within 3s", () => {
+    const at = Date.now();
+    const state = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "연비서", account: 100000, toon: 0, contribution: 100000 }],
+      donors: [
+        {
+          id: "toonation:test-account-1",
+          name: "익명",
+          amount: 100000,
+          memberId: "m1",
+          at,
+          target: "account" as const,
+          message: "익명 연비서",
+        },
+      ],
+    };
+    const event: DonationEvent = {
+      id: "toonation:test-toon-2",
+      provider: "toonation",
+      externalId: "test-toon-2",
+      donorName: "철수",
+      amount: 100000,
+      message: "익명 연비서",
+      at: new Date(at + 500).toISOString(),
+      status: "queued",
+      target: "toon",
+    };
+    const result = applyDonationToAppState(state, event);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("duplicate");
+  });
+
   it("rejects near-duplicate weak fp- ids with same content within 3s (이중 경로)", () => {
     const at = Date.now();
     const state = {

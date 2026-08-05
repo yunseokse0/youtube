@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { defaultState } from "@/lib/state";
 import type { AppState, Member } from "@/types";
-import { mergeDonationApplyBase } from "./merge-donation-apply-base";
+import {
+  enrichStateBeforeAuthoritativeDonationSave,
+  mergeDonationApplyBase,
+} from "./merge-donation-apply-base";
 
 function members(names: string[]): Member[] {
   return names.map((name, idx) => ({
@@ -98,5 +101,62 @@ describe("mergeDonationApplyBase", () => {
     };
     const merged = mergeDonationApplyBase(fresh, hint);
     expect(merged?.overlayPresets?.[0]?.theme).toBe("excelLive");
+  });
+});
+
+describe("enrichStateBeforeAuthoritativeDonationSave", () => {
+  it("prevents unmatched-apply wipe when API apply base lost prior donors", () => {
+    const prior: AppState = {
+      ...defaultState(),
+      members: [
+        { id: "m1", name: "BT태호", account: 0, toon: 120000, contribution: 120000 },
+        { id: "m2", name: "연비서", account: 100000, toon: 0, contribution: 100000 },
+      ],
+      donors: [
+        {
+          id: "toonation:old-1",
+          name: "철수",
+          amount: 120000,
+          memberId: "m1",
+          at: 1,
+          target: "toon",
+        },
+        {
+          id: "toonation:old-2",
+          name: "익명",
+          amount: 100000,
+          memberId: "m2",
+          at: 2,
+          target: "account",
+        },
+      ],
+    };
+    /** 미매칭 반영 직후 — GET 빈 스냅샷 위에 새 1건만 있는 상태 */
+    const appliedOnlyNew: AppState = {
+      ...defaultState(),
+      members: [
+        { id: "m1", name: "BT태호", account: 0, toon: 1000, contribution: 1000 },
+        { id: "m2", name: "연비서", account: 0, toon: 0, contribution: 0 },
+      ],
+      donors: [
+        {
+          id: "toonation:new-unmatched",
+          name: "후원",
+          amount: 1000,
+          memberId: "m1",
+          at: 3,
+          target: "toon",
+        },
+      ],
+    };
+    const emptyApi: AppState = { ...defaultState(), donors: [], members: members(["BT태호", "연비서"]) };
+    const enriched = enrichStateBeforeAuthoritativeDonationSave(appliedOnlyNew, [prior, emptyApi]);
+    expect(enriched.donors.map((d) => d.id).sort()).toEqual([
+      "toonation:new-unmatched",
+      "toonation:old-1",
+      "toonation:old-2",
+    ]);
+    expect(enriched.members.find((m) => m.id === "m1")?.toon).toBe(121000);
+    expect(enriched.members.find((m) => m.id === "m2")?.account).toBe(100000);
   });
 });

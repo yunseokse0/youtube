@@ -218,10 +218,14 @@ export async function ingestToonationWebSocketMessage(
   const payload = peekToonationWsPayload(raw);
   const isTestDonation = payload != null && isToonationTestDonationPayload(payload);
   /**
-   * 투네 후원 테스트는 클릭마다 WS 원문이 거의 동일하다.
-   * 테스트는 건별 unique externalId 로 반영하고, WS 재전송 중복은 드물어 dedupe 를 건너뛴다.
+   * RAW hash 는 항상 기록한다.
+   * - 실후원: 짧은 창 재전송 무시
+   * - 테스트: 서버 WS 연속 클릭은 허용(unique id)하되,
+   *   브라우저 릴레이가 같은 원문을 한 번 더 넣으면 무시
+   *   (한쪽만 채널주인 리맵 → 익명(계좌)+철수(투네) 동시 반영 방지)
    */
-  if (!isTestDonation && shouldSkipDuplicateRawWs(userId, raw, RAW_WS_DEDUPE_MS)) {
+  const rawDup = shouldSkipDuplicateRawWs(userId, raw, RAW_WS_DEDUPE_MS);
+  if (rawDup && (source === "browser-relay" || !isTestDonation)) {
     return { ok: true, outcome: "duplicate" };
   }
 

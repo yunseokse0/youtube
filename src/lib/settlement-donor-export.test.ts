@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Donor, SettlementRecord } from "@/types";
 import {
   aggregateMemberDonors,
+  recordToMemberDonorsCsv,
   resolveSettlementDonors,
 } from "@/lib/settlement-donor-export";
 
@@ -87,5 +88,24 @@ describe("aggregateMemberDonors", () => {
     expect(a?.count).toBe(2);
     expect(a?.accountAmount).toBe(10000);
     expect(a?.toonAmount).toBe(5000);
+  });
+});
+
+describe("recordToMemberDonorsCsv", () => {
+  it("includes donation message in detail rows", () => {
+    const donors: Donor[] = [
+      {
+        id: "d1",
+        name: "익명",
+        amount: 10000,
+        memberId: "m1",
+        at: Date.parse("2026-07-29T11:30:00.000Z"),
+        target: "account",
+        message: "계좌 응원합니다",
+      },
+    ];
+    const csv = recordToMemberDonorsCsv(baseRecord, donors);
+    expect(csv).toContain("메시지");
+    expect(csv).toContain("계좌 응원합니다");
   });
 });

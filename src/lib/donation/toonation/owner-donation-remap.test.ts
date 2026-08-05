@@ -60,7 +60,19 @@ describe("owner-donation-remap", () => {
     expect(out.target).toBe("account");
     expect(out.donorName).toBe("익명");
     expect(out.playerName).toBe("홍쓰");
-    expect(out.message).toBe("");
+    expect(out.message).toBe("익명 홍쓰");
+  });
+
+  it("owner account remap keeps full toonation comment including rest", () => {
+    const owners = new Set([normalizeOwnerNameForCompare("BT태호")]);
+    const out = applyOwnerDonationRemapIfNeeded(
+      toonEvent({ donorName: "BT태호", message: "익명 홍쓰 감사합니다" }),
+      owners
+    );
+    expect(out.target).toBe("account");
+    expect(out.donorName).toBe("익명");
+    expect(out.playerName).toBe("홍쓰");
+    expect(out.message).toBe("익명 홍쓰 감사합니다");
   });
 
   it("remaps owner with honorific alert nick", () => {
@@ -82,6 +94,38 @@ describe("owner-donation-remap", () => {
     );
     expect(out.target).toBe("toon");
     expect(out.donorName).toBe("시청자");
+  });
+
+  it("donor nick ≠ channel owner → keeps toon donor name for excel", () => {
+    const owners = new Set([normalizeOwnerNameForCompare("BT태호")]);
+    const out = applyOwnerDonationRemapIfNeeded(
+      toonEvent({ donorName: "철수", message: "연비서 응원", target: "toon" }),
+      owners
+    );
+    expect(out.target).toBe("toon");
+    expect(out.donorName).toBe("철수");
+    expect(out.message).toBe("연비서 응원");
+  });
+
+  it("donor nick = channel owner → account auto apply", () => {
+    const owners = new Set([normalizeOwnerNameForCompare("BT태호")]);
+    const out = applyOwnerDonationRemapIfNeeded(
+      toonEvent({ donorName: "BT태호", message: "익명 연비서 감사합니다", target: "toon" }),
+      owners
+    );
+    expect(out.target).toBe("account");
+    expect(out.donorName).toBe("익명");
+    expect(out.playerName).toBe("연비서");
+    expect(out.message).toBe("익명 연비서 감사합니다");
+  });
+
+  it("empty owner candidates → never remap to account", () => {
+    const out = applyOwnerDonationRemapIfNeeded(
+      toonEvent({ donorName: "BT태호", message: "익명 홍쓰" }),
+      new Set()
+    );
+    expect(out.target).toBe("toon");
+    expect(out.donorName).toBe("BT태호");
   });
 
   it("explicit 계좌 format skips prefix token", () => {

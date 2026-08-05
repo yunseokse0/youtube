@@ -10214,15 +10214,15 @@ export default function AdminPage() {
                     엑셀표에 즉시 반영합니다(7/29 방식). 서버가 끊기면 브라우저 릴레이가 자동 fallback 합니다.
                   </div>
                   <div className="text-[11px] text-amber-200/80 mt-1 leading-snug">
-                    · 메시지가 <span className="text-amber-100">「계좌 후원자 멤버」</span> 형식 → <strong>계좌</strong> 열
+                    · <strong className="text-amber-100">투네</strong>: 알림 후원자 닉 ≠ 채널 주인명 → 후원자명=알림 닉 그대로{" "}
+                    <strong>투네</strong> 열 저장 (메시지 첫 토큰=멤버 선택)
                     <br />
-                    · <span className="text-amber-100">계좌</span>는 메시지 <strong>앞·중간</strong> 어디든 가능. 닉 필드에만 넣은 경우도 인식
+                    · <strong className="text-amber-100">계좌</strong>: 알림 후원자 닉 = 채널 주인명 →{" "}
+                    <strong>계좌</strong> 열. 메시지{" "}
+                    <span className="text-amber-100">「실제후원자 멤버 (메시지…)」</span> 순으로 파싱 (님·호칭 무시)
                     <br />
-                    · 일반 투네: 알림 <strong className="text-amber-100">후원자 닉(금액 앞)</strong> = 후원자, 메시지 첫 토큰 = 멤버(선택) →{" "}
-                    <strong>투네</strong> 열
-                    <br />
-                    · 알림 닉 = <strong className="text-amber-100">채널 주인명</strong> → <strong>계좌</strong> 열. 메시지{" "}
-                    <span className="text-amber-100">「후원자 멤버 (메시지…)」</span> 순으로 파싱 (님·호칭 무시)
+                    · 메시지가 <span className="text-amber-100">「계좌 후원자 멤버」</span> 형식이면 닉과 무관하게{" "}
+                    <strong>계좌</strong> (앞·중간 어디든, 닉 필드만 넣은 경우도 인식)
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -10272,7 +10272,7 @@ export default function AdminPage() {
                 />
                 <input
                   className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10 text-sm"
-                  placeholder="채널 주인명 (후원자명이 이 값과 같으면 계좌 처리)"
+                  placeholder="채널 주인명 (투네 알림 닉과 같으면 계좌, 다르면 투네)"
                   value={toonationOwnerName}
                   onChange={(e) => setToonationOwnerName(e.target.value)}
                 />
@@ -10997,7 +10997,10 @@ export default function AdminPage() {
               <div className="text-xs text-neutral-400 mt-2">
                 후원자 리스트는 건별 기록입니다. (동일 후원자여도 건별로 별도 행 표시)
                 {" "}
-                투네이션 후원 메시지(comment)는 <strong className="text-neutral-300">메시지</strong> 열에 자동 표기됩니다.
+                투네이션 <strong className="text-neutral-300">통합알림창 하단 후원 메시지(comment)</strong>는
+                잘라내지 않고 <strong className="text-neutral-300">메시지</strong> 열에 원문 그대로 저장됩니다.
+                {" "}
+                (예: 알림 닉「Y 철수」+ 메시지「익명 비서」→ 후원자 Y 철수, 메시지 익명 비서)
                 {" "}
                 단체 후원은 리스트 <strong className="text-violet-300">나누기</strong>로 균등 분배하거나, 멤버·금액을 나눠 <strong className="text-neutral-300">합산 추가</strong>로 수동 입력하세요.
               </div>

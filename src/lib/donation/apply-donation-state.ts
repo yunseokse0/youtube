@@ -144,6 +144,45 @@ export function donationContentMatchKey(donor: {
   return `${name}|${amount}|${target}|${msg}`;
 }
 
+function donorTargetField(target?: string): "account" | "toon" {
+  return target === "toon" ? "toon" : "account";
+}
+
+/**
+ * 채널 주인 리맵이 한쪽만 적용되면 같은 투네 원문이
+ * `익명(계좌)` + `철수(투네)` 로 갈라져 들어온다 — 금액·메시지·시각으로 묶는다.
+ */
+export function isOwnerRemapSplitDuplicate(
+  existing: { name?: string; amount?: number; target?: string; message?: string; at?: number | string },
+  incoming: { donorName?: string; amount?: number; target?: string; message?: string; at?: string | number }
+): boolean {
+  const amountA = Math.max(0, Math.round(Number(existing.amount) || 0));
+  const amountB = Math.max(0, Math.round(Number(incoming.amount) || 0));
+  if (amountA <= 0 || amountA !== amountB) return false;
+  const atA = donorAtEpochMs(existing);
+  const atB =
+    typeof incoming.at === "number" && Number.isFinite(incoming.at)
+      ? incoming.at
+      : toEpochMs(String(incoming.at || ""));
+  if (Math.abs(atA - atB) > DONATION_NEAR_DUP_WINDOW_MS) return false;
+  const targetA = donorTargetField(existing.target);
+  const targetB = donorTargetField(incoming.target);
+  if (targetA === targetB) return false;
+  const msgA = String(existing.message || "").trim().toLowerCase();
+  const msgB = String(incoming.message || "").trim().toLowerCase();
+  if (msgA && msgB && msgA === msgB) return true;
+  const nameA = String(existing.name || "").trim().toLowerCase();
+  const nameB = String(incoming.donorName || "").trim().toLowerCase();
+  if (msgA && nameB && msgA.includes(nameB)) return true;
+  if (msgB && nameA && msgB.includes(nameA)) return true;
+  /** 리맵 후 메시지 비움 + 원문도 비어 있을 때 — 익명 계좌 vs 원닉 투네 */
+  if (!msgA && !msgB) {
+    const anon = (n: string) => n === "익명" || n === "anonymous" || n === "anon";
+    if (anon(nameA) || anon(nameB)) return true;
+  }
+  return false;
+}
+
 /** 동일 투네·계좌 후원 id가 이미 donors에 있으면 중복(연속 동일 금액·닉은 창 밖이면 별도 건으로 허용) */
 export function isDuplicateDonationEvent(state: AppState, rawEvent: DonationEvent): boolean {
   const donors = state.donors || [];
@@ -182,6 +221,8 @@ export function isDuplicateDonationEvent(state: AppState, rawEvent: DonationEven
     ) {
       return true;
     }
+    /** 주인 리맵 유무가 갈라져 익명(계좌)·원닉(투네)로 동시에 쌓이는 경우 */
+    if (isOwnerRemapSplitDuplicate(d, rawEvent)) return true;
     return false;
   });
 }

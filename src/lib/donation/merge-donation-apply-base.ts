@@ -71,3 +71,19 @@ export function mergeDonationApplyBase(
   };
   return syncMemberTotalsFromDonors(merged);
 }
+
+/**
+ * donorsAuthoritative 저장 직전 — 빈 GET·지연 스냅샷만으로 엑셀표가 초기화되지 않게
+ * 화면 hint·LS·서버 스냅샷 donors 를 union 한다.
+ */
+export function enrichStateBeforeAuthoritativeDonationSave(
+  applied: AppState,
+  sources: Array<AppState | null | undefined>
+): AppState {
+  let next = applied;
+  for (const src of sources) {
+    if (!src) continue;
+    next = mergeDonationApplyBase(next, src) ?? next;
+  }
+  return next;
+}

@@ -142,6 +142,31 @@ describe("ingestToonationWebSocketMessage consecutive identical raw", () => {
     }
   });
 
+  it("dedupes browser-relay after server-ws for identical test raw (주인리맵 이중 반영 방지)", async () => {
+    const userId = `test-relay-raw-${Date.now()}`;
+    __testOnlySetListenerConnected(userId, false);
+    try {
+      const fromServer = await ingestToonationWebSocketMessage(
+        userId,
+        TEST_RAW,
+        undefined,
+        "server-ws"
+      );
+      const fromBrowser = await ingestToonationWebSocketMessage(
+        userId,
+        TEST_RAW,
+        undefined,
+        "browser-relay"
+      );
+
+      expect(fromServer).toEqual({ ok: true, outcome: "applied" });
+      expect(fromBrowser).toEqual({ ok: true, outcome: "duplicate" });
+      expect(tryAutoApplyToonationDonationOnServer).toHaveBeenCalledTimes(1);
+    } finally {
+      __testOnlyClearListener(userId);
+    }
+  });
+
   it("allows browser-relay ingest when server WS is disconnected", async () => {
     const userId = `test-relay-fallback-${Date.now()}`;
     __testOnlySetListenerConnected(userId, false);

@@ -283,6 +283,18 @@ describe("toonation parse-event", () => {
     expect(isToonationTestDonationPayload(JSON.parse(raw).content)).toBe(true);
   });
 
+  it("stores alertbox comment as message as-is (통합알림창 하단 메시지)", () => {
+    const evt = parseToonationDonationPayload({
+      nickname: "Y 철수",
+      amount: 100000,
+      comment: "익명 비서",
+    });
+    expect(evt?.target).toBe("toon");
+    expect(evt?.donorName).toBe("Y 철수");
+    expect(evt?.playerName).toBe("비서");
+    expect(evt?.message).toBe("익명 비서");
+  });
+
   it("peekToonationWsPayload extracts content envelope", () => {
     const raw = JSON.stringify({ code: 101, content: { nickname: "a", amount: 1, isTest: true } });
     expect(peekToonationWsPayload(raw)).toEqual({ nickname: "a", amount: 1, isTest: true });

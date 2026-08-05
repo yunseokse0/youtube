@@ -1846,6 +1846,27 @@ export async function saveStateAsync(
     : options;
   let guarded = next;
   const local = loadState(userId);
+  /**
+   * donorsAuthoritative 라도 정산 리셋이 아니면, LS보다 후원이 줄어든 채 올리면
+   * 미매칭 반영 등으로 엑셀표가 초기화된다.
+   * (삭제는 markAuthoritativeDonationSave 가 먼저 LS를 줄인 뒤 호출하므로 shrink 가 아님)
+   */
+  if (saveOpts?.donorsAuthoritative && !saveOpts?.settlementReset && local) {
+    const localDonors = normalizeDonorsArray(local.donors);
+    const nextDonors = normalizeDonorsArray(guarded.donors);
+    if (
+      localDonors.length > 0 &&
+      (nextDonors.length < localDonors.length || wouldShrinkDonationData(local, guarded))
+    ) {
+      const unioned = mergeDonorsForMultiTabSave(nextDonors, localDonors, {
+        incomingUpdatedAt: guarded.updatedAt,
+        existingUpdatedAt: local.updatedAt,
+      });
+      if (unioned.length > nextDonors.length) {
+        guarded = syncMemberTotalsFromDonors({ ...guarded, donors: unioned });
+      }
+    }
+  }
   if (!saveOpts?.settlementReset && !saveOpts?.donorsAuthoritative) {
     const localDonors = normalizeDonorsArray(local?.donors);
     if (localDonors.length > 0) {

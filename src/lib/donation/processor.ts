@@ -1,5 +1,8 @@
-import { loadStateFromApi, saveStateAsync } from "@/lib/state";
-import { mergeDonationApplyBase } from "./merge-donation-apply-base";
+import { loadState, loadStateFromApi, saveStateAsync } from "@/lib/state";
+import {
+  enrichStateBeforeAuthoritativeDonationSave,
+  mergeDonationApplyBase,
+} from "./merge-donation-apply-base";
 import { createModuleLogger } from "@/lib/logger";
 import type { AppState } from "@/types";
 import { applyDonationToAppState, isDuplicateDonationEvent } from "./apply-donation-state";
@@ -91,7 +94,19 @@ export async function processDonationEvent(
       return { ...event, status: "processed" as const, updatedState: beforeSave };
     }
 
-    const saved = await saveCurrentAppState(applied.state, userId, { donorsAuthoritative: true });
+    /**
+     * donorsAuthoritative 저장은 서버 후원 목록을 통째로 교체한다.
+     * GET이 비어 있거나 지연이면 미매칭 1건만 남아 엑셀표가 초기화되므로
+     * 저장 직전 LS·화면 hint·서버 스냅샷과 다시 union 한다.
+     */
+    const local = typeof window !== "undefined" ? loadState(userId) : null;
+    const toSave = enrichStateBeforeAuthoritativeDonationSave(applied.state, [
+      hintState,
+      local,
+      beforeSave,
+    ]);
+
+    const saved = await saveCurrentAppState(toSave, userId, { donorsAuthoritative: true });
     if (!saved.ok) {
       return { ...event, status: "failed" as const, error: "state_save_failed" };
     }
@@ -99,7 +114,7 @@ export async function processDonationEvent(
     unresolvedEventIds.delete(dedupeKey);
     await resolveUnmatched(applied.event.id, userId);
     log.debug("processed", applied.event.donorName, applied.event.amount);
-    return { ...applied.event, status: "processed" as const, updatedState: applied.state };
+    return { ...applied.event, status: "processed" as const, updatedState: toSave };
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown_error";
     log.error("process failed", message);

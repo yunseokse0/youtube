@@ -126,6 +126,7 @@ export function isAnonymousMarkerToken(raw: string): boolean {
  * - 계좌(주인 후원): 알림 닉=채널 주인 → 메시지 `후원자 멤버 (메시지…)` (owner-donation-remap)
  * - 투네: 알림 닉=후원자(금액 앞 표시). 메시지 첫 토큰=플레이어(선택).
  *   `익명 지히`처럼 익명 마커가 앞에 오면 다음 토큰을 플레이어로 사용.
+ * - 저장용 message 필드는 항상 통합알림창 하단 comment 원문(파싱과 무관).
  */
 export function parseToonationMessageBody(
   message: string,
@@ -407,6 +408,7 @@ export function parseToonationDonationPayload(data: unknown): DonationEvent | nu
     playerName,
     recipientName: playerName,
     amount,
+    /** 통합알림창에 보이는 후원 메시지(comment) 원문 — 멤버 파싱용 토큰과 별개로 그대로 저장 */
     message: rawMessage,
     at: new Date().toISOString(),
     target: parsed.target,

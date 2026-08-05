@@ -188,6 +188,35 @@ describe("toonation auto-apply flow (parse → apply)", () => {
     expect(result.event.memberAutoAssigned).toBeFalsy();
   });
 
+  it("투네 메시지 열 = 통합알림창 comment 원문 (익명 비서)", () => {
+    const raw = JSON.stringify({
+      code: 101,
+      content: {
+        nickname: "Y 철수",
+        amount: 100000,
+        comment: "익명 비서",
+      },
+    });
+    const event = parseToonationWebSocketMessage(raw)!;
+    expect(event.message).toBe("익명 비서");
+    expect(event.donorName).toBe("Y 철수");
+    expect(event.target).toBe("toon");
+
+    const result = applyDonationToAppState(
+      baseState([
+        { id: "m1", name: "연비서" },
+        { id: "m2", name: "BT태호" },
+      ]),
+      event,
+      []
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.donors?.[0]?.message).toBe("익명 비서");
+    expect(result.state.donors?.[0]?.name).toBe("Y 철수");
+    expect(result.state.donors?.[0]?.target).toBe("toon");
+  });
+
   it("메시지 익명 지히 → 자하 초성 유사 일치", () => {
     const raw = JSON.stringify({
       code: 101,
