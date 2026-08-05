@@ -221,7 +221,12 @@ function SigRollingOverlayInner() {
     hostParam === "external" ||
     (sp.get("obsSafe") || "").toLowerCase() === "true" ||
     (sp.get("obsSafe") || "").toLowerCase() === "1";
-  const { state, ready } = useOverlayRemoteState(userId);
+  const { state, ready } = useOverlayRemoteState(userId, {
+    /** 새로고침 시 LS·last-good 이전 이미지가 먼저 보이지 않게 */
+    skipLocalSnapshot: true,
+    forceInitialFull: true,
+    persistLastGood: false,
+  });
   const overlayUserId = useMemo(
     () => inferSigUploadUserIdFromInventory(state?.sigInventory, userId),
     [state?.sigInventory, userId]
@@ -235,7 +240,6 @@ function SigRollingOverlayInner() {
     [items, highMin]
   );
   const totalCount = highItems.length + lowItems.length;
-  const showPair = highItems.length > 0 && lowItems.length > 0;
 
   const [leftIdx, setLeftIdx] = useState(0);
   const [rightIdx, setRightIdx] = useState(0);
@@ -245,14 +249,10 @@ function SigRollingOverlayInner() {
   leftIdxRef.current = leftIdx;
   rightIdxRef.current = rightIdx;
 
-  /** 마지막 유효 목록 — 폴링 중 빈 스냅샷이 나와도 OBS가 투명으로 깜빡이지 않게 */
-  const lastItemsRef = useRef({ high: highItems, low: lowItems, total: totalCount });
-  if (totalCount > 0) {
-    lastItemsRef.current = { high: highItems, low: lowItems, total: totalCount };
-  }
-  const stableHigh = totalCount > 0 ? highItems : lastItemsRef.current.high;
-  const stableLow = totalCount > 0 ? lowItems : lastItemsRef.current.low;
-  const stableTotal = stableHigh.length + stableLow.length;
+  /** API 수신 전·빈 스냅샷에는 이전 목록을 재사용하지 않음(새로고침 플래시 방지) */
+  const stableHigh = highItems;
+  const stableLow = lowItems;
+  const stableTotal = totalCount;
   const stableShowPair = stableHigh.length > 0 && stableLow.length > 0;
 
   const leftCurrent = pickSigRollingAt(stableHigh, leftIdx);
@@ -364,7 +364,7 @@ function SigRollingOverlayInner() {
     return "";
   }, [state, memberFilterId]);
 
-  if (!ready && stableTotal === 0) {
+  if (!ready) {
     if (obsSafe) return <main className="overlay-root inline-block w-fit bg-transparent p-1" />;
     return (
       <main className="overlay-root inline-block w-fit p-1">
