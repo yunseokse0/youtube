@@ -1432,6 +1432,26 @@ export default function AdminPage() {
       merged = { ...merged, sigSoldOutStampUrl: local.sigSoldOutStampUrl };
       didPreserve = true;
     }
+    /** 시그 롤링 표시 시간: 방금 저장한 로컬 값이 원격 기본/구값으로 덮이지 않게 */
+    {
+      const localHold = normalizeSigRolling(local.sigRolling).staticHoldMs;
+      const remoteHold = normalizeSigRolling(merged.sigRolling).staticHoldMs;
+      if (
+        localHold > 0 &&
+        localHold !== remoteHold &&
+        (pendingUnsyncedRef.current || Date.now() - lastLocalPersistAtRef.current < 12000)
+      ) {
+        merged = {
+          ...merged,
+          sigRolling: {
+            ...normalizeSigRolling(merged.sigRolling),
+            staticHoldMs: localHold,
+            fadeMs: normalizeSigRolling(local.sigRolling).fadeMs,
+          },
+        };
+        didPreserve = true;
+      }
+    }
     if (
       Array.isArray(local.donorRankingsPresets) &&
       local.donorRankingsPresets.length > 0 &&

@@ -23,6 +23,7 @@ import {
   inferSigUploadUserIdFromInventory,
 } from "@/lib/overlay-params";
 import { resolveSigRollingHoldMs } from "@/lib/sig-rolling-duration";
+import { createObsSafeInterval } from "@/lib/obs-safe-interval";
 import { useOverlayRemoteState } from "@/hooks/useOverlayRemoteState";
 import {
   sigRollingFixedPairLayoutPx,
@@ -101,8 +102,8 @@ function RollingCardColumn({
       setShownSrc(src);
     };
 
-    /** OBS 브라우저 소스가 onLoad를 누락해도 교체되도록 */
-    const forceId = window.setTimeout(() => commit(targetSrc), 900);
+    /** OBS CEF에서 onLoad 누락 시에도 빠르게 교체 */
+    const forceId = window.setTimeout(() => commit(targetSrc), 200);
 
     return () => {
       cancelled = true;
@@ -311,7 +312,7 @@ function SigRollingOverlayInner() {
     if (stableLow.length > 0 && rightIdx >= stableLow.length) setRightIdx(0);
   }, [stableHigh.length, stableLow.length, leftIdx, rightIdx]);
 
-  /** leftIdx에 묶지 않는 interval — 인덱스 리셋/재구독으로 교체가 멈추지 않게 */
+  /** OBS-safe worker interval — 메인 스레드 setInterval 스로틀로 진행이 멈추지 않게 */
   useEffect(() => {
     if (!ready || stableTotal === 0 || !canAdvance) return;
 
@@ -333,8 +334,7 @@ function SigRollingOverlayInner() {
       stableLow.length > 1 ? pickSigRollingAt(bandsRef.current.low, rightIdxRef.current + 1) : null
     );
 
-    const timerId = window.setInterval(tick, waitMs);
-    return () => window.clearInterval(timerId);
+    return createObsSafeInterval(tick, waitMs);
   }, [
     ready,
     stableTotal,
