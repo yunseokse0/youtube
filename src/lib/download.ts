@@ -14,16 +14,32 @@ async function isCapacitorNative(): Promise<boolean> {
   }
 }
 
+/** HTTP(비보안) 페이지에서는 blob: URL 로드가 차단되므로 data URL 사용 */
+async function blobToDownloadHref(blob: Blob): Promise<{ href: string; revoke?: () => void }> {
+  if (typeof window !== "undefined" && window.isSecureContext) {
+    const href = URL.createObjectURL(blob);
+    return { href, revoke: () => URL.revokeObjectURL(href) };
+  }
+  const href = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error ?? new Error("download_read_failed"));
+    reader.readAsDataURL(blob);
+  });
+  return { href };
+}
+
 /** 웹에서 blob 다운로드 (데스크톱/모바일 브라우저) */
-function downloadBlobWeb(filename: string, blob: Blob): void {
+async function downloadBlobWeb(filename: string, blob: Blob): Promise<void> {
+  const { href, revoke } = await blobToDownloadHref(blob);
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
+  a.href = href;
   a.download = filename;
   a.style.display = "none";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  if (revoke) setTimeout(revoke, 1000);
 }
 
 /** Capacitor 네이티브에서 파일 저장 후 열기 */
@@ -81,11 +97,11 @@ export async function downloadTextFile(
       await saveAndOpenNative(filename, content, mimeType);
     } catch {
       const blob = new Blob([content], { type: mimeType });
-      downloadBlobWeb(filename, blob);
+      await downloadBlobWeb(filename, blob);
     }
   } else {
     const blob = new Blob([content], { type: mimeType });
-    downloadBlobWeb(filename, blob);
+    await downloadBlobWeb(filename, blob);
   }
 }
 
@@ -98,9 +114,9 @@ export async function downloadBlobFile(filename: string, blob: Blob): Promise<vo
     try {
       await saveAndOpenNative(filename, blob, blob.type);
     } catch {
-      downloadBlobWeb(filename, blob);
+      await downloadBlobWeb(filename, blob);
     }
   } else {
-    downloadBlobWeb(filename, blob);
+    await downloadBlobWeb(filename, blob);
   }
 }
