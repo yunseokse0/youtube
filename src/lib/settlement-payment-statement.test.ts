@@ -146,9 +146,13 @@ describe("buildMemberPaymentStatementHtml layout", () => {
   it("uses fixed pay-block cells aligned to Excel column ratios", () => {
     const html = buildMemberPaymentStatementHtml(record(), member());
     expect(html).toContain('class="pay-block"');
-    expect(html).toContain('class="pay-edge"');
+    expect(html).not.toContain('class="pay-edge"');
     expect(html).toContain("left:0%;width:20%");
     expect(html).toContain("left:80%;width:20%");
+    expect(html).toContain("justify-content: center");
+    expect(html).toContain(".pay-block .cell");
+    expect(html).toMatch(/\.pay-block\s*\{[^}]*border:\s*none/s);
+    expect(html).toMatch(/\.pay-block \.cell\s*\{[^}]*border:\s*none/s);
     expect(html).not.toContain("rowspan");
     expect(html).toContain("1,150,730");
   });

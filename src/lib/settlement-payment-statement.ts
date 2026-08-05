@@ -606,7 +606,6 @@ export function buildMemberPaymentStatementHtml(
       <div class="cell num" style="left:40%;width:20%">${moneyCell(vat)}</div>
       <div class="cell num" style="left:60%;width:20%">${moneyCell(net)}</div>
       <div class="cell num" style="left:80%;width:20%">${moneyCell(share)}</div>
-      <div class="pay-edge"></div>
     </div>`;
 
   return `<!DOCTYPE html>
@@ -683,61 +682,53 @@ export function buildMemberPaymentStatementHtml(
     line-height: 34px;
     font-size: 14px;
     font-weight: 800;
+    text-align: center;
     background: #e8e8e8;
-    border: 1px solid #333;
-    border-bottom: none;
+    border: none;
   }
   .pay-block {
     position: relative;
     width: 100%;
     height: 98px;
-    border-left: 1px solid #333;
-    border-right: 1px solid #333;
+    border: none;
     background: #fff;
   }
   .pay-block .cell {
     position: absolute;
     top: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     text-align: center;
-    border-right: 1px solid #333;
-    border-bottom: 1px solid #333;
+    border: none;
     word-break: keep-all;
     overflow: hidden;
+    padding: 0 4px;
   }
   .pay-block .cell.head {
     background: #f3f3f3;
     font-weight: 700;
     font-size: 11px;
+    line-height: 1.25;
   }
   .pay-block .cell.head.tall {
     height: 56px;
-    line-height: 56px;
   }
   .pay-block .cell.head.short {
     height: 28px;
-    line-height: 28px;
   }
   .pay-block .cell.head.mid {
     top: 28px;
     height: 28px;
-    line-height: 28px;
   }
   .pay-block .cell.num {
     top: 56px;
     height: 40px;
-    line-height: 40px;
     font-variant-numeric: tabular-nums;
     font-weight: 700;
     font-size: 13px;
+    line-height: 1.2;
     background: #fff;
-  }
-  .pay-block .pay-edge {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: 2px;
-    background: #333;
   }
   .total-box {
     margin-top: 28px;
