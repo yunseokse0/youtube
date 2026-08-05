@@ -579,9 +579,9 @@ export function buildMemberPaymentStatementHtml(
     : `<div class="logo-placeholder"></div>`;
 
   /**
-   * 엑셀 10칸(각 10%) 비율:
-   * 후원금 0–20 | 수수료 20–40 | 부가세 40–60 | 순매출 60–80 | 정산금 80–100
-   * html2canvas는 table rowspan/grid를 자주 깨뜨려 absolute 배치 사용
+   * 엑셀 5열(각 20%) 비율:
+   * 후원금 | 수수료 | 부가세 | 순매출 | 정산금
+   * 셀 테두리 + 셀 중앙(가로·세로) 정렬
    */
   const channelBlock = (
     sectionTitle: string,
@@ -594,19 +594,36 @@ export function buildMemberPaymentStatementHtml(
     share: number
   ) => `
     <div class="section-bar">${escapeHtml(sectionTitle)}</div>
-    <div class="pay-block">
-      <div class="cell head tall" style="left:0%;width:20%">${escapeHtml(grossLabel)}</div>
-      <div class="cell head short" style="left:20%;width:40%">기본 공제</div>
-      <div class="cell head mid" style="left:20%;width:20%">플랫폼 수수료</div>
-      <div class="cell head mid" style="left:40%;width:20%">부가세</div>
-      <div class="cell head tall" style="left:60%;width:20%">순매출</div>
-      <div class="cell head tall" style="left:80%;width:20%">${escapeHtml(shareLabel)}</div>
-      <div class="cell num" style="left:0%;width:20%">${moneyCell(gross)}</div>
-      <div class="cell num" style="left:20%;width:20%">${moneyCell(fee)}</div>
-      <div class="cell num" style="left:40%;width:20%">${moneyCell(vat)}</div>
-      <div class="cell num" style="left:60%;width:20%">${moneyCell(net)}</div>
-      <div class="cell num" style="left:80%;width:20%">${moneyCell(share)}</div>
-    </div>`;
+    <table class="pay-table">
+      <colgroup>
+        <col style="width:20%" />
+        <col style="width:20%" />
+        <col style="width:20%" />
+        <col style="width:20%" />
+        <col style="width:20%" />
+      </colgroup>
+      <thead>
+        <tr>
+          <th rowspan="2">${escapeHtml(grossLabel)}</th>
+          <th colspan="2">기본 공제</th>
+          <th rowspan="2">순매출</th>
+          <th rowspan="2">${escapeHtml(shareLabel)}</th>
+        </tr>
+        <tr>
+          <th>플랫폼 수수료</th>
+          <th>부가세</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>${moneyCell(gross)}</td>
+          <td>${moneyCell(fee)}</td>
+          <td>${moneyCell(vat)}</td>
+          <td>${moneyCell(net)}</td>
+          <td>${moneyCell(share)}</td>
+        </tr>
+      </tbody>
+    </table>`;
 
   return `<!DOCTYPE html>
 <html lang="ko">
@@ -682,53 +699,43 @@ export function buildMemberPaymentStatementHtml(
     line-height: 34px;
     font-size: 14px;
     font-weight: 800;
-    text-align: center;
+    text-align: left;
     background: #e8e8e8;
-    border: none;
+    border: 1px solid #333;
+    border-bottom: none;
   }
-  .pay-block {
-    position: relative;
+  table.pay-table {
     width: 100%;
-    height: 98px;
-    border: none;
+    border-collapse: collapse;
+    border-spacing: 0;
+    table-layout: fixed;
+    border: 1px solid #333;
     background: #fff;
+    margin: 0;
   }
-  .pay-block .cell {
-    position: absolute;
-    top: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  table.pay-table th,
+  table.pay-table td {
+    border: 1px solid #333;
     text-align: center;
-    border: none;
+    vertical-align: middle;
     word-break: keep-all;
-    overflow: hidden;
-    padding: 0 4px;
+    padding: 8px 4px;
   }
-  .pay-block .cell.head {
+  table.pay-table thead th {
     background: #f3f3f3;
     font-weight: 700;
     font-size: 11px;
-    line-height: 1.25;
-  }
-  .pay-block .cell.head.tall {
-    height: 56px;
-  }
-  .pay-block .cell.head.short {
+    line-height: 1.3;
     height: 28px;
   }
-  .pay-block .cell.head.mid {
-    top: 28px;
-    height: 28px;
-  }
-  .pay-block .cell.num {
-    top: 56px;
-    height: 40px;
+  table.pay-table tbody td {
     font-variant-numeric: tabular-nums;
     font-weight: 700;
     font-size: 13px;
     line-height: 1.2;
     background: #fff;
+    height: 40px;
+    padding: 10px 4px;
   }
   .total-box {
     margin-top: 28px;

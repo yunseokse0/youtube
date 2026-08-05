@@ -143,17 +143,19 @@ describe("computeFullSettlementSummary (정산서.xlsx 전체 정산서)", () =>
 });
 
 describe("buildMemberPaymentStatementHtml layout", () => {
-  it("uses fixed pay-block cells aligned to Excel column ratios", () => {
+  it("uses bordered centered pay-table with Excel column ratios", () => {
     const html = buildMemberPaymentStatementHtml(record(), member());
-    expect(html).toContain('class="pay-block"');
-    expect(html).not.toContain('class="pay-edge"');
-    expect(html).toContain("left:0%;width:20%");
-    expect(html).toContain("left:80%;width:20%");
-    expect(html).toContain("justify-content: center");
-    expect(html).toContain(".pay-block .cell");
-    expect(html).toMatch(/\.pay-block\s*\{[^}]*border:\s*none/s);
-    expect(html).toMatch(/\.pay-block \.cell\s*\{[^}]*border:\s*none/s);
-    expect(html).not.toContain("rowspan");
+    expect(html).toContain('class="pay-table"');
+    expect(html).not.toContain('class="pay-block"');
+    expect(html).toContain('style="width:20%"');
+    expect(html).toContain("기본 공제");
+    expect(html).toContain("플랫폼 수수료");
+    expect(html).toContain('rowspan="2"');
+    expect(html).toContain('colspan="2"');
+    expect(html).toMatch(/table\.pay-table\s*\{[^}]*border:\s*1px solid #333/s);
+    expect(html).toMatch(/table\.pay-table th,\s*table\.pay-table td\s*\{[^}]*border:\s*1px solid #333/s);
+    expect(html).toMatch(/table\.pay-table th,\s*table\.pay-table td\s*\{[^}]*text-align:\s*center/s);
+    expect(html).toMatch(/table\.pay-table th,\s*table\.pay-table td\s*\{[^}]*vertical-align:\s*middle/s);
     expect(html).toContain("1,150,730");
   });
 
