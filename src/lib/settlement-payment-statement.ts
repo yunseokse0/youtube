@@ -461,53 +461,62 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
   });
 }
 
+function isMostlyBlankCanvas(canvas: HTMLCanvasElement): boolean {
+  try {
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return true;
+    const w = Math.min(canvas.width, 80);
+    const h = Math.min(canvas.height, 80);
+    if (w < 2 || h < 2) return true;
+    const { data } = ctx.getImageData(0, 0, w, h);
+    let dark = 0;
+    for (let i = 0; i < data.length; i += 16) {
+      if (data[i]! < 250 || data[i + 1]! < 250 || data[i + 2]! < 250) dark += 1;
+    }
+    return dark < 8;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 데모와 동일하게 브라우저가 그린 DOM을 캡처.
+ * 기본 html2canvas 텍스트 엔진은 한글 셀 세로정렬을 아래로 밀므로
+ * foreignObjectRendering(브라우저 네이티브 페인트)을 우선 사용.
+ */
 async function renderHtmlSheetToCanvas(
   html: string,
   widthPx: number
 ): Promise<HTMLCanvasElement> {
   const { default: html2canvas } = await import("html2canvas");
-  const iframe = document.createElement("iframe");
-  iframe.setAttribute("aria-hidden", "true");
-  iframe.style.cssText = [
+  const host = document.createElement("div");
+  host.setAttribute("aria-hidden", "true");
+  host.style.cssText = [
     "position:fixed",
-    "left:-10000px",
+    "left:0",
     "top:0",
     `width:${widthPx}px`,
-    "height:1400px",
-    "border:0",
-    "opacity:0",
+    "background:#fff",
+    "opacity:0.01",
     "pointer-events:none",
+    "z-index:-1",
+    "overflow:hidden",
   ].join(";");
-  document.body.appendChild(iframe);
+
+  const parsed = new DOMParser().parseFromString(html, "text/html");
+  const styleEl = parsed.querySelector("style");
+  const sheetEl = parsed.querySelector(".sheet");
+  if (!sheetEl) throw new Error("pdf_sheet_unavailable");
+  if (styleEl) host.appendChild(document.importNode(styleEl, true));
+  const sheet = document.importNode(sheetEl, true) as HTMLElement;
+  host.appendChild(sheet);
+  document.body.appendChild(host);
 
   try {
-    const doc = iframe.contentDocument;
-    if (!doc) throw new Error("pdf_iframe_unavailable");
-    doc.open();
-    doc.write(html);
-    doc.close();
-
-    await new Promise<void>((resolve) => {
-      let done = false;
-      const finish = () => {
-        if (done) return;
-        done = true;
-        resolve();
-      };
-      if (doc.readyState === "complete") {
-        finish();
-        return;
-      }
-      iframe.addEventListener("load", () => finish(), { once: true });
-      window.setTimeout(finish, 120);
-    });
-
-    if (doc.fonts?.ready) {
-      await withTimeout(doc.fonts.ready.then(() => true), 800, true);
+    if (document.fonts?.ready) {
+      await withTimeout(document.fonts.ready.then(() => true), 800, true);
     }
-
-    const target = (doc.querySelector(".sheet") as HTMLElement) || doc.body;
-    const imgs = Array.from(target.querySelectorAll("img"));
+    const imgs = Array.from(sheet.querySelectorAll("img"));
     await Promise.all(
       imgs.map((img) =>
         img.complete
@@ -523,29 +532,31 @@ async function renderHtmlSheetToCanvas(
       )
     );
 
-    // 반드시 await — return html2canvas(...)만 하면 finally가 캡처 전에 iframe을 제거함
-    // scale 3: 데모(벡터 폰트)에 가깝게 선명도 확보 (2는 PDF 뷰어에서 뭉개짐)
-    const canvas = await html2canvas(target, {
+    // 레이아웃 확정
+    void sheet.offsetHeight;
+
+    const common = {
       scale: 3,
-      backgroundColor: "#ffffff",
+      backgroundColor: "#ffffff" as const,
       useCORS: true,
       windowWidth: widthPx,
       scrollX: 0,
       scrollY: 0,
-      onclone: (clonedDoc) => {
-        clonedDoc.querySelectorAll<HTMLElement>(".vmid").forEach((el) => {
-          el.style.display = "table-cell";
-          el.style.verticalAlign = "middle";
-        });
-        clonedDoc.querySelectorAll<HTMLElement>(".vbox").forEach((el) => {
-          el.style.display = "table";
-          el.style.width = "100%";
-        });
-      },
+    };
+
+    let canvas = await html2canvas(sheet, {
+      ...common,
+      foreignObjectRendering: true,
     });
+    if (isMostlyBlankCanvas(canvas)) {
+      canvas = await html2canvas(sheet, {
+        ...common,
+        foreignObjectRendering: false,
+      });
+    }
     return canvas;
   } finally {
-    iframe.remove();
+    host.remove();
   }
 }
 
@@ -640,7 +651,7 @@ export async function recordToPaymentStatementPdfBlob(
 }
 
 
-/** 인쇄/PDF용 단페이지 HTML (지급 정산서 시트와 동일 구조) */
+/** 인쇄/PDF용 단페이지 HTML — public/payment-statement-demo.html 과 동일 양식 */
 export function buildMemberPaymentStatementHtml(
   record: SettlementRecord,
   member: SettlementMemberResult,
@@ -655,18 +666,6 @@ export function buildMemberPaymentStatementHtml(
     ? `<img class="logo-img" src="${escapeHtml(logo)}" alt="로고" />`
     : `<div class="logo-placeholder"></div>`;
 
-  /**
-   * 엑셀 5열(각 20%) 비율.
-   * html2canvas는 td의 line-height/flex 세로중앙을 종종 아래로 그림.
-   * 모든 칸을 display:table + table-cell(vertical-align:middle)로 통일.
-   */
-  const v = (inner: string, h: number, align: "center" | "left" = "center") =>
-    `<div class="vbox" style="height:${h}px"><div class="vmid${align === "left" ? " vmid-l" : ""}">${inner}</div></div>`;
-  const td = (cls: string, inner: string, h: number, attrs = "") =>
-    `<td class="${cls}"${attrs ? ` ${attrs}` : ""}>${v(inner, h)}</td>`;
-  const th = (cls: string, inner: string, h: number, attrs = "") =>
-    `<th class="${cls}"${attrs ? ` ${attrs}` : ""}>${v(inner, h)}</th>`;
-
   const channelBlock = (
     sectionTitle: string,
     grossLabel: string,
@@ -677,7 +676,7 @@ export function buildMemberPaymentStatementHtml(
     net: number,
     share: number
   ) => `
-    <div class="section-bar">${v(escapeHtml(sectionTitle), 34, "left")}</div>
+    <div class="section-bar">${escapeHtml(sectionTitle)}</div>
     <table class="pay-table">
       <colgroup>
         <col style="width:20%" />
@@ -688,31 +687,32 @@ export function buildMemberPaymentStatementHtml(
       </colgroup>
       <thead>
         <tr>
-          ${th("h", escapeHtml(grossLabel), 56)}
+          <th class="h">${escapeHtml(grossLabel)}</th>
           <th colspan="2" class="deduct">
             <table class="deduct-inner">
-              <tr>${td("d-top", "기본 공제", 28, 'colspan="2"')}</tr>
+              <tr><td class="d-top" colspan="2">기본 공제</td></tr>
               <tr>
-                ${td("d-bot", "플랫폼 수수료", 28)}
-                ${td("d-bot", "부가세", 28)}
+                <td class="d-bot">플랫폼 수수료</td>
+                <td class="d-bot">부가세</td>
               </tr>
             </table>
           </th>
-          ${th("h", "순매출", 56)}
-          ${th("h", escapeHtml(shareLabel), 56)}
+          <th class="h">순매출</th>
+          <th class="h">${escapeHtml(shareLabel)}</th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          ${td("n", moneyCell(gross), 42)}
-          ${td("n", moneyCell(fee), 42)}
-          ${td("n", moneyCell(vat), 42)}
-          ${td("n", moneyCell(net), 42)}
-          ${td("n", moneyCell(share), 42)}
+          <td class="n">${moneyCell(gross)}</td>
+          <td class="n">${moneyCell(fee)}</td>
+          <td class="n">${moneyCell(vat)}</td>
+          <td class="n">${moneyCell(net)}</td>
+          <td class="n">${moneyCell(share)}</td>
         </tr>
       </tbody>
     </table>`;
 
+  // CSS/마크업은 데모 HTML과 동일 — 값만 멤버별로 주입
   return `<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -734,16 +734,12 @@ export function buildMemberPaymentStatementHtml(
   }
   .title {
     text-align: center;
-    margin: 4px 0 14px;
-  }
-  .title-text {
-    display: inline-block;
     font-size: 28px;
     font-weight: 800;
     letter-spacing: 0.12em;
-    line-height: 1.2;
-    padding-bottom: 6px;
-    border-bottom: 2px solid #111;
+    margin: 4px 0 14px;
+    text-decoration: underline;
+    text-underline-offset: 6px;
   }
   .header-row {
     display: flex;
@@ -773,40 +769,25 @@ export function buildMemberPaymentStatementHtml(
     width: 96px;
     height: 96px;
   }
-  /* html2canvas 세로중앙: line-height/flex 대신 table-cell */
-  .vbox {
-    display: table;
-    width: 100%;
-    table-layout: fixed;
-    border-collapse: collapse;
-  }
-  .vmid {
-    display: table-cell;
-    vertical-align: middle;
-    text-align: center;
-    line-height: 1.2;
-    width: 100%;
-    padding: 0 4px;
-  }
-  .vmid-l {
-    text-align: left;
-    padding: 0 10px;
-  }
   .meta table { border-collapse: collapse; font-size: 13px; }
   .meta td {
     border: 1px solid #333;
     height: 30px;
-    padding: 0;
-    vertical-align: top;
+    line-height: 30px;
+    padding: 0 10px;
+    text-align: center;
+    vertical-align: middle;
   }
   .meta td.k { background: #efefef; font-weight: 700; width: 88px; }
   .meta td.v { min-width: 140px; }
   .section-bar {
     margin: 18px 0 0;
+    padding: 0 10px;
     height: 34px;
-    padding: 0;
+    line-height: 34px;
     font-size: 14px;
     font-weight: 800;
+    text-align: left;
     background: #e8e8e8;
     border: 1px solid #333;
     border-bottom: none;
@@ -830,16 +811,19 @@ export function buildMemberPaymentStatementHtml(
   table.total-table td,
   table.deduct-inner td {
     border: 1px solid #333;
+    text-align: center;
+    vertical-align: middle;
     word-break: keep-all;
-    padding: 0;
-    vertical-align: top;
-    line-height: normal;
+    padding: 0 4px;
   }
   table.pay-table thead th.h {
     background: #f3f3f3;
     font-weight: 700;
     font-size: 11px;
     height: 56px;
+    line-height: 56px;
+    padding: 0 4px;
+    vertical-align: middle;
     white-space: nowrap;
   }
   table.pay-table thead th.deduct {
@@ -855,11 +839,17 @@ export function buildMemberPaymentStatementHtml(
     font-size: 11px;
     border: none;
     border-bottom: 1px solid #333;
-    padding: 0;
+    vertical-align: middle;
+    text-align: center;
+    padding: 0 2px;
   }
-  table.deduct-inner td.d-top { height: 28px; }
+  table.deduct-inner td.d-top {
+    height: 28px;
+    line-height: 28px;
+  }
   table.deduct-inner td.d-bot {
     height: 28px;
+    line-height: 28px;
     border-bottom: none;
     border-right: 1px solid #333;
     width: 50%;
@@ -867,13 +857,15 @@ export function buildMemberPaymentStatementHtml(
   table.deduct-inner tr:last-child td.d-bot:last-child {
     border-right: none;
   }
-  table.deduct-inner .vmid { padding: 0 2px; }
   table.pay-table tbody td.n {
     font-variant-numeric: tabular-nums;
     font-weight: 700;
     font-size: 13px;
     background: #fff;
     height: 42px;
+    line-height: 42px;
+    padding: 0 4px;
+    vertical-align: middle;
   }
   table.total-table {
     margin-top: 28px;
@@ -881,22 +873,31 @@ export function buildMemberPaymentStatementHtml(
   table.total-table td.left {
     width: 60%;
     height: 72px;
+    line-height: 72px;
     font-size: 18px;
     font-weight: 800;
     background: #efefef;
+    vertical-align: middle;
+    padding: 0 4px;
   }
   table.total-table td.cap {
     width: 40%;
     height: 28px;
+    line-height: 28px;
     font-size: 12px;
     font-weight: 700;
     background: #f7f7f7;
+    vertical-align: middle;
+    padding: 0 4px;
   }
   table.total-table td.amt {
     height: 44px;
+    line-height: 44px;
     font-size: 22px;
     font-weight: 800;
     font-variant-numeric: tabular-nums;
+    vertical-align: middle;
+    padding: 0 4px;
   }
   .thanks {
     margin-top: 40px;
@@ -915,18 +916,18 @@ export function buildMemberPaymentStatementHtml(
 </head>
 <body>
   <div class="sheet">
-    <div class="title"><span class="title-text">지급 정산서</span></div>
+    <div class="title">지급 정산서</div>
     <div class="header-row">
       <div class="logo-wrap">${logoHtml}</div>
       <div class="meta">
         <table>
           <tr>
-            ${td("k", "방송일", 30)}
-            ${td("v", escapeHtml(s.broadcastDateLabel), 30)}
+            <td class="k">방송일</td>
+            <td class="v">${escapeHtml(s.broadcastDateLabel)}</td>
           </tr>
           <tr>
-            ${td("k", "스트리머명", 30)}
-            ${td("v", escapeHtml(s.streamerName), 30)}
+            <td class="k">스트리머명</td>
+            <td class="v">${escapeHtml(s.streamerName)}</td>
           </tr>
         </table>
       </div>
@@ -956,11 +957,11 @@ export function buildMemberPaymentStatementHtml(
 
     <table class="total-table">
       <tr>
-        ${td("left", "총 정산 금액", 72, 'rowspan="2"')}
-        ${td("cap", `(A+B)-(원천세 ${escapeHtml(withholdPct)}%)`, 28)}
+        <td class="left" rowspan="2">총 정산 금액</td>
+        <td class="cap">(A+B)-(원천세 ${escapeHtml(withholdPct)}%)</td>
       </tr>
       <tr>
-        ${td("amt", moneyCell(s.payout), 44)}
+        <td class="amt">${moneyCell(s.payout)}</td>
       </tr>
     </table>
 
