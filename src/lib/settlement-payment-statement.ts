@@ -524,8 +524,9 @@ async function renderHtmlSheetToCanvas(
     );
 
     // 반드시 await — return html2canvas(...)만 하면 finally가 캡처 전에 iframe을 제거함
+    // scale 3: 데모(벡터 폰트)에 가깝게 선명도 확보 (2는 PDF 뷰어에서 뭉개짐)
     const canvas = await html2canvas(target, {
-      scale: 2,
+      scale: 3,
       backgroundColor: "#ffffff",
       useCORS: true,
       windowWidth: widthPx,
@@ -540,24 +541,31 @@ async function renderHtmlSheetToCanvas(
 
 async function htmlToPdfBlob(html: string, orientation: "p" | "l" = "p"): Promise<Blob> {
   const { jsPDF } = await import("jspdf");
-  const widthPx = orientation === "l" ? 1123 : 794;
+  // 시트(680px)와 동일 폭으로 캡처 — 여백 있는 794 iframe은 레이아웃이 데모와 달라 보임
+  const widthPx = orientation === "l" ? 1123 : 680;
   const canvas = await renderHtmlSheetToCanvas(html, widthPx);
   const pdf = new jsPDF({ orientation, unit: "mm", format: "a4" });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
-  const margin = 6;
-  const imgW = pageW - margin * 2;
+  const margin = 12;
+  const maxW = pageW - margin * 2;
+  const maxH = pageH - margin * 2;
+  const imgW = maxW;
   const imgH = (canvas.height * imgW) / canvas.width;
-  const y = Math.max(margin, (pageH - Math.min(imgH, pageH - margin * 2)) / 2);
+  const drawH = Math.min(imgH, maxH);
+  const drawW = imgH > maxH ? (canvas.width * drawH) / canvas.height : imgW;
+  // 데모처럼 상단부터 배치 (세로 중앙 정렬하면 위아래 빈 공간이 커져 양식이 달라 보임)
+  const x = margin + (maxW - drawW) / 2;
+  const y = margin;
   pdf.addImage(
     canvas.toDataURL("image/png"),
     "PNG",
-    margin,
+    x,
     y,
-    imgW,
-    Math.min(imgH, pageH - margin * 2),
+    drawW,
+    drawH,
     undefined,
-    "FAST"
+    "NONE"
   );
   const out = pdf.output("blob");
   return out instanceof Blob ? out : new Blob([out], { type: "application/pdf" });
@@ -594,23 +602,27 @@ export async function recordToPaymentStatementPdfBlob(
   const pdf = new jsPDF({ orientation: "p", unit: "mm", format: "a4" });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
-  const margin = 6;
+  const margin = 12;
   for (let i = 0; i < members.length; i += 1) {
     const html = buildMemberPaymentStatementHtml(record, members[i]!, options);
-    const canvas = await renderHtmlSheetToCanvas(html, 794);
-    const imgW = pageW - margin * 2;
+    const canvas = await renderHtmlSheetToCanvas(html, 680);
+    const maxW = pageW - margin * 2;
+    const maxH = pageH - margin * 2;
+    const imgW = maxW;
     const imgH = (canvas.height * imgW) / canvas.width;
+    const drawH = Math.min(imgH, maxH);
+    const drawW = imgH > maxH ? (canvas.width * drawH) / canvas.height : imgW;
     if (i > 0) pdf.addPage();
-    const y = Math.max(margin, (pageH - Math.min(imgH, pageH - margin * 2)) / 2);
+    const x = margin + (maxW - drawW) / 2;
     pdf.addImage(
       canvas.toDataURL("image/png"),
       "PNG",
+      x,
       margin,
-      y,
-      imgW,
-      Math.min(imgH, pageH - margin * 2),
+      drawW,
+      drawH,
       undefined,
-      "FAST"
+      "NONE"
     );
   }
   const out = pdf.output("blob");
