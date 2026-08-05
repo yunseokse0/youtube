@@ -49,3 +49,76 @@ export function isExampleToonationLinkKey(input: string): boolean {
   const key = extractToonationLinkKey(input) || String(input || "").trim();
   return key === EXAMPLE_TOONATION_LINK_KEY;
 }
+
+/** localStorage 키 기본명 — 반드시 계정 id를 붙여 사용 */
+export const TOONATION_LS_ALERTBOX = "donationAutomation.toonation.alertboxUrl";
+export const TOONATION_LS_SOCKET = "donationAutomation.toonation.socketEnabled";
+export const TOONATION_LS_OWNER = "donationAutomation.toonation.ownerName";
+
+export function toonationSettingStorageKey(base: string, userId: string): string {
+  const uid = String(userId || "").trim();
+  if (!uid) return base;
+  return `${base}:${uid}`;
+}
+
+export function readToonationAlertboxFromLocal(userId: string): string {
+  if (typeof window === "undefined" || !userId) return "";
+  try {
+    const scoped = window.localStorage.getItem(toonationSettingStorageKey(TOONATION_LS_ALERTBOX, userId)) || "";
+    if (scoped) return isExampleToonationLinkKey(scoped) ? "" : scoped;
+    return "";
+  } catch {
+    return "";
+  }
+}
+
+export function readToonationSocketEnabledFromLocal(userId: string): boolean {
+  if (typeof window === "undefined" || !userId) return false;
+  try {
+    const v = window.localStorage.getItem(toonationSettingStorageKey(TOONATION_LS_SOCKET, userId));
+    if (v == null) return false;
+    return v !== "false";
+  } catch {
+    return false;
+  }
+}
+
+export function readToonationOwnerFromLocal(userId: string): string {
+  if (typeof window === "undefined" || !userId) return "";
+  try {
+    return window.localStorage.getItem(toonationSettingStorageKey(TOONATION_LS_OWNER, userId)) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function writeToonationSettingsToLocal(
+  userId: string,
+  values: { alertboxUrl?: string; socketEnabled?: boolean; ownerName?: string }
+): void {
+  if (typeof window === "undefined" || !userId) return;
+  try {
+    if (typeof values.socketEnabled === "boolean") {
+      window.localStorage.setItem(
+        toonationSettingStorageKey(TOONATION_LS_SOCKET, userId),
+        String(values.socketEnabled)
+      );
+    }
+    if (typeof values.alertboxUrl === "string") {
+      const key = toonationSettingStorageKey(TOONATION_LS_ALERTBOX, userId);
+      if (!values.alertboxUrl || isExampleToonationLinkKey(values.alertboxUrl)) {
+        window.localStorage.removeItem(key);
+      } else {
+        window.localStorage.setItem(key, values.alertboxUrl);
+      }
+    }
+    if (typeof values.ownerName === "string") {
+      window.localStorage.setItem(
+        toonationSettingStorageKey(TOONATION_LS_OWNER, userId),
+        values.ownerName
+      );
+    }
+  } catch {
+    // noop
+  }
+}

@@ -1,0 +1,123 @@
+/** 지급 정산서 로고 — 계정(userId)별 저장 */
+
+export const SETTLEMENT_LOGO_KEY = "excel-broadcast-settlement-logo-v1";
+
+export function settlementLogoStorageKey(userId?: string | null): string {
+  if (!userId) throw new Error("정산서 로고는 계정별로 저장됩니다. 로그인이 필요합니다.");
+  return `${SETTLEMENT_LOGO_KEY}:${userId}`;
+}
+
+export function loadSettlementLogoDataUrl(userId?: string | null): string | null {
+  if (typeof window === "undefined" || !userId) return null;
+  try {
+    const raw = window.localStorage.getItem(settlementLogoStorageKey(userId));
+    if (!raw || !raw.startsWith("data:image/")) return null;
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
+export function saveSettlementLogoDataUrl(dataUrl: string | null, userId?: string | null): void {
+  if (typeof window === "undefined") return;
+  if (!userId) throw new Error("정산서 로고는 계정별로 저장됩니다. 로그인이 필요합니다.");
+  const key = settlementLogoStorageKey(userId);
+  try {
+    if (!dataUrl) {
+      window.localStorage.removeItem(key);
+      return;
+    }
+    window.localStorage.setItem(key, dataUrl);
+  } catch {
+    throw new Error("로고 저장에 실패했습니다. 더 작은 이미지를 사용해 주세요.");
+  }
+}
+
+function loadImageElement(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("이미지를 불러오지 못했습니다."));
+    img.src = src;
+  });
+}
+
+/** 업로드 파일을 정산서용 data URL로 변환(최대 360px, PNG) */
+export async function fileToSettlementLogoDataUrl(file: File, maxSide = 360): Promise<string> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("이미지 파일만 업로드할 수 있습니다.");
+  }
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const img = await loadImageElement(objectUrl);
+    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+    const w = Math.max(1, Math.round((img.naturalWidth || 1) * scale));
+    const h = Math.max(1, Math.round((img.naturalHeight || 1) * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("캔버스를 사용할 수 없습니다.");
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas.toDataURL("image/png");
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+/** 서버에서 계정별 로고 불러와 로컬에도 캐시 */
+export async function fetchSettlementLogoFromApi(userId: string): Promise<string | null> {
+  try {
+    const res = await fetch(`/api/settlements/logo?user=${encodeURIComponent(userId)}&_t=${Date.now()}`, {
+      cache: "no-store",
+      credentials: "include",
+    });
+    if (!res.ok) return loadSettlementLogoDataUrl(userId);
+    const data = (await res.json()) as { dataUrl?: string | null };
+    const url = typeof data?.dataUrl === "string" && data.dataUrl.startsWith("data:image/") ? data.dataUrl : null;
+    if (url) {
+      try {
+        saveSettlementLogoDataUrl(url, userId);
+      } catch {}
+    }
+    return url;
+  } catch {
+    return loadSettlementLogoDataUrl(userId);
+  }
+}
+
+export async function saveSettlementLogoToApi(dataUrl: string, userId: string): Promise<boolean> {
+  saveSettlementLogoDataUrl(dataUrl, userId);
+  try {
+    const res = await fetch(`/api/settlements/logo?user=${encodeURIComponent(userId)}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dataUrl }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function deleteSettlementLogoFromApi(userId: string): Promise<boolean> {
+  saveSettlementLogoDataUrl(null, userId);
+  try {
+    const res = await fetch(`/api/settlements/logo?user=${encodeURIComponent(userId)}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** 이 계정의 로고만 사용(공용 기본 로고 없음) */
+export async function resolveSettlementLogoDataUrl(userId?: string | null): Promise<string | null> {
+  if (!userId) return null;
+  const stored = loadSettlementLogoDataUrl(userId);
+  if (stored) return stored;
+  return fetchSettlementLogoFromApi(userId);
+}

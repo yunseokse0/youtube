@@ -304,40 +304,74 @@ export function buildFullSettlementHtml(record: SettlementRecord): string {
   @page { size: A4 landscape; margin: 8mm; }
   body { margin: 0; font-family: "Malgun Gothic","Apple SD Gothic Neo",sans-serif; color:#111; background:#fff; }
   .sheet { padding: 6mm; }
-  .title { text-align:center; font-size:22px; font-weight:800; margin: 4px 0 10px; }
-  .date { text-align:center; font-size:13px; margin-bottom: 12px; }
+  .title { text-align:center; font-size:22px; font-weight:800; margin: 4px 0 10px; line-height: 1.2; }
+  .date { text-align:center; font-size:13px; margin-bottom: 12px; line-height: 1.2; }
   table.main { width:100%; border-collapse:collapse; font-size:9px; table-layout:fixed; }
   table.main th, table.main td {
     border:1px solid #444;
-    padding:0 2px;
+    padding: 0 2px;
     text-align:center;
-    vertical-align:middle;
-    height: 32px;
-    line-height: 1.2;
+    vertical-align: middle;
+    height: 34px;
+    line-height: 34px;
   }
   table.main th {
     background:#f3f3f3;
     font-weight:700;
-    height: 40px;
+    height: 42px;
+    line-height: 14px;
+    white-space: normal;
+    padding: 4px 2px;
+    vertical-align: middle;
   }
   table.main tfoot td {
     font-size:8px;
-    height: 26px;
-    vertical-align:middle;
+    height: 28px;
+    line-height: 28px;
+    padding: 0 2px;
   }
   table.main tfoot .lab { background:#f7f7f7; font-weight:700; }
   table.main tfoot .num { font-weight:700; font-variant-numeric: tabular-nums; }
   .num { font-variant-numeric: tabular-nums; }
-  .foot { margin-top: 14px; display:grid; grid-template-columns: 1fr 1fr 1.1fr; gap: 16px; font-size:11px; align-items:start; }
-  .foot table { width:100%; border-collapse:collapse; }
-  .foot td {
-    border:1px solid #555;
-    padding:0 6px;
-    height: 28px;
-    vertical-align:middle;
+  .foot {
+    margin-top: 14px;
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    font-size: 12px;
   }
-  .foot td.k { background:#f7f7f7; font-weight:700; width:48%; text-align:center; }
-  .foot td.v { text-align:center; font-variant-numeric: tabular-nums; font-weight:700; }
+  .foot-col { flex: 1; min-width: 0; }
+  .foot-col.wide { flex: 1.15; }
+  .foot-row {
+    position: relative;
+    height: 34px;
+    border: 1px solid #555;
+    margin-top: -1px;
+    background: #fff;
+  }
+  .foot-col > .foot-row:first-child { margin-top: 0; }
+  .foot-k, .foot-v {
+    position: absolute;
+    top: 0;
+    height: 34px;
+    line-height: 34px;
+    text-align: center;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .foot-k {
+    left: 0;
+    width: 48%;
+    background: #f7f7f7;
+    font-weight: 700;
+    border-right: 1px solid #555;
+  }
+  .foot-v {
+    left: 48%;
+    width: 52%;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
 </style></head><body>
 <div class="sheet">
   <div class="title">${escapeHtml(s.title)}</div>
@@ -380,19 +414,19 @@ export function buildFullSettlementHtml(record: SettlementRecord): string {
     </tfoot>
   </table>
   <div class="foot">
-    <table>
-      <tr><td class="k">총매출</td><td class="v">${moneyCell(s.totalGrossDonation)}</td></tr>
-    </table>
-    <table>
-      <tr><td class="k">세금합계</td><td class="v">${moneyCell(s.taxGrandTotal)}</td></tr>
-    </table>
-    <table>
-      <tr><td class="k">제작진</td><td class="v">${moneyCell(s.productionShare)}</td></tr>
-      <tr><td class="k">국고 50%</td><td class="v">${s.treasuryShare ? moneyCell(s.treasuryShare) : ""}</td></tr>
-      <tr><td class="k">합계</td><td class="v">${moneyCell(s.remittanceSubtotal)}</td></tr>
-      <tr><td class="k">부가세 10%</td><td class="v">${moneyCell(s.productionVat)}</td></tr>
-      <tr><td class="k">총 송금금액</td><td class="v">${moneyCell(s.productionTransfer)}</td></tr>
-    </table>
+    <div class="foot-col">
+      <div class="foot-row"><div class="foot-k">총매출</div><div class="foot-v">${moneyCell(s.totalGrossDonation)}</div></div>
+    </div>
+    <div class="foot-col">
+      <div class="foot-row"><div class="foot-k">세금합계</div><div class="foot-v">${moneyCell(s.taxGrandTotal)}</div></div>
+    </div>
+    <div class="foot-col wide">
+      <div class="foot-row"><div class="foot-k">제작진</div><div class="foot-v">${moneyCell(s.productionShare)}</div></div>
+      <div class="foot-row"><div class="foot-k">국고 50%</div><div class="foot-v">${s.treasuryShare ? moneyCell(s.treasuryShare) : ""}</div></div>
+      <div class="foot-row"><div class="foot-k">합계</div><div class="foot-v">${moneyCell(s.remittanceSubtotal)}</div></div>
+      <div class="foot-row"><div class="foot-k">부가세 10%</div><div class="foot-v">${moneyCell(s.productionVat)}</div></div>
+      <div class="foot-row"><div class="foot-k">총 송금금액</div><div class="foot-v">${moneyCell(s.productionTransfer)}</div></div>
+    </div>
   </div>
 </div>
 </body></html>`;
@@ -413,6 +447,18 @@ async function htmlToPdfBlob(html: string, orientation: "p" | "l" = "p"): Promis
   document.body.appendChild(host);
   try {
     const target = (host.querySelector(".sheet") as HTMLElement) || host;
+    const imgs = Array.from(target.querySelectorAll("img"));
+    await Promise.all(
+      imgs.map(
+        (img) =>
+          img.complete
+            ? Promise.resolve()
+            : new Promise<void>((resolve) => {
+                img.onload = () => resolve();
+                img.onerror = () => resolve();
+              })
+      )
+    );
     const canvas = await html2canvas(target, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
     const pdf = new jsPDF({ orientation, unit: "mm", format: "a4" });
     const pageW = pdf.internal.pageSize.getWidth();
@@ -443,11 +489,17 @@ export async function recordToFullSettlementPdfBlob(record: SettlementRecord): P
   return htmlToPdfBlob(buildFullSettlementHtml(record), "l");
 }
 
+export type PaymentStatementPdfOptions = {
+  issuerLine?: string;
+  thankYouMessage?: string;
+  logoDataUrl?: string | null;
+};
+
 /** 멤버 1명 지급 정산서 PDF */
 export async function memberToPaymentStatementPdfBlob(
   record: SettlementRecord,
   member: SettlementMemberResult,
-  options?: { issuerLine?: string; thankYouMessage?: string }
+  options?: PaymentStatementPdfOptions
 ): Promise<Blob> {
   return htmlToPdfBlob(buildMemberPaymentStatementHtml(record, member, options), "p");
 }
@@ -455,7 +507,7 @@ export async function memberToPaymentStatementPdfBlob(
 /** @deprecated 일괄 다운로드 대신 memberToPaymentStatementPdfBlob 사용 */
 export async function recordToPaymentStatementPdfBlob(
   record: SettlementRecord,
-  options?: { issuerLine?: string; thankYouMessage?: string }
+  options?: PaymentStatementPdfOptions
 ): Promise<Blob> {
   const members = listPayableMembers(record);
   if (members.length === 0) throw new Error("지급 대상 멤버가 없습니다.");
@@ -477,7 +529,20 @@ export async function recordToPaymentStatementPdfBlob(
     host.innerHTML = html;
     document.body.appendChild(host);
     try {
-      const canvas = await html2canvas(host.querySelector(".sheet") as HTMLElement, {
+      const target = host.querySelector(".sheet") as HTMLElement;
+      const imgs = Array.from(target.querySelectorAll("img"));
+      await Promise.all(
+        imgs.map(
+          (img) =>
+            img.complete
+              ? Promise.resolve()
+              : new Promise<void>((resolve) => {
+                  img.onload = () => resolve();
+                  img.onerror = () => resolve();
+                })
+        )
+      );
+      const canvas = await html2canvas(target, {
         scale: 2,
         backgroundColor: "#ffffff",
         useCORS: true,
@@ -502,12 +567,16 @@ export async function recordToPaymentStatementPdfBlob(
 export function buildMemberPaymentStatementHtml(
   record: SettlementRecord,
   member: SettlementMemberResult,
-  options?: { issuerLine?: string; thankYouMessage?: string }
+  options?: PaymentStatementPdfOptions
 ): string {
   const s = computeMemberPaymentStatement(record, member);
   const issuer = options?.issuerLine ?? PAYMENT_STATEMENT_DEFAULTS.issuerLine;
   const thanks = options?.thankYouMessage ?? PAYMENT_STATEMENT_DEFAULTS.thankYouMessage;
   const withholdPct = (s.withholdingRate * 100).toFixed(1).replace(/\.0$/, "");
+  const logo = String(options?.logoDataUrl || "").trim();
+  const logoHtml = logo
+    ? `<img class="logo-img" src="${escapeHtml(logo)}" alt="로고" />`
+    : `<div class="logo-placeholder"></div>`;
 
   /**
    * 엑셀 10칸(각 10%) 비율:
@@ -526,17 +595,18 @@ export function buildMemberPaymentStatementHtml(
   ) => `
     <div class="section-bar">${escapeHtml(sectionTitle)}</div>
     <div class="pay-block">
-      <div class="cell head" style="left:0%;width:20%;top:0;height:56px">${escapeHtml(grossLabel)}</div>
-      <div class="cell head" style="left:20%;width:40%;top:0;height:28px">기본 공제</div>
-      <div class="cell head" style="left:20%;width:20%;top:28px;height:28px">플랫폼 수수료</div>
-      <div class="cell head" style="left:40%;width:20%;top:28px;height:28px">부가세</div>
-      <div class="cell head" style="left:60%;width:20%;top:0;height:56px">순매출</div>
-      <div class="cell head" style="left:80%;width:20%;top:0;height:56px">${escapeHtml(shareLabel)}</div>
-      <div class="cell num" style="left:0%;width:20%;top:56px;height:40px">${moneyCell(gross)}</div>
-      <div class="cell num" style="left:20%;width:20%;top:56px;height:40px">${moneyCell(fee)}</div>
-      <div class="cell num" style="left:40%;width:20%;top:56px;height:40px">${moneyCell(vat)}</div>
-      <div class="cell num" style="left:60%;width:20%;top:56px;height:40px">${moneyCell(net)}</div>
-      <div class="cell num" style="left:80%;width:20%;top:56px;height:40px">${moneyCell(share)}</div>
+      <div class="cell head tall" style="left:0%;width:20%">${escapeHtml(grossLabel)}</div>
+      <div class="cell head short" style="left:20%;width:40%">기본 공제</div>
+      <div class="cell head mid" style="left:20%;width:20%">플랫폼 수수료</div>
+      <div class="cell head mid" style="left:40%;width:20%">부가세</div>
+      <div class="cell head tall" style="left:60%;width:20%">순매출</div>
+      <div class="cell head tall" style="left:80%;width:20%">${escapeHtml(shareLabel)}</div>
+      <div class="cell num" style="left:0%;width:20%">${moneyCell(gross)}</div>
+      <div class="cell num" style="left:20%;width:20%">${moneyCell(fee)}</div>
+      <div class="cell num" style="left:40%;width:20%">${moneyCell(vat)}</div>
+      <div class="cell num" style="left:60%;width:20%">${moneyCell(net)}</div>
+      <div class="cell num" style="left:80%;width:20%">${moneyCell(share)}</div>
+      <div class="pay-edge"></div>
     </div>`;
 
   return `<!DOCTYPE html>
@@ -563,22 +633,54 @@ export function buildMemberPaymentStatementHtml(
     font-size: 28px;
     font-weight: 800;
     letter-spacing: 0.12em;
-    margin: 4px 0 18px;
+    margin: 4px 0 14px;
     text-decoration: underline;
     text-underline-offset: 6px;
   }
-  .meta {
+  .header-row {
     display: flex;
-    justify-content: flex-end;
-    margin-bottom: 22px;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+    min-height: 88px;
+  }
+  .logo-wrap {
+    width: 96px;
+    height: 96px;
+    flex: 0 0 96px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .logo-img {
+    max-width: 96px;
+    max-height: 96px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    display: block;
+  }
+  .logo-placeholder {
+    width: 96px;
+    height: 96px;
   }
   .meta table { border-collapse: collapse; font-size: 13px; }
-  .meta td { padding: 5px 10px; border: 1px solid #333; }
-  .meta td.k { background: #efefef; font-weight: 700; width: 88px; text-align: center; }
-  .meta td.v { min-width: 140px; text-align: center; }
+  .meta td {
+    padding: 0 10px;
+    border: 1px solid #333;
+    height: 30px;
+    line-height: 30px;
+    text-align: center;
+    vertical-align: middle;
+  }
+  .meta td.k { background: #efefef; font-weight: 700; width: 88px; }
+  .meta td.v { min-width: 140px; }
   .section-bar {
     margin: 18px 0 0;
-    padding: 8px 10px;
+    padding: 0 10px;
+    height: 34px;
+    line-height: 34px;
     font-size: 14px;
     font-weight: 800;
     background: #e8e8e8;
@@ -588,18 +690,15 @@ export function buildMemberPaymentStatementHtml(
   .pay-block {
     position: relative;
     width: 100%;
-    height: 96px;
-    border: 1px solid #333;
-    border-top: none;
+    height: 98px;
+    border-left: 1px solid #333;
+    border-right: 1px solid #333;
     background: #fff;
   }
   .pay-block .cell {
     position: absolute;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    top: 0;
     text-align: center;
-    padding: 2px 4px;
     border-right: 1px solid #333;
     border-bottom: 1px solid #333;
     word-break: keep-all;
@@ -609,18 +708,42 @@ export function buildMemberPaymentStatementHtml(
     background: #f3f3f3;
     font-weight: 700;
     font-size: 11px;
-    line-height: 1.2;
+  }
+  .pay-block .cell.head.tall {
+    height: 56px;
+    line-height: 56px;
+  }
+  .pay-block .cell.head.short {
+    height: 28px;
+    line-height: 28px;
+  }
+  .pay-block .cell.head.mid {
+    top: 28px;
+    height: 28px;
+    line-height: 28px;
   }
   .pay-block .cell.num {
+    top: 56px;
+    height: 40px;
+    line-height: 40px;
     font-variant-numeric: tabular-nums;
     font-weight: 700;
     font-size: 13px;
+    background: #fff;
+  }
+  .pay-block .pay-edge {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: #333;
   }
   .total-box {
     margin-top: 28px;
     position: relative;
     width: 100%;
-    height: 72px;
+    height: 74px;
     border: 1px solid #333;
   }
   .total-box .left {
@@ -628,10 +751,9 @@ export function buildMemberPaymentStatementHtml(
     left: 0;
     top: 0;
     width: 60%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    height: 72px;
+    line-height: 72px;
+    text-align: center;
     font-size: 18px;
     font-weight: 800;
     background: #efefef;
@@ -643,9 +765,8 @@ export function buildMemberPaymentStatementHtml(
     top: 0;
     width: 40%;
     height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    line-height: 28px;
+    text-align: center;
     font-size: 12px;
     font-weight: 700;
     background: #f7f7f7;
@@ -657,9 +778,8 @@ export function buildMemberPaymentStatementHtml(
     top: 28px;
     width: 40%;
     height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    line-height: 44px;
+    text-align: center;
     font-size: 22px;
     font-weight: 800;
     font-variant-numeric: tabular-nums;
@@ -682,11 +802,14 @@ export function buildMemberPaymentStatementHtml(
 <body>
   <div class="sheet">
     <div class="title">지급 정산서</div>
-    <div class="meta">
-      <table>
-        <tr><td class="k">방송일</td><td class="v">${escapeHtml(s.broadcastDateLabel)}</td></tr>
-        <tr><td class="k">스트리머명</td><td class="v">${escapeHtml(s.streamerName)}</td></tr>
-      </table>
+    <div class="header-row">
+      <div class="logo-wrap">${logoHtml}</div>
+      <div class="meta">
+        <table>
+          <tr><td class="k">방송일</td><td class="v">${escapeHtml(s.broadcastDateLabel)}</td></tr>
+          <tr><td class="k">스트리머명</td><td class="v">${escapeHtml(s.streamerName)}</td></tr>
+        </table>
+      </div>
     </div>
 
     ${channelBlock(

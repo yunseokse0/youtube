@@ -116,4 +116,8 @@ export {
   isExampleToonationLinkKey,
   isToonationLinkKey,
   normalizeToonationAlertboxUrl,
+  readToonationAlertboxFromLocal,
+  readToonationOwnerFromLocal,
+  readToonationSocketEnabledFromLocal,
+  writeToonationSettingsToLocal,
 } from "./link-key";

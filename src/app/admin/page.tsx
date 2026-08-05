@@ -172,9 +172,13 @@ import {
   fetchToonationListenerStatus,
   isExampleToonationLinkKey,
   normalizeToonationAlertboxUrl,
+  readToonationAlertboxFromLocal,
+  readToonationOwnerFromLocal,
+  readToonationSocketEnabledFromLocal,
   stopToonationListener,
   syncToonationListenerFromBrowser,
   toonationListenerStatusFromServer,
+  writeToonationSettingsToLocal,
   type ToonationListenerStatus,
 } from "@/lib/donation/toonation/listener";
 import {
@@ -496,42 +500,19 @@ export default function AdminPage() {
   const [donorAmount, setDonorAmount] = useState("");
   const [donorMemberId, setDonorMemberId] = useState<string | null>(null);
   const [donorTarget, setDonorTarget] = useState<DonorTarget>("account");
-  const [toonationSocketEnabled, setToonationSocketEnabled] = useState(() => {
-    if (typeof window === "undefined") return true;
-    try {
-      return window.localStorage.getItem("donationAutomation.toonation.socketEnabled") !== "false";
-    } catch {
-      return true;
-    }
-  });
+  const [toonationSocketEnabled, setToonationSocketEnabled] = useState(false);
   const [toonationListenerStatus, setToonationListenerStatus] = useState<ToonationListenerStatus | null>(null);
   const [toonationListenerMeta, setToonationListenerMeta] = useState<{
     lastDonationAt?: number;
     lastEventAt?: number;
   }>({});
-  const [toonationAlertboxUrl, setToonationAlertboxUrl] = useState(() => {
-    if (typeof window === "undefined") return "";
-    try {
-      const urlRaw = window.localStorage.getItem("donationAutomation.toonation.alertboxUrl") || "";
-      const envUrl = (process.env.NEXT_PUBLIC_TOONATION_ALERTBOX_URL || "").trim();
-      const envKey = (process.env.NEXT_PUBLIC_TOONATION_LINK_KEY || "").trim();
-      const candidate = urlRaw || envKey || envUrl || "";
-      /** 구버전 기본 예시키는 빈 값으로 — 타 PC가 서버 연동키를 덮지 않게 */
-      return isExampleToonationLinkKey(candidate) && !envKey && !envUrl ? "" : candidate;
-    } catch {
-      return "";
-    }
-  });
-  const [toonationOwnerName, setToonationOwnerName] = useState(() => {
-    if (typeof window === "undefined") return "";
-    try {
-      return window.localStorage.getItem("donationAutomation.toonation.ownerName") || "";
-    } catch {
-      return "";
-    }
-  });
+  /** 계정 로드 전·신규 계정은 빈 연동키로 시작(타 계정 LS 상속 금지) */
+  const [toonationAlertboxUrl, setToonationAlertboxUrl] = useState("");
+  const [toonationOwnerName, setToonationOwnerName] = useState("");
   /** 서버 리스너 설정을 읽기 전에는 POST로 덮지 않음 */
   const [toonationSettingsHydrated, setToonationSettingsHydrated] = useState(false);
+  /** persist/sync는 이 계정에 대해 hydrate가 끝난 뒤에만 수행(계정 전환 시 키 오염 방지) */
+  const toonationHydratedUserIdRef = useRef<string | null>(null);
   const toonationResolvedAlertboxUrl = useMemo(
     () => normalizeToonationAlertboxUrl(toonationAlertboxUrl.trim()),
     [toonationAlertboxUrl]
@@ -5622,11 +5603,20 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!user?.id) {
+      toonationHydratedUserIdRef.current = null;
       setToonationSettingsHydrated(false);
+      setToonationAlertboxUrl("");
+      setToonationOwnerName("");
+      setToonationSocketEnabled(false);
       return;
     }
     let cancelled = false;
+    toonationHydratedUserIdRef.current = null;
     setToonationSettingsHydrated(false);
+    /** 계정 전환 직후: 이전 계정 값이 화면에 남지 않게 비움 → 이 계정 LS/서버만 로드 */
+    setToonationAlertboxUrl(readToonationAlertboxFromLocal(user.id));
+    setToonationSocketEnabled(readToonationSocketEnabledFromLocal(user.id));
+    setToonationOwnerName(readToonationOwnerFromLocal(user.id));
     void (async () => {
       try {
         const status = await fetchToonationListenerStatus(user.id);
@@ -5638,26 +5628,20 @@ export default function AdminPage() {
           setToonationSocketEnabled(status?.enabled !== false);
           const serverOwner = String(status?.ownerName || "").trim();
           if (serverOwner) setToonationOwnerName(serverOwner);
-          try {
-            window.localStorage.setItem("donationAutomation.toonation.alertboxUrl", serverKey);
-            window.localStorage.setItem(
-              "donationAutomation.toonation.socketEnabled",
-              String(status?.enabled !== false)
-            );
-            if (serverOwner) {
-              window.localStorage.setItem("donationAutomation.toonation.ownerName", serverOwner);
-            }
-          } catch {
-            // noop
-          }
-        } else {
-          /** 서버에 없으면 LS·env 유지. 예시키만 있으면 비움 */
-          setToonationAlertboxUrl((prev) => (isExampleToonationLinkKey(prev) ? "" : prev));
+          writeToonationSettingsToLocal(user.id, {
+            alertboxUrl: serverKey,
+            socketEnabled: status?.enabled !== false,
+            ownerName: serverOwner || undefined,
+          });
         }
+        /** 서버 키 없음(신규 계정): 이 계정 LS만 유지(보통 ""). 공용/타 계정 키는 읽지 않음 */
       } catch {
-        // 네트워크 실패 시 LS 값 유지
+        // 네트워크 실패 시 이 계정 LS만 유지(이미 위에서 로드)
       } finally {
-        if (!cancelled) setToonationSettingsHydrated(true);
+        if (!cancelled) {
+          toonationHydratedUserIdRef.current = user.id;
+          setToonationSettingsHydrated(true);
+        }
       }
     })();
     return () => {
@@ -5670,6 +5654,10 @@ export default function AdminPage() {
     try {
       window.localStorage.removeItem("donationAutomation.toonation.enabled");
       window.localStorage.removeItem("donationAutomation.toonation.socketDebug");
+      /** 구버전 공용 키 — 계정 간 키 오염 방지 */
+      window.localStorage.removeItem("donationAutomation.toonation.alertboxUrl");
+      window.localStorage.removeItem("donationAutomation.toonation.socketEnabled");
+      window.localStorage.removeItem("donationAutomation.toonation.ownerName");
     } catch {
       // noop
     }
@@ -5684,24 +5672,26 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!toonationSettingsHydrated) return;
+    if (!user?.id || !toonationSettingsHydrated) return;
+    if (toonationHydratedUserIdRef.current !== user.id) return;
+    writeToonationSettingsToLocal(user.id, {
+      alertboxUrl: toonationAlertboxUrl,
+      socketEnabled: toonationSocketEnabled,
+      ownerName: toonationOwnerName,
+    });
     try {
-      window.localStorage.setItem("donationAutomation.toonation.socketEnabled", String(toonationSocketEnabled));
-      if (!isExampleToonationLinkKey(toonationAlertboxUrl)) {
-        window.localStorage.setItem("donationAutomation.toonation.alertboxUrl", toonationAlertboxUrl);
-      }
-      window.localStorage.setItem("donationAutomation.toonation.ownerName", toonationOwnerName);
       window.localStorage.removeItem("donationAutomation.toonation.autoProcess");
     } catch {
       // noop
     }
-  }, [toonationAlertboxUrl, toonationOwnerName, toonationSettingsHydrated, toonationSocketEnabled]);
+  }, [toonationAlertboxUrl, toonationOwnerName, toonationSettingsHydrated, toonationSocketEnabled, user?.id]);
 
   useEffect(() => {
     const uid = user?.id || "";
     const normalized = toonationResolvedAlertboxUrl;
     /** 로그인 전·서버 설정 로드 전에는 서버 리스너를 덮지 않음 */
     if (!uid || !toonationSettingsHydrated) return;
+    if (toonationHydratedUserIdRef.current !== uid) return;
     if (normalized && isExampleToonationLinkKey(normalized)) {
       setToonationListenerStatus({ kind: "idle", message: "연동키를 입력하세요" });
       return;

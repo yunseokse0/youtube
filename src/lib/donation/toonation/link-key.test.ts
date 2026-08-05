@@ -4,6 +4,8 @@ import {
   extractToonationLinkKey,
   isExampleToonationLinkKey,
   normalizeToonationAlertboxUrl,
+  TOONATION_LS_ALERTBOX,
+  toonationSettingStorageKey,
 } from "./link-key";
 
 const KEY = "abc123def456ghi789jkl012mno345pq";
@@ -41,5 +43,14 @@ describe("normalizeToonationAlertboxUrl", () => {
       isExampleToonationLinkKey(`https://toon.at/widget/alertbox/${EXAMPLE_TOONATION_LINK_KEY}`)
     ).toBe(true);
     expect(isExampleToonationLinkKey(KEY)).toBe(false);
+  });
+
+  it("scopes toonation localStorage keys per account", () => {
+    expect(toonationSettingStorageKey(TOONATION_LS_ALERTBOX, "alice")).toBe(
+      `${TOONATION_LS_ALERTBOX}:alice`
+    );
+    expect(toonationSettingStorageKey(TOONATION_LS_ALERTBOX, "bob")).not.toBe(
+      toonationSettingStorageKey(TOONATION_LS_ALERTBOX, "alice")
+    );
   });
 });

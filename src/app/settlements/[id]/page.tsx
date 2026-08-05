@@ -12,6 +12,13 @@ import {
 } from "@/lib/settlement-payment-statement";
 import { downloadTextFile, downloadBlobFile } from "@/lib/download";
 import { loadDailyLog, loadDailyLogFromApi } from "@/lib/state";
+import {
+  deleteSettlementLogoFromApi,
+  fetchSettlementLogoFromApi,
+  fileToSettlementLogoDataUrl,
+  resolveSettlementLogoDataUrl,
+  saveSettlementLogoToApi,
+} from "@/lib/settlement-branding";
 
 function updateMemberBankInfo(
   records: SettlementRecord[],
@@ -40,6 +47,8 @@ export default function SettlementDetailPage() {
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const [fullPdfGenerating, setFullPdfGenerating] = useState(false);
   const [memberPdfId, setMemberPdfId] = useState<string | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -58,6 +67,7 @@ export default function SettlementDetailPage() {
         loadDailyLogFromApi(u.id).then((serverLog) => {
           if (serverLog) setDailyLog(serverLog as Record<string, DailyLogEntry[]>);
         });
+        void fetchSettlementLogoFromApi(u.id).then((logo) => setLogoPreview(logo));
       });
   }, [router]);
 
@@ -232,7 +242,8 @@ export default function SettlementDetailPage() {
     if (!record || memberPdfId) return;
     setMemberPdfId(m.memberId);
     try {
-      const blob = await memberToPaymentStatementPdfBlob(record, m);
+      const logoDataUrl = await resolveSettlementLogoDataUrl(user?.id);
+      const blob = await memberToPaymentStatementPdfBlob(record, m, { logoDataUrl });
       const safeName = (m.realName || m.name || m.memberId).replace(/[\\/:*?"<>|]/g, "_");
       await downloadBlobFile(`${record.title}-지급정산서-${safeName}.pdf`, blob);
     } catch (e) {
@@ -240,6 +251,34 @@ export default function SettlementDetailPage() {
       window.alert(msg);
     } finally {
       setMemberPdfId(null);
+    }
+  };
+
+  const onUploadLogo = async (file: File | null) => {
+    if (!file || !user) return;
+    try {
+      const dataUrl = await fileToSettlementLogoDataUrl(file);
+      const ok = await saveSettlementLogoToApi(dataUrl, user.id);
+      setLogoPreview(dataUrl);
+      if (!ok) {
+        window.alert("이 계정 로고를 기기에 저장했습니다. 서버 동기화는 실패했을 수 있습니다.");
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "로고 업로드에 실패했습니다.";
+      window.alert(msg);
+    } finally {
+      if (logoInputRef.current) logoInputRef.current.value = "";
+    }
+  };
+
+  const onResetLogo = async () => {
+    if (!user) return;
+    try {
+      await deleteSettlementLogoFromApi(user.id);
+      setLogoPreview(null);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "로고 삭제에 실패했습니다.";
+      window.alert(msg);
     }
   };
 
@@ -319,6 +358,43 @@ export default function SettlementDetailPage() {
             <button className="px-3 py-2 rounded bg-red-800 hover:bg-red-700 whitespace-nowrap" onClick={onDeleteRecord}>
               삭제
             </button>
+          </div>
+        </div>
+
+        <div className="rounded border border-white/10 bg-neutral-900/60 p-3 flex flex-wrap items-center gap-4">
+          <div className="text-sm font-semibold whitespace-nowrap">이 계정 지급정산서 로고</div>
+          <div className="w-16 h-16 rounded bg-black/40 border border-white/10 overflow-hidden flex items-center justify-center shrink-0">
+            {logoPreview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoPreview} alt="정산서 로고" className="max-w-full max-h-full object-contain" />
+            ) : (
+              <span className="text-[10px] text-neutral-500">미설정</span>
+            )}
+          </div>
+          <input
+            ref={logoInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={(e) => void onUploadLogo(e.target.files?.[0] || null)}
+          />
+          <button
+            type="button"
+            className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700 text-sm whitespace-nowrap"
+            onClick={() => logoInputRef.current?.click()}
+          >
+            로고 업로드
+          </button>
+          <button
+            type="button"
+            className="px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700 text-sm whitespace-nowrap disabled:opacity-50"
+            onClick={() => void onResetLogo()}
+            disabled={!logoPreview}
+          >
+            로고 삭제
+          </button>
+          <div className="text-xs text-neutral-400">
+            계정마다 다른 로고를 씁니다. 업로드한 로고만 이 계정 지급정산서 PDF에 들어갑니다.
           </div>
         </div>
 

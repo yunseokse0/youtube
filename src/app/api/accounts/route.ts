@@ -8,6 +8,7 @@ import {
   saveAccounts,
   type StoredAccount,
 } from "@/lib/accounts-storage";
+import { writeToonationListenerConfig } from "@/lib/donation/toonation/listener-config-store";
 import { upstashSetAppStateJson } from "../_shared/upstash-app-state";
 
 const STATE_KEY_BASE = "excel-broadcast-state-v1";
@@ -47,6 +48,14 @@ async function initAccountAppState(userId: string): Promise<void> {
   const key = `${STATE_KEY_BASE}:${userId}`;
   const seed = { ...defaultState(), updatedAt: Date.now() };
   await upstashSetAppStateJson(key, seed);
+  /** 신규 계정은 투네 연동키 비움(타 계정 키 상속 방지) */
+  await writeToonationListenerConfig({
+    userId,
+    alertboxUrl: "",
+    ownerName: "",
+    enabled: false,
+    updatedAt: Date.now(),
+  });
 }
 
 export async function GET(req: Request) {

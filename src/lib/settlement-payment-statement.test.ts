@@ -146,20 +146,31 @@ describe("buildMemberPaymentStatementHtml layout", () => {
   it("uses fixed pay-block cells aligned to Excel column ratios", () => {
     const html = buildMemberPaymentStatementHtml(record(), member());
     expect(html).toContain('class="pay-block"');
+    expect(html).toContain('class="pay-edge"');
     expect(html).toContain("left:0%;width:20%");
     expect(html).toContain("left:80%;width:20%");
     expect(html).not.toContain("rowspan");
     expect(html).toContain("1,150,730");
   });
+
+  it("embeds uploaded logo in header when provided", () => {
+    const html = buildMemberPaymentStatementHtml(record(), member(), {
+      logoDataUrl: "data:image/png;base64,abc",
+    });
+    expect(html).toContain('class="logo-img"');
+    expect(html).toContain("data:image/png;base64,abc");
+    expect(html).toContain('class="header-row"');
+  });
 });
 
 describe("buildFullSettlementHtml", () => {
-  it("omits income/local tax columns and centers cells", () => {
+  it("omits income/local tax columns and centers footer cells", () => {
     const html = buildFullSettlementHtml(record());
     expect(html).toContain("원천세");
     expect(html).toContain("정산금의 30%");
     expect(html).not.toContain(">소득세<");
     expect(html).not.toContain(">지방소득세<");
-    expect(html).toContain("vertical-align:middle");
+    expect(html).toContain('class="foot-row"');
+    expect(html).toContain("line-height: 34px");
   });
 });
