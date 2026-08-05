@@ -69,6 +69,7 @@ import {
   normalizeSigRolling,
   normalizeRouletteState,
   normalizeMemberPositions,
+  fitRankPositionLabelsToMemberCount,
   type OverlayConfig,
 } from "@/lib/state";
 import {
@@ -2793,6 +2794,10 @@ export default function AdminPage() {
           memberPositions: Object.fromEntries(
             Object.entries(prev.memberPositions || {}).filter(([k]) => k !== id)
           ),
+          rankPositionLabels: fitRankPositionLabelsToMemberCount(
+            prev.rankPositionLabels,
+            members.length
+          ),
           donors,
           sigMatch: nextSigMatch,
           mealMatch: nextMealMatch,
@@ -2825,10 +2830,15 @@ export default function AdminPage() {
     const base = (newMemberName || `멤버${state.members.length + 1}`).trim();
     const id = `m_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
     setState((prev: AppState) => {
+      const members = [...prev.members, { id, name: base, account: 0, toon: 0, contribution: 0, restroom: 0 }];
       const next: AppState = {
         ...prev,
-        members: [...prev.members, { id, name: base, account: 0, toon: 0, contribution: 0, restroom: 0 }],
+        members,
         memberPositions: { ...(prev.memberPositions || {}) },
+        rankPositionLabels: fitRankPositionLabelsToMemberCount(
+          prev.rankPositionLabels,
+          members.length
+        ),
         sigMatch: { ...(prev.sigMatch || {}), [id]: 0 },
         mealMatch: { ...(prev.mealMatch || {}), [id]: 0 },
         mealBattle: {
@@ -2856,7 +2866,18 @@ export default function AdminPage() {
 
   const updateMemberPositionMode = (mode: AppState["memberPositionMode"]) => {
     setState((prev: AppState) => {
-      const next: AppState = { ...prev, memberPositionMode: mode };
+      const next: AppState = {
+        ...prev,
+        memberPositionMode: mode,
+        ...(mode === "rankLinked"
+          ? {
+              rankPositionLabels: fitRankPositionLabelsToMemberCount(
+                prev.rankPositionLabels,
+                prev.members.length
+              ),
+            }
+          : {}),
+      };
       persistState(next, { includeDonationFields: true });
       return next;
     });
@@ -2877,8 +2898,11 @@ export default function AdminPage() {
 
   const updateRankPositionLabel = (index: number, value: string) => {
     setState((prev: AppState) => {
-      const labels = [...(prev.rankPositionLabels || ["대표", "이사", "부장", "과장", "대리", "사원"])];
-      while (labels.length <= index) labels.push("");
+      const labels = fitRankPositionLabelsToMemberCount(
+        prev.rankPositionLabels,
+        prev.members.length
+      );
+      if (index < 0 || index >= labels.length) return prev;
       labels[index] = value;
       const next: AppState = { ...prev, rankPositionLabels: labels };
       persistState(next, { includeDonationFields: true });
@@ -6562,10 +6586,11 @@ export default function AdminPage() {
                       </select>
                     </div>
                     <div className="text-xs text-neutral-400 mb-2">
-                      순위별 직급 라벨 (1위~12위). 대표 멤버를 지정하면 해당 멤버는 항상 대표로 고정됩니다.
+                      순위별 직급 라벨 (1위~{Math.max(1, state.members.length)}위 · 멤버 {state.members.length}명).
+                      대표 멤버를 지정하면 해당 멤버는 항상 대표로 고정됩니다.
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                      {Array.from({ length: 12 }).map((_, idx) => (
+                      {Array.from({ length: Math.max(1, state.members.length) }).map((_, idx) => (
                         <label key={`rank-label-${idx}`} className="grid grid-cols-[46px_1fr] items-center gap-2 text-xs text-neutral-300">
                           <span>{idx + 1}위</span>
                           <input

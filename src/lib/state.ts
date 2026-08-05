@@ -764,10 +764,29 @@ function normalizeMemberPositionMode(input: unknown): AppState["memberPositionMo
   return input === "rankLinked" ? "rankLinked" : "fixed";
 }
 
-function normalizeRankPositionLabels(input: unknown): string[] {
-  const fallback = ["대표", "", "", "", "", "", "", "", "", "", "", ""];
-  if (!Array.isArray(input)) return fallback;
-  return Array.from({ length: 12 }).map((_, idx) => String(input[idx] || "").trim());
+/** 순위 연동 직급 라벨 상한(멤버 수 연동, 비정상 배열 방지) */
+export const MAX_RANK_POSITION_LABELS = 100;
+
+/** 저장·로드용 — 길이 고정(12) 없이 입력 배열을 그대로 정규화 */
+export function normalizeRankPositionLabels(input: unknown): string[] {
+  if (!Array.isArray(input)) return ["대표"];
+  const labels = input
+    .map((x) => String(x ?? "").trim())
+    .slice(0, MAX_RANK_POSITION_LABELS);
+  return labels.length > 0 ? labels : ["대표"];
+}
+
+/** 멤버 수만큼 직급 라벨 슬롯을 맞춤(부족분은 빈 문자열, 초과분은 잘라냄) */
+export function fitRankPositionLabelsToMemberCount(
+  labels: string[] | null | undefined,
+  memberCount: number
+): string[] {
+  const n = Math.max(
+    1,
+    Math.min(MAX_RANK_POSITION_LABELS, Math.floor(Number(memberCount) || 1))
+  );
+  const src = normalizeRankPositionLabels(labels);
+  return Array.from({ length: n }, (_, i) => String(src[i] || "").trim());
 }
 
 function normalizeOverlayBodyImagePosition(input: unknown): OverlayConfig["bodyImagePosition"] {
@@ -879,7 +898,7 @@ export function defaultState(): AppState {
     members: defaultMembers(),
     memberPositions: {},
     memberPositionMode: "fixed",
-    rankPositionLabels: ["대표", "", "", "", "", "", "", "", "", "", "", ""],
+    rankPositionLabels: fitRankPositionLabelsToMemberCount(["대표"], defaultMembers().length),
     donorRankingsTheme: { ...DEFAULT_DONOR_RANKINGS_THEME },
     donorRankingsFullTheme: { ...DEFAULT_DONOR_RANKINGS_FULL_THEME },
     donorRankingsPresets: [],
@@ -1229,7 +1248,10 @@ export function loadState(userId?: string | null): AppState {
     data.members = (() => { const v = ensureMembers(data.members); return v.length > 0 ? v : defaultMembers().map(normalizeMember); })();
     data.memberPositions = normalizeMemberPositions((data as AppState).memberPositions, data.members);
     data.memberPositionMode = normalizeMemberPositionMode((data as AppState).memberPositionMode);
-    data.rankPositionLabels = normalizeRankPositionLabels((data as AppState).rankPositionLabels);
+    data.rankPositionLabels = fitRankPositionLabelsToMemberCount(
+      (data as AppState).rankPositionLabels,
+      data.members.length
+    );
     data.donorRankingsTheme = normalizeDonorRankingsTheme((data as AppState).donorRankingsTheme);
     data.donorRankingsFullTheme = normalizeDonorRankingsFullTheme((data as AppState).donorRankingsFullTheme);
     data.donorRankingsPresets = normalizeDonorRankingsPresets((data as AppState).donorRankingsPresets);
@@ -2615,7 +2637,10 @@ async function doLoadStateFromApi(
       data.members = (() => { const v = ensureMembers(data.members); return v.length > 0 ? v : defaultMembers().map(normalizeMember); })();
       data.memberPositions = normalizeMemberPositions((data as AppState).memberPositions, data.members);
       data.memberPositionMode = normalizeMemberPositionMode((data as AppState).memberPositionMode);
-      data.rankPositionLabels = normalizeRankPositionLabels((data as AppState).rankPositionLabels);
+      data.rankPositionLabels = fitRankPositionLabelsToMemberCount(
+        (data as AppState).rankPositionLabels,
+        data.members.length
+      );
       data.donorRankingsTheme = normalizeDonorRankingsTheme((data as AppState).donorRankingsTheme);
       data.donorRankingsFullTheme = normalizeDonorRankingsFullTheme((data as AppState).donorRankingsFullTheme);
       data.donorRankingsPresets = normalizeDonorRankingsPresets((data as AppState).donorRankingsPresets);

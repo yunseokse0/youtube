@@ -106,7 +106,11 @@ export function sortMembersForRanking(
 ): MemberRankingRow[] {
   const mode = options?.mode || "fixed";
   const orderIndex = buildMemberCreationOrderIndex(members || []);
-  const rankLabels = Array.from({ length: 12 }).map((_, idx) => String(options?.rankPositionLabels?.[idx] || "").trim());
+  const labelSrc = options?.rankPositionLabels || [];
+  const rankLabelCount = Math.max(1, (members || []).length, labelSrc.length);
+  const rankLabels = Array.from({ length: rankLabelCount }).map((_, idx) =>
+    String(labelSrc[idx] || "").trim()
+  );
   const rows: MemberRankingRow[] = (members || []).map((m) => {
     // 엑셀표(멤버 랭킹 표)는 100원 단위 버림 기준으로 집계한다.
     const accountAmount = floorToHundreds(safeAmount(m.account));
