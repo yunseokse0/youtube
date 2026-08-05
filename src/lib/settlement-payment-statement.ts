@@ -436,6 +436,31 @@ export function buildFullSettlementHtml(record: SettlementRecord): string {
  * 데모 HTML과 동일하게 전체 문서를 iframe에 로드한 뒤 캡처.
  * div.innerHTML에 전체 문서를 넣으면 style/레이아웃이 브라우저 미리보기와 달라짐.
  */
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const timer = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve(fallback);
+    }, ms);
+    void promise.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        resolve(fallback);
+      }
+    );
+  });
+}
+
 async function renderHtmlSheetToCanvas(
   html: string,
   widthPx: number
@@ -463,38 +488,43 @@ async function renderHtmlSheetToCanvas(
     doc.close();
 
     await new Promise<void>((resolve) => {
-      const done = () => resolve();
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        resolve();
+      };
       if (doc.readyState === "complete") {
-        done();
+        finish();
         return;
       }
-      iframe.addEventListener("load", () => done(), { once: true });
-      window.setTimeout(done, 120);
+      iframe.addEventListener("load", () => finish(), { once: true });
+      window.setTimeout(finish, 120);
     });
 
     if (doc.fonts?.ready) {
-      try {
-        await doc.fonts.ready;
-      } catch {
-        /* ignore */
-      }
+      await withTimeout(doc.fonts.ready.then(() => true), 800, true);
     }
 
     const target = (doc.querySelector(".sheet") as HTMLElement) || doc.body;
     const imgs = Array.from(target.querySelectorAll("img"));
     await Promise.all(
-      imgs.map(
-        (img) =>
-          img.complete
-            ? Promise.resolve()
-            : new Promise<void>((resolve) => {
+      imgs.map((img) =>
+        img.complete
+          ? Promise.resolve()
+          : withTimeout(
+              new Promise<void>((resolve) => {
                 img.onload = () => resolve();
                 img.onerror = () => resolve();
-              })
+              }),
+              2000,
+              undefined
+            )
       )
     );
 
-    return html2canvas(target, {
+    // 반드시 await — return html2canvas(...)만 하면 finally가 캡처 전에 iframe을 제거함
+    const canvas = await html2canvas(target, {
       scale: 2,
       backgroundColor: "#ffffff",
       useCORS: true,
@@ -502,8 +532,9 @@ async function renderHtmlSheetToCanvas(
       scrollX: 0,
       scrollY: 0,
     });
+    return canvas;
   } finally {
-    document.body.removeChild(iframe);
+    iframe.remove();
   }
 }
 
