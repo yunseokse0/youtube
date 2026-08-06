@@ -193,6 +193,11 @@ import {
   syncMemberTotalsFromDonors,
 } from "@/lib/donation/apply-donation-state";
 import { mergeDonationApplyBase, enrichStateBeforeAuthoritativeDonationSave } from "@/lib/donation/merge-donation-apply-base";
+import {
+  parseBulkDonationText,
+  resolveBulkDonationRows,
+  type ResolvedBulkDonationRow,
+} from "@/lib/donation/parse-bulk-account-donations";
 import { suggestMemberForDonationEvent } from "@/lib/donation/mapper";
 import { processDonationEvent, type ProcessDonationResult } from "@/lib/donation/processor";
 import {
@@ -506,6 +511,13 @@ export default function AdminPage() {
   const [dailyLog, setDailyLog] = useState<Record<string, DailyLogEntry[]>>({});
   const [donorName, setDonorName] = useState("");
   const [donorAmount, setDonorAmount] = useState("");
+  const [bulkDonationText, setBulkDonationText] = useState("");
+  const [bulkDonationBusy, setBulkDonationBusy] = useState(false);
+  const [bulkDonationPreview, setBulkDonationPreview] = useState<ResolvedBulkDonationRow[] | null>(null);
+  const [bulkDonationSkipped, setBulkDonationSkipped] = useState<
+    { lineNo: number; raw: string; reason: string }[]
+  >([]);
+  const [bulkDonationTarget, setBulkDonationTarget] = useState<DonorTarget>("account");
   const [donorMemberId, setDonorMemberId] = useState<string | null>(null);
   const [donorTarget, setDonorTarget] = useState<DonorTarget>("account");
   const [toonationSocketEnabled, setToonationSocketEnabled] = useState(false);
@@ -5326,6 +5338,162 @@ export default function AdminPage() {
         );
       }
     });
+  };
+
+  const previewBulkDonations = () => {
+    const parsed = parseBulkDonationText(bulkDonationText);
+    setBulkDonationTarget(parsed.defaultTarget);
+    setBulkDonationSkipped(parsed.skipped);
+    const resolved = resolveBulkDonationRows(
+      parsed.rows,
+      stateRef.current.members || [],
+      [],
+      stateRef.current.memberPositions
+    );
+    setBulkDonationPreview(resolved);
+  };
+
+  const applyBulkDonations = () => {
+    const preview =
+      bulkDonationPreview ??
+      resolveBulkDonationRows(
+        parseBulkDonationText(bulkDonationText).rows,
+        stateRef.current.members || [],
+        [],
+        stateRef.current.memberPositions
+      );
+    const matched = preview.filter((r) => r.matched && r.memberId);
+    const unmatched = preview.filter((r) => !r.matched || !r.memberId);
+    if (matched.length === 0) {
+      window.alert("멤버에 매칭된 줄이 없습니다. 멤버 이름(태호·홍쓰 등)을 확인해 주세요.");
+      return;
+    }
+    if (unmatched.length > 0) {
+      const sample = unmatched
+        .slice(0, 8)
+        .map((r) => `${r.lineNo}: ${r.raw}`)
+        .join("\n");
+      if (
+        !window.confirm(
+          `매칭 ${matched.length}건만 추가합니다.\n미매칭 ${unmatched.length}건은 건너뜁니다.\n\n${sample}${
+            unmatched.length > 8 ? "\n…" : ""
+          }\n\n계속할까요?`
+        )
+      ) {
+        return;
+      }
+    } else if (
+      !window.confirm(`계좌/투네 일괄 추가 ${matched.length}건을 반영할까요?`)
+    ) {
+      return;
+    }
+    const target =
+      bulkDonationPreview != null
+        ? bulkDonationTarget
+        : parseBulkDonationText(bulkDonationText).defaultTarget;
+    setBulkDonationBusy(true);
+    addDonorSaveChainRef.current = addDonorSaveChainRef.current
+      .catch(() => {})
+      .then(async () => {
+        donationAuthoritativeSaveUntilRef.current = Date.now() + 60_000;
+        const fresh = await loadStateFromApi(user?.id, { forceFull: true });
+        const localSnap = loadState(user?.id);
+        const hint = stateRef.current;
+        const baseMerged = enrichStateBeforeAuthoritativeDonationSave(hint, [localSnap, fresh]);
+        const nowTs = Date.now();
+        for (const [id, exp] of recentlyRemovedDonorIdsRef.current) {
+          if (exp < nowTs) recentlyRemovedDonorIdsRef.current.delete(id);
+        }
+        const removed = recentlyRemovedDonorIdsRef.current;
+        const baseDonors = normalizeDonorsArray(baseMerged.donors).filter((d) => !removed.has(d.id));
+        const resetAt = Math.max(
+          Number(baseMerged.settlementResetAt || 0),
+          Number(fresh?.settlementResetAt || 0),
+          Number(hint.settlementResetAt || 0)
+        );
+        const now = Date.now();
+        const newDonors: Donor[] = matched.map((row, i) => ({
+          id: `d_bulk_${now}_${i}_${Math.random().toString(36).slice(2, 6)}`,
+          name: row.donorName.replace(/\s+/g, "") || "무명",
+          amount: row.amount,
+          memberId: row.memberId!,
+          at: now + i,
+          target,
+        }));
+        let mealParticipants = baseMerged.mealBattle?.participants || hint.mealBattle?.participants || [];
+        const syncMode = baseMerged.donationSyncMode || hint.donationSyncMode || "mealBattle";
+        if (syncMode === "mealBattle") {
+          for (const d of newDonors) {
+            mealParticipants = applyMealBattleDonationToParticipants(
+              mealParticipants,
+              d.memberId,
+              d.amount,
+              1,
+              d.at,
+              mealBattleUsesRawDonationScore(baseMerged.mealBattle ?? hint.mealBattle)
+            );
+          }
+        }
+        const next: AppState = syncMemberTotalsFromDonors({
+          ...baseMerged,
+          settlementResetAt: resetAt || baseMerged.settlementResetAt,
+          donors: rebumpDonorsPastSettlementReset([...baseDonors, ...newDonors], resetAt),
+          donorRankingsUpdatedAt: now,
+          updatedAt: now,
+          mealBattle: {
+            ...baseMerged.mealBattle,
+            participants: mealParticipants,
+          },
+        });
+        const preserved = markAuthoritativeDonationSave(
+          { serverUpdatedAt: next.updatedAt },
+          next,
+          { replaceDonors: true }
+        );
+        setState(preserved);
+        const saved = await saveStateAsync(preserved, user?.id, { donorsAuthoritative: true });
+        if (saved.ok) {
+          const serverAt =
+            typeof saved.serverUpdatedAt === "number" && Number.isFinite(saved.serverUpdatedAt)
+              ? saved.serverUpdatedAt
+              : Number(preserved.updatedAt || 0);
+          const bumped: AppState = {
+            ...preserved,
+            updatedAt: Math.max(Number(preserved.updatedAt || 0), serverAt),
+            donorRankingsUpdatedAt: Math.max(
+              Number(preserved.donorRankingsUpdatedAt || 0),
+              serverAt
+            ),
+          };
+          stateRef.current = bumped;
+          stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, bumped.updatedAt);
+          lastAppliedRemoteUpdatedAtRef.current = Math.max(
+            lastAppliedRemoteUpdatedAtRef.current,
+            bumped.updatedAt
+          );
+          donationAuthoritativeSaveUntilRef.current = Date.now() + 45_000;
+          try {
+            window.localStorage.setItem(storageKey(user?.id), JSON.stringify(bumped));
+          } catch {}
+          notifyBroadcastStateLocalUpdated(user?.id, bumped.updatedAt);
+          setState(bumped);
+          setSyncStatus(saved.storageFallback ? "error" : "synced");
+          setBulkDonationText("");
+          setBulkDonationPreview(null);
+          setBulkDonationSkipped([]);
+          window.alert(
+            `일괄 추가 완료: ${matched.length}건` +
+              (unmatched.length > 0 ? ` (미매칭 ${unmatched.length}건 제외)` : "") +
+              (saved.storageFallback ? "\n(서버 저장 실패 — 이 PC에만 반영)" : "")
+          );
+        } else {
+          setSyncStatus(
+            typeof navigator !== "undefined" && !navigator.onLine ? "local" : "error"
+          );
+          window.alert("일괄 추가 저장에 실패했습니다.");
+        }
+      })
+      .finally(() => setBulkDonationBusy(false));
   };
 
   const fetchUnmatchedEvents = useCallback(async () => {
@@ -10547,6 +10715,84 @@ export default function AdminPage() {
                 >
                   합산 추가
                 </button>
+              </div>
+              <div className="mt-4 rounded border border-emerald-500/25 bg-emerald-500/5 p-3 space-y-2">
+                <div className="text-xs font-semibold text-emerald-200">계좌·투네 일괄 붙여넣기</div>
+                <div className="text-[11px] text-neutral-400 leading-snug">
+                  첫 줄 <code className="text-emerald-200/90">계좌</code> 또는{" "}
+                  <code className="text-emerald-200/90">투네</code> · 각 줄{" "}
+                  <code className="text-neutral-300">후원자 멤버 금액</code>
+                  <br />
+                  예: <span className="text-neutral-300">안녕 태호 300000</span> · 멤버는 태호→BT태호, 자하→이자하, 비서→연비서처럼 짧게 써도 됩니다.
+                </div>
+                <textarea
+                  className="w-full min-h-[140px] px-3 py-2 rounded bg-neutral-950 border border-white/10 text-sm font-mono"
+                  name="bulkDonationPaste"
+                  placeholder={"계좌\n안녕 태호 300000\n연이 홍쓰 50000\n익명 연비서 15000"}
+                  value={bulkDonationText}
+                  onChange={(e) => {
+                    setBulkDonationText(e.target.value);
+                    setBulkDonationPreview(null);
+                  }}
+                  disabled={bulkDonationBusy}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 rounded bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold disabled:opacity-50"
+                    onClick={previewBulkDonations}
+                    disabled={bulkDonationBusy || !bulkDonationText.trim()}
+                  >
+                    미리보기·멤버 매칭
+                  </button>
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold disabled:opacity-50"
+                    onClick={applyBulkDonations}
+                    disabled={bulkDonationBusy || !bulkDonationText.trim()}
+                  >
+                    {bulkDonationBusy ? "반영 중…" : "일괄 합산 추가"}
+                  </button>
+                </div>
+                {bulkDonationPreview && (
+                  <div className="max-h-48 overflow-auto rounded border border-white/10 bg-black/30 text-[11px]">
+                    <table className="w-full">
+                      <thead className="sticky top-0 bg-neutral-900 text-neutral-400">
+                        <tr>
+                          <th className="p-1 text-left">줄</th>
+                          <th className="p-1 text-left">후원자</th>
+                          <th className="p-1 text-left">멤버</th>
+                          <th className="p-1 text-right">금액</th>
+                          <th className="p-1 text-left">매칭</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bulkDonationPreview.map((r) => (
+                          <tr
+                            key={`${r.lineNo}-${r.raw}`}
+                            className={r.matched ? "text-neutral-200" : "text-amber-300"}
+                          >
+                            <td className="p-1">{r.lineNo}</td>
+                            <td className="p-1">{r.donorName}</td>
+                            <td className="p-1">
+                              {r.matched ? r.memberName : `${r.memberHint} (미매칭)`}
+                            </td>
+                            <td className="p-1 text-right">{r.amount.toLocaleString("ko-KR")}</td>
+                            <td className="p-1">{r.matched ? "OK" : "확인 필요"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="p-2 text-neutral-500 border-t border-white/5">
+                      대상: {bulkDonationTarget === "toon" ? "투네" : "계좌"} · 매칭{" "}
+                      {bulkDonationPreview.filter((r) => r.matched).length}/
+                      {bulkDonationPreview.length}
+                      {bulkDonationSkipped.length > 0
+                        ? ` · 형식오류 ${bulkDonationSkipped.length}`
+                        : ""}
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="text-sm text-neutral-400 mt-2">입력값에 콤마/문자 포함되어도 숫자만 인식</div>
               <div className="mt-4 rounded border border-cyan-500/20 bg-cyan-500/5 p-3 space-y-3">
