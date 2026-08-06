@@ -55,7 +55,7 @@ function memberMaps(record: SettlementRecord) {
   return { nameById, realById };
 }
 
-/** 정산 기록에 스냅샷이 없으면 해당 날짜 daily log에서 복원 */
+/** 정산 시점 후원 스냅샷 기준 · 없으면 해당 날짜 daily log에서 복원 */
 export function resolveSettlementDonors(
   record: SettlementRecord,
   dailyLog?: Record<string, DailyLogEntry[]>
@@ -72,6 +72,63 @@ export function resolveSettlementDonors(
     .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
   const best = beforeOrAt[0] ?? entries[entries.length - 1];
   return best?.donors || [];
+}
+
+/**
+ * 편집용 후원 목록. 스냅샷·일일로그가 비어 있으면 멤버 원금으로 시드해
+ * 재계산 시 다른 멤버 금액이 0으로 날아가지 않게 한다.
+ */
+export function seedSettlementDonorsForEdit(
+  record: SettlementRecord,
+  dailyLog?: Record<string, DailyLogEntry[]>
+): Donor[] {
+  const existing = resolveSettlementDonors(record, dailyLog);
+  if (existing.length > 0) {
+    return existing.map((d) => ({
+      ...d,
+      id: String(d.id || "").trim() || `d_seed_${d.memberId}_${d.at}`,
+      name: String(d.name || "무명").replace(/\s+/g, "") || "무명",
+      amount: Math.max(0, Math.round(Number(d.amount) || 0)),
+      memberId: String(d.memberId || "").trim(),
+      at:
+        typeof d.at === "number" && Number.isFinite(d.at)
+          ? d.at
+          : record.createdAt,
+      target: d.target === "toon" ? "toon" : "account",
+    }));
+  }
+  const out: Donor[] = [];
+  for (const m of record.members || []) {
+    const account = Math.max(
+      0,
+      Math.round(Number(typeof m.accountSource === "number" ? m.accountSource : m.account) || 0)
+    );
+    const toon = Math.max(
+      0,
+      Math.round(Number(typeof m.toonSource === "number" ? m.toonSource : m.toon) || 0)
+    );
+    if (account > 0) {
+      out.push({
+        id: `seed_acc_${m.memberId}`,
+        name: "(정산원금)",
+        amount: account,
+        memberId: m.memberId,
+        at: record.createdAt,
+        target: "account",
+      });
+    }
+    if (toon > 0) {
+      out.push({
+        id: `seed_toon_${m.memberId}`,
+        name: "(정산원금)",
+        amount: toon,
+        memberId: m.memberId,
+        at: record.createdAt,
+        target: "toon",
+      });
+    }
+  }
+  return out;
 }
 
 export function aggregateMemberDonors(

@@ -1,14 +1,7 @@
 import { formatManThousand } from "@/lib/state";
 import { computeSettlement, isOperatingSettlementMember, type SigMatchRankingItem } from "@/lib/settlement-utils";
 import { computeMemberPaymentStatement } from "@/lib/settlement-payment-statement";
-import type {
-  Donor,
-  Member,
-  SettlementDeleteLog,
-  SettlementMemberRatioOverrides,
-  SettlementMemberResult,
-  SettlementRecord,
-} from "@/types";
+import type { Donor, Member, SettlementDeleteLog, SettlementMemberRatioOverrides, SettlementMemberResult, SettlementRecord } from "@/types";
 
 export const SETTLEMENT_RECORDS_KEY = "excel-broadcast-settlement-records-v1";
 export const SETTLEMENT_DELETE_LOGS_KEY = "excel-broadcast-settlement-delete-logs-v1";
@@ -420,6 +413,110 @@ export async function appendSigMatchIncentiveSettlementAndSync(
   saveSettlementRecords(next, userId);
   await saveSettlementRecordsToApi(next, userId);
   return rec;
+}
+
+function donorAmountSums(donors: Donor[]): Map<string, { account: number; toon: number }> {
+  const map = new Map<string, { account: number; toon: number }>();
+  for (const d of donors || []) {
+    const memberId = String(d.memberId || "").trim();
+    if (!memberId) continue;
+    const amount = Math.max(0, Math.round(Number(d.amount) || 0));
+    if (amount <= 0) continue;
+    const cur = map.get(memberId) || { account: 0, toon: 0 };
+    if ((d.target || "account") === "toon") cur.toon += amount;
+    else cur.account += amount;
+    map.set(memberId, cur);
+  }
+  return map;
+}
+
+/**
+ * 정산 기록의 후원 목록을 바꾼 뒤 computeSettlement 로 멤버·합계를 재계산.
+ * 은행/예금주·비율·부가세 옵션은 유지한다.
+ */
+export function recomputeSettlementFromDonors(
+  record: SettlementRecord,
+  donors: Donor[]
+): SettlementRecord {
+  const positions = record.memberPositionsAtSettlement || {};
+  const sums = donorAmountSums(donors);
+  const membersInput: Member[] = (record.members || []).map((m) => {
+    const s = sums.get(m.memberId) || { account: 0, toon: 0 };
+    return {
+      id: m.memberId,
+      name: m.name,
+      realName: m.realName || "",
+      operating: m.operating,
+      account: s.account,
+      toon: s.toon,
+      contribution: 0,
+    };
+  });
+
+  const overrides: SettlementMemberRatioOverrides = {};
+  for (const m of record.members || []) {
+    const accDiff =
+      typeof m.accountRatio === "number" &&
+      Math.abs(m.accountRatio - record.accountRatio) > 1e-9;
+    const toonDiff =
+      typeof m.toonRatio === "number" && Math.abs(m.toonRatio - record.toonRatio) > 1e-9;
+    if (accDiff || toonDiff || m.operating) {
+      overrides[m.memberId] = {
+        ...(accDiff ? { accountRatio: m.accountRatio } : {}),
+        ...(toonDiff ? { toonRatio: m.toonRatio } : {}),
+      };
+    }
+  }
+
+  const body = computeSettlement(
+    membersInput,
+    record.accountRatio,
+    record.toonRatio,
+    record.feeRate,
+    Object.keys(overrides).length > 0 ? overrides : undefined,
+    positions,
+    { vatIncluded: record.vatIncluded, vatRate: record.vatRate }
+  );
+
+  const prevById = new Map((record.members || []).map((m) => [m.memberId, m]));
+  const members = body.members.map((m) => {
+    const prev = prevById.get(m.memberId);
+    if (!prev) return m;
+    return {
+      ...m,
+      bankName: prev.bankName || m.bankName,
+      bankAccount: prev.bankAccount || m.bankAccount,
+      accountHolder: prev.accountHolder || m.accountHolder,
+    };
+  });
+
+  return {
+    ...record,
+    ...body,
+    members,
+    memberPositionsAtSettlement: positions,
+    donors: (donors || []).map((d) => ({
+      ...d,
+      id: String(d.id || "").trim() || `d_adj_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      name: String(d.name || "무명").replace(/\s+/g, "") || "무명",
+      amount: Math.max(0, Math.round(Number(d.amount) || 0)),
+      memberId: String(d.memberId || "").trim(),
+      at: typeof d.at === "number" && Number.isFinite(d.at) ? d.at : record.createdAt,
+      target: d.target === "toon" ? "toon" : "account",
+    })),
+  };
+}
+
+/** records 배열에서 해당 정산의 donors 를 교체·재계산 */
+export function updateSettlementRecordDonors(
+  records: SettlementRecord[],
+  recordId: string,
+  donors: Donor[]
+): SettlementRecord[] {
+  return (records || []).map((r) => {
+    if (r.id !== recordId) return r;
+    return recomputeSettlementFromDonors(r, donors);
+  });
 }
 
 export async function deleteSettlementRecordAndSync(recordId: string, reason = "manual", userId?: string | null): Promise<{ ok: boolean; deleted?: SettlementRecord }> {

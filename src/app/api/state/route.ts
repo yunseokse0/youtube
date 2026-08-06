@@ -634,9 +634,11 @@ export async function POST(req: Request) {
     }
     const body = (await req.json()) as Partial<AppState> & {
       donorsAuthoritative?: boolean;
+      donorsReplace?: boolean;
       settlementReset?: boolean;
     };
     const donorsAuthoritative = body.donorsAuthoritative === true;
+    const donorsReplace = body.donorsReplace === true;
     const settlementReset = body.settlementReset === true;
     const { base, token } = getRedisEnv();
     let existing: AppState | null = null;
@@ -696,7 +698,7 @@ export async function POST(req: Request) {
       donorsInPatch = false;
     }
     /**
-     * donorsAuthoritative 라도 삭제(부분집합 shrink)·정산 리셋이 아니면
+     * donorsAuthoritative 라도 삭제(shrink)·단체짠 나누기(donorsReplace)·정산 리셋이 아니면
      * Redis 기존 donors 와 union — 수동 합산이 직전 투네를 지우지 않게.
      */
     /**
@@ -723,6 +725,7 @@ export async function POST(req: Request) {
       !massEmptyAuthoritativeWipe &&
       (settlementReset ||
         donationInitReset ||
+        donorsReplace ||
         isIntentionalDonorListShrink(
           incomingDonorsFiltered,
           baseDonorsNorm,

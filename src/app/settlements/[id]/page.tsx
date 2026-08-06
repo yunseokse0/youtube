@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useParams } from "next/navigation";
-import { SettlementMemberResult, SettlementRecord, deleteSettlementRecordAndSync, getMembersForExport, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToReadableTxt, recordToTxt, saveSettlementRecords, saveSettlementRecordsToApi, toPaymentAlignedSettlement, toSettlementFormulaLine } from "@/lib/settlement";
-import { aggregateMemberDonors, recordToMemberDonorsCsv, recordToMemberDonorsXlsxBlob, resolveSettlementDonors, type DailyLogEntry } from "@/lib/settlement-donor-export";
+import { SettlementMemberResult, SettlementRecord, deleteSettlementRecordAndSync, getMembersForExport, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToReadableTxt, recordToTxt, saveSettlementRecords, saveSettlementRecordsToApi, toPaymentAlignedSettlement, toSettlementFormulaLine, updateSettlementRecordDonors } from "@/lib/settlement";
+import { aggregateMemberDonors, recordToMemberDonorsCsv, recordToMemberDonorsXlsxBlob, resolveSettlementDonors, seedSettlementDonorsForEdit, type DailyLogEntry } from "@/lib/settlement-donor-export";
 import {
   memberToPaymentStatementPdfBlob,
   recordToFullSettlementPdfBlob,
@@ -19,6 +19,8 @@ import {
   resolveSettlementLogoDataUrl,
   saveSettlementLogoToApi,
 } from "@/lib/settlement-branding";
+import { isNationalTreasuryMember } from "@/lib/donation/mapper";
+import type { Donor, DonorTarget } from "@/types";
 
 function updateMemberBankInfo(
   records: SettlementRecord[],
@@ -35,6 +37,16 @@ function updateMemberBankInfo(
   });
 }
 
+function isTreasurySettlementMember(
+  m: Pick<SettlementMemberResult, "memberId" | "name" | "realName">,
+  record: SettlementRecord
+): boolean {
+  return isNationalTreasuryMember(
+    { id: m.memberId, name: m.name, realName: m.realName },
+    record.memberPositionsAtSettlement || null
+  );
+}
+
 export default function SettlementDetailPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -48,8 +60,12 @@ export default function SettlementDetailPage() {
   const [fullPdfGenerating, setFullPdfGenerating] = useState(false);
   const [memberPdfId, setMemberPdfId] = useState<string | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [editingDonors, setEditingDonors] = useState<Donor[] | null>(null);
+  const [donorEditBusy, setDonorEditBusy] = useState(false);
+  const [donorEditMsg, setDonorEditMsg] = useState<string | null>(null);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
+  const donorEditDirtyRef = useRef(false);
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
       .then((r) => r.json())
@@ -71,12 +87,17 @@ export default function SettlementDetailPage() {
       });
   }, [router]);
 
-  // 디바이스 간 동기화
+  // 디바이스 간 동기화 (후원 편집 중에는 덮어쓰지 않음)
   useEffect(() => {
     if (!user) return;
-    const syncRecords = () => loadSettlementRecordsPreferApi(user.id).then(setRecords);
+    const syncRecords = () => {
+      if (donorEditDirtyRef.current) return;
+      void loadSettlementRecordsPreferApi(user.id).then(setRecords);
+    };
     const timer = window.setInterval(syncRecords, 3000);
-    const onVisibility = () => { if (document.visibilityState === "visible") void syncRecords(); };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") syncRecords();
+    };
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.clearInterval(timer);
@@ -90,9 +111,21 @@ export default function SettlementDetailPage() {
     () => (record ? resolveSettlementDonors(record, dailyLog) : []),
     [record, dailyLog]
   );
+
+  useEffect(() => {
+    if (!record) {
+      setEditingDonors(null);
+      donorEditDirtyRef.current = false;
+      return;
+    }
+    if (donorEditDirtyRef.current) return;
+    setEditingDonors(seedSettlementDonorsForEdit(record, dailyLog));
+  }, [record, dailyLog]);
+
+  const editableDonors = editingDonors ?? settlementDonors;
   const memberDonorSummary = useMemo(
-    () => (record ? aggregateMemberDonors(record, settlementDonors) : []),
-    [record, settlementDonors]
+    () => (record ? aggregateMemberDonors(record, editableDonors) : []),
+    [record, editableDonors]
   );
   const memberDonorSummaryByMember = useMemo(() => {
     const map = new Map<string, typeof memberDonorSummary>();
@@ -106,7 +139,7 @@ export default function SettlementDetailPage() {
 
   const onDownloadMemberDonorsXlsx = async () => {
     if (!record) return;
-    const blob = recordToMemberDonorsXlsxBlob(record, settlementDonors);
+    const blob = recordToMemberDonorsXlsxBlob(record, editableDonors);
     await downloadBlobFile(`${record.title}-멤버별후원자.xlsx`, blob);
   };
 
@@ -114,7 +147,7 @@ export default function SettlementDetailPage() {
     if (!record) return;
     await downloadTextFile(
       `${record.title}-멤버별후원자.csv`,
-      recordToMemberDonorsCsv(record, settlementDonors),
+      recordToMemberDonorsCsv(record, editableDonors),
       "text/csv;charset=utf-8"
     );
   };
@@ -125,6 +158,67 @@ export default function SettlementDetailPage() {
     setRecords(next);
     saveSettlementRecords(next, user.id);
     saveSettlementRecordsToApi(next, user.id).catch(() => {});
+  };
+
+  const persistDonorAdjustments = (nextDonors: Donor[]) => {
+    if (!records || !user || !record) return;
+    setDonorEditBusy(true);
+    donorEditDirtyRef.current = true;
+    setEditingDonors(nextDonors);
+    const next = updateSettlementRecordDonors(records, id, nextDonors);
+    setRecords(next);
+    saveSettlementRecords(next, user.id);
+    void saveSettlementRecordsToApi(next, user.id)
+      .then((ok) => {
+        setDonorEditMsg(ok ? "후원 조정 저장됨 · 정산 금액 재계산" : "로컬만 저장됨(서버 동기화 실패)");
+        window.setTimeout(() => setDonorEditMsg(null), 2500);
+        if (ok) donorEditDirtyRef.current = false;
+      })
+      .finally(() => setDonorEditBusy(false));
+  };
+
+  const patchEditableDonor = (donorId: string, patch: Partial<Donor>) => {
+    const base = editingDonors ?? seedSettlementDonorsForEdit(record!, dailyLog);
+    const next = base.map((d) => (d.id === donorId ? { ...d, ...patch } : d));
+    setEditingDonors(next);
+    donorEditDirtyRef.current = true;
+  };
+
+  const commitEditableDonor = (donorId: string, patch: Partial<Donor>) => {
+    const base = editingDonors ?? seedSettlementDonorsForEdit(record!, dailyLog);
+    const next = base.map((d) => (d.id === donorId ? { ...d, ...patch } : d));
+    persistDonorAdjustments(next);
+  };
+
+  const removeEditableDonor = (donorId: string) => {
+    const base = editingDonors ?? seedSettlementDonorsForEdit(record!, dailyLog);
+    if (!window.confirm("이 후원 건을 정산에서 제거할까요? 멤버 정산액이 다시 계산됩니다.")) return;
+    persistDonorAdjustments(base.filter((d) => d.id !== donorId));
+  };
+
+  const addEditableDonor = (preferTreasury: boolean) => {
+    if (!record) return;
+    const treasury = record.members.find((m) => isTreasurySettlementMember(m, record));
+    const fallback = record.members[0];
+    const memberId = preferTreasury && treasury ? treasury.memberId : fallback?.memberId;
+    if (!memberId) return;
+    const base = editingDonors ?? seedSettlementDonorsForEdit(record, dailyLog);
+    const row: Donor = {
+      id: `d_adj_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name: "무명",
+      amount: 0,
+      memberId,
+      at: Date.now(),
+      target: "account",
+    };
+    const next = [...base, row];
+    persistDonorAdjustments(next);
+  };
+
+  const reapplyDonorEdits = () => {
+    if (!record) return;
+    const base = editingDonors ?? seedSettlementDonorsForEdit(record, dailyLog);
+    persistDonorAdjustments(base);
   };
 
   const copyKakaoTxt = async () => {
@@ -511,18 +605,45 @@ export default function SettlementDetailPage() {
         <div className="rounded border border-white/10 bg-neutral-900/50 p-3 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <div className="text-sm font-semibold">멤버별 후원자 내역</div>
+              <div className="text-sm font-semibold">멤버별 후원자 내역 · 조정</div>
               <div className="text-xs text-neutral-400 mt-1">
-                정산 시점 후원 스냅샷 기준 · {settlementDonors.length}건
-                {settlementDonors.length === 0 ? " (일일 로그·정산 스냅샷 없음)" : ""}
+                정산 생성 후에도 후원 목록을 수정할 수 있습니다. 국고 포함 멤버 배정·금액·채널을 바꾸면 정산액이 다시 계산됩니다.
+                {" · "}
+                {editableDonors.length}건
+                {donorEditMsg ? <span className="text-emerald-400 ml-2">{donorEditMsg}</span> : null}
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
+                className="px-3 py-1.5 rounded bg-amber-800 hover:bg-amber-700 text-sm disabled:opacity-50"
+                onClick={() => addEditableDonor(true)}
+                disabled={!record || donorEditBusy || !record.members.some((m) => isTreasurySettlementMember(m, record))}
+                title="국고 멤버에 후원 행 추가"
+              >
+                국고 후원 추가
+              </button>
+              <button
+                type="button"
+                className="px-3 py-1.5 rounded bg-neutral-700 hover:bg-neutral-600 text-sm disabled:opacity-50"
+                onClick={() => addEditableDonor(false)}
+                disabled={!record || donorEditBusy}
+              >
+                후원 행 추가
+              </button>
+              <button
+                type="button"
+                className="px-3 py-1.5 rounded bg-cyan-800 hover:bg-cyan-700 text-sm disabled:opacity-50"
+                onClick={reapplyDonorEdits}
+                disabled={!record || donorEditBusy || editableDonors.length === 0}
+              >
+                {donorEditBusy ? "저장 중…" : "재계산·저장"}
+              </button>
+              <button
+                type="button"
                 className="px-3 py-1.5 rounded bg-emerald-800 hover:bg-emerald-700 text-sm disabled:opacity-50"
                 onClick={onDownloadMemberDonorsXlsx}
-                disabled={settlementDonors.length === 0}
+                disabled={editableDonors.length === 0}
               >
                 엑셀 다운로드
               </button>
@@ -530,32 +651,165 @@ export default function SettlementDetailPage() {
                 type="button"
                 className="px-3 py-1.5 rounded bg-neutral-800 hover:bg-neutral-700 text-sm disabled:opacity-50"
                 onClick={onDownloadMemberDonorsCsv}
-                disabled={settlementDonors.length === 0}
+                disabled={editableDonors.length === 0}
               >
                 CSV 다운로드
               </button>
             </div>
           </div>
 
-          {settlementDonors.length === 0 ? (
+          {!record || editableDonors.length === 0 ? (
             <p className="text-sm text-neutral-400">
-              이 정산에 저장된 후원 목록이 없습니다. 이후 생성되는 정산은 방송 종료 시 후원 스냅샷이 함께 저장됩니다.
+              후원 목록이 없습니다. 「국고 후원 추가」또는 「후원 행 추가」로 정산 후원을 넣을 수 있습니다.
             </p>
           ) : (
             <div className="space-y-3">
+              <div className="overflow-auto rounded border border-amber-500/30 bg-black/30">
+                <table className="w-full text-sm whitespace-nowrap">
+                  <thead>
+                    <tr className="text-neutral-400 border-b border-white/10">
+                      <th className="p-2 text-left">후원자</th>
+                      <th className="p-2 text-right">금액</th>
+                      <th className="p-2 text-left">채널</th>
+                      <th className="p-2 text-left">멤버(국고 포함)</th>
+                      <th className="p-2 text-center">삭제</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...editableDonors]
+                      .sort((a, b) => {
+                        const aT = record.members.find((m) => m.memberId === a.memberId);
+                        const bT = record.members.find((m) => m.memberId === b.memberId);
+                        const aTreasury = aT ? isTreasurySettlementMember(aT, record) : false;
+                        const bTreasury = bT ? isTreasurySettlementMember(bT, record) : false;
+                        if (aTreasury !== bTreasury) return aTreasury ? -1 : 1;
+                        return Number(b.at || 0) - Number(a.at || 0);
+                      })
+                      .map((d) => {
+                        const member = record.members.find((m) => m.memberId === d.memberId);
+                        const treasury = member ? isTreasurySettlementMember(member, record) : false;
+                        return (
+                          <tr
+                            key={d.id}
+                            className={`border-b border-white/5 ${treasury ? "bg-amber-950/40" : ""}`}
+                          >
+                            <td className="p-2">
+                              <input
+                                className="w-full min-w-[7rem] px-2 py-1 rounded bg-neutral-800 border border-white/10"
+                                value={d.name}
+                                disabled={donorEditBusy}
+                                onChange={(e) =>
+                                  patchEditableDonor(d.id, {
+                                    name: e.target.value,
+                                  })
+                                }
+                                onBlur={() =>
+                                  commitEditableDonor(d.id, {
+                                    name: String(
+                                      (editingDonors ?? []).find((x) => x.id === d.id)?.name ?? d.name
+                                    )
+                                      .replace(/\s+/g, "") || "무명",
+                                  })
+                                }
+                              />
+                            </td>
+                            <td className="p-2 text-right">
+                              <input
+                                type="number"
+                                min={0}
+                                step={1000}
+                                className="w-28 px-2 py-1 rounded bg-neutral-800 border border-white/10 text-right tabular-nums"
+                                value={d.amount}
+                                disabled={donorEditBusy}
+                                onChange={(e) =>
+                                  patchEditableDonor(d.id, {
+                                    amount: Math.max(0, Math.round(Number(e.target.value) || 0)),
+                                  })
+                                }
+                                onBlur={() =>
+                                  commitEditableDonor(d.id, {
+                                    amount: Math.max(0, Math.round(Number(d.amount) || 0)),
+                                  })
+                                }
+                              />
+                            </td>
+                            <td className="p-2">
+                              <select
+                                className="px-2 py-1 rounded bg-neutral-800 border border-white/10"
+                                value={d.target === "toon" ? "toon" : "account"}
+                                disabled={donorEditBusy}
+                                onChange={(e) =>
+                                  commitEditableDonor(d.id, {
+                                    target: e.target.value as DonorTarget,
+                                  })
+                                }
+                              >
+                                <option value="account">계좌</option>
+                                <option value="toon">투네</option>
+                              </select>
+                            </td>
+                            <td className="p-2">
+                              <select
+                                className={`min-w-[8rem] px-2 py-1 rounded bg-neutral-800 border ${
+                                  treasury ? "border-amber-500/50 text-amber-100" : "border-white/10"
+                                }`}
+                                value={d.memberId}
+                                disabled={donorEditBusy}
+                                onChange={(e) =>
+                                  commitEditableDonor(d.id, { memberId: e.target.value })
+                                }
+                              >
+                                {record.members.map((m) => (
+                                  <option key={m.memberId} value={m.memberId}>
+                                    {m.name}
+                                    {isTreasurySettlementMember(m, record) ? " (국고)" : ""}
+                                    {m.realName ? ` · ${m.realName}` : ""}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="p-2 text-center">
+                              <button
+                                type="button"
+                                className="px-2 py-1 rounded bg-red-950 hover:bg-red-900 border border-red-500/30 text-xs disabled:opacity-50"
+                                disabled={donorEditBusy}
+                                onClick={() => removeEditableDonor(d.id)}
+                              >
+                                삭제
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+
               {getMembersForExport(record).map((m) => {
                 const rows = memberDonorSummaryByMember.get(m.memberId) || [];
                 if (rows.length === 0) return null;
                 const memberTotal = rows.reduce((s, r) => s + r.totalAmount, 0);
+                const treasury = isTreasurySettlementMember(m, record);
                 return (
-                  <details key={`donors-${m.memberId}`} className="rounded border border-white/10 bg-black/20" open>
+                  <details
+                    key={`donors-${m.memberId}`}
+                    className={`rounded border bg-black/20 ${
+                      treasury ? "border-amber-500/40" : "border-white/10"
+                    }`}
+                    open={treasury}
+                  >
                     <summary className="cursor-pointer select-none px-3 py-2 text-sm flex flex-wrap items-center justify-between gap-2">
                       <span>
                         <span className="font-medium text-neutral-100">{m.name}</span>
+                        {treasury ? (
+                          <span className="ml-2 text-xs text-amber-300">국고</span>
+                        ) : null}
                         {m.realName ? <span className="text-neutral-500"> ({m.realName})</span> : null}
                         <span className="text-neutral-400 ml-2">후원자 {rows.length}명</span>
                       </span>
-                      <span className="font-semibold text-cyan-300 tabular-nums">{memberTotal.toLocaleString()}원</span>
+                      <span className="font-semibold text-cyan-300 tabular-nums">
+                        {memberTotal.toLocaleString()}원
+                      </span>
                     </summary>
                     <div className="overflow-auto border-t border-white/10">
                       <table className="w-full text-sm whitespace-nowrap">
@@ -572,10 +826,16 @@ export default function SettlementDetailPage() {
                           {rows.map((row) => (
                             <tr key={`${row.memberId}-${row.donorName}`} className="border-b border-white/5">
                               <td className="p-2">{row.donorName}</td>
-                              <td className="p-2 text-right font-medium tabular-nums">{row.totalAmount.toLocaleString()}</td>
+                              <td className="p-2 text-right font-medium tabular-nums">
+                                {row.totalAmount.toLocaleString()}
+                              </td>
                               <td className="p-2 text-right tabular-nums">{row.count}</td>
-                              <td className="p-2 text-right tabular-nums text-neutral-300">{row.accountAmount.toLocaleString()}</td>
-                              <td className="p-2 text-right tabular-nums text-neutral-300">{row.toonAmount.toLocaleString()}</td>
+                              <td className="p-2 text-right tabular-nums text-neutral-300">
+                                {row.accountAmount.toLocaleString()}
+                              </td>
+                              <td className="p-2 text-right tabular-nums text-neutral-300">
+                                {row.toonAmount.toLocaleString()}
+                              </td>
                             </tr>
                           ))}
                         </tbody>

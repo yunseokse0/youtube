@@ -169,4 +169,35 @@ describe("mergeServerSaveApiBodies", () => {
     };
     expect(merged.donors.map((d) => d.id)).toEqual(["a"]);
   });
+
+  it("donorsReplace keeps group-split list without union-reviving pre-split row flags", () => {
+    const prev = JSON.stringify({
+      donorsAuthoritative: true,
+      donors: [donor("src", 90_000, 1000)],
+      updatedAt: 1000,
+    });
+    const next = JSON.stringify({
+      donorsAuthoritative: true,
+      donorsReplace: true,
+      donors: [
+        { ...donor("src", 90_000, 1000), donationExcluded: true, groupSplitSource: true },
+        { ...donor("src:split:m1", 30_000, 2000), groupSplit: true },
+        { ...donor("src:split:m2", 30_000, 2000), groupSplit: true },
+        { ...donor("src:split:m3", 30_000, 2000), groupSplit: true },
+      ],
+      updatedAt: 2000,
+    });
+    const merged = JSON.parse(mergeServerSaveApiBodies(prev, next)) as {
+      donors: Donor[];
+      donorsReplace?: boolean;
+    };
+    expect(merged.donorsReplace).toBe(true);
+    expect(merged.donors.map((d) => d.id).sort()).toEqual([
+      "src",
+      "src:split:m1",
+      "src:split:m2",
+      "src:split:m3",
+    ]);
+    expect(merged.donors.find((d) => d.id === "src")?.donationExcluded).toBe(true);
+  });
 });

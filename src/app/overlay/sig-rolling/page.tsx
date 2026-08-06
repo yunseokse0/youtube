@@ -321,13 +321,13 @@ function SigRollingOverlayInner() {
     if (stableLow.length > 0 && rightIdx >= stableLow.length) setRightIdx(0);
   }, [stableHigh.length, stableLow.length, leftIdx, rightIdx]);
 
-  /** holdMs·목록 길이만으로 타이머 유지 — 매 폴링마다 재생성하지 않음 */
+  /** holdMs 기준으로만 타이머 유지 — catalogKey/폴링마다 재생성하면 5초가 리셋되어 안 도는 것처럼 보임 */
   useEffect(() => {
     if (!ready || !canAdvance) return;
-    if (stableHigh.length + stableLow.length === 0) return;
 
     const tick = () => {
       const snap = bandsRef.current;
+      if (snap.high.length + snap.low.length === 0) return;
       const li = leftIdxRef.current;
       const ri = rightIdxRef.current;
       preloadRollingImage(snap.high.length > 1 ? pickSigRollingAt(snap.high, li + 1) : null);
@@ -337,7 +337,7 @@ function SigRollingOverlayInner() {
 
     const waitMs = resolveSigRollingHoldMs(holdMsRef.current);
     return createObsSafeInterval(tick, waitMs);
-  }, [ready, canAdvance, holdMs, catalogKey, advanceBands, preloadRollingImage, stableHigh.length, stableLow.length]);
+  }, [ready, canAdvance, holdMs, advanceBands, preloadRollingImage]);
 
   const emptyDetail = useMemo(() => {
     if (!state) return "";

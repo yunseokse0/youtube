@@ -19,7 +19,8 @@ export type PickDefaultToonationMemberOptions = {
   memberPositions?: Record<string, string> | null;
 };
 
-function isNationalTreasuryMember(
+/** 이름·실명·직급에 「국고」가 있으면 국고 멤버 */
+export function isNationalTreasuryMember(
   m: Pick<Member, "id" | "name" | "realName">,
   memberPositions?: Record<string, string> | null
 ): boolean {

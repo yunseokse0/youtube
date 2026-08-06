@@ -196,6 +196,7 @@ import {
 } from "@/lib/donation/apply-donation-state";
 import { mergeDonationApplyBase, enrichStateBeforeAuthoritativeDonationSave } from "@/lib/donation/merge-donation-apply-base";
 import { applyBankDonationsViaApi } from "@/lib/donation/apply-bank-donation-client";
+import { applyDonationDummySeed } from "@/lib/dev/seed-donation-dummy";
 import {
   parseBulkDonationText,
   resolveBulkDonationRows,
@@ -5811,6 +5812,88 @@ export default function AdminPage() {
     setDonorAmount("");
   }, [applyProcessDonationResult, donorAmount, donorName, fetchUnmatchedEvents, toonationOwnerName, user?.id]);
 
+  const [showDevSeedTools, setShowDevSeedTools] = useState(false);
+  useEffect(() => {
+    setShowDevSeedTools(/^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname));
+  }, []);
+
+  const seedDevDummyDonations = useCallback(
+    async (mode: "replace" | "append" = "replace") => {
+      if (!showDevSeedTools) return;
+      const label = mode === "replace" ? "기존 후원을 더미로 교체" : "더미를 뒤에 추가";
+      if (
+        !window.confirm(
+          `개발용 더미 후원을 ${label}합니다.\n` +
+            `· 「단체짠더미」→ 나누기 테스트\n` +
+            `· 소액 더미 → 삭제 테스트\n` +
+            `· 국고 멤버가 있으면 「국고더미」포함\n\n계속할까요?`
+        )
+      ) {
+        return;
+      }
+      try {
+        const q = new URLSearchParams();
+        if (user?.id) {
+          q.set("u", user.id);
+          q.set("user", user.id);
+        }
+        const res = await fetch(`/api/dev/seed-donations?${q.toString()}`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode }),
+        });
+        const data = (await res.json().catch(() => null)) as {
+          ok?: boolean;
+          error?: string;
+          added?: number;
+          donorsCount?: number;
+          state?: AppState;
+          hint?: string;
+        } | null;
+        if (!res.ok || !data?.ok || !data.state) {
+          /** API 실패 시 클라이언트 시드로 폴백 */
+          const local = applyDonationDummySeed(stateRef.current, { mode });
+          const preserved = markAuthoritativeDonationSave(
+            { serverUpdatedAt: local.state.updatedAt },
+            local.state,
+            { replaceDonors: true, awaitingServerSave: true }
+          );
+          setState(preserved);
+          const saved = await saveStateAsync(preserved, user?.id, {
+            donorsAuthoritative: true,
+            donorsReplace: true,
+          });
+          pendingUnsyncedRef.current = false;
+          if (!saved.ok) {
+            pushToonationLog(`더미 시드 실패: ${data?.error || "save_failed"}`);
+            return;
+          }
+          setSyncStatus(saved.storageFallback ? "error" : "synced");
+          pushToonationLog(
+            `더미 시드(로컬): ${local.added.length}건 · 삭제/단체짠 나누기 테스트 가능`
+          );
+          return;
+        }
+        const preserved = markAuthoritativeDonationSave(
+          { serverUpdatedAt: data.state.updatedAt },
+          data.state,
+          { replaceDonors: true }
+        );
+        pendingUnsyncedRef.current = false;
+        setState(preserved);
+        setSyncStatus("synced");
+        pushToonationLog(
+          `더미 시드: ${data.added ?? 0}건 추가 · 총 ${data.donorsCount ?? 0}건` +
+            (data.hint ? ` — ${data.hint}` : "")
+        );
+      } catch (e) {
+        pushToonationLog(`더미 시드 오류: ${e instanceof Error ? e.message : "unknown"}`);
+      }
+    },
+    [showDevSeedTools, markAuthoritativeDonationSave, pushToonationLog, user?.id]
+  );
+
   const applyUnmatchedEvent = useCallback(async (event: DonationEvent) => {
     const selectedMemberId = unmatchedAssignMap[event.id] || donorMemberId || state.members[0]?.id || "";
     if (!selectedMemberId) return;
@@ -5868,11 +5951,14 @@ export default function AdminPage() {
       }
       /**
        * 빈 Redis GET 을 먼저 쓰면 화면 후원이 사라지거나 리셋 스탬프가 꼬인다.
-       * 화면 stateRef 를 hint 로 두고, 서버는 스탬프·원격 후원만 보강.
+       * 화면 stateRef 를 기준으로 LS·서버 donors 만 보강한다.
        */
       const freshState = await loadStateFromApi(user?.id, { forceFull: true });
-      const base = mergeDonationApplyBase(freshState, stateRef.current);
-      if (!base) return;
+      const localSnap = loadState(user?.id);
+      const base = enrichStateBeforeAuthoritativeDonationSave(stateRef.current, [
+        localSnap,
+        freshState,
+      ]);
       if (!normalizeDonorsArray(base.donors).some((d) => d.id === donor.id)) {
         pushToonationLog(
           `단체짠 분배 실패: ${donor.name} — 후원 행을 찾지 못함 (서버가 비어 있으면 합산 추가 후 다시 시도)`
@@ -5916,29 +6002,33 @@ export default function AdminPage() {
         { replaceDonors: true, awaitingServerSave: true }
       );
       setState(preserved);
-      const saved = await saveStateAsync(preserved, user?.id, { donorsAuthoritative: true });
+      const saved = await saveStateAsync(preserved, user?.id, {
+        donorsAuthoritative: true,
+        donorsReplace: true,
+      });
       if (!saved.ok) {
         pushToonationLog("단체짠 분배: 저장 실패");
+        pendingUnsyncedRef.current = false;
         setSyncStatus(
           typeof navigator !== "undefined" && !navigator.onLine ? "local" : "error"
         );
         return;
       }
-      const baseAfter = stateRef.current;
       const serverAt =
         typeof saved.serverUpdatedAt === "number" && Number.isFinite(saved.serverUpdatedAt)
           ? saved.serverUpdatedAt
-          : Number(baseAfter.updatedAt || 0);
+          : Number(preserved.updatedAt || 0);
       const serverDr =
         typeof saved.donorRankingsUpdatedAt === "number" &&
         Number.isFinite(saved.donorRankingsUpdatedAt)
           ? saved.donorRankingsUpdatedAt
-          : Number(baseAfter.donorRankingsUpdatedAt || 0);
+          : Number(preserved.donorRankingsUpdatedAt || 0);
+      /** 저장 중 stateRef 가 빈 원격으로 바뀌어도 나누기 결과를 덮지 않음 */
       const bumped: AppState = {
-        ...baseAfter,
-        updatedAt: Math.max(Number(baseAfter.updatedAt || 0), serverAt),
+        ...preserved,
+        updatedAt: Math.max(Number(preserved.updatedAt || 0), serverAt),
         donorRankingsUpdatedAt: Math.max(
-          Number(baseAfter.donorRankingsUpdatedAt || 0),
+          Number(preserved.donorRankingsUpdatedAt || 0),
           serverDr,
           serverAt
         ),
@@ -5949,7 +6039,8 @@ export default function AdminPage() {
         lastAppliedRemoteUpdatedAtRef.current,
         bumped.updatedAt
       );
-      donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
+      donationAuthoritativeSaveUntilRef.current = Date.now() + 45_000;
+      pendingUnsyncedRef.current = false;
       try {
         window.localStorage.setItem(storageKey(user?.id), JSON.stringify(bumped));
       } catch {}
@@ -10836,6 +10927,26 @@ export default function AdminPage() {
                   >
                     테스트 이벤트 주입(투네)
                   </button>
+                  {showDevSeedTools ? (
+                    <>
+                      <button
+                        type="button"
+                        className="px-3 py-1.5 rounded bg-amber-700 hover:bg-amber-600 text-xs font-semibold"
+                        onClick={() => void seedDevDummyDonations("replace")}
+                        title="로컬 개발 전용 — 후원 목록을 더미로 채웁니다"
+                      >
+                        더미 후원 채우기
+                      </button>
+                      <button
+                        type="button"
+                        className="px-3 py-1.5 rounded bg-amber-900/80 hover:bg-amber-800 text-xs"
+                        onClick={() => void seedDevDummyDonations("append")}
+                        title="기존 후원 유지 + 더미 추가"
+                      >
+                        더미 추가
+                      </button>
+                    </>
+                  ) : null}
                   <button
                     type="button"
                     className="px-3 py-1.5 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
@@ -11459,19 +11570,23 @@ export default function AdminPage() {
                                         setState(preserved);
                                         const saved = await saveStateAsync(preserved, user?.id, {
                                           donorsAuthoritative: true,
+                                          donorsReplace: true,
                                         });
                                         if (saved.ok) {
-                                          const base = stateRef.current;
                                           const serverAt =
                                             typeof saved.serverUpdatedAt === "number" &&
                                             Number.isFinite(saved.serverUpdatedAt)
                                               ? saved.serverUpdatedAt
-                                              : Number(base.updatedAt || 0);
+                                              : Number(preserved.updatedAt || 0);
+                                          /** 저장 중 빈 원격이 stateRef 를 바꿔도 삭제 결과를 덮지 않음 */
                                           const bumped: AppState = {
-                                            ...base,
-                                            updatedAt: Math.max(Number(base.updatedAt || 0), serverAt),
+                                            ...preserved,
+                                            updatedAt: Math.max(
+                                              Number(preserved.updatedAt || 0),
+                                              serverAt
+                                            ),
                                             donorRankingsUpdatedAt: Math.max(
-                                              Number(base.donorRankingsUpdatedAt || 0),
+                                              Number(preserved.donorRankingsUpdatedAt || 0),
                                               serverAt
                                             ),
                                           };
@@ -11484,7 +11599,9 @@ export default function AdminPage() {
                                             lastAppliedRemoteUpdatedAtRef.current,
                                             bumped.updatedAt
                                           );
-                                          donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
+                                          donationAuthoritativeSaveUntilRef.current =
+                                            Date.now() + 45_000;
+                                          pendingUnsyncedRef.current = false;
                                           try {
                                             window.localStorage.setItem(
                                               storageKey(user?.id),
@@ -11495,6 +11612,7 @@ export default function AdminPage() {
                                           setState(bumped);
                                           setSyncStatus(saved.storageFallback ? "error" : "synced");
                                         } else {
+                                          pendingUnsyncedRef.current = false;
                                           setSyncStatus(
                                             typeof navigator !== "undefined" && !navigator.onLine
                                               ? "local"

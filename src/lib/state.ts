@@ -1437,6 +1437,11 @@ async function postAppStateWithAuthRecovery(json: string, userId?: string | null
 export type SaveStateAsyncOptions = {
   /** 후원 삭제·전체 비우기 — mergeDonorsForMultiTabSave 되살림 방지 */
   donorsAuthoritative?: boolean;
+  /**
+   * 삭제·단체짠 나누기처럼 클라이언트가 만든 donors 목록을 서버에 그대로 반영.
+   * (donorsAuthoritative 만으로는 shrink 가 아닐 때 union 되어 제외 플래그·분배 행이 깨질 수 있음)
+   */
+  donorsReplace?: boolean;
   /** 정산 리셋 — placeholder member LS 복원·후원 merge 되살림 방지 */
   settlementReset?: boolean;
   /**
@@ -1444,7 +1449,7 @@ export type SaveStateAsyncOptions = {
    * 관리자 persistState 는 기본적으로 이 플래그를 켠다(includeDonationFields 미지정 시).
    */
   omitDonationFields?: boolean;
-  /** 판매완료 도장을 빈 값(기본 도장)으로 되돌릴 때만 true — 빈 URL 우연 덮어쓰기 방지 */
+  /** 판매완료 도장을 기본 도장으로 되돌릴 때만 true — 빈 URL 우연 덮어쓰기 방지 */
   clearSigSoldOutStamp?: boolean;
 };
 
@@ -1507,10 +1512,11 @@ export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): st
     const nextDonors = Array.isArray(next.donors) ? (next.donors as Donor[]) : null;
     const prevAuthoritative = prev.donorsAuthoritative === true;
     const nextAuthoritative = next.donorsAuthoritative === true;
+    const nextReplace = next.donorsReplace === true;
     /**
      * 수동 합산·투네 등 donorsAuthoritative 저장이 큐에서 합쳐질 때
      * 나중 POST 가 앞선 후원 목록을 통째로 덮지 않게 union 한다.
-     * (의도적 삭제·전체 비우기만 replace)
+     * (의도적 삭제·단체짠 나누기·전체 비우기만 replace)
      */
     if (
       prevDonors &&
@@ -1524,7 +1530,11 @@ export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): st
         Number(next.updatedAt || 0),
         Number(prev.updatedAt || 0)
       );
-      if (intentionalShrink && nextAuthoritative) {
+      if (nextReplace && nextAuthoritative) {
+        merged.donors = nextDonors;
+        merged.donorsAuthoritative = true;
+        merged.donorsReplace = true;
+      } else if (intentionalShrink && nextAuthoritative) {
         merged.donors = nextDonors;
         merged.donorsAuthoritative = true;
       } else {
@@ -1739,8 +1749,16 @@ async function runServerSaveQueue(): Promise<void> {
 
 /** placeholder 멤버를 API에 실어내면 Redis 실멤버를 덮을 수 있어 필드 자체를 생략한다. */
 function omitPlaceholderMembersFromApiPayload(
-  payload: Partial<AppState> & { donorsAuthoritative?: boolean; settlementReset?: boolean }
-): Partial<AppState> & { donorsAuthoritative?: boolean; settlementReset?: boolean } {
+  payload: Partial<AppState> & {
+    donorsAuthoritative?: boolean;
+    donorsReplace?: boolean;
+    settlementReset?: boolean;
+  }
+): Partial<AppState> & {
+  donorsAuthoritative?: boolean;
+  donorsReplace?: boolean;
+  settlementReset?: boolean;
+} {
   if (!isDefaultPlaceholderMemberList(payload.members as Member[] | undefined)) {
     return payload;
   }
@@ -1759,7 +1777,11 @@ function appStatePayloadForApi(
   next: AppState,
   userId?: string | null,
   options?: SaveStateAsyncOptions
-): Partial<AppState> & { donorsAuthoritative?: boolean; settlementReset?: boolean } {
+): Partial<AppState> & {
+  donorsAuthoritative?: boolean;
+  donorsReplace?: boolean;
+  settlementReset?: boolean;
+} {
   const normalizedSigInventory = slimSigInventoryForWire(
     normalizeSigInventory(next.sigInventory),
     userId ?? undefined
@@ -1772,7 +1794,11 @@ function appStatePayloadForApi(
   };
   const donors = Array.isArray(next.donors) ? next.donors : rest.donors;
   const donorRankingsUpdatedAt = next.donorRankingsUpdatedAt;
-  const base: Partial<AppState> & { donorsAuthoritative?: boolean; settlementReset?: boolean } = {
+  const base: Partial<AppState> & {
+    donorsAuthoritative?: boolean;
+    donorsReplace?: boolean;
+    settlementReset?: boolean;
+  } = {
     ...rest,
     donors,
     ...(typeof donorRankingsUpdatedAt === "number" && Number.isFinite(donorRankingsUpdatedAt)
@@ -1781,6 +1807,7 @@ function appStatePayloadForApi(
   };
   const flags = {
     ...(options?.donorsAuthoritative ? { donorsAuthoritative: true as const } : {}),
+    ...(options?.donorsReplace ? { donorsReplace: true as const } : {}),
     ...(options?.settlementReset ? { settlementReset: true as const } : {}),
   };
   let payload = omitPlaceholderMembersFromApiPayload({ ...base, ...flags });
