@@ -588,6 +588,18 @@ export async function GET(req: Request) {
       logger.error("후원 백업 복구 실패", err);
     }
 
+    /** donors 있는데 members 합계 0이면 GET 응답·메모리에서 맞춤(Prism 엑셀 미반영 방지) */
+    if (normalizeDonorsArray(mergedForResponse.donors).length > 0) {
+      const synced = syncMemberTotalsFromDonors(mergedForResponse);
+      if (totalCombined(synced) !== totalCombined(mergedForResponse)) {
+        mergedForResponse = synced;
+        setServerMemoryAppState(userId, synced);
+        void upstashSetAppStateJson(stateKey(userId), synced);
+      } else {
+        mergedForResponse = synced;
+      }
+    }
+
     if (isNotModified(mergedForResponse)) {
       return stateNotModifiedResponse("redis");
     }

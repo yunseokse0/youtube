@@ -227,6 +227,20 @@ export function shouldRejectPoorerDonationRemote(
   /** 정산 리셋 없이 완전 빈 원격은 로컬 후원을 덮지 않음 */
   if (localDonors > 0 && remoteDonors === 0) return true;
 
+  /**
+   * 엑셀 members 합계가 0인데 서버 donors·revision 만 앞선 경우
+   * (후원순위는 되고 엑셀만 0) — poorer 고스트로 막지 않음
+   */
+  const localMemberTotal = (local.members || []).reduce(
+    (sum, m) => sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)),
+    0
+  );
+  const remoteDr = Number(remote.donorRankingsUpdatedAt || 0);
+  const localDr = Number(local.donorRankingsUpdatedAt || 0);
+  if (localMemberTotal === 0 && remoteDonors > 0 && remoteDr > localDr) {
+    return false;
+  }
+
   if (!isRicherDonationSnapshot(local, remote)) return false;
   if (isNewerIntentionalDonationShrink(remote, local)) return false;
   return true;

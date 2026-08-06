@@ -41,6 +41,7 @@ import {
   isEmbeddedInSameOriginAdminFrame,
   isExternalOverlayBroadcastHost,
   shouldSuppressOverlaySseConnection,
+  resolveScopedOverlayUserId,
   mergeOverlayPresetsForOverlayView,
   resolveTimerOverlayStyle,
   timerOverlayStyleHasCustomColors,
@@ -254,7 +255,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
     }
     if (!Array.isArray((incoming as AppState).members)) return;
     const ts = (incoming as any).updatedAt || Date.now();
-    const next = mergeKeepingStrongRoster(incoming as AppState);
+    const next = syncMemberTotalsFromDonors(mergeKeepingStrongRoster(incoming as AppState));
     const nextSig = buildOverlaySyncSignature(next);
     if (nextSig === lastVisualSigRef.current) {
       lastUpdatedRef.current = Math.max(lastUpdatedRef.current, ts);
@@ -330,7 +331,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
             !isNewerIntentionalDonationShrink(localNow, shownForCompare)
           )
         ) {
-          const mergedLocal = mergeKeepingStrongRoster(localNow);
+          const mergedLocal = syncMemberTotalsFromDonors(mergeKeepingStrongRoster(localNow));
           const nextSig = buildOverlaySyncSignature(mergedLocal);
           lastUpdatedRef.current = mergedLocal.updatedAt || localNow.updatedAt;
           hasStrongRosterRef.current = true;
@@ -1656,10 +1657,10 @@ function OverlayInner() {
   const rawSp = useSearchParams();
   const rawUserId = (rawSp.get("u") || "").trim();
   const hostObs = isOverlayBroadcastHost(rawSp);
-  const userId = rawUserId || "finalent";
+  const userId = resolveScopedOverlayUserId(rawUserId);
   const snapKey = (rawSp.get("snapKey") || "").trim();
   const snap = tryReadSnapshotFromStorage(snapKey || null) || tryDecodeSnapshot(rawSp.get("snap"));
-  const { state: remoteState, ready: remoteReady } = useRemoteState(userId, !snap);
+  const { state: remoteState, ready: remoteReady } = useRemoteState(userId || undefined, !snap && Boolean(userId));
   const s = snap || remoteState;
   const ready = !!snap || remoteReady;
   const [localPresets, setLocalPresets] = useState<OverlayPresetLike[]>(() => {
@@ -1706,7 +1707,15 @@ function OverlayInner() {
       unsubscribePresets();
     };
   }, [userId, readLocalPresets]);
-  const membersRemote = useMemo(() => ensureMembers(ready && s ? s.members : []), [ready, s]);
+  const membersRemote = useMemo(() => {
+    if (!ready || !s) return ensureMembers([]);
+    /** 후원순위(donors)는 되는데 엑셀(members)만 0인 스냅샷 — 표시 직전 재동기화 */
+    const donors = Array.isArray(s.donors) ? s.donors : [];
+    if (donors.length > 0) {
+      return ensureMembers(syncMemberTotalsFromDonors(s as AppState).members);
+    }
+    return ensureMembers(s.members);
+  }, [ready, s]);
   const donorsRemote = useMemo(() => (ready && s ? s.donors : []), [ready, s]);
   const missions = useMemo(() => {
     const raw = ready && s ? (s.missions || []) : [];

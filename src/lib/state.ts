@@ -2671,6 +2671,10 @@ async function doLoadStateFromApi(
         : undefined;
       data.donors = normalizeDonorsArray(data.donors);
       data.donorsFormat = normalizeDonorsFormat((data as AppState).donorsFormat);
+      /** pick/병합 후 donors 대비 members 합계가 비면 엑셀표만 0 — 여기서 맞춤 */
+      if (data.donors.length > 0) {
+        data = syncMemberTotalsFromDonors(data);
+      }
       data.contributionLogs = Array.isArray((data as AppState).contributionLogs)
         ? ((data as AppState).contributionLogs as ContributionLog[])
             .filter((x) => x && typeof x === "object")

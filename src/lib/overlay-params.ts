@@ -1587,7 +1587,9 @@ export function shouldSkipOverlaySseForObsBroadcast(): boolean {
   try {
     const sp = new URLSearchParams(window.location.search);
     if (sp.get("overlayAllowSse") === "1") return false;
-    return sp.get("host") === "obs";
+    /** prism 도 SSE 중복·레이스로 엑셀표만 갱신 누락되기 쉬움 — 폴링(forceFull)만 사용 */
+    const host = sp.get("host")?.trim().toLowerCase();
+    return host === "obs" || host === "prism" || host === "external";
   } catch {
     return false;
   }

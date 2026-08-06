@@ -213,6 +213,43 @@ describe("shouldRejectPoorerDonationRemote", () => {
     };
     expect(shouldRejectPoorerDonationRemote(local, remote)).toBe(true);
   });
+
+  it("allows remote when local excel totals are 0 but remote donors advanced", async () => {
+    const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
+    const local = {
+      ...defaultState(),
+      updatedAt: 1000,
+      donorRankingsUpdatedAt: 1000,
+      settlementResetAt: 500,
+      donors: [] as Array<{
+        id: string;
+        name: string;
+        amount: number;
+        memberId: string;
+        at: number;
+        target: "account" | "toon";
+      }>,
+      members: [{ id: "m1", name: "홍쓰", account: 0, toon: 0, contribution: 0 }],
+    };
+    const remote = {
+      ...defaultState(),
+      updatedAt: 2000,
+      donorRankingsUpdatedAt: 2500,
+      settlementResetAt: 500,
+      donors: [
+        {
+          id: "toonation:new",
+          name: "시드",
+          amount: 120000,
+          memberId: "m1",
+          at: 2000,
+          target: "toon" as const,
+        },
+      ],
+      members: [{ id: "m1", name: "홍쓰", account: 0, toon: 120000, contribution: 120000 }],
+    };
+    expect(shouldRejectPoorerDonationRemote(local, remote)).toBe(false);
+  });
 });
 
 describe("isRicherDonationSnapshot", () => {
