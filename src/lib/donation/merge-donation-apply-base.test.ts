@@ -44,6 +44,34 @@ describe("mergeDonationApplyBase", () => {
     expect(merged?.members.map((m) => m.name)).toEqual(["BT태호", "홍쓰"]);
   });
 
+  it("keeps newer settlementResetAt from server when hint has stale stamp", () => {
+    const hint: AppState = {
+      ...defaultState(),
+      members: members(["A"]),
+      donors: [
+        {
+          id: "d1",
+          name: "후원",
+          amount: 10000,
+          memberId: "m1",
+          at: 1000,
+          target: "account",
+        },
+      ],
+      settlementResetAt: 5_000,
+    };
+    const fresh: AppState = {
+      ...defaultState(),
+      members: members(["A"]),
+      donors: [],
+      settlementResetAt: 20_000,
+      updatedAt: 20_000,
+    };
+    const merged = mergeDonationApplyBase(fresh, hint);
+    expect(merged?.settlementResetAt).toBe(20_000);
+    expect(merged?.donors).toHaveLength(1);
+  });
+
   it("unions donors from both snapshots with hint winning same id", () => {
     const hint: AppState = {
       ...defaultState(),

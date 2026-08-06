@@ -86,6 +86,11 @@ export function mergeDonationApplyBase(
       ? hint.donorRankingsPresets
       : fresh.donorRankingsPresets,
     donorRankingsPresetId: hint.donorRankingsPresetId ?? fresh.donorRankingsPresetId,
+    /** hint 가 구 리셋 스탬프면 서버 최신 리셋을 덮어 분배 at 가 필터에 걸림 → max 유지 */
+    settlementResetAt: Math.max(
+      Number(fresh.settlementResetAt || 0),
+      Number(hint.settlementResetAt || 0)
+    ) || fresh.settlementResetAt || hint.settlementResetAt,
     overlaySettings: {
       ...((fresh.overlaySettings && typeof fresh.overlaySettings === "object"
         ? fresh.overlaySettings

@@ -495,7 +495,7 @@ export default function AdminPage() {
   const lastAppliedRemoteUpdatedAtRef = useRef<number>(0);
   const oneShotSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const POLL_MERGE_PERSIST_MIN_MS = 6000;
-  const DONOR_LOCAL_PROTECT_MS = 8000;
+  const DONOR_LOCAL_PROTECT_MS = 20_000;
   /** 시그 추가·삭제 직후 서버 GET이 로컬 변경을 덮어쓰지 않도록 보호(ms) */
   const SIG_INVENTORY_LOCAL_PROTECT_MS = 30_000;
   /** 금액/숫자 입력 중에는 원격 동기화 적용을 잠시 보류해 타이핑 값 초기화를 방지 */
@@ -1756,15 +1756,11 @@ export default function AdminPage() {
           return false;
         }
       }
-      if (
-        !remoteSettlementWins &&
-        Date.now() < donationAuthoritativeSaveUntilRef.current
-      ) {
-        /**
-         * 후원 반영·삭제 직후 — 빈/구 스냅샷으로 덮지 않음.
-         * 단 서버 투네 자동 반영 등 더 많은 후원·금액은 수용(엑셀표 투네 열 지연 방지).
-         * 방금 삭제한 id 가 들어 있는 “더 많은” 스냅샷은 삭제를 되돌리므로 제외.
-         */
+      /**
+       * 수동 합산 추가 직후 빈 Redis·forceDonorMerge 폴링이 로컬 후원을 지우지 않게.
+       * (정산 리셋 remoteSettlementWins 는 위에서 이미 허용)
+       */
+      if (!remoteSettlementWins) {
         const nowTs = Date.now();
         for (const [id, exp] of recentlyRemovedDonorIdsRef.current) {
           if (exp < nowTs) recentlyRemovedDonorIdsRef.current.delete(id);
@@ -1783,7 +1779,14 @@ export default function AdminPage() {
         const remoteRicher =
           totalCombined(remoteSansRemoved) > totalCombined(stateRef.current) ||
           remoteOnlyFresh.length > 0;
-        if (!remoteRicher) return false;
+        const inAuthoritativeWindow = Date.now() < donationAuthoritativeSaveUntilRef.current;
+        const localRicherThanEmptyRemote =
+          localDonors.length > 0 && remoteDonors.length === 0;
+        if (inAuthoritativeWindow && !remoteRicher) return false;
+        /** forceDonorMerge 여도 빈 원격으로 수동 입력을 초기화하지 않음 */
+        if (opts?.forceDonorMerge && localRicherThanEmptyRemote && !remoteRicher) {
+          return false;
+        }
       }
       /** 저장 대기 중이어도 원격 신규 후원은 mergeIncoming에서 수용.
        * 다른 브라우저 정산 리셋(remoteSettlementWins)은 빈 후원이어도 반드시 적용. */
@@ -5196,7 +5199,7 @@ export default function AdminPage() {
           lastAppliedRemoteUpdatedAtRef.current,
           bumped.updatedAt
         );
-        donationAuthoritativeSaveUntilRef.current = Date.now() + 12_000;
+        donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
         pendingUnsyncedRef.current = false;
         try {
           window.localStorage.setItem(storageKey(user?.id), JSON.stringify(bumped));
@@ -5391,7 +5394,7 @@ export default function AdminPage() {
       ? next
       : mergeDonationApplyBase(next, stateRef.current) ?? next;
     const ts = saved.serverUpdatedAt ?? preserved.updatedAt ?? Date.now();
-    donationAuthoritativeSaveUntilRef.current = Date.now() + 12_000;
+    donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
     stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, ts);
     lastAppliedRemoteUpdatedAtRef.current = Math.max(lastAppliedRemoteUpdatedAtRef.current, ts);
     lastLocalPersistAtRef.current = Date.now();
@@ -5476,7 +5479,7 @@ export default function AdminPage() {
         lastAppliedRemoteUpdatedAtRef.current,
         bumped.updatedAt
       );
-      donationAuthoritativeSaveUntilRef.current = Date.now() + 12_000;
+      donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
       try {
         window.localStorage.setItem(storageKey(user?.id), JSON.stringify(bumped));
       } catch {}
@@ -5674,9 +5677,19 @@ export default function AdminPage() {
         pushToonationLog("이미 분배된 하위 행입니다.");
         return;
       }
+      /**
+       * 빈 Redis GET 을 먼저 쓰면 화면 후원이 사라지거나 리셋 스탬프가 꼬인다.
+       * 화면 stateRef 를 hint 로 두고, 서버는 스탬프·원격 후원만 보강.
+       */
       const freshState = await loadStateFromApi(user?.id, { forceFull: true });
       const base = mergeDonationApplyBase(freshState, stateRef.current);
       if (!base) return;
+      if (!normalizeDonorsArray(base.donors).some((d) => d.id === donor.id)) {
+        pushToonationLog(
+          `단체짠 분배 실패: ${donor.name} — 후원 행을 찾지 못함 (서버가 비어 있으면 합산 추가 후 다시 시도)`
+        );
+        return;
+      }
 
       const settings = normalizeGroupSplitDonationSettings(base.groupSplitDonationSettings);
       const applied = splitExistingDonorInAppState(base, donor.id, settings);
@@ -5695,33 +5708,48 @@ export default function AdminPage() {
         return;
       }
 
+      const resetAt = Math.max(
+        Number(applied.state.settlementResetAt || 0),
+        Number(freshState?.settlementResetAt || 0),
+        Number(stateRef.current.settlementResetAt || 0)
+      );
       const rebumpedState = syncMemberTotalsFromDonors({
         ...applied.state,
-        donors: rebumpDonorsPastSettlementReset(
-          applied.state.donors,
-          Number(applied.state.settlementResetAt || 0)
-        ),
+        settlementResetAt: resetAt || applied.state.settlementResetAt,
+        donors: rebumpDonorsPastSettlementReset(applied.state.donors, resetAt),
+        donorRankingsUpdatedAt: Date.now(),
+        updatedAt: Date.now(),
       });
-      const saved = await saveStateAsync(rebumpedState, user?.id, { donorsAuthoritative: true });
+      /** 저장 전에 보호 구간을 열어 빈 Redis 폴링이 나누기 결과를 지우지 않게 함 */
+      const preserved = markAuthoritativeDonationSave(
+        { serverUpdatedAt: rebumpedState.updatedAt },
+        rebumpedState,
+        { replaceDonors: true }
+      );
+      setState(preserved);
+      const saved = await saveStateAsync(preserved, user?.id, { donorsAuthoritative: true });
       if (!saved.ok) {
         pushToonationLog("단체짠 분배: 저장 실패");
+        setSyncStatus(
+          typeof navigator !== "undefined" && !navigator.onLine ? "local" : "error"
+        );
         return;
       }
-      const preserved = markAuthoritativeDonationSave(saved, rebumpedState, { replaceDonors: true });
+      const baseAfter = stateRef.current;
       const serverAt =
         typeof saved.serverUpdatedAt === "number" && Number.isFinite(saved.serverUpdatedAt)
           ? saved.serverUpdatedAt
-          : Number(preserved.updatedAt || 0);
+          : Number(baseAfter.updatedAt || 0);
       const serverDr =
         typeof saved.donorRankingsUpdatedAt === "number" &&
         Number.isFinite(saved.donorRankingsUpdatedAt)
           ? saved.donorRankingsUpdatedAt
-          : Number(preserved.donorRankingsUpdatedAt || 0);
+          : Number(baseAfter.donorRankingsUpdatedAt || 0);
       const bumped: AppState = {
-        ...preserved,
-        updatedAt: Math.max(Number(preserved.updatedAt || 0), serverAt),
+        ...baseAfter,
+        updatedAt: Math.max(Number(baseAfter.updatedAt || 0), serverAt),
         donorRankingsUpdatedAt: Math.max(
-          Number(preserved.donorRankingsUpdatedAt || 0),
+          Number(baseAfter.donorRankingsUpdatedAt || 0),
           serverDr,
           serverAt
         ),
@@ -5732,12 +5760,13 @@ export default function AdminPage() {
         lastAppliedRemoteUpdatedAtRef.current,
         bumped.updatedAt
       );
-      donationAuthoritativeSaveUntilRef.current = Date.now() + 12_000;
+      donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
       try {
         window.localStorage.setItem(storageKey(user?.id), JSON.stringify(bumped));
       } catch {}
       notifyBroadcastStateLocalUpdated(user?.id, bumped.updatedAt);
       setState(bumped);
+      setSyncStatus(saved.storageFallback ? "error" : "synced");
       pushToonationLog(
         `단체짠: ${donor.name} ${donor.amount.toLocaleString("ko-KR")}원 → ${applied.donors.length}행 생성 (${applied.preview.sharePerMember.toLocaleString("ko-KR")}원×${applied.preview.eligibleMembers.length}명, 합계 ${donor.amount.toLocaleString("ko-KR")}원 유지)`
       );
@@ -11185,7 +11214,7 @@ export default function AdminPage() {
                                             lastAppliedRemoteUpdatedAtRef.current,
                                             bumped.updatedAt
                                           );
-                                          donationAuthoritativeSaveUntilRef.current = Date.now() + 12_000;
+                                          donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
                                           try {
                                             window.localStorage.setItem(
                                               storageKey(user?.id),

@@ -1945,16 +1945,26 @@ export async function saveStateAsync(
       };
     }
   }
-  /** 정산 리셋 이후 구 후원 at 은 클라이언트에서도 제거 후 POST */
+  /**
+   * donorsAuthoritative 저장만 리셋 이전 at 를 rebump·filter 한다.
+   * 테마 등 비권한 저장에서 filter 후 LS setItem 하면 수동 입력이 0으로 초기화된다.
+   * (서버 POST 는 route 에서 별도 filter)
+   */
   {
     const resetAt = Math.max(
       Number(guarded.settlementResetAt || 0),
       Number(local?.settlementResetAt || 0)
     );
-    if (resetAt > 0 && !saveOpts?.settlementReset) {
+    if (resetAt > 0 && !saveOpts?.settlementReset && saveOpts?.donorsAuthoritative) {
       const before = normalizeDonorsArray(guarded.donors);
-      const after = filterDonorsAfterSettlementReset(before, resetAt);
-      if (after.length !== before.length || Number(guarded.settlementResetAt || 0) < resetAt) {
+      const rebumped = rebumpDonorsPastSettlementReset(before, resetAt);
+      const after = filterDonorsAfterSettlementReset(rebumped, resetAt);
+      const atChanged = rebumped.some((d, i) => Number(d.at) !== Number(before[i]?.at));
+      if (
+        after.length !== before.length ||
+        atChanged ||
+        Number(guarded.settlementResetAt || 0) < resetAt
+      ) {
         guarded = syncMemberTotalsFromDonors({
           ...guarded,
           donors: after,
