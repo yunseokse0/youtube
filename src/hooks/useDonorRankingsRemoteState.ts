@@ -21,6 +21,12 @@ import {
   shouldSyncDonorRankingsFromStateUpdatedEvent,
 } from "@/lib/overlay-pull-policy";
 import { useSSEConnection } from "@/lib/sse-client";
+import { shouldRejectPoorerDonationRemote } from "@/lib/overlay-sync-signature";
+import {
+  overlayUserIdsMatch,
+  readLocalBroadcastState,
+  subscribeBroadcastStateLocalUpdated,
+} from "@/lib/broadcast-state-local-sync";
 
 function readLocalStateIfExists(userId?: string): AppState | null {
   if (typeof window === "undefined") return null;
@@ -46,22 +52,9 @@ function mergeDonorRankingsApiState(prev: AppState | null, remote: Partial<AppSt
   return next;
 }
 
-function readDonorRankingsThemeFromLocal(userId?: string): Partial<AppState> | null {
-  const local = readLocalStateIfExists(userId);
-  if (!local) return null;
-  const {
-    donors: _donors,
-    members: _members,
-    mealBattle: _mealBattle,
-    sigInventory: _sigInventory,
-    rouletteState: _rouletteState,
-    ...themeAndMeta
-  } = local;
-  return themeAndMeta;
-}
-
 /**
  * 후원 순위 오버레이: donors·순위 UI 가 바뀔 때만 GET (`pick=donor-rankings` + SSE `donorRankingsUpdatedAt`).
+ * 수동 합산 추가 시 같은 탭 Broadcast·LS 후원을 즉시 반영하고, 빈 Redis 로 덮지 않는다.
  */
 export function useDonorRankingsRemoteState(
   userId?: string
@@ -69,12 +62,25 @@ export function useDonorRankingsRemoteState(
   const [state, setState] = useState<AppState | null>(null);
   const [syncedOnce, setSyncedOnce] = useState(false);
   const lastSyncedRevRef = useRef(0);
+  const stateRef = useRef<AppState | null>(null);
   const syncingRef = useRef(false);
   const syncFromApiRef = useRef<(opts?: { forceFull?: boolean }) => Promise<void>>(async () => {});
   const scheduleSseSyncRef = useRef<(() => void) | null>(null);
 
+  stateRef.current = state;
+
+  const applyLocalDonationSnapshot = useCallback((local: AppState) => {
+    setState((prev) => mergeDonorRankingsApiState(prev, local));
+    lastSyncedRevRef.current = Math.max(
+      lastSyncedRevRef.current,
+      readDonorRankingsRevision(local)
+    );
+  }, []);
+
   const syncFromApi = useCallback(async (opts?: { forceFull?: boolean }) => {
-    if (syncingRef.current) return;
+    if (syncingRef.current) {
+      return;
+    }
     syncingRef.current = true;
     try {
       const forceFull = Boolean(opts?.forceFull);
@@ -84,6 +90,21 @@ export function useDonorRankingsRemoteState(
         forceFull,
       });
       if (!remote) return;
+      const localNow = stateRef.current || readLocalStateIfExists(userId);
+      if (localNow && shouldRejectPoorerDonationRemote(localNow, remote)) {
+        /** 빈/축소 Redis 로 수동 합산·순위를 지우지 않음 — 테마만 원격 수용 */
+        setState((prev) =>
+          mergeDonorRankingsApiState(prev, {
+            ...remote,
+            donors: normalizeDonorsArray(localNow.donors),
+            donorRankingsUpdatedAt: Math.max(
+              readDonorRankingsRevision(localNow),
+              readDonorRankingsRevision(remote)
+            ),
+          })
+        );
+        return;
+      }
       const rev = readDonorRankingsRevision(remote);
       if (rev > 0) lastSyncedRevRef.current = Math.max(lastSyncedRevRef.current, rev);
       setState((prev) => mergeDonorRankingsApiState(prev, remote));
@@ -97,23 +118,25 @@ export function useDonorRankingsRemoteState(
     const o = d as { type?: string; updatedAt?: number; donorRankingsUpdatedAt?: number };
     if (o?.type !== "state_updated") return;
     if (!shouldSyncDonorRankingsFromStateUpdatedEvent(o, lastSyncedRevRef.current)) return;
-    void syncFromApiRef.current();
+    /** 수동 후원 직후 부분 GET(304) 레이스 방지 — 전체 수신 */
+    void syncFromApiRef.current({ forceFull: true });
   });
 
   useEffect(() => {
-    const localTheme = readDonorRankingsThemeFromLocal(userId);
-    if (localTheme) {
-      setState((prev) => mergeDonorRankingsApiState(prev, { ...localTheme, donors: [] }));
-      lastSyncedRevRef.current = readDonorRankingsRevision(localTheme as AppState);
+    const local = readLocalStateIfExists(userId);
+    if (local) {
+      /** 테마만 시드하고 donors=[] 로 비우면 합산 직후 순위가 한동안 0으로 보임 */
+      setState(mergeDonorRankingsApiState(null, local));
     } else {
       setState(defaultState());
-      lastSyncedRevRef.current = 0;
     }
+    /** 로컬 rev 를 since 로 쓰면 서버 신규 후원 GET 이 304 로 스킵될 수 있음 */
+    lastSyncedRevRef.current = 0;
 
     syncFromApiRef.current = syncFromApi;
     const { schedule, cancel } = createStateUpdatedScheduler(
       () => {
-        void syncFromApiRef.current();
+        void syncFromApiRef.current({ forceFull: true });
       },
       { debounceMs: DONOR_STATE_UPDATED_DEBOUNCE_MS, maxWaitMs: DONOR_STATE_UPDATED_MAX_WAIT_MS }
     );
@@ -139,8 +162,21 @@ export function useDonorRankingsRemoteState(
 
     const onStorage = (e: StorageEvent) => {
       if (e.key !== storageKey(userId ?? undefined)) return;
+      const localNow = readLocalStateIfExists(userId);
+      if (localNow && normalizeDonorsArray(localNow.donors).length > 0) {
+        applyLocalDonationSnapshot(localNow);
+      }
       void syncFromApiRef.current({ forceFull: true });
     };
+
+    const unsubscribeLocal = subscribeBroadcastStateLocalUpdated((detail) => {
+      if (!overlayUserIdsMatch(userId, detail.userId)) return;
+      const localNow = readLocalBroadcastState(userId) || readLocalStateIfExists(userId);
+      if (localNow && normalizeDonorsArray(localNow.donors).length > 0) {
+        applyLocalDonationSnapshot(localNow);
+      }
+      void syncFromApiRef.current({ forceFull: true });
+    });
 
     window.addEventListener("storage", onStorage);
     return () => {
@@ -149,8 +185,9 @@ export function useDonorRankingsRemoteState(
       stopPoll?.();
       if (sseFallbackId) window.clearInterval(sseFallbackId);
       window.removeEventListener("storage", onStorage);
+      unsubscribeLocal();
     };
-  }, [userId, syncFromApi]);
+  }, [userId, syncFromApi, applyLocalDonationSnapshot]);
 
   const resync = useCallback(
     (opts?: { forceFull?: boolean }) => syncFromApi(opts),

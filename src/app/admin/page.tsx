@@ -5209,7 +5209,7 @@ export default function AdminPage() {
          * 저장 성공 후 preserved(구 updatedAt)로 LS를 덮지 않음.
          * 덮으면 엑셀·후원표가 최신 후원을 오래된 스냅샷으로 보고 반영을 건너뜀.
          */
-        const base = stateRef.current;
+        let base = stateRef.current;
         const serverAt =
           typeof saved.serverUpdatedAt === "number" && Number.isFinite(saved.serverUpdatedAt)
             ? saved.serverUpdatedAt
@@ -5219,13 +5219,46 @@ export default function AdminPage() {
           Number.isFinite(saved.donorRankingsUpdatedAt)
             ? saved.donorRankingsUpdatedAt
             : Number(base.donorRankingsUpdatedAt || 0);
+        /** Redis 미반영(구서버 filter 등)이면 한 번 더 authoritative 저장 */
+        if (!saved.storageFallback) {
+          const verify = await loadStateFromApi(user?.id, { forceFull: true });
+          const verifiedDonors = normalizeDonorsArray(verify?.donors);
+          const hasNew = verifiedDonors.some((d) => d.id === donor.id);
+          if (!hasNew) {
+            const retryAt = Date.now();
+            const retryState = syncMemberTotalsFromDonors({
+              ...base,
+              donors: rebumpDonorsPastSettlementReset(
+                normalizeDonorsArray(base.donors),
+                Math.max(
+                  Number(base.settlementResetAt || 0),
+                  Number(verify?.settlementResetAt || 0)
+                )
+              ),
+              settlementResetAt: Math.max(
+                Number(base.settlementResetAt || 0),
+                Number(verify?.settlementResetAt || 0)
+              ),
+              updatedAt: retryAt,
+              donorRankingsUpdatedAt: retryAt,
+            });
+            const retrySaved = await saveStateAsync(retryState, user?.id, {
+              donorsAuthoritative: true,
+            });
+            if (retrySaved.ok) {
+              base = retryState;
+              stateRef.current = retryState;
+            }
+          }
+        }
         const bumped: AppState = {
           ...base,
-          updatedAt: Math.max(Number(base.updatedAt || 0), serverAt),
+          updatedAt: Math.max(Number(base.updatedAt || 0), serverAt, Date.now()),
           donorRankingsUpdatedAt: Math.max(
             Number(base.donorRankingsUpdatedAt || 0),
             serverDr,
-            serverAt
+            serverAt,
+            Date.now()
           ),
         };
         stateRef.current = bumped;
