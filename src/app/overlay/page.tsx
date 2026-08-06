@@ -363,9 +363,19 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         const remoteRicher = Boolean(
           data && isRicherDonationSnapshot(data, lastGoodRef.current)
         );
+        /**
+         * 삭제 SSE → forceFull 이 빈/구 Redis 를 덮어쓰면 엑셀표가 0 초기화된다.
+         * 의도적 축소(수동 삭제)만 허용하고, 그 외 poorer 스냅샷은 last-good 유지.
+         */
+        const remotePoorer =
+          Boolean(data && lastGoodRef.current && isRicherDonationSnapshot(lastGoodRef.current, data));
+        const remoteIntentionalShrink = Boolean(
+          data && isNewerIntentionalDonationShrink(data, lastGoodRef.current)
+        );
         const shouldApplyRemote =
           !!data &&
           !shouldKeepLastGoodInsteadOf(data, STATE_PICK_OVERLAY_DONORS, lastGoodRef.current) &&
+          !(remotePoorer && !remoteIntentionalShrink) &&
           (Boolean(opts?.forceFull) ||
             remoteRev > overlaySinceRef.current ||
             remoteRicher ||

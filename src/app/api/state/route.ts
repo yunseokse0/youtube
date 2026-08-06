@@ -14,6 +14,7 @@ import {
   defaultState,
   DEFAULT_DONOR_RANKINGS_FULL_THEME,
   filterDonorsAfterSettlementReset,
+  rebumpDonorsPastSettlementReset,
   coalesceSettlementResetAt,
   hasExpandedSigInventory,
   hasMeaningfulMemberRoster,
@@ -640,10 +641,17 @@ export async function POST(req: Request) {
     const donationInitReset = settlementReset || isDonationInitGoalResetPatch(body);
     const resetAt = Number(baseState.settlementResetAt || 0);
     const incomingDonorsRaw = donorsInPatch ? normalizeDonorsArray(body.donors) : [];
-    /** donorsAuthoritative(투네 프로세서 등)도 리셋 이전 at 후원은 버린다 — 구 스냅샷 되살림 방지 */
+    /**
+     * 수동 삭제·합산 저장: 리셋 이전 at 는 rebump 후 filter.
+     * rebump 없이 filter 만 하면 남은 후원까지 전량 탈락 → 엑셀표 0 초기화.
+     */
+    const incomingDonorsRebumped =
+      resetAt > 0 && !settlementReset && donorsInPatch
+        ? rebumpDonorsPastSettlementReset(incomingDonorsRaw, resetAt)
+        : incomingDonorsRaw;
     const incomingDonorsFiltered =
       resetAt > 0 && !settlementReset && donorsInPatch
-        ? filterDonorsAfterSettlementReset(incomingDonorsRaw, resetAt)
+        ? filterDonorsAfterSettlementReset(incomingDonorsRebumped, resetAt)
         : incomingDonorsRaw;
     if (
       resetAt > 0 &&
@@ -798,13 +806,17 @@ export async function POST(req: Request) {
     }
     if (!settlementReset && effectiveResetAt > 0) {
       const before = normalizeDonorsArray(next.donors);
-      const after = filterDonorsAfterSettlementReset(before, effectiveResetAt);
-      if (after.length !== before.length) {
+      const rebumped = rebumpDonorsPastSettlementReset(before, effectiveResetAt);
+      const after = filterDonorsAfterSettlementReset(rebumped, effectiveResetAt);
+      const atChanged = rebumped.some((d, i) => Number(d.at) !== Number(before[i]?.at));
+      if (after.length !== before.length || atChanged) {
         next = syncMemberTotalsFromDonors({ ...next, donors: after });
-        logger.warn("pre-reset donors stripped before persist", {
-          userId,
-          dropped: before.length - after.length,
-        });
+        if (after.length !== before.length) {
+          logger.warn("pre-reset donors stripped before persist", {
+            userId,
+            dropped: before.length - after.length,
+          });
+        }
       }
     }
 

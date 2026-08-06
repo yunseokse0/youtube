@@ -63,6 +63,28 @@ describe("isNewerIntentionalDonationShrink", () => {
     expect(isNewerIntentionalDonationShrink(newer, older)).toBe(true);
     expect(isNewerIntentionalDonationShrink(older, newer)).toBe(false);
   });
+
+  it("rejects older empty redis as intentional shrink", async () => {
+    const { isNewerIntentionalDonationShrink, isRicherDonationSnapshot } = await import(
+      "@/lib/overlay-sync-signature"
+    );
+    const lastGood = {
+      ...defaultState(),
+      updatedAt: 3000,
+      donors: [
+        { id: "d1", name: "a", amount: 10000, memberId: "m1", at: 1, target: "account" as const },
+      ],
+      members: [{ id: "m1", name: "홍쓰", account: 10000, toon: 0, contribution: 10000 }],
+    };
+    const emptyStale = {
+      ...defaultState(),
+      updatedAt: 1000,
+      donors: [] as typeof lastGood.donors,
+      members: [{ id: "m1", name: "홍쓰", account: 0, toon: 0, contribution: 0 }],
+    };
+    expect(isRicherDonationSnapshot(lastGood, emptyStale)).toBe(true);
+    expect(isNewerIntentionalDonationShrink(emptyStale, lastGood)).toBe(false);
+  });
 });
 
 describe("isRicherDonationSnapshot", () => {
