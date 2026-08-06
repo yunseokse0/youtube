@@ -24,6 +24,7 @@ import {
   isDefaultPlaceholderMemberList,
   isShrunkToDefaultSigInventory,
   mergeDonorsForMultiTabSave,
+  isIntentionalDonorListShrink,
   mergeOverlaySettingsPreservingObsText,
   normalizeDonorsArray,
   normalizeRouletteState,
@@ -698,21 +699,34 @@ export async function POST(req: Request) {
       });
       donorsInPatch = false;
     }
+    /**
+     * donorsAuthoritative 라도 삭제(부분집합 shrink)·정산 리셋이 아니면
+     * Redis 기존 donors 와 union — 수동 합산이 직전 투네를 지우지 않게.
+     */
+    const authoritativeReplace =
+      donorsAuthoritative &&
+      (settlementReset ||
+        donationInitReset ||
+        isIntentionalDonorListShrink(
+          incomingDonorsFiltered,
+          baseDonorsNorm,
+          Number(body.updatedAt || 0),
+          Number(baseState.updatedAt || 0)
+        ));
     const mergedDonors = donorsInPatch
       ? donationInitReset
         ? []
-        : donorsAuthoritative
+        : authoritativeReplace
           ? incomingDonorsFiltered
           : mergeDonorsForMultiTabSave(incomingDonorsFiltered, baseState.donors, {
-            incomingUpdatedAt: Number(body.updatedAt || 0),
-            existingUpdatedAt: Number(baseState.updatedAt || 0),
-            donorsAuthoritative,
-          })
+              incomingUpdatedAt: Number(body.updatedAt || 0),
+              existingUpdatedAt: Number(baseState.updatedAt || 0),
+            })
       : baseState.donors;
     let safeMergedDonors = mergedDonors;
     if (
       donorsInPatch &&
-      !donorsAuthoritative &&
+      !authoritativeReplace &&
       !settlementReset &&
       !donationInitReset &&
       Array.isArray(baseState.donors) &&
@@ -731,6 +745,7 @@ export async function POST(req: Request) {
             baseCount,
             mergedCount,
             recovered: recovered.length,
+            donorsAuthoritative,
           });
           safeMergedDonors = recovered;
         }

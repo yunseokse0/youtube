@@ -11,6 +11,29 @@ function donor(id: string, amount: number, at = 1000): Donor {
   return { id, name: "tester", amount, memberId: "m1", at, target: "toon" };
 }
 
+describe("isIntentionalDonorListShrink", () => {
+  it("detects single-donor delete as intentional shrink", async () => {
+    const { isIntentionalDonorListShrink } = await import("@/lib/state");
+    const existing = [donor("a", 10000), donor("b", 20000)];
+    const incoming = [donor("a", 10000)];
+    expect(isIntentionalDonorListShrink(incoming, existing, 9000, 5000)).toBe(true);
+  });
+
+  it("does not treat manual add (new id) as shrink even if shorter than redis race", async () => {
+    const { isIntentionalDonorListShrink } = await import("@/lib/state");
+    const existing = [donor("toonation:1", 64000)];
+    const incoming = [donor("d_manual_1", 50000, 2000)];
+    expect(isIntentionalDonorListShrink(incoming, existing, 9000, 5000)).toBe(false);
+  });
+
+  it("does not treat add+keep as shrink", async () => {
+    const { isIntentionalDonorListShrink } = await import("@/lib/state");
+    const existing = [donor("toonation:1", 64000)];
+    const incoming = [donor("toonation:1", 64000), donor("d_manual_1", 50000, 2000)];
+    expect(isIntentionalDonorListShrink(incoming, existing, 9000, 5000)).toBe(false);
+  });
+});
+
 describe("mergeDonorsForMultiTabSave", () => {
   it("does not restore deleted donors from a stale tab save", () => {
     const existing = [donor("toonation:1", 51000), donor("toonation:2", 10000)];

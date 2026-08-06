@@ -2863,6 +2863,31 @@ export function mergeDonorsForMultiTabSave(
   return unionDonorsById(existing, incoming);
 }
 
+/**
+ * 수동 삭제처럼 incoming 이 existing 의 부분집합이고 시각이 앞설 때만 true.
+ * 합산 추가(신규 id)·투네와 경합 시에는 false → 서버는 replace 대신 union.
+ */
+export function isIntentionalDonorListShrink(
+  incoming: Donor[] | undefined,
+  existing: Donor[] | undefined,
+  incomingUpdatedAt = 0,
+  existingUpdatedAt = 0
+): boolean {
+  const incomingNorm = normalizeDonorsArray(incoming);
+  const existingNorm = normalizeDonorsArray(existing);
+  if (existingNorm.length === 0) return false;
+  if (incomingNorm.length >= existingNorm.length) return false;
+  const existingIds = new Set(existingNorm.map((d) => String(d.id || "")).filter(Boolean));
+  const incomingIds = incomingNorm.map((d) => String(d.id || "")).filter(Boolean);
+  /** 신규 id 가 있으면 합산·투네 반영 — 삭제가 아님 */
+  if (incomingIds.some((id) => !existingIds.has(id))) return false;
+  if (incomingIds.some((id) => !id)) return false;
+  const inAt = Number(incomingUpdatedAt || 0);
+  const exAt = Number(existingUpdatedAt || 0);
+  if (inAt > 0 && exAt > 0 && inAt < exAt) return false;
+  return true;
+}
+
 /** filterDonorsAfterSettlementReset / rebump 와 동일 grace */
 const SETTLEMENT_RESET_DONOR_GRACE_MS = 3000;
 

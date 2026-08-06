@@ -5296,6 +5296,11 @@ export default function AdminPage() {
             verifiedDonors = normalizeDonorsArray(verify?.donors);
             hasNew = verifiedDonors.some((d) => d.id === donor.id);
           }
+          /** 서버가 투네와 union 했다면 화면·순위에도 합친 목록 반영 */
+          if (verify && verifiedDonors.length > normalizeDonorsArray(base.donors).length) {
+            base = enrichStateBeforeAuthoritativeDonationSave(base, [verify]);
+            stateRef.current = base;
+          }
           if (!hasNew) {
             const retryAt = Date.now();
             const retryReset = Math.max(
