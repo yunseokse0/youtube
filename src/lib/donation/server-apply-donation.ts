@@ -3,17 +3,14 @@ import {
   releaseDonationApplyClaim,
   tryClaimDonationApply,
 } from "@/app/api/donations/_shared/applied-store";
-import { saveAppStateForRoulette } from "@/app/api/roulette/edge-state-store";
 import { readDonationQueue } from "@/app/api/donations/_shared/queue-store";
 import { loadAppStateForUserId } from "@/lib/app-state-server-load";
-import { getServerMemoryAppState } from "@/lib/server-memory-app-state";
-import { publishSseEvent } from "@/lib/sse-clients-hub";
 import { broadcastPlayerDonationAlert, enrichDonationEventWithSigMatch } from "./player-donation-alert";
 import {
   applyDonationToAppState,
   isDuplicateDonationEvent,
 } from "./apply-donation-state";
-import { mergeStatePreservingDonorsUntilSettlementReset } from "@/lib/donation/merge-donation-apply-base";
+import { persistDonationApplyLikeToonation } from "@/lib/donation/persist-donation-like-toon";
 import { enqueueDonationEvent, purgeDonationQueueForEvent } from "./toonation/enqueue-donation";
 import { readToonationListenerConfig } from "./toonation/listener-config-store";
 import { resolveToonationDonationWithOwnerRemap } from "./toonation/owner-donation-remap";
@@ -41,29 +38,6 @@ async function resolveAlreadyAppliedOrDefer(
   const state = await loadAppStateForUserId(userId);
   if (isDuplicateDonationEvent(state, event)) return "applied";
   return "retry";
-}
-
-type DonationAppliedSseHint = {
-  donorName: string;
-  amount: number;
-  target: "account" | "toon";
-  memberName?: string;
-};
-
-async function broadcastDonationStateUpdated(
-  updatedAt: number,
-  donorRankingsUpdatedAt?: number,
-  donationApplied?: DonationAppliedSseHint
-): Promise<void> {
-  const payload = {
-    type: "state_updated" as const,
-    updatedAt,
-    ...(typeof donorRankingsUpdatedAt === "number" && donorRankingsUpdatedAt > 0
-      ? { donorRankingsUpdatedAt }
-      : {}),
-    ...(donationApplied ? { donationApplied } : {}),
-  };
-  await publishSseEvent(payload);
 }
 
 /** 큐에 쌓인 후원을 서버에서 즉시 재시도(관리자 탭 없이 엑셀 반영) */
@@ -126,30 +100,12 @@ export async function tryAutoApplyToonationDonationOnServer(
       await releaseDonationApplyClaim(userId, event);
       return "not_applied";
     }
-    /**
-     * 반영 중 수동 합산 POST 가 끼면 freshState 에 없던 계좌 후원이 유실될 수 있음.
-     * 저장 직전 최신 스냅샷과 한 번 더 union.
-     */
-    const concurrent = await loadAppStateForUserId(userId);
-    const toPersist = mergeStatePreservingDonorsUntilSettlementReset(result.state, concurrent);
-    await saveAppStateForRoulette(userId, toPersist);
-    const memSaved = getServerMemoryAppState(userId);
-    const verify = await loadAppStateForUserId(userId);
-    const persisted =
-      isDuplicateDonationEvent(verify, event) ||
-      (memSaved ? isDuplicateDonationEvent(memSaved, event) : false);
-    if (!persisted) {
+    const persisted = await persistDonationApplyLikeToonation(userId, result.state, result.event);
+    if (!persisted.ok) {
       await releaseDonationApplyClaim(userId, event);
       return "not_applied";
     }
     await purgeDonationQueueForEvent(userId, event);
-    const member = (toPersist.members || []).find((m) => m.id === result.event.memberId);
-    await broadcastDonationStateUpdated(toPersist.updatedAt, toPersist.donorRankingsUpdatedAt, {
-      donorName: result.event.donorName,
-      amount: result.event.amount,
-      target: result.event.target === "account" ? "account" : "toon",
-      memberName: member?.name || undefined,
-    });
     const enriched = await enrichDonationEventWithSigMatch(userId, result.event);
     await broadcastPlayerDonationAlert(userId, enriched);
     return result.event.memberAutoAssigned ? "applied_needs_review" : "applied";

@@ -3,6 +3,7 @@ import {
   enrichStateBeforeAuthoritativeDonationSave,
   mergeDonationApplyBase,
 } from "./merge-donation-apply-base";
+import { applyBankDonationsViaApi } from "./apply-bank-donation-client";
 import { createModuleLogger } from "@/lib/logger";
 import type { AppState } from "@/types";
 import { applyDonationToAppState, isDuplicateDonationEvent } from "./apply-donation-state";
@@ -61,6 +62,50 @@ export async function processDonationEvent(
       unresolvedEventIds.delete(dedupeKey);
     } else if (processedEventIds.has(dedupeKey)) {
       return { ...event, status: "processed" as const };
+    }
+
+    /**
+     * 수동 계좌·미매칭 배치: 투네 서버 반영과 동일 API
+     * (applyDonation → union → saveAppStateForRoulette → SSE)
+     */
+    const manualMemberId = String(event.manualAssignMemberId || "").trim();
+    if (manualMemberId || event.provider === "bank") {
+      const memberId = manualMemberId || String(event.memberId || "").trim();
+      if (!memberId) {
+        if (!unresolvedEventIds.has(dedupeKey)) {
+          unresolvedEventIds.add(dedupeKey);
+          await saveUnmatched({ ...event, status: "unmatched" }, userId);
+        }
+        return { ...event, status: "unmatched" as const };
+      }
+      const target = event.target === "toon" ? "toon" : "account";
+      const apiResult = await applyBankDonationsViaApi(
+        userId,
+        [
+          {
+            donorName: event.donorName,
+            amount: event.amount,
+            memberId,
+            target,
+            ...(event.message ? { message: event.message } : {}),
+            id: event.id,
+          },
+        ],
+        { target }
+      );
+      if (!apiResult.ok) {
+        return { ...event, status: "failed" as const, error: apiResult.error || "state_save_failed" };
+      }
+      processedEventIds.add(dedupeKey);
+      unresolvedEventIds.delete(dedupeKey);
+      await resolveUnmatched(event.id, userId);
+      log.debug("processed(via apply api)", event.donorName, event.amount);
+      return {
+        ...event,
+        memberId,
+        status: "processed" as const,
+        updatedState: apiResult.state,
+      };
     }
 
     const loaded = await loadStateFromApi(userId, { forceFull: true });

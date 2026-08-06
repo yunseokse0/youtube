@@ -195,6 +195,7 @@ import {
   syncMemberTotalsFromDonors,
 } from "@/lib/donation/apply-donation-state";
 import { mergeDonationApplyBase, enrichStateBeforeAuthoritativeDonationSave } from "@/lib/donation/merge-donation-apply-base";
+import { applyBankDonationsViaApi } from "@/lib/donation/apply-bank-donation-client";
 import {
   parseBulkDonationText,
   resolveBulkDonationRows,
@@ -5253,179 +5254,34 @@ export default function AdminPage() {
     const rawName = donorName;
     setDonorName("");
     setDonorAmount("");
-    const donor: Donor = {
-      id: `d_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      name: (rawName || "무명").replace(/\s+/g, ""),
-      amount,
-      memberId,
-      at: Date.now(),
-      target,
-    };
+    const donorNameClean = (rawName || "무명").replace(/\s+/g, "") || "무명";
     addDonorSaveChainRef.current = addDonorSaveChainRef.current
       .catch(() => {})
       .then(async () => {
-      /** 연속 합산·검증 동안 빈 원격으로 표가 초기화되지 않게 */
+      /** 투네 서버 반영과 동일 파이프라인 — `/api/donations/apply` */
       donationAuthoritativeSaveUntilRef.current = Date.now() + 45_000;
-      /**
-       * 투네 자동반영과 동일: authoritative 저장 전 서버·LS·화면 donors 를 union.
-       * 화면만으로 저장하면 Redis 투네 후원이 통째로 지워져 “수동 입력 시 초기화”처럼 보인다.
-       */
-      const fresh = await loadStateFromApi(user?.id, { forceFull: true });
-      const localSnap = loadState(user?.id);
-      const hint = stateRef.current;
-      const baseMerged = enrichStateBeforeAuthoritativeDonationSave(hint, [localSnap, fresh]);
-      const nowTs = Date.now();
-      for (const [id, exp] of recentlyRemovedDonorIdsRef.current) {
-        if (exp < nowTs) recentlyRemovedDonorIdsRef.current.delete(id);
-      }
-      const removed = recentlyRemovedDonorIdsRef.current;
-      const baseDonors = normalizeDonorsArray(baseMerged.donors).filter((d) => !removed.has(d.id));
-      const resetAt = Math.max(
-        Number(baseMerged.settlementResetAt || 0),
-        Number(fresh?.settlementResetAt || 0),
-        Number(hint.settlementResetAt || 0)
+      pendingUnsyncedRef.current = true;
+      const result = await applyBankDonationsViaApi(
+        user?.id,
+        [{ donorName: donorNameClean, amount, memberId, target }],
+        { target }
       );
-      const syncMode = baseMerged.donationSyncMode || hint.donationSyncMode || "mealBattle";
-      const now = Date.now();
-      const mealParticipants =
-        syncMode === "mealBattle"
-          ? applyMealBattleDonationToParticipants(
-              baseMerged.mealBattle?.participants || hint.mealBattle?.participants || [],
-              memberId,
-              amount,
-              1,
-              donor.at,
-              mealBattleUsesRawDonationScore(baseMerged.mealBattle ?? hint.mealBattle)
-            )
-          : (baseMerged.mealBattle?.participants || hint.mealBattle?.participants || []);
-      const next: AppState = syncMemberTotalsFromDonors({
-        ...baseMerged,
-        settlementResetAt: resetAt || baseMerged.settlementResetAt,
-        donors: rebumpDonorsPastSettlementReset([...baseDonors, donor], resetAt),
-        donorRankingsUpdatedAt: now,
-        updatedAt: now,
-        mealBattle: {
-          ...baseMerged.mealBattle,
-          participants: mealParticipants,
-        },
-      });
-      /**
-       * 삭제와 동일하게 donorsAuthoritative 로 저장.
-       * union merge 면 방금 지운 계좌후원이 되살아나 재입력이 깨짐.
-       */
-      const preserved = markAuthoritativeDonationSave(
-        { serverUpdatedAt: next.updatedAt },
-        next,
-        { replaceDonors: true, awaitingServerSave: true }
-      );
-      setState(preserved);
-      const saved = await saveStateAsync(preserved, user?.id, {
-        donorsAuthoritative: true,
-      });
-      if (saved.ok) {
-        /**
-         * 저장 성공 후 preserved(구 updatedAt)로 LS를 덮지 않음.
-         * 덮으면 엑셀·후원표가 최신 후원을 오래된 스냅샷으로 보고 반영을 건너뜀.
-         */
-        let base = stateRef.current;
-        /** 직렬화 중 다른 합산이 stateRef 를 바꿨을 수 있어, 이번 저장본 donors 를 기준으로 유지 */
-        if (normalizeDonorsArray(base.donors).length < normalizeDonorsArray(preserved.donors).length) {
-          base = {
-            ...preserved,
-            donors: mergeDonorsForMultiTabSave(
-              normalizeDonorsArray(preserved.donors),
-              normalizeDonorsArray(base.donors),
-              {
-                incomingUpdatedAt: preserved.updatedAt,
-                existingUpdatedAt: base.updatedAt,
-              }
-            ),
-          };
-          base = syncMemberTotalsFromDonors(base);
-        }
-        const serverAt =
-          typeof saved.serverUpdatedAt === "number" && Number.isFinite(saved.serverUpdatedAt)
-            ? saved.serverUpdatedAt
-            : Number(base.updatedAt || 0);
-        const serverDr =
-          typeof saved.donorRankingsUpdatedAt === "number" &&
-          Number.isFinite(saved.donorRankingsUpdatedAt)
-            ? saved.donorRankingsUpdatedAt
-            : Number(base.donorRankingsUpdatedAt || 0);
-        /** Redis 미반영(구서버 filter 등)이면 한 번 더 authoritative 저장 */
-        if (!saved.storageFallback) {
-          let verify = await loadStateFromApi(user?.id, { forceFull: true });
-          let verifiedDonors = normalizeDonorsArray(verify?.donors);
-          let hasNew = verifiedDonors.some((d) => d.id === donor.id);
-          if (
-            !hasNew &&
-            typeof saved.serverUpdatedAt === "number" &&
-            Number(verify?.updatedAt || 0) + 50 < saved.serverUpdatedAt
-          ) {
-            await new Promise((r) => window.setTimeout(r, 450));
-            verify = await loadStateFromApi(user?.id, { forceFull: true });
-            verifiedDonors = normalizeDonorsArray(verify?.donors);
-            hasNew = verifiedDonors.some((d) => d.id === donor.id);
-          }
-          /** 서버가 투네와 union 했다면 화면·순위에도 합친 목록 반영 */
-          if (verify && verifiedDonors.length > normalizeDonorsArray(base.donors).length) {
-            base = enrichStateBeforeAuthoritativeDonationSave(base, [verify]);
-            stateRef.current = base;
-          }
-          if (!hasNew) {
-            const retryAt = Date.now();
-            const retryReset = Math.max(
-              Number(base.settlementResetAt || 0),
-              Number(verify?.settlementResetAt || 0)
-            );
-            const retryState = syncMemberTotalsFromDonors({
-              ...base,
-              donors: rebumpDonorsPastSettlementReset(
-                normalizeDonorsArray(base.donors),
-                retryReset
-              ),
-              settlementResetAt: retryReset,
-              updatedAt: retryAt,
-              donorRankingsUpdatedAt: retryAt,
-            });
-            const retrySaved = await saveStateAsync(retryState, user?.id, {
-              donorsAuthoritative: true,
-            });
-            if (retrySaved.ok) {
-              base = retryState;
-              stateRef.current = retryState;
-            }
-          }
-        }
-        const bumped: AppState = {
-          ...base,
-          updatedAt: Math.max(Number(base.updatedAt || 0), serverAt, Date.now()),
-          donorRankingsUpdatedAt: Math.max(
-            Number(base.donorRankingsUpdatedAt || 0),
-            serverDr,
-            serverAt,
-            Date.now()
-          ),
-        };
-        stateRef.current = bumped;
-        stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, bumped.updatedAt);
-        lastAppliedRemoteUpdatedAtRef.current = Math.max(
-          lastAppliedRemoteUpdatedAtRef.current,
-          bumped.updatedAt
-        );
-        donationAuthoritativeSaveUntilRef.current = Date.now() + 45_000;
-        pendingUnsyncedRef.current = false;
-        try {
-          window.localStorage.setItem(storageKey(user?.id), JSON.stringify(bumped));
-        } catch {}
-        notifyBroadcastStateLocalUpdated(user?.id, bumped.updatedAt);
-        setState(bumped);
-        setSyncStatus(saved.storageFallback ? "error" : "synced");
-      } else {
+      if (!result.ok) {
         setSyncStatus(
           typeof navigator !== "undefined" && !navigator.onLine ? "local" : "error"
         );
+        pendingUnsyncedRef.current = false;
+        return;
       }
+      const merged = enrichStateBeforeAuthoritativeDonationSave(stateRef.current, [result.state]);
+      const preserved = markAuthoritativeDonationSave(
+        { serverUpdatedAt: result.updatedAt },
+        merged,
+        { replaceDonors: true }
+      );
+      pendingUnsyncedRef.current = false;
+      setState(preserved);
+      setSyncStatus("synced");
     });
   };
 
@@ -5485,102 +5341,41 @@ export default function AdminPage() {
       .catch(() => {})
       .then(async () => {
         donationAuthoritativeSaveUntilRef.current = Date.now() + 60_000;
-        const fresh = await loadStateFromApi(user?.id, { forceFull: true });
-        const localSnap = loadState(user?.id);
-        const hint = stateRef.current;
-        const baseMerged = enrichStateBeforeAuthoritativeDonationSave(hint, [localSnap, fresh]);
-        const nowTs = Date.now();
-        for (const [id, exp] of recentlyRemovedDonorIdsRef.current) {
-          if (exp < nowTs) recentlyRemovedDonorIdsRef.current.delete(id);
-        }
-        const removed = recentlyRemovedDonorIdsRef.current;
-        const baseDonors = normalizeDonorsArray(baseMerged.donors).filter((d) => !removed.has(d.id));
-        const resetAt = Math.max(
-          Number(baseMerged.settlementResetAt || 0),
-          Number(fresh?.settlementResetAt || 0),
-          Number(hint.settlementResetAt || 0)
+        pendingUnsyncedRef.current = true;
+        const result = await applyBankDonationsViaApi(
+          user?.id,
+          matched.map((row) => ({
+            donorName: row.donorName.replace(/\s+/g, "") || "무명",
+            amount: row.amount,
+            memberId: row.memberId!,
+            target,
+          })),
+          { target }
         );
-        const now = Date.now();
-        const newDonors: Donor[] = matched.map((row, i) => ({
-          id: `d_bulk_${now}_${i}_${Math.random().toString(36).slice(2, 6)}`,
-          name: row.donorName.replace(/\s+/g, "") || "무명",
-          amount: row.amount,
-          memberId: row.memberId!,
-          at: now + i,
-          target,
-        }));
-        let mealParticipants = baseMerged.mealBattle?.participants || hint.mealBattle?.participants || [];
-        const syncMode = baseMerged.donationSyncMode || hint.donationSyncMode || "mealBattle";
-        if (syncMode === "mealBattle") {
-          for (const d of newDonors) {
-            mealParticipants = applyMealBattleDonationToParticipants(
-              mealParticipants,
-              d.memberId,
-              d.amount,
-              1,
-              d.at,
-              mealBattleUsesRawDonationScore(baseMerged.mealBattle ?? hint.mealBattle)
-            );
-          }
-        }
-        const next: AppState = syncMemberTotalsFromDonors({
-          ...baseMerged,
-          settlementResetAt: resetAt || baseMerged.settlementResetAt,
-          donors: rebumpDonorsPastSettlementReset([...baseDonors, ...newDonors], resetAt),
-          donorRankingsUpdatedAt: now,
-          updatedAt: now,
-          mealBattle: {
-            ...baseMerged.mealBattle,
-            participants: mealParticipants,
-          },
-        });
-        const preserved = markAuthoritativeDonationSave(
-          { serverUpdatedAt: next.updatedAt },
-          next,
-          { replaceDonors: true, awaitingServerSave: true }
-        );
-        setState(preserved);
-        const saved = await saveStateAsync(preserved, user?.id, { donorsAuthoritative: true });
-        if (saved.ok) {
-          const serverAt =
-            typeof saved.serverUpdatedAt === "number" && Number.isFinite(saved.serverUpdatedAt)
-              ? saved.serverUpdatedAt
-              : Number(preserved.updatedAt || 0);
-          const bumped: AppState = {
-            ...preserved,
-            updatedAt: Math.max(Number(preserved.updatedAt || 0), serverAt),
-            donorRankingsUpdatedAt: Math.max(
-              Number(preserved.donorRankingsUpdatedAt || 0),
-              serverAt
-            ),
-          };
-          stateRef.current = bumped;
-          stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, bumped.updatedAt);
-          lastAppliedRemoteUpdatedAtRef.current = Math.max(
-            lastAppliedRemoteUpdatedAtRef.current,
-            bumped.updatedAt
-          );
-          donationAuthoritativeSaveUntilRef.current = Date.now() + 45_000;
-          try {
-            window.localStorage.setItem(storageKey(user?.id), JSON.stringify(bumped));
-          } catch {}
-          notifyBroadcastStateLocalUpdated(user?.id, bumped.updatedAt);
-          setState(bumped);
-          setSyncStatus(saved.storageFallback ? "error" : "synced");
-          setBulkDonationText("");
-          setBulkDonationPreview(null);
-          setBulkDonationSkipped([]);
-          window.alert(
-            `일괄 추가 완료: ${matched.length}건` +
-              (unmatched.length > 0 ? ` (미매칭 ${unmatched.length}건 제외)` : "") +
-              (saved.storageFallback ? "\n(서버 저장 실패 — 이 PC에만 반영)" : "")
-          );
-        } else {
+        if (!result.ok) {
           setSyncStatus(
             typeof navigator !== "undefined" && !navigator.onLine ? "local" : "error"
           );
-          window.alert("일괄 추가 저장에 실패했습니다.");
+          pendingUnsyncedRef.current = false;
+          window.alert(`일괄 추가 저장에 실패했습니다.\n(${result.error})`);
+          return;
         }
+        const merged = enrichStateBeforeAuthoritativeDonationSave(stateRef.current, [result.state]);
+        const preserved = markAuthoritativeDonationSave(
+          { serverUpdatedAt: result.updatedAt },
+          merged,
+          { replaceDonors: true }
+        );
+        pendingUnsyncedRef.current = false;
+        setState(preserved);
+        setSyncStatus("synced");
+        setBulkDonationText("");
+        setBulkDonationPreview(null);
+        setBulkDonationSkipped([]);
+        window.alert(
+          `일괄 추가 완료: ${result.appliedCount}건` +
+            (unmatched.length > 0 ? ` (미매칭 ${unmatched.length}건 제외)` : "")
+        );
       })
       .finally(() => setBulkDonationBusy(false));
   };

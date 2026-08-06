@@ -28,4 +28,6 @@
 - 후원 전체 초기화·`settlementResetAt` 상승은 사용자 명시 `settlementReset: true`(관리자「정산 리셋」)만 허용한다.
 - 투네 반영·테마 저장·폴링·권한 저장이 후원을 통째로 비우거나 리셋 stamp 를 올리면 안 된다.
 - 단건 후원 삭제(의도적 shrink)는 허용한다.
-- 후원이 갱신되는 순간(합산·붙여넣기·투네·삭제·복구) 서버(Redis)에 `donorsAuthoritative` 로 즉시 저장한다.
+- 후원이 갱신되는 순간(합산·붙여넣기·투네·삭제·복구) 서버(Redis)에 즉시 저장한다.
+  - 수동 합산·일괄은 `/api/donations/apply`(투네와 동일: applyDonation → union → saveAppStateForRoulette → SSE).
+  - 삭제·복구 등은 `donorsAuthoritative` 저장을 유지한다.
