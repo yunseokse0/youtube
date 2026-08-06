@@ -192,7 +192,7 @@ import {
   revertDonationFromAppState,
   syncMemberTotalsFromDonors,
 } from "@/lib/donation/apply-donation-state";
-import { mergeDonationApplyBase } from "@/lib/donation/merge-donation-apply-base";
+import { mergeDonationApplyBase, enrichStateBeforeAuthoritativeDonationSave } from "@/lib/donation/merge-donation-apply-base";
 import { suggestMemberForDonationEvent } from "@/lib/donation/mapper";
 import { processDonationEvent, type ProcessDonationResult } from "@/lib/donation/processor";
 import {
@@ -5170,32 +5170,46 @@ export default function AdminPage() {
       .then(async () => {
       /** 연속 합산·검증 동안 빈 원격으로 표가 초기화되지 않게 */
       donationAuthoritativeSaveUntilRef.current = Date.now() + 45_000;
-      /** 항상 최신 stateRef 기준 — 병렬 합산이 이전 후원을 덮어쓰지 않음 */
-      const prev = stateRef.current;
-      const syncMode = prev.donationSyncMode || "mealBattle";
+      /**
+       * 투네 자동반영과 동일: authoritative 저장 전 서버·LS·화면 donors 를 union.
+       * 화면만으로 저장하면 Redis 투네 후원이 통째로 지워져 “수동 입력 시 초기화”처럼 보인다.
+       */
+      const fresh = await loadStateFromApi(user?.id, { forceFull: true });
+      const localSnap = loadState(user?.id);
+      const hint = stateRef.current;
+      const baseMerged = enrichStateBeforeAuthoritativeDonationSave(hint, [localSnap, fresh]);
+      const nowTs = Date.now();
+      for (const [id, exp] of recentlyRemovedDonorIdsRef.current) {
+        if (exp < nowTs) recentlyRemovedDonorIdsRef.current.delete(id);
+      }
+      const removed = recentlyRemovedDonorIdsRef.current;
+      const baseDonors = normalizeDonorsArray(baseMerged.donors).filter((d) => !removed.has(d.id));
+      const resetAt = Math.max(
+        Number(baseMerged.settlementResetAt || 0),
+        Number(fresh?.settlementResetAt || 0),
+        Number(hint.settlementResetAt || 0)
+      );
+      const syncMode = baseMerged.donationSyncMode || hint.donationSyncMode || "mealBattle";
       const now = Date.now();
       const mealParticipants =
         syncMode === "mealBattle"
           ? applyMealBattleDonationToParticipants(
-              prev.mealBattle?.participants || [],
+              baseMerged.mealBattle?.participants || hint.mealBattle?.participants || [],
               memberId,
               amount,
               1,
               donor.at,
-              mealBattleUsesRawDonationScore(prev.mealBattle)
+              mealBattleUsesRawDonationScore(baseMerged.mealBattle ?? hint.mealBattle)
             )
-          : (prev.mealBattle?.participants || []);
-      /** donors → 멤버 계좌/투네 재합산 (엑셀표·후원순위와 동일 소스) */
+          : (baseMerged.mealBattle?.participants || hint.mealBattle?.participants || []);
       const next: AppState = syncMemberTotalsFromDonors({
-        ...prev,
-        donors: rebumpDonorsPastSettlementReset(
-          [...(prev.donors || []), donor],
-          Number(prev.settlementResetAt || 0)
-        ),
+        ...baseMerged,
+        settlementResetAt: resetAt || baseMerged.settlementResetAt,
+        donors: rebumpDonorsPastSettlementReset([...baseDonors, donor], resetAt),
         donorRankingsUpdatedAt: now,
         updatedAt: now,
         mealBattle: {
-          ...prev.mealBattle,
+          ...baseMerged.mealBattle,
           participants: mealParticipants,
         },
       });
