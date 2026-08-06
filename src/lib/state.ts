@@ -2837,6 +2837,17 @@ export function mergeDonorsForMultiTabSave(
   return unionDonorsById(existing, incoming);
 }
 
+/** filterDonorsAfterSettlementReset / rebump 와 동일 grace */
+const SETTLEMENT_RESET_DONOR_GRACE_MS = 3000;
+
+function donorAtEpochMs(donor: { at?: number | string }): number {
+  const raw = donor.at;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (Number.isFinite(Number(raw))) return Math.floor(Number(raw));
+  const parsed = Date.parse(String(raw || ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 /** 정산 리셋 이후 구 탭·다른 PC가 실어낸 후원(at < reset) 제거 */
 export function filterDonorsAfterSettlementReset(
   donors: Donor[] | undefined,
@@ -2844,18 +2855,33 @@ export function filterDonorsAfterSettlementReset(
 ): Donor[] {
   const resetAt = Number(settlementResetAt || 0);
   if (!resetAt) return normalizeDonorsArray(donors);
-  const graceMs = 3000;
-  const threshold = resetAt - graceMs;
+  const threshold = resetAt - SETTLEMENT_RESET_DONOR_GRACE_MS;
   return normalizeDonorsArray(donors).filter((d) => {
-    const raw = d.at;
-    const at =
-      typeof raw === "number" && Number.isFinite(raw)
-        ? raw
-        : Number.isFinite(Number(raw))
-          ? Math.floor(Number(raw))
-          : Date.parse(String(raw || ""));
+    const at = donorAtEpochMs(d);
     if (!Number.isFinite(at) || at <= 0) return true;
     return at >= threshold;
+  });
+}
+
+/**
+ * 일일 로그·브라우저 복구 시 리셋 이전 at 이면 서버 저장 직후 전부 걸림.
+ * 의도적 복구에서는 reset 이후로 at 을 올려 엑셀·후원순위에 반영되게 한다.
+ */
+export function rebumpDonorsPastSettlementReset(
+  donors: Donor[] | undefined,
+  settlementResetAt: number
+): Donor[] {
+  const resetAt = Number(settlementResetAt || 0);
+  const normalized = normalizeDonorsArray(donors);
+  if (!resetAt) return normalized;
+  const threshold = resetAt - SETTLEMENT_RESET_DONOR_GRACE_MS;
+  let seq = 0;
+  return normalized.map((d) => {
+    const at = donorAtEpochMs(d);
+    if (!Number.isFinite(at) || at <= 0 || at >= threshold) return d;
+    const bumped = resetAt + seq;
+    seq += 1;
+    return { ...d, at: bumped };
   });
 }
 

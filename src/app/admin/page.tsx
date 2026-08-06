@@ -40,6 +40,7 @@ import {
   isDefaultLikeTimerDisplayStyle,
   normalizeDonorsArray,
   mergeDonorsForMultiTabSave,
+  rebumpDonorsPastSettlementReset,
   ensureMissionItems,
   appendDailyLog,
   loadDailyLogFromApi,
@@ -469,6 +470,10 @@ export default function AdminPage() {
   const pendingUnsyncedRef = useRef<boolean>(false);
   /** donorsAuthoritative 저장 직후 SSE·폴링이 빈 서버 스냅샷으로 덮어쓰지 않게 */
   const donationAuthoritativeSaveUntilRef = useRef<number>(0);
+  /** 방금 삭제한 후원 id — richer remote 가 삭제분을 되살리지 않게 */
+  const recentlyRemovedDonorIdsRef = useRef<Map<string, number>>(new Map());
+  /** 일일 로그 복구 — markAuthoritativeDonationSave 이후 본문 연결 */
+  const restoreDonorsFromDailyLogSnapshotRef = useRef<(() => Promise<void>) | null>(null);
   /** 테마 자동 복구 안내는 세션당 1회 */
   const themeRestorePromptedRef = useRef(false);
   /** 주기 폴링에서 didPreserve로 서버에 다시 올릴 때 최소 간격 — 연속 POST·SSE 대기 완화 */
@@ -1758,12 +1763,26 @@ export default function AdminPage() {
         /**
          * 후원 반영·삭제 직후 — 빈/구 스냅샷으로 덮지 않음.
          * 단 서버 투네 자동 반영 등 더 많은 후원·금액은 수용(엑셀표 투네 열 지연 방지).
+         * 방금 삭제한 id 가 들어 있는 “더 많은” 스냅샷은 삭제를 되돌리므로 제외.
          */
+        const nowTs = Date.now();
+        for (const [id, exp] of recentlyRemovedDonorIdsRef.current) {
+          if (exp < nowTs) recentlyRemovedDonorIdsRef.current.delete(id);
+        }
+        const removed = recentlyRemovedDonorIdsRef.current;
         const remoteDonors = normalizeDonorsArray(remote.donors);
         const localDonors = normalizeDonorsArray(stateRef.current.donors);
+        const localIds = new Set(localDonors.map((d) => d.id));
+        const remoteOnlyFresh = remoteDonors.filter(
+          (d) => !localIds.has(d.id) && !removed.has(d.id)
+        );
+        const remoteSansRemoved = {
+          ...remote,
+          donors: remoteDonors.filter((d) => !removed.has(d.id)),
+        };
         const remoteRicher =
-          totalCombined(remote) > totalCombined(stateRef.current) ||
-          remoteDonors.length > localDonors.length;
+          totalCombined(remoteSansRemoved) > totalCombined(stateRef.current) ||
+          remoteOnlyFresh.length > 0;
         if (!remoteRicher) return false;
       }
       /** 저장 대기 중이어도 원격 신규 후원은 mergeIncoming에서 수용.
@@ -3988,42 +4007,8 @@ export default function AdminPage() {
   );
 
   const restoreDonorsFromDailyLogSnapshot = useCallback(async () => {
-    const serverLog = await loadDailyLogFromApi(user?.id);
-    const localLog = loadDailyLog(user?.id);
-    const merged: Record<string, DailyLogEntry[]> = { ...localLog, ...serverLog };
-    const todayKey = new Date().toISOString().slice(0, 10);
-    const latest = pickDailyLogEntryForRestore(merged, todayKey);
-    if (!latest) {
-      window.alert("일일 로그에 복구할 후원 스냅샷이 없습니다.");
-      return;
-    }
-    const donorCount = Array.isArray(latest.donors) ? latest.donors.length : 0;
-    const memberCount = Array.isArray(latest.members) ? latest.members.length : 0;
-    if (donorCount === 0 && memberCount === 0) {
-      window.alert("최근 일일 로그에 후원·멤버 데이터가 없습니다.");
-      return;
-    }
-    const fromToday = String(latest.at || "").slice(0, 10) === todayKey;
-    if (
-      !window.confirm(
-        `일일 로그 ${fromToday ? "오늘" : "최근"} 스냅샷(${latest.at})에서 복구합니다.\n` +
-          `후원 ${donorCount}건 · 멤버 ${memberCount}명\n계속할까요?`
-      )
-    ) {
-      return;
-    }
-    setState((prev: AppState) => {
-      const draft: AppState = {
-        ...prev,
-        ...(memberCount > 0 ? { members: latest.members } : {}),
-        ...(donorCount > 0 ? { donors: normalizeDonorsArray(latest.donors) } : {}),
-        updatedAt: Date.now(),
-      };
-      persistState(draft);
-      return draft;
-    });
-    window.alert(`일일 로그 복구 완료: 후원 ${donorCount}건 · 멤버 ${memberCount}명`);
-  }, [user?.id, persistState]);
+    await restoreDonorsFromDailyLogSnapshotRef.current?.();
+  }, []);
 
   const dedupeSigInventoryItems = useCallback(
     (strategy: "imageUrl" | "nameAndPrice") => {
@@ -5125,57 +5110,106 @@ export default function AdminPage() {
     if (!confirmHighAmount(amount)) return;
     if (amount <= 0) return;
     const target = donorTarget;
-    setState((prev: AppState) => {
+    const memberId = donorMemberId;
+    const rawName = donorName;
+    setDonorName("");
+    setDonorAmount("");
+    void (async () => {
+      const prev = stateRef.current;
       const syncMode = prev.donationSyncMode || "mealBattle";
-      const safeName = (donorName || "무명").replace(/\s+/g, "");
+      const safeName = (rawName || "무명").replace(/\s+/g, "");
       // Keep each donation as a separate row for easier per-transaction corrections.
       const donor: Donor = {
         id: `d_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         name: safeName,
         amount,
-        memberId: donorMemberId,
+        memberId,
         at: Date.now(),
         target,
       };
-      const donors: Donor[] = [...prev.donors, donor];
-      const field = target === "toon" ? "toon" : "account";
-      const members = prev.members.map((m: Member) =>
-        m.id === donorMemberId
-          ? (() => {
-              const nextAccount = field === "account" ? (m.account || 0) + amount : (m.account || 0);
-              const nextToon = field === "toon" ? (m.toon || 0) + amount : (m.toon || 0);
-              return { ...m, [field]: (m[field] || 0) + amount, contribution: nextAccount + nextToon };
-            })()
-          : m
-      );
+      const now = Date.now();
       const mealParticipants =
         syncMode === "mealBattle"
           ? applyMealBattleDonationToParticipants(
               prev.mealBattle?.participants || [],
-              donorMemberId,
+              memberId,
               amount,
               1,
               donor.at,
               mealBattleUsesRawDonationScore(prev.mealBattle)
             )
           : (prev.mealBattle?.participants || []);
-      const now = Date.now();
-      const next: AppState = {
+      /** donors → 멤버 계좌/투네 재합산 (엑셀표·후원순위와 동일 소스) */
+      let next: AppState = syncMemberTotalsFromDonors({
         ...prev,
-        members,
-        donors,
+        donors: rebumpDonorsPastSettlementReset(
+          [...(prev.donors || []), donor],
+          Number(prev.settlementResetAt || 0)
+        ),
         donorRankingsUpdatedAt: now,
         updatedAt: now,
         mealBattle: {
           ...prev.mealBattle,
           participants: mealParticipants,
         },
-      };
-      persistState(next, { includeDonationFields: true });
-      return next;
-    });
-    setDonorName("");
-    setDonorAmount("");
+      });
+      /**
+       * 삭제와 동일하게 donorsAuthoritative 로 저장.
+       * union merge 면 방금 지운 계좌후원이 되살아나 재입력이 깨짐.
+       */
+      const preserved = markAuthoritativeDonationSave(
+        { serverUpdatedAt: next.updatedAt },
+        next,
+        { replaceDonors: true }
+      );
+      setState(preserved);
+      const saved = await saveStateAsync(preserved, user?.id, {
+        donorsAuthoritative: true,
+      });
+      if (saved.ok) {
+        /**
+         * 저장 성공 후 preserved(구 updatedAt)로 LS를 덮지 않음.
+         * 덮으면 엑셀·후원표가 최신 후원을 오래된 스냅샷으로 보고 반영을 건너뜀.
+         */
+        const base = stateRef.current;
+        const serverAt =
+          typeof saved.serverUpdatedAt === "number" && Number.isFinite(saved.serverUpdatedAt)
+            ? saved.serverUpdatedAt
+            : Number(base.updatedAt || 0);
+        const serverDr =
+          typeof saved.donorRankingsUpdatedAt === "number" &&
+          Number.isFinite(saved.donorRankingsUpdatedAt)
+            ? saved.donorRankingsUpdatedAt
+            : Number(base.donorRankingsUpdatedAt || 0);
+        const bumped: AppState = {
+          ...base,
+          updatedAt: Math.max(Number(base.updatedAt || 0), serverAt),
+          donorRankingsUpdatedAt: Math.max(
+            Number(base.donorRankingsUpdatedAt || 0),
+            serverDr,
+            serverAt
+          ),
+        };
+        stateRef.current = bumped;
+        stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, bumped.updatedAt);
+        lastAppliedRemoteUpdatedAtRef.current = Math.max(
+          lastAppliedRemoteUpdatedAtRef.current,
+          bumped.updatedAt
+        );
+        donationAuthoritativeSaveUntilRef.current = Date.now() + 12_000;
+        pendingUnsyncedRef.current = false;
+        try {
+          window.localStorage.setItem(storageKey(user?.id), JSON.stringify(bumped));
+        } catch {}
+        notifyBroadcastStateLocalUpdated(user?.id, bumped.updatedAt);
+        setState(bumped);
+        setSyncStatus(saved.storageFallback ? "error" : "synced");
+      } else {
+        setSyncStatus(
+          typeof navigator !== "undefined" && !navigator.onLine ? "local" : "error"
+        );
+      }
+    })();
   };
 
   const fetchUnmatchedEvents = useCallback(async () => {
@@ -5345,6 +5379,14 @@ export default function AdminPage() {
      * replaceDonors: 삭제·정본 스냅샷은 그대로 유지.
      * merge(기본): 후원 추가 시 화면 멤버 구성과 union.
      */
+    if (opts?.replaceDonors) {
+      const prevIds = new Set((stateRef.current.donors || []).map((d) => d.id));
+      const nextIds = new Set((next.donors || []).map((d) => d.id));
+      const until = Date.now() + 12_000;
+      for (const id of prevIds) {
+        if (!nextIds.has(id)) recentlyRemovedDonorIdsRef.current.set(id, until);
+      }
+    }
     const preserved = opts?.replaceDonors
       ? next
       : mergeDonationApplyBase(next, stateRef.current) ?? next;
@@ -5361,6 +5403,100 @@ export default function AdminPage() {
     notifyBroadcastStateLocalUpdated(user?.id, preserved.updatedAt);
     return preserved;
   }, [user?.id]);
+
+  restoreDonorsFromDailyLogSnapshotRef.current = async () => {
+    const serverLog = await loadDailyLogFromApi(user?.id);
+    const localLog = loadDailyLog(user?.id);
+    const merged: Record<string, DailyLogEntry[]> = { ...localLog, ...serverLog };
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const latest = pickDailyLogEntryForRestore(merged, todayKey);
+    if (!latest) {
+      window.alert("일일 로그에 복구할 후원 스냅샷이 없습니다.");
+      return;
+    }
+    const donorCount = Array.isArray(latest.donors) ? latest.donors.length : 0;
+    const memberCount = Array.isArray(latest.members) ? latest.members.length : 0;
+    if (donorCount === 0 && memberCount === 0) {
+      window.alert("최근 일일 로그에 후원·멤버 데이터가 없습니다.");
+      return;
+    }
+    const fromToday = String(latest.at || "").slice(0, 10) === todayKey;
+    if (
+      !window.confirm(
+        `일일 로그 ${fromToday ? "오늘" : "최근"} 스냅샷(${latest.at})에서 복구합니다.\n` +
+          `후원 ${donorCount}건 · 멤버 ${memberCount}명\n` +
+          `서버·엑셀표·후원순위에 반영됩니다. 계속할까요?`
+      )
+    ) {
+      return;
+    }
+    const prev = stateRef.current;
+    const now = Date.now();
+    const rebumpedDonors = rebumpDonorsPastSettlementReset(
+      donorCount > 0 ? latest.donors : prev.donors,
+      Number(prev.settlementResetAt || 0)
+    );
+    const next: AppState = syncMemberTotalsFromDonors({
+      ...prev,
+      ...(memberCount > 0 ? { members: latest.members } : {}),
+      donors: rebumpedDonors,
+      donorRankingsUpdatedAt: now,
+      updatedAt: now,
+    });
+    const preserved = markAuthoritativeDonationSave(
+      { serverUpdatedAt: next.updatedAt },
+      next,
+      { replaceDonors: true }
+    );
+    setState(preserved);
+    const saved = await saveStateAsync(preserved, user?.id, { donorsAuthoritative: true });
+    if (saved.ok) {
+      const base = stateRef.current;
+      const serverAt =
+        typeof saved.serverUpdatedAt === "number" && Number.isFinite(saved.serverUpdatedAt)
+          ? saved.serverUpdatedAt
+          : Number(base.updatedAt || 0);
+      const serverDr =
+        typeof saved.donorRankingsUpdatedAt === "number" &&
+        Number.isFinite(saved.donorRankingsUpdatedAt)
+          ? saved.donorRankingsUpdatedAt
+          : Number(base.donorRankingsUpdatedAt || 0);
+      const bumped: AppState = {
+        ...base,
+        updatedAt: Math.max(Number(base.updatedAt || 0), serverAt),
+        donorRankingsUpdatedAt: Math.max(
+          Number(base.donorRankingsUpdatedAt || 0),
+          serverDr,
+          serverAt
+        ),
+      };
+      stateRef.current = bumped;
+      stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, bumped.updatedAt);
+      lastAppliedRemoteUpdatedAtRef.current = Math.max(
+        lastAppliedRemoteUpdatedAtRef.current,
+        bumped.updatedAt
+      );
+      donationAuthoritativeSaveUntilRef.current = Date.now() + 12_000;
+      try {
+        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(bumped));
+      } catch {}
+      notifyBroadcastStateLocalUpdated(user?.id, bumped.updatedAt);
+      setState(bumped);
+      setSyncStatus(saved.storageFallback ? "error" : "synced");
+      window.alert(
+        saved.storageFallback
+          ? `일일 로그 복구는 이 PC에만 반영됐습니다(서버 저장 실패). 후원 ${rebumpedDonors.length}건`
+          : `일일 로그 복구 완료: 후원 ${rebumpedDonors.length}건 · 멤버 ${
+              memberCount || prev.members.length
+            }명 (엑셀·후원순위 반영)`
+      );
+    } else {
+      setSyncStatus(
+        typeof navigator !== "undefined" && !navigator.onLine ? "local" : "error"
+      );
+      window.alert("일일 로그 복구 저장에 실패했습니다. 네트워크·동기화 상태를 확인하세요.");
+    }
+  };
 
   const applyProcessDonationResult = useCallback((result: ProcessDonationResult) => {
     if (!result.updatedState) return;
@@ -5559,13 +5695,49 @@ export default function AdminPage() {
         return;
       }
 
-      const saved = await saveStateAsync(applied.state, user?.id, { donorsAuthoritative: true });
+      const rebumpedState = syncMemberTotalsFromDonors({
+        ...applied.state,
+        donors: rebumpDonorsPastSettlementReset(
+          applied.state.donors,
+          Number(applied.state.settlementResetAt || 0)
+        ),
+      });
+      const saved = await saveStateAsync(rebumpedState, user?.id, { donorsAuthoritative: true });
       if (!saved.ok) {
         pushToonationLog("단체짠 분배: 저장 실패");
         return;
       }
-      markAuthoritativeDonationSave(saved, applied.state);
-      setState((prev) => mergeDonationApplyBase(applied.state, prev) ?? applied.state);
+      const preserved = markAuthoritativeDonationSave(saved, rebumpedState, { replaceDonors: true });
+      const serverAt =
+        typeof saved.serverUpdatedAt === "number" && Number.isFinite(saved.serverUpdatedAt)
+          ? saved.serverUpdatedAt
+          : Number(preserved.updatedAt || 0);
+      const serverDr =
+        typeof saved.donorRankingsUpdatedAt === "number" &&
+        Number.isFinite(saved.donorRankingsUpdatedAt)
+          ? saved.donorRankingsUpdatedAt
+          : Number(preserved.donorRankingsUpdatedAt || 0);
+      const bumped: AppState = {
+        ...preserved,
+        updatedAt: Math.max(Number(preserved.updatedAt || 0), serverAt),
+        donorRankingsUpdatedAt: Math.max(
+          Number(preserved.donorRankingsUpdatedAt || 0),
+          serverDr,
+          serverAt
+        ),
+      };
+      stateRef.current = bumped;
+      stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, bumped.updatedAt);
+      lastAppliedRemoteUpdatedAtRef.current = Math.max(
+        lastAppliedRemoteUpdatedAtRef.current,
+        bumped.updatedAt
+      );
+      donationAuthoritativeSaveUntilRef.current = Date.now() + 12_000;
+      try {
+        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(bumped));
+      } catch {}
+      notifyBroadcastStateLocalUpdated(user?.id, bumped.updatedAt);
+      setState(bumped);
       pushToonationLog(
         `단체짠: ${donor.name} ${donor.amount.toLocaleString("ko-KR")}원 → ${applied.donors.length}행 생성 (${applied.preview.sharePerMember.toLocaleString("ko-KR")}원×${applied.preview.eligibleMembers.length}명, 합계 ${donor.amount.toLocaleString("ko-KR")}원 유지)`
       );
@@ -10990,13 +11162,38 @@ export default function AdminPage() {
                                           donorsAuthoritative: true,
                                         });
                                         if (saved.ok) {
-                                          markAuthoritativeDonationSave(saved, preserved, {
-                                            replaceDonors: true,
-                                          });
-                                          if (typeof saved.serverUpdatedAt === "number") {
-                                            stateUpdatedAtRef.current = saved.serverUpdatedAt;
-                                            lastAppliedRemoteUpdatedAtRef.current = saved.serverUpdatedAt;
-                                          }
+                                          const base = stateRef.current;
+                                          const serverAt =
+                                            typeof saved.serverUpdatedAt === "number" &&
+                                            Number.isFinite(saved.serverUpdatedAt)
+                                              ? saved.serverUpdatedAt
+                                              : Number(base.updatedAt || 0);
+                                          const bumped: AppState = {
+                                            ...base,
+                                            updatedAt: Math.max(Number(base.updatedAt || 0), serverAt),
+                                            donorRankingsUpdatedAt: Math.max(
+                                              Number(base.donorRankingsUpdatedAt || 0),
+                                              serverAt
+                                            ),
+                                          };
+                                          stateRef.current = bumped;
+                                          stateUpdatedAtRef.current = Math.max(
+                                            stateUpdatedAtRef.current,
+                                            bumped.updatedAt
+                                          );
+                                          lastAppliedRemoteUpdatedAtRef.current = Math.max(
+                                            lastAppliedRemoteUpdatedAtRef.current,
+                                            bumped.updatedAt
+                                          );
+                                          donationAuthoritativeSaveUntilRef.current = Date.now() + 12_000;
+                                          try {
+                                            window.localStorage.setItem(
+                                              storageKey(user?.id),
+                                              JSON.stringify(bumped)
+                                            );
+                                          } catch {}
+                                          notifyBroadcastStateLocalUpdated(user?.id, bumped.updatedAt);
+                                          setState(bumped);
                                           setSyncStatus(saved.storageFallback ? "error" : "synced");
                                         } else {
                                           setSyncStatus(

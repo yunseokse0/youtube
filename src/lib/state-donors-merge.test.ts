@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { mergeDonorsForMultiTabSave } from "@/lib/state";
+import {
+  filterDonorsAfterSettlementReset,
+  mergeDonorsForMultiTabSave,
+  rebumpDonorsPastSettlementReset,
+} from "@/lib/state";
 import type { Donor } from "@/types";
 
 function donor(id: string, amount: number, at = 1000): Donor {
@@ -70,5 +74,16 @@ describe("mergeDonorsForMultiTabSave", () => {
       donorsAuthoritative: true,
     });
     expect(merged).toEqual([]);
+  });
+});
+
+describe("rebumpDonorsPastSettlementReset", () => {
+  it("bumps pre-reset donor at so filter keeps them", () => {
+    const resetAt = 10_000;
+    const donors = [donor("a", 1000, 5000), donor("b", 2000, 12_000)];
+    const bumped = rebumpDonorsPastSettlementReset(donors, resetAt);
+    expect(filterDonorsAfterSettlementReset(bumped, resetAt).map((d) => d.id)).toEqual(["a", "b"]);
+    expect(Number(bumped[0]?.at)).toBeGreaterThanOrEqual(resetAt - 3000);
+    expect(Number(bumped[1]?.at)).toBe(12_000);
   });
 });

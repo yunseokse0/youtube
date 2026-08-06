@@ -335,7 +335,12 @@ export function splitExistingDonorInAppState(
     return { ok: false, reason: "amount_too_small", event: donationEventFromDonor(donor), preview };
   }
 
-  const atMs = Number.isFinite(Number(donor.at)) ? Math.max(0, Math.floor(Number(donor.at))) : Date.now();
+  /** 리셋 이전 원본 at 을 물리면 서버 filter 에 걸려 엑셀·후원순위가 비게 됨 */
+  let atMs = Number.isFinite(Number(donor.at)) ? Math.max(0, Math.floor(Number(donor.at))) : Date.now();
+  const resetAt = Number(currentState.settlementResetAt || 0);
+  if (resetAt > 0 && atMs < resetAt - 3000) {
+    atMs = Date.now();
+  }
   const splitDonors = buildGroupSplitDonorRows(
     rawId,
     donor.name,
