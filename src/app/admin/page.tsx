@@ -130,6 +130,7 @@ import {
   buildDonorRankingsFullOverlayUrl,
   donorRankingsFullOverlayPath,
   sanitizeBroadcastOverlayUrl,
+  resolveScopedOverlayUserId,
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
 import { TABLE_FONT_FAMILY_OPTIONS, clampTableMemberSizePx, normalizeTableFontFamily } from "@/lib/table-font-style";
@@ -467,6 +468,8 @@ function adminSyncFingerprint(s: AppState): string {
 export default function AdminPage() {
   const router = useRouter();
   const [user, setUser] = useState<{ id: string; companyName: string; name?: string; remainingDays?: number | null; unlimited?: boolean } | null>(null);
+  /** 오버레이 URL·미리보기 — finalent 폴백 금지(타계정 후원 노출) */
+  const overlayUserId = resolveScopedOverlayUserId(user?.id);
   const [state, setState] = useState<AppState>(defaultState());
   const [syncStatus, setSyncStatus] = useState<"loading" | "synced" | "local" | "error">("loading");
   const stateUpdatedAtRef = useRef<number>(0);
@@ -2398,7 +2401,7 @@ export default function AdminPage() {
     const base = `${window.location.origin}/overlay`;
     const q = buildCompactBroadcastOverlayParams({
       presetId: p.id,
-      userId: user?.id || "finalent",
+      userId: overlayUserId,
     });
     return `${base}?${q.toString()}`;
   };
@@ -2415,14 +2418,14 @@ export default function AdminPage() {
     if (isGoalOnlyPreset) {
       const goalOnly = new URL(`${window.location.origin}/overlay/goal`);
       goalOnly.searchParams.set("p", p.id);
-      goalOnly.searchParams.set("u", user?.id || "finalent");
+      goalOnly.searchParams.set("u", overlayUserId);
       goalOnly.searchParams.set("host", "prism");
       return goalOnly.toString();
     }
     const base = `${window.location.origin}/overlay`;
     const q = buildCompactBroadcastOverlayParams({
       presetId: p.id,
-      userId: user?.id || "finalent",
+      userId: overlayUserId,
       host: "prism",
       vertical: !!vertical,
     });
@@ -2455,7 +2458,7 @@ export default function AdminPage() {
       !Boolean(p.showPersonalGoal);
     if (isGoalOnlyPreset) {
       const goalOnly = new URL(`${window.location.origin}/overlay/goal`);
-      goalOnly.searchParams.set("u", user?.id || "finalent");
+      goalOnly.searchParams.set("u", overlayUserId);
       goalOnly.searchParams.set("host", "prism");
       if (p.id) goalOnly.searchParams.set("p", p.id);
       goalOnly.searchParams.set("previewGuide", "true");
@@ -2469,7 +2472,7 @@ export default function AdminPage() {
      */
     const q = new URLSearchParams();
     q.set("p", p.id);
-    q.set("u", user?.id || "finalent");
+    q.set("u", overlayUserId);
     q.set("previewGuide", "true");
     if (p.tableOnly) q.set("tableOnly", "true");
     const isVertical = !!p.vertical;
@@ -2493,7 +2496,7 @@ export default function AdminPage() {
   }, [battleContentWidthPct]);
   const buildSigMatchLiveUrl = useCallback((): string => {
     if (typeof window === "undefined") return "";
-    const uid = user?.id || "finalent";
+    const uid = overlayUserId;
     const raw = battleScalePct.replace(/[^\d]/g, "");
     const n = parseInt(raw || "100", 10);
     const scalePct = Number.isFinite(n) ? Math.max(50, Math.min(300, n)) : 100;
@@ -2505,7 +2508,7 @@ export default function AdminPage() {
   }, [user?.id, battleScalePct, getBattleContentWidthPct]);
   const buildMealMatchLiveUrl = useCallback((): string => {
     if (typeof window === "undefined") return "";
-    const uid = user?.id || "finalent";
+    const uid = overlayUserId;
     const raw = battleScalePct.replace(/[^\d]/g, "");
     const n = parseInt(raw || "100", 10);
     const scalePct = Number.isFinite(n) ? Math.max(50, Math.min(300, n)) : 100;
@@ -2542,7 +2545,7 @@ export default function AdminPage() {
       setCopiedId(id); setTimeout(() => setCopiedId(null), 1500);
     } catch {}
   };
-  const rouletteUserId = user?.id || "finalent";
+  const rouletteUserId = overlayUserId;
   const getSigSalesMenuCount = useCallback((): number => {
     return clampSigSalesMenuCount(sigSalesMenuCount);
   }, [sigSalesMenuCount]);
@@ -2618,7 +2621,7 @@ export default function AdminPage() {
     if (typeof window === "undefined") return "";
     const theme = state.donorRankingsTheme || defaultState().donorRankingsTheme;
     const q = donorRankingsThemeToSearchParams(theme);
-    q.set("u", user?.id || "finalent");
+    q.set("u", overlayUserId);
     q.set("host", "obs");
     q.set("zoomPct", String(getDonorRankingsZoomPct()));
     if (opts?.test) q.set("test", "true");
@@ -2629,7 +2632,7 @@ export default function AdminPage() {
     const theme = state.donorRankingsFullTheme || defaultState().donorRankingsFullTheme;
     const url = buildDonorRankingsFullOverlayUrl(
       window.location.origin,
-      user?.id || "finalent",
+      overlayUserId,
       theme,
       getDonorRankingsZoomPct()
     );
@@ -2659,7 +2662,7 @@ export default function AdminPage() {
     const b64 = btoa(encodeURIComponent(json));
     const q = new URLSearchParams();
     q.set("p", p.id);
-    q.set("u", user?.id || "finalent");
+    q.set("u", overlayUserId);
     q.set("snap", b64);
     return `${base}?${q.toString()}`;
   };
@@ -3433,7 +3436,7 @@ export default function AdminPage() {
   };
 
   const spinSigRoulette = async (opts?: { forceFiveOnly?: boolean }) => {
-    /** 오버레이 URL의 `u=` 와 동일해야 폴링 상태가 맞음 (`user` 미로드 시 finalent 등) */
+    /** 오버레이 URL의 `u=` 와 동일해야 폴링 상태가 맞음 (로그인 계정만) */
     const uid = rouletteUserId;
     setRouletteSpinBusy(true);
     setRouletteActionMessage("");
@@ -4200,7 +4203,7 @@ export default function AdminPage() {
               ""
           ).trim()
         : "";
-    const uid = String(user?.id || uidFromQuery || "finalent").trim();
+    const uid = resolveScopedOverlayUserId(user?.id, uidFromQuery);
     let res: Response;
     try {
       const q = new URLSearchParams();
@@ -4554,16 +4557,14 @@ export default function AdminPage() {
 
   const normalizeUploadedSigImageUrl = useCallback(
     (url: string) => {
-      const uid =
-        String(user?.id || "").trim() ||
-        (typeof window !== "undefined"
-          ? String(
-              new URLSearchParams(window.location.search).get("u") ||
-                new URLSearchParams(window.location.search).get("user") ||
-                ""
-            ).trim()
-          : "") ||
-        "finalent";
+      const uid = resolveScopedOverlayUserId(
+        user?.id,
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("u") ||
+              new URLSearchParams(window.location.search).get("user")
+          : ""
+      );
+      if (!uid) return normalizeSigImageUrlStored(url);
       return normalizeSigImageUrlStored(repairDiskUploadSigImagePath(url, uid));
     },
     [user?.id]
@@ -7501,7 +7502,7 @@ export default function AdminPage() {
                 <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
                   <span>오버레이 URL:</span>
                   <code className="text-neutral-300 break-all">
-                    /overlay/sig-match?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}&contentWidthPct=
+                    /overlay/sig-match?u={overlayUserId}&scalePct={getBattleScalePct()}&contentWidthPct=
                     {getBattleContentWidthPct()}
                   </code>
                   <button
@@ -8098,7 +8099,7 @@ export default function AdminPage() {
                 <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
                   <span>오버레이 URL:</span>
                   <code className="text-neutral-300 break-all">
-                    /overlay/meal-match?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}&contentWidthPct=
+                    /overlay/meal-match?u={overlayUserId}&scalePct={getBattleScalePct()}&contentWidthPct=
                     {getBattleContentWidthPct()}
                   </code>
                   <button
@@ -8324,7 +8325,7 @@ export default function AdminPage() {
                   <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
                     <span>실시간 URL:</span>
                     <code className="text-neutral-300 break-all">
-                      /overlay/donor-rankings?u={user?.id || "finalent"}&zoomPct={getDonorRankingsZoomPct()}
+                      /overlay/donor-rankings?u={overlayUserId}&zoomPct={getDonorRankingsZoomPct()}
                     </code>
                     <button
                       type="button"
@@ -8340,7 +8341,7 @@ export default function AdminPage() {
                   <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
                     <span>테스트 URL:</span>
                     <code className="text-neutral-300 break-all">
-                      /overlay/donor-rankings?u={user?.id || "finalent"}&zoomPct={getDonorRankingsZoomPct()}&test=true
+                      /overlay/donor-rankings?u={overlayUserId}&zoomPct={getDonorRankingsZoomPct()}&test=true
                     </code>
                     <button
                       type="button"
@@ -8537,7 +8538,7 @@ export default function AdminPage() {
                     <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
                       <span>OBS URL:</span>
                       <code className="text-pink-100/90 break-all">
-                        {donorRankingsFullOverlayPath(user?.id || "finalent", getDonorRankingsZoomPct())}
+                        {donorRankingsFullOverlayPath(overlayUserId, getDonorRankingsZoomPct())}
                       </code>
                       <button
                         type="button"
@@ -8598,7 +8599,7 @@ export default function AdminPage() {
                   </div>
                   <div className="flex flex-col items-end gap-2 shrink-0">
                     <code className="max-w-[min(100%,420px)] break-all text-[11px] text-fuchsia-100/90">
-                      /overlay/donor-rankings?u={user?.id || "finalent"}&zoomPct={getDonorRankingsZoomPct()}
+                      /overlay/donor-rankings?u={overlayUserId}&zoomPct={getDonorRankingsZoomPct()}
                     </code>
                     <div className="flex flex-wrap justify-end gap-2">
                       <button
@@ -8812,14 +8813,14 @@ export default function AdminPage() {
                   </div>
                   <div className="flex flex-col items-end gap-2 shrink-0">
                     <code className="max-w-[min(100%,420px)] break-all text-[11px] text-fuchsia-100/90">
-                      /overlay/donation-lists?u={user?.id || "finalent"}
+                      /overlay/donation-lists?u={overlayUserId}
                     </code>
                     <div className="flex flex-wrap justify-end gap-2">
                       <button
                         type="button"
                         className={`rounded px-2 py-1 text-xs ${copiedId === "dash-donation-lists" ? "bg-emerald-600" : "bg-white/15 text-pink-50 hover:bg-white/25"}`}
                         onClick={() => {
-                          const u = `${window.location.origin}/overlay/donation-lists?u=${user?.id || "finalent"}`;
+                          const u = `${window.location.origin}/overlay/donation-lists?u=${overlayUserId}`;
                           void copyUrl(u, "dash-donation-lists");
                         }}
                       >
@@ -8828,7 +8829,7 @@ export default function AdminPage() {
                       <button
                         type="button"
                         className="rounded bg-gradient-to-r from-fuchsia-600 to-pink-600 px-2 py-1 text-xs font-semibold text-white shadow-sm hover:from-fuchsia-500 hover:to-pink-500"
-                        onClick={() => window.open(`/overlay/donation-lists?u=${user?.id || "finalent"}`, "_blank", "noopener,noreferrer")}
+                        onClick={() => window.open(`/overlay/donation-lists?u=${overlayUserId}`, "_blank", "noopener,noreferrer")}
                       >
                         오버레이 열기
                       </button>
@@ -9013,7 +9014,7 @@ export default function AdminPage() {
                       className="rounded border border-white/20 px-2 py-1.5 text-xs text-neutral-200 hover:bg-white/10"
                       onClick={() => {
                         window.open(
-                          `/overlay/sig-sales-forced?u=${encodeURIComponent(user?.id || "finalent")}`,
+                          `/overlay/sig-sales-forced?u=${encodeURIComponent(overlayUserId)}`,
                           "_blank",
                           "noopener,noreferrer"
                         );
@@ -9304,12 +9305,12 @@ export default function AdminPage() {
                     ))}
                   </select>
                   <code className="text-neutral-300 break-all">
-                    /overlay/sig-sales?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}&wheelScalePct=85&menuCount={getSigSalesMenuCount()}
+                    /overlay/sig-sales?u={overlayUserId}&scalePct={getBattleScalePct()}&wheelScalePct=85&menuCount={getSigSalesMenuCount()}
                     {selectedMemberId ? `&memberId=${selectedMemberId}` : ""}&sigResultScalePct=
                     {clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct)}
                   </code>
                   <code className="text-sky-300 break-all">
-                    /overlay/sig-sales-forced?u={user?.id || "finalent"}&scalePct={getBattleScalePct()}&wheelScalePct=85&menuCount={getSigSalesMenuCount()}
+                    /overlay/sig-sales-forced?u={overlayUserId}&scalePct={getBattleScalePct()}&wheelScalePct=85&menuCount={getSigSalesMenuCount()}
                     {selectedMemberId ? `&memberId=${selectedMemberId}` : ""}&sigResultScalePct=
                     {clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct)}
                   </code>
@@ -9318,7 +9319,7 @@ export default function AdminPage() {
                     className={`rounded px-2 py-1 text-xs shrink-0 ${copiedId === "dash-sig-sales" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
                     onClick={() => {
                       const rs = clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct);
-                      const u = `${window.location.origin}/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}`;
+                      const u = `${window.location.origin}/overlay/sig-sales?u=${overlayUserId}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}`;
                       void copyUrl(u, "dash-sig-sales");
                     }}
                   >
@@ -9330,7 +9331,7 @@ export default function AdminPage() {
                     onClick={() => {
                       const rs = clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct);
                       window.open(
-                        `/overlay/sig-sales?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}`,
+                        `/overlay/sig-sales?u=${overlayUserId}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}`,
                         "_blank",
                         "noopener,noreferrer"
                       );
@@ -9344,7 +9345,7 @@ export default function AdminPage() {
                     onClick={() => {
                       const rs = clampSigSalesResultScalePct(state.rouletteState?.sigResultScalePct);
                       window.open(
-                        `/overlay/sig-sales-forced?u=${user?.id || "finalent"}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}`,
+                        `/overlay/sig-sales-forced?u=${overlayUserId}&scalePct=${getBattleScalePct()}&wheelScalePct=85&menuCount=${getSigSalesMenuCount()}${selectedMemberId ? `&memberId=${encodeURIComponent(selectedMemberId)}` : ""}&sigResultScalePct=${rs}`,
                         "_blank",
                         "noopener,noreferrer"
                       );
@@ -9445,13 +9446,13 @@ export default function AdminPage() {
                     <div className="text-xs text-neutral-400 flex flex-wrap items-center justify-end gap-2">
                       <span>오버레이 URL:</span>
                       <code className="text-neutral-300 break-all text-left">
-                        /overlay/sig-rolling?u={user?.id || "finalent"}&host=obs
+                        /overlay/sig-rolling?u={overlayUserId}&host=obs
                       </code>
                       <button
                         type="button"
                         className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-sig-rolling" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
                         onClick={() => {
-                          const u = `${window.location.origin}/overlay/sig-rolling?u=${user?.id || "finalent"}&host=obs`;
+                          const u = `${window.location.origin}/overlay/sig-rolling?u=${overlayUserId}&host=obs`;
                           void copyUrl(u, "dash-sig-rolling");
                         }}
                       >
@@ -9463,7 +9464,7 @@ export default function AdminPage() {
                       className="px-2 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-xs self-end"
                       onClick={() =>
                         window.open(
-                          `/overlay/sig-rolling?u=${user?.id || "finalent"}&host=obs`,
+                          `/overlay/sig-rolling?u=${overlayUserId}&host=obs`,
                           "_blank",
                           "noopener,noreferrer"
                         )
@@ -10239,7 +10240,8 @@ export default function AdminPage() {
                             value={item.imageUrl || ""}
                             onChange={(e) => updateSigItem(item.id, { imageUrl: e.target.value })}
                             onBlur={() => {
-                              const uid = String(user?.id || "finalent").trim() || "finalent";
+                              const uid = overlayUserId;
+                              if (!uid) return;
                               const fixed = normalizeSigImageUrlStored(
                                 repairDiskUploadSigImagePath(item.imageUrl || "", uid)
                               );
@@ -10438,7 +10440,7 @@ export default function AdminPage() {
                   const mm = Math.floor(effective / 60);
                   const ss = effective % 60;
                   const overlayOn = state.matchTimerEnabled?.[timerDef.flag] !== false;
-                  const timerOnlyUrl = `/overlay?u=${user?.id || "finalent"}&timerType=${timerDef.flag}`;
+                  const timerOnlyUrl = `/overlay?u=${overlayUserId}&timerType=${timerDef.flag}`;
                   return (
                     <div key={timerDef.key} className="rounded border border-white/10 bg-[#1f1f1f] px-3 py-2">
                       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -10956,17 +10958,17 @@ export default function AdminPage() {
                   <button
                     type="button"
                     className="px-3 py-1.5 rounded bg-sky-700 hover:bg-sky-600 text-xs font-semibold"
-                    onClick={() => openPlayerAlertPopup(user?.id || "finalent")}
+                    onClick={() => openPlayerAlertPopup(overlayUserId)}
                   >
                     후원 웹 팝업 열기
                   </button>
                 </div>
                 <p className="text-[11px] text-neutral-500">
                   후원 팝업:{" "}
-                  <code className="text-neutral-400">{buildPlayerAlertPopupUrl(user?.id || "finalent")}</code>
+                  <code className="text-neutral-400">{buildPlayerAlertPopupUrl(overlayUserId)}</code>
                   {" · "}
                   <a
-                    href={`/player-alert?u=${encodeURIComponent(user?.id || "finalent")}&preview=1`}
+                    href={`/player-alert?u=${encodeURIComponent(overlayUserId)}&preview=1`}
                     target="_blank"
                     rel="noreferrer"
                     className="text-sky-400 hover:text-sky-300"
@@ -11918,7 +11920,7 @@ export default function AdminPage() {
               </p>
               <div className="mb-3 rounded border border-white/10 bg-black/20 p-2 text-xs text-neutral-400 flex flex-wrap items-center gap-2">
                 <span>후원 리스트 오버레이:</span>
-                <code className="text-neutral-300 break-all">/overlay/donor-rankings?u={user?.id || "finalent"}&zoomPct={getDonorRankingsZoomPct()}</code>
+                <code className="text-neutral-300 break-all">/overlay/donor-rankings?u={overlayUserId}&zoomPct={getDonorRankingsZoomPct()}</code>
                 <button
                   type="button"
                   className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-donor-rankings-inline" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
@@ -12122,13 +12124,19 @@ export default function AdminPage() {
                   </button>
                 </div>
                 <div className="relative w-full bg-black/40" style={{ minHeight: "260px", aspectRatio: "16 / 9" }}>
-                  <iframe
-                    key={`donor-rankings-${donorRankingsPreviewIframeKey}-${user?.id || "finalent"}`}
-                    src={appendAdminPreviewEmbedToOverlayUrl(`/overlay/donor-rankings?u=${user?.id || "finalent"}&zoomPct=${getDonorRankingsZoomPct()}`)}
-                    title="후원 순위 오버레이 미리보기"
-                    className="absolute inset-0 h-full w-full border-0"
-                    style={{ background: "transparent" }}
-                  />
+                  {overlayUserId ? (
+                    <iframe
+                      key={`donor-rankings-${donorRankingsPreviewIframeKey}-${overlayUserId}`}
+                      src={appendAdminPreviewEmbedToOverlayUrl(`/overlay/donor-rankings?u=${overlayUserId}&zoomPct=${getDonorRankingsZoomPct()}`)}
+                      title="후원 순위 오버레이 미리보기"
+                      className="absolute inset-0 h-full w-full border-0"
+                      style={{ background: "transparent" }}
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center text-xs text-neutral-500">
+                      로그인 계정 확인 중…
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="mb-3 rounded-lg border border-pink-500/25 bg-pink-950/15 overflow-hidden">
@@ -12152,15 +12160,21 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <div className="relative w-full bg-black/40" style={{ minHeight: "260px", aspectRatio: "16 / 9" }}>
-                  <iframe
-                    key={`donor-rankings-full-${donorRankingsFullPreviewIframeKey}-${user?.id || "finalent"}`}
-                    src={appendAdminPreviewEmbedToOverlayUrl(
-                      donorRankingsFullOverlayPath(user?.id || "finalent", getDonorRankingsZoomPct())
-                    )}
-                    title="후원 순위 전체(분홍) 미리보기"
-                    className="absolute inset-0 h-full w-full border-0"
-                    style={{ background: "transparent" }}
-                  />
+                  {overlayUserId ? (
+                    <iframe
+                      key={`donor-rankings-full-${donorRankingsFullPreviewIframeKey}-${overlayUserId}`}
+                      src={appendAdminPreviewEmbedToOverlayUrl(
+                        donorRankingsFullOverlayPath(overlayUserId, getDonorRankingsZoomPct())
+                      )}
+                      title="후원 순위 전체(분홍) 미리보기"
+                      className="absolute inset-0 h-full w-full border-0"
+                      style={{ background: "transparent" }}
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center text-xs text-neutral-500">
+                      로그인 계정 확인 중…
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="mb-3 rounded border border-pink-500/25 bg-pink-950/20 p-3 space-y-3">
@@ -12367,8 +12381,8 @@ export default function AdminPage() {
                       onClick={() => {
                         const u =
                           typeof window !== "undefined"
-                            ? buildSigSalesManualOverlayUrl(window.location.origin, user?.id || "finalent")
-                            : buildSigSalesManualOverlayUrl("http://localhost:3000", user?.id || "finalent");
+                            ? buildSigSalesManualOverlayUrl(window.location.origin, overlayUserId)
+                            : buildSigSalesManualOverlayUrl("http://localhost:3000", overlayUserId);
                         void copyUrl(u, "dash-sig-sales-manual");
                       }}
                     >
@@ -12380,7 +12394,7 @@ export default function AdminPage() {
                       onClick={() => {
                         const u = buildSigSalesManualOverlayUrl(
                           typeof window !== "undefined" ? window.location.origin : "http://localhost:3000",
-                          user?.id || "finalent"
+                          overlayUserId
                         );
                         window.open(u, "_blank", "noopener,noreferrer");
                       }}
@@ -12390,7 +12404,7 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <code className="block break-all text-[11px] text-sky-100/90">
-                  /overlay/sig-sales-manual?u={user?.id || "finalent"}&hideSigBoard=1
+                  /overlay/sig-sales-manual?u={overlayUserId}&hideSigBoard=1
                 </code>
               </div>
               <div className="mb-3 rounded border border-violet-500/30 bg-violet-950/25 p-3 space-y-3">
@@ -12418,7 +12432,7 @@ export default function AdminPage() {
                         if (typeof window === "undefined") return;
                         const text = formatObsTextOverlayUrlList(
                           window.location.origin,
-                          user?.id || "finalent",
+                          overlayUserId,
                           obsTextRegistry
                         );
                         void copyUrl(text, "dash-obs-text-all");
@@ -12427,7 +12441,7 @@ export default function AdminPage() {
                       {copiedId === "dash-obs-text-all" ? "전체 URL 복사됨" : "전체 URL 복사"}
                     </button>
                     <Link
-                      href={`/admin/obs-text?u=${encodeURIComponent(user?.id || "finalent")}`}
+                      href={`/admin/obs-text?u=${encodeURIComponent(overlayUserId)}`}
                       className="shrink-0 rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-600"
                     >
                       전체 편집
@@ -12439,12 +12453,12 @@ export default function AdminPage() {
                 ) : (
                   <div className="space-y-2">
                     {obsTextRegistry.instances.map((inst) => {
-                      const path = obsTextOverlayPath(user?.id || "finalent", inst.id);
+                      const path = obsTextOverlayPath(overlayUserId, inst.id);
                       const absUrl =
                         typeof window !== "undefined"
                           ? buildObsTextOverlayUrl(
                               window.location.origin,
-                              user?.id || "finalent",
+                              overlayUserId,
                               inst.id
                             )
                           : path;
@@ -12482,7 +12496,7 @@ export default function AdminPage() {
                               복제
                             </button>
                             <Link
-                              href={`/admin/obs-text?u=${encodeURIComponent(user?.id || "finalent")}&textId=${encodeURIComponent(inst.id)}`}
+                              href={`/admin/obs-text?u=${encodeURIComponent(overlayUserId)}&textId=${encodeURIComponent(inst.id)}`}
                               className="rounded border border-violet-500/40 px-2 py-1 text-xs text-violet-200 hover:bg-violet-900/40"
                             >
                               편집
@@ -12528,7 +12542,7 @@ export default function AdminPage() {
                       새로고침
                     </button>
                     <Link
-                      href={`/admin/obs-text?u=${encodeURIComponent(user?.id || "finalent")}&textId=${encodeURIComponent(obsTextPreviewId)}`}
+                      href={`/admin/obs-text?u=${encodeURIComponent(overlayUserId)}&textId=${encodeURIComponent(obsTextPreviewId)}`}
                       className="rounded border border-violet-500/40 px-2 py-0.5 text-[11px] text-violet-200 hover:bg-violet-900/40"
                     >
                       편집
@@ -12540,9 +12554,9 @@ export default function AdminPage() {
                   style={{ minHeight: "200px", aspectRatio: "16 / 9" }}
                 >
                   <iframe
-                    key={`obs-text-${obsTextPreviewIframeKey}-${obsTextPreviewId}-${user?.id || "finalent"}`}
+                    key={`obs-text-${obsTextPreviewIframeKey}-${obsTextPreviewId}-${overlayUserId}`}
                     src={appendAdminPreviewEmbedToOverlayUrl(
-                      obsTextOverlayPath(user?.id || "finalent", obsTextPreviewId)
+                      obsTextOverlayPath(overlayUserId, obsTextPreviewId)
                     )}
                     title="OBS 텍스트 오버레이 미리보기"
                     className="absolute inset-0 h-full w-full border-0"
@@ -13619,7 +13633,7 @@ export default function AdminPage() {
                                 onClick={() => {
                                   if (typeof window === "undefined") return;
                                   const goalUrl = new URL(`${window.location.origin}/overlay/goal`);
-                                  goalUrl.searchParams.set("u", user?.id || "finalent");
+                                  goalUrl.searchParams.set("u", overlayUserId);
                                   if (p.id) goalUrl.searchParams.set("p", p.id);
                                   goalUrl.searchParams.set(
                                     "donorsFormat",

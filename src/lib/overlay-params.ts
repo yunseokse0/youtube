@@ -1441,7 +1441,7 @@ export function isOverlayBroadcastHost(searchParams: SearchParamsLike): boolean 
 
 export function getOverlayUserIdFromSearchParams(
   searchParams: SearchParamsLike,
-  fallback = "finalent"
+  fallback = ""
 ): string {
   /** `n=`·`id=`·`a=` 레거시·오타 호환 */
   const userId =
@@ -1450,7 +1450,20 @@ export function getOverlayUserIdFromSearchParams(
     searchParams.get("n") ||
     searchParams.get("id") ||
     searchParams.get("a");
+  /** finalent 기본 폴백 금지 — u= 없으면 타계정(finalent) 실데이터가 노출됨 */
   return (userId || "").trim() || fallback;
+}
+
+/** 관리자·오버레이 URL용. 로그인 id 만 사용 (finalent 폴백으로 타계정 유출 방지) */
+export function resolveScopedOverlayUserId(
+  userId: string | null | undefined,
+  ...fallbacks: Array<string | null | undefined>
+): string {
+  for (const cand of [userId, ...fallbacks]) {
+    const id = String(cand || "").trim();
+    if (id && id !== "undefined" && id !== "null") return id;
+  }
+  return "";
 }
 
 /** OBS 프리셋 등에서 `memberId=null` 문자열이 들어오면 필터가 깨지므로 무시 */

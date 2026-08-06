@@ -30,6 +30,8 @@ import {
 
 function readLocalStateIfExists(userId?: string): AppState | null {
   if (typeof window === "undefined") return null;
+  /** u= 없이 legacy LS(타계정 잔여)를 읽지 않음 */
+  if (!String(userId || "").trim()) return null;
   try {
     const raw = window.localStorage.getItem(storageKey(userId));
     if (!raw) return null;
@@ -78,6 +80,10 @@ export function useDonorRankingsRemoteState(
   }, []);
 
   const syncFromApi = useCallback(async (opts?: { forceFull?: boolean }) => {
+    if (!String(userId || "").trim()) {
+      setSyncedOnce(true);
+      return;
+    }
     if (syncingRef.current) {
       return;
     }

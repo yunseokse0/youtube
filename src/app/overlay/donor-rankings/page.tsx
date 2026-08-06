@@ -72,23 +72,23 @@ function donorRankingsOutlineCssBlock(outlineColor: string, outlineWidthPx?: num
 type DonorRow = DonorRankingRow;
 
 const TEST_ACCOUNT_ROWS: DonorRow[] = [
-  { name: "artaiker", amount: 3849000 },
-  { name: "서동", amount: 2614000 },
-  { name: "fgojin", amount: 1116000 },
-  { name: "wlkgf", amount: 819000 },
-  { name: "브라운", amount: 542900 },
-  { name: "동네형", amount: 420000 },
-  { name: "푸른별", amount: 315000 },
+  { name: "샘플후원A", amount: 3849000 },
+  { name: "샘플후원B", amount: 2614000 },
+  { name: "샘플후원C", amount: 1116000 },
+  { name: "샘플후원D", amount: 819000 },
+  { name: "샘플후원E", amount: 542900 },
+  { name: "샘플후원F", amount: 420000 },
+  { name: "샘플후원G", amount: 315000 },
 ];
 
 const TEST_TOON_ROWS: DonorRow[] = [
-  { name: "대폭군", amount: 700000 },
-  { name: "슈퍼고양이", amount: 115000 },
-  { name: "도깨비", amount: 108000 },
-  { name: "동하", amount: 84000 },
-  { name: "쌍남", amount: 70000 },
-  { name: "초승달", amount: 50000 },
-  { name: "콩콩", amount: 10000 },
+  { name: "테스트투네1", amount: 700000 },
+  { name: "테스트투네2", amount: 115000 },
+  { name: "테스트투네3", amount: 108000 },
+  { name: "테스트투네4", amount: 84000 },
+  { name: "테스트투네5", amount: 70000 },
+  { name: "테스트투네6", amount: 50000 },
+  { name: "테스트투네7", amount: 10000 },
 ];
 
 function readNumber(sp: URLSearchParams, key: string, fallback: number, min: number, max: number): number {
