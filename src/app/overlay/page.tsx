@@ -67,7 +67,7 @@ import {
   readDonationListsOverlayPollMs,
   readOverlayLiveSyncPollMs,
 } from "@/lib/overlay-pull-policy";
-import { buildOverlaySyncSignature, isRicherDonationSnapshot } from "@/lib/overlay-sync-signature";
+import { buildOverlaySyncSignature, isRicherDonationSnapshot, isNewerIntentionalDonationShrink } from "@/lib/overlay-sync-signature";
 import { readDonorRankingsRevision } from "@/lib/donor-rankings-rev";
 import {
   overlayUserIdsMatch,
@@ -322,7 +322,11 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
           localNow.updatedAt &&
           localNow.updatedAt > lastUpdatedRef.current &&
           !shouldKeepLastGoodInsteadOf(localNow, STATE_PICK_OVERLAY_DONORS, lastGoodRef.current) &&
-          !(shownForCompare && isRicherDonationSnapshot(shownForCompare, localNow))
+          !(
+            shownForCompare &&
+            isRicherDonationSnapshot(shownForCompare, localNow) &&
+            !isNewerIntentionalDonationShrink(localNow, shownForCompare)
+          )
         ) {
           const mergedLocal = mergeKeepingStrongRoster(localNow);
           const nextSig = buildOverlaySyncSignature(mergedLocal);
@@ -444,8 +448,30 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         void syncOnceRef.current();
         return;
       }
-      /** 구 LS가 이미 맞은 투네·계좌를 덮지 않음 — 서버 force sync로 보정 */
+      /**
+       * 구 LS가 이미 맞은 투네·계좌를 덮지 않음 — 서버 force sync로 보정.
+       * 단, 수동 삭제처럼 더 최신 LS 가 의도적으로 줄어든 경우 forceFull(빈/구 서버)로
+       * 엑셀표를 0 초기화하지 않고 로컬 삭제를 그대로 적용한다.
+       */
       if (lastGoodRef.current && isRicherDonationSnapshot(lastGoodRef.current, localNow)) {
+        if (isNewerIntentionalDonationShrink(localNow, lastGoodRef.current)) {
+          const mergedLocal = mergeKeepingStrongRoster(localNow);
+          const nextSig = buildOverlaySyncSignature(mergedLocal);
+          lastUpdatedRef.current = Math.max(lastUpdatedRef.current, mergedLocal.updatedAt || 0);
+          lastDonorRevRef.current = Math.max(
+            lastDonorRevRef.current,
+            readDonorRankingsRevision(mergedLocal)
+          );
+          if (nextSig !== lastVisualSigRef.current) {
+            lastVisualSigRef.current = nextSig;
+            setState(mergedLocal);
+          }
+          if (isViable(mergedLocal)) {
+            lastGoodRef.current = mergedLocal;
+            saveLastGood(mergedLocal);
+          }
+          return;
+        }
         void syncOnceRef.current({ forceFull: true });
         return;
       }

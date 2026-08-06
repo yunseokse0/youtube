@@ -174,3 +174,27 @@ export function isRicherDonationSnapshot(
   if (cAccount !== bAccount) return cAccount > bAccount;
   return cDonors > bDonors;
 }
+
+/**
+ * 관리자 수동 삭제 등 — 더 최신 LS 가 금액·건수만 줄어든 경우.
+ * 이 때 last-good 이 “더 많다”고 빈 서버 forceFull 하면 엑셀표가 통째로 0 이 된다.
+ */
+export function isNewerIntentionalDonationShrink(
+  newer: AppState | null | undefined,
+  older: AppState | null | undefined
+): boolean {
+  if (!newer || !older) return false;
+  const newerAt = Number(newer.updatedAt || 0);
+  const olderAt = Number(older.updatedAt || 0);
+  if (!(newerAt >= olderAt && newerAt > 0)) return false;
+  const newerDonors = Array.isArray(newer.donors) ? newer.donors : [];
+  const olderDonors = Array.isArray(older.donors) ? older.donors : [];
+  const olderIds = new Set(olderDonors.map((d) => String(d.id || "")).filter(Boolean));
+  const newerIds = newerDonors.map((d) => String(d.id || "")).filter(Boolean);
+  if (newerIds.some((id) => !olderIds.has(id))) return false;
+  if (newerDonors.length > olderDonors.length) return false;
+  if (newerDonors.length === olderDonors.length && !isRicherDonationSnapshot(older, newer)) {
+    return false;
+  }
+  return isRicherDonationSnapshot(older, newer) || newerDonors.length < olderDonors.length;
+}

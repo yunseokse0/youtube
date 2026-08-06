@@ -1880,12 +1880,20 @@ export async function saveStateAsync(
       localDonors.length > 0 &&
       (nextDonors.length < localDonors.length || wouldShrinkDonationData(local, guarded))
     ) {
-      const unioned = mergeDonorsForMultiTabSave(nextDonors, localDonors, {
-        incomingUpdatedAt: guarded.updatedAt,
-        existingUpdatedAt: local.updatedAt,
-      });
-      if (unioned.length > nextDonors.length) {
-        guarded = syncMemberTotalsFromDonors({ ...guarded, donors: unioned });
+      const localIds = new Set(localDonors.map((d) => String(d.id || "")));
+      const nextIds = nextDonors.map((d) => String(d.id || ""));
+      const isSubsetDelete =
+        nextIds.every((id) => !id || localIds.has(id)) &&
+        Number(guarded.updatedAt || 0) >= Number(local.updatedAt || 0);
+      /** 수동 삭제(부분 축소)는 union 하지 않음 — 삭제분이 되살아나 엑셀이 꼬임 */
+      if (!isSubsetDelete) {
+        const unioned = mergeDonorsForMultiTabSave(nextDonors, localDonors, {
+          incomingUpdatedAt: guarded.updatedAt,
+          existingUpdatedAt: local.updatedAt,
+        });
+        if (unioned.length > nextDonors.length) {
+          guarded = syncMemberTotalsFromDonors({ ...guarded, donors: unioned });
+        }
       }
     }
   }

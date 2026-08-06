@@ -42,6 +42,29 @@ describe("buildOverlaySyncSignature", () => {
   });
 });
 
+describe("isNewerIntentionalDonationShrink", () => {
+  it("detects newer local delete that reduces donors", async () => {
+    const { isNewerIntentionalDonationShrink } = await import("@/lib/overlay-sync-signature");
+    const older = {
+      ...defaultState(),
+      updatedAt: 1000,
+      donors: [
+        { id: "d1", name: "a", amount: 10000, memberId: "m1", at: 1, target: "account" as const },
+        { id: "d2", name: "b", amount: 20000, memberId: "m1", at: 2, target: "account" as const },
+      ],
+      members: [{ id: "m1", name: "홍쓰", account: 30000, toon: 0, contribution: 30000 }],
+    };
+    const newer = {
+      ...older,
+      updatedAt: 2000,
+      donors: [older.donors[0]!],
+      members: [{ id: "m1", name: "홍쓰", account: 10000, toon: 0, contribution: 10000 }],
+    };
+    expect(isNewerIntentionalDonationShrink(newer, older)).toBe(true);
+    expect(isNewerIntentionalDonationShrink(older, newer)).toBe(false);
+  });
+});
+
 describe("isRicherDonationSnapshot", () => {
   it("detects higher toon even when account is equal", async () => {
     const { isRicherDonationSnapshot } = await import("@/lib/overlay-sync-signature");
