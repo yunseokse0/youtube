@@ -150,6 +150,29 @@ describe("shouldRejectPoorerDonationRemote", () => {
     };
     expect(shouldRejectPoorerDonationRemote(local, shrunk)).toBe(false);
   });
+
+  it("allows remote with new donor ids even when local totals look richer", async () => {
+    const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
+    const local = {
+      ...defaultState(),
+      updatedAt: 1000,
+      settlementResetAt: 500,
+      donors: [
+        { id: "ghost1", name: "old", amount: 100000, memberId: "m1", at: 1, target: "account" as const },
+      ],
+      members: [{ id: "m1", name: "홍쓰", account: 100000, toon: 0, contribution: 100000 }],
+    };
+    const remoteWithNew = {
+      ...defaultState(),
+      updatedAt: 2000,
+      settlementResetAt: 500,
+      donors: [
+        { id: "fresh1", name: "new", amount: 10000, memberId: "m1", at: 2000, target: "account" as const },
+      ],
+      members: [{ id: "m1", name: "홍쓰", account: 10000, toon: 0, contribution: 10000 }],
+    };
+    expect(shouldRejectPoorerDonationRemote(local, remoteWithNew)).toBe(false);
+  });
 });
 
 describe("isRicherDonationSnapshot", () => {
