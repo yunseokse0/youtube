@@ -87,6 +87,71 @@ describe("isNewerIntentionalDonationShrink", () => {
   });
 });
 
+describe("shouldRejectPoorerDonationRemote", () => {
+  it("rejects empty remote when local has donors and reset is not newer", async () => {
+    const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
+    const local = {
+      ...defaultState(),
+      updatedAt: 1000,
+      settlementResetAt: 500,
+      donors: [
+        { id: "d1", name: "a", amount: 10000, memberId: "m1", at: 1, target: "account" as const },
+      ],
+      members: [{ id: "m1", name: "홍쓰", account: 10000, toon: 0, contribution: 10000 }],
+    };
+    const emptyRemote = {
+      ...defaultState(),
+      updatedAt: 2000,
+      settlementResetAt: 500,
+      donors: [] as typeof local.donors,
+      members: [{ id: "m1", name: "홍쓰", account: 0, toon: 0, contribution: 0 }],
+    };
+    expect(shouldRejectPoorerDonationRemote(local, emptyRemote)).toBe(true);
+  });
+
+  it("allows empty remote when settlementResetAt is newer", async () => {
+    const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
+    const local = {
+      ...defaultState(),
+      updatedAt: 1000,
+      settlementResetAt: 500,
+      donors: [
+        { id: "d1", name: "a", amount: 10000, memberId: "m1", at: 1, target: "account" as const },
+      ],
+      members: [{ id: "m1", name: "홍쓰", account: 10000, toon: 0, contribution: 10000 }],
+    };
+    const resetRemote = {
+      ...defaultState(),
+      updatedAt: 2000,
+      settlementResetAt: 900,
+      donors: [] as typeof local.donors,
+      members: [{ id: "m1", name: "홍쓰", account: 0, toon: 0, contribution: 0 }],
+    };
+    expect(shouldRejectPoorerDonationRemote(local, resetRemote)).toBe(false);
+  });
+
+  it("allows intentional single-donor delete shrink", async () => {
+    const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
+    const local = {
+      ...defaultState(),
+      updatedAt: 1000,
+      settlementResetAt: 500,
+      donors: [
+        { id: "d1", name: "a", amount: 10000, memberId: "m1", at: 1, target: "account" as const },
+        { id: "d2", name: "b", amount: 20000, memberId: "m1", at: 2, target: "account" as const },
+      ],
+      members: [{ id: "m1", name: "홍쓰", account: 30000, toon: 0, contribution: 30000 }],
+    };
+    const shrunk = {
+      ...local,
+      updatedAt: 2000,
+      donors: [local.donors[0]!],
+      members: [{ id: "m1", name: "홍쓰", account: 10000, toon: 0, contribution: 10000 }],
+    };
+    expect(shouldRejectPoorerDonationRemote(local, shrunk)).toBe(false);
+  });
+});
+
 describe("isRicherDonationSnapshot", () => {
   it("detects higher toon even when account is equal", async () => {
     const { isRicherDonationSnapshot } = await import("@/lib/overlay-sync-signature");

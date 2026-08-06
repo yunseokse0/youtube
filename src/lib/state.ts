@@ -1467,7 +1467,8 @@ let serverSaveInFlight = false;
 let serverSavePending: ServerSaveJob | null = null;
 
 /** 대기 중 POST 본문을 최신 요청과 병합 — 프리셋-only PATCH가 전체 저장(후원순위 테마 등)을 덮어쓰지 않게 함 */
-function mergeServerSaveApiBodies(prevJson: string, nextJson: string): string {
+/** 저장 큐 병합 — 정산 리셋 직후 follow-up 이 구 at 후원을 전량 버리지 않게 rebump 후 filter */
+export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): string {
   try {
     const prev = JSON.parse(prevJson) as Record<string, unknown>;
     const next = JSON.parse(nextJson) as Record<string, unknown>;
@@ -1488,7 +1489,10 @@ function mergeServerSaveApiBodies(prevJson: string, nextJson: string): string {
       if (Array.isArray(next.donors)) {
         mergedReset.donors =
           resetAt > 0
-            ? filterDonorsAfterSettlementReset(next.donors as Donor[], resetAt)
+            ? filterDonorsAfterSettlementReset(
+                rebumpDonorsPastSettlementReset(next.donors as Donor[], resetAt),
+                resetAt
+              )
             : next.donors;
       } else if (Array.isArray(prev.donors)) {
         mergedReset.donors = prev.donors;

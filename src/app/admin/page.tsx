@@ -79,6 +79,7 @@ import {
   pickDailyLogEntryForRestore,
   summarizeRestoreJson,
 } from "@/lib/state-restore";
+import { shouldRejectPoorerDonationRemote } from "@/lib/overlay-sync-signature";
 import {
   applyThemeRestorePatch,
   collectThemeRestoreCandidates,
@@ -1571,20 +1572,32 @@ export default function AdminPage() {
       }
     } catch {}
     loadStateFromApi(user?.id, { forceFull: true }).then((apiState) => {
-      /** 후원·금액은 계정 서버 정본. LS는 테마·시그 등 보조 캐시만. */
+      /** 후원·금액은 계정 서버 정본. LS는 테마·시그 등 보조 캐시만.
+       * 단, 빈/축소 Redis 가 LS 실후원을 덮어 시스템 삭제처럼 보이면 안 됨. */
       const local = localFallback;
       if (apiState) {
-        stateUpdatedAtRef.current = apiState.updatedAt || 0;
-        lastAppliedRemoteUpdatedAtRef.current = apiState.updatedAt || 0;
+        const rejectPoorer = shouldRejectPoorerDonationRemote(local, apiState);
+        stateUpdatedAtRef.current = rejectPoorer
+          ? Math.max(Number(local.updatedAt || 0), Number(apiState.updatedAt || 0))
+          : apiState.updatedAt || 0;
+        lastAppliedRemoteUpdatedAtRef.current = stateUpdatedAtRef.current;
         const { merged, didPreserve } = mergeIncomingStateSafely(apiState, local);
+        const donationSource = rejectPoorer ? local : apiState;
         const toApplyBase = syncMemberTotalsFromDonors({
           ...merged,
-          donors: apiState.donors,
-          members: apiState.members,
-          memberPositions: apiState.memberPositions,
-          contributionLogs: apiState.contributionLogs,
-          restroomLogs: apiState.restroomLogs,
-          settlementResetAt: apiState.settlementResetAt,
+          donors: normalizeDonorsArray(donationSource.donors),
+          members: donationSource.members,
+          memberPositions: donationSource.memberPositions ?? apiState.memberPositions,
+          contributionLogs: rejectPoorer
+            ? local.contributionLogs ?? apiState.contributionLogs
+            : apiState.contributionLogs,
+          restroomLogs: rejectPoorer
+            ? local.restroomLogs ?? apiState.restroomLogs
+            : apiState.restroomLogs,
+          settlementResetAt: Math.max(
+            Number(local.settlementResetAt || 0),
+            Number(apiState.settlementResetAt || 0)
+          ),
           sigSoldOutStampUrl:
             String(apiState.sigSoldOutStampUrl || "").trim() ||
             String(merged.sigSoldOutStampUrl || "").trim() ||
@@ -1626,9 +1639,27 @@ export default function AdminPage() {
             };
           }
         }
-        if (didPreserve) {
+        if (didPreserve && !rejectPoorer) {
           /** 테마·시그 등만 보존 — 후원 필드는 서버 값 유지(LS로 서버에 밀어 올리지 않음) */
           persistState(toApply, { omitDonationFields: true });
+        }
+        if (rejectPoorer) {
+          /** 빈 Redis 복구 — LS 후원을 계정 정본으로 한 번 올림 */
+          donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
+          const healAt = Date.now();
+          const healState: AppState = {
+            ...toApply,
+            updatedAt: Math.max(Number(toApply.updatedAt || 0), healAt),
+            donorRankingsUpdatedAt: Math.max(
+              Number(toApply.donorRankingsUpdatedAt || 0),
+              healAt
+            ),
+          };
+          stateRef.current = healState;
+          void saveStateAsync(healState, user?.id, { donorsAuthoritative: true }).then((r) => {
+            if (r.ok) setSyncStatus(r.storageFallback ? "error" : "synced");
+          });
+          toApply = healState;
         }
         const serverInv = toApply.sigInventory || [];
         if (
@@ -1785,6 +1816,10 @@ export default function AdminPage() {
         if (inAuthoritativeWindow && !remoteRicher) return false;
         /** forceDonorMerge 여도 빈 원격으로 수동 입력을 초기화하지 않음 */
         if (opts?.forceDonorMerge && localRicherThanEmptyRemote && !remoteRicher) {
+          return false;
+        }
+        /** 보호창 밖에서도 poorer/empty Redis 가 실후원을 시스템 삭제처럼 덮지 않음 */
+        if (shouldRejectPoorerDonationRemote(stateRef.current, remote)) {
           return false;
         }
       }

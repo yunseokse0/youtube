@@ -198,3 +198,28 @@ export function isNewerIntentionalDonationShrink(
   }
   return isRicherDonationSnapshot(older, newer) || newerDonors.length < olderDonors.length;
 }
+
+/**
+ * 빈/축소 원격으로 로컬·엑셀 후원을 시스템에 의해 지우면 안 된다.
+ * - 정산 리셋(remote.settlementResetAt 상승)만 빈 원격 허용
+ * - 의도적 부분 삭제(subset shrink)는 허용
+ * - 그 외 poorer·완전 빈 원격은 거부
+ */
+export function shouldRejectPoorerDonationRemote(
+  local: AppState | null | undefined,
+  remote: AppState | null | undefined
+): boolean {
+  if (!local || !remote) return false;
+  const remoteReset = Number(remote.settlementResetAt || 0);
+  const localReset = Number(local.settlementResetAt || 0);
+  if (remoteReset > localReset) return false;
+
+  const localDonors = Array.isArray(local.donors) ? local.donors.length : 0;
+  const remoteDonors = Array.isArray(remote.donors) ? remote.donors.length : 0;
+  /** 정산 리셋 없이 완전 빈 원격은 로컬 후원을 덮지 않음 */
+  if (localDonors > 0 && remoteDonors === 0) return true;
+
+  if (!isRicherDonationSnapshot(local, remote)) return false;
+  if (isNewerIntentionalDonationShrink(remote, local)) return false;
+  return true;
+}

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   filterDonorsAfterSettlementReset,
   mergeDonorsForMultiTabSave,
+  mergeServerSaveApiBodies,
   rebumpDonorsPastSettlementReset,
 } from "@/lib/state";
 import type { Donor } from "@/types";
@@ -85,5 +86,28 @@ describe("rebumpDonorsPastSettlementReset", () => {
     expect(filterDonorsAfterSettlementReset(bumped, resetAt).map((d) => d.id)).toEqual(["a", "b"]);
     expect(Number(bumped[0]?.at)).toBeGreaterThanOrEqual(resetAt - 3000);
     expect(Number(bumped[1]?.at)).toBe(12_000);
+  });
+});
+
+describe("mergeServerSaveApiBodies", () => {
+  it("rebumps then filters donors after settlementReset queue merge", () => {
+    const resetAt = 10_000;
+    const prev = JSON.stringify({
+      settlementReset: true,
+      settlementResetAt: resetAt,
+      donors: [],
+      updatedAt: resetAt,
+    });
+    const next = JSON.stringify({
+      donors: [donor("a", 1000, 5000), donor("b", 2000, 12_000)],
+      updatedAt: resetAt + 100,
+    });
+    const merged = JSON.parse(mergeServerSaveApiBodies(prev, next)) as {
+      donors: Donor[];
+      settlementResetAt: number;
+    };
+    expect(merged.settlementResetAt).toBe(resetAt);
+    expect(merged.donors.map((d) => d.id).sort()).toEqual(["a", "b"]);
+    expect(Number(merged.donors.find((d) => d.id === "a")?.at)).toBeGreaterThanOrEqual(resetAt - 3000);
   });
 });

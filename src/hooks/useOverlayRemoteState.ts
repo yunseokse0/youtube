@@ -43,8 +43,7 @@ import { useSSEConnection } from "@/lib/sse-client";
 import {
   buildOverlaySyncSignature,
   buildSigSalesOverlaySyncSignature,
-  isNewerIntentionalDonationShrink,
-  isRicherDonationSnapshot,
+  shouldRejectPoorerDonationRemote,
 } from "@/lib/overlay-sync-signature";
 
 import {
@@ -442,9 +441,7 @@ export function useOverlayRemoteState(
 
         if (
           (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) &&
-          lastGoodRef.current &&
-          isRicherDonationSnapshot(lastGoodRef.current, remote) &&
-          !isNewerIntentionalDonationShrink(remote, lastGoodRef.current)
+          shouldRejectPoorerDonationRemote(lastGoodRef.current, remote)
         ) {
           /** forceFull 이어도 빈/구 Redis 로 엑셀 금액을 지우지 않음 */
           return;
