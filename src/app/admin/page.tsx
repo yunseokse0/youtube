@@ -501,6 +501,8 @@ export default function AdminPage() {
   const SIG_INVENTORY_LOCAL_PROTECT_MS = 30_000;
   /** 금액/숫자 입력 중에는 원격 동기화 적용을 잠시 보류해 타이핑 값 초기화를 방지 */
   const amountInputEditingRef = useRef<boolean>(false);
+  /** 합산 추가 연속 클릭 시 이전 후원을 덮어쓰지 않게 직렬화 */
+  const addDonorSaveChainRef = useRef<Promise<void>>(Promise.resolve());
   const [dailyLog, setDailyLog] = useState<Record<string, DailyLogEntry[]>>({});
   const [donorName, setDonorName] = useState("");
   const [donorAmount, setDonorAmount] = useState("");
@@ -720,10 +722,13 @@ export default function AdminPage() {
     if (typeof document === "undefined") return;
     const isAmountLikeEditor = (el: EventTarget | null): boolean => {
       if (!(el instanceof HTMLElement)) return false;
-      if (el instanceof HTMLInputElement) {
-        const type = String(el.type || "").toLowerCase();
-        const inputMode = String(el.inputMode || "").toLowerCase();
+      if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement) {
+        const type = el instanceof HTMLInputElement ? String(el.type || "").toLowerCase() : "";
+        const inputMode = el instanceof HTMLInputElement ? String(el.inputMode || "").toLowerCase() : "";
         const hint = `${el.placeholder || ""} ${el.name || ""} ${el.id || ""}`.toLowerCase();
+        /** 수동 합산 폼(이름·금액·멤버) 입력 중에도 빈 Redis 적용으로 표가 0 되지 않게 */
+        if (/(donor|후원자|입금액|합산)/.test(hint)) return true;
+        if (!(el instanceof HTMLInputElement)) return false;
         return (
           type === "number" ||
           inputMode === "numeric" ||
@@ -5152,19 +5157,22 @@ export default function AdminPage() {
     const rawName = donorName;
     setDonorName("");
     setDonorAmount("");
-    void (async () => {
+    const donor: Donor = {
+      id: `d_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name: (rawName || "무명").replace(/\s+/g, ""),
+      amount,
+      memberId,
+      at: Date.now(),
+      target,
+    };
+    addDonorSaveChainRef.current = addDonorSaveChainRef.current
+      .catch(() => {})
+      .then(async () => {
+      /** 연속 합산·검증 동안 빈 원격으로 표가 초기화되지 않게 */
+      donationAuthoritativeSaveUntilRef.current = Date.now() + 45_000;
+      /** 항상 최신 stateRef 기준 — 병렬 합산이 이전 후원을 덮어쓰지 않음 */
       const prev = stateRef.current;
       const syncMode = prev.donationSyncMode || "mealBattle";
-      const safeName = (rawName || "무명").replace(/\s+/g, "");
-      // Keep each donation as a separate row for easier per-transaction corrections.
-      const donor: Donor = {
-        id: `d_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        name: safeName,
-        amount,
-        memberId,
-        at: Date.now(),
-        target,
-      };
       const now = Date.now();
       const mealParticipants =
         syncMode === "mealBattle"
@@ -5178,7 +5186,7 @@ export default function AdminPage() {
             )
           : (prev.mealBattle?.participants || []);
       /** donors → 멤버 계좌/투네 재합산 (엑셀표·후원순위와 동일 소스) */
-      let next: AppState = syncMemberTotalsFromDonors({
+      const next: AppState = syncMemberTotalsFromDonors({
         ...prev,
         donors: rebumpDonorsPastSettlementReset(
           [...(prev.donors || []), donor],
@@ -5210,6 +5218,21 @@ export default function AdminPage() {
          * 덮으면 엑셀·후원표가 최신 후원을 오래된 스냅샷으로 보고 반영을 건너뜀.
          */
         let base = stateRef.current;
+        /** 직렬화 중 다른 합산이 stateRef 를 바꿨을 수 있어, 이번 저장본 donors 를 기준으로 유지 */
+        if (normalizeDonorsArray(base.donors).length < normalizeDonorsArray(preserved.donors).length) {
+          base = {
+            ...preserved,
+            donors: mergeDonorsForMultiTabSave(
+              normalizeDonorsArray(preserved.donors),
+              normalizeDonorsArray(base.donors),
+              {
+                incomingUpdatedAt: preserved.updatedAt,
+                existingUpdatedAt: base.updatedAt,
+              }
+            ),
+          };
+          base = syncMemberTotalsFromDonors(base);
+        }
         const serverAt =
           typeof saved.serverUpdatedAt === "number" && Number.isFinite(saved.serverUpdatedAt)
             ? saved.serverUpdatedAt
@@ -5221,24 +5244,32 @@ export default function AdminPage() {
             : Number(base.donorRankingsUpdatedAt || 0);
         /** Redis 미반영(구서버 filter 등)이면 한 번 더 authoritative 저장 */
         if (!saved.storageFallback) {
-          const verify = await loadStateFromApi(user?.id, { forceFull: true });
-          const verifiedDonors = normalizeDonorsArray(verify?.donors);
-          const hasNew = verifiedDonors.some((d) => d.id === donor.id);
+          let verify = await loadStateFromApi(user?.id, { forceFull: true });
+          let verifiedDonors = normalizeDonorsArray(verify?.donors);
+          let hasNew = verifiedDonors.some((d) => d.id === donor.id);
+          if (
+            !hasNew &&
+            typeof saved.serverUpdatedAt === "number" &&
+            Number(verify?.updatedAt || 0) + 50 < saved.serverUpdatedAt
+          ) {
+            await new Promise((r) => window.setTimeout(r, 450));
+            verify = await loadStateFromApi(user?.id, { forceFull: true });
+            verifiedDonors = normalizeDonorsArray(verify?.donors);
+            hasNew = verifiedDonors.some((d) => d.id === donor.id);
+          }
           if (!hasNew) {
             const retryAt = Date.now();
+            const retryReset = Math.max(
+              Number(base.settlementResetAt || 0),
+              Number(verify?.settlementResetAt || 0)
+            );
             const retryState = syncMemberTotalsFromDonors({
               ...base,
               donors: rebumpDonorsPastSettlementReset(
                 normalizeDonorsArray(base.donors),
-                Math.max(
-                  Number(base.settlementResetAt || 0),
-                  Number(verify?.settlementResetAt || 0)
-                )
+                retryReset
               ),
-              settlementResetAt: Math.max(
-                Number(base.settlementResetAt || 0),
-                Number(verify?.settlementResetAt || 0)
-              ),
+              settlementResetAt: retryReset,
               updatedAt: retryAt,
               donorRankingsUpdatedAt: retryAt,
             });
@@ -5267,7 +5298,7 @@ export default function AdminPage() {
           lastAppliedRemoteUpdatedAtRef.current,
           bumped.updatedAt
         );
-        donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
+        donationAuthoritativeSaveUntilRef.current = Date.now() + 45_000;
         pendingUnsyncedRef.current = false;
         try {
           window.localStorage.setItem(storageKey(user?.id), JSON.stringify(bumped));
@@ -5280,7 +5311,7 @@ export default function AdminPage() {
           typeof navigator !== "undefined" && !navigator.onLine ? "local" : "error"
         );
       }
-    })();
+    });
   };
 
   const fetchUnmatchedEvents = useCallback(async () => {
@@ -10464,12 +10495,14 @@ export default function AdminPage() {
               <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_auto_auto_auto] gap-3 mt-4">
                 <input
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  name="donorName"
                   placeholder="후원자 이름"
                   value={donorName}
                   onChange={(e) => setDonorName(e.target.value)}
                 />
                 <input
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  name="donorAmount"
                   placeholder={
                     donorsAmountFormat === "full" ? "입금액 (예: 35000)" : "입금액 (예: 38 또는 38000)"
                   }
