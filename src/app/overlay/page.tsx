@@ -2,6 +2,8 @@
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster } from "@/lib/state";
+import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
+import { mergeDonationApplyBase } from "@/lib/donation/merge-donation-apply-base";
 import { maxOverlayAmountDisplayLength } from "@/lib/overlay-amount-display";
 import {
   formatRestroomDisplay,
@@ -360,23 +362,46 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         });
         const remoteRev = Math.max(data?.updatedAt || 0, readDonorRankingsRevision(data || ({} as AppState)));
         const remoteStrong = hasMeaningfulMemberRoster(data);
+        let remoteForApply = data;
+        if (data && lastGoodRef.current) {
+          const localReset = Number(lastGoodRef.current.settlementResetAt || 0);
+          const remoteReset = Number(data.settlementResetAt || 0);
+          if (remoteReset <= localReset) {
+            const localDonors = Array.isArray(lastGoodRef.current.donors) ? lastGoodRef.current.donors : [];
+            const remoteDonors = Array.isArray(data.donors) ? data.donors : [];
+            const localIds = new Set(localDonors.map((d) => String(d.id || "")).filter(Boolean));
+            const remoteIds = new Set(remoteDonors.map((d) => String(d.id || "")).filter(Boolean));
+            const hasLocalOnly = localDonors.some((d) => {
+              const id = String(d.id || "");
+              return Boolean(id) && !remoteIds.has(id);
+            });
+            const hasRemoteOnly = remoteDonors.some((d) => {
+              const id = String(d.id || "");
+              return Boolean(id) && !localIds.has(id);
+            });
+            if (hasLocalOnly && hasRemoteOnly) {
+              remoteForApply = mergeDonationApplyBase(data, lastGoodRef.current) ?? data;
+            }
+          }
+        }
         const remoteRicher = Boolean(
-          data && isRicherDonationSnapshot(data, lastGoodRef.current)
+          remoteForApply && isRicherDonationSnapshot(remoteForApply, lastGoodRef.current)
         );
         /**
          * 삭제 SSE → forceFull 이 빈/구 Redis 를 덮어쓰면 엑셀표가 0 초기화된다.
          * 의도적 축소·정산 리셋만 허용하고, 그 외 poorer 스냅샷은 last-good 유지.
          */
         const shouldApplyRemote =
-          !!data &&
-          !shouldKeepLastGoodInsteadOf(data, STATE_PICK_OVERLAY_DONORS, lastGoodRef.current) &&
-          !shouldRejectPoorerDonationRemote(lastGoodRef.current, data) &&
+          !!remoteForApply &&
+          !shouldKeepLastGoodInsteadOf(remoteForApply, STATE_PICK_OVERLAY_DONORS, lastGoodRef.current) &&
+          !shouldRejectPoorerDonationRemote(lastGoodRef.current, remoteForApply) &&
           (Boolean(opts?.forceFull) ||
             remoteRev > overlaySinceRef.current ||
             remoteRicher ||
             (needRosterHydration && remoteStrong));
-        if (shouldApplyRemote && data) {
-          const toApply = mergeKeepingStrongRoster(data);
+        if (shouldApplyRemote && remoteForApply) {
+          /** donors 는 있는데 members 합계가 비면 엑셀만 0 — 순위와 맞추기 */
+          const toApply = syncMemberTotalsFromDonors(mergeKeepingStrongRoster(remoteForApply));
           const appliedStrong = hasMeaningfulMemberRoster(toApply);
           const nextSig = buildOverlaySyncSignature(toApply);
           lastUpdatedRef.current = toApply.updatedAt || 0;
@@ -442,8 +467,15 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
       shouldSuppressOverlaySseConnection() || isExternalOverlayBroadcastHost()
         ? readOverlayLiveSyncPollMs()
         : readDonationListsOverlayPollMs();
+    const obsForceFullPoll =
+      shouldSuppressOverlaySseConnection() || isExternalOverlayBroadcastHost();
     let pollTimer: number | undefined;
-    if (pollMs > 0) pollTimer = window.setInterval(() => void syncOnce(), pollMs);
+    if (pollMs > 0) {
+      pollTimer = window.setInterval(
+        () => void syncOnceRef.current(obsForceFullPoll ? { forceFull: true } : undefined),
+        pollMs
+      );
+    }
     window.addEventListener("storage", onStorage);
     const unsubscribeLocal = subscribeBroadcastStateLocalUpdated((detail) => {
       if (!overlayUserIdsMatch(userId, detail.userId)) return;

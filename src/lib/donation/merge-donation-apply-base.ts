@@ -123,3 +123,24 @@ export function enrichStateBeforeAuthoritativeDonationSave(
   }
   return next;
 }
+
+/**
+ * 정산 리셋(settlementResetAt 상승) 전에는 기존 donors 를 버리지 않고 incoming 과 union.
+ * 투네 자동 반영이 수동 계좌 붙여넣기를 덮어쓰는 lost-update 방지.
+ */
+export function mergeStatePreservingDonorsUntilSettlementReset(
+  incoming: AppState,
+  existing: AppState | null | undefined
+): AppState {
+  if (!existing) return incoming;
+  const incomingReset = Number(incoming.settlementResetAt || 0);
+  const existingReset = Number(existing.settlementResetAt || 0);
+  if (incomingReset > existingReset) {
+    return syncMemberTotalsFromDonors({
+      ...incoming,
+      settlementResetAt: incomingReset,
+      donors: normalizeDonorsArray(incoming.donors),
+    });
+  }
+  return mergeDonationApplyBase(incoming, existing) ?? incoming;
+}

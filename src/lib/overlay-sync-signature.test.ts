@@ -171,7 +171,47 @@ describe("shouldRejectPoorerDonationRemote", () => {
       ],
       members: [{ id: "m1", name: "홍쓰", account: 10000, toon: 0, contribution: 10000 }],
     };
-    expect(shouldRejectPoorerDonationRemote(local, remoteWithNew)).toBe(false);
+    /** poorer+신규 id 만으로는 허용하지 않음 — 호출측 union 후 적용 */
+    expect(shouldRejectPoorerDonationRemote(local, remoteWithNew)).toBe(true);
+  });
+
+  it("rejects poorer toon-only remote that drops manual account donors", async () => {
+    const { shouldRejectPoorerDonationRemote } = await import("@/lib/overlay-sync-signature");
+    const local = {
+      ...defaultState(),
+      updatedAt: 1000,
+      donorRankingsUpdatedAt: 1000,
+      settlementResetAt: 500,
+      donors: [
+        {
+          id: "d_bulk_1",
+          name: "계좌",
+          amount: 100000,
+          memberId: "m1",
+          at: 1,
+          target: "account" as const,
+        },
+      ],
+      members: [{ id: "m1", name: "홍쓰", account: 100000, toon: 0, contribution: 100000 }],
+    };
+    const remote = {
+      ...defaultState(),
+      updatedAt: 2000,
+      donorRankingsUpdatedAt: 2500,
+      settlementResetAt: 500,
+      donors: [
+        {
+          id: "toonation:new",
+          name: "투네",
+          amount: 10000,
+          memberId: "m1",
+          at: 2000,
+          target: "toon" as const,
+        },
+      ],
+      members: [{ id: "m1", name: "홍쓰", account: 0, toon: 10000, contribution: 10000 }],
+    };
+    expect(shouldRejectPoorerDonationRemote(local, remote)).toBe(true);
   });
 });
 

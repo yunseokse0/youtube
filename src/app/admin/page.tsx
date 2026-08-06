@@ -1482,9 +1482,22 @@ export default function AdminPage() {
     const localOnlyCount = localDonorsNorm.filter((d) => !incomingIdSet.has(d.id)).length;
     /**
      * 후원·금액은 계정 서버가 정본. LS/캐시로 빈 서버를 “복구”하거나 축소본을 막지 않는다.
-     * 예외: 같은 세션에서 저장 직후·편집 중일 때만 id 병합(원격 신규 후원 누락 방지).
+     * 예외:
+     * - 로컬·원격에 서로 없는 id 가 있으면 항상 union (투네가 수동 계좌를 덮지 않음)
+     * - 같은 세션 저장 직후·편집 중일 때 한쪽만 있는 경우도 병합
      */
-    if (
+    if (remoteOnlyCount > 0 && localOnlyCount > 0) {
+      const union = mergeDonorsForMultiTabSave(incomingDonorsNorm, localDonorsNorm, {
+        incomingUpdatedAt: incoming.updatedAt,
+        existingUpdatedAt: local.updatedAt,
+      });
+      merged = {
+        ...merged,
+        donors: union,
+        members: remoteOnlyCount >= localOnlyCount ? merged.members : local.members,
+      };
+      didPreserve = true;
+    } else if (
       (pendingUnsyncedRef.current || recentlyEditedDonors) &&
       (remoteOnlyCount > 0 || localOnlyCount > 0)
     ) {
@@ -1499,17 +1512,6 @@ export default function AdminPage() {
           ...merged,
           donors: localDonorsNorm,
           members: local.members,
-        };
-        didPreserve = true;
-      } else if (remoteOnlyCount > 0 && localOnlyCount > 0) {
-        const union = mergeDonorsForMultiTabSave(incomingDonorsNorm, localDonorsNorm, {
-          incomingUpdatedAt: incoming.updatedAt,
-          existingUpdatedAt: local.updatedAt,
-        });
-        merged = {
-          ...merged,
-          donors: union,
-          members: remoteOnlyCount >= localOnlyCount ? merged.members : local.members,
         };
         didPreserve = true;
       }
@@ -1818,12 +1820,20 @@ export default function AdminPage() {
         const remoteDonors = normalizeDonorsArray(remote.donors);
         const localDonors = normalizeDonorsArray(stateRef.current.donors);
         const localIds = new Set(localDonors.map((d) => d.id));
+        const remoteIds = new Set(remoteDonors.map((d) => d.id));
         const remoteOnlyFresh = remoteDonors.filter(
           (d) => !localIds.has(d.id) && !removed.has(d.id)
         );
+        const localOnly = localDonors.filter((d) => !remoteIds.has(d.id) && !removed.has(d.id));
+        /** 투네 신규 + 수동 계좌(로컬만) → 거부하지 말고 union 후 적용 */
+        let remoteForGuards = remote;
+        if (localOnly.length > 0 && remoteOnlyFresh.length > 0) {
+          remoteForGuards =
+            mergeDonationApplyBase(remote, stateRef.current) ?? remote;
+        }
         const remoteSansRemoved = {
-          ...remote,
-          donors: remoteDonors.filter((d) => !removed.has(d.id)),
+          ...remoteForGuards,
+          donors: normalizeDonorsArray(remoteForGuards.donors).filter((d) => !removed.has(d.id)),
         };
         const remoteRicher =
           totalCombined(remoteSansRemoved) > totalCombined(stateRef.current) ||
@@ -1837,9 +1847,10 @@ export default function AdminPage() {
           return false;
         }
         /** 보호창 밖에서도 poorer/empty Redis 가 실후원을 시스템 삭제처럼 덮지 않음 */
-        if (shouldRejectPoorerDonationRemote(stateRef.current, remote)) {
+        if (shouldRejectPoorerDonationRemote(stateRef.current, remoteForGuards)) {
           return false;
         }
+        remote = remoteForGuards;
       }
       /** 저장 대기 중이어도 원격 신규 후원은 mergeIncoming에서 수용.
        * 다른 브라우저 정산 리셋(remoteSettlementWins)은 빈 후원이어도 반드시 적용. */

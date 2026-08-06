@@ -170,6 +170,10 @@ export function isRicherDonationSnapshot(
     0
   );
   const bDonors = Array.isArray(baseline.donors) ? baseline.donors.length : 0;
+  /** 계좌·투네 합계 우선 — 투네 1건이 큰 수동 계좌를 ‘richer’로 이기지 않게 */
+  const cTotal = cAccount + cToon;
+  const bTotal = bAccount + bToon;
+  if (cTotal !== bTotal) return cTotal > bTotal;
   if (cToon !== bToon) return cToon > bToon;
   if (cAccount !== bAccount) return cAccount > bAccount;
   return cDonors > bDonors;
@@ -202,8 +206,9 @@ export function isNewerIntentionalDonationShrink(
 /**
  * 빈/축소 원격으로 로컬·엑셀 후원을 시스템에 의해 지우면 안 된다.
  * - 정산 리셋(remote.settlementResetAt 상승)만 빈 원격 허용
- * - 원격에 로컬에 없는 신규 후원 id 가 있으면 갱신 허용(엑셀·순위 반영)
  * - 의도적 부분 삭제(subset shrink)는 허용
+ * - 신규 id·revision 만으로 poorer 원격 허용하지 않음
+ *   (투네 1건이 수동 계좌 붙여넣기를 통째로 덮지 않게 — 호출측에서 union)
  * - 그 외 poorer·완전 빈 원격은 거부
  */
 export function shouldRejectPoorerDonationRemote(
@@ -217,15 +222,6 @@ export function shouldRejectPoorerDonationRemote(
 
   const localDonorList = Array.isArray(local.donors) ? local.donors : [];
   const remoteDonorList = Array.isArray(remote.donors) ? remote.donors : [];
-  const localIds = new Set(localDonorList.map((d) => String(d.id || "")).filter(Boolean));
-  /** 신규 후원 id 가 있으면 고스트 LS보다 서버 갱신을 우선 — 엑셀·후원순위 미반영 방지 */
-  if (remoteDonorList.some((d) => {
-    const id = String(d.id || "");
-    return Boolean(id) && !localIds.has(id);
-  })) {
-    return false;
-  }
-
   const localDonors = localDonorList.length;
   const remoteDonors = remoteDonorList.length;
   /** 정산 리셋 없이 완전 빈 원격은 로컬 후원을 덮지 않음 */

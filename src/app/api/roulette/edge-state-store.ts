@@ -1,6 +1,7 @@
 import type { AppState } from "@/lib/state";
 import { defaultState } from "@/lib/state";
 import { pickFresherAppState } from "@/lib/app-state-freshness";
+import { mergeStatePreservingDonorsUntilSettlementReset } from "@/lib/donation/merge-donation-apply-base";
 import { snapshotTimerForPersist } from "@/lib/timer-utils";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { getUserIdFromRequest } from "../_shared/user-id";
@@ -48,9 +49,20 @@ export async function loadAppStateForRoulette(userId: string): Promise<AppState>
 
 export async function saveAppStateForRoulette(userId: string, next: AppState): Promise<void> {
   const { base, token } = getRedisEnv();
+  /**
+   * 투네 반영이 구 스냅샷 위에 저장되면 직전 수동 계좌 donors 가 사라짐.
+   * 정산 리셋이 아닌 한 Redis·메모리 기존 donors 와 union 후 기록.
+   */
+  const mem = getServerMemoryAppState(userId);
+  let existing: AppState | null = mem && Array.isArray(mem.members) ? mem : null;
+  if (base && token) {
+    const raw = await upstashGet(stateKey(userId));
+    existing = pickFresherAppState(raw as AppState | null, mem);
+  }
+  const merged = mergeStatePreservingDonorsUntilSettlementReset(next, existing);
   const persisted: AppState = {
-    ...next,
-    generalTimer: snapshotTimerForPersist(next.generalTimer),
+    ...merged,
+    generalTimer: snapshotTimerForPersist(merged.generalTimer),
   };
   setServerMemoryAppState(userId, persisted);
   if (base && token) {

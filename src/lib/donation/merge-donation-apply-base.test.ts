@@ -230,3 +230,78 @@ describe("enrichStateBeforeAuthoritativeDonationSave", () => {
     expect(enriched.members.some((m) => m.id === "m1")).toBe(false);
   });
 });
+
+describe("mergeStatePreservingDonorsUntilSettlementReset", () => {
+  it("unions manual account donors with incoming toon when reset is unchanged", async () => {
+    const { mergeStatePreservingDonorsUntilSettlementReset } = await import(
+      "./merge-donation-apply-base"
+    );
+    const existing: AppState = {
+      ...defaultState(),
+      settlementResetAt: 1000,
+      members: members(["BT태호"]),
+      donors: [
+        {
+          id: "d_bulk_1",
+          name: "계좌후원",
+          amount: 50000,
+          memberId: "m1",
+          at: 2000,
+          target: "account",
+        },
+      ],
+      updatedAt: 2000,
+    };
+    const incoming: AppState = {
+      ...defaultState(),
+      settlementResetAt: 1000,
+      members: members(["BT태호"]).map((m) => ({ ...m, toon: 10000, contribution: 10000 })),
+      donors: [
+        {
+          id: "toonation:new-1",
+          name: "투네",
+          amount: 10000,
+          memberId: "m1",
+          at: 3000,
+          target: "toon",
+        },
+      ],
+      updatedAt: 3000,
+    };
+    const merged = mergeStatePreservingDonorsUntilSettlementReset(incoming, existing);
+    expect(merged.donors.map((d) => d.id).sort()).toEqual(["d_bulk_1", "toonation:new-1"]);
+    expect(merged.members.find((m) => m.id === "m1")?.account).toBe(50000);
+    expect(merged.members.find((m) => m.id === "m1")?.toon).toBe(10000);
+  });
+
+  it("allows empty donors when settlementResetAt advances", async () => {
+    const { mergeStatePreservingDonorsUntilSettlementReset } = await import(
+      "./merge-donation-apply-base"
+    );
+    const existing: AppState = {
+      ...defaultState(),
+      settlementResetAt: 1000,
+      members: members(["BT태호"]).map((m) => ({ ...m, account: 50000, contribution: 50000 })),
+      donors: [
+        {
+          id: "d_bulk_1",
+          name: "계좌후원",
+          amount: 50000,
+          memberId: "m1",
+          at: 2000,
+          target: "account",
+        },
+      ],
+    };
+    const incoming: AppState = {
+      ...defaultState(),
+      settlementResetAt: 9000,
+      members: members(["BT태호"]),
+      donors: [],
+      updatedAt: 9000,
+    };
+    const merged = mergeStatePreservingDonorsUntilSettlementReset(incoming, existing);
+    expect(merged.donors).toHaveLength(0);
+    expect(merged.settlementResetAt).toBe(9000);
+  });
+});

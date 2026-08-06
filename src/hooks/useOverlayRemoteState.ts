@@ -19,7 +19,7 @@ import {
   type AppState,
 } from "@/lib/state";
 
-import { shouldSuppressOverlaySseConnection } from "@/lib/overlay-params";
+import { shouldSuppressOverlaySseConnection, isExternalOverlayBroadcastHost } from "@/lib/overlay-params";
 import { startStaggeredOverlayPoll } from "@/lib/overlay-poll-stagger";
 
 import {
@@ -45,6 +45,8 @@ import {
   buildSigSalesOverlaySyncSignature,
   shouldRejectPoorerDonationRemote,
 } from "@/lib/overlay-sync-signature";
+import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
+import { mergeDonationApplyBase } from "@/lib/donation/merge-donation-apply-base";
 
 import {
   hasObsTextRegistryInState,
@@ -203,10 +205,18 @@ function applySyncedState(
     setState: Dispatch<SetStateAction<AppState | null>>;
   }
 ): boolean {
-  const nextSig = overlaySyncSignatureForPick(data, pick);
+  /** 엑셀은 members 합계 — donors 기준 보정 후 서명 비교 (순위만 되고 표만 0인 경우 방지) */
+  const dataForApply =
+    (pick === STATE_PICK_OVERLAY || pick === STATE_PICK_OVERLAY_DONORS) &&
+    Array.isArray(data.donors) &&
+    data.donors.length > 0
+      ? syncMemberTotalsFromDonors(data)
+      : data;
+
+  const nextSig = overlaySyncSignatureForPick(dataForApply, pick);
 
   /** obs-text pick 304 비교는 max(updatedAt, config.revision) — updatedAt 만 쓰면 영구 304 */
-  const pickRev = revisionForStatePick(data, pick);
+  const pickRev = revisionForStatePick(dataForApply, pick);
 
   if (
     pick === STATE_PICK_OBS_TEXT &&
@@ -218,7 +228,7 @@ function applySyncedState(
   }
 
   if (pick !== STATE_PICK_OBS_TEXT) {
-    const dr = readDonorRankingsRevision(data);
+    const dr = readDonorRankingsRevision(dataForApply);
     if (dr > 0) {
       refs.lastSyncedDonorRevRef.current = Math.max(
         refs.lastSyncedDonorRevRef.current,
@@ -248,18 +258,18 @@ function applySyncedState(
 
   const mergedTimer = mergeGeneralTimerPreferEffective(
     refs.lastGoodRef.current?.generalTimer,
-    data.generalTimer
+    dataForApply.generalTimer
   );
   /** pick 에 timerDisplayStyles 키가 없을 때만 last-good 로 보정.
    * 키가 있어도 기본(빈 색)이면 last-good 커스텀을 유지 — 첫 페인트 기본색→재설정 회귀 방지 */
   const lastTimerStyles = refs.lastGoodRef.current?.timerDisplayStyles;
-  const incomingTimerStyles = data.timerDisplayStyles;
-  const hasIncomingTimerKey = Object.prototype.hasOwnProperty.call(data, "timerDisplayStyles");
+  const incomingTimerStyles = dataForApply.timerDisplayStyles;
+  const hasIncomingTimerKey = Object.prototype.hasOwnProperty.call(dataForApply, "timerDisplayStyles");
   const preferLastTimer =
     hasCustomTimerDisplayStyles(lastTimerStyles) &&
     (!hasIncomingTimerKey || isDefaultLikeTimerDisplayStyle(incomingTimerStyles?.general));
   const next = {
-    ...data,
+    ...dataForApply,
     generalTimer: mergedTimer,
     ...(preferLastTimer && lastTimerStyles
       ? { timerDisplayStyles: lastTimerStyles }
@@ -439,9 +449,37 @@ export function useOverlayRemoteState(
           return;
         }
 
+        let remoteForApply = remote;
         if (
           (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) &&
-          shouldRejectPoorerDonationRemote(lastGoodRef.current, remote)
+          lastGoodRef.current
+        ) {
+          const localReset = Number(lastGoodRef.current.settlementResetAt || 0);
+          const remoteReset = Number(remote.settlementResetAt || 0);
+          if (remoteReset <= localReset) {
+            const localDonors = Array.isArray(lastGoodRef.current.donors)
+              ? lastGoodRef.current.donors
+              : [];
+            const remoteDonors = Array.isArray(remote.donors) ? remote.donors : [];
+            const localIds = new Set(localDonors.map((d) => String(d.id || "")).filter(Boolean));
+            const remoteIds = new Set(remoteDonors.map((d) => String(d.id || "")).filter(Boolean));
+            const hasLocalOnly = localDonors.some((d) => {
+              const id = String(d.id || "");
+              return Boolean(id) && !remoteIds.has(id);
+            });
+            const hasRemoteOnly = remoteDonors.some((d) => {
+              const id = String(d.id || "");
+              return Boolean(id) && !localIds.has(id);
+            });
+            if (hasLocalOnly && hasRemoteOnly) {
+              remoteForApply = mergeDonationApplyBase(remote, lastGoodRef.current) ?? remote;
+            }
+          }
+        }
+
+        if (
+          (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS) &&
+          shouldRejectPoorerDonationRemote(lastGoodRef.current, remoteForApply)
         ) {
           /** forceFull 이어도 빈/구 Redis 로 엑셀 금액을 지우지 않음 */
           return;
@@ -449,11 +487,11 @@ export function useOverlayRemoteState(
 
         if (sigSalesPick) {
           lastRouletteSyncRef.current = sigSalesRouletteSyncCursorFromState(
-            remote.rouletteState
+            remoteForApply.rouletteState
           );
         }
 
-        applySyncedState(remote, statePick, refs);
+        applySyncedState(remoteForApply, statePick, refs);
       } catch {
         restoreFallback();
       } finally {
@@ -648,12 +686,17 @@ export function useOverlayRemoteState(
 
     if (pollMs > 0) {
       const pollSourceKey = `${statePick}:${userId || "default"}:${typeof window !== "undefined" ? window.location.pathname : ""}:${typeof window !== "undefined" ? window.location.search : ""}`;
+      const obsForceFullPoll =
+        shouldSuppressOverlaySseConnection() || isExternalOverlayBroadcastHost();
       stopPoll = startStaggeredOverlayPoll(
         () => {
           const pollOpts =
             sigSalesPick && !sigSalesIncrementalPoll
               ? { forceFull: true as const }
-              : undefined;
+              : obsForceFullPoll &&
+                  (statePick === STATE_PICK_OVERLAY || statePick === STATE_PICK_OVERLAY_DONORS)
+                ? { forceFull: true as const }
+                : undefined;
           void syncFromApiRef.current(pollOpts);
         },
         pollMs,
