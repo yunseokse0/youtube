@@ -376,25 +376,21 @@ function mergePartialState(
   }
 
   /**
-   * 다른 브라우저·구 탭이 낮은 settlementResetAt 으로 덮어쓰면
-   * 리셋 가드가 풀려 구 후원이 되살아남. 리셋 플래그 없는 PATCH는 단조 증가만 허용.
+   * 사용자 명시 settlementReset 없이 settlementResetAt 상승 금지.
+   * (클라이언트가 Date.now() 를 실어 보내 후원이 자동 필터·초기화되는 경로 차단)
    */
   if (!patchSettlementReset) {
     const baseReset = Number(base.settlementResetAt || 0);
     const patchReset = Number(next.settlementResetAt || 0);
-    const coalesced = coalesceSettlementResetAt({
-      baseResetAt: baseReset,
-      patchResetAt: patchReset,
-    });
-    if (coalesced > 0 && coalesced > patchReset) {
-      next.settlementResetAt = coalesced;
-      logger.warn("stale settlementResetAt overwrite blocked", {
-        userId,
-        baseReset,
-        patchReset,
-      });
-    } else if (coalesced > 0) {
-      next.settlementResetAt = coalesced;
+    if (patchReset !== baseReset) {
+      next.settlementResetAt = baseReset > 0 ? baseReset : undefined;
+      if (patchReset > baseReset) {
+        logger.warn("settlementResetAt raise blocked without settlementReset flag", {
+          userId,
+          baseReset,
+          patchReset,
+        });
+      }
     }
   }
 
@@ -703,8 +699,28 @@ export async function POST(req: Request) {
      * donorsAuthoritative 라도 삭제(부분집합 shrink)·정산 리셋이 아니면
      * Redis 기존 donors 와 union — 수동 합산이 직전 투네를 지우지 않게.
      */
+    /**
+     * 다건 후원을 한 번에 빈 배열로 덮는 authoritative 저장은
+     * 사용자 명시 정산 리셋(settlementReset/donationInit) 없이 허용하지 않음.
+     * 단건 삭제(1→0)만 예외.
+     */
+    const massEmptyAuthoritativeWipe =
+      donorsAuthoritative &&
+      !settlementReset &&
+      !donationInitReset &&
+      donorsInPatch &&
+      incomingDonorsFiltered.length === 0 &&
+      baseDonorsNorm.length > 1;
+    if (massEmptyAuthoritativeWipe) {
+      logger.warn("refused mass empty authoritative wipe without settlementReset", {
+        userId,
+        baseCount: baseDonorsNorm.length,
+      });
+      donorsInPatch = false;
+    }
     const authoritativeReplace =
       donorsAuthoritative &&
+      !massEmptyAuthoritativeWipe &&
       (settlementReset ||
         donationInitReset ||
         isIntentionalDonorListShrink(
@@ -851,8 +867,11 @@ export async function POST(req: Request) {
       void saveSigInventoryBackup(userId, next.sigInventory);
     }
 
-    /** 후원 금액 — 재시작·메인 상태 유실 대비 별도 백업. 정산/전체삭제 시 빈 백업으로 교체 */
-    if (settlementReset || (donorsAuthoritative && normalizeDonorsArray(next.donors).length === 0)) {
+    /** 후원 금액 — 재시작·메인 상태 유실 대비 별도 백업. 정산·의도적 전체삭제 시에만 빈 백업 */
+    if (
+      settlementReset ||
+      (authoritativeReplace && normalizeDonorsArray(next.donors).length === 0)
+    ) {
       await clearDonationRosterBackup(userId, next.settlementResetAt);
     } else if (normalizeDonorsArray(next.donors).length > 0 || totalCombined(next) > 0) {
       void saveDonationRosterBackup(userId, next);

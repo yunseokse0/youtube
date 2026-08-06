@@ -60,6 +60,15 @@ describe("settlement reset guards", () => {
     ).toBe(20_000);
   });
 
+  it("ignores client raising settlementResetAt without settlementReset flag", () => {
+    expect(
+      coalesceSettlementResetAt({
+        baseResetAt: 20_000,
+        patchResetAt: 99_000,
+      })
+    ).toBe(20_000);
+  });
+
   it("allows settlementReset to advance stamp", () => {
     expect(
       coalesceSettlementResetAt({

@@ -1053,8 +1053,20 @@ export default function AdminPage() {
       Boolean(opts?.donorsAuthoritative) ||
       Boolean(opts?.settlementReset);
     const omitDonationFields = Boolean(opts?.omitDonationFields) || !includeDonations;
+    /**
+     * 후원이 갱신된 저장은 즉시 서버 정본으로 올린다.
+     * includeDonationFields 만으로는 HARD GUARD·큐 병합에서 빠질 수 있어
+     * donors 가 있으면 donorsAuthoritative 를 강제한다 (정산 리셋·빈 목록 wipe 제외).
+     */
+    const donorCount = normalizeDonorsArray(s.donors).length;
+    const forceAuthoritativeDonors =
+      includeDonations &&
+      !omitDonationFields &&
+      !opts?.settlementReset &&
+      donorCount > 0;
     const resolvedOpts = {
       ...opts,
+      ...(forceAuthoritativeDonors ? { donorsAuthoritative: true as const } : {}),
       ...(omitDonationFields ? { omitDonationFields: true as const } : {}),
     };
     /** 후원 포함 저장에서만 축소 스냅샷 차단 (비후원 저장은 어차피 donors 미전송) */
@@ -1792,7 +1804,8 @@ export default function AdminPage() {
     let pendingForceDonorSync = false;
     const healLocalDonorsToServerIfRicher = () => {
       const now = Date.now();
-      if (now - lastEmptyRemoteDonationHealAtRef.current < 8_000) return;
+      /** 후원 갱신 직후 서버 반영 — 짧은 쿨다운만 (연타 POST 방지) */
+      if (now - lastEmptyRemoteDonationHealAtRef.current < 500) return;
       const local = stateRef.current;
       const localDonors = normalizeDonorsArray(local.donors);
       if (localDonors.length === 0 && totalCombined(local) <= 0) return;
@@ -1830,7 +1843,10 @@ export default function AdminPage() {
       if (!shouldApplyRemote) return false;
       const remoteResetAt = Number(remote.settlementResetAt || 0);
       const localResetAt = Number(stateRef.current.settlementResetAt || 0);
-      /** 다른 브라우저에서 정산 리셋됨 — 로컬 미저장·편집 보호보다 리셋을 우선 적용 */
+      /**
+       * 다른 브라우저에서 사용자가 정산 리셋함(settlementResetAt 상승).
+       * stamp 상승은 서버가 settlementReset 플래그일 때만 허용한다.
+       */
       const remoteSettlementWins = remoteResetAt > localResetAt;
       if (remoteSettlementWins) {
         settlementResetUntilRef.current = Date.now() + 30_000;
@@ -5861,13 +5877,33 @@ export default function AdminPage() {
 
   const applyProcessDonationResult = useCallback((result: ProcessDonationResult) => {
     if (!result.updatedState) return;
+    const needsResave =
+      result.status === "failed" || String(result.error || "") === "state_save_failed";
     const preserved = markAuthoritativeDonationSave(
       { serverUpdatedAt: result.updatedState.updatedAt },
-      result.updatedState
+      result.updatedState,
+      { awaitingServerSave: needsResave }
     );
     setState(preserved);
-    /** 즉시 forceDonorMerge GET 금지 — 저장 직후 빈/지연 스냅샷이 첫 후원을 지움 */
-  }, [markAuthoritativeDonationSave]);
+    /** 후원 반영 직후 서버 저장 실패·누락 시 즉시 재저장 */
+    if (needsResave) {
+      void saveStateAsync(preserved, user?.id, { donorsAuthoritative: true }).then((r) => {
+        if (r.ok) {
+          pendingUnsyncedRef.current = false;
+          setSyncStatus(r.storageFallback ? "error" : "synced");
+          if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
+            stateUpdatedAtRef.current = r.serverUpdatedAt;
+            lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
+          }
+          notifyBroadcastStateLocalUpdated(user?.id, preserved.updatedAt);
+        } else {
+          setSyncStatus(
+            typeof navigator !== "undefined" && !navigator.onLine ? "local" : "error"
+          );
+        }
+      });
+    }
+  }, [markAuthoritativeDonationSave, user?.id]);
 
   const autoProcessAllQueueEvents = useCallback(async (events?: DonationEvent[]) => {
     let batch = events;

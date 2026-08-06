@@ -23,3 +23,9 @@
 6) 투네 실시간 자동 수집은 **핵심 기능 — 현재 상태 프리즈** (2026-08-03).
 - 사용자 명시 요청 없이 `src/lib/donation/toonation/**`, 릴레이 컴포넌트, ingest API 동작을 변경하지 않는다.
 - 상세 invariant·테스트: `.cursor/rules/toonation-auto-collect-freeze.mdc` 참고.
+
+7) 후원·정산 리셋 invariant (2026-08-06).
+- 후원 전체 초기화·`settlementResetAt` 상승은 사용자 명시 `settlementReset: true`(관리자「정산 리셋」)만 허용한다.
+- 투네 반영·테마 저장·폴링·권한 저장이 후원을 통째로 비우거나 리셋 stamp 를 올리면 안 된다.
+- 단건 후원 삭제(의도적 shrink)는 허용한다.
+- 후원이 갱신되는 순간(합산·붙여넣기·투네·삭제·복구) 서버(Redis)에 `donorsAuthoritative` 로 즉시 저장한다.

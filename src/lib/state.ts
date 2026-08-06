@@ -1988,6 +1988,20 @@ export async function saveStateAsync(
     }
   }
   /**
+   * 명시적 정산 리셋이 아니면 settlementResetAt 을 올리지 않음.
+   * (잘못된 stamp 상승 → filterDonorsAfterSettlementReset 로 후원 전량 탈락 방지)
+   */
+  if (!saveOpts?.settlementReset) {
+    const localReset = Number(local?.settlementResetAt || 0);
+    const guardedReset = Number(guarded.settlementResetAt || 0);
+    if (guardedReset > localReset) {
+      guarded = {
+        ...guarded,
+        settlementResetAt: localReset > 0 ? localReset : undefined,
+      };
+    }
+  }
+  /**
    * donorsAuthoritative 저장만 리셋 이전 at 를 rebump·filter 한다.
    * 테마 등 비권한 저장에서 filter 후 LS setItem 하면 수동 입력이 0으로 초기화된다.
    * (서버 POST 는 route 에서 별도 filter)
@@ -2967,8 +2981,10 @@ export function rebumpDonorsPastSettlementReset(
 }
 
 /**
- * 다른 브라우저 구 저장이 settlementResetAt 을 낮춰 리셋 가드를 풀지 못하게 함.
- * 명시적 settlementReset 저장만 새 stamp 를 쓴다.
+ * 정산 리셋 시각 병합.
+ * - `settlementReset: true` 일 때만 새 stamp 허용 (사용자 명시 리셋).
+ * - 그 외에는 서버(base) 값만 유지 — 클라이언트가 올린 더 큰 settlementResetAt 로
+ *   후원이 자동 초기화되는 것을 막는다. (낮추는 것도 금지 → 리셋 가드 해제 방지)
  */
 export function coalesceSettlementResetAt(opts: {
   baseResetAt?: number;
@@ -2980,7 +2996,7 @@ export function coalesceSettlementResetAt(opts: {
     const stamp = Number(opts.resetStamp || 0);
     return stamp > 0 ? stamp : Date.now();
   }
-  return Math.max(Number(opts.baseResetAt || 0), Number(opts.patchResetAt || 0));
+  return Math.max(0, Number(opts.baseResetAt || 0));
 }
 
 export function totalAccount(state: AppState): number {
