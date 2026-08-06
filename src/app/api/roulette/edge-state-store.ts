@@ -30,13 +30,25 @@ async function upstashSet(key: string, value: unknown): Promise<boolean> {
   return upstashSetAppStateJson(key, value);
 }
 
+/** Redis·메모리 양쪽 donors 를 리셋 가드 하에 합친 뒤 더 신선한 셸을 고른다. */
+function coalesceRedisAndMemory(
+  redis: AppState | null | undefined,
+  mem: AppState | null | undefined
+): AppState | null {
+  const picked = pickFresherAppState(redis, mem);
+  if (redis && mem && Array.isArray(redis.members) && Array.isArray(mem.members)) {
+    return mergeStatePreservingDonorsUntilSettlementReset(picked || redis, mem);
+  }
+  return picked;
+}
+
 export async function loadAppStateForRoulette(userId: string): Promise<AppState> {
   const mem = getServerMemoryAppState(userId);
   const { base, token } = getRedisEnv();
   if (base && token) {
     const raw = await upstashGet(stateKey(userId));
     const redis = raw as AppState | null;
-    const picked = pickFresherAppState(redis, mem);
+    const picked = coalesceRedisAndMemory(redis, mem);
     if (picked) {
       /** 오래된 Redis로 최신 메모리(방금 반영된 후원)를 덮어쓰지 않음 */
       if (mem !== picked) setServerMemoryAppState(userId, picked);
@@ -57,7 +69,7 @@ export async function saveAppStateForRoulette(userId: string, next: AppState): P
   let existing: AppState | null = mem && Array.isArray(mem.members) ? mem : null;
   if (base && token) {
     const raw = await upstashGet(stateKey(userId));
-    existing = pickFresherAppState(raw as AppState | null, mem);
+    existing = coalesceRedisAndMemory(raw as AppState | null, mem);
   }
   const merged = mergeStatePreservingDonorsUntilSettlementReset(next, existing);
   const persisted: AppState = {

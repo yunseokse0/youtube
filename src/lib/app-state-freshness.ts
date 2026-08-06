@@ -1,4 +1,5 @@
 import type { AppState } from "@/types";
+import { isIntentionalDonorListShrink, normalizeDonorsArray } from "@/lib/state";
 
 /** Redis vs 인메모리 — 후원 직후 Redis 반영 지연 시 최신 스냅샷 선택 */
 export function appStateFreshnessScore(state: AppState | null | undefined): number {
@@ -11,7 +12,9 @@ export function appStateFreshnessScore(state: AppState | null | undefined): numb
 
 /**
  * 투네 자동 반영 직후 메모리는 최신인데 Redis GET이 한 박자 늦을 수 있음.
- * updatedAt·donorRankingsUpdatedAt·donors 길이로 더 신선한 쪽을 고른다.
+ * - settlementResetAt 이 더 높은 쪽이 정본(정산 리셋)
+ * - 같은 리셋 구간에서는 빈/축소 스냅샷이 실후원을 이기지 않음
+ * - 그 외 updatedAt·donorRankingsUpdatedAt·donors 길이로 선택
  */
 export function pickFresherAppState(
   a: AppState | null | undefined,
@@ -22,5 +25,41 @@ export function pickFresherAppState(
   if (scoreA < 0 && scoreB < 0) return null;
   if (scoreA < 0) return b ?? null;
   if (scoreB < 0) return a ?? null;
-  return scoreB > scoreA ? (b as AppState) : (a as AppState);
+
+  const stateA = a as AppState;
+  const stateB = b as AppState;
+  const resetA = Number(stateA.settlementResetAt || 0);
+  const resetB = Number(stateB.settlementResetAt || 0);
+  if (resetB > resetA) return stateB;
+  if (resetA > resetB) return stateA;
+
+  const donorsA = normalizeDonorsArray(stateA.donors);
+  const donorsB = normalizeDonorsArray(stateB.donors);
+
+  /** 같은 리셋 — 빈 쪽이 시각만 앞서도 실후원을 덮지 않음 */
+  if (donorsA.length > 0 && donorsB.length === 0) return stateA;
+  if (donorsB.length > 0 && donorsA.length === 0) return stateB;
+
+  if (donorsA.length !== donorsB.length) {
+    const richer = donorsA.length > donorsB.length ? stateA : stateB;
+    const poorer = donorsA.length > donorsB.length ? stateB : stateA;
+    const poorerIsIntentionalShrink = isIntentionalDonorListShrink(
+      normalizeDonorsArray(poorer.donors),
+      normalizeDonorsArray(richer.donors),
+      Number(poorer.updatedAt || 0),
+      Number(richer.updatedAt || 0)
+    );
+    if (!poorerIsIntentionalShrink) {
+      /** 투네 1건(신규 id)만 있는 축소본이 수동 다건을 이기지 않게 풍부한 쪽 유지 */
+      const poorerOnlyNew =
+        normalizeDonorsArray(poorer.donors).some(
+          (d) => !normalizeDonorsArray(richer.donors).some((r) => r.id === d.id)
+        ) && normalizeDonorsArray(poorer.donors).length < normalizeDonorsArray(richer.donors).length;
+      if (poorerOnlyNew || donorsA.length === 0 || donorsB.length === 0) {
+        return richer;
+      }
+    }
+  }
+
+  return scoreB > scoreA ? stateB : stateA;
 }

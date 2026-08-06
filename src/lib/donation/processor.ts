@@ -95,9 +95,9 @@ export async function processDonationEvent(
     }
 
     /**
-     * donorsAuthoritative 저장은 서버 후원 목록을 통째로 교체한다.
-     * GET이 비어 있거나 지연이면 미매칭 1건만 남아 엑셀표가 초기화되므로
-     * 저장 직전 LS·화면 hint·서버 스냅샷과 다시 union 한다.
+     * donorsAuthoritative 저장은 서버에서 삭제(shrink)·정산 리셋이 아니면
+     * 기존 donors 와 union 한다. GET이 비어 있거나 지연이면 미매칭 1건만
+     * 남아 엑셀표가 초기화되므로 저장 직전 LS·화면 hint·서버와 다시 union 한다.
      */
     const local = typeof window !== "undefined" ? loadState(userId) : null;
     const toSave = enrichStateBeforeAuthoritativeDonationSave(applied.state, [

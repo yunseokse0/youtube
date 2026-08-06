@@ -1505,12 +1505,42 @@ export function mergeServerSaveApiBodies(prevJson: string, nextJson: string): st
     const merged: Record<string, unknown> = { ...prev, ...next };
     const prevDonors = Array.isArray(prev.donors) ? (prev.donors as Donor[]) : null;
     const nextDonors = Array.isArray(next.donors) ? (next.donors as Donor[]) : null;
+    const prevAuthoritative = prev.donorsAuthoritative === true;
     const nextAuthoritative = next.donorsAuthoritative === true;
     /**
-     * 시각-only PATCH(후원 키 없음) 뒤에 빈 donors 전체 저장이 붙으면
-     * 서버가 후원을 지울 수 있어, 비권한 빈/축소 donors 는 병합본에서 제거한다.
+     * 수동 합산·투네 등 donorsAuthoritative 저장이 큐에서 합쳐질 때
+     * 나중 POST 가 앞선 후원 목록을 통째로 덮지 않게 union 한다.
+     * (의도적 삭제·전체 비우기만 replace)
      */
-    if (!nextAuthoritative && next.settlementReset !== true && nextDonors) {
+    if (
+      prevDonors &&
+      nextDonors &&
+      (prevAuthoritative || nextAuthoritative) &&
+      next.settlementReset !== true
+    ) {
+      const intentionalShrink = isIntentionalDonorListShrink(
+        nextDonors,
+        prevDonors,
+        Number(next.updatedAt || 0),
+        Number(prev.updatedAt || 0)
+      );
+      if (intentionalShrink && nextAuthoritative) {
+        merged.donors = nextDonors;
+        merged.donorsAuthoritative = true;
+      } else {
+        merged.donors = mergeDonorsForMultiTabSave(nextDonors, prevDonors, {
+          incomingUpdatedAt: Number(next.updatedAt || 0),
+          existingUpdatedAt: Number(prev.updatedAt || 0),
+        });
+        if (prevAuthoritative || nextAuthoritative) {
+          merged.donorsAuthoritative = true;
+        }
+      }
+    } else if (!nextAuthoritative && next.settlementReset !== true && nextDonors) {
+      /**
+       * 시각-only PATCH(후원 키 없음) 뒤에 빈 donors 전체 저장이 붙으면
+       * 서버가 후원을 지울 수 있어, 비권한 빈/축소 donors 는 병합본에서 제거한다.
+       */
       if (!prevDonors && nextDonors.length === 0) {
         delete merged.donors;
       } else if (prevDonors && nextDonors.length === 0 && prevDonors.length > 0) {

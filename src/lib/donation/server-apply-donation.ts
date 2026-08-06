@@ -13,6 +13,7 @@ import {
   applyDonationToAppState,
   isDuplicateDonationEvent,
 } from "./apply-donation-state";
+import { mergeStatePreservingDonorsUntilSettlementReset } from "@/lib/donation/merge-donation-apply-base";
 import { enqueueDonationEvent, purgeDonationQueueForEvent } from "./toonation/enqueue-donation";
 import { readToonationListenerConfig } from "./toonation/listener-config-store";
 import { resolveToonationDonationWithOwnerRemap } from "./toonation/owner-donation-remap";
@@ -125,7 +126,13 @@ export async function tryAutoApplyToonationDonationOnServer(
       await releaseDonationApplyClaim(userId, event);
       return "not_applied";
     }
-    await saveAppStateForRoulette(userId, result.state);
+    /**
+     * 반영 중 수동 합산 POST 가 끼면 freshState 에 없던 계좌 후원이 유실될 수 있음.
+     * 저장 직전 최신 스냅샷과 한 번 더 union.
+     */
+    const concurrent = await loadAppStateForUserId(userId);
+    const toPersist = mergeStatePreservingDonorsUntilSettlementReset(result.state, concurrent);
+    await saveAppStateForRoulette(userId, toPersist);
     const memSaved = getServerMemoryAppState(userId);
     const verify = await loadAppStateForUserId(userId);
     const persisted =
@@ -136,8 +143,8 @@ export async function tryAutoApplyToonationDonationOnServer(
       return "not_applied";
     }
     await purgeDonationQueueForEvent(userId, event);
-    const member = (result.state.members || []).find((m) => m.id === result.event.memberId);
-    await broadcastDonationStateUpdated(result.state.updatedAt, result.state.donorRankingsUpdatedAt, {
+    const member = (toPersist.members || []).find((m) => m.id === result.event.memberId);
+    await broadcastDonationStateUpdated(toPersist.updatedAt, toPersist.donorRankingsUpdatedAt, {
       donorName: result.event.donorName,
       amount: result.event.amount,
       target: result.event.target === "account" ? "account" : "toon",

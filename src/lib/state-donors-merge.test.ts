@@ -133,4 +133,40 @@ describe("mergeServerSaveApiBodies", () => {
     expect(merged.donors.map((d) => d.id).sort()).toEqual(["a", "b"]);
     expect(Number(merged.donors.find((d) => d.id === "a")?.at)).toBeGreaterThanOrEqual(resetAt - 3000);
   });
+
+  it("unions consecutive donorsAuthoritative saves so manual is not dropped by later toon", () => {
+    const prev = JSON.stringify({
+      donorsAuthoritative: true,
+      donors: [donor("manual-1", 50_000, 1000)],
+      updatedAt: 1000,
+    });
+    const next = JSON.stringify({
+      donorsAuthoritative: true,
+      donors: [donor("toon-1", 10_000, 2000)],
+      updatedAt: 2000,
+    });
+    const merged = JSON.parse(mergeServerSaveApiBodies(prev, next)) as {
+      donors: Donor[];
+      donorsAuthoritative?: boolean;
+    };
+    expect(merged.donorsAuthoritative).toBe(true);
+    expect(merged.donors.map((d) => d.id).sort()).toEqual(["manual-1", "toon-1"]);
+  });
+
+  it("keeps intentional authoritative delete as shrink replace", () => {
+    const prev = JSON.stringify({
+      donorsAuthoritative: true,
+      donors: [donor("a", 1000, 1000), donor("b", 2000, 1000)],
+      updatedAt: 1000,
+    });
+    const next = JSON.stringify({
+      donorsAuthoritative: true,
+      donors: [donor("a", 1000, 2000)],
+      updatedAt: 2000,
+    });
+    const merged = JSON.parse(mergeServerSaveApiBodies(prev, next)) as {
+      donors: Donor[];
+    };
+    expect(merged.donors.map((d) => d.id)).toEqual(["a"]);
+  });
 });

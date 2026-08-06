@@ -40,6 +40,7 @@ import {
   isDefaultLikeTimerDisplayStyle,
   normalizeDonorsArray,
   mergeDonorsForMultiTabSave,
+  isIntentionalDonorListShrink,
   rebumpDonorsPastSettlementReset,
   ensureMissionItems,
   appendDailyLog,
@@ -479,6 +480,8 @@ export default function AdminPage() {
   const pendingUnsyncedRef = useRef<boolean>(false);
   /** donorsAuthoritative 저장 직후 SSE·폴링이 빈 서버 스냅샷으로 덮어쓰지 않게 */
   const donationAuthoritativeSaveUntilRef = useRef<number>(0);
+  /** 빈 Redis 거부 후 로컬→서버 heal 연속 POST 방지 */
+  const lastEmptyRemoteDonationHealAtRef = useRef<number>(0);
   /** 방금 삭제한 후원 id — richer remote 가 삭제분을 되살리지 않게 */
   const recentlyRemovedDonorIdsRef = useRef<Map<string, number>>(new Map());
   /** 일일 로그 복구 — markAuthoritativeDonationSave 이후 본문 연결 */
@@ -1473,10 +1476,6 @@ export default function AdminPage() {
       };
       didPreserve = true;
     }
-    const recentlyEditedDonors =
-      Date.now() < settlementResetUntilRef.current
-        ? false
-        : Date.now() - lastLocalPersistAtRef.current < DONOR_LOCAL_PROTECT_MS;
     const localDonorsNorm = normalizeDonorsArray(local.donors);
     const incomingDonorsNorm = normalizeDonorsArray(merged.donors);
     const localIdSet = new Set(localDonorsNorm.map((d) => d.id));
@@ -1484,39 +1483,34 @@ export default function AdminPage() {
     const remoteOnlyCount = incomingDonorsNorm.filter((d) => !localIdSet.has(d.id)).length;
     const localOnlyCount = localDonorsNorm.filter((d) => !incomingIdSet.has(d.id)).length;
     /**
-     * 후원·금액은 계정 서버가 정본. LS/캐시로 빈 서버를 “복구”하거나 축소본을 막지 않는다.
-     * 예외:
-     * - 로컬·원격에 서로 없는 id 가 있으면 항상 union (투네가 수동 계좌를 덮지 않음)
-     * - 같은 세션 저장 직후·편집 중일 때 한쪽만 있는 경우도 병합
+     * 투네 SSE/폴링이 수동 계좌를 덮지 않게 — 정산 리셋·의도적 삭제가 아니면 항상 union.
+     * (보호창 밖에서도 localOnly 수동 후원을 버리면 엑셀·리스트에서 사라짐)
      */
-    if (remoteOnlyCount > 0 && localOnlyCount > 0) {
-      const union = mergeDonorsForMultiTabSave(incomingDonorsNorm, localDonorsNorm, {
-        incomingUpdatedAt: incoming.updatedAt,
-        existingUpdatedAt: local.updatedAt,
-      });
-      merged = {
-        ...merged,
-        donors: union,
-        members: remoteOnlyCount >= localOnlyCount ? merged.members : local.members,
-      };
-      didPreserve = true;
-    } else if (
-      (pendingUnsyncedRef.current || recentlyEditedDonors) &&
-      (remoteOnlyCount > 0 || localOnlyCount > 0)
-    ) {
-      if (remoteOnlyCount > 0 && localOnlyCount === 0) {
+    if (localOnlyCount > 0 || remoteOnlyCount > 0) {
+      const intentionalShrink =
+        remoteOnlyCount === 0 &&
+        isIntentionalDonorListShrink(
+          incomingDonorsNorm,
+          localDonorsNorm,
+          Number(incoming.updatedAt || 0),
+          Number(local.updatedAt || 0)
+        );
+      if (intentionalShrink) {
         merged = {
           ...merged,
           donors: incomingDonorsNorm,
           members: merged.members,
         };
-      } else if (localOnlyCount > 0 && remoteOnlyCount === 0) {
+      } else {
+        const union = mergeDonorsForMultiTabSave(incomingDonorsNorm, localDonorsNorm, {
+          incomingUpdatedAt: incoming.updatedAt,
+          existingUpdatedAt: local.updatedAt,
+        });
         merged = {
           ...merged,
-          donors: localDonorsNorm,
-          members: local.members,
+          donors: union,
         };
-        didPreserve = true;
+        if (localOnlyCount > 0) didPreserve = true;
       }
     }
     merged = {
@@ -1667,20 +1661,33 @@ export default function AdminPage() {
           persistState(toApply, { omitDonationFields: true });
         }
         if (rejectPoorer) {
-          /** 빈 Redis 복구 — LS 후원을 계정 정본으로 한 번 올림 */
+          /** 빈 Redis 복구 — LS 후원을 계정 정본으로 한 번 올림(리셋 이전 at 은 rebump) */
           donationAuthoritativeSaveUntilRef.current = Date.now() + 20_000;
+          lastEmptyRemoteDonationHealAtRef.current = Date.now();
           const healAt = Date.now();
-          const healState: AppState = {
+          const resetAt = Number(toApply.settlementResetAt || 0);
+          const healState: AppState = syncMemberTotalsFromDonors({
             ...toApply,
+            donors: rebumpDonorsPastSettlementReset(
+              normalizeDonorsArray(toApply.donors),
+              resetAt
+            ),
             updatedAt: Math.max(Number(toApply.updatedAt || 0), healAt),
             donorRankingsUpdatedAt: Math.max(
               Number(toApply.donorRankingsUpdatedAt || 0),
               healAt
             ),
-          };
+          });
           stateRef.current = healState;
           void saveStateAsync(healState, user?.id, { donorsAuthoritative: true }).then((r) => {
-            if (r.ok) setSyncStatus(r.storageFallback ? "error" : "synced");
+            if (r.ok) {
+              setSyncStatus(r.storageFallback ? "error" : "synced");
+              if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
+                stateUpdatedAtRef.current = r.serverUpdatedAt;
+                lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
+              }
+              notifyBroadcastStateLocalUpdated(user?.id, healState.updatedAt);
+            }
           });
           toApply = healState;
         }
@@ -1783,6 +1790,39 @@ export default function AdminPage() {
     let running = true;
     let inFlight = false;
     let pendingForceDonorSync = false;
+    const healLocalDonorsToServerIfRicher = () => {
+      const now = Date.now();
+      if (now - lastEmptyRemoteDonationHealAtRef.current < 8_000) return;
+      const local = stateRef.current;
+      const localDonors = normalizeDonorsArray(local.donors);
+      if (localDonors.length === 0 && totalCombined(local) <= 0) return;
+      lastEmptyRemoteDonationHealAtRef.current = now;
+      donationAuthoritativeSaveUntilRef.current = now + 20_000;
+      pendingUnsyncedRef.current = true;
+      const resetAt = Number(local.settlementResetAt || 0);
+      const healState = syncMemberTotalsFromDonors({
+        ...local,
+        donors: rebumpDonorsPastSettlementReset(localDonors, resetAt),
+        updatedAt: Math.max(Number(local.updatedAt || 0), now),
+        donorRankingsUpdatedAt: Math.max(Number(local.donorRankingsUpdatedAt || 0), now),
+      });
+      stateRef.current = healState;
+      setState(healState);
+      try {
+        window.localStorage.setItem(storageKey(user?.id), JSON.stringify(healState));
+      } catch {}
+      void saveStateAsync(healState, user?.id, { donorsAuthoritative: true }).then((r) => {
+        if (r.ok) {
+          pendingUnsyncedRef.current = false;
+          setSyncStatus(r.storageFallback ? "error" : "synced");
+          if (typeof r.serverUpdatedAt === "number" && Number.isFinite(r.serverUpdatedAt)) {
+            stateUpdatedAtRef.current = r.serverUpdatedAt;
+            lastAppliedRemoteUpdatedAtRef.current = r.serverUpdatedAt;
+          }
+          notifyBroadcastStateLocalUpdated(user?.id, healState.updatedAt);
+        }
+      });
+    };
     const applyRemoteState = (remote: AppState, opts?: { forceDonorMerge?: boolean }) => {
       const remoteUpdatedAt = remote.updatedAt || 0;
       const shouldApplyRemote =
@@ -1845,12 +1885,14 @@ export default function AdminPage() {
         const localRicherThanEmptyRemote =
           localDonors.length > 0 && remoteDonors.length === 0;
         if (inAuthoritativeWindow && !remoteRicher) return false;
-        /** forceDonorMerge 여도 빈 원격으로 수동 입력을 초기화하지 않음 */
+        /** forceDonorMerge 여도 빈 원격으로 수동 입력을 초기화하지 않음 — 대신 서버에 복구 푸시 */
         if (opts?.forceDonorMerge && localRicherThanEmptyRemote && !remoteRicher) {
+          healLocalDonorsToServerIfRicher();
           return false;
         }
         /** 보호창 밖에서도 poorer/empty Redis 가 실후원을 시스템 삭제처럼 덮지 않음 */
         if (shouldRejectPoorerDonationRemote(stateRef.current, remoteForGuards)) {
+          healLocalDonorsToServerIfRicher();
           return false;
         }
         remote = remoteForGuards;
@@ -1908,8 +1950,21 @@ export default function AdminPage() {
         didPreserve &&
         Number(toApply.settlementResetAt || 0) <= Number(prev.settlementResetAt || 0)
       ) {
-        /** 시각·시그 보존만 서버에 올리고 후원 필드는 건드리지 않음 */
-        persistState(toApply, { omitDonationFields: true });
+        const remoteIds = new Set(normalizeDonorsArray(remote.donors).map((d) => d.id));
+        const preservedLocalDonors = normalizeDonorsArray(toApply.donors).some(
+          (d) => !remoteIds.has(d.id)
+        );
+        if (preservedLocalDonors) {
+          /**
+           * 투네 원격에 없는 수동 계좌를 union 했으면 omitDonation 이 아니라
+           * 서버에도 올려야 다음 투네 반영이 빈 Redis 기준으로 시작하지 않음.
+           */
+          stateRef.current = toApply;
+          healLocalDonorsToServerIfRicher();
+        } else {
+          /** 시각·시그 보존만 서버에 올리고 후원 필드는 건드리지 않음 */
+          persistState(toApply, { omitDonationFields: true });
+        }
       }
       stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, remoteUpdatedAt);
       lastAppliedRemoteUpdatedAtRef.current = Math.max(
@@ -5245,7 +5300,7 @@ export default function AdminPage() {
       const preserved = markAuthoritativeDonationSave(
         { serverUpdatedAt: next.updatedAt },
         next,
-        { replaceDonors: true }
+        { replaceDonors: true, awaitingServerSave: true }
       );
       setState(preserved);
       const saved = await saveStateAsync(preserved, user?.id, {
@@ -5466,7 +5521,7 @@ export default function AdminPage() {
         const preserved = markAuthoritativeDonationSave(
           { serverUpdatedAt: next.updatedAt },
           next,
-          { replaceDonors: true }
+          { replaceDonors: true, awaitingServerSave: true }
         );
         setState(preserved);
         const saved = await saveStateAsync(preserved, user?.id, { donorsAuthoritative: true });
@@ -5675,7 +5730,7 @@ export default function AdminPage() {
   const markAuthoritativeDonationSave = useCallback((
     saved: { serverUpdatedAt?: number },
     next: AppState,
-    opts?: { replaceDonors?: boolean }
+    opts?: { replaceDonors?: boolean; awaitingServerSave?: boolean }
   ) => {
     /**
      * replaceDonors: 삭제·정본 스냅샷은 그대로 유지.
@@ -5697,7 +5752,11 @@ export default function AdminPage() {
     stateUpdatedAtRef.current = Math.max(stateUpdatedAtRef.current, ts);
     lastAppliedRemoteUpdatedAtRef.current = Math.max(lastAppliedRemoteUpdatedAtRef.current, ts);
     lastLocalPersistAtRef.current = Date.now();
-    pendingUnsyncedRef.current = false;
+    /**
+     * 서버 POST 전에 synced 로 보이면 폴링이 빈 Redis 를 허용할 수 있음.
+     * 합산·삭제 등 저장 대기 중에는 pending 유지.
+     */
+    pendingUnsyncedRef.current = Boolean(opts?.awaitingServerSave);
     stateRef.current = preserved;
     try {
       window.localStorage.setItem(storageKey(user?.id), JSON.stringify(preserved));
@@ -5748,7 +5807,7 @@ export default function AdminPage() {
     const preserved = markAuthoritativeDonationSave(
       { serverUpdatedAt: next.updatedAt },
       next,
-      { replaceDonors: true }
+      { replaceDonors: true, awaitingServerSave: true }
     );
     setState(preserved);
     const saved = await saveStateAsync(preserved, user?.id, { donorsAuthoritative: true });
@@ -6023,7 +6082,7 @@ export default function AdminPage() {
       const preserved = markAuthoritativeDonationSave(
         { serverUpdatedAt: rebumpedState.updatedAt },
         rebumpedState,
-        { replaceDonors: true }
+        { replaceDonors: true, awaitingServerSave: true }
       );
       setState(preserved);
       const saved = await saveStateAsync(preserved, user?.id, { donorsAuthoritative: true });
@@ -11564,7 +11623,7 @@ export default function AdminPage() {
                                         const preserved = markAuthoritativeDonationSave(
                                           { serverUpdatedAt: next.updatedAt },
                                           next,
-                                          { replaceDonors: true }
+                                          { replaceDonors: true, awaitingServerSave: true }
                                         );
                                         setState(preserved);
                                         const saved = await saveStateAsync(preserved, user?.id, {
