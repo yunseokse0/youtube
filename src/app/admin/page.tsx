@@ -737,7 +737,8 @@ export default function AdminPage() {
       if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement) {
         const type = el instanceof HTMLInputElement ? String(el.type || "").toLowerCase() : "";
         const inputMode = el instanceof HTMLInputElement ? String(el.inputMode || "").toLowerCase() : "";
-        const hint = `${el.placeholder || ""} ${el.name || ""} ${el.id || ""}`.toLowerCase();
+        const placeholder = el instanceof HTMLInputElement ? String(el.placeholder || "") : "";
+        const hint = `${placeholder} ${el.name || ""} ${el.id || ""}`.toLowerCase();
         /** 수동 합산 폼(이름·금액·멤버) 입력 중에도 빈 Redis 적용으로 표가 0 되지 않게 */
         if (/(donor|후원자|입금액|합산)/.test(hint)) return true;
         if (!(el instanceof HTMLInputElement)) return false;
