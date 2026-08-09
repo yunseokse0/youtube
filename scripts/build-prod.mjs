@@ -42,19 +42,12 @@ if (legacyInPlace || stopBeforeBuild) {
   run("pm2", ["stop", pm2App], { stdio: "inherit" });
 }
 
-/** 라우트 삭제 후 남은 .next-staging/types 가 타입 검사 실패하는 것 방지 */
-if (stagingDir) {
-  const stagingPath = path.resolve(stagingDir);
-  console.log(`[build:prod] clean ${stagingDir}`);
-  rmSync(stagingPath, { recursive: true, force: true });
-} else {
-  const staleTypes = path.resolve(".next/types");
-  try {
-    rmSync(staleTypes, { recursive: true, force: true });
-    console.log("[build:prod] clean .next/types (삭제된 라우트 타입 잔재 방지)");
-  } catch {
-    /* noop */
-  }
+/** 라우트 삭제 후 남은 types 캐시가 타입 검사 실패하는 것 방지 */
+for (const dir of [stagingDir, ".next-staging", ".next/types"]) {
+  if (!dir) continue;
+  const target = path.resolve(dir);
+  console.log(`[build:prod] clean ${dir}`);
+  rmSync(target, { recursive: true, force: true });
 }
 
 const env = {

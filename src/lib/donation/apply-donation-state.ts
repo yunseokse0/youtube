@@ -1,8 +1,8 @@
 import { applyMealBattleDonationToParticipants, mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
-import type { AppState } from "@/types";
+import type { AppState, Donor } from "@/types";
 import { mapToMember } from "./mapper";
-import type { DonationEvent, Donor, DonorAlias } from "./types";
+import type { DonationEvent, DonorAlias } from "./types";
 
 function toEpochMs(input: string): number {
   const ts = Date.parse(input);
@@ -273,7 +273,7 @@ export function applyDonationToAppState(
     return { ok: false, reason: "unmatched", event: { ...processedEvent, status: "unmatched" } };
   }
 
-  const newDonor: Donor = {
+  const newDonor = {
     id: processedEvent.id,
     name: processedEvent.donorName,
     amount: Math.max(0, Math.round(Number(processedEvent.amount) || 0)),
@@ -284,7 +284,7 @@ export function applyDonationToAppState(
       ? { message: String(processedEvent.message).trim() }
       : {}),
   };
-  const atMs = toEpochMs(newDonor.at);
+  const atMs = toEpochMs(processedEvent.at);
 
   const updatedMembers = currentState.members.map((member) => {
     if (member.id !== newDonor.memberId) return member;
@@ -490,11 +490,11 @@ export function updateDonorMessageInAppState(
   const prev = String(donor.message || "").trim();
   if (trimmed === prev) return null;
   const now = Date.now();
-  const nextDonors = (currentState.donors || []).map((d) => {
+  const nextDonors = (currentState.donors || []).map((d): Donor => {
     if (d.id !== id) return d;
     if (!trimmed) {
       const { message: _drop, ...rest } = d;
-      return rest as Donor;
+      return rest;
     }
     return { ...d, message: trimmed };
   });

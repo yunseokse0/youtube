@@ -19,6 +19,9 @@ const nextConfig = {
       /** OBS 예전 플레이어 오버레이 → 웹 팝업 */
       { source: "/overlay/player", destination: "/player-alert", permanent: false },
       { source: "/overlay/player/:path*", destination: "/player-alert/:path*", permanent: false },
+      /** 후원순위 전체(분홍) 제거 — OBS 예전 URL */
+      { source: "/overlay/donor-rankings-full", destination: "/overlay/donor-rankings", permanent: false },
+      { source: "/overlay/donor-rankings-full/:path*", destination: "/overlay/donor-rankings", permanent: false },
     ];
   },
   async rewrites() {
