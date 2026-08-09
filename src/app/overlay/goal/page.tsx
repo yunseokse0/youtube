@@ -15,6 +15,9 @@ import {
   resolveGoalBarFillColorParam,
   resolveGoalFontFamilyCss,
   resolveGoalBarAnimationMode,
+  resolveGoalBarGifUrl,
+  resolveGoalBarGifOpacity,
+  resolveGoalBarGifBrightness,
   resolveOverlayTextSharpRender,
   resolveGoalFontWeight,
   resolveLivePresetStyleParam,
@@ -202,6 +205,18 @@ export default function GoalOverlayPage() {
     () => resolveGoalBarAnimationMode(sp, activePreset, { ready }),
     [sp, activePreset, ready]
   );
+  const goalBarGifUrl = useMemo(
+    () => resolveGoalBarGifUrl(sp, activePreset, { ready }),
+    [sp, activePreset, ready]
+  );
+  const goalBarGifOpacity = useMemo(
+    () => resolveGoalBarGifOpacity(sp, activePreset, { ready }),
+    [sp, activePreset, ready]
+  );
+  const goalBarGifBrightness = useMemo(
+    () => resolveGoalBarGifBrightness(sp, activePreset, { ready }),
+    [sp, activePreset, ready]
+  );
   const overlayTextSharpRender = useMemo(
     () =>
       resolveOverlayTextSharpRender(sp, activePreset, {
@@ -274,6 +289,9 @@ export default function GoalOverlayPage() {
               textOutlineWidthPx={goalTextOutlineWidthPx}
               barBgColor={goalBarBgColor}
               barFillColor={goalBarFillColor}
+              barGifUrl={goalBarGifUrl || undefined}
+              barGifOpacity={goalBarGifOpacity}
+              barGifBrightness={goalBarGifBrightness}
               fontFamilyCss={goalFontFamilyCss}
               animationMode={goalBarAnimationMode}
               fontWeight={goalFontWeight}

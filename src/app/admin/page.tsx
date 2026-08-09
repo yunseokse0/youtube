@@ -255,13 +255,14 @@ type OverlayPreset = {
   goalBaseline?: string;
   /** 목표 100% 달성 시 자동 상향 증가폭(원). 비우면 200만 원 */
   goalIncreaseStep?: string;
-  goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string; goalOpacity?: string; goalOpacityText?: boolean; goalTextColor?: string; goalFontSize?: string; goalFontWeight?: string; goalTextOutlineColor?: string; goalTextOutlineWidth?: string; goalBarBgColor?: string; goalBarFillColor?: string; goalFontFamily?: string; goalBarAnimation?: string; overlayTextSharpRender?: boolean;
+  goalLabel: string; goalWidth: string; goalAnchor: string; goalCurrent?: string; goalOpacity?: string; goalOpacityText?: boolean; goalTextColor?: string; goalFontSize?: string; goalFontWeight?: string; goalTextOutlineColor?: string; goalTextOutlineWidth?: string; goalBarBgColor?: string; goalBarFillColor?: string; goalBarGifUrl?: string; goalBarGifOpacity?: string; goalBarGifBrightness?: string; goalFontFamily?: string; goalBarAnimation?: string; overlayTextSharpRender?: boolean;
+  showTeamBattle?: boolean; teamBattleAnchor?: string;
   showPersonalGoal?: boolean; personalGoalTheme?: string; personalGoalAnchor?: string; personalGoalLimit?: string; personalGoalFree?: boolean; personalGoalX?: string; personalGoalY?: string;
   tickerInMembers?: boolean; tickerInGoal?: boolean; tickerInPersonalGoal?: boolean;
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
-  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
+  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableFrameUrl?: string; tableFrameOpacity?: string; tableFrameInset?: string; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
   rankTop3Mode?: string; rankTop3Effect?: string; rankLabelFormat?: string; rank1Bg?: string; rank2Bg?: string; rank3Bg?: string; rank1Mark?: string; rank2Mark?: string; rank3Mark?: string; rank1Effect?: string; rank2Effect?: string; rank3Effect?: string; rank1TextColor?: string; rank2TextColor?: string; rank3TextColor?: string; rank1TextColorAlt?: string; rank2TextColorAlt?: string; rank3TextColorAlt?: string;
 };
 
@@ -5072,6 +5073,24 @@ export default function AdminPage() {
       const { url } = await uploadSigImageFile(file);
       if (!url) return;
       updatePreset(presetId, { tableBgGifUrl: url });
+    })();
+  };
+
+  const uploadGoalBarGifImage = (presetId: string, file: File | null) => {
+    if (!file) return;
+    void (async () => {
+      const { url } = await uploadSigImageFile(file);
+      if (!url) return;
+      updatePreset(presetId, { goalBarGifUrl: url });
+    })();
+  };
+
+  const uploadTableFrameImage = (presetId: string, file: File | null) => {
+    if (!file) return;
+    void (async () => {
+      const { url } = await uploadSigImageFile(file);
+      if (!url) return;
+      updatePreset(presetId, { tableFrameUrl: url });
     })();
   };
 
@@ -12975,6 +12994,79 @@ export default function AdminPage() {
                                     />
                                     <span className="text-xs text-neutral-500">%</span>
                                   </div>
+                                  <details className="rounded border border-indigo-400/30 bg-indigo-950/20">
+                                    <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-indigo-200">
+                                      엑셀표 PNG 프레임 (투명 테두리)
+                                    </summary>
+                                    <div className="space-y-2 border-t border-indigo-400/20 p-3">
+                                      <p className="text-[11px] leading-relaxed text-indigo-100/85">
+                                        표 <strong className="font-semibold">바깥 장식 테두리</strong>용 PNG입니다. 중앙은 투명(알파)으로 두고, 모서리·테두리 장식만 그려 주세요.
+                                      </p>
+                                      <div className="rounded border border-white/10 bg-black/30 p-2 text-[10px] leading-relaxed text-neutral-300">
+                                        <p className="font-semibold text-emerald-200/95 mb-1">PNG 제작 가이드</p>
+                                        <ul className="list-disc pl-4 space-y-0.5">
+                                          <li>권장 캔버스: <strong>920×680px</strong> (표 기본 크기 기준)</li>
+                                          <li>중앙 투명 창(표가 보이는 영역): 약 <strong>860×580px</strong></li>
+                                          <li>프레임 두께(여백): 상·하·좌·우 각 <strong>30px</strong> 권장</li>
+                                          <li>파일 형식: <strong>PNG-24</strong> (알파 채널 필수)</li>
+                                          <li>업로드 후 「안쪽 여백」으로 표와 프레임 정렬을 미세 조정</li>
+                                        </ul>
+                                      </div>
+                                      <label className="text-xs text-neutral-400">PNG 프레임 URL</label>
+                                      <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
+                                        <input
+                                          className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                          placeholder="예: /uploads/.../frame.png"
+                                          value={p.tableFrameUrl || ""}
+                                          onChange={(e) => updatePreset(p.id, { tableFrameUrl: e.target.value })}
+                                        />
+                                        <label className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs text-white cursor-pointer text-center">
+                                          PNG 업로드
+                                          <input
+                                            type="file"
+                                            accept=".png,image/png"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                              const file = e.target.files?.[0] || null;
+                                              uploadTableFrameImage(p.id, file);
+                                              e.currentTarget.value = "";
+                                            }}
+                                          />
+                                        </label>
+                                      </div>
+                                      <label className="text-xs text-neutral-400">프레임 불투명도</label>
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="range"
+                                          min="0"
+                                          max="100"
+                                          value={p.tableFrameOpacity || "100"}
+                                          onChange={(e) => updatePreset(p.id, { tableFrameOpacity: e.target.value })}
+                                          className="flex-1 accent-indigo-500"
+                                        />
+                                        <input
+                                          className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right"
+                                          value={p.tableFrameOpacity || "100"}
+                                          onChange={(e) =>
+                                            updatePreset(p.id, {
+                                              tableFrameOpacity: e.target.value.replace(/[^\d]/g, ""),
+                                            })
+                                          }
+                                        />
+                                        <span className="text-xs text-neutral-500">%</span>
+                                      </div>
+                                      <label className="text-xs text-neutral-400">프레임 안쪽 여백(px)</label>
+                                      <input
+                                        className="w-24 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                                        type="number"
+                                        min={0}
+                                        max={120}
+                                        value={p.tableFrameInset ?? "32"}
+                                        onChange={(e) => updatePreset(p.id, { tableFrameInset: e.target.value })}
+                                      />
+                                      <p className="text-[10px] text-neutral-500">기본 32px. PNG 가이드의 30px 여백과 맞추고, 표 크기에 따라 ±4px 조정하세요.</p>
+                                    </div>
+                                  </details>
                                   <label className="text-xs text-neutral-400">TOTAL 표시</label>
                                   <select
                                     className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
@@ -13634,13 +13726,18 @@ export default function AdminPage() {
                             <details className="rounded border border-white/10 bg-neutral-900/40">
                               <summary className="cursor-pointer select-none px-3 py-2 text-xs text-neutral-300">표시 요소</summary>
                               <div className="p-3 flex flex-wrap gap-1">
-                                {([["멤버 목록", "showMembers"], ["총합", "showTotal"], ["목표바", "showGoal"], ["개인 골", "showPersonalGoal"], ["타이머", "showTimer"], ["미션 전광판", "showMission"]] as [string, keyof OverlayPreset][]).map(([label, key]) => (
+                                {([["멤버 목록", "showMembers"], ["총합", "showTotal"], ["목표바", "showGoal"], ["팀 대전차", "showTeamBattle"], ["개인 골", "showPersonalGoal"], ["타이머", "showTimer"], ["미션 전광판", "showMission"]] as [string, keyof OverlayPreset][]).map(([label, key]) => (
                                   <button key={key} className={`px-2 py-0.5 rounded border text-xs ${p[key] ? "border-emerald-500 text-emerald-300" : "border-white/10 text-neutral-500"}`} onClick={() => updatePreset(p.id, { [key]: !p[key] })}>{label} {p[key] ? "ON" : "OFF"}</button>
                                 ))}
                               </div>
                               {!p.showGoal ? (
                                 <p className="mt-2 text-[10px] text-amber-200/90 leading-snug">
                                   엑셀표 아래 후원 목표 막대(0만원 / N만원)를 쓰려면 위에서 <strong className="font-semibold">목표바 ON</strong>을 켜 주세요.
+                                </p>
+                              ) : null}
+                              {p.showTeamBattle ? (
+                                <p className="mt-2 text-[10px] text-sky-200/90 leading-snug">
+                                  「팀 대전차」는 식사 대전 팀 모드(<strong className="font-semibold">teamBattleEnabled</strong>)가 켜져 있고 A/B 멤버가 배정되어 있을 때, 상단 중앙에 빨강·파랑 금액 + 타이머 + 차액 박스를 표시합니다.
                                 </p>
                               ) : null}
                             </details>
@@ -13991,6 +14088,76 @@ export default function AdminPage() {
                                         <option value="sweep">스윕만</option>
                                         <option value="off">끄기</option>
                                       </select>
+                                    </div>
+                                    <div className="space-y-1 sm:col-span-2">
+                                      <label className="text-[11px] text-neutral-400">막대 배경 GIF/JPG URL</label>
+                                      <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
+                                        <input
+                                          className="px-2 py-1 rounded bg-neutral-900/90 border border-white/15 text-xs"
+                                          placeholder="예: https://media.giphy.com/.../giphy.gif"
+                                          value={p.goalBarGifUrl || ""}
+                                          onChange={(e) => updatePreset(p.id, { goalBarGifUrl: e.target.value })}
+                                        />
+                                        <label className="px-2 py-1 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-xs text-white cursor-pointer text-center">
+                                          GIF/JPG 업로드
+                                          <input
+                                            type="file"
+                                            accept=".gif,.jpg,.jpeg,image/gif,image/jpeg"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                              const file = e.target.files?.[0] || null;
+                                              uploadGoalBarGifImage(p.id, file);
+                                              e.currentTarget.value = "";
+                                            }}
+                                          />
+                                        </label>
+                                      </div>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] text-neutral-400">배경 GIF/JPG 불투명도</label>
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="range"
+                                          min="0"
+                                          max="100"
+                                          value={p.goalBarGifOpacity || "45"}
+                                          onChange={(e) => updatePreset(p.id, { goalBarGifOpacity: e.target.value })}
+                                          className="flex-1 accent-fuchsia-500"
+                                        />
+                                        <input
+                                          className="w-14 px-2 py-1 rounded bg-neutral-900/90 border border-white/15 text-xs text-right"
+                                          value={p.goalBarGifOpacity || "45"}
+                                          onChange={(e) =>
+                                            updatePreset(p.id, {
+                                              goalBarGifOpacity: e.target.value.replace(/[^\d]/g, ""),
+                                            })
+                                          }
+                                        />
+                                        <span className="text-[10px] text-neutral-500">%</span>
+                                      </div>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] text-neutral-400">배경 GIF/JPG 밝기</label>
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="range"
+                                          min="40"
+                                          max="200"
+                                          value={p.goalBarGifBrightness || "100"}
+                                          onChange={(e) => updatePreset(p.id, { goalBarGifBrightness: e.target.value })}
+                                          className="flex-1 accent-fuchsia-500"
+                                        />
+                                        <input
+                                          className="w-14 px-2 py-1 rounded bg-neutral-900/90 border border-white/15 text-xs text-right"
+                                          value={p.goalBarGifBrightness || "100"}
+                                          onChange={(e) =>
+                                            updatePreset(p.id, {
+                                              goalBarGifBrightness: e.target.value.replace(/[^\d]/g, ""),
+                                            })
+                                          }
+                                        />
+                                        <span className="text-[10px] text-neutral-500">%</span>
+                                      </div>
                                     </div>
                                   </div>
                                   <p className="mt-1 text-[10px] text-emerald-400/90 leading-snug">

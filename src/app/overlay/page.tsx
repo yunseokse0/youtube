@@ -20,6 +20,12 @@ import {
   resolveGoalBarFillColorParam,
   resolveGoalFontFamilyCss,
   resolveGoalBarAnimationMode,
+  resolveGoalBarGifUrl,
+  resolveGoalBarGifOpacity,
+  resolveGoalBarGifBrightness,
+  resolveTableFrameUrl,
+  resolveTableFrameOpacity,
+  resolveTableFrameInsetPx,
   resolveOverlayTextSharpRender,
   shouldDefaultSharpRenderOnBroadcastHost,
   resolveGoalFontWeight,
@@ -55,6 +61,8 @@ import MissionBoard from "@/components/MissionBoard";
 import MissionBoardSlot from "@/components/MissionBoardSlot";
 import OverlayToonationRelayHost from "@/components/OverlayToonationRelayHost";
 import { GoalBar } from "@/components/GoalBar";
+import BattleTeamColumnBoard from "@/components/battle/BattleTeamColumnBoard";
+import { mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
 import {
   buildBroadcastTextOutlineShadowCss,
   buildBroadcastTextOutlineStyle,
@@ -2055,6 +2063,13 @@ function OverlayInner() {
     return 400;
   }, [sp, activePreset]);
   const goalAnchor = (sp.get("goalAnchor") || "bc").toLowerCase();
+  const showTeamBattle = (() => {
+    const raw = (sp.get("showTeamBattle") || "").trim().toLowerCase();
+    if (raw === "true") return true;
+    if (raw === "false") return false;
+    return Boolean(activePreset?.showTeamBattle);
+  })();
+  const teamBattleAnchor = (sp.get("teamBattleAnchor") || activePreset?.teamBattleAnchor || "tc").toLowerCase();
   const personalGoalAnchor = (sp.get("personalGoalAnchor") || "tl").toLowerCase();
   const personalGoalLimit = Math.max(1, Math.min(12, parseInt(sp.get("personalGoalLimit") || "3", 10)));
   const personalGoalTheme = (sp.get("personalGoalTheme") || "goalClassic") as "goalClassic" | "goalNeon";
@@ -2156,6 +2171,35 @@ function OverlayInner() {
   const timerBaseText = serverTimer.text || elapsed || (timerOnlyMode ? "00:00:00" : null);
   const timerText = formatTimerText(timerBaseText, serverTimer.remainingSeconds, timerShowHours);
 
+  const teamBattleBoard = useMemo(() => {
+    const mb = s?.mealBattle;
+    if (!showTeamBattle || !mb?.teamBattleEnabled) return null;
+    const teamAIds = new Set(mb.teamAMemberIds || []);
+    const teamBIds = new Set(mb.teamBMemberIds || []);
+    const participants = mb.participants || [];
+    let aScore = 0;
+    let bScore = 0;
+    const aNames: string[] = [];
+    const bNames: string[] = [];
+    for (const p of participants) {
+      if (teamAIds.has(p.memberId)) {
+        aScore += Math.max(0, Number(p.score) || 0);
+        aNames.push(String(p.name || "").trim() || p.memberId);
+      } else if (teamBIds.has(p.memberId)) {
+        bScore += Math.max(0, Number(p.score) || 0);
+        bNames.push(String(p.name || "").trim() || p.memberId);
+      }
+    }
+    if (aNames.length === 0 && bNames.length === 0) return null;
+    return {
+      aScore,
+      bScore,
+      aNames: aNames.join(","),
+      bNames: bNames.join(","),
+      useRaw: mealBattleUsesRawDonationScore(mb),
+    };
+  }, [s?.mealBattle, showTeamBattle]);
+
   // 숫자 컬럼 가독성 우선: 이름 기본 폭을 확보하고 계좌·투네 열을 넓혀 백만원대 겹침을 줄인다(URL nameCh·bankCh·toonCh 로 조정 가능).
   const nameCh = Math.max(4, Math.min(40, parseInt(sp.get("nameCh") || (compact ? "7" : (isVertical ? "11" : "7")), 10)));
   const nameGrow = (sp.get("nameGrow") || "true").toLowerCase() === "true";
@@ -2254,6 +2298,10 @@ function OverlayInner() {
   const goalBarFillColor = resolveGoalBarFillColorParam(rawSp, effectivePreset, { ready });
   const goalFontFamilyCss = resolveGoalFontFamilyCss(rawSp, effectivePreset, { ready });
   const goalBarAnimationMode = resolveGoalBarAnimationMode(rawSp, effectivePreset, { ready });
+  const goalBarGifUrl = resolveGoalBarGifUrl(rawSp, effectivePreset, { ready });
+  const goalBarGifOpacity = resolveGoalBarGifOpacity(rawSp, effectivePreset, { ready });
+  const goalBarGifBrightness = resolveGoalBarGifBrightness(rawSp, effectivePreset, { ready });
+  const showGoalBarGif = !stableMode && Boolean(goalBarGifUrl);
   const overlayTextSharpRender = resolveOverlayTextSharpRender(rawSp, effectivePreset, {
     ready,
     defaultSharpOnBroadcast: shouldDefaultSharpRenderOnBroadcastHost(rawSp),
@@ -2296,6 +2344,10 @@ function OverlayInner() {
   })();
   const showTableBgGif = !stableMode && Boolean(tableBgGifUrl);
   const tableBgAnimated = useMemo(() => resolveAnimatedSourceForEmbed(tableBgGifUrl), [tableBgGifUrl]);
+  const tableFrameUrl = resolveTableFrameUrl(rawSp, effectivePreset, { ready });
+  const tableFrameOpacity = resolveTableFrameOpacity(rawSp, effectivePreset, { ready });
+  const tableFrameInsetPx = resolveTableFrameInsetPx(rawSp, effectivePreset, { ready });
+  const showTableFrame = !stableMode && Boolean(tableFrameUrl);
   useEffect(() => {
     if (typeof window === "undefined") return;
     (window as any).__overlayTickerConfig = {
@@ -4060,11 +4112,27 @@ function OverlayInner() {
                 ) : null}
                 <div className="relative z-[1]">
                 <div
+                  className="relative"
+                  style={showTableFrame ? { padding: tableFrameInsetPx } : undefined}
+                >
+                  {showTableFrame ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={tableFrameUrl}
+                      alt=""
+                      className="pointer-events-none absolute inset-0 z-[2] h-full w-full object-fill"
+                      style={{ opacity: tableFrameOpacity / 100 }}
+                      loading="eager"
+                      decoding="async"
+                    />
+                  ) : null}
+                <div
                   className="relative overflow-visible"
                   style={{
-                    borderRadius: 10,
-                    border: `1px solid ${tablePanelBorder}`,
-                    boxShadow: tablePanelShadow,
+                    zIndex: 1,
+                    borderRadius: showTableFrame ? 0 : 10,
+                    border: showTableFrame ? "none" : `1px solid ${tablePanelBorder}`,
+                    boxShadow: showTableFrame ? "none" : tablePanelShadow,
                     padding: "0.14rem",
                     backgroundColor: tableBodySheetBgCss,
                   }}
@@ -4358,8 +4426,34 @@ function OverlayInner() {
                 </table>
                   </div>
                 </div>
+                </div>
               </div>
             </div>
+          </div>
+        )}
+        {showTeamBattle && teamBattleBoard && (ready || isPreviewGuide || externalHost) && (
+          <div
+            className={`absolute ${posClass(teamBattleAnchor)} z-[9000]`}
+            style={{ width: "min(92vw, 680px)" }}
+          >
+            <BattleTeamColumnBoard
+              leftScore={teamBattleBoard.aScore}
+              rightScore={teamBattleBoard.bScore}
+              leftMemberLabel={teamBattleBoard.aNames}
+              rightMemberLabel={teamBattleBoard.bNames}
+              gapSuffix={teamBattleBoard.useRaw ? "원" : ""}
+              timerSlot={
+                effectiveTimerAllowed && timerText ? (
+                  <div
+                    className={`inline-flex items-center justify-center rounded-md px-2.5 py-0.5 font-black tabular-nums text-white ring-1 ring-white/15 ${
+                      serverTimer.paused ? "bg-neutral-700/90" : "bg-neutral-950/85"
+                    } text-lg sm:text-xl`}
+                  >
+                    <span suppressHydrationWarning>{timerText}</span>
+                  </div>
+                ) : null
+              }
+            />
           </div>
         )}
         {(showGoal || fallbackShowGoal) && (ready || isPreviewGuide || externalHost) && goal > 0 && (
@@ -4377,6 +4471,9 @@ function OverlayInner() {
               textOutlineWidthPx={goalTextOutlineWidthPx}
               barBgColor={goalBarBgColor}
               barFillColor={goalBarFillColor}
+              barGifUrl={showGoalBarGif ? goalBarGifUrl : undefined}
+              barGifOpacity={goalBarGifOpacity}
+              barGifBrightness={goalBarGifBrightness}
               fontFamilyCss={goalFontFamilyCss}
               animationMode={goalBarAnimationMode}
               fontWeight={goalFontWeight}
@@ -4389,7 +4486,7 @@ function OverlayInner() {
         {showPersonalGoal && (ready || isPreviewGuide || externalHost) && (
           renderPersonalGoal()
         )}
-        {showTimer && effectiveTimerAllowed && (
+        {showTimer && effectiveTimerAllowed && !(showTeamBattle && teamBattleBoard) && (
           <div className={`absolute ${posClass(timerAnchor)} z-[10000]`}>
             <Timer
               elapsed={timerText}

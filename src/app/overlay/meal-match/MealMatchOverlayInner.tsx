@@ -19,7 +19,8 @@ import { resolveMealGaugeAnimStyle } from "@/lib/meal-gauge-motion";
 import { MEAL_MATCH_OVERLAY_UI_REV } from "@/lib/overlay-ui-revision";
 import { showOverlayDevHud, useOverlayHubCompactLayout } from "@/lib/overlay-dev-hud";
 import BattleRulesBox from "@/components/battle/BattleRulesBox";
-import BattleTeamScoreHeader from "@/components/battle/BattleTeamScoreHeader";
+import BattleTeamColumnBoard from "@/components/battle/BattleTeamColumnBoard";
+import { mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
 
 function outlineStyle(): React.CSSProperties {
   return { textShadow: "0 1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 -1px 0 #000, 0 0 8px rgba(0,0,0,.55)" };
@@ -431,6 +432,24 @@ export default function MealMatchOverlayInner() {
 
   const useTeamSplitGauge = teamBattleEnabled && !fillGaugeMode && hasTeamRoster;
 
+  const teamAMemberLabel = useMemo(
+    () =>
+      participants
+        .filter((p) => teamAIds.has(p.memberId))
+        .map((p) => p.name)
+        .join(","),
+    [participants, teamAIds]
+  );
+  const teamBMemberLabel = useMemo(
+    () =>
+      participants
+        .filter((p) => teamBIds.has(p.memberId))
+        .map((p) => p.name)
+        .join(","),
+    [participants, teamBIds]
+  );
+  const mealBattleUseRawScore = mealBattleUsesRawDonationScore(mb);
+
   const overlayRulesText = String(mb?.overlayRulesText || "").trim();
 
   const segments = useMemo(() => {
@@ -631,7 +650,7 @@ export default function MealMatchOverlayInner() {
               ) : null}
             </div>
           )}
-          {shouldRenderMealMatchTimer ? (
+          {shouldRenderMealMatchTimer && !useTeamSplitGauge ? (
             <div
               className={`${mealTimerShellClass(timerTheme, paused)} ${compact ? "!mt-0.5" : "!mt-1"}`}
               style={mealTimerShellStyle(timerTheme)}
@@ -671,21 +690,40 @@ export default function MealMatchOverlayInner() {
             ) : null}
             {useTeamSplitGauge ? (
               <div className="mb-1 px-1">
-                <BattleTeamScoreHeader
-                  leftName={teamAName}
+                <BattleTeamColumnBoard
                   leftScore={teamAgg.aScore}
-                  rightName={teamBName}
                   rightScore={teamAgg.bScore}
+                  leftMemberLabel={teamAMemberLabel}
+                  rightMemberLabel={teamBMemberLabel}
                   compact={compact}
-                  leftRatio={
-                    teamAgg.aScore + teamAgg.bScore > 0
-                      ? (teamAgg.aScore / Math.max(1, teamAgg.aScore + teamAgg.bScore)) * 100
-                      : 50
-                  }
-                  gapLabel={
-                    Math.abs(teamAgg.aScore - teamAgg.bScore) > 0
-                      ? Math.round(Math.abs(teamAgg.aScore - teamAgg.bScore)).toLocaleString("ko-KR")
-                      : null
+                  gapSuffix={mealBattleUseRawScore ? "원" : ""}
+                  timerSlot={
+                    shouldRenderMealMatchTimer ? (
+                      <div
+                        className={`${mealTimerShellClass(timerTheme, paused)} !mt-0 inline-flex`}
+                        style={mealTimerShellStyle(timerTheme)}
+                      >
+                        <motion.span
+                          className={mealTimerTextClass(timerTheme, paused, timerLowTime)}
+                          style={{ fontSize: `${Math.max(16, Math.round(timerSize * 0.72))}px`, lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}
+                          animate={{
+                            scale:
+                              gaugeFx.timerTension && !paused && remaining > 0 && remaining <= 5
+                                ? [1, 1.14, 1]
+                                : 1,
+                          }}
+                          transition={{
+                            scale: {
+                              duration: 0.5,
+                              repeat: gaugeFx.timerTension && !paused && remaining > 0 && remaining <= 5 ? Infinity : 0,
+                              ease: "easeInOut",
+                            },
+                          }}
+                        >
+                          <span suppressHydrationWarning>{timerText}</span>
+                        </motion.span>
+                      </div>
+                    ) : null
                   }
                 />
               </div>

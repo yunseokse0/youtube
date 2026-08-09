@@ -994,6 +994,12 @@ function normalizeOverlayPresetsMedia(input: unknown): unknown[] {
     if (typeof o.tableBgGifUrl === "string") {
       next.tableBgGifUrl = sanitizeOverlayEmbedMediaUrl(o.tableBgGifUrl);
     }
+    if (typeof o.tableFrameUrl === "string") {
+      next.tableFrameUrl = sanitizeOverlayEmbedMediaUrl(o.tableFrameUrl);
+    }
+    if (typeof o.goalBarGifUrl === "string") {
+      next.goalBarGifUrl = sanitizeOverlayEmbedMediaUrl(o.goalBarGifUrl);
+    }
     return next;
   });
   return normalizeOverlayPresetDonationGoals(withMedia) as unknown[];

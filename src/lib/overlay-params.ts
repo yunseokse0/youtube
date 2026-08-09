@@ -9,6 +9,7 @@ import {
   resolveGoalBarTrackBg,
   type GoalBarAnimationMode,
 } from "@/lib/goal-bar-style";
+import { sanitizeOverlayEmbedMediaUrl } from "@/lib/gif-url";
 
 /** 프리셋 → URL 쿼리 변환. OBS 등 별도 컨텍스트에서 API 없이 동작하도록 URL에 설정 포함 */
 export type OverlayPresetLike = {
@@ -52,6 +53,9 @@ export type OverlayPresetLike = {
   showTotal?: boolean;
   totalMode?: "total" | "contribution";
   showGoal?: boolean;
+  /** 통합 오버레이 — 식사 대전 팀 금액차 3열 보드 */
+  showTeamBattle?: boolean;
+  teamBattleAnchor?: string;
   goal?: string;
   /** 후원 초기화 시 복원할 목표(백오피스·자동 상향 스냅샷) */
   goalBaseline?: string;
@@ -77,6 +81,10 @@ export type OverlayPresetLike = {
   goalFontWeight?: string;
   /** 게이지 애니메이션: off | pulse | sweep | both */
   goalBarAnimation?: string;
+  /** 목표 막대 트랙 배경 GIF/JPG URL */
+  goalBarGifUrl?: string;
+  goalBarGifOpacity?: string;
+  goalBarGifBrightness?: string;
   /** OBS 선명 렌더링 — geometricPrecision + stroke 유지 + 외곽 blur 축소 */
   overlayTextSharpRender?: boolean;
   showPersonalGoal?: boolean;
@@ -142,6 +150,11 @@ export type OverlayPresetLike = {
   tableBgGifUrl?: string;
   tableBgGifOpacity?: string;
   tableBgGifBrightness?: string;
+  /** 엑셀표 PNG 장식 프레임(투명 중앙). 표 바깥 absolute 오버레이 */
+  tableFrameUrl?: string;
+  tableFrameOpacity?: string;
+  /** 프레임 안쪽 여백(px). 비우면 32 */
+  tableFrameInset?: string;
   /** 엑셀표 시트 배경색(#rrggbb). 비우면 테마 기본 */
   tableBgColor?: string;
   /** 엑셀표 헤더(상단) 배경색. 비우면 테마 기본 */
@@ -249,6 +262,10 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
     if (preset.goalOpacity && preset.goalOpacity.trim()) q.set("goalOpacity", preset.goalOpacity.trim());
     if (preset.goalOpacityText) q.set("goalOpacityText", "true");
   }
+  if (preset.showTeamBattle) {
+    q.set("showTeamBattle", "true");
+    q.set("teamBattleAnchor", preset.teamBattleAnchor || "tc");
+  }
   if (preset.showPersonalGoal) q.set("showPersonalGoal", "true");
   if (preset.personalGoalTheme && preset.personalGoalTheme.trim()) q.set("personalGoalTheme", preset.personalGoalTheme.trim());
   if (preset.personalGoalFree) {
@@ -322,6 +339,10 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.tableBgGifUrl && preset.tableBgGifUrl.trim()) q.set("tableBgGifUrl", preset.tableBgGifUrl.trim());
   if (preset.tableBgGifOpacity && preset.tableBgGifOpacity.trim()) q.set("tableBgGifOpacity", preset.tableBgGifOpacity.trim());
   if (preset.tableBgGifBrightness && preset.tableBgGifBrightness.trim()) q.set("tableBgGifBrightness", preset.tableBgGifBrightness.trim());
+  const tableFrameUrl = sanitizeOverlayEmbedMediaUrl(preset.tableFrameUrl || "");
+  if (tableFrameUrl) q.set("tableFrameUrl", tableFrameUrl);
+  if (preset.tableFrameOpacity && preset.tableFrameOpacity.trim()) q.set("tableFrameOpacity", preset.tableFrameOpacity.trim());
+  if (preset.tableFrameInset && preset.tableFrameInset.trim()) q.set("tableFrameInset", preset.tableFrameInset.trim());
   const tableBgColor = normalizeGoalHexColor((preset.tableBgColor || "").trim());
   if (tableBgColor) q.set("tableBgColor", tableBgColor);
   const tableHeaderBgColor = normalizeGoalHexColor((preset.tableHeaderBgColor || "").trim());
@@ -393,6 +414,9 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "tableBgGifUrl",
   "tableBgGifOpacity",
   "tableBgGifBrightness",
+  "tableFrameUrl",
+  "tableFrameOpacity",
+  "tableFrameInset",
   "tableBgColor",
   "tableHeaderBgColor",
   "tableHeaderTextColor",
@@ -443,6 +467,9 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "goalFontFamily",
   "goalFontWeight",
   "goalBarAnimation",
+  "goalBarGifUrl",
+  "goalBarGifOpacity",
+  "goalBarGifBrightness",
   "textSharp",
   "goalOpacity",
   "goalOpacityText",
@@ -476,6 +503,8 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "showMembers",
   "showTotal",
   "showGoal",
+  "showTeamBattle",
+  "teamBattleAnchor",
   "showTicker",
   "showTimer",
   "showMission",
@@ -531,6 +560,9 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "tableBgGifUrl",
   "tableBgGifOpacity",
   "tableBgGifBrightness",
+  "tableFrameUrl",
+  "tableFrameOpacity",
+  "tableFrameInset",
   "tableBgColor",
   "tableHeaderBgColor",
   "tableHeaderTextColor",
@@ -581,6 +613,9 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "goalFontFamily",
   "goalFontWeight",
   "goalBarAnimation",
+  "goalBarGifUrl",
+  "goalBarGifOpacity",
+  "goalBarGifBrightness",
   "textSharp",
   "goalOpacity",
   "goalOpacityText",
@@ -612,6 +647,8 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "showMembers",
   "showTotal",
   "showGoal",
+  "showTeamBattle",
+  "teamBattleAnchor",
   "showTicker",
   "showTimer",
   "showMission",
@@ -772,6 +809,9 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "goalFontFamily",
   "goalFontWeight",
   "goalBarAnimation",
+  "goalBarGifUrl",
+  "goalBarGifOpacity",
+  "goalBarGifBrightness",
   "textSharp",
   "goalOpacity",
   "goalOpacityText",
@@ -794,6 +834,8 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "tableBgOpacity",
   "tableBgGifOpacity",
   "tableBgGifBrightness",
+  "tableFrameOpacity",
+  "tableFrameInset",
   "tableBgColor",
   "tableHeaderBgColor",
   "tableHeaderTextColor",
@@ -1105,6 +1147,126 @@ export function resolveGoalBarAnimationMode(
   return normalizeGoalBarAnimation(merged || "both");
 }
 
+export function resolveGoalBarGifUrl(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string {
+  if (opts.ready && preset?.goalBarGifUrl) {
+    const fromPreset = sanitizeOverlayEmbedMediaUrl(preset.goalBarGifUrl);
+    if (fromPreset) return fromPreset;
+  }
+  const merged = resolveLivePresetStyleParam(
+    "goalBarGifUrl",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  return sanitizeOverlayEmbedMediaUrl(merged || "");
+}
+
+export function resolveGoalBarGifOpacity(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): number {
+  if (opts.ready && preset?.goalBarGifOpacity) {
+    const n = parseInt(String(preset.goalBarGifOpacity).trim(), 10);
+    if (Number.isFinite(n)) return Math.max(0, Math.min(100, n));
+  }
+  const merged = resolveLivePresetStyleParam(
+    "goalBarGifOpacity",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  const raw = String(merged || "").trim();
+  if (!raw) return 45;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 45;
+}
+
+export function resolveGoalBarGifBrightness(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): number {
+  if (opts.ready && preset?.goalBarGifBrightness) {
+    const n = parseInt(String(preset.goalBarGifBrightness).trim(), 10);
+    if (Number.isFinite(n)) return Math.max(40, Math.min(200, n));
+  }
+  const merged = resolveLivePresetStyleParam(
+    "goalBarGifBrightness",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  const raw = String(merged || "").trim();
+  if (!raw) return 100;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? Math.max(40, Math.min(200, n)) : 100;
+}
+
+export function resolveTableFrameUrl(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string {
+  if (opts.ready && preset?.tableFrameUrl) {
+    const fromPreset = sanitizeOverlayEmbedMediaUrl(preset.tableFrameUrl);
+    if (fromPreset) return fromPreset;
+  }
+  const merged = resolveLivePresetStyleParam(
+    "tableFrameUrl",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  return sanitizeOverlayEmbedMediaUrl(merged || "");
+}
+
+export function resolveTableFrameOpacity(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): number {
+  if (opts.ready && preset?.tableFrameOpacity) {
+    const n = parseInt(String(preset.tableFrameOpacity).trim(), 10);
+    if (Number.isFinite(n)) return Math.max(0, Math.min(100, n));
+  }
+  const merged = resolveLivePresetStyleParam(
+    "tableFrameOpacity",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  const raw = String(merged || "").trim();
+  if (!raw) return 100;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 100;
+}
+
+export function resolveTableFrameInsetPx(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): number {
+  if (opts.ready && preset?.tableFrameInset) {
+    const n = parseInt(String(preset.tableFrameInset).trim(), 10);
+    if (Number.isFinite(n)) return Math.max(0, Math.min(120, n));
+  }
+  const merged = resolveLivePresetStyleParam(
+    "tableFrameInset",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  const raw = String(merged || "").trim();
+  if (!raw) return 32;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? Math.max(0, Math.min(120, n)) : 32;
+}
+
 export function resolveOverlayTextSharpRender(
   rawSp: SearchParamsLike,
   preset: OverlayPresetLike | null,
@@ -1338,6 +1500,14 @@ export function appendGoalBarStyleParams(target: URLSearchParams, preset: Overla
   if (goalFontFamily !== "auto") target.set("goalFontFamily", goalFontFamily);
   const goalBarAnim = normalizeGoalBarAnimation(preset.goalBarAnimation || "");
   if (goalBarAnim !== "both") target.set("goalBarAnimation", goalBarAnim);
+  const goalBarGifUrl = sanitizeOverlayEmbedMediaUrl(preset.goalBarGifUrl || "");
+  if (goalBarGifUrl) target.set("goalBarGifUrl", goalBarGifUrl);
+  if (preset.goalBarGifOpacity && preset.goalBarGifOpacity.trim()) {
+    target.set("goalBarGifOpacity", preset.goalBarGifOpacity.trim());
+  }
+  if (preset.goalBarGifBrightness && preset.goalBarGifBrightness.trim()) {
+    target.set("goalBarGifBrightness", preset.goalBarGifBrightness.trim());
+  }
   const goalFwRaw = (preset.goalFontWeight || "").trim();
   if (goalFwRaw) {
     const fw = parseInt(goalFwRaw, 10);

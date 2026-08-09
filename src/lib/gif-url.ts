@@ -79,6 +79,7 @@ export function sanitizeOverlayEmbedMediaUrl(raw: unknown): string {
     if (lower.includes("giphy.com")) return s;
     if (lower.includes("i.giphy.com")) return s;
     if (lower.includes("media.giphy.com")) return s;
+    if (/\.(gif|jpe?g|png|webp|mp4|webm)(\?|#|$)/i.test(s)) return s;
     return "";
   }
   return s;

@@ -6,10 +6,32 @@ import {
   pickOverlayPresetsPreferCustom,
 } from "@/lib/state";
 import type { AppState, Donor, Member } from "@/types";
-import { mergeDonorRowFields, syncMemberTotalsFromDonors } from "./apply-donation-state";
+import {
+  mergeDonorRowFields,
+  repairMemberTotalsForDonorRoster,
+  rosterDonorMatchScore,
+  syncMemberTotalsFromDonors,
+} from "./apply-donation-state";
+import { isGroupSplitPartDonor } from "./group-split-donation";
 
-/** 후원 memberId 가 로스터에 얼마나 매칭되는지(금액 합) — 로스터 선택용 */
-export function rosterDonorMatchScore(
+export { rosterDonorMatchScore } from "./apply-donation-state";
+
+/** 단체짠 split·원본 행이 incoming 쪽에서 빠져도 union 에 남게 보강 */
+function unionGroupSplitDonorsIntoMap(
+  donorMap: Map<string, Donor>,
+  ...lists: Donor[][]
+): void {
+  for (const list of lists) {
+    for (const d of list) {
+      if (!isGroupSplitPartDonor(d) && !d.groupSplitSource) continue;
+      const prev = donorMap.get(d.id);
+      donorMap.set(d.id, prev ? mergeDonorRowFields(d, prev) : d);
+    }
+  }
+}
+
+/** split 행 memberId 가 로스터에 얼마나 매칭되는지 — 동점 로스터 선택용 */
+function groupSplitRosterMatchScore(
   members: Member[] | null | undefined,
   donors: Donor[] | null | undefined
 ): number {
@@ -17,6 +39,7 @@ export function rosterDonorMatchScore(
   if (ids.size === 0) return 0;
   let score = 0;
   for (const d of donors || []) {
+    if (!isGroupSplitPartDonor(d)) continue;
     const mid = String(d.memberId || "").trim();
     if (!mid || !ids.has(mid)) continue;
     score += Math.max(0, Math.round(Number(d.amount) || 0));
@@ -46,6 +69,7 @@ export function mergeDonationApplyBase(
     const prev = donorMap.get(d.id);
     donorMap.set(d.id, prev ? mergeDonorRowFields(d, prev) : d);
   }
+  unionGroupSplitDonorsIntoMap(donorMap, freshDonors, hintDonors);
   const mergedDonors = Array.from(donorMap.values()).sort((a, b) => b.at - a.at);
 
   const hintStrong = hasMeaningfulMemberRoster(hint);
@@ -56,8 +80,25 @@ export function mergeDonationApplyBase(
   if (hintStrong && !freshStrong) useHintRoster = true;
   else if (!hintStrong && freshStrong) useHintRoster = false;
   else if (hintStrong && freshStrong) {
-    /** 매칭 점수가 같으면 hint(화면) 우선 — 관리자 실멤버 유지 */
-    useHintRoster = hintScore >= freshScore;
+    if (hintScore > freshScore) useHintRoster = true;
+    else if (freshScore > hintScore) useHintRoster = false;
+    else {
+      const hintSplitScore = groupSplitRosterMatchScore(hint.members, mergedDonors);
+      const freshSplitScore = groupSplitRosterMatchScore(fresh.members, mergedDonors);
+      if (hintSplitScore > freshSplitScore) useHintRoster = true;
+      else if (freshSplitScore > hintSplitScore) useHintRoster = false;
+      else {
+        const hintHasSplits = hintDonors.some(
+          (d) => isGroupSplitPartDonor(d) || d.groupSplitSource
+        );
+        const freshHasSplits = freshDonors.some(
+          (d) => isGroupSplitPartDonor(d) || d.groupSplitSource
+        );
+        if (hintHasSplits && !freshHasSplits) useHintRoster = true;
+        else if (freshHasSplits && !hintHasSplits) useHintRoster = false;
+        else useHintRoster = hintScore >= freshScore;
+      }
+    }
   }
   const rosterBase = useHintRoster ? hint : fresh;
 
@@ -104,7 +145,8 @@ export function mergeDonationApplyBase(
     } as AppState["overlaySettings"],
     updatedAt: Math.max(Number(hint.updatedAt || 0), Number(fresh.updatedAt || 0)) || Date.now(),
   };
-  return syncMemberTotalsFromDonors(merged);
+  const synced = syncMemberTotalsFromDonors(merged);
+  return repairMemberTotalsForDonorRoster(synced, fresh, hint);
 }
 
 /**

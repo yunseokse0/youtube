@@ -12,19 +12,36 @@ export function appStateStorageKey(userId: string): string {
 }
 
 /**
+ * Redis·메모리 donors 를 리셋 가드 하에 모두 union.
+ * pickFresherAppState 승자만 merge 하면 다른 쪽(예: Redis 단체짠 split) donors 가 유실될 수 있다.
+ */
+export function coalesceAppStateRedisAndMemory(
+  redis: AppState | null | undefined,
+  mem: AppState | null | undefined
+): AppState | null {
+  if (!redis && !mem) return null;
+  if (!redis) return mem ?? null;
+  if (!mem) return redis;
+  if (!Array.isArray(redis.members) || !Array.isArray(mem.members)) {
+    return pickFresherAppState(redis, mem);
+  }
+  const picked = pickFresherAppState(redis, mem) || redis;
+  let merged = mergeStatePreservingDonorsUntilSettlementReset(picked, mem) ?? picked;
+  merged = mergeStatePreservingDonorsUntilSettlementReset(merged, redis) ?? merged;
+  return merged;
+}
+
+/**
  * Redis와 인메모리 중 더 신선한 상태를 반환.
  * 투네 후원 직후 메모리는 갱신됐는데 Redis GET이 지연되면 첫 후원이 엑셀에 안 보이는 문제를 막는다.
- * 같은 리셋 구간에서는 Redis·메모리 donors 를 union 해 수동 계좌 유실을 막는다.
+ * 같은 리셋 구간에서는 Redis·메모리 donors 를 union 해 수동 계좌·단체짠 유실을 막는다.
  */
 export async function loadAppStateForUserId(userId: string): Promise<AppState> {
   const mem = getServerMemoryAppState(userId);
   const { base, token } = getRedisEnv();
   if (base && token) {
     const saved = await upstashGetAppStateJson<AppState>(appStateStorageKey(userId));
-    let picked = pickFresherAppState(saved, mem);
-    if (saved && mem && Array.isArray(saved.members) && Array.isArray(mem.members)) {
-      picked = mergeStatePreservingDonorsUntilSettlementReset(picked || saved, mem);
-    }
+    const picked = coalesceAppStateRedisAndMemory(saved, mem);
     if (picked) {
       /** 메모리보다 Redis가 앞서면 메모리도 맞춤(반대는 덮어쓰지 않음) */
       if (mem !== picked) setServerMemoryAppState(userId, picked);

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { formatDonorsAmount, formatManThousand } from "@/lib/state";
 import { buildOverlayCellOutlineStyle } from "@/lib/text-outline-style";
+import { resolveAnimatedSourceForEmbed } from "@/lib/gif-url";
 import {
   GOAL_BAR_DEFAULT_TRACK_BG,
   GOAL_BAR_DEFAULT_TRACK_BORDER,
@@ -58,6 +59,9 @@ export function GoalBar({
   textOutlineWidthPx,
   barBgColor = GOAL_BAR_DEFAULT_TRACK_BG,
   barFillColor,
+  barGifUrl,
+  barGifOpacity = 45,
+  barGifBrightness = 100,
   fontFamilyCss,
   animationMode = "both",
   fontWeight,
@@ -83,6 +87,12 @@ export function GoalBar({
   barBgColor?: string;
   /** 게이지(채움) 기준색 — 그라데이션 자동 생성 */
   barFillColor?: string;
+  /** 막대 트랙 배경 GIF/JPG URL */
+  barGifUrl?: string;
+  /** GIF/JPG 불투명도(0~100) */
+  barGifOpacity?: number;
+  /** GIF/JPG 밝기(40~200%) */
+  barGifBrightness?: number;
   /** CSS font-family (null/undefined면 기본) */
   fontFamilyCss?: string | null;
   /** 게이지 애니메이션 */
@@ -170,6 +180,15 @@ export function GoalBar({
     color: effectiveTextColor,
     WebkitTextFillColor: effectiveTextColor,
   };
+  const showBarGif = Boolean((barGifUrl || "").trim());
+  const barGifAnimated = useMemo(
+    () => resolveAnimatedSourceForEmbed(barGifUrl || ""),
+    [barGifUrl]
+  );
+  const barGifMediaStyle: CSSProperties = {
+    opacity: Math.max(0, Math.min(100, barGifOpacity)) / 100,
+    filter: `brightness(${Math.max(40, Math.min(200, barGifBrightness))}%)`,
+  };
 
   return (
     <div
@@ -194,6 +213,30 @@ export function GoalBar({
           boxShadow: "inset 0 1px 2px rgba(255, 160, 200, 0.28)",
         }}
       >
+        {showBarGif && barGifAnimated.src ? (
+          barGifAnimated.kind === "video" ? (
+            <video
+              src={barGifAnimated.src}
+              className="pointer-events-none absolute inset-0 z-0 h-full w-full object-cover"
+              style={barGifMediaStyle}
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="auto"
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={barGifAnimated.src}
+              alt=""
+              className="pointer-events-none absolute inset-0 z-0 h-full w-full object-cover"
+              style={barGifMediaStyle}
+              loading="eager"
+              decoding="async"
+            />
+          )
+        ) : null}
         <div
           className="goalbar-fill absolute inset-y-0 left-0 transition-all duration-700 ease-out"
           style={{

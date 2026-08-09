@@ -337,4 +337,78 @@ describe("mergeStatePreservingDonorsUntilSettlementReset", () => {
     expect(merged.donors).toHaveLength(0);
     expect(merged.settlementResetAt).toBe(9000);
   });
+
+  it("preserves manual group-split rows when toonation account donation arrives", async () => {
+    const { mergeStatePreservingDonorsUntilSettlementReset } = await import(
+      "./merge-donation-apply-base"
+    );
+    const roster = members(["BT태호", "연비서", "국고"]);
+    const existing: AppState = {
+      ...defaultState(),
+      settlementResetAt: 1000,
+      members: roster.map((m, i) => ({
+        ...m,
+        account: i < 2 ? 25000 : 0,
+        contribution: i < 2 ? 25000 : 0,
+      })),
+      donors: [
+        {
+          id: "manual-src",
+          name: "익명 단체짠",
+          amount: 50000,
+          memberId: "m3",
+          at: 2000,
+          target: "account",
+          donationExcluded: true,
+          groupSplitSource: true,
+        },
+        {
+          id: "manual-src:split:m1",
+          name: "익명 단체짠",
+          amount: 25000,
+          memberId: "m1",
+          at: 2001,
+          target: "account",
+          groupSplit: true,
+        },
+        {
+          id: "manual-src:split:m2",
+          name: "익명 단체짠",
+          amount: 25000,
+          memberId: "m2",
+          at: 2001,
+          target: "account",
+          groupSplit: true,
+        },
+      ],
+      updatedAt: 2001,
+    };
+    const incoming: AppState = {
+      ...defaultState(),
+      settlementResetAt: 1000,
+      members: roster.map((m) => ({ ...m, account: 0, toon: 0, contribution: 0 })),
+      donors: [
+        {
+          id: "toonation:acct-1",
+          name: "투네계좌",
+          amount: 10000,
+          memberId: "m3",
+          at: 3000,
+          target: "account",
+        },
+      ],
+      updatedAt: 3000,
+    };
+    const merged = mergeStatePreservingDonorsUntilSettlementReset(incoming, existing);
+    expect(merged.donors.map((d) => d.id).sort()).toEqual([
+      "manual-src",
+      "manual-src:split:m1",
+      "manual-src:split:m2",
+      "toonation:acct-1",
+    ]);
+    expect(merged.donors.find((d) => d.id === "manual-src")?.groupSplitSource).toBe(true);
+    expect(merged.members.find((m) => m.id === "m1")?.account).toBe(25000);
+    expect(merged.members.find((m) => m.id === "m2")?.account).toBe(25000);
+    expect(merged.members.find((m) => m.id === "m3")?.account).toBe(10000);
+  });
 });

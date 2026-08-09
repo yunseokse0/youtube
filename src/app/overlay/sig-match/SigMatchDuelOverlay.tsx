@@ -19,7 +19,7 @@ import {
   type SigMatchRankingItem,
 } from "@/lib/settlement-utils";
 import BattleRulesBox from "@/components/battle/BattleRulesBox";
-import BattleTeamScoreHeader from "@/components/battle/BattleTeamScoreHeader";
+import BattleTeamColumnBoard from "@/components/battle/BattleTeamColumnBoard";
 
 type SigMatchSide = { ids: string[]; label: string; score: number; teamLabel?: string };
 
@@ -796,6 +796,15 @@ export default function SigMatchDuelOverlay({
     [duelData, ranking, memberMap, sigScores]
   );
 
+  const leftMemberLabel = useMemo(
+    () => leftMemberLines.map((m) => m.name).join(","),
+    [leftMemberLines]
+  );
+  const rightMemberLabel = useMemo(
+    () => rightMemberLines.map((m) => m.name).join(","),
+    [rightMemberLines]
+  );
+
   const rulesText = String(sigSettings.rulesText || "").trim();
 
   if (!clientReady || !ready || !overlayState) {
@@ -917,14 +926,12 @@ export default function SigMatchDuelOverlay({
                 transition={{ duration: 0.4 }}
                 key={barPulseKey}
               >
-                <BattleTeamScoreHeader
-                  leftName={duelData.left.label}
+                <BattleTeamColumnBoard
                   leftScore={duelData.left.score}
-                  rightName={duelData.right.label}
                   rightScore={duelData.right.score}
+                  leftMemberLabel={leftMemberLabel}
+                  rightMemberLabel={rightMemberLabel}
                   compact={compact}
-                  leftRatio={dualBar.leftPct}
-                  rightRatio={dualBar.rightPct}
                   gapLabel={vsCenterGapLabel}
                   formatScore={(n) => formatSigMatchScoreLabel(n, scoringMode)}
                   timerSlot={
@@ -940,28 +947,6 @@ export default function SigMatchDuelOverlay({
                 />
                 <SigFloatingScores bursts={floatingBursts} />
               </motion.div>
-              <div className="grid grid-cols-2 gap-2 px-0.5">
-                <SigTeamMemberBox
-                  members={leftMemberLines}
-                  scoringMode={scoringMode}
-                  align="left"
-                  nameClass="text-rose-100"
-                  scoreClass="text-white/85"
-                  borderClass="border-rose-300/25"
-                  teamLeading={dualBar.leftLeading}
-                  teamTint="pink"
-                />
-                <SigTeamMemberBox
-                  members={rightMemberLines}
-                  scoringMode={scoringMode}
-                  align="right"
-                  nameClass="text-sky-100"
-                  scoreClass="text-white/85"
-                  borderClass="border-sky-300/25"
-                  teamLeading={dualBar.rightLeading}
-                  teamTint="sky"
-                />
-              </div>
             </div>
           ) : null}
           {tripleBar && duelData.mode === "triple" ? (

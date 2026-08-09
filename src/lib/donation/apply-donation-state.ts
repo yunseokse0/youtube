@@ -142,20 +142,20 @@ export function rosterDonorMatchScore(
   return score;
 }
 
-/** donors.memberId 와 맞는 로스터로 재동기화 — 후원은 있는데 members 합계만 0일 때 */
+/** donors.memberId 와 맞는 로스터로 재동기화 — 후원은 있는데 members 합계가 donors 와 어긋날 때 */
 export function repairMemberTotalsForDonorRoster(
   state: AppState,
   ...fallbacks: Array<AppState | null | undefined>
 ): AppState {
   const donors = state.donors || [];
-  if (countableDonorTotal(donors) <= 0) return state;
-  const memberTotal = (state.members || []).reduce(
-    (sum, m) => sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)),
-    0
-  );
-  if (memberTotal > 0) return state;
+  const countable = countableDonorTotal(donors);
+  if (countable <= 0) return state;
+
+  const currentScore = rosterDonorMatchScore(state.members, donors);
+  if (currentScore >= countable * 0.99) return state;
+
   let bestMembers = state.members;
-  let bestScore = rosterDonorMatchScore(state.members, donors);
+  let bestScore = currentScore;
   for (const fb of fallbacks) {
     if (!fb?.members?.length) continue;
     const score = rosterDonorMatchScore(fb.members, donors);
