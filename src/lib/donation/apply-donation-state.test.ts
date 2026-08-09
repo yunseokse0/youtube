@@ -620,6 +620,36 @@ describe("mergeDonorRowFields", () => {
       ).message
     ).toBe("익명 연비서");
   });
+
+  it("preserves donationExcluded and groupSplit flags from either side", () => {
+    const merged = mergeDonorRowFields(
+      { id: "src", name: "익명2", amount: 300_000, memberId: "m1", at: 1000 },
+      {
+        id: "src",
+        name: "익명2",
+        amount: 300_000,
+        memberId: "m1",
+        at: 1000,
+        donationExcluded: true,
+        groupSplitSource: true,
+      }
+    );
+    expect(merged.donationExcluded).toBe(true);
+    expect(merged.groupSplitSource).toBe(true);
+
+    const merged2 = mergeDonorRowFields(
+      {
+        id: "src:split:m1",
+        name: "익명2",
+        amount: 60_000,
+        memberId: "m1",
+        at: 2000,
+        groupSplit: true,
+      },
+      { id: "src:split:m1", name: "익명2", amount: 60_000, memberId: "m1", at: 2000 }
+    );
+    expect(merged2.groupSplit).toBe(true);
+  });
 });
 
 describe("dedupeDonorRows message preservation", () => {

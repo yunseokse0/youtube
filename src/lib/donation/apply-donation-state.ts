@@ -1,6 +1,6 @@
 import { applyMealBattleDonationToParticipants, mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
-import type { AppState, Donor } from "@/types";
+import type { AppState, Donor, Member } from "@/types";
 import { mapToMember } from "./mapper";
 import type { DonationEvent, DonorAlias } from "./types";
 
@@ -63,13 +63,25 @@ export function isDonorExcludedFromDonationTotals(donor: {
   return donor.donationExcluded === true;
 }
 
-/** 동일 id 병합 시 message 등 선택 필드가 비는 쪽을 보완 */
-export function mergeDonorRowFields<T extends { message?: string }>(preferred: T, fallback?: T | null): T {
+/** 동일 id 병합 시 message·단체짠 플래그 등 선택 필드가 비는 쪽을 보완 */
+export function mergeDonorRowFields<
+  T extends {
+    message?: string;
+    donationExcluded?: boolean;
+    groupSplit?: boolean;
+    groupSplitSource?: boolean;
+  },
+>(preferred: T, fallback?: T | null): T {
   if (!fallback) return preferred;
   const msg = String(preferred.message || "").trim();
   const fallbackMsg = String(fallback.message || "").trim();
-  if (msg || !fallbackMsg) return preferred;
-  return { ...preferred, message: fallbackMsg };
+  const withMessage = msg || !fallbackMsg ? preferred : { ...preferred, message: fallbackMsg };
+  return {
+    ...withMessage,
+    ...(preferred.donationExcluded || fallback.donationExcluded ? { donationExcluded: true as const } : {}),
+    ...(preferred.groupSplit || fallback.groupSplit ? { groupSplit: true as const } : {}),
+    ...(preferred.groupSplitSource || fallback.groupSplitSource ? { groupSplitSource: true as const } : {}),
+  };
 }
 
 export function dedupeDonorRows<
@@ -104,6 +116,56 @@ export function donationQueueIdsForDonor(donor: { id?: string }): string[] {
     out.add(`toonation:${externalId}::review`);
   }
   return Array.from(out);
+}
+
+/** 합산에 포함되는 후원 행 금액 합 — donationExcluded 제외 */
+export function countableDonorTotal(donors: Donor[] | undefined): number {
+  return dedupeDonorRows(donors || [])
+    .filter((d) => !isDonorExcludedFromDonationTotals(d))
+    .reduce((sum, d) => sum + Math.max(0, Math.round(Number(d.amount) || 0)), 0);
+}
+
+/** 후원 memberId 가 로스터에 얼마나 매칭되는지(금액 합) */
+export function rosterDonorMatchScore(
+  members: Member[] | null | undefined,
+  donors: Donor[] | null | undefined
+): number {
+  const ids = new Set((members || []).map((m) => String(m.id || "").trim()).filter(Boolean));
+  if (ids.size === 0) return 0;
+  let score = 0;
+  for (const d of donors || []) {
+    if (isDonorExcludedFromDonationTotals(d)) continue;
+    const mid = String(d.memberId || "").trim();
+    if (!mid || !ids.has(mid)) continue;
+    score += Math.max(0, Math.round(Number(d.amount) || 0));
+  }
+  return score;
+}
+
+/** donors.memberId 와 맞는 로스터로 재동기화 — 후원은 있는데 members 합계만 0일 때 */
+export function repairMemberTotalsForDonorRoster(
+  state: AppState,
+  ...fallbacks: Array<AppState | null | undefined>
+): AppState {
+  const donors = state.donors || [];
+  if (countableDonorTotal(donors) <= 0) return state;
+  const memberTotal = (state.members || []).reduce(
+    (sum, m) => sum + Math.max(0, Number(m.account || 0)) + Math.max(0, Number(m.toon || 0)),
+    0
+  );
+  if (memberTotal > 0) return state;
+  let bestMembers = state.members;
+  let bestScore = rosterDonorMatchScore(state.members, donors);
+  for (const fb of fallbacks) {
+    if (!fb?.members?.length) continue;
+    const score = rosterDonorMatchScore(fb.members, donors);
+    if (score > bestScore) {
+      bestScore = score;
+      bestMembers = fb.members;
+    }
+  }
+  if (bestScore <= 0) return state;
+  return syncMemberTotalsFromDonors({ ...state, members: bestMembers });
 }
 
 /** 후원자 리스트(donors) 기준으로 멤버 계좌·투네 합계 재계산 — 순위·엑셀표 금액 불일치 방지 */

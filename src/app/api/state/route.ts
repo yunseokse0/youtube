@@ -35,6 +35,7 @@ import {
 import type { SigItem } from "@/types";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
 import { dedupeDonorRows, syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
+import { isGroupSplitDonorListMutation } from "@/lib/donation/group-split-donation";
 import { rosterDonorMatchScore } from "@/lib/donation/merge-donation-apply-base";
 import { isManualOverlaySessionId } from "@/lib/sig-sales-manual-round";
 import { createModuleLogger } from "@/lib/logger";
@@ -727,6 +728,7 @@ export async function POST(req: Request) {
       (settlementReset ||
         donationInitReset ||
         donorsReplace ||
+        isGroupSplitDonorListMutation(incomingDonorsFiltered) ||
         isDonorListMemberReassignment(incomingDonorsFiltered, baseDonorsNorm) ||
         isIntentionalDonorListShrink(
           incomingDonorsFiltered,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultState } from "@/lib/state";
+import { defaultState, filterDonorsAfterSettlementReset, rebumpDonorsPastSettlementReset } from "@/lib/state";
 import type { AppState, Member } from "@/types";
 import {
   applyGroupSplitDonationToAppState,
@@ -281,5 +281,38 @@ describe("group split donation", () => {
     expect(applied.state.donors.find((d) => d.id === "toonation:already-1")?.donationExcluded).toBe(true);
     const memberSum = applied.state.members.reduce((s, m) => s + (m.toon || 0), 0);
     expect(memberSum).toBe(60000);
+  });
+
+  it("splitExistingDonorInAppState marks source excluded and keeps member totals after settlement reset", () => {
+    const at = Date.now() - 60_000;
+    const state: AppState = {
+      ...defaultState(),
+      settlementResetAt: Date.now() - 30_000,
+      members: members(["A", "B", "C"]),
+      donors: [
+        {
+          id: "toonation:split-src",
+          name: "익명2",
+          amount: 300_000,
+          memberId: "m1",
+          at,
+          target: "toon",
+        },
+      ],
+    };
+    const applied = splitExistingDonorInAppState(state, "toonation:split-src");
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    const source = applied.state.donors.find((d) => d.id === "toonation:split-src");
+    expect(source?.donationExcluded).toBe(true);
+    expect(source?.groupSplitSource).toBe(true);
+    expect(Number(source?.at)).toBeGreaterThanOrEqual(at);
+    expect(applied.state.members.reduce((s, m) => s + (m.toon || 0), 0)).toBe(300_000);
+    expect(
+      filterDonorsAfterSettlementReset(
+        rebumpDonorsPastSettlementReset(applied.state.donors, Number(state.settlementResetAt)),
+        Number(state.settlementResetAt)
+      ).length
+    ).toBeGreaterThan(0);
   });
 });

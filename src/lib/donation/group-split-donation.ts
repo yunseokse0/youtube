@@ -131,6 +131,13 @@ export function isGroupSplitPartDonor(donor: Donor): boolean {
   return Boolean(donor.groupSplit) || String(donor.id || "").includes(":split:");
 }
 
+/** donorsReplace 가 필요한 단체짠 나누기(분배 행·원본 제외 플래그) */
+export function isGroupSplitDonorListMutation(donors: Donor[] | undefined): boolean {
+  const rows = donors || [];
+  if (rows.some((d) => isGroupSplitPartDonor(d))) return true;
+  return rows.some((d) => d.groupSplitSource === true);
+}
+
 function donorAtMs(donor: { at?: number | string }): number {
   const raw = donor.at;
   if (typeof raw === "number" && Number.isFinite(raw)) return raw;
@@ -361,7 +368,9 @@ export function splitExistingDonorInAppState(
     ...currentState,
     donors: [
       ...(currentState.donors || []).map((d) =>
-        d.id === rawId ? { ...d, donationExcluded: true, groupSplitSource: true } : d
+        d.id === rawId
+          ? { ...d, donationExcluded: true, groupSplitSource: true, at: atMs }
+          : d
       ),
       ...splitDonors,
     ],

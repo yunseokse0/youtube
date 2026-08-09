@@ -49,7 +49,8 @@ import {
   type StateApiPick,
 } from "@/lib/state-api-pick";
 import { MANUAL_SIG_BROADCAST_STATE_KEY } from "@/lib/manual-sig-broadcast-state";
-import { mergeDonorRowFields, syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
+import { mergeDonorRowFields, syncMemberTotalsFromDonors, repairMemberTotalsForDonorRoster } from "@/lib/donation/apply-donation-state";
+import { isGroupSplitDonorListMutation } from "@/lib/donation/group-split-donation";
 import { MANUAL_SIG_DRAFT_STATE_KEY } from "@/lib/manual-sig-workbench";
 import { OBS_TEXT_OVERLAY_STATE_KEY, normalizeObsTextRegistry, type ObsTextOverlayRegistry } from "@/lib/obs-text-overlay";
 import { slimSigInventoryForWire } from "@/lib/state-wire-slim";
@@ -2116,6 +2117,15 @@ export async function saveStateAsync(
   ) {
     saveOpts = { ...saveOpts, donorsReplace: true };
   }
+  if (
+    saveOpts?.donorsAuthoritative &&
+    !saveOpts?.settlementReset &&
+    !saveOpts?.donorsReplace &&
+    isGroupSplitDonorListMutation(normalizeDonorsArray(guarded.donors))
+  ) {
+    saveOpts = { ...saveOpts, donorsReplace: true };
+  }
+  guarded = repairMemberTotalsForDonorRoster(guarded, local);
   /**
    * donorsAuthoritative 라도 정산 리셋이 아니면, LS보다 후원이 줄어든 채 올리면
    * 미매칭 반영 등으로 엑셀표가 초기화된다.
@@ -2124,7 +2134,10 @@ export async function saveStateAsync(
   if (saveOpts?.donorsAuthoritative && !saveOpts?.settlementReset && local) {
     const localDonors = normalizeDonorsArray(local.donors);
     const nextDonors = normalizeDonorsArray(guarded.donors);
+    const skipShrinkUnion =
+      Boolean(saveOpts?.donorsReplace) || isGroupSplitDonorListMutation(nextDonors);
     if (
+      !skipShrinkUnion &&
       localDonors.length > 0 &&
       (nextDonors.length < localDonors.length || wouldShrinkDonationData(local, guarded))
     ) {
@@ -2228,7 +2241,7 @@ export async function saveStateAsync(
     if (resetAt > 0 && !saveOpts?.settlementReset && saveOpts?.donorsAuthoritative) {
       const before = normalizeDonorsArray(guarded.donors);
       const rebumped = rebumpDonorsPastSettlementReset(before, resetAt);
-      const after = filterDonorsAfterSettlementReset(rebumped, resetAt);
+      const after = applySettlementResetDonorPipeline(before, resetAt);
       const atChanged = rebumped.some((d, i) => Number(d.at) !== Number(before[i]?.at));
       if (
         after.length !== before.length ||
@@ -3110,7 +3123,10 @@ export function donorsListContentDiffers(
     return (
       String(rd.memberId || "") !== String(ld.memberId || "") ||
       Math.round(Number(rd.amount) || 0) !== Math.round(Number(ld.amount) || 0) ||
-      String(rd.message || "").trim() !== String(ld.message || "").trim()
+      String(rd.message || "").trim() !== String(ld.message || "").trim() ||
+      Boolean(rd.donationExcluded) !== Boolean(ld.donationExcluded) ||
+      Boolean(rd.groupSplit) !== Boolean(ld.groupSplit) ||
+      Boolean(rd.groupSplitSource) !== Boolean(ld.groupSplitSource)
     );
   });
 }
@@ -3258,6 +3274,23 @@ export function rebumpDonorsPastSettlementReset(
     seq += 1;
     return { ...d, at: bumped };
   });
+}
+
+/** rebump → filter. 명시 리셋이 아닐 때 필터가 전량 탈락시키면 rebump 본을 유지 */
+export function applySettlementResetDonorPipeline(
+  donors: Donor[] | undefined,
+  settlementResetAt: number,
+  opts?: { allowFullWipe?: boolean }
+): Donor[] {
+  const resetAt = Number(settlementResetAt || 0);
+  const normalized = normalizeDonorsArray(donors);
+  if (!resetAt) return normalized;
+  const rebumped = rebumpDonorsPastSettlementReset(normalized, resetAt);
+  const filtered = filterDonorsAfterSettlementReset(rebumped, resetAt);
+  if (!opts?.allowFullWipe && normalized.length > 0 && filtered.length === 0) {
+    return rebumped;
+  }
+  return filtered;
 }
 
 /**
