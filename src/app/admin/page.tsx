@@ -5347,9 +5347,6 @@ export default function AdminPage() {
     const memberId = donorMemberId;
     const rawName = donorName;
     const rawMessage = donorMessage;
-    setDonorName("");
-    setDonorMessage("");
-    setDonorAmount("");
     const donorNameClean = (rawName || "무명").replace(/\s+/g, "") || "무명";
     const messageClean = String(rawMessage || "").trim();
     addDonorSaveChainRef.current = addDonorSaveChainRef.current
@@ -5374,8 +5371,17 @@ export default function AdminPage() {
           typeof navigator !== "undefined" && !navigator.onLine ? "local" : "error"
         );
         pendingUnsyncedRef.current = false;
+        window.alert(
+          `합산 추가에 실패했습니다.\n(${result.error})` +
+            (result.error === "persist_failed"
+              ? "\n\n서버 저장 검증 오류입니다. 새로고침 후 후원 목록을 확인해 주세요."
+              : "")
+        );
         return;
       }
+      setDonorName("");
+      setDonorMessage("");
+      setDonorAmount("");
       const merged = enrichStateBeforeAuthoritativeDonationSave(stateRef.current, [result.state]);
       markAuthoritativeDonationSave(
         { serverUpdatedAt: result.updatedAt },

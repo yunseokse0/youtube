@@ -48,12 +48,15 @@ export async function persistDonationStateToServer(
   const persisted = await saveAppStateForRoulette(userId, nextState, { donorsMode: mode });
 
   if (opts?.verifyEvent && mode === "add") {
+    /** reload(coalesce) 레이스로 verify 실패 → persist_failed 는 저장됐는데 UI 미반영 */
     const memSaved = getServerMemoryAppState(userId);
-    const verify = await loadAppStateForUserId(userId);
     const ok =
-      isDuplicateDonationEvent(verify, opts.verifyEvent) ||
+      isDuplicateDonationEvent(persisted, opts.verifyEvent) ||
       (memSaved ? isDuplicateDonationEvent(memSaved, opts.verifyEvent) : false);
-    if (!ok) return { ok: false };
+    if (!ok) {
+      const verify = await loadAppStateForUserId(userId);
+      if (!isDuplicateDonationEvent(verify, opts.verifyEvent)) return { ok: false };
+    }
   }
 
   await broadcastDonationStateUpdated(
