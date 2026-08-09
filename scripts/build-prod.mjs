@@ -8,6 +8,8 @@
  * - PM2_APP + 스테이징 없음 → 구 방식(빌드 전 stop, 빌드 후 restart)
  */
 import { spawnSync } from "node:child_process";
+import { rmSync } from "node:fs";
+import path from "node:path";
 
 const heapMb = String(process.env.NODE_HEAP_MB || "2048").replace(/[^\d]/g, "") || "2048";
 const pm2App = String(process.env.PM2_APP || "").trim();
@@ -40,6 +42,21 @@ if (legacyInPlace || stopBeforeBuild) {
   run("pm2", ["stop", pm2App], { stdio: "inherit" });
 }
 
+/** 라우트 삭제 후 남은 .next-staging/types 가 타입 검사 실패하는 것 방지 */
+if (stagingDir) {
+  const stagingPath = path.resolve(stagingDir);
+  console.log(`[build:prod] clean ${stagingDir}`);
+  rmSync(stagingPath, { recursive: true, force: true });
+} else {
+  const staleTypes = path.resolve(".next/types");
+  try {
+    rmSync(staleTypes, { recursive: true, force: true });
+    console.log("[build:prod] clean .next/types (삭제된 라우트 타입 잔재 방지)");
+  } catch {
+    /* noop */
+  }
+}
+
 const env = {
   ...process.env,
   NODE_OPTIONS: `--max-old-space-size=${heapMb}`,
@@ -53,6 +70,7 @@ if (code !== 0) {
     "\n[build:prod] 실패 — 스왑 미설정이면: sudo bash deploy/ec2-setup-swap.sh\n" +
       "  또는 NODE_HEAP_MB=1536 PM2_STOP_BEFORE_BUILD=1 npm run build:prod\n" +
       "  또는 PC에서 npm run build 후 .next만 scp (deploy/EC2-저메모리-빌드.md)\n" +
+      "  라우트 삭제 후 빌드 실패 시: rm -rf .next-staging .next && npm run build:prod\n" +
       "  deploy/deploy-on-ec2.sh 는 스테이징 빌드·실패 시 기존 .next 유지합니다.\n"
   );
   if (pm2App && (legacyInPlace || stopBeforeBuild)) {
