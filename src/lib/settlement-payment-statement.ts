@@ -1,5 +1,5 @@
 import type { SettlementMemberResult, SettlementRecord } from "@/types";
-import { isOperatingSettlementMember } from "@/lib/settlement-utils";
+import { isOperatingSettlementMember, isTreasurySettlementMember } from "@/lib/settlement-utils";
 import {
   computeExcelWithholding,
   computePaymentChannelBreakdown,
@@ -127,8 +127,10 @@ export function formatWonAmount(n: number): string {
 }
 
 function sortMembersForStatement(record: SettlementRecord): SettlementMemberResult[] {
-  const members = record.members || [];
   const pos = record.memberPositionsAtSettlement;
+  const members = (record.members || []).filter(
+    (m) => !record.omitTreasuryFromSettlement || !isTreasurySettlementMember(m, pos)
+  );
   const isOp = (m: SettlementMemberResult) =>
     isOperatingSettlementMember(
       { id: m.memberId, name: m.name, operating: m.operating, realName: m.realName },
@@ -229,7 +231,7 @@ export function computeFullSettlementSummary(
   const totalGrossDonation = rows.reduce((a, r) => a + r.accountGross + r.toonGross, 0);
   const taxGrandTotal = sumVatTotal + sumWithholding;
   const productionShare = roundWon(sumStudioShare * 0.5);
-  const treasuryShare = 0;
+  const treasuryShare = record.includeTreasuryInFullStatement ? roundWon(sumStudioShare * 0.5) : 0;
   const remittanceSubtotal = productionShare + treasuryShare;
   const productionVat = roundWon(remittanceSubtotal * 0.1);
   const productionTransfer = remittanceSubtotal + productionVat;

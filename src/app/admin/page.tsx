@@ -42,6 +42,7 @@ import {
   isDefaultLikeTimerDisplayStyle,
   normalizeDonorsArray,
   mergeDonorsForMultiTabSave,
+  donorsListContentDiffers,
   isIntentionalDonorListShrink,
   rebumpDonorsPastSettlementReset,
   ensureMissionItems,
@@ -122,7 +123,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import { appendSettlementRecordAndSync, appendSigMatchIncentiveSettlementAndSync, SettlementMemberRatioOverrides } from "@/lib/settlement";
-import { formatSigMatchStat, getSigMatchRankings, isOperatingSettlementMember, resolveSigMatchDonationLink } from "@/lib/settlement-utils";
+import { formatSigMatchStat, formatSigMatchManualAdjustStepLabel, getSigMatchRankings, isOperatingSettlementMember, resolveSigMatchDonationLink, resolveSigMatchManualAdjustSteps } from "@/lib/settlement-utils";
 import { getEffectiveRemainingTime, mergeGeneralTimerPreferEffective, pauseTimer, resumeTimer } from "@/lib/timer-utils";
 import {
   appendAdminPreviewEmbedToOverlayUrl,
@@ -664,15 +665,21 @@ export default function AdminPage() {
     targetCount: string;
     incentivePerPoint: string;
     overlayTimerDurationSec: string;
+    manualAddStep: string;
+    manualDeductStep: string;
   }>({
     targetCount: "100",
     incentivePerPoint: "1000",
     overlayTimerDurationSec: "180",
+    manualAddStep: "10000",
+    manualDeductStep: "10000",
   });
   const sigMatchNumericEditingRef = useRef<Record<keyof typeof sigMatchNumericDraft, boolean>>({
     targetCount: false,
     incentivePerPoint: false,
     overlayTimerDurationSec: false,
+    manualAddStep: false,
+    manualDeductStep: false,
   });
   const ROULETTE_ROUND_UI_CAP = 40;
   const [rouletteResetBusy, setRouletteResetBusy] = useState(false);
@@ -733,12 +740,19 @@ export default function AdminPage() {
 
   useEffect(() => {
     const s = state.sigMatchSettings || {};
+    const steps = resolveSigMatchManualAdjustSteps(s);
     setSigMatchNumericDraft((prev) => ({
       targetCount: sigMatchNumericEditingRef.current.targetCount ? prev.targetCount : String(s.targetCount ?? 100),
       incentivePerPoint: sigMatchNumericEditingRef.current.incentivePerPoint ? prev.incentivePerPoint : String(s.incentivePerPoint ?? 1000),
       overlayTimerDurationSec: sigMatchNumericEditingRef.current.overlayTimerDurationSec
         ? prev.overlayTimerDurationSec
         : String(s.overlayTimerDurationSec ?? 180),
+      manualAddStep: sigMatchNumericEditingRef.current.manualAddStep
+        ? prev.manualAddStep
+        : String(s.manualAddStep ?? steps.addStep),
+      manualDeductStep: sigMatchNumericEditingRef.current.manualDeductStep
+        ? prev.manualDeductStep
+        : String(s.manualDeductStep ?? steps.deductStep),
     }));
   }, [state.sigMatchSettings]);
 
@@ -802,6 +816,8 @@ export default function AdminPage() {
   const [toonRatioInput, setToonRatioInput] = useState("60");
   const [taxRateInput, setTaxRateInput] = useState("3.3");
   const [vatIncluded, setVatIncluded] = useState(false);
+  const [omitTreasuryFromSettlement, setOmitTreasuryFromSettlement] = useState(false);
+  const [includeTreasuryInFullStatement, setIncludeTreasuryInFullStatement] = useState(false);
   const [useMemberRatioOverrides, setUseMemberRatioOverrides] = useState(false);
   const [memberRatioInputs, setMemberRatioInputs] = useState<Record<string, { account: string; toon: string }>>({});
   const presetStorageKey = useMemo(() => overlayPresetsStorageKey(user?.id), [user?.id]);
@@ -1484,11 +1500,13 @@ export default function AdminPage() {
     const incomingIdSet = new Set(incomingDonorsNorm.map((d) => d.id));
     const remoteOnlyCount = incomingDonorsNorm.filter((d) => !localIdSet.has(d.id)).length;
     const localOnlyCount = localDonorsNorm.filter((d) => !incomingIdSet.has(d.id)).length;
+    const donorsFieldDiff = donorsListContentDiffers(localDonorsNorm, incomingDonorsNorm);
     /**
      * 투네 SSE/폴링이 수동 계좌를 덮지 않게 — 정산 리셋·의도적 삭제가 아니면 항상 union.
      * (보호창 밖에서도 localOnly 수동 후원을 버리면 엑셀·리스트에서 사라짐)
+     * 동일 id만 있어도 memberId·메시지 등이 다르면 union(재배치·편집 반영).
      */
-    if (localOnlyCount > 0 || remoteOnlyCount > 0) {
+    if (localOnlyCount > 0 || remoteOnlyCount > 0 || donorsFieldDiff) {
       const intentionalShrink =
         remoteOnlyCount === 0 &&
         isIntentionalDonorListShrink(
@@ -1513,6 +1531,7 @@ export default function AdminPage() {
           donors: union,
         };
         if (localOnlyCount > 0) didPreserve = true;
+        else if (donorsFieldDiff && local.updatedAt >= Number(incoming.updatedAt || 0)) didPreserve = true;
       }
     }
     merged = {
@@ -1572,11 +1591,19 @@ export default function AdminPage() {
           vatIncluded?: boolean;
           useMemberRatioOverrides?: boolean;
           memberRatioInputs?: Record<string, { account?: string; toon?: string }>;
+          omitTreasuryFromSettlement?: boolean;
+          includeTreasuryInFullStatement?: boolean;
         };
         if (typeof parsed.accountRatioInput === "string") setAccountRatioInput(parsed.accountRatioInput);
         if (typeof parsed.toonRatioInput === "string") setToonRatioInput(parsed.toonRatioInput);
         if (typeof parsed.taxRateInput === "string") setTaxRateInput(parsed.taxRateInput);
         if (typeof parsed.vatIncluded === "boolean") setVatIncluded(parsed.vatIncluded);
+        if (typeof parsed.omitTreasuryFromSettlement === "boolean") {
+          setOmitTreasuryFromSettlement(parsed.omitTreasuryFromSettlement);
+        }
+        if (typeof parsed.includeTreasuryInFullStatement === "boolean") {
+          setIncludeTreasuryInFullStatement(parsed.includeTreasuryInFullStatement);
+        }
         if (typeof parsed.useMemberRatioOverrides === "boolean") setUseMemberRatioOverrides(parsed.useMemberRatioOverrides);
         if (parsed.memberRatioInputs && typeof parsed.memberRatioInputs === "object") {
           const normalized: Record<string, { account: string; toon: string }> = {};
@@ -2843,10 +2870,12 @@ export default function AdminPage() {
           vatIncluded,
           useMemberRatioOverrides,
           memberRatioInputs,
+          omitTreasuryFromSettlement,
+          includeTreasuryInFullStatement,
         })
       );
     } catch {}
-  }, [settlementOptionsKey, accountRatioInput, toonRatioInput, taxRateInput, vatIncluded, useMemberRatioOverrides, memberRatioInputs]);
+  }, [settlementOptionsKey, accountRatioInput, toonRatioInput, taxRateInput, vatIncluded, useMemberRatioOverrides, memberRatioInputs, omitTreasuryFromSettlement, includeTreasuryInFullStatement]);
 
   const updateMember = (m: Member) => {
     setState((prev: AppState) => {
@@ -3152,6 +3181,22 @@ export default function AdminPage() {
     const next = Number.isFinite(n) ? Math.max(0, Math.min(86400, n)) : 0;
     setSigMatchNumericDraft((prev) => ({ ...prev, overlayTimerDurationSec: String(next) }));
     updateSigMatchSettings({ overlayTimerDurationSec: next });
+  };
+
+  const commitSigMatchManualAddStepDraft = () => {
+    setSigMatchDraftEditing("manualAddStep", false);
+    const n = Number.parseInt(sigMatchNumericDraft.manualAddStep || "1", 10);
+    const next = Number.isFinite(n) ? Math.max(1, n) : 1;
+    setSigMatchNumericDraft((prev) => ({ ...prev, manualAddStep: String(next) }));
+    updateSigMatchSettings({ manualAddStep: next });
+  };
+
+  const commitSigMatchManualDeductStepDraft = () => {
+    setSigMatchDraftEditing("manualDeductStep", false);
+    const n = Number.parseInt(sigMatchNumericDraft.manualDeductStep || "1", 10);
+    const next = Number.isFinite(n) ? Math.max(1, n) : 1;
+    setSigMatchNumericDraft((prev) => ({ ...prev, manualDeductStep: String(next) }));
+    updateSigMatchSettings({ manualDeductStep: next });
   };
 
   const updateMealMatchSettings = (patch: Partial<AppState["mealMatchSettings"]>) => {
@@ -3475,17 +3520,27 @@ export default function AdminPage() {
     });
   };
 
-  const adjustSigMatchScore = (memberId: string, delta: number) => {
+  const adjustSigMatchManual = (memberId: string, delta: number) => {
+    if (!Number.isFinite(delta) || delta === 0) return;
     setState((prev: AppState) => {
-      const current = prev.sigMatch?.[memberId] || 0;
-      const nextScore = Math.max(0, current + delta);
-      const next: AppState = {
-        ...prev,
-        sigMatch: {
-          ...(prev.sigMatch || {}),
-          [memberId]: nextScore,
-        },
-      };
+      const current = prev.sigMatch?.[memberId] ?? 0;
+      const nextAdjust = current + delta;
+      const sigMatch = { ...(prev.sigMatch || {}) };
+      if (nextAdjust === 0) delete sigMatch[memberId];
+      else sigMatch[memberId] = nextAdjust;
+      const next: AppState = { ...prev, sigMatch };
+      persistState(next);
+      return next;
+    });
+  };
+
+  const setSigMatchManualAdjust = (memberId: string, value: number) => {
+    if (!Number.isFinite(value)) return;
+    setState((prev: AppState) => {
+      const sigMatch = { ...(prev.sigMatch || {}) };
+      if (value === 0) delete sigMatch[memberId];
+      else sigMatch[memberId] = value;
+      const next: AppState = { ...prev, sigMatch };
       persistState(next);
       return next;
     });
@@ -6253,15 +6308,17 @@ export default function AdminPage() {
     const uid = user?.id || "";
     if (!uid || !toonationSocketEnabled || !toonationSettingsHydrated) return;
     const poll = window.setInterval(() => {
-      void fetchToonationListenerStatus(uid).then((status) => {
-        setToonationListenerMeta({
-          lastDonationAt: status?.lastDonationAt,
-          lastEventAt: status?.lastEventAt,
-        });
-        setToonationListenerStatus(
-          toonationListenerStatusFromServer(status, { socketEnabled: true })
-        );
-      });
+      void fetchToonationListenerStatus(uid)
+        .then((status) => {
+          setToonationListenerMeta({
+            lastDonationAt: status?.lastDonationAt,
+            lastEventAt: status?.lastEventAt,
+          });
+          setToonationListenerStatus(
+            toonationListenerStatusFromServer(status, { socketEnabled: true })
+          );
+        })
+        .catch(() => {});
     }, 8000);
     return () => window.clearInterval(poll);
   }, [toonationSettingsHydrated, toonationSocketEnabled, user?.id]);
@@ -6468,6 +6525,11 @@ export default function AdminPage() {
     ),
     [sigMatchDonors, state.members, state.sigMatchSettings, state.sigMatch, state.memberPositions]
   );
+  const sigMatchManualSteps = useMemo(
+    () => resolveSigMatchManualAdjustSteps(state.sigMatchSettings || defaultState().sigMatchSettings),
+    [state.sigMatchSettings]
+  );
+  const sigMatchScoringMode = state.sigMatchSettings?.scoringMode === "amount" ? "amount" : "count";
   const sigSignatureAmountsInput = useMemo(
     () => (state.sigMatchSettings?.signatureAmounts || []).join(", "),
     [state.sigMatchSettings?.signatureAmounts]
@@ -6874,7 +6936,11 @@ export default function AdminPage() {
       state.donors,
       user?.id,
       state.memberPositions || null,
-      { vatIncluded }
+      {
+        vatIncluded,
+        omitTreasuryFromSettlement,
+        includeTreasuryInFullStatement,
+      }
     );
     router.push(`/settlements/${rec.id}`);
   };
@@ -7186,7 +7252,7 @@ export default function AdminPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h3 className="text-base font-semibold">시그 대전 관리</h3>
-                    <p className="text-xs text-neutral-400">Redis donors를 기준으로 점수를 실시간 집계하고, 긴급 보정값을 합산합니다.</p>
+                    <p className="text-xs text-neutral-400">Redis donors를 기준으로 점수를 실시간 집계하고, 멤버별 추가·차감 보정을 합산합니다.</p>
                     <a
                       href="/overlay/battle-effects-demo"
                       target="_blank"
@@ -7533,20 +7599,100 @@ export default function AdminPage() {
                     </div>
                   )}
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr] gap-2 items-end">
+                  <label className="block space-y-1">
+                    <span className="text-xs text-neutral-400">추가 단위 ({sigMatchScoringMode === "amount" ? "원" : "건"})</span>
+                    <input
+                      className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                      type="number"
+                      min={1}
+                      value={sigMatchNumericDraft.manualAddStep}
+                      onFocus={() => setSigMatchDraftEditing("manualAddStep", true)}
+                      onChange={(e) =>
+                        setSigMatchNumericDraft((prev) => ({ ...prev, manualAddStep: e.target.value.replace(/[^\d]/g, "") }))
+                      }
+                      onBlur={commitSigMatchManualAddStepDraft}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.currentTarget.blur();
+                      }}
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-xs text-neutral-400">차감 단위 ({sigMatchScoringMode === "amount" ? "원" : "건"})</span>
+                    <input
+                      className="w-full px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                      type="number"
+                      min={1}
+                      value={sigMatchNumericDraft.manualDeductStep}
+                      onFocus={() => setSigMatchDraftEditing("manualDeductStep", true)}
+                      onChange={(e) =>
+                        setSigMatchNumericDraft((prev) => ({ ...prev, manualDeductStep: e.target.value.replace(/[^\d]/g, "") }))
+                      }
+                      onBlur={commitSigMatchManualDeductStepDraft}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.currentTarget.blur();
+                      }}
+                    />
+                  </label>
+                </div>
+                <p className="text-[11px] text-neutral-500">
+                  참가 멤버 행의「추가 / 차감」버튼에 위 단위가 적용됩니다. 보정값은 후원 집계 점수에 더해지며, 차감은 음수 보정으로
+                  반영됩니다(최종 점수 0 미만은 0).
+                </p>
                 <div className="space-y-2">
                   {sigMatchRanking.map((row) => (
-                    <div key={row.memberId} className="flex items-center justify-between gap-2 rounded border border-white/10 bg-[#1f1f1f] px-3 py-2">
+                    <div key={row.memberId} className="flex flex-wrap items-center justify-between gap-2 rounded border border-white/10 bg-[#1f1f1f] px-3 py-2">
                       <div className="min-w-0">
                         <div className="text-sm font-semibold truncate">{row.name}</div>
                         <div className="text-xs text-neutral-400">
                           점수 {formatSigMatchStat(row.score)} · 매칭 {formatSigMatchStat(row.matchedCount)}건 · 합계{" "}
-                          {formatSigMatchStat(row.matchedAmount)} · 보정 {row.manualAdjust >= 0 ? "+" : ""}
-                          {row.manualAdjust}
+                          {formatSigMatchStat(row.matchedAmount)} · 추가·차감 {row.manualAdjust >= 0 ? "+" : ""}
+                          {formatSigMatchStat(row.manualAdjust)}
                         </div>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <button className="px-2 py-1 rounded bg-red-900/70 hover:bg-red-800 text-xs" onClick={() => adjustSigMatchScore(row.memberId, -1)}>긴급 -1</button>
-                        <button className="px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-xs" onClick={() => adjustSigMatchScore(row.memberId, 1)}>긴급 +1</button>
+                      <div className="flex flex-wrap items-center gap-1 justify-end">
+                        <label className="flex items-center gap-1 text-[11px] text-neutral-400">
+                          보정
+                          <input
+                            key={`sig-manual-${row.memberId}-${row.manualAdjust}`}
+                            className="w-24 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-right text-neutral-100"
+                            type="number"
+                            defaultValue={row.manualAdjust === 0 ? "" : String(row.manualAdjust)}
+                            placeholder="0"
+                            onBlur={(e) => {
+                              const raw = e.target.value.trim();
+                              if (raw === "" || raw === "-") {
+                                setSigMatchManualAdjust(row.memberId, 0);
+                                return;
+                              }
+                              const n = Number(raw);
+                              if (Number.isFinite(n)) setSigMatchManualAdjust(row.memberId, n);
+                            }}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className="px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-xs"
+                          onClick={() => adjustSigMatchManual(row.memberId, sigMatchManualSteps.addStep)}
+                        >
+                          추가 +{formatSigMatchManualAdjustStepLabel(sigMatchManualSteps.addStep, sigMatchScoringMode)}
+                        </button>
+                        <button
+                          type="button"
+                          className="px-2 py-1 rounded bg-red-900/70 hover:bg-red-800 text-xs"
+                          onClick={() => adjustSigMatchManual(row.memberId, -sigMatchManualSteps.deductStep)}
+                        >
+                          차감 −{formatSigMatchManualAdjustStepLabel(sigMatchManualSteps.deductStep, sigMatchScoringMode)}
+                        </button>
+                        {row.manualAdjust !== 0 ? (
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-[11px] text-neutral-200"
+                            onClick={() => setSigMatchManualAdjust(row.memberId, 0)}
+                          >
+                            보정 초기화
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   ))}
@@ -14401,11 +14547,32 @@ export default function AdminPage() {
                   부가세 포함 {vatIncluded ? "ON" : "OFF"}
                 </button>
                 <button
+                  type="button"
+                  className={`px-3 py-2 rounded border text-sm whitespace-nowrap ${omitTreasuryFromSettlement ? "border-amber-500 bg-amber-950/40 text-amber-300" : "border-white/10 bg-neutral-900/80 text-neutral-400"}`}
+                  onClick={() => setOmitTreasuryFromSettlement((v) => !v)}
+                  title="국고 멤버 후원은 정산 합계·지급 대상에서 제외하고 별도 표시"
+                >
+                  국고 정산 제외 {omitTreasuryFromSettlement ? "ON" : "OFF"}
+                </button>
+                <button
+                  type="button"
+                  className={`px-3 py-2 rounded border text-sm whitespace-nowrap ${includeTreasuryInFullStatement ? "border-cyan-500 bg-cyan-950/40 text-cyan-300" : "border-white/10 bg-neutral-900/80 text-neutral-400"}`}
+                  onClick={() => setIncludeTreasuryInFullStatement((v) => !v)}
+                  title="전체 정산서 PDF의 국고 50% 행 반영"
+                >
+                  전체정산서 국고 포함 {includeTreasuryInFullStatement ? "ON" : "OFF"}
+                </button>
+                <button
                   className="px-4 py-2 rounded bg-[#22c55e] hover:bg-[#16a34a] font-semibold text-white whitespace-nowrap flex-none"
                   onClick={onFinishBroadcastAndSettle}
                 >
                   방송 종료(정산 생성)
                 </button>
+              </div>
+              <div className="mt-2 text-xs text-neutral-400 leading-relaxed">
+                · <span className="text-neutral-300">국고 정산 제외</span>: 국고 멤버 후원은 멤버별 최종 정산·합계에서 빠지고 참고용으로만 표시됩니다.
+                {" · "}
+                <span className="text-neutral-300">전체정산서 국고 포함</span>: 전체 정산서 PDF에 국고 50% 송금 행을 넣습니다(매출 30%의 절반).
               </div>
               <div className="mt-3 rounded border border-white/10 bg-neutral-900/40 p-3 space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">

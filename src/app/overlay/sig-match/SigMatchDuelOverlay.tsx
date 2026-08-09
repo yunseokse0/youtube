@@ -87,24 +87,46 @@ function sigVsBarHeightClass(hubPreview: boolean): string {
     : "h-12 w-full overflow-hidden rounded-xl bg-black/30 ring-1 ring-white/12 sm:h-14";
 }
 
-/** 게이지 정중앙 — 선두 차이만 표시 (VS 문구 없음) */
+/** 게이지 정중앙 — VS + 선두 차이 (차액은 바 아래 별도 행) */
 function SigVsBarCenterLabel({
   compact,
   gapLabel,
+  variant = "inline",
 }: {
   compact?: boolean;
   gapLabel?: string | null;
+  /** inline: 막대 위 VS만 · belowBar: 바 아래 차액 행 */
+  variant?: "inline" | "belowBar";
 }) {
-  if (!gapLabel) return null;
+  const gapSize = compact ? "text-[10px] sm:text-xs" : "text-xs sm:text-sm";
+
+  if (variant === "belowBar") {
+    if (!gapLabel) return null;
+    return (
+      <div className="relative z-20 flex justify-center py-0.5" data-sig-vs-gap-row="true">
+        <span
+          className={`rounded-md bg-neutral-950/90 px-1.5 py-0.5 font-black tabular-nums text-amber-100 ring-1 ring-amber-300/40 ${gapSize}`}
+          data-sig-vs-gap="true"
+          title="선두 차액"
+        >
+          +{gapLabel}
+        </span>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col items-center justify-center gap-0.5" data-sig-vs-center="true">
+    <div className="flex items-center justify-center" data-sig-vs-center="true">
       <span
-        className={`rounded-md bg-neutral-950/80 px-1.5 py-0.5 font-bold tabular-nums text-white/95 ring-1 ring-white/15 ${
-          compact ? "text-[10px] sm:text-xs" : "text-xs sm:text-sm"
+        className={`flex items-center justify-center rounded-lg font-black tracking-[0.12em] text-white shadow-md ring-1 ring-white/25 ${
+          compact ? "h-8 min-w-[2.25rem] px-1.5 text-sm" : "h-9 min-w-[2.5rem] px-2 text-base sm:text-lg"
         }`}
-        data-sig-vs-gap="true"
+        style={{
+          background:
+            "linear-gradient(135deg, rgba(220,38,38,0.95) 0%, rgba(23,23,23,0.96) 48%, rgba(37,99,235,0.95) 100%)",
+        }}
       >
-        +{gapLabel}
+        VS
       </span>
     </div>
   );
@@ -1025,9 +1047,10 @@ export default function SigMatchDuelOverlay({
                     ))}
                   </div>
                   <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
-                    <SigVsBarCenterLabel compact={compact} gapLabel={vsCenterGapLabel} />
+                    <SigVsBarCenterLabel compact={compact} gapLabel={vsCenterGapLabel} variant="inline" />
                   </div>
                 </div>
+                <SigVsBarCenterLabel compact={compact} gapLabel={vsCenterGapLabel} variant="belowBar" />
                 <SigFloatingScores bursts={floatingBursts} />
               </motion.div>
             </div>

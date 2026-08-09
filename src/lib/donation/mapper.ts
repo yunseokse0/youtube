@@ -205,6 +205,66 @@ function matchMemberByMessageContains(message: string, members: Member[]): Membe
   return best?.member;
 }
 
+/** 공백 없는 메시지·부분 문자열까지 후보 토큰 추출 */
+function extractMessageLookupTokens(message: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (raw: string) => {
+    const t = String(raw || "")
+      .trim()
+      .replace(/[,.:;!?~]+$/g, "")
+      .trim();
+    if (!t || !isUsefulDonorLookupName(t)) return;
+    const key = normalizeName(t);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(t);
+  };
+  const raw = String(message || "").trim();
+  if (!raw) return out;
+  for (const tok of raw.split(/\s+/).filter(Boolean)) {
+    if (isAccountFormatToken(tok)) continue;
+    push(tok);
+  }
+  const compact = normalizeName(raw);
+  if (compact.length >= 2) {
+    const maxLen = Math.min(8, compact.length);
+    for (let len = 2; len <= maxLen; len += 1) {
+      for (let i = 0; i <= compact.length - len; i += 1) {
+        push(compact.slice(i, i + len));
+      }
+    }
+  }
+  return out.slice(0, 48);
+}
+
+/** 메시지 토큰·부분 문자열 유사 일치 — `홍스`↔`홍쓰`, 공백 없는 닉 포함 */
+function matchMemberByMessageFuzzy(
+  message: string,
+  members: Member[],
+  aliases: DonorAlias[],
+  threshold = MEMBER_NAME_FUZZY_AUTO_APPLY_THRESHOLD
+): Member | undefined {
+  const tokens = extractMessageLookupTokens(message);
+  if (tokens.length === 0) return undefined;
+  const fuzzyCandidates = memberFuzzyCandidates(members);
+  let best: { member: Member; score: number } | null = null;
+  for (const token of tokens) {
+    const aliasMatch = matchMemberByAliasFuzzy(token, members, aliases, threshold);
+    if (aliasMatch) {
+      const score = 1;
+      if (!best || score > best.score) best = { member: aliasMatch, score };
+      continue;
+    }
+    const fuzzy = findBestFuzzyNameMatch(token, fuzzyCandidates, threshold);
+    if (!fuzzy) continue;
+    if (!best || fuzzy.score > best.score) {
+      best = { member: fuzzy.item.value, score: fuzzy.score };
+    }
+  }
+  return best?.member;
+}
+
 function matchMemberByName(
   lookupName: string,
   members: Member[],
@@ -313,6 +373,16 @@ export function mapToMember(
     };
   }
 
+  const messageFuzzyMatched = matchMemberByMessageFuzzy(event.message || "", members, aliases);
+  if (messageFuzzyMatched) {
+    return {
+      ...event,
+      memberId: messageFuzzyMatched.id,
+      memberFuzzyMatched: true,
+      status: "processed",
+    };
+  }
+
   const candidates = resolveAllMemberLookupCandidates(event);
   for (const lookupName of candidates) {
     const matched = matchMemberByName(lookupName, members, aliases);
@@ -371,6 +441,8 @@ export function suggestMemberForDonationEvent(
   if (!Array.isArray(members) || members.length === 0) return undefined;
   const msgMatch = matchMemberByMessageContains(event.message || "", members);
   if (msgMatch) return msgMatch;
+  const msgFuzzy = matchMemberByMessageFuzzy(event.message || "", members, aliases);
+  if (msgFuzzy) return msgFuzzy;
   for (const lookupName of resolveAllMemberLookupCandidates(event)) {
     const exact = matchMemberByName(lookupName, members, aliases);
     if (exact) return exact;

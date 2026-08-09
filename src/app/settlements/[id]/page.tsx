@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useParams } from "next/navigation";
-import { SettlementMemberResult, SettlementRecord, deleteSettlementRecordAndSync, getMembersForExport, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToReadableTxt, recordToTxt, saveSettlementRecords, saveSettlementRecordsToApi, toPaymentAlignedSettlement, toSettlementFormulaLine, updateSettlementRecordDonors } from "@/lib/settlement";
+import { SettlementMemberResult, SettlementRecord, deleteSettlementRecordAndSync, getMembersForExport, getTreasuryMembersForExport, isTreasurySettlementMember, loadSettlementRecords, loadSettlementRecordsPreferApi, recordToCsv, recordToReadableTxt, recordToTxt, saveSettlementRecords, saveSettlementRecordsToApi, toPaymentAlignedSettlement, toSettlementFormulaLine, updateSettlementRecordDonors, updateSettlementRecordOptions } from "@/lib/settlement";
 import { aggregateMemberDonors, recordToMemberDonorsCsv, recordToMemberDonorsXlsxBlob, resolveSettlementDonors, seedSettlementDonorsForEdit, type DailyLogEntry } from "@/lib/settlement-donor-export";
 import {
   memberToPaymentStatementPdfBlob,
@@ -19,7 +19,6 @@ import {
   resolveSettlementLogoDataUrl,
   saveSettlementLogoToApi,
 } from "@/lib/settlement-branding";
-import { isNationalTreasuryMember } from "@/lib/donation/mapper";
 import type { Donor, DonorTarget } from "@/types";
 
 function updateMemberBankInfo(
@@ -37,14 +36,16 @@ function updateMemberBankInfo(
   });
 }
 
-function isTreasurySettlementMember(
-  m: Pick<SettlementMemberResult, "memberId" | "name" | "realName">,
+function memberRoleBadge(
+  m: SettlementMemberResult,
   record: SettlementRecord
-): boolean {
-  return isNationalTreasuryMember(
-    { id: m.memberId, name: m.name, realName: m.realName },
-    record.memberPositionsAtSettlement || null
-  );
+): { label: string; className: string } | null {
+  const pos = record.memberPositionsAtSettlement;
+  if (m.operating) return { label: "운영비", className: "text-sky-300 border-sky-500/40 bg-sky-950/30" };
+  if (isTreasurySettlementMember(m, pos)) {
+    return { label: "국고", className: "text-amber-300 border-amber-500/40 bg-amber-950/30" };
+  }
+  return null;
 }
 
 export default function SettlementDetailPage() {
@@ -107,6 +108,14 @@ export default function SettlementDetailPage() {
 
   const record = useMemo(() => (records || []).find((x) => x.id === id) || null, [records, id]);
   const viewRecord = useMemo(() => (record ? toPaymentAlignedSettlement(record) : null), [record]);
+  const exportMembers = useMemo(
+    () => (viewRecord ? getMembersForExport(viewRecord) : []),
+    [viewRecord]
+  );
+  const treasuryExcludedMembers = useMemo(
+    () => (viewRecord ? getTreasuryMembersForExport(viewRecord) : []),
+    [viewRecord]
+  );
   const settlementDonors = useMemo(
     () => (record ? resolveSettlementDonors(record, dailyLog) : []),
     [record, dailyLog]
@@ -160,6 +169,16 @@ export default function SettlementDetailPage() {
     saveSettlementRecordsToApi(next, user.id).catch(() => {});
   };
 
+  const persistSettlementOptions = (
+    patch: Pick<SettlementRecord, "omitTreasuryFromSettlement" | "includeTreasuryInFullStatement">
+  ) => {
+    if (!records || !user || !record) return;
+    const next = updateSettlementRecordOptions(records, id, patch);
+    setRecords(next);
+    saveSettlementRecords(next, user.id);
+    void saveSettlementRecordsToApi(next, user.id);
+  };
+
   const persistDonorAdjustments = (nextDonors: Donor[]) => {
     if (!records || !user || !record) return;
     setDonorEditBusy(true);
@@ -198,7 +217,9 @@ export default function SettlementDetailPage() {
 
   const addEditableDonor = (preferTreasury: boolean) => {
     if (!record) return;
-    const treasury = record.members.find((m) => isTreasurySettlementMember(m, record));
+    const treasury = record.members.find((m) =>
+      isTreasurySettlementMember(m, record.memberPositionsAtSettlement)
+    );
     const fallback = record.members[0];
     const memberId = preferTreasury && treasury ? treasury.memberId : fallback?.memberId;
     if (!memberId) return;
@@ -492,19 +513,114 @@ export default function SettlementDetailPage() {
           </div>
         </div>
 
-        <div className="rounded border border-white/10 bg-neutral-900/60 p-3">
-          <div className="text-sm font-semibold mb-2">최종 정산 요약</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-            {getMembersForExport(viewRecord!).map((m) => (
-              <div key={`sum-${m.memberId}`} className="rounded bg-black/30 border border-white/10 px-3 py-2 flex items-baseline justify-between">
-                <div className="text-sm text-neutral-300 mr-3 truncate">
-                  <span className="font-medium">{m.name}</span>
-                  {m.realName ? <span className="text-neutral-500"> ({m.realName})</span> : null}
-                </div>
-                <div className="text-base font-extrabold text-emerald-300 tabular-nums">{m.net.toLocaleString()}</div>
-              </div>
-            ))}
+        <div className="rounded border border-white/10 bg-neutral-900/60 p-3 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-sm font-semibold">정산 옵션</div>
+            <div className="flex flex-wrap gap-2">
+              <label className="inline-flex items-center gap-2 px-3 py-2 rounded border border-white/10 bg-black/20 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={Boolean(record.omitTreasuryFromSettlement)}
+                  onChange={(e) =>
+                    persistSettlementOptions({ omitTreasuryFromSettlement: e.target.checked })
+                  }
+                />
+                국고 정산 제외
+              </label>
+              <label className="inline-flex items-center gap-2 px-3 py-2 rounded border border-white/10 bg-black/20 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={Boolean(record.includeTreasuryInFullStatement)}
+                  onChange={(e) =>
+                    persistSettlementOptions({ includeTreasuryInFullStatement: e.target.checked })
+                  }
+                />
+                전체 정산서에 국고 50% 포함
+              </label>
+            </div>
           </div>
+          <div className="text-xs text-neutral-400">
+            국고 정산 제외 시 아래 멤버별 최종 매출·합계에서 국고가 빠집니다. 전체 정산서 PDF의 국고 50% 행은 별도 체크로 제어합니다.
+          </div>
+        </div>
+
+        <div className="rounded border border-white/10 bg-neutral-900/60 p-3 overflow-auto">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div className="text-sm font-semibold">멤버별 최종 매출</div>
+            <div className="text-xs text-neutral-400">지급정산서 기준 · 세후 입금액(net)</div>
+          </div>
+          <table className="w-full text-sm whitespace-nowrap">
+            <thead>
+              <tr className="text-neutral-400 border-b border-white/10">
+                <th className="p-2 text-left">멤버</th>
+                <th className="p-2 text-right">계좌 반영</th>
+                <th className="p-2 text-right">투네 반영</th>
+                <th className="p-2 text-right">세금</th>
+                <th className="p-2 text-right">최종 정산</th>
+              </tr>
+            </thead>
+            <tbody>
+              {exportMembers.map((m) => {
+                const badge = memberRoleBadge(m, record);
+                return (
+                  <tr key={`sum-${m.memberId}`} className="border-b border-white/10">
+                    <td className="p-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-medium truncate">{m.name}</span>
+                        {m.realName ? <span className="text-neutral-500 truncate">({m.realName})</span> : null}
+                        {badge ? (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 ${badge.className}`}>
+                            {badge.label}
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="p-2 text-right tabular-nums">{m.accountApplied.toLocaleString()}</td>
+                    <td className="p-2 text-right tabular-nums">{m.toonApplied.toLocaleString()}</td>
+                    <td className="p-2 text-right tabular-nums text-rose-300">{m.fee.toLocaleString()}</td>
+                    <td className="p-2 text-right tabular-nums font-extrabold text-emerald-300">
+                      {m.net.toLocaleString()}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="font-semibold border-t border-white/10">
+                <td className="p-2">지급 합계</td>
+                <td className="p-2 text-right tabular-nums">
+                  {exportMembers.reduce((s, m) => s + m.accountApplied, 0).toLocaleString()}
+                </td>
+                <td className="p-2 text-right tabular-nums">
+                  {exportMembers.reduce((s, m) => s + m.toonApplied, 0).toLocaleString()}
+                </td>
+                <td className="p-2 text-right tabular-nums text-rose-300">
+                  {viewRecord!.totalFee.toLocaleString()}
+                </td>
+                <td className="p-2 text-right tabular-nums text-emerald-300 text-base">
+                  {viewRecord!.totalNet.toLocaleString()}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+          {treasuryExcludedMembers.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-amber-500/20">
+              <div className="text-xs font-medium text-amber-300 mb-2">국고 (정산 제외 · 참고)</div>
+              <table className="w-full text-sm whitespace-nowrap">
+                <tbody>
+                  {treasuryExcludedMembers.map((m) => (
+                    <tr key={`treasury-${m.memberId}`} className="border-b border-white/5 text-neutral-400">
+                      <td className="p-2">{m.name}</td>
+                      <td className="p-2 text-right tabular-nums">{m.accountApplied.toLocaleString()}</td>
+                      <td className="p-2 text-right tabular-nums">{m.toonApplied.toLocaleString()}</td>
+                      <td className="p-2 text-right tabular-nums">{m.fee.toLocaleString()}</td>
+                      <td className="p-2 text-right tabular-nums">{m.net.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         <div className="text-sm text-neutral-300 whitespace-nowrap overflow-x-auto">
@@ -533,9 +649,20 @@ export default function SettlementDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {getMembersForExport(viewRecord!).map((m) => (
+              {exportMembers.map((m) => {
+                const badge = memberRoleBadge(m, record);
+                return (
                 <tr key={m.memberId} className="border-b border-white/10">
-                  <td className="p-2">{m.name}</td>
+                  <td className="p-2">
+                    <div className="flex items-center gap-2">
+                      <span>{m.name}</span>
+                      {badge ? (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded border ${badge.className}`}>
+                          {badge.label}
+                        </span>
+                      ) : null}
+                    </div>
+                  </td>
                   <td className="p-2">{m.realName || "-"}</td>
                   <td className="p-2">
                     <input
@@ -588,7 +715,8 @@ export default function SettlementDetailPage() {
                   <td className="p-2 text-right font-semibold">{m.net.toLocaleString()}</td>
                   <td className="p-2 text-xs text-neutral-300 whitespace-nowrap">{toSettlementFormulaLine(viewRecord!, m)}</td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
             <tfoot>
               <tr className="font-semibold">
@@ -618,7 +746,11 @@ export default function SettlementDetailPage() {
                 type="button"
                 className="px-3 py-1.5 rounded bg-amber-800 hover:bg-amber-700 text-sm disabled:opacity-50"
                 onClick={() => addEditableDonor(true)}
-                disabled={!record || donorEditBusy || !record.members.some((m) => isTreasurySettlementMember(m, record))}
+                disabled={
+                  !record ||
+                  donorEditBusy ||
+                  !record.members.some((m) => isTreasurySettlementMember(m, record.memberPositionsAtSettlement))
+                }
                 title="국고 멤버에 후원 행 추가"
               >
                 국고 후원 추가
@@ -680,14 +812,20 @@ export default function SettlementDetailPage() {
                       .sort((a, b) => {
                         const aT = record.members.find((m) => m.memberId === a.memberId);
                         const bT = record.members.find((m) => m.memberId === b.memberId);
-                        const aTreasury = aT ? isTreasurySettlementMember(aT, record) : false;
-                        const bTreasury = bT ? isTreasurySettlementMember(bT, record) : false;
+                        const aTreasury = aT
+                          ? isTreasurySettlementMember(aT, record.memberPositionsAtSettlement)
+                          : false;
+                        const bTreasury = bT
+                          ? isTreasurySettlementMember(bT, record.memberPositionsAtSettlement)
+                          : false;
                         if (aTreasury !== bTreasury) return aTreasury ? -1 : 1;
                         return Number(b.at || 0) - Number(a.at || 0);
                       })
                       .map((d) => {
                         const member = record.members.find((m) => m.memberId === d.memberId);
-                        const treasury = member ? isTreasurySettlementMember(member, record) : false;
+                        const treasury = member
+                          ? isTreasurySettlementMember(member, record.memberPositionsAtSettlement)
+                          : false;
                         return (
                           <tr
                             key={d.id}
@@ -762,7 +900,7 @@ export default function SettlementDetailPage() {
                                 {record.members.map((m) => (
                                   <option key={m.memberId} value={m.memberId}>
                                     {m.name}
-                                    {isTreasurySettlementMember(m, record) ? " (국고)" : ""}
+                                    {isTreasurySettlementMember(m, record.memberPositionsAtSettlement) ? " (국고)" : ""}
                                     {m.realName ? ` · ${m.realName}` : ""}
                                   </option>
                                 ))}
@@ -789,7 +927,7 @@ export default function SettlementDetailPage() {
                 const rows = memberDonorSummaryByMember.get(m.memberId) || [];
                 if (rows.length === 0) return null;
                 const memberTotal = rows.reduce((s, r) => s + r.totalAmount, 0);
-                const treasury = isTreasurySettlementMember(m, record);
+                const treasury = isTreasurySettlementMember(m, record.memberPositionsAtSettlement);
                 return (
                   <details
                     key={`donors-${m.memberId}`}

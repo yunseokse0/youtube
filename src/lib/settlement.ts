@@ -1,5 +1,5 @@
 import { formatManThousand } from "@/lib/state";
-import { computeSettlement, isOperatingSettlementMember, type SigMatchRankingItem } from "@/lib/settlement-utils";
+import { computeSettlement, isOperatingSettlementMember, isTreasurySettlementMember, type SigMatchRankingItem } from "@/lib/settlement-utils";
 import { computeMemberPaymentStatement } from "@/lib/settlement-payment-statement";
 import type { Donor, Member, SettlementDeleteLog, SettlementMemberRatioOverrides, SettlementMemberResult, SettlementRecord } from "@/types";
 
@@ -19,7 +19,14 @@ export type {
   SettlementMemberResult,
   SettlementRecord,
 };
-export { computeSettlement, isOperatingSettlementMember };
+export { computeSettlement, isOperatingSettlementMember, isTreasurySettlementMember };
+
+export type SettlementCreateOptions = {
+  vatIncluded?: boolean;
+  vatRate?: number;
+  omitTreasuryFromSettlement?: boolean;
+  includeTreasuryInFullStatement?: boolean;
+};
 
 function pruneOlderThan3Years(records: SettlementRecord[]): SettlementRecord[] {
   const now = Date.now();
@@ -208,7 +215,7 @@ export function appendSettlementRecord(
   donors?: Donor[],
   userId?: string | null,
   memberPositions?: Record<string, string> | null,
-  settlementOptions?: { vatIncluded?: boolean; vatRate?: number }
+  settlementOptions?: SettlementCreateOptions
 ): SettlementRecord {
   const body = computeSettlement(
     members,
@@ -226,6 +233,8 @@ export function appendSettlementRecord(
     ...body,
     memberPositionsAtSettlement: memberPositions && typeof memberPositions === "object" ? { ...memberPositions } : {},
     ...(donors && donors.length > 0 ? { donors } : {}),
+    ...(settlementOptions?.omitTreasuryFromSettlement ? { omitTreasuryFromSettlement: true } : {}),
+    ...(settlementOptions?.includeTreasuryInFullStatement ? { includeTreasuryInFullStatement: true } : {}),
   };
   const prev = loadSettlementRecords(userId);
   saveSettlementRecords([rec, ...prev], userId);
@@ -345,7 +354,7 @@ export async function appendSettlementRecordAndSync(
   donors?: Donor[],
   userId?: string | null,
   memberPositions?: Record<string, string> | null,
-  settlementOptions?: { vatIncluded?: boolean; vatRate?: number }
+  settlementOptions?: SettlementCreateOptions
 ): Promise<SettlementRecord> {
   const rec = appendSettlementRecord(
     title,
@@ -507,6 +516,15 @@ export function recomputeSettlementFromDonors(
   };
 }
 
+/** records 배열에서 정산 옵션(국고 등) 패치 */
+export function updateSettlementRecordOptions(
+  records: SettlementRecord[],
+  recordId: string,
+  patch: Pick<SettlementRecord, "omitTreasuryFromSettlement" | "includeTreasuryInFullStatement">
+): SettlementRecord[] {
+  return (records || []).map((r) => (r.id === recordId ? { ...r, ...patch } : r));
+}
+
 /** records 배열에서 해당 정산의 donors 를 교체·재계산 */
 export function updateSettlementRecordDonors(
   records: SettlementRecord[],
@@ -562,10 +580,23 @@ export function applyPaymentStatementAmounts(
 export function getMembersForExport(record: SettlementRecord): SettlementMemberResult[] {
   const members = (record.members || []).map((m) => applyPaymentStatementAmounts(record, m));
   const pos = record.memberPositionsAtSettlement;
-  const operating = members.filter((m) => settlementRowIsOperating(m, pos));
-  const nonOperating = members.filter((m) => !settlementRowIsOperating(m, pos));
+  const scoped = record.omitTreasuryFromSettlement
+    ? members.filter((m) => !isTreasurySettlementMember(m, pos))
+    : members;
+  const operating = scoped.filter((m) => settlementRowIsOperating(m, pos));
+  const nonOperating = scoped.filter((m) => !settlementRowIsOperating(m, pos));
   const sortByNet = (a: SettlementMemberResult, b: SettlementMemberResult) => (b.net || 0) - (a.net || 0);
   return [...nonOperating.sort(sortByNet), ...operating.sort(sortByNet)];
+}
+
+/** omitTreasury 시 정산에서 제외된 국고 멤버(참고용) */
+export function getTreasuryMembersForExport(record: SettlementRecord): SettlementMemberResult[] {
+  if (!record.omitTreasuryFromSettlement) return [];
+  const pos = record.memberPositionsAtSettlement;
+  return (record.members || [])
+    .map((m) => applyPaymentStatementAmounts(record, m))
+    .filter((m) => isTreasurySettlementMember(m, pos))
+    .sort((a, b) => (b.net || 0) - (a.net || 0));
 }
 
 /** 화면·합계용: 멤버 금액을 지급정산서 기준으로 맞춘 레코드 뷰 */

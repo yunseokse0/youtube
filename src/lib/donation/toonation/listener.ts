@@ -101,13 +101,17 @@ export async function stopToonationListener(userId?: string): Promise<void> {
 
 export async function fetchToonationListenerStatus(userId?: string): Promise<ToonationServerStatus> {
   const q = userId ? `?u=${encodeURIComponent(userId)}` : "";
-  const res = await fetch(`/api/donations/toonation/listener${q}`, {
-    cache: "no-store",
-    credentials: "include",
-  });
-  if (!res.ok) return null;
-  const data = (await res.json().catch(() => null)) as { status?: ToonationServerStatus } | null;
-  return data?.status ?? null;
+  try {
+    const res = await fetch(`/api/donations/toonation/listener${q}`, {
+      cache: "no-store",
+      credentials: "include",
+    });
+    if (!res.ok) return null;
+    const data = (await res.json().catch(() => null)) as { status?: ToonationServerStatus } | null;
+    return data?.status ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export {

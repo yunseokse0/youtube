@@ -26,7 +26,8 @@ export function isWeakToonationDonorId(id: string): boolean {
   return /^\d{10,13}-\d+(-\d+-[a-z0-9]+)?$/i.test(base);
 }
 
-function donorAtEpochMs(donor: { at?: number | string }): number {
+/** donors·순위·멤버 합계 공통 — epoch ms (병합·정렬) */
+export function donorAtEpochMs(donor: { at?: number | string }): number {
   const raw = donor.at;
   if (typeof raw === "number" && Number.isFinite(raw)) return raw;
   const parsed = Date.parse(String(raw || ""));
@@ -461,7 +462,9 @@ export function reassignDonorMemberInAppState(
 
   const now = Date.now();
   const nextDonors = (currentState.donors || []).map((d) =>
-    d.id === donorId ? { ...d, memberId: targetMemberId } : d
+    d.id === donorId
+      ? { ...d, memberId: targetMemberId, at: now, memberAutoAssigned: false }
+      : d
   );
 
   return syncMemberTotalsFromDonors({

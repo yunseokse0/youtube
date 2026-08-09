@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster } from "@/lib/state";
+import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster, mergeDonorsForMultiTabSave, donorsListContentDiffers } from "@/lib/state";
 import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
 import { mergeDonationApplyBase } from "@/lib/donation/merge-donation-apply-base";
 import { maxOverlayAmountDisplayLength } from "@/lib/overlay-amount-display";
@@ -382,6 +382,19 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
             });
             if (hasLocalOnly && hasRemoteOnly) {
               remoteForApply = mergeDonationApplyBase(data, lastGoodRef.current) ?? data;
+            } else if (
+              !hasLocalOnly &&
+              !hasRemoteOnly &&
+              localDonors.length > 0 &&
+              donorsListContentDiffers(localDonors, remoteDonors)
+            ) {
+              remoteForApply = {
+                ...data,
+                donors: mergeDonorsForMultiTabSave(remoteDonors, localDonors, {
+                  incomingUpdatedAt: Number(data.updatedAt || 0),
+                  existingUpdatedAt: Number(lastGoodRef.current.updatedAt || 0),
+                }),
+              };
             }
           }
         }

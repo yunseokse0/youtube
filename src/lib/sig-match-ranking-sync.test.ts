@@ -82,4 +82,13 @@ describe("getSigMatchRankings countAllDonations", () => {
     );
     expect(rows.find((r) => r.memberId === "a")?.score).toBe(20_000);
   });
+
+  it("applies negative manual adjust as deduction from donation score", () => {
+    const donors: Donor[] = [
+      { id: "d1", name: "fan", amount: 50_000, memberId: "a", at: Date.now(), target: "toon" },
+    ];
+    const rows = getSigMatchRankings(donors, members, baseSettings, { a: -20_000 }, {});
+    expect(rows.find((r) => r.memberId === "a")?.manualAdjust).toBe(-20_000);
+    expect(rows.find((r) => r.memberId === "a")?.score).toBe(30_000);
+  });
 });

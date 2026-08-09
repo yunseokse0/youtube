@@ -25,6 +25,7 @@ import {
   isShrunkToDefaultSigInventory,
   mergeDonorsForMultiTabSave,
   isIntentionalDonorListShrink,
+  isDonorListMemberReassignment,
   mergeOverlaySettingsPreservingObsText,
   normalizeDonorsArray,
   normalizeRouletteState,
@@ -726,6 +727,7 @@ export async function POST(req: Request) {
       (settlementReset ||
         donationInitReset ||
         donorsReplace ||
+        isDonorListMemberReassignment(incomingDonorsFiltered, baseDonorsNorm) ||
         isIntentionalDonorListShrink(
           incomingDonorsFiltered,
           baseDonorsNorm,

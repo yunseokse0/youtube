@@ -284,6 +284,9 @@ export type SigMatchSettings = {
   countAllDonations?: boolean;
   /** count 모드에서 포인트→정산 환산 단가 */
   incentivePerPoint: number;
+  /** 멤버별 추가·차감 버튼 단위(건수/금액). 미설정 시 집계 방식 기본값 */
+  manualAddStep?: number;
+  manualDeductStep?: number;
   /**
    * n:n 풀 목록(멤버 1명 이상). 비어 있으면 후원은 멤버별 1:1 집계.
    * 한 멤버는 한 풀에만 속할 수 있음(먼저 정의된 풀 우선).
@@ -536,6 +539,10 @@ export type SettlementRecord = {
   memberPositionsAtSettlement?: Record<string, string>;
   /** 정산 당시 후원 스냅샷 */
   donors?: Donor[];
+  /** true면 국고 멤버를 정산 합계·지급 대상에서 제외(별도 표시) */
+  omitTreasuryFromSettlement?: boolean;
+  /** true면 전체 정산서 PDF에 국고 50% 행 반영 */
+  includeTreasuryInFullStatement?: boolean;
 };
 
 export type SettlementDeleteLog = {

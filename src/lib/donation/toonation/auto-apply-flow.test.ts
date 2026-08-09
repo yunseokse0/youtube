@@ -215,6 +215,34 @@ describe("toonation auto-apply flow (parse → apply)", () => {
     expect(result.state.donors?.[0]?.message).toBe("익명 비서");
     expect(result.state.donors?.[0]?.name).toBe("Y 철수");
     expect(result.state.donors?.[0]?.target).toBe("toon");
+    expect(result.state.members.find((m) => m.id === "m1")?.toon).toBe(100000);
+    expect(result.event.memberId).toBe("m1");
+  });
+
+  it("메시지 익명 홍스(오타) → 홍쓰 유사 일치", () => {
+    const raw = JSON.stringify({
+      code: 101,
+      content: {
+        nickname: "Y 철수",
+        amount: 10000,
+        comment: "익명 홍스",
+        isTest: true,
+      },
+    });
+    const event = parseToonationWebSocketMessage(raw);
+    expect(event?.playerName).toBe("홍스");
+    const result = applyDonationToAppState(
+      baseState([
+        { id: "m1", name: "홍쓰" },
+        { id: "m2", name: "BT태호" },
+      ]),
+      event!,
+      []
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.members.find((m) => m.id === "m1")?.toon).toBe(10000);
+    expect(result.event.memberFuzzyMatched).toBe(true);
   });
 
   it("메시지 익명 지히 → 자하 초성 유사 일치", () => {

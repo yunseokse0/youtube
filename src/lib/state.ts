@@ -1087,6 +1087,8 @@ export function defaultState(): AppState {
       scoringMode: "amount",
       countAllDonations: true,
       incentivePerPoint: 1000,
+      manualAddStep: 10_000,
+      manualDeductStep: 10_000,
       sigMatchPools: [],
       participantMemberIds: [],
       donationLinks: {},
@@ -1504,6 +1506,16 @@ export function loadState(userId?: string | null): AppState {
       incentivePerPoint: Number.isFinite(data.sigMatchSettings?.incentivePerPoint)
         ? Math.max(0, Math.floor(data.sigMatchSettings!.incentivePerPoint))
         : 1000,
+      manualAddStep: (() => {
+        const raw = (data as AppState).sigMatchSettings?.manualAddStep;
+        if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) return undefined;
+        return Math.floor(raw);
+      })(),
+      manualDeductStep: (() => {
+        const raw = (data as AppState).sigMatchSettings?.manualDeductStep;
+        if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) return undefined;
+        return Math.floor(raw);
+      })(),
       sigMatchPools: normalizeSigMatchPools(data.sigMatchSettings?.sigMatchPools, validSigMemberIds),
       participantMemberIds: normalizeSigMatchParticipantIds(
         (data as AppState).sigMatchSettings?.participantMemberIds,
@@ -2090,11 +2102,20 @@ export async function saveStateAsync(
   const next = options?.settlementReset
     ? normalized
     : preserveLocalMeaningfulRoster(normalized, userId);
-  const saveOpts: SaveStateAsyncOptions | undefined = options?.settlementReset
+  let saveOpts: SaveStateAsyncOptions | undefined = options?.settlementReset
     ? { ...options, donorsAuthoritative: true, settlementReset: true }
     : options;
   let guarded = next;
   const local = loadState(userId);
+  if (
+    saveOpts?.donorsAuthoritative &&
+    !saveOpts?.settlementReset &&
+    !saveOpts?.donorsReplace &&
+    local &&
+    isDonorListMemberReassignment(normalizeDonorsArray(guarded.donors), normalizeDonorsArray(local.donors))
+  ) {
+    saveOpts = { ...saveOpts, donorsReplace: true };
+  }
   /**
    * donorsAuthoritative 라도 정산 리셋이 아니면, LS보다 후원이 줄어든 채 올리면
    * 미매칭 반영 등으로 엑셀표가 초기화된다.
@@ -2994,6 +3015,16 @@ async function doLoadStateFromApi(
         incentivePerPoint: Number.isFinite(data.sigMatchSettings?.incentivePerPoint)
           ? Math.max(0, Math.floor(data.sigMatchSettings!.incentivePerPoint))
           : 1000,
+        manualAddStep: (() => {
+          const raw = (data as AppState).sigMatchSettings?.manualAddStep;
+          if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) return undefined;
+          return Math.floor(raw);
+        })(),
+        manualDeductStep: (() => {
+          const raw = (data as AppState).sigMatchSettings?.manualDeductStep;
+          if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) return undefined;
+          return Math.floor(raw);
+        })(),
         sigMatchPools: normalizeSigMatchPools(data.sigMatchSettings?.sigMatchPools, validSigMemberIdsApi),
         participantMemberIds: normalizeSigMatchParticipantIds(
           (data as AppState).sigMatchSettings?.participantMemberIds,
@@ -3064,22 +3095,66 @@ export type MergeDonorsForMultiTabSaveOptions = {
   donorsAuthoritative?: boolean;
 };
 
+/** 동일 id 집합에서 memberId·금액·메시지 등 내용 차이 */
+export function donorsListContentDiffers(
+  a: Donor[] | undefined,
+  b: Donor[] | undefined
+): boolean {
+  const an = normalizeDonorsArray(a);
+  const bn = normalizeDonorsArray(b);
+  if (an.length !== bn.length) return true;
+  const bMap = new Map(bn.map((d) => [String(d.id), d]));
+  return an.some((ld) => {
+    const rd = bMap.get(String(ld.id));
+    if (!rd) return true;
+    return (
+      String(rd.memberId || "") !== String(ld.memberId || "") ||
+      Math.round(Number(rd.amount) || 0) !== Math.round(Number(ld.amount) || 0) ||
+      String(rd.message || "").trim() !== String(ld.message || "").trim()
+    );
+  });
+}
+
+/** 건수·금액 동일, memberId만 바뀐 재배치 — union 시 구 배치로 되돌아가면 안 됨 */
+export function isDonorListMemberReassignment(
+  incoming: Donor[] | undefined,
+  existing: Donor[] | undefined
+): boolean {
+  const inc = normalizeDonorsArray(incoming);
+  const ex = normalizeDonorsArray(existing);
+  if (inc.length === 0 || inc.length !== ex.length) return false;
+  const exMap = new Map(ex.map((d) => [String(d.id), d]));
+  let memberChanges = 0;
+  for (const d of inc) {
+    const prev = exMap.get(String(d.id));
+    if (!prev) return false;
+    if (Math.round(Number(prev.amount) || 0) !== Math.round(Number(d.amount) || 0)) return false;
+    if (String(prev.memberId || "") !== String(d.memberId || "")) memberChanges += 1;
+  }
+  return memberChanges > 0;
+}
+
 function unionDonorsById(existing: Donor[], incoming: Donor[]): Donor[] {
   const map = new Map<string, Donor>();
-  for (const d of existing) map.set(d.id, d);
+  for (const d of existing) map.set(String(d.id), d);
   for (const d of incoming) {
-    const prev = map.get(d.id);
+    const id = String(d.id);
+    const prev = map.get(id);
     if (!prev) {
-      map.set(d.id, d);
+      map.set(id, d);
       continue;
     }
-    if (d.at >= prev.at) {
-      map.set(d.id, mergeDonorRowFields(d, prev));
+    const prevAt = donorAtEpochMs(prev);
+    const nextAt = donorAtEpochMs(d);
+    if (nextAt > prevAt) {
+      map.set(id, mergeDonorRowFields(d, prev));
+    } else if (nextAt < prevAt) {
+      map.set(id, mergeDonorRowFields(prev, d));
     } else {
-      map.set(d.id, mergeDonorRowFields(prev, d));
+      map.set(id, mergeDonorRowFields(d, prev));
     }
   }
-  return Array.from(map.values()).sort((a, b) => b.at - a.at);
+  return Array.from(map.values()).sort((a, b) => donorAtEpochMs(b) - donorAtEpochMs(a));
 }
 
 /**

@@ -133,6 +133,28 @@ describe("computeFullSettlementSummary (정산서.xlsx 전체 정산서)", () =>
     expect(summary.productionTransfer).toBe(196_350);
   });
 
+  it("includes treasury 50% when includeTreasuryInFullStatement is set", () => {
+    const summary = computeFullSettlementSummary(
+      record({ includeTreasuryInFullStatement: true })
+    );
+    expect(summary.productionShare).toBe(178_500);
+    expect(summary.treasuryShare).toBe(178_500);
+    expect(summary.remittanceSubtotal).toBe(357_000);
+    expect(summary.productionVat).toBe(35_700);
+    expect(summary.productionTransfer).toBe(392_700);
+  });
+
+  it("omits treasury member rows when omitTreasuryFromSettlement", () => {
+    const rec = record({
+      omitTreasuryFromSettlement: true,
+      members: [
+        member({ memberId: "m1" }),
+        member({ memberId: "tr", name: "국고", account: 500_000, toon: 0 }),
+      ],
+    });
+    expect(computeFullSettlementSummary(rec).rows.map((r) => r.memberId)).toEqual(["m1"]);
+  });
+
   it("computeExcelWithholding uses ROUNDDOWN to tens", () => {
     expect(computeExcelWithholding(1_190_000)).toEqual({
       incomeTax: 35_700,

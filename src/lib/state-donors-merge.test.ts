@@ -99,6 +99,26 @@ describe("mergeDonorsForMultiTabSave", () => {
     });
     expect(merged).toEqual([]);
   });
+
+  it("keeps reassigned memberId when local donor at is newer than remote", () => {
+    const remote = [donor("d1", 100_000, 1000)];
+    const local = [{ ...donor("d1", 100_000, 9000), memberId: "m2" }];
+    const merged = mergeDonorsForMultiTabSave(remote, local, {
+      incomingUpdatedAt: 5000,
+      existingUpdatedAt: 9000,
+    });
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.memberId).toBe("m2");
+  });
+
+  it("detects member reassignment for authoritative replace", async () => {
+    const { isDonorListMemberReassignment } = await import("@/lib/state");
+    const existing = [donor("d1", 100_000, 1000)];
+    const incoming = [{ ...donor("d1", 100_000, 2000), memberId: "m2" }];
+    expect(isDonorListMemberReassignment(incoming, existing)).toBe(true);
+    expect(isDonorListMemberReassignment(existing, incoming)).toBe(true);
+    expect(isDonorListMemberReassignment([donor("d1", 50_000, 2000)], existing)).toBe(false);
+  });
 });
 
 describe("rebumpDonorsPastSettlementReset", () => {

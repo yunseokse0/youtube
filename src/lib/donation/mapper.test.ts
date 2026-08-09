@@ -359,6 +359,72 @@ describe("mapToMember", () => {
     expect(mapped.memberId).toBe("m1");
     expect(mapped.memberFuzzyMatched).toBe(true);
   });
+
+  it("fuzzy-matches one-char typo playerName (홍스 → 홍쓰)", () => {
+    const team: Member[] = [
+      { id: "m-hong", name: "홍쓰", account: 0, toon: 0, contribution: 0 },
+      { id: "m2", name: "BT태호", account: 0, toon: 0, contribution: 0 },
+    ];
+    const event: DonationEvent = {
+      id: "t-typo",
+      provider: "toonation",
+      externalId: "e-typo",
+      donorName: "Y 철수",
+      playerName: "홍스",
+      message: "익명 홍스",
+      amount: 10000,
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "toon",
+    };
+    const mapped = mapToMember(event, team);
+    expect(mapped.memberId).toBe("m-hong");
+    expect(mapped.memberFuzzyMatched).toBe(true);
+    expect(mapped.status).toBe("processed");
+  });
+
+  it("fuzzy-matches typo in compact message without spaces", () => {
+    const team: Member[] = [
+      { id: "m-hong", name: "홍쓰", account: 0, toon: 0, contribution: 0 },
+    ];
+    const event: DonationEvent = {
+      id: "t-compact",
+      provider: "toonation",
+      externalId: "e-compact",
+      donorName: "시청자",
+      playerName: "",
+      message: "응원홍스화이팅",
+      amount: 5000,
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "toon",
+    };
+    const mapped = mapToMember(event, team);
+    expect(mapped.memberId).toBe("m-hong");
+    expect(mapped.memberFuzzyMatched).toBe(true);
+  });
+
+  it("partial-matches short suffix in message (비서 → 연비서)", () => {
+    const team: Member[] = [
+      { id: "m-yeon", name: "연비서", account: 0, toon: 0, contribution: 0 },
+      { id: "m2", name: "BT태호", account: 0, toon: 0, contribution: 0 },
+    ];
+    const event: DonationEvent = {
+      id: "t-biseo",
+      provider: "toonation",
+      externalId: "e-biseo",
+      donorName: "Y 철수",
+      playerName: "비서",
+      message: "익명 비서",
+      amount: 100000,
+      at: new Date().toISOString(),
+      status: "queued",
+      target: "toon",
+    };
+    const mapped = mapToMember(event, team);
+    expect(mapped.memberId).toBe("m-yeon");
+    expect(mapped.status).toBe("processed");
+  });
 });
 
 describe("pickTopRankedDonationMember", () => {

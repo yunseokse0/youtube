@@ -63,6 +63,20 @@ export function isOperatingSettlementMember(
   );
 }
 
+/** 이름·실명·직급에 「국고」가 있으면 국고 멤버 */
+export function isTreasurySettlementMember(
+  m: { id?: string; memberId?: string; name: string; realName?: string },
+  memberPositions?: Record<string, string> | null
+): boolean {
+  const memberId = String(m.id || m.memberId || "").trim();
+  const pos = String(memberPositions?.[memberId] || "").trim();
+  return (
+    /국고/i.test(String(m.name || "")) ||
+    /국고/i.test(String(m.realName || "")) ||
+    /국고/i.test(pos)
+  );
+}
+
 /**
  * 정산 집계 — 지급정산서(정산서.xlsx)와 동일:
  * 후원금에서 수수료·부가세 공제 후 배분율 적용, 원천세 차감 = 최종정산
@@ -193,6 +207,33 @@ export function formatSigMatchGapLabel(
 ): string {
   const n = formatSigMatchStat(Math.max(0, gap));
   return scoringMode === "amount" ? `${n}원` : `${n} 시그`;
+}
+
+/** 시그 대전 — 추가·차감 버튼 단위(설정 없으면 건수 1 / 금액 1만) */
+export function resolveSigMatchManualAdjustSteps(settings: SigMatchSettings): {
+  addStep: number;
+  deductStep: number;
+} {
+  const defaultStep = settings.scoringMode === "amount" ? 10_000 : 1;
+  const addRaw = settings.manualAddStep;
+  const deductRaw = settings.manualDeductStep;
+  const addStep =
+    typeof addRaw === "number" && Number.isFinite(addRaw) && addRaw > 0
+      ? Math.floor(addRaw)
+      : defaultStep;
+  const deductStep =
+    typeof deductRaw === "number" && Number.isFinite(deductRaw) && deductRaw > 0
+      ? Math.floor(deductRaw)
+      : defaultStep;
+  return { addStep, deductStep };
+}
+
+export function formatSigMatchManualAdjustStepLabel(
+  step: number,
+  scoringMode: "count" | "amount"
+): string {
+  const n = formatSigMatchStat(step);
+  return scoringMode === "amount" ? `${n}원` : `${n}`;
 }
 
 function findPoolForMember(memberId: string, pools: SigMatchPool[]): string[] | null {

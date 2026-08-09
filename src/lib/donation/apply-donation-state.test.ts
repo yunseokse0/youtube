@@ -38,6 +38,8 @@ describe("reassignDonorMemberInAppState", () => {
     expect(next!.donors[0]?.memberId).toBe("m2");
     expect(next!.members.find((m) => m.id === "m1")?.toon).toBe(0);
     expect(next!.members.find((m) => m.id === "m2")?.toon).toBe(50_000);
+    expect(next!.donors[0]?.at).toBeGreaterThanOrEqual(state.donors[0]!.at);
+    expect(next!.donors[0]?.memberAutoAssigned).toBe(false);
   });
 });
 

@@ -558,7 +558,7 @@ function RankingColumn({
   unified?: boolean;
   /** unified일 때 좌측 칼럼 오른쪽 구분선(md 이상) */
   showColumnDivider?: boolean;
-  /** unified: 헤더·목록 배경에 동일하게 `panelBg`/`headerBg`×투명도 */
+  /** unified: 목록은 `panelBg`, 헤더는 `headerBg`에 각각 투명도 적용 */
   panelOpacityFrac?: number;
   rowEvenBg?: string;
   rowOddBg?: string;
@@ -589,11 +589,7 @@ function RankingColumn({
   const headerOpacityFrac = unified
     ? Math.max(0, Math.min(1, panelOpacityFrac ?? 1))
     : Math.max(0, Math.min(100, headerOpacity)) / 100;
-  /** 웹후원 스타일: 헤더를 패널과 같은 톤으로 이어 붙여 한 덩어리로 보이게 */
-  const headerBgResolved = backgroundWithOpacityFrac(
-    unified ? panelBg || headerBg : headerBg,
-    headerOpacityFrac
-  );
+  const headerBgResolved = backgroundWithOpacityFrac(headerBg, headerOpacityFrac);
 
   const rowList = disableMotion ? (
     <div className="space-y-0">

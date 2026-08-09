@@ -98,20 +98,27 @@ export function nameSimilarityScore(a: string, b: string): number {
   }
   const hangul = hangulNameSimilarity(na, nb);
   const dist = levenshtein(na, nb);
-  const edit = Math.max(0, 1 - dist / maxLen);
+  let edit = Math.max(0, 1 - dist / maxLen);
+  /** 2~6자 닉네임 한·두 글자 오타(홍스↔홍쓰, 이자허↔이자하) */
+  if (dist === 1 && maxLen >= 2 && maxLen <= 6) {
+    edit = Math.max(edit, maxLen <= 3 ? 0.72 : 0.68);
+  } else if (dist === 2 && maxLen >= 3 && maxLen <= 8) {
+    edit = Math.max(edit, 0.64);
+  }
   return Math.max(hangul, edit);
 }
 
 export const MEMBER_NAME_FUZZY_THRESHOLD = 0.72;
 
 /** 자동 반영(엑셀표) — 미매칭 UI 제안과 동일한 완화 임계값 */
-export const MEMBER_NAME_FUZZY_AUTO_APPLY_THRESHOLD = 0.62;
+export const MEMBER_NAME_FUZZY_AUTO_APPLY_THRESHOLD = 0.58;
 
 function effectiveFuzzyThreshold(lookupName: string, override?: number): number {
   if (typeof override === "number") return override;
   const len = stripHonorificSuffix(lookupName).length;
-  if (len <= 3) return 0.65;
-  if (len <= 4) return 0.68;
+  if (len <= 2) return 0.58;
+  if (len <= 3) return 0.62;
+  if (len <= 4) return 0.65;
   return MEMBER_NAME_FUZZY_THRESHOLD;
 }
 

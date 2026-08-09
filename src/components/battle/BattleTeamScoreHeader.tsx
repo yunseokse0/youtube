@@ -61,12 +61,13 @@ export default function BattleTeamScoreHeader({
 
   const leftLeading = leftScore > rightScore;
   const rightLeading = rightScore > leftScore;
+  const scoreGap = Math.abs(leftScore - rightScore);
   const computedGap =
-    typeof gapLabel === "string"
-      ? gapLabel.trim() || null
-      : Math.abs(leftScore - rightScore) > 0
-        ? formatScore(Math.abs(leftScore - rightScore))
-        : null;
+    scoreGap > 0
+      ? typeof gapLabel === "string" && gapLabel.trim()
+        ? gapLabel.trim()
+        : formatScore(scoreGap)
+      : null;
   const barH = compact ? "h-12 sm:h-14" : "h-14 sm:h-16";
   const scoreSize = compact
     ? "text-xl sm:text-2xl md:text-3xl"
@@ -74,20 +75,29 @@ export default function BattleTeamScoreHeader({
   const nameSize = compact ? "text-xs sm:text-sm" : "text-sm sm:text-base";
   const gapSize = compact ? "text-[10px] sm:text-xs" : "text-xs sm:text-sm";
 
+  const vsBadge = (
+    <span
+      className={`flex items-center justify-center rounded-lg font-black tracking-[0.12em] text-white shadow-md ring-1 ring-white/25 ${
+        compact ? "h-8 min-w-[2.25rem] px-1.5 text-sm" : "h-9 min-w-[2.5rem] px-2 text-base sm:text-lg"
+      }`}
+      style={{
+        background:
+          "linear-gradient(135deg, rgba(220,38,38,0.95) 0%, rgba(23,23,23,0.96) 48%, rgba(37,99,235,0.95) 100%)",
+      }}
+    >
+      VS
+    </span>
+  );
+
   const defaultCenter = (
-    <div className="flex flex-col items-center justify-center gap-0.5" data-battle-vs-center="true">
-      <span
-        className={`flex items-center justify-center rounded-lg font-black tracking-[0.12em] text-white shadow-md ring-1 ring-white/25 ${
-          compact ? "h-8 min-w-[2.25rem] px-1.5 text-sm" : "h-9 min-w-[2.5rem] px-2 text-base sm:text-lg"
-        }`}
-        style={{
-          background:
-            "linear-gradient(135deg, rgba(220,38,38,0.95) 0%, rgba(23,23,23,0.96) 48%, rgba(37,99,235,0.95) 100%)",
-        }}
-      >
-        VS
-      </span>
-      {computedGap ? (
+    <div className="flex items-center justify-center" data-battle-vs-center="true">
+      {vsBadge}
+    </div>
+  );
+
+  const gapRow =
+    computedGap && !centerSlot ? (
+      <div className="relative z-20 flex justify-center py-0.5" data-battle-vs-gap-row="true">
         <span
           className={`rounded-md bg-neutral-950/90 px-1.5 py-0.5 font-black tabular-nums text-amber-100 ring-1 ring-amber-300/40 ${gapSize}`}
           data-battle-vs-gap="true"
@@ -95,9 +105,8 @@ export default function BattleTeamScoreHeader({
         >
           +{computedGap}
         </span>
-      ) : null}
-    </div>
-  );
+      </div>
+    ) : null;
 
   return (
     <div className="w-full" data-battle-team-score-header="true" data-battle-vs-style="clean">
@@ -144,13 +153,14 @@ export default function BattleTeamScoreHeader({
           </div>
         </div>
 
-        {/* VS + 차액: 바 밖으로 살짝 내려 하단에 차액이 보이도록 */}
-        <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-[42%] flex-col items-center">
+        <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center">
           {centerSlot ?? defaultCenter}
         </div>
       </div>
 
-      <div className={`grid grid-cols-2 gap-2 px-0.5 ${computedGap && !centerSlot ? "mt-5" : "mt-1.5"}`}>
+      {gapRow}
+
+      <div className={`grid grid-cols-2 gap-2 px-0.5 ${computedGap && !centerSlot ? "mt-1" : "mt-1.5"}`}>
         <div className="flex justify-start">
           <span
             className={`inline-flex max-w-full truncate rounded-md px-2.5 py-0.5 font-bold text-white shadow-sm ${nameSize} ${

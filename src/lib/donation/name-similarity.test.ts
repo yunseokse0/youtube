@@ -23,4 +23,12 @@ describe("nameSimilarityScore", () => {
   it("scores hangul consonant-skeleton names (지히 ↔ 자하)", () => {
     expect(nameSimilarityScore("지히", "자하")).toBeGreaterThanOrEqual(0.72);
   });
+
+  it("scores short-name typos (홍스 ↔ 홍쓰)", () => {
+    expect(nameSimilarityScore("홍스", "홍쓰")).toBeGreaterThanOrEqual(0.58);
+  });
+
+  it("scores 3-char typos (이자허 ↔ 이자하)", () => {
+    expect(nameSimilarityScore("이자허", "이자하")).toBeGreaterThanOrEqual(0.58);
+  });
 });
