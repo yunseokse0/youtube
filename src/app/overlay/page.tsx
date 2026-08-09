@@ -545,7 +545,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
        */
       if (lastGoodRef.current && isRicherDonationSnapshot(lastGoodRef.current, localNow)) {
         if (isNewerIntentionalDonationShrink(localNow, lastGoodRef.current)) {
-          const mergedLocal = mergeKeepingStrongRoster(localNow);
+          const mergedLocal = applyOverlayDonationSync(localNow);
           const nextSig = buildOverlaySyncSignature(mergedLocal);
           lastUpdatedRef.current = Math.max(lastUpdatedRef.current, mergedLocal.updatedAt || 0);
           lastDonorRevRef.current = Math.max(
@@ -565,16 +565,20 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         void syncOnceRef.current({ forceFull: true });
         return;
       }
-      const nextSig = buildOverlaySyncSignature(localNow);
-      lastUpdatedRef.current = Math.max(lastUpdatedRef.current, localNow.updatedAt || 0);
-      lastDonorRevRef.current = Math.max(lastDonorRevRef.current, readDonorRankingsRevision(localNow));
+      const syncedLocal = applyOverlayDonationSync(localNow);
+      const nextSig = buildOverlaySyncSignature(syncedLocal);
+      lastUpdatedRef.current = Math.max(lastUpdatedRef.current, syncedLocal.updatedAt || 0);
+      lastDonorRevRef.current = Math.max(
+        lastDonorRevRef.current,
+        readDonorRankingsRevision(syncedLocal)
+      );
       if (nextSig !== lastVisualSigRef.current) {
         lastVisualSigRef.current = nextSig;
-        setState(localNow);
+        setState(syncedLocal);
       }
-      if (isViable(localNow)) {
-        lastGoodRef.current = localNow;
-        saveLastGood(localNow);
+      if (isViable(syncedLocal)) {
+        lastGoodRef.current = syncedLocal;
+        saveLastGood(syncedLocal);
       }
     });
     void syncOnce();

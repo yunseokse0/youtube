@@ -1,7 +1,10 @@
 import type { AppState } from "@/lib/state";
 import { defaultState } from "@/lib/state";
 import { coalesceAppStateRedisAndMemory } from "@/lib/app-state-server-load";
-import { mergeStatePreservingDonorsUntilSettlementReset } from "@/lib/donation/merge-donation-apply-base";
+import {
+  mergeDonationReplaceForPersist,
+  mergeStatePreservingDonorsUntilSettlementReset,
+} from "@/lib/donation/merge-donation-apply-base";
 import { snapshotTimerForPersist } from "@/lib/timer-utils";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { getUserIdFromRequest } from "../_shared/user-id";
@@ -47,11 +50,23 @@ export async function loadAppStateForRoulette(userId: string): Promise<AppState>
   return defaultState();
 }
 
-export async function saveAppStateForRoulette(userId: string, next: AppState): Promise<void> {
+export type DonorsPersistMode = "add" | "replace";
+
+export type SaveAppStateForRouletteOptions = {
+  /** add=투네·수동 추가(union), replace=삭제·나누기·재배치(incoming donors 그대로) */
+  donorsMode?: DonorsPersistMode;
+};
+
+export async function saveAppStateForRoulette(
+  userId: string,
+  next: AppState,
+  opts?: SaveAppStateForRouletteOptions
+): Promise<AppState> {
   const { base, token } = getRedisEnv();
   /**
    * 투네 반영이 구 스냅샷 위에 저장되면 직전 수동 계좌 donors 가 사라짐.
    * 정산 리셋이 아닌 한 Redis·메모리 기존 donors 와 union 후 기록.
+   * replace 는 삭제·단체짠 등 intentional shrink — union 금지.
    */
   const mem = getServerMemoryAppState(userId);
   let existing: AppState | null = mem && Array.isArray(mem.members) ? mem : null;
@@ -59,7 +74,10 @@ export async function saveAppStateForRoulette(userId: string, next: AppState): P
     const raw = await upstashGet(stateKey(userId));
     existing = coalesceAppStateRedisAndMemory(raw as AppState | null, mem);
   }
-  const merged = mergeStatePreservingDonorsUntilSettlementReset(next, existing);
+  const merged =
+    opts?.donorsMode === "replace"
+      ? mergeDonationReplaceForPersist(next, existing)
+      : mergeStatePreservingDonorsUntilSettlementReset(next, existing);
   const persisted: AppState = {
     ...merged,
     generalTimer: snapshotTimerForPersist(merged.generalTimer),
@@ -68,4 +86,5 @@ export async function saveAppStateForRoulette(userId: string, next: AppState): P
   if (base && token) {
     await upstashSet(stateKey(userId), persisted);
   }
+  return persisted;
 }

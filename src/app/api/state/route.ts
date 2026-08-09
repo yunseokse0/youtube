@@ -34,13 +34,14 @@ import {
 } from "@/lib/state";
 import type { SigItem } from "@/types";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
-import { dedupeDonorRows, syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
+import { dedupeDonorRows, repairMemberTotalsForDonorRoster, syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
 import { isGroupSplitDonorListMutation } from "@/lib/donation/group-split-donation";
-import { rosterDonorMatchScore } from "@/lib/donation/merge-donation-apply-base";
 import { isManualOverlaySessionId } from "@/lib/sig-sales-manual-round";
 import { createModuleLogger } from "@/lib/logger";
 import { isLegacyMigrationTargetUserId } from "@/lib/legacy-migration";
 import { pickFresherAppState } from "@/lib/app-state-freshness";
+import { coalesceAppStateRedisAndMemory } from "@/lib/app-state-server-load";
+import { saveAppStateForRoulette } from "../roulette/edge-state-store";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { isRouletteLocked } from "../roulette/roulette-lock";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
@@ -514,9 +515,13 @@ export async function GET(req: Request) {
       }
     }
     const memState = getServerMemoryAppState(userId);
-    /** 투네 후원 직후 메모리가 Redis보다 앞서면 메모리 우선 — 첫 후원 엑셀 지연 방지 */
+    /** Redis·메모리 donors union — pickFresher 만 쓰면 split·수동 계좌가 유실될 수 있음 */
     const effective =
-      pickFresherAppState(state, memState) || state || memState || defaultState();
+      coalesceAppStateRedisAndMemory(state, memState) ||
+      pickFresherAppState(state, memState) ||
+      state ||
+      memState ||
+      defaultState();
     if (!state && !memState) {
       logger.warn('Redis/메모리 모두 비어있음 - 기본값 반환 (서버 재시작 시 발생. Redis 설정 권장)', { userId });
     }
@@ -643,11 +648,13 @@ export async function POST(req: Request) {
     const donorsReplace = body.donorsReplace === true;
     const settlementReset = body.settlementReset === true;
     const { base, token } = getRedisEnv();
+    const memExisting = getServerMemoryAppState(userId);
     let existing: AppState | null = null;
     if (base && token) {
-      existing = await upstashGet<AppState>(stateKey(userId));
+      const raw = await upstashGet<AppState>(stateKey(userId));
+      existing = coalesceAppStateRedisAndMemory(raw, memExisting);
     } else {
-      existing = getServerMemoryAppState(userId);
+      existing = memExisting;
     }
     const baseState = existing || defaultState();
     let donorsInPatch = Array.isArray(body.donors);
@@ -790,29 +797,11 @@ export async function POST(req: Request) {
         ? syncMemberTotalsFromDonors({ ...merged, donors: dedupedDonors })
         : { ...merged, donors: dedupedDonors };
     /**
-     * donorsAuthoritative + donors 있음인데 멤버 합계 0 → memberId/로스터 불일치.
-     * body 멤버가 donors 와 더 잘 맞으면 그 로스터로 재동기화(미매칭 반영 시 엑셀 0 방지).
+     * donorsAuthoritative + donors 있음인데 멤버 합계가 donors 와 어긋나면 로스터 재동기화.
      */
-    if (
-      donorsAuthoritative &&
-      !settlementReset &&
-      !donationInitReset &&
-      normalizeDonorsArray(dedupedDonors).length > 0 &&
-      totalCombined(draft) === 0
-    ) {
-      const bodyMembers = Array.isArray(body.members) ? (body.members as AppState["members"]) : null;
-      const bodyAsState = bodyMembers ? ({ members: bodyMembers } as AppState) : null;
-      if (
-        bodyAsState &&
-        hasMeaningfulMemberRoster(bodyAsState) &&
-        rosterDonorMatchScore(bodyMembers, dedupedDonors) >
-          rosterDonorMatchScore(draft.members, dedupedDonors)
-      ) {
-        draft = syncMemberTotalsFromDonors({
-          ...draft,
-          members: bodyMembers!,
-        });
-      }
+    if (donorsInPatch && normalizeDonorsArray(dedupedDonors).length > 0) {
+      const bodyMembers = Array.isArray(body.members) ? ({ members: body.members } as AppState) : null;
+      draft = repairMemberTotalsForDonorRoster(draft, baseState, bodyMembers);
     }
     const donorRankingsUpdatedAt = computeDonorRankingsUpdatedAt(
       baseState,
@@ -881,13 +870,20 @@ export async function POST(req: Request) {
     }
 
     if (!base || !token) {
-      setServerMemoryAppState(userId, next);
-      logger.info('메모리 상태 업데이트', { updatedAt: next.updatedAt });
+      let memNext = next;
+      if (donorsInPatch) {
+        memNext = await saveAppStateForRoulette(userId, next, {
+          donorsMode: authoritativeReplace ? "replace" : "add",
+        });
+      } else {
+        setServerMemoryAppState(userId, next);
+      }
+      logger.info('메모리 상태 업데이트', { updatedAt: memNext.updatedAt });
       return new Response(
         JSON.stringify({
           ok: true,
-          updatedAt: next.updatedAt,
-          donorRankingsUpdatedAt: next.donorRankingsUpdatedAt,
+          updatedAt: memNext.updatedAt,
+          donorRankingsUpdatedAt: memNext.donorRankingsUpdatedAt,
         }),
         {
         headers: {
@@ -899,21 +895,34 @@ export async function POST(req: Request) {
       });
     }
 
-    const ok = await upstashSet(stateKey(userId), next);
-    logger.info('Redis 상태 업데이트', { updatedAt: next.updatedAt, success: ok, userId });
-    // Redis 오류 시에도 방송 중단 방지를 위해 메모리에 저장 후 200 반환
-    if (!ok) {
-      setServerMemoryAppState(userId, next);
-      logger.warn('Redis 업데이트 실패로 메모리에 기록', { updatedAt: next.updatedAt, userId });
+    let persistedNext = next;
+    let redisFallback: "memory" | undefined;
+    if (donorsInPatch) {
+      persistedNext = await saveAppStateForRoulette(userId, next, {
+        donorsMode: authoritativeReplace ? "replace" : "add",
+      });
+      logger.info('Redis 상태 업데이트 (roulette pipeline)', {
+        updatedAt: persistedNext.updatedAt,
+        donorsMode: authoritativeReplace ? "replace" : "add",
+        userId,
+      });
     } else {
-      setServerMemoryAppState(userId, next);
+      const ok = await upstashSet(stateKey(userId), next);
+      logger.info('Redis 상태 업데이트', { updatedAt: next.updatedAt, success: ok, userId });
+      if (!ok) {
+        setServerMemoryAppState(userId, next);
+        redisFallback = "memory";
+        logger.warn('Redis 업데이트 실패로 메모리에 기록', { updatedAt: next.updatedAt, userId });
+      } else {
+        setServerMemoryAppState(userId, next);
+      }
     }
     return new Response(
       JSON.stringify({
         ok: true,
-        updatedAt: next.updatedAt,
-        donorRankingsUpdatedAt: next.donorRankingsUpdatedAt,
-        fallback: ok ? undefined : "memory",
+        updatedAt: persistedNext.updatedAt,
+        donorRankingsUpdatedAt: persistedNext.donorRankingsUpdatedAt,
+        fallback: redisFallback,
       }),
       {
         headers: {

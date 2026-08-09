@@ -7,6 +7,7 @@ import { loadAppStateForUserId } from "@/lib/app-state-server-load";
 import {
   applyDonationToAppState,
   isDuplicateDonationEvent,
+  repairMemberTotalsForDonorRoster,
 } from "@/lib/donation/apply-donation-state";
 import { persistDonationApplyLikeToonation } from "@/lib/donation/persist-donation-like-toon";
 import type { DonationEvent } from "@/lib/donation/types";
@@ -128,14 +129,16 @@ export async function POST(req: Request) {
     });
   }
 
+  const repaired = repairMemberTotalsForDonorRoster(persisted.state, state);
+
   return new Response(
     JSON.stringify({
       ok: true,
-      updatedAt: persisted.state.updatedAt,
-      donorRankingsUpdatedAt: persisted.state.donorRankingsUpdatedAt,
-      donorsCount: normalizeDonorsArray(persisted.state.donors).length,
+      updatedAt: repaired.updatedAt,
+      donorRankingsUpdatedAt: repaired.donorRankingsUpdatedAt,
+      donorsCount: normalizeDonorsArray(repaired.donors).length,
       applied: appliedEvents,
-      state: persisted.state,
+      state: repaired,
     }),
     {
       status: 200,

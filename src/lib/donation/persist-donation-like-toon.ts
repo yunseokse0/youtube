@@ -1,8 +1,10 @@
-import { saveAppStateForRoulette } from "@/app/api/roulette/edge-state-store";
+import {
+  saveAppStateForRoulette,
+  type DonorsPersistMode,
+} from "@/app/api/roulette/edge-state-store";
 import { loadAppStateForUserId } from "@/lib/app-state-server-load";
 import { getServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { publishSseEvent } from "@/lib/sse-clients-hub";
-import { mergeStatePreservingDonorsUntilSettlementReset } from "@/lib/donation/merge-donation-apply-base";
 import { isDuplicateDonationEvent } from "@/lib/donation/apply-donation-state";
 import type { DonationEvent } from "@/lib/donation/types";
 import type { AppState } from "@/types";
@@ -29,34 +31,59 @@ async function broadcastDonationStateUpdated(
   });
 }
 
+export type PersistDonationStateOptions = {
+  mode?: DonorsPersistMode;
+  donationApplied?: DonationAppliedSseHint;
+  /** add 모드에서 중복 검증용 (투네·수동 apply) */
+  verifyEvent?: DonationEvent;
+};
+
 /**
- * 투네 서버 반영과 동일한 저장 파이프라인.
- * - Redis·메모리와 donors union (정산 리셋 전)
- * - saveAppStateForRoulette 로 즉시 기록
- * - SSE donationApplied 로 엑셀·관리자 동기화
+ * 후원 mutation 공통 저장 — coalesce + saveAppStateForRoulette + SSE.
+ * 투네·apply·삭제·나누기가 동일 Redis 경로를 탄다.
+ */
+export async function persistDonationStateToServer(
+  userId: string,
+  nextState: AppState,
+  opts?: PersistDonationStateOptions
+): Promise<{ ok: true; state: AppState } | { ok: false }> {
+  const mode = opts?.mode ?? "add";
+  const persisted = await saveAppStateForRoulette(userId, nextState, { donorsMode: mode });
+
+  if (opts?.verifyEvent && mode === "add") {
+    const memSaved = getServerMemoryAppState(userId);
+    const verify = await loadAppStateForUserId(userId);
+    const ok =
+      isDuplicateDonationEvent(verify, opts.verifyEvent) ||
+      (memSaved ? isDuplicateDonationEvent(memSaved, opts.verifyEvent) : false);
+    if (!ok) return { ok: false };
+  }
+
+  await broadcastDonationStateUpdated(
+    persisted.updatedAt,
+    persisted.donorRankingsUpdatedAt,
+    opts?.donationApplied
+  );
+  return { ok: true, state: persisted };
+}
+
+/**
+ * 투네·수동 apply — add 모드 + donationApplied SSE.
  */
 export async function persistDonationApplyLikeToonation(
   userId: string,
   appliedState: AppState,
   event: DonationEvent
 ): Promise<{ ok: true; state: AppState } | { ok: false }> {
-  const concurrent = await loadAppStateForUserId(userId);
-  const toPersist = mergeStatePreservingDonorsUntilSettlementReset(appliedState, concurrent);
-  await saveAppStateForRoulette(userId, toPersist);
-
-  const memSaved = getServerMemoryAppState(userId);
-  const verify = await loadAppStateForUserId(userId);
-  const persisted =
-    isDuplicateDonationEvent(verify, event) ||
-    (memSaved ? isDuplicateDonationEvent(memSaved, event) : false);
-  if (!persisted) return { ok: false };
-
-  const member = (toPersist.members || []).find((m) => m.id === event.memberId);
-  await broadcastDonationStateUpdated(toPersist.updatedAt, toPersist.donorRankingsUpdatedAt, {
-    donorName: event.donorName,
-    amount: event.amount,
-    target: event.target === "account" ? "account" : "toon",
-    memberName: member?.name || undefined,
+  const member = (appliedState.members || []).find((m) => m.id === event.memberId);
+  return persistDonationStateToServer(userId, appliedState, {
+    mode: "add",
+    verifyEvent: event,
+    donationApplied: {
+      donorName: event.donorName,
+      amount: event.amount,
+      target: event.target === "account" ? "account" : "toon",
+      memberName: member?.name || undefined,
+    },
   });
-  return { ok: true, state: toPersist };
 }

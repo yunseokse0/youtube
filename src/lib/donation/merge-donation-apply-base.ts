@@ -2,6 +2,7 @@ import {
   DEFAULT_DONOR_RANKINGS_FULL_THEME,
   hasMeaningfulMemberRoster,
   isDefaultLikeDonorRankingsTheme,
+  isIntentionalDonorListShrink,
   normalizeDonorsArray,
   pickOverlayPresetsPreferCustom,
 } from "@/lib/state";
@@ -187,5 +188,75 @@ export function mergeStatePreservingDonorsUntilSettlementReset(
       donors: normalizeDonorsArray(incoming.donors),
     });
   }
+  const incomingDonors = normalizeDonorsArray(incoming.donors);
+  const existingDonors = normalizeDonorsArray(existing.donors);
+  /** 수동 삭제 — union 하면 지운 행이 Redis·메모리에서 되살아 엑셀표가 꼬임 */
+  if (
+    incomingDonors.length > 0 &&
+    existingDonors.length > incomingDonors.length &&
+    isIntentionalDonorListShrink(
+      incomingDonors,
+      existingDonors,
+      Number(incoming.updatedAt || 0),
+      Number(existing.updatedAt || 0)
+    )
+  ) {
+    const shrunk = syncMemberTotalsFromDonors({
+      ...incoming,
+      donors: incomingDonors,
+      settlementResetAt: Math.max(incomingReset, existingReset) || incoming.settlementResetAt || existing.settlementResetAt,
+      updatedAt: Math.max(Number(incoming.updatedAt || 0), Number(existing.updatedAt || 0)) || Date.now(),
+    });
+    return repairMemberTotalsForDonorRoster(shrunk, existing, incoming);
+  }
   return mergeDonationApplyBase(incoming, existing) ?? incoming;
+}
+
+/**
+ * donorsReplace·삭제·단체짠 — incoming donors 를 그대로 쓰고 shell(로스터·테마·타이머)만 병합.
+ * union 경로와 달리 삭제·split 행이 Redis·메모리에서 되살아나지 않게 한다.
+ */
+export function mergeDonationReplaceForPersist(
+  incoming: AppState,
+  existing: AppState | null | undefined
+): AppState {
+  const incomingDonors = normalizeDonorsArray(incoming.donors);
+  if (!existing) {
+    const synced = syncMemberTotalsFromDonors({ ...incoming, donors: incomingDonors });
+    return repairMemberTotalsForDonorRoster(synced, incoming);
+  }
+  const incomingReset = Number(incoming.settlementResetAt || 0);
+  const existingReset = Number(existing.settlementResetAt || 0);
+  if (incomingReset > existingReset) {
+    return repairMemberTotalsForDonorRoster(
+      syncMemberTotalsFromDonors({
+        ...incoming,
+        settlementResetAt: incomingReset,
+        donors: incomingDonors,
+      }),
+      existing,
+      incoming
+    );
+  }
+  const shell = mergeDonationApplyBase(incoming, existing) ?? incoming;
+  const useIncomingRoster = hasMeaningfulMemberRoster(incoming);
+  const replaced = syncMemberTotalsFromDonors({
+    ...shell,
+    donors: incomingDonors,
+    members: useIncomingRoster ? incoming.members : shell.members,
+    memberPositions: useIncomingRoster
+      ? incoming.memberPositions ?? shell.memberPositions
+      : shell.memberPositions,
+    settlementResetAt:
+      Math.max(incomingReset, existingReset) || shell.settlementResetAt,
+    updatedAt:
+      Math.max(Number(incoming.updatedAt || 0), Number(existing.updatedAt || 0)) ||
+      Date.now(),
+    donorRankingsUpdatedAt:
+      Math.max(
+        Number(incoming.donorRankingsUpdatedAt || 0),
+        Number(existing.donorRankingsUpdatedAt || 0)
+      ) || incoming.donorRankingsUpdatedAt,
+  });
+  return repairMemberTotalsForDonorRoster(replaced, existing, incoming);
 }

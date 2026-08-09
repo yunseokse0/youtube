@@ -411,4 +411,58 @@ describe("mergeStatePreservingDonorsUntilSettlementReset", () => {
     expect(merged.members.find((m) => m.id === "m2")?.account).toBe(25000);
     expect(merged.members.find((m) => m.id === "m3")?.account).toBe(10000);
   });
+
+  it("does not union deleted donors back when incoming is intentional shrink", async () => {
+    const { mergeStatePreservingDonorsUntilSettlementReset } = await import(
+      "./merge-donation-apply-base"
+    );
+    const existing: AppState = {
+      ...defaultState(),
+      settlementResetAt: 1000,
+      members: members(["BT태호"]).map((m) => ({ ...m, account: 1_000_000, contribution: 1_000_000 })),
+      donors: [
+        { id: "d1", name: "익명", amount: 500_000, memberId: "m1", at: 2000, target: "account" },
+        { id: "d2", name: "익명", amount: 500_000, memberId: "m1", at: 2001, target: "account" },
+      ],
+      updatedAt: 2000,
+    };
+    const incoming: AppState = {
+      ...defaultState(),
+      settlementResetAt: 1000,
+      members: members(["BT태호"]).map((m) => ({ ...m, account: 500_000, contribution: 500_000 })),
+      donors: [
+        { id: "d1", name: "익명", amount: 500_000, memberId: "m1", at: 2000, target: "account" },
+      ],
+      updatedAt: 3000,
+    };
+    const merged = mergeStatePreservingDonorsUntilSettlementReset(incoming, existing);
+    expect(merged.donors.map((d) => d.id)).toEqual(["d1"]);
+    expect(merged.members.find((m) => m.id === "m1")?.account).toBe(500_000);
+  });
+});
+
+describe("mergeDonationReplaceForPersist", () => {
+  it("keeps incoming donors only and does not union deleted rows from existing", async () => {
+    const { mergeDonationReplaceForPersist } = await import("./merge-donation-apply-base");
+    const existing: AppState = {
+      ...defaultState(),
+      members: members(["BT태호"]),
+      donors: [
+        { id: "d1", name: "A", amount: 10000, memberId: "m1", at: 1000, target: "account" },
+        { id: "d2", name: "B", amount: 20000, memberId: "m1", at: 1001, target: "account" },
+      ],
+      updatedAt: 1000,
+    };
+    const incoming: AppState = {
+      ...defaultState(),
+      members: members(["BT태호"]).map((m) => ({ ...m, account: 10000, contribution: 10000 })),
+      donors: [
+        { id: "d1", name: "A", amount: 10000, memberId: "m1", at: 1000, target: "account" },
+      ],
+      updatedAt: 2000,
+    };
+    const merged = mergeDonationReplaceForPersist(incoming, existing);
+    expect(merged.donors.map((d) => d.id)).toEqual(["d1"]);
+    expect(merged.members.find((m) => m.id === "m1")?.account).toBe(10000);
+  });
 });
