@@ -11,6 +11,11 @@ STAGING_DIR="${NEXT_BUILD_DIR:-.next-staging}"
 PORT="${PORT:-3000}"
 
 echo "== git pull =="
+# Next.js 빌드가 tsconfig.json 을 로컬에서 바꾸면 pull 이 막힘 — 배포 전 원복
+if ! git diff --quiet -- tsconfig.json 2>/dev/null; then
+  echo "tsconfig.json 로컬 변경 감지 — git checkout 으로 원복 후 pull"
+  git checkout -- tsconfig.json
+fi
 git pull --ff-only
 
 if ! swapon --show 2>/dev/null | grep -q .; then
@@ -25,7 +30,7 @@ echo "== 메모리 =="
 free -h
 
 echo "== 스테이징 빌드 (${STAGING_DIR}) — 기존 .next 로 서비스 유지 =="
-rm -rf "$STAGING_DIR"
+rm -rf "$STAGING_DIR" .next/types
 
 export NODE_HEAP_MB
 export NEXT_BUILD_DIR="$STAGING_DIR"
