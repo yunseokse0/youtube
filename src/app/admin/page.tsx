@@ -5733,13 +5733,13 @@ export default function AdminPage() {
         );
         return false;
       }
-      const merged = enrichStateBeforeAuthoritativeDonationSave(preserved, [result.state]);
+      /** replace 저장 후 union(enrich)하면 삭제분이 서버·백업에서 되살아남 */
       const serverAt = result.updatedAt;
       const bumped: AppState = {
-        ...merged,
-        updatedAt: Math.max(Number(merged.updatedAt || 0), serverAt),
+        ...result.state,
+        updatedAt: Math.max(Number(result.state.updatedAt || 0), serverAt),
         donorRankingsUpdatedAt: Math.max(
-          Number(merged.donorRankingsUpdatedAt || 0),
+          Number(result.state.donorRankingsUpdatedAt || 0),
           result.donorRankingsUpdatedAt ?? serverAt
         ),
       };

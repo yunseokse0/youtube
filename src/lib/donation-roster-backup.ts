@@ -69,10 +69,12 @@ export function shouldRestoreDonationRosterFromBackup(
   if (curReset > backupReset) {
     return false;
   }
+  /**
+   * 완전 비었을 때만 복구. 부분 삭제(shrink)는 정상 동작이므로
+   * backup.donorsCount > curDonors.length 이면 되살리지 않음.
+   */
   if (curDonors.length === 0 && backup.donorsCount > 0) return true;
   if (curTotal === 0 && backup.total > 0) return true;
-  if (backup.donorsCount > curDonors.length && backup.total >= curTotal) return true;
-  if (backup.total > curTotal * 1.5 && backup.donorsCount >= curDonors.length) return true;
   return false;
 }
 

@@ -5,6 +5,10 @@ import { getUserIdFromRequest } from "@/app/api/_shared/user-id";
 import type { DonorsPersistMode } from "@/app/api/roulette/edge-state-store";
 import { persistDonationStateToServer } from "@/lib/donation/persist-donation-like-toon";
 import { repairMemberTotalsForDonorRoster } from "@/lib/donation/apply-donation-state";
+import {
+  buildDonationRosterBackupPayload,
+  saveDonationRosterBackup,
+} from "@/lib/donation-roster-backup";
 import { normalizeDonorsArray } from "@/lib/state";
 import type { AppState } from "@/types";
 
@@ -43,6 +47,9 @@ export async function POST(req: Request) {
   }
 
   const repaired = repairMemberTotalsForDonorRoster(persisted.state, body.state);
+  if (buildDonationRosterBackupPayload(repaired)) {
+    void saveDonationRosterBackup(userId, repaired);
+  }
 
   return new Response(
     JSON.stringify({

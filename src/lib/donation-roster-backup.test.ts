@@ -73,6 +73,47 @@ describe("donation-roster-backup", () => {
     expect(shouldRestoreDonationRosterFromBackup(afterResetWithNewDonation, backup)).toBe(false);
   });
 
+  it("does not restore when user deleted some donations (partial shrink)", () => {
+    const backup = buildDonationRosterBackupPayload({
+      ...richState(),
+      donors: [
+        {
+          id: "d1",
+          name: "익명",
+          amount: 500_000,
+          memberId: "m1",
+          at: Date.now(),
+          target: "account",
+        },
+        {
+          id: "d2",
+          name: "익명",
+          amount: 500_000,
+          memberId: "m1",
+          at: Date.now() + 1,
+          target: "account",
+        },
+      ],
+      members: [{ id: "m1", name: "피자", account: 1_000_000, toon: 0, contribution: 1_000_000 }],
+    })!;
+    const afterDelete: AppState = {
+      ...richState(),
+      donors: [
+        {
+          id: "d1",
+          name: "익명",
+          amount: 500_000,
+          memberId: "m1",
+          at: Date.now(),
+          target: "account",
+        },
+      ],
+      members: [{ id: "m1", name: "피자", account: 500_000, toon: 0, contribution: 500_000 }],
+      updatedAt: Date.now() + 9999,
+    };
+    expect(shouldRestoreDonationRosterFromBackup(afterDelete, backup)).toBe(false);
+  });
+
   it("applies backup members and donors to empty state", () => {
     const backup = buildDonationRosterBackupPayload(richState()) as DonationRosterBackupPayload;
     const next = applyDonationRosterBackupToState(defaultState(), backup);
