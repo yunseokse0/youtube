@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, Suspense } from "react";
+import { APP_SYSTEM_NAME } from "@/lib/app-branding";
 import { useRouter, useSearchParams } from "next/navigation";
-
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -45,7 +45,7 @@ function LoginForm() {
     <main className="min-h-screen flex items-center justify-center bg-[#1a1a1a]">
       <div className="w-[92%] max-w-sm rounded-xl border border-white/10 bg-[#252525] p-6 shadow-xl">
         <h1 className="text-xl font-bold text-white mb-1">로그인</h1>
-        <p className="text-sm text-neutral-400 mb-6">방송 정산 시스템</p>
+        <p className="text-sm text-neutral-400 mb-6">{APP_SYSTEM_NAME}</p>
         {sessionReason === "expired" ? (
           <div
             role="alert"

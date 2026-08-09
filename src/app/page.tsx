@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { cookies, headers } from "next/headers";
 import { AUTH_COOKIE } from "@/lib/auth";
+import { APP_SYSTEM_NAME } from "@/lib/app-branding";
 
 export default async function Home() {
   const cookieStore = await cookies();
@@ -26,7 +27,7 @@ export default async function Home() {
   return (
     <main className="min-h-screen flex items-center justify-center bg-[#1a1a1a]">
       <div className="glass p-8 w-[92%] max-w-2xl text-center">
-        <h1 className="text-2xl font-bold mb-3">방송 정산 시스템</h1>
+        <h1 className="text-2xl font-bold mb-3">{APP_SYSTEM_NAME}</h1>
         <p className="text-neutral-300 mb-6">로그인 후 사용하세요.</p>
         <div className="flex gap-4 justify-center">
           <Link className="px-4 py-2 rounded bg-[#6366f1] hover:bg-[#4f46e5] text-white" href="/login">로그인</Link>

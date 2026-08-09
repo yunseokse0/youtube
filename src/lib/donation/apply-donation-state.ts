@@ -62,9 +62,18 @@ export function isDonorExcludedFromDonationTotals(donor: {
   return donor.donationExcluded === true;
 }
 
-export function dedupeDonorRows<T extends { id?: string; name?: string; amount?: number; at?: number | string }>(
-  donors: T[]
-): T[] {
+/** 동일 id 병합 시 message 등 선택 필드가 비는 쪽을 보완 */
+export function mergeDonorRowFields<T extends { message?: string }>(preferred: T, fallback?: T | null): T {
+  if (!fallback) return preferred;
+  const msg = String(preferred.message || "").trim();
+  const fallbackMsg = String(fallback.message || "").trim();
+  if (msg || !fallbackMsg) return preferred;
+  return { ...preferred, message: fallbackMsg };
+}
+
+export function dedupeDonorRows<
+  T extends { id?: string; name?: string; amount?: number; at?: number | string; message?: string },
+>(donors: T[]): T[] {
   const map = new Map<string, T>();
   for (const d of donors) {
     const key = donorRowDedupeKey(d);
@@ -73,7 +82,11 @@ export function dedupeDonorRows<T extends { id?: string; name?: string; amount?:
       map.set(key, d);
       continue;
     }
-    if (donorAtEpochMs(d) >= donorAtEpochMs(prev)) map.set(key, d);
+    if (donorAtEpochMs(d) >= donorAtEpochMs(prev)) {
+      map.set(key, mergeDonorRowFields(d, prev));
+    } else {
+      map.set(key, mergeDonorRowFields(prev, d));
+    }
   }
   return Array.from(map.values());
 }
@@ -399,4 +412,96 @@ export function revertDonationFromAppState(currentState: AppState, donorId: stri
     donorRankingsUpdatedAt: now,
     updatedAt: now,
   });
+}
+
+/**
+ * 후원자명은 유지하고 배치 멤버만 변경.
+ * 멤버 계좌/투네 합계는 donors 기준으로 재동기화하고, 식대전 연동 점수도 이전/신규 멤버에 반영.
+ */
+export function reassignDonorMemberInAppState(
+  currentState: AppState,
+  donorId: string,
+  nextMemberId: string
+): AppState | null {
+  const targetMemberId = String(nextMemberId || "").trim();
+  if (!targetMemberId) return null;
+  if (!(currentState.members || []).some((m) => m.id === targetMemberId)) return null;
+
+  const donor = (currentState.donors || []).find((d) => d.id === donorId);
+  if (!donor) return null;
+  const prevMemberId = String(donor.memberId || "").trim();
+  if (prevMemberId === targetMemberId) return null;
+
+  const amount = Math.max(0, Math.round(Number(donor.amount) || 0));
+  const atMs = Number.isFinite(Number(donor.at)) ? Math.max(0, Math.floor(Number(donor.at))) : Date.now();
+  const syncMode = currentState.donationSyncMode || "mealBattle";
+  const mealRaw = mealBattleUsesRawDonationScore(currentState.mealBattle);
+  let mealParticipants = currentState.mealBattle?.participants || [];
+
+  if (syncMode === "mealBattle" && amount > 0 && !isDonorExcludedFromDonationTotals(donor)) {
+    if (prevMemberId) {
+      mealParticipants = applyMealBattleDonationToParticipants(
+        mealParticipants,
+        prevMemberId,
+        amount,
+        -1,
+        atMs,
+        mealRaw
+      );
+    }
+    mealParticipants = applyMealBattleDonationToParticipants(
+      mealParticipants,
+      targetMemberId,
+      amount,
+      1,
+      atMs,
+      mealRaw
+    );
+  }
+
+  const now = Date.now();
+  const nextDonors = (currentState.donors || []).map((d) =>
+    d.id === donorId ? { ...d, memberId: targetMemberId } : d
+  );
+
+  return syncMemberTotalsFromDonors({
+    ...currentState,
+    donors: nextDonors,
+    mealBattle: {
+      ...currentState.mealBattle,
+      participants: mealParticipants,
+    },
+    donorRankingsUpdatedAt: now,
+    updatedAt: now,
+  });
+}
+
+/** 후원자 리스트 메시지(comment) 수정 — 금액·멤버·합산에는 영향 없음 */
+export function updateDonorMessageInAppState(
+  currentState: AppState,
+  donorId: string,
+  message: string
+): AppState | null {
+  const id = String(donorId || "").trim();
+  if (!id) return null;
+  const donor = (currentState.donors || []).find((d) => d.id === id);
+  if (!donor) return null;
+  const trimmed = String(message || "").trim();
+  const prev = String(donor.message || "").trim();
+  if (trimmed === prev) return null;
+  const now = Date.now();
+  const nextDonors = (currentState.donors || []).map((d) => {
+    if (d.id !== id) return d;
+    if (!trimmed) {
+      const { message: _drop, ...rest } = d;
+      return rest as Donor;
+    }
+    return { ...d, message: trimmed };
+  });
+  return {
+    ...currentState,
+    donors: nextDonors,
+    donorRankingsUpdatedAt: now,
+    updatedAt: now,
+  };
 }

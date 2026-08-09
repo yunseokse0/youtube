@@ -60,7 +60,7 @@ export async function showNotification(options: PushNotificationOptions): Promis
   try {
     const notificationOptions: NotificationOptions = {
       body: options.body,
-      icon: options.icon || '/favicon.ico'
+      ...(options.icon ? { icon: options.icon } : {}),
     };
     
     // 선택적 속성 추가 (브라우저 호환성 고려)

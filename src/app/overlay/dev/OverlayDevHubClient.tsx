@@ -122,12 +122,6 @@ export default function OverlayDevHubClient() {
         testPath: `/overlay/donor-rankings?u={u}&test=true&zoomPct=${zoomPct}`,
       },
       {
-        id: "donor-rankings-full",
-        title: "후원 순위 · 전체 (분홍)",
-        desc: "전체 후원자 목록 + 분홍 테마. 기존 순위와 URL·설정 분리.",
-        obsPath: `/overlay/donor-rankings-full?u={u}&host=obs&zoomPct=${zoomPct}`,
-      },
-      {
         id: "donation-lists",
         title: "후원·기여도 리스트",
         desc: "멤버 계좌·투네·기여도 표.",

@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { AUTH_COOKIE, isDevAuthBypassRequest } from "@/lib/auth";
 import { getUserById } from "@/lib/auth";
+import { APP_BRAND_NAME } from "@/lib/app-branding";
 import { loadAccounts, getRemainingDays } from "@/lib/accounts-storage";
 import { cookies } from "next/headers";
 
 export async function GET(req: Request) {
   try {
     if (isDevAuthBypassRequest(req)) {
-      return NextResponse.json({ user: { id: "finalent", companyName: "Final Entertainment" } });
+      return NextResponse.json({ user: { id: "finalent", companyName: APP_BRAND_NAME } });
     }
     const cookieStore = await cookies();
     const raw = cookieStore.get(AUTH_COOKIE)?.value;
@@ -15,7 +16,7 @@ export async function GET(req: Request) {
     const parsed = JSON.parse(decodeURIComponent(raw)) as { id: string; companyName: string };
     const uid = parsed?.id || "";
     if (uid === "finalent" && isDevAuthBypassRequest(req)) {
-      return NextResponse.json({ user: { id: "finalent", companyName: "Final Entertainment" } });
+      return NextResponse.json({ user: { id: "finalent", companyName: APP_BRAND_NAME } });
     }
     let user = getUserById(uid);
     if (!user) {

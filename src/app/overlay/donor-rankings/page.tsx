@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { usePathname } from "next/navigation";
 import { useClientOnlySearchParams } from "@/hooks/useClientOnlySearchParams";
 import {
   defaultState,
@@ -66,7 +65,51 @@ function donorRankingsOutlineCssBlock(outlineColor: string, outlineWidthPx?: num
       paint-order: stroke fill !important;
       text-shadow: ${shadow} !important;
     }
+    /* 트로피·이모지 순위 아이콘에는 외곽선 링을 먹지 않게 (깨져 보이는 원인) */
+    .donor-rankings-overlay-root .overlay-rank-icon,
+    .donor-rankings-overlay-root .overlay-rank-icon .overlay-cell-text-inner {
+      text-shadow: none !important;
+      -webkit-text-stroke: 0 !important;
+      paint-order: normal !important;
+    }
   `;
+}
+
+/** 웹후원 스타일 1~3위 트로피 (금/은/동 + 별) */
+function RankTrophyIcon({ place, sizePx }: { place: 1 | 2 | 3; sizePx: number }) {
+  const size = Math.max(18, Math.round(sizePx * 1.15));
+  const cup =
+    place === 1 ? { fill: "#ffc107", stroke: "#b45309" } : place === 2 ? { fill: "#e8eef5", stroke: "#64748b" } : { fill: "#d97706", stroke: "#7c2d12" };
+  const base =
+    place === 1 ? "#dc2626" : place === 2 ? "#2563eb" : "#78350f";
+  const star = place === 1 ? "#fff7ed" : place === 2 ? "#dbeafe" : "#fef3c7";
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 32 32"
+      className="overlay-rank-icon mx-auto block shrink-0"
+      aria-hidden
+    >
+      <path
+        d="M8 6h16v2.2c0 5.2-3.2 9.2-8 10.2-4.8-1-8-5-8-10.2V6z"
+        fill={cup.fill}
+        stroke={cup.stroke}
+        strokeWidth="1.4"
+      />
+      <path d="M8 8H5.2c0 3.2 1.4 5.4 3.4 6.4" fill="none" stroke={cup.stroke} strokeWidth="1.3" />
+      <path d="M24 8h2.8c0 3.2-1.4 5.4-3.4 6.4" fill="none" stroke={cup.stroke} strokeWidth="1.3" />
+      <rect x="13.2" y="18.2" width="5.6" height="3.2" rx="0.8" fill={cup.stroke} />
+      <path d="M10 26.5h12l-1.2-3.6H11.2L10 26.5z" fill={base} />
+      <rect x="9" y="26.5" width="14" height="2.4" rx="0.7" fill={base} />
+      <path
+        d="M16 9.2l1.1 2.2 2.4.4-1.7 1.7.4 2.4-2.2-1.1-2.2 1.1.4-2.4-1.7-1.7 2.4-.4L16 9.2z"
+        fill={star}
+        stroke={cup.stroke}
+        strokeWidth="0.6"
+      />
+    </svg>
+  );
 }
 
 type DonorRow = DonorRankingRow;
@@ -142,11 +185,16 @@ function liveThemeTitle(
   sp: URLSearchParams,
   fallback: string
 ): string {
+  const fromUrl = (sp.get("title") || "").trim();
+  /** 관리자 미리보기: 입력 중인 제목(URL)을 우선 — 원격 기본값과 어긋나지 않게 */
+  const adminPreview =
+    sp.get("adminPreviewEmbed") === "1" || sp.get("hubPreview") === "1";
+  if (adminPreview && fromUrl) return fromUrl.slice(0, 60);
   if (ready && !useTest) {
     const s = (saved || "").trim();
     return s || fallback;
   }
-  return (sp.get("title") || "").trim() || (saved || "").trim() || fallback;
+  return fromUrl || (saved || "").trim() || fallback;
 }
 
 /** URL 쿼리 `donorsB64` 최대 길이(과도한 쿼리 방지) */
@@ -368,23 +416,24 @@ function RankingRow({
     outlineColor: resolvedOutlineColor,
     outlineWidthPx,
   });
-  const rankLabel = (i: number): string => {
-    if (i === 0) return "🥇";
-    if (i === 1) return "🥈";
-    if (i === 2) return "🥉";
-    return String(i + 1);
-  };
+  const isTrophy = idx <= 2;
   const rowStyle: CSSProperties = {
     fontSize: `${rowSize}px`,
     backgroundColor: idx % 2 === 0 ? rowEvenBg || "transparent" : rowOddBg || "transparent",
   };
   const inner = (
     <>
-      <span
-        className="overlay-cell-text-inner font-black text-center"
-        style={{ color: rankColor, fontSize: `${rankSize}px`, ...rankOutline }}
-      >
-        {rankLabel(idx)}
+      <span className="flex items-center justify-center leading-none">
+        {isTrophy ? (
+          <RankTrophyIcon place={(idx + 1) as 1 | 2 | 3} sizePx={rankSize} />
+        ) : (
+          <span
+            className="overlay-cell-text-inner font-black text-center leading-none"
+            style={{ color: rankColor, fontSize: `${rankSize}px`, ...rankOutline }}
+          >
+            {`${idx + 1}등`}
+          </span>
+        )}
       </span>
       <span
         className="overlay-cell-text-inner break-words font-bold leading-tight"
@@ -393,7 +442,7 @@ function RankingRow({
         {item.name}
       </span>
       <span
-        className="overlay-cell-text-inner font-black tabular-nums text-right"
+        className="overlay-cell-text-inner font-black tabular-nums text-right whitespace-nowrap"
         style={{ color: amountColor, ...rowOutline }}
       >
         {amountFormat === "short"
@@ -402,12 +451,11 @@ function RankingRow({
       </span>
     </>
   );
+  const rowClass =
+    "grid grid-cols-[2.75em_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-0 px-2.5 py-1.5 border-b border-white/40 last:border-b-0";
   if (disableMotion) {
     return (
-      <div
-        className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-1 py-1"
-        style={rowStyle}
-      >
+      <div className={rowClass} style={rowStyle}>
         {inner}
       </div>
     );
@@ -419,7 +467,7 @@ function RankingRow({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -12 }}
       transition={{ type: "spring", stiffness: 420, damping: 34, mass: 0.8 }}
-      className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-1 py-1"
+      className={rowClass}
       style={rowStyle}
     >
       {inner}
@@ -530,7 +578,7 @@ function RankingColumn({
           ? "border-b border-solid border-r-0 md:border-b-0 md:border-r md:border-solid"
           : ""
       }`
-    : "relative z-[1] w-full overflow-visible rounded-2xl border shadow-[0_12px_32px_rgba(236,72,153,0.14)] backdrop-blur-md";
+    : "relative z-[1] w-full overflow-visible rounded-2xl border shadow-[0_8px_28px_rgba(15,23,42,0.18)] backdrop-blur-md";
   const outerStyle: CSSProperties | undefined = unified
     ? { borderColor }
     : {
@@ -541,10 +589,14 @@ function RankingColumn({
   const headerOpacityFrac = unified
     ? Math.max(0, Math.min(1, panelOpacityFrac ?? 1))
     : Math.max(0, Math.min(100, headerOpacity)) / 100;
-  const headerBgResolved = backgroundWithOpacityFrac(headerBg, headerOpacityFrac);
+  /** 웹후원 스타일: 헤더를 패널과 같은 톤으로 이어 붙여 한 덩어리로 보이게 */
+  const headerBgResolved = backgroundWithOpacityFrac(
+    unified ? panelBg || headerBg : headerBg,
+    headerOpacityFrac
+  );
 
   const rowList = disableMotion ? (
-    <div className="space-y-1">
+    <div className="space-y-0">
       {items.map((item, idx) => (
         <RankingRow
           key={item.name}
@@ -591,9 +643,10 @@ function RankingColumn({
   return (
     <section className={outerClass} style={outerStyle}>
       <div
-        className="relative overflow-hidden px-4 py-3 font-black border-b text-center"
+        className={`relative overflow-hidden px-4 py-2.5 font-black text-center ${
+          unified ? "border-b border-white/40" : "border-b border-white/28"
+        }`}
         style={{
-          borderColor: "rgba(255, 232, 244, 0.55)",
           color: titleColor,
           fontSize: `${titleSize}px`,
           ...titleOutline,
@@ -606,7 +659,7 @@ function RankingColumn({
             ...(headerBgResolved.opacity !== undefined ? { opacity: headerBgResolved.opacity } : {}),
           }}
         />
-        <span className="overlay-cell-text-inner relative z-10">{title}</span>
+        <span className="overlay-cell-text-inner relative z-10 tracking-tight">{title}</span>
       </div>
       {bodyImageBelowTitle}
       {unified ? (
@@ -616,10 +669,10 @@ function RankingColumn({
             aria-hidden
             style={backgroundWithOpacityFrac(panelBg, Math.max(0, Math.min(1, panelOpacityFrac ?? 1)))}
           />
-          <div className="relative z-[1] space-y-1 px-3 py-2.5">{rowList}</div>
+          <div className="relative z-[1] px-2 py-1.5">{rowList}</div>
         </div>
       ) : (
-        <div className="space-y-1 p-2.5">{rowList}</div>
+        <div className="p-2">{rowList}</div>
       )}
       {bodyImageBelowList}
     </section>
@@ -628,8 +681,6 @@ function RankingColumn({
 
 export default function DonorRankingsOverlayPage() {
   const { params: sp, ready: spReady } = useClientOnlySearchParams();
-  const pathname = usePathname();
-  const profileFull = (pathname || "").includes("donor-rankings-full");
   const userId = getOverlayUserIdFromSearchParams(sp);
   const hostObs = isOverlayBroadcastHost(sp);
   const { state, ready, resync } = useDonorRankingsRemoteState(userId);
@@ -650,23 +701,15 @@ export default function DonorRankingsOverlayPage() {
     };
   }, [hostObs, resync]);
   const overlayCfg = useMemo(
-    () =>
-      normalizeDonorRankingsOverlayConfig(
-        profileFull ? state?.donorRankingsFullOverlayConfig : state?.donorRankingsOverlayConfig
-      ),
-    [state?.donorRankingsOverlayConfig, state?.donorRankingsFullOverlayConfig, profileFull]
+    () => normalizeDonorRankingsOverlayConfig(state?.donorRankingsOverlayConfig),
+    [state?.donorRankingsOverlayConfig]
   );
 
   const useTest = (sp.get("test") || "false").toLowerCase() === "true";
-  const layoutDual = !profileFull && (sp.get("layout") || "").toLowerCase() === "dual";
-  const savedTheme = profileFull
-    ? state?.donorRankingsFullTheme || defaultState().donorRankingsFullTheme
-    : state?.donorRankingsTheme || defaultState().donorRankingsTheme;
+  const layoutDual = (sp.get("layout") || "").toLowerCase() === "dual";
+  const savedTheme = state?.donorRankingsTheme || defaultState().donorRankingsTheme;
 
-  const showAllDonors =
-    profileFull ||
-    (sp.get("all") || "").trim() === "1" ||
-    (sp.get("top") || "").trim() === "0";
+  const showAllDonors = (sp.get("all") || "").trim() === "1" || (sp.get("top") || "").trim() === "0";
   const topN = showAllDonors
     ? 0
     : liveThemeNumber(ready, useTest, savedTheme.top, sp, "top", 1, 50);
@@ -677,22 +720,22 @@ export default function DonorRankingsOverlayPage() {
   const zoomPct = Math.floor(readNumber(sp, "zoomPct", 100, 30, 300));
   const viewportSize = useOverlayViewportSize();
   const zoomScale = useMemo(
-    () => resolveBroadcastZoomScale(zoomPct, viewportSize.w, profileFull ? 1200 : 1500),
-    [zoomPct, viewportSize.w, profileFull]
+    () => resolveBroadcastZoomScale(zoomPct, viewportSize.w, 1500),
+    [zoomPct, viewportSize.w]
   );
   const bg =
     ready && !useTest
       ? (savedTheme.bg || "").trim() || "transparent"
       : readColor(sp, "bg", savedTheme.bg) || "transparent";
-  /** 어두운 기본값 + 투명도 시 방송 화면과 섞여 버건디로 보이므로 밝은 파스텔 핑크를 기본으로 */
-  const panelBg = resolveThemeColorLive(ready, useTest, sp, "panelBg", savedTheme.panelBg, "rgba(255, 248, 252, 1)");
+  /** 웹후원 순위 기본 — 반투명 밝은 패널 */
+  const panelBg = resolveThemeColorLive(ready, useTest, sp, "panelBg", savedTheme.panelBg, "rgba(232, 232, 236, 0.7)");
   const borderColor = resolveThemeColorLive(
     ready,
     useTest,
     sp,
     "border",
     savedTheme.borderColor,
-    "rgba(255, 210, 232, 0.42)"
+    "transparent"
   );
   const headerAccountBg = liveThemeColor(
     ready,
@@ -700,7 +743,7 @@ export default function DonorRankingsOverlayPage() {
     savedTheme.headerAccountBg,
     sp,
     "headerAccountBg",
-    "linear-gradient(135deg, #fff5fa 0%, #ffd6ea 48%, #ffb7d6 100%)"
+    "rgba(232, 232, 236, 0.55)"
   );
   const headerToonBg = liveThemeColor(
     ready,
@@ -708,29 +751,23 @@ export default function DonorRankingsOverlayPage() {
     savedTheme.headerToonBg,
     sp,
     "headerToonBg",
-    "linear-gradient(135deg, #fff4f9 0%, #ffc8e6 48%, #ffa3cf 100%)"
+    "rgba(232, 232, 236, 0.55)"
   );
   const headerUnifiedBg = readColor(sp, "headerBg", headerAccountBg) || headerAccountBg;
-  const rankingTitle = liveThemeTitle(
-    ready,
-    useTest,
-    savedTheme.titleText,
-    sp,
-    profileFull ? "👑 후원 순위 👑" : "후원 순위"
-  );
+  const rankingTitle = liveThemeTitle(ready, useTest, savedTheme.titleText, sp, "👑 웹후원 순위 👑");
   const rowEvenBg = liveThemeColor(ready, useTest, savedTheme.rowEvenBg, sp, "rowEvenBg", "transparent");
-  const rowOddBg = liveThemeColor(ready, useTest, savedTheme.rowOddBg, sp, "rowOddBg", "transparent");
-  const rankColor = liveThemeColor(ready, useTest, savedTheme.rankColor, sp, "rankColor", "#fff5f9");
-  const nameColor = liveThemeColor(ready, useTest, savedTheme.nameColor, sp, "nameColor", "#fff7fb");
-  const amountColor = liveThemeColor(ready, useTest, savedTheme.amountColor, sp, "amountColor", "#fff7ed");
-  const titleColor = liveThemeColor(ready, useTest, savedTheme.titleColor, sp, "titleColor", "#fff7fb");
+  const rowOddBg = liveThemeColor(ready, useTest, savedTheme.rowOddBg, sp, "rowOddBg", "rgba(255, 255, 255, 0.14)");
+  const rankColor = liveThemeColor(ready, useTest, savedTheme.rankColor, sp, "rankColor", "#ffffff");
+  const nameColor = liveThemeColor(ready, useTest, savedTheme.nameColor, sp, "nameColor", "#ffc107");
+  const amountColor = liveThemeColor(ready, useTest, savedTheme.amountColor, sp, "amountColor", "#ffc107");
+  const titleColor = liveThemeColor(ready, useTest, savedTheme.titleColor, sp, "titleColor", "#ffffff");
   const outlineColor = liveThemeColor(
     ready,
     useTest,
     savedTheme.outlineColor,
     sp,
     "outline",
-    "rgba(58, 6, 28, 0.85)"
+    "rgba(20, 12, 6, 0.96)"
   );
   const outlineWidthPx = liveThemeOutlineWidth(ready, useTest, savedTheme.outlineWidth, sp);
   const showBgLayer = overlayCfg.isBgEnabled && Boolean(overlayCfg.bgGifUrl.trim());
@@ -827,9 +864,9 @@ export default function DonorRankingsOverlayPage() {
           <>
             {bodyImageEl && bodyPos === "belowTitle" ? bodyImageEl : null}
             <div
-              className="relative grid grid-cols-1 overflow-visible rounded-2xl border shadow-[0_12px_32px_rgba(236,72,153,0.14)] backdrop-blur-md md:grid-cols-2 md:gap-0"
+              className="relative grid grid-cols-1 overflow-hidden rounded-2xl border border-white/30 shadow-[0_8px_28px_rgba(15,23,42,0.2)] backdrop-blur-md md:grid-cols-2 md:gap-0"
               style={{
-                borderColor,
+                borderColor: borderColor === "transparent" ? "rgba(255,255,255,0.3)" : borderColor,
                 backgroundColor: "transparent",
               }}
             >
@@ -886,11 +923,9 @@ export default function DonorRankingsOverlayPage() {
           </>
         ) : (
           <div
-            className={`relative mx-auto overflow-visible rounded-2xl border shadow-[0_12px_32px_rgba(236,72,153,0.14)] backdrop-blur-md ${
-              profileFull ? "max-w-[920px]" : "max-w-[760px]"
-            }`}
+            className="relative mx-auto max-w-[720px] overflow-hidden rounded-2xl border border-white/30 shadow-[0_8px_28px_rgba(15,23,42,0.2)] backdrop-blur-md"
             style={{
-              borderColor,
+              borderColor: borderColor === "transparent" ? "rgba(255,255,255,0.3)" : borderColor,
               backgroundColor: "transparent",
             }}
           >

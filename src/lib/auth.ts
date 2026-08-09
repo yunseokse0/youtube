@@ -7,7 +7,7 @@ export const AUTH_COOKIE = "sb_user";
 
 export const USERS: Record<string, { companyName: string; password: string }> = {
   finalent: {
-    companyName: "Final Entertainment",
+    companyName: "DIN Studio",
     password: "finalent",
   },
 };

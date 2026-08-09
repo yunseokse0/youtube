@@ -7,6 +7,8 @@ import {
   loadStateFromApi,
   normalizeDonorsArray,
   storageKey,
+  isDefaultLikeDonorRankingsTheme,
+  DEFAULT_DONOR_RANKINGS_FULL_THEME,
   type AppState,
 } from "@/lib/state";
 import { STATE_PICK_DONOR_RANKINGS } from "@/lib/state-api-pick";
@@ -50,6 +52,21 @@ function mergeDonorRankingsApiState(prev: AppState | null, remote: Partial<AppSt
   const next = { ...defaultState(), ...prev, ...remote } as AppState;
   if (Array.isArray(remote.donors)) {
     next.donors = normalizeDonorsArray(remote.donors);
+  }
+  /** 원격이 기본 테마인데 로컬이 커스텀이면 유지 — 제목「후원 순위」가 기본「👑 웹후원 순위 👑」로 덮이는 것 방지 */
+  if (
+    prev?.donorRankingsTheme &&
+    !isDefaultLikeDonorRankingsTheme(prev.donorRankingsTheme) &&
+    isDefaultLikeDonorRankingsTheme(next.donorRankingsTheme)
+  ) {
+    next.donorRankingsTheme = prev.donorRankingsTheme;
+  }
+  if (
+    prev?.donorRankingsFullTheme &&
+    !isDefaultLikeDonorRankingsTheme(prev.donorRankingsFullTheme, DEFAULT_DONOR_RANKINGS_FULL_THEME) &&
+    isDefaultLikeDonorRankingsTheme(next.donorRankingsFullTheme, DEFAULT_DONOR_RANKINGS_FULL_THEME)
+  ) {
+    next.donorRankingsFullTheme = prev.donorRankingsFullTheme;
   }
   return next;
 }

@@ -803,8 +803,22 @@ const TABLE_NUMERIC_OUTLINE_DARK_ON_LIGHT =
 const TABLE_BROADCAST_PANEL_BORDER = "#f5b8d4";
 const TABLE_BROADCAST_TOTAL_BORDER = "rgba(244, 170, 205, 0.45)";
 const TABLE_BROADCAST_PANEL_BG = "#fde8f2";
-const TABLE_BROADCAST_TEXT_ON_LIGHT = "#6b2d4a";
+/** 밝은 시트 본문 — 테마 핑크/블루 대신 고대비 잉크 */
+const TABLE_BROADCAST_TEXT_ON_LIGHT = "#111827";
 const TABLE_BROADCAST_TEXT_ON_DARK = "#f8fafc";
+/** 엑셀 계열 본문(이름·금액) — 테마 컬러 글자 대신 가독성 우선 */
+const EXCEL_BODY_TEXT_ON_LIGHT = "#0f172a";
+const EXCEL_BODY_TEXT_ON_DARK = "#f8fafc";
+const EXCEL_LIGHT_NAME_CLS = "text-[#0f172a] font-semibold";
+const EXCEL_LIGHT_ACCOUNT_CLS =
+  "text-[#0f172a] font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden";
+const EXCEL_LIGHT_TOON_CLS =
+  "text-[#1e293b] font-semibold whitespace-nowrap font-mono tabular-nums overflow-hidden";
+const EXCEL_DARK_NAME_CLS = "text-[#f8fafc] font-semibold";
+const EXCEL_DARK_ACCOUNT_CLS =
+  "text-[#f8fafc] font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden";
+const EXCEL_DARK_TOON_CLS =
+  "text-[#e2e8f0] font-semibold whitespace-nowrap font-mono tabular-nums overflow-hidden";
 
 const THEMES: Record<ThemeId, {
   label: string;
@@ -827,27 +841,27 @@ const THEMES: Record<ThemeId, {
   default: {
     label: "핑크 그라데이션",
     memberCls: "font-bold tracking-tight",
-    nameCls: "text-pink-700",
-    accountCls: "text-pink-700",
-    toonCls: "text-pink-600",
-    totalCls: "font-extrabold text-pink-700 drop-shadow-[0_0_6px_rgba(255,255,255,0.45)]",
+    nameCls: "text-[#111827] font-semibold",
+    accountCls: "text-[#111827] font-bold",
+    toonCls: "text-[#1f2937] font-semibold",
+    totalCls: "font-extrabold text-[#111827] drop-shadow-[0_0_6px_rgba(255,255,255,0.45)]",
     totalWrapCls: "bg-[linear-gradient(135deg,#FFDEE9_0%,#FCE4EC_50%,#FFD1FF_100%)] border border-white/40 px-2 py-1 rounded backdrop-blur-xl shadow-[0_8px_32px_0_rgba(255,182,193,0.3)]",
     rowCls: "px-2 py-1 bg-white/30 hover:bg-pink-50/50 transition-colors",
     tableCls: "bg-white/30 border border-white/40 rounded-lg overflow-hidden border-collapse backdrop-blur-xl shadow-[0_8px_32px_0_rgba(255,182,193,0.3)]",
-    headerCls: "bg-pink-100/80 text-pink-700 font-bold px-2 py-1 text-sm",
+    headerCls: "bg-pink-700 text-white font-bold px-2 py-1 text-sm",
     goalBarBg: "bg-white/35",
     goalBarFill: "bg-gradient-to-r from-[#FFDEE9] via-[#FCE4EC] to-[#FFD1FF]",
     goalText: "text-white font-bold drop-shadow-[0_0_4px_rgba(0,0,0,1)]",
     goalWrap: "border border-white/40 bg-white/30 rounded p-1 backdrop-blur-xl shadow-[0_8px_32px_0_rgba(255,182,193,0.25)]",
-    tickerCls: "text-pink-700 font-semibold",
-    timerCls: "font-mono text-pink-700/90",
+    tickerCls: "text-[#111827] font-semibold",
+    timerCls: "font-mono text-[#1f2937]",
   },
   excel: {
     label: "엑셀(녹색)",
     memberCls: "font-mono",
-    nameCls: "text-slate-900 font-semibold",
-    accountCls: "text-blue-800 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
-    toonCls: "text-slate-600 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    nameCls: EXCEL_LIGHT_NAME_CLS,
+    accountCls: EXCEL_LIGHT_ACCOUNT_CLS,
+    toonCls: EXCEL_LIGHT_TOON_CLS,
     totalCls: "font-bold text-white",
     totalWrapCls: "bg-[#217346] px-2 py-1",
     rowCls: "border border-[#d4d4d4] px-2 py-1 align-middle bg-white",
@@ -863,9 +877,9 @@ const THEMES: Record<ThemeId, {
   excelLive: {
     label: "방송 엑셀(청록·줄무늬)",
     memberCls: "font-mono font-semibold",
-    nameCls: "text-[#1e3a5f] font-semibold",
-    accountCls: "text-[#1e40af] font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
-    toonCls: "text-[#475569] whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    nameCls: EXCEL_LIGHT_NAME_CLS,
+    accountCls: EXCEL_LIGHT_ACCOUNT_CLS,
+    toonCls: EXCEL_LIGHT_TOON_CLS,
     totalCls: "font-bold text-white",
     totalWrapCls: "bg-[#1a5276] px-2 py-1",
     rowCls: "border border-[#cbd5e1]/60 px-2 py-1 align-middle",
@@ -881,9 +895,9 @@ const THEMES: Record<ThemeId, {
   excelBlue: {
     label: "엑셀(파랑)",
     memberCls: "font-mono",
-    nameCls: "text-slate-900 font-semibold",
-    accountCls: "text-blue-800 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
-    toonCls: "text-slate-600 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    nameCls: EXCEL_LIGHT_NAME_CLS,
+    accountCls: EXCEL_LIGHT_ACCOUNT_CLS,
+    toonCls: EXCEL_LIGHT_TOON_CLS,
     totalCls: "font-bold text-white",
     totalWrapCls: "bg-[#2563eb] px-2 py-1",
     rowCls: "border border-[#cbd5e1] px-2 py-1 align-middle bg-white",
@@ -899,9 +913,9 @@ const THEMES: Record<ThemeId, {
   excelSlate: {
     label: "엑셀(슬레이트)",
     memberCls: "font-mono",
-    nameCls: "text-slate-100 font-semibold",
-    accountCls: "text-sky-300 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
-    toonCls: "text-slate-400 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    nameCls: EXCEL_DARK_NAME_CLS,
+    accountCls: EXCEL_DARK_ACCOUNT_CLS,
+    toonCls: EXCEL_DARK_TOON_CLS,
     totalCls: "font-bold text-white",
     totalWrapCls: "bg-[#334155] px-2 py-1",
     rowCls: "border border-slate-600 px-2 py-1 align-middle",
@@ -917,9 +931,9 @@ const THEMES: Record<ThemeId, {
   excelAmber: {
     label: "엑셀(앰버)",
     memberCls: "font-mono",
-    nameCls: "text-amber-950 font-semibold",
-    accountCls: "text-amber-900 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
-    toonCls: "text-amber-700 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    nameCls: EXCEL_LIGHT_NAME_CLS,
+    accountCls: EXCEL_LIGHT_ACCOUNT_CLS,
+    toonCls: EXCEL_LIGHT_TOON_CLS,
     totalCls: "font-bold text-white",
     totalWrapCls: "bg-[#d97706] px-2 py-1",
     rowCls: "border border-amber-200 px-2 py-1 align-middle bg-amber-50",
@@ -935,9 +949,9 @@ const THEMES: Record<ThemeId, {
   excelRose: {
     label: "엑셀(로즈)",
     memberCls: "font-mono",
-    nameCls: "text-rose-950 font-semibold",
-    accountCls: "text-rose-800 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
-    toonCls: "text-rose-600 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    nameCls: EXCEL_LIGHT_NAME_CLS,
+    accountCls: EXCEL_LIGHT_ACCOUNT_CLS,
+    toonCls: EXCEL_LIGHT_TOON_CLS,
     totalCls: "font-bold text-white",
     totalWrapCls: "bg-[#e11d48] px-2 py-1",
     rowCls: "border border-rose-200 px-2 py-1 align-middle bg-rose-50",
@@ -953,9 +967,9 @@ const THEMES: Record<ThemeId, {
   excelNavy: {
     label: "엑셀(네이비)",
     memberCls: "font-mono",
-    nameCls: "text-slate-100 font-semibold",
-    accountCls: "text-sky-200 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
-    toonCls: "text-slate-400 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    nameCls: EXCEL_DARK_NAME_CLS,
+    accountCls: EXCEL_DARK_ACCOUNT_CLS,
+    toonCls: EXCEL_DARK_TOON_CLS,
     totalCls: "font-bold text-white",
     totalWrapCls: "bg-[#1e3a8a] px-2 py-1",
     rowCls: "border border-slate-500 px-2 py-1 align-middle",
@@ -971,9 +985,9 @@ const THEMES: Record<ThemeId, {
   excelTeal: {
     label: "엑셀(틸)",
     memberCls: "font-mono",
-    nameCls: "text-slate-900 font-semibold",
-    accountCls: "text-teal-800 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
-    toonCls: "text-slate-600 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    nameCls: EXCEL_LIGHT_NAME_CLS,
+    accountCls: EXCEL_LIGHT_ACCOUNT_CLS,
+    toonCls: EXCEL_LIGHT_TOON_CLS,
     totalCls: "font-bold text-white",
     totalWrapCls: "bg-[#0d9488] px-2 py-1",
     rowCls: "border border-teal-200 px-2 py-1 align-middle bg-teal-50",
@@ -989,9 +1003,9 @@ const THEMES: Record<ThemeId, {
   excelPurple: {
     label: "엑셀(퍼플)",
     memberCls: "font-mono",
-    nameCls: "text-slate-900 font-semibold",
-    accountCls: "text-purple-800 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
-    toonCls: "text-slate-600 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    nameCls: EXCEL_LIGHT_NAME_CLS,
+    accountCls: EXCEL_LIGHT_ACCOUNT_CLS,
+    toonCls: EXCEL_LIGHT_TOON_CLS,
     totalCls: "font-bold text-white",
     totalWrapCls: "bg-[#7c3aed] px-2 py-1",
     rowCls: "border border-purple-200 px-2 py-1 align-middle bg-purple-50",
@@ -1007,9 +1021,9 @@ const THEMES: Record<ThemeId, {
   excelEmerald: {
     label: "엑셀(에메랄드)",
     memberCls: "font-mono",
-    nameCls: "text-slate-900 font-semibold",
-    accountCls: "text-emerald-800 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
-    toonCls: "text-slate-600 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    nameCls: EXCEL_LIGHT_NAME_CLS,
+    accountCls: EXCEL_LIGHT_ACCOUNT_CLS,
+    toonCls: EXCEL_LIGHT_TOON_CLS,
     totalCls: "font-bold text-white",
     totalWrapCls: "bg-[#059669] px-2 py-1",
     rowCls: "border border-emerald-200 px-2 py-1 align-middle bg-emerald-50",
@@ -1025,9 +1039,9 @@ const THEMES: Record<ThemeId, {
   excelOrange: {
     label: "엑셀(오렌지)",
     memberCls: "font-mono",
-    nameCls: "text-slate-900 font-semibold",
-    accountCls: "text-orange-800 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
-    toonCls: "text-slate-600 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    nameCls: EXCEL_LIGHT_NAME_CLS,
+    accountCls: EXCEL_LIGHT_ACCOUNT_CLS,
+    toonCls: EXCEL_LIGHT_TOON_CLS,
     totalCls: "font-bold text-white",
     totalWrapCls: "bg-[#ea580c] px-2 py-1",
     rowCls: "border border-orange-200 px-2 py-1 align-middle bg-orange-50",
@@ -1043,9 +1057,9 @@ const THEMES: Record<ThemeId, {
   excelIndigo: {
     label: "엑셀(인디고)",
     memberCls: "font-mono",
-    nameCls: "text-slate-900 font-semibold",
-    accountCls: "text-indigo-800 font-bold whitespace-nowrap font-mono tabular-nums overflow-hidden",
-    toonCls: "text-slate-600 whitespace-nowrap font-mono tabular-nums overflow-hidden",
+    nameCls: EXCEL_LIGHT_NAME_CLS,
+    accountCls: EXCEL_LIGHT_ACCOUNT_CLS,
+    toonCls: EXCEL_LIGHT_TOON_CLS,
     totalCls: "font-bold text-white",
     totalWrapCls: "bg-[#4f46e5] px-2 py-1",
     rowCls: "border border-indigo-200 px-2 py-1 align-middle bg-indigo-50",
@@ -2359,28 +2373,31 @@ function OverlayInner() {
           color: ${tableThemeAutoTextColor} !important;
         }`
         : "";
+  /** 엑셀 테마: 본문만 고대비(헤더·총합 행 흰색 유지). 테마 컬러 글자 대신 잉크색 */
+  const excelReadableBodyText =
+    isLightTableSheet ? EXCEL_BODY_TEXT_ON_LIGHT : EXCEL_BODY_TEXT_ON_DARK;
+  const excelAutoBodyTextCss =
+    !useBroadcastTableChrome && !hasTableTextColorOverride
+      ? `
+        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td,
+        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td span,
+        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td strong,
+        .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td .overlay-cell-text-inner {
+          color: ${excelReadableBodyText} !important;
+        }`
+      : "";
   const tableBodyTextStroke = tableTextIsLight && !externalSafeMode
     ? "0.75px rgba(6, 12, 24, 0.95)"
     : "0";
   const stripTextColor = (cls: string) =>
-    hasTableTextColorOverride || hasTableHeaderTextColorOverride
+    hasTableTextColorOverride || hasTableHeaderTextColorOverride || Boolean(excelAutoBodyTextCss)
       ? cls.replace(/\btext-[^\s]+/g, "").replace(/\s+/g, " ").trim()
       : cls;
-  // GIF 배경은 테이블/열 불투명 배경 아래에 깔리므로, GIF 사용 시에도 stripBg + 틴트 경로를 태워야 보임
-  const useTableOpacity = tableBgOpacity < 100 || showTableBgGif;
   /** GIF 모드에서도 관리자 tableBgOpacity(0~100)를 그대로 반영 */
-  const tableTintAlpha = (() => {
-    if (!showTableBgGif) return tableBgOpacity / 100;
-    const direct = tableBgOpacity / 100;
-    return Math.max(0, Math.min(1, direct));
-  })();
-  /** 100% + GIF 없음 → 완전 불투명(행·헤더 이중 알파·OBS 0.94 바닥값 방지) */
+  const tableTintAlpha = Math.max(0, Math.min(1, tableBgOpacity / 100));
+  /** 100% + GIF 없음 → 완전 불투명(rgb). 그 외는 슬라이더 값 그대로(예전 OBS 0.94 바닥값 제거) */
   const tableSheetFullyOpaque = tableBgOpacity >= 100 && !showTableBgGif;
-  const effectiveTableTintAlpha = tableSheetFullyOpaque
-    ? 1
-    : externalHost && isLightTableSheet && !showTableBgGif
-      ? Math.max(tableTintAlpha, 0.94)
-      : tableTintAlpha;
+  const effectiveTableTintAlpha = tableSheetFullyOpaque ? 1 : tableTintAlpha;
   /** 본문 시트 배경 — 100%일 때 rgb()로 OBS/Prism 합성 투명 이슈 완화 */
   const tableBodySheetBgCss = tableSheetFullyOpaque
     ? `rgb(${tableSheetRgb.join(", ")})`
@@ -3518,7 +3535,8 @@ function OverlayInner() {
         .overlay-center-fixed table.overlay-elegant-table .overlay-row td,
         .overlay-center-fixed table.overlay-elegant-table thead td { font-size: ${memberFontPx}px !important; min-height: ${Math.round(memberFontPx * 1.5)}px !important; line-height: 1.2 !important; padding: ${Math.round(memberFontPx * 0.25)}px ${Math.round(memberFontPx * 0.4)}px !important; }
         .overlay-center-fixed table.overlay-elegant-table .overlay-total-row td { font-size: ${memberFontPx}px !important; min-height: ${Math.round(memberFontPx * 1.5)}px !important; padding: ${Math.round(memberFontPx * 0.25)}px ${Math.round(memberFontPx * 0.4)}px !important; font-weight: ${tableFontWeight} !important; }
-        .overlay-center-fixed table { background: ${showTableBgGif ? "transparent" : "rgba(0,0,0,0.5)"} !important; }
+        /* 시트 불투명도는 바깥 wrapper(tableBodySheetBgCss)만 담당 — table에 불투명/반투명 깔면 슬라이더가 안 먹음 */
+        .overlay-center-fixed table { background: transparent !important; }
         .overlay-center-fixed table.overlay-elegant-table td { container-type: inline-size; white-space: nowrap !important; overflow: visible !important; }
       ` }} />
     ) : null;
@@ -3606,6 +3624,10 @@ function OverlayInner() {
         }`
             : ""
         }
+        .overlay-root .overlay-elegant-table {
+          background: transparent !important;
+          background-color: transparent !important;
+        }
         .overlay-root .overlay-elegant-table thead td,
         .overlay-root .overlay-elegant-table tbody td {
           border: none !important;
@@ -3639,6 +3661,7 @@ function OverlayInner() {
         }
         ${tableForcedTextColorCss}
         ${tableAutoTextColorCss}
+        ${excelAutoBodyTextCss}
         ${broadcastTheadCss}
         ${
           useBroadcastTableChrome

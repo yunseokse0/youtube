@@ -49,7 +49,7 @@ import {
   type StateApiPick,
 } from "@/lib/state-api-pick";
 import { MANUAL_SIG_BROADCAST_STATE_KEY } from "@/lib/manual-sig-broadcast-state";
-import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
+import { mergeDonorRowFields, syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
 import { MANUAL_SIG_DRAFT_STATE_KEY } from "@/lib/manual-sig-workbench";
 import { OBS_TEXT_OVERLAY_STATE_KEY, normalizeObsTextRegistry, type ObsTextOverlayRegistry } from "@/lib/obs-text-overlay";
 import { slimSigInventoryForWire } from "@/lib/state-wire-slim";
@@ -254,6 +254,27 @@ export function normalizeSigMatchParticipantIds(raw: unknown, validMemberIds: Se
   return out;
 }
 
+/** 시그 멤버별 후원 연동 맵 정규화 */
+export function normalizeSigMatchDonationLinks(
+  raw: unknown,
+  validMemberIds: Set<string>
+): Record<string, { active: boolean; startedAt?: number }> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, { active: boolean; startedAt?: number }> = {};
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!validMemberIds.has(id)) continue;
+    if (!v || typeof v !== "object") continue;
+    const o = v as Record<string, unknown>;
+    const active = Boolean(o.active);
+    const startedRaw = Number(o.startedAt);
+    const startedAt = Number.isFinite(startedRaw) ? Math.max(0, Math.floor(startedRaw)) : undefined;
+    out[id] = active
+      ? { active: true, ...(startedAt !== undefined ? { startedAt } : {}) }
+      : { active: false, ...(startedAt !== undefined ? { startedAt } : {}) };
+  }
+  return out;
+}
+
 export function normalizeRouletteState(raw: unknown): RouletteState {
   const def: RouletteState = {
     phase: "IDLE",
@@ -407,28 +428,167 @@ export function buildRouletteIdlePreserveSettings(
 
 export const DEFAULT_DONOR_RANKINGS_THEME: DonorRankingsTheme = {
   top: 20,
-  titleText: "후원 순위",
-  titleSize: 28,
-  rowSize: 21,
-  rankSize: 24,
-  overlayOpacity: 100,
+  titleText: "👑 웹후원 순위 👑",
+  titleSize: 34,
+  rowSize: 28,
+  rankSize: 30,
+  overlayOpacity: 88,
   bg: "transparent",
-  /** 투명도 슬라이더는 헤더·목록 배경 공통 — 어두운 기본값은 방송 합성 시 탁해 보임 */
-  panelBg: "rgba(255, 248, 252, 1)",
+  /** 반투명 밝은 패널 — 방송 배경이 비치는 유리 느낌 */
+  panelBg: "rgba(232, 232, 236, 0.7)",
   borderColor: "transparent",
-  headerAccountBg: "#F8BBD0",
-  headerToonBg: "#f9a8d4",
+  headerAccountBg: "rgba(232, 232, 236, 0.55)",
+  headerToonBg: "rgba(232, 232, 236, 0.55)",
   rowEvenBg: "transparent",
-  rowOddBg: "transparent",
-  rankColor: "#F06292",
-  nameColor: "#ffffff",
-  amountColor: "#fff59d",
-  titleColor: "#fff7fb",
-  outlineColor: "rgba(0,0,0,0.92)",
-  outlineWidth: 1.25,
+  rowOddBg: "rgba(255, 255, 255, 0.14)",
+  /** 4등 이후 — 흰 글자 + 짙은 외곽선 / 제목도 흰 글자 */
+  rankColor: "#ffffff",
+  nameColor: "#ffc107",
+  amountColor: "#ffc107",
+  titleColor: "#ffffff",
+  outlineColor: "rgba(20, 12, 6, 0.96)",
+  outlineWidth: 2.25,
 };
 
-/** 전체 후원 순위(`/overlay/donor-rankings-full`) — 분홍 테마 기본값 */
+/** 후원순위 기본 제공 테마 5종 (관리자 원클릭 적용) */
+export const BUILT_IN_DONOR_RANKINGS_PRESETS: DonorRankingsPreset[] = [
+  {
+    id: "dr_builtin_web_gold",
+    name: "웹후원 골드",
+    theme: { ...DEFAULT_DONOR_RANKINGS_THEME },
+  },
+  {
+    id: "dr_builtin_neon_cyber",
+    name: "네온 사이버",
+    theme: {
+      top: 20,
+      titleText: "⚡ 웹후원 순위 ⚡",
+      titleSize: 32,
+      rowSize: 26,
+      rankSize: 28,
+      overlayOpacity: 90,
+      bg: "transparent",
+      panelBg: "rgba(8, 12, 28, 0.78)",
+      borderColor: "rgba(34, 211, 238, 0.35)",
+      headerAccountBg: "linear-gradient(135deg, rgba(15,23,42,0.95) 0%, rgba(30,58,138,0.9) 100%)",
+      headerToonBg: "linear-gradient(135deg, rgba(15,23,42,0.95) 0%, rgba(88,28,135,0.85) 100%)",
+      rowEvenBg: "rgba(255, 255, 255, 0.04)",
+      rowOddBg: "rgba(34, 211, 238, 0.08)",
+      rankColor: "#67e8f9",
+      nameColor: "#e0f2fe",
+      amountColor: "#f0abfc",
+      titleColor: "#22d3ee",
+      outlineColor: "rgba(2, 6, 23, 0.95)",
+      outlineWidth: 1.75,
+    },
+  },
+  {
+    id: "dr_builtin_classic_pink",
+    name: "클래식 핑크",
+    theme: {
+      top: 20,
+      titleText: "💖 후원 순위 💖",
+      titleSize: 30,
+      rowSize: 22,
+      rankSize: 24,
+      overlayOpacity: 96,
+      bg: "transparent",
+      panelBg: "rgba(255, 248, 252, 0.96)",
+      borderColor: "rgba(244, 114, 182, 0.4)",
+      headerAccountBg: "linear-gradient(135deg, #fce7f3 0%, #fbcfe8 48%, #f9a8d4 100%)",
+      headerToonBg: "linear-gradient(135deg, #fdf2f8 0%, #f9a8d4 100%)",
+      rowEvenBg: "rgba(255, 228, 240, 0.35)",
+      rowOddBg: "transparent",
+      rankColor: "#be185d",
+      nameColor: "#831843",
+      amountColor: "#b45309",
+      titleColor: "#9d174d",
+      outlineColor: "rgba(255, 255, 255, 0.85)",
+      outlineWidth: 1.25,
+    },
+  },
+  {
+    id: "dr_builtin_midnight",
+    name: "미드나잇",
+    theme: {
+      top: 20,
+      titleText: "🌙 웹후원 순위 🌙",
+      titleSize: 32,
+      rowSize: 26,
+      rankSize: 28,
+      overlayOpacity: 92,
+      bg: "transparent",
+      panelBg: "rgba(15, 17, 23, 0.82)",
+      borderColor: "rgba(148, 163, 184, 0.25)",
+      headerAccountBg: "rgba(30, 41, 59, 0.92)",
+      headerToonBg: "rgba(30, 41, 59, 0.92)",
+      rowEvenBg: "rgba(255, 255, 255, 0.03)",
+      rowOddBg: "rgba(255, 255, 255, 0.07)",
+      rankColor: "#f8fafc",
+      nameColor: "#f1f5f9",
+      amountColor: "#fde68a",
+      titleColor: "#f8fafc",
+      outlineColor: "rgba(0, 0, 0, 0.88)",
+      outlineWidth: 1.5,
+    },
+  },
+  {
+    id: "dr_builtin_emerald",
+    name: "에메랄드",
+    theme: {
+      top: 20,
+      titleText: "✨ 웹후원 순위 ✨",
+      titleSize: 32,
+      rowSize: 26,
+      rankSize: 28,
+      overlayOpacity: 90,
+      bg: "transparent",
+      panelBg: "rgba(236, 253, 245, 0.78)",
+      borderColor: "rgba(16, 185, 129, 0.35)",
+      headerAccountBg: "linear-gradient(135deg, #d1fae5 0%, #a7f3d0 50%, #6ee7b7 100%)",
+      headerToonBg: "linear-gradient(135deg, #ecfdf5 0%, #6ee7b7 100%)",
+      rowEvenBg: "rgba(167, 243, 208, 0.28)",
+      rowOddBg: "transparent",
+      rankColor: "#064e3b",
+      nameColor: "#065f46",
+      amountColor: "#b45309",
+      titleColor: "#064e3b",
+      outlineColor: "rgba(255, 255, 255, 0.9)",
+      outlineWidth: 1.35,
+    },
+  },
+];
+
+const BUILT_IN_DONOR_RANKINGS_PRESET_IDS = new Set(
+  BUILT_IN_DONOR_RANKINGS_PRESETS.map((p) => p.id)
+);
+
+export function isBuiltInDonorRankingsPresetId(id: string | null | undefined): boolean {
+  return Boolean(id && BUILT_IN_DONOR_RANKINGS_PRESET_IDS.has(id));
+}
+
+/** 기본 5종을 앞에 두고, 사용자 커스텀 프리셋을 뒤에 유지 */
+export function mergeBuiltInDonorRankingsPresets(
+  existing: DonorRankingsPreset[] | null | undefined
+): DonorRankingsPreset[] {
+  const list = Array.isArray(existing) ? existing : [];
+  const byId = new Map(list.map((p) => [p.id, p]));
+  const merged: DonorRankingsPreset[] = BUILT_IN_DONOR_RANKINGS_PRESETS.map((builtIn) => {
+    const prev = byId.get(builtIn.id);
+    /** 빌트인 id는 카탈로그 테마를 정본으로 — 이름만 사용자가 바꿔 둔 경우 유지 */
+    return {
+      id: builtIn.id,
+      name: prev?.name?.trim() ? prev.name : builtIn.name,
+      theme: { ...builtIn.theme },
+    };
+  });
+  for (const p of list) {
+    if (!BUILT_IN_DONOR_RANKINGS_PRESET_IDS.has(p.id)) merged.push(p);
+  }
+  return merged;
+}
+
+/** @deprecated 후원순위 전체(분홍) UI·라우트 제거 — Redis 호환용 기본값만 유지 */
 export const DEFAULT_DONOR_RANKINGS_FULL_THEME: DonorRankingsTheme = {
   top: 0,
   titleText: "👑 후원 순위 👑",
@@ -572,8 +732,8 @@ export function isDefaultLikeDonorRankingsTheme(
 }
 
 function normalizeDonorRankingsPresets(input: unknown): DonorRankingsPreset[] {
-  if (!Array.isArray(input)) return [];
-  return input
+  if (!Array.isArray(input)) return mergeBuiltInDonorRankingsPresets([]);
+  const normalized = input
     .filter((x) => x && typeof x === "object")
     .map((x, idx) => {
       const o = x as Record<string, unknown>;
@@ -585,6 +745,7 @@ function normalizeDonorRankingsPresets(input: unknown): DonorRankingsPreset[] {
         theme: normalizeDonorRankingsTheme(o.theme),
       };
     });
+  return mergeBuiltInDonorRankingsPresets(normalized);
 }
 
 /** 동기화 오류 시 members가 missions에 섞이는 것 방지. title/price가 있는 항목만 반환 */
@@ -901,8 +1062,8 @@ export function defaultState(): AppState {
     rankPositionLabels: fitRankPositionLabelsToMemberCount(["대표"], defaultMembers().length),
     donorRankingsTheme: { ...DEFAULT_DONOR_RANKINGS_THEME },
     donorRankingsFullTheme: { ...DEFAULT_DONOR_RANKINGS_FULL_THEME },
-    donorRankingsPresets: [],
-    donorRankingsPresetId: undefined,
+    donorRankingsPresets: mergeBuiltInDonorRankingsPresets([]),
+    donorRankingsPresetId: "dr_builtin_web_gold",
     donors: [],
     donorsFormat: "full",
     contributionLogs: [],
@@ -928,6 +1089,7 @@ export function defaultState(): AppState {
       incentivePerPoint: 1000,
       sigMatchPools: [],
       participantMemberIds: [],
+      donationLinks: {},
       overlayTimerDurationSec: 180,
       overlayTimerEndAt: null,
       rulesText: "",
@@ -1345,6 +1507,10 @@ export function loadState(userId?: string | null): AppState {
       sigMatchPools: normalizeSigMatchPools(data.sigMatchSettings?.sigMatchPools, validSigMemberIds),
       participantMemberIds: normalizeSigMatchParticipantIds(
         (data as AppState).sigMatchSettings?.participantMemberIds,
+        validSigMemberIds
+      ),
+      donationLinks: normalizeSigMatchDonationLinks(
+        (data as AppState).sigMatchSettings?.donationLinks,
         validSigMemberIds
       ),
       overlayTimerDurationSec: Number.isFinite((data as AppState).sigMatchSettings?.overlayTimerDurationSec)
@@ -2833,6 +2999,10 @@ async function doLoadStateFromApi(
           (data as AppState).sigMatchSettings?.participantMemberIds,
           validSigMemberIdsApi
         ),
+        donationLinks: normalizeSigMatchDonationLinks(
+          (data as AppState).sigMatchSettings?.donationLinks,
+          validSigMemberIdsApi
+        ),
         overlayTimerDurationSec: Number.isFinite((data as AppState).sigMatchSettings?.overlayTimerDurationSec)
           ? Math.max(0, Math.min(24 * 60 * 60, Math.floor((data as AppState).sigMatchSettings!.overlayTimerDurationSec as number)))
           : 180,
@@ -2899,7 +3069,15 @@ function unionDonorsById(existing: Donor[], incoming: Donor[]): Donor[] {
   for (const d of existing) map.set(d.id, d);
   for (const d of incoming) {
     const prev = map.get(d.id);
-    if (!prev || d.at >= prev.at) map.set(d.id, d);
+    if (!prev) {
+      map.set(d.id, d);
+      continue;
+    }
+    if (d.at >= prev.at) {
+      map.set(d.id, mergeDonorRowFields(d, prev));
+    } else {
+      map.set(d.id, mergeDonorRowFields(prev, d));
+    }
   }
   return Array.from(map.values()).sort((a, b) => b.at - a.at);
 }

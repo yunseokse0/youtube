@@ -4,6 +4,7 @@ import { createPortal, flushSync } from "react-dom";
 import MemberRow from "@/components/MemberRow";
 import DonationTableOptionCheckboxes from "@/components/admin/DonationTableOptionCheckboxes";
 import { notifyBroadcastStateLocalUpdated, notifyOverlayPresetsLocalUpdated } from "@/lib/broadcast-state-local-sync";
+import { APP_BRAND_NAME, APP_SYSTEM_NAME } from "@/lib/app-branding";
 import Toast from "@/components/Toast";
 import {
   AppState,
@@ -32,7 +33,8 @@ import {
   isShrunkToDefaultSigInventory,
   isDefaultLikeDonorRankingsTheme,
   isDefaultLikeOverlayPresets,
-  DEFAULT_DONOR_RANKINGS_FULL_THEME,
+  BUILT_IN_DONOR_RANKINGS_PRESETS,
+  isBuiltInDonorRankingsPresetId,
   shouldPreferLocalSigInventoryOverIncoming,
   shouldAvoidOverwritingLocalStateWithRemote,
   wouldShrinkDonationData,
@@ -66,6 +68,7 @@ import {
   normalizeDonorRankingsOverlayConfig,
   normalizeSigMatchPools,
   normalizeSigMatchParticipantIds,
+  normalizeSigMatchDonationLinks,
   normalizeDonationListsOverlayConfig,
   getUnifiedSigRollingItems,
   normalizeSigRolling,
@@ -119,7 +122,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import { appendSettlementRecordAndSync, appendSigMatchIncentiveSettlementAndSync, SettlementMemberRatioOverrides } from "@/lib/settlement";
-import { formatSigMatchStat, getSigMatchRankings, isOperatingSettlementMember } from "@/lib/settlement-utils";
+import { formatSigMatchStat, getSigMatchRankings, isOperatingSettlementMember, resolveSigMatchDonationLink } from "@/lib/settlement-utils";
 import { getEffectiveRemainingTime, mergeGeneralTimerPreferEffective, pauseTimer, resumeTimer } from "@/lib/timer-utils";
 import {
   appendAdminPreviewEmbedToOverlayUrl,
@@ -128,8 +131,6 @@ import {
   appendGoalBarStyleParams,
   normalizeGoalHexColor,
   donorRankingsThemeToSearchParams,
-  buildDonorRankingsFullOverlayUrl,
-  donorRankingsFullOverlayPath,
   sanitizeBroadcastOverlayUrl,
   resolveScopedOverlayUserId,
   type OverlayPresetLike,
@@ -192,6 +193,8 @@ import {
   isDuplicateDonationEvent,
   normalizeDonationEventId,
   revertDonationFromAppState,
+  reassignDonorMemberInAppState,
+  updateDonorMessageInAppState,
   syncMemberTotalsFromDonors,
 } from "@/lib/donation/apply-donation-state";
 import { mergeDonationApplyBase, enrichStateBeforeAuthoritativeDonationSave } from "@/lib/donation/merge-donation-apply-base";
@@ -518,6 +521,7 @@ export default function AdminPage() {
   const addDonorSaveChainRef = useRef<Promise<void>>(Promise.resolve());
   const [dailyLog, setDailyLog] = useState<Record<string, DailyLogEntry[]>>({});
   const [donorName, setDonorName] = useState("");
+  const [donorMessage, setDonorMessage] = useState("");
   const [donorAmount, setDonorAmount] = useState("");
   const [bulkDonationText, setBulkDonationText] = useState("");
   const [bulkDonationBusy, setBulkDonationBusy] = useState(false);
@@ -881,7 +885,6 @@ export default function AdminPage() {
   const [battleContentWidthPct, setBattleContentWidthPct] = useState("100");
   const [sigSalesMenuCount, setSigSalesMenuCount] = useState("10");
   const [donorRankingsPreviewIframeKey, setDonorRankingsPreviewIframeKey] = useState(0);
-  const [donorRankingsFullPreviewIframeKey, setDonorRankingsFullPreviewIframeKey] = useState(0);
   const [obsTextPreviewIframeKey, setObsTextPreviewIframeKey] = useState(0);
   const [obsTextPreviewInstanceId, setObsTextPreviewInstanceId] = useState<string | null>(null);
   const obsTextRegistry = useMemo(() => readObsTextRegistryFromState(state), [state]);
@@ -1406,26 +1409,11 @@ export default function AdminPage() {
       didPreserve = true;
     }
     if (
-      !isDefaultLikeDonorRankingsTheme(local.donorRankingsFullTheme, DEFAULT_DONOR_RANKINGS_FULL_THEME) &&
-      isDefaultLikeDonorRankingsTheme(merged.donorRankingsFullTheme, DEFAULT_DONOR_RANKINGS_FULL_THEME)
-    ) {
-      merged = { ...merged, donorRankingsFullTheme: local.donorRankingsFullTheme };
-      didPreserve = true;
-    }
-    if (
       (pendingUnsyncedRef.current || Date.now() - lastLocalPersistAtRef.current < 8000) &&
       local.donorRankingsTheme &&
       !isDefaultLikeDonorRankingsTheme(local.donorRankingsTheme)
     ) {
       merged = { ...merged, donorRankingsTheme: local.donorRankingsTheme };
-      didPreserve = true;
-    }
-    if (
-      (pendingUnsyncedRef.current || Date.now() - lastLocalPersistAtRef.current < 8000) &&
-      local.donorRankingsFullTheme &&
-      !isDefaultLikeDonorRankingsTheme(local.donorRankingsFullTheme, DEFAULT_DONOR_RANKINGS_FULL_THEME)
-    ) {
-      merged = { ...merged, donorRankingsFullTheme: local.donorRankingsFullTheme };
       didPreserve = true;
     }
     if (
@@ -2700,20 +2688,6 @@ export default function AdminPage() {
     if (opts?.test) q.set("test", "true");
     return `${window.location.origin}/overlay/donor-rankings?${q.toString()}`;
   };
-  const buildDonorRankingsFullUrl = (opts?: { test?: boolean }): string => {
-    if (typeof window === "undefined") return "";
-    const theme = state.donorRankingsFullTheme || defaultState().donorRankingsFullTheme;
-    const url = buildDonorRankingsFullOverlayUrl(
-      window.location.origin,
-      overlayUserId,
-      theme,
-      getDonorRankingsZoomPct()
-    );
-    if (!opts?.test) return url;
-    const u = new URL(url);
-    u.searchParams.set("test", "true");
-    return u.toString();
-  };
   const buildEmergencySnapshotUrl = (p: OverlayPreset): string => {
     if (typeof window === "undefined") return "";
     const base = `${window.location.origin}/overlay`;
@@ -3059,6 +3033,7 @@ export default function AdminPage() {
       const merged: AppState["sigMatchSettings"] = {
         ...prev.sigMatchSettings,
         sigMatchPools: prev.sigMatchSettings.sigMatchPools ?? [],
+        donationLinks: prev.sigMatchSettings.donationLinks ?? {},
         ...patch,
       };
       let donationSyncMode = prev.donationSyncMode || "mealBattle";
@@ -3070,10 +3045,82 @@ export default function AdminPage() {
           ...merged,
           sigMatchPools: normalizeSigMatchPools(merged.sigMatchPools, valid),
           participantMemberIds: normalizeSigMatchParticipantIds(merged.participantMemberIds, valid),
+          donationLinks: normalizeSigMatchDonationLinks(merged.donationLinks, valid),
         },
         updatedAt: Date.now(),
       };
       /** 시그매치 설정만 — 후원 금액은 API에서 제외 */
+      persistState(next, { omitDonationFields: true });
+      return next;
+    });
+  };
+
+  /** 시그 대전 멤버별 후원 연동 ON/OFF (엑셀 배정 donors → 시그 점수) */
+  const toggleSigDonationLink = (memberId: string) => {
+    setState((prev: AppState) => {
+      if (!prev.members.some((m) => m.id === memberId)) return prev;
+      const valid = new Set(prev.members.map((m) => m.id));
+      const current = resolveSigMatchDonationLink(prev.sigMatchSettings, memberId);
+      const nextActive = !current.active;
+      const donationLinks = {
+        ...(prev.sigMatchSettings.donationLinks || {}),
+        [memberId]: nextActive
+          ? { active: true, startedAt: Date.now() }
+          : { active: false, startedAt: current.startedAt || undefined },
+      };
+      const next: AppState = {
+        ...prev,
+        donationSyncMode:
+          nextActive && (!prev.donationSyncMode || prev.donationSyncMode === "none")
+            ? "sigMatch"
+            : prev.donationSyncMode,
+        sigMatchSettings: {
+          ...prev.sigMatchSettings,
+          donationLinks: normalizeSigMatchDonationLinks(donationLinks, valid),
+        },
+        updatedAt: Date.now(),
+      };
+      persistState(next, { omitDonationFields: true });
+      return next;
+    });
+  };
+
+  const setAllSigDonationLinks = (active: boolean) => {
+    setState((prev: AppState) => {
+      const valid = new Set(prev.members.map((m) => m.id));
+      const ids = prev.sigMatchSettings?.participantMemberIds ?? [];
+      const targets =
+        ids.length > 0
+          ? ids.filter((id) => valid.has(id))
+          : prev.members
+              .filter(
+                (m) =>
+                  !Boolean(m.operating) &&
+                  !/운영비/i.test(String(m.name || "")) &&
+                  !/운영비/i.test(String(m.realName || ""))
+              )
+              .map((m) => m.id);
+      const now = Date.now();
+      const donationLinks: Record<string, { active: boolean; startedAt?: number }> = {
+        ...(prev.sigMatchSettings.donationLinks || {}),
+      };
+      for (const id of targets) {
+        donationLinks[id] = active
+          ? { active: true, startedAt: now }
+          : { active: false, startedAt: donationLinks[id]?.startedAt };
+      }
+      const next: AppState = {
+        ...prev,
+        donationSyncMode:
+          active && (!prev.donationSyncMode || prev.donationSyncMode === "none")
+            ? "sigMatch"
+            : prev.donationSyncMode,
+        sigMatchSettings: {
+          ...prev.sigMatchSettings,
+          donationLinks: normalizeSigMatchDonationLinks(donationLinks, valid),
+        },
+        updatedAt: Date.now(),
+      };
       persistState(next, { omitDonationFields: true });
       return next;
     });
@@ -3139,34 +3186,6 @@ export default function AdminPage() {
     });
   };
 
-  const updateDonorRankingsFullTheme = (patch: Partial<AppState["donorRankingsFullTheme"]>) => {
-    setState((prev: AppState) => {
-      const next: AppState = {
-        ...prev,
-        donorRankingsFullTheme: {
-          ...(prev.donorRankingsFullTheme || defaultState().donorRankingsFullTheme),
-          ...patch,
-        },
-        updatedAt: Date.now(),
-      };
-      persistVisualSettings(next, { donorRankingsFullTheme: next.donorRankingsFullTheme });
-      return next;
-    });
-  };
-
-  const updateDonorRankingsFullOverlayConfig = (patch: Partial<OverlayConfig>) => {
-    setState((prev: AppState) => {
-      const base = normalizeDonorRankingsOverlayConfig(prev.donorRankingsFullOverlayConfig);
-      const next: AppState = {
-        ...prev,
-        donorRankingsFullOverlayConfig: { ...base, ...patch },
-        updatedAt: Date.now(),
-      };
-      persistVisualSettings(next, { donorRankingsFullOverlayConfig: next.donorRankingsFullOverlayConfig });
-      return next;
-    });
-  };
-
   const updateDonationListsOverlayConfig = (patch: Partial<OverlayConfig>) => {
     setState((prev: AppState) => {
       const base = normalizeDonationListsOverlayConfig(prev.donationListsOverlayConfig);
@@ -3194,20 +3213,17 @@ export default function AdminPage() {
     });
   };
 
-  /** 일반·전체 후원순위 오버레이 본문 이미지를 함께 갱신 */
+  /** 후원순위 오버레이 본문 이미지 */
   const updateDonorRankingsBodyImageConfig = (patch: Partial<OverlayConfig>) => {
     setState((prev: AppState) => {
       const base = normalizeDonorRankingsOverlayConfig(prev.donorRankingsOverlayConfig);
-      const baseFull = normalizeDonorRankingsOverlayConfig(prev.donorRankingsFullOverlayConfig);
       const next: AppState = {
         ...prev,
         donorRankingsOverlayConfig: normalizeDonorRankingsOverlayConfig({ ...base, ...patch }),
-        donorRankingsFullOverlayConfig: normalizeDonorRankingsOverlayConfig({ ...baseFull, ...patch }),
         updatedAt: Date.now(),
       };
       persistVisualSettings(next, {
         donorRankingsOverlayConfig: next.donorRankingsOverlayConfig,
-        donorRankingsFullOverlayConfig: next.donorRankingsFullOverlayConfig,
       });
       return next;
     });
@@ -3215,7 +3231,8 @@ export default function AdminPage() {
 
   const applyDonorRankingsPreset = (id: string) => {
     setState((prev: AppState) => {
-      const preset = (prev.donorRankingsPresets || []).find((x) => x.id === id);
+      const builtIn = BUILT_IN_DONOR_RANKINGS_PRESETS.find((x) => x.id === id);
+      const preset = builtIn || (prev.donorRankingsPresets || []).find((x) => x.id === id);
       if (!preset) return prev;
       const next: AppState = {
         ...prev,
@@ -3255,6 +3272,7 @@ export default function AdminPage() {
   };
 
   const deleteDonorRankingsPreset = (id: string) => {
+    if (isBuiltInDonorRankingsPresetId(id)) return;
     setState((prev: AppState) => {
       const presets = (prev.donorRankingsPresets || []).filter((x) => x.id !== id);
       const next: AppState = {
@@ -5253,9 +5271,12 @@ export default function AdminPage() {
     const target = donorTarget;
     const memberId = donorMemberId;
     const rawName = donorName;
+    const rawMessage = donorMessage;
     setDonorName("");
+    setDonorMessage("");
     setDonorAmount("");
     const donorNameClean = (rawName || "무명").replace(/\s+/g, "") || "무명";
+    const messageClean = String(rawMessage || "").trim();
     addDonorSaveChainRef.current = addDonorSaveChainRef.current
       .catch(() => {})
       .then(async () => {
@@ -5264,7 +5285,13 @@ export default function AdminPage() {
       pendingUnsyncedRef.current = true;
       const result = await applyBankDonationsViaApi(
         user?.id,
-        [{ donorName: donorNameClean, amount, memberId, target }],
+        [{
+          donorName: donorNameClean,
+          amount,
+          memberId,
+          target,
+          ...(messageClean ? { message: messageClean } : {}),
+        }],
         { target }
       );
       if (!result.ok) {
@@ -5350,6 +5377,7 @@ export default function AdminPage() {
             amount: row.amount,
             memberId: row.memberId!,
             target,
+            ...(String(row.raw || "").trim() ? { message: String(row.raw).trim() } : {}),
           })),
           { target }
         );
@@ -6464,8 +6492,49 @@ export default function AdminPage() {
         state.sigMatchSettings?.incentivePerPoint || 1000,
         user?.id
       );
+      updateSigMatchSettings({ isActive: nextActive });
+      return;
     }
-    updateSigMatchSettings({ isActive: nextActive });
+    /** 활성화 시 참가자 후원 연동을 ON으로 맞춰 엑셀 배정 후원이 점수에 반영되게 함 */
+    setState((prev: AppState) => {
+      const valid = new Set(prev.members.map((m) => m.id));
+      const ids = prev.sigMatchSettings?.participantMemberIds ?? [];
+      const targets =
+        ids.length > 0
+          ? ids.filter((id) => valid.has(id))
+          : prev.members
+              .filter(
+                (m) =>
+                  !Boolean(m.operating) &&
+                  !/운영비/i.test(String(m.name || "")) &&
+                  !/운영비/i.test(String(m.realName || ""))
+              )
+              .map((m) => m.id);
+      const now = Date.now();
+      const donationLinks: Record<string, { active: boolean; startedAt?: number }> = {
+        ...(prev.sigMatchSettings.donationLinks || {}),
+      };
+      for (const id of targets) {
+        donationLinks[id] = { active: true, startedAt: now };
+      }
+      const next: AppState = {
+        ...prev,
+        donationSyncMode: "sigMatch",
+        sigMatchSettings: {
+          ...prev.sigMatchSettings,
+          isActive: true,
+          sigMatchPools: normalizeSigMatchPools(prev.sigMatchSettings.sigMatchPools || [], valid),
+          participantMemberIds: normalizeSigMatchParticipantIds(
+            prev.sigMatchSettings.participantMemberIds || [],
+            valid
+          ),
+          donationLinks: normalizeSigMatchDonationLinks(donationLinks, valid),
+        },
+        updatedAt: Date.now(),
+      };
+      persistState(next, { omitDonationFields: true });
+      return next;
+    });
   };
   const flatLogs = useMemo(() => {
     const arr: Array<{ date: string; entry: DailyLogEntry }> = [];
@@ -6879,7 +6948,7 @@ export default function AdminPage() {
         <div>
         <div className="flex flex-wrap items-start sm:items-center justify-between gap-2 mb-6">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <h1 className="text-2xl font-bold">{user?.companyName || "매니저"} 정산 시스템</h1>
+            <h1 className="text-2xl font-bold">{APP_SYSTEM_NAME}</h1>
             {(user?.remainingDays != null || user?.unlimited) && (
               <span className={`px-2 py-0.5 rounded text-xs font-medium ${user?.unlimited ? "bg-blue-900/60 text-blue-300" : (user?.remainingDays ?? 0) <= 7 ? "bg-amber-900/60 text-amber-300" : "bg-neutral-800 text-neutral-400"}`}>
                 {user?.unlimited ? "무제한" : `남은 일수: ${user?.remainingDays ?? 0}일`}
@@ -7079,9 +7148,10 @@ export default function AdminPage() {
               <div className="mt-4 rounded-lg border border-white/10 bg-neutral-900/40 p-3 space-y-3">
                 <div className="rounded-lg border border-amber-300/30 bg-amber-500/10 p-3 space-y-2">
                   <div className="text-sm font-semibold text-amber-200">후원 동기화 일괄 관리 (중복 방지)</div>
-                  <p className="text-xs text-neutral-300">
-                    후원 입력은 아래에서 선택한 대상에만 동기화됩니다. 시그/식사 대전을 켜면 모드가 자동 전환되고, 참가자 후원 연동도 자동 설정됩니다.
-                  </p>
+                    <p className="text-xs text-neutral-300">
+                      후원 입력은 아래에서 선택한 대상에만 동기화됩니다. 시그/식사 대전을 켜면 모드가 자동 전환됩니다.
+                      참가자별 「후원 연동 ON/OFF」로 엑셀에 배정된 후원이 해당 대전 점수에 반영될지 제어합니다.
+                    </p>
                   <div className="flex flex-wrap gap-2">
                     {([
                       ["mealBattle", "식사대전 동기화"],
@@ -7292,9 +7362,10 @@ export default function AdminPage() {
                 </div>
                 <div className="rounded-lg border border-white/10 bg-neutral-950/30 p-3 space-y-2">
                   <div>
-                    <h4 className="text-sm font-semibold text-neutral-200">랭킹 표시 멤버 (참가자)</h4>
+                    <h4 className="text-sm font-semibold text-neutral-200">랭킹 표시 멤버 (참가자) · 후원 연동</h4>
                     <p className="mt-1 text-xs text-neutral-500">
-                      체크가 전부 켜져 있으면 전원이 랭킹에 나갑니다. 일부만 남기면 그 멤버만 표시·집계되며, 제외된 멤버에게 붙은 시그는 대전 점수에 포함되지 않습니다.
+                      체크가 전부 켜져 있으면 전원이 랭킹에 나갑니다. 일부만 남기면 그 멤버만 표시·집계됩니다.
+                      「후원 연동 ON」인 참가자에게 엑셀과 동일하게 배정된 후원만 시그 점수에 반영됩니다. OFF면 엑셀/멤버 금액은 그대로이고 시그 점수만 제외됩니다.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -7305,46 +7376,82 @@ export default function AdminPage() {
                     >
                       전원 표시
                     </button>
+                    <button
+                      type="button"
+                      className="rounded bg-amber-800/90 px-2 py-1 text-xs hover:bg-amber-700"
+                      onClick={() => setAllSigDonationLinks(true)}
+                    >
+                      후원 연동 전체 ON
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded bg-neutral-700 px-2 py-1 text-xs hover:bg-neutral-600"
+                      onClick={() => setAllSigDonationLinks(false)}
+                    >
+                      후원 연동 전체 OFF
+                    </button>
                   </div>
-                  <div className="flex flex-wrap gap-x-3 gap-y-1">
+                  <div className="flex flex-wrap gap-x-3 gap-y-2">
                     {state.members.map((m) => {
                       const ids = state.sigMatchSettings?.participantMemberIds ?? [];
                       const allMode = ids.length === 0;
                       const checked = allMode || ids.includes(m.id);
                       const allMemberIds = state.members.map((x) => x.id);
+                      const link = resolveSigMatchDonationLink(state.sigMatchSettings, m.id);
                       return (
-                        <label key={`sig-part-${m.id}`} className="flex cursor-pointer items-center gap-1.5 text-xs text-neutral-300">
-                          <input
-                            type="checkbox"
-                            className="rounded border-white/20"
-                            checked={checked}
-                            onChange={() => {
-                              const valid = new Set(state.members.map((mm) => mm.id));
-                              if (allMode) {
-                                const next = allMemberIds.filter((id) => id !== m.id);
-                                updateSigMatchSettings({
-                                  participantMemberIds: normalizeSigMatchParticipantIds(next, valid),
-                                });
-                              } else {
-                                const set = new Set(ids);
-                                let next: string[];
-                                if (set.has(m.id)) {
-                                  next = ids.filter((id) => id !== m.id);
-                                } else {
-                                  next = [...ids, m.id];
-                                }
-                                if (next.length === 0 || next.length >= allMemberIds.length) {
-                                  updateSigMatchSettings({ participantMemberIds: [] });
-                                } else {
+                        <div key={`sig-part-${m.id}`} className="flex items-center gap-1.5 text-xs text-neutral-300">
+                          <label className="flex cursor-pointer items-center gap-1.5">
+                            <input
+                              type="checkbox"
+                              className="rounded border-white/20"
+                              checked={checked}
+                              onChange={() => {
+                                const valid = new Set(state.members.map((mm) => mm.id));
+                                if (allMode) {
+                                  const next = allMemberIds.filter((id) => id !== m.id);
                                   updateSigMatchSettings({
                                     participantMemberIds: normalizeSigMatchParticipantIds(next, valid),
                                   });
+                                } else {
+                                  const set = new Set(ids);
+                                  let next: string[];
+                                  if (set.has(m.id)) {
+                                    next = ids.filter((id) => id !== m.id);
+                                  } else {
+                                    next = [...ids, m.id];
+                                  }
+                                  if (next.length === 0 || next.length >= allMemberIds.length) {
+                                    updateSigMatchSettings({ participantMemberIds: [] });
+                                  } else {
+                                    updateSigMatchSettings({
+                                      participantMemberIds: normalizeSigMatchParticipantIds(next, valid),
+                                    });
+                                  }
                                 }
-                              }
-                            }}
-                          />
-                          <span className="truncate max-w-[120px]">{m.name}</span>
-                        </label>
+                              }}
+                            />
+                            <span className="truncate max-w-[100px]">{m.name}</span>
+                          </label>
+                          <button
+                            type="button"
+                            disabled={!checked}
+                            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                              !checked
+                                ? "cursor-not-allowed bg-neutral-800 text-neutral-500"
+                                : link.active
+                                  ? "bg-amber-700 text-white hover:bg-amber-600"
+                                  : "bg-neutral-700 text-neutral-200 hover:bg-neutral-600"
+                            }`}
+                            onClick={() => toggleSigDonationLink(m.id)}
+                            title={
+                              link.active
+                                ? "후원 연동 ON — 엑셀 배정 후원이 시그 점수에 반영"
+                                : "후원 연동 OFF — 시그 점수 미반영"
+                            }
+                          >
+                            연동 {link.active ? "ON" : "OFF"}
+                          </button>
+                        </div>
                       );
                     })}
                   </div>
@@ -8116,7 +8223,7 @@ export default function AdminPage() {
                       value={state.donorRankingsTheme.titleText || ""}
                       onChange={(e) => updateDonorRankingsTheme({ titleText: e.target.value })}
                       className="h-8 w-full rounded border border-white/10 bg-neutral-900/80 px-2 text-sm"
-                      placeholder="후원 순위"
+                      placeholder="👑 웹후원 순위 👑"
                       maxLength={60}
                     />
                   </label>
@@ -8268,6 +8375,29 @@ export default function AdminPage() {
                     <div className="text-[11px] text-neutral-500">
                       반투명/rgba 값이 필요하면 아래 URL 파라미터로 덮어쓸 수 있습니다. 기본은 관리자 저장값이 사용됩니다.
                     </div>
+                    <div className="rounded border border-white/10 bg-black/25 px-2 py-2 space-y-2">
+                      <div className="text-[11px] text-neutral-400">기본 테마 5종 (원클릭 적용)</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {BUILT_IN_DONOR_RANKINGS_PRESETS.map((preset) => {
+                          const active = state.donorRankingsPresetId === preset.id;
+                          return (
+                            <button
+                              key={preset.id}
+                              type="button"
+                              title={preset.name}
+                              className={`px-2.5 py-1 rounded text-xs border transition-colors ${
+                                active
+                                  ? "bg-emerald-700 border-emerald-500 text-white"
+                                  : "bg-neutral-800/90 border-white/10 text-neutral-200 hover:bg-neutral-700"
+                              }`}
+                              onClick={() => applyDonorRankingsPreset(preset.id)}
+                            >
+                              {preset.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <input
                         type="text"
@@ -8284,27 +8414,35 @@ export default function AdminPage() {
                       {(state.donorRankingsPresets || []).length === 0 ? (
                         <p className="text-[11px] text-neutral-500">저장된 프리셋이 없습니다.</p>
                       ) : (
-                        (state.donorRankingsPresets || []).map((preset) => (
-                          <div key={preset.id} className="flex items-center justify-between gap-2 rounded border border-white/10 bg-black/20 px-2 py-1">
-                            <span className="text-xs text-neutral-200 truncate">{preset.name}</span>
-                            <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                className={`px-2 py-0.5 rounded text-xs ${state.donorRankingsPresetId === preset.id ? "bg-emerald-700" : "bg-neutral-700 hover:bg-neutral-600"}`}
-                                onClick={() => applyDonorRankingsPreset(preset.id)}
-                              >
-                                {state.donorRankingsPresetId === preset.id ? "적용중" : "적용"}
-                              </button>
-                              <button
-                                type="button"
-                                className="px-2 py-0.5 rounded text-xs bg-red-900/80 hover:bg-red-800"
-                                onClick={() => deleteDonorRankingsPreset(preset.id)}
-                              >
-                                삭제
-                              </button>
+                        (state.donorRankingsPresets || []).map((preset) => {
+                          const builtIn = isBuiltInDonorRankingsPresetId(preset.id);
+                          return (
+                            <div key={preset.id} className="flex items-center justify-between gap-2 rounded border border-white/10 bg-black/20 px-2 py-1">
+                              <span className="text-xs text-neutral-200 truncate">
+                                {preset.name}
+                                {builtIn ? <span className="ml-1 text-[10px] text-neutral-500">(기본)</span> : null}
+                              </span>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  className={`px-2 py-0.5 rounded text-xs ${state.donorRankingsPresetId === preset.id ? "bg-emerald-700" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                                  onClick={() => applyDonorRankingsPreset(preset.id)}
+                                >
+                                  {state.donorRankingsPresetId === preset.id ? "적용중" : "적용"}
+                                </button>
+                                {!builtIn ? (
+                                  <button
+                                    type="button"
+                                    className="px-2 py-0.5 rounded text-xs bg-red-900/80 hover:bg-red-800"
+                                    onClick={() => deleteDonorRankingsPreset(preset.id)}
+                                  >
+                                    삭제
+                                  </button>
+                                ) : null}
+                              </div>
                             </div>
-                          </div>
-                        ))
+                          );
+                        })
                       )}
                     </div>
                   </div>
@@ -8340,211 +8478,6 @@ export default function AdminPage() {
                       {copiedId === "dash-donor-rankings-test" ? "복사됨!" : "테스트 URL 복사"}
                     </button>
                   </div>
-                  <div className="rounded border border-pink-500/35 bg-pink-950/25 p-3 space-y-2">
-                    <div>
-                      <h4 className="text-sm font-semibold text-pink-100">후원 순위 · 전체 목록 (분홍 테마)</h4>
-                      <p className="text-xs text-neutral-400 mt-1">
-                        상위 N명이 아닌 <strong className="text-pink-100">전체 후원자</strong>를 한 목록으로 표시합니다.
-                        위 「후원 순위」와 <strong className="text-pink-100">테마·URL이 완전히 분리</strong>되어 OBS에 브라우저 소스를 따로 추가하세요.
-                      </p>
-                    </div>
-                    <label className="text-[11px] text-neutral-400 flex flex-col gap-1 rounded border border-pink-500/20 bg-black/20 px-2 py-2">
-                      <span>제목 문구</span>
-                      <input
-                        type="text"
-                        value={state.donorRankingsFullTheme.titleText || ""}
-                        onChange={(e) => updateDonorRankingsFullTheme({ titleText: e.target.value })}
-                        className="h-8 w-full rounded border border-white/10 bg-neutral-900/80 px-2 text-sm"
-                        placeholder="👑 후원 순위 👑"
-                        maxLength={60}
-                      />
-                    </label>
-                    <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
-                      <label className="text-[11px] text-neutral-400">
-                        제목 폰트
-                        <input
-                          type="range"
-                          min={14}
-                          max={80}
-                          value={state.donorRankingsFullTheme.titleSize}
-                          onChange={(e) => updateDonorRankingsFullTheme({ titleSize: Number(e.target.value) })}
-                          className="w-full"
-                        />
-                        <div className="text-xs text-neutral-300">{state.donorRankingsFullTheme.titleSize}px</div>
-                      </label>
-                      <label className="text-[11px] text-neutral-400">
-                        행 폰트
-                        <input
-                          type="range"
-                          min={12}
-                          max={64}
-                          value={state.donorRankingsFullTheme.rowSize}
-                          onChange={(e) => updateDonorRankingsFullTheme({ rowSize: Number(e.target.value) })}
-                          className="w-full"
-                        />
-                        <div className="text-xs text-neutral-300">{state.donorRankingsFullTheme.rowSize}px</div>
-                      </label>
-                      <label className="text-[11px] text-neutral-400">
-                        순위 폰트
-                        <input
-                          type="range"
-                          min={12}
-                          max={72}
-                          value={state.donorRankingsFullTheme.rankSize}
-                          onChange={(e) => updateDonorRankingsFullTheme({ rankSize: Number(e.target.value) })}
-                          className="w-full"
-                        />
-                        <div className="text-xs text-neutral-300">{state.donorRankingsFullTheme.rankSize}px</div>
-                      </label>
-                      <label className="text-[11px] text-neutral-400">
-                        배경 투명도
-                        <input
-                          type="range"
-                          min={0}
-                          max={100}
-                          value={state.donorRankingsFullTheme.overlayOpacity}
-                          onChange={(e) => updateDonorRankingsFullTheme({ overlayOpacity: Number(e.target.value) })}
-                          className="w-full"
-                        />
-                        <div className="text-xs text-neutral-300">{state.donorRankingsFullTheme.overlayOpacity}%</div>
-                      </label>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
-                      {(
-                        [
-                          ["headerAccountBg", "헤더"],
-                          ["titleColor", "제목"],
-                          ["rankColor", "순위"],
-                          ["nameColor", "닉네임"],
-                          ["amountColor", "금액"],
-                        ] as const
-                      ).map(([key, label]) => (
-                        <label
-                          key={key}
-                          className="text-[11px] text-neutral-400 flex items-center justify-between gap-2 rounded border border-pink-500/20 bg-black/20 px-2 py-1"
-                        >
-                          <span>{label}</span>
-                          <input
-                            type="color"
-                            value={toColorPickerValue(
-                              String((state.donorRankingsFullTheme as unknown as Record<string, unknown>)[key] ?? ""),
-                              "#f9a8d4"
-                            )}
-                            onChange={(e) =>
-                              updateDonorRankingsFullTheme({
-                                [key]: e.target.value,
-                              } as Partial<AppState["donorRankingsFullTheme"]>)
-                            }
-                            className="h-7 w-9 rounded border border-white/20 bg-transparent p-0.5"
-                          />
-                        </label>
-                      ))}
-                    </div>
-                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                      {(
-                        [
-                          ["bg", "전체 배경", "#ffffff"],
-                          ["panelBg", "패널 배경", "#ffeef6"],
-                          ["borderColor", "테두리", "#f472b6"],
-                          ["rowEvenBg", "짝수 행", "#ffe4f0"],
-                          ["rowOddBg", "홀수 행", "#ffffff"],
-                        ] as const
-                      ).map(([key, label, fallback]) => (
-                        <label
-                          key={key}
-                          className="text-[11px] text-neutral-400 flex items-center gap-2 rounded border border-pink-500/20 bg-black/20 px-2 py-1"
-                        >
-                          <span className="w-24 shrink-0">{label}</span>
-                          <input
-                            type="color"
-                            value={toColorPickerValue(
-                              String((state.donorRankingsFullTheme as unknown as Record<string, unknown>)[key] ?? ""),
-                              fallback
-                            )}
-                            onChange={(e) =>
-                              updateDonorRankingsFullTheme({
-                                [key]: e.target.value,
-                              } as Partial<AppState["donorRankingsFullTheme"]>)
-                            }
-                            className="h-7 w-9 shrink-0 rounded border border-white/20 bg-transparent p-0.5"
-                          />
-                          <input
-                            type="text"
-                            value={String((state.donorRankingsFullTheme as unknown as Record<string, unknown>)[key] || "")}
-                            onChange={(e) =>
-                              updateDonorRankingsFullTheme({
-                                [key]: e.target.value,
-                              } as Partial<AppState["donorRankingsFullTheme"]>)
-                            }
-                            className="h-7 min-w-0 flex-1 rounded border border-white/10 bg-neutral-900/80 px-2 text-xs"
-                            placeholder="transparent / #fff / rgba(...)"
-                          />
-                        </label>
-                      ))}
-                    </div>
-                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                      <label className="text-[11px] text-neutral-400 flex items-center gap-2 rounded border border-pink-500/20 bg-black/20 px-2 py-1">
-                        <span className="w-24 shrink-0">텍스트 외곽선</span>
-                        <input
-                          type="text"
-                          value={state.donorRankingsFullTheme.outlineColor || ""}
-                          onChange={(e) => updateDonorRankingsFullTheme({ outlineColor: e.target.value })}
-                          className="h-7 w-full rounded border border-white/10 bg-neutral-900/80 px-2 text-xs"
-                          placeholder="rgba(...) / #fff"
-                        />
-                      </label>
-                      <label className="text-[11px] text-neutral-400 flex flex-col gap-1 rounded border border-pink-500/20 bg-black/20 px-2 py-2">
-                        <span>텍스트 외곽선 두께(px)</span>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="range"
-                            min={0}
-                            max={3}
-                            step={0.25}
-                            value={state.donorRankingsFullTheme.outlineWidth}
-                            onChange={(e) => updateDonorRankingsFullTheme({ outlineWidth: Number(e.target.value) })}
-                            className="flex-1"
-                          />
-                          <input
-                            type="number"
-                            min={0}
-                            max={3}
-                            step={0.25}
-                            value={state.donorRankingsFullTheme.outlineWidth}
-                            onChange={(e) =>
-                              updateDonorRankingsFullTheme({
-                                outlineWidth: Math.max(0, Math.min(3, parseFloat(e.target.value || "0") || 0)),
-                              })
-                            }
-                            className="w-16 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs text-right"
-                          />
-                        </div>
-                      </label>
-                    </div>
-                    <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
-                      <span>OBS URL:</span>
-                      <code className="text-pink-100/90 break-all">
-                        {donorRankingsFullOverlayPath(overlayUserId, getDonorRankingsZoomPct())}
-                      </code>
-                      <button
-                        type="button"
-                        className={`px-2 py-1 rounded text-xs shrink-0 ${copiedId === "dash-donor-rankings-full" ? "bg-emerald-600" : "bg-pink-800 hover:bg-pink-700"}`}
-                        onClick={() => {
-                          const u = buildDonorRankingsFullUrl();
-                          void copyUrl(u, "dash-donor-rankings-full");
-                        }}
-                      >
-                        {copiedId === "dash-donor-rankings-full" ? "복사됨!" : "URL 복사"}
-                      </button>
-                      <button
-                        type="button"
-                        className="px-2 py-1 rounded text-xs bg-pink-900/80 hover:bg-pink-800 text-pink-50"
-                        onClick={() => window.open(buildDonorRankingsFullUrl(), "_blank", "noopener,noreferrer")}
-                      >
-                        열기
-                      </button>
-                    </div>
-                  </div>
                   <div className="rounded border border-white/10 bg-black/20 px-3 py-2">
                     <div className="text-xs text-neutral-300 mb-1">
                       후원 리스트 패널 배경 투명도(실시간 · 계좌/투네 헤더·목록 공통)
@@ -8573,323 +8506,18 @@ export default function AdminPage() {
                   <div className="text-[11px] text-neutral-500">
                     필요 시 URL 파라미터로 임시 오버라이드 가능: <code>top</code>, <code>test</code>, <code>zoomPct</code>, <code>overlayOpacity</code>, <code>titleSize</code>, <code>rowSize</code>, <code>rankSize</code>, <code>headerAccountBg</code>, <code>headerToonBg</code>, <code>rowEvenBg</code>, <code>rowOddBg</code>, <code>nameColor</code>, <code>amountColor</code>, <code>rankColor</code>, <code>panelBg</code>, <code>border</code>, <code>outline</code>, <code>outlineWidth</code>, <code>bg</code>
                   </div>
-                </div>
-              </div>
-              <div className="mt-3 rounded-2xl border border-fuchsia-400/35 bg-gradient-to-br from-fuchsia-950/55 via-rose-950/45 to-pink-950/40 p-4 shadow-[0_10px_36px_rgba(236,72,153,0.22)] backdrop-blur-md">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h4 className="text-sm font-semibold text-pink-100">후원 랭킹 · 배경 GIF</h4>
-                    <p className="mt-1 max-w-xl text-xs text-pink-100/75">
-                      후원 랭킹(<code className="text-pink-50/90">/overlay/donor-rankings</code>) 전용 배경입니다. 엑셀표 배경과 분리되어 독립 저장됩니다.
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-2 shrink-0">
-                    <code className="max-w-[min(100%,420px)] break-all text-[11px] text-fuchsia-100/90">
-                      /overlay/donor-rankings?u={overlayUserId}&zoomPct={getDonorRankingsZoomPct()}
-                    </code>
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <button
-                        type="button"
-                        className={`rounded px-2 py-1 text-xs ${copiedId === "dash-donor-rankings-bg" ? "bg-emerald-600" : "bg-white/15 text-pink-50 hover:bg-white/25"}`}
-                        onClick={() => {
-                          const u = buildDonorRankingsUrl();
-                          void copyUrl(u, "dash-donor-rankings-bg");
-                        }}
-                      >
-                        {copiedId === "dash-donor-rankings-bg" ? "복사됨!" : "URL 복사"}
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded bg-gradient-to-r from-fuchsia-600 to-pink-600 px-2 py-1 text-xs font-semibold text-white shadow-sm hover:from-fuchsia-500 hover:to-pink-500"
-                        onClick={() => window.open(buildDonorRankingsUrl(), "_blank", "noopener,noreferrer")}
-                      >
-                        오버레이 열기
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                {(() => {
-                  const drCfg = normalizeDonorRankingsOverlayConfig(state.donorRankingsOverlayConfig);
-                  const presetSelectValue = DONATION_LISTS_BG_GIF_PRESETS.some((p) => p.url && p.url === drCfg.bgGifUrl)
-                    ? drCfg.bgGifUrl
-                    : drCfg.bgGifUrl.trim()
-                      ? "__custom__"
-                      : "";
-                  return (
-                    <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
-                        GIF 프리셋
-                        <select
-                          className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 shadow-inner outline-none focus:border-fuchsia-400/70"
-                          value={presetSelectValue}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            if (v === "__custom__") return;
-                            updateDonorRankingsOverlayConfig({
-                              bgGifUrl: v,
-                              isBgEnabled: Boolean(String(v || "").trim()),
-                            });
-                          }}
-                        >
-                          {DONATION_LISTS_BG_GIF_PRESETS.map((p) => (
-                            <option key={p.label} value={p.url}>
-                              {p.label}
-                            </option>
-                          ))}
-                          <option value="__custom__">직접 URL 입력</option>
-                        </select>
-                      </label>
-                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
-                        GIF URL (https… 또는 /public 경로)
-                        <input
-                          className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 placeholder:text-pink-200/40 outline-none focus:border-fuchsia-400/70"
-                          placeholder="예: https://media.giphy.com/... 또는 /images/bg/my.gif"
-                          value={drCfg.bgGifUrl}
-                          onChange={(e) =>
-                            updateDonorRankingsOverlayConfig({
-                              bgGifUrl: e.target.value,
-                              isBgEnabled: Boolean(String(e.target.value || "").trim()),
-                            })
-                          }
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90 md:col-span-2">
-                        배경 투명도 ({drCfg.bgOpacity}%)
-                        <input
-                          type="range"
-                          min={0}
-                          max={100}
-                          value={drCfg.bgOpacity}
-                          onChange={(e) => updateDonorRankingsOverlayConfig({ bgOpacity: Number(e.target.value) })}
-                          className="w-full accent-fuchsia-400"
-                        />
-                      </label>
-                      <label className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/15 bg-black/20 px-3 py-2.5 md:col-span-2 cursor-pointer">
-                        <span className="text-xs font-semibold text-pink-50">배경 사용</span>
-                        <span className="flex items-center gap-2 text-[11px] text-pink-100/80">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 rounded border-white/30 bg-black/40 text-fuchsia-500 focus:ring-fuchsia-400"
-                            checked={drCfg.isBgEnabled}
-                            onChange={(e) => updateDonorRankingsOverlayConfig({ isBgEnabled: e.target.checked })}
-                          />
-                          ON / OFF
-                        </span>
-                      </label>
-                    </div>
-                  );
-                })()}
-              </div>
-              <div className="mt-3 rounded-2xl border border-fuchsia-400/35 bg-gradient-to-br from-fuchsia-950/55 via-rose-950/45 to-pink-950/40 p-4 shadow-[0_10px_36px_rgba(236,72,153,0.22)] backdrop-blur-md">
-                <div className="min-w-0">
-                  <h4 className="text-sm font-semibold text-pink-100">후원 랭킹 · 본문 이미지 / GIF</h4>
-                  <p className="mt-1 max-w-xl text-xs text-pink-100/75">
-                    순위 패널 본문(제목 아래·목록 아래 등)에 표시할 이미지·GIF입니다. 파일 업로드 또는 URL을 사용할 수 있으며, 일반·전체 후원순위 오버레이에 함께 적용됩니다.
+                  <p className="text-[11px] text-neutral-500">
+                    배경 GIF·본문 이미지는{" "}
+                    <button
+                      type="button"
+                      className="text-sky-400 underline"
+                      onClick={() => moveToSection("overlay", "overlay-settings")}
+                    >
+                      오버레이 설정
+                    </button>
+                    {" "}탭 「오버레이 배경 · 본문 이미지」에서 설정합니다.
                   </p>
                 </div>
-                {(() => {
-                  const drCfg = normalizeDonorRankingsOverlayConfig(state.donorRankingsOverlayConfig);
-                  return (
-                    <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
-                        파일 업로드 (gif / png / jpg / webp)
-                        <input
-                          type="file"
-                          accept="image/gif,image/png,image/jpeg,image/webp,.gif,.png,.jpg,.jpeg,.webp"
-                          className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 file:mr-3 file:rounded file:border-0 file:bg-fuchsia-600 file:px-2 file:py-1 file:text-xs file:font-semibold file:text-white"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0] || null;
-                            uploadDonorRankingsBodyImage(file);
-                            e.target.value = "";
-                          }}
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
-                        이미지 URL (https… 또는 /uploads 경로)
-                        <input
-                          className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 placeholder:text-pink-200/40 outline-none focus:border-fuchsia-400/70"
-                          placeholder="예: /uploads/sigs/.../banner.gif"
-                          value={drCfg.bodyImageUrl}
-                          onChange={(e) =>
-                            updateDonorRankingsBodyImageConfig({
-                              bodyImageUrl: e.target.value,
-                              isBodyImageEnabled: Boolean(String(e.target.value || "").trim()),
-                            })
-                          }
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
-                        배치 위치
-                        <select
-                          className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 shadow-inner outline-none focus:border-fuchsia-400/70"
-                          value={drCfg.bodyImagePosition}
-                          onChange={(e) =>
-                            updateDonorRankingsBodyImageConfig({
-                              bodyImagePosition: e.target.value as OverlayConfig["bodyImagePosition"],
-                            })
-                          }
-                        >
-                          <option value="abovePanel">패널 위</option>
-                          <option value="belowTitle">제목 아래 (기본)</option>
-                          <option value="belowList">순위 목록 아래</option>
-                        </select>
-                      </label>
-                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
-                        본문 이미지 투명도 ({drCfg.bodyImageOpacity}%)
-                        <input
-                          type="range"
-                          min={0}
-                          max={100}
-                          value={drCfg.bodyImageOpacity}
-                          onChange={(e) =>
-                            updateDonorRankingsBodyImageConfig({ bodyImageOpacity: Number(e.target.value) })
-                          }
-                          className="w-full accent-fuchsia-400"
-                        />
-                      </label>
-                      {drCfg.bodyImageUrl.trim() ? (
-                        <div className="md:col-span-2 flex flex-wrap items-center gap-3 rounded-xl border border-white/15 bg-black/20 px-3 py-2.5">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={drCfg.bodyImageUrl.trim()}
-                            alt=""
-                            className="max-h-20 max-w-[200px] rounded object-contain"
-                          />
-                          <button
-                            type="button"
-                            className="rounded bg-white/15 px-2 py-1 text-xs text-pink-50 hover:bg-white/25"
-                            onClick={() =>
-                              updateDonorRankingsBodyImageConfig({
-                                bodyImageUrl: "",
-                                isBodyImageEnabled: false,
-                              })
-                            }
-                          >
-                            이미지 지우기
-                          </button>
-                        </div>
-                      ) : null}
-                      <label className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/15 bg-black/20 px-3 py-2.5 md:col-span-2 cursor-pointer">
-                        <span className="text-xs font-semibold text-pink-50">본문 이미지 사용</span>
-                        <span className="flex items-center gap-2 text-[11px] text-pink-100/80">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 rounded border-white/30 bg-black/40 text-fuchsia-500 focus:ring-fuchsia-400"
-                            checked={drCfg.isBodyImageEnabled}
-                            onChange={(e) =>
-                              updateDonorRankingsBodyImageConfig({ isBodyImageEnabled: e.target.checked })
-                            }
-                          />
-                          ON / OFF
-                        </span>
-                      </label>
-                    </div>
-                  );
-                })()}
-              </div>
-              <div className="mt-3 rounded-2xl border border-fuchsia-400/35 bg-gradient-to-br from-fuchsia-950/55 via-rose-950/45 to-pink-950/40 p-4 shadow-[0_10px_36px_rgba(236,72,153,0.22)] backdrop-blur-md">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h4 className="text-sm font-semibold text-pink-100">후원 엑셀표 · 배경 GIF</h4>
-                    <p className="mt-1 max-w-xl text-xs text-pink-100/75">
-                      후원 엑셀표 배경 GIF입니다. 통합 오버레이(<code className="text-pink-50/90">/overlay</code>)·단독(
-                      <code className="text-pink-50/90">/overlay/donation-lists</code>) 모두 반영됩니다. Giphy <span className="text-pink-50/90">페이지</span> 주소(
-                      <code className="break-all">giphy.com/gifs/…</code>)도 자동으로 직접 GIF/MP4로 바뀝니다. GIF 선명도를 높이면 표 뒤 애니메이션이 더 잘 보입니다.
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-2 shrink-0">
-                    <code className="max-w-[min(100%,420px)] break-all text-[11px] text-fuchsia-100/90">
-                      /overlay/donation-lists?u={overlayUserId}
-                    </code>
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <button
-                        type="button"
-                        className={`rounded px-2 py-1 text-xs ${copiedId === "dash-donation-lists" ? "bg-emerald-600" : "bg-white/15 text-pink-50 hover:bg-white/25"}`}
-                        onClick={() => {
-                          const u = `${window.location.origin}/overlay/donation-lists?u=${overlayUserId}`;
-                          void copyUrl(u, "dash-donation-lists");
-                        }}
-                      >
-                        {copiedId === "dash-donation-lists" ? "복사됨!" : "URL 복사"}
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded bg-gradient-to-r from-fuchsia-600 to-pink-600 px-2 py-1 text-xs font-semibold text-white shadow-sm hover:from-fuchsia-500 hover:to-pink-500"
-                        onClick={() => window.open(`/overlay/donation-lists?u=${overlayUserId}`, "_blank", "noopener,noreferrer")}
-                      >
-                        오버레이 열기
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                {(() => {
-                  const dlCfg = normalizeDonationListsOverlayConfig(state.donationListsOverlayConfig);
-                  const presetSelectValue = DONATION_LISTS_BG_GIF_PRESETS.some((p) => p.url && p.url === dlCfg.bgGifUrl)
-                    ? dlCfg.bgGifUrl
-                    : dlCfg.bgGifUrl.trim()
-                      ? "__custom__"
-                      : "";
-                  return (
-                    <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
-                        GIF 프리셋
-                        <select
-                          className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 shadow-inner outline-none focus:border-fuchsia-400/70"
-                          value={presetSelectValue}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            if (v === "__custom__") return;
-                            updateDonationListsOverlayConfig({ bgGifUrl: v, isBgEnabled: Boolean(String(v || "").trim()) });
-                          }}
-                        >
-                          {DONATION_LISTS_BG_GIF_PRESETS.map((p) => (
-                            <option key={p.label} value={p.url}>
-                              {p.label}
-                            </option>
-                          ))}
-                          <option value="__custom__">직접 URL 입력</option>
-                        </select>
-                      </label>
-                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
-                        GIF URL (https… 또는 /public 경로)
-                        <input
-                          className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 placeholder:text-pink-200/40 outline-none focus:border-fuchsia-400/70"
-                          placeholder="https://i.giphy.com/xxxxx.gif 또는 giphy.com/gifs/… 페이지"
-                          value={dlCfg.bgGifUrl}
-                          onChange={(e) =>
-                            updateDonationListsOverlayConfig({
-                              bgGifUrl: e.target.value,
-                              isBgEnabled: Boolean(String(e.target.value || "").trim()),
-                            })
-                          }
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90 md:col-span-2">
-                        GIF 선명도 ({dlCfg.bgOpacity}% · 높을수록 잘 보임)
-                        <input
-                          type="range"
-                          min={0}
-                          max={100}
-                          value={dlCfg.bgOpacity}
-                          onChange={(e) => updateDonationListsOverlayConfig({ bgOpacity: Number(e.target.value) })}
-                          className="w-full accent-fuchsia-400"
-                        />
-                      </label>
-                      <label className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/15 bg-black/20 px-3 py-2.5 md:col-span-2 cursor-pointer">
-                        <span className="text-xs font-semibold text-pink-50">배경 사용</span>
-                        <span className="flex items-center gap-2 text-[11px] text-pink-100/80">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 rounded border-white/30 bg-black/40 text-fuchsia-500 focus:ring-fuchsia-400"
-                            checked={dlCfg.isBgEnabled}
-                            onChange={(e) => updateDonationListsOverlayConfig({ isBgEnabled: e.target.checked })}
-                          />
-                          ON / OFF
-                        </span>
-                      </label>
-                    </div>
-                  );
-                })()}
               </div>
               {!sigSalesModalOpen ? (
                 <SigSalesCompactCard
@@ -10674,13 +10302,20 @@ export default function AdminPage() {
                   풀=입력한 원 그대로 ·                   만원=축약 표기 · 오버레이·목표 막대에도 동일(막대 총액만 천원 반올림)
                 </span>
               </div>
-              <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_auto_auto_auto] gap-3 mt-4">
+              <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_auto_auto_auto_auto] gap-3 mt-4">
                 <input
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
                   name="donorName"
                   placeholder="후원자 이름"
                   value={donorName}
                   onChange={(e) => setDonorName(e.target.value)}
+                />
+                <input
+                  className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
+                  name="donorMessage"
+                  placeholder="후원 메시지 (선택)"
+                  value={donorMessage}
+                  onChange={(e) => setDonorMessage(e.target.value)}
                 />
                 <input
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
@@ -11478,7 +11113,6 @@ export default function AdminPage() {
                       .slice()
                       .sort((a,b)=>b.at-a.at)
                       .map((d) => {
-                        const m = state.members.find((x) => x.id === d.memberId);
                         const isSplitPart = isGroupSplitPartDonor(d);
                         const isSplitSource = isGroupSplitSourceDonor(state, d);
                         const splitPartCount = isSplitSource ? countGroupSplitParts(state, d.id) : 0;
@@ -11505,14 +11139,164 @@ export default function AdminPage() {
                                 </>
                               ) : null}
                             </td>
-                            <td className="p-1 text-neutral-300">{m?.name || d.memberId}</td>
+                            <td className="p-1 text-neutral-300">
+                              <select
+                                className="max-w-[9rem] rounded border border-white/10 bg-neutral-900/80 px-1 py-0.5 text-xs text-neutral-100"
+                                value={d.memberId || ""}
+                                title="후원자명은 유지하고 배치 멤버만 변경"
+                                onChange={(e) => {
+                                  const nextMemberId = e.target.value;
+                                  if (!nextMemberId || nextMemberId === d.memberId) return;
+                                  const memberName =
+                                    state.members.find((x) => x.id === nextMemberId)?.name || nextMemberId;
+                                  requestConfirm(
+                                    "멤버 재배치",
+                                    `후원자「${d.name}」의 배치만「${memberName}」로 바꿀까요? (후원자명·금액·메시지는 그대로입니다)`,
+                                    () => {
+                                      void (async () => {
+                                        const prev = stateRef.current;
+                                        const next = reassignDonorMemberInAppState(prev, d.id, nextMemberId);
+                                        if (!next) return;
+                                        const preserved = markAuthoritativeDonationSave(
+                                          { serverUpdatedAt: next.updatedAt },
+                                          next,
+                                          { replaceDonors: true, awaitingServerSave: true }
+                                        );
+                                        setState(preserved);
+                                        const saved = await saveStateAsync(preserved, user?.id, {
+                                          donorsAuthoritative: true,
+                                          donorsReplace: true,
+                                        });
+                                        if (saved.ok) {
+                                          const serverAt =
+                                            typeof saved.serverUpdatedAt === "number" &&
+                                            Number.isFinite(saved.serverUpdatedAt)
+                                              ? saved.serverUpdatedAt
+                                              : Number(preserved.updatedAt || 0);
+                                          const bumped: AppState = {
+                                            ...preserved,
+                                            updatedAt: Math.max(
+                                              Number(preserved.updatedAt || 0),
+                                              serverAt
+                                            ),
+                                            donorRankingsUpdatedAt: Math.max(
+                                              Number(preserved.donorRankingsUpdatedAt || 0),
+                                              serverAt
+                                            ),
+                                          };
+                                          stateRef.current = bumped;
+                                          stateUpdatedAtRef.current = Math.max(
+                                            stateUpdatedAtRef.current,
+                                            bumped.updatedAt
+                                          );
+                                          lastAppliedRemoteUpdatedAtRef.current = Math.max(
+                                            lastAppliedRemoteUpdatedAtRef.current,
+                                            bumped.updatedAt
+                                          );
+                                          donationAuthoritativeSaveUntilRef.current =
+                                            Date.now() + 45_000;
+                                          pendingUnsyncedRef.current = false;
+                                          try {
+                                            window.localStorage.setItem(
+                                              storageKey(user?.id),
+                                              JSON.stringify(bumped)
+                                            );
+                                          } catch {}
+                                          notifyBroadcastStateLocalUpdated(user?.id, bumped.updatedAt);
+                                          setState(bumped);
+                                          setSyncStatus(saved.storageFallback ? "error" : "synced");
+                                        } else {
+                                          pendingUnsyncedRef.current = false;
+                                          setSyncStatus(
+                                            typeof navigator !== "undefined" && !navigator.onLine
+                                              ? "local"
+                                              : "error"
+                                          );
+                                        }
+                                      })();
+                                    },
+                                    { confirmText: "재배치", danger: false }
+                                  );
+                                }}
+                              >
+                                {state.members.map((mem) => (
+                                  <option key={mem.id} value={mem.id}>
+                                    {mem.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
                             <td className="p-1">{(d.target || "account") === "toon" ? <span className="text-amber-300">투네</span> : <span className="text-emerald-300">계좌</span>}</td>
                             <td className="p-1 text-neutral-400 max-w-[220px]">
-                              {d.message ? (
-                                <span className="line-clamp-2" title={d.message}>{d.message}</span>
-                              ) : (
-                                <span className="text-neutral-600">—</span>
-                              )}
+                              <input
+                                type="text"
+                                key={`${d.id}:${d.message || ""}`}
+                                className="w-full min-w-[8rem] rounded border border-white/10 bg-neutral-950/80 px-1.5 py-0.5 text-xs text-neutral-200 placeholder:text-neutral-600"
+                                defaultValue={d.message || ""}
+                                placeholder="메시지 입력"
+                                title="투네 통합알림 comment·후원 문구 — 클릭 후 입력하고 포커스를 벗어나면 저장"
+                                onBlur={(e) => {
+                                  const nextMessage = e.target.value;
+                                  if (String(nextMessage || "").trim() === String(d.message || "").trim()) return;
+                                  void (async () => {
+                                    const prev = stateRef.current;
+                                    const next = updateDonorMessageInAppState(prev, d.id, nextMessage);
+                                    if (!next) return;
+                                    const preserved = markAuthoritativeDonationSave(
+                                      { serverUpdatedAt: next.updatedAt },
+                                      next,
+                                      { replaceDonors: true, awaitingServerSave: true }
+                                    );
+                                    setState(preserved);
+                                    const saved = await saveStateAsync(preserved, user?.id, {
+                                      donorsAuthoritative: true,
+                                      donorsReplace: true,
+                                    });
+                                    if (saved.ok) {
+                                      const serverAt =
+                                        typeof saved.serverUpdatedAt === "number" &&
+                                        Number.isFinite(saved.serverUpdatedAt)
+                                          ? saved.serverUpdatedAt
+                                          : Number(preserved.updatedAt || 0);
+                                      const bumped: AppState = {
+                                        ...preserved,
+                                        updatedAt: Math.max(Number(preserved.updatedAt || 0), serverAt),
+                                        donorRankingsUpdatedAt: Math.max(
+                                          Number(preserved.donorRankingsUpdatedAt || 0),
+                                          serverAt
+                                        ),
+                                      };
+                                      stateRef.current = bumped;
+                                      stateUpdatedAtRef.current = Math.max(
+                                        stateUpdatedAtRef.current,
+                                        bumped.updatedAt
+                                      );
+                                      lastAppliedRemoteUpdatedAtRef.current = Math.max(
+                                        lastAppliedRemoteUpdatedAtRef.current,
+                                        bumped.updatedAt
+                                      );
+                                      donationAuthoritativeSaveUntilRef.current = Date.now() + 45_000;
+                                      pendingUnsyncedRef.current = false;
+                                      try {
+                                        window.localStorage.setItem(
+                                          storageKey(user?.id),
+                                          JSON.stringify(bumped)
+                                        );
+                                      } catch {}
+                                      notifyBroadcastStateLocalUpdated(user?.id, bumped.updatedAt);
+                                      setState(bumped);
+                                      setSyncStatus(saved.storageFallback ? "error" : "synced");
+                                    } else {
+                                      pendingUnsyncedRef.current = false;
+                                      setSyncStatus(
+                                        typeof navigator !== "undefined" && !navigator.onLine
+                                          ? "local"
+                                          : "error"
+                                      );
+                                    }
+                                  })();
+                                }}
+                              />
                             </td>
                             <td className="p-1 text-right whitespace-nowrap" title={`저장값 ${d.amount.toLocaleString("ko-KR")}원${isSplitSource ? " (합산 제외)" : ""}`}>
                               <span className={isSplitSource ? "text-neutral-500 line-through decoration-neutral-600" : ""}>
@@ -11639,8 +11423,12 @@ export default function AdminPage() {
               <div className="text-xs text-neutral-400 mt-2">
                 후원자 리스트는 건별 기록입니다. (동일 후원자여도 건별로 별도 행 표시)
                 {" "}
+                <strong className="text-neutral-300">멤버</strong> 열에서 후원자명은 그대로 두고 배치만 바꿀 수 있습니다.
+                {" "}
                 투네이션 <strong className="text-neutral-300">통합알림창 하단 후원 메시지(comment)</strong>는
                 잘라내지 않고 <strong className="text-neutral-300">메시지</strong> 열에 원문 그대로 저장됩니다.
+                {" "}
+                비어 있는 행은 셀을 클릭해 직접 입력·저장할 수 있습니다.
                 {" "}
                 (예: 알림 닉「Y 철수」+ 메시지「익명 비서」→ 후원자 Y 철수, 메시지 익명 비서)
                 {" "}
@@ -11957,7 +11745,7 @@ export default function AdminPage() {
                   <h4 className="text-sm font-semibold text-fuchsia-100">후원 순위 · 글자·색상</h4>
                   <p className="mt-1 text-[11px] text-neutral-400 leading-snug">
                     Prism/OBS 브라우저 소스는 <strong className="text-neutral-300">저장 즉시 반영</strong>됩니다(URL 재복사 불필요).
-                    상세·프리셋은 <button type="button" className="text-sky-400 underline" onClick={() => document.getElementById("donor-management")?.scrollIntoView({ behavior: "smooth" })}>후원자</button> 탭에도 있습니다.
+                    후원 순위 테마·프리셋 상세는 <button type="button" className="text-sky-400 underline" onClick={() => document.getElementById("donor-management")?.scrollIntoView({ behavior: "smooth" })}>후원자</button> 탭에도 있습니다. 배경 GIF·본문 이미지는 아래 「오버레이 배경 · 본문 이미지」에서 설정하세요.
                   </p>
                 </div>
                 <label className="text-[11px] text-neutral-400 flex flex-col gap-1 rounded border border-fuchsia-500/25 bg-black/25 px-2 py-2">
@@ -12125,6 +11913,328 @@ export default function AdminPage() {
                   </label>
                 </div>
               </div>
+              <div id="overlay-bg-media" className="mb-4 space-y-1">
+                <h3 className="text-sm font-semibold text-fuchsia-100">오버레이 배경 · 본문 이미지</h3>
+                <p className="text-[11px] text-neutral-400 leading-snug">
+                  후원 순위·엑셀표 오버레이의 GIF 배경·본문 이미지입니다. 각 URL과 연동되어 저장됩니다.
+                </p>
+              </div>
+              <div className="mt-3 rounded-2xl border border-fuchsia-400/35 bg-gradient-to-br from-fuchsia-950/55 via-rose-950/45 to-pink-950/40 p-4 shadow-[0_10px_36px_rgba(236,72,153,0.22)] backdrop-blur-md">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h4 className="text-sm font-semibold text-pink-100">후원 랭킹 · 배경 GIF</h4>
+                    <p className="mt-1 max-w-xl text-xs text-pink-100/75">
+                      후원 랭킹(<code className="text-pink-50/90">/overlay/donor-rankings</code>) 전용 배경입니다. 엑셀표 배경과 분리되어 독립 저장됩니다.
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <code className="max-w-[min(100%,420px)] break-all text-[11px] text-fuchsia-100/90">
+                      /overlay/donor-rankings?u={overlayUserId}&zoomPct={getDonorRankingsZoomPct()}
+                    </code>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        className={`rounded px-2 py-1 text-xs ${copiedId === "dash-donor-rankings-bg" ? "bg-emerald-600" : "bg-white/15 text-pink-50 hover:bg-white/25"}`}
+                        onClick={() => {
+                          const u = buildDonorRankingsUrl();
+                          void copyUrl(u, "dash-donor-rankings-bg");
+                        }}
+                      >
+                        {copiedId === "dash-donor-rankings-bg" ? "복사됨!" : "URL 복사"}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded bg-gradient-to-r from-fuchsia-600 to-pink-600 px-2 py-1 text-xs font-semibold text-white shadow-sm hover:from-fuchsia-500 hover:to-pink-500"
+                        onClick={() => window.open(buildDonorRankingsUrl(), "_blank", "noopener,noreferrer")}
+                      >
+                        오버레이 열기
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                {(() => {
+                  const drCfg = normalizeDonorRankingsOverlayConfig(state.donorRankingsOverlayConfig);
+                  const presetSelectValue = DONATION_LISTS_BG_GIF_PRESETS.some((p) => p.url && p.url === drCfg.bgGifUrl)
+                    ? drCfg.bgGifUrl
+                    : drCfg.bgGifUrl.trim()
+                      ? "__custom__"
+                      : "";
+                  return (
+                    <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
+                        GIF 프리셋
+                        <select
+                          className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 shadow-inner outline-none focus:border-fuchsia-400/70"
+                          value={presetSelectValue}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === "__custom__") return;
+                            updateDonorRankingsOverlayConfig({
+                              bgGifUrl: v,
+                              isBgEnabled: Boolean(String(v || "").trim()),
+                            });
+                          }}
+                        >
+                          {DONATION_LISTS_BG_GIF_PRESETS.map((p) => (
+                            <option key={p.label} value={p.url}>
+                              {p.label}
+                            </option>
+                          ))}
+                          <option value="__custom__">직접 URL 입력</option>
+                        </select>
+                      </label>
+                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
+                        GIF URL (https… 또는 /public 경로)
+                        <input
+                          className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 placeholder:text-pink-200/40 outline-none focus:border-fuchsia-400/70"
+                          placeholder="예: https://media.giphy.com/... 또는 /images/bg/my.gif"
+                          value={drCfg.bgGifUrl}
+                          onChange={(e) =>
+                            updateDonorRankingsOverlayConfig({
+                              bgGifUrl: e.target.value,
+                              isBgEnabled: Boolean(String(e.target.value || "").trim()),
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90 md:col-span-2">
+                        배경 투명도 ({drCfg.bgOpacity}%)
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={drCfg.bgOpacity}
+                          onChange={(e) => updateDonorRankingsOverlayConfig({ bgOpacity: Number(e.target.value) })}
+                          className="w-full accent-fuchsia-400"
+                        />
+                      </label>
+                      <label className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/15 bg-black/20 px-3 py-2.5 md:col-span-2 cursor-pointer">
+                        <span className="text-xs font-semibold text-pink-50">배경 사용</span>
+                        <span className="flex items-center gap-2 text-[11px] text-pink-100/80">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-white/30 bg-black/40 text-fuchsia-500 focus:ring-fuchsia-400"
+                            checked={drCfg.isBgEnabled}
+                            onChange={(e) => updateDonorRankingsOverlayConfig({ isBgEnabled: e.target.checked })}
+                          />
+                          ON / OFF
+                        </span>
+                      </label>
+                    </div>
+                  );
+                })()}
+              </div>
+              <div className="mt-3 rounded-2xl border border-fuchsia-400/35 bg-gradient-to-br from-fuchsia-950/55 via-rose-950/45 to-pink-950/40 p-4 shadow-[0_10px_36px_rgba(236,72,153,0.22)] backdrop-blur-md">
+                <div className="min-w-0">
+                  <h4 className="text-sm font-semibold text-pink-100">후원 랭킹 · 본문 이미지 / GIF</h4>
+                  <p className="mt-1 max-w-xl text-xs text-pink-100/75">
+                    순위 패널 본문(제목 아래·목록 아래 등)에 표시할 이미지·GIF입니다. 파일 업로드 또는 URL을 사용할 수 있으며, 일반·전체 후원순위 오버레이에 함께 적용됩니다.
+                  </p>
+                </div>
+                {(() => {
+                  const drCfg = normalizeDonorRankingsOverlayConfig(state.donorRankingsOverlayConfig);
+                  return (
+                    <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
+                        파일 업로드 (gif / png / jpg / webp)
+                        <input
+                          type="file"
+                          accept="image/gif,image/png,image/jpeg,image/webp,.gif,.png,.jpg,.jpeg,.webp"
+                          className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 file:mr-3 file:rounded file:border-0 file:bg-fuchsia-600 file:px-2 file:py-1 file:text-xs file:font-semibold file:text-white"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0] || null;
+                            uploadDonorRankingsBodyImage(file);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
+                        이미지 URL (https… 또는 /uploads 경로)
+                        <input
+                          className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 placeholder:text-pink-200/40 outline-none focus:border-fuchsia-400/70"
+                          placeholder="예: /uploads/sigs/.../banner.gif"
+                          value={drCfg.bodyImageUrl}
+                          onChange={(e) =>
+                            updateDonorRankingsBodyImageConfig({
+                              bodyImageUrl: e.target.value,
+                              isBodyImageEnabled: Boolean(String(e.target.value || "").trim()),
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
+                        배치 위치
+                        <select
+                          className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 shadow-inner outline-none focus:border-fuchsia-400/70"
+                          value={drCfg.bodyImagePosition}
+                          onChange={(e) =>
+                            updateDonorRankingsBodyImageConfig({
+                              bodyImagePosition: e.target.value as OverlayConfig["bodyImagePosition"],
+                            })
+                          }
+                        >
+                          <option value="abovePanel">패널 위</option>
+                          <option value="belowTitle">제목 아래 (기본)</option>
+                          <option value="belowList">순위 목록 아래</option>
+                        </select>
+                      </label>
+                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
+                        본문 이미지 투명도 ({drCfg.bodyImageOpacity}%)
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={drCfg.bodyImageOpacity}
+                          onChange={(e) =>
+                            updateDonorRankingsBodyImageConfig({ bodyImageOpacity: Number(e.target.value) })
+                          }
+                          className="w-full accent-fuchsia-400"
+                        />
+                      </label>
+                      {drCfg.bodyImageUrl.trim() ? (
+                        <div className="md:col-span-2 flex flex-wrap items-center gap-3 rounded-xl border border-white/15 bg-black/20 px-3 py-2.5">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={drCfg.bodyImageUrl.trim()}
+                            alt=""
+                            className="max-h-20 max-w-[200px] rounded object-contain"
+                          />
+                          <button
+                            type="button"
+                            className="rounded bg-white/15 px-2 py-1 text-xs text-pink-50 hover:bg-white/25"
+                            onClick={() =>
+                              updateDonorRankingsBodyImageConfig({
+                                bodyImageUrl: "",
+                                isBodyImageEnabled: false,
+                              })
+                            }
+                          >
+                            이미지 지우기
+                          </button>
+                        </div>
+                      ) : null}
+                      <label className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/15 bg-black/20 px-3 py-2.5 md:col-span-2 cursor-pointer">
+                        <span className="text-xs font-semibold text-pink-50">본문 이미지 사용</span>
+                        <span className="flex items-center gap-2 text-[11px] text-pink-100/80">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-white/30 bg-black/40 text-fuchsia-500 focus:ring-fuchsia-400"
+                            checked={drCfg.isBodyImageEnabled}
+                            onChange={(e) =>
+                              updateDonorRankingsBodyImageConfig({ isBodyImageEnabled: e.target.checked })
+                            }
+                          />
+                          ON / OFF
+                        </span>
+                      </label>
+                    </div>
+                  );
+                })()}
+              </div>
+              <div className="mt-3 rounded-2xl border border-fuchsia-400/35 bg-gradient-to-br from-fuchsia-950/55 via-rose-950/45 to-pink-950/40 p-4 shadow-[0_10px_36px_rgba(236,72,153,0.22)] backdrop-blur-md">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h4 className="text-sm font-semibold text-pink-100">후원 엑셀표 · 배경 GIF</h4>
+                    <p className="mt-1 max-w-xl text-xs text-pink-100/75">
+                      후원 엑셀표 배경 GIF입니다. 통합 오버레이(<code className="text-pink-50/90">/overlay</code>)·단독(
+                      <code className="text-pink-50/90">/overlay/donation-lists</code>) 모두 반영됩니다. Giphy <span className="text-pink-50/90">페이지</span> 주소(
+                      <code className="break-all">giphy.com/gifs/…</code>)도 자동으로 직접 GIF/MP4로 바뀝니다. GIF 선명도를 높이면 표 뒤 애니메이션이 더 잘 보입니다.
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <code className="max-w-[min(100%,420px)] break-all text-[11px] text-fuchsia-100/90">
+                      /overlay/donation-lists?u={overlayUserId}
+                    </code>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        className={`rounded px-2 py-1 text-xs ${copiedId === "dash-donation-lists" ? "bg-emerald-600" : "bg-white/15 text-pink-50 hover:bg-white/25"}`}
+                        onClick={() => {
+                          const u = `${window.location.origin}/overlay/donation-lists?u=${overlayUserId}`;
+                          void copyUrl(u, "dash-donation-lists");
+                        }}
+                      >
+                        {copiedId === "dash-donation-lists" ? "복사됨!" : "URL 복사"}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded bg-gradient-to-r from-fuchsia-600 to-pink-600 px-2 py-1 text-xs font-semibold text-white shadow-sm hover:from-fuchsia-500 hover:to-pink-500"
+                        onClick={() => window.open(`/overlay/donation-lists?u=${overlayUserId}`, "_blank", "noopener,noreferrer")}
+                      >
+                        오버레이 열기
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                {(() => {
+                  const dlCfg = normalizeDonationListsOverlayConfig(state.donationListsOverlayConfig);
+                  const presetSelectValue = DONATION_LISTS_BG_GIF_PRESETS.some((p) => p.url && p.url === dlCfg.bgGifUrl)
+                    ? dlCfg.bgGifUrl
+                    : dlCfg.bgGifUrl.trim()
+                      ? "__custom__"
+                      : "";
+                  return (
+                    <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
+                        GIF 프리셋
+                        <select
+                          className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 shadow-inner outline-none focus:border-fuchsia-400/70"
+                          value={presetSelectValue}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === "__custom__") return;
+                            updateDonationListsOverlayConfig({ bgGifUrl: v, isBgEnabled: Boolean(String(v || "").trim()) });
+                          }}
+                        >
+                          {DONATION_LISTS_BG_GIF_PRESETS.map((p) => (
+                            <option key={p.label} value={p.url}>
+                              {p.label}
+                            </option>
+                          ))}
+                          <option value="__custom__">직접 URL 입력</option>
+                        </select>
+                      </label>
+                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90">
+                        GIF URL (https… 또는 /public 경로)
+                        <input
+                          className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-pink-50 placeholder:text-pink-200/40 outline-none focus:border-fuchsia-400/70"
+                          placeholder="https://i.giphy.com/xxxxx.gif 또는 giphy.com/gifs/… 페이지"
+                          value={dlCfg.bgGifUrl}
+                          onChange={(e) =>
+                            updateDonationListsOverlayConfig({
+                              bgGifUrl: e.target.value,
+                              isBgEnabled: Boolean(String(e.target.value || "").trim()),
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1.5 text-[11px] font-medium text-pink-100/90 md:col-span-2">
+                        GIF 선명도 ({dlCfg.bgOpacity}% · 높을수록 잘 보임)
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={dlCfg.bgOpacity}
+                          onChange={(e) => updateDonationListsOverlayConfig({ bgOpacity: Number(e.target.value) })}
+                          className="w-full accent-fuchsia-400"
+                        />
+                      </label>
+                      <label className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/15 bg-black/20 px-3 py-2.5 md:col-span-2 cursor-pointer">
+                        <span className="text-xs font-semibold text-pink-50">배경 사용</span>
+                        <span className="flex items-center gap-2 text-[11px] text-pink-100/80">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-white/30 bg-black/40 text-fuchsia-500 focus:ring-fuchsia-400"
+                            checked={dlCfg.isBgEnabled}
+                            onChange={(e) => updateDonationListsOverlayConfig({ isBgEnabled: e.target.checked })}
+                          />
+                          ON / OFF
+                        </span>
+                      </label>
+                    </div>
+                  );
+                })()}
+              </div>
               <div className="mb-3 rounded-lg border border-white/10 bg-black/30 overflow-hidden">
                 <div className="flex items-center justify-between border-b border-white/5 px-2 py-1.5">
                   <span className="text-xs font-medium text-neutral-300">후원 순위 (상위 N) 미리보기</span>
@@ -12139,8 +12249,18 @@ export default function AdminPage() {
                 <div className="relative w-full bg-black/40" style={{ minHeight: "260px", aspectRatio: "16 / 9" }}>
                   {overlayUserId ? (
                     <iframe
-                      key={`donor-rankings-${donorRankingsPreviewIframeKey}-${overlayUserId}`}
-                      src={appendAdminPreviewEmbedToOverlayUrl(`/overlay/donor-rankings?u=${overlayUserId}&zoomPct=${getDonorRankingsZoomPct()}`)}
+                      key={`donor-rankings-${donorRankingsPreviewIframeKey}-${overlayUserId}-${state.donorRankingsTheme?.titleText || ""}`}
+                      src={appendAdminPreviewEmbedToOverlayUrl(
+                        (() => {
+                          const title = String(state.donorRankingsTheme?.titleText || "").trim();
+                          const q = new URLSearchParams({
+                            u: overlayUserId,
+                            zoomPct: String(getDonorRankingsZoomPct()),
+                          });
+                          if (title) q.set("title", title);
+                          return `/overlay/donor-rankings?${q.toString()}`;
+                        })()
+                      )}
                       title="후원 순위 오버레이 미리보기"
                       className="absolute inset-0 h-full w-full border-0"
                       style={{ background: "transparent" }}
@@ -12150,223 +12270,6 @@ export default function AdminPage() {
                       로그인 계정 확인 중…
                     </div>
                   )}
-                </div>
-              </div>
-              <div className="mb-3 rounded-lg border border-pink-500/25 bg-pink-950/15 overflow-hidden">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-pink-500/15 px-2 py-1.5">
-                  <span className="text-xs font-medium text-pink-100">후원 순위 · 전체 (분홍) 미리보기</span>
-                  <div className="flex gap-1">
-                    <button
-                      type="button"
-                      className={`px-2 py-0.5 rounded text-[11px] ${copiedId === "dash-donor-rankings-full-dash" ? "bg-emerald-600" : "bg-pink-800 hover:bg-pink-700 text-white"}`}
-                      onClick={() => void copyUrl(buildDonorRankingsFullUrl(), "dash-donor-rankings-full-dash")}
-                    >
-                      {copiedId === "dash-donor-rankings-full-dash" ? "복사됨" : "URL"}
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded border border-pink-400/30 px-2 py-0.5 text-[11px] text-pink-100 hover:bg-pink-900/40"
-                      onClick={() => setDonorRankingsFullPreviewIframeKey((k) => k + 1)}
-                    >
-                      새로고침
-                    </button>
-                  </div>
-                </div>
-                <div className="relative w-full bg-black/40" style={{ minHeight: "260px", aspectRatio: "16 / 9" }}>
-                  {overlayUserId ? (
-                    <iframe
-                      key={`donor-rankings-full-${donorRankingsFullPreviewIframeKey}-${overlayUserId}`}
-                      src={appendAdminPreviewEmbedToOverlayUrl(
-                        donorRankingsFullOverlayPath(overlayUserId, getDonorRankingsZoomPct())
-                      )}
-                      title="후원 순위 전체(분홍) 미리보기"
-                      className="absolute inset-0 h-full w-full border-0"
-                      style={{ background: "transparent" }}
-                    />
-                  ) : (
-                    <div className="absolute inset-0 flex items-center justify-center text-xs text-neutral-500">
-                      로그인 계정 확인 중…
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="mb-3 rounded border border-pink-500/25 bg-pink-950/20 p-3 space-y-3">
-                <div>
-                  <h4 className="text-sm font-semibold text-pink-100">후원 순위 · 전체 (분홍) · 글자·색상</h4>
-                  <p className="mt-1 text-[11px] text-neutral-400 leading-snug">
-                    기존 후원 순위와 별도 저장됩니다. OBS에는{" "}
-                    <code className="text-pink-200/90">/overlay/donor-rankings-full</code> URL을 사용하세요.
-                  </p>
-                </div>
-                <label className="text-[11px] text-neutral-400 flex flex-col gap-1 rounded border border-pink-500/20 bg-black/25 px-2 py-2">
-                  <span>제목 문구</span>
-                  <input
-                    type="text"
-                    value={state.donorRankingsFullTheme.titleText || ""}
-                    onChange={(e) => updateDonorRankingsFullTheme({ titleText: e.target.value })}
-                    className="h-8 w-full rounded border border-white/10 bg-neutral-900/80 px-2 text-sm"
-                    placeholder="👑 후원 순위 👑"
-                    maxLength={60}
-                  />
-                </label>
-                <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-                  <label className="text-[11px] text-neutral-400">
-                    제목(px)
-                    <input
-                      type="range"
-                      min={14}
-                      max={80}
-                      value={state.donorRankingsFullTheme.titleSize}
-                      onChange={(e) => updateDonorRankingsFullTheme({ titleSize: Number(e.target.value) })}
-                      className="w-full"
-                    />
-                    <span className="text-xs text-neutral-300">{state.donorRankingsFullTheme.titleSize}px</span>
-                  </label>
-                  <label className="text-[11px] text-neutral-400">
-                    행(px)
-                    <input
-                      type="range"
-                      min={12}
-                      max={64}
-                      value={state.donorRankingsFullTheme.rowSize}
-                      onChange={(e) => updateDonorRankingsFullTheme({ rowSize: Number(e.target.value) })}
-                      className="w-full"
-                    />
-                    <span className="text-xs text-neutral-300">{state.donorRankingsFullTheme.rowSize}px</span>
-                  </label>
-                  <label className="text-[11px] text-neutral-400">
-                    순위(px)
-                    <input
-                      type="range"
-                      min={12}
-                      max={72}
-                      value={state.donorRankingsFullTheme.rankSize}
-                      onChange={(e) => updateDonorRankingsFullTheme({ rankSize: Number(e.target.value) })}
-                      className="w-full"
-                    />
-                    <span className="text-xs text-neutral-300">{state.donorRankingsFullTheme.rankSize}px</span>
-                  </label>
-                  <label className="text-[11px] text-neutral-400">
-                    배경 투명도
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={state.donorRankingsFullTheme.overlayOpacity}
-                      onChange={(e) => updateDonorRankingsFullTheme({ overlayOpacity: Number(e.target.value) })}
-                      className="w-full"
-                    />
-                    <span className="text-xs text-neutral-300">{state.donorRankingsFullTheme.overlayOpacity}%</span>
-                  </label>
-                </div>
-                <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
-                  {(
-                    [
-                      ["titleColor", "제목"],
-                      ["rankColor", "순위"],
-                      ["nameColor", "닉네임"],
-                      ["amountColor", "금액"],
-                      ["headerAccountBg", "헤더"],
-                    ] as const
-                  ).map(([key, label]) => (
-                    <label
-                      key={key}
-                      className="flex items-center justify-between gap-2 rounded border border-pink-500/20 bg-black/25 px-2 py-1 text-[11px] text-neutral-400"
-                    >
-                      <span>{label}</span>
-                      <input
-                        type="color"
-                        value={toColorPickerValue(
-                          String((state.donorRankingsFullTheme as unknown as Record<string, unknown>)[key] ?? ""),
-                          "#f9a8d4"
-                        )}
-                        onChange={(e) =>
-                          updateDonorRankingsFullTheme({
-                            [key]: e.target.value,
-                          } as Partial<AppState["donorRankingsFullTheme"]>)
-                        }
-                        className="h-7 w-9 rounded border border-white/20 bg-transparent p-0.5"
-                      />
-                    </label>
-                  ))}
-                </div>
-                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                  {(
-                    [
-                      ["bg", "전체 배경", "#ffffff"],
-                      ["panelBg", "패널 배경", "#ffeef6"],
-                    ] as const
-                  ).map(([key, label, fallback]) => (
-                    <label
-                      key={key}
-                      className="flex items-center gap-2 rounded border border-pink-500/20 bg-black/25 px-2 py-1 text-[11px] text-neutral-400"
-                    >
-                      <span className="w-24 shrink-0">{label}</span>
-                      <input
-                        type="color"
-                        value={toColorPickerValue(
-                          String((state.donorRankingsFullTheme as unknown as Record<string, unknown>)[key] ?? ""),
-                          fallback
-                        )}
-                        onChange={(e) =>
-                          updateDonorRankingsFullTheme({
-                            [key]: e.target.value,
-                          } as Partial<AppState["donorRankingsFullTheme"]>)
-                        }
-                        className="h-7 w-9 shrink-0 rounded border border-white/20 bg-transparent p-0.5"
-                      />
-                      <input
-                        type="text"
-                        value={String((state.donorRankingsFullTheme as unknown as Record<string, unknown>)[key] || "")}
-                        onChange={(e) =>
-                          updateDonorRankingsFullTheme({
-                            [key]: e.target.value,
-                          } as Partial<AppState["donorRankingsFullTheme"]>)
-                        }
-                        className="h-7 min-w-0 flex-1 rounded border border-white/10 bg-neutral-900/80 px-2 text-xs"
-                        placeholder="transparent / rgba(...)"
-                      />
-                    </label>
-                  ))}
-                </div>
-                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                  <label className="flex items-center gap-2 rounded border border-pink-500/20 bg-black/25 px-2 py-1 text-[11px] text-neutral-400">
-                    <span className="w-24 shrink-0">텍스트 외곽선</span>
-                    <input
-                      type="text"
-                      value={state.donorRankingsFullTheme.outlineColor || ""}
-                      onChange={(e) => updateDonorRankingsFullTheme({ outlineColor: e.target.value })}
-                      className="h-7 w-full rounded border border-white/10 bg-neutral-900/80 px-2 text-xs"
-                      placeholder="rgba(...) / #fff"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1 rounded border border-pink-500/20 bg-black/25 px-2 py-2 text-[11px] text-neutral-400">
-                    <span>텍스트 외곽선 두께(px)</span>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="range"
-                        min={0}
-                        max={3}
-                        step={0.25}
-                        value={state.donorRankingsFullTheme.outlineWidth}
-                        onChange={(e) => updateDonorRankingsFullTheme({ outlineWidth: Number(e.target.value) })}
-                        className="flex-1"
-                      />
-                      <input
-                        type="number"
-                        min={0}
-                        max={3}
-                        step={0.25}
-                        value={state.donorRankingsFullTheme.outlineWidth}
-                        onChange={(e) =>
-                          updateDonorRankingsFullTheme({
-                            outlineWidth: Math.max(0, Math.min(3, parseFloat(e.target.value || "0") || 0)),
-                          })
-                        }
-                        className="w-16 rounded border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs text-right"
-                      />
-                    </div>
-                  </label>
                 </div>
               </div>
               <div className="mb-3 rounded border border-sky-500/30 bg-sky-950/25 p-3 space-y-3">
@@ -12732,8 +12635,8 @@ export default function AdminPage() {
                                   <label className="text-xs text-neutral-400">표 배경 불투명도</label>
                                   <div className="flex items-center gap-2">
                                     <input type="range" min="0" max="100" value={p.tableBgOpacity || "100"} onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value })} className="flex-1 accent-emerald-500" />
-                                    <input className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right" value={p.tableBgOpacity || "100"} onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value.replace(/[^\\d]/g, "") })} />
-                                    <span className="text-xs text-neutral-500">%</span>
+                                    <input className="w-16 px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm text-right" value={p.tableBgOpacity || "100"} onChange={(e) => updatePreset(p.id, { tableBgOpacity: e.target.value.replace(/[^\d]/g, "").slice(0, 3) })} />
+                                    <span className="text-xs text-neutral-500">% (100=불투명)</span>
                                   </div>
                                   <div className="col-span-full space-y-2.5 rounded-lg border border-white/10 bg-neutral-950/50 p-2.5">
                                     <div className="text-xs font-semibold text-emerald-300/90">헤더(상단)</div>
@@ -13526,7 +13429,7 @@ export default function AdminPage() {
                                   </span>
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] items-center gap-2">
-                                  <label className="text-xs text-neutral-400">표 배경 투명도</label>
+                                  <label className="text-xs text-neutral-400">표 배경 불투명도</label>
                                   <div className="flex items-center gap-2">
                                     <input
                                       type="range"
@@ -14746,7 +14649,7 @@ export default function AdminPage() {
         </div>
       )}
       <footer className="mt-8 text-center text-xs text-neutral-500">
-        © 2026 Final Entertainment. All rights reserved.
+        © 2026 {APP_BRAND_NAME}. All rights reserved.
       </footer>
       <nav className="fixed bottom-0 left-0 right-0 z-40 lg:hidden border-t border-white/10 bg-[#202020]/95 backdrop-blur">
         <div

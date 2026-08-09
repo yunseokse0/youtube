@@ -670,17 +670,27 @@ export default function MealMatchOverlayInner() {
               </div>
             ) : null}
             {useTeamSplitGauge ? (
-              <div className="mb-2 px-1">
+              <div className="mb-1 px-1">
                 <BattleTeamScoreHeader
                   leftName={teamAName}
                   leftScore={teamAgg.aScore}
                   rightName={teamBName}
                   rightScore={teamAgg.bScore}
                   compact={compact}
+                  leftRatio={
+                    teamAgg.aScore + teamAgg.bScore > 0
+                      ? (teamAgg.aScore / Math.max(1, teamAgg.aScore + teamAgg.bScore)) * 100
+                      : 50
+                  }
+                  gapLabel={
+                    Math.abs(teamAgg.aScore - teamAgg.bScore) > 0
+                      ? Math.round(Math.abs(teamAgg.aScore - teamAgg.bScore)).toLocaleString("ko-KR")
+                      : null
+                  }
                 />
               </div>
             ) : null}
-            {devHud ? (
+            {devHud && !useTeamSplitGauge ? (
               <p
                 className="mb-2 text-center text-[9px] font-bold text-pink-200/90"
                 data-meal-ui-features="score-in-bar-names-below"
@@ -688,6 +698,7 @@ export default function MealMatchOverlayInner() {
                 UI {MEAL_MATCH_OVERLAY_UI_REV} · 막대 안 점수 / 아래 이름
               </p>
             ) : null}
+            {!useTeamSplitGauge ? (
             <div className="flex w-full flex-col">
               <div
                 className={`relative z-0 mb-0 w-full shrink-0 overflow-hidden rounded-full ${
@@ -959,6 +970,7 @@ export default function MealMatchOverlayInner() {
                 </div>
               ) : null}
             </div>
+            ) : null}
           </div>
         </div>
 

@@ -19,6 +19,22 @@ function floorToHundreds(value: number): number {
   return Math.floor(Math.max(0, value) / 100) * 100;
 }
 
+/**
+ * 시그 후원 연동 상태.
+ * donationLinks에 항목이 없으면 하위호환으로 ON(전체 기간).
+ */
+export function resolveSigMatchDonationLink(
+  settings: Pick<SigMatchSettings, "donationLinks"> | null | undefined,
+  memberId: string
+): { active: boolean; startedAt: number } {
+  const link = settings?.donationLinks?.[memberId];
+  if (!link) return { active: true, startedAt: 0 };
+  return {
+    active: Boolean(link.active),
+    startedAt: Number.isFinite(Number(link.startedAt)) ? Math.max(0, Math.floor(Number(link.startedAt))) : 0,
+  };
+}
+
 export const DEFAULT_VAT_RATE = 0.1;
 
 /** 부가세 포함 금액이면 공급가(÷(1+세율))로 환산 후 100원 단위 내림 */
@@ -226,6 +242,10 @@ export function getSigMatchRankings(
   for (const d of donors || []) {
     const memberId = d.memberId;
     if (!byMember.has(memberId)) continue;
+    const link = resolveSigMatchDonationLink(settings, memberId);
+    if (!link.active) continue;
+    const donorAt = Number.isFinite(Number(d.at)) ? Math.max(0, Math.floor(Number(d.at))) : 0;
+    if (link.startedAt > 0 && donorAt > 0 && donorAt < link.startedAt) continue;
     const amount = Math.max(0, Number(d.amount || 0));
     const countAll =
       settings.countAllDonations !== false &&
@@ -254,6 +274,8 @@ export function getSigMatchRankings(
     const incCount = 1 / n;
     const incAmount = amount / n;
     for (const id of recipients) {
+      const recvLink = resolveSigMatchDonationLink(settings, id);
+      if (!recvLink.active) continue;
       const b = byMember.get(id);
       if (!b) continue;
       b.count += incCount;

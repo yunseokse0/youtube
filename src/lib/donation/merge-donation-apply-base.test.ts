@@ -130,6 +130,39 @@ describe("mergeDonationApplyBase", () => {
     const merged = mergeDonationApplyBase(fresh, hint);
     expect(merged?.overlayPresets?.[0]?.theme).toBe("excelLive");
   });
+
+  it("preserves donor message when hint row overwrites fresh without message", () => {
+    const fresh: AppState = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "BT태호", account: 0, toon: 10000, contribution: 10000 }],
+      donors: [
+        {
+          id: "d1",
+          name: "익명",
+          amount: 10000,
+          memberId: "m1",
+          at: 1,
+          target: "toon",
+          message: "익명 BT태호",
+        },
+      ],
+    };
+    const hint: AppState = {
+      ...fresh,
+      donors: [
+        {
+          id: "d1",
+          name: "익명",
+          amount: 10000,
+          memberId: "m1",
+          at: 2,
+          target: "toon",
+        },
+      ],
+    };
+    const merged = mergeDonationApplyBase(fresh, hint);
+    expect(merged?.donors?.[0]?.message).toBe("익명 BT태호");
+  });
 });
 
 describe("enrichStateBeforeAuthoritativeDonationSave", () => {

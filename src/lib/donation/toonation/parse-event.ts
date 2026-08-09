@@ -84,7 +84,12 @@ export function extractToonationMessage(data: unknown): string {
     safeRead(root, "message") ||
       safeRead(root, "comment") ||
       safeRead(root, "text") ||
+      safeRead(root, "msg") ||
+      safeRead(root, "donationMessage") ||
+      safeRead(root, "donation_message") ||
+      safeRead(root, "donationComment") ||
       safeRead(data, "comment") ||
+      safeRead(data, "message") ||
       ""
   ).trim();
 }

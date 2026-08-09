@@ -6,7 +6,7 @@ import {
   pickOverlayPresetsPreferCustom,
 } from "@/lib/state";
 import type { AppState, Donor, Member } from "@/types";
-import { syncMemberTotalsFromDonors } from "./apply-donation-state";
+import { mergeDonorRowFields, syncMemberTotalsFromDonors } from "./apply-donation-state";
 
 /** 후원 memberId 가 로스터에 얼마나 매칭되는지(금액 합) — 로스터 선택용 */
 export function rosterDonorMatchScore(
@@ -42,7 +42,10 @@ export function mergeDonationApplyBase(
   const hintDonors = normalizeDonorsArray(hint.donors);
   const donorMap = new Map<string, (typeof freshDonors)[number]>();
   for (const d of freshDonors) donorMap.set(d.id, d);
-  for (const d of hintDonors) donorMap.set(d.id, d);
+  for (const d of hintDonors) {
+    const prev = donorMap.get(d.id);
+    donorMap.set(d.id, prev ? mergeDonorRowFields(d, prev) : d);
+  }
   const mergedDonors = Array.from(donorMap.values()).sort((a, b) => b.at - a.at);
 
   const hintStrong = hasMeaningfulMemberRoster(hint);

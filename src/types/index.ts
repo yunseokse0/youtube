@@ -295,6 +295,13 @@ export type SigMatchSettings = {
    * 비어 있으면 전원. 하나 이상이면 해당 멤버만 대전에 포함(나머지는 목록에서 제외).
    */
   participantMemberIds: string[];
+  /**
+   * 멤버별 후원 연동(엑셀 배정과 동일 donors 소스).
+   * - 항목 없음: 하위호환으로 연동 ON·전체 기간 집계
+   * - active=false: 해당 멤버 후원은 시그 점수에 미반영(엑셀/멤버 금액은 유지)
+   * - active=true + startedAt: 그 시각 이후 후원만 집계
+   */
+  donationLinks?: Record<string, { active: boolean; startedAt?: number }>;
   /** 시그 대전 오버레이 카운트다운 총 시간(초). 0이면 타이머 숨김 */
   overlayTimerDurationSec?: number;
   /** 시그 대전 오버레이 타이머 종료 시각(epoch ms). null/0이면 정지 */
@@ -416,7 +423,7 @@ export type AppState = {
   rankPositionLabels: string[];
   /** 계좌/투네 후원 순위 오버레이 테마 */
   donorRankingsTheme: DonorRankingsTheme;
-  /** `/overlay/donor-rankings-full` — 전체 후원자 목록·분홍 테마(기존 순위와 분리) */
+  /** @deprecated 후원순위 전체(분홍) 제거 — 저장 호환용 */
   donorRankingsFullTheme: DonorRankingsTheme;
   /** 후원 순위 오버레이 테마 프리셋 목록 */
   donorRankingsPresets: DonorRankingsPreset[];
@@ -456,7 +463,7 @@ export type AppState = {
   timerDisplayStyles: Record<"general", TimerDisplayStyle>;
   /** `/overlay/donor-rankings` 배경 GIF·투명도 */
   donorRankingsOverlayConfig: OverlayConfig;
-  /** `/overlay/donor-rankings-full` 배경 GIF·투명도 */
+  /** @deprecated 후원순위 전체(분홍) 제거 — 저장 호환용 */
   donorRankingsFullOverlayConfig: OverlayConfig;
   /** `/overlay/donation-lists` 배경 GIF·투명도(상태 저장 시 Redis와 동기화) */
   donationListsOverlayConfig: OverlayConfig;

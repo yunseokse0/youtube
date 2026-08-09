@@ -1345,25 +1345,6 @@ export function appendGoalBarStyleParams(target: URLSearchParams, preset: Overla
   }
 }
 
-/** 전체 후원 순위(분홍) OBS URL — 상위 N 제한 없음 */
-export function buildDonorRankingsFullOverlayUrl(
-  origin: string,
-  userId: string,
-  theme: DonorRankingsTheme,
-  zoomPct: number
-): string {
-  const q = donorRankingsThemeToSearchParams(theme);
-  q.delete("top");
-  q.set("u", userId);
-  q.set("host", "obs");
-  q.set("zoomPct", String(zoomPct));
-  return `${origin.replace(/\/$/, "")}/overlay/donor-rankings-full?${q.toString()}`;
-}
-
-export function donorRankingsFullOverlayPath(userId: string, zoomPct: number): string {
-  return `/overlay/donor-rankings-full?u=${encodeURIComponent(userId)}&host=obs&zoomPct=${zoomPct}`;
-}
-
 /** 후원순위 OBS URL에 테마·폰트 크기 반영(관리자 저장값과 동일하게) */
 export function donorRankingsThemeToSearchParams(theme: DonorRankingsTheme): URLSearchParams {
   const q = new URLSearchParams();

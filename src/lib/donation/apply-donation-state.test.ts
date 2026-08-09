@@ -3,10 +3,43 @@ import { defaultState } from "@/lib/state";
 import {
   applyDonationToAppState,
   dedupeDonorRows,
+  mergeDonorRowFields,
+  reassignDonorMemberInAppState,
   revertDonationFromAppState,
   syncMemberTotalsFromDonors,
+  updateDonorMessageInAppState,
 } from "./apply-donation-state";
 import type { DonationEvent } from "./types";
+
+describe("reassignDonorMemberInAppState", () => {
+  it("keeps donor name and moves amount between members", () => {
+    const state = {
+      ...defaultState(),
+      members: [
+        { id: "m1", name: "피자", account: 0, toon: 50_000, contribution: 50_000 },
+        { id: "m2", name: "비서", account: 0, toon: 0, contribution: 0 },
+      ],
+      donors: [
+        {
+          id: "toonation:re1",
+          name: "두근거",
+          amount: 50_000,
+          memberId: "m1",
+          at: Date.now(),
+          target: "toon" as const,
+          message: "응원합니다",
+        },
+      ],
+    };
+    const next = reassignDonorMemberInAppState(state, "toonation:re1", "m2");
+    expect(next).not.toBeNull();
+    expect(next!.donors[0]?.name).toBe("두근거");
+    expect(next!.donors[0]?.message).toBe("응원합니다");
+    expect(next!.donors[0]?.memberId).toBe("m2");
+    expect(next!.members.find((m) => m.id === "m1")?.toon).toBe(0);
+    expect(next!.members.find((m) => m.id === "m2")?.toon).toBe(50_000);
+  });
+});
 
 describe("applyDonationToAppState", () => {
   it("stores donation message on donor row", () => {
@@ -573,5 +606,49 @@ describe("applyDonationToAppState", () => {
     };
     const next = syncMemberTotalsFromDonors(state);
     expect(next.members[0]?.toon).toBe(3000);
+  });
+});
+
+describe("mergeDonorRowFields", () => {
+  it("fills missing message from fallback row", () => {
+    expect(
+      mergeDonorRowFields(
+        { id: "a", name: "익명", amount: 1000, memberId: "m1", at: 2 },
+        { id: "a", name: "익명", amount: 1000, memberId: "m1", at: 1, message: "익명 연비서" }
+      ).message
+    ).toBe("익명 연비서");
+  });
+});
+
+describe("dedupeDonorRows message preservation", () => {
+  it("keeps message when newer duplicate row lacks it", () => {
+    const rows = dedupeDonorRows([
+      { id: "d1", name: "익명", amount: 1000, memberId: "m1", at: 1, message: "익명 비서" },
+      { id: "d1", name: "익명", amount: 1000, memberId: "m1", at: 2 },
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.message).toBe("익명 비서");
+  });
+});
+
+describe("updateDonorMessageInAppState", () => {
+  it("updates message without changing totals", () => {
+    const state = {
+      ...defaultState(),
+      members: [{ id: "m1", name: "피자", account: 0, toon: 5000, contribution: 5000 }],
+      donors: [
+        {
+          id: "d1",
+          name: "익명",
+          amount: 5000,
+          memberId: "m1",
+          at: Date.now(),
+          target: "toon" as const,
+        },
+      ],
+    };
+    const next = updateDonorMessageInAppState(state, "d1", "익원 감사");
+    expect(next?.donors?.[0]?.message).toBe("익원 감사");
+    expect(next?.members[0]?.toon).toBe(5000);
   });
 });

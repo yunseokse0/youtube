@@ -26,15 +26,15 @@ type SigMatchSide = { ids: string[]; label: string; score: number; teamLabel?: s
 function sigGaugeInBarScoreStyle(leading: boolean): React.CSSProperties {
   if (leading) {
     return {
-      color: "#fef9c3",
-      textShadow:
-        "0 0 16px rgba(250,204,21,0.95), 0 0 6px rgba(251,191,36,0.85), 0 2px 10px rgba(0,0,0,0.95), -1px 0 0 #000, 1px 0 0 #000",
+      color: "#ffffff",
+      textShadow: "0 1px 2px rgba(0,0,0,0.55)",
+      WebkitTextStroke: "0.35px rgba(0,0,0,0.4)",
+      paintOrder: "stroke fill",
     };
   }
   return {
-    color: "rgba(255,255,255,0.92)",
-    textShadow:
-      "0 1px 0 #000, 0 2px 8px rgba(0,0,0,0.95), -1px 0 0 #000, 1px 0 0 #000",
+    color: "rgba(255,255,255,0.95)",
+    textShadow: "0 1px 2px rgba(0,0,0,0.5)",
   };
 }
 
@@ -83,8 +83,8 @@ type SigMatchDuelLayout =
 
 function sigVsBarHeightClass(hubPreview: boolean): string {
   return hubPreview
-    ? "h-20 w-full min-h-[5rem] overflow-hidden rounded-full border-2 border-white/25 bg-black/50 shadow-[inset_0_2px_12px_rgba(0,0,0,0.55)] sm:h-24"
-    : "h-14 w-full overflow-hidden rounded-full bg-black/40 shadow-[inset_0_2px_10px_rgba(0,0,0,0.45)] sm:h-16";
+    ? "h-16 w-full min-h-[4rem] overflow-hidden rounded-xl bg-black/35 ring-1 ring-white/15 sm:h-20"
+    : "h-12 w-full overflow-hidden rounded-xl bg-black/30 ring-1 ring-white/12 sm:h-14";
 }
 
 /** 게이지 정중앙 — 선두 차이만 표시 (VS 문구 없음) */
@@ -99,13 +99,9 @@ function SigVsBarCenterLabel({
   return (
     <div className="flex flex-col items-center justify-center gap-0.5" data-sig-vs-center="true">
       <span
-        className={`font-black tabular-nums text-amber-100 ${
+        className={`rounded-md bg-neutral-950/80 px-1.5 py-0.5 font-bold tabular-nums text-white/95 ring-1 ring-white/15 ${
           compact ? "text-[10px] sm:text-xs" : "text-xs sm:text-sm"
         }`}
-        style={{
-          textShadow:
-            "0 0 10px rgba(251,191,36,0.75), 0 1px 4px rgba(0,0,0,0.95), -1px 0 0 #000, 1px 0 0 #000",
-        }}
         data-sig-vs-gap="true"
       >
         +{gapLabel}
@@ -114,101 +110,32 @@ function SigVsBarCenterLabel({
   );
 }
 
-function sigTeamBoxLeadingClasses(tint: "pink" | "sky" | "amber", leading: boolean): string {
-  if (!leading) return "opacity-[0.88]";
-  if (tint === "pink") {
-    return "border-pink-300/85 bg-pink-950/85 shadow-[0_0_20px_rgba(244,114,182,0.55)] ring-2 ring-amber-400/50";
-  }
-  if (tint === "sky") {
-    return "border-sky-300/85 bg-sky-950/85 shadow-[0_0_20px_rgba(56,189,248,0.55)] ring-2 ring-amber-400/50";
-  }
-  return "border-amber-300/85 bg-amber-950/85 shadow-[0_0_20px_rgba(251,191,36,0.5)] ring-2 ring-amber-400/50";
+function sigTeamBoxLeadingClasses(_tint: "pink" | "sky" | "amber", leading: boolean): string {
+  return leading
+    ? "border-white/25 bg-black/55 ring-1 ring-emerald-400/40"
+    : "border-white/10 bg-black/40 opacity-90";
 }
 
-/** 타이틀·타이머 — 멤버 행 위(stack) 또는 2팀 사이(inline) */
-function SigMatchTitleTimerBlock({
-  title,
-  timerVisible,
+function SigCleanTimerPill({
   timerPaused,
   timerText,
   compact,
-  titleStyle,
   timerTextStyle,
-  layout = "stack",
 }: {
-  title: string;
-  timerVisible: boolean;
   timerPaused: boolean;
   timerText: string;
   compact: boolean;
-  titleStyle: React.CSSProperties;
   timerTextStyle: React.CSSProperties;
-  layout?: "stack" | "inline";
 }) {
-  const inline = layout === "inline";
   return (
     <div
-      className={
-        inline
-          ? `flex shrink-0 flex-col items-center justify-end self-end ${compact ? "gap-0.5 px-1" : "gap-1 px-2"}`
-          : `flex w-full flex-col items-center ${compact ? "gap-0.5 py-0.5" : "gap-1 py-1"}`
-      }
-      data-sig-title-timer={inline ? "inline-members" : "above-gauge"}
+      className={`inline-flex items-center justify-center rounded-md px-2.5 py-0.5 font-black tabular-nums text-white ring-1 ring-white/15 ${
+        timerPaused ? "bg-neutral-700/90" : "bg-neutral-950/85"
+      } ${compact ? "text-base sm:text-lg" : "text-lg sm:text-xl"}`}
+      style={timerTextStyle}
+      data-sig-clean-timer="true"
     >
-      <h1
-        className={`text-center font-black tracking-wide whitespace-nowrap ${
-          inline
-            ? compact
-              ? "text-base sm:text-lg"
-              : "text-xl sm:text-2xl"
-            : compact
-              ? "text-lg sm:text-xl"
-              : "text-2xl sm:text-3xl"
-        }`}
-        style={titleStyle}
-      >
-        {title}
-      </h1>
-      {timerVisible ? (
-        <div
-          className={`flex w-fit max-w-full flex-col items-center rounded-xl ${
-            inline
-              ? compact
-                ? "gap-0.5 px-2.5 py-1"
-                : "gap-1 px-3 py-1.5 sm:px-4"
-              : compact
-                ? "gap-0.5 px-3 py-1.5"
-                : "gap-1 px-4 py-2 sm:px-5 sm:py-2.5"
-          } ${
-            timerPaused
-              ? "bg-neutral-700/90"
-              : "bg-red-600/90 shadow-[0_0_22px_rgba(220,38,38,0.65)]"
-          }`}
-        >
-          <span
-            className={`font-bold uppercase tracking-[0.18em] text-red-100/90 ${
-              compact ? "text-[9px]" : "text-[10px] sm:text-xs"
-            }`}
-          >
-            시그 대전 타이머
-          </span>
-          <span
-            className={`font-black leading-none tabular-nums text-white ${
-              inline
-                ? compact
-                  ? "text-3xl sm:text-4xl"
-                  : "text-4xl sm:text-5xl"
-                : compact
-                  ? "text-4xl sm:text-5xl"
-                  : "text-5xl sm:text-6xl"
-            }`}
-            style={timerTextStyle}
-            suppressHydrationWarning
-          >
-            {timerText}
-          </span>
-        </div>
-      ) : null}
+      <span suppressHydrationWarning>{timerText}</span>
     </div>
   );
 }
@@ -259,14 +186,14 @@ function memberFloatX(
   return 50;
 }
 
-/** 팀 단위 한 박스 — 멤버 세로 나열 (선두 팀은 박스 색·링 강조) */
+/** 팀 단위 한 박스 — 멤버 세로 나열 (선두만 얇은 링) */
 function SigTeamMemberBox({
   members,
   scoringMode,
   align,
   nameClass,
-  scoreClass = "text-amber-100",
-  borderClass = "border-white/20",
+  scoreClass = "text-white/90",
+  borderClass = "border-white/15",
   teamLeading = false,
   teamTint = "pink",
 }: {
@@ -290,24 +217,24 @@ function SigTeamMemberBox({
       data-sig-team-box="true"
       data-sig-team-leading={teamLeading ? "true" : "false"}
       aria-label={teamLeading ? "선두 팀" : undefined}
-      className={`w-full min-w-[9.5rem] max-w-[12rem] rounded-lg border bg-black/60 px-2.5 py-2 shadow-sm backdrop-blur-sm transition-colors sm:min-w-[10.5rem] sm:max-w-[13rem] sm:px-3 sm:py-2.5 ${borderClass} ${sigTeamBoxLeadingClasses(teamTint, teamLeading)} ${boxPos}`}
+      className={`w-full min-w-[8.5rem] max-w-[11rem] rounded-md border px-2 py-1.5 backdrop-blur-sm transition-colors sm:min-w-[9.5rem] sm:max-w-[12rem] sm:px-2.5 ${borderClass} ${sigTeamBoxLeadingClasses(teamTint, teamLeading)} ${boxPos}`}
     >
-      <ul className="flex flex-col gap-1.5">
+      <ul className="flex flex-col gap-1">
         {members.map((m, idx) => {
           const amountLabel = formatSigMatchScoreLabel(m.score, scoringMode);
           return (
             <li
               key={m.memberId}
               className={`flex min-w-0 ${rowDir} items-center gap-1.5 ${rowJustify} ${
-                idx > 0 ? "border-t border-white/10 pt-1.5" : ""
+                idx > 0 ? "border-t border-white/8 pt-1" : ""
               }`}
             >
-              <span className={`min-w-0 flex-1 truncate font-bold text-sm sm:text-base ${nameClass}`}>
+              <span className={`min-w-0 flex-1 truncate text-xs font-semibold sm:text-sm ${nameClass}`}>
                 {m.name}
               </span>
               <span
-                className={`shrink-0 whitespace-nowrap font-black tabular-nums text-sm sm:text-base ${
-                  teamLeading ? "text-amber-50" : scoreClass
+                className={`shrink-0 whitespace-nowrap font-bold tabular-nums text-xs sm:text-sm ${
+                  teamLeading ? "text-white" : scoreClass
                 }`}
               >
                 {amountLabel}
@@ -888,7 +815,7 @@ export default function SigMatchDuelOverlay({
               <span className="font-black text-lime-200">
                 SIG DUEL {SIG_MATCH_OVERLAY_UI_REV}
               </span>
-              <span className="text-lime-100/90"> · 선두 팀 박스 강조 · VS 차이 · 막대 안 합산</span>
+              <span className="text-lime-100/90"> · 클린 VS 바 · 타이머 상단 · 이름 필</span>
               <span className="mt-0.5 block text-red-300">
                 「멤버1·멤버2」 pill만 보이면 구 JS → dev:clean + 새로고침
               </span>
@@ -896,206 +823,143 @@ export default function SigMatchDuelOverlay({
           ) : null}
 
           {dualBar && duelData.mode === "dual" && isSoloDualLayout && soloDualSide ? (
-            <div className={`flex flex-col ${compact ? "gap-2 pt-0" : "gap-3 pt-1"}`}>
-              <div className="flex items-end justify-center gap-2 sm:gap-4">
-                <SigMatchTitleTimerBlock
-                  title={title}
-                  timerVisible={timerVisible}
-                  timerPaused={timerPaused}
-                  timerText={timerText}
-                  compact={compact}
-                  titleStyle={sigMatchTitleStyle}
-                  timerTextStyle={timerTextOutlineStyle}
-                  layout="inline"
-                />
-                <div className="flex flex-col items-center gap-1">
-                  <span className="text-[10px] font-semibold text-white/50">1인 시그</span>
-                  <SigMemberVerticalList
-                    members={memberScoresForSide(soloDualSide, ranking, memberMap, sigScores)}
-                    scoringMode={scoringMode}
-                    align="center"
-                    nameClass={
-                      soloDualSide === duelData.left ? "text-pink-200" : "text-sky-200"
-                    }
-                    scoreClass={
-                      soloDualSide === duelData.left ? "text-pink-50" : "text-sky-50"
-                    }
-                    teamLeading
-                    teamTint={soloDualSide === duelData.left ? "pink" : "sky"}
+            <div className={`flex flex-col ${compact ? "gap-2 pt-0" : "gap-2.5 pt-1"}`}>
+              <h1
+                className={`text-center font-black tracking-wide ${compact ? "text-lg sm:text-xl" : "text-xl sm:text-2xl"}`}
+                style={sigMatchTitleStyle}
+              >
+                {title}
+              </h1>
+              {timerVisible ? (
+                <div className="flex justify-center">
+                  <SigCleanTimerPill
+                    timerPaused={timerPaused}
+                    timerText={timerText}
+                    compact={compact}
+                    timerTextStyle={timerTextOutlineStyle}
                   />
                 </div>
-              </div>
-              <div className="relative mt-1" data-sig-vs-bar="true">
-                <div className={`relative ${sigVsBarHeightClass(compact)}`}>
-                  <div className="flex h-full w-full">
-                    <motion.div
-                      className="relative h-full overflow-hidden bg-gradient-to-r from-pink-500 to-pink-300 shadow-[inset_0_0_16px_rgba(250,204,21,0.45)]"
-                      initial={false}
-                      animate={{ width: `${dualBar.leftPct}%` }}
-                      transition={vsBarSpring}
-                    >
-                      <SigVsBarSegmentLabel
-                        score={soloDualSide.score}
-                        scoringMode={scoringMode}
-                        leading
-                        compact={compact}
-                      />
-                    </motion.div>
-                  </div>
-                  <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
-                    <SigVsBarCenterLabel compact={compact} gapLabel={vsCenterGapLabel} />
-                  </div>
+              ) : null}
+              <div className="relative mt-0.5" data-sig-vs-bar="true">
+                <div
+                  className={`relative flex items-center justify-center overflow-hidden rounded-xl ring-1 ring-white/15 ${
+                    compact ? "h-12 sm:h-14" : "h-14 sm:h-16"
+                  }`}
+                  style={{
+                    background:
+                      soloDualSide === duelData.left
+                        ? "linear-gradient(180deg, #f87171 0%, #dc2626 48%, #b91c1c 100%)"
+                        : "linear-gradient(180deg, #60a5fa 0%, #2563eb 48%, #1d4ed8 100%)",
+                  }}
+                >
+                  <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent" />
+                  <SigVsBarSegmentLabel
+                    score={soloDualSide.score}
+                    scoringMode={scoringMode}
+                    leading
+                    compact={compact}
+                  />
+                </div>
+                <div className="mt-1.5 flex justify-center">
+                  <span className="inline-flex rounded-md bg-neutral-800/90 px-2.5 py-0.5 text-sm font-bold text-white ring-1 ring-white/10">
+                    {soloDualSide.label}
+                  </span>
                 </div>
                 <SigFloatingScores bursts={floatingBursts} />
+              </div>
+              <div className="flex justify-center">
+                <SigMemberVerticalList
+                  members={memberScoresForSide(soloDualSide, ranking, memberMap, sigScores)}
+                  scoringMode={scoringMode}
+                  align="center"
+                  nameClass={soloDualSide === duelData.left ? "text-rose-100" : "text-sky-100"}
+                  scoreClass="text-white/85"
+                  teamLeading
+                  teamTint={soloDualSide === duelData.left ? "pink" : "sky"}
+                />
               </div>
             </div>
           ) : null}
           {dualBar && duelData.mode === "dual" && !isSoloDualLayout ? (
-            <div className={`flex w-full flex-col ${compact ? "gap-2 pt-0" : "gap-3 pt-1"}`}>
-              <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-x-2 sm:gap-x-3">
-                <SigTeamMemberBox
-                  members={leftMemberLines}
-                  scoringMode={scoringMode}
-                  align="left"
-                  nameClass="text-pink-200"
-                  scoreClass="text-pink-50"
-                  borderClass="border-pink-400/35"
-                  teamLeading={dualBar.leftLeading}
-                  teamTint="pink"
-                />
-                <SigMatchTitleTimerBlock
-                  title={title}
-                  timerVisible={timerVisible}
-                  timerPaused={timerPaused}
-                  timerText={timerText}
-                  compact={compact}
-                  titleStyle={sigMatchTitleStyle}
-                  timerTextStyle={timerTextOutlineStyle}
-                  layout="inline"
-                />
-                <SigTeamMemberBox
-                  members={rightMemberLines}
-                  scoringMode={scoringMode}
-                  align="right"
-                  nameClass="text-sky-200"
-                  scoreClass="text-sky-50"
-                  borderClass="border-sky-400/35"
-                  teamLeading={dualBar.rightLeading}
-                  teamTint="sky"
-                />
-              </div>
-              {dualBar && !isSoloDualLayout ? (
+            <div className={`flex w-full flex-col ${compact ? "gap-2 pt-0" : "gap-2.5 pt-1"}`}>
+              <h1
+                className={`text-center font-black tracking-wide ${compact ? "text-lg sm:text-xl" : "text-xl sm:text-2xl"}`}
+                style={sigMatchTitleStyle}
+              >
+                {title}
+              </h1>
+              <motion.div
+                className="relative shrink-0"
+                data-sig-vs-bar="true"
+                animate={{ scale: barPulseKey > 0 ? [1, 1.015, 1] : 1 }}
+                transition={{ duration: 0.4 }}
+                key={barPulseKey}
+              >
                 <BattleTeamScoreHeader
                   leftName={duelData.left.label}
                   leftScore={duelData.left.score}
                   rightName={duelData.right.label}
                   rightScore={duelData.right.score}
                   compact={compact}
+                  leftRatio={dualBar.leftPct}
+                  rightRatio={dualBar.rightPct}
+                  gapLabel={vsCenterGapLabel}
                   formatScore={(n) => formatSigMatchScoreLabel(n, scoringMode)}
+                  timerSlot={
+                    timerVisible ? (
+                      <SigCleanTimerPill
+                        timerPaused={timerPaused}
+                        timerText={timerText}
+                        compact={compact}
+                        timerTextStyle={timerTextOutlineStyle}
+                      />
+                    ) : null
+                  }
                 />
-              ) : null}
-              <motion.div
-                className="relative shrink-0"
-                data-sig-vs-bar="true"
-                animate={{ scale: barPulseKey > 0 ? [1, 1.025, 1] : 1 }}
-                transition={{ duration: 0.45 }}
-                key={barPulseKey}
-              >
-                {devHud ? (
-                  <p className="mb-1 text-center text-[9px] font-bold text-pink-200/90">VS 팀 합산 게이지</p>
-                ) : null}
-                <div className="relative w-full">
-                  <div className={`relative overflow-hidden ${sigVsBarHeightClass(compact)}`}>
-                  <div className="flex h-full w-full">
-                    <motion.div
-                      className={`relative h-full overflow-hidden ${
-                        dualBar.leftLeading
-                          ? "bg-gradient-to-r from-pink-500 to-pink-300 shadow-[inset_0_0_16px_rgba(250,204,21,0.45)]"
-                          : "bg-gradient-to-r from-pink-400 to-pink-300"
-                      }`}
-                      initial={false}
-                      animate={{ width: `${dualBar.leftPct}%` }}
-                      transition={vsBarSpring}
-                    >
-                      {dualBar.leftLeading ? (
-                        <motion.div
-                          className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-r from-transparent via-white/35 to-transparent"
-                          animate={{ x: ["-100%", "120%"] }}
-                          transition={{ duration: 1.9, repeat: Infinity, ease: "linear" }}
-                          aria-hidden
-                        />
-                      ) : (
-                        <motion.div
-                          className="pointer-events-none absolute inset-y-0 right-0 z-[1] w-2 bg-white/50"
-                          animate={{ opacity: [0.15, 0.65, 0.15] }}
-                          transition={{ duration: 1.3, repeat: Infinity }}
-                          aria-hidden
-                        />
-                      )}
-                      <SigVsBarSegmentLabel
-                        score={duelData.left.score}
-                        scoringMode={scoringMode}
-                        narrow={dualBar.leftPct < 28}
-                        leading={dualBar.leftLeading}
-                        compact={compact}
-                      />
-                    </motion.div>
-                    <motion.div
-                      className={`relative h-full overflow-hidden ${
-                        dualBar.rightLeading
-                          ? "bg-gradient-to-l from-sky-500 to-sky-300 shadow-[inset_0_0_16px_rgba(250,204,21,0.45)]"
-                          : "bg-gradient-to-l from-sky-400 to-sky-300"
-                      }`}
-                      initial={false}
-                      animate={{ width: `${dualBar.rightPct}%` }}
-                      transition={vsBarSpring}
-                    >
-                      {dualBar.rightLeading ? (
-                        <motion.div
-                          className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-r from-transparent via-white/35 to-transparent"
-                          animate={{ x: ["-100%", "120%"] }}
-                          transition={{ duration: 1.9, repeat: Infinity, ease: "linear" }}
-                          aria-hidden
-                        />
-                      ) : (
-                        <motion.div
-                          className="pointer-events-none absolute inset-y-0 left-0 z-[1] w-2 bg-white/50"
-                          animate={{ opacity: [0.15, 0.65, 0.15] }}
-                          transition={{ duration: 1.3, repeat: Infinity }}
-                          aria-hidden
-                        />
-                      )}
-                      <SigVsBarSegmentLabel
-                        score={duelData.right.score}
-                        scoringMode={scoringMode}
-                        narrow={dualBar.rightPct < 28}
-                        leading={dualBar.rightLeading}
-                        compact={compact}
-                      />
-                    </motion.div>
-                  </div>
-                  </div>
-                  <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
-                    <SigVsBarCenterLabel compact={compact} gapLabel={vsCenterGapLabel} />
-                  </div>
-                </div>
                 <SigFloatingScores bursts={floatingBursts} />
               </motion.div>
+              <div className="grid grid-cols-2 gap-2 px-0.5">
+                <SigTeamMemberBox
+                  members={leftMemberLines}
+                  scoringMode={scoringMode}
+                  align="left"
+                  nameClass="text-rose-100"
+                  scoreClass="text-white/85"
+                  borderClass="border-rose-300/25"
+                  teamLeading={dualBar.leftLeading}
+                  teamTint="pink"
+                />
+                <SigTeamMemberBox
+                  members={rightMemberLines}
+                  scoringMode={scoringMode}
+                  align="right"
+                  nameClass="text-sky-100"
+                  scoreClass="text-white/85"
+                  borderClass="border-sky-300/25"
+                  teamLeading={dualBar.rightLeading}
+                  teamTint="sky"
+                />
+              </div>
             </div>
           ) : null}
           {tripleBar && duelData.mode === "triple" ? (
-            <div className={`flex flex-col ${compact ? "gap-2 pt-0" : "gap-3 pt-1"}`}>
-              {/** 타이머를 멤버 행 위에 두어 가운데 멤버(멤버2)를 가리지 않음 */}
-              <SigMatchTitleTimerBlock
-                title={title}
-                timerVisible={timerVisible}
-                timerPaused={timerPaused}
-                timerText={timerText}
-                compact={compact}
-                titleStyle={sigMatchTitleStyle}
-                timerTextStyle={timerTextOutlineStyle}
-                layout="stack"
-              />
+            <div className={`flex flex-col ${compact ? "gap-2 pt-0" : "gap-2.5 pt-1"}`}>
+              <h1
+                className={`text-center font-black tracking-wide ${compact ? "text-lg sm:text-xl" : "text-xl sm:text-2xl"}`}
+                style={sigMatchTitleStyle}
+              >
+                {title}
+              </h1>
+              {timerVisible ? (
+                <div className="flex justify-center">
+                  <SigCleanTimerPill
+                    timerPaused={timerPaused}
+                    timerText={timerText}
+                    compact={compact}
+                    timerTextStyle={timerTextOutlineStyle}
+                  />
+                </div>
+              ) : null}
               <div className="flex w-full items-end">
                 {duelData.sides.map((side, i) => (
                   <div
@@ -1108,17 +972,15 @@ export default function SigMatchDuelOverlay({
                       scoringMode={scoringMode}
                       align="center"
                       nameClass={
-                        i === 0 ? "text-pink-200" : i === 1 ? "text-amber-200" : "text-sky-200"
+                        i === 0 ? "text-rose-100" : i === 1 ? "text-amber-100" : "text-sky-100"
                       }
-                      scoreClass={
-                        i === 0 ? "text-pink-50" : i === 1 ? "text-amber-50" : "text-sky-50"
-                      }
+                      scoreClass="text-white/85"
                       borderClass={
                         i === 0
-                          ? "border-pink-400/35"
+                          ? "border-rose-300/25"
                           : i === 1
-                            ? "border-amber-400/35"
-                            : "border-sky-400/35"
+                            ? "border-amber-300/25"
+                            : "border-sky-300/25"
                       }
                       teamLeading={Boolean(tripleBar.leading[i])}
                       teamTint={i === 0 ? "pink" : i === 1 ? "amber" : "sky"}
@@ -1128,8 +990,8 @@ export default function SigMatchDuelOverlay({
               </div>
               <motion.div
                 className="relative shrink-0"
-                animate={{ scale: barPulseKey > 0 ? [1, 1.025, 1] : 1 }}
-                transition={{ duration: 0.45 }}
+                animate={{ scale: barPulseKey > 0 ? [1, 1.015, 1] : 1 }}
+                transition={{ duration: 0.4 }}
                 key={`triple-bar-${barPulseKey}`}
               >
                 <div className={`relative ${sigVsBarHeightClass(compact)}`} data-sig-vs-bar="true">
@@ -1137,24 +999,21 @@ export default function SigMatchDuelOverlay({
                     {duelData.sides.map((side, i) => (
                       <motion.div
                         key={`sig-triple-seg-${i}-${side.ids.join("-")}`}
-                        className={`relative h-full overflow-hidden ${
-                          tripleBar.leading[i]
-                            ? "shadow-[inset_0_0_14px_rgba(250,204,21,0.45)]"
-                            : ""
-                        } ${i === 0 ? "bg-gradient-to-r from-pink-500 to-pink-300" : i === 1 ? "bg-amber-400" : "bg-gradient-to-l from-sky-500 to-sky-300"}`}
+                        className="relative h-full overflow-hidden"
+                        style={{
+                          background:
+                            i === 0
+                              ? "linear-gradient(180deg, #f87171 0%, #dc2626 55%, #b91c1c 100%)"
+                              : i === 1
+                                ? "linear-gradient(180deg, #fbbf24 0%, #d97706 55%, #b45309 100%)"
+                                : "linear-gradient(180deg, #60a5fa 0%, #2563eb 55%, #1d4ed8 100%)",
+                        }}
                         title={side.label}
                         initial={false}
                         animate={{ width: `${tripleBar.pcts[i]}%` }}
                         transition={vsBarSpring}
                       >
-                        {tripleBar.leading[i] ? (
-                          <motion.div
-                            className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-r from-transparent via-white/35 to-transparent"
-                            animate={{ x: ["-100%", "120%"] }}
-                            transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                            aria-hidden
-                          />
-                        ) : null}
+                        <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/20 to-transparent" />
                         <SigVsBarSegmentLabel
                           score={side.score}
                           scoringMode={scoringMode}
