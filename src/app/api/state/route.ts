@@ -13,7 +13,7 @@ import { normalizeRestroomCount } from "@/lib/restroom-utils";
 import {
   defaultState,
   DEFAULT_DONOR_RANKINGS_FULL_THEME,
-  filterDonorsAfterSettlementReset,
+  applySettlementResetDonorPipeline,
   rebumpDonorsPastSettlementReset,
   coalesceSettlementResetAt,
   hasExpandedSigInventory,
@@ -655,16 +655,12 @@ export async function POST(req: Request) {
     const resetAt = Number(baseState.settlementResetAt || 0);
     const incomingDonorsRaw = donorsInPatch ? normalizeDonorsArray(body.donors) : [];
     /**
-     * 수동 삭제·합산 저장: 리셋 이전 at 는 rebump 후 filter.
-     * rebump 없이 filter 만 하면 남은 후원까지 전량 탈락 → 엑셀표 0 초기화.
+     * 수동 삭제·합산·단체짠 저장: 리셋 이전 at 는 rebump 후 filter.
+     * filter 만 하면 남은 후원까지 전량 탈락 → 엑셀표 0 초기화.
      */
-    const incomingDonorsRebumped =
-      resetAt > 0 && !settlementReset && donorsInPatch
-        ? rebumpDonorsPastSettlementReset(incomingDonorsRaw, resetAt)
-        : incomingDonorsRaw;
     const incomingDonorsFiltered =
       resetAt > 0 && !settlementReset && donorsInPatch
-        ? filterDonorsAfterSettlementReset(incomingDonorsRebumped, resetAt)
+        ? applySettlementResetDonorPipeline(incomingDonorsRaw, resetAt)
         : incomingDonorsRaw;
     if (
       resetAt > 0 &&
@@ -856,8 +852,8 @@ export async function POST(req: Request) {
     }
     if (!settlementReset && effectiveResetAt > 0) {
       const before = normalizeDonorsArray(next.donors);
+      const after = applySettlementResetDonorPipeline(before, effectiveResetAt);
       const rebumped = rebumpDonorsPastSettlementReset(before, effectiveResetAt);
-      const after = filterDonorsAfterSettlementReset(rebumped, effectiveResetAt);
       const atChanged = rebumped.some((d, i) => Number(d.at) !== Number(before[i]?.at));
       if (after.length !== before.length || atChanged) {
         next = syncMemberTotalsFromDonors({ ...next, donors: after });

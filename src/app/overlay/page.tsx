@@ -2,7 +2,10 @@
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppState, Member, Donor, MissionItem, roundToThousand, formatManThousand, formatDonorsAmount, loadStateFromApi, loadState, storageKey, defaultState, ensureMissionItems, ensureMembers, defaultMembers, normalizeDonationListsOverlayConfig, overlayPresetsStorageKey, hasMeaningfulMemberRoster, mergeDonorsForMultiTabSave, donorsListContentDiffers } from "@/lib/state";
-import { syncMemberTotalsFromDonors } from "@/lib/donation/apply-donation-state";
+import {
+  repairMemberTotalsForDonorRoster,
+  syncMemberTotalsFromDonors,
+} from "@/lib/donation/apply-donation-state";
 import { mergeDonationApplyBase } from "@/lib/donation/merge-donation-apply-base";
 import { maxOverlayAmountDisplayLength } from "@/lib/overlay-amount-display";
 import {
@@ -240,6 +243,15 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
     };
     return merged;
   }, []);
+  /** donors → members 재계산 + 로스터 불일치 보정(단체짠 split 후 엑셀 0 방지) */
+  const applyOverlayDonationSync = useCallback(
+    (incoming: AppState): AppState => {
+      const merged = mergeKeepingStrongRoster(incoming);
+      const synced = syncMemberTotalsFromDonors(merged);
+      return repairMemberTotalsForDonorRoster(synced, lastGoodRef.current, merged);
+    },
+    [mergeKeepingStrongRoster]
+  );
   const onSSE = useCallback((incoming: any) => {
     if (!incoming) return;
     if (incoming.type === "state_updated") {
@@ -263,7 +275,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
     }
     if (!Array.isArray((incoming as AppState).members)) return;
     const ts = (incoming as any).updatedAt || Date.now();
-    const next = syncMemberTotalsFromDonors(mergeKeepingStrongRoster(incoming as AppState));
+    const next = applyOverlayDonationSync(incoming as AppState);
     const nextSig = buildOverlaySyncSignature(next);
     if (nextSig === lastVisualSigRef.current) {
       lastUpdatedRef.current = Math.max(lastUpdatedRef.current, ts);
@@ -276,7 +288,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
       lastGoodRef.current = next;
       saveLastGood(next);
     }
-  }, [saveLastGood, mergeKeepingStrongRoster, restoreLastGood]);
+  }, [saveLastGood, applyOverlayDonationSync, restoreLastGood]);
   const _sse = useSSEConnection(onSSE);
   const readLocalStateIfExists = useCallback((): AppState | null => {
     if (typeof window === "undefined") return null;
@@ -339,7 +351,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
             !isNewerIntentionalDonationShrink(localNow, shownForCompare)
           )
         ) {
-          const mergedLocal = syncMemberTotalsFromDonors(mergeKeepingStrongRoster(localNow));
+          const mergedLocal = applyOverlayDonationSync(localNow);
           const nextSig = buildOverlaySyncSignature(mergedLocal);
           lastUpdatedRef.current = mergedLocal.updatedAt || localNow.updatedAt;
           hasStrongRosterRef.current = true;
@@ -352,13 +364,31 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
             saveLastGood(mergedLocal);
           }
         }
-        /** 관리자 iframe 미리보기만 GET 생략 — forceFull(후원 반영)일 때는 서버에서 다시 당김 */
+        /** 관리자 iframe 미리보기 — LS donors 기준으로 엑셀 금액을 매 sync 마다 재계산 */
         if (
           !opts?.forceFull &&
           (isAdminDashboardPreviewEmbed() || isEmbeddedInSameOriginAdminFrame())
         ) {
           const peek = readLocalStateIfExists();
           if (peek && (peek.updatedAt || 0) > 0 && hasMeaningfulMemberRoster(peek)) {
+            const syncedPeek = applyOverlayDonationSync(peek);
+            const peekSig = buildOverlaySyncSignature(syncedPeek);
+            lastUpdatedRef.current = Math.max(
+              lastUpdatedRef.current,
+              syncedPeek.updatedAt || peek.updatedAt || 0
+            );
+            lastDonorRevRef.current = Math.max(
+              lastDonorRevRef.current,
+              readDonorRankingsRevision(syncedPeek)
+            );
+            if (peekSig !== lastVisualSigRef.current) {
+              lastVisualSigRef.current = peekSig;
+            }
+            setState(syncedPeek);
+            if (isViable(syncedPeek)) {
+              lastGoodRef.current = syncedPeek;
+              saveLastGood(syncedPeek);
+            }
             return;
           }
         }
@@ -423,7 +453,7 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
             (needRosterHydration && remoteStrong));
         if (shouldApplyRemote && remoteForApply) {
           /** donors 는 있는데 members 합계가 비면 엑셀만 0 — 순위와 맞추기 */
-          const toApply = syncMemberTotalsFromDonors(mergeKeepingStrongRoster(remoteForApply));
+          const toApply = applyOverlayDonationSync(remoteForApply);
           const appliedStrong = hasMeaningfulMemberRoster(toApply);
           const nextSig = buildOverlaySyncSignature(toApply);
           lastUpdatedRef.current = toApply.updatedAt || 0;
@@ -471,15 +501,16 @@ function useRemoteState(userId?: string, enabled = true): { state: AppState | nu
         localNow.updatedAt > lastUpdatedRef.current &&
         !shouldKeepLastGoodInsteadOf(localNow, STATE_PICK_OVERLAY_DONORS, lastGoodRef.current)
       ) {
-        const nextSig = buildOverlaySyncSignature(localNow);
-        lastUpdatedRef.current = localNow.updatedAt;
+        const syncedLocal = applyOverlayDonationSync(localNow);
+        const nextSig = buildOverlaySyncSignature(syncedLocal);
+        lastUpdatedRef.current = syncedLocal.updatedAt || localNow.updatedAt;
         if (nextSig !== lastVisualSigRef.current) {
           lastVisualSigRef.current = nextSig;
-          setState(localNow);
+          setState(syncedLocal);
         }
-        if (isViable(localNow)) {
-          lastGoodRef.current = localNow;
-          saveLastGood(localNow);
+        if (isViable(syncedLocal)) {
+          lastGoodRef.current = syncedLocal;
+          saveLastGood(syncedLocal);
         }
       } else {
         void syncOnceRef.current();
@@ -1747,7 +1778,9 @@ function OverlayInner() {
     /** 후원순위(donors)는 되는데 엑셀(members)만 0인 스냅샷 — 표시 직전 재동기화 */
     const donors = Array.isArray(s.donors) ? s.donors : [];
     if (donors.length > 0) {
-      return ensureMembers(syncMemberTotalsFromDonors(s as AppState).members);
+      return ensureMembers(
+        repairMemberTotalsForDonorRoster(syncMemberTotalsFromDonors(s as AppState), s as AppState).members
+      );
     }
     return ensureMembers(s.members);
   }, [ready, s]);
