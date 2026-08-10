@@ -1,7 +1,9 @@
 /**
  * DATABASE_URL(mysql://…) 기반 키-값 JSON 저장 — Upstash Redis 대체
  * 테이블: app_kv (k PK, v LONGTEXT, expires_at ms, updated_at ms)
+ * 서버 전용 — 클라이언트 번들 금지
  */
+import "server-only";
 import mysql, { type Pool, type RowDataPacket } from "mysql2/promise";
 
 let pool: Pool | null = null;

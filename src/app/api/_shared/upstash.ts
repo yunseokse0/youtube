@@ -1,15 +1,23 @@
-import {
-  isMysqlKvConfigured,
-  mysqlKvDel,
-  mysqlKvGetJson,
-  mysqlKvSetJson,
-  mysqlKvSetNxEx,
-} from "./mysql-kv";
-
 type RedisEnv = {
   base: string;
   token: string;
 };
+
+function hasMysqlDatabaseUrl(): boolean {
+  const url = String(process.env.DATABASE_URL || "").trim();
+  return Boolean(url && /^mysql:\/\//i.test(url));
+}
+
+/** Edge 번들에 mysql2가 포함되지 않도록 동적 로드 (nodejs 런타임만) */
+async function loadMysqlKv() {
+  if (!hasMysqlDatabaseUrl()) return null;
+  if (process.env.NEXT_RUNTIME === "edge") return null;
+  try {
+    return await import(/* webpackIgnore: true */ "./mysql-kv");
+  } catch {
+    return null;
+  }
+}
 
 export function getRedisEnv(): RedisEnv {
   const base =
@@ -30,7 +38,7 @@ export function isRedisConfigured(): boolean {
 
 /** Upstash Redis 또는 DATABASE_URL(MySQL) — 영속 KV */
 export function isPersistentKvConfigured(): boolean {
-  return isRedisConfigured() || isMysqlKvConfigured();
+  return isRedisConfigured() || hasMysqlDatabaseUrl();
 }
 
 async function redisGetJson<T = unknown>(key: string): Promise<T | null> {
@@ -75,15 +83,14 @@ async function redisSetJson(key: string, value: unknown, usePipeline: boolean): 
   return response.ok;
 }
 
-/** Redis 우선, 없으면 MySQL DATABASE_URL */
+/** Redis 우선, 없으면 MySQL DATABASE_URL (nodejs만) */
 export async function upstashGetJson<T = unknown>(key: string): Promise<T | null> {
   if (isRedisConfigured()) {
     const fromRedis = await redisGetJson<T>(key);
     if (fromRedis != null) return fromRedis;
   }
-  if (isMysqlKvConfigured()) {
-    return mysqlKvGetJson<T>(key);
-  }
+  const mysql = await loadMysqlKv();
+  if (mysql) return mysql.mysqlKvGetJson<T>(key);
   return null;
 }
 
@@ -95,9 +102,8 @@ export async function upstashSetJsonWithSetPath(
     const ok = await redisSetJson(key, value, false);
     if (ok) return true;
   }
-  if (isMysqlKvConfigured()) {
-    return mysqlKvSetJson(key, value);
-  }
+  const mysql = await loadMysqlKv();
+  if (mysql) return mysql.mysqlKvSetJson(key, value);
   return false;
 }
 
@@ -109,9 +115,8 @@ export async function upstashSetJsonWithPipeline(
     const ok = await redisSetJson(key, value, true);
     if (ok) return true;
   }
-  if (isMysqlKvConfigured()) {
-    return mysqlKvSetJson(key, value);
-  }
+  const mysql = await loadMysqlKv();
+  if (mysql) return mysql.mysqlKvSetJson(key, value);
   return false;
 }
 
@@ -129,9 +134,8 @@ export async function kvSetNxEx(key: string, ttlSec: number): Promise<boolean | 
     const data = (await response.json().catch(() => null)) as { result?: string | null } | null;
     return data?.result === "OK";
   }
-  if (isMysqlKvConfigured()) {
-    return mysqlKvSetNxEx(key, ttlSec);
-  }
+  const mysql = await loadMysqlKv();
+  if (mysql) return mysql.mysqlKvSetNxEx(key, ttlSec);
   return null;
 }
 
@@ -145,7 +149,6 @@ export async function kvDel(key: string): Promise<void> {
       cache: "no-store",
     }).catch(() => {});
   }
-  if (isMysqlKvConfigured()) {
-    await mysqlKvDel(key);
-  }
+  const mysql = await loadMysqlKv();
+  if (mysql) await mysql.mysqlKvDel(key);
 }

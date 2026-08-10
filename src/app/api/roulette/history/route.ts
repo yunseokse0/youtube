@@ -1,8 +1,7 @@
-export const runtime = "edge";
 export const revalidate = 0;
 
 import { z } from "zod";
-import { getRouletteHistory } from "@/lib/sig-roulette";
+import { getRouletteHistory } from "@/lib/sig-roulette-persist";
 import { loadAppStateForRoulette } from "../edge-state-store";
 import { getRouletteUserId } from "../edge-state-store";
 

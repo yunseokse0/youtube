@@ -58,15 +58,31 @@ const nextConfig = {
     ];
   },
   /** Windows dev: webpack pack 캐시 rename ENOENT → _next/static 404 방지 */
-  webpack: (config, { dev }) => {
+  webpack: (config, { dev, isServer }) => {
     if (dev) {
       config.cache = { type: "memory" };
+    }
+    if (isServer) {
+      const prev = config.externals;
+      const add = ["mysql2", "mysql2/promise"];
+      if (Array.isArray(prev)) config.externals = [...prev, ...add];
+      else if (typeof prev === "function") {
+        config.externals = [
+          prev,
+          ({ request }, cb) => {
+            if (request && add.includes(request)) return cb(null, `commonjs ${request}`);
+            cb();
+          },
+        ];
+      } else if (prev) config.externals = [prev, ...add];
+      else config.externals = add;
     }
     return config;
   },
   /** EC2 1GB 등: deploy/build-prod.mjs 가 LOW_MEMORY_BUILD=1 설정 */
   experimental: {
     instrumentationHook: true,
+    serverComponentsExternalPackages: ["mysql2"],
     ...(process.env.LOW_MEMORY_BUILD === "1"
       ? {
           cpus: 1,

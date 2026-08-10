@@ -1,11 +1,10 @@
-export const runtime = "edge";
 export const revalidate = 0;
 
 import type { AppState } from "@/lib/state";
 import { normalizeRouletteState } from "@/lib/state";
 import type { SigItem } from "@/types";
 import { z } from "zod";
-import { listRouletteLogs, saveRouletteLog } from "@/lib/sig-roulette";
+import { listRouletteLogs, saveRouletteLog } from "@/lib/sig-roulette-persist";
 import { getRouletteUserId, saveAppStateForRoulette } from "../edge-state-store";
 import { clearRouletteLock } from "../roulette-lock";
 import {

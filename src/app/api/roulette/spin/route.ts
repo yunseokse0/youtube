@@ -1,4 +1,3 @@
-export const runtime = "edge";
 export const revalidate = 0;
 
 import type { AppState } from "@/lib/state";
