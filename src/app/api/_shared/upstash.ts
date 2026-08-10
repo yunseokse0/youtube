@@ -3,26 +3,36 @@ type RedisEnv = {
   token: string;
 };
 
+/** mysql-kv 모듈 표면 — upstash가 mysql-kv를 직접 import 하지 않기 위함(클라이언트 번들 차단) */
+export type MysqlKvBackend = {
+  mysqlKvGetJson: <T = unknown>(key: string) => Promise<T | null>;
+  mysqlKvSetJson: (key: string, value: unknown) => Promise<boolean>;
+  mysqlKvSetNxEx: (key: string, ttlSec: number) => Promise<boolean | null>;
+  mysqlKvDel: (key: string) => Promise<void>;
+  getLastMysqlKvError?: () => string | null;
+};
+
 function hasMysqlDatabaseUrl(): boolean {
   const url = String(process.env.DATABASE_URL || "").trim();
   return Boolean(url && /^mysql:\/\//i.test(url));
 }
 
 let mysqlLoadError: string | null = null;
+let mysqlKvBackend: MysqlKvBackend | null = null;
 
-/** Edge에서는 MySQL 미사용. Node에서는 동적 import (mysql2는 next.config externals) */
-async function loadMysqlKv() {
+/** Node instrumentation / 서버 라우트에서만 호출 — 클라이언트 import 체인에 mysql-kv가 안 타게 함 */
+export function registerMysqlKvBackend(api: MysqlKvBackend): void {
+  mysqlKvBackend = api;
+  mysqlLoadError = null;
+}
+
+async function loadMysqlKv(): Promise<MysqlKvBackend | null> {
   if (!hasMysqlDatabaseUrl()) return null;
   if (process.env.NEXT_RUNTIME === "edge") return null;
-  try {
-    const mod = await import("./mysql-kv");
-    mysqlLoadError = null;
-    return mod;
-  } catch (err) {
-    mysqlLoadError = err instanceof Error ? err.message : String(err);
-    console.error("[kv] mysql-kv import failed", err);
-    return null;
-  }
+  if (mysqlKvBackend) return mysqlKvBackend;
+  mysqlLoadError =
+    "MySQL KV backend not registered — instrumentation 또는 서버 부트스트랩을 확인하세요.";
+  return null;
 }
 
 export function getRedisEnv(): RedisEnv {

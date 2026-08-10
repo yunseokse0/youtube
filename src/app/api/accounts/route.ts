@@ -9,7 +9,20 @@ import {
   type StoredAccount,
 } from "@/lib/accounts-storage";
 import { writeToonationListenerConfig } from "@/lib/donation/toonation/listener-config-store";
+import { registerMysqlKvBackend } from "../_shared/upstash";
 import { upstashSetAppStateJson } from "../_shared/upstash-app-state";
+
+/** instrumentation 전에 라우트가 먼저 불릴 때를 대비한 MySQL 백엔드 보장 */
+async function ensureMysqlKvBackend(): Promise<void> {
+  const url = String(process.env.DATABASE_URL || "").trim();
+  if (!url || !/^mysql:\/\//i.test(url)) return;
+  try {
+    const mysqlKv = await import("../_shared/mysql-kv");
+    registerMysqlKvBackend(mysqlKv);
+  } catch (err) {
+    console.error("[api/accounts] mysql-kv register failed", err);
+  }
+}
 
 const STATE_KEY_BASE = "excel-broadcast-state-v1";
 
@@ -66,6 +79,7 @@ export async function GET(req: Request) {
       headers: { "Content-Type": "application/json" },
     });
   }
+  await ensureMysqlKvBackend();
   if (!isAccountsRedisConfigured()) {
     return new Response(
       JSON.stringify({
@@ -101,6 +115,7 @@ export async function POST(req: Request) {
       headers: { "Content-Type": "application/json" },
     });
   }
+  await ensureMysqlKvBackend();
   try {
     const body = (await req.json()) as {
       name?: string;
