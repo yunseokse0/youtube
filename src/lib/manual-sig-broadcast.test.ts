@@ -237,6 +237,27 @@ describe("resolveManualOneShotOverlayImageUrl", () => {
     expect(url).toContain("custom_한방.gif");
     expect(url).not.toContain(DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE.split("/").pop()!);
   });
+
+  it("prefers draft oneShotImageUrl for timestamp upload without 한방 in filename", () => {
+    const state = {
+      overlaySettings: {
+        sigSalesManualDraftV1: {
+          drafts: [],
+          oneShotName: "한방 시그",
+          oneShotPriceInput: "",
+          oneShotImageUrl: "/uploads/sigs/finalent/1710000000000_abcd1234.gif",
+          sigSoldFlags: [],
+          oneShotMarkSold: false,
+        },
+      },
+    } as unknown as AppState;
+    const stored = resolveManualOneShotStoredImageUrl({
+      state,
+      selectedSigs: [winner],
+    });
+    expect(stored).toContain("1710000000000_abcd1234.gif");
+    expect(stored).not.toContain("한방시그.gif");
+  });
 });
 
 describe("resolveManualDraftRowForSigItem", () => {

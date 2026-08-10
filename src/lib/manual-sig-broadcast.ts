@@ -731,9 +731,16 @@ export function resolveManualOneShotDisplayFromState(
   userId: string
 ): { id: string; name: string; price: number } | null {
   if (selected.length < MIN_MANUAL_OVERLAY_SIGS) return null;
+  const invOneShot = (state?.sigInventory || []).find((x) => x.id === ONE_SHOT_SIG_ID);
+  /** 인벤「OBS 표시」체크 해제 시 오버레이에서 한방 카드 숨김 */
+  if (invOneShot && invOneShot.isActive === false) return null;
   const draft = readManualSigDraftFromState(state);
   const soldIdSet = buildManualOverlaySoldOverrideSet(state, selected, userId);
   const storedOneShot = readManualSigBroadcastFromState(state)?.oneShotResult;
+  const fallbackName =
+    String(draft?.oneShotName || "").trim() ||
+    String(invOneShot?.name || "").trim() ||
+    storedOneShot?.name;
   return resolveOneShotDisplayPrice({
     selected: selected.map((s) => ({
       id: s.id,
@@ -741,7 +748,7 @@ export function resolveManualOneShotDisplayFromState(
     })),
     soldIdSet,
     manualPriceInput: draft?.oneShotPriceInput,
-    fallbackName: draft?.oneShotName ?? storedOneShot?.name,
+    fallbackName,
   });
 }
 

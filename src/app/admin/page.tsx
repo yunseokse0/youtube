@@ -965,9 +965,10 @@ export default function AdminPage() {
         ],
       };
     }
+    const customName = String(oneShot.name || "").trim();
     const nextOneShot = {
       ...oneShot,
-      name: ONE_SHOT_SIG_NAME,
+      name: customName || ONE_SHOT_SIG_NAME,
       price: totalAmount,
       maxCount: 1,
       soldCount: 0,
@@ -2799,12 +2800,11 @@ export default function AdminPage() {
         const oneShot = inv.find((x) => x.id === ONE_SHOT_SIG_ID);
         const needsOneShot =
           !oneShot ||
-          oneShot.name !== ONE_SHOT_SIG_NAME ||
+          !String(oneShot.name || "").trim() ||
           oneShot.price !== totalAmount ||
           oneShot.maxCount !== 1 ||
           oneShot.soldCount !== 0 ||
-          oneShot.isRolling !== false ||
-          oneShot.isActive !== true;
+          oneShot.isRolling !== false;
         if (!needsClamp && !needsOneShot) return prev;
         const clampedInventory = needsClamp
           ? inv.map((x) => {
@@ -3597,7 +3597,6 @@ export default function AdminPage() {
   };
 
   const toggleSigActiveItem = (id: string, checked: boolean) => {
-    if (id === ONE_SHOT_SIG_ID) return;
     setState((prev: AppState) => {
       const draft: AppState = {
         ...prev,
@@ -3891,12 +3890,11 @@ export default function AdminPage() {
           id === ONE_SHOT_SIG_ID
             ? {
                 ...patch,
-                name: ONE_SHOT_SIG_NAME,
+                /** 금액·재고는 자동 동기화. 이름·이미지·활성은 사용자가 편집 */
                 price: undefined,
                 maxCount: undefined,
                 soldCount: undefined,
                 isRolling: undefined,
-                isActive: undefined,
               }
             : patch;
         const draft: AppState = {
@@ -9960,9 +9958,12 @@ export default function AdminPage() {
                                 checked={Boolean(item.isActive)}
                                 onChange={(e) => toggleSigActiveItem(item.id, e.target.checked)}
                               />
-                              <span>판매 활성</span>
+                              <span>{isOneShot ? "OBS 표시" : "판매 활성"}</span>
                             </label>
                             <span className="font-semibold">{item.name}</span>
+                            {isOneShot ? (
+                              <span className="text-[10px] text-amber-200/80">한방 · 이름·이미지 편집 가능</span>
+                            ) : null}
                           </div>
                           <div className="text-xs text-neutral-400">가격 {item.price.toLocaleString("ko-KR")}</div>
                           <div className="flex flex-wrap items-center gap-1">
@@ -10030,8 +10031,8 @@ export default function AdminPage() {
                         <input
                           className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
                           value={item.name}
-                          disabled={isOneShot}
                           onChange={(e) => updateSigItem(item.id, { name: e.target.value })}
+                          placeholder={isOneShot ? "한방 시그 이름" : undefined}
                         />
                         <input
                           className="px-2 py-1 rounded bg-neutral-900/80 border border-white/10 text-sm"
@@ -10039,6 +10040,7 @@ export default function AdminPage() {
                           min={0}
                           value={sigPriceDraftMap[item.id] ?? String(item.price)}
                           disabled={isOneShot}
+                          title={isOneShot ? "한방 금액은 활성 시그 합계로 자동 계산됩니다" : undefined}
                           onChange={(e) =>
                             setSigPriceDraftMap((prev) => ({
                               ...prev,

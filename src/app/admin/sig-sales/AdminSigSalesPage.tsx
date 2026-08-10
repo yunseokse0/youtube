@@ -2051,11 +2051,35 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
       const url = await uploadManualSigImage(file);
       if (!url) return;
       setManualOneShotImageUrl(url);
-      setToast("한방 이미지 업로드 완료");
+      setState((prev) => {
+        if (!prev) return prev;
+        const inv = prev.sigInventory || [];
+        const has = inv.some((x) => x.id === ONE_SHOT_SIG_ID);
+        const nextInv = has
+          ? inv.map((x) => (x.id === ONE_SHOT_SIG_ID ? { ...x, imageUrl: url } : x))
+          : [
+              ...inv,
+              {
+                id: ONE_SHOT_SIG_ID,
+                name: manualOneShotName || "한방 시그",
+                price: 0,
+                imageUrl: url,
+                memberId: "",
+                maxCount: 1,
+                soldCount: 0,
+                isRolling: false,
+                isActive: true,
+              },
+            ];
+        const next = { ...prev, sigInventory: nextInv, updatedAt: Date.now() };
+        void saveSigSalesManualStateAsync(next, userId);
+        return next;
+      });
+      setToast("한방 이미지 업로드 완료 · OBS 반영됨");
     } finally {
       setManualOneShotUploadBusy(false);
     }
-  }, [uploadManualSigImage]);
+  }, [uploadManualSigImage, manualOneShotName, userId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -3439,6 +3463,52 @@ export function AdminSigSalesPage({ manualOnly = false }: { manualOnly?: boolean
                 />
                 한방도 판매완료 처리
               </label>
+            </label>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-neutral-300">
+            <label className="inline-flex items-center gap-1.5 text-amber-100">
+              <input
+                type="checkbox"
+                checked={Boolean(
+                  (state?.sigInventory || []).find((x) => x.id === ONE_SHOT_SIG_ID)?.isActive !== false
+                )}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setState((prev) => {
+                    if (!prev) return prev;
+                    const inv = prev.sigInventory || [];
+                    const has = inv.some((x) => x.id === ONE_SHOT_SIG_ID);
+                    const nextInv = has
+                      ? inv.map((x) =>
+                          x.id === ONE_SHOT_SIG_ID ? { ...x, isActive: checked } : x
+                        )
+                      : [
+                          ...inv,
+                          {
+                            id: ONE_SHOT_SIG_ID,
+                            name: manualOneShotName || "한방 시그",
+                            price: 0,
+                            imageUrl: manualOneShotImageUrl || "",
+                            memberId: "",
+                            maxCount: 1,
+                            soldCount: 0,
+                            isRolling: false,
+                            isActive: checked,
+                          },
+                        ];
+                    const next = {
+                      ...prev,
+                      sigInventory: nextInv,
+                      updatedAt: Date.now(),
+                    };
+                    void saveSigSalesManualStateAsync(next, userId).then((saved) => {
+                      if (saved.ok) setState(next);
+                    });
+                    return next;
+                  });
+                }}
+              />
+              OBS에 한방 시그 표시
             </label>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">

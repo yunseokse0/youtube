@@ -1645,6 +1645,8 @@ function SigSalesOverlayPageInner() {
   /** 당첨 시그 판매 시 한방 금액 차감 — 서버 oneShotResult·수동 입력 모두 동일 규칙 */
   const oneShotForResultOverlay = useMemo(() => {
     if (!oneShotRevealReady) return null;
+    const invOneShot = (state?.sigInventory || []).find((item) => item.id === ONE_SHOT_SIG_ID);
+    if (invOneShot && invOneShot.isActive === false) return null;
     if (manualOverlayMode) {
       const selected = manualOverlayResultSigs;
       if (selected.length < MIN_ONE_SHOT_SIGS) return null;
@@ -1653,7 +1655,10 @@ function SigSalesOverlayPageInner() {
         soldIdSet: manualOneShotSoldIdSet,
         manualPriceInput: manualDraftEffective?.oneShotPriceInput,
         fallbackName:
-          manualDraftEffective?.oneShotName ?? machine.oneShot?.name ?? state?.rouletteState?.oneShotResult?.name,
+          manualDraftEffective?.oneShotName ??
+          invOneShot?.name ??
+          machine.oneShot?.name ??
+          state?.rouletteState?.oneShotResult?.name,
       });
     }
     const selected = resultSigsForUi.slice(0, CONFIRMED_VISIBLE_SLOTS);
@@ -1662,7 +1667,7 @@ function SigSalesOverlayPageInner() {
       selected,
       soldIdSet: resultSoldOverrideSet,
       manualPriceInput: undefined,
-      fallbackName: machine.oneShot?.name,
+      fallbackName: machine.oneShot?.name || invOneShot?.name,
     });
   }, [
     oneShotRevealReady,
@@ -1672,6 +1677,11 @@ function SigSalesOverlayPageInner() {
     resultSigsForUi,
     resultSoldOverrideSet,
     manualDraftEffective?.oneShotPriceInput,
+    manualDraftEffective?.oneShotName,
+    machine.oneShot?.name,
+    state?.rouletteState?.oneShotResult?.name,
+    state?.sigInventory,
+  ]);
     manualDraftEffective?.oneShotName,
     machine.oneShot?.name,
     state?.rouletteState?.oneShotResult?.name,

@@ -27,10 +27,10 @@ export function isDedicatedOneShotSigImageUrl(url: string | undefined | null): b
   const s = String(url || "").trim();
   if (!s || s === BUNDLED_SIG_PLACEHOLDER_URL) return false;
   if (s === DEFAULT_ONE_SHOT_SIG_BUNDLED_IMAGE) return true;
-  if (/한방|hanbang|one[_-]?shot/i.test(s)) return true;
-  if (s.startsWith("/uploads/sigs/")) {
-    return /한방|hanbang|one[_-]?shot/i.test(s);
-  }
+  if (/한방|hanbang|one[_-]?shot|sig_one_shot/i.test(s)) return true;
+  /** 업로드 API는 `timestamp_uuid.ext` 파일명을 쓰므로 경로에 '한방'이 없어도 허용.
+   * 당첨 시그 GIF 오염은 resolveManualOneShotStoredImageUrl 의 isSameAsSelectedSigImage 로 차단. */
+  if (s.startsWith("/uploads/sigs/") || s.includes("/uploads/sigs/")) return true;
   return false;
 }
 
