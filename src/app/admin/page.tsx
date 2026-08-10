@@ -4,7 +4,7 @@ import { createPortal, flushSync } from "react-dom";
 import MemberRow from "@/components/MemberRow";
 import DonationTableOptionCheckboxes from "@/components/admin/DonationTableOptionCheckboxes";
 import { notifyBroadcastStateLocalUpdated, notifyOverlayPresetsLocalUpdated } from "@/lib/broadcast-state-local-sync";
-import { APP_BRAND_NAME, APP_SYSTEM_NAME } from "@/lib/app-branding";
+import { APP_BRAND_NAME, adminHeaderTitle } from "@/lib/app-branding";
 import Toast from "@/components/Toast";
 import {
   AppState,
@@ -7067,7 +7067,7 @@ export default function AdminPage() {
         <div>
         <div className="flex flex-wrap items-start sm:items-center justify-between gap-2 mb-6">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <h1 className="text-2xl font-bold">{APP_SYSTEM_NAME}</h1>
+            <h1 className="text-2xl font-bold">{adminHeaderTitle(user)}</h1>
             {(user?.remainingDays != null || user?.unlimited) && (
               <span className={`px-2 py-0.5 rounded text-xs font-medium ${user?.unlimited ? "bg-blue-900/60 text-blue-300" : (user?.remainingDays ?? 0) <= 7 ? "bg-amber-900/60 text-amber-300" : "bg-neutral-800 text-neutral-400"}`}>
                 {user?.unlimited ? "무제한" : `남은 일수: ${user?.remainingDays ?? 0}일`}
