@@ -377,6 +377,14 @@ export type OverlayConfig = {
   isBodyImageEnabled: boolean;
   /** 본문 이미지 배치 위치 */
   bodyImagePosition: OverlayBodyImagePosition;
+  /** 패널 바깥 PNG 테두리 프레임 URL (중앙 투명) */
+  frameUrl: string;
+  /** 프레임 불투명도 0~100 */
+  frameOpacity: number;
+  /** 프레임 안쪽 여백(px) */
+  frameInset: number;
+  /** PNG 프레임 사용 여부 */
+  isFrameEnabled: boolean;
 };
 
 /** 단체짠 후원 — 운영비·지정 멤버 제외 후 균등 분배 (기본 전원 분배, excludedMemberIds만 제외) */

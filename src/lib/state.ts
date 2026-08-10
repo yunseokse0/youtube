@@ -969,6 +969,14 @@ export function normalizeDonationListsOverlayConfig(input: unknown): OverlayConf
   let bodyOp = Number(v.bodyImageOpacity);
   if (!Number.isFinite(bodyOp)) bodyOp = 100;
   bodyOp = Math.max(0, Math.min(100, Math.round(bodyOp)));
+  const frameUrlRaw = typeof v.frameUrl === "string" ? v.frameUrl.trim() : "";
+  const frameUrl = sanitizeOverlayEmbedMediaUrl(frameUrlRaw);
+  let frameOp = Number(v.frameOpacity);
+  if (!Number.isFinite(frameOp)) frameOp = 100;
+  frameOp = Math.max(0, Math.min(100, Math.round(frameOp)));
+  let frameInset = Number(v.frameInset);
+  if (!Number.isFinite(frameInset)) frameInset = 32;
+  frameInset = Math.max(0, Math.min(120, Math.round(frameInset)));
   return {
     bgGifUrl,
     bgOpacity: op,
@@ -977,6 +985,10 @@ export function normalizeDonationListsOverlayConfig(input: unknown): OverlayConf
     bodyImageOpacity: bodyOp,
     isBodyImageEnabled: Boolean(bodyImageUrl && v.isBodyImageEnabled),
     bodyImagePosition: normalizeOverlayBodyImagePosition(v.bodyImagePosition),
+    frameUrl,
+    frameOpacity: frameOp,
+    frameInset,
+    isFrameEnabled: Boolean(frameUrl && v.isFrameEnabled),
   };
 }
 

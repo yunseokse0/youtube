@@ -777,6 +777,10 @@ export default function DonorRankingsOverlayPage() {
     <DonorRankingsBodyImage url={overlayCfg.bodyImageUrl} opacityPct={overlayCfg.bodyImageOpacity} />
   ) : null;
   const bodyPos = overlayCfg.bodyImagePosition;
+  const showFrame =
+    overlayCfg.isFrameEnabled && Boolean(String(overlayCfg.frameUrl || "").trim());
+  const frameInsetPx = Math.max(0, Math.min(120, Math.round(Number(overlayCfg.frameInset) || 32)));
+  const frameOpacityFrac = Math.max(0, Math.min(100, Number(overlayCfg.frameOpacity) || 100)) / 100;
 
   const donorsOverride = useDonorsOverrideFromUrl(sp);
 
@@ -860,12 +864,36 @@ export default function DonorRankingsOverlayPage() {
           <>
             {bodyImageEl && bodyPos === "belowTitle" ? bodyImageEl : null}
             <div
-              className="relative grid grid-cols-1 overflow-hidden rounded-2xl border border-white/30 shadow-[0_8px_28px_rgba(15,23,42,0.2)] backdrop-blur-md md:grid-cols-2 md:gap-0"
-              style={{
-                borderColor: borderColor === "transparent" ? "rgba(255,255,255,0.3)" : borderColor,
-                backgroundColor: "transparent",
-              }}
+              className="relative"
+              style={showFrame ? { padding: frameInsetPx } : undefined}
+              data-donor-rankings-frame-wrap={showFrame ? "true" : undefined}
             >
+              {showFrame ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={overlayCfg.frameUrl}
+                  alt=""
+                  className="pointer-events-none absolute inset-0 z-[2] h-full w-full object-fill"
+                  style={{ opacity: frameOpacityFrac }}
+                  loading="eager"
+                  decoding="async"
+                />
+              ) : null}
+              <div
+                className={`relative z-[1] grid grid-cols-1 overflow-hidden backdrop-blur-md md:grid-cols-2 md:gap-0 ${
+                  showFrame
+                    ? "rounded-none border-0 shadow-none"
+                    : "rounded-2xl border border-white/30 shadow-[0_8px_28px_rgba(15,23,42,0.2)]"
+                }`}
+                style={{
+                  borderColor: showFrame
+                    ? "transparent"
+                    : borderColor === "transparent"
+                      ? "rgba(255,255,255,0.3)"
+                      : borderColor,
+                  backgroundColor: "transparent",
+                }}
+              >
               <RankingColumn
                 title="계좌 후원 순위"
                 items={accountTop}
@@ -914,17 +942,42 @@ export default function DonorRankingsOverlayPage() {
                 rowOddBg={rowOddBg}
                 disableMotion={hostObs}
               />
+              </div>
             </div>
             {bodyImageEl && bodyPos === "belowList" ? bodyImageEl : null}
           </>
         ) : (
           <div
-            className="relative mx-auto max-w-[720px] overflow-hidden rounded-2xl border border-white/30 shadow-[0_8px_28px_rgba(15,23,42,0.2)] backdrop-blur-md"
-            style={{
-              borderColor: borderColor === "transparent" ? "rgba(255,255,255,0.3)" : borderColor,
-              backgroundColor: "transparent",
-            }}
+            className="relative mx-auto max-w-[720px]"
+            style={showFrame ? { padding: frameInsetPx } : undefined}
+            data-donor-rankings-frame-wrap={showFrame ? "true" : undefined}
           >
+            {showFrame ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={overlayCfg.frameUrl}
+                alt=""
+                className="pointer-events-none absolute inset-0 z-[2] h-full w-full object-fill"
+                style={{ opacity: frameOpacityFrac }}
+                loading="eager"
+                decoding="async"
+              />
+            ) : null}
+            <div
+              className={`relative z-[1] overflow-hidden backdrop-blur-md ${
+                showFrame
+                  ? "rounded-none border-0 shadow-none"
+                  : "rounded-2xl border border-white/30 shadow-[0_8px_28px_rgba(15,23,42,0.2)]"
+              }`}
+              style={{
+                borderColor: showFrame
+                  ? "transparent"
+                  : borderColor === "transparent"
+                    ? "rgba(255,255,255,0.3)"
+                    : borderColor,
+                backgroundColor: "transparent",
+              }}
+            >
             <RankingColumn
               title={rankingTitle}
               items={unifiedTop}
@@ -950,6 +1003,7 @@ export default function DonorRankingsOverlayPage() {
               bodyImageBelowTitle={bodyPos === "belowTitle" ? bodyImageEl : null}
               bodyImageBelowList={bodyPos === "belowList" ? bodyImageEl : null}
             />
+            </div>
           </div>
         )}
       </div>

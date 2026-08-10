@@ -5130,6 +5130,18 @@ export default function AdminPage() {
     })();
   };
 
+  const uploadDonorRankingsFrameImage = (file: File | null) => {
+    if (!file) return;
+    void (async () => {
+      const { url } = await uploadSigImageFile(file);
+      if (!url) return;
+      updateDonorRankingsBodyImageConfig({
+        frameUrl: url,
+        isFrameEnabled: true,
+      });
+    })();
+  };
+
   const toggleSigSalesExcluded = (id: string, excluded: boolean) => {
     setState((prev: AppState) => {
       const base = new Set((prev.sigSalesExcludedIds || []).map(String));
@@ -12185,6 +12197,136 @@ export default function AdminPage() {
                           ON / OFF
                         </span>
                       </label>
+                    </div>
+                  );
+                })()}
+              </div>
+              <div className="mt-3 rounded-2xl border border-indigo-400/35 bg-gradient-to-br from-indigo-950/55 via-violet-950/45 to-fuchsia-950/40 p-4 shadow-[0_10px_36px_rgba(99,102,241,0.22)] backdrop-blur-md">
+                <div className="min-w-0">
+                  <h4 className="text-sm font-semibold text-indigo-100">후원순위 PNG 프레임 (투명 테두리)</h4>
+                  <p className="mt-1 max-w-xl text-xs text-indigo-100/75">
+                    후원순위 패널 <strong className="font-semibold">바깥 장식 테두리</strong>용 PNG입니다. 중앙은 투명(알파)으로 두고, 모서리·테두리 장식만 그려 주세요.
+                  </p>
+                </div>
+                {(() => {
+                  const drCfg = normalizeDonorRankingsOverlayConfig(state.donorRankingsOverlayConfig);
+                  return (
+                    <div className="mt-4 space-y-3">
+                      <div className="rounded border border-white/10 bg-black/30 p-2 text-[10px] leading-relaxed text-neutral-300">
+                        <p className="mb-1 font-semibold text-emerald-200/95">PNG 제작 가이드</p>
+                        <ul className="list-disc space-y-0.5 pl-4">
+                          <li>
+                            권장 캔버스: <strong>920×680px</strong> (패널 기본 크기 기준)
+                          </li>
+                          <li>
+                            중앙 투명 창: 약 <strong>860×580px</strong>
+                          </li>
+                          <li>
+                            프레임 두께(여백): 상·하·좌·우 각 <strong>30px</strong> 권장
+                          </li>
+                          <li>
+                            파일 형식: <strong>PNG-24</strong> (알파 채널 필수)
+                          </li>
+                          <li>업로드 후 「안쪽 여백」으로 패널과 프레임 정렬을 미세 조정</li>
+                        </ul>
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <label className="flex flex-col gap-1.5 text-[11px] font-medium text-indigo-100/90">
+                          PNG 업로드
+                          <input
+                            type="file"
+                            accept=".png,image/png"
+                            className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-indigo-50 file:mr-3 file:rounded file:border-0 file:bg-indigo-600 file:px-2 file:py-1 file:text-xs file:font-semibold file:text-white"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0] || null;
+                              uploadDonorRankingsFrameImage(file);
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1.5 text-[11px] font-medium text-indigo-100/90">
+                          PNG 프레임 URL
+                          <input
+                            className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-indigo-50 placeholder:text-indigo-200/40 outline-none focus:border-indigo-400/70"
+                            placeholder="예: /uploads/.../frame.png"
+                            value={drCfg.frameUrl}
+                            onChange={(e) =>
+                              updateDonorRankingsBodyImageConfig({
+                                frameUrl: e.target.value,
+                                isFrameEnabled: Boolean(String(e.target.value || "").trim()),
+                              })
+                            }
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1.5 text-[11px] font-medium text-indigo-100/90">
+                          프레임 불투명도 ({drCfg.frameOpacity}%)
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            value={drCfg.frameOpacity}
+                            onChange={(e) =>
+                              updateDonorRankingsBodyImageConfig({ frameOpacity: Number(e.target.value) })
+                            }
+                            className="w-full accent-indigo-400"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1.5 text-[11px] font-medium text-indigo-100/90">
+                          프레임 안쪽 여백(px)
+                          <input
+                            className="rounded-lg border border-white/20 bg-black/25 px-2 py-2 text-sm text-indigo-50 outline-none focus:border-indigo-400/70"
+                            type="number"
+                            min={0}
+                            max={120}
+                            value={drCfg.frameInset}
+                            onChange={(e) =>
+                              updateDonorRankingsBodyImageConfig({
+                                frameInset: Number(e.target.value.replace(/[^\d]/g, "") || 0),
+                              })
+                            }
+                          />
+                        </label>
+                      </div>
+                      {drCfg.frameUrl.trim() ? (
+                        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-white/15 bg-black/20 px-3 py-2.5">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={drCfg.frameUrl.trim()}
+                            alt=""
+                            className="max-h-20 max-w-[200px] rounded object-contain"
+                          />
+                          <button
+                            type="button"
+                            className="rounded bg-white/15 px-2 py-1 text-xs text-indigo-50 hover:bg-white/25"
+                            onClick={() =>
+                              updateDonorRankingsBodyImageConfig({
+                                frameUrl: "",
+                                isFrameEnabled: false,
+                              })
+                            }
+                          >
+                            프레임 지우기
+                          </button>
+                        </div>
+                      ) : null}
+                      <label className="flex cursor-pointer flex-wrap items-center justify-between gap-3 rounded-xl border border-white/15 bg-black/20 px-3 py-2.5">
+                        <span className="text-xs font-semibold text-indigo-50">프레임 사용</span>
+                        <span className="flex items-center gap-2 text-[11px] text-indigo-100/80">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-white/30 bg-black/40 text-indigo-500 focus:ring-indigo-400"
+                            checked={drCfg.isFrameEnabled}
+                            disabled={!drCfg.frameUrl.trim()}
+                            onChange={(e) =>
+                              updateDonorRankingsBodyImageConfig({ isFrameEnabled: e.target.checked })
+                            }
+                          />
+                          ON / OFF
+                        </span>
+                      </label>
+                      <p className="text-[10px] text-neutral-500">
+                        기본 안쪽 여백 32px. PNG 가이드의 30px 여백과 맞추고, 패널 크기에 따라 ±4px 조정하세요.
+                      </p>
                     </div>
                   );
                 })()}
