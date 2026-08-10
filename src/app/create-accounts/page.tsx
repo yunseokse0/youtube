@@ -124,7 +124,8 @@ export default function CreateAccountsPage() {
       });
       const data = await r.json();
       if (!r.ok) {
-        setError(data.error || "생성 실패");
+        const detail = typeof data.detail === "string" ? ` (${data.detail})` : "";
+        setError((data.error || "생성 실패") + detail);
         return;
       }
       setForm({ name: "", companyName: "", password: "", startDate: "", endDate: "", unlimited: true });

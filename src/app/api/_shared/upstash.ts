@@ -8,13 +8,19 @@ function hasMysqlDatabaseUrl(): boolean {
   return Boolean(url && /^mysql:\/\//i.test(url));
 }
 
-/** Edge 번들에 mysql2가 포함되지 않도록 동적 로드 (nodejs 런타임만) */
+let mysqlLoadError: string | null = null;
+
+/** Edge에서는 MySQL 미사용. Node에서는 동적 import (mysql2는 next.config externals) */
 async function loadMysqlKv() {
   if (!hasMysqlDatabaseUrl()) return null;
   if (process.env.NEXT_RUNTIME === "edge") return null;
   try {
-    return await import(/* webpackIgnore: true */ "./mysql-kv");
-  } catch {
+    const mod = await import("./mysql-kv");
+    mysqlLoadError = null;
+    return mod;
+  } catch (err) {
+    mysqlLoadError = err instanceof Error ? err.message : String(err);
+    console.error("[kv] mysql-kv import failed", err);
     return null;
   }
 }
@@ -102,9 +108,25 @@ export async function upstashSetJsonWithSetPath(
     const ok = await redisSetJson(key, value, false);
     if (ok) return true;
   }
-  const mysql = await loadMysqlKv();
-  if (mysql) return mysql.mysqlKvSetJson(key, value);
+  if (hasMysqlDatabaseUrl()) {
+    const mysql = await loadMysqlKv();
+    if (!mysql) {
+      console.error("[kv] DATABASE_URL set but mysql-kv unavailable (import/runtime)");
+      return false;
+    }
+    const ok = await mysql.mysqlKvSetJson(key, value);
+    if (!ok) console.error("[kv] mysqlKvSetJson failed for", key);
+    return ok;
+  }
   return false;
+}
+
+/** 최근 MySQL KV 오류 메시지 (진단용) */
+export async function getPersistentKvLastError(): Promise<string | null> {
+  if (mysqlLoadError) return mysqlLoadError;
+  if (!hasMysqlDatabaseUrl()) return null;
+  const mysql = await loadMysqlKv();
+  return mysql?.getLastMysqlKvError?.() ?? null;
 }
 
 export async function upstashSetJsonWithPipeline(

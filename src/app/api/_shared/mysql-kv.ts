@@ -8,6 +8,15 @@ import mysql, { type Pool, type RowDataPacket } from "mysql2/promise";
 
 let pool: Pool | null = null;
 let tableReady: Promise<void> | null = null;
+let lastMysqlError: string | null = null;
+
+export function getLastMysqlKvError(): string | null {
+  return lastMysqlError;
+}
+
+function setLastMysqlError(err: unknown): void {
+  lastMysqlError = err instanceof Error ? err.message : String(err);
+}
 
 export function getMysqlDatabaseUrl(): string {
   return String(process.env.DATABASE_URL || "").trim();
@@ -91,14 +100,19 @@ export async function mysqlKvGet(key: string): Promise<string | null> {
       return null;
     }
     return typeof row.v === "string" ? row.v : String(row.v ?? "");
-  } catch {
+  } catch (err) {
+    setLastMysqlError(err);
+    console.error("[mysql-kv] get failed", err);
     return null;
   }
 }
 
 export async function mysqlKvSet(key: string, value: string, ttlSec?: number): Promise<boolean> {
   const p = getPool();
-  if (!p) return false;
+  if (!p) {
+    lastMysqlError = "MySQL pool unavailable (DATABASE_URL parse/config)";
+    return false;
+  }
   try {
     await ensureTable(p);
     const now = Date.now();
@@ -110,8 +124,11 @@ export async function mysqlKvSet(key: string, value: string, ttlSec?: number): P
        ON DUPLICATE KEY UPDATE \`v\` = VALUES(\`v\`), \`expires_at\` = VALUES(\`expires_at\`), \`updated_at\` = VALUES(\`updated_at\`)`,
       [key, value, expires, now]
     );
+    lastMysqlError = null;
     return true;
-  } catch {
+  } catch (err) {
+    setLastMysqlError(err);
+    console.error("[mysql-kv] set failed", err);
     return false;
   }
 }

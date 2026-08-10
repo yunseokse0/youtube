@@ -7,6 +7,7 @@ import {
   isPersistentKvConfigured,
   upstashGetJson,
   upstashSetJsonWithSetPath,
+  getPersistentKvLastError,
 } from "@/app/api/_shared/upstash";
 
 export const ACCOUNTS_REDIS_KEY = "excel-broadcast-accounts-v1";
@@ -42,7 +43,16 @@ export async function saveAccounts(
     };
   }
   const ok = await upstashSetJsonWithSetPath(ACCOUNTS_REDIS_KEY, accounts);
-  if (!ok) return { ok: false, error: "계정 저장 실패" };
+  if (!ok) {
+    const mysqlErr = await getPersistentKvLastError();
+    const detail = mysqlErr ? ` (${mysqlErr})` : "";
+    return {
+      ok: false,
+      error:
+        "계정 저장 실패 — MySQL 연결/비밀번호(DATABASE_URL) 또는 Redis를 확인하세요." +
+        detail,
+    };
+  }
   return { ok: true };
 }
 

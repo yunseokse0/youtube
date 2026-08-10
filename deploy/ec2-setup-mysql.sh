@@ -36,15 +36,19 @@ EOF
 run systemctl enable mysql
 run systemctl restart mysql
 
-echo "== DB·유저 생성 (${DB_USER}@localhost / ${DB_NAME}) =="
+echo "== DB·유저 생성 (${DB_USER}@localhost + @127.0.0.1 / ${DB_NAME}) =="
 # root 는 auth_socket(Ubuntu 기본) — sudo mysql
 # SQL 문자열용 작은따옴표 이스케이프
+# TCP(127.0.0.1)와 소켓(localhost) 호스트를 둘 다 만들어야 DATABASE_URL이 안정적으로 접속됨
 SQL_PW="${MYSQL_APP_PASSWORD//\'/\'\'}"
 run mysql --protocol=socket <<SQL
 CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${SQL_PW}';
 ALTER USER '${DB_USER}'@'localhost' IDENTIFIED BY '${SQL_PW}';
 GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
+CREATE USER IF NOT EXISTS '${DB_USER}'@'127.0.0.1' IDENTIFIED BY '${SQL_PW}';
+ALTER USER '${DB_USER}'@'127.0.0.1' IDENTIFIED BY '${SQL_PW}';
+GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'127.0.0.1';
 FLUSH PRIVILEGES;
 SQL
 
