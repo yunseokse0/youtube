@@ -18,11 +18,35 @@ export function isMysqlKvConfigured(): boolean {
   return Boolean(url && /^mysql:\/\//i.test(url));
 }
 
+/** mysql://user:pass@host:port/db — 비밀번호 특수문자 안전하게 파싱 */
+function mysqlPoolOptionsFromUrl(raw: string): mysql.PoolOptions | null {
+  try {
+    const u = new URL(raw);
+    if (!/^mysql:$/i.test(u.protocol)) return null;
+    const database = decodeURIComponent(u.pathname.replace(/^\//, "").split("/")[0] || "");
+    if (!database) return null;
+    return {
+      host: u.hostname || "127.0.0.1",
+      port: u.port ? Number(u.port) : 3306,
+      user: decodeURIComponent(u.username || ""),
+      password: decodeURIComponent(u.password || ""),
+      database,
+      waitForConnections: true,
+      connectionLimit: 8,
+      enableKeepAlive: true,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function getPool(): Pool | null {
   if (!isMysqlKvConfigured()) return null;
   if (pool) return pool;
   try {
-    pool = mysql.createPool(getMysqlDatabaseUrl());
+    const opts = mysqlPoolOptionsFromUrl(getMysqlDatabaseUrl());
+    if (!opts) return null;
+    pool = mysql.createPool(opts);
   } catch {
     return null;
   }

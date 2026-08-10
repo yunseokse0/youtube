@@ -82,8 +82,10 @@ export async function GET(req: Request) {
         "Cache-Control": "no-store, max-age=0",
       },
     });
-  } catch {
-    return new Response(JSON.stringify({ error: "계정 목록 조회 실패" }), {
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("[api/accounts] GET failed", detail);
+    return new Response(JSON.stringify({ error: "계정 목록 조회 실패", detail }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });
@@ -150,8 +152,10 @@ export async function POST(req: Request) {
       headers: { "Content-Type": "application/json" },
       status: 201,
     });
-  } catch {
-    return new Response(JSON.stringify({ error: "처리 중 오류" }), {
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("[api/accounts] POST failed", detail);
+    return new Response(JSON.stringify({ error: "처리 중 오류", detail }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });
