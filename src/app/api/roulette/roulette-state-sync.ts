@@ -1,12 +1,11 @@
 import type { AppState } from "@/lib/state";
 import { broadcastStateUpdatedAt } from "@/lib/sse-post";
-import { getRedisEnv } from "../_shared/upstash";
+import { isPersistentKvConfigured } from "../_shared/upstash";
 import { forwardCookieHeader } from "../_shared/internal-state-headers";
 import { loadAppStateForRoulette } from "./edge-state-store";
 
 export function isRouletteSharedRedisConfigured(): boolean {
-  const { base, token } = getRedisEnv();
-  return Boolean(base && token);
+  return isPersistentKvConfigured();
 }
 
 /**

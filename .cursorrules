@@ -4,9 +4,10 @@
 - 신규 페이지/라우트는 `src/app` 기준으로 구성한다.
 - API는 `src/app/api/**/route.ts` 패턴을 사용한다.
 
-2) 상태 저장 우선순위는 항상 Upstash Redis 우선이다.
-- 상태 저장/조회 로직 변경 시 `UPSTASH_REDIS_*` 경로를 먼저 고려한다.
-- Redis 실패 시에만 메모리/로컬 fallback을 유지한다.
+2) 상태 저장 우선순위: **DATABASE_URL(MySQL) 또는 Upstash Redis**.
+- EC2 동일 서버는 `DATABASE_URL=mysql://…` 권장 (`app_kv` 테이블).
+- Upstash(`UPSTASH_REDIS_*`)가 설정되어 있으면 Redis를 우선한다.
+- 둘 다 없으면 메모리 fallback(재시작 시 유실).
 
 3) 정산 계산은 공통 유틸을 반드시 경유한다.
 - 정산 계산식은 `src/lib/settlement-utils.ts`의 `computeSettlement()`를 사용한다.

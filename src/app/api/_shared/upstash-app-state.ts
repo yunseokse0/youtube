@@ -1,5 +1,9 @@
 import { gzip, ungzip } from "pako";
-import { getRedisEnv, upstashGetJson, upstashSetJsonWithPipeline } from "./upstash";
+import {
+  isPersistentKvConfigured,
+  upstashGetJson,
+  upstashSetJsonWithPipeline,
+} from "./upstash";
 
 const GZIP_MARKER = "__gzipB64";
 
@@ -59,8 +63,7 @@ export async function upstashGetAppStateJson<T = unknown>(key: string): Promise<
 }
 
 export async function upstashSetAppStateJson(key: string, value: unknown): Promise<boolean> {
-  const { base, token } = getRedisEnv();
-  if (!base || !token) return false;
+  if (!isPersistentKvConfigured()) return false;
   const json = JSON.stringify(value);
   if (!isUpstashAppStateGzipEnabled() || json.length < minBytesForGzip()) {
     return upstashSetJsonWithPipeline(key, value);

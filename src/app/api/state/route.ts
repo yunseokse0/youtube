@@ -46,7 +46,7 @@ import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-m
 import { isRouletteLocked } from "../roulette/roulette-lock";
 import { mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 import { getUserIdFromRequest } from "../_shared/user-id";
-import { getRedisEnv } from "../_shared/upstash";
+import { isPersistentKvConfigured } from "../_shared/upstash";
 import {
   upstashGetAppStateJson,
   upstashSetAppStateJson,
@@ -467,13 +467,15 @@ export async function GET(req: Request) {
     pickMode ? revisionForStatePick(state, pickMode) : state.updatedAt || 0;
   const isNotModified = (state: AppState) => since > 0 && revisionAt(state) <= since;
   try {
-    const { base, token } = getRedisEnv();
-    if (!base || !token) {
+    const kvOk = isPersistentKvConfigured();
+    if (!kvOk) {
       let state = applyDonationGoalPresetNormalization(
         getServerMemoryAppState(userId) || defaultState()
       );
       if (!getServerMemoryAppState(userId)) {
-        logger.warn('Redis 미설정 - 메모리만 사용 (서버 재시작 시 데이터 초기화됨. UPSTASH_REDIS_* 환경변수 설정 권장)');
+        logger.warn(
+          "영속 저장소 미설정 - 메모리만 사용 (서버 재시작 시 초기화. DATABASE_URL 또는 UPSTASH_REDIS_* 설정)"
+        );
       }
       try {
         const donationEnriched = await enrichAppStateWithDonationRosterBackup(userId, state);
@@ -647,10 +649,10 @@ export async function POST(req: Request) {
     const donorsAuthoritative = body.donorsAuthoritative === true;
     const donorsReplace = body.donorsReplace === true;
     const settlementReset = body.settlementReset === true;
-    const { base, token } = getRedisEnv();
+    const kvOk = isPersistentKvConfigured();
     const memExisting = getServerMemoryAppState(userId);
     let existing: AppState | null = null;
-    if (base && token) {
+    if (kvOk) {
       const raw = await upstashGet<AppState>(stateKey(userId));
       existing = coalesceAppStateRedisAndMemory(raw, memExisting);
     } else {
@@ -869,7 +871,7 @@ export async function POST(req: Request) {
       void saveDonationRosterBackup(userId, next);
     }
 
-    if (!base || !token) {
+    if (!isPersistentKvConfigured()) {
       let memNext = next;
       if (donorsInPatch) {
         memNext = await saveAppStateForRoulette(userId, next, {

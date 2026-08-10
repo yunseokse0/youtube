@@ -8,7 +8,7 @@ import {
 import { snapshotTimerForPersist } from "@/lib/timer-utils";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { getUserIdFromRequest } from "../_shared/user-id";
-import { getRedisEnv } from "../_shared/upstash";
+import { isPersistentKvConfigured } from "../_shared/upstash";
 import {
   upstashGetAppStateJson,
   upstashSetAppStateJson,
@@ -35,8 +35,7 @@ async function upstashSet(key: string, value: unknown): Promise<boolean> {
 
 export async function loadAppStateForRoulette(userId: string): Promise<AppState> {
   const mem = getServerMemoryAppState(userId);
-  const { base, token } = getRedisEnv();
-  if (base && token) {
+  if (isPersistentKvConfigured()) {
     const raw = await upstashGet(stateKey(userId));
     const redis = raw as AppState | null;
     const picked = coalesceAppStateRedisAndMemory(redis, mem);
@@ -62,7 +61,6 @@ export async function saveAppStateForRoulette(
   next: AppState,
   opts?: SaveAppStateForRouletteOptions
 ): Promise<AppState> {
-  const { base, token } = getRedisEnv();
   /**
    * 투네 반영이 구 스냅샷 위에 저장되면 직전 수동 계좌 donors 가 사라짐.
    * 정산 리셋이 아닌 한 Redis·메모리 기존 donors 와 union 후 기록.
@@ -70,7 +68,8 @@ export async function saveAppStateForRoulette(
    */
   const mem = getServerMemoryAppState(userId);
   let existing: AppState | null = mem && Array.isArray(mem.members) ? mem : null;
-  if (base && token) {
+  const kvOk = isPersistentKvConfigured();
+  if (kvOk) {
     const raw = await upstashGet(stateKey(userId));
     existing = coalesceAppStateRedisAndMemory(raw as AppState | null, mem);
   }
@@ -83,7 +82,7 @@ export async function saveAppStateForRoulette(
     generalTimer: snapshotTimerForPersist(merged.generalTimer),
   };
   setServerMemoryAppState(userId, persisted);
-  if (base && token) {
+  if (kvOk) {
     await upstashSet(stateKey(userId), persisted);
   }
   return persisted;

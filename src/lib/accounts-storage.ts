@@ -1,10 +1,10 @@
 /**
- * 서비스 계정 목록 — Upstash Redis 단일 소스 (브라우저·PC 무관)
+ * 서비스 계정 목록 — Redis 또는 MySQL(DATABASE_URL) 단일 소스
  * 로그인/me·/api/accounts 공통
  */
 
 import {
-  getRedisEnv,
+  isPersistentKvConfigured,
   upstashGetJson,
   upstashSetJsonWithSetPath,
 } from "@/app/api/_shared/upstash";
@@ -22,8 +22,7 @@ export type StoredAccount = {
 };
 
 export function isAccountsRedisConfigured(): boolean {
-  const { base, token } = getRedisEnv();
-  return Boolean(base && token);
+  return isPersistentKvConfigured();
 }
 
 export async function loadAccounts(): Promise<StoredAccount[]> {
@@ -38,11 +37,12 @@ export async function saveAccounts(
   if (!isAccountsRedisConfigured()) {
     return {
       ok: false,
-      error: "Redis(UPSTASH_REDIS_REST_URL/TOKEN) 미설정 — 계정을 서버에 저장할 수 없습니다.",
+      error:
+        "영속 저장소 미설정 — UPSTASH_REDIS_* 또는 DATABASE_URL(MySQL)을 설정하세요.",
     };
   }
   const ok = await upstashSetJsonWithSetPath(ACCOUNTS_REDIS_KEY, accounts);
-  if (!ok) return { ok: false, error: "Redis 저장 실패" };
+  if (!ok) return { ok: false, error: "계정 저장 실패" };
   return { ok: true };
 }
 

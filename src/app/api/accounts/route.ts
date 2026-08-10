@@ -69,7 +69,7 @@ export async function GET(req: Request) {
   if (!isAccountsRedisConfigured()) {
     return new Response(
       JSON.stringify({
-        error: "Redis(UPSTASH_REDIS_REST_URL/TOKEN) 미설정 — 계정 목록을 불러올 수 없습니다.",
+        error: "영속 저장소 미설정 — DATABASE_URL(MySQL) 또는 UPSTASH_REDIS_* 를 설정하세요.",
       }),
       { status: 503, headers: { "Content-Type": "application/json" } }
     );

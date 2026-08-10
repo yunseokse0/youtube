@@ -129,7 +129,7 @@ async function writeSigImageToPublicUploads(
   }
   if (!wrote) {
     const hint = getSigUploadPersistentDataDir()
-      ? `영구 폴더 쓰기 실패(${getSigUploadPersistentDataDir()}). sudo mkdir -p /var/lib/finalent/uploads/sigs && sudo chown -R $USER:$USER /var/lib/finalent`
+      ? `영구 폴더 쓰기 실패(${getSigUploadPersistentDataDir()}). sudo mkdir -p /var/lib/DIN/uploads/sigs && sudo chown -R $USER:$USER /var/lib/DIN`
       : "SIG_UPLOADS_DATA_DIR 또는 public/uploads 쓰기 권한을 확인하세요.";
     const msg = lastErr instanceof Error ? `${lastErr.message} — ${hint}` : hint;
     throw new Error(msg);

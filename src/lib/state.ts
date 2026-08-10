@@ -2848,7 +2848,7 @@ function maybeWarnMemoryStateBackend(res: Response): void {
   if (h === "localhost" || h === "127.0.0.1" || h === "[::1]" || h.endsWith(".local")) return;
   warnedMemoryStateBackend = true;
   console.warn(
-    "[방송 정산] 서버가 상태를 메모리에만 두고 있습니다. 호스팅에서 인스턴스가 2개 이상이면 기기·탭 간 동기화가 깨질 수 있습니다. UPSTASH_REDIS_REST_URL·UPSTASH_REDIS_REST_TOKEN(또는 KV_REST_*)를 설정하거나 인스턴스를 1개로 맞추세요."
+    "[방송 정산] 서버가 상태를 메모리에만 두고 있습니다. DATABASE_URL(MySQL) 또는 UPSTASH_REDIS_* 를 설정하거나 인스턴스를 1개로 맞추세요."
   );
 }
 

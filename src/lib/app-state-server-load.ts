@@ -1,4 +1,4 @@
-import { getRedisEnv } from "@/app/api/_shared/upstash";
+import { isPersistentKvConfigured } from "@/app/api/_shared/upstash";
 import { upstashGetAppStateJson } from "@/app/api/_shared/upstash-app-state";
 import { pickFresherAppState } from "@/lib/app-state-freshness";
 import { mergeStatePreservingDonorsUntilSettlementReset } from "@/lib/donation/merge-donation-apply-base";
@@ -38,8 +38,7 @@ export function coalesceAppStateRedisAndMemory(
  */
 export async function loadAppStateForUserId(userId: string): Promise<AppState> {
   const mem = getServerMemoryAppState(userId);
-  const { base, token } = getRedisEnv();
-  if (base && token) {
+  if (isPersistentKvConfigured()) {
     const saved = await upstashGetAppStateJson<AppState>(appStateStorageKey(userId));
     const picked = coalesceAppStateRedisAndMemory(saved, mem);
     if (picked) {

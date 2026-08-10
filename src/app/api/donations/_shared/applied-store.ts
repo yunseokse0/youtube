@@ -1,4 +1,4 @@
-import { getRedisEnv } from "@/app/api/_shared/upstash";
+import { kvDel, kvSetNxEx } from "@/app/api/_shared/upstash";
 import {
   DONATION_CONTENT_DEDUPE_TTL_SEC,
   donationApplyContentKey,
@@ -16,36 +16,11 @@ function pruneMemoryApplied(now: number): void {
   }
 }
 
-async function upstashSetNxEx(key: string, ttlSec: number): Promise<boolean | null> {
-  const { base, token } = getRedisEnv();
-  if (!base || !token) return null;
-  const url = `${base.replace(/\/$/, "")}/set/${encodeURIComponent(key)}/${encodeURIComponent("1")}?NX=true&EX=${ttlSec}`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-  if (!response.ok) return null;
-  const data = (await response.json().catch(() => null)) as { result?: string | null } | null;
-  return data?.result === "OK";
-}
-
-async function upstashDel(key: string): Promise<void> {
-  const { base, token } = getRedisEnv();
-  if (!base || !token) return;
-  const url = `${base.replace(/\/$/, "")}/del/${encodeURIComponent(key)}`;
-  await fetch(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  }).catch(() => {});
-}
-
 async function claimKey(key: string, ttlSec: number): Promise<boolean> {
   const now = Date.now();
-  const redis = await upstashSetNxEx(key, ttlSec);
-  if (redis === true) return true;
-  if (redis === false) return false;
+  const claimed = await kvSetNxEx(key, ttlSec);
+  if (claimed === true) return true;
+  if (claimed === false) return false;
 
   pruneMemoryApplied(now);
   const exp = memoryApplied.get(key);
@@ -56,7 +31,7 @@ async function claimKey(key: string, ttlSec: number): Promise<boolean> {
 
 function releaseKey(key: string): void {
   memoryApplied.delete(key);
-  void upstashDel(key);
+  void kvDel(key);
 }
 
 /** true = 이번 요청이 선점 성공(반영 진행), false = 이미 반영·처리 중 */

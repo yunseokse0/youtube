@@ -29,15 +29,15 @@ EC2를 재시작해도 IP가 안 바뀌게 **Elastic IP**를 인스턴스에 연
 ## 권장: 업로드 영구 저장
 
 ```bash
-sudo mkdir -p /var/lib/finalent/uploads/sigs
-sudo chown -R ubuntu:ubuntu /var/lib/finalent   # 실제 실행 사용자로 변경
+sudo mkdir -p /var/lib/DIN/uploads/sigs
+sudo chown -R ubuntu:ubuntu /var/lib/DIN   # 실제 실행 사용자로 변경
 ```
 
-`.env` (선택, 미설정 시 Linux 프로덕션은 `/var/lib/finalent` 자동 시도):
+`.env` (선택, 미설정 시 Linux 프로덕션은 `/var/lib/DIN` 자동 시도):
 
 ```env
 SIG_SERVE_SIG_IMAGES_FROM_DISK=true
-SIG_UPLOADS_DATA_DIR=/var/lib/finalent
+SIG_UPLOADS_DATA_DIR=/var/lib/DIN
 ```
 
 **끄기:** `NEXT_PUBLIC_SIG_IMAGES_GITHUB_ONLY=true` 이면 디스크 업로드 URL이 Git 경로로 바뀌어 404가 납니다. EC2 디스크 업로드 시 **반드시 끄세요.**
@@ -60,3 +60,5 @@ curl -I http://127.0.0.1:3000/api/health
 자세한 OOM 대응: **`deploy/EC2-저메모리-빌드.md`**
 
 Nginx SSE·업로드: `deploy/nginx-youtube.conf.example` 참고.
+
+신규 EC2 + 동일 서버 MySQL: **`deploy/EC2-MySQL-setup.md`**

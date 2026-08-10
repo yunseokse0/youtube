@@ -1,4 +1,4 @@
-import { getRedisEnv, upstashGetJson, upstashSetJsonWithPipeline } from "@/app/api/_shared/upstash";
+import { isPersistentKvConfigured, upstashGetJson, upstashSetJsonWithPipeline } from "@/app/api/_shared/upstash";
 import type { DonationEvent } from "@/lib/donation/types";
 
 const KEY_PREFIX = "excel-donation-queue-v1";
@@ -10,8 +10,7 @@ function queueKey(userId: string): string {
 
 export async function readDonationQueue(userId: string): Promise<DonationEvent[]> {
   const key = queueKey(userId);
-  const { base, token } = getRedisEnv();
-  if (base && token) {
+  if (isPersistentKvConfigured()) {
     const saved = await upstashGetJson<DonationEvent[]>(key);
     return Array.isArray(saved) ? saved : [];
   }
@@ -21,8 +20,7 @@ export async function readDonationQueue(userId: string): Promise<DonationEvent[]
 export async function writeDonationQueue(userId: string, list: DonationEvent[]): Promise<void> {
   const key = queueKey(userId);
   const capped = list.slice(0, 300);
-  const { base, token } = getRedisEnv();
-  if (base && token) {
+  if (isPersistentKvConfigured()) {
     await upstashSetJsonWithPipeline(key, capped);
     return;
   }

@@ -27,7 +27,7 @@ function createSupabaseAdmin(): SupabaseClient | null {
 /**
  * EC2·자체 서버: git pull / npm run build 후에도 업로드가 남도록 프로젝트 밖 경로.
  * SIG_UPLOADS_DATA_DIR — 그 안에 uploads/sigs/<계정>/ 구조로 저장 (public 과 동일).
- * 미설정 시 Linux 프로덕션(Render 제외)은 /var/lib/finalent 를 추가 시도.
+ * 미설정 시 Linux 프로덕션(Render 제외)은 /var/lib/DIN 를 추가 시도.
  */
 export function getSigUploadPersistentDataDir(): string | null {
   const explicit = (process.env.SIG_UPLOADS_DATA_DIR || "").trim();
@@ -37,7 +37,7 @@ export function getSigUploadPersistentDataDir(): string | null {
     process.env.RENDER !== "true" &&
     process.platform !== "win32"
   ) {
-    return "/var/lib/finalent";
+    return "/var/lib/DIN";
   }
   return null;
 }

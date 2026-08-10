@@ -4,7 +4,7 @@ import type { AppState } from "@/lib/state";
 import { defaultState } from "@/lib/state";
 import { getServerMemoryAppState, setServerMemoryAppState } from "@/lib/server-memory-app-state";
 import { getUserIdFromRequest } from "../../_shared/user-id";
-import { getRedisEnv } from "../../_shared/upstash";
+import { isPersistentKvConfigured } from "../../_shared/upstash";
 import { upstashGetAppStateJson, upstashSetAppStateJson } from "../../_shared/upstash-app-state";
 import {
   applyDonationGoalEscalationToState,
@@ -19,8 +19,7 @@ function stateKey(userId: string): string {
 }
 
 async function loadState(userId: string): Promise<AppState> {
-  const { base, token } = getRedisEnv();
-  if (base && token) {
+  if (isPersistentKvConfigured()) {
     const remote = await upstashGetAppStateJson<AppState>(stateKey(userId));
     if (remote && Array.isArray(remote.members)) return remote;
   }
@@ -30,9 +29,8 @@ async function loadState(userId: string): Promise<AppState> {
 }
 
 async function saveState(userId: string, next: AppState): Promise<void> {
-  const { base, token } = getRedisEnv();
   setServerMemoryAppState(userId, next);
-  if (base && token) {
+  if (isPersistentKvConfigured()) {
     await upstashSetAppStateJson(stateKey(userId), next);
   }
 }

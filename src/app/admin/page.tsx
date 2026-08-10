@@ -10167,7 +10167,7 @@ export default function AdminPage() {
                 <div className="text-xs text-neutral-500">
                   「보드 노출」은 <code>/overlay/sig-sales</code> 상단 롤링 그리드,「판매 활성」은 회전판 메뉴 후보에 포함됩니다. 시그 추가/멤버 지정/판매량 조절은 즉시 `/api/state`를 통해 Redis에 반영됩니다.{" "}
                   <span className="text-neutral-400">
-                    시그 이미지는 PC에서 파일을 선택하면 서버에 저장되고 URL이 자동으로 붙습니다. EC2는 <code className="text-neutral-300">/var/lib/finalent/uploads/sigs</code> 영구 경로를 쓰며, 재시작 후에는 <strong className="text-amber-200/90">새 공인 IP</strong>로 접속해야 합니다(Elastic IP 권장).
+                    시그 이미지는 PC에서 파일을 선택하면 서버에 저장되고 URL이 자동으로 붙습니다. EC2는 <code className="text-neutral-300">/var/lib/DIN/uploads/sigs</code> 영구 경로를 쓰며, 재시작 후에는 <strong className="text-amber-200/90">새 공인 IP</strong>로 접속해야 합니다(Elastic IP 권장).
                   </span>
                 </div>
               </div>

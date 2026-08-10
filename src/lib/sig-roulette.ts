@@ -2,6 +2,11 @@ import type { SigItem } from "@/types";
 import { repairDiskUploadSigImagePath } from "@/lib/sig-image-mode";
 import { isBundledSigPlaceholderItem } from "@/lib/sig-placeholder";
 import { getServerMemoryRouletteLogs, setServerMemoryRouletteLogs } from "@/lib/server-memory-roulette-logs";
+import {
+  isPersistentKvConfigured,
+  upstashGetJson as kvGetJson,
+  upstashSetJsonWithPipeline as kvSetJson,
+} from "@/app/api/_shared/upstash";
 
 export const ONE_SHOT_SIG_ID = "sig_one_shot";
 
@@ -1869,47 +1874,14 @@ function getLogKey(userId: string) {
   return `${LOG_KEY_PREFIX}:${userId}`;
 }
 
-function getEnv() {
-  const base = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL || "";
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || "";
-  return { base, token };
-}
-
 async function upstashGetJson<T>(key: string): Promise<T | null> {
-  const { base, token } = getEnv();
-  if (!base || !token) return null;
-  const url = `${base.replace(/\/$/, "")}/get/${encodeURIComponent(key)}`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
-  if (!res.ok) return null;
-  const data = (await res.json()) as { result?: string | null };
-  if (!data?.result) return null;
-  try {
-    return JSON.parse(data.result) as T;
-  } catch {
-    return null;
-  }
+  if (!isPersistentKvConfigured()) return null;
+  return kvGetJson<T>(key);
 }
 
 async function upstashSetJson(key: string, value: unknown): Promise<boolean> {
-  const { base, token } = getEnv();
-  if (!base || !token) return false;
-  let payload: string;
-  try {
-    payload = JSON.stringify(value);
-  } catch {
-    return false;
-  }
-  const url = `${base.replace(/\/$/, "")}/pipeline`;
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify([["SET", key, payload]]),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
+  if (!isPersistentKvConfigured()) return false;
+  return kvSetJson(key, value);
 }
 
 export async function listRouletteLogs(userId: string): Promise<RouletteSessionLog[]> {

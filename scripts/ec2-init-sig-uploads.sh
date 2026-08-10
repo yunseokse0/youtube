@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # EC2: 시그 업로드 영구 폴더 + (선택) 기존 public/uploads 마이그레이션
 set -euo pipefail
-DATA_DIR="${SIG_UPLOADS_DATA_DIR:-/var/lib/finalent}"
+DATA_DIR="${SIG_UPLOADS_DATA_DIR:-/var/lib/DIN}"
+
 APP_USER="${APP_USER:-ubuntu}"
 
 sudo mkdir -p "${DATA_DIR}/uploads/sigs"
