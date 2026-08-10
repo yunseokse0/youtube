@@ -525,7 +525,7 @@ export default function SettlementDetailPage() {
                     persistSettlementOptions({ omitTreasuryFromSettlement: e.target.checked })
                   }
                 />
-                국고 정산 제외
+                운영비
               </label>
               <label className="inline-flex items-center gap-2 px-3 py-2 rounded border border-white/10 bg-black/20 text-sm cursor-pointer">
                 <input
@@ -540,7 +540,7 @@ export default function SettlementDetailPage() {
             </div>
           </div>
           <div className="text-xs text-neutral-400">
-            국고 정산 제외 시 아래 멤버별 최종 매출·합계에서 국고가 빠집니다. 전체 정산서 PDF의 국고 50% 행은 별도 체크로 제어합니다.
+            운영비 ON 시 아래 멤버별 최종 매출·합계에서 국고가 빠집니다. 전체 정산서 PDF의 국고 50% 행은 별도 체크로 제어합니다.
           </div>
         </div>
 
@@ -605,7 +605,7 @@ export default function SettlementDetailPage() {
           </table>
           {treasuryExcludedMembers.length > 0 && (
             <div className="mt-3 pt-3 border-t border-amber-500/20">
-              <div className="text-xs font-medium text-amber-300 mb-2">국고 (정산 제외 · 참고)</div>
+              <div className="text-xs font-medium text-amber-300 mb-2">운영비 (정산 제외 · 참고)</div>
               <table className="w-full text-sm whitespace-nowrap">
                 <tbody>
                   {treasuryExcludedMembers.map((m) => (

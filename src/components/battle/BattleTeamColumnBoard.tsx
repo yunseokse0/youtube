@@ -2,16 +2,19 @@
 
 import type { CSSProperties, ReactNode } from "react";
 
-function scoreBoxStyle(): CSSProperties {
+function scoreTextStyle(): CSSProperties {
   return {
     color: "#ffffff",
-    textShadow: "0 1px 3px rgba(0,0,0,0.55), 0 0 1px rgba(0,0,0,0.85)",
-    WebkitTextStroke: "0.35px rgba(0,0,0,0.35)",
+    textShadow: "0 1px 2px rgba(0,0,0,0.55), 0 0 1px rgba(0,0,0,0.8)",
+    WebkitTextStroke: "0.4px rgba(0,0,0,0.35)",
     paintOrder: "stroke fill",
   };
 }
 
-/** 대전 3열 보드 — 좌 빨강 / 중앙 타이머+차액 / 우 파랑 (방송 스크린샷형) */
+/**
+ * 대전 합산 게이지 — 빨강|파랑 한 줄로 붙이고 중앙 VS.
+ * 타이머는 바 위, 선두 차액은 바 아래(0이어도 표시), 멤버명은 좌·우 하단.
+ */
 export default function BattleTeamColumnBoard({
   leftScore,
   rightScore,
@@ -30,108 +33,139 @@ export default function BattleTeamColumnBoard({
   rightMemberLabel: string;
   compact?: boolean;
   formatScore?: (n: number) => string;
-  /** 중앙 금색 차액. 미지정 시 |좌-우| 자동 계산. 동점이면 숨김 */
+  /** 중앙 아래 차액. 미지정 시 |좌-우| 자동 계산. 동점(0)도 표시 */
   gapLabel?: string | null;
-  /** 차액 뒤 단위 (예: "원") */
+  /** 차액 뒤 단위 (예: "원") — gapLabel에 이미 단위가 있으면 비움 */
   gapSuffix?: string;
   timerSlot?: ReactNode;
 }) {
+  const total = Math.max(0, leftScore) + Math.max(0, rightScore);
+  let leftPct = total > 0 ? (Math.max(0, leftScore) / total) * 100 : 50;
+  let rightPct = 100 - leftPct;
+  leftPct = Math.max(18, Math.min(82, leftPct));
+  rightPct = Math.max(18, Math.min(82, rightPct));
+  const sum = leftPct + rightPct;
+  if (sum > 0 && Math.abs(sum - 100) > 0.01) {
+    leftPct = (leftPct / sum) * 100;
+    rightPct = 100 - leftPct;
+  }
+
   const scoreGap = Math.abs(leftScore - rightScore);
   const computedGap =
-    scoreGap > 0
-      ? typeof gapLabel === "string" && gapLabel.trim()
-        ? gapLabel.trim()
-        : formatScore(scoreGap)
-      : null;
-
-  const scoreSize = compact
-    ? "text-xl sm:text-2xl"
-    : "text-2xl sm:text-3xl md:text-[2rem]";
-  const nameSize = compact ? "text-[10px] sm:text-xs" : "text-xs sm:text-sm";
-  const gapSize = compact ? "text-sm sm:text-base" : "text-base sm:text-lg md:text-xl";
-  const timerWrapClass = compact ? "min-w-[5.5rem]" : "min-w-[6.5rem] sm:min-w-[7rem]";
-  const teamBoxClass = compact
-    ? "min-w-[7rem] px-3 py-2 sm:min-w-[7.5rem]"
-    : "min-w-[8rem] px-4 py-2.5 sm:min-w-[9rem] md:min-w-[10rem]";
+    typeof gapLabel === "string" && gapLabel.trim()
+      ? gapLabel.trim()
+      : formatScore(scoreGap);
 
   const leftLeading = leftScore > rightScore;
   const rightLeading = rightScore > leftScore;
 
+  const barH = compact ? "h-12 sm:h-14" : "h-14 sm:h-16";
+  const scoreSize = compact
+    ? "text-xl sm:text-2xl md:text-3xl"
+    : "text-2xl sm:text-3xl md:text-4xl";
+  const nameSize = compact ? "text-xs sm:text-sm" : "text-sm sm:text-base";
+  const gapSize = compact ? "text-[10px] sm:text-xs" : "text-xs sm:text-sm";
+
   return (
-    <div
-      className="mx-auto w-full max-w-3xl"
-      data-battle-team-column-board="true"
-    >
-      <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-x-2 sm:gap-x-3">
-        <div className="flex flex-col items-center">
+    <div className="w-full" data-battle-team-column-board="true" data-battle-vs-style="attached">
+      {timerSlot ? <div className="mb-1 flex justify-center">{timerSlot}</div> : null}
+
+      <div className="relative">
+        <div
+          className={`relative flex w-full overflow-hidden rounded-xl shadow-[0_4px_18px_rgba(0,0,0,0.35)] ring-1 ring-white/15 ${barH}`}
+          data-battle-vs-bar="true"
+        >
           <div
-            className={`flex w-full items-center justify-center rounded-lg shadow-[0_3px_14px_rgba(0,0,0,0.35)] ring-1 ring-white/20 ${teamBoxClass} ${
+            className={`relative flex h-full min-w-0 items-center justify-center overflow-hidden transition-[width] duration-500 ease-out ${
               leftLeading ? "brightness-110" : "brightness-95"
             }`}
             style={{
-              background: "linear-gradient(180deg, #f87171 0%, #dc2626 52%, #b91c1c 100%)",
+              width: `${leftPct}%`,
+              background: "linear-gradient(180deg, #f87171 0%, #dc2626 48%, #b91c1c 100%)",
             }}
             data-battle-team-box="left"
           >
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent" />
             <span
-              className={`font-black tabular-nums leading-none tracking-tight ${scoreSize}`}
-              style={scoreBoxStyle()}
+              className={`relative z-[1] px-2 font-black tabular-nums leading-none tracking-tight ${scoreSize}`}
+              style={scoreTextStyle()}
             >
               {formatScore(leftScore)}
             </span>
           </div>
-          {leftMemberLabel ? (
-            <p
-              className={`mt-1 max-w-full truncate px-1 text-center font-semibold text-white/85 ${nameSize}`}
-              data-battle-team-names="left"
-            >
-              {leftMemberLabel}
-            </p>
-          ) : null}
-        </div>
 
-        <div className={`flex flex-col items-center gap-1.5 ${timerWrapClass}`}>
-          {timerSlot ? (
-            <div className="flex w-full justify-center" data-battle-team-timer="true">
-              {timerSlot}
-            </div>
-          ) : null}
-          {computedGap ? (
-            <div
-              className={`w-full rounded-md border-2 border-amber-950/70 bg-gradient-to-b from-amber-200 via-amber-300 to-amber-400 px-2 py-1 text-center font-black tabular-nums text-amber-950 shadow-[0_2px_8px_rgba(0,0,0,0.35)] ${gapSize}`}
-              data-battle-team-gap="true"
-              title="금액 차"
-            >
-              {computedGap}
-              {gapSuffix}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="flex flex-col items-center">
           <div
-            className={`flex w-full items-center justify-center rounded-lg shadow-[0_3px_14px_rgba(0,0,0,0.35)] ring-1 ring-white/20 ${teamBoxClass} ${
+            className={`relative flex h-full min-w-0 items-center justify-center overflow-hidden transition-[width] duration-500 ease-out ${
               rightLeading ? "brightness-110" : "brightness-95"
             }`}
             style={{
-              background: "linear-gradient(180deg, #60a5fa 0%, #2563eb 52%, #1d4ed8 100%)",
+              width: `${rightPct}%`,
+              background: "linear-gradient(180deg, #60a5fa 0%, #2563eb 48%, #1d4ed8 100%)",
             }}
             data-battle-team-box="right"
           >
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent" />
             <span
-              className={`font-black tabular-nums leading-none tracking-tight ${scoreSize}`}
-              style={scoreBoxStyle()}
+              className={`relative z-[1] px-2 font-black tabular-nums leading-none tracking-tight ${scoreSize}`}
+              style={scoreTextStyle()}
             >
               {formatScore(rightScore)}
             </span>
           </div>
+        </div>
+
+        <div
+          className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center"
+          data-battle-vs-center="true"
+        >
+          <span
+            className={`flex items-center justify-center rounded-lg font-black tracking-[0.12em] text-white shadow-md ring-1 ring-white/25 ${
+              compact ? "h-8 min-w-[2.25rem] px-1.5 text-sm" : "h-9 min-w-[2.5rem] px-2 text-base sm:text-lg"
+            }`}
+            style={{
+              background:
+                "linear-gradient(135deg, rgba(220,38,38,0.95) 0%, rgba(23,23,23,0.96) 48%, rgba(37,99,235,0.95) 100%)",
+            }}
+          >
+            VS
+          </span>
+        </div>
+      </div>
+
+      <div className="relative z-20 flex justify-center py-0.5" data-battle-team-gap-row="true">
+        <span
+          className={`rounded-md bg-neutral-950/90 px-1.5 py-0.5 font-black tabular-nums text-amber-100 ring-1 ring-amber-300/40 ${gapSize}`}
+          data-battle-team-gap="true"
+          title="선두 차액"
+        >
+          +{computedGap}
+          {gapSuffix}
+        </span>
+      </div>
+
+      <div className={`grid grid-cols-2 gap-2 px-0.5 mt-1`}>
+        <div className="flex justify-start">
+          {leftMemberLabel ? (
+            <span
+              className={`inline-flex max-w-full truncate rounded-md px-2.5 py-0.5 font-bold text-white shadow-sm ${nameSize} ${
+                leftLeading ? "bg-emerald-600/95 ring-1 ring-white/20" : "bg-neutral-800/90 ring-1 ring-white/10"
+              }`}
+              data-battle-team-names="left"
+            >
+              {leftMemberLabel}
+            </span>
+          ) : null}
+        </div>
+        <div className="flex justify-end">
           {rightMemberLabel ? (
-            <p
-              className={`mt-1 max-w-full truncate px-1 text-center font-semibold text-white/85 ${nameSize}`}
+            <span
+              className={`inline-flex max-w-full truncate rounded-md px-2.5 py-0.5 font-bold text-white shadow-sm ${nameSize} ${
+                rightLeading ? "bg-emerald-600/95 ring-1 ring-white/20" : "bg-neutral-800/90 ring-1 ring-white/10"
+              }`}
               data-battle-team-names="right"
             >
               {rightMemberLabel}
-            </p>
+            </span>
           ) : null}
         </div>
       </div>

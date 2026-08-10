@@ -101,7 +101,8 @@ function SigVsBarCenterLabel({
   const gapSize = compact ? "text-[10px] sm:text-xs" : "text-xs sm:text-sm";
 
   if (variant === "belowBar") {
-    if (!gapLabel) return null;
+    const label = gapLabel == null ? null : String(gapLabel).trim();
+    if (label == null || label === "") return null;
     return (
       <div className="relative z-20 flex justify-center py-0.5" data-sig-vs-gap-row="true">
         <span
@@ -109,7 +110,7 @@ function SigVsBarCenterLabel({
           data-sig-vs-gap="true"
           title="선두 차액"
         >
-          +{gapLabel}
+          +{label}
         </span>
       </div>
     );
@@ -715,14 +716,12 @@ export default function SigMatchDuelOverlay({
   const vsCenterGapLabel = useMemo(() => {
     if (duelData.mode === "dual") {
       const gap = Math.abs(duelData.left.score - duelData.right.score);
-      if (gap <= 0) return null;
       return formatSigMatchGapLabel(gap, scoringMode);
     }
     if (duelData.mode === "triple") {
       const scores = duelData.sides.map((s) => s.score);
       const sorted = [...scores].sort((a, b) => b - a);
-      const gap = (sorted[0] ?? 0) - (sorted[1] ?? 0);
-      if (gap <= 0) return null;
+      const gap = Math.max(0, (sorted[0] ?? 0) - (sorted[1] ?? 0));
       return formatSigMatchGapLabel(gap, scoringMode);
     }
     return null;

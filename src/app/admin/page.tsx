@@ -14610,9 +14610,9 @@ export default function AdminPage() {
                   type="button"
                   className={`px-3 py-2 rounded border text-sm whitespace-nowrap ${omitTreasuryFromSettlement ? "border-amber-500 bg-amber-950/40 text-amber-300" : "border-white/10 bg-neutral-900/80 text-neutral-400"}`}
                   onClick={() => setOmitTreasuryFromSettlement((v) => !v)}
-                  title="국고 멤버 후원은 정산 합계·지급 대상에서 제외하고 별도 표시"
+                  title="운영비(국고) 멤버 후원은 정산 합계·지급 대상에서 제외하고 별도 표시"
                 >
-                  국고 정산 제외 {omitTreasuryFromSettlement ? "ON" : "OFF"}
+                  운영비 {omitTreasuryFromSettlement ? "ON" : "OFF"}
                 </button>
                 <button
                   type="button"
@@ -14630,7 +14630,7 @@ export default function AdminPage() {
                 </button>
               </div>
               <div className="mt-2 text-xs text-neutral-400 leading-relaxed">
-                · <span className="text-neutral-300">국고 정산 제외</span>: 국고 멤버 후원은 멤버별 최종 정산·합계에서 빠지고 참고용으로만 표시됩니다.
+                · <span className="text-neutral-300">운영비</span>: 국고 멤버 후원은 멤버별 최종 정산·합계에서 빠지고 참고용으로만 표시됩니다.
                 {" · "}
                 <span className="text-neutral-300">전체정산서 국고 포함</span>: 전체 정산서 PDF에 국고 50% 송금 행을 넣습니다(매출 30%의 절반).
               </div>

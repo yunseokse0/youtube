@@ -33,7 +33,7 @@ export default function BattleTeamScoreHeader({
   /** 0–100. 미지정 시 점수 비율(합 0이면 50:50) */
   leftRatio?: number;
   rightRatio?: number;
-  /** VS 아래 선두 차액 라벨 (예: "12,000"). 동점이면 숨김 */
+  /** VS 아래 선두 차액 라벨 (예: "12,000"). 동점(0)도 표시 */
   gapLabel?: string | null;
   /** VS 자리 — 기본은 VS 뱃지 (+ gapLabel) */
   centerSlot?: ReactNode;
@@ -63,11 +63,9 @@ export default function BattleTeamScoreHeader({
   const rightLeading = rightScore > leftScore;
   const scoreGap = Math.abs(leftScore - rightScore);
   const computedGap =
-    scoreGap > 0
-      ? typeof gapLabel === "string" && gapLabel.trim()
-        ? gapLabel.trim()
-        : formatScore(scoreGap)
-      : null;
+    typeof gapLabel === "string" && gapLabel.trim()
+      ? gapLabel.trim()
+      : formatScore(scoreGap);
   const barH = compact ? "h-12 sm:h-14" : "h-14 sm:h-16";
   const scoreSize = compact
     ? "text-xl sm:text-2xl md:text-3xl"
@@ -96,7 +94,7 @@ export default function BattleTeamScoreHeader({
   );
 
   const gapRow =
-    computedGap && !centerSlot ? (
+    !centerSlot ? (
       <div className="relative z-20 flex justify-center py-0.5" data-battle-vs-gap-row="true">
         <span
           className={`rounded-md bg-neutral-950/90 px-1.5 py-0.5 font-black tabular-nums text-amber-100 ring-1 ring-amber-300/40 ${gapSize}`}
@@ -160,7 +158,7 @@ export default function BattleTeamScoreHeader({
 
       {gapRow}
 
-      <div className={`grid grid-cols-2 gap-2 px-0.5 ${computedGap && !centerSlot ? "mt-1" : "mt-1.5"}`}>
+      <div className={`grid grid-cols-2 gap-2 px-0.5 ${gapRow ? "mt-1" : "mt-1.5"}`}>
         <div className="flex justify-start">
           <span
             className={`inline-flex max-w-full truncate rounded-md px-2.5 py-0.5 font-bold text-white shadow-sm ${nameSize} ${
