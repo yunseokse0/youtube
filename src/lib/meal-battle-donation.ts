@@ -1,4 +1,5 @@
 import type { MealBattleParticipant, MealBattleState, Member } from "@/types";
+import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 
 /** 후원 금액(원)을 식대전 점수 증분으로 환산: 만 원 단위 올림, 최소 1 */
 export function mealBattleDonationScoreDelta(amount: number, useRawAmount = false): number {
@@ -15,13 +16,15 @@ export function mealBattleUsesRawDonationScore(mealBattle: MealBattleState | und
   return Boolean(mealBattle.teamBattleEnabled);
 }
 
-/** 후원 연동 ON 시 참가자 행이 없으면 추가(게이지·점수 반영 대상) */
+/** 후원 연동 ON 시 참가자 행이 없으면 추가(게이지·점수 반영 대상). 운영비는 추가하지 않음 */
 export function ensureMealBattleParticipantRow(
   mealBattle: MealBattleState | undefined,
-  member: Pick<Member, "id" | "name">,
-  colorPalette: string[]
+  member: Pick<Member, "id" | "name" | "operating" | "realName">,
+  colorPalette: string[],
+  memberPositions?: Record<string, string> | null
 ): MealBattleParticipant[] {
   const existing = mealBattle?.participants || [];
+  if (isOperatingSettlementMember(member, memberPositions)) return existing;
   if (existing.some((p) => p.memberId === member.id)) return existing;
   const totalGoal = Math.max(1, Math.floor(mealBattle?.totalGoal || 100));
   const color =

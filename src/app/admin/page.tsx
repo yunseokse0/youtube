@@ -3141,19 +3141,13 @@ export default function AdminPage() {
 
   const setAllSigDonationLinks = (active: boolean) => {
     setState((prev: AppState) => {
-      const valid = new Set(prev.members.map((m) => m.id));
+      const playable = prev.members.filter(
+        (m) => !isOperatingSettlementMember(m, prev.memberPositions)
+      );
+      const valid = new Set(playable.map((m) => m.id));
       const ids = prev.sigMatchSettings?.participantMemberIds ?? [];
       const targets =
-        ids.length > 0
-          ? ids.filter((id) => valid.has(id))
-          : prev.members
-              .filter(
-                (m) =>
-                  !Boolean(m.operating) &&
-                  !/운영비/i.test(String(m.name || "")) &&
-                  !/운영비/i.test(String(m.realName || ""))
-              )
-              .map((m) => m.id);
+        ids.length > 0 ? ids.filter((id) => valid.has(id)) : playable.map((m) => m.id);
       const now = Date.now();
       const donationLinks: Record<string, { active: boolean; startedAt?: number }> = {
         ...(prev.sigMatchSettings.donationLinks || {}),
@@ -3379,6 +3373,7 @@ export default function AdminPage() {
     setState((prev: AppState) => {
       const member = prev.members.find((m) => m.id === memberId);
       if (!member) return prev;
+      if (isOperatingSettlementMember(member, prev.memberPositions)) return prev;
       const existing = prev.mealBattle?.participants || [];
       const exists = existing.some((p) => p.memberId === memberId);
       let participants = existing;
@@ -3445,7 +3440,13 @@ export default function AdminPage() {
     setState((prev: AppState) => {
       const member = prev.members.find((m) => m.id === memberId);
       if (!member) return prev;
-      const withRow = ensureMealBattleParticipantRow(prev.mealBattle, member, MEAL_PARTICIPANT_COLORS);
+      if (isOperatingSettlementMember(member, prev.memberPositions)) return prev;
+      const withRow = ensureMealBattleParticipantRow(
+        prev.mealBattle,
+        member,
+        MEAL_PARTICIPANT_COLORS,
+        prev.memberPositions
+      );
       let enabling = false;
       const participants = withRow.map((p) => {
         if (p.memberId !== memberId) return p;
@@ -3514,6 +3515,8 @@ export default function AdminPage() {
 
   const setMealBattleMemberTeam = (memberId: string, team: "" | "A" | "B") => {
     setState((prev: AppState) => {
+      const member = prev.members.find((m) => m.id === memberId);
+      if (member && isOperatingSettlementMember(member, prev.memberPositions)) return prev;
       const a = (prev.mealBattle?.teamAMemberIds || []).filter((id) => id !== memberId);
       const b = (prev.mealBattle?.teamBMemberIds || []).filter((id) => id !== memberId);
       const nextA = team === "A" ? [...a, memberId] : a;
@@ -6624,19 +6627,13 @@ export default function AdminPage() {
     }
     /** 활성화 시 참가자 후원 연동을 ON으로 맞춰 엑셀 배정 후원이 점수에 반영되게 함 */
     setState((prev: AppState) => {
-      const valid = new Set(prev.members.map((m) => m.id));
+      const playable = prev.members.filter(
+        (m) => !isOperatingSettlementMember(m, prev.memberPositions)
+      );
+      const valid = new Set(playable.map((m) => m.id));
       const ids = prev.sigMatchSettings?.participantMemberIds ?? [];
       const targets =
-        ids.length > 0
-          ? ids.filter((id) => valid.has(id))
-          : prev.members
-              .filter(
-                (m) =>
-                  !Boolean(m.operating) &&
-                  !/운영비/i.test(String(m.name || "")) &&
-                  !/운영비/i.test(String(m.realName || ""))
-              )
-              .map((m) => m.id);
+        ids.length > 0 ? ids.filter((id) => valid.has(id)) : playable.map((m) => m.id);
       const now = Date.now();
       const donationLinks: Record<string, { active: boolean; startedAt?: number }> = {
         ...(prev.sigMatchSettings.donationLinks || {}),
@@ -7495,7 +7492,7 @@ export default function AdminPage() {
                   <div>
                     <h4 className="text-sm font-semibold text-neutral-200">랭킹 표시 멤버 (참가자) · 후원 연동</h4>
                     <p className="mt-1 text-xs text-neutral-500">
-                      체크가 전부 켜져 있으면 전원이 랭킹에 나갑니다. 일부만 남기면 그 멤버만 표시·집계됩니다.
+                      체크가 전부 켜져 있으면 전원이 랭킹에 나갑니다(운영비 제외). 일부만 남기면 그 멤버만 표시·집계됩니다.
                       「후원 연동 ON」인 참가자에게 엑셀과 동일하게 배정된 후원만 시그 점수에 반영됩니다. OFF면 엑셀/멤버 금액은 그대로이고 시그 점수만 제외됩니다.
                     </p>
                   </div>
@@ -7523,11 +7520,15 @@ export default function AdminPage() {
                     </button>
                   </div>
                   <div className="flex flex-wrap gap-x-3 gap-y-2">
-                    {state.members.map((m) => {
+                    {state.members
+                      .filter((m) => !isOperatingSettlementMember(m, state.memberPositions))
+                      .map((m) => {
                       const ids = state.sigMatchSettings?.participantMemberIds ?? [];
                       const allMode = ids.length === 0;
                       const checked = allMode || ids.includes(m.id);
-                      const allMemberIds = state.members.map((x) => x.id);
+                      const playableMemberIds = state.members
+                        .filter((x) => !isOperatingSettlementMember(x, state.memberPositions))
+                        .map((x) => x.id);
                       const link = resolveSigMatchDonationLink(state.sigMatchSettings, m.id);
                       return (
                         <div key={`sig-part-${m.id}`} className="flex items-center gap-1.5 text-xs text-neutral-300">
@@ -7537,9 +7538,9 @@ export default function AdminPage() {
                               className="rounded border-white/20"
                               checked={checked}
                               onChange={() => {
-                                const valid = new Set(state.members.map((mm) => mm.id));
+                                const valid = new Set(playableMemberIds);
                                 if (allMode) {
-                                  const next = allMemberIds.filter((id) => id !== m.id);
+                                  const next = playableMemberIds.filter((id) => id !== m.id);
                                   updateSigMatchSettings({
                                     participantMemberIds: normalizeSigMatchParticipantIds(next, valid),
                                   });
@@ -7551,7 +7552,7 @@ export default function AdminPage() {
                                   } else {
                                     next = [...ids, m.id];
                                   }
-                                  if (next.length === 0 || next.length >= allMemberIds.length) {
+                                  if (next.length === 0 || next.length >= playableMemberIds.length) {
                                     updateSigMatchSettings({ participantMemberIds: [] });
                                   } else {
                                     updateSigMatchSettings({
@@ -8037,9 +8038,11 @@ export default function AdminPage() {
                           />
                         </label>
                       </div>
-                      <div className="text-xs text-neutral-400">전체 멤버를 A팀·B팀·미배정 중 하나로 지정합니다. 식대전 참가자만 점수가 합산됩니다.</div>
+                      <div className="text-xs text-neutral-400">전체 멤버를 A팀·B팀·미배정 중 하나로 지정합니다. 식대전 참가자만 점수가 합산됩니다. 운영비는 대전 참가 대상이 아닙니다.</div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[220px] overflow-y-auto pr-1">
-                        {state.members.map((m) => {
+                        {state.members
+                          .filter((m) => !isOperatingSettlementMember(m, state.memberPositions))
+                          .map((m) => {
                           const inA = (state.mealBattle?.teamAMemberIds || []).includes(m.id);
                           const inB = (state.mealBattle?.teamBMemberIds || []).includes(m.id);
                           const val = inA ? "A" : inB ? "B" : "";
@@ -8290,7 +8293,9 @@ export default function AdminPage() {
                   <span className="text-xs text-neutral-400">패널·게이지 테두리는 위 옵션을 켠 경우에만 오버레이에 표시됩니다.</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {state.members.map((m, idx) => {
+                  {state.members
+                    .filter((m) => !isOperatingSettlementMember(m, state.memberPositions))
+                    .map((m, idx) => {
                     const p = mealParticipants.find((x) => x.memberId === m.id);
                     const draft =
                       state.mealBattle?.memberGaugeColors?.[m.id] ||
@@ -8329,7 +8334,7 @@ export default function AdminPage() {
                   })}
                 </div>
                 <p className="text-[11px] text-amber-200/90">
-                  후원 연동: 「식사대전 동기화」모드 + 참가자 「후원 연동 ON」이어야 게이지 점수에 반영됩니다. 연동 ON 시 참가 체크가 없으면 자동으로 참가 처리됩니다.
+                  후원 연동: 「식사대전 동기화」모드 + 참가자 「후원 연동 ON」이어야 게이지 점수에 반영됩니다. 연동 ON 시 참가 체크가 없으면 자동으로 참가 처리됩니다. 운영비 멤버는 참가할 수 없습니다.
                 </p>
                 <div className="space-y-2">
                   {mealParticipants.map((row) => (

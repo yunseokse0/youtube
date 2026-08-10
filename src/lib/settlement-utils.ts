@@ -255,11 +255,7 @@ export function getSigMatchRankings(
   const positionMap = memberPositions || {};
   // 운영비는 시그 대결 참가/집계 대상에서 항상 제외
   const playableMembers = allMembers.filter(
-    (m) =>
-      !Boolean(m.operating) &&
-      !/운영비/i.test(String(m.name || "")) &&
-      !/운영비/i.test(String(m.realName || "")) &&
-      !/운영비/i.test(String(positionMap[m.id] || ""))
+    (m) => !isOperatingSettlementMember(m, positionMap)
   );
   const rawParticipants = settings.participantMemberIds || [];
   let rankingMembers = playableMembers;

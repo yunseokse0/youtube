@@ -1,6 +1,7 @@
 import { DEFAULT_MEAL_GAUGE_EFFECTS, normalizeMealGaugeEffects } from "@/lib/meal-gauge-effects";
 import { normalizeDonationTableColumnsOptions } from "@/lib/donation-table-options";
 import { notifyBroadcastStateLocalUpdated } from "@/lib/broadcast-state-local-sync";
+import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 import type {
   AppState,
   Donor,
@@ -1245,29 +1246,58 @@ function normalizeMealMatchSettings(input: unknown): MealMatchSettings {
 
 function syncBattleStateWithMembers(data: AppState): AppState {
   const validMemberIds = new Set((data.members || []).map((m) => m.id));
+  const memberById = new Map((data.members || []).map((m) => [m.id, m]));
+  const positions = data.memberPositions || {};
+  const isBattlePlayableId = (memberId: string) => {
+    if (!validMemberIds.has(memberId)) return false;
+    const m = memberById.get(memberId);
+    if (!m) return false;
+    return !isOperatingSettlementMember(m, positions);
+  };
 
   const syncedMealBattle: MealBattleState = {
     ...data.mealBattle,
-    participants: (data.mealBattle?.participants || []).filter((p) => validMemberIds.has(p.memberId)),
+    participants: (data.mealBattle?.participants || []).filter((p) => isBattlePlayableId(p.memberId)),
     memberGaugeColors: Object.fromEntries(
-      Object.entries(data.mealBattle?.memberGaugeColors || {}).filter(([memberId]) => validMemberIds.has(memberId))
+      Object.entries(data.mealBattle?.memberGaugeColors || {}).filter(([memberId]) =>
+        isBattlePlayableId(memberId)
+      )
     ),
-    teamAMemberIds: (data.mealBattle?.teamAMemberIds || []).filter((memberId) => validMemberIds.has(memberId)),
-    teamBMemberIds: (data.mealBattle?.teamBMemberIds || []).filter((memberId) => validMemberIds.has(memberId)),
+    teamAMemberIds: (data.mealBattle?.teamAMemberIds || []).filter((memberId) =>
+      isBattlePlayableId(memberId)
+    ),
+    teamBMemberIds: (data.mealBattle?.teamBMemberIds || []).filter((memberId) =>
+      isBattlePlayableId(memberId)
+    ),
   };
 
   const syncedMealMatch = Object.fromEntries(
-    Object.entries(data.mealMatch || {}).filter(([memberId]) => validMemberIds.has(memberId))
+    Object.entries(data.mealMatch || {}).filter(([memberId]) => isBattlePlayableId(memberId))
   ) as AppState["mealMatch"];
 
   const syncedSigMatch = Object.fromEntries(
-    Object.entries(data.sigMatch || {}).filter(([memberId]) => validMemberIds.has(memberId))
+    Object.entries(data.sigMatch || {}).filter(([memberId]) => isBattlePlayableId(memberId))
   ) as AppState["sigMatch"];
 
   const syncedMealMatchSettings: MealMatchSettings = {
     ...data.mealMatchSettings,
-    teamAMemberIds: (data.mealMatchSettings?.teamAMemberIds || []).filter((memberId) => validMemberIds.has(memberId)),
-    teamBMemberIds: (data.mealMatchSettings?.teamBMemberIds || []).filter((memberId) => validMemberIds.has(memberId)),
+    teamAMemberIds: (data.mealMatchSettings?.teamAMemberIds || []).filter((memberId) =>
+      isBattlePlayableId(memberId)
+    ),
+    teamBMemberIds: (data.mealMatchSettings?.teamBMemberIds || []).filter((memberId) =>
+      isBattlePlayableId(memberId)
+    ),
+  };
+
+  const syncedSigMatchSettings: SigMatchSettings = {
+    ...data.sigMatchSettings,
+    participantMemberIds: (data.sigMatchSettings?.participantMemberIds || []).filter((memberId) =>
+      isBattlePlayableId(memberId)
+    ),
+    sigMatchPools: (data.sigMatchSettings?.sigMatchPools || []).map((pool) => ({
+      ...pool,
+      memberIds: (pool.memberIds || []).filter((memberId) => isBattlePlayableId(memberId)),
+    })),
   };
 
   return {
@@ -1276,6 +1306,7 @@ function syncBattleStateWithMembers(data: AppState): AppState {
     mealMatch: syncedMealMatch,
     sigMatch: syncedSigMatch,
     mealMatchSettings: syncedMealMatchSettings,
+    sigMatchSettings: syncedSigMatchSettings,
   };
 }
 

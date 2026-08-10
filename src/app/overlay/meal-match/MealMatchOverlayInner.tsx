@@ -21,6 +21,7 @@ import { showOverlayDevHud, useOverlayHubCompactLayout } from "@/lib/overlay-dev
 import BattleRulesBox from "@/components/battle/BattleRulesBox";
 import BattleTeamColumnBoard from "@/components/battle/BattleTeamColumnBoard";
 import { mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
+import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 
 function outlineStyle(): React.CSSProperties {
   return { textShadow: "0 1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 -1px 0 #000, 0 0 8px rgba(0,0,0,.55)" };
@@ -34,15 +35,6 @@ function gaugeInBarScoreStyle(color: string): React.CSSProperties {
     WebkitTextStroke: "1px rgba(0,0,0,0.7)",
     paintOrder: "stroke fill",
   };
-}
-
-/** 엑셀표·식사대전과 동일: 운영비 행은 멤버 대전 상대로 치지 않음(`state.normalizeMember`와 맞춤) */
-function isOperatingMemberLike(m: { operating?: boolean; name?: string; realName?: string } | undefined): boolean {
-  if (!m) return false;
-  if (Boolean(m.operating)) return true;
-  const n = String(m.name || "");
-  const r = String(m.realName || "");
-  return /운영비/i.test(n) || /운영비/i.test(r);
 }
 
 function segmentBarStyle(seg: { memberId: string; color: string }): React.CSSProperties {
@@ -302,18 +294,33 @@ export default function MealMatchOverlayInner() {
     () => new Map((state?.members || []).map((m) => [m.id, m])),
     [state?.members]
   );
+  const mealPositions = state?.memberPositions || {};
   /** 운영비 등 비대전 멤버를 제외한 실질 참가자 — 1명이면 팀 게이지 대신 1인 채움 UI */
   const coreMealParticipants = useMemo(
-    () => participants.filter((p) => !isOperatingMemberLike(memberMapForMeal.get(p.memberId))),
-    [participants, memberMapForMeal]
+    () =>
+      participants.filter((p) => {
+        const m = memberMapForMeal.get(p.memberId);
+        if (!m) return false;
+        return !isOperatingSettlementMember(m, mealPositions);
+      }),
+    [participants, memberMapForMeal, mealPositions]
   );
   const soloMealParticipant =
-    participants.length === 1 ? participants[0] : coreMealParticipants.length === 1 ? coreMealParticipants[0] : null;
+    coreMealParticipants.length === 1
+      ? coreMealParticipants[0]
+      : participants.length === 1
+        ? (() => {
+            const only = participants[0];
+            const m = memberMapForMeal.get(only.memberId);
+            if (!m || isOperatingSettlementMember(m, mealPositions)) return null;
+            return only;
+          })()
+        : null;
   const shouldRenderMealMatchTimer = usePreviewTimer || showMealMatchTimer;
-  const totalScore = participants.reduce((sum, p) => sum + p.score, 0);
+  const totalScore = coreMealParticipants.reduce((sum, p) => sum + p.score, 0);
   const totalGoalsSum = useMemo(
-    () => Math.max(1, participants.reduce((s, p) => s + p.goal, 0)),
-    [participants]
+    () => Math.max(1, coreMealParticipants.reduce((s, p) => s + p.goal, 0)),
+    [coreMealParticipants]
   );
   const rawOverlayTitle = state?.mealBattle?.overlayTitle?.trim() || "";
   const defaultOverlayTitle = "식사 대전";
@@ -407,8 +414,8 @@ export default function MealMatchOverlayInner() {
   }, [demoEnabled, demoMode, mb?.teamBMemberIds]);
 
   const hasTeamRoster = useMemo(
-    () => participants.some((p) => teamAIds.has(p.memberId) || teamBIds.has(p.memberId)),
-    [participants, teamAIds, teamBIds]
+    () => coreMealParticipants.some((p) => teamAIds.has(p.memberId) || teamBIds.has(p.memberId)),
+    [coreMealParticipants, teamAIds, teamBIds]
   );
 
   const teamAgg = useMemo(() => {
@@ -416,7 +423,7 @@ export default function MealMatchOverlayInner() {
     let aGoal = 0;
     let bScore = 0;
     let bGoal = 0;
-    for (const p of participants) {
+    for (const p of coreMealParticipants) {
       if (teamAIds.has(p.memberId)) {
         aScore += p.score;
         aGoal += p.goal;
@@ -428,32 +435,34 @@ export default function MealMatchOverlayInner() {
     const resolvedAGoal = teamAGoalSetting > 0 ? teamAGoalSetting : Math.max(1, aGoal);
     const resolvedBGoal = teamBGoalSetting > 0 ? teamBGoalSetting : Math.max(1, bGoal);
     return { aScore, bScore, aGoal: resolvedAGoal, bGoal: resolvedBGoal };
-  }, [participants, teamAIds, teamBIds, teamAGoalSetting, teamBGoalSetting]);
+  }, [coreMealParticipants, teamAIds, teamBIds, teamAGoalSetting, teamBGoalSetting]);
 
   const useTeamSplitGauge = teamBattleEnabled && !fillGaugeMode && hasTeamRoster;
 
   const teamAMemberLabel = useMemo(
     () =>
-      participants
+      coreMealParticipants
         .filter((p) => teamAIds.has(p.memberId))
         .map((p) => p.name)
+        .filter(Boolean)
         .join(","),
-    [participants, teamAIds]
+    [coreMealParticipants, teamAIds]
   );
   const teamBMemberLabel = useMemo(
     () =>
-      participants
+      coreMealParticipants
         .filter((p) => teamBIds.has(p.memberId))
         .map((p) => p.name)
+        .filter(Boolean)
         .join(","),
-    [participants, teamBIds]
+    [coreMealParticipants, teamBIds]
   );
   const mealBattleUseRawScore = mealBattleUsesRawDonationScore(mb);
 
   const overlayRulesText = String(mb?.overlayRulesText || "").trim();
 
   const segments = useMemo(() => {
-    if (!participants.length || fillGaugeMode) return [];
+    if (!coreMealParticipants.length || fillGaugeMode) return [];
     if (useTeamSplitGauge) {
       const totalGoal = Math.max(1, teamAgg.aGoal + teamAgg.bGoal);
       if (teamAgg.aScore + teamAgg.bScore <= 0) {
@@ -501,19 +510,19 @@ export default function MealMatchOverlayInner() {
         },
       ];
     }
-    const slotPercent = 100 / Math.max(1, participants.length);
-    return participants.map((p, idx) => {
+    const slotPercent = 100 / Math.max(1, coreMealParticipants.length);
+    return coreMealParticipants.map((p, idx) => {
       const fillPercent = Math.min(100, (p.score / Math.max(1, p.goal)) * 100);
       return {
         ...p,
         // 멤버 슬롯은 고정(자리 유지), 슬롯 내부 채움만 점수에 따라 증가
         percent: slotPercent,
         fillPercent,
-        center: ((idx + 0.5) / participants.length) * 100,
+        center: ((idx + 0.5) / coreMealParticipants.length) * 100,
       };
     });
   }, [
-    participants,
+    coreMealParticipants,
     fillGaugeMode,
     useTeamSplitGauge,
     teamAgg,
@@ -523,7 +532,7 @@ export default function MealMatchOverlayInner() {
     teamBColor,
   ]);
 
-  const sortedByScore = [...participants].sort((a, b) => b.score - a.score);
+  const sortedByScore = [...coreMealParticipants].sort((a, b) => b.score - a.score);
   const topMemberId = soloMealParticipant?.memberId || sortedByScore[0]?.memberId || "";
   const leaderKey = useMemo(() => {
     if (useTeamSplitGauge) {
@@ -536,7 +545,9 @@ export default function MealMatchOverlayInner() {
 
   const unassignedScore = Math.max(0, totalScore - teamAgg.aScore - teamAgg.bScore);
   /** 운영비만 상대편인 1인 UI에서는 팀 색 띠 대신 단일 채움색 */
-  const operatingExcludedSoloUi = Boolean(soloMealParticipant && participants.length > 1);
+  const operatingExcludedSoloUi = Boolean(
+    soloMealParticipant && participants.length > coreMealParticipants.length
+  );
   const showTeamStripeInFill =
     fillGaugeMode && teamBattleEnabled && hasTeamRoster && totalScore > 0 && !operatingExcludedSoloUi;
 

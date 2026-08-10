@@ -66,6 +66,7 @@ import OverlayToonationRelayHost from "@/components/OverlayToonationRelayHost";
 import { GoalBar } from "@/components/GoalBar";
 import BattleTeamColumnBoard from "@/components/battle/BattleTeamColumnBoard";
 import { mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
+import { isOperatingSettlementMember } from "@/lib/settlement-utils";
 import {
   buildBroadcastTextOutlineShadowCss,
   buildBroadcastTextOutlineStyle,
@@ -2213,7 +2214,13 @@ function OverlayInner() {
     if (!showTeamBattle || !mb?.teamBattleEnabled) return null;
     const teamAIds = new Set(mb.teamAMemberIds || []);
     const teamBIds = new Set(mb.teamBMemberIds || []);
-    const participants = mb.participants || [];
+    const memberById = new Map((s?.members || []).map((m) => [m.id, m]));
+    const positions = s?.memberPositions || {};
+    const participants = (mb.participants || []).filter((p) => {
+      const m = memberById.get(p.memberId);
+      if (!m) return false;
+      return !isOperatingSettlementMember(m, positions);
+    });
     let aScore = 0;
     let bScore = 0;
     const aNames: string[] = [];
@@ -2235,7 +2242,7 @@ function OverlayInner() {
       bNames: bNames.join(","),
       useRaw: mealBattleUsesRawDonationScore(mb),
     };
-  }, [s?.mealBattle, showTeamBattle]);
+  }, [s?.mealBattle, s?.members, s?.memberPositions, showTeamBattle]);
 
   // 숫자 컬럼 가독성 우선: 이름 기본 폭을 확보하고 계좌·투네 열을 넓혀 백만원대 겹침을 줄인다(URL nameCh·bankCh·toonCh 로 조정 가능).
   const nameCh = Math.max(4, Math.min(40, parseInt(sp.get("nameCh") || (compact ? "7" : (isVertical ? "11" : "7")), 10)));
