@@ -127,6 +127,7 @@ import { formatSigMatchStat, formatSigMatchManualAdjustStepLabel, getSigMatchRan
 import { getEffectiveRemainingTime, mergeGeneralTimerPreferEffective, pauseTimer, resumeTimer } from "@/lib/timer-utils";
 import {
   appendAdminPreviewEmbedToOverlayUrl,
+  mergeOverlayPresetsPreferLocal,
   mergePresetBroadcastVisualParams,
   buildCompactBroadcastOverlayParams,
   appendGoalBarStyleParams,
@@ -1441,6 +1442,23 @@ export default function AdminPage() {
       merged = { ...merged, overlayPresets: local.overlayPresets };
       didPreserve = true;
     }
+    /** 엑셀표 프리셋: 저장 직후 GET/SSE가 구 색·글꼴로 덮지 않게 로컬 우선 병합 */
+    if (
+      (pendingUnsyncedRef.current || Date.now() - lastLocalPersistAtRef.current < 8000) &&
+      Array.isArray(local.overlayPresets) &&
+      local.overlayPresets.length > 0 &&
+      Array.isArray(merged.overlayPresets) &&
+      merged.overlayPresets.length > 0
+    ) {
+      merged = {
+        ...merged,
+        overlayPresets: mergeOverlayPresetsPreferLocal(
+          merged.overlayPresets as OverlayPresetLike[],
+          local.overlayPresets as OverlayPresetLike[]
+        ) as AppState["overlayPresets"],
+      };
+      didPreserve = true;
+    }
     /** 타이머 표시 색: 원격이 기본(빈 색)인데 로컬이 커스텀이면 유지 */
     if (
       hasCustomTimerDisplayStyles(local.timerDisplayStyles) &&
@@ -2008,7 +2026,12 @@ export default function AdminPage() {
       );
       setState(toApply);
       if (Array.isArray(toApply.overlayPresets)) {
-        setPresets(toApply.overlayPresets as OverlayPreset[]);
+        const nextOverlayPresets = toApply.overlayPresets as OverlayPreset[];
+        setPresets(nextOverlayPresets);
+        try {
+          window.localStorage.setItem(presetStorageKey, JSON.stringify(nextOverlayPresets));
+          notifyOverlayPresetsLocalUpdated();
+        } catch {}
       }
       try {
         window.localStorage.setItem(storageKey(user?.id), JSON.stringify(toApply));

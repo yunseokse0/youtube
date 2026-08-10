@@ -6,6 +6,8 @@ import {
   mergePresetBroadcastVisualParams,
   presetToParams,
   resolveOverlayTextSharpRender,
+  resolveTableBgColor,
+  resolveTableFontFamilyId,
   resolveTimerOverlayStyle,
   stripAdminPreviewHotReloadParams,
   type OverlayPresetLike,
@@ -210,5 +212,25 @@ describe("admin preview hot-reload params", () => {
     expect(
       resolveOverlayTextSharpRender(new URLSearchParams(), preset, { ready: true })
     ).toBe(true);
+  });
+
+  it("ignores stale URL tableFontFamily when ready and preset uses theme auto", () => {
+    const preset: OverlayPresetLike = {
+      id: "ov_font",
+      tableFontFamily: "",
+      showMembers: true,
+    };
+    const url = new URLSearchParams("tableFontFamily=sans");
+    expect(resolveTableFontFamilyId(url, preset, { ready: true })).toBe("auto");
+  });
+
+  it("ignores stale URL tableBgColor when ready and preset uses theme auto", () => {
+    const preset: OverlayPresetLike = {
+      id: "ov_bg",
+      tableBgColor: "",
+      showMembers: true,
+    };
+    const url = new URLSearchParams("tableBgColor=%23ff0000");
+    expect(resolveTableBgColor(url, preset, { ready: true })).toBe("");
   });
 });

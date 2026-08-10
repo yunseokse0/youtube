@@ -853,6 +853,33 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "totalTheme",
 ]);
 
+/** presetToParams에 비어 있으면 URL에 넣지 않는 키 — ready 후 URL 스테일 무시(테마·글꼴 자동) */
+const PRESET_EMPTY_USES_THEME_DEFAULT_KEYS = new Set([
+  "tableFontFamily",
+  "tableBgColor",
+  "tableHeaderBgColor",
+  "tableHeaderTextColor",
+  "tableLineColor",
+  "tableTextColor",
+  "tableTextOutlineColor",
+  "tableTextOutlineWidth",
+  "tableHeaderTextOutlineColor",
+  "tableHeaderTextOutlineWidth",
+  "tableFontWeight",
+  "accountColor",
+  "toonColor",
+  "membersTheme",
+  "totalTheme",
+  "goalTextColor",
+  "goalFontSize",
+  "goalTextOutlineColor",
+  "goalTextOutlineWidth",
+  "goalBarBgColor",
+  "goalBarFillColor",
+  "goalFontFamily",
+  "goalFontWeight",
+]);
+
 const GOAL_HEX_COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
 
 /** 후원 목표 글자색 — `#` 없이 입력해도 허용 */
@@ -891,6 +918,14 @@ export function resolveLivePresetStyleParam(
     fromPreset !== ""
   ) {
     return fromPreset;
+  }
+  /** 테마·글꼴 자동(프리셋 빈 값) — OBS·구 URL 스테일 무시 */
+  if (
+    opts.ready &&
+    PRESET_EMPTY_USES_THEME_DEFAULT_KEYS.has(key) &&
+    (fromPreset === null || fromPreset === "")
+  ) {
+    return null;
   }
   /** 타이머 색만: 프리셋이 비어 있으면 OBS URL에 남은 #ffffff 등을 무시 → timerDisplayStyles 사용 */
   if (opts.ready && TIMER_OVERLAY_LIVE_STYLE_KEYS.has(key)) {
@@ -1467,6 +1502,9 @@ export function resolveTableFontFamilyId(
   preset: OverlayPresetLike | null,
   opts: { ready: boolean }
 ): TableFontFamilyId {
+  if (opts.ready && preset) {
+    return normalizeTableFontFamily(preset.tableFontFamily || "");
+  }
   const merged = resolveLivePresetStyleParam(
     "tableFontFamily",
     rawSp,
