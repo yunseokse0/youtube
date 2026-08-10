@@ -1682,10 +1682,6 @@ function SigSalesOverlayPageInner() {
     state?.rouletteState?.oneShotResult?.name,
     state?.sigInventory,
   ]);
-    manualDraftEffective?.oneShotName,
-    machine.oneShot?.name,
-    state?.rouletteState?.oneShotResult?.name,
-  ]);
   useEffect(() => {
     if (!hideWheelAfterComplete) return;
     if (!oneShotEligibleAfterReveal) return;
