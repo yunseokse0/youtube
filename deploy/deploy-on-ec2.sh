@@ -10,6 +10,22 @@ NODE_HEAP_MB="${NODE_HEAP_MB:-2048}"
 STAGING_DIR="${NEXT_BUILD_DIR:-.next-staging}"
 PORT="${PORT:-3000}"
 
+AVAIL_KB="$(df -Pk / | awk 'NR==2 {print $4}')"
+AVAIL_MB=$((AVAIL_KB / 1024))
+echo "== disk free: ${AVAIL_MB}MB =="
+if [[ "$AVAIL_MB" -lt 2500 ]]; then
+  echo "경고: 루트 여유 ${AVAIL_MB}MB — 스테이징 빌드 전 정리 권장"
+  echo "  bash deploy/ec2-free-disk.sh"
+  echo "  또는 SHRINK_SWAP=1 bash deploy/ec2-free-disk.sh"
+  if [[ "$AVAIL_MB" -lt 1200 ]]; then
+    echo "여유 부족으로 중단 (ENOSPC 방지). 정리 후 다시 실행하세요."
+    exit 1
+  fi
+fi
+
+echo "== 이전 빌드 잔여 제거 =="
+rm -rf "$STAGING_DIR" .next.old .next/cache .next/types
+
 echo "== git pull =="
 # Next.js 빌드가 tsconfig.json 을 로컬에서 바꾸면 pull 이 막힘 — 배포 전 원복
 if ! git diff --quiet -- tsconfig.json 2>/dev/null; then
@@ -68,7 +84,9 @@ pm2 start "$PM2_APP" 2>/dev/null || pm2 restart "$PM2_APP" 2>/dev/null || {
   pm2 restart "$PM2_APP" 2>/dev/null || true
   exit 1
 }
-rm -rf .next.old
+rm -rf .next.old "$STAGING_DIR"
+# 빌드 직후 npm 캐시·apt 잔여 정리 (디스크 20GB 운영)
+npm cache clean --force 2>/dev/null || true
 
 echo "== health =="
 sleep 2
