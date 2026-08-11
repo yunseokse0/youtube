@@ -1,102 +1,232 @@
 #!/usr/bin/env bash
-# EC2 ~/youtube 에서: git pull → 스테이징 빌드(서비스 유지) → .next 교체(수 초만 중단) → pm2
+# EC2 원클릭 배포: pull → (디스크/스왑/binlog 보장) → 스테이징 빌드 → .next 교체 → MySQL·pm2·헬스
+# 사용 (레포 루트):
+#   bash deploy/deploy-on-ec2.sh
+#
+# 환경변수(선택):
+#   PM2_APP=youtube
+#   NODE_HEAP_MB=1536|2048
+#   SWAP_SIZE=1G              # 빌드용 스왑 (기본 1G — 20GB 디스크용)
+#   KEEP_SWAP=1              # 빌드 후 스왑 유지(기본). 0 이면 빌드 후 제거
+#   STOP_MYSQL_FOR_BUILD=1   # 빌드 중 MySQL 일시 정지(기본 1, OOM 완화)
+#   SKIP_GIT_PULL=0
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 PM2_APP="${PM2_APP:-youtube}"
-NODE_HEAP_MB="${NODE_HEAP_MB:-2048}"
+NODE_HEAP_MB="${NODE_HEAP_MB:-1536}"
 STAGING_DIR="${NEXT_BUILD_DIR:-.next-staging}"
 PORT="${PORT:-3000}"
+SWAP_FILE="${SWAP_FILE:-/swapfile}"
+SWAP_SIZE="${SWAP_SIZE:-1G}"
+KEEP_SWAP="${KEEP_SWAP:-1}"
+STOP_MYSQL_FOR_BUILD="${STOP_MYSQL_FOR_BUILD:-1}"
+SKIP_GIT_PULL="${SKIP_GIT_PULL:-0}"
+MYSQL_WAS_STOPPED=0
+SWAP_CREATED_BY_US=0
 
+run() {
+  if [[ "$(id -u)" == "0" ]]; then "$@"; else sudo "$@"; fi
+}
+
+cleanup_on_fail() {
+  echo "== 실패 복구: MySQL·pm2 기동 보장 =="
+  if [[ "$MYSQL_WAS_STOPPED" == "1" ]]; then
+    run systemctl start mysql 2>/dev/null || true
+  fi
+  pm2 start "$PM2_APP" 2>/dev/null || pm2 restart "$PM2_APP" 2>/dev/null || true
+}
+trap cleanup_on_fail ERR
+
+echo "=========================================="
+echo " youtube EC2 자동 배포"
+echo "=========================================="
+
+# ----- 디스크 -----
 AVAIL_KB="$(df -Pk / | awk 'NR==2 {print $4}')"
 AVAIL_MB=$((AVAIL_KB / 1024))
 echo "== disk free: ${AVAIL_MB}MB =="
-if [[ "$AVAIL_MB" -lt 2500 ]]; then
-  echo "경고: 루트 여유 ${AVAIL_MB}MB — 스테이징 빌드 전 정리 권장"
-  echo "  bash deploy/ec2-free-disk.sh"
-  echo "  또는 SHRINK_SWAP=1 bash deploy/ec2-free-disk.sh"
-  if [[ "$AVAIL_MB" -lt 1200 ]]; then
-    echo "여유 부족으로 중단 (ENOSPC 방지). 정리 후 다시 실행하세요."
-    exit 1
-  fi
+if [[ "$AVAIL_MB" -lt 2000 ]]; then
+  echo "== 여유 부족 — 캐시·빌드 잔여 자동 정리 =="
+  rm -rf "$STAGING_DIR" .next.old .next/cache .next/types 2>/dev/null || true
+  npm cache clean --force 2>/dev/null || true
+  rm -rf "${HOME}/.npm/_cacache" 2>/dev/null || true
+  run apt-get clean 2>/dev/null || true
+  pm2 flush 2>/dev/null || true
+  run journalctl --vacuum-size=80M 2>/dev/null || true
+  AVAIL_KB="$(df -Pk / | awk 'NR==2 {print $4}')"
+  AVAIL_MB=$((AVAIL_KB / 1024))
+  echo "== disk free after clean: ${AVAIL_MB}MB =="
+fi
+if [[ "$AVAIL_MB" -lt 900 ]]; then
+  echo "여유 ${AVAIL_MB}MB — ENOSPC 위험. bash deploy/ec2-free-disk.sh 후 재실행하세요."
+  exit 1
 fi
 
 echo "== 이전 빌드 잔여 제거 =="
 rm -rf "$STAGING_DIR" .next.old .next/cache .next/types
 
-echo "== git pull =="
-# Next.js 빌드가 tsconfig.json 을 로컬에서 바꾸면 pull 이 막힘 — 배포 전 원복
-if ! git diff --quiet -- tsconfig.json 2>/dev/null; then
-  echo "tsconfig.json 로컬 변경 감지 — git checkout 으로 원복 후 pull"
-  git checkout -- tsconfig.json
+# ----- MySQL binlog 만료 (디스크 재폭발 방지) -----
+BINLOG_CNF="/etc/mysql/mysql.conf.d/zzz-binlog-expire.cnf"
+if [[ ! -f "$BINLOG_CNF" ]]; then
+  echo "== MySQL binlog 1일 만료 설정 =="
+  run tee "$BINLOG_CNF" >/dev/null <<'EOF'
+[mysqld]
+binlog_expire_logs_seconds=86400
+EOF
+  if systemctl is-active --quiet mysql 2>/dev/null; then
+    run mysql --protocol=socket -e "SET GLOBAL binlog_expire_logs_seconds=86400; PURGE BINARY LOGS BEFORE NOW();" 2>/dev/null || true
+  fi
 fi
-git pull --ff-only
 
-if ! swapon --show 2>/dev/null | grep -q .; then
-  echo "== swap 없음 — 설정 시도 =="
-  bash deploy/ec2-setup-swap.sh || {
-    echo "스왑 설정 실패. sudo bash deploy/ec2-setup-swap.sh 후 다시 실행하세요."
-    exit 1
-  }
+# ----- git -----
+if [[ "$SKIP_GIT_PULL" != "1" ]]; then
+  echo "== git pull =="
+  if ! git diff --quiet -- tsconfig.json 2>/dev/null; then
+    echo "tsconfig.json 로컬 변경 감지 — checkout 후 pull"
+    git checkout -- tsconfig.json
+  fi
+  git pull --ff-only
 fi
+
+# ----- 스왑 (빌드용 1G) -----
+ensure_swap() {
+  if swapon --show 2>/dev/null | grep -q .; then
+    echo "== swap 이미 활성 =="
+    swapon --show || true
+    return 0
+  fi
+  echo "== swap ${SWAP_SIZE} 준비 (${SWAP_FILE}) =="
+  if [[ -f "$SWAP_FILE" ]]; then
+    run chmod 600 "$SWAP_FILE" || true
+    run mkswap "$SWAP_FILE" 2>/dev/null || true
+    run swapon "$SWAP_FILE" 2>/dev/null || {
+      run rm -f "$SWAP_FILE"
+    }
+  fi
+  if ! swapon --show 2>/dev/null | grep -q .; then
+    run fallocate -l "$SWAP_SIZE" "$SWAP_FILE" || run dd if=/dev/zero of="$SWAP_FILE" bs=1M count=1024 status=none
+    run chmod 600 "$SWAP_FILE"
+    run mkswap "$SWAP_FILE"
+    run swapon "$SWAP_FILE"
+    SWAP_CREATED_BY_US=1
+  fi
+  if ! grep -q "$SWAP_FILE" /etc/fstab 2>/dev/null; then
+    echo "$SWAP_FILE none swap sw 0 0" | run tee -a /etc/fstab >/dev/null
+  fi
+  swapon --show || true
+}
+ensure_swap
 
 echo "== 메모리 =="
 free -h
 
-echo "== 스테이징 빌드 (${STAGING_DIR}) — 기존 .next 로 서비스 유지 =="
-rm -rf "$STAGING_DIR" .next/types
+# ----- 빌드 중 MySQL 일시 정지 (OOM 방지) -----
+if [[ "$STOP_MYSQL_FOR_BUILD" == "1" ]] && systemctl is-active --quiet mysql 2>/dev/null; then
+  echo "== 빌드 중 MySQL 일시 정지 =="
+  run systemctl stop mysql
+  MYSQL_WAS_STOPPED=1
+fi
 
+# ----- 스테이징 빌드 -----
+echo "== 스테이징 빌드 (${STAGING_DIR}) heap=${NODE_HEAP_MB}MB =="
+rm -rf "$STAGING_DIR" .next/types
 export NODE_HEAP_MB
 export NEXT_BUILD_DIR="$STAGING_DIR"
-# build:prod 가 pm2 stop 하지 않도록 — PM2_APP 은 빌드 자식 프로세스에서만 제거(set -u 와 충돌 방지)
 set +e
 env -u PM2_APP npm run build:prod
 BUILD_CODE=$?
 set -e
 
-if [ "$BUILD_CODE" -ne 0 ]; then
-  echo "== 빌드 실패 — 스테이징 제거, 기존 .next·pm2 유지 =="
+if [[ "$BUILD_CODE" -ne 0 ]]; then
+  echo "== 빌드 실패 — 스테이징 제거, 서비스 복구 =="
   rm -rf "$STAGING_DIR"
+  if [[ "$MYSQL_WAS_STOPPED" == "1" ]]; then
+    run systemctl start mysql
+    MYSQL_WAS_STOPPED=0
+  fi
   pm2 restart "$PM2_APP" 2>/dev/null || pm2 start "$PM2_APP" 2>/dev/null || true
   exit "$BUILD_CODE"
 fi
 
-if [ ! -d "$STAGING_DIR" ]; then
+if [[ ! -d "$STAGING_DIR" ]]; then
   echo "== 빌드 산출물 없음: ${STAGING_DIR} =="
   exit 1
 fi
 
-echo "== .next 교체 (수 초만 502 가능) =="
+# ----- .next 교체 + 서비스 기동 -----
+echo "== .next 교체 · 서비스 기동 =="
 pm2 stop "$PM2_APP" 2>/dev/null || true
 rm -rf .next.old
-if [ -d .next ]; then
+if [[ -d .next ]]; then
   mv .next .next.old
 fi
 mv "$STAGING_DIR" .next
-pm2 start "$PM2_APP" 2>/dev/null || pm2 restart "$PM2_APP" 2>/dev/null || {
-  echo "== pm2 기동 실패 — .next 롤백 시도 =="
+
+if [[ "$MYSQL_WAS_STOPPED" == "1" ]]; then
+  echo "== MySQL 기동 =="
+  run systemctl start mysql
+  MYSQL_WAS_STOPPED=0
+  sleep 1
+fi
+
+# nginx
+if systemctl list-unit-files nginx.service >/dev/null 2>&1; then
+  run systemctl start nginx 2>/dev/null || true
+fi
+
+pm2 start "$PM2_APP" 2>/dev/null || pm2 restart "$PM2_APP" --update-env 2>/dev/null || {
+  echo "== pm2 기동 실패 — .next 롤백 =="
   rm -rf .next
-  if [ -d .next.old ]; then
+  if [[ -d .next.old ]]; then
     mv .next.old .next
   fi
   pm2 restart "$PM2_APP" 2>/dev/null || true
   exit 1
 }
+pm2 restart "$PM2_APP" --update-env 2>/dev/null || true
+pm2 save 2>/dev/null || true
+
 rm -rf .next.old "$STAGING_DIR"
-# 빌드 직후 npm 캐시·apt 잔여 정리 (디스크 20GB 운영)
 npm cache clean --force 2>/dev/null || true
 
+# ----- 빌드 후 스왑 -----
+if [[ "$KEEP_SWAP" != "1" ]] && [[ "$SWAP_CREATED_BY_US" == "1" || "${FORCE_REMOVE_SWAP:-0}" == "1" ]]; then
+  echo "== 빌드 후 스왑 제거 (디스크 절약) =="
+  run swapoff "$SWAP_FILE" 2>/dev/null || true
+  run rm -f "$SWAP_FILE"
+fi
+
+# ----- 헬스 -----
 echo "== health =="
 sleep 2
-curl -sf "http://127.0.0.1:${PORT}/api/health" && echo " health OK" || echo " health check 실패 — pm2 logs 확인"
+HEALTH_OK=0
+for i in 1 2 3 4 5; do
+  if curl -sf "http://127.0.0.1:${PORT}/api/health" >/dev/null; then
+    echo " health OK"
+    HEALTH_OK=1
+    break
+  fi
+  sleep 1
+done
+if [[ "$HEALTH_OK" != "1" ]]; then
+  echo " health check 실패 — pm2 logs ${PM2_APP} 확인"
+  pm2 logs "$PM2_APP" --lines 30 --nostream 2>/dev/null || true
+  exit 1
+fi
 
 OBS_TEXT_CODE="$(curl -sf -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/overlay/obs-text?u=finalent&host=obs&textId=default" || echo "000")"
 echo "overlay/obs-text HTTP ${OBS_TEXT_CODE}"
-if [ "$OBS_TEXT_CODE" != "200" ]; then
-  echo "경고: 텍스트 오버레이 라우트 비정상 — pm2 logs ${PM2_APP} 확인"
-fi
 
-echo "== pm2 =="
+echo "== 상태 =="
+df -h / | awk 'NR==1 || /root|\/$/'
+free -h | head -2
 pm2 status "$PM2_APP" || true
+systemctl is-active mysql 2>/dev/null && echo "mysql: active" || echo "mysql: $(systemctl is-active mysql 2>/dev/null || echo unknown)"
+
+trap - ERR
+echo "=========================================="
+echo " 배포 완료 — 바로 사용 가능"
+echo "=========================================="

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# EC2 1GB RAM 등 — Next.js 빌드용 스왑(기본 2GB). 인스턴스 업그레이드 없이 1회 실행.
+# EC2 1GB RAM 등 — Next.js 빌드용 스왑(기본 1GB, 20GB 디스크용). 인스턴스 업그레이드 없이 1회 실행.
 set -euo pipefail
 
-SWAP_SIZE="${SWAP_SIZE:-2G}"
+SWAP_SIZE="${SWAP_SIZE:-1G}"
 SWAP_FILE="${SWAP_FILE:-/swapfile}"
 
 if swapon --show 2>/dev/null | grep -q .; then
@@ -32,7 +32,7 @@ if [[ -f "$SWAP_FILE" ]]; then
   fi
 else
   echo "[swap] $SWAP_SIZE 스왑 파일 생성: $SWAP_FILE"
-  run fallocate -l "$SWAP_SIZE" "$SWAP_FILE" || run dd if=/dev/zero of="$SWAP_FILE" bs=1M count=2048 status=progress
+  run fallocate -l "$SWAP_SIZE" "$SWAP_FILE" || run dd if=/dev/zero of="$SWAP_FILE" bs=1M count=1024 status=progress
   run chmod 600 "$SWAP_FILE"
   run mkswap "$SWAP_FILE"
 fi
