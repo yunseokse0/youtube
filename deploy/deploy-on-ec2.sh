@@ -177,16 +177,25 @@ if systemctl list-unit-files nginx.service >/dev/null 2>&1; then
   run systemctl start nginx 2>/dev/null || true
 fi
 
-pm2 start "$PM2_APP" 2>/dev/null || pm2 restart "$PM2_APP" --update-env 2>/dev/null || {
+start_pm2_app() {
+  # 기존에 등록된 프로세스면 restart, 없으면 npm start 로 신규 등록
+  if pm2 describe "$PM2_APP" >/dev/null 2>&1; then
+    pm2 restart "$PM2_APP" --update-env
+    return $?
+  fi
+  pm2 start npm --name "$PM2_APP" -- start
+  return $?
+}
+
+if ! start_pm2_app; then
   echo "== pm2 기동 실패 — .next 롤백 =="
   rm -rf .next
   if [[ -d .next.old ]]; then
     mv .next.old .next
   fi
-  pm2 restart "$PM2_APP" 2>/dev/null || true
+  start_pm2_app || true
   exit 1
-}
-pm2 restart "$PM2_APP" --update-env 2>/dev/null || true
+fi
 pm2 save 2>/dev/null || true
 
 rm -rf .next.old "$STAGING_DIR"
