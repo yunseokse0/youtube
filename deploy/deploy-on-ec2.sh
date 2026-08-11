@@ -136,9 +136,11 @@ rm -rf "$STAGING_DIR" .next/types
 export NODE_HEAP_MB
 export NEXT_BUILD_DIR="$STAGING_DIR"
 set +e
-env -u PM2_APP npm run build:prod
+# 빌드 자식에만 NEXT_BUILD_DIR 전달 — 현재 셸/pm2 로 새지 않게
+env -u PM2_APP NEXT_BUILD_DIR="$STAGING_DIR" NODE_HEAP_MB="$NODE_HEAP_MB" npm run build:prod
 BUILD_CODE=$?
 set -e
+unset NEXT_BUILD_DIR || true
 
 if [[ "$BUILD_CODE" -ne 0 ]]; then
   echo "== 빌드 실패 — 스테이징 제거, 서비스 복구 =="
@@ -178,12 +180,16 @@ if systemctl list-unit-files nginx.service >/dev/null 2>&1; then
 fi
 
 start_pm2_app() {
+  # 빌드용 NEXT_BUILD_DIR 이 런타임에 남으면 next start 가 .next-staging 을 찾아 실패함
+  unset NEXT_BUILD_DIR || true
+  export NEXT_BUILD_DIR=""
   # 기존에 등록된 프로세스면 restart, 없으면 npm start 로 신규 등록
   if pm2 describe "$PM2_APP" >/dev/null 2>&1; then
     pm2 restart "$PM2_APP" --update-env
     return $?
   fi
-  pm2 start npm --name "$PM2_APP" -- start
+  # env 를 깨끗이: distDir 기본(.next) 사용
+  NEXT_BUILD_DIR= pm2 start npm --name "$PM2_APP" -- start
   return $?
 }
 
