@@ -63,14 +63,19 @@ function RoundTimerHud({
   );
 }
 
+function dirGlyph(dir: HighSocietySeat["expandDir"]): string {
+  if (dir === "right") return "→";
+  if (dir === "left") return "←";
+  return "↔";
+}
+
 function TerritoryGauge({
   style,
   seats,
-  fieldCm,
 }: {
   style: HighSocietyBarStyle;
   seats: HighSocietySeat[];
-  fieldCm: number;
+  fieldCm?: number;
 }) {
   const [ready, setReady] = useState(false);
   const [flashIds, setFlashIds] = useState<Record<string, number>>({});
@@ -112,66 +117,58 @@ function TerritoryGauge({
   const alive = seats.filter((s) => !s.eliminated);
   if (alive.length === 0) {
     return (
-      <div className="hs-lanes-panel" aria-label="영토 게이지">
-        <div className="hs-territory-empty">후원 대기 중 · 상류사회</div>
+      <div className="hs-field" aria-label="영토 전장">
+        <div className="hs-field-wall" title="장벽">
+          벽
+        </div>
+        <div className="hs-field-track">
+          <div className="hs-territory-empty">후원 대기 중 · 상류사회</div>
+        </div>
+        <div className="hs-field-wall" title="장벽">
+          벽
+        </div>
       </div>
     );
   }
 
   return (
     <div
-      className={`hs-lanes-panel hs-gauge-${style}${ready ? " hs-lanes-ready" : ""}`}
-      aria-label={`영토 게이지 (${style === "arrow" ? "화살표" : "평평"})`}
+      className={`hs-field hs-field-${style}${ready ? " hs-field-ready" : ""}`}
+      aria-label={`영토 전장 (${style === "arrow" ? "화살표" : "평평"})`}
     >
-      {seats.map((seat, i) => {
-        const fillPct = seat.eliminated
-          ? 0
-          : Math.max(4, Math.round((seat.widthCm / fieldCm) * 1000) / 10);
-        const growing = Boolean(flashIds[seat.id]);
-        return (
-          <div
-            key={seat.id}
-            className={`hs-lane-row${seat.eliminated ? " hs-lane-eliminated" : ""}${
-              growing ? " hs-lane-growing" : ""
-            }`}
-            style={{ ["--hs-i" as string]: String(i) }}
-          >
-            <div className="hs-lane-tag" title={`${seat.letter} · ${seat.name}`}>
-              {seat.name}
-            </div>
-            <div className={`hs-lane-track hs-lane-track-${style}`}>
-              <span className="hs-lane-center" aria-hidden title="전장 중앙">
-                <span className="hs-lane-center-line" />
-                <span className="hs-lane-center-label">중앙</span>
-              </span>
-              {!seat.eliminated ? (
-                <div
-                  className={`hs-lane-fill hs-lane-fill-${style}`}
-                  style={{
-                    width: ready ? `${fillPct}%` : "0%",
-                    background: seat.color,
-                    transitionDelay: ready ? `${i * 70}ms` : "0ms",
-                  }}
-                >
-                  <span className="hs-lane-sheen" aria-hidden />
-                  {style === "arrow" ? <span className="hs-lane-tip" aria-hidden /> : null}
-                </div>
-              ) : null}
-              <span className="hs-lane-fill-label">
-                {seat.eliminated
-                  ? `${seat.name} · 방석`
-                  : `${seat.name} : ${formatCm(seat.widthCm)}`}
-              </span>
-            </div>
+      <div className="hs-field-wall" title="장벽(이동 불가)">
+        벽
+      </div>
+      <div className="hs-field-track">
+        {alive.map((seat) => {
+          const growing = Boolean(flashIds[seat.id]);
+          return (
             <div
-              className={`hs-lane-meta${growing ? " hs-lane-meta-pop" : ""}`}
-              title={`라운드 확장 ${formatCm(seat.expandCm)}`}
+              key={seat.id}
+              className={`hs-field-seg hs-field-${seat.letter.toLowerCase()}${
+                growing ? " hs-field-seg-growing" : ""
+              }`}
+              style={{
+                flexGrow: ready ? Math.max(seat.widthCm, 0.01) : 0.01,
+                flexBasis: 0,
+                background: seat.color,
+              }}
+              title={`${seat.letter} ${seat.name} · ${formatCm(seat.widthCm)} · 확장 ${formatCm(seat.expandCm)}`}
             >
-              {seat.eliminated ? "—" : `+${formatCm(seat.expandCm)}`}
+              <span className="hs-field-label">
+                {seat.letter} : {formatCm(seat.widthCm)}
+              </span>
+              <span className="hs-field-dir" aria-hidden>
+                {dirGlyph(seat.expandDir)}
+              </span>
+              {style === "arrow" ? <span className="hs-field-arrow-tip" aria-hidden /> : null}
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
+      <div className="hs-field-wall" title="장벽(이동 불가)">
+        벽
+      </div>
     </div>
   );
 }
@@ -273,7 +270,7 @@ export default function HighSocietyOverlayPage() {
       <div id="hs-overlay-container">
         {useTest ? <div className="hs-test-badge">TEST</div> : null}
 
-        <TerritoryGauge style={barStyle} seats={field.seats} fieldCm={field.fieldCm} />
+        <TerritoryGauge style={barStyle} seats={field.seats} />
 
         {timerEnabled ? (
           <RoundTimerHud

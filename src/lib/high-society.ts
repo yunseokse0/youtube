@@ -603,12 +603,12 @@ export const HIGH_SOCIETY_BAR_STYLES: Array<{
   {
     id: "flat",
     label: "평평(사각)",
-    desc: "A~D 가로 게이지 · 사각 끝 · 영토 cm",
+    desc: "장벽(벽) + A~D 연속 영토 바 · 사각",
   },
   {
     id: "arrow",
     label: "화살표",
-    desc: "끝단 화살 팁 + 글로우 · 영토 cm",
+    desc: "장벽(벽) + 연속 바 · 세그먼트 끝 화살",
   },
 ];
 
