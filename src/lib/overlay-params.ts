@@ -168,6 +168,8 @@ export type OverlayPresetLike = {
   accountColor?: string;
   toonColor?: string;
   tableTextColor?: string;
+  /** 엑셀표 맨 아래「총합」행 글자색. 비우면 테마 자동(본문색과 별도) */
+  totalTextColor?: string;
   tableTextOutlineColor?: string;
   tableTextOutlineWidth?: string;
   /** 헤더 글자 외곽선 — 비우면 본문(tableTextOutline*)과 동일 */
@@ -355,6 +357,8 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
   if (preset.accountColor && preset.accountColor.trim()) q.set("accountColor", preset.accountColor.trim());
   if (preset.toonColor && preset.toonColor.trim()) q.set("toonColor", preset.toonColor.trim());
   if (preset.tableTextColor && preset.tableTextColor.trim()) q.set("tableTextColor", preset.tableTextColor.trim());
+  const totalTextColor = normalizeGoalHexColor((preset.totalTextColor || "").trim());
+  if (totalTextColor) q.set("totalTextColor", totalTextColor);
   const tableOutlineColor = normalizeGoalHexColor((preset.tableTextOutlineColor || "").trim());
   if (tableOutlineColor) q.set("tableTextOutlineColor", tableOutlineColor);
   const tableOutlineW = (preset.tableTextOutlineWidth || "").trim();
@@ -429,6 +433,7 @@ const PRESET_BROADCAST_SKIP_KEYS = new Set([
   "accountColor",
   "toonColor",
   "tableTextColor",
+  "totalTextColor",
   "tableTextOutlineColor",
   "tableTextOutlineWidth",
   "tableHeaderTextOutlineColor",
@@ -575,6 +580,7 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "accountColor",
   "toonColor",
   "tableTextColor",
+  "totalTextColor",
   "tableTextOutlineColor",
   "tableTextOutlineWidth",
   "tableHeaderTextOutlineColor",
@@ -1353,6 +1359,21 @@ export function resolveTableTextColor(
 ): string {
   const merged = resolveLivePresetStyleParam(
     "tableTextColor",
+    rawSp,
+    presetToParams(preset),
+    opts
+  );
+  return normalizeGoalHexColor(merged || "") || "";
+}
+
+/** 엑셀표 총합 행 글자색. 비우면 테마 자동 */
+export function resolveTotalTextColor(
+  rawSp: SearchParamsLike,
+  preset: OverlayPresetLike | null,
+  opts: { ready: boolean }
+): string {
+  const merged = resolveLivePresetStyleParam(
+    "totalTextColor",
     rawSp,
     presetToParams(preset),
     opts

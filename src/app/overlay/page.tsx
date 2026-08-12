@@ -33,6 +33,7 @@ import {
   shouldDefaultSharpRenderOnBroadcastHost,
   resolveGoalFontWeight,
   resolveTableTextColor,
+  resolveTotalTextColor,
   resolveTableBgColor,
   resolveTableHeaderBgColor,
   resolveTableHeaderTextColor,
@@ -2285,6 +2286,7 @@ function OverlayInner() {
   const accountColor = sp.get("accountColor") || undefined;
   const toonColor = sp.get("toonColor") || undefined;
   const tableTextColorRaw = resolveTableTextColor(rawSp, effectivePreset, { ready });
+  const totalTextColorRaw = resolveTotalTextColor(rawSp, effectivePreset, { ready });
   const tableBgColorRaw = resolveTableBgColor(rawSp, effectivePreset, { ready });
   const tableHeaderBgColorRaw = resolveTableHeaderBgColor(rawSp, effectivePreset, { ready });
   const tableHeaderTextColorRaw = resolveTableHeaderTextColor(rawSp, effectivePreset, { ready });
@@ -2424,6 +2426,7 @@ function OverlayInner() {
       .replace(/\s+/g, " ")
       .trim();
   const hasTableTextColorOverride = /^#[0-9a-fA-F]{3,8}$/.test(tableTextColorRaw);
+  const hasTotalTextColorOverride = /^#[0-9a-fA-F]{3,8}$/.test(totalTextColorRaw);
   const hasTableHeaderTextColorOverride = /^#[0-9a-fA-F]{3,8}$/.test(tableHeaderTextColorRaw);
   const hasTableHeaderBgColorOverride = /^#[0-9a-fA-F]{3,8}$/.test(tableHeaderBgColorRaw);
   const isLightTableSheet = isLightTableSheetRgb(tableSheetRgb);
@@ -2434,6 +2437,9 @@ function OverlayInner() {
   const tableThemeAutoTextColor = isLightTableSheet
     ? TABLE_BROADCAST_TEXT_ON_LIGHT
     : TABLE_BROADCAST_TEXT_ON_DARK;
+  const totalRowTextColor = hasTotalTextColorOverride
+    ? totalTextColorRaw
+    : tableThemeAutoTextColor;
   /** 본문 글자색(헤더·총합 행 제외) */
   const tableBodyForcedTextColorCss = hasTableTextColorOverride
     ? `
@@ -2442,13 +2448,17 @@ function OverlayInner() {
         .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td strong,
         .overlay-root .overlay-elegant-table tbody tr:not(.overlay-total-row) td .overlay-cell-text-inner {
           color: ${tableTextColorRaw} !important;
-        }
+        }`
+    : "";
+  const tableTotalForcedTextColorCss =
+    hasTotalTextColorOverride || hasTableTextColorOverride
+      ? `
         .overlay-root .overlay-elegant-table .overlay-total-row td,
         .overlay-root .overlay-elegant-table .overlay-total-row td span,
         .overlay-root .overlay-elegant-table .overlay-total-row td .overlay-cell-text-inner {
-          color: ${tableThemeAutoTextColor} !important;
+          color: ${totalRowTextColor} !important;
         }`
-    : "";
+      : "";
   /** 헤더(상단) 글자색 — 본문 tableTextColor 와 분리 */
   const tableHeaderForcedTextColorCss = hasTableHeaderTextColorOverride
     ? `
@@ -2459,7 +2469,7 @@ function OverlayInner() {
           color: ${tableHeaderTextColorRaw} !important;
         }`
     : "";
-  const tableForcedTextColorCss = `${tableBodyForcedTextColorCss}${tableHeaderForcedTextColorCss}`;
+  const tableForcedTextColorCss = `${tableBodyForcedTextColorCss}${tableTotalForcedTextColorCss}${tableHeaderForcedTextColorCss}`;
   /** 테마 자동: 방송 기본(핑크)만 — 엑셀 테마는 THEMES 글자색 유지 */
   const tableAutoTextColorCss =
     useBroadcastTableChrome && !hasTableTextColorOverride && !hasTableHeaderTextColorOverride
@@ -3978,8 +3988,9 @@ function OverlayInner() {
         }
         .overlay-root .overlay-elegant-table thead td.overlay-col-total,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-total {
-          padding-left: 0.95em !important;
-          padding-right: 0.55em !important;
+          padding-left: 0.75em !important;
+          padding-right: 0.75em !important;
+          text-align: center !important;
         }
         /* 마지막 열(기여도·화장실): 너무 오른쪽으로 밀려 보이지 않게 투네/합계 열과 유사한 간격으로 조정 */
         .overlay-root .overlay-elegant-table thead td.overlay-col-contribution,
@@ -3990,6 +4001,8 @@ function OverlayInner() {
           padding-right: 0.62em !important;
           overflow: visible !important;
         }
+        .overlay-root .overlay-elegant-table thead td.overlay-col-contribution,
+        .overlay-root .overlay-elegant-table tbody td.overlay-col-contribution,
         .overlay-root .overlay-elegant-table thead td.overlay-col-restroom,
         .overlay-root .overlay-elegant-table tbody td.overlay-col-restroom {
           text-align: center !important;
@@ -4206,10 +4219,10 @@ function OverlayInner() {
                       <td className={`${effectiveHeaderCls} overlay-col-account text-center`}>{accountHeaderLabel}</td>
                       <td className={`${effectiveHeaderCls} overlay-col-toon text-center`}>{toonHeaderLabel}</td>
                       {showCombinedColumn && (
-                        <td className={`${effectiveHeaderCls} overlay-col-total text-right`}>{totalHeaderLabel}</td>
+                        <td className={`${effectiveHeaderCls} overlay-col-total text-center`}>{totalHeaderLabel}</td>
                       )}
                       {showContributionColumn && (
-                        <td className={`${effectiveHeaderCls} overlay-col-contribution text-right`} title="관리자「기여도 기록부」값. 후원만 반영된 경우 계좌+투네 합으로 표시. 운영비 행은 기여도 미표시(—), 총합은 운영비 제외 합산.">
+                        <td className={`${effectiveHeaderCls} overlay-col-contribution text-center`} title="관리자「기여도 기록부」값. 후원만 반영된 경우 계좌+투네 합으로 표시. 운영비 행은 기여도 미표시(—), 총합은 운영비 제외 합산.">
                           기여도
                         </td>
                       )}
@@ -4295,7 +4308,7 @@ function OverlayInner() {
                           />
                         </td>
                         {showCombinedColumn && (
-                          <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>
+                          <td className={`${effectiveRowCls} overlay-col-total text-center font-bold`}>
                             <OverlayTableNumCell
                               value={m.account + m.toon}
                               format={fmtTotalCell}
@@ -4306,7 +4319,7 @@ function OverlayInner() {
                           </td>
                         )}
                         {showContributionColumn && (
-                          <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
+                          <td className={`${effectiveRowCls} overlay-col-contribution text-center font-semibold`}>
                             <OverlayTableNumCell
                               value={getContributionValueForMember(m)}
                               format={fmt}
@@ -4378,7 +4391,7 @@ function OverlayInner() {
                           />
                         </td>
                         {showCombinedColumn && (
-                          <td className={`${effectiveRowCls} overlay-col-total text-right font-bold`}>
+                          <td className={`${effectiveRowCls} overlay-col-total text-center font-bold`}>
                             <OverlayTableNumCell
                               value={m.account + m.toon}
                               format={fmtTotalCell}
@@ -4389,7 +4402,7 @@ function OverlayInner() {
                           </td>
                         )}
                         {showContributionColumn && (
-                          <td className={`${effectiveRowCls} overlay-col-contribution text-right font-semibold`}>
+                          <td className={`${effectiveRowCls} overlay-col-contribution text-center font-semibold`}>
                             <span className="overlay-num-cell-inner overlay-cell-text-inner overlay-rank-mark" style={overlayCellOutlineStyle}>
                               —
                             </span>
@@ -4437,7 +4450,7 @@ function OverlayInner() {
                           />
                         </td>
                         {showCombinedColumn && (
-                          <td className={`${overlayTotalRowCls} overlay-col-total text-right`}>
+                          <td className={`${overlayTotalRowCls} overlay-col-total text-center`}>
                             <OverlayTableNumCell
                               value={sumCombined}
                               format={fmt}
@@ -4448,7 +4461,7 @@ function OverlayInner() {
                           </td>
                         )}
                         {showContributionColumn && showContributionSum && (
-                          <td className={`${overlayTotalRowCls} overlay-col-contribution text-right`}>
+                          <td className={`${overlayTotalRowCls} overlay-col-contribution text-center`}>
                             <OverlayTableNumCell
                               value={sumContribution}
                               format={fmt}
@@ -4459,7 +4472,7 @@ function OverlayInner() {
                           </td>
                         )}
                         {showContributionColumn && !showContributionSum && (
-                          <td className={`${overlayTotalRowCls} overlay-col-contribution text-right`} />
+                          <td className={`${overlayTotalRowCls} overlay-col-contribution text-center`} />
                         )}
                         {showRestroomColumn && (
                           <td className={`${overlayTotalRowCls} overlay-col-restroom text-center`} />

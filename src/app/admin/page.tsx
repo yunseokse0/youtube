@@ -264,7 +264,7 @@ type OverlayPreset = {
   showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
-  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableFrameUrl?: string; tableFrameOpacity?: string; tableFrameInset?: string; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
+  confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableFrameUrl?: string; tableFrameOpacity?: string; tableFrameInset?: string; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; totalTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
   rankTop3Mode?: string; rankTop3Effect?: string; rankLabelFormat?: string; rank1Bg?: string; rank2Bg?: string; rank3Bg?: string; rank1Mark?: string; rank2Mark?: string; rank3Mark?: string; rank1Effect?: string; rank2Effect?: string; rank3Effect?: string; rank1TextColor?: string; rank2TextColor?: string; rank3TextColor?: string; rank1TextColorAlt?: string; rank2TextColorAlt?: string; rank3TextColorAlt?: string;
 };
 
@@ -2408,6 +2408,10 @@ export default function AdminPage() {
     if (patch.tableTextColor !== undefined) {
       const normalized = normalizeGoalHexColor(String(patch.tableTextColor || ""));
       mergedPatch.tableTextColor = normalized || "";
+    }
+    if (patch.totalTextColor !== undefined) {
+      const normalized = normalizeGoalHexColor(String(patch.totalTextColor || ""));
+      mergedPatch.totalTextColor = normalized || "";
     }
     if (patch.tableTextOutlineWidth !== undefined) {
       const w = parseFloat(String(patch.tableTextOutlineWidth || "").replace(/[^\d.]/g, "") || "0");
@@ -12944,6 +12948,17 @@ export default function AdminPage() {
                                         />
                                         <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">{p.tableTextColor || "테마 자동"}</span>
                                         <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { tableTextColor: "" })}>테마 자동</button>
+                                      </div>
+                                      <label className="text-xs text-neutral-400">총합 글자색</label>
+                                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                        <input
+                                          type="color"
+                                          className="h-9 w-14 shrink-0 rounded border border-white/10 bg-neutral-900/80 p-1 cursor-pointer"
+                                          value={toColorPickerValue(p.totalTextColor, "#111827")}
+                                          onChange={(e) => updatePreset(p.id, { totalTextColor: e.target.value })}
+                                        />
+                                        <span className="text-xs text-neutral-400 font-mono truncate max-w-[8rem] sm:max-w-none">{p.totalTextColor || "테마 자동"}</span>
+                                        <button type="button" className="shrink-0 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-xs" onClick={() => updatePreset(p.id, { totalTextColor: "" })}>테마 자동</button>
                                       </div>
                                     </div>
                                     <div className="text-xs font-semibold text-neutral-300 pt-0.5">공통</div>
