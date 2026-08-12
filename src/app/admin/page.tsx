@@ -554,6 +554,11 @@ export default function AdminPage() {
   const [donorMemberId, setDonorMemberId] = useState<string | null>(null);
   const [donorTarget, setDonorTarget] = useState<DonorTarget>("account");
   const [donorHsPushDir, setDonorHsPushDir] = useState<"left" | "right" | "system">("system");
+  /** 후원자 리스트 · 기존 후원 확장 방향 초안(적용 버튼으로 커밋) */
+  const [pendingHsPushDirByDonorId, setPendingHsPushDirByDonorId] = useState<
+    Record<string, "left" | "right" | "split" | "system">
+  >({});
+  const [hsPushDirApplyBusyId, setHsPushDirApplyBusyId] = useState<string | null>(null);
   const [toonationSocketEnabled, setToonationSocketEnabled] = useState(false);
   const [toonationListenerStatus, setToonationListenerStatus] = useState<ToonationListenerStatus | null>(null);
   const [toonationListenerMeta, setToonationListenerMeta] = useState<{
@@ -6651,8 +6656,8 @@ export default function AdminPage() {
       : 0;
   const patchHighSocietySettings = useCallback(
     (patch: Partial<ReturnType<typeof normalizeHighSocietySettings>>) => {
+      const wasOn = normalizeHighSocietySettings(stateRef.current.highSocietySettings).enabled;
       setState((prev: AppState) => {
-        const wasOn = normalizeHighSocietySettings(prev.highSocietySettings).enabled;
         const nextSettings = normalizeHighSocietySettings({
           ...normalizeHighSocietySettings(prev.highSocietySettings),
           ...patch,
@@ -6671,6 +6676,17 @@ export default function AdminPage() {
         }
         return next;
       });
+      const nextEnabled =
+        typeof patch.enabled === "boolean"
+          ? patch.enabled
+          : normalizeHighSocietySettings({
+              ...normalizeHighSocietySettings(stateRef.current.highSocietySettings),
+              ...patch,
+            }).enabled;
+      if (wasOn && !nextEnabled) {
+        setPendingHsPushDirByDonorId({});
+        setHsPushDirApplyBusyId(null);
+      }
     },
     [persistState]
   );
@@ -11631,7 +11647,8 @@ export default function AdminPage() {
                   <div>
                     <div className="text-sm font-semibold text-amber-100">상류사회 모드</div>
                     <p className="text-[11px] text-neutral-400 mt-0.5">
-                      ON이면 아래 리스트에 <strong className="text-neutral-300">확장(←/→)</strong> 열이 생깁니다. 가운데 좌석만 방향 변경 가능.
+                      ON이면 아래 리스트 <strong className="text-neutral-300">확장</strong>에서 이미 들어온 후원 방향을 바꾸고{" "}
+                      <strong className="text-amber-200/90">적용</strong>을 누르세요. (가운데 좌석만 · 끝자리는 ←/→고정)
                     </p>
                   </div>
                   <button
@@ -11716,7 +11733,7 @@ export default function AdminPage() {
                       <th className="text-left font-medium p-1">후원자</th>
                       <th className="text-left font-medium p-1">멤버</th>
                       {highSocietySettings.enabled ? (
-                        <th className="text-left font-medium p-1 w-28">확장</th>
+                        <th className="text-left font-medium p-1 min-w-[9.5rem]">확장</th>
                       ) : null}
                       <th className="text-left font-medium p-1">대상</th>
                       <th className="text-left font-medium p-1 min-w-[120px]">메시지</th>
@@ -11797,57 +11814,114 @@ export default function AdminPage() {
                                   </option>
                                 ))}
                               </select>
-                              {rowSeat ? (
-                                <span className="ml-1 text-[10px] text-amber-300/90">
-                                  #{rowSeat.index + 1}
-                                </span>
-                              ) : null}
                             </td>
                             {highSocietySettings.enabled ? (
                               <td className="p-1">
                                 {canSetPush ? (
-                                  <select
-                                    className="rounded border border-amber-400/35 bg-amber-950/50 px-1 py-0.5 text-[11px] text-amber-50"
-                                    value={
-                                      d.hsPushDir ||
-                                      "system"
-                                    }
-                                    title="상류사회 ON일 때만 · 원복 후 수동 방향 적용"
-                                    onChange={(e) => {
-                                      const raw = e.target.value;
-                                      const nextDir =
-                                        raw === "system" || raw === "left" || raw === "right" || raw === "split"
-                                          ? raw
-                                          : "system";
-                                      void (async () => {
-                                        const prev = stateRef.current;
-                                        if (!normalizeHighSocietySettings(prev.highSocietySettings).enabled) {
-                                          return;
-                                        }
-                                        const next = applyManualHsPushDirChange(prev, d.id, nextDir);
-                                        if (!next) return;
-                                        const preserved = markAuthoritativeDonationSave(
-                                          { serverUpdatedAt: next.updatedAt },
-                                          next,
-                                          { replaceDonors: true, awaitingServerSave: true }
-                                        );
-                                        setState(preserved);
-                                        await commitAuthoritativeDonorPersist(preserved);
-                                      })();
-                                    }}
-                                  >
-                                    <option value="system">
-                                      시스템(
-                                      {resolveSystemMiddlePushDir(highSocietySettings) === "left"
-                                        ? "←"
-                                        : "→"}
-                                      )
-                                    </option>
-                                    <option value="left">← 수동</option>
-                                    <option value="right">→ 수동</option>
-                                  </select>
+                                  (() => {
+                                    const savedDir: "left" | "right" | "split" | "system" =
+                                      d.hsPushDir === "left" ||
+                                      d.hsPushDir === "right" ||
+                                      d.hsPushDir === "split"
+                                        ? d.hsPushDir
+                                        : "system";
+                                    const draftDir =
+                                      pendingHsPushDirByDonorId[d.id] ?? savedDir;
+                                    const dirty = draftDir !== savedDir;
+                                    const applying = hsPushDirApplyBusyId === d.id;
+                                    return (
+                                      <div className="flex flex-wrap items-center gap-1">
+                                        <select
+                                          className="rounded border border-amber-400/35 bg-amber-950/50 px-1 py-0.5 text-[11px] text-amber-50"
+                                          value={draftDir === "split" ? "system" : draftDir}
+                                          title="방향을 고른 뒤 적용을 누르세요"
+                                          disabled={applying}
+                                          onChange={(e) => {
+                                            const raw = e.target.value;
+                                            const nextDir: "left" | "right" | "system" =
+                                              raw === "left" || raw === "right" || raw === "system"
+                                                ? raw
+                                                : "system";
+                                            setPendingHsPushDirByDonorId((prev) => ({
+                                              ...prev,
+                                              [d.id]: nextDir,
+                                            }));
+                                          }}
+                                        >
+                                          <option value="system">
+                                            시스템(
+                                            {resolveSystemMiddlePushDir(highSocietySettings) === "left"
+                                              ? "←"
+                                              : "→"}
+                                            )
+                                          </option>
+                                          <option value="left">← 수동</option>
+                                          <option value="right">→ 수동</option>
+                                        </select>
+                                        <button
+                                          type="button"
+                                          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                                            dirty && !applying
+                                              ? "bg-amber-600 hover:bg-amber-500 text-white"
+                                              : "bg-neutral-800 text-neutral-500 cursor-not-allowed"
+                                          }`}
+                                          disabled={!dirty || applying}
+                                          title="선택한 확장 방향을 이 후원에 저장"
+                                          onClick={() => {
+                                            void (async () => {
+                                              const prev = stateRef.current;
+                                              if (
+                                                !normalizeHighSocietySettings(prev.highSocietySettings)
+                                                  .enabled
+                                              ) {
+                                                return;
+                                              }
+                                              const nextDir = draftDir;
+                                              setHsPushDirApplyBusyId(d.id);
+                                              try {
+                                                const next = applyManualHsPushDirChange(
+                                                  prev,
+                                                  d.id,
+                                                  nextDir
+                                                );
+                                                setPendingHsPushDirByDonorId((map) => {
+                                                  const { [d.id]: _drop, ...rest } = map;
+                                                  return rest;
+                                                });
+                                                if (!next) {
+                                                  // 시스템과 동일한 수동 선택 등 — 저장값과 같아져 dirty 해제만
+                                                  setSyncStatus("synced");
+                                                  return;
+                                                }
+                                                const preserved = markAuthoritativeDonationSave(
+                                                  { serverUpdatedAt: next.updatedAt },
+                                                  next,
+                                                  { replaceDonors: true, awaitingServerSave: true }
+                                                );
+                                                setState(preserved);
+                                                const ok = await commitAuthoritativeDonorPersist(
+                                                  preserved
+                                                );
+                                                if (!ok) {
+                                                  window.alert(
+                                                    "확장 방향 저장에 실패했습니다. 잠시 후 다시 적용해 주세요."
+                                                  );
+                                                }
+                                              } finally {
+                                                setHsPushDirApplyBusyId((cur) =>
+                                                  cur === d.id ? null : cur
+                                                );
+                                              }
+                                            })();
+                                          }}
+                                        >
+                                          {applying ? "…" : "적용"}
+                                        </button>
+                                      </div>
+                                    );
+                                  })()
                                 ) : rowSeat ? (
-                                  <span className="text-[10px] text-neutral-400">
+                                  <span className="text-[10px] text-neutral-400" title="끝자리 좌석은 확장 방향이 고정입니다">
                                     {rowSeat.expandDir === "right" ? "→고정" : "←고정"}
                                   </span>
                                 ) : (
