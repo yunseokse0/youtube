@@ -11,10 +11,8 @@ import { getEffectiveRemainingTime } from "@/lib/timer-utils";
 import {
   buildHighSocietyFieldFromAppState,
   buildHighSocietyFieldFromMembers,
-  buildHighSocietyZones,
   formatCm,
   formatHighSocietyTimer,
-  formatManWon,
   HIGH_SOCIETY_ROUND_SEC,
   HIGH_SOCIETY_TEST_MEMBERS,
   normalizeHighSocietySettings,
@@ -183,7 +181,6 @@ export default function HighSocietyOverlayPage() {
   const userId = getOverlayUserIdFromSearchParams(sp);
   const hostObs = isOverlayBroadcastHost(sp);
   const useTest = (sp.get("test") || "").toLowerCase() === "true";
-  const corner = (sp.get("corner") || "right").toLowerCase() === "left" ? "left" : "right";
   const barFromUrl = sp.get("bar") || sp.get("gauge");
   const roundFromUrl = sp.get("round") || sp.get("r");
   const split = parseHighSocietySplit(sp.get("bLeft") || sp.get("b"), sp.get("cLeft") || sp.get("c"));
@@ -242,8 +239,6 @@ export default function HighSocietyOverlayPage() {
     return buildHighSocietyFieldFromAppState(state);
   }, [useTest, state, hsSettings, hasUrlSplit, split]);
 
-  const zones = useMemo(() => buildHighSocietyZones(field.seats), [field.seats]);
-
   const timerState = state?.generalTimer || null;
   const timerEnabled = state?.matchTimerEnabled?.general !== false;
 
@@ -273,10 +268,6 @@ export default function HighSocietyOverlayPage() {
     );
   }
 
-  const minimapTop = Math.min(56 + 8 + field.seats.length * 34 + (timerEnabled ? 44 : 0), 360);
-  const statusTotal = field.seats.reduce((s, x) => s + x.donationWon, 0);
-  const leader = field.leader;
-
   return (
     <main className={`hs-overlay-root${hostObs ? " hs-host-obs" : ""}`}>
       <div id="hs-overlay-container">
@@ -293,47 +284,6 @@ export default function HighSocietyOverlayPage() {
             ended={timerEnded}
           />
         ) : null}
-
-        <aside
-          className={`hs-minimap-frame hs-corner-${corner}`}
-          style={{ top: minimapTop }}
-          aria-label="상류사회 미니맵"
-        >
-          <div className="hs-map-grid">
-            {zones.map((zone) => (
-              <div
-                key={zone.id}
-                className={`hs-zone${zone.ownerName ? "" : " hs-zone-empty"}`}
-              >
-                {zone.ownerName ? (
-                  <div className="hs-zone-fill" style={{ background: zone.color }} />
-                ) : null}
-                <span className="hs-zone-pin">{zone.ownerName || zone.label}</span>
-              </div>
-            ))}
-          </div>
-          <div className="hs-status-panel">
-            {leader ? (
-              <>
-                <div>
-                  영토 1위 <strong>{leader.name}</strong> · {formatCm(leader.widthCm)}
-                </div>
-                <div>
-                  전장 {formatCm(field.fieldCm)} · {field.playerCount}등분(시작{" "}
-                  {formatCm(field.startCm)})
-                </div>
-                <div>라운드 후원 {formatManWon(statusTotal)}</div>
-                {field.cushion.length > 0 ? (
-                  <div className="hs-cushion">
-                    방석: {field.cushion.map((s) => s.name).join(", ")}
-                  </div>
-                ) : null}
-              </>
-            ) : (
-              <div>영토 미점유 · 후원을 기다립니다</div>
-            )}
-          </div>
-        </aside>
       </div>
     </main>
   );

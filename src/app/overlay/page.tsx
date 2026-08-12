@@ -59,6 +59,10 @@ import {
   type ResolvedTimerOverlayStyle,
 } from "@/lib/overlay-params";
 import { resolveTableFontFamilyCss } from "@/lib/table-font-style";
+import {
+  ensureTimerGoogleFontsLoaded,
+  resolveTimerFontFamilyCss,
+} from "@/lib/timer-font-style";
 import { getEffectiveRemainingTime, mergeGeneralTimerPreferEffective } from "@/lib/timer-utils";
 import { useFlip } from "@/lib/flip";
 import MissionBoard from "@/components/MissionBoard";
@@ -1668,6 +1672,7 @@ function DonorTicker({ donors, theme, fontSize, color, bgColor, bgOpacity, full,
 function Timer({
   elapsed,
   fontSize,
+  fontFamily,
   fontColor,
   bgColor,
   borderColor,
@@ -1677,6 +1682,7 @@ function Timer({
 }: {
   elapsed: string | null;
   fontSize: number;
+  fontFamily?: string;
   fontColor?: string;
   bgColor?: string;
   borderColor?: string;
@@ -1695,6 +1701,7 @@ function Timer({
   const noBackground =
     opacity <= 0 || bgLower === "transparent" || bgLower === "none" || bgLower === "rgba(0,0,0,0)";
   const noBorder = noBackground || borderLower === "transparent" || borderLower === "none";
+  const fontFamilyCss = resolveTimerFontFamilyCss(fontFamily);
   return (
     <div
       className={`inline-flex min-w-[4.5ch] items-center justify-center rounded-full px-4 py-1.5 ${noBackground ? "" : "backdrop-blur-md"}`}
@@ -1709,8 +1716,9 @@ function Timer({
       suppressHydrationWarning
     >
       <span
-        className={`font-mono font-bold tabular-nums ${hasCustomFontColor ? "" : "text-pastel-ink"}`}
+        className={`font-bold tabular-nums ${hasCustomFontColor ? "" : "text-pastel-ink"}`}
         style={{
+          fontFamily: fontFamilyCss,
           fontSize,
           lineHeight: 1.1,
           color: hasCustomFontColor ? fontColor : undefined,
@@ -2191,6 +2199,7 @@ function OverlayInner() {
     return next;
   }, [rawSp, effectivePreset, timerStyleFromState, ready, timerOnlyMode]);
   const timerShowHours = timerStyleResolved.showHours;
+  const timerFontFamily = timerStyleResolved.fontFamily;
   const timerFontColor = timerStyleResolved.fontColor;
   const timerBgColor = timerStyleResolved.bgColor;
   const timerBorderColor = timerStyleResolved.borderColor;
@@ -2200,6 +2209,9 @@ function OverlayInner() {
   const timerScalePercent = timerStyleResolved.scalePercent;
   const timerBaseFontSize = timerOnlyMode ? 56 : Math.max(28, Math.round(memberSize * 1.45));
   const timerFontSize = Math.max(14, Math.round(timerBaseFontSize * (timerScalePercent / 100)));
+  useEffect(() => {
+    if (showTimer) ensureTimerGoogleFontsLoaded();
+  }, [showTimer, timerFontFamily]);
   const matchTimerAllowed = useMemo(() => {
     if (!s?.matchTimerEnabled) return true;
     return s.matchTimerEnabled.general;
@@ -4548,6 +4560,7 @@ function OverlayInner() {
             <Timer
               elapsed={timerText}
               fontSize={timerFontSize}
+              fontFamily={timerFontFamily}
               fontColor={timerFontColor}
               bgColor={timerBgColor}
               borderColor={timerBorderColor}

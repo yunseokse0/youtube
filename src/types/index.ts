@@ -234,6 +234,8 @@ export type TimerState = {
 
 export type TimerDisplayStyle = {
   showHours: boolean;
+  /** 타이머 글꼴 id (`src/lib/timer-font-style.ts`) — 기본 mono */
+  fontFamily: string;
   fontColor: string;
   bgColor: string;
   borderColor: string;

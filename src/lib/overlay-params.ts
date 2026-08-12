@@ -2,6 +2,7 @@ import type { DonorRankingsTheme, SigItem } from "@/types";
 import { appendExcelRankTop3Params } from "@/lib/excel-rank-top3-style";
 import { mergeDonationTablePresetFields } from "@/lib/donation-table-options";
 import { normalizeTableFontFamily, type TableFontFamilyId } from "@/lib/table-font-style";
+import { normalizeTimerFontFamily } from "@/lib/timer-font-style";
 import {
   normalizeGoalBarAnimation,
   resolveGoalBarFillColor,
@@ -107,6 +108,7 @@ export type OverlayPresetLike = {
   timerStart?: number | null;
   timerAnchor?: string;
   timerShowHours?: boolean;
+  timerFontFamily?: string;
   timerFontColor?: string;
   timerBgColor?: string;
   timerBorderColor?: string;
@@ -296,6 +298,7 @@ export function presetToParams(preset: OverlayPresetLike | null): URLSearchParam
     q.set("timerStart", String(preset.timerStart));
     q.set("timerAnchor", preset.timerAnchor || "tr");
     if (preset.timerShowHours) q.set("timerShowHours", "true");
+    if (preset.timerFontFamily && preset.timerFontFamily.trim()) q.set("timerFontFamily", preset.timerFontFamily.trim());
     if (preset.timerFontColor && preset.timerFontColor.trim()) q.set("timerFontColor", preset.timerFontColor.trim());
     if (preset.timerBgColor && preset.timerBgColor.trim()) q.set("timerBgColor", preset.timerBgColor.trim());
     if (preset.timerBorderColor && preset.timerBorderColor.trim()) q.set("timerBorderColor", preset.timerBorderColor.trim());
@@ -694,6 +697,7 @@ export const ADMIN_PREVIEW_HOT_RELOAD_PARAM_KEYS = [
   "tickerInPersonalGoal",
   "timerAnchor",
   "timerShowHours",
+  "timerFontFamily",
   "timerFontColor",
   "timerBgColor",
   "timerBorderColor",
@@ -847,6 +851,7 @@ export const OVERLAY_LIVE_PRESET_STYLE_KEYS = new Set([
   "tableHeaderTextColor",
   "tableLineColor",
   /** 타이머 색·스타일 — OBS URL 스테일 방지 */
+  "timerFontFamily",
   "timerFontColor",
   "timerBgColor",
   "timerBorderColor",
@@ -902,6 +907,7 @@ export function normalizeGoalHexColor(raw: string): string | null {
  */
 /** 타이머 색·스케일 — ready 후 빈 프리셋이면 URL 스테일을 쓰지 않음 */
 const TIMER_OVERLAY_LIVE_STYLE_KEYS = new Set([
+  "timerFontFamily",
   "timerFontColor",
   "timerBgColor",
   "timerBorderColor",
@@ -943,6 +949,7 @@ export function resolveLivePresetStyleParam(
 }
 
 export type ResolvedTimerOverlayStyle = {
+  fontFamily: string;
   fontColor?: string;
   bgColor?: string;
   borderColor?: string;
@@ -955,6 +962,7 @@ export type ResolvedTimerOverlayStyle = {
 
 type TimerStyleFromStateLike = {
   showHours?: boolean;
+  fontFamily?: string;
   fontColor?: string;
   bgColor?: string;
   borderColor?: string;
@@ -1039,7 +1047,13 @@ export function resolveTimerOverlayStyle(
     ? showHoursRaw.toLowerCase() === "true"
     : (stateStyle?.showHours ?? !opts.timerOnlyDefaultShowHours);
 
+  const fontFamilyRaw =
+    pickTimerPresetOrParam("timerFontFamily", "timerFontFamily", rawSp, preset, opts) ||
+    (stateStyle?.fontFamily || "").trim() ||
+    "mono";
+
   return {
+    fontFamily: normalizeTimerFontFamily(fontFamilyRaw),
     fontColor,
     bgColor,
     borderColor,

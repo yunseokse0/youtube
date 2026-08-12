@@ -57,6 +57,7 @@ import { MANUAL_SIG_DRAFT_STATE_KEY } from "@/lib/manual-sig-workbench";
 import { OBS_TEXT_OVERLAY_STATE_KEY, normalizeObsTextRegistry, type ObsTextOverlayRegistry } from "@/lib/obs-text-overlay";
 import { slimSigInventoryForWire } from "@/lib/state-wire-slim";
 import { sanitizeAppStateWheelDemo } from "@/lib/sig-wheel-demo-pool";
+import { normalizeTimerFontFamily } from "@/lib/timer-font-style";
 export type {
   AppState,
   ContributionLog,
@@ -1349,6 +1350,7 @@ function normalizeMatchTimerEnabled(input: unknown): MatchTimerEnabled {
 function defaultTimerDisplayStyle(): TimerDisplayStyle {
   return {
     showHours: false,
+    fontFamily: "mono",
     fontColor: "",
     bgColor: "",
     borderColor: "",
@@ -1359,12 +1361,17 @@ function defaultTimerDisplayStyle(): TimerDisplayStyle {
   };
 }
 
-/** 타이머 표시 색이 전부 비어 기본값인지 */
+/** 타이머 표시 색·글꼴이 전부 비어 기본값인지 */
 export function isDefaultLikeTimerDisplayStyle(
   style: TimerDisplayStyle | null | undefined
 ): boolean {
   if (!style) return true;
+  const font = String(style.fontFamily || "")
+    .trim()
+    .toLowerCase();
+  const fontIsDefault = !font || font === "mono" || font === "default" || font === "auto";
   return (
+    fontIsDefault &&
     !String(style.fontColor || "").trim() &&
     !String(style.bgColor || "").trim() &&
     !String(style.borderColor || "").trim() &&
@@ -1383,8 +1390,10 @@ function normalizeTimerDisplayStyle(input: unknown): TimerDisplayStyle {
   const op = Number(v.bgOpacity);
   const scale = Number(v.scalePercent);
   const outlineWidth = Number(v.outlineWidth);
+  const fontFamilyRaw = typeof v.fontFamily === "string" ? v.fontFamily.trim() : "";
   return {
     showHours: typeof v.showHours === "boolean" ? v.showHours : false,
+    fontFamily: normalizeTimerFontFamily(fontFamilyRaw || "mono"),
     fontColor: typeof v.fontColor === "string" ? v.fontColor : "",
     bgColor: typeof v.bgColor === "string" ? v.bgColor : "",
     borderColor: typeof v.borderColor === "string" ? v.borderColor : "",

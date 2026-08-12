@@ -137,6 +137,12 @@ import {
   type OverlayPresetLike,
 } from "@/lib/overlay-params";
 import { TABLE_FONT_FAMILY_OPTIONS, clampTableMemberSizePx, normalizeTableFontFamily } from "@/lib/table-font-style";
+import {
+  TIMER_FONT_FAMILY_OPTIONS,
+  ensureTimerGoogleFontsLoaded,
+  normalizeTimerFontFamily,
+  resolveTimerFontFamilyCss,
+} from "@/lib/timer-font-style";
 import { resetOverlayPresetsGoalForDonationInit } from "@/lib/goal-preset-math";
 import { planSigBulkReupload, sigBulkFilesWithoutNameMatch } from "@/lib/sig-image-bulk";
 import { parseSigMetaFromFileName } from "@/lib/sig-filename-meta";
@@ -270,7 +276,7 @@ type OverlayPreset = {
   showTeamBattle?: boolean; teamBattleAnchor?: string;
   showPersonalGoal?: boolean; personalGoalTheme?: string; personalGoalAnchor?: string; personalGoalLimit?: string; personalGoalFree?: boolean; personalGoalX?: string; personalGoalY?: string;
   tickerInMembers?: boolean; tickerInGoal?: boolean; tickerInPersonalGoal?: boolean;
-  showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
+  showTicker: boolean; tickerAnchor?: string; tickerWidth?: string; tickerFree?: boolean; tickerX?: string; tickerY?: string; showTimer: boolean; timerStart: number | null; timerAnchor: string; timerShowHours?: boolean; timerFontFamily?: string; timerFontColor?: string; timerBgColor?: string; timerBorderColor?: string; timerBgOpacity?: string; timerScale?: string;
   showMission: boolean; missionAnchor: string;
   showBottomDonors?: boolean; donorsSize?: string; donorsGap?: string; donorsSpeed?: string; donorsLimit?: string; donorsFormat?: string; donorsUnit?: string; donorsColor?: string; donorsBgColor?: string; donorsBgOpacity?: string; tickerTheme?: string; tickerGlow?: string; tickerShadow?: string; currencyLocale?: string; tableOnly?: boolean;
   confettiMilestone?: string; tableBgOpacity?: string; tableBgGifUrl?: string; tableBgGifOpacity?: string; tableBgGifBrightness?: string; tableFrameUrl?: string; tableFrameOpacity?: string; tableFrameInset?: string; tableBgColor?: string; tableHeaderBgColor?: string; tableHeaderTextColor?: string; tableLineColor?: string; totalLineVisible?: boolean; vertical?: boolean; accountColor?: string; toonColor?: string; tableTextColor?: string; totalTextColor?: string; tableTextOutlineColor?: string; tableTextOutlineWidth?: string; tableHeaderTextOutlineColor?: string; tableHeaderTextOutlineWidth?: string; tableFontWeight?: string; tableFontFamily?: string; host?: string;
@@ -860,7 +866,7 @@ export default function AdminPage() {
     showMembers: true, showTotal: true, totalMode: "total", showGoal: false, goal: "0", goalLabel: "후원", showPersonalGoal: false, personalGoalTheme: "goalClassic", personalGoalAnchor: "tl", personalGoalLimit: "3", personalGoalFree: false, personalGoalX: "78", personalGoalY: "82",
     tickerInMembers: false, tickerInGoal: false, tickerInPersonalGoal: false,
     goalWidth: "400", goalAnchor: "bc", goalCurrent: "", goalOpacity: "", goalOpacityText: false, showTicker: false, tickerAnchor: "bc", tickerWidth: "600", tickerFree: false, tickerX: "50", tickerY: "86", showTimer: false,
-    timerStart: null, timerAnchor: "tr", timerShowHours: false, timerFontColor: "", timerBgColor: "", timerBorderColor: "", timerBgOpacity: "40", timerScale: "100", showMission: false, missionAnchor: "br",
+    timerStart: null, timerAnchor: "tr", timerShowHours: false, timerFontFamily: "mono", timerFontColor: "", timerBgColor: "", timerBorderColor: "", timerBgOpacity: "40", timerScale: "100", showMission: false, missionAnchor: "br",
     missionWidth: "800", missionDuration: "25",
     membersTheme: "auto", totalTheme: "auto", goalTheme: "auto", tickerBaseTheme: "auto", timerTheme: "auto", missionTheme: "auto",
     showBottomDonors: false, donorsSize: "", donorsGap: "16", donorsSpeed: "60", donorsLimit: "8", donorsFormat: "short", donorsUnit: "", donorsColor: "", donorsBgColor: "", donorsBgOpacity: "0", tickerTheme: "auto", tickerGlow: "45", tickerShadow: "35", currencyLocale: "ko-KR",
@@ -1697,6 +1703,7 @@ export default function AdminPage() {
               timerDisplayStyles: {
                 general: {
                   showHours: Boolean(presetWithTimer.timerShowHours),
+                  fontFamily: normalizeTimerFontFamily(presetWithTimer.timerFontFamily || "mono"),
                   fontColor: String(presetWithTimer.timerFontColor || ""),
                   bgColor: String(presetWithTimer.timerBgColor || ""),
                   borderColor: String(presetWithTimer.timerBorderColor || ""),
@@ -2462,6 +2469,7 @@ export default function AdminPage() {
     setState((prev: AppState) => {
       const settingsPatch = { currentPresetId: id };
       const timerColorTouched =
+        mergedPatch.timerFontFamily !== undefined ||
         mergedPatch.timerFontColor !== undefined ||
         mergedPatch.timerBgColor !== undefined ||
         mergedPatch.timerBorderColor !== undefined ||
@@ -2476,6 +2484,10 @@ export default function AdminPage() {
                 mergedPatch.timerShowHours !== undefined
                   ? Boolean(mergedPatch.timerShowHours)
                   : Boolean(prevTimer?.showHours),
+              fontFamily:
+                mergedPatch.timerFontFamily !== undefined
+                  ? normalizeTimerFontFamily(mergedPatch.timerFontFamily)
+                  : normalizeTimerFontFamily(prevTimer?.fontFamily || "mono"),
               fontColor:
                 mergedPatch.timerFontColor !== undefined
                   ? String(mergedPatch.timerFontColor || "")
@@ -5343,7 +5355,7 @@ export default function AdminPage() {
   const updateTimerDisplayStyle = (key: "general", patch: Partial<AppState["timerDisplayStyles"]["general"]>) => {
     setState((prev: AppState) => {
       const baseStyles = prev.timerDisplayStyles || {
-        general: { showHours: false, fontColor: "", bgColor: "", borderColor: "", outlineColor: "", outlineWidth: 0.8, bgOpacity: 40, scalePercent: 100 },
+        general: { showHours: false, fontFamily: "mono", fontColor: "", bgColor: "", borderColor: "", outlineColor: "", outlineWidth: 0.8, bgOpacity: 40, scalePercent: 100 },
       };
       const nextGeneral = {
         ...baseStyles[key],
@@ -5359,6 +5371,7 @@ export default function AdminPage() {
           if (!p.showTimer) return p;
           return {
             ...p,
+            ...(patch.fontFamily !== undefined ? { timerFontFamily: String(patch.fontFamily || "mono") } : {}),
             ...(patch.fontColor !== undefined ? { timerFontColor: String(patch.fontColor || "") } : {}),
             ...(patch.bgColor !== undefined ? { timerBgColor: String(patch.bgColor || "") } : {}),
             ...(patch.borderColor !== undefined ? { timerBorderColor: String(patch.borderColor || "") } : {}),
@@ -10329,6 +10342,7 @@ export default function AdminPage() {
                   const timer = state[timerDef.key];
                   const timerStyle = state.timerDisplayStyles?.[timerDef.flag] || {
                     showHours: false,
+                    fontFamily: "mono",
                     fontColor: "",
                     bgColor: "",
                     borderColor: "",
@@ -10337,6 +10351,8 @@ export default function AdminPage() {
                     bgOpacity: 40,
                     scalePercent: 100,
                   };
+                  const timerFontId = normalizeTimerFontFamily(timerStyle.fontFamily);
+                  const timerFontCss = resolveTimerFontFamilyCss(timerFontId);
                   const effective = getEffectiveRemainingTime(timer, timerUiNow);
                   const mm = Math.floor(effective / 60);
                   const ss = effective % 60;
@@ -10427,6 +10443,56 @@ export default function AdminPage() {
                         >
                           시:분:초 {timerStyle.showHours ? "ON" : "OFF"} (OFF=분:초)
                         </button>
+                        <label className="text-xs text-neutral-400">글꼴</label>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <select
+                            className="min-w-[12rem] max-w-full px-2 py-1.5 rounded bg-neutral-900/80 border border-white/10 text-sm"
+                            value={timerFontId}
+                            onFocus={() => ensureTimerGoogleFontsLoaded()}
+                            onChange={(e) => {
+                              ensureTimerGoogleFontsLoaded();
+                              updateTimerDisplayStyle(timerDef.flag, {
+                                fontFamily: normalizeTimerFontFamily(e.target.value),
+                              });
+                            }}
+                          >
+                            <optgroup label="귀여운">
+                              {TIMER_FONT_FAMILY_OPTIONS.filter((o) => o.group === "cute").map((opt) => (
+                                <option key={opt.id} value={opt.id}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </optgroup>
+                            <optgroup label="디스플레이">
+                              {TIMER_FONT_FAMILY_OPTIONS.filter((o) => o.group === "display").map((opt) => (
+                                <option key={opt.id} value={opt.id}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </optgroup>
+                            <optgroup label="깔끔·가독">
+                              {TIMER_FONT_FAMILY_OPTIONS.filter((o) => o.group === "clean").map((opt) => (
+                                <option key={opt.id} value={opt.id}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </optgroup>
+                            <optgroup label="레트로">
+                              {TIMER_FONT_FAMILY_OPTIONS.filter((o) => o.group === "retro").map((opt) => (
+                                <option key={opt.id} value={opt.id}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </optgroup>
+                          </select>
+                          <span
+                            className="inline-flex items-center rounded border border-white/10 bg-neutral-950/80 px-3 py-1 text-lg font-bold tabular-nums text-white"
+                            style={{ fontFamily: timerFontCss }}
+                            title="미리보기"
+                          >
+                            {String(mm).padStart(2, "0")}:{String(ss).padStart(2, "0")}
+                          </span>
+                        </div>
                         <label className="text-xs text-neutral-400">글자 색상</label>
                         <div className="flex items-center gap-2">
                           <input
@@ -10590,7 +10656,7 @@ export default function AdminPage() {
                 </span>
               </div>
 
-              <div className="mb-4 rounded-lg border border-amber-400/35 bg-amber-950/25 p-3 space-y-3">
+              <div id="high-society-mode" className="mb-4 rounded-lg border border-amber-400/35 bg-amber-950/25 p-3 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <div className="text-sm font-semibold text-amber-100">상류사회 모드 (땅따먹기)</div>
@@ -12702,53 +12768,122 @@ export default function AdminPage() {
                       OBS 캔버스·브라우저 소스 <strong className="text-neutral-300">1080×1920</strong>.
                     </p>
                   </div>
-                  <div className="flex flex-col items-end gap-2 shrink-0">
-                    <code className="max-w-[min(100%,420px)] break-all text-[11px] text-amber-100/90">
-                      /overlay/high-society?u={overlayUserId}&host=obs&bar=flat&round=1
-                    </code>
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <button
-                        type="button"
-                        className={`rounded px-2 py-1 text-xs ${copiedId === "dash-high-society" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
-                        onClick={() => {
-                          const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs&bar=flat&round=1`;
-                          void copyUrl(u, "dash-high-society");
-                        }}
-                      >
-                        {copiedId === "dash-high-society" ? "복사됨!" : "OBS URL 복사(평평)"}
-                      </button>
-                      <button
-                        type="button"
-                        className={`rounded px-2 py-1 text-xs ${copiedId === "dash-high-society-arrow" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
-                        onClick={() => {
-                          const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs&bar=arrow&round=1`;
-                          void copyUrl(u, "dash-high-society-arrow");
-                        }}
-                      >
-                        {copiedId === "dash-high-society-arrow" ? "복사됨!" : "OBS URL 복사(화살표)"}
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded bg-amber-700 hover:bg-amber-600 px-2 py-1 text-xs font-semibold text-white"
-                        onClick={() =>
-                          window.open(
-                            `/overlay/high-society?u=${overlayUserId}&test=true&bar=flat&round=1&timerSec=120`,
-                            "_blank",
-                            "noopener,noreferrer"
-                          )
-                        }
-                      >
-                        테스트 미리보기
-                      </button>
-                    </div>
+                  <button
+                    type="button"
+                    className={`rounded px-3 py-1.5 text-xs font-semibold shrink-0 ${
+                      highSocietySettings.enabled
+                        ? "bg-amber-600 text-white"
+                        : "bg-neutral-700 text-neutral-200 hover:bg-neutral-600"
+                    }`}
+                    onClick={() => patchHighSocietySettings({ enabled: !highSocietySettings.enabled })}
+                  >
+                    {highSocietySettings.enabled ? "상류사회 ON" : "상류사회 OFF"}
+                  </button>
+                </div>
+
+                <div className="rounded border border-white/10 bg-black/25 p-2.5 space-y-2">
+                  <div className="text-[11px] font-semibold text-amber-100/95">가운데 좌석 · 확장 방향</div>
+                  <p className="text-[10px] text-neutral-400 leading-snug">
+                    양끝은 고정(좌끝→ / 우끝←). 가운데 후원은 아래 시스템 기본으로 밀고, 건별 수동은{" "}
+                    <button
+                      type="button"
+                      className="text-sky-400 underline"
+                      onClick={() => {
+                        moveToSection("donor", "donor-management");
+                        window.setTimeout(() => {
+                          document.getElementById("high-society-mode")?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "start",
+                          });
+                        }, 80);
+                      }}
+                    >
+                      후원자 기록부
+                    </button>
+                    에서 설정합니다.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={!highSocietySettings.enabled}
+                      className={`rounded px-3 py-1.5 text-xs font-semibold border disabled:opacity-40 ${
+                        resolveSystemMiddlePushDir(highSocietySettings) === "left"
+                          ? "border-amber-400 bg-amber-700/90 text-white"
+                          : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
+                      }`}
+                      onClick={() => patchHighSocietySettings({ defaultMiddlePush: "left" })}
+                    >
+                      ← 왼쪽
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!highSocietySettings.enabled}
+                      className={`rounded px-3 py-1.5 text-xs font-semibold border disabled:opacity-40 ${
+                        resolveSystemMiddlePushDir(highSocietySettings) === "right"
+                          ? "border-amber-400 bg-amber-700/90 text-white"
+                          : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-white/30"
+                      }`}
+                      onClick={() => patchHighSocietySettings({ defaultMiddlePush: "right" })}
+                    >
+                      오른쪽 →
+                    </button>
+                  </div>
+                  {!highSocietySettings.enabled ? (
+                    <p className="text-[10px] text-amber-200/80">방향 설정은 상류사회 ON일 때만 적용됩니다.</p>
+                  ) : null}
+                </div>
+
+                <div className="flex flex-col items-stretch gap-2">
+                  <code className="max-w-full break-all text-[11px] text-amber-100/90">
+                    /overlay/high-society?u={overlayUserId}&host=obs&bar=
+                    {highSocietySettings.barStyle || "flat"}
+                    &round={highSocietySettings.round || 1}
+                  </code>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className={`rounded px-2 py-1 text-xs ${copiedId === "dash-high-society" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                      onClick={() => {
+                        patchHighSocietySettings({ barStyle: "flat" });
+                        const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs&bar=flat&round=${highSocietySettings.round || 1}`;
+                        void copyUrl(u, "dash-high-society");
+                      }}
+                    >
+                      {copiedId === "dash-high-society" ? "복사됨!" : "OBS URL 복사(평평)"}
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded px-2 py-1 text-xs ${copiedId === "dash-high-society-arrow" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                      onClick={() => {
+                        patchHighSocietySettings({ barStyle: "arrow" });
+                        const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs&bar=arrow&round=${highSocietySettings.round || 1}`;
+                        void copyUrl(u, "dash-high-society-arrow");
+                      }}
+                    >
+                      {copiedId === "dash-high-society-arrow" ? "복사됨!" : "OBS URL 복사(화살표)"}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded bg-amber-700 hover:bg-amber-600 px-2 py-1 text-xs font-semibold text-white"
+                      onClick={() =>
+                        window.open(
+                          `/overlay/high-society?u=${overlayUserId}&test=true&bar=${highSocietySettings.barStyle || "flat"}&round=${highSocietySettings.round || 1}&timerSec=120`,
+                          "_blank",
+                          "noopener,noreferrer"
+                        )
+                      }
+                    >
+                      테스트 미리보기
+                    </button>
                   </div>
                 </div>
                 <div className="rounded-lg border border-white/10 bg-black/30 overflow-hidden">
                   <div className="relative w-full bg-black/50 mx-auto" style={{ maxWidth: 270, aspectRatio: "9 / 16" }}>
                     {overlayUserId ? (
                       <iframe
+                        key={`hs-preview-${highSocietySettings.barStyle || "flat"}`}
                         src={appendAdminPreviewEmbedToOverlayUrl(
-                          `/overlay/high-society?u=${encodeURIComponent(overlayUserId)}`
+                          `/overlay/high-society?u=${encodeURIComponent(overlayUserId)}&bar=${encodeURIComponent(highSocietySettings.barStyle || "flat")}&round=${highSocietySettings.round || 1}`
                         )}
                         title="상류사회 세로 오버레이 미리보기"
                         className="absolute inset-0 h-full w-full border-0"

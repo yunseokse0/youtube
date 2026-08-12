@@ -11,7 +11,6 @@ import {
  * 상류사회 세로(9:16) 오버레이 데모 — 로그인 없이 test 데이터로 확인
  */
 export default function HighSocietyDemoPage() {
-  const [corner, setCorner] = useState<"right" | "left">("right");
   const [hostObs, setHostObs] = useState(false);
   const [barStyle, setBarStyle] = useState<HighSocietyBarStyle>("flat");
   const [round, setRound] = useState(1);
@@ -26,7 +25,6 @@ export default function HighSocietyDemoPage() {
   const iframeSrc = useMemo(() => {
     const q = new URLSearchParams({
       test: "true",
-      corner,
       bar: barStyle,
       round: String(round),
       timerSec: "3600",
@@ -35,7 +33,7 @@ export default function HighSocietyDemoPage() {
     });
     if (hostObs) q.set("host", "obs");
     return `/overlay/high-society?${q.toString()}`;
-  }, [corner, hostObs, barStyle, round, bLeft, cLeft]);
+  }, [hostObs, barStyle, round, bLeft, cLeft]);
 
   const obsPath = `/overlay/high-society?u=din&host=obs&bar=${barStyle}&round=${round}`;
   const obsUrl = origin ? `${origin}${obsPath}` : obsPath;
@@ -119,24 +117,6 @@ export default function HighSocietyDemoPage() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
-                corner === "right" ? "bg-amber-600 text-white" : "bg-neutral-800 text-neutral-300"
-              }`}
-              onClick={() => setCorner("right")}
-            >
-              미니맵 우측
-            </button>
-            <button
-              type="button"
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
-                corner === "left" ? "bg-amber-600 text-white" : "bg-neutral-800 text-neutral-300"
-              }`}
-              onClick={() => setCorner("left")}
-            >
-              미니맵 좌측
-            </button>
             <button
               type="button"
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
