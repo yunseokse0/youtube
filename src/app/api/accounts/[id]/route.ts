@@ -1,7 +1,20 @@
 export const revalidate = 0;
+export const runtime = "nodejs";
 
 import { loadAccounts, saveAccounts } from "@/lib/accounts-storage";
 import type { Account } from "../route";
+import { registerMysqlKvBackend } from "../../_shared/upstash";
+
+async function ensureMysqlKvBackend(): Promise<void> {
+  const url = String(process.env.DATABASE_URL || "").trim();
+  if (!url || !/^mysql:\/\//i.test(url)) return;
+  try {
+    const mysqlKv = await import("../../_shared/mysql-kv");
+    registerMysqlKvBackend(mysqlKv);
+  } catch (err) {
+    console.error("[api/accounts/[id]] mysql-kv register failed", err);
+  }
+}
 
 function getAdminKey(req: Request): string | null {
   const url = new URL(req.url);
@@ -36,10 +49,12 @@ export async function PATCH(
   }
   const { id } = await params;
   try {
+    await ensureMysqlKvBackend();
     const body = (await req.json()) as {
       startDate?: string | null;
       endDate?: string | null;
       unlimited?: boolean;
+      password?: string | null;
     };
     const list = await loadAccounts();
     const idx = list.findIndex((a) => a.id === id);
@@ -59,6 +74,16 @@ export async function PATCH(
       if (body.endDate !== undefined) {
         list[idx].endDate = body.endDate ? new Date(body.endDate).getTime() : null;
       }
+    }
+    if (typeof body.password === "string") {
+      const nextPassword = body.password.trim();
+      if (!nextPassword) {
+        return new Response(JSON.stringify({ error: "비밀번호를 비울 수 없습니다." }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      list[idx] = { ...list[idx], password: nextPassword };
     }
     const saved = await saveAccounts(list);
     if (!saved.ok) {

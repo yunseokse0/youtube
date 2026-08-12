@@ -15,6 +15,46 @@ function apiUrl(path: string, key: string) {
   return `${path}?key=${encodeURIComponent(key)}`;
 }
 
+function PasswordField({
+  value,
+  onChange,
+  placeholder,
+  required,
+  autoFocus,
+  className = "w-full px-3 py-2 rounded bg-neutral-800 border border-white/10 pr-16",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  required?: boolean;
+  autoFocus?: boolean;
+  className?: string;
+}) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        type={visible ? "text" : "password"}
+        className={className}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        required={required}
+        autoFocus={autoFocus}
+        autoComplete="new-password"
+      />
+      <button
+        type="button"
+        className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded text-xs text-neutral-300 hover:text-white hover:bg-white/10"
+        onClick={() => setVisible((v) => !v)}
+        aria-label={visible ? "비밀번호 숨기기" : "비밀번호 보기"}
+      >
+        {visible ? "숨기기" : "보기"}
+      </button>
+    </div>
+  );
+}
+
 export default function CreateAccountsPage() {
   const [key, setKey] = useState("");
   const [keyInput, setKeyInput] = useState("");
@@ -31,7 +71,12 @@ export default function CreateAccountsPage() {
     unlimited: true,
   });
   const [editing, setEditing] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ startDate: "", endDate: "", unlimited: true });
+  const [editForm, setEditForm] = useState({
+    startDate: "",
+    endDate: "",
+    unlimited: true,
+    password: "",
+  });
 
   const fetchAccounts = async () => {
     if (!key) return;
@@ -104,7 +149,6 @@ export default function CreateAccountsPage() {
     setError("");
   };
 
-
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!key) return;
@@ -153,6 +197,7 @@ export default function CreateAccountsPage() {
 
   const handleUpdate = async (id: string) => {
     if (!key) return;
+    const nextPassword = editForm.password.trim();
     try {
       const r = await fetch(apiUrl(`/api/accounts/${id}`, key), {
         method: "PATCH",
@@ -161,6 +206,7 @@ export default function CreateAccountsPage() {
           startDate: editForm.unlimited ? null : editForm.startDate || null,
           endDate: editForm.unlimited ? null : editForm.endDate || null,
           unlimited: editForm.unlimited,
+          ...(nextPassword ? { password: nextPassword } : {}),
         }),
       });
       const data = await r.json();
@@ -169,6 +215,7 @@ export default function CreateAccountsPage() {
         return;
       }
       setEditing(null);
+      setEditForm((f) => ({ ...f, password: "" }));
       fetchAccounts();
     } catch {
       setError("수정 중 오류가 발생했습니다.");
@@ -181,6 +228,7 @@ export default function CreateAccountsPage() {
       startDate: a.startDate ? new Date(a.startDate).toISOString().slice(0, 10) : "",
       endDate: a.endDate ? new Date(a.endDate).toISOString().slice(0, 10) : "",
       unlimited: a.startDate == null && a.endDate == null,
+      password: "",
     });
   };
 
@@ -191,13 +239,15 @@ export default function CreateAccountsPage() {
           <h1 className="text-xl font-bold mb-4 text-center">계정 관리</h1>
           <p className="text-neutral-400 text-sm mb-4 text-center">접근 키를 입력하세요.</p>
           <form onSubmit={handleKeySubmit} className="space-y-4">
-            <input
-              type="password"
-              className="w-full px-4 py-3 rounded bg-neutral-800 border border-white/10"
+            <PasswordField
               value={keyInput}
-              onChange={(e) => { setKeyInput(e.target.value); setError(""); }}
+              onChange={(v) => {
+                setKeyInput(v);
+                setError("");
+              }}
               placeholder="접근 키"
               autoFocus
+              className="w-full px-4 py-3 rounded bg-neutral-800 border border-white/10 pr-16"
             />
             {error && <p className="text-red-400 text-sm">{error}</p>}
             <button type="submit" className="w-full py-3 rounded bg-emerald-600 hover:bg-emerald-500 font-medium">
@@ -249,11 +299,9 @@ export default function CreateAccountsPage() {
             </div>
             <div>
               <label className="block text-xs text-neutral-400 mb-1">비밀번호</label>
-              <input
-                type="password"
-                className="w-full px-3 py-2 rounded bg-neutral-800 border border-white/10"
+              <PasswordField
                 value={form.password}
-                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                onChange={(v) => setForm((f) => ({ ...f, password: v }))}
                 placeholder="비밀번호"
                 required
               />
@@ -319,7 +367,7 @@ export default function CreateAccountsPage() {
               </thead>
               <tbody>
                 {accounts.map((a) => (
-                  <tr key={a.id} className="border-b border-white/10">
+                  <tr key={a.id} className="border-b border-white/10 align-top">
                     <td className="p-2 font-mono">{a.id}</td>
                     <td className="p-2">{a.name}</td>
                     <td className="p-2">{a.companyName}</td>
@@ -332,8 +380,10 @@ export default function CreateAccountsPage() {
                           onChange={(e) => setEditForm((f) => ({ ...f, startDate: e.target.value }))}
                           disabled={editForm.unlimited}
                         />
+                      ) : a.startDate ? (
+                        new Date(a.startDate).toLocaleDateString("ko-KR")
                       ) : (
-                        a.startDate ? new Date(a.startDate).toLocaleDateString("ko-KR") : "무제한"
+                        "무제한"
                       )}
                     </td>
                     <td className="p-2">
@@ -345,44 +395,63 @@ export default function CreateAccountsPage() {
                           onChange={(e) => setEditForm((f) => ({ ...f, endDate: e.target.value }))}
                           disabled={editForm.unlimited}
                         />
+                      ) : a.endDate ? (
+                        new Date(a.endDate).toLocaleDateString("ko-KR")
                       ) : (
-                        a.endDate ? new Date(a.endDate).toLocaleDateString("ko-KR") : "무제한"
+                        "무제한"
                       )}
                     </td>
                     <td className="p-2 text-right">
                       {editing === a.id ? (
-                        <div className="flex gap-1 justify-end">
-                          <label className="flex items-center gap-1 text-xs">
-                            <input
-                              type="checkbox"
-                              checked={editForm.unlimited}
-                              onChange={(e) => setEditForm((f) => ({ ...f, unlimited: e.target.checked }))}
-                              className="rounded"
+                        <div className="flex flex-col items-end gap-2 min-w-[220px]">
+                          <div className="w-full text-left">
+                            <label className="block text-[11px] text-neutral-400 mb-1">
+                              새 비밀번호 (비우면 유지)
+                            </label>
+                            <PasswordField
+                              value={editForm.password}
+                              onChange={(v) => setEditForm((f) => ({ ...f, password: v }))}
+                              placeholder="새 비밀번호"
+                              className="w-full px-2 py-1.5 rounded bg-neutral-800 border border-white/10 text-xs pr-14"
                             />
-                            무제한
-                          </label>
-                          <button
-                            className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-xs"
-                            onClick={() => handleUpdate(a.id)}
-                          >
-                            저장
-                          </button>
-                          <button
-                            className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
-                            onClick={() => setEditing(null)}
-                          >
-                            취소
-                          </button>
+                          </div>
+                          <div className="flex gap-1 justify-end flex-wrap">
+                            <label className="flex items-center gap-1 text-xs">
+                              <input
+                                type="checkbox"
+                                checked={editForm.unlimited}
+                                onChange={(e) => setEditForm((f) => ({ ...f, unlimited: e.target.checked }))}
+                                className="rounded"
+                              />
+                              무제한
+                            </label>
+                            <button
+                              type="button"
+                              className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-xs"
+                              onClick={() => handleUpdate(a.id)}
+                            >
+                              저장
+                            </button>
+                            <button
+                              type="button"
+                              className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
+                              onClick={() => setEditing(null)}
+                            >
+                              취소
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         <div className="flex gap-1 justify-end">
                           <button
+                            type="button"
                             className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
                             onClick={() => startEdit(a)}
                           >
                             수정
                           </button>
                           <button
+                            type="button"
                             className="px-2 py-1 rounded bg-red-800 hover:bg-red-700 text-xs"
                             onClick={() => handleDelete(a.id)}
                           >
