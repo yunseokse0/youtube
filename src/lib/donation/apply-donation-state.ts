@@ -1,5 +1,9 @@
 import { applyMealBattleDonationToParticipants, mealBattleUsesRawDonationScore } from "@/lib/meal-battle-donation";
 import { isOperatingSettlementMember } from "@/lib/settlement-utils";
+import {
+  normalizeHighSocietySettings,
+  resolveSystemMiddlePushDir,
+} from "@/lib/high-society";
 import type { AppState, Donor, Member } from "@/types";
 import { mapToMember } from "./mapper";
 import type { DonationEvent, DonorAlias } from "./types";
@@ -70,14 +74,19 @@ export function mergeDonorRowFields<
     donationExcluded?: boolean;
     groupSplit?: boolean;
     groupSplitSource?: boolean;
+    hsPushDir?: "left" | "right" | "split";
   },
 >(preferred: T, fallback?: T | null): T {
   if (!fallback) return preferred;
   const msg = String(preferred.message || "").trim();
   const fallbackMsg = String(fallback.message || "").trim();
   const withMessage = msg || !fallbackMsg ? preferred : { ...preferred, message: fallbackMsg };
+  const withPush =
+    withMessage.hsPushDir || !fallback.hsPushDir
+      ? withMessage
+      : { ...withMessage, hsPushDir: fallback.hsPushDir };
   return {
-    ...withMessage,
+    ...withPush,
     ...(preferred.donationExcluded || fallback.donationExcluded ? { donationExcluded: true as const } : {}),
     ...(preferred.groupSplit || fallback.groupSplit ? { groupSplit: true as const } : {}),
     ...(preferred.groupSplitSource || fallback.groupSplitSource ? { groupSplitSource: true as const } : {}),
@@ -346,6 +355,11 @@ export function applyDonationToAppState(
     ...(String(processedEvent.message || "").trim()
       ? { message: String(processedEvent.message).trim() }
       : {}),
+    ...(processedEvent.hsPushDir === "left" ||
+    processedEvent.hsPushDir === "right" ||
+    processedEvent.hsPushDir === "split"
+      ? { hsPushDir: processedEvent.hsPushDir }
+      : {}),
   };
   const atMs = toEpochMs(processedEvent.at);
 
@@ -568,5 +582,97 @@ export function updateDonorMessageInAppState(
     donors: nextDonors,
     donorRankingsUpdatedAt: now,
     updatedAt: now,
+  };
+}
+
+/** 상류사회 B·C(가운데) 확장 방향만 변경 — 금액·멤버 합산 불변 */
+export function updateDonorHsPushDirInAppState(
+  currentState: AppState,
+  donorId: string,
+  hsPushDir: "left" | "right" | "split" | null
+): AppState | null {
+  const id = String(donorId || "").trim();
+  if (!id) return null;
+  const donor = (currentState.donors || []).find((d) => d.id === id);
+  if (!donor) return null;
+  const prev = donor.hsPushDir || null;
+  const nextDir =
+    hsPushDir === "left" || hsPushDir === "right" || hsPushDir === "split" ? hsPushDir : null;
+  if (prev === nextDir) return null;
+  const now = Date.now();
+  const nextDonors = (currentState.donors || []).map((d): Donor => {
+    if (d.id !== id) return d;
+    if (!nextDir) {
+      const { hsPushDir: _drop, ...rest } = d;
+      return rest;
+    }
+    return { ...d, hsPushDir: nextDir };
+  });
+  return {
+    ...currentState,
+    donors: nextDonors,
+    updatedAt: now,
+  };
+}
+
+/**
+ * 수동 방향 변경: 원복(시스템) 후 새 방향 적용.
+ * - 상류사회 모드 OFF → 변경 불가
+ * - 시스템 기본과 같거나 "system" → hsPushDir 제거(시스템 추종)
+ */
+export function applyManualHsPushDirChange(
+  currentState: AppState,
+  donorId: string,
+  nextDir: "left" | "right" | "split" | "system"
+): AppState | null {
+  const settings = normalizeHighSocietySettings(currentState.highSocietySettings);
+  if (!settings.enabled) return null;
+
+  const id = String(donorId || "").trim();
+  if (!id) return null;
+  const donor = (currentState.donors || []).find((d) => d.id === id);
+  if (!donor) return null;
+
+  const systemDir = resolveSystemMiddlePushDir(settings);
+  const wantOverride =
+    nextDir !== "system" &&
+    (nextDir === "left" || nextDir === "right" || nextDir === "split") &&
+    nextDir !== systemDir
+      ? nextDir
+      : null;
+
+  const prev = donor.hsPushDir || null;
+  if (prev === wantOverride) return null;
+
+  const now = Date.now();
+  // 원복 후(필요 시) 변경 — 항상 hsPushDir를 한번 비운 뒤 덮어씀
+  const nextDonors = (currentState.donors || []).map((d): Donor => {
+    if (d.id !== id) return d;
+    const { hsPushDir: _drop, ...rest } = d;
+    if (!wantOverride) return rest;
+    return { ...rest, hsPushDir: wantOverride };
+  });
+
+  return {
+    ...currentState,
+    donors: nextDonors,
+    updatedAt: now,
+  };
+}
+
+/** 상류사회 OFF 시 모든 후원 행 수동 방향 원복 */
+export function clearAllDonorHsPushDirs(currentState: AppState): AppState {
+  let changed = false;
+  const nextDonors = (currentState.donors || []).map((d): Donor => {
+    if (!d.hsPushDir) return d;
+    changed = true;
+    const { hsPushDir: _drop, ...rest } = d;
+    return rest;
+  });
+  if (!changed) return currentState;
+  return {
+    ...currentState,
+    donors: nextDonors,
+    updatedAt: Date.now(),
   };
 }

@@ -20,6 +20,7 @@ type ApplyBody = {
   target?: "account" | "toon";
   message?: string;
   id?: string;
+  hsPushDir?: "left" | "right" | "split";
   /** 여러 건 일괄 (붙여넣기) */
   items?: Array<{
     donorName?: string;
@@ -28,6 +29,7 @@ type ApplyBody = {
     target?: "account" | "toon";
     message?: string;
     id?: string;
+    hsPushDir?: "left" | "right" | "split";
   }>;
 };
 
@@ -43,6 +45,10 @@ function buildBankEvent(
   const id =
     String(row.id || "").trim() ||
     `bank:${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${amount}`;
+  const hsPushDir =
+    row.hsPushDir === "left" || row.hsPushDir === "right" || row.hsPushDir === "split"
+      ? row.hsPushDir
+      : undefined;
   return {
     id,
     provider: "bank",
@@ -55,6 +61,7 @@ function buildBankEvent(
     memberId,
     manualAssignMemberId: memberId,
     ...(String(row.message || "").trim() ? { message: String(row.message).trim() } : {}),
+    ...(hsPushDir ? { hsPushDir } : {}),
   };
 }
 

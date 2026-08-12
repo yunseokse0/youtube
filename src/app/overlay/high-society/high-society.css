@@ -117,6 +117,88 @@
   color: #fca5a5;
 }
 
+/* 라운드 타이머 — generalTimer 연동 HUD (게이지 바로 아래) */
+.hs-round-timer {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 8px 14px;
+  background: rgba(8, 6, 4, 0.88);
+  border: 3px solid rgba(212, 175, 55, 0.85);
+  border-radius: 6px;
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.8),
+    0 4px 12px rgba(0, 0, 0, 0.55);
+  font-variant-numeric: tabular-nums;
+}
+
+.hs-round-badge {
+  font-family: "Cinzel", "Times New Roman", Georgia, serif;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #e8c76a;
+  text-shadow: 0 1px 2px #000;
+}
+
+.hs-round-clock {
+  font-family: "Cinzel", "Times New Roman", Georgia, serif;
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff8e7;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 12px rgba(212, 175, 55, 0.35), 0 1px 3px #000;
+  min-width: 5.5ch;
+  text-align: center;
+}
+
+.hs-round-state {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.7);
+  text-shadow: 0 1px 2px #000;
+}
+
+.hs-round-timer.hs-round-low .hs-round-clock {
+  color: #ffd28a;
+}
+
+.hs-round-timer.hs-round-critical {
+  border-color: rgba(248, 113, 113, 0.7);
+  animation: hs-round-pulse 1s ease-in-out infinite;
+}
+
+.hs-round-timer.hs-round-critical .hs-round-clock {
+  color: #fecaca;
+}
+
+.hs-round-timer.hs-round-paused .hs-round-clock {
+  color: #94a3b8;
+}
+
+.hs-round-timer.hs-round-ended .hs-round-badge,
+.hs-round-timer.hs-round-ended .hs-round-clock {
+  color: #f87171;
+}
+
+@keyframes hs-round-pulse {
+  0%,
+  100% {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 18px rgba(248, 113, 113, 0.45);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hs-round-timer.hs-round-critical {
+    animation: none;
+  }
+}
+
 /* 1b. 상단 영토 프로그래스 — share (점유 스트립) */
 .hs-top-bar-container {
   display: flex;
@@ -181,45 +263,125 @@
   color: rgba(255, 255, 255, 0.55);
 }
 
-/* 1b. lanes / race — 세로 적층 게이지 (참고: A/B/C/D 사선 바) */
+/* 게이지 2종 — flat(사각) / arrow(화살 팁) · 멤버명 + 굵은 외곽선 */
 .hs-lanes-panel {
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  background: rgba(0, 0, 0, 0.72);
-  border-top: 2px solid #d4af37;
-  border-bottom: 2px solid #d4af37;
-  border-radius: 4px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.75);
+  gap: 8px;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.82);
+  border: 4px solid #d4af37;
+  border-radius: 6px;
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.85),
+    0 6px 18px rgba(0, 0, 0, 0.8);
 }
 
 .hs-lane-row {
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr) 64px;
+  grid-template-columns: minmax(72px, 108px) minmax(0, 1fr) 76px;
   align-items: center;
-  gap: 8px;
-  min-height: 28px;
+  gap: 10px;
+  min-height: 32px;
+  opacity: 0;
+  transform: translateY(6px);
+  animation: hs-lane-enter 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation-delay: calc(var(--hs-i, 0) * 70ms);
+}
+
+.hs-lane-row.hs-lane-eliminated {
+  filter: grayscale(0.35);
+  animation-name: hs-lane-enter-dim;
 }
 
 .hs-lane-tag {
-  font-size: 12px;
-  font-weight: 800;
-  color: #ffd700;
-  text-shadow: 1px 1px 2px #000;
-  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 900;
+  color: #ffe566;
+  text-align: left;
+  line-height: 1.15;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  -webkit-text-stroke: 0.6px #000;
+  paint-order: stroke fill;
+  text-shadow:
+    0 0 2px #000,
+    1px 1px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    0 2px 4px rgba(0, 0, 0, 0.85);
 }
 
 .hs-lane-track {
   position: relative;
-  height: 22px;
-  background: rgba(255, 255, 255, 0.08);
-  clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+  height: 30px;
+  background: rgba(0, 0, 0, 0.45);
   overflow: hidden;
-  box-shadow: inset 0 0 0 1px rgba(212, 175, 55, 0.25);
+  border: 3px solid #d4af37;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(0, 0, 0, 0.75);
+}
+
+.hs-lane-track-flat {
+  border-radius: 4px;
+}
+
+.hs-lane-track-arrow {
+  overflow: visible;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+/* 전장 중앙(50%) 시인성 마커 */
+.hs-lane-center {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 0;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.hs-lane-center-line {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  transform: translateX(-50%);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 248, 220, 0.95) 0%,
+    #ffe566 40%,
+    #d4af37 100%
+  );
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.9),
+    0 0 8px rgba(255, 220, 100, 0.55);
+}
+
+.hs-lane-center-label {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 0 4px;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: #fff8e0;
+  background: rgba(0, 0, 0, 0.72);
+  border: 1px solid rgba(212, 175, 55, 0.85);
+  border-radius: 2px;
+  white-space: nowrap;
+  -webkit-text-stroke: 0.4px #000;
+  paint-order: stroke fill;
+  text-shadow: 0 1px 2px #000;
 }
 
 .hs-lane-fill {
@@ -227,31 +389,204 @@
   left: 0;
   top: 0;
   bottom: 0;
-  transition: width 0.55s cubic-bezier(0.25, 1, 0.5, 1);
-  clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 12px rgba(0, 0, 0, 0.35);
+  width: 0%;
+  transition: width 0.85s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.35),
+    inset 0 0 0 2px rgba(0, 0, 0, 0.35);
+  will-change: width;
+}
+
+.hs-lane-fill-flat {
+  border-radius: 1px;
+}
+
+.hs-lane-fill-arrow {
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%);
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.4));
+}
+
+.hs-lane-sheen {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    transparent 42%,
+    rgba(255, 255, 255, 0.38) 50%,
+    transparent 58%,
+    transparent 100%
+  );
+  background-size: 220% 100%;
+  animation: hs-sheen 2.8s ease-in-out infinite;
+  pointer-events: none;
+  mix-blend-mode: soft-light;
+}
+
+.hs-lane-tip {
+  position: absolute;
+  right: 8px;
+  top: 0;
+  bottom: 0;
+  width: 22px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.7));
+  pointer-events: none;
+  animation: hs-tip-pulse 1.2s ease-in-out infinite;
+}
+
+.hs-lane-growing .hs-lane-fill {
+  animation: hs-grow-flash 1.05s ease-out;
+}
+
+.hs-lane-growing .hs-lane-track {
+  border-color: #ffe08a;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.55),
+    0 0 0 2px rgba(255, 215, 0, 0.55),
+    0 0 16px rgba(255, 200, 80, 0.4);
 }
 
 .hs-lane-fill-label {
   position: absolute;
-  left: 14px;
+  left: 10px;
   top: 50%;
   transform: translateY(-50%);
-  font-size: 11px;
-  font-weight: 800;
+  z-index: 1;
+  font-size: 13px;
+  font-weight: 900;
   color: #fff;
-  text-shadow: 0 1px 2px #000;
   white-space: nowrap;
+  max-width: calc(100% - 16px);
+  overflow: hidden;
+  text-overflow: ellipsis;
   pointer-events: none;
+  opacity: 0;
+  animation: hs-label-in 0.4s ease forwards;
+  animation-delay: calc(0.25s + var(--hs-i, 0) * 70ms);
+  -webkit-text-stroke: 0.7px #000;
+  paint-order: stroke fill;
+  text-shadow:
+    0 0 2px #000,
+    1px 1px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    0 2px 5px rgba(0, 0, 0, 0.9);
 }
 
 .hs-lane-meta {
-  font-size: 11px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  font-weight: 800;
+  color: #fff;
   text-align: right;
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 1px 2px #000;
+  -webkit-text-stroke: 0.5px #000;
+  paint-order: stroke fill;
+  text-shadow:
+    0 0 2px #000,
+    1px 1px 0 #000,
+    -1px 1px 0 #000,
+    0 2px 4px rgba(0, 0, 0, 0.85);
+}
+
+.hs-lane-meta-pop {
+  animation: hs-meta-pop 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  color: #ffe08a;
+}
+
+@keyframes hs-lane-enter {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hs-lane-enter-dim {
+  to {
+    opacity: 0.45;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hs-sheen {
+  0% {
+    background-position: 140% 0;
+  }
+  100% {
+    background-position: -60% 0;
+  }
+}
+
+@keyframes hs-tip-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    filter: brightness(1);
+  }
+  50% {
+    opacity: 1;
+    filter: brightness(1.35);
+  }
+}
+
+@keyframes hs-grow-flash {
+  0% {
+    filter: brightness(1);
+  }
+  25% {
+    filter: brightness(1.55);
+  }
+  100% {
+    filter: brightness(1);
+  }
+}
+
+@keyframes hs-label-in {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
+@keyframes hs-meta-pop {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.18);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hs-lane-row,
+  .hs-lane-fill-label,
+  .hs-lane-sheen,
+  .hs-lane-tip,
+  .hs-lane-growing .hs-lane-fill,
+  .hs-lane-meta-pop {
+    animation: none !important;
+  }
+
+  .hs-lane-row {
+    opacity: 1;
+    transform: none;
+  }
+
+  .hs-lane-fill-label {
+    opacity: 1;
+  }
+
+  .hs-lane-fill {
+    transition: none;
+  }
 }
 
 /* 2. 우측(또는 좌측) 상단 컴팩트 미니맵 — 중앙 인물 가림 방지 */
@@ -260,9 +595,11 @@
   top: 60px;
   width: 200px;
   background: rgba(15, 12, 9, 0.9);
-  border: 2px solid #c5a059;
+  border: 3px solid #d4af37;
   border-radius: 8px;
-  box-shadow: 0 0 15px rgba(0, 0, 0, 0.8);
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.75),
+    0 0 15px rgba(0, 0, 0, 0.8);
   z-index: 100;
   overflow: hidden;
 }

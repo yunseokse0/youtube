@@ -13,7 +13,8 @@ import {
 export default function HighSocietyDemoPage() {
   const [corner, setCorner] = useState<"right" | "left">("right");
   const [hostObs, setHostObs] = useState(false);
-  const [barStyle, setBarStyle] = useState<HighSocietyBarStyle>("field");
+  const [barStyle, setBarStyle] = useState<HighSocietyBarStyle>("flat");
+  const [round, setRound] = useState(1);
   const [bLeft, setBLeft] = useState(50);
   const [cLeft, setCLeft] = useState(50);
   const [origin, setOrigin] = useState("");
@@ -27,14 +28,16 @@ export default function HighSocietyDemoPage() {
       test: "true",
       corner,
       bar: barStyle,
+      round: String(round),
+      timerSec: "3600",
       bLeft: String(bLeft),
       cLeft: String(cLeft),
     });
     if (hostObs) q.set("host", "obs");
     return `/overlay/high-society?${q.toString()}`;
-  }, [corner, hostObs, barStyle, bLeft, cLeft]);
+  }, [corner, hostObs, barStyle, round, bLeft, cLeft]);
 
-  const obsPath = `/overlay/high-society?u=din&host=obs&bar=${barStyle}&bLeft=${bLeft}&cLeft=${cLeft}`;
+  const obsPath = `/overlay/high-society?u=din&host=obs&bar=${barStyle}&round=${round}`;
   const obsUrl = origin ? `${origin}${obsPath}` : obsPath;
 
   return (
@@ -45,63 +48,75 @@ export default function HighSocietyDemoPage() {
             <p className="text-xs uppercase tracking-[0.14em] text-amber-400/80">High Society</p>
             <h1 className="mt-1 text-2xl font-bold text-amber-50">상류사회 · 세로 오버레이 데모</h1>
             <p className="mt-2 text-sm leading-relaxed text-neutral-400">
-              룰: 균등 시작 → 1시간 라운드 → 1만원=5cm · A는 오른쪽만 / D는 왼쪽만 / B·C는 좌우 분배.
-              인접 영토를 같은 길이만큼 축소합니다.
+              게이지 형태 2종(평평 / 화살표). 룰: 1만원=5cm · A→D 영토.
             </p>
           </div>
 
           <div>
             <p className="mb-2 text-[11px] font-semibold text-amber-200/90">영토 게이지 형태</p>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-2">
               {HIGH_SOCIETY_BAR_STYLES.map((opt) => (
                 <button
                   key={opt.id}
                   type="button"
-                  className={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                  className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${
                     barStyle === opt.id
                       ? "border-amber-400 bg-amber-600/90 text-white"
                       : "border-white/10 bg-neutral-900 text-neutral-300 hover:border-white/25"
                   }`}
                   onClick={() => setBarStyle(opt.id)}
                 >
-                  <div className="text-xs font-bold">{opt.label}</div>
+                  <div className="text-sm font-bold">{opt.label}</div>
                   <div className="mt-0.5 text-[10px] opacity-80 leading-snug">{opt.desc}</div>
                 </button>
               ))}
             </div>
           </div>
 
-          {barStyle === "field" ? (
-            <div className="space-y-3 rounded-xl border border-white/10 bg-neutral-900/80 p-3">
-              <p className="text-[11px] font-semibold text-amber-200/90">B·C 확장 방향 분배 (조정 시간)</p>
-              <label className="block text-[11px] text-neutral-400">
-                B 왼쪽 {bLeft}% / 오른쪽 {100 - bLeft}%
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={bLeft}
-                  onChange={(e) => setBLeft(Number(e.target.value))}
-                  className="mt-1 w-full accent-amber-500"
-                />
-              </label>
-              <label className="block text-[11px] text-neutral-400">
-                C 왼쪽 {cLeft}% / 오른쪽 {100 - cLeft}%
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={cLeft}
-                  onChange={(e) => setCLeft(Number(e.target.value))}
-                  className="mt-1 w-full accent-amber-500"
-                />
-              </label>
-              <p className="text-[10px] leading-relaxed text-neutral-500">
-                A는 항상 → , D는 항상 ← . URL: <code className="text-neutral-400">bLeft</code> /{" "}
-                <code className="text-neutral-400">cLeft</code>
-              </p>
-            </div>
-          ) : null}
+          <div className="space-y-3 rounded-xl border border-white/10 bg-neutral-900/80 p-3">
+            <p className="text-[11px] font-semibold text-amber-200/90">라운드</p>
+            <label className="flex items-center gap-3 text-[11px] text-neutral-400">
+              ROUND
+              <input
+                type="number"
+                min={1}
+                max={99}
+                value={round}
+                onChange={(e) => setRound(Math.max(1, Math.min(99, Number(e.target.value) || 1)))}
+                className="w-16 rounded border border-white/15 bg-neutral-950 px-2 py-1 text-neutral-100"
+              />
+            </label>
+            <p className="text-[10px] leading-relaxed text-neutral-500">
+              실방송 타이머는 관리자 「타이머 제어」의 <strong className="text-neutral-300">일반 타이머</strong>와
+              동기화됩니다. 룰 권장 60분. URL: <code className="text-neutral-400">round=</code>
+            </p>
+          </div>
+
+          <div className="space-y-3 rounded-xl border border-white/10 bg-neutral-900/80 p-3">
+            <p className="text-[11px] font-semibold text-amber-200/90">B·C 확장 방향 분배</p>
+            <label className="block text-[11px] text-neutral-400">
+              B 왼쪽 {bLeft}% / 오른쪽 {100 - bLeft}%
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={bLeft}
+                onChange={(e) => setBLeft(Number(e.target.value))}
+                className="mt-1 w-full accent-amber-500"
+              />
+            </label>
+            <label className="block text-[11px] text-neutral-400">
+              C 왼쪽 {cLeft}% / 오른쪽 {100 - cLeft}%
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={cLeft}
+                onChange={(e) => setCLeft(Number(e.target.value))}
+                className="mt-1 w-full accent-amber-500"
+              />
+            </label>
+          </div>
 
           <div className="flex flex-wrap gap-2">
             <button
@@ -134,16 +149,12 @@ export default function HighSocietyDemoPage() {
           </div>
 
           <div className="rounded-xl border border-amber-500/25 bg-amber-950/30 p-3 text-xs text-neutral-300 space-y-2">
-            <p className="font-semibold text-amber-100">OBS 설정</p>
-            <ul className="list-disc space-y-1 pl-4 text-neutral-400">
-              <li>
-                비디오 캔버스: <strong className="text-neutral-200">1080 × 1920</strong>
-              </li>
-              <li>브라우저 소스 너비/높이: 1080 / 1920</li>
-              <li>
-                URL: <code className="break-all text-amber-200/90">{obsUrl}</code>
-              </li>
-            </ul>
+            <p className="font-semibold text-amber-100">OBS URL</p>
+            <code className="block break-all text-amber-200/90">{obsUrl}</code>
+            <p className="text-[10px] text-neutral-500">
+              화살표: <code className="text-neutral-400">&amp;bar=arrow</code> · 평평:{" "}
+              <code className="text-neutral-400">&amp;bar=flat</code> (기본)
+            </p>
             <button
               type="button"
               className="rounded bg-neutral-800 px-2 py-1 text-[11px] hover:bg-neutral-700"
@@ -172,13 +183,6 @@ export default function HighSocietyDemoPage() {
             className="relative w-full max-w-[360px] overflow-hidden rounded-[28px] border border-white/15 bg-[radial-gradient(ellipse_at_center,_#2a2218_0%,_#0a0a0a_70%)] shadow-2xl"
             style={{ aspectRatio: "9 / 16" }}
           >
-            <div
-              className="pointer-events-none absolute inset-x-[18%] top-[28%] bottom-[22%] rounded-full border border-dashed border-white/15"
-              aria-hidden
-            />
-            <p className="pointer-events-none absolute left-1/2 top-[48%] -translate-x-1/2 text-[10px] text-white/25">
-              크리에이터 영역
-            </p>
             <iframe
               key={iframeSrc}
               src={iframeSrc}

@@ -7,6 +7,7 @@ export type BankDonationApplyItem = {
   target?: DonorTarget;
   message?: string;
   id?: string;
+  hsPushDir?: "left" | "right" | "split";
 };
 
 export type BankDonationApplyResult =
@@ -49,6 +50,9 @@ export async function applyBankDonationsViaApi(
           target: it.target || opts?.target || "account",
           ...(it.message ? { message: it.message } : {}),
           ...(it.id ? { id: it.id } : {}),
+          ...(it.hsPushDir === "left" || it.hsPushDir === "right" || it.hsPushDir === "split"
+            ? { hsPushDir: it.hsPushDir }
+            : {}),
         })),
       }),
     });

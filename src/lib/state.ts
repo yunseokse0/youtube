@@ -29,6 +29,7 @@ import type {
   SigRollingSettings,
   DonorsAmountFormat,
 } from "@/types";
+import { normalizeHighSocietySettings } from "@/lib/high-society";
 import { ONE_SHOT_SIG_ID, sigMatchesMemberFilter } from "@/lib/sig-roulette";
 import { isBundledSigPlaceholderItem } from "@/lib/sig-placeholder";
 import { normalizeRestroomCount } from "@/lib/restroom-utils";
@@ -1135,6 +1136,16 @@ export function defaultState(): AppState {
     donorRankingsFullOverlayConfig: normalizeDonorRankingsOverlayConfig(null),
     donationListsOverlayConfig: normalizeDonationListsOverlayConfig(null),
     donationSyncMode: "mealBattle",
+    highSocietySettings: {
+      enabled: false,
+      seatMemberIds: [],
+      defaultMiddlePush: "right",
+      defaultBPush: "right",
+      defaultCPush: "right",
+      barStyle: "flat",
+      round: 1,
+      fieldCm: 1200,
+    },
     sigRolling: normalizeSigRolling(null),
     sigRollingMeta: {},
     updatedAt: Date.now(),
@@ -1423,6 +1434,11 @@ export function normalizeDonorsArray(input: unknown): Donor[] {
       if (x.groupSplit === true) row.groupSplit = true;
       if (x.groupSplitSource === true) row.groupSplitSource = true;
       if (x.donationExcluded === true) row.donationExcluded = true;
+      const hsPush =
+        x.hsPushDir === "left" || x.hsPushDir === "right" || x.hsPushDir === "split"
+          ? x.hsPushDir
+          : null;
+      if (hsPush) row.hsPushDir = hsPush;
       return row;
     });
 }
@@ -1599,6 +1615,9 @@ export function loadState(userId?: string | null): AppState {
     };
     data.rouletteState = normalizeRouletteState((data as AppState).rouletteState);
     data.mealMatchSettings = normalizeMealMatchSettings((data as AppState).mealMatchSettings);
+    data.highSocietySettings = normalizeHighSocietySettings(
+      (data as AppState).highSocietySettings
+    );
     data.generalTimer = normalizeTimerState((data as AppState).generalTimer);
     data.matchTimerEnabled = normalizeMatchTimerEnabled((data as AppState).matchTimerEnabled);
     data.timerDisplayStyles = normalizeTimerDisplayStyles((data as AppState).timerDisplayStyles);
@@ -3120,6 +3139,9 @@ async function doLoadStateFromApi(
       };
       data.rouletteState = normalizeRouletteState((data as AppState).rouletteState);
       data.mealMatchSettings = normalizeMealMatchSettings((data as AppState).mealMatchSettings);
+    data.highSocietySettings = normalizeHighSocietySettings(
+      (data as AppState).highSocietySettings
+    );
       data.generalTimer = normalizeTimerState((data as AppState).generalTimer);
       data.matchTimerEnabled = normalizeMatchTimerEnabled((data as AppState).matchTimerEnabled);
       data.timerDisplayStyles = normalizeTimerDisplayStyles((data as AppState).timerDisplayStyles);

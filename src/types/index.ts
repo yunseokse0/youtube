@@ -44,6 +44,11 @@ export type Donor = {
   groupSplitSource?: boolean;
   /** 단체짠 원본 등 — 리스트에는 표시하되 멤버·순위 합산에서 제외 */
   donationExcluded?: boolean;
+  /**
+   * 상류사회 영토 확장 방향 (B·C 좌석용).
+   * left=왼쪽만 / right=오른쪽만 / split=양분. A·D는 무시(고정 방향).
+   */
+  hsPushDir?: "left" | "right" | "split";
 };
 
 export type ContributionLog = {
@@ -397,6 +402,31 @@ export type GroupSplitDonationSettings = {
   autoSplitOnKeyword?: boolean;
 };
 
+/** 상류사회 땅따먹기 — 총 길이 고정, 멤버 N등분 시작, 양끝만 단방향 */
+export type HighSocietyPushDir = "left" | "right" | "split";
+
+export type HighSocietySettings = {
+  /** 후원 목록에서 상류사회 모드·방향 설정 표시 */
+  enabled: boolean;
+  /**
+   * 좌→우 좌석 멤버 id (순서=전장 배치).
+   * 비우면 운영비 제외 전원(로스터 순)이 참가 → N등분.
+   */
+  seatMemberIds: string[];
+  /** 가운데 멤버 기본 확장 방향(후원 행 hsPushDir 없을 때) */
+  defaultMiddlePush: HighSocietyPushDir;
+  /** @deprecated defaultMiddlePush로 통합 — 하위 호환 */
+  defaultBPush?: HighSocietyPushDir;
+  /** @deprecated defaultMiddlePush로 통합 — 하위 호환 */
+  defaultCPush?: HighSocietyPushDir;
+  /** 오버레이 게이지 flat | arrow */
+  barStyle?: "flat" | "arrow";
+  /** 라운드 번호 표시용 */
+  round?: number;
+  /** 전장 총 가로(cm) — 멤버 수와 무관하게 고정 */
+  fieldCm?: number;
+};
+
 /** `/overlay/sig-rolling` — 이미지/GIF 순환 한 장 항목 */
 export type SigRollingItem = {
   id: string;
@@ -482,6 +512,8 @@ export type AppState = {
   donationListsOverlayConfig: OverlayConfig;
   /** 단체짠 후원 분배 — 제외 멤버 등 */
   groupSplitDonationSettings?: GroupSplitDonationSettings;
+  /** 상류사회(땅따먹기) — 후원 목록·오버레이 연동 */
+  highSocietySettings?: HighSocietySettings;
   /** 시그 판매/회전판에서 제외할 시그 ID 목록 */
   sigSalesExcludedIds: string[];
   /** 후원 동기화 라우팅(중복 반영 방지): none | mealBattle | sigMatch | sigSales */

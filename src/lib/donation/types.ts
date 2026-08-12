@@ -23,6 +23,8 @@ export interface DonationEvent {
   alreadyApplied?: boolean;
   /** 관리자 미매칭 수동 배치 — 드롭다운에서 고른 멤버에 강제 적립 */
   manualAssignMemberId?: string;
+  /** 상류사회 B·C 확장 방향 */
+  hsPushDir?: "left" | "right" | "split";
   error?: string;
   sigListSnapshot?: QueueSigItem[];
   /** 금액·텍스트 매칭(또는 리롤판 백업)으로 추정한 시그명 — 플레이어 팝업용 */

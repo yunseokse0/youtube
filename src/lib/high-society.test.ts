@@ -10,6 +10,7 @@ import {
   HIGH_SOCIETY_DEFAULT_FIELD_CM,
   HIGH_SOCIETY_TEST_MEMBERS,
   parseHighSocietyBarStyle,
+  parseHighSocietyRound,
   parseHighSocietySplit,
   resolveHighSocietyField,
 } from "./high-society";
@@ -23,7 +24,22 @@ describe("high-society rule field", () => {
     expect(donationToExpandCm(100000)).toBe(50);
   });
 
-  it("starts equal when no donations", () => {
+  it("starts equal N-way split of fixed field", () => {
+    const { seats, startCm, fieldCm, playerCount } = resolveHighSocietyField({
+      players: [
+        { id: "a", name: "A", donationWon: 0 },
+        { id: "b", name: "B", donationWon: 0 },
+        { id: "c", name: "C", donationWon: 0 },
+      ],
+    });
+    expect(fieldCm).toBe(HIGH_SOCIETY_DEFAULT_FIELD_CM);
+    expect(playerCount).toBe(3);
+    expect(startCm).toBe(400);
+    expect(seats.map((s) => s.widthCm)).toEqual([400, 400, 400]);
+    expect(seats.every((s) => !s.eliminated)).toBe(true);
+  });
+
+  it("starts equal when no donations (4)", () => {
     const { seats, startCm, fieldCm } = resolveHighSocietyField({
       players: [
         { id: "a", name: "A", donationWon: 0 },
@@ -66,7 +82,7 @@ describe("high-society rule field", () => {
     expect(seats[2]!.widthCm).toBe(280);
   });
 
-  it("B can put all expansion to the left", () => {
+  it("B all-left push expands into A", () => {
     const { seats } = resolveHighSocietyField({
       players: [
         { id: "a", name: "A", donationWon: 0 },
@@ -79,6 +95,19 @@ describe("high-society rule field", () => {
     expect(seats[1]!.widthCm).toBe(330);
     expect(seats[0]!.widthCm).toBe(270);
     expect(seats[2]!.widthCm).toBe(300);
+  });
+
+  it("uses absolute left/right cm from donation directions", () => {
+    const { seats } = resolveHighSocietyField({
+      players: [
+        { id: "a", name: "A", donationWon: 0, expandLeftCm: 0, expandRightCm: 0 },
+        { id: "b", name: "B", donationWon: 100_000, expandLeftCm: 0, expandRightCm: 50 },
+        { id: "c", name: "C", donationWon: 0, expandLeftCm: 0, expandRightCm: 0 },
+        { id: "d", name: "D", donationWon: 0, expandLeftCm: 0, expandRightCm: 0 },
+      ],
+    });
+    expect(seats[1]!.widthCm).toBe(350);
+    expect(seats[2]!.widthCm).toBe(250);
   });
 
   it("eliminates a seat that loses all width (cushion)", () => {
@@ -95,27 +124,40 @@ describe("high-society rule field", () => {
     expect(cushion.map((c) => c.letter)).toEqual(["B"]);
   });
 
-  it("maps members A→D in array order", () => {
-    const { seats, leader } = buildHighSocietyFieldFromMembers(HIGH_SOCIETY_TEST_MEMBERS, {
-      split: { bLeft: 0.5, cLeft: 0.5 },
-    });
-    expect(seats.map((s) => s.letter)).toEqual(["A", "B", "C", "D"]);
-    expect(seats[0]!.name).toBe("금수저");
-    expect(leader?.letter).toBeTruthy();
+  it("maps all non-operating members (N-way)", () => {
+    const { seats, leader, playerCount, startCm } = buildHighSocietyFieldFromMembers(
+      HIGH_SOCIETY_TEST_MEMBERS,
+      { split: { bLeft: 0.5, cLeft: 0.5 } }
+    );
+    expect(playerCount).toBe(4);
+    expect(startCm).toBe(300);
+    expect(seats.map((s) => s.name)).toEqual(["금수저", "은수저", "동수저", "흑수저"]);
+    expect(leader?.name).toBeTruthy();
     const sum = seats.reduce((s, x) => s + x.widthCm, 0);
     expect(sum).toBeCloseTo(HIGH_SOCIETY_DEFAULT_FIELD_CM, 0);
   });
 
-  it("parses split and default bar style field", () => {
-    expect(parseHighSocietyBarStyle("")).toBe("field");
-    expect(parseHighSocietyBarStyle("share")).toBe("share");
+  it("parses split and bar styles (flat / arrow)", () => {
+    expect(parseHighSocietyBarStyle("")).toBe("flat");
+    expect(parseHighSocietyBarStyle("flat")).toBe("flat");
+    expect(parseHighSocietyBarStyle("lanes")).toBe("flat");
+    expect(parseHighSocietyBarStyle("field")).toBe("flat");
+    expect(parseHighSocietyBarStyle("arrow")).toBe("arrow");
+    expect(parseHighSocietyBarStyle("chevron")).toBe("arrow");
     expect(parseHighSocietySplit("70", "30")).toEqual({ bLeft: 0.7, cLeft: 0.3 });
     expect(parseHighSocietySplit("0.2", "0.8")).toEqual({ bLeft: 0.2, cLeft: 0.8 });
     expect(formatCm(305)).toBe("305cm");
   });
+
+  it("parses round number", () => {
+    expect(parseHighSocietyRound(undefined)).toBe(1);
+    expect(parseHighSocietyRound("3")).toBe(3);
+    expect(parseHighSocietyRound("0")).toBe(1);
+    expect(parseHighSocietyRound("150")).toBe(99);
+  });
 });
 
-describe("high-society territory (aux styles)", () => {
+describe("high-society territory (aux)", () => {
   it("builds pct slices from account+toon", () => {
     const { slices, total, leader } = buildHighSocietyTerritory(HIGH_SOCIETY_TEST_MEMBERS);
     expect(total).toBe(320000 + 180000 + 90000 + 50000);

@@ -196,12 +196,22 @@ import {
   revertDonationFromAppState,
   reassignDonorMemberInAppState,
   updateDonorMessageInAppState,
+  applyManualHsPushDirChange,
+  clearAllDonorHsPushDirs,
   syncMemberTotalsFromDonors,
 } from "@/lib/donation/apply-donation-state";
 import { mergeDonationApplyBase, enrichStateBeforeAuthoritativeDonationSave } from "@/lib/donation/merge-donation-apply-base";
 import { applyBankDonationsViaApi } from "@/lib/donation/apply-bank-donation-client";
 import { persistDonationStateViaApi } from "@/lib/donation/persist-donation-client";
 import { applyDonationDummySeed } from "@/lib/dev/seed-donation-dummy";
+import {
+  formatCm,
+  normalizeHighSocietySettings,
+  resolveHighSocietySeatMembers,
+  resolveSystemMiddlePushDir,
+  seatRoleForMemberId,
+  HIGH_SOCIETY_DEFAULT_FIELD_CM,
+} from "@/lib/high-society";
 import {
   parseBulkDonationText,
   resolveBulkDonationRows,
@@ -535,6 +545,7 @@ export default function AdminPage() {
   const [bulkDonationTarget, setBulkDonationTarget] = useState<DonorTarget>("account");
   const [donorMemberId, setDonorMemberId] = useState<string | null>(null);
   const [donorTarget, setDonorTarget] = useState<DonorTarget>("account");
+  const [donorHsPushDir, setDonorHsPushDir] = useState<"left" | "right" | "system">("system");
   const [toonationSocketEnabled, setToonationSocketEnabled] = useState(false);
   const [toonationListenerStatus, setToonationListenerStatus] = useState<ToonationListenerStatus | null>(null);
   const [toonationListenerMeta, setToonationListenerMeta] = useState<{
@@ -5385,6 +5396,16 @@ export default function AdminPage() {
     const rawMessage = donorMessage;
     const donorNameClean = (rawName || "무명").replace(/\s+/g, "") || "무명";
     const messageClean = String(rawMessage || "").trim();
+    const hsSettingsNow = normalizeHighSocietySettings(stateRef.current.highSocietySettings);
+    const seatRole = hsSettingsNow.enabled
+      ? seatRoleForMemberId(hsSettingsNow, stateRef.current.members || [], memberId)
+      : null;
+    const hsPushForApply =
+      seatRole?.canChoosePush && donorHsPushDir !== "system"
+        ? donorHsPushDir === resolveSystemMiddlePushDir(hsSettingsNow)
+          ? undefined
+          : donorHsPushDir
+        : undefined;
     addDonorSaveChainRef.current = addDonorSaveChainRef.current
       .catch(() => {})
       .then(async () => {
@@ -5399,6 +5420,7 @@ export default function AdminPage() {
           memberId,
           target,
           ...(messageClean ? { message: messageClean } : {}),
+          ...(hsPushForApply ? { hsPushDir: hsPushForApply } : {}),
         }],
         { target }
       );
@@ -6574,6 +6596,47 @@ export default function AdminPage() {
     [state.members, isOperatingMember]
   );
   const donationSyncMode = (state.donationSyncMode || "mealBattle") as "none" | "mealBattle" | "sigMatch" | "sigSales";
+  const highSocietySettings = useMemo(
+    () => normalizeHighSocietySettings(state.highSocietySettings),
+    [state.highSocietySettings]
+  );
+  const donorSeatRole = useMemo(() => {
+    if (!highSocietySettings.enabled || !donorMemberId) return null;
+    return seatRoleForMemberId(highSocietySettings, state.members || [], donorMemberId);
+  }, [highSocietySettings, donorMemberId, state.members]);
+  const hsSeatPlayers = useMemo(
+    () => resolveHighSocietySeatMembers(state.members || [], highSocietySettings.seatMemberIds),
+    [state.members, highSocietySettings.seatMemberIds]
+  );
+  const hsStartCm =
+    hsSeatPlayers.length > 0
+      ? (highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM) / hsSeatPlayers.length
+      : 0;
+  const patchHighSocietySettings = useCallback(
+    (patch: Partial<ReturnType<typeof normalizeHighSocietySettings>>) => {
+      setState((prev: AppState) => {
+        const wasOn = normalizeHighSocietySettings(prev.highSocietySettings).enabled;
+        const nextSettings = normalizeHighSocietySettings({
+          ...normalizeHighSocietySettings(prev.highSocietySettings),
+          ...patch,
+        });
+        let next: AppState = {
+          ...prev,
+          highSocietySettings: nextSettings,
+          updatedAt: Date.now(),
+        };
+        const turningOff = wasOn && !nextSettings.enabled;
+        if (turningOff) {
+          next = clearAllDonorHsPushDirs(next);
+          persistState(next, { includeDonationFields: true });
+        } else {
+          persistState(next, { omitDonationFields: true });
+        }
+        return next;
+      });
+    },
+    [persistState]
+  );
   const sigMatchDonors = useMemo(
     () =>
       donationSyncMode === "sigMatch" || state.sigMatchSettings?.isActive
@@ -10526,6 +10589,101 @@ export default function AdminPage() {
                   풀=입력한 원 그대로 ·                   만원=축약 표기 · 오버레이·목표 막대에도 동일(막대 총액만 천원 반올림)
                 </span>
               </div>
+
+              <div className="mb-4 rounded-lg border border-amber-400/35 bg-amber-950/25 p-3 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-semibold text-amber-100">상류사회 모드 (땅따먹기)</div>
+                    <p className="mt-0.5 text-[11px] text-neutral-400 leading-snug">
+                      전장 총길이{" "}
+                      <strong className="text-neutral-200">
+                        {(highSocietySettings.fieldCm || HIGH_SOCIETY_DEFAULT_FIELD_CM).toLocaleString("ko-KR")}cm
+                      </strong>
+                      고정 · 참가 {hsSeatPlayers.length || 0}명 → 1인 시작{" "}
+                      <strong className="text-neutral-200">{formatCm(hsStartCm)}</strong>
+                      . 양끝은 단방향, 가운데는 <strong className="text-neutral-300">시스템 한쪽 방향</strong>
+                      (수동 변경은 모드 ON일 때만 · 원복 후 적용).
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className={`rounded px-3 py-1.5 text-xs font-semibold ${
+                      highSocietySettings.enabled
+                        ? "bg-amber-600 text-white"
+                        : "bg-neutral-700 text-neutral-200 hover:bg-neutral-600"
+                    }`}
+                    onClick={() => patchHighSocietySettings({ enabled: !highSocietySettings.enabled })}
+                  >
+                    {highSocietySettings.enabled ? "상류사회 ON" : "상류사회 OFF"}
+                  </button>
+                </div>
+                {highSocietySettings.enabled ? (
+                  <div className="space-y-3">
+                    <div className="text-[11px] text-neutral-400">
+                      좌석 순서(좌→우). 비우면 운영비 제외 <strong className="text-neutral-300">전원 N등분</strong>.
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {(state.members || [])
+                        .filter((m) => !m.operating)
+                        .map((m) => {
+                          const on = highSocietySettings.seatMemberIds.includes(m.id);
+                          return (
+                            <button
+                              key={`hs-pick-${m.id}`}
+                              type="button"
+                              className={`rounded px-2 py-1 text-[11px] font-semibold border ${
+                                on
+                                  ? "border-amber-400 bg-amber-700/80 text-white"
+                                  : "border-white/15 bg-neutral-900 text-neutral-300"
+                              }`}
+                              onClick={() => {
+                                const cur = highSocietySettings.seatMemberIds.slice();
+                                const next = on
+                                  ? cur.filter((id) => id !== m.id)
+                                  : [...cur, m.id].slice(0, 8);
+                                patchHighSocietySettings({ seatMemberIds: next });
+                              }}
+                            >
+                              {on
+                                ? `${highSocietySettings.seatMemberIds.indexOf(m.id) + 1}. ${m.name}`
+                                : m.name}
+                            </button>
+                          );
+                        })}
+                    </div>
+                    {hsSeatPlayers.length > 0 ? (
+                      <div className="text-[11px] text-amber-100/90">
+                        배치:{" "}
+                        {hsSeatPlayers.map((p, i) => (
+                          <span key={p.id}>
+                            {i > 0 ? " → " : ""}
+                            {p.name}
+                            <span className="text-neutral-500">
+                              ({i === 0 ? "→만" : i === hsSeatPlayers.length - 1 ? "←만" : "↔"})
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                    <label className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
+                      가운데 시스템 기본 방향
+                      <select
+                        className="rounded border border-white/10 bg-neutral-950 px-2 py-1"
+                        value={resolveSystemMiddlePushDir(highSocietySettings)}
+                        onChange={(e) =>
+                          patchHighSocietySettings({
+                            defaultMiddlePush: e.target.value === "left" ? "left" : "right",
+                          })
+                        }
+                      >
+                        <option value="right">오른쪽 → (기본)</option>
+                        <option value="left">← 왼쪽</option>
+                      </select>
+                    </label>
+                  </div>
+                ) : null}
+              </div>
+
               <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_auto_auto_auto_auto] gap-3 mt-4">
                 <input
                   className="px-3 py-2 rounded bg-neutral-900/80 border border-white/10"
@@ -10568,6 +10726,26 @@ export default function AdminPage() {
                     <option key={m.id} value={m.id}>{m.name}</option>
                   ))}
                 </select>
+                {highSocietySettings.enabled && donorSeatRole?.canChoosePush ? (
+                  <select
+                    className="px-3 py-2 rounded bg-amber-950/80 border border-amber-400/40 text-amber-50"
+                    value={donorHsPushDir}
+                    title="수동 변경 시에만 시스템과 다른 방향 저장(원복 후 적용)"
+                    onChange={(e) =>
+                      setDonorHsPushDir(e.target.value as "left" | "right" | "system")
+                    }
+                  >
+                    <option value="system">
+                      시스템({resolveSystemMiddlePushDir(highSocietySettings) === "left" ? "←" : "→"})
+                    </option>
+                    <option value="left">← 왼쪽(수동)</option>
+                    <option value="right">오른쪽 →(수동)</option>
+                  </select>
+                ) : highSocietySettings.enabled && donorSeatRole ? (
+                  <span className="self-center text-[11px] text-amber-200/80 whitespace-nowrap">
+                    {donorSeatRole.expandDir === "right" ? "→고정" : "←고정"}
+                  </span>
+                ) : null}
                 <button
                   className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-500 font-semibold"
                   onClick={addDonor}
@@ -11325,6 +11503,9 @@ export default function AdminPage() {
                       <th className="text-left font-medium p-1">시간</th>
                       <th className="text-left font-medium p-1">후원자</th>
                       <th className="text-left font-medium p-1">멤버</th>
+                      {highSocietySettings.enabled ? (
+                        <th className="text-left font-medium p-1 w-28">확장</th>
+                      ) : null}
                       <th className="text-left font-medium p-1">대상</th>
                       <th className="text-left font-medium p-1 min-w-[120px]">메시지</th>
                       <th className="text-right font-medium p-1">금액</th>
@@ -11343,6 +11524,10 @@ export default function AdminPage() {
                         const splitPreview = !isSplitPart && !isSplitSource
                           ? previewGroupSplitDonation(state, d.amount, state.groupSplitDonationSettings)
                           : null;
+                        const rowSeat = highSocietySettings.enabled
+                          ? seatRoleForMemberId(highSocietySettings, state.members || [], d.memberId)
+                          : null;
+                        const canSetPush = Boolean(rowSeat?.canChoosePush);
                         return (
                           <tr key={d.id} className={`border-t border-white/10 ${isSplitPart ? "bg-violet-950/15" : isSplitSource ? "bg-violet-950/10" : ""}`}>
                             <td className="p-1 text-neutral-400"><ClientTime ts={d.at} /></td>
@@ -11400,7 +11585,64 @@ export default function AdminPage() {
                                   </option>
                                 ))}
                               </select>
+                              {rowSeat ? (
+                                <span className="ml-1 text-[10px] text-amber-300/90">
+                                  #{rowSeat.index + 1}
+                                </span>
+                              ) : null}
                             </td>
+                            {highSocietySettings.enabled ? (
+                              <td className="p-1">
+                                {canSetPush ? (
+                                  <select
+                                    className="rounded border border-amber-400/35 bg-amber-950/50 px-1 py-0.5 text-[11px] text-amber-50"
+                                    value={
+                                      d.hsPushDir ||
+                                      "system"
+                                    }
+                                    title="상류사회 ON일 때만 · 원복 후 수동 방향 적용"
+                                    onChange={(e) => {
+                                      const raw = e.target.value;
+                                      const nextDir =
+                                        raw === "system" || raw === "left" || raw === "right" || raw === "split"
+                                          ? raw
+                                          : "system";
+                                      void (async () => {
+                                        const prev = stateRef.current;
+                                        if (!normalizeHighSocietySettings(prev.highSocietySettings).enabled) {
+                                          return;
+                                        }
+                                        const next = applyManualHsPushDirChange(prev, d.id, nextDir);
+                                        if (!next) return;
+                                        const preserved = markAuthoritativeDonationSave(
+                                          { serverUpdatedAt: next.updatedAt },
+                                          next,
+                                          { replaceDonors: true, awaitingServerSave: true }
+                                        );
+                                        setState(preserved);
+                                        await commitAuthoritativeDonorPersist(preserved);
+                                      })();
+                                    }}
+                                  >
+                                    <option value="system">
+                                      시스템(
+                                      {resolveSystemMiddlePushDir(highSocietySettings) === "left"
+                                        ? "←"
+                                        : "→"}
+                                      )
+                                    </option>
+                                    <option value="left">← 수동</option>
+                                    <option value="right">→ 수동</option>
+                                  </select>
+                                ) : rowSeat ? (
+                                  <span className="text-[10px] text-neutral-400">
+                                    {rowSeat.expandDir === "right" ? "→고정" : "←고정"}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-neutral-600">—</span>
+                                )}
+                              </td>
+                            ) : null}
                             <td className="p-1">{(d.target || "account") === "toon" ? <span className="text-amber-300">투네</span> : <span className="text-emerald-300">계좌</span>}</td>
                             <td className="p-1 text-neutral-400 max-w-[220px]">
                               <input
@@ -12453,32 +12695,44 @@ export default function AdminPage() {
                   <div>
                     <h4 className="text-sm font-semibold text-amber-100">상류사회 · 세로(9:16) 오버레이</h4>
                     <p className="mt-1 text-[11px] text-neutral-400 leading-snug max-w-xl">
-                      계좌·투네 후원 합산으로 상단 영토 바·우측 상단 미니맵을 갱신합니다. OBS 캔버스·브라우저 소스
-                      해상도는 <strong className="text-neutral-300">1080×1920</strong> 권장. 중앙 인물 가림을 피하려면
-                      미니맵은 기본 우측 상단입니다 (<code className="text-amber-200/90">corner=left</code> 로 좌측 가능).
+                      계좌·투네 후원 합산으로 상단 영토 게이지를 갱신합니다.{" "}
+                      <strong className="text-neutral-300">라운드 타이머</strong>는 「타이머 제어」
+                      일반 타이머(<code className="text-amber-200/90">generalTimer</code>)와 동기화 —
+                      권장 60분. 라운드 번호는 URL <code className="text-amber-200/90">round=1</code>.
+                      OBS 캔버스·브라우저 소스 <strong className="text-neutral-300">1080×1920</strong>.
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-2 shrink-0">
                     <code className="max-w-[min(100%,420px)] break-all text-[11px] text-amber-100/90">
-                      /overlay/high-society?u={overlayUserId}&host=obs
+                      /overlay/high-society?u={overlayUserId}&host=obs&bar=flat&round=1
                     </code>
                     <div className="flex flex-wrap justify-end gap-2">
                       <button
                         type="button"
                         className={`rounded px-2 py-1 text-xs ${copiedId === "dash-high-society" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
                         onClick={() => {
-                          const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs`;
+                          const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs&bar=flat&round=1`;
                           void copyUrl(u, "dash-high-society");
                         }}
                       >
-                        {copiedId === "dash-high-society" ? "복사됨!" : "OBS URL 복사"}
+                        {copiedId === "dash-high-society" ? "복사됨!" : "OBS URL 복사(평평)"}
+                      </button>
+                      <button
+                        type="button"
+                        className={`rounded px-2 py-1 text-xs ${copiedId === "dash-high-society-arrow" ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                        onClick={() => {
+                          const u = `${window.location.origin}/overlay/high-society?u=${overlayUserId}&host=obs&bar=arrow&round=1`;
+                          void copyUrl(u, "dash-high-society-arrow");
+                        }}
+                      >
+                        {copiedId === "dash-high-society-arrow" ? "복사됨!" : "OBS URL 복사(화살표)"}
                       </button>
                       <button
                         type="button"
                         className="rounded bg-amber-700 hover:bg-amber-600 px-2 py-1 text-xs font-semibold text-white"
                         onClick={() =>
                           window.open(
-                            `/overlay/high-society?u=${overlayUserId}&test=true`,
+                            `/overlay/high-society?u=${overlayUserId}&test=true&bar=flat&round=1&timerSec=120`,
                             "_blank",
                             "noopener,noreferrer"
                           )
