@@ -11574,7 +11574,7 @@ export default function AdminPage() {
               </div>
             </section>
 
-            <section className={`${panelCardClass} p-4 md:p-6 ${simpleMode ? "hidden" : ""}`}>
+            <section id="donor-list" className={`${panelCardClass} p-4 md:p-6 ${simpleMode ? "hidden" : ""}`}>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-lg font-semibold">후원자 리스트</h2>
                 <button
@@ -11586,6 +11586,71 @@ export default function AdminPage() {
                   일일 로그에서 후원 복구
                 </button>
               </div>
+
+              <div className="mb-3 rounded-lg border border-amber-400/40 bg-amber-950/30 p-3 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-semibold text-amber-100">상류사회 모드</div>
+                    <p className="text-[11px] text-neutral-400 mt-0.5">
+                      ON이면 아래 리스트에 <strong className="text-neutral-300">확장(←/→)</strong> 열이 생깁니다. 가운데 좌석만 방향 변경 가능.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className={`rounded px-3 py-1.5 text-xs font-semibold shrink-0 ${
+                      highSocietySettings.enabled
+                        ? "bg-amber-600 text-white"
+                        : "bg-neutral-700 text-neutral-200 hover:bg-neutral-600"
+                    }`}
+                    onClick={() => patchHighSocietySettings({ enabled: !highSocietySettings.enabled })}
+                  >
+                    {highSocietySettings.enabled ? "상류사회 ON" : "상류사회 OFF"}
+                  </button>
+                </div>
+                {highSocietySettings.enabled ? (
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-300">
+                    <span className="text-neutral-400">가운데 시스템 기본</span>
+                    <button
+                      type="button"
+                      className={`rounded px-2.5 py-1 font-semibold border ${
+                        resolveSystemMiddlePushDir(highSocietySettings) === "left"
+                          ? "border-amber-400 bg-amber-700/90 text-white"
+                          : "border-white/15 bg-neutral-900"
+                      }`}
+                      onClick={() => patchHighSocietySettings({ defaultMiddlePush: "left" })}
+                    >
+                      ← 왼쪽
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded px-2.5 py-1 font-semibold border ${
+                        resolveSystemMiddlePushDir(highSocietySettings) === "right"
+                          ? "border-amber-400 bg-amber-700/90 text-white"
+                          : "border-white/15 bg-neutral-900"
+                      }`}
+                      onClick={() => patchHighSocietySettings({ defaultMiddlePush: "right" })}
+                    >
+                      오른쪽 →
+                    </button>
+                    <button
+                      type="button"
+                      className="text-sky-400 underline ml-1"
+                      onClick={() => {
+                        moveToSection("donor", "donor-management");
+                        window.setTimeout(() => {
+                          document.getElementById("high-society-mode")?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "start",
+                          });
+                        }, 80);
+                      }}
+                    >
+                      좌석·상세 설정
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+
               <div className="max-h-[260px] overflow-auto pr-1">
                 <table className="w-full text-sm">
                   <thead>
